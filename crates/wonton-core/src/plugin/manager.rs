@@ -8,6 +8,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+use wonton_protocol::{InstallProgress, InstallStage};
 
 use super::docker::Engine;
 use super::egress::core_proxy::CoreProxy;
@@ -470,6 +471,7 @@ impl PluginManager {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(id) {
             entry.status = status;
+            entry.install_progress = None;
             entry.health = None;
             entry.checked_at = now_secs();
             entry.follows_containers = false;
@@ -479,6 +481,47 @@ impl PluginManager {
         }
         drop(plugins);
         self.changed();
+    }
+
+    /// 报一步阶段，不带百分比。
+    pub(super) fn stage(&self, id: &PluginId, stage: InstallStage) {
+        self.report_progress(
+            id,
+            InstallProgress {
+                stage,
+                percent: None,
+            },
+        );
+    }
+
+    /// 安装或升级报到的阶段。阶段变了、或者百分比又前进了 5 才算换了一格，免得拉镜像时每一块都叫醒一轮列表。
+    pub(super) fn report_progress(&self, id: &PluginId, progress: InstallProgress) {
+        let stepped = {
+            let mut plugins = self.plugins.write().expect("插件表锁中毒");
+            let Some(entry) = plugins.get_mut(id) else {
+                return;
+            };
+            let stepped = match &entry.install_progress {
+                None => true,
+                Some(current) => {
+                    current.stage != progress.stage
+                        || match (current.percent, progress.percent) {
+                            (None, None) => false,
+                            (Some(before), Some(now)) => {
+                                now == 100 || now.saturating_sub(before) >= 5
+                            }
+                            _ => true,
+                        }
+                }
+            };
+            if stepped {
+                entry.install_progress = Some(progress);
+            }
+            stepped
+        };
+        if stepped {
+            self.changed();
+        }
     }
 
     /// 核心启动时：按记录恢复插件状态，把 OIDC 客户端同步到身份提供方。

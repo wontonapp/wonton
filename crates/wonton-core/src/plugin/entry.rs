@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use serde::Serialize;
+use wonton_protocol::InstallProgress;
 
 use super::listed::Listed;
 use super::manifest::{LocalizedText, PluginId, PluginKind};
@@ -67,6 +68,8 @@ pub(super) struct Entry {
     pub(super) system: bool,
     pub(super) has_webui: bool,
     pub(super) status: PluginStatus,
+    /// 安装或升级做到了哪一步；不在安装、升级时为空。
+    pub(super) install_progress: Option<InstallProgress>,
     pub(super) health: Option<Health>,
     /// 最近一次核对状态的时间（Unix 秒）：构造、看容器（[`super::watch`]）或状态变更时更新。
     pub(super) checked_at: u64,
@@ -112,6 +115,7 @@ impl Entry {
             system: manifest.kind == PluginKind::System,
             has_webui: manifest.webui.is_some(),
             status,
+            install_progress: None,
             health: None,
             checked_at: super::manager::now_secs(),
             upstream,
@@ -169,6 +173,7 @@ impl Entry {
             system: false,
             has_webui: false,
             status: PluginStatus::Degraded { reason },
+            install_progress: None,
             health: None,
             checked_at: super::manager::now_secs(),
             upstream: None,

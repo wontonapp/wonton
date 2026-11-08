@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::time::Instant;
+use wonton_protocol::InstallStage;
 
 use super::super::bots::is_bot;
 use super::super::compose::PullPolicy;
@@ -182,6 +183,7 @@ impl PluginManager {
             health: entry.health,
         };
         entry.status = PluginStatus::Upgrading;
+        entry.install_progress = None;
         drop(plugins);
         self.changed();
         Ok(before)
@@ -200,6 +202,7 @@ impl PluginManager {
             let langs = self.owner_languages();
             return Err(InstallError::not_installed(&langs, id));
         };
+        entry.install_progress = None;
         match outcome {
             Outcome::Upgraded(deployed) => {
                 let installed_at = entry
@@ -355,8 +358,15 @@ impl PluginManager {
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline = Instant::now() + self.cfg.install_timeout;
+        self.stage(&manifest.id, InstallStage::Starting);
         let health = self
-            .start_containers(&plan, &mut progress.undo, deadline, &langs)
+            .start_containers(
+                &plan,
+                Some(&manifest.id),
+                &mut progress.undo,
+                deadline,
+                &langs,
+            )
             .await?;
         if secrets::collect(
             &self.engine,
@@ -421,6 +431,7 @@ impl PluginManager {
         progress: &mut Progress,
     ) -> Result<Prepared, InstallError> {
         let manifest = &package.manifest;
+        self.stage(&manifest.id, InstallStage::Preparing);
         let oidc_secret = uses_sso(manifest)
             .then(|| old.record.oidc_client_secret.clone())
             .map(|kept| kept.unwrap_or_else(random_token));
@@ -449,7 +460,9 @@ impl PluginManager {
             .upgrade_model_vars(package, &mut progress.added_models, &langs)
             .await?;
         let mut plan = render(package, &ctx, &langs)?;
-        self.prepare_images(&mut plan, &langs).await?;
+        self.prepare_images(&mut plan, Some(&manifest.id), &langs)
+            .await?;
+        self.stage(&manifest.id, InstallStage::Preparing);
         self.prepare_dirs(&ctx, &plan.dirs, &mut progress.undo, &langs)?;
         for volume in &plan.volumes {
             let labels = self.engine.volume_labels(volume).await?;

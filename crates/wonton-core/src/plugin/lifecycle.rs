@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::time::Instant;
+use wonton_protocol::InstallStage;
 
 use super::compose::DependCondition;
 use super::configs;
@@ -173,6 +174,7 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
+        self.stage(&manifest.id, InstallStage::Preparing);
         self.clear_leftovers(&manifest.id).await?;
         let secret = uses_sso(manifest).then(random_token);
         let mut secrets = self.prepare_secrets(manifest, undo)?;
@@ -196,7 +198,9 @@ impl PluginManager {
             undo.models = Some(manifest.id.clone());
         }
         let mut plan = render(package, &ctx, langs)?;
-        self.prepare_images(&mut plan, langs).await?;
+        self.prepare_images(&mut plan, Some(&manifest.id), langs)
+            .await?;
+        self.stage(&manifest.id, InstallStage::Preparing);
         self.prepare_dirs(&ctx, &plan.dirs, undo, langs)?;
         self.create_networks(manifest, &plan, &ctx, undo).await?;
         // 容器启动前登记：安装过程中 Bot 就要经核心连 Matrix，健康检查才过得了。
@@ -228,7 +232,10 @@ impl PluginManager {
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline = Instant::now() + self.cfg.install_timeout;
-        let health = self.start_containers(&plan, undo, deadline, langs).await?;
+        self.stage(&manifest.id, InstallStage::Starting);
+        let health = self
+            .start_containers(&plan, Some(&manifest.id), undo, deadline, langs)
+            .await?;
         let (upstream, models, mcp) = self
             .started_upstreams(manifest, &plan, &mut secrets, undo, deadline, langs)
             .await?;
@@ -535,6 +542,7 @@ impl PluginManager {
     pub(super) async fn start_containers(
         &self,
         plan: &Deployment,
+        id: Option<&PluginId>,
         undo: &mut Undo,
         deadline: Instant,
         langs: &Languages,
@@ -577,6 +585,9 @@ impl PluginManager {
                     .await?;
             }
             self.engine.start_container(&container.name).await?;
+        }
+        if let Some(id) = id {
+            self.stage(id, InstallStage::WaitingForBot);
         }
         // 没人依赖的一次性服务通常是装好之后的收尾（比如建账号），跑完才算装好。被依赖的这时已经退出，马上返回。
         for container in plan.containers.iter().filter(|c| c.one_shot) {

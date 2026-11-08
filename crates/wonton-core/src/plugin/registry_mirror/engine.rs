@@ -12,12 +12,35 @@ use crate::plugin::docker::{Engine, EngineError};
 
 type Result<T, E = EngineError> = std::result::Result<T, E>;
 
+/// 拉镜像时一层报到的情况。Docker 的 `progressDetail` 是按层的，百分比要按层的字节数加起来算。
+pub(in crate::plugin) struct LayerProgress<'a> {
+    /// 层的 ID。
+    pub id: &'a str,
+    /// 这一层已经下完，或者本来就在本地（`Already exists`、`Pull complete`）。
+    pub done: bool,
+    /// 这一层下到的字节数。
+    pub current: u64,
+    pub total: u64,
+}
+
 impl Engine {
     pub async fn ensure_image(
         &self,
         image: &str,
         policy: PullPolicy,
         mirror: Option<&str>,
+    ) -> Result<String> {
+        self.ensure_image_with_progress(image, policy, mirror, &mut |_layer: LayerProgress<'_>| {})
+            .await
+    }
+
+    /// 同 [`Self::ensure_image`]。拉的时候每层的字节数交给 `progress`；本机已经有了、不拉时不报。
+    pub(in crate::plugin) async fn ensure_image_with_progress(
+        &self,
+        image: &str,
+        policy: PullPolicy,
+        mirror: Option<&str>,
+        progress: &mut (dyn FnMut(LayerProgress<'_>) + Send),
     ) -> Result<String> {
         let accelerated = mirror.and_then(|mirror| mirrored(image, mirror));
         if policy != PullPolicy::Always {
@@ -41,7 +64,7 @@ impl Engine {
         }
         let reference = accelerated.as_deref().unwrap_or(image);
         let pulled = async {
-            self.pull(reference).await?;
+            self.pull(reference, progress).await?;
             if digest(reference).is_some() {
                 self.check_digest(reference).await?;
             }
@@ -130,14 +153,18 @@ impl Engine {
         Ok(())
     }
 
-    async fn pull(&self, image: &str) -> Result<()> {
+    async fn pull(
+        &self,
+        image: &str,
+        progress: &mut (dyn FnMut(LayerProgress<'_>) + Send),
+    ) -> Result<()> {
         let reference = pull_reference(image);
         let options = CreateImageOptionsBuilder::default()
             .from_image(&reference)
             .build();
         let mut stream = self.docker.create_image(Some(options), None, None);
         while let Some(item) = stream.next().await {
-            item.map_err(|error| match error {
+            let item = item.map_err(|error| match error {
                 BollardError::DockerResponseServerError { message, .. }
                 | BollardError::DockerStreamError { error: message } => EngineError::Pull {
                     image: image.to_owned(),
@@ -160,6 +187,25 @@ impl Engine {
                     )
                 }
             })?;
+            let Some(id) = item.id else { continue };
+            let done = matches!(
+                item.status.as_deref(),
+                Some("Already exists" | "Pull complete" | "Download complete")
+            );
+            let (current, total) = item.progress_detail.map_or((0, 0), |detail| {
+                (
+                    detail.current.unwrap_or_default().max(0) as u64,
+                    detail.total.unwrap_or_default().max(0) as u64,
+                )
+            });
+            if done || total > 0 {
+                progress(LayerProgress {
+                    id: &id,
+                    done,
+                    current,
+                    total,
+                });
+            }
         }
         Ok(())
     }

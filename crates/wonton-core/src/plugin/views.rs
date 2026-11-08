@@ -522,7 +522,7 @@ impl PluginManager {
             removable: !entry.system,
             notices,
             enabled_root_permissions: Vec::new(),
-            install_progress: None,
+            install_progress: entry.install_progress.clone(),
         }
     }
 

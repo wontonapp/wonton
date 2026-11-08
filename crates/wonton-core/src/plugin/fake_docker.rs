@@ -10,6 +10,7 @@ use axum::extract::{Request, State};
 use axum::http::{Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
+use futures_util::StreamExt;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
@@ -559,6 +560,11 @@ fn others(docker: &mut Resources, method: &Method, parts: &[&str]) -> Option<Res
                 json!({"Name": docker.name, "Runtimes": map, "Architecture": "x86_64", "OSType": "linux", "NCPU": 32, "HttpsProxy": docker.https_proxy}),
             )
         }
+        (&Method::GET, ["images", image @ .., "json"])
+            if docker.missing_images.contains(&image.join("/")) =>
+        {
+            json_reply(StatusCode::NOT_FOUND, json!({"message": "No such image"}))
+        }
         (&Method::GET, ["images", image @ .., "json"]) => {
             let check = docker.image_healthchecks.get(&image.join("/"));
             json_reply(StatusCode::OK, json!({"Config": {"Healthcheck": check}}))
@@ -567,6 +573,28 @@ fn others(docker: &mut Resources, method: &Method, parts: &[&str]) -> Option<Res
             StatusCode::INTERNAL_SERVER_ERROR,
             json!({"message": docker.pull_error}),
         ),
+        // 拉成功：像 Docker 一样一行一个 JSON，带进度，最后一条表示下完。每行隔一会儿，测试才看得到中间状态。
+        (&Method::POST, ["images", "create"]) => {
+            // 拉完镜像就在本地了：之后查它、用它建容器都正常。
+            docker.missing_images.clear();
+            let lines = futures_util::stream::iter([
+                "{\"status\":\"Downloading\",\"progressDetail\":{\"current\":40,\"total\":100},\"id\":\"a\"}",
+                "{\"status\":\"Downloading\",\"progressDetail\":{\"current\":40,\"total\":100},\"id\":\"b\"}",
+                "{\"status\":\"Pull complete\",\"id\":\"a\"}",
+                "{\"status\":\"Downloading\",\"progressDetail\":{\"current\":100,\"total\":100},\"id\":\"b\"}",
+                "{\"status\":\"Already exists\",\"id\":\"c\"}",
+                "{\"status\":\"Pull complete\",\"id\":\"b\"}",
+            ])
+            .then(|line| async move {
+                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                Ok::<_, std::io::Error>(Bytes::from(format!("{line}\n")))
+            });
+            axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from_stream(lines))
+                .unwrap()
+        }
         (&Method::GET, ["exec", id, "json"]) if docker.execs.contains_key(*id) => {
             let code = docker.execs[*id].exit_code;
             json_reply(

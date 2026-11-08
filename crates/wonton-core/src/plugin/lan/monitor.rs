@@ -457,14 +457,14 @@ impl PluginManager {
         mut plan: Deployment,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
-        self.prepare_images(&mut plan, &langs).await?;
+        self.prepare_images(&mut plan, None, &langs).await?;
         // 计划按依赖拓扑排序，正序删除让共享网络命名空间的容器先于目标删；逆序会把目标先删，等价于按容器 ID 绑定的依赖先拆引用者。
         for container in plan.containers.iter() {
             self.engine.remove_container(&container.name).await?;
         }
         self.rewrite_image_healthchecks(ctx, &mut plan).await?;
         let deadline = Instant::now() + self.cfg.install_timeout;
-        self.start_containers(&plan, &mut Undo::default(), deadline, &langs)
+        self.start_containers(&plan, None, &mut Undo::default(), deadline, &langs)
             .await?;
         Ok(())
     }

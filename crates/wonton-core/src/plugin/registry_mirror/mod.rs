@@ -5,18 +5,59 @@ mod engine;
 mod probe;
 pub(crate) mod reference;
 
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 use futures_util::future::join_all;
 use wonton_protocol::{
-    RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest, RegistryMirrorTests,
-    RegistryMirrorUpdate, RegistryProbe,
+    InstallProgress, InstallStage, RegistryMirrorSettings, RegistryMirrorTest,
+    RegistryMirrorTestRequest, RegistryMirrorTests, RegistryMirrorUpdate, RegistryProbe,
 };
 
 use crate::l10n;
 use crate::plugin::docker::EngineError;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::{InstallError, PluginManager};
+use crate::plugin::manifest::PluginId;
+pub(in crate::plugin) use engine::LayerProgress;
+
+/// 一张镜像按层累加的下载进度。Docker 每条只带一层的字节数，层还会交错，所以按层的 ID 记住、把它们加起来。
+#[derive(Default)]
+pub(in crate::plugin) struct LayerBytes {
+    layers: HashMap<String, (u64, u64, bool)>,
+    last: u8,
+}
+
+impl LayerBytes {
+    /// 记一层的一条进展，返回新的百分比。层还没报过总数时是 0；看到的层都完成了就是 100。只增不减。
+    pub(in crate::plugin) fn update(&mut self, layer: LayerProgress<'_>) -> u8 {
+        let entry = self
+            .layers
+            .entry(layer.id.to_owned())
+            .or_insert((0, 0, false));
+        entry.1 = entry.1.max(layer.total);
+        entry.0 = entry.0.max(layer.current).min(entry.1.max(layer.current));
+        entry.2 |= layer.done;
+        // 完成的事件（`Pull complete` 这类）没有字节数：按这一层满了算。
+        if layer.done {
+            entry.0 = entry.1;
+        }
+        let known: u64 = self.layers.values().map(|(_, total, _)| *total).sum();
+        let current: u64 = self.layers.values().map(|(current, _, _)| *current).sum();
+        let all_done = !self.layers.is_empty() && self.layers.values().all(|(_, _, done)| *done);
+        let percent = if all_done {
+            100
+        } else {
+            current
+                .saturating_mul(100)
+                .checked_div(known)
+                .unwrap_or_default()
+                .min(99)
+        };
+        self.last = (percent.min(100) as u8).max(self.last);
+        self.last
+    }
+}
 use crate::plugin::render::Deployment;
 
 #[derive(Default)]
@@ -133,13 +174,33 @@ impl PluginManager {
     pub(in crate::plugin) async fn prepare_images(
         &self,
         plan: &mut Deployment,
+        id: Option<&PluginId>,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let mirror = self.registry_mirror_address(langs)?;
-        for container in &mut plan.containers {
+        let count = plan.containers.len().max(1) as u64;
+        for (index, container) in plan.containers.iter_mut().enumerate() {
+            let mut bytes = LayerBytes::default();
+            let mut report = |layer: LayerProgress<'_>| {
+                let Some(id) = id else { return };
+                let done = u64::from(bytes.update(layer));
+                let percent = ((index as u64 * 100 + done) / count).min(100) as u8;
+                self.report_progress(
+                    id,
+                    InstallProgress {
+                        stage: InstallStage::PullingImages,
+                        percent: Some(percent),
+                    },
+                );
+            };
             let result = self
                 .engine
-                .ensure_image(&container.image, container.pull_policy, mirror.as_deref())
+                .ensure_image_with_progress(
+                    &container.image,
+                    container.pull_policy,
+                    mirror.as_deref(),
+                    &mut report,
+                )
                 .await;
             let image = result.map_err(|error| {
                 let langs = self.owner_languages();
