@@ -2,7 +2,8 @@
 
 作业跑在自托管 runner 上。
 
-- 标签 `self-hosted, macOS, ARM64, xcode` 的机器跑 SwiftLint 和 iOS 模拟器构建，要装 Xcode 和 rustup。
+- 标签 `self-hosted, macOS, ARM64, xcode` 的机器跑 iOS 模拟器构建，要装 Xcode 和 rustup。
+- 标签 `self-hosted, macOS, ARM64, swiftlint` 的机器跑 SwiftLint，不编译，但要装 Xcode（SwiftLint 用它的 SourceKit）；可以和 `xcode` 标在同一台上。
 - 标签 `self-hosted, Linux, X64` 的机器跑结构门禁和 Android，要装 rustup，Android SDK 与 NDK 由 runner 环境的 `ANDROID_HOME` 给出。
 - 带 `rust` 标签的机器跑 Rust 作业（格式、Clippy、不依赖 Docker 的测试），要装 rustup。带 `docker` 标签的主机不打 `rust` 标签，免得编译最重的作业落到最忙的机器上。只给 Rust 作业用的机器注册时加 `--no-default-labels --labels rust`，没有 `self-hosted, Linux, X64`，就不会接到 Android 这类要别的环境的作业。
 - 同时带 `docker` 标签的机器还跑“Rust Docker 测试”作业（Docker 集成测试、官方索引检查），要装 Docker。

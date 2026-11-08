@@ -47,7 +47,8 @@ jobs:
   swiftlint:
     name: SwiftLint（函数体 ≤ 100 行）
     # 不放 Linux：只有带 docker 标签的机器能接容器作业，它们被 Rust 作业占满时，这个几秒钟的作业要排半小时。
-    runs-on: [self-hosted, macOS, ARM64, xcode]
+    # 单独一个标签：不编译的轻量 runner 只接它，不用排在几分钟一个的模拟器构建后面。
+    runs-on: [self-hosted, macOS, ARM64, swiftlint]
     timeout-minutes: 10
     env:
       SWIFTLINT_VERSION: "0.65.1"
