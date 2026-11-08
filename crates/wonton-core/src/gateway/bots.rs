@@ -31,6 +31,7 @@ pub async fn create_shared(
                 "invalid_input",
                 &format!("请求体不是建共享 Bot 的参数：{e}"),
                 &api::languages(&headers),
+                pages::Format::of(&headers),
             );
         }
     };

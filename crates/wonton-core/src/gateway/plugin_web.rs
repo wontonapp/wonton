@@ -15,6 +15,7 @@ use crate::plugin::upstreams::Endpoint;
 pub(super) fn upstream(
     route: &crate::plugin::manager::Route,
     langs: &Languages,
+    format: pages::Format,
 ) -> Result<Endpoint, Box<Response>> {
     match (&route.status, &route.upstream) {
         (PluginStatus::Running, Some(upstream)) => Ok(upstream.clone()),
@@ -23,6 +24,7 @@ pub(super) fn upstream(
             "no_webui",
             &l10n::text(langs, "gateway-no-webui", &[]),
             langs,
+            format,
         ))),
         (PluginStatus::Degraded { .. }, Some(upstream)) if route.web_serving => {
             Ok(upstream.clone())
@@ -39,6 +41,7 @@ pub(super) fn upstream(
                 ),
                 Some(&detail),
                 langs,
+                format,
             )))
         }
     }
@@ -52,7 +55,8 @@ pub(super) async fn self_request(
     mut req: Request,
 ) -> Response {
     let langs = crate::gateway::api::languages(req.headers());
-    let upstream = match upstream(route, &langs) {
+    let format = pages::Format::of(req.headers());
+    let upstream = match upstream(route, &langs, format) {
         Ok(upstream) => upstream,
         Err(response) => return *response,
     };
@@ -70,7 +74,7 @@ pub(super) async fn self_request(
     let mut response =
         match proxy::forward_or(&gateway.upstream_http, target, req, fwd, &langs).await {
             Ok(response) => response,
-            Err(error) => return error.response(route.id.as_str(), &langs),
+            Err(error) => return error.response(route.id.as_str(), &langs, format),
         };
     isolation::sanitize_set_cookies(response.headers_mut());
     if route.cross_origin_isolated {

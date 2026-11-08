@@ -267,6 +267,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
                 "not_found",
                 &l10n::text(&langs, "gateway-not-found", &[]),
                 &langs,
+                pages::Format::of(&headers),
             )
         })
         .layer(middleware::from_fn_with_state(
@@ -315,6 +316,7 @@ async fn reject_cross_site_writes(
         "cross_site",
         &l10n::text(&langs, "gateway-cross-site-write", &[]),
         &langs,
+        pages::Format::of(req.headers()),
     )
 }
 

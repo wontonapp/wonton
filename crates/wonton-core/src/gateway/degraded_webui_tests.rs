@@ -93,4 +93,20 @@ async fn an_unhealthy_web_container_still_answers_not_ready() {
         page.text()
     );
     assert!(!page.text().contains("Degraded"), "{}", page.text());
+
+    // 接口拿到的是 JSON，同一段原因放进 `detail`。
+    let api = h
+        .get(&host, "/api/data", &[("accept", "*/*"), ("cookie", &app)])
+        .await;
+    assert_eq!(api.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(api.error_kind(), Some("not_ready"));
+    let error = &api.json()["error"];
+    assert_eq!(error["category"], "not_ready");
+    assert!(
+        error["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("wget: connection refused")),
+        "{}",
+        api.text()
+    );
 }

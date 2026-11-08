@@ -12,7 +12,7 @@ use axum::Json;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{RawQuery, Request};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use hyper::StatusCode;
 use hyper::header;
@@ -60,11 +60,13 @@ async fn discovery() -> Json<Value> {
 }
 
 /// 假插件：把收到的请求（路径和请求头）原样回显；`/ws` 支持协议升级后回显字节；
-/// `/set-cookie?c=..&c=..` 把每个 `c` 原样作为一条 `Set-Cookie` 返回。
+/// `/set-cookie?c=..&c=..` 把每个 `c` 原样作为一条 `Set-Cookie` 返回；`/unauthorized` 回应用自己的 401（网关
+/// 只放行到这里，请求已经到达插件）。
 pub(super) async fn echo_upstream(hits: Arc<AtomicUsize>) -> SocketAddr {
     let router = Router::new()
         .route("/ws", get(upgrade_echo))
         .route("/set-cookie", get(set_cookies))
+        .route("/unauthorized", get(unauthorized))
         .route("/.well-known/openid-configuration", get(discovery))
         .fallback(move |req: Request| {
             let hits = hits.clone();
@@ -81,6 +83,14 @@ pub(super) async fn echo_upstream(hits: Arc<AtomicUsize>) -> SocketAddr {
     let (listener, addr) = bind().await;
     serve(listener, router).await;
     addr
+}
+
+async fn unauthorized() -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({"error": "app_login_required"})),
+    )
+        .into_response()
 }
 
 async fn set_cookies(RawQuery(query): RawQuery) -> Response {

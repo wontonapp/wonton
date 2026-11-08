@@ -20,6 +20,7 @@ pub(super) async fn request(gateway: &Gateway, req: Request) -> Response {
             "oidc_unavailable",
             &l10n::text(&langs, "gateway-oidc-unconfigured", &[]),
             &langs,
+            pages::Format::of(req.headers()),
         );
     };
     let fwd = proxy::Forwarded {
@@ -39,27 +40,29 @@ pub(super) async fn request(gateway: &Gateway, req: Request) -> Response {
 /// （[`crate::oidc::rewrite_discovery`]）。两个主机名拿到同一份改写结果。
 async fn discovery(gateway: &Gateway, req: Request) -> Response {
     let langs = api::languages(req.headers());
+    let format = pages::Format::of(req.headers());
     let Some(hydra) = &gateway.hydra else {
         return pages::error(
             StatusCode::SERVICE_UNAVAILABLE,
             "oidc_unavailable",
             &l10n::text(&langs, "gateway-oidc-unconfigured", &[]),
             &langs,
+            format,
         );
     };
     let browser = gateway.public.origin(&gateway.public.auth_host());
     let backend = gateway.public.auth_internal_origin();
     let mut document = match hydra.discovery().await {
         Ok(document) => document,
-        Err(error) => return failure(&error, &langs),
+        Err(error) => return failure(&error, &langs, format),
     };
     if let Err(error) = crate::oidc::rewrite_discovery(&mut document, &browser, &backend) {
-        return failure(&error, &langs);
+        return failure(&error, &langs, format);
     }
     axum::Json(document).into_response()
 }
 
-fn failure(error: &crate::oidc::OidcError, langs: &Languages) -> Response {
+fn failure(error: &crate::oidc::OidcError, langs: &Languages, format: pages::Format) -> Response {
     let name = l10n::text(langs, "gateway-name-oidc", &[]);
     pages::error(
         StatusCode::BAD_GATEWAY,
@@ -70,5 +73,6 @@ fn failure(error: &crate::oidc::OidcError, langs: &Languages) -> Response {
             &[("name", name.into()), ("error", error.to_string().into())],
         ),
         langs,
+        format,
     )
 }

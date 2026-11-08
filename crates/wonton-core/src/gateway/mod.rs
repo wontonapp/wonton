@@ -72,7 +72,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::{ConnectInfo, Request};
 use axum::response::{IntoResponse, Redirect, Response};
-use hyper::header::{ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, HOST, SET_COOKIE};
+use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, HOST, SET_COOKIE};
 use hyper::{HeaderMap, Method, StatusCode};
 use iroh::EndpointId;
 use tower::ServiceExt;
@@ -501,6 +501,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
                     &[("host", host.as_str().into())],
                 ),
                 &langs,
+                pages::Format::of(req.headers()),
             )
         }
     }
@@ -532,6 +533,7 @@ async fn from_service(authority: Option<&str>, peer: Option<SocketAddr>, name: &
 async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Response {
     let host = gateway.public.plugin_host(slug);
     let langs = api::languages(req.headers());
+    let format = pages::Format::of(req.headers());
     let Some(route) = gateway.plugins.route(slug) else {
         return pages::error(
             StatusCode::NOT_FOUND,
@@ -542,6 +544,7 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
                 &[("host", host.as_str().into())],
             ),
             &langs,
+            format,
         );
     };
     // 这个插件自己网络里的容器访问它自己的网页地址：不要会话，转给它自己的上游，也不代表任何人（ADR-0063）。
@@ -576,40 +579,17 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
                 &[("id", route.id.as_str().into())],
             ),
             &langs,
+            format,
         );
     }
-    let upstream = match plugin_web::upstream(&route, &langs) {
+    let upstream = match plugin_web::upstream(&route, &langs, format) {
         Ok(upstream) => upstream,
         Err(response) => return *response,
     };
-    if let Some(auth) = &route.proxy {
-        let identity = match gateway.identity_of(&person) {
-            Ok(identity) => identity,
-            Err(e) => {
-                tracing::warn!(plugin = %route.id, error = %e, "代登录拿不到身份");
-                return pages::error(
-                    StatusCode::FORBIDDEN,
-                    "permission_denied",
-                    &l10n::text(&langs, "gateway-proxy-sso-member-missing", &[]),
-                    &langs,
-                );
-            }
-        };
-        if let Err(e) = proxy_sso::attach(req.headers_mut(), auth, &identity, &langs) {
-            return pages::error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "proxy_credentials",
-                &l10n::text(
-                    &langs,
-                    "gateway-proxy-sso-failed",
-                    &[
-                        ("id", route.id.as_str().into()),
-                        ("error", e.to_string().into()),
-                    ],
-                ),
-                &langs,
-            );
-        }
+    if let Err(response) =
+        attach_proxy_credentials(gateway, &route, &person, req.headers_mut(), &langs, format)
+    {
+        return *response;
     }
     let fwd = proxy::Forwarded {
         client: client_addr(&req),
@@ -622,7 +602,7 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
     let mut response =
         match proxy::forward_or(&gateway.upstream_http, target, req, fwd, &langs).await {
             Ok(response) => response,
-            Err(error) => return error.response(route.id.as_str(), &langs),
+            Err(error) => return error.response(route.id.as_str(), &langs, format),
         };
     isolation::sanitize_set_cookies(response.headers_mut());
     if let Some(auth) = &route.proxy {
@@ -634,24 +614,64 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
     response
 }
 
-/// 未登录：浏览器的页面请求跳到核心换取插件会话，其余请求（XHR、API）直接 401。`credentials` 为假的
+/// 代登录（`sso: proxy`）：拿这个人的身份写进请求头。拿不到身份或值写不进去时，回错误（形状按请求协商）。
+fn attach_proxy_credentials(
+    gateway: &Gateway,
+    route: &crate::plugin::manager::Route,
+    person: &Person,
+    headers: &mut hyper::HeaderMap,
+    langs: &crate::plugin::languages::Languages,
+    format: pages::Format,
+) -> Result<(), Box<Response>> {
+    let Some(auth) = &route.proxy else {
+        return Ok(());
+    };
+    let identity = match gateway.identity_of(person) {
+        Ok(identity) => identity,
+        Err(e) => {
+            tracing::warn!(plugin = %route.id, error = %e, "代登录拿不到身份");
+            return Err(Box::new(pages::error(
+                StatusCode::FORBIDDEN,
+                "permission_denied",
+                &l10n::text(langs, "gateway-proxy-sso-member-missing", &[]),
+                langs,
+                format,
+            )));
+        }
+    };
+    proxy_sso::attach(headers, auth, &identity, langs).map_err(|e| {
+        Box::new(pages::error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "proxy_credentials",
+            &l10n::text(
+                langs,
+                "gateway-proxy-sso-failed",
+                &[
+                    ("id", route.id.as_str().into()),
+                    ("error", e.to_string().into()),
+                ],
+            ),
+            langs,
+            format,
+        ))
+    })
+}
+
+/// 未登录：浏览器的页面导航跳到核心换取插件会话，其余请求（XHR、API）直接 401。`credentials` 为假的
 /// 跨站请求换到会话也不认，同样 401。
 fn unauthenticated(gateway: &Gateway, host: &str, req: &Request, credentials: bool) -> Response {
     let langs = api::languages(req.headers());
+    let format = pages::Format::of(req.headers());
     if !credentials {
         return pages::error(
             StatusCode::UNAUTHORIZED,
             "unauthenticated",
             &l10n::text(&langs, "gateway-cross-site-login", &[]),
             &langs,
+            format,
         );
     }
-    let wants_html = req
-        .headers()
-        .get(ACCEPT)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.contains("text/html"));
-    if req.method() == Method::GET && wants_html {
+    if req.method() == Method::GET && format == pages::Format::Html {
         let path = req.uri().path_and_query().map_or("/", |p| p.as_str());
         let to = format!("{}{path}", gateway.public.origin(host));
         let query = url::form_urlencoded::Serializer::new(String::new())
@@ -665,6 +685,7 @@ fn unauthenticated(gateway: &Gateway, host: &str, req: &Request, credentials: bo
         "unauthenticated",
         &l10n::text(&langs, "gateway-login-required", &[]),
         &langs,
+        format,
     )
 }
 

@@ -46,12 +46,14 @@ pub async fn start(
         return login_redirect(&gateway, &path_and_query(req.uri()));
     };
     let langs = api::languages(req.headers());
+    let format = pages::Format::of(req.headers());
     let Ok(target) = url::Url::parse(&query.to) else {
         return pages::error(
             StatusCode::BAD_REQUEST,
             "invalid_input",
             &l10n::text(&langs, "gateway-sso-invalid-next", &[]),
             &langs,
+            format,
         );
     };
     let host = target.host_str().unwrap_or_default().to_owned();
@@ -64,6 +66,7 @@ pub async fn start(
             "invalid_input",
             &l10n::text(&langs, "gateway-sso-local-only", &[]),
             &langs,
+            format,
         );
     }
     let code = gateway.sessions.create_code(&person, &host);
@@ -89,12 +92,14 @@ struct RedeemQuery {
 /// `GET <slug>.<base>/_wonton/session?code=..&to=..`：兑换交接码，设置本域名的插件会话。
 pub fn redeem(gateway: &Gateway, host: &str, req: &Request) -> Response {
     let langs = api::languages(req.headers());
+    let format = pages::Format::of(req.headers());
     let Ok(Query(query)) = Query::<RedeemQuery>::try_from_uri(req.uri()) else {
         return pages::error(
             StatusCode::BAD_REQUEST,
             "invalid_input",
             &l10n::text(&langs, "gateway-sso-missing-code", &[]),
             &langs,
+            format,
         );
     };
     let Some(person) = gateway.sessions.redeem_code(&query.code, host) else {
@@ -103,6 +108,7 @@ pub fn redeem(gateway: &Gateway, host: &str, req: &Request) -> Response {
             "unauthenticated",
             &l10n::text(&langs, "gateway-sso-code-invalid", &[]),
             &langs,
+            format,
         );
     };
     // 只允许跳到本域名内的路径，防止开放重定向。
@@ -123,7 +129,7 @@ pub struct ConsentChallenge {
     consent_challenge: String,
 }
 
-fn oidc_failure(e: &OidcError, langs: &Languages) -> Response {
+fn oidc_failure(e: &OidcError, langs: &Languages, format: pages::Format) -> Response {
     let (status, kind) = match e {
         OidcError::Unavailable(_) => (StatusCode::BAD_GATEWAY, "oidc_unavailable"),
         OidcError::Rejected {
@@ -132,7 +138,7 @@ fn oidc_failure(e: &OidcError, langs: &Languages) -> Response {
         _ => (StatusCode::BAD_GATEWAY, "oidc_error"),
     };
     tracing::warn!(error = %e, "OIDC 流程失败");
-    pages::error(status, kind, &e.to_string(), langs)
+    pages::error(status, kind, &e.to_string(), langs, format)
 }
 
 /// Hydra 的登录端点：用核心会话或隧道设备的身份直接接受登录，用户不会看到第二个登录页。subject 是当前
@@ -145,6 +151,7 @@ pub async fn oidc_login(
     uri: hyper::Uri,
 ) -> Response {
     let langs = api::languages(&headers);
+    let format = pages::Format::of(&headers);
     let Some(person) = gateway.core_person(peer.map(|Extension(peer)| peer), &headers) else {
         return login_redirect(&gateway, &path_and_query(&uri));
     };
@@ -154,11 +161,12 @@ pub async fn oidc_login(
             "oidc_unavailable",
             &l10n::text(&langs, "gateway-oidc-unconfigured", &[]),
             &langs,
+            format,
         );
     };
     let request = match hydra.login_request(&query.login_challenge).await {
         Ok(request) => request,
-        Err(e) => return oidc_failure(&e, &langs),
+        Err(e) => return oidc_failure(&e, &langs, format),
     };
     if request.skip && request.subject != person.username {
         return pages::error(
@@ -166,6 +174,7 @@ pub async fn oidc_login(
             "conflict",
             &l10n::text(&langs, "gateway-sso-user-mismatch", &[]),
             &langs,
+            format,
         );
     }
     tracing::info!(client = %request.client.client_id, person = %person.username, "接受 OIDC 登录");
@@ -174,7 +183,7 @@ pub async fn oidc_login(
         .await
     {
         Ok(to) => Redirect::to(&to).into_response(),
-        Err(e) => oidc_failure(&e, &langs),
+        Err(e) => oidc_failure(&e, &langs, format),
     }
 }
 
@@ -188,6 +197,7 @@ pub async fn oidc_consent(
     uri: hyper::Uri,
 ) -> Response {
     let langs = api::languages(&headers);
+    let format = pages::Format::of(&headers);
     let Some(person) = gateway.core_person(peer.map(|Extension(peer)| peer), &headers) else {
         return login_redirect(&gateway, &path_and_query(&uri));
     };
@@ -197,11 +207,12 @@ pub async fn oidc_consent(
             "oidc_unavailable",
             &l10n::text(&langs, "gateway-oidc-unconfigured", &[]),
             &langs,
+            format,
         );
     };
     let request = match hydra.consent_request(&query.consent_challenge).await {
         Ok(request) => request,
-        Err(e) => return oidc_failure(&e, &langs),
+        Err(e) => return oidc_failure(&e, &langs, format),
     };
     if request.subject != person.username {
         return pages::error(
@@ -209,6 +220,7 @@ pub async fn oidc_consent(
             "permission_denied",
             &l10n::text(&langs, "gateway-sso-consent-mismatch", &[]),
             &langs,
+            format,
         );
     }
     let granted = granted_scopes(&request.requested_scope);
@@ -222,6 +234,7 @@ pub async fn oidc_consent(
                 "permission_denied",
                 &l10n::text(&langs, "gateway-proxy-sso-member-missing", &[]),
                 &langs,
+                format,
             );
         }
     };
@@ -238,6 +251,6 @@ pub async fn oidc_consent(
         .await
     {
         Ok(to) => Redirect::to(&to).into_response(),
-        Err(e) => oidc_failure(&e, &langs),
+        Err(e) => oidc_failure(&e, &langs, format),
     }
 }

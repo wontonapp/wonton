@@ -99,7 +99,7 @@ pub async fn forward(
     forward_with_deadline(http, target, req, fwd, RESPONSE_HEADER_DEADLINE, langs).await
 }
 
-/// 同 [`forward`]，期限由调用方指定（测试用短期限），失败回 HTML 错误页。
+/// 同 [`forward`]，期限由调用方指定（测试用短期限），失败回错误响应（形状按请求的 `Accept`）。
 pub(crate) async fn forward_with_deadline(
     http: &HttpClient,
     target: Target<'_>,
@@ -109,9 +109,10 @@ pub(crate) async fn forward_with_deadline(
     langs: &Languages,
 ) -> Response {
     let name = target.name;
+    let format = pages::Format::of(req.headers());
     match forward_with_limit(http, target, req, fwd, limit, langs).await {
         Ok(response) => response,
-        Err(error) => error.response(name, langs),
+        Err(error) => error.response(name, langs, format),
     }
 }
 
@@ -126,11 +127,15 @@ pub enum ForwardError {
 }
 
 impl ForwardError {
-    pub(super) fn response(self, name: &str, langs: &Languages) -> Response {
+    pub(super) fn response(self, name: &str, langs: &Languages, format: pages::Format) -> Response {
         match self {
-            Self::SystemResolution(e) => {
-                pages::error(StatusCode::BAD_GATEWAY, "upstream_unreachable", &e, langs)
-            }
+            Self::SystemResolution(e) => pages::error(
+                StatusCode::BAD_GATEWAY,
+                "upstream_unreachable",
+                &e,
+                langs,
+                format,
+            ),
             Self::Unreachable(e) => pages::error(
                 StatusCode::BAD_GATEWAY,
                 "upstream_unreachable",
@@ -140,12 +145,14 @@ impl ForwardError {
                     &[("name", name.into()), ("error", e.as_str().into())],
                 ),
                 langs,
+                format,
             ),
             Self::HeaderTimeout => pages::error(
                 StatusCode::GATEWAY_TIMEOUT,
                 "upstream_timeout",
                 &l10n::text(langs, "gateway-upstream-timeout", &[("name", name.into())]),
                 langs,
+                format,
             ),
         }
     }
@@ -198,6 +205,7 @@ async fn forward_with_limit(
             "invalid_input",
             &l10n::text(langs, "gateway-invalid-path", &[]),
             langs,
+            pages::Format::of(&parts.headers),
         ));
     };
     let host = parts.headers.get(header::HOST).cloned();
