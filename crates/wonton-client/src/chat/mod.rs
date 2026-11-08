@@ -20,6 +20,7 @@ mod display_name;
 mod draft;
 mod follow_home;
 mod installs;
+mod layout;
 mod links;
 mod login;
 mod onboarding;
@@ -28,6 +29,7 @@ mod pending;
 mod read_mark;
 mod recovery;
 mod rich;
+mod room_rows;
 mod session;
 mod sign_in;
 mod storage;
@@ -65,8 +67,9 @@ use crate::l10n::{CATALOG, language};
 use crate::scope::reuse;
 use confirmation::{Answers, Cards};
 use draft::DraftWrite;
+use layout::Layouts;
 use storage::ChatStorage;
-use view::{core_error, room_row, sort_rooms};
+use view::core_error;
 
 /// 向前翻页一次最多加载的事件数。
 const PAGE: u16 = 30;
@@ -98,6 +101,8 @@ pub(crate) struct ChatLink {
     display_name: Mutex<Option<String>>,
     /// 聊天列表最上面的安装占位行（ADR-0067）。
     installs: Arc<installs::Installs>,
+    /// 聊天显示方式的账号数据（ADR-0060），只读给房间和 Bot 资料页合成用。
+    layouts: Arc<Layouts>,
     bots: Arc<bots::Bots>,
     plugins: Arc<crate::plugins::PluginsLink>,
     avatar_files: avatar_files::AvatarFiles,
@@ -185,7 +190,14 @@ impl ChatLink {
             },
         );
         let installs = installs::Installs::new(plugins.clone(), view.clone());
-        let bots = bots::Bots::new(runtime.clone(), home.clone(), plugins.clone(), view.clone());
+        let layouts = Layouts::new();
+        let bots = bots::Bots::new(
+            runtime.clone(),
+            home.clone(),
+            plugins.clone(),
+            view.clone(),
+            layouts.clone(),
+        );
         let (draft_writes, draft_receiver) = mpsc::unbounded_channel();
         let chat = Arc::new(Self {
             runtime: runtime.clone(),
@@ -203,6 +215,7 @@ impl ChatLink {
             sent: watch::Sender::new(Vec::new()),
             display_name: Mutex::new(None),
             installs,
+            layouts,
             bots,
             plugins,
             avatar_files: avatar_files::AvatarFiles::new(data_dir),
@@ -362,9 +375,7 @@ impl ChatLink {
                 secrets,
             } => self.answer_confirmation(id, answer, choice_id, secrets),
             Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
-            Action::SetChatLayout { .. } => Err(CoreError::NotReady {
-                reason: l10n!(CATALOG, language(), "chat-layouts-unsupported"),
-            }),
+            Action::SetChatLayout { target, choice } => self.set_chat_layout(target, choice),
             _ => Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action"))),
         }
     }
@@ -657,44 +668,11 @@ impl ChatLink {
     }
 
     /// 把会话的房间列表、加密状态、同步状态和会话事件接到 ViewModel 上。
-    /// 房间列表跟着 SDK 的房间流走：每批都重排、记进 ViewModel。主人的机器人排前面的规则在 `room_order` 里。
-    fn observe_rooms(self: &Arc<Self>, session: &Arc<MatrixSession>) -> JoinHandle<()> {
-        let view = self.view.clone();
-        let session = session.clone();
-        let room_order = self.room_order.clone();
-        let primary_bot = self.primary_bot.clone();
-        let chat = Arc::downgrade(self);
-        self.runtime.spawn(async move {
-            let rooms = match session.rooms().await {
-                Ok(rooms) => rooms,
-                Err(error) => {
-                    tracing::warn!("can't get the room list: {error}");
-                    return;
-                }
-            };
-            let core = core_account(session.user_id());
-            let mut rooms = std::pin::pin!(rooms);
-            while let Some(rooms) = rooms.next().await {
-                let mut rows: Vec<_> = rooms
-                    .into_iter()
-                    .map(|room| room_row(room, &core))
-                    .collect();
-                sort_rooms(&mut rows);
-                let bot = lock(&primary_bot).clone();
-                let rows = room_order.replace(rows, bot.as_deref());
-                view.send_modify(|view| view.rooms = rows);
-                if let Some(chat) = chat.upgrade() {
-                    chat.installs.refresh();
-                }
-            }
-        })
-    }
-
-    /// 把会话的房间列表、加密状态、同步状态和会话事件接到 ViewModel 上。
     fn observe(self: &Arc<Self>, session: &Arc<MatrixSession>) -> Vec<JoinHandle<()>> {
         let view = self.view.clone();
         let background = self.observe_background(session);
         let rooms = self.observe_rooms(session);
+        let layouts = layout::follow(self, session).expect("the chat link is still alive here");
         let encryption = self
             .runtime
             .spawn(recovery::watch(Arc::downgrade(self), session.clone()));
@@ -751,6 +729,7 @@ impl ChatLink {
         let mut tasks = vec![
             background,
             rooms,
+            layouts,
             encryption,
             sync,
             events,

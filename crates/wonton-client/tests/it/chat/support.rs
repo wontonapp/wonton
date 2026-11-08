@@ -149,6 +149,8 @@ struct Core {
     /// 为真时取房间成员的请求一接上就断开，别的请求不受影响。
     members_down: AtomicBool,
     members_requests_dropped: AtomicUsize,
+    /// 为真时取聊天显示方式账号数据的请求一接上就断开，别的请求不受影响。
+    layout_down: AtomicBool,
     reject_backup_creation: AtomicBool,
     /// 同步应答保持错标直到测试显式清除，避免其他同步连接提前把状态覆盖回来。
     stale_join: watch::Sender<Option<StaleJoin>>,
@@ -204,6 +206,7 @@ impl Home {
             matrix_down: watch::Sender::new(false),
             members_down: AtomicBool::new(false),
             members_requests_dropped: AtomicUsize::new(0),
+            layout_down: AtomicBool::new(false),
             reject_backup_creation: AtomicBool::new(false),
             stale_join: watch::Sender::new(None),
             join_reported_as_invited: AtomicUsize::new(0),
@@ -317,6 +320,11 @@ impl Home {
     /// 取房间成员的请求断开或恢复。
     pub fn set_members_down(&self, down: bool) {
         self.core.members_down.store(down, Ordering::SeqCst);
+    }
+
+    /// 取聊天显示方式账号数据的请求断开或恢复，别的请求不受影响。
+    pub fn set_layout_down(&self, down: bool) {
+        self.core.layout_down.store(down, Ordering::SeqCst);
     }
 
     /// 下一个带着 `stale` 房间加入事件的同步应答起，每个这样的应答都被改写成还是受邀（同步重启后 SDK 会

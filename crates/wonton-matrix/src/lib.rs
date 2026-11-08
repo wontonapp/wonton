@@ -17,6 +17,7 @@
 mod chat_room;
 mod encryption;
 mod error;
+mod layout;
 mod media;
 mod message;
 mod profile;
@@ -36,6 +37,7 @@ pub use chat_room::{
 };
 pub use encryption::{EncryptionState, Recovery, Verification};
 pub use error::{Error, Result};
+pub use layout::{CHAT_LAYOUT_EVENT, ChatLayoutContent};
 pub use matrix_sdk::ruma::{
     DeviceId, EventId, OwnedDeviceId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId,
 };

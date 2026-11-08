@@ -161,14 +161,14 @@ chat-empty-message = Type a message first.
 chat-ask-invalid-bot-id = The default agent's ID isn't formatted correctly.
 # Shown when a saved direct chat's room ID doesn't parse.
 chat-ask-invalid-room-id = The direct chat's room ID isn't valid.
+chat-layout-invalid-bot-id = That Matrix ID isn't formatted correctly, like @name:server.
+chat-layout-change-failed = Couldn't change the chat layout: { $reason }
 
 # Shown when the account is marked failed because Matrix revoked this device.
 chat-session-device-revoked = This device was revoked on Matrix. Pair it with your home server again.
 
 # Shown when the shell routes a chat action this core doesn't know.
 chat-invalid-action = Not a chat action.
-# Shown when setting a chat layout this core doesn't implement (ADR-0060).
-chat-layouts-unsupported = This version of the client core doesn't support chat layouts.
 # Shown when starting a direct chat with a user ID that isn't @name:server.
 chat-invalid-user-id = That user ID isn't valid. It should look like @name:server.
 # $file_type is the picked file's unchanged MIME type.

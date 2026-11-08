@@ -10,7 +10,7 @@ use wonton_matrix::{
     SendStatus, TimelineEntry, UserId, VectorDiff, Verification,
 };
 use wonton_protocol::{
-    ChatFailure, CoreError, DeviceVerification, FileLinks, ImageContent, MediaHandle,
+    ChatFailure, ChatLayout, CoreError, DeviceVerification, FileLinks, ImageContent, MediaHandle,
     MessageAction, MessageContent, MessageSummary, RecoveryStatus, RoomMembership, RoomPreview,
     RoomRow, SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
     extract_file_links,
@@ -32,10 +32,10 @@ pub(crate) fn sort_rooms(rows: &mut [RoomRow]) {
     });
 }
 
-pub(crate) fn room_row(room: RoomInfo, core: &UserId) -> RoomRow {
+pub(crate) fn room_row(room: RoomInfo, core: &UserId, layout: ChatLayout) -> RoomRow {
     let is_read_only = room.direct_user_id.as_deref() == Some(core);
     RoomRow {
-        layout: Default::default(),
+        layout,
         room_id: room.room_id.to_string(),
         name: room.name,
         is_direct: room.is_direct,

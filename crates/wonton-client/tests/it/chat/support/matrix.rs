@@ -84,6 +84,11 @@ pub(super) async fn serve_matrix(
         core.members_requests_dropped.fetch_add(1, Ordering::SeqCst);
         return;
     }
+    if text.contains("/account_data/app.wonton.chat_layout")
+        && core.layout_down.load(Ordering::SeqCst)
+    {
+        return;
+    }
     if expire_room_list(&mut tcp, &core, request.as_ref()).await {
         return;
     }

@@ -64,6 +64,11 @@ impl ChatLink {
             self.forget_current().await;
             drop(old);
         }
+        // 账号数据跟着服务器走：断线时先留着，换服务器才清。
+        if self.layouts.adopt(&server_id) {
+            self.view
+                .send_modify(|view| view.chat_layout_default = Default::default());
+        }
         self.view
             .send_modify(|view| view.account = ChatAccount::SigningIn);
         let session = match self.sign_in(&proxy, server_id).await {

@@ -13,6 +13,7 @@
 mod chat;
 mod egress;
 mod encryption;
+mod layout;
 mod login;
 mod messaging;
 mod profile;

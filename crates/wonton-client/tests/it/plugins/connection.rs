@@ -184,6 +184,23 @@ async fn a_list_only_clears_its_own_problem() {
 }
 
 #[tokio::test]
+async fn an_owner_only_refusal_is_permission_not_transport() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+
+    // 家人的设备调只给主人的接口：这是权限不够，不是连不上。
+    rig.core.answer(
+        Method::GET,
+        "/_wonton/api/plugins",
+        core_error(403, "owner_only", "Only the owner"),
+    );
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    let view = rig.wait_for(|view| view.problem.is_some()).await;
+    assert_eq!(view.problem.unwrap().reason, PluginFailure::Unauthorized);
+}
+
+#[tokio::test]
 async fn a_state_from_a_newer_core_is_not_taken_for_success() {
     let rig = Rig::new().await;
     rig.connected().await;

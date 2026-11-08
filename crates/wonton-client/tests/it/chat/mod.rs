@@ -12,6 +12,7 @@ mod confirmation;
 mod device_name;
 mod draft;
 mod key_upload_order;
+mod layout;
 mod onboarding;
 mod pending;
 mod push;

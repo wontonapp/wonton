@@ -147,14 +147,14 @@ chat-empty-message = 訊息不能為空。
 chat-ask-invalid-bot-id = 預設 Agent 的 ID 格式不對。
 # 已有私訊的聊天室 ID 剖析失敗時顯示。
 chat-ask-invalid-room-id = 私訊的聊天室 ID 無效。
+chat-layout-invalid-bot-id = ID 的格式不對，應該像 @名字:伺服器。
+chat-layout-change-failed = 改顯示方式沒成功：{ $reason }
 
 # Matrix 撤銷本裝置、帳號標記為失敗時顯示。
 chat-session-device-revoked = 這台裝置在 Matrix 上已被撤銷，需要主人重新配對。
 
 # 殼把不認得的操作交給聊天時顯示。
 chat-invalid-action = 不是聊天操作
-# 設定聊天版面配置而核心還沒實作時顯示。
-chat-layouts-unsupported = 這個版本的用戶端核心不支援聊天版面配置
 # 發起私聊時給的 ID 不像 @名稱:伺服器時顯示。
 chat-invalid-user-id = ID 格式不對，應該像 @名稱:伺服器
 # $file_type 是所選檔案原始的 MIME 類型。

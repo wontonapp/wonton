@@ -123,5 +123,9 @@ pub use wonton_protocol::{
     SharedAppRow, SharedAppsSource, SharedAppsState, SharedAppsViewModel, SharedPlugin,
 };
 pub use wonton_protocol::{
+    BotChatSettings, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings, ChatLayoutTarget,
+    ChatTextScale, CodeOverflow, PluginChat,
+};
+pub use wonton_protocol::{
     MappedPort, PluginPortMapping, PortMappingState, PortProtocol, UdpFlowStats,
 };

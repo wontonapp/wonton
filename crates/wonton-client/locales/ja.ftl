@@ -147,14 +147,14 @@ chat-empty-message = メッセージを入力してください。
 chat-ask-invalid-bot-id = デフォルトのエージェントのIDの形式が正しくありません。
 # 既存のダイレクトチャットのルームIDを解析できない場合に表示します。
 chat-ask-invalid-room-id = ダイレクトチャットのルームIDが無効です。
+chat-layout-invalid-bot-id = Matrix IDの形式が正しくありません（@name:server の形式）。
+chat-layout-change-failed = チャットの表示方法を変更できませんでした：{ $reason }
 
 # Matrixがこのデバイスを取り消し、アカウントが失敗扱いになったときに表示します。
 chat-session-device-revoked = このデバイスはMatrixで取り消されました。もう一度自宅サーバーとペアリングしてください。
 
 # シェルからコアの知らないチャット操作が渡されたときに表示します。
 chat-invalid-action = チャット操作ではありません
-# チャットレイアウトの設定に未対応のとき表示します。
-chat-layouts-unsupported = このバージョンのクライアントコアはチャットレイアウトに対応していません
 # ダイレクトチャットの開始時に、@名前:サーバーの形でないIDが渡されたときに表示します。
 chat-invalid-user-id = ユーザーIDの形式が正しくありません。@名前:サーバーのように入力してください
 # $file_type は選択したファイルの元のMIMEタイプです。
