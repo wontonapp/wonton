@@ -223,7 +223,7 @@ pub enum RichBlockKind {
     Rule,
 }
 
-/// 一段样式相同的文字。`link` 只会是 http、https 或 mailto 的地址。
+/// 一段样式相同的文字。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct RichSpan {
@@ -232,7 +232,49 @@ pub struct RichSpan {
     pub italic: bool,
     pub code: bool,
     pub strike: bool,
-    pub link: Option<String>,
+    pub link: Option<RichLink>,
+}
+
+/// 文字里的一个链接，以及核心判断的类别：壳按类别打开，不自己看地址（ADR-0065）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RichLink {
+    /// 打开或交给系统的地址。不带协议的网址已经补成 http，纯文本邮箱补成 `mailto:`，号码补成 `tel:`。
+    pub url: String,
+    pub kind: RichLinkKind,
+}
+
+/// 链接的类别，决定点开以后去哪里。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RichLinkKind {
+    /// 别处的网页：iOS 用 `SFSafariViewController`、Android 用 Custom Tabs 打开。
+    External,
+    /// 这台服务器上插件的网页：打开那个插件的页面，经隧道。
+    Plugin { plugin_id: String },
+    /// matrix.to 的链接：在 App 里打开对应的用户或房间。
+    Matrix { target: MatrixTarget },
+    /// 邮件：交给系统。
+    Email,
+    /// 电话：交给系统。
+    Phone,
+    /// 其他交给系统的地址，比如云吞自己的 `wonton://`。
+    Other,
+}
+
+/// matrix.to 链接指向的东西。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MatrixTarget {
+    /// 一个用户。
+    User { user_id: String },
+    /// 一个房间：房间 ID，或房间别名（`#alias:server`）。`event_id` 是链接指向的事件（事件永久链接），只有房间时为 `None`。
+    Room {
+        room_id: String,
+        event_id: Option<String>,
+    },
 }
 
 /// 图片消息。原图和缩略图都经 `ClientCore::load_media` 取，核心负责下载、解密和缓存。
@@ -401,7 +443,10 @@ mod tests {
                 spans: vec![RichSpan {
                     text: "你好".into(),
                     bold: true,
-                    link: Some("https://example.com/".into()),
+                    link: Some(RichLink {
+                        url: "https://example.com/".into(),
+                        kind: RichLinkKind::External,
+                    }),
                     ..RichSpan::default()
                 }],
             }],
@@ -457,6 +502,43 @@ mod tests {
         }
         let state: SendState = serde_json::from_str(r#"{"type":"sending"}"#).unwrap();
         assert_eq!(state, SendState::Sending { progress: None });
+    }
+
+    /// 契约：每个链接类别都能经 JSON 往返，壳收到的类别和地址都还在。
+    #[test]
+    fn every_link_kind_round_trips_through_json() {
+        for kind in [
+            RichLinkKind::External,
+            RichLinkKind::Plugin {
+                plugin_id: "app.grafana".into(),
+            },
+            RichLinkKind::Matrix {
+                target: MatrixTarget::User {
+                    user_id: "@alice:home.example".into(),
+                },
+            },
+            RichLinkKind::Matrix {
+                target: MatrixTarget::Room {
+                    room_id: "!abc:home.example".into(),
+                    event_id: None,
+                },
+            },
+            RichLinkKind::Matrix {
+                target: MatrixTarget::Room {
+                    room_id: "#room:home.example".into(),
+                    event_id: Some("$event".into()),
+                },
+            },
+            RichLinkKind::Email,
+            RichLinkKind::Phone,
+            RichLinkKind::Other,
+        ] {
+            let link = RichLink {
+                url: "https://example.com/".into(),
+                kind,
+            };
+            assert_eq!(round_trip(&link), link);
+        }
     }
 
     fn round_trip<T: Serialize + DeserializeOwned>(value: &T) -> T {

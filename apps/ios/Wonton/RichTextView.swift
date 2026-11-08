@@ -87,7 +87,7 @@ private struct RichBlockView: View {
                 part.backgroundColor = ink.opacity(WontonTheme.ratio.codeFill)
             }
             part.inlinePresentationIntent = intent
-            if let link = span.link, let url = URL(string: link) {
+            if let link = span.link, let url = URL(string: link.url) {
                 part.link = url
                 part.underlineStyle = .single
             }

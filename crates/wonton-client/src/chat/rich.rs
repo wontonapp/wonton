@@ -5,7 +5,7 @@
 use linkify::{LinkFinder, LinkKind};
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use url::Url;
-use wonton_protocol::{RichBlock, RichBlockKind, RichSpan};
+use wonton_protocol::{RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan};
 
 /// 自己发的：只有一段，网址可以点。
 pub(crate) fn plain(text: &str) -> Vec<RichBlock> {
@@ -118,7 +118,7 @@ struct Builder {
     bold: u32,
     italic: u32,
     strike: u32,
-    links: Vec<Option<String>>,
+    links: Vec<Option<RichLink>>,
     /// 每层列表下一项的序号，无序列表为 `None`。
     lists: Vec<Option<u64>>,
     /// 当前列表项的符号，还没画出去。
@@ -246,7 +246,7 @@ impl Builder {
         if self.image_start == self.spans.len()
             && let Some(link) = link
         {
-            self.span(&link.clone(), Some(link));
+            self.span(&link.url.clone(), Some(link));
         }
     }
 
@@ -296,7 +296,7 @@ impl Builder {
         self.add(span);
     }
 
-    fn span(&mut self, text: &str, link: Option<String>) {
+    fn span(&mut self, text: &str, link: Option<RichLink>) {
         if text.is_empty() {
             return;
         }
@@ -311,11 +311,11 @@ impl Builder {
         self.add(span);
     }
 
-    fn active_link(&self) -> Option<&String> {
+    fn active_link(&self) -> Option<&RichLink> {
         self.links.iter().rev().find_map(Option::as_ref)
     }
 
-    fn style(&self, link: Option<String>) -> RichSpan {
+    fn style(&self, link: Option<RichLink>) -> RichSpan {
         RichSpan {
             bold: self.bold > 0,
             italic: self.italic > 0,
@@ -381,9 +381,18 @@ fn without_zero_width(text: &str) -> String {
     text.replace(ZERO_WIDTH_SPACE, "")
 }
 
-fn allowed_link(url: &str) -> Option<String> {
+fn allowed_link(url: &str) -> Option<RichLink> {
     let parsed = Url::parse(&without_zero_width(url)).ok()?;
-    matches!(parsed.scheme(), "http" | "https" | "mailto" | "wonton").then(|| parsed.to_string())
+    let kind = match parsed.scheme() {
+        "http" | "https" => RichLinkKind::External,
+        "mailto" => RichLinkKind::Email,
+        "wonton" => RichLinkKind::Other,
+        _ => return None,
+    };
+    Some(RichLink {
+        url: parsed.to_string(),
+        kind,
+    })
 }
 
 /// 复制出去的文字：看到什么复制什么，不带 Markdown 的符号。
@@ -416,7 +425,8 @@ mod tests {
         blocks
             .iter()
             .flat_map(|block| &block.spans)
-            .filter_map(|span| span.link.as_deref())
+            .filter_map(|span| span.link.as_ref())
+            .map(|link| link.url.as_str())
             .collect()
     }
 

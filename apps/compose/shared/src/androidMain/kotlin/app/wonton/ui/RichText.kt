@@ -181,7 +181,7 @@ private fun inlineText(
             withStyle(style) { append(span.text) }
         } else {
             val underline = TextLinkStyles(SpanStyle(textDecoration = TextDecoration.Underline))
-            withLink(LinkAnnotation.Url(link, underline)) { withStyle(style) { append(span.text) } }
+            withLink(LinkAnnotation.Url(link.url, underline)) { withStyle(style) { append(span.text) } }
         }
     }
     if (reserve != null) withStyle(reserveStyle) { append(reserve) }
