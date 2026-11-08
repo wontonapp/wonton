@@ -24,6 +24,7 @@ mod push;
 mod rooms;
 mod send_queue;
 mod session;
+mod store_holder;
 mod sync;
 #[cfg(feature = "testkit")]
 pub mod testkit;

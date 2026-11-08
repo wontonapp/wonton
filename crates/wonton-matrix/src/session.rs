@@ -8,6 +8,7 @@ use futures_util::{Stream, stream};
 use matrix_sdk::{
     Client, ClientBuildError, SessionChange, SessionMeta, SessionTokens,
     authentication::matrix::MatrixSession as SdkSession,
+    cross_process_lock::CrossProcessLockConfig,
     encryption::{BackupDownloadStrategy, EncryptionSettings},
     reqwest,
     ruma::{DeviceId, OwnedDeviceId, OwnedUserId, UserId, serde::JsonObject},
@@ -429,6 +430,13 @@ async fn build_client(config: &SessionConfig, versions: VersionBuilder) -> Resul
     if let Some(proxy) = &config.proxy {
         builder = builder.proxy(proxy);
     }
+    let store = match &config.store {
+        StoreConfig::InMemory => None,
+        StoreConfig::Sqlite { path, .. } => Some(path.as_path()),
+    };
+    builder = builder.cross_process_store_config(CrossProcessLockConfig::multi_process(
+        crate::store_holder::holder_for(store),
+    ));
     let builder = match &config.store {
         StoreConfig::InMemory => builder,
         StoreConfig::Sqlite { path, passphrase } => {
