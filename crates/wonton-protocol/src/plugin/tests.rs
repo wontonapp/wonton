@@ -77,6 +77,7 @@ fn installed() -> InstalledPlugin {
         removable: true,
         notices: vec![],
         enabled_root_permissions: vec!["docker.socket".into()],
+        install_progress: None,
     }
 }
 
@@ -158,6 +159,7 @@ fn preview() -> InstallPreview {
         summary: "局域网文件共享".into(),
         version: "1.0.0".into(),
         kind: PluginKind::App,
+        has_bot: false,
         icon: None,
         trust: PluginTrust::Community,
         provider: Some("github.com/someone/wonton-samba".into()),
@@ -669,39 +671,6 @@ fn the_models_not_connected_hint_keeps_its_wire_format() {
 }
 
 #[test]
-fn a_core_without_writers_lists_plugins_without_them() {
-    let mut item = serde_json::to_value(installed()).unwrap();
-    item.as_object_mut().unwrap().remove("written_by");
-    let item: InstalledPlugin = serde_json::from_value(item).unwrap();
-    assert_eq!(item.written_by, None);
-
-    let mut shown = serde_json::to_value(detail()).unwrap();
-    shown.as_object_mut().unwrap().remove("ask_every_update");
-    shown.as_object_mut().unwrap().remove("hints");
-    shown.as_object_mut().unwrap().remove("secret_inputs");
-    let shown: PluginDetail = serde_json::from_value(shown).unwrap();
-    assert_eq!(shown.ask_every_update, None);
-    assert!(shown.hints.is_empty(), "旧核心没有这个字段，轻提示为空");
-    assert!(
-        shown.secret_inputs.is_empty(),
-        "旧核心没有这个字段，没有要填的"
-    );
-}
-
-#[test]
-fn a_core_without_tabs_lists_plugins_without_pages() {
-    let mut plugin = serde_json::to_value(installed()).unwrap();
-    let fields = plugin.as_object_mut().unwrap();
-    fields.remove("tabs");
-    fields.remove("web_display");
-    fields.remove("cross_origin_isolated");
-    let plugin: InstalledPlugin = serde_json::from_value(plugin).unwrap();
-    assert!(plugin.tabs.is_empty());
-    assert_eq!(plugin.web_display, TabDisplay::Standard);
-    assert!(!plugin.cross_origin_isolated);
-}
-
-#[test]
 fn values_from_a_newer_core_still_parse() {
     let parse = |value| serde_json::from_value::<StoreItem>(value).unwrap();
     let mut item = serde_json::to_value(&store().official.plugins[0]).unwrap();
@@ -792,3 +761,4 @@ where
 }
 
 mod capability;
+mod legacy_fields;

@@ -164,6 +164,7 @@ impl ChatLink {
                 account: ChatAccount::SignedOut,
                 sync: ChatSync::Idle,
                 encryption,
+                installing_bots: Vec::new(),
                 rooms: Vec::new(),
                 problem: None,
                 push: PushStatus::NoEndpoint,

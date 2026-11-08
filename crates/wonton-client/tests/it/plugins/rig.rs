@@ -405,6 +405,7 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         removable: true,
         notices: Vec::new(),
         enabled_root_permissions: Vec::new(),
+        install_progress: None,
     }
 }
 
@@ -427,6 +428,7 @@ pub fn preview(id: &str) -> InstallPreview {
         summary: String::new(),
         version: "1.0.0".to_owned(),
         kind: PluginKind::App,
+        has_bot: false,
         icon: None,
         trust: PluginTrust::Official,
         provider: None,

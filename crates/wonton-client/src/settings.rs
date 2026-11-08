@@ -383,6 +383,7 @@ mod tests {
                 can_verify_with_other_device: false,
                 verification_flow: None,
             },
+            installing_bots: Vec::new(),
             rooms: Vec::new(),
             problem: None,
             push: PushStatus::NoEndpoint,

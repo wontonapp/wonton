@@ -258,6 +258,7 @@ impl PluginManager {
             summary: langs.pick_owned(&m.description),
             version: m.version.clone(),
             kind: kind(m.kind),
+            has_bot: super::bots::is_bot(m),
             icon: icon.map(|i| i.paths()),
             trust: trust(package.origin.as_ref()),
             author: author(m),
@@ -521,6 +522,7 @@ impl PluginManager {
             removable: !entry.system,
             notices,
             enabled_root_permissions: Vec::new(),
+            install_progress: None,
         }
     }
 

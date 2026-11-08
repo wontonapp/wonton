@@ -172,6 +172,9 @@ pub struct InstalledPlugin {
     /// 现在开着的最高级可选权限（ADR-0057），如 `docker.socket`：列表里据此带醒目标志，没有时为空。
     #[serde(default)]
     pub enabled_root_permissions: Vec<String>,
+    /// 正在安装或升级时做到了哪一步；其余状态和还没开始部署时为空。
+    #[serde(default)]
+    pub install_progress: Option<InstallProgress>,
 }
 
 /// 插件的状态。
@@ -206,6 +209,33 @@ pub enum PluginHealth {
     /// 只知道在运行：有服务没有健康检查，或者核心启动后还没检查完。
     #[serde(other)]
     Unknown,
+}
+
+/// 一次安装或升级做到了哪一步，带这一步的进度。步骤由家里的服务器报，App 按 `stage` 挑文字。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct InstallProgress {
+    pub stage: InstallStage,
+    /// 这一步完成了多少，0 到 100；算不出来时为空，壳只显示阶段。
+    pub percent: Option<u8>,
+}
+
+/// 安装或升级的阶段。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum InstallStage {
+    /// 拉镜像。
+    PullingImages,
+    /// 建网络和卷、准备数据目录、代 Bot 登录。
+    Preparing,
+    /// 启动容器。
+    Starting,
+    /// 容器起来了，等检查通过、Bot 上线。
+    WaitingForBot,
+    /// 比这个 App 新的核心给的阶段。
+    #[serde(other)]
+    Other,
 }
 
 /// 能升级到的版本。
@@ -534,6 +564,9 @@ pub struct InstallPreview {
     pub summary: String,
     pub version: String,
     pub kind: PluginKind,
+    /// 清单声明了 Bot：装的时候聊天列表要给它占一行，装好后是和它的私聊。
+    #[serde(default)]
+    pub has_bot: bool,
     pub icon: Option<PluginIcon>,
     pub trust: PluginTrust,
     /// 核心能核实的提供方，如 `github.com/owner/repo`；上传的和预装的插件为空。清单里的 `author` 是作者自己写的，要分开显示。

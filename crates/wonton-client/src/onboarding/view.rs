@@ -226,6 +226,7 @@ mod tests {
                 can_verify_with_other_device: false,
                 verification_flow: None,
             },
+            installing_bots: Vec::new(),
             rooms: vec![RoomRow {
                 layout: Default::default(),
                 room_id: room_id.to_owned(),

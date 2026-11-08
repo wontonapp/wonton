@@ -60,9 +60,10 @@ pub use bot_profile::{
     MAX_BOT_NAME_CHARS, StateAvatar, StateAvatars, bot_profile_path, check_bot_name,
 };
 pub use chat::{
-    BackupReminder, ChatAccount, ChatContact, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
-    DeviceVerification, EncryptionStatus, ImageThumbnail, ImageUpload, MessageSummary,
-    PendingConfirmation, RecoveryStatus, RoomMembership, RoomPreview, RoomRow,
+    BackupReminder, BotInstallRow, BotInstallState, ChatAccount, ChatContact, ChatFailure,
+    ChatProblem, ChatSync, ChatViewModel, DeviceVerification, EncryptionStatus, ImageThumbnail,
+    ImageUpload, MessageSummary, PendingConfirmation, RecoveryStatus, RoomMembership, RoomPreview,
+    RoomRow,
 };
 pub use chat_layout::{
     BotChatSettings, CHAT_LAYOUT_EVENT, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings,
@@ -137,9 +138,9 @@ pub use plugin::{
     AddSourceRequest, AddedSource, AddedTools, AskEveryUpdate, BlockedCategory, BotSwitch,
     CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef, CapabilityProviderSettings,
     CapabilitySetting, ConsumerCapabilityChoice, ConsumerCapabilitySetting, InUseError,
-    InstallPreview, InstallRequest, InstallSource, InstallTogether, InstalledPlugin,
-    InstalledPlugins, LanWebuiOffer, MAX_PLUGIN_ARCHIVE_BYTES, MissingCapability, OpenWindow,
-    OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets, PermissionLine,
+    InstallPreview, InstallProgress, InstallRequest, InstallSource, InstallStage, InstallTogether,
+    InstalledPlugin, InstalledPlugins, LanWebuiOffer, MAX_PLUGIN_ARCHIVE_BYTES, MissingCapability,
+    OpenWindow, OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets, PermissionLine,
     PermissionOpened, PermissionRisk, PermissionUpdate, PluginAuthor, PluginDetail, PluginDevice,
     PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits,
     PluginOperation, PluginProblem, PluginState, PluginTakeover, PluginTask, PluginTaskState,

@@ -6,8 +6,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    BotView, ChatLayout, ChatLayoutChoice, PushNotification, PushStatus, SecretString,
-    VerificationFlow,
+    BotView, ChatLayout, ChatLayoutChoice, InstallProgress, PluginFailure, PluginIcon,
+    PluginOperation, PushNotification, PushStatus, SecretString, VerificationFlow,
 };
 
 /// 聊天页的 ViewModel。
@@ -17,6 +17,10 @@ pub struct ChatViewModel {
     pub account: ChatAccount,
     pub sync: ChatSync,
     pub encryption: EncryptionStatus,
+    /// 有 Bot 的插件在装、在升级、装失败时的占位行，显示在 `rooms` 上面。装好、Bot 的私聊出现在 `rooms` 里以后
+    /// 由那一行代替，这里不再有它。
+    #[serde(default)]
+    pub installing_bots: Vec<BotInstallRow>,
     /// 房间，按最近活动排序：最近有消息的在前，正在发送的在最前。
     pub rooms: Vec<RoomRow>,
     /// 最近一次在后台失败的操作（加入房间、发起私聊、设置恢复等）；壳显示后用
@@ -36,6 +40,46 @@ pub struct ChatViewModel {
     pub bots: Vec<BotView>,
     /// 聊天显示方式的全局默认里用户改过的项（ADR-0060），设置页的“聊天显示”读它。
     pub chat_layout_default: ChatLayoutChoice,
+}
+
+/// 聊天列表最上面的一行：有 Bot 的插件在装、在升级、装失败了。
+/// 装好、Bot 的私聊出现以后它由私聊那一行代替，不并排显示。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct BotInstallRow {
+    pub plugin_id: String,
+    /// 插件名。
+    pub title: String,
+    /// 插件图标；没有时为空，壳画占位图。
+    pub icon: Option<PluginIcon>,
+    /// 新装还是升级。卸载不会出现在这里，卸载时私聊还在。
+    pub operation: PluginOperation,
+    /// 重试时重新预览的来源，如 `github:owner/repo@v1.2.0`、`upload:sha256:…`：和
+    /// [`InstallPreview::source`](crate::InstallPreview::source) 一样交给预览接口，主人重新确认后再发
+    /// [`Action::InstallPlugin`](crate::Action::InstallPlugin)。不知道来源时为空，壳不给重试，引导回插件页。
+    pub source: Option<String>,
+    pub state: BotInstallState,
+}
+
+/// 安装行的情况。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum BotInstallState {
+    Running {
+        progress: InstallProgress,
+    },
+    /// 失败，插件已经回滚。`reason` 决定壳显示的类别和下一步，`message` 是默认收起的详情。
+    Failed {
+        reason: PluginFailure,
+        /// 家里的服务器写的说明，按 App 的语言。
+        message: String,
+    },
+    /// 说不清做到哪一步（连接断了、家里的服务器一直没回应）：可能还在装，看插件列表。
+    Uncertain {
+        /// 家里的服务器或客户端核心写的说明，按 App 的语言。
+        message: String,
+    },
 }
 
 /// 一张等主人回答的确认卡片。
@@ -327,7 +371,10 @@ mod tests {
     use serde::de::DeserializeOwned;
 
     use super::*;
-    use crate::{Action, CoreError, NotificationCategory, PushContent, PushStatus, SecretString};
+    use crate::{
+        Action, CoreError, InstallProgress, InstallStage, NotificationCategory, PluginOperation,
+        PushContent, PushStatus, SecretString,
+    };
 
     /// 测试用的恢复密钥原文。
     const KEY: &str = "EsTc 1234 abcd";
@@ -351,6 +398,19 @@ mod tests {
                 can_verify_with_other_device: true,
                 verification_flow: None,
             },
+            installing_bots: vec![BotInstallRow {
+                plugin_id: "app.hermes".into(),
+                title: "Hermes".into(),
+                icon: None,
+                operation: PluginOperation::Install,
+                source: Some("github:example/hermes@v1.2.0".into()),
+                state: BotInstallState::Running {
+                    progress: InstallProgress {
+                        stage: InstallStage::PullingImages,
+                        percent: Some(40),
+                    },
+                },
+            }],
             rooms: vec![RoomRow {
                 layout: Default::default(),
                 room_id: "!bot:home.example".into(),
@@ -463,5 +523,39 @@ mod tests {
 
     fn round_trip<T: Serialize + DeserializeOwned>(value: &T) -> T {
         serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
+    }
+
+    /// 旧核心没有安装行；新核心的阶段旧 App 不认识时落到 `Other`，行照样显示。
+    #[test]
+    fn install_rows_fall_back_on_old_cores_and_new_stages() {
+        let mut view = serde_json::to_value(sample_view_model()).unwrap();
+        view.as_object_mut().unwrap().remove("installing_bots");
+        let view: ChatViewModel = serde_json::from_value(view).unwrap();
+        assert!(view.installing_bots.is_empty());
+
+        let stage: InstallStage = serde_json::from_value(serde_json::json!("migrating")).unwrap();
+        assert_eq!(stage, InstallStage::Other);
+        let state: BotInstallState = serde_json::from_value(serde_json::json!({
+            "state": "running",
+            "progress": {"stage": "migrating", "percent": null},
+        }))
+        .unwrap();
+        assert_eq!(
+            state,
+            BotInstallState::Running {
+                progress: InstallProgress {
+                    stage: InstallStage::Other,
+                    percent: None,
+                }
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(BotInstallState::Failed {
+                reason: PluginFailure::Upstream,
+                message: "Docker 报错".into(),
+            })
+            .unwrap(),
+            serde_json::json!({"state": "failed", "reason": "upstream", "message": "Docker 报错"})
+        );
     }
 }
