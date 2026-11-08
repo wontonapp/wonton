@@ -528,8 +528,14 @@ impl PluginPackage {
             .iter()
             .flat_map(|l| &l.ports)
             .map(|port| ("lan.ports", Some(&port.service)));
+        let tunnel = self
+            .manifest
+            .tunnel
+            .iter()
+            .flat_map(|t| &t.ports)
+            .map(|port| ("tunnel.ports", Some(&port.service)));
         let all = refs.iter().cloned().chain(collects).chain(bots).chain(gpu);
-        for (field, service) in all.chain(lan) {
+        for (field, service) in all.chain(lan).chain(tunnel) {
             if let Some(service) = service
                 && !self.services.contains_key(service)
             {

@@ -197,6 +197,21 @@ pub fn spawn_announcing(
     })
 }
 
+/// 明确拒绝插件端口解析，不查安装记录或建立上游连接。
+#[derive(Debug)]
+pub struct UnsupportedPortResolver;
+
+impl wonton_tunnel::PortResolver for UnsupportedPortResolver {
+    async fn resolve(
+        &self,
+        _plugin: &str,
+        _port: u16,
+        _protocol: wonton_protocol::PortProtocol,
+    ) -> Result<SocketAddr, wonton_tunnel::PortResolveError> {
+        Err(wonton_tunnel::PortResolveError::Unsupported)
+    }
+}
+
 /// 运行中的隧道入口。
 pub struct TunnelEntry {
     server: TunnelServer,

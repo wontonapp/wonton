@@ -520,6 +520,9 @@ impl TunnelClient {
             Status::Ok => Ok(()),
             Status::UpstreamUnavailable => Err(TunnelError::UpstreamUnavailable),
             Status::UnsupportedRequest => Err(TunnelError::protocol("服务端不支持这个请求类型")),
+            Status::PluginNotInstalled => Err(TunnelError::protocol("请求指定的插件没有安装")),
+            Status::PortNotDeclared => Err(TunnelError::protocol("插件没有声明请求的端口和协议")),
+            Status::PluginNotRunning => Err(TunnelError::protocol("请求指定的插件没有运行")),
         }
     }
 

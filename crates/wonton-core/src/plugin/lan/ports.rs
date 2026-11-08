@@ -8,9 +8,9 @@ use std::net::IpAddr;
 
 use bollard::models::{ContainerSummaryStateEnum, PortSummaryTypeEnum};
 use bollard::query_parameters::ListContainersOptionsBuilder;
+use wonton_protocol::{PortProtocol, PortSpec};
 
 use super::super::docker::{Engine, EngineError, from_bollard};
-use super::{LanPortSpec, Protocol};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 
@@ -24,7 +24,7 @@ pub struct PublishedPort {
     /// 发布在哪个地址上，`0.0.0.0` 和 `::` 是通配。
     pub address: IpAddr,
     pub port: u16,
-    pub protocol: Protocol,
+    pub protocol: PortProtocol,
 }
 
 impl Engine {
@@ -73,8 +73,9 @@ impl Engine {
                             address,
                             port: p.public_port?,
                             protocol: match p.typ {
-                                Some(PortSummaryTypeEnum::UDP) => Protocol::Udp,
-                                _ => Protocol::Tcp,
+                                Some(PortSummaryTypeEnum::UDP) => PortProtocol::Udp,
+                                Some(PortSummaryTypeEnum::TCP) => PortProtocol::Tcp,
+                                _ => PortProtocol::Other,
                             },
                         })
                     })
@@ -89,7 +90,7 @@ pub struct Taken {
     /// 插件要开的地址。
     pub address: IpAddr,
     pub port: u16,
-    pub protocol: Protocol,
+    pub protocol: PortProtocol,
     /// 占着它的容器；探测出来的宿主进程没有名字。
     pub container: Option<String>,
     /// 占着它的是别的插件时，那个插件的 ID。
@@ -133,7 +134,12 @@ impl Taken {
 }
 
 /// 同一个端口和协议，地址相同或者任一边是通配（`0.0.0.0`、`::`）就算撞上。
-fn same_place(published: &PublishedPort, address: IpAddr, port: u16, protocol: Protocol) -> bool {
+fn same_place(
+    published: &PublishedPort,
+    address: IpAddr,
+    port: u16,
+    protocol: PortProtocol,
+) -> bool {
     published.port == port
         && published.protocol == protocol
         && (published.address == address
@@ -146,7 +152,7 @@ pub(in crate::plugin) fn clashes(
     published: &[PublishedPort],
     own: Option<&str>,
     addresses: &[IpAddr],
-    ports: &[LanPortSpec],
+    ports: &[PortSpec],
 ) -> Vec<Taken> {
     let mut found = Vec::new();
     for port in ports {
@@ -188,12 +194,12 @@ pub(in crate::plugin) fn unheard(
         .filter(|(address, port)| {
             !published
                 .iter()
-                .any(|published| same_place(published, *address, *port, Protocol::Tcp))
+                .any(|published| same_place(published, *address, *port, PortProtocol::Tcp))
         })
         .map(|&(address, port)| Taken {
             address,
             port,
-            protocol: Protocol::Tcp,
+            protocol: PortProtocol::Tcp,
             container: None,
             plugin: None,
         })

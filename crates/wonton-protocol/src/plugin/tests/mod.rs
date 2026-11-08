@@ -406,6 +406,7 @@ fn interface_types_round_trip_through_json() {
         }),
         actions: Vec::new(),
         shared_apps: None,
+        port_mappings: Vec::new(),
     };
     assert_eq!(round_trip(&view_model), view_model);
 }

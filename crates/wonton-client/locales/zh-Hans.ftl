@@ -286,6 +286,7 @@ home-no-connection-info = 还没有家里服务器的连接信息
 home-proxy-start-failed = 本地代理启动失败：{ $error }
 home-tunnel-closed = 隧道客户端已关闭
 home-lan-unsupported = 这个版本的客户端核心不支持局域网设置
+home-port-mapping-unsupported = 这个版本的客户端核心不支持端口映射
 # 底栏（tabs/view.rs、tabs/config.rs）和外观（appearance/mod.rs）的界面「详情」。
 
 # 底栏 ViewModel 的错误，作为 CoreError 的 reason 或底栏的问题提示显示。

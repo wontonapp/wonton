@@ -7,10 +7,9 @@
 
 use std::sync::Arc;
 
-use wonton_protocol::{LanPort, LanProtocol, LanWebuiOffer, PluginDetail};
+use wonton_protocol::{LanPort, LanProtocol, LanWebuiOffer, PluginDetail, PortProtocol, PortSpec};
 
 use super::select::Plan;
-use super::{LanPortSpec, Protocol};
 use crate::l10n;
 use crate::plugin::core_address;
 use crate::plugin::languages::Languages;
@@ -42,7 +41,7 @@ impl Risk {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Switched {
-    pub ports: Vec<LanPortSpec>,
+    pub ports: Vec<PortSpec>,
     risk: Risk,
 }
 
@@ -58,12 +57,13 @@ impl Switched {
     }
 }
 
-pub(super) fn lan_port(port: &LanPortSpec) -> LanPort {
+pub(super) fn lan_port(port: &PortSpec) -> LanPort {
     LanPort {
         port: port.port,
         protocol: match port.protocol {
-            Protocol::Tcp => LanProtocol::Tcp,
-            Protocol::Udp => LanProtocol::Udp,
+            PortProtocol::Tcp => LanProtocol::Tcp,
+            PortProtocol::Udp => LanProtocol::Udp,
+            PortProtocol::Other => LanProtocol::Other,
         },
     }
 }
@@ -93,12 +93,12 @@ pub fn switched(package: &PluginPackage) -> Option<Switched> {
     }
     let webui = m.webui.as_ref()?;
     let ports = m.lan.iter().flat_map(|lan| &lan.ports);
-    let (ports, risk): (Vec<LanPortSpec>, _) = if impersonable(package) {
+    let (ports, risk): (Vec<PortSpec>, _) = if impersonable(package) {
         let ports = ports.filter(|p| p.service == webui.service);
         (ports.cloned().collect(), Risk::Impersonate)
     } else if webui.sso == Sso::None {
         let ports = ports.filter(|p| {
-            p.service == webui.service && p.port == webui.port && p.protocol == Protocol::Tcp
+            p.service == webui.service && p.port == webui.port && p.protocol == PortProtocol::Tcp
         });
         (ports.cloned().collect(), Risk::Register)
     } else {
@@ -112,7 +112,7 @@ pub fn open_ports_of(
     manifest: &Manifest,
     switched: Option<&Switched>,
     enabled: bool,
-) -> Vec<LanPortSpec> {
+) -> Vec<PortSpec> {
     let closed = switched.filter(|_| !enabled);
     let ports = manifest.lan.iter().flat_map(|lan| &lan.ports);
     ports
@@ -121,7 +121,7 @@ pub fn open_ports_of(
         .collect()
 }
 
-pub fn open_ports(package: &PluginPackage, enabled: bool) -> Vec<LanPortSpec> {
+pub fn open_ports(package: &PluginPackage, enabled: bool) -> Vec<PortSpec> {
     open_ports_of(&package.manifest, switched(package).as_ref(), enabled)
 }
 

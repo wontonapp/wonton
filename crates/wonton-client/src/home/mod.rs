@@ -577,6 +577,8 @@ impl HomeLink {
             lost_packets: stats.lost_packets,
             last_failure: stats.last_failure.as_ref().map(ToString::to_string),
             addresses_stale: self.addresses_stale.load(Ordering::Relaxed),
+            udp_flows: Vec::new(),
+            udp_buffer_evicted_datagrams: None,
         };
         let tick = tracker.next_tick();
         drop(tracker);

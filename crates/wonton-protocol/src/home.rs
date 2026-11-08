@@ -186,6 +186,12 @@ pub struct ConnectionDetails {
     pub last_failure: Option<String>,
     /// 连上之后一直没取到服务器现在的地址：存着的地址可能已经过时，下次建连可能要先绕中继。取到就清掉。
     pub addresses_stale: bool,
+    /// 当前隧道连接的 UDP 流向；只统计完整应用包，不能与上面的 QUIC 包计数相加。
+    #[serde(default)]
+    pub udp_flows: Vec<crate::UdpFlowStats>,
+    /// 连接级被发送缓冲推出的数据报帧数估计；无法测得时为空，分片可能让一包占两帧。
+    #[serde(default)]
+    pub udp_buffer_evicted_datagrams: Option<u64>,
 }
 
 /// 连接当前走的路径。

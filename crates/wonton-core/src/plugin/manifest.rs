@@ -7,7 +7,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use wonton_protocol::ChatForm;
+use wonton_protocol::{ChatForm, PortProtocol, TunnelSpec};
 
 use super::gpu::GpuSpec;
 use super::lan::LanSpec;
@@ -516,6 +516,9 @@ pub struct Manifest {
     /// 在局域网上开放的端口，见规范“局域网”；要和 `network.lan` 权限一起声明。
     #[serde(default)]
     pub lan: Option<LanSpec>,
+    /// 已配对设备经隧道访问的端口；不发布到宿主网络。
+    #[serde(default)]
+    pub tunnel: Option<TunnelSpec>,
     /// 插件自己的密钥，见规范“插件密钥”。
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub secrets: BTreeMap<String, SecretSpec>,
@@ -584,6 +587,7 @@ impl Manifest {
         super::gpu::validate(self, langs)?;
         super::requirements::validate(self, langs)?;
         super::lan::validate(self, langs)?;
+        validate_tunnel(self)?;
         super::provides::validate(self, langs)?;
         super::capabilities::validate(self, langs)?;
         super::proxy_auth::validate(self, langs)?;
@@ -599,6 +603,36 @@ impl Manifest {
             .iter()
             .try_for_each(|(n, s)| super::secret_spec::validate_secret(n, s))
     }
+}
+
+fn validate_tunnel(manifest: &Manifest) -> Result<(), ManifestError> {
+    let Some(tunnel) = &manifest.tunnel else {
+        return Ok(());
+    };
+    let mcp = manifest.mcp.as_ref().map(|m| (&m.service, m.port));
+    let mut seen = BTreeMap::new();
+    for port in &tunnel.ports {
+        if port.port < 1024 {
+            return Err(ManifestError::Invalid(
+                "tunnel.ports requires port >= 1024".to_owned(),
+            ));
+        }
+        // 请求头和同号本机监听都不带 service，一个插件的端口/协议只能指向一个服务。
+        if let Some(service) = seen.insert((port.port, port.protocol), &port.service) {
+            return Err(ManifestError::Invalid(format!(
+                "duplicate tunnel.ports endpoint {}: services {service} and {}",
+                port.key(),
+                port.service
+            )));
+        }
+        // MCP is TCP; a UDP listener with the same number is a separate endpoint, as in lan.ports.
+        if port.protocol == PortProtocol::Tcp && mcp == Some((&port.service, port.port)) {
+            return Err(ManifestError::Invalid(
+                "tunnel.ports cannot expose the MCP endpoint".to_owned(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// `bot`、`bots` 和 `agent.protocol: matrix` 都以 Bot 身份收发消息，必须申请 `matrix.bot`。

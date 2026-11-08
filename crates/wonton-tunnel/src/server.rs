@@ -134,7 +134,7 @@ async fn serve_stream(
             Upstream::Embedded(streams) => hand_over(send, recv, remote, &streams).await,
         },
         Some(Request::Ping) => reply(&mut send, Status::Ok).await,
-        None => {
+        Some(Request::Port | Request::Udp) | None => {
             warn!(kind = kind[0], "unsupported request type");
             reply(&mut send, Status::UnsupportedRequest).await;
         }

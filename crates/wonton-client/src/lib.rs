@@ -121,3 +121,6 @@ pub use wonton_protocol::{
     ShareFailure, ShareGrant, ShareGrantUpdate, ShareIdentityFailure, ShareProblem, ShareRecipient,
     SharedAppRow, SharedAppsSource, SharedAppsState, SharedAppsViewModel, SharedPlugin,
 };
+pub use wonton_protocol::{
+    MappedPort, PluginPortMapping, PortMappingState, PortProtocol, UdpFlowStats,
+};

@@ -72,6 +72,8 @@ mod tests {
                 lost_packets: 3,
                 last_failure: Some("timed out".into()),
                 addresses_stale: true,
+                udp_flows: Vec::new(),
+                udp_buffer_evicted_datagrams: None,
             },
             proxy: Some(ProxySettings {
                 host: "127.0.0.1".into(),

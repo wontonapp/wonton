@@ -116,7 +116,7 @@ async fn serve_stream(mut send: SendStream, mut recv: RecvStream, upstream: Sock
     match Request::from_byte(kind[0]) {
         Some(Request::Forward) => forward_to_upstream(send, recv, upstream).await,
         Some(Request::Ping) => reply(&mut send, Status::Ok).await,
-        None => {
+        Some(Request::Port | Request::Udp) | None => {
             warn!(kind = kind[0], "unsupported request type");
             reply(&mut send, Status::UnsupportedRequest).await;
         }

@@ -633,6 +633,9 @@ impl ClientCore {
                 Ok(())
             }
             Action::StartPlugin { plugin_id } => scope.plugins.start(plugin_id),
+            Action::SetPortMapping { .. } => Err(CoreError::NotReady {
+                reason: l10n!(CATALOG, language(), "home-port-mapping-unsupported"),
+            }),
             Action::RefreshStore { force } => {
                 scope.plugins.refresh_store(force);
                 Ok(())

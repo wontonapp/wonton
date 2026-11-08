@@ -3,13 +3,13 @@
 
 use std::net::IpAddr;
 
-use wonton_protocol::{CardLine, LanFailure};
+use wonton_protocol::{CardLine, LanFailure, PortProtocol, PortSpec};
 
+use super::LanGrant;
 use super::monitor::Detected;
 use super::ports;
 use super::select::{Bound, Plan, Problem};
 use super::webui::open_ports;
-use super::{LanGrant, LanPortSpec, Protocol};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::{InstallError, PluginManager};
@@ -17,13 +17,13 @@ use crate::plugin::manifest::{Manifest, Permission};
 use crate::plugin::package::PluginPackage;
 
 /// 要连一下试试的地址和端口：连一下只判得了 TCP，UDP 端口不放。
-fn targets(addresses: &[IpAddr], ports: &[LanPortSpec]) -> Vec<(IpAddr, u16)> {
+fn targets(addresses: &[IpAddr], ports: &[PortSpec]) -> Vec<(IpAddr, u16)> {
     addresses
         .iter()
         .flat_map(|address| {
             ports
                 .iter()
-                .filter(|port| port.protocol == Protocol::Tcp)
+                .filter(|port| port.protocol == PortProtocol::Tcp)
                 .map(move |port| (*address, port.port))
         })
         .collect()
@@ -231,7 +231,7 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         addresses: &[IpAddr],
-        ports: &[LanPortSpec],
+        ports: &[PortSpec],
         published: &[ports::PublishedPort],
         langs: &Languages,
     ) -> Option<String> {
@@ -249,7 +249,7 @@ impl PluginManager {
         &self,
         detected: &Detected,
         addresses: &[IpAddr],
-        ports: &[LanPortSpec],
+        ports: &[PortSpec],
         published: &[ports::PublishedPort],
         langs: &Languages,
     ) -> Vec<CardLine> {
@@ -294,7 +294,7 @@ impl PluginManager {
     pub(super) fn lan_conflict(
         &self,
         manifest: &Manifest,
-        ports: &[LanPortSpec],
+        ports: &[PortSpec],
         langs: &Languages,
     ) -> Option<String> {
         let plugins = self.plugins.read().expect("插件表锁中毒");

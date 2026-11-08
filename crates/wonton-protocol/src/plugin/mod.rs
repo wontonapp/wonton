@@ -10,18 +10,21 @@ mod forms;
 pub mod hint;
 mod owner_secrets;
 mod permission;
+pub(super) mod ports;
 mod secret_input;
 #[path = "task.rs"]
 mod task;
 mod tool_policy;
+use crate::{
+    CardLine, CoreUpgradeViewModel, EgressViewModel, LanPort, PluginChat, PluginTab,
+    RegistryMirrorViewModel, TabDisplay,
+};
 pub use capability_deps::{
     BlockedCategory, CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef,
     CapabilityProviderSettings, CapabilitySetting, ConsumerCapabilityChoice,
     ConsumerCapabilitySetting, InUseError, InstallTogether, MissingCapability, UninstallPreview,
     UninstallRequest,
 };
-use serde::{Deserialize, Serialize};
-
 pub use forms::{PluginKind, PluginRuntime, PluginScope, plugin_scope_path};
 pub use owner_secrets::{OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets};
 pub use permission::{
@@ -30,16 +33,11 @@ pub use permission::{
 pub use secret_input::{
     SecretInput, SecretInputState, SecretUpdate, SecretValues, secret_input_path,
 };
+use serde::{Deserialize, Serialize};
 pub use task::{PluginOperation, PluginTask, PluginTaskState, UpgradeResult};
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
 };
-
-use crate::{
-    CardLine, CoreUpgradeViewModel, EgressViewModel, LanPort, PluginChat, PluginTab,
-    RegistryMirrorViewModel, TabDisplay,
-};
-
 /// 插件从哪里来，决定商店、确认页和已安装列表上的标签。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -708,6 +706,9 @@ pub struct PluginsViewModel {
     pub actions: Vec<crate::AppsAction>,
     /// 朋友分享的应用，来源独立于自家已装插件；未取到时为空。
     pub shared_apps: Option<crate::SharedAppsViewModel>,
+    /// 这台设备上的插件端口映射；未取到或尚无映射时为空，不代表插件没有声明端口。
+    #[serde(default)]
+    pub port_mappings: Vec<crate::PluginPortMapping>,
 }
 
 /// 这台设备上的“我来操作”，同时只操作一个插件。

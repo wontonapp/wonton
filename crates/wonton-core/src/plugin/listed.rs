@@ -2,11 +2,10 @@
 
 use std::sync::Arc;
 
-use wonton_protocol::PluginLimits;
+use wonton_protocol::{PluginLimits, PortSpec};
 
 use super::gallery::IconSource;
 use super::github_source::Origin;
-use super::lan::LanPortSpec;
 use super::lan::webui::{self, Switched};
 use super::manifest::Manifest;
 use super::package::PluginPackage;
@@ -83,7 +82,7 @@ impl Listed {
     }
 
     /// 开关是 `enabled` 时开着的局域网端口。
-    pub fn open_ports(&self, enabled: bool) -> Vec<LanPortSpec> {
+    pub fn open_ports(&self, enabled: bool) -> Vec<PortSpec> {
         webui::open_ports_of(&self.manifest, self.lan_switched.as_ref(), enabled)
     }
 

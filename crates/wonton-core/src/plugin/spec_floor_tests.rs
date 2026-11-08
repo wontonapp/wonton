@@ -202,3 +202,13 @@ fn plugin_forms_require_spec_0_10() {
         assert!(problems(&document("0.10", manifest, plain())).is_empty());
     }
 }
+
+#[test]
+fn tunnel_ports_need_0_11() {
+    let manifest = json!({"tunnel": {"ports": [{"service": "web", "port": 1024}]}});
+    assert_eq!(
+        problems(&document("0.10", manifest.clone(), plain())).len(),
+        1
+    );
+    assert!(problems(&document("0.11", manifest, plain())).is_empty());
+}

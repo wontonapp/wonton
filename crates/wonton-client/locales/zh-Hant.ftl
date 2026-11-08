@@ -286,6 +286,7 @@ home-no-connection-info = 還沒有家用伺服器的連線資訊
 home-proxy-start-failed = 本機代理啟動失敗：{ $error }
 home-tunnel-closed = 隧道用戶端已關閉
 home-lan-unsupported = 這個版本的用戶端核心不支援區域網路設定
+home-port-mapping-unsupported = 這個版本的用戶端核心不支援連接埠映射
 # 底欄（tabs/view.rs、tabs/config.rs）和外觀（appearance/mod.rs）的介面「詳細資訊」。
 # 對使用者，插件一律叫「App」；底欄按 Android 慣例寫「底部導覽列」。
 

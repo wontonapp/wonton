@@ -28,6 +28,7 @@ use std::net::IpAddr;
 
 use bollard::models::{ContainerCreateBody, EndpointSettings, PortBinding};
 use serde::{Deserialize, Serialize};
+use wonton_protocol::{PortProtocol, PortSpec};
 
 use crate::l10n;
 
@@ -51,45 +52,9 @@ pub const ANNOUNCE_VAR: &str = "WONTON_ANNOUNCE_ADDRESSES";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LanSpec {
-    pub ports: Vec<LanPortSpec>,
+    pub ports: Vec<PortSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client: Option<client::LanClientSpec>,
-}
-
-/// 一个端口。宿主端口和容器端口相同：SMB 客户端只认 445，换了端口就等于不能用。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LanPortSpec {
-    pub service: String,
-    pub port: u16,
-    #[serde(default)]
-    pub protocol: Protocol,
-}
-
-#[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum Protocol {
-    #[default]
-    Tcp,
-    Udp,
-}
-
-impl Protocol {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Tcp => "tcp",
-            Self::Udp => "udp",
-        }
-    }
-}
-
-impl LanPortSpec {
-    /// Docker 的写法，如 `445/tcp`。
-    pub fn key(&self) -> String {
-        format!("{}/{}", self.port, self.protocol.as_str())
-    }
 }
 
 /// `lan` 和 `network.lan` 要一起出现；端口不重复，也不能是 MCP 的端口：它只经核心访问。网页的端口可以列，要不要开关见
@@ -132,7 +97,7 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
                 &[("port", port.key().into())],
             ));
         }
-        if port.protocol == Protocol::Tcp && mcp == Some((&port.service, port.port)) {
+        if port.protocol == PortProtocol::Tcp && mcp == Some((&port.service, port.port)) {
             return invalid(l10n::text(
                 langs,
                 "plugin-settings-lan-port-mcp",
@@ -192,7 +157,7 @@ pub struct LanGrant {
     /// 没声明 `network.egress` 的插件发布端口用的网络（`wonton-<slug>--lan`）：Docker 不在内部网络上发布端口。
     pub network: Option<String>,
     /// 要开的端口。开关关着、没有要开的时为空，地址也为空，这时不接 `network`。
-    pub ports: Vec<LanPortSpec>,
+    pub ports: Vec<PortSpec>,
     /// 主人打开了开关 `lan_webui`。
     pub webui: bool,
 }
@@ -214,9 +179,19 @@ pub fn publish(
     body: &mut ContainerCreateBody,
     langs: &Languages,
 ) -> Result<(), RenderError> {
-    let ports: Vec<&LanPortSpec> = grant.ports.iter().filter(|p| p.service == name).collect();
+    let ports: Vec<&PortSpec> = grant.ports.iter().filter(|p| p.service == name).collect();
     if ports.is_empty() {
         return Ok(());
+    }
+    if ports
+        .iter()
+        .any(|port| port.protocol == PortProtocol::Other)
+    {
+        return Err(service_err(
+            langs,
+            name,
+            "unsupported lan.ports protocol; update the home server",
+        ));
     }
     if service.network_mode == Some(NetworkMode::None) {
         return Err(service_err(

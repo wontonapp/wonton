@@ -254,6 +254,11 @@ pub enum Action {
     StartPlugin {
         plugin_id: String,
     },
+    /// 在这台设备上开关插件的同号端口映射；未实现映射的客户端返回 `NotReady`，不改变开关或绑定端口。
+    SetPortMapping {
+        plugin_id: String,
+        enabled: bool,
+    },
     /// 取商店的列表。`force` 为真时家里的服务器不等缓存过期，直接去来源取（下拉刷新）。
     RefreshStore {
         force: bool,

@@ -32,6 +32,7 @@ mod peers;
 mod plugin;
 mod plugin_mail;
 mod plugin_notice;
+mod port_mapping;
 mod push;
 mod registry_mirror;
 mod secret;
@@ -149,6 +150,7 @@ pub use peers::{
 pub use plugin::LanClient;
 pub use plugin::StoreUnreadable;
 pub use plugin::hint::{PluginHint, PluginHintCategory};
+pub use plugin::ports::{PortProtocol, PortSpec, TunnelSpec};
 pub use plugin::{
     AddSourceRequest, AddedSource, AddedTools, AskEveryUpdate, BlockedCategory, BotSwitch,
     CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef, CapabilityProviderSettings,
@@ -167,6 +169,7 @@ pub use plugin::{
 };
 pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
+pub use port_mapping::{MappedPort, PluginPortMapping, PortMappingState, UdpFlowStats};
 pub use push::{
     NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushMethod,
     PushNotification, PushStatus,
