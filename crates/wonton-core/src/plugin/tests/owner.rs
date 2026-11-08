@@ -321,69 +321,8 @@ async fn a_proxy_template_stops_forwarding_when_the_email_is_removed_later() {
     );
 }
 
-/// OIDC 登录用 `email` 声明认人的应用声明 `requires_email`：没填邮箱时预览和安装都报，不用等登录。
 #[tokio::test]
-async fn an_oidc_plugin_requiring_email_is_stopped_before_install() {
-    let port = web().await.port();
-    let (_docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let m = without_email_oidc(engine, &dir).await;
-    let compose = package(
-        "  web:\n    image: nginx",
-        &format!(
-            "  webui:\n    service: web\n    port: {port}\n    sso: oidc\n    \
-             oidc: {{redirect_paths: [/cb], requires_email: true}}\n  permissions: []"
-        ),
-    );
-    let preview = m
-        .preview_install(&parsed(&compose), &Languages::default())
-        .await
-        .unwrap();
-    assert_eq!(preview.blocked, None, "填了就能装，不算装不了");
-    assert_eq!(
-        preview.missing_profile.as_deref(),
-        Some(super::message("plugin-settings-email-needed", &[]).as_str())
-    );
-    let error = m.install(&compose, &[], super::langs()).await.unwrap_err();
-    assert_eq!(error.kind(), "owner_profile_incomplete", "{error}");
-    assert!(
-        error
-            .to_string()
-            .contains(&super::message("plugin-settings-email-missing", &[])),
-        "{error}"
-    );
-}
-
-#[tokio::test]
-async fn an_oidc_plugin_requiring_email_installs_once_the_email_is_filled() {
-    let port = web().await.port();
-    let (_docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let m = without_email_oidc(engine, &dir).await;
-    m.cfg
-        .profile
-        .update(&OwnerProfileUpdate {
-            display_name: "云吞".into(),
-            email: Some("filled@example.com".into()),
-        })
-        .unwrap();
-    let compose = package(
-        "  web:\n    image: nginx",
-        &format!(
-            "  webui:\n    service: web\n    port: {port}\n    sso: oidc\n    \
-             oidc: {{redirect_paths: [/cb], requires_email: true}}\n  permissions: []"
-        ),
-    );
-    let preview = m
-        .preview_install(&parsed(&compose), &Languages::default())
-        .await
-        .unwrap();
-    assert_eq!(preview.missing_profile, None);
-    m.install(&compose, &[], super::langs()).await.unwrap();
-}
-
-#[tokio::test]
-async fn an_oidc_plugin_without_requires_email_still_installs_without_an_email() {
+async fn an_oidc_plugin_installs_without_a_profile_email() {
     let port = web().await.port();
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
@@ -401,6 +340,21 @@ async fn an_oidc_plugin_without_requires_email_still_installs_without_an_email()
         .unwrap();
     assert_eq!(preview.missing_profile, None);
     m.install(&compose, &[], super::langs()).await.unwrap();
+}
+
+#[test]
+fn oidc_rejects_the_removed_email_requirement() {
+    let compose = package(
+        "  web:\n    image: nginx",
+        "  webui:\n    service: web\n    port: 80\n    sso: oidc\n    \
+         oidc: {redirect_paths: [/cb], requires_email: true}\n  permissions: []",
+    );
+    assert!(matches!(
+        PluginPackage::parse(&compose, &super::langs()),
+        Err(super::super::package::PackageError::Manifest(
+            super::super::manifest::ManifestError::Invalid(_)
+        ))
+    ));
 }
 
 /// 清单校验 `oidc.owner_groups`：名字合法、不重复、最多 8 个。

@@ -106,9 +106,8 @@ JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、ma
    核心按会话接受登录（`subject` 是用户 ID）→ 授权确认端点只发放客户端可申请的 scope，并按 scope 附上
    声明（`name`、`preferred_username`、`email`、`groups`）→ 回到应用。Hydra 不记住会话，每次授权都
    回到核心检查。实测从未登录到进入 Grafana 首页共 12 次跳转。`groups` 默认只有 `owner`；清单的
-   `webui.oidc.owner_groups` 给单个客户端加组名（应用按组名对角色，核心不认识应用的角色），
-   `webui.oidc.requires_email` 让用 `email` 声明认人的应用在安装时就要主人填邮箱，不用等登录才失败
-   （ADR-0022 的“邮箱不兜底”）。
+   `webui.oidc.owner_groups` 给单个客户端加组名（应用按组名对角色，核心不认识应用的角色）。邮箱声明及应用发信
+   遵循 [ADR-0056](0056-internal-mailbox.md)。
 4. 插件后端在自己的网络里访问签发方和令牌、用户信息端点，地址见 ADR-0063（已取代原来的 `auth.<base>` 别名）。
    Hydra 只在核心的私有网络里，插件访问不到它的管理端口（冒烟脚本验证）。
 5. 应用走 OIDC end-session 登出时，带回跳地址的请求只允许登记过的地址；没有回跳参数时由 Hydra 的

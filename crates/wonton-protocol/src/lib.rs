@@ -30,6 +30,7 @@ mod onboarding;
 mod owner;
 mod peers;
 mod plugin;
+mod plugin_mail;
 mod plugin_notice;
 mod push;
 mod registry_mirror;
@@ -163,6 +164,7 @@ pub use plugin::{
     ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
     UpgradeRequest, UpgradeResult, secret_input_path,
 };
+pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
 pub use push::{
     NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushMethod,

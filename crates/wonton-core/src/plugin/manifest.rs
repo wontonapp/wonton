@@ -156,9 +156,6 @@ pub struct OidcClient {
     /// 只发给这个客户端，别的插件看不到。
     #[serde(default)]
     pub owner_groups: Vec<String>,
-    /// 应用用 `email` 声明认人时写上：主人没填邮箱就装不上，预览和安装时报，不用等登录才失败。
-    #[serde(default)]
-    pub requires_email: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

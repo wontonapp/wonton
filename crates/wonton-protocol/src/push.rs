@@ -83,7 +83,7 @@ pub enum NotificationCategory {
     Message,
     /// 等主人回答的确认卡片：Agent 停在那里等，默认比消息更醒目。
     Confirmation,
-    /// 插件发来的通知（ADR-0047），只有 `warning`、`critical` 级别的会推送。
+    /// 插件通知（ADR-0047）的 `warning`、`critical` 级别，以及应用邮件（ADR-0056）。
     PluginNotice,
 }
 

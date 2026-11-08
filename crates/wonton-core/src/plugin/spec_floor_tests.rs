@@ -113,3 +113,75 @@ fn friend_declaration_requires_0_9_even_when_false() {
         assert!(problems(&document("0.9", manifest, plain())).is_empty());
     }
 }
+
+#[test]
+fn smtp_variables_require_spec_0_11_in_compose_and_inline_configs() {
+    for name in ["WONTON_SMTP_HOST", "WONTON_SMTP_PORT", "WONTON_MAIL_FROM"] {
+        for reference in [
+            format!("${name}"),
+            format!("${{{name}}}"),
+            format!("${{{name}:?required}}"),
+            format!("${{{name}?required}}"),
+            format!("${{OTHER:-${{{name}}}}}"),
+            format!("${{OTHER:+${{{name}}}}}"),
+        ] {
+            let manifest = json!({"permissions": ["notify"]});
+            let mut doc = document("0.10", manifest, plain());
+            doc["services"]["web"]["environment"] = json!({"SMTP": reference});
+            assert_eq!(problems(&doc).len(), 1, "{doc}");
+            doc["services"]["web"]["environment"] = json!([format!("SMTP={reference}")]);
+            assert_eq!(problems(&doc).len(), 1, "{doc}");
+            doc["services"]["web"]["environment"] = json!({});
+            doc["services"]["web"]["configs"] = json!(["mail"]);
+            doc["configs"] = json!({"mail": {"content": format!("smtp={reference}")}});
+            assert_eq!(problems(&doc).len(), 1, "{doc}");
+            doc["x-wonton"]["spec"] = json!("0.11");
+            assert!(problems(&doc).is_empty(), "{doc}");
+            doc["services"]["web"]["environment"] = json!({"SMTP": reference});
+            assert!(problems(&doc).is_empty(), "{doc}");
+        }
+    }
+}
+
+#[test]
+fn smtp_names_outside_interpolated_values_do_not_raise_the_floor() {
+    let service = json!({
+        "image": "nginx",
+        "environment": {
+            "WONTON_SMTP_HOST": "WONTON_SMTP_HOST",
+            "${WONTON_SMTP_PORT}": "$${WONTON_SMTP_PORT}",
+            "FROM": "$${WONTON_MAIL_FROM}",
+            "OTHER": "${WONTON_SMTP_HOST_SUFFIX:-local}",
+            "ERROR": "${OTHER:?use ${WONTON_MAIL_FROM}}"
+        },
+        "x-mail": "${WONTON_MAIL_FROM}"
+    });
+    let mut doc = document(
+        "0.10",
+        json!({"permissions": ["notify"], "description": {"en": "${WONTON_SMTP_HOST}"}}),
+        service,
+    );
+    doc["configs"] = json!({"mail": {"file": "${WONTON_MAIL_FROM}.txt"}});
+    assert!(problems(&doc).is_empty());
+    for reference in [
+        "${WONTON_SMTP_HOST:-smtp.example}",
+        "${WONTON_SMTP_PORT-25}",
+        "${WONTON_MAIL_FROM:-}",
+        "${WONTON_SMTP_HOST:+enabled}",
+        "${WONTON_MAIL_FROM+enabled}",
+        "${WONTON_MATRIX_ALLOWED_USERS:-${WONTON_MATRIX_OWNER}}",
+    ] {
+        let service = json!({"image": "nginx", "environment": {"VALUE": reference}});
+        let mut doc = document("0.8", json!({}), service);
+        doc["configs"] = json!({"mail": {"content": reference}});
+        assert!(problems(&doc).is_empty(), "{doc}");
+    }
+}
+
+#[test]
+fn all_new_variables_are_checked_even_after_an_unrelated_reference() {
+    let service = json!({"image": "nginx", "environment": {"SMTP":
+        "${OTHER} ${WONTON_SMTP_HOST}:${WONTON_SMTP_PORT} ${WONTON_MAIL_FROM} ${WONTON_SMTP_HOST}"
+    }});
+    assert_eq!(problems(&document("0.10", json!({}), service)).len(), 3);
+}

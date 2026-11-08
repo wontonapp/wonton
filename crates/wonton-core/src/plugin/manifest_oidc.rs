@@ -1,4 +1,4 @@
-//! 清单里 `webui.oidc` 的字段规则，和“装这个插件要不要主人的邮箱”的统一判断。
+//! 清单里 `webui.oidc` 的字段规则。
 
 use std::collections::BTreeSet;
 
@@ -42,16 +42,9 @@ fn is_group_name(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b':'))
 }
 
-/// 装这个插件要不要主人的邮箱：代登录模板用了 `{email}`（compose 里引用
-/// `WONTON_OWNER_EMAIL` 的由渲染时的插值检查拦下），或 OIDC 声明了 `requires_email`。
-/// OIDC 用 `email` 声明认人的应用不引用变量，声明 `requires_email` 让预览和安装时就报，不用等登录才失败。
+/// 代登录模板用了 `{email}` 时需要邮箱；compose 变量由渲染时的插值检查处理。
 pub fn needs_owner_email(manifest: &Manifest) -> bool {
     super::proxy_auth::uses_email(manifest)
-        || manifest
-            .webui
-            .as_ref()
-            .and_then(|webui| webui.oidc.as_ref())
-            .is_some_and(|client| client.requires_email)
 }
 
 #[cfg(test)]
@@ -64,7 +57,6 @@ mod tests {
             post_logout_paths: Vec::new(),
             token_endpoint_auth_method: Default::default(),
             owner_groups: owner_groups.iter().map(|s| s.to_string()).collect(),
-            requires_email: false,
         }
     }
 
