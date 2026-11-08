@@ -107,6 +107,7 @@ pub(super) fn render(
         chat_prompts,
         replaced_agent: replaced_agent(onboarding),
         tips: tips(records),
+        too_old: None,
     };
     (view, primary_bot)
 }

@@ -70,6 +70,7 @@ pub(super) fn proxied_client(
         .proxy(
             reqwest::Proxy::all(proxy_url(proxy)).map_err(|e| PluginProblem {
                 reason: PluginFailure::Protocol,
+                min_version: None,
                 message: l10n!(
                     CATALOG,
                     language(),
@@ -81,6 +82,7 @@ pub(super) fn proxied_client(
         .build()
         .map_err(|e| PluginProblem {
             reason: PluginFailure::Protocol,
+            min_version: None,
             message: l10n!(
                 CATALOG,
                 language(),
@@ -210,6 +212,7 @@ impl CoreApi {
     ) -> Result<T, PluginProblem> {
         let body = serde_json::to_vec(body).map_err(|e| PluginProblem {
             reason: PluginFailure::Protocol,
+            min_version: None,
             message: l10n!(
                 CATALOG,
                 language(),
@@ -251,6 +254,7 @@ impl CoreApi {
     ) -> Result<T, PluginProblem> {
         let body = serde_json::to_vec(body).map_err(|e| PluginProblem {
             reason: PluginFailure::Protocol,
+            min_version: None,
             message: l10n!(
                 CATALOG,
                 language(),
@@ -418,6 +422,7 @@ impl CoreApi {
     ) -> Result<Vec<u8>, PluginProblem> {
         let body = serde_json::to_vec(body).map_err(|e| PluginProblem {
             reason: PluginFailure::Protocol,
+            min_version: None,
             message: l10n!(
                 CATALOG,
                 language(),
@@ -456,6 +461,7 @@ impl CoreApi {
         if !image.path.starts_with(IMAGE_PREFIX) {
             return Err(PluginProblem {
                 reason: PluginFailure::Invalid,
+                min_version: None,
                 message: l10n!(
                     CATALOG,
                     language(),
@@ -466,6 +472,7 @@ impl CoreApi {
         }
         let url = self.base.join(&image.path).map_err(|e| PluginProblem {
             reason: PluginFailure::Invalid,
+            min_version: None,
             message: l10n!(
                 CATALOG,
                 language(),
@@ -477,6 +484,7 @@ impl CoreApi {
         if !url.path().starts_with(IMAGE_PREFIX) {
             return Err(PluginProblem {
                 reason: PluginFailure::Invalid,
+                min_version: None,
                 message: l10n!(
                     CATALOG,
                     language(),
@@ -522,6 +530,7 @@ fn http_error(status: u16, bytes: &[u8]) -> CoreApiError {
 fn parse<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, PluginProblem> {
     serde_json::from_slice(bytes).map_err(|e| PluginProblem {
         reason: PluginFailure::Protocol,
+        min_version: None,
         message: l10n!(
             CATALOG,
             language(),
@@ -544,6 +553,7 @@ fn transport(error: &reqwest::Error, timeout: Duration) -> PluginProblem {
 pub(super) fn not_connected() -> PluginProblem {
     PluginProblem {
         reason: PluginFailure::TransportUnavailable,
+        min_version: None,
         message: l10n!(CATALOG, language(), "plugins-api-not-connected"),
     }
 }
@@ -593,7 +603,11 @@ fn core_error(status: u16, body: &[u8]) -> PluginProblem {
         },
         |detail| detail.message,
     );
-    PluginProblem { reason, message }
+    PluginProblem {
+        reason,
+        message,
+        min_version: None,
+    }
 }
 
 fn upgrade_error(status: u16, body: &[u8]) -> CoreUpgradeProblem {
@@ -649,5 +663,9 @@ pub(super) fn to_core_error(problem: PluginProblem) -> CoreError {
         PluginFailure::SourceUnavailable | PluginFailure::Upstream | PluginFailure::Protocol => {
             CoreError::Upstream { reason }
         }
+        PluginFailure::ServerTooOld => CoreError::ServerTooOld {
+            reason,
+            min_version: None,
+        },
     }
 }

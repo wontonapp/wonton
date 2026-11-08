@@ -704,6 +704,9 @@ pub struct PluginProblem {
     pub reason: PluginFailure,
     /// 核心写的说明，壳原样显示。
     pub message: String,
+    /// “服务器太旧”时要的最低服务器版本；别的类别和不知道时为空。
+    #[serde(default)]
+    pub min_version: Option<String>,
 }
 
 /// 失败的原因，壳据此提示主人下一步。
@@ -743,6 +746,9 @@ pub enum PluginFailure {
     Upstream,
     /// App 和家里服务器的版本对不上，有一边要更新。
     Protocol,
+    /// 服务器比 App 旧，还没有这个接口（[`crate::minimum_server_version`]）：升级服务器后可用。
+    /// 服务器不旧却回 404 时不归这一类。
+    ServerTooOld,
 }
 
 #[cfg(test)]

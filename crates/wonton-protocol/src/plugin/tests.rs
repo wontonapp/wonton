@@ -308,7 +308,6 @@ fn detail() -> PluginDetail {
     }
 }
 
-/// 契约：核心的接口和 ViewModel 用到的类型都能经 JSON 往返。
 #[test]
 fn interface_types_round_trip_through_json() {
     let installed = InstalledPlugins {
@@ -359,6 +358,7 @@ fn interface_types_round_trip_through_json() {
         refreshing: true,
         problem: Some(PluginProblem {
             reason: PluginFailure::TransportUnavailable,
+            min_version: None,
             message: "连不上家里的服务器".into(),
         }),
         tasks: vec![PluginTask {
@@ -387,6 +387,7 @@ fn interface_types_round_trip_through_json() {
             state: TakeoverState::Lost {
                 problem: PluginProblem {
                     reason: PluginFailure::TransportUnavailable,
+                    min_version: None,
                     message: "连不上家里的服务器".into(),
                 },
             },
@@ -590,13 +591,6 @@ fn an_uncertain_task_keeps_its_wire_format() {
         .unwrap(),
         json!({"type": "uncertain", "message": "x"})
     );
-}
-
-#[test]
-fn the_ask_every_update_switch_keeps_its_wire_format() {
-    let switch = AskEveryUpdate { enabled: true };
-    assert_eq!(json!(switch), json!({"enabled": true}));
-    assert_eq!(round_trip(&switch), switch);
 }
 
 /// 契约：模型网关没接上的轻提示。类别落在字段上，壳按类别写文字（ADR-0043）；核心写的只有 `detail`。

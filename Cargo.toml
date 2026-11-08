@@ -30,6 +30,8 @@ matrix-sdk = "0.19.1"
 reqwest = { version = "0.13.5", default-features = false }
 # Apache-2.0。MCP 的官方 Rust SDK（ADR-0006、ADR-0016）；各 crate 按需加客户端、服务器和传输的特性。
 rmcp = { version = "3.8.0", default-features = false }
+# MIT OR Apache-2.0。比核心的发布版本：客户端判服务器太旧，核心自己读版本。
+semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.10"

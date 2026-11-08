@@ -32,6 +32,7 @@ mod plugin_notice;
 mod push;
 mod registry_mirror;
 mod secret;
+mod server_version;
 mod servers;
 mod session;
 mod settings;
@@ -116,8 +117,8 @@ pub use onboarding::{
     OnboardingCommit, OnboardingItemProblem, OnboardingItemState, OnboardingModelChoice,
     OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingProfileStep,
     OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
-    OnboardingStep, OnboardingTip, OnboardingTips, OnboardingUpdate, OnboardingViewModel,
-    ReplacedAgent, StepNav, model_provider_path, model_provider_test_path,
+    OnboardingStep, OnboardingTip, OnboardingTips, OnboardingTooOld, OnboardingUpdate,
+    OnboardingViewModel, ReplacedAgent, StepNav, model_provider_path, model_provider_test_path,
 };
 pub use owner::{
     MAX_DISPLAY_NAME_CHARS, OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name,
@@ -159,6 +160,7 @@ pub use registry_mirror::{
     RegistryProblem,
 };
 pub use secret::SecretString;
+pub use server_version::{is_older, minimum_server_version};
 pub use servers::{ServerName, ServerRow, ServersViewModel};
 pub use session::{SessionListViewModel, SessionRow};
 pub use settings::{SettingsEntry, SettingsSection, SettingsViewModel};

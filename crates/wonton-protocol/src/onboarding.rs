@@ -38,7 +38,7 @@ pub const CUSTOM_MODEL_PROVIDER_TEST_PATH: &str = "/_wonton/api/models/custom-pr
 
 /// 引导的一步。家里的服务器上只记 `Profile`（还没走完）和 `Finished`：每一步只记下选择，到 `Review` 点完成才一起
 /// 生效（ADR-0038），所以中间的步骤只在客户端核心里。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum OnboardingStep {
@@ -221,6 +221,17 @@ pub struct OnboardingViewModel {
     /// [`Action::DismissReplacedAgentOffer`](crate::Action::DismissReplacedAgentOffer)。
     pub replaced_agent: Option<ReplacedAgent>,
     pub tips: OnboardingTips,
+    /// 服务器太旧，引导整段打不开（连引导接口都没有）：[`Self::step`] 为空，壳只在引导该出现的地方留一条
+    /// “升级服务器后可用”和服务器升级入口。
+    pub too_old: Option<OnboardingTooOld>,
+}
+
+/// 服务器太旧，引导整段用不了。各步单独隐藏的情况不在这里，见 [`OnboardingViewModel::step`]。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct OnboardingTooOld {
+    /// 服务器至少要升到的版本；旧服务器不报版本时为空。
+    pub min_version: Option<String>,
 }
 
 /// 一步一张的外框：第几步、共几步，哪些按钮能点。壳的外框只认这个类型。

@@ -42,4 +42,37 @@ pub enum CoreError {
     /// 服务器上的服务出错。
     #[error("{}", detail("core-error-upstream", .reason))]
     Upstream { reason: String },
+    /// 服务器比 App 旧，还没有这个接口（[`crate::minimum_server_version`]）。升级服务器后可用；服务器不旧却回
+    /// 404 时不归这一类，照旧按原来的类别报。
+    #[error("{}", detail("core-error-server-too-old", .reason))]
+    ServerTooOld {
+        reason: String,
+        /// 这个接口要的服务器版本；不知道时为空。
+        min_version: Option<String>,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_too_old_round_trips_with_its_minimum() {
+        let error = CoreError::ServerTooOld {
+            reason: "0.1.0-beta.4 没有这个接口".to_owned(),
+            min_version: Some("0.1.0-beta.5".to_owned()),
+        };
+        let json = serde_json::to_value(&error).unwrap();
+        assert_eq!(json["type"], "server_too_old");
+        assert_eq!(serde_json::from_value::<CoreError>(json).unwrap(), error);
+    }
+
+    #[test]
+    fn server_too_old_without_a_known_minimum_is_fine() {
+        let error = CoreError::ServerTooOld {
+            reason: "太旧".to_owned(),
+            min_version: None,
+        };
+        assert!(serde_json::from_value::<CoreError>(serde_json::to_value(&error).unwrap()).is_ok());
+    }
 }

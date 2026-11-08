@@ -62,6 +62,8 @@ extension PluginFailure {
                 .problemPluginOwnerProfileIncompleteTitle, .problemPluginOwnerProfileIncompleteNextStep, detail
             )
         case .protocol: categorizedProblem(.problemPluginProtocolTitle, .problemPluginProtocolNextStep, detail)
+        // 比这个壳新的类别：先按服务器出错说。
+        default: categorizedProblem(.problemUpstreamTitle, .problemUpstreamNextStep, detail)
         }
     }
 }
@@ -201,6 +203,13 @@ extension Error {
             )
         case let .InvalidInput(reason):
             return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: reason)
+        // 比这个壳新的类别：先按服务器出错说。
+        default:
+            return Problem(
+                title: String(localized: .problemUpstreamTitle),
+                nextStep: String(localized: .problemUpstreamNextStep),
+                detail: detail
+            )
         }
     }
 }

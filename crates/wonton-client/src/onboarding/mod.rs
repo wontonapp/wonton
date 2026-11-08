@@ -409,6 +409,7 @@ fn provider_problem(problem: PluginProblem) -> ModelProviderProblem {
 fn storage_problem(error: CoreError) -> PluginProblem {
     PluginProblem {
         reason: PluginFailure::Upstream,
+        min_version: None,
         message: error.to_string(),
     }
 }

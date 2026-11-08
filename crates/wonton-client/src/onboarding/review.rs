@@ -238,6 +238,7 @@ pub(super) fn follow_tasks(entries: &mut [ReviewEntry], tasks: &[PluginTask]) ->
                 problem: OnboardingItemProblem::Plugin {
                     problem: PluginProblem {
                         reason: *reason,
+                        min_version: None,
                         message: message.clone(),
                     },
                 },
@@ -268,10 +269,12 @@ fn core_problem(error: &CoreError) -> PluginProblem {
         CoreError::Storage { .. } | CoreError::NotReady { .. } | CoreError::Upstream { .. } => {
             PluginFailure::Upstream
         }
+        CoreError::ServerTooOld { .. } => PluginFailure::ServerTooOld,
     };
     PluginProblem {
         reason,
         message: error.to_string(),
+        min_version: None,
     }
 }
 

@@ -448,6 +448,9 @@ fn chat_problem(error: CoreError) -> Problem {
         CoreError::InvalidInput { reason } => Problem::Failed(FileFailure::InvalidInput, reason),
         CoreError::Storage { reason } => Problem::Failed(FileFailure::LocalIo, reason),
         CoreError::Upstream { reason } => Problem::Failed(FileFailure::UpstreamError, reason),
+        CoreError::ServerTooOld { reason, .. } => {
+            Problem::Failed(FileFailure::UpstreamError, reason)
+        }
     }
 }
 

@@ -216,6 +216,7 @@ fn save_problem(problem: PluginProblem) -> PluginProblem {
     }
     PluginProblem {
         reason: problem.reason,
+        min_version: None,
         message: l10n!(
             CATALOG,
             language(),

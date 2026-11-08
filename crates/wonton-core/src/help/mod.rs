@@ -275,11 +275,7 @@ fn days_ago(at_ms: u64) -> u64 {
 
 /// 版本都读得懂、而且 `version` 更旧。开发构建没有版本号，不比较。
 fn older_than(version: Option<&str>, required: &str) -> bool {
-    let parse = |v: &str| semver::Version::parse(v.trim_start_matches('v')).ok();
-    match (version.and_then(parse), parse(required)) {
-        (Some(version), Some(required)) => version < required,
-        _ => false,
-    }
+    version.is_some_and(|version| wonton_protocol::is_older(version, required))
 }
 
 fn chosen<'p>(pages: &'p Pages, topic: &str, languages: &Languages) -> Option<&'p Page> {
