@@ -283,3 +283,40 @@ async fn scope_routes_reject_invalid_request_shapes() {
         assert_eq!(reply.error_kind(), Some("invalid_input"));
     }
 }
+
+#[tokio::test]
+async fn the_plugin_list_carries_declared_tunnel_ports() {
+    let h = Harness::start(None).await;
+    let tunnel = "services:\n  web:\n    image: nginx\n  media:\n    image: nginx\nx-wonton:\n  spec: '0.11'\n  id: app.remote\n  version: 1.0.0\n  kind: app\n  title: {en: Remote}\n  description: {en: Remote}\n  permissions: []\n  tunnel:\n    ports:\n      - {service: web, port: 47989}\n      - {service: media, port: 47998, protocol: udp}\n";
+    h.manager
+        .install(tunnel, &[], Languages::default())
+        .await
+        .unwrap();
+    let reply = send_as(
+        &h.app,
+        None,
+        Method::GET,
+        CORE,
+        "/_wonton/api/plugins",
+        &[("authorization", bearer().as_str())],
+        "",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    let plugins = reply.json()["plugins"].as_array().unwrap().clone();
+    let ports = |id: &str| {
+        plugins
+            .iter()
+            .find(|plugin| plugin["id"] == id)
+            .unwrap_or_else(|| panic!("{id} missing"))["tunnel_ports"]
+            .clone()
+    };
+    assert_eq!(
+        ports("app.remote"),
+        serde_json::json!([
+            {"port": 47989, "protocol": "tcp"},
+            {"port": 47998, "protocol": "udp"},
+        ])
+    );
+    assert_eq!(ports("app.whoami"), serde_json::json!([]));
+}

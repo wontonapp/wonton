@@ -12,6 +12,7 @@ mod owner_secrets;
 mod permission;
 pub(super) mod ports;
 mod secret_input;
+mod takeover;
 #[path = "task.rs"]
 mod task;
 mod tool_policy;
@@ -34,6 +35,7 @@ pub use secret_input::{
     SecretInput, SecretInputState, SecretUpdate, SecretValues, secret_input_path,
 };
 use serde::{Deserialize, Serialize};
+pub use takeover::{PluginTakeover, TakeoverState};
 pub use task::{PluginOperation, PluginTask, PluginTaskState, UpgradeResult};
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
@@ -163,6 +165,10 @@ pub struct InstalledPlugin {
     /// 正在安装或升级时做到了哪一步；其余状态和还没开始部署时为空。
     #[serde(default)]
     pub install_progress: Option<InstallProgress>,
+    /// 清单 `tunnel.ports` 的端口和协议：App 在 `127.0.0.1` 上同号映射这些端口。只给 App 要的两项，不带清单校验用的
+    /// `deny_unknown_fields`：新核心给端口项加字段时旧 App 照样读得懂列表。
+    #[serde(default)]
+    pub tunnel_ports: Vec<crate::MappedPort>,
 }
 
 /// 插件的状态。
@@ -709,29 +715,6 @@ pub struct PluginsViewModel {
     /// 这台设备上的插件端口映射；未取到或尚无映射时为空，不代表插件没有声明端口。
     #[serde(default)]
     pub port_mappings: Vec<crate::PluginPortMapping>,
-}
-
-/// 这台设备上的“我来操作”，同时只操作一个插件。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct PluginTakeover {
-    pub id: String,
-    pub state: TakeoverState,
-}
-
-/// “我来操作”走到哪一步了。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum TakeoverState {
-    /// 请求发出去了，家里的服务器还没回：Bot 的调用还没有停住。
-    Starting,
-    /// 家里的服务器确认了：Bot 的敏感调用都先停住。
-    Operating,
-    /// 没开始成，Bot 的调用照常判定。
-    NotStarted { problem: PluginProblem },
-    /// 操作到一半断了：续不上约，或者插件停了、设备被吊销。Bot 的调用不再停住。
-    Lost { problem: PluginProblem },
 }
 
 /// 家里服务器存数据的那块盘。

@@ -145,6 +145,7 @@ mod tests {
             notices: Vec::new(),
             enabled_root_permissions: Vec::new(),
             install_progress: None,
+            tunnel_ports: Vec::new(),
         }
     }
 

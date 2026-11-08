@@ -531,6 +531,19 @@ impl PluginManager {
             notices,
             enabled_root_permissions: Vec::new(),
             install_progress: entry.install_progress.clone(),
+            tunnel_ports: manifest.and_then(|m| m.tunnel.as_ref()).map_or_else(
+                Vec::new,
+                |tunnel| {
+                    tunnel
+                        .ports
+                        .iter()
+                        .map(|spec| wonton_protocol::MappedPort {
+                            port: spec.port,
+                            protocol: spec.protocol,
+                        })
+                        .collect()
+                },
+            ),
         }
     }
 

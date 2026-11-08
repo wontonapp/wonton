@@ -26,6 +26,14 @@ pub enum PortMappingState {
     PortInUse,
     ServerTooOld,
     TunnelDisconnected,
+    /// 服务器上没装这个插件。
+    PluginNotInstalled,
+    /// 插件的清单没声明这个端口和协议。
+    PortNotDeclared,
+    /// 插件装了，但没在运行。
+    PluginNotRunning,
+    /// 插件在运行，服务器却连不上它的服务。
+    PluginUnreachable,
     #[serde(other)]
     Other,
 }

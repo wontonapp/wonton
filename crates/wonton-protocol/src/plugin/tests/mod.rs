@@ -82,6 +82,7 @@ fn installed() -> InstalledPlugin {
         notices: vec![],
         enabled_root_permissions: vec!["docker.socket".into()],
         install_progress: None,
+        tunnel_ports: Vec::new(),
     }
 }
 
@@ -727,6 +728,26 @@ fn values_from_a_newer_core_still_parse() {
             provider: None,
             capability: None,
         }]
+    );
+}
+
+#[test]
+fn tunnel_ports_from_an_older_or_newer_core_still_parse() {
+    let mut older = serde_json::to_value(installed()).unwrap();
+    older.as_object_mut().unwrap().remove("tunnel_ports");
+    let older: InstalledPlugin = serde_json::from_value(older).unwrap();
+    assert!(older.tunnel_ports.is_empty());
+
+    let mut newer = serde_json::to_value(installed()).unwrap();
+    newer["tunnel_ports"] = json!([
+        {"port": 47998, "protocol": "udp"},
+        {"port": 47999, "protocol": "future_transport", "label": "x"},
+    ]);
+    let newer: InstalledPlugin = serde_json::from_value(newer).unwrap();
+    let protocols: Vec<_> = newer.tunnel_ports.iter().map(|p| p.protocol).collect();
+    assert_eq!(
+        protocols,
+        [crate::PortProtocol::Udp, crate::PortProtocol::Other]
     );
 }
 
