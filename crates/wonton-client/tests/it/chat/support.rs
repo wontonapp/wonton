@@ -18,6 +18,7 @@ use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing_subscriber::Layer as _;
+use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use wonton_client::{
@@ -51,7 +52,10 @@ pub const OWNER: &str = "@owner:wonton.localhost";
 pub fn init_test_logging() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        let subscriber = tracing_subscriber::registry().with(super::rebuild_reason::Capture);
+        let subscriber =
+            tracing_subscriber::registry().with(super::rebuild_reason::Capture.with_filter(
+                filter_fn(|m| super::rebuild_reason::TARGETS.contains(&m.target())),
+            ));
         match std::env::var("WONTON_TEST_LOG") {
             Ok(filter) => {
                 let filter = tracing_subscriber::EnvFilter::try_new(&filter)
