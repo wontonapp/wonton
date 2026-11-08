@@ -566,18 +566,6 @@ impl ChatRoom {
         Ok(outcome.reached_start)
     }
 
-    /// 向前翻页的状态流：第一项是当前状态。
-    pub async fn back_pagination_status(&self) -> impl Stream<Item = BackPaginationStatus> + use<> {
-        match self.timeline().await.live_back_pagination_status().await {
-            Some((current, updates)) => stream::once(future::ready(current))
-                .chain(updates)
-                .map(back_pagination)
-                .left_stream(),
-            // 只有聚焦到某个事件的时间线才没有这个状态；本封装打开的都是实时时间线。
-            None => stream::once(future::ready(BackPaginationStatus::Idle)).right_stream(),
-        }
-    }
-
     /// 把房间标为读到最新一条：发出已读回执，房间的未读数随之清零；已读位置（`m.fully_read`）也移到最新一条，
     /// 房间开着时时间线里的“已读位置”不会停在中间。已经读到最新时什么都不做，返回 `false`。
     pub async fn mark_as_read(&self) -> Result<bool> {
@@ -764,6 +752,7 @@ async fn local_member_names(room: &Room) -> MemberNames {
 
 #[cfg(test)]
 mod bootstrap_tests;
+mod pagination_status;
 mod send;
 #[cfg(test)]
 mod tests;

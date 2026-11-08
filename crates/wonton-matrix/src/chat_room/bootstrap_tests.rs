@@ -14,6 +14,7 @@ use tokio::sync::Notify;
 use super::ChatRoom;
 
 mod crypto;
+mod pagination_status;
 use crypto::EncryptedMessages;
 
 async fn seeded_client(url: String, events: Vec<TimelineEvent>, path: Option<&Path>) -> Client {
