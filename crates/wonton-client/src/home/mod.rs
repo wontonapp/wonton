@@ -456,11 +456,13 @@ impl HomeLink {
             password: credential.password().to_owned(),
             domain,
         };
-        self.view.send_modify(|view| view.proxy = Some(settings));
+        self.view
+            .send_modify(|view| view.proxy = Some(settings.clone()));
         let watcher = self.runtime.spawn(refresh::follow_connection(
             Arc::downgrade(self),
             endpoint.clone(),
             client.clone(),
+            settings,
         ));
         let checker = self.runtime.spawn(keep_checking(
             Arc::downgrade(self),
@@ -546,13 +548,15 @@ impl HomeLink {
         self.recount();
     }
 
-    /// 把隧道的情况算成 ViewModel，有变化才推送。返回多久之后要重新算一次。
+    /// 把隧道的情况算成 ViewModel，有变化才推送。视图已归别的连接时返回 [`Published::Superseded`]，
+    /// 调用方该退出了；否则返回多久之后要重新算一次。
     fn publish(
         &self,
         tunnel: &TunnelStatus,
         endpoint: &Endpoint,
         client: &TunnelClient,
-    ) -> Option<Duration> {
+        proxy: &ProxySettings,
+    ) -> Published {
         let now = Instant::now();
         let status = status_view(tunnel);
         let path = client.path().map(path_view);
@@ -585,7 +589,16 @@ impl HomeLink {
         let connected = status == HomeStatus::Connected;
         let stats_due = connected && self.stats_due(now);
         let mut withheld = false;
+        // 视图里的本地代理不是这条连接的，说明连接信息已被换过（换了服务器或重连），视图归新的
+        // 连接管：这里再写会把 start 刚写下的 Connecting 盖回 Connected，而新连接的 proxy 还没进
+        // 视图，App 会以为已经连上，这期间发的请求全部按“连不上”失败（#826）。判据放在
+        // send_if_modified 的闭包里，和 start 的视图写同锁，中间插不进别的写。
+        let superseded = std::cell::Cell::new(false);
         let changed = self.view.send_if_modified(|view| {
+            if view.proxy.as_ref() != Some(proxy) {
+                superseded.set(true);
+                return false;
+            }
             let mut details = details;
             let mut path = path;
             if connected && !stats_due {
@@ -610,6 +623,9 @@ impl HomeLink {
             view.details = details;
             changed
         });
+        if superseded.get() {
+            return Published::Superseded;
+        }
         if changed && stats_due {
             *self.lock_stats_at() = Some(now);
         }
@@ -618,10 +634,10 @@ impl HomeLink {
             Some(at) => STATS_INTERVAL.saturating_sub(now.duration_since(at)),
             None => STATS_INTERVAL,
         });
-        match (tick, stats_tick) {
+        Published::Tick(match (tick, stats_tick) {
             (Some(tick), Some(stats)) => Some(tick.min(stats)),
             (tick, stats) => tick.or(stats),
-        }
+        })
     }
 
     /// 距上次把每包变化的计数写进主 ViewModel 过了多久；还没推过就是到期。
@@ -631,6 +647,13 @@ impl HomeLink {
             None => true,
         }
     }
+}
+
+/// 一次 [`HomeLink::publish`] 的结果：视图已归别的连接（这个 watcher 该退出了），或者照常发布
+/// 完，返回多久之后要重新算一次。
+enum Published {
+    Superseded,
+    Tick(Option<Duration>),
 }
 
 impl Link {

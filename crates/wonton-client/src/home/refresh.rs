@@ -15,6 +15,7 @@ use wonton_tunnel::relays::Relay;
 use wonton_tunnel::{TunnelClient, TunnelStatus};
 
 use super::HomeLink;
+use super::Published;
 use super::ticket::Ticket;
 use crate::chat::proxy_url;
 
@@ -200,6 +201,7 @@ pub(super) async fn follow_connection(
     home: Weak<HomeLink>,
     endpoint: Endpoint,
     client: TunnelClient,
+    proxy: ProxySettings,
 ) {
     let Some(mut recount) = home.upgrade().map(|home| home.recount.subscribe()) else {
         return;
@@ -220,7 +222,11 @@ pub(super) async fn follow_connection(
         let path = client.path().map(|path| path.remote);
         let changed_to_direct = path != selected && path.as_ref().is_some_and(|path| path.is_ip());
         selected = path;
-        let tick = link.publish(&current, &endpoint, &client);
+        // 判据在 publish 的视图写锁里：视图已归别的连接就退出，这里不会再发布。
+        let tick = match link.publish(&current, &endpoint, &client, &proxy) {
+            Published::Superseded => return,
+            Published::Tick(tick) => tick,
+        };
         if connected && (!was_connected || changed_to_direct) {
             link.spawn_address_refresh();
         } else if !connected {

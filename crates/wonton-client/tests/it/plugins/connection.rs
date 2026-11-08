@@ -9,7 +9,9 @@ use wonton_client::{
     Action, ConnectionNotice, HomeFailure, HomeStatus, PluginFailure, PluginState, PluginTaskState,
 };
 
-use super::rig::{Canned, FakeHome, Rig, core_error, installed, preview, running, ticket};
+use super::rig::{
+    CONNECT_BACKSTOP, Canned, FakeHome, Rig, core_error, installed, preview, running, ticket,
+};
 
 /// 建连尝试可能要等到握手超时。
 const DIAL: Duration = Duration::from_secs(90);
@@ -291,4 +293,35 @@ async fn pairing_with_another_server_forgets_the_previous_one() {
     // 商店页可能正开着，接着取新服务器的。
     rig.wait_for(|view| view.store.is_some()).await;
     assert_eq!(next.core.seen(&Method::GET, "/_wonton/api/store").len(), 1);
+}
+
+/// 换服务器时，旧连接的收尾事件不能把视图盖回“已连接”：新连接的本地代理还没进视图（`proxy`
+/// 是 `None`）时，视图必须停在“连接中”。盖回去的话，这个窗口里发出的请求全部按“连不上”失败，
+/// 插件页还会把假问题记下来，连上后连带多取一轮（#826 的两条偶发）。
+#[tokio::test]
+async fn switching_servers_does_not_report_connected_before_the_new_proxy() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let next = FakeHome::start(vec![rig.device()]).await;
+    let home = rig.app.subscribe_home();
+    home.next().await.unwrap();
+    rig.connect_to(next.ticket());
+    // `RetryConnection` 触发的重算会唤醒还没被收尾的旧连接 watcher：没有守卫时，它按旧客户端
+    // 仍是“已连接”的状态重算视图，把刚写下的“连接中”盖回“已连接”。
+    rig.app.dispatch(Action::RetryConnection).unwrap();
+    let deadline = Instant::now() + CONNECT_BACKSTOP;
+    loop {
+        // 等待本身限时：连接挂着不动时视图不来，deadline 要能兜底。
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let view = tokio::time::timeout(remaining, home.next())
+            .await
+            .unwrap_or_else(|_| panic!("新服务器没连上：{:?}", rig.app.home()))
+            .expect("连接订阅提前结束");
+        if view.status == HomeStatus::Connected {
+            assert!(view.proxy.is_some(), "新连接还没就位就报了已连接：{view:?}");
+        }
+        if view.status == HomeStatus::Connected && view.proxy.is_some() {
+            return;
+        }
+    }
 }
