@@ -36,6 +36,7 @@ mod files;
 mod health;
 mod isolation;
 mod lan;
+mod link_preview;
 pub mod matrix;
 mod mcp;
 mod me;
@@ -171,6 +172,8 @@ pub struct Gateway {
     pub(crate) onboarding: Arc<onboarding::OnboardingState>,
     /// `plugins.health` 的限频表（[`health`]）。
     health_limits: health::RateLimits,
+    /// 链接预览（ADR-0065），缓存在核心数据目录，出网跟着核心的代理设置。
+    pub(crate) link_previews: Arc<crate::link_preview::LinkPreviews>,
     sessions: session::SessionStore,
 }
 
@@ -197,6 +200,10 @@ impl Gateway {
             None => (None, None),
         };
         let onboarding = Arc::new(onboarding::OnboardingState::new(plugins.data_dir()));
+        let link_previews = Arc::new(crate::link_preview::LinkPreviews::new(
+            plugins.data_dir().join("core").join("link-previews"),
+            plugins.core_proxy().clone(),
+        ));
         Self {
             public,
             owner,
@@ -224,6 +231,7 @@ impl Gateway {
             peers: None,
             onboarding,
             health_limits: health::RateLimits::new(),
+            link_previews,
             sessions: session::SessionStore::default(),
         }
     }

@@ -17,6 +17,11 @@ impl CoreProxy {
         *self.0.write().expect("核心代理锁中毒") = url;
     }
 
+    /// 当前的代理地址（带用户名和密码）。链接预览自己连代理（ADR-0065），不经 reqwest。
+    pub fn current(&self) -> Option<Url> {
+        self.0.read().expect("核心代理锁中毒").clone()
+    }
+
     /// 给 HTTP 客户端的设置。设了它，reqwest 就不再读环境变量。
     pub fn for_client(&self) -> reqwest::Proxy {
         let current = Arc::clone(&self.0);

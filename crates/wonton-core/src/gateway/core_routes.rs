@@ -227,6 +227,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             post(super::registry_mirror::test),
         )
         .route(wonton_protocol::ME_PATH, get(me::read).put(me::save))
+        .merge(link_preview_routes())
         .merge(member_routes())
         .route(
             wonton_protocol::BOT_ACTIVITY_PATH,
@@ -275,6 +276,19 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             reject_cross_site_writes,
         ))
         .with_state(gateway)
+}
+
+/// 链接预览（ADR-0065）：核心去取网页摘要和预览图。
+fn link_preview_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route(
+            wonton_protocol::LINK_PREVIEW_PATH,
+            get(super::link_preview::preview),
+        )
+        .route(
+            &wonton_protocol::link_preview_image_path("{id}"),
+            get(super::link_preview::image),
+        )
 }
 
 /// 家人和共享 Bot（ADR-0045）：邀请、设置、配对码、移除、插件开放。

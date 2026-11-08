@@ -23,10 +23,14 @@ pub const INSTALL: &str = "install";
 pub const CORE: &str = "core";
 pub const VOLUMES: &str = "volumes";
 
-/// 核心数据里不备份、恢复时也不碰的目录：升级自己的状态，和没传完的上传。
+/// 核心数据里不备份、恢复时也不碰的目录：升级自己的状态、没传完的上传和链接预览的缓存。
 fn core_skips(layout: &Layout) -> Vec<PathBuf> {
     let core = layout.core_dir();
-    vec![core.join("upgrade"), core.join("files").join("uploads")]
+    vec![
+        core.join("upgrade"),
+        core.join("files").join("uploads"),
+        core.join("link-previews"),
+    ]
 }
 
 /// `expired` 返回真时停下，返回错误。

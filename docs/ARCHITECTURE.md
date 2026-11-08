@@ -200,6 +200,12 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
 核心提供文件服务：每个文件一个编号，指向共享文件夹里的原文件、插件的资源或设备上传的文件。工具结果里的文件，总线换成编号交给 Agent；Agent 分享后拿到一个
 `wonton://file/<编号>` 链接，放进回复。App 认出链接显示成卡片，字节经隧道走 HTTP（下载用 `Range`，上传用 tus）。设备上传的文件放进共享文件夹 `transfers`，算主人自己的文件。App 之间互传用同一种链接（ADR-0020）。
 
+### 链接预览
+
+聊天里的链接卡片由家里的核心去取：主人和家人的设备经隧道 `GET /_wonton/api/link-preview?url=`，核心自己解析域名、拒绝内网地址，经主人的出网代理
+（没配就直连）取网页开头和 `og:image`，结果连同图片按网址缓存在核心数据目录。Bot 和插件拿不到这个接口，Tuwunel 的 `preview_url` 仍关着。
+见 [ADR-0065](adr/0065-link-previews.md)。
+
 ### 升级
 
 核心经 Docker 查渠道（stable / beta）的 tag 指向哪个 digest，有新版本时 App 里显示。主人确认后，核心拉起 `wonton-updater`：

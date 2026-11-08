@@ -24,7 +24,17 @@ qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 http-body-util = "0.1.5"
 hyper = { version = "1.12.0", features = ["client", "http1", "server"] }
-hyper-util = { version = "0.1.21", features = ["client-legacy", "http1", "tokio"] }
+# client-proxy：链接预览经主人的代理连对方站点（HTTP CONNECT、SOCKS5，ADR-0065）。
+hyper-util = { version = "0.1.21", features = ["client-legacy", "client-proxy", "http1", "tokio"] }
+# MIT OR Apache-2.0。链接预览只用它的分词器读网页的 `<head>`（ADR-0065）。
+html5ever = "0.39.0"
+# (Apache-2.0 OR MIT) AND BSD-3-Clause。链接预览解码 GBK、Shift_JIS 这些非 UTF-8 网页。
+encoding_rs = "0.8.42"
+# Apache-2.0 OR ISC OR MIT、MIT OR Apache-2.0、MIT OR Apache-2.0。链接预览自己握 TLS：连的是检查过的 IP，SNI 仍是原域名
+# （ADR-0065）；根证书用系统的，和 reqwest 一样。都已在依赖树里。
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"] }
+tokio-rustls = { version = "0.26.6", default-features = false }
+rustls-platform-verifier = "0.7.1"
 # MIT OR Apache-2.0。插件的图标和截图（ADR-0017，只收 PNG 和 JPEG）、文件的缩略图（ADR-0020，另收 GIF 和 WebP）解码、
 # 缩放后重新编码。
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
