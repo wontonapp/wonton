@@ -757,6 +757,8 @@
     <string name="onboarding_problem_plugin_owner_profile_incomplete">プロフィールが未入力です。入力してから再試行してください。</string>
     <!-- Problem title while installing: the app and the home server versions don't work together. -->
     <string name="onboarding_problem_plugin_protocol">Wontonと自宅サーバーのバージョンが一致していません。Wontonかサーバーを更新してください。</string>
+    <!-- Problem title while installing: the home server is older than the app needs. -->
+    <string name="onboarding_problem_plugin_server_too_old">自宅サーバーのバージョンが古すぎます。先にサーバーをアップデートしてください。</string>
     <!-- Problem title while installing: the app's source is temporarily unreachable. -->
     <string name="onboarding_problem_plugin_source_unavailable">アプリの情報を取得できません。提供元が復旧してから再試行してください。</string>
     <!-- Problem title while installing: the home server can't be reached. -->
@@ -1000,6 +1002,8 @@
     <string name="problem_plugin_save_uncertain_next_step">自宅サーバーに接続してからもう一度確認してください。</string>
     <!-- Problem title after saving the internet proxy while offline: whether it saved isn't known. -->
     <string name="problem_plugin_save_uncertain_title">保存されたかどうか不明です</string>
+    <!-- Problem title: the home server is older than this app needs. -->
+    <string name="problem_plugin_server_too_old_title">自宅サーバーのバージョンが古すぎます</string>
     <!-- Next step: the home server can't reach the app's source, try later. -->
     <string name="problem_plugin_source_unavailable_next_step">自宅サーバーからアプリの提供元に接続できません。しばらくしてからもう一度お試しください。</string>
     <!-- Problem title: the app's information can't be fetched from its source right now. -->

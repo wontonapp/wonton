@@ -821,6 +821,8 @@
     <string name="onboarding_problem_plugin_owner_profile_incomplete">Your profile isn\'t complete. Fill it in and try again.</string>
     <!-- Problem title while installing: the app and the home server versions don't work together. -->
     <string name="onboarding_problem_plugin_protocol">Wonton and your home server versions don\'t match. Update Wonton or the server.</string>
+    <!-- Problem title while installing: the home server is older than the app needs. -->
+    <string name="onboarding_problem_plugin_server_too_old">Your home server is too old for this app. Update the server first.</string>
     <!-- Problem title while installing: the app's source is temporarily unreachable. -->
     <string name="onboarding_problem_plugin_source_unavailable">Can\'t get the app\'s info. Try again once its source is back.</string>
     <!-- Problem title while installing: the home server can't be reached. -->
@@ -1082,6 +1084,8 @@
     <string name="problem_plugin_save_uncertain_next_step">Check it again once your home server is reachable.</string>
     <!-- Problem title after saving the internet proxy while offline: whether it saved isn't known. -->
     <string name="problem_plugin_save_uncertain_title">Couldn\'t confirm it was saved</string>
+    <!-- Problem title: the home server is older than this app needs. -->
+    <string name="problem_plugin_server_too_old_title">Your home server is too old</string>
     <!-- Next step: the home server can't reach the app's source, try later. -->
     <string name="problem_plugin_source_unavailable_next_step">Your home server can\'t reach the app\'s source. Try again later.</string>
     <!-- Problem title: the app's information can't be fetched from its source right now. -->

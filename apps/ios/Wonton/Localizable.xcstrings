@@ -11562,6 +11562,36 @@
         }
       }
     },
+    "problem.plugin.serverTooOld.title": {
+      "comment": "Problem title: the home server is older than this app needs.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your home server is too old"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家里的服务器版本太旧"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家用伺服器版本太舊"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバのバージョンが古すぎます"
+          }
+        }
+      }
+    },
     "problem.plugin.sourceUnavailable.nextStep": {
       "comment": "Next step: the home server can't reach the app's source, try later.",
       "extractionState": "manual",

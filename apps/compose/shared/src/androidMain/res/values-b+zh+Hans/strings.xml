@@ -757,6 +757,8 @@
     <string name="onboarding_problem_plugin_owner_profile_incomplete">你的资料还没填好，填好后再试。</string>
     <!-- Problem title while installing: the app and the home server versions don't work together. -->
     <string name="onboarding_problem_plugin_protocol">App 和家里的服务器版本对不上，请更新 App 或服务器。</string>
+    <!-- Problem title while installing: the home server is older than the app needs. -->
+    <string name="onboarding_problem_plugin_server_too_old">家里的服务器版本太旧，请先升级服务器。</string>
     <!-- Problem title while installing: the app's source is temporarily unreachable. -->
     <string name="onboarding_problem_plugin_source_unavailable">取不到应用的信息，来源恢复后再试。</string>
     <!-- Problem title while installing: the home server can't be reached. -->
@@ -1000,6 +1002,8 @@
     <string name="problem_plugin_save_uncertain_next_step">连上家里的服务器后再看一下。</string>
     <!-- Problem title after saving the internet proxy while offline: whether it saved isn't known. -->
     <string name="problem_plugin_save_uncertain_title">不确定改好了没有</string>
+    <!-- Problem title: the home server is older than this app needs. -->
+    <string name="problem_plugin_server_too_old_title">家里的服务器版本太旧</string>
     <!-- Next step: the home server can't reach the app's source, try later. -->
     <string name="problem_plugin_source_unavailable_next_step">家里的服务器连不上应用的来源，稍后再试。</string>
     <!-- Problem title: the app's information can't be fetched from its source right now. -->

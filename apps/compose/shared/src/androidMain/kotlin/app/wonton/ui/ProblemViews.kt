@@ -208,6 +208,11 @@ fun PluginFailure.problem(detail: String?): Problem = when (this) {
         nextStepRes = R.string.problem_plugin_protocol_next_step,
         detail = detail,
     )
+    PluginFailure.SERVER_TOO_OLD -> Problem(
+        titleRes = R.string.problem_plugin_server_too_old_title,
+        nextStepRes = R.string.problem_upgrade_server_next_step,
+        detail = detail,
+    )
     // 比这个壳新的类别：先按服务器出错说。
     else -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
 }
@@ -275,6 +280,11 @@ val CoreException.problem: Problem
                 detail = detail,
             )
             is CoreException.InvalidInput -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = reason)
+            is CoreException.ServerTooOld -> Problem(
+                titleRes = R.string.problem_plugin_server_too_old_title,
+                nextStepRes = R.string.problem_upgrade_server_next_step,
+                detail = detail,
+            )
             // 比这个壳新的类别：先按服务器出错说。
             else -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
         }
