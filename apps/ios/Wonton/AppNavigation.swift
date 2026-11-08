@@ -29,7 +29,7 @@ final class AppNavigation {
     }
 
     static func requireShared() throws -> AppNavigation {
-        guard let shared else { throw CoreError.NotReady(reason: "云吞没有启动成功，请打开 App 查看。") }
+        guard let shared else { throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadyLaunchFailed)) }
         return shared
     }
 
@@ -91,7 +91,7 @@ final class AppNavigation {
 
     func askAgent(_ text: String) async throws {
         guard try await navigationReady() else {
-            throw CoreError.NotReady(reason: "请先完成配对和引导，再问 Bot。")
+            throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadyAskAgent))
         }
         let bot = try primaryBot()
         // 新操作不能被上一次后台失败留下的 problem 提前判成失败。
@@ -113,7 +113,7 @@ final class AppNavigation {
             if let step = view.step { return step == .finished }
             if let problem = view.problem { throw IntentProblem(problem: problem.problem) }
             if let end, clock.now >= end {
-                throw CoreError.NotReady(reason: "还没连上家里的服务器，请打开云吞，连上后再试。")
+                throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadySlowServer))
             }
             try await Task.sleep(for: .milliseconds(100))
         }
@@ -129,7 +129,7 @@ final class AppNavigation {
             guard allowsNavigation else { return }
             if let problem = chat.core.plugins().problem { throw IntentProblem(problem: problem.problem) }
             if let end, clock.now >= end {
-                throw CoreError.NotReady(reason: "应用列表还没有加载好，请连上家里的服务器后再试。")
+                throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadyPluginsNotLoaded))
             }
             try await Task.sleep(for: .milliseconds(100))
         }
@@ -137,7 +137,7 @@ final class AppNavigation {
 
     private func primaryBot() throws -> String {
         guard let bot = chat.core.onboarding().primaryBotUserId else {
-            throw CoreError.NotReady(reason: "还没有默认 Agent：先在设置里选一个")
+            throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadyNoDefaultAgent))
         }
         return bot
     }

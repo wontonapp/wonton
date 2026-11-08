@@ -29,14 +29,14 @@ struct HomeView: View {
             Group {
                 if case .notConfigured = model.viewModel.status {
                     PairingView(model: model)
-                        .wontonRootScreen("配对", hasActions: !tabs.isPinned(.settings)) {
+                        .wontonRootScreen(String(localized: .pairingTitle), hasActions: !tabs.isPinned(.settings)) {
                             if !tabs.isPinned(.settings) {
                                 settingsLink
                             }
                         }
                 } else {
                     launcher
-                        .wontonRootScreen("应用", hasActions: !tabs.isPinned(.settings)) {
+                        .wontonRootScreen(String(localized: .launcherTitle), hasActions: !tabs.isPinned(.settings)) {
                             if !tabs.isPinned(.settings) {
                                 settingsLink
                             }
@@ -113,7 +113,7 @@ struct HomeView: View {
                         .accessibilityElement(children: .contain)
                         .accessibilityAddTraits(.isButton)
                         .accessibilityAction { tap(plugin) }
-                        .accessibilityAction(named: "菜单") { menuPlugin = plugin }
+                        .accessibilityAction(named: Text(.launcherMenu)) { menuPlugin = plugin }
                 }
             }
         }
@@ -124,13 +124,13 @@ struct HomeView: View {
             HStack(spacing: WontonTheme.spacing.s12) {
                 WontonIcon.store.view()
                     .foregroundStyle(Color(colors.accentInkOnFill))
-                Text("应用商店")
+                Text(.storeTitle)
                     .wontonText(WontonTheme.typography.body)
                 Spacer(minLength: 0)
                 if let installed = plugins.viewModel.installed {
                     let updates = installed.plugins.reduce(0) { $0 + ($1.upgrade != nil ? 1 : 0) }
                     if updates > 0 {
-                        Text("\(updates) 个可更新")
+                        Text(.launcherUpdatesAvailable(count: updates))
                             .wontonText(WontonTheme.typography.supporting)
                             .multilineTextAlignment(.trailing)
                     }
@@ -168,11 +168,13 @@ struct HomeView: View {
 
     private func menu(for plugin: InstalledPlugin) -> [WontonSheetAction] {
         var actions = [
-            WontonSheetAction(title: "详情", icon: .info) { path.append(PluginRoute.installed(id: plugin.id)) }
+            WontonSheetAction(title: String(localized: .commonDetails), icon: .info) {
+                path.append(PluginRoute.installed(id: plugin.id))
+            }
         ]
         // 有 Bot 又有网页的 Agent 插件，点图标进私聊，网页从这里打开。
         if plugin.entries.count > 1, let web = plugin.entries.last {
-            actions.append(WontonSheetAction(title: "打开网页", icon: .web) { open(web) })
+            actions.append(WontonSheetAction(title: String(localized: .launcherOpenWeb), icon: .web) { open(web) })
         }
         for choice in plugin.tabChoices {
             let pinned = tabs.isPinned(choice.tab)
@@ -183,12 +185,14 @@ struct HomeView: View {
             })
         }
         if let upgrade = plugin.upgrade {
-            actions.append(WontonSheetAction(title: "升级到 \(upgrade.version)", icon: .download) {
+            let title = String(localized: .launcherUpgradeTo(upgrade.version))
+            actions.append(WontonSheetAction(title: title, icon: .download) {
                 confirmation = .upgrade(id: plugin.id)
             })
         }
         if plugin.removable {
-            actions.append(WontonSheetAction(title: "卸载", icon: .trash, isDanger: true) {
+            let title = String(localized: .pluginUninstallAction)
+            actions.append(WontonSheetAction(title: title, icon: .trash, isDanger: true) {
                 uninstalling = UninstallTarget(id: plugin.id, title: plugin.title)
             })
         }
@@ -245,10 +249,10 @@ private struct NoPlugins: View {
 
     var body: some View {
         VStack(spacing: WontonTheme.spacing.s12) {
-            Text("还没有装应用")
+            Text(.launcherEmpty)
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
-            Button("去应用商店", action: showStore)
+            Button(.launcherGoToStore, action: showStore)
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
         }
         .frame(maxWidth: .infinity)

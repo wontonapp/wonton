@@ -222,7 +222,7 @@ struct TabPageView: View {
                 guard let url = URL(string: value) else { return }
                 openURL(url) { accepted in
                     if !accepted {
-                        session?.problem = Problem(title: TabText.choose("打不开这个链接", "Could not open this link"))
+                        session?.problem = Problem(title: String(localized: .tabOpenLinkFailed))
                     }
                 }
             case let .draftMessage(text): draft(text)

@@ -27,12 +27,12 @@ struct PairingView: View {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                     scanner
-                    Text("在家里的局域网里，用浏览器打开服务器的 IP 地址（装好时终端里给出），页面上有配对二维码。")
+                    Text(.pairingInstructions)
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.textSecondary))
                 }
                 VStack(spacing: WontonTheme.spacing.s8) {
-                    TextField("粘贴配对码", text: $pastedCode, axis: .vertical)
+                    TextField(String(localized: .pairingPastePlaceholder), text: $pastedCode, axis: .vertical)
                         .textFieldStyle(.plain)
                         .font(pastedCode.isEmpty ? nil : .caption.monospaced())
                         .focused($isEditingCode)
@@ -43,7 +43,7 @@ struct PairingView: View {
                     Button {
                         pair(pastedCode)
                     } label: {
-                        Text("配对").frame(maxWidth: .infinity)
+                        Text(.pairingSubmit).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle())
                     .disabled(pastedCode.isEmpty || isPairing)
@@ -55,11 +55,11 @@ struct PairingView: View {
                     PairingProgress(status: pairing, retry: lastCode.map { code in { pair(code) } })
                 }
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                    Text("这台设备的名字")
+                    Text(.pairingDeviceName)
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.textSecondary))
                         .accessibilityHidden(true)
-                    TextField("这台设备的名字", text: $deviceName)
+                    TextField(String(localized: .pairingDeviceName), text: $deviceName)
                         .textFieldStyle(.plain)
                         .wontonField()
                 }
@@ -100,7 +100,7 @@ struct PairingView: View {
         case .authorized:
             if let scannerProblem {
                 WontonNotice(icon: .cameraOff, title: scannerProblem) {
-                    Button("重新打开相机") { self.scannerProblem = nil }
+                    Button(.pairingReopenCamera) { self.scannerProblem = nil }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             } else {
@@ -111,12 +111,12 @@ struct PairingView: View {
         case .notDetermined:
             HStack(spacing: WontonTheme.spacing.s12) {
                 ProgressView()
-                Text("等待相机权限…").wontonText(WontonTheme.typography.body)
+                Text(.cameraWaiting).wontonText(WontonTheme.typography.body)
             }
             .foregroundStyle(Color(colors.textPrimary))
         case .denied:
-            WontonNotice(icon: .cameraOff, title: "云吞没有相机权限，扫不了码。可以在系统设置里打开，或者粘贴配对码。") {
-                Button("打开系统设置") {
+            WontonNotice(icon: .cameraOff, title: String(localized: .pairingCameraDenied)) {
+                Button(.cameraSettings) {
                     if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
@@ -183,17 +183,18 @@ private struct PairingProgress: View {
         case .inProgress:
             HStack(spacing: WontonTheme.spacing.s12) {
                 ProgressView()
-                Text("正在配对…").wontonText(WontonTheme.typography.body)
+                Text(.pairingInProgress).wontonText(WontonTheme.typography.body)
             }
             .foregroundStyle(Color(colors.textPrimary))
         case let .failed(reason, message):
             WontonNotice(
                 icon: .warning,
                 title: Self.title(reason),
-                lines: [message, Self.hint(reason)].compactMap { $0 }
+                lines: Self.hint(reason).map { [$0] } ?? []
             ) {
+                if let detail = Self.detail(reason, message) { ProblemDetail(text: detail) }
                 if let retry, Self.canRetrySameCode(reason) {
-                    Button("用这个码再试一次", action: retry)
+                    Button(.pairingRetrySameCode, action: retry)
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             }
@@ -202,21 +203,32 @@ private struct PairingProgress: View {
 
     private static func title(_ reason: PairingFailure) -> String {
         switch reason {
-        case .rejected: "服务器不认这个配对码"
-        case .expired: "配对码过期了"
-        case .closed: "这个配对码已经停用"
-        case .transportUnavailable: "连不上家里的服务器"
-        case .upstream: "家里的服务器出错了"
-        case .protocol: "App 和服务器的版本对不上"
+        case .rejected: String(localized: .pairingFailureRejected)
+        case .expired: String(localized: .pairingFailureExpired)
+        case .closed: String(localized: .pairingFailureClosed)
+        case .transportUnavailable: String(localized: .pairingFailureTransport)
+        case .upstream: String(localized: .pairingFailureUpstream)
+        case .protocol: String(localized: .pairingFailureProtocol)
         }
     }
 
-    /// 服务器拒绝时，它的说明里已经写了下一步；本机这一侧的失败补一句。
+    /// 服务器按服务器主人的语言写说明：码过期、不认识、已停用这几类说的和标题是同一件事，不再列一遍；
+    /// 本机这一侧的失败补一句下一步。
     private static func hint(_ reason: PairingFailure) -> String? {
         switch reason {
-        case .transportUnavailable: "请确认手机和服务器在同一个局域网里，或者服务器连得上互联网，然后再试一次。"
-        case .protocol: "请把 App 和服务器都更新到最新版本。"
-        case .rejected, .expired, .closed, .upstream: nil
+        case .rejected, .expired: String(localized: .pairingNextStepNewCode)
+        case .closed: String(localized: .pairingNextStepClosed)
+        case .transportUnavailable: String(localized: .pairingHintTransport)
+        case .protocol: String(localized: .pairingHintProtocol)
+        case .upstream: nil
+        }
+    }
+
+    /// 原始说明是服务器写的，收进详情；上面几类连下一步都说完了，不用再点开。
+    private static func detail(_ reason: PairingFailure, _ message: String) -> String? {
+        switch reason {
+        case .rejected, .expired, .closed: nil
+        case .transportUnavailable, .upstream, .protocol: message
         }
     }
 

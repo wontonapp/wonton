@@ -69,7 +69,10 @@ extension MainView {
             $0.webUrl.flatMap(URL.init(string:))?.appendingPathComponent("") == gateway
         }),
               let choice = plugin.tabChoices.first else {
-            onboarding.rejection = Problem(title: "找不到模型网关的网页", nextStep: "重试后再打开。")
+            onboarding.rejection = Problem(
+                title: String(localized: .onboardingGatewayMissingTitle),
+                nextStep: String(localized: .onboardingGatewayMissingNextStep)
+            )
             return
         }
         onboardingGateway = choice

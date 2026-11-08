@@ -118,7 +118,7 @@ final class TabWebSession: NSObject {
         guard let input else { return }
         if let proxy = input.proxy, configuredProxy != proxy || view !== webView {
             guard let port = NWEndpoint.Port(rawValue: proxy.port) else {
-                throw CoreError.InvalidInput(reason: "本地代理端口无效")
+                throw CoreError.InvalidInput(reason: String(localized: .tabProxyPortInvalid))
             }
             let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(proxy.host), port: port)
             var configuration = ProxyConfiguration(httpCONNECTProxy: endpoint)

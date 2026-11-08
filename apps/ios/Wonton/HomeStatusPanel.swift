@@ -14,21 +14,26 @@ struct HomeStatusPanel: View {
         WontonGroup {
             Button(action: showConnection) {
                 WontonRow(
-                    title: "连接", value: connection, valueTint: needsTheOwner ? colors.danger : nil, showsForward: true
+                    title: String(localized: .homeStatusConnection), value: connection,
+                    valueTint: needsTheOwner ? colors.danger : nil, showsForward: true
                 )
             }
             .buttonStyle(.plain)
             WontonSeparator()
             if let first = cards.first {
                 Button { openCardRoom(first.roomId) } label: {
-                    WontonRow(title: "等确认", value: "\(cards.count) 张", showsForward: true)
+                    WontonRow(
+                        title: String(localized: .homeStatusPending),
+                        value: String(localized: .homeStatusPendingCount(count: cards.count)),
+                        showsForward: true
+                    )
                 }
                 .buttonStyle(.plain)
             } else {
-                WontonRow(title: "等确认", value: "没有")
+                WontonRow(title: String(localized: .homeStatusPending), value: String(localized: .homeStatusNone))
             }
             WontonSeparator()
-            WontonRow(title: "存储", value: storage)
+            WontonRow(title: String(localized: .homeStatusStorage), value: storage)
             if let problem = plugins.storageProblem {
                 Text(problem.message)
                     .wontonText(WontonTheme.typography.supporting)
@@ -48,16 +53,17 @@ struct HomeStatusPanel: View {
         switch home.status {
         case .connected:
             guard let path = home.path else { return home.status.connectionText }
-            return "\(home.status.connectionText) · \(path.relay ? "中继" : "直连")"
+            let route = path.relay ? String(localized: .connectionRelay) : String(localized: .connectionDirect)
+            return "\(home.status.connectionText) · \(route)"
         default:
             return home.notice?.sentence ?? home.status.connectionText
         }
     }
 
     private var storage: String {
-        guard let usage = plugins.storage else { return "不确定" }
+        guard let usage = plugins.storage else { return String(localized: .commonUnknown) }
         let free = ByteCountFormatter.string(fromByteCount: Int64(clamping: usage.freeBytes), countStyle: .file)
         let total = ByteCountFormatter.string(fromByteCount: Int64(clamping: usage.totalBytes), countStyle: .file)
-        return "\(free) 可用，共 \(total)"
+        return String(localized: .homeStatusStorageUsage(free, total))
     }
 }

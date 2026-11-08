@@ -70,7 +70,7 @@ struct EnclosingScrollView: UIViewRepresentable {
 
         @available(*, unavailable)
         required init?(coder: NSCoder) {
-            fatalError("只从代码创建")
+            fatalError("Only created in code")
         }
 
         override func didMoveToWindow() {

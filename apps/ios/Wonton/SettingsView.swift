@@ -40,13 +40,13 @@ struct SettingsTab: View {
         case .invite: InviteView(model: home, chat: chat)
         case .pairing:
             PairingView(model: home) { if !model.path.isEmpty { model.path.removeLast() } }
-                .wontonPushedScreen("重新配对")
+                .wontonPushedScreen(String(localized: .pairingTitleAgain))
         case .peers:
             PeersView(core: chat.core, focusRequests: model.peersFocusRequests)
         case .egress: EgressSettingsView(model: plugins)
         case .registryMirror: RegistryMirrorSettingsView(model: plugins)
         case .coreUpgrade: CoreUpgradeView(model: plugins)
-        case .appearance: AppearanceView(model: appearance).wontonPushedScreen("外观")
+        case .appearance: AppearanceView(model: appearance).wontonPushedScreen(String(localized: .appearanceTitle))
         case .chatBackup: ChatBackupView(model: chat)
         case .bottomBar: TabSettingsView(plugins: plugins).wontonPushedScreen(TabText.bottomBar)
         case .notifications: NotificationSettingsView()
@@ -84,7 +84,9 @@ struct SettingsView: View {
     @ViewBuilder private func row(_ entry: SettingsEntry) -> some View {
         switch entry {
         case .profile:
-            Button(action: editProfile) { WontonRow(title: "你的资料", showsForward: true) }
+            Button(action: editProfile) {
+                WontonRow(title: String(localized: .onboardingStepProfile), showsForward: true)
+            }
         case let .server(name, status, upgrade):
             NavigationLink(value: SettingsRoute.server) {
                 WontonRow(
@@ -93,7 +95,9 @@ struct SettingsView: View {
                 )
             }
         case .appearance:
-            NavigationLink(value: SettingsRoute.appearance) { WontonRow(title: "外观", showsForward: true) }
+            NavigationLink(value: SettingsRoute.appearance) {
+                WontonRow(title: String(localized: .appearanceTitle), showsForward: true)
+            }
         case .language:
             LanguageSettingsRow()
         case let .peers(count):
@@ -103,18 +107,26 @@ struct SettingsView: View {
         case .bottomBar:
             NavigationLink(value: SettingsRoute.bottomBar) { WontonRow(title: TabText.bottomBar, showsForward: true) }
         case .notifications:
-            NavigationLink(value: SettingsRoute.notifications) { WontonRow(title: "通知", showsForward: true) }
+            NavigationLink(value: SettingsRoute.notifications) {
+                WontonRow(title: String(localized: .notificationTitle), showsForward: true)
+            }
         case .defaultAgent:
-            Button(action: chooseAgent) { WontonRow(title: "默认 Agent", showsForward: true) }
+            Button(action: chooseAgent) {
+                WontonRow(title: String(localized: .launcherDefaultAgent), showsForward: true)
+            }
         case let .chatBackup(recovery):
             NavigationLink(value: SettingsRoute.chatBackup) {
-                WontonRow(title: "聊天记录备份", value: recovery.backupValue, showsForward: true)
+                WontonRow(
+                    title: String(localized: .chatBackupTitle), value: recovery.backupValue, showsForward: true
+                )
             }
         case .restartOnboarding:
-            Button { onboarding.send(.restartOnboarding) } label: { WontonRow(title: "重看引导") }
+            Button { onboarding.send(.restartOnboarding) } label: {
+                WontonRow(title: String(localized: .settingsRestartOnboarding))
+            }
         case .about:
             NavigationLink(value: SettingsRoute.about) {
-                WontonRow(title: "关于", value: AppVersion.full, showsForward: true)
+                WontonRow(title: String(localized: .settingsAbout), value: AppVersion.full, showsForward: true)
             }
         }
     }
@@ -122,10 +134,12 @@ struct SettingsView: View {
 
 private enum AppVersion {
     static var short: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "未知"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? String(localized: .commonUnknown)
     }
     static var full: String {
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "未知"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+            ?? String(localized: .commonUnknown)
         return "\(short) (\(build))"
     }
 }
@@ -133,9 +147,9 @@ private enum AppVersion {
 private struct AboutView: View {
     var body: some View {
         ScrollView {
-            WontonGroup { WontonRow(title: "版本", value: AppVersion.full) }
+            WontonGroup { WontonRow(title: String(localized: .pluginInfoVersion), value: AppVersion.full) }
                 .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen("关于")
+        .wontonPushedScreen(String(localized: .settingsAbout))
     }
 }

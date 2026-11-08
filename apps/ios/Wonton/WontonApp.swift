@@ -35,8 +35,10 @@ struct WontonApp: App {
                 }
             case let .failed(reason):
                 WontonThemeRoot(appearance: defaultAppearance()) {
-                    ContentUnavailableView("启动失败", systemImage: "exclamationmark.triangle",
-                                           description: Text(reason))
+                    ContentUnavailableView(
+                        String(localized: .appLaunchFailed), systemImage: "exclamationmark.triangle",
+                        description: Text(reason)
+                    )
                 }
             }
         }
@@ -67,7 +69,7 @@ private enum Launch {
         do {
             core = try ClientCore(dataDir: dataDirectory().path(percentEncoded: false))
         } catch {
-            return .failed("核心启动失败：\(error)")
+            return .failed(String(localized: .appCoreLaunchFailed(String(describing: error))))
         }
         // 赶在核心接着传上次没传完的文件之前。
         core.setFileOpener(opener: BookmarkFileOpener())
@@ -77,7 +79,7 @@ private enum Launch {
             do {
                 try core.dispatch(action: .pairHome(code: code, deviceName: UIDevice.current.name))
             } catch {
-                return .failed("开发时传入的配对码被拒绝：\(error)")
+                return .failed(String(localized: .appDevCodeRejected(String(describing: error))))
             }
         }
         #endif

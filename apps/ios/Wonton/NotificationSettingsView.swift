@@ -14,16 +14,16 @@ struct NotificationSettingsView: View {
                             openURL(url)
                         }
                     } label: {
-                        WontonRow(title: "系统通知", showsForward: true)
+                        WontonRow(title: String(localized: .notificationSystemSettings), showsForward: true)
                     }
                     .buttonStyle(.plain)
                 }
-                Text("这个版本的 iOS App 还收不到推送")
+                Text(.notificationUnsupported)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen("通知")
+        .wontonPushedScreen(String(localized: .notificationTitle))
     }
 }

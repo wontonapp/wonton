@@ -90,13 +90,13 @@ struct PluginDetailView: View {
                         Button {
                             changingVersionOf = installed.id
                         } label: {
-                            Text("换版本").frame(maxWidth: .infinity)
+                            Text(.installChangeVersion).frame(maxWidth: .infinity)
                         }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                         Button(role: .destructive) {
                             uninstalling = UninstallTarget(id: installed.id, title: installed.title)
                         } label: {
-                            Text("卸载").frame(maxWidth: .infinity)
+                            Text(.pluginUninstallAction).frame(maxWidth: .infinity)
                         }
                         .buttonStyle(WontonButtonStyle(kind: .danger))
                     }
@@ -127,15 +127,15 @@ struct PluginDetailView: View {
     private func action(for detail: PluginDetail) -> DetailAction? {
         if let installed = detail.installed {
             if installed.upgrade != nil {
-                return DetailAction(title: "更新", enabled: !installed.isBusy) {
+                return DetailAction(title: String(localized: .storeUpdate), enabled: !installed.isBusy) {
                     confirmation = .upgrade(id: installed.id)
                 }
             }
             guard let entry = installed.entries.first else { return nil }
-            return DetailAction(title: "打开", enabled: !installed.isBusy) { open(entry) }
+            return DetailAction(title: String(localized: .storeOpen), enabled: !installed.isBusy) { open(entry) }
         }
         guard let source = detail.source else { return nil }
-        return DetailAction(title: "获取", enabled: detail.blocked == nil && !isWorking) {
+        return DetailAction(title: String(localized: .storeGet), enabled: detail.blocked == nil && !isWorking) {
             confirmation = .install(source: source)
         }
     }
@@ -152,14 +152,14 @@ private struct SaveGrants: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        DetailSection(title: "能存文件的文件夹") {
+        DetailSection(title: String(localized: .pluginSaveGrantTitle)) {
             ForEach(folders, id: \.self) { folder in
                 HStack(spacing: WontonTheme.spacing.s12) {
                     Text(folder)
                         .wontonText(WontonTheme.typography.body)
                         .foregroundStyle(Color(colors.textPrimary))
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Button("撤销") { revoke(folder) }
+                    Button(.pluginSaveGrantRevoke) { revoke(folder) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                         .fixedSize()
                         .disabled(revoking)
@@ -200,9 +200,9 @@ private struct AskEveryUpdateSection: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        DetailSection(title: "更新") {
+        DetailSection(title: String(localized: .storeUpdate)) {
             Toggle(isOn: Binding(get: { isOn }, set: { set($0) })) {
-                Text("每次都问")
+                Text(.pluginAskEveryUpdate)
                     .wontonText(WontonTheme.typography.body)
                     .foregroundStyle(Color(colors.textPrimary))
             }
@@ -261,7 +261,7 @@ private struct DetailHeader: View {
                                 .foregroundStyle(Color(colors.textSecondary))
                         }
                         if let writer = detail.installed?.writtenBy {
-                            Text("你的 Agent · \(writer.title)")
+                            Text(.pluginWrittenByAgent(writer.title))
                                 .wontonText(WontonTheme.typography.caption)
                                 .foregroundStyle(Color(colors.textSecondary))
                         }
@@ -329,7 +329,7 @@ private struct DetailSections: View {
 
     var body: some View {
         if let notes = detail.releaseNotes {
-            DetailSection(title: "新内容") {
+            DetailSection(title: String(localized: .installReleaseNotes)) {
                 Text(detail.version)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
@@ -339,7 +339,7 @@ private struct DetailSections: View {
             }
         }
         if !detail.permissions.isEmpty {
-            DetailSection(title: "权限") {
+            DetailSection(title: String(localized: .installPermissions)) {
                 ForEach(detail.permissions, id: \.permission) { line in
                     if line.optional, detail.installed != nil {
                         OptionalPermissionRow(model: model, id: detail.id, line: line, updated: updated)
@@ -350,7 +350,7 @@ private struct DetailSections: View {
             }
         }
         if !detail.requirements.isEmpty {
-            DetailSection(title: "要求") {
+            DetailSection(title: String(localized: .pluginRequirements)) {
                 ForEach(detail.requirements, id: \.text) { requirement in
                     HStack(alignment: .top, spacing: WontonTheme.spacing.s8) {
                         WontonIcon.check.view(size: WontonTheme.size.iconSmall)
@@ -362,7 +362,7 @@ private struct DetailSections: View {
                 }
             }
         }
-        DetailSection(title: "信息") {
+        DetailSection(title: String(localized: .pluginInfo)) {
             WontonGroup {
                 ForEach(Array(info.enumerated()), id: \.offset) { index, row in
                     if index > 0 { WontonSeparator() }
@@ -378,19 +378,25 @@ private struct DetailSections: View {
     }
 
     private var info: [(title: String, value: String)] {
-        var rows = [(title: "版本", value: detail.version)]
-        if !detail.tags.isEmpty { rows.append(("标签", detail.tags.joined(separator: "、"))) }
-        if let author = detail.author { rows.append(("作者", author.name)) }
-        if let license = detail.license { rows.append(("许可证", license)) }
-        if let source = detail.source { rows.append(("来源", source)) }
-        if let stars = detail.stars { rows.append(("星标", stars.formatted())) }
+        var rows = [(title: String(localized: .pluginInfoVersion), value: detail.version)]
+        if !detail.tags.isEmpty {
+            rows.append((String(localized: .pluginInfoTags), detail.tags.formatted(.list(type: .and))))
+        }
+        if let author = detail.author { rows.append((String(localized: .pluginInfoAuthor), author.name)) }
+        if let license = detail.license { rows.append((String(localized: .pluginInfoLicense), license)) }
+        if let source = detail.source { rows.append((String(localized: .pluginInfoSource), source)) }
+        if let stars = detail.stars { rows.append((String(localized: .pluginInfoStars), stars.formatted())) }
         return rows
     }
 
     private var links: [(title: String, url: URL)] {
         var rows: [(title: String, url: URL)] = []
-        if let link = detail.homepage.flatMap(URL.init(string:)) { rows.append(("主页", link)) }
-        if let link = detail.repository.flatMap(URL.init(string:)) { rows.append(("代码仓库", link)) }
+        if let link = detail.homepage.flatMap(URL.init(string:)) {
+            rows.append((String(localized: .pluginInfoHomepage), link))
+        }
+        if let link = detail.repository.flatMap(URL.init(string:)) {
+            rows.append((String(localized: .pluginInfoRepository), link))
+        }
         return rows
     }
 }
@@ -400,8 +406,8 @@ extension View {
     func uninstallDialog(_ target: Binding<UninstallTarget?>, model: PluginsModel) -> some View {
         let id = target.wrappedValue?.id ?? ""
         return wontonDialog(
-            "卸载“\(target.wrappedValue?.title ?? "")”？",
-            message: "删除数据会一并删掉它的密钥和 Bot 账号，不能恢复。",
+            String(localized: .pluginUninstallTitle(target.wrappedValue?.title ?? "")),
+            message: String(localized: .pluginUninstallDeleteDataWarning),
             isPresented: Binding(
                 get: { target.wrappedValue != nil },
                 set: { isShowing in
@@ -409,13 +415,13 @@ extension View {
                 }
             ),
             actions: [
-                WontonDialogAction(title: "卸载，保留数据") {
+                WontonDialogAction(title: String(localized: .pluginUninstallKeepData)) {
                     model.send(.uninstallPlugin(id: id, deleteData: false))
                 },
-                WontonDialogAction(title: "卸载并删除数据", kind: .danger) {
+                WontonDialogAction(title: String(localized: .pluginUninstallDeleteData), kind: .danger) {
                     model.send(.uninstallPlugin(id: id, deleteData: true))
                 },
-                WontonDialogAction(title: "取消")
+                WontonDialogAction(title: String(localized: .commonCancel))
             ]
         )
     }

@@ -49,7 +49,7 @@ struct TabPageStateView: View {
         case .uninstalling:
             skeleton(TabText.uninstalling)
         case let .failed(reason):
-            failure("\(page.title) \(TabText.failed)", detail: reason) {
+            failure(String(localized: .tabFailedTitle(page.title)), detail: reason) {
                 Button(TabText.details, action: details)
                 Button(TabText.retry, action: session.retry)
             }
@@ -116,9 +116,9 @@ struct TabPageStateView: View {
 private extension TabLoadFailure {
     var label: String {
         switch self {
-        case .transport: TabText.choose("连不上家里的服务器", "Cannot connect to your server")
-        case .pluginNotReady: TabText.choose("应用还没准备好", "The app is not ready")
-        case .upstream: TabText.choose("应用返回了错误", "The app returned an error")
+        case .transport: String(localized: .tabFailureTransport)
+        case .pluginNotReady: String(localized: .tabFailurePluginNotReady)
+        case .upstream: String(localized: .tabFailureUpstream)
         }
     }
 }

@@ -2,24 +2,3 @@
 # 每行一条：路径 | 原因 | 到期日（YYYY-MM-DD）。原因里不能有 |。
 # 列出的文件不查界面文字（源码字符串、界面接口的写死文字、字符串目录）；到期后例外失效，CI 重新失败。
 # 文件里的写死文字抽完后，这一行会报错，删掉它。这个列表只减不增：新代码直接写进字符串目录，不要加进来。
-apps/ios/Wonton/AppNavigation.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/BottomPin.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/ChatListView.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/ConnectionStatus.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/HomeStatusPanel.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/HomeView.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/Intents/NavigationIntents.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/Intents/WontonPageEntity.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/Intents/WontonShortcuts.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/MainView+Navigation.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/NotificationSettingsView.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/PageTakeover.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/PairingView.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/PluginDetailView.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/SettingsView.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/TabPageStateView.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/TabPageView.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/TabTexts.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/TabWebView.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/TimelineRow.swift | 待抽取（ADR-0043） | 2026-12-31
-apps/ios/Wonton/WontonApp.swift | 待抽取（ADR-0043） | 2026-12-31

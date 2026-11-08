@@ -5,8 +5,8 @@ import WontonClient
 extension HomeStatus {
     var connectionText: String {
         switch self {
-        case .notConfigured: "未配对"
-        case .connected: "已连接"
+        case .notConfigured: String(localized: .connectionNotPaired)
+        case .connected: String(localized: .connectionConnected)
         case .connecting: ConnectionNotice.connecting.sentence
         case .disconnected: ConnectionNotice.unreachable(retrying: false).sentence
         }
@@ -16,13 +16,13 @@ extension HomeStatus {
 extension ConnectionNotice {
     var sentence: String {
         switch self {
-        case .waitingForNetwork: "等待网络…"
-        case .connecting: "连接中…"
-        case .updating: "正在更新…"
-        case .serverOffline: "家里的服务器好像离线了"
-        case .unreachable: "连不上家里的服务器"
-        case .deviceRejected: "这台手机已不被家里的服务器认可"
-        case .versionMismatch: "App 或家里的服务器需要更新"
+        case .waitingForNetwork: String(localized: .connectionNoticeWaitingForNetwork)
+        case .connecting: String(localized: .connectionNoticeConnecting)
+        case .updating: String(localized: .connectionNoticeUpdating)
+        case .serverOffline: String(localized: .connectionNoticeServerOffline)
+        case .unreachable: String(localized: .connectionNoticeUnreachable)
+        case .deviceRejected: String(localized: .connectionNoticeDeviceRejected)
+        case .versionMismatch: String(localized: .connectionNoticeVersionMismatch)
         }
     }
 
@@ -66,11 +66,11 @@ struct ConnectionLine: View {
                 .foregroundStyle(Color(notice == .deviceRejected ? colors.warning : colors.textPrimary))
             HStack(spacing: WontonTheme.spacing.s8) {
                 if notice == .deviceRejected {
-                    Button("重新配对") { open(.pairing) }
+                    Button(.connectionPairAgain) { open(.pairing) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 } else {
                     if let retrying = notice.retrying { RetryButton(retrying: retrying, retry: retry) }
-                    Button("查看连接") { open(.server) }
+                    Button(.connectionViewConnection) { open(.server) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             }
@@ -87,7 +87,7 @@ private struct RetryButton: View {
         Button(action: retry) {
             HStack(spacing: WontonTheme.spacing.s4) {
                 if retrying { ProgressView().controlSize(.small) }
-                Text("重试")
+                Text(.commonRetry)
             }
         }
         .buttonStyle(WontonButtonStyle(kind: .secondary))
@@ -135,18 +135,18 @@ struct ConnectionView: View {
             VStack(spacing: WontonTheme.spacing.sectionGap) {
                 ServersSection(model: model, removing: $removing)
                 WontonGroup {
-                    WontonRow(title: "手机网络", value: view.details.network.check.text)
+                    WontonRow(title: String(localized: .connectionCellular), value: view.details.network.check.text)
                     WontonSeparator()
-                    WontonRow(title: "中继", value: view.details.relay.text)
+                    WontonRow(title: String(localized: .connectionRelay), value: view.details.relay.text)
                     WontonSeparator()
-                    WontonRow(title: "家里的服务器", value: view.details.server.text)
+                    WontonRow(title: String(localized: .egressPathHomeServer), value: view.details.server.text)
                 }
                 if let retrying = view.notice?.retrying {
                     RetryButton(retrying: retrying) { model.send(.retryConnection) }
                 }
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.connectionDetails) {
-                        WontonRow(title: "详情", showsForward: true)
+                        WontonRow(title: String(localized: .commonDetails), showsForward: true)
                     }
                 }
                 .buttonStyle(.plain)
@@ -161,8 +161,9 @@ struct ConnectionView: View {
                     WontonSeparator()
                     NavigationLink(value: SettingsRoute.coreUpgrade) {
                         WontonRow(
-                            title: "升级服务器",
-                            value: plugins.viewModel.coreUpgrade.isPrompting ? "有新版本" : nil,
+                            title: String(localized: .coreUpgradeTitle),
+                            value: plugins.viewModel.coreUpgrade.isPrompting
+                                ? String(localized: .designUpdateBadge) : nil,
                             showsForward: true
                         )
                     }
@@ -170,13 +171,16 @@ struct ConnectionView: View {
                 .buttonStyle(.plain)
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.invite) {
-                        WontonRow(title: "添加设备", showsForward: true)
+                        WontonRow(title: String(localized: .inviteTitle), showsForward: true)
                     }
                 }
                 .buttonStyle(.plain)
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.pairing) {
-                        WontonRow(title: "重新配对", titleTint: colors.danger, showsForward: true)
+                        WontonRow(
+                            title: String(localized: .connectionPairAgain),
+                            titleTint: colors.danger, showsForward: true
+                        )
                     }
                 }
                 .buttonStyle(.plain)
@@ -184,7 +188,7 @@ struct ConnectionView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .removeServerDialog($removing, model: model)
-        .wontonPushedScreen("家里的服务器")
+        .wontonPushedScreen(String(localized: .egressPathHomeServer))
     }
 }
 
@@ -202,32 +206,35 @@ struct ConnectionDetailsView: View {
                         WontonSeparator()
                     }
                     if let path = model.viewModel.path {
-                        WontonRow(title: "路径", value: path.kindText)
+                        WontonRow(title: String(localized: .connectionDetailPath), value: path.kindText)
                         WontonSeparator()
-                        WontonRow(title: "延迟", value: "\(path.rttMs) ms")
+                        WontonRow(title: String(localized: .connectionDetailLatency), value: "\(path.rttMs) ms")
                         WontonSeparator()
                     }
-                    WontonRow(title: "丢包", value: "\(details.lostPackets) / \(details.sentPackets)")
+                    WontonRow(
+                        title: String(localized: .connectionDetailLoss),
+                        value: "\(details.lostPackets) / \(details.sentPackets)"
+                    )
                     if let handshake = details.handshakeMs {
                         WontonSeparator()
-                        WontonRow(title: "上次握手", value: "\(handshake) ms")
+                        WontonRow(title: String(localized: .connectionDetailLastHandshake), value: "\(handshake) ms")
                     }
                     WontonSeparator()
-                    WontonRow(title: "断开次数", value: "\(details.disconnects)")
+                    WontonRow(title: String(localized: .connectionDetailDisconnects), value: "\(details.disconnects)")
                     if let connected = details.lastConnectedAtMs {
                         WontonSeparator()
-                        WontonRow(title: "最后连上", value: Self.time(connected))
+                        WontonRow(title: String(localized: .connectionDetailLastConnected), value: Self.time(connected))
                     }
                 }
                 if let failure = details.lastFailure {
                     WontonGroup {
-                        WontonRow(title: "上次失败", value: failure)
+                        WontonRow(title: String(localized: .connectionDetailLastFailure), value: failure)
                     }
                 }
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen("详情")
+        .wontonPushedScreen(String(localized: .commonDetails))
     }
 
     private static func time(_ milliseconds: UInt64) -> String {
@@ -237,8 +244,8 @@ struct ConnectionDetailsView: View {
 
 private extension HomePath {
     var kindText: String {
-        if lan { return "局域网" }
-        return relay ? "中继" : "直连"
+        if lan { return String(localized: .connectionLan) }
+        return relay ? String(localized: .connectionRelay) : String(localized: .connectionDirect)
     }
 }
 
@@ -256,9 +263,9 @@ private extension Optional<DeviceNetwork> {
 private extension ConnectionCheck {
     var text: String {
         switch self {
-        case .ok: "正常"
-        case .failing: "不通"
-        case .unknown: "不确定"
+        case .ok: String(localized: .connectionCheckOk)
+        case .failing: String(localized: .connectionCheckFailing)
+        case .unknown: String(localized: .commonUnknown)
         }
     }
 }
