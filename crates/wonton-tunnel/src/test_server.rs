@@ -59,11 +59,7 @@ impl<R: PortResolver> ProtocolHandler for Handler<R> {
         let mux = DatagramMux::start(conn.clone());
         let next_flow = Arc::new(AtomicU16::new(0));
         while let Ok((send, recv)) = conn.accept_bi().await {
-            let stream = TunnelStream {
-                send,
-                recv,
-                conn_id: conn.stable_id(),
-            };
+            let stream = TunnelStream::untracked(send, recv, conn.stable_id());
             tokio::spawn(serve(
                 stream,
                 self.resolver.clone(),

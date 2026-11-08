@@ -41,7 +41,9 @@ pub mod wire;
 
 pub use allowlist::Allowlist;
 pub use blocking::off_workers;
-pub use client::{PathInfo, PathKind, SuspendClock, TunnelClient, TunnelStats, TunnelStatus};
+pub use client::{
+    PathInfo, PathKind, SuspendClock, TunnelClient, TunnelStats, TunnelStatus, TunnelStreamStats,
+};
 pub use credential::{ProxyAccess, ProxyCredential};
 pub use embed::{PeerStream, TunnelListener};
 pub use error::TunnelError;

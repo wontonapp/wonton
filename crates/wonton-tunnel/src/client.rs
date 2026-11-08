@@ -5,9 +5,12 @@
 
 mod attempt;
 mod ports;
+mod streams;
 mod suspend;
 
 use attempt::Attempt;
+pub use streams::TunnelStreamStats;
+use streams::{StreamCounters, StreamLease, open_stream};
 pub use suspend::SuspendClock;
 
 use std::{
@@ -28,10 +31,7 @@ use tokio::sync::watch;
 use tracing::{debug, info};
 
 use crate::{
-    error::{
-        TunnelError, from_connect_error, from_connection_error, from_read_exact_error,
-        from_write_error,
-    },
+    error::{TunnelError, from_connect_error, from_connection_error, from_read_exact_error},
     forward,
     pacing::Pacing,
     wire::{ALPN, CLOSE_NORMAL, Request, Status},
@@ -105,6 +105,8 @@ pub struct TunnelStats {
     pub failed_dials: u32,
     /// 最近一次失败的原因。连上之后还留着，方便查刚才的问题。
     pub last_failure: Option<TunnelError>,
+    /// 客户端开着的隧道流。
+    pub streams: TunnelStreamStats,
 }
 
 impl fmt::Display for TunnelStatus {
@@ -156,6 +158,7 @@ struct Inner {
     closed: AtomicBool,
     pacing: Mutex<Pacing>,
     stats: Mutex<TunnelStats>,
+    streams: Arc<StreamCounters>,
     /// 服务端确认过的连接：没确认就断开的（比如被拒绝）要退避，确认过的断开了可以马上重连。
     confirmed: Mutex<Option<usize>>,
     slow_path: Mutex<Option<SlowPath>>,
@@ -197,12 +200,24 @@ pub(crate) struct TunnelStream {
     pub(crate) recv: RecvStream,
     /// 承载这条流的连接，用于在服务端回状态后把它标记为已授权。
     pub(crate) conn_id: usize,
+    pub(crate) _lease: StreamLease,
 }
 
 impl TunnelStream {
     /// 复位流的两个方向。
     pub(crate) fn abort(&mut self) {
         forward::abort(&mut self.send, &mut self.recv);
+    }
+
+    /// 测试用的假服务端拿这个类型包它接到的流，不算进任何客户端的计数。
+    #[cfg(feature = "test-hooks")]
+    pub(crate) fn untracked(send: SendStream, recv: RecvStream, conn_id: usize) -> Self {
+        Self {
+            send,
+            recv,
+            conn_id,
+            _lease: Arc::<StreamCounters>::default().lease(Request::Forward),
+        }
     }
 }
 
@@ -240,6 +255,7 @@ impl TunnelClient {
                 closed: AtomicBool::new(false),
                 pacing: Mutex::default(),
                 stats: Mutex::default(),
+                streams: Arc::default(),
                 confirmed: Mutex::new(None),
                 slow_path: Mutex::new(None),
                 clock,
@@ -447,6 +463,7 @@ impl TunnelClient {
     /// 连接质量的指标。
     pub fn stats(&self) -> TunnelStats {
         let mut stats = lock(&self.inner.stats).clone();
+        stats.streams = self.inner.streams.snapshot();
         if let Some(conn) = self.inner.live_connection() {
             let current = conn.stats();
             stats.sent_packets = current.sent_packets;
@@ -498,7 +515,7 @@ impl TunnelClient {
         let mut retried = false;
         loop {
             let conn = self.connection().await?;
-            match open_stream(&conn, request).await {
+            match open_stream(&conn, request, &self.inner.streams).await {
                 Ok(stream) => return Ok(stream),
                 // 连接恰好在检查之后断开。这时还没发出任何数据，换一条新连接重试一次是安全的。
                 Err(err @ TunnelError::TransportUnavailable { .. }) if !retried => {
@@ -553,7 +570,7 @@ impl TunnelClient {
 
     /// 在指定的连接上做一次往返，不经过 [`Self::connection`]。
     async fn ping_on(&self, conn: &Connection) -> Result<(), TunnelError> {
-        let mut stream = open_stream(conn, Request::Ping).await?;
+        let mut stream = open_stream(conn, Request::Ping, &self.inner.streams).await?;
         stream.send.finish().ok();
         self.read_status(&mut stream.recv, stream.conn_id).await
     }
@@ -740,21 +757,6 @@ fn watch_close(inner: Weak<Inner>, conn: &Connection) {
         }
         inner.mark(conn_id, TunnelStatus::Disconnected(err));
     });
-}
-
-async fn open_stream(conn: &Connection, request: Request) -> Result<TunnelStream, TunnelError> {
-    let (mut send, recv) = conn
-        .open_bi()
-        .await
-        .map_err(|err| from_connection_error(&err))?;
-    send.write_all(&[request as u8])
-        .await
-        .map_err(|err| from_write_error(&err))?;
-    Ok(TunnelStream {
-        send,
-        recv,
-        conn_id: conn.stable_id(),
-    })
 }
 
 fn revalidation_window(relay: bool, proven_slow: bool) -> Duration {

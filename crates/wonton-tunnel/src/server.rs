@@ -24,6 +24,9 @@ use crate::{
 
 /// 每条连接上客户端可以同时打开的流数。本地代理的每条 TCP 连接占一条流，HTTP keep-alive、长轮询和
 /// WebSocket 都会长期占用，所以比 QUIC 默认的 100 放宽。
+///
+/// 结束的流腾出的额度，noq 1.4 要攒到超过 1/8（这里是 33 条）才发 MAX_STREAMS 告诉客户端
+/// （`StreamsState::queue_max_stream_id`）：同时开着 224 条以上时，新流要等到再有流结束才开得出来。
 const MAX_CONCURRENT_STREAMS: VarInt = VarInt::from_u32(256);
 
 /// 隧道流的去向。

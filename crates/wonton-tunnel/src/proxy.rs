@@ -219,6 +219,7 @@ async fn relay(
         send,
         recv,
         conn_id,
+        ..
     } = stream;
     {
         let mut upload = pin!(forward::tcp_to_tunnel(tcp_read, send));

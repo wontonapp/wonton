@@ -34,6 +34,12 @@ impl SettingsLink {
                        peers: &watch::Receiver<PeersViewModel>,
                        servers: &watch::Receiver<ServersViewModel>,
                        method: &watch::Receiver<PushMethod>| {
+            // 同一个 watch 不能同时借两份：发送方在两次 borrow 之间等写锁时，第二次 borrow 排在它后面，
+            // 第一份又不会还，两个线程一起卡死。
+            let peer_count = {
+                let peers = peers.borrow();
+                (peers.state == PeersState::Ready).then(|| peers.peers.len())
+            };
             let chat = chat.borrow();
             settings_view(
                 &home.borrow().status,
@@ -42,7 +48,7 @@ impl SettingsLink {
                 *method.borrow(),
                 &chat.push,
                 plugins.borrow().core_upgrade.is_prompting(),
-                (peers.borrow().state == PeersState::Ready).then(|| peers.borrow().peers.len()),
+                peer_count,
             )
         };
         let view = reuse(
