@@ -153,6 +153,7 @@ fn with_input(required: bool) -> String {
             "  permissions: []\n  secrets:\n    token:\n      input:\n        title: {{en: Token}}\n        required: {required}\n    greeting:\n      input:\n        title: {{en: Greeting}}\n        required: false\n"
         ),
     )
+    .replace("spec: '0.5'", "spec: '0.8'")
 }
 
 #[tokio::test]

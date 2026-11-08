@@ -268,3 +268,50 @@ async fn the_card_asks_for_input_secrets_and_the_bot_cannot_fill_them() {
     assert!(!failed(&result), "{result:?}");
     assert!(b.installed("app.input"));
 }
+
+/// 最高级权限的两张卡：密钥填在第一张上，执行用的是第一张卡的值（第二张卡没有输入）。
+#[tokio::test]
+async fn a_highest_install_takes_the_secrets_from_the_first_card() {
+    let b = bench().await;
+    let source = official_with_mount("app.example.root", "全能", "docker.socket")
+        .replace("spec: '0.4'", "spec: '0.8'")
+        .replace(
+            "    volumes:",
+            "    environment:\n      TOKEN: ${WONTON_SECRET_TOKEN}\n    volumes:",
+        )
+        .replace(
+            "permissions: [docker.socket]",
+            "permissions: [docker.socket]\n  secrets:\n    token:\n      input:\n        title: {zh: 令牌, en: Token}\n        required: true",
+        );
+    let package =
+        crate::plugin::PluginPackage::parse(&source, &Languages::from_header(Some("zh-Hans")))
+            .unwrap();
+    let entry = crate::plugin::storefront::index::IndexEntry::of(
+        &package,
+        "github:example/root",
+        &"a".repeat(40),
+    )
+    .unwrap();
+    entry
+        .write_to(&b.s.dir.path().join("index"), &package)
+        .unwrap();
+
+    let call = b.s.spawn(INSTALL, json!({"id": "app.example.root"}));
+    let card = b.s.cards.wait_for(1).await;
+    assert_eq!(card.secret_inputs.len(), 1, "{card:?}");
+    b.s.answer_with_secrets(
+        &card.id,
+        Answer::Approve,
+        [(
+            "token".to_owned(),
+            wonton_protocol::SecretString::new("s3cret"),
+        )]
+        .into(),
+    )
+    .unwrap();
+    let card = b.s.cards.wait_for(2).await;
+    b.s.answer(&card.id, Answer::Approve).unwrap();
+    let result = call.await.unwrap();
+    assert!(!failed(&result), "{result:?}");
+    assert!(b.installed("app.example.root"));
+}

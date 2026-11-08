@@ -177,13 +177,6 @@ pub enum Action {
         preview: InstallPreview,
         secrets: crate::SecretValues,
     },
-    /// 填一项插件密钥，或把可选项清空（`value` 为空，ADR-0064）。只有主人能改；成功看 `PluginsViewModel` 的详情。
-    SetPluginSecret {
-        id: String,
-        name: String,
-        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-        value: Option<crate::SecretString>,
-    },
     /// 卸载。`delete_data` 为真时同时删除它的数据、密钥和 Bot 账号，不可恢复。
     UninstallPlugin { id: String, delete_data: bool },
     /// 清掉一个做完的任务（成功或失败的提示）。

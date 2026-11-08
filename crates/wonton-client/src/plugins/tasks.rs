@@ -99,21 +99,6 @@ impl PluginsLink {
         result
     }
 
-    /// `SetPluginSecret`：在后台发出去，不挡住 App。
-    pub(crate) fn set_secret(
-        self: &Arc<Self>,
-        id: String,
-        name: String,
-        value: Option<SecretString>,
-    ) {
-        let link = self.clone();
-        self.runtime.spawn(async move {
-            if let Err(e) = link.set_secret_now(id, name, value).await {
-                tracing::warn!(error = %e, "could not set the plugin secret");
-            }
-        });
-    }
-
     /// `UpgradePlugin`：升到预览给的版本。
     pub(crate) fn upgrade(
         self: &Arc<Self>,

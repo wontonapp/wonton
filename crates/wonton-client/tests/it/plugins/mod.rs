@@ -698,19 +698,33 @@ async fn the_secret_values_the_owner_filled_are_posted_and_updated() {
     .unwrap();
     assert_eq!(sent["secrets"]["token"], "s3cret");
 
-    rig.app
-        .dispatch(Action::SetPluginSecret {
-            id: "app.photos".to_owned(),
-            name: "token".to_owned(),
-            value: Some(SecretString::new("next")),
-        })
-        .unwrap();
     let path = "/_wonton/api/plugins/app.photos/secrets/token";
-    let deadline = Instant::now() + WAIT;
-    while rig.core.seen(&Method::PUT, path).is_empty() {
-        assert!(Instant::now() < deadline, "没发出改密钥的请求");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    rig.core.answer(
+        Method::PUT,
+        path,
+        Canned(
+            200,
+            serde_json::json!({
+                "source": null, "id": "app.photos", "title": "x", "summary": "",
+                "about": null, "icon": null, "screenshots": [], "tags": [],
+                "kind": "app", "version": "1.0.0", "trust": "official",
+                "provider": null, "via_index": null, "author": null,
+                "homepage": null, "repository": null, "license": null, "stars": null,
+                "release_notes": null, "permissions": [], "requirements": [],
+                "has_web": false, "installed": null, "blocked": null,
+                "lan_webui": null, "secret_inputs": [],
+            })
+            .to_string(),
+        ),
+    );
+    rig.app
+        .set_plugin_secret(
+            "app.photos".to_owned(),
+            "token".to_owned(),
+            Some(SecretString::new("next")),
+        )
+        .await
+        .unwrap();
     let put: serde_json::Value =
         serde_json::from_str(&rig.core.seen(&Method::PUT, path)[0].body).unwrap();
     assert_eq!(put["value"], "next");

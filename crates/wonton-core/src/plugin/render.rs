@@ -18,7 +18,7 @@ use super::hostdir::Owner;
 use super::interpolate::UsedVars;
 use super::lan::{self, LanGrant};
 use super::languages::Languages;
-use super::manifest::{Access, Manifest, Permission, SecretSpec, Sso};
+use super::manifest::{Access, Manifest, Permission, Sso};
 use super::mounts::{Mounts, check_not_nested, dir_owners};
 use super::names::Instance;
 use super::package::{PackageError, PluginPackage};
@@ -286,9 +286,8 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
             .then(|| "http://notify.wonton.internal/notices".into()),
         secrets: manifest
             .secrets
-            .iter()
-            .filter(|(_, spec)| matches!(spec, SecretSpec::Generate(_) | SecretSpec::Input(_)))
-            .map(|(name, _)| (name.clone(), "dry-run".to_owned()))
+            .keys()
+            .map(|name| (name.clone(), "dry-run".to_owned()))
             .collect(),
         instance: Instance::default(),
         tz: "UTC".into(),

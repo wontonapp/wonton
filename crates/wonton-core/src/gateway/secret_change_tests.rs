@@ -201,7 +201,10 @@ async fn the_value_never_reaches_the_logs() {
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
     let text = String::from_utf8_lossy(&logs.lock().unwrap()).into_owned();
-    assert!(!text.is_empty(), "日志没装上");
+    assert!(
+        text.contains("secret_update"),
+        "日志没装上或没有改动日志：{text}"
+    );
     assert!(!text.contains("log-only-secret"), "{text}");
 }
 
@@ -322,8 +325,6 @@ async fn an_unknown_name_is_invalid_input() {
 #[tokio::test]
 async fn the_value_never_shows_up_in_the_preview() {
     let home = home().await;
-    let compose = compose();
-    let package = crate::plugin::PluginPackage::parse(&compose, &zh()).unwrap();
     let preview = home
         .app
         .clone()
@@ -338,7 +339,6 @@ async fn the_value_never_shows_up_in_the_preview() {
         )
         .await
         .unwrap();
-    let _ = package;
     assert_eq!(preview.status(), StatusCode::OK);
     let bytes = preview.into_body().collect().await.unwrap().to_bytes();
     let detail: Value = serde_json::from_slice(&bytes).unwrap();
@@ -349,6 +349,10 @@ async fn the_value_never_shows_up_in_the_preview() {
         .find(|line| line["name"] == "token")
         .unwrap();
     assert_eq!(token["filled"], true);
+    assert!(
+        !detail.to_string().contains("old"),
+        "种子值不进详情：{detail}"
+    );
 }
 
 #[test]
@@ -431,5 +435,57 @@ async fn a_broken_secrets_header_is_invalid_input() {
     assert!(
         !text.contains("not-base64") || !text.contains("s3cret"),
         "{text}"
+    );
+}
+
+/// 重建失败：值退回原样、容器还是旧值；同一个值再提一次也能重试（不会因为“没变化”早退）。
+#[tokio::test]
+async fn a_failed_change_rolls_back_and_can_be_retried() {
+    let home = home().await;
+    let web = container_name("app-secret", "web");
+    let bearer = format!("Bearer {TOKEN}");
+    home.docker.fail_starts(Some("启动失败"));
+    let failed = home
+        .put(
+            "token",
+            serde_json::json!({"value": "zz-rollback"}),
+            Some(&bearer),
+        )
+        .await;
+    assert!(!failed.status.is_success(), "{}", failed.text());
+    let stored = Store::open(home._dir.path().join("plugins"))
+        .unwrap()
+        .secrets()
+        .load(&crate::plugin::PluginId::parse(PLUGIN).unwrap())
+        .unwrap();
+    assert_eq!(
+        stored
+            .as_ref()
+            .and_then(|s| s.get("token"))
+            .map(Vec::as_slice),
+        Some(&b"old"[..]),
+        "值退回"
+    );
+    assert!(
+        home.docker.env(&web).iter().any(|e| e == "TOKEN=old"),
+        "{:?}",
+        home.docker.env(&web)
+    );
+    home.docker.fail_starts(None);
+    let retried = home
+        .put(
+            "token",
+            serde_json::json!({"value": "zz-rollback"}),
+            Some(&bearer),
+        )
+        .await;
+    assert_eq!(retried.status, StatusCode::OK, "{}", retried.text());
+    assert!(
+        home.docker
+            .env(&web)
+            .iter()
+            .any(|e| e == "TOKEN=zz-rollback"),
+        "{:?}",
+        home.docker.env(&web)
     );
 }

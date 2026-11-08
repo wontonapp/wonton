@@ -634,10 +634,6 @@ impl ClientCore {
             Action::UpgradePlugin { preview, secrets } => scope.plugins.upgrade(preview, secrets),
             Action::UninstallPlugin { id, delete_data } => scope.plugins.uninstall(id, delete_data),
             Action::DismissPluginTask { id } => scope.plugins.dismiss_task(&id),
-            Action::SetPluginSecret { id, name, value } => {
-                scope.plugins.set_secret(id, name, value);
-                Ok(())
-            }
             Action::StartTakeover { id } => {
                 scope.plugins.start_takeover(id);
                 Ok(())

@@ -15,7 +15,7 @@ fn plugin_actions_round_trip_through_json() {
         Action::RefreshStore { force: true },
         Action::InstallPlugin {
             preview: preview(),
-            secrets: Default::default(),
+            secrets: [("token".to_owned(), crate::SecretString::new("s3cret"))].into(),
         },
         Action::UpgradePlugin {
             preview: InstallPreview {

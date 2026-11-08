@@ -74,12 +74,15 @@ impl PluginManager {
                 .store
                 .secrets()
                 .save_changed(id, &before, &before_changed);
-            if let Err(back) = self
+            match self
                 .rebuild_secret_users(&listed, &package, &record, name, langs)
                 .await
             {
-                tracing::error!(plugin = %id, secret = %name, error = %back, "改密钥失败，退回旧值也失败");
-                self.set_degraded(id, format!("改密钥失败，退回也失败：{back}"));
+                Ok(()) => self.changed(),
+                Err(back) => {
+                    tracing::error!(plugin = %id, secret = %name, error = %back, "改密钥失败，退回旧值也失败");
+                    self.set_degraded(id, format!("改密钥失败，退回也失败：{back}"));
+                }
             }
             tracing::warn!(plugin = %id, secret = %name, error = %e, "改密钥失败");
         } else {
