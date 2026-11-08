@@ -1619,4 +1619,13 @@
         <item>Folder</item>
         <item>Pin</item>
     </string-array>
+    <string name="secret_section_title">Keys this app needs</string>
+    <string name="secret_optional">Optional</string>
+    <string name="secret_get_one">Where to get one</string>
+    <string name="secret_show">Show value</string>
+    <string name="secret_hide">Hide value</string>
+    <string name="secret_edit">Change</string>
+    <string name="secret_clear">Clear</string>
+    <string name="secret_filled">Filled</string>
+    <string name="secret_unfilled">Not filled</string>
 </resources>

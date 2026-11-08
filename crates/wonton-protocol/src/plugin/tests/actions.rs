@@ -22,7 +22,7 @@ fn plugin_actions_round_trip_through_json() {
                 upgrade_from: Some("0.9.0".into()),
                 ..preview()
             },
-            secrets: Default::default(),
+            secrets: [("region".to_owned(), crate::SecretString::new("eu-west"))].into(),
         },
         Action::StartTakeover {
             id: "app.memos".into(),

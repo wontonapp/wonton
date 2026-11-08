@@ -211,6 +211,7 @@ private fun InstalledDetailSections(
     onToggled: (PluginDetail) -> Unit,
 ) {
     val installed = detail.installed ?: return
+    SecretSection(detail, plugins, onToggled)
     detail.lanWebui?.let { InstalledLanWebui(plugins, detail.id, it, onToggled) }
     if (detail.saveGrants.isNotEmpty()) SaveGrants(plugins, detail.id, detail.saveGrants, onToggled)
     ToolPolicySection(plugins, detail.id, detail.version)

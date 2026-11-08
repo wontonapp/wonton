@@ -1414,4 +1414,13 @@
         <item>フォルダー</item>
         <item>ピン</item>
     </string-array>
+    <string name="secret_section_title">このアプリに必要な鍵</string>
+    <string name="secret_optional">任意</string>
+    <string name="secret_get_one">取得先</string>
+    <string name="secret_show">値を表示</string>
+    <string name="secret_hide">値を隠す</string>
+    <string name="secret_edit">変更</string>
+    <string name="secret_clear">クリア</string>
+    <string name="secret_filled">入力済み</string>
+    <string name="secret_unfilled">未入力</string>
 </resources>

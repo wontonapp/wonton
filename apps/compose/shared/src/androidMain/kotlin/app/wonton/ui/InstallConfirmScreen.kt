@@ -53,6 +53,7 @@ fun InstallConfirmScreen(
     var rejection by remember { mutableStateOf<Problem?>(null) }
     var lanWebui by remember { mutableStateOf(false) }
     var enabled by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var secrets by remember(confirmation) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var fillingProfile by remember { mutableStateOf(false) }
     var submittedId by remember(confirmation) { mutableStateOf<String?>(null) }
     var previousTask by remember(confirmation) { mutableStateOf<PluginTask?>(null) }
@@ -84,6 +85,7 @@ fun InstallConfirmScreen(
         }
         return
     }
+    SecureScreen()
     val title = confirmation.actionTitle
     WontonScreen(bar = { WontonPushedBar(title, onClose, WontonIcon.Close, stringResource(R.string.common_close)) }) {
         val result = loaded
@@ -103,18 +105,21 @@ fun InstallConfirmScreen(
                         onOptional = { permission, on ->
                             enabled = if (on) enabled + permission else enabled - permission
                         },
+                        secrets = secrets,
+                        onSecret = { name, value -> secrets = secrets + (name to value) },
                     )
                 }
             }
             preview?.let { current ->
                 val chosen = current.withPermissionChoices(lanWebui, enabled)
-                ConfirmInstallButton(chosen, title) {
+                val sent = secretValues(chosen.secretInputs, secrets)
+                ConfirmInstallButton(
+                    chosen,
+                    title,
+                    secretsReady = !missingRequiredSecret(chosen.secretInputs, secrets),
+                ) {
                     val action =
-                        if (isUpgrade) {
-                            Action.UpgradePlugin(chosen, emptyMap())
-                        } else {
-                            Action.InstallPlugin(chosen, emptyMap())
-                        }
+                        if (isUpgrade) Action.UpgradePlugin(chosen, sent) else Action.InstallPlugin(chosen, sent)
                     previousTask = plugins.viewModel.tasks.firstOrNull { it.id == chosen.id }
                     rejection = plugins.core.send(action)
                     if (rejection == null) {
@@ -190,6 +195,8 @@ private fun PreviewContent(
     onFillProfile: () -> Unit,
     onLanWebui: (Boolean) -> Unit,
     onOptional: (String, Boolean) -> Unit,
+    secrets: Map<String, String>,
+    onSecret: (String, String) -> Unit,
 ) {
     val colors = WontonTheme.colors
     Column(
@@ -226,6 +233,11 @@ private fun PreviewContent(
         }
         if (preview.notices.isNotEmpty()) NoticeLines(preview.notices)
         InstallPermissionChoices(preview.permissions, enabled, onOptional)
+        if (preview.secretInputs.isNotEmpty()) {
+            DetailSection(stringResource(R.string.secret_section_title)) {
+                SecretInputsSection(preview.secretInputs, secrets, onChange = onSecret)
+            }
+        }
         AlwaysAllowed(preview, plugins)
         preview.lanWebui?.let { LanWebuiToggle(it, lanWebui, enabled = true, onLanWebui) }
         preview.releaseNotes?.let { notes ->

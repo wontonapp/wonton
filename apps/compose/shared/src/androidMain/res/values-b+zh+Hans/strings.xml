@@ -1414,4 +1414,13 @@
         <item>文件夹</item>
         <item>图钉</item>
     </string-array>
+    <string name="secret_section_title">要填的密钥</string>
+    <string name="secret_optional">可选</string>
+    <string name="secret_get_one">去哪里拿</string>
+    <string name="secret_show">显示</string>
+    <string name="secret_hide">隐藏</string>
+    <string name="secret_edit">修改</string>
+    <string name="secret_clear">清空</string>
+    <string name="secret_filled">已填写</string>
+    <string name="secret_unfilled">未填写</string>
 </resources>

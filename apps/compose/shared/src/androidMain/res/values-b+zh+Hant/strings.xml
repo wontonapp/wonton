@@ -1414,4 +1414,13 @@
         <item>資料夾</item>
         <item>圖釘</item>
     </string-array>
+    <string name="secret_section_title">要填的密鑰</string>
+    <string name="secret_optional">可選</string>
+    <string name="secret_get_one">去哪裡拿</string>
+    <string name="secret_show">顯示</string>
+    <string name="secret_hide">隱藏</string>
+    <string name="secret_edit">修改</string>
+    <string name="secret_clear">清空</string>
+    <string name="secret_filled">已填寫</string>
+    <string name="secret_unfilled">未填寫</string>
 </resources>

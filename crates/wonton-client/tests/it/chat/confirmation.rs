@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Value, json};
 use wonton_client::{
     Action, Answer, ChatFailure, ConfirmationState, ConfirmationView, CoreError, MessageContent,
-    MessageSummary, PushContent, PushStatus, RoomMembership, TimelineContent, TimelineItem,
-    WindowView,
+    MessageSummary, PushContent, PushStatus, RoomMembership, SecretString, TimelineContent,
+    TimelineItem, WindowView,
 };
 use wonton_matrix::{ChatRoom, MatrixSession, OwnedEventId, OwnedRoomId, OwnedUserId};
 
@@ -256,6 +256,61 @@ async fn only_the_core_account_can_show_a_card() {
             _ => None,
         })
         .await;
+}
+
+/// 卡片上的密钥随回答上行：填了的必填项在 `secrets` 里，没填的可选项不出现。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn the_secrets_filled_on_a_card_are_answered() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let (core, room_id) = core_room(&phone, &home).await;
+    let room = core.open_room(&room_id).await.expect("核心打开私聊");
+    let mut timeline = Timeline::open(&phone, room_id.as_str()).await;
+
+    let mut install = install_card();
+    install["secret_inputs"] = json!([
+        {"name": "token", "title": "Token", "required": true},
+        {
+            "name": "region",
+            "title": "Region",
+            "description": "填了就近连接",
+            "url": "https://example.com/regions",
+            "required": false,
+        },
+    ]);
+    send(&room, content(&install)).await;
+    let view = card_view(&mut timeline, "install", "带密钥的卡片").await;
+    let inputs: Vec<_> = view
+        .card
+        .secret_inputs
+        .iter()
+        .map(|input| (input.name.as_str(), input.required))
+        .collect();
+    assert_eq!(inputs, [("token", true), ("region", false)]);
+
+    phone
+        .dispatch(Action::AnswerConfirmation {
+            id: "install".to_owned(),
+            answer: Answer::Approve,
+            choice_id: None,
+            secrets: [("token".to_owned(), SecretString::new("s3cret"))].into(),
+        })
+        .unwrap();
+    until_card(&mut timeline, "install", "回答上行", |view| {
+        view.card.state == ConfirmationState::Running
+    })
+    .await;
+    assert_eq!(
+        home.confirmation_answers(),
+        [(
+            "install".to_owned(),
+            json!({"answer": "approve", "secrets": {"token": "s3cret"}})
+        )]
+    );
 }
 
 /// 主人不开 App 也要知道有卡片在等。不响的两种靠 Tuwunel 真实的默认推送规则：后面那张卡片的推送到了，说明前面的已经判定过。
