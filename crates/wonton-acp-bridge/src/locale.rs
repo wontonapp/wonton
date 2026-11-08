@@ -56,7 +56,7 @@ impl Failure {
     }
 }
 
-type Lookup = Result<Vec<String>, Failure>;
+pub type Lookup = Result<Vec<String>, Failure>;
 
 /// 查一个人语言的地方：生产走核心 MCP，测试用内存替身。
 pub trait LocaleSource {
@@ -210,6 +210,30 @@ impl CoreMcp {
         // 会话在关闭时由传输层 DELETE 掉。
         client.cancellation_token().cancel();
         Ok(entry)
+    }
+}
+
+/// 语言从哪来：生产问核心，测试固定回一种。`Locales` 的泛型参数要具体类型，用它包一层。
+pub enum Origin {
+    Core(CoreMcp),
+    /// 固定回简体中文，测试里的断言照中文写。
+    #[cfg(test)]
+    Fixed,
+}
+
+impl Origin {
+    pub fn core(mcp_url: &str) -> Self {
+        Self::Core(CoreMcp::new(mcp_url))
+    }
+}
+
+impl LocaleSource for Origin {
+    async fn user_locale(&self, user_id: &str) -> Lookup {
+        match self {
+            Self::Core(source) => source.user_locale(user_id).await,
+            #[cfg(test)]
+            Self::Fixed => Ok(vec!["zh-Hans".to_owned()]),
+        }
     }
 }
 

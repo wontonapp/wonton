@@ -44,8 +44,10 @@ services:
       WONTON_MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM:?需要主人与 Bot 的房间 ID}
       WONTON_MCP_URL: ${WONTON_MCP_URL:-http://mcp.wonton.internal/mcp}
       WONTON_ACP_MODE: ${WONTON_ACP_MODE:-plan}
+      WONTON_ACP_TOPIC_MODE: ${WONTON_ACP_TOPIC_MODE:-}
       WONTON_ACP_TURN_SECONDS: ${WONTON_ACP_TURN_SECONDS:-600}
       WONTON_ACP_IDLE_SECONDS: ${WONTON_ACP_IDLE_SECONDS:-600}
+      WONTON_ACP_TOPIC_IDLE_SECONDS: ${WONTON_ACP_TOPIC_IDLE_SECONDS:-1800}
     volumes:
       - ${WONTON_BOT_DATA:?需要 Bot 数据目录}/bridge:/data/bridge
       - acp-socket:/run/wonton

@@ -23,10 +23,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::Result;
+use crate::l10n::text;
 use board::{Board, NAME_MAX_CHARS, Row, SUMMARY_LINES, Status, TEXT_MAX_CHARS};
+use wonton_l10n::Lang;
 
 /// 会话键：主对话是 [`SessionKey::Main`]，话题用它的根消息事件 ID。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// 排序是主对话在前、话题按根消息 ID，用作按会话存状态的有序映射。
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SessionKey {
     Main,
     /// 话题根消息的事件 ID。
@@ -36,6 +40,14 @@ pub enum SessionKey {
 impl SessionKey {
     pub(crate) fn is_topic(&self) -> bool {
         matches!(self, SessionKey::Topic(_))
+    }
+
+    /// 会话的持久化键：主对话是 `main`，话题是根消息事件 ID。
+    pub(crate) fn storage_key(&self) -> &str {
+        match self {
+            SessionKey::Main => "main",
+            SessionKey::Topic(root) => root,
+        }
     }
 }
 
@@ -78,6 +90,7 @@ impl Topics {
         key: &SessionKey,
         prompt: &str,
         now: SystemTime,
+        lang: Lang,
     ) -> Result<TurnStart> {
         let now = stamp(now);
         let base = self.board.seq();
@@ -109,7 +122,7 @@ impl Topics {
             let name = if key.is_topic() {
                 digest::clip_plain(prompt, NAME_MAX_CHARS)
             } else {
-                "主对话".to_owned()
+                text(lang, "name-main", &[])
             };
             self.board.add_row(Row {
                 key: key.clone(),
@@ -141,11 +154,19 @@ impl Topics {
         key: &SessionKey,
         update: &Value,
         now: SystemTime,
+        lang: Lang,
     ) -> Result<Option<EditConflict>> {
         let now = stamp(now);
         let (files, executed) = match claims::parse_tool_call(update) {
             claims::ToolEdit::Files(paths) if !paths.is_empty() => (Some(paths), None),
-            claims::ToolEdit::Executed(title) => (None, Some(title)),
+            claims::ToolEdit::Executed(title) => (
+                None,
+                Some(if title.is_empty() {
+                    text(lang, "topic-exec-default", &[])
+                } else {
+                    title
+                }),
+            ),
             _ => return Ok(None),
         };
         let name = self
@@ -165,7 +186,7 @@ impl Topics {
                     .unwrap_or_default();
                 self.board.log_change(
                     key.clone(),
-                    digest::conflict_text(&other_name, &name, path),
+                    digest::conflict_text(&other_name, &name, path, lang),
                     true,
                 );
             }
@@ -179,8 +200,11 @@ impl Topics {
             }
         }
         if let Some(title) = executed {
-            self.board
-                .log_change(key.clone(), digest::executed_text(&name, &title), false);
+            self.board.log_change(
+                key.clone(),
+                digest::executed_text(&name, &title, lang),
+                false,
+            );
         }
         self.board.persist().await?;
         Ok(conflict.map(|(other, path)| EditConflict { other, path }))
@@ -210,6 +234,28 @@ impl Topics {
         Ok(conflict.map(|(other, _)| other))
     }
 
+    /// 权限请求本身带路径时就记进改文件表：有的适配层只在这里给文件，工具调用通知里没有。
+    pub async fn claim(
+        &mut self,
+        key: &SessionKey,
+        paths: &[String],
+        now: SystemTime,
+    ) -> Result<()> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let now = stamp(now);
+        self.board.record_claims(key, paths, now);
+        if let Some(row) = self.board.row_mut(key) {
+            for path in paths {
+                if !row.files.contains(path) {
+                    row.files.push(path.clone());
+                }
+            }
+        }
+        self.board.persist().await
+    }
+
     /// 权限卡片有了结果、桥答复 ACP 之后调：把会话从“等你确认”放回“进行中”。
     pub async fn permission_settled(&mut self, key: &SessionKey) -> Result<()> {
         let changed = match self.board.row_mut(key) {
@@ -234,6 +280,7 @@ impl Topics {
         key: &SessionKey,
         last_reply: &str,
         now: SystemTime,
+        lang: Lang,
     ) -> Result<Option<String>> {
         let now = stamp(now);
         let Some(row) = self.board.row_mut(key) else {
@@ -243,7 +290,10 @@ impl Topics {
             return Ok(None);
         }
         row.summary = summary_lines(last_reply);
-        row.status = Status::Idle;
+        // 用户先结束了话题、这一轮还在跑：结论照记，状态保持已结束。
+        if row.status != Status::Finished {
+            row.status = Status::Idle;
+        }
         row.last_activity = now;
         let name = row.name.clone();
         let files = row.files.clone();
@@ -252,45 +302,76 @@ impl Topics {
         if !summary.is_empty() || !files.is_empty() {
             self.board.log_change(
                 key.clone(),
-                digest::turn_done_text(&name, &summary, &files),
+                digest::turn_done_text(&name, &summary, &files, lang),
                 false,
             );
         }
         let notice = key
             .is_topic()
-            .then(|| digest::finish_notice(&name, files.len()));
+            .then(|| digest::finish_notice(&name, files.len(), lang));
         self.board.persist().await?;
         Ok(notice)
+    }
+
+    /// 会话在聊天里用的名字（话题名，主对话是“主对话”）；工作板上没有这个会话时为空串。
+    pub fn name(&self, key: &SessionKey) -> String {
+        self.board
+            .row(key)
+            .map(|row| row.name.clone())
+            .unwrap_or_default()
+    }
+
+    /// 这个会话已经结束（主对话永远不结束）。
+    pub fn is_finished(&self, key: &SessionKey) -> bool {
+        self.board
+            .row(key)
+            .is_some_and(|row| row.status == crate::topics::board::Status::Finished)
+    }
+
+    /// 占着话题名额的会话数，用来在排队提示里说明前面还有几个。
+    pub fn active_topics(&self) -> usize {
+        self.board.active_topics()
     }
 
     /// 每轮开头、把用户这句话发给 Agent 之前调（在 [`Topics::turn_started`] 之前，
     /// 它读的是上一轮记下的序号）：其他会话从上一轮开始到现在的工作板变化。
     /// 没有变化返回 `None`，第 2 步就不用拼动态。
-    pub fn digest_for(&self, key: &SessionKey) -> Option<String> {
-        digest::digest(&self.board, key)
+    pub fn digest_for(&self, key: &SessionKey, lang: Lang) -> Option<String> {
+        digest::digest(&self.board, key, lang)
     }
 
     /// 话题第一条消息到达时调（在 [`Topics::turn_started`] 之前）：话题开局说明。
     /// `root` 是话题起点那条消息，`preceding` 是它之前的主对话消息，按时间先后；
     /// 超过 6 条只带最近的 6 条。排队的话题晋升后用它重新拼一次再发。
-    pub fn opening_for(&self, key: &SessionKey, root: &str, preceding: &[String]) -> String {
-        digest::opening(&self.board, key, root, preceding)
+    pub fn opening_for(
+        &self,
+        key: &SessionKey,
+        root: &str,
+        preceding: &[String],
+        lang: Lang,
+    ) -> String {
+        digest::opening(&self.board, key, root, preceding, lang)
     }
 
     /// 用户在话题里发 `/wonton end` 时调：把话题标成已结束。返回是否确实结束了一个
     /// 开着的话题（主对话或未知会话返回 `false`，第 2 步照实回话）。
-    pub async fn end(&mut self, key: &SessionKey, now: SystemTime) -> Result<bool> {
-        if limits::end(&mut self.board, key, stamp(now)) {
+    pub async fn end(&mut self, key: &SessionKey, now: SystemTime, lang: Lang) -> Result<bool> {
+        if limits::end(&mut self.board, key, stamp(now), lang) {
             self.board.persist().await?;
             return Ok(true);
         }
         Ok(false)
     }
 
-    /// 桥的空闲定时器里调：把空闲超过 30 分钟的话题判为结束，返回它们的会话键，
+    /// 桥的空闲定时器里调：把空闲超过 `ttl`（ADR-0058：30 分钟）的话题判为结束，返回它们的会话键，
     /// 第 2 步据此关 Agent 会话（支持 `session/close` 就关）并在话题里告知。
-    pub async fn sweep(&mut self, now: SystemTime) -> Result<Vec<SessionKey>> {
-        let ended = limits::sweep(&mut self.board, stamp(now));
+    pub async fn sweep(
+        &mut self,
+        now: SystemTime,
+        ttl: std::time::Duration,
+        lang: Lang,
+    ) -> Result<Vec<SessionKey>> {
+        let ended = limits::sweep(&mut self.board, stamp(now), ttl.as_millis() as u64, lang);
         if !ended.is_empty() {
             self.board.persist().await?;
         }

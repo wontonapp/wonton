@@ -9,12 +9,12 @@ async fn fake_agent_round_trip_sets_http_mcp_and_mode() {
         .await
         .unwrap();
     let session = bounded(
-        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan"),
+        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
         "session/new",
     )
     .await
     .unwrap();
-    assert_eq!(session, "session-1");
+    assert_eq!(session.session_id, "session-1");
     let result = bounded(
         client.prompt("session-1", "hi", 1024, Duration::from_secs(2), zh()),
         "prompt",
@@ -51,12 +51,12 @@ async fn agent_without_modes_gets_a_session_without_set_mode() {
         .await
         .unwrap();
     let session = bounded(
-        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan"),
+        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
         "session/new",
     )
     .await
     .unwrap();
-    assert_eq!(session, "session-1");
+    assert_eq!(session.session_id, "session-1");
     let requests = agent.requests().await;
     assert!(
         !requests

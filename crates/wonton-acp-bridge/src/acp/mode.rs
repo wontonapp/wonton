@@ -29,6 +29,44 @@ pub(super) fn request(
     ))
 }
 
+/// 话题想要“改前先问”的模式请求（ADR-0058）：Agent 自己报的出这个取值才切，否则返回
+/// `None`，由调用方退回配置的默认模式并在话题里如实说明。
+pub(super) fn topic_request(
+    session: &Value,
+    session_id: &str,
+    mode: &str,
+) -> Option<(&'static str, Value)> {
+    if !offers(session, mode) {
+        return None;
+    }
+    request(session, session_id, mode)
+}
+
+/// Agent 报出的模式取值里有没有 `mode`。`modes.availableModes` 和类别为 `mode` 的配置项
+/// 的 `options[].value` 是两种写法；两样都没有可选值表时不认。
+fn offers(session: &Value, mode: &str) -> bool {
+    let listed = session["modes"]["availableModes"]
+        .as_array()
+        .map(|modes| {
+            modes
+                .iter()
+                .any(|available| available["id"].as_str() == Some(mode))
+        })
+        .unwrap_or(false);
+    if listed {
+        return true;
+    }
+    session
+        .get("configOptions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|option| option["category"] == "mode")
+        .filter_map(|option| option["options"].as_array())
+        .flatten()
+        .any(|value| value["value"].as_str() == Some(mode))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

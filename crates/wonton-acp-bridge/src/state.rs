@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use crate::error::{Detail, Error, Result};
+use crate::topics::SessionKey;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SessionRecord {
@@ -14,9 +15,10 @@ pub struct SessionRecord {
     pub cwd: String,
 }
 
+/// 房间和会话键（主对话 `main`，话题是根消息事件 ID）到 ACP 会话的映射，重启后恢复。
 pub struct SessionStore {
     path: PathBuf,
-    records: Mutex<BTreeMap<String, SessionRecord>>,
+    records: Mutex<BTreeMap<String, BTreeMap<String, SessionRecord>>>,
 }
 
 impl SessionStore {
@@ -44,32 +46,44 @@ impl SessionStore {
         })
     }
 
-    pub async fn get(&self, room_id: &str) -> Option<SessionRecord> {
-        self.records.lock().await.get(room_id).cloned()
-    }
-
-    pub async fn set(&self, room_id: String, record: SessionRecord) -> Result<()> {
-        let mut records = self.records.lock().await;
-        records.insert(room_id, record);
-        self.persist(&records).await
-    }
-
-    pub async fn remove(&self, room_id: &str) -> Result<()> {
-        let mut records = self.records.lock().await;
-        records.remove(room_id);
-        self.persist(&records).await
-    }
-
-    async fn persist(&self, records: &BTreeMap<String, SessionRecord>) -> Result<()> {
-        let bytes = serde_json::to_vec_pretty(records).map_err(|error| {
-            Error::Upstream(Detail::data(format!("编码桥会话映射失败：{error}")))
-        })?;
-        let temp = self.path.with_extension("tmp");
-        tokio::fs::write(&temp, bytes)
+    pub async fn get(&self, room_id: &str, key: &SessionKey) -> Option<SessionRecord> {
+        self.records
+            .lock()
             .await
-            .map_err(|error| Error::Upstream(Detail::data(format!("写桥会话映射失败：{error}"))))?;
-        tokio::fs::rename(&temp, &self.path)
-            .await
-            .map_err(|error| Error::Upstream(Detail::data(format!("替换桥会话映射失败：{error}"))))
+            .get(room_id)
+            .and_then(|room| room.get(key.storage_key()))
+            .cloned()
     }
+
+    pub async fn set(&self, room_id: &str, key: &SessionKey, record: SessionRecord) -> Result<()> {
+        let mut records = self.records.lock().await;
+        records
+            .entry(room_id.to_owned())
+            .or_default()
+            .insert(key.storage_key().to_owned(), record);
+        persist(&self.path, &records).await
+    }
+
+    pub async fn remove(&self, room_id: &str, key: &SessionKey) -> Result<()> {
+        let mut records = self.records.lock().await;
+        if let Some(room) = records.get_mut(room_id) {
+            room.remove(key.storage_key());
+        }
+        persist(&self.path, &records).await
+    }
+}
+
+async fn persist(
+    path: &Path,
+    records: &BTreeMap<String, BTreeMap<String, SessionRecord>>,
+) -> Result<()> {
+    let bytes = serde_json::to_vec_pretty(records)
+        .map_err(|error| Error::Upstream(Detail::data(format!("编码桥会话映射失败：{error}"))))?;
+    let temp = path.with_extension("tmp");
+    tokio::fs::write(&temp, bytes)
+        .await
+        .map_err(|error| Error::Upstream(Detail::data(format!("写桥会话映射失败：{error}"))))?;
+    tokio::fs::rename(&temp, path)
+        .await
+        .map_err(|error| Error::Upstream(Detail::data(format!("替换桥会话映射失败：{error}"))))
 }

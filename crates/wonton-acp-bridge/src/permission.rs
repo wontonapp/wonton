@@ -22,13 +22,31 @@ const REQUEST_GRACE_SECS: u64 = 5;
 pub struct PendingPermission {
     pub request: AgentPermissionRequest,
     pub option_ids: HashMap<String, String>,
+    /// 工具调用带的文件路径（ACP `locations[].path`），用来查和别的会话的冲突。
+    pub locations: Vec<String>,
+    /// 工具类别（ACP `toolCall.kind`）；查冲突只看 edit/delete/move。
+    pub kind: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PermissionResult {
-    Selected { option_id: String },
+    Selected {
+        option_id: String,
+        /// 拒绝时给 Agent 的理由，随应答的 `_meta.reason` 一起发。
+        reason: Option<String>,
+    },
     Cancelled,
     Expired,
+}
+
+impl PermissionResult {
+    /// 只选了一项、没有附加理由。
+    pub fn selected(option_id: String) -> Self {
+        Self::Selected {
+            option_id,
+            reason: None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -113,7 +131,7 @@ impl PermissionBroker {
                 .option_ids
                 .get(&choice_id)
                 .cloned()
-                .map(|option_id| PermissionResult::Selected { option_id })
+                .map(PermissionResult::selected)
                 .unwrap_or(PermissionResult::Cancelled),
             AgentPermissionOutcome::Cancelled => PermissionResult::Cancelled,
             AgentPermissionOutcome::Expired => PermissionResult::Expired,
@@ -138,6 +156,25 @@ pub fn parse_pending(params: &Value, lang: Lang) -> Result<PendingPermission> {
         .get("rawInput")
         .filter(|value| !value.is_null())
         .map(|value| redact_secrets(value, lang));
+    let mut locations: Vec<String> = tool_call["locations"]
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item["path"].as_str().filter(|path| !path.is_empty()))
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    // 有的适配层不带 locations，只在参数里给文件路径（如 Claude 的 file_path）。
+    if locations.is_empty() {
+        locations = ["file_path", "path", "notebook_path"]
+            .iter()
+            .filter_map(|field| tool_call["rawInput"][field].as_str())
+            .filter(|path| !path.is_empty())
+            .map(str::to_owned)
+            .collect();
+    }
     let mut options = Vec::new();
     let mut option_ids = HashMap::new();
     let mut seen_option_ids = HashSet::new();
@@ -179,6 +216,8 @@ pub fn parse_pending(params: &Value, lang: Lang) -> Result<PendingPermission> {
             options,
         },
         option_ids,
+        locations,
+        kind: tool_call["kind"].as_str().map(str::to_owned),
     })
 }
 
@@ -253,6 +292,8 @@ mod tests {
                 }],
             },
             option_ids: HashMap::from([(String::from("acp-0"), String::from("allow_once"))]),
+            locations: Vec::new(),
+            kind: None,
         }
     }
 
@@ -317,6 +358,7 @@ mod tests {
                     "toolCallId": "call-1",
                     "title": "运行命令",
                     "kind": "execute",
+                    "locations": [{"path": "src/a.rs"}],
                     "rawInput": {"command": "echo hi", "api_token": "secret"}
                 },
                 "options": [
@@ -329,6 +371,8 @@ mod tests {
         .unwrap();
         assert_eq!(pending.request.options[0].choice_id, "acp-0");
         assert_eq!(pending.option_ids["acp-1"], "reject_once");
+        assert_eq!(pending.locations, ["src/a.rs"]);
+        assert_eq!(pending.kind.as_deref(), Some("execute"));
         assert_eq!(
             pending.request.arguments.as_ref().unwrap()["api_token"],
             "[已隐藏]"
@@ -342,7 +386,8 @@ mod tests {
         assert_eq!(
             result.unwrap(),
             PermissionResult::Selected {
-                option_id: "allow_once".into()
+                option_id: "allow_once".into(),
+                reason: None,
             }
         );
         assert!(request.contains("\"tool_call_id\":\"call-1\""));

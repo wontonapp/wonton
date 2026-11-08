@@ -6,8 +6,10 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use wonton_l10n::Lang;
 
 use crate::error::{Detail, Error, Result};
+use crate::l10n::text;
 use crate::topics::SessionKey;
 use crate::topics::claims;
 use crate::topics::claims::Claim;
@@ -33,14 +35,15 @@ pub(crate) enum Status {
 }
 
 impl Status {
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Status::Working => "进行中",
-            Status::WaitingApproval => "等你确认",
-            Status::Idle => "空闲",
-            Status::Finished => "已结束",
-            Status::Queued => "排队中",
-        }
+    pub(crate) fn label(self, lang: Lang) -> String {
+        let id = match self {
+            Status::Working => "status-working",
+            Status::WaitingApproval => "status-waiting",
+            Status::Idle => "status-idle",
+            Status::Finished => "status-finished",
+            Status::Queued => "status-queued",
+        };
+        text(lang, id, &[])
     }
 
     /// 是否占话题名额：开着的话题（含空闲）占，排队和已结束的不占。

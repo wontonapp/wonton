@@ -94,7 +94,7 @@ async fn url_login_completes_through_chat_commands() {
             .unwrap(),
     );
     let error = bounded(
-        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan"),
+        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
         "gated session",
     )
     .await
@@ -174,12 +174,12 @@ async fn url_login_completes_through_chat_commands() {
     assert!(!reconnect);
 
     let session = bounded(
-        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan"),
+        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
         "session after login",
     )
     .await
     .unwrap();
-    assert_eq!(session, "session-1");
+    assert_eq!(session.session_id, "session-2");
     drop(client);
     agent.finish().await;
 }
@@ -194,7 +194,7 @@ async fn terminal_login_forwards_code_and_reconnects() {
             .unwrap(),
     );
     let error = bounded(
-        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan"),
+        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
         "gated session",
     )
     .await
@@ -259,12 +259,12 @@ async fn terminal_login_forwards_code_and_reconnects() {
         .await
         .unwrap();
     let session = bounded(
-        reconnected.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan"),
+        reconnected.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
         "session after reconnect",
     )
     .await
     .unwrap();
-    assert_eq!(session, "session-1");
+    assert_eq!(session.session_id, "session-1");
     drop(reconnected);
     drop(client);
     agent.finish().await;

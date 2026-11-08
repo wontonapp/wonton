@@ -1,12 +1,14 @@
 //! 房间主人：`m.room.create` 的发送者是本服务器上的人、又不是这个 Bot 时就是他，
 //! 否则是 Bot 的主人。取不到创建事件按 Bot 的主人算。
 
-use wonton_matrix::{ChatRoom, OwnedUserId, UserId};
+use wonton_matrix::{OwnedUserId, UserId};
+
+use crate::room::Room;
 
 /// 房间主人：`m.room.create` 的发送者是本服务器上的人、又不是这个 Bot 时就是他，
 /// 否则是 Bot 的主人。取不到创建事件或发送者按 Bot 的主人算。
-pub(crate) async fn room_owner(room: &ChatRoom, bot: &UserId, bot_owner: &UserId) -> OwnedUserId {
-    let created = match room.fetch_state_event("m.room.create", "").await {
+pub(crate) async fn room_owner(room: &impl Room, bot: &UserId, bot_owner: &UserId) -> OwnedUserId {
+    let created = match room.created().await {
         Ok(created) => created,
         Err(error) => {
             tracing::warn!(error = %error, "can't read the room's create event; treating the bot owner as the room owner");

@@ -12,6 +12,10 @@ pub struct Limits {
     pub max_queue: usize,
     pub turn_timeout: Duration,
     pub idle_timeout: Duration,
+    /// 空闲定时器的周期。
+    pub idle_tick: Duration,
+    /// 话题空闲多久判结束（ADR-0058：30 分钟）。
+    pub topic_idle: Duration,
 }
 
 #[derive(Clone, Debug)]
@@ -26,6 +30,8 @@ pub struct Config {
     pub workspace: String,
     pub mcp_url: String,
     pub mode: String,
+    /// 话题会话想切的“改前先问”模式（ADR-0058）；Agent 报不出这个取值时退回 `mode`。
+    pub topic_mode: Option<String>,
     pub limits: Limits,
 }
 
@@ -58,12 +64,17 @@ impl Config {
                 .unwrap_or_else(|_| "/workspace".into()),
             mcp_url,
             mode: std::env::var("WONTON_ACP_MODE").unwrap_or_else(|_| "plan".into()),
+            topic_mode: std::env::var("WONTON_ACP_TOPIC_MODE")
+                .ok()
+                .filter(|mode| !mode.trim().is_empty()),
             limits: Limits {
                 max_input_bytes: env_usize("WONTON_ACP_MAX_INPUT_BYTES", 16 * 1024)?,
                 max_output_bytes: env_usize("WONTON_ACP_MAX_OUTPUT_BYTES", 64 * 1024)?,
                 max_queue: env_usize("WONTON_ACP_MAX_QUEUE", 8)?,
                 turn_timeout: Duration::from_secs(env_u64("WONTON_ACP_TURN_SECONDS", 10 * 60)?),
                 idle_timeout: Duration::from_secs(env_u64("WONTON_ACP_IDLE_SECONDS", 10 * 60)?),
+                idle_tick: Duration::from_secs(env_u64("WONTON_ACP_IDLE_TICK_SECONDS", 30)?),
+                topic_idle: Duration::from_secs(env_u64("WONTON_ACP_TOPIC_IDLE_SECONDS", 30 * 60)?),
             },
         })
     }

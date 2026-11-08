@@ -7,6 +7,8 @@ pub struct IncomingText {
     pub text: String,
     /// 这条消息的事件 ID；撤回（如转交登录密钥后）要用它。
     pub event_id: String,
+    /// 所属话题的根消息事件 ID；在主对话里发的消息是 `None`。
+    pub thread_root: Option<String>,
 }
 
 pub fn new_owner_messages(
@@ -25,6 +27,7 @@ pub fn new_owner_messages(
                 return None;
             }
             let event_id = message.event_id.as_ref()?.to_string();
+            let thread_root = message.thread_root.as_ref().map(ToString::to_string);
             if !seen.insert(event_id.clone()) {
                 return None;
             }
@@ -32,6 +35,7 @@ pub fn new_owner_messages(
                 return Some(IncomingText {
                     text: String::new(),
                     event_id,
+                    thread_root,
                 });
             };
             // 群里有别的 Bot，命令要由主人点名本 Bot；私聊不用。
@@ -44,6 +48,7 @@ pub fn new_owner_messages(
             Some(IncomingText {
                 text: text.clone(),
                 event_id,
+                thread_root,
             })
         })
         .collect()

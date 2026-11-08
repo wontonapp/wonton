@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{UnixStream, unix::OwnedReadHalf},
-    sync::{Mutex, broadcast, oneshot, watch},
+    sync::{Mutex, broadcast, mpsc, oneshot, watch},
 };
 
 use wonton_l10n::Lang;
@@ -21,11 +21,13 @@ use crate::{
     config::MAX_FRAME_BYTES,
     error::{Detail, Error, Result},
     l10n::default_lang,
-    permission::{PermissionBroker, PermissionResult, parse_pending},
+    permission::{PendingPermission, PermissionBroker, PermissionResult, parse_pending},
 };
 
 pub mod auth;
 mod mode;
+mod permissions;
+use permissions::PermissionWaiter;
 mod rpc_error;
 mod updates;
 use auth::{AuthMethod, AuthRequests, parse_auth_methods};
@@ -66,6 +68,22 @@ pub struct PromptResult {
     pub output_limited: bool,
 }
 
+/// `session/new` 的结果：会话 ID，以及话题想要的“改前先问”模式有没有生效。
+#[derive(Debug)]
+pub struct NewSession {
+    pub session_id: String,
+    pub ask_before_edit: bool,
+}
+
+/// 桥接层接管一次权限请求的机会：Agent 发来 `session/request_permission`，ACP 把它连同
+/// 应答通道交给会话注册的接管方（桥要查文件冲突、可能要等另一轮结束才答复）。
+/// 没有接管方，或接管方已经关闭时，ACP 直接问核心的确认卡片。
+pub struct PermissionAsk {
+    pub session_id: String,
+    pub pending: PendingPermission,
+    pub reply: oneshot::Sender<Result<PermissionResult>>,
+}
+
 struct PendingGuard {
     inner: Arc<Inner>,
     id: u64,
@@ -95,6 +113,7 @@ struct Inner {
     pending: Mutex<HashMap<u64, oneshot::Sender<std::result::Result<Value, RpcError>>>>,
     notices: broadcast::Sender<AgentNotice>,
     permission_broker: PermissionBroker,
+    permission_hooks: Mutex<HashMap<String, mpsc::Sender<PermissionAsk>>>,
     permission_waiters: Mutex<HashMap<String, PermissionWaiter>>,
     tool_calls: Mutex<HashMap<(String, String), Value>>,
     old_message_ids: Mutex<HashMap<String, HashSet<String>>>,
@@ -105,10 +124,6 @@ struct Inner {
     auth: AuthRequests,
 }
 
-struct PermissionWaiter {
-    session_id: String,
-    cancel: oneshot::Sender<()>,
-}
 #[derive(Clone)]
 pub struct AcpClient {
     inner: Arc<Inner>,
@@ -135,6 +150,7 @@ impl AcpClient {
             pending: Mutex::new(HashMap::new()),
             notices,
             permission_broker,
+            permission_hooks: Mutex::new(HashMap::new()),
             permission_waiters: Mutex::new(HashMap::new()),
             tool_calls: Mutex::new(HashMap::new()),
             old_message_ids: Mutex::new(HashMap::new()),
@@ -176,6 +192,10 @@ impl AcpClient {
         })
     }
 
+    pub fn broker(&self) -> PermissionBroker {
+        self.inner.permission_broker.clone()
+    }
+
     pub fn capabilities(&self) -> &Capabilities {
         &self.capabilities
     }
@@ -188,7 +208,33 @@ impl AcpClient {
         self.inner.notices.subscribe()
     }
 
-    pub async fn new_session(&self, cwd: &str, mcp_url: &str, mode: &str) -> Result<String> {
+    /// 让桥接层接管这个会话的权限请求；同一个会话重复注册时后者生效。
+    pub async fn register_permissions(
+        &self,
+        session_id: &str,
+        sender: mpsc::Sender<PermissionAsk>,
+    ) {
+        self.inner
+            .permission_hooks
+            .lock()
+            .await
+            .insert(session_id.to_owned(), sender);
+    }
+
+    /// 会话关闭或不再归这一层管时调用；之后的权限请求直接走确认卡片。
+    pub async fn unregister_permissions(&self, session_id: &str) {
+        self.inner.permission_hooks.lock().await.remove(session_id);
+    }
+
+    /// 建会话并切模式。`topic` 时先试 `ask_mode`（“改前先问”，ADR-0058），Agent 报不出
+    /// 这个取值就退回 `mode`，由调用方在话题里如实说明。
+    pub async fn new_session(
+        &self,
+        cwd: &str,
+        mcp_url: &str,
+        mode: &str,
+        ask_mode: Option<&str>,
+    ) -> Result<NewSession> {
         if !self.capabilities.mcp_http {
             return Err(Error::AgentNotReady(Detail::msg("acp-no-http-mcp")));
         }
@@ -212,7 +258,14 @@ impl AcpClient {
             .as_str()
             .ok_or_else(|| Error::AgentNotReady(Detail::msg("acp-no-session-id")))?
             .to_owned();
-        match mode::request(&result, &session_id, mode) {
+        let asked = ask_mode.and_then(|asked| {
+            mode::topic_request(&result, &session_id, asked).map(|request| (request, asked))
+        });
+        let (request, mode, ask_before_edit) = match asked {
+            Some((request, asked)) => (Some(request), asked, true),
+            None => (mode::request(&result, &session_id, mode), mode, false),
+        };
+        match request {
             Some((method, params)) => {
                 self.request(method, params)
                     .await
@@ -220,7 +273,10 @@ impl AcpClient {
             }
             None => tracing::info!(mode, "Agent 不分工作模式，跳过切换"),
         }
-        Ok(session_id)
+        Ok(NewSession {
+            session_id,
+            ask_before_edit,
+        })
     }
 
     pub async fn load_or_resume(&self, session_id: &str, cwd: &str, mcp_url: &str) -> Result<()> {
@@ -281,7 +337,7 @@ impl AcpClient {
         if !self.capabilities.close {
             return Ok(());
         }
-        self.cancel_permissions(session_id).await;
+        permissions::cancel_session(&self.inner, session_id).await;
         self.request("session/close", json!({"sessionId": session_id}))
             .await
             .map_err(|error| Error::Upstream(rpc_detail(&error)))?;
@@ -289,7 +345,7 @@ impl AcpClient {
     }
 
     pub async fn cancel(&self, session_id: &str) -> Result<()> {
-        self.cancel_permissions(session_id).await;
+        permissions::cancel_session(&self.inner, session_id).await;
         self.inner
             .cancelled_sessions
             .lock()
@@ -412,6 +468,7 @@ impl AcpClient {
             }
         }
     }
+
     /// 取消这一轮：等响应落定（最多一秒）、把通知收干净、记住消息 ID；响应已带回时清掉取消标记。
     async fn cancel_and_settle(
         &self,
@@ -435,19 +492,6 @@ impl AcpClient {
         }
     }
 
-    async fn cancel_permissions(&self, session_id: &str) {
-        let mut waiters = self.inner.permission_waiters.lock().await;
-        let keys = waiters
-            .iter()
-            .filter(|(_, waiter)| waiter.session_id == session_id)
-            .map(|(key, _)| key.clone())
-            .collect::<Vec<_>>();
-        for key in keys {
-            if let Some(waiter) = waiters.remove(&key) {
-                let _ = waiter.cancel.send(());
-            }
-        }
-    }
     async fn clear_cancelled(&self, session_id: &str) {
         self.inner
             .cancelled_sessions
@@ -570,7 +614,7 @@ async fn handle_request(inner: &Arc<Inner>, message: &Value) {
         return;
     }
     if method == "$/cancel_request" {
-        cancel_permission_request(inner, &message["params"]["requestId"]).await;
+        permissions::cancel_request(inner, &message["params"]["requestId"]).await;
         inner.auth.cancel(&message["params"]["requestId"]).await;
         return;
     }
@@ -581,7 +625,7 @@ async fn handle_request(inner: &Arc<Inner>, message: &Value) {
         "session/request_permission" => {
             let inner = inner.clone();
             let request = message.clone();
-            tokio::spawn(async move { handle_permission_request(inner, id, request).await });
+            tokio::spawn(async move { permissions::handle_request(inner, id, request).await });
         }
         "elicitation/create" => {
             tokio::spawn(auth::elicit(inner.clone(), id, message["params"].clone()));
@@ -631,85 +675,6 @@ fn merge_json(target: &mut Value, patch: &Value) {
             continue;
         }
         target.insert(key.clone(), value.clone());
-    }
-}
-
-async fn handle_permission_request(inner: Arc<Inner>, id: Value, message: Value) {
-    let session_id = message["params"]["sessionId"]
-        .as_str()
-        .unwrap_or_default()
-        .to_owned();
-    let mut params = message["params"].clone();
-    merge_permission_tool_call(&inner, &session_id, &mut params).await;
-    let lang = lang_for(&inner, &session_id).await;
-    let pending = match parse_pending(&params, lang) {
-        Ok(pending) => pending,
-        Err(error) => {
-            send_result(&inner, &id, json!({"outcome": {"outcome": "cancelled"}})).await;
-            let _ = inner.notices.send(AgentNotice::PermissionFailed {
-                session_id,
-                detail: permission_detail(&error),
-            });
-            return;
-        }
-    };
-    let key = id_key(&id);
-    let (cancel_tx, cancel_rx) = oneshot::channel();
-    inner.permission_waiters.lock().await.insert(
-        key.clone(),
-        PermissionWaiter {
-            session_id: session_id.clone(),
-            cancel: cancel_tx,
-        },
-    );
-    let result = tokio::select! {
-        result = inner.permission_broker.ask(pending) => result,
-        _ = cancel_rx => Ok(PermissionResult::Cancelled),
-    };
-    inner.permission_waiters.lock().await.remove(&key);
-    match result {
-        Ok(PermissionResult::Selected { option_id }) => {
-            send_result(
-                &inner,
-                &id,
-                json!({"outcome": {"outcome": "selected", "optionId": option_id}}),
-            )
-            .await;
-        }
-        Ok(PermissionResult::Cancelled) | Ok(PermissionResult::Expired) => {
-            send_result(&inner, &id, json!({"outcome": {"outcome": "cancelled"}})).await;
-            let _ = inner
-                .notices
-                .send(AgentNotice::PermissionCancelled { session_id });
-        }
-        Err(error) => {
-            send_result(&inner, &id, json!({"outcome": {"outcome": "cancelled"}})).await;
-            let _ = inner.notices.send(AgentNotice::PermissionFailed {
-                session_id,
-                detail: permission_detail(&error),
-            });
-        }
-    }
-}
-
-async fn merge_permission_tool_call(inner: &Arc<Inner>, session_id: &str, params: &mut Value) {
-    let Some(tool_call_id) = params["toolCall"]["toolCallId"].as_str() else {
-        return;
-    };
-    let key = (session_id.to_owned(), tool_call_id.to_owned());
-    let calls = inner.tool_calls.lock().await;
-    let Some(previous) = calls.get(&key) else {
-        return;
-    };
-    let mut merged = previous.clone();
-    merge_json(&mut merged, &params["toolCall"]);
-    params["toolCall"] = merged;
-}
-
-async fn cancel_permission_request(inner: &Arc<Inner>, request_id: &Value) {
-    let key = id_key(request_id);
-    if let Some(waiter) = inner.permission_waiters.lock().await.remove(&key) {
-        let _ = waiter.cancel.send(());
     }
 }
 

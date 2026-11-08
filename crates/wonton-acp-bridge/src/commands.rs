@@ -29,7 +29,7 @@ pub trait CommandSink {
 /// 桥自己的命令名，永远排第一。
 const OWN_NAME: &str = "wonton";
 /// 子命令名（匹配用，不翻译）；参数写法在 `cmd-hint` 的译文里。
-const SUBCOMMANDS: [&str; 4] = ["login", "interrupt", "queue", "steer"];
+const SUBCOMMANDS: [&str; 5] = ["login", "end", "interrupt", "queue", "steer"];
 
 /// `/wonton` 的帮助文字，也让 `/wonton` 出现在菜单里时能照抄。
 /// 各条来自 `cmd-hint` 的 “ | ” 分隔。
