@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use super::core_address;
@@ -42,7 +44,8 @@ pub struct MatrixVars {
     pub homeserver: String,
     pub user_id: String,
     pub access_token: String,
-    pub owner: String,
+    /// `WONTON_MATRIX_ALLOWED_USERS`：逗号分隔的 Matrix 用户 ID，Bot 只听这些人的话（ADR-0045）。
+    pub allowed_users: String,
     pub home_room: String,
 }
 
@@ -51,7 +54,7 @@ impl std::fmt::Debug for MatrixVars {
         f.debug_struct("MatrixVars")
             .field("homeserver", &self.homeserver)
             .field("user_id", &self.user_id)
-            .field("owner", &self.owner)
+            .field("allowed_users", &self.allowed_users)
             .field("home_room", &self.home_room)
             .finish_non_exhaustive()
     }
@@ -66,8 +69,8 @@ pub struct ModelVars {
     pub gemini_url: Option<String>,
     /// 插件级的凭据（凭据名是插件 `id`），全插件一份的服务用。
     pub plugin_key: Option<String>,
-    /// 默认 Bot 的凭据（`<id>/default`），声明了 `bots` 时 Bot 服务用。
-    pub bot_key: Option<String>,
+    /// 每个 Bot 的凭据（凭据名 `<id>/<Bot 名>`，键是 Bot 名），声明了 `bots` 时 Bot 服务用。
+    pub bot_keys: BTreeMap<String, String>,
     pub default_model: String,
 }
 
@@ -165,7 +168,7 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
         set("WONTON_MATRIX_HOMESERVER", matrix.homeserver.clone());
         set("WONTON_MATRIX_USER_ID", matrix.user_id.clone());
         set("WONTON_MATRIX_ACCESS_TOKEN", matrix.access_token.clone());
-        set("WONTON_MATRIX_OWNER", matrix.owner.clone());
+        set("WONTON_MATRIX_ALLOWED_USERS", matrix.allowed_users.clone());
         set("WONTON_MATRIX_HOME_ROOM", matrix.home_room.clone());
     }
     vars

@@ -42,7 +42,10 @@ fn a_service_cannot_take_the_name_of_a_system_service_or_another_plugins_contain
 /// Bot 服务多一个别名 `<服务名>-default`：不能和别的插件的容器名 `wonton-app-b--default` 一样。
 #[test]
 fn a_generated_alias_cannot_take_the_name_of_another_plugins_container() {
-    assert_eq!(bot_alias("wonton-app-b-"), "wonton-app-b--default");
+    assert_eq!(
+        bot_alias("wonton-app-b-", "default"),
+        "wonton-app-b--default"
+    );
 
     let bot = package(
         "  wonton-app-b-:\n    image: hermes",

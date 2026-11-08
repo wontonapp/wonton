@@ -355,10 +355,12 @@ impl PluginManager {
         };
         let bind: Vec<IpAddr> = plan.bind.iter().map(|bound| bound.ip).collect();
         let grant = self.lan_grant_on(package, record.lan_webui, bind, plan.announce.clone());
-        let ctx = self
+        let mut ctx = self
             .rebuild_context(package, record, Some(grant), pending.as_ref())
             .await?;
         let langs = self.owner_languages();
+        // Bot 的 Matrix 变量和总线地址也要填：Bot 服务的容器引用了它们，令牌从旧容器读回。
+        self.fill_bot_vars(package, &mut ctx, &langs).await?;
         let mut render_plan = render(package, &ctx, &langs)?;
         match (&pending, reservation) {
             (Some(pending), Some(reservation)) => {

@@ -71,9 +71,9 @@ pub struct UninstallReport {
     pub data_removed: bool,
     /// 没有配置身份提供方时为空。
     pub oidc_client_removed: Option<bool>,
-    /// 插件有 Bot 时：吊销了它的设备，删除数据时还停用了账号。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bot: Option<BotReport>,
+    /// 插件有 Bot 时：吊销了它们的设备，删除数据时还停用了账号。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub bots: Vec<BotReport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -12,7 +12,6 @@ use wonton_protocol::InstallStage;
 
 use super::super::bots::is_bot;
 use super::super::compose::PullPolicy;
-use super::super::egress::cannot_read;
 use super::super::gpu::GpuGrant;
 use super::super::health;
 use super::super::lan::LanGrant;
@@ -27,11 +26,12 @@ use super::super::manager::{
 use super::super::manifest::{Manifest, Permission, PluginId, PluginKind};
 use super::super::package::PluginPackage;
 use super::super::proxy_auth::ProxyAuth;
+use wonton_protocol::BotKeeper;
+
 use super::super::render::{Deployment, InstallContext, dry_run, render};
 use super::super::secrets::{self, Secrets};
 use super::super::store::{EnabledPermission, InstalledRecord};
 use super::super::upstreams::{core_aliases, uses_sso};
-use super::super::vars::MatrixVars;
 use super::{installed_package, newer};
 use crate::l10n;
 use crate::secret::random_token;
@@ -308,7 +308,8 @@ impl PluginManager {
         let package = installed_package(&record, &langs)?;
         let lan = self.lan_grant(&package, record.lan_webui, &langs).await?;
         let mut ctx = self.rebuild_context(&package, &record, lan, None).await?;
-        ctx.matrix = self.bot_vars_read_back(&package, &ctx, &langs).await?;
+        // Bot 的 Matrix 变量和总线地址也要填：Bot 服务的容器引用了它们，令牌从旧容器读回。
+        self.fill_bot_vars(&package, &mut ctx, &langs).await?;
         let plan = render(&package, &ctx, &langs)?;
         let mut images = HashMap::new();
         for container in &plan.containers {
@@ -372,6 +373,7 @@ impl PluginManager {
             &self.engine,
             &self.cfg.instance,
             manifest,
+            &self.bot_names(&manifest.id),
             &mut secrets,
             &langs,
         )
@@ -388,8 +390,8 @@ impl PluginManager {
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &network)
             .await;
-        if let Some((_, bot)) = &progress.undo.bot {
-            progress.undo.handed_over = self.hand_over_home_room(bot).await?;
+        if let Some((_, _, bot)) = &progress.undo.bot {
+            progress.undo.handed_over = self.hand_over_home_room(&self.cfg.owner, bot).await?;
         }
         self.store.save(&InstalledRecord {
             id: manifest.id.clone(),
@@ -453,12 +455,36 @@ impl PluginManager {
         ctx.limits = old.record.limits;
         ctx.gpu = gpu;
         ctx.lan = lan;
-        ctx.matrix = self
-            .upgrade_bot(old, package, &mut progress.undo, &langs)
-            .await?;
+        // 新版本才接入 Matrix 的插件：先代 Bot 登录新设备，模型凭据签发后再把变量填进上下文。
+        let mut new_bot = None;
+        if is_bot(manifest) && !is_bot(&old.package.manifest) {
+            let keeper = BotKeeper::User {
+                username: self.cfg.owner.clone(),
+            };
+            let bot = self
+                .provision_bot(
+                    &manifest.id,
+                    manifest,
+                    super::super::bot_services::DEFAULT_BOT,
+                    keeper,
+                    package,
+                )
+                .await?;
+            progress.undo.bot = Some((
+                manifest.id.clone(),
+                super::super::bot_services::DEFAULT_BOT.to_owned(),
+                bot.clone(),
+            ));
+            new_bot = Some(bot);
+        }
         ctx.models = self
             .upgrade_model_vars(package, &mut progress.added_models, &langs)
             .await?;
+        if let Some(bot) = new_bot {
+            self.fill_default_bot_vars(manifest, &bot, &mut ctx);
+        } else {
+            self.fill_bot_vars(package, &mut ctx, &langs).await?;
+        }
         let mut plan = render(package, &ctx, &langs)?;
         self.prepare_images(&mut plan, Some(&manifest.id), &langs)
             .await?;
@@ -487,39 +513,6 @@ impl PluginManager {
             oidc_secret,
             pulled: plan,
         })
-    }
-
-    /// 新版本的 Matrix 变量。原来就是 Bot 的沿用账号和设备；新版本才申请 `matrix.bot` 的才签发。
-    async fn upgrade_bot(
-        &self,
-        old: &Old,
-        package: &PluginPackage,
-        undo: &mut Undo,
-        langs: &Languages,
-    ) -> Result<Option<MatrixVars>, InstallError> {
-        let manifest = &package.manifest;
-        if !is_bot(manifest) {
-            return Ok(None);
-        }
-        if is_bot(&old.package.manifest) {
-            let vars = old.ctx.matrix.clone();
-            if vars.as_ref().is_none_or(|v| v.access_token.is_empty()) {
-                return Err(cannot_read(
-                    langs,
-                    l10n::text(langs, "plugin-settings-egress-token-not-used", &[]),
-                ));
-            }
-            if let Some(vars) = &vars {
-                self.fill_default_avatars(package, &vars.user_id).await?;
-            }
-            return Ok(vars);
-        }
-        let Some(bot) = self.provision_bot(package).await? else {
-            return Ok(None);
-        };
-        let vars = self.matrix_vars(&bot);
-        undo.bot = Some((manifest.id.clone(), bot));
-        Ok(Some(vars))
     }
 
     /// 删掉这个插件所有的容器，包括新版本不要了的服务的。
@@ -711,7 +704,7 @@ impl PluginManager {
         }
         if is_bot(was)
             && !is_bot(manifest)
-            && let Err(e) = self.remove_bot(id, false).await
+            && let Err(e) = self.deactivate_bots(id, false).await
         {
             tracing::warn!(plugin = %id, error = %e, "吊销新版本不用的 Bot 设备失败");
         }

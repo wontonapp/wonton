@@ -9,7 +9,7 @@ use wonton_matrix::Message;
 
 use super::{HISTORY_MAX, Room, RoomState, TurnContext, turns};
 use crate::error::Result;
-use crate::matrix::new_owner_messages;
+use crate::matrix::new_allowed_messages;
 use crate::topics::{SessionKey, Topics};
 
 /// 开局最多带的话题起点之前的主对话消息条数（ADR-0058）。
@@ -22,9 +22,9 @@ pub(super) async fn route_owner_messages<R: Room>(
     messages: &[Message],
     seen: &mut HashSet<String>,
 ) -> Result<()> {
-    for incoming in new_owner_messages(
+    for incoming in new_allowed_messages(
         messages,
-        &context.bridge.config.owner,
+        &context.bridge.config.allowed_users,
         &context.bridge.bot,
         context.group,
         seen,

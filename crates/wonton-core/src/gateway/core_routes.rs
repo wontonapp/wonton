@@ -15,7 +15,7 @@ use crate::l10n;
 
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
-    Gateway, TunnelPeer, api, confirmations, core_upgrade, devices, family, files, isolation,
+    Gateway, TunnelPeer, api, bots, confirmations, core_upgrade, devices, family, files, isolation,
     matrix, me, model_providers, onboarding, pages, peers, push, same_origin_path, settings_api,
     sso, store_api, tool_policy, with_cookie,
 };
@@ -200,6 +200,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             &wonton_protocol::bot_profile_path("{id}"),
             put(super::bot_profile::save),
         )
+        .route(wonton_protocol::SHARED_BOTS_PATH, post(bots::create_shared))
         .route(
             "/_wonton/api/lan",
             get(settings_api::lan).put(settings_api::set_lan),
@@ -282,10 +283,6 @@ fn member_routes() -> Router<Arc<Gateway>> {
         .route(
             "/_wonton/api/members/{username}/remove",
             post(family::remove),
-        )
-        .route(
-            wonton_protocol::SHARED_BOTS_PATH,
-            post(family::new_shared_bot),
         )
         .route(
             "/_wonton/api/plugins/{id}/family",

@@ -26,6 +26,7 @@ mod api_switch;
 mod auth;
 mod bot_activity;
 mod bot_profile;
+mod bots;
 mod confirmations;
 mod core_routes;
 mod core_upgrade;
@@ -306,6 +307,18 @@ impl Gateway {
 
     fn check_owner_token(&self, token: &str) -> bool {
         constant_time_eq(token.trim(), &self.owner_token)
+    }
+
+    /// 访问令牌是谁（Matrix 用户 ID）：`whoami`，按令牌的哈希缓存（和发送限制共用一份，见
+    /// [`send_limits::SendLimiter`]）。没接入 Matrix 或认不出时是 `None`。
+    pub(crate) async fn bot_user_of_token(&self, token: &str) -> Option<String> {
+        self.send_limits
+            .user_id(
+                token,
+                send_limits::token_hash(token),
+                self.matrix.as_deref(),
+            )
+            .await
     }
 
     /// 经隧道接入的已配对设备是谁（ADR-0045）：设备记录里写了家人就是他，没写是主人。吊销后立即不再认它，
@@ -674,6 +687,8 @@ mod bot_activity_tests;
 #[cfg(test)]
 mod bot_profile_tests;
 #[cfg(test)]
+mod bots_tests;
+#[cfg(test)]
 mod core_upgrade_tests;
 #[cfg(test)]
 mod degraded_webui_tests;
@@ -714,6 +729,8 @@ mod lan_tests;
 #[cfg(test)]
 mod limits_tests;
 #[cfg(test)]
+mod mcp_takeover_tests;
+#[cfg(test)]
 mod mcp_tests;
 #[cfg(test)]
 mod model_providers_tests;
@@ -743,6 +760,8 @@ mod registry_mirror_tests;
 mod secret_change_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tunnel_bot_tests;
 #[cfg(test)]
 mod tunnel_tests;
 #[cfg(test)]

@@ -78,7 +78,7 @@ pub(super) struct Undo {
     /// 本次安装之前插件的密钥（`None` 表示原来没有），回滚时恢复成这样。
     secrets_before: Option<(PluginId, Option<Secrets>)>,
     /// 本次安装代 Bot 登录的设备，回滚时吊销（账号和主房间保留给下次安装）。
-    pub(super) bot: Option<(PluginId, ProvisionedBot)>,
+    pub(super) bot: Option<(PluginId, String, ProvisionedBot)>,
     /// 本次安装把主房间交给了主人（主人原来不在里面），回滚时收回。
     pub(super) handed_over: bool,
     /// 已登记插件网络的地址段，回滚时注销。
@@ -164,6 +164,7 @@ impl PluginManager {
         }
     }
 
+    /// 安装时代默认 Bot 登录（归属人是主人），失败时回滚吊销设备。没有 Bot 的插件返回 `None`。
     async fn deploy_inner(
         &self,
         package: &PluginPackage,
@@ -189,13 +190,13 @@ impl PluginManager {
         ctx.gpu = gpu;
         ctx.lan = lan;
         self.check_network_names(&ctx).await?;
-        if let Some(bot) = self.provision_bot(package).await? {
-            ctx.matrix = Some(self.matrix_vars(&bot));
-            undo.bot = Some((manifest.id.clone(), bot));
-        }
+        let default_bot = self.provision_default_bot(package, undo).await?;
         if let Some(models) = self.provision_models(package, langs).await? {
             ctx.models = Some(models);
             undo.models = Some(manifest.id.clone());
+        }
+        if let Some(bot) = &default_bot {
+            self.fill_default_bot_vars(manifest, bot, &mut ctx);
         }
         let mut plan = render(package, &ctx, langs)?;
         self.prepare_images(&mut plan, Some(&manifest.id), langs)
@@ -281,7 +282,16 @@ impl PluginManager {
         deadline: Instant,
         langs: &Languages,
     ) -> Result<(Option<Endpoint>, Option<ModelsRoute>, Option<McpTarget>), InstallError> {
-        if secrets::collect(&self.engine, &self.cfg.instance, manifest, secrets, langs).await? {
+        if secrets::collect(
+            &self.engine,
+            &self.cfg.instance,
+            manifest,
+            &self.bot_names(&manifest.id),
+            secrets,
+            langs,
+        )
+        .await?
+        {
             self.store.secrets().save(&manifest.id, secrets)?;
         }
         let upstream = self.webui_upstream(manifest, &plan.network).await?;
@@ -290,8 +300,8 @@ impl PluginManager {
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
             health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
         }
-        if let Some((_, bot)) = &undo.bot {
-            undo.handed_over = self.hand_over_home_room(bot).await?;
+        if let Some((_, _, bot)) = &undo.bot {
+            undo.handed_over = self.hand_over_home_room(&self.cfg.owner, bot).await?;
         }
         Ok((upstream, models, mcp))
     }
@@ -320,6 +330,7 @@ impl PluginManager {
         Ok(())
     }
 
+    /// 容器起来之后收存插件写下的密钥（`collect` 项），变了就保存。Bot 服务上的按 Bot 各一份。
     /// 读出插件的密钥（上次不删数据卸载时保留的也在），给还没有值的 `generate` 项生成并保存。
     pub(super) fn prepare_secrets(
         &self,
@@ -431,6 +442,7 @@ impl PluginManager {
                 email: self.cfg.profile.email(),
             }),
             matrix: None,
+            bots: Default::default(),
             models: None,
             mcp_url: manifest.permissions.contains(&Permission::Tools).then(|| {
                 let port = self.cfg.gateway_port;
@@ -634,7 +646,7 @@ impl PluginManager {
             self.engine.remove_container(container).await?;
         }
         // 容器都停了再吊销 Bot 的设备和模型网关凭据。
-        let bot = self.remove_bot(id, purge).await?;
+        let bots = self.deactivate_bots(id, purge).await?;
         self.revoke_models(id, langs).await?;
         self.remove_networks(&found.networks).await?;
         // 核心为只读根服务写的配置文件（configs_store）跟着插件删，不占数据目录的清理（purge）。
@@ -654,7 +666,7 @@ impl PluginManager {
         let mut report = UninstallReport {
             containers: found.containers.clone(),
             networks: found.networks.clone(),
-            bot,
+            bots,
             ..Default::default()
         };
         if let Some(hydra) = &self.oidc {

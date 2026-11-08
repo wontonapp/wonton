@@ -112,7 +112,7 @@ fn newer(new: &str, installed: &str) -> bool {
 }
 
 /// 记录里的插件包。
-fn installed_package(
+pub(in crate::plugin) fn installed_package(
     record: &InstalledRecord,
     langs: &Languages,
 ) -> Result<PluginPackage, InstallError> {

@@ -47,7 +47,7 @@ impl PluginManager {
         failures: &mut Vec<String>,
     ) {
         let mut note = note_for(langs, failures);
-        if let Some((id, bot)) = &undo.bot {
+        if let Some((id, _, bot)) = &undo.bot {
             // 收回主房间要用 Bot 的令牌，所以在吊销设备之前。
             if undo.handed_over {
                 note(

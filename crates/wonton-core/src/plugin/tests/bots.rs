@@ -2,12 +2,14 @@
 //! [`super::bot_lifecycle`]，模型网关的凭据见 [`super::models`]。
 
 use super::super::PluginId;
-use super::super::bots::{BotRecord, BotStore};
+use super::super::bot_services::DEFAULT_BOT;
+use super::super::bots::{BotEntry, BotStore, PluginBots};
 use super::super::package::{PackageError, PluginPackage};
 use super::super::render::{ContainerPlan, Deployment, InstallContext, RenderError, dry_run};
 use super::super::vars::{MatrixVars, ModelVars, OidcVars};
 use super::{env_of, package};
 use crate::matrix::BotAccount;
+use wonton_protocol::BotKeeper;
 
 /// `init` 和 `gateway` 每个 Bot 一份，`web` 全插件一份。
 const SERVICES: &str = "  init:\n    image: busybox\n    restart: 'no'\n    \
@@ -195,15 +197,16 @@ fn install_contexts_print_no_tokens_or_secrets() {
             homeserver: "http://matrix.wonton.internal".into(),
             user_id: "@test:t".into(),
             access_token: "matrix-token-value".into(),
-            owner: "@owner:t".into(),
+            allowed_users: "@owner:t".into(),
             home_room: "!room:t".into(),
         }),
+        bots: Default::default(),
         models: Some(ModelVars {
             base_url: "http://models.wonton.internal/v1".into(),
             anthropic_url: None,
             gemini_url: None,
             plugin_key: Some("model-key-value".into()),
-            bot_key: Some("bot-model-key-value".into()),
+            bot_keys: Default::default(),
             default_model: "group/default".into(),
         }),
         mcp_url: None,
@@ -239,20 +242,32 @@ fn install_contexts_print_no_tokens_or_secrets() {
 fn a_room_only_has_the_bots_whose_home_it_is() {
     let dir = tempfile::tempdir().unwrap();
     let store = BotStore::new(dir.path().to_owned());
-    let bot = |user_id: &str, home_room: &str| BotRecord {
-        account: BotAccount {
-            user_id: user_id.to_owned(),
-            home_room: home_room.to_owned(),
-        },
-        device_id: None,
+    let bot = |user_id: &str, home_room: &str| {
+        (
+            DEFAULT_BOT.to_owned(),
+            BotEntry {
+                account: BotAccount {
+                    user_id: user_id.to_owned(),
+                    home_room: home_room.to_owned(),
+                },
+                device_id: None,
+                keeper: BotKeeper::User {
+                    username: "owner".to_owned(),
+                },
+                bus_token: "token".to_owned(),
+            },
+        )
+    };
+    let record = |(name, entry): (String, BotEntry)| PluginBots {
+        bots: [(name, entry)].into_iter().collect(),
     };
     let id = |name: &str| PluginId::parse(name).unwrap();
     store
-        .save(&id("app.a"), &bot("@a:home", "!a:home"))
+        .save(&id("app.a"), &record(bot("@a:home", "!a:home")))
         .unwrap();
     store
-        .save(&id("app.b"), &bot("@b:home", "!b:home"))
+        .save(&id("app.b"), &record(bot("@b:home", "!b:home")))
         .unwrap();
-    assert_eq!(store.in_home_room("!a:home").unwrap(), ["a"]);
-    assert!(store.in_home_room("!people:home").unwrap().is_empty());
+    assert_eq!(store.localparts_in_room("!a:home").unwrap(), ["a"]);
+    assert!(store.localparts_in_room("!people:home").unwrap().is_empty());
 }

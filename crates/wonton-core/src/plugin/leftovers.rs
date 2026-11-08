@@ -55,9 +55,9 @@ impl PluginManager {
             self.engine.remove_container(container).await?;
         }
         // 正常卸载和回滚都会清掉设备记录，还记着就是上次没装完。容器都停了再吊销。
-        let bot = self.store.bots().load(id)?;
-        if bot.is_some_and(|record| record.device_id.is_some()) {
-            self.remove_bot(id, false).await?;
+        let bots = self.store.bots().load(id)?;
+        if bots.bots.values().any(|entry| entry.device_id.is_some()) {
+            self.deactivate_bots(id, false).await?;
         }
         self.remove_networks(&found.networks).await
     }

@@ -316,9 +316,9 @@ async fn invalid_default_or_poster_fails_before_any_upload_and_retry_reuses_acco
                 .bots()
                 .load(&id())
                 .unwrap()
-                .unwrap()
-                .device_id
-                .is_none()
+                .bots
+                .values()
+                .all(|entry| entry.device_id.is_none())
         );
         assert_eq!(bed.manager.profile_revisions().get("app.test"), 0);
         bed.manager

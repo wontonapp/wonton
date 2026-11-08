@@ -12,7 +12,6 @@ use std::path::{Component, Path, PathBuf};
 
 use bollard::models::Mount;
 
-use super::bot_services::ServiceVars;
 use super::compose::{Scalar, Service, UserSpec};
 use super::interpolate::{UsedVars, Vars};
 use super::languages::Languages;
@@ -77,17 +76,16 @@ pub(super) fn resolve_service(
     service: &Service,
     ctx: &InstallContext,
     name: &str,
-    vars: &ServiceVars,
+    vars: &Vars,
     mounts: &mut Vec<Mount>,
     used: &mut UsedVars,
     langs: &Languages,
 ) -> Result<(Vec<ConfigFile>, Option<PathBuf>), RenderError> {
     let targets = mount_targets(service, mounts);
-    let files =
-        resolve(package, service, vars.get(name), &targets, used, langs).map_err(|e| match e {
-            ConfigError::Package(e) => e.into(),
-            ConfigError::Rule(m) => service_err(langs, name, m),
-        })?;
+    let files = resolve(package, service, vars, &targets, used, langs).map_err(|e| match e {
+        ConfigError::Package(e) => e.into(),
+        ConfigError::Rule(m) => service_err(langs, name, m),
+    })?;
     let store_dir = (service.read_only == Some(true) && !files.is_empty()).then(|| {
         super::configs_store::service_dir(&ctx.config_store, &ctx.instance, &ctx.slug, name)
     });

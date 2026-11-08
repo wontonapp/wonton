@@ -16,6 +16,7 @@ use super::tests::{CORE, Harness, Reply, TOKEN};
 use super::tunnel_tests::{Home, Phone, header};
 use crate::http::HttpClient;
 use crate::members::MemberRecord;
+use crate::plugin::PluginId;
 
 const ME: &str = wonton_protocol::ME_PATH;
 const MEMBERS: &str = wonton_protocol::MEMBERS_PATH;
@@ -723,15 +724,18 @@ async fn a_member_sees_and_revokes_only_her_own_devices() {
 #[tokio::test]
 async fn member_issued_codes_follow_the_issuer_and_bot_names_are_taken() {
     let (home, _state) = home_with_matrix().await;
-    // 记录一个 Bot 用户名 hermes-alice（Bot 记录在插件记录目录的 bots/ 下）。
-    let bots_dir = home.data_dir().join("plugins").join("bots");
-    std::fs::create_dir_all(&bots_dir).unwrap();
-    std::fs::write(
-        bots_dir.join("app.hermes.json"),
-        json!({"user_id": "@hermes-alice:wonton.localhost", "home_room": "!room:wonton.localhost"})
-            .to_string(),
-    )
-    .unwrap();
+    // 记录一个 Bot 用户名 hermes-alice。
+    home.plugins.bot_records_for_test(
+        &PluginId::parse("app.hermes").unwrap(),
+        &[(
+            "default",
+            "@hermes-alice:wonton.localhost",
+            wonton_protocol::BotKeeper::User {
+                username: "owner".to_owned(),
+            },
+            "hermes-token",
+        )],
+    );
     seed_member_via_home(&home, "Alice").await;
     let hers = SecretKey::generate().public();
     home.tunnel

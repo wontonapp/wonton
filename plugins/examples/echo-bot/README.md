@@ -1,7 +1,7 @@
 # 回声 Bot
 
 最小的 Matrix Bot 示例插件，代码在 [`crates/wonton-echo-bot`](../../../crates/wonton-echo-bot)。它只用核心注入的
-`WONTON_MATRIX_*`：按令牌恢复会话，把主人发来的文字原样回成 `回声：<原文>`，加密房间里也一样；主人邀请它进别的
+`WONTON_MATRIX_*`：按令牌恢复会话，把名单里的人（`WONTON_MATRIX_ALLOWED_USERS`）发来的文字原样回成 `回声：<原文>`，加密房间里也一样；名单里的人邀请它进别的
 房间时接受。它没有网页、不申请出网，Matrix 也只经核心在插件网络里的别名访问。
 
 镜像在本地构建（`pull_policy: never`），然后像别的示例一样安装：

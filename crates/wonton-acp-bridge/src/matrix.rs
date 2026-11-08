@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use wonton_matrix::{Message, MessageBody, UserId};
+use wonton_matrix::{Message, MessageBody, OwnedUserId, UserId};
 
 #[derive(Clone, Debug)]
 pub struct IncomingText {
@@ -11,16 +11,16 @@ pub struct IncomingText {
     pub thread_root: Option<String>,
 }
 
-pub fn new_owner_messages(
+pub fn new_allowed_messages(
     messages: &[Message],
-    owner: &UserId,
+    allowed_users: &[OwnedUserId],
     bot: &UserId,
     group: bool,
     seen: &mut HashSet<String>,
 ) -> Vec<IncomingText> {
     messages
         .iter()
-        .filter(|message| !message.is_own && message.sender == owner)
+        .filter(|message| !message.is_own && allowed_users.contains(&message.sender))
         .filter_map(|message| {
             // 密钥可能晚于事件到达；正文解密后的同一事件仍需交给 Agent。
             if matches!(message.body, MessageBody::Undecryptable) {
@@ -77,32 +77,40 @@ mod tests {
     }
 
     #[test]
-    fn delayed_decryption_delivers_the_owner_message_once() {
+    fn delayed_decryption_delivers_the_allowed_message_once() {
         let owner: OwnedUserId = "@owner:example.org".parse().unwrap();
         let bot: OwnedUserId = "@bot:example.org".parse().unwrap();
+        let allowed = [owner.clone()];
         let mut message = owner_message("$delayed:example.org", "", &[]);
         message.body = MessageBody::Undecryptable;
         let mut seen = HashSet::new();
-        assert!(new_owner_messages(&[message.clone()], &owner, &bot, false, &mut seen).is_empty());
+        assert!(
+            new_allowed_messages(&[message.clone()], &allowed, &bot, false, &mut seen).is_empty()
+        );
         message.body = MessageBody::Text("hello".into());
-        let incoming = new_owner_messages(&[message.clone()], &owner, &bot, false, &mut seen);
+        let incoming = new_allowed_messages(&[message.clone()], &allowed, &bot, false, &mut seen);
         assert_eq!(incoming[0].text, "hello");
         assert_eq!(incoming[0].event_id, "$delayed:example.org");
         assert_eq!(incoming.len(), 1);
-        assert!(new_owner_messages(&[message], &owner, &bot, false, &mut seen).is_empty());
+        assert!(new_allowed_messages(&[message], &allowed, &bot, false, &mut seen).is_empty());
+        // 名单外的人说话不交给 Agent。
+        let mut stranger = owner_message("$stranger:example.org", "hello", &[]);
+        stranger.sender = "@stranger:example.org".parse().unwrap();
+        assert!(new_allowed_messages(&[stranger], &allowed, &bot, false, &mut seen).is_empty());
     }
 
     #[test]
     fn a_group_only_takes_commands_that_mention_the_bot() {
         let owner: OwnedUserId = "@owner:example.org".parse().unwrap();
         let bot: OwnedUserId = "@bot:example.org".parse().unwrap();
+        let allowed = [owner.clone()];
         let plain = owner_message("$plain:example.org", "普通消息", &[]);
         let command = owner_message("$command:example.org", "/review", &[]);
         let mentioned = owner_message("$mentioned:example.org", "/review", &["@bot:example.org"]);
         let mut seen = HashSet::new();
-        let incoming = new_owner_messages(
+        let incoming = new_allowed_messages(
             &[plain.clone(), command, mentioned],
-            &owner,
+            &allowed,
             &bot,
             true,
             &mut seen,
@@ -118,9 +126,9 @@ mod tests {
         // 私聊不分提及。
         let mut seen = HashSet::new();
         assert_eq!(
-            new_owner_messages(
+            new_allowed_messages(
                 &[plain, owner_message("$c2:example.org", "/review", &[])],
-                &owner,
+                &allowed,
                 &bot,
                 false,
                 &mut seen

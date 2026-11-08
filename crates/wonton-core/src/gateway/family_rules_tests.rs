@@ -2,10 +2,13 @@
 //! 跳数。网关后面接假的 Tuwunel（`crate::matrix::fake`），时钟是注入的，不许 sleep。
 
 use std::collections::BTreeSet;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use wonton_protocol::BotKeeper;
 
+use crate::plugin::PluginId;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::ConnectInfo;
@@ -93,6 +96,17 @@ impl Home {
             "app.echo",
             "172.30.1.0/24",
             vec!["matrix.bot".parse::<Permission>().unwrap()],
+        );
+        plugins.bot_records_for_test(
+            &PluginId::parse("app.echo").unwrap(),
+            &[(
+                "default",
+                "@hermes:test",
+                BotKeeper::User {
+                    username: "owner".to_owned(),
+                },
+                BOT_TOKEN,
+            )],
         );
         let (tunnel, members) = loopback_tunnel(dir.path()).await;
         let phone = SecretKey::generate().public();

@@ -600,6 +600,17 @@ fn validate_bots(manifest: &Manifest) -> Result<(), ManifestError> {
             "bots.services 至少一项，且不能重复".to_owned(),
         ));
     }
+    // 局域网端口按服务开在宿主上：Bot 服务每个 Bot 一组容器，同一端口会互相冲突。
+    if let Some(lan) = &manifest.lan {
+        for port in &lan.ports {
+            if bots.services.contains(&port.service) {
+                return Err(ManifestError::Invalid(format!(
+                    "network.lan 的服务 {} 是 Bot 服务：每个 Bot 一组容器，端口开不了，换全插件一份的服务",
+                    port.service
+                )));
+            }
+        }
+    }
     Ok(())
 }
 

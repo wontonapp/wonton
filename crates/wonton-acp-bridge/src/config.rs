@@ -22,6 +22,8 @@ pub struct Limits {
 pub struct Config {
     pub homeserver: String,
     pub access_token: String,
+    pub allowed_users: Vec<OwnedUserId>,
+    /// 主房间的主人，即私聊的对方：`WONTON_MATRIX_ALLOWED_USERS` 的第一个（私人 Bot 就是归属人）。
     pub owner: OwnedUserId,
     pub home_room: OwnedRoomId,
     pub matrix_store: PathBuf,
@@ -42,9 +44,15 @@ impl Config {
             "WONTON_BRIDGE_DATA",
             &bot_data.join("bridge").display().to_string(),
         )?;
-        let owner = required("WONTON_MATRIX_OWNER")?
-            .parse()
-            .context("WONTON_MATRIX_OWNER 不是合法的 Matrix 用户 ID")?;
+        // Bot 只听名单里的人（ADR-0045）：私人 Bot 是归属人，共享 Bot 是一家人。
+        let allowed_users = required("WONTON_MATRIX_ALLOWED_USERS")?
+            .split(',')
+            .filter(|id| !id.is_empty())
+            .map(|id| {
+                id.parse()
+                    .context("WONTON_MATRIX_ALLOWED_USERS 里有不合法的 Matrix 用户 ID")
+            })
+            .collect::<Result<Vec<OwnedUserId>, _>>()?;
         let home_room = required("WONTON_MATRIX_HOME_ROOM")?
             .parse()
             .context("WONTON_MATRIX_HOME_ROOM 不是合法的 Matrix 房间 ID")?;
@@ -52,9 +60,14 @@ impl Config {
         if !mcp_url.starts_with("http://") && !mcp_url.starts_with("https://") {
             bail!("WONTON_MCP_URL 必须是 HTTP URL");
         }
+        let owner = allowed_users
+            .first()
+            .context("WONTON_MATRIX_ALLOWED_USERS 是空的，不知道主房间归谁")?
+            .clone();
         Ok(Self {
             homeserver: required("WONTON_MATRIX_HOMESERVER")?,
             access_token: required("WONTON_MATRIX_ACCESS_TOKEN")?,
+            allowed_users,
             owner,
             home_room,
             matrix_store: bridge_data.join("matrix"),

@@ -49,6 +49,7 @@ impl Harness {
             homeserver: "http://example.org".into(),
             access_token: "token".into(),
             owner: OWNER.parse::<OwnedUserId>().unwrap(),
+            allowed_users: vec![OWNER.parse::<OwnedUserId>().unwrap()],
             home_room: "!room:example.org".parse().unwrap(),
             matrix_store: dir.path().join("matrix"),
             bridge_data: dir.path().join("bridge"),

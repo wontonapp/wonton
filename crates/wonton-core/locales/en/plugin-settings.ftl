@@ -341,9 +341,9 @@ plugin-settings-secret-too-big = is larger than 64 KiB
 
 plugin-settings-bot-avatar-missing = bot.avatar points to { $path }, which is not in the plugin package
 plugin-settings-bot-avatar-type = bot.avatar supports only png, jpg, gif, and webp: { $path }
-plugin-settings-bot-device-name = Wonton app { $id }
+plugin-settings-bot-device-name = Wonton app { $id } (bot { $bot })
 plugin-settings-bot-account-deactivated = The bot account { $user } has been deactivated: uninstall this app choosing to delete its data and reinstall, and a new account will be assigned
-plugin-settings-bot-device-record-missing = There is no bot device record for this app: reinstall it (you can keep its data)
+plugin-settings-bot-device-record-missing = There is no device record for bot { $bot }: reinstall the app (you can keep its data)
 plugin-settings-bot-device-revoked = The bot { $user }'s device has been revoked, so the Matrix token the app holds no longer works: reinstall it (you can keep its data) to get a new one
 
 # ── LAN detection, the egress container and the store index (lan/detect.rs, docker_limits.rs, egress, storefront) ──

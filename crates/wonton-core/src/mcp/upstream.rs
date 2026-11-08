@@ -32,6 +32,8 @@ use rmcp::transport::streamable_http_client::{
     StreamableHttpClientTransportConfig, StreamableHttpError,
 };
 use rmcp::{ClientLifecycleMode, ClientServiceExt};
+use serde_json::Value;
+use wonton_protocol::TOOL_CALL_USER_META;
 
 use tokio::time::Instant;
 
@@ -479,12 +481,21 @@ impl Upstreams {
         server: &McpServer,
         tool: &str,
         arguments: Option<JsonObject>,
+        on_behalf_of: Option<String>,
         cancelled: impl Future<Output = ()>,
     ) -> Result<CallToolResult, CallError> {
         let connection = self.connection(server).await.map_err(CallError::NotSent)?;
         let mut params = CallToolRequestParams::new(tool.to_owned());
         if let Some(arguments) = arguments {
             params = params.with_arguments(arguments);
+        }
+        // 替谁办事（ADR-0045）：私人 Bot 是归属人的用户名，多用户的应用按它切数据。
+        if let Some(user) = on_behalf_of {
+            params.meta = Some(rmcp::model::RequestMetaObject(rmcp::model::MetaObject(
+                [(TOOL_CALL_USER_META.to_owned(), Value::from(user))]
+                    .into_iter()
+                    .collect(),
+            )));
         }
         let limits = server.tool_limits;
         let options = PeerRequestOptions::with_timeout(limits.idle)

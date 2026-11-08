@@ -13,7 +13,7 @@ use wonton_protocol::BotActivityReport;
 
 use crate::gateway::tests::Harness;
 use crate::matrix::BotAccount;
-use crate::plugin::bots::{BotRecord, BotStore};
+use crate::plugin::bots::{BotEntry, BotStore, PluginBots};
 use crate::plugin::languages::Languages;
 use crate::plugin::models::ModelsRoute;
 use crate::plugin::{Permission, PluginPackage, PluginStatus};
@@ -93,12 +93,23 @@ fn bot(h: &Harness, id: &str) {
     BotStore::new(h.data_dir().join("plugins/bots"))
         .save(
             &manifest.id,
-            &BotRecord {
-                account: BotAccount {
-                    user_id: format!("@{id}:wonton.localhost"),
-                    home_room: format!("!{id}:wonton.localhost"),
-                },
-                device_id: Some("BOT_DEVICE".into()),
+            &PluginBots {
+                bots: [(
+                    crate::plugin::bot_services::DEFAULT_BOT.to_owned(),
+                    BotEntry {
+                        account: BotAccount {
+                            user_id: format!("@{id}:wonton.localhost"),
+                            home_room: format!("!{id}:wonton.localhost"),
+                        },
+                        device_id: Some("BOT_DEVICE".into()),
+                        keeper: wonton_protocol::BotKeeper::User {
+                            username: "owner".to_owned(),
+                        },
+                        bus_token: "bot-token".to_owned(),
+                    },
+                )]
+                .into_iter()
+                .collect(),
             },
         )
         .unwrap();

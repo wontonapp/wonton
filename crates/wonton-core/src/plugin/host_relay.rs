@@ -144,6 +144,7 @@ pub fn plan(
     labels.insert(LABEL_SERVICE.to_owned(), service.clone());
     let inside = format!("/s/{}", relay.socket());
     ContainerPlan {
+        bot: None,
         service: service.clone(),
         name: name.clone(),
         image: IMAGE.to_owned(),

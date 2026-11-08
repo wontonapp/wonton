@@ -102,47 +102,86 @@ pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
 }
 
 /// `matrix.wonton.internal`：插件网络里的 Bot（`WONTON_MATRIX_HOMESERVER`）。只转发声明了 `matrix.bot` 的
-/// 插件的请求，按来源地址认出插件（见 [`crate::plugin::sources`]）；其余规则同 `matrix.<base>`。
+/// 插件的请求，按来源地址认出插件（见 [`crate::plugin::sources`]），再凭访问令牌认出是哪个 Bot（`whoami`，
+/// 按令牌的哈希缓存）：只放行这个插件自己的 Bot，插件拿别人的令牌来转发得到 403（ADR-0045）。其余规则同
+/// `matrix.<base>`。
 pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
     let source = client_addr(&req).and_then(|addr| gateway.plugins.source(addr.ip()));
-    match source {
-        Some(source) if source.permissions.contains(&Permission::MatrixBot) => {
-            // Bot 只能注册指向推送代理的 pusher，见 `pushers`。
-            let req = if pushers::is_pushers_set(req.method(), req.uri().path()) {
-                match pushers::check(req).await {
-                    Ok(req) => req,
-                    Err(refused) => return *refused,
-                }
-            } else {
-                req
-            };
-            let req = match room_rules::check(req).await {
-                Ok(req) => req,
-                Err(refused) => return *refused,
-            };
-            let req = match gateway
-                .send_limits
-                .check_bot_send(req, gateway.matrix.as_deref())
-                .await
-            {
-                Ok(req) => req,
-                Err(refused) => return *refused,
-            };
-            forward_client_api(gateway, req).await
+    let source = match source {
+        Some(source) if source.permissions.contains(&Permission::MatrixBot) => source,
+        Some(source) => {
+            return matrix_error(
+                StatusCode::FORBIDDEN,
+                "M_FORBIDDEN",
+                "permission_denied",
+                &format!("插件 {} 没有申请 matrix.bot 权限", source.id),
+            );
         }
-        Some(source) => matrix_error(
-            StatusCode::FORBIDDEN,
-            "M_FORBIDDEN",
-            "permission_denied",
-            &format!("插件 {} 没有申请 matrix.bot 权限", source.id),
-        ),
-        None => matrix_error(
+        None => {
+            return matrix_error(
+                StatusCode::FORBIDDEN,
+                "M_FORBIDDEN",
+                "unauthenticated",
+                "这个地址只给插件网络里的 Bot 用",
+            );
+        }
+    };
+    // 令牌认 Bot：令牌是谁，必须且只是这个插件记录在案的 Bot。
+    let token = req
+        .headers()
+        .get(hyper::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+    let Some(token) = token else {
+        return matrix_error(
             StatusCode::FORBIDDEN,
             "M_FORBIDDEN",
             "unauthenticated",
-            "这个地址只给插件网络里的 Bot 用",
-        ),
+            "Bot 的请求要带它的 Matrix 访问令牌",
+        );
+    };
+    match gateway.bot_user_of_token(token).await {
+        Some(user) if gateway.plugins.is_bot_user(&source.id, &user) => {}
+        Some(user) => {
+            tracing::warn!(plugin = %source.id, bot = %user, "插件拿别的 Bot 的令牌转发请求");
+            return matrix_error(
+                StatusCode::FORBIDDEN,
+                "M_FORBIDDEN",
+                "unauthenticated",
+                "这个令牌不是这个插件自己的 Bot 的",
+            );
+        }
+        None => {
+            return matrix_error(
+                StatusCode::FORBIDDEN,
+                "M_FORBIDDEN",
+                "unauthenticated",
+                "认不出这个访问令牌是谁",
+            );
+        }
     }
+    // Bot 只能注册指向推送代理的 pusher，见 `pushers`。
+    let req = if pushers::is_pushers_set(req.method(), req.uri().path()) {
+        match pushers::check(req).await {
+            Ok(req) => req,
+            Err(refused) => return *refused,
+        }
+    } else {
+        req
+    };
+    let req = match room_rules::check(req).await {
+        Ok(req) => req,
+        Err(refused) => return *refused,
+    };
+    let req = match gateway
+        .send_limits
+        .check_bot_send(req, gateway.matrix.as_deref())
+        .await
+    {
+        Ok(req) => req,
+        Err(refused) => return *refused,
+    };
+    forward_client_api(gateway, req).await
 }
 
 /// 只转发客户端接口，先挡住可能被上游读成别的路径的写法。

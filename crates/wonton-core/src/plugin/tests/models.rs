@@ -10,6 +10,7 @@ use axum::routing::get;
 use tokio::net::TcpListener;
 
 use super::super::fake_docker::FakeDocker;
+use super::super::names::Instance;
 use super::super::names::container_name;
 use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::github::zh;
@@ -481,7 +482,11 @@ async fn bot_services_get_the_bot_credential_and_shared_services_the_plugin_one(
         .await
         .unwrap();
     let keys = bed.keys.lock().unwrap().clone();
-    let gateway = env_of_container(&bed.docker, &container_name("app-test", "gateway"));
+    // gateway 是 Bot 服务：容器按 Bot 一份。
+    let gateway = env_of_container(
+        &bed.docker,
+        &Instance::default().bot_container("app-test", "gateway", "default"),
+    );
     assert_eq!(gateway["KEY"], keys["app.test/default"]);
     assert_eq!(web_env(&bed)["KEY"], keys["app.test"]);
     assert_ne!(keys["app.test"], keys["app.test/default"]);

@@ -49,7 +49,8 @@ grafana="$grafana_network--grafana"
 echo_bot="wonton-$WONTON_DEV_INSTANCE--agent-echo--bot"
 magpie="$magpie_network--magpie"
 model_client="wonton-$WONTON_DEV_INSTANCE--app-model-client--client"
-hermes="$hermes_network--gateway"
+# Hermes 声明了 bots（x-wonton.bots），gateway 是 Bot 服务：容器按 Bot 一份。
+hermes="$hermes_network--gateway--default"
 plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client com.nousresearch.hermes app.wonton.files org.navidrome.navidrome)
 
 # 构建镜像经 dev.sh：远端主机上经它自己的代理、限制并发（WONTON_DEV_BUILD_PROXY、WONTON_DEV_BUILD_JOBS）。
@@ -381,14 +382,14 @@ probe="$(docker run --rm --network "container:$core" "$echo_image" probe --homes
   --bot "$bot_user" 2>&1)" || fail "加密收发失败：$probe"
 ok "经隧道发出加密消息，收到 Bot 的加密回声"
 report="$("$dev" uninstall agent.echo)"
-expect "卸载时吊销 Bot 的设备" "$(json bot.devices_removed <<<"$report") $(json bot.deactivated <<<"$report")" "1 false"
+expect "卸载时吊销 Bot 的设备" "$(json bots.0.devices_removed <<<"$report") $(json bots.0.deactivated <<<"$report")" "1 false"
 expect "Bot 的令牌立即失效" \
   "$(t -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $bot_token" "$matrix_url/_matrix/client/v3/account/whoami")" 401
 install_echo
 expect "不删数据重装：同一个账号、同一个主房间" \
   "$(bot_env WONTON_MATRIX_USER_ID) $(direct_rooms "$bot_user")" "$bot_user $home_room"
 report="$("$dev" uninstall agent.echo --purge)"
-expect "删除数据时停用 Bot 账号" "$(json bot.deactivated <<<"$report")" true
+expect "删除数据时停用 Bot 账号" "$(json bots.0.deactivated <<<"$report")" true
 members="$(owner_api "/rooms/$home_room/joined_members")"
 expect "停用的 Bot 退出了主房间" \
   "$(python3 -c 'import json, sys; print(sys.argv[1] in json.load(sys.stdin)["joined"])' "$bot_user" <<<"$members")" False
@@ -507,7 +508,11 @@ ok "经隧道和 Hermes 加密对话两轮"
 rm -f "$said"
 
 step "让 Agent 动手（MCP 总线）：Hermes 请主人确认后装上文件搜索，再用它在授权的文件夹里找文件"
-expect "Hermes 拿到 MCP 总线的地址" "$(hermes_env WONTON_MCP_URL)" "http://mcp.wonton.internal:$WONTON_DEV_PORT/mcp"
+hermes_mcp="$(hermes_env WONTON_MCP_URL)"
+case "$hermes_mcp" in
+  "http://mcp.wonton.internal:$WONTON_DEV_PORT/mcp/"?*) ;;
+  *) fail "Hermes 拿到的 MCP 总线地址应带总线令牌：$hermes_mcp" ;;
+esac
 # 经隧道在和 Hermes 的私聊里说一句话，收它的回答，直到它 90 秒不再说话（它先说一句再去调要等确认的工具）：
 # $1 输出文件，$2 话。
 ask_hermes() {
@@ -661,7 +666,7 @@ expect "卸载文件搜索" "$("$dev" uninstall app.wonton.files --purge | json 
 hermes_token="$(hermes_env MATRIX_ACCESS_TOKEN)"
 report="$("$dev" uninstall com.nousresearch.hermes --purge)"
 expect "卸载 Hermes：吊销 Bot 的设备、停用账号" \
-  "$(json bot.devices_removed <<<"$report") $(json bot.deactivated <<<"$report")" "1 true"
+  "$(json bots.0.devices_removed <<<"$report") $(json bots.0.deactivated <<<"$report")" "1 true"
 expect "Hermes 的 Matrix 令牌失效" \
   "$(t -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $hermes_token" "$matrix_url/_matrix/client/v3/account/whoami")" 401
 expect "网关里 Hermes 的凭据吊销了" "$(gateway_keys)" ""

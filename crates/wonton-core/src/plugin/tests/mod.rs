@@ -66,6 +66,7 @@ mod store;
 mod store_refresh;
 mod tabs;
 mod upgrade;
+mod upgrade_bot;
 mod views;
 mod views_l10n;
 mod watch;

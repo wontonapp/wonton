@@ -30,6 +30,8 @@ pub struct Notes {
     pub cancelled: Arc<std::sync::atomic::AtomicUsize>,
     /// 工具 `find`、`archive` 返回的结果。
     pub found: Arc<Mutex<CallToolResult>>,
+    /// 每次调用收到的 `_meta`（没有时是 `None`）。
+    pub received_meta: Arc<Mutex<Vec<Option<rmcp::model::MetaObject>>>>,
 }
 
 impl Default for Notes {
@@ -39,6 +41,7 @@ impl Default for Notes {
             hang: Arc::default(),
             cancelled: Arc::default(),
             found: Arc::new(Mutex::new(CallToolResult::success(Vec::new()))),
+            received_meta: Arc::default(),
         }
     }
 }
@@ -85,6 +88,11 @@ impl ServerHandler for Notes {
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             return Err(ErrorData::internal_error("取消了", None));
         }
+        // rmcp 把进站请求的 `_meta` 挪进 RequestContext（typed 字段只在出站时用）。
+        self.received_meta
+            .lock()
+            .unwrap()
+            .push(Some(ctx.meta.0.clone()));
         let name = request
             .arguments
             .as_ref()

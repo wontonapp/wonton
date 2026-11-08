@@ -3,11 +3,11 @@
 //! 这里是纯函数，不访问 Docker。注入的变量见 `docs/plugin-spec.md` 的“安装时注入的变量”。
 
 use std::collections::{BTreeMap, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use bollard::models::ContainerCreateBody;
 
-use super::bot_services::ServiceVars;
+use super::bot_services::{BotVars, ServiceVars};
 use super::compose::{DependCondition, NetworkMode, PullPolicy, Service, StringOrList};
 use super::configs::{self, ConfigFile};
 use super::core_address;
@@ -28,6 +28,8 @@ use spec::{ContainerOptions, container_plan};
 
 /// 容器是插件的哪个服务。
 pub const LABEL_SERVICE: &str = "wonton.service";
+/// 容器是哪个 Bot 的：只有 Bot 服务（`bots.services`）的容器有。
+pub const LABEL_BOT: &str = "wonton.bot";
 
 pub(super) mod spec;
 
@@ -107,8 +109,11 @@ pub struct InstallContext {
     /// 声明了 `webui.sso`（`oidc` 或 `proxy`）时：主人的用户名和邮箱。这些插件本来就能从登录里得到它们，其余的
     /// 插件（包括未审核的）不多拿一份主人的个人信息。
     pub owner: Option<OwnerVars>,
-    /// 声明了 `matrix.bot` 时：核心代 Bot 登录后签发的身份。
+    /// 声明了 `matrix.bot` 时：核心代 Bot 登录后签发的身份。只有一个 Bot（没声明 `bots`）的插件在
+    /// 插件级变量里注入它；声明了 `bots` 的按 Bot 注入，见 `bots`。
     pub matrix: Option<MatrixVars>,
+    /// 声明了 `bots` 时每个 Bot 的 Matrix 身份、模型凭据和总线地址（`bots.services` 里的服务用）。
+    pub bots: BTreeMap<String, BotVars>,
     /// 声明了 `models` 时：模型网关的地址、凭据和默认模型。
     pub models: Option<ModelVars>,
     /// 声明了 `tools` 时：MCP 总线的地址。
@@ -154,6 +159,7 @@ impl std::fmt::Debug for InstallContext {
             .field("oidc", &self.oidc)
             .field("owner", &self.owner)
             .field("matrix", &self.matrix)
+            .field("bots", &self.bots.keys().collect::<Vec<_>>())
             .field("models", &self.models)
             .field("mcp_url", &self.mcp_url)
             .field("notify_url", &self.notify_url)
@@ -177,6 +183,8 @@ impl std::fmt::Debug for InstallContext {
 #[derive(Debug, Clone)]
 pub struct ContainerPlan {
     pub service: String,
+    /// Bot 服务的容器属于哪个 Bot（`bots.services`）；全插件一份的服务是 `None`。
+    pub bot: Option<String>,
     pub name: String,
     pub image: String,
     pub pull_policy: PullPolicy,
@@ -190,6 +198,7 @@ pub struct ContainerPlan {
     pub store_dir: Option<PathBuf>,
     /// 一次性服务：以 0 退出是它的正常状态，安装时不等它健康。
     pub one_shot: bool,
+    /// 渲染这个容器时用到的变量名：局域网地址变了，引用它的容器要重建。
     pub variables: UsedVars,
 }
 
@@ -226,18 +235,15 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
     let manifest = &package.manifest;
     let slug = manifest.id.slug();
     let root = PathBuf::from("/wonton-dry-run");
-    let shares = manifest
-        .permissions
-        .iter()
-        .filter_map(|p| match p {
-            Permission::StorageShare { name, .. } => {
-                Some((name.clone(), root.join("shares").join(name)))
-            }
-            _ => None,
-        })
-        .collect();
+    let shares = dry_run_shares(manifest, &root);
     let webui = manifest.webui.as_ref();
     let url = format!("http://{slug}.wonton.invalid");
+    // 所有密钥项都占位：`collect` 项也会在容器 env 里被引用，漏给会误报“变量未定义”（#775）。
+    let secrets = manifest
+        .secrets
+        .keys()
+        .map(|name| (name.clone(), "dry-run".to_owned()))
+        .collect();
     InstallContext {
         app_data: root.join("apps").join(&slug),
         config_store: root.join("core").join("configs"),
@@ -262,9 +268,10 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
                 homeserver: "http://matrix.wonton.internal".into(),
                 user_id: "@dry-run:wonton.invalid".into(),
                 access_token: "dry-run".into(),
-                owner: "@owner:wonton.invalid".into(),
+                allowed_users: "@owner:wonton.invalid".into(),
                 home_room: "!dry-run:wonton.invalid".into(),
             }),
+        bots: dry_run_bots(manifest),
         models: manifest
             .permissions
             .contains(&Permission::Models)
@@ -273,7 +280,16 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
                 anthropic_url: Some("http://models.wonton.internal".into()),
                 gemini_url: Some("http://models.wonton.internal".into()),
                 plugin_key: Some("dry-run".into()),
-                bot_key: manifest.bots.as_ref().map(|_| "dry-run".into()),
+                bot_keys: manifest
+                    .bots
+                    .as_ref()
+                    .map(|_| {
+                        BTreeMap::from([(
+                            super::bot_services::DEFAULT_BOT.to_owned(),
+                            "dry-run".into(),
+                        )])
+                    })
+                    .unwrap_or_default(),
                 default_model: "dry-run".into(),
             }),
         mcp_url: manifest
@@ -284,11 +300,7 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
             .permissions
             .contains(&Permission::Notify)
             .then(|| "http://notify.wonton.internal/notices".into()),
-        secrets: manifest
-            .secrets
-            .keys()
-            .map(|name| (name.clone(), "dry-run".to_owned()))
-            .collect(),
+        secrets,
         instance: Instance::default(),
         tz: "UTC".into(),
         puid: 1000,
@@ -331,6 +343,138 @@ pub fn render(
     render_plan(package, ctx, langs).map_err(|e| explain_owner_vars(e, ctx, langs))
 }
 
+/// dry run 里声明过的共享文件夹占位：指向虚构根下的同名目录。
+fn dry_run_shares(manifest: &Manifest, root: &Path) -> BTreeMap<String, PathBuf> {
+    manifest
+        .permissions
+        .iter()
+        .filter_map(|p| match p {
+            Permission::StorageShare { name, .. } => {
+                Some((name.clone(), root.join("shares").join(name)))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// dry run 里每个 Bot 的占位值：渲染和正式安装走同一条路，多 Bot 的插件每个 Bot 一套。
+fn dry_run_bots(manifest: &Manifest) -> BTreeMap<String, BotVars> {
+    if manifest.bots.is_none() || !manifest.permissions.contains(&Permission::MatrixBot) {
+        return BTreeMap::new();
+    }
+    let vars = BotVars {
+        model_key: manifest
+            .permissions
+            .contains(&Permission::Models)
+            .then(|| "dry-run".into()),
+        matrix: Some(MatrixVars {
+            homeserver: "http://matrix.wonton.internal".into(),
+            user_id: "@dry-run:wonton.invalid".into(),
+            access_token: "dry-run".into(),
+            allowed_users: "@owner:wonton.invalid".into(),
+            home_room: "!dry-run:wonton.invalid".into(),
+        }),
+        mcp_url: manifest
+            .permissions
+            .contains(&Permission::Tools)
+            .then(|| "http://mcp.wonton.internal/mcp/dry-run".into()),
+    };
+    BTreeMap::from([(super::bot_services::DEFAULT_BOT.to_owned(), vars)])
+}
+
+/// 一个服务的容器：Bot 服务每个 Bot 一份，全插件一份的服务只一份。
+#[allow(clippy::too_many_arguments)]
+fn render_service_containers(
+    package: &PluginPackage,
+    ctx: &InstallContext,
+    vars: &ServiceVars,
+    service_keys: &[String],
+    name: &str,
+    service: &Service,
+    one_shot: bool,
+    gpu: Option<&GpuGrant>,
+    requirements: Option<&super::requirements::Requirements>,
+    network: &str,
+    labels: &HashMap<String, String>,
+    read_only_shares: &[PathBuf],
+    binds: &mut Vec<(String, PathBuf)>,
+    variables: &mut UsedVars,
+    containers: &mut Vec<ContainerPlan>,
+    langs: &Languages,
+) -> Result<(), RenderError> {
+    let manifest = &package.manifest;
+    // Bot 服务每个 Bot 一份容器；全插件一份的服务只一份。
+    let bots: Box<dyn Iterator<Item = Option<&str>>> = if vars.is_bot_service(name) {
+        Box::new(vars.bot_names().map(Some))
+    } else {
+        Box::new(std::iter::once(None))
+    };
+    for bot in bots {
+        let service_vars = match bot {
+            Some(bot) => vars.get_bot(bot).ok_or_else(|| {
+                service_err(
+                    langs,
+                    name,
+                    format!("没有 Bot `{bot}` 的变量，装不了它的服务"),
+                )
+            })?,
+            None => vars.get(name),
+        };
+        let mut mounts = Mounts {
+            ctx,
+            read_only_shares,
+            named: package.named_volumes(),
+            service: name,
+            allow_docker_socket: ctx.granted.contains(&Permission::DockerSocket),
+            socket_declared: manifest.permissions.contains(&Permission::DockerSocket)
+                || manifest
+                    .optional_permissions
+                    .contains_key(&Permission::DockerSocket),
+            langs,
+        }
+        .build(&service.volumes, binds)?;
+        let (files, store_dir) = configs::resolve_service(
+            package,
+            service,
+            ctx,
+            name,
+            service_vars,
+            &mut mounts,
+            variables,
+            langs,
+        )?;
+        // 共用别的服务的网络命名空间时没有自己的网络端点，不设别名（#511）。
+        let options = ContainerOptions {
+            requirements,
+            network,
+            aliases: if service.network_mode.is_none() {
+                vars.aliases(name, bot)
+            } else {
+                Vec::new()
+            },
+            labels,
+            gpu,
+            bot_services: vars.bot_service_names(),
+        };
+        let mut plan = container_plan(name, service, bot, mounts, ctx, options, langs)?;
+        if let Some(grant) = &ctx.lan {
+            lan::publish(name, service, grant, &mut plan.body, langs)?;
+        }
+        if let Some(egress) = ctx.egress.as_ref()
+            && matches!(&service.network_mode, None | Some(NetworkMode::Service(_)))
+        {
+            egress.inject(&mut plan.body, service_keys.iter().map(String::as_str));
+            egress::healthcheck::apply(&mut plan.body);
+        }
+        plan.files = files;
+        plan.store_dir = store_dir;
+        plan.one_shot = one_shot;
+        plan.variables = variables.clone();
+        containers.push(plan);
+    }
+    Ok(())
+}
+
 fn render_plan(
     package: &PluginPackage,
     ctx: &InstallContext,
@@ -346,6 +490,7 @@ fn render_plan(
     let gpu_services: &[String] = manifest.gpu.as_ref().map_or(&[], |g| &g.services);
     let mut binds = Vec::new();
     let mut containers = Vec::new();
+    let service_keys: Vec<String> = services.keys().cloned().collect();
     for name in start_order(dependencies(&services), langs)? {
         let service = &services[&name];
         let mut variables = used.remove(&name).unwrap_or_default();
@@ -359,55 +504,24 @@ fn render_plan(
                 crate::l10n::text(langs, "plugin-install-render-one-shot-restart", &[]),
             ));
         }
-        let mut mounts = Mounts {
-            ctx,
-            read_only_shares: &read_only_shares,
-            named: package.named_volumes(),
-            service: &name,
-            allow_docker_socket: ctx.granted.contains(&Permission::DockerSocket),
-            socket_declared: manifest.permissions.contains(&Permission::DockerSocket)
-                || manifest
-                    .optional_permissions
-                    .contains_key(&Permission::DockerSocket),
-            langs,
-        }
-        .build(&service.volumes, &mut binds)?;
-        let (files, store_dir) = configs::resolve_service(
+        render_service_containers(
             package,
-            service,
             ctx,
-            &name,
             &vars,
-            &mut mounts,
+            &service_keys,
+            &name,
+            service,
+            one_shot,
+            gpu,
+            requirements,
+            network.as_str(),
+            &labels,
+            &read_only_shares,
+            &mut binds,
             &mut variables,
+            &mut containers,
             langs,
         )?;
-        let options = ContainerOptions {
-            requirements,
-            network: network.as_str(),
-            aliases: if service.network_mode.is_none() {
-                vars.aliases(&name)
-            } else {
-                Vec::new()
-            },
-            labels: &labels,
-            gpu,
-        };
-        let mut plan = container_plan(&name, service, mounts, ctx, options, langs)?;
-        if let Some(grant) = &ctx.lan {
-            lan::publish(&name, service, grant, &mut plan.body, langs)?;
-        }
-        if let Some(vars) = ctx.egress.as_ref()
-            && matches!(&service.network_mode, None | Some(NetworkMode::Service(_)))
-        {
-            vars.inject(&mut plan.body, services.keys().map(String::as_str));
-            egress::healthcheck::apply(&mut plan.body);
-        }
-        plan.files = files;
-        plan.store_dir = store_dir;
-        plan.one_shot = one_shot;
-        plan.variables = variables;
-        containers.push(plan);
     }
     check_not_nested(&binds, langs)?;
     let mut dirs = dir_owners(&binds, &services, ctx, langs)?;
@@ -440,12 +554,11 @@ fn validated_services<'a>(
     langs: &Languages,
 ) -> Result<ServiceSet<'a>, RenderError> {
     let manifest = &package.manifest;
-    let bot_key = ctx.models.as_ref().and_then(|m| m.bot_key.clone());
     let vars = ServiceVars::new(
         manifest,
         &ctx.app_data,
         injected_vars(manifest, ctx),
-        bot_key,
+        &ctx.bots,
     );
     let mut used = BTreeMap::new();
     let services = package.services(|name| vars.get(name), &mut used, langs)?;

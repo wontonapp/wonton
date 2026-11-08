@@ -341,9 +341,9 @@ plugin-settings-secret-too-big = 64 KiBを超えています
 
 plugin-settings-bot-avatar-missing = bot.avatarが指す{ $path }がアプリのパッケージにありません
 plugin-settings-bot-avatar-type = bot.avatarはpng・jpg・gif・webpのみ使えます：{ $path }
-plugin-settings-bot-device-name = Wontonアプリ{ $id }
+plugin-settings-bot-device-name = Wontonアプリ{ $id }（ボット{ $bot }）
 plugin-settings-bot-account-deactivated = ボットのアカウント{ $user }は停止済みです。データを削除してこのアプリをアンインストールし、再インストールすると新しいアカウントが割り当てられます
-plugin-settings-bot-device-record-missing = このアプリのボットのデバイスの記録がありません。アプリを再インストールしてください（データは削除しなくてかまいません）
+plugin-settings-bot-device-record-missing = ボット{ $bot }のデバイスの記録がありません。アプリを再インストールしてください（データは削除しなくてかまいません）
 plugin-settings-bot-device-revoked = ボット{ $user }のデバイスが取り消されたため、アプリが持っているMatrixトークンは無効になりました。アプリを再インストールすると（データは削除しなくてかまいません）再発行されます
 
 # ── LAN検出・送信コンテナ・ストアインデックスの補足（lan/detect.rs、docker_limits.rs、egress、storefront）──

@@ -16,19 +16,20 @@ impl PluginManager {
             {
                 continue;
             }
-            let Some(bot) = self.store.bots().load(id)? else {
-                continue;
-            };
-            bots.push(BotActivityFacts {
-                plugin_id: id.to_string(),
-                user_id: bot.account.user_id,
-                running: entry.status == PluginStatus::Running
-                    && entry.health == Some(Health::Healthy),
-                model_requests: 0,
-                tool_calls: 0,
-                waiting: 0,
-                profile_rev: self.bot_profile_rev(id),
-            });
+            let records = self.store.bots().load(id)?;
+            let running =
+                entry.status == PluginStatus::Running && entry.health == Some(Health::Healthy);
+            for bot in records.bots.values() {
+                bots.push(BotActivityFacts {
+                    plugin_id: id.to_string(),
+                    user_id: bot.account.user_id.clone(),
+                    running,
+                    model_requests: 0,
+                    tool_calls: 0,
+                    waiting: 0,
+                    profile_rev: self.bot_profile_rev(id),
+                });
+            }
         }
         Ok(bots)
     }

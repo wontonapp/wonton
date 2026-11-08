@@ -122,7 +122,10 @@ impl PluginManager {
         let slug = package.manifest.id.slug();
         let mut updates = Vec::new();
         for plan in render(&package, &ctx, langs)?.containers {
-            let container = self.cfg.instance.container(&slug, &plan.service);
+            let container = match &plan.bot {
+                Some(bot) => self.cfg.instance.bot_container(&slug, &plan.service, bot),
+                None => self.cfg.instance.container(&slug, &plan.service),
+            };
             // 容器不在的服务下次重建时按记录来。
             let Some(current) = self.engine.inspect_container(&container).await? else {
                 continue;

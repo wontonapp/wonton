@@ -187,14 +187,31 @@ impl PluginManager {
             langs,
         )?;
         let one_shot = package.one_shot_services();
-        let names: Vec<String> = order
-            .iter()
-            .filter(|name| !one_shot.contains(name.as_str()))
-            .map(|name| self.cfg.instance.container(&slug, name))
-            .collect();
+        let bot_services = super::bot_services::bot_services(&package.manifest);
+        let bots = self.bot_names(&package.manifest.id);
+        // 要启动的容器：Bot 服务的按 Bot 一组，其余全插件一份；启动顺序不变。
+        let name_of = |service: &str, bot: Option<&str>| match bot {
+            Some(bot) => self.cfg.instance.bot_container(&slug, service, bot),
+            None => self.cfg.instance.container(&slug, service),
+        };
+        let mut group: Vec<(&str, Option<&str>)> = Vec::new();
+        for service in &order {
+            if one_shot.contains(service.as_str()) {
+                continue;
+            }
+            if bot_services.contains(service.as_str()) && !bots.is_empty() {
+                group.extend(
+                    bots.iter()
+                        .map(|bot| (service.as_str(), Some(bot.as_str()))),
+                );
+            } else {
+                group.push((service.as_str(), None));
+            }
+        }
         // 启动前逐个确认归属：同名但被别的容器占用时不碰它。
-        for name in &names {
-            let info = self.engine.inspect_container(name).await?.ok_or_else(|| {
+        for (service, bot) in &group {
+            let name = name_of(service, *bot);
+            let info = self.engine.inspect_container(&name).await?.ok_or_else(|| {
                 InstallError::Unhealthy(l10n::text(
                     langs,
                     "plugin-install-container-missing",
@@ -221,12 +238,9 @@ impl PluginManager {
         self.register_source(&package.manifest, &self.cfg.instance.network(&slug))
             .await?;
         let deadline = Instant::now() + self.cfg.install_timeout;
-        for service in order
-            .iter()
-            .filter(|name| !one_shot.contains(name.as_str()))
-        {
+        for (service, bot) in &group {
             // 一次性服务不重跑（见文件头）：它上次以 0 退出才算满足。
-            let deps: Vec<(String, DependCondition)> = dependencies[service.as_str()]
+            let deps: Vec<(String, DependCondition)> = dependencies[service]
                 .iter()
                 .map(|(dependency, condition)| {
                     let condition = if one_shot.contains(dependency.as_str()) {
@@ -234,15 +248,18 @@ impl PluginManager {
                     } else {
                         *condition
                     };
-                    (self.cfg.instance.container(&slug, dependency), condition)
+                    // 依赖的 Bot 服务是同一个 Bot 的那份；全插件一份的服务就它自己。
+                    let dep_bot = bot.filter(|_| bot_services.contains(dependency.as_str()));
+                    (name_of(dependency, dep_bot), condition)
                 })
                 .collect();
             health::wait_for_all(&self.engine, &deps, deadline, langs).await?;
-            let name = self.cfg.instance.container(&slug, service);
+            let name = name_of(service, *bot);
             self.engine.start_container(&name).await?;
         }
-        for name in &names {
-            health::wait_for(&self.engine, name, Target::Ready, deadline, langs).await?;
+        for (service, bot) in &group {
+            let name = name_of(service, *bot);
+            health::wait_for(&self.engine, &name, Target::Ready, deadline, langs).await?;
         }
         self.ensure_relays(&package.manifest, record).await?;
         Ok(())

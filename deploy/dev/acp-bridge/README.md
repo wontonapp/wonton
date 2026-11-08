@@ -38,7 +38,7 @@ export WONTON_BOT_DATA="$PWD/deploy/dev/acp-bridge/.data"
 mkdir -p "$WONTON_BOT_DATA"
 export WONTON_MATRIX_HOMESERVER=http://matrix.wonton.internal
 export WONTON_MATRIX_ACCESS_TOKEN='…'
-export WONTON_MATRIX_OWNER='@owner:wonton.localhost'
+export WONTON_MATRIX_ALLOWED_USERS='@owner:wonton.localhost'
 export WONTON_MATRIX_HOME_ROOM='!room:wonton.localhost'
 export WONTON_MODEL_BASE_URL=http://models.wonton.internal/v1
 export WONTON_MODEL_API_KEY='…'

@@ -46,7 +46,7 @@ const PORT: u16 = 18480;
 
 pub(super) struct Home {
     pub(super) app: Router,
-    plugins: Arc<PluginManager>,
+    pub(super) plugins: Arc<PluginManager>,
     pub(super) tunnel: Tunnel,
     hits: Arc<AtomicUsize>,
     _entry: TunnelEntry,
@@ -54,11 +54,6 @@ pub(super) struct Home {
 }
 
 impl Home {
-    /// 记录目录：测试要往插件记录目录里放 Bot 记录。
-    pub(super) fn data_dir(&self) -> &std::path::Path {
-        self._dir.path()
-    }
-
     pub(super) async fn start(hydra_admin: Option<SocketAddr>) -> Self {
         Self::start_with(hydra_admin, None).await
     }
@@ -587,7 +582,7 @@ async fn tunnel_api_reports_the_server_address_to_the_owner() {
 }
 
 /// 局域网（没有隧道身份）的请求，在进程内直接交给网关。
-async fn lan(
+pub(super) async fn lan(
     home: &Home,
     method: Method,
     host: &str,
@@ -728,10 +723,15 @@ async fn paired_devices_get_a_login_token_and_reach_the_client_api() {
 }
 
 /// 插件网络里的容器发来的请求：网关看到的来源地址是 `from`。
-async fn from_plugin(home: &Home, from: &str, path: &str) -> (StatusCode, HeaderMap, Value) {
+pub(super) async fn from_plugin(
+    home: &Home,
+    from: &str,
+    path: &str,
+) -> (StatusCode, HeaderMap, Value) {
     let mut request = hyper::Request::builder()
         .uri(path)
         .header(header::HOST, "matrix.wonton.internal:8080")
+        .header(header::AUTHORIZATION, "Bearer bot-token")
         .body(Body::empty())
         .unwrap();
     let addr: SocketAddr = from.parse().unwrap();
@@ -742,57 +742,4 @@ async fn from_plugin(home: &Home, from: &str, path: &str) -> (StatusCode, Header
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     (status, headers, body)
-}
-
-#[tokio::test]
-async fn bots_reach_matrix_only_from_networks_of_plugins_with_matrix_bot() {
-    let (_fake, config) = crate::matrix::fake::start().await;
-    let state = tempfile::tempdir().unwrap();
-    let matrix = Matrix::connect(&config, state.path(), HttpClient::new())
-        .await
-        .unwrap();
-    let home = Home::start_with(None, Some(Arc::new(matrix))).await;
-    let bot = vec!["matrix.bot".parse().unwrap()];
-    home.plugins
-        .register_source_for_test("app.echo", "172.30.1.0/24", bot);
-    home.plugins
-        .register_source_for_test("app.web", "172.30.2.0/24", Vec::new());
-
-    let (status, _, body) =
-        from_plugin(&home, "172.30.1.5:40000", "/_matrix/client/versions").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(body["versions"].is_array());
-    // 规则同 matrix.<base>：只有客户端接口，写法可疑的路径先挡住。
-    let admin = "/_synapse/admin/v1/register";
-    let (status, _, _) = from_plugin(&home, "172.30.1.5:40000", admin).await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    let sneaky = "/_matrix/client/../../_synapse/admin/v1/register";
-    let (status, _, _) = from_plugin(&home, "172.30.1.5:40000", sneaky).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-
-    // 没申请 matrix.bot 的插件、插件网络以外的来源都不行。
-    let (status, headers, body) =
-        from_plugin(&home, "172.30.2.5:40000", "/_matrix/client/versions").await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["errcode"], "M_FORBIDDEN");
-    assert_eq!(
-        header(&headers, "x-wonton-error"),
-        Some("permission_denied")
-    );
-    let (status, headers, _) =
-        from_plugin(&home, "192.168.1.20:40000", "/_matrix/client/versions").await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(header(&headers, "x-wonton-error"), Some("unauthenticated"));
-    let (status, _, _) = lan(
-        &home,
-        Method::GET,
-        "matrix.wonton.internal",
-        "/_matrix/client/versions",
-    )
-    .await;
-    assert_eq!(
-        status,
-        StatusCode::FORBIDDEN,
-        "没有来源地址（如经隧道）也不行"
-    );
 }

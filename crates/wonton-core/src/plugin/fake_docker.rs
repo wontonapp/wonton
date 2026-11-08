@@ -101,7 +101,7 @@ struct Resources {
     containers: BTreeMap<String, Labels>,
     /// 容器名 → 创建它的请求。
     created: BTreeMap<String, Value>,
-    /// 容器名 → 被创建过的次数：重建会计数，断言“容器没被动过”用。
+    /// 容器名 → 被创建过的次数：重建会计数，断言“容器（别的 Bot 的）没被动过”用。
     creation_count: BTreeMap<String, u32>,
     /// 网络名 → 标签。
     networks: BTreeMap<String, Labels>,

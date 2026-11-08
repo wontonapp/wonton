@@ -1,7 +1,6 @@
 //! 管理接口给 App 的视图（ADR-0017 的“接口：App 和核心”）：已安装的插件、详情页、安装预览和图标。文字按请求的
 //! 语言挑好，App 原样显示。
 
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use wonton_protocol::{
@@ -11,8 +10,6 @@ use wonton_protocol::{
 };
 
 use super::egress::probe::blocks;
-use super::gallery::{IconSource, Variant};
-use super::github_source::{Origin, Trust};
 use super::host_check::{self, Item};
 use super::host_facts::HostFacts;
 use super::image_worker::ImageError;
@@ -24,8 +21,11 @@ use super::manifest::{AgentSpec, Manifest, Permission, PluginId, PluginKind, Sso
 use super::manifest_tabs;
 use super::package::PluginPackage;
 use super::render::{dry_run, dry_run_with_email};
-use super::store::{EnabledPermission, StoreError};
-use super::views_source::source_notices;
+use super::{
+    gallery::{IconSource, Variant},
+    github_source::{Origin, Trust},
+};
+use super::{store::EnabledPermission, views_source::source_notices};
 use crate::l10n;
 
 impl PluginManager {
@@ -526,43 +526,6 @@ impl PluginManager {
         }
     }
 
-    /// 全部 Bot 用掉的 Matrix 用户名（localpart），给家人用户名的查重用（ADR-0045）。
-    pub fn bot_localparts(&self) -> Result<BTreeSet<String>, StoreError> {
-        self.store.bots().localparts()
-    }
-
-    /// 填上插件的 Bot 和写它的人：读记录要读文件，不在插件表的锁里做。
-    fn with_bot(&self, mut plugin: InstalledPlugin) -> InstalledPlugin {
-        let Ok(id) = PluginId::parse(&plugin.id) else {
-            return plugin;
-        };
-        match self.store.bots().load(&id) {
-            Ok(record) => plugin.bot_user_id = record.map(|r| r.account.user_id),
-            Err(e) => tracing::warn!(plugin = %id, error = %e, "读 Bot 记录失败"),
-        }
-        match self.store.load(&id) {
-            Ok(record) => {
-                plugin.written_by = record.as_ref().and_then(|record| record.written_by.clone());
-                plugin.enabled_root_permissions = record
-                    .as_ref()
-                    .map(|record| {
-                        record
-                            .enabled_permissions
-                            .iter()
-                            .filter(|item| {
-                                super::privileges::risk(&item.permission)
-                                    == Some(super::privileges::CapabilityRisk::Highest)
-                            })
-                            .map(|item| item.permission.to_string())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                plugin.family = record.is_some_and(|record| record.family);
-            }
-            Err(e) => tracing::warn!(plugin = %id, error = %e, "读插件记录失败"),
-        }
-        plugin
-    }
     pub(super) fn set_listed_limits(&self, id: &PluginId, limits: PluginLimits) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(id)
@@ -605,25 +568,6 @@ pub(crate) fn agent_login_options(
             title: langs.pick_owned(&login.title),
         })
         .collect()
-}
-
-#[cfg(test)]
-impl PluginManager {
-    pub(crate) fn bot_for_test(&self, id: &PluginId, user_id: &str) {
-        self.store
-            .bots()
-            .save(
-                id,
-                &super::bots::BotRecord {
-                    account: crate::matrix::BotAccount {
-                        user_id: user_id.to_owned(),
-                        home_room: "!test:example.com".to_owned(),
-                    },
-                    device_id: None,
-                },
-            )
-            .unwrap();
-    }
 }
 
 /// 检查的结果：这台主机上装不了时是原因，别的错误原样报。

@@ -341,9 +341,9 @@ plugin-settings-secret-too-big = 超過 64 KiB
 
 plugin-settings-bot-avatar-missing = bot.avatar 指向的 { $path } 不在應用程式的套件裡
 plugin-settings-bot-avatar-type = bot.avatar 只支援 png、jpg、gif、webp：{ $path }
-plugin-settings-bot-device-name = Wonton 應用程式 { $id }
+plugin-settings-bot-device-name = Wonton 應用程式 { $id }（{ $bot }）
 plugin-settings-bot-account-deactivated = Bot 帳號 { $user } 已停用：選擇刪除資料解除安裝這個應用程式後重裝，會分配新帳號
-plugin-settings-bot-device-record-missing = 沒有這個應用程式的 Bot 裝置記錄：重裝應用程式（可以不刪資料）
+plugin-settings-bot-device-record-missing = 沒有 Bot { $bot } 的裝置記錄：重裝應用程式（可以不刪資料）
 plugin-settings-bot-device-revoked = Bot { $user } 的裝置已被吊銷，應用程式拿著的 Matrix 權杖失效了：重裝應用程式（可以不刪資料）重新簽發
 
 # ── 區網偵測、出口容器和商店索引的補充（lan/detect.rs、docker_limits.rs、egress、storefront）──

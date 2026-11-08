@@ -146,17 +146,23 @@ impl PluginManager {
         if !has_bot {
             return Err(ProfileError::NotFound);
         }
-        let record = self
+        let bots = self
             .store
             .bots()
             .load(id)
-            .map_err(|e| ProfileError::Storage(e.to_string()))?
+            .map_err(|e| ProfileError::Storage(e.to_string()))?;
+        // 资料按 Bot 的接口在别的任务里；现在默认 Bot 没有（或插件没记录）就报没找到。
+        let record = bots
+            .bots
+            .get(super::bot_services::DEFAULT_BOT)
+            .or_else(|| bots.bots.values().next())
             .ok_or(ProfileError::NotFound)?;
+        let user = record.account.user_id.clone();
         let matrix = self
             .matrix
             .as_deref()
             .ok_or_else(|| ProfileError::MatrixUnavailable("核心没有接入 Matrix".to_owned()))?;
-        Ok((matrix, record.account.user_id))
+        Ok((matrix, user))
     }
 
     fn profile_name(&self, name: Option<String>) -> Result<Option<String>, ProfileError> {

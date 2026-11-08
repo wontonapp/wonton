@@ -55,6 +55,7 @@ pub use server::Caller;
 use takeover::Takeovers;
 pub use tool_policy::PolicyChange;
 use upstream::{CallError, UncertainKind, Upstreams};
+use wonton_protocol::BotKeeper;
 
 /// 卡片过期之后，会话还要留多久：确认了才开始执行，执行的时间也算在这里。
 const SESSION_IDLE_AFTER_CARD: Duration = Duration::from_secs(3600);
@@ -117,7 +118,8 @@ impl Outcome {
     }
 }
 
-/// 转给插件。结果里的文件引用换成编号（[`file_results`]）。
+/// 转给插件。私人 Bot 的调用带上替谁办事（`_meta` 的 `app.wonton/user`，ADR-0045）。结果里的文件引用
+/// 换成编号（[`file_results`]）。
 async fn forward(
     bus: &Arc<Bus>,
     caller: &Caller,
@@ -126,9 +128,13 @@ async fn forward(
     arguments: JsonObject,
     cancelled: impl Future<Output = ()> + Send,
 ) -> Outcome {
+    let on_behalf_of = caller.bot.as_ref().and_then(|bot| match &bot.keeper {
+        BotKeeper::User { username } => Some(username.clone()),
+        BotKeeper::Household | BotKeeper::Other => None,
+    });
     let called = bus
         .upstreams
-        .call(server, tool, Some(arguments), cancelled)
+        .call(server, tool, Some(arguments), on_behalf_of, cancelled)
         .await;
     match called {
         Ok(result) => {
@@ -253,14 +259,17 @@ impl Bus {
             .ok_or_else(|| Failure::new(FileFailure::ServiceUnavailable, "核心没有启用文件服务"))
     }
 
-    /// 文件访问范围里的这个调用方：有 Bot 账号的插件是它的 Matrix 用户名，和 `grants` 查到的一样；没有的（比如不进聊天的 Agent）是插件
-    /// ID，它有点，用户名里没有，不会重名。
+    /// 文件访问范围里的这个调用方：令牌认出的 Bot 用它的 Matrix 用户名（和 `grants` 查到的一样）；没有 Bot 的（比如
+    /// 不进聊天的工具插件）用插件 ID，它有点，用户名里没有，不会重名。
     fn bot_name(&self, caller: &Caller) -> Result<String, Failure> {
-        let name = self
+        let Some(bot) = &caller.bot else {
+            return Ok(caller.id.to_string());
+        };
+        let localpart = self
             .plugins
-            .bot_name(&caller.id)
+            .bot_localpart(&caller.id, &bot.bot)
             .map_err(|e| Failure::new(FileFailure::Internal, e.to_string()))?;
-        Ok(name.unwrap_or_else(|| caller.id.to_string()))
+        Ok(localpart.unwrap_or_else(|| caller.id.to_string()))
     }
 
     fn bot_ref(&self, caller: &Caller, plugin: &PluginId) -> Result<BotRef, Failure> {

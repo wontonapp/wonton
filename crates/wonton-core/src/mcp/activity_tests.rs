@@ -21,7 +21,7 @@ use super::test_support::Notes;
 use super::tests::failed;
 use crate::files::test_support::Fixture;
 use crate::matrix::BotAccount;
-use crate::plugin::bots::BotRecord;
+use crate::plugin::bots::{BotEntry, PluginBots};
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::languages::Languages;
@@ -47,12 +47,23 @@ fn register_bot(s: &Setup) {
         .bots()
         .save(
             &s.caller.id,
-            &BotRecord {
-                account: BotAccount {
-                    user_id: "@source:example.com".into(),
-                    home_room: "!source:example.com".into(),
-                },
-                device_id: Some("SOURCE".into()),
+            &PluginBots {
+                bots: [(
+                    crate::plugin::bot_services::DEFAULT_BOT.to_owned(),
+                    BotEntry {
+                        account: BotAccount {
+                            user_id: "@source:example.com".into(),
+                            home_room: "!source:example.com".into(),
+                        },
+                        device_id: Some("SOURCE".into()),
+                        keeper: wonton_protocol::BotKeeper::User {
+                            username: "owner".to_owned(),
+                        },
+                        bus_token: "source-token".to_owned(),
+                    },
+                )]
+                .into_iter()
+                .collect(),
             },
         )
         .unwrap();

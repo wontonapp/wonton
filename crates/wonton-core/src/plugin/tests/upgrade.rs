@@ -7,22 +7,18 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 use wonton_protocol::{InstallRequest, PluginState, PluginTrust, UpgradeRequest};
 
-use super::super::egress::settings::StoredEgress;
 use super::super::fake_docker::FakeDocker;
-use super::super::github::GitHub;
-use super::super::manifest::Permission;
 use super::super::names::container_name;
 use super::super::preinstall::Backoff;
-use super::super::storefront::StoreConfig;
-use super::super::storefront::index::IndexEntry;
+use super::super::storefront::{StoreConfig, index::IndexEntry};
 use super::super::{InstallError, PluginId, PluginManager, PluginPackage, PluginStatus, UpgradeTo};
-use super::env_of_container;
-use super::github::{FakeGitHub, zh};
+use super::super::{github::GitHub, manifest::Permission};
 use super::lan::{office, on};
 use super::manager::{manager_in_container, manager_with};
-use crate::http::HttpClient;
-use crate::matrix::Matrix;
-use crate::matrix::fake::start;
+use super::{
+    env_of_container,
+    github::{FakeGitHub, zh},
+};
 
 const REPO: &str = "acme/hello";
 const SOURCE: &str = "github:acme/hello";
@@ -51,7 +47,7 @@ fn web() -> String {
     container_name("app-hello", "web")
 }
 
-fn permissions(compose: &str) -> Vec<Permission> {
+pub(super) fn permissions(compose: &str) -> Vec<Permission> {
     PluginPackage::parse(compose, &super::langs())
         .unwrap()
         .manifest
@@ -122,7 +118,7 @@ fn version(m: &PluginManager) -> String {
     m.installed_plugin(&id(), &zh()).unwrap().version
 }
 
-fn image(docker: &FakeDocker, container: &str) -> String {
+pub(super) fn image(docker: &FakeDocker, container: &str) -> String {
     docker.created(container).unwrap()["Image"]
         .as_str()
         .unwrap()
@@ -436,7 +432,7 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
 }
 
 /// Bot 插件，出网。
-fn echo(version: &str, services: &str) -> String {
+pub(super) fn echo(version: &str, services: &str) -> String {
     format!(
         "services:\n  bot:\n    image: echo:{version}\n    environment:\n      \
          TOKEN: ${{WONTON_MATRIX_ACCESS_TOKEN}}\n      AUTH: Bearer ${{WONTON_MATRIX_ACCESS_TOKEN}}\n{services}\
@@ -447,7 +443,7 @@ fn echo(version: &str, services: &str) -> String {
 }
 
 /// 新版本多了一个起不来的服务：升级被整体退回，报 rolled-back，bot 的设备和代理环境都不变。
-async fn upgrade_expect_rollback(
+pub(super) async fn upgrade_expect_rollback(
     m: &Arc<PluginManager>,
     docker: &FakeDocker,
     id: &PluginId,
@@ -481,93 +477,6 @@ async fn upgrade_expect_rollback(
     let env = env_of_container(docker, bot);
     assert_eq!(env["TOKEN"], token, "退回旧版本也沿用同一台设备");
     assert_eq!(env["HTTP_PROXY"], "http://egress.wonton.internal:3128");
-}
-
-#[tokio::test]
-async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
-    let (docker, engine) = FakeDocker::start().await;
-    let (tuwunel, config) = start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let matrix = Matrix::connect(&config, &dir.path().join("core"), HttpClient::new())
-        .await
-        .unwrap();
-    let m = Arc::new(manager_in_container(engine, &dir).with_matrix(Some(Arc::new(matrix))));
-    let settings = StoredEgress {
-        url: Some("http://proxy:1".to_owned()),
-        direct_cidrs: Vec::new(),
-        use_plugin: false,
-    };
-    m.store.save_egress_settings(&settings).unwrap();
-    let id = PluginId::parse("app.echo").unwrap();
-    let bot = container_name("app-echo", "bot");
-    let v1 = echo("1.0.0", "");
-    m.install(&v1, &permissions(&v1), super::langs())
-        .await
-        .unwrap();
-    let env = env_of_container(&docker, &bot);
-    let token = env["TOKEN"].clone();
-    let devices = tuwunel.state().tokens.len();
-    let device = m.store.bots().load(&id).unwrap().unwrap().device_id;
-
-    let parse = |compose: &str| PluginPackage::parse(compose, &super::langs()).unwrap();
-    upgrade_expect_rollback(&m, &docker, &id, &bot, &token).await;
-
-    let v2 = echo("1.2.0", "");
-    m.upgrade_upload(
-        &id,
-        parse(&v2),
-        permissions(&v2),
-        Vec::new(),
-        false,
-        &super::langs(),
-    )
-    .await
-    .unwrap();
-    let env = env_of_container(&docker, &bot);
-    assert_eq!(env["TOKEN"], token);
-    assert_eq!(env["AUTH"], format!("Bearer {token}"));
-    assert_eq!(env["HTTP_PROXY"], "http://egress.wonton.internal:3128");
-    assert_eq!(image(&docker, &bot), "echo:1.2.0");
-    assert_eq!(tuwunel.state().tokens.len(), devices, "没有签新设备");
-    assert_eq!(m.store.bots().load(&id).unwrap().unwrap().device_id, device);
-    assert!(m.store.load(&id).unwrap().unwrap().proxied);
-    assert_eq!(m.status_of(&id), Some(PluginStatus::Running));
-
-    // 令牌读不回来时报错，不悄悄签新设备。
-    m.engine.remove_container(&bot).await.unwrap();
-    let v3 = echo("1.3.0", "");
-    let err = m
-        .upgrade_upload(
-            &id,
-            parse(&v3),
-            permissions(&v3),
-            Vec::new(),
-            false,
-            &super::langs(),
-        )
-        .await
-        .unwrap_err();
-    assert!(
-        err.to_string().contains(&super::message(
-            "plugin-settings-egress-token-read-back",
-            &[
-                (
-                    "reason",
-                    &super::message(
-                        "plugin-settings-egress-old-container-gone",
-                        &[("container", "wonton-app-echo--bot")],
-                    )
-                ),
-                (
-                    "reinstall",
-                    &super::message("plugin-settings-egress-token-reinstall", &[]),
-                ),
-            ],
-        )),
-        "{err}"
-    );
-    assert_eq!(tuwunel.state().tokens.len(), devices);
-    assert_eq!(m.status_of(&id), Some(PluginStatus::Running));
 }
 
 /// 没有来源的默认插件（Hermes 这样随核心预装的）：看官方索引。

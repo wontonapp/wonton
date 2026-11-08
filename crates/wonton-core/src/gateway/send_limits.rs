@@ -135,7 +135,7 @@ fn bearer(req: &Request) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn token_hash(token: &str) -> [u8; 32] {
+pub(crate) fn token_hash(token: &str) -> [u8; 32] {
     Sha256::digest(token.as_bytes()).into()
 }
 
@@ -380,7 +380,7 @@ impl SendLimiter {
     }
 
     /// 令牌是谁：先查缓存，没有就问 Tuwunel 的 `whoami`。取不到不挡消息。
-    async fn user_id(
+    pub(crate) async fn user_id(
         &self,
         token: &str,
         hash: [u8; 32],

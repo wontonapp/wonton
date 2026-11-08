@@ -149,33 +149,46 @@ impl PluginManager {
             .webui
             .as_ref()
             .map(|webui| webui.service.as_str());
+        let bot_services = super::bot_services::bot_services(&package.manifest);
+        let bots = self.bot_names(&package.manifest.id);
         let mut running = 0;
         let mut healthy = true;
         let mut stopped = Vec::new();
         let mut failures = Vec::new();
         let mut web = false;
-        for service in package.service_names() {
-            let name = self.cfg.instance.container(&slug, service);
-            let checked = health::check_now(
-                &self.engine,
-                &name,
-                service,
-                one_shot.contains(service),
-                langs,
-            )
-            .await?;
-            if webui == Some(service) {
-                web = matches!(checked, Checked::Healthy | Checked::Running);
+        // Bot 服务按 Bot 一组容器，每个都核对；全插件一份的服务照旧一个。
+        let instances = |service: &str| -> Vec<String> {
+            if bot_services.contains(service) && !bots.is_empty() {
+                bots.iter()
+                    .map(|bot| self.cfg.instance.bot_container(&slug, service, bot))
+                    .collect()
+            } else {
+                vec![self.cfg.instance.container(&slug, service)]
             }
-            match checked {
-                Checked::Completed => {}
-                Checked::Healthy => running += 1,
-                Checked::Running => {
-                    running += 1;
-                    healthy = false;
+        };
+        for service in package.service_names() {
+            for name in instances(service) {
+                let checked = health::check_now(
+                    &self.engine,
+                    &name,
+                    service,
+                    one_shot.contains(service),
+                    langs,
+                )
+                .await?;
+                if webui == Some(service) {
+                    web = matches!(checked, Checked::Healthy | Checked::Running);
                 }
-                Checked::Stopped => stopped.push(name),
-                Checked::Failed(reason) => failures.push(reason),
+                match checked {
+                    Checked::Completed => {}
+                    Checked::Healthy => running += 1,
+                    Checked::Running => {
+                        running += 1;
+                        healthy = false;
+                    }
+                    Checked::Stopped => stopped.push(name),
+                    Checked::Failed(reason) => failures.push(reason),
+                }
             }
         }
         let state = ContainersState::Running(if healthy {
@@ -225,6 +238,7 @@ impl PluginManager {
             &self.engine,
             &self.cfg.instance,
             manifest,
+            &self.bot_names(&manifest.id),
             &mut secrets,
             &self.owner_languages(),
         )
