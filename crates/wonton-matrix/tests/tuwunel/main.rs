@@ -17,6 +17,7 @@ mod login;
 mod messaging;
 mod profile;
 mod push;
+mod recovery_order;
 mod send_queue;
 mod state;
 mod support;

@@ -8,9 +8,9 @@
 crates.io 上的包原样导入：sha256 `2afc652a144822f6fbe24084e08bc59cb483fd0b504396d492131dec0749396e`，上游提交见
 `matrix-sdk/.cargo_vcs_info.json`。包里没有 LICENSE，从上游同一提交取来。
 
-补丁两处。
+### SAS 缺秘密时补要
 
-第一处：`src/encryption/mod.rs` 加了公开方法 `Encryption::query_missing_secrets_from_other_sessions`，转调
+`src/encryption/mod.rs` 加了公开方法 `Encryption::query_missing_secrets_from_other_sessions`，转调
 matrix-sdk-crypto 已经公开的 `OlmMachine::query_missing_secrets_from_other_sessions`，向自己的其他设备再要一次缺的秘密，
 再调 SDK 内部的 `send_outgoing_requests` 当场发出。只排队不发的话，请求要等下一次同步才发，可能是 30 秒的长轮询，
 取回密钥的期限就过了。
@@ -19,8 +19,18 @@ matrix-sdk-crypto 已经公开的 `OlmMachine::query_missing_secrets_from_other_
 旧设备还没把新设备记成已验证，回 “device isn't trusted” 直接丢掉，不排队也不补发，新设备就一直缺那个秘密。
 实测和时序见 [ADR-0046](../docs/adr/0046-device-verification.md)“取回密钥”一节。matrix-sdk 只在 `testing` feature 下
 暴露 `OlmMachine`，正式代码没法补要；`base_client()` 绕过存储配置和跨进程锁，不能用。
+这条补丁只服务 SAS 验证后的秘密请求；输入恢复密钥走秘密存储，不调用它。
 
-第二处：`src/sliding_sync/mod.rs` 的 `generate_sync_request` 加几条 `debug!`，记下从拿到 `pos` 到发出请求之间每一步
+### 恢复完成不被旧状态检查覆盖
+
+`src/encryption/recovery/mod.rs` 的 `all_known_secrets_available` 在查询服务器的备份禁用标志后，重新读取本地备份是否启用。
+实测：设备列表刷新先看到本地备份未启用，等待 `m.key_backup` 的 HTTP 应答期间，另一条恢复密钥操作已导入全部秘密、启用备份；
+旧检查随后回写 `Incomplete`，界面又要求输入恢复密钥。网络后读本地状态保留原来的“已启用或明确禁用”判断，不重试、不改变等待上限。
+回归用真实 Tuwunel、只延迟真实 HTTP 应答，见 `crates/wonton-matrix/tests/tuwunel/recovery_order.rs`。
+
+### 同步起步的日志
+
+`src/sliding_sync/mod.rs` 的 `generate_sync_request` 加几条 `debug!`，记下从拿到 `pos` 到发出请求之间每一步
 （读回存下的位置、取 Olm 机器、读房间订阅）。这一段原本没有任何日志，同步卡在起步时只能看见前后两个时间点，分不出卡在哪，
 补上才能用 `WONTON_TEST_LOG` 定位。
 
@@ -44,7 +54,8 @@ crates.io 包原样导入，sha256 `e43a190b56df060b5a901d0e783e04002612981d1fef
 
 ## 升级
 
-1. 先查新版 SDK 是否同时含 SDK-ui 的快照交接修复和 matrix-sdk 的公开等价取密钥方法。
+1. 先查新版 SDK 是否同时含 SDK-ui 的快照交接修复、matrix-sdk 的公开等价取密钥方法，
+   以及网络等待期间启用备份后状态不被旧检查覆盖的修复。
    各自已有上游实现时，迁移调用并删除对应 vendor 目录、workspace exclude 和 patch 项。
 2. 没有：根 `Cargo.toml` 里 matrix-sdk 系的版本一起改，`cargo fetch` 后从
    `~/.cargo/registry/cache/*/matrix-sdk-<版本>.crate` 解包，核对 sha256 和 `Cargo.lock` 的 checksum 一致，整个目录替换
