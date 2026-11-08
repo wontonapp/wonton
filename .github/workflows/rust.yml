@@ -50,11 +50,13 @@ jobs:
         # 按 runner 分开：同一台主机上的几个 runner 共用 WONTON_CI_CACHE，同时跑的作业共用一个 target 目录时，
         # 实测出现过测试编进了另一个分支的代码（2026-11-03，#139 编出了 file-client 分支的 wonton-protocol）。
         run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/rust" >> "$GITHUB_ENV"
-      - name: 构建缓存超过 30 GB 就清掉
+      - name: 构建缓存超过上限就清掉
         # Cargo 不回收旧产物，target 目录会一直长。不用 cargo clean：target 目录是挪到别的盘的符号链接时，它只删链接（实测），
         # 数据留在原处，下次还编译到链接原来的位置。
+        # 上限按机器配：runner 的 .env 里设 WONTON_CI_CACHE_MAX_GB，没设就是 30 GB。盘紧的机器设小，如 194：根盘 1.8 TB 只剩
+        # 约 60 GB，主人要留 50 GB，低于 58 GB 就停 runner，而一次“Rust Docker 测试”就往缓存里写 9 GB（2026-11-08），设 10 GB。
         run: |
-          if [ -d "$CARGO_TARGET_DIR" ] && [ "$(du -sm "$CARGO_TARGET_DIR/" | cut -f1)" -gt 30720 ]; then
+          if [ -d "$CARGO_TARGET_DIR" ] && [ "$(du -sm "$CARGO_TARGET_DIR/" | cut -f1)" -gt $(( ${WONTON_CI_CACHE_MAX_GB:-30} * 1024 )) ]; then
             rm -rf "$CARGO_TARGET_DIR/debug"
           fi
       - name: 安装 rust-toolchain.toml 指定的工具链
@@ -95,9 +97,9 @@ jobs:
       # 下面三步同“Rust”作业。
       - name: 构建缓存目录
         run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/rust" >> "$GITHUB_ENV"
-      - name: 构建缓存超过 30 GB 就清掉
+      - name: 构建缓存超过上限就清掉
         run: |
-          if [ -d "$CARGO_TARGET_DIR" ] && [ "$(du -sm "$CARGO_TARGET_DIR/" | cut -f1)" -gt 30720 ]; then
+          if [ -d "$CARGO_TARGET_DIR" ] && [ "$(du -sm "$CARGO_TARGET_DIR/" | cut -f1)" -gt $(( ${WONTON_CI_CACHE_MAX_GB:-30} * 1024 )) ]; then
             rm -rf "$CARGO_TARGET_DIR/debug"
           fi
       - name: 安装 rust-toolchain.toml 指定的工具链
