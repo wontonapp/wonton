@@ -194,7 +194,14 @@ private struct MessageBubble: View {
             ConfirmationCardView(
                 view: view,
                 answer: {
-                    cardAction(.answerConfirmation(id: view.card.id, answer: $0.answer, choiceId: $0.choiceId))
+                    cardAction(
+                        .answerConfirmation(
+                            id: view.card.id,
+                            answer: $0.answer,
+                            choiceId: $0.choiceId,
+                            secrets: [:]
+                        )
+                    )
                 },
                 stopWindow: { cardAction(.stopConfirmationWindow(id: view.card.id)) }
             )

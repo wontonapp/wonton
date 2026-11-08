@@ -27,6 +27,10 @@ fn package(compose: &str) -> PluginPackage {
     PluginPackage::parse(compose, &super::langs()).unwrap()
 }
 
+fn secret(value: &str) -> wonton_protocol::SecretString {
+    wonton_protocol::SecretString::new(value)
+}
+
 fn id() -> PluginId {
     PluginId::parse("app.hello").unwrap()
 }
@@ -476,4 +480,137 @@ async fn a_changed_file_in_a_third_party_index_is_refused() {
     let source = &added.section.plugins[0].source;
     let err = m.preview_source(source, &zh()).await.unwrap_err();
     assert_eq!(err.kind(), "invalid_input", "{err}");
+}
+
+/// 带一项主人填写的密钥的清单，服务引用它的变量。
+fn hello_with_input(version: &str, required: bool) -> String {
+    let secrets = format!(
+        "  secrets:\n    token:\n      input:\n        title: {{zh: 令牌, en: Token}}\n        url: https://example.com/keys\n        required: {required}\n"
+    );
+    format!(
+        "services:\n  web:\n    image: ghcr.io/acme/web:{version}\n    environment:\n      TOKEN: ${{WONTON_SECRET_TOKEN}}\n\
+         x-wonton:\n  spec: \"0.8\"\n  id: app.hello\n  version: {version}\n  kind: app\n  title: {{zh: 你好, en: Hello}}\n  \
+         description: {{zh: 打个招呼, en: Say hi}}\n  permissions: []\n{secrets}"
+    )
+}
+
+async fn preview_of(
+    m: &Arc<PluginManager>,
+    compose: &str,
+) -> (wonton_protocol::InstallPreview, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let preview = m
+        .preview_upload(
+            PluginPackage::parse(compose, &super::langs()).unwrap(),
+            &zh(),
+        )
+        .await
+        .unwrap();
+    (preview, dir)
+}
+
+#[tokio::test]
+async fn installing_without_a_required_input_names_it() {
+    let (_github, _docker, m, _dir) = manager().await;
+    let (preview, _stage) = preview_of(&m, &hello_with_input("1.0.0", true)).await;
+    assert_eq!(preview.secret_inputs.len(), 1);
+    assert!(preview.secret_inputs[0].required);
+    let err = m
+        .install_source(&install_request(&preview))
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind(), "invalid_input", "{err}");
+    assert!(err.to_string().contains("token"), "{err}");
+    assert!(
+        m.installed_plugin(&id(), &zh()).is_none(),
+        "缺必填项时没装上"
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_key_is_rejected() {
+    let (_github, _docker, m, _dir) = manager().await;
+    let (preview, _stage) = preview_of(&m, &hello_with_input("1.0.0", true)).await;
+    let mut request = install_request(&preview);
+    request.secrets = [
+        ("token".to_owned(), secret("x")),
+        ("nope".to_owned(), secret("y")),
+    ]
+    .into();
+    let err = m.install_source(&request).await.unwrap_err();
+    assert_eq!(err.kind(), "invalid_input", "{err}");
+    assert!(err.to_string().contains("nope"), "{err}");
+}
+
+#[tokio::test]
+async fn the_value_reaches_the_container_but_not_the_detail() {
+    let (_github, docker, m, _dir) = manager().await;
+    let (preview, _stage) = preview_of(&m, &hello_with_input("1.0.0", true)).await;
+    let mut request = install_request(&preview);
+    request.secrets = [("token".to_owned(), secret("s3cret"))].into();
+    m.install_source(&request).await.unwrap();
+    let detail = m.judged_detail(&id(), &zh()).await.unwrap();
+    let line = detail
+        .secret_inputs
+        .iter()
+        .find(|l| l.name == "token")
+        .unwrap();
+    assert!(line.filled);
+    assert!(line.changed_at_ms.is_some());
+    assert!(!serde_json::to_string(&detail).unwrap().contains("s3cret"));
+    let web = super::super::names::container_name("app-hello", "web");
+    assert!(
+        docker.env(&web).iter().any(|e| e == "TOKEN=s3cret"),
+        "{:?}",
+        docker.env(&web)
+    );
+}
+
+#[tokio::test]
+async fn a_reinstall_reuses_the_filled_value() {
+    let (_github, _docker, m, _dir) = manager().await;
+    let compose = hello_with_input("1.0.0", true);
+    let (preview, _stage) = preview_of(&m, &compose).await;
+    let mut request = install_request(&preview);
+    request.secrets = [("token".to_owned(), secret("kept"))].into();
+    m.install_source(&request).await.unwrap();
+    m.uninstall(&id(), false, &zh()).await.unwrap();
+    let (again, _stage) = preview_of(&m, &compose).await;
+    m.install_source(&install_request(&again)).await.unwrap();
+    let detail = m.judged_detail(&id(), &zh()).await.unwrap();
+    assert!(detail.secret_inputs[0].filled, "填过的沿用");
+}
+
+#[tokio::test]
+async fn an_upgrade_only_asks_for_new_and_unfilled_inputs() {
+    let (github, _docker, m, _dir) = manager().await;
+    let v1 = hello_with_input("1.0.0", true).replace(
+        "  secrets:",
+        "  secrets:\n    other:\n      input:\n        title: {en: Other}\n        required: false\n",
+    );
+    github.publish(REPO, "v1.0.0", &[("docker-compose.yml", &v1)]);
+    let (preview, _stage) = preview_of(&m, &v1).await;
+    let mut first = install_request(&preview);
+    first.secrets = [("token".to_owned(), secret("kept"))].into();
+    m.install_source(&first).await.unwrap();
+    let v2 = v1.replace("app.hello\n  version: 1.0.0", "app.hello\n  version: 1.1.0");
+    let _ = github;
+    let asked = m
+        .preview_upgrade(
+            &id(),
+            super::super::UpgradeTo::Upload(Box::new(package(&v2))),
+            &zh(),
+        )
+        .await
+        .unwrap();
+    let names: Vec<_> = asked
+        .secret_inputs
+        .iter()
+        .map(|l| l.name.as_str())
+        .collect();
+    assert!(
+        !names.contains(&"token"),
+        "还没填的 token 已经填过：{names:?}"
+    );
+    assert!(names.len() <= 1, "{names:?}");
 }

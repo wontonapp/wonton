@@ -62,5 +62,6 @@ pub(crate) fn set_permission(
         choices: choices(&action, &cancel),
         scope: None,
         plugin_id: None,
+        secret_inputs: Vec::new(),
     }
 }

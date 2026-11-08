@@ -197,6 +197,12 @@ impl PluginManager {
                 request.source
             )));
         }
+        self.store_input_values(
+            &package.manifest,
+            &request.secrets,
+            None,
+            &self.owner_languages(),
+        )?;
         let installed = self
             .install_detached_enabled(
                 package,

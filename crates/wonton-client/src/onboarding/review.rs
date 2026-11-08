@@ -365,7 +365,7 @@ impl OnboardingLink {
     }
 
     fn install(self: &Arc<Self>, id: &str, preview: InstallPreview) {
-        if let Err(error) = self.plugins.install(preview) {
+        if let Err(error) = self.plugins.install(preview, Default::default()) {
             let mut state = lock(&self.state);
             if let Some(entry) = state.review.iter_mut().find(|entry| entry.id == id) {
                 entry.state = plugin_failed(core_problem(&error));

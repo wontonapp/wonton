@@ -153,7 +153,7 @@ impl PluginManager {
         self.rebuild_context(package, record, grant, None).await
     }
 
-    fn listed(&self, id: &PluginId) -> Result<Listed, InstallError> {
+    pub(in crate::plugin) fn listed(&self, id: &PluginId) -> Result<Listed, InstallError> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         plugins
             .get(id)
@@ -161,7 +161,10 @@ impl PluginManager {
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
     }
 
-    fn package_of(&self, record: &InstalledRecord) -> Result<PluginPackage, InstallError> {
+    pub(in crate::plugin) fn package_of(
+        &self,
+        record: &InstalledRecord,
+    ) -> Result<PluginPackage, InstallError> {
         let mut package = PluginPackage::with_files(
             &record.source,
             record.files.clone(),
@@ -171,7 +174,7 @@ impl PluginManager {
         Ok(package)
     }
 
-    fn set_degraded(&self, id: &PluginId, reason: String) {
+    pub(in crate::plugin) fn set_degraded(&self, id: &PluginId, reason: String) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(id) {
             entry.status = PluginStatus::Degraded { reason };

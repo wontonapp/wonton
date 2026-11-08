@@ -224,8 +224,8 @@ pub struct BotServices {
 }
 
 pub use super::secret_spec::{
-    CollectSecret, GenerateSecret, MAX_SECRET_BYTES, SecretEncoding, SecretSpec, ShowOwner,
-    is_secret_name,
+    CollectSecret, GenerateSecret, InputSecret, MAX_SECRET_BYTES, SecretEncoding, SecretSpec,
+    ShowOwner, is_secret_name,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

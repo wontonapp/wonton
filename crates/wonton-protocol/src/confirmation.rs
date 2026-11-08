@@ -48,6 +48,10 @@ pub struct ConfirmationCard {
     /// 这张卡片要装或要更新的插件（ADR-0033）。批准后插件有网页时，壳显示“打开”和“放到底栏”。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin_id: Option<String>,
+    /// 装插件、升级插件的卡片要主人填的密钥（ADR-0064）：壳按它渲染原生表单，值随回答的
+    /// [`ConfirmationAnswer::secrets`] 带回。别的卡片是空列表。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secret_inputs: Vec<crate::SecretInput>,
 }
 
 /// 放行时段：这个 Bot 调这个插件，到期前不再发卡片。卡片只在时段开始和结束时更新。

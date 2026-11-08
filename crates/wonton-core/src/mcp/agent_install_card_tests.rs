@@ -222,3 +222,49 @@ async fn a_shrinking_update_grants_only_the_new_manifest() {
         record.granted_permissions
     );
 }
+
+/// Agent 写的插件带一项主人填写的密钥：卡片列出它，Bot 传的任何 `secrets` 参数都不算值，
+/// 主人回答时缺必填项卡片不结束。
+#[tokio::test]
+async fn the_card_asks_for_input_secrets_and_the_bot_cannot_fill_them() {
+    let b = bench().await;
+    let (services, mut x_wonton) = plain("app.input", "1.0.0", "");
+    x_wonton = format!(
+        "{x_wonton}  secrets:\n    token:\n      input:\n        title: {{zh: 令牌, en: Token}}\n        required: true\n"
+    );
+    let services = services.replace(
+        "    configs:",
+        "    environment:\n      TOKEN: ${WONTON_SECRET_TOKEN}\n    configs:",
+    );
+    b.write_package("input", &services, &x_wonton);
+    // Bot 自己带了一个 secrets 参数：工具不收它，卡片照常要填。
+    let call = b.s.spawn(
+        INSTALL,
+        json!({"dir": "input", "secrets": {"token": "from-bot"}}),
+    );
+    let card = b.s.cards.wait_for(1).await;
+    assert_eq!(card.secret_inputs.len(), 1, "{card:?}");
+    assert_eq!(card.secret_inputs[0].name, "token");
+    assert!(card.secret_inputs[0].required);
+
+    // 缺必填项：报错，卡片还等着。
+    let err =
+        b.s.answer_with_secrets(&card.id, Answer::Approve, Default::default())
+            .unwrap_err();
+    assert!(err.to_string().contains("token"), "{err}");
+    assert!(!b.installed("app.input"));
+
+    b.s.answer_with_secrets(
+        &card.id,
+        Answer::Approve,
+        [(
+            "token".to_owned(),
+            wonton_protocol::SecretString::new("s3cret"),
+        )]
+        .into(),
+    )
+    .unwrap();
+    let result = call.await.unwrap();
+    assert!(!failed(&result), "{result:?}");
+    assert!(b.installed("app.input"));
+}

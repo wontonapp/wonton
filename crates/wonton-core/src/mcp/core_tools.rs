@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotations};
 use serde_json::{Value, json};
+use wonton_protocol::SecretValues;
 
 use super::audit::{Decision, Record};
 use super::{
@@ -349,7 +350,7 @@ async fn set_permission(
     };
     let run = {
         let (id, title, langs) = (id.clone(), title.clone(), langs.clone());
-        move |bus: Arc<Bus>| async move {
+        move |bus: Arc<Bus>, _secrets: SecretValues| async move {
             match bus
                 .plugins
                 .set_plugin_permission(
@@ -387,7 +388,7 @@ async fn set_permission(
         .clearance(caller.id.as_str(), naming::CORE, SET_PERMISSION)
         .is_some();
     if cleared {
-        let outcome = run(Arc::clone(bus)).await;
+        let outcome = run(Arc::clone(bus), SecretValues::new()).await;
         let failed = matches!(outcome.state, ConfirmationState::Failed { .. });
         bus.audit.record(&Record {
             caller: caller.id.as_str(),
@@ -439,7 +440,7 @@ async fn uninstall(
         .unwrap_or(false);
     let langs = bus.plugins.owner_languages();
     let draft = cards::uninstall(&caller.name, &title, purge, &langs);
-    let run = move |bus: Arc<Bus>| async move {
+    let run = move |bus: Arc<Bus>, _secrets: SecretValues| async move {
         match bus
             .plugins
             .uninstall_detached(id.clone(), purge, bus.plugins.owner_languages())

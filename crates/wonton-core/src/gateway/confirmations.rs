@@ -61,6 +61,7 @@ pub async fn answer(
     body: Bytes,
 ) -> Response {
     let by = acted_by(&gateway, peer.as_ref(), &headers);
+    let langs = languages(&headers);
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
@@ -74,23 +75,26 @@ pub async fn answer(
         Ok(answer) => answer,
         Err(e) => {
             let message = l10n::text(
-                &languages(&headers),
+                &langs,
                 "gateway-confirm-invalid-body",
                 &[("error", e.to_string().into())],
             );
             return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
         }
     };
-    match mcp
-        .bus
-        .answer_card(&id, answer.answer, answer.choice_id.as_deref(), &by)
-    {
+    match mcp.bus.answer_card_with_secrets(
+        &id,
+        answer.answer,
+        answer.choice_id.as_deref(),
+        answer.secrets,
+        &by,
+    ) {
         Ok(state) => Json(ConfirmationReply { state }).into_response(),
         Err(e) => {
             let status = match e {
                 AnswerError::NotFound => StatusCode::NOT_FOUND,
                 AnswerError::AlreadyAnswered | AnswerError::Expired => StatusCode::CONFLICT,
-                AnswerError::UnknownAnswer => StatusCode::BAD_REQUEST,
+                AnswerError::UnknownAnswer | AnswerError::Secrets(_) => StatusCode::BAD_REQUEST,
             };
             error_response(status, e.kind(), &e.to_string())
         }

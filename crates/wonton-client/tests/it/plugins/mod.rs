@@ -23,6 +23,7 @@ use rig::{
     CONNECT_BACKSTOP, Canned, IMAGE, Rig, WAIT, core_error, installed, item, listing, preview,
     running,
 };
+use wonton_protocol::{SecretInput, SecretString};
 
 /// 兜底预算，不是节奏：按生产常数推导——三次成功读取最坏 3 × (3s 间隔 + 30s 读取限时) = 99s，
 /// 之后 settle 自己在最后一次成功读取 120s 后转不确定（UNREACHABLE_LIMIT），合计 219s；取 240s。
@@ -138,6 +139,7 @@ async fn installing_grants_what_the_preview_listed_and_reports_the_result() {
     rig.app
         .dispatch(Action::InstallPlugin {
             preview: shown.clone(),
+            secrets: Default::default(),
         })
         .unwrap();
     let view = rig.app.plugins();
@@ -200,7 +202,10 @@ async fn a_chosen_file_goes_up_as_is_and_installs_by_the_source_in_its_preview()
     assert!(asked.body.ends_with("gz"), "{asked:?}");
 
     rig.app
-        .dispatch(Action::InstallPlugin { preview: shown })
+        .dispatch(Action::InstallPlugin {
+            preview: shown,
+            secrets: Default::default(),
+        })
         .unwrap();
     rig.task("app.photos", |state| *state != PluginTaskState::Running)
         .await;
@@ -279,7 +284,10 @@ async fn a_preview_that_says_no_is_not_sent() {
     let mut blocked = preview("app.photos");
     blocked.blocked = Some("宿主架构不符".to_owned());
     assert!(matches!(
-        rig.app.dispatch(Action::InstallPlugin { preview: blocked }),
+        rig.app.dispatch(Action::InstallPlugin {
+            preview: blocked,
+            secrets: Default::default()
+        }),
         Err(CoreError::NotReady { .. })
     ));
     assert!(rig.app.plugins().tasks.is_empty());
@@ -298,7 +306,8 @@ async fn a_preview_that_needs_the_profile_is_not_sent() {
     needs_email.missing_profile = Some("这个应用要用你的邮箱，填好才能装".to_owned());
     assert!(matches!(
         rig.app.dispatch(Action::InstallPlugin {
-            preview: needs_email
+            preview: needs_email,
+            secrets: Default::default(),
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -399,6 +408,7 @@ async fn failures_keep_their_reason() {
         rig.app
             .dispatch(Action::InstallPlugin {
                 preview: preview("app.photos"),
+                secrets: Default::default(),
             })
             .unwrap();
         let state = rig
@@ -453,6 +463,7 @@ async fn a_dropped_connection_waits_for_the_result_on_the_server() {
     rig.app
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
+            secrets: Default::default(),
         })
         .unwrap();
     let state = rig
@@ -471,6 +482,7 @@ async fn a_dropped_connection_waits_for_the_result_on_the_server() {
     rig.app
         .dispatch(Action::InstallPlugin {
             preview: preview("app.other"),
+            secrets: Default::default(),
         })
         .unwrap();
     let state = rig
@@ -501,6 +513,7 @@ async fn a_stalled_list_read_does_not_fail_the_install() {
     rig.app
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
+            secrets: Default::default(),
         })
         .unwrap();
 
@@ -613,6 +626,7 @@ async fn an_upgrade_says_which_tools_the_new_version_added() {
     rig.app
         .dispatch(Action::UpgradePlugin {
             preview: preview("app.photos"),
+            secrets: Default::default(),
         })
         .unwrap();
     let view = rig
@@ -642,6 +656,7 @@ async fn an_upgrade_whose_answer_cannot_be_read_still_succeeded() {
     rig.app
         .dispatch(Action::UpgradePlugin {
             preview: preview("app.photos"),
+            secrets: Default::default(),
         })
         .unwrap();
     let view = rig
@@ -652,4 +667,51 @@ async fn an_upgrade_whose_answer_cannot_be_read_still_succeeded() {
         })
         .await;
     assert_eq!(view.tasks[0].added_tools, None);
+}
+
+/// 确认页上填的密钥随安装请求发出；改一项时走 PUT，值只上行。
+#[tokio::test]
+async fn the_secret_values_the_owner_filled_are_posted_and_updated() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let mut shown = preview("app.photos");
+    shown.secret_inputs = vec![SecretInput {
+        name: "token".to_owned(),
+        title: "Token".to_owned(),
+        description: None,
+        url: None,
+        required: true,
+    }];
+    rig.app
+        .dispatch(Action::InstallPlugin {
+            preview: shown,
+            secrets: [("token".to_owned(), SecretString::new("s3cret"))].into(),
+        })
+        .unwrap();
+    rig.task("app.photos", |state| *state != PluginTaskState::Running)
+        .await;
+    let sent: serde_json::Value = serde_json::from_str(
+        rig.core.seen(&Method::POST, "/_wonton/api/plugins")[0]
+            .body
+            .as_str(),
+    )
+    .unwrap();
+    assert_eq!(sent["secrets"]["token"], "s3cret");
+
+    rig.app
+        .dispatch(Action::SetPluginSecret {
+            id: "app.photos".to_owned(),
+            name: "token".to_owned(),
+            value: Some(SecretString::new("next")),
+        })
+        .unwrap();
+    let path = "/_wonton/api/plugins/app.photos/secrets/token";
+    let deadline = Instant::now() + WAIT;
+    while rig.core.seen(&Method::PUT, path).is_empty() {
+        assert!(Instant::now() < deadline, "没发出改密钥的请求");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let put: serde_json::Value =
+        serde_json::from_str(&rig.core.seen(&Method::PUT, path)[0].body).unwrap();
+    assert_eq!(put["value"], "next");
 }

@@ -34,7 +34,7 @@ use serde_json::json;
 use wonton_protocol::{AddedTools, InstallRequest, InstallSource, UpgradeRequest, UpgradeResult};
 
 pub(super) use super::api_body::{MAX_UPLOAD_BYTES, invalid_body, json_body, package};
-use super::api_switch::{enabled, granted, upload_parts};
+use super::api_switch::{enabled, granted, secrets, upload_parts};
 use super::{Gateway, Person, TunnelPeer, isolation, pages};
 
 pub use super::api_switch::set_plugin_permission;
@@ -376,7 +376,11 @@ async fn install_upload(
 ) -> Result<PluginView, InstallError> {
     let granted = granted(query)?;
     let enabled = enabled(query)?;
+    let secrets = secrets(headers)?;
     let package = package(langs, headers, body)?;
+    gateway
+        .plugins
+        .store_input_values(&package.manifest, &secrets, None, langs)?;
     gateway
         .plugins
         .install_detached_enabled(package, granted, enabled, query.lan_webui, langs.clone())
@@ -447,8 +451,14 @@ pub async fn upgrade(
         Some(Err(e)) => return install_error(&e),
         Some(Ok(request)) => gateway.plugins.upgrade_source(&id, &request, &langs).await,
         None => match upload_parts(&languages(&headers), &headers, &body, &query) {
-            Ok((grant, enabled, package)) => {
+            Ok((grant, enabled, secrets, package)) => {
                 let plugins = &gateway.plugins;
+                let filled = plugins.store().secrets().load(&id).ok().flatten();
+                if let Err(e) =
+                    plugins.store_input_values(&package.manifest, &secrets, filled.as_ref(), &langs)
+                {
+                    return install_error(&e);
+                }
                 plugins
                     .upgrade_upload(&id, package, grant, enabled, query.lan_webui, &langs)
                     .await

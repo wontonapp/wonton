@@ -19,6 +19,7 @@ fn answer(phone: &Phone, id: &str) {
             id: id.to_owned(),
             answer: Answer::Reject,
             choice_id: None,
+            secrets: Default::default(),
         })
         .unwrap();
 }

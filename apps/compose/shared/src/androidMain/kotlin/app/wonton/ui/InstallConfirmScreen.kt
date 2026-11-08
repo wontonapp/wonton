@@ -109,7 +109,12 @@ fun InstallConfirmScreen(
             preview?.let { current ->
                 val chosen = current.withPermissionChoices(lanWebui, enabled)
                 ConfirmInstallButton(chosen, title) {
-                    val action = if (isUpgrade) Action.UpgradePlugin(chosen) else Action.InstallPlugin(chosen)
+                    val action =
+                        if (isUpgrade) {
+                            Action.UpgradePlugin(chosen, emptyMap())
+                        } else {
+                            Action.InstallPlugin(chosen, emptyMap())
+                        }
                     previousTask = plugins.viewModel.tasks.firstOrNull { it.id == chosen.id }
                     rejection = plugins.core.send(action)
                     if (rejection == null) {

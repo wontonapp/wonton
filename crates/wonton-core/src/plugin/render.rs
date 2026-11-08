@@ -287,7 +287,7 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
         secrets: manifest
             .secrets
             .iter()
-            .filter(|(_, spec)| matches!(spec, SecretSpec::Generate(_)))
+            .filter(|(_, spec)| matches!(spec, SecretSpec::Generate(_) | SecretSpec::Input(_)))
             .map(|(name, _)| (name.clone(), "dry-run".to_owned()))
             .collect(),
         instance: Instance::default(),

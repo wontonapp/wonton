@@ -88,3 +88,18 @@ fn a_field_inside_a_name_keyed_table_names_the_actual_key() {
     assert!(found[0].contains("\"0.8\""), "{found:?}");
     assert!(problems(&document("0.8", manifest, plain())).is_empty());
 }
+
+/// `input` 也是 0.8 的写法，报错写实际的密钥名。
+#[test]
+fn an_input_secret_needs_0_8() {
+    let manifest = json!({"secrets": {
+        "brave_key": {"input": {"title": {"en": "Brave key"}}}
+    }});
+    let found = problems(&document("0.7", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].contains("x-wonton.secrets.brave_key.input"),
+        "{found:?}"
+    );
+    assert!(problems(&document("0.8", manifest, plain())).is_empty());
+}

@@ -14,7 +14,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures_util::future::BoxFuture;
 use tokio::sync::oneshot;
-use wonton_protocol::{Answer, CardChoice, ConfirmationCard, ConfirmationState};
+use wonton_protocol::{
+    Answer, CardChoice, ConfirmationCard, ConfirmationState, SecretInput, SecretValues,
+};
 
 use super::cards::Draft;
 use crate::l10n;
@@ -86,6 +88,9 @@ pub enum AnswerError {
     Expired,
     #[error("不认识这个回答")]
     UnknownAnswer,
+    /// 卡片要填的密钥不对：缺必填项、多出不认识的项，或者这张卡片不收密钥。卡片照常等回答。
+    #[error("{0}")]
+    Secrets(String),
 }
 
 impl AnswerError {
@@ -94,7 +99,7 @@ impl AnswerError {
             Self::NotFound => "not_found",
             Self::AlreadyAnswered => "already_answered",
             Self::Expired => "expired",
-            Self::UnknownAnswer => "invalid_input",
+            Self::UnknownAnswer | Self::Secrets(_) => "invalid_input",
         }
     }
 }
@@ -104,6 +109,8 @@ pub struct Ticket {
     id: String,
     /// 主人按的是哪个“同意”。
     pub answer: Answer,
+    /// 主人在卡片里填的密钥（ADR-0064）。
+    pub secrets: SecretValues,
     /// 主人没回答这张卡片，是另一张卡片打开放行时段时一起放行的：那张卡片的 ID。
     pub window: Option<String>,
 }
@@ -112,6 +119,8 @@ pub struct Ticket {
 pub struct Chosen {
     pub answer: Answer,
     pub choice_id: Option<String>,
+    /// 主人在卡片里填的密钥（ADR-0064）；别的卡片是空表。
+    pub secrets: SecretValues,
 }
 
 struct Slot {
@@ -123,6 +132,8 @@ struct Slot {
     card: ConfirmationCard,
     handle: Option<String>,
     waiter: Option<oneshot::Sender<Chosen>>,
+    /// 这张卡片要填的密钥（ADR-0064）；不填密钥的卡片是空的。
+    secret_inputs: Vec<SecretInput>,
     created: SystemTime,
 }
 
@@ -192,6 +203,7 @@ impl Confirmations {
                 Ok(Ticket {
                     id: card.id,
                     answer,
+                    secrets: chosen.secrets,
                     window,
                 })
             }
@@ -219,6 +231,7 @@ impl Confirmations {
             choices: draft.choices,
             expires_at_ms: now_ms(created + self.ttl),
             plugin_id: draft.plugin_id,
+            secret_inputs: draft.secret_inputs.clone(),
             window: None,
         };
         let (waiter, answered) = oneshot::channel();
@@ -244,6 +257,7 @@ impl Confirmations {
             card: card.clone(),
             handle: None,
             waiter: Some(waiter),
+            secret_inputs: draft.secret_inputs,
             created,
         };
         table.slots.insert(card.id.clone(), slot);
@@ -305,6 +319,24 @@ impl Confirmations {
         answer: Answer,
         choice_id: Option<&str>,
     ) -> Result<ConfirmationState, AnswerError> {
+        self.answer_with_secrets(
+            id,
+            answer,
+            choice_id,
+            SecretValues::new(),
+            &Languages::from_header(None),
+        )
+    }
+
+    /// 带密钥的回答（ADR-0064）。
+    pub fn answer_with_secrets(
+        &self,
+        id: &str,
+        answer: Answer,
+        choice_id: Option<&str>,
+        secrets: SecretValues,
+        langs: &Languages,
+    ) -> Result<ConfirmationState, AnswerError> {
         let state = match answer {
             Answer::Approve | Answer::ApproveWider | Answer::AllowWindow => {
                 ConfirmationState::Running
@@ -323,6 +355,42 @@ impl Confirmations {
         if slot.card.state == ConfirmationState::Expired || now >= slot.card.expires_at_ms {
             return Err(AnswerError::Expired);
         }
+        // 先查密钥：不对时卡片照常等回答。
+        let secrets = if slot.secret_inputs.is_empty() {
+            if !secrets.is_empty() {
+                return Err(AnswerError::Secrets(crate::l10n::text(
+                    langs,
+                    "chat-card-secrets-not-used",
+                    &[],
+                )));
+            }
+            secrets
+        } else {
+            if let Some(name) = secrets
+                .keys()
+                .find(|name| !slot.secret_inputs.iter().any(|i| &i.name == *name))
+            {
+                return Err(AnswerError::Secrets(crate::l10n::text(
+                    langs,
+                    "plugin-secret-unknown",
+                    &[("names", crate::l10n::list(langs, &[name.as_str()]).into())],
+                )));
+            }
+            let missing: Vec<&str> = slot
+                .secret_inputs
+                .iter()
+                .filter(|i| i.required && !secrets.contains_key(&i.name))
+                .map(|i| i.name.as_str())
+                .collect();
+            if !missing.is_empty() {
+                return Err(AnswerError::Secrets(crate::l10n::text(
+                    langs,
+                    "plugin-secret-required-missing",
+                    &[("names", crate::l10n::list(langs, &missing).into())],
+                )));
+            }
+            secrets
+        };
         let Some(waiter) = slot.waiter.take() else {
             return Err(AnswerError::AlreadyAnswered);
         };
@@ -330,6 +398,7 @@ impl Confirmations {
         let chosen = Chosen {
             answer,
             choice_id: choice_id.map(str::to_owned),
+            secrets,
         };
         if waiter.send(chosen).is_err() {
             slot.card.state = ConfirmationState::Expired;
@@ -368,6 +437,7 @@ impl Confirmations {
         let _ = waiter.send(Chosen {
             answer: Answer::Reject,
             choice_id: Some(SUPERSEDED.to_owned()),
+            secrets: SecretValues::new(),
         });
         self.publish(id).await;
         true

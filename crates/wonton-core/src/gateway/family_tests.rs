@@ -521,6 +521,11 @@ fn owner_only_route_tables() -> Vec<RouteTable> {
         ),
         (
             Method::PUT,
+            "/_wonton/api/plugins/app.whoami/secrets/admin_password",
+            "{\"value\": \"x\"}",
+        ),
+        (
+            Method::PUT,
             "/_wonton/api/plugins/app.whoami/tool-policy/always/hermes",
             "",
         ),

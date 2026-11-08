@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use wonton_l10n::Arg;
 use wonton_protocol::{
     AgentPermissionRequest, Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard,
-    ConfirmationState, ConfirmationWindow, PermissionRisk, WindowEnd,
+    ConfirmationState, ConfirmationWindow, PermissionRisk, SecretInput, WindowEnd,
 };
 
 pub(crate) use permission::set_permission;
@@ -34,6 +34,8 @@ pub struct Draft {
     pub scope: Option<String>,
     /// 卡片关于哪个插件：壳用它画“打开”和“放到底栏”。
     pub plugin_id: Option<String>,
+    /// 卡片要主人填的密钥（ADR-0064）；不填密钥的卡片是空的。
+    pub secret_inputs: Vec<SecretInput>,
 }
 
 impl Draft {
@@ -218,7 +220,12 @@ pub fn added_lines(
 }
 
 /// 安装插件。
-pub fn install(requester: &str, manifest: &Manifest, langs: &Languages) -> Draft {
+pub fn install(
+    requester: &str,
+    manifest: &Manifest,
+    secret_inputs: Vec<SecretInput>,
+    langs: &Languages,
+) -> Draft {
     let mut lines = vec![
         line(text(&manifest.description)),
         line(l10n::text(
@@ -242,6 +249,7 @@ pub fn install(requester: &str, manifest: &Manifest, langs: &Languages) -> Draft
         ),
         scope: None,
         plugin_id: Some(manifest.id.to_string()),
+        secret_inputs,
     }
 }
 
@@ -259,7 +267,12 @@ fn install_title(requester: &str, manifest: &Manifest, langs: &Languages) -> Str
 
 /// Agent 写的插件第一次装（ADR-0033）：未审核、全部权限和镜像，和“以后不再问”的说明。
 /// 有很高或最高级权限时这些权限每次更新都问，“不再问”不成立，就不写。
-pub fn agent_install(requester: &str, package: &PluginPackage, langs: &Languages) -> Draft {
+pub fn agent_install(
+    requester: &str,
+    package: &PluginPackage,
+    secret_inputs: Vec<SecretInput>,
+    langs: &Languages,
+) -> Draft {
     let manifest = &package.manifest;
     let mut lines = vec![
         emphasized(l10n::text(
@@ -304,6 +317,7 @@ pub fn agent_install(requester: &str, package: &PluginPackage, langs: &Languages
         ),
         scope: None,
         plugin_id: Some(manifest.id.to_string()),
+        secret_inputs,
     }
 }
 
@@ -315,6 +329,7 @@ pub fn agent_update(
     header: &str,
     added: &[CardLine],
     from: &str,
+    secret_inputs: Vec<SecretInput>,
     langs: &Languages,
 ) -> Draft {
     let manifest = &package.manifest;
@@ -356,6 +371,7 @@ pub fn agent_update(
         ),
         scope: None,
         plugin_id: Some(manifest.id.to_string()),
+        secret_inputs,
     }
 }
 
@@ -416,6 +432,7 @@ pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
         ),
         scope: None,
         plugin_id: Some(manifest.id.to_string()),
+        secret_inputs: Vec::new(),
     }
 }
 
@@ -439,6 +456,7 @@ pub fn uninstall(requester: &str, title: &str, delete_data: bool, langs: &Langua
         ),
         scope: None,
         plugin_id: None,
+        secret_inputs: Vec::new(),
     }
 }
 
@@ -473,6 +491,7 @@ pub fn tool_call(
         ),
         scope: None,
         plugin_id: None,
+        secret_inputs: Vec::new(),
     }
 }
 
@@ -536,6 +555,7 @@ pub fn agent_permission(
         choices: buttons,
         scope: None,
         plugin_id: None,
+        secret_inputs: Vec::new(),
     }
 }
 
@@ -624,6 +644,7 @@ pub fn save_file(
         choices: buttons,
         scope: None,
         plugin_id: None,
+        secret_inputs: Vec::new(),
     }
 }
 
@@ -703,6 +724,7 @@ mod tests {
     fn a_card_is_a_message_the_default_push_rules_notify() {
         let langs = Languages::default();
         let card = ConfirmationCard {
+            secret_inputs: Vec::new(),
             id: "abc".into(),
             state: ConfirmationState::Pending,
             title: "Hermes 想安装 Grafana".into(),
@@ -722,6 +744,7 @@ mod tests {
     #[test]
     fn the_card_body_follows_the_requested_language() {
         let card = ConfirmationCard {
+            secret_inputs: Vec::new(),
             id: "abc".into(),
             state: ConfirmationState::Pending,
             title: "Hermes 想安装 Grafana".into(),

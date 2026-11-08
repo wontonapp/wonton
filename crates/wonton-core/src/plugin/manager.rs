@@ -351,6 +351,11 @@ impl PluginManager {
             .then(|| format!("{}{}", self.web_url(id), entry.entry_path()))
     }
 
+    /// 插件记录和密钥库（卡片里要用密钥库判断哪一项已经填过）。
+    pub(crate) fn store(&self) -> &Store {
+        &self.store
+    }
+
     pub(crate) fn is_installed(&self, id: &PluginId) -> bool {
         self.plugins.read().expect("插件表锁中毒").contains_key(id)
     }

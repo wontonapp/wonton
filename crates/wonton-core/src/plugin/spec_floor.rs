@@ -51,6 +51,7 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_7, Added::NoNewPrivilegesWithoutPermission),
     (V0_8, Added::Field(&["optional_permissions"])),
     (V0_8, Added::Field(&["secrets", "*", "show_owner"])),
+    (V0_8, Added::Field(&["secrets", "*", "input"])),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。

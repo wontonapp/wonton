@@ -41,7 +41,7 @@ pub(super) const WHOAMI: &str =
 pub(super) struct Reply {
     pub status: StatusCode,
     pub headers: HeaderMap,
-    text: String,
+    pub(super) text: String,
 }
 
 impl Reply {

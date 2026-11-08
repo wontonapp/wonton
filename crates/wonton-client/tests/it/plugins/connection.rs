@@ -197,6 +197,7 @@ async fn a_state_from_a_newer_core_is_not_taken_for_success() {
     rig.app
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
+            secrets: Default::default(),
         })
         .unwrap();
     let state = rig

@@ -116,6 +116,8 @@ pub enum Action {
         answer: Answer,
         #[cfg_attr(feature = "uniffi", uniffi(default = None))]
         choice_id: Option<String>,
+        /// 装插件、升级插件的卡片上填的密钥（ADR-0064）；别的卡片是空表。
+        secrets: crate::SecretValues,
     },
     /// 主人点了卡片上放行时段的“停止”：只拦后面的调用，已经发给插件的不撤回（ADR-0024）。进展和结果在
     /// [`ConfirmationView::window`](crate::ConfirmationView::window)。已经在发时什么都不做，家里的服务器还没连上时返回
@@ -162,9 +164,23 @@ pub enum Action {
     RefreshStore { force: bool },
     /// 主人在确认页上点了“安装”：按预览安装，授予预览里列出的全部权限。插件包在预览之后变了时失败
     /// （`PluginFailure::Changed`），要重新预览。主人打开了确认页上的开关时，把预览的 `lan_webui.enabled` 改成 `true` 再发。
-    InstallPlugin { preview: InstallPreview },
+    InstallPlugin {
+        preview: InstallPreview,
+        /// 主人在确认页上填的密钥（ADR-0064）。
+        secrets: crate::SecretValues,
+    },
     /// 主人在升级确认页上点了“升级”，同 [`Action::InstallPlugin`]。
-    UpgradePlugin { preview: InstallPreview },
+    UpgradePlugin {
+        preview: InstallPreview,
+        secrets: crate::SecretValues,
+    },
+    /// 填一项插件密钥，或把可选项清空（`value` 为空，ADR-0064）。只有主人能改；成功看 `PluginsViewModel` 的详情。
+    SetPluginSecret {
+        id: String,
+        name: String,
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        value: Option<crate::SecretString>,
+    },
     /// 卸载。`delete_data` 为真时同时删除它的数据、密钥和 Bot 账号，不可恢复。
     UninstallPlugin { id: String, delete_data: bool },
     /// 清掉一个做完的任务（成功或失败的提示）。

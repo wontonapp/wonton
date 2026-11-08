@@ -329,7 +329,8 @@ impl ChatLink {
                 id,
                 answer,
                 choice_id,
-            } => self.answer_confirmation(id, answer, choice_id),
+                secrets,
+            } => self.answer_confirmation(id, answer, choice_id, secrets),
             Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
             Action::SetChatLayout { .. } => Err(CoreError::NotReady {
                 reason: l10n!(CATALOG, language(), "chat-layouts-unsupported"),
@@ -471,6 +472,7 @@ impl ChatLink {
         id: String,
         answer: Answer,
         choice_id: Option<String>,
+        secrets: wonton_protocol::SecretValues,
     ) -> Result<(), CoreError> {
         if answer == Answer::Unknown {
             return Err(invalid(&l10n!(CATALOG, language(), "chat-unknown-answer")));
@@ -491,7 +493,7 @@ impl ChatLink {
             let body = ConfirmationAnswer {
                 answer,
                 choice_id,
-                secrets: Default::default(),
+                secrets,
             };
             let outcome = confirmation::send_answer(&core_url, &proxy, &id, body).await;
             answers.send_modify(|answers| answers.finish(id, outcome));

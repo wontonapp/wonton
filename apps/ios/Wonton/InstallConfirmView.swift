@@ -135,7 +135,12 @@ struct InstallConfirmView: View {
             line.enabled = enabled.contains(line.permission)
             return line
         }
-        let action: Action = isUpgrade ? .upgradePlugin(preview: preview) : .installPlugin(preview: preview)
+        let action: Action
+        if isUpgrade {
+            action = .upgradePlugin(preview: preview, secrets: [:])
+        } else {
+            action = .installPlugin(preview: preview, secrets: [:])
+        }
         do {
             try model.core.dispatch(action: action)
             if isUpgrade {

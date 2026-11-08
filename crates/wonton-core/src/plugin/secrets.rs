@@ -28,6 +28,9 @@ pub type Secrets = BTreeMap<String, Vec<u8>>;
 struct SecretFile {
     #[serde(with = "base64_map")]
     values: Secrets,
+    /// 主人填写的项最后改动的时间（Unix 毫秒）；只有 `input` 项在里面。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    changed: BTreeMap<String, u64>,
 }
 
 pub struct SecretStore {
@@ -48,10 +51,26 @@ impl SecretStore {
         Ok(read_json::<SecretFile>(&self.path(id))?.map(|file| file.values))
     }
 
+    /// 读出 `input` 项的改动时间。
+    pub fn changed(&self, id: &PluginId) -> Result<BTreeMap<String, u64>, StoreError> {
+        Ok(read_json::<SecretFile>(&self.path(id))?.map_or_default(|file| file.changed))
+    }
+
     pub fn save(&self, id: &PluginId, secrets: &Secrets) -> Result<(), StoreError> {
+        self.save_changed(id, secrets, &self.changed(id)?)
+    }
+
+    /// 存下密钥和 `input` 项的改动时间。
+    pub fn save_changed(
+        &self,
+        id: &PluginId,
+        secrets: &Secrets,
+        changed: &BTreeMap<String, u64>,
+    ) -> Result<(), StoreError> {
         create_private_dir(&self.dir)?;
         let file = SecretFile {
             values: secrets.clone(),
+            changed: changed.clone(),
         };
         write_json(&self.path(id), &file)
     }
@@ -85,13 +104,14 @@ pub fn generate_missing(manifest: &Manifest, secrets: &mut Secrets) -> bool {
     added
 }
 
-/// 要注入的 `generate` 项：名字 → 文本值。缺了哪一项（密钥文件被删或损坏后重建）就报出它的名字。
+/// 要注入的 `generate` 和 `input` 项：名字 → 文本值。`generate` 缺了（密钥文件被删或损坏后重建）就报出它的
+/// 名字；可选的 `input` 没填时注入空串，必填的没填也报错。
 pub fn generated_values(
     manifest: &Manifest,
     secrets: &Secrets,
     langs: &Languages,
 ) -> Result<BTreeMap<String, String>, String> {
-    manifest
+    let mut values: BTreeMap<String, String> = manifest
         .secrets
         .iter()
         .filter(|(_, spec)| matches!(spec, SecretSpec::Generate(_)))
@@ -112,7 +132,35 @@ pub fn generated_values(
             })?;
             Ok((name.clone(), text))
         })
-        .collect()
+        .collect::<Result<_, String>>()?;
+    for (name, spec) in &manifest.secrets {
+        let SecretSpec::Input(input) = spec else {
+            continue;
+        };
+        match secrets.get(name) {
+            Some(value) => {
+                let text = String::from_utf8(value.clone()).map_err(|_| {
+                    crate::l10n::text(
+                        langs,
+                        "plugin-settings-secret-not-text",
+                        &[("name", name.clone().into())],
+                    )
+                })?;
+                values.insert(name.clone(), text);
+            }
+            None if input.required => {
+                return Err(crate::l10n::text(
+                    langs,
+                    "plugin-settings-secret-missing",
+                    &[("name", name.clone().into())],
+                ));
+            }
+            None => {
+                values.insert(name.clone(), String::new());
+            }
+        }
+    }
+    Ok(values)
 }
 
 #[derive(Debug, thiserror::Error)]

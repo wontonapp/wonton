@@ -1,3 +1,5 @@
+mod actions;
+
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -396,42 +398,6 @@ fn interface_types_round_trip_through_json() {
         }),
     };
     assert_eq!(round_trip(&view_model), view_model);
-}
-
-#[test]
-fn plugin_actions_round_trip_through_json() {
-    for action in [
-        Action::SetLanguages {
-            languages: vec!["zh-Hans-CN".into(), "en".into()],
-        },
-        Action::RefreshPlugins,
-        Action::StartPlugin {
-            plugin_id: "app.samba".into(),
-        },
-        Action::RefreshStore { force: true },
-        Action::InstallPlugin { preview: preview() },
-        Action::UpgradePlugin {
-            preview: InstallPreview {
-                upgrade_from: Some("0.9.0".into()),
-                ..preview()
-            },
-        },
-        Action::StartTakeover {
-            id: "app.memos".into(),
-        },
-        Action::EndTakeover {
-            id: "app.memos".into(),
-        },
-        Action::UninstallPlugin {
-            id: "app.samba".into(),
-            delete_data: true,
-        },
-        Action::DismissPluginTask {
-            id: "app.samba".into(),
-        },
-    ] {
-        assert_eq!(round_trip(&action), action);
-    }
 }
 
 /// 契约：核心和客户端核心之间的 JSON 写法。改了就要两边一起改，旧的 App 也会读不懂。

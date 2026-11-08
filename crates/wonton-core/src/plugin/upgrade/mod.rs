@@ -329,6 +329,7 @@ impl PluginManager {
             )
             .await?;
         preview.upgrade_from = Some(record.version.clone());
+        preview.secret_inputs = self.missing_secret_inputs(id, &package.manifest, langs);
         if upload {
             preview.source = Some(self.staged.stage(package.clone()));
         }
@@ -390,6 +391,23 @@ impl PluginManager {
         Ok(preview)
     }
 
+    /// 升级预览里要填的密钥：只列还没填的，已经填过的沿用。
+    fn missing_secret_inputs(
+        &self,
+        id: &PluginId,
+        manifest: &super::manifest::Manifest,
+        langs: &Languages,
+    ) -> Vec<wonton_protocol::SecretInput> {
+        let filled = self
+            .store
+            .secrets()
+            .load(id)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        super::secret_input::lines(manifest, &|name| filled.contains_key(name), true, langs)
+    }
+
     /// 按预览给的摘要升级。升级本身在独立的任务里执行，请求断开了也照样做完。
     pub async fn upgrade_source(
         self: &Arc<Self>,
@@ -422,6 +440,8 @@ impl PluginManager {
                 &[("id", id.as_str().into()), ("digest", digest.into())],
             )));
         }
+        let filled = self.store.secrets().load(id).ok().flatten();
+        self.store_input_values(&package.manifest, &request.secrets, filled.as_ref(), langs)?;
         self.upgrade_detached(package, granted, requested, request.lan_webui)
             .await?;
         self.staged.remove(&digest);

@@ -1,6 +1,6 @@
 //! 插件密钥的清单声明（`x-wonton.secrets`，规范"插件密钥"）：每项是核心生成的随机值
-//! （`generate`）或插件运行中生成、交给核心保管的文件（`collect`），恰好一种；注入与收存在
-//! [`super::secrets`]。`show_owner` 声明主人可在 App 里查看一项生成的密钥。
+//! （`generate`）、插件运行中生成、交给核心保管的文件（`collect`）或主人自己填的值（`input`），
+//! 恰好一种；注入与收存在 [`super::secrets`]。`show_owner` 声明主人可在 App 里查看一项生成的密钥。
 
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +12,7 @@ use super::manifest::{LocalizedText, ManifestError, require_locales};
 pub enum SecretSpec {
     Generate(GenerateSecret),
     Collect(CollectSecret),
+    Input(InputSecret),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,6 +54,37 @@ pub struct ShowOwner {
     pub label: LocalizedText,
 }
 
+/// 主人在安装、升级时自己填的一项密钥（ADR-0064）：值是用户在别的服务那里拿到的凭据，不返回、只显示
+/// 填没填。`url` 是去哪里拿；`required` 缺了装不上。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InputSecret {
+    /// 输入框的标题，写法同清单的 `title`。
+    pub title: LocalizedText,
+    /// 一句补充，如免费额度、要开哪些权限。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<LocalizedText>,
+    /// 去哪里拿这个密钥，只接受 `https://`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// 必填，默认是。
+    #[serde(default = "default_required")]
+    pub required: bool,
+}
+
+fn default_required() -> bool {
+    true
+}
+
+/// `https://` 开头、带主机、没有空白。
+fn https_url(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    !host.is_empty() && !url.chars().any(char::is_whitespace)
+}
+
 /// 生成的密钥最多这么多随机字节。
 pub const MAX_SECRET_BYTES: usize = 1024;
 
@@ -68,6 +100,8 @@ struct RawSecret {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     collect: Option<CollectSecret>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    input: Option<InputSecret>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     show_owner: Option<ShowOwner>,
 }
 
@@ -75,16 +109,20 @@ impl TryFrom<RawSecret> for SecretSpec {
     type Error = String;
 
     fn try_from(raw: RawSecret) -> Result<Self, Self::Error> {
-        match (raw.generate, raw.collect, raw.show_owner) {
-            (Some(mut generate), None, show_owner) => {
+        match (raw.generate, raw.collect, raw.input, raw.show_owner) {
+            (Some(mut generate), None, None, show_owner) => {
                 generate.view = show_owner;
                 Ok(Self::Generate(generate))
             }
-            (None, Some(_), Some(_)) => {
+            (None, Some(_), None, Some(_)) => {
                 Err("collect 项是插件交给核心的凭据，不给人看，不能加 show_owner".to_owned())
             }
-            (None, Some(collect), None) => Ok(Self::Collect(collect)),
-            _ => Err("每项密钥必须恰好写 generate 或 collect 之一".to_owned()),
+            (None, Some(collect), None, None) => Ok(Self::Collect(collect)),
+            (None, None, Some(_), Some(_)) => {
+                Err("input 项的值不返回，不能加 show_owner".to_owned())
+            }
+            (None, None, Some(input), None) => Ok(Self::Input(input)),
+            _ => Err("每项密钥必须恰好写 generate、collect 或 input 之一".to_owned()),
         }
     }
 }
@@ -100,11 +138,19 @@ impl From<SecretSpec> for RawSecret {
                     view: None,
                 }),
                 collect: None,
+                input: None,
             },
             SecretSpec::Collect(collect) => Self {
                 show_owner: None,
                 generate: None,
                 collect: Some(collect),
+                input: None,
+            },
+            SecretSpec::Input(input) => Self {
+                show_owner: None,
+                generate: None,
+                collect: None,
+                input: Some(input),
             },
         }
     }
@@ -141,6 +187,18 @@ pub(super) fn validate_secret(name: &str, spec: &SecretSpec) -> Result<(), Manif
             if !collect.path.starts_with('/') || collect.path.split('/').any(|p| p == "..") =>
         {
             invalid("collect.path 须是容器里的绝对路径，不能含 ..".to_owned())
+        }
+        SecretSpec::Input(input) => {
+            require_locales("input.title", &input.title)
+                .map_err(|e| ManifestError::Invalid(format!("secrets.{name}：{e}")))?;
+            if let Some(description) = &input.description {
+                require_locales("input.description", description)
+                    .map_err(|e| ManifestError::Invalid(format!("secrets.{name}：{e}")))?;
+            }
+            match &input.url {
+                Some(url) if !https_url(url) => invalid("input.url 须是 https:// 地址".to_owned()),
+                _ => Ok(()),
+            }
         }
         _ => Ok(()),
     }
@@ -211,7 +269,7 @@ mod tests {
         let source = "    orphan:\n\
                       \x20     show_owner: { label: { zh: 孤儿, en: Orphan } }";
         let error = manifest_with(source).unwrap_err();
-        assert!(error.to_string().contains("generate 或 collect"), "{error}");
+        assert!(error.to_string().contains("恰好写 generate"), "{error}");
     }
 
     #[test]

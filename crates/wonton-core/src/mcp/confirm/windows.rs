@@ -8,7 +8,9 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
-use wonton_protocol::{Answer, ConfirmationCard, ConfirmationState, ConfirmationWindow, WindowEnd};
+use wonton_protocol::{
+    Answer, ConfirmationCard, ConfirmationState, ConfirmationWindow, SecretValues, WindowEnd,
+};
 
 use super::{Chosen, Confirmations, Table, now_ms};
 use crate::l10n;
@@ -146,6 +148,7 @@ impl Confirmations {
             let chosen = Chosen {
                 answer: Answer::Approve,
                 choice_id: None,
+                secrets: SecretValues::new(),
             };
             if waiter.send(chosen).is_ok() {
                 slot.card.state = ConfirmationState::Running;

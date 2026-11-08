@@ -366,3 +366,9 @@ plugin-settings-store-index-docs-problem = 公式インデックスのdocsを読
 plugin-settings-store-index-onboarding-problem = 公式インデックスのonboardingを読み取れません：{ $error }
 plugin-settings-store-index-mirrors-problem = 公式インデックスのregistry_mirrorsを読み取れません：{ $error }
 plugin-settings-store-index-read-failed = 公式インデックス{ $path }を読み取れません：{ $error }
+
+plugin-secret-unknown = リクエストに知らない鍵があります: { $names }
+plugin-secret-required-missing = 必須の鍵がまだ入力されていません: { $names }
+plugin-secret-required-clear = 必須の鍵 { $name } は空にできません
+plugin-secret-not-input = { $name } はオーナーが入力する鍵ではありません
+chat-card-secrets-not-used = この確認では鍵を受け取りません

@@ -34,7 +34,7 @@ use rmcp::service::{Peer, RoleServer};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use serde_json::Value;
-use wonton_protocol::{ConfirmationState, FileFailure};
+use wonton_protocol::{ConfirmationState, FileFailure, SecretValues};
 
 use crate::bot_activity::Guard;
 use crate::config::PLUGIN_MCP_HOST;
@@ -480,7 +480,7 @@ impl Bus {
         }
         // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
         let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());
-        let run = move |bus: Arc<Bus>| async move {
+        let run = move |bus: Arc<Bus>, _secrets: SecretValues| async move {
             forward(
                 &bus,
                 &agent,
@@ -506,7 +506,7 @@ impl Bus {
         run: F,
     ) -> CallToolResult
     where
-        F: FnOnce(Arc<Bus>) -> Fut + Send + 'static,
+        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
         self.confirmed_after_hold(caller, name, args, (draft, activity), run, None)
@@ -524,7 +524,7 @@ impl Bus {
         held_ms: Option<u64>,
     ) -> CallToolResult
     where
-        F: FnOnce(Arc<Bus>) -> Fut + Send + 'static,
+        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
         drop(activity);
@@ -536,7 +536,7 @@ impl Bus {
             match decision {
                 Ok(ticket) => {
                     let activity = bus.plugins.activity.start_tool(&caller.id);
-                    let outcome = run(bus.clone()).await;
+                    let outcome = run(bus.clone(), ticket.secrets.clone()).await;
                     drop(activity);
                     bus.record(
                         &caller,
@@ -571,7 +571,7 @@ impl Bus {
         run: F,
     ) -> CallToolResult
     where
-        F: FnOnce(Arc<Bus>) -> Fut + Send + 'static,
+        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
         let Some(second) = second else {
@@ -605,7 +605,7 @@ impl Bus {
                 }
             };
             let activity = bus.plugins.activity.start_tool(&caller.id);
-            let outcome = run(bus.clone()).await;
+            let outcome = run(bus.clone(), ticket.secrets.clone()).await;
             drop(activity);
             bus.record(
                 &caller,

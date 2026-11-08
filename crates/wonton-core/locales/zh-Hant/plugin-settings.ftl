@@ -366,3 +366,9 @@ plugin-settings-store-index-docs-problem = 無法讀取官方索引的 docs：{ 
 plugin-settings-store-index-onboarding-problem = 無法讀取官方索引的 onboarding：{ $error }
 plugin-settings-store-index-mirrors-problem = 無法讀取官方索引的 registry_mirrors：{ $error }
 plugin-settings-store-index-read-failed = 讀不了官方索引 { $path }：{ $error }
+
+plugin-secret-unknown = 請求裡有不認識的密鑰：{ $names }
+plugin-secret-required-missing = 必填的密鑰還沒填：{ $names }
+plugin-secret-required-clear = 必填的密鑰 { $name } 不能清空
+plugin-secret-not-input = { $name } 不是主人填寫的密鑰
+chat-card-secrets-not-used = 這張確認不收密鑰

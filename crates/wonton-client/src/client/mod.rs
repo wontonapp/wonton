@@ -8,8 +8,8 @@ use wonton_protocol::{
     FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, HomeViewModel,
     InstallPreview, LanChoice, LanSettings, Me, MediaHandle, OnboardingViewModel,
     OwnerProfileUpdate, PeersViewModel, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers,
-    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef, TabsViewModel,
-    TransfersViewModel,
+    SecretString, ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef,
+    TabsViewModel, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -414,6 +414,20 @@ impl ClientCore {
             .await
     }
 
+    /// 填一项插件密钥或清空可选项（ADR-0064）：核心重建用到它的服务，做完才回应；返回之后的详情。
+    pub async fn set_plugin_secret(
+        &self,
+        id: String,
+        name: String,
+        value: Option<SecretString>,
+    ) -> Result<PluginDetail, CoreError> {
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.set_secret_now(id, name, value).await })
+            .await
+    }
+
     /// 开关“每次都问”（ADR-0033）：打开后这个 Agent 每次更新都发卡片；返回开关之后的详情。
     pub async fn set_ask_every_update(
         &self,
@@ -616,10 +630,14 @@ impl ClientCore {
                 scope.plugins.refresh_store(force);
                 Ok(())
             }
-            Action::InstallPlugin { preview } => scope.plugins.install(preview),
-            Action::UpgradePlugin { preview } => scope.plugins.upgrade(preview),
+            Action::InstallPlugin { preview, secrets } => scope.plugins.install(preview, secrets),
+            Action::UpgradePlugin { preview, secrets } => scope.plugins.upgrade(preview, secrets),
             Action::UninstallPlugin { id, delete_data } => scope.plugins.uninstall(id, delete_data),
             Action::DismissPluginTask { id } => scope.plugins.dismiss_task(&id),
+            Action::SetPluginSecret { id, name, value } => {
+                scope.plugins.set_secret(id, name, value);
+                Ok(())
+            }
             Action::StartTakeover { id } => {
                 scope.plugins.start_takeover(id);
                 Ok(())

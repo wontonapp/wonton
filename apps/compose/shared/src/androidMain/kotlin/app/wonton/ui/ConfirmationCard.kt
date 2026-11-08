@@ -73,7 +73,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
             ) {
                 card.choices.forEach { choice ->
                     ChoiceButton(choice, view) {
-                        onAction(Action.AnswerConfirmation(card.id, choice.answer, choice.choiceId))
+                        onAction(Action.AnswerConfirmation(card.id, choice.answer, choice.choiceId, emptyMap()))
                     }
                 }
             }

@@ -55,6 +55,11 @@ default_instance() {
   printf '%s' "${name:0:16}"
 }
 export WONTON_DEV_INSTANCE="${WONTON_DEV_INSTANCE-$(default_instance)}"
+# 端口没给时沿用这套栈上次起的端口（.data/dev-port）。up 时远端选的是别的端口的场景靠它，
+# 不然后续子命令连不上，还得手动带环境变量。
+if [[ -z "${WONTON_DEV_PORT:-}" && -f "$here/.data/dev-port" ]]; then
+  WONTON_DEV_PORT="$(cat "$here/.data/dev-port")"
+fi
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18480}"
 export WONTON_DEV_DOMAIN="${WONTON_DEV_DOMAIN:-wonton.localhost}"
 export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18482}"
@@ -228,7 +233,7 @@ package_type() {
 }
 
 install() {
-  local file="$1" yes="${2:-}" preview grants type blocked
+  local file="$1" yes="${2:-}" secrets="${3:-}" preview grants type blocked headers
   [[ -e "$file" ]] || die "找不到插件包：$file"
   type="$(package_type "$file")"
   preview="$(package "$file" | api POST /_wonton/api/plugins/preview -H "Content-Type: $type" --data-binary @-)" ||
@@ -246,8 +251,30 @@ for notice in json.load(sys.stdin)["notices"]:
     read -r -p "确认安装？[y/N] " answer
     [[ "$answer" == y || "$answer" == Y ]] || die "已取消"
   fi
-  package "$file" | api POST "/_wonton/api/plugins?grant=$grants" -H "Content-Type: $type" --data-binary @-
+  headers=(-H "Content-Type: $type")
+  if [[ -n "$secrets" ]]; then
+    # 值是 base64url(JSON)：查询串会进日志，密钥放头里。
+    headers+=(-H "Wonton-Plugin-Secrets: $(python3 -c 'import base64,json,sys;print(base64.urlsafe_b64encode(json.dumps(json.loads(sys.argv[1])).encode()).decode().rstrip("="))' "$secrets")")
+  fi
+  package "$file" | api POST "/_wonton/api/plugins?grant=$grants" "${headers[@]}" --data-binary @-
   echo
+}
+
+# 填一项密钥或清空可选项（ADR-0064）。值留空是清空。
+secret() {
+  local id="${1:?用法：$0 secret <插件 ID> <名字> [值]}"
+  local name="${2:?用法：$0 secret <插件 ID> <名字> [值]}"
+  local value="${3:-}"
+  api PUT "/_wonton/api/plugins/$id/secrets/$name" -d "{\"value\": \"$value\"}"
+  echo
+}
+
+# 插件容器的环境变量，只列 WONTON_SECRET_*。
+secret_env() {
+  local id="${1:?用法：$0 secret-env <插件 ID>}"
+  docker ps -q --filter "name=${id//./-}" | while read -r c; do
+    docker inspect "$c" --format '{{json .Config.Env}}'
+  done | tr ',' '\n' | grep -o 'WONTON_SECRET_[A-Z0-9_]*=[^"]*' | sort -u
 }
 
 # 以主人身份打开插件网页：核心登录 → 会话交接 → 插件的 OIDC 登录，全程用上面的浏览器替身走完，走到插件页面
@@ -297,6 +324,7 @@ case "${1:-}" in
   up)
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
     export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
+    mkdir -p "$here/.data" && printf '%s' "$WONTON_DEV_PORT" > "$here/.data/dev-port"
     if [[ -n "${WONTON_DEV_BUILD_PROXY:-}" ]]; then
       build_image -q --target dev --build-arg WONTON_BUILD_COMMIT -t "wonton-core:${WONTON_CORE_IMAGE_TAG:-dev}" -f "$here/Dockerfile" "$repo" >/dev/null
       compose up -d --wait
@@ -321,8 +349,17 @@ case "${1:-}" in
     fi
     ;;
   logs) compose logs -f core ;;
+  api)
+    shift
+    api "$@"
+    echo
+    ;;
   token) token ;;
-  install) install "${2:?用法：$0 install <compose 文件或插件包目录> [--yes]}" "${3:-}" ;;
+  install)
+    install "${2:?用法：$0 install <compose 文件或插件包目录> [--yes] [密钥 JSON]}" "${3:-}" "${4:-}"
+    ;;
+  secret) secret "${@:2}" ;;
+  secret-env) secret_env "${2:?用法：$0 secret-env <插件 ID>}" ;;
   uninstall)
     id="${2:?用法：$0 uninstall <插件 ID> [--purge]}"
     purge=false

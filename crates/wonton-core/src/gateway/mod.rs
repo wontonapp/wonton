@@ -740,6 +740,8 @@ mod push_tests;
 #[cfg(test)]
 mod registry_mirror_tests;
 #[cfg(test)]
+mod secret_change_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tunnel_tests;

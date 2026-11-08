@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject};
 use serde_json::{Value, json};
+use wonton_protocol::SecretValues;
 
 use super::Outcome;
 use super::audit::{Decision, Record};
@@ -71,7 +72,11 @@ async fn official(
         Err(message) => return bus.deny(caller, name, value, &message),
     };
     let langs = bus.plugins.owner_languages();
-    let mut draft = cards::install(&caller.name, &package.manifest, &langs);
+    let inputs = match bus.plugins.secret_inputs(&package.manifest, None, &langs) {
+        Ok(inputs) => inputs,
+        Err(e) => return bus.deny(caller, name, value, &e.to_string()),
+    };
+    let mut draft = cards::install(&caller.name, &package.manifest, inputs, &langs);
     match bus
         .plugins
         .retained_data(&package.manifest.id, &langs)
@@ -91,7 +96,17 @@ async fn official(
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, &langs));
     let granted = package.manifest.permissions.clone();
     let langs = langs.clone();
-    let run = move |bus: Arc<Bus>| async move {
+    let run = move |bus: Arc<Bus>, secrets: SecretValues| async move {
+        if let Err(e) = bus
+            .plugins
+            .store_input_values(&package.manifest, &secrets, None, &langs)
+        {
+            return Outcome::failed(crate::l10n::text(
+                &langs,
+                "chat-install-failed",
+                &[("kind", e.kind().into()), ("error", e.to_string().into())],
+            ));
+        }
         match bus
             .plugins
             .install_detached(package, granted, false, langs.clone())
@@ -227,7 +242,11 @@ async fn first_install(
     bus.confirmations
         .supersede_pending(&caller.id, &id, langs)
         .await;
-    let mut draft = cards::agent_install(&caller.name, &package, langs);
+    let inputs = match bus.plugins.secret_inputs(&package.manifest, None, langs) {
+        Ok(inputs) => inputs,
+        Err(e) => return bus.deny(caller, name, value, &e.to_string()),
+    };
+    let mut draft = cards::agent_install(&caller.name, &package, inputs, langs);
     match bus.plugins.retained_data(&id, langs).await {
         Ok(Some(notice)) => draft.lines.insert(1, notice),
         Ok(None) => {}
@@ -248,7 +267,17 @@ async fn first_install(
     };
     let id_for_run = id.clone();
     let langs = langs.clone();
-    let run = move |bus: Arc<Bus>| async move {
+    let run = move |bus: Arc<Bus>, secrets: SecretValues| async move {
+        if let Err(e) = bus
+            .plugins
+            .store_input_values(&package.manifest, &secrets, None, &langs)
+        {
+            return Outcome::failed(crate::l10n::text(
+                &langs,
+                "chat-install-failed",
+                &[("kind", e.kind().into()), ("error", e.to_string().into())],
+            ));
+        }
         match bus
             .plugins
             .install_detached(package, granted, false, langs.clone())
@@ -391,7 +420,15 @@ async fn update(
     let granted = package.manifest.permissions.clone();
     let lan_webui = record.lan_webui;
     let enabled = record.enabled_permissions.clone();
-    if widened.is_empty() && !risky && !record.ask_every_update {
+    // 新增的必填密钥没填过：静默更新会让启动失败，得发给主人填。
+    let filled = bus.plugins.store().secrets().load(&id).ok().flatten();
+    let needs_secrets = package.manifest.secrets.iter().any(|(name, spec)| {
+        matches!(spec, crate::plugin::manifest::SecretSpec::Input(input) if input.required)
+            && !filled
+                .as_ref()
+                .is_some_and(|secrets| secrets.contains_key(name))
+    });
+    if widened.is_empty() && !risky && !record.ask_every_update && !needs_secrets {
         // 不打扰主人：直接更新，写审计（ADR-0033 的“更新，权限没变宽”）。之前还在等的
         // 同一份提交让位，不能让主人批一份已经被盖掉的。
         bus.confirmations
@@ -427,19 +464,27 @@ async fn update(
             Vec::new(),
         )
     };
+    let inputs = match bus
+        .plugins
+        .secret_inputs(&package.manifest, filled.as_ref(), langs)
+    {
+        Ok(inputs) => inputs,
+        Err(e) => return bus.deny(caller, name, value, &e.to_string()),
+    };
     let draft = cards::agent_update(
         &caller.name,
         &package,
         &header,
         &lines,
         &record.version,
+        inputs,
         langs,
     );
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, langs));
     let id_for_run = id;
-    let run = move |bus: Arc<Bus>| {
+    let run = move |bus: Arc<Bus>, secrets: SecretValues| {
         upgrade_ran(
-            bus, id_for_run, version, package, granted, enabled, lan_webui,
+            bus, id_for_run, version, package, granted, enabled, lan_webui, secrets,
         )
     };
     bus.confirmed_twice(
@@ -462,8 +507,20 @@ async fn upgrade_ran(
     granted: Vec<Permission>,
     enabled: Vec<EnabledPermission>,
     lan_webui: bool,
+    secrets: SecretValues,
 ) -> Outcome {
     let langs = bus.plugins.owner_languages();
+    let filled = bus.plugins.store().secrets().load(&id).ok().flatten();
+    if let Err(e) =
+        bus.plugins
+            .store_input_values(&package.manifest, &secrets, filled.as_ref(), &langs)
+    {
+        return Outcome::failed(l10n::text(
+            &langs,
+            "chat-install-failed",
+            &[("kind", e.kind().into()), ("error", e.to_string().into())],
+        ));
+    }
     match bus
         .plugins
         .upgrade_upload(&id, package, granted, enabled, lan_webui, &langs)

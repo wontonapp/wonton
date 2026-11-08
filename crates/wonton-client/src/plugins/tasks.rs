@@ -8,11 +8,12 @@ use std::time::{Duration, Instant};
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    CoreError, InstallPreview, InstallRequest, PluginFailure, PluginIcon, PluginOperation,
-    PluginProblem, PluginState, PluginTask, PluginTaskState, UpgradeRequest, UpgradeResult,
+    CoreError, InstallPreview, InstallRequest, PluginDetail, PluginFailure, PluginIcon,
+    PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskState, SecretString,
+    SecretUpdate, SecretValues, UpgradeRequest, UpgradeResult,
 };
 
-use super::api::{CoreApi, INSTALL_TIMEOUT};
+use super::api::{CoreApi, INSTALL_TIMEOUT, to_core_error};
 use super::{POLL_INTERVAL, PluginsLink};
 use crate::l10n::{CATALOG, language};
 
@@ -34,7 +35,11 @@ enum Outcome {
 
 impl PluginsLink {
     /// `InstallPlugin`：按预览安装，授予预览里列出的全部权限。
-    pub(crate) fn install(self: &Arc<Self>, preview: InstallPreview) -> Result<(), CoreError> {
+    pub(crate) fn install(
+        self: &Arc<Self>,
+        preview: InstallPreview,
+        secrets: SecretValues,
+    ) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
         let lan_webui = lan_webui_chosen(&preview);
         let enabled_permissions = enabled_permissions(&preview);
@@ -54,7 +59,7 @@ impl PluginsLink {
             digest: preview.digest,
             grant,
             enabled_permissions,
-            secrets: Default::default(),
+            secrets,
             devices: Vec::new(),
             lan_webui,
             install_together: Vec::new(),
@@ -73,8 +78,48 @@ impl PluginsLink {
         Ok(())
     }
 
+    /// 填一项密钥或清空可选项（ADR-0064）：核心重建用到它的服务，做完才回应。
+    pub(crate) async fn set_secret_now(
+        self: &Arc<Self>,
+        id: String,
+        name: String,
+        value: Option<SecretString>,
+    ) -> Result<PluginDetail, CoreError> {
+        let api = self.api().map_err(to_core_error)?;
+        let update = SecretUpdate { value };
+        let result = api
+            .put(
+                &["plugins", &id, "secrets", &name],
+                &update,
+                INSTALL_TIMEOUT,
+            )
+            .await
+            .map_err(to_core_error);
+        self.refresh_installed();
+        result
+    }
+
+    /// `SetPluginSecret`：在后台发出去，不挡住 App。
+    pub(crate) fn set_secret(
+        self: &Arc<Self>,
+        id: String,
+        name: String,
+        value: Option<SecretString>,
+    ) {
+        let link = self.clone();
+        self.runtime.spawn(async move {
+            if let Err(e) = link.set_secret_now(id, name, value).await {
+                tracing::warn!(error = %e, "could not set the plugin secret");
+            }
+        });
+    }
+
     /// `UpgradePlugin`：升到预览给的版本。
-    pub(crate) fn upgrade(self: &Arc<Self>, preview: InstallPreview) -> Result<(), CoreError> {
+    pub(crate) fn upgrade(
+        self: &Arc<Self>,
+        preview: InstallPreview,
+        secrets: SecretValues,
+    ) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
         let lan_webui = lan_webui_chosen(&preview);
         self.begin_task(
@@ -90,7 +135,7 @@ impl PluginsLink {
             digest: preview.digest,
             grant,
             enabled_permissions,
-            secrets: Default::default(),
+            secrets,
             lan_webui,
         };
         let link = self.clone();

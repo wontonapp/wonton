@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use wonton_protocol::{Answer, ConfirmationState, WindowEnd};
+use wonton_protocol::{Answer, ConfirmationState, SecretValues, WindowEnd};
 
 use super::Bus;
 use super::audit::WindowRecord;
@@ -22,7 +22,25 @@ impl Bus {
         choice_id: Option<&str>,
         by: &str,
     ) -> Result<ConfirmationState, AnswerError> {
-        let state = self.confirmations.answer(id, answer, choice_id)?;
+        self.answer_card_with_secrets(id, answer, choice_id, SecretValues::new(), by)
+    }
+
+    /// 带密钥的回答卡片（ADR-0064）。
+    pub fn answer_card_with_secrets(
+        self: &Arc<Self>,
+        id: &str,
+        answer: Answer,
+        choice_id: Option<&str>,
+        secrets: SecretValues,
+        by: &str,
+    ) -> Result<ConfirmationState, AnswerError> {
+        let state = self.confirmations.answer_with_secrets(
+            id,
+            answer,
+            choice_id,
+            secrets,
+            &self.owner_languages(),
+        )?;
         if answer == Answer::AllowWindow {
             self.window_opened(id, by);
         }

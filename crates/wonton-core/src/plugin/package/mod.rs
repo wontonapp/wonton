@@ -518,7 +518,7 @@ impl PluginPackage {
                 SecretSpec::Collect(collect) => {
                     Some(("secrets.collect.service", Some(&collect.service)))
                 }
-                SecretSpec::Generate(_) => None,
+                SecretSpec::Generate(_) | SecretSpec::Input(_) => None,
             });
         let bot_services = self.manifest.bots.iter().flat_map(|b| &b.services);
         let bots = bot_services

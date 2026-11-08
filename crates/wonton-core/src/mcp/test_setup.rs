@@ -340,6 +340,22 @@ impl Setup {
         self.bus.confirmations().answer(id, answer, None)
     }
 
+    /// 带密钥的回答（ADR-0064）。
+    pub(super) fn answer_with_secrets(
+        &self,
+        id: &str,
+        answer: Answer,
+        secrets: wonton_protocol::SecretValues,
+    ) -> Result<ConfirmationState, AnswerError> {
+        self.bus.confirmations().answer_with_secrets(
+            id,
+            answer,
+            None,
+            secrets,
+            &Languages::from_header(None),
+        )
+    }
+
     pub(super) fn audit(&self) -> Vec<Value> {
         let text = fs::read_to_string(self.dir.path().join("audit.jsonl")).unwrap_or_default();
         text.lines()

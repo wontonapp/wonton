@@ -366,3 +366,9 @@ plugin-settings-store-index-docs-problem = The official index's docs could not b
 plugin-settings-store-index-onboarding-problem = The official index's onboarding could not be read: { $error }
 plugin-settings-store-index-mirrors-problem = The official index's registry_mirrors could not be read: { $error }
 plugin-settings-store-index-read-failed = The official index { $path } could not be read: { $error }
+
+plugin-secret-unknown = Unknown key in the request: { $names }
+plugin-secret-required-missing = Fill in the required keys: { $names }
+plugin-secret-required-clear = The required key { $name } can't be cleared
+plugin-secret-not-input = { $name } is not a key the owner fills in
+chat-card-secrets-not-used = This confirmation does not take keys

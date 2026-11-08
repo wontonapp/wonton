@@ -366,3 +366,9 @@ plugin-settings-store-index-docs-problem = 官方索引的 docs 读不懂：{ $e
 plugin-settings-store-index-onboarding-problem = 官方索引的 onboarding 读不懂：{ $error }
 plugin-settings-store-index-mirrors-problem = 官方索引的 registry_mirrors 读不懂：{ $error }
 plugin-settings-store-index-read-failed = 读不了官方索引 { $path }：{ $error }
+
+plugin-secret-unknown = 请求里有不认识的密钥：{ $names }
+plugin-secret-required-missing = 必填的密钥还没填：{ $names }
+plugin-secret-required-clear = 必填的密钥 { $name } 不能清空
+plugin-secret-not-input = { $name } 不是主人填写的密钥
+chat-card-secrets-not-used = 这张确认不收密钥
