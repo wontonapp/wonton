@@ -69,6 +69,7 @@
 | [0057](0057-optional-permissions.md) | 可选权限：声明成默认关，主人自己打开 |
 | [0058](0058-agent-side-sessions.md) | Agent 的话题会话：都能干活，互相知道对方在做什么，改同一个文件时排队 |
 | [0060](0060-chat-layouts.md) | 聊天页的显示方式：气泡或文档，核心合成，壳只画预设 |
+| [0061](0061-agent-runtime-and-frontends.md) | Agent 的运行时和前端分开：运行时经一道 ACP 网关提供能力，聊天、网页、看板都是前端 |
 | [0062](0062-desktop-vm-host.md) | Mac 和 Windows 当服务器：云吞自带一台隐藏的 Linux 虚拟机 |
 | [0063](0063-internal-oidc-issuer.md) | 签发方用插件网络里的内部名字，浏览器走的地址不变 |
 | [0064](0064-input-secrets.md) | 用户填写的密钥：清单声明，装时在原生表单里填，核心保管，不回显 |
