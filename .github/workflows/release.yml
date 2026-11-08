@@ -3,11 +3,14 @@ name: release
 # 推 vX.Y.Z 的 tag 时构建核心镜像（amd64、arm64），推到 GHCR（ADR-0012）。带连字符的预发布版本（v0.2.0-beta.1）只更新
 # beta 渠道，正式版本同时更新 stable 和 beta。安装脚本和 App 里的升级都按 digest 记版本，渠道只是找新版本的入口。
 # 只认版本号的 tag（v1.2.3、v1.2.3-beta.1），误推的 vfoo 不会发布。
+# 手动触发（只认 main）只发桥镜像，标签 main-<短提交号>，不碰任何渠道：桥和插件一起改名时，插件要先钉上新桥，
+# 不必为此发一版核心。
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
       - "v[0-9]+.[0-9]+.[0-9]+-*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,6 +19,7 @@ permissions:
 jobs:
   core-image:
     name: 核心镜像
+    if: github.event_name == 'push'
     runs-on: [self-hosted, Linux, X64, docker]
     timeout-minutes: 60
     steps:
@@ -66,6 +70,7 @@ jobs:
 
   acp-bridge-image:
     name: ACP bridge 镜像
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
     runs-on: [self-hosted, Linux, X64, docker]
     timeout-minutes: 60
     steps:
@@ -73,10 +78,15 @@ jobs:
       - name: 版本和代理
         id: meta
         run: |
-          version="${GITHUB_REF_NAME#v}"
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-acp-bridge"
-          tags="$image:$version,$image:beta"
-          case "$version" in *-*) ;; *) tags="$tags,$image:stable" ;; esac
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            version="main-${GITHUB_SHA::7}"
+            tags="$image:$version"
+          else
+            version="${GITHUB_REF_NAME#v}"
+            tags="$image:$version,$image:beta"
+            case "$version" in *-*) ;; *) tags="$tags,$image:stable" ;; esac
+          fi
           {
             echo "version=$version"
             echo "tags=$tags"
