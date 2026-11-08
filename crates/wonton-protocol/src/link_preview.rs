@@ -46,6 +46,9 @@ pub enum LinkPreviewFailure {
     InvalidUrl,
     /// 域名解析到回环、私有、链路本地等不许去的地址，跳转后的地址也算。
     BlockedAddress,
+    /// 配了出网代理时经代理用 DoH 解析域名失败：DoH 服务器连不上、回了错误，或者查不到这个域名。
+    /// 不会退回本地解析，所以本地解析的结果可用也不走。
+    DnsFailed,
     /// 对方站点连不上、返回错误，或者跳转超过 3 次。
     UpstreamError,
     /// 整次超过 10 秒。
