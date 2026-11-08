@@ -115,6 +115,35 @@ pub enum PluginKind {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Runtime {
+    #[default]
+    Compose,
+    RemoteMcp,
+    Skills,
+}
+
+impl Runtime {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Compose => "compose",
+            Self::RemoteMcp => "remote_mcp",
+            Self::Skills => "skills",
+        }
+    }
+}
+
+impl From<Runtime> for wonton_protocol::PluginRuntime {
+    fn from(runtime: Runtime) -> Self {
+        match runtime {
+            Runtime::Compose => Self::Compose,
+            Runtime::RemoteMcp => Self::RemoteMcp,
+            Runtime::Skills => Self::Skills,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Sso {
     Oidc,
@@ -435,6 +464,8 @@ pub struct Manifest {
     pub id: PluginId,
     pub version: String,
     pub kind: PluginKind,
+    #[serde(default)]
+    pub runtime: Runtime,
     pub title: LocalizedText,
     pub description: LocalizedText,
     /// 插件包里的 PNG 或 SVG。

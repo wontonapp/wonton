@@ -58,6 +58,7 @@ impl PluginsLink {
         let request = InstallRequest {
             source,
             digest: preview.digest,
+            scope: None,
             grant,
             enabled_permissions,
             secrets,

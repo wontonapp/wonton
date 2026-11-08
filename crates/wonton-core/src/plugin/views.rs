@@ -104,6 +104,8 @@ impl PluginManager {
             screenshots: Vec::new(),
             tags: langs.pick_tags(&m.tags),
             kind: installed.kind,
+            runtime: m.runtime.into(),
+            scope: Some(wonton_protocol::PluginScope::All),
             version: m.version.clone(),
             trust: installed.trust,
             author: author(m),
@@ -199,6 +201,7 @@ impl PluginManager {
         written_by: Option<PluginWriter>,
         enabled: &[EnabledPermission],
     ) -> Result<InstallPreview, InstallError> {
+        super::install_entry::check_runtime(&package.manifest, langs)?;
         let plan = dry_run(package, langs)?;
         let icon = self.check_icon(package, langs).await?;
         if let Some(icon) = &icon {
@@ -260,6 +263,8 @@ impl PluginManager {
             version: m.version.clone(),
             kind: kind(m.kind),
             has_bot: super::bots::is_bot(m),
+            runtime: m.runtime.into(),
+            scope_choices: self.scope_choices()?,
             icon: icon.map(|i| i.paths()),
             trust: trust(package.origin.as_ref()),
             author: author(m),
@@ -423,6 +428,7 @@ impl PluginManager {
         m: &Manifest,
         langs: &Languages,
     ) -> Result<(), InstallError> {
+        super::install_entry::check_runtime(m, langs)?;
         if let Some(p) = m.permissions.iter().find(|p| !supported(p)) {
             return Err(InstallError::Unsupported(l10n::text(
                 langs,
@@ -492,6 +498,7 @@ impl PluginManager {
                 .map_or(&entry.version, |listed| &listed.revision)
                 .clone(),
             kind: manifest.map_or(Kind::Other, |m| kind(m.kind)),
+            runtime: manifest.map_or(wonton_protocol::PluginRuntime::Other, |m| m.runtime.into()),
             icon: entry
                 .listed
                 .as_ref()
@@ -680,6 +687,8 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         screenshots: Vec::new(),
         tags: Vec::new(),
         kind: installed.kind,
+        runtime: installed.runtime,
+        scope: None,
         version: installed.version.clone(),
         trust: installed.trust,
         author: None,

@@ -514,3 +514,5 @@ plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $fie
 plugin-capability-service-unknown = { $field } 引用的服务 `{ $service }` 在 compose 里不存在
 plugin-capability-service-not-forwardable = { $field } 不能指向 network_mode: none 的服务：核心要转发进去、在里面签发凭据
 plugin-install-capability-deps-unsupported = 这个核心还不支持插件之间的依赖，升级核心后再装
+plugin-install-runtime-services = runtime 为 { $runtime } 时不能声明 services
+plugin-install-runtime-unsupported = 这个核心不支持安装或升级 runtime 为 { $runtime } 的插件，请先升级核心

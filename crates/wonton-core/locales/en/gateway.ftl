@@ -128,3 +128,5 @@ gateway-owner-secrets-not-generated = The secret { $name } has no value yet; sta
 gateway-owner-secrets-store-failed = Couldn't read the app secret: { $error }
 gateway-owner-secrets-not-text = The secret { $name } isn't stored as text
 gateway-owner-secrets-audit-unavailable = The audit log isn't wired on this server, so secret values can't be shown
+gateway-plugin-scope-unsupported = This core does not support changing which bots can use a plugin. Upgrade the core first.
+gateway-bot-plugin-access-unsupported = This core does not support switching plugin access for a bot. Upgrade the core first.

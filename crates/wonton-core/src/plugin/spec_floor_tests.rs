@@ -185,3 +185,20 @@ fn all_new_variables_are_checked_even_after_an_unrelated_reference() {
     }});
     assert_eq!(problems(&document("0.10", json!({}), service)).len(), 3);
 }
+
+#[test]
+fn plugin_forms_require_spec_0_10() {
+    for (field, manifest) in [
+        ("x-wonton.runtime", json!({"runtime": "compose"})),
+        (
+            "x-wonton.agent.skills.mount",
+            json!({"agent": {"skills": {"mount": "/opt/wonton/skills"}}}),
+        ),
+    ] {
+        let found = problems(&document("0.9", manifest.clone(), plain()));
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].contains(field), "{found:?}");
+        assert!(found[0].contains("spec \"0.10\""), "{found:?}");
+        assert!(problems(&document("0.10", manifest, plain())).is_empty());
+    }
+}

@@ -97,6 +97,7 @@ fn plugins(revision: &str) -> PluginsViewModel {
                 version: "1.0.0".to_owned(),
                 revision: revision.to_owned(),
                 kind: wonton_protocol::PluginKind::App,
+                runtime: Default::default(),
                 icon: None,
                 trust: wonton_protocol::PluginTrust::Official,
                 source: None,

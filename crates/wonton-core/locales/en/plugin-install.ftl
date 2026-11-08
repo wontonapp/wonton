@@ -515,3 +515,5 @@ plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $fie
 plugin-capability-service-unknown = { $field } refers to service `{ $service }`, which doesn't exist in the compose file
 plugin-capability-service-not-forwardable = { $field } must not point at a network_mode: none service: the core forwards into it and issues credentials there
 plugin-install-capability-deps-unsupported = this core does not support dependencies between plugins yet; upgrade the core before installing
+plugin-install-runtime-services = runtime { $runtime } must not declare services
+plugin-install-runtime-unsupported = this core cannot install or upgrade runtime { $runtime }; upgrade the core first

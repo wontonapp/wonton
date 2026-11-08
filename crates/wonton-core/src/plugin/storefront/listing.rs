@@ -188,6 +188,10 @@ impl PluginManager {
             screenshots: Vec::new(),
             tags: langs.pick_tags(&m.tags),
             kind: kind(m.kind),
+            runtime: m.runtime.into(),
+            scope: installed
+                .as_ref()
+                .map(|_| wonton_protocol::PluginScope::All),
             version: m.version.clone(),
             trust: match origin.map(|o| o.trust) {
                 Some(Trust::Official) => PluginTrust::Official,

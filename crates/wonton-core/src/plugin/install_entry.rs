@@ -4,10 +4,21 @@ use std::sync::Arc;
 
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginView, detached};
-use super::manifest::{Permission, PluginKind};
+use super::manifest::{Manifest, Permission, PluginKind, Runtime};
 use super::package::PluginPackage;
 use super::store::EnabledPermission;
 use crate::l10n;
+
+pub(super) fn check_runtime(manifest: &Manifest, langs: &Languages) -> Result<(), InstallError> {
+    if manifest.runtime != Runtime::Compose {
+        return Err(InstallError::UnsupportedRuntime(l10n::text(
+            langs,
+            "plugin-install-runtime-unsupported",
+            &[("runtime", manifest.runtime.as_str().into())],
+        )));
+    }
+    Ok(())
+}
 
 impl PluginManager {
     /// 安装只有 compose 文本的插件包，见 [`Self::install_package`]。
@@ -52,6 +63,7 @@ impl PluginManager {
         lan_webui: bool,
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
+        check_runtime(&package.manifest, &langs)?;
         if package.manifest.kind == PluginKind::System {
             return Err(InstallError::Unsupported(l10n::text(
                 &langs,

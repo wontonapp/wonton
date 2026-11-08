@@ -57,6 +57,7 @@ mod people_languages;
 mod preinstall;
 mod privileges;
 mod resources;
+mod runtime;
 mod secrets;
 mod settings_l10n;
 mod sources;

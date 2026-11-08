@@ -58,11 +58,12 @@ pub use bot_commands::{
     MAX_COMMAND_DESCRIPTION_CHARS, MAX_COMMAND_HINT_CHARS, MAX_COMMAND_NAME_CHARS,
 };
 pub use bot_profile::{
-    AVATARS_FIELD, AvatarChange, AvatarImage, AvatarKind, AvatarMedia, AvatarMediaProblem,
-    AvatarUpload, BOT_ACTIVITY_PATH, BOT_ACTIVITY_WAIT_SECS, BotActivity, BotActivityFacts,
-    BotActivityReport, BotNameProblem, BotProfileFailure, BotProfileProblem, BotProfileUpdate,
-    BotProfileUpdated, BotView, MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE,
-    MAX_BOT_NAME_CHARS, StateAvatar, StateAvatars, bot_profile_path, check_bot_name,
+    AVATARS_FIELD, AccessSource, AvatarChange, AvatarImage, AvatarKind, AvatarMedia,
+    AvatarMediaProblem, AvatarUpload, BOT_ACTIVITY_PATH, BOT_ACTIVITY_WAIT_SECS, BotActivity,
+    BotActivityFacts, BotActivityReport, BotNameProblem, BotPluginAccess, BotPluginAccessUpdate,
+    BotProfileFailure, BotProfileProblem, BotProfileUpdate, BotProfileUpdated, BotView,
+    MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE, MAX_BOT_NAME_CHARS, StateAvatar,
+    StateAvatars, bot_plugin_access_path, bot_profile_path, check_bot_name,
 };
 pub use chat::{
     BackupReminder, BotInstallRow, BotInstallState, ChatAccount, ChatContact, ChatFailure,
@@ -157,12 +158,12 @@ pub use plugin::{
     OpenWindow, OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets, PermissionLine,
     PermissionOpened, PermissionRisk, PermissionUpdate, PluginAuthor, PluginDetail, PluginDevice,
     PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits,
-    PluginOperation, PluginProblem, PluginState, PluginTakeover, PluginTask, PluginTaskState,
-    PluginTrust, PluginWriter, PluginsViewModel, RequirementLine, RequirementStatus, SecretInput,
-    SecretInputState, SecretUpdate, SecretValues, SourceKind, StorageUsage, StoreFailure,
-    StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState, ToolAccess,
-    ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
-    UpgradeRequest, UpgradeResult, secret_input_path,
+    PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginState, PluginTakeover,
+    PluginTask, PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel, RequirementLine,
+    RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues, SourceKind,
+    StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
+    ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
+    UpgradeRequest, UpgradeResult, plugin_scope_path, secret_input_path,
 };
 pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};

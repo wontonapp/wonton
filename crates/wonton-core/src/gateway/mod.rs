@@ -47,6 +47,7 @@ mod onboarding;
 mod owner_secrets;
 mod pages;
 mod peers;
+mod plugin_scope;
 mod plugin_start;
 mod plugin_web;
 mod proxy;
@@ -748,6 +749,8 @@ mod owner_secrets_tests;
 mod pairing_tests;
 #[cfg(test)]
 mod peers_api_tests;
+#[cfg(test)]
+mod plugin_forms_tests;
 #[cfg(test)]
 mod plugin_start_tests;
 #[cfg(test)]

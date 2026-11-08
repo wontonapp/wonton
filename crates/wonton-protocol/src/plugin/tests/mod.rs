@@ -1,4 +1,5 @@
 mod actions;
+mod forms;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -42,6 +43,7 @@ fn installed() -> InstalledPlugin {
         version: "2.0.0".into(),
         revision: "opaque:revision/版本-2".into(),
         kind: PluginKind::App,
+        runtime: PluginRuntime::Compose,
         icon: Some(icon("ab")),
         trust: PluginTrust::Official,
         source: Some("github:example/wonton-immich@v2.0.0".into()),
@@ -161,6 +163,8 @@ fn preview() -> InstallPreview {
         summary: "局域网文件共享".into(),
         version: "1.0.0".into(),
         kind: PluginKind::App,
+        runtime: PluginRuntime::Compose,
+        scope_choices: vec![],
         has_bot: false,
         icon: None,
         trust: PluginTrust::Community,
@@ -255,6 +259,8 @@ fn detail() -> PluginDetail {
         }],
         tags: vec![],
         kind: PluginKind::App,
+        runtime: PluginRuntime::Compose,
+        scope: None,
         version: "2.1.0".into(),
         trust: PluginTrust::Official,
         author: None,
@@ -334,6 +340,7 @@ fn interface_types_round_trip_through_json() {
     let request = InstallRequest {
         source: "github:someone/wonton-samba@v1.0.0".into(),
         digest: preview().digest,
+        scope: None,
         grant: vec!["network.host".into()],
         enabled_permissions: vec!["docker.socket".into()],
         secrets: SecretValues::from([("brave_key".into(), crate::SecretString::new("s3cret"))]),

@@ -76,6 +76,7 @@ async fn with_github(
 async fn install(m: &Arc<PluginManager>, source: &str) {
     let preview = m.preview_source(source, &zh()).await.unwrap();
     let request = InstallRequest {
+        scope: None,
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
         grant: preview

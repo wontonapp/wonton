@@ -32,6 +32,7 @@ enum Added {
 const V0_7: SpecVersion = SpecVersion::new(0, 7);
 const V0_8: SpecVersion = SpecVersion::new(0, 8);
 const V0_9: SpecVersion = SpecVersion::new(0, 9);
+const V0_10: SpecVersion = SpecVersion::new(0, 10);
 const V0_11: SpecVersion = SpecVersion::new(0, 11);
 
 /// 0.6 以后才有的写法。新加清单字段时在这里加一行，规范的“各版本新增的字段”同步加。
@@ -59,6 +60,8 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_8, Added::Field(&["secrets", "*", "show_owner"])),
     (V0_8, Added::Field(&["secrets", "*", "input"])),
     (V0_9, Added::Field(&["webui", "friends"])),
+    (V0_10, Added::Field(&["runtime"])),
+    (V0_10, Added::Field(&["agent", "skills", "mount"])),
     (V0_11, Added::Variable("WONTON_SMTP_HOST")),
     (V0_11, Added::Variable("WONTON_SMTP_PORT")),
     (V0_11, Added::Variable("WONTON_MAIL_FROM")),

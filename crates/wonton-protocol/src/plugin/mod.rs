@@ -6,6 +6,7 @@
 //! 核心可能比 App 新：核心多给的字段被忽略；枚举遇到不认识的取值时落到 `Other` 或 `Unknown`，不让整份列表解析失败。
 
 mod capability_deps;
+mod forms;
 pub mod hint;
 mod owner_secrets;
 mod permission;
@@ -21,6 +22,7 @@ pub use capability_deps::{
 };
 use serde::{Deserialize, Serialize};
 
+pub use forms::{PluginKind, PluginRuntime, PluginScope, plugin_scope_path};
 pub use owner_secrets::{OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets};
 pub use permission::{
     PermissionLine, PermissionOpened, PermissionRisk, PermissionUpdate, PluginDevice,
@@ -54,20 +56,6 @@ pub enum PluginTrust {
     /// 比这个 App 新的核心给的来源，当作未审核显示。
     #[serde(other)]
     Unknown,
-}
-
-/// 插件的种类（清单的 `kind`）。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PluginKind {
-    App,
-    Agent,
-    Channel,
-    Model,
-    System,
-    #[serde(other)]
-    Other,
 }
 
 /// 核心处理过的一张图片：图标是 PNG，截图是 JPEG。用 `ClientCore::load_plugin_image` 取。
@@ -128,6 +116,8 @@ pub struct InstalledPlugin {
     /// 插件内容变化时随之变化，仅用于比较相等。
     pub revision: String,
     pub kind: PluginKind,
+    #[serde(default)]
+    pub runtime: PluginRuntime,
     /// 没有图标时为空，壳画占位图标。
     pub icon: Option<PluginIcon>,
     pub trust: PluginTrust,
@@ -444,6 +434,11 @@ pub struct PluginDetail {
     pub screenshots: Vec<PluginImage>,
     pub tags: Vec<String>,
     pub kind: PluginKind,
+    #[serde(default)]
+    pub runtime: PluginRuntime,
+    /// 只有主人能看到的安装范围；家人或未安装时为空。
+    #[serde(default)]
+    pub scope: Option<PluginScope>,
     /// 详情说的版本。
     pub version: String,
     pub trust: PluginTrust,
@@ -567,6 +562,11 @@ pub struct InstallPreview {
     pub summary: String,
     pub version: String,
     pub kind: PluginKind,
+    #[serde(default)]
+    pub runtime: PluginRuntime,
+    /// 可供主人选择的 Bot；只有一个 Bot 时为空，壳不显示范围选择。
+    #[serde(default)]
+    pub scope_choices: Vec<crate::BotRef>,
     /// 清单声明了 Bot：装的时候聊天列表要给它占一行，装好后是和它的私聊。
     #[serde(default)]
     pub has_bot: bool,
@@ -626,6 +626,9 @@ pub struct InstallRequest {
     pub source: String,
     /// 预览给的 `digest`；对不上时得到 409 `changed`。
     pub digest: String,
+    /// 主人选择的范围；省略时按全局（[`PluginScope::All`]）安装。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<PluginScope>,
     /// 主人确认的权限：每项必需权限都要在，少一项装不上；可以带上可选项（老客户端会这么做），但它们不算打开；
     /// 多出预览里没有的项装不上。
     pub grant: Vec<String>,

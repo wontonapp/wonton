@@ -108,6 +108,7 @@ fn retryable(e: &InstallError) -> bool {
         InstallError::Invalid(_)
         | InstallError::PermissionNotGranted(_)
         | InstallError::Unsupported(_)
+        | InstallError::UnsupportedRuntime(_)
         | InstallError::Conflict(_)
         | InstallError::NotInstalled(_)
         | InstallError::NotFound(_)

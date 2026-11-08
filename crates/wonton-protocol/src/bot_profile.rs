@@ -38,6 +38,38 @@ pub fn bot_profile_path(plugin_id: &str) -> String {
     format!("/_wonton/api/bots/{plugin_id}/profile")
 }
 
+/// `PUT`：请求体 [`BotPluginAccessUpdate`]。只有主人能用。
+pub fn bot_plugin_access_path(plugin_id: &str, bot: &str, target_plugin_id: &str) -> String {
+    format!("/_wonton/api/bots/{plugin_id}/{bot}/plugin-access/{target_plugin_id}")
+}
+
+/// Bot 资料页里的一项工具插件或技能。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct BotPluginAccess {
+    pub plugin_id: String,
+    pub source: AccessSource,
+    pub enabled: bool,
+}
+
+/// 插件因全局范围还是指定范围对这个 Bot 生效。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum AccessSource {
+    Global,
+    Specified,
+    #[serde(other)]
+    Other,
+}
+
+/// [`bot_plugin_access_path`] 的请求体，单独关掉会覆盖插件范围。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct BotPluginAccessUpdate {
+    pub enabled: bool,
+}
+
 /// Bot 此刻在做什么，也是状态头像的状态（[`StateAvatars::states`] 的键）。客户端核心合成（规则见 ADR-0044），
 /// 壳按它选状态头像。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

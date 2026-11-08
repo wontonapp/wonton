@@ -458,7 +458,7 @@ type RouteTable = (&'static str, Vec<(Method, &'static str, &'static str)>);
 
 /// 分层的路由表：`kind` 是没授权的家人会拿到的错误码。
 fn owner_only_route_tables() -> Vec<RouteTable> {
-    let owner_only: Vec<(Method, &str, &str)> = vec![
+    let mut owner_only: Vec<(Method, &str, &str)> = vec![
         (Method::GET, "/_wonton/api/egress-proxy", ""),
         (Method::PUT, "/_wonton/api/egress-proxy", "{}"),
         (Method::GET, "/_wonton/api/registry-mirror", ""),
@@ -541,6 +541,7 @@ fn owner_only_route_tables() -> Vec<RouteTable> {
         (Method::DELETE, "/_wonton/api/peers/rejected/r1", ""),
         (Method::DELETE, "/_wonton/api/peers/other.example", ""),
     ];
+    owner_only.extend(super::plugin_forms_tests::owner_only_routes());
     vec![("owner_only", owner_only), install_not_allowed_routes()]
 }
 

@@ -54,6 +54,7 @@ fn texts(preview: &InstallPreview) -> Vec<&str> {
 
 fn install_request(preview: &InstallPreview) -> InstallRequest {
     InstallRequest {
+        scope: None,
         devices: Vec::new(),
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),

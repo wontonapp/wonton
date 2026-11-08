@@ -25,6 +25,8 @@ pub enum InstallError {
     PermissionNotGranted(String),
     #[error("{0}")]
     Unsupported(String),
+    #[error("{0}")]
+    UnsupportedRuntime(String),
     /// 插件要用的资料（如邮箱）还没填（ADR-0030）。
     #[error("{0}")]
     OwnerProfileIncomplete(String),
@@ -94,7 +96,7 @@ impl InstallError {
         match self {
             Self::Invalid(_) => "invalid_input",
             Self::PermissionNotGranted(_) => "permission_denied",
-            Self::Unsupported(_) => "unsupported",
+            Self::Unsupported(_) | Self::UnsupportedRuntime(_) => "unsupported",
             Self::OwnerProfileIncomplete(_) => "owner_profile_incomplete",
             Self::Conflict(_) | Self::NameTaken(_) => "conflict",
             Self::NotInstalled(_) => "not_installed",
@@ -143,6 +145,7 @@ impl InstallError {
             Self::Invalid(m) => Self::Invalid(add(m)),
             Self::PermissionNotGranted(list) => Self::PermissionNotGranted(list),
             Self::Unsupported(m) => Self::Unsupported(add(m)),
+            Self::UnsupportedRuntime(m) => Self::UnsupportedRuntime(add(m)),
             Self::OwnerProfileIncomplete(m) => Self::OwnerProfileIncomplete(m),
             Self::Conflict(m) => Self::Conflict(add(m)),
             Self::NameTaken(m) => Self::NameTaken(add(m)),

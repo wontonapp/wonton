@@ -214,6 +214,7 @@ async fn a_source_without_a_version_installs_the_latest_release_and_remembers_it
     assert!(preview.icon.is_some());
 
     let request = InstallRequest {
+        scope: None,
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
         grant: Vec::new(),
@@ -265,6 +266,7 @@ async fn a_tag_moved_after_the_preview_is_not_installed() {
     // 作者把 tag 移到了换了镜像的提交上：主人确认的不是这个。
     release(&github, "1.0.0", "evil");
     let request = InstallRequest {
+        scope: None,
         source: preview.source.unwrap(),
         digest: preview.digest,
         grant: Vec::new(),

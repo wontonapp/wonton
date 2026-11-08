@@ -514,3 +514,5 @@ plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $fie
 plugin-capability-service-unknown = { $field } が参照するサービス `{ $service }` が compose ファイルにありません
 plugin-capability-service-not-forwardable = { $field } は network_mode: none のサービスを指せません。コアが転送し、そこで資格情報を発行するためです
 plugin-install-capability-deps-unsupported = このコアはプラグイン間の依存関係にまだ対応していません。コアを更新してからインストールしてください
+plugin-install-runtime-services = runtime が { $runtime } の場合、services は宣言できません
+plugin-install-runtime-unsupported = このコアは runtime が { $runtime } のプラグインのインストールや更新に対応していません。先にコアを更新してください

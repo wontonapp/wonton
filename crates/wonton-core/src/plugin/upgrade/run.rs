@@ -108,6 +108,7 @@ impl PluginManager {
         lan_webui: bool,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
+        super::super::install_entry::check_runtime(&package.manifest, &langs)?;
         self.check_not_upgrading(&langs)?;
         dry_run(&package, &langs)?;
         self.check_icon(&package, &langs).await?;

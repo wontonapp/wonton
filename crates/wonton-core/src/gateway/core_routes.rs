@@ -95,6 +95,10 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
             get(api::detail).delete(api::uninstall),
         )
         .route(
+            &wonton_protocol::plugin_scope_path("{id}"),
+            put(super::plugin_scope::scope),
+        )
+        .route(
             "/_wonton/api/plugins/{id}/secrets",
             get(super::owner_secrets::list),
         )
@@ -199,6 +203,10 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .route(
             &wonton_protocol::bot_profile_path("{id}"),
             put(super::bot_profile::save),
+        )
+        .route(
+            &wonton_protocol::bot_plugin_access_path("{id}", "{bot}", "{target}"),
+            put(super::plugin_scope::bot_access),
         )
         .route(wonton_protocol::SHARED_BOTS_PATH, post(bots::create_shared))
         .route(

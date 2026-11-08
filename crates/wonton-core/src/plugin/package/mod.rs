@@ -32,6 +32,7 @@ use crate::l10n::text;
 
 #[path = "package_capability_services.rs"]
 mod capability_services;
+mod runtime;
 
 pub(super) mod errors;
 
@@ -192,16 +193,7 @@ impl PluginPackage {
         };
         manifest.validate(langs)?;
 
-        let services = match top.remove("services") {
-            Some(Value::Object(services)) if !services.is_empty() => services,
-            _ => {
-                return Err(service_error(
-                    langs,
-                    "*",
-                    text(langs, "plugin-install-pkg-needs-service", &[]),
-                ));
-            }
-        };
+        let services = runtime::services(top.remove("services"), manifest.runtime, langs)?;
         for (name, service) in &services {
             check_service_name(name, langs)?;
             check_service_keys(name, service, langs)?;

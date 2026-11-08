@@ -67,6 +67,12 @@ pub use tabs::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
 pub use wonton_protocol::LanClient;
 pub use wonton_protocol::StoreUnreadable;
 pub use wonton_protocol::{
+    AccessSource, AvatarImage, AvatarKind, AvatarMedia, AvatarMediaProblem, AvatarUpload,
+    BotActivity, BotActivityFacts, BotActivityReport, BotNameProblem, BotPluginAccess,
+    BotPluginAccessUpdate, BotProfileFailure, BotProfileProblem, BotRef, BotView, StateAvatar,
+    bot_plugin_access_path, plugin_scope_path,
+};
+pub use wonton_protocol::{
     Action, AddedSource, AddedTools, AgentLogin, Answer, AppLink, AppearanceProblem,
     AppearanceViewModel, BackPagination, BackupReminder, BotSwitch, CandidatePlugin, CardChoice,
     CardLine, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, ConfirmationCard,
@@ -90,22 +96,22 @@ pub use wonton_protocol::{
     OpenWindow, OwnerProfileUpdate, PairingFailure, PairingStatus, PeerCode, PeerError,
     PeerRequestRow, PeerRow, PeerStatus, PeersState, PeersViewModel, PendingConfirmation,
     PermissionLine, PermissionRisk, PluginAuthor, PluginDetail, PluginDevice, PluginFailure,
-    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem, PluginState,
-    PluginTab, PluginTakeover, PluginTask, PluginTaskState, PluginTrust, PluginsViewModel,
-    ProxySettings, PushConfirmation, PushContent, PushEndpoint, PushMethod, PushNotification,
-    PushStatus, RecoveryStatus, RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest,
-    RegistryMirrorTestRequest, RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel,
-    RegistryProbe, RegistryProblem, RejectedPeerRow, ReplacedAgent, RequirementLine,
-    RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow, RoomTransfers, SecretString,
-    SendState, ServerName, ServerRow, ServersViewModel, SessionListViewModel, SessionRow,
-    SettingsEntry, SettingsSection, SettingsViewModel, SourceKind, StepNav, StoreFailure,
-    StoreItem, StoreListing, StoreProblem, StoreSection, TabCandidate, TabDisplay,
-    TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure, TabPage, TabRef, TabState,
-    TabsProblem, TabsViewModel, TakeoverState, TextSize, ThemeColors, ThemeMode, TimelineContent,
-    TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate, ToolAccess, ToolPolicyEntry,
-    ToolPolicyView, Transfer, TransferAction, TransferDirection, TransferElsewhere, TransferState,
-    TransfersViewModel, UpgradeOffer, UploadSource, VerificationCancel, VerificationEmoji,
-    VerificationFlow, VerificationStage, WindowView,
+    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem,
+    PluginRuntime, PluginScope, PluginState, PluginTab, PluginTakeover, PluginTask,
+    PluginTaskState, PluginTrust, PluginsViewModel, ProxySettings, PushConfirmation, PushContent,
+    PushEndpoint, PushMethod, PushNotification, PushStatus, RecoveryStatus, RegistryFailure,
+    RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest, RegistryMirrorTests,
+    RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe, RegistryProblem, RejectedPeerRow,
+    ReplacedAgent, RequirementLine, RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow,
+    RoomTransfers, SecretString, SendState, ServerName, ServerRow, ServersViewModel,
+    SessionListViewModel, SessionRow, SettingsEntry, SettingsSection, SettingsViewModel,
+    SourceKind, StepNav, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
+    TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure,
+    TabPage, TabRef, TabState, TabsProblem, TabsViewModel, TakeoverState, TextSize, ThemeColors,
+    ThemeMode, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate,
+    ToolAccess, ToolPolicyEntry, ToolPolicyView, Transfer, TransferAction, TransferDirection,
+    TransferElsewhere, TransferState, TransfersViewModel, UpgradeOffer, UploadSource,
+    VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage, WindowView,
 };
 pub use wonton_protocol::{
     AppsAction, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendGroup,
@@ -114,9 +120,4 @@ pub use wonton_protocol::{
     MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, PluginShares, ServerKind,
     ShareFailure, ShareGrant, ShareGrantUpdate, ShareIdentityFailure, ShareProblem, ShareRecipient,
     SharedAppRow, SharedAppsSource, SharedAppsState, SharedAppsViewModel, SharedPlugin,
-};
-pub use wonton_protocol::{
-    AvatarImage, AvatarKind, AvatarMedia, AvatarMediaProblem, AvatarUpload, BotActivity,
-    BotActivityFacts, BotActivityReport, BotNameProblem, BotProfileFailure, BotProfileProblem,
-    BotView, StateAvatar,
 };

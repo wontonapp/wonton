@@ -19,6 +19,8 @@ fn detail(ask: bool) -> Canned {
         screenshots: Vec::new(),
         tags: Vec::new(),
         kind: PluginKind::App,
+        runtime: Default::default(),
+        scope: None,
         version: "1.0.0".to_owned(),
         trust: PluginTrust::Official,
         provider: None,

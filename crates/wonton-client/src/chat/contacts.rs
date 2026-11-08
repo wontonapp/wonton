@@ -125,6 +125,7 @@ mod tests {
             version: "1".to_owned(),
             revision: "1".to_owned(),
             kind: PluginKind::Agent,
+            runtime: Default::default(),
             icon: None,
             trust: PluginTrust::Official,
             source: None,
