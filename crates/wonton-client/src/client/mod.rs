@@ -235,6 +235,13 @@ impl ClientCore {
             .await
     }
 
+    /// 房间输入框里的草稿，没打过字时是 `None`。换房间、重启核心都还在，主人回来接着写。
+    pub async fn draft(&self, room_id: String) -> Result<Option<String>, CoreError> {
+        let scope = self.scope();
+        let chat = scope.chat.clone();
+        scope.run(async move { chat.draft(&room_id).await }).await
+    }
+
     /// 取图片等媒体的原文件（时间线里给出的句柄）。核心负责下载、解密和缓存。
     pub async fn load_media(&self, media: MediaHandle) -> Result<Vec<u8>, CoreError> {
         let scope = self.scope();

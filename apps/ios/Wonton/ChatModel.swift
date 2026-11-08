@@ -76,6 +76,18 @@ final class ChatModel {
     func appendDraft(_ text: String, to roomId: String) {
         let existing = drafts[roomId, default: ""]
         drafts[roomId] = existing.isEmpty ? text : existing + "\n" + text
+        saveDraft(roomId)
+    }
+
+    /// 草稿在核心里，按房间存，退出房间、重启 App 都还在。进房间时读回来，打完字写回去。
+    func loadDraft(_ roomId: String) async {
+        guard let stored = try? await core.draft(roomId: roomId) else { return }
+        // 读回来之前已经打了字就不盖掉。
+        if drafts[roomId, default: ""].isEmpty { drafts[roomId] = stored ?? "" }
+    }
+
+    func saveDraft(_ roomId: String) {
+        send(.setDraft(roomId: roomId, body: drafts[roomId, default: ""]))
     }
 
     /// `tab` 这一页正在显示的房间。

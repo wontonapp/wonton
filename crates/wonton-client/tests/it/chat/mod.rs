@@ -10,6 +10,7 @@ mod bot_profile_support;
 mod card_plugin_refresh;
 mod confirmation;
 mod device_name;
+mod draft;
 mod key_upload_order;
 mod onboarding;
 mod pending;

@@ -17,6 +17,7 @@ mod confirmation;
 mod connect;
 mod contacts;
 mod display_name;
+mod draft;
 mod follow_home;
 mod installs;
 mod login;
@@ -41,7 +42,7 @@ use futures_util::StreamExt;
 #[cfg(feature = "test-hooks")]
 use futures_util::future::BoxFuture;
 use tokio::runtime::Handle;
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
 use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SyncStatus};
@@ -61,6 +62,7 @@ use crate::home::HomeLink;
 use crate::l10n::{CATALOG, language};
 use crate::scope::reuse;
 use confirmation::{Answers, Cards};
+use draft::DraftWrite;
 use storage::ChatStorage;
 use view::{core_error, room_row, sort_rooms};
 
@@ -98,6 +100,8 @@ pub(crate) struct ChatLink {
     avatar_files: avatar_files::AvatarFiles,
     /// 收新消息的方式（ADR-0003）：保持连接时后台同步到的新消息要弹通知。
     method: watch::Receiver<PushMethod>,
+    /// 排队的草稿写入，见 [`draft::write_drafts`]。
+    draft_writes: mpsc::UnboundedSender<DraftWrite>,
     /// App 在后台：保持连接下同步到的该通知的消息收集进 `background_notifications`。
     background: AtomicBool,
     verification: Mutex<Option<verification::Control>>,
@@ -179,6 +183,7 @@ impl ChatLink {
         );
         let installs = installs::Installs::new(plugins.clone(), view.clone());
         let bots = bots::Bots::new(runtime.clone(), home.clone(), plugins, view.clone());
+        let (draft_writes, draft_receiver) = mpsc::unbounded_channel();
         let chat = Arc::new(Self {
             runtime: runtime.clone(),
             home: home.clone(),
@@ -198,10 +203,12 @@ impl ChatLink {
             bots,
             avatar_files: avatar_files::AvatarFiles::new(data_dir),
             method,
+            draft_writes,
             background: AtomicBool::new(false),
             verification: Mutex::new(None),
             relogin: connect::Relogin::default(),
         });
+        runtime.spawn(draft::write_drafts(Arc::downgrade(&chat), draft_receiver));
         runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
         Ok(chat)
     }
@@ -323,6 +330,7 @@ impl ChatLink {
                 });
                 Ok(())
             }
+            Action::SetDraft { room_id, body } => self.set_draft(&room_id, &body),
             Action::ResetRecovery => self.reset_recovery(),
             Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
@@ -356,7 +364,12 @@ impl ChatLink {
         let sent_room = room_id.to_string();
         self.spawn_op_with_success(
             "chat-op-send-text-failed",
-            async move { chat.room(&room_id).await?.send_text(&body).await },
+            async move {
+                chat.room(&room_id).await?.send_text(&body).await?;
+                // 发出去了，草稿留着没用了；发送途中又打的字不算。
+                chat.enqueue_draft(DraftWrite::Forget(room_id, body));
+                Ok(())
+            },
             move || onboarding::record_sent(&sent, sent_room),
         );
         Ok(())

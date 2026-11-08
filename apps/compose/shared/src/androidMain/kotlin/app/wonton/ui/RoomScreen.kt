@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,6 +26,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -31,6 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
@@ -49,6 +55,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.filter
+
+private const val TAG = "RoomScreen"
 
 private class TimelineState {
     val items = mutableStateListOf<TimelineItem>()
@@ -139,6 +147,32 @@ private fun RoomScreen(
 ) {
     var menu by remember { mutableStateOf<MessageMenuTarget?>(null) }
     val openMenu = { message: TimelineMessage, bounds: Rect -> menu = MessageMenuTarget(message, bounds) }
+    // 菜单能画在哪儿：窗口减去系统栏和键盘。弹层是另一个窗口，在里面拿不到这些，在这里算好传进去。
+    // 横屏时导航栏或挖孔在侧边，左右也要让。
+    val windowSize = LocalWindowInfo.current.containerSize
+    val density = LocalDensity.current
+    val safe = WindowInsets.safeDrawing
+    val direction = LocalLayoutDirection.current
+    val visible = Rect(
+        safe.getLeft(density, direction).toFloat(),
+        safe.getTop(density).toFloat(),
+        (windowSize.width - safe.getRight(density, direction)).toFloat(),
+        (windowSize.height - safe.getBottom(density)).toFloat(),
+    )
+    // 草稿在核心里，按房间存：退出房间、重启 App 都还在。进房间读一次；先读回来之前已经打了字就不盖掉。
+    // 写只在主人改输入框时发，别把读到的初值也写回去：房间还没同步到本机时读会失败，写一个空串会把存的草稿清掉。
+    var draft by rememberSaveable(roomId) { mutableStateOf("") }
+    LaunchedEffect(core, roomId) {
+        runCatching { core.draft(roomId) }.onSuccess { stored ->
+            if (draft.isEmpty()) draft = stored.orEmpty()
+        }.onFailure { failure ->
+            Log.w(TAG, "could not load the draft for this room", failure)
+        }
+    }
+    val changeDraft = { text: String ->
+        draft = text
+        onAction(Action.SetDraft(roomId, text))
+    }
     // 和 Bot 的私聊：顶栏显示 Bot 的状态头像和名字（ADR-0044），名字下面不写状态文字。
     val barTitle = if (isDirect) bot?.name ?: title else title
     val barAvatar: (@Composable () -> Unit)? = if (isDirect && bot != null) {
@@ -164,11 +198,11 @@ private fun RoomScreen(
                         Messages(core, roomId, timeline, showsSender, onAction, openMenu, Modifier.weight(1f))
                     }
                     TransfersStrip(roomId, core)
-                    if (!isReadOnly) Composer(roomId, onAction, onReject)
+                    if (!isReadOnly) Composer(roomId, draft, changeDraft, onAction, onReject)
                 }
             }
         }
-        menu?.let { target -> MessageMenu(target.message, target.bubble, core) { menu = null } }
+        menu?.let { target -> MessageMenu(target.message, target.bubble, visible, core) { menu = null } }
     }
 }
 

@@ -480,6 +480,10 @@ tabs-bridge-invalid-environment = 頁面欄高與安全區必須是有限的非�
 
 # 聊天的連線問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailable 的原因和失敗操作的訊息。
 chat-not-connected = 連上家用伺服器後再試
+chat-draft-save-failed = 存草稿失敗：{ $error }
+chat-draft-clear-failed = 清掉已發出的草稿失敗：{ $error }
+chat-draft-not-signed-in = 還沒有登入 Matrix
+chat-draft-read-interrupted = 草稿的讀取被打斷了
 
 # 引導的本機記錄（crates/wonton-client/src/onboarding/storage.rs）。
 # $path 是檔案的路徑，$reason 是原始的讀寫錯誤。

@@ -8,7 +8,13 @@ struct ComposerView: View {
     let roomId: String
     let pin: BottomPin
     private var draft: Binding<String> {
-        Binding(get: { model.drafts[roomId, default: ""] }, set: { model.drafts[roomId] = $0 })
+        Binding(
+            get: { model.drafts[roomId, default: ""] },
+            set: {
+                model.drafts[roomId] = $0
+                model.saveDraft(roomId)
+            }
+        )
     }
     @State private var photo: PhotosPickerItem?
     @State private var isChoosingAttachment = false

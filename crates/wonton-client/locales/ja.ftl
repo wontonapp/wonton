@@ -480,6 +480,10 @@ tabs-bridge-invalid-environment = ページのインセットとセーフエリ�
 
 # チャットの接続問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailableの理由と失敗した操作のメッセージ。
 chat-not-connected = 自宅サーバーに接続してから、もう一度試してください
+chat-draft-save-failed = 下書きの保存に失敗しました：{ $error }
+chat-draft-clear-failed = 送信済みの下書きを消すのに失敗しました：{ $error }
+chat-draft-not-signed-in = まだ Matrix にログインしていません
+chat-draft-read-interrupted = 下書きの読み込みが中断されました
 
 # セットアップのローカル記録（crates/wonton-client/src/onboarding/storage.rs）。
 # $path はファイルのパス、$reason は元の入出力エラーです。

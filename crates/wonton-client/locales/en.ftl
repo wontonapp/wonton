@@ -528,6 +528,10 @@ tabs-bridge-invalid-environment = The page insets and safe area must be finite, 
 # Chat transport problems (crates/wonton-client/src/chat/view.rs): the reason
 # of a CoreError::TransportUnavailable and the message of a failed chat action.
 chat-not-connected = Try again once you're connected to your home server.
+chat-draft-save-failed = Saving the draft failed: { $error }
+chat-draft-clear-failed = Clearing the sent draft failed: { $error }
+chat-draft-not-signed-in = Not signed in to Matrix yet
+chat-draft-read-interrupted = Loading the draft was interrupted
 
 # Onboarding records (crates/wonton-client/src/onboarding/storage.rs).
 # $path is the file's path, $reason is the original I/O error.

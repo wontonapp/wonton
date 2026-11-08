@@ -55,12 +55,17 @@ private const val MAX_LINES = 6
 
 /** 聊天页底部的输入栏。 */
 @Composable
-fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (Problem) -> Unit) {
-    var draft by rememberSaveable(roomId) { mutableStateOf("") }
+fun Composer(
+    roomId: String,
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    onAction: (Action) -> Unit,
+    onReject: (Problem) -> Unit,
+) {
     val incoming = LocalTabDraft.current
-    LaunchedEffect(incoming.text, roomId) {
+    LaunchedEffect(incoming.text) {
         incoming.text?.let { text ->
-            draft = if (draft.isBlank()) text else "$draft\n$text"
+            onDraftChange(if (draft.isBlank()) text else "$draft\n$text")
             incoming.text = null
         }
     }
@@ -91,7 +96,7 @@ fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (Problem) -> 
         WontonIconButton(WontonIcon.Attach, stringResource(R.string.composer_attach), { isChoosingAttachment = true })
         ComposerField(
             value = draft,
-            onValueChange = { draft = it },
+            onValueChange = onDraftChange,
             modifier = Modifier.weight(1f)
                 .padding(vertical = (size.target - size.composerField) / 2)
                 .padding(end = if (isEmpty) spacing.s12 else 0.dp),
@@ -104,7 +109,7 @@ fun Composer(roomId: String, onAction: (Action) -> Unit, onReject: (Problem) -> 
         ) {
             SendButton {
                 onAction(Action.SendText(roomId, draft))
-                draft = ""
+                onDraftChange("")
             }
         }
     }

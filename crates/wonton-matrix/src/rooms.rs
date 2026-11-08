@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use futures_util::{Stream, StreamExt, stream};
 use matrix_sdk::{
-    Room, RoomDisplayName, RoomMemberships, RoomState,
+    ComposerDraft, ComposerDraftType, Room, RoomDisplayName, RoomMemberships, RoomState,
     ruma::{
         MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, RoomId, UserId,
         api::{
@@ -368,6 +368,35 @@ impl MatrixSession {
     pub async fn send_text_to(&self, room_id: &RoomId, body: &str) -> Result<()> {
         let room = self.joined(room_id)?;
         room.send(RoomMessageEventContent::text_plain(body)).await?;
+        Ok(())
+    }
+
+    /// 这个房间输入框里的草稿，没打过字时是 `None`。存在本机状态库里，关掉 App 也还在；不上服务器。
+    ///
+    /// 和 [`open_room`](Self::open_room) 不同，这里不订阅房间：敲字的房间和打开着的房间不是同一个时不打断那边的时间线。
+    pub async fn draft(&self, room_id: &RoomId) -> Result<Option<String>> {
+        let room = self.joined(room_id)?;
+        Ok(room
+            .load_composer_draft(None)
+            .await?
+            .map(|draft| draft.plain_text))
+    }
+
+    /// 记下草稿，空串删掉。存在本机状态库里。
+    pub async fn save_draft(&self, room_id: &RoomId, body: &str) -> Result<()> {
+        let room = self.joined(room_id)?;
+        if body.is_empty() {
+            room.clear_composer_draft(None).await?;
+        } else {
+            let draft = ComposerDraft {
+                plain_text: body.to_owned(),
+                // 不发格式化内容，正文就是原文。
+                html_text: None,
+                draft_type: ComposerDraftType::NewMessage,
+                attachments: Vec::new(),
+            };
+            room.save_composer_draft(draft, None).await?;
+        }
         Ok(())
     }
 

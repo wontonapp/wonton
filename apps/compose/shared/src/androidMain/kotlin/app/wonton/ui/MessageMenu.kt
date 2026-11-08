@@ -65,11 +65,20 @@ private object WindowOrigin : PopupPositionProvider {
     ) = IntOffset.Zero
 }
 
-/** 消息预览留在原来的位置，菜单贴着它；放不下时整体往上挪。`bubble` 是气泡在屏幕上的位置（根坐标）。 */
+/// 消息预览留在原来的位置，菜单贴着它：下面放得下放下面，放不下翻到上面，两头都夹在可视区里。
+/// `bubble` 是气泡在屏幕上的位置（根坐标），`visible` 是能用的那一片（同样坐标，已经让开系统栏和键盘）。
 @Composable
-fun MessageMenu(message: TimelineMessage, bubble: Rect, core: ClientCore, onDismiss: () -> Unit) {
+fun MessageMenu(
+    message: TimelineMessage,
+    bubble: Rect,
+    visible: Rect,
+    core: ClientCore,
+    onDismiss: () -> Unit,
+) {
     var origin by remember { mutableStateOf(Offset.Zero) }
     val bounds = bubble.translate(-origin)
+    // 弹层里的坐标从让开边距以后的左上角算起，可视区也要跟着挪。
+    val area = visible.translate(-origin)
     val gap = WontonTheme.spacing.s8
     val scrim = Color.Black.copy(alpha = WontonTheme.ratio.scrim)
     val width = with(LocalDensity.current) { bounds.width.toDp() }
@@ -100,13 +109,23 @@ fun MessageMenu(message: TimelineMessage, bubble: Rect, core: ClientCore, onDism
                 val preview = measurables[0].measure(loose)
                 val menu = measurables[1].measure(loose)
                 val spacing = gap.roundToPx()
-                val lowest = constraints.maxHeight - menu.height - spacing - preview.height
-                val previewTop = minOf(bounds.top.roundToInt(), lowest).coerceAtLeast(0)
-                val menuTop = minOf(previewTop + preview.height + spacing, constraints.maxHeight - menu.height)
+                // 弹层的窗口可能比看得见的地方长（键盘、系统栏那么一块照画不误），两样都别越过。
+                val left = area.left.roundToInt().coerceIn(0, constraints.maxWidth)
+                val top = area.top.roundToInt().coerceIn(0, constraints.maxHeight)
+                val right = area.right.roundToInt().coerceIn(left, constraints.maxWidth)
+                val bottom = area.bottom.roundToInt().coerceIn(top, constraints.maxHeight)
+                val previewTop = bounds.top.roundToInt().coerceIn(top, maxOf(top, bottom - preview.height))
+                val below = previewTop + preview.height + spacing
+                val above = previewTop - spacing - menu.height
+                val wanted = if (below + menu.height <= bottom) below else above
+                val menuTop = wanted.coerceIn(top, maxOf(top, bottom - menu.height))
                 val menuX = if (message.isOwn) bounds.right.roundToInt() - menu.width else bounds.left.roundToInt()
                 layout(constraints.maxWidth, constraints.maxHeight) {
-                    preview.place(bounds.left.roundToInt(), previewTop)
-                    menu.place(menuX.coerceIn(0, constraints.maxWidth - menu.width), menuTop)
+                    preview.place(
+                        bounds.left.roundToInt().coerceIn(left, maxOf(left, right - preview.width)),
+                        previewTop,
+                    )
+                    menu.place(menuX.coerceIn(left, maxOf(left, right - menu.width)), menuTop)
                 }
             }
         }

@@ -50,6 +50,7 @@ struct ChatRoomView: View {
         .wontonPushedScreen(bot?.name ?? title, avatar: barAvatar, showsStatus: true) { EmptyView() }
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
+        .task(id: roomId) { await model.loadDraft(roomId) }
         .task(id: timeline.attempt) {
             if await timeline.observe() {
                 model.path = []
