@@ -25,6 +25,21 @@ pub(super) enum PushInput {
 }
 
 impl ClientCore {
+    /// Pairing always starts in an unpaired scope, including direct/debug scans and re-pairing.
+    pub(super) fn pair_home(&self, text: &str, device_name: &str) -> Result<(), CoreError> {
+        let _switching = lock(&self.switching);
+        let Some(code) = self.scope().home.validate_pairing(text, device_name)? else {
+            return Ok(());
+        };
+        if self.scope().home.view().server_id.is_some() {
+            self.change_servers_locked(ServerList::add)?;
+        }
+        self.scope().home.pair(code, device_name);
+        Ok(())
+    }
+}
+
+impl ClientCore {
     pub(super) fn scope(&self) -> Arc<Scope> {
         self.scope
             .read()
@@ -43,6 +58,13 @@ impl ClientCore {
         change: impl FnOnce(&ServerList) -> Result<Change, CoreError>,
     ) -> Result<(), CoreError> {
         let _switching = lock(&self.switching);
+        self.change_servers_locked(change)
+    }
+
+    fn change_servers_locked(
+        &self,
+        change: impl FnOnce(&ServerList) -> Result<Change, CoreError>,
+    ) -> Result<(), CoreError> {
         let change = change(&self.servers)?;
         let previous = self.scope();
         if let Some(slot) = change.switch_to.filter(|slot| *slot != previous.slot) {

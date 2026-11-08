@@ -14,12 +14,17 @@ use super::HomeLink;
 use crate::l10n::{CATALOG, language};
 
 impl HomeLink {
-    pub(crate) fn pair(self: &Arc<Self>, text: &str, device_name: &str) -> Result<(), CoreError> {
+    /// Validate before changing server scope so an invalid scan does not leave the active server.
+    pub(crate) fn validate_pairing(
+        &self,
+        text: &str,
+        device_name: &str,
+    ) -> Result<Option<PairingCode>, CoreError> {
         let code = match PairingCode::parse(text) {
             Ok(code) => code,
             Err(e @ InvalidCode::UnsupportedVersion(_)) => {
                 self.set_pairing(Some(failed(PairingFailure::Protocol, e.to_string())));
-                return Ok(());
+                return Ok(None);
             }
             Err(e) => {
                 return Err(CoreError::InvalidInput {
@@ -34,12 +39,16 @@ impl HomeLink {
                 reason: l10n!(CATALOG, language(), "home-pairing-name-empty"),
             });
         }
+        Ok(Some(code))
+    }
+
+    pub(crate) fn pair(self: &Arc<Self>, code: PairingCode, device_name: &str) {
+        let device_name = device_name.trim();
         self.set_pairing(Some(PairingStatus::InProgress));
         self.runtime.spawn(
             self.clone()
                 .pair_with(code, device_name.to_owned(), language()),
         );
-        Ok(())
     }
 
     async fn pair_with(self: Arc<Self>, code: PairingCode, device_name: String, lang: Lang) {

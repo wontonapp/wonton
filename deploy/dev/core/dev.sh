@@ -460,7 +460,7 @@ case "${1:-}" in
     if [[ "${2:-}" == --keep-tunnel-identity ]]; then
       echo "隧道身份和设备登记保留（core/tunnel-key、core/devices.json）：endpoint ID 不变，已配对的设备不用重新配对（家人设备的用户名记录随核心数据删了）。"
     else
-      echo "隧道身份已换，已配对的 App 要重新配对（Android 模拟器里可能要清 App 数据，见 #786）。"
+      echo "隧道身份已换，已配对的 App 要用新码添加服务器；旧服务器的数据保留。"
     fi
     ;;
   status)

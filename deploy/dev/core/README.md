@@ -84,7 +84,7 @@ deploy/dev/core/dev.sh devices                 # 已登记的设备；revoke <en
 `DOCKER_HOST` 指向远端主机时，`127.0.0.1`、`localhost`、`::1` 是那台主机的本机地址，手机和模拟器到不了，`dev.sh pair`
 会提醒；局域网里的设备用那台主机的局域网 IP 发码，模拟器用跑着模拟器的那台机器上的栈。
 
-`reset` 删掉核心数据目录，隧道身份（endpoint ID）跟着换，已配对的 App 要重新配对（#786）；
+`reset` 删掉核心数据目录，隧道身份（endpoint ID）跟着换；App 用新码添加服务器，旧服务器的数据保留；
 `reset --keep-tunnel-identity` 保留 `core/tunnel-key` 和 `core/devices.json`，endpoint ID 不变，已配对的设备不用重新配对
 （家人设备记的用户名随核心数据删了，要重新登记）。
 
