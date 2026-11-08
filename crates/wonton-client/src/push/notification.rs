@@ -17,7 +17,7 @@ use wonton_protocol::{
 };
 
 use super::PushLink;
-use crate::chat::{PushedCard, core_account, failure, pushed_card, summary};
+use crate::chat::{LinkTargets, PushedCard, core_account, failure, pushed_card, summary};
 use crate::l10n::{CATALOG, language};
 
 /// 等 Matrix 会话就绪最多这么久：推送唤醒的进程要先建好本地代理、从本机恢复会话。
@@ -213,7 +213,7 @@ pub(crate) fn push_notification(
         },
         MessageBody::Other { kind } if kind == "m.room.member" => PushContent::Invite,
         body => PushContent::Message {
-            summary: summary(body, false),
+            summary: summary(body, false, &LinkTargets::default()),
         },
     };
     Some(PushNotification {

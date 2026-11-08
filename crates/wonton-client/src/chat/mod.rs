@@ -20,6 +20,7 @@ mod display_name;
 mod draft;
 mod follow_home;
 mod installs;
+mod links;
 mod login;
 mod onboarding;
 mod ops;
@@ -54,6 +55,7 @@ use wonton_protocol::{
 
 pub use bots::bot_current_avatar;
 pub(crate) use confirmation::{PushedCard, core_account, pushed_card};
+pub(crate) use links::LinkTargets;
 pub(crate) use login::proxy_url;
 pub use timeline::TimelineSubscription;
 pub(crate) use view::{failure, summary};
@@ -97,6 +99,7 @@ pub(crate) struct ChatLink {
     /// 聊天列表最上面的安装占位行（ADR-0067）。
     installs: Arc<installs::Installs>,
     bots: Arc<bots::Bots>,
+    plugins: Arc<crate::plugins::PluginsLink>,
     avatar_files: avatar_files::AvatarFiles,
     /// 收新消息的方式（ADR-0003）：保持连接时后台同步到的新消息要弹通知。
     method: watch::Receiver<PushMethod>,
@@ -182,7 +185,7 @@ impl ChatLink {
             },
         );
         let installs = installs::Installs::new(plugins.clone(), view.clone());
-        let bots = bots::Bots::new(runtime.clone(), home.clone(), plugins, view.clone());
+        let bots = bots::Bots::new(runtime.clone(), home.clone(), plugins.clone(), view.clone());
         let (draft_writes, draft_receiver) = mpsc::unbounded_channel();
         let chat = Arc::new(Self {
             runtime: runtime.clone(),
@@ -201,6 +204,7 @@ impl ChatLink {
             display_name: Mutex::new(None),
             installs,
             bots,
+            plugins,
             avatar_files: avatar_files::AvatarFiles::new(data_dir),
             method,
             draft_writes,
@@ -401,7 +405,12 @@ impl ChatLink {
         );
         *lock(&self.open_room) = Some((room_id, room.clone()));
         let cards = Cards::new(session.user_id(), self.answers.subscribe());
-        Ok(TimelineSubscription::start(&self.runtime, room, cards))
+        Ok(TimelineSubscription::start(
+            &self.runtime,
+            room,
+            cards,
+            self.plugins.clone(),
+        ))
     }
 
     /// 凭句柄下载媒体原文件（加密附件在本机解密）。

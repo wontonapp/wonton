@@ -1,6 +1,7 @@
 //! 把 `wonton-matrix` 的结果转成 ViewModel：房间行、时间线条目和增量、加密状态、按原因分类的错误。
 
 use super::confirmation::CardsView;
+use super::links::LinkTargets;
 use super::read_mark::ReadMark;
 use super::rich;
 use wonton_l10n::l10n;
@@ -56,7 +57,7 @@ fn preview(latest: LatestMessage) -> Option<RoomPreview> {
     if matches!(&latest.body, MessageBody::Other { kind } if kind == "state") {
         return None;
     }
-    let body = summary(latest.body, latest.is_own);
+    let body = summary(latest.body, latest.is_own, &LinkTargets::default());
     Some(RoomPreview {
         sender_name: latest.sender_name,
         is_own: latest.is_own,
@@ -66,7 +67,7 @@ fn preview(latest: LatestMessage) -> Option<RoomPreview> {
 }
 
 /// 消息的摘要：房间列表的预览用它。推送的正文是字符串，由 `push::notification` 转换。
-pub(crate) fn summary(body: MessageBody, is_own: bool) -> MessageSummary {
+pub(crate) fn summary(body: MessageBody, is_own: bool, links: &LinkTargets) -> MessageSummary {
     match body {
         MessageBody::Text(text) | MessageBody::Notice(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
@@ -76,7 +77,7 @@ pub(crate) fn summary(body: MessageBody, is_own: bool) -> MessageSummary {
                 MessageSummary::Text { text: body }
             } else {
                 MessageSummary::Text {
-                    text: rich::flatten(&rich::markdown(&body)),
+                    text: rich::flatten(&rich::markdown(&body, links)),
                 }
             }
         }
@@ -91,11 +92,12 @@ pub(crate) fn timeline_item(
     entry: TimelineEntry,
     cards: &CardsView,
     read: &ReadMark,
+    links: &LinkTargets,
 ) -> TimelineItem {
     let read_by = read.readers_of(&entry.id);
     let content = match entry.kind {
         EntryKind::Message(message) => TimelineContent::Message {
-            message: timeline_message(*message, cards, read_by),
+            message: timeline_message(*message, cards, read_by, links),
         },
         EntryKind::Notice(text) => TimelineContent::Notice { text },
         EntryKind::ProfileChange {
@@ -119,13 +121,18 @@ pub(crate) fn timeline_item(
     }
 }
 
-fn timeline_message(message: Message, cards: &CardsView, read_by: Vec<String>) -> TimelineMessage {
+fn timeline_message(
+    message: Message,
+    cards: &CardsView,
+    read_by: Vec<String>,
+    links: &LinkTargets,
+) -> TimelineMessage {
     let card = cards.view_of(&message);
     // 卡片靠编辑更新状态，对主人来说不是“编辑过”。
     let edited = message.edited && card.is_none();
     let body = match (card, message.body) {
         (Some(view), _) => MessageContent::Confirmation { view },
-        (None, body) => message_content(body, message.is_own),
+        (None, body) => message_content(body, message.is_own, links),
     };
     TimelineMessage {
         event_id: message.event_id.map(|id| id.to_string()),
@@ -163,14 +170,14 @@ fn message_actions(body: &MessageContent) -> Vec<MessageAction> {
     }
 }
 
-fn message_content(body: MessageBody, is_own: bool) -> MessageContent {
+fn message_content(body: MessageBody, is_own: bool, links: &LinkTargets) -> MessageContent {
     match body {
         MessageBody::Text(text) | MessageBody::Notice(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
             let blocks = if is_own {
-                rich::plain(&body)
+                rich::plain(&body, links)
             } else {
-                rich::markdown(&body)
+                rich::markdown(&body, links)
             };
             MessageContent::Text {
                 body,
@@ -206,8 +213,9 @@ pub(crate) fn timeline_diff(
     diff: VectorDiff<TimelineEntry>,
     cards: &CardsView,
     read: &ReadMark,
+    links: &LinkTargets,
 ) -> TimelineDiff {
-    let item = |entry| timeline_item(entry, cards, read);
+    let item = |entry| timeline_item(entry, cards, read, links);
     match diff {
         VectorDiff::Append { values } => TimelineDiff::Append {
             items: values.into_iter().map(item).collect(),
@@ -286,7 +294,7 @@ pub(crate) fn core_error(error: &Error) -> CoreError {
 mod tests {
     use super::*;
     use wonton_matrix::UploadProgress;
-    use wonton_protocol::FileId;
+    use wonton_protocol::{FileId, RichLinkKind};
 
     #[test]
     fn timeline_exposes_upload_fractions_without_hiding_regressions() {
@@ -311,6 +319,7 @@ mod tests {
                 }),
                 &cards,
                 &ReadMark::default(),
+                &LinkTargets::default(),
             );
             let TimelineContent::Message { message } = item.content else {
                 panic!("the message must stay in the timeline");
@@ -352,14 +361,57 @@ mod tests {
     #[test]
     fn previews_do_not_show_file_links() {
         let link = FileId::from_bytes([1; 16]).link();
-        let with_text = summary(MessageBody::Text(format!("给你 {link}")), false);
+        let links = LinkTargets::default();
+        let with_text = summary(MessageBody::Text(format!("给你 {link}")), false, &links);
         assert_eq!(
             with_text,
             MessageSummary::Text {
                 text: "给你".to_owned()
             }
         );
-        let only_link = summary(MessageBody::Text(link), false);
+        let only_link = summary(MessageBody::Text(link), false, &links);
         assert_eq!(only_link, MessageSummary::Files);
+    }
+
+    /// 行为：消息正文里的链接带着类别进 ViewModel，插件地址认成插件页。
+    #[test]
+    fn message_links_carry_their_kind() {
+        let targets = crate::chat::links::test_targets(&[(
+            "app.grafana",
+            "http://app-grafana.home.example:18480/",
+        )]);
+        let content = message_content(
+            MessageBody::Text(
+                "看 http://app-grafana.home.example:18480/ 和 example.com，打 +8613800138000。"
+                    .into(),
+            ),
+            false,
+            &targets,
+        );
+        let MessageContent::Text { blocks, .. } = content else {
+            panic!("文字还是文字");
+        };
+        let found: Vec<(String, RichLinkKind)> = blocks
+            .iter()
+            .flat_map(|block| &block.spans)
+            .filter_map(|span| {
+                span.link
+                    .as_ref()
+                    .map(|link| (link.url.clone(), link.kind.clone()))
+            })
+            .collect();
+        assert_eq!(
+            found,
+            [
+                (
+                    "http://app-grafana.home.example:18480/".to_owned(),
+                    RichLinkKind::Plugin {
+                        plugin_id: "app.grafana".to_owned()
+                    }
+                ),
+                ("http://example.com/".to_owned(), RichLinkKind::External),
+                ("tel:+8613800138000".to_owned(), RichLinkKind::Phone),
+            ]
+        );
     }
 }
