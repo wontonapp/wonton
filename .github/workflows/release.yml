@@ -24,49 +24,22 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
-      # runner 环境里的代理监听在主机的回环地址上，构建步骤（cargo 下载依赖）用 host 网络才连得上。
-      - name: 版本、渠道和代理
+      - name: 版本、渠道
         id: meta
         run: |
           version="${GITHUB_REF_NAME#v}"
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-core"
           tags="$image:$version,$image:beta"
           case "$version" in *-*) ;; *) tags="$tags,$image:stable" ;; esac
-          {
-            echo "version=$version"
-            echo "tags=$tags"
-            echo "http_proxy=${http_proxy:-}"
-            echo "https_proxy=${https_proxy:-}"
-          } >> "$GITHUB_OUTPUT"
-      # 容器里的构建器：Docker 自带的构建器用的是 Docker 的镜像存储，本机已有 amd64 的 debian:trixie-slim 时，构建 arm64
-      # 也拿它当基础镜像（Docker 29.7.2、overlayfs 存储驱动上实测，镜像里的 arm64 程序找不到动态链接器）。每次都是新的
-      # 构建器，Rust 从头编译。构建器自己的镜像 moby/buildkit 要预先放在 runner 主机上：国内的主机连不上 Docker Hub
-      # （所以基础镜像也改从 ECR Public 拉，见 Dockerfile）。
-      - uses: docker/setup-buildx-action@v3
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/push-image
         with:
-          driver-opts: network=host
-          buildkitd-flags: --allow-insecure-entitlement network.host
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/dev/core/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          network: host
-          allow: network.host
-          build-args: |
-            http_proxy=${{ steps.meta.outputs.http_proxy }}
-            https_proxy=${{ steps.meta.outputs.https_proxy }}
-            WONTON_BUILD_COMMIT=${{ github.sha }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
-          push: true
+          platforms: linux/amd64,linux/arm64
+          file: deploy/dev/core/Dockerfile
+          version: ${{ steps.meta.outputs.version }}
+          extra-build-args: WONTON_BUILD_COMMIT=${{ github.sha }}
 
   acp-bridge-image:
     name: ACP bridge 镜像
@@ -75,7 +48,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
-      - name: 版本和代理
+      - name: 版本、渠道
         id: meta
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-acp-bridge"
@@ -90,31 +63,11 @@ jobs:
           {
             echo "version=$version"
             echo "tags=$tags"
-            echo "http_proxy=${http_proxy:-}"
-            echo "https_proxy=${https_proxy:-}"
           } >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@v3
+      - uses: ./.github/actions/push-image
         with:
-          driver-opts: network=host
-          buildkitd-flags: --allow-insecure-entitlement network.host
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/dev/acp-bridge/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          network: host
-          allow: network.host
-          build-args: |
-            http_proxy=${{ steps.meta.outputs.http_proxy }}
-            https_proxy=${{ steps.meta.outputs.https_proxy }}
-            CARGO_BUILD_JOBS=8
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
-          push: true
+          platforms: linux/amd64,linux/arm64
+          file: deploy/dev/acp-bridge/Dockerfile
+          version: ${{ steps.meta.outputs.version }}
+          extra-build-args: CARGO_BUILD_JOBS=8
