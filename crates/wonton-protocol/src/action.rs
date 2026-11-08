@@ -85,6 +85,9 @@ pub enum Action {
     PaginateBackwards { room_id: String },
     /// 把房间标为读到最新一条，发出已读回执，房间的未读数随之清零。
     MarkRoomRead { room_id: String },
+    /// 记下这个房间输入框里的草稿，主人换个房间、关掉 App 再回来还在；空串表示清掉。只存本机，不上服务器。
+    /// 发送成功后核心自己清掉。
+    SetDraft { room_id: String, body: String },
     /// 重置恢复：删掉账号的密钥备份和秘密存储，换新的交叉签名身份，本设备成为新身份下已验证的设备，再开启备份，
     /// 新的恢复密钥放进 `EncryptionStatus::recovery_key`。旧的恢复密钥作废，备份里的旧消息取不回了，其他设备要
     /// 输入新的恢复密钥。主人不用输密码，核心发的登录令牌就能向服务器确认身份。
