@@ -30,6 +30,8 @@ chat-card-agent-ask-again = 以後 { $requester } 更改這個應用程式不再
 chat-card-update-header-added = 這次更新新增的項目：
 chat-card-update-header-risky = 這次更新申請了很高或最高級別的權限：
 chat-card-update-header-ask-every = 權限沒有放寬，但你開啟了「每次詢問」：
+chat-card-update-header-adopt = 這個應用程式是你裝的，同意後交給 { $requester } 管理：
+chat-card-update-adopt-replace = 同意後換成它交來的這份，資料保留，裝不上會退回
 
 # 卡片標題。$requester 是 Bot 的名字；$title、$plugin、$tool 是應用程式給的名字。
 chat-card-install-title = { $requester } 想安裝 { $title }

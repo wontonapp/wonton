@@ -23,9 +23,10 @@ mod tool_policy;
 pub mod upstream;
 mod windows;
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, JsonObject, MetaObject, Tool,
@@ -60,6 +61,9 @@ use wonton_protocol::BotKeeper;
 /// 卡片过期之后，会话还要留多久：确认了才开始执行，执行的时间也算在这里。
 const SESSION_IDLE_AFTER_CARD: Duration = Duration::from_secs(3600);
 
+/// 接手申请的冷却（#817）：主人回绝或没理之后，同一个 Bot 对同一个插件这段时间内不再发接手卡片。
+const ADOPT_COOLDOWN: Duration = Duration::from_secs(600);
+
 /// 挂到网关上的 Streamable HTTP 服务。
 pub type McpService = StreamableHttpService<server::Handler, LocalSessionManager>;
 
@@ -82,6 +86,8 @@ pub struct Bus {
     upstreams: Arc<Upstreams>,
     audit: Arc<Audit>,
     takeovers: Takeovers,
+    /// 接手申请的冷却（#817）：主人回绝或没理之后，同一个 Bot 对同一个插件在这段时间内不再发接手卡片。
+    adopt_refusals: Mutex<HashMap<(PluginId, PluginId), Instant>>,
     /// 文件服务。它读插件的资源要用这里的 [`Upstreams`]，所以总线先建好，文件服务后接上（[`Bus::attach_files`]）。
     files: OnceLock<Arc<Files>>,
     /// 帮助文档。它要升级服务给的版本号，所以和文件服务一样后接上（[`Bus::attach_help`]）。
@@ -206,6 +212,7 @@ impl Bus {
             upstreams,
             audit,
             takeovers: Takeovers::new(),
+            adopt_refusals: Mutex::new(HashMap::new()),
             files: OnceLock::new(),
             help: OnceLock::new(),
             people: OnceLock::new(),
@@ -286,6 +293,29 @@ impl Bus {
 
     pub fn confirmations(&self) -> &Confirmations {
         &self.confirmations
+    }
+
+    /// 接手申请在冷却中：返回还要等多久。过期的记录顺手清掉。
+    fn adopt_cooldown(&self, caller: &PluginId, id: &PluginId) -> Option<Duration> {
+        let mut refusals = self.adopt_refusals.lock().expect("接手冷却表锁中毒");
+        let key = (caller.clone(), id.clone());
+        let now = Instant::now();
+        let until = *refusals.get(&key)?;
+        if until <= now {
+            refusals.remove(&key);
+            return None;
+        }
+        Some(until - now)
+    }
+
+    /// 记一次接手申请：冷却期内同一个 Bot 对同一个插件不再发卡，表里过期的顺手清掉。
+    fn note_adopt_attempt(&self, caller: &PluginId, id: &PluginId) {
+        let mut refusals = self.adopt_refusals.lock().expect("接手冷却表锁中毒");
+        refusals.retain(|_, until| *until > Instant::now());
+        refusals.insert(
+            (caller.clone(), id.clone()),
+            Instant::now() + ADOPT_COOLDOWN,
+        );
     }
 
     /// 主人最近一次请求用的语言：Agent 和 Bot 的调用没有请求头，文字按它写（ADR-0043）。
@@ -709,6 +739,8 @@ impl Bus {
 
 #[cfg(test)]
 mod activity_tests;
+#[cfg(test)]
+mod agent_install_adopt_tests;
 #[cfg(test)]
 mod agent_install_card_tests;
 #[cfg(test)]

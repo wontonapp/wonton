@@ -80,7 +80,7 @@ pub fn text(localized: &LocalizedText) -> String {
         .unwrap_or_default()
 }
 
-fn line(text: impl Into<String>) -> CardLine {
+pub(crate) fn line(text: impl Into<String>) -> CardLine {
     CardLine {
         text: text.into(),
         emphasis: false,

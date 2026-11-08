@@ -2,12 +2,12 @@
 //! `wonton__install_plugin` 的 `dir`。`id` 路径也在这里：判定、卡片（最高级多一张）和执行共用，
 //! 走的是官方安装/升级的同一层（`install_detached`、`upgrade_upload`），不另写第二套。
 
+use std::collections::BTreeMap;
 use std::os::fd::AsFd;
 use std::sync::Arc;
 
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject};
 use serde_json::{Value, json};
-use wonton_protocol::SecretValues;
 
 use super::Outcome;
 use super::audit::{Decision, Record};
@@ -22,7 +22,7 @@ use crate::plugin::manifest::{Manifest, Permission};
 use crate::plugin::privileges::{self, CapabilityRisk};
 use crate::plugin::store::{EnabledPermission, InstalledRecord};
 use crate::plugin::{PluginId, PluginPackage, PluginView, package_files};
-use wonton_protocol::PluginWriter;
+use wonton_protocol::{CardLine, PluginWriter, SecretValues};
 
 fn result(value: &Value) -> CallToolResult {
     CallToolResult::success(vec![ContentBlock::text(value.to_string())])
@@ -395,18 +395,24 @@ async fn update(
 ) -> CallToolResult {
     let deny = |message: String| bus.deny(caller, name, value, &message);
     let id = package.manifest.id.clone();
-    let version = package.manifest.version.clone();
     let owns = record
         .written_by
         .as_ref()
         .is_some_and(|w| w.plugin_id == caller.id.to_string());
-    if !owns {
+    // 主人自己上传的插件（没有来源，也不归哪个 Bot）归主人：Agent 想接手得主人点头，更新
+    // 一定发卡片，批下来后归属记成这个 Bot（#817）。官方、社区装的、别的 Bot 写的和系统
+    // 插件照旧拒绝。
+    let adopt = !owns
+        && record.written_by.is_none()
+        && record.origin.is_none()
+        && !bus.plugins.is_system(&id);
+    if !owns && !adopt {
         return deny(format!(
             "invalid_input：{id} 已经装了，不是你写的插件，不能从这里更新"
         ));
     }
     let installed_digest = package_files::digest(record.source.as_bytes(), &record.files);
-    if installed_digest == package.digest() {
+    if installed_digest == package.digest() && !adopt {
         return deny("invalid_input：没有变化：装着的就是这份（摘要相同）".to_owned());
     }
     let risky = highest(&package.manifest)
@@ -418,8 +424,6 @@ async fn update(
     let widened = cards::added_lines(&record, &package, langs);
     // 授予的就是新清单里写的：减权限时旧授予不作数，没变宽时它是子集。
     let granted = package.manifest.permissions.clone();
-    let lan_webui = record.lan_webui;
-    let enabled = record.enabled_permissions.clone();
     // 新增的必填密钥没填过：静默更新会让启动失败，得发给主人填。
     let filled = bus.plugins.store().secrets().load(&id).ok().flatten();
     let needs_secrets = package.manifest.secrets.iter().any(|(name, spec)| {
@@ -428,7 +432,7 @@ async fn update(
                 .as_ref()
                 .is_some_and(|secrets| secrets.contains_key(name))
     });
-    if widened.is_empty() && !risky && !record.ask_every_update && !needs_secrets {
+    if !adopt && widened.is_empty() && !risky && !record.ask_every_update && !needs_secrets {
         // 不打扰主人：直接更新，写审计（ADR-0033 的“更新，权限没变宽”）。之前还在等的
         // 同一份提交让位，不能让主人批一份已经被盖掉的。
         bus.confirmations
@@ -444,11 +448,78 @@ async fn update(
         )
         .await;
     }
-    // 发卡片前同样让位：同一份插件只留一张等确认的卡。
+    let enabled = record.enabled_permissions.clone();
+    let lan_webui = record.lan_webui;
+    card_update(
+        bus,
+        caller,
+        name,
+        value,
+        package,
+        (record, langs, activity),
+        (adopt, risky, widened),
+        granted,
+        enabled,
+        lan_webui,
+        filled,
+    )
+    .await
+}
+
+/// 发卡片的更新：接手（#817）的抬头不同，批下来后把归属记成这个 Bot。
+#[allow(clippy::too_many_arguments)] // 卡片和执行要用的几个值，打包反而看不清哪来的。
+async fn card_update(
+    bus: &Arc<Bus>,
+    caller: &Caller,
+    name: &str,
+    value: &Value,
+    package: PluginPackage,
+    (record, langs, activity): (InstalledRecord, &Languages, Guard),
+    (adopt, risky, widened): (bool, bool, Vec<CardLine>),
+    granted: Vec<Permission>,
+    enabled: Vec<EnabledPermission>,
+    lan_webui: bool,
+    filled: Option<BTreeMap<String, Vec<u8>>>,
+) -> CallToolResult {
+    let id = package.manifest.id.clone();
+    let version = package.manifest.version.clone();
+    if adopt {
+        // 冷却（#817）：主人回绝或没理之后不再刷卡，让 Bot 过会儿再来。
+        if let Some(wait) = bus.adopt_cooldown(&caller.id, &id) {
+            let minutes = wait.as_secs().div_ceil(60);
+            return bus.deny(
+                caller,
+                name,
+                value,
+                &format!("invalid_input：接手刚被回绝，{minutes} 分钟内不会再问"),
+            );
+        }
+        bus.note_adopt_attempt(&caller.id, &id);
+    }
+    // 发卡片前让位：同一份插件只留一张等确认的卡。
     bus.confirmations
         .supersede_pending(&caller.id, &id, langs)
         .await;
-    let (header, lines) = if !widened.is_empty() {
+    let (header, lines) = if adopt {
+        // 三件事要说清（#817）：换成 Bot 的版本、数据保留、以后没变宽不再问。权限变化照常列。
+        let mut lines = vec![
+            cards::line(l10n::text(langs, "chat-card-update-adopt-replace", &[])),
+            cards::line(l10n::text(
+                langs,
+                "chat-card-agent-ask-again",
+                &[("requester", caller.name.as_str().into())],
+            )),
+        ];
+        lines.extend(widened);
+        (
+            l10n::text(
+                langs,
+                "chat-card-update-header-adopt",
+                &[("requester", caller.name.as_str().into())],
+            ),
+            lines,
+        )
+    } else if !widened.is_empty() {
         (
             l10n::text(langs, "chat-card-update-header-added", &[]),
             widened,
@@ -482,9 +553,13 @@ async fn update(
     );
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, langs));
     let id_for_run = id;
+    let writer = adopt.then(|| PluginWriter {
+        plugin_id: caller.id.to_string(),
+        title: caller.name.clone(),
+    });
     let run = move |bus: Arc<Bus>, secrets: SecretValues| {
         upgrade_ran(
-            bus, id_for_run, version, package, granted, enabled, lan_webui, secrets,
+            bus, id_for_run, version, package, granted, enabled, lan_webui, secrets, writer,
         )
     };
     bus.confirmed_twice(
@@ -498,6 +573,7 @@ async fn update(
 }
 
 /// 更新执行完的结果：卡片上的话按主人的语言写，给 Agent 的还是结构化的 JSON。
+/// `writer` 是接手时记下的归属（#817）；没记下来时下次更新还会再问一次主人，两边都要如实说。
 #[allow(clippy::too_many_arguments)] // 卡片执行要用的几个值，再包一层也是逐个填。
 async fn upgrade_ran(
     bus: Arc<Bus>,
@@ -508,6 +584,7 @@ async fn upgrade_ran(
     enabled: Vec<EnabledPermission>,
     lan_webui: bool,
     secrets: SecretValues,
+    writer: Option<PluginWriter>,
 ) -> Outcome {
     let langs = bus.plugins.owner_languages();
     let filled = bus.plugins.store().secrets().load(&id).ok().flatten();
@@ -527,6 +604,17 @@ async fn upgrade_ran(
         .await
     {
         Ok(()) => {
+            let note = match writer.map(|writer| bus.plugins.set_writer(&id, Some(writer))) {
+                None | Some(Ok(())) => None,
+                Some(Err(e)) => {
+                    tracing::error!(plugin = %id, error = %e, "记插件的归属失败");
+                    Some(l10n::text(
+                        &langs,
+                        "chat-install-note-writer",
+                        &[("error", e.to_string().into())],
+                    ))
+                }
+            };
             let url = bus
                 .plugins
                 .list()
@@ -547,6 +635,14 @@ async fn upgrade_ran(
                     "chat-update-done",
                     &[("version", version.as_str().into())],
                 ),
+            };
+            let message = match note {
+                Some(note) => l10n::text(
+                    &langs,
+                    "chat-outcome-with-note",
+                    &[("message", message.into()), ("note", note.into())],
+                ),
+                None => message,
             };
             Outcome::ok(
                 json!({"updated": id.to_string(), "version": version, "url": url}).to_string(),

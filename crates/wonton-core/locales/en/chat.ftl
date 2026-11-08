@@ -42,6 +42,8 @@ chat-card-agent-ask-again = Future changes by { $requester } won't ask again, un
 chat-card-update-header-added = What this update adds:
 chat-card-update-header-risky = This update asks for high-risk permissions:
 chat-card-update-header-ask-every = Permissions didn't widen; you turned on "Ask every time":
+chat-card-update-header-adopt = You installed this app yourself; approving hands it to { $requester }:
+chat-card-update-adopt-replace = Approving replaces the version you installed; data is kept, failed updates roll back
 
 # Card titles. $requester is the bot's name; $title, $plugin and $tool are app-provided names.
 chat-card-install-title = { $requester } wants to install { $title }

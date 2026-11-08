@@ -33,6 +33,8 @@ chat-card-agent-ask-again = 今後{ $requester }がこのアプリを更新す�
 chat-card-update-header-added = このアップデートで追加される項目：
 chat-card-update-header-risky = このアップデートは危険度の高い権限を要求しています：
 chat-card-update-header-ask-every = 権限は変わっていませんが、「毎回確認」が有効になっています：
+chat-card-update-header-adopt = このアプリはあなたがインストールしたものです。承認すると { $requester } が管理します：
+chat-card-update-adopt-replace = 承認するとインストール済みの版を置き換えます。データは保持され、失敗時は元に戻ります
 
 # カードのタイトル。$requester は Bot の名前、$title・$plugin・$tool はアプリが渡す名前。
 chat-card-install-title = { $requester }が{ $title }のインストールを要求しています
