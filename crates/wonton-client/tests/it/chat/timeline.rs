@@ -1,6 +1,7 @@
 //! 测试里的时间线：按顺序应用每一批增量，和壳那一侧做的一样。
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use wonton_client::{
     Action, BackPagination, ClientCore, TimelineDiff, TimelineItem, TimelineSubscription,
@@ -22,7 +23,14 @@ pub struct Timeline {
     /// 每次清空的原因，按发生顺序；断言失败时带进 panic 消息。
     cleared_reasons: Vec<String>,
     paging: bool,
+    /// 已经翻到房间开头。
+    at_start: bool,
+    /// 上一次往回翻的时刻，翻页按这个限速。
+    last_page: Instant,
 }
+
+/// 往回翻的间隔：卡着的时候连续翻不会更快，太密只会堆请求。
+const PAGE_EVERY: Duration = Duration::from_millis(250);
 
 impl Timeline {
     pub async fn open(phone: &Phone, room_id: &str) -> Self {
@@ -41,6 +49,8 @@ impl Timeline {
             cleared: false,
             cleared_reasons: Vec::new(),
             paging: false,
+            at_start: false,
+            last_page: Instant::now(),
         }
     }
 
@@ -57,8 +67,15 @@ impl Timeline {
                         self.cleared = true;
                         let reason = take_rebuild_reason(&self.room_id);
                         self.cleared_reasons.push(reason);
+                        // 列表换了，翻到一半的那页算完，新列表要重新从头翻。
+                        self.paging = false;
+                        self.at_start = false;
                     }
-                    TimelineDiff::Reset { .. } => self.cleared = true,
+                    TimelineDiff::Reset { .. } => {
+                        self.cleared = true;
+                        self.paging = false;
+                        self.at_start = false;
+                    }
                     _ => {}
                 }
             }
@@ -66,6 +83,7 @@ impl Timeline {
         }
         self.started = true;
         self.back_pagination = back_pagination;
+        self.at_start = back_pagination == BackPagination::ReachedStart;
     }
 
     pub fn was_cleared(&self) -> bool {
@@ -98,10 +116,13 @@ impl Timeline {
         self.cleared_reasons.join("；")
     }
 
-    /// 清空过、还没翻到头、没在翻：像壳一样再翻一页。
+    /// 还没翻到头、没在翻这一页、离上一页够远了：像壳一样再翻一页。重启后同步从头开始，时间线只留最新一段，
+    /// 壳这时也往回翻，不靠先收到一次清空——清空可能在时间线打开前就发生过。重建中的时间线一直报“正在翻”，
+    /// 所以不拿状态当能不能翻的依据，只认到了房间开头。
     fn page_back_if_cleared(&mut self) {
-        if self.cleared && !self.paging && self.back_pagination == BackPagination::Idle {
+        if !self.at_start && !self.paging && self.last_page.elapsed() >= PAGE_EVERY {
             self.paging = true;
+            self.last_page = Instant::now();
             self.dispatched += 1;
             self.core
                 .dispatch(Action::PaginateBackwards {
@@ -133,8 +154,15 @@ impl Timeline {
                     return found;
                 }
                 self.page_back_if_cleared();
-                let update = self.subscription.next().await.expect("时间线订阅提前结束");
-                self.apply_update(update.diffs, update.back_pagination);
+                // 翻页按间隔限速：等太久没动静时也醒一次再翻，不能只等增量。
+                let rest = PAGE_EVERY.saturating_sub(self.last_page.elapsed());
+                tokio::select! {
+                    update = self.subscription.next() => {
+                        let update = update.expect("时间线订阅提前结束");
+                        self.apply_update(update.diffs, update.back_pagination);
+                    }
+                    () = tokio::time::sleep(rest) => {}
+                }
             }
         };
         match tokio::time::timeout(WAIT, waiting).await {

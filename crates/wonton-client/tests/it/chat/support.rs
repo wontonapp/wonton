@@ -31,9 +31,11 @@ use wonton_tunnel::pair::{
 };
 use wonton_tunnel::{Allowlist, TunnelListener, TunnelServer};
 
+mod diagnostics;
 mod fake_core;
 mod matrix;
 
+pub use diagnostics::{is_room_list, pending_requests, request_arrived, request_done};
 use fake_core::fake_core;
 
 pub const WAIT: Duration = Duration::from_secs(60);
@@ -680,6 +682,7 @@ impl Phone {
         mut check: impl FnMut(&ChatViewModel) -> Option<R>,
     ) -> R {
         let subscription = self.subscribe_chat();
+        let since = std::time::Instant::now();
         let mut last = None;
         let waiting = async {
             while let Some(view) = subscription.next().await {
@@ -692,7 +695,19 @@ impl Phone {
         };
         match tokio::time::timeout(WAIT, waiting).await {
             Ok(found) => found,
-            Err(_) => panic!("{what}：{WAIT:?} 内没有等到，当前：{:#?}", self.chat()),
+            Err(_) => {
+                let view = self.chat();
+                // 起步现场的记录按 Matrix 设备号分开，设备号只在登录后才有。
+                let device = match &view.account {
+                    ChatAccount::SignedIn { device_id, .. } => device_id.as_str(),
+                    _ => "",
+                };
+                panic!(
+                    "{what}：{WAIT:?} 内没有等到，当前：{view:#?}\n同步起步：{}\n挂着的请求：{}",
+                    wonton_matrix::last_sync_diagnostic(device),
+                    pending_requests(since)
+                )
+            }
         }
     }
 

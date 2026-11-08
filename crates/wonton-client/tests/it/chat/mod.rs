@@ -137,6 +137,41 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
         .await;
 }
 
+/// 重启换了连接号就不排在死连接的长轮询后面；轮回到别人（自己在 30 秒内崩溃两次）时最多等一轮。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_restart_does_not_wait_for_the_dead_long_poll() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    drop(phone);
+
+    // 换了连接号：死掉那条连接的长轮询在另一个号上，不该等它。
+    let phone = Phone::open(dir.path());
+    phone.connect(&home);
+    let started = Instant::now();
+    phone.signed_in().await;
+    assert!(
+        started.elapsed() < Duration::from_secs(15),
+        "换个连接号还要等：{:?}",
+        started.elapsed()
+    );
+    drop(phone);
+
+    // 第三个实例轮回到第一个连接号，那边还挂着第一次启动的死长轮询：最多等它这一轮（30 秒），不能更久。
+    let phone = Phone::open(dir.path());
+    phone.connect(&home);
+    let started = Instant::now();
+    phone.signed_in().await;
+    assert!(
+        started.elapsed() < Duration::from_secs(45),
+        "轮回到第一个连接号时等了两轮以上：{:?}",
+        started.elapsed()
+    );
+}
+
 /// 新设备打开房间时取不到成员，隔一会儿再取，Bot 的名字最终补上。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]

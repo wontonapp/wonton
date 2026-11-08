@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures_util::{Stream, stream};
 use matrix_sdk::{
@@ -25,6 +26,34 @@ use crate::{Error, Result, send_queue};
 
 /// Tuwunel 的 JWT 登录类型。
 const JWT_LOGIN_TYPE: &str = "org.matrix.login.jwt";
+
+/// 房间列表的两个连接号，轮换着用：上次用哪个记在存储目录下的文件里，这次用另一个，服务端那边的旧会话
+/// 就不会挡住新连接。都是 13 个字符，SDK 只收 16 个以内，测试守着。
+const ROOM_LIST_CONN_IDS: [&str; 2] = ["room-list-a", "room-list-b"];
+/// 记上次用的连接号的文件名，和 Matrix 存储放在同一个目录（归客户端核心所有）。
+const ROOM_LIST_CONN_FILE: &str = "room-list-conn";
+
+/// 这次用哪个连接号，并记下来。没有记录（第一次启动）从第一个开始；连着两次都在 30 秒内崩溃时，第三个实例会
+/// 轮回到第一个连接号，死掉那条长轮询可能还挂在上面，最多再等它一轮（30 秒），不会卡死。内存存储没有目录，
+/// 按进程里的调用次数轮换，够一个进程里几个会话分开。
+async fn next_room_list_conn_id(store: &StoreConfig) -> &'static str {
+    let StoreConfig::Sqlite { path, .. } = store else {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        return ROOM_LIST_CONN_IDS[NEXT.fetch_add(1, Ordering::Relaxed) % ROOM_LIST_CONN_IDS.len()];
+    };
+    let previous = tokio::fs::read_to_string(path.join(ROOM_LIST_CONN_FILE))
+        .await
+        .unwrap_or_default();
+    let next = if previous.trim() == ROOM_LIST_CONN_IDS[0] {
+        ROOM_LIST_CONN_IDS[1]
+    } else {
+        ROOM_LIST_CONN_IDS[0]
+    };
+    if let Err(error) = tokio::fs::write(path.join(ROOM_LIST_CONN_FILE), next).await {
+        tracing::warn!("could not record the room list connection id: {error}");
+    }
+    next
+}
 
 /// 登录参数。`Debug` 不输出代理的会话凭据和存储口令。
 #[derive(Clone)]
@@ -147,7 +176,7 @@ impl MatrixSession {
             .initial_device_display_name(&config.device_name)
             .request_refresh_token()
             .await?;
-        Self::with_client(client, response.user_id, response.device_id).await
+        Self::with_client(client, response.user_id, response.device_id, config).await
     }
 
     /// 用核心交给 Bot 的访问令牌恢复设备；令牌只用于本次进程，不写进 Matrix 状态库。
@@ -178,7 +207,7 @@ impl MatrixSession {
             )
             .await
             .map_err(|error| Error::Upstream(format!("恢复 Matrix 会话失败：{error}")))?;
-        let session = Self::with_client(client, user_id, device_id.clone()).await?;
+        let session = Self::with_client(client, user_id, device_id.clone(), config).await?;
         if let Some(marker) = marker {
             tokio::fs::write(&marker, device_id.as_str())
                 .await
@@ -197,15 +226,23 @@ impl MatrixSession {
         let user_id = saved.0.meta.user_id.clone();
         let device_id = saved.0.meta.device_id.clone();
         client.restore_session(saved.0).await?;
-        Self::with_client(client, user_id, device_id).await
+        Self::with_client(client, user_id, device_id, config).await
     }
 
     async fn with_client(
         client: Client,
         user_id: OwnedUserId,
         device_id: OwnedDeviceId,
+        config: &SessionConfig,
     ) -> Result<Self> {
+        // 每次实例轮换房间列表的连接号。服务器按（设备，连接号）一条一条地处理 Sliding Sync：重启后沿用
+        // 同一个连接号，新请求就排在死掉的那条还没结束的 30 秒长轮询后面，起步干等半分钟；换一个就不排队了。
+        // 也不开 `share_pos`：位置按连接号存，轮换后读回来的是两轮前的，服务端早不认，还是要先挂一轮再回
+        // `M_UNKNOWN_POS`，不如省掉。
+        // 同一个实例内的重启（[`Self::keep_syncing`]）连接号和内存里的 `pos` 都不变。
         let sync = SyncService::builder(client.clone())
+            .with_room_list_conn_id(next_room_list_conn_id(&config.store).await.to_owned())
+            .with_share_pos(false)
             .build()
             .await
             .map_err(|error| Error::from(&error))?;
@@ -432,6 +469,34 @@ mod tests {
         assert!(!printed.contains("proxy-password"), "{printed}");
         assert!(!printed.contains("store-passphrase"), "{printed}");
         assert!(printed.contains("matrix.wonton.localhost"), "{printed}");
+    }
+
+    /// SDK 只收 16 个字符以内的实例名，超了在建 `SyncService` 时直接失败。
+    #[test]
+    fn room_list_conn_ids_fit_the_sdk_limit() {
+        for id in ROOM_LIST_CONN_IDS {
+            assert!(id.len() <= 16, "{id} 太长");
+        }
+        assert_ne!(ROOM_LIST_CONN_IDS[0], ROOM_LIST_CONN_IDS[1]);
+    }
+
+    /// 连接号两次启动换一个，第三次回到第一个（崩溃循环时最多再等一轮长轮询）。存储里只留一条记录。
+    #[tokio::test]
+    async fn room_list_conn_ids_rotate() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = StoreConfig::Sqlite {
+            path: dir.path().to_owned(),
+            passphrase: None,
+        };
+        let first = next_room_list_conn_id(&store).await;
+        let second = next_room_list_conn_id(&store).await;
+        let third = next_room_list_conn_id(&store).await;
+        assert_ne!(first, second);
+        assert_eq!(first, third);
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(ROOM_LIST_CONN_FILE)).unwrap(),
+            third
+        );
     }
 
     #[tokio::test]

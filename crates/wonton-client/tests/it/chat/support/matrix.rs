@@ -298,10 +298,12 @@ async fn forward_to(core: &Core, head: &[u8]) -> Option<TcpStream> {
 
 /// 下一条房间列表请求回 M_UNKNOWN_POS，过期注入先于房间状态改写。
 async fn expire_room_list(tcp: &mut TcpStream, core: &Core, request: Option<&Value>) -> bool {
-    let room_list = request
-        .and_then(|request| request.get("conn_id"))
-        .and_then(|conn| conn.as_str())
-        == Some("room-list");
+    let room_list = super::is_room_list(
+        &request
+            .and_then(|request| request.get("conn_id"))
+            .cloned()
+            .unwrap_or_default(),
+    );
     if !room_list || !core.expire_room_list.swap(false, Ordering::SeqCst) {
         return false;
     }
@@ -335,7 +337,7 @@ async fn record_sync_request(core: &Core, text: &str, body: &[u8]) -> Option<Val
     request["test_sequence"] = sequence.into();
     request["pos"] = pos.map(Value::String).unwrap_or(Value::Null);
     // Joined 行可先于加入流程的临时订阅清理出现，不能把那条带订阅请求当成旧空长轮询。
-    if request["conn_id"] == "room-list"
+    if super::is_room_list(request.get("conn_id").unwrap_or(&Value::Null))
         && request.get("room_subscriptions").is_none()
         && core.hold_sync_recording.swap(false, Ordering::SeqCst)
     {

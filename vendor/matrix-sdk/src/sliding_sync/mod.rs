@@ -498,10 +498,13 @@ impl SlidingSync {
         let to_device_enabled = self.inner.extensions.to_device.enabled == Some(true);
 
         let restored_fields = if self.inner.share_pos || to_device_enabled {
+            debug!("Restoring the sliding sync state");
+            let _timer = timer!("restoring the sliding sync state");
             restore_sliding_sync_state(&self.inner.client, &self.inner.storage_key).await?
         } else {
             None
         };
+        debug!("Restored the sliding sync state");
 
         // Update pos: either the one restored from the database, if any and the sliding
         // sync was configured so, or read it from the memory cache.
@@ -536,9 +539,12 @@ impl SlidingSync {
         if pos.is_none() && self.is_e2ee_enabled() {
             info!("Marking all tracked users as dirty");
 
+            debug!("Getting the olm machine");
             let olm_machine = self.inner.client.olm_machine().await;
+            debug!("Got the olm machine");
             let olm_machine = olm_machine.as_ref().ok_or(Error::NoOlmMachine)?;
             olm_machine.mark_all_tracked_users_as_dirty().await?;
+            debug!("Marked all tracked users as dirty");
         }
 
         // Configure the timeout.
@@ -564,7 +570,9 @@ impl SlidingSync {
         });
 
         // Add room subscriptions.
+        debug!("Reading the room subscriptions");
         request.room_subscriptions = self.inner.room_subscriptions.read().unwrap().clone();
+        debug!("Read the room subscriptions");
 
         // Add extensions.
         request.extensions = self.inner.extensions.clone();
@@ -574,6 +582,8 @@ impl SlidingSync {
             request.extensions.to_device.since =
                 restored_fields.and_then(|fields| fields.to_device_token);
         }
+
+        debug!("Sync request generated");
 
         Ok((
             // The request itself.

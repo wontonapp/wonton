@@ -8,7 +8,9 @@
 crates.io 上的包原样导入：sha256 `2afc652a144822f6fbe24084e08bc59cb483fd0b504396d492131dec0749396e`，上游提交见
 `matrix-sdk/.cargo_vcs_info.json`。包里没有 LICENSE，从上游同一提交取来。
 
-补丁只有一处：`src/encryption/mod.rs` 加了公开方法 `Encryption::query_missing_secrets_from_other_sessions`，转调
+补丁两处。
+
+第一处：`src/encryption/mod.rs` 加了公开方法 `Encryption::query_missing_secrets_from_other_sessions`，转调
 matrix-sdk-crypto 已经公开的 `OlmMachine::query_missing_secrets_from_other_sessions`，向自己的其他设备再要一次缺的秘密，
 再调 SDK 内部的 `send_outgoing_requests` 当场发出。只排队不发的话，请求要等下一次同步才发，可能是 30 秒的长轮询，
 取回密钥的期限就过了。
@@ -17,6 +19,10 @@ matrix-sdk-crypto 已经公开的 `OlmMachine::query_missing_secrets_from_other_
 旧设备还没把新设备记成已验证，回 “device isn't trusted” 直接丢掉，不排队也不补发，新设备就一直缺那个秘密。
 实测和时序见 [ADR-0046](../docs/adr/0046-device-verification.md)“取回密钥”一节。matrix-sdk 只在 `testing` feature 下
 暴露 `OlmMachine`，正式代码没法补要；`base_client()` 绕过存储配置和跨进程锁，不能用。
+
+第二处：`src/sliding_sync/mod.rs` 的 `generate_sync_request` 加几条 `debug!`，记下从拿到 `pos` 到发出请求之间每一步
+（读回存下的位置、取 Olm 机器、读房间订阅）。这一段原本没有任何日志，同步卡在起步时只能看见前后两个时间点，分不出卡在哪，
+补上才能用 `WONTON_TEST_LOG` 定位。
 
 ## matrix-sdk-ui 0.19.1（Apache-2.0，`matrix-sdk-ui/LICENSE`）
 

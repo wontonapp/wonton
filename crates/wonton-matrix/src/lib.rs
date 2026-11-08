@@ -45,6 +45,6 @@ pub use profile::UserProfile;
 pub use push::{BackgroundNotification, Notification, PusherConfig};
 pub use rooms::{LatestMessage, Membership, RoomInfo};
 pub use session::{MatrixSession, SavedSession, SessionConfig, SessionEvent, StoreConfig};
-pub use sync::SyncStatus;
+pub use sync::{SyncStatus, last_sync_diagnostic};
 pub use timeline::{EntryKind, TimelineEntry};
 pub use verification::SelfVerification;

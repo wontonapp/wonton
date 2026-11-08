@@ -35,10 +35,14 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
     let text = String::from_utf8_lossy(&head).to_ascii_lowercase();
     if text.contains(&format!("\r\nhost: matrix.{BASE_DOMAIN}")) {
         core.bot_api.observe_matrix(&text);
+        let request = super::request_arrived(&text);
         matrix::serve_matrix(tcp, core, head, &text).await;
+        super::request_done(request);
         return;
     }
+    let request = super::request_arrived(&text);
     answer_core_route(&core, &text, &mut tcp).await;
+    super::request_done(request);
 }
 
 /// 假核心自己的接口：读完请求体，交给 Bot 的应答或 `respond`，没有就回 404。

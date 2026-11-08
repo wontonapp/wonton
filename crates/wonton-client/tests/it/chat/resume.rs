@@ -6,7 +6,7 @@ use futures_util::StreamExt;
 use wonton_client::{Action, ChatSync, HomeStatus, TimelineContent};
 use wonton_matrix::{ChatRoom, MatrixSession, MessageBody, OwnedRoomId};
 
-use super::support::{Home, Phone, Timeline, WAIT};
+use super::support::{Home, Phone, Timeline, WAIT, is_room_list};
 use super::{accept_the_bots_invite, text};
 
 struct Chat {
@@ -247,7 +247,7 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
         .home
         .sync_requests()
         .into_iter()
-        .filter(|request| request["conn_id"] == "room-list")
+        .filter(|request| is_room_list(&request["conn_id"]))
         .rev()
         .find_map(|request| {
             request["room_subscriptions"][chat.room_id.as_str()]["timeline_limit"].as_u64()
@@ -275,6 +275,7 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
     chat.timeline.until_cleared().await;
     chat.bot_room.send_text("之后的").await.expect("Bot 发消息");
 
+    // 重建已经发生，前面的消息只可能靠往回翻补回来。
     chat.timeline
         .until_items("新消息到了，更早的也翻回来了", |items| {
             let has = |body| items.iter().any(|item| text(item, body).is_some());
