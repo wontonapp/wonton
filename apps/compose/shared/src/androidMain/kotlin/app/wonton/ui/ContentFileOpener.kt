@@ -71,10 +71,10 @@ fun openWithSystem(context: Context, path: String, mimeType: String?): Problem? 
 }
 
 /** 下载好的文件交给系统的分享：存到别处、发给别的 App。 */
-fun shareWithSystem(context: Context, path: String) {
+fun shareWithSystem(context: Context, path: String, mimeType: String? = null) {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", File(path))
     val send = Intent(Intent.ACTION_SEND)
-        .setType(context.contentResolver.getType(uri) ?: "*/*")
+        .setType(mimeType ?: context.contentResolver.getType(uri) ?: "*/*")
         .putExtra(Intent.EXTRA_STREAM, uri)
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     context.startActivity(Intent.createChooser(send, null))

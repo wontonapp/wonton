@@ -2,7 +2,6 @@ package app.wonton.ui
 
 import android.graphics.ImageDecoder
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -15,6 +14,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,22 +23,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LocalPinnableContainer
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import app.wonton.client.ClientCore
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.ImageContent
 import app.wonton.protocol.MediaHandle
 import app.wonton.protocol.SendState
-import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.icons.Close
-import app.wonton.ui.icons.WontonIcon
 import java.io.IOException
 import java.nio.ByteBuffer
 import kotlinx.coroutines.Dispatchers
@@ -48,12 +43,18 @@ import kotlinx.coroutines.withContext
 fun MessageImage(image: ImageContent, core: ClientCore, sendState: SendState) {
     val shown = image.thumbnail ?: image.media
     val preview by loadedImage(core, shown)
-    var showingOriginal by remember { mutableStateOf(false) }
+    var showingViewer by remember { mutableStateOf(false) }
+    // 查看器开着时钉住这一行：行被列表回收，查看器会跟着一起被关掉。
+    val pinnable = LocalPinnableContainer.current
+    DisposableEffect(showingViewer, pinnable) {
+        val pin = if (showingViewer) pinnable?.pin() else null
+        onDispose { pin?.release() }
+    }
     Box(
         Modifier.widthIn(max = WontonTheme.size.messageImage)
             .aspectRatio(image.ratio())
             .clip(RoundedCornerShape(WontonTheme.radii.control))
-            .clickable { showingOriginal = true },
+            .clickable { showingViewer = true },
         contentAlignment = Alignment.Center,
     ) {
         LoadedImage(preview, ContentScale.Crop)
@@ -64,24 +65,8 @@ fun MessageImage(image: ImageContent, core: ClientCore, sendState: SendState) {
             else LinearProgressIndicator({ progress }, bar)
         }
     }
-    if (showingOriginal) {
-        Dialog(
-            onDismissRequest = { showingOriginal = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-        ) {
-            val original by loadedImage(core, image.media)
-            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-                LoadedImage(original, ContentScale.Fit)
-                Box(Modifier.align(Alignment.TopEnd).padding(WontonTheme.spacing.s8)) {
-                    WontonIconButton(
-                        WontonIcon.Close,
-                        stringResource(R.string.common_close),
-                        { showingOriginal = false },
-                        Color.White,
-                    )
-                }
-            }
-        }
+    if (showingViewer) {
+        ImageViewer(image, core) { showingViewer = false }
     }
 }
 
@@ -107,12 +92,14 @@ private fun LoadedImage(state: Result<ImageBitmap>?, scale: ContentScale) {
     }
 }
 
-/** `ImageDecoder` 解码时按 EXIF 方向转正（`BitmapFactory` 不会），别的客户端发来、只靠 EXIF 标方向的照片也是正的。 */
+/** `ImageDecoder` 解码时按 EXIF 方向转正（`BitmapFactory` 不会），别的客户端发来、只靠 EXIF 标方向的照片也是正的。
+ *  [retryKey] 变了就重新取一次：查看器用它做重试。 */
 @Composable
-private fun loadedImage(core: ClientCore, media: MediaHandle) =
+internal fun loadedImage(core: ClientCore, media: MediaHandle, retryKey: Int = 0) =
     remember(media) { mutableStateOf<Result<ImageBitmap>?>(null) }.also { state ->
         val formatUnsupported = stringResource(R.string.message_image_format_unsupported)
-        LaunchedEffect(media) {
+        LaunchedEffect(media, retryKey) {
+            state.value = null
             state.value = try {
                 val bytes = core.loadMedia(media)
                 withContext(Dispatchers.Default) {
