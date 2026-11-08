@@ -164,7 +164,14 @@ pub enum Action {
     PaginateBackwards {
         room_id: String,
     },
-    /// 把房间标为读到最新一条，发出已读回执，房间的未读数随之清零。
+    /// 壳报告列表停在哪儿：滚动停下、进出底部时发，不用每一帧发。要先订阅这个房间的时间线。核心据此重算
+    /// [`TimelineUpdate::viewport`](crate::TimelineUpdate::viewport)，下面的新消息数随之变。
+    SetTimelineScroll {
+        room_id: String,
+        scroll: crate::TimelineScroll,
+    },
+    /// 把房间标为读到最新一条，发出已读回执，房间的未读数随之清零。只在列表真的贴着最新一条时发（新消息到了、
+    /// 滚回底部），翻在别处时不发。
     MarkRoomRead {
         room_id: String,
     },

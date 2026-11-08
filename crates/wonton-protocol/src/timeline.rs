@@ -3,18 +3,61 @@
 //! 时间线可能有成百上千条，每次变化都推整份太浪费，所以推的是增量批次，不能合并：壳要按顺序把每一批应用到
 //! 自己持有的列表上。第一批总是 [`TimelineDiff::Reset`]，给出当前的全部条目。条目和 matrix-rust-sdk 的时间线
 //! 一一对应（含日期分隔线、已读标记等），下标就是 SDK 的下标；哪些事件进时间线由 `wonton-matrix` 的事件过滤决定。
+//!
+//! 列表该停在哪也由核心说：壳用 [`Action::SetTimelineScroll`](crate::Action::SetTimelineScroll) 报告是不是离开了底部，
+//! 核心在每一批里给出重新算过的位置和新消息数（[`TimelineUpdate::viewport`]），并在第一批给出该停在哪一条
+//! （[`TimelineUpdate::anchor`]）。壳只按这两个值画和滚，不自己数。
 
 use serde::{Deserialize, Serialize};
 
 use crate::{ConfirmationView, FileId, QuotedMessage, ReplyQuote};
 
-/// 一批时间线变化，以及向前翻页的状态。
+/// 一批时间线变化，以及向前翻页的状态和列表该停在哪。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TimelineUpdate {
-    /// 按顺序应用的增量；只有翻页状态变化时为空。
+    /// 按顺序应用的增量；只有翻页状态或位置变化时为空。
     pub diffs: Vec<TimelineDiff>,
     pub back_pagination: BackPagination,
+    /// 列表该停在哪。壳按它画“回到底部”和按钮上的数字；新消息不把列表拽走。
+    pub viewport: TimelineViewport,
+    /// 只有订阅的第一批有，之后为 `None`：壳先把这一条（`Reset` 里的 `TimelineItem::id`）摆到视野顶部，
+    /// 摆好之前不报 [`TimelineScroll::Bottom`]（报早了核心以为主人已经看到最新一条，会清掉落点）。
+    ///
+    /// 锚点是已读位置，主人一眼看到“以下是新消息”；没有未读时是最新一条，空房间为空。这一条摆过去之前就没了
+    /// （撤回、被裁掉）时，壳停在最新一条。
+    ///
+    /// 这一批里有 [`TimelineContent::ReadMarker`] 就锚它自己（`__read_marker`），那一行正好在已读和新消息之间。
+    /// 没有这一行时（SDK 还没插上，或者未读多到落点被加载窗口截断）按本账号已读位置算：位置在这一批里就锚它后面
+    /// 第一条，不在就从末尾往回数未读条数、数不到就锚最早一条，让主人接着往前翻。
+    ///
+    /// 有没有未读另看未读数：有 `ReadMarker` 一定还有未读，没有它却可能只是读完了、未读被窗口截断或者标记还没插上。
+    pub anchor: Option<String>,
+}
+
+/// 列表该停在哪，方向是核心到壳。核心按已读位置、壳报告的滚动（[`Action::SetTimelineScroll`](crate::Action::SetTimelineScroll)）
+/// 和条目算出。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TimelineViewport {
+    /// 贴着最新一条。新消息照常往这里来，已读回执照发。
+    Bottom,
+    /// 翻到别处了，壳在右下角画“回到底部”按钮。`new_messages` 是房间的未读数（和聊天列表那一行同一个数）：
+    /// 是 0 时只画按钮不写数字。点按钮滚到最新一条，壳随后报告 [`TimelineScroll::Bottom`]，`new_messages` 变回 0。
+    Away { new_messages: u32 },
+}
+
+/// 壳报告列表是不是离开了底部，方向是壳到核心。跨过底部时发，不用每一帧发。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TimelineScroll {
+    /// 贴着最新一条：壳照发已读回执，核心把 [`TimelineViewport`] 变成 [`TimelineViewport::Bottom`]、`new_messages`
+    /// 归零。第一批的 [`TimelineUpdate::anchor`] 落定之前不要报，免得把落点当成到底了。
+    Bottom,
+    /// 翻到别处了：已读位置不动，之后到的消息都算新消息。
+    Away,
 }
 
 /// 对条目列表的一次修改，语义同 `eyeball-im` 的 `VectorDiff`。
@@ -432,11 +475,32 @@ mod tests {
                 TimelineDiff::Clear,
             ],
             back_pagination: BackPagination::ReachedStart,
+            viewport: TimelineViewport::Away { new_messages: 3 },
+            anchor: Some("5".into()),
         };
         assert_eq!(round_trip(&update), update);
         assert!(
             !format!("{update:?}").contains("mxc://"),
             "Debug 不能输出媒体句柄"
+        );
+    }
+
+    /// 契约：滚动位置双向都能经 JSON 往返，壳和核心对“在哪儿”的每个取值都认。
+    #[test]
+    fn every_scroll_and_viewport_round_trips_through_json() {
+        for scroll in [TimelineScroll::Bottom, TimelineScroll::Away] {
+            assert_eq!(round_trip(&scroll), scroll);
+        }
+        for viewport in [
+            TimelineViewport::Bottom,
+            TimelineViewport::Away { new_messages: 0 },
+            TimelineViewport::Away { new_messages: 27 },
+        ] {
+            assert_eq!(round_trip(&viewport), viewport);
+        }
+        assert_eq!(
+            serde_json::to_value(TimelineViewport::Away { new_messages: 2 }).unwrap(),
+            serde_json::json!({"type": "away", "new_messages": 2})
         );
     }
 

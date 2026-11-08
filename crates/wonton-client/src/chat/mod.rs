@@ -347,6 +347,8 @@ impl ChatLink {
                 });
                 Ok(())
             }
+            // 位置由时间线订阅自己算，这里只确认房间开着：这一步的 ViewModel 还没填它。
+            Action::SetTimelineScroll { room_id, .. } => self.opened(&room_id).map(drop),
             Action::MarkRoomRead { room_id } => {
                 let chat = self.clone();
                 let (_, room_id) = self.target(&room_id)?;

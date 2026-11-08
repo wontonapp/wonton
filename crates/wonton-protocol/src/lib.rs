@@ -202,7 +202,7 @@ pub use tabs::{
 pub use timeline::{
     BackPagination, ImageContent, MatrixTarget, MediaHandle, MessageAction, MessageContent,
     RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan, SendState, TimelineContent,
-    TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate,
+    TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
 };
 pub use verification::{
     VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,

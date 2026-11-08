@@ -8,7 +8,7 @@ use tokio::sync::{Mutex, mpsc, watch};
 use wonton_matrix::{
     BackPaginationStatus, ChatRoom, MissedEvent, TimelineEntry, Vector, VectorDiff,
 };
-use wonton_protocol::{BackPagination, TimelineDiff, TimelineUpdate};
+use wonton_protocol::{BackPagination, TimelineDiff, TimelineUpdate, TimelineViewport};
 
 use super::confirmation::{Cards, CardsView};
 use super::links::LinkTargets;
@@ -449,6 +449,9 @@ fn send(
         .send(TimelineUpdate {
             diffs,
             back_pagination,
+            // 位置和落点由订阅算；先把字段填上，壳按 Bottom 摆。
+            viewport: TimelineViewport::Bottom,
+            anchor: None,
         })
         .map_err(|_| ())
 }

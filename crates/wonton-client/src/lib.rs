@@ -109,10 +109,11 @@ pub use wonton_protocol::{
     SourceKind, StepNav, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
     TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure,
     TabPage, TabRef, TabState, TabsProblem, TabsViewModel, TakeoverState, TextSize, ThemeColors,
-    ThemeMode, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate,
-    ToolAccess, ToolPolicyEntry, ToolPolicyView, Transfer, TransferAction, TransferDirection,
-    TransferElsewhere, TransferState, TransfersViewModel, UpgradeOffer, UploadSource,
-    VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage, WindowView,
+    ThemeMode, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll,
+    TimelineUpdate, TimelineViewport, ToolAccess, ToolPolicyEntry, ToolPolicyView, Transfer,
+    TransferAction, TransferDirection, TransferElsewhere, TransferState, TransfersViewModel,
+    UpgradeOffer, UploadSource, VerificationCancel, VerificationEmoji, VerificationFlow,
+    VerificationStage, WindowView,
 };
 pub use wonton_protocol::{
     AppsAction, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendGroup,
