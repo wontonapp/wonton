@@ -598,4 +598,5 @@ chat-window-ended =
 
 # Pairing details. Addresses/relay URLs contain no pairing secret; error is the unchanged upstream reason.
 home-pairing-timeout = Pairing did not finish within { $seconds } seconds.
+home-pairing-aborted = Pairing stopped before it finished. Try again.
 home-pairing-failed-detail = Direct addresses: { $addresses }. Relays: [{ $relays }]. Elapsed: { $milliseconds } ms; time limit: { $seconds } seconds. Reason: { $error }

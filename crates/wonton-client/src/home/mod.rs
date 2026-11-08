@@ -5,6 +5,7 @@
 //! `dispatch` 不阻塞。
 
 mod background;
+mod bind;
 mod connection;
 mod invite;
 mod pairing;
@@ -17,8 +18,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use iroh::endpoint::{Builder, QuicTransportConfig, presets};
-use iroh::{Endpoint, RelayMode, SecretKey, Watcher};
+use iroh::{Endpoint, SecretKey, Watcher};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, watch};
 use tokio::task::JoinHandle;
@@ -28,7 +28,7 @@ use wonton_protocol::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure,
     HomePath, HomeStatus, HomeViewModel, ProxySettings, PushMethod,
 };
-use wonton_tunnel::relays::{FALLBACK_AFTER, Relay, RelayTable, relay_map, spawn_tier_fallback};
+use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, spawn_tier_fallback};
 use wonton_tunnel::{
     LocalProxy, PathInfo, PathKind, ProxyAccess, ProxyCredential, TunnelClient, TunnelError,
     TunnelStatus,
@@ -113,6 +113,10 @@ pub(crate) struct HomeLink {
     addresses_stale: AtomicBool,
     /// 当前取地址的任务。重连时取消旧的，同一时刻只跑一个。
     address_refresh: std::sync::Mutex<Option<JoinHandle<()>>>,
+    /// 第几次配对。旧一次的看门线程和迟到的结果只认自己那次，不盖掉后来的配对。
+    pair_attempt: AtomicU64,
+    #[cfg(feature = "test-hooks")]
+    pub(crate) test_hooks: bind::TestHooks,
 }
 
 /// 到一台服务器的连接：endpoint、隧道客户端和本地代理同生共死。
@@ -175,6 +179,9 @@ impl HomeLink {
             network_changes: AtomicU64::new(0),
             addresses_stale: AtomicBool::new(false),
             address_refresh: std::sync::Mutex::default(),
+            pair_attempt: AtomicU64::new(0),
+            #[cfg(feature = "test-hooks")]
+            test_hooks: bind::TestHooks::default(),
         });
         home.runtime.spawn(background::follow_keep_connection(
             Arc::downgrade(&home),
@@ -410,18 +417,7 @@ impl HomeLink {
     }
 
     async fn open(self: &Arc<Self>, ticket: &Ticket) -> Result<Link, String> {
-        let endpoint = self
-            .endpoint_builder(ticket.relays(), 1)
-            .bind()
-            .await
-            .map_err(|e| {
-                l10n!(
-                    CATALOG,
-                    language(),
-                    "home-pairing-bind-failed",
-                    error = e.to_string()
-                )
-            })?;
+        let endpoint = self.bind_endpoint(ticket.relays(), 1, language()).await?;
         // 只建最优先的一档（ADR-0048）；掉档回退由这个任务盯着家中继状态做。DirectOnly 不连中继，
         // 连接信息里一个中继都没有时没有表，也不回退。
         if self.network == Network::Internet && !ticket.relays().is_empty() {
@@ -481,36 +477,6 @@ impl HomeLink {
             watcher,
             checker,
         })
-    }
-
-    /// 本设备身份的 endpoint。`relays` 是连接信息或配对码带来的中继表，`tiers` 是要放进 endpoint 的
-    /// 档数：App 的隧道 endpoint 只放最优先的一档（ADR-0048），配对一次成、等不了回退，放全部档。
-    /// 连接信息里一个中继都没有时才用内置 n0。
-    ///
-    /// 关掉 GSO：网卡不支持时（实测 Android 模拟器的 virtio 网卡；内核对没有校验和卸载的网卡和 IPsec 都这样）
-    /// 多包的发送报 EIO。noq-udp 随后关掉这个 socket 的 GSO，但 iroh 1.4.1 的发送端把分段上限存在建连那一刻，
-    /// 这条连接之后的多包发送每次都 EIO，错误还被吞掉：单包的心跳和确认照常往返，连接看着活着，请求却卡到
-    /// 连接被换掉（#154）。手机上的流量用不上 GSO 省下的那点 CPU。
-    fn endpoint_builder(&self, relays: &[Relay], tiers: usize) -> Builder {
-        let builder = match (self.network, relays.is_empty()) {
-            (Network::Internet, false) => Endpoint::builder(presets::N0)
-                .relay_mode(RelayMode::Custom(relay_map(relays, tiers))),
-            (Network::Internet, true) => Endpoint::builder(presets::N0),
-            #[cfg(feature = "test-hooks")]
-            (Network::TestRelay, _) => Endpoint::builder(presets::Minimal)
-                .clear_ip_transports()
-                .bind_addr((Ipv4Addr::LOCALHOST, 0))
-                .expect("fixed loopback bind is valid")
-                .relay_mode(RelayMode::Custom(relay_map(relays, tiers)))
-                .ca_tls_config(iroh::tls::CaTlsConfig::insecure_skip_verify()),
-            (Network::DirectOnly, _) => Endpoint::builder(presets::Minimal),
-        };
-        let transport = QuicTransportConfig::builder()
-            .enable_segmentation_offload(false)
-            .build();
-        builder
-            .secret_key(self.device_key.clone())
-            .transport_config(transport)
     }
 
     async fn resume(self: Arc<Self>) {

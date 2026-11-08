@@ -358,7 +358,10 @@ async fn spawn_probe(map: RelayMap, tls: Option<CaTlsConfig>) -> anyhow::Result<
     if let Some(tls) = tls {
         builder = builder.ca_tls_config(tls);
     }
-    builder.bind().await.context("绑定中继探针 endpoint")
+    crate::off_workers(move || builder.bind())
+        .await
+        .context("绑定中继探针 endpoint")?
+        .context("绑定中继探针 endpoint")
 }
 
 /// 按当前被撤的档（tiers 档以上全部启用时就是 0..wanted）对齐探针的覆盖集合，返回探针真正连上的

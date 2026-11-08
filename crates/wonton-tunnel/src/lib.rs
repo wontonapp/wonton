@@ -18,6 +18,7 @@
 //! - 服务器配对：两台服务器的主人互相配对服务器（ADR-0050），码和 ALPN 见 [`peer_pair`] 模块。
 
 mod allowlist;
+mod blocking;
 mod client;
 mod credential;
 mod embed;
@@ -39,6 +40,7 @@ mod udp;
 pub mod wire;
 
 pub use allowlist::Allowlist;
+pub use blocking::off_workers;
 pub use client::{PathInfo, PathKind, SuspendClock, TunnelClient, TunnelStats, TunnelStatus};
 pub use credential::{ProxyAccess, ProxyCredential};
 pub use embed::{PeerStream, TunnelListener};

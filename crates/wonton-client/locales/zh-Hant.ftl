@@ -536,4 +536,5 @@ chat-window-ended =
 
 # 配對詳細資訊。位址和中繼 URL 不含配對密鑰；error 保留上游原文。
 home-pairing-timeout = 配對未能在 { $seconds } 秒內完成。
+home-pairing-aborted = 配對沒有完成就中斷了，再試一次。
 home-pairing-failed-detail = 直連位址：{ $addresses }。中繼：[{ $relays }]。已用時 { $milliseconds } 毫秒，時限 { $seconds } 秒。原因：{ $error }

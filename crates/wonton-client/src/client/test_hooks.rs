@@ -2,6 +2,9 @@
 //! 钩子挂在当前作用域上（`Scope::open` 建的），换服务器会换作用域，测试不换服务器就一直是同一个。
 //! 状态和等放行的机制在 [`crate::test_hooks`]。
 
+use std::sync::Arc;
+use std::time::Duration;
+
 use super::ClientCore;
 
 impl ClientCore {
@@ -30,5 +33,31 @@ impl ClientCore {
     #[doc(hidden)]
     pub fn test_release_card_success(&self) {
         self.scope().card_success_hook.release();
+    }
+}
+
+impl ClientCore {
+    /// 本设备身份的 endpoint 绑定之前、在跑绑定的阻塞线程里调用的钩子：一直不返回就是卡住的 iroh 绑定。
+    #[doc(hidden)]
+    pub fn test_set_bind_hook(&self, hook: Option<Arc<dyn Fn() + Send + Sync>>) {
+        *self
+            .scope()
+            .home
+            .test_hooks
+            .bind
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = hook;
+    }
+
+    /// 替掉配对交换的时限（`exchange`）和看门线程的时限（`watchdog`），免得测试等满生产的 30 多秒。
+    #[doc(hidden)]
+    pub fn test_set_pair_deadlines(&self, exchange: Duration, watchdog: Duration) {
+        *self
+            .scope()
+            .home
+            .test_hooks
+            .pair_deadlines
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((exchange, watchdog));
     }
 }

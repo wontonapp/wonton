@@ -4,12 +4,17 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
 import app.wonton.android.R
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.PushMethod
+import app.wonton.ui.homeUpdates
 import app.wonton.ui.pushMethod
 import app.wonton.ui.send
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import org.unifiedpush.android.connector.UnifiedPush
 
 /**
@@ -35,7 +40,15 @@ class PushRegistration(private val activity: ComponentActivity, private val core
         PushNotifications.createChannels(activity)
         val granted = activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
-        if (granted) register() else permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        if (granted) {
+            register()
+            return
+        }
+        // 权限框会盖住配对页：等 home 不再是 NotConfigured（刚配上，或者本来就配过）再要。
+        activity.lifecycleScope.launch {
+            core.homeUpdates().first { it.status != HomeStatus.NotConfigured }
+            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     private fun register() {

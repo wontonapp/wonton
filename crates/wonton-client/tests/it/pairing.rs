@@ -2,6 +2,7 @@
 //! 码决定登记还是拒绝，登记就是把设备加进隧道的白名单；经隧道来的 HTTP 请求由一个模拟的核心回答。
 
 mod reset;
+mod stuck_bind;
 
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
