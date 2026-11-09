@@ -6,6 +6,7 @@ mod chat_rows;
 mod connection;
 mod core_upgrade;
 mod egress;
+mod now;
 mod onboarding;
 mod registry_mirror;
 pub mod rig;

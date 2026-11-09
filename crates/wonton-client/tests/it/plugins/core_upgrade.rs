@@ -8,7 +8,7 @@ use axum::http::Method;
 use wonton_client::{
     Action, ClientCore, CoreUpgradeCheck, CoreUpgradeFailure, CoreUpgradeOffer, CoreUpgradePhase,
     CoreUpgradeProblem, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage, CoreUpgradeStatus,
-    CoreUpgradeTarget, CoreVersion, HomeStatus, PluginsViewModel, SettingsEntry, TabRef,
+    CoreUpgradeTarget, CoreVersion, HomeStatus, PluginsViewModel, SettingsEntry,
 };
 
 use super::rig::{Canned, Rig, WAIT, core_error};
@@ -498,13 +498,9 @@ async fn a_new_version_marks_the_server_setting_and_the_settings_tab_until_skipp
                 } => Some((status, upgrade)),
                 _ => None,
             });
-        let tab = rig
-            .app
-            .tabs()
-            .items
-            .into_iter()
-            .find(|item| item.tab == TabRef::Settings);
-        (server, tab.map(|item| item.badge))
+        // 设置的红点现在在侧边栏上（栏上默认没有设置这一项）。
+        let badge = rig.app.plugins().sidebar.settings_badge;
+        (server, Some(badge))
     };
     let deadline = tokio::time::Instant::now() + WAIT;
     while marked(&rig) != (Some((HomeStatus::Connected, true)), Some(true)) {

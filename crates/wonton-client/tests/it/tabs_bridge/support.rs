@@ -48,9 +48,6 @@ pub async fn open_page(display: TabDisplay, pinned: bool) -> (Rig, TabRef) {
         plugin_id: "app.feed".to_owned(),
         page: Some("feed".to_owned()),
     };
-    rig.app
-        .dispatch(Action::SelectTab { tab: TabRef::Apps })
-        .unwrap();
     if pinned {
         rig.app
             .dispatch(Action::PinTab {

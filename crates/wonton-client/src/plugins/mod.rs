@@ -7,6 +7,7 @@ pub(crate) mod cards;
 mod core_upgrade;
 mod egress;
 mod me;
+mod now;
 mod polling;
 mod registry_mirror;
 mod start;
@@ -14,7 +15,7 @@ mod takeover;
 mod tasks;
 mod tool_policy;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -27,7 +28,8 @@ use wonton_protocol::{
     AddSourceRequest, AddedSource, AskEveryUpdate, CoreError, CoreUpgradeViewModel,
     EgressViewModel, HomeStatus, InstallPreview, InstallSource, InstalledPlugins, LanWebuiUpdate,
     PermissionUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginTaskState,
-    PluginsViewModel, ProxySettings, StorageUsage, StoreItem, StoreListing, TabRef,
+    PluginsViewModel, ProxySettings, StorageUsage, StoreConfirmation, StoreItem, StoreListing,
+    TabRef,
 };
 
 use crate::home::HomeLink;
@@ -81,6 +83,8 @@ pub(crate) struct PluginsLink {
     data_dir: PathBuf,
     /// 发起安装、升级时的预览，按插件 ID 记着：失败后重试要来源，聊天列表的安装行要 `has_bot`。做完被主人清掉时删。
     previews: Mutex<HashMap<String, InstallPreview>>,
+    /// “全部更新”里排着队等主人拿主意的确认，一次一条放进 `view.confirmation`；换服务器时随作用域作废。
+    confirmations: Mutex<VecDeque<StoreConfirmation>>,
     /// 插件端口在本机的同号映射（ADR-0072），结果写进 `view.port_mappings`。
     ports: Arc<PortMapper>,
 }
@@ -130,15 +134,31 @@ impl PluginsLink {
             starts: Mutex::new(HashMap::new()),
             data_dir: data_dir.to_owned(),
             previews: Mutex::new(HashMap::new()),
+            confirmations: Mutex::new(VecDeque::new()),
             ports,
         });
         link.restore_core_upgrade();
+        link.refresh_derived();
         runtime.spawn(follow_home(Arc::downgrade(&link)));
         link
     }
 
     pub(crate) fn view(&self) -> PluginsViewModel {
         self.view.borrow().clone()
+    }
+
+    /// 派生字段跟着输入重算：可更新的应用和侧边栏都由已安装列表、商店、任务忙闲和核心升级页算出来。
+    /// 改了这些输入的地方要调一次；值没变时不打扰订阅者。
+    pub(crate) fn refresh_derived(&self) {
+        self.view.send_if_modified(|view| {
+            let updatable = now::updatable(view);
+            let mut changed = view.updatable != updatable;
+            view.updatable = updatable;
+            let sidebar = now::sidebar(view);
+            changed |= view.sidebar != sidebar;
+            view.sidebar = sidebar;
+            changed
+        });
     }
 
     /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
@@ -413,6 +433,7 @@ impl PluginsLink {
         }
         self.view
             .send_modify(|view| view.installed = Some(installed));
+        self.refresh_derived();
         if self.needs_polling().is_some() {
             self.start_polling();
         }
@@ -433,6 +454,7 @@ impl PluginsLink {
         }
         let store = result?;
         self.view.send_modify(|view| view.store = Some(store));
+        self.refresh_derived();
         Ok(())
     }
 

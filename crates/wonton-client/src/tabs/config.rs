@@ -96,9 +96,7 @@ fn validate_file(file: &TabsFile) -> Result<(), String> {
             ));
         }
     }
-    if !file.items.iter().any(|item| item.tab == TabRef::Chat)
-        || !file.items.iter().any(|item| item.tab == TabRef::Apps)
-    {
+    if !file.items.iter().any(|item| item.tab == TabRef::Chat) {
         return Err(l10n!(CATALOG, language(), "tabs-config-missing-fixed"));
     }
     Ok(())
@@ -106,21 +104,29 @@ fn validate_file(file: &TabsFile) -> Result<(), String> {
 
 pub(super) fn default_file(server_id: Option<String>) -> TabsFile {
     TabsFile {
-        server_id,
-        items: vec![
-            StoredItem {
+        server_id: server_id.clone(),
+        // 配上了服务器，入口都在侧边栏里，底栏默认只剩“聊天”；没配对时“应用”网格页还是配对页，留在栏上。
+        items: if server_id.is_some() {
+            vec![StoredItem {
                 tab: TabRef::Chat,
                 page: None,
-            },
-            StoredItem {
-                tab: TabRef::Apps,
-                page: None,
-            },
-            StoredItem {
-                tab: TabRef::Settings,
-                page: None,
-            },
-        ],
+            }]
+        } else {
+            vec![
+                StoredItem {
+                    tab: TabRef::Chat,
+                    page: None,
+                },
+                StoredItem {
+                    tab: TabRef::Apps,
+                    page: None,
+                },
+                StoredItem {
+                    tab: TabRef::Settings,
+                    page: None,
+                },
+            ]
+        },
         displays: Vec::new(),
         labels: true,
     }

@@ -314,7 +314,7 @@ tabs-config-corrupt = ナビゲーションバーの設定ファイル { $path }
 tabs-config-too-many-items = ナビゲーションバーには最大 { $count } 個までしか項目を追加できません。
 tabs-config-duplicate-page = ナビゲーションバーに重複したページがあります。
 tabs-config-plugin-page-incomplete = アプリのページにタイトルとアイコンがありません。
-tabs-config-missing-fixed = ナビゲーションバーにチャットかアプリがありません。
+tabs-config-missing-fixed = ナビゲーションバーにチャットがありません。
 # $path は設定ファイルのパス、$reason は元の書き込みエラーです。
 tabs-config-write-failed = ナビゲーションバーの設定ファイル { $path } に書き込めません：{ $reason }
 
@@ -547,3 +547,4 @@ chat-window-ended =
 home-pairing-timeout = { $seconds } 秒以内にペアリングを完了できませんでした。
 home-pairing-aborted = ペアリングが完了する前に中断しました。もう一度お試しください。
 home-pairing-failed-detail = 直接接続先：{ $addresses }。リレー：[{ $relays }]。経過時間：{ $milliseconds } ミリ秒、制限時間：{ $seconds } 秒。原因：{ $error }
+plugin-now-start-failed = ワンタップ操作を開始できません：{ $error }

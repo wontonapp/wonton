@@ -52,10 +52,19 @@ async fn candidates_list_every_page_with_its_plugin_icon_until_pinned() {
             icon: None,
         }),
     };
-    // 设置默认在栏上，不在候选里。
+    // 设置不在默认栏上，是候选的第一项。
+    let settings = TabCandidate {
+        tab: TabRef::Settings,
+        plugin: None,
+    };
     assert_eq!(
         view.candidates,
-        [rss_page("feed"), rss_page("saved"), photos.clone()]
+        [
+            settings,
+            rss_page("feed"),
+            rss_page("saved"),
+            photos.clone()
+        ]
     );
 
     rig.app
@@ -64,11 +73,7 @@ async fn candidates_list_every_page_with_its_plugin_icon_until_pinned() {
             replacing: None,
         })
         .unwrap();
-    rig.app
-        .dispatch(Action::UnpinTab {
-            tab: TabRef::Settings,
-        })
-        .unwrap();
+    // 设置一开始就不在栏上，还是候选的第一项。
     let settings = TabCandidate {
         tab: TabRef::Settings,
         plugin: None,
