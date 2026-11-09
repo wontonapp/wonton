@@ -1575,11 +1575,21 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "\u30db\u30fc\u30e0\u306e\u30aa\u30fc\u30ca\u30fc\u306e\u7aef\u672b\u304b\u3089\u5909\u66f4\u3057\u3066\u3082\u3089\u3063\u3066\u304f\u3060\u3055\u3044\u3002"
+            "value": "ホームのオーナーの端末から変更してもらってください。"
           }
         },
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "请主人用自己的设备改。"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "請主人用自己的裝置改。"}}
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请主人用自己的设备改。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請主人用自己的裝置改。"
+          }
+        }
       }
     },
     "botProfile.title": {
@@ -11202,6 +11212,36 @@
         }
       }
     },
+    "preview.botName": {
+      "comment": "预览里的假 Bot 名，只给 Xcode 预览走查用。",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Assistant"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家庭助手"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家庭助手"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アシスタント"
+          }
+        }
+      }
+    },
     "problem.appearance.title": {
       "comment": "Problem title when the appearance settings couldn't be saved on the home server.",
       "extractionState": "manual",
@@ -20808,6 +20848,66 @@
         }
       }
     },
+    "connection.notice.poor": {
+      "comment": "Short status when connected but the recent connection quality is poor.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poor connection, things may be slow"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络较差，可能会卡"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "網路較差，可能會卡"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通信が不安定です"
+          }
+        }
+      }
+    },
+    "connection.notice.poorRelay": {
+      "comment": "Short status when connected but the recent connection quality is poor and traffic goes through a relay. One complete sentence, not assembled from parts.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poor connection, going through a relay"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络较差，正在经中转连接"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "網路較差，正在經中繼連線"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リレー経由のため通信が不安定です"
+          }
+        }
+      }
+    },
     "connection.pairAgain": {
       "comment": "Button when the server no longer recognizes this phone; also the settings row.",
       "extractionState": "manual",
@@ -21018,6 +21118,36 @@
         }
       }
     },
+    "connection.detail.quality": {
+      "comment": "Row in the connection details page: quality of the recent window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接质量"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連線品質"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続品質"
+          }
+        }
+      }
+    },
     "connection.detail.latency": {
       "comment": "Row in the connection details page: round-trip time.",
       "extractionState": "manual",
@@ -21048,32 +21178,32 @@
         }
       }
     },
-    "connection.detail.loss": {
-      "comment": "Row in the connection details page: lost of sent packets. Two numbers, lost first.",
+    "connection.detail.lossRate": {
+      "comment": "Row in the connection details page: window packet loss as a percentage; a dash when there aren't enough samples.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Packet Loss"
+            "value": "Loss Rate"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "丢包"
+            "value": "丢包率"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "封包遺失"
+            "value": "封包遺失率"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "パケット損失"
+            "value": "パケット損失率"
           }
         }
       }
@@ -21194,6 +21324,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "前回の失敗"
+          }
+        }
+      }
+    },
+    "connection.quality.good": {
+      "comment": "Row in the connection details page: quality of the recent window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "好"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "良好"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "良好"
+          }
+        }
+      }
+    },
+    "connection.quality.poor": {
+      "comment": "Row in the connection details page: quality of the recent window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poor"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "较差"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "較差"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不良"
           }
         }
       }
