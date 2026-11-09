@@ -12,18 +12,20 @@ use crate::l10n::{CATALOG, language};
 use wonton_l10n::l10n;
 
 pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsViewModel {
-    let items = state
+    let items: Vec<_> = state
         .config
         .items
         .iter()
         .map(|item| build_item(state, item, plugins, true))
         .collect();
+    let show_bar = items.len() > 1;
     let overlay = state
         .overlay
         .as_ref()
         .map(|item| build_item(state, item, plugins, false));
     TabsViewModel {
         items,
+        show_bar,
         selected: state.selected.clone(),
         overlay,
         full: state.config.items.len() >= super::MAX_ITEMS,
