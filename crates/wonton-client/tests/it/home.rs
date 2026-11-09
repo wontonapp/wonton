@@ -536,12 +536,21 @@ async fn a_new_outage_does_not_inherit_the_previous_failure() {
         phone.home()
     );
 
-    // 再断开。停掉定时检查就没有新的失败，断开的说法只能是宽限和“连接中”，不能说连不上；
-    // 详情里的上次失败是排查信息，不受状态影响。
+    // 再断开。停掉定时检查后，聊天、设备列表等后台重试仍可能在这一轮重拨；重拨失败，宽限过后提示就会
+    // 从“连接中”变“连不上”——那是这一轮自己的失败，证据是失败计数涨了。继承来的失败不会让计数变多。
     phone.stop_periodic_checks();
+    let failures_before = phone.home().details.failed_dials;
     home.stop().await;
     let view = phone
         .wait_for(|view| {
+            // 30 秒的长断开兜底在等待上限之外：这里说连不上只能来自本轮失败。
+            if first_unreachable(view) {
+                assert!(
+                    view.details.failed_dials > failures_before,
+                    "没有本轮失败却说连不上：{view:?}"
+                );
+                return true;
+            }
             view.status != HomeStatus::Connected
                 && view.notice == Some(ConnectionNotice::Connecting)
         })

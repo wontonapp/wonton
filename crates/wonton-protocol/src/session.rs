@@ -68,6 +68,7 @@ mod tests {
                 last_connected_at_ms: Some(1_793_778_000_000),
                 handshake_ms: Some(120),
                 disconnects: 2,
+                failed_dials: 1,
                 sent_packets: 900,
                 lost_packets: 3,
                 last_failure: Some("timed out".into()),

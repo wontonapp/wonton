@@ -178,6 +178,9 @@ pub struct ConnectionDetails {
     pub handshake_ms: Option<u32>,
     /// 这次启动以来断开的次数。
     pub disconnects: u32,
+    /// 距上次连上，这一轮的建连已经失败过几次；连上就清零。判断“这次断开是本轮新失败”用。
+    #[serde(default)]
+    pub failed_dials: u32,
     /// 当前连接发出的包数。
     pub sent_packets: u64,
     /// 当前连接判定丢失的包数。

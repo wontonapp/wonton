@@ -548,6 +548,7 @@ impl HomeLink {
                 .handshake
                 .map(|took| u32::try_from(took.as_millis()).unwrap_or(u32::MAX)),
             disconnects: stats.disconnects,
+            failed_dials: stats.failed_dials,
             sent_packets: stats.sent_packets,
             lost_packets: stats.lost_packets,
             last_failure: stats.last_failure.as_ref().map(ToString::to_string),
