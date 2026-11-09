@@ -6,7 +6,8 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
 ## 结构
 
 - `Wonton/`：App 源码。`ChatModel`、`HomeModel`、`PluginsModel` 持有核心推来的 ViewModel 并转发操作，`TimelineModel` 按顺序
-  应用时间线的增量，视图只渲染。`PhotoUpload` 把相册里选的照片转成要发的图片（规则见 ADR-0005）。`FilesModel`、`FileCardView`、`TransfersStrip` 和 `BookmarkFileOpener` 是文件的选择、卡片、进度和打开（ADR-0020）。`TabsModel` 持有核心底栏状态；`TabPageView` 和 `TabWebSession`
+  应用时间线的增量，视图只渲染。`PhotoUpload` 把相册里选的照片转成要发的图片（规则见 ADR-0005），消息图片的全屏查看在
+  `ImageViewer`：缩放、下滑关闭、存相册和分享都调系统能力。`FilesModel`、`FileCardView`、`TransfersStrip` 和 `BookmarkFileOpener` 是文件的选择、卡片、进度和打开（ADR-0020）。`TabsModel` 持有核心底栏状态；`TabPageView` 和 `TabWebSession`
   共用固定页、覆盖页的 WKWebView 容器，HTTP CONNECT 代理带会话凭据，插件网页经隧道打开。`PairingView` 是扫码配对页，
   `QRScannerView` 用 VisionKit 的 `DataScannerViewController` 识别二维码；`InviteView` 是“添加设备”，用 Core Image
   把核心要来的配对码画成二维码。`HomeView` 是底栏的“应用”页，商店入口独立放在已装插件网格上方，有更新时显示数量；连接和“添加设备”在设置的“家里的服务器”里。`StoreView`、

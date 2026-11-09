@@ -40,9 +40,10 @@ targets:
           # 文件的播放器经核心在回环地址上的 http 地址取数据（ADR-0020）。
           NSAllowsLocalNetworking: true
         # iroh 经局域网直连家里的服务器时，iOS 要先征得用户同意。
-        # 这两句和 App 名字的各语言版本在 InfoPlist.xcstrings，这里是英文的基础值。
+        # 这三句和 App 名字的各语言版本在 InfoPlist.xcstrings，这里是英文的基础值。
         NSLocalNetworkUsageDescription: Wonton connects directly to your home server over the local network.
         NSCameraUsageDescription: Wonton uses the camera to scan the pairing QR code from your home server.
+        NSPhotoLibraryAddUsageDescription: Wonton saves photos from your chats to your photo library.
         UILaunchScreen:
           UIColorName: LaunchBackground
           UIImageName: LaunchGlyph

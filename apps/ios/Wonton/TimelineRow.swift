@@ -314,41 +314,6 @@ private struct MediaImage: View {
     }
 }
 
-struct OriginalImage: View {
-    let image: ImageContent
-    let core: ClientCore
-    @Environment(\.dismiss) private var dismiss
-    @State private var original: Result<UIImage, MediaFailure>?
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                switch original {
-                case let .success(loaded):
-                    Image(uiImage: loaded).resizable().scaledToFit()
-                case let .failure(failure):
-                    WontonNotice(
-                        icon: .imageBroken, title: String(localized: .messageOriginalUnavailable),
-                        lines: [failure.message]
-                    )
-                        .padding(WontonTheme.spacing.pageInset)
-                case nil:
-                    ProgressView()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.black)
-            .navigationTitle(image.filename)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar { Button(.commonDone) { dismiss() } }
-        }
-        .task { original = await MediaFailure.load(image.media, from: core) }
-    }
-}
-
 private struct MediaFailure: Error {
     let message: String
 
