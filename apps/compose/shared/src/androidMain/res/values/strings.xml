@@ -542,8 +542,6 @@
     <string name="install_change_version">Change version</string>
     <!-- Status when the install succeeded. -->
     <string name="install_completion_done">Installed</string>
-    <!-- Problem title when the install failed; the core's reason is in the collapsed details. -->
-    <string name="install_completion_failed">Installation failed</string>
     <!-- Status while the app installs. -->
     <string name="install_completion_installing">Installing…</string>
     <!-- Title of the page that stays open while the app installs. -->

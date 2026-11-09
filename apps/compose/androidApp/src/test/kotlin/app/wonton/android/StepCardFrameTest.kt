@@ -55,13 +55,13 @@ class StepCardFrameTest {
     }
 }
 
-private fun rgb(hex: Int) = Rgb(
+internal fun rgb(hex: Int) = Rgb(
     (hex shr 16 and 0xFF).toUByte(),
     (hex shr 8 and 0xFF).toUByte(),
     (hex and 0xFF).toUByte(),
 )
 
-private fun palette() = ThemeColors(
+internal fun palette() = ThemeColors(
     canvas = rgb(0xFFFFFF),
     surface = rgb(0xFFFFFF),
     surfaceSubtle = rgb(0xF2F2F2),
@@ -80,7 +80,7 @@ private fun palette() = ThemeColors(
     accentFillBorder = rgb(0xBBDEFB),
 )
 
-private fun testAppearance() = AppearanceViewModel(
+internal fun testAppearance() = AppearanceViewModel(
     accent = rgb(0x3366FF),
     presets = listOf(rgb(0x3366FF)),
     moreColors = emptyList(),

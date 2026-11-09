@@ -25,6 +25,7 @@ import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
+import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskState
 import app.wonton.ui.design.wontonContentPadding
@@ -171,10 +172,7 @@ private fun InstallCompletion(
                 }
                 is PluginTaskState.Succeeded -> Text(stringResource(R.string.install_completion_done),
                     style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
-                is PluginTaskState.Failed -> {
-                    ProblemNotice(Problem(stringResource(R.string.install_completion_failed), null, state.message))
-                    WontonButton(stringResource(R.string.plugin_task_review), onReview)
-                }
+                is PluginTaskState.Failed -> InstallFailure(state.reason, state.message, onReview)
                 is PluginTaskState.Uncertain -> ProblemNotice(Problem(
                     stringResource(R.string.install_completion_uncertain), null, state.message))
             }
@@ -184,6 +182,18 @@ private fun InstallCompletion(
             WontonButton(stringResource(R.string.install_done), onClose)
         }
     }
+}
+
+/** 安装失败：标题和下一步按类别出，标题沿用商店任务行的“安装失败：原因”格式。 */
+@Composable
+fun InstallFailure(reason: PluginFailure, message: String, onReview: () -> Unit) {
+    val problem = reason.problem(message)
+    ProblemNotice(Problem(
+        title = stringResource(R.string.plugin_task_install_failed, problem.titleText),
+        nextStep = problem.nextStepText,
+        detail = problem.detail,
+    ))
+    WontonButton(stringResource(R.string.plugin_task_review), onReview)
 }
 
 @Composable

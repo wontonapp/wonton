@@ -483,8 +483,6 @@
     <string name="install_change_version">換版本</string>
     <!-- Status when the install succeeded. -->
     <string name="install_completion_done">安裝完成</string>
-    <!-- Problem title when the install failed; the core's reason is in the collapsed details. -->
-    <string name="install_completion_failed">安裝失敗</string>
     <!-- Status while the app installs. -->
     <string name="install_completion_installing">正在安裝…</string>
     <!-- Title of the page that stays open while the app installs. -->
