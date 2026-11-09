@@ -10,7 +10,7 @@ use tokio::net::{TcpStream, UdpSocket};
 use wonton_client::{HomeStatus, MappedPort, PortMappingState, PortProtocol};
 use wonton_tunnel::PortResolveError;
 
-use crate::home::support::wait_until_port_is_free;
+use crate::home::support::bind_udp_until_free;
 use crate::plugins::rig::{FakeHome, WAIT};
 use rig::{App, MapHome, PLUGIN, free_port, remote};
 
@@ -235,8 +235,7 @@ async fn turning_mapping_off_frees_the_ports_and_the_switch_is_remembered() {
     assert!(!app.mapping(PortMappingState::Off).await.enabled);
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, home.tcp));
     std::net::TcpListener::bind(addr).unwrap();
-    wait_until_port_is_free(home.udp).await;
-    std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, home.udp)).unwrap();
+    let _held = bind_udp_until_free(home.udp).await;
 }
 
 /// 服务器拒绝开端口时按原因显示，TCP 和 UDP 一样；下一次开成功就回到“开着”。
