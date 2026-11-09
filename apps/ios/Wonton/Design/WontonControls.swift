@@ -246,27 +246,31 @@ struct WontonRootBar<Trailing: View>: View {
     @ViewBuilder let trailing: Trailing
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
+    @Environment(\.wontonOpenSidebar) private var openSidebar
+
+    private var hasButtons: Bool { hasActions || openSidebar != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if hasActions || status.title?.isEmpty == false {
+            if hasButtons || status.title?.isEmpty == false {
                 ZStack {
                     if let title = status.title, !title.isEmpty {
                         Text(title)
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textPrimary))
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, hasActions ? WontonTheme.size.target + WontonTheme.spacing.s8 : 0)
+                            .padding(.horizontal, hasButtons ? WontonTheme.size.target + WontonTheme.spacing.s8 : 0)
                             .padding(.vertical, WontonTheme.spacing.s8)
                     }
-                    if hasActions {
+                    if hasButtons {
                         HStack(spacing: 0) {
+                            if let openSidebar { SidebarButton(action: openSidebar) }
                             Spacer(minLength: 0)
-                            trailing
+                            if hasActions { trailing }
                         }
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: hasActions ? WontonTheme.size.topBar : 0)
+                .frame(maxWidth: .infinity, minHeight: hasButtons ? WontonTheme.size.topBar : 0)
             }
             if let line = status.line {
                 line.padding(.bottom, WontonTheme.spacing.s8)
@@ -274,6 +278,23 @@ struct WontonRootBar<Trailing: View>: View {
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// 根页面左上角的侧边栏按钮。
+private struct SidebarButton: View {
+    let action: () -> Void
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        Button(action: action) {
+            WontonIcon.list.view()
+                .foregroundStyle(Color(colors.textPrimary))
+                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(localized: .sidebarOpen))
     }
 }
 
