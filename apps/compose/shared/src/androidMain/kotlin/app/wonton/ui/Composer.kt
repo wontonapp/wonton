@@ -4,14 +4,18 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
 import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.content.ReceiveContentListener
+import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,15 +25,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.TextFieldDecorator
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
@@ -54,6 +64,7 @@ import kotlinx.coroutines.launch
 private const val MAX_LINES = 6
 
 /** 聊天页底部的输入栏。 */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Composer(
     roomId: String,
@@ -75,6 +86,16 @@ fun Composer(
     // 字符串资源在协程里取不到，弹窗前先取好。
     val photoUnreadable = stringResource(R.string.photo_unreadable)
     val photoTryAnother = stringResource(R.string.photo_try_another)
+    var pendingPaste by rememberSaveable(roomId) { mutableStateOf<Uri?>(null) }
+    // 监听器只建一次；发送文件要带的房间以最新一次组成为准（预览面板是模态的，开着时换不了房间）。
+    val sendPastedFile by rememberUpdatedState { uri: Uri -> onAction(uploadAction(context, uri, roomId)) }
+    val pasteListener = remember {
+        pasteContentListener(
+            context.applicationContext.contentResolver,
+            onImage = { pendingPaste = it },
+            onFile = { sendPastedFile(it) },
+        )
+    }
     val pickPhoto = rememberLauncherForActivityResult(PickVisualMedia()) { uri ->
         if (uri != null) {
             scope.launch {
@@ -95,8 +116,9 @@ fun Composer(
     Row(Modifier.fillMaxWidth().padding(spacing.s4), verticalAlignment = Alignment.Bottom) {
         WontonIconButton(WontonIcon.Attach, stringResource(R.string.composer_attach), { isChoosingAttachment = true })
         ComposerField(
-            value = draft,
-            onValueChange = onDraftChange,
+            draft,
+            onDraftChange,
+            pasteListener,
             modifier = Modifier.weight(1f)
                 .padding(vertical = (size.target - size.composerField) / 2)
                 .padding(end = if (isEmpty) spacing.s12 else 0.dp),
@@ -126,20 +148,52 @@ fun Composer(
             onDismiss = { isChoosingAttachment = false },
         )
     }
+    pendingPaste?.let { uri ->
+        PastePreviewSheet(
+            uri,
+            onSend = { upload -> onAction(Action.SendImage(roomId, upload)) },
+            onDismiss = { pendingPaste = null },
+            onReject = onReject,
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ComposerField(value: String, onValueChange: (String) -> Unit, modifier: Modifier) {
+private fun ComposerField(
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    pasteListener: ReceiveContentListener,
+    modifier: Modifier,
+) {
     val colors = WontonTheme.colors
     val typography = WontonTheme.typography
+    val fieldState = remember { TextFieldState(draft) }
+    // 换房间是同一个调用点重组：推上去的回调要拿到当前值，不能冻在第一次组合。
+    val currentDraft by rememberUpdatedState(draft)
+    val currentOnDraftChange by rememberUpdatedState(onDraftChange)
+    // 草稿在别处变了（进房间读回存的草稿、桥接来的文本）时落进输入框，光标放在末尾；主人打字经 state 推上去，
+    // 内容相同时不再落，避免光标跳动。
+    LaunchedEffect(draft) {
+        if (fieldState.text.toString() != draft) {
+            fieldState.edit {
+                replace(0, length, draft)
+                if (draft.isEmpty()) placeCursorBeforeCharAt(0) else placeCursorAfterCharAt(draft.length - 1)
+            }
+        }
+    }
+    LaunchedEffect(fieldState) {
+        snapshotFlow { fieldState.text.toString() }.collect { text ->
+            if (text != currentDraft) currentOnDraftChange(text)
+        }
+    }
     BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
-        maxLines = MAX_LINES,
+        state = fieldState,
+        modifier = modifier.contentReceiver(pasteListener),
+        lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = MAX_LINES),
         textStyle = typography.body.copy(color = colors.textPrimary.toColor()),
         cursorBrush = SolidColor(colors.textPrimary.toColor()),
-        modifier = modifier,
-        decorationBox = { field ->
+        decorator = TextFieldDecorator { field ->
             Box(
                 Modifier.fillMaxWidth()
                     .heightIn(min = WontonTheme.size.composerField)
@@ -147,7 +201,7 @@ private fun ComposerField(value: String, onValueChange: (String) -> Unit, modifi
                     .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s8),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                if (value.isEmpty()) {
+                if (fieldState.text.isEmpty()) {
                     Text(
                         stringResource(R.string.composer_message),
                         style = typography.body,
