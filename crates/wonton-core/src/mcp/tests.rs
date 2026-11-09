@@ -466,7 +466,7 @@ async fn without_a_card_nothing_runs() {
         .call("app-example-notes__delete", json!({"name": "e"}))
         .await;
     assert!(
-        failed(&result) && text(&result).contains("没能请主人确认"),
+        failed(&result) && text(&result).contains("没能请你确认"),
         "{result:?}"
     );
     s.cards.broken.store(false, Ordering::SeqCst);
@@ -479,7 +479,7 @@ async fn without_a_card_nothing_runs() {
         .call("app-example-notes__delete", json!({"name": "f"}))
         .await;
     assert!(
-        failed(&result) && text(&result).contains("等主人确认"),
+        failed(&result) && text(&result).contains("等你确认"),
         "{result:?}"
     );
     for card in s.cards.posted.lock().unwrap().iter() {

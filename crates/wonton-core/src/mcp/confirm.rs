@@ -64,15 +64,15 @@ pub enum Refusal {
 impl Refusal {
     pub fn message(&self) -> String {
         match self {
-            Self::Rejected => "主人拒绝了，没有执行".to_owned(),
-            Self::Expired => "主人没有在期限内确认，已经过期，没有执行".to_owned(),
+            Self::Rejected => "你拒绝了，没有执行".to_owned(),
+            Self::Expired => "你没有在期限内确认，已经过期，没有执行".to_owned(),
             Self::Superseded => {
                 "这个插件有了新的确认请求，这一份已经被取代，只有最新的那份能确认".to_owned()
             }
             Self::TooMany => {
-                format!("已经有 {MAX_PENDING_PER_CALLER} 个请求在等主人确认，等主人处理完再试")
+                format!("已经有 {MAX_PENDING_PER_CALLER} 个请求在等你确认，等你处理完再试")
             }
-            Self::Unavailable(e) => format!("没能请主人确认：{e}"),
+            Self::Unavailable(e) => format!("没能请你确认：{e}"),
         }
     }
 

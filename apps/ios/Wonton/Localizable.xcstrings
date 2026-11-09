@@ -9312,36 +9312,6 @@
         }
       }
     },
-    "ownerProfile.nameRequired": {
-      "comment": "Placeholder in the empty name field.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Required"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "必填"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "必填"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "必須"
-          }
-        }
-      }
-    },
     "ownerProfile.title": {
       "comment": "Title of the owner profile page (name and email) and its entry point in Settings.",
       "extractionState": "manual",

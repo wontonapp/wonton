@@ -408,7 +408,7 @@ async fn quiet_update(
         Ok(()) => result(&json!({
             "updated": id.to_string(),
             "version": version,
-            "note": "权限没变宽，没有打扰主人，已写进审计",
+            "note": "权限没变宽，没有打扰你，已写进审计",
         })),
         Err(e) => with_failure(
             &format!("更新 {} 失败（{}）：{}", id, e.kind(), e),

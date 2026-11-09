@@ -854,8 +854,6 @@
     <string name="owner_profile_email_optional">选填</string>
     <!-- Section title, field label and accessibility label for the owner's display name. -->
     <string name="owner_profile_name">名字</string>
-    <!-- Placeholder in the empty name field. -->
-    <string name="owner_profile_name_required">必填</string>
     <!-- Title of the owner profile page (name and email) and its entry point in Settings. -->
     <string name="owner_profile_title">你的资料</string>
     <!-- Row label for the account name the home server assigned; shown under the form. -->

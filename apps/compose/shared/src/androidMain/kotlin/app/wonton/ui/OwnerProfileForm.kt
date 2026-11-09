@@ -47,7 +47,6 @@ internal fun OwnerProfileFields(
     DetailSection(stringResource(R.string.owner_profile_name)) {
         WontonTextField(
             name, onName, Modifier.fillMaxWidth(),
-            placeholder = stringResource(R.string.owner_profile_name_required),
             label = stringResource(R.string.owner_profile_name),
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
         )

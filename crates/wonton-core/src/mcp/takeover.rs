@@ -240,7 +240,7 @@ impl Bus {
                 caller,
                 name,
                 args,
-                "主人正在操作这个插件，等着的调用太多了，这次调用没有执行。",
+                "你正在操作这个插件，等着的调用太多了，这次调用没有执行。",
             ));
         };
         let started = Instant::now();
@@ -255,7 +255,7 @@ impl Bus {
                         caller,
                         name,
                         args,
-                        "主人操作这个插件的时间太长，这次调用没有执行，过一会再试。",
+                        "你操作这个插件的时间太长，这次调用没有执行，过一会再试。",
                     ));
                 }
                 () = cancelled.as_mut() => return Err(self.withdrawn(caller, name, args)),

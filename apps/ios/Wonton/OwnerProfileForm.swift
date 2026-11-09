@@ -80,7 +80,7 @@ struct OwnerProfileFields: View {
 
     var body: some View {
         DetailSection(title: String(localized: .ownerProfileName)) {
-            TextField(String(localized: .ownerProfileNameRequired), text: $name)
+            TextField("", text: $name)
                 .accessibilityLabel(String(localized: .ownerProfileName))
                 .textContentType(.name)
                 .textFieldStyle(.plain)

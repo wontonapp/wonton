@@ -321,7 +321,7 @@ pub(super) async fn installable(bus: &Bus, id: &str) -> Result<PluginPackage, To
     if bus.plugins.missing_profile(&package, &langs).is_some() {
         return Err(ToolFailure::new(
             "owner_profile_incomplete",
-            format!("没有装上 {id}：它要用主人的邮箱，主人在 App 的设置里填好邮箱后我再装"),
+            format!("{id} 要用你的邮箱，你还没填：请你在 App 的设置里填好再装"),
         ));
     }
     Ok(package)
