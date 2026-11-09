@@ -1,22 +1,22 @@
 use serde_json::{Value, json};
 use url::Url;
-use wonton_protocol::{TabDisplayChoice, TabRef};
+use wonton_protocol::{PlacedTab, TabDisplayChoice};
 
 use crate::appearance::AppearanceLink;
 
-use super::super::TabsLink;
-use super::{TabBridgeAction, TabBridgeResult, TabEnvironment, context, page, reply_script};
+use super::super::{TabsLink, placed_tab_ref};
+use super::{TabBridgeAction, TabBridgeResult, TabEnvironment, context, page_of, reply_script};
 
 pub(crate) fn handle_message(
     tabs: &TabsLink,
     appearance: &AppearanceLink,
-    tab: &TabRef,
+    page: &PlacedTab,
     is_main_frame: bool,
     origin: &str,
     message: &str,
     environment: &TabEnvironment,
 ) -> TabBridgeResult {
-    if !is_main_frame || !accepts_origin(tabs, tab, origin) {
+    if !is_main_frame || !accepts_origin(tabs, page, origin) {
         return TabBridgeResult::default();
     }
     let value: Value = match serde_json::from_str(message) {
@@ -35,11 +35,11 @@ pub(crate) fn handle_message(
     let Some(id) = id else {
         return TabBridgeResult {
             initialized: value["method"] == "ui/notifications/initialized"
-                && page(tabs, tab).is_ok(),
+                && page_of(tabs, page).is_ok(),
             ..TabBridgeResult::default()
         };
     };
-    match request(tabs, appearance, tab, &value, environment) {
+    match request(tabs, appearance, page, &value, environment) {
         Ok((result, action)) => TabBridgeResult {
             reply_script: Some(reply_script(
                 json!({"jsonrpc":"2.0", "id":id, "result":result}),
@@ -51,14 +51,14 @@ pub(crate) fn handle_message(
     }
 }
 
-fn accepts_origin(tabs: &TabsLink, tab: &TabRef, origin: &str) -> bool {
+fn accepts_origin(tabs: &TabsLink, page: &PlacedTab, origin: &str) -> bool {
     let Ok(origin) = Url::parse(origin) else {
         return false;
     };
-    let Ok(page) = page(tabs, tab) else {
+    let Ok(current) = page_of(tabs, page) else {
         return false;
     };
-    let Some(url) = page.url.as_deref().and_then(|url| Url::parse(url).ok()) else {
+    let Some(url) = current.url.as_deref().and_then(|url| Url::parse(url).ok()) else {
         return false;
     };
     origin.scheme() == url.scheme()
@@ -73,7 +73,7 @@ type RpcResult = Result<(Value, Option<TabBridgeAction>), RpcError>;
 fn request(
     tabs: &TabsLink,
     appearance: &AppearanceLink,
-    tab: &TabRef,
+    page: &PlacedTab,
     message: &Value,
     environment: &TabEnvironment,
 ) -> RpcResult {
@@ -87,7 +87,7 @@ fn request(
             {
                 return Err(invalid_params());
             }
-            let page = page(tabs, tab).map_err(core_error)?;
+            let page = page_of(tabs, page).map_err(core_error)?;
             let mut payload =
                 context::payload(&appearance.view(), &page, environment).map_err(core_error)?;
             Ok((
@@ -100,9 +100,9 @@ fn request(
                 None,
             ))
         }
-        Some("ui/request-display-mode") => display_mode(tabs, tab, params),
+        Some("ui/request-display-mode") => display_mode(tabs, page, params),
         Some("ui/open-link") => {
-            page(tabs, tab).map_err(core_error)?;
+            page_of(tabs, page).map_err(core_error)?;
             let url = params["url"].as_str().ok_or_else(invalid_params)?;
             let parsed = Url::parse(url).map_err(|_| invalid_params())?;
             if parsed.scheme() != "https" || parsed.host_str().is_none() {
@@ -114,38 +114,50 @@ fn request(
             ))
         }
         Some("ui/message") => {
-            page(tabs, tab).map_err(core_error)?;
+            page_of(tabs, page).map_err(core_error)?;
             let text = draft_text(params)?;
             Ok((json!({}), Some(TabBridgeAction::DraftMessage { text })))
         }
+        // Wonton 自己的扩展：面板里的页要求关注（红点），ADR-0052。
+        Some("ui/wonton-attention") => set_attention(tabs, page, params),
         _ => Err((-32601, "Method not found".to_owned())),
     }
 }
 
-fn display_mode(tabs: &TabsLink, tab: &TabRef, params: &Value) -> RpcResult {
+fn display_mode(tabs: &TabsLink, page: &PlacedTab, params: &Value) -> RpcResult {
     let mode = params["mode"].as_str().ok_or_else(invalid_params)?;
     if !matches!(mode, "inline" | "fullscreen") {
         return Err(invalid_params());
     }
-    let current = page(tabs, tab).map_err(core_error)?;
+    let current = page_of(tabs, page).map_err(core_error)?;
     if current.display != TabDisplayChoice::Standard {
         if mode == "fullscreen" && !current.fullscreen {
-            tabs.enter_fullscreen(tab.clone()).map_err(core_error)?;
+            tabs.enter_fullscreen(placed_tab_ref(page).clone())
+                .map_err(core_error)?;
         } else if mode == "inline" && current.fullscreen {
-            tabs.exit_fullscreen(tab.clone()).map_err(core_error)?;
+            tabs.exit_fullscreen(placed_tab_ref(page).clone())
+                .map_err(core_error)?;
         }
     }
     // 打开即全屏的覆盖层退出后被 A3 关闭，不再出现在 ViewModel 中。
     let view = tabs.view();
-    let fullscreen = view
-        .items
-        .iter()
-        .chain(view.overlay.iter())
-        .any(|item| item.tab == *tab && item.page.as_ref().is_some_and(|page| page.fullscreen));
+    let fullscreen = view.items.iter().chain(view.overlay.iter()).any(|item| {
+        item.tab == *placed_tab_ref(page) && item.page.as_ref().is_some_and(|page| page.fullscreen)
+    });
     Ok((
         json!({"mode": if fullscreen { "fullscreen" } else { "inline" }}),
         None,
     ))
+}
+
+/// 页面要求关注（面板那一页画红点）。底栏的页面没有红点可挂，返回输入非法。
+fn set_attention(tabs: &TabsLink, page: &PlacedTab, params: &Value) -> RpcResult {
+    let Some(attention) = params["attention"].as_bool() else {
+        return Err(invalid_params());
+    };
+    tabs.set_attention(page.clone(), attention)
+        .map_err(core_error)?;
+    Ok((json!({}), None))
 }
 
 fn draft_text(params: &Value) -> Result<String, RpcError> {

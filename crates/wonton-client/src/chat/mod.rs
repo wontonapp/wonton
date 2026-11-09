@@ -52,11 +52,11 @@ use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
-use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SyncStatus};
+use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, RoomId, SyncStatus};
 use wonton_protocol::{
     Action, Answer, ChatAccount, ChatFailure, ChatSync, ChatViewModel, ConfirmationAnswer,
     CoreError, DeviceVerification, EncryptionStatus, MediaHandle, PushMethod, PushStatus,
-    RecoveryStatus, TimelineScroll,
+    RecoveryStatus, RoomPanel, TimelineScroll,
 };
 
 pub use bots::bot_current_avatar;
@@ -87,6 +87,10 @@ pub(crate) struct ChatLink {
     active: tokio::sync::Mutex<Option<Active>>,
     /// 当前会话，给不阻塞的 `dispatch` 用。
     session: Mutex<Option<Arc<MatrixSession>>>,
+    /// 登录状态流出的口：tabs 的面板配置同步跟着它走（ADR-0052）。
+    session_out: watch::Sender<Option<Arc<MatrixSession>>>,
+    /// 打开的房间的面板内容流出口：账号数据在这里读，tabs 合成给壳的视图。
+    room_panel_out: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
     /// 订阅着时间线的房间。同一时间只打开一个房间。
     open_room: Mutex<Option<(OwnedRoomId, Arc<ChatRoom>)>>,
     /// 最近一次订阅的时间线里每条消息的菜单，转发、撤回只认这里有的（[`menu`]）。
@@ -161,6 +165,18 @@ impl Drop for ChatLink {
     }
 }
 
+/// ChatLink 对外的通道：scope 建好，chat 往里喂，tabs 等拿去用。
+pub(crate) struct ChatChannels {
+    /// ViewModel 发送端，换服务器时给壳接着订阅用。
+    pub(crate) view: Option<watch::Sender<ChatViewModel>>,
+    /// 推送方式。
+    pub(crate) method: watch::Receiver<PushMethod>,
+    /// 登录着的会话。
+    pub(crate) session_out: watch::Sender<Option<Arc<MatrixSession>>>,
+    /// 打开的房间的面板（房间账号数据）。
+    pub(crate) room_panel_out: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
+}
+
 impl ChatLink {
     pub(crate) fn new(
         runtime: Handle,
@@ -168,9 +184,14 @@ impl ChatLink {
         data_dir: &Path,
         card_success: CardSuccess,
         plugins: Arc<crate::plugins::PluginsLink>,
-        view: Option<watch::Sender<ChatViewModel>>,
-        method: watch::Receiver<PushMethod>,
+        channels: ChatChannels,
     ) -> Result<Arc<Self>, CoreError> {
+        let ChatChannels {
+            view,
+            method,
+            session_out,
+            room_panel_out,
+        } = channels;
         let storage = ChatStorage::open(data_dir)?;
         let mut encryption = EncryptionStatus {
             verification: DeviceVerification::Unknown,
@@ -215,6 +236,8 @@ impl ChatLink {
             view,
             active: tokio::sync::Mutex::new(None),
             session: Mutex::new(None),
+            session_out,
+            room_panel_out,
             open_room: Mutex::new(None),
             open_menus: Mutex::new(None),
             open_timeline: Mutex::new(None),
@@ -410,9 +433,13 @@ impl ChatLink {
     }
 
     /// 订阅一个已加入房间的时间线。打开另一个房间会关掉前一个的订阅。
+    ///
+    /// `room_view` 是 tabs 合成的房间面板视图（面板页、上次看的那页、入口有没有被盖住），每批时间线增量
+    /// 都带上当前值；变了也发一批（增量为空）。
     pub(crate) async fn open_timeline(
         self: &Arc<Self>,
         room_id: &str,
+        room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
         let (session, room_id) = self.target(room_id)?;
         if *self.bots.foreground.borrow() {
@@ -427,16 +454,40 @@ impl ChatLink {
         *lock(&self.open_room) = Some((room_id.clone(), room.clone()));
         let menus = Arc::new(Mutex::new(menu::Menus::default()));
         *lock(&self.open_menus) = Some((room_id.clone(), menus.clone()));
+        self.publish_room_panel(&session, &room_id).await;
         // 链接的类别要认插件页，插件列表还一次没取过时先取一次（取过或正在取就不重复，免得打乱别处的节奏）。
         let plugins = self.plugins.view();
         if plugins.installed.is_none() && !plugins.refreshing {
             self.plugins.refresh_installed();
         }
         let cards = Cards::new(session.user_id(), self.answers.subscribe());
-        let subscription =
-            TimelineSubscription::start(&self.runtime, room, cards, self.plugins.clone(), menus);
+        let subscription = TimelineSubscription::start(
+            &self.runtime,
+            room,
+            cards,
+            self.plugins.clone(),
+            menus,
+            room_view,
+        );
         *lock(&self.open_timeline) = Some((room_id, Arc::downgrade(&subscription)));
         Ok(subscription)
+    }
+
+    /// 读打开着的房间的面板（房间账号数据），交给 tabs 合成给壳的视图。
+    ///
+    /// 读不了时按没有面板开：房间照常打开，主人编辑面板时写不进去，那里会报原因。
+    pub(crate) async fn publish_room_panel(&self, session: &Arc<MatrixSession>, room_id: &RoomId) {
+        let panel = match session.room_panel(room_id).await {
+            Ok(content) => content
+                .and_then(|content| serde_json::from_value(content.0.into()).ok())
+                .unwrap_or_default(),
+            Err(error) => {
+                tracing::warn!("could not read the room panel of {room_id}: {error}");
+                RoomPanel::default()
+            }
+        };
+        self.room_panel_out
+            .send_replace(Some((room_id.to_owned(), panel)));
     }
 
     /// 壳报告列表滚到了哪儿：交给这个房间现在的时间线订阅。
@@ -634,6 +685,8 @@ impl ChatLink {
 impl ChatLink {
     async fn forget_current(&self) {
         self.bots.set_session(None);
+        self.session_out.send_replace(None);
+        self.room_panel_out.send_replace(None);
         *lock(&self.verification) = None;
         *lock(&self.open_room) = None;
         *lock(&self.open_menus) = None;

@@ -94,7 +94,7 @@ impl<'a> Driver<'a> {
         };
         let script = rig
             .app
-            .tab_document_script(tab.clone(), driver.environment.clone())
+            .tab_document_script(super::support::bar(tab), driver.environment.clone())
             .unwrap();
         driver.send(
             json!({"script":script, "platform":platform, "url":format!("{PAGE_ORIGIN}/feed")}),
@@ -116,7 +116,7 @@ impl<'a> Driver<'a> {
             let value: Value = serde_json::from_str(&line).unwrap();
             if let Some(message) = value["message"].as_str() {
                 let result = self.rig.app.tab_handle_message(
-                    self.tab.clone(),
+                    super::support::bar(self.tab),
                     true,
                     value["origin"].as_str().unwrap().to_owned(),
                     message.to_owned(),
@@ -144,7 +144,7 @@ impl<'a> Driver<'a> {
         let script = self
             .rig
             .app
-            .tab_context_script(self.tab.clone(), self.environment.clone())
+            .tab_context_script(super::support::bar(self.tab), self.environment.clone())
             .unwrap();
         self.send(json!({"script":script}));
     }

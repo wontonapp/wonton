@@ -11,7 +11,7 @@ extension TabWebSession: WKNavigationDelegate {
         components.host = origin.host
         if origin.port > 0 { components.port = origin.port }
         let result = core.tabHandleMessage(
-            tab: tab, isMainFrame: message.frameInfo.isMainFrame,
+            page: PlacedTab.bar(tab: tab), isMainFrame: message.frameInfo.isMainFrame,
             origin: components.string ?? "", message: body, environment: input.environment
         )
         if result.initialized { ready = true }

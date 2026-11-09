@@ -131,7 +131,7 @@ final class TabWebSession: NSObject {
         let background = UIColor(Color(colors.canvas))
         view.backgroundColor = background
         view.pageZoom = 1
-        let script = try core.tabDocumentScript(tab: tab, environment: input.environment)
+        let script = try core.tabDocumentScript(page: PlacedTab.bar(tab: tab), environment: input.environment)
             + "\n" + textSizeScript(input.textScale)
         if script != documentScript || view !== webView {
             let controller = view.configuration.userContentController
@@ -153,7 +153,7 @@ final class TabWebSession: NSObject {
             evaluate(textSizeScript(input.textScale), in: view)
             lastTextScale = input.textScale
         }
-        let context = try core.tabContextScript(tab: tab, environment: input.environment)
+        let context = try core.tabContextScript(page: PlacedTab.bar(tab: tab), environment: input.environment)
         if force || textChanged || context != lastContext {
             evaluate(context, in: view)
             lastContext = context

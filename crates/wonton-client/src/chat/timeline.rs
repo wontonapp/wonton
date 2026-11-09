@@ -30,21 +30,24 @@ pub struct TimelineSubscription {
 
 impl TimelineSubscription {
     /// 在核心的运行时里开始转发 `room` 的时间线。订阅释放或取消后转发自动停止。
+    ///
+    /// `room_view` 是 tabs 合成的房间面板视图（ADR-0052）：每一批都带上当前值，变了也发一批空的。
     pub(crate) fn start(
         runtime: &Handle,
         room: Arc<ChatRoom>,
         cards: Cards,
         plugins: Arc<crate::plugins::PluginsLink>,
         menus: Arc<std::sync::Mutex<Menus>>,
+        room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
     ) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
         let (scroll, mut scrolled) = watch::channel(TimelineScroll::Bottom);
         runtime.spawn(async move {
-            let sender = Outbox::new(sender, menus);
+            let outbox = Outbox::new(sender, menus, room_view.clone());
             tokio::select! {
-                () = forward(&room, cards, &plugins, &sender, &mut scrolled) => {}
-                () = sender.closed() => {}
+                () = forward(&room, cards, &plugins, &outbox, &mut scrolled, room_view) => {}
+                () = outbox.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}
             }
         });
@@ -139,6 +142,7 @@ async fn forward(
     plugins: &crate::plugins::PluginsLink,
     sender: &Outbox,
     scrolled: &mut watch::Receiver<TimelineScroll>,
+    mut room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
 ) {
     let mut rebuilt_for: Option<wonton_matrix::OwnedEventId> = None;
     'outer: loop {
@@ -197,6 +201,13 @@ async fn forward(
                         }
                         None => continue,
                     }
+                }
+                changed = room_view.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    // 面板、红点或入口状态变了：增量是空的，壳只更新那几个字段。
+                    Batch::Sent(send(sender, Vec::new(), &mut view, None), false)
                 }
                 changed = plugin_changes.changed() => {
                     if changed.is_err() {

@@ -2,7 +2,7 @@
 //!
 //! 面板挂在两处：主聊天页（会话列表到顶后往下拉）和每个房间（消息列表到底后往上推）。
 //! 用户放的页面存在账号数据里（全局 [`LAYOUT_EVENT`]，房间 [`ROOM_PANEL_EVENT`]），登录同一账号的手机都同步；
-//! 上次停在哪一页是本机状态，不同步。Bot 钉页面走 MCP 总线的工具（另见 #655），不写账号数据。
+//! 上次停在哪一页是本机状态，不同步。Bot 钉页面走 MCP 总线的工具（另见 #35），不写账号数据。
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};

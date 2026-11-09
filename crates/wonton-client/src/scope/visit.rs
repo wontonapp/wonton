@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 
+use tokio::sync::watch;
 use wonton_protocol::CoreError;
 
 use super::ScopeRuntime;
@@ -54,8 +55,12 @@ impl Visit {
             dir,
             card_success,
             plugins,
-            None,
-            push_method.subscribe(),
+            crate::chat::ChatChannels {
+                view: None,
+                method: push_method.subscribe(),
+                session_out: watch::channel(None).0,
+                room_panel_out: watch::channel(None).0,
+            },
         )?;
         chat.backgrounded();
         let push = PushLink::new(handle, home, chat.clone(), dir, push_method.subscribe());
