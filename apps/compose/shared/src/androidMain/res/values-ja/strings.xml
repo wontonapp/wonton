@@ -271,7 +271,13 @@
     <string name="connection_unknown">不明</string>
     <string name="connection_path">経路</string>
     <string name="connection_latency">遅延</string>
-    <string name="connection_lost_packets">パケット損失</string>
+    <string name="connection_loss_rate">パケット損失率</string>
+    <string name="connection_value_none">—</string>
+    <string name="connection_poor">通信状態が悪く、動作が遅くなることがあります</string>
+    <string name="connection_poor_relay">通信状態が悪く、リレー経由で接続しています</string>
+    <string name="connection_quality">通信品質</string>
+    <string name="connection_quality_good">良い</string>
+    <string name="connection_quality_poor">悪い</string>
     <string name="connection_last_handshake">最後のハンドシェイク</string>
     <string name="connection_disconnects">切断回数</string>
     <string name="connection_last_connected">最後に接続した日時</string>
