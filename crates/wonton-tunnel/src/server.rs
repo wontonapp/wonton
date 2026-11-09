@@ -1,6 +1,10 @@
 //! 隧道服务端：只接受白名单里的设备，把每条流转发到本机的上游 HTTP 服务，或者连同对端身份交给嵌入方。
 
-use std::{collections::HashSet, net::SocketAddr};
+use std::{
+    collections::HashSet,
+    net::SocketAddr,
+    sync::{Arc, atomic::AtomicU64},
+};
 
 use iroh::{
     Endpoint, EndpointId,
@@ -19,7 +23,12 @@ use crate::{
     embed::{PeerStream, TunnelListener},
     forward,
     pair::{PAIR_ALPN, PairHandler, PairProtocol},
-    wire::{ALPN, CLOSE_UNAUTHORIZED, REASON_UNAUTHORIZED, Request, Status},
+    ports::{PortResolver, UnsupportedPortResolver},
+    udp::server::Flows,
+    wire::{
+        ALPN, CLOSE_UNAUTHORIZED, MAX_PORT_REQUEST_LEN, PortRequest, REASON_UNAUTHORIZED, Request,
+        Status,
+    },
 };
 
 /// 每条连接上客户端可以同时打开的流数。本地代理的每条 TCP 连接占一条流，HTTP keep-alive、长轮询和
@@ -41,30 +50,81 @@ enum Upstream {
 /// 隧道服务端协议，挂在 iroh [`Router`] 的 [`ALPN`] 上。
 ///
 /// 独立运行时用 [`TunnelServer`]；核心会把它和配对等其他协议挂在同一个 endpoint 的 router 上。
-#[derive(Debug, Clone)]
-pub struct TunnelProtocol {
+#[derive(Debug)]
+pub struct TunnelProtocol<R: PortResolver = UnsupportedPortResolver> {
     allowlist: Allowlist,
     upstream: Upstream,
+    resolver: Arc<R>,
+    timeouts: crate::udp::server::FlowTimeouts,
+    oversized: Arc<AtomicU64>,
+}
+
+impl<R: PortResolver> Clone for TunnelProtocol<R> {
+    fn clone(&self) -> Self {
+        Self {
+            allowlist: self.allowlist.clone(),
+            upstream: self.upstream.clone(),
+            resolver: self.resolver.clone(),
+            timeouts: self.timeouts,
+            oversized: self.oversized.clone(),
+        }
+    }
 }
 
 impl TunnelProtocol {
     /// `upstream` 是隧道流量要转发到的本机 HTTP 服务地址。
     pub fn new(allowlist: Allowlist, upstream: SocketAddr) -> Self {
-        Self {
+        Self::with_resolver(allowlist, upstream, Arc::new(UnsupportedPortResolver))
+    }
+
+    /// 插件端口由嵌入方解析。
+    pub fn with_resolver<R: PortResolver>(
+        allowlist: Allowlist,
+        upstream: SocketAddr,
+        resolver: Arc<R>,
+    ) -> TunnelProtocol<R> {
+        TunnelProtocol {
             allowlist,
             upstream: Upstream::Tcp(upstream),
+            resolver,
+            timeouts: crate::udp::server::FlowTimeouts::default(),
+            oversized: Arc::new(AtomicU64::new(0)),
         }
     }
 
     /// 不转发到 TCP 上游，而是把每条流连同对端设备的 endpoint ID 交给嵌入方，从返回的
     /// [`TunnelListener`] 取。核心用它在进程内服务网关，并知道请求来自哪台已配对设备。
     pub fn embedded(allowlist: Allowlist) -> (Self, TunnelListener) {
+        Self::embedded_with(allowlist, Arc::new(UnsupportedPortResolver))
+    }
+
+    /// 同 [`Self::embedded`]，插件端口由嵌入方解析。
+    pub fn embedded_with<R: PortResolver>(
+        allowlist: Allowlist,
+        resolver: Arc<R>,
+    ) -> (TunnelProtocol<R>, TunnelListener) {
         let (streams, listener) = TunnelListener::channel();
-        let protocol = Self {
+        let protocol = TunnelProtocol {
             allowlist,
             upstream: Upstream::Embedded(streams),
+            resolver,
+            timeouts: crate::udp::server::FlowTimeouts::default(),
+            oversized: Arc::new(AtomicU64::new(0)),
         };
         (protocol, listener)
+    }
+}
+
+impl<R: PortResolver> TunnelProtocol<R> {
+    /// 换掉 UDP 空闲和分片等待时限，测试用短值。
+    pub fn with_udp_timeouts(mut self, timeouts: crate::udp::server::FlowTimeouts) -> Self {
+        self.timeouts = timeouts;
+        self
+    }
+
+    /// 超过两片数据报预算的 UDP 包数。
+    pub fn oversized_drops(&self) -> u64 {
+        self.oversized.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// 接受这条连接上的流，直到连接关闭或设备被吊销。返回结束原因。
@@ -75,11 +135,19 @@ impl TunnelProtocol {
         mut allowlist: watch::Receiver<HashSet<EndpointId>>,
     ) -> String {
         let mut streams = JoinSet::new();
+        let flows = Flows::start(conn.clone(), self.timeouts, self.oversized.clone());
         loop {
             tokio::select! {
                 accepted = conn.accept_bi() => match accepted {
                     Ok((send, recv)) => {
-                        streams.spawn(serve_stream(send, recv, remote, self.upstream.clone()));
+                        streams.spawn(serve_stream(
+                            send,
+                            recv,
+                            remote,
+                            flows.clone(),
+                            self.upstream.clone(),
+                            self.resolver.clone(),
+                        ));
                     }
                     Err(err) => return err.to_string(),
                 },
@@ -102,7 +170,7 @@ impl TunnelProtocol {
     }
 }
 
-impl ProtocolHandler for TunnelProtocol {
+impl<R: PortResolver> ProtocolHandler for TunnelProtocol<R> {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
         let remote = conn.remote_id();
         // 先订阅再检查：检查之后、订阅之前发生的吊销也会被看到。
@@ -120,11 +188,13 @@ impl ProtocolHandler for TunnelProtocol {
     }
 }
 
-async fn serve_stream(
+async fn serve_stream<R: PortResolver>(
     mut send: SendStream,
     mut recv: RecvStream,
     remote: EndpointId,
+    flows: Arc<Flows>,
     upstream: Upstream,
+    resolver: Arc<R>,
 ) {
     let mut kind = [0u8; 1];
     if let Err(err) = recv.read_exact(&mut kind).await {
@@ -137,14 +207,83 @@ async fn serve_stream(
             Upstream::Embedded(streams) => hand_over(send, recv, remote, &streams).await,
         },
         Some(Request::Ping) => reply(&mut send, Status::Ok).await,
-        Some(Request::Port | Request::Udp) | None => {
+        Some(kind @ (Request::Port | Request::Udp)) => {
+            serve_port(send, recv, kind, flows, resolver.as_ref()).await;
+        }
+        None => {
             warn!(kind = kind[0], "unsupported request type");
             reply(&mut send, Status::UnsupportedRequest).await;
         }
     }
 }
 
-async fn forward_to_upstream(mut send: SendStream, mut recv: RecvStream, upstream: SocketAddr) {
+async fn read_port_request<'a>(
+    recv: &mut RecvStream,
+    kind: Request,
+    header: &'a mut [u8; MAX_PORT_REQUEST_LEN],
+) -> Result<PortRequest<'a>, String> {
+    header[0] = kind as u8;
+    recv.read_exact(&mut header[1..2])
+        .await
+        .map_err(|err| err.to_string())?;
+    let name_len = usize::from(header[1]);
+    if name_len > crate::wire::MAX_PLUGIN_ID_LEN {
+        return Err("plugin identifier exceeds 63 bytes".to_owned());
+    }
+    let len = name_len + 4;
+    recv.read_exact(&mut header[2..len])
+        .await
+        .map_err(|err| err.to_string())?;
+    PortRequest::decode(&header[..len])
+        .map(|(request, _)| request)
+        .map_err(|err| err.to_string())
+}
+
+async fn serve_port<R: PortResolver>(
+    mut send: SendStream,
+    mut recv: RecvStream,
+    kind: Request,
+    flows: Arc<Flows>,
+    resolver: &R,
+) {
+    let mut header = [0; MAX_PORT_REQUEST_LEN];
+    let request = match read_port_request(&mut recv, kind, &mut header).await {
+        Ok(request) => request,
+        Err(err) => {
+            debug!("invalid plugin port request: {err}");
+            reply(&mut send, Status::UnsupportedRequest).await;
+            return;
+        }
+    };
+    let protocol = match kind {
+        Request::Port => wonton_protocol::PortProtocol::Tcp,
+        _ => wonton_protocol::PortProtocol::Udp,
+    };
+    let addr = match resolver
+        .resolve(request.plugin, request.port, protocol)
+        .await
+    {
+        Ok(addr) => addr,
+        Err(err) => {
+            reply(&mut send, err.status()).await;
+            return;
+        }
+    };
+    match kind {
+        Request::Port => connect_and_forward(send, recv, addr).await,
+        _ => {
+            flows
+                .serve(send, recv, addr, (request.plugin, request.port))
+                .await
+        }
+    }
+}
+
+async fn forward_to_upstream(send: SendStream, recv: RecvStream, upstream: SocketAddr) {
+    connect_and_forward(send, recv, upstream).await;
+}
+
+async fn connect_and_forward(mut send: SendStream, mut recv: RecvStream, upstream: SocketAddr) {
     let mut tcp = match TcpStream::connect(upstream).await {
         Ok(tcp) => tcp,
         Err(err) => {
@@ -192,7 +331,7 @@ async fn hand_over(
     slot.send(PeerStream::new(remote, send, recv));
 }
 
-async fn reply(send: &mut SendStream, status: Status) {
+pub(crate) async fn reply(send: &mut SendStream, status: Status) {
     match send.write_all(&[status as u8]).await {
         Ok(()) => {
             send.finish().ok();
@@ -212,6 +351,17 @@ impl TunnelServer {
     /// 在 `endpoint` 上开始接受隧道连接，只放行 `allowlist` 里的设备，流量转发到 `upstream`。
     pub fn spawn(endpoint: Endpoint, allowlist: Allowlist, upstream: SocketAddr) -> Self {
         let protocol = TunnelProtocol::new(allowlist.clone(), upstream);
+        Self::with_protocol(endpoint, allowlist, protocol)
+    }
+
+    /// 同 [`spawn`](Self::spawn)，插件端口按 `resolver` 解析。
+    pub fn spawn_with_resolver<R: PortResolver>(
+        endpoint: Endpoint,
+        allowlist: Allowlist,
+        upstream: SocketAddr,
+        resolver: Arc<R>,
+    ) -> Self {
+        let protocol = TunnelProtocol::with_resolver(allowlist.clone(), upstream, resolver);
         Self::with_protocol(endpoint, allowlist, protocol)
     }
 
@@ -245,7 +395,24 @@ impl TunnelServer {
         pairing: PairProtocol<H>,
         extra: impl IntoIterator<Item = (&'static [u8], Box<dyn DynProtocolHandler>)>,
     ) -> (Self, TunnelListener) {
-        let (protocol, listener) = TunnelProtocol::embedded(allowlist.clone());
+        Self::spawn_embedded_with_pairing_and_resolver(
+            endpoint,
+            allowlist,
+            pairing,
+            extra,
+            Arc::new(UnsupportedPortResolver),
+        )
+    }
+
+    /// 同 [`spawn_embedded_with_pairing_and`](Self::spawn_embedded_with_pairing_and)，插件端口按 `resolver` 解析。
+    pub fn spawn_embedded_with_pairing_and_resolver<H: PairHandler, R: PortResolver>(
+        endpoint: Endpoint,
+        allowlist: Allowlist,
+        pairing: PairProtocol<H>,
+        extra: impl IntoIterator<Item = (&'static [u8], Box<dyn DynProtocolHandler>)>,
+        resolver: Arc<R>,
+    ) -> (Self, TunnelListener) {
+        let (protocol, listener) = TunnelProtocol::embedded_with(allowlist.clone(), resolver);
         let mut builder = Router::builder(endpoint)
             .accept(ALPN, protocol)
             .accept(PAIR_ALPN, pairing);
@@ -261,7 +428,11 @@ impl TunnelServer {
         )
     }
 
-    fn with_protocol(endpoint: Endpoint, allowlist: Allowlist, protocol: TunnelProtocol) -> Self {
+    fn with_protocol<R: PortResolver>(
+        endpoint: Endpoint,
+        allowlist: Allowlist,
+        protocol: TunnelProtocol<R>,
+    ) -> Self {
         let router = Router::builder(endpoint).accept(ALPN, protocol).spawn();
         Self { router, allowlist }
     }

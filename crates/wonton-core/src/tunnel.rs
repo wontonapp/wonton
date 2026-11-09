@@ -197,18 +197,31 @@ pub fn spawn_announcing(
     })
 }
 
-/// 明确拒绝插件端口解析，不查安装记录或建立上游连接。
-#[derive(Debug)]
-pub struct UnsupportedPortResolver;
+/// 按插件安装记录、清单的 `tunnel.ports` 和运行状态解析端口。
+pub struct PluginPortResolver {
+    plugins: Arc<crate::plugin::PluginManager>,
+}
 
-impl wonton_tunnel::PortResolver for UnsupportedPortResolver {
+impl std::fmt::Debug for PluginPortResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PluginPortResolver")
+    }
+}
+
+impl PluginPortResolver {
+    pub fn new(plugins: Arc<crate::plugin::PluginManager>) -> Self {
+        Self { plugins }
+    }
+}
+
+impl wonton_tunnel::PortResolver for PluginPortResolver {
     async fn resolve(
         &self,
-        _plugin: &str,
-        _port: u16,
-        _protocol: wonton_protocol::PortProtocol,
+        plugin: &str,
+        port: u16,
+        protocol: wonton_protocol::PortProtocol,
     ) -> Result<SocketAddr, wonton_tunnel::PortResolveError> {
-        Err(wonton_tunnel::PortResolveError::Unsupported)
+        self.plugins.tunnel_port(plugin, port, protocol).await
     }
 }
 
@@ -222,21 +235,28 @@ impl TunnelEntry {
     /// 在隧道的 endpoint 上接受已配对设备的隧道连接，用 `app`（网关的完整路由）服务每条流；还没登记的设备
     /// 可以来配对。
     pub fn spawn(tunnel: &Tunnel, app: Router) -> Self {
-        Self::spawn_with_protocols(tunnel, app, [])
+        Self::spawn_with_protocols(
+            tunnel,
+            app,
+            [],
+            Arc::new(wonton_tunnel::UnsupportedPortResolver),
+        )
     }
 
     /// 同 [`Self::spawn`]，同一个 endpoint 上再多挂几个协议的处理器（联邦转发和服务器配对，ADR-0050），
     /// 每项是它的 ALPN 加处理器。
-    pub fn spawn_with_protocols(
+    pub fn spawn_with_protocols<R: wonton_tunnel::PortResolver>(
         tunnel: &Tunnel,
         app: Router,
         extra: impl IntoIterator<Item = (&'static [u8], Box<dyn iroh::protocol::DynProtocolHandler>)>,
+        ports: Arc<R>,
     ) -> Self {
-        let (server, listener) = TunnelServer::spawn_embedded_with_pairing_and(
+        let (server, listener) = TunnelServer::spawn_embedded_with_pairing_and_resolver(
             tunnel.endpoint.clone(),
             tunnel.devices.allowlist().clone(),
             PairProtocol::new(tunnel.pairing.clone()),
             extra,
+            ports,
         );
         let task = tokio::spawn(serve(listener, app));
         Self { server, task }

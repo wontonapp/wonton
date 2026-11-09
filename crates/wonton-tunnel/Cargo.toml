@@ -45,7 +45,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 tokio = { workspace = true, features = ["signal", "test-util"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
-# 对自己的 dev 依赖：集成测试要用 test-hooks 里的假服务端（`test_server`），App 不经 dev-dependencies。
+# 对自己的 dev 依赖：集成测试要用 test-hooks，App 不经 dev-dependencies。
 [dev-dependencies.wonton-tunnel]
 path = "."
 features = ["test-hooks"]

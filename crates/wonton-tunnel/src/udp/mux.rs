@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use iroh::endpoint::{Connection, SendDatagramError};
@@ -55,10 +55,16 @@ pub(crate) struct DatagramMux {
     /// 最近一次能算准的推出帧数；发送缓冲不空时算不准，沿用上一次。
     evicted: Mutex<Option<u64>>,
     reader: Mutex<Option<JoinHandle<()>>>,
+    fragment_ttl: Duration,
+    external_oversized: Option<Arc<AtomicU64>>,
 }
 
 impl DatagramMux {
-    pub(crate) fn start(conn: Connection) -> Arc<Self> {
+    pub(crate) fn start(
+        conn: Connection,
+        fragment_ttl: Duration,
+        external_oversized: Option<Arc<AtomicU64>>,
+    ) -> Arc<Self> {
         let mux = Arc::new(Self {
             empty_space: conn.datagram_send_buffer_space(),
             conn: conn.clone(),
@@ -66,10 +72,18 @@ impl DatagramMux {
             submitted: AtomicU64::new(0),
             evicted: Mutex::new(None),
             reader: Mutex::new(None),
+            fragment_ttl,
+            external_oversized,
         });
         let task = tokio::spawn(read_loop(conn, Arc::downgrade(&mux)));
         *lock(&mux.reader) = Some(task);
         mux
+    }
+    fn oversized(&self, counters: &FlowCounters) {
+        counters.oversized.fetch_add(1, Ordering::Relaxed);
+        if let Some(counter) = &self.external_oversized {
+            counter.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     pub(crate) fn conn_id(&self) -> usize {
@@ -97,7 +111,7 @@ impl DatagramMux {
             flow,
             Route {
                 deliver,
-                reassembler: Reassembler::default(),
+                reassembler: Reassembler::with_ttl(self.fragment_ttl),
                 counters: counters.clone(),
                 plugin: plugin.into(),
                 port,
@@ -125,14 +139,14 @@ impl DatagramMux {
             Ok(Packet::Whole(frame)) => vec![frame],
             Ok(Packet::Pair(pair)) => pair.to_vec(),
             Err(_) => {
-                counters.oversized.fetch_add(1, Ordering::Relaxed);
+                self.oversized(counters);
                 return Ok(());
             }
         };
         for frame in frames {
             let mut datagram = vec![0; frame.header_len() + frame.payload.len()];
             if frame.encode(&mut datagram, max).is_err() {
-                counters.oversized.fetch_add(1, Ordering::Relaxed);
+                self.oversized(counters);
                 return Ok(());
             }
             match self.conn.send_datagram(Bytes::from(datagram)) {
@@ -141,7 +155,7 @@ impl DatagramMux {
                 }
                 // 取上限和发送之间路径变了（ADR-0072：新路径加进来时会从 1414 掉回 1162），这一包丢掉。
                 Err(SendDatagramError::TooLarge) => {
-                    counters.oversized.fetch_add(1, Ordering::Relaxed);
+                    self.oversized(counters);
                     return Ok(());
                 }
                 Err(SendDatagramError::ConnectionLost(err)) => {

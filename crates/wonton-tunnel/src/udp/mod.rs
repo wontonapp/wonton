@@ -3,6 +3,7 @@
 
 pub(crate) mod mux;
 pub(crate) mod reassembly;
+pub(crate) mod server;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};

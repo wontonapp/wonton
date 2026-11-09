@@ -35,9 +35,6 @@ pub mod relays;
 mod server;
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
-pub mod test_server;
-#[cfg(feature = "test-hooks")]
-#[doc(hidden)]
 pub mod test_support;
 mod udp;
 pub mod wire;
@@ -50,8 +47,9 @@ pub use client::{
 pub use credential::{ProxyAccess, ProxyCredential};
 pub use embed::{PeerStream, TunnelListener};
 pub use error::TunnelError;
-pub use ports::{PortResolveError, PortResolver};
+pub use ports::{PortResolveError, PortResolver, UnsupportedPortResolver};
 pub use proxy::{ERROR_HEADER, LocalProxy};
 pub use server::{TunnelProtocol, TunnelServer};
+pub use udp::server::FlowTimeouts;
 pub use udp::{PortError, PortStream, UdpFlow, UdpReceiver, UdpSender};
 pub use wire::ALPN;

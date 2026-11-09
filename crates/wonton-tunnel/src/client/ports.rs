@@ -61,7 +61,7 @@ impl TunnelClient {
         {
             return Ok(mux.clone());
         }
-        let mux = DatagramMux::start(conn);
+        let mux = DatagramMux::start(conn, crate::udp::reassembly::FRAGMENT_TTL, None);
         *current = Some(mux.clone());
         Ok(mux)
     }
