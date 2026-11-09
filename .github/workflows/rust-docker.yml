@@ -53,7 +53,8 @@ jobs:
     name: Rust Docker 测试
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # 桥镜像要整编一遍（预构建 + 测试缓存），45 分钟紧，留出余量。
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -88,6 +89,17 @@ jobs:
           scripts/mirror-test-images.sh --list | while IFS= read -r image; do
             docker pull "$image"
           done
+      - name: 预构建桥镜像
+        # 测试只验启动行为，构建本身先在这里做掉、给 docker 构建缓存预热，测试里的同名 build 就只走缓存。
+        run: >-
+          docker build -q
+          -f deploy/dev/acp-bridge/Dockerfile
+          --build-arg "RUST_IMAGE=$WONTON_TEST_IMAGES/rust:1.99.1-slim-trixie"
+          --build-arg "DEBIAN_IMAGE=$WONTON_TEST_IMAGES/debian:trixie-slim"
+          -t wonton-acp-bridge-docker-test:prebuilt .
+      - name: 准备日志目录
+        # 步骤里用 tee 往 $RUNNER_TEMP/test-logs 写输出，目录得先有：shell 带 pipefail，tee 打不开文件就让整步非零。
+        run: mkdir -p "$RUNNER_TEMP/test-logs"
       - name: Docker 集成测试（标了 #[ignore] 的都是）
         shell: bash
         run: cargo nextest run --workspace --locked --profile docker --run-ignored only 2>&1 | tee "$RUNNER_TEMP/test-logs/test-output.log"

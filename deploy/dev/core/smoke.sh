@@ -53,6 +53,9 @@ model_client="wonton-$WONTON_DEV_INSTANCE--app-model-client--client"
 hermes="$hermes_network--gateway--default"
 plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client com.nousresearch.hermes app.wonton.files org.navidrome.navidrome)
 
+# shellcheck source=deploy/dev/core/smoke-cleanup.sh
+source "$here/smoke-cleanup.sh"
+
 # 构建镜像经 dev.sh：远端主机上经它自己的代理、限制并发（WONTON_DEV_BUILD_PROXY、WONTON_DEV_BUILD_JOBS）。
 build_failed() {
   docker buildx version >/dev/null 2>&1 || fail "构建镜像需要 Docker buildx，请安装 Docker buildx 插件后重试"
@@ -99,31 +102,6 @@ labeled() {
   } | tr -d '[:space:]'
 }
 
-cleanup() {
-  local status=$?
-  [[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null || true
-  # 一次性网关凭据按建 key 时记下的 id 删（失败退出也删，KEEP 也删）；没建过（id 为空）就什么都不做。
-  [[ -z "${host_model_key_id:-}" ]] || magpie gateway-key remove "$host_model_key_id" >/dev/null 2>&1 || true
-  if [[ "${KEEP:-}" == 1 ]]; then
-    echo "保留现场：项目 $core，数据目录 $WONTON_DEV_DATA（清理：WONTON_DEV_PROJECT=$core WONTON_DEV_DATA=$WONTON_DEV_DATA $dev reset）"
-    return
-  fi
-  docker rm -f "$browser" "$phone" >/dev/null 2>&1 || true
-  [[ -z "${fake_upstream:-}" ]] || docker rm -f "$fake_upstream" >/dev/null 2>&1 || true
-  # 中途失败时插件可能还在：先删插件容器，再停核心，最后删插件网络和卷。
-  local id resource
-  for id in "${plugins[@]}"; do
-    for resource in $(docker ps -aq --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do docker rm -f "$resource" >/dev/null; done
-  done
-  "$dev" reset >/dev/null 2>&1 || true
-  for id in "${plugins[@]}"; do
-    for resource in $(docker network ls -q --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do docker network rm "$resource" >/dev/null; done
-    for resource in $(docker volume ls -q --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do docker volume rm "$resource" >/dev/null; done
-  done
-  docker run --rm --user 0 --entrypoint rm -v /tmp:/host-tmp "$curl_image" \
-    -rf "/host-tmp/$(basename "$WONTON_DEV_DATA")" >/dev/null 2>&1 || true
-  if [[ $status == 0 ]]; then echo "已清理"; else echo "冒烟失败，已清理（KEEP=1 可保留现场）" >&2; fi
-}
 
 step "预检"
 docker version --format '   Docker {{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}'

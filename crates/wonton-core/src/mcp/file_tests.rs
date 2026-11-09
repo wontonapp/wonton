@@ -308,7 +308,16 @@ async fn one_result_registers_at_most_a_hundred_files() {
 
 #[tokio::test]
 async fn the_first_four_images_get_previews_no_larger_than_1024() {
-    let b = bench().await;
+    // 预览期限是给产品用的 10 秒（files/mod.rs 的 PREVIEW_BUDGET）。CI 是 debug 构建，慢机器上一个切片的
+    // 测试挤在一起解码 1600 像素的图偶尔超过它（2 核机器上实测），这条测的是「前四张里能看的都有预览、
+    // 不超过 1024」，跟单张预算的生死赛跑无关，所以先放宽预算，断言就和机器快慢脱钩。
+    let mut f = Fixture::new();
+    std::sync::Arc::get_mut(&mut f.files)
+        .unwrap()
+        .preview_budget = Duration::from_secs(60);
+    let s = setup(Docker::unreachable_for_test(), Duration::from_secs(60)).await;
+    s.bus.attach_files(f.files.clone());
+    let b = Bench { s, f };
     let mut links = Vec::new();
     for i in 0..6 {
         let path = format!("photos/{i}.jpg");
