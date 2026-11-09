@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 use axum::http::Method;
 use wonton_client::{Action, OnboardingStep, OnboardingViewModel, PluginTaskState};
 
-use super::super::rig::{Canned, Rig, WAIT, core_error, item, preview, running};
-use super::{KEY_TEST, ONBOARDING, act, at, edit, onboarding, providers, test_key};
+use super::super::rig::{Canned, Rig, core_error, item, preview, running};
+use super::{KEY_TEST, ONBOARDING, act, at, edit, onboarding, providers, test_key, wait_requests};
 
 const PLUGINS: &str = "/_wonton/api/plugins";
 
@@ -34,17 +34,6 @@ async fn install_rig(step: &str) -> Rig {
     rig.wait_onboarding(|view| view.step.is_some() && !view.loading)
         .await;
     rig
-}
-
-async fn wait_requests(rig: &Rig, method: Method, path: &str, count: usize) {
-    let deadline = Instant::now() + WAIT;
-    while rig.core.seen(&method, path).len() < count {
-        assert!(
-            Instant::now() < deadline,
-            "missing {method} {path} #{count}"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
 }
 
 async fn assert_stays(rig: &Rig, expected: &OnboardingViewModel) {

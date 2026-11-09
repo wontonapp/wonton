@@ -1,4 +1,5 @@
 use std::fs;
+use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use wonton_client::{
@@ -6,7 +7,7 @@ use wonton_client::{
     OnboardingReviewKind, OnboardingStep, OnboardingViewModel, SecretString, StepNav,
 };
 
-use super::rig::{FakeHome, Rig, core_error, item};
+use super::rig::{FakeHome, Rig, WAIT, core_error, item};
 
 mod commit;
 mod loading;
@@ -160,6 +161,19 @@ async fn walk_to_review(rig: &Rig) -> OnboardingViewModel {
                 .all(|item| item.state != wonton_client::OnboardingItemState::Preparing)
     })
     .await
+}
+
+/// 轮询等请求到达假核心，20ms 一拍。不能用 yield_now 忙等：忙等的测试任务和假核心、
+/// 隧道服务端共用测试线程，高负载下会把请求链饿死（#836）。
+async fn wait_requests(rig: &Rig, method: Method, path: &str, count: usize) {
+    let deadline = Instant::now() + WAIT;
+    while rig.core.seen(&method, path).len() < count {
+        assert!(
+            Instant::now() < deadline,
+            "missing {method} {path} #{count}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 #[tokio::test]

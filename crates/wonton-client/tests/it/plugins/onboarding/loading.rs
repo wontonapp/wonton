@@ -7,7 +7,7 @@ use tokio::sync::oneshot;
 use wonton_client::{Action, ChatAccount, OnboardingSubscription, OnboardingViewModel};
 
 use super::super::rig::{Rig, WAIT, running};
-use super::{ONBOARDING, PROVIDERS, onboarding, providers};
+use super::{ONBOARDING, PROVIDERS, onboarding, providers, wait_requests};
 
 struct PausedWake {
     entered: Mutex<Option<oneshot::Sender<()>>>,
@@ -62,16 +62,6 @@ impl Wake for RecordWake {
             }
         }
     }
-}
-
-async fn wait_requests(rig: &Rig, method: Method, path: &str, count: usize) {
-    tokio::time::timeout(WAIT, async {
-        while rig.core.seen(&method, path).len() < count {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .unwrap();
 }
 
 #[tokio::test]
