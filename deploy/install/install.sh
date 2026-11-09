@@ -25,6 +25,8 @@
 #   WONTON_EGRESS_PROXY  出网插件和核心经这个代理访问外网，http://、https:// 或 socks5://，可以带用户名和密码，特殊字符写成
 #                       百分号编码。测不通时安装失败。默认不设：第一次安装时检测一次，主人在 App 里改（ADR-0023）。设成空就取消
 #   WONTON_PLUGIN_NETWORK_POOL  插件网络使用的私有 IPv4 地址段（默认 10.213.0.0/16），核心从中分配 /26
+#   WONTON_INSTALL_TIMEOUT_SECS  装插件时等容器就绪的下限秒数（默认 300）。插件按 healthcheck 的 start_period
+#                       自己放宽等待，一般不用设
 #   WONTON_PULL=never   不拉核心镜像，用本机已有的（测试用）
 #   WONTON_CORE_PIN     手动退回到这个 digest（sha256:…），之后照样跟渠道（ADR-0025）。有当时升级留下的备份就恢复核心
 #                       数据和安装目录
@@ -139,6 +141,8 @@ announce_addresses=${WONTON_ANNOUNCE_ADDRESSES-$(saved WONTON_ANNOUNCE_ADDRESSES
 relays=${WONTON_RELAYS-$(saved WONTON_RELAYS)}
 egress_proxy=${WONTON_EGRESS_PROXY-$(saved WONTON_EGRESS_PROXY)}
 egress_detected=$(saved WONTON_EGRESS_PROXY_DETECTED)
+# 不用 `:-`：环境变量设成空就是取消上次的设置，回到核心的默认值。
+install_timeout=${WONTON_INSTALL_TIMEOUT_SECS-$(saved WONTON_INSTALL_TIMEOUT_SECS)}
 tz=${TZ:-$(saved TZ)}
 # `curl | sudo sh` 的环境里通常没有 TZ。都读不到时留空，由 compose 给 UTC。
 if [ -z "$tz" ]; then
@@ -431,6 +435,10 @@ WONTON_ANNOUNCE_ADDRESSES=$announce_addresses
 WONTON_RELAYS=$relays
 WONTON_EGRESS_PROXY=$egress_proxy
 EOF
+  # 设了才写：没设时核心用自己的默认值，.env 里不记常用默认。
+  if [ -n "$install_timeout" ]; then
+    echo "WONTON_INSTALL_TIMEOUT_SECS=$install_timeout" >>"$env_file.tmp"
+  fi
   if [ -n "$plugin_slice" ]; then
     echo "WONTON_PLUGIN_SLICE=$plugin_slice" >>"$env_file.tmp"
   fi

@@ -178,6 +178,32 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(env["WONTON_CORE_IMAGE"], reference)
         self.assertEqual(env["WONTON_CORE_SOURCE"], reference)
 
+    def test_install_timeout_is_written_when_set_and_kept_across_reruns(self):
+        digest = "sha256:" + "e" * 64
+        self.digests["ghcr.io/geraldpeng6/wonton-core:beta"] = [
+            "ghcr.io/geraldpeng6/wonton-core@" + digest
+        ]
+
+        # 没设时不写这一行，核心用自己的默认值。
+        result = self.run_install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("WONTON_INSTALL_TIMEOUT_SECS", self.env())
+
+        # 设了写进 .env，compose 的白名单把它传进核心容器。
+        result = self.run_install(WONTON_INSTALL_TIMEOUT_SECS="600")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.env()["WONTON_INSTALL_TIMEOUT_SECS"], "600")
+
+        # 重跑（升级、修复）重写 .env 时沿用保存的值，不用再给一遍。
+        result = self.run_install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.env()["WONTON_INSTALL_TIMEOUT_SECS"], "600")
+
+        # 设成空就是取消：回到核心默认，回写时不再有这一行。
+        result = self.run_install(WONTON_INSTALL_TIMEOUT_SECS="")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("WONTON_INSTALL_TIMEOUT_SECS", self.env())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -53,6 +53,8 @@ services:
       # 启动器声明的宣告地址（ADR-0019）：设了就绑 0.0.0.0，手机连这些地址。每项可以带前缀。
       WONTON_ANNOUNCE_ADDRESSES: ${WONTON_ANNOUNCE_ADDRESSES:-}
       WONTON_PLUGIN_SLICE: ${WONTON_PLUGIN_SLICE:-}
+      # 装插件时等容器就绪的下限秒数：空值时用核心自己的默认值，不在这里写。
+      WONTON_INSTALL_TIMEOUT_SECS: ${WONTON_INSTALL_TIMEOUT_SECS:-}
       WONTON_PLUGIN_NETWORK_POOL: ${WONTON_PLUGIN_NETWORK_POOL:-10.213.0.0/16}
       # 给 Tuwunel 的联邦出站代理（ADR-0050）：用下面 core 网络上的别名，核心只绑在这个网络的地址上，插件网络里
       # 连不到。和 tuwunel.toml 里的代理地址（wonton-core init 写的）是同一个值。
