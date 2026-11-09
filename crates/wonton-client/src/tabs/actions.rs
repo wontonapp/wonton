@@ -27,7 +27,7 @@ impl TabsLink {
                 return Ok(());
             }
             if !matches!(tab, TabRef::Plugin { .. }) {
-                return Err(invalid("这个页面没有固定到底栏"));
+                return Err(invalid(&l10n!(CATALOG, language(), "tabs-bar-not-pinned")));
             }
             let item = stored_item_for_tab(&tab, plugins)?;
             let previous = state.selected.clone();
@@ -60,12 +60,20 @@ impl TabsLink {
     ) -> Result<(), CoreError> {
         self.config_change(|state, plugins| {
             if state.config.items.iter().any(|item| item.tab == tab) {
-                return Err(invalid("这个页面已经固定到底栏"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-bar-already-pinned"
+                )));
             }
             let item = stored_item_with_title(&tab, plugins, title)?;
             if state.config.items.len() >= MAX_ITEMS {
                 let Some(replacing) = replacing else {
-                    return Err(invalid("底栏已满，必须指定要替换的页面"));
+                    return Err(invalid(&l10n!(
+                        CATALOG,
+                        language(),
+                        "tabs-bar-replace-required"
+                    )));
                 };
                 let Some(index) = state
                     .config
@@ -73,10 +81,14 @@ impl TabsLink {
                     .iter()
                     .position(|item| item.tab == replacing)
                 else {
-                    return Err(invalid("要替换的页面不在底栏"));
+                    return Err(invalid(&l10n!(
+                        CATALOG,
+                        language(),
+                        "tabs-bar-replacing-missing"
+                    )));
                 };
                 if !is_removable(&replacing) {
-                    return Err(invalid("聊天和应用不能被替换"));
+                    return Err(invalid(&l10n!(CATALOG, language(), "tabs-bar-fixed")));
                 }
                 state.config.items[index] = item;
                 state
@@ -89,7 +101,7 @@ impl TabsLink {
                 }
             } else {
                 if replacing.is_some() {
-                    return Err(invalid("底栏未满时不能指定替换页面"));
+                    return Err(invalid(&l10n!(CATALOG, language(), "tabs-bar-not-full")));
                 }
                 state.config.items.push(item);
             }
@@ -108,10 +120,18 @@ impl TabsLink {
     pub(super) fn unpin(&self, tab: TabRef) -> Result<(), CoreError> {
         self.config_change(|state, _| {
             if !is_removable(&tab) {
-                return Err(invalid("聊天和应用不能拿掉"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-bar-remove-fixed"
+                )));
             }
             let Some(index) = state.config.items.iter().position(|item| item.tab == tab) else {
-                return Err(invalid("这个页面不在底栏"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-bar-page-missing"
+                )));
             };
             state.config.items.remove(index);
             state.config.displays.retain(|display| display.tab != tab);
@@ -135,10 +155,18 @@ impl TabsLink {
         self.config_change(|state, _| {
             let index = index as usize;
             if index >= state.config.items.len() {
-                return Err(invalid("底栏下标越界"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-bar-index-out-of-range"
+                )));
             }
             let Some(current) = state.config.items.iter().position(|item| item.tab == tab) else {
-                return Err(invalid("这个页面不在底栏"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-bar-page-missing"
+                )));
             };
             let item = state.config.items.remove(current);
             state.config.items.insert(index, item);
@@ -160,7 +188,11 @@ impl TabsLink {
     ) -> Result<(), CoreError> {
         self.config_change(|state, plugins| {
             if !matches!(tab, TabRef::Plugin { .. }) {
-                return Err(invalid("只有插件页面可以设置打开方式"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-open-only-plugins"
+                )));
             }
             let _ = stored_item_for_tab(&tab, plugins)?;
             state.config.displays.retain(|entry| entry.tab != tab);
@@ -185,7 +217,11 @@ impl TabsLink {
     pub(super) fn enter_fullscreen(&self, tab: TabRef) -> Result<(), CoreError> {
         self.runtime_change(|state, plugins| {
             if !matches!(tab, TabRef::Plugin { .. }) {
-                return Err(invalid("只有插件页面可以全屏"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-fullscreen-only-plugins"
+                )));
             }
             if state
                 .fullscreen
@@ -211,11 +247,15 @@ impl TabsLink {
     pub(super) fn exit_fullscreen(&self, tab: TabRef) -> Result<(), CoreError> {
         self.runtime_change(|state, _| {
             let Some(fullscreen) = state.fullscreen.take() else {
-                return Err(invalid("当前没有全屏页面"));
+                return Err(invalid(&l10n!(CATALOG, language(), "tabs-fullscreen-none")));
             };
             if fullscreen.tab != tab {
                 state.fullscreen = Some(fullscreen);
-                return Err(invalid("退出的页面不是当前全屏页面"));
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-fullscreen-not-current"
+                )));
             }
             if let Some(return_to) = fullscreen.return_to {
                 state.overlay = None;

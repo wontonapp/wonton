@@ -566,3 +566,17 @@ panel-config-duplicate = 同一個頁面在面板裡出現了兩次。
 panel-sync-failed-read = 從伺服器讀面板設定沒有成功。
 panel-sync-unreadable = 伺服器上的面板設定這台裝置讀不懂，先用本機的。
 tabs-page-cannot-reload = 這個頁面不能重新載入。
+
+tabs-bar-not-pinned = 這個頁面沒有固定到底欄。
+tabs-bar-already-pinned = 這個頁面已經固定到底欄。
+tabs-bar-replace-required = 底欄已滿，必須指定要替換的頁面。
+tabs-bar-replacing-missing = 要替換的頁面不在底欄。
+tabs-bar-fixed = 聊天和應用不能被替換。
+tabs-bar-not-full = 底欄未滿時不能指定替換頁面。
+tabs-bar-remove-fixed = 聊天和應用不能拿掉。
+tabs-bar-page-missing = 這個頁面不在底欄。
+tabs-bar-index-out-of-range = 底欄下標越界。
+tabs-open-only-plugins = 只有外掛頁面可以設定開啟方式。
+tabs-fullscreen-only-plugins = 只有外掛頁面可以全螢幕。
+tabs-fullscreen-none = 目前沒有全螢幕頁面。
+tabs-fullscreen-not-current = 退出的頁面不是目前全螢幕頁面。

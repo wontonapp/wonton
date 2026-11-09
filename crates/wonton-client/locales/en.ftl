@@ -628,3 +628,17 @@ panel-config-duplicate = The same page appears twice in the panel.
 panel-sync-failed-read = Couldn't read the panel settings from the server.
 panel-sync-unreadable = The panel settings from the server can't be read here; keeping the ones on this device.
 tabs-page-cannot-reload = This page can't be reloaded.
+
+tabs-bar-not-pinned = This page isn't pinned to the Navigation bar.
+tabs-bar-already-pinned = This page is already pinned to the Navigation bar.
+tabs-bar-replace-required = The Navigation bar is full; pick a page to replace.
+tabs-bar-replacing-missing = The page to replace isn't in the Navigation bar.
+tabs-bar-fixed = Chat and Apps can't be replaced.
+tabs-bar-not-full = The Navigation bar isn't full, so there's nothing to replace.
+tabs-bar-remove-fixed = Chat and Apps can't be removed.
+tabs-bar-page-missing = This page isn't in the Navigation bar.
+tabs-bar-index-out-of-range = That position is past the end of the Navigation bar.
+tabs-open-only-plugins = Only app pages have an opening mode.
+tabs-fullscreen-only-plugins = Only app pages can go full screen.
+tabs-fullscreen-none = Nothing is full screen right now.
+tabs-fullscreen-not-current = That page isn't the full-screen one.

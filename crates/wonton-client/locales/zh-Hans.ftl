@@ -565,3 +565,17 @@ panel-config-duplicate = 同一个页面在面板里出现了两次。
 panel-sync-failed-read = 从服务器读面板设置没成功。
 panel-sync-unreadable = 服务器上的面板设置这台设备读不懂，先用本机的。
 tabs-page-cannot-reload = 这个页面不能重新加载。
+
+tabs-bar-not-pinned = 这个页面没有固定到底栏。
+tabs-bar-already-pinned = 这个页面已经固定到底栏。
+tabs-bar-replace-required = 底栏已满，必须指定要替换的页面。
+tabs-bar-replacing-missing = 要替换的页面不在底栏。
+tabs-bar-fixed = 聊天和应用不能被替换。
+tabs-bar-not-full = 底栏未满时不能指定替换页面。
+tabs-bar-remove-fixed = 聊天和应用不能拿掉。
+tabs-bar-page-missing = 这个页面不在底栏。
+tabs-bar-index-out-of-range = 底栏下标越界。
+tabs-open-only-plugins = 只有插件页面可以设置打开方式。
+tabs-fullscreen-only-plugins = 只有插件页面可以全屏。
+tabs-fullscreen-none = 当前没有全屏页面。
+tabs-fullscreen-not-current = 退出的页面不是当前全屏页面。

@@ -566,3 +566,17 @@ panel-config-duplicate = 同じページがパネルに二つあります。
 panel-sync-failed-read = サーバーからパネルの設定を読み取れませんでした。
 panel-sync-unreadable = サーバーのパネル設定をこの端末では読めないため、端末のものを使います。
 tabs-page-cannot-reload = このページは再読み込みできません。
+
+tabs-bar-not-pinned = このページはナビゲーションバーに固定されていません。
+tabs-bar-already-pinned = このページはすでにナビゲーションバーに固定されています。
+tabs-bar-replace-required = ナビゲーションバーがいっぱいです。置き換えるページを指定してください。
+tabs-bar-replacing-missing = 置き換えるページがナビゲーションバーにありません。
+tabs-bar-fixed = チャットとアプリは置き換えられません。
+tabs-bar-not-full = ナビゲーションバーがいっぱいではないので、置き換えるページは指定できません。
+tabs-bar-remove-fixed = チャットとアプリは外せません。
+tabs-bar-page-missing = このページはナビゲーションバーにありません。
+tabs-bar-index-out-of-range = その位置はナビゲーションバーの範囲外です。
+tabs-open-only-plugins = 開き方を設定できるのはアプリのページだけです。
+tabs-fullscreen-only-plugins = 全画面にできるのはアプリのページだけです。
+tabs-fullscreen-none = 全画面のページはありません。
+tabs-fullscreen-not-current = そのページは全画面のページではありません。
