@@ -469,23 +469,6 @@ fn initial_selection(paired: bool) -> TabRef {
 }
 
 /// 面板现在有的页面：主面板在配置里，房间面板在打开着的房间里。
-fn empty_view() -> TabsViewModel {
-    TabsViewModel {
-        items: Vec::new(),
-        show_bar: false,
-        selected: TabRef::Apps,
-        overlay: None,
-        full: false,
-        uninstalled: Vec::new(),
-        problem: None,
-        labels: true,
-        candidates: Vec::new(),
-        panel: Vec::new(),
-        panel_candidates: Vec::new(),
-        panel_selected: None,
-    }
-}
-
 fn refresh_state(state: &mut TabsState, plugins: &PluginsViewModel, home: &HomeViewModel) -> bool {
     let mut config_changed = false;
     let server_changed = home.server_id.is_some() && state.config.server_id != home.server_id;

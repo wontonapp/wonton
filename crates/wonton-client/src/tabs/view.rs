@@ -7,7 +7,7 @@ use wonton_protocol::{
     TabItem, TabLayout, TabPage, TabRef, TabState, TabsViewModel,
 };
 
-use super::{Fullscreen, StoredItem, StoredPage, TabsState, invalid};
+use super::{Fullscreen, StoredItem, StoredPage, TabsState, TabsViewModel, invalid};
 use crate::l10n::{CATALOG, language};
 use wonton_l10n::l10n;
 
@@ -716,4 +716,20 @@ pub(super) fn is_plugin(tab: &TabRef) -> bool {
 pub(super) fn is_removable(tab: &TabRef) -> bool {
     // “应用”只在没配对时在栏上，那时它是配对页，也不能拿。
     !matches!(tab, TabRef::Chat | TabRef::Apps)
+}
+pub(super) fn empty_view() -> TabsViewModel {
+    TabsViewModel {
+        items: Vec::new(),
+        show_bar: false,
+        selected: TabRef::Apps,
+        overlay: None,
+        full: false,
+        uninstalled: Vec::new(),
+        problem: None,
+        labels: true,
+        candidates: Vec::new(),
+        panel: Vec::new(),
+        panel_candidates: Vec::new(),
+        panel_selected: None,
+    }
 }
