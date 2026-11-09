@@ -96,6 +96,12 @@ struct InstallConfirmView: View {
     }
 
     private func load() async {
+        if let preloaded = confirmation.preloaded {
+            lanWebui = preloaded.lanWebui?.enabled ?? false
+            enabled = Set(preloaded.permissions.filter { $0.optional && $0.enabled }.map(\.permission))
+            loaded = .success(preloaded)
+            return
+        }
         loaded = nil
         do {
             let preview = switch confirmation {
@@ -104,6 +110,7 @@ struct InstallConfirmView: View {
             case let .upload(archive): try await model.core.previewUpload(archive: archive)
             case let .upgradeFrom(id, source): try await model.core.previewUpgradeFrom(id: id, source: source)
             case let .upgradeUpload(id, archive): try await model.core.previewUpgradeUpload(id: id, archive: archive)
+            case .store: throw CancellationError()
             }
             lanWebui = preview.lanWebui?.enabled ?? false
             enabled = Set(preview.permissions.filter { $0.optional && $0.enabled }.map(\.permission))

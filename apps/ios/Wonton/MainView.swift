@@ -19,6 +19,8 @@ struct MainView: View {
     @State var pendingSettingsPresentation = false
     @EnvironmentObject private var orientation: FullscreenOrientation
     @State var onboardingGateway: TabChoice?
+    @State var showsSidebar = false
+    @State var storeRequest = 0
     @State private var addingReturn: (serverID: String?, settingsModal: Bool)?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
@@ -110,7 +112,7 @@ struct MainView: View {
                 page(item).tag(item.tab).toolbar(.hidden, for: .tabBar)
             }
         }
-        .environment(\.wontonTabBar, isKeyboardVisible ? nil : AnyView(bottomBar))
+        .environment(\.wontonTabBar, isKeyboardVisible || !tabs.viewModel.showBar ? nil : AnyView(bottomBar))
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             isKeyboardVisible = true
         }
@@ -127,7 +129,8 @@ struct MainView: View {
                 model: home, plugins: plugins, chat: chat, settings: settings, open: open,
                 pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
                 showSettings: { settings.path = []; showsSettings = true },
-                showServer: { showServerRoute(.server) }, settingsPresented: showsSettings, devWebURL: devWebURL
+                showServer: { showServerRoute(.server) }, settingsPresented: showsSettings, devWebURL: devWebURL,
+                storeRequest: storeRequest
             )
         case .settings:
             SettingsTab(model: settings, appearance: appearance, chat: chat, home: home, plugins: plugins,
@@ -272,7 +275,14 @@ extension MainView {
                         PendingCardBanner(cards: pendingElsewhere, open: openCardRoom)
                     }
                     notices
-                    pages
+                    SidebarContainer(isOpen: $showsSidebar, edgeSwipe: allowsEdgeSwipe) {
+                        pages.environment(\.wontonOpenSidebar) { showsSidebar = true }
+                    } panel: {
+                        SidebarPanel(
+                            home: home, plugins: plugins, current: tabs.viewModel.selected,
+                            navigate: navigate
+                        )
+                    }
                 }
             })
         }
