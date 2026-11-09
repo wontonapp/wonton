@@ -75,6 +75,14 @@ fn a_proxy_that_is_not_an_address_stops_the_core_from_starting() {
 }
 
 #[test]
+fn a_doh_server_that_is_not_an_address_stops_the_core_from_starting() {
+    let with = |value| config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_DOH_URL", value)]);
+    assert!(with("ftp://1.1.1.1/dns-query").is_err());
+    assert!(with("https://1.1.1.1").is_err());
+    assert!(with("https://1.1.1.1/dns-query").is_ok());
+}
+
+#[test]
 fn invalid_settings_fail_fast() {
     assert!(matches!(config(&[]), Err(ConfigError::Missing(_))));
     assert!(config(&[("WONTON_DATA_DIR", "relative")]).is_err());

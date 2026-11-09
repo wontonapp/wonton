@@ -30,6 +30,8 @@ hyper = { version = "1.12.0", features = ["client", "http1", "server"] }
 hyper-util = { version = "0.1.21", features = ["client-legacy", "client-proxy", "http1", "tokio"] }
 # MIT OR Apache-2.0。链接预览只用它的分词器读网页的 `<head>`（ADR-0065）。
 html5ever = "0.39.0"
+# MIT OR Apache-2.0。链接预览经代理用 DoH 解析域名时编解码 DNS 报文（ADR-0065）。
+hickory-proto = { version = "0.26.3", default-features = false }
 # (Apache-2.0 OR MIT) AND BSD-3-Clause。链接预览解码 GBK、Shift_JIS 这些非 UTF-8 网页。
 encoding_rs = "0.8.42"
 # Apache-2.0 OR ISC OR MIT、MIT OR Apache-2.0、MIT OR Apache-2.0。链接预览自己握 TLS：连的是检查过的 IP，SNI 仍是原域名

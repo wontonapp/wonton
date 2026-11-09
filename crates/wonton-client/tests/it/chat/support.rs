@@ -2,7 +2,7 @@
 //! 前面接真实的隧道服务端。手机是真实的客户端核心，经隧道和本地代理访问，和 App 一样。
 
 use std::collections::VecDeque;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -10,8 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use super::stale_join::StaleJoin;
-use iroh::endpoint::presets;
-use iroh::{Endpoint, EndpointId, SecretKey};
+use iroh::{EndpointId, SecretKey};
 use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
@@ -33,10 +32,12 @@ use wonton_tunnel::pair::{
 use wonton_tunnel::{Allowlist, TunnelListener, TunnelServer};
 
 mod diagnostics;
+mod endpoint;
 mod fake_core;
 mod matrix;
 
 pub use diagnostics::{is_room_list, pending_requests, request_arrived, request_done};
+use endpoint::loopback_endpoint;
 use fake_core::fake_core;
 
 pub const WAIT: Duration = Duration::from_secs(60);
@@ -396,15 +397,6 @@ impl Home {
 
     /// 用同样的身份和端口恢复隧道。
     pub async fn start_tunnel(&mut self) {
-        let deadline = tokio::time::Instant::now() + WAIT;
-        // iroh 关闭后要再过一小会儿才释放 UDP 端口。
-        while std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, self.tunnel_port)).is_err() {
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "隧道的端口一直没有释放"
-            );
-            tokio::time::sleep(Duration::from_millis(1)).await;
-        }
         let endpoint = loopback_endpoint(self.tunnel_key.clone(), self.tunnel_port).await;
         let (tunnel, listener) = TunnelServer::spawn_embedded_with_pairing(
             endpoint,
@@ -649,17 +641,6 @@ fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
         return None;
     };
     Some((200, response.to_string()))
-}
-
-async fn loopback_endpoint(key: SecretKey, port: u16) -> Endpoint {
-    Endpoint::builder(presets::Minimal)
-        .secret_key(key)
-        .clear_ip_transports()
-        .bind_addr((Ipv4Addr::LOCALHOST, port))
-        .unwrap()
-        .bind()
-        .await
-        .unwrap()
 }
 
 /// 测试里的手机：一个客户端核心，连同它的数据目录。

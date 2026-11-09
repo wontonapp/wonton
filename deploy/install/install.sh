@@ -26,6 +26,7 @@
 #   WONTON_RELAYS      中继表（ADR-0048）：档位用 ; 分开、前面的档优先，同档用 , 分开；令牌写在地址的
 #                       userinfo（https://TOKEN@host），n0 代表 iroh 内置的 n0 公共中继。默认不设：用 n0。
 #                       设成空就取消，回到 n0
+#   WONTON_DOH_URL       配了出网代理时，链接预览经代理解析域名用的 DoH 服务器，默认 https://1.1.1.1/dns-query
 #   WONTON_EGRESS_PROXY  出网插件和核心经这个代理访问外网，http://、https:// 或 socks5://，可以带用户名和密码，特殊字符写成
 #                       百分号编码。测不通时安装失败。默认不设：第一次安装时检测一次，主人在 App 里改（ADR-0023）。设成空就取消
 #   WONTON_PLUGIN_NETWORK_POOL  插件网络使用的私有 IPv4 地址段（默认 10.213.0.0/16），核心从中分配 /26
@@ -143,6 +144,7 @@ announce_addresses=${WONTON_ANNOUNCE_ADDRESSES-$(saved WONTON_ANNOUNCE_ADDRESSES
 # 不用 `:-`：环境变量设成空就是取消上次的设置，回到 n0。
 relays=${WONTON_RELAYS-$(saved WONTON_RELAYS)}
 egress_proxy=${WONTON_EGRESS_PROXY-$(saved WONTON_EGRESS_PROXY)}
+doh_url=${WONTON_DOH_URL-$(saved WONTON_DOH_URL)}
 egress_detected=$(saved WONTON_EGRESS_PROXY_DETECTED)
 # 不用 `:-`：环境变量设成空就是取消上次的设置，回到核心的默认值。
 install_timeout=${WONTON_INSTALL_TIMEOUT_SECS-$(saved WONTON_INSTALL_TIMEOUT_SECS)}
@@ -351,6 +353,9 @@ settle_proxy() {
     # （环境没变，测也是空）；检测到过值的不动，主人可能在 App 里调过。
     { [ -n "$detected_value" ] || [ -z "$daemon_proxy" ]; } && record_detected=yes
   fi
+  if [ -n "$doh_url" ]; then
+    fits_env "$doh_url" || die "WONTON_DOH_URL 里的特殊字符要写成百分号编码：$doh_url"
+  fi
   if [ -n "$egress_proxy" ]; then
     egress_proxy=$(proxy_for_containers "$egress_proxy")
     shown=$(masked_proxy "$egress_proxy")
@@ -495,6 +500,7 @@ WONTON_LAN_ADDRESSES=$lan_addresses
 WONTON_ANNOUNCE_ADDRESSES=$announce_addresses
 WONTON_RELAYS=$relays
 WONTON_EGRESS_PROXY=$egress_proxy
+WONTON_DOH_URL=$doh_url
 EOF
   # 设了才写：没设时核心用自己的默认值，.env 里不记常用默认。
   if [ -n "$install_timeout" ]; then

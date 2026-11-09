@@ -8327,6 +8327,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "gif",
+ "hickory-proto",
  "hickory-resolver",
  "html5ever",
  "http-body-util",

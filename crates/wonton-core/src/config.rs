@@ -11,6 +11,7 @@ use crate::plugin::lan::announce::Announced;
 use crate::plugin::names::Instance;
 use crate::plugin::network_pool::{self, NetworkPool};
 use crate::plugin::storefront::StoreConfig;
+use url::Url;
 use wonton_tunnel::relays::RelayTable;
 
 mod hosts;
@@ -86,6 +87,8 @@ pub struct Config {
     pub egress_proxy: Option<ProxyAddress>,
     /// 安装脚本检测到的代理（`WONTON_EGRESS_PROXY_DETECTED`）：只作初值，App 里能改。
     pub egress_proxy_detected: Option<ProxyAddress>,
+    /// 配了出网代理时，链接预览经代理用 DoH 解析域名问的服务器（`WONTON_DOH_URL`，ADR-0065）。不设时用默认的。
+    pub doh_url: Option<Url>,
     /// 插件容器的 Docker `CgroupParent`（`WONTON_PLUGIN_SLICE`）；空值不设置。
     pub plugin_slice: Option<String>,
     pub plugin_network_pool: NetworkPool,
@@ -148,6 +151,16 @@ fn proxy_address(
         .map_err(|e| invalid(name, &e))
 }
 
+/// `WONTON_DOH_URL`：链接预览经代理解析域名用的 DoH 服务器（ADR-0065）。
+fn doh_url(get: &impl Fn(&str) -> Option<String>) -> Result<Option<Url>, ConfigError> {
+    get("WONTON_DOH_URL")
+        .map(|text| {
+            crate::plugin::egress::settings::parse_doh(&text)
+                .map_err(|e| invalid("WONTON_DOH_URL", &e))
+        })
+        .transpose()
+}
+
 /// 局域网地址的两个覆盖变量（ADR-0019）：`WONTON_LAN_ADDRESSES` 和 `WONTON_ANNOUNCE_ADDRESSES`。
 struct LanOverrides {
     fixed: Option<Vec<IpAddr>>,
@@ -171,6 +184,8 @@ impl Config {
         Self::from_lookup(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
     }
 
+    /// 启动配置：每项一行，和环境变量一一对应。
+    #[allow(clippy::too_many_lines, reason = "每项一行，拆开会更难对照环境变量")]
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self, ConfigError> {
         let data_dir =
             PathBuf::from(get("WONTON_DATA_DIR").ok_or(ConfigError::Missing("WONTON_DATA_DIR"))?);
@@ -235,6 +250,7 @@ impl Config {
             announce_addresses,
             egress_proxy: proxy_address(&get, "WONTON_EGRESS_PROXY")?,
             egress_proxy_detected: proxy_address(&get, "WONTON_EGRESS_PROXY_DETECTED")?,
+            doh_url: doh_url(&get)?,
             plugin_slice: get("WONTON_PLUGIN_SLICE").filter(|value| !value.is_empty()),
             plugin_network_pool: parse(&get, network_pool::VAR, NetworkPool::default())?,
             instance: Instance::parse(get("WONTON_INSTANCE").as_deref())

@@ -131,6 +131,7 @@ curl -fsSL <安装脚本地址> | sudo WONTON_CORE_PIN=sha256:… sh
 重跑安装时，上次检测没测到、而 Docker 守护进程后来配上了代理的，会重新检测一次（先因为没代理装失败的，配好代理重跑就能用上）；
 检测到过值的、或主人显式给了 `WONTON_EGRESS_PROXY` 的不动。不要的话在 App 的设置里清空。要指定地址就给 `WONTON_EGRESS_PROXY`，测不通时安装失败，设成空再执行一次就取消。
 宿主的防火墙要放行 Docker 网段到代理的端口，代理只监听回环地址时连不上。规则和报错见 [ADR-0023](../../docs/adr/0023-egress-proxy.md)。
+配了代理时，链接预览经代理用 DoH 解析域名，服务器默认 `https://1.1.1.1/dns-query`，要换就设 `WONTON_DOH_URL`（ADR-0065）。
 
 拉镜像不走这个代理，走 Docker 守护进程自己的配置，见上一节。
 
