@@ -424,7 +424,9 @@ async fn failures_keep_their_reason() {
         );
     }
 
-    rig.core.answer(
+    // 401 在这段一直站着：装失败后的静默刷新可能晚于下面的 RefreshStore 落地，它也会再取一次商店，
+    // 一次性的 401 挡不住它，它拿到默认回答反而把刚记下的问题清掉。
+    rig.core.answer_always(
         Method::GET,
         "/_wonton/api/store",
         core_error(401, "unauthenticated", "不认这台设备"),
@@ -434,6 +436,7 @@ async fn failures_keep_their_reason() {
         .unwrap();
     let view = rig.wait_for(|view| view.problem.is_some()).await;
     assert_eq!(view.problem.unwrap().reason, PluginFailure::Unauthorized);
+    rig.core.stop_answering(Method::GET, "/_wonton/api/store");
 
     rig.core.answer(
         Method::GET,
