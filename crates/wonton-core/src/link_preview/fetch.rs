@@ -15,7 +15,7 @@ use super::{Failure, target};
 const MAX_REDIRECTS: usize = 3;
 
 /// 有些站点只给认得出的预览抓取器回 Open Graph，所以写明是预览。
-const USER_AGENT: &str = concat!(
+pub(super) const USER_AGENT: &str = concat!(
     "Mozilla/5.0 (compatible; WontonLinkPreview/",
     env!("CARGO_PKG_VERSION"),
     ")"
@@ -84,7 +84,22 @@ pub(super) fn upstream(detail: String) -> Failure {
 }
 
 /// 连接任务的看守：请求结束或被超时丢下时把连接一起断掉。
-struct Connection(tokio::task::JoinHandle<()>);
+pub(super) struct Connection(tokio::task::JoinHandle<()>);
+
+impl Connection {
+    /// 在后台跑连接任务，`Connection` 丢掉时一起断掉。
+    pub(super) fn spawn<B>(
+        connection: hyper::client::conn::http1::Connection<TokioIo<super::connect::BoxIo>, B>,
+    ) -> Self
+    where
+        B: hyper::body::Body<Data = Bytes> + Send + 'static,
+        B::Error: std::error::Error + Send + Sync,
+    {
+        Self(tokio::spawn(async move {
+            let _ = connection.await;
+        }))
+    }
+}
 
 impl Drop for Connection {
     fn drop(&mut self) {
@@ -110,9 +125,7 @@ async fn once(
     let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
         .await
         .map_err(|e| upstream(crate::http::error_chain(&e)))?;
-    let guard = Connection(tokio::spawn(async move {
-        let _ = connection.await;
-    }));
+    let guard = Connection::spawn(connection);
     let authority = match url.port() {
         Some(port) => format!("{host}:{port}"),
         None => host.to_owned(),

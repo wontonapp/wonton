@@ -40,6 +40,7 @@ fn id(text: &str) -> PluginId {
 fn set_proxy(m: &PluginManager, url: Option<&str>) {
     let settings = StoredEgress {
         url: url.map(str::to_owned),
+        doh_url: None,
         direct_cidrs: Vec::new(),
         use_plugin: false,
     };

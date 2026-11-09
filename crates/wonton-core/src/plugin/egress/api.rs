@@ -119,13 +119,14 @@ impl PluginManager {
             }
         }
         // 地址由环境变量指定时，存下的那份不动：环境变量取消后接着用。没有时不能写“清空了”：那是主人没做过的选择。
+        let previous = self.store.egress_settings()?;
+        // App 里还改不了 DoH 服务器，改其他设置时保留存下的那份。
+        let doh_url = previous.as_ref().and_then(|stored| stored.doh_url.clone());
         let mut stored = if current.source == EgressProxySource::Env {
-            self.store
-                .egress_settings()?
-                .unwrap_or_else(|| StoredEgress {
-                    url: self.egress.detected_text(),
-                    ..StoredEgress::default()
-                })
+            previous.clone().unwrap_or_else(|| StoredEgress {
+                url: self.egress.detected_text(),
+                ..StoredEgress::default()
+            })
         } else {
             StoredEgress {
                 url: target
@@ -136,6 +137,7 @@ impl PluginManager {
                 ..StoredEgress::default()
             }
         };
+        stored.doh_url = doh_url;
         stored.direct_cidrs = direct_cidrs;
         self.store.save_egress_settings(&stored)?;
         self.follow_core_proxy();

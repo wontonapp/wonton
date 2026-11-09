@@ -1,11 +1,12 @@
 //! 链接预览（ADR-0065 的“核心取预览”）：设备给一个网址，核心去取它的标题、摘要和图片。
 //!
-//! 只有网关上主人和家人的设备能调（`gateway::link_preview`）。出网走主人配的出网代理，没配就直连；不许去内网和本机地址
-//! （[`target`]），用检查过的 IP 去连（[`connect`]）。结果按网址缓存（[`cache`]），没命中缓存的才按设备限速（[`limit`]）：
+//! 只有网关上主人和家人的设备能调（`gateway::link_preview`）。出网走主人配的出网代理，没配就直连；配了代理时域名经代理用 DoH
+//! 解析（[`doh`]），否则用本地解析。不许去内网和本机地址（[`target`]），用检查过的 IP 去连（[`connect`]）。结果按网址缓存（[`cache`]），没命中缓存的才按设备限速（[`limit`]）：
 //! 打开一个链接很多的聊天时，读缓存不该被拦。
 
 mod cache;
 pub(crate) mod connect;
+mod doh;
 mod fetch;
 mod html;
 mod limit;
@@ -75,7 +76,7 @@ pub(crate) struct LinkPreviews {
 }
 
 impl LinkPreviews {
-    /// `dir` 是缓存目录（核心数据目录下）；`proxy` 是核心自己出网用的代理，和推送、商店是同一份。
+    /// `dir` 是缓存目录（核心数据目录下）；`proxy` 是核心自己出网用的代理，和推送、商店是同一份，配了代理时域名也经它用 DoH 解析。
     pub(crate) fn new(dir: PathBuf, proxy: CoreProxy) -> Self {
         Self::with(dir, Net::system(proxy), Limits::default(), system_clock())
     }

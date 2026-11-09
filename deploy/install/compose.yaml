@@ -48,6 +48,8 @@ services:
       # 出网代理（ADR-0023）：前者是主人指定的，后者是安装脚本检测到的，只作初值。核心自己访问外网也用它们。
       WONTON_EGRESS_PROXY: ${WONTON_EGRESS_PROXY:-}
       WONTON_EGRESS_PROXY_DETECTED: ${WONTON_EGRESS_PROXY_DETECTED:-}
+      # 配了代理时链接预览经代理解析域名的 DoH 服务器（ADR-0065），空时用默认的。
+      WONTON_DOH_URL: ${WONTON_DOH_URL:-}
       # 空时核心自动选插件的局域网端口开在哪个地址上（ADR-0019）。
       WONTON_LAN_ADDRESSES: ${WONTON_LAN_ADDRESSES:-}
       # 启动器声明的宣告地址（ADR-0019）：设了就绑 0.0.0.0，手机连这些地址。每项可以带前缀。

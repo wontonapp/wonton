@@ -61,17 +61,19 @@ impl Chat {
 
     /// 恢复以后两条都到了对面，同步在跑，用的还是原来的会话。
     async fn caught_up(&mut self) {
+        // 先等同步真的跑起来（恢复的后置条件），再等断开期间的消息：同步没跑起来时，等消息只会白等满一个
+        // 时限，也分不清是同步没恢复还是消息没到。
+        self.phone
+            .wait_chat("同步恢复", |view| {
+                (view.sync == ChatSync::Running).then_some(())
+            })
+            .await;
         self.timeline
             .until("打开着的房间收到断开时 Bot 发的", |item| {
                 text(item, "断开时 Bot 发的")
             })
             .await;
         self.bot_received("断开时主人发的").await;
-        self.phone
-            .wait_chat("同步恢复", |view| {
-                (view.sync == ChatSync::Running).then_some(())
-            })
-            .await;
         assert_eq!(
             self.home.login_tokens(),
             self.login_tokens,

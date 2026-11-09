@@ -18,7 +18,6 @@ use wonton_client::{
 use wonton_tunnel::test_support::unused_port;
 use wonton_tunnel::{Allowlist, PortResolveError, PortResolver, TunnelServer};
 
-use crate::home::support::wait_until_port_is_free;
 use crate::plugins::rig::{CoreState, WAIT, fake_core, running, ticket};
 
 pub const PLUGIN: &str = "app.remote";
@@ -118,7 +117,6 @@ impl MapHome {
     }
 
     pub async fn start_again(&mut self) {
-        wait_until_port_is_free(self.port).await;
         let endpoint = endpoint(self.key.clone(), self.port).await;
         self.server = Some(TunnelServer::spawn_with_resolver(
             endpoint,
@@ -144,14 +142,27 @@ pub fn remote(tcp: u16, udp: u16) -> wonton_client::InstalledPlugin {
 }
 
 async fn endpoint(key: SecretKey, port: u16) -> Endpoint {
-    Endpoint::builder(presets::Minimal)
-        .secret_key(key)
-        .clear_ip_transports()
-        .bind_addr((Ipv4Addr::LOCALHOST, port))
-        .unwrap()
-        .bind()
-        .await
-        .unwrap()
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        let bound = Endpoint::builder(presets::Minimal)
+            .secret_key(key.clone())
+            .clear_ip_transports()
+            .bind_addr((Ipv4Addr::LOCALHOST, port))
+            .unwrap()
+            .bind()
+            .await;
+        match bound {
+            Ok(endpoint) => return endpoint,
+            Err(error) if crate::home::support::port_in_use(&error) => {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "旧服务端的 UDP 端口 {port} 一直没有释放"
+                );
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            Err(error) => panic!("回环地址的端点起不来：{error}"),
+        }
+    }
 }
 
 async fn tcp_echo() -> SocketAddr {

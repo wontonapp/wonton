@@ -47,7 +47,6 @@ async fn new_identity_at_the_same_address_pairs_without_clearing_old_data() {
     let old_tabs = dir.path().join("servers").join(&old_slot).join("tabs.json");
     let old_data = std::fs::read(&old_tabs).unwrap();
     a.server.shutdown().await;
-    crate::home::support::wait_until_port_is_free(address.port()).await;
     let b = Home::start_at(address).await;
     assert_ne!(a_id, b.codes.server_id.to_string());
     assert_eq!(b.codes.direct_addrs, [address]);
