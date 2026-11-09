@@ -2,7 +2,7 @@ name: main-image
 
 # 每次合进 main 都构建核心镜像，推 ghcr.io/<owner>/wonton-core 的 :main 和 :sha-<完整提交号>：
 # 插件仓库的 CI（公开仓库、GitHub 自带 runner）拉它跑端到端冒烟，不占我们的自托管栈。
-# 这不是发版：不碰 stable/beta 渠道，不打 git tag，不写发布说明。构建方式与 release.yml 共用
+# 这不是发版：不碰 stable 渠道，不打 git tag，不写发布说明。构建方式与 release.yml 共用
 # .github/actions/push-image。
 on:
   push:

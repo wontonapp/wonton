@@ -28,4 +28,4 @@ public.ecr.aws/docker/library/docker:29.9.2-cli
 !ghcr.io/example/samba-web:1
 !ghcr.io/example/samba:4
 !ghcr.io/org/app:1
-!ghcr.io/x/core:beta
+!ghcr.io/x/core:stable

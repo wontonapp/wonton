@@ -220,7 +220,7 @@ curl -fsSL <安装脚本地址> | sudo WONTON_CORE_PIN=<旧 digest> sh
 
 ### 默认渠道
 
-新装的主机默认走 stable（已定 11），已经装好的按 `.env` 里的 `WONTON_CORE_SOURCE` 不变。只有不带连字符的 tag 才更新 stable（`release.yml`），所以改安装脚本默认值的同时要有一个正式版本，否则新装拉不到镜像。`install.sh` 和安装说明跟实现一起改。
+新装的主机默认走 stable（已定 11），已经装好的按 `.env` 里的 `WONTON_CORE_SOURCE` 不变。每个 `vX.Y.Z` 都更新 stable（`release.yml`，ADR-0070）。
 
 ## 理由与没选的做法
 

@@ -130,7 +130,7 @@ class InstallTest(unittest.TestCase):
 
     def test_a_channel_tag_is_resolved_to_its_repository_digest(self):
         digest = "sha256:" + "a" * 64
-        self.digests["ghcr.io/geraldpeng6/wonton-core:beta"] = [
+        self.digests["ghcr.io/geraldpeng6/wonton-core:stable"] = [
             "ghcr.io/geraldpeng6/wonton-core@" + digest
         ]
 
@@ -140,11 +140,11 @@ class InstallTest(unittest.TestCase):
         env = self.env()
         self.assertEqual(env["WONTON_CORE_IMAGE"], "ghcr.io/geraldpeng6/wonton-core@" + digest)
         # 渠道照旧记标签：核心从 WONTON_CORE_SOURCE 读渠道。
-        self.assertEqual(env["WONTON_CORE_SOURCE"], "ghcr.io/geraldpeng6/wonton-core:beta")
-        self.assertEqual(self.calls("pull")[-1], ["pull", "ghcr.io/geraldpeng6/wonton-core:beta"])
+        self.assertEqual(env["WONTON_CORE_SOURCE"], "ghcr.io/geraldpeng6/wonton-core:stable")
+        self.assertEqual(self.calls("pull")[-1], ["pull", "ghcr.io/geraldpeng6/wonton-core:stable"])
         for run in self.runs():
             self.assertIn("ghcr.io/geraldpeng6/wonton-core@" + digest, run)
-            self.assertNotIn("ghcr.io/geraldpeng6/wonton-core:beta", run)
+            self.assertNotIn("ghcr.io/geraldpeng6/wonton-core:stable", run)
 
     def test_a_registry_port_is_kept_in_the_repository(self):
         reference = "192.0.2.10:5000/wonton/core:stable"
@@ -159,7 +159,7 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(env["WONTON_CORE_SOURCE"], reference)
 
     def test_no_matching_repository_digest_stops_instead_of_writing_the_tag(self):
-        reference = "ghcr.io/geraldpeng6/wonton-core:beta"
+        reference = "ghcr.io/geraldpeng6/wonton-core:stable"
         self.digests[reference] = ["ghcr.io/elsewhere/core@sha256:" + "c" * 64]
 
         result = self.run_install()
@@ -180,7 +180,7 @@ class InstallTest(unittest.TestCase):
 
     def test_install_timeout_is_written_when_set_and_kept_across_reruns(self):
         digest = "sha256:" + "e" * 64
-        self.digests["ghcr.io/geraldpeng6/wonton-core:beta"] = [
+        self.digests["ghcr.io/geraldpeng6/wonton-core:stable"] = [
             "ghcr.io/geraldpeng6/wonton-core@" + digest
         ]
 

@@ -117,7 +117,7 @@
 - 分支名用 `<type>/<简述>`，如 `feat/tunnel-http-proxy`。
 - 提交信息用 Conventional Commits：`type(scope): 中文摘要`。`type` 取 `feat`、`fix`、`docs`、
   `test`、`refactor`、`chore`、`build`、`ci`；摘要说清行为变化，不写 `Update files` 这类空话。
-- 发布打 tag（`vX.Y.Z`）；stable/beta 是镜像渠道，不是分支。每次合进 main 还会推核心镜像 `:main` 和
+- 发布打 tag（`vX.Y.Z`，1.0 之前是 `v0.x.0`，不带预发布后缀）；`stable` 是镜像渠道，不是分支。每次合进 main 还会推核心镜像 `:main` 和
   `:sha-<提交号>`（`.github/workflows/main-image.yml`），给插件仓库的 CI 跑端到端冒烟，不是发版。
 - 提交前运行 `git status --short` 和 `git diff --cached --stat`，确认只包含本次任务的改动。
   截图、录屏、`.xcresult` 等调试产物放在仓库外。

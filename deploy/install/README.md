@@ -17,7 +17,7 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 - `compose.yaml`、`wonton`：编进核心的二进制，由 `wonton-core init` 写到安装目录，跟着核心镜像的版本走。
   `wonton` 是主机上的命令，转到核心容器里的 `wonton-core pair`。
 
-镜像发布在 `ghcr.io/geraldpeng6/wonton-core`，`stable` 和 `beta` 两个渠道（ADR-0012），1.0 之前安装脚本默认装 `beta`；安装脚本另放在一个公开的
+镜像发布在 `ghcr.io/geraldpeng6/wonton-core`，`stable` 一个渠道（ADR-0070），安装脚本默认装它；安装脚本另放在一个公开的
 小仓库里，因为主仓库是私有的。
 
 Tuwunel 经 `core` 网络直连核心的推送专用监听，不用发布额外端口；网络、地址和配置约定见
@@ -41,7 +41,7 @@ Tuwunel 经 `core` 网络直连核心的推送专用监听，不用发布额外�
 
 ## 升级
 
-再执行一次 `install.sh` 就是升级或修复：拉 `WONTON_CORE_SOURCE`（1.0 之前默认 `beta` 渠道）的最新版本，已有的密钥、
+再执行一次 `install.sh` 就是升级或修复：拉 `WONTON_CORE_SOURCE`（默认 `stable` 渠道）的最新版本，已有的密钥、
 数据和已配对的设备都沿用，compose 文件按新的核心镜像重写，基础域名、Matrix 的服务器名和主人的用户名不能改。App 里的一键升级由一次性的 `wonton-updater` 容器执行，步骤和回滚见 ADR-0025。
 
 退回旧版本时带上它的 digest，之后照样跟渠道。有当时升级留下的备份就恢复核心数据和安装目录，备份之后写的数据会丢，要在终端里确认一次：

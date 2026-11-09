@@ -289,8 +289,8 @@ mod tests {
     #[test]
     fn only_a_tag_follows_a_channel() {
         assert_eq!(
-            channel("ghcr.io/x/core:beta"),
-            Some(("ghcr.io/x/core", "beta"))
+            channel("ghcr.io/x/core:stable"),
+            Some(("ghcr.io/x/core", "stable"))
         );
         assert_eq!(
             channel("localhost:5000/core:stable"),
@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn a_channel_never_downgrades() {
         assert!(is_older(Some("0.2.0"), Some("0.3.0")));
-        assert!(is_older(Some("v0.3.0-beta.1"), Some("0.3.0-beta.2")));
+        assert!(is_older(Some("v0.3.0"), Some("0.4.0")));
         assert!(!is_older(Some("0.3.0"), Some("0.3.0")));
         assert!(!is_older(Some("0.4.0"), Some("0.3.0")));
         assert!(!is_older(None, Some("0.3.0")));
