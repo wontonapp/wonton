@@ -16,6 +16,8 @@ plugins=(
   geraldpeng6/wonton-plugin-omp@v0.1.3
   geraldpeng6/wonton-plugin-codex@v0.1.4
   geraldpeng6/wonton-plugin-claude-code@v0.1.2
+  geraldpeng6/wonton-plugin-codebuddy@v0.1.0
+  geraldpeng6/wonton-plugin-zcode@v0.1.1
   geraldpeng6/wonton-plugin-immich@v0.2.0
   geraldpeng6/wonton-plugin-navidrome@v0.1.1
   geraldpeng6/wonton-plugin-paperless-ngx@v0.1.2

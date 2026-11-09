@@ -1,0 +1,129 @@
+# CodeBuddy Agent：bridge 说 ACP，agent 跑固定版本的 CodeBuddy Code CLI。两个服务只共享 ACP socket 所在的
+# run/ 子目录；bridge 的 crypto store 和 Matrix 令牌不给 agent，agent 的 HOME 和工作区不给 bridge。
+services:
+  agent:
+    image: ghcr.io/geraldpeng6/wonton-plugin-codebuddy:0.1.0@sha256:dec0dc5f84d9f7acd333cca819aae432cbec4d71362b39b105af47df6aea8319
+    # 镜像里固定用 65532，入口不再降权；bridge 挂同一个 run/ 目录，两个服务的属主必须相同，否则核心拒绝安装。
+    user: "65532:65532"
+    restart: unless-stopped
+    environment:
+      HOME: /data/agent/home
+      # 网关钩子每次启动按有没有值选路：有网关就写进只有 Agent 读的环境文件，为空（网关没装或没就绪）
+      # 就用账号登录或用户自己的 key；密钥只引用变量名。
+      WONTON_MODEL_BASE_URL: ${WONTON_MODEL_BASE_URL:-}
+      WONTON_MODEL_API_KEY: ${WONTON_MODEL_API_KEY:-}
+      WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT:-}
+      WONTON_MCP_URL: ${WONTON_MCP_URL:?需要 MCP 总线地址}
+      WONTON_ACP_SOCKET: /data/run/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+      # 遥测、错误上报、自更新关掉；版本由 [[install]] 固定。
+      DISABLE_TELEMETRY: "1"
+      DISABLE_ERROR_REPORTING: "1"
+      DISABLE_AUTOUPDATER: "1"
+      # 出网代理由核心注入：登录和登录后的官方模型请求经它出去，内部地址核心已写进
+      # NO_PROXY，不会绕道。这里不写代理变量，写了空值就会把核心的注入顶掉。
+    volumes:
+      - ${WONTON_BOT_DATA:?需要 Bot 数据目录}/agent:/data/agent
+      - ${WONTON_BOT_DATA}/run:/data/run
+      - ${WONTON_BOT_DATA}/workspace:/workspace
+    healthcheck:
+      # socket 是入口建好 ACP 转发后才有的，有这个文件就说明 Agent 侧能接连接。
+      test: ["CMD", "test", "-S", "/data/run/acp.sock"]
+      interval: 30s
+      timeout: 5s
+      start_period: 180s
+      start_interval: 2s
+
+  bridge:
+    image: ghcr.io/geraldpeng6/wonton-acp-bridge:main-83d4297@sha256:6b0645e4cd8a5b80b6c25e4c17334c8d4621b9959756902785bae58b558b2326
+    user: "65532:65532"
+    restart: unless-stopped
+    depends_on:
+      agent:
+        condition: service_started
+    environment:
+      HOME: /data/bridge
+      WONTON_BOT_DATA: /data
+      WONTON_BRIDGE_DATA: /data/bridge
+      WONTON_ACP_SOCKET: /data/run/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+      WONTON_MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER:?需要 Matrix 地址}
+      WONTON_MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN:?需要 Bot 的 Matrix 访问令牌}
+      # 核心 #578 起只注入名单（逗号分隔），不再有单个 OWNER。
+      WONTON_MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:?需要主人（及家人）的 Matrix 用户 ID 名单}
+      WONTON_MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM:?需要主人与 Bot 的主房间}
+      WONTON_MCP_URL: ${WONTON_MCP_URL:?需要 MCP 总线地址}
+      # 首问冷启动可能几分钟（实测 4–10 分钟），桥默认 600 秒会先取消。
+      WONTON_ACP_TURN_SECONDS: "900"
+      RUST_LOG: info,wonton_acp_bridge=debug
+    volumes:
+      - ${WONTON_BOT_DATA}/bridge:/data/bridge
+      - ${WONTON_BOT_DATA}/run:/data/run
+    healthcheck:
+      test: ["CMD", "test", "-S", "/data/run/acp.sock"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
+
+x-wonton:
+  spec: "0.9"
+  id: ai.codebuddy
+  version: 0.1.0
+  kind: agent
+  title: { zh: CodeBuddy, en: CodeBuddy }
+  description:
+    zh: 腾讯的 CodeBuddy 编程 Agent，在聊天里按你的确认动手
+    en: Tencent's CodeBuddy coding agent that acts in chat, asking before it acts
+  icon: icon.svg
+  notices: [NOTICE, images/wonton-plugin-codebuddy/LICENSE.codebuddy]
+  author: { name: Wonton plugin authors }
+  homepage: https://www.codebuddy.ai
+  # 上游 npm 包的许可证。
+  license: MIT
+  tags: { zh: [AI, 开发], en: [AI, Development] }
+  webui:
+    service: agent
+    port: 8080
+    sso: none
+  about:
+    zh: |
+      CodeBuddy 以 Bot 的身份住进聊天：模型网关接好时默认走网关，不用账号，也不用填任何 key。
+      没接网关时，在插件页的登录网页（默认 Bot）或聊天里发 /wonton login（这个聊天对应的 Bot）：
+      用微信或 Google / GitHub 账号登录，或者贴一个自己的 CodeBuddy API key。它住在自己的容器里工作，
+      改文件、跑命令之前经确认卡片问你；Wonton 插件的工具也从聊天里调。
+    en: |
+      CodeBuddy lives in the chat as a bot: when the model gateway is connected it goes through the
+      gateway by default, with no account and no key to fill in. Without the gateway, use the login
+      page on the plugin screen (default bot) or send /wonton login in the chat (this chat's bot):
+      sign in with WeChat or Google / GitHub, or paste your own CodeBuddy API key. It works in its
+      own container and asks through confirmation cards before editing files or running commands;
+      Wonton plugin tools are called from the chat too.
+  release_notes:
+    zh: 首个版本：模型网关可选，没接网关时用微信 / Google / GitHub 账号或自己的 API key 登录；登录网页和 /wonton login 都从 ACP 取链接。
+    en: >-
+      First release: the model gateway is optional; without it, sign in with a WeChat, Google or
+      GitHub account or your own API key. Both the login page and /wonton login take the link from ACP.
+  agent:
+    protocol: acp
+    # 登录在 CodeBuddy 自己的程序里完成，链接发进聊天和登录网页。
+    login:
+      - id: internal
+        title: { zh: 微信账号, en: WeChat account }
+      - id: external
+        title: { zh: Google / GitHub 账号, en: Google / GitHub account }
+      - id: api-key
+        title: { zh: CodeBuddy API key, en: CodeBuddy API key }
+  bot:
+    display_name: { zh: CodeBuddy, en: CodeBuddy }
+  bots:
+    services: [agent, bridge]
+  permissions:
+    - matrix.bot
+    - tools
+    - models
+    # 账号登录和登录后的官方模型请求都要出网。
+    - network.egress
+  requirements:
+    arch: [amd64]
+    memory: 1G

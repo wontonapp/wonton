@@ -1,0 +1,37 @@
+# CodeBuddy 插件声明
+
+## 图标
+
+`icon.svg` 是按插件规范手绘的线条图标（对话气泡），原创，随插件包以本仓库的 MIT 许可证分发。
+CodeBuddy、腾讯云是腾讯的商标；本插件不是腾讯或 CodeBuddy 的官方出品，也不表示得到它们的认可或背书。
+
+## 上游程序
+
+`@tencent-ai/codebuddy-code` 2.181.0（CodeBuddy Code CLI，腾讯云代码助手）。npm 包里的 `LICENSE.txt` 是 MIT
+（Copyright 2023 Tencent Cloud）；包内是混淆过的 JS，源码未公开，按闭源 CLI 处理：不打进镜像，首次启动由底座
+从 npm 官方源下载，按 `dist.integrity` 的 SHA-512 核对，落盘到插件数据卷。
+
+- 来源 <https://registry.npmjs.org/@tencent-ai/codebuddy-code>，文档仓库 <https://cnb.cool/codebuddy/codebuddy-code>
+- 许可证全文随镜像分发（`LICENSE.codebuddy`）
+
+镜像只加底座（Debian、Node.js、Python），不修改上游程序。CLI 的运行时依赖由底座用
+`npm install --ignore-scripts` 安装，不执行上游的安装脚本。
+
+## 登录与条款
+
+登录只走 CLI 官方的 ACP `authenticate`：链接由插件里的脚本从 `_codebuddy.ai/authUrl` 通知取出，用户在任意浏览器
+完成（微信扫码，或 Google / GitHub），登录态（`~/.codebuddy/.credentials.json`）留在插件数据卷里。插件不接触账号密码。
+
+按《腾讯云代码助手软件许可及服务协议》，许可是个人的、不可转让的；自家服务器自用属于官方 ACP 接口的用法，
+对外提供服务、多人共享账号不在本插件范围内。个人免费版的对话内容会经去标识化后用于模型优化。
+
+## ACP 桥镜像
+
+`ghcr.io/geraldpeng6/wonton-acp-bridge` 由 Wonton 主仓库构建，许可证随主仓库。桥只用标准 ACP 和 Matrix 客户端接口，
+不含任何厂商 Agent。
+
+## 许可证
+
+MIT License
+
+Copyright (c) 2026 Wonton plugin authors

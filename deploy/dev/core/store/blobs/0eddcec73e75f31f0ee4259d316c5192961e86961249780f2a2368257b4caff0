@@ -1,0 +1,140 @@
+# ZCode Agent：agent 跑固定版本的官方 ZCode CLI（镜像里）和 ACP 桥 zcode-acp-server（首次启动装到数据卷）；
+# 两个服务只共享 ACP socket 所在的 run/ 子目录，bridge 的 crypto store 和 Matrix 令牌不给 agent。
+services:
+  agent:
+    image: ghcr.io/geraldpeng6/wonton-plugin-zcode:0.1.1@sha256:c0532a1f91c9de5e3d9629cec3a7f0926ca1c83eb9008eb1a3c674d15ffaa9b0
+    user: "65532:65532"
+    restart: unless-stopped
+    environment:
+      HOME: /data/agent/home
+      WONTON_ACP_SOCKET: /data/run/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+      # 模型网关钩子：有网关就把网关写进配置，为空就删掉，用户自己的登录和 key 不动。
+      WONTON_MODEL_BASE_URL: ${WONTON_MODEL_BASE_URL:-}
+      WONTON_MODEL_API_KEY: ${WONTON_MODEL_API_KEY:-}
+      WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT:-}
+      # 插件工具经 MCP 总线；地址带 Bot 令牌，钩子每次启动写进 CLI 运行配置。
+      WONTON_MCP_URL: ${WONTON_MCP_URL:?需要 MCP 总线地址}
+      # 凭据文件的加密密钥：核心按安装生成一次，重建容器不变，否则已有的登录解不开。
+      ZCODE_CREDENTIAL_SECRET: ${WONTON_SECRET_ZCODE_CREDENTIAL_SECRET}
+      # 会话起始权限模式：改文件和跑命令前弹确认卡片。
+      ZCODE_ACP_MODE: guarded
+      # 桥自己也要出网（账号 token 交换），Node 24 认这个变量并读容器里的代理环境变量。
+      NODE_USE_ENV_PROXY: "1"
+      # 出网代理由核心注入，这里不写代理变量，写了空值会把核心的注入顶掉。
+    volumes:
+      - ${WONTON_BOT_DATA:?需要 Bot 数据目录}/agent:/data/agent
+      - ${WONTON_BOT_DATA}/run:/data/run
+      - ${WONTON_BOT_DATA}/workspace:/workspace
+    healthcheck:
+      # socket 是底座把 ACP 转发建好之后才有的，有它才说明 Agent 能接连接。
+      test: ["CMD", "test", "-S", "/data/run/acp.sock"]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      start_interval: 2s
+
+  bridge:
+    image: ghcr.io/geraldpeng6/wonton-acp-bridge:main-83d4297@sha256:6b0645e4cd8a5b80b6c25e4c17334c8d4621b9959756902785bae58b558b2326
+    user: "65532:65532"
+    restart: unless-stopped
+    depends_on:
+      agent:
+        condition: service_started
+    environment:
+      HOME: /data/bridge
+      WONTON_BOT_DATA: /data
+      WONTON_BRIDGE_DATA: /data/bridge
+      WONTON_ACP_SOCKET: /data/run/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+      WONTON_MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER:?需要 Matrix 地址}
+      WONTON_MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN:?需要 Bot 的 Matrix 访问令牌}
+      WONTON_MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:?需要主人的 Matrix 用户 ID}
+      WONTON_MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM:?需要主人与 Bot 的主房间}
+      WONTON_MCP_URL: ${WONTON_MCP_URL:?需要 MCP 总线地址}
+      # 新会话切到这个模式：改文件、跑命令经确认卡片问主人。
+      WONTON_ACP_MODE: guarded
+    volumes:
+      - ${WONTON_BOT_DATA}/bridge:/data/bridge
+      - ${WONTON_BOT_DATA}/run:/data/run
+    healthcheck:
+      test: ["CMD", "test", "-S", "/data/run/acp.sock"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
+
+x-wonton:
+  spec: "0.9"
+  id: ai.zcode
+  version: 0.1.1
+  kind: agent
+  title: { zh: ZCode, en: ZCode }
+  description:
+    zh: 智谱的 ZCode 编程 Agent，在聊天里动手，改文件前先问你
+    en: Zhipu's ZCode coding agent that works in chat and asks before it edits
+  icon: icon.png
+  notices: [NOTICE, images/wonton-plugin-zcode/LICENSE.zcode]
+  author: { name: Wonton plugin authors }
+  homepage: https://github.com/zai-org/ZCode
+  license: Apache-2.0
+  tags: { zh: [AI, 开发], en: [AI, Development] }
+  about:
+    zh: |
+      ZCode 是智谱的编程 Agent，以 Bot 的身份住进聊天。模型网关接好时默认走网关，不用账号，也不用填 key。
+      没接网关时在插件页的登录网页（默认 Bot）或聊天里发 /wonton login，用智谱账号登录（浏览器授权），或者贴一个 Coding Plan 的 key；账号登录和登录后的模型请求都直接发给智谱。
+
+      注意两件事：Coding Plan 的额度和加速条款只对官方工具和官方端点有效，经这里用的是官方 ZCode CLI 本体，
+      但社区 ACP 桥拉起的会话算不算官方工具，官方没写明；账号登录的令牌过期后不会自动刷新，要重新登录一次。
+
+      它住在自己的容器里，改文件、跑命令之前经确认卡片问你；Wonton 插件的工具也从聊天里调。
+    en: |
+      ZCode is Zhipu's coding agent, living in the chat as a bot. When the model gateway is connected it
+      goes through the gateway by default, with no account and no key to fill in. Without the gateway, sign
+      in from the plugin page's sign-in screen (the default bot) or with /wonton login in the chat: a Zhipu
+      account (browser authorization) or a Coding Plan key; the sign-in and the model requests after it go
+      straight to Zhipu.
+
+      Two things to know: the Coding Plan quota and speed terms only cover official tools and endpoints.
+      This plugin runs the official ZCode CLI itself, but whether sessions started through the community
+      ACP bridge count as an official tool is not documented by Zhipu. A sign-in token is not refreshed
+      automatically once it expires, and you have to sign in again.
+
+      It works in its own container and asks through confirmation cards before editing files or running
+      commands; Wonton plugin tools are called from the chat too.
+  release_notes:
+    zh: 首个版本。支持模型网关、智谱账号登录和 Coding Plan key。名单用核心的名单变量（插件规范 0.9）。
+    en: First release. Supports the model gateway, Zhipu account sign-in and Coding Plan keys. The allow list uses the core's user list (spec 0.9).
+  agent:
+    protocol: acp
+    # id 和 agent.toml 的 [[login]] 一一对应；登录都在 ZCode 自己的程序里完成。
+    login:
+      - id: account-zai
+        title: { zh: Z.ai 账号, en: Z.ai account }
+      - id: account-bigmodel
+        title: { zh: 智谱账号（bigmodel.cn）, en: Zhipu account (bigmodel.cn) }
+      - id: coding-plan-zai
+        title: { zh: Z.ai Coding Plan key, en: Z.ai Coding Plan key }
+      - id: coding-plan-bigmodel
+        title: { zh: 智谱 Coding Plan key, en: Zhipu Coding Plan key }
+  bot:
+    display_name: { zh: ZCode, en: ZCode }
+  bots:
+    services: [agent, bridge]
+  webui:
+    service: agent
+    port: 8080
+    sso: none
+  secrets:
+    # 凭据文件的加密密钥，装一次生成一次，存在核心的密钥库里。
+    zcode_credential_secret:
+      generate: { bytes: 32 }
+  permissions:
+    - matrix.bot
+    - tools
+    - models
+    # 账号登录和登录后的官方模型请求都要出网。
+    - network.egress
+  requirements:
+    arch: [amd64, arm64]
+    memory: 1G
