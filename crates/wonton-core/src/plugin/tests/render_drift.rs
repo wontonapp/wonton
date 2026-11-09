@@ -48,18 +48,29 @@ async fn fake_hydra(issuer: Arc<Mutex<String>>) -> Hydra {
     )
 }
 
-/// 带名字的卷、应用数据目录和 SSO 的插件。
-fn app() -> String {
+/// 带名字的卷、应用数据目录和 SSO 的插件。port 是清单的网页入口端口：异步测试传 [`webui`] 起的服务，
+/// 只解析不安装的测试不连它，任意合法值都行。
+fn app(port: u16) -> String {
     let services = "  web:\n    image: nginx\n    environment:\n      WONTON_OIDC_ISSUER: '${WONTON_OIDC_ISSUER}'\n    \
                     volumes: ['data:/data', '${WONTON_APP_DATA}/data:/data']";
     format!(
         "volumes:\n  data: {{}}\n{}",
         package(
             services,
-            "  permissions: []\n  webui:\n    service: web\n    port: 3000\n    path: /\n    sso: oidc\n    \
-             oidc:\n      redirect_paths: [/oidc/callback]",
+            &format!(
+                "  permissions: []\n  webui:\n    service: web\n    port: {port}\n    path: /\n    sso: oidc\n    \
+                 oidc:\n      redirect_paths: [/oidc/callback]"
+            ),
         )
     )
+}
+
+/// 假 Docker 把插件容器的地址报成 127.0.0.1，安装最后检查的网页入口就是这个本机服务：
+/// 和 egress 的安装一样，测试自己 serve，不靠宿主碰巧在监听某个端口。
+async fn webui() -> u16 {
+    serve(Router::new().route("/", get(|| async { "ok" })))
+        .await
+        .port()
 }
 
 /// 插件的容器和它用的卷。
@@ -95,7 +106,10 @@ async fn an_unchanged_render_restores_without_recreating() {
     let dir = tempfile::tempdir().unwrap();
     let hydra = fake_hydra(Arc::new(Mutex::new("http://auth.wonton.internal".into()))).await;
     let manager = manager_with_oidc(engine.clone(), &dir, hydra.clone());
-    manager.install(&app(), &[], super::langs()).await.unwrap();
+    manager
+        .install(&app(webui().await), &[], super::langs())
+        .await
+        .unwrap();
     let kept = data_file(&dir);
 
     drop(manager);
@@ -114,7 +128,10 @@ async fn a_changed_issuer_recreates_the_containers_and_keeps_the_data() {
     let issuer = Arc::new(Mutex::new("http://auth.wonton.internal".into()));
     let hydra = fake_hydra(issuer.clone()).await;
     let manager = manager_with_oidc(engine.clone(), &dir, hydra.clone());
-    manager.install(&app(), &[], super::langs()).await.unwrap();
+    manager
+        .install(&app(webui().await), &[], super::langs())
+        .await
+        .unwrap();
     assert_eq!(issuer_of(&docker, WEB), "http://auth.wonton.internal");
     let kept = data_file(&dir);
 
@@ -137,7 +154,10 @@ async fn a_container_without_the_label_is_recreated_once() {
     let dir = tempfile::tempdir().unwrap();
     let hydra = fake_hydra(Arc::new(Mutex::new("http://auth.wonton.internal".into()))).await;
     let manager = manager_with_oidc(engine.clone(), &dir, hydra.clone());
-    manager.install(&app(), &[], super::langs()).await.unwrap();
+    manager
+        .install(&app(webui().await), &[], super::langs())
+        .await
+        .unwrap();
 
     // 旧核心建的容器：有归属，没有渲染摘要。
     let mut body = docker.created(WEB).unwrap();
@@ -173,7 +193,10 @@ async fn a_failed_recreate_is_reported_instead_of_using_the_old_container() {
     let issuer = Arc::new(Mutex::new("http://auth.wonton.internal".into()));
     let hydra = fake_hydra(issuer.clone()).await;
     let manager = manager_with_oidc(engine.clone(), &dir, hydra.clone());
-    manager.install(&app(), &[], super::langs()).await.unwrap();
+    manager
+        .install(&app(webui().await), &[], super::langs())
+        .await
+        .unwrap();
 
     *issuer.lock().unwrap() = "http://auth.wonton.internal:9443".into();
     docker.fail_starts(Some("容器起不来"));
@@ -202,7 +225,10 @@ async fn a_stopped_plugin_is_recreated_when_started_not_at_restore() {
     let issuer = Arc::new(Mutex::new("http://auth.wonton.internal".into()));
     let hydra = fake_hydra(issuer.clone()).await;
     let manager = manager_with_oidc(engine.clone(), &dir, hydra.clone());
-    let installed = manager.install(&app(), &[], super::langs()).await.unwrap();
+    let installed = manager
+        .install(&app(webui().await), &[], super::langs())
+        .await
+        .unwrap();
     docker.set_state(
         WEB,
         json!({"Status": "exited", "Running": false, "ExitCode": 0}),
@@ -233,7 +259,7 @@ async fn a_stopped_plugin_is_recreated_when_started_not_at_restore() {
 
 #[test]
 fn the_digest_ignores_the_label_itself_and_unordered_fields() {
-    let pkg = super::super::PluginPackage::parse(&app(), &super::langs()).unwrap();
+    let pkg = super::super::PluginPackage::parse(&app(1), &super::langs()).unwrap();
     let mut plan = super::super::render::dry_run(&pkg, &super::langs()).unwrap();
     let before = super::super::render_drift::digest(&plan.containers[0]);
     super::super::render_drift::stamp(&mut plan.containers[0]);
@@ -255,7 +281,7 @@ fn the_digest_ignores_the_label_itself_and_unordered_fields() {
 
 #[test]
 fn the_digest_covers_the_container_name_and_the_written_files() {
-    let pkg = super::super::PluginPackage::parse(&app(), &super::langs()).unwrap();
+    let pkg = super::super::PluginPackage::parse(&app(1), &super::langs()).unwrap();
     let plan = super::super::render::dry_run(&pkg, &super::langs()).unwrap();
     let original = super::super::render_drift::digest(&plan.containers[0]);
 
@@ -276,7 +302,7 @@ fn the_digest_covers_the_container_name_and_the_written_files() {
 
 #[test]
 fn the_same_render_always_hashes_the_same() {
-    let pkg = super::super::PluginPackage::parse(&app(), &super::langs()).unwrap();
+    let pkg = super::super::PluginPackage::parse(&app(1), &super::langs()).unwrap();
     let first = super::super::render::dry_run(&pkg, &super::langs()).unwrap();
     let second = super::super::render::dry_run(&pkg, &super::langs()).unwrap();
     assert_eq!(
