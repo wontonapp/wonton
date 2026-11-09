@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -56,6 +57,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.ui.R
+import app.wonton.ui.LocalWontonOpenSidebar
+import app.wonton.ui.SidebarMenuButton
 import app.wonton.ui.icons.Back
 import app.wonton.ui.icons.WontonIcon
 
@@ -240,17 +243,19 @@ fun Modifier.accentFill(shape: Shape, border: Boolean = true): Modifier {
 fun WontonRootBar(title: String, actions: (@Composable RowScope.() -> Unit)? = null) {
     val status = LocalWontonBarStatus.current
     val statusTitle = status.title?.takeIf { it.isNotBlank() }
+    val openSidebar = LocalWontonOpenSidebar.current
     Column(
         Modifier.fillMaxWidth()
             .statusBarsPadding().semantics { paneTitle = title },
     ) {
-        if (statusTitle != null || actions != null) {
+        if (statusTitle != null || actions != null || openSidebar != null) {
             Row(
                 Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.topBar)
                     .padding(horizontal = WontonTheme.spacing.pageInset),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.End,
             ) {
+                openSidebar?.let { SidebarMenuButton(it) }
                 if (statusTitle != null) {
                     Text(
                         statusTitle,
@@ -258,6 +263,8 @@ fun WontonRootBar(title: String, actions: (@Composable RowScope.() -> Unit)? = n
                         style = WontonTheme.typography.supporting,
                         color = WontonTheme.colors.textPrimary.toColor(),
                     )
+                } else {
+                    Spacer(Modifier.weight(1f))
                 }
                 actions?.invoke(this)
             }
