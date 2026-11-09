@@ -1,4 +1,4 @@
-//! 镜像加速：核心经加速地址按摘要拉 Docker Hub 的镜像（ADR-0040）。
+//! 镜像加速：核心经加速地址按摘要拉要加速的仓库的镜像（ADR-0040、ADR-0074）。
 //!
 //! 核心的管理接口 `/_wonton/api/registry-mirror` 收发这里的类型，客户端核心原样交给壳。
 //!
@@ -26,9 +26,10 @@ pub struct RegistryMirrorViewModel {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct RegistryMirrorSettings {
-    /// 在用的加速地址（主机名，可以带端口）；没打开时为空。
+    /// 在用的 Docker Hub 加速地址（主机名，可以带端口）；没打开时为空。
     pub mirror: Option<String>,
-    /// 官方索引给的预置地址，按索引里的顺序；索引读不到时为空，这时只能自己填。
+    /// 官方索引给的 Docker Hub 预置地址，按索引里的顺序；索引读不到时为空，这时只能自己填。
+    /// ghcr、quay 的名单不进这个选择。
     pub choices: Vec<String>,
     /// `choices` 读不懂（或整个索引读不到）时核心写的整句，壳显示在表单上；读到了就没有。
     pub choices_problem: Option<String>,
