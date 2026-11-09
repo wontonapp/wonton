@@ -366,8 +366,11 @@ async fn serve() -> anyhow::Result<()> {
     ));
     // 网关开始接了才核对插件：核对时渲染变了会重建容器，里面的一次性服务要经核心的地址访问核心。
     start_restored_plugins(&cfg, &manager, upgrades_after_serve).await?;
+    // 隧道跟网关同生命周期：网关结束（收到退出信号）后才关。放在核对之后、网关结束之前关，
+    // 核心一启动完隧道就没了，手机配不上也连不回家。
+    let served = served.await.context("网关任务退出");
     entry.shutdown().await;
-    served.await.context("网关任务退出")?
+    served?
 }
 
 fn spawn_plugin_monitors(manager: &Arc<PluginManager>) {
