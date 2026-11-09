@@ -42,6 +42,7 @@ import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.TabItem
 import app.wonton.protocol.TabPage
+import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.TabState
 import app.wonton.ui.design.WontonTheme
@@ -110,7 +111,7 @@ private class WebPageState(val tab: TabRef, val tabs: TabsState) {
     fun loadFinished(environment: TabEnvironment) {
         loaded = true
         failed = false
-        tabs.send(Action.TabLoadSucceeded(tab))
+        tabs.send(Action.TabLoadSucceeded(PlacedTab.Bar(tab)))
         script(environment)?.let { controller.evaluateJavascript(it) }
         controller.evaluateJavascript(tabs.core.tabConnectionScript())
         capsule.show()
@@ -118,7 +119,7 @@ private class WebPageState(val tab: TabRef, val tabs: TabsState) {
 
     fun loadFailed(status: Int?) {
         failed = true
-        tabs.send(Action.TabLoadFailed(tab, status?.toUShort()))
+        tabs.send(Action.TabLoadFailed(PlacedTab.Bar(tab), status?.toUShort()))
     }
 }
 
@@ -187,14 +188,14 @@ private fun PageChrome(
     if (page.fullscreen) {
         PluginPageChrome(tab, page, tabs, safe, bannerTop, shortStatus(page), capsule, controller, takeover,
             onClose = { controller.closeCustomView(); tabs.send(Action.ExitFullscreen(tab)) },
-            onReload = { tabs.send(Action.ReloadTab(tab)) }, onDetails = onDetails)
+            onReload = { tabs.send(Action.ReloadTab(PlacedTab.Bar(tab))) }, onDetails = onDetails)
     } else {
         val density = LocalDensity.current
         Column(Modifier.onSizeChanged { top(with(density) { it.height.toDp() }) }) {
             PluginTabBar(page, controller.canGoBack, overlay, back,
                 { tabs.send(Action.CloseTabOverlay) }, takeover,
                 onExpand = { tabs.send(Action.EnterFullscreen(tab)) },
-                onReload = { tabs.send(Action.ReloadTab(tab)) })
+                onReload = { tabs.send(Action.ReloadTab(PlacedTab.Bar(tab))) })
             takeover?.let { TakeoverNotice(it) }
         }
     }
