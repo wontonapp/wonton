@@ -85,7 +85,13 @@ if [[ -z "${WONTON_DEV_PORT:-}" && -f "$here/.data/dev-port" ]]; then
   WONTON_DEV_PORT="$(cat "$here/.data/dev-port")"
 fi
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18480}"
-export WONTON_DEV_DOMAIN="${WONTON_DEV_DOMAIN:-wonton.localhost}"
+default_domain() {
+  [[ "$WONTON_DEV_PROJECT" == wonton-dev-core ]] && printf 'wonton.localhost' && return
+  local name="${WONTON_DEV_PROJECT#wonton-}"
+  name="${name//[^a-z0-9.-]/-}"
+  printf '%s.wonton.localhost' "$name"
+}
+export WONTON_DEV_DOMAIN="${WONTON_DEV_DOMAIN:-$(default_domain)}"
 export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18482}"
 if [[ -z "${WONTON_DEV_DATA:-}" ]]; then
   case "${DOCKER_HOST:-}" in
@@ -119,10 +125,11 @@ ensure_secret() {
   export WONTON_DEV_HYDRA_SECRET
 }
 
-# 核心签发 Matrix 登录 JWT 的 Ed25519 密钥，和 Tuwunel 的注册共享密钥（ADR-0009）。私钥给核心，公钥给
-# Tuwunel。生成需要 OpenSSL 3 及以上（macOS 可以 brew install openssl@3）。
+# 核心签发 Matrix 登录 JWT 的 Ed25519 密钥，和 Tuwunel 的注册共享密钥（ADR-0009）。核心还要给开发栈的
+# 联邦端口准备一张只用于本地测试的证书；证书不出开发栈，也不代表生产证书。
 ensure_matrix_secrets() {
   local key="$secrets/matrix-jwt.pem" pub="$secrets/matrix-jwt.pub.pem" shared="$secrets/matrix-shared-secret"
+  local tls_cert="$secrets/tuwunel-tls.crt" tls_key="$secrets/tuwunel-tls.key"
   mkdir -p "$secrets"
   chmod 700 "$secrets"
   if [[ ! -s "$key" || ! -s "$pub" ]]; then
@@ -135,15 +142,47 @@ ensure_matrix_secrets() {
     od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$shared"
     chmod 600 "$shared"
   fi
+  if [[ ! -s "$tls_cert" || ! -s "$tls_key" ]]; then
+    (umask 077 && openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+      -subj "/CN=$WONTON_DEV_DOMAIN" \
+      -addext "subjectAltName=DNS:$WONTON_DEV_DOMAIN" \
+      -keyout "$tls_key" -out "$tls_cert")
+    chmod 600 "$tls_cert" "$tls_key"
+  fi
   WONTON_DEV_MATRIX_JWT_KEY="$(cat "$key")"
   WONTON_DEV_MATRIX_JWT_PUBLIC_KEY="$(cat "$pub")"
   WONTON_DEV_MATRIX_SECRET="$(cat "$shared")"
   export WONTON_DEV_MATRIX_JWT_KEY WONTON_DEV_MATRIX_JWT_PUBLIC_KEY WONTON_DEV_MATRIX_SECRET
 }
 
+# Tuwunel 先于核心启动，名单文件必须已经在：缺失时先写一份放行全部兜底；核心起来后按配对名单原地重写，
+# 所以不在每次 compose 调用时覆盖它。代理文件核心不改，每次写。
+ensure_dev_federation() {
+  local path="$WONTON_DEV_DATA/fed/config.toml"
+  local proxy="$WONTON_DEV_DATA/fed/proxy.toml"
+  mkdir -p "${path%/*}"
+  if [[ ! -s "$path" ]]; then
+    cat >"$path" <<'EOF'
+# 开发栈联邦名单；正式安装由核心按配对记录重写，不使用这份放行全部的配置。
+allowed_remote_server_names_experimental = ['^.*$']
+forbidden_remote_server_names = []
+EOF
+  fi
+  cat >"$proxy" <<'EOF'
+# 开发栈联邦出站代理；单独成文件，避免名单文件被核心原地重写时丢掉代理规则。
+[global.proxy]
+[[global.proxy.by_domain]]
+url = "http://federation-proxy.wonton.internal:8448"
+include = []
+exclude = ["push.wonton.internal"]
+EOF
+  chmod 644 "$path" "$proxy"
+}
+
 compose() {
   ensure_secret
   ensure_matrix_secrets
+  ensure_dev_federation
   local files=(-f "$here/compose.yaml")
   if [[ -n ${WONTON_DEV_CORE_SUBNET:-} ]]; then
     local override="$secrets/$WONTON_DEV_PROJECT.subnet.yaml"
@@ -152,6 +191,7 @@ compose() {
   fi
   docker compose "${files[@]}" "$@"
 }
+
 
 # docker build，加上 WONTON_DEV_BUILD_PROXY、WONTON_DEV_BUILD_JOBS 要的参数。代理只监听 Docker 主机的回环地址，
 # 构建要用宿主网络；compose 把构建交给 buildx bake，传不了 --allow，所以经代理时核心镜像也由这里构建。

@@ -6,7 +6,7 @@
 
 mod ask_agent;
 mod bot_profile;
-mod bot_profile_support;
+pub mod bot_profile_support;
 mod card_plugin_refresh;
 mod confirmation;
 mod device_name;

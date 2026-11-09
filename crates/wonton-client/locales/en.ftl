@@ -51,6 +51,20 @@ peers-invalid-proxy = The local proxy isn't available: { $reason }
 peers-server-status = Your home server returned HTTP { $status }
 # $reason is the JSON parser's original error.
 peers-invalid-response = Can't read your home server's response: { $reason }
+friends-transport = Can't reach your home server: { $reason }
+friends-server-status = Your home server returned HTTP { $status }
+friends-invalid-response = Can't read your home server's response: { $reason }
+friends-not-signed-in = You're not signed in to this account yet.
+friends-not-connected = You're not connected to your home server yet.
+friends-invalid-action = Not a friends action.
+friends-local-open = Can't open the local friend list: { $reason }
+friends-invalid-proxy = The local proxy address isn't available: { $reason }
+friends-http-client = Can't create the local HTTP client: { $reason }
+friends-invalid-url = The friend service address is invalid: { $reason }
+friends-request-body = Can't encode the friend request: { $reason }
+friends-timeout = The friend service did not respond in time.
+friends-group-name-required = A group name is required.
+friends-group-not-found = Group { $id } was not found.
 # $reason is the tunnel's original refusal text.
 peers-rejected = Your home server rejected this device: { $reason }
 

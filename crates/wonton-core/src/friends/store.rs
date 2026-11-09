@@ -125,6 +125,7 @@ impl Friends {
                     friend.group_generations.clear();
                 }
                 friend.status = FriendStatus::Active;
+                friend.removed_at_ms = None;
                 friend.display_name = display_name.map(str::to_owned);
                 return Ok(friend.clone());
             }
@@ -146,6 +147,7 @@ impl Friends {
                 group_generations: Default::default(),
                 accepted_order: next_revision(snapshot)?,
                 accepted_at_ms,
+                removed_at_ms: None,
                 last_opened_share_at_ms: None,
             };
             snapshot.friends.push(friend.clone());
@@ -154,7 +156,7 @@ impl Friends {
     }
 
     /// Retain the username tombstone and revoke all group memberships. Repeated removal is a no-op.
-    pub fn remove(&self, user_id: &str) -> Result<FriendRecord, FriendsError> {
+    pub fn remove(&self, user_id: &str, removed_at_ms: u64) -> Result<FriendRecord, FriendsError> {
         self.change(|snapshot| {
             let friend = snapshot
                 .friends
@@ -162,6 +164,7 @@ impl Friends {
                 .find(|f| f.user_id == user_id)
                 .ok_or_else(|| FriendsError::NotFound(user_id.to_owned()))?;
             friend.status = FriendStatus::Removed;
+            friend.removed_at_ms = Some(removed_at_ms);
             friend.groups.clear();
             friend.group_generations.clear();
             Ok(friend.clone())

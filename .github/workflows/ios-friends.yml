@@ -1,0 +1,73 @@
+name: ios friends
+
+# 手动触发：在两台自建模拟器上把好友页实走一遍并留下截图（ADR-0051）。
+# 配对码由 npchy 上的小服务现取（端口 8090），栈由发起人当场起好。
+on:
+  push:
+    branches: [feat/fr-friends]
+    paths:
+      - ".github/workflows/ios-friends.yml"
+  workflow_dispatch:
+    inputs:
+      a_user:
+        description: A 的 Matrix 用户 ID
+        required: true
+      b_user:
+        description: B 的 Matrix 用户 ID
+        required: true
+      b_server:
+        description: B 的服务器名（A 拉黑用）
+        required: true
+      codes_port:
+        description: 取配对码的端口
+        required: true
+        default: "8090"
+
+concurrency:
+  group: ios-friends-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  friends:
+    runs-on: [self-hosted, macOS, ARM64, xcode]
+    timeout-minutes: 90
+    env:
+      XCODEGEN_VERSION: "2.46.0"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+    steps:
+      - uses: actions/checkout@v5
+      - name: 构建缓存目录
+        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/ios" >> "$GITHUB_ENV"
+      - name: 安装工具链和 iOS 模拟器 target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-ios-sim
+      - name: 安装 XcodeGen
+        run: |
+          dir="$RUNNER_TOOL_CACHE/xcodegen/$XCODEGEN_VERSION"
+          if [[ ! -x "$dir/xcodegen/bin/xcodegen" ]]; then
+            curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
+              "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+            mkdir -p "$dir"
+            unzip -q -o "$RUNNER_TEMP/xcodegen.zip" -d "$dir"
+          fi
+          echo "$dir/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: 两台模拟器实走
+        env:
+          WONTON_DERIVED_DATA: ${{ runner.temp }}/DerivedData
+          CODES_PORT: ${{ inputs.codes_port || '8090' }}
+          A_USER: ${{ inputs.a_user || '@owner:fr-friends-a.wonton.localhost' }}
+          B_USER: ${{ inputs.b_user || '@owner:fr-friends-b.wonton.localhost' }}
+          B_SERVER: ${{ inputs.b_server || 'fr-friends-b.wonton.localhost' }}
+        run: |
+          SHOTS_DIR="$HOME/wonton-src/fr-friends-shots" \
+          REPO_DIR="$GITHUB_WORKSPACE" \
+            bash ios-e2e.sh "$CODES_PORT" "$A_USER" "$B_USER" "$B_SERVER"
+      - name: 收截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: friends-shots
+          path: /Users/jiale/wonton-src/fr-friends-shots
+          if-no-files-found: warn

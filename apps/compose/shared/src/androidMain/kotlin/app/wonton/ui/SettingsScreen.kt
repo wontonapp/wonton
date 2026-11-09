@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +45,8 @@ fun SettingsPage(
     onSubpage: (SettingsSubpage) -> Unit,
 ) {
     val core = plugins.core
+    // 好友项只在列表取到过以后出现；进设置先取一次。
+    LaunchedEffect(core) { core.send(Action.RefreshFriends) }
     val back = { onSubpage(subpage.parent()) }
     val version = appVersion()
     var rejection by remember { mutableStateOf<Problem?>(null) }
@@ -64,6 +67,7 @@ fun SettingsPage(
         SettingsSubpage.NOTIFICATIONS -> NotificationSettingsScreen(core, settings, back)
         SettingsSubpage.ABOUT -> AboutPage(version, back)
         SettingsSubpage.PEERS -> PeersPage(core, back, peersOpenRequests, onPeersOpenRequestsHandled)
+        SettingsSubpage.FRIENDS -> FriendsPage(core, back)
         SettingsSubpage.MAIN -> WontonScreen(bar = {
             val title = stringResource(R.string.tab_settings)
             if (onClose != null) WontonPushedBar(title, onClose) else WontonRootBar(title)
@@ -123,6 +127,14 @@ private fun SettingsEntryRow(
         is SettingsEntry.Peers -> WontonRow(
             stringResource(R.string.peers_title), entry.count.toString(),
             showsForward = true, onClick = { onSubpage(SettingsSubpage.PEERS) },
+        )
+        // 好友（ADR-0051）；核心只在列表取到过时给这一项，请求数做角标。
+        is SettingsEntry.Friends -> WontonRow(
+            stringResource(R.string.friends_title),
+            entry.count.toString(),
+            showsForward = true,
+            badgeCount = entry.requests.toInt(),
+            onClick = { onSubpage(SettingsSubpage.FRIENDS) },
         )
         SettingsEntry.BottomBar -> WontonRow(stringResource(R.string.settings_nav_bar), showsForward = true) {
             onSubpage(SettingsSubpage.TABS)

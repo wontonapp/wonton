@@ -12,8 +12,6 @@ use std::time::Duration;
 use super::stale_join::StaleJoin;
 use iroh::{EndpointId, SecretKey};
 use serde_json::{Value, json};
-use tokio::io::AsyncReadExt;
-use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing_subscriber::Layer as _;
@@ -29,16 +27,19 @@ use wonton_matrix::testkit::{Issuer, PushGateway, TestServer, random_hex};
 use wonton_tunnel::pair::{
     PairHandler, PairProtocol, PairResponse, PairingCode, PairingSecret, SECRET_LEN,
 };
-use wonton_tunnel::{Allowlist, TunnelListener, TunnelServer};
+use wonton_tunnel::{Allowlist, TunnelServer};
 
 mod diagnostics;
 mod endpoint;
 mod fake_core;
+mod friends;
+mod io;
 mod matrix;
 
 pub use diagnostics::{is_room_list, pending_requests, request_arrived, request_done};
 use endpoint::loopback_endpoint;
 use fake_core::fake_core;
+pub(super) use io::{read_body, relay};
 
 pub const WAIT: Duration = Duration::from_secs(60);
 pub(super) const BASE_DOMAIN: &str = "wonton.localhost";
@@ -179,6 +180,8 @@ struct Core {
     /// 取已装列表的请求次数。
     installed_requests: AtomicUsize,
     bot_api: Arc<super::bot_profile_support::BotApi>,
+    /// 好友接口的假名单（ADR-0051）。
+    friends: Mutex<friends::FakeFriends>,
 }
 
 impl Home {
@@ -227,6 +230,7 @@ impl Home {
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
             bot_api: Arc::default(),
+            friends: Mutex::default(),
         });
         let (addr, task) = fake_core(core.clone()).await;
         let tunnel_key = SecretKey::generate();
@@ -456,6 +460,11 @@ impl Home {
         self.core.push_registrations_seen.subscribe()
     }
 
+    /// 好友接口收到的请求：方法和小写路径。
+    pub fn friends_calls(&self) -> Vec<(String, String)> {
+        self.core.friends.lock().unwrap().calls.clone()
+    }
+
     pub fn ticket(&self) -> String {
         let tunnel = self.tunnel.as_ref().expect("隧道没在运行");
         let id = tunnel.endpoint().id();
@@ -557,17 +566,6 @@ impl Home {
     }
 }
 
-pub(super) async fn read_body(tcp: &mut TcpStream, head: &str) -> Option<Vec<u8>> {
-    let length = head
-        .lines()
-        .find_map(|line| line.strip_prefix("content-length:"))
-        .and_then(|value| value.trim().parse().ok())
-        .unwrap_or(0);
-    let mut body = vec![0u8; length];
-    tcp.read_exact(&mut body).await.ok()?;
-    Some(body)
-}
-
 /// 核心自己的接口；不认识的请求回 `None`（404）。
 fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
     let push = |method: &str, body: Value| {
@@ -605,6 +603,9 @@ fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
         return Some(reply.map_or((204, String::new()), |(status, reply)| {
             (status, reply.to_string())
         }));
+    }
+    if let Some(reply) = friends::respond(core, head, body) {
+        return Some(reply);
     }
     if head.starts_with("get /_wonton/api/plugins ") {
         core.installed_requests.fetch_add(1, Ordering::SeqCst);
@@ -761,20 +762,6 @@ impl Phone {
             ),
         }
     }
-}
-
-/// 把隧道交给嵌入方的流接到假核心的 TCP 上，拆开后连接各自结束。
-fn relay(mut listener: TunnelListener, upstream: SocketAddr) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        while let Some(mut stream) = listener.accept().await {
-            tokio::spawn(async move {
-                let Ok(mut tcp) = TcpStream::connect(upstream).await else {
-                    return;
-                };
-                let _ = tokio::io::copy_bidirectional(&mut stream, &mut tcp).await;
-            });
-        }
-    })
 }
 
 pub use super::timeline::Timeline;

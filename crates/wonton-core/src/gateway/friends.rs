@@ -1,0 +1,470 @@
+//! 好友名单和整台服务器的联邦黑名单（ADR-0051 的“好友”“挡垃圾”）。
+//!
+//! 好友请求本身是 Matrix 的私聊邀请，客户端收下以后才调 `PUT /_wonton/api/friends/{user_id}` 把身份记下来：
+//! 核心在这里分配固定的本机插件用户名（`friend-…`），分享插件按这份名单认人。设备身份和好友身份是两套。
+//!
+//! | 方法 | 路径 | 说明 |
+//! | --- | --- | --- |
+//! | GET | `/_wonton/api/friends` | 好友、分组、黑名单里的服务器 |
+//! | PUT | `/_wonton/api/friends/{user_id}` | 记下同意的好友，请求体是 `{"display_name":…}` |
+//! | DELETE | `/_wonton/api/friends/{user_id}` | 删好友（插件授权的收回见分享模块） |
+//! | PUT | `/_wonton/api/friends/{user_id}/groups` | 整份替换分组，`{"groups":[…]}` |
+//! | POST | `/_wonton/api/friend-groups` | 建组，`{"id":…,"name":…}`；`id` 为空表示新建 |
+//! | DELETE | `/_wonton/api/friend-groups/{id}` | 删组 |
+//! | POST | `/_wonton/api/federation-blocks/{server_name}` | 拉黑整台服务器，只有主人 |
+//! | DELETE | `/_wonton/api/federation-blocks/{server_name}` | 撤销拉黑 |
+//!
+//! 个人屏蔽（MSC4155）是每个 Matrix 账号自己的账号数据，不在这里：客户端直接读写信箱里的
+//! `m.ignored_user_list`，只有整台服务器的黑名单要核心写进 Tuwunel 的配置。
+
+use std::sync::Arc;
+
+use axum::body::Bytes;
+use axum::extract::{Path, State};
+use axum::response::{IntoResponse, Response};
+use axum::{Extension, Json};
+use hyper::{HeaderMap, StatusCode};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use wonton_protocol::{FriendGroup, FriendRow};
+
+use super::api::error_response;
+use super::{Gateway, TunnelPeer};
+use crate::friends::FriendsError;
+use crate::matrix::ADMIN_LOCALPART;
+
+/// 好友页的数据。请求和屏蔽邀请在客户端从 Matrix 同步里拼，这里只有核心存着的部分。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FriendsView {
+    pub friends: Vec<FriendRow>,
+    pub groups: Vec<FriendGroup>,
+    /// 整台服务器黑名单（`forbidden_remote_server_names`）。
+    pub blocked_servers: Vec<String>,
+    /// 删过的人：他们的私聊还带着好友标记，但不算好友，除非重新同意或收到新邀请。
+    pub removed: Vec<RemovedFriend>,
+    /// 这台设备的人能不能改整台服务器的黑名单：只有主人，且服务器能热加载配置。
+    pub can_block_federation: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemovedFriend {
+    pub user_id: String,
+    pub removed_at_ms: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FriendAccept {
+    #[serde(default)]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FriendGroups {
+    pub groups: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FriendGroupSave {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub name: String,
+}
+
+/// 认设备的人：只给经隧道接入的已配对设备，不接受别的网页发来的请求。
+fn person_denied(
+    gateway: &Gateway,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+) -> Option<Response> {
+    if gateway
+        .device_person(peer.map(|Extension(peer)| peer))
+        .is_none()
+    {
+        return Some(error_response(
+            StatusCode::UNAUTHORIZED,
+            "unauthenticated",
+            "好友接口只给经隧道接入的已配对设备",
+        ));
+    }
+    if super::isolation::not_from_another_page(headers, &gateway.core_origin()) {
+        None
+    } else {
+        Some(error_response(
+            StatusCode::FORBIDDEN,
+            "cross_site",
+            "好友接口不接受其他网页发来的请求",
+        ))
+    }
+}
+
+fn parse<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, Box<Response>> {
+    serde_json::from_slice(body).map_err(|error| {
+        Box::new(error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_input",
+            &error.to_string(),
+        ))
+    })
+}
+
+fn friends_error(error: FriendsError) -> Response {
+    match error {
+        FriendsError::Invalid(message) => {
+            let kind = if message.contains("Matrix user ID") {
+                "invalid_user_id"
+            } else {
+                "invalid_input"
+            };
+            error_response(StatusCode::BAD_REQUEST, kind, &message)
+        }
+        FriendsError::NotFound(message) | FriendsError::GroupNotFound(message) => {
+            error_response(StatusCode::NOT_FOUND, "request_not_found", &message)
+        }
+        FriendsError::UsernameTaken(name) => error_response(
+            StatusCode::CONFLICT,
+            "username_taken",
+            &format!("插件用户名 {name} 已经被占"),
+        ),
+        other => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "storage",
+            &format!("好友名单读写失败：{other}"),
+        ),
+    }
+}
+
+fn view(gateway: &Gateway, is_owner: bool) -> FriendsView {
+    let snapshot = gateway.friends().map(|friends| friends.snapshot());
+    let friends = snapshot
+        .as_ref()
+        .map(|snapshot| {
+            snapshot
+                .active()
+                .map(|record| FriendRow {
+                    user_id: record.user_id.clone(),
+                    display_name: record.display_name.clone(),
+                    groups: record.groups.clone(),
+                    // 插件的有效授权由分享模块填，这里先不给。
+                    shared_plugins: Vec::new(),
+                    last_opened_share_at_ms: record.last_opened_share_at_ms,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let groups = snapshot
+        .as_ref()
+        .map(|snapshot| snapshot.groups.clone())
+        .unwrap_or_default();
+    let removed = snapshot
+        .as_ref()
+        .map(|snapshot| {
+            snapshot
+                .friends
+                .iter()
+                .filter(|record| record.status == crate::friends::FriendStatus::Removed)
+                .filter_map(|record| {
+                    record.removed_at_ms.map(|removed_at_ms| RemovedFriend {
+                        user_id: record.user_id.clone(),
+                        removed_at_ms,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    FriendsView {
+        friends,
+        groups,
+        removed,
+        blocked_servers: gateway
+            .federation_blocks
+            .as_ref()
+            .map(|blocks| blocks.names().into_iter().collect())
+            .unwrap_or_default(),
+        can_block_federation: is_owner && gateway.federation_blocks.is_some(),
+    }
+}
+
+pub async fn list(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(denied) = person_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let Some(friends) = gateway.friends() else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "这台核心没有好友名单",
+        );
+    };
+    let _ = friends;
+    let is_owner = gateway
+        .device_person(peer.map(|Extension(peer)| peer))
+        .is_some_and(|person| person.is_owner());
+    Json(view(&gateway, is_owner)).into_response()
+}
+
+pub async fn accept(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    Path(user_id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) = person_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let Some(friends) = gateway.friends() else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "没有好友名单",
+        );
+    };
+    let accept: FriendAccept = match parse(&body) {
+        Ok(accept) => accept,
+        Err(response) => return *response,
+    };
+    let user_id = match decode_user_id(&user_id) {
+        Ok(user_id) => user_id,
+        Err(response) => return *response,
+    };
+    let local_name_taken = match local_name_check(&gateway, &friends) {
+        Ok(check) => check,
+        Err(response) => return *response,
+    };
+    match friends.accept(
+        &user_id,
+        accept.display_name.as_deref(),
+        now_ms(),
+        local_name_taken,
+    ) {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => friends_error(error),
+    }
+}
+
+pub async fn remove(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    Path(user_id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(denied) = person_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let Some(friends) = gateway.friends() else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "没有好友名单",
+        );
+    };
+    let user_id = match decode_user_id(&user_id) {
+        Ok(user_id) => user_id,
+        Err(response) => return *response,
+    };
+    match friends.remove(&user_id, now_ms()) {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => friends_error(error),
+    }
+}
+
+pub async fn set_groups(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    Path(user_id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) = person_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let Some(friends) = gateway.friends() else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "没有好友名单",
+        );
+    };
+    let groups: FriendGroups = match parse(&body) {
+        Ok(groups) => groups,
+        Err(response) => return *response,
+    };
+    let user_id = match decode_user_id(&user_id) {
+        Ok(user_id) => user_id,
+        Err(response) => return *response,
+    };
+    match friends.set_groups(&user_id, &groups.groups) {
+        Ok(record) => Json(record).into_response(),
+        Err(error) => friends_error(error),
+    }
+}
+
+pub async fn save_group(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) = person_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let Some(friends) = gateway.friends() else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "没有好友名单",
+        );
+    };
+    let save: FriendGroupSave = match parse(&body) {
+        Ok(save) => save,
+        Err(response) => return *response,
+    };
+    match friends.save_group(save.id.as_deref(), &save.name) {
+        Ok(group) => Json(group).into_response(),
+        Err(error) => friends_error(error),
+    }
+}
+
+pub async fn remove_group(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(denied) = person_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let Some(friends) = gateway.friends() else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "没有好友名单",
+        );
+    };
+    match friends.remove_group(&id) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => friends_error(error),
+    }
+}
+
+pub async fn block_server(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    Path(server_name): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    set_block(gateway, peer, server_name, headers, body, true).await
+}
+
+pub async fn unblock_server(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    Path(server_name): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    set_block(gateway, peer, server_name, headers, body, false).await
+}
+
+async fn set_block(
+    gateway: Arc<Gateway>,
+    peer: Option<Extension<TunnelPeer>>,
+    server_name: String,
+    headers: HeaderMap,
+    _body: Bytes,
+    blocked: bool,
+) -> Response {
+    let Some(person) = gateway.device_person(peer.map(|Extension(peer)| peer)) else {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "unauthenticated",
+            "黑名单只给经隧道接入的已配对设备",
+        );
+    };
+    if !person.is_owner() {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "owner_only",
+            "整台服务器的黑名单只有主人能改",
+        );
+    }
+    if !super::isolation::not_from_another_page(&headers, &gateway.core_origin()) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "cross_site",
+            "黑名单不接受其他网页发来的请求",
+        );
+    }
+    let Some(blocks) = &gateway.federation_blocks else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "这台核心没有能热加载的联邦黑名单",
+        );
+    };
+    let server_name = percent_decode(&server_name).to_lowercase();
+    match blocks.set(&server_name, blocked) {
+        Ok(()) if blocked => {
+            Json(json!({"server_name": server_name, "blocked": true})).into_response()
+        }
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => error_response(StatusCode::BAD_REQUEST, "invalid_input", &error.to_string()),
+    }
+}
+
+/// 本机已经用掉的插件用户名：主人、管理账号、家人（含已移除）、Bot 和别的好友。
+fn local_name_check<'a>(
+    gateway: &'a Gateway,
+    _friends: &'a crate::friends::Friends,
+) -> Result<impl Fn(&str) -> bool + 'a, Box<Response>> {
+    let bots = gateway.plugins.bot_localparts().map_err(|error| {
+        Box::new(error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "storage",
+            &format!("读 Bot 用户名失败：{error}"),
+        ))
+    })?;
+    let owner = gateway.owner.username().to_owned();
+    Ok(move |name: &str| {
+        name == owner
+            || name == ADMIN_LOCALPART
+            || name == crate::matrix::SERVER_USER_LOCALPART
+            || gateway.members.taken(name)
+            || bots.contains(name)
+    })
+}
+
+fn decode_user_id(raw: &str) -> Result<String, Box<Response>> {
+    let id = percent_decode(raw);
+    match ruma_user_id(&id) {
+        true => Ok(id),
+        false => Err(Box::new(error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_user_id",
+            "要是完整的 Matrix 用户 ID，如 @bob:example.org",
+        ))),
+    }
+}
+
+fn ruma_user_id(id: &str) -> bool {
+    id.starts_with('@') && id.contains(':') && !id.contains(char::is_whitespace) && id.len() > 3
+}
+
+/// 路径里的百分号转义（用户 ID 的 `@`、`:` 可能被编码）。
+fn percent_decode(raw: &str) -> String {
+    super::matrix::percent_decode(raw)
+        .into_iter()
+        .map(|byte| byte as char)
+        .collect()
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as u64)
+}

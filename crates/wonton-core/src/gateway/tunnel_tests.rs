@@ -48,6 +48,7 @@ pub(super) struct Home {
     pub(super) app: Router,
     pub(super) plugins: Arc<PluginManager>,
     pub(super) tunnel: Tunnel,
+    pub(super) members: Arc<crate::members::Members>,
     hits: Arc<AtomicUsize>,
     _entry: TunnelEntry,
     _dir: tempfile::TempDir,
@@ -57,12 +58,10 @@ impl Home {
     pub(super) async fn start(hydra_admin: Option<SocketAddr>) -> Self {
         Self::start_with(hydra_admin, None).await
     }
-
-    /// 局域网地址是宣告地址（或检测到的地址）时的核心。
     pub(super) async fn start_lan(addresses: &[&str]) -> Self {
         let lan: std::collections::BTreeSet<std::net::IpAddr> =
             addresses.iter().map(|a| a.parse().unwrap()).collect();
-        Self::start_full(None, None, lan).await
+        Self::start_full(None, None, lan, None, None).await
     }
 
     pub(super) async fn start_with(
@@ -73,14 +72,45 @@ impl Home {
             hydra_admin,
             matrix,
             std::collections::BTreeSet::from(["192.168.1.2".parse().unwrap()]),
+            None,
+            None,
         )
         .await
+    }
+    pub(super) async fn start_with_friends(
+        friends: Arc<crate::friends::Friends>,
+        blocks: Option<Arc<crate::matrix::FederationBlocks>>,
+    ) -> Self {
+        Self::start_full(
+            None,
+            None,
+            std::collections::BTreeSet::from(["192.168.1.2".parse().unwrap()]),
+            Some(friends),
+            blocks,
+        )
+        .await
+    }
+    pub(super) fn owner_device(&self) -> iroh::EndpointId {
+        let id = SecretKey::generate().public();
+        self.tunnel.devices.add(id, None).unwrap();
+        id
+    }
+
+    pub(super) fn member_device(&self, username: &str) -> iroh::EndpointId {
+        let id = SecretKey::generate().public();
+        self.tunnel
+            .devices
+            .add_if(id, None, Some(username.to_owned()), |_| true)
+            .unwrap();
+        id
     }
 
     async fn start_full(
         hydra_admin: Option<SocketAddr>,
         matrix: Option<Arc<Matrix>>,
         lan: std::collections::BTreeSet<std::net::IpAddr>,
+        friends: Option<Arc<crate::friends::Friends>>,
+        blocks: Option<Arc<crate::matrix::FederationBlocks>>,
     ) -> Self {
         let hits = Arc::new(AtomicUsize::new(0));
         let upstream = echo_upstream(hits.clone()).await;
@@ -131,19 +161,22 @@ impl Home {
             public,
             profile,
             TOKEN.into(),
-            members,
+            members.clone(),
             manager.clone(),
             hydra,
             http,
             tunnel.clone(),
         )
-        .with_matrix(matrix);
+        .with_matrix(matrix)
+        .with_friends(friends)
+        .with_federation_blocks(blocks);
         let app = router(Arc::new(gateway));
         let entry = TunnelEntry::spawn(&tunnel, app.clone());
         Self {
             app,
             plugins: manager,
             tunnel,
+            members,
             hits,
             _entry: entry,
             _dir: dir,

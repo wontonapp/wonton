@@ -9,12 +9,13 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    ChatViewModel, CoreError, HomeViewModel, OnboardingViewModel, PeersViewModel, PluginsViewModel,
-    ServersViewModel, SettingsViewModel, TabsViewModel, TransfersViewModel,
+    ChatViewModel, CoreError, FriendsViewModel, HomeViewModel, OnboardingViewModel, PeersViewModel,
+    PluginsViewModel, ServersViewModel, SettingsViewModel, TabsViewModel, TransfersViewModel,
 };
 
 use crate::chat::ChatLink;
 use crate::files::FilesLink;
+use crate::friends::FriendsLink;
 use crate::home::{HomeLink, Network, Storage};
 use crate::onboarding::OnboardingLink;
 use crate::peers::PeersLink;
@@ -37,6 +38,7 @@ pub(crate) struct Scope {
     pub(crate) files: Arc<FilesLink>,
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) peers: Arc<PeersLink>,
+    pub(crate) friends: Arc<FriendsLink>,
     pub(crate) settings: SettingsLink,
     /// 卡片成功的测试钩子，只给集成测试用（feature `test-hooks`，生产构建没有）。挂在作用域上：
     /// 换服务器换作用域，测试不换服务器就一直是同一个。
@@ -56,6 +58,7 @@ pub(crate) struct Views {
     pub(crate) transfers: watch::Sender<TransfersViewModel>,
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
     pub(crate) peers: watch::Sender<PeersViewModel>,
+    pub(crate) friends: watch::Sender<FriendsViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
 
@@ -69,6 +72,7 @@ impl Views {
             transfers: scope.files.sender(),
             onboarding: scope.onboarding.sender(),
             peers: scope.peers.sender(),
+            friends: scope.friends.sender(),
             settings: scope.settings.sender(),
         }
     }
@@ -172,12 +176,20 @@ impl Scope {
             views.map(|v| v.onboarding.clone()),
         );
         let peers = PeersLink::new(handle.clone(), home.clone(), views.map(|v| v.peers.clone()));
+        let friends = FriendsLink::new(
+            handle.clone(),
+            home.clone(),
+            chat.clone(),
+            dir,
+            views.map(|v| v.friends.clone()),
+        )?;
         let settings = SettingsLink::new(
             &handle,
             home.subscribe(),
             chat.subscribe(),
             plugins.subscribe(),
             peers.subscribe(),
+            friends.subscribe(),
             servers,
             push_method.subscribe(),
             views.map(|v| v.settings.clone()),
@@ -193,6 +205,7 @@ impl Scope {
             files,
             onboarding,
             peers,
+            friends,
             settings,
             #[cfg(feature = "test-hooks")]
             card_success_hook,

@@ -6,10 +6,10 @@ use wonton_l10n::l10n;
 use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, ComposerDraft, CoreError,
     FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
-    HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle, OnboardingViewModel,
-    OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail, PluginImage, PluginsViewModel,
-    RoomTransfers, SecretString, ServersViewModel, SessionListViewModel, SettingsViewModel,
-    StoreItem, TabsViewModel, TransfersViewModel,
+    FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
+    OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail, PluginImage,
+    PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
+    SettingsViewModel, StoreItem, TabRef, TabsViewModel, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -21,9 +21,9 @@ use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
-    AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
-    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
-    SettingsSubscription, TabsSubscription, TransfersSubscription,
+    AppearanceSubscription, ChatSubscription, FriendsSubscription, HomeSubscription,
+    OnboardingSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
+    SessionListSubscription, SettingsSubscription, TabsSubscription, TransfersSubscription,
 };
 use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 use switch::Replay;
@@ -175,6 +175,16 @@ impl ClientCore {
     /// 订阅“其他服务器”页面，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_peers(&self) -> Arc<PeersSubscription> {
         Arc::new(PeersSubscription::new(self.views.peers.subscribe()))
+    }
+
+    /// 当前的好友页（ADR-0051），用于首帧渲染。
+    pub fn friends(&self) -> FriendsViewModel {
+        self.views.friends.borrow().clone()
+    }
+
+    /// 订阅好友页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_friends(&self) -> Arc<FriendsSubscription> {
+        Arc::new(FriendsSubscription::new(self.views.friends.subscribe()))
     }
 
     /// 当前的会话列表，用于首帧渲染。

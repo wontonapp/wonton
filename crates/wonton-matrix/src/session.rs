@@ -284,6 +284,11 @@ impl MatrixSession {
         &self.user_id
     }
 
+    /// 底层 SDK 客户端：本 crate 的封装之外的操作（如自定义状态事件、账号数据）用它。
+    pub fn client(&self) -> &Client {
+        &self.client
+    }
+
     /// 本设备在服务器上的 ID，核心吊销设备时用它。
     pub fn device_id(&self) -> &DeviceId {
         &self.device_id
