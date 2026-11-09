@@ -112,7 +112,7 @@ struct MainView: View {
                 page(item).tag(item.tab).toolbar(.hidden, for: .tabBar)
             }
         }
-        .environment(\.wontonTabBar, isKeyboardVisible || !tabs.viewModel.show_bar ? nil : AnyView(bottomBar))
+        .environment(\.wontonTabBar, isKeyboardVisible || !tabs.viewModel.showBar ? nil : AnyView(bottomBar))
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             isKeyboardVisible = true
         }
