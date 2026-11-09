@@ -72,8 +72,10 @@ impl ServerHandler for Notes {
         let find = Tool::new("find", "找文件", schema())
             .with_annotations(ToolAnnotations::new().read_only(true));
         let archive = Tool::new("archive", "归档文件", schema());
+        let boom = Tool::new("boom", "总是报错", schema())
+            .with_annotations(ToolAnnotations::new().read_only(true));
         Ok(ListToolsResult::with_all_items(vec![
-            search, delete, find, archive,
+            search, delete, find, archive, boom,
         ]))
     }
 
@@ -101,6 +103,7 @@ impl ServerHandler for Notes {
             .unwrap_or_default()
             .to_owned();
         let text = match request.name.as_ref() {
+            "boom" => return Err(ErrorData::internal_error("炸了", None)),
             "find" | "archive" => return Ok(self.found.lock().unwrap().clone().into()),
             "search" => format!("找到 {name}.txt"),
             "delete" => {

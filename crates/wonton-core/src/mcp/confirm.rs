@@ -75,6 +75,17 @@ impl Refusal {
             Self::Unavailable(e) => format!("没能请主人确认：{e}"),
         }
     }
+
+    /// 结果 `_meta` 的 `app.wonton/failure`：Agent 和 App 不用读文案就知道是哪种没执行。
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Rejected => "owner_rejected",
+            Self::Expired => "confirmation_expired",
+            Self::Superseded => "superseded",
+            Self::TooMany => "too_many_pending",
+            Self::Unavailable(_) => "confirmation_unavailable",
+        }
+    }
 }
 
 /// 回答失败的原因，网关按它给出 HTTP 状态。

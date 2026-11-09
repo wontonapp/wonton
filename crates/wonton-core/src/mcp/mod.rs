@@ -28,9 +28,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, JsonObject, MetaObject, Tool,
-};
+use rmcp::model::{CallToolRequestParams, CallToolResult, JsonObject, Tool};
 use rmcp::service::{Peer, RoleServer};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
@@ -41,12 +39,11 @@ use crate::bot_activity::Guard;
 use crate::config::PLUGIN_MCP_HOST;
 use crate::files::{BotRef, Failure, Files};
 use crate::help::Help;
-use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::tool_policy::Clearance;
 use crate::plugin::{McpServer, PluginId, PluginManager};
 pub use agent_permission::AgentPermissionError;
-use audit::{Audit, AuditedFile, Basis, Decision, Grounds, Record};
+use audit::{Audit, Basis, Decision, Grounds, Record};
 pub use cards::Draft;
 pub use cards::content as card_content;
 pub use cards::text as card_text;
@@ -55,8 +52,10 @@ pub use notifier::NoMatrix;
 pub use server::Caller;
 use takeover::Takeovers;
 pub use tool_policy::PolicyChange;
-use upstream::{CallError, UncertainKind, Upstreams};
-use wonton_protocol::BotKeeper;
+use upstream::Upstreams;
+
+pub(crate) mod result;
+pub(crate) use result::{Outcome, ToolFailure, error, forward, with_confirmation, with_failure};
 
 /// 卡片过期之后，会话还要留多久：确认了才开始执行，执行的时间也算在这里。
 const SESSION_IDLE_AFTER_CARD: Duration = Duration::from_secs(3600);
@@ -96,97 +95,6 @@ pub struct Bus {
     people: OnceLock<People>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
     peers: Mutex<Vec<Peer<RoleServer>>>,
-}
-
-/// 一次执行的结果：返回给 Agent 的内容，和卡片的最终状态。
-struct Outcome {
-    result: CallToolResult,
-    state: ConfirmationState,
-    /// 这次调用登记的文件，写进审计。
-    files: Vec<AuditedFile>,
-}
-
-impl Outcome {
-    fn ok(text: String, message: String) -> Self {
-        Self {
-            result: CallToolResult::success(vec![ContentBlock::text(text)]),
-            state: ConfirmationState::Succeeded { message },
-            files: Vec::new(),
-        }
-    }
-
-    fn failed(message: String) -> Self {
-        Self {
-            result: error(&message),
-            state: ConfirmationState::Failed { message },
-            files: Vec::new(),
-        }
-    }
-}
-
-/// 转给插件。私人 Bot 的调用带上替谁办事（`_meta` 的 `app.wonton/user`，ADR-0045）。结果里的文件引用
-/// 换成编号（[`file_results`]）。
-async fn forward(
-    bus: &Arc<Bus>,
-    caller: &Caller,
-    server: &McpServer,
-    tool: &str,
-    arguments: JsonObject,
-    cancelled: impl Future<Output = ()> + Send,
-) -> Outcome {
-    let on_behalf_of = caller.bot.as_ref().and_then(|bot| match &bot.keeper {
-        BotKeeper::User { username } => Some(username.clone()),
-        BotKeeper::Household | BotKeeper::Other => None,
-    });
-    let called = bus
-        .upstreams
-        .call(server, tool, Some(arguments), on_behalf_of, cancelled)
-        .await;
-    match called {
-        Ok(result) => {
-            let langs = bus.plugins.owner_languages();
-            let state = if result.is_error == Some(true) {
-                ConfirmationState::Failed {
-                    message: l10n::text(&langs, "chat-tool-failed", &[]),
-                }
-            } else {
-                ConfirmationState::Succeeded {
-                    message: l10n::text(&langs, "chat-tool-ran", &[]),
-                }
-            };
-            let (result, files) = file_results::rewrite(bus, caller, &server.id, result).await;
-            Outcome {
-                result,
-                state,
-                files,
-            }
-        }
-        Err(CallError::Uncertain { kind, message }) => Outcome {
-            result: uncertain(&message, kind),
-            state: ConfirmationState::Uncertain { message },
-            files: Vec::new(),
-        },
-        Err(e) => Outcome::failed(e.to_string()),
-    }
-}
-
-/// 工具结果里给 Agent 看的类别，结果不确定或者主人在操作时才有：和工具自己报的错分开，Agent 不该直接重试。
-const FAILURE_META: &str = "app.wonton/failure";
-
-fn uncertain(message: &str, kind: UncertainKind) -> CallToolResult {
-    with_failure(message, kind.as_str())
-}
-
-fn with_failure(message: &str, kind: &str) -> CallToolResult {
-    let mut result = error(message);
-    let meta = [(FAILURE_META.to_owned(), Value::from(kind))];
-    result.meta = Some(MetaObject(meta.into_iter().collect()));
-    result
-}
-
-/// 工具执行失败：Agent 能读到原因（MCP 的 `isError`）。
-fn error(message: &str) -> CallToolResult {
-    CallToolResult::error(vec![ContentBlock::text(message.to_owned())])
 }
 
 impl Bus {
@@ -404,7 +312,12 @@ impl Bus {
         let arguments = request.arguments.unwrap_or_default();
         let args = Value::Object(arguments.clone());
         let Some((owner, tool)) = naming::split(&name) else {
-            return self.deny(caller, &name, &args, &format!("没有工具 {name}"));
+            return self.deny(
+                caller,
+                &name,
+                &args,
+                &ToolFailure::new("invalid_input", format!("没有工具 {name}")),
+            );
         };
         if owner == naming::CORE {
             return core_tools::call(self, caller, tool, arguments, activity).await;
@@ -419,7 +332,7 @@ impl Bus {
                 caller,
                 &name,
                 &args,
-                &format!("没有在运行的插件提供 {name}"),
+                &ToolFailure::new("not_found", format!("没有在运行的插件提供 {name}")),
             );
         };
         self.call_plugin(
@@ -432,6 +345,37 @@ impl Bus {
         .await
     }
 
+    /// 插件工具的声明：清单这会儿取不到、或插件没有这个工具时，给 Agent 的失败。
+    async fn definition_of(
+        &self,
+        caller: &Caller,
+        name: &str,
+        args: &Value,
+        server: &McpServer,
+        tool: &str,
+    ) -> Result<rmcp::model::Tool, CallToolResult> {
+        let listed = match self.upstreams.tools(server).await {
+            Ok(tools) => tools,
+            // 插件的工具清单这会儿取不到：多半是插件没就绪或连接断了，Agent 该晚点再试。
+            Err(e) => {
+                return Err(self.deny(
+                    caller,
+                    name,
+                    args,
+                    &ToolFailure::new("source_unavailable", e),
+                ));
+            }
+        };
+        listed.into_iter().find(|t| t.name == tool).ok_or_else(|| {
+            self.deny(
+                caller,
+                name,
+                args,
+                &ToolFailure::new("not_found", format!("插件 {} 没有工具 {tool}", server.id)),
+            )
+        })
+    }
+
     async fn call_plugin(
         self: &Arc<Self>,
         caller: &Caller,
@@ -441,17 +385,9 @@ impl Bus {
         cancelled: impl Future<Output = ()> + Send,
     ) -> CallToolResult {
         let args = Value::Object(arguments.clone());
-        let definition = match self.upstreams.tools(server).await {
-            Ok(tools) => tools.into_iter().find(|t| t.name == tool),
-            Err(e) => return self.deny(caller, name, &args, &e),
-        };
-        let Some(definition) = definition else {
-            return self.deny(
-                caller,
-                name,
-                &args,
-                &format!("插件 {} 没有工具 {tool}", server.id),
-            );
+        let definition = match self.definition_of(caller, name, &args, server, tool).await {
+            Ok(definition) => definition,
+            Err(result) => return result,
         };
         let read_only = definition
             .annotations
@@ -502,10 +438,17 @@ impl Bus {
                 name,
                 &args,
                 Decision::Allowed,
-                Some(Grounds { basis, held_ms }),
+                Some(Grounds {
+                    basis: basis.clone(),
+                    held_ms,
+                }),
                 &outcome,
             );
-            return outcome.result;
+            // 放行时段里没发卡片，但这段是主人先前批准的：照实告诉 Agent。
+            return match basis {
+                Basis::Window(_) => with_confirmation(outcome.result, "window"),
+                _ => outcome.result,
+            };
         }
         let plugin = cards::text(&server.title);
         let langs = self.plugins.owner_languages();
@@ -577,6 +520,12 @@ impl Bus {
                     let activity = bus.plugins.activity.start_tool(&caller.id);
                     let outcome = run(bus.clone(), ticket.secrets.clone()).await;
                     drop(activity);
+                    // `window` 有值：不是这次调用自己的卡片，是主人先前批准的放行时段。
+                    let confirmation = if ticket.window.is_some() {
+                        "window"
+                    } else {
+                        "card"
+                    };
                     bus.record(
                         &caller,
                         &name,
@@ -589,13 +538,13 @@ impl Bus {
                         &outcome,
                     );
                     bus.confirmations.finish(ticket, outcome.state).await;
-                    outcome.result
+                    with_confirmation(outcome.result, confirmation)
                 }
                 Err(refusal) => bus.refused(&caller, &name, &args, &refusal, held_ms),
             }
         });
         task.await
-            .unwrap_or_else(|e| error(&format!("确认流程意外中止：{e}")))
+            .unwrap_or_else(|e| with_failure(&format!("确认流程意外中止：{e}"), "internal_error"))
     }
 
     /// 最高级的安装和更新（ADR-0036）：第一张批准后，再请主人点一张“我知道这个插件能控制整台主机”
@@ -646,6 +595,11 @@ impl Bus {
             let activity = bus.plugins.activity.start_tool(&caller.id);
             let outcome = run(bus.clone(), ticket.secrets.clone()).await;
             drop(activity);
+            let confirmation = if ticket.window.is_some() {
+                "window"
+            } else {
+                "card"
+            };
             bus.record(
                 &caller,
                 &name,
@@ -660,10 +614,10 @@ impl Bus {
             let state = outcome.state.clone();
             bus.confirmations.finish(ticket, state.clone()).await;
             bus.confirmations.finish(second_ticket, state).await;
-            outcome.result
+            with_confirmation(outcome.result, confirmation)
         });
         task.await
-            .unwrap_or_else(|e| error(&format!("确认流程意外中止：{e}")))
+            .unwrap_or_else(|e| with_failure(&format!("确认流程意外中止：{e}"), "internal_error"))
     }
 
     /// 主人没同意：拒绝了、过期了，或者卡片发不出去。
@@ -693,20 +647,27 @@ impl Bus {
             outcome: Some(&message),
             files: &[],
         });
-        error(&message)
+        with_failure(&message, refusal.kind())
     }
 
-    fn deny(&self, caller: &Caller, name: &str, args: &Value, message: &str) -> CallToolResult {
+    /// 总线拒绝：工具不在、参数不对、不让这个 Bot 做的事。类别进结果的 `_meta`，Agent 不用读文案。
+    fn deny(
+        &self,
+        caller: &Caller,
+        name: &str,
+        args: &Value,
+        failure: &ToolFailure,
+    ) -> CallToolResult {
         self.audit.record(&Record {
             caller: caller.id.as_str(),
             tool: name,
             arguments: args,
             decision: Decision::Denied,
             basis: None,
-            outcome: Some(message),
+            outcome: Some(&failure.message),
             files: &[],
         });
-        error(message)
+        with_failure(&failure.message, failure.kind)
     }
 
     fn record(
@@ -775,6 +736,8 @@ mod test_setup;
 pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tool_failure_tests;
 #[cfg(test)]
 mod tool_policy_tests;
 #[cfg(test)]

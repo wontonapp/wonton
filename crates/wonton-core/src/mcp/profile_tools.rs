@@ -8,12 +8,13 @@ use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use wonton_protocol::{
-    BotActivity, MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE, MAX_BOT_NAME_CHARS,
+    BotActivity, FileFailure, MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE,
+    MAX_BOT_NAME_CHARS,
 };
 
 use super::audit::{Decision, Record};
 use super::core_tools::tool;
-use super::{Bus, Caller, naming};
+use super::{Bus, Caller, ToolFailure, naming};
 use crate::files::share_fs::saving::Outgoing;
 use crate::plugin::bot_profile::{LocalUpdate, MediaChange, Profile, ProfileError, UploadedAvatar};
 
@@ -63,17 +64,23 @@ struct Arguments {
     avatars: BTreeMap<BotActivity, Option<String>>,
 }
 
-fn parse(args: &JsonObject) -> Result<Arguments, String> {
+fn parse(args: &JsonObject) -> Result<Arguments, ToolFailure> {
     // serde 的 Option 会接受 null；只有 avatars 里的 null 才表示清掉。
     for key in ["name", "avatar"] {
         if args.get(key).is_some_and(|value| !value.is_string()) {
-            return Err(format!("invalid_input: {key} must be a string"));
+            return Err(ToolFailure::new(
+                "invalid_input",
+                format!("invalid_input: {key} must be a string"),
+            ));
         }
     }
     let args: Arguments = serde_json::from_value(Value::Object(args.clone()))
-        .map_err(|e| format!("invalid_input: {e}"))?;
+        .map_err(|e| ToolFailure::new("invalid_input", format!("invalid_input: {e}")))?;
     if args.name.is_none() && args.avatar.is_none() && args.avatars.is_empty() {
-        return Err("invalid_input: change at least name, avatar, or one state avatar".to_owned());
+        return Err(ToolFailure::new(
+            "invalid_input",
+            "invalid_input: change at least name, avatar, or one state avatar",
+        ));
     }
     Ok(args)
 }
@@ -95,7 +102,10 @@ pub(super) async fn call(
             caller,
             &naming::join(naming::CORE, which),
             &Value::Object(args),
-            &format!("internal: profile operation aborted unexpectedly: {e}"),
+            &ToolFailure::new(
+                "internal_error",
+                format!("internal: profile operation aborted unexpectedly: {e}"),
+            ),
         ),
     }
 }
@@ -107,10 +117,10 @@ async fn run(bus: &Bus, caller: &Caller, which: &str, args: JsonObject) -> CallT
         if args.is_empty() {
             bus.plugins.bot_profile(&caller.id).await.map_err(problem)
         } else {
-            Err(
-                "invalid_input: get_profile takes no arguments; it only reads your own bot"
-                    .to_owned(),
-            )
+            Err(ToolFailure::new(
+                "invalid_input",
+                "invalid_input: get_profile takes no arguments; it only reads your own bot",
+            ))
         }
     } else {
         set(bus, caller, &args).await
@@ -128,14 +138,15 @@ async fn run(bus: &Bus, caller: &Caller, which: &str, args: JsonObject) -> CallT
             });
             CallToolResult::success(vec![ContentBlock::text(view(&profile).to_string())])
         }
-        Err(message) => bus.deny(caller, &name, &value, &message),
+        Err(failure) => bus.deny(caller, &name, &value, &failure),
     }
 }
 
-fn problem(error: ProfileError) -> String {
-    match error {
+fn problem(error: ProfileError) -> ToolFailure {
+    // 这两个的文字按 Bot 面向的英文写，限流的还带机器可读的秒数；别的用错误自己的文字（开头就是类别）。
+    let message = match &error {
         ProfileError::NotFound => {
-            "invalid_input: the app is not installed or has no bot of its own".to_owned()
+            "not_found: the app is not installed or has no bot of its own".to_owned()
         }
         ProfileError::RateLimited { retry_after_secs } => {
             format!(
@@ -143,10 +154,11 @@ fn problem(error: ProfileError) -> String {
             )
         }
         error => error.to_string(),
-    }
+    };
+    ToolFailure::new(error.kind(), message)
 }
 
-async fn set(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Profile, String> {
+async fn set(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Profile, ToolFailure> {
     let args = parse(args)?;
     let mut paths = BTreeMap::new();
     for path in args
@@ -156,12 +168,14 @@ async fn set(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Profile, S
     {
         *paths.entry(path.clone()).or_insert(0) += 1;
     }
-    let (outgoing, mut files) = read(bus.plugins.app_data_dir(&caller.id), paths).await?;
-    let mut take = |path: String| -> Result<MediaChange, String> {
+    let (outgoing, mut files) = read(bus.plugins.app_data_dir(&caller.id), paths)
+        .await
+        .map_err(|e| ToolFailure::new(e.kind.as_str(), e.to_string()))?;
+    let mut take = |path: String| -> Result<MediaChange, ToolFailure> {
         // 重复路径只读一次；上传接口拥有字节，所以最后一次使用才移动，其余使用复制。
-        let (filename, data, uses) = files
-            .get_mut(&path)
-            .ok_or_else(|| "internal: avatar file was not read".to_owned())?;
+        let (filename, data, uses) = files.get_mut(&path).ok_or_else(|| {
+            ToolFailure::new("internal_error", "internal: avatar file was not read")
+        })?;
         *uses -= 1;
         let data = if *uses == 0 {
             std::mem::take(data)
@@ -186,7 +200,7 @@ async fn set(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Profile, S
                     .unwrap_or(MediaChange::Clear),
             ))
         })
-        .collect::<Result<_, String>>()?;
+        .collect::<Result<_, ToolFailure>>()?;
     let profile = bus
         .plugins
         .set_bot_profile(
@@ -212,16 +226,14 @@ type Files = BTreeMap<String, (String, Vec<u8>, usize)>;
 async fn read(
     app_data: PathBuf,
     paths: BTreeMap<String, usize>,
-) -> Result<(Option<Outgoing>, Files), String> {
+) -> Result<(Option<Outgoing>, Files), crate::files::Failure> {
     if paths.is_empty() {
         return Ok((None, BTreeMap::new()));
     }
     tokio::task::spawn_blocking(move || {
         let unique: Vec<_> = paths.keys().cloned().collect();
-        let outgoing = Outgoing::open(&app_data, &unique).map_err(|e| e.to_string())?;
-        let bytes = outgoing
-            .read_bounded(MAX_AVATAR_BYTES + 1)
-            .map_err(|e| e.to_string())?;
+        let outgoing = Outgoing::open(&app_data, &unique)?;
+        let bytes = outgoing.read_bounded(MAX_AVATAR_BYTES + 1)?;
         let files = paths
             .into_iter()
             .zip(bytes)
@@ -230,7 +242,12 @@ async fn read(
         Ok((Some(outgoing), files))
     })
     .await
-    .map_err(|e| format!("internal: reading the outbox aborted unexpectedly: {e}"))?
+    .map_err(|e| {
+        crate::files::Failure::new(
+            FileFailure::Internal,
+            format!("internal: reading the outbox aborted unexpectedly: {e}"),
+        )
+    })?
 }
 
 fn view(profile: &Profile) -> Value {

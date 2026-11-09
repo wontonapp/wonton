@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use super::Outcome;
 use super::audit::{Decision, Record};
 use super::cards;
-use super::{Bus, Caller, error};
+use super::{Bus, Caller, ToolFailure, with_failure};
 use crate::bot_activity::Guard;
 use crate::files::share_fs::saving;
 use crate::l10n;
@@ -51,7 +51,10 @@ pub(super) async fn install(
             caller,
             name,
             &value,
-            "invalid_input：id 和 dir 必须且只能给一个：官方索引里的用 id，自己写的用 dir",
+            &ToolFailure::new(
+                "invalid_input",
+                "invalid_input：id 和 dir 必须且只能给一个：官方索引里的用 id，自己写的用 dir",
+            ),
         ),
         (Some(id), None) => official(bus, caller, name, &value, id, activity).await,
         (None, Some(dir)) => from_dir(bus, caller, name, &value, dir, activity).await,
@@ -69,12 +72,19 @@ async fn official(
 ) -> CallToolResult {
     let package = match super::core_tools::installable(bus, id).await {
         Ok(package) => package,
-        Err(message) => return bus.deny(caller, name, value, &message),
+        Err(failure) => return bus.deny(caller, name, value, &failure),
     };
     let langs = bus.plugins.owner_languages();
     let inputs = match bus.plugins.secret_inputs(&package.manifest, None, &langs) {
         Ok(inputs) => inputs,
-        Err(e) => return bus.deny(caller, name, value, &e.to_string()),
+        Err(e) => {
+            return bus.deny(
+                caller,
+                name,
+                value,
+                &ToolFailure::new(e.kind(), e.to_string()),
+            );
+        }
     };
     let mut draft = cards::install(&caller.name, &package.manifest, inputs, &langs);
     match bus
@@ -89,7 +99,10 @@ async fn official(
                 caller,
                 name,
                 value,
-                &format!("internal_error：查旧数据失败：{e}"),
+                &ToolFailure::new(
+                    "internal_error",
+                    format!("internal_error：查旧数据失败：{e}"),
+                ),
             );
         }
     }
@@ -101,11 +114,14 @@ async fn official(
             .plugins
             .store_input_values(&package.manifest, &secrets, None, &langs)
         {
-            return Outcome::failed(crate::l10n::text(
-                &langs,
-                "chat-install-failed",
-                &[("kind", e.kind().into()), ("error", e.to_string().into())],
-            ));
+            return Outcome::failed(
+                e.kind(),
+                crate::l10n::text(
+                    &langs,
+                    "chat-install-failed",
+                    &[("kind", e.kind().into()), ("error", e.to_string().into())],
+                ),
+            );
         }
         match bus
             .plugins
@@ -113,11 +129,14 @@ async fn official(
             .await
         {
             Ok(view) => installed_outcome(&view, None, &langs),
-            Err(e) => Outcome::failed(crate::l10n::text(
-                &langs,
-                "chat-install-failed",
-                &[("kind", e.kind().into()), ("error", e.to_string().into())],
-            )),
+            Err(e) => Outcome::failed(
+                e.kind(),
+                crate::l10n::text(
+                    &langs,
+                    "chat-install-failed",
+                    &[("kind", e.kind().into()), ("error", e.to_string().into())],
+                ),
+            ),
         }
     };
     bus.confirmed_twice(
@@ -177,18 +196,23 @@ async fn from_dir(
     dir: &str,
     activity: Guard,
 ) -> CallToolResult {
-    let deny = |message: String| bus.deny(caller, name, value, &message);
+    let deny = |failure: ToolFailure| bus.deny(caller, name, value, &failure);
     let app_data = bus.plugins.app_data_dir(&caller.id);
     // 目录 fd 一路钉住：校验和装的都是这一眼看到的包，中途换成软链接也出不去。
     let opened = match saving::outbox_dir(&app_data, dir) {
         Ok((opened, _)) => opened,
-        Err(failure) => return deny(failure.to_string()),
+        Err(failure) => return deny(ToolFailure::new(failure.kind.as_str(), failure.to_string())),
     };
     let langs = bus.plugins.owner_languages();
     // 只读一次：对这个包做检查，装的就是校验的这一份，中间改文件换不掉。
     let package = match PluginPackage::load_dir_at(opened.as_fd(), &langs) {
         Ok(package) => package,
-        Err(e) => return deny(format!("invalid_input：插件包不合法：{e}")),
+        Err(e) => {
+            return deny(ToolFailure::new(
+                "invalid_input",
+                format!("invalid_input：插件包不合法：{e}"),
+            ));
+        }
     };
     // 和 wonton__check_plugin 同一份校验：有 problems 就不发卡片，全部列出来。
     let problems =
@@ -197,19 +221,27 @@ async fn from_dir(
             Err(e) => vec![e],
         };
     if !problems.is_empty() {
-        return deny(format!(
-            "invalid_input：校验没过，改完再装：{}",
-            problems.join("；")
+        return deny(ToolFailure::new(
+            "invalid_input",
+            format!("invalid_input：校验没过，改完再装：{}", problems.join("；")),
         ));
     }
     // 和 id 路径一样，卡片之前就知道这台主机装不装得了。
     if let Err(e) = bus.plugins.fits_host(&package.manifest, &langs).await {
-        return deny(format!("invalid_input：{e}"));
+        return deny(ToolFailure::new(
+            "invalid_input",
+            format!("invalid_input：{e}"),
+        ));
     }
     let id = package.manifest.id.clone();
     let record = match bus.plugins.installed_record(&id) {
         Ok(record) => record,
-        Err(e) => return deny(format!("internal_error：读插件记录失败：{e}")),
+        Err(e) => {
+            return deny(ToolFailure::new(
+                "internal_error",
+                format!("internal_error：读插件记录失败：{e}"),
+            ));
+        }
     };
     match record {
         None => first_install(bus, caller, name, value, package, &langs, activity).await,
@@ -244,7 +276,14 @@ async fn first_install(
         .await;
     let inputs = match bus.plugins.secret_inputs(&package.manifest, None, langs) {
         Ok(inputs) => inputs,
-        Err(e) => return bus.deny(caller, name, value, &e.to_string()),
+        Err(e) => {
+            return bus.deny(
+                caller,
+                name,
+                value,
+                &ToolFailure::new(e.kind(), e.to_string()),
+            );
+        }
     };
     let mut draft = cards::agent_install(&caller.name, &package, inputs, langs);
     match bus.plugins.retained_data(&id, langs).await {
@@ -255,7 +294,10 @@ async fn first_install(
                 caller,
                 name,
                 value,
-                &format!("internal_error：查旧数据失败：{e}"),
+                &ToolFailure::new(
+                    "internal_error",
+                    format!("internal_error：查旧数据失败：{e}"),
+                ),
             );
         }
     }
@@ -272,11 +314,14 @@ async fn first_install(
             .plugins
             .store_input_values(&package.manifest, &secrets, None, &langs)
         {
-            return Outcome::failed(crate::l10n::text(
-                &langs,
-                "chat-install-failed",
-                &[("kind", e.kind().into()), ("error", e.to_string().into())],
-            ));
+            return Outcome::failed(
+                e.kind(),
+                crate::l10n::text(
+                    &langs,
+                    "chat-install-failed",
+                    &[("kind", e.kind().into()), ("error", e.to_string().into())],
+                ),
+            );
         }
         match bus
             .plugins
@@ -298,15 +343,18 @@ async fn first_install(
                 };
                 installed_outcome(&view, note, &langs)
             }
-            Err(e) => Outcome::failed(l10n::text(
-                &langs,
-                "chat-install-failed-id",
-                &[
-                    ("id", id_for_run.as_str().into()),
-                    ("kind", e.kind().into()),
-                    ("error", e.to_string().into()),
-                ],
-            )),
+            Err(e) => Outcome::failed(
+                e.kind(),
+                l10n::text(
+                    &langs,
+                    "chat-install-failed-id",
+                    &[
+                        ("id", id_for_run.as_str().into()),
+                        ("kind", e.kind().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ),
+            ),
         }
     };
     bus.confirmed_twice(
@@ -362,7 +410,10 @@ async fn quiet_update(
             "version": version,
             "note": "权限没变宽，没有打扰主人，已写进审计",
         })),
-        Err(e) => error(&format!("更新 {} 失败（{}）：{}", id, e.kind(), e)),
+        Err(e) => with_failure(
+            &format!("更新 {} 失败（{}）：{}", id, e.kind(), e),
+            e.kind(),
+        ),
     }
 }
 
@@ -381,7 +432,7 @@ async fn quiet_update_detached(
         result
     })
     .await
-    .unwrap_or_else(|e| error(&format!("更新流程意外中止：{e}")))
+    .unwrap_or_else(|e| with_failure(&format!("更新流程意外中止：{e}"), "internal_error"))
 }
 
 /// 写审计；其余发卡片，最高级再多点一张。摘要和装着的相同报“没有变化”。
@@ -393,7 +444,7 @@ async fn update(
     package: PluginPackage,
     (record, langs, activity): (InstalledRecord, &Languages, Guard),
 ) -> CallToolResult {
-    let deny = |message: String| bus.deny(caller, name, value, &message);
+    let deny = |failure: ToolFailure| bus.deny(caller, name, value, &failure);
     let id = package.manifest.id.clone();
     let owns = record
         .written_by
@@ -407,13 +458,17 @@ async fn update(
         && record.origin.is_none()
         && !bus.plugins.is_system(&id);
     if !owns && !adopt {
-        return deny(format!(
-            "invalid_input：{id} 已经装了，不是你写的插件，不能从这里更新"
+        return deny(ToolFailure::new(
+            "invalid_input",
+            format!("invalid_input：{id} 已经装了，不是你写的插件，不能从这里更新"),
         ));
     }
     let installed_digest = package_files::digest(record.source.as_bytes(), &record.files);
     if installed_digest == package.digest() && !adopt {
-        return deny("invalid_input：没有变化：装着的就是这份（摘要相同）".to_owned());
+        return deny(ToolFailure::new(
+            "invalid_input",
+            "invalid_input：没有变化：装着的就是这份（摘要相同）",
+        ));
     }
     let risky = highest(&package.manifest)
         || package
@@ -491,7 +546,10 @@ async fn card_update(
                 caller,
                 name,
                 value,
-                &format!("invalid_input：接手刚被回绝，{minutes} 分钟内不会再问"),
+                &ToolFailure::new(
+                    "invalid_input",
+                    format!("invalid_input：接手刚被回绝，{minutes} 分钟内不会再问"),
+                ),
             );
         }
         bus.note_adopt_attempt(&caller.id, &id);
@@ -540,7 +598,14 @@ async fn card_update(
         .secret_inputs(&package.manifest, filled.as_ref(), langs)
     {
         Ok(inputs) => inputs,
-        Err(e) => return bus.deny(caller, name, value, &e.to_string()),
+        Err(e) => {
+            return bus.deny(
+                caller,
+                name,
+                value,
+                &ToolFailure::new(e.kind(), e.to_string()),
+            );
+        }
     };
     let draft = cards::agent_update(
         &caller.name,
@@ -592,11 +657,14 @@ async fn upgrade_ran(
         bus.plugins
             .store_input_values(&package.manifest, &secrets, filled.as_ref(), &langs)
     {
-        return Outcome::failed(l10n::text(
-            &langs,
-            "chat-install-failed",
-            &[("kind", e.kind().into()), ("error", e.to_string().into())],
-        ));
+        return Outcome::failed(
+            e.kind(),
+            l10n::text(
+                &langs,
+                "chat-install-failed",
+                &[("kind", e.kind().into()), ("error", e.to_string().into())],
+            ),
+        );
     }
     match bus
         .plugins
@@ -649,14 +717,17 @@ async fn upgrade_ran(
                 message,
             )
         }
-        Err(e) => Outcome::failed(l10n::text(
-            &langs,
-            "chat-update-failed",
-            &[
-                ("id", id.as_str().into()),
-                ("kind", e.kind().into()),
-                ("error", e.to_string().into()),
-            ],
-        )),
+        Err(e) => Outcome::failed(
+            e.kind(),
+            l10n::text(
+                &langs,
+                "chat-update-failed",
+                &[
+                    ("id", id.as_str().into()),
+                    ("kind", e.kind().into()),
+                    ("error", e.to_string().into()),
+                ],
+            ),
+        ),
     }
 }

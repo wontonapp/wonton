@@ -128,10 +128,11 @@ async fn an_unknown_topic_lists_what_can_be_asked() {
         .answer(Some("add device"), None)
         .await
         .unwrap_err();
-    assert!(error.starts_with("invalid_input"), "{error}");
+    assert_eq!(error.kind(), "invalid_input");
+    let message = error.to_string();
     assert!(
-        error.contains("devices") && error.contains("models"),
-        "{error}"
+        message.contains("devices") && message.contains("models"),
+        "{message}"
     );
 }
 
@@ -140,7 +141,7 @@ async fn no_docs_at_all_is_reported() {
     let rig = Rig::new();
     fs::remove_dir_all(rig.dir.path().join("image")).unwrap();
     let error = rig.help(None).answer(None, None).await.unwrap_err();
-    assert!(error.starts_with("docs_unavailable"), "{error}");
+    assert_eq!(error.kind(), "docs_unavailable");
 }
 
 #[tokio::test]
@@ -318,7 +319,8 @@ async fn agents_reach_the_docs_through_the_bus() {
     let s = setup(Engine::unreachable_for_test(), Duration::from_secs(60)).await;
     let missing = s.call("wonton__help", json!({})).await;
     assert!(failed(&missing));
-    assert!(text(&missing).starts_with("service_unavailable"));
+    let meta = missing.meta.as_ref().unwrap();
+    assert_eq!(meta.0["app.wonton/failure"], "service_unavailable");
 
     let rig = Rig::new();
     s.bus.attach_help(rig.help(None));
