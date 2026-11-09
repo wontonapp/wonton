@@ -96,6 +96,12 @@ struct InstallConfirmView: View {
     }
 
     private func load() async {
+        if let preloaded = confirmation.preloaded {
+            lanWebui = preloaded.lanWebui?.enabled ?? false
+            enabled = Set(preloaded.permissions.filter { $0.optional && $0.enabled }.map(\.permission))
+            loaded = .success(preloaded)
+            return
+        }
         loaded = nil
         do {
             let preview = switch confirmation {
