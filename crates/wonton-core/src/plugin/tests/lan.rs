@@ -570,7 +570,8 @@ async fn a_core_restarted_after_a_dhcp_change_moves_the_ports() {
     *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
     let m = Arc::new(manager_with(engine, &dir).with_lan(lan()));
     m.restore().await.unwrap();
-    assert!(matches!(status(&m), PluginStatus::Degraded { .. }));
+    // 容器不在，核对按检测到的新地址重建，端口直接搬过去。
+    assert_eq!(status(&m), PluginStatus::Running);
     m.lan_pass(&Languages::default()).await.unwrap();
     assert_eq!(status(&m), PluginStatus::Running);
     let bindings = &created(&docker, "samba")["HostConfig"]["PortBindings"];

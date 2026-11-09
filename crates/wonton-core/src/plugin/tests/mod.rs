@@ -56,6 +56,7 @@ mod owner;
 mod people_languages;
 mod preinstall;
 mod privileges;
+mod render_drift;
 mod resources;
 mod runtime;
 mod secrets;

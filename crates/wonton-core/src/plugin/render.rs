@@ -526,6 +526,9 @@ fn render_plan(
     check_not_nested(&binds, langs)?;
     let mut dirs = dir_owners(&binds, &services, ctx, langs)?;
     let relays = prepare_relays(manifest, ctx, langs, &services, &mut containers, &mut dirs)?;
+    for container in &mut containers {
+        super::render_drift::stamp(container);
+    }
     let volumes = package
         .named_volumes()
         .iter()

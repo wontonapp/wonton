@@ -149,8 +149,14 @@ impl PluginManager {
                 self.set(id, PluginStatus::Installing, None);
                 // 复用恢复核对，先把核心接回网络；依赖核心内部别名的服务才能启动。
                 self.reconcile(&package, &record).await?;
-                self.start_resident_containers(&package, &record, langs)
-                    .await?;
+                // 渲染变了就重建，免得主人启动的还是旧配置的容器。
+                if !self
+                    .recreate_on_drift(&package, &record, langs, true)
+                    .await?
+                {
+                    self.start_resident_containers(&package, &record, langs)
+                        .await?;
+                }
             }
         }
         let deployed = self.reconcile_running(&package, &record).await?;

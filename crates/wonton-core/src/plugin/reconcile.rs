@@ -82,6 +82,10 @@ impl PluginManager {
         if let Some(core) = &self.cfg.core_container {
             self.attach_core(&network, core, manifest).await?;
         }
+        // 渲染和容器上的摘要对不上（核心升级换了注入的值，或旧容器没有摘要）就照安装的路径重建。全停着的
+        // 插件不在这里动，留给启动流程（见 start.rs）。
+        self.recreate_on_drift(package, record, &langs, false)
+            .await?;
         let health = match self
             .check_containers(package, &langs)
             .await?

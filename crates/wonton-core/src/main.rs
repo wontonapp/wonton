@@ -272,6 +272,11 @@ async fn serve() -> anyhow::Result<()> {
     tracing::info!(version = %docker.version, arch = %docker.arch, "Docker 已连接");
 
     let owner_token = owner_token(&cfg)?;
+    // 监听先建起来：核心启动时核对插件，渲染变了会重建容器，里面的一次性服务（比如登记 OIDC 源）要经核心
+    // 的地址访问核心。网关这时还没开始接，连接先进内核的队列等着。
+    let listener = TcpListener::bind(cfg.listen)
+        .await
+        .with_context(|| format!("监听 {}", cfg.listen))?;
 
     let upgrades = open_upgrades(&cfg, &engine);
     let http = HttpClient::new();
@@ -321,13 +326,14 @@ async fn serve() -> anyhow::Result<()> {
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices);
     let push = open_push(&cfg, &tunnel, &manager)?;
+    let upgrades_after_serve = upgrades.clone();
     let gateway = Arc::new(
         Gateway::new(
             cfg.public.clone(),
             owner,
             owner_token,
             members,
-            manager,
+            manager.clone(),
             hydra,
             http,
             tunnel.clone(),
@@ -346,9 +352,6 @@ async fn serve() -> anyhow::Result<()> {
     );
     let push_listener = push_listener::bind(cfg.push_listen.as_deref()).await?;
     let app = gateway::router(gateway.clone());
-    let listener = TcpListener::bind(cfg.listen)
-        .await
-        .with_context(|| format!("监听 {}", cfg.listen))?;
     let entry =
         TunnelEntry::spawn_with_protocols(&tunnel, app.clone(), extra_protocols(peers, federation));
     tracing::info!(
@@ -356,14 +359,15 @@ async fn serve() -> anyhow::Result<()> {
         url = %cfg.public.origin(cfg.public.core_host()),
         "网关已启动"
     );
-    let served = push_listener::serve(
+    let served = tokio::spawn(push_listener::serve(
         listener,
         app,
         push_listener.map(|listener| (listener, gateway::push_router(gateway))),
-    )
-    .await;
+    ));
+    // 网关开始接了才核对插件：核对时渲染变了会重建容器，里面的一次性服务要经核心的地址访问核心。
+    start_restored_plugins(&cfg, &manager, upgrades_after_serve).await?;
     entry.shutdown().await;
-    served
+    served.await.context("网关任务退出")?
 }
 
 fn spawn_plugin_monitors(manager: &Arc<PluginManager>) {
@@ -633,11 +637,20 @@ async fn start_plugin_manager(
     manager.spawn_registry_mirror_probe();
     // 启动时把宿主主机名取好缓存起来，装插件、重建容器时不再查 Docker；没取到时下次安装再取。
     manager.host_name().await;
-    manager.restore().await.context("恢复已安装的插件")?;
-    spawn_plugin_monitors(&manager);
-    upgrades.spawn();
-    preinstall(cfg, manager.clone(), upgrades.clone())?;
     Ok((manager, images))
+}
+
+/// 网关开始接连接之后才做：核对已装插件、起监控、装默认插件。
+async fn start_restored_plugins(
+    cfg: &Config,
+    manager: &Arc<PluginManager>,
+    upgrades: Arc<Upgrades>,
+) -> anyhow::Result<()> {
+    manager.restore().await.context("恢复已安装的插件")?;
+    spawn_plugin_monitors(manager);
+    upgrades.spawn();
+    preinstall(cfg, manager.clone(), upgrades)?;
+    Ok(())
 }
 
 /// 读取已配对设备和隧道私钥，绑定隧道 endpoint。绑不上就启动失败：没有隧道，App 连不回家。

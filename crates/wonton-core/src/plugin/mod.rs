@@ -81,6 +81,7 @@ pub mod proxy_auth;
 mod reconcile;
 pub mod registry_mirror;
 pub mod render;
+mod render_drift;
 pub mod requirements;
 pub mod save_grants;
 pub mod secret_input;

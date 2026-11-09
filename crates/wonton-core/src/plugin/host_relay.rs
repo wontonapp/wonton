@@ -282,6 +282,8 @@ impl super::manager::PluginManager {
             }
             self.engine.remove_container(&name).await?;
             let mut plan = plan(&self.cfg.instance, manifest, &app_data, owner, relay);
+            // 摘要按渲染时的镜像算，所以要在换成拉取后的写法之前打。
+            super::render_drift::stamp(&mut plan);
             plan.body.image = Some(image.clone());
             plan.image.clone_from(&image);
             self.engine.create_container(&name, plan.body).await?;
