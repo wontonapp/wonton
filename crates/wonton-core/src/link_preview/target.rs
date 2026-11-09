@@ -46,9 +46,7 @@ pub(super) async fn addresses(net: &Net, url: &Url) -> Result<Vec<IpAddr>, Failu
     let found = match url.host() {
         Some(Host::Ipv4(ip)) => vec![IpAddr::V4(ip)],
         Some(Host::Ipv6(ip)) => vec![IpAddr::V6(ip)],
-        Some(Host::Domain(name)) => (net.resolve)(name.to_owned(), port)
-            .await
-            .map_err(|e| Failure::new(LinkPreviewFailure::UpstreamError, e.to_string()))?,
+        Some(Host::Domain(name)) => net.resolve(name.to_owned(), port).await?,
         None => {
             return Err(Failure::new(
                 LinkPreviewFailure::InvalidUrl,
@@ -58,7 +56,12 @@ pub(super) async fn addresses(net: &Net, url: &Url) -> Result<Vec<IpAddr>, Failu
     };
     if found.is_empty() {
         let host = url.host_str().unwrap_or_default().to_owned();
-        return Err(Failure::new(LinkPreviewFailure::UpstreamError, host));
+        let kind = if net.proxy.current().is_some() {
+            LinkPreviewFailure::DnsFailed
+        } else {
+            LinkPreviewFailure::UpstreamError
+        };
+        return Err(Failure::new(kind, host));
     }
     if let Some(ip) = found.iter().copied().find(|ip| blocked(*ip)) {
         return Err(Failure::new(
