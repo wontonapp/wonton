@@ -196,6 +196,8 @@
     <!-- Status: the app isn\'t running, or is installing, updating or starting. -->
     <string name="bot_state_offline">離線</string>
     <string name="timeline_new_messages_below">以下是新訊息</string>
+    <string name="room_scroll_to_bottom">回到底部</string>
+    <string name="room_scroll_to_bottom_count">回到底部，還有 %1$d 條新訊息</string>
     <string name="timeline_start">以上是聊天的開頭</string>
     <string name="timeline_edited">已編輯</string>
     <string name="timeline_sending">傳送中</string>

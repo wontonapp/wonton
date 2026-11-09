@@ -196,6 +196,8 @@
     <!-- Status: the app isn\'t running, or is installing, updating or starting. -->
     <string name="bot_state_offline">オフライン</string>
     <string name="timeline_new_messages_below">以下が新着メッセージです</string>
+    <string name="room_scroll_to_bottom">一番下へ戻る</string>
+    <string name="room_scroll_to_bottom_count">一番下へ戻る、新着 %1$d 件</string>
     <string name="timeline_start">チャットの最初です</string>
     <string name="timeline_edited">編集済み</string>
     <string name="timeline_sending">送信中</string>

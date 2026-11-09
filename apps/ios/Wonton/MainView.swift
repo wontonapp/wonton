@@ -210,7 +210,8 @@ struct MainView: View {
         }
     }
 
-    private var isPaired: Bool { home.viewModel.status != .notConfigured }
+    /// 深链接的 `wonton://pair` 也要看它（`MainView+Navigation.swift` 在别的文件里，`private` 看不到）。
+    var isPaired: Bool { home.viewModel.status != .notConfigured }
     var overlayPresented: Binding<Bool> {
         Binding(get: { tabs.viewModel.overlay != nil && onboardingGateway == nil },
                 set: { if !$0 { tabs.send(.closeTabOverlay) } })
