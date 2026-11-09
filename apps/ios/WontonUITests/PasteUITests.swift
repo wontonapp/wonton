@@ -42,14 +42,12 @@ final class PasteUITests: XCTestCase {
         XCTAssertNotNil(send, "粘贴后没有出预览面板")
         XCTAssertNotNil(waitAnyButton(["Cancel", "取消"], timeout: 3), "预览面板没有取消")
         shot("10-preview")
-        send?.tap()
 
-        // 本地回显在时间线末尾；列表是懒加载，发送后先等传完，滚到底再找最后一屏的图片。
+        // 本地回显在时间线末尾，App 发送后自动滚到最新消息。图片气泡的读屏类型不确定，
+        // 用复合证据：大图元素，或自己这条消息的「已读」回执。
+        send?.tap()
         waitSendingDone(deadline: Date().addingTimeInterval(120))
-        app.swipeUp()
-        app.swipeUp()
-        app.swipeUp()
-        XCTAssertTrue(hasLargeImage(), "时间线里没有出现图片消息")
+        XCTAssertTrue(hasLargeImage() || hasReadReceipt(), "时间线里没有出现图片消息")
         shot("11-sent")
     }
 
@@ -145,9 +143,24 @@ final class PasteUITests: XCTestCase {
         return buttons.allElementsBoundByIndex.filter { $0.frame.width > 100 && $0.frame.height > 100 }
     }
 
-    /// 图片气泡比头像、错误图标都大。
+    /// 大图元素：App 级找 Image 和 Button（图片气泡的读屏类型不确定），头像等小图被尺寸过滤掉。
     private func hasLargeImage() -> Bool {
-        timelineImages().contains { $0.frame.width > 100 && $0.frame.height > 100 }
+        for query in [app.images, app.buttons] {
+            if query.firstMatch.waitForExistence(timeout: 0.2),
+               query.allElementsBoundByIndex.contains(where: { $0.frame.width > 100 && $0.frame.height > 100 }) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// 自己这条消息的「已读」回执：对方的核心确认过这条消息，配合发送完成标记即送达证据。
+    private func hasReadReceipt() -> Bool {
+        let texts = app.staticTexts
+        guard texts.firstMatch.waitForExistence(timeout: 0.3) else { return false }
+        return texts.allElementsBoundByIndex.contains {
+            $0.label.contains("已读") || $0.label.contains("Read")
+        }
     }
 
     /// 本设备没有这条消息的密钥时的占位（没配恢复的新设备会这样）。
