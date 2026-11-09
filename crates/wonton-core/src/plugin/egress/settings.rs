@@ -7,16 +7,46 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
+use url::Url;
 use wonton_protocol::{EgressProbe, EgressProxySource};
 
 use super::address::ProxyAddress;
 use super::probe::Prober;
+
+/// 配了出网代理时，链接预览经代理问这个 DoH 服务器解析域名。用 IP 写，不用先解析它自己的域名。
+pub const DEFAULT_DOH: &str = "https://1.1.1.1/dns-query";
+
+/// 默认的 DoH 服务器地址，常量本来就合法。
+pub fn default_doh() -> Url {
+    Url::parse(DEFAULT_DOH).expect("默认的 DoH 地址不合法")
+}
+
+/// 主人给的 DoH 地址：http(s)、有主机、没有用户名密码、带路径。
+pub fn parse_doh(text: &str) -> Result<Url, String> {
+    let url = Url::parse(text).map_err(|e| format!("不是合法的地址：{e}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("要用 http:// 或 https://".into());
+    }
+    if url.host().is_none() {
+        return Err("缺少主机名".into());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("不能带用户名或密码".into());
+    }
+    if url.path().is_empty() || url.path() == "/" {
+        return Err("要带查询路径，比如 /dns-query".into());
+    }
+    Ok(url)
+}
 
 /// 主人在 App 里存下的设置。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredEgress {
     /// 没有时是主人清空了。
     pub url: Option<String>,
+    /// 经代理解析域名用的 DoH 服务器；没有时用 [`DEFAULT_DOH`]。App 里还不能改，经环境变量或设置文件改。
+    #[serde(default)]
+    pub doh_url: Option<String>,
     #[serde(default)]
     pub direct_cidrs: Vec<IpNet>,
     #[serde(default)]
@@ -29,6 +59,8 @@ pub struct EgressConfig {
     pub url: Option<ProxyAddress>,
     pub source: EgressProxySource,
     pub direct_cidrs: Vec<IpNet>,
+    /// 经代理解析域名用的 DoH 服务器。
+    pub doh_url: Url,
 }
 
 /// 核心里出网代理的状态。
@@ -38,6 +70,8 @@ pub struct Egress {
     env: Option<ProxyAddress>,
     /// `WONTON_EGRESS_PROXY_DETECTED`：只作初值。
     detected: Option<ProxyAddress>,
+    /// `WONTON_DOH_URL`：设了就只用它，设置文件里不能改。
+    doh: Option<Url>,
     /// 出口容器一次只改一处：同时安装的两个插件不能同时建它、改名单。
     pub(super) pass: tokio::sync::Mutex<()>,
     /// 改设置一次做一个：要重启插件，可能很久。
@@ -68,6 +102,13 @@ impl Egress {
             detected,
             ..Self::default()
         }
+    }
+
+    /// `WONTON_DOH_URL`。
+    #[must_use]
+    pub fn with_doh(mut self, doh: Option<Url>) -> Self {
+        self.doh = doh;
+        self
     }
 
     /// 测试用：探测的结果由测试给出。
@@ -163,7 +204,19 @@ impl Egress {
             url,
             source,
             direct_cidrs,
+            doh_url: self.doh_url(stored)?,
         })
+    }
+
+    /// DoH 服务器：环境变量 > 设置文件 > 默认。
+    fn doh_url(&self, stored: Option<&StoredEgress>) -> Result<Url, String> {
+        if let Some(doh) = &self.doh {
+            return Ok(doh.clone());
+        }
+        match stored.and_then(|stored| stored.doh_url.as_deref()) {
+            Some(text) => parse_doh(text),
+            None => Ok(default_doh()),
+        }
     }
 }
 
@@ -178,6 +231,7 @@ mod tests {
     fn stored(url: Option<&str>) -> StoredEgress {
         StoredEgress {
             url: url.map(str::to_owned),
+            doh_url: None,
             direct_cidrs: vec!["100.64.0.0/10".parse().unwrap()],
             use_plugin: false,
         }
@@ -220,5 +274,38 @@ mod tests {
     fn a_stored_address_that_no_longer_parses_is_an_error() {
         let egress = Egress::default();
         assert!(egress.resolve(Some(&stored(Some("ftp://x")))).is_err());
+    }
+
+    #[test]
+    fn the_doh_server_is_the_install_setting_then_the_stored_one_then_the_default() {
+        let stored = StoredEgress {
+            doh_url: Some("https://dns.example/dns-query".into()),
+            ..Default::default()
+        };
+        let env: Url = "http://env.example/dns-query".parse().unwrap();
+        let config = Egress::default()
+            .with_doh(Some(env.clone()))
+            .resolve(Some(&stored))
+            .unwrap();
+        assert_eq!(config.doh_url, env);
+
+        let config = Egress::default().resolve(Some(&stored)).unwrap();
+        assert_eq!(config.doh_url.as_str(), "https://dns.example/dns-query");
+
+        let config = Egress::default().resolve(None).unwrap();
+        assert_eq!(config.doh_url.as_str(), DEFAULT_DOH);
+    }
+
+    #[test]
+    fn a_bad_doh_server_is_an_error() {
+        for text in [
+            "ftp://dns.example/dns-query",
+            "https://dns.example/",
+            "https://user:pass@dns.example/dns-query",
+            "https://",
+        ] {
+            assert!(parse_doh(text).is_err(), "{text}");
+        }
+        assert!(parse_doh("https://1.1.1.1/dns-query").is_ok());
     }
 }

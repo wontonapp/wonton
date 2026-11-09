@@ -22,6 +22,9 @@ use wonton_tunnel::{Allowlist, LocalProxy, ProxyAccess, TunnelClient, TunnelServ
 
 /// 等待异步事件的上限。正常情况下都在几百毫秒内完成，超过即视为失败。
 pub const WAIT: Duration = Duration::from_secs(15);
+/// 同一端口重建时等端口空出来的总预算：iroh 关掉 endpoint 以后套接字还要过一阵才真的释放，并行的
+/// 测试的 `bind(0)` 也可能临时拿走这个端口。
+const RESTART: Duration = Duration::from_secs(60);
 
 /// 测试里的“家里服务器”：隧道服务端，可以停止、模拟崩溃，再用同样的身份和端口重启。
 pub struct Home {
@@ -64,7 +67,6 @@ impl Home {
 
     pub async fn restart(&mut self) {
         assert!(self.server.is_none(), "服务端还在运行");
-        wait_until_port_is_free(self.port).await;
         let endpoint = loopback_endpoint(self.key.clone(), self.port, Timeouts::Default).await;
         self.server = Some(TunnelServer::spawn(
             endpoint,
@@ -117,18 +119,13 @@ impl Phone {
     }
 }
 
-/// 等旧服务端的 UDP 端口空出来。iroh 的 `Endpoint::close` 返回后，后台任务还要再过一小会儿才释放
-/// 套接字（Linux 单核上实测约 1 ms），丢弃不关闭时也一样。真实的重启是新进程，旧进程退出后端口一定已经
-/// 空了；进程内模拟重启时要等到这一点，否则会偶发 `Address already in use`。
-async fn wait_until_port_is_free(port: u16) {
-    let deadline = tokio::time::Instant::now() + WAIT;
-    while std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).is_err() {
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "旧服务端的 UDP 端口 {port} 一直没有释放"
-        );
-        tokio::time::sleep(Duration::from_millis(1)).await;
-    }
+/// 端口还被别的套接字占着；别的错（配置、加密后端）再怎么等也不会好。
+pub fn port_in_use(error: &iroh::endpoint::BindError) -> bool {
+    matches!(
+        error,
+        iroh::endpoint::BindError::Sockets { source, .. }
+            if source.kind() == std::io::ErrorKind::AddrInUse
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -167,19 +164,34 @@ pub async fn loopback_endpoint(key: SecretKey, port: u16, timeouts: Timeouts) ->
 
 pub async fn endpoint_on(addr: SocketAddr, key: SecretKey, timeouts: Timeouts) -> Endpoint {
     init_tracing();
-    let mut builder = Endpoint::builder(presets::Minimal)
-        .secret_key(key)
-        .clear_ip_transports()
-        .bind_addr(addr)
-        .unwrap();
-    if let Timeouts::Short = timeouts {
-        let config = QuicTransportConfig::builder()
-            .max_idle_timeout(Some(Duration::from_secs(3).try_into().unwrap()))
-            .keep_alive_interval(Duration::from_secs(1))
-            .build();
-        builder = builder.transport_config(config);
+    let deadline = tokio::time::Instant::now() + RESTART;
+    loop {
+        let mut builder = Endpoint::builder(presets::Minimal)
+            .secret_key(key.clone())
+            .clear_ip_transports()
+            .bind_addr(addr)
+            .unwrap();
+        if let Timeouts::Short = timeouts {
+            let config = QuicTransportConfig::builder()
+                .max_idle_timeout(Some(Duration::from_secs(3).try_into().unwrap()))
+                .keep_alive_interval(Duration::from_secs(1))
+                .build();
+            builder = builder.transport_config(config);
+        }
+        match builder.bind().await {
+            Ok(endpoint) => return endpoint,
+            // 同一端口重建：旧 endpoint 的套接字可能还没释放，或者刚空出来就被并行的测试 bind(0) 拿走。
+            Err(error) if port_in_use(&error) => {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "旧服务端的 UDP 端口 {} 一直没有释放",
+                    addr.port()
+                );
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            Err(error) => panic!("{addr} 起不来：{error}"),
+        }
     }
-    builder.bind().await.unwrap()
 }
 
 /// 用 `RUST_LOG=wonton_tunnel=debug` 查看测试里的隧道日志。

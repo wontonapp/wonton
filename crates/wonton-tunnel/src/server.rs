@@ -4,6 +4,7 @@ use std::{
     collections::HashSet,
     net::SocketAddr,
     sync::{Arc, atomic::AtomicU64},
+    time::Duration,
 };
 
 use iroh::{
@@ -15,6 +16,7 @@ use tokio::{
     net::TcpStream,
     sync::{mpsc, watch},
     task::JoinSet,
+    time::timeout,
 };
 use tracing::{debug, error, info, warn};
 
@@ -37,6 +39,10 @@ use crate::{
 /// 结束的流腾出的额度，noq 1.4 要攒到超过 1/8（这里是 33 条）才发 MAX_STREAMS 告诉客户端
 /// （`StreamsState::queue_max_stream_id`）：同时开着 224 条以上时，新流要等到再有流结束才开得出来。
 const MAX_CONCURRENT_STREAMS: VarInt = VarInt::from_u32(256);
+
+/// [`TunnelServer::shutdown`] 等 endpoint 真正关掉的上限。正常是毫秒级；等不到也不挂住调用方，
+/// 只是返回时端口可能还被占着。
+const CLOSE_WAIT: Duration = Duration::from_secs(10);
 
 /// 隧道流的去向。
 #[derive(Debug, Clone)]
@@ -449,13 +455,17 @@ impl TunnelServer {
 
     /// 停止接受新连接，关闭现有连接和 endpoint，等对端确认关闭（最多几秒）。
     ///
-    /// 返回时 UDP 端口不一定已经释放：iroh 的后台任务还要再过一小会儿（毫秒级）才关掉套接字。要在同一个
-    /// 进程里用同一端口立即重启的调用方，先等端口空出来。
+    /// 返回时 UDP 端口已经空出来：iroh 的 `Endpoint::close` 在有别的关闭在进行时会先返回，套接字要等那次
+    /// 关闭走完才释放，所以这里再等 endpoint 真的关掉（有上限，不把调用方挂住）。
     pub async fn shutdown(self) {
+        let closed = self.router.endpoint().closed();
         match self.router.shutdown().await {
             Ok(()) => {}
             Err(err) if err.is_panic() => std::panic::resume_unwind(err.into_panic()),
             Err(err) => error!("tunnel server shutdown failed: {err}"),
+        }
+        if timeout(CLOSE_WAIT, closed).await.is_err() {
+            warn!("endpoint 没有在上限内关掉，UDP 端口可能还被占着");
         }
     }
 }

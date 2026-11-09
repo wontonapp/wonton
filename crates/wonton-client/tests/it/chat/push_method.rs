@@ -3,13 +3,71 @@
 //! `background_notifications`，回到前台清空。
 
 use wonton_client::{
-    Action, CoreError, DeviceNetwork, MessageSummary, PushContent, PushMethod, PushStatus,
+    Action, ChatViewModel, CoreError, DeviceNetwork, MessageSummary, PushContent, PushMethod,
+    PushStatus,
 };
+use wonton_matrix::ChatRoom;
 use wonton_protocol::SettingsEntry;
 
 use super::accept_the_bots_invite;
 use super::push::endpoint;
 use super::support::{Home, Phone, WAIT};
+
+/// 自己带出去的那条会同步回来，但不该进后台通知；同一条别的照常收集。
+async fn own_message_is_not_notified(phone: &Phone, bot_room: &ChatRoom, room_id: &str) {
+    phone
+        .dispatch(Action::SendText {
+            room_id: room_id.to_owned(),
+            body: "这是我自己说的".to_owned(),
+            reply_to: None,
+        })
+        .unwrap();
+    bot_room.send_text("收到").await.expect("Bot 再发一条");
+    let mine = phone
+        .wait_chat("第二条该通知的消息", |view| {
+            view.background_notifications
+                .iter()
+                .find(|notice| {
+                    notice.content
+                        == PushContent::Message {
+                            summary: MessageSummary::Text {
+                                text: "收到".to_owned(),
+                            },
+                        }
+                })
+                .map(|notice| notice.sender.clone())
+        })
+        .await;
+    assert_eq!(mine.as_deref(), Some("Hermes"));
+    assert!(
+        !phone
+            .chat()
+            .background_notifications
+            .iter()
+            .any(|notice| notice.content
+                == PushContent::Message {
+                    summary: MessageSummary::Text {
+                        text: "这是我自己说的".to_owned()
+                    }
+                }),
+        "自己发的消息不该通知"
+    );
+}
+
+/// 这条消息进了房间预览：只有经同步才会出现。
+fn preview_has<'a>(room_id: &'a str, text: &'a str) -> impl Fn(&ChatViewModel) -> Option<()> + 'a {
+    move |view| {
+        let body = MessageSummary::Text {
+            text: text.to_owned(),
+        };
+        view.rooms
+            .iter()
+            .find(|room| room.room_id == room_id)
+            .and_then(|room| room.preview.as_ref())
+            .filter(|preview| preview.body == body)
+            .map(|_| ())
+    }
+}
 
 /// 设置页“通知”条目里存的方式，同壳读它的路径。
 fn push_method(settings: &wonton_client::SettingsViewModel) -> PushMethod {
@@ -185,6 +243,11 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
     phone.dispatch(Action::AppBackgrounded).unwrap();
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
     bot_room.send_text("在吗").await.expect("Bot 发消息");
+    // 先等这条从同步到了手机上（房间预览里出现），这里只可能由那次后台同步写进来；通知要在这个基础上再取一次
+    // 消息才生成，两件事分开等，通知那一步迟迟不来时不会再被同步本身的耗时吃掉预算。
+    phone
+        .wait_chat("后台同步到这条消息", preview_has(room_id.as_str(), "在吗"))
+        .await;
     let notice = phone
         .wait_chat("后台同步到的通知", |view| {
             view.background_notifications
@@ -204,43 +267,7 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
     );
 
     // 自己发的不通知：同步还开着，消息能到本机，但不该进后台通知。
-    phone
-        .dispatch(Action::SendText {
-            room_id: room_id.to_string(),
-            body: "这是我自己说的".to_owned(),
-            reply_to: None,
-        })
-        .unwrap();
-    bot_room.send_text("收到").await.expect("Bot 再发一条");
-    let mine = phone
-        .wait_chat("第二条该通知的消息", |view| {
-            view.background_notifications
-                .iter()
-                .find(|notice| {
-                    notice.content
-                        == PushContent::Message {
-                            summary: MessageSummary::Text {
-                                text: "收到".to_owned(),
-                            },
-                        }
-                })
-                .map(|notice| notice.sender.clone())
-        })
-        .await;
-    assert_eq!(mine.as_deref(), Some("Hermes"));
-    assert!(
-        !phone
-            .chat()
-            .background_notifications
-            .iter()
-            .any(|notice| notice.content
-                == PushContent::Message {
-                    summary: MessageSummary::Text {
-                        text: "这是我自己说的".to_owned()
-                    }
-                }),
-        "自己发的消息不该通知"
-    );
+    own_message_is_not_notified(&phone, &bot_room, room_id.as_str()).await;
 
     // 回到前台清空：主人看得见界面，通知都用不上了。
     phone.dispatch(Action::AppForegrounded).unwrap();

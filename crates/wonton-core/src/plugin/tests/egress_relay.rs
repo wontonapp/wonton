@@ -84,6 +84,7 @@ impl Rig {
     fn save(&self, url: Option<&str>, direct: &[&str]) {
         let settings = StoredEgress {
             url: url.map(str::to_owned),
+            doh_url: None,
             direct_cidrs: direct.iter().map(|c| c.parse().unwrap()).collect(),
             use_plugin: false,
         };
