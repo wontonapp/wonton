@@ -130,21 +130,21 @@ class InstallTest(unittest.TestCase):
 
     def test_a_channel_tag_is_resolved_to_its_repository_digest(self):
         digest = "sha256:" + "a" * 64
-        self.digests["ghcr.io/geraldpeng6/wonton-core:stable"] = [
-            "ghcr.io/geraldpeng6/wonton-core@" + digest
+        self.digests["ghcr.io/wontonapp/wonton-core:stable"] = [
+            "ghcr.io/wontonapp/wonton-core@" + digest
         ]
 
         result = self.run_install()
 
         self.assertEqual(result.returncode, 0, result.stderr)
         env = self.env()
-        self.assertEqual(env["WONTON_CORE_IMAGE"], "ghcr.io/geraldpeng6/wonton-core@" + digest)
+        self.assertEqual(env["WONTON_CORE_IMAGE"], "ghcr.io/wontonapp/wonton-core@" + digest)
         # 渠道照旧记标签：核心从 WONTON_CORE_SOURCE 读渠道。
-        self.assertEqual(env["WONTON_CORE_SOURCE"], "ghcr.io/geraldpeng6/wonton-core:stable")
-        self.assertEqual(self.calls("pull")[-1], ["pull", "ghcr.io/geraldpeng6/wonton-core:stable"])
+        self.assertEqual(env["WONTON_CORE_SOURCE"], "ghcr.io/wontonapp/wonton-core:stable")
+        self.assertEqual(self.calls("pull")[-1], ["pull", "ghcr.io/wontonapp/wonton-core:stable"])
         for run in self.runs():
-            self.assertIn("ghcr.io/geraldpeng6/wonton-core@" + digest, run)
-            self.assertNotIn("ghcr.io/geraldpeng6/wonton-core:stable", run)
+            self.assertIn("ghcr.io/wontonapp/wonton-core@" + digest, run)
+            self.assertNotIn("ghcr.io/wontonapp/wonton-core:stable", run)
 
     def test_a_registry_port_is_kept_in_the_repository(self):
         reference = "192.0.2.10:5000/wonton/core:stable"
@@ -159,17 +159,17 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(env["WONTON_CORE_SOURCE"], reference)
 
     def test_no_matching_repository_digest_stops_instead_of_writing_the_tag(self):
-        reference = "ghcr.io/geraldpeng6/wonton-core:stable"
+        reference = "ghcr.io/wontonapp/wonton-core:stable"
         self.digests[reference] = ["ghcr.io/elsewhere/core@sha256:" + "c" * 64]
 
         result = self.run_install()
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("没有仓库 ghcr.io/geraldpeng6/wonton-core 的 digest", result.stderr)
+        self.assertIn("没有仓库 ghcr.io/wontonapp/wonton-core 的 digest", result.stderr)
         self.assertFalse((self.install_dir / ".env").exists())
 
     def test_an_explicit_digest_is_kept_and_leaves_the_channel(self):
-        reference = "ghcr.io/geraldpeng6/wonton-core@sha256:" + "d" * 64
+        reference = "ghcr.io/wontonapp/wonton-core@sha256:" + "d" * 64
 
         result = self.run_install(WONTON_CORE_IMAGE=reference)
 
@@ -180,8 +180,8 @@ class InstallTest(unittest.TestCase):
 
     def test_install_timeout_is_written_when_set_and_kept_across_reruns(self):
         digest = "sha256:" + "e" * 64
-        self.digests["ghcr.io/geraldpeng6/wonton-core:stable"] = [
-            "ghcr.io/geraldpeng6/wonton-core@" + digest
+        self.digests["ghcr.io/wontonapp/wonton-core:stable"] = [
+            "ghcr.io/wontonapp/wonton-core@" + digest
         ]
 
         # 没设时不写这一行，核心用自己的默认值。

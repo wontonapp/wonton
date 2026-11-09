@@ -17,7 +17,7 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 - `compose.yaml`、`wonton`：编进核心的二进制，由 `wonton-core init` 写到安装目录，跟着核心镜像的版本走。
   `wonton` 是主机上的命令，转到核心容器里的 `wonton-core pair`。
 
-镜像发布在 `ghcr.io/geraldpeng6/wonton-core`，`stable` 一个渠道（ADR-0070），安装脚本默认装它；安装脚本另放在一个公开的
+镜像发布在 `ghcr.io/wontonapp/wonton-core`，`stable` 一个渠道（ADR-0070），安装脚本默认装它；安装脚本另放在一个公开的
 小仓库里，因为主仓库是私有的。
 
 Tuwunel 经 `core` 网络直连核心的推送专用监听，不用发布额外端口；网络、地址和配置约定见

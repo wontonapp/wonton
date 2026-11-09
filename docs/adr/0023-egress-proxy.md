@@ -261,7 +261,7 @@ gost -C /etc/gost/gost.yaml
      安装器的代理预检调用核心的 `prepare-egress-network`，也不直接让 Docker 自动选网段。
   3. 核心接入时用 `IPAddress` 指定最后一个可用地址；已经接着但地址不对时断开重接。
 
-  Docker 默认地址池大约建 30 个网络就用完（[#120](https://github.com/geraldpeng6/wonton/issues/120)），所以由核心分配小网段，
+  Docker 默认地址池大约建 30 个网络就用完（[#120](https://github.com/wontonapp/wonton/issues/120)），所以由核心分配小网段，
   不改 `daemon.json`。地址段没有空闲 `/26` 时复用地址池用完的拒绝路径：提示主人卸载不用的插件，或者扩大
   `WONTON_PLUGIN_NETWORK_POOL`；详情带上地址段和已用数量。Engine 28 不许在自动分配的网段上指定地址（实测报
   `user specified IP address is supported only when connecting to networks with user configured subnets`，Engine 29.7.2 可以），

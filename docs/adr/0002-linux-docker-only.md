@@ -53,8 +53,8 @@
 Docker Engine 29.9.2、Compose v5.6.1，所有镜像都从公开的仓库拉取。
 
 - 从执行安装命令到终端出现首次配对码（含拉全部镜像）：arm64 44 秒，amd64 35 秒。
-- `.env` 记下渠道（`WONTON_CORE_SOURCE=ghcr.io/geraldpeng6/wonton-core:beta`）和按 digest 写下的镜像
-  （`ghcr.io/geraldpeng6/wonton-core@sha256:93feeb5de86afb2c678cef8e3c630cd4f6c0228d95aa9d046c58120ba6fe8b7f`）；amd64 上
+- `.env` 记下渠道（`WONTON_CORE_SOURCE=ghcr.io/wontonapp/wonton-core:beta`）和按 digest 写下的镜像
+  （`ghcr.io/wontonapp/wonton-core@sha256:93feeb5de86afb2c678cef8e3c630cd4f6c0228d95aa9d046c58120ba6fe8b7f`）；amd64 上
   拉到的是 amd64 的变体。
 - 核心、Hydra、Tuwunel、magpie 四个容器都健康。
 - 从另一台机器用虚拟机的 IP 打开 8480 端口，看到运行状态和首次配对二维码；`Host` 换成域名得到 404。

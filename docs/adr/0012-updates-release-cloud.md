@@ -15,7 +15,7 @@ bot 读不到包等发布事故反复出现；发布要走 test、canary、prod 
 - **插件升级**：按官方索引里的版本或插件仓库的新 tag 提示，主人确认后升级（ADR-0017）。以后可以给“官方插件、权限
   没变”的升级打开自动。
 - **镜像分发**：同时发布到 GHCR 和国内镜像仓库，安装脚本按网络自动选择；以镜像 digest 作为版本身份。
-  先只发 GHCR（`ghcr.io/<owner>/wonton-core`）；国内拉 ghcr.io 可能慢，国内镜像仓库
+  先只发 GHCR（`ghcr.io/wontonapp/wonton-core`）；国内拉 ghcr.io 可能慢，国内镜像仓库
   以后按这一条加上。安装脚本放在单独的公开小仓库：免费账号下，私有仓库的 Release 附件和 Pages 都不能匿名下载。
 - **我们运营的云服务**只有五类：iroh 中继与发现、推送中继、节点列表（签名静态文件）、国内镜像、第三方 App 的
   入口（中继、家名服务、acme-dns、权威 DNS，ADR-0021）。没有用户账号，也不存业务数据。第三方 App 的入口存的是
@@ -27,7 +27,7 @@ bot 读不到包等发布事故反复出现；发布要走 test、canary、prod 
   分钟都免费，macOS 不再按 10 倍计分钟）：lint 在 ubuntu-24.04，Rust 测试用 nextest 在 ubuntu-24.04 分三片
   并行，Docker 集成测试只在改到相关路径时跑，iOS 在 xcode-27 镜像（Xcode 27.1，对齐开发机），Android 在
   ubuntu-24.04。草稿 PR 只跑轻检查，转 ready 后才跑重作业；main 不重跑全套，每天定时全量兜底。测试要拉的
-  上游镜像每周复制到 ghcr.io/<owner>/test-images（digest 原样保留），测试经 `WONTON_TEST_IMAGES` 指过去：
+  上游镜像每周复制到 ghcr.io/wontonapp/test-images（digest 原样保留），测试经 `WONTON_TEST_IMAGES` 指过去：
   托管 runner 的出口 IP 拉不动 Docker Hub 和 ECR Public。 runner 的要求见
   [.github/workflows/README.md](../../.github/workflows/README.md)。公开仓库的作业对外部的 PR 也会执行：
   权限只给 `contents: read`（需要的作业单独放开），第三方 action 固定到提交 SHA，检出不留凭据。

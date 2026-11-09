@@ -37,4 +37,6 @@ scripts/     CI 与开发脚本
 
 ## 许可
 
-私有仓库，保留所有权利。
+源码公开供查看，版权所有，暂未授予使用、修改和分发的许可。
+
+The source is published for viewing only. All rights reserved; no license to use, modify or distribute is granted yet.
