@@ -213,6 +213,7 @@ private fun InstalledDetailSections(
     val installed = detail.installed ?: return
     SecretSection(detail, plugins, onToggled)
     detail.lanWebui?.let { InstalledLanWebui(plugins, detail.id, it, onToggled) }
+    if (installed.tunnelPorts.isNotEmpty()) PortMappingSection(plugins, installed)
     if (detail.saveGrants.isNotEmpty()) SaveGrants(plugins, detail.id, detail.saveGrants, onToggled)
     ToolPolicySection(plugins, detail.id, detail.version)
     if (installed.writtenBy != null) {

@@ -1070,6 +1070,28 @@
     <string name="plugin_uninstall_keep_data">Uninstall and keep data</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
     <string name="plugin_uninstall_title">Uninstall %1$s?</string>
+    <!-- Switch on an app's page: map the ports the app declares onto this device's loopback interface, so other apps on the phone can reach them (ADR-0072). -->
+    <string name="port_mapping_toggle">Map to this device</string>
+    <!-- One declared port under the switch: the loopback address with the port number, then the protocol. -->
+    <string name="port_mapping_port_line">127.0.0.1:%1$d · %2$s</string>
+    <!-- Protocol label of a declared port whose protocol Wonton doesn't recognize. -->
+    <string name="port_mapping_protocol_other">Other</string>
+    <!-- Reason shown while the mapping is on but another app on this phone has taken the port. -->
+    <string name="port_mapping_reason_port_in_use">The port is already in use by another app on this phone.</string>
+    <!-- Reason shown while the mapping is on but the home server is too old to map ports. -->
+    <string name="port_mapping_reason_server_too_old">Your home server is too old and needs an update.</string>
+    <!-- Reason shown while the mapping is on but the tunnel isn't connected. -->
+    <string name="port_mapping_reason_tunnel_disconnected">The tunnel to your home server isn\'t connected.</string>
+    <!-- Reason shown while the mapping is on but the app isn't installed on the home server. -->
+    <string name="port_mapping_reason_plugin_not_installed">This app isn\'t installed on your home server.</string>
+    <!-- Reason shown while the mapping is on but the app doesn't declare that port. -->
+    <string name="port_mapping_reason_port_not_declared">This app doesn\'t declare that port.</string>
+    <!-- Reason shown while the mapping is on but the app isn't running. -->
+    <string name="port_mapping_reason_plugin_not_running">This app isn\'t running on your home server.</string>
+    <!-- Reason shown while the mapping is on but the home server can't reach the app. -->
+    <string name="port_mapping_reason_plugin_unreachable">Your home server can\'t reach this app.</string>
+    <!-- Reason shown while the mapping is on and failed for a reason Wonton doesn't recognize. -->
+    <string name="port_mapping_reason_other">Port mapping ran into a problem.</string>
     <!-- Problem title when the appearance settings couldn't be saved on the home server. -->
     <string name="problem_appearance_title">Appearance settings weren\'t saved</string>
     <!-- Problem reason when a link to an app page opens before the installed app list loaded. -->

@@ -5,6 +5,12 @@
     <string name="keepalive_channel_name">Keep connection</string>
     <!-- Title of the ongoing notification of the "keep connection" foreground service. -->
     <string name="keepalive_notification_title">Staying connected to your home server</string>
+    <!-- Name of the notification channel for the ongoing port-mapping foreground service (ADR-0072). Shown in the system notification settings. -->
+    <string name="mapping_channel_name">Port mapping</string>
+    <!-- Title of the ongoing port-mapping notification when one app's ports are mapped. Argument: the app's name. -->
+    <string name="mapping_notification_title">Mapping ports for %1$s</string>
+    <!-- Title of the ongoing port-mapping notification when several apps have the mapping on. Argument: the number of apps. -->
+    <string name="mapping_notification_title_multiple">Mapping ports for %1$d apps</string>
     <!-- Notification text when a message is in a group room: sender name, then the message. -->
     <string name="push_in_room">%1$s: %2$s</string>
     <!-- Shown as the sender when the push didn't say who sent the message. -->
