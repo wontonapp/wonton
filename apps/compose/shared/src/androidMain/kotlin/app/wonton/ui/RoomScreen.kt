@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,7 +48,8 @@ import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineMessage
-import app.wonton.ui.design.wontonContentPaddingValues
+import app.wonton.ui.design.LocalWontonBottomInset
+import app.wonton.ui.design.LocalWontonTopInset
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
@@ -185,8 +187,12 @@ private fun RoomScreen(
         Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
             WontonScreen(bar = { WontonPushedBar(barTitle, onClose, showsStatus = true, avatar = barAvatar) }) {
                 // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
+                // 房间列表倒着排、贴底，稳态下旧消息正对着顶栏：让位不能像普通滚动页那样走 contentPadding
+                // （随滚动消失，消息仍画到标题和状态栏上），视口本身要从顶栏下面开始。
                 Column(
-                    Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)),
+                    Modifier.fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
+                        .padding(top = LocalWontonTopInset.current),
                 ) {
                     val failure = timeline.failure
                     if (failure != null) {
@@ -246,10 +252,12 @@ private fun Messages(
         modifier.fillMaxWidth(),
         state = listState,
         reverseLayout = true,
-        contentPadding = wontonContentPaddingValues(
-            horizontal = WontonTheme.spacing.pageInset,
+        // 顶栏让位已垫在视口上（上面的 Column），这里不再叠加；底部照旧让开手势条。
+        contentPadding = PaddingValues(
+            start = WontonTheme.spacing.pageInset,
+            end = WontonTheme.spacing.pageInset,
             top = WontonTheme.spacing.s8,
-            bottom = WontonTheme.spacing.s8,
+            bottom = LocalWontonBottomInset.current + WontonTheme.spacing.s8,
         ),
         verticalArrangement = Arrangement.spacedBy(JOINED_GAP),
     ) {
