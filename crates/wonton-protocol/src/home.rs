@@ -150,6 +150,23 @@ pub enum ConnectionNotice {
     VersionMismatch,
 }
 
+/// 连接质量（ADR-0032）：核心按最近窗口的丢包率和往返时间判定，壳只在连接着且为 [`Self::Poor`] 时提示。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionQuality {
+    /// 正常。
+    Good,
+    /// 连着但很差：丢包多或往返慢。
+    Poor,
+    /// 样本不够，或者还没连上。
+    #[default]
+    Unknown,
+    /// 比这个 App 新的取值，按 `Unknown` 显示。
+    #[serde(other)]
+    Other,
+}
+
 /// 连接页的一行诊断。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -185,6 +202,15 @@ pub struct ConnectionDetails {
     pub sent_packets: u64,
     /// 当前连接判定丢失的包数。
     pub lost_packets: u64,
+    /// 最近判定窗口的连接质量。
+    #[serde(default)]
+    pub quality: ConnectionQuality,
+    /// 判定窗口内的丢包率，千分比（`50` 是 5%）；样本不够时为空。
+    #[serde(default)]
+    pub loss_per_mille: Option<u16>,
+    /// 判定窗口内的往返时间，毫秒；样本不够时为空。
+    #[serde(default)]
+    pub rtt_ms: Option<u32>,
     /// 最近一次失败的原文，只在“详情”里显示；连上之后还留着，方便查刚才的问题。
     pub last_failure: Option<String>,
     /// 连上之后一直没取到服务器现在的地址：存着的地址可能已经过时，下次建连可能要先绕中继。取到就清掉。
@@ -232,5 +258,47 @@ impl std::fmt::Debug for ProxySettings {
             .field("password", &"<redacted>")
             .field("domain", &self.domain)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 上一版的 JSON 里没有质量字段和窗口数字，新核心要读得懂，缺的按不知道处理。
+    #[test]
+    fn details_without_quality_fields_read_as_unknown() {
+        let details: ConnectionDetails = serde_json::from_str(
+            r#"{"network":"wifi","relay":"ok","server":"ok","last_connected_at_ms":1793778000000,
+                "handshake_ms":120,"disconnects":2,"sent_packets":900,"lost_packets":3,
+                "last_failure":null,"addresses_stale":false}"#,
+        )
+        .unwrap();
+        assert_eq!(details.quality, ConnectionQuality::Unknown);
+        assert_eq!(details.loss_per_mille, None);
+        assert_eq!(details.rtt_ms, None);
+    }
+
+    #[test]
+    fn unknown_quality_falls_back_to_other() {
+        assert_eq!(
+            serde_json::from_str::<ConnectionQuality>(r#""hologram""#).unwrap(),
+            ConnectionQuality::Other
+        );
+    }
+
+    #[test]
+    fn quality_round_trips_through_json() {
+        let details = ConnectionDetails {
+            quality: ConnectionQuality::Poor,
+            loss_per_mille: Some(73),
+            rtt_ms: Some(1_240),
+            ..ConnectionDetails::default()
+        };
+        let json = serde_json::to_string(&details).unwrap();
+        let read: ConnectionDetails = serde_json::from_str(&json).unwrap();
+        assert_eq!(read.quality, ConnectionQuality::Poor);
+        assert_eq!(read.loss_per_mille, Some(73));
+        assert_eq!(read.rtt_ms, Some(1_240));
     }
 }

@@ -116,8 +116,9 @@ pub use friends::{
     FriendsViewModel,
 };
 pub use home::{
-    ConnectionCheck, ConnectionDetails, ConnectionNotice, DeviceInvite, DeviceNetwork, HomeFailure,
-    HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus, ProxySettings,
+    ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
+    DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus,
+    ProxySettings,
 };
 pub use lan::{
     LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort,

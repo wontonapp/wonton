@@ -25,8 +25,8 @@ use tokio::task::JoinHandle;
 use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure,
-    HomePath, HomeStatus, HomeViewModel, ProxySettings, PushMethod,
+    ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, CoreError,
+    DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, ProxySettings, PushMethod,
 };
 use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, spawn_tier_fallback};
 use wonton_tunnel::{
@@ -551,6 +551,9 @@ impl HomeLink {
             failed_dials: stats.failed_dials,
             sent_packets: stats.sent_packets,
             lost_packets: stats.lost_packets,
+            quality: ConnectionQuality::Unknown,
+            loss_per_mille: None,
+            rtt_ms: None,
             last_failure: stats.last_failure.as_ref().map(ToString::to_string),
             addresses_stale: self.addresses_stale.load(Ordering::Relaxed),
             udp_flows: client.udp_flows(),
