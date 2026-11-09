@@ -6,6 +6,8 @@ use wonton_protocol::{CoreError, TabRef};
 
 use super::TabsState;
 use super::view::is_plugin;
+use crate::l10n::{CATALOG, language};
+use wonton_l10n::l10n;
 
 pub(crate) fn clear_plugin_config(state: &mut TabsState) {
     state.config.items.retain(|item| !is_plugin(&item.tab));
@@ -19,7 +21,12 @@ pub(crate) fn clear_plugin_config(state: &mut TabsState) {
 
 pub(crate) fn storage_problem(error: &CoreError) -> super::TabsProblem {
     super::TabsProblem {
-        message: format!("底栏设置存不下，下次启动可能恢复旧状态：{error}"),
+        message: l10n!(
+            CATALOG,
+            language(),
+            "tabs-storage-problem",
+            error = error.to_string()
+        ),
     }
 }
 

@@ -317,6 +317,8 @@ home-port-mapping-save-failed = ポートマッピングの設定を保存でき
 tabs-view-always-pinned = チャットとアプリはすでにナビゲーションバーに固定されています。
 tabs-view-plugin-list-not-ready = アプリの一覧をまだ読み込んでいないため、今はアプリのページを操作できません。
 tabs-view-unknown-plugin = このアプリが見つかりません。
+# $error はローカル保存の元のエラー。
+tabs-storage-problem = タブバーの設定を保存できません。次回の起動では古い状態に戻ることがあります: { $error }
 tabs-view-plugin-no-page = このアプリには開けるウェブページがありません。
 tabs-page-not-placed = このページはパネルにありません。
 

@@ -336,6 +336,8 @@ home-port-mapping-save-failed = Couldn't save the port mapping switch: { $error 
 tabs-view-always-pinned = Chat and Apps are already pinned to the Navigation bar.
 tabs-view-plugin-list-not-ready = The app list hasn't loaded yet, so app pages can't be changed right now.
 tabs-view-unknown-plugin = Can't find this app.
+# $error is the local store's original error.
+tabs-storage-problem = Couldn't save the tab bar settings; the next launch may restore the old state: { $error }
 tabs-view-plugin-no-page = This app has no web page to open.
 tabs-page-not-placed = This page isn't in the panel.
 
