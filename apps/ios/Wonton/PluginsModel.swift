@@ -115,7 +115,7 @@ enum PluginRoute: Hashable {
 }
 
 /// 安装或升级的确认页。
-enum PluginConfirmation: Identifiable {
+enum PluginConfirmation: Identifiable, Equatable {
     case install(source: String)
     case upgrade(id: String)
     /// 主人选的压缩包。
@@ -164,6 +164,8 @@ enum PluginConfirmation: Identifiable {
         case .install, .upload: return String(localized: .installActionInstall)
         case .upgrade: return String(localized: .installActionUpgrade)
         case .upgradeFrom, .upgradeUpload: return String(localized: .installChangeVersion)
+        case let .store(confirmation):
+            return String(localized: confirmation.isUpgrade ? .installActionUpgrade : .installActionInstall)
         }
     }
 }
