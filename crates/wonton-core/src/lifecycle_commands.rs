@@ -77,4 +77,3 @@ pub(super) async fn manual_rollback(args: &[String]) -> anyhow::Result<()> {
     );
     rollback.run(&host).await
 }
-
