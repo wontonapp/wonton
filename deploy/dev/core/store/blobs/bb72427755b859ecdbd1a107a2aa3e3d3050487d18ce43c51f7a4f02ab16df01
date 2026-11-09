@@ -68,10 +68,9 @@ services:
       MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER}
       MATRIX_USER_ID: ${WONTON_MATRIX_USER_ID}
       MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN}
-      # 私人 Bot 只接受主人的指令；主房间是核心替主人建的加密私聊，定时任务结果发到这里。
+      # Bot 只听名单里的人；主房间是核心替主人建的加密私聊，定时任务结果发到这里。
       # 变量名是 MATRIX_HOME_ROOM，不是 Hermes 插件清单里写的 MATRIX_HOME_CHANNEL。
-      # 名单变量 0.9 起改叫 WONTON_MATRIX_ALLOWED_USERS；旧核心只给旧名。
-      MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:-${WONTON_MATRIX_OWNER}}
+      MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:?需要主人的 Matrix 用户 ID}
       MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM}
       # 主流客户端默认加密私聊；依赖缺失时直接失败，不静默退回明文。
       MATRIX_E2EE_MODE: required
@@ -136,9 +135,9 @@ configs:
     file: ./dashboard-nginx.conf
 
 x-wonton:
-  spec: "0.7"
+  spec: "0.9"
   id: com.nousresearch.hermes
-  version: 0.6.4
+  version: 0.6.5
   kind: agent
   title: { zh: Hermes, en: Hermes }
   description:
@@ -164,8 +163,8 @@ x-wonton:
 
       Open the plugin page to configure Telegram, Feishu or WeCom for the default bot in Hermes' native Channels page. Telegram uses Wonton's outbound proxy.
   release_notes:
-    zh: 增加默认 Bot 的原生 Channels 网页和 Telegram 出网代理，插件网页只经核心网关打开；升级官方 Hermes 至 0.22.7，修复原生重启的依赖清单识别，不额外安装运行依赖。需要插件规范 0.7。
-    en: Adds the default bot's native Channels page and a Telegram outbound proxy, opening the page only through the core gateway. Upgrades official Hermes to 0.22.7 to fix native restart payload discovery without installing extra runtime dependencies. Requires spec 0.7.
+    zh: 改用新的名单变量，Bot 只听名单里的人（核心 0.9 起，不再兼容旧变量）。需要插件规范 0.9。
+    en: Switches to the new allow-list variable so a bot follows the people on the list (core 0.9 and later; the old variable is gone). Requires spec 0.9.
   agent:
     protocol: matrix
   bot:

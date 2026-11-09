@@ -23,8 +23,7 @@ services:
       MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER}
       MATRIX_USER_ID: ${WONTON_MATRIX_USER_ID}
       MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN}
-      # 名单变量 0.9 起改叫 WONTON_MATRIX_ALLOWED_USERS；旧核心只给旧名。
-      MATRIX_OWNER: ${WONTON_MATRIX_ALLOWED_USERS:-${WONTON_MATRIX_OWNER}}
+      MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:?需要主人的 Matrix 用户 ID}
       MATRIX_DEVICE_NAME: Wonton OpenClaw
     volumes:
       - ${WONTON_BOT_DATA}:/home/node/.openclaw
@@ -61,7 +60,7 @@ services:
       MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER}
       MATRIX_USER_ID: ${WONTON_MATRIX_USER_ID}
       MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN}
-      MATRIX_OWNER: ${WONTON_MATRIX_ALLOWED_USERS:-${WONTON_MATRIX_OWNER}}
+      MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:?需要主人的 Matrix 用户 ID}
       MATRIX_DEVICE_NAME: Wonton OpenClaw
     volumes:
       - ${WONTON_BOT_DATA}:/home/node/.openclaw
@@ -84,9 +83,9 @@ configs:
       export MATRIX_DEVICE_ID="$$(node --input-type=module -e 'const r=await fetch(process.env.MATRIX_HOMESERVER + "/_matrix/client/v3/account/whoami", {headers: {Authorization: "Bearer " + process.env.MATRIX_ACCESS_TOKEN}}); if (!r.ok) throw new Error("whoami HTTP " + r.status); const j=await r.json(); if (!j.device_id) throw new Error("whoami response missing device_id"); process.stdout.write(j.device_id);')"
       test -n "$$MATRIX_DEVICE_ID"
       config=/home/node/.openclaw/openclaw.json
-      # 名单是逗号分隔的一串 MXID（0.9 的一张名单，可能是一个人，也可能是一家人），配置里要的是数组。
+      # 名单是逗号分隔的一串 MXID，可能是一个人，也可能是一家人；配置里要的是数组。
       # 每次启动都重算，家人增减重建容器时配置跟着变；首次写配置和下面的续写补丁都用它。
-      export ALLOW_JSON="$$(node -e 'process.stdout.write(JSON.stringify((process.env.MATRIX_OWNER ?? "").split(",").map((s) => s.trim()).filter(Boolean)))')"
+      export ALLOW_JSON="$$(node -e 'process.stdout.write(JSON.stringify((process.env.MATRIX_ALLOWED_USERS ?? "").split(",").map((s) => s.trim()).filter(Boolean)))')"
       test -n "$$ALLOW_JSON"
       mkdir -p /home/node/.openclaw /home/node/.openclaw/workspace
       # 0.1.0 及更早的 init 以 root 跑 npm，会在数据卷（npm/projects）和 npm 缓存（/home/node/.npm）
@@ -200,9 +199,9 @@ configs:
     file: wonton-help/SKILL.md
 
 x-wonton:
-  spec: "0.4"
+  spec: "0.9"
   id: ai.openclaw.agent
-  version: 0.1.3
+  version: 0.1.4
   kind: agent
   title: { zh: OpenClaw, en: OpenClaw }
   description:
@@ -224,8 +223,8 @@ x-wonton:
 
       The workspace and OpenClaw state stay in this Bot's data directory. Its built-in shell, filesystem, and other tools execute inside the container without Wonton confirmation cards; they can read and write that Bot data and, when network.egress is granted, reach the Internet or run container-local installers. Wonton MCP tools remain subject to the core's permissions and confirmation rules. The container has no Docker socket, host shell, web entry, public port, or OpenClaw plugin marketplace.
   release_notes:
-    zh: "Bot 的白名单改从核心给的名单读，新版核心可以给多个家人；旧核心照常能装。"
-    en: "The bot's allow list now comes from the core's user list, which newer cores can fill with several family members; still installs on older cores."
+    zh: "Bot 的白名单改从核心给的名单读，可以给多个家人；需要插件规范 0.9。"
+    en: "The bot's allow list now comes from the core's user list, which can hold several family members; requires spec 0.9."
   agent:
     protocol: matrix
   bot:

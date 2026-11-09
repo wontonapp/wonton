@@ -2,7 +2,7 @@
 # run/ 子目录；bridge 的 crypto store 和 Matrix 令牌不给 agent，agent 的 HOME 和工作区不给 bridge。
 services:
   agent:
-    image: ghcr.io/geraldpeng6/wonton-plugin-claude-code:0.1.0@sha256:5c1a2c83d86914bd000e34a9871ce9777b2589968dcbfab3dcea89d337d2e96e
+    image: ghcr.io/geraldpeng6/wonton-plugin-claude-code:0.1.2@sha256:e883143925537e6cf7eeb699a1659a98d5217c72a3cb5f934f825b5262199726
     # 底座镜像固定用 65532，入口不再降权；bridge 挂同一个 run/ 目录，两个服务的属主必须相同。
     user: "65532:65532"
     restart: unless-stopped
@@ -40,7 +40,7 @@ services:
       start_interval: 2s
 
   bridge:
-    image: ghcr.io/geraldpeng6/wonton-acp-bridge:0.1.0-beta.2@sha256:5b34b9dadd5548182034b972dfffce64ec62b31c26a65a97bf3fb7f5a318cb80
+    image: ghcr.io/geraldpeng6/wonton-acp-bridge:main-83d4297@sha256:6b0645e4cd8a5b80b6c25e4c17334c8d4621b9959756902785bae58b558b2326
     user: "65532:65532"
     restart: unless-stopped
     depends_on:
@@ -54,9 +54,7 @@ services:
       WONTON_AGENT_WORKSPACE: /workspace
       WONTON_MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER:?需要 Matrix 地址}
       WONTON_MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN:?需要 Bot 的 Matrix 访问令牌}
-      # 名单变量 0.9 起改叫 WONTON_MATRIX_ALLOWED_USERS；两个名字都传，新旧桥都能读。
-      WONTON_MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:-${WONTON_MATRIX_OWNER:?需要主人的 Matrix 用户 ID}}
-      WONTON_MATRIX_OWNER: ${WONTON_MATRIX_OWNER:-${WONTON_MATRIX_ALLOWED_USERS:?需要主人的 Matrix 用户 ID}}
+      WONTON_MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:?需要主人的 Matrix 用户 ID}
       WONTON_MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM:?需要主人与 Bot 的主房间}
       WONTON_MCP_URL: ${WONTON_MCP_URL:?需要 MCP 总线地址}
       # Claude Code 的 default 模式每次都问（改文件、跑命令都出确认卡片），和 Codex 的 read-only 同一种手感；
@@ -75,7 +73,7 @@ services:
   # 登录网页的入口：webui 不能指向 Bot 服务（旧核心仍按这条判），而登录页在 agent 容器里（每个 Bot 一份），
   # 所以架一个全插件一份的转发。插件页只开默认 Bot 的那一份，聊天里的 /wonton login 用当前 Bot。
   web:
-    image: ghcr.io/geraldpeng6/wonton-plugin-claude-code:0.1.0@sha256:5c1a2c83d86914bd000e34a9871ce9777b2589968dcbfab3dcea89d337d2e96e
+    image: ghcr.io/geraldpeng6/wonton-plugin-claude-code:0.1.2@sha256:e883143925537e6cf7eeb699a1659a98d5217c72a3cb5f934f825b5262199726
     user: "65532:65532"
     restart: unless-stopped
     entrypoint: ["python3", "/usr/local/lib/wonton-agent/web-proxy"]
@@ -91,9 +89,9 @@ services:
       start_interval: 2s
 
 x-wonton:
-  spec: "0.6"
+  spec: "0.9"
   id: ai.claude-code
-  version: 0.1.1
+  version: 0.1.2
   kind: agent
   title: { zh: Claude Code, en: Claude Code }
   description:
@@ -126,8 +124,8 @@ x-wonton:
       Console (paste one login code), or paste your own Anthropic API key.
       Subscriptions need Pro, Max, Ultra, Team or Enterprise; the free plan has no Claude Code.
   release_notes:
-    zh: "适配新版核心的名单变量名，旧核心照常能装，用起来没有变化。"
-    en: "Adapts to the new core's allow-list variable name; still installs on older cores, nothing changes in use."
+    zh: "改用新的名单变量，Bot 只听名单里的人（核心 0.9 起，不再兼容旧变量）。需要插件规范 0.9。"
+    en: "Switches to the new allow-list variable so a bot follows the people on the list (core 0.9 and later; the old variable is gone). Requires spec 0.9."
   webui:
     service: web
     port: 8080
