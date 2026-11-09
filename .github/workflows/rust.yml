@@ -21,10 +21,16 @@ on:
     # 每天全量兜底（PR 已在最新 main 上跑过，main 上不重跑）。
     - cron: "0 3 * * *"
   workflow_dispatch:
+  # 合并队列：格式、Clippy、测试都是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
+  # merge_group 不认 paths，上面的路径过滤只对 PR 生效。
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
 
 # 同一个 PR 又推了新提交，旧的运行就取消，别占着 runner；定时运行都跑完。
+# 队列里的 ref 一律是 gh-merge-queue/main，按它分组会把几次入队挤进同一组，改用这次入队的合并提交。
 concurrency:
-  group: rust-${{ github.ref }}
+  group: rust-${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # CI 不需要增量编译的缓存，调试信息只留行号：构建缓存小一半以上。
