@@ -177,7 +177,7 @@ ADR-0019 实测：宿主开着防火墙时，桥接网络里的核心连不上�
 
 ## 验证结果（2026-11-04）
 
-npchy，Docker Engine 29.7.2，开着 ufw 和 ufw-docker。镜像 `alpine/socat:1.8.0.3`。一个宿主网络的容器监听 18124 端口，另一个宿主网络的容器做中继：`UNIX-LISTEN:/s/web.sock → TCP:127.0.0.1:18124`。
+开发机，Docker Engine 29.7.2，开着 ufw 和 ufw-docker。镜像 `alpine/socat:1.8.0.3`。一个宿主网络的容器监听 18124 端口，另一个宿主网络的容器做中继：`UNIX-LISTEN:/s/web.sock → TCP:127.0.0.1:18124`。
 
 | 从哪连 | 结果 |
 | --- | --- |
@@ -190,7 +190,7 @@ npchy，Docker Engine 29.7.2，开着 ufw 和 ufw-docker。镜像 `alpine/socat:
 
 ### 中继与协议升级（2026-11-05）
 
-npchy，Docker Engine 29.7.2，`systemctl is-active ufw` 为 active，没改防火墙规则。核心按本 ADR 给一个宿主网络的网页
+开发机，Docker Engine 29.7.2，`systemctl is-active ufw` 为 active，没改防火墙规则。核心按本 ADR 给一个宿主网络的网页
 服务配了 `alpine/socat:1.8.0.3` 中继（同一网络模式，挂插件数据目录，监听 unix 套接字转发到 `127.0.0.1:<端口>`）。
 直连超时和防火墙提示另用同机的纯网页样例测过，条件和这里相同。
 
@@ -206,7 +206,7 @@ npchy，Docker Engine 29.7.2，`systemctl is-active ufw` 为 active，没改防�
 
 ### 只监听回环时的防火墙提示（2026-11-05）
 
-npchy，Docker Engine 29.7.2。假 Docker 下让行为测试复现后修复：只监听回环、监听所有地址、读不到监听表三种情况。另用 `public.ecr.aws/docker/library/busybox:1.37` 在宿主网络里 `nc -l -s 127.0.0.1`，确认真实内核的 `/proc/net/tcp` 格式能被解析成回环监听。
+开发机，Docker Engine 29.7.2。假 Docker 下让行为测试复现后修复：只监听回环、监听所有地址、读不到监听表三种情况。另用 `public.ecr.aws/docker/library/busybox:1.37` 在宿主网络里 `nc -l -s 127.0.0.1`，确认真实内核的 `/proc/net/tcp` 格式能被解析成回环监听。
 
 ### 最高级工具的卡片（2026-11-05）
 
@@ -214,7 +214,7 @@ npchy，Docker Engine 29.7.2。假 Docker 下让行为测试复现后修复：�
 
 ### Home Assistant 作为第一个样例（2026-11-06）
 
-npchy，开着 ufw。插件 `wonton-plugin-home-assistant` 头部 `a9444526`，Home Assistant 2026.10.4，核心 main `d3f3bf96`（手动流程）和 `wonton-core:m1v4b`（冒烟）。主服务 `network_mode: host`，只加 `cap.NET_RAW`，`privileged=false`。
+开发机，开着 ufw。插件 `wonton-plugin-home-assistant` 头部 `a9444526`，Home Assistant 2026.10.4，核心 main `d3f3bf96`（手动流程）和 `wonton-core:m1v4b`（冒烟）。主服务 `network_mode: host`，只加 `cap.NET_RAW`，`privileged=false`。
 
 | 检查 | 结果 |
 | --- | --- |

@@ -212,7 +212,7 @@ impl Phone {
     fn pair(&self, code: &str) -> Result<(), CoreError> {
         self.dispatch(Action::PairHome {
             code: SecretString::new(code),
-            device_name: "Jiale 的 iPhone".to_owned(),
+            device_name: "Alice 的 iPhone".to_owned(),
         })
     }
 
@@ -287,7 +287,7 @@ async fn scanning_a_code_pairs_the_phone_and_it_reconnects_after_restart() {
         Some(home.server.endpoint().id().to_string())
     );
     assert!(view.proxy.is_some());
-    assert_eq!(*home.codes.names.lock().unwrap(), vec!["Jiale 的 iPhone"]);
+    assert_eq!(*home.codes.names.lock().unwrap(), vec!["Alice 的 iPhone"]);
     drop(phone);
 
     // 存下的是服务端的地址，不是一次性的码：重启后直接连上，不用再配对。

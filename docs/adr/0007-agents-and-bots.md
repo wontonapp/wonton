@@ -107,7 +107,7 @@ ACP 桥的 C1 设计、容器边界、Matrix/ACP/MCP 转换和 C3 登录路径�
   确认的地方。它补的插话、登录、额度三项，ACP 这边已经有，或者对我们用处不大。
 
 环境：本机 macOS + OrbStack（arm64，Docker 29.8）。每个 Agent 一个容器（`node:24-bookworm-slim` 加一个说 ACP
-的程序），HOME 和工作区放在持久卷里，每个场景一个新容器。模型经开发机的 magpie（`auto/glm-5.3-flash`）。
+的程序），HOME 和工作区放在持久卷里，每个场景一个新容器。模型经开发机的 magpie（网关默认模型）。
 版本：
 
 - `claude-agent-acp` 0.98.0（内含 Claude Agent SDK 0.3.310）；

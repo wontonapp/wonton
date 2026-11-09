@@ -16,7 +16,7 @@
 | 对外接口 | REST + SSE，`user_input` 表单、审批都有 resolve 接口 | REST + SSE，要邮箱验证码登录的用户会话 | 从 GitHub、飞书“听”任务（Source），可以加 Source |
 | 上游发布物 | 桌面安装包、Linux deb/AppImage、npm 启动器；没有容器镜像 | 没有镜像（compose 全部本地构建） | 只有源码；一次提交，研究原型 |
 
-AO 的实测见调研报告（npchy `research/orchestrator-probe.md`，2026-11-07）。
+AO 的实测见调研报告（`research/orchestrator-probe.md`，2026-11-07）。
 
 ## 决策
 

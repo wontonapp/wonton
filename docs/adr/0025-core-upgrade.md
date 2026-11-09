@@ -238,7 +238,7 @@ curl -fsSL <安装脚本地址> | sudo WONTON_CORE_PIN=<旧 digest> sh
 
 ### 验证结果
 
-2026-11-03 在 npchy 上实测：
+2026-11-03 在开发机上实测：
 
 - Docker 29.7.2（containerd 存储）、Compose v5.6.1：
   - `docker-compose` 单个文件在 `debian:trixie-slim` 里、`--network none` 下能运行；

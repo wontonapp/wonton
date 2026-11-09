@@ -1,4 +1,4 @@
-# Docker 测试会拉的镜像，一行一个。没有 Docker Hub 的 CI 机器（194、titan）由 npchy 按这份清单每小时推一次，
+# Docker 测试会拉的镜像，一行一个。没有 Docker Hub 的 CI 机器由一台能拉 Docker Hub 的主机按这份清单每小时推一次，
 # 推完逐个核对；缺了的记进看板。scripts/check-docker-test-images.sh 检查 crates/ 和测试用 Dockerfile 里的镜像引用
 # 都在这里：要拉的照写，只是测试数据、不会去拉的前面加 `!`。
 

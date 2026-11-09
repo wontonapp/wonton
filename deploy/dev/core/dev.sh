@@ -30,7 +30,7 @@
 # WONTON_DEV_INSTANCE（核心的实例名，插件的资源名和标签都带上它；默认按项目名取，去了标点时加项目名哈希
 # 后缀免得和别的项目名撞，默认项目没有实例名，设成空也没有）、
 # WONTON_BUILD_COMMIT（编进核心、打在启动日志里的提交号，默认按当前检出算）、
-# WONTON_DEV_BUILD_PROXY（构建镜像时经 Docker 主机上的这个代理下载依赖，如 npchy 本机的 http://127.0.0.1:7899）、
+# WONTON_DEV_BUILD_PROXY（构建镜像时经 Docker 主机上的这个代理下载依赖，如那台主机上的 http://127.0.0.1:7899）、
 # WONTON_DEV_BUILD_JOBS（构建镜像时编译的并发数，和别的任务共用一台主机时用）、
 # WONTON_DEV_DEFAULT_PLUGINS（设成空时核心不装默认 Agent Hermes，省得拉它 4 GB 的镜像）、
 # WONTON_DEV_OWNER_PROFILE（设成 off 时不替你填资料，测还没填的情形用）、

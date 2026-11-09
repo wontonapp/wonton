@@ -277,7 +277,7 @@ pub enum PairRequest {
     /// 出示配对密钥，请服务端把本设备登记成主人的设备。
     Pair {
         secret: PairingSecret,
-        /// 主人在设备列表里认它用，如“Jiale 的 iPhone”。
+        /// 主人在设备列表里认它用，如“Alice 的 iPhone”。
         device_name: String,
     },
 }
@@ -413,14 +413,14 @@ mod tests {
     fn messages_have_the_documented_json_shape() {
         let request = PairRequest::Pair {
             secret: PairingSecret::from_bytes([1; SECRET_LEN]),
-            device_name: "Jiale 的 iPhone".to_owned(),
+            device_name: "Alice 的 iPhone".to_owned(),
         };
         assert_eq!(
             serde_json::to_value(&request).unwrap(),
             serde_json::json!({
                 "type": "pair",
                 "secret": "01010101010101010101010101010101",
-                "device_name": "Jiale 的 iPhone",
+                "device_name": "Alice 的 iPhone",
             })
         );
         assert_eq!(

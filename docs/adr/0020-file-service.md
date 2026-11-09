@@ -318,7 +318,7 @@ tusd v2.10.1（`tusproject/tusd@sha256:7b1c552a…`）：OrbStack 上 Docker 29.
 - **完整的 compose。** Linux 主机、Docker 29，`dev.sh up`：tusd 以 `read_only`、`cap_drop: [ALL]`、`no-new-privileges` 运行，四个服务都健康，Docker 自动建的 `uploads` 由核心交给 `PUID`，接着 tusd 才启动。经 `tusd.wonton.internal` 创建上传、分两次 PATCH，钩子的来源检查通过；没有设备身份的回 401。数据目录所在的盘剩不到 5% 时创建回 507 `storage_full`。
 - **跨卷放置。** 同一份 compose，`uploads` 换成单独的 tmpfs 卷，和 `transfers` 是两个文件系统（挂载的设备号不同）：64 MiB 的文件内容一致，放好后链接数是 1，没有临时文件，`uploads` 和待完成记录清空，记录写好；同名上传加序号，原文件不动；最后一个 PATCH 时核心停着，tusd 照样回 204，核心重启后的清理把文件放好。同卷时结果一样。
 - **跨卷放置，经临时名。** `place_upload` 在 tmpfs 和 ext4 两个卷上（Linux 主机，设备号 32 和 56）：同名时加序号，原文件不动；重放认得出已经放好的文件；删掉临时文件后链接数是 1。
-- **和真实 Bot 收发（客户端核心）。** Hermes v0.22.5（`HERMES_MEDIA_DELIVERY_STRICT=1`），magpie v0.1.1327 经开发机的 magpie 路由到 `auto/glm-5.3-flashx`，OrbStack 上 Docker 29.8.2，手机和家经隧道在本机直连，`wonton-client` 的 `examples/file-smoke.rs` 扮演手机，跑了 5 次。5 次里 Bot 都调了 `search_files` 再调 `wonton__share_file`，链接原样进了回复，`body` 没被改动，App 认出卡片；回复里没有抄预览的 `MEDIA:` 路径。下载和用 `file_stream_url` 带 Range 取到的字节都对得上。上传后核心授权、发链接，Bot 调 `wonton__view_file` 经预览和 Hermes 的 `vision_analyze` 说对了颜色；文件名看不出颜色（`测试图.png`，纯绿）。
+- **和真实 Bot 收发（客户端核心）。** Hermes v0.22.5（`HERMES_MEDIA_DELIVERY_STRICT=1`），magpie v0.1.1327 经开发机的 magpie 路由到网关默认模型，OrbStack 上 Docker 29.8.2，手机和家经隧道在本机直连，`wonton-client` 的 `examples/file-smoke.rs` 扮演手机，跑了 5 次。5 次里 Bot 都调了 `search_files` 再调 `wonton__share_file`，链接原样进了回复，`body` 没被改动，App 认出卡片；回复里没有抄预览的 `MEDIA:` 路径。下载和用 `file_stream_url` 带 Range 取到的字节都对得上。上传后核心授权、发链接，Bot 调 `wonton__view_file` 经预览和 Hermes 的 `vision_analyze` 说对了颜色；文件名看不出颜色（`测试图.png`，纯绿）。
 - **大文件续传。** 同一条件，128 MiB：上传到 2.3 MiB、下载到 11 KiB 时释放核心（相当于 App 被杀），重启后都接着传完，内容逐字节相同。走的是本机直连，不是中继。
 - **Android App。** 同样的 Bot 和模型，模拟器（API 36，arm64），#143 接上文件和“下完直接打开”之后的 Debug 构建：Bot 分享的文本、图片、视频都画成卡片，写明来源，图片有缩略图。点文本卡片下载后交给系统选 App，HTML Viewer 经 `FileProvider` 打开，内容正确。视频经 `file_stream_url` 用 `VideoView` 播放，能拖到 1:34（17 MiB，整个文件走一次 Range 请求，拖动时没再发新的请求：回环上它一次读完了）。系统选择器选 `Download` 里的图片，经内容 URI 上传，核心把链接发进房间，自己和 Bot 的消息都是卡片，Bot 用 `wonton__view_file` 说对了颜色。家里的磁盘不够时传输列表如实显示 `storage_full` 的原因。
 - **Android App，核心决定按钮之后。** 同样的条件，#143 的 Debug 构建：视频卡片点开边下边播，旁边有“用其他 App 打开”；随机字节的 `bad.mp4` 由 `VideoView` 报错，核心再探一次服务端，说“这台手机放不了这个格式”，“下载后用其他 App 打开”交给系统（Google Photos）。下完的文件进“已下载”，可以打开、分享（系统分享面板）和清理：“只清记录”留下 App 目录里的文件，“连手机上的文件一起删”连文件删掉。上传时 `docker pause` Tuwunel：约 30 秒后传输显示“已传完，链接没发出”和“重发链接”；恢复后点重发，只发链接，不重传，链接进了房间。之后 Bot 读出了文本的最后一行，用 `wonton__view_file` 说对了图片的颜色（纯蓝 PNG）。
@@ -331,7 +331,7 @@ tusd v2.10.1（`tusproject/tusd@sha256:7b1c552a…`）：OrbStack 上 Docker 29.
 
 都在实现时验证，结果写进这篇的“验证结果”。
 
-- 别的模型看到编号文字后，会不会用 `wonton__share_file`、原样抄链接，会不会抄预览的 `MEDIA:` 路径：`auto/glm-5.3-flashx` 的结果见“验证结果”，它不代表所有模型。
+- 别的模型看到编号文字后，会不会用 `wonton__share_file`、原样抄链接，会不会抄预览的 `MEDIA:` 路径：验证里那个模型的结果见“验证结果”，它不代表所有模型。
 - `HERMES_MEDIA_DELIVERY_STRICT=1` 下，Hermes 的生图和语音照常能发。
 - 播放和续传走中继时的表现。
 - 插件网页在 WebView 里读不到文件接口：`<img>`、`fetch`、导航都被挡住。

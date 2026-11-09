@@ -20,7 +20,7 @@ use wonton_core::plugin::languages::Languages;
 #[path = "../src/test_docker.rs"]
 mod test_docker;
 
-/// npchy 和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
+/// 开发机和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
 const BUSYBOX: &str = "public.ecr.aws/docker/library/busybox:1.37";
 const USERNAME: &str = "u@x";
 /// YAML 里有意义的字符都带上：配置不是拼出来的。

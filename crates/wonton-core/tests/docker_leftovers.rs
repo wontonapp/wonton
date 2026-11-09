@@ -27,7 +27,7 @@ use wonton_core::plugin::store::Store;
 
 const ID: &str = "app.leftovers";
 const SLUG: &str = "app-leftovers";
-/// npchy 和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
+/// 开发机和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
 const IMAGE: &str = "public.ecr.aws/docker/library/busybox:1.37";
 /// 收到 TERM 马上退出，删容器时不用等 10 秒。
 const PLUGIN: &str = "services:

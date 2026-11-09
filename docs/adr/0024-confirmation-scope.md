@@ -172,7 +172,7 @@ ADR-0016 规定：插件工具只要没标 `readOnlyHint: true`，Bot 每调用�
 
 ## 验证结果
 
-2026-11-03 在 npchy 上实测：Hermes v0.22.5（MCP Python SDK 2.3.0），核心 309b210（rmcp 3.8.0），开发环境，Hermes 和核心之间是明文 HTTP，在两侧抓包。
+2026-11-03 在开发机上实测：Hermes v0.22.5（MCP Python SDK 2.3.0），核心 309b210（rmcp 3.8.0），开发环境，Hermes 和核心之间是明文 HTTP，在两侧抓包。
 
 | 情况 | 看到的 |
 | --- | --- |

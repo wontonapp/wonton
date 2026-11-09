@@ -58,7 +58,7 @@ jobs:
           cache="${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME"
           echo "CARGO_TARGET_DIR=$cache/android" >> "$GITHUB_ENV"
           echo "GRADLE_USER_HOME=$cache/gradle" >> "$GITHUB_ENV"
-          # Gradle 和 wrapper 不读 https_proxy，要写成 systemProp。没配时 wrapper 直连下载，1k 上实测 58 KB/s，
+          # Gradle 和 wrapper 不读 https_proxy，要写成 systemProp。没配时 wrapper 直连下载，一台测试主机上实测 58 KB/s，
           # 170 MB 的发行包下不完，作业到 30 分钟超时（2026-11-04，#308）。
           if [ -n "${https_proxy:-}" ]; then
             address="${https_proxy#*://}"
@@ -82,7 +82,7 @@ jobs:
           rustup target add aarch64-linux-android
       - name: 安装 cargo-ndk
         # 同一台主机上的几个 runner 共用 ~/.cargo。版本对了就不装：不是 cargo install 装进来的同版本二进制，
-        # cargo install 会报 already exists 失败（titan 实测）。要装时加锁，免得升级版本时几个作业同时写同一处；
+        # cargo install 会报 already exists 失败（实测）。要装时加锁，免得升级版本时几个作业同时写同一处；
         # 等到锁时别的作业已经装好，cargo install 认得出已装的同版本，直接成功。
         run: |
           if [ "$(cargo ndk --version 2>/dev/null)" = "cargo-ndk $CARGO_NDK_VERSION" ]; then exit 0; fi

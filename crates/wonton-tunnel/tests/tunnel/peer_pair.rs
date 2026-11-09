@@ -236,8 +236,8 @@ fn code_for(issuer: &Server, token: PeerPairToken) -> PeerPairingCode {
 fn scanner_identity() -> PeerIdentity {
     PeerIdentity {
         server_name: "scanner.example".to_owned(),
-        owner_user_id: "@jiale:scanner.example".to_owned(),
-        owner_display_name: "Jiale".to_owned(),
+        owner_user_id: "@alice:scanner.example".to_owned(),
+        owner_display_name: "Alice".to_owned(),
         relays: Vec::new(),
         addrs: Vec::new(),
     }
@@ -283,8 +283,8 @@ async fn a_scan_gets_awaiting_approval_and_the_decision_reaches_only_the_scanned
         issuer_state.token.clone(),
         PeerIdentity {
             server_name: "scanner.example".to_owned(),
-            owner_user_id: "@jiale:scanner.example".to_owned(),
-            owner_display_name: "Jiale".to_owned(),
+            owner_user_id: "@alice:scanner.example".to_owned(),
+            owner_display_name: "Alice".to_owned(),
             relays: Vec::new(),
             addrs: scanner.addrs.clone(),
         },
@@ -374,7 +374,7 @@ async fn the_same_code_scans_twice_and_updates_one_request() {
     let issuer = start(issuer_state.clone()).await;
     let scanner = start(Arc::new(Scanner::default())).await;
 
-    for name in ["Jiale", "改名了"] {
+    for name in ["Alice", "改名了"] {
         let reply = scan_server(
             &scanner,
             &issuer,

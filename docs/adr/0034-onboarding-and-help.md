@@ -333,7 +333,7 @@ requires_core: 0.9.0
 
 条件和没测的：
 - 模型经开发机上的 magpie 接入（`magpie provider add upstream url=… key=placeholder`），没有在 App 里填真实厂商的 key，所以“填真实的 key”这条只验证了错的 key。
-- `magpie provider test` 对可用上游（magpie 0.1.1327）输出 `✓ chat 345 ms · auto/glm-5.3-flashx`，退出码 0，输出不含 key，走 `providers.sh` 的成功路径。这个上游不校验 key，错的 key 同样通过，所以它不能代表真实厂商对 key 的校验；厂商拒绝错 key 的输出见 `providers.sh` 的注释。
+- `magpie provider test` 对可用上游（magpie 0.1.1327）输出 `✓ chat 345 ms · <模型名>`，退出码 0，输出不含 key，走 `providers.sh` 的成功路径。这个上游不校验 key，错的 key 同样通过，所以它不能代表真实厂商对 key 的校验；厂商拒绝错 key 的输出见 `providers.sh` 的注释。
 
 ## 参考
 

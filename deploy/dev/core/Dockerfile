@@ -4,7 +4,7 @@
 # 编译总在构建机自己的架构上跑，要别的架构时交叉编译（`--platform linux/arm64`），不在 QEMU 里跑编译器；核心镜像的
 # 最后一层只复制文件、不执行命令，也用不到模拟器。
 #
-# 基础镜像是 Docker 官方镜像在 ECR Public 上的副本：国内的构建机（比如跑发布作业的 npchy）连不上 Docker Hub，
+# 基础镜像是 Docker 官方镜像在 ECR Public 上的副本：国内的构建机（比如跑发布作业的那台）连不上 Docker Hub，
 # ECR Public 直连可用（2026-10-29 实测）。
 FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/rust:1.99.1-slim-trixie AS build
 # 固定为镜像自带的工具链，不按 rust-toolchain.toml 再去下载组件。

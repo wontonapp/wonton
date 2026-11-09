@@ -64,7 +64,7 @@ jobs:
       - name: 构建缓存超过上限就清掉
         # Cargo 不回收旧产物，target 目录会一直长。不用 cargo clean：target 目录是挪到别的盘的符号链接时，它只删链接（实测），
         # 数据留在原处，下次还编译到链接原来的位置。
-        # 上限按机器配：runner 的 .env 里设 WONTON_CI_CACHE_MAX_GB，没设就是 30 GB。盘紧的机器设小，如 194：根盘 1.8 TB 只剩
+        # 上限按机器配：runner 的 .env 里设 WONTON_CI_CACHE_MAX_GB，没设就是 30 GB。盘紧的机器设小，如小盘机器：根盘 1.8 TB 只剩
         # 约 60 GB，主人要留 50 GB，低于 58 GB 就停 runner，而一次“Rust Docker 测试”就往缓存里写 9 GB（2026-11-08），设 10 GB。
         run: |
           if [ -d "$CARGO_TARGET_DIR" ] && [ "$(du -sm "$CARGO_TARGET_DIR/" | cut -f1)" -gt $(( ${WONTON_CI_CACHE_MAX_GB:-30} * 1024 )) ]; then
@@ -121,8 +121,8 @@ jobs:
 
   docker:
     name: Rust Docker 测试
-    # docker-test：能跑这些测试的机器（Docker 可用、deploy/ci/docker-test-images.txt 里的镜像由 npchy 推过去）。和发布用的 docker 标签分开，
-    # 194 这类只跑测试、拉不到 Docker Hub 的机器不会接到发布作业。
+    # docker-test：能跑这些测试的机器（Docker 可用、deploy/ci/docker-test-images.txt 里的镜像由一台能拉 Docker Hub 的主机推过去）。和发布用的 docker 标签分开，
+    # 只跑测试、拉不到 Docker Hub 的机器不会接到发布作业。
     runs-on: [docker-test]
     # 起容器、拉镜像最容易卡住，不要占满默认的 6 小时。
     timeout-minutes: 45
@@ -175,7 +175,7 @@ jobs:
         run: |
           # 每个插件都按安装前的渲染走一遍（索引里只有文件的 sha256，被引用的文件用占位内容），
           # 核心不再注入的变量、改名的变量当场失败，免得合进来以后那些插件装不上。
-          # 自建 runner 经宿主的出口代理取 raw.githubusercontent；代理偶尔卡住时 curl 默认连 300 秒才放弃（2026-11-07 194-1 上 #711 因此被取消），
+          # 自建 runner 经宿主的出口代理取 raw.githubusercontent；代理偶尔卡住时 curl 默认连 300 秒才放弃（2026-11-07 在一台 CI 机器上 #711 因此被取消），
           # 所以限死连接和总时长，卡住就快速重试。
           curl -fsSL --connect-timeout 20 --max-time 120 --retry 5 --retry-all-errors --retry-delay 5 \
             -o "$RUNNER_TEMP/index.json" https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json

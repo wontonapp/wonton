@@ -222,7 +222,7 @@ impl fmt::Debug for PeerPairToken {
 pub struct PeerIdentity {
     /// 自己的 Matrix 服务器名。
     pub server_name: String,
-    /// 自己主人的 Matrix 用户 ID，如 `@jiale:home.example`。
+    /// 自己主人的 Matrix 用户 ID，如 `@alice:home.example`。
     pub owner_user_id: String,
     /// 自己主人的显示名。
     pub owner_display_name: String,
@@ -336,8 +336,8 @@ mod tests {
     fn identity() -> PeerIdentity {
         PeerIdentity {
             server_name: "abc.wonton.internal".to_owned(),
-            owner_user_id: "@jiale:abc.wonton.internal".to_owned(),
-            owner_display_name: "Jiale".to_owned(),
+            owner_user_id: "@alice:abc.wonton.internal".to_owned(),
+            owner_display_name: "Alice".to_owned(),
             relays: vec!["https://relay.example.com./".to_owned()],
             addrs: vec!["192.168.1.20:18482".parse().unwrap()],
         }
@@ -418,8 +418,8 @@ mod tests {
                 "type": "scan",
                 "token": "01010101010101010101010101010101",
                 "server_name": "abc.wonton.internal",
-                "owner_user_id": "@jiale:abc.wonton.internal",
-                "owner_display_name": "Jiale",
+                "owner_user_id": "@alice:abc.wonton.internal",
+                "owner_display_name": "Alice",
                 "relays": ["https://relay.example.com./"],
                 "addrs": ["192.168.1.20:18482"],
             })

@@ -87,8 +87,8 @@ fn invalid_settings_fail_fast() {
     assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_INSTANCE", "dev-1")]).is_err());
     // 局域网端口不能开在公网地址上：核心启动时就报错退出。
     let lan = |value| config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_LAN_ADDRESSES", value)]);
-    assert!(lan("192.168.0.193,203.0.113.5").is_err());
-    let addresses = lan("192.168.0.193, fd00::10")
+    assert!(lan("192.168.0.10,203.0.113.5").is_err());
+    let addresses = lan("192.168.0.10, fd00::10")
         .unwrap()
         .lan_addresses
         .unwrap();

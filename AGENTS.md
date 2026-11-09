@@ -6,8 +6,8 @@
 
 ## 产品边界
 
-- Wonton 是独立产品，不引入端脑云（Cephalon）的任何代码、账号体系或服务。旧 Lucy 仓库只作参考，
-  不整段复制代码，也不导入其 git 历史。
+- Wonton 是独立产品，不引入其他产品的代码、账号体系或服务。别的仓库只作参考：不整段复制代码，
+  也不导入其 git 历史。
 - 服务端是“任意 Linux + Docker”。Mac、Windows 上由云吞自带一台隐藏的 Linux 虚拟机来跑，核心和插件照样在 Linux + Docker 里，
   不做原生的 macOS 或 Windows 服务端（[ADR-0062](docs/adr/0062-desktop-vm-host.md)）。
 - 不做自有 OS 镜像，只在 Mac、Windows 上带一台不可变的 Linux 虚拟机，系统盘整盘替换。

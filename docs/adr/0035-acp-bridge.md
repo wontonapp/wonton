@@ -76,11 +76,11 @@ Wonton MCP 入口按插件网络来源授权，C1–C3 不引入 bearer token；
 
 ## 验证结果与未决项
 
-已实测条件分两组：ACP 实验使用 `node:24-bookworm-slim`、macOS + OrbStack（Docker 29.8，arm64）、开发机 magpie `auto/glm-5.3-flash`，Agent 版本为 Claude `claude-agent-acp` 0.98.0、Codex `codex-acp` 2.3.0、Kimi Code 2.4.0、Qwen Code 0.26.2；覆盖 `session/new`、续聊、`session/load`/`session/resume`、cancel、权限允许/拒绝/取消、只连模型网关、Claude/Codex 的 `_session/steering`、模式和内存。另在本机直接运行 `omp 18.16.0`，用临时本地 MCP HTTP 服务验证 `session/new` 收到 HTTP `mcpServers` 后实际发出 MCP `initialize`、`notifications/initialized` 和 `tools/list`；未启动完整 Wonton 栈。
+已实测条件分两组：ACP 实验使用 `node:24-bookworm-slim`、macOS + OrbStack（Docker 29.8，arm64）、开发机 magpie 的网关默认模型，Agent 版本为 Claude `claude-agent-acp` 0.98.0、Codex `codex-acp` 2.3.0、Kimi Code 2.4.0、Qwen Code 0.26.2；覆盖 `session/new`、续聊、`session/load`/`session/resume`、cancel、权限允许/拒绝/取消、只连模型网关、Claude/Codex 的 `_session/steering`、模式和内存。另在本机直接运行 `omp 18.16.0`，用临时本地 MCP HTTP 服务验证 `session/new` 收到 HTTP `mcpServers` 后实际发出 MCP `initialize`、`notifications/initialized` 和 `tools/list`；未启动完整 Wonton 栈。
 
 未实测：各 Agent 只放行 Wonton MCP 服务器的具体配置键和写法；Codex 的 `model_catalog_json` 警告修复；Qoder 的 session；完整账号登录和登录态重启；C3 条款要求。C2 首个实现用 `omp 18.16.0` 接 magpie、无需账号；主人的验收是 omp 加 Codex 或 Claude Code 至少一个，不以 Qwen 或 Kimi 作为验收组合。
 
-C2 首版随后在 npchy 的 Docker 29.7.2、核心 `1f2c3be`、Tuwunel 1.9.4 上按插件安装并实跑：核心代 Bot 建加密私聊，主人客户端发消息后，桥建立 ACP session 并把 HTTP `mcpServers` 交给 `omp 18.16.0`；OMP 实际完成 MCP `initialize` 和 `tools/list`，并经 `WONTON_MCP_URL` 调用了核心只读工具 `wonton__list_plugins`，结果回到聊天。确认接口用假 ACP Agent 驱动：允许和拒绝分别映射回原 `optionId`，桥断开时请求撤回、卡片从待确认列表消失。真实 OMP 的 `/wonton interrupt` 先取消旧轮再发新 prompt，`/wonton queue` 在有活动轮时不提前发送。Agent 与桥同时重启后，`session/load` 先等回放更新安静，再发新 prompt，未再被立刻取消。Agent 容器只挂自己的数据目录和 socket，环境里没有 Matrix 令牌；bridge 数据目录为 0700。平台原因未完成的三项：OMP 到 magpie 返回 `上游错误：Internal error`，所以 OMP 的 shell 权限卡片和真实模型回复未验收；npchy 容器到宿主 3425 的模型通路未打通；App 内点带 `choice_id` 的按钮另测。
+C2 首版随后在开发机的 Docker 29.7.2、核心 `1f2c3be`、Tuwunel 1.9.4 上按插件安装并实跑：核心代 Bot 建加密私聊，主人客户端发消息后，桥建立 ACP session 并把 HTTP `mcpServers` 交给 `omp 18.16.0`；OMP 实际完成 MCP `initialize` 和 `tools/list`，并经 `WONTON_MCP_URL` 调用了核心只读工具 `wonton__list_plugins`，结果回到聊天。确认接口用假 ACP Agent 驱动：允许和拒绝分别映射回原 `optionId`，桥断开时请求撤回、卡片从待确认列表消失。真实 OMP 的 `/wonton interrupt` 先取消旧轮再发新 prompt，`/wonton queue` 在有活动轮时不提前发送。Agent 与桥同时重启后，`session/load` 先等回放更新安静，再发新 prompt，未再被立刻取消。Agent 容器只挂自己的数据目录和 socket，环境里没有 Matrix 令牌；bridge 数据目录为 0700。平台原因未完成的三项：OMP 到 magpie 返回 `上游错误：Internal error`，所以 OMP 的 shell 权限卡片和真实模型回复未验收；开发机容器到宿主 3425 的模型通路未打通；App 内点带 `choice_id` 的按钮另测。
 
 ## 要改核心的部分
 

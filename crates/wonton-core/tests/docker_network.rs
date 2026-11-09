@@ -27,7 +27,7 @@ use wonton_core::plugin::network_pool::NetworkPool;
 #[path = "../src/test_docker.rs"]
 mod test_docker;
 
-/// npchy 和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
+/// 开发机和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
 const IMAGE: &str = "public.ecr.aws/docker/library/busybox:1.37";
 const PORT: &str = "7000/tcp";
 

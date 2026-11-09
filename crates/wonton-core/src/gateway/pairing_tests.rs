@@ -70,7 +70,7 @@ async fn the_first_code_on_the_lan_page_makes_a_phone_the_owner_once() {
     let endpoint = loopback_endpoint(key.clone()).await;
     let code = reachable(code, &home);
     assert_eq!(
-        reject_reason(pair(&endpoint, &code, "Jiale 的 iPhone").await.unwrap()),
+        reject_reason(pair(&endpoint, &code, "Alice 的 iPhone").await.unwrap()),
         None
     );
     assert!(home.tunnel.devices.contains(&key.public()));
@@ -183,15 +183,13 @@ async fn the_install_terminal_shows_the_lan_pages_first_code_until_a_device_pair
 /// 请求里没给直连地址时，码里是核心自己算的地址：启动器声明了宣告地址就是宣告地址加隧道端口。
 #[tokio::test]
 async fn codes_without_addresses_use_the_announced_address() {
-    let home = Home::start_lan(&["192.168.0.7"]).await;
+    let home = Home::start_lan(&["192.168.0.15"]).await;
     let first = "/_wonton/api/pairing-codes/first";
     let (status, body) = ask_with(&home, first, Some(TOKEN), "{}").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let code = PairingCode::parse(body["code"].as_str().unwrap()).unwrap();
-    assert_eq!(
-        code.direct_addrs,
-        vec![format!("192.168.0.7:{}", home.tunnel.port).parse().unwrap()]
-    );
+    let addr = format!("192.168.0.15:{}", home.tunnel.port);
+    assert_eq!(code.direct_addrs, vec![addr.parse().unwrap()]);
 
     // 配上第一台后，主人发的码同样用宣告地址。
     let phone = loopback_endpoint(SecretKey::generate()).await;
@@ -202,10 +200,8 @@ async fn codes_without_addresses_use_the_announced_address() {
     let (status, body) = ask_with(&home, "/_wonton/api/pairing-codes", Some(TOKEN), "{}").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let code = PairingCode::parse(body["code"].as_str().unwrap()).unwrap();
-    assert_eq!(
-        code.direct_addrs,
-        vec![format!("192.168.0.7:{}", home.tunnel.port).parse().unwrap()]
-    );
+    let addr = format!("192.168.0.15:{}", home.tunnel.port);
+    assert_eq!(code.direct_addrs, vec![addr.parse().unwrap()]);
 }
 
 /// 没设宣告地址时，没给直连地址的码里是检测到的地址。

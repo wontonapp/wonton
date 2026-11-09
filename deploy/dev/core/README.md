@@ -41,7 +41,8 @@ Cookie 罐路径，curl 加 `-b` 复用。
   OpenSSL 3 及以上，macOS 自带的 LibreSSL 不行：`brew install openssl@3`）。检出目录里旧的 `.secrets/` 不再读，
   也不迁移。两者都不提交。
 - `dev.sh` 的 HTTP 请求在一个与核心共享网络的 curl 容器里发出，所以 `DOCKER_HOST` 指向远端主机时
-  也能用（远端只需要 Docker）：`DOCKER_HOST=ssh://npchy deploy/dev/core/dev.sh up`。
+  也能用（远端只需要 Docker）。下文提到远端主机时都写成 `$DEV_HOST`，先 `export DEV_HOST=<那台的 SSH 目标>`，
+  运行时这样用：`DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/dev.sh up`。
 - 核心容器只读挂着宿主的 `/dev`（`WONTON_HOST_DEV=/host/dev`），申请了 `devices.gpu` 的插件据此检测显卡和设备所属的组
   （ADR-0018）；核心直接跑在宿主上时不用设，读的就是 `/dev`。
 - 申请了 `network.lan` 的插件，端口开在哪个地址上由核心起一个宿主网络里的一次性容器检测（`wonton-<实例名>-lan-probe`，
@@ -126,7 +127,7 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -H 'content-type:
 magpie（同 `deploy/dev/agent`）；加了 provider，默认路由组 `wonton-default` 自动有了它的模型（ADR-0008）：
 
 ```bash
-docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=http://host.docker.internal:3425/v1 key=placeholder models=rm/glm-5.3-flash
+docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=http://host.docker.internal:3425/v1 key=placeholder models='<上游 /v1/models 里的模型 ID>'
 ```
 
 ## MCP 总线
@@ -154,8 +155,8 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 上游，设 `WONTON_SMOKE_EGRESS_PROXY=http://host.docker.internal:<宿主代理端口>`，不设时这两个用例跳过。
 
 ```bash
-deploy/dev/core/smoke.sh                           # 本机 Docker
-DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机
+deploy/dev/core/smoke.sh        # 本机 Docker；要设 WONTON_SMOKE_MODEL（见下）
+DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 ```
 
 用独立的 compose 项目、端口（18481，隧道 18483）和临时数据目录，依次验证：一条命令安装 Grafana 示例插件并通过
@@ -177,8 +178,9 @@ DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh   # 远端 Linux 主机
 主人的手机确认后才装好，Hermes 再经 MCP 总线在授权的文件夹里找到文件，审计记下这两次调用；没申请 `matrix.bot`、
 `models`、`tools` 的插件进不了对应的内部地址；
 核心重启后插件恢复，卸掉的 Hermes 不会被装回来；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
-结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，提供 `auto/glm-5.3-flashx`，
-冒烟里的 magpie 经 `host.docker.internal:3425` 用它（同 `deploy/dev/agent`），不读取开发机 magpie 的配置和密钥。
+结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经
+`WONTON_SMOKE_MODEL` 传入（magpie 里一个能对话的模型），冒烟里的 magpie 经 `host.docker.internal:3425` 用它
+（同 `deploy/dev/agent`），不读取开发机 magpie 的配置和密钥。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例），传完删掉本机的 amd64 副本。核心镜像的 Rust、
 Debian 基础镜像从 ECR Public 拉（见 Dockerfile），不用传：
@@ -187,7 +189,7 @@ Debian 基础镜像从 ECR Public 拉（见 Dockerfile），不用传：
 for image in oryd/hydra:v26.2.0 ghcr.io/matrix-construct/tuwunel:v1.9.4 tusproject/tusd:v2.10.1 \
   grafana/grafana:12.2.1 traefik/whoami:v1.11 curlimages/curl:8.23.0 alpine/socat:1.8.0.3; do
   docker pull --platform linux/amd64 "$image"
-  docker save --platform linux/amd64 "$image" | ssh npchy docker load
+  docker save --platform linux/amd64 "$image" | ssh "$DEV_HOST" docker load
   docker image rm --platform linux/amd64 "$image"
 done
 ```
@@ -198,8 +200,8 @@ done
 ```bash
 image=nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
 docker pull --platform linux/amd64 "$image"
-docker save "$image" | ssh npchy docker load
-ssh npchy docker tag "sha256:${image#*@sha256:}" "${image%@*}"
+docker save "$image" | ssh "$DEV_HOST" docker load
+ssh "$DEV_HOST" docker tag "sha256:${image#*@sha256:}" "${image%@*}"
 ```
 
 核心和系统容器不继承 Docker 客户端配置里的代理。开发环境要经代理访问 GitHub 或者测出网插件时，设 `WONTON_EGRESS_PROXY`（ADR-0023）。
@@ -210,8 +212,8 @@ magpie，`WONTON_SMOKE_MODEL` 选它提供的模型。冒烟在主机网络里�
 只接受冒烟的 magpie，结束时删掉；主机的防火墙要放行插件网络连这个端口（13425），否则 Hermes 一步连不上模型：
 
 ```bash
-DOCKER_HOST=ssh://npchy WONTON_DEV_BUILD_PROXY=http://127.0.0.1:7899 WONTON_DEV_BUILD_JOBS=16 \
-  WONTON_SMOKE_MODEL_RELAY=127.0.0.1:3425 WONTON_SMOKE_MODEL=group/auto-glm-5-3-flash deploy/dev/core/smoke.sh
+DOCKER_HOST=ssh://$DEV_HOST WONTON_DEV_BUILD_PROXY=http://127.0.0.1:7899 WONTON_DEV_BUILD_JOBS=16 \
+  WONTON_SMOKE_MODEL_RELAY=127.0.0.1:3425 WONTON_SMOKE_MODEL='<开发机 magpie 里的模型名>' deploy/dev/core/smoke.sh
 ```
 
 ## 在宿主上直接运行核心

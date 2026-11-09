@@ -358,7 +358,7 @@ key 仍然不进聊天记录；模型接上之前没有 Agent，配对刚结束�
 
 ## 验证结果
 
-2026-11-05 在 npchy 上实测，用 `wonton-client` 的集成测试环境（真实的 Tuwunel v1.9.4、真实的客户端核心，matrix-sdk 0.19.1，提交 `423fe9a1`）。Bot 账号建加密私聊，主人加入，房间确认是加密的。然后用 Bot 的令牌直接 `PUT /rooms/{id}/send/m.room.message/{txn}`：
+2026-11-05 在开发机上实测，用 `wonton-client` 的集成测试环境（真实的 Tuwunel v1.9.4、真实的客户端核心，matrix-sdk 0.19.1，提交 `423fe9a1`）。Bot 账号建加密私聊，主人加入，房间确认是加密的。然后用 Bot 的令牌直接 `PUT /rooms/{id}/send/m.room.message/{txn}`：
 
 | 做了什么 | 结果 |
 | --- | --- |
@@ -372,7 +372,7 @@ key 仍然不进聊天记录；模型接上之前没有 Agent，配对刚结束�
 
 ### Agent 自己发加密卡片
 
-2026-11-05 在 npchy 上实测：Hermes v0.22.5 官方镜像（固定摘要，没改镜像）、Tuwunel v1.9.4，主人一侧是 `wonton-matrix` 的 matrix-sdk，模型是假的。测试代码没有进仓库。
+2026-11-05 在开发机上实测：Hermes v0.22.5 官方镜像（固定摘要，没改镜像）、Tuwunel v1.9.4，主人一侧是 `wonton-matrix` 的 matrix-sdk，模型是假的。测试代码没有进仓库。
 
 | 步骤 | 结果 |
 | --- | --- |

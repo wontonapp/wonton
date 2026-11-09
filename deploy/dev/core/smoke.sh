@@ -7,10 +7,10 @@
 # Hermes 一步要真实模型：开发机上要有在运行的 magpie。冒烟的 magpie 容器直连宿主 3425，
 # 凭据是冒烟自己新建的一次性网关凭据：限定到这次的模型，退出时按建 key 时记下的 id 删掉
 # （失败退出也删），凭据不进日志、不写进仓库。
-# 提供 auto/glm-5.3-flashx（WONTON_SMOKE_MODEL 可以换）。
+# 模型名经 WONTON_SMOKE_MODEL 传入：开发机 magpie 里一个能对话的模型。
 #
-#   deploy/dev/core/smoke.sh                          本机 Docker
-#   DOCKER_HOST=ssh://npchy deploy/dev/core/smoke.sh  远端 Linux 主机（远端只需要 Docker）
+#   deploy/dev/core/smoke.sh    本机 Docker；要设 WONTON_SMOKE_MODEL，见上
+#   DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  远端 Linux 主机（远端只需要 Docker，DEV_HOST 是它的 SSH 目标）
 #
 # 使用独立的 compose 项目、端口和临时数据目录，结束时清理全部容器、网络、卷和数据；KEEP=1 保留现场。
 # 本机需要 bash、docker、python3；HTTP 请求都在与核心共享网络的 curl 容器里发出。
@@ -60,7 +60,7 @@ build_failed() {
 }
 build() { "$dev" build -q "$@" >/dev/null || build_failed "镜像构建失败"; }
 # 真实模型：冒烟的 magpie 容器直连宿主上的 magpie（地址见模型段的按 Docker 种类区分），凭据见文件头。
-model="${WONTON_SMOKE_MODEL:-auto/glm-5.3-flashx}"
+model="${WONTON_SMOKE_MODEL:?未设 WONTON_SMOKE_MODEL：Hermes 一步要真实模型，填开发机 magpie 里能对话的模型名}"
 
 step() { printf '\n== %s\n' "$*"; }
 ok() { printf '   ✓ %s\n' "$*"; }

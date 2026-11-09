@@ -4,7 +4,7 @@
 
 ## 背景
 
-插件网页只经核心网关打开，只有已配对的 Wonton App 能经 iroh 隧道连回家（ADR-0004、ADR-0009）。Immich 手机 App、Bitwarden、Jellyfin 和 Subsonic 播放器、CalDAV/CardDAV、OPDS 阅读器、Git 客户端都连不进来。50 个候选插件的调研里（npchy 上的 `~/wonton-dev/research/plugin-candidates.md`），这是最大的共性缺口。那份调研的结论第 1、2、13 项核对后：
+插件网页只经核心网关打开，只有已配对的 Wonton App 能经 iroh 隧道连回家（ADR-0004、ADR-0009）。Immich 手机 App、Bitwarden、Jellyfin 和 Subsonic 播放器、CalDAV/CardDAV、OPDS 阅读器、Git 客户端都连不进来。50 个候选插件的调研里（`research/plugin-candidates.md`），这是最大的共性缺口。那份调研的结论第 1、2、13 项核对后：
 
 - **第 1、2 项的缺口属实。** `lan.ports` 确实不能列 `webui` 的端口（插件规范的“局域网”）。它建议的“把网页端口发布到局域网”没有采用，理由见“没选的做法”；它建议的“一个 TLS 端口按 SNI 路由”采用了，名字问题见“局域网直连”。
 - **第 13 项不是缺口。** 按 `f664c6b` 的 `gateway/proxy.rs`，网关流式转发请求和响应，`Range` 原样带给插件；请求体发完后等响应头最多 120 秒（ADR-0006），响应体仍然不限时。这篇的新入口复用它。
@@ -319,7 +319,7 @@ DNS 对任何标签都回答同样的结果（通配符），查不出哪个标�
 
 ### 局域网直连
 
-**用真实的域名指向局域网地址，配公共证书，和 Plex 的 `plex.direct` 同一个思路，名字固定。** `https://<标签>.lan.<家>.<域名>:8483` 解析到家的 RFC 1918 地址，核心更新 A 记录。没选 Plex 的“IP 写进名字”：DHCP 换地址（ADR-0019：npchy 从 `.68` 变成 `.193`）时第三方 App 都要重填。
+**用真实的域名指向局域网地址，配公共证书，和 Plex 的 `plex.direct` 同一个思路，名字固定。** `https://<标签>.lan.<家>.<域名>:8483` 解析到家的 RFC 1918 地址，核心更新 A 记录。没选 Plex 的“IP 写进名字”：DHCP 换地址（ADR-0019：主机从 `.14` 变成 `.10`）时第三方 App 都要重填。
 
 **端口只绑检测到的局域网地址（启动器声明了宣告地址时绑 `0.0.0.0`，见 ADR-0019），不按来源过滤当边界。** 静态 compose 的 `ports` 会监听 `0.0.0.0` 和 `::`，经 docker-proxy 进来的 IPv6 连接来源是网桥网关，正好在 RFC 1918 里（ADR-0019 实测），所以单靠来源过滤，公网 IPv6 能直连局域网入口，还绕过公网入口的开关。
 
@@ -336,7 +336,7 @@ DNS 对任何标签都回答同样的结果（通配符），查不出哪个标�
 - **选中的地址不是 RFC 1918 时**（100.64/10、fc00::/7，或 `WONTON_LAN_ADDRESSES` 指定的这类地址）拒绝打开局域网入口，地址页写明原因（错误类别 `lan_unavailable`）。公网入口不受影响。
 - **地址集合一致。** 家名服务 `PUT lan` 接受的和能打开局域网入口的都是 RFC 1918 地址（宣告地址同样只收私有地址），8483 放行这个地址所在的网段。
 
-- **`*.lan` 的公网解析会泄露家的私有地址。** 只有 `192.168.0.193` 这种信息，外人用不上。
+- **`*.lan` 的公网解析会泄露家的私有地址。** 只有 `192.0.2.10` 这种信息，外人用不上。
 - **iOS 第三方 App** 第一次连局域网地址时，系统会问“本地网络”权限，拒绝就连不上（[TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)）。
 - **第三方 App 里只能填一个地址的，主人二选一。** 公网地址在家也能用，只是绕一圈中继。Immich 有[按 Wi-Fi 自动切换地址](https://github.com/immich-app/immich/pull/14437)的设置（要定位权限，[有过切换失败的报告](https://github.com/immich-app/immich/issues/21930)），能两个都填。
 
@@ -544,7 +544,7 @@ ADR-0011 写的是“所有访问经核心网关鉴权”。这篇开了一个�
 
 - **注册门槛：** 邀请码由家名服务的管理命令生成，一码一用，有过期时间（生成时指定），管理员手动发。注册按来源限速。
 - **举报和下线：** 官网和证书页写明举报邮箱。下线一个家是一条命令，**同时停 DNS 和停 frps 路由**（`Login`、`NewUserConn`、`Ping` 都拒绝），生效时间见“中继”。App 显示这个家被停用和原因。
-- **安全浏览监控：** 家名服务用 Web Risk 的 [Update API](https://cloud.google.com/web-risk/docs/update-api)，`threatLists.computeDiff` 下载本地库（免费），查登记过的名字时先在本地比对哈希前缀，命中才把前缀发给 `hashes.search`（[每千次 50 美元](https://cloud.google.com/web-risk/pricing)，2026-11-03）。不用 Lookup API：它每月 10 万次以内免费，但把完整的 URI 发给 Google，等于把所有家的可读标签成批交给第三方。[Safe Browsing API](https://developers.google.com/safe-browsing/v4/usage-limits) 限非商业用途，不用。域名本身加进 Search Console 收告警。
+- **安全浏览监控：** 家名服务用 Web Risk 的 [Update API](https://cloud.google.com/web-risk/docs/update-api)，`threatLists.computeDiff` 下载本地库（免费），查登记过的名字时先在本地比对哈希前缀，命中才把前缀发给 `hashes.search`（按量计费）。不用 Lookup API：它每月 10 万次以内免费，但把完整的 URI 发给 Google，等于把所有家的可读标签成批交给第三方。[Safe Browsing API](https://developers.google.com/safe-browsing/v4/usage-limits) 限非商业用途，不用。域名本身加进 Search Console 收告警。
 - **入口专用一个和产品官网无关的域名**（部署时定，注册商也是），一个家出事不影响官网。
 
 **先只在邀请制范围内（主人和朋友）运行。公开注册的前置条件，缺一不可：**
@@ -626,7 +626,7 @@ M1 做局域网直连和主人自己的域名，不依赖我们的云服务，�
 - **Clash 这类代理。** 公网地址和 Clash 没有冲突。局域网名字要规则放行，否则可能被送去代理（fake-IP 尤其如此），要实测。
 - **全局失败上限能被外人触发。** 主人在这段时间也登录不了新客户端，已登录的不受影响。
 - **`<家>` 变了，所有第三方 App 都要重填。** 核心数据丢失又没有备份时会发生。
-- **多三个常驻容器**：入口容器和局域网转发（同一个 HAProxy 镜像，60 MB。内存在 npchy 上是入口容器约 27 MiB，在 OrbStack 上两个都约 80 MiB）、frpc（镜像 39 MB，内存约 12 MiB），加上每天一次的 lego。
+- **多三个常驻容器**：入口容器和局域网转发（同一个 HAProxy 镜像，60 MB。内存在开发机上是入口容器约 27 MiB，在 OrbStack 上两个都约 80 MiB）、frpc（镜像 39 MB，内存约 12 MiB），加上每天一次的 lego。
 
 ## 验证
 

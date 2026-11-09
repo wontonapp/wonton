@@ -746,7 +746,7 @@ mod tests {
             ("Alice", Some("alice")),
             ("Alice-2_Girl", Some("alice-2_girl")),
             ("Alice!", Some("alice")),
-            ("Jiale 的 iPhone", None),
+            ("Alice 的 iPhone", None),
             ("张三", None),
             ("123", None),
             ("", None),

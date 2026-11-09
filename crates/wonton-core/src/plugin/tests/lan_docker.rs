@@ -178,7 +178,7 @@ async fn lan_address_change_updates_real_containers_and_config_page() {
 /// containerd 镜像存储下，核心镜像的记录被清掉（标签先被移走）后，路由探针退回按容器创建时的引用起，
 /// 检测照样能跑（#666）。经典存储下旧镜像 ID 一直可用，复现不了这个行为，本地不跑。
 /// 前提：Docker 用 containerd 镜像存储。CI 的 Docker 作业设 `WONTON_TEST_REQUIRE_CONTAINERD=1`，不是就失败，不许
-/// 静默跳过。在 npchy 上手动跑：
+/// 静默跳过。手动跑（例）：
 /// `~/wonton-dev/cargo-slot.sh cargo test -p wonton-core a_gone_core_image_record -- --ignored`
 #[tokio::test]
 #[ignore = "需要 Docker（containerd 镜像存储）；经典存储下旧镜像 ID 一直可用，复现不了 #666"]

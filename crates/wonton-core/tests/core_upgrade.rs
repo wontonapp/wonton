@@ -21,7 +21,7 @@ use wonton_core::upgrade::state::{self, ImageRef, Layout, Outcome, UpgradeState}
 use wonton_core::upgrade::{PROJECT, updater};
 use wonton_protocol::CoreUpgradeFailure;
 
-/// npchy 和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
+/// 开发机和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
 const BASE: &str = "public.ecr.aws/docker/library/busybox:1.37";
 const OBSERVE: Duration = Duration::from_secs(8);
 

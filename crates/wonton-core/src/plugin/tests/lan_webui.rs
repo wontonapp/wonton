@@ -140,7 +140,7 @@ async fn a_client_port_stays_closed_until_the_switch_then_shows_the_account() {
     let offer = opened.lan_webui.unwrap();
     assert_eq!(offer.client_problem, None);
     let client = offer.client.expect("开着就有账号");
-    assert_eq!(client.addresses, ["http://192.168.0.193:4533"]);
+    assert_eq!(client.addresses, ["http://192.168.0.10:4533"]);
     assert_eq!(client.username, m.cfg.owner);
     let installed = m.installed_detail(&id(), &langs).unwrap();
     assert_eq!(
@@ -242,10 +242,10 @@ async fn opening_at_install_publishes_the_port_and_survives_restart() {
     let key = format!("{port}/tcp");
     assert_eq!(
         published(&docker, "web")[&key],
-        binding("192.168.0.193", &port.to_string())
+        binding("192.168.0.10", &port.to_string())
     );
     let env = env_of_container(&docker, "wonton-app-test--web");
-    assert_eq!(env["ADDRESSES"], "192.168.0.193");
+    assert_eq!(env["ADDRESSES"], "192.168.0.10");
     assert_eq!(m.lan_plugins().len(), 1);
 
     let record = super::super::store::Store::open(dir.path().join("plugins"))
@@ -272,7 +272,7 @@ async fn switching_rebuilds_the_opening_containers_only() {
         .await
         .unwrap();
     assert!(detail.lan_webui.unwrap().enabled);
-    let binding_on = binding("192.168.0.193", &port.to_string());
+    let binding_on = binding("192.168.0.10", &port.to_string());
     assert_eq!(published(&docker, "web")[&key], binding_on);
     assert_eq!(m.lan_plugins()[0].1.ports.len(), 2);
     assert_eq!(status(&m), PluginStatus::Running);
@@ -292,7 +292,7 @@ async fn switching_rebuilds_the_opening_containers_only() {
     assert_eq!(published(&docker, "web"), Value::Null);
     assert_eq!(
         published(&docker, "smb")["445/tcp"],
-        binding("192.168.0.193", "445"),
+        binding("192.168.0.10", "445"),
         "不用开关的端口一直开着"
     );
     assert_eq!(m.lan_plugins()[0].1.ports.len(), 1);
@@ -313,7 +313,7 @@ async fn switching_updates_address_consumers_without_lan_ports() {
         env_of_container(&docker, "wonton-app-test--smb")["ADDRESSES"],
         ""
     );
-    for (enabled, addresses) in [(true, "192.168.0.193"), (false, "")] {
+    for (enabled, addresses) in [(true, "192.168.0.10"), (false, "")] {
         let before = docker.writes().len();
         m.set_lan_webui(id(), enabled, Languages::default())
             .await

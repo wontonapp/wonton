@@ -35,7 +35,7 @@
 
 `deploy/install/install.sh` 在干净的 Ubuntu 24.04 上装好核心、Hydra、Tuwunel，核心随后装上 magpie，四个容器都健康。
 验证条件（2026-10-29）：OrbStack 虚拟机，arm64 原生、amd64 在 Rosetta 下，Docker Engine 29.9.2、Compose v5.6.1；核心镜像
-用发布的 Dockerfile 在 npchy 上构建（arm64 交叉编译）后导入虚拟机，Hydra、Tuwunel、magpie 的镜像从各自的仓库拉取；安装
+用发布的 Dockerfile 在一台 Linux 主机上构建（arm64 交叉编译）后导入虚拟机，Hydra、Tuwunel、magpie 的镜像从各自的仓库拉取；安装
 脚本由本机的 HTTP 服务提供，按 `curl … | sudo sh` 执行。
 
 - amd64：从执行安装命令到终端出现首次配对码（这时核心、Hydra、Tuwunel 都健康）465 秒，大半是在 Rosetta 下拉 Hydra 和
