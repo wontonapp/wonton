@@ -34,6 +34,17 @@ pub struct TimelineUpdate {
     ///
     /// 有没有未读另看未读数：有 `ReadMarker` 一定还有未读，没有它却可能只是读完了、未读被窗口截断或者标记还没插上。
     pub anchor: Option<String>,
+    /// 打开的房间的面板（ADR-0052）：每一批都给当前的列表，空的时候壳画大加号。
+    #[serde(default)]
+    pub panel: Vec<crate::PanelItem>,
+    /// 房间面板上次看的那一页（本机记住，不同步），下次拉开还是它。没记住时为 `None`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panel_selected: Option<crate::TabRef>,
+    /// 房间里另有东西开着（长按菜单、多选模式、转发或删除确认、交给 Bot 的选择、斜杠命令列表）：
+    /// 上推拉面板的入口不响应。壳只读它，不自己合成；状态由
+    /// [`Action::SetRoomEntryBlocked`](crate::Action::SetRoomEntryBlocked) 报告，换房间后按没盖算。
+    #[serde(default)]
+    pub entry_blocked: bool,
 }
 
 /// 列表该停在哪，方向是核心到壳。核心按已读位置、壳报告的滚动（[`Action::SetTimelineScroll`](crate::Action::SetTimelineScroll)）
@@ -382,13 +393,12 @@ mod tests {
         Answer, CardChoice, CardLine, ChatFailure, ChatProblem, ConfirmationCard, ConfirmationState,
     };
 
-    /// 契约：时间线增量的每种变化和每种条目都能经 JSON 往返；媒体句柄不进 Debug 输出。
-    #[test]
-    fn timeline_updates_round_trip_through_json() {
+    /// 条目列表的样例，从下面的往返测试里挪出来，函数保持在门禁行数内。
+    fn sample_items() -> Vec<TimelineItem> {
         let media = MediaHandle {
             token: "mxc://home.example/abc#key".into(),
         };
-        let items = vec![
+        vec![
             item("1", TimelineContent::TimelineStart),
             item(
                 "2",
@@ -446,7 +456,13 @@ mod tests {
                     text: "Hermes 离开了房间".into(),
                 },
             ),
-        ];
+        ]
+    }
+
+    /// 契约：时间线增量的每种变化和每种条目都能经 JSON 往返；媒体句柄不进 Debug 输出。
+    #[test]
+    fn timeline_updates_round_trip_through_json() {
+        let items = sample_items();
         let update = TimelineUpdate {
             diffs: vec![
                 TimelineDiff::Reset {
@@ -478,6 +494,9 @@ mod tests {
             back_pagination: BackPagination::ReachedStart,
             viewport: TimelineViewport::Away { new_messages: 3 },
             anchor: Some("5".into()),
+            panel: Vec::new(),
+            panel_selected: None,
+            entry_blocked: true,
         };
         assert_eq!(round_trip(&update), update);
         assert!(

@@ -2,6 +2,7 @@
 //! （网页、模型网关、MCP 服务）。普通网络里连 [`names::service_host`] 的稳定域名（上游看到的 Host 就是它），
 //! 宿主网络里的服务经 [`super::host_relay`] 的 unix 套接字访问。
 
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
 use std::time::Duration;
@@ -26,6 +27,8 @@ use crate::config::{
 };
 use crate::http::HttpError;
 use crate::l10n;
+use wonton_protocol::PortProtocol;
+use wonton_tunnel::PortResolveError;
 
 /// MCP 服务没写 `path` 时的路径。
 const DEFAULT_MCP_PATH: &str = "/mcp";
@@ -453,6 +456,80 @@ impl PluginManager {
             .and_then(|e| e.ip_address)
             .filter(|ip| !ip.is_empty());
         Ok(ip.map(|ip| format!("{ip}:{port}")))
+    }
+
+    /// 隧道把已授权设备的 `Port`/`Udp` 请求解析到插件网络里的地址（ADR-0072）：只在清单声明过
+    /// `(service, port, protocol)` 时放行，拒绝类别和“连不上”分开。
+    pub(crate) async fn tunnel_port(
+        &self,
+        plugin: &str,
+        port: u16,
+        protocol: PortProtocol,
+    ) -> Result<SocketAddr, PortResolveError> {
+        use PortResolveError as Refused;
+
+        if protocol == PortProtocol::Other {
+            return Err(Refused::PortNotDeclared);
+        }
+        let id = PluginId::parse(plugin).map_err(|_| Refused::PluginNotInstalled)?;
+        let internal = |why: String| {
+            tracing::warn!(plugin, port, %why, "解析插件隧道端口失败");
+            Refused::UpstreamUnavailable
+        };
+        let record = self
+            .store
+            .load(&id)
+            .map_err(|e| internal(e.to_string()))?
+            .ok_or(Refused::PluginNotInstalled)?;
+        let package =
+            PluginPackage::with_files(&record.source, record.files, &self.owner_languages())
+                .map_err(|e| internal(e.to_string()))?;
+        if package.manifest.id != id {
+            return Err(internal("插件清单和安装记录的 ID 不符".to_owned()));
+        }
+        let service = package
+            .manifest
+            .tunnel
+            .as_ref()
+            .and_then(|tunnel| {
+                tunnel
+                    .ports
+                    .iter()
+                    .find(|spec| spec.port == port && spec.protocol == protocol)
+            })
+            .map(|spec| spec.service.as_str())
+            .ok_or(Refused::PortNotDeclared)?;
+        if !self.is_running(&id) {
+            return Err(Refused::PluginNotRunning);
+        }
+        let slug = id.slug();
+        let name = self.cfg.instance.container(&slug, service);
+        let network = self.cfg.instance.network(&slug);
+        // 即使核心在容器里也查这个插件网络的地址，不经 DNS 解析请求里的插件名。
+        let endpoint = self
+            .engine
+            .inspect_container(&name)
+            .await
+            .map_err(|e| internal(e.to_string()))?
+            .and_then(|info| info.network_settings)
+            .and_then(|settings| settings.networks)
+            .and_then(|mut networks| networks.remove(&network))
+            .ok_or(Refused::UpstreamUnavailable)?;
+        let address = endpoint
+            .ip_address
+            .as_deref()
+            .filter(|ip| !ip.is_empty())
+            .or_else(|| {
+                endpoint
+                    .global_ipv6_address
+                    .as_deref()
+                    .filter(|ip| !ip.is_empty())
+            })
+            .ok_or(Refused::UpstreamUnavailable)?;
+        let ip = address
+            .parse::<IpAddr>()
+            .map_err(|e| internal(e.to_string()))?;
+        Ok(SocketAddr::new(ip, port))
     }
 }
 

@@ -38,7 +38,7 @@ extension TabWebSession: WKNavigationDelegate {
         recoveryURL = nil
         canGoBack = webView.canGoBack
         do {
-            try core.dispatch(action: .tabLoadSucceeded(tab: tab))
+            try core.dispatch(action: .tabLoadSucceeded(page: .bar(tab: tab)))
             try updateContext(webView, force: true)
         } catch { problem = error.problem }
         #if DEBUG
@@ -115,6 +115,8 @@ extension TabWebSession: WKNavigationDelegate {
     private func loadFailed(status: UInt16?) {
         ready = hasContent
         if recoveryURL == nil { recoveryURL = navigationURL }
-        do { try core.dispatch(action: .tabLoadFailed(tab: tab, status: status)) } catch { problem = error.problem }
+        do {
+            try core.dispatch(action: .tabLoadFailed(page: .bar(tab: tab), status: status))
+        } catch { problem = error.problem }
     }
 }

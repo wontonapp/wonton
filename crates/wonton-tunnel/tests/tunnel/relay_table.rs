@@ -33,6 +33,10 @@ const FALLBACK_AFTER: Duration = Duration::from_secs(2);
 /// （1 秒轮询 + 2 秒探测限时），8 秒的窗口足够把误判等出来；修对以后这个窗口白等 8 秒。
 const FLAP_WINDOW: Duration = Duration::from_secs(8);
 
+/// 等中继重连的窗口。iroh 重连有退避，托管 CI 只有 2–4 核、测试把线程占满时偶尔超过
+/// [`WAIT`] 的 15 秒（实测），这一处放得宽一些。
+const RECONNECT_WAIT: Duration = Duration::from_secs(60);
+
 /// 只认 `token` 的准入：和 iroh-relay 二进制的 `shared_token` 一个做法。
 #[derive(Debug)]
 struct SharedToken(String);
@@ -683,8 +687,9 @@ async fn timeout_get(phone: &Phone, path: &str) -> crate::support::Response {
 }
 
 /// 等一个中继连上：iroh 重连有退避，端口恢复可达和家里继真正连上是两件事。
+/// 用比 [`WAIT`] 更宽的窗口：托管 CI 只有 2–4 核、测试并发占满时，重连偶尔超过 15 秒（实测）。
 async fn wait_relay_connected(endpoint: &Endpoint, url: &RelayUrl) {
-    tokio::time::timeout(WAIT, async {
+    tokio::time::timeout(RECONNECT_WAIT, async {
         loop {
             let statuses = endpoint.home_relay_status().get();
             if statuses

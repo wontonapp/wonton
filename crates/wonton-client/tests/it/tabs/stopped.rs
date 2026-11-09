@@ -255,7 +255,9 @@ async fn stopped_state_overrides_stale_load_failure_and_running_reloads() {
         let (rig, page_tab, running_plugin) = connected_page_rig(ID, "home").await;
         rig.app
             .dispatch(Action::TabLoadFailed {
-                tab: page_tab.clone(),
+                page: PlacedTab::Bar {
+                    tab: page_tab.clone(),
+                },
                 status: Some(502),
             })
             .unwrap();
@@ -274,7 +276,9 @@ async fn stopped_state_overrides_stale_load_failure_and_running_reloads() {
         // 晚到的 WebView 失败不能把已停止盖掉。
         rig.app
             .dispatch(Action::TabLoadFailed {
-                tab: page_tab.clone(),
+                page: PlacedTab::Bar {
+                    tab: page_tab.clone(),
+                },
                 status: None,
             })
             .unwrap();
@@ -305,7 +309,9 @@ async fn stopped_state_overrides_stale_load_failure_and_running_reloads() {
         assert!(!item(&ready, &page_tab).page.as_ref().unwrap().dimmed);
         rig.app
             .dispatch(Action::ReloadTab {
-                tab: page_tab.clone(),
+                page: PlacedTab::Bar {
+                    tab: page_tab.clone(),
+                },
             })
             .unwrap();
         assert_eq!(
