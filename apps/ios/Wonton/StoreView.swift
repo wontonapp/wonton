@@ -65,7 +65,7 @@ struct StoreView: View {
             self.confirmation = confirmation.map(PluginConfirmation.store)
         }
         .confirmationDialog(
-            String(localized: .storeUpdateAllTitle(model.viewModel.updatable.count)),
+            String(localized: .storeUpdateAllTitle(count: model.viewModel.updatable.count)),
             isPresented: $showsUpdateAll,
             titleVisibility: .visible
         ) {
