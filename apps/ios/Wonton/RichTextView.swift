@@ -150,16 +150,37 @@ private struct RichTable: View {
     }
 }
 
+/// 不折行，放不下才横向滚动；右上角的复制按钮不随滚动移动。
 private struct CodeBlock: View {
     let text: String
     let ink: Color
+    @State private var copied = false
 
     var body: some View {
-        Scrollable { code }
-            .background(
-                ink.opacity(WontonTheme.ratio.codeFill),
-                in: RoundedRectangle(cornerRadius: WontonTheme.radii.control)
-            )
+        HStack(alignment: .top, spacing: 0) {
+            Scrollable { code }
+                // 左边距在滚动区外，文字滚起来左边也留白；按钮占右侧 48pt，图标居中正好是 12pt 边距。
+                .padding(.leading, WontonTheme.spacing.s12)
+                // 短代码块只有一行时按按钮的高度撑开，文字在块里垂直居中。
+                .frame(minHeight: WontonTheme.size.target)
+            WontonIconButton(
+                icon: copied ? .check : .copy,
+                label: copied ? String(localized: .messageCodeCopied) : String(localized: .messageCodeCopy),
+                tint: ink
+            ) {
+                UIPasteboard.general.string = text
+                copied = true
+            }
+            .task(id: copied) {
+                guard copied else { return }
+                try? await Task.sleep(for: .seconds(2))
+                copied = false
+            }
+        }
+        .background(
+            ink.opacity(WontonTheme.ratio.codeFill),
+            in: RoundedRectangle(cornerRadius: WontonTheme.radii.control)
+        )
     }
 
     private var code: some View {
@@ -167,7 +188,6 @@ private struct CodeBlock: View {
             .wontonText(WontonTheme.typography.supporting)
             .monospaced()
             .fixedSize()
-            .padding(.horizontal, WontonTheme.spacing.s12)
             .padding(.vertical, WontonTheme.spacing.s8)
     }
 }
