@@ -111,7 +111,7 @@ private fun AppContent(
     var reselected by remember { mutableStateOf<TabRef?>(null) }
     val nativeState = rememberSaveableStateHolder()
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val status = connectionBarStatus(home.notice, { tabs.send(Action.RetryConnection) }, nav::settings)
+    val status = connectionBarStatus(home, { tabs.send(Action.RetryConnection) }, nav::settings)
     val cards = chat.pendingConfirmations.filter {
         shown != TabRef.Chat || nav.settingsOverlay || it.roomId != nav.chat.openRoom
     }
