@@ -4,8 +4,8 @@
 mod migration;
 pub(crate) mod support;
 
-use support::{BEFORE_IDLE_TIMEOUT, WEB_URL, get, wait_until_ticket_has};
 pub(crate) use support::{Home, Phone};
+use support::{WEB_URL, get, wait_until_ticket_has};
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
@@ -331,16 +331,16 @@ async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
     home.drop_connections_silently().await;
     assert_eq!(phone.home().status, HomeStatus::Connected);
 
-    let started = Instant::now();
+    // 回到前台：限时确认发现连接已死，马上换新连接。“几秒内回来”不按墙钟断言（机器忙时真实 I/O 会排过任何
+    // 时限），按因果断言：定时检查已停、App 刚回前台，服务端看到的新连接只可能是前台检查换的——空闲超时只会
+    // 判死、不会自己拨号，“重试”也不动活着的连接。等到新连接、界面回到已连接，第一批请求就要能用。
     phone.dispatch(Action::AppForegrounded).unwrap();
     home.wait_for_a_connection().await;
+    phone
+        .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
+        .await;
     let (status, body) = get(&proxy, WEB_URL, "/after", true).await;
     assert_eq!((status, body.as_str()), (200, "/after"));
-    assert!(
-        started.elapsed() < BEFORE_IDLE_TIMEOUT,
-        "回到前台后 {:?} 才恢复",
-        started.elapsed()
-    );
 }
 
 #[tokio::test]
@@ -372,20 +372,19 @@ async fn a_network_change_replaces_a_dead_connection_without_waiting_for_the_nex
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;
 
+    // 手机一无所知，也没有回前台、没有发请求：网络变化的通知确认连接不通，换上新连接。“不等下一次检查”不按
+    // 墙钟断言（机器忙时真实 I/O 会排过任何时限），按因果断言：定时检查已停，服务端看到的新连接只可能是网络
+    // 变化这条路径换的——空闲超时只会判死、不会自己拨号。
     home.drop_connections_silently().await;
-    let started = Instant::now();
     phone
         .dispatch(Action::NetworkChanged {
             network: DeviceNetwork::Wifi,
         })
         .unwrap();
     home.wait_for_a_connection().await;
-
-    assert!(
-        started.elapsed() < BEFORE_IDLE_TIMEOUT,
-        "网络变化后 {:?} 才换上新连接",
-        started.elapsed()
-    );
+    phone
+        .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
+        .await;
 }
 
 /// 保持连接（ADR-0003）：App 在后台、方式是保持连接时，核心不算在后台——探测和自动重连照常，

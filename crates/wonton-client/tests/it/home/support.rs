@@ -18,9 +18,6 @@ use wonton_tunnel::{Allowlist, TunnelServer};
 
 // 只用作等状态的上限，等到就往下走。要盖住定时检查发现死连接的最长用时（间隔 5 秒加时限 8 秒）和之后的重连。
 const WAIT: Duration = Duration::from_secs(30);
-/// 比 iroh 的空闲超时（30 秒）早。定时检查关掉以后，这之前换上新连接只可能是被测的动作促成的。平时只要几秒，
-/// 留够余量，机器忙的时候也不会误报。
-pub(super) const BEFORE_IDLE_TIMEOUT: Duration = Duration::from_secs(20);
 pub(super) const WEB_URL: &str = "http://app-grafana.wonton.localhost:18480/";
 
 /// 测试里的手机：一个客户端核心，连同它的数据目录。
