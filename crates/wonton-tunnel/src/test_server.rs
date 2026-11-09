@@ -56,7 +56,7 @@ struct Handler<R> {
 
 impl<R: PortResolver> ProtocolHandler for Handler<R> {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
-        let mux = DatagramMux::start(conn.clone());
+        let mux = DatagramMux::start(conn.clone(), crate::udp::reassembly::FRAGMENT_TTL, None);
         let next_flow = Arc::new(AtomicU16::new(0));
         while let Ok((send, recv)) = conn.accept_bi().await {
             let stream = TunnelStream::untracked(send, recv, conn.stable_id());
