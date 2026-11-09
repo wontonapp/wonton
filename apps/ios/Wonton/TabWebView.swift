@@ -214,7 +214,7 @@ final class TabWebSession: NSObject {
         problem = nil
         do {
             try core.dispatch(action: .refreshPlugins)
-            try core.dispatch(action: .reloadTab(tab: tab))
+            try core.dispatch(action: .reloadTab(page: .bar(tab: tab)))
         } catch { problem = error.problem }
     }
 

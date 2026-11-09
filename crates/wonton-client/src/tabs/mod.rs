@@ -10,13 +10,15 @@ use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, CoreError, HomeStatus, HomeViewModel, PluginState, PluginsViewModel, TabDisplayChoice,
-    TabLoadFailure, TabRef, TabsProblem, TabsViewModel,
+    Action, CoreError, HomeStatus, HomeViewModel, PlacedTab, PluginState, PluginsViewModel,
+    TabDisplayChoice, TabLoadFailure, TabRef, TabsProblem, TabsViewModel,
 };
 
 use crate::home::HomeLink;
+use crate::l10n::{CATALOG, language};
 use crate::plugins::PluginsLink;
 use crate::scope::reuse;
+use wonton_l10n::l10n;
 
 pub(crate) mod bridge;
 pub(crate) mod media;
@@ -145,9 +147,9 @@ impl TabsLink {
             Action::SetTabDisplay { tab, display } => self.set_display(tab, display),
             Action::EnterFullscreen { tab } => self.enter_fullscreen(tab),
             Action::ExitFullscreen { tab } => self.exit_fullscreen(tab),
-            Action::ReloadTab { tab } => self.reload(tab),
-            Action::TabLoadFailed { tab, status } => self.load_failed(tab, status),
-            Action::TabLoadSucceeded { tab } => self.load_succeeded(tab),
+            Action::ReloadTab { page } => self.reload(page),
+            Action::TabLoadFailed { page, status } => self.load_failed(page, status),
+            Action::TabLoadSucceeded { page } => self.load_succeeded(page),
             Action::DismissUninstalledTabs => self.dismiss_uninstalled(),
             _ => Err(CoreError::InvalidInput {
                 reason: "不是底栏操作".to_owned(),
@@ -376,7 +378,18 @@ impl TabsLink {
         })
     }
 
-    pub(crate) fn reload(&self, tab: TabRef) -> Result<(), CoreError> {
+    /// 页面实例属于底栏时给出它的页面；面板的那一份在实现 PR（#652 的实现部分）里接上。
+    fn bar_tab(page: &PlacedTab) -> Option<&TabRef> {
+        match page {
+            PlacedTab::Bar { tab } => Some(tab),
+            PlacedTab::Panel { .. } => None,
+        }
+    }
+
+    pub(crate) fn reload(&self, page: PlacedTab) -> Result<(), CoreError> {
+        let tab = Self::bar_tab(&page)
+            .cloned()
+            .ok_or_else(|| invalid(&l10n!(CATALOG, language(), "tabs-page-not-placed")))?;
         self.runtime_change(|state, _| {
             if !is_plugin(&tab) || !state_has_page(state, &tab) {
                 return Err(invalid("这个页面不能重新加载"));
@@ -387,7 +400,14 @@ impl TabsLink {
         })
     }
 
-    pub(crate) fn load_failed(&self, tab: TabRef, status: Option<u16>) -> Result<(), CoreError> {
+    pub(crate) fn load_failed(
+        &self,
+        page: PlacedTab,
+        status: Option<u16>,
+    ) -> Result<(), CoreError> {
+        let tab = Self::bar_tab(&page)
+            .cloned()
+            .ok_or_else(|| invalid(&l10n!(CATALOG, language(), "tabs-page-not-placed")))?;
         self.runtime_change(|state, plugins| {
             if !is_plugin(&tab) || !state_has_page(state, &tab) {
                 return Err(invalid("这个页面不在底栏或页面覆盖层"));
@@ -404,7 +424,12 @@ impl TabsLink {
         })
     }
 
-    pub(crate) fn load_succeeded(&self, tab: TabRef) -> Result<(), CoreError> {
+    pub(crate) fn load_succeeded(&self, page: PlacedTab) -> Result<(), CoreError> {
+        let tab = match Self::bar_tab(&page) {
+            Some(tab) => tab.clone(),
+            // 面板里的实例没有失败记录可清；不发布，免得白白唤醒壳。
+            None => return Ok(()),
+        };
         // 没有失败记录时什么都不发布：runtime_change 无条件发新状态，会白白唤醒壳。
         if !lock(&self.state).failures.contains_key(&tab) {
             return Ok(());
@@ -532,6 +557,9 @@ fn empty_view() -> TabsViewModel {
         problem: None,
         labels: true,
         candidates: Vec::new(),
+        panel: Vec::new(),
+        panel_candidates: Vec::new(),
+        panel_selected: None,
     }
 }
 

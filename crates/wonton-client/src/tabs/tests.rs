@@ -1,5 +1,5 @@
 use super::*;
-use wonton_protocol::{InstalledPlugin, InstalledPlugins, PluginHealth, TabState};
+use wonton_protocol::{InstalledPlugin, InstalledPlugins, PlacedTab, PluginHealth, TabState};
 
 struct Rig {
     tabs: TabsLink,
@@ -168,7 +168,7 @@ async fn pinning_before_tabs_observes_new_servers_list_does_not_reload() {
 async fn switching_servers_discards_previous_pages_reload_count() {
     let rig = Rig::new();
     rig.pin();
-    rig.tabs.reload(page_tab()).unwrap();
+    rig.tabs.reload(PlacedTab::Bar { tab: page_tab() }).unwrap();
     assert_eq!(rig.page().reload, 1);
 
     rig.home.send_replace(home("new-server"));
@@ -183,7 +183,7 @@ async fn switching_servers_discards_previous_pages_reload_count() {
 async fn new_list_before_tabs_observes_server_change_starts_pages_fresh() {
     let rig = Rig::new();
     rig.pin();
-    rig.tabs.reload(page_tab()).unwrap();
+    rig.tabs.reload(PlacedTab::Bar { tab: page_tab() }).unwrap();
     rig.tabs.select(page_tab()).unwrap();
     assert_eq!(rig.page().reload, 1);
 

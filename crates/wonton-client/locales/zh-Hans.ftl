@@ -303,6 +303,7 @@ tabs-view-always-pinned = 聊天和应用已经固定到底栏。
 tabs-view-plugin-list-not-ready = 插件列表还没读到，暂时不能操作插件页面。
 tabs-view-unknown-plugin = 没有这个插件。
 tabs-view-plugin-no-page = 插件没有可打开的网页。
+tabs-page-not-placed = 这个页面不在面板里。
 
 # 底栏设置文件（tabs.json）的错误，作为 CoreError 的 reason 显示。
 # $path 是设置文件的路径，$reason 是原始的解析或读写错误。

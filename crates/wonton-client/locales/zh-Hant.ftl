@@ -304,6 +304,7 @@ tabs-view-always-pinned = 聊天和應用程式已經固定到底部導覽列。
 tabs-view-plugin-list-not-ready = 還沒載入應用程式清單，暫時無法操作應用程式頁面。
 tabs-view-unknown-plugin = 找不到這個應用程式。
 tabs-view-plugin-no-page = 這個應用程式沒有可開啟的網頁。
+tabs-page-not-placed = 這個頁面不在面板裡。
 
 # 底部導覽列設定檔（tabs.json）的錯誤，作為 CoreError 的 reason 顯示。
 # $path 是設定檔的路徑，$reason 是原始的剖析或讀寫錯誤。

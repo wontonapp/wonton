@@ -74,6 +74,18 @@ pub enum TabRef {
         /// 清单 `tabs` 里的 `id`；空的是没声明 `tabs` 的插件的网页入口（`webui`）。
         page: Option<String>,
     },
+    /// 插件网站里的某一页：网页入口下的路径（含查询和 `#` 后面的部分），只认同一个插件网站。
+    /// 从正在看的页面钉上来的（[`Action::PinCurrentPage`](crate::Action::PinCurrentPage)），
+    /// 或者编辑面板里给插件填的路径。
+    PluginPath {
+        plugin_id: String,
+        path: String,
+    },
+    /// 公网网页，只收 `https://`。手机直接访问，不经隧道：没有登录身份、桥和 `--wonton-*` 变量，
+    /// 存储和插件页面分开。
+    Url {
+        url: String,
+    },
     /// 分享页与本机插件页、其他来源的同名插件分别持有网页状态；不授予主人管理操作。
     SharedApp {
         owner_user_id: String,
@@ -101,6 +113,17 @@ pub struct TabsViewModel {
     pub labels: bool,
     /// 还没放到底栏上、可以加上去的页面：设置在前，然后按已装插件的顺序。
     pub candidates: Vec<TabCandidate>,
+    /// 主聊天页下拉面板里的页面，按显示顺序（ADR-0052）。空的时候壳画大加号。
+    #[serde(default)]
+    pub panel: Vec<crate::PanelItem>,
+    /// 还没放进主面板、可以放进去的页面：已装插件的页面，去掉已经在面板里的。
+    /// 插件里的某一页和公网网页不走这里：钉当前页（[`Action::PinCurrentPage`](crate::Action::PinCurrentPage)）
+    /// 或在编辑面板里填。
+    #[serde(default)]
+    pub panel_candidates: Vec<TabCandidate>,
+    /// 主面板上次看的那一页（本机记住，不同步），下次拉开还是它。没记住时为 `None`，壳从第一页开。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panel_selected: Option<TabRef>,
 }
 
 /// 底栏上的一项。
@@ -245,10 +268,8 @@ mod tests {
         assert_eq!(serde_json::from_value::<T>(json).unwrap(), value);
     }
 
-    #[test]
-    fn the_view_model_round_trips_through_json() {
-        let image = |path: &str| PluginImage { path: path.into() };
-        let plugin_page = |state, icon| TabPage {
+    fn sample_page(state: TabState, icon: TabIcon) -> TabPage {
+        TabPage {
             title: "动态".into(),
             icon,
             url: Some("http://app-example-feed.wonton.localhost:8480/feed".into()),
@@ -259,13 +280,27 @@ mod tests {
             opens_fullscreen: true,
             fullscreen: true,
             reload: 2,
-        };
+        }
+    }
+
+    fn sample_item(state: TabState, icon: TabIcon) -> TabItem {
+        TabItem {
+            tab: page(),
+            removable: true,
+            badge: true,
+            page: Some(sample_page(state, icon)),
+        }
+    }
+
+    #[test]
+    fn the_view_model_round_trips_through_json() {
+        let image = |path: &str| PluginImage { path: path.into() };
         let monochrome = TabIcon::Monochrome {
             icon: image("/_wonton/api/images/a.png"),
             selected: Some(image("/_wonton/api/images/b.png")),
         };
         let mut without_dimmed =
-            serde_json::to_value(plugin_page(TabState::Ready, monochrome.clone())).unwrap();
+            serde_json::to_value(sample_page(TabState::Ready, monochrome.clone())).unwrap();
         without_dimmed.as_object_mut().unwrap().remove("dimmed");
         assert!(
             !serde_json::from_value::<TabPage>(without_dimmed)
@@ -301,13 +336,15 @@ mod tests {
             },
             TabState::Unknown,
         ] {
-            items.push(TabItem {
-                tab: page(),
-                removable: true,
-                badge: true,
-                page: Some(plugin_page(state, monochrome.clone())),
-            });
+            items.push(sample_item(state, monochrome.clone()));
         }
+        let overlay = sample_item(TabState::Ready, colored.clone());
+        let panel = vec![crate::PanelItem {
+            tab: page(),
+            page: sample_page(TabState::Ready, colored),
+            attention: true,
+            source: crate::PanelSource::User,
+        }];
         round_trip(TabsViewModel {
             items,
             selected: page(),
@@ -318,7 +355,7 @@ mod tests {
                 },
                 removable: true,
                 badge: false,
-                page: Some(plugin_page(TabState::Ready, colored)),
+                page: Some(overlay.page.expect("overlay page")),
             }),
             full: true,
             uninstalled: vec!["相册".into()],
@@ -340,6 +377,9 @@ mod tests {
                     }),
                 },
             ],
+            panel,
+            panel_candidates: vec![],
+            panel_selected: Some(page()),
         });
     }
 
@@ -366,13 +406,53 @@ mod tests {
             },
             Action::EnterFullscreen { tab: page() },
             Action::ExitFullscreen { tab: page() },
-            Action::ReloadTab { tab: page() },
-            Action::TabLoadFailed {
-                tab: page(),
-                status: None,
+            Action::ReloadTab {
+                page: crate::PlacedTab::Bar { tab: page() },
             },
-            Action::TabLoadSucceeded { tab: page() },
+            Action::TabLoadFailed {
+                page: crate::PlacedTab::Panel {
+                    scope: crate::PanelScope::Main,
+                    tab: page(),
+                },
+                status: Some(503),
+            },
+            Action::TabLoadSucceeded {
+                page: crate::PlacedTab::Bar { tab: page() },
+            },
             Action::DismissUninstalledTabs,
+            Action::AddPanelPage {
+                scope: crate::PanelScope::Main,
+                tab: crate::TabRef::Url {
+                    url: "https://example.com/weather".into(),
+                },
+            },
+            Action::RemovePanelPage {
+                scope: crate::PanelScope::Room {
+                    room_id: "!room:home.example".into(),
+                },
+                tab: page(),
+            },
+            Action::MovePanelPage {
+                scope: crate::PanelScope::Main,
+                tab: page(),
+                index: 1,
+            },
+            Action::SelectPanelPage {
+                scope: crate::PanelScope::Main,
+                tab: page(),
+            },
+            Action::PinCurrentPage {
+                url: "https://app.example.wonton.localhost/stats".into(),
+                title: Some("本月统计".into()),
+                to: crate::PinTarget::Panel {
+                    scope: crate::PanelScope::Main,
+                },
+                replacing: None,
+            },
+            Action::SetRoomEntryBlocked {
+                room_id: "!room:home.example".into(),
+                blocked: true,
+            },
         ] {
             round_trip(action);
         }

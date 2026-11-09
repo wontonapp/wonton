@@ -122,7 +122,7 @@ internal fun TabBarIcon(item: TabItem, selected: Boolean, tint: Color, plugins: 
         TabRef.Chat -> if (selected) WontonIcon.ChatFill else WontonIcon.Chat
         TabRef.Apps -> if (selected) WontonIcon.AppsFill else WontonIcon.Apps
         TabRef.Settings -> if (selected) WontonIcon.SettingsFill else WontonIcon.Settings
-        is TabRef.Plugin, is TabRef.SharedApp -> null
+        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Url, is TabRef.SharedApp -> null
     }
     if (builtIn != null) {
         Icon(builtIn, null, Modifier.size(size), tint)

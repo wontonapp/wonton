@@ -304,6 +304,7 @@ tabs-view-always-pinned = チャットとアプリはすでにナビゲーショ
 tabs-view-plugin-list-not-ready = アプリの一覧をまだ読み込んでいないため、今はアプリのページを操作できません。
 tabs-view-unknown-plugin = このアプリが見つかりません。
 tabs-view-plugin-no-page = このアプリには開けるウェブページがありません。
+tabs-page-not-placed = このページはパネルにありません。
 
 # ナビゲーションバーの設定ファイル（tabs.json）のエラー。CoreError の理由として出ます。
 # $path は設定ファイルのパス、$reason は元のパースまたは入出力エラーです。

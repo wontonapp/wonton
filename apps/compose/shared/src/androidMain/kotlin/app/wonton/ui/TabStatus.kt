@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.webkit.WebViewCompat
 import app.wonton.protocol.Action
+import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.TabLoadFailure
 import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
@@ -87,7 +88,7 @@ private fun TabStatusActions(
     } else if (state is TabState.Stopped && tab is TabRef.Plugin) {
         WontonButton(stringResource(R.string.tab_start), { tabs.send(Action.StartPlugin(tab.pluginId)) })
     } else {
-        WontonButton(stringResource(R.string.common_retry), { tabs.send(Action.ReloadTab(tab)) })
+        WontonButton(stringResource(R.string.common_retry), { tabs.send(Action.ReloadTab(PlacedTab.Bar(tab))) })
         if (state is TabState.Failed && tab is TabRef.Plugin) {
             WontonButton(stringResource(R.string.tab_view_details), { onDetails(tab.pluginId) })
         }

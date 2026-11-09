@@ -132,7 +132,7 @@ struct MainView: View {
         case .settings:
             SettingsTab(model: settings, appearance: appearance, chat: chat, home: home, plugins: plugins,
                         isActive: tabs.viewModel.selected == .settings && !showsSettings)
-        case .plugin, .sharedApp:
+        case .plugin, .pluginPath, .url, .sharedApp:
             if visited.contains(item.tab), let page = item.page { pluginPage(item.tab, page: page, overlay: false) }
         }
     }
@@ -202,7 +202,7 @@ struct MainView: View {
     var nativeTab: AppTab {
         switch tabs.viewModel.selected {
         case .chat: .chat
-        case .apps, .plugin, .sharedApp: .apps
+        case .apps, .plugin, .pluginPath, .url, .sharedApp: .apps
         case .settings: .settings
         }
     }
