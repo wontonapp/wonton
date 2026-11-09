@@ -20,13 +20,19 @@ struct ComposerView: View {
     @State private var isChoosingAttachment = false
     @State private var isPickingPhoto = false
     @State private var isPickingFiles = false
+    /// 粘贴进来还没发的图：转码完成待确认。
+    @State private var pendingImage: ImageUpload?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let isEmpty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         HStack(alignment: .bottom, spacing: 0) {
             WontonIconButton(icon: .attach, label: String(localized: .composerAttach)) { isChoosingAttachment = true }
-            ComposerField(text: draft)
+            ComposerField(
+                text: draft,
+                onPasteImage: { providers in Task { await pasteImage(from: providers) } },
+                onPasteFiles: { pasteFiles($0) }
+            )
                 .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.composerField) / 2)
                 .padding(.trailing, isEmpty ? WontonTheme.spacing.s12 : 0)
             if !isEmpty {
@@ -62,9 +68,26 @@ struct ComposerView: View {
                 )
             }
         }
+        .wontonSheet(isPresented: isPreviewing) { close in
+            if let image = pendingImage {
+                PastePreview(
+                    image: image,
+                    onSend: { close { deliver(image) } },
+                    onCancel: { close {} }
+                )
+            }
+        }
     }
 
-    /// 解码和转码放到后台：大照片在主线程上转码会卡住界面。
+    /// 预览面板开着表示有待确认的图；往下拖、点空白也走这里取消。
+    private var isPreviewing: Binding<Bool> {
+        Binding(
+            get: { pendingImage != nil },
+            set: { if !$0 { pendingImage = nil } }
+        )
+    }
+
+    /// 相册选的图直接发。
     private func send(_ item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self) else {
             model.rejection = Problem(
@@ -72,47 +95,55 @@ struct ComposerView: View {
             )
             return
         }
-        let type = item.supportedContentTypes.first
+        await transcode(data, item.supportedContentTypes.first, confirm: false)
+    }
+
+    /// 粘贴的图先转码，出预览面板等主人确认。
+    private func pasteImage(from providers: [NSItemProvider]) async {
+        guard let (data, type) = await ComposerPaste.image(from: providers) else {
+            model.rejection = Problem(
+                title: String(localized: .photoUnreadable), nextStep: String(localized: .photoTryAnother)
+            )
+            return
+        }
+        await transcode(data, type, confirm: true)
+    }
+
+    /// 粘贴的文件：和文件选择器一样交核心上传，传完链接发进房间。
+    private func pasteFiles(_ urls: [URL]) {
+        pin.pin()
+        for url in urls { model.files.upload(url, room: roomId) }
+    }
+
+    /// 解码和转码放到后台：大照片在主线程上转码会卡住界面。`confirm` 为真先出预览再发。
+    private func transcode(_ data: Data, _ type: UTType?, confirm: Bool) async {
         do {
             let upload = try await Task.detached(priority: .userInitiated) {
                 try PhotoUpload.make(data: data, type: type)
             }.value
-            pin.pin()
-            model.send(.sendImage(roomId: roomId, image: upload))
-        } catch let failure as PhotoUpload.Failure {
-            model.rejection = Problem(
-                title: String(localized: failure.text), nextStep: String(localized: .photoTryAnother)
-            )
+            if confirm {
+                pendingImage = upload
+            } else {
+                deliver(upload)
+            }
         } catch {
-            model.rejection = Problem(title: String(describing: error), nextStep: String(localized: .photoTryAnother))
+            switch error {
+            case let failure as PhotoUpload.Failure:
+                model.rejection = Problem(
+                    title: String(localized: failure.text), nextStep: String(localized: .photoTryAnother)
+                )
+            default:
+                model.rejection = Problem(
+                    title: String(describing: error), nextStep: String(localized: .photoTryAnother)
+                )
+            }
         }
     }
-}
 
-private struct ComposerField: View {
-    @Binding var text: String
-    @Environment(\.wontonColors) private var colors
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        TextField(
-            "", text: $text,
-            prompt: Text(.composerMessage).foregroundStyle(Color(colors.textSecondary)), axis: .vertical
-        )
-            .lineLimit(1...6)
-            .textFieldStyle(.plain)
-            .focused($isFocused)
-            .wontonText(WontonTheme.typography.body)
-            .foregroundStyle(Color(colors.textPrimary))
-            .padding(.horizontal, WontonTheme.spacing.s16)
-            .padding(.vertical, WontonTheme.spacing.s8)
-            .frame(minHeight: WontonTheme.size.composerField)
-            .background(
-                RoundedRectangle(cornerRadius: WontonTheme.radii.composerField).fill(Color(colors.surfaceSubtle))
-            )
-            // 系统的输入框只有文字那一行接得住点按，整个底都要能点。
-            .contentShape(Rectangle())
-            .onTapGesture { isFocused = true }
+    private func deliver(_ image: ImageUpload) {
+        pendingImage = nil
+        pin.pin()
+        model.send(.sendImage(roomId: roomId, image: image))
     }
 }
 
@@ -131,5 +162,39 @@ private struct SendButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(.composerSend))
+    }
+}
+
+/// 粘贴图片的确认面板：看一眼再发，不要就取消。
+private struct PastePreview: View {
+    let image: ImageUpload
+    let onSend: () -> Void
+    let onCancel: () -> Void
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        VStack(spacing: WontonTheme.spacing.s16) {
+            // 预览的就是发出去的那份：有缩略图用缩略图，小图直接用原图。
+            if let preview = UIImage(data: image.thumbnail?.data ?? image.data) {
+                Image(uiImage: preview)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxHeight: WontonTheme.size.screenshot)
+                    .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
+                    .accessibilityHidden(true)
+            }
+            HStack(spacing: WontonTheme.spacing.s8) {
+                Button(action: onCancel) {
+                    Text(.commonCancel).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .secondary))
+                Button(action: onSend) {
+                    Text(.composerSend).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
+        }
+        .padding(.horizontal, WontonTheme.spacing.pageInset)
+        .padding(.bottom, WontonTheme.spacing.s8)
     }
 }
