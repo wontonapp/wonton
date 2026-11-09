@@ -14,6 +14,10 @@ struct TimelineRow: View {
     let cancel: () -> Void
     /// 回答这张确认卡片。
     let cardAction: (Action) -> Void
+    /// 进入回复状态，引用由核心随菜单给。
+    let reply: (QuotedMessage) -> Void
+    let forward: () -> Void
+    let redact: () -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -21,7 +25,8 @@ struct TimelineRow: View {
         case let .message(message):
             MessageBubble(
                 message: message, core: core, showsSender: showsSender && !joinsPrevious,
-                joinsPrevious: joinsPrevious, joinsNext: joinsNext, retry: retry, cancel: cancel, cardAction: cardAction
+                joinsPrevious: joinsPrevious, joinsNext: joinsNext, retry: retry, cancel: cancel,
+                cardAction: cardAction, reply: reply, forward: forward, redact: redact
             )
         case let .notice(text):
             note(Text(text))
@@ -76,6 +81,9 @@ private struct MessageBubble: View {
     let retry: () -> Void
     let cancel: () -> Void
     let cardAction: (Action) -> Void
+    let reply: (QuotedMessage) -> Void
+    let forward: () -> Void
+    let redact: () -> Void
     @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
 
@@ -124,6 +132,27 @@ private struct MessageBubble: View {
             } label: {
                 Label { Text(.messageCopy) } icon: { WontonIcon.copy.image }
             }
+        case let .reply(quoted):
+            Button {
+                reply(quoted)
+            } label: {
+                Label { Text(.messageReply) } icon: { WontonIcon.reply.image }
+            }
+            .accessibilityIdentifier("messageReply")
+        case .forward:
+            Button {
+                forward()
+            } label: {
+                Label { Text(.messageForward) } icon: { WontonIcon.forward.image }
+            }
+            .accessibilityIdentifier("messageForward")
+        case .redact:
+            Button(role: .destructive) {
+                redact()
+            } label: {
+                Label { Text(.messageRedact) } icon: { WontonIcon.trash.image }
+            }
+            .accessibilityIdentifier("messageRedact")
         // 核心和 App 分开升级时，不认识的菜单项不显示。
         default:
             EmptyView()
@@ -131,13 +160,25 @@ private struct MessageBubble: View {
     }
 
     @ViewBuilder private var bubble: some View {
-        let body = laidOut
+        let body = quoted
             .padding(.horizontal, WontonTheme.spacing.s12)
             .padding(.vertical, WontonTheme.spacing.s8)
         if message.isOwn {
             body.accentFill(shape)
         } else {
             body.background(shape.fill(Color(colors.surfaceSubtle)))
+        }
+    }
+
+    /// 回复别人时，正文上方先画被引用的原消息（ADR-0073）；点引用跳转还没做。
+    @ViewBuilder private var quoted: some View {
+        if let quote = message.reply {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                ReplyQuoteView(quote: quote, core: core, ink: textColor)
+                laidOut
+            }
+        } else {
+            laidOut
         }
     }
 
@@ -314,7 +355,43 @@ private struct MediaImage: View {
     }
 }
 
-private struct MediaFailure: Error {
+struct OriginalImage: View {
+    let image: ImageContent
+    let core: ClientCore
+    @Environment(\.dismiss) private var dismiss
+    @State private var original: Result<UIImage, MediaFailure>?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                switch original {
+                case let .success(loaded):
+                    Image(uiImage: loaded).resizable().scaledToFit()
+                case let .failure(failure):
+                    WontonNotice(
+                        icon: .imageBroken, title: String(localized: .messageOriginalUnavailable),
+                        lines: [failure.message]
+                    )
+                        .padding(WontonTheme.spacing.pageInset)
+                case nil:
+                    ProgressView()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black)
+            .navigationTitle(image.filename)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarBackground(.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar { Button(.commonDone) { dismiss() } }
+        }
+        .task { original = await MediaFailure.load(image.media, from: core) }
+    }
+}
+
+/// 媒体取不到的原因，引用缩略图和原图共用。
+struct MediaFailure: Error {
     let message: String
 
     static func load(_ media: MediaHandle, from core: ClientCore) async -> Result<UIImage, MediaFailure> {
