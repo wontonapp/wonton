@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use super::manifest::{Manifest, ManifestError, OidcClient};
+use super::manifest::{ManifestError, OidcClient};
 
 /// `owner_groups` 最多这么多个。
 pub const MAX_OWNER_GROUPS: usize = 8;
@@ -40,11 +40,6 @@ fn is_group_name(name: &str) -> bool {
         && name
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b':'))
-}
-
-/// 代登录模板用了 `{email}` 时需要邮箱；compose 变量由渲染时的插值检查处理。
-pub fn needs_owner_email(manifest: &Manifest) -> bool {
-    super::proxy_auth::uses_email(manifest)
 }
 
 #[cfg(test)]

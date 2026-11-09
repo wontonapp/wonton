@@ -682,7 +682,6 @@ fn core_error(
         Some("port_taken") => PluginFailure::LanPortTaken,
         Some("egress_proxy_unavailable") => PluginFailure::EgressProxyUnavailable,
         Some("core_upgrading") => PluginFailure::CoreUpgrading,
-        Some("owner_profile_incomplete") => PluginFailure::OwnerProfileIncomplete,
         Some(_) if status >= 500 => PluginFailure::Upstream,
         Some(_) => PluginFailure::Protocol,
         None => match status {
@@ -761,7 +760,6 @@ pub(super) fn to_core_error(problem: PluginProblem) -> CoreError {
         | PluginFailure::LanUnavailable
         | PluginFailure::LanPortTaken
         | PluginFailure::EgressProxyUnavailable
-        | PluginFailure::OwnerProfileIncomplete
         | PluginFailure::CoreUpgrading => CoreError::NotReady { reason },
         PluginFailure::SourceUnavailable | PluginFailure::Upstream | PluginFailure::Protocol => {
             CoreError::Upstream { reason }

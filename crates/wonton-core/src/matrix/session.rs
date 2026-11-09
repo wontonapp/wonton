@@ -137,10 +137,21 @@ impl<'a> Session<'a> {
 
     /// 发一条消息，返回事件 ID。
     pub async fn send_message(&self, room: &str, content: &Value) -> Result<String, MatrixError> {
+        self.send_message_with_txn(room, content, &crate::secret::random_token())
+            .await
+    }
+
+    /// 同一事务可在断线或重启后重发，Matrix 不会在同一房间里生成重复事件。
+    pub(crate) async fn send_message_with_txn(
+        &self,
+        room: &str,
+        content: &Value,
+        transaction: &str,
+    ) -> Result<String, MatrixError> {
         let path = format!(
             "/_matrix/client/v3/rooms/{}/send/m.room.message/{}",
             encode(room),
-            crate::secret::random_token()
+            encode(transaction)
         );
         let value = self
             .json(Method::PUT, &path, Some(content), "发消息")

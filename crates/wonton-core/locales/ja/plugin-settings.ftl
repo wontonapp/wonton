@@ -7,11 +7,6 @@
 ## with_note は元のメッセージと補足を1文につなげる。
 plugin-settings-note-appended = { $message }（{ $note }）
 
-# ── メール未設定（owner.rs、インストールとWebポートで使用）────────────────────
-
-plugin-settings-email-missing = メールアドレスが未入力です。Wontonの設定で入力してからもう一度お試しください
-plugin-settings-email-needed = このアプリにはあなたのメールアドレスが必要です。入力してからインストールしてください
-
 # ── Webページのローカルネットワークポートのリスク説明（lan/webui.rs、詳細で表示）──
 
 plugin-settings-lan-webui-risk-impersonate = ローカルネットワーク上のデバイスや、このホスト上でインターネットに出られるアプリが、パスワードなしであなたとしてこのページを開けます

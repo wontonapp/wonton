@@ -44,11 +44,9 @@ pub enum RenderError {
     HostPath(String),
     #[error("{0}")]
     NoOwnerIdentity(String),
-    #[error("{0}")]
-    NoOwnerEmail(String),
 }
 
-/// 引用了主人的身份变量却没注入时，分清是插件没申请还是主人没配（ADR-0022）。
+/// 引用了主人的身份变量却没申请身份权限时，说明缺少的声明。
 fn explain_owner_vars(error: RenderError, ctx: &InstallContext, langs: &Languages) -> RenderError {
     let variable = match &error {
         RenderError::Package(
@@ -58,11 +56,6 @@ fn explain_owner_vars(error: RenderError, ctx: &InstallContext, langs: &Language
         _ => None,
     };
     match (variable, &ctx.owner) {
-        (Some("WONTON_OWNER_EMAIL"), Some(_)) => RenderError::NoOwnerEmail(crate::l10n::text(
-            langs,
-            "plugin-settings-email-missing",
-            &[],
-        )),
         (Some(name @ ("WONTON_OWNER_NAME" | "WONTON_OWNER_EMAIL")), None) => {
             RenderError::NoOwnerIdentity(crate::l10n::text(
                 langs,
@@ -218,20 +211,11 @@ pub struct Deployment {
 
 /// 用占位环境渲染一遍，在不接触 Docker 的情况下检查插件包能否安装。
 pub fn dry_run(package: &PluginPackage, langs: &Languages) -> Result<Deployment, RenderError> {
-    dry_run_with_email(package, Some("owner@wonton.invalid"), langs)
-}
-
-/// 同 [`dry_run`]，主人的邮箱用 `email`：主人没配邮箱时，看插件在这台主机上装不装得上。
-pub(super) fn dry_run_with_email(
-    package: &PluginPackage,
-    email: Option<&str>,
-    langs: &Languages,
-) -> Result<Deployment, RenderError> {
-    render(package, &dry_run_context(package, email), langs)
+    render(package, &dry_run_context(package), langs)
 }
 
 /// [`dry_run`] 用的占位环境。
-pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> InstallContext {
+pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
     let manifest = &package.manifest;
     let slug = manifest.id.slug();
     let root = PathBuf::from("/wonton-dry-run");
@@ -259,7 +243,7 @@ pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> I
         }),
         owner: manifest.gets_owner_identity().then(|| OwnerVars {
             name: "owner".into(),
-            email: email.map(str::to_owned),
+            email: crate::owner::internal_email("owner"),
         }),
         matrix: manifest
             .permissions
