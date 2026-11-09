@@ -110,8 +110,14 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
   装着的就是审核过的那份。提交对不上的保持社区，主人升级到官方索引里的版本才换过来。
 - 提示：已安装列表里给出能升级到的版本、更新说明（清单的 `release_notes`），以及权限有没有变。App 显示角标。M1 不另发消息，
   以后在“Wonton”私聊里发（ADR-0016）。
-- 升级要主人确认，和安装用同一个确认页：列出新版本的全部权限，新增的标出来，高权限照样醒目；新版本多申请了权限，就要重新
-  确认全部权限。
+- 一键更新（2026-11-09 定）：商店列表和详情页的“获取”“更新”点了就开始，不跳页；只有要主人拿主意的才弹出确认页。核心取
+  预览、判断要不要请主人拿主意，规则在核心写成测试：装不了、缺资料、要用设备、有核心不支持的权限；安装时有带风险等级的
+  权限或标了重点的提醒（内存、架构、自动登录这类说明不拦）；更新时新增了权限，或者这个插件有 Bot 开了“始终允许”
+  （ADR-0024 规定这种不能静默升级）。核心判完把要确认的放进 `PluginsViewModel.confirmation`，壳照着打开确认页。
+- 商店页右上角的更新图标带着可更新数，点了弹一次确认（列出这些应用），然后逐个升级：不用拿主意的直接开始，要拿主意的排进
+  确认页，一次一条。侧边栏“应用商店”的角标是同一个数。
+- 升级要主人拿主意时，和安装用同一个确认页：列出新版本的全部权限，新增的标出来，高权限照样醒目；新版本多申请了权限，就要
+  重新确认全部权限。
 - 执行：保留数据、密钥、Bot 账号和设备（不换加密身份）、模型凭据和 OIDC 客户端，只换容器。新版本健康检查不过就回滚，按旧
   记录和旧容器当时的镜像重建旧版本的容器。没有降级，回滚只发生在这次升级失败时。（“没有降级”已被 ADR-0031 取代。）
 - 数据迁移由应用自己负责。迁移做到一半才失败时，旧版本可能读不了新数据；插件作者要在更新说明里写明这类风险。升级前备份的
@@ -216,11 +222,13 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 **客户端核心**（`ClientCore`）：
 
 - 状态：`subscribe_plugins()` 推 `PluginsViewModel`：已安装的插件、商店、最近一次取列表的问题，以及安装、升级、卸载的
-  进展（`tasks`）。
+  进展（`tasks`）、可更新的应用（`updatable`）、侧边栏的内容（`sidebar`），以及一键装、一键升的进展
+  （`pending`）和要主人拿主意的确认（`confirmation`）。
 - 操作：`SetLanguages`（壳把系统的语言偏好告诉核心，核心据此带 `Accept-Language`）、`RefreshPlugins`、
   `RefreshStore { force }`、`InstallPlugin { preview }`、`UpgradePlugin { preview }`、`UninstallPlugin`、
-  `DismissPluginTask`。安装和升级把确认页渲染的那份预览原样交回，核心按它授予列出的全部权限：确认页上看到的就是授予的，
-  壳不用自己拼权限列表。
+  `DismissPluginTask`，以及一键装、一键升：`InstallNow { source }`、`UpgradeNow { plugin_id }`、`UpgradeAll`、
+  `DismissStoreConfirmation`。安装和升级把确认页渲染的那份预览原样交回，核心按它授予列出的全部权限：确认页上看到的
+  就是授予的，壳不用自己拼权限列表。
 - 直接返回结果的调用：`store_plugin(source)`、`installed_plugin(id)`（详情页）、`preview_install(source)`、
   `preview_upgrade(id)`（确认页）、`load_plugin_image(image)`（经隧道取图片并缓存，返回 PNG 或 JPEG 的字节，同
   `load_media`）、`search_store(query)`（在取到的商店列表里按名字、说明、标签和 ID 找）。

@@ -316,6 +316,22 @@ pub enum Action {
     DismissPluginTask {
         id: String,
     },
+    /// 主人在商店列表或详情页点了"获取"：核心取预览、判断要不要请主人拿主意（规则在核心，ADR-0017）。
+    /// 不用拿主意的直接开始装（ [`PluginsViewModel::tasks`](crate::PluginsViewModel::tasks) 里出现任务）；
+    /// 要拿主意的放进 [`PluginsViewModel::confirmation`](crate::PluginsViewModel::confirmation)，壳打开确认页。
+    /// 取预览失败也进 `tasks`，按钮回到"获取"。正在取预览的插件在 [`PluginsViewModel::pending`](crate::PluginsViewModel::pending) 里。
+    InstallNow {
+        source: String,
+    },
+    /// 主人点了"更新"，同 [`Action::InstallNow`]，对装着的应用升级到提示的版本。
+    UpgradeNow {
+        plugin_id: String,
+    },
+    /// 主人在商店页点了"全部更新"：逐个升级 [`PluginsViewModel::updatable`](crate::PluginsViewModel::updatable) 里的应用，
+    /// 不用拿主意的直接开始；要拿主意的排进 [`PluginsViewModel::confirmation`](crate::PluginsViewModel::confirmation)，一次一条。
+    UpgradeAll,
+    /// 主人关掉了一键操作的确认页，没装也没升。还有排着队的就放下一条进来，没有就清空。
+    DismissStoreConfirmation,
 
     // “我来操作”（ADR-0024）。续约在核心里，进展和结果在 `PluginsViewModel.takeover` 里。
     /// 主人在插件网页的标题栏上点了“我来操作”。正在操作别的插件时，那个先交还。
@@ -506,7 +522,7 @@ pub enum Action {
         tab: TabRef,
         replacing: Option<TabRef>,
     },
-    /// 从栏上拿掉。聊天和应用不能拿，返回 `InvalidInput`。
+    /// 从栏上拿掉。聊天不能拿，返回 `InvalidInput`。
     UnpinTab {
         tab: TabRef,
     },

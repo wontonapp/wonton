@@ -99,6 +99,8 @@ pub enum TabRef {
 pub struct TabsViewModel {
     /// 底栏上的项，按显示顺序。
     pub items: Vec<TabItem>,
+    /// 要不要显示整条底栏：栏上除了"聊天"还有别的项才显示，只有"聊天"时聊天页铺到底。核心算，壳不自己数。
+    pub show_bar: bool,
     pub selected: TabRef,
     /// 没固定的插件页打开时盖在主界面上：有顶栏，没有底栏。
     pub overlay: Option<TabItem>,
@@ -131,7 +133,7 @@ pub struct TabsViewModel {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TabItem {
     pub tab: TabRef,
-    /// 能从栏上拿掉；聊天和应用不能。
+    /// 能从栏上拿掉；聊天不能。
     pub removable: bool,
     /// 图标上要不要画角标：插件页出了问题，或者设置里有要处理的事（核心有新版本）。
     pub badge: bool,
@@ -347,6 +349,7 @@ mod tests {
         }];
         round_trip(TabsViewModel {
             items,
+            show_bar: true,
             selected: page(),
             overlay: Some(TabItem {
                 tab: TabRef::Plugin {

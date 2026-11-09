@@ -550,6 +550,7 @@ fn initial_selection(paired: bool) -> TabRef {
 fn empty_view() -> TabsViewModel {
     TabsViewModel {
         items: Vec::new(),
+        show_bar: false,
         selected: TabRef::Apps,
         overlay: None,
         full: false,
