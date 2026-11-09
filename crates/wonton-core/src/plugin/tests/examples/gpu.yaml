@@ -1,0 +1,26 @@
+name: comfyui
+services:
+  comfyui:
+    image: ghcr.io/example/comfyui:1
+    shm_size: 8g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8188/"]
+  web:
+    image: ghcr.io/example/comfyui-proxy:1
+
+x-wonton:
+  spec: '0.4'
+  id: ai.example.comfyui
+  version: 1.0.0
+  kind: app
+  title: { zh: ComfyUI, en: ComfyUI }
+  description: { zh: 用工作流生图、生视频, en: Image and video generation with workflows }
+  webui:
+    service: web
+    port: 8188
+  gpu:
+    services: [comfyui]
+  permissions:
+    - devices.gpu
+  requirements:
+    gpu: {need: required}

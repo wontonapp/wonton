@@ -1,0 +1,35 @@
+# 只有页面：nginx 把 configs 交进来的 index.html 发出去。
+services:
+  web:
+    image: nginx:1.29-alpine
+    init: true
+    configs:
+      - source: page
+        target: /usr/share/nginx/html/index.html
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      start_interval: 1s
+
+configs:
+  page:
+    file: index.html
+
+x-wonton:
+  spec: "0.5"
+  id: app.example.hello
+  version: 0.1.0
+  kind: app
+  title: { zh: 你好, en: Hello }
+  description: { zh: 一个静态页面, en: A static page }
+  webui:
+    service: web
+    port: 80
+  tabs:
+    - id: home
+      title: { zh: 你好, en: Hello }
+      icon: tabs/home.svg
+      path: /
+  permissions: []

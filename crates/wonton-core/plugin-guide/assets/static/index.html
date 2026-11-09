@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>你好</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0;
+    padding: calc(var(--wonton-inset-top, 0px) + 16px) 16px calc(var(--wonton-inset-bottom, 0px) + 16px);
+    background: var(--color-background-primary, Canvas);
+    color: var(--color-text-primary, CanvasText);
+    font: 16px/1.5 var(--font-sans, system-ui, sans-serif);
+  }
+  button {
+    border: 0;
+    padding: 8px 16px;
+    border-radius: var(--border-radius-md, 12px);
+    background: var(--wonton-accent-fill, ButtonFace);
+    color: var(--wonton-accent-ink, ButtonText);
+    font: inherit;
+  }
+</style>
+</head>
+<body>
+<h1>你好</h1>
+<button id="count">点了 0 次</button>
+<script>
+  let n = 0;
+  document.getElementById("count").onclick = (e) => { e.target.textContent = `点了 ${++n} 次`; };
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 核心放下载文件的目录（ADR-0020），只把它交给系统打开。 -->
+    <files-path name="downloads" path="downloads/" />
+    <!-- 图片分享：落进私有缓存，经 FileProvider 交给分享面板，用完由系统清。 -->
+    <cache-path name="share" path="share/" />
+</paths>

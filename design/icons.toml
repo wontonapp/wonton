@@ -1,0 +1,65 @@
+# 语义名 = Phosphor 的名字。fill 表示还要实心版（选中时用）；mirror 表示从右到左时要翻转。
+[upstream]
+package = "@phosphor-icons/core"
+version = "2.1.1"
+license = "MIT"
+
+[icons]
+add = { phosphor = "plus" }
+agent = { phosphor = "sparkle", fill = true }
+apps = { phosphor = "squares-four", fill = true }
+attach = { phosphor = "paperclip" }
+back = { phosphor = "caret-left", mirror = true }
+blocked = { phosphor = "prohibit" }
+cameraOff = { phosphor = "camera-slash" }
+chat = { phosphor = "chats-circle", fill = true }
+check = { phosphor = "check" }
+checkCircle = { phosphor = "check-circle", fill = true }
+close = { phosphor = "x" }
+code = { phosphor = "code", fill = true }
+compose = { phosphor = "note-pencil" }
+connection = { phosphor = "broadcast" }
+copy = { phosphor = "copy" }
+cpu = { phosphor = "cpu", fill = true }
+device = { phosphor = "device-mobile-camera" }
+document = { phosphor = "file-text", fill = true }
+download = { phosphor = "download-simple", fill = true }
+error = { phosphor = "x-circle", fill = true }
+expand = { phosphor = "corners-out" }
+eye = { phosphor = "eye" }
+file = { phosphor = "file" }
+folder = { phosphor = "folder", fill = true }
+forward = { phosphor = "caret-right", mirror = true }
+globe = { phosphor = "globe", fill = true }
+help = { phosphor = "question" }
+home = { phosphor = "house", fill = true }
+image = { phosphor = "image", fill = true }
+imageBroken = { phosphor = "image-broken" }
+info = { phosphor = "info" }
+leave = { phosphor = "record" }
+lock = { phosphor = "lock", fill = true }
+lockKey = { phosphor = "lock-key" }
+more = { phosphor = "dots-three" }
+music = { phosphor = "music-notes", fill = true }
+notify = { phosphor = "bell-ringing" }
+pause = { phosphor = "pause", fill = true }
+person = { phosphor = "user-plus" }
+play = { phosphor = "play", fill = true }
+qrCode = { phosphor = "qr-code" }
+refresh = { phosphor = "arrows-clockwise" }
+reply = { phosphor = "arrow-elbow-down-left", mirror = true }
+search = { phosphor = "magnifying-glass" }
+send = { phosphor = "arrow-up" }
+server = { phosphor = "hard-drives" }
+settings = { phosphor = "gear-six", fill = true }
+share = { phosphor = "export" }
+shield = { phosphor = "shield-check", fill = true }
+star = { phosphor = "star", fill = true }
+store = { phosphor = "storefront" }
+tasks = { phosphor = "list-checks", fill = true }
+trash = { phosphor = "trash" }
+upload = { phosphor = "upload-simple" }
+warning = { phosphor = "warning", fill = true }
+warningCircle = { phosphor = "warning-circle", fill = true }
+web = { phosphor = "compass" }
+wrench = { phosphor = "wrench", fill = true }

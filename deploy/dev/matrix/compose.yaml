@@ -1,0 +1,33 @@
+# Wonton 本地开发用的 Tuwunel。用 dev.sh 起停：它先生成核心的 JWT 签发密钥，再把公钥注入这里。
+name: wonton-dev-matrix
+
+services:
+  tuwunel:
+    image: ghcr.io/matrix-construct/tuwunel:v1.9.4
+    restart: unless-stopped
+    # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
+    stop_grace_period: 5m
+    ports:
+      # 只监听本机：Tuwunel 不直接对局域网暴露，客户端经核心网关（M0 先直连）访问。
+      - "127.0.0.1:${WONTON_DEV_MATRIX_PORT:-8008}:8008"
+    # 联邦选项在第二份配置里（ADR-0050）：基础配置给测试和网关用，联邦的只有这个栈挂。
+    command: ["-c", "/etc/tuwunel/tuwunel.toml", "-c", "/etc/tuwunel/federation.toml"]
+    volumes:
+      - ./tuwunel.toml:/etc/tuwunel/tuwunel.toml:ro
+      - ./federation.toml:/etc/tuwunel/federation.toml:ro
+      - ./.secrets/tls.crt:/etc/tuwunel/tls/tls.crt:ro
+      - ./.secrets/tls.key:/etc/tuwunel/tls/tls.key:ro
+      - data:/var/lib/tuwunel
+    environment:
+      TUWUNEL_CONFIG: /etc/tuwunel/tuwunel.toml
+      TUWUNEL_JWT__KEY: ${WONTON_DEV_JWT_PUBLIC_KEY:?请用 deploy/dev/matrix/dev.sh up 启动}
+    healthcheck:
+      # 镜像自带的检查间隔是 30 秒，开发时缩短，让 `up --wait` 尽快返回。
+      test: ["CMD", "tuwunel", "--health-check"]
+      interval: 10s
+      timeout: 5s
+      start_period: 5m
+      start_interval: 1s
+
+volumes:
+  data:

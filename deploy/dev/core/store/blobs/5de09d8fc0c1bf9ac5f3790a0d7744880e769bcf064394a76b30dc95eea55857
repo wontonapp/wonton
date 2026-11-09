@@ -1,0 +1,120 @@
+# Navidrome 音乐库：用户的音乐放在共享文件夹 music 里，网页经核心网关登录（Remote-User 请求头代登录），
+# 第三方 Subsonic 客户端连局域网端口，详情页的开关打开后显示地址和账号。上游 GPL-3.0-only，镜像按清单列表（index）的摘要固定。
+services:
+  navidrome:
+    image: deluan/navidrome:0.64.2@sha256:38dc2727bfcfd5ede290f8ada114fc90368146f265ae4701ddddbcbe2a44ee52
+    # 镜像不依赖 root：以用户身份运行，数据目录由核心按 user 交给 PUID:PGID，宿主上的文件归用户。
+    # 音乐目录只读（storage.share.music:read）；持久数据和缓存在 /data，临时文件在 /tmp，根文件系统无需可写。
+    user: "${PUID}:${PGID}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      # ND_ 变量名必须全大写（Navidrome 用 ND_<大写键> 查环境变量），小写不生效。
+      ND_MUSICFOLDER: /music
+      ND_DATAFOLDER: /data
+      # 加密保存的密码用它，不用 Navidrome 内置的默认密钥（升级、迁移后保持同一把）。
+      ND_PASSWORDENCRYPTIONKEY: ${WONTON_SECRET_PASSWORD_ENCRYPTION_KEY}
+      # 不申请 network.egress，外部服务（Deezer、Last.fm、ListenBrainz、insights、外部歌单封面）取不到，
+      # 显式关掉：否则它们会一直在内部网络上重试、写错误日志。这是 0.64 的总开关，会一并清空 Agents。
+      ND_ENABLEEXTERNALSERVICES: "false"
+      # 分享链接指向插件子域名，收件人没有云吞会话、会被跳到核心登录页，所以关掉分享。
+      ND_ENABLESHARING: "false"
+      # 网关代登录：只信任核心的地址。Navidrome 的白名单只认 CIDR，要带 /32。
+      ND_REVERSEPROXYUSERHEADER: Remote-User
+      ND_REVERSEPROXYWHITELIST: ${WONTON_CORE_ADDRESS}/32
+      # 空库时用内置 admin 建号；provision 随后把它换成用户自己的账号。
+      ND_DEVAUTOCREATEADMINPASSWORD: ${WONTON_SECRET_CLIENT_PASSWORD}
+    volumes:
+      - ${WONTON_APP_DATA}/data:/data
+      - ${WONTON_SHARE_MUSIC}:/music:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4533/ping"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 1s
+
+  # 一次性服务：等主服务健康后建用户账号、删掉内置 admin；/data/.owner-ready 在就跳过。
+  # 用同一个镜像，脚本只用镜像里有的 wget。Navidrome 0.64.2 实测：没有这个开关时账号要等第一次打开网页
+  # 由代登录头建出来，第三方 Subsonic 客户端在打开网页之前用不了。
+  provision:
+    image: deluan/navidrome:0.64.2@sha256:38dc2727bfcfd5ede290f8ada114fc90368146f265ae4701ddddbcbe2a44ee52
+    user: "${PUID}:${PGID}"
+    entrypoint: ["/bin/sh", "/app/provision.sh"]
+    environment:
+      WONTON_OWNER_NAME: ${WONTON_OWNER_NAME:?核心没有注入用户名}
+      WONTON_SECRET_CLIENT_PASSWORD: ${WONTON_SECRET_CLIENT_PASSWORD}
+    volumes:
+      - ${WONTON_APP_DATA}/data:/data
+    configs:
+      - source: provision
+        target: /app/provision.sh
+    depends_on:
+      navidrome:
+        condition: service_healthy
+    restart: "no"
+
+configs:
+  provision:
+    file: provision.sh
+
+x-wonton:
+  spec: "0.4"
+  id: org.navidrome.navidrome
+  version: 0.1.1
+  kind: app
+  title: { en: Navidrome }
+  description: { zh: 把共享文件夹里的音乐变成你自己的流媒体音乐库, en: Turn the music in your shared folder into your own streaming library }
+  icon: icon.png
+  notices: [NOTICE]
+  screenshots: [screenshots/home.png, screenshots/album.png, screenshots/player.png]
+  author: { name: geraldpeng6 }
+  homepage: https://www.navidrome.org
+  license: GPL-3.0-only
+  tags:
+    zh: [音乐]
+    en: [Music]
+  about:
+    zh: |
+      把共享文件夹里的音乐整理成自己的音乐库：按歌手、专辑和流派浏览、播放，建歌单。
+
+      打开就用，不用再登录一次。音乐文件只读，不会被改动。
+
+      要用手机上的 Subsonic 播放器，在插件详情里打开“在局域网开放”，把显示的地址、账号和密码填进去。
+    en: |
+      Turn the music in your shared folder into your own library: browse and play by artist, album and genre, and build playlists.
+
+      Opening the page is enough, there is no second login. Music files are read-only and never modified.
+
+      To use a Subsonic player on your phone, turn on the LAN switch in the plugin details and enter the address, account and password shown there.
+  release_notes: { zh: 名字和说明更新。, en: Product name and description update. }
+  webui:
+    service: navidrome
+    port: 4533
+    sso: proxy
+    proxy:
+      headers:
+        Remote-User: "{user}"
+  # 第三方 Subsonic 客户端连这个端口，详情页的开关打开后显示地址和账号。
+  lan:
+    ports:
+      - { service: navidrome, port: 4533 }
+    client:
+      address: "http://{host}:4533"
+      username: "{user}"
+      password: "{secret:client_password}"
+  secrets:
+    password_encryption_key:
+      generate: { bytes: 32 }
+    client_password:
+      generate: { bytes: 32 }
+  permissions:
+    - storage.share.music:read
+    - network.lan
+    # 知道用户名：账号按注入的用户名建。
+    - owner.identity
+  # 上游没写最低内存；本机空闲实测约 62M，取 128M。镜像支持 amd64 和 arm64（docker manifest inspect）。
+  requirements:
+    arch: [amd64, arm64]
+    memory: 128M

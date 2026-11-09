@@ -1,0 +1,155 @@
+# Claude Code Agent：bridge 说 ACP，agent 跑固定版本的 claude-agent-acp。两个服务只共享 ACP socket 所在的
+# run/ 子目录；bridge 的 crypto store 和 Matrix 令牌不给 agent，agent 的 HOME 和工作区不给 bridge。
+services:
+  agent:
+    image: ghcr.io/geraldpeng6/wonton-plugin-claude-code:0.1.2@sha256:e883143925537e6cf7eeb699a1659a98d5217c72a3cb5f934f825b5262199726
+    # 底座镜像固定用 65532，入口不再降权；bridge 挂同一个 run/ 目录，两个服务的属主必须相同。
+    user: "65532:65532"
+    restart: unless-stopped
+    environment:
+      HOME: /data/agent/home
+      # 底座每次启动按有没有值选路：三个 WONTON_MODEL_* 都有值时调网关钩子，任一为空就清掉网关配置、
+      # 用 Agent 自己的登录态。Claude Code 只讲 Anthropic Messages，地址取核心注入的兼容地址，
+      # 为空同样按没接网关处理。
+      WONTON_MODEL_BASE_URL: ${WONTON_MODEL_BASE_URL:-}
+      WONTON_MODEL_API_KEY: ${WONTON_MODEL_API_KEY:-}
+      WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT:-}
+      WONTON_MODEL_ANTHROPIC_BASE_URL: ${WONTON_MODEL_ANTHROPIC_BASE_URL:-}
+      WONTON_ACP_SOCKET: /data/run/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+      # 容器里没有浏览器：登录命令只打链接，用户自己开浏览器拿 code。
+      NO_BROWSER: "1"
+      # MCP 工具直接进工具表：ToolSearch 的延迟加载在网关后面要多一轮，模型常常先答话不调工具。
+      ENABLE_TOOL_SEARCH: "false"
+      # 关掉自动更新、遥测、错误上报和非必要请求；官方 devcontainer 也是这么配的。
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+      DISABLE_AUTOUPDATER: "1"
+      DISABLE_TELEMETRY: "1"
+      DISABLE_ERROR_REPORTING: "1"
+      # 出网代理由核心注入（ADR-0023），这里不写代理变量，写了空值就会把核心的注入顶掉。
+    volumes:
+      - ${WONTON_BOT_DATA:?需要 Bot 数据目录}/agent:/data/agent
+      - ${WONTON_BOT_DATA}/run:/data/run
+      - ${WONTON_BOT_DATA}/workspace:/workspace
+    healthcheck:
+      # socket 是首启下载完 CLI、ACP 转发建好后才有；有它才算能接连接。
+      test: ["CMD", "test", "-S", "/data/run/acp.sock"]
+      interval: 30s
+      timeout: 5s
+      start_period: 300s
+      start_interval: 2s
+
+  bridge:
+    image: ghcr.io/wontonapp/wonton-acp-bridge:main-83d4297@sha256:6b0645e4cd8a5b80b6c25e4c17334c8d4621b9959756902785bae58b558b2326
+    user: "65532:65532"
+    restart: unless-stopped
+    depends_on:
+      agent:
+        condition: service_started
+    environment:
+      HOME: /data/bridge
+      WONTON_BOT_DATA: /data
+      WONTON_BRIDGE_DATA: /data/bridge
+      WONTON_ACP_SOCKET: /data/run/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+      WONTON_MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER:?需要 Matrix 地址}
+      WONTON_MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN:?需要 Bot 的 Matrix 访问令牌}
+      WONTON_MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:?需要主人的 Matrix 用户 ID}
+      WONTON_MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM:?需要主人与 Bot 的主房间}
+      WONTON_MCP_URL: ${WONTON_MCP_URL:?需要 MCP 总线地址}
+      # Claude Code 的 default 模式每次都问（改文件、跑命令都出确认卡片），和 Codex 的 read-only 同一种手感；
+      # 适配器还支持 acceptEdits、plan、auto、bypassPermissions（非 root 才有）。
+      WONTON_ACP_MODE: default
+    volumes:
+      - ${WONTON_BOT_DATA}/bridge:/data/bridge
+      - ${WONTON_BOT_DATA}/run:/data/run
+    healthcheck:
+      test: ["CMD", "test", "-S", "/data/run/acp.sock"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
+
+  # 登录网页的入口：webui 不能指向 Bot 服务（旧核心仍按这条判），而登录页在 agent 容器里（每个 Bot 一份），
+  # 所以架一个全插件一份的转发。插件页只开默认 Bot 的那一份，聊天里的 /wonton login 用当前 Bot。
+  web:
+    image: ghcr.io/geraldpeng6/wonton-plugin-claude-code:0.1.2@sha256:e883143925537e6cf7eeb699a1659a98d5217c72a3cb5f934f825b5262199726
+    user: "65532:65532"
+    restart: unless-stopped
+    entrypoint: ["python3", "/usr/local/lib/wonton-agent/web-proxy"]
+    environment:
+      HOME: /data/agent/home
+      WEB_PORT: "8080"
+    healthcheck:
+      # 本地监听和上游都要通：上游没了这台也不该算健康。
+      test: ["CMD", "python3", "-c", "import socket; [socket.create_connection(a, 3).close() for a in [('127.0.0.1', 8080), ('agent-default', 8080)]]"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
+
+x-wonton:
+  spec: "0.9"
+  id: ai.claude-code
+  version: 0.1.2
+  kind: agent
+  title: { zh: Claude Code, en: Claude Code }
+  description:
+    zh: Anthropic 的 Claude Code 编程 Agent，在聊天里按你的确认动手
+    en: Anthropic's Claude Code coding agent that acts in chat, asking before it acts
+  icon: icon.svg
+  notices: [NOTICE, images/wonton-plugin-claude-code/LICENSE.claude-agent-acp, images/wonton-plugin-claude-code/LICENSE.claude-code]
+  author: { name: Wonton plugin authors }
+  homepage: https://github.com/agentclientprotocol/claude-agent-acp
+  # 上游 CLI 的许可证（适配器是 Apache-2.0，插件包自己的许可证在 LICENSE）。
+  license: Apache-2.0
+  tags: { zh: [AI, 开发], en: [AI, Development] }
+  about:
+    zh: |
+      Claude Code 以 Bot 的身份住进聊天，用它自己的 Anthropic 登录或 key。它住在自己的容器里，
+      改文件、跑命令之前经确认卡片问你；Wonton 插件的工具也从聊天里调。
+
+      接上模型网关（要提供 Anthropic Messages 接口）时默认走网关，不用账号。没接网关时，在插件页的登录
+      网页（默认 Bot）或聊天里发 /wonton login（这个聊天对应的 Bot）登录：用 Claude 订阅或 Anthropic
+      Console 登录（粘一次登录码），也可以贴一个自己的 Anthropic API key。订阅需要 Pro、Max、Ultra、
+      Team 或 Enterprise；免费版不含 Claude Code。
+    en: |
+      Claude Code lives in the chat as a bot, signed in with your own Anthropic account or key. It
+      works in its own container and asks through confirmation cards before editing files or running
+      commands; Wonton plugin tools are called from the chat too.
+
+      With a model gateway that speaks Anthropic Messages it goes through the gateway by default,
+      with no account. Without one, sign in from the login page on the plugin screen (default bot)
+      or send /wonton login in the chat (this chat's bot): with a Claude subscription or Anthropic
+      Console (paste one login code), or paste your own Anthropic API key.
+      Subscriptions need Pro, Max, Ultra, Team or Enterprise; the free plan has no Claude Code.
+  release_notes:
+    zh: "改用新的名单变量，Bot 只听名单里的人（核心 0.9 起，不再兼容旧变量）。需要插件规范 0.9。"
+    en: "Switches to the new allow-list variable so a bot follows the people on the list (core 0.9 and later; the old variable is gone). Requires spec 0.9."
+  webui:
+    service: web
+    port: 8080
+    sso: none
+  agent:
+    protocol: acp
+    # 官方登录：链接和提示在聊天或登录网页里；code 粘回去，CLI 自己写凭据，Wonton 不留 token。
+    login:
+      - id: claudeai
+        title: { zh: Claude 订阅, en: Claude subscription }
+      - id: console
+        title: { zh: Anthropic Console, en: Anthropic Console }
+      - id: api-key
+        title: { zh: Anthropic API key, en: Anthropic API key }
+  bot:
+    display_name: { zh: Claude Code, en: Claude Code }
+  bots:
+    services: [agent, bridge]
+  permissions:
+    - matrix.bot
+    - tools
+    - models
+    # 登录和登录后的官方模型请求都要出网。
+    - network.egress
+  requirements:
+    arch: [amd64, arm64]
+    memory: 4G

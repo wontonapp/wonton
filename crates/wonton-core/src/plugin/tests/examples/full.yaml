@@ -1,0 +1,53 @@
+name: immich
+services:
+  server:
+    image: ghcr.io/immich-app/immich-server:v2
+    volumes:
+      - ${WONTON_APP_DATA}/upload:/usr/src/app/upload
+      - ${WONTON_SHARE_PHOTOS}:/photos:ro
+    healthcheck:
+      test: ["CMD", "immich-healthcheck"]
+  mcp:
+    image: ghcr.io/example/immich-mcp:1
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+
+x-wonton:
+  spec: "0.2"
+  id: app.immich.photos
+  version: 2.0.0
+  kind: app
+  title: { zh: 相册, en: Photos }
+  description: { zh: 照片备份、人脸与语义搜索, en: Photo backup with face and semantic search }
+  icon: icon.png
+  screenshots: [screenshots/timeline.png, screenshots/search.png]
+  author: { name: Example, url: https://example.com }
+  homepage: https://immich.app
+  license: AGPL-3.0-only
+  tags: { zh: [相册, AI], en: [Photos, AI] }
+  about:
+    zh: |
+      手机里的照片自动备份到家里的服务器。
+
+      按人脸、地点和画面内容搜索照片。
+    en: |
+      Back up the photos on your phone to the server at home.
+
+      Search photos by face, place and what is in them.
+  release_notes: { zh: 升级到 Immich 2.0。, en: Upgrades to Immich 2.0. }
+  webui:
+    service: server
+    port: 2283
+    sso: oidc
+    oidc:
+      redirect_paths: [/auth/login, /user-settings]
+  mcp:
+    service: mcp
+    port: 8080
+    transport: streamable-http
+  permissions:
+    - storage.share.photos:read
+  settings: settings.schema.json
+  requirements:
+    arch: [amd64, arm64]
+    memory: 2G

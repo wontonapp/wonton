@@ -1,0 +1,23 @@
+[package]
+name = "wonton-protocol"
+description = "核心 API、ViewModel 与插件清单类型：跨端唯一事实源"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# 为客户端核心生成 Swift / Kotlin 类型；服务端不需要。
+uniffi = ["dep:uniffi"]
+
+[dependencies]
+base64 = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uniffi = { workspace = true, optional = true }
+
+[lints]
+workspace = true

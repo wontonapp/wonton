@@ -1,0 +1,43 @@
+# 带后端：只用 Python 标准库，代码经 configs 交进容器，数据在 /data。
+services:
+  app:
+    image: python:3.13-alpine
+    init: true
+    command: ["python3", "/app/server.py"]
+    user: "${PUID}:${PGID}"
+    volumes:
+      - ${WONTON_APP_DATA}:/data
+    configs:
+      - source: server
+        target: /app/server.py
+      - source: page
+        target: /app/index.html
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request as r; r.build_opener(r.ProxyHandler({})).open('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      start_interval: 1s
+
+configs:
+  server:
+    file: server.py
+  page:
+    file: index.html
+
+x-wonton:
+  spec: "0.5"
+  id: app.example.notes
+  version: 0.1.0
+  kind: app
+  title: { zh: 便签, en: Notes }
+  description: { zh: 记几条便签, en: Keep a few notes }
+  webui:
+    service: app
+    port: 8080
+  tabs:
+    - id: notes
+      title: { zh: 便签, en: Notes }
+      icon: tabs/home.svg
+      path: /
+  permissions: []

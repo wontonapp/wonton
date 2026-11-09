@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">雲吞</string>
+    <!-- 「保持連線」前台服務的常駐通知渠道名（ADR-0003），顯示在系統的通知設定裡。 -->
+    <string name="keepalive_channel_name">保持連線</string>
+    <!-- 「保持連線」前台服務的常駐通知標題。 -->
+    <string name="keepalive_notification_title">與家用伺服器保持連線</string>
+    <string name="push_in_room">%1$s：%2$s</string>
+    <string name="push_unknown_sender">有人</string>
+    <string name="push_invite">邀請你加入</string>
+    <string name="push_unavailable">新訊息（暫時無法載入內容）</string>
+    <string name="push_hidden">新訊息</string>
+    <string name="startup_core_failed">雲吞啟動失敗：%1$s</string>
+    <string name="startup_code_rejected">開發時傳入的配對碼被拒絕：%1$s</string>
+    <string name="push_no_permission">沒有通知權限：雲吞被關閉或螢幕鎖定時彈不出新訊息</string>
+    <string name="push_no_distributor">沒有安裝 UnifiedPush 分發器（例如 ntfy）：雲吞被關閉或螢幕鎖定時收不到新訊息</string>
+    <string name="push_no_public_key">分發器沒有提供 Web Push 公鑰，推送內容無法加密</string>
+    <string name="push_registration_rejected">分發器拒絕了註冊：%1$s</string>
+    <string name="push_unregistered">分發器註銷了雲吞</string>
+</resources>

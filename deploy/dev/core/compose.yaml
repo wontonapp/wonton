@@ -1,0 +1,245 @@
+# Wonton 本地开发用的核心、身份提供方（Ory Hydra）和 Matrix 服务器（Tuwunel）。用 dev.sh 起停：它准备好
+# 数据目录、Hydra 的系统密钥和核心签发 Matrix 登录用的密钥，再把下面引用的变量传进来。
+# 项目名同时用作核心的容器名；冒烟脚本用另一个名字，和开发环境互不干扰。
+name: ${WONTON_DEV_PROJECT:-wonton-dev-core}
+
+# Docker 客户端配了代理时（~/.docker/config.json），docker compose 会给容器设这些变量。系统服务之间只走内部地址，经代理
+# 到不了；busybox wget 还不看 no_proxy，连健康检查访问 127.0.0.1 也发给代理（#121）。写成空，客户端的配置就进不来。
+x-no-proxy: &no-proxy
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  http_proxy: ""
+  https_proxy: ""
+
+services:
+  core:
+    build:
+      context: ../../..
+      dockerfile: deploy/dev/core/Dockerfile
+      # 开发镜像带开发索引（WONTON_STORE_INDEX）；发布的镜像是 Dockerfile 的最后一个阶段，不带。
+      target: dev
+      # 经 Docker 主机上的代理构建时，dev.sh 自己构建这个镜像（见 build_image）。
+      args:
+        WONTON_BUILD_COMMIT: ${WONTON_BUILD_COMMIT:-unknown}
+        # cargo 不认空值，没设 WONTON_DEV_BUILD_JOBS 时按 CPU 数（default）。
+        CARGO_BUILD_JOBS: ${WONTON_DEV_BUILD_JOBS:-default}
+    image: wonton-core:${WONTON_CORE_IMAGE_TAG:-dev}
+    # 核心要知道自己的容器名，才能把自己接入每个插件网络。
+    container_name: ${WONTON_DEV_PROJECT:-wonton-dev-core}
+    restart: unless-stopped
+    # 核心接在所有插件网络上，不能替别的插件转发：带 NET_RAW 的插件可以把源地址写成核心在 B 网络里的地址、发给核心，
+    # 由核心转进 B 的网络，冒充核心（ADR-0023 的“只信任核心的地址”）。
+    sysctls:
+      - net.ipv4.ip_forward=0
+    # 主人的代理在宿主的回环地址上时，经这个名字连。
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    environment:
+      <<: *no-proxy
+      WONTON_DATA_DIR: ${WONTON_DEV_DATA:?请用 deploy/dev/core/dev.sh up 启动}
+      WONTON_BASE_DOMAIN: ${WONTON_DEV_DOMAIN:-wonton.localhost}
+      WONTON_PUBLIC_PORT: ${WONTON_DEV_PORT:-18480}
+      WONTON_TUNNEL_PORT: ${WONTON_DEV_TUNNEL_PORT:-18482}
+      WONTON_CORE_CONTAINER: ${WONTON_DEV_PROJECT:-wonton-dev-core}
+      WONTON_INSTANCE: ${WONTON_DEV_INSTANCE:-}
+      # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
+      WONTON_HOST_DEV: /host/dev
+      # 出网代理（ADR-0023）：开发环境没有安装脚本，要用时自己设 WONTON_EGRESS_PROXY。核心自己访问外网也用它。
+      WONTON_EGRESS_PROXY: ${WONTON_EGRESS_PROXY:-}
+      WONTON_EGRESS_PROXY_DETECTED: ${WONTON_EGRESS_PROXY_DETECTED:-}
+      # 空时核心自动选插件的局域网端口开在哪个地址上（ADR-0019）。
+      WONTON_PLUGIN_SLICE: ${WONTON_PLUGIN_SLICE:-}
+      WONTON_PLUGIN_NETWORK_POOL: ${WONTON_PLUGIN_NETWORK_POOL:-10.213.0.0/16}
+      WONTON_LAN_ADDRESSES: ${WONTON_DEV_LAN_ADDRESSES:-}
+      # 启动器声明的宣告地址（ADR-0019）：设了就绑 0.0.0.0，手机连这些地址。
+      WONTON_ANNOUNCE_ADDRESSES: ${WONTON_DEV_ANNOUNCE_ADDRESSES:-}
+      # 中继表（ADR-0048）：默认 n0 的公共中继，要用本地测试中继时自己设。
+      WONTON_RELAYS: ${WONTON_DEV_RELAYS:-}
+      WONTON_PUSH_LISTEN: push.wonton.internal:80
+      # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；
+      # 裸的 `hydra`、`tusd` 就可能解析到插件的容器。
+      WONTON_OIDC_ADMIN_URL: http://hydra.wonton.internal:4445
+      WONTON_OIDC_PUBLIC_URL: http://hydra.wonton.internal:4444
+      # 核心持有 Matrix 登录的签发私钥，并用注册共享密钥注册自己的管理账号（ADR-0009）。
+      WONTON_MATRIX_URL: http://tuwunel.wonton.internal:8008
+      WONTON_TUSD_URL: http://tusd.wonton.internal:8080
+      WONTON_MATRIX_JWT_KEY: ${WONTON_DEV_MATRIX_JWT_KEY:?请用 deploy/dev/core/dev.sh up 启动}
+      WONTON_MATRIX_REGISTRATION_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
+      # 核心启动后在后台预装镜像里的系统插件（模型网关 magpie），再装一次默认 Agent（Hermes）。不要默认 Agent 时
+      # （它的镜像有 4 GB）把 WONTON_DEV_DEFAULT_PLUGINS 设成空。
+      WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
+      WONTON_DEFAULT_PLUGINS: ${WONTON_DEV_DEFAULT_PLUGINS-/usr/share/wonton/default-plugins}
+      WONTON_PUID: ${WONTON_DEV_PUID:-1000}
+      WONTON_PGID: ${WONTON_DEV_PGID:-1000}
+      WONTON_OWNER_NAME: ${WONTON_OWNER_NAME:-}
+      TZ: ${TZ:-UTC}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      # 只监听本机。浏览器用 http://wonton.localhost:18480 访问，*.localhost 自动解析到本机。
+      - "127.0.0.1:${WONTON_DEV_PORT:-18480}:${WONTON_DEV_PORT:-18480}"
+      # 隧道入口（iroh，UDP）。默认只给本机，手机经局域网直连时设 WONTON_DEV_TUNNEL_BIND=0.0.0.0。
+      - "${WONTON_DEV_TUNNEL_BIND:-127.0.0.1}:${WONTON_DEV_TUNNEL_PORT:-18482}:${WONTON_DEV_TUNNEL_PORT:-18482}/udp"
+    volumes:
+      # 系统服务里只有核心挂载 Docker socket（ADR-0011）。
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 数据目录在容器内外路径相同：插件的绑定挂载由宿主上的 Docker 解析。
+      - ${WONTON_DEV_DATA}:${WONTON_DEV_DATA}
+      # 只读看宿主的设备节点（有没有显卡、属于哪个组）；设备 cgroup 没放行，核心开不了它们。不递归：/dev 下的子挂载
+      # （/dev/shm 里是宿主其他进程的共享内存，还有 /dev/pts、/dev/mqueue）不带进来，核心只要 devtmpfs 里的节点。
+      - type: bind
+        source: /dev
+        target: /host/dev
+        read_only: true
+        bind:
+          recursive: disabled
+    networks:
+      core:
+        # 文件钩子和推送监听只在这个网络上，与正式安装一致。
+        aliases: [files-hooks.wonton.internal, push.wonton.internal]
+    depends_on:
+      hydra:
+        condition: service_healthy
+      tuwunel:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wonton-core", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      start_period: 2m
+      start_interval: 1s
+
+  # 设备上传的字节（ADR-0020）。只在核心的私有网络里，经核心网关鉴权后才到它；没传完的数据放在核心数据目录下。
+  tusd:
+    image: tusproject/tusd:v2.10.1@sha256:7b1c552a8b42f4b36cb01f2a3bd49f82ab078b2eefd191459e716141dd50376c
+    restart: unless-stopped
+    user: "${WONTON_DEV_PUID:-1000}:${WONTON_DEV_PGID:-1000}"
+    # 只写 /srv/uploads，什么特权都不要。
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment: *no-proxy
+    command:
+      - -upload-dir=/srv/uploads
+      - -base-path=/_wonton/files/uploads/
+      - -behind-proxy
+      - -disable-cors
+      - -disable-download
+      - -disable-concatenation
+      - -hooks-http=http://files-hooks.wonton.internal:${WONTON_DEV_PORT:-18480}/
+      - -hooks-enabled-events=pre-create,post-finish
+      - -hooks-http-retry=2
+      - -hooks-http-backoff=1s
+    volumes:
+      # 第一次启动时 Docker 建这个目录，属主是 root；tusd 要等核心健康才启动，那时核心已经把它交给 PUID:PGID。
+      - ${WONTON_DEV_DATA}/core/files/uploads:/srv/uploads
+    networks:
+      core:
+        aliases: [tusd.wonton.internal]
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/metrics"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 1s
+
+  hydra-migrate:
+    image: oryd/hydra:v26.2.0
+    command: migrate sql up -e --yes
+    environment:
+      <<: *no-proxy
+      DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
+    volumes:
+      # 镜像以 nonroot 运行，卷挂在它的家目录才有写权限。
+      - hydra:/home/nonroot
+    networks: [core]
+
+  hydra:
+    image: oryd/hydra:v26.2.0
+    # --dev 允许 http 签发方：M0 的网关还没有 TLS。
+    command: serve all --dev
+    restart: unless-stopped
+    environment:
+      <<: *no-proxy
+      DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
+      # 签发方用插件网络里的内部名字（ADR-0063）：插件后端经核心的这个别名访问它，有的库把 *.localhost 直接当回环，
+      # auth.<基础域名> 的别名对它们不起作用。签发方本身浏览器不访问，只走授权和登出端点。
+      URLS_SELF_ISSUER: http://auth.wonton.internal:${WONTON_DEV_PORT:-18480}
+      # 浏览器看到的地址：登录、授权确认后 Hydra 把浏览器送回这里，浏览器只认这个地址。
+      URLS_SELF_PUBLIC: http://auth.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}
+      # 登录和授权确认交给核心：核心按自己的会话直接接受，用户不会看到第二个登录页。
+      URLS_LOGIN: http://${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/oidc/login
+      URLS_CONSENT: http://${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/oidc/consent
+      URLS_POST_LOGOUT_REDIRECT: http://${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/
+      SECRETS_SYSTEM: ${WONTON_DEV_HYDRA_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
+    volumes:
+      - hydra:/home/nonroot
+    # 只在核心的私有网络里：插件访问不到管理端口（4445），公开端口也只经核心网关访问。
+    networks:
+      core:
+        aliases: [hydra.wonton.internal]
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4445/health/ready"]
+      interval: 10s
+      timeout: 5s
+      start_period: 1m
+      start_interval: 1s
+
+  # Matrix 服务器，配置和 deploy/dev/matrix/tuwunel.toml 一致，这里全用环境变量给出：DOCKER_HOST 指向远端
+  # 主机时，本机的配置文件挂不进去。只在核心的私有网络里，App 和 Bot 都经核心网关访问它（ADR-0009）。
+  tuwunel:
+    image: ghcr.io/matrix-construct/tuwunel:v1.9.4
+    restart: unless-stopped
+    # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
+    stop_grace_period: 5m
+    environment:
+      <<: *no-proxy
+      TUWUNEL_SERVER_NAME: ${WONTON_DEV_DOMAIN:-wonton.localhost}
+      TUWUNEL_DATABASE_PATH: /var/lib/tuwunel
+      TUWUNEL_ADDRESS: 0.0.0.0
+      TUWUNEL_PORT: 8008
+      # 联邦只对配对过的服务器开：正式安装里名单文件由核心生成和热加载（ADR-0050）；这个栈挂不进
+      # 文件（DOCKER_HOST 可能是远端），也没有那份名单，等于没有限制，8448 不发布到主机出不去。
+      TUWUNEL_ALLOW_FEDERATION: "true"
+      TUWUNEL_TRUSTED_SERVERS: "[]"
+      # 默认值含 10/8、127/8，会拦掉到转发组件的出站（ADR-0050）。
+      TUWUNEL_IP_RANGE_DENYLIST: "[]"
+      # 联邦对端证书是自签的，出站不校验（ADR-0050）。
+      TUWUNEL_ALLOW_INVALID_TLS_CERTIFICATES: "true"
+      # 账号只由核心签发：设备和 Bot 用 JWT 登录，首次登录自动建号。不开放注册，也不接受密码登录。
+      TUWUNEL_ALLOW_REGISTRATION: "false"
+      TUWUNEL_LOGIN_WITH_PASSWORD: "false"
+      TUWUNEL_NEW_USER_DISPLAYNAME_SUFFIX: ""
+      # 核心持有 Ed25519 私钥，Tuwunel 只拿公钥验签；令牌必须带 exp 和对应的签发方、接收方。
+      TUWUNEL_JWT__ENABLE: "true"
+      TUWUNEL_JWT__FORMAT: EDDSA
+      TUWUNEL_JWT__ALGORITHM: EdDSA
+      TUWUNEL_JWT__REQUIRE_EXP: "true"
+      TUWUNEL_JWT__ISSUER: '["wonton-core"]'
+      TUWUNEL_JWT__AUDIENCE: '["tuwunel"]'
+      TUWUNEL_JWT__KEY: ${WONTON_DEV_MATRIX_JWT_PUBLIC_KEY:?请用 deploy/dev/core/dev.sh up 启动}
+      # 核心用它注册自己的管理账号（Synapse 兼容的管理接口）。
+      TUWUNEL_REGISTRATION_SHARED_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
+    volumes:
+      - tuwunel:/var/lib/tuwunel
+    networks:
+      core:
+        aliases: [tuwunel.wonton.internal]
+    healthcheck:
+      test: ["CMD", "tuwunel", "--health-check"]
+      interval: 10s
+      timeout: 5s
+      start_period: 5m
+      start_interval: 1s
+
+networks:
+  core:
+
+volumes:
+  hydra:
+  tuwunel:
