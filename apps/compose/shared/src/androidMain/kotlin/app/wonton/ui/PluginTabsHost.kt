@@ -93,7 +93,11 @@ private class WebPageState(val tab: TabRef, val tabs: TabsState) {
     }
 
     fun script(environment: TabEnvironment, document: Boolean = false): String? = try {
-        if (document) tabs.core.tabDocumentScript(PlacedTab.Bar(tab), environment) else tabs.core.tabContextScript(PlacedTab.Bar(tab), environment)
+        if (document) {
+            tabs.core.tabDocumentScript(PlacedTab.Bar(tab), environment)
+        } else {
+            tabs.core.tabContextScript(PlacedTab.Bar(tab), environment)
+        }
     } catch (failure: CoreException) {
         problem = failure.problem
         null
@@ -275,7 +279,9 @@ private fun PageWebView(
         modifier = Modifier.padding(inset), darkTheme = environment.dark,
         controller = state.controller, documentStartScript = script,
         onBridgeMessage = { origin, main, message ->
-            val reply = state.tabs.core.tabHandleMessage(PlacedTab.Bar(state.tab), main, origin.toString(), message, environment)
+            val reply = state.tabs.core.tabHandleMessage(
+                PlacedTab.Bar(state.tab), main, origin.toString(), message, environment,
+            )
             reply.replyScript?.let { state.controller.evaluateJavascript(it) }
             if (reply.initialized) state.loaded = true
             when (val action = reply.action) {
