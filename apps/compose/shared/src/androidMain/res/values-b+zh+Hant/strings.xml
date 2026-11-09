@@ -1486,4 +1486,49 @@
     <string name="secret_clear">清空</string>
     <string name="secret_filled">已填寫</string>
     <string name="secret_unfilled">未填寫</string>
+    <string name="pin_to_bar">固定到底部導覽列</string>
+    <!-- 長按側邊欄裡的一行，把應用程式的頁面從底部導覽列拿掉。 -->
+    <string name="unpin_from_bar">從底部導覽列拿掉</string>
+    <!-- 側邊欄上的 App 名字。 -->
+    <string name="sidebar_title">雲吞</string>
+    <!-- 根頁面左上角打開側邊欄的按鈕。 -->
+    <string name="sidebar_open">側邊欄</string>
+    <!-- 側邊欄開著時蓋在主畫面上的那層，點一下收起側邊欄。 -->
+    <string name="sidebar_collapse">收起側邊欄</string>
+    <!-- 側邊欄標題下的狀態：家用伺服器已連線。 -->
+    <string name="sidebar_status_connected">家用伺服器 · 已連線</string>
+    <!-- 側邊欄標題下的狀態：正在連線家用伺服器。 -->
+    <string name="sidebar_status_connecting">家用伺服器 · 連線中</string>
+    <!-- 側邊欄標題下的狀態：連不上家用伺服器。 -->
+    <string name="sidebar_status_disconnected">家用伺服器 · 無法連線</string>
+    <!-- 側邊欄標題下的狀態：還沒配對家用伺服器。 -->
+    <string name="sidebar_status_not_configured">還沒連上家用伺服器</string>
+    <!-- 側邊欄裡回到聊天清單的一行。 -->
+    <string name="sidebar_chats">聊天</string>
+    <!-- 側邊欄裡進應用商店的一行。 -->
+    <string name="sidebar_store">應用商店</string>
+    <!-- 側邊欄裡能開啟的應用程式上面的小標題。 -->
+    <string name="sidebar_my_apps">我的應用</string>
+    <!-- 我的應用右邊進應用程式格的連結。 -->
+    <string name="sidebar_all">全部</string>
+    <!-- 裝的應用程式超過八個時側邊欄的最後一行，進應用程式格。 -->
+    <string name="sidebar_all_apps">所有應用程式</string>
+    <!-- 側邊欄底部開啟設定的圓形按鈕。 -->
+    <string name="sidebar_settings">設定</string>
+    <!-- 側邊欄底部發起新聊天的主色膠囊。 -->
+    <string name="sidebar_new_chat">新聊天</string>
+    <!-- 商店一行上紅色數字角標的讀屏描述：有幾個應用程式可更新。 -->
+    <string name="sidebar_updates_badge">%1$d 個可更新</string>
+    <!-- 應用程式行上紅點的讀屏描述：這個應用程式有更新。 -->
+    <string name="sidebar_updatable">可更新</string>
+    <!-- 應用程式行上小圖釘的讀屏描述：這個應用程式的頁面固定在底部導覽列上。 -->
+    <string name="sidebar_pinned">已固定到底部導覽列</string>
+    <!-- 一次更新所有有更新的應用程式之前，底部面板的標題。 -->
+    <string name="store_update_all_title">更新 %1$d 個應用程式</string>
+    <!-- 那個面板裡開始全部更新的按鈕。 -->
+    <string name="store_update_all">全部更新</string>
+    <!-- 開啟那個面板的工具列下載圖示的讀屏描述。 -->
+    <string name="store_update_all_a11y">全部更新，%1$d 個</string>
+    <!-- 一行提示：這個應用程式的更新要先確認才能開始。 -->
+    <string name="sidebar_needs_attention">有要處理的事</string>
 </resources>
