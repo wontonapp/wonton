@@ -9,6 +9,7 @@ struct RichTextView: View {
     var trailingReserve: String?
 
     var body: some View {
+        let links = linkMap
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 RichBlockView(block: block, ink: ink, reserve: index == blocks.count - 1 ? trailingReserve : nil)
@@ -16,6 +17,21 @@ struct RichTextView: View {
             }
         }
         .tint(ink)
+        .environment(\.openURL, OpenURLAction { url in
+            guard let link = links[url] else { return .systemAction }
+            AppNavigation.shared?.openLink(link)
+            return .handled
+        })
+    }
+
+    /// 这一块文字里每个地址的类别：AttributedString 的链接只带地址，点开时按地址找回类别。
+    private var linkMap: [URL: RichLink] {
+        var links: [URL: RichLink] = [:]
+        for span in blocks.flatMap(\.spans) {
+            guard let link = span.link, let url = URL(string: link.url) else { continue }
+            links[url] = link
+        }
+        return links
     }
 
     private func gap(after previous: RichBlock, before next: RichBlock) -> CGFloat {

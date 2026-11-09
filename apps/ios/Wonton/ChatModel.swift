@@ -33,6 +33,8 @@ final class ChatModel {
     var visiting: VisitingRoom?
     /// 刚发起了和这个用户的私聊，房间出现后打开。
     private var awaitedPeer: String?
+    /// 链接要打开的房间；还需要加入或等同步。
+    private var awaitedRoom: String?
     @ObservationIgnored private var awaitedFrom = AppTab.chat
     /// 发起私聊在后台失败了，原因显示在聊天页，主界面要切过去。
     var openingFailed = false
@@ -111,6 +113,7 @@ final class ChatModel {
 
     func resetNavigation() {
         awaitedPeer = nil
+        awaitedRoom = nil
         openingFailed = false
         visiting = nil
         path = []
@@ -163,6 +166,23 @@ final class ChatModel {
         }
     }
 
+    /// 按房间 ID 打开（matrix.to 的房间和事件永久链接都落到房间）：已经在的就直接开；还没加入就先加入、等它出现。
+    func openRoom(id: String) {
+        awaitedPeer = nil
+        awaitedRoom = nil
+        visiting = nil
+        if viewModel.rooms.contains(where: { $0.roomId == id && $0.membership == .joined }) {
+            path = [.room(id)]
+            return
+        }
+        do {
+            try core.dispatch(action: .joinRoom(roomId: id))
+            awaitedRoom = id
+        } catch {
+            rejection = error.problem
+        }
+    }
+
     /// AskAgent 已在核心里发起或加入房间；这里只等订阅里的房间出现，避免重复建房。
     func openAskedAgentChat(with peer: String) {
         path = []
@@ -182,6 +202,16 @@ final class ChatModel {
     }
 
     private func openAwaitedChat() {
+        if let room = awaitedRoom {
+            if viewModel.rooms.contains(where: { $0.roomId == room && $0.membership == .joined }) {
+                awaitedRoom = nil
+                path = [.room(room)]
+            } else if viewModel.problem != nil {
+                awaitedRoom = nil
+                openingFailed = true
+            }
+            return
+        }
         guard let peer = awaitedPeer else { return }
         if let room = viewModel.rooms.first(where: { $0.directUserId == peer && $0.membership == .joined }) {
             awaitedPeer = nil

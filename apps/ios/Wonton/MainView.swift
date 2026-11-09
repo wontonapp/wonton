@@ -33,7 +33,8 @@ struct MainView: View {
     }
 
     var body: some View {
-        rootContent
+        @Bindable var navigation = navigation
+        return rootContent
         .overlay { if chat.isOpeningChat { ProgressView() } }
         .modifier(ChatDialogs(model: chat))
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
@@ -87,6 +88,9 @@ struct MainView: View {
         }
         .onChange(of: onboardingGatewayPage) { _, page in
             if page == nil { onboardingGateway = nil }
+        }
+        .sheet(item: $navigation.safari) { target in
+            SafariView(url: target.url).ignoresSafeArea()
         }
         .onOpenURL(perform: receiveAppURL)
         .onChange(of: navigation.presentationRevision, initial: true) { _, _ in applyAppNavigation() }
