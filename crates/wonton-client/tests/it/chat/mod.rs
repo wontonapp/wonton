@@ -13,6 +13,7 @@ mod device_name;
 mod draft;
 mod key_upload_order;
 mod layout;
+mod message_actions;
 mod onboarding;
 mod pending;
 mod push;
@@ -20,6 +21,7 @@ mod push_method;
 mod rebuild_reason;
 mod recovery;
 mod relogin;
+mod replies;
 mod resume;
 mod send;
 mod server_switch;
@@ -343,21 +345,7 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
     })
     .await;
 
-    // 加密房间里服务器做不了缩略图，图片都由发送端带上缩略图。
-    let upload = wonton_matrix::ImageUpload {
-        filename: "dot.png".to_owned(),
-        mime_type: "image/png".to_owned(),
-        data: PNG.to_vec(),
-        width: Some(2),
-        height: Some(2),
-        thumbnail: Some(wonton_matrix::ImageThumbnail {
-            mime_type: "image/png".to_owned(),
-            data: THUMBNAIL.to_vec(),
-            width: 1,
-            height: 1,
-        }),
-    };
-    bot_room.send_image(upload).await.expect("Bot 发图片");
+    bot_room.send_image(test_image()).await.expect("Bot 发图片");
     let image = timeline.until("收到 Bot 的图片", bots_image).await;
     let bytes = phone.load_media(image.media).await.expect("取图片");
     assert_eq!(bytes, PNG, "取到的图片和原图不一致");
@@ -406,6 +394,23 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
     .await;
     let bytes = bot.download_media(&received).await.expect("Bot 取缩略图");
     assert_eq!(bytes, THUMBNAIL, "Bot 取到的缩略图和主人发的不一致");
+}
+
+/// Bot 发的图片。加密房间里服务器做不了缩略图，图片都由发送端带上缩略图。
+fn test_image() -> wonton_matrix::ImageUpload {
+    wonton_matrix::ImageUpload {
+        filename: "dot.png".to_owned(),
+        mime_type: "image/png".to_owned(),
+        data: PNG.to_vec(),
+        width: Some(2),
+        height: Some(2),
+        thumbnail: Some(wonton_matrix::ImageThumbnail {
+            mime_type: "image/png".to_owned(),
+            data: THUMBNAIL.to_vec(),
+            width: 1,
+            height: 1,
+        }),
+    }
 }
 
 /// 等 Bot 的时间线里出现满足条件的消息。

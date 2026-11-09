@@ -164,7 +164,7 @@ private fun RoomScreen(
     var draft by rememberSaveable(roomId) { mutableStateOf("") }
     LaunchedEffect(core, roomId) {
         runCatching { core.draft(roomId) }.onSuccess { stored ->
-            if (draft.isEmpty()) draft = stored.orEmpty()
+            if (draft.isEmpty()) draft = stored?.body.orEmpty()
         }.onFailure { failure ->
             Log.w(TAG, "could not load the draft for this room", failure)
         }

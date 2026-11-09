@@ -12,6 +12,8 @@ use matrix_sdk::ruma::{
 use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, MsgLikeKind, TimelineDetails};
 use serde_json::{Map, Value};
 
+use crate::reply::{ReplyTo, reply_to};
+
 /// 时间线里的一条消息。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
@@ -41,6 +43,11 @@ pub struct Message {
     pub edited: bool,
     /// 读到这条为止的其他人（显示名）。
     pub read_by: Vec<String>,
+    /// 这条回复的是哪条消息（`m.in_reply_to`）；不是回复时为 `None`。
+    pub reply: Option<ReplyTo>,
+    /// 本账号在这个房间的权限（power level）能不能撤回这条：自己的看“撤回自己的”，别人的看“撤回别人的”。
+    /// 只看权限，发没发出去、是不是已撤回由调用方判断。
+    pub can_redact: bool,
 }
 
 /// SDK 按加密前文件大小估算的进度，包含原图和缩略图；重试时可倒退，总量为零时未知。
@@ -137,13 +144,33 @@ impl From<&ImageMessageEventContent> for ImageContent {
     }
 }
 
-/// 房间成员的显示名，用来显示“谁已读”。没有记录的成员显示用户 ID。
+/// 房间成员的显示名（显示发送者、“谁已读”和引用的发送者），以及本账号在房间里的撤回权限。没有记录的成员显示用户 ID。
+///
+/// 两样都跟着房间状态变，一起放在这里，变了的时候时间线按 [`Self::affects`] 重发受影响的条目。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct MemberNames(HashMap<OwnedUserId, String>);
+pub(crate) struct MemberNames {
+    names: HashMap<OwnedUserId, String>,
+    redaction: RedactionPower,
+}
+
+/// 本账号在房间里能撤回谁的消息（Matrix 的 power level）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct RedactionPower {
+    pub(crate) own: bool,
+    pub(crate) others: bool,
+}
 
 impl MemberNames {
     pub(crate) fn new(names: HashMap<OwnedUserId, String>) -> Self {
-        Self(names)
+        Self {
+            names,
+            redaction: RedactionPower::default(),
+        }
+    }
+
+    pub(crate) fn with_redaction(mut self, redaction: RedactionPower) -> Self {
+        self.redaction = redaction;
+        self
     }
 
     pub(crate) fn name(&self, user: &UserId) -> String {
@@ -151,11 +178,28 @@ impl MemberNames {
     }
 
     fn get<'a>(&'a self, user: &'a UserId) -> &'a str {
-        self.0.get(user).map_or(user.as_str(), String::as_str)
+        self.names.get(user).map_or(user.as_str(), String::as_str)
+    }
+
+    fn can_redact(&self, event: &EventTimelineItem) -> bool {
+        if event.is_own() {
+            self.redaction.own
+        } else {
+            self.redaction.others
+        }
     }
 
     pub(crate) fn affects(&self, event: &EventTimelineItem, next: &Self) -> bool {
-        self.get(event.sender()) != next.get(event.sender())
+        let quoted_sender = event
+            .content()
+            .in_reply_to()
+            .and_then(|reply| match reply.event {
+                TimelineDetails::Ready(quoted) => Some(quoted.sender),
+                _ => None,
+            });
+        self.redaction != next.redaction
+            || self.get(event.sender()) != next.get(event.sender())
+            || quoted_sender.is_some_and(|user| self.get(&user) != next.get(&user))
             || event
                 .read_receipts()
                 .keys()
@@ -187,6 +231,11 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
         thread_root: msglike.thread_root.clone(),
         edited,
         read_by,
+        reply: msglike
+            .in_reply_to
+            .as_ref()
+            .map(|details| reply_to(details, names)),
+        can_redact: names.can_redact(event),
     })
 }
 
@@ -278,18 +327,24 @@ pub(crate) fn body(kind: &MsgLikeKind) -> MessageBody {
         kind: kind.to_owned(),
     };
     match kind {
-        MsgLikeKind::Message(message) => match message.msgtype() {
-            MessageType::Text(text) => MessageBody::Text(text.body.clone()),
-            MessageType::Notice(notice) => MessageBody::Notice(notice.body.clone()),
-            MessageType::Image(image) => MessageBody::Image(image.into()),
-            msgtype => other(msgtype.msgtype()),
-        },
+        MsgLikeKind::Message(message) => msgtype_body(message.msgtype()),
         MsgLikeKind::UnableToDecrypt(_) => MessageBody::Undecryptable,
         MsgLikeKind::Redacted => MessageBody::Redacted,
         MsgLikeKind::Sticker(_) => other("m.sticker"),
         MsgLikeKind::Poll(_) => other("m.poll.start"),
         MsgLikeKind::LiveLocation(_) => other("m.beacon_info"),
         MsgLikeKind::Other(message) => other(&message.event_type().to_string()),
+    }
+}
+
+pub(crate) fn msgtype_body(msgtype: &MessageType) -> MessageBody {
+    match msgtype {
+        MessageType::Text(text) => MessageBody::Text(text.body.clone()),
+        MessageType::Notice(notice) => MessageBody::Notice(notice.body.clone()),
+        MessageType::Image(image) => MessageBody::Image(image.into()),
+        msgtype => MessageBody::Other {
+            kind: msgtype.msgtype().to_owned(),
+        },
     }
 }
 

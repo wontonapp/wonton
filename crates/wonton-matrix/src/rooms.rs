@@ -32,7 +32,7 @@ use matrix_sdk_ui::{
 };
 use tokio::sync::watch;
 
-use crate::{ChatRoom, Error, MatrixSession, MessageBody, Result, message::body};
+use crate::{ChatRoom, Draft, Error, MatrixSession, MessageBody, Result, message::body};
 
 /// 房间列表一次最多展示的房间数。家里服务器的房间不多，一页就够。
 const PAGE_SIZE: usize = 500;
@@ -371,28 +371,37 @@ impl MatrixSession {
         Ok(())
     }
 
-    /// 这个房间输入框里的草稿，没打过字时是 `None`。存在本机状态库里，关掉 App 也还在；不上服务器。
+    /// 这个房间输入框里的草稿，没打过字也没在回复时是 `None`。存在本机状态库里，关掉 App 也还在；不上服务器。
     ///
     /// 和 [`open_room`](Self::open_room) 不同，这里不订阅房间：敲字的房间和打开着的房间不是同一个时不打断那边的时间线。
-    pub async fn draft(&self, room_id: &RoomId) -> Result<Option<String>> {
+    pub async fn draft(&self, room_id: &RoomId) -> Result<Option<Draft>> {
         let room = self.joined(room_id)?;
-        Ok(room
-            .load_composer_draft(None)
-            .await?
-            .map(|draft| draft.plain_text))
+        Ok(room.load_composer_draft(None).await?.map(|draft| Draft {
+            body: draft.plain_text,
+            reply_to: match draft.draft_type {
+                ComposerDraftType::Reply { event_id } => Some(event_id),
+                ComposerDraftType::NewMessage | ComposerDraftType::Edit { .. } => None,
+            },
+        }))
     }
 
-    /// 记下草稿，空串删掉。存在本机状态库里。
-    pub async fn save_draft(&self, room_id: &RoomId, body: &str) -> Result<()> {
+    /// 记下草稿（matrix-sdk 的 composer draft，回复存成 `ComposerDraftType::Reply`），正文空、也没在回复时删掉。
+    /// 存在本机状态库里。
+    pub async fn save_draft(&self, room_id: &RoomId, draft: &Draft) -> Result<()> {
         let room = self.joined(room_id)?;
-        if body.is_empty() {
+        if draft.body.is_empty() && draft.reply_to.is_none() {
             room.clear_composer_draft(None).await?;
         } else {
             let draft = ComposerDraft {
-                plain_text: body.to_owned(),
+                plain_text: draft.body.clone(),
                 // 不发格式化内容，正文就是原文。
                 html_text: None,
-                draft_type: ComposerDraftType::NewMessage,
+                draft_type: match &draft.reply_to {
+                    Some(event_id) => ComposerDraftType::Reply {
+                        event_id: event_id.clone(),
+                    },
+                    None => ComposerDraftType::NewMessage,
+                },
                 attachments: Vec::new(),
             };
             room.save_composer_draft(draft, None).await?;
@@ -400,7 +409,7 @@ impl MatrixSession {
         Ok(())
     }
 
-    fn joined(&self, room_id: &RoomId) -> Result<Room> {
+    pub(crate) fn joined(&self, room_id: &RoomId) -> Result<Room> {
         let room = self.room(room_id)?;
         if room.state() != RoomState::Joined {
             return Err(Error::NotReady("还没有加入这个聊天".to_owned()));

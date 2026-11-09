@@ -68,6 +68,8 @@ mod tests {
                 thread_root: None,
                 edited: false,
                 read_by: read_by.iter().map(|&name| name.to_owned()).collect(),
+                reply: None,
+                can_redact: false,
             })),
         }
     }

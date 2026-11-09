@@ -8,11 +8,13 @@ use tokio::sync::{Mutex, mpsc, watch};
 use wonton_matrix::{
     BackPaginationStatus, ChatRoom, MissedEvent, TimelineEntry, Vector, VectorDiff,
 };
-use wonton_protocol::{BackPagination, TimelineDiff, TimelineUpdate, TimelineViewport};
+use wonton_protocol::{BackPagination, TimelineDiff, TimelineUpdate};
 
 use super::confirmation::{Cards, CardsView};
 use super::links::LinkTargets;
+use super::menu::{Menus, Outbox};
 use super::read_mark::ReadMark;
+use super::reply::QuoteFetches;
 use super::view::{timeline_diff, timeline_item};
 
 /// 一个房间的时间线订阅。壳循环调用 [`next`](Self::next)，把每一批增量按顺序应用到自己的列表上；不再需要时
@@ -30,10 +32,12 @@ impl TimelineSubscription {
         room: Arc<ChatRoom>,
         cards: Cards,
         plugins: Arc<crate::plugins::PluginsLink>,
+        menus: Arc<std::sync::Mutex<Menus>>,
     ) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
         runtime.spawn(async move {
+            let sender = Outbox::new(sender, menus);
             tokio::select! {
                 () = forward(&room, cards, &plugins, &sender) => {}
                 () = sender.closed() => {}
@@ -93,13 +97,15 @@ macro_rules! refreshed {
 }
 
 async fn forward(
-    room: &ChatRoom,
+    room: &Arc<ChatRoom>,
     mut cards: Cards,
     plugins: &crate::plugins::PluginsLink,
-    sender: &mpsc::UnboundedSender<TimelineUpdate>,
+    sender: &Outbox,
 ) {
     let mut rebuilt_for: Option<wonton_matrix::OwnedEventId> = None;
     'outer: loop {
+        // 换了时间线，SDK 里取过的引用也跟着没了，重新取。
+        let fetches = QuoteFetches::default();
         let (entries, diffs) = room.entries().await;
         let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
         let mut shown = cards.view();
@@ -119,6 +125,7 @@ async fn forward(
         if send(sender, vec![reset], status).is_err() {
             return;
         }
+        fetches.request(room, &entries);
         let mut diffs = std::pin::pin!(diffs);
         // 插件装、卸以后，同一段文字里的插件网址类别会变，要重算。
         let mut plugin_changes = plugins.subscribe();
@@ -173,7 +180,7 @@ async fn forward(
             match settle(sent, room, sender, status).await {
                 Next::End => return,
                 Next::Rebuild => continue 'outer,
-                Next::Continue => {}
+                Next::Continue => fetches.request(room, &entries),
             }
         }
     }
@@ -185,7 +192,7 @@ fn relinked_batch(
     cards: &Cards,
     read: &ReadMark,
     plugins: &crate::plugins::PluginsLink,
-    sender: &mpsc::UnboundedSender<TimelineUpdate>,
+    sender: &Outbox,
     status: BackPagination,
 ) -> Option<Batch> {
     let links = LinkTargets::of(&plugins.view());
@@ -223,7 +230,7 @@ fn apply(
     cards: &Cards,
     read: &mut ReadMark,
     plugins: &crate::plugins::PluginsLink,
-    sender: &mpsc::UnboundedSender<TimelineUpdate>,
+    sender: &Outbox,
     status: BackPagination,
     batch: Vec<VectorDiff<TimelineEntry>>,
 ) -> Batch {
@@ -258,12 +265,7 @@ enum Next {
     Rebuild,
 }
 
-async fn settle(
-    sent: Batch,
-    room: &ChatRoom,
-    sender: &mpsc::UnboundedSender<TimelineUpdate>,
-    status: BackPagination,
-) -> Next {
+async fn settle(sent: Batch, room: &ChatRoom, sender: &Outbox, status: BackPagination) -> Next {
     match sent {
         Batch::Sent(Err(_), _) => Next::End,
         Batch::Sent(Ok(()), true) => {
@@ -290,7 +292,7 @@ fn clear_batch(
     shown: &CardsView,
     read: &mut ReadMark,
     links: &LinkTargets,
-    sender: &mpsc::UnboundedSender<TimelineUpdate>,
+    sender: &Outbox,
     status: BackPagination,
 ) -> Batch {
     let replaced = reset_diffs(entries, &batch, shown, read, links);
@@ -360,7 +362,7 @@ fn refreshed_batch(
     cards: &Cards,
     read: &ReadMark,
     links: &LinkTargets,
-    sender: &mpsc::UnboundedSender<TimelineUpdate>,
+    sender: &Outbox,
     status: BackPagination,
 ) -> Option<Batch> {
     let refreshed = refresh(entries, shown, cards, read, links);
@@ -441,19 +443,11 @@ fn links_of(plugins: &crate::plugins::PluginsLink) -> LinkTargets {
 }
 
 fn send(
-    sender: &mpsc::UnboundedSender<TimelineUpdate>,
+    sender: &Outbox,
     diffs: Vec<TimelineDiff>,
     back_pagination: BackPagination,
 ) -> Result<(), ()> {
-    sender
-        .send(TimelineUpdate {
-            diffs,
-            back_pagination,
-            // 位置和落点由订阅算；先把字段填上，壳按 Bottom 摆。
-            viewport: TimelineViewport::Bottom,
-            anchor: None,
-        })
-        .map_err(|_| ())
+    sender.send(diffs, back_pagination)
 }
 
 fn back_pagination(status: BackPaginationStatus) -> BackPagination {
@@ -486,6 +480,8 @@ mod tests {
                 thread_root: None,
                 edited: false,
                 read_by: Vec::new(),
+                reply: None,
+                can_redact: false,
             })),
         }
     }

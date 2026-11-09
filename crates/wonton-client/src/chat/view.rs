@@ -2,7 +2,9 @@
 
 use super::confirmation::CardsView;
 use super::links::LinkTargets;
+use super::menu::message_actions;
 use super::read_mark::ReadMark;
+use super::reply::{quoted_content, reply_quote};
 use super::rich;
 use wonton_l10n::l10n;
 use wonton_matrix::{
@@ -11,7 +13,7 @@ use wonton_matrix::{
 };
 use wonton_protocol::{
     ChatFailure, ChatLayout, CoreError, DeviceVerification, FileLinks, ImageContent, MediaHandle,
-    MessageAction, MessageContent, MessageSummary, RecoveryStatus, RoomMembership, RoomPreview,
+    MessageContent, MessageSummary, QuotedMessage, RecoveryStatus, RoomMembership, RoomPreview,
     RoomRow, SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
     extract_file_links,
 };
@@ -134,9 +136,19 @@ fn timeline_message(
         (Some(view), _) => MessageContent::Confirmation { view },
         (None, body) => message_content(body, message.is_own, links),
     };
+    let event_id = message.event_id.map(|id| id.to_string());
+    let sender_id = message.sender.to_string();
+    let actions = message_actions(&body, event_id.as_deref(), message.can_redact, |event_id| {
+        QuotedMessage {
+            event_id,
+            sender_id: sender_id.clone(),
+            sender_name: message.sender_name.clone(),
+            content: quoted_content(&body),
+        }
+    });
     TimelineMessage {
-        event_id: message.event_id.map(|id| id.to_string()),
-        sender_id: message.sender.to_string(),
+        event_id,
+        sender_id,
         sender_name: message.sender_name,
         is_own: message.is_own,
         timestamp_ms: message.timestamp_ms,
@@ -153,25 +165,20 @@ fn timeline_message(
             },
         },
         edited,
-        reply: None,
-        actions: message_actions(&body),
+        reply: message
+            .reply
+            .map(|reply| reply_quote(reply, cards.core_account(), links)),
+        actions,
         body,
         read_by,
     }
 }
 
-fn message_actions(body: &MessageContent) -> Vec<MessageAction> {
-    match body {
-        MessageContent::Text { body, blocks, .. } if !body.trim().is_empty() => {
-            vec![MessageAction::Copy {
-                text: rich::copy_text(blocks),
-            }]
-        }
-        _ => Vec::new(),
-    }
-}
-
-fn message_content(body: MessageBody, is_own: bool, links: &LinkTargets) -> MessageContent {
+pub(super) fn message_content(
+    body: MessageBody,
+    is_own: bool,
+    links: &LinkTargets,
+) -> MessageContent {
     match body {
         MessageBody::Text(text) | MessageBody::Notice(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
@@ -355,6 +362,8 @@ mod tests {
                 thread_root: None,
                 edited: false,
                 read_by: Vec::new(),
+                reply: None,
+                can_redact: true,
             })),
         }
     }

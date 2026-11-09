@@ -33,6 +33,22 @@ impl MatrixSession {
             .session_tokens()
             .map(|tokens| (tokens.access_token, tokens.refresh_token))
     }
+
+    /// 建一个不加密的群聊（`private_chat` 预设）并邀请 `peer`：和私聊不同，被邀请的人加入后是普通成员（power level 0），
+    /// 撤回不了别人的消息。
+    pub async fn create_group_room(
+        &self,
+        name: &str,
+        peer: &matrix_sdk::ruma::UserId,
+    ) -> Result<matrix_sdk::ruma::OwnedRoomId> {
+        use matrix_sdk::ruma::api::client::room::create_room::v3::{Request, RoomPreset};
+        let mut request = Request::new();
+        request.name = Some(name.to_owned());
+        request.invite = vec![peer.to_owned()];
+        request.preset = Some(RoomPreset::PrivateChat);
+        let room = self.client.create_room(request).await?;
+        Ok(room.room_id().to_owned())
+    }
 }
 
 /// 本地开发环境的配置和镜像，测试用同一份。

@@ -73,6 +73,8 @@ mod tests {
             thread_root: None,
             edited: false,
             read_by: Vec::new(),
+            reply: None,
+            can_redact: false,
         }
     }
 

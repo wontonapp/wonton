@@ -83,7 +83,7 @@ final class ChatModel {
     func loadDraft(_ roomId: String) async {
         guard let stored = try? await core.draft(roomId: roomId) else { return }
         // 读回来之前已经打了字就不盖掉。
-        if drafts[roomId, default: ""].isEmpty { drafts[roomId] = stored ?? "" }
+        if drafts[roomId, default: ""].isEmpty { drafts[roomId] = stored.body }
     }
 
     func saveDraft(_ roomId: String) {

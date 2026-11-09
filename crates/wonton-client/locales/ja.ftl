@@ -171,6 +171,12 @@ chat-invalid-room-id = ルームIDが正しくありません：{ $error }
 chat-read-only-room = このルームは通知専用のため、メッセージを送信できません
 # $room は元のルームIDです。
 chat-room-not-subscribed = 先にルーム{ $room }のタイムラインを購読してください
+# $error はイベント ID パーサーの元のエラー。
+chat-invalid-event-id = メッセージのイベントIDが正しくありません：{ $error }
+# 転送・取り消しするメッセージのメニューにその項目がない（取り消し済み、未送信、権限がないなど）ときに表示。
+chat-message-action-unavailable = このメッセージにはその操作ができません
+# 転送先のルームが存在しないか、まだ参加していないときに表示。
+chat-forward-target-not-joined = 転送先のルームにまだ参加していません
 # デフォルトのエージェントを選ぶ前に問い合わせたときに表示します。
 chat-no-default-agent = デフォルトのエージェントがまだありません。設定で選んでください
 
@@ -186,6 +192,8 @@ chat-op-mark-read-failed = ルームを既読にできませんでした：{ $er
 chat-op-direct-chat-failed = ダイレクトチャットを開始できませんでした：{ $error }
 chat-op-send-text-failed = メッセージを送信できませんでした：{ $error }
 chat-op-send-image-failed = 画像を送信できませんでした：{ $error }
+chat-op-forward-failed = メッセージを転送できませんでした：{ $error }
+chat-op-redact-failed = メッセージを取り消せませんでした：{ $error }
 ## ファイル転送と再生の詳細情報。転送リストの項目、ファイルカード、再生失敗の説明に表示されます。
 
 # 転送や再生を始める前に接続がないとわかったときに表示されます。

@@ -171,6 +171,12 @@ chat-invalid-room-id = 聊天室 ID 無效：{ $error }
 chat-read-only-room = 這個聊天室只放通知，不能傳送訊息
 # $room 是原始的房間 ID。
 chat-room-not-subscribed = 要先訂閱聊天室 { $room } 的時間軸
+# $error 是事件 ID 解析器的原始錯誤。
+chat-invalid-event-id = 訊息的事件 ID 無效：{ $error }
+# 要轉傳或收回的訊息選單裡沒有這一項（已收回、還沒傳出去、沒有權限等）時顯示。
+chat-message-action-unavailable = 這則訊息不能這樣操作
+# 轉傳的目標聊天室不存在或還沒加入時顯示。
+chat-forward-target-not-joined = 還沒有加入要轉傳到的聊天室
 # 還沒選預設 Agent 就詢問時顯示。
 chat-no-default-agent = 還沒有預設 Agent：先在設定裡選一個
 
@@ -186,6 +192,8 @@ chat-op-mark-read-failed = 無法標為已讀：{ $error }
 chat-op-direct-chat-failed = 無法發起私訊：{ $error }
 chat-op-send-text-failed = 無法傳送訊息：{ $error }
 chat-op-send-image-failed = 無法傳送圖片：{ $error }
+chat-op-forward-failed = 無法轉傳訊息：{ $error }
+chat-op-redact-failed = 無法收回訊息：{ $error }
 ## 檔案傳輸與播放的詳細資訊。顯示在傳輸清單項目、檔案卡片和播放失敗說明上。
 
 # 傳輸或播放還沒開始就發現未連線時顯示。

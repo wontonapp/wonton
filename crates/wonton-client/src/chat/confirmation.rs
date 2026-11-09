@@ -187,6 +187,10 @@ pub(crate) struct CardsView {
 }
 
 impl CardsView {
+    pub(super) fn core_account(&self) -> &UserId {
+        &self.core_account
+    }
+
     fn card(&self, message: &Message) -> Option<ConfirmationCard> {
         parse_card(&self.core_account, &message.sender, &message.custom)
     }

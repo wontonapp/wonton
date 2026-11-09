@@ -19,17 +19,21 @@ mod contacts;
 mod display_name;
 mod draft;
 mod follow_home;
+mod forward;
 mod installs;
 mod layout;
 mod links;
 mod login;
+mod menu;
 mod onboarding;
 mod ops;
 mod pending;
 mod read_mark;
 mod recovery;
+mod reply;
 mod rich;
 mod room_rows;
+mod send;
 mod session;
 mod sign_in;
 mod storage;
@@ -51,8 +55,8 @@ use wonton_l10n::l10n;
 use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SyncStatus};
 use wonton_protocol::{
     Action, Answer, ChatAccount, ChatFailure, ChatSync, ChatViewModel, ConfirmationAnswer,
-    CoreError, DeviceVerification, EncryptionStatus, ImageUpload, MediaHandle, PushMethod,
-    PushStatus, RecoveryStatus,
+    CoreError, DeviceVerification, EncryptionStatus, MediaHandle, PushMethod, PushStatus,
+    RecoveryStatus,
 };
 
 pub use bots::bot_current_avatar;
@@ -85,6 +89,8 @@ pub(crate) struct ChatLink {
     session: Mutex<Option<Arc<MatrixSession>>>,
     /// 订阅着时间线的房间。同一时间只打开一个房间。
     open_room: Mutex<Option<(OwnedRoomId, Arc<ChatRoom>)>>,
+    /// 最近一次订阅的时间线里每条消息的菜单，转发、撤回只认这里有的（[`menu`]）。
+    open_menus: Mutex<Option<(OwnedRoomId, Arc<Mutex<menu::Menus>>)>>,
     /// 这台设备回答确认卡片的进展，时间线的订阅跟着它更新卡片。
     answers: watch::Sender<Answers>,
     /// 本会话里亲眼看到从没结束变成成功的插件 ID：插件列表多半还是旧的，补取的逻辑在插件那头。
@@ -207,6 +213,7 @@ impl ChatLink {
             active: tokio::sync::Mutex::new(None),
             session: Mutex::new(None),
             open_room: Mutex::new(None),
+            open_menus: Mutex::new(None),
             answers: watch::Sender::default(),
             card_success,
             resetting_recovery: AtomicBool::default(),
@@ -316,13 +323,19 @@ impl ChatLink {
             Action::SendText {
                 room_id,
                 body,
-                reply_to: None,
-            } => self.send_text(&room_id, &body),
+                reply_to,
+            } => self.send_text(&room_id, &body, reply_to.as_deref()),
             Action::SendImage {
                 room_id,
                 image,
-                reply_to: None,
-            } => self.send_image(&room_id, image),
+                reply_to,
+            } => self.send_image(&room_id, image, reply_to.as_deref()),
+            Action::ForwardMessage {
+                room_id,
+                item_id,
+                to_room_id,
+            } => self.forward_message(&room_id, &item_id, &to_room_id),
+            Action::RedactMessage { room_id, item_id } => self.redact_message(&room_id, &item_id),
             Action::RetrySend { room_id, item_id } => {
                 let room = self.opened(&room_id)?;
                 let sent = self.sent.clone();
@@ -360,8 +373,8 @@ impl ChatLink {
             Action::SetDraft {
                 room_id,
                 body,
-                reply_to: None,
-            } => self.set_draft(&room_id, &body),
+                reply_to,
+            } => self.set_draft(&room_id, &body, reply_to.as_deref()),
             Action::ResetRecovery => self.reset_recovery(),
             Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
@@ -380,28 +393,6 @@ impl ChatLink {
             Action::SetChatLayout { target, choice } => self.set_chat_layout(target, choice),
             _ => Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action"))),
         }
-    }
-
-    fn send_text(self: &Arc<Self>, room_id: &str, body: &str) -> Result<(), CoreError> {
-        let body = body.trim().to_owned();
-        if body.is_empty() {
-            return Err(invalid(&l10n!(CATALOG, language(), "chat-empty-message")));
-        }
-        let chat = self.clone();
-        let sent = self.sent.clone();
-        let (_, room_id) = self.send_target(room_id)?;
-        let sent_room = room_id.to_string();
-        self.spawn_op_with_success(
-            "chat-op-send-text-failed",
-            async move {
-                chat.room(&room_id).await?.send_text(&body).await?;
-                // 发出去了，草稿留着没用了；发送途中又打的字不算。
-                chat.enqueue_draft(DraftWrite::Forget(room_id, body));
-                Ok(())
-            },
-            move || onboarding::record_sent(&sent, sent_room),
-        );
-        Ok(())
     }
 
     fn confirm_recovery_key_saved(&self) -> Result<(), CoreError> {
@@ -428,7 +419,9 @@ impl ChatLink {
                 .await
                 .map_err(|e| core_error(&e))?,
         );
-        *lock(&self.open_room) = Some((room_id, room.clone()));
+        *lock(&self.open_room) = Some((room_id.clone(), room.clone()));
+        let menus = Arc::new(Mutex::new(menu::Menus::default()));
+        *lock(&self.open_menus) = Some((room_id, menus.clone()));
         // 链接的类别要认插件页，插件列表还一次没取过时先取一次（取过或正在取就不重复，免得打乱别处的节奏）。
         let plugins = self.plugins.view();
         if plugins.installed.is_none() && !plugins.refreshing {
@@ -440,6 +433,7 @@ impl ChatLink {
             room,
             cards,
             self.plugins.clone(),
+            menus,
         ))
     }
 
@@ -484,42 +478,6 @@ impl ChatLink {
         self.spawn_op("chat-op-direct-chat-failed", async move {
             session.create_direct_chat(&user, true).await.map(drop)
         });
-        Ok(())
-    }
-
-    fn send_image(self: &Arc<Self>, room_id: &str, image: ImageUpload) -> Result<(), CoreError> {
-        if !image.mime_type.starts_with("image/") {
-            return Err(invalid(&l10n!(
-                CATALOG,
-                language(),
-                "chat-not-image-type",
-                file_type = image.mime_type.as_str()
-            )));
-        }
-        let chat = self.clone();
-        let sent = self.sent.clone();
-        let (_, room_id) = self.send_target(room_id)?;
-        let sent_room = room_id.to_string();
-        let upload = wonton_matrix::ImageUpload {
-            filename: image.filename,
-            mime_type: image.mime_type,
-            data: image.data,
-            width: image.width,
-            height: image.height,
-            thumbnail: image
-                .thumbnail
-                .map(|thumbnail| wonton_matrix::ImageThumbnail {
-                    mime_type: thumbnail.mime_type,
-                    data: thumbnail.data,
-                    width: thumbnail.width,
-                    height: thumbnail.height,
-                }),
-        };
-        self.spawn_op_with_success(
-            "chat-op-send-image-failed",
-            async move { chat.room(&room_id).await?.send_image(upload).await },
-            move || onboarding::record_sent(&sent, sent_room),
-        );
         Ok(())
     }
 
@@ -654,6 +612,7 @@ impl ChatLink {
         self.bots.set_session(None);
         *lock(&self.verification) = None;
         *lock(&self.open_room) = None;
+        *lock(&self.open_menus) = None;
         self.room_order.clear();
         self.sent.send_replace(Vec::new());
         self.home.set_catching_up(false);

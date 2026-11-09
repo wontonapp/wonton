@@ -171,6 +171,12 @@ chat-invalid-room-id = 房间 ID 不合法：{ $error }
 chat-read-only-room = 这个房间只放通知，不能发消息
 # $room 是原始的房间 ID。
 chat-room-not-subscribed = 要先订阅房间 { $room } 的时间线
+# $error 是事件 ID 解析器的原始错误。
+chat-invalid-event-id = 消息的事件 ID 不合法：{ $error }
+# 要转发或撤回的消息菜单里没有这一项（已撤回、还没发出去、没有权限等）时显示。
+chat-message-action-unavailable = 这条消息不能这样操作
+# 转发的目标房间不存在或还没加入时显示。
+chat-forward-target-not-joined = 还没有加入要转发到的房间
 # 还没选默认 Agent 就问它时显示。
 chat-no-default-agent = 还没有默认 Agent：先在设置里选一个
 
@@ -186,6 +192,8 @@ chat-op-mark-read-failed = 标为已读失败：{ $error }
 chat-op-direct-chat-failed = 发起私聊失败：{ $error }
 chat-op-send-text-failed = 发送消息失败：{ $error }
 chat-op-send-image-failed = 发送图片失败：{ $error }
+chat-op-forward-failed = 转发消息失败：{ $error }
+chat-op-redact-failed = 撤回消息失败：{ $error }
 ## 文件传输和播放的详情。显示在传输列表条目、文件卡片和播放失败说明上。
 
 # 传输或播放还没等开始就发现没连上时显示。

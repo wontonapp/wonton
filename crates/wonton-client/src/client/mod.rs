@@ -4,9 +4,9 @@ use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, CoreError, FileCard,
-    FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, HomeViewModel,
-    InstallPreview, LanChoice, LanSettings, Me, MediaHandle, OnboardingViewModel,
+    Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, ComposerDraft, CoreError,
+    FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
+    HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle, OnboardingViewModel,
     OwnerProfileUpdate, PeersViewModel, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers,
     SecretString, ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef,
     TabsViewModel, TransfersViewModel,
@@ -235,8 +235,8 @@ impl ClientCore {
             .await
     }
 
-    /// 房间输入框里的草稿，没打过字时是 `None`。换房间、重启核心都还在，主人回来接着写。
-    pub async fn draft(&self, room_id: String) -> Result<Option<String>, CoreError> {
+    /// 房间输入框里的草稿（正文和正在回复的消息），没打过字也没在回复时是 `None`。换房间、重启核心都还在，主人回来接着写。
+    pub async fn draft(&self, room_id: String) -> Result<Option<ComposerDraft>, CoreError> {
         let scope = self.scope();
         let chat = scope.chat.clone();
         scope.run(async move { chat.draft(&room_id).await }).await

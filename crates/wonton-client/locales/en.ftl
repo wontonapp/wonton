@@ -185,6 +185,12 @@ chat-invalid-room-id = The room ID isn't valid: { $error }
 chat-read-only-room = This room only carries notifications, so you can't send messages here.
 # $room is the unchanged room ID.
 chat-room-not-subscribed = Subscribe to the room's timeline first: { $room }
+# $error is the event ID parser's original error.
+chat-invalid-event-id = The message's event ID isn't valid: { $error }
+# Shown when the message to forward or remove doesn't offer that action (already removed, not sent yet, no permission, …).
+chat-message-action-unavailable = You can't do that with this message.
+# Shown when the room to forward to doesn't exist or hasn't been joined.
+chat-forward-target-not-joined = You haven't joined the room you're forwarding to.
 # Shown when asking the default agent before one is chosen.
 chat-no-default-agent = There's no Default Agent yet. Choose one in Settings.
 
@@ -201,6 +207,8 @@ chat-op-mark-read-failed = Can't mark the room as read: { $error }
 chat-op-direct-chat-failed = Can't start the direct chat: { $error }
 chat-op-send-text-failed = Can't send the message: { $error }
 chat-op-send-image-failed = Can't send the image: { $error }
+chat-op-forward-failed = Can't forward the message: { $error }
+chat-op-redact-failed = Can't remove the message: { $error }
 ## File transfers and playback. Details show on transfer list entries, file cards and playback failure messages.
 
 # Shown when a transfer or playback starts before the connection is up.

@@ -346,6 +346,8 @@ pub fn owner_message(event_id: &str, text: &str, thread_root: Option<&str>) -> M
         thread_root: thread_root.map(|root| root.parse().unwrap()),
         edited: false,
         read_by: Vec::new(),
+        reply: None,
+        can_redact: false,
     }
 }
 
