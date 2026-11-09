@@ -84,3 +84,26 @@ async fn an_old_config_with_the_apps_page_loses_it_on_reconnect() {
     );
     assert!(reopened.show_bar);
 }
+
+#[tokio::test]
+async fn apps_page_stays_selected_without_being_on_the_bar() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    wait_tabs(&rig, |view| view.items.len() == 1).await;
+    // 网格页从侧边栏进：不在栏上也能选中，整条底栏照旧不显示。
+    rig.app
+        .dispatch(Action::SelectTab { tab: TabRef::Apps })
+        .unwrap();
+    assert_eq!(rig.app.tabs().selected, TabRef::Apps);
+    assert!(!rig.app.tabs().show_bar);
+    // 刷新时选中不被弹回聊天。
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.core.set_lists(vec![Vec::new()]);
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    assert_eq!(rig.app.tabs().selected, TabRef::Apps);
+    // 回聊天仍然正常。
+    rig.app
+        .dispatch(Action::SelectTab { tab: TabRef::Chat })
+        .unwrap();
+    assert_eq!(rig.app.tabs().selected, TabRef::Chat);
+}

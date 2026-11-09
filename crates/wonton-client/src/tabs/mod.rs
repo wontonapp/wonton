@@ -180,6 +180,13 @@ impl TabsLink {
                 set_automatic_fullscreen(state, &item, previous, plugins);
                 return Ok(());
             }
+            // "应用"网格页只从侧边栏进，不在栏上也能选中：选它等于把网格页推到前面，栏照旧隐藏。
+            if tab == TabRef::Apps {
+                state.selected = tab;
+                state.overlay = None;
+                state.fullscreen = None;
+                return Ok(());
+            }
             if !matches!(tab, TabRef::Plugin { .. }) {
                 return Err(invalid("这个页面没有固定到底栏"));
             }
@@ -571,13 +578,15 @@ fn refresh_state(state: &mut TabsState, plugins: &PluginsViewModel, home: &HomeV
         if state.config.server_id.is_some() && state.config.server_id != home.server_id {
             clear_plugin_config(state);
         }
-        // 第一次配上服务器：入口都在侧边栏里，底栏重置为只有“聊天”。
+        // 第一次配上服务器：入口都在侧边栏里，底栏重置为只有“聊天”，选中也回聊天。
         if state.config.server_id.is_none() {
             state.config.items = vec![StoredItem {
                 tab: TabRef::Chat,
                 page: None,
             }];
             state.config.displays.clear();
+            state.selected = TabRef::Chat;
+            (state.overlay, state.fullscreen) = (None, None);
         }
         state.config.items.retain(|item| item.tab != TabRef::Apps);
         state.config.server_id = home.server_id.clone();
@@ -679,7 +688,7 @@ fn remove_uninstalled(
             _ => false,
         };
         if missing {
-            state.selected = TabRef::Apps;
+            state.selected = TabRef::Chat;
             state.fullscreen = None;
         } else {
             state.overlay = Some(overlay);
@@ -695,7 +704,7 @@ fn remove_uninstalled(
             state.uninstalled.push(title);
         }
         if state.selected == tab {
-            state.selected = TabRef::Apps;
+            state.selected = TabRef::Chat;
             state.fullscreen = None;
         }
         if state
@@ -735,18 +744,10 @@ fn update_metadata(state: &mut TabsState, installed: &wonton_protocol::Installed
 }
 
 fn ensure_selection(state: &mut TabsState, plugins: &PluginsViewModel) {
-    if !state
-        .config
-        .items
-        .iter()
-        .any(|item| item.tab == state.selected)
-    {
-        // 没配对时回到“应用”（配对页）；配上了就回“聊天”。
-        state.selected = if state.config.server_id.is_some() {
-            TabRef::Chat
-        } else {
-            TabRef::Apps
-        };
+    // “应用”（配对页、网格页和商店都推在它上面）不在栏上也能一直选中，不跟着刷新被弹回去。
+    let on_bar = state.config.items.iter().any(|i| i.tab == state.selected);
+    if !on_bar && state.selected != TabRef::Apps {
+        state.selected = TabRef::Chat;
         state.overlay = None;
         state.fullscreen = None;
     }

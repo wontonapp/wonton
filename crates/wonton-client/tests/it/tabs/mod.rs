@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 
 use wonton_client::{
     Action, CoreError, HomeStatus, InstalledPlugin, PlacedTab, PluginHealth, PluginImage,
-    PluginState, PluginTab, TabDisplay, TabDisplayChoice, TabIcon, TabLayout, TabLoadFailure,
-    TabRef, TabState, TabsViewModel,
+    PluginState, TabDisplay, TabDisplayChoice, TabIcon, TabLayout, TabLoadFailure, TabRef,
+    TabState, TabsViewModel,
 };
 
 use crate::plugins::rig::{FakeHome, Rig, installed};
