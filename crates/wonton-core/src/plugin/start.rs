@@ -1,5 +1,6 @@
 //! 只启动现存的常驻容器，不重建配置、不重跑已完成的一次性服务。
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use tokio::time::Instant;
@@ -21,6 +22,7 @@ use crate::l10n;
 
 struct Started {
     health: Health,
+    serving: BTreeSet<String>,
     deployed: Option<Deployed>,
 }
 
@@ -49,7 +51,11 @@ impl PluginManager {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let entry = plugins.get_mut(id).expect("启动期间其他操作不能删除插件");
         let result = match result {
-            Ok(Started { health, deployed }) => {
+            Ok(Started {
+                health,
+                serving,
+                deployed,
+            }) => {
                 let started = deployed.is_some();
                 if let Some(deployed) = deployed {
                     let listed = entry.listed.clone().expect("启动前检查了插件记录");
@@ -57,6 +63,7 @@ impl PluginManager {
                 } else {
                     entry.status = PluginStatus::Running;
                     entry.health = Some(health);
+                    entry.serving = serving;
                     entry.checked_at = now_secs();
                 }
                 let probe = started
@@ -137,10 +144,12 @@ impl PluginManager {
             .ok_or_else(|| InstallError::not_installed(langs, id))?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
-        match self.check_containers(&package, langs).await?.ready(langs)? {
+        let checked = self.check_containers(&package, langs).await?;
+        match checked.ready(langs)? {
             ContainersState::Running(health) if *before == PluginStatus::Running => {
                 return Ok(Started {
                     health,
+                    serving: checked.serving().clone(),
                     deployed: None,
                 });
             }
@@ -172,6 +181,7 @@ impl PluginManager {
         }
         Ok(Started {
             health: deployed.health,
+            serving: BTreeSet::new(),
             deployed: Some(deployed),
         })
     }

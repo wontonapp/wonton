@@ -135,7 +135,7 @@ pub(super) fn binding(ip: &str, port: &str) -> Value {
     json!([{"HostIp": ip, "HostPort": port}])
 }
 
-fn status(m: &PluginManager) -> PluginStatus {
+pub(super) fn status(m: &PluginManager) -> PluginStatus {
     m.list().into_iter().next().expect("装了插件").status
 }
 

@@ -165,6 +165,25 @@ impl PluginManager {
     }
 
     /// 安装时代默认 Bot 登录（归属人是主人），失败时回滚吊销设备。没有 Bot 的插件返回 `None`。
+    /// 按计划建卷；已存在的卷不动（见 [`volume_action`]）。
+    async fn create_volumes(
+        &self,
+        plan: &Deployment,
+        manifest: &Manifest,
+        undo: &mut Undo,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
+        for volume in &plan.volumes {
+            let labels = self.engine.volume_labels(volume).await?;
+            if volume_action(volume, labels.as_ref(), &manifest.id, langs)? == VolumeAction::Create
+            {
+                self.engine.create_volume(volume, &plan.labels).await?;
+                undo.volumes.push(volume.clone());
+            }
+        }
+        Ok(())
+    }
+
     async fn deploy_inner(
         &self,
         package: &PluginPackage,
@@ -217,14 +236,7 @@ impl PluginManager {
         let pulled = plan;
         let mut plan = render(package, &ctx, langs)?;
         super::registry_mirror::use_pulled_images(&mut plan, pulled);
-        for volume in &plan.volumes {
-            let labels = self.engine.volume_labels(volume).await?;
-            if volume_action(volume, labels.as_ref(), &manifest.id, langs)? == VolumeAction::Create
-            {
-                self.engine.create_volume(volume, &plan.labels).await?;
-                undo.volumes.push(volume.clone());
-            }
-        }
+        self.create_volumes(&plan, manifest, undo, langs).await?;
         if let Some(secret) = &secret {
             self.hydra(langs)?
                 .upsert_client(&client_spec(manifest, &ctx, secret))
@@ -264,6 +276,12 @@ impl PluginManager {
         })?;
         Ok(Deployed {
             upstream,
+            serving: package
+                .resident_services()
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            problem: None,
             health,
             models,
             proxy: proxy.map(Arc::new),
@@ -272,7 +290,7 @@ impl PluginManager {
         })
     }
 
-    /// 容器起来之后的收尾：收存密钥、等网页入口就绪、把 Bot 的房间交给核心。
+    /// 容器起来之后的收尾：收存密钥和入口（见 [`PluginManager::deploy_upstreams`]），把 Bot 的房间交给核心。
     async fn started_upstreams(
         &self,
         manifest: &Manifest,
@@ -282,28 +300,13 @@ impl PluginManager {
         deadline: Instant,
         langs: &Languages,
     ) -> Result<(Option<Endpoint>, Option<ModelsRoute>, Option<McpTarget>), InstallError> {
-        if secrets::collect(
-            &self.engine,
-            &self.cfg.instance,
-            manifest,
-            &self.bot_names(&manifest.id),
-            secrets,
-            langs,
-        )
-        .await?
-        {
-            self.store.secrets().save(&manifest.id, secrets)?;
-        }
-        let upstream = self.webui_upstream(manifest, &plan.network).await?;
-        let models = self.models_upstream(manifest, &plan.network).await?;
-        let mcp = self.mcp_upstream(manifest, &plan.network, secrets).await?;
-        if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
-            health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
-        }
+        let upstreams = self
+            .deploy_upstreams(manifest, &plan.network, secrets, deadline, langs)
+            .await?;
         if let Some((_, _, bot)) = &undo.bot {
             undo.handed_over = self.hand_over_home_room(&self.cfg.owner, bot).await?;
         }
-        Ok((upstream, models, mcp))
+        Ok(upstreams)
     }
 
     /// 建插件网络，以及局域网端口要用的网络（见 [`super::lan`]）。

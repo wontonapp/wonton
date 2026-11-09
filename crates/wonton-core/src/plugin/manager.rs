@@ -30,7 +30,6 @@ use super::mcp_server::{McpServer, ToolLimits};
 use super::models::ModelsRoute;
 use super::models::ProviderState;
 use super::package::PluginPackage;
-use super::proxy_auth::ProxyAuth;
 use super::render::dry_run;
 use super::sources::{Source, Sources};
 use super::staged::StagedUploads;
@@ -43,6 +42,9 @@ use crate::l10n;
 use crate::matrix::Matrix;
 
 pub(super) mod busy;
+mod views;
+
+pub use views::{PluginView, Route};
 
 pub(super) use busy::{busy, detached};
 
@@ -50,18 +52,6 @@ pub(super) use super::entry::{Deployed, Entry};
 pub use super::entry::{Health, PluginStatus};
 pub use super::install_error::InstallError;
 use crate::oidc::Hydra;
-
-#[derive(Debug, Clone, Serialize)]
-pub struct PluginView {
-    pub id: PluginId,
-    pub version: String,
-    pub title: LocalizedText,
-    pub status: PluginStatus,
-    /// 只有运行中的插件才有。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub health: Option<Health>,
-    pub url: Option<String>,
-}
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct UninstallReport {
@@ -83,21 +73,6 @@ pub struct BotReport {
     pub devices_removed: usize,
     /// 账号已停用（不可恢复）。
     pub deactivated: bool,
-}
-
-/// 网关查询用的路由信息。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Route {
-    pub id: PluginId,
-    pub status: PluginStatus,
-    /// 核心可直接访问的插件网页地址。
-    pub upstream: Option<Endpoint>,
-    /// 清单 `webui` 指向的容器在运行、健康检查没失败：插件整体异常时也照常转发。
-    pub web_serving: bool,
-    /// 网页响应是否要加跨源隔离策略头。
-    pub cross_origin_isolated: bool,
-    /// `sso: proxy` 时网关代加的凭据。
-    pub proxy: Option<Arc<ProxyAuth>>,
 }
 
 pub struct PluginManager {
@@ -230,25 +205,31 @@ impl PluginManager {
         self.activity.changed();
     }
 
-    /// 在运行、声明了 `mcp` 的插件。
+    /// 声明了 `mcp`、MCP 服务现在能用的插件：运行中，或者异常但 MCP 服务自己好着。
     pub fn mcp_servers(&self) -> Vec<McpServer> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         plugins
             .iter()
-            .filter(|(_, entry)| entry.status == PluginStatus::Running)
+            .filter(|(_, entry)| {
+                matches!(
+                    entry.status,
+                    PluginStatus::Running | PluginStatus::Degraded { .. }
+                )
+            })
             .filter_map(|(id, entry)| {
                 let target = entry.mcp.clone()?;
-                let title = entry.title.clone();
-                let listed = entry.listed.as_ref();
-                let mcp = listed.and_then(|l| l.manifest.mcp.as_ref());
+                let mcp = entry.listed.as_ref()?.manifest.mcp.as_ref()?;
+                if !entry.serving.contains(&mcp.service) {
+                    return None;
+                }
                 Some(McpServer {
                     id: id.clone(),
-                    title,
+                    title: entry.title.clone(),
                     url: target.url,
                     socket: target.socket,
                     headers: target.headers,
-                    tool_limits: ToolLimits::of(mcp),
-                    tools: mcp.and_then(|mcp| mcp.tools.clone()),
+                    tool_limits: ToolLimits::of(Some(mcp)),
+                    tools: mcp.tools.clone(),
                 })
             })
             .collect()
@@ -282,14 +263,18 @@ impl PluginManager {
         self.sources.find(ip)
     }
 
-    /// 模型网关现在的状态：没装、装了没在运行、可用。
+    /// 模型网关现在的状态：没装、装了没在运行（或者网关服务不可用）、可用。
     pub(super) fn models_provider(&self) -> ProviderState {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         let Some((id, entry)) = plugins.iter().find(|(_, e)| e.provides_models) else {
             return ProviderState::Absent;
         };
         match (&entry.status, &entry.models) {
-            (PluginStatus::Running, Some(route)) => ProviderState::Ready(Box::new(route.clone())),
+            (PluginStatus::Running | PluginStatus::Degraded { .. }, Some(route))
+                if entry.serving.contains(&route.spec.service) =>
+            {
+                ProviderState::Ready(Box::new(route.clone()))
+            }
             _ => ProviderState::NotReady(id.clone()),
         }
     }
@@ -302,54 +287,9 @@ impl PluginManager {
             .collect()
     }
 
-    pub fn route(&self, slug: &str) -> Option<Route> {
-        let plugins = self.plugins.read().expect("插件表锁中毒");
-        plugins
-            .iter()
-            .find(|(id, _)| id.slug() == slug)
-            .map(|(id, entry)| Route {
-                id: id.clone(),
-                status: entry.status.clone(),
-                upstream: entry.upstream.clone(),
-                web_serving: entry.web_serving,
-                cross_origin_isolated: entry
-                    .listed
-                    .as_ref()
-                    .and_then(|listed| listed.manifest.webui.as_ref())
-                    .is_some_and(|webui| webui.cross_origin_isolated),
-                proxy: entry.proxy.clone(),
-            })
-    }
-
     /// 处理插件包里的图标和截图（校验插件包时用，`plugin check` 同一份代码）。
     pub fn images(&self) -> &Arc<ImageWorker> {
         self.gallery.images()
-    }
-
-    pub(super) fn view(&self, id: &PluginId, entry: &Entry) -> PluginView {
-        PluginView {
-            id: id.clone(),
-            version: entry.version.clone(),
-            title: entry.title.clone(),
-            status: entry.status.clone(),
-            health: entry.health,
-            url: self.open_url(id, entry),
-        }
-    }
-
-    /// 插件网页的 origin；用户打开的地址还要加清单声明的入口路径（见 [`Self::open_url`]）。
-    pub(super) fn web_url(&self, id: &PluginId) -> String {
-        self.cfg
-            .public
-            .origin(&self.cfg.public.plugin_host(&id.slug()))
-    }
-
-    /// 用户打开的插件网页地址：origin 加清单声明的入口路径（核心原样拼接，不再编码）。
-    /// 网关按 Host 转发，代理路由不含入口路径；入口路径只决定打开时落在哪一页。
-    pub(super) fn open_url(&self, id: &PluginId, entry: &Entry) -> Option<String> {
-        entry
-            .has_webui
-            .then(|| format!("{}{}", self.web_url(id), entry.entry_path()))
     }
 
     /// 插件记录和密钥库（卡片里要用密钥库判断哪一项已经填过）。
@@ -574,12 +514,19 @@ impl PluginManager {
                     tracing::warn!(plugin = %record.id, error = %e, "登记插件网络的地址段失败");
                 }
                 let listed = Listed::of_record(&package, record);
+                let lan_ports = listed.open_ports(record.lan_webui);
                 match self.reconcile(&package, record).await {
-                    Ok(Some(deployed)) => Entry::running(listed, deployed),
+                    // 有的服务没就绪时路由照样回来了：照常让局域网检测核一遍地址（见下面）。
+                    Ok(Some(deployed)) => {
+                        if deployed.problem.is_some() && !lan_ports.is_empty() {
+                            self.lan.mark_degraded(&manifest.id);
+                        }
+                        Entry::running(listed, deployed)
+                    }
                     Ok(None) => Entry::stopped(listed),
                     Err(e) => {
                         // 宿主重启后 DHCP 换了地址时，容器发布不到旧地址上、起不来：由局域网检测按新地址重建。
-                        if !listed.open_ports(record.lan_webui).is_empty() {
+                        if !lan_ports.is_empty() {
                             self.lan.mark_degraded(&manifest.id);
                         }
                         Entry::containers_failed(listed, e.to_string())

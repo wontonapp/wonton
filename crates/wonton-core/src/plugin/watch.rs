@@ -3,6 +3,7 @@
 //! 只管容器决定的状态：在运行的插件和核对没过的插件（[`Entry::containers_failed`]）。卸载中途失败、记录损坏，
 //! 容器好了也解决不了，原样留着；局域网地址的异常由局域网检测重建。正在安装、卸载、重建时容器本来就在变，不看。
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -80,7 +81,7 @@ impl PluginManager {
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), &langs)?;
         package.origin = record.origin.clone();
         let checked = self.check_containers(&package, &langs).await?;
-        self.saw_web(id, checked.web_serves());
+        self.saw_serving(id, checked.serving().clone());
         match checked.ready(&langs) {
             Ok(ContainersState::Running(health))
                 if self.status_of(id) == Some(PluginStatus::Running) =>
@@ -104,16 +105,16 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 网页服务容器能不能转发：网关按它决定插件异常时照不照常给网页。
-    fn saw_web(&self, id: &PluginId, serving: bool) {
+    /// 记下插件现在哪些服务能用：插件异常时网关、MCP 和模型按它决定照不照常给路由。
+    fn saw_serving(&self, id: &PluginId, serving: BTreeSet<String>) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let Some(entry) = plugins.get_mut(id) else {
             return;
         };
-        if entry.web_serving == serving {
+        if entry.serving == serving {
             return;
         }
-        entry.web_serving = serving;
+        entry.serving = serving;
         drop(plugins);
         self.changed();
     }

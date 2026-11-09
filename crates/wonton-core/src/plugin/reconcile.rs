@@ -1,5 +1,6 @@
 //! 核心重启或巡检时核对已装的插件：容器、网络、OIDC 客户端和密钥是否还和记录一致。
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use super::docker::NetworkReach;
@@ -23,39 +24,48 @@ pub(super) enum ContainersState {
 /// 看一眼插件的每个容器得到的结果。
 pub(super) struct Containers {
     state: ContainersState,
-    /// 清单 `webui` 指向的服务的容器在运行、健康检查没失败：网关按它决定异常时照不照常转发。
-    web: bool,
+    /// 能用的服务：它的每个容器（Bot 服务的每份）都在运行、健康检查没失败。一次性服务不在里面。
+    serving: BTreeSet<String>,
     /// 不健康的容器（或其他问题）的原因，按请求的语言写好，一个容器一条。
     failures: Vec<String>,
 }
 
 impl Containers {
-    pub(super) fn web_serves(&self) -> bool {
-        self.web
+    /// 现在能用的服务：网关、MCP 和模型按它决定异常时照不照常给路由。
+    pub(super) fn serving(&self) -> &BTreeSet<String> {
+        &self.serving
     }
 
-    /// 都就绪时给容器状态；有不健康的就把它们一起列在原因里。
-    pub(super) fn ready(self, langs: &Languages) -> Result<ContainersState, InstallError> {
-        let mut failures = self.failures.into_iter();
-        let Some(first) = failures.next() else {
-            return Ok(self.state);
-        };
-        let rest: Vec<String> = failures.collect();
+    /// 都就绪时为空；有不健康的就把它们一起列在原因里。
+    pub(super) fn problem(&self, langs: &Languages) -> Option<InstallError> {
+        let (first, rest) = self.failures.split_first()?;
         if rest.is_empty() {
-            return Err(InstallError::Unhealthy(first));
+            return Some(InstallError::Unhealthy(first.clone()));
         }
-        let failures = std::iter::once(first).chain(rest).collect::<Vec<_>>();
-        Err(InstallError::Unhealthy(l10n::text(
+        let failures: Vec<&str> = self.failures.iter().map(String::as_str).collect();
+        Some(InstallError::Unhealthy(l10n::text(
             langs,
             "plugin-install-containers-unhealthy",
             &[("failures", l10n::list(langs, &failures).into())],
         )))
+    }
+
+    /// 都就绪时给容器状态；有不健康的就把它们一起列在原因里。
+    pub(super) fn ready(&self, langs: &Languages) -> Result<ContainersState, InstallError> {
+        match self.problem(langs) {
+            Some(problem) => Err(problem),
+            None => Ok(self.state),
+        }
     }
 }
 
 impl PluginManager {
     /// 核心重启后核对插件：一次性服务已以 0 退出，长期运行的容器在运行、健康检查没有失败；核心在插件
     /// 网络里、OIDC 客户端已登记、插件密钥都在，并重新收存一次插件写下的密钥。`None` 表示常驻服务全部停止。
+    ///
+    /// 有容器没就绪不算核对失败：照样给出能用的服务、上游、代登录凭据和 MCP 地址，原因放进 `problem`，
+    /// 由网关、MCP 和模型按服务如实回答（见 [`Deployed`]）。网络、relay、密钥、OIDC 这些地址和凭据本身
+    /// 的问题仍然整体失败。
     pub(super) async fn reconcile(
         &self,
         package: &PluginPackage,
@@ -86,14 +96,12 @@ impl PluginManager {
         // 插件不在这里动，留给启动流程（见 start.rs）。
         self.recreate_on_drift(package, record, &langs, false)
             .await?;
-        let health = match self
-            .check_containers(package, &langs)
-            .await?
-            .ready(&langs)?
-        {
-            ContainersState::Running(health) => health,
+        let checked = self.check_containers(package, &langs).await?;
+        let health = match checked.state {
             ContainersState::Stopped => return Ok(None),
+            ContainersState::Running(health) => health,
         };
+        let problem = checked.problem(&langs).map(|problem| problem.to_string());
         self.ensure_relays(manifest, record).await?;
         self.check_bot(manifest).await?;
         let secrets = self.check_secrets(manifest).await?;
@@ -117,6 +125,8 @@ impl PluginManager {
         }
         Ok(Some(Deployed {
             upstream: self.webui_upstream(manifest, &network).await?,
+            serving: checked.serving().clone(),
+            problem,
             health,
             models: self.models_upstream(manifest, &network).await?,
             mcp: self.mcp_upstream(manifest, &network, &secrets).await?,
@@ -148,18 +158,13 @@ impl PluginManager {
     ) -> Result<Containers, InstallError> {
         let slug = package.manifest.id.slug();
         let one_shot = package.one_shot_services();
-        let webui = package
-            .manifest
-            .webui
-            .as_ref()
-            .map(|webui| webui.service.as_str());
         let bot_services = super::bot_services::bot_services(&package.manifest);
         let bots = self.bot_names(&package.manifest.id);
         let mut running = 0;
         let mut healthy = true;
         let mut stopped = Vec::new();
         let mut failures = Vec::new();
-        let mut web = false;
+        let mut served = BTreeSet::new();
         // Bot 服务按 Bot 一组容器，每个都核对；全插件一份的服务照旧一个。
         let instances = |service: &str| -> Vec<String> {
             if bot_services.contains(service) && !bots.is_empty() {
@@ -171,6 +176,8 @@ impl PluginManager {
             }
         };
         for service in package.service_names() {
+            // 这个服务能不能用：它的每一份容器都在运行、健康检查没失败。
+            let mut serving = true;
             for name in instances(service) {
                 let checked = health::check_now(
                     &self.engine,
@@ -180,9 +187,6 @@ impl PluginManager {
                     langs,
                 )
                 .await?;
-                if webui == Some(service) {
-                    web = matches!(checked, Checked::Healthy | Checked::Running);
-                }
                 match checked {
                     Checked::Completed => {}
                     Checked::Healthy => running += 1,
@@ -190,9 +194,18 @@ impl PluginManager {
                         running += 1;
                         healthy = false;
                     }
-                    Checked::Stopped => stopped.push(name),
-                    Checked::Failed(reason) => failures.push(reason),
+                    Checked::Stopped => {
+                        serving = false;
+                        stopped.push(name);
+                    }
+                    Checked::Failed(reason) => {
+                        serving = false;
+                        failures.push(reason);
+                    }
                 }
+            }
+            if serving && !one_shot.contains(service) {
+                served.insert(service.to_owned());
             }
         }
         let state = ContainersState::Running(if healthy {
@@ -203,14 +216,14 @@ impl PluginManager {
         if stopped.is_empty() {
             return Ok(Containers {
                 state,
-                web,
+                serving: served,
                 failures,
             });
         }
         if running == 0 && failures.is_empty() {
             return Ok(Containers {
                 state: ContainersState::Stopped,
-                web,
+                serving: served,
                 failures,
             });
         }
@@ -223,7 +236,7 @@ impl PluginManager {
         }
         Ok(Containers {
             state,
-            web,
+            serving: served,
             failures,
         })
     }

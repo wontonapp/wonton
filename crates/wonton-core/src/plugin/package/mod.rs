@@ -408,6 +408,14 @@ impl PluginPackage {
             .collect()
     }
 
+    /// 长期运行的服务，也就是部署完成时全部能用的那些（[`Self::one_shot_services`] 之外）。
+    pub fn resident_services(&self) -> BTreeSet<&str> {
+        let one_shot = self.one_shot_services();
+        self.service_names()
+            .filter(|service| !one_shot.contains(service))
+            .collect()
+    }
+
     /// 被引用的文件，安装时随记录保存。
     pub fn files(&self) -> &PackageFiles {
         &self.files

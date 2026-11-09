@@ -1,5 +1,6 @@
 //! 插件表里的一项：插件现在是什么状态，网关要转发到哪里。
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -76,8 +77,8 @@ pub(super) struct Entry {
     /// 列表和详情页显示的信息；记录读不出来的插件为空。
     pub(super) listed: Option<Arc<Listed>>,
     pub(super) upstream: Option<Endpoint>,
-    /// 清单 `webui` 指向的容器在运行、健康检查没失败：插件整体异常时网关照样转发网页（见 [`super::watch`]）。
-    pub(super) web_serving: bool,
+    /// 现在能用的服务（见 [`super::watch`]）：网关、MCP 和模型按它决定异常时照不照常给路由。
+    pub(super) serving: BTreeSet<String>,
     /// 声明了 `provides.models`（不论状态）。
     pub(super) provides_models: bool,
     pub(super) provides_egress_proxy: bool,
@@ -94,6 +95,10 @@ pub(super) struct Entry {
 /// 部署或核对完成的插件：核心访问它网页的地址（是模型网关时还有网关接口的地址），和检查时的健康状况。
 pub(super) struct Deployed {
     pub upstream: Option<Endpoint>,
+    /// 现在能用的服务：有服务不可用时，网关、MCP 和模型按它照常回答。
+    pub serving: BTreeSet<String>,
+    /// 有服务不可用时的原因（核对时容器没就绪）；全都就绪时为空。有原因时插件是 [`PluginStatus::Degraded`]。
+    pub problem: Option<String>,
     pub health: Health,
     pub models: Option<ModelsRoute>,
     pub proxy: Option<Arc<ProxyAuth>>,
@@ -119,7 +124,7 @@ impl Entry {
             health: None,
             checked_at: super::manager::now_secs(),
             upstream,
-            web_serving: false,
+            serving: BTreeSet::new(),
             provides_models: manifest
                 .provides
                 .as_ref()
@@ -136,14 +141,21 @@ impl Entry {
         }
     }
 
+    /// 部署或核对完成的插件：有服务不可用时是异常，但路由、凭据照常带着，网关、MCP 和模型按服务如实回答；
+    /// 跟着容器走，容器好了由巡检重新核对（见 [`super::watch`]）。
     pub(super) fn running(listed: Arc<Listed>, deployed: Deployed) -> Self {
-        let web_serving = deployed.upstream.is_some();
+        let (status, health, follows_containers) = match deployed.problem {
+            None => (PluginStatus::Running, Some(deployed.health), false),
+            Some(reason) => (PluginStatus::Degraded { reason }, None, true),
+        };
         Self {
-            health: Some(deployed.health),
+            status,
+            health,
+            follows_containers,
+            serving: deployed.serving,
             models: deployed.models,
             proxy: deployed.proxy,
             mcp: deployed.mcp,
-            web_serving,
             ..Self::new(listed, PluginStatus::Running, deployed.upstream)
         }
     }
@@ -177,7 +189,7 @@ impl Entry {
             health: None,
             checked_at: super::manager::now_secs(),
             upstream: None,
-            web_serving: false,
+            serving: BTreeSet::new(),
             provides_models: false,
             provides_egress_proxy: false,
             models: None,

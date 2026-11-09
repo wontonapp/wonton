@@ -6,8 +6,12 @@ use std::path::{Path, PathBuf};
 
 use std::time::Duration;
 
+use tokio::time::Instant;
+
 use super::PluginId;
+use super::health;
 use super::host_relay::{HostRelay, Purpose};
+use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, Permission, Sso};
 use super::models::ModelsRoute;
@@ -201,15 +205,14 @@ impl PluginManager {
         {
             return Ok(Some(endpoint));
         }
-        self.service_upstream(
+        self.service_address(
             &name,
             &names::service_host(&slug, &webui.service),
             webui.port,
             network,
         )
         .await
-        .map(Endpoint::Tcp)
-        .map(Some)
+        .map(|address| address.map(Endpoint::Tcp))
     }
 
     /// 网页探测的状态码（ADR-0033 的 `wonton__plugin_status`）：请求一次网页入口，和装完时的探测
@@ -238,14 +241,17 @@ impl PluginManager {
         };
         let slug = manifest.id.slug();
         let name = self.cfg.instance.container(&slug, &spec.service);
-        let upstream = self
-            .service_upstream(
+        let Some(upstream) = self
+            .service_address(
                 &name,
                 &names::service_host(&slug, &spec.service),
                 spec.port,
                 network,
             )
-            .await?;
+            .await?
+        else {
+            return Ok(None);
+        };
         Ok(Some(ModelsRoute {
             id: manifest.id.clone(),
             spec: spec.clone(),
@@ -294,14 +300,17 @@ impl PluginManager {
         }
         let slug = manifest.id.slug();
         let name = self.cfg.instance.container(&slug, &mcp.service);
-        let upstream = self
-            .service_upstream(
+        let Some(upstream) = self
+            .service_address(
                 &name,
                 &names::service_host(&slug, &mcp.service),
                 mcp.port,
                 network,
             )
-            .await?;
+            .await?
+        else {
+            return Ok(None);
+        };
         Ok(Some(McpTarget {
             url: format!("http://{upstream}{path}"),
             socket: None,
@@ -385,25 +394,44 @@ impl PluginManager {
             .ok_or(ResourceUpstreamError::Unavailable)
     }
 
-    /// 核心访问容器里一个端口的地址：核心在容器里时用服务的稳定域名（`服务名.<slug>.wonton.internal`，对上游
-    /// 可见的 Host），否则用容器 IP。
-    pub(super) async fn service_upstream(
+    /// 安装、升级的容器起来之后：收存密钥，取网页、MCP 和模型网关的入口，声明了的入口取不到就是部署坏了，
+    /// 最后等网页入口应一声。核对时容器本来就可能不在，所以入口函数给的是 `None`，这两条路要当错误。
+    pub(super) async fn deploy_upstreams(
         &self,
-        container: &str,
-        host: &str,
-        port: u16,
+        manifest: &Manifest,
         network: &str,
-    ) -> Result<String, InstallError> {
-        let langs = self.owner_languages();
-        self.service_address(container, host, port, network)
-            .await?
-            .ok_or_else(|| {
-                InstallError::Docker(l10n::text(
-                    &langs,
-                    "plugin-install-upstream-container-missing",
-                    &[("container", container.into()), ("network", network.into())],
-                ))
-            })
+        secrets: &mut Secrets,
+        deadline: Instant,
+        langs: &Languages,
+    ) -> Result<(Option<Endpoint>, Option<ModelsRoute>, Option<McpTarget>), InstallError> {
+        if super::secrets::collect(
+            &self.engine,
+            &self.cfg.instance,
+            manifest,
+            &self.bot_names(&manifest.id),
+            secrets,
+            langs,
+        )
+        .await?
+        {
+            self.store.secrets().save(&manifest.id, secrets)?;
+        }
+        let upstream = self.webui_upstream(manifest, network).await?;
+        let models = self.models_upstream(manifest, network).await?;
+        let mcp = self.mcp_upstream(manifest, network, secrets).await?;
+        check_present(
+            upstream.as_ref(),
+            models.as_ref(),
+            mcp.as_ref(),
+            manifest,
+            &self.cfg.instance,
+            network,
+            langs,
+        )?;
+        if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
+            health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
+        }
+        Ok((upstream, models, mcp))
     }
 
     /// 容器不在或者在这个网络里没有地址时为空。
@@ -426,6 +454,49 @@ impl PluginManager {
             .filter(|ip| !ip.is_empty());
         Ok(ip.map(|ip| format!("{ip}:{port}")))
     }
+}
+
+/// 安装、升级刚确认过每个容器就绪，声明了的入口却取不到就是这次部署坏了。核对时容器本来就可能不在，
+/// [`PluginManager::webui_upstream`] 这些给的是 `None`（原因在核对的 `problem` 里），这两条路要当错误。
+pub(super) fn check_present(
+    upstream: Option<&Endpoint>,
+    models_route: Option<&ModelsRoute>,
+    mcp_target: Option<&McpTarget>,
+    manifest: &Manifest,
+    instance: &names::Instance,
+    network: &str,
+    langs: &Languages,
+) -> Result<(), InstallError> {
+    let slug = manifest.id.slug();
+    let missing = |service: &str| {
+        InstallError::Docker(l10n::text(
+            langs,
+            "plugin-install-upstream-container-missing",
+            &[
+                ("container", instance.container(&slug, service).into()),
+                ("network", network.into()),
+            ],
+        ))
+    };
+    if let Some(webui) = &manifest.webui
+        && upstream.is_none()
+    {
+        return Err(missing(&webui.service));
+    }
+    if let Some(models) = manifest
+        .provides
+        .as_ref()
+        .and_then(|provides| provides.models.as_ref())
+        && models_route.is_none()
+    {
+        return Err(missing(&models.service));
+    }
+    if let Some(mcp) = &manifest.mcp
+        && mcp_target.is_none()
+    {
+        return Err(missing(&mcp.service));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

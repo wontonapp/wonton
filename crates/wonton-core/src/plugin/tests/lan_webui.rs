@@ -442,13 +442,14 @@ async fn closing_never_reopens_the_port_when_it_fails() {
         detail.lan_webui.unwrap().enabled
     };
 
-    // 别的服务不健康：端口关了，报错，定期检测也不开回去；那个服务好了就恢复，网页不再重建。
+    // 别的服务不健康：端口照样关得掉（按服务算，关的是网页的端口），插件是异常；定期检测不开回去，
+    // 那个服务好了就恢复，网页不再重建。
     let smb = container_name("app-test", "smb");
     let health = |status| serde_json::json!({"Status": "running", "Running": true, "Health": {"Status": status}});
     docker.set_state(&smb, health("unhealthy"));
     m.set_lan_webui(id(), false, Languages::default())
         .await
-        .unwrap_err();
+        .unwrap();
     assert!(!enabled(&m));
     assert!(matches!(status(&m), PluginStatus::Degraded { .. }));
     let closed = docker.writes().len();
@@ -457,7 +458,9 @@ async fn closing_never_reopens_the_port_when_it_fails() {
     assert!(!enabled(&m));
     assert!(matches!(status(&m), PluginStatus::Degraded { .. }));
     docker.set_state(&smb, health("healthy"));
+    // 端口已经关了，局域网检测没事可做：由巡检发现容器好了。
     m.lan_pass(&Languages::default()).await.unwrap();
+    m.watch_containers().await;
     assert_eq!(status(&m), PluginStatus::Running);
     assert_eq!(published(&docker, "web"), Value::Null);
     assert!(

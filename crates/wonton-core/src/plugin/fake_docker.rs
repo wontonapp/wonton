@@ -332,6 +332,17 @@ impl FakeDocker {
         self.lock().states.insert(container.to_owned(), state);
     }
 
+    /// 容器从 Docker 里不见了（被外部删掉）。
+    pub fn remove(&self, container: &str) {
+        let mut docker = self.lock();
+        docker.containers.remove(container);
+        docker.states.remove(container);
+        docker.created.remove(container);
+        for endpoints in docker.endpoints.values_mut() {
+            endpoints.remove(container);
+        }
+    }
+
     pub fn set_start_state(&self, container: &str, state: Value) {
         self.lock().start_states.insert(container.to_owned(), state);
     }

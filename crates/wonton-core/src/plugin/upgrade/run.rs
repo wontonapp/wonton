@@ -13,7 +13,6 @@ use wonton_protocol::InstallStage;
 use super::super::bots::is_bot;
 use super::super::compose::PullPolicy;
 use super::super::gpu::GpuGrant;
-use super::super::health;
 use super::super::lan::LanGrant;
 use super::super::lan::webui::switched;
 use super::super::languages::Languages;
@@ -370,24 +369,9 @@ impl PluginManager {
                 &langs,
             )
             .await?;
-        if secrets::collect(
-            &self.engine,
-            &self.cfg.instance,
-            manifest,
-            &self.bot_names(&manifest.id),
-            &mut secrets,
-            &langs,
-        )
-        .await?
-        {
-            self.store.secrets().save(&manifest.id, &secrets)?;
-        }
-        let upstream = self.webui_upstream(manifest, &network).await?;
-        let models = self.models_upstream(manifest, &network).await?;
-        let mcp = self.mcp_upstream(manifest, &network, &secrets).await?;
-        if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
-            health::wait_webui(&self.http, upstream, &webui.path, deadline, &langs).await?;
-        }
+        let (upstream, models, mcp) = self
+            .deploy_upstreams(manifest, &network, &mut secrets, deadline, &langs)
+            .await?;
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &network)
             .await;
@@ -416,6 +400,12 @@ impl PluginManager {
         })?;
         Ok(Deployed {
             upstream,
+            serving: package
+                .resident_services()
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            problem: None,
             health,
             models,
             proxy: proxy.map(Arc::new),
