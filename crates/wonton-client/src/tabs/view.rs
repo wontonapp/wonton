@@ -7,7 +7,7 @@ use wonton_protocol::{
     TabItem, TabLayout, TabPage, TabRef, TabState, TabsViewModel,
 };
 
-use super::{Fullscreen, StoredItem, StoredPage, TabsState, TabsViewModel, invalid};
+use super::{Fullscreen, StoredItem, StoredPage, TabsState, invalid};
 use crate::l10n::{CATALOG, language};
 use wonton_l10n::l10n;
 

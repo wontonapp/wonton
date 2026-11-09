@@ -26,6 +26,13 @@ impl TabsLink {
                 set_automatic_fullscreen(state, &item, previous, plugins);
                 return Ok(());
             }
+            // "应用"网格页只从侧边栏进，不在栏上也能选中：选它等于把网格页推到前面，栏照旧隐藏。
+            if tab == TabRef::Apps {
+                state.selected = tab;
+                state.overlay = None;
+                state.fullscreen = None;
+                return Ok(());
+            }
             if !matches!(tab, TabRef::Plugin { .. }) {
                 return Err(invalid(&l10n!(CATALOG, language(), "tabs-bar-not-pinned")));
             }

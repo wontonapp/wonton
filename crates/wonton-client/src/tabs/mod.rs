@@ -237,47 +237,6 @@ impl TabsLink {
         }
     }
 
-    pub(crate) fn select(&self, tab: TabRef) -> Result<(), CoreError> {
-        self.runtime_change(|state, plugins| {
-            if state.selected == tab
-                && state
-                    .fullscreen
-                    .as_ref()
-                    .is_some_and(|fullscreen| fullscreen.tab == tab)
-            {
-                return Ok(());
-            }
-            if let Some(item) = state
-                .config
-                .items
-                .iter()
-                .find(|item| item.tab == tab)
-                .cloned()
-            {
-                let previous = state.selected.clone();
-                state.selected = tab;
-                state.overlay = None;
-                set_automatic_fullscreen(state, &item, previous, plugins);
-                return Ok(());
-            }
-            // "应用"网格页只从侧边栏进，不在栏上也能选中：选它等于把网格页推到前面，栏照旧隐藏。
-            if tab == TabRef::Apps {
-                state.selected = tab;
-                state.overlay = None;
-                state.fullscreen = None;
-                return Ok(());
-            }
-            if !matches!(tab, TabRef::Plugin { .. }) {
-                return Err(invalid("这个页面没有固定到底栏"));
-            }
-            let item = stored_item_for_tab(&tab, plugins)?;
-            let previous = state.selected.clone();
-            state.overlay = Some(item.clone());
-            set_automatic_fullscreen(state, &item, previous, plugins);
-            Ok(())
-        })
-    }
-
     pub(crate) fn room_view(&self) -> Option<Arc<RoomPanelView>> {
         self.room_view.borrow().clone()
     }
