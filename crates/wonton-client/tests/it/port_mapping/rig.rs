@@ -1,5 +1,5 @@
-//! 端口映射测试的家里服务器：`wonton_tunnel::test_server` 的假服务端接 `Port`/`Udp`，`Forward` 交给插件测试的
-//! 假核心（给已安装列表）；插件服务是本机的 TCP、UDP 回显。真正的服务端实现不在这里。
+//! 端口映射测试的家里服务器：真的 `wonton_tunnel::TunnelServer` 接 `Port`/`Udp`，`Forward` 交给插件测试的
+//! 假核心（给已安装列表）；插件服务是本机的 TCP、UDP 回显。
 
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -15,9 +15,8 @@ use wonton_client::{
     Action, ClientCore, HomeViewModel, MappedPort, Network, PluginPortMapping, PluginsViewModel,
     PortMappingState, PortProtocol,
 };
-use wonton_tunnel::test_server::PortServer;
 use wonton_tunnel::test_support::unused_port;
-use wonton_tunnel::{PortResolveError, PortResolver};
+use wonton_tunnel::{Allowlist, PortResolveError, PortResolver, TunnelServer};
 
 use crate::home::support::wait_until_port_is_free;
 use crate::plugins::rig::{CoreState, WAIT, fake_core, running, ticket};
@@ -61,9 +60,10 @@ pub struct MapHome {
     pub udp: u16,
     key: SecretKey,
     port: u16,
-    resolver: Resolver,
+    resolver: Arc<Resolver>,
     upstream: SocketAddr,
-    server: Option<PortServer>,
+    allowlist: Allowlist,
+    server: Option<TunnelServer>,
 }
 
 impl MapHome {
@@ -78,16 +78,18 @@ impl MapHome {
             ((tcp, PortProtocol::Tcp), tcp_echo().await),
             ((udp, PortProtocol::Udp), udp_echo().await),
         ]));
-        let resolver = Resolver {
+        let resolver = Arc::new(Resolver {
             routes,
             refusal: Arc::default(),
-        };
+        });
         core.set_lists(vec![vec![remote(tcp, udp)]]);
         let key = SecretKey::generate();
-        let server = PortServer::spawn(
+        let allowlist = Allowlist::default();
+        let server = TunnelServer::spawn_with_resolver(
             endpoint(key.clone(), 0).await,
+            allowlist.clone(),
+            upstream,
             resolver.clone(),
-            Some(upstream),
         );
         let port = server.endpoint().bound_sockets()[0].port();
         Self {
@@ -97,6 +99,7 @@ impl MapHome {
             port,
             resolver,
             upstream,
+            allowlist,
             server: Some(server),
         }
     }
@@ -117,11 +120,17 @@ impl MapHome {
     pub async fn start_again(&mut self) {
         wait_until_port_is_free(self.port).await;
         let endpoint = endpoint(self.key.clone(), self.port).await;
-        self.server = Some(PortServer::spawn(
+        self.server = Some(TunnelServer::spawn_with_resolver(
             endpoint,
+            self.allowlist.clone(),
+            self.upstream,
             self.resolver.clone(),
-            Some(self.upstream),
         ));
+    }
+
+    /// 让服务端放行这台设备：真的服务端只认白名单。
+    pub fn allow(&self, app: &App) {
+        self.allowlist.allow(app.device());
     }
 }
 
@@ -183,7 +192,13 @@ impl App {
         }
     }
 
+    /// 这台设备的 endpoint ID。
+    pub fn device(&self) -> iroh::EndpointId {
+        self.core.home().device_id.parse().unwrap()
+    }
+
     pub fn connect(&self, home: &MapHome) {
+        home.allow(self);
         self.core
             .dispatch(Action::ConnectHome {
                 ticket: home.ticket(),

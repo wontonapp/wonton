@@ -10,5 +10,6 @@ fun TabItem.tabTitle(): String = when (tab) {
     TabRef.Chat -> stringResource(R.string.tab_chat)
     TabRef.Apps -> stringResource(R.string.tab_apps)
     TabRef.Settings -> stringResource(R.string.tab_settings)
-    is TabRef.Plugin, is TabRef.SharedApp -> page?.title ?: stringResource(R.string.tab_app_page)
+    is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Url, is TabRef.SharedApp -> page?.title
+        ?: stringResource(R.string.tab_app_page)
 }

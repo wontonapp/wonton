@@ -71,6 +71,7 @@ mod store;
 mod store_refresh;
 mod tabs;
 mod tunnel_ports;
+mod tunnel_resolver;
 mod upgrade;
 mod upgrade_bot;
 mod views;

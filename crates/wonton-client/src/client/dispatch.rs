@@ -130,10 +130,25 @@ impl ClientCore {
             Action::SetThemeMode { mode } => self.appearance.set_theme_mode(mode),
             Action::SetTextSize { size } => self.appearance.set_text_size(size),
             Action::SetFont { font } => self.appearance.set_font(font),
-            action @ (Action::SelectTab { .. }
+            action if is_tab_action(&action) => scope.tabs.dispatch(action),
+            other => self.dispatch_plugins_or_chat(&scope, other),
+        }
+    }
+}
+
+/// 底栏和面板自己的操作，整组交给 [`TabsLink`](crate::tabs::TabsLink)。
+fn is_tab_action(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::SelectTab { .. }
             | Action::CloseTabOverlay
             | Action::PinTab { .. }
             | Action::UnpinTab { .. }
+            | Action::AddPanelPage { .. }
+            | Action::RemovePanelPage { .. }
+            | Action::MovePanelPage { .. }
+            | Action::SelectPanelPage { .. }
+            | Action::PinCurrentPage { .. }
             | Action::MoveTab { .. }
             | Action::SetTabLabels { .. }
             | Action::SetTabDisplay { .. }
@@ -142,8 +157,7 @@ impl ClientCore {
             | Action::ReloadTab { .. }
             | Action::TabLoadFailed { .. }
             | Action::TabLoadSucceeded { .. }
-            | Action::DismissUninstalledTabs) => scope.tabs.dispatch(action),
-            other => self.dispatch_plugins_or_chat(&scope, other),
-        }
-    }
+            | Action::DismissUninstalledTabs
+            | Action::SetRoomEntryBlocked { .. }
+    )
 }

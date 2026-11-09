@@ -162,6 +162,9 @@ impl Outbox {
                 back_pagination,
                 viewport,
                 anchor,
+                panel: Vec::new(),
+                panel_selected: None,
+                entry_blocked: false,
             })
             .map_err(|_| ())
     }

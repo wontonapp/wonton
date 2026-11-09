@@ -6,10 +6,16 @@ on:
   pull_request:
   push:
     branches: [main]
+  # 合并队列：这三个作业都是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
+  # merge_group 不认 paths，路径过滤只留在 pull_request 下自己生效。
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
 
 # 同一个 PR 又推了新提交，旧的运行就取消，别占着 runner；main 上的每次合并都跑完。
+# 队列里的 ref 一律是 gh-merge-queue/main，按它分组会把几次入队挤进同一组，改用这次入队的合并提交。
 concurrency:
-  group: lint-${{ github.ref }}
+  group: lint-${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
