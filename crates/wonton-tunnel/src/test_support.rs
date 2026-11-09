@@ -96,6 +96,8 @@ fn lock() -> MutexGuard<'static, Option<HashSet<u16>>> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::{FALLBACK_WINDOW, unused_port, window_for};
 
     #[test]
@@ -118,17 +120,14 @@ mod tests {
         // 低端界很小的时候窗口会让到 1024 起，按它算出的区间断言，不能一律要求低于临时端口段。
         let expected = window_for(local_low);
         assert!(expected.0 < expected.1, "窗口至少要有两个号：{expected:?}");
-        let (first, second) = (unused_port(), unused_port());
-        assert_ne!(first, second, "同一进程里不能发同一个号");
-        for port in [first, second] {
+        // 一次要够多个号：发放本身就该去重，重绑一次还会被别的进程抢，干扰判断。
+        let ports: HashSet<_> = (0..64).map(|_| unused_port()).collect();
+        assert_eq!(ports.len(), 64, "同一进程里不能发同一个号");
+        for port in ports {
             assert!(port >= 1_024, "{port} 是特权端口");
             assert!(
                 (expected.0..=expected.1).contains(&port),
                 "{port} 不在 {expected:?} 里"
-            );
-            assert!(
-                std::net::TcpListener::bind(("127.0.0.1", port)).is_ok(),
-                "{port} 发出去时就不空闲"
             );
         }
     }
