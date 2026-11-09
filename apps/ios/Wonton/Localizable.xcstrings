@@ -13675,10 +13675,16 @@
               "formatSpecifier": "lld",
               "variations": {
                 "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "1個のアプリ"
+                    }
+                  },
                   "other": {
                     "stringUnit": {
                       "state": "translated",
-                      "value": "%#@count@個のアプリ"
+                      "value": "%lld個のアプリ"
                     }
                   }
                 }
