@@ -130,8 +130,12 @@ impl Home {
     }
 
     pub(super) fn ticket(&self) -> String {
+        self.ticket_at(self.server().endpoint().bound_sockets()[0])
+    }
+
+    /// 连接信息里的直连地址换成 `addr`（拦在中间的回环代理）。
+    pub(super) fn ticket_at(&self, addr: SocketAddr) -> String {
         let id = self.server().endpoint().id();
-        let addr = self.server().endpoint().bound_sockets()[0];
         format!(
             r#"{{"server": {{"endpoint_id": "{id}", "direct_addrs": ["{addr}"]}},
                 "base_domain": "wonton.localhost", "web_url": "{WEB_URL}"}}"#
