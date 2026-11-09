@@ -10,8 +10,12 @@
 #   WONTON_PORT         局域网网页和网关的 TCP 端口（默认 8480）
 #   WONTON_TUNNEL_PORT  隧道的 UDP 端口（默认 8482）
 #   WONTON_BASE_DOMAIN  基础域名：App 经隧道访问核心和插件网页用的主机名，装好后不能改（默认 wonton.localhost）
-#   WONTON_MATRIX_SERVER_NAME  Matrix 的服务器名，只在第一次安装时有用，装好后不能改。默认随机生成一个每台不同的
-#                       名字；以后要和公网的 Matrix 联邦才写成自己的域名（ADR-0009）
+#   WONTON_MATRIX_SERVER_NAME  高级：自己的 Matrix 域名，装好后不能改。
+#   WONTON_MATRIX_NAME_MODE=none  高级：不要名字，只与同类已配对云吞通信；以后互通必须重装聊天数据。
+#   WONTON_CLIENT_SERVICE、WONTON_CLIENT_INVITE_FILE  送的名字的服务地址和邀请码文件。
+#   送名字缺这些配置时安装会停，并给出“不要名字”“用自己的域名”两条带安装命令的路。
+#   WONTON_ACME_DIRECTORY、WONTON_ACME_ACCEPT_TERMS  证书服务地址及是否明确接受其条款。
+#   WONTON_*_CA_FILE、WONTON_ACME_RESOLVERS  测试 CA 与开发 DNS，证书验证不会关闭。
 #   WONTON_OWNER_NAME   用户名，同时是 Matrix 用户名和插件里的账号，只能用小写字母、数字、_ 和 -，以字母开头，
 #                       最长 32 个字符，装好后不能改（默认 owner）
 #   TZ                  时区，IANA 时区名，如 Asia/Shanghai（默认宿主的时区，读不到时是 UTC）
@@ -399,17 +403,75 @@ manual_rollback() {
     die "退回失败，看上面的错误。备份还在数据目录的 core/upgrade/backup 里"
 }
 
+# 文件凭据只复制到私有安装目录，不把凭据值放到命令行。
+prepare_entry_env() {
+mkdir -p "$install_dir/entry-input"
+chmod 700 "$install_dir/entry-input"
+umask 077
+output="$install_dir/entry-input/init.env"
+: >"$output"
+for key in WONTON_MATRIX_SERVER_NAME WONTON_MATRIX_NAME_MODE WONTON_CLIENT_SERVICE \
+  WONTON_ACME_DIRECTORY WONTON_ACME_RESOLVERS WONTON_ACME_EMAIL WONTON_ACME_ACCEPT_TERMS \
+  WONTON_ACME_NETWORK WONTON_ACME_DNS_PROVIDER WONTON_ENTRY_CERTIFICATE; do
+  value=$(printenv "$key" || true)
+  [ -n "$value" ] || continue
+  case "$value" in *'
+'*) echo "$key 不能包含换行" >&2; exit 1 ;; esac
+  printf '%s=%s\n' "$key" "$value" >>"$output"
+done
+for key in WONTON_CLIENT_INVITE_FILE WONTON_CLIENT_CA_FILE WONTON_FRP_CA_FILE \
+  WONTON_ACME_CA_FILE WONTON_ACME_DNS_ENV_FILE; do
+  source=$(printenv "$key" || true)
+  [ -n "$source" ] || continue
+  case "$source" in /*) ;; *) echo "$key 必须是绝对路径" >&2; exit 1 ;; esac
+  target="$install_dir/entry-input/$key"
+  if [ "$source" != "$target" ]; then cp "$source" "$target"; fi
+  chmod 600 "$target"
+  printf '%s=%s\n' "$key" "$target" >>"$output"
+done
+}
+
+# 送名字要的家名服务、邀请码和证书输入缺了：给两条能直接抄的路，不写死内部地址。
+entry_missing() {
+  [ "${WONTON_MATRIX_NAME_MODE:-given}" = none ] && return 1
+  [ -n "${WONTON_MATRIX_SERVER_NAME:-}" ] && return 1
+  for key in WONTON_CLIENT_SERVICE WONTON_CLIENT_INVITE_FILE WONTON_ACME_DIRECTORY \
+    WONTON_ACME_ACCEPT_TERMS WONTON_FRP_CA_FILE; do
+    [ -n "$(printenv "$key" || true)" ] || return 0
+  done
+  return 1
+}
+
+init_failed() {
+  if entry_missing; then
+    cat >&2 <<'EOF'
+还没有服务器名，送名字要的配置（家名服务、邀请码、证书）也不全。两条路选一条，在原来的安装命令上带一个变量：
+  1) 不要名字（以后不能改；要和外面的 Matrix 互通得清空聊天数据重装）：
+     curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_NAME_MODE=none sh
+  2) 用自己的域名（证书怎么做见安装说明的“服务器名和证书”一节）：
+     curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_SERVER_NAME=chat.example.com sh
+EOF
+  else
+    echo "设置不对：按上面的错误改了再执行一次" >&2
+  fi
+  exit 1
+}
+
 write_config() {
   info "生成密钥和配置（已有的沿用）"
   # 带上主人的设置：核心启动时也查，但那时容器会一直重启，要等满 10 分钟才报错，这里当场说清楚。
   [ -z "$relays" ] || fits_env "$relays" ||
     die "WONTON_RELAYS 里不能有空格和引号这些字符，令牌里的特殊字符写成百分号编码"
-  docker run --rm -v "$install_dir:$install_dir" -v "$data_dir:$data_dir:ro" \
+  prepare_entry_env
+  docker run --rm --network "${WONTON_ACME_NETWORK:-bridge}" \
+    --env-file "$install_dir/entry-input/init.env" \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "$install_dir:$install_dir" -v "$data_dir:$data_dir" \
     -e WONTON_DATA_DIR="$data_dir" -e WONTON_OWNER_NAME="$owner_name" -e TZ="$tz" \
     -e WONTON_MATRIX_SERVER_NAME="${WONTON_MATRIX_SERVER_NAME:-}" \
     -e WONTON_PLUGIN_NETWORK_POOL="$plugin_network_pool" \
     -e WONTON_RELAYS="$relays" \
-    "$pinned" init "$install_dir" "$domain" || die "设置不对：按上面的错误改了再执行一次"
+    "$pinned" init "$install_dir" "$domain" || init_failed
 
   settle_proxy
   setup_plugin_slice

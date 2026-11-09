@@ -33,7 +33,7 @@ pub struct Report {
     pub kept: Vec<PathBuf>,
 }
 
-/// `requested` 是安装时指定的 Matrix 服务器名（`WONTON_MATRIX_SERVER_NAME`），没指定时第一次安装随机生成一个。
+/// 写出已选定身份的配置；CLI 在调用前完成家名注册和证书准备，`None` 仅用于明确的私用模式。
 pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
     if let Some(name) = requested {
         validate_server_name(name)?;
@@ -62,18 +62,19 @@ pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
 
     let tuwunel = secrets.join("tuwunel.toml");
     let server_name = server_name(&secrets, &tuwunel, requested, &mut report)?;
-    tls_cert(&secrets, &server_name, &mut report)?;
+    if federation_config::is_private(&server_name) {
+        tls_cert(&secrets, &server_name, &mut report)?;
+    }
     write_private(
         &tuwunel,
-        &tuwunel_config(
-            &server_name,
-            &registration,
-            &public_key,
-            federation_config::PROXY_ADDR,
-        ),
+        &tuwunel_config(&server_name, &registration, &public_key),
     )?;
-    fed_files(dir, &mut report)?;
-    write_private(&dir.join("compose.yaml"), COMPOSE)?;
+    fed_files(dir, &server_name, &mut report)?;
+    let settings = crate::entry_settings::EntrySettings::load(dir)?;
+    write_private(
+        &dir.join("compose.yaml"),
+        &crate::entry_compose::render(COMPOSE, settings.as_ref(), dir)?,
+    )?;
     write_file(&dir.join("wonton"), CLI, 0o755)?;
     Ok(report)
 }
@@ -127,7 +128,7 @@ fn random_server_name() -> String {
 }
 
 /// 和核心的 `WONTON_BASE_DOMAIN` 一样的规则：小写字母、数字和连字符组成的点分标签。
-fn validate_server_name(name: &str) -> anyhow::Result<()> {
+pub(crate) fn validate_server_name(name: &str) -> anyhow::Result<()> {
     let valid = !name.is_empty()
         && name.split('.').all(|label| {
             !label.is_empty()
@@ -215,28 +216,26 @@ fn read_server_name(path: &Path) -> anyhow::Result<Option<String>> {
     }))
 }
 
-/// 选项和 `deploy/dev/matrix/tuwunel.toml` 一致，说明见 Tuwunel 仓库的 tuwunel-example.toml。
-/// 联邦的取舍（ADR-0050）：名单制，只和配对过的服务器说话；TLS 自签且出站不校验，对端认证靠
-/// X-Matrix 签名和隧道的 endpoint ID；`dual_protocol` 让 8008 上的明文客户端接口照旧，网关不用改。
-/// 联邦出站经 `federation_proxy`（`主机:端口`）上核心的 CONNECT 代理。
-fn tuwunel_config(
-    server_name: &str,
-    registration_secret: &str,
-    public_key: &str,
-    federation_proxy: &str,
-) -> String {
+/// 证书校验按安装时定下的模式选择；配对目标和黑名单在第二份配置里热加载。
+fn tuwunel_config(server_name: &str, registration_secret: &str, public_key: &str) -> String {
+    let private = federation_config::is_private(server_name);
+    let ports = if private { "[8008, 8448]" } else { "8008" };
+    let tls = if private {
+        "\n[global.tls]\ncerts = \"/etc/tuwunel/tuwunel-tls.crt\"\nkey = \"/etc/tuwunel/tuwunel-tls.key\"\ndual_protocol = true\n"
+    } else {
+        ""
+    };
     format!(
         r#"# 由 wonton-core init 生成，升级时按新版本重写；改了会被覆盖。
 [global]
 server_name = "{server_name}"
 database_path = "/var/lib/tuwunel"
 address = "0.0.0.0"
-# 8008 明文给核心网关（客户端接口），8448 是联邦端口，只在内部网络上（ADR-0050）。
-port = [8008, 8448]
-# 联邦只对配对过的服务器开：名单在 fed/config.toml，核心改它并热加载（ADR-0050）。
+# 有名字时 TLS 在隔离入口容器里终止；私用模式保留内部 8448。
+port = {ports}
 allow_federation = true
 trusted_servers = []
-# 默认值含 10/8、127/8，会拦掉直连内部网络上的服务；联邦的目的地由名单和核心的代理收紧。
+# 配对代理是内部地址；公开直连的目的地仍由 Matrix 认证。
 ip_range_denylist = []
 # 账号只由核心签发：设备和 Bot 用 JWT 登录，首次登录自动建号。不开放注册，也不接受密码登录。
 allow_registration = false
@@ -244,8 +243,8 @@ login_with_password = false
 new_user_displayname_suffix = ""
 # 核心用它注册自己的管理账号（Synapse 兼容的管理接口）。
 registration_shared_secret = "{registration_secret}"
-# 对端证书是自签的（服务器名是内部域名，拿不到公共证书），出站不校验；对端认证落在 X-Matrix 签名上。
-allow_invalid_tls_certificates = true
+# 私用名拿不到公共证书，仅封闭配对模式保留此例外（ADR-0051）。
+allow_invalid_tls_certificates = {private}
 
 [global.jwt]
 enable = true
@@ -258,22 +257,7 @@ audience = ["tuwunel"]
 key = """
 {public_key}"""
 
-[global.tls]
-# 自签证书，进站的联邦 TLS 在这里终结（经隧道的字节原样接到这个端口）。容器里的路径：compose 把
-# secrets/tuwunel-tls.* 挂到这里。
-certs = "/etc/tuwunel/tls.crt"
-key = "/etc/tuwunel/tls.key"
-# 明文的客户端接口和 TLS 并存在同一个监听上，网关照旧用 http。
-dual_protocol = true
-
-# 出站都经核心的 CONNECT 代理（ADR-0050）：服务器名不查 DNS、不写 hosts，代理按配对名单经隧道转给对方，
-# 别的目的地它一律拒绝。include 为空表示所有域名（服务器名可以是安装时指定的任意名字）；推送
-# （push.wonton.internal）直连核心在 core 网络上的专用监听，不经联邦代理。
-[global.proxy]
-[[global.proxy.by_domain]]
-url = "http://{federation_proxy}"
-include = []
-exclude = ["push.wonton.internal"]
+{tls}
 "#
     )
 }
@@ -299,7 +283,7 @@ fn tls_cert(secrets: &Path, server_name: &str, report: &mut Report) -> anyhow::R
 /// 联邦名单的初值（`fed/config.toml`，ADR-0050）。只在还没有时创建：第一次 `docker compose up` 把它挂进
 /// Tuwunel 需要文件已经存在，之后的内容由核心运行时原地重写（不换 inode——单文件绑定挂载钉住的是挂载时的
 /// inode，换了名字容器读到的还是旧文件）。
-fn fed_files(dir: &Path, report: &mut Report) -> anyhow::Result<()> {
+fn fed_files(dir: &Path, server_name: &str, report: &mut Report) -> anyhow::Result<()> {
     let fed = dir.join("fed");
     fs::create_dir_all(&fed).with_context(|| format!("建立 {}", fed.display()))?;
     let path = fed.join("config.toml");
@@ -309,14 +293,14 @@ fn fed_files(dir: &Path, report: &mut Report) -> anyhow::Result<()> {
     }
     write_file(
         &path,
-        &federation_config::allowlist_toml(&BTreeSet::new()),
+        &federation_config::config_toml(server_name, &BTreeSet::new(), &BTreeSet::new()),
         0o644,
     )?;
     report.created.push(path);
     Ok(())
 }
 
-fn write_private(path: &Path, text: &str) -> anyhow::Result<()> {
+pub(crate) fn write_private(path: &Path, text: &str) -> anyhow::Result<()> {
     write_file(path, text, 0o600)
 }
 
@@ -350,8 +334,12 @@ mod tests {
     #[test]
     fn init_creates_secrets_once_and_keeps_them_on_rerun() {
         let dir = tempfile::tempdir().unwrap();
-        let first = init(dir.path(), Some("home.example")).unwrap();
-        assert_eq!(first.created.len(), 7, "{first:?}");
+        let first = init(dir.path(), Some("home.wonton.internal")).unwrap();
+        assert!(
+            first
+                .created
+                .contains(&dir.path().join("secrets/matrix-jwt.pem"))
+        );
         let key = fs::read_to_string(dir.path().join("secrets/matrix-jwt.pem")).unwrap();
         let config = fs::read_to_string(dir.path().join("secrets/tuwunel.toml")).unwrap();
         let mode = |path: &str| {
@@ -380,7 +368,7 @@ mod tests {
             config
         );
         assert!(
-            init(dir.path(), Some("home.example")).is_ok(),
+            init(dir.path(), Some("home.wonton.internal")).is_ok(),
             "重装不换证书和名单文件"
         );
         assert!(

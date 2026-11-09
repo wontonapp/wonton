@@ -12,8 +12,8 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 添加任意一家模型服务商的 key，Hermes 就能回答；没添加时它会提示去添加（ADR-0008）。主人卸掉 Hermes 后，核心不会
 再自动装它。
 
-- `install.sh`：检查系统和 Docker，拉核心镜像，在镜像里执行 `wonton-core init` 生成密钥和配置，写 `.env`，
-  用镜像里的 compose 执行 `up`，等到都健康。可调的环境变量写在脚本开头。
+- `install.sh`：检查系统和 Docker，拉核心镜像，在镜像里执行 `wonton-core init` 注册服务器名、准备证书、生成密钥和配置，写 `.env`，
+  最后用镜像里的 compose 启动 Tuwunel 等服务，等到都健康。可调的环境变量写在脚本开头和下面。
 - `compose.yaml`、`wonton`：编进核心的二进制，由 `wonton-core init` 写到安装目录，跟着核心镜像的版本走。
   `wonton` 是主机上的命令，转到核心容器里的 `wonton-core pair`。
 
@@ -23,6 +23,66 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 Tuwunel 经 `core` 网络直连核心的推送专用监听，不用发布额外端口；网络、地址和配置约定见
 [ADR-0003 的“接口：推送”](../../docs/adr/0003-matrix-and-encrypted-push.md#接口推送m0-3)。
 
+## 服务器名和证书
+
+第一次安装默认用家名服务送的名字（`WONTON_MATRIX_NAME_MODE=given`，可省略）。没有家名服务时，换一种装法（一条比一条命令，加在原来的安装命令上）：
+
+```sh
+# 不要名字：以后不能改；要和外面的 Matrix 互通得清空聊天数据重装
+curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_NAME_MODE=none sh
+# 用自己的域名：证书按下表准备
+curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_SERVER_NAME=chat.example.com sh
+```
+
+先配置服务、邀请码和证书输入，
+`init` 完成注册和证书准备后才启动 Tuwunel；缺配置、注册或签证书失败就停止。家名服务没有内置的公共默认地址，ACME 也没有默认 CA。
+开发只用[本地 entry-cloud](../dev/entry-cloud/) 的 Pebble、DNS 和 `.test` 名字，并显式信任测试 CA。
+
+| 输入 | 用途 |
+| --- | --- |
+| `WONTON_CLIENT_SERVICE` | 家名服务的 HTTPS 地址；默认送名字时必填 |
+| `WONTON_CLIENT_INVITE_FILE` | 存放邀请码的文件，读取后去掉首尾空白；不把邀请码本身放进环境变量或命令行 |
+| `WONTON_CLIENT_CA_FILE` | 家名服务的 PEM CA 文件；使用测试或私有 CA 时提供，未给时用系统信任 |
+| `WONTON_FRP_CA_FILE` | frps 的 PEM CA 文件；送名字时必填，用于校验连接器到中继的 TLS 证书 |
+| `WONTON_ACME_DIRECTORY` | 显式指定 ACME directory 的 HTTPS URL；使用 ACME 签证书时必填 |
+| `WONTON_ACME_ACCEPT_TERMS=true` | 运营者明确接受所选 CA 的条款后才设置；ACME 模式缺少此确认就停止 |
+| `WONTON_ACME_CA_FILE` | ACME 和 acme-dns 使用的 PEM CA 文件；测试 CA 显式传入，不关闭 TLS 验证 |
+| `WONTON_ACME_RESOLVERS` | 可选 DNS 解析器，逗号分隔，例如 `192.0.2.10:53`；用于挑战记录和 CAA 查询 |
+| `WONTON_ACME_EMAIL` | 可选 ACME 账号联系邮箱 |
+| `WONTON_ACME_NETWORK` | 已存在的 Docker 网络，默认 `bridge`；初始化和 lego 必须能经它访问家名服务、ACME、acme-dns 和所选 DNS |
+| `WONTON_ACME_DNS_PROVIDER`、`WONTON_ACME_DNS_ENV_FILE` | 自己的域名使用的 lego DNS provider 及其 dotenv 凭据文件，必须成对提供；送的名字使用注册结果中的 acme-dns 凭据，不混用自定义 provider |
+| `WONTON_ENTRY_CERTIFICATE=external` | 显式使用外部证书，跳过 ACME 签发和自动续期；安装前准备 `<安装目录>/entry/certs/site.pem` |
+
+所有 `*_FILE` 输入必须是宿主机的绝对路径。安装脚本把文件复制到 `<安装目录>/entry-input/<变量名>`，文件权限 0600、目录 0700，
+并在 `entry-input/init.env` 中传递复制后的路径。不要删除这些副本：保存的入口配置继续引用 CA 和 DNS 凭据文件，家名状态查询和续期仍要读取它们。
+
+高级选项在第一次安装时明确选择：
+
+- **自己的域名**：设 `WONTON_MATRIX_SERVER_NAME` 为自己的小写 DNS 名（可同时设 `WONTON_MATRIX_NAME_MODE=own`），不注册送的名字。
+  主人负责 DNS、对外入口和服务发现；证书用上表的自定义 DNS provider，或显式选择外部证书。自己的入口连接器默认发布在 `127.0.0.1:8443`，
+  由主人的公网转发接入；生成的 Compose 可用 `WONTON_ENTRY_BIND`、`WONTON_ENTRY_PORT` 配置绑定地址和端口。
+- **不要名字**：设 `WONTON_MATRIX_NAME_MODE=none`，不能同时设 `WONTON_MATRIX_SERVER_NAME`。生成随机的 `<24 位>.wonton.internal`，
+  只与同类已配对云吞通信。安装时会警告：以后不能改名，要接入 Matrix 生态必须清空聊天数据、所有人换新账号。
+
+送的名字和自己的域名都开放 Matrix 联邦，严格验证证书（`allow_invalid_tls_certificates = false`）。配对目的地走 iroh，其余由 Tuwunel 直接访问，
+没有配对时不配置全局代理。不要名字的模式保留 ADR-0050 的封闭联邦、自签证书和 TLS 例外，只能与同类通信，和有名字的服务器不通（ADR-0051）。
+三种选择都在首次安装时确定身份；重装、升级沿用 `secrets/matrix-server-name`，有名字时也复用 `entry/settings.json`，不重新注册，也不能借重跑安装改名。
+送的名字属于运营家名服务的一方；服务停止或名字停用会使外部服务器无法联系这台，账号不能搬到另一个名字上。
+
+### 证书文件和续期
+
+ACME 为服务器名本身、`*.<服务器名>` 和 `*.lan.<服务器名>` 签证书。`entry/certs/site.key` 是留在家里的私钥，lego 只收到
+`entry/requests/site.csr`；`entry/acme/` 保存 ACME 账号、DNS 凭据和签发结果，`entry/prepared.json` 记录账号与 provider 的绑定。
+送的名字会先把 ACME 账号 URI 绑定到家名服务的 CAA，并查询生效后才下单。备份时保留整个 `entry/` 和 `entry-input/`，不要单独删私钥或账号文件。
+
+核心启动时和此后每 24 小时使用 `entry/settings.json` 保存的 directory、条款确认、网络、CA、DNS 解析器及 provider/凭据输入调用证书流程，
+成功后原子发布 `entry/certs/site.pem`，给入口容器发 `SIGUSR2` 热加载。签发失败保留原证书并通知主人；热加载失败也单独通知。
+`init` 发现已有 `site.pem` 就沿用，重新执行安装不会重新选择证书配置。
+
+外部证书的 `site.pem` 必须包含证书链和对应的 PEM 私钥，覆盖入口所用的服务器名；Wonton 不替它续期。
+主人负责在到期前更新此文件，保持入口容器可读的所有者和权限，并执行
+`docker compose --project-directory /opt/wonton kill -s SIGUSR2 entry` 热加载（自定义安装目录时替换路径）。
+
 ## 装在哪
 
 | 路径 | 内容 |
@@ -30,8 +90,10 @@ Tuwunel 经 `core` 网络直连核心的推送专用监听，不用发布额外�
 | `/opt/wonton/compose.yaml`、`/opt/wonton/wonton` | 由当前的核心镜像写出，每次 `init` 重写 |
 | `/usr/local/bin/wonton` | 链接到 `/opt/wonton/wonton` |
 | `/opt/wonton/.env` | 核心镜像的来源（`WONTON_CORE_SOURCE`）和按 digest 写下的镜像（`WONTON_CORE_IMAGE`）、端口、基础域名、用户名、时区、数据目录，由 `install.sh` 写 |
-| `/opt/wonton/secrets/` | Matrix 签发私钥、Matrix 服务器名（`matrix-server-name`）、Tuwunel 配置（含公钥和注册共享密钥）、联邦的自签证书、Hydra 的系统密钥；0700 |
-| `/opt/wonton/fed/` | 联邦名单（`config.toml`）：由核心生成初值、运行时原地重写（ADR-0050）；Tuwunel 只读挂载 |
+| `/opt/wonton/secrets/` | Matrix 签发私钥、Matrix 服务器名（`matrix-server-name`）、Tuwunel 配置（含公钥和注册共享密钥）、不要名字模式的自签证书、Hydra 的系统密钥；0700 |
+| `/opt/wonton/entry-input/` | 安装输入文件的私有副本与 `init.env`，CA 和 DNS 凭据文件供状态查询、续期复用 |
+| `/opt/wonton/entry/` | `settings.json`（名字、注册凭据、证书设置）、入口和连接器配置、`certs/site.pem` 与 `site.key`、ACME 状态；含私钥，不对外分享 |
+| `/opt/wonton/fed/` | 联邦配置（`config.toml`）：配对目的地、代理范围和黑名单由核心生成并原地热更新（ADR-0050、ADR-0051）；Tuwunel 只读挂载 |
 | `/etc/systemd/system/wonton_plugins.slice` | systemd + cgroup v2 主机上由安装脚本生成的插件总量限制；删除时先删 `.env` 里的 `WONTON_PLUGIN_SLICE` 行，再删这个文件并执行 `systemctl daemon-reload` |
 | `/var/lib/wonton/`（`WONTON_DATA_DIR`） | 核心和插件的数据，容器内外路径相同 |
 | Docker 卷 `wonton_hydra`、`wonton_tuwunel` | Hydra 的 SQLite、Tuwunel 的数据库 |

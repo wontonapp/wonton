@@ -31,6 +31,7 @@ mod confirmations;
 mod core_routes;
 mod core_upgrade;
 mod devices;
+mod entry;
 pub mod family;
 mod files;
 mod health;
@@ -55,10 +56,12 @@ mod proxy;
 mod proxy_sso;
 mod push;
 mod pushers;
+mod redirect;
 mod registry_mirror;
 mod room_rules;
 pub(crate) mod send_limits;
 
+pub use entry::router as entry_router;
 pub use push::router as push_router;
 pub use send_limits::{SendLimiter, SendLimits};
 mod session;
@@ -73,7 +76,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::{ConnectInfo, Request};
 use axum::response::{IntoResponse, Redirect, Response};
-use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, HOST, SET_COOKIE};
+use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, HOST};
 use hyper::{HeaderMap, Method, StatusCode};
 use iroh::EndpointId;
 use tower::ServiceExt;
@@ -95,6 +98,7 @@ use crate::plugin::PluginManager;
 use crate::push::Push;
 use crate::secret::constant_time_eq;
 use crate::tunnel::Tunnel;
+use redirect::{same_origin_path, with_cookie};
 
 pub use pages::ERROR_HEADER;
 pub use session::{APP_COOKIE, CORE_COOKIE};
@@ -696,22 +700,6 @@ fn unauthenticated(gateway: &Gateway, host: &str, req: &Request, credentials: bo
         format,
     )
 }
-
-/// 把跳转目标相对 `origin` 解析，只接受同源结果，返回站内路径（含查询）。浏览器会把 http(s)
-/// 地址里的 `\` 当成 `/`，只拒绝 `//` 开头不够（`/\evil.example` 会跳到 `http://evil.example`）。
-fn same_origin_path(origin: &str, target: &str) -> Option<String> {
-    let base = url::Url::parse(origin).ok()?;
-    let joined = base.join(target).ok()?;
-    (joined.origin() == base.origin()).then(|| joined[url::Position::BeforePath..].to_owned())
-}
-
-fn with_cookie(mut response: Response, cookie: String) -> Response {
-    if let Ok(value) = cookie.parse() {
-        response.headers_mut().append(SET_COOKIE, value);
-    }
-    response
-}
-
 #[cfg(test)]
 mod bot_activity_tests;
 #[cfg(test)]

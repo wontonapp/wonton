@@ -213,6 +213,22 @@ impl Engine {
         Ok(Self::new(docker))
     }
 
+    /// 不连守护进程的客户端，给从来不碰 Docker 的测试用：bollard 只检查路径存在，
+    /// 建一个空的 socket 文件就够，没有 Docker 的机器上也建得出来。
+    #[cfg(test)]
+    pub(crate) fn for_test() -> Self {
+        let path = std::env::temp_dir().join(format!("wonton-test-{}.sock", std::process::id()));
+        std::fs::write(&path, b"").expect("写测试 socket 占位文件");
+        Self::new(
+            Docker::connect_with_unix(
+                &format!("unix://{}", path.display()),
+                120,
+                bollard::API_DEFAULT_VERSION,
+            )
+            .expect("构造 Docker 客户端"),
+        )
+    }
+
     fn new(docker: Docker) -> Self {
         Self {
             docker,

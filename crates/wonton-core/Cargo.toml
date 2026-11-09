@@ -18,6 +18,8 @@ base64 = { workspace = true }
 bollard = { workspace = true }
 futures-util = "0.3.34"
 getrandom = { workspace = true }
+# MIT OR Apache-2.0。签证书前查询权威 DNS 的 CAA，不自写 DNS 协议。
+hickory-resolver = { version = "0.26.3", default-features = false, features = ["tokio", "system-config"] }
 # MIT OR Apache-2.0。状态页和终端上的配对二维码。
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 # MIT OR Apache-2.0。给 Tuwunel 生成联邦用的自签证书（ADR-0050）；后端用核心已有的 aws-lc-rs，不引入 ring。
@@ -56,6 +58,8 @@ jsonwebtoken = { workspace = true }
 wonton-l10n = { path = "../wonton-l10n" }
 # MIT OR Apache-2.0。解码共享文件夹引用的路径，编码下载的文件名。
 percent-encoding = "2.3.2"
+# MIT OR Apache-2.0。从 SSL_CERT_FILE 读自签/测试 CA 给 iroh 中继校验用。
+rustls-pki-types = "1"
 # MIT OR Apache-2.0。推送代理按 Web Push 发推送：推送地址来自设备，可能是 https（rustls，根证书用系统的）。
 reqwest = { workspace = true, features = ["rustls", "socks"] }
 # MIT。Matrix 用户 ID 的规范解析，复用 matrix-sdk 已用的版本。
@@ -119,3 +123,8 @@ iroh = { workspace = true, features = ["test-utils"] }
 # Apache-2.0 OR MIT。名单测试按 Tuwunel 的语义（RegexSet）编译生成的正则。
 regex = "1.13.1"
 tempfile = { workspace = true }
+# MIT OR Apache-2.0。按 TOML 语义验证 Tuwunel 的联邦配置。
+toml = "1.1"
+
+[lints]
+workspace = true

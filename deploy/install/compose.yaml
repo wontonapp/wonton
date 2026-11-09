@@ -203,20 +203,18 @@ services:
     restart: unless-stopped
     # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
     stop_grace_period: 5m
-    # 两份配置（ADR-0050）：第一份是安装时的主体配置，第二份只有联邦名单，由核心重写并热加载。
-    command: ["-c", "/etc/tuwunel/tuwunel.toml", "-c", "/etc/tuwunel/fed.toml"]
+    # 配对代理范围与黑名单在第二份配置一起热加载（ADR-0051）；私用名另有允许名单。
+    # 放在 /etc 下而不是 /etc/tuwunel 里：后者整体是只读挂载，Docker 在里面建不出挂载点。
+    command: ["-c", "/etc/tuwunel/tuwunel.toml", "-c", "/etc/wonton-fed.toml"]
     environment:
       <<: *no-proxy
       # 配置和 JWT 公钥都在文件里：轮换签发密钥时核心改写它、发 SIGUSR1 热加载（ADR-0009）。
       TUWUNEL_CONFIG: /etc/tuwunel/tuwunel.toml
     volumes:
       - tuwunel:/var/lib/tuwunel
-      - ${WONTON_INSTALL_DIR}/secrets/tuwunel.toml:/etc/tuwunel/tuwunel.toml:ro
-      - ${WONTON_INSTALL_DIR}/fed/config.toml:/etc/tuwunel/fed.toml:ro
-      # 联邦进站的自签证书，tuwunel.toml 按这两个容器里的路径读。
-      - ${WONTON_INSTALL_DIR}/secrets/tuwunel-tls.crt:/etc/tuwunel/tls.crt:ro
-      - ${WONTON_INSTALL_DIR}/secrets/tuwunel-tls.key:/etc/tuwunel/tls.key:ro
-    # 只在核心的私有网络里，App 和 Bot 都经核心网关访问它（ADR-0009）；8448 不映射到主机，联邦只经隧道进出。
+      - ${WONTON_INSTALL_DIR}/secrets:/etc/tuwunel:ro
+      - ${WONTON_INSTALL_DIR}/fed/config.toml:/etc/wonton-fed.toml:ro
+    # 不发布任何端口；公网联邦经过隔离入口容器和核心的专用监听。
     networks:
       core:
         aliases: [tuwunel.wonton.internal]

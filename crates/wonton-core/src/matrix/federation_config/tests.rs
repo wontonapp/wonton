@@ -307,11 +307,11 @@ impl Cluster {
         let fed_path = match fed {
             Some(fed) => {
                 let path = dir.path().join(fed);
-                let mount = format!("{}:/etc/tuwunel/fed.toml:ro", path.display());
+                let mount = format!("{}:/etc/wonton-fed.toml:ro", path.display());
                 docker_args.push("--volume".to_owned());
                 docker_args.push(mount);
                 command_args.push("-c".to_owned());
-                command_args.push("/etc/tuwunel/fed.toml".to_owned());
+                command_args.push("/etc/wonton-fed.toml".to_owned());
                 Some(path)
             }
             None => None,

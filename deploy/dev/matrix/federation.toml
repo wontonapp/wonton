@@ -14,6 +14,8 @@ trusted_servers = []
 ip_range_denylist = []
 
 # 联邦对端证书是自签的（服务器名拿不到公共证书），出站不校验；对端认证落在 X-Matrix 签名上。
+# 这个栈等同不受信任名的私用模式（ADR-0051）：正式安装里有名字的服务器用有效证书并关掉这一项，
+# 只有显式不要名字的服务器才保留自签证书和这个例外。
 allow_invalid_tls_certificates = true
 
 [global.tls]

@@ -22,14 +22,14 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use hyper::Method;
-use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 use wonton_core::config::Config;
+mod serve;
 use wonton_core::device::Devices;
 use wonton_core::files::{CoreHost, Files, FilesConfig};
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
-use wonton_core::matrix::{FederationConfig, Matrix, NoticeRoom};
+use wonton_core::matrix::{FederationBlocks, FederationConfig, Matrix, NoticeRoom};
 use wonton_core::mcp;
 use wonton_core::mcp::audit::Audit;
 use wonton_core::members::Members;
@@ -147,6 +147,7 @@ fn extra_protocols(
 }
 
 mod federation_addrs;
+mod init_command;
 mod pair_command;
 mod plugin_command;
 mod push_listener;
@@ -186,7 +187,10 @@ async fn run() -> ExitCode {
         None | Some("serve") => serve().await,
         Some("healthcheck") => healthcheck().await,
         Some("pair") => pair_command::run(std::env::args().skip(2).collect()).await,
-        Some("init") => init(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("init") => init_command::init(&std::env::args().skip(2).collect::<Vec<_>>()).await,
+        Some("federation-block") => {
+            init_command::federation_block(&std::env::args().skip(2).collect::<Vec<_>>())
+        }
         Some("updater") => run_updater(&std::env::args().skip(2).collect::<Vec<_>>()).await,
         Some(wonton_core::plugin::network_pool_command::COMMAND) => {
             wonton_core::plugin::network_pool_command::run().await
@@ -239,17 +243,27 @@ fn spawn_federation_config(
     cfg: &Config,
     peers: &Option<Arc<peers::Peers>>,
     notices: &Option<Arc<NoticeRoom>>,
-) {
+) -> anyhow::Result<()> {
     let Some(names) = peers.as_ref().map(|peers| peers.paired_names()) else {
-        return;
+        return Ok(());
     };
+    let blocks = Arc::new(FederationBlocks::open(
+        cfg.core_state_dir().join("federation-blocks.json"),
+    )?);
     FederationConfig::spawn(
         engine.clone(),
         cfg.install_dir.clone(),
         cfg.core_container.clone(),
         notices.clone(),
         names,
+        cfg.matrix
+            .as_ref()
+            .expect("peers requires Matrix")
+            .server_name
+            .clone(),
+        blocks,
     );
+    Ok(())
 }
 
 /// 主人令牌：第一次启动生成一个，之后原样读。
@@ -259,6 +273,15 @@ fn owner_token(cfg: &Config) -> anyhow::Result<String> {
         .with_context(|| format!("读取主人令牌 {}", path.display()))?;
     tracing::info!(path = %path.display(), "主人令牌已就绪");
     Ok(token)
+}
+
+/// 网关监听先建好再装配：核对插件时的一次性服务要连核心，连接先在内核队列等着。
+async fn open_listener(
+    listen: std::net::SocketAddr,
+) -> anyhow::Result<wonton_core::entry_runtime::MainListener> {
+    wonton_core::entry_runtime::MainListener::bind(listen)
+        .await
+        .with_context(|| format!("监听 {listen}"))
 }
 
 async fn serve() -> anyhow::Result<()> {
@@ -272,12 +295,8 @@ async fn serve() -> anyhow::Result<()> {
     tracing::info!(version = %docker.version, arch = %docker.arch, "Docker 已连接");
 
     let owner_token = owner_token(&cfg)?;
-    // 监听先建起来：核心启动时核对插件，渲染变了会重建容器，里面的一次性服务（比如登记 OIDC 源）要经核心
-    // 的地址访问核心。网关这时还没开始接，连接先进内核的队列等着。
-    let listener = TcpListener::bind(cfg.listen)
-        .await
-        .with_context(|| format!("监听 {}", cfg.listen))?;
-
+    // 监听先建起来：核对插件时的一次性服务要经核心的地址访问核心，网关还没接，连接先在内核队列等着。
+    let listener = open_listener(cfg.listen).await?;
     let upgrades = open_upgrades(&cfg, &engine);
     let http = HttpClient::new();
     let system_http =
@@ -324,7 +343,16 @@ async fn serve() -> anyhow::Result<()> {
     let (peers, federation, _forwarder) =
         open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
-    spawn_federation_config(&engine, &cfg, &peers, &notices);
+    spawn_federation_config(&engine, &cfg, &peers, &notices)?;
+    if let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) {
+        wonton_core::entry_runtime::spawn(
+            dir,
+            &cfg.data_dir,
+            engine.clone(),
+            container.clone(),
+            notices.clone(),
+        )?;
+    }
     let push = open_push(&cfg, &tunnel, &manager)?;
     let upgrades_after_serve = upgrades.clone();
     let gateway = Arc::new(
@@ -350,37 +378,19 @@ async fn serve() -> anyhow::Result<()> {
         .with_upgrades(Some(upgrades))
         .with_peers(peers.clone()),
     );
-    let push_listener = push_listener::bind(cfg.push_listen.as_deref()).await?;
-    let app = gateway::router(gateway.clone());
-    let entry =
-        TunnelEntry::spawn_with_protocols(&tunnel, app.clone(), extra_protocols(peers, federation));
-    tracing::info!(
-        listen = %cfg.listen,
-        url = %cfg.public.origin(cfg.public.core_host()),
-        "网关已启动"
-    );
-    let served = tokio::spawn(push_listener::serve(
+    serve::serve_listeners(
+        &cfg,
         listener,
-        app,
-        push_listener.map(|listener| (listener, gateway::push_router(gateway))),
-    ));
-    // 网关开始接了才核对插件：核对时渲染变了会重建容器，里面的一次性服务要经核心的地址访问核心。
-    start_restored_plugins(&cfg, &manager, upgrades_after_serve).await?;
-    // 隧道跟网关同生命周期：网关结束（收到退出信号）后才关。放在核对之后、网关结束之前关，
-    // 核心一启动完隧道就没了，手机配不上也连不回家。
-    let served = served.await.context("网关任务退出");
-    entry.shutdown().await;
-    served?
+        gateway,
+        tunnel,
+        (peers, federation),
+        (manager, upgrades_after_serve),
+    )
+    .await
 }
 
-fn spawn_plugin_monitors(manager: &Arc<PluginManager>) {
-    manager.spawn_lan_monitor();
-    manager.spawn_egress_monitor();
-    manager.spawn_upgrade_checks();
-    manager.spawn_oom_watch();
-    manager.spawn_container_watch();
-}
-
+/// 三个监听一起跑：公开网关、Tuwunel 的推送入口，以及只有入口容器能进的联邦入口。
+#[allow(clippy::too_many_arguments)]
 fn lifecycle_config(cfg: &Config, owner: Arc<OwnerStore>) -> LifecycleConfig {
     LifecycleConfig {
         public: cfg.public.clone(),
@@ -650,7 +660,7 @@ async fn start_restored_plugins(
     upgrades: Arc<Upgrades>,
 ) -> anyhow::Result<()> {
     manager.restore().await.context("恢复已安装的插件")?;
-    spawn_plugin_monitors(manager);
+    serve::spawn_plugin_monitors(manager);
     upgrades.spawn();
     preinstall(cfg, manager.clone(), upgrades)?;
     Ok(())
@@ -765,24 +775,4 @@ async fn manual_rollback(args: &[String]) -> anyhow::Result<()> {
         }),
     );
     rollback.run(&host).await
-}
-
-/// 第二个参数是基础域名：旧版本的升级器照这个格式调新镜像的 `init`，所以留着，`init` 不再用它。Matrix 服务器名只在
-/// 第一次安装时由 `WONTON_MATRIX_SERVER_NAME` 指定。
-fn init(args: &[String]) -> anyhow::Result<()> {
-    let [dir, _base_domain] = args else {
-        bail!("用法：wonton-core init <安装目录> <基础域名>");
-    };
-    check_owner_before_install()?;
-    let requested = std::env::var("WONTON_MATRIX_SERVER_NAME")
-        .ok()
-        .filter(|v| !v.is_empty());
-    let report = wonton_core::install::init(std::path::Path::new(dir), requested.as_deref())?;
-    for path in &report.created {
-        println!("已生成 {}", path.display());
-    }
-    for path in &report.kept {
-        println!("沿用 {}", path.display());
-    }
-    Ok(())
 }
