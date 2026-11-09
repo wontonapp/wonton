@@ -18,6 +18,7 @@ pub mod bot_media;
 pub mod config;
 pub mod device;
 pub mod files;
+pub mod friends;
 pub mod gateway;
 pub mod help;
 pub mod http;

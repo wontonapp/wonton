@@ -8177,6 +8177,7 @@ dependencies = [
  "reqwest",
  "resvg",
  "rmcp",
+ "ruma-common",
  "rustix",
  "rustls",
  "rustls-platform-verifier",
