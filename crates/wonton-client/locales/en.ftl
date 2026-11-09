@@ -337,7 +337,7 @@ tabs-config-too-many-items = { $count ->
 }
 tabs-config-duplicate-page = The Navigation bar has duplicate pages.
 tabs-config-plugin-page-incomplete = An app page is missing its title and icon.
-tabs-config-missing-fixed = The Navigation bar is missing Chat or Apps.
+tabs-config-missing-fixed = The Navigation bar is missing Chat.
 # $path is the settings file's path, $reason is the original I/O error.
 tabs-config-write-failed = Can't write the Navigation bar settings file { $path }: { $reason }
 
@@ -609,3 +609,4 @@ chat-window-ended =
 home-pairing-timeout = Pairing did not finish within { $seconds } seconds.
 home-pairing-aborted = Pairing stopped before it finished. Try again.
 home-pairing-failed-detail = Direct addresses: { $addresses }. Relays: [{ $relays }]. Elapsed: { $milliseconds } ms; time limit: { $seconds } seconds. Reason: { $error }
+plugin-now-start-failed = Could not start the update: { $error }

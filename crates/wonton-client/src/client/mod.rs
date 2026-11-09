@@ -642,6 +642,13 @@ impl ClientCore {
             }
             Action::InstallPlugin { preview, secrets } => scope.plugins.install(preview, secrets),
             Action::UpgradePlugin { preview, secrets } => scope.plugins.upgrade(preview, secrets),
+            Action::InstallNow { source } => scope.plugins.install_now(source),
+            Action::UpgradeNow { plugin_id } => scope.plugins.upgrade_now(plugin_id),
+            Action::UpgradeAll => scope.plugins.upgrade_all(),
+            Action::DismissStoreConfirmation => {
+                scope.plugins.dismiss_confirmation();
+                Ok(())
+            }
             Action::UninstallPlugin { id, delete_data } => scope.plugins.uninstall(id, delete_data),
             Action::DismissPluginTask { id } => scope.plugins.dismiss_task(&id),
             Action::StartTakeover { id } => {

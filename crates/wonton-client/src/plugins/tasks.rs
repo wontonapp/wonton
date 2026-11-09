@@ -41,6 +41,7 @@ impl PluginsLink {
         secrets: SecretValues,
     ) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
+        self.resolve_confirmation(&preview);
         self.remember_preview(&preview);
         let lan_webui = lan_webui_chosen(&preview);
         let enabled_permissions = enabled_permissions(&preview);
@@ -108,6 +109,7 @@ impl PluginsLink {
         secrets: SecretValues,
     ) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
+        self.resolve_confirmation(&preview);
         self.remember_preview(&preview);
         let lan_webui = lan_webui_chosen(&preview);
         self.begin_task(
@@ -258,6 +260,7 @@ impl PluginsLink {
         });
         if outcome.is_ok() {
             self.start_polling();
+            self.refresh_derived();
         }
         outcome
     }
@@ -285,6 +288,7 @@ impl PluginsLink {
                 task.state = state;
             }
         });
+        self.refresh_derived();
     }
 
     /// 升级已经成功了，响应读不出来不算失败：核心比 App 新时形状可以变，这时不显示新增的工具。
