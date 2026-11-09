@@ -673,6 +673,10 @@
     <string name="message_clip_label">メッセージ</string>
     <!-- Item in the message menu: copy the message text. Android only. -->
     <string name="message_copy">コピー</string>
+    <!-- Accessibility label of the copy button on a code block in a message. -->
+    <string name="message_code_copy">コードをコピー</string>
+    <!-- Accessibility label of that copy button right after the code was copied. -->
+    <string name="message_code_copied">コピーしました</string>
     <!-- Item in the message menu: remove the message for everyone in the chat. Android only. -->
     <string name="message_delete_everyone">全員のメッセージを削除</string>
     <!-- Confirm button in the dialog that removes a message for everyone. Android only. -->
