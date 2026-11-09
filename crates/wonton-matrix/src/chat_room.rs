@@ -99,7 +99,7 @@ pub struct MissedEvent {
 
 /// 一个已打开的房间。
 pub struct ChatRoom {
-    room: Room,
+    pub(crate) room: Room,
     /// 时间线。事件缓存被清空重来时要换一条，房间对象本身不换（发消息、翻页都还走它）。
     timeline: tokio::sync::RwLock<Arc<Timeline>>,
     /// 缓存里有、时间线里一直没有的事件第一次被看到缺席的时间。

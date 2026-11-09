@@ -30,6 +30,7 @@ mod subscriptions;
 pub(crate) mod support;
 mod sync_order;
 mod timeline;
+mod timeline_position;
 mod upload_progress;
 mod verification;
 

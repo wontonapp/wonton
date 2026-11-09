@@ -4,11 +4,13 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use tokio::runtime::Handle;
-use tokio::sync::{Mutex, mpsc, watch};
+use tokio::sync::{Mutex, broadcast, mpsc, watch};
 use wonton_matrix::{
-    BackPaginationStatus, ChatRoom, MissedEvent, TimelineEntry, Vector, VectorDiff,
+    BackPaginationStatus, ChatRoom, EntryKind, MissedEvent, TimelineEntry, Vector, VectorDiff,
 };
-use wonton_protocol::{BackPagination, TimelineDiff, TimelineUpdate};
+use wonton_protocol::{
+    BackPagination, TimelineDiff, TimelineScroll, TimelineUpdate, TimelineViewport,
+};
 
 use super::confirmation::{Cards, CardsView};
 use super::links::LinkTargets;
@@ -23,6 +25,7 @@ use super::view::{timeline_diff, timeline_item};
 pub struct TimelineSubscription {
     updates: Mutex<mpsc::UnboundedReceiver<TimelineUpdate>>,
     cancelled: watch::Sender<bool>,
+    scroll: watch::Sender<TimelineScroll>,
 }
 
 impl TimelineSubscription {
@@ -36,10 +39,11 @@ impl TimelineSubscription {
     ) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
+        let (scroll, mut scrolled) = watch::channel(TimelineScroll::Bottom);
         runtime.spawn(async move {
             let sender = Outbox::new(sender, menus);
             tokio::select! {
-                () = forward(&room, cards, &plugins, &sender) => {}
+                () = forward(&room, cards, &plugins, &sender, &mut scrolled) => {}
                 () = sender.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}
             }
@@ -47,6 +51,7 @@ impl TimelineSubscription {
         Arc::new(Self {
             updates: Mutex::new(receiver),
             cancelled,
+            scroll,
         })
     }
 }
@@ -65,13 +70,44 @@ impl TimelineSubscription {
         }
     }
 
+    /// 壳报告列表停在哪（[`Action::SetTimelineScroll`](wonton_protocol::Action::SetTimelineScroll)）。
+    /// 跨过底部时发一次，下一批更新里带重新算过的位置和新消息数。
+    pub fn set_scroll(&self, scroll: TimelineScroll) {
+        self.scroll.send_replace(scroll);
+    }
+
     /// 取消订阅，语义同 `HomeSubscription::cancel`（Swift 的 Task 取消不会传到 Rust）。
     pub fn cancel(&self) {
         self.cancelled.send_replace(true);
     }
 }
 
-/// 先发当前条目，再逐批转发增量；翻页状态变了也发一批（增量为空）。确认卡片的显示还取决于这台设备回答的进展和
+/// 每一批随增量带出去的外壳状态：翻页状态、壳报告的滚动位置、未读数。位置只在壳报告到底时变成
+/// [`TimelineScroll::Bottom`]，未读数从那一刻起不再算数（到底了就是 0）。
+struct View {
+    status: BackPagination,
+    scroll: TimelineScroll,
+    unread: u32,
+    /// 上一批送出去的未读数：同步之后未读数变了才补发一批，一样的数字不重复发。
+    sent_unread: u32,
+}
+
+impl View {
+    fn viewport(&self) -> TimelineViewport {
+        match self.scroll {
+            TimelineScroll::Bottom => TimelineViewport::Bottom,
+            TimelineScroll::Away => TimelineViewport::Away {
+                new_messages: self.unread,
+            },
+        }
+    }
+
+    fn refresh_unread(&mut self, room: &ChatRoom) {
+        self.unread = u32::try_from(room.unread_messages()).unwrap_or(u32::MAX);
+    }
+}
+
+/// 先发当前条目，再逐批转发增量；翻页状态、滚动位置变了也发一批（增量为空）。确认卡片的显示还取决于这台设备回答的进展和
 /// 现在的时间，它们变了时比较前后的显示，变了的卡片发 `Set`，所以这里留着一份 SDK 的条目。
 /// `select!` 分支的结果：这一批送出去没有，以及这一批里有没有清空。
 enum Batch {
@@ -80,7 +116,7 @@ enum Batch {
 
 /// 卡片显示变了就重发受影响的条目，没变就等下一轮。用在 [`forward`] 的选择分支里，展开成 `continue` 或一批。
 macro_rules! refreshed {
-    ($entries:ident, $shown:ident, $cards:ident, $read:ident, $plugins:ident, $sender:ident, $status:ident) => {
+    ($entries:ident, $shown:ident, $cards:ident, $read:ident, $plugins:ident, $sender:ident, $view:expr) => {
         match refreshed_batch(
             &$entries,
             &mut $shown,
@@ -88,7 +124,7 @@ macro_rules! refreshed {
             &$read,
             &links_of($plugins),
             $sender,
-            $status,
+            $view,
         ) {
             Some(batch) => batch,
             None => continue,
@@ -96,11 +132,13 @@ macro_rules! refreshed {
     };
 }
 
+#[allow(clippy::too_many_lines)] // 一个循环里就是这些分支，拆出去只是把 select 用到的状态搬来搬去。
 async fn forward(
     room: &Arc<ChatRoom>,
     mut cards: Cards,
     plugins: &crate::plugins::PluginsLink,
     sender: &Outbox,
+    scrolled: &mut watch::Receiver<TimelineScroll>,
 ) {
     let mut rebuilt_for: Option<wonton_matrix::OwnedEventId> = None;
     'outer: loop {
@@ -111,33 +149,44 @@ async fn forward(
         let mut shown = cards.view();
         let mut read = ReadMark::of(&entries);
         let mut statuses = std::pin::pin!(room.back_pagination_status().await);
-        let mut status = match statuses.next().await {
+        let status = match statuses.next().await {
             Some(status) => back_pagination(status),
             None => BackPagination::Idle,
         };
         let links = LinkTargets::of(&plugins.view());
-        let reset = TimelineDiff::Reset {
-            items: entries
-                .iter()
-                .map(|entry| timeline_item(entry.clone(), &shown, &read, &links))
-                .collect(),
-        };
-        if send(sender, vec![reset], status).is_err() {
+        let Some(mut view) =
+            start_batch(room, &entries, &shown, &read, &links, sender, status).await
+        else {
             return;
-        }
+        };
         fetches.request(room, &entries);
         let mut diffs = std::pin::pin!(diffs);
         // 插件装、卸以后，同一段文字里的插件网址类别会变，要重算。
         let mut plugin_changes = plugins.subscribe();
+        // 未读数在同步之后才重新数，比带消息的那一批晚；跟着房间信息重算，按钮上的数字才不会停在旧数上。
+        let mut room_info = room.subscribe_to_info_updates();
         // 丢事件的时候常常是“后面没有别的增量了”，光靠增量触发查不出来；每秒看一次缓存有没有漏就够。
         let mut check = tokio::time::interval(std::time::Duration::from_secs(1));
         check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
+            view.refresh_unread(room);
             let next_expiry = shown.next_expiry(&entries);
             let sent = tokio::select! {
                 batch = diffs.next() => {
                     let Some(batch) = batch else { return };
-                    apply(room, &mut entries, &mut shown, &cards, &mut read, plugins, sender, status, batch)
+                    apply(room, &mut entries, &mut shown, &cards, &mut read, plugins, sender, &mut view, batch)
+                }
+                update = room_info.recv() => {
+                    match update {
+                        Ok(update) if update.room_id.as_str() == room.room_id().as_str() => {}
+                        Ok(_) => continue,
+                        Err(broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(broadcast::error::RecvError::Closed) => return,
+                    }
+                    if view.scroll == TimelineScroll::Bottom || view.unread == view.sent_unread {
+                        continue;
+                    }
+                    Batch::Sent(send(sender, Vec::new(), &mut view, None), false)
                 }
                 _ = check.tick() => {
                     match room.missed_cached_event(rebuilt_for.as_deref()).await {
@@ -153,7 +202,7 @@ async fn forward(
                     if changed.is_err() {
                         return;
                     }
-                    let Some(batch) = relinked_batch(&entries, &cards, &read, plugins, sender, status) else {
+                    let Some(batch) = relinked_batch(&entries, &cards, &read, plugins, sender, &mut view) else {
                         continue;
                     };
                     batch
@@ -161,29 +210,74 @@ async fn forward(
                 next = statuses.next() => {
                     let Some(next) = next else { return };
                     let next = back_pagination(next);
-                    if next == status {
+                    if next == view.status {
                         continue;
                     }
-                    status = next;
-                    Batch::Sent(send(sender, Vec::new(), status), false)
+                    view.status = next;
+                    Batch::Sent(send(sender, Vec::new(), &mut view, None), false)
+                }
+                changed = scrolled.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    let next = *scrolled.borrow_and_update();
+                    if next == view.scroll {
+                        continue;
+                    }
+                    view.scroll = next;
+                    view.refresh_unread(room);
+                    Batch::Sent(send(sender, Vec::new(), &mut view, None), false)
                 }
                 changed = cards.changed() => {
                     if changed.is_err() {
                         return;
                     }
-                    refreshed!(entries, shown, cards, read, plugins, sender, status)
+                    refreshed!(entries, shown, cards, read, plugins, sender, &mut view)
                 }
                 () = tokio::time::sleep(next_expiry.unwrap_or_default()), if next_expiry.is_some() => {
-                    refreshed!(entries, shown, cards, read, plugins, sender, status)
+                    refreshed!(entries, shown, cards, read, plugins, sender, &mut view)
                 }
             };
-            match settle(sent, room, sender, status).await {
+            match settle(sent, room, sender, &mut view).await {
                 Next::End => return,
                 Next::Rebuild => continue 'outer,
                 Next::Continue => fetches.request(room, &entries),
             }
         }
     }
+}
+
+/// 首批：整条时间线发出去，并给出该停在哪。进房间停在已读位置，没有未读时到最新一条；壳把这个落点摆好之前
+/// 不报到底。送回失败时返回 `None`。
+async fn start_batch(
+    room: &ChatRoom,
+    entries: &Vector<TimelineEntry>,
+    shown: &CardsView,
+    read: &ReadMark,
+    links: &LinkTargets,
+    sender: &Outbox,
+    status: BackPagination,
+) -> Option<View> {
+    let mut view = View {
+        status,
+        scroll: TimelineScroll::Bottom,
+        unread: 0,
+        sent_unread: 0,
+    };
+    view.refresh_unread(room);
+    let position = read_index(room, entries).await;
+    let anchor = anchor_of(entries, view.unread, position);
+    if anchor.as_deref() != entries.last().map(|entry| entry.id.as_str()) {
+        view.scroll = TimelineScroll::Away;
+    }
+    let reset = TimelineDiff::Reset {
+        items: entries
+            .iter()
+            .map(|entry| timeline_item(entry.clone(), shown, read, links))
+            .collect(),
+    };
+    send(sender, vec![reset], &mut view, anchor).ok()?;
+    Some(view)
 }
 
 /// 插件表变了：整条时间线按现在的插件表重画一遍；没有条目时返回 `None`。
@@ -193,7 +287,7 @@ fn relinked_batch(
     read: &ReadMark,
     plugins: &crate::plugins::PluginsLink,
     sender: &Outbox,
-    status: BackPagination,
+    view: &mut View,
 ) -> Option<Batch> {
     let links = LinkTargets::of(&plugins.view());
     let shown = cards.view();
@@ -201,7 +295,7 @@ fn relinked_batch(
     if diffs.is_empty() {
         return None;
     }
-    Some(Batch::Sent(send(sender, diffs, status), false))
+    Some(Batch::Sent(send(sender, diffs, view, None), false))
 }
 
 /// 整条时间线按给定的插件表重画：链接的类别可能变。
@@ -231,7 +325,7 @@ fn apply(
     read: &mut ReadMark,
     plugins: &crate::plugins::PluginsLink,
     sender: &Outbox,
-    status: BackPagination,
+    view: &mut View,
     batch: Vec<VectorDiff<TimelineEntry>>,
 ) -> Batch {
     if batch.iter().any(|diff| matches!(diff, VectorDiff::Clear)) {
@@ -243,7 +337,7 @@ fn apply(
             read,
             &links_of(plugins),
             sender,
-            status,
+            view,
         );
     }
     let links = LinkTargets::of(&plugins.view());
@@ -254,7 +348,7 @@ fn apply(
     }
     out.extend(move_read_mark(entries, shown, read, &links));
     // 对账不放在每批之后：它会读一遍整个缓存，批多一点就把时间线的更新通道挤到跟不上（15 秒一次都嫌多）。
-    Batch::Sent(send(sender, out, status), false)
+    Batch::Sent(send(sender, out, view, None), false)
 }
 
 /// 一批送出后的下一步。
@@ -265,12 +359,12 @@ enum Next {
     Rebuild,
 }
 
-async fn settle(sent: Batch, room: &ChatRoom, sender: &Outbox, status: BackPagination) -> Next {
+async fn settle(sent: Batch, room: &ChatRoom, sender: &Outbox, view: &mut View) -> Next {
     match sent {
         Batch::Sent(Err(_), _) => Next::End,
         Batch::Sent(Ok(()), true) => {
             // 告诉壳从头来，换一条时间线，从缓存重新读。房间对象不换，壳因为这个清空往回翻页时还落在同一个房间上。
-            if send(sender, vec![TimelineDiff::Clear], status).is_err() {
+            if send(sender, vec![TimelineDiff::Clear], view, None).is_err() {
                 return Next::End;
             }
             if room.rebuild_timeline().await.is_err() {
@@ -293,15 +387,15 @@ fn clear_batch(
     read: &mut ReadMark,
     links: &LinkTargets,
     sender: &Outbox,
-    status: BackPagination,
+    view: &mut View,
 ) -> Batch {
     let replaced = reset_diffs(entries, &batch, shown, read, links);
     tracing::info!(room_id = %room.room_id(), reason = "sdk-clear", silent = replaced.is_some(), "timeline got a Clear");
     let Some(mut out) = replaced else {
-        return Batch::Sent(send(sender, vec![TimelineDiff::Clear], status), true);
+        return Batch::Sent(send(sender, vec![TimelineDiff::Clear], view, None), true);
     };
     out.extend(move_read_mark(entries, shown, read, links));
-    Batch::Sent(send(sender, out, status), false)
+    Batch::Sent(send(sender, out, view, None), false)
 }
 
 /// 把一次重置折成增删：返回 `Some` 时已经换上新的条目，`None` 表示这次重置动到了开头或丢了条目，要清空重建。
@@ -363,13 +457,13 @@ fn refreshed_batch(
     read: &ReadMark,
     links: &LinkTargets,
     sender: &Outbox,
-    status: BackPagination,
+    view: &mut View,
 ) -> Option<Batch> {
     let refreshed = refresh(entries, shown, cards, read, links);
     if refreshed.is_empty() {
         return None;
     }
-    Some(Batch::Sent(send(sender, refreshed, status), false))
+    Some(Batch::Sent(send(sender, refreshed, view, None), false))
 }
 
 /// 记下这次重建时间线的原因，失败时能从日志看出是哪条路。
@@ -445,9 +539,46 @@ fn links_of(plugins: &crate::plugins::PluginsLink) -> LinkTargets {
 fn send(
     sender: &Outbox,
     diffs: Vec<TimelineDiff>,
-    back_pagination: BackPagination,
+    view: &mut View,
+    anchor: Option<String>,
 ) -> Result<(), ()> {
-    sender.send(diffs, back_pagination)
+    view.sent_unread = view.unread;
+    sender.send(diffs, view.status, view.viewport(), anchor)
+}
+
+/// 本账号已读位置在 `entries` 里的下标：回执指着的事件不在这一批里时为空。
+async fn read_index(room: &ChatRoom, entries: &Vector<TimelineEntry>) -> Option<usize> {
+    let position = wonton_matrix::entry_id(&room.read_position().await?);
+    entries.iter().position(|entry| entry.id == position)
+}
+
+/// 首批该停在哪：有已读标记就停它自己；没有时按未读算——位置在这一批里就停它后面第一条，位置不在这里就从末尾
+/// 往回数未读条数、数不够一屏就停在最早一条，让主人接着往前翻；没有未读停在最新一条，空房间为空。
+fn anchor_of(entries: &Vector<TimelineEntry>, unread: u32, read: Option<usize>) -> Option<String> {
+    let last = entries.len().checked_sub(1)?;
+    if let Some(marker) = entries
+        .iter()
+        .find(|entry| matches!(entry.kind, EntryKind::ReadMarker))
+    {
+        return Some(marker.id.clone());
+    }
+    if unread == 0 {
+        return Some(entries[last].id.clone());
+    }
+    if let Some(after) = read.and_then(|index| index.checked_add(1)) {
+        return Some(entries[after.min(last)].id.clone());
+    }
+    let wanted = usize::try_from(unread).unwrap_or(usize::MAX);
+    let mut counted = 0;
+    for entry in entries.iter().rev() {
+        if matches!(entry.kind, EntryKind::Message(_)) {
+            counted += 1;
+            if counted == wanted {
+                return Some(entry.id.clone());
+            }
+        }
+    }
+    Some(entries[0].id.clone())
 }
 
 fn back_pagination(status: BackPaginationStatus) -> BackPagination {

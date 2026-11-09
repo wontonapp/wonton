@@ -152,15 +152,16 @@ impl Outbox {
         &self,
         diffs: Vec<TimelineDiff>,
         back_pagination: BackPagination,
+        viewport: TimelineViewport,
+        anchor: Option<String>,
     ) -> Result<(), ()> {
         lock(&self.menus).apply(&diffs);
         self.sender
             .send(TimelineUpdate {
                 diffs,
                 back_pagination,
-                // 位置和落点由订阅算；先把字段填上，壳按 Bottom 摆。
-                viewport: TimelineViewport::Bottom,
-                anchor: None,
+                viewport,
+                anchor,
             })
             .map_err(|_| ())
     }

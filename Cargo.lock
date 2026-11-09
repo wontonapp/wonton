@@ -8241,6 +8241,7 @@ dependencies = [
  "futures-util",
  "jsonwebtoken",
  "matrix-sdk",
+ "matrix-sdk-base",
  "matrix-sdk-crypto",
  "matrix-sdk-ui",
  "mime",

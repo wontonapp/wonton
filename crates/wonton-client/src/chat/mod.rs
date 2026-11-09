@@ -43,7 +43,7 @@ mod view;
 
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use futures_util::StreamExt;
 #[cfg(feature = "test-hooks")]
@@ -56,7 +56,7 @@ use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, Sy
 use wonton_protocol::{
     Action, Answer, ChatAccount, ChatFailure, ChatSync, ChatViewModel, ConfirmationAnswer,
     CoreError, DeviceVerification, EncryptionStatus, MediaHandle, PushMethod, PushStatus,
-    RecoveryStatus,
+    RecoveryStatus, TimelineScroll,
 };
 
 pub use bots::bot_current_avatar;
@@ -91,6 +91,8 @@ pub(crate) struct ChatLink {
     open_room: Mutex<Option<(OwnedRoomId, Arc<ChatRoom>)>>,
     /// 最近一次订阅的时间线里每条消息的菜单，转发、撤回只认这里有的（[`menu`]）。
     open_menus: Mutex<Option<(OwnedRoomId, Arc<Mutex<menu::Menus>>)>>,
+    /// 打开的房间的时间线订阅，用来把壳报告的滚动位置送进去。订阅没了（壳重开、房间关掉）就升级不出来。
+    open_timeline: Mutex<Option<(OwnedRoomId, Weak<TimelineSubscription>)>>,
     /// 这台设备回答确认卡片的进展，时间线的订阅跟着它更新卡片。
     answers: watch::Sender<Answers>,
     /// 本会话里亲眼看到从没结束变成成功的插件 ID：插件列表多半还是旧的，补取的逻辑在插件那头。
@@ -152,6 +154,7 @@ impl Drop for ChatLink {
     fn drop(&mut self) {
         let _context = self.runtime.enter();
         lock(&self.open_room).take();
+        lock(&self.open_timeline).take();
         lock(&self.session).take();
         self.bots.session.send_replace(None);
         self.active.get_mut().take();
@@ -214,6 +217,7 @@ impl ChatLink {
             session: Mutex::new(None),
             open_room: Mutex::new(None),
             open_menus: Mutex::new(None),
+            open_timeline: Mutex::new(None),
             answers: watch::Sender::default(),
             card_success,
             resetting_recovery: AtomicBool::default(),
@@ -360,8 +364,9 @@ impl ChatLink {
                 });
                 Ok(())
             }
-            // 位置由时间线订阅自己算，这里只确认房间开着：这一步的 ViewModel 还没填它。
-            Action::SetTimelineScroll { room_id, .. } => self.opened(&room_id).map(drop),
+            Action::SetTimelineScroll { room_id, scroll } => {
+                self.set_timeline_scroll(&room_id, scroll)
+            }
             Action::MarkRoomRead { room_id } => {
                 let chat = self.clone();
                 let (_, room_id) = self.target(&room_id)?;
@@ -421,20 +426,39 @@ impl ChatLink {
         );
         *lock(&self.open_room) = Some((room_id.clone(), room.clone()));
         let menus = Arc::new(Mutex::new(menu::Menus::default()));
-        *lock(&self.open_menus) = Some((room_id, menus.clone()));
+        *lock(&self.open_menus) = Some((room_id.clone(), menus.clone()));
         // 链接的类别要认插件页，插件列表还一次没取过时先取一次（取过或正在取就不重复，免得打乱别处的节奏）。
         let plugins = self.plugins.view();
         if plugins.installed.is_none() && !plugins.refreshing {
             self.plugins.refresh_installed();
         }
         let cards = Cards::new(session.user_id(), self.answers.subscribe());
-        Ok(TimelineSubscription::start(
-            &self.runtime,
-            room,
-            cards,
-            self.plugins.clone(),
-            menus,
-        ))
+        let subscription =
+            TimelineSubscription::start(&self.runtime, room, cards, self.plugins.clone(), menus);
+        *lock(&self.open_timeline) = Some((room_id, Arc::downgrade(&subscription)));
+        Ok(subscription)
+    }
+
+    /// 壳报告列表滚到了哪儿：交给这个房间现在的时间线订阅。
+    fn set_timeline_scroll(&self, room_id: &str, scroll: TimelineScroll) -> Result<(), CoreError> {
+        let subscription = lock(&self.open_timeline)
+            .as_ref()
+            .filter(|(id, _)| id.as_str() == room_id)
+            .and_then(|(_, subscription)| subscription.upgrade());
+        match subscription {
+            Some(subscription) => {
+                subscription.set_scroll(scroll);
+                Ok(())
+            }
+            None => Err(CoreError::NotReady {
+                reason: l10n!(
+                    CATALOG,
+                    language(),
+                    "chat-room-not-subscribed",
+                    room = room_id
+                ),
+            }),
+        }
     }
 
     /// 凭句柄下载媒体原文件（加密附件在本机解密）。
@@ -613,6 +637,7 @@ impl ChatLink {
         *lock(&self.verification) = None;
         *lock(&self.open_room) = None;
         *lock(&self.open_menus) = None;
+        *lock(&self.open_timeline) = None;
         self.room_order.clear();
         self.sent.send_replace(Vec::new());
         self.home.set_catching_up(false);

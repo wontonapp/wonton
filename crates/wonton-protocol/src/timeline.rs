@@ -21,8 +21,9 @@ pub struct TimelineUpdate {
     pub back_pagination: BackPagination,
     /// 列表该停在哪。壳按它画“回到底部”和按钮上的数字；新消息不把列表拽走。
     pub viewport: TimelineViewport,
-    /// 只有订阅的第一批有，之后为 `None`：壳先把这一条（`Reset` 里的 `TimelineItem::id`）摆到视野顶部，
-    /// 摆好之前不报 [`TimelineScroll::Bottom`]（报早了核心以为主人已经看到最新一条，会清掉落点）。
+    /// 只有带 `Reset` 的那一批有（订阅的第一批，时间线重建后的第一批），其余为 `None`：壳先把这一条
+    /// （`Reset` 里的 `TimelineItem::id`）摆到视野顶部，摆好之前不报 [`TimelineScroll::Bottom`]
+    /// （报早了核心以为主人已经看到最新一条，会清掉落点）。
     ///
     /// 锚点是已读位置，主人一眼看到“以下是新消息”；没有未读时是最新一条，空房间为空。这一条摆过去之前就没了
     /// （撤回、被裁掉）时，壳停在最新一条。
