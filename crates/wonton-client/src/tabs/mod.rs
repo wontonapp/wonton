@@ -29,6 +29,8 @@ pub(crate) mod bridge;
 pub(crate) mod media;
 
 mod config;
+mod helpers;
+pub(super) use helpers::{clear_plugin_config, invalid, lock, storage_problem};
 mod sharing;
 use config::*;
 
@@ -60,7 +62,7 @@ struct PreviousPlugin {
 }
 
 #[derive(Clone)]
-struct TabsState {
+pub(crate) struct TabsState {
     config: TabsFile,
     problem: Option<TabsProblem>,
     selected: TabRef,
@@ -702,22 +704,4 @@ fn ensure_selection(state: &mut TabsState, plugins: &PluginsViewModel) {
             state.fullscreen = None;
         }
     }
-}
-
-fn storage_problem(error: &CoreError) -> TabsProblem {
-    TabsProblem {
-        message: format!("底栏设置存不下，下次启动可能恢复旧状态：{error}"),
-    }
-}
-
-fn invalid(reason: &str) -> CoreError {
-    CoreError::InvalidInput {
-        reason: reason.to_owned(),
-    }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
