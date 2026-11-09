@@ -21,7 +21,6 @@ final class PasteUITests: XCTestCase {
         try launch()
         UIPasteboard.general.setData(renderPNG(), forPasteboardType: UTType.png.identifier)
         openRoom()
-        let before = timelineImages().count
 
         let composer = composerField()
         XCTAssertNotNil(composer, "找不到输入框")
@@ -45,13 +44,12 @@ final class PasteUITests: XCTestCase {
         shot("10-preview")
         send?.tap()
 
-        // 本地回显马上出现；上传完“发送中”标记消失。
-        let deadline = Date().addingTimeInterval(60)
-        while Date() < deadline && timelineImages().count <= before {
-            _ = app.wait(for: .runningForeground, timeout: 1)
-        }
-        XCTAssertGreaterThan(timelineImages().count, before, "时间线里没有出现图片消息")
+        // 本地回显在时间线末尾；列表是懒加载，发送后先等传完，滚到底再找最后一屏的图片。
         waitSendingDone(deadline: Date().addingTimeInterval(120))
+        app.swipeUp()
+        app.swipeUp()
+        app.swipeUp()
+        XCTAssertTrue(hasLargeImage(), "时间线里没有出现图片消息")
         shot("11-sent")
     }
 
@@ -134,16 +132,16 @@ final class PasteUITests: XCTestCase {
     }
 
     /// 时间线（List）里的图片元素。图片气泡带 `.isButton` 读屏 trait，会暴露成按钮而不是图片。
-    /// 空子查询在 Xcode 26 上解析会抛「Failed to get matching snapshot」，先 waitForExistence 再取列表。
+    /// 空子查询在 Xcode 26 上解析会抛「Failed to get matching snapshot」，先探 firstMatch 再取列表。
     private func timelineImages() -> [XCUIElement] {
         guard app.collectionViews.firstMatch.waitForExistence(timeout: 2) else { return [] }
         let collectionView = app.collectionViews.firstMatch
         let images = collectionView.images
-        if images.waitForExistence(timeout: 0.5) {
+        if images.firstMatch.waitForExistence(timeout: 0.5) {
             return images.allElementsBoundByIndex.filter { $0.frame.width > 100 && $0.frame.height > 100 }
         }
         let buttons = collectionView.buttons
-        guard buttons.waitForExistence(timeout: 0.5) else { return [] }
+        guard buttons.firstMatch.waitForExistence(timeout: 0.5) else { return [] }
         return buttons.allElementsBoundByIndex.filter { $0.frame.width > 100 && $0.frame.height > 100 }
     }
 
@@ -155,7 +153,7 @@ final class PasteUITests: XCTestCase {
     /// 本设备没有这条消息的密钥时的占位（没配恢复的新设备会这样）。
     private func hasUndecryptable() -> Bool {
         let texts = app.staticTexts
-        guard texts.waitForExistence(timeout: 0.3) else { return false }
+        guard texts.firstMatch.waitForExistence(timeout: 0.3) else { return false }
         return texts.allElementsBoundByIndex.contains {
             $0.label.contains("decrypt") || $0.label.contains("解密")
         }
