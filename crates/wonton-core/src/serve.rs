@@ -12,8 +12,7 @@ pub(super) async fn serve_listeners(
     let push_listener = push_listener::bind(cfg.push_listen.as_deref()).await?;
     let app = gateway::router(gateway.clone());
     let public_entry = wonton_core::entry_runtime::bind().await?;
-    let entry =
-        TunnelEntry::spawn_with_protocols(&tunnel, app.clone(), extra_protocols(peers, federation));
+    let entry = spawn_tunnel(&tunnel, app.clone(), peers, federation, &manager);
     tracing::info!(
         listen = %cfg.listen,
         url = %cfg.public.origin(cfg.public.core_host()),
@@ -32,6 +31,22 @@ pub(super) async fn serve_listeners(
     let served = served.await.context("网关任务退出");
     entry.shutdown().await;
     served?
+}
+
+/// 隧道入口：网关路由、联邦和服务器配对处理器、插件端口解析器一起挂上。
+fn spawn_tunnel(
+    tunnel: &Tunnel,
+    app: axum::Router,
+    peers: Option<Arc<peers::Peers>>,
+    federation: Option<FederationProtocol>,
+    manager: &Arc<PluginManager>,
+) -> TunnelEntry {
+    TunnelEntry::spawn_with_protocols(
+        tunnel,
+        app,
+        extra_protocols(peers, federation),
+        Arc::new(tunnel::PluginPortResolver::new(manager.clone())),
+    )
 }
 
 pub(super) fn spawn_plugin_monitors(manager: &Arc<PluginManager>) {

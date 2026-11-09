@@ -1,6 +1,6 @@
 //! 安装入口与终端联邦黑名单命令。
 
-use super::check_owner_before_install;
+use super::lifecycle_commands::check_owner_before_install;
 use anyhow::{Context, bail};
 use wonton_core::matrix::FederationBlocks;
 use wonton_core::plugin::docker::Engine;
