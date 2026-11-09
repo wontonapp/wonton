@@ -13,6 +13,7 @@ on:
       - "Cargo.lock"
       - "clippy.toml"
       - "rust-toolchain.toml"
+      - ".config/nextest.toml"
       - ".github/workflows/rust.yml"
       - "scripts/clean-docker-test-leftovers.sh"
       - "scripts/ci-capture-container-logs.sh"
@@ -33,11 +34,21 @@ env:
   # CI 不需要增量编译的缓存，调试信息只留行号：构建缓存小一半以上。
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # nextest 用官方发布的预编译二进制：自托管的 runner 没有 sudo，也不每次 cargo install 编一遍。版本固定，下载后核对
+  # sha256（见安装步骤）。Apache-2.0 / MIT 双许可，只当命令跑，不链接进我们的二进制。
+  NEXTEST_VERSION: "0.9.151"
 
 jobs:
   # 分成两个作业：格式、Clippy 和默认测试不碰 Docker，跑在带 rust 标签的机器上；Docker 集成测试只能在带 docker 标签的
   # 几台上跑。合在一起时每个 PR 都要排那几台，一排七八个（2026-11-06）。分开后两个作业同时跑，Docker 那个要在另一个
   # target 目录里再编译、链接一遍测试二进制，但 PR 等的总时间不变长。
+  #
+  # 2026-11-08 实测 Docker 作业排队 8–9 分钟、跑 9.4 分钟，其中 6 分钟是 cargo test 一个测试二进制跑完才开下一个。
+  # nextest 让不同二进制也同时跑（同一二进制里的测试本来就并行），两个档案的并发数都固定；Docker 里 compose 起服务、
+  # 建网络的重活还单独限到 2 条：这些 runner 都和别的工作、验证栈共用，按核数并发时靠墙钟计时的测试和 Docker 操作会互相拖到
+  # 超时（2026-11-08，#848 的 CI）。
+  # 不分片到多个 runner：能跑 Docker 的机器本来就不够，分片只会多排队。nextest 不跑 doctest，“Rust”作业里单列一步
+  # cargo test --doc。
   rust:
     name: Rust
     # 不用任意 Linux runner：带 docker 标签的那台主机同时跑 omp 编译和验证栈，常年满载，Rust 作业落上去会慢到超时。
@@ -67,13 +78,36 @@ jobs:
         run: python3 -m unittest discover -q -s scripts/install -t scripts
       - name: Clippy（含函数不超过 100 行）
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: 装 nextest（版本和 sha256 固定）
+        run: |
+          dir="$RUNNER_TOOL_CACHE/nextest/$NEXTEST_VERSION"
+          if [[ ! -x "$dir/cargo-nextest" ]]; then
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/cargo-nextest.tar.gz" \
+              "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-$NEXTEST_VERSION/cargo-nextest-$NEXTEST_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+            (cd "$RUNNER_TEMP" && echo "1d4ce302b820c41f4b89c5fb9bce45f0f0c94882c1cf08fc360caf08be6e7df4  cargo-nextest.tar.gz" | sha256sum -c -)
+            # 解到临时目录再改名进去：同一台机器上的另一个 runner 可能正装着同一个版本，别让它执行到写了一半的文件。
+            ex="$RUNNER_TEMP/cargo-nextest.d"
+            rm -rf "$ex"
+            mkdir -p "$ex"
+            tar -xzf "$RUNNER_TEMP/cargo-nextest.tar.gz" -C "$ex" cargo-nextest
+            mkdir -p "$dir"
+            mv -f "$ex/cargo-nextest" "$dir/cargo-nextest"
+          fi
+          echo "$dir" >> "$GITHUB_PATH"
+          "$dir/cargo-nextest" --version
       - name: 测试（不含依赖 Docker 的集成测试）
         # 完整输出另存一份：失败时作为 artifact 上传，重跑覆盖不了失败那次的日志。
         # shell: bash 带 pipefail：默认的 shell 不带，经过 tee 测试失败也会算成功。
         shell: bash
-        run: bash scripts/ci-note-sigterm.sh cargo test --workspace --locked 2>&1 | tee "$RUNNER_TEMP/test-output.log"
+        run: bash scripts/ci-note-sigterm.sh cargo nextest run --workspace --locked 2>&1 | tee "$RUNNER_TEMP/test-output.log"
         env:
           # 故意让 Docker 不可用，保证默认的测试不依赖它：依赖 Docker 的测试标了 #[ignore]，由“Rust Docker 测试”运行。
+          DOCKER_HOST: unix:///nonexistent/docker.sock
+      - name: 文档测试（nextest 不跑 doctest）
+        shell: bash
+        # 接在上一条的日志后面：失败时一起进 artifact。
+        run: bash scripts/ci-note-sigterm.sh cargo test --doc --workspace --locked 2>&1 | tee -a "$RUNNER_TEMP/test-output.log"
+        env:
           DOCKER_HOST: unix:///nonexistent/docker.sock
       - name: 失败时留下测试输出
         if: failure()
@@ -104,6 +138,23 @@ jobs:
           fi
       - name: 安装 rust-toolchain.toml 指定的工具链
         run: rustup toolchain install
+      - name: 装 nextest（版本和 sha256 固定，同“Rust”作业）
+        run: |
+          dir="$RUNNER_TOOL_CACHE/nextest/$NEXTEST_VERSION"
+          if [[ ! -x "$dir/cargo-nextest" ]]; then
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/cargo-nextest.tar.gz" \
+              "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-$NEXTEST_VERSION/cargo-nextest-$NEXTEST_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+            (cd "$RUNNER_TEMP" && echo "1d4ce302b820c41f4b89c5fb9bce45f0f0c94882c1cf08fc360caf08be6e7df4  cargo-nextest.tar.gz" | sha256sum -c -)
+            # 解到临时目录再改名进去：同一台机器上的另一个 runner 可能正装着同一个版本，别让它执行到写了一半的文件。
+            ex="$RUNNER_TEMP/cargo-nextest.d"
+            rm -rf "$ex"
+            mkdir -p "$ex"
+            tar -xzf "$RUNNER_TEMP/cargo-nextest.tar.gz" -C "$ex" cargo-nextest
+            mkdir -p "$dir"
+            mv -f "$ex/cargo-nextest" "$dir/cargo-nextest"
+          fi
+          echo "$dir" >> "$GITHUB_PATH"
+          "$dir/cargo-nextest" --version
       - name: 确认 Docker 可用
         run: docker version
       - name: 清理被中断的 Docker 测试遗留
@@ -115,8 +166,9 @@ jobs:
           nohup bash scripts/ci-capture-container-logs.sh "$RUNNER_TEMP/test-logs/containers" "$PPID" >/dev/null 2>&1 &
       - name: Docker 集成测试（标了 #[ignore] 的都是）
         shell: bash
+        # --run-ignored only 就是原来的 -- --ignored。并发上限在 .config/nextest.toml 的 docker 档案里。
         # 这个作业的 runner 都是 containerd 镜像存储：只在那时复现得了 #666 的测试不许静默跳过。
-        run: bash scripts/ci-note-sigterm.sh cargo test --workspace --locked -- --ignored 2>&1 | tee "$RUNNER_TEMP/test-logs/test-output.log"
+        run: bash scripts/ci-note-sigterm.sh cargo nextest run --workspace --locked --profile docker --run-ignored only 2>&1 | tee "$RUNNER_TEMP/test-logs/test-output.log"
         env:
           WONTON_TEST_REQUIRE_CONTAINERD: "1"
       - name: 官方索引里的清单这份核心都读得懂、渲染得出来
