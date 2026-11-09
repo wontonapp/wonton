@@ -21,6 +21,7 @@ use super::names::Instance;
 use super::render::{ContainerPlan, LABEL_SERVICE};
 use super::store::InstalledRecord;
 use crate::l10n;
+use crate::plugin::registry_mirror;
 
 /// `alpine/socat`，ADR-0036 的验证结果用它实测过。GPL-2.0，作为独立容器运行。摘要是多架构 manifest
 /// list 的（registry API 取，`mediaType` 是 manifest list，覆盖 amd64、arm64 等），Docker 按本机架构挑。
@@ -255,14 +256,11 @@ impl super::manager::PluginManager {
         if record.relays.is_empty() {
             return Ok(());
         }
-        let mirror = self.registry_mirror_address(&self.owner_languages())?;
+        let mirrors = self.registry_mirrors(&self.owner_languages()).await?;
+        let accelerated = registry_mirror::accelerated(IMAGE, &mirrors);
         let image = self
             .engine
-            .ensure_image(
-                &image(),
-                super::compose::PullPolicy::Missing,
-                mirror.as_deref(),
-            )
+            .ensure_image(IMAGE, super::compose::PullPolicy::Missing, &accelerated)
             .await?;
         let owner = self.owner();
         let app_data = self.cfg.apps_dir.join(manifest.id.slug());

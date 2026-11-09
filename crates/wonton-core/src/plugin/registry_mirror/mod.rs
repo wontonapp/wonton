@@ -1,7 +1,8 @@
-//! 镜像加速（ADR-0040）。只改变按摘要拉取 Docker Hub 镜像的地址，不改宿主 Docker 配置。
+//! 镜像加速（ADR-0074，按仓库主机分名单）。只改变按摘要拉取镜像的地址，不改宿主 Docker 配置。
 
 pub(crate) mod address;
 mod engine;
+pub(in crate::plugin) mod mirrors;
 mod probe;
 pub(crate) mod reference;
 
@@ -20,6 +21,7 @@ use crate::plugin::languages::Languages;
 use crate::plugin::manager::{InstallError, PluginManager};
 use crate::plugin::manifest::PluginId;
 pub(in crate::plugin) use engine::LayerProgress;
+use mirrors::Mirrors;
 
 /// 一张镜像按层累加的下载进度。Docker 每条只带一层的字节数，层还会交错，所以按层的 ID 记住、把它们加起来。
 #[derive(Default)]
@@ -71,7 +73,13 @@ impl PluginManager {
         &self,
         langs: &Languages,
     ) -> Result<RegistryMirrorSettings, InstallError> {
-        let mirror = self.registry_mirror_address(langs)?;
+        let mirror = self
+            .store
+            .registry_mirror()?
+            .and_then(|settings| settings.mirror);
+        if let Some(address) = &mirror {
+            address::validate(address, langs).map_err(InstallError::Storage)?;
+        }
         let (index, _, problem) = self.storefront.official(false, langs).await;
         let choices_problem = index
             .registry_mirrors_problem
@@ -85,7 +93,7 @@ impl PluginManager {
         let recommended = recommended(docker_hub.as_ref());
         Ok(RegistryMirrorSettings {
             mirror,
-            choices: index.registry_mirrors,
+            choices: index.registry_mirrors.docker_hub,
             choices_problem,
             docker_hub,
             recommended,
@@ -157,18 +165,28 @@ impl PluginManager {
         });
     }
 
-    pub(in crate::plugin) fn registry_mirror_address(
+    /// 这张机器能用的加速名单，加速关掉时为空。打开时主人填的 Docker Hub 地址排在最前面，其余按索引的顺序（ADR-0074）。
+    pub(in crate::plugin) async fn registry_mirrors(
         &self,
         langs: &Languages,
-    ) -> Result<Option<String>, InstallError> {
-        let mirror = self
+    ) -> Result<Mirrors, InstallError> {
+        let Some(address) = self
             .store
             .registry_mirror()?
-            .and_then(|settings| settings.mirror);
-        if let Some(address) = &mirror {
-            address::validate(address, langs).map_err(InstallError::Storage)?;
-        }
-        Ok(mirror)
+            .and_then(|settings| settings.mirror)
+        else {
+            return Ok(Mirrors::default());
+        };
+        address::validate(&address, langs).map_err(InstallError::Storage)?;
+        let mut mirrors = self
+            .storefront
+            .official(false, langs)
+            .await
+            .0
+            .registry_mirrors;
+        mirrors.docker_hub.insert(0, address);
+        mirrors.dedupe();
+        Ok(mirrors)
     }
 
     pub(in crate::plugin) async fn prepare_images(
@@ -177,7 +195,7 @@ impl PluginManager {
         id: Option<&PluginId>,
         langs: &Languages,
     ) -> Result<(), InstallError> {
-        let mirror = self.registry_mirror_address(langs)?;
+        let mirrors = self.registry_mirrors(langs).await?;
         let count = plan.containers.len().max(1) as u64;
         for (index, container) in plan.containers.iter_mut().enumerate() {
             let mut bytes = LayerBytes::default();
@@ -193,18 +211,19 @@ impl PluginManager {
                     },
                 );
             };
+            let accelerated = accelerated(&container.image, &mirrors);
             let result = self
                 .engine
                 .ensure_image_with_progress(
                     &container.image,
                     container.pull_policy,
-                    mirror.as_deref(),
+                    &accelerated,
                     &mut report,
                 )
                 .await;
             let image = result.map_err(|error| {
                 let langs = self.owner_languages();
-                self.registry_pull_error(error, mirror.as_deref(), &langs)
+                self.registry_pull_error(error, mirrors.docker_hub.is_empty(), &langs)
             })?;
             container.body.image = Some(image.clone());
             container.image = image;
@@ -215,11 +234,11 @@ impl PluginManager {
     pub(in crate::plugin) fn registry_pull_error(
         &self,
         error: EngineError,
-        mirror: Option<&str>,
+        acceleration_off: bool,
         langs: &Languages,
     ) -> InstallError {
-        let suggest = mirror.is_none()
-            && matches!(&error, EngineError::Pull { image, .. } if reference::docker_hub(image))
+        let suggest = acceleration_off
+            && matches!(&error, EngineError::Pull { image, .. } if mirrors::registry(image).is_some())
             && recommended(
                 self.registry_mirror
                     .docker_hub
@@ -236,6 +255,14 @@ impl PluginManager {
         } else {
             error
         }
+    }
+}
+
+/// 这张镜像的加速引用：仓库有名单、引用按摘要钉住时才改。
+pub(in crate::plugin) fn accelerated(image: &str, mirrors: &Mirrors) -> Vec<String> {
+    match mirrors::registry(image) {
+        Some(registry) => reference::accelerated(image, mirrors.stations(registry), registry),
+        None => Vec::new(),
     }
 }
 

@@ -1,6 +1,8 @@
 use wonton_protocol::RegistryMirrorUpdate;
 
 use super::docker_fixture::Fixture;
+use super::mirrors::Registry;
+use super::reference::accelerated;
 use crate::plugin::PluginStatus;
 use crate::plugin::languages::Languages;
 
@@ -65,7 +67,11 @@ async fn correct_digest(fixture: &mut Fixture) {
         .ensure_image(
             &original,
             crate::plugin::compose::PullPolicy::Missing,
-            Some(&fixture.mirror),
+            &accelerated(
+                &original,
+                std::slice::from_ref(&fixture.mirror),
+                Registry::DockerHub,
+            ),
         )
         .await
         .unwrap();
