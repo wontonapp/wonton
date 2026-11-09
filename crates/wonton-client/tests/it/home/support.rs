@@ -16,7 +16,8 @@ use tokio::task::JoinHandle;
 use wonton_client::{Action, ClientCore, HomeViewModel, Network, ProxySettings};
 use wonton_tunnel::{Allowlist, TunnelServer};
 
-// 只用作等状态的上限，等到就往下走。要盖住定时检查发现死连接的最长用时（间隔 5 秒加时限 8 秒）和之后的重连。
+// 只用作等状态的上限，等到就往下走。要盖住核心自己的时限：确认死连接（确认窗口）和拨新连接（建连时限），
+// 不是“几秒内必须回来”的断言。
 const WAIT: Duration = Duration::from_secs(30);
 /// 同一端口重建时等端口空出来的总预算。iroh 关掉 endpoint 以后套接字还要过一阵才真的释放，并行的测试
 /// 的 `bind(0)` 也可能临时拿走这个端口；这笔账比 [`WAIT`] 长，但只管重建这一处。
