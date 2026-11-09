@@ -28,3 +28,10 @@ compose = { max-threads = 2 }
 [[profile.docker.overrides]]
 filter = 'binary(core_upgrade) | binary(docker_network) | test(plugin::tests::lan_docker) | test(install::tuwunel_tests) | test(registry_mirror::docker_tests)'
 test-group = 'compose'
+
+# bridge 镜像冒烟：测试自己 docker build 整张镜像（cargo 全家桶），4 核托管机上超过 10 分钟才算正常。
+# 放进重活组，窗口放到 10 分钟 × 6；作业里另外有一步预构建，平时命中缓存用不到这么长。
+[[profile.docker.overrides]]
+filter = 'binary(docker)'
+test-group = 'compose'
+slow-timeout = { period = "600s", terminate-after = 6 }
