@@ -42,12 +42,41 @@ extension ConnectionNotice {
     }
 }
 
+/// 质量差的轻提示（#847）：直连和经中继各一条完整文案，不拼句子。
+enum ConnectionQualityHint: Equatable {
+    case poor
+    case poorRelay
+
+    var sentence: String {
+        switch self {
+        case .poor: String(localized: .connectionNoticePoor)
+        case .poorRelay: String(localized: .connectionNoticePoorRelay)
+        }
+    }
+
+    /// 只在连接着、核心判了 Poor、又没有别的通知时出现，占 ADR-0032 短状态的位置；Unknown、Good、Other 都不显示。
+    /// 判断是纯函数：哪种状态显示哪一条，好测。
+    static func current(
+        connected: Bool, notice: ConnectionNotice?, quality: ConnectionQuality, pathRelay: Bool?
+    ) -> ConnectionQualityHint? {
+        guard connected, notice == nil, quality == .poor else { return nil }
+        return pathRelay == true ? .poorRelay : .poor
+    }
+}
+
 extension WontonBarStatus {
-    init<Line: View>(notice: ConnectionNotice?, @ViewBuilder line: (ConnectionNotice) -> Line) {
+    /// 同一时刻只显示一条：核心的通知优先，没有通知且质量差时轮到轻提示。
+    init<Line: View>(home: HomeViewModel, @ViewBuilder line: (ConnectionNotice) -> Line) {
+        let hint = ConnectionQualityHint.current(
+            connected: home.status == .connected,
+            notice: home.notice,
+            quality: home.details.quality,
+            pathRelay: home.path?.relay
+        )
         self.init(
-            title: notice.flatMap { $0.isShort ? $0.sentence : nil },
-            subtitle: notice?.sentence,
-            line: notice.flatMap { $0.isShort ? nil : AnyView(line($0)) }
+            title: home.notice.flatMap { $0.isShort ? $0.sentence : nil } ?? hint?.sentence,
+            subtitle: home.notice?.sentence ?? hint?.sentence,
+            line: home.notice.flatMap { $0.isShort ? nil : AnyView(line($0)) }
         )
     }
 }
@@ -200,32 +229,7 @@ struct ConnectionDetailsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: WontonTheme.spacing.sectionGap) {
-                WontonGroup {
-                    if details.addressesStale {
-                        WontonRow(title: String(localized: .connectionAddressesStale))
-                        WontonSeparator()
-                    }
-                    if let path = model.viewModel.path {
-                        WontonRow(title: String(localized: .connectionDetailPath), value: path.kindText)
-                        WontonSeparator()
-                        WontonRow(title: String(localized: .connectionDetailLatency), value: "\(path.rttMs) ms")
-                        WontonSeparator()
-                    }
-                    WontonRow(
-                        title: String(localized: .connectionDetailLoss),
-                        value: "\(details.lostPackets) / \(details.sentPackets)"
-                    )
-                    if let handshake = details.handshakeMs {
-                        WontonSeparator()
-                        WontonRow(title: String(localized: .connectionDetailLastHandshake), value: "\(handshake) ms")
-                    }
-                    WontonSeparator()
-                    WontonRow(title: String(localized: .connectionDetailDisconnects), value: "\(details.disconnects)")
-                    if let connected = details.lastConnectedAtMs {
-                        WontonSeparator()
-                        WontonRow(title: String(localized: .connectionDetailLastConnected), value: Self.time(connected))
-                    }
-                }
+                ConnectionDetailsRows(details: details, path: model.viewModel.path)
                 if let failure = details.lastFailure {
                     WontonGroup {
                         WontonRow(title: String(localized: .connectionDetailLastFailure), value: failure)
@@ -236,9 +240,67 @@ struct ConnectionDetailsView: View {
         }
         .wontonPushedScreen(String(localized: .commonDetails))
     }
+}
+
+/// 详情页的行。窗口化的质量指标（#847）样本不够时显示"—"，不是 0。
+struct ConnectionDetailsRows: View {
+    let details: ConnectionDetails
+    let path: HomePath?
+
+    private static let missing = "—"
+
+    var body: some View {
+        WontonGroup {
+            if details.addressesStale {
+                WontonRow(title: String(localized: .connectionAddressesStale))
+                WontonSeparator()
+            }
+            if let path {
+                WontonRow(title: String(localized: .connectionDetailPath), value: path.kindText)
+                WontonSeparator()
+            }
+            WontonRow(title: String(localized: .connectionDetailQuality), value: details.quality.text)
+            WontonSeparator()
+            WontonRow(
+                title: String(localized: .connectionDetailLossRate),
+                value: details.lossPerMille.map(Self.lossPercent) ?? Self.missing
+            )
+            WontonSeparator()
+            WontonRow(
+                title: String(localized: .connectionDetailLatency),
+                value: details.rttMs.map { "\($0) ms" } ?? Self.missing
+            )
+            if let handshake = details.handshakeMs {
+                WontonSeparator()
+                WontonRow(title: String(localized: .connectionDetailLastHandshake), value: "\(handshake) ms")
+            }
+            WontonSeparator()
+            WontonRow(title: String(localized: .connectionDetailDisconnects), value: "\(details.disconnects)")
+            if let connected = details.lastConnectedAtMs {
+                WontonSeparator()
+                WontonRow(title: String(localized: .connectionDetailLastConnected), value: Self.time(connected))
+            }
+        }
+    }
+
+    /// 千分比换算成百分比，保留一位小数（`73` 是 7.3%）。
+    private static func lossPercent(_ perMille: UInt16) -> String {
+        String(format: "%.1f%%", Double(perMille) / 10)
+    }
 
     private static func time(_ milliseconds: UInt64) -> String {
         Date(timeIntervalSince1970: Double(milliseconds) / 1000).formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+private extension ConnectionQuality {
+    /// Other 是比这个 App 新的取值，按 Unknown 显示。
+    var text: String {
+        switch self {
+        case .good: String(localized: .connectionQualityGood)
+        case .poor: String(localized: .connectionQualityPoor)
+        case .unknown, .other: String(localized: .commonUnknown)
+        }
     }
 }
 

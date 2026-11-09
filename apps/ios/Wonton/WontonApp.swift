@@ -20,10 +20,21 @@ struct WontonApp: App {
             switch launch {
             case let .ready(chat, home, plugins, appearance, navigation):
                 WontonThemeRoot(appearance: appearance.viewModel) {
+                    #if DEBUG
+                    if QualityPreviews.active {
+                        QualityPreviews.root
+                    } else {
+                        MainView(
+                            chat: chat, home: home, plugins: plugins, appearance: appearance,
+                            navigation: navigation, devWebURL: Launch.devWebURL
+                        )
+                    }
+                    #else
                     MainView(
                         chat: chat, home: home, plugins: plugins, appearance: appearance,
                         navigation: navigation, devWebURL: Launch.devWebURL
                     )
+                    #endif
                 }
                 .environmentObject(orientation)
                 .task { await appearance.observe() }
