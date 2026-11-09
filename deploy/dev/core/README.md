@@ -204,7 +204,8 @@ docker save "$image" | ssh "$DEV_HOST" docker load
 ssh "$DEV_HOST" docker tag "sha256:${image#*@sha256:}" "${image%@*}"
 ```
 
-核心和系统容器不继承 Docker 客户端配置里的代理。开发环境要经代理访问 GitHub 或者测出网插件时，设 `WONTON_EGRESS_PROXY`（ADR-0023）。
+核心和系统容器不继承 Docker 客户端配置里的代理。开发环境要经代理访问 GitHub 或者测出网插件时，设 `WONTON_EGRESS_PROXY`（ADR-0023）；
+链接预览经代理用的 DoH 服务器用 `WONTON_DOH_URL` 换（默认 `https://1.1.1.1/dns-query`，ADR-0065）。
 
 远端主机直连 crates.io、GitHub 太慢时，构建镜像经那台主机自己的代理（`WONTON_DEV_BUILD_PROXY`，构建用宿主网络）。
 Linux 主机上容器里没有 `host.docker.internal`，冒烟用 `WONTON_SMOKE_MODEL_RELAY` 指向那台主机上只监听回环地址的

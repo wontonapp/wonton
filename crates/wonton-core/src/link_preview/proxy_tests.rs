@@ -13,31 +13,11 @@ use tokio_rustls::TlsAcceptor;
 use wonton_protocol::LinkPreviewFailure;
 
 use super::Limits;
-use super::test_support::{SITE_IP, og_page, world, world_with};
+use super::test_support::{
+    DOH_PORT, DohReply, SITE_IP, header_value, og_page, read_head, world, world_with,
+};
 use crate::plugin::egress::address::ProxyAddress;
 use crate::plugin::languages::Languages;
-
-/// 读到请求头结束（空行）为止，返回读到的文字。
-async fn read_head<S: AsyncReadExt + Unpin>(stream: &mut S) -> String {
-    let mut head = Vec::new();
-    let mut byte = [0u8; 1];
-    while !head.ends_with(b"\r\n\r\n") {
-        if stream.read(&mut byte).await.unwrap_or(0) == 0 {
-            break;
-        }
-        head.push(byte[0]);
-    }
-    String::from_utf8_lossy(&head).into_owned()
-}
-
-fn header_value(head: &str, name: &str) -> Option<String> {
-    head.lines().find_map(|line| {
-        let (key, value) = line.split_once(':')?;
-        key.trim()
-            .eq_ignore_ascii_case(name)
-            .then(|| value.trim().to_owned())
-    })
-}
 
 /// 证书只给 `name` 的 https 站点，记下每个连接的 SNI 和 `Host`。
 async fn tls_site(
@@ -50,19 +30,12 @@ async fn tls_site(
     let cert = key.cert.der().clone();
     let private = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.signing_key.serialize_der()));
     let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-    let server = rustls::ServerConfig::builder_with_provider(provider.clone())
+    let server = rustls::ServerConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .unwrap()
         .with_no_client_auth()
         .with_single_cert(vec![cert.clone()], private)
         .unwrap();
-    let mut roots = rustls::RootCertStore::empty();
-    roots.add(cert).unwrap();
-    let client = rustls::ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()
-        .unwrap()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
     let acceptor = TlsAcceptor::from(Arc::new(server));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -89,7 +62,7 @@ async fn tls_site(
             });
         }
     });
-    ((addr, Arc::new(client)), seen)
+    ((addr, cert), seen)
 }
 
 #[tokio::test]
@@ -120,8 +93,8 @@ async fn https_connects_to_the_checked_ip_but_keeps_the_domain_for_sni_and_host(
     assert_eq!(wrong.unwrap_err().kind, LinkPreviewFailure::UpstreamError);
 }
 
-/// HTTP 代理替身：记下 `CONNECT` 请求头，然后接到假站点。
-async fn connect_proxy(site: SocketAddr) -> (u16, Arc<Mutex<Vec<String>>>) {
+/// HTTP 代理替身：记下 `CONNECT` 请求头，端口 `DOH_PORT` 接到假 DoH，其他接到假站点；连不上回 502。
+async fn connect_proxy(site: SocketAddr, doh: SocketAddr) -> (u16, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -129,12 +102,21 @@ async fn connect_proxy(site: SocketAddr) -> (u16, Arc<Mutex<Vec<String>>>) {
     tokio::spawn(async move {
         while let Ok((mut client, _)) = listener.accept().await {
             let head = read_head(&mut client).await;
-            record.lock().unwrap().push(head);
+            record.lock().unwrap().push(head.clone());
+            let port = head
+                .split_whitespace()
+                .nth(1)
+                .and_then(|target| target.rsplit_once(':'))
+                .and_then(|(_, port)| port.parse::<u16>().ok());
+            let to = if port == Some(DOH_PORT) { doh } else { site };
+            let Ok(mut upstream) = TcpStream::connect(to).await else {
+                let _ = client.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n").await;
+                continue;
+            };
             client
                 .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 .await
                 .unwrap();
-            let mut upstream = TcpStream::connect(site).await.unwrap();
             tokio::spawn(async move {
                 let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
             });
@@ -143,8 +125,8 @@ async fn connect_proxy(site: SocketAddr) -> (u16, Arc<Mutex<Vec<String>>>) {
     (port, seen)
 }
 
-/// SOCKS5 代理替身（不要认证）：记下请求里的目标，只接受 IPv4 地址，域名一律回失败。
-async fn socks_proxy(site: SocketAddr) -> (u16, Arc<Mutex<Vec<SocketAddr>>>) {
+/// SOCKS5 代理替身（不要认证）：记下请求里的目标，只接受 IPv4 地址，域名一律回失败；端口 `DOH_PORT` 接到假 DoH。
+async fn socks_proxy(site: SocketAddr, doh: SocketAddr) -> (u16, Arc<Mutex<Vec<SocketAddr>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -167,11 +149,19 @@ async fn socks_proxy(site: SocketAddr) -> (u16, Arc<Mutex<Vec<SocketAddr>>>) {
             let ip = std::net::Ipv4Addr::new(target[0], target[1], target[2], target[3]);
             let to = SocketAddr::new(ip.into(), u16::from_be_bytes([target[4], target[5]]));
             record.lock().unwrap().push(to);
+            let upstream = if to.port() == DOH_PORT {
+                TcpStream::connect(doh).await
+            } else {
+                TcpStream::connect(site).await
+            };
+            let Ok(mut upstream) = upstream else {
+                let _ = client.write_all(&[5, 5, 0, 1, 0, 0, 0, 0, 0, 0]).await;
+                continue;
+            };
             client
                 .write_all(&[5, 0, 0, 1, 0, 0, 0, 0, 0, 0])
                 .await
                 .unwrap();
-            let mut upstream = TcpStream::connect(site).await.unwrap();
             tokio::spawn(async move {
                 let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
             });
@@ -197,7 +187,7 @@ fn page_routes() -> Router {
 async fn the_owner_http_proxy_is_asked_for_the_ip_with_the_password() {
     let dns: &[(&str, &[&str])] = &[("loopback.test", &["127.0.0.1"])];
     let (previews, world) = world_with(page_routes(), dns, Limits::default(), None).await;
-    let (port, seen) = connect_proxy(world.site).await;
+    let (port, seen) = connect_proxy(world.site, world.doh).await;
     use_proxy(&world.proxy, &format!("http://me:s3cret@127.0.0.1:{port}"));
 
     let preview = previews
@@ -205,11 +195,13 @@ async fn the_owner_http_proxy_is_asked_for_the_ip_with_the_password() {
         .await
         .unwrap();
     assert_eq!(preview.title.as_deref(), Some("Proxied"));
-    let head = seen.lock().unwrap().first().cloned().unwrap();
-    assert!(
-        head.starts_with(&format!("CONNECT {SITE_IP}:80 ")),
-        "{head}"
-    );
+    let head = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|head| head.starts_with(&format!("CONNECT {SITE_IP}:80 ")))
+        .cloned()
+        .expect("站点应该经代理去连");
     // me:s3cret 的 base64。
     assert_eq!(
         header_value(&head, "proxy-authorization").as_deref(),
@@ -217,20 +209,36 @@ async fn the_owner_http_proxy_is_asked_for_the_ip_with_the_password() {
     );
     assert!(world.dialed.lock().unwrap().is_empty(), "经代理时不直连");
     assert_eq!(world.hits.lock().unwrap().as_slice(), ["site.test /"]);
+    assert_eq!(world.local_calls("site.test"), 0, "目标域名不该走本地解析");
+    assert!(
+        world.doh_hits.load(std::sync::atomic::Ordering::SeqCst) > 0,
+        "地址应该来自经代理的 DoH"
+    );
 
     // 内网地址在交给代理之前就拒绝了。
+    world.doh_answer(
+        "loopback.test",
+        DohReply::Addresses(vec!["127.0.0.1".parse().unwrap()]),
+    );
     let blocked = previews.preview("http://loopback.test/", "device").await;
     assert_eq!(
         blocked.unwrap_err().kind,
         LinkPreviewFailure::BlockedAddress
     );
-    assert_eq!(seen.lock().unwrap().len(), 1);
+    assert_eq!(
+        seen.lock()
+            .unwrap()
+            .iter()
+            .filter(|head| head.starts_with(&format!("CONNECT {SITE_IP}:80 ")))
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
 async fn the_owner_socks5_proxy_gets_the_ip_not_the_name() {
     let (previews, world) = world(page_routes()).await;
-    let (port, seen) = socks_proxy(world.site).await;
+    let (port, seen) = socks_proxy(world.site, world.doh).await;
     use_proxy(&world.proxy, &format!("socks5://127.0.0.1:{port}"));
 
     let preview = previews
@@ -239,6 +247,94 @@ async fn the_owner_socks5_proxy_gets_the_ip_not_the_name() {
         .unwrap();
     assert_eq!(preview.title.as_deref(), Some("Proxied"));
     let expected: SocketAddr = format!("{SITE_IP}:80").parse().unwrap();
-    assert_eq!(seen.lock().unwrap().as_slice(), [expected]);
+    assert_eq!(
+        seen.lock()
+            .unwrap()
+            .iter()
+            .filter(|addr| addr.port() == 80)
+            .copied()
+            .collect::<Vec<_>>(),
+        [expected]
+    );
     assert!(world.dialed.lock().unwrap().is_empty());
+    assert_eq!(world.local_calls("site.test"), 0, "目标域名不该走本地解析");
+}
+
+#[tokio::test]
+async fn a_home_address_from_doh_is_still_blocked() {
+    let (previews, world) = world(page_routes()).await;
+    let (port, _seen) = connect_proxy(world.site, world.doh).await;
+    use_proxy(&world.proxy, &format!("http://127.0.0.1:{port}"));
+    world.doh_answer(
+        "loopback.test",
+        DohReply::Addresses(vec!["127.0.0.1".parse().unwrap()]),
+    );
+
+    let blocked = previews
+        .preview("http://loopback.test/", "device")
+        .await
+        .unwrap_err();
+    assert_eq!(blocked.kind, LinkPreviewFailure::BlockedAddress);
+    assert_eq!(world.local_calls("loopback.test"), 0);
+}
+
+#[tokio::test]
+async fn a_doh_server_that_does_not_answer_is_dns_failed() {
+    let (previews, world) = world(page_routes()).await;
+    let (port, _seen) = connect_proxy(world.site, world.doh).await;
+    use_proxy(&world.proxy, &format!("http://127.0.0.1:{port}"));
+    world.stop_doh();
+
+    let failed = previews
+        .preview("http://site.test/", "device")
+        .await
+        .unwrap_err();
+    assert_eq!(failed.kind, LinkPreviewFailure::DnsFailed);
+}
+
+#[tokio::test]
+async fn doh_error_codes_are_dns_failed() {
+    use hickory_proto::op::ResponseCode;
+
+    let (previews, world) = world(page_routes()).await;
+    let (port, _seen) = connect_proxy(world.site, world.doh).await;
+    use_proxy(&world.proxy, &format!("http://127.0.0.1:{port}"));
+    for (name, code) in [
+        ("fail.test", ResponseCode::ServFail),
+        ("missing.test", ResponseCode::NXDomain),
+    ] {
+        world.doh_answer(name, DohReply::Rcode(code));
+        let failed = previews
+            .preview(&format!("http://{name}/"), "device")
+            .await
+            .unwrap_err();
+        assert_eq!(failed.kind, LinkPreviewFailure::DnsFailed, "{name}");
+    }
+}
+
+#[tokio::test]
+async fn without_a_proxy_the_local_resolver_is_used() {
+    let (previews, world) = world(page_routes()).await;
+    previews
+        .preview("http://site.test/", "device")
+        .await
+        .unwrap();
+
+    assert_eq!(world.local_calls("site.test"), 1);
+    assert_eq!(world.doh_hits.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+/// 真的经代理问 1.1.1.1：TLS 按 IP 校验、RFC 8484 报文和解析都走一遍。跑的时候要有 `https_proxy`。
+#[tokio::test]
+#[ignore = "需要外网和出网代理，CI 不跑"]
+async fn real_doh_through_the_owner_proxy_resolves_a_public_name() {
+    let text = std::env::var("https_proxy").expect("要设置 https_proxy");
+    let proxy = crate::plugin::egress::core_proxy::CoreProxy::default();
+    use_proxy(&proxy, &text);
+    let net = super::Net::system(proxy);
+
+    let found = super::doh::lookup(&net, net.proxy.doh(), "example.com")
+        .await
+        .unwrap();
+    assert!(!found.is_empty());
 }

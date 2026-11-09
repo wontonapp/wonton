@@ -60,6 +60,21 @@ impl Net {
         }
     }
 
+    /// 解析域名。配了主人代理时经代理用 DoH：国内本地 DNS 可能回得不到的假地址，经代理连它也没用（ADR-0065）。
+    /// 没配代理时用本地解析。
+    pub(super) async fn resolve(
+        &self,
+        host: String,
+        port: u16,
+    ) -> Result<Vec<IpAddr>, super::Failure> {
+        match self.proxy.current() {
+            None => (self.resolve)(host, port).await.map_err(|e| {
+                super::Failure::new(super::LinkPreviewFailure::UpstreamError, e.to_string())
+            }),
+            Some(_) => super::doh::lookup(self, self.proxy.doh(), &host).await,
+        }
+    }
+
     /// 连到 `host` 的某个地址，`tls` 时在上面握 TLS（SNI 和证书校验都按 `host`）。依次试 `ips`，第一个连上的为准。
     pub(super) async fn open(
         &self,

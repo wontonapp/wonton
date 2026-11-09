@@ -542,10 +542,10 @@ fn open_plugin_manager(
     .with_matrix(matrix)
     .with_host(HostPaths::new(cfg.host_dev.clone()))
     .with_lan(Lan::from_config(cfg))
-    .with_egress(Egress::new(
-        cfg.egress_proxy.clone(),
-        cfg.egress_proxy_detected.clone(),
-    ))
+    .with_egress(
+        Egress::new(cfg.egress_proxy.clone(), cfg.egress_proxy_detected.clone())
+            .with_doh(cfg.doh_url.clone()),
+    )
     .with_store(cfg.store.clone())
     .with_upgrade_freeze(upgrades.frozen())
 }
