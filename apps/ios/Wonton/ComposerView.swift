@@ -24,6 +24,7 @@ struct ComposerView: View {
     @State private var pendingImage: ImageUpload?
     @FocusState private var isFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         let isEmpty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -37,7 +38,9 @@ struct ComposerView: View {
                 .padding(.top, WontonTheme.spacing.s8)
             }
             HStack(alignment: .bottom, spacing: 0) {
-                WontonIconButton(icon: .attach, label: String(localized: .composerAttach)) { isChoosingAttachment = true }
+                WontonIconButton(icon: .attach, label: String(localized: .composerAttach)) {
+                    isChoosingAttachment = true
+                }
                 ComposerField(
                     text: draft,
                     focused: $isFocused,
