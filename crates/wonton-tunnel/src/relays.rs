@@ -8,7 +8,12 @@
 //! 分档回退（[`spawn_tier_fallback`]）：endpoint 一开始只放最优先的一档，这一档全部连不上、持续
 //! 超过 [`FALLBACK_AFTER`] 才把下一档加进来；被撤的档里有中继真的收我们（探针 endpoint 带令牌
 //! 握手成功）才撤回来。档内谁快用谁由 iroh 按探测延迟挑（家中继），这里不排先后。
+//!
+//! 中继拒绝（令牌被吊销、配额用完）和连不上走同一条重试路径：iroh 对它连不上的中继按 10 毫秒起、
+//! 每次翻倍、封顶 16 秒的退避重连。这一层不再自己加节奏——改 endpoint 的中继表会让 iroh 跑一遍完整
+//! net_report（每台中继 3 个 HTTPS 探测），所以探针只用单台中继的 map，档位不变时一次都不动。
 
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -344,6 +349,64 @@ impl TierFallbackHandle {
     }
 }
 
+/// 恢复探针：每台被撤档的中继一个自己的 endpoint。
+///
+/// 为什么不让一个探针 endpoint 装多台中继：`home_relay_status` 只报当前家中继一个，多台装在
+/// 一个 map 里时，剩下的谁插过、谁连上没有第二个信号，只能靠“缺的就插”每拍对一遍——而每次
+/// `insert_relay` 都是一次 `RelayMapChange`，iroh 会为它跑一遍完整 net_report（每台中继 3 个 HTTPS
+/// 探测），拒绝期间变成每秒几个新连接的放大回路。单台中继的 map 没有这个问题：它的家中继就是那台，
+/// `home_relay_status` 直接是那台的握手结论，档位不变时一次都不用动它。
+///
+/// 探针仍然长寿命：档位变了只增删差集，已有的不重建（不重新 bind、不重新握手）。恢复判定靠 iroh
+/// 自己的 10 毫秒起、封顶 16 秒的退避重连，加上它每 20–26 秒的周期 net_report，我们不再另加节奏。
+struct Probes {
+    endpoints: HashMap<RelayUrl, Endpoint>,
+}
+
+impl Probes {
+    fn new() -> Self {
+        Self {
+            endpoints: HashMap::new(),
+        }
+    }
+
+    /// 关掉不再需要探的 endpoint。
+    fn retain(&mut self, wanted: &[Relay]) {
+        let stale: Vec<RelayUrl> = self
+            .endpoints
+            .keys()
+            .filter(|url| !wanted.iter().any(|relay| &relay.url == *url))
+            .cloned()
+            .collect();
+        for url in stale {
+            if let Some(endpoint) = self.endpoints.remove(&url) {
+                tokio::spawn(async move { endpoint.close().await });
+            }
+        }
+    }
+
+    async fn close(self) {
+        for endpoint in self.endpoints.into_values() {
+            endpoint.close().await;
+        }
+    }
+
+    /// 真正连上的（带令牌握手通过）中继。
+    fn connected(&self) -> Vec<RelayUrl> {
+        self.endpoints
+            .iter()
+            .filter(|(url, endpoint)| {
+                endpoint
+                    .home_relay_status()
+                    .get()
+                    .iter()
+                    .any(|status| status.is_connected() && status.url() == *url)
+            })
+            .map(|(url, _)| url.clone())
+            .collect()
+    }
+}
+
 /// 起一个只连 `map` 里这些中继的探针 endpoint：最小 preset、随机身份、不做直连和地址发现。它的
 /// 家中继状态就是「带令牌的真握手」的结论：中继进程活着却不收我们（令牌被吊销、配额用完、反向
 /// 代理后面后端挂了）时，握手到不了 Connected，不会误判成恢复（只看 TCP 端口就会来回切）。
@@ -364,63 +427,34 @@ async fn spawn_probe(map: RelayMap, tls: Option<CaTlsConfig>) -> anyhow::Result<
         .context("绑定中继探针 endpoint")
 }
 
-/// 按当前被撤的档（tiers 档以上全部启用时就是 0..wanted）对齐探针的覆盖集合，返回探针真正连上的
-/// 中继——恢复信号。没有激活回退（wanted == 0）时关掉探针。
+/// 按当前被撤的档（`wanted` 档 0..n）对齐探针覆盖集合，返回真正连上的中继——恢复信号。没有激活
+/// 回退（wanted == 0）时关掉全部探针。
 async fn probe_signal(
-    probe: &mut Option<Endpoint>,
+    probe: &mut Probes,
     table: &RelayTable,
     wanted: usize,
     tls: Option<CaTlsConfig>,
 ) -> Vec<RelayUrl> {
-    if wanted == 0 {
-        if let Some(p) = probe.take() {
-            tokio::spawn(async move { p.close().await });
-        }
-        return Vec::new();
-    }
     let wanted: Vec<Relay> = (0..wanted)
         .flat_map(|tier| table.tier(tier as u8))
         .cloned()
         .collect();
-    if probe.as_ref().is_none_or(Endpoint::is_closed) {
-        if let Some(dead) = probe.take() {
-            drop(dead);
+    probe.retain(&wanted);
+    for relay in &wanted {
+        if probe.endpoints.contains_key(&relay.url) {
+            continue;
         }
-        match spawn_probe(relay_map(table.relays(), 0), tls).await {
-            Ok(p) => *probe = Some(p),
+        let map: RelayMap = std::iter::once(Arc::new(relay.relay_config())).collect();
+        match spawn_probe(map, tls.clone()).await {
+            Ok(endpoint) => {
+                probe.endpoints.insert(relay.url.clone(), endpoint);
+            }
             Err(error) => {
-                tracing::warn!(%error, "中继表：恢复探针起不来，这拍不判恢复");
-                return Vec::new();
+                tracing::warn!(%error, url = %relay.url, "中继表：恢复探针起不来，这拍不探这台");
             }
         }
     }
-    let Some(p) = probe.as_ref() else {
-        return Vec::new();
-    };
-    // 对齐覆盖集合：多的撤掉、缺的加进。
-    let held: Vec<RelayUrl> = p
-        .home_relay_status()
-        .get()
-        .iter()
-        .map(|status| status.url().clone())
-        .collect();
-    for url in &held {
-        if !wanted.iter().any(|relay| &relay.url == url) {
-            p.remove_relay(url).await;
-        }
-    }
-    for relay in &wanted {
-        if !held.contains(&relay.url) {
-            p.insert_relay(relay.url.clone(), Arc::new(relay.relay_config()))
-                .await;
-        }
-    }
-    p.home_relay_status()
-        .get()
-        .iter()
-        .filter(|status| status.is_connected())
-        .map(|status| status.url().clone())
-        .collect()
+    probe.connected()
 }
 
 /// 盯着 iroh 的家中继状态跑分档回退：到点了就 [`Endpoint::insert_relay`] 下一档、
@@ -437,15 +471,15 @@ pub fn spawn_tier_fallback(
     let (enabled, watching) = tokio::sync::watch::channel(1);
     tokio::spawn(async move {
         let mut fallback = TierFallback::new();
-        // 长寿命探针：只在回退激活期间存在，档数变了不改建，直接对它 insert/remove_relay 对齐被撤
-        // 的档集合（和主 endpoint 同一套调用）。不重建就不必每次重新 bind + 重新握手：换档的瞬间
-        // 主 endpoint 也在重连同一批中继，两边不会互相抢拨号。
-        let mut probe: Option<Endpoint> = None;
+        // 长寿命探针：只在回退激活期间存在，档位变了只增删差集。单台中继一个 endpoint 是为了让
+        // 家中继状态直接等于那台的结论（见 `Probes`）。
+        let mut probe = Probes::new();
         let mut ticker = tokio::time::interval(POLL_INTERVAL);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             ticker.tick().await;
             if endpoint.is_closed() {
+                probe.close().await;
                 return;
             }
             let connected: Vec<RelayUrl> = endpoint
@@ -504,250 +538,4 @@ pub fn spawn_tier_fallback(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn url(text: &str) -> RelayUrl {
-        text.parse().unwrap()
-    }
-
-    fn relay(text: &str, tier: u8) -> Relay {
-        Relay {
-            url: url(text),
-            token: None,
-            tier,
-        }
-    }
-
-    #[test]
-    fn the_default_table_is_the_n0_group() {
-        let table = RelayTable::builtin_n0();
-        assert_eq!(RelayTable::parse("n0").unwrap(), table);
-        assert_eq!(table.tier_count(), 1);
-        assert!(!table.tier(0).is_empty());
-        assert!(table.tier(0).iter().all(|relay| relay.tier == 0));
-        assert!(table.tier(0).iter().all(|relay| relay.token.is_none()));
-    }
-
-    #[test]
-    fn a_token_in_the_userinfo_is_taken_out_of_the_url() {
-        let table = RelayTable::parse("https://tok@a.example").unwrap();
-        assert_eq!(table.tier(0).len(), 1);
-        assert_eq!(table.tier(0)[0].url, url("https://a.example/"));
-        assert_eq!(table.tier(0)[0].token.as_ref().unwrap().expose(), "tok");
-        // 百分号编码的令牌按原文解码。
-        let table = RelayTable::parse("https://a%40b%3Ac@example.org;n0").unwrap();
-        assert_eq!(table.tier(0)[0].token.as_ref().unwrap().expose(), "a@b:c");
-        assert_eq!(table.tier(1).len(), RelayTable::builtin_n0().tier(0).len());
-    }
-
-    #[test]
-    fn tiers_keep_their_order_and_n0_can_sit_in_any_tier() {
-        let table = RelayTable::parse("https://b.example,https://tok@a.example;n0").unwrap();
-        assert_eq!(table.tier_count(), 2);
-        assert_eq!(table.tier(0)[0].url, url("https://b.example/"));
-        assert_eq!(table.tier(0)[1].url, url("https://a.example/"));
-        assert_eq!(table.tier(0)[1].token.as_ref().unwrap().expose(), "tok");
-        assert_eq!(table.tier(1).len(), RelayTable::builtin_n0().tier(0).len());
-    }
-
-    #[test]
-    fn a_later_entry_for_the_same_address_replaces_the_earlier_one() {
-        let table = RelayTable::parse("https://a.example;n0").unwrap();
-        assert_eq!(table.tier_count(), 2);
-        // 同一地址再写一次，档位以最后一次为准。
-        let table = RelayTable::parse("https://a.example,https://tok@a.example").unwrap();
-        assert_eq!(table.tier_count(), 1);
-        assert_eq!(table.tier(0).len(), 1);
-        assert_eq!(table.tier(0)[0].token.as_ref().unwrap().expose(), "tok");
-    }
-
-    #[test]
-    fn invalid_values_name_the_offending_item() {
-        for (text, expected) in [
-            ("", "空的中继项"),
-            ("  ", "空的中继项"),
-            ("n0;", "空的中继项"),
-            ("n0,,n0", "空的中继项"),
-            ("notaurl", "不是合法的地址"),
-            ("http://a.example", "要用 https"),
-            ("https://tok:pw@a.example", "不能有密码"),
-            ("https://@a.example", "令牌不能是空"),
-            ("https://%ff@a.example", "UTF-8"),
-        ] {
-            let error = RelayTable::parse(text).unwrap_err();
-            assert!(error.contains(expected), "{text}：{error}");
-        }
-        assert!(
-            RelayTable::parse(vec!["n0"; 300].join(";").as_str())
-                .unwrap_err()
-                .contains("档位太多")
-        );
-    }
-
-    #[test]
-    fn wire_entries_must_not_carry_the_token_in_the_url() {
-        let mut entry = relay("https://a.example", 0);
-        assert_eq!(entry.validate(), Ok(()));
-        entry.url = "https://tok@a.example".parse().unwrap();
-        assert!(entry.validate().unwrap_err().contains("userinfo"));
-        entry.url = "http://a.example".parse().unwrap();
-        assert!(entry.validate().unwrap_err().contains("https"));
-        entry = relay("https://a.example", 0);
-        entry.token = Some(RelayToken::new(""));
-        assert!(entry.validate().unwrap_err().contains("空"));
-    }
-
-    #[test]
-    fn the_map_only_holds_the_requested_tiers() {
-        let table = RelayTable::parse("https://a.example;n0").unwrap();
-        let map = relay_map(table.relays(), 1);
-        assert_eq!(map.len(), 1);
-        assert!(map.contains(&url("https://a.example/")));
-        let map = relay_map(table.relays(), 2);
-        assert_eq!(map.len(), 1 + RelayTable::builtin_n0().tier(0).len());
-        // 令牌进了 iroh 的配置，不在地址里。
-        let config = map.get(&url("https://a.example/")).unwrap();
-        assert_eq!(config.auth_token.as_deref(), None);
-        let table = RelayTable::parse("https://tok@a.example").unwrap();
-        let map = relay_map(table.relays(), 1);
-        let config = map.get(&url("https://a.example/")).unwrap();
-        assert_eq!(config.auth_token.as_deref(), Some("tok"));
-    }
-
-    #[test]
-    fn fallback_waits_out_the_threshold_before_enabling_the_next_tier() {
-        let table =
-            RelayTable::parse("https://a.example;https://b.example;https://c.example").unwrap();
-        let mut fallback = TierFallback::new();
-        let start = Instant::now();
-        let step = |fallback: &mut TierFallback, now, connected: Vec<&str>| {
-            fallback.step(
-                &table,
-                &connected.iter().map(|text| url(text)).collect::<Vec<_>>(),
-                &[],
-                now,
-                Duration::from_secs(30),
-            )
-        };
-        // 顶档连着：什么都不做。
-        assert_eq!(step(&mut fallback, start, vec!["https://a.example/"]), None);
-        // 全断，但还没到阈值：等。
-        assert_eq!(step(&mut fallback, start, vec![]), None);
-        assert_eq!(
-            step(&mut fallback, start + Duration::from_secs(29), vec![]),
-            None
-        );
-        // 到了阈值：把下一档加进来，并重新计时。
-        assert_eq!(
-            step(&mut fallback, start + Duration::from_secs(30), vec![]),
-            Some(TierAction::Enable(1))
-        );
-        // 刚加进来的档还没连上，不马上走下一档。
-        assert_eq!(
-            step(&mut fallback, start + Duration::from_secs(35), vec![]),
-            None
-        );
-        assert_eq!(
-            step(&mut fallback, start + Duration::from_secs(65), vec![]),
-            Some(TierAction::Enable(2))
-        );
-        // 全部档都启用后不再加。
-        assert_eq!(
-            step(&mut fallback, start + Duration::from_secs(100), vec![]),
-            None
-        );
-    }
-
-    #[test]
-    fn fallback_removes_a_tier_once_a_lower_one_is_reachable_again() {
-        let table =
-            RelayTable::parse("https://a.example;https://b.example;https://c.example").unwrap();
-        let mut fallback = TierFallback::new();
-        let start = Instant::now();
-        let step = |fallback: &mut TierFallback, now, reachable: Vec<&str>| {
-            fallback.step(
-                &table,
-                &[],
-                &reachable.iter().map(|text| url(text)).collect::<Vec<_>>(),
-                now,
-                Duration::from_secs(30),
-            )
-        };
-        // 预热计时，然后逐档启用。
-        assert_eq!(step(&mut fallback, start, vec![]), None);
-        let t1 = start + Duration::from_secs(30);
-        assert_eq!(step(&mut fallback, t1, vec![]), Some(TierAction::Enable(1)));
-        assert_eq!(
-            step(&mut fallback, t1 + Duration::from_secs(1), vec![]),
-            None
-        );
-        let t2 = t1 + Duration::from_secs(31);
-        assert_eq!(step(&mut fallback, t2, vec![]), Some(TierAction::Enable(2)));
-        // 低档有端口连得上的中继（顶档恢复了）：最靠后的那档先撤。
-        assert_eq!(
-            step(&mut fallback, t2, vec!["https://a.example/"]),
-            Some(TierAction::Disable(2))
-        );
-        // 还连得上，继续撤。
-        assert_eq!(
-            step(&mut fallback, t2, vec!["https://a.example/"]),
-            Some(TierAction::Disable(1))
-        );
-        // 只剩顶档，不再撤。
-        assert_eq!(step(&mut fallback, t2, vec!["https://a.example/"]), None);
-        // 低档全断时撤档不会发生。
-        assert_eq!(step(&mut fallback, t2, vec![]), None);
-        // 中间档连得上也算：它一恢复，它后面的档就不需要了。
-        let mut fallback = TierFallback::new();
-        assert_eq!(step(&mut fallback, t2, vec![]), None);
-        let t4 = t2 + Duration::from_secs(30);
-        assert_eq!(step(&mut fallback, t4, vec![]), Some(TierAction::Enable(1)));
-        assert_eq!(
-            step(&mut fallback, t4 + Duration::from_secs(1), vec![]),
-            None
-        );
-        let t5 = t4 + Duration::from_secs(31);
-        assert_eq!(step(&mut fallback, t5, vec![]), Some(TierAction::Enable(2)));
-        assert_eq!(
-            step(&mut fallback, t5, vec!["https://b.example/"]),
-            Some(TierAction::Disable(2))
-        );
-        // 顶档还断着：第二档留着顶班。
-        assert_eq!(step(&mut fallback, t5, vec![]), None);
-    }
-
-    #[test]
-    fn a_recovered_top_tier_resets_the_timer() {
-        let table = RelayTable::parse("https://a.example;https://b.example").unwrap();
-        let mut fallback = TierFallback::new();
-        let start = Instant::now();
-        let step = |fallback: &mut TierFallback, now, connected: Vec<&str>| {
-            fallback.step(
-                &table,
-                &connected.iter().map(|text| url(text)).collect::<Vec<_>>(),
-                &[],
-                now,
-                Duration::from_secs(30),
-            )
-        };
-        assert_eq!(step(&mut fallback, start, vec![]), None);
-        // 断了 20 秒时恢复一下，计时清零；再断要重新等满 30 秒。
-        assert_eq!(
-            step(
-                &mut fallback,
-                start + Duration::from_secs(20),
-                vec!["https://a.example/"]
-            ),
-            None
-        );
-        assert_eq!(
-            step(&mut fallback, start + Duration::from_secs(25), vec![]),
-            None
-        );
-        assert_eq!(
-            step(&mut fallback, start + Duration::from_secs(55), vec![]),
-            Some(TierAction::Enable(1))
-        );
-    }
-}
+mod tests;

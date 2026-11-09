@@ -15,6 +15,7 @@ mod relay;
 mod relay_table;
 mod reset_resume;
 mod resume;
+mod revocation;
 mod stale_addrs;
 mod stall;
 mod support;
