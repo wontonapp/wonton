@@ -146,7 +146,8 @@ plugin-settings-egress-token-not-used = 旧版本没有服务用到令牌
 
 plugin-settings-mirror-address-invalid = 镜像加速地址 { $address } 不合法：只填主机名和可选端口，不带协议、路径或用户名密码
 plugin-settings-mirror-policy-never = 镜像 { $image } 标了 pull_policy: never，本地又没有
-plugin-settings-mirror-pull-failed = 加速地址 { $mirror }：{ $error }；请去设置里测速、换一个加速地址
+plugin-settings-mirror-all-failed = 镜像 { $image } 从哪个加速地址都拉不下来；{ $tries }。请去设置里测速、换一个加速地址
+plugin-settings-mirror-try-failed = { $mirror }：{ $error }
 plugin-settings-mirror-digest-mismatch = 本地镜像的 RepoDigests 没有要求的摘要 { $digest }，拒绝使用
 plugin-settings-mirror-probe-timeout = 测速总超时（{ $ms } 毫秒）：{ $error }
 plugin-settings-mirror-no-challenge = 缺少有效的 Bearer WWW-Authenticate

@@ -81,3 +81,4 @@
 | [0071](0071-timeline-position.md) | 聊天时间线的位置：回到底部、新消息数、重进停在哪，都由核心算 |
 | [0072](0072-tunnel-udp.md) | 隧道传 UDP：同一条隧道连接上的 QUIC 数据报，插件声明 `tunnel.ports`，App 在本机 `127.0.0.1` 映射 |
 | [0073](0073-message-actions-and-replies.md) | 消息菜单和回复：菜单项由核心按消息给，回复、转发、撤回都用 Matrix 的标准做法 |
+| [0074](0074-registry-mirrors-per-registry.md) | 镜像加速按仓库分开：ghcr 和 quay 各有自己的名单，一个站不行换下一个 |

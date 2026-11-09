@@ -146,7 +146,8 @@ plugin-settings-egress-token-not-used = 旧バージョンではトークンを�
 
 plugin-settings-mirror-address-invalid = ダウンロードミラーのアドレス{ $address }が不正です。ホスト名と任意のポートのみを書き、方式・パス・認証情報は付けません
 plugin-settings-mirror-policy-never = イメージ{ $image }はpull_policy: neverですが、ローカルにありません
-plugin-settings-mirror-pull-failed = ミラー{ $mirror }：{ $error }。設定でテストして、別のミラーを選んでください
+plugin-settings-mirror-all-failed = イメージ{ $image }はどのミラーからも取得できませんでした。{ $tries }。設定でテストして、別のミラーを選んでください
+plugin-settings-mirror-try-failed = { $mirror }：{ $error }
 plugin-settings-mirror-digest-mismatch = ローカルイメージのRepoDigestsに必要なダイジェスト{ $digest }がありません。使用を拒否します
 plugin-settings-mirror-probe-timeout = テスト全体がタイムアウトしました（{ $ms }ミリ秒）：{ $error }
 plugin-settings-mirror-no-challenge = 有効なBearer WWW-Authenticateチャレンジがありません

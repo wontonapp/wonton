@@ -16,6 +16,7 @@ use super::super::languages::Languages;
 use super::super::manifest::Manifest;
 use super::super::package::PluginPackage;
 use super::super::package_files::{COMPOSE_FILE, MAX_FILE_BYTES, PackageFiles, sha256_hex};
+use super::super::registry_mirror::mirrors::Mirrors;
 use super::onboarding::OnboardingCatalog;
 
 /// 核心读得懂的索引格式。
@@ -165,7 +166,7 @@ pub struct Index {
     pub onboarding: Option<OnboardingCatalog>,
     /// `onboarding` 读不懂的原因。
     pub onboarding_problem: Option<String>,
-    pub registry_mirrors: Vec<String>,
+    pub registry_mirrors: Mirrors,
     pub registry_mirrors_problem: Option<String>,
 }
 
@@ -252,12 +253,12 @@ impl Index {
         }
         match file.registry_mirrors.map(|value| {
             // 索引在缓存刷新时解析，校验消息按默认语言（ADR-0043 的回退）。
-            super::super::registry_mirror::address::choices(
+            super::super::registry_mirror::mirrors::parse(
                 value,
                 &super::super::languages::Languages::default(),
             )
         }) {
-            Some(Ok(choices)) => index.registry_mirrors = choices,
+            Some(Ok(mirrors)) => index.registry_mirrors = mirrors,
             Some(Err(e)) => {
                 let reason = crate::l10n::text(
                     langs,

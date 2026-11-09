@@ -11,7 +11,7 @@ async fn harness() -> (Harness, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("index.json"),
-        r#"{"format":1,"registry_mirrors":["mirror.example:5443"]}"#,
+        r#"{"format":1,"registry_mirrors":{"docker.io":["mirror.example:5443"],"ghcr.io":["ghcr.example"]}}"#,
     )
     .unwrap();
     let harness = Harness::start_with_store(

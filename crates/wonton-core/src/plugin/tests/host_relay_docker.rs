@@ -15,7 +15,7 @@ async fn a_real_loopback_listener_is_recognized_in_the_proc_table() {
     // 本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
     let image = wonton_test_images::image("public.ecr.aws/docker/library/busybox:1.37");
     engine
-        .ensure_image(&image, PullPolicy::Missing, None)
+        .ensure_image(&image, PullPolicy::Missing, &[])
         .await
         .unwrap();
     let mut names = Names::new();

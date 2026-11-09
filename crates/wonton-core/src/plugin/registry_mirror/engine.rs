@@ -6,7 +6,7 @@ use bollard::errors::Error as BollardError;
 use bollard::query_parameters::CreateImageOptionsBuilder;
 use futures_util::StreamExt;
 
-use super::reference::{digest, mirrored, pull_reference};
+use super::reference::{digest, pull_reference, station};
 use crate::plugin::compose::PullPolicy;
 use crate::plugin::docker::{Engine, EngineError};
 
@@ -28,30 +28,33 @@ impl Engine {
         &self,
         image: &str,
         policy: PullPolicy,
-        mirror: Option<&str>,
+        accelerated: &[String],
     ) -> Result<String> {
-        self.ensure_image_with_progress(image, policy, mirror, &mut |_layer: LayerProgress<'_>| {})
+        self.ensure_image_with_progress(image, policy, accelerated, &mut |_layer: LayerProgress<
+            '_,
+        >| {})
             .await
     }
 
     /// 同 [`Self::ensure_image`]。拉的时候每层的字节数交给 `progress`；本机已经有了、不拉时不报。
+    /// `accelerated` 是同一个引用按名单顺序改写出的加速引用，一个站失败就换下一个（ADR-0074）。
     pub(in crate::plugin) async fn ensure_image_with_progress(
         &self,
         image: &str,
         policy: PullPolicy,
-        mirror: Option<&str>,
+        accelerated: &[String],
         progress: &mut (dyn FnMut(LayerProgress<'_>) + Send),
     ) -> Result<String> {
-        let accelerated = mirror.and_then(|mirror| mirrored(image, mirror));
         if policy != PullPolicy::Always {
             if self.image_present(image).await? {
                 return Ok(image.to_owned());
             }
-            if let Some(reference) = &accelerated
-                && self.image_present(reference).await?
-            {
-                self.check_digest(reference).await?;
-                return Ok(reference.clone());
+            for reference in accelerated {
+                if self.image_present(reference).await?
+                    && self.check_digest(reference).await.is_ok()
+                {
+                    return Ok(reference.clone());
+                }
             }
             if policy == PullPolicy::Never {
                 let langs = self.owner_languages();
@@ -62,37 +65,63 @@ impl Engine {
                 )));
             }
         }
-        let reference = accelerated.as_deref().unwrap_or(image);
-        let pulled = async {
-            self.pull(reference, progress).await?;
-            if digest(reference).is_some() {
-                self.check_digest(reference).await?;
-            }
-            Ok::<_, EngineError>(())
+        if accelerated.is_empty() {
+            self.pull_and_check(image, progress).await?;
+            return Ok(image.to_owned());
         }
-        .await;
-        if let Err(error) = pulled {
-            return Err(if accelerated.is_some() {
-                let langs = self.owner_languages();
-                EngineError::Pull {
-                    image: reference.to_owned(),
-                    message: l10n::text(
-                        &langs,
-                        "plugin-settings-mirror-pull-failed",
-                        &[
-                            ("mirror", mirror.expect("改写引用有加速地址").into()),
-                            ("error", error.to_string().into()),
-                        ],
-                    ),
+        let mut failures = Vec::new();
+        for reference in accelerated {
+            match self.pull_and_check(reference, progress).await {
+                Ok(()) => {
+                    return Ok(if self.image_present(image).await? {
+                        image.to_owned()
+                    } else {
+                        reference.clone()
+                    });
                 }
-            } else {
-                error
-            });
+                Err(error) => failures.push((station(reference).to_owned(), error.to_string())),
+            }
         }
-        if accelerated.is_some() && self.image_present(image).await? {
-            Ok(image.to_owned())
-        } else {
-            Ok(reference.to_owned())
+        Err(self.all_stations_failed(image, &failures))
+    }
+
+    async fn pull_and_check(
+        &self,
+        reference: &str,
+        progress: &mut (dyn FnMut(LayerProgress<'_>) + Send),
+    ) -> Result<()> {
+        self.pull(reference, progress).await?;
+        if digest(reference).is_some() {
+            self.check_digest(reference).await?;
+        }
+        Ok(())
+    }
+
+    fn all_stations_failed(&self, image: &str, failures: &[(String, String)]) -> EngineError {
+        let langs = self.owner_languages();
+        let tries = failures
+            .iter()
+            .map(|(mirror, error)| {
+                l10n::text(
+                    &langs,
+                    "plugin-settings-mirror-try-failed",
+                    &[
+                        ("mirror", mirror.as_str().into()),
+                        ("error", error.as_str().into()),
+                    ],
+                )
+            })
+            .collect::<Vec<_>>();
+        EngineError::Pull {
+            image: image.to_owned(),
+            message: l10n::text(
+                &langs,
+                "plugin-settings-mirror-all-failed",
+                &[
+                    ("image", image.into()),
+                    ("tries", l10n::list(&langs, &tries).into()),
+                ],
+            ),
         }
     }
 

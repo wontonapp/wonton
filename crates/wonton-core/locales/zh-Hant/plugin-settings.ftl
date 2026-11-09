@@ -146,7 +146,8 @@ plugin-settings-egress-token-not-used = 舊版本沒有服務用到權杖
 
 plugin-settings-mirror-address-invalid = 下載鏡像站位址 { $address } 不正確：只填主機名稱和可選連接埠，不帶協定、路徑或使用者名稱密碼
 plugin-settings-mirror-policy-never = 映像檔 { $image } 標了 pull_policy: never，本機又沒有
-plugin-settings-mirror-pull-failed = 鏡像站位址 { $mirror }：{ $error }；請到設定裡測速、換一個鏡像站位址
+plugin-settings-mirror-all-failed = 鏡像 { $image } 從哪個鏡像站位址都拉不下來；{ $tries }。請到設定裡測速、換一個鏡像站位址
+plugin-settings-mirror-try-failed = { $mirror }：{ $error }
 plugin-settings-mirror-digest-mismatch = 本機映像檔的 RepoDigests 沒有要求的摘要 { $digest }，拒絕使用
 plugin-settings-mirror-probe-timeout = 測速總逾時（{ $ms } 毫秒）：{ $error }
 plugin-settings-mirror-no-challenge = 缺少有效的 Bearer WWW-Authenticate

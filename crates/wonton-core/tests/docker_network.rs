@@ -297,7 +297,7 @@ async fn leaving_an_egress_plugin_network_keeps_connections_through_published_po
         .with_network_pool(pool, Detector::Here);
     engine.check_server().await.unwrap();
     engine
-        .ensure_image(&image(), PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, &[])
         .await
         .unwrap();
     let labels = HashMap::new();
@@ -421,7 +421,7 @@ async fn plugin_networks_created_at_the_same_time_all_keep_the_core_address_free
         .with_network_pool(pool, Detector::Here);
     engine.check_server().await.unwrap();
     engine
-        .ensure_image(&image(), PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, &[])
         .await
         .unwrap();
     let labels = HashMap::new();
@@ -468,7 +468,7 @@ async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_rec
         .unwrap()
         .with_network_pool(pool, Detector::Here);
     engine
-        .ensure_image(&image(), PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, &[])
         .await
         .unwrap();
     for reach in [
@@ -541,7 +541,7 @@ async fn a_network_already_on_the_next_subnet_is_skipped() {
         .unwrap()
         .with_network_pool(pool, Detector::Here);
     engine
-        .ensure_image(&image(), PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, &[])
         .await
         .unwrap();
     let taken = names.oneshot_network("occupied-taken");
@@ -658,7 +658,7 @@ async fn a_core_with_forwarding_off_still_reaches_plugin_networks() {
         .unwrap()
         .with_network_pool(pool, Detector::Here);
     engine
-        .ensure_image(&image(), PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, &[])
         .await
         .unwrap();
     let plugin = names.oneshot_network("forward");
