@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.ConnectionCheck
 import app.wonton.protocol.ConnectionNotice
+import app.wonton.protocol.ConnectionQuality
 import app.wonton.protocol.DeviceNetwork
 import app.wonton.protocol.HomePath
 import app.wonton.protocol.HomeStatus
@@ -34,6 +36,7 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 
 internal val HomeStatus.connectionText: String
     @Composable get() = when (this) {
@@ -67,13 +70,49 @@ private val ConnectionNotice.retrying: Boolean?
         else -> null
     }
 
+/** 连接 Poor 且连着、没有别的通知时，短状态位置显示的一句；`null` 是不显示（#847）。 */
+@StringRes
+fun poorNoticeText(
+    connected: Boolean,
+    notice: ConnectionNotice?,
+    quality: ConnectionQuality,
+    relayPath: Boolean,
+): Int? = when {
+    !connected || notice != null || quality != ConnectionQuality.POOR -> null
+    relayPath -> R.string.connection_poor_relay
+    else -> R.string.connection_poor
+}
+
+/** 详情里“连接质量”的取值：Other 也按不确定显示（#847）。 */
+@StringRes
+fun qualityValueText(quality: ConnectionQuality): Int = when (quality) {
+    ConnectionQuality.GOOD -> R.string.connection_quality_good
+    ConnectionQuality.POOR -> R.string.connection_quality_poor
+    ConnectionQuality.UNKNOWN, ConnectionQuality.OTHER -> R.string.connection_unknown
+}
+
+/** 千分比换百分比要除的数：10‰ = 1%。 */
+private const val MILLE_PER_PERCENT = 10.0
+
+/** 判定窗口的丢包率：千分比换一位小数的百分比；样本不够时 `null`，界面显示“—”，不能显示 0（#847）。 */
+fun lossRateText(lossPerMille: UShort?): String? =
+    lossPerMille?.let { String.format(Locale.ROOT, "%.1f%%", it.toDouble() / MILLE_PER_PERCENT) }
+
+/** 判定窗口的往返时间；样本不够时 `null`，界面显示“—”（#847）。 */
+fun rttText(rttMs: UInt?): String? = rttMs?.let { "$it ms" }
+
 @Composable
 fun connectionBarStatus(
-    notice: ConnectionNotice?,
+    home: HomeViewModel,
     onRetry: () -> Unit,
     onOpen: (SettingsSubpage) -> Unit,
 ): WontonBarStatus {
+    val notice = home.notice
+    val poor = poorNoticeText(
+        home.status is HomeStatus.Connected, notice, home.details.quality, home.path?.relay == true,
+    )?.let { stringResource(it) }
     return when {
+        poor != null -> WontonBarStatus(title = poor, subtitle = poor)
         notice == null -> WontonBarStatus()
         notice.isShort -> WontonBarStatus(title = notice.sentence, subtitle = notice.sentence)
         else -> WontonBarStatus(subtitle = notice.sentence, line = { ConnectionLine(notice, onRetry, onOpen) })
@@ -199,12 +238,20 @@ fun ConnectionDetailsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
                 viewModel.path?.let { path ->
                     WontonRow(stringResource(R.string.connection_path), path.kindText)
                     WontonSeparator()
-                    WontonRow(stringResource(R.string.connection_latency), "${path.rttMs} ms")
-                    WontonSeparator()
                 }
                 WontonRow(
-                    stringResource(R.string.connection_lost_packets),
-                    "${details.lostPackets} / ${details.sentPackets}",
+                    stringResource(R.string.connection_quality),
+                    stringResource(qualityValueText(details.quality)),
+                )
+                WontonSeparator()
+                WontonRow(
+                    stringResource(R.string.connection_loss_rate),
+                    lossRateText(details.lossPerMille) ?: stringResource(R.string.connection_value_none),
+                )
+                WontonSeparator()
+                WontonRow(
+                    stringResource(R.string.connection_latency),
+                    rttText(details.rttMs) ?: stringResource(R.string.connection_value_none),
                 )
                 details.handshakeMs?.let {
                     WontonSeparator()

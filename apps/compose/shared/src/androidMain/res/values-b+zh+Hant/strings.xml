@@ -271,7 +271,13 @@
     <string name="connection_unknown">不確定</string>
     <string name="connection_path">路徑</string>
     <string name="connection_latency">延遲</string>
-    <string name="connection_lost_packets">封包遺失</string>
+    <string name="connection_loss_rate">封包遺失率</string>
+    <string name="connection_value_none">—</string>
+    <string name="connection_poor">網路較差，可能會卡</string>
+    <string name="connection_poor_relay">網路較差，正在經由中繼連線</string>
+    <string name="connection_quality">連線品質</string>
+    <string name="connection_quality_good">好</string>
+    <string name="connection_quality_poor">較差</string>
     <string name="connection_last_handshake">上次交握</string>
     <string name="connection_disconnects">斷線次數</string>
     <string name="connection_last_connected">上次連上</string>

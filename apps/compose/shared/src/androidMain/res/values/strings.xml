@@ -318,8 +318,20 @@
     <string name="connection_path">Path</string>
     <!-- Label of the round-trip time in the connection details. -->
     <string name="connection_latency">Latency</string>
-    <!-- Label of the lost and sent packet counts in the connection details. -->
-    <string name="connection_lost_packets">Packet loss</string>
+    <!-- Label of the connection quality in the connection details. -->
+    <string name="connection_quality">Connection quality</string>
+    <!-- Value of the connection quality: the connection is fine. -->
+    <string name="connection_quality_good">Good</string>
+    <!-- Value of the connection quality: connected, but lossy or slow. -->
+    <string name="connection_quality_poor">Poor</string>
+    <!-- Label of the recent loss rate in the connection details; a percentage with one decimal. -->
+    <string name="connection_loss_rate">Packet loss</string>
+    <!-- Value of a number the core couldn\'t measure: a dash, never 0. -->
+    <string name="connection_value_none">—</string>
+    <!-- Short status shown while connected and the connection quality is poor. -->
+    <string name="connection_poor">Poor connection, things may lag</string>
+    <!-- Short status shown while connected, the quality is poor, and the traffic goes through a relay. -->
+    <string name="connection_poor_relay">Poor connection, going through a relay</string>
     <!-- Label of the last handshake time in the connection details. -->
     <string name="connection_last_handshake">Last handshake</string>
     <!-- Label of the disconnect count in the connection details. -->
