@@ -36,6 +36,9 @@ mod server;
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub mod test_server;
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod test_support;
 mod udp;
 pub mod wire;
 

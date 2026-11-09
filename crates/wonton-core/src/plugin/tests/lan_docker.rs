@@ -146,9 +146,7 @@ async fn lan_address_change_updates_real_containers_and_config_page() {
     let dir = tempfile::tempdir().unwrap();
     let mut manager = manager_in_instance(engine.clone(), &dir, names.name());
     manager.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    drop(listener);
+    let port = wonton_tunnel::test_support::unused_port();
     let mut addresses = Vec::new();
     for fixture in ["address-one", "address-two"] {
         let network = names.instance().network(fixture);

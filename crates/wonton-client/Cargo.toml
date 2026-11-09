@@ -76,6 +76,8 @@ libc = "=0.2.189"
 jni = "0.21"
 
 [dev-dependencies]
+# MIT。测试挑本机空闲端口（`wonton_tunnel::test_support`）要 `test-hooks`。
+wonton-tunnel = { path = "../wonton-tunnel", features = ["test-hooks"] }
 # MIT。插件和文件接口的行为测试用它在本机假扮核心（文件还假扮 tusd）。
 axum = { workspace = true }
 tempfile = { workspace = true }

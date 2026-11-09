@@ -202,10 +202,10 @@ async fn a_server_that_moved_is_reached_at_its_new_address_without_pairing() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
     let mut home = Home::start(&[phone.device_id()]).await;
-    let moved = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
-        .unwrap()
-        .local_addr()
-        .unwrap();
+    let moved = SocketAddr::from((
+        Ipv4Addr::LOCALHOST,
+        wonton_tunnel::test_support::unused_port(),
+    ));
     home.report_address(moved);
     phone.connect(&home);
     wait_until_ticket_has(dir.path(), moved).await;

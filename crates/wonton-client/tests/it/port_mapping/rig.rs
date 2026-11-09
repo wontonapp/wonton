@@ -16,6 +16,7 @@ use wonton_client::{
     PortMappingState, PortProtocol,
 };
 use wonton_tunnel::test_server::PortServer;
+use wonton_tunnel::test_support::unused_port;
 use wonton_tunnel::{PortResolveError, PortResolver};
 
 use crate::home::support::wait_until_port_is_free;
@@ -50,15 +51,9 @@ impl PortResolver for Resolver {
     }
 }
 
-/// 回环上一个现在没人用的端口号；映射要同号，测试只能先挑一个空的。
+/// 回环上一个现在没人用的端口号，见 [`unused_port`]。
 pub fn free_port() -> u16 {
-    let tcp = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-    let port = tcp.local_addr().unwrap().port();
-    // 同号的 UDP 也得空着：映射同时绑两种协议。
-    if std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).is_ok() {
-        return port;
-    }
-    free_port()
+    unused_port()
 }
 
 pub struct MapHome {
