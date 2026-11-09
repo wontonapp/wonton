@@ -3641,6 +3641,12 @@ impl Client {
             .await
     }
 
+    /// A weak reference to this client, to observe its lifetime from the
+    /// outside without keeping it alive.
+    pub fn downgrade(&self) -> WeakClient {
+        WeakClient::from_client(self)
+    }
+
     /// Waits until an at least partially synced room is received, and returns
     /// it.
     ///
@@ -3974,8 +3980,11 @@ impl Client {
 
 /// A weak reference to the inner client, useful when trying to get a handle
 /// on the owning client.
+///
+/// Obtained via [`Client::downgrade`]; the `client` module stays private, so
+/// this re-export at the crate root is the only reachable path.
 #[derive(Clone, Debug)]
-pub(crate) struct WeakClient {
+pub struct WeakClient {
     client: Weak<ClientInner>,
 }
 
