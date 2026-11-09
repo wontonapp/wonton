@@ -23648,6 +23648,66 @@
         }
       }
     },
+    "room.scrollToBottom": {
+      "comment": "Accessibility label of the scroll-to-bottom button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to bottom"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到底部"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到底部"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一番下へ戻る"
+          }
+        }
+      }
+    },
+    "room.scrollToBottom.count": {
+      "comment": "Accessibility label of the scroll-to-bottom button with new messages. %1$@ is the count.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to bottom, %1$@ new messages"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到底部，还有 %1$@ 条新消息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到底部，還有 %1$@ 條新訊息"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一番下へ戻る、新着 %1$@ 件"
+          }
+        }
+      }
+    },
     "timeline.start": {
       "comment": "Divider above the first message of a chat.",
       "extractionState": "manual",

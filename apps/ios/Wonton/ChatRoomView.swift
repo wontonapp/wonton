@@ -16,6 +16,8 @@ struct ChatRoomView: View {
     @State private var pickingForwardRoom = false
     @State private var redactItem: String?
     @State private var showingRedact = false
+    /// 进房间的落点摆好之前不标已读（ADR-0071）：标早了已读行会跳到最新一条，落点就丢了。
+    @State private var placed = false
     @Environment(OnboardingModel.self) private var onboarding
     @Environment(TabsModel.self) private var tabs
 
@@ -157,10 +159,36 @@ struct ChatRoomView: View {
                 DispatchQueue.main.async { scroller.scrollTo(pageAnchor, anchor: .top) }
             }
             .onChange(of: timeline.items.last?.id) { _, last in
-                if last != nil { model.send(.markRoomRead(roomId: roomId)) }
+                guard last != nil else { return }
+                // 只有停在底部才标已读；翻上去读历史时不标，回到底部再标（贴底那一下的 onChange 在下面）。
+                // 落点摆好之前不标：标早了已读行跳到最新一条，进房的落点就丢了。
+                if pin.isPinned, placed { model.send(.markRoomRead(roomId: roomId)) }
+                // 自己发的消息（包括别的设备发的）到了：不管翻到哪都回到底部看结果。
+                if case let .message(message) = timeline.items.last?.content, message.isOwn { pin.pin() }
+            }
+            .onChange(of: pin.isPinned) { _, pinned in
+                // 跨过底部报告方向（ADR-0071）：核心按它算“回到底部”按钮和新消息数；贴底时标已读。
+                model.send(.setTimelineScroll(roomId: roomId, scroll: pinned ? .bottom : .away))
+                if pinned { model.send(.markRoomRead(roomId: roomId)) }
+            }
+            // 摆进房间的落点（ADR-0071）：落点不是最新一条就停在它上面（落点行在视野顶部），解开贴底；
+            // 没有落点或落点就是最新一条，维持贴底。unpin 触发上面的方向报告，核心的落点由此知道没被当成到底。
+            .onChange(of: timeline.isLoaded) { _, loaded in
+                if loaded { placeAnchor(scroller) }
+            }
+            // 时间线清空重建后重摆落点，摆好前一样不标已读。
+            .onChange(of: timeline.generation) {
+                placed = false
+                placeAnchor(scroller)
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
                 pin.stick()
+            }
+            // 停在别处时的“回到底部”：数字是离开底部后到的消息数（ADR-0071）。
+            .overlay(alignment: .bottomTrailing) {
+                if case let .away(newMessages) = timeline.viewport {
+                    ScrollToBottomButton(count: Int(newMessages)) { pin.pin() }
+                }
             }
         }
     }
@@ -173,6 +201,17 @@ struct ChatRoomView: View {
             default: true
             }
         }?.id
+    }
+
+    /// 摆进房间的落点（ADR-0071）：落点不是最新一条就停在它上面，落点行在视野顶部；没有落点或落点就是最新
+    /// 一条，维持贴底。摆好（或决定贴底）后放开标已读的闸门。
+    private func placeAnchor(_ scroller: ScrollViewProxy) {
+        guard timeline.isLoaded, !placed else { return }
+        if let anchor = timeline.anchor, timeline.items.last?.id != anchor {
+            pin.unpin()
+            DispatchQueue.main.async { scroller.scrollTo(anchor, anchor: .top) }
+        }
+        placed = true
     }
 
     private var isDirect: Bool {
@@ -243,6 +282,40 @@ private extension TimelineItem {
         guard case let .message(mine) = content, case let .message(theirs) = other.content else { return false }
         return mine.senderId == theirs.senderId
     }
+}
+
+/// 停在别处时的“回到底部”（ADR-0071）：圆形材质按钮，数字在箭头上方的胶囊里，没有数字就不画胶囊。
+private struct ScrollToBottomButton: View {
+    let count: Int
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                if count > 0 {
+                    Text(count > Self.badgeMax ? "\(Self.badgeMax)+" : String(count))
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(.thinMaterial, in: Capsule())
+                }
+                Image(systemName: "arrow.down")
+                    .frame(width: 44, height: 44)
+                    .background(.regularMaterial, in: Circle())
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            count > 0
+                ? String(format: String(localized: "room.scrollToBottom.count"), "\(count)")
+                : String(localized: "room.scrollToBottom")
+        )
+        .padding(.trailing, 16)
+        .padding(.bottom, 16)
+    }
+
+    /// 数字超过这个数就写“99+”。
+    private static let badgeMax = 99
 }
 
 private extension View {

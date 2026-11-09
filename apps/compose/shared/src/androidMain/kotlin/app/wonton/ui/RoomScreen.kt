@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,9 +27,9 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -49,6 +50,7 @@ import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineMessage
+import app.wonton.protocol.TimelineViewport
 import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.LocalWontonTopInset
 import app.wonton.ui.design.WontonButtonKind
@@ -64,7 +66,7 @@ import kotlinx.coroutines.flow.filter
 
 private const val TAG = "RoomScreen"
 
-private class TimelineState {
+internal class TimelineState {
     val items = mutableStateListOf<TimelineItem>()
     var backPagination by mutableStateOf(BackPagination.IDLE)
 
@@ -72,13 +74,25 @@ private class TimelineState {
     var loaded by mutableStateOf(false)
     var failure by mutableStateOf<Problem?>(null)
 
+    /** 核心算的位置：在不在底部、离开底部时的新消息数（ADR-0071）。 */
+    var viewport by mutableStateOf<TimelineViewport>(TimelineViewport.Bottom)
+
+    /** 第一批的落点：进房间停在这一条上（ADR-0071）。 */
+    var anchor by mutableStateOf<String?>(null)
+
+    /** 时间线被清空重建的次数：重建的 Reset 里带新落点，壳要重新摆。 */
+    var clears by mutableIntStateOf(0)
+
     /** 打不开时点“重试”加一，按它重新订阅。 */
     var attempt by mutableIntStateOf(0)
 
     fun apply(diff: TimelineDiff) {
         when (diff) {
             is TimelineDiff.Append -> items.addAll(diff.items)
-            TimelineDiff.Clear -> items.clear()
+            TimelineDiff.Clear -> {
+                items.clear()
+                clears++
+            }
             is TimelineDiff.PushFront -> items.add(0, diff.item)
             is TimelineDiff.PushBack -> items.add(diff.item)
             TimelineDiff.PopFront -> items.removeAt(0)
@@ -117,6 +131,8 @@ fun RoomRoute(
             core.timelineUpdates(roomId).collect { update ->
                 update.diffs.forEach(timeline::apply)
                 timeline.backPagination = update.backPagination
+                timeline.viewport = update.viewport
+                update.anchor?.let { timeline.anchor = it }
                 timeline.loaded = true
             }
             currentCoroutineContext().ensureActive()
@@ -124,10 +140,6 @@ fun RoomRoute(
         } catch (failure: CoreException) {
             timeline.failure = failure.problem
         }
-    }
-    val newest = timeline.items.lastOrNull()?.id
-    LaunchedEffect(newest) {
-        if (newest != null) onAction(Action.MarkRoomRead(roomId))
     }
     val first = remember(core) { core.transfers() }
     val transfers by produceState(first, core) { core.transfersUpdates().collect { value = it } }
@@ -328,69 +340,65 @@ private fun Messages(
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
+    ScrollEffects(listState, timeline, roomId, onAction)
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
-    // 新消息插在第 0 项时，列表保持原来看到的那条不动，新消息落在屏幕下面；原本就在底部时滚过去。
-    val newest = timeline.items.lastOrNull()?.id
-    var followed by remember { mutableStateOf(newest) }
-    LaunchedEffect(newest) {
-        if (newest == null) return@LaunchedEffect
-        // 这里可能先于列表测量新条目运行：那时第 0 项还是旧的那条，滚过去等于没动，新消息留在屏幕下面（实测回复较长时）。
-        withFrameNanos { }
-        // 一批到了几条时，上次滚到的那条不在第 1 项。滚动被下一条打断时不更新，下一条还会跟上。
-        val arrived = newestFirst.indexOfFirst { it.id == followed }.coerceAtLeast(1)
-        if (listState.firstVisibleItemIndex <= arrived) listState.animateScrollToItem(0)
-        followed = newest
-    }
     // 滚到最上面（最早的一条露出来）时加载更早的消息；加载完条目变多，还在顶上就再加载一页。
     LaunchedEffect(listState, roomId) {
-        snapshotFlow {
-            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
-            timeline.loaded && last != null && last >= listState.layoutInfo.totalItemsCount - 1 &&
-                timeline.backPagination == BackPagination.IDLE
-        }
+        snapshotFlow { listState.reachedTop(timeline) }
             .distinctUntilChanged()
             .filter { it }
             .collect { onAction(Action.PaginateBackwards(roomId)) }
     }
-    LazyColumn(
-        modifier.fillMaxWidth(),
-        state = listState,
-        reverseLayout = true,
-        // 顶栏让位已垫在视口上（上面的 Column），这里不再叠加；底部照旧让开手势条。
-        contentPadding = PaddingValues(
-            start = WontonTheme.spacing.pageInset,
-            end = WontonTheme.spacing.pageInset,
-            top = WontonTheme.spacing.s8,
-            bottom = LocalWontonBottomInset.current + WontonTheme.spacing.s8,
-        ),
-        verticalArrangement = Arrangement.spacedBy(JOINED_GAP),
-    ) {
-        itemsIndexed(newestFirst, key = { _, item -> item.id }) { index, item ->
-            // 倒着排：下标大的是更早的一条。
-            val joinsPrevious = item.joins(newestFirst.getOrNull(index + 1))
-            val joinsNext = item.joins(newestFirst.getOrNull(index - 1))
-            Box(Modifier.padding(top = if (joinsPrevious) 0.dp else WontonTheme.spacing.s8 - JOINED_GAP)) {
-                TimelineItemView(
-                    item,
-                    core,
-                    showsSender,
-                    joinsPrevious,
-                    joinsNext,
-                    onRetry = { onAction(Action.RetrySend(roomId, item.id)) },
-                    onCancel = { onAction(Action.CancelSend(roomId, item.id)) },
-                    onCardAction = onAction,
-                    onOpenMenu = onOpenMenu,
+    Box(modifier) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            state = listState,
+            reverseLayout = true,
+            // 顶栏让位已垫在视口上（上面的 Column），这里不再叠加；底部照旧让开手势条。
+            contentPadding = PaddingValues(
+                start = WontonTheme.spacing.pageInset,
+                end = WontonTheme.spacing.pageInset,
+                top = WontonTheme.spacing.s8,
+                bottom = LocalWontonBottomInset.current + WontonTheme.spacing.s8,
+            ),
+            verticalArrangement = Arrangement.spacedBy(JOINED_GAP),
+        ) {
+            itemsIndexed(newestFirst, key = { _, item -> item.id }) { index, item ->
+                // 倒着排：下标大的是更早的一条。
+                val joinsPrevious = item.joins(newestFirst.getOrNull(index + 1))
+                val joinsNext = item.joins(newestFirst.getOrNull(index - 1))
+                Box(Modifier.padding(top = if (joinsPrevious) 0.dp else WontonTheme.spacing.s8 - JOINED_GAP)) {
+                    TimelineItemView(
+                        item,
+                        core,
+                        showsSender,
+                        joinsPrevious,
+                        joinsNext,
+                        onRetry = { onAction(Action.RetrySend(roomId, item.id)) },
+                        onCancel = { onAction(Action.CancelSend(roomId, item.id)) },
+                        onCardAction = onAction,
+                        onOpenMenu = onOpenMenu,
                     onReply = onReply,
-                )
+                    )
+                }
+            }
+            if (timeline.backPagination != BackPagination.REACHED_START) {
+                // 列表还空时转圈是第 0 项。它的键不能和有消息时一样：列表按键记位置，消息进来后会跟着转圈跳到最早的一条。
+                item(key = if (newestFirst.isEmpty()) "loading" else "paginating") {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                }
             }
         }
-        if (timeline.backPagination != BackPagination.REACHED_START) {
-            // 列表还空时转圈是第 0 项。它的键不能和有消息时一样：列表按键记位置，消息进来后会跟着转圈跳到最早的一条。
-            item(key = if (newestFirst.isEmpty()) "loading" else "paginating") {
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            }
-        }
+        ScrollToBottomButton(
+            timeline,
+            roomId,
+            listState,
+            onAction,
+            Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = WontonTheme.spacing.pageInset, bottom = WontonTheme.spacing.s8),
+        )
     }
 }
 
@@ -404,3 +412,6 @@ private fun TimelineItem.joins(other: TimelineItem?): Boolean {
 
 private val TimelineItem.senderId
     get() = (content as? TimelineContent.Message)?.message?.senderId
+
+internal val TimelineItem.isOwn
+    get() = (content as? TimelineContent.Message)?.message?.isOwn == true

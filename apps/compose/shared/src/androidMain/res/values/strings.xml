@@ -211,6 +211,10 @@
     <string name="bot_state_offline">Offline</string>
     <!-- Marker between read and new messages in the timeline. No arguments. -->
     <string name="timeline_new_messages_below">New messages below</string>
+    <!-- Accessibility label of the scroll-to-bottom button. -->
+    <string name="room_scroll_to_bottom">Back to bottom</string>
+    <!-- Accessibility label of the scroll-to-bottom button with new messages. Argument: the new message count. -->
+    <string name="room_scroll_to_bottom_count">Back to bottom, %1$d new messages</string>
     <!-- Marker at the start of the timeline. No arguments. -->
     <string name="timeline_start">Start of the chat</string>
     <!-- Footer label of an edited message. No arguments. -->
