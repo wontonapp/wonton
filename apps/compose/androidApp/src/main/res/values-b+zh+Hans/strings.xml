@@ -5,6 +5,12 @@
     <string name="keepalive_channel_name">保持连接</string>
     <!-- “保持连接”前台服务的常驻通知标题。 -->
     <string name="keepalive_notification_title">正在保持与家里的服务器的连接</string>
+    <!-- 端口映射前台服务的常驻通知渠道名（ADR-0072），显示在系统的通知设置里。 -->
+    <string name="mapping_channel_name">端口映射</string>
+    <!-- 端口映射的常驻通知标题：只有一个应用开着映射。参数是应用名。 -->
+    <string name="mapping_notification_title">正在映射 %1$s 的端口</string>
+    <!-- 端口映射的常驻通知标题：不止一个应用开着映射。参数是应用个数。 -->
+    <string name="mapping_notification_title_multiple">正在映射 %1$d 个应用的端口</string>
     <string name="push_in_room">%1$s：%2$s</string>
     <string name="push_unknown_sender">有人</string>
     <string name="push_invite">邀请你加入</string>

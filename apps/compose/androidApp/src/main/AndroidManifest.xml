@@ -7,7 +7,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- 新消息的系统通知；Android 13 起要在运行时申请。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- “保持连接”的前台服务（ADR-0003 的“设计：保持连接”）：后台不被挂起，隧道和 Matrix 同步照常。 -->
+    <!-- 前台服务的 specialUse 类型：两个服务都用——“保持连接”（ADR-0003）和端口映射（ADR-0072）。
+         FOREGROUND_SERVICE：后台不被挂起，隧道和 Matrix 同步照常。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- 推送唤醒后，取消息期间不让手机睡回去。 -->
@@ -86,6 +87,15 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps the tunnel to the user's self-hosted home server connected while the app is in the background, so new end-to-end-encrypted messages keep arriving." />
+        </service>
+        <!-- 端口映射的前台服务（ADR-0072）。subtype 同样写给 Google Play 的 specialUse 声明用。 -->
+        <service
+            android:name=".portmapping.PortMappingService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Maps ports of plugins on the user's self-hosted home server onto this device's loopback interface while the user has the mapping switched on, so other apps on the phone can connect to them." />
         </service>
     </application>
 
