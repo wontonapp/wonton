@@ -116,8 +116,9 @@ async fn sustained_traffic_does_not_publish_a_home_view_for_each_request() {
             () = &mut traffic => break,
             view = updates.next() => {
                 let view = view.expect("连接订阅提前结束");
-                assert_eq!(view.status, HomeStatus::Connected);
-                publications += 1;
+                // 机器忙的时候，网络通知后的确认（4 秒）会超时，连接被换掉：换连接自己会推几条，和这里数的
+                // “同一网络没变化也重算”无关，只数仍停在“已连接”的推送。
+                publications += u64::from(view.status == HomeStatus::Connected);
             }
         }
     }
@@ -126,7 +127,10 @@ async fn sustained_traffic_does_not_publish_a_home_view_for_each_request() {
     eprintln!("300 requests: {publications} home publications in {elapsed:?}, limit {limit}");
     assert!(publications <= limit, "{publications} > {limit}");
     phone
-        .wait_for(|view| view.details.sent_packets > before.details.sent_packets)
+        .wait_for(|view| {
+            view.status == HomeStatus::Connected
+                && view.details.sent_packets > before.details.sent_packets
+        })
         .await;
 }
 
@@ -325,6 +329,9 @@ async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
         .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
         .await;
     let proxy = view.proxy.unwrap();
+    // 旧连接被判死时断开计数加一（换连接先写“连接中”，同样算一次断开）。提前记下来：关闭帧偶尔能送到，
+    // 这一步就会涨；之后涨得比它多只可能来自前台检查对旧连接的判死。
+    let disconnects = phone.home().details.disconnects;
     phone.dispatch(Action::AppBackgrounded).unwrap();
 
     // App 挂起期间服务端放弃了连接，关闭帧到不了手机：手机仍以为连着，iroh 要 30 秒空闲超时才发现。
@@ -332,10 +339,13 @@ async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
     assert_eq!(phone.home().status, HomeStatus::Connected);
 
     // 回到前台：限时确认发现连接已死，马上换新连接。“几秒内回来”不按墙钟断言（机器忙时真实 I/O 会排过任何
-    // 时限），按因果断言：定时检查已停、App 刚回前台，服务端看到的新连接只可能是前台检查换的——空闲超时只会
-    // 判死、不会自己拨号，“重试”也不动活着的连接。等到新连接、界面回到已连接，第一批请求就要能用。
+    // 时限），按因果断言：定时检查已停、App 刚回前台，先等旧连接被判死（断开计数涨），再等界面重新说“已连接”
+    // ——那之后只可能是前台检查换的新连接：空闲超时只会判死、不会自己拨号，“重试”也不动活着的连接。等旧连接
+    // 判死之前，界面的“已连接”可能是旧连接的残影。
     phone.dispatch(Action::AppForegrounded).unwrap();
-    home.wait_for_a_connection().await;
+    phone
+        .wait_for(|view| view.details.disconnects > disconnects)
+        .await;
     phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;
@@ -421,9 +431,10 @@ async fn in_the_background_the_core_leaves_the_connection_alone() {
     let phone = Phone::open(dir.path());
     let mut home = Home::start(&[phone.device_id()]).await;
     phone.connect(&home);
-    phone
-        .wait_for(|view| view.status == HomeStatus::Connected)
+    let view = phone
+        .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
         .await;
+    let proxy = view.proxy.unwrap();
 
     // 后台暂停的前提是收新消息走 UnifiedPush（ADR-0003）：保持连接是默认方式，退到后台也照常探测和重连。
     phone
@@ -436,11 +447,26 @@ async fn in_the_background_the_core_leaves_the_connection_alone() {
     home.drop_connections_silently().await;
     // 比定时检查的间隔加限时都长。
     tokio::time::sleep(Duration::from_secs(14)).await;
-    let opened = &home.server().endpoint().metrics().socket.num_conns_opened;
-    assert_eq!(opened.get(), 0, "在后台还在重连");
+    let opened = home
+        .server()
+        .endpoint()
+        .metrics()
+        .socket
+        .num_conns_opened
+        .get();
+    // 退到后台那一刻已经开出去的那次检查不算：它会把连接换掉、在“后台”留一条。还在后台检查的话，14 秒里
+    // （间隔 5 秒、每次最多 8 秒）不止一条。
+    assert!(opened <= 1, "在后台还在重连：{opened}");
 
+    // 回到前台，等这一轮检查走完再发请求：它还活着的连接会确认一次，已经判死的会换新的再确认。请求早于
+    // 这一轮发出的话，可能正赶上旧连接被收走（502），那不是这个测试要断言的事。
+    let confirmed = phone.home().details.last_connected_at_ms;
     phone.dispatch(Action::AppForegrounded).unwrap();
-    home.wait_for_a_connection().await;
+    phone
+        .wait_for(|view| view.details.last_connected_at_ms > confirmed)
+        .await;
+    let (status, body) = get(&proxy, WEB_URL, "/after", true).await;
+    assert_eq!((status, body.as_str()), (200, "/after"));
 }
 
 #[tokio::test]
