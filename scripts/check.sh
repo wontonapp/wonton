@@ -33,7 +33,6 @@ python3 scripts/check-ui-text.py
 python3 scripts/check-dev-compose-ports.py
 bash scripts/check-conflict-markers.sh
 bash scripts/check-bundled-plugin-versions.sh
-bash scripts/check-docker-test-images.sh
 
 bash scripts/check-uniffi-comments.sh
 

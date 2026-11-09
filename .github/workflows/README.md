@@ -1,16 +1,54 @@
 # CI 的 runner
 
-作业跑在自托管 runner 上。
+作业全部跑在 GitHub 托管 runner 上（仓库公开后 Linux 和 macOS 分钟都免费，公开仓库不按 10 倍计 macOS）：
 
-- 标签 `self-hosted, macOS, ARM64, xcode` 的机器跑 iOS 模拟器构建，要装 Xcode 和 rustup。
-- 标签 `self-hosted, macOS, ARM64, swiftlint` 的机器跑 SwiftLint，不编译，但要装 Xcode（SwiftLint 用它的 SourceKit）；可以和 `xcode` 标在同一台上。
-- 标签 `self-hosted, Linux, X64` 的机器跑结构门禁和 Android，要装 rustup，Android SDK 与 NDK 由 runner 环境的 `ANDROID_HOME` 给出。
-- 带 `rust` 标签的机器跑 Rust 作业（格式、Clippy、不依赖 Docker 的测试），要装 rustup。带 `docker` 标签的主机不打 `rust` 标签，免得编译最重的作业落到最忙的机器上。只给 Rust 作业用的机器注册时加 `--no-default-labels --labels rust`，没有 `self-hosted, Linux, X64`，就不会接到 Android 这类要别的环境的作业。
-- 同时带 `docker` 标签的机器还跑“Rust Docker 测试”作业（Docker 集成测试、官方索引检查），要装 Docker。
-- Rust 测试用 nextest 跑（不同测试二进制同时跑，并发上限在 `.config/nextest.toml`）。工作流把固定版本的官方预编译二进制装进 runner 的工具缓存、核对 sha256，runner 不用预装，只要第一次能连上 GitHub 取发布物。
-- “Rust Docker 测试”跑 Docker 集成测试前会清理测试进程已退出且超过 20 分钟的测试容器和网络，以及带 `org.testcontainers.managed-by=testcontainers` 标签、停在 `Created` 且超过 20 分钟的孤儿容器，避免被取消的作业长期占用 Docker 资源；正式安装和插件验证资源不在范围内。
-- Rust 构建缓存放在 runner 环境 `WONTON_CI_CACHE` 指的目录（没设时是 runner 工作目录下的 `_cargo-target/`），按 runner 分目录、跨次沿用。Android 作业的 `GRADLE_USER_HOME` 也在这里。CI 关掉增量编译、调试信息只留行号，缓存小一半以上。Rust 的缓存在作业开始时超过 `WONTON_CI_CACHE_MAX_GB`（runner 环境，没设是 30）就整个清掉，盘紧的机器在 runner 的 `.env` 里设小。
-- 同一台 Linux 机器可以注册多个 runner，作业并行跑。
-- PR 上按路径跳过作业，范围写在各个工作流开头的 `paths` 里（冲突标记检查没写 `paths`，不跳过）。没有分支保护，跳过的检查不挡合并。
-- iOS 的模拟器构建在 PR 上先过一道“Swift 接口没变”判定（`scripts/ci-ios-needed.sh`，在带 `rust` 标签的机器上把 base 和 HEAD 的 Swift 绑定各生成一次逐字比较）：改到 iOS 相关文件，或绑定不同才跑；判成不需要时是 skipped，不挡合并。main 上每次合并都跑，红了谁合的谁修。
-- 密钥扫描（secret-scan.yml）也没写 `paths`，密钥可能写在文档里。用 gitleaks 官方二进制（版本和 sha256 固定在工作流里），只扫 PR 带进来的提交（`HEAD^1..HEAD`）或 push 到 main 的这一个提交，不扫全部历史；误报白名单在 `.gitleaks.toml`，每条写明理由，真密钥不能进白名单。
+- `ubuntu-24.04`：lint（结构门禁、冲突标记、密钥扫描）、Rust 的格式/Clippy/测试、Android（SDK 和 NDK 27 镜像自带）、
+  “Rust Docker 测试”（Docker 28 镜像自带）、核心镜像和发版镜像的 amd64 构建。
+- `ubuntu-24.04-arm`：发版镜像的 arm64 构建，和 amd64 各自构建后由 merge 作业合成多架构 manifest。
+- `macos-26`：SwiftLint。
+- `xcode-27`：iOS 模拟器构建。选这个镜像是为对上开发机（mini）的 Xcode 27.1；作业里显式
+  `xcode-select /Applications/Xcode_27.1.app`，镜像以后把默认版本升上去也不受影响。
+
+## 什么时候跑
+
+- 每个工作流都按 `paths` 跳过不相关的改动，范围写在各个工作流开头（lint 例外：冲突标记和密钥可能写在
+  任何文件里，不按路径过滤；它里面的结构门禁在只改文档时自己跳过）。没有分支保护，跳过的检查不挡合并。
+- 草稿 PR 只跑轻检查（lint 全部、Rust 的格式）；`ready_for_review` 事件触发 Clippy、测试、Docker、
+  Android、iOS（各作业 `if` 里判断 `github.event.pull_request.draft`）。
+- 合并进 main 不重跑全套（PR 已在最新 main 上跑过）；只有 main-image 继续构建核心镜像。每天定时
+  （`schedule`，02:00 起错开）把 Rust、Docker、Android、iOS 全量跑一遍兜底。
+- `test-images.yml` 每周一 02:00 UTC 把测试和镜像构建要拉的上游镜像复制到 `ghcr.io/<owner>/test-images`
+  （`scripts/mirror-test-images.sh` + crane copy，digest 原样保留），也可以手动触发。托管 runner 的
+  出口 IP 拉不动 Docker Hub 和 ECR Public（实测 `registry:2` 返回 toomanyrequests、构建基础镜像 429），
+  所以：Docker 集成测试作业设 `WONTON_TEST_IMAGES`，测试代码经 wonton-test-images crate 把镜像引用指到
+  副本，本地不设、按上游引用拉；main-image 和 release 给 Dockerfile 的 `*_IMAGE` build-arg 传副本引用。
+  仓库公开当天先手动跑一次 test-images.yml，再让 main-image 跑（副本空着时镜像构建会拉取失败）。
+
+## 缓存
+
+- Rust 作业用 Swatinem/rust-cache：缓存只在 main 上写（`save-if: github.ref == 'refs/heads/main'`，
+  定时运行），PR 只读。三个测试分片共用 `rust-test` 一个 key（编的是同一套测试二进制），“Rust Docker
+  测试”也恢复它；Clippy 和 iOS 各有各的 key（iOS 是 macOS 产物，不能和 Linux 混）。测试用 cargo-nextest
+  按测试名哈希分三片并行；并发上限、卡死时限和 Docker 重活的分组在 `.config/nextest.toml`。nextest 不跑
+  doctest，第一片里单列一步 `cargo test --doc`。
+- 镜像构建用 buildx 的 `type=gha` 缓存。`RUN --mount=type=cache` 不会随层导出，所以 Dockerfile 用
+  cargo-chef 把依赖编进独立的依赖层：清单不变就不重编依赖，gha 缓存才能省到时间。
+- 仓库的 actions 缓存上限 10 GB，Rust、Gradle、buildx 的缓存都从这里出，超了按最久未用逐出。
+
+## 安全（仓库公开后对外部 PR 也会执行）
+
+- 每个工作流顶层 `permissions: contents: read`，需要的作业单独放开（`packages: write` 推镜像、
+  `packages: read` 拉私有的测试镜像副本）。
+- 所有 `actions/checkout` 都带 `persist-credentials: false`，不在工作区留 git 凭据。
+- 第三方 action 固定到提交 SHA（行尾注释写版本号）；SwiftLint、XcodeGen、gitleaks、crane、actionlint
+  这类下载的二进制都校验 sha256。
+- 不用 `pull_request_target`；artifact 只留测试输出，保留 7 天。
+
+## 已知边界
+
+- `xcode-27` 是公开预览镜像；它转正或标签改名时改一下 `runs-on` 就行。
+- 托管 runner 的 Docker 是经典存储（overlay2），不是 containerd 镜像存储：#666 的行为（containerd
+  存储下镜像记录清掉后探针退回按创建引用起）复现不了，那个测试只在开了 containerd 存储的机器上手动跑。
+- 密钥扫描用 gitleaks 官方二进制（版本和 sha256 固定在工作流里），只扫 PR 带进来的提交（`HEAD^1..HEAD`）
+  或 push 到 main 的这一个提交，不扫全部历史；误报白名单在 `.gitleaks.toml`，每条写明理由，真密钥不能
+  进白名单。

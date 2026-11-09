@@ -1,0 +1,102 @@
+name: rust-docker
+
+# 依赖 Docker 的集成测试（标了 #[ignore] 的都在 wonton-core、wonton-client、wonton-matrix、wonton-acp-bridge 里）
+# 和官方索引检查。草稿 PR 不跑；转 ready 或每天的定时全量才跑。测试镜像拉的是 ghcr.io/<owner>/test-images
+# 的副本（test-images.yml 每周和每次 main 合并时同步），托管 runner 的出口 IP 拉不动 Docker Hub 和 ECR Public。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "crates/wonton-acp-bridge/**"
+      - "crates/wonton-client/**"
+      - "crates/wonton-core/**"
+      - "crates/wonton-matrix/**"
+      - "deploy/**"
+      - "plugins/**"
+      - "Cargo.toml"
+      - "vendor/**"
+      - "Cargo.lock"
+      - "clippy.toml"
+      - ".config/nextest.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/rust-docker.yml"
+      - "!**/*.md"
+  schedule:
+    # 每天全量兜底（PR 已在最新 main 上跑过，main 上不重跑）。
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: rust-docker-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # 集成测试的镜像引用指到镜像仓库副本（wonton-test-images 改写），本地不设、按上游引用拉。
+  # 副本前缀按仓库主人来，仓库换组织也跟着走。
+  WONTON_TEST_IMAGES: ghcr.io/${{ github.repository_owner }}/test-images
+
+permissions:
+  contents: read
+  # 镜像副本在仓库还是私有的时候是私有包，拉取要 GITHUB_TOKEN。
+  packages: read
+
+jobs:
+  docker:
+    name: Rust Docker 测试
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 安装 rust-toolchain.toml 指定的工具链
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-nextest@0.9.151
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # 和“测试”分片同一份缓存：编出来的测试二进制一样，恢复完就能直接跑。
+          shared-key: rust-test
+          save-if: false
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: 确认 Docker 可用
+        run: docker version
+      - name: 腾出预装 SDK 占的盘
+        # 托管 runner 根盘只有约 70 GB，预装的 Android、.NET 等 SDK 占掉二十几 GB；测试要拉十来 GB 镜像，
+        # 而核心按磁盘 5% 留空（files/uploads.rs），挤到线以下连 0 字节的上传也会被报 storage_full。
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
+          df -h /
+      - name: 一次拉齐测试镜像
+        # 测试里 ensure_image 见本机已有就不再联网，跑起来后不依赖 ghcr 的临时令牌还能用多久
+        # （实测跑了几分钟后换令牌开始 401）。
+        run: |
+          scripts/mirror-test-images.sh --list | while IFS= read -r image; do
+            docker pull "$image"
+          done
+      - name: Docker 集成测试（标了 #[ignore] 的都是）
+        shell: bash
+        run: cargo nextest run --workspace --locked --profile docker --run-ignored only 2>&1 | tee "$RUNNER_TEMP/test-logs/test-output.log"
+      - name: 官方索引里的清单这份核心都读得懂、渲染得出来
+        run: |
+          # 每个插件都按安装前的渲染走一遍（索引里只有文件的 sha256，被引用的文件用占位内容），
+          # 核心不再注入的变量、改名的变量当场失败，免得合进来以后那些插件装不上。
+          curl -fsSL --retry 5 -o "$RUNNER_TEMP/index.json" \
+            https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
+          cargo run -q -p wonton-core --locked -- plugin check-index "$RUNNER_TEMP/index.json"
+      - name: 失败时留下测试输出
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-docker-test-logs-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/test-logs
+          retention-days: 7
+          if-no-files-found: ignore

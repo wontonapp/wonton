@@ -167,8 +167,8 @@ impl TestServer {
             .with_env_var("TUWUNEL_CONFIG", CONFIG_PATH)
             .with_env_var("TUWUNEL_JWT__KEY", issuer.public_key_pem())
             .with_env_var("TUWUNEL_REGISTRATION_SHARED_SECRET", &secret)
-            // CI 失败时只上传本次作业起的容器的日志（scripts/ci-capture-container-logs.sh 按它认）：testcontainers
-            // 起的名字是随机的，认不出是哪个测试进程的。
+            // 这个标签登记是哪个测试进程起的：testcontainers 起的名字是随机的，本机多套测试并行时
+            // 认不出是谁的容器。
             .with_label("wonton.test-pid", std::process::id().to_string());
         request = match host_network {
             true => request.with_network("host"),
@@ -288,13 +288,18 @@ async fn listening_port(container: &ContainerAsync<GenericImage>) -> u16 {
         .unwrap_or_else(|| panic!("Tuwunel 的日志里没有它挑上的端口：{text}"))
 }
 
-/// compose.yaml 里的镜像，拆成名字和标签。
-fn image() -> (&'static str, &'static str) {
-    COMPOSE
+/// compose.yaml 里的镜像，拆成名字和标签；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本
+/// （wonton-test-images），本地按 compose 里的上游引用拉。
+fn image() -> (String, String) {
+    let (name, tag) = COMPOSE
         .lines()
         .find_map(|line| line.trim().strip_prefix("image: "))
         .and_then(|image| image.rsplit_once(':'))
-        .expect("compose.yaml 里应有带标签的 Tuwunel 镜像")
+        .expect("compose.yaml 里应有带标签的 Tuwunel 镜像");
+    wonton_test_images::image(&format!("{name}:{tag}"))
+        .rsplit_once(':')
+        .map(|(name, tag)| (name.to_owned(), tag.to_owned()))
+        .expect("镜像引用应有标签")
 }
 
 /// 每次运行都不同的用户名，测试之间、多次运行之间互不干扰。

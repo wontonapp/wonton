@@ -15,7 +15,12 @@ use super::manager::manager_in_instance;
 use super::package;
 use crate::test_docker::Names;
 
-const IMAGE: &str = "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec";
+/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
+fn image() -> String {
+    wonton_test_images::image(
+        "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    )
+}
 
 /// 一个 `read_only` 服务，配置放在 `/etc/motd`，属主和权限按声明。
 fn compose(content: &str) -> String {
@@ -23,9 +28,10 @@ fn compose(content: &str) -> String {
         "configs:\n  app:\n    content: \"{content}\"\n{}",
         package(
             &format!(
-                "  web:\n    image: {IMAGE}\n    read_only: true\n    user: '65532:65532'\n    \
+                "  web:\n    image: {}\n    read_only: true\n    user: '65532:65532'\n    \
                  command: ['sleep', 'infinity']\n    configs:\n      - source: app\n        \
-                 target: /etc/motd\n        uid: '65532'\n        gid: '65532'\n        mode: 0440"
+                 target: /etc/motd\n        uid: '65532'\n        gid: '65532'\n        mode: 0440",
+                image()
             ),
             "  permissions: []",
         )
@@ -38,7 +44,7 @@ async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
     engine
-        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, None)
         .await
         .unwrap();
     let names = Names::new();

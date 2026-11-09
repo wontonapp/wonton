@@ -14,7 +14,10 @@ use crate::config::MatrixConfig;
 use crate::http::HttpClient;
 use crate::test_docker::Names;
 
-const IMAGE: &str = "ghcr.io/matrix-construct/tuwunel:v1.9.4";
+/// Tuwunel：本地按标签拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
+fn image() -> String {
+    wonton_test_images::image("ghcr.io/matrix-construct/tuwunel:v1.9.4")
+}
 const CONFIG: &str = include_str!("../../../../deploy/dev/matrix/tuwunel.toml");
 const FEDERATION: &str = include_str!("../../../../deploy/dev/matrix/federation.toml");
 
@@ -88,7 +91,7 @@ impl Tuwunel {
                 &public,
                 "--env",
                 &secret,
-                IMAGE,
+                image().as_str(),
             ])
             .output()
             .expect("运行 Docker");

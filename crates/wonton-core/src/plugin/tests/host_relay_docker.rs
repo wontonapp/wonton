@@ -12,9 +12,10 @@ async fn a_real_loopback_listener_is_recognized_in_the_proc_table() {
 
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
-    const IMAGE: &str = "public.ecr.aws/docker/library/busybox:1.37";
+    // 本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
+    let image = wonton_test_images::image("public.ecr.aws/docker/library/busybox:1.37");
     engine
-        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .ensure_image(&image, PullPolicy::Missing, None)
         .await
         .unwrap();
     let mut names = Names::new();
@@ -23,7 +24,7 @@ async fn a_real_loopback_listener_is_recognized_in_the_proc_table() {
         .create_container(
             &name,
             ContainerCreateBody {
-                image: Some(IMAGE.to_owned()),
+                image: Some(image.clone()),
                 // 端口交给 nc 自己挑：测试先找空闲端口再交给它，中间隔着一次 `docker run`，宿主上别的进程能抢走。
                 cmd: Some(vec![
                     "sh".to_owned(),

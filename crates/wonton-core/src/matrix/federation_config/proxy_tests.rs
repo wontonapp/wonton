@@ -22,7 +22,7 @@ use wonton_tunnel::federation::{
 };
 
 use super::tests::{
-    Account, ClusterServer, IMAGE, create_room, invite, join, register_user, wait_ready,
+    Account, ClusterServer, create_room, image, invite, join, register_user, wait_ready,
 };
 use super::{PROXY_ADDR, allowlist_toml};
 use crate::http::{HttpClient, RequestBody};
@@ -310,7 +310,7 @@ impl Stack {
                 args.extend(["--volume".to_owned(), mount]);
             }
         }
-        args.push(IMAGE.to_owned());
+        args.push(image());
         args.extend(strings(&tuwunel["command"]));
         args
     }

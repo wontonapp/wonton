@@ -1,5 +1,9 @@
 # ACP bridge 发布镜像：桥只编译 Rust 二进制；Agent 镜像由每个 Agent 插件负责。
-FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/rust:1.99.1-slim-trixie AS build
+# 基础镜像默认从 ECR Public 拉（国内的构建机连不上 Docker Hub）；镜像冒烟测试经 build-arg 指到
+# ghcr.io/<owner>/test-images 的副本（deploy/dev/acp-bridge 的 Dockerfile 是测试唯一构建的）。
+ARG RUST_IMAGE=public.ecr.aws/docker/library/rust:1.99.1-slim-trixie
+ARG DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:trixie-slim
+FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS build-base
 ENV RUSTUP_TOOLCHAIN=1.99.1 CARGO_TERM_COLOR=never
 ARG TARGETARCH BUILDARCH CARGO_BUILD_JOBS
 ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc \
@@ -16,15 +20,35 @@ RUN case "$TARGETARCH" in \
          apt-get update && apt-get install -y --no-install-recommends "$gcc" "libc6-dev-$TARGETARCH-cross" \
          && rm -rf /var/lib/apt/lists/* && rustup target add "$triple"; \
        fi
+# cargo-chef（Apache-2.0 OR MIT），依赖层用。
+RUN cargo install cargo-chef --locked --version 0.1.78
+
+FROM build-base AS planner
 WORKDIR /src
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates crates
+COPY vendor vendor
+RUN cargo chef prepare --recipe-path recipe.json
+
+# 依赖层：只拿 recipe.json 和 vendor（[patch] 的源码，cook 解析要用），清单不变就命中缓存。cook 按桩工程
+# 改它自己的 Cargo.lock（带 --locked 时 cargo 拒绝，实测），下面的正式构建把上下文里原始的 Cargo.lock
+# COPY 回来，--locked 照常把门。
+FROM build-base AS deps
+WORKDIR /src
+COPY --from=planner /src/recipe.json recipe.json
+COPY vendor vendor
+RUN cargo chef cook --release --recipe-path recipe.json --target "$(cat /rust-target)"
+
+FROM deps AS build
+WORKDIR /src
+COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY crates crates
+COPY vendor vendor
 COPY . .
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/src/target,sharing=locked \
-    find crates -exec touch {} + \
-    && cargo build --release --locked --target "$(cat /rust-target)" -p wonton-acp-bridge \
+RUN cargo build --release --locked --target "$(cat /rust-target)" -p wonton-acp-bridge \
     && cp "target/$(cat /rust-target)/release/wonton-acp-bridge" /usr/local/bin/wonton-acp-bridge
 
-FROM public.ecr.aws/docker/library/debian:trixie-slim AS bridge
+FROM ${DEBIAN_IMAGE} AS bridge
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/bin/wonton-acp-bridge /usr/local/bin/wonton-acp-bridge

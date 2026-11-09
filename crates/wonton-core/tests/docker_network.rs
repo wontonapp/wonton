@@ -27,8 +27,10 @@ use wonton_core::plugin::network_pool::NetworkPool;
 #[path = "../src/test_docker.rs"]
 mod test_docker;
 
-/// 开发机和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
-const IMAGE: &str = "public.ecr.aws/docker/library/busybox:1.37";
+/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
+fn image() -> String {
+    wonton_test_images::image("public.ecr.aws/docker/library/busybox:1.37")
+}
 const PORT: &str = "7000/tcp";
 
 struct Names {
@@ -295,7 +297,7 @@ async fn leaving_an_egress_plugin_network_keeps_connections_through_published_po
         .with_network_pool(pool, Detector::Here);
     engine.check_server().await.unwrap();
     engine
-        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, None)
         .await
         .unwrap();
     let labels = HashMap::new();
@@ -312,7 +314,7 @@ async fn leaving_an_egress_plugin_network_keeps_connections_through_published_po
         host_port: Some(String::new()),
     };
     let body = ContainerCreateBody {
-        image: Some(IMAGE.to_owned()),
+        image: Some(image()),
         // 回显第一个连上来的连接。
         cmd: Some(
             ["nc", "-l", "-p", "7000", "-e", "cat"]
@@ -365,7 +367,7 @@ async fn inspect(name: &str) -> NetworkInspect {
 /// 一直运行的小容器，接在 `network` 上。
 async fn sleeper(engine: &Engine, name: &str, network: &str) {
     let body = ContainerCreateBody {
-        image: Some(IMAGE.to_owned()),
+        image: Some(image()),
         cmd: Some(vec!["sleep".to_owned(), "3600".to_owned()]),
         host_config: Some(HostConfig {
             network_mode: Some(network.to_owned()),
@@ -419,7 +421,7 @@ async fn plugin_networks_created_at_the_same_time_all_keep_the_core_address_free
         .with_network_pool(pool, Detector::Here);
     engine.check_server().await.unwrap();
     engine
-        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, None)
         .await
         .unwrap();
     let labels = HashMap::new();
@@ -466,7 +468,7 @@ async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_rec
         .unwrap()
         .with_network_pool(pool, Detector::Here);
     engine
-        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, None)
         .await
         .unwrap();
     for reach in [
@@ -539,7 +541,7 @@ async fn a_network_already_on_the_next_subnet_is_skipped() {
         .unwrap()
         .with_network_pool(pool, Detector::Here);
     engine
-        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, None)
         .await
         .unwrap();
     let taken = names.oneshot_network("occupied-taken");
@@ -656,7 +658,7 @@ async fn a_core_with_forwarding_off_still_reaches_plugin_networks() {
         .unwrap()
         .with_network_pool(pool, Detector::Here);
     engine
-        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, None)
         .await
         .unwrap();
     let plugin = names.oneshot_network("forward");
@@ -673,7 +675,7 @@ async fn a_core_with_forwarding_off_still_reaches_plugin_networks() {
         .unwrap();
     sleeper(&engine, &app, &plugin).await;
     let body = ContainerCreateBody {
-        image: Some(IMAGE.to_owned()),
+        image: Some(image()),
         cmd: Some(vec!["sleep".to_owned(), "3600".to_owned()]),
         host_config: Some(HostConfig {
             network_mode: Some(own.clone()),

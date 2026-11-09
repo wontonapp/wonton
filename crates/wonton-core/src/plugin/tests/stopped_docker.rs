@@ -21,7 +21,12 @@ use crate::members::Members;
 use crate::test_docker::Names;
 use crate::tunnel::Tunnel;
 
-const IMAGE: &str = "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec";
+/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
+fn image() -> String {
+    wonton_test_images::image(
+        "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    )
+}
 const TOKEN: &str = "stopped-integration-owner-token";
 
 async fn gateway(
@@ -67,7 +72,9 @@ async fn gateway(
 fn compose() -> String {
     package(
         &format!(
-            "  init:\n    image: {IMAGE}\n    restart: 'no'\n    volumes: ['${{WONTON_APP_DATA}}:/data']\n    command: ['sh', '-c', 'echo initialized >> /data/init-runs; echo persistent > /data/index.html']\n  app:\n    image: {IMAGE}\n    init: true\n    volumes: ['${{WONTON_APP_DATA}}:/data']\n    command: ['httpd', '-f', '-p', '8000', '-h', '/data']\n    depends_on:\n      init: {{condition: service_completed_successfully}}\n    healthcheck:\n      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8000/']\n      interval: 1s\n      timeout: 1s\n      retries: 3\n"
+            "  init:\n    image: {}\n    restart: 'no'\n    volumes: ['${{WONTON_APP_DATA}}:/data']\n    command: ['sh', '-c', 'echo initialized >> /data/init-runs; echo persistent > /data/index.html']\n  app:\n    image: {}\n    init: true\n    volumes: ['${{WONTON_APP_DATA}}:/data']\n    command: ['httpd', '-f', '-p', '8000', '-h', '/data']\n    depends_on:\n      init: {{condition: service_completed_successfully}}\n    healthcheck:\n      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8000/']\n      interval: 1s\n      timeout: 1s\n      retries: 3\n",
+            image(),
+            image()
         ),
         "  permissions: []\n  webui: {service: app, port: 8000, sso: none}",
     )

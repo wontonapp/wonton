@@ -8,7 +8,10 @@ use super::{allowlist_toml, files::regex_escape};
 use crate::http::{HttpClient, RequestBody};
 use crate::plugin::docker::Engine;
 
-pub(super) const IMAGE: &str = "ghcr.io/matrix-construct/tuwunel:v1.9.4";
+/// Tuwunel：本地按标签拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
+pub(super) fn image() -> String {
+    wonton_test_images::image("ghcr.io/matrix-construct/tuwunel:v1.9.4")
+}
 const WAIT: Duration = Duration::from_secs(15);
 
 /// 真实 Tuwunel（v1.9.4）：两份配置里的名单生效，原地重写第二份后发 SIGUSR1，
@@ -313,7 +316,7 @@ impl Cluster {
             }
             None => None,
         };
-        docker_args.push(IMAGE.to_owned());
+        docker_args.push(image());
         docker_args.extend(command_args);
         let output = Command::new("docker")
             .args(&docker_args)

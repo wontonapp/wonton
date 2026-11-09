@@ -1,5 +1,7 @@
 //! 时间线的位置（ADR-0071）：翻走期间来的消息数、回到底部、重进房间停在已读标记，都由核心算。
 
+use std::time::Duration;
+
 use wonton_client::{Action, RoomMembership, TimelineContent, TimelineScroll, TimelineViewport};
 use wonton_matrix::{ChatRoom, MatrixSession, OwnedRoomId};
 
@@ -160,7 +162,10 @@ async fn new_messages_only_raise_the_number_until_the_shell_reports_the_bottom()
     assert_eq!(chat.unread(), 0);
 }
 
-/// 等核心报的数字和聊天列表那一行的未读数一致。未读数是 SDK 按通知算的，和条数可能差一两条，两边同源即可。
+/// 等核心报的数字和聊天列表那一行的读数一致。未读数与条数可能差一两条，两边同源即可。
+///
+/// 每轮先比状态再等事件：`next()` 可能在上一次状态变化之后才挂起，一直等下去就赶不上已发生的匹配
+/// （托管 runner 上实测过），所以 `next()` 外面套一层短超时，醒了先重新比一次。
 async fn until_the_number_matches(timeline: &mut Timeline, chat: &Chat) {
     let waiting = async {
         loop {
@@ -170,7 +175,7 @@ async fn until_the_number_matches(timeline: &mut Timeline, chat: &Chat) {
             if timeline.viewport() == wanted {
                 return;
             }
-            timeline.next().await;
+            let _ = tokio::time::timeout(Duration::from_millis(200), timeline.next()).await;
         }
     };
     if tokio::time::timeout(WAIT, waiting).await.is_err() {

@@ -3,7 +3,7 @@
 # 用法：generate-swift-bindings.sh <libwonton_client.a 路径> <输出目录>
 # 输出目录里生成 headers/（.h 与 module.modulemap）和 swift/（.swift），已有内容先整个删掉。
 # 生成结果只取决于 staticlib 里的 uniffi 接口；仓库里没有带 #[cfg(target_os…)] 的导出，Linux 上
-# 生成的绑定就是 iOS 用的那份，scripts/ci-ios-needed.sh 靠这一点在 Linux 上判定接口变没变。
+# 生成的绑定就是 iOS 用的那份。
 #
 # 要能在 macOS 自带的 bash 3.2 下运行：不要展开可能为空的数组（set -u 会报 unbound variable）。
 set -euo pipefail

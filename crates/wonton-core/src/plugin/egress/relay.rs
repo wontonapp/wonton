@@ -8,7 +8,7 @@ use ipnet::IpNet;
 
 use super::EgressVars;
 use super::address::ProxyAddress;
-use super::gost::{ALIAS, IMAGE, Relay, RelayFiles, config_yaml, runner};
+use super::gost::{ALIAS, Relay, RelayFiles, config_yaml, runner};
 use super::lists::{self, Reach};
 use super::provider::provides_proxy;
 use super::settings::EgressConfig;
@@ -148,7 +148,7 @@ impl PluginManager {
         let current = created
             .and_then(|c| c.image.as_deref())
             .is_some_and(|image| {
-                crate::plugin::registry_mirror::reference::same_image(image, IMAGE)
+                crate::plugin::registry_mirror::reference::same_image(image, &super::gost::image())
             });
         let state = found.as_ref().and_then(|c| c.state.as_ref());
         let running = state.and_then(|s| s.running) == Some(true);
@@ -156,7 +156,11 @@ impl PluginManager {
         let mirror = self.registry_mirror_address(&self.owner_languages())?;
         let image = self
             .engine
-            .ensure_image(IMAGE, PullPolicy::Missing, mirror.as_deref())
+            .ensure_image(
+                &super::gost::image(),
+                PullPolicy::Missing,
+                mirror.as_deref(),
+            )
             .await
             .map_err(|error| {
                 let langs = self.owner_languages();

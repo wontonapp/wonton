@@ -84,6 +84,8 @@ tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt", "time", "net", "io-util"] }
 # 聊天的集成测试：一次性的 Tuwunel 和模拟核心的 JWT 签发。
 wonton-matrix = { path = "../wonton-matrix", features = ["testkit"] }
+# MIT OR Apache-2.0。tabs 测试的 node 镜像在 CI 指到镜像仓库副本。
+wonton-test-images = { path = "../wonton-test-images" }
 # 对自己的 dev 依赖：编集成测试时给 test-hooks 打开，钩子代码就只进测试二进制。cargo 允许这样自引用；
 # 依赖 App 的构建不经 dev-dependencies，核心还是干净的。
 

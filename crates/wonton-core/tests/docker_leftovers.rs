@@ -27,22 +27,29 @@ use wonton_core::plugin::store::Store;
 
 const ID: &str = "app.leftovers";
 const SLUG: &str = "app-leftovers";
-/// 开发机和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
-const IMAGE: &str = "public.ecr.aws/docker/library/busybox:1.37";
+/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
+fn image() -> String {
+    wonton_test_images::image("public.ecr.aws/docker/library/busybox:1.37")
+}
 /// 收到 TERM 马上退出，删容器时不用等 10 秒。
-const PLUGIN: &str = "services:
+fn leftovers_plugin() -> String {
+    format!(
+        "services:
   web:
-    image: public.ecr.aws/docker/library/busybox:1.37
+    image: {}
     command: [sh, -c, 'trap \"exit 0\" TERM; sleep 300 & wait']
 x-wonton:
   spec: '0.4'
   id: app.leftovers
   version: 1.0.0
   kind: app
-  title: {zh: 残留, en: Leftovers}
-  description: {zh: 残留, en: Leftovers}
+  title: {{zh: 残留, en: Leftovers}}
+  description: {{zh: 残留, en: Leftovers}}
   permissions: []
-";
+",
+        image()
+    )
+}
 
 /// 一套用自己实例名的核心：只碰这个测试建的资源，和同一台 Docker 上别的核心、别的 runner 互不相干。
 /// 容器、网络和卷由 `test_docker::Names` 的守卫按实例标签和登记的名字回收。
@@ -73,7 +80,7 @@ impl Core {
     async fn prepare(&self) {
         self.engine.check_server().await.unwrap();
         self.engine
-            .ensure_image(IMAGE, PullPolicy::Missing, None)
+            .ensure_image(&image(), PullPolicy::Missing, None)
             .await
             .unwrap();
         self.start_idle(&self.core_container).await;
@@ -81,7 +88,7 @@ impl Core {
 
     async fn start_idle(&self, name: &str) {
         let body = ContainerCreateBody {
-            image: Some(IMAGE.to_owned()),
+            image: Some(image()),
             cmd: Some(["sleep", "300"].map(str::to_owned).into()),
             ..Default::default()
         };
@@ -157,7 +164,11 @@ async fn restart_midway(core: &Core) -> Result<String, String> {
     let manager = core.manager();
     let install = tokio::spawn(async move {
         manager
-            .install(PLUGIN, &[], Languages::from_header(Some("zh-Hans")))
+            .install(
+                &leftovers_plugin(),
+                &[],
+                Languages::from_header(Some("zh-Hans")),
+            )
             .await
     });
     let mut orphan = None;
@@ -189,7 +200,11 @@ async fn recovers(core: &Core) -> Result<(), String> {
     let orphan = restart_midway(core).await?;
     let view = core
         .manager()
-        .install(PLUGIN, &[], Languages::from_header(Some("zh-Hans")))
+        .install(
+            &leftovers_plugin(),
+            &[],
+            Languages::from_header(Some("zh-Hans")),
+        )
         .await;
     let view = view.map_err(|e| format!("再装失败（{}）：{e}", e.kind()))?;
     if core.container_id().await.as_ref() == Some(&orphan) {
@@ -219,7 +234,11 @@ async fn stays_away(core: &Core) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let Err(error) = core
         .manager()
-        .install(PLUGIN, &[], Languages::from_header(Some("zh-Hans")))
+        .install(
+            &leftovers_plugin(),
+            &[],
+            Languages::from_header(Some("zh-Hans")),
+        )
         .await
     else {
         return Err("另一套核心接在网络上，不应当装上".into());
@@ -255,7 +274,11 @@ async fn refuses(core: &mut Core) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let Err(error) = core
         .manager()
-        .install(PLUGIN, &[], Languages::from_header(Some("zh-Hans")))
+        .install(
+            &leftovers_plugin(),
+            &[],
+            Languages::from_header(Some("zh-Hans")),
+        )
         .await
     else {
         return Err("同名网络不是本插件的，不应当装上".into());

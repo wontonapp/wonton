@@ -27,6 +27,12 @@ use crate::l10n;
 pub const IMAGE: &str =
     "alpine/socat:1.8.0.3@sha256:beb4a68d9e4fe6b0f21ea774a0fde6c31f580dde6368939ed70100c5385b015e";
 
+/// CI 把测试镜像复制到自己的仓库后经 `WONTON_TEST_IMAGES` 指过去（wonton-test-images）；
+/// 没设时就是 [`IMAGE`]，本地行为不变。
+pub fn image() -> String {
+    wonton_test_images::image(IMAGE)
+}
+
 /// AF_UNIX 套接字路径的上限：Linux 的 `sun_path` 有 108 字节，含结尾 NUL，路径本身最多 107 字节。
 pub const MAX_SOCKET_PATH: usize = 107;
 
@@ -147,11 +153,11 @@ pub fn plan(
         bot: None,
         service: service.clone(),
         name: name.clone(),
-        image: IMAGE.to_owned(),
+        image: image(),
         pull_policy: PullPolicy::Missing,
         depends_on: Vec::new(),
         body: ContainerCreateBody {
-            image: Some(IMAGE.to_owned()),
+            image: Some(image()),
             cmd: Some(vec![
                 format!("UNIX-LISTEN:{inside},fork,mode=0660,unlink-early"),
                 format!("TCP:127.0.0.1:{}", relay.port),
@@ -253,7 +259,7 @@ impl super::manager::PluginManager {
         let image = self
             .engine
             .ensure_image(
-                IMAGE,
+                &image(),
                 super::compose::PullPolicy::Missing,
                 mirror.as_deref(),
             )

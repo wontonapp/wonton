@@ -8,6 +8,9 @@ use std::{
 };
 
 const DOCKERFILE: &str = "deploy/dev/acp-bridge/Dockerfile";
+/// Dockerfile 里基础镜像的默认值，和它保持一致。
+const RUST_IMAGE: &str = "public.ecr.aws/docker/library/rust:1.99.1-slim-trixie";
+const DEBIAN_IMAGE: &str = "public.ecr.aws/docker/library/debian:trixie-slim";
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -29,8 +32,21 @@ fn docker(root: &Path, args: &[&str]) -> Output {
 fn bridge_image_starts_and_reports_missing_configuration() {
     let root = workspace_root();
     let image = format!("wonton-acp-bridge-docker-test:{}", std::process::id());
+    // 基础镜像在 CI 经 WONTON_TEST_IMAGES 指到镜像仓库副本（wonton-test-images）；本地用默认值。
+    let rust_image = format!("RUST_IMAGE={}", wonton_test_images::image(RUST_IMAGE));
+    let debian_image = format!("DEBIAN_IMAGE={}", wonton_test_images::image(DEBIAN_IMAGE));
     let build_args = [
-        "build", "--quiet", "--file", DOCKERFILE, "--tag", &image, ".",
+        "build",
+        "--quiet",
+        "--file",
+        DOCKERFILE,
+        "--tag",
+        &image,
+        ".",
+        "--build-arg",
+        &rust_image,
+        "--build-arg",
+        &debian_image,
     ];
     let build = docker(&root, &build_args);
     if !build.status.success() {

@@ -10,7 +10,7 @@ use wonton_protocol::{EgressFailure, EgressProxyUpdate};
 use super::super::compose::PullPolicy;
 use super::super::core_address::Endpoint;
 use super::super::docker::Engine;
-use super::super::egress::gost::IMAGE;
+use super::super::egress::gost;
 use super::super::egress::probe::Prober;
 use super::super::egress::settings::Egress;
 use super::super::lan::{Lan, detect::Detector};
@@ -23,7 +23,12 @@ use super::package;
 use crate::config::DEFAULT_INSTALL_TIMEOUT;
 use crate::test_docker::Names;
 
-const BUSYBOX: &str = "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec";
+/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
+fn busybox() -> String {
+    wonton_test_images::image(
+        "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    )
+}
 
 async fn install(m: &PluginManager, source: &str) {
     let granted = PluginPackage::parse(source, &super::langs())
@@ -57,7 +62,10 @@ async fn fetch(engine: &Engine, client: &str) -> Result<String, String> {
 
 async fn exercise(m: &Arc<PluginManager>, engine: &Engine, names: &Instance) {
     let proxy = package(
-        &format!("  proxy:\n    image: {IMAGE}\n    command: ['-L', 'http://:7890']"),
+        &format!(
+            "  proxy:\n    image: {}\n    command: ['-L', 'http://:7890']",
+            gost::image()
+        ),
         "  provides:\n    egress_proxy: {service: proxy, port: 7890}\n  permissions: [network.egress, egress.proxy]",
     ).replace("id: app.test", "id: app.proxy");
     install(m, &proxy).await;
@@ -79,7 +87,7 @@ async fn exercise(m: &Arc<PluginManager>, engine: &Engine, names: &Instance) {
         .unwrap();
     let far = names.container("far", "web");
     engine.create_container(&far, ContainerCreateBody {
-        image: Some(BUSYBOX.to_owned()),
+        image: Some(busybox()),
         cmd: Some(["sh", "-c", "mkdir -p /www; echo proxy-only > /www/index.html; exec httpd -f -p 80 -h /www"].map(str::to_owned).to_vec()),
         labels: Some(names.core_labels()),
         host_config: Some(HostConfig { network_mode: Some(far_net.clone()), ..Default::default() }),
@@ -104,7 +112,10 @@ async fn exercise(m: &Arc<PluginManager>, engine: &Engine, names: &Instance) {
         .await
         .unwrap();
     let consumer = package(
-        &format!("  client:\n    image: {BUSYBOX}\n    command: ['sleep', '3600']"),
+        &format!(
+            "  client:\n    image: {}\n    command: ['sleep', '3600']",
+            busybox()
+        ),
         "  permissions: [network.egress]",
     )
     .replace("id: app.test", "id: app.out");
@@ -154,9 +165,9 @@ async fn exercise(m: &Arc<PluginManager>, engine: &Engine, names: &Instance) {
 async fn egress_plugin_relay_uses_provider_dns_and_fails_closed() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
-    for image in [IMAGE, BUSYBOX] {
+    for image in [gost::image(), busybox()] {
         engine
-            .ensure_image(image, PullPolicy::Missing, None)
+            .ensure_image(&image, PullPolicy::Missing, None)
             .await
             .unwrap();
     }

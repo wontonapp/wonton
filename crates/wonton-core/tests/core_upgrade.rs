@@ -21,8 +21,10 @@ use wonton_core::upgrade::state::{self, ImageRef, Layout, Outcome, UpgradeState}
 use wonton_core::upgrade::{PROJECT, updater};
 use wonton_protocol::CoreUpgradeFailure;
 
-/// 开发机和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
-const BASE: &str = "public.ecr.aws/docker/library/busybox:1.37";
+/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
+fn base() -> String {
+    wonton_test_images::image("public.ecr.aws/docker/library/busybox:1.37")
+}
 const OBSERVE: Duration = Duration::from_secs(8);
 
 const FAKE_CORE: &str = r#"#!/bin/sh
@@ -202,10 +204,11 @@ impl Install {
         fs::write(context.path().join("compose.yaml"), compose).unwrap();
         let healthy = u8::from(healthy);
         let dockerfile = format!(
-            "FROM {BASE}\nCOPY wonton-core /bin/wonton-core\nCOPY compose.yaml /fake/compose.yaml\n\
+            "FROM {}\nCOPY wonton-core /bin/wonton-core\nCOPY compose.yaml /fake/compose.yaml\n\
              ENV FAKE_VERSION={version} FAKE_HEALTHY={healthy} FAKE_CRASH_AFTER={crash_after}\n\
              LABEL org.opencontainers.image.version={version}\n\
-             ENTRYPOINT [\"wonton-core\"]\nCMD [\"serve\"]\n"
+             ENTRYPOINT [\"wonton-core\"]\nCMD [\"serve\"]\n",
+            base()
         );
         fs::write(context.path().join("Dockerfile"), dockerfile).unwrap();
         let image = format!("{}:{version}", self.project);

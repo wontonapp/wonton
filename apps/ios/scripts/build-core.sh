@@ -39,7 +39,7 @@ for target in "${targets[@]}"; do
   libraries+=("$target_dir/$target/$profile/libwonton_client.a")
 done
 
-# 绑定怎么生成只写在这一处：CI 的“Swift 接口没变”判定（scripts/ci-ios-needed.sh）也调它。
+# 绑定怎么生成只写在这一处。
 "$repo_root/apps/ios/scripts/generate-swift-bindings.sh" "${libraries[0]}" "$work_dir"
 
 rm -rf "$generated_dir" "$xcframework"

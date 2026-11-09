@@ -8103,6 +8103,7 @@ dependencies = [
  "wonton-l10n",
  "wonton-matrix",
  "wonton-protocol",
+ "wonton-test-images",
 ]
 
 [[package]]
@@ -8138,6 +8139,7 @@ dependencies = [
  "wonton-l10n",
  "wonton-matrix",
  "wonton-protocol",
+ "wonton-test-images",
  "wonton-tunnel",
 ]
 
@@ -8204,6 +8206,7 @@ dependencies = [
  "web-push-native",
  "wonton-l10n",
  "wonton-protocol",
+ "wonton-test-images",
  "wonton-tunnel",
  "zip",
  "zune-core",
@@ -8256,6 +8259,7 @@ dependencies = [
  "tracing-subscriber",
  "wonton-matrix",
  "wonton-protocol",
+ "wonton-test-images",
 ]
 
 [[package]]
@@ -8269,6 +8273,10 @@ dependencies = [
  "thiserror 2.0.21",
  "uniffi",
 ]
+
+[[package]]
+name = "wonton-test-images"
+version = "0.0.0"
 
 [[package]]
 name = "wonton-tunnel"

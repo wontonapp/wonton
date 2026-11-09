@@ -20,7 +20,12 @@ use super::package;
 use crate::config::DEFAULT_INSTALL_TIMEOUT;
 use crate::test_docker::Names;
 
-const IMAGE: &str = "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec";
+/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
+fn image() -> String {
+    wonton_test_images::image(
+        "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    )
+}
 
 fn lan(address: IpAddr) -> Lan {
     let detector = Detector::Fixed(Arc::new(Mutex::new(Err("测试直接指定地址".into()))));
@@ -28,19 +33,20 @@ fn lan(address: IpAddr) -> Lan {
 }
 
 fn compose(port: u16) -> String {
+    let image = image();
     let services = format!(
         r#"  untouched:
-    image: {IMAGE}
+    image: {image}
     init: true
     command: ['sleep', '3600']
   init:
-    image: {IMAGE}
+    image: {image}
     restart: 'no'
     depends_on: [untouched]
     volumes: ['${{WONTON_APP_DATA}}:/data']
     command: ['sh', '-c', 'echo ${{WONTON_LAN_ADDRESSES}} >> /data/runs']
   web:
-    image: {IMAGE}
+    image: {image}
     init: true
     depends_on:
       init: {{condition: service_completed_successfully}}
@@ -52,7 +58,7 @@ fn compose(port: u16) -> String {
       timeout: 1s
       start_interval: 1s
   lan:
-    image: {IMAGE}
+    image: {image}
     init: true
     depends_on: [web]
     command: ['httpd', '-f', '-p', '{port}']"#
@@ -176,10 +182,8 @@ async fn lan_address_change_updates_real_containers_and_config_page() {
 }
 
 /// containerd 镜像存储下，核心镜像的记录被清掉（标签先被移走）后，路由探针退回按容器创建时的引用起，
-/// 检测照样能跑（#666）。经典存储下旧镜像 ID 一直可用，复现不了这个行为，本地不跑。
-/// 前提：Docker 用 containerd 镜像存储。CI 的 Docker 作业设 `WONTON_TEST_REQUIRE_CONTAINERD=1`，不是就失败，不许
-/// 静默跳过。手动跑（例）：
-/// `~/wonton-dev/cargo-slot.sh cargo test -p wonton-core a_gone_core_image_record -- --ignored`
+/// 检测照样能跑（#666）。经典存储下旧镜像 ID 一直可用，复现不了这个行为，本地不跑；CI 的托管 runner
+/// 也是经典存储（overlay2），这个测试只在开了 containerd 镜像存储的机器上手动跑。
 #[tokio::test]
 #[ignore = "需要 Docker（containerd 镜像存储）；经典存储下旧镜像 ID 一直可用，复现不了 #666"]
 async fn a_gone_core_image_record_falls_back_to_the_creation_reference() {
@@ -195,10 +199,6 @@ async fn a_gone_core_image_record_falls_back_to_the_creation_reference() {
         .collect::<Vec<_>>()
         .join(",");
     if !driver.contains("io.containerd.snapshotter.v1") {
-        assert!(
-            std::env::var_os("WONTON_TEST_REQUIRE_CONTAINERD").is_none(),
-            "WONTON_TEST_REQUIRE_CONTAINERD 设了，但 Docker 不是 containerd 镜像存储（{driver}），复现不了 #666"
-        );
         println!("跳过：Docker 不是 containerd 镜像存储（{driver}），复现不了 #666");
         return;
     }
@@ -215,7 +215,7 @@ async fn a_gone_core_image_record_falls_back_to_the_creation_reference() {
         .create_container(
             &seed,
             ContainerCreateBody {
-                image: Some(IMAGE.to_owned()),
+                image: Some(image()),
                 ..Default::default()
             },
         )
@@ -332,12 +332,12 @@ async fn a_port_published_by_another_container_fails_the_install_right_away() {
     // 别的容器占着 0.0.0.0 上的一个端口，和报出来的现象一样。宿主端口让 Docker 分配、事后再问它：先在测试里绑一个
     // 再放掉，放掉到 Docker 绑上之间，并行的测试或别的进程可能拿走同一个端口。
     engine
-        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, None)
         .await
         .unwrap();
     let hold = names.oneshot_container("occupy");
     let body = ContainerCreateBody {
-        image: Some(IMAGE.to_owned()),
+        image: Some(image()),
         cmd: Some(vec![
             "httpd".to_owned(),
             "-f".to_owned(),

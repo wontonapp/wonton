@@ -12,7 +12,8 @@ use wonton_core::plugin::compose::PullPolicy;
 use wonton_core::plugin::core_address::Endpoint;
 use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::egress::address::ProxyAddress;
-use wonton_core::plugin::egress::gost::{ALIAS, IMAGE, Relay, RelayFiles, config_yaml, runner};
+use wonton_core::plugin::egress::gost;
+use wonton_core::plugin::egress::gost::{ALIAS, Relay, RelayFiles, config_yaml, runner};
 use wonton_core::plugin::egress::lists::{self, Lists, Reach};
 use wonton_core::plugin::languages::Languages;
 
@@ -20,8 +21,10 @@ use wonton_core::plugin::languages::Languages;
 #[path = "../src/test_docker.rs"]
 mod test_docker;
 
-/// 开发机和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
-const BUSYBOX: &str = "public.ecr.aws/docker/library/busybox:1.37";
+/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
+fn busybox() -> String {
+    wonton_test_images::image("public.ecr.aws/docker/library/busybox:1.37")
+}
 const USERNAME: &str = "u@x";
 /// YAML 里有意义的字符都带上：配置不是拼出来的。
 const PASSWORD: &str = "*p: #&\"w";
@@ -63,7 +66,15 @@ impl Names {
 /// 回 200 的小网站，`network` 上的别名是 `alias`。
 async fn website(engine: &Engine, name: &str, network: &str, alias: &str) {
     let script = "mkdir -p /www && echo ok > /www/index.html && exec httpd -f -p 80 -h /www";
-    start(engine, name, BUSYBOX, network, &["sh", "-c", script], None).await;
+    start(
+        engine,
+        name,
+        &busybox(),
+        network,
+        &["sh", "-c", script],
+        None,
+    )
+    .await;
     engine.disconnect_network(network, name).await.unwrap();
     let endpoint = Endpoint {
         address: None,
@@ -155,7 +166,7 @@ async fn start_relay(engine: &Engine, names: &Names, files: &RelayFiles, proxy: 
         name: &names.relay,
         labels: &labels,
         files,
-        image: IMAGE,
+        image: &gost::image(),
     };
     engine.start_relay(&relay).await.unwrap();
     connect_relay(engine, &names.plugin, &names.relay, &[ALIAS]).await;
@@ -181,7 +192,7 @@ async fn set_up(engine: &Engine, names: &Names) -> (ProxyAddress, String) {
     start(
         engine,
         &names.upstream,
-        IMAGE,
+        &gost::image(),
         &names.upstream_network,
         &upstream_cmd,
         None,
@@ -245,7 +256,7 @@ async fn exercise(engine: &Engine, names: &Names, files: &RelayFiles) {
     start(
         engine,
         &names.client,
-        BUSYBOX,
+        &busybox(),
         &names.plugin,
         &["sleep", "3600"],
         Some(vec![via]),
@@ -312,9 +323,9 @@ async fn relay_id(engine: &Engine, relay: &str) -> Option<String> {
 async fn the_relay_goes_through_the_owners_proxy_and_follows_its_lists() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
-    for image in [IMAGE, BUSYBOX] {
+    for image in [gost::image(), busybox()] {
         engine
-            .ensure_image(image, PullPolicy::Missing, None)
+            .ensure_image(&image, PullPolicy::Missing, None)
             .await
             .unwrap();
     }
