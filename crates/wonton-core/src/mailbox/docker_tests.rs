@@ -25,7 +25,7 @@ async fn smtp_mail_reaches_each_persons_private_room() {
     let mut names = crate::test_docker::Names::new();
     let engine = Engine::connect().unwrap();
     engine
-        .ensure_image(&image(), PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, &[])
         .await
         .unwrap();
     let name = names.oneshot_container("mailpit");
