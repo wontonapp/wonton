@@ -214,8 +214,6 @@ struct ChatRoomView: View {
         placed = true
     }
 
-
-
     private var isDirect: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isDirect ?? false
     }
