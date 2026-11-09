@@ -102,7 +102,7 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
         TabRef.Chat -> chat.openRoom != null || chat.showingBackup || chat.startingChat
         TabRef.Apps -> appsPage != HomePage.LAUNCHER || plugins.detail != null || plugins.confirmation != null
         TabRef.Settings -> settingsPage != SettingsSubpage.MAIN
-        is TabRef.Plugin, is TabRef.SharedApp -> false
+        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Url, is TabRef.SharedApp -> false
     }
 }
 
