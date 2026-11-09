@@ -1,0 +1,2 @@
+# 源码文件行数门禁例外：<路径> | <原因> | <到期日 YYYY-MM-DD>
+crates/wonton-core/src/plugin/render.rs | configs 只读交付的装配（resolve_service 调用与 store_dir 字段），main 上该文件已达 800 行上限，拆分由后续 PR 做 | 2026-12-07

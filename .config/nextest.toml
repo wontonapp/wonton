@@ -1,0 +1,30 @@
+# nextest 自己的配置（cargo test 不读）。CI 用 `cargo nextest run` 跑测试，本机手动跑也一样。
+# nextest 把每个测试放在独立进程里，和 cargo test 同一二进制里按核数开线程的方式不一样：
+# 一个二进制里的测试不再共享进程，不同二进制会同时跑，所以两个档案都固定了并发数。
+
+[profile.default]
+# 不按核数并发：托管 runner 只有 4 核，编译和测试还同时占着 CPU；槽全占满时，靠墙钟计时的测试
+# （home 的连接计数、tunnel 绑端口）会被拖到超时。8 先用，跑稳再放宽。
+test-threads = 8
+# 失败不中途停：一次看到所有失败，不用为了下一个失败再排一轮编译和 runner。
+fail-fast = false
+# 时好时坏的测试修测试本身，不靠重试盖住（AGENTS.md）。
+retries = 0
+# 卡住时先报慢，再按周期数杀掉；否则一个卡死的测试拖到作业超时才结束。
+slow-timeout = { period = "60s", terminate-after = 10 }
+
+# Docker 作业：每个测试自己起容器，同时跑的越多，Docker 操作和镜像拉取等的越久。
+# 这几个重活测试另放一组，最多 2 条同时跑：compose 起服务、建网络、拉镜像互相错开，其余测试照常用剩下的槽。
+[profile.docker]
+test-threads = 8
+fail-fast = false
+retries = 0
+# Docker 测试起容器、拉镜像，一条几百秒也算正常；10 分钟还没完就杀掉。
+slow-timeout = { period = "120s", terminate-after = 5 }
+
+[test-groups]
+compose = { max-threads = 2 }
+
+[[profile.docker.overrides]]
+filter = 'binary(core_upgrade) | binary(docker_network) | test(plugin::tests::lan_docker) | test(install::tuwunel_tests) | test(registry_mirror::docker_tests)'
+test-group = 'compose'

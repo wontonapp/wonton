@@ -1,0 +1,3 @@
+# category name source commit package-digest
+system magpie github:geraldpeng6/wonton-plugin-magpie@v0.6.1 11c122dbc43aeead117aff9b3db91a1501e44f4a sha256:35248c2371f0c770c12850d92a046ae9470dc898c5a46d1852e1dd506d3aa3f6
+default hermes github:geraldpeng6/wonton-plugin-hermes@v0.6.5 0283de97830136f43a2e23b1f62057c8abb3a9b5 sha256:bb4edf864d683f9f98328a5f7faaac7069f9e4a68f04f92ce6231299d554812b

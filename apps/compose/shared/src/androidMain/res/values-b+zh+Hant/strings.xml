@@ -1,0 +1,1508 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Destructive menu action or confirmation button that removes an item from this device. No arguments; short label. -->
+    <string name="common_remove">移除</string>
+    <!-- Menu action and dialog title for renaming an item. No arguments; short label. -->
+    <string name="common_rename">重新命名</string>
+    <!-- 资源实际落到的语言标签，App 靠它知道界面用的是哪种语言，再告诉核心（见 AppLanguage.kt）。
+         每种语言的这一条都保留原值，不要翻译。 -->
+    <string name="language_tag">zh-Hant</string>
+    <!-- Section title for the accent color, and accessibility label prefix of the accent color swatches. -->
+    <string name="appearance_accent">強調色</string>
+    <!-- Accessibility state of the More row while the extra colors are hidden. -->
+    <string name="appearance_collapsed">已收起</string>
+    <!-- Label of the color input field for a hex value like #RRGGBB. -->
+    <string name="appearance_color_value">顏色值</string>
+    <!-- Accessibility state of the More row while the extra colors are shown. -->
+    <string name="appearance_expanded">已展開</string>
+    <!-- Section title for the font. -->
+    <string name="appearance_font">字體</string>
+    <!-- Choice row: the system default font. -->
+    <string name="appearance_font_default">預設</string>
+    <!-- Choice row: the monospaced system font design. -->
+    <string name="appearance_font_monospaced">等寬</string>
+    <!-- Choice row: the rounded system font design. -->
+    <string name="appearance_font_rounded">圓體</string>
+    <!-- Choice row: the serif system font design. -->
+    <string name="appearance_font_serif">襯線</string>
+    <!-- Error under the color input field when the text isn't a valid #RRGGBB value. -->
+    <string name="appearance_hex_invalid">顏色要寫成 #RRGGBB</string>
+    <!-- Row that expands the extra color swatches and the color input field. -->
+    <string name="appearance_more">更多</string>
+    <!-- Accessibility label prefix of the extra color swatches behind the More row. -->
+    <string name="appearance_more_colors">更多顏色</string>
+    <!-- Sample chat bubble on the appearance page, hidden from accessibility; it shows how the theme looks. -->
+    <string name="appearance_preview_message">今晚吃什麼？</string>
+    <!-- Sender name in the sample chat bubble on the appearance page: the app's own name. -->
+    <string name="appearance_preview_name">雲吞</string>
+    <!-- Choice row: extra large text size. -->
+    <string name="appearance_size_extra_large">特大</string>
+    <!-- Choice row: large text size. -->
+    <string name="appearance_size_large">大</string>
+    <!-- Choice row: small text size. -->
+    <string name="appearance_size_small">小</string>
+    <!-- Choice row: standard text size. -->
+    <string name="appearance_size_standard">標準</string>
+    <!-- Choice row for theme mode and text size: follow the system setting. -->
+    <string name="appearance_system">跟隨系統</string>
+    <!-- Section title for the text size. -->
+    <string name="appearance_text_size">字型大小</string>
+    <!-- Section title on the appearance page for light and dark mode. -->
+    <string name="appearance_theme">明暗</string>
+    <!-- Choice row: dark mode. -->
+    <string name="appearance_theme_dark">深色</string>
+    <!-- Choice row: light mode. -->
+    <string name="appearance_theme_light">淺色</string>
+    <!-- Button that copies the recovery key to the local clipboard only. -->
+    <string name="chat_empty">還沒有聊天</string>
+    <string name="chat_signing_in">正在登入…</string>
+    <string name="chat_signed_out">還沒連上家用伺服器</string>
+    <string name="chat_encrypted">已加密</string>
+    <string name="chat_own_preview">你：%1$s</string>
+    <string name="chat_unread_count">%1$d 則未讀</string>
+    <string name="chat_yesterday">昨天</string>
+    <string name="chat_invite_direct">%1$s 邀請你私訊</string>
+    <string name="chat_invite_room">%1$s 邀請你加入房間</string>
+    <string name="chat_invite_accept">接受</string>
+    <string name="chat_invite_decline">拒絕</string>
+    <string name="chat_start_direct">發起私訊</string>
+    <string name="chat_peer_placeholder">使用者名稱或 Matrix ID</string>
+    <string name="chat_start">發起</string>
+    <!-- Install row subtitle while images are downloaded. No arguments. -->
+    <string name="chat_install_stage_pulling_images">正在拉取映像</string>
+    <!-- Install row subtitle while networks, volumes and data folders are set up. No arguments. -->
+    <string name="chat_install_stage_preparing">正在準備</string>
+    <!-- Install row subtitle while containers start. No arguments. -->
+    <string name="chat_install_stage_starting">正在啟動</string>
+    <!-- Install row subtitle while health checks pass and the bot comes online. No arguments. -->
+    <string name="chat_install_stage_waiting_for_bot">等待 Bot 就緒</string>
+    <!-- Button on an install row when the source is unknown or the result is uncertain; opens the app's page. No arguments; short label. -->
+    <string name="chat_install_open_page">前往應用程式頁面</string>
+    <string name="chat_backup_copy">複製</string>
+    <!-- Explanation under the heading when backup is on. -->
+    <string name="chat_backup_detail_enabled">換手機或新裝置時，輸入復原金鑰就能看到以前的訊息。</string>
+    <!-- Explanation when the recovery key is missing on this device. -->
+    <string name="chat_backup_detail_incomplete">輸入開啟備份時儲存的復原金鑰。如果金鑰遺失了，就重置備份。</string>
+    <!-- Explanation when the backup status can't be confirmed because the server isn't reachable. -->
+    <string name="chat_backup_detail_unknown">連上家用伺服器後才能確認。</string>
+    <!-- Explanation when backup is off because this device isn't verified; the earliest paired device turns it on. -->
+    <string name="chat_backup_detail_unverified">請開啟最早配對的那台裝置，備份會自動開啟。那台裝置不在手邊，就重置備份。</string>
+    <!-- Explanation when this device is verified: backup turns on by itself. -->
+    <string name="chat_backup_detail_verified">裝置驗證後會自動開啟備份。</string>
+    <!-- Primary button under the recovery key field: fetch past messages with the entered key. -->
+    <string name="chat_backup_recover">取回以前的訊息</string>
+    <!-- Placeholder of the recovery key field and the clipboard label when copying the key. The key restores past messages. -->
+    <string name="chat_backup_recovery_key">復原金鑰</string>
+    <!-- Banner in the chat list asking for the recovery key to restore past messages. -->
+    <string name="chat_backup_reminder_enter_key">輸入復原金鑰，取回以前的訊息</string>
+    <!-- Banner in the chat list asking the owner to save their recovery key. -->
+    <string name="chat_backup_reminder_save_key">儲存復原金鑰，換手機時會用到</string>
+    <!-- Button that opens the reset confirmation; it replaces the recovery key with a new one. -->
+    <string name="chat_backup_reset">重置備份</string>
+    <!-- Danger button that confirms the reset in the dialog. -->
+    <string name="chat_backup_reset_confirm">重置</string>
+    <!-- Body of the reset confirmation dialog: a new recovery key is issued, the old one stops working. -->
+    <string name="chat_backup_reset_message">會產生新的復原金鑰，舊的會失效。重置後可能無法讀取舊訊息，其他裝置也要輸入新金鑰。</string>
+    <!-- Title of the reset confirmation dialog. -->
+    <string name="chat_backup_reset_title">重置聊天記錄備份？</string>
+    <!-- Note under the freshly issued recovery key: it is only shown once. -->
+    <string name="chat_backup_save_key_note">換手機時會用到。只會顯示這一次，點一下「已儲存」後，這台裝置就不會再保留。</string>
+    <!-- Heading above the freshly issued recovery key. -->
+    <string name="chat_backup_save_key_title">儲存復原金鑰</string>
+    <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
+    <string name="chat_backup_saved">已儲存</string>
+    <!-- Page heading when chat backup hasn't been set up. -->
+    <string name="chat_backup_status_disabled">還沒有備份聊天記錄</string>
+    <!-- Page heading when chat backup is on and verified. -->
+    <string name="chat_backup_status_enabled">聊天記錄已備份</string>
+    <!-- Page heading while backup or recovery runs. -->
+    <string name="chat_backup_status_in_progress">正在處理…</string>
+    <!-- Page heading when the recovery key is missing on this device, so past messages can't be shown. -->
+    <string name="chat_backup_status_incomplete">這台裝置還看不到以前的訊息</string>
+    <!-- Page heading when the backup status isn't known (offline). -->
+    <string name="chat_backup_status_unknown">還無法確認備份狀態</string>
+    <!-- Title of the chat backup page. -->
+    <string name="chat_backup_title">聊天記錄備份</string>
+    <!-- Value on the Settings row: backup is off. -->
+    <string name="chat_backup_value_disabled">未開啟</string>
+    <!-- Value on the Settings row for chat backup: backup is on. -->
+    <string name="chat_backup_value_enabled">已開啟</string>
+    <!-- Value on the Settings row: backup or recovery is running. -->
+    <string name="chat_backup_value_in_progress">處理中</string>
+    <!-- Value on the Settings row: backup needs the recovery key on this device. -->
+    <string name="chat_backup_value_incomplete">需要復原金鑰</string>
+    <!-- Value on the Settings row: the status can't be determined. -->
+    <string name="chat_backup_value_unknown">不確定</string>
+    <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
+    <string name="chat_status_reconnecting">正在重新連線…</string>
+    <!-- Dialog button that closes the dialog without doing anything. -->
+    <string name="common_cancel">取消</string>
+    <!-- Icon button that dismisses a tip or a dialog without doing anything. -->
+    <!-- Accessibility label for a Bot's avatar: the Bot's name, then what it is doing right now. -->
+    <string name="bot_avatar_label">%1$s，%2$s</string>
+    <!-- Button under the large avatar on the Bot profile: pick a new profile picture. -->
+    <string name="bot_avatar_choose">選擇圖片</string>
+    <!-- Sheet action on a status avatar cell: pick a new picture or video. -->
+    <string name="bot_avatar_choose_media">選擇圖片或影片</string>
+    <!-- Text inside an empty status avatar cell; tapping it picks a picture or video. -->
+    <string name="bot_avatar_add">新增</string>
+    <!-- Sheet action that removes the Bot's static avatar or one status avatar. -->
+    <string name="bot_avatar_remove">移除</string>
+    <!-- Section on an installed Agent app's page: the Bot's name, avatar and status avatars. -->
+    <string name="bot_profile_title">個人資料</string>
+    <!-- Label of the field for editing the Bot's name. -->
+    <string name="bot_name_title">名字</string>
+    <!-- The Bot name was empty. -->
+    <string name="bot_name_empty">名字不能空白</string>
+    <!-- The Bot name was longer than the limit; the number isn\'t shown. -->
+    <string name="bot_name_too_long">這個名字太長了</string>
+    <!-- The Bot name contains line breaks or control characters. -->
+    <string name="bot_name_control">名字裡有不能用的字元</string>
+    <!-- The Bot name collides with Wonton\'s or the owner\'s name, so Bots can\'t use it. -->
+    <string name="bot_name_reserved">Bot 不能叫 Wonton 或你的名字</string>
+    <!-- The Bot name failed validation for another reason. -->
+    <string name="bot_name_other">這個名字不行</string>
+    <!-- Saving the Bot profile failed because the home server couldn\'t be reached. -->
+    <string name="bot_problem_transport">連不上家用伺服器</string>
+    <!-- Saving failed because the app isn\'t installed, has no Bot, or its Matrix login isn\'t ready. -->
+    <string name="bot_problem_not_ready">應用程式還沒準備好</string>
+    <!-- Saving failed because the home server or Matrix reported an error. -->
+    <string name="bot_problem_upstream">家用伺服器出錯了</string>
+    <string name="bot_problem_owner_only">只有主人能改 Bot 的資料</string>
+    <!-- Saving the Bot profile failed for another reason. -->
+    <string name="bot_problem_other">資料沒儲存上</string>
+    <!-- The picked avatar file is in a format the home server doesn\'t accept. -->
+    <string name="bot_media_format">這個檔案不是支援的格式</string>
+    <!-- The picked avatar file exceeds the size limit; the number isn\'t shown. -->
+    <string name="bot_media_too_large">這個檔案太大了</string>
+    <!-- The picked avatar image is larger in pixels than the home server accepts. -->
+    <string name="bot_media_too_big">這張圖片尺寸超過上限</string>
+    <!-- The picked avatar image isn\'t square. -->
+    <string name="bot_media_not_square">這張圖片不是正方形</string>
+    <!-- The picked avatar animation or video exceeds the duration limit; the number isn\'t shown. -->
+    <string name="bot_media_too_long">這個動態圖片或影片太長了</string>
+    <!-- The home server couldn\'t read the picked avatar file. -->
+    <string name="bot_media_unreadable">讀不出這個檔案</string>
+    <!-- The picked file failed for another reason. -->
+    <string name="bot_media_other">這個檔案不能用作大頭貼</string>
+    <!-- An animated GIF or WebP was too large to send as-is; the Bot profile accepts videos instead. -->
+    <string name="bot_media_use_video">這張動態圖片太大了，改用一段影片吧</string>
+    <!-- The four states of a Bot, shown as status avatar grid labels and read out for the avatar. -->
+    <string name="bot_state_idle">待機</string>
+    <!-- Status: the Bot has model requests, tool calls, or is typing. -->
+    <string name="bot_state_working">工作中</string>
+    <!-- Status: a confirmation card from the Bot is waiting for the owner. -->
+    <string name="bot_state_waiting">等你確認</string>
+    <!-- Status: the app isn\'t running, or is installing, updating or starting. -->
+    <string name="bot_state_offline">離線</string>
+    <string name="timeline_new_messages_below">以下是新訊息</string>
+    <string name="timeline_start">以上是聊天的開頭</string>
+    <string name="timeline_edited">已編輯</string>
+    <string name="timeline_sending">傳送中</string>
+    <string name="timeline_read">已讀</string>
+    <string name="timeline_send_failed_retrying">傳送失敗，會自動重試</string>
+    <string name="timeline_send_failed">傳送失敗：%1$s</string>
+    <string name="timeline_resend">重新傳送</string>
+    <string name="timeline_undecryptable">無法解密：這支裝置還沒有這則訊息的金鑰</string>
+    <string name="timeline_redacted">訊息已收回</string>
+    <string name="timeline_unsupported">暫不支援顯示的訊息（%1$s）</string>
+    <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
+    <string name="timeline_profile_rename">%1$s 改名為 %2$s</string>
+    <!-- Timeline note: someone changed their avatar. Argument: their name. -->
+    <string name="timeline_profile_avatar">%1$s 換了大頭貼</string>
+    <!-- Icon button that dismisses an inline notice. -->
+    <string name="common_close">關閉</string>
+    <!-- Trash button that removes the item after you confirm. -->
+    <string name="common_delete">刪除</string>
+    <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
+    <string name="common_details">詳細資訊</string>
+    <!-- Button that closes the video player after watching. -->
+    <string name="common_done">完成</string>
+    <!-- Button that loads the page's data again after it failed. -->
+    <string name="common_retry">重試</string>
+    <!-- Toolbar button that saves the page's settings. Short, fits a small pill button. -->
+    <string name="common_save">儲存</string>
+    <!-- Icon button at the left of the chat composer: opens the attachment menu (photo or file). Also its screen-reader label. -->
+    <string name="composer_attach">附件</string>
+    <!-- Title of the problem shown when the file picker fails. The detail is the system's reason. -->
+    <string name="composer_choose_failed">無法選擇這個檔案</string>
+    <!-- Item in the composer's attachment menu: pick files to send. -->
+    <string name="composer_file">檔案</string>
+    <!-- Placeholder in the chat composer's empty text field. -->
+    <string name="composer_message">訊息</string>
+    <!-- Item in the composer's attachment menu: pick a photo to send. -->
+    <string name="composer_photo">照片</string>
+    <!-- Screen-reader label of the round send button at the right of the chat composer. -->
+    <string name="composer_send">傳送</string>
+    <!-- Status line on an approval request card: the request expired, so nothing was carried out. -->
+    <string name="confirmation_card_expired">已過期，沒有執行</string>
+    <!-- Status line on an approval request card: the action ran but failed. Argument: the home server's result message, shown as is. -->
+    <string name="confirmation_card_failed_result">沒有成功：%1$s</string>
+    <!-- Status line on an approval request card: it was denied, so nothing was carried out. -->
+    <string name="confirmation_card_rejected">已拒絕，沒有執行</string>
+    <!-- Status line on an approval request card while the action is being carried out, next to a spinner. -->
+    <string name="confirmation_card_running">正在執行</string>
+    <!-- Button on an approval request card: stop the approval window during which further actions run without asking. -->
+    <string name="confirmation_card_stop_window">停止</string>
+    <!-- Status line on an approval request card: the action ran, but whether it worked is unknown. Argument: the home server's result message, shown as is. -->
+    <string name="confirmation_card_uncertain_result">結果不確定：%1$s</string>
+    <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
+    <string name="confirmation_card_window_until">允許至 %1$s</string>
+    <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
+    <string name="connection_unpaired">未配對</string>
+    <string name="connection_connected">已連線</string>
+    <string name="connection_waiting_network">等待網路…</string>
+    <string name="connection_connecting">連線中…</string>
+    <string name="connection_updating">正在更新…</string>
+    <string name="connection_server_offline">家用伺服器似乎離線了</string>
+    <string name="connection_device_rejected">家用伺服器已不認這支手機</string>
+    <string name="connection_version_mismatch">雲吞或家用伺服器需要更新</string>
+    <string name="connection_pair_again">重新配對</string>
+    <string name="connection_view">查看連線</string>
+    <string name="connection_lan">區域網路</string>
+    <string name="connection_relay">經由中繼</string>
+    <string name="connection_direct">直接連線</string>
+    <string name="connection_details_title">詳細資訊</string>
+    <string name="connection_new_version">有新版本</string>
+    <string name="connection_add_device">新增裝置</string>
+    <string name="connection_mobile_network">行動網路</string>
+    <string name="connection_ok">正常</string>
+    <string name="connection_failing">不通</string>
+    <string name="connection_unknown">不確定</string>
+    <string name="connection_path">路徑</string>
+    <string name="connection_latency">延遲</string>
+    <string name="connection_lost_packets">封包遺失</string>
+    <string name="connection_last_handshake">上次交握</string>
+    <string name="connection_disconnects">斷線次數</string>
+    <string name="connection_last_connected">上次連上</string>
+    <string name="connection_last_failure">上次失敗</string>
+    <string name="home_connection">連線</string>
+    <string name="home_awaiting">等你確認</string>
+    <plurals name="home_cards">
+        <item quantity="other">%1$d 張</item>
+    </plurals>
+    <string name="home_none">沒有</string>
+    <string name="home_storage">儲存空間</string>
+    <string name="home_storage_value">可用 %1$s，共 %2$s</string>
+    <string name="connection_addresses_stale">伺服器的位址可能已經過時，會自動再取</string>
+    <!-- Danger button while the update is running and can still be cancelled: nothing was touched yet. -->
+    <string name="core_upgrade_cancel_upgrade">取消更新</string>
+    <!-- Stage line after the owner cancelled the update. -->
+    <string name="core_upgrade_canceled">已取消更新</string>
+    <!-- Secondary button when the update's outcome is unknown: ask the home server again. -->
+    <string name="core_upgrade_check_again">重新檢查</string>
+    <!-- Channel state while the check is running. -->
+    <string name="core_upgrade_check_checking">正在檢查新版本</string>
+    <!-- Channel state while the new version downloads; a progress bar with sizes is shown below. -->
+    <string name="core_upgrade_check_downloading">正在下載新版本</string>
+    <!-- Button on the update page that checks the channel for a new version. -->
+    <string name="core_upgrade_check_for_update">檢查更新</string>
+    <!-- Channel state on the update page: the server wasn't installed with the install script, so one-tap updates aren't available. -->
+    <string name="core_upgrade_check_not_installed">這台伺服器不是用安裝腳本安裝的，無法一鍵更新</string>
+    <!-- Channel state: the home server reported something this app doesn't understand. -->
+    <string name="core_upgrade_check_other">家用伺服器回報了雲吞不認得的狀態，請更新雲吞後再檢查</string>
+    <!-- Channel state: this installation is pinned to one version and doesn't follow the channel. -->
+    <string name="core_upgrade_check_pinned">這次安裝固定在某個版本，不會隨版本類型更新</string>
+    <!-- Channel state: the server already runs the newest version. -->
+    <string name="core_upgrade_check_up_to_date">已經是最新版</string>
+    <!-- Button on the update page while the channel check is running. -->
+    <string name="core_upgrade_checking">正在檢查…</string>
+    <!-- Stage line after the update finished. Argument: the version now running. -->
+    <string name="core_upgrade_completed_to">已更新到 %1$s</string>
+    <!-- Primary button in the confirm step: start the update. -->
+    <string name="core_upgrade_confirm_upgrade">更新</string>
+    <!-- Heading of the offer card in the confirm step. Argument: the new version. -->
+    <string name="core_upgrade_confirm_version">更新到 %1$s？</string>
+    <!-- Row label in the update page and in the collapsed details: the core version currently running. -->
+    <string name="core_upgrade_current_version">目前版本</string>
+    <!-- Secondary button in the confirm step: don't update now. -->
+    <string name="core_upgrade_decline_upgrade">稍後再說</string>
+    <!-- Collapsed details row: the update channel's name. -->
+    <string name="core_upgrade_detail_channel">版本類型</string>
+    <!-- Collapsed details row: the data kinds this version migrates, as a localized list. -->
+    <string name="core_upgrade_detail_migrates">會遷移的資料</string>
+    <!-- Collapsed details row: the new version's full digest. -->
+    <string name="core_upgrade_detail_new_version">新版本</string>
+    <!-- Collapsed details row on the update page: the core's own reason for the failed update, shown verbatim. -->
+    <string name="core_upgrade_detail_reason">原因</string>
+    <!-- Version label when the core reports no version and no digest: a development build. -->
+    <string name="core_upgrade_dev_version">開發版</string>
+    <!-- Stage line after the update failed early, before anything was changed. -->
+    <string name="core_upgrade_failed_no_changes">更新沒有完成，沒有做任何變更。</string>
+    <!-- Update failure summary: an update is already running. -->
+    <string name="core_upgrade_failure_busy">已經在更新了</string>
+    <!-- Update failure summary: the version on the channel changed since the owner approved it. -->
+    <string name="core_upgrade_failure_changed">可用的新版本變了，請重新確認</string>
+    <!-- Update failure summary: the new version crashed after it started. -->
+    <string name="core_upgrade_failure_crashed">新版本啟動後當掉了</string>
+    <!-- Update failure summary: the new version rejected the update, for example because it needs an older core first. -->
+    <string name="core_upgrade_failure_init_failed">新版本拒絕了這次更新</string>
+    <!-- Update failure summary: the computer is out of disk space. -->
+    <string name="core_upgrade_failure_no_space">磁碟空間不足</string>
+    <!-- Update failure summary: the new version hasn't finished downloading. -->
+    <string name="core_upgrade_failure_not_ready">新版本還沒下載好</string>
+    <!-- Update failure summary for the protocol and unknown reasons: the app and the home server version don't match. -->
+    <string name="core_upgrade_failure_protocol">雲吞和家用伺服器的版本不相符</string>
+    <!-- Update failure summary: the image registry can't be reached. -->
+    <string name="core_upgrade_failure_registry_unavailable">無法連線到映像檔倉庫</string>
+    <!-- Update failure summary: a step of the update exceeded its time limit. -->
+    <string name="core_upgrade_failure_timed_out">更新逾時</string>
+    <!-- Update failure summary: cancelling came too late, the update already started changing things. -->
+    <string name="core_upgrade_failure_too_late">更新已經開始，無法取消</string>
+    <!-- Update failure summary: the new version didn't pass the health check. -->
+    <string name="core_upgrade_failure_unhealthy">新版本沒通過健康檢查</string>
+    <!-- Update failure summary: the updater itself stopped working. -->
+    <string name="core_upgrade_failure_updater_failed">更新程式出了問題</string>
+    <!-- Update failure summary: Docker reported an error. -->
+    <string name="core_upgrade_failure_upstream">Docker 發生錯誤</string>
+    <!-- Warning in the confirm step of the update: this version migrates data and the update can't be undone. -->
+    <string name="core_upgrade_migrates_warning">這個版本會遷移資料，更新後無法退回舊版。</string>
+    <!-- Heading of the offer card while the new version is shown for review. Argument: the new version, like 1.2.3 or a short digest. -->
+    <string name="core_upgrade_new_version">新版本 %1$s</string>
+    <!-- Update phase: backing up data before switching. -->
+    <string name="core_upgrade_phase_backing_up">正在備份資料</string>
+    <!-- Update phase: watching the new version for a few minutes to make sure it is healthy. -->
+    <string name="core_upgrade_phase_observing">正在確認新版本是否穩定</string>
+    <!-- Update phase for a step this app doesn't know. -->
+    <string name="core_upgrade_phase_other">處理中</string>
+    <!-- Update phase shown under the stage line: pulling the new image. Nothing was touched yet. -->
+    <string name="core_upgrade_phase_pulling">正在下載新版本</string>
+    <!-- Update phase: restoring the old version after a failure. -->
+    <string name="core_upgrade_phase_rolling_back">正在退回舊版本</string>
+    <!-- Update phase: waiting for the new core to start. -->
+    <string name="core_upgrade_phase_starting">正在等新版本啟動</string>
+    <!-- Update phase: switching the services to the new version. -->
+    <string name="core_upgrade_phase_switching">正在切換到新版本</string>
+    <!-- Detail under the updating stage line: the app lost its connection and is reconnecting. -->
+    <string name="core_upgrade_reconnecting">暫時連不上家用伺服器</string>
+    <!-- Stage line right after the owner confirmed: the request is on its way. -->
+    <string name="core_upgrade_requesting_upgrade">正在開始更新…</string>
+    <!-- Stage line after the update failed and the old version was restored. Argument: the version now running. -->
+    <string name="core_upgrade_rolled_back_to">已退回 %1$s</string>
+    <!-- Secondary button on the offer card: skip this version and don't ask again until the channel changes. -->
+    <string name="core_upgrade_skip_version">跳過這個版本</string>
+    <!-- Note on the offer card after the owner skipped this version. -->
+    <string name="core_upgrade_skipped">已跳過</string>
+    <!-- Title of the home server update page, shown in the top bar while it is pushed. -->
+    <string name="core_upgrade_title">更新家用伺服器</string>
+    <!-- Stage line when the connection dropped mid-update and the outcome is not known yet. -->
+    <string name="core_upgrade_uncertain">結果不確定</string>
+    <!-- Primary button on the offer card: open the confirm step. -->
+    <string name="core_upgrade_upgrade">更新</string>
+    <!-- Stage line while the update runs and the target version is unknown. -->
+    <string name="core_upgrade_upgrading">正在更新…</string>
+    <!-- Stage line while the update runs. Argument: the target version. -->
+    <string name="core_upgrade_upgrading_to">正在更新到 %1$s…</string>
+    <!-- Label of the back button in pushed pages' top bars. -->
+    <string name="design_back">返回</string>
+    <!-- Accessibility label of the small spinner shown while a step's action runs. Android only. -->
+    <string name="design_busy">正在處理</string>
+    <!-- Label of the button that empties the search field. -->
+    <string name="design_clear">清除</string>
+    <!-- Label of the close button in modal pages' top bars. -->
+    <string name="design_close">關閉</string>
+    <!-- Default single button of the app's dialog, which just closes it. -->
+    <string name="design_ok">好</string>
+    <!-- Button on setup steps: skip this step. -->
+    <string name="design_skip">跳過</string>
+    <!-- Button on setup steps: go back to the previous step. -->
+    <string name="design_step_back">上一步</string>
+    <!-- Accessibility label of the step counter on setup steps, shown as 2/4. Arguments: the current step and the total. -->
+    <string name="design_step_progress">第 %1$d 步，共 %2$d 步</string>
+    <!-- Name of the custom accessibility action that opens a tab's menu. Android only. -->
+    <string name="design_tab_menu">標籤選單</string>
+    <!-- Accessibility state of a list row with the update badge dot. -->
+    <string name="design_update_badge">有新版本</string>
+    <!-- Section title and text field label for the proxy address (like http://192.0.2.10:7890). -->
+    <string name="egress_address">代理伺服器位址</string>
+    <!-- Radio option: type a proxy address by hand instead of using an app's proxy. -->
+    <string name="egress_address_enter">輸入代理伺服器位址</string>
+    <!-- Radio option: use the proxy that an installed app provides. Argument: that app's name. -->
+    <string name="egress_address_use_provider">使用 %1$s</string>
+    <!-- Row title on the Internet proxy page: whether apps on the home server can reach the internet through the proxy. The value on the right is a reachability status. -->
+    <string name="egress_path_apps">應用程式</string>
+    <!-- Status value: the internet can't be reached through the proxy. A reason is shown below the row. -->
+    <string name="egress_path_failed">無法連線</string>
+    <!-- Row title on the Internet proxy page: whether the home server itself can reach the internet through the proxy. -->
+    <string name="egress_path_home_server">家用伺服器</string>
+    <!-- Status value next to Apps / Home Server while the proxy is being checked. -->
+    <string name="egress_path_probing">檢查中…</string>
+    <!-- Status value: the internet can be reached through the proxy. -->
+    <string name="egress_path_reachable">可連線</string>
+    <!-- Status value: the check couldn't tell whether the proxy works. A reason is shown below the row. -->
+    <string name="egress_path_uncertain">無法確定</string>
+    <!-- Section title and text field label for network ranges (CIDR, like 100.64.0.0/10) that skip the proxy and are reached directly. -->
+    <string name="egress_ranges">直接連線網段</string>
+    <!-- Note under the bypass ranges field. Argument: the computer's own network ranges (CIDR), comma-separated. -->
+    <string name="egress_ranges_host">主機所在網段：%1$s</string>
+    <!-- Explanation under the bypass ranges field. -->
+    <string name="egress_ranges_note">這些網段不經過代理伺服器，可以上網的應用程式都能連線。</string>
+    <!-- Confirmation dialog title before turning off the Internet proxy; the message lists the apps on the home server that will restart. -->
+    <string name="egress_restart_cancel_title">取消代理伺服器需要重新啟動這些應用程式</string>
+    <!-- Primary button in the proxy confirmation dialog: restart the listed apps. -->
+    <string name="egress_restart_confirm">重新啟動</string>
+    <!-- Body of the proxy restart confirmation. Argument: the names of the apps that restart, already formatted as a list. The second line says their data is kept. -->
+    <string name="egress_restart_message">%1$s\n資料不會變動。</string>
+    <!-- Confirmation dialog title before turning on the Internet proxy; the message lists the apps on the home server that will restart. -->
+    <string name="egress_restart_set_title">設定代理伺服器需要重新啟動這些應用程式</string>
+    <!-- Note under the proxy address when the installer detected it on the computer. -->
+    <string name="egress_source_detected">安裝時偵測到的。</string>
+    <!-- Note under the proxy address when it was set by an environment variable at install time. Keep WONTON_EGRESS_PROXY as is. -->
+    <string name="egress_source_env">位址由 WONTON_EGRESS_PROXY 指定。要變更的話，修改安裝目錄裡的設定，再執行一次安裝指令碼。</string>
+    <!-- Note under the proxy address when the proxy comes from an installed app. Argument: that app's name. -->
+    <string name="egress_source_provider">來自 %1$s</string>
+    <!-- Title of the Internet proxy settings page and its row in Settings > Home Server. The proxy is what apps on the home server use to reach the internet. -->
+    <string name="egress_title">代理伺服器</string>
+    <!-- Destructive full-width button that stops using the Internet proxy. -->
+    <string name="egress_turn_off">停用代理伺服器</string>
+    <!-- Button in the video player's failure view: download the file, then open it in another app. -->
+    <string name="file_download_and_open">下載後用其他 App 開啟</string>
+    <!-- Title of the problem shown when no installed app can open a downloaded file. Android only. -->
+    <string name="file_no_app_opens_it">這支手機上沒有應用程式可以開啟這個檔案</string>
+    <!-- Link under a file card: open the downloaded file with another app. -->
+    <string name="file_open_elsewhere">用其他 App 開啟</string>
+    <!-- Line under a file card while its download is paused. Argument: the home server's reason, shown as is. -->
+    <string name="file_paused">暫停：%1$s</string>
+    <!-- Line under a file card while its download is paused without a reason: it resumes when the connection recovers. -->
+    <string name="file_paused_waiting">等連線恢復後接著下載</string>
+    <!-- Caption under a file card: which bot sent the file. First argument: the bot's name; second: the plugin's name. -->
+    <string name="file_source_bot">來自 %1$s（%2$s）</string>
+    <!-- Caption under a file card: the sender is unknown. -->
+    <string name="file_source_unknown">來源不明</string>
+    <!-- Reason in the collapsed details of an upload problem: the system didn't provide the picked file. Android only. -->
+    <string name="file_system_no_file">系統沒有給出這個檔案</string>
+    <!-- Fallback name for an uploaded file when the system doesn't provide one. Shown as the file's name. Android only. -->
+    <string name="file_unnamed">檔案</string>
+    <!-- Confirm button and title of the page that installs an app from the Store or a file. -->
+    <string name="install_action_install">安裝</string>
+    <!-- Confirm button and title of the page that updates an installed app to a newer version. -->
+    <string name="install_action_upgrade">更新</string>
+    <!-- Warning under the Always Allow switches in the install preview. -->
+    <string name="install_always_allowed_risk">這些 Bot 用這個應用程式的工具不再問，新版本多出來的工具也算在內</string>
+    <!-- Title of the page that switches an installed app to a version from another source or a file. -->
+    <string name="install_change_version">換版本</string>
+    <!-- Status when the install succeeded. -->
+    <string name="install_completion_done">安裝完成</string>
+    <!-- Status while the app installs. -->
+    <string name="install_completion_installing">正在安裝…</string>
+    <!-- Title of the page that stays open while the app installs. -->
+    <string name="install_completion_title">安裝應用程式</string>
+    <!-- Problem title when the core couldn't confirm the install result. -->
+    <string name="install_completion_uncertain">安裝結果不確定</string>
+    <!-- Button that closes the install page. -->
+    <string name="install_done">完成</string>
+    <!-- Button in the install preview when the app needs profile details you haven't filled in yet. -->
+    <string name="install_fill_profile">填寫資料</string>
+    <!-- Section title above the permissions the app asks for, in the install preview and the detail page. -->
+    <string name="install_permissions">權限</string>
+    <!-- Section title above the release notes in the install preview. -->
+    <string name="install_release_notes">更新說明</string>
+    <!-- Notice title when the pairing code ran out of time. -->
+    <string name="invite_expired">這個配對碼已過期。</string>
+    <!-- Under the QR code: how long the code is still valid. Argument: the remaining time as m:ss. -->
+    <string name="invite_expires_in">%1$s 後過期</string>
+    <!-- Notice title when the pairing code couldn't be fetched; the core's reason is shown below. -->
+    <string name="invite_failed_title">無法取得配對碼</string>
+    <!-- Explanation under the QR code: what the new device's owner should do. The code works only once. -->
+    <string name="invite_instructions">在新裝置上開啟雲吞並掃描這個 QR 碼，就能新增這台裝置。QR 碼只能使用一次。</string>
+    <!-- Label above the pairing code as text, for when the QR code can't be scanned. -->
+    <string name="invite_paste_fallback">無法掃描時，請貼上這段文字</string>
+    <!-- Accessibility label of the QR code image with the pairing code. -->
+    <string name="invite_qr_label">配對 QR 碼</string>
+    <!-- Button under the expired notice: get a new code. -->
+    <string name="invite_renew">產生新的配對碼</string>
+    <!-- Shown next to a spinner while the pairing code is being requested. -->
+    <string name="invite_requesting">正在向家用伺服器取得配對碼…</string>
+    <!-- Button under the failed notice: request a pairing code again. -->
+    <string name="invite_try_again">重試</string>
+    <!-- Title of the page that pairs this phone with the home server by scanning. -->
+    <string name="pairing_title">配對</string>
+    <!-- Title of the page for pairing the same phone again from the server settings. -->
+    <string name="pairing_title_again">重新配對</string>
+    <!-- Explanation above the paste field: where the pairing QR code lives. May wrap. -->
+    <string name="pairing_instructions">在家用區域網路裡，用瀏覽器開啟伺服器的 IP 位址（安裝時終端裡會給出），頁面上有配對 QR 碼。</string>
+    <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
+    <string name="pairing_paste_placeholder">貼上配對碼</string>
+    <!-- Button under the paste field: pair with the code. -->
+    <string name="pairing_submit">配對</string>
+    <!-- Shown next to a spinner while pairing is in progress. -->
+    <string name="pairing_in_progress">正在配對…</string>
+    <!-- Label of the field for this device's name. -->
+    <string name="pairing_device_name">這台裝置的名字</string>
+    <!-- Failure title when the server rejected the pairing code. -->
+    <string name="pairing_failure_rejected">伺服器不認這個配對碼</string>
+    <!-- Failure title when the pairing code ran out of time. -->
+    <string name="pairing_failure_expired">配對碼過期了</string>
+    <!-- Failure title when the pairing code was deactivated. -->
+    <string name="pairing_failure_closed">這個配對碼已經停用</string>
+    <!-- Failure title when none of the pairing code's server addresses can be reached. No arguments. -->
+    <string name="pairing_failure_transport">連不上配對碼裡的伺服器</string>
+    <!-- Button under the failed notice: retry pairing with the same code. -->
+    <string name="pairing_next_new_code">換一個新的配對碼：在已配對的裝置上點「新增裝置」取得，或在主機上執行 sudo wonton pair。</string>
+    <string name="pairing_next_closed">這台伺服器已經有配對的裝置，首次配對碼無法再用；請從已配對的裝置新增，或在主機上執行 sudo wonton pair 另發一個碼。</string>
+    <string name="pairing_retry_same_code">用這個碼再試一次</string>
+    <!-- Failure title when the app and the server speak different versions. -->
+    <string name="pairing_failure_protocol">App 和伺服器的版本對不上</string>
+    <!-- Next step under the transport failure. May wrap. -->
+    <string name="pairing_hint_transport">確認家用伺服器已開機並連上網路，再試一次。</string>
+    <!-- Next step under the protocol failure. May wrap. -->
+    <string name="pairing_hint_protocol">請把 App 和伺服器都更新到最新版本。</string>
+    <!-- Title of the "Other servers" page and the settings row that opens it. -->
+    <string name="peers_title">其他伺服器</string>
+    <!-- Top-right button on the peers page that offers the two ways to add a server. -->
+    <string name="peers_add">新增</string>
+    <!-- Action that shows this server's pairing QR code for the other owner to scan. -->
+    <string name="peers_show_code">出示我的碼</string>
+    <!-- Action that scans the other server's pairing code; also the scan page's title. -->
+    <string name="peers_scan_code">掃描對方的碼</string>
+    <!-- Empty page: the one sentence above the two add actions. -->
+    <string name="peers_empty">還沒有連線其他伺服器</string>
+    <!-- Row subtitle when the other server can't be reached. -->
+    <string name="peers_status_offline">對方伺服器連不上</string>
+    <!-- Under the offline subtitle. Argument: relative time like "3 hours ago". -->
+    <string name="peers_last_connected">上次連線：%1$s</string>
+    <!-- Used when the last connection was less than a minute ago. -->
+    <string name="peers_just_now">剛剛</string>
+    <!-- Row subtitle when the other side removed the pairing. -->
+    <string name="peers_status_removed">對方已中斷連線</string>
+    <!-- Row subtitle while the other owner hasn't approved the pairing yet. -->
+    <string name="peers_status_awaiting">等對方同意</string>
+    <!-- Row subtitle when the other owner declined my pairing request. -->
+    <string name="peers_status_declined">對方拒絕了</string>
+    <!-- Row subtitle while the first reachability check after pairing hasn't returned yet. -->
+    <string name="peers_status_checking">正在確認</string>
+    <!-- Row subtitle for a status this version doesn't know. -->
+    <string name="peers_status_unknown">狀態未知</string>
+    <!-- Section heading above the pairing requests other servers sent. -->
+    <string name="peers_requests_title">請求</string>
+    <!-- Approve button on a request row. -->
+    <string name="peers_request_approve">同意</string>
+    <!-- Reject button on a request row. -->
+    <string name="peers_request_reject">拒絕</string>
+    <!-- Warning on a request row whose self-reported name matches a paired server. Argument: that server's display name. -->
+    <string name="peers_request_conflicts">和已配對的「%1$s」重名，不是同一台</string>
+    <!-- Collapsed section heading at the bottom for requests I declined. -->
+    <string name="peers_rejected_title">已拒絕</string>
+    <!-- Undo button on a declined-request row: they can ask again. -->
+    <string name="peers_rejected_undo">撤銷</string>
+    <!-- Confirmation dialog title for removing a paired server. Argument: the other owner's display name. -->
+    <string name="peers_remove_title">移除「%1$s」？</string>
+    <!-- Confirmation dialog body: what removing does. -->
+    <string name="peers_remove_message">移除後不再和這台伺服器互通訊息。</string>
+    <!-- Failure title when the scanned text isn't a pairing code. -->
+    <string name="peers_error_code_invalid">這不是伺服器配對碼</string>
+    <!-- Failure title when the code was replaced by a reset and no longer works. -->
+    <string name="peers_error_code_revoked">這張碼已經作廢，請對方重新發一張</string>
+    <!-- Failure title when the other server can't be reached. -->
+    <string name="peers_error_peer_unreachable">連不上對方的伺服器</string>
+    <!-- Failure title when the other owner declined the pairing. -->
+    <string name="peers_error_peer_rejected">對方沒有同意</string>
+    <!-- Failure title when the two servers are already paired. -->
+    <string name="peers_error_already_paired">已經和這台伺服器連線過了</string>
+    <!-- Failure title when the scanned code is from your own server. -->
+    <string name="peers_error_self_pairing">這是你自己伺服器的碼</string>
+    <!-- Failure title when this server isn't paired. -->
+    <string name="peers_error_not_paired">這台伺服器還沒連線</string>
+    <!-- Failure title when this device isn't the owner's. -->
+    <string name="peers_error_unauthenticated">只有伺服器主人能管理其他伺服器</string>
+    <!-- Failure title when the home server can't be reached. -->
+    <string name="peers_error_transport">連不上家用伺服器</string>
+    <!-- Failure title for the remaining categories. -->
+    <string name="peers_error_other">出了點問題，請稍後再試</string>
+    <!-- Failure title when the other server can't take more requests right now. -->
+    <string name="peers_error_too_many_requests">對方暫時收不了請求，稍後再試</string>
+    <!-- Notice when the request just handled was already processed elsewhere; the list refreshes itself. -->
+    <string name="peers_error_request_not_found">這條請求已經處理過了</string>
+    <!-- Shown while waiting for the camera permission. -->
+    <string name="camera_waiting">等待相機權限…</string>
+    <!-- Notice when the camera permission was declined but can be asked again. -->
+    <string name="camera_denied">雲吞沒有相機權限，無法掃碼。</string>
+    <!-- Button to ask for the camera permission again. -->
+    <string name="camera_allow">允許使用相機</string>
+    <!-- Notice when the camera permission was declined permanently. -->
+    <string name="camera_blocked">雲吞沒有相機權限，可以在系統設定裡開啟。</string>
+    <!-- Button that opens the app's page in system settings. -->
+    <string name="camera_settings">開啟系統設定</string>
+    <!-- Notice when the device has no camera at all. -->
+    <string name="camera_missing">這台裝置沒有相機。</string>
+    <!-- Accessibility label of the server pairing QR code image. -->
+    <string name="peers_code_qr_label">伺服器配對QR碼</string>
+    <!-- Button under the QR code: hands the code text to the system share sheet. -->
+    <string name="peers_code_share">分享</string>
+    <!-- Button under the QR code: replaces the code so the old one stops working. -->
+    <string name="peers_code_reset">重設</string>
+    <!-- Confirmation dialog title for resetting the pairing code. -->
+    <string name="peers_reset_title">重設配對碼？</string>
+    <!-- Confirmation dialog body: what resetting does. -->
+    <string name="peers_reset_message">舊碼會作廢，用舊碼發來的請求一併清掉</string>
+    <!-- Placeholder of the field for pasting the code when scanning is not possible. -->
+    <string name="peers_paste_placeholder">貼上配對碼</string>
+    <!-- Button under the paste field: submit the pasted code. -->
+    <string name="peers_paste_submit">配對</string>
+    <!-- Label before an address that a third-party client uses to connect to the app. -->
+    <string name="lan_client_address">位址</string>
+    <!-- Label before the password a third-party client uses to sign in to the app. -->
+    <string name="lan_client_password">密碼</string>
+    <!-- Label before the username a third-party client uses to sign in to the app. -->
+    <string name="lan_client_username">帳號</string>
+    <!-- Note under the Open on Local Network switch. First argument: number of ports; second: the port numbers, comma-separated. -->
+    <plurals name="lan_webui_ports">
+        <item quantity="other">連接埠 %1$s</item>
+    </plurals>
+    <!-- Switch on an app's page: make the app's web page reachable from other devices on the local network. The ports are listed below. -->
+    <string name="lan_webui_toggle">在區域網路開放</string>
+    <!-- Title of the default agent picker, opened from Settings. -->
+    <string name="launcher_default_agent">預設 Agent</string>
+    <!-- Shown on the launcher when no apps are installed yet. -->
+    <string name="launcher_empty">還沒有安裝應用程式</string>
+    <!-- Button under it that opens the Store. -->
+    <string name="launcher_go_to_store">前往商店</string>
+    <!-- Action-sheet item that opens the app's web page. -->
+    <string name="launcher_open_web">開啟網頁</string>
+    <!-- Action-sheet item that pins one of the app's web pages to the bottom navigation bar. -->
+    <string name="launcher_pin_to_bar">固定到底部導覽列</string>
+    <!-- Title of the launcher screen with the installed apps. -->
+    <string name="launcher_title">應用程式</string>
+    <!-- Badge in the Store entry row: how many installed apps have updates. Argument: the count. -->
+    <plurals name="launcher_updates_available">
+        <item quantity="other">%1$d 個可更新</item>
+    </plurals>
+    <!-- Action-sheet item that updates the app. Argument: the new version. -->
+    <string name="launcher_upgrade_to">升級到 %1$s</string>
+    <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
+    <string name="message_clip_label">訊息</string>
+    <!-- Item in the message menu: copy the message text. Android only. -->
+    <string name="message_copy">複製</string>
+    <!-- Item in the message menu: remove the message for everyone in the chat. Android only. -->
+    <string name="message_delete_everyone">收回</string>
+    <!-- Confirm button in the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_confirm">收回</string>
+    <!-- Body of the dialog that removes a message for everyone, saying the scope of it. Android only. -->
+    <string name="message_delete_everyone_message">這個房間裡所有成員都會看到它被收回。</string>
+    <!-- Title of the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_title">對所有人生效，收回這則訊息？</string>
+    <!-- Item in the message menu: send the message to another room. Android only. -->
+    <string name="message_forward">轉發</string>
+    <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_empty">沒有其他聊天</string>
+    <!-- Title of the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_title">轉發到</string>
+    <!-- Fallback under an image message when it can't be decoded: the format isn't supported. Android only. -->
+    <string name="message_image_format_unsupported">圖片格式不支援</string>
+    <!-- Fallback under an image message when it can't be loaded and the error carries no reason. Android only. -->
+    <string name="message_image_unavailable">取不到圖片</string>
+    <!-- Item in the message menu: reply to the message. Android only. -->
+    <string name="message_reply">回覆</string>
+    <!-- Screen-reader label of the cross that stops replying above the composer. Android only. -->
+    <string name="message_reply_cancel">取消回覆</string>
+    <!-- Short stand-in for a quoted message type that can be shown but has nothing to summarize. Android only. -->
+    <string name="message_quote_image">圖片</string>
+    <!-- Short stand-in in a quote for a message type with no text, like an approval card. Android only. -->
+    <string name="message_quote_other">一則訊息</string>
+    <!-- Stand-in in a quote for a message the core couldn't load from the server. Android only. -->
+    <string name="message_quote_unavailable">原訊息不可用</string>
+    <!-- Stand-in in a quote for a message this device can't decrypt. Android only. -->
+    <string name="message_quote_undecryptable">加密訊息</string>
+    <string name="message_image_save">儲存到相簿</string>
+    <string name="message_image_save_failed">無法儲存到相簿</string>
+    <string name="message_image_saved">已儲存到相簿</string>
+    <string name="message_image_share">分享</string>
+    <string name="message_image_share_failed">無法分享這張圖片</string>
+    <!-- Description of an agent row in setup when it has no account login. -->
+    <string name="onboarding_agent_connection_key">API 金鑰</string>
+    <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
+    <string name="onboarding_agent_connection_logins">%1$s或 API 金鑰</string>
+    <!-- Problem title in setup when no agent can be chosen. -->
+    <string name="onboarding_agent_empty">沒有可選的 Agent，可以重新整理再試。</string>
+    <!-- Trailing label on a recommended app row that is already installed. -->
+    <string name="onboarding_app_installed">已安裝</string>
+    <!-- Dialog title for choosing the default agent. -->
+    <string name="onboarding_default_agent_title">預設 Agent</string>
+    <!-- Primary button that finishes setup. -->
+    <string name="onboarding_done">完成</string>
+    <!-- Primary button after setup finished: leave setup and open chat. -->
+    <string name="onboarding_enter_chat">進入聊天</string>
+    <!-- Bar title of the in-app browser that opens the model gateway's settings. -->
+    <string name="onboarding_gateway_title">模型設定</string>
+    <!-- Button that keeps the agent that a new one replaces. -->
+    <string name="onboarding_keep">保留</string>
+    <!-- Loading spinner shown while setup data loads. -->
+    <string name="onboarding_loading">正在載入</string>
+    <!-- Row title: type a model provider by hand instead of picking a recommended one. -->
+    <string name="onboarding_model_custom">自訂</string>
+    <!-- Label of the password field for the provider's API key. -->
+    <string name="onboarding_model_form_api_key">API 金鑰</string>
+    <!-- Label of the field for the provider's API base URL (like https://api.example.com/v1). -->
+    <string name="onboarding_model_form_base_url">Base URL</string>
+    <!-- Label of the field for the model's name (like gpt-4o). -->
+    <string name="onboarding_model_form_model_name">模型名稱</string>
+    <!-- Button that opens the provider's website to get an API key. -->
+    <string name="onboarding_model_get_key">取得 API 金鑰</string>
+    <!-- Button that collapses the list of less common model providers. -->
+    <string name="onboarding_model_less">收起供應商</string>
+    <!-- Button that expands the list of less common model providers. -->
+    <string name="onboarding_model_more">更多供應商</string>
+    <!-- Notice when tapping "Get API key" found no browser to open the link. -->
+    <string name="onboarding_model_no_browser">沒有瀏覽器能開啟這個連結，請安裝或啟用瀏覽器後再試。</string>
+    <!-- Button that opens the model gateway's settings page. -->
+    <string name="onboarding_model_open_settings">開啟模型設定</string>
+    <!-- Button that checks the typed API key against the model provider. -->
+    <string name="onboarding_model_test">測試</string>
+    <!-- Warning under a model provider row: testing couldn't reach the provider, but it's saved anyway when setup finishes. -->
+    <string name="onboarding_model_unreachable">連不上供應商，完成時照樣儲存。</string>
+    <!-- Row title: keep the models already configured in the model gateway. -->
+    <string name="onboarding_model_use_current">使用目前的</string>
+    <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
+    <string name="onboarding_model_use_login">用%1$s</string>
+    <!-- Primary button that advances to the next setup step. -->
+    <string name="onboarding_next">下一步</string>
+    <!-- Banner when several approval cards are waiting. Argument: the number of cards. -->
+    <plurals name="onboarding_pending_card_many">
+        <item quantity="other">%1$d 張卡片等你確認</item>
+    </plurals>
+    <!-- Banner when one approval card is waiting. Argument: the card's title. -->
+    <string name="onboarding_pending_card_one">%1$s，等你確認</string>
+    <!-- Problem title in setup: the model gateway on the home server isn't ready. -->
+    <string name="onboarding_problem_model_gateway_not_ready">模型閘道還沒就緒，請重試或跳過這一步。</string>
+    <!-- Problem title in setup: the provider rejected the API key. -->
+    <string name="onboarding_problem_model_key_rejected">供應商拒絕了這個 API 金鑰，請修改後重新測試。</string>
+    <!-- Problem title in setup: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_model_protocol">應用程式和家用伺服器的版本不相容，請更新後重試。</string>
+    <!-- Problem title in setup: the provider's address can't be reached. -->
+    <string name="onboarding_problem_model_provider_unreachable">連不上供應商，請檢查位址或網路後重試。</string>
+    <!-- Problem title in setup: the home server can't be reached. -->
+    <string name="onboarding_problem_model_transport_unavailable">連不上家用伺服器，請檢查網路後重試。</string>
+    <!-- Problem title in setup: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_model_unauthorized">家用伺服器未授權這部裝置，請檢查存取權限後重試。</string>
+    <!-- Problem title in setup: the home server hit an error answering the request. -->
+    <string name="onboarding_problem_model_upstream">家用伺服器未能完成請求，請稍後重試。</string>
+    <!-- Problem title while installing: the app changed after it was confirmed. -->
+    <string name="onboarding_problem_plugin_changed">應用程式在確認之後變了，請重新查看、確認。</string>
+    <!-- Problem title while installing: the app is already installed or another task is busy. -->
+    <string name="onboarding_problem_plugin_conflict">這個應用程式已經裝了或正在忙，等目前工作結束後重新整理。</string>
+    <!-- Problem title while installing: the home server is updating itself right now. -->
+    <string name="onboarding_problem_plugin_core_upgrading">家用伺服器正在更新，結束後再試。</string>
+    <!-- Problem title while installing: the device the app needs is unavailable. -->
+    <string name="onboarding_problem_plugin_device_unavailable">選擇的裝置不可用，請重新選擇。</string>
+    <!-- Problem title while installing: the home server's internet proxy can't be reached. -->
+    <string name="onboarding_problem_plugin_egress_proxy_unavailable">伺服器的代理伺服器連不上，請檢查後重試。</string>
+    <!-- Problem title while installing: the request was rejected as invalid. -->
+    <string name="onboarding_problem_plugin_invalid">這個操作沒被接受，查看詳細資訊後修改重試。</string>
+    <!-- Problem title while installing: a port the app opens on the local network is used by another container or program. -->
+    <string name="onboarding_problem_plugin_lan_port_taken">這個應用程式要開的連接埠被佔用，停掉佔著它的容器或程式再試。</string>
+    <!-- Problem title while installing: no local network address is available for the app. -->
+    <string name="onboarding_problem_plugin_lan_unavailable">沒有可用的區域網路位址，請檢查伺服器的網路設定。</string>
+    <!-- Problem title while installing: the app wasn't found. -->
+    <string name="onboarding_problem_plugin_not_found">沒有找到這個應用程式，重新整理清單後再試。</string>
+    <!-- Problem title while installing: the owner profile isn't complete. -->
+    <string name="onboarding_problem_plugin_owner_profile_incomplete">你的個人資料還沒填好，填好後再試。</string>
+    <!-- Problem title while installing: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_plugin_protocol">應用程式和家用伺服器的版本對不上，請更新應用程式或伺服器。</string>
+    <!-- Problem title while installing: the home server is older than the app needs. -->
+    <string name="onboarding_problem_plugin_server_too_old">家用伺服器版本太舊，請先升級伺服器。</string>
+    <!-- Problem title while installing: the app's source is temporarily unreachable. -->
+    <string name="onboarding_problem_plugin_source_unavailable">取不到應用程式的資訊，來源恢復後再試。</string>
+    <!-- Problem title while installing: the home server can't be reached. -->
+    <string name="onboarding_problem_plugin_transport_unavailable">連不上家用伺服器，檢查網路後重試。</string>
+    <!-- Problem title while installing: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_plugin_unauthorized">家用伺服器不認得這部裝置，請重新掃描 QR 碼配對。</string>
+    <!-- Problem title while installing: the home server doesn't support this app. -->
+    <string name="onboarding_problem_plugin_unsupported">家用伺服器不支援這個應用程式，請先升級伺服器。</string>
+    <!-- Problem title while installing: the home server hit an error. -->
+    <string name="onboarding_problem_plugin_upstream">家用伺服器出錯了，稍後再試。</string>
+    <!-- Problem title in setup: the recommendation source is turned off. -->
+    <string name="onboarding_problem_store_disabled">推薦清單的來源已關閉，可以跳過。</string>
+    <!-- Problem title in setup: some recommendations didn't load. -->
+    <string name="onboarding_problem_store_incomplete">部分推薦清單沒有載入出來，可以重試或跳過。</string>
+    <!-- Problem title in setup: the recommendation list needs a newer home server. -->
+    <string name="onboarding_problem_store_index_too_new">推薦清單需要更新的伺服器，可以升級或跳過。</string>
+    <!-- Problem title in setup: the recommendation list can't be read. -->
+    <string name="onboarding_problem_store_invalid_index">讀不懂推薦清單，可以重試或跳過。</string>
+    <!-- Problem title in setup: recommendations are unavailable for another reason. -->
+    <string name="onboarding_problem_store_other">取不到推薦清單，可以重試或跳過。</string>
+    <!-- Problem title in setup: too many requests to the recommendation source. -->
+    <string name="onboarding_problem_store_rate_limited">推薦清單的請求太頻繁，可以稍後重試或跳過。</string>
+    <!-- Problem title in setup: the recommendation source responds too slowly. -->
+    <string name="onboarding_problem_store_timeout">推薦清單的來源回應太慢，可以重試或跳過。</string>
+    <!-- Problem title in setup: the recommendation source can't be reached. -->
+    <string name="onboarding_problem_store_unreachable">連不上推薦清單的來源，可以重試或跳過。</string>
+    <!-- Problem title in setup: the recommendation source hit an error. -->
+    <string name="onboarding_problem_store_upstream">推薦清單的來源出錯了，可以重試或跳過。</string>
+    <!-- Dialog title when a new agent replaces an installed one. Argument: the old agent's name. -->
+    <string name="onboarding_replaced_agent_title">要解除安裝「%1$s」嗎？</string>
+    <!-- Fallback when the core gives no reason why an app can't be installed. -->
+    <string name="onboarding_review_blocked">無法安裝</string>
+    <!-- Checkmark icon for a finished install task. -->
+    <string name="onboarding_review_done">完成</string>
+    <!-- Row description in the review step: the already-configured models are kept. -->
+    <string name="onboarding_review_keep_current">使用目前的</string>
+    <!-- Label next to a spinner while an install task is being prepared. -->
+    <string name="onboarding_review_preparing">正在準備</string>
+    <!-- Row description in the review step: the item is set as the default agent. -->
+    <string name="onboarding_review_set_default">設為預設</string>
+    <!-- Row description in the review step: the agent signs in from chat after setup. -->
+    <string name="onboarding_review_sign_in_after_setup">裝好後在聊天裡登入</string>
+    <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
+    <string name="onboarding_review_uncertain">不確定裝好沒有，請到應用程式頁查看。</string>
+    <!-- Row description in the review step: the model couldn't be reached during the test. -->
+    <string name="onboarding_review_unreachable">測試時沒連上</string>
+    <!-- Row description in the review step. Argument: the model's name. -->
+    <string name="onboarding_review_unreachable_model">%1$s · 測試時沒連上</string>
+    <!-- Label while an install task waits for others to finish. -->
+    <string name="onboarding_review_waiting">排隊中</string>
+    <!-- Busy label while a setup step or an install task is running. -->
+    <string name="onboarding_running">進行中</string>
+    <!-- Secondary button on the setup error screen: leave setup without finishing. -->
+    <string name="onboarding_skip_anyway">先跳過</string>
+    <!-- Card title at the top of the agent step in setup: pick the agent to use. -->
+    <string name="onboarding_step_agent">選擇 Agent</string>
+    <!-- Card title at the top of the apps step in setup: pick the apps to install. -->
+    <string name="onboarding_step_apps">選擇應用程式</string>
+    <!-- Card title after setup finished. -->
+    <string name="onboarding_step_finished">完成</string>
+    <!-- Card title at the top of the model step in setup: connect a model provider. -->
+    <string name="onboarding_step_model">連接模型</string>
+    <!-- Card title fallback in setup when the step is unknown. -->
+    <string name="onboarding_step_other">初始設定</string>
+    <!-- Card title at the top of the profile step in setup. -->
+    <string name="onboarding_step_profile">個人資料</string>
+    <!-- Card title at the top of the review step in setup: check everything before finishing. -->
+    <string name="onboarding_step_review">確認</string>
+    <!-- Dismissable tip after an app installed: it can be pinned to the bottom navigation bar. -->
+    <string name="onboarding_tip_app_installed">應用程式裝好後，可以把它加到底部導覽列。</string>
+    <!-- Dismissable tip above the chat input: confirm approval requests on the card in chat. -->
+    <string name="onboarding_tip_confirmation_card">需要確認時，在聊天裡的卡片上點確認。</string>
+    <!-- Button that uninstalls the agent that a new one replaces. -->
+    <string name="onboarding_uninstall">解除安裝</string>
+    <!-- Section title, field label and accessibility label for the owner's email address. -->
+    <string name="owner_profile_email">電子郵件</string>
+    <!-- Placeholder in the empty email field. -->
+    <string name="owner_profile_email_optional">選填</string>
+    <!-- Section title, field label and accessibility label for the owner's display name. -->
+    <string name="owner_profile_name">名字</string>
+    <!-- Title of the owner profile page (name and email) and its entry point in Settings. -->
+    <string name="owner_profile_title">個人資料</string>
+    <!-- Row label for the account name the home server assigned; shown under the form. -->
+    <string name="owner_profile_username">使用者名稱</string>
+    <!-- Detail of the photo problem: the GIF's header is invalid. Android only. -->
+    <string name="photo_gif_unreadable">認不出這張 GIF</string>
+    <!-- Next step under a photo problem: pick a different photo. -->
+    <string name="photo_try_another">換一張試試。</string>
+    <!-- Title of the photo problem on iOS, detail on Android: the photo was decoded but couldn't be re-encoded for sending. -->
+    <string name="photo_unencodable">照片轉換失敗</string>
+    <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
+    <string name="photo_unreadable">讀不出這張照片</string>
+    <!-- Small tag next to a permission that's newly requested in this update. -->
+    <string name="plugin_save_folders">可儲存檔案的資料夾</string>
+    <string name="plugin_save_revoke">撤銷</string>
+    <string name="plugin_updates_section">更新</string>
+    <string name="plugin_ask_every_update">每次都詢問</string>
+    <string name="plugin_written_by_agent">你的 Agent · %1$s</string>
+    <string name="plugin_requirements">需求</string>
+    <string name="plugin_info">資訊</string>
+    <string name="plugin_tags">標籤</string>
+    <string name="plugin_author">作者</string>
+    <string name="plugin_license">授權條款</string>
+    <string name="plugin_source">來源</string>
+    <string name="plugin_stars">星數</string>
+    <string name="plugin_homepage">首頁</string>
+    <string name="plugin_repository">程式碼儲存庫</string>
+    <string name="plugin_permission_added">新增</string>
+    <!-- Small tag next to a permission the core doesn't support. -->
+    <string name="plugin_permission_unsupported">不支援</string>
+    <string name="plugin_permission_optional">可選</string>
+    <string name="plugin_permission_risk_high">高風險</string>
+    <string name="plugin_permission_risk_very_high">很高風險</string>
+    <string name="plugin_permission_risk_highest">最高風險</string>
+    <string name="plugin_root_permission_badge">這個外掛能控制整台主機</string>
+    <string name="plugin_permission_open_title">開啟「%1$s」？</string>
+    <string name="plugin_permission_understand_title">我知道這個外掛能控制整台主機</string>
+    <string name="plugin_permission_host_root">開啟後它能以 root 身分管理這台主機上的容器。</string>
+    <string name="plugin_permission_continue">繼續</string>
+    <string name="plugin_permission_open">開啟</string>
+    <string name="plugin_permission_close_title">關閉「%1$s」？</string>
+    <string name="plugin_permission_close">關閉</string>
+    <string name="plugin_permission_opened_owner">你在 %1$s 開啟</string>
+    <string name="plugin_permission_opened_bot">Bot %1$s 在 %2$s 開啟</string>
+    <!-- Button that adds the typed source address. -->
+    <string name="plugin_sources_add">新增</string>
+    <!-- Button that proceeds with the typed source address when changing versions. -->
+    <string name="plugin_sources_continue">繼續</string>
+    <!-- Reason shown when the picked archive is bigger than the server accepts. Argument: the size limit, formatted as a file size. -->
+    <string name="plugin_sources_file_too_large">檔案太大了，最多 %1$s</string>
+    <!-- Reason shown when the picked file can't be opened. -->
+    <string name="plugin_sources_file_unreadable">打不開這個檔案</string>
+    <!-- Button that opens the file picker to install from an archive. -->
+    <string name="plugin_sources_install_from_file">從檔案安裝</string>
+    <!-- Section title above the sources you added, in the store list and on the Add Source page. -->
+    <string name="plugin_sources_mine">我新增的</string>
+    <!-- Title of the page where you add a source by address or install from a file. -->
+    <string name="plugin_sources_title">新增來源</string>
+    <!-- Warning at the top of the Add Source page. -->
+    <string name="plugin_sources_unreviewed_warning">這裡新增的應用程式和檔案都沒有經過審核，只裝你信任的。</string>
+    <!-- Succeeded task line listing the tools the app gained. Argument: the tool names, formatted as a list. -->
+    <string name="plugin_task_added_tools">新增的工具：%1$s</string>
+    <!-- Succeeded task line when the core couldn't compare the app's tools. -->
+    <string name="plugin_task_added_tools_unknown">不知道這次多了哪些工具</string>
+    <!-- Status of a finished install task. -->
+    <string name="plugin_task_install_done">已安裝</string>
+    <!-- Failed install task line. Argument: the reason from the core. -->
+    <string name="plugin_task_install_failed">安裝失敗：%1$s</string>
+    <!-- Status of a running install task. -->
+    <string name="plugin_task_install_running">正在安裝</string>
+    <!-- Button on a failed task whose app package changed after the confirmation: reopen the confirmation. -->
+    <string name="plugin_task_review">重新查看</string>
+    <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
+    <string name="plugin_task_uncertain">結果不確定：%1$s</string>
+    <!-- Status of a finished uninstall task. -->
+    <string name="plugin_task_uninstall_done">已解除安裝</string>
+    <!-- Failed uninstall task line. Argument: the reason from the core. -->
+    <string name="plugin_task_uninstall_failed">解除安裝失敗：%1$s</string>
+    <!-- Status of a running uninstall task. -->
+    <string name="plugin_task_uninstall_running">正在解除安裝</string>
+    <!-- Status of a finished update task. -->
+    <string name="plugin_task_upgrade_done">已升級</string>
+    <!-- Failed update task line. Argument: the reason from the core. -->
+    <string name="plugin_task_upgrade_failed">升級失敗：%1$s</string>
+    <!-- Status of a running update task. -->
+    <string name="plugin_task_upgrade_running">正在升級</string>
+    <!-- Small tag on a store row and the install preview: the app is reviewed. -->
+    <string name="plugin_trust_official">已審核</string>
+    <!-- Small tag: a system app that's always installed. -->
+    <string name="plugin_trust_system">系統</string>
+    <!-- Small tag: the app isn't reviewed. -->
+    <string name="plugin_trust_unreviewed">未審核</string>
+    <!-- Action-sheet item that uninstalls the app. -->
+    <string name="plugin_uninstall_action">解除安裝</string>
+    <!-- Destructive button that uninstalls and deletes the app's data. -->
+    <string name="plugin_uninstall_delete_data">解除安裝並刪除資料</string>
+    <!-- Message of the uninstall confirmation. -->
+    <string name="plugin_uninstall_delete_data_warning">刪除資料會一併刪掉它的金鑰和 Bot 帳號，無法復原。</string>
+    <!-- Button that uninstalls but keeps the app's data. -->
+    <string name="plugin_uninstall_keep_data">解除安裝，保留資料</string>
+    <!-- Title of the uninstall confirmation. Argument: the app's name. -->
+    <string name="plugin_uninstall_title">解除安裝「%1$s」？</string>
+    <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
+    <string name="problem_appearance_title">無法儲存外觀設定</string>
+    <string name="problem_apps_not_ready">應用程式清單還沒準備好，請稍後重試。</string>
+    <string name="problem_no_default_agent">還沒有預設 Agent，請先在初始設定中選擇並安裝。</string>
+    <string name="problem_invalid_input_title">無法執行這個操作</string>
+    <!-- Accessibility label of the skeleton list placeholder while content loads. -->
+    <string name="problem_loading">正在載入</string>
+    <!-- Problem title when the core says the action can't run yet; the core's own reason is shown as the next step. -->
+    <string name="problem_not_ready_title">目前還無法執行</string>
+    <!-- Next step: look at the app again and approve it again. -->
+    <string name="problem_plugin_changed_next_step">請重新查看並確認。</string>
+    <!-- Problem title: the app changed after the owner approved the install. -->
+    <string name="problem_plugin_changed_title">應用程式在你確認後有變動</string>
+    <!-- Next step: the app is installed or installing, updating or uninstalling; wait for that to finish. -->
+    <string name="problem_plugin_conflict_next_step">它已經安裝了，或正在安裝、更新、解除安裝，請等它完成。</string>
+    <!-- Problem title: the app is busy with another task. -->
+    <string name="problem_plugin_conflict_title">這個應用程式正忙</string>
+    <!-- Next step: try after the update finishes. -->
+    <string name="problem_plugin_core_upgrading_next_step">更新完成後再試。</string>
+    <!-- Problem title: the home server is updating itself right now. -->
+    <string name="problem_plugin_core_upgrading_title">家用伺服器正在更新</string>
+    <!-- Next step: look at the devices again and choose one that's available. -->
+    <string name="problem_plugin_device_unavailable_next_step">重新查看裝置後再試。</string>
+    <!-- Problem title: the device the app should run on isn't available. -->
+    <string name="problem_plugin_device_unavailable_title">選擇的裝置無法使用</string>
+    <!-- Next step: check the proxy on the home server, or change the address in the internet proxy settings. -->
+    <string name="problem_plugin_egress_proxy_unavailable_next_step">檢查家用伺服器上的代理伺服器，或在代理伺服器設定裡修改位址後再試。</string>
+    <!-- Problem title: the app can't reach the internet through the internet proxy. -->
+    <string name="problem_plugin_egress_proxy_unavailable_title">連不上代理伺服器</string>
+    <!-- Next step: contact the app's author. -->
+    <string name="problem_plugin_invalid_next_step">請聯絡應用程式的作者。</string>
+    <!-- Problem title: the app's package is broken. -->
+    <string name="problem_plugin_invalid_title">這個應用程式的安裝套件有問題</string>
+    <!-- Next step: stop the container or program using this port, then try again. -->
+    <string name="problem_plugin_lan_port_taken_next_step">停掉佔著這個連接埠的容器或程式再試。</string>
+    <!-- Problem title: a port the app opens on the local network is used by another container or program. -->
+    <string name="problem_plugin_lan_port_taken_title">連接埠被佔用</string>
+    <!-- Next step: choose an interface or address in the local network settings, then try again. -->
+    <string name="problem_plugin_lan_unavailable_next_step">在區域網路設定裡選好網卡或位址後再試。</string>
+    <!-- Problem title: no local network address could be picked for the app. -->
+    <string name="problem_plugin_lan_unavailable_title">找不到可用的區域網路位址</string>
+    <!-- Next step: refresh the store and try again. -->
+    <string name="problem_plugin_not_found_next_step">重新整理商店後再試。</string>
+    <!-- Problem title: the app is gone from its source. -->
+    <string name="problem_plugin_not_found_title">找不到這個應用程式</string>
+    <!-- Next step: fill it in in Settings, then try again. -->
+    <string name="problem_plugin_owner_profile_incomplete_next_step">在設定裡填好後再試。</string>
+    <!-- Problem title: the owner's profile (name and email) isn't filled in yet, and the app needs it. -->
+    <string name="problem_plugin_owner_profile_incomplete_title">你的資料還沒填好</string>
+    <!-- Next step: update the app or the home server. -->
+    <string name="problem_plugin_protocol_next_step">請更新雲吞或家用伺服器。</string>
+    <!-- Problem title: the app and the home server versions don't match. -->
+    <string name="problem_plugin_protocol_title">雲吞和家用伺服器的版本不相符</string>
+    <!-- Problem title when the proxy settings were rejected as invalid; the core's own reason is shown as the next step. -->
+    <string name="problem_plugin_save_invalid_title">填寫的內容不正確</string>
+    <!-- Next step: look at the proxy settings again once the server is reachable. -->
+    <string name="problem_plugin_save_uncertain_next_step">連上家用伺服器後再檢查一次。</string>
+    <!-- Problem title after saving the internet proxy while offline: whether it saved isn't known. -->
+    <string name="problem_plugin_save_uncertain_title">無法確定是否已儲存</string>
+    <!-- Problem title: the home server is older than this app needs. -->
+    <string name="problem_plugin_server_too_old_title">家用伺服器版本太舊</string>
+    <!-- Next step: the home server can't reach the app's source, try later. -->
+    <string name="problem_plugin_source_unavailable_next_step">家用伺服器連不上應用程式的來源，請稍後再試。</string>
+    <!-- Problem title: the app's information can't be fetched from its source right now. -->
+    <string name="problem_plugin_source_unavailable_title">暫時無法取得應用程式的資訊</string>
+    <!-- Problem title: the home server is too old for this app. -->
+    <string name="problem_plugin_unsupported_title">家用伺服器不支援這個應用程式</string>
+    <!-- Shown after a few seconds under a spinner: the network is slow, loading still goes on. -->
+    <string name="problem_slow_loading">還在載入，網路慢時要多等一會兒</string>
+    <!-- Next step under the storage problem. Also used when settings couldn't be saved. -->
+    <string name="problem_storage_next_step">檢查儲存空間後再試。</string>
+    <!-- Problem title: this device failed to read or write its own data. -->
+    <string name="problem_storage_title">這台裝置讀寫資料時出錯了</string>
+    <!-- Problem title: the community source is switched off, so its apps are missing. -->
+    <string name="problem_store_disabled_title">社群來源已關閉</string>
+    <!-- Problem title: some apps couldn't be loaded into the list. -->
+    <string name="problem_store_incomplete_title">有幾個應用程式沒有載入</string>
+    <!-- Problem title: the store's index is newer than the home server understands. -->
+    <string name="problem_store_index_too_new_title">應用程式清單比家用伺服器新</string>
+    <!-- Problem title: the store's index can't be read. -->
+    <string name="problem_store_invalid_index_title">無法讀取應用程式清單</string>
+    <!-- Problem title: the app list may be incomplete for an unknown reason. -->
+    <string name="problem_store_other_title">應用程式清單可能不完整</string>
+    <!-- Next step: wait a few minutes and try again. -->
+    <string name="problem_store_rate_limited_next_step">過幾分鐘再試。</string>
+    <!-- Problem title: the source is answering too many requests. -->
+    <string name="problem_store_rate_limited_title">請求太頻繁了</string>
+    <!-- Problem title: the app's source answered too slowly, the list may be stale. -->
+    <string name="problem_store_timeout_title">應用程式的來源回應太慢，清單可能不是最新的</string>
+    <!-- Problem title shown above the store list: the app's source can't be reached, the list may be stale. -->
+    <string name="problem_store_unreachable_title">連不上應用程式的來源，清單可能不是最新的</string>
+    <!-- Problem title: the app's source itself reported a problem. -->
+    <string name="problem_store_upstream_title">應用程式的來源出了問題</string>
+    <!-- Next step under the can't-reach-the-server problem. -->
+    <string name="problem_transport_unavailable_next_step">檢查網路，連上後再試。</string>
+    <!-- Problem title used for plugin, chat and connection failures: the home server can't be reached. -->
+    <string name="problem_transport_unavailable_title">連不上家用伺服器</string>
+    <!-- Next step under the not-recognized problem: pair again by scanning the code. -->
+    <string name="problem_unauthorized_next_step">請重新掃描配對碼。</string>
+    <!-- Problem title: the home server no longer accepts this device. -->
+    <string name="problem_unauthorized_title">家用伺服器不認得這台裝置</string>
+    <!-- Next step: update the home server first. Used when the server is too old. -->
+    <string name="problem_upgrade_server_next_step">請先更新家用伺服器。</string>
+    <!-- Next step under the server-error problem. Also used for other problems that only say to try later. -->
+    <string name="problem_upstream_next_step">稍後再試。</string>
+    <!-- Problem title used for plugin, chat and connection failures: the home server itself reported an error. -->
+    <string name="problem_upstream_title">家用伺服器出錯了</string>
+    <!-- Reason shown when system policy disabled the camera. -->
+    <string name="qr_scanner_camera_disabled">相機被系統政策停用了</string>
+    <!-- Reason shown for other CameraX errors. Argument: the numeric CameraX error code. -->
+    <string name="qr_scanner_camera_error_code">相機出錯了（CameraX 錯誤碼 %1$d）</string>
+    <!-- Reason shown when the camera can't open at all; the pairing code can be pasted instead. -->
+    <string name="qr_scanner_camera_failed">相機打不開，請貼上配對碼</string>
+    <!-- Reason shown when the camera is used by another app. -->
+    <string name="qr_scanner_camera_in_use">相機正被別的應用程式佔用</string>
+    <!-- Reason shown when Do Not Disturb mode blocks the camera. -->
+    <string name="qr_scanner_do_not_disturb">零打擾模式下開不了相機</string>
+    <!-- Reason shown when the device has no rear camera to scan with. -->
+    <string name="qr_scanner_no_back_camera">這台裝置沒有後置相機</string>
+    <!-- Radio option for typing a mirror address that isn't in the list. -->
+    <string name="registry_mirror_custom">自訂</string>
+    <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->
+    <string name="registry_mirror_custom_address">自訂鏡像站位址</string>
+    <!-- Row title for the speed test result of Docker Hub reached directly, without a mirror. Keep Docker Hub as is. -->
+    <string name="registry_mirror_docker_hub_direct">Docker Hub 直接連線</string>
+    <!-- Speed test result: the mirror works but no latency was measured. -->
+    <string name="registry_mirror_probe_available">可用</string>
+    <!-- Speed test result: the mirror returned content whose digest doesn't match. -->
+    <string name="registry_mirror_probe_digest_mismatch">摘要不符</string>
+    <!-- Speed test result: some other failure; details are collapsed below. -->
+    <string name="registry_mirror_probe_other">其他錯誤</string>
+    <!-- Speed test result: the mirror refused the request. -->
+    <string name="registry_mirror_probe_rejected">遭拒絕</string>
+    <!-- Speed test result when this address hasn't been tested. -->
+    <string name="registry_mirror_probe_unknown">不確定</string>
+    <!-- Speed test result: the mirror can't be reached. -->
+    <string name="registry_mirror_probe_unreachable">無法連線</string>
+    <!-- Warning on the Download Mirror page when Docker Hub can't be reached directly. Keep Docker Hub as is. -->
+    <string name="registry_mirror_recommended">無法連上 Docker Hub，建議開啟下載鏡像站。</string>
+    <!-- Explanation under the Download Mirror switch: the mirrors are run by third parties, can see what is downloaded, but can't tamper with it because every image is checked against its digest. -->
+    <string name="registry_mirror_risk">這些是第三方的公益服務，能看到你下載了哪些映像檔，但無法修改映像檔的內容，因為每個映像檔的摘要都會逐一核對。</string>
+    <!-- Problem title when the typed mirror address is invalid and wasn't saved. The server's reason is in the collapsed details. -->
+    <string name="registry_mirror_save_failed">鏡像站位址沒有儲存</string>
+    <!-- Button that measures how fast each mirror and Docker Hub respond. -->
+    <string name="registry_mirror_test">測速</string>
+    <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
+    <string name="registry_mirror_title">下載鏡像站</string>
+    <!-- Server list button that opens pairing to add another server. No arguments; short button label. -->
+    <string name="servers_add">新增伺服器</string>
+    <!-- Navigation title while pairing an additional server. No arguments; fits a phone navigation bar. -->
+    <string name="servers_add_title">新增伺服器</string>
+    <!-- Default display name for server number 1 in the server list and Settings. No arguments; keep it short enough for a settings row. -->
+    <string name="servers_default_first">家用伺服器</string>
+    <!-- Default server name in the server list and Settings. Argument: the stable server number, not the number of servers. Keep it short enough for a settings row. -->
+    <plurals name="servers_default_numbered">
+        <item quantity="other">伺服器 %1$d</item>
+    </plurals>
+    <!-- Accessibility long-press action label for a server row; opens rename and remove actions. No arguments; short action label. -->
+    <string name="servers_manage">管理伺服器</string>
+    <!-- Text field label in the server rename dialog. The value is the owner's editable server name. No format arguments; short label. -->
+    <string name="servers_name">名稱</string>
+    <!-- Problem dialog title when a notification targets a server that cannot be connected. The upstream reason is shown separately in collapsed details. No arguments; may wrap. -->
+    <string name="servers_notification_unreachable">無法連上這則通知所屬的伺服器</string>
+    <!-- Body of the server removal confirmation. Only this phone's chat history and files are deleted; data on the server is unaffected. No arguments; wraps in a dialog. -->
+    <string name="servers_remove_message">將刪除這支手機上這台伺服器的聊天記錄和檔案，不會影響伺服器上的資料。</string>
+    <!-- Destructive confirmation title for removing a server from this phone. Argument: the server's displayed name, including a localized default or the owner's unmodified name. May wrap. -->
+    <string name="servers_remove_title">移除「%1$s」？</string>
+    <string name="settings_profile">個人資料</string>
+    <string name="settings_appearance">外觀</string>
+    <string name="settings_nav_bar">底部導覽列</string>
+    <string name="settings_default_agent">預設 Agent</string>
+    <string name="settings_about">關於</string>
+    <string name="settings_version">版本</string>
+    <string name="settings_toolbar">設定</string>
+    <string name="settings_toolbar_update">設定，有新版本</string>
+    <string name="settings_show_setup_again">重看初始設定</string>
+    <string name="settings_language">語言</string>
+    <string name="settings_language_system">跟隨系統</string>
+    <string name="shortcuts_not_updated">桌面捷徑沒有更新</string>
+    <string name="shortcuts_rejected">系統沒有接受捷徑。</string>
+    <string name="shortcuts_unlock">請解鎖裝置後重新開啟雲吞。</string>
+    <string name="shortcuts_not_allowed">系統不允許更新捷徑。</string>
+    <string name="shortcuts_rate_limited">系統暫時限制了捷徑更新，請稍後重新開啟雲吞。</string>
+    <string name="shortcuts_update_refused">系統沒有接受捷徑更新，請稍後重新開啟雲吞。</string>
+    <string name="shortcuts_app_uninstalled">這個應用程式已解除安裝</string>
+    <string name="shortcut_icon_missing">取不到「%1$s」的圖示，請檢查連線後重新開啟雲吞。</string>
+    <string name="shortcut_icon_convert_failed">「%1$s」的圖示無法轉換，請重新開啟雲吞。</string>
+    <string name="shortcut_new_chat">新增聊天</string>
+    <string name="shortcut_agent_chat">詢問 Bot</string>
+    <string name="shortcuts_too_few">系統只允許 %1$d 個捷徑，無法同時顯示「新增聊天」和「詢問 Bot」。</string>
+    <string name="shortcuts_too_many">系統最多允許 %1$d 個捷徑，已優先保留「新增聊天」「詢問 Bot」，應用程式頁面依底部導覽列順序顯示。</string>
+    <!-- Toolbar button that opens the Add Source page. -->
+    <string name="store_add_source">新增來源</string>
+    <!-- Button on a store row to install an app you don't have. -->
+    <string name="store_get">取得</string>
+    <!-- Small tag on a store row for an app that asks for risky permissions. -->
+    <string name="store_high_permissions">高權限</string>
+    <!-- Shown when a store search found nothing. -->
+    <string name="store_no_results">沒有找到</string>
+    <!-- Button on a store row to open an installed app. -->
+    <string name="store_open">開啟</string>
+    <!-- Problem title in the store with the source it came from. Arguments: the provider's name, the problem title from the core. -->
+    <string name="store_problem_from_source">%1$s：%2$s</string>
+    <!-- Placeholder under an added source whose list hasn't been fetched yet. Argument: the source's provider name. -->
+    <string name="store_reading">正在載入 %1$s</string>
+    <!-- Placeholder of the search field on the Store screen. -->
+    <string name="store_search_prompt">搜尋</string>
+    <!-- Section title above community apps in the store. -->
+    <string name="store_section_community">社區</string>
+    <!-- Section title above reviewed apps in the store. -->
+    <string name="store_section_reviewed">已審核</string>
+    <!-- Chip that clears the tag filter in the store. -->
+    <string name="store_tag_all">全部</string>
+    <!-- Title of the Store screen and of the row that opens it. -->
+    <string name="store_title">商店</string>
+    <!-- Notice for an app in a source whose manifest can't be read. Arguments: the source address, the reason from the core. -->
+    <string name="store_unreadable">讀不懂 %1$s：%2$s</string>
+    <!-- Button on a store row to update an installed app. -->
+    <string name="store_update">更新</string>
+    <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
+    <string name="store_via_index">經 %1$s</string>
+    <!-- 全屏頁面膠囊上退出全屏的按鈕。 -->
+    <string name="takeover_hand_back">交還</string>
+    <string name="takeover_start">我來操作</string>
+    <string name="takeover_got_it">知道了</string>
+    <string name="takeover_not_started">沒有開始操作：%1$s</string>
+    <string name="takeover_lost">已交還，連線斷了</string>
+    <string name="takeover_lost_reason">已交還：%1$s</string>
+    <string name="tab_webview_too_old">請更新 Android System WebView 後再試</string>
+    <string name="tab_stopped">%1$s 已停止</string>
+    <string name="tab_problem">%1$s 出了問題</string>
+    <string name="tab_page_removed">新版本不再提供這個頁面</string>
+    <string name="tab_status_unknown">無法確定應用程式狀態</string>
+    <string name="tab_starting">正在啟動…</string>
+    <string name="tab_uninstalling">正在解除安裝…</string>
+    <string name="tab_upgrading">正在更新…</string>
+    <string name="tab_open_anyway">仍然開啟</string>
+    <string name="tab_unpin_from_bar">從底部導覽列移除</string>
+    <string name="tab_start">啟動</string>
+    <string name="tab_view_details">查看詳細資訊</string>
+    <string name="tab_cross_origin_title">這個應用程式暫時無法在 Android 版雲吞裡開啟</string>
+    <string name="tab_cross_origin_detail">目前的 Android System WebView：%1$s；需要 156 或更新版本。</string>
+    <string name="tab_webview_version_unknown">取不到版本號</string>
+    <string name="tab_load_not_ready">應用程式還沒準備好</string>
+    <string name="tab_load_upstream">應用程式的網頁打不開</string>
+    <string name="tab_uninstalled_notice">%1$s 已解除安裝，已從底部導覽列移除</string>
+    <string name="tab_settings_unreadable">無法讀取底部導覽列設定</string>
+    <string name="tab_open_settings">底部導覽列設定</string>
+    <string name="tab_menu_open_fullscreen">全螢幕開啟</string>
+    <string name="tab_edit_bar">編輯底部導覽列</string>
+    <string name="tab_fullscreen">全螢幕</string>
+    <string name="tab_choose_page">選擇頁面</string>
+    <string name="tab_choose_replace">選擇要取代的項目</string>
+    <string name="tab_bar_full">底部導覽列已滿：固定%1$s</string>
+    <string name="tab_pin_a11y">%1$s，%2$s</string>
+    <string name="tab_add_more">新增更多</string>
+    <string name="tab_show_labels">顯示文字</string>
+    <string name="tab_move_up">上移</string>
+    <string name="tab_move_down">下移</string>
+    <string name="tab_add_to_bar">新增至底部導覽列</string>
+    <string name="tab_defaults_shown">已顯示預設底部導覽列。修改後會重新儲存設定。</string>
+    <string name="tab_no_browser">無法開啟瀏覽器</string>
+    <string name="tab_chat">聊天</string>
+    <string name="tab_apps">應用程式</string>
+    <string name="tab_settings">設定</string>
+    <string name="tab_app_page">應用程式頁面</string>
+    <string name="tab_exit_fullscreen">退出全螢幕</string>
+    <!-- 全屏膠囊選單項:帶開關,控制這個頁面從底欄打開時是否直接全屏。 -->
+    <string name="tab_menu_always_fullscreen">總是全螢幕</string>
+    <!-- 全屏膠囊選單項:在頁面的歷史裡後退一步。 -->
+    <string name="tab_menu_back">返回</string>
+    <!-- 全屏膠囊選單項:打開應用的詳情頁。 -->
+    <string name="tab_menu_details">插件詳情</string>
+    <!-- 全屏膠囊選單項:重新載入頁面。 -->
+    <string name="tab_menu_reload">重新載入</string>
+    <!-- Small button on an approval request card: open the app that was just installed. -->
+    <string name="tab_open">開啟</string>
+    <!-- 全屏頁面膠囊左鍵的無障礙標籤,點它打開選單。 -->
+    <string name="tab_page_menu">頁面選單</string>
+    <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
+    <string name="tab_pin_to_bar">放到標籤列</string>
+    <!-- Warning under the allow-all switches. -->
+    <string name="tool_policy_allow_all_risk">這個 Bot 用所有應用程式的工具都不再問，以後裝的也算。提示注入能讓它不經確認改資料、刪東西、往外發內容</string>
+    <!-- Section title for bots that may use every app's tools without asking. -->
+    <string name="tool_policy_allow_all_title">一律允許</string>
+    <!-- Warning under the Always Allow switches. -->
+    <string name="tool_policy_always_risk">這個 Bot 用這個應用程式的工具不再問，包括會改資料的</string>
+    <!-- Section title for bots that may use this app's tools without asking; also in the install preview. -->
+    <string name="tool_policy_always_title">始終允許</string>
+    <!-- Explanation shown when the tool list is expanded. -->
+    <string name="tool_policy_read_only_hint">開啟的工具算唯讀，所有 Bot 呼叫它都不再問</string>
+    <!-- Caption in place of the switch for tools the app itself marks read-only. -->
+    <string name="tool_policy_read_only_tag">唯讀</string>
+    <!-- Button that ends a bot's open time window. -->
+    <string name="tool_policy_stop">停止</string>
+    <!-- Collapsible section title for the app's tools. -->
+    <string name="tool_policy_tools_title">工具</string>
+    <!-- Next step under that problem. -->
+    <string name="tool_policy_unreadable_next">現在每次呼叫都會問你，這裡也改不了。</string>
+    <!-- Problem title when the tool policy can't be read. -->
+    <string name="tool_policy_unreadable_title">放寬的設定讀不出來</string>
+    <!-- Row for an open time window. Arguments: the bot's name, the time it ends. -->
+    <string name="tool_policy_window_until">%1$s 允許至 %2$s</string>
+    <!-- Section title for the time windows during which a bot may act without asking. -->
+    <string name="tool_policy_windows_title">暫時允許</string>
+    <!-- Icon button on a downloaded transfer: opens the dialog asking what to clean up. -->
+    <string name="transfer_clean_up">清理</string>
+    <!-- Destructive action in the cleanup dialog: remove the record and also delete the downloaded file on this phone. -->
+    <string name="transfer_cleanup_delete_file">連手機上的檔案一起刪</string>
+    <!-- Action in the cleanup dialog: remove the transfer record, keep the downloaded file. -->
+    <string name="transfer_cleanup_record_only">只清記錄</string>
+    <!-- Title of the cleanup dialog for a downloaded transfer. Argument: the file's name. -->
+    <string name="transfer_cleanup_title">清理「%1$s」</string>
+    <!-- Icon button on a transfer: remove it from the strip without deleting anything. -->
+    <string name="transfer_clear">清除</string>
+    <!-- Title of the sheet listing downloaded transfers. -->
+    <string name="transfer_downloaded">已下載</string>
+    <!-- Caption button above the chat composer: opens the list of downloaded transfers. Argument: their count. -->
+    <plurals name="transfer_downloaded_count">
+        <item quantity="other">已下載 %1$d 個</item>
+    </plurals>
+    <!-- Line under an upload: it finished, but the link never reached the room. Argument: the home server's reason, shown as is. -->
+    <string name="transfer_link_not_sent">已傳完，連結沒發出：%1$s</string>
+    <!-- Icon button on a downloaded transfer: open the file. -->
+    <string name="transfer_open">開啟</string>
+    <!-- Line under a paused transfer. First argument: the transferred size, already formatted as a byte count; second: the home server's reason, shown as is. -->
+    <string name="transfer_paused_progress">暫停，已傳 %1$s：%2$s</string>
+    <!-- Line under a paused transfer without a reason. Argument: the transferred size, already formatted as a byte count. -->
+    <string name="transfer_paused_waiting">等連線恢復後接著傳，已傳 %1$s</string>
+    <!-- Text button on a finished upload whose link wasn't sent: send the link again. -->
+    <string name="transfer_resend_link">重發連結</string>
+    <!-- Line under a transfer that lives in another room: that room isn't in the home server's room list. -->
+    <string name="transfer_room_missing">目標房間不在這台伺服器的清單裡</string>
+    <!-- Caption under a transfer that was sent to another room. Argument: that room's name. -->
+    <string name="transfer_sent_to">傳送到 %1$s</string>
+    <!-- Icon button on a downloaded transfer: share the file. -->
+    <string name="transfer_share">分享</string>
+    <!-- Text button on an upload whose link hasn't been sent: cancel it. -->
+    <string name="transfer_stop_sending">停止傳送</string>
+    <!-- Name of the notification channel for audio playing in plugin pages. -->
+    <string name="page_media_channel">播放</string>
+    <!-- Log when the media foreground service cannot be started from the background. Arguments: reason, foreground service reason. -->
+    <string name="page_media_start_failed">背景起不了服務，播放繼續，稍後重試：%1$s（前景服務：%2$s）</string>
+    <!-- 通知設定頁的開關：開 = 前台服務讓和家用伺服器的隧道在後台不斷，新訊息由 App 彈本機通知；關 = 走 UnifiedPush 推送（ADR-0003）。 -->
+    <string name="notification_title">通知</string>
+    <string name="notification_system">系統通知</string>
+    <string name="notification_push">推送</string>
+    <string name="notification_channel_message">聊天訊息</string>
+    <string name="notification_channel_confirmation">等你確認</string>
+    <string name="notification_channel_plugin">應用程式通知</string>
+    <string name="notification_value_on">已開啟</string>
+    <string name="notification_value_off">已關閉</string>
+    <string name="notification_value_registering">註冊中</string>
+    <string name="notification_value_not_set">未開啟</string>
+    <string name="notification_value_unavailable">收不到</string>
+    <string name="notification_channel_created">已建立</string>
+    <string name="notification_channel_not_created">未建立</string>
+    <string name="push_status_no_endpoint">未註冊</string>
+    <string name="push_status_registering">正在註冊</string>
+    <string name="push_status_registered">已註冊</string>
+    <string name="push_status_unavailable">收不到推送，請檢查系統通知和分發器</string>
+    <string name="push_status_failed_transport">註冊失敗，連上家用伺服器後重試</string>
+    <string name="push_status_failed_unauthorized">註冊失敗，請重新配對</string>
+    <string name="push_status_failed_upstream">註冊失敗，家用伺服器出錯了</string>
+    <string name="push_status_failed_not_ready">註冊失敗，請等聊天連線就緒</string>
+    <string name="push_status_failed_invalid_input">註冊失敗，推送位址無效</string>
+    <string name="keepalive_toggle">保持連線</string>
+    <!-- 系統裡關了通知時，開關下面的一行說明：服務照常執行，但新訊息彈不出通知。 -->
+    <string name="keepalive_without_permission">沒有通知權限：新訊息彈不出通知，連線照常保持。</string>
+    <string name="message_summary_files">[檔案]</string>
+    <string name="message_summary_image">[圖片]</string>
+    <string name="message_summary_undecryptable">[加密訊息]</string>
+    <string name="message_summary_redacted">[已收回]</string>
+    <!-- Device verification (ADR-0046): confirm a new device with an already-verified one. -->
+    <string name="common_ok">好</string>
+    <string name="verification_title">裝置確認</string>
+    <string name="verification_incoming_message">用這部裝置確認「%1$s」？</string>
+    <string name="verification_accept">開始確認</string>
+    <string name="verification_deny">拒絕</string>
+    <string name="verification_same">相同</string>
+    <string name="verification_different">不同</string>
+    <string name="verification_compare_title">兩部裝置上顯示的一樣嗎？</string>
+    <string name="verification_requested">等待另一部裝置接受…</string>
+    <string name="verification_requested_hint">打開你另一支手機上的雲吞。</string>
+    <string name="verification_starting">正在準備確認…</string>
+    <string name="verification_waiting_for_other">等待另一部裝置確認…</string>
+    <string name="verification_fetching_keys">正在取回金鑰…</string>
+    <string name="verification_done_here">已驗證，以前的訊息可以查看了。</string>
+    <string name="verification_done_other">確認完成</string>
+    <string name="verification_retry">重新開始</string>
+    <string name="verification_use_recovery_key">輸入復原金鑰</string>
+    <string name="verification_verify_with_other_device">用另一部裝置確認</string>
+    <string name="verification_cancelled_by_me">你取消了確認。</string>
+    <string name="verification_cancelled_by_other">另一部裝置取消了確認。</string>
+    <string name="verification_cancelled_mismatch">兩部裝置上的表情對不上，確認已取消。</string>
+    <string name="verification_cancelled_timeout">另一部裝置太久沒有回應，確認已取消。</string>
+    <string name="verification_cancelled_accepted_elsewhere">這次確認由你的另一部裝置接手了。</string>
+    <string name="verification_cancelled_concurrent_request">同時收到另一個確認請求，兩個都取消了。</string>
+    <string name="verification_cancelled_keys_missing">沒能從另一部裝置取全金鑰，以前的訊息還是解不開。</string>
+    <string name="verification_cancelled_failed">確認沒有完成，出了點問題。</string>
+    <string name="verification_cancelled_other">確認沒有完成。</string>
+    <!-- Localized names of the 64 SAS verification emoji, by index in the Matrix spec table
+         (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0). -->
+    <string-array name="verification_emoji">
+        <item>狗</item>
+        <item>貓</item>
+        <item>獅子</item>
+        <item>馬</item>
+        <item>獨角獸</item>
+        <item>豬</item>
+        <item>大象</item>
+        <item>兔子</item>
+        <item>熊貓</item>
+        <item>公雞</item>
+        <item>企鵝</item>
+        <item>烏龜</item>
+        <item>魚</item>
+        <item>章魚</item>
+        <item>蝴蝶</item>
+        <item>花</item>
+        <item>樹</item>
+        <item>仙人掌</item>
+        <item>蘑菇</item>
+        <item>地球</item>
+        <item>月亮</item>
+        <item>雲朵</item>
+        <item>火</item>
+        <item>香蕉</item>
+        <item>蘋果</item>
+        <item>草莓</item>
+        <item>玉米</item>
+        <item>披薩</item>
+        <item>蛋糕</item>
+        <item>愛心</item>
+        <item>笑臉</item>
+        <item>機器人</item>
+        <item>帽子</item>
+        <item>眼鏡</item>
+        <item>扳手</item>
+        <item>聖誕老人</item>
+        <item>讚</item>
+        <item>雨傘</item>
+        <item>沙漏</item>
+        <item>時鐘</item>
+        <item>禮物</item>
+        <item>燈泡</item>
+        <item>書</item>
+        <item>鉛筆</item>
+        <item>迴紋針</item>
+        <item>剪刀</item>
+        <item>鎖頭</item>
+        <item>鑰匙</item>
+        <item>鎚子</item>
+        <item>電話</item>
+        <item>旗幟</item>
+        <item>火車</item>
+        <item>腳踏車</item>
+        <item>飛機</item>
+        <item>火箭</item>
+        <item>獎盃</item>
+        <item>足球</item>
+        <item>吉他</item>
+        <item>喇叭</item>
+        <item>鈴鐺</item>
+        <item>船錨</item>
+        <item>耳機</item>
+        <item>資料夾</item>
+        <item>圖釘</item>
+    </string-array>
+    <string name="secret_section_title">要填的密鑰</string>
+    <string name="secret_optional">可選</string>
+    <string name="secret_get_one">去哪裡拿</string>
+    <string name="secret_show">顯示</string>
+    <string name="secret_hide">隱藏</string>
+    <string name="secret_edit">修改</string>
+    <string name="secret_clear">清空</string>
+    <string name="secret_filled">已填寫</string>
+    <string name="secret_unfilled">未填寫</string>
+    <string name="pin_to_bar">固定到底部導覽列</string>
+    <!-- 長按側邊欄裡的一行，把應用程式的頁面從底部導覽列拿掉。 -->
+    <string name="unpin_from_bar">從底部導覽列拿掉</string>
+    <!-- 側邊欄上的 App 名字。 -->
+    <string name="sidebar_title">雲吞</string>
+    <!-- 根頁面左上角打開側邊欄的按鈕。 -->
+    <string name="sidebar_open">側邊欄</string>
+    <!-- 側邊欄開著時蓋在主畫面上的那層，點一下收起側邊欄。 -->
+    <string name="sidebar_collapse">收起側邊欄</string>
+    <!-- 側邊欄標題下的狀態：家用伺服器已連線。 -->
+    <string name="sidebar_status_connected">家用伺服器 · 已連線</string>
+    <!-- 側邊欄標題下的狀態：正在連線家用伺服器。 -->
+    <string name="sidebar_status_connecting">家用伺服器 · 連線中</string>
+    <!-- 側邊欄標題下的狀態：連不上家用伺服器。 -->
+    <string name="sidebar_status_disconnected">家用伺服器 · 無法連線</string>
+    <!-- 側邊欄標題下的狀態：還沒配對家用伺服器。 -->
+    <string name="sidebar_status_not_configured">還沒連上家用伺服器</string>
+    <!-- 側邊欄裡回到聊天清單的一行。 -->
+    <string name="sidebar_chats">聊天</string>
+    <!-- 側邊欄裡進應用商店的一行。 -->
+    <string name="sidebar_store">應用商店</string>
+    <!-- 側邊欄裡能開啟的應用程式上面的小標題。 -->
+    <string name="sidebar_my_apps">我的應用</string>
+    <!-- 我的應用右邊進應用程式格的連結。 -->
+    <string name="sidebar_all">全部</string>
+    <!-- 裝的應用程式超過八個時側邊欄的最後一行，進應用程式格。 -->
+    <string name="sidebar_all_apps">所有應用程式</string>
+    <!-- 側邊欄底部開啟設定的圓形按鈕。 -->
+    <string name="sidebar_settings">設定</string>
+    <!-- 側邊欄底部發起新聊天的主色膠囊。 -->
+    <string name="sidebar_new_chat">新聊天</string>
+    <!-- 商店一行上紅色數字角標的讀屏描述：有幾個應用程式可更新。 -->
+    <string name="sidebar_updates_badge">%1$d 個可更新</string>
+    <!-- 應用程式行上紅點的讀屏描述：這個應用程式有更新。 -->
+    <string name="sidebar_updatable">可更新</string>
+    <!-- 應用程式行上小圖釘的讀屏描述：這個應用程式的頁面固定在底部導覽列上。 -->
+    <string name="sidebar_pinned">已固定到底部導覽列</string>
+    <!-- 一次更新所有有更新的應用程式之前，底部面板的標題。 -->
+    <string name="store_update_all_title">更新 %1$d 個應用程式</string>
+    <!-- 那個面板裡開始全部更新的按鈕。 -->
+    <string name="store_update_all">全部更新</string>
+    <!-- 開啟那個面板的工具列下載圖示的讀屏描述。 -->
+    <string name="store_update_all_a11y">全部更新，%1$d 個</string>
+    <!-- 一行提示：這個應用程式的更新要先確認才能開始。 -->
+    <string name="sidebar_needs_attention">有要處理的事</string>
+</resources>

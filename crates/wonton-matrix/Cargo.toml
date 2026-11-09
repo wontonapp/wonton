@@ -1,0 +1,59 @@
+[package]
+name = "wonton-matrix"
+description = "Matrix 客户端封装（matrix-rust-sdk）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# LicenseRef-Proprietary。确认流程的 ViewModel 类型直接用协议的，不再维护一份平行模型。
+wonton-protocol = { path = "../wonton-protocol" }
+# MIT OR Apache-2.0。testkit 的 Tuwunel 镜像引用经它读 `WONTON_TEST_IMAGES`（CI 指到镜像仓库副本），没设时原样返回。
+wonton-test-images = { path = "../wonton-test-images" }
+# Apache-2.0。默认特性含 E2EE、SQLite 存储与 rustls；bundled-sqlite 自带 SQLite，移动端不依赖系统库。
+matrix-sdk = { workspace = true, features = ["bundled-sqlite"] }
+# Apache-2.0。Sliding Sync 同步服务、房间列表与时间线；版本必须与 matrix-sdk 一致。
+matrix-sdk-ui = "0.19.1"
+# MIT OR Apache-2.0。房间信息更新的通知类型（未读数、已读回执），matrix-sdk 没有在根上重导出。
+matrix-sdk-base = "0.19.1"
+# MIT OR Apache-2.0。
+futures-util = "0.3.34"
+# MIT OR Apache-2.0。附件的 MIME 类型，matrix-sdk 的发送接口要求这个类型。
+mime = "0.3.17"
+# 存登录状态，以及把媒体来源编成不透明的句柄。
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "sync", "rt", "time"] }
+tracing = { workspace = true }
+
+# 以下只给 testkit 用。
+# MIT。扮演核心推送代理的推送网关。
+axum = { workspace = true, optional = true }
+# ISC AND (Apache-2.0 OR ISC)。生成模拟核心的 Ed25519 签发密钥；rustls 已经依赖它。
+aws-lc-rs = { version = "1", optional = true }
+# MIT。模拟核心签发 Tuwunel 登录 JWT。
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["use_pem", "aws_lc_rs"], optional = true }
+# MIT。把生成的公钥编码成 PEM 交给 Tuwunel；jsonwebtoken 已经依赖它。
+pem = { version = "3.0.6", optional = true }
+# MIT OR Apache-2.0。用 Docker 起一次性的 Tuwunel。
+testcontainers = { version = "0.28.0", default-features = false, optional = true }
+# MIT。`WONTON_TEST_LOG` 有值时把日志打出来，查偶发失败用。
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"], optional = true }
+
+[features]
+# 一次性的 Tuwunel 和模拟核心的 JWT 签发，给本 crate 和客户端核心的集成测试共用；App 不启用。
+testkit = ["dep:aws-lc-rs", "dep:axum", "dep:jsonwebtoken", "dep:pem", "dep:testcontainers", "dep:tracing-subscriber", "tokio/io-util", "tokio/net"]
+
+[dev-dependencies]
+# 集成测试用 testkit。
+wonton-matrix = { path = ".", features = ["testkit"] }
+# Apache-2.0。行为测试生成真实 Megolm 密文和迟到的房间密钥，不伪造解密结果。
+matrix-sdk-crypto = "0.19.1"
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

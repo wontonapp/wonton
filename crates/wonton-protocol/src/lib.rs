@@ -1,0 +1,217 @@
+//! 核心 API、ViewModel 与插件清单（`x-wonton`）的类型定义，是服务端、客户端和插件之间的唯一事实源。
+//!
+//! 修改这里的公开类型属于跨模块接口变更：先单独提 PR 合并，再由依赖方跟进（见 AGENTS.md）。
+//!
+//! 所有类型都可以用 serde 序列化，供测试和将来的 Web 端使用；启用 `uniffi` feature 后，
+//! 同一份类型经 UniFFI 生成 Swift / Kotlin 类型，原生壳不再手写一份。
+
+#[cfg(feature = "uniffi")]
+uniffi::setup_scaffolding!();
+
+mod action;
+mod agent_permission;
+mod appearance;
+mod bot_commands;
+mod bot_profile;
+mod chat;
+mod chat_layout;
+mod confirmation;
+mod core_upgrade;
+mod egress;
+mod error;
+mod family;
+mod file;
+mod friends;
+mod home;
+mod lan;
+mod link;
+mod link_preview;
+mod matrix_login;
+mod onboarding;
+mod owner;
+mod peers;
+mod plugin;
+mod plugin_mail;
+mod plugin_notice;
+mod port_mapping;
+mod push;
+mod registry_mirror;
+mod reply;
+mod secret;
+mod server_version;
+mod servers;
+mod session;
+mod settings;
+mod share_transport;
+mod sharing;
+mod sidebar;
+mod tabs;
+mod timeline;
+mod verification;
+
+pub use action::Action;
+pub use agent_permission::{
+    AGENT_PERMISSION_PATH, AGENT_PERMISSION_TTL_SECS, AgentPermissionKind, AgentPermissionOption,
+    AgentPermissionOutcome, AgentPermissionRequest,
+};
+pub use appearance::{
+    AppearanceProblem, AppearanceViewModel, FontStyle, Rgb, TextSize, ThemeColors, ThemeMode,
+};
+pub use bot_commands::{
+    BOT_COMMANDS_EVENT, BotCommand, BotCommands, MAX_BOT_COMMANDS, MAX_BOT_COMMANDS_BYTES,
+    MAX_COMMAND_DESCRIPTION_CHARS, MAX_COMMAND_HINT_CHARS, MAX_COMMAND_NAME_CHARS,
+};
+pub use bot_profile::{
+    AVATARS_FIELD, AccessSource, AvatarChange, AvatarImage, AvatarKind, AvatarMedia,
+    AvatarMediaProblem, AvatarUpload, BOT_ACTIVITY_PATH, BOT_ACTIVITY_WAIT_SECS, BotActivity,
+    BotActivityFacts, BotActivityReport, BotNameProblem, BotPluginAccess, BotPluginAccessUpdate,
+    BotProfileFailure, BotProfileProblem, BotProfileUpdate, BotProfileUpdated, BotView,
+    MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE, MAX_BOT_NAME_CHARS, StateAvatar,
+    StateAvatars, bot_plugin_access_path, bot_profile_path, check_bot_name,
+};
+pub use chat::{
+    BackupReminder, BotInstallRow, BotInstallState, ChatAccount, ChatContact, ChatFailure,
+    ChatProblem, ChatSync, ChatViewModel, DeviceVerification, EncryptionStatus, ImageThumbnail,
+    ImageUpload, MessageSummary, PendingConfirmation, RecoveryStatus, RoomMembership, RoomPreview,
+    RoomRow,
+};
+pub use chat_layout::{
+    BotChatSettings, CHAT_LAYOUT_EVENT, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings,
+    ChatLayoutTarget, ChatTextScale, CodeOverflow, PluginChat,
+};
+pub use confirmation::{
+    Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
+    ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView, ConfirmationWindow,
+    WindowEnd, WindowView, answer_path, window_path,
+};
+pub use core_upgrade::{
+    CORE_UPGRADE_CHECK_PATH, CORE_UPGRADE_PATH, CoreUpgradeCheck, CoreUpgradeCheckRequest,
+    CoreUpgradeFailure, CoreUpgradeOffer, CoreUpgradePhase, CoreUpgradeProblem,
+    CoreUpgradeProgress, CoreUpgradeRequest, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage,
+    CoreUpgradeStatus, CoreUpgradeTarget, CoreUpgradeViewModel, CoreVersion,
+};
+pub use egress::{
+    EgressConfirmation, EgressCurrent, EgressFailure, EgressPathState, EgressProbe, EgressProblem,
+    EgressProxyProvider, EgressProxySettings, EgressProxySource, EgressProxyUpdate, EgressRestart,
+    EgressViewModel, LanWebuiUpdate,
+};
+pub use error::{CoreError, set_core_error_formatter};
+pub use family::{
+    BotContact, BotContacts, BotKeeper, BotRef, ContactRequest, ContactState, FAMILY_ROOM_EVENT,
+    FamilyAccess, GATEWAY_REFUSAL_HEADER, GatewayRefusal, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS,
+    MEMBERS_PATH, Me, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval,
+    MemberSettings, MemberStatus, NewSharedBot, Role, SHARED_BOTS_PATH, TOOL_CALL_USER_META,
+    bot_contact_path, bot_contacts_path, member_pairing_code_path, member_path,
+    member_removal_path, plugin_family_path,
+};
+pub use file::{
+    FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileCardAction, FileCardActions, FileError,
+    FileErrorBody, FileFailure, FileGrantRequest, FileId, FileInfo, FileLinks, FileOperation,
+    FileProblem, FileSource, InvalidFileId, RoomTransfers, Transfer, TransferAction,
+    TransferDirection, TransferElsewhere, TransferState, TransfersViewModel, UploadSource,
+    extract_file_links,
+};
+pub use friends::{
+    FRIEND_EVENT, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendEvent, FriendFailure,
+    FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsState,
+    FriendsViewModel,
+};
+pub use home::{
+    ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
+    DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus,
+    ProxySettings,
+};
+pub use lan::{
+    LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort,
+    LanProblem, LanProtocol, LanSettings,
+};
+pub use link::AppLink;
+pub use link_preview::{
+    LINK_PREVIEW_PATH, LinkPreview, LinkPreviewFailure, LinkPreviewImage, link_preview_image_path,
+};
+pub use matrix_login::{
+    MatrixAccount, MatrixLoginFailure, MatrixLoginMethod, MatrixLoginState, MatrixLoginViewModel,
+    MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin,
+};
+pub use onboarding::{
+    AgentLogin, CUSTOM_MODEL_PROVIDER_PATH, CUSTOM_MODEL_PROVIDER_TEST_PATH,
+    ConfiguredModelProvider, CustomModelProvider, MODEL_PROVIDERS_PATH, ModelProvider,
+    ModelProviderFailure, ModelProviderInput, ModelProviderKey, ModelProviderProblem,
+    ModelProviders, ONBOARDING_PATH, Onboarding, OnboardingAgent, OnboardingAgentRow,
+    OnboardingCommit, OnboardingItemProblem, OnboardingItemState, OnboardingModelChoice,
+    OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingProfileStep,
+    OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
+    OnboardingStep, OnboardingTip, OnboardingTips, OnboardingTooOld, OnboardingUpdate,
+    OnboardingViewModel, ReplacedAgent, StepNav, model_provider_path, model_provider_test_path,
+};
+pub use owner::{
+    MAX_DISPLAY_NAME_CHARS, OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name,
+    check_email, check_email_change, normalized_email,
+};
+pub use peers::{
+    PEER_ERROR_HEADER, PEERS_PATH, PeerCode, PeerError, PeerErrorBody, PeerProblem, PeerRequestRow,
+    PeerRow, PeerScan, PeerStatus, PeersState, PeersView, PeersViewModel, RejectedPeerRow,
+    peer_code_path, peer_code_reset_path, peer_path, peer_rejected_path, peer_request_approve_path,
+    peer_request_reject_path,
+};
+pub use plugin::LanClient;
+pub use plugin::StoreUnreadable;
+pub use plugin::hint::{PluginHint, PluginHintCategory};
+pub use plugin::ports::{PortProtocol, PortSpec, TunnelSpec};
+pub use plugin::store::{StoreConfirmation, UpdatablePlugin};
+pub use plugin::{
+    AddSourceRequest, AddedSource, AddedTools, AskEveryUpdate, BlockedCategory, BotSwitch,
+    CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef, CapabilityProviderSettings,
+    CapabilitySetting, ConsumerCapabilityChoice, ConsumerCapabilitySetting, InUseError,
+    InstallPreview, InstallProgress, InstallRequest, InstallSource, InstallStage, InstallTogether,
+    InstalledPlugin, InstalledPlugins, LanWebuiOffer, MAX_PLUGIN_ARCHIVE_BYTES, MissingCapability,
+    OpenWindow, OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets, PermissionLine,
+    PermissionOpened, PermissionRisk, PermissionUpdate, PluginAuthor, PluginDetail, PluginDevice,
+    PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits,
+    PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginState, PluginTakeover,
+    PluginTask, PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel, RequirementLine,
+    RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues, SourceKind,
+    StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
+    ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
+    UpgradeRequest, UpgradeResult, plugin_scope_path, secret_input_path,
+};
+pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
+pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
+pub use port_mapping::{MappedPort, PluginPortMapping, PortMappingState, UdpFlowStats};
+pub use push::{
+    NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushMethod,
+    PushNotification, PushStatus,
+};
+pub use registry_mirror::{
+    RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest,
+    RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe,
+    RegistryProblem,
+};
+pub use reply::{ComposerDraft, QuotedContent, QuotedMessage, ReplyQuote};
+pub use secret::SecretString;
+pub use server_version::{is_older, minimum_server_version};
+pub use servers::{ServerKind, ServerName, ServerRow, ServersViewModel};
+pub use session::{SessionListViewModel, SessionRow};
+pub use settings::{SettingsEntry, SettingsSection, SettingsViewModel};
+pub use share_transport::{
+    MatrixOpenIdToken, SHARE_ALPN, ShareReply, ShareRequest, SharedPlugins, WONTON_WELL_KNOWN_PATH,
+    WontonDiscovery,
+};
+pub use sharing::{
+    AppsAction, PluginShares, ShareFailure, ShareGrant, ShareGrantUpdate, ShareIdentityFailure,
+    ShareProblem, ShareRecipient, SharedAppRow, SharedAppsSource, SharedAppsState,
+    SharedAppsViewModel, SharedPlugin,
+};
+pub use sidebar::{SidebarApp, SidebarOpen, SidebarViewModel};
+pub use tabs::{
+    CandidatePlugin, PluginTab, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem,
+    TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,
+};
+pub use timeline::{
+    BackPagination, ImageContent, MatrixTarget, MediaHandle, MessageAction, MessageContent,
+    RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan, SendState, TimelineContent,
+    TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
+};
+pub use verification::{
+    VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
+};

@@ -1,0 +1,303 @@
+# Immich 相册插件：网页登录走核心的 OIDC，密码登录为局域网直连而开（取舍见 README）；照片原件放共享文件夹 photos，
+# 缩略图、转码、数据库等派生数据放插件自己的数据目录。
+#
+# 首次安装时 bootstrap 在空库里按注入的用户名建管理员；用户名就是 OIDC 的 sub，装上以后不变，每次启动按它认账号，
+# 只更新能变的邮箱。用户邮箱被别的账号占用时报错。
+#
+# Bot 按内容搜照片：本仓库自己的只读 MCP 服务（images/immich-mcp/）调 Immich 的 smart search，
+# 凭据是 bootstrap 每次启动核对重建的 Immich API key（最小权限 asset.read、asset.view），
+# 写进插件数据目录、MCP 服务只读挂载。
+# 局域网直连（Immich 官方 App 等第三方客户端）：详情页开关打开后 Immich 的 2283 端口开在局域网地址上，
+# App 用 lan.client 给出的邮箱和密码直连登录；取舍见 README 的“局域网直连”。
+#
+# 设置界面：OAuth 等设置由 IMMICH_CONFIG_FILE 指向的配置文件固定，Immich 管理界面因此整体只读（上游行为）；
+# 要改这些设置得改这里的配置节。
+services:
+  server:
+    # 上游官方镜像，按 v3.3.5 官方 compose 的版本组合固定（license: AGPL-3.0-only）。
+    image: &server ghcr.io/immich-app/immich-server:v3.3.5@sha256:485d546a2e31d6a8b4db8423fcba5c109de8c218d93410af115fd1ccfc4352a6
+    # 以用户身份运行：共享文件夹里写下的文件归用户，数据目录也按 PUID:PGID 交给它。
+    user: "${PUID}:${PGID}"
+    environment:
+      IMMICH_CONFIG_FILE: /usr/src/app/wonton-config.json
+      DB_HOSTNAME: database
+      DB_USERNAME: ${WONTON_SECRET_DB_USERNAME}
+      DB_PASSWORD: ${WONTON_SECRET_DB_PASSWORD}
+      DB_DATABASE_NAME: immich
+      REDIS_HOSTNAME: redis
+      # 服务名是 machine-learning，上游默认的 immich-machine-learning 在云吞里解析不到。
+      IMMICH_MACHINE_LEARNING_URL: http://machine-learning:3003
+      # 媒体根放在插件数据目录（upload/thumbs/encoded-video/profile/backups 都跟着它），只把 library 换成共享文件夹。
+      IMMICH_MEDIA_LOCATION: /data
+      TZ: ${TZ}
+    volumes:
+      # 派生数据都在 /data；共享文件夹只挂在它下面的 library，里面不出现 thumbs 这类空目录。
+      - ${WONTON_APP_DATA}/media:/data
+      # 只申请了写共享文件夹 photos（storage.share.photos:write）。共享文件夹只能整个挂载。
+      - ${WONTON_SHARE_PHOTOS}:/data/library
+    configs:
+      # OAuth 设置：内容里的 ${WONTON_OIDC_*} 在安装时插值。文件不在挂载点里。
+      - source: immich-config
+        target: /usr/src/app/wonton-config.json
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      prepare:
+        condition: service_completed_successfully
+    healthcheck:
+      # 镜像自带的 immich-healthcheck 请求 /api/server/ping 并要求回 {"res":"pong"}，查的是 API 真正可用。
+      test: ["CMD", "immich-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 2m
+      start_interval: 5s
+    stop_grace_period: 5m
+
+  # 一次性服务：Immich 要求每个媒体子目录里有 .immich 标记才能启动，数据目录里的挂载是空的，先补齐。
+  # 必须在 server 启动前跑完，所以 server 依赖它；它自己不需要网络。
+  prepare:
+    image: *server
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        for d in upload thumbs encoded-video profile backups library; do
+          mkdir -p "/data/$$d"
+          [ -f "/data/$$d/.immich" ] || : > "/data/$$d/.immich"
+        done
+    user: "${PUID}:${PGID}"
+    # 只读根文件系统，临时文件走 tmpfs。
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ${WONTON_APP_DATA}/media:/data
+      # 共享文件夹的根上只写一个 .immich 标记文件，不建目录。
+      - ${WONTON_SHARE_PHOTOS}:/data/library
+    network_mode: none
+    restart: "no"
+
+  # 一次性服务：空库时建管理员；每次启动按用户名找到它、刷邮箱并补齐 onboard 标记（安装、升级、重建都会跑）。
+  # 每次启动都核对 Bot 搜索服务的 Immich API key（文件和库里的行一致就跳过，否则重建，见 mcp 服务）。
+  bootstrap:
+    image: *server
+    # 不碰文件，按用户身份跑。
+    user: "${PUID}:${PGID}"
+    entrypoint: ["node", "/usr/src/app/bootstrap.cjs"]
+    configs:
+      # 有 configs，不能 read_only（核心往根文件系统写文件）。
+      - source: bootstrap
+        target: /usr/src/app/bootstrap.cjs
+    volumes:
+      # API key 写进插件数据目录自己的子目录，MCP 服务只读挂走（不嵌套别的挂载源）。
+      - ${WONTON_APP_DATA}/mcp:/mcp-data
+    environment:
+      # 变量只用于插值，容器里要显式写上；核心不给（没声明 webui.sso）时安装失败并说明原因。
+      # 值是建容器时的快照：用户改了邮箱，要升级或重装（可以不删数据）后新建的容器才拿到新值。
+      WONTON_OWNER_NAME: ${WONTON_OWNER_NAME:?核心没有注入用户名字}
+      WONTON_OWNER_EMAIL: ${WONTON_OWNER_EMAIL:?核心没有注入用户邮箱}
+      WONTON_SECRET_ADMIN_PASSWORD: ${WONTON_SECRET_ADMIN_PASSWORD}
+      DB_HOSTNAME: database
+      DB_USERNAME: ${WONTON_SECRET_DB_USERNAME}
+      DB_PASSWORD: ${WONTON_SECRET_DB_PASSWORD}
+      DB_DATABASE_NAME: immich
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: "no"
+
+  # 自己写的只读搜索服务（images/immich-mcp/，由 .github/workflows/publish-images.yml 构建发布）：一个工具，按画面内容搜照片
+  # （Immich 的 smart search），经核心的 MCP 总线给 Bot 用。它只调 Immich 的读接口；key 失效时工具
+  # 会报“权限失效，重启插件会重建”。取舍见 README。
+  mcp:
+    image: ghcr.io/geraldpeng6/immich-mcp:0.2.0@sha256:b4f6cb4ad458bace01795b1deec17d13008946636ae095305b273cc12e708e97
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    read_only: true
+    environment:
+      TZ: "${TZ}"
+      IMMICH_URL: http://server:2283
+      APIKEY_FILE: /mcp-data/apikey
+    volumes:
+      - ${WONTON_APP_DATA}/mcp:/mcp-data:ro
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/wonton-immich-mcp", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 1m
+      start_interval: 5s
+
+  machine-learning:
+    # CPU 版。清单不申请显卡：只有一个 CPU 镜像，申请了就会把设备交进来却用不上；显卡版另开 PR。
+    image: ghcr.io/immich-app/immich-machine-learning:v3.3.5@sha256:5b28c9352c8374b8a1ed96fbdd8d6755fea6e43510ec43fdf6538aa02ea40f56
+    user: "${PUID}:${PGID}"
+    environment:
+      TZ: ${TZ}
+      # 模型经 network.egress 从 Hugging Face 官方地址下载，不另配 DNS、代理或下载后端。
+    volumes:
+      # 模型缓存放插件数据目录；保留数据重装时不重下。
+      - ${WONTON_APP_DATA}/model-cache:/cache
+    depends_on:
+      # 让核心把 bootstrap 当一次性服务：等它以 0 退出再启动机器学习。
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      # 镜像自带的 healthcheck.py 请求推理服务的 /ping，查的是服务真正可用。
+      test: ["CMD", "python3", "healthcheck.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 3m
+      start_interval: 5s
+
+  redis:
+    # 官方 compose 固定的 valkey 版本（license: BSD-3-Clause）。
+    image: docker.io/valkey/valkey:9@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+    # 只读根文件系统；Valkey 的工作目录和快照写 tmpfs。
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+      start_interval: 2s
+
+  database:
+    # Immich 自己的 PostgreSQL 镜像，带向量扩展（license: AGPL-3.0-only；PostgreSQL 部分为 PostgreSQL License）。
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    environment:
+      POSTGRES_USER: ${WONTON_SECRET_DB_USERNAME}
+      POSTGRES_PASSWORD: ${WONTON_SECRET_DB_PASSWORD}
+      POSTGRES_DB: immich
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      # 数据库是派生数据，放插件数据目录，不进共享文件夹。
+      - ${WONTON_APP_DATA}/postgres:/var/lib/postgresql/data
+    shm_size: 128mb
+    # 只读根文件系统；数据卷仍然可写，socket 和临时文件走 tmpfs。
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+      # 入口脚本会生成 postgresql.conf 到这里。
+      - /etc/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${WONTON_SECRET_DB_USERNAME}", "-d", "immich", "-q"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+      start_interval: 2s
+
+configs:
+  bootstrap:
+    file: bootstrap/bootstrap.cjs
+  immich-config:
+    # 只写 oauth 一节：设置文件里没写的键沿用默认值。
+    # passwordLogin 打开是给局域网 App 的登录路径（lan.client 的账号就是它）；经网关的网页登录仍走 OIDC。
+    # allowInsecureRequests 必须为 true：核心网关不做 TLS，签发方（auth.<基础域名>）和插件网页一样是 http，
+    # openid-client 默认只收 https；换成 https 的部署时这项没有副作用。
+    content: |
+      {
+        "oauth": {
+          "enabled": true,
+          "issuerUrl": "${WONTON_OIDC_ISSUER}",
+          "clientId": "${WONTON_OIDC_CLIENT_ID}",
+          "clientSecret": "${WONTON_OIDC_CLIENT_SECRET}",
+          "scope": "openid email profile",
+          "allowInsecureRequests": true,
+          "tokenEndpointAuthMethod": "client_secret_post",
+          "autoLaunch": true,
+          "autoRegister": false,
+          "buttonText": "Wonton"
+        },
+        "passwordLogin": {
+          "enabled": true
+        },
+        "storageTemplate": {
+          "enabled": true,
+          "template": "{{y}}/{{y}}-{{MM}}-{{dd}}/{{filename}}"
+        }
+      }
+
+x-wonton:
+  spec: "0.4"
+  id: app.immich.immich
+  version: 0.2.0
+  kind: app
+  title: { en: Immich }
+  description: { zh: "备份手机里的照片和视频，按人脸和内容搜索", en: "Back up your photos and videos, search by face and content" }
+  icon: icon.png
+  notices: [NOTICE]
+  screenshots: [screenshots/timeline.jpg, screenshots/viewer.jpg, screenshots/search.jpg]
+  author: { name: geraldpeng6 }
+  homepage: https://immich.app
+  license: AGPL-3.0-only
+  tags:
+    zh: [相册, AI]
+    en: [Photos, AI]
+  about:
+    zh: |
+      照片和视频从手机备份到家里的主机，时间线、相册和人脸、内容搜索都在网页里。
+
+      原图存进共享文件夹 photos，别的应用也读得到；缩略图和转码视频另存，不占共享文件夹。
+
+      Bot 也能帮你找照片：问它“找海滩上的日落”这类画面描述，它按内容在照片库里搜，拿到文件名、日期和缩略图。
+    en: |
+      Photos and videos are backed up from your phone to your server; browse the timeline, albums and search by face or content in the web page.
+
+      Originals go into the photos shared folder, where other apps can read them; thumbnails and transcoded videos are kept elsewhere.
+
+      Bots can also find photos for you: describe the scene ("a sunset at the beach") and the bot searches the library by content, getting file names, dates and thumbnails.
+  release_notes: { zh: Bot 能按画面内容搜照片了；局域网里的 Immich 官方 App 和第三方客户端也可以直连备份。, en: Bots can now search photos by content; the official Immich app and third-party clients on the LAN can also back up directly. }
+  webui:
+    service: server
+    port: 2283
+    sso: oidc
+    oidc:
+      redirect_paths: [/auth/login, /user-settings]
+      token_endpoint_auth_method: client_secret_post
+  mcp:
+    service: mcp
+    port: 8080
+    transport: streamable-http
+  # 局域网直连给 Immich 官方 App 和第三方客户端：端口受详情页开关管（默认关），
+  # 账号是 bootstrap 建的用户账号——Immich 的登录名是邮箱，密码是建号时核心生成的 admin_password。
+  # 官方 App 的 OAuth 回调是自定义 scheme，核心只登记网关上的回调路径，App 走不了 OAuth，用密码登录。
+  # 密码登录的全局取舍见 README 的“局域网直连”。
+  lan:
+    ports:
+      - { service: server, port: 2283 }
+    client:
+      address: "http://{host}:2283"
+      username: "{email}"
+      password: "{secret:admin_password}"
+  permissions:
+    - storage.share.photos:write
+    - network.egress
+    - owner.identity
+    - network.lan
+  secrets:
+    db_username:
+      generate: { bytes: 8 }
+    db_password:
+      generate: { bytes: 32 }
+    admin_password:
+      generate: { bytes: 32 }
+  # 多架构镜像；上游要求最低 6G 内存（https://docs.immich.app/install/requirements），推荐 8G。
+  # 机器学习（smart search 的索引）首次启动要下载约 500 MB 模型，索引库随照片数增长，放插件数据目录。
+  # 局域网直连不经网关：App 在局域网里按用户身份调 Immich 自己的接口，权限由 Immich 的账号体系管。
+  requirements:
+    arch: [amd64, arm64]
+    memory: 6G

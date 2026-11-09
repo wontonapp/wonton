@@ -1,0 +1,42 @@
+# 最小的 Matrix Bot 示例插件：把名单里的人发来的文字原样回过去，加密房间里也一样（crates/wonton-echo-bot）。
+# 核心安装时代 Bot 登录、建好和主人的加密私聊，只把令牌交给插件；插件不能出网，只经核心在插件网络里的
+# 别名 matrix.wonton.internal 访问 Matrix。镜像在本地构建，见同目录的 README。
+name: echo-bot
+services:
+  bot:
+    image: wonton-echo-bot:dev
+    pull_policy: never
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    environment:
+      WONTON_MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER}
+      WONTON_MATRIX_USER_ID: ${WONTON_MATRIX_USER_ID}
+      WONTON_MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN}
+      WONTON_MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS}
+      # 加密存储（设备密钥、会话），每台设备一个子目录。
+      ECHO_STORE: /data
+    volumes:
+      - ${WONTON_APP_DATA}/store:/data
+    healthcheck:
+      # 最近 90 秒内同步成功过才算健康。
+      test: ["CMD", "echo-bot", "health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 1m
+      start_interval: 1s
+
+x-wonton:
+  spec: '0.4'
+  id: agent.echo
+  version: 0.1.1
+  kind: agent
+  title: { zh: 回声, en: Echo }
+  description:
+    zh: 把主人发来的话原样回过去的最小 Bot 示例
+    en: Minimal bot that echoes its owner's messages
+  icon: icon.svg
+  agent:
+    protocol: matrix
+  bot:
+    display_name: { zh: 回声, en: Echo }
+  permissions: [matrix.bot]

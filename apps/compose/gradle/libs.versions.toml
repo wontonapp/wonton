@@ -1,0 +1,63 @@
+[versions]
+agp = "9.4.1"
+kotlin = "2.4.21"
+compose-multiplatform = "1.12.2"
+compose-material3 = "1.9.0"
+detekt = "2.0.0-alpha.6"
+jna = "5.19.1"
+kotlinx-coroutines = "1.11.0"
+androidx-activity = "1.13.0"
+androidx-appcompat = "1.8.0"
+androidx-core = "1.18.0"
+androidx-webkit = "1.18.0"
+androidx-browser = "1.9.0"
+unifiedpush-connector = "3.3.5"
+androidx-camera = "1.6.2"
+androidx-media3 = "1.11.1"
+zxing = "3.5.4"
+junit = "4.13.2"
+robolectric = "4.17"
+androidx-test-junit = "1.3.0"
+compose-ui-test-manifest = "1.12.0-beta01"
+android-compileSdk = "37"
+android-minSdk = "29"
+android-targetSdk = "36"
+
+[libraries]
+compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
+compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "compose-material3" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
+androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "androidx-appcompat" }
+androidx-core = { module = "androidx.core:core", version.ref = "androidx-core" }
+androidx-webkit = { module = "androidx.webkit:webkit", version.ref = "androidx-webkit" }
+# Apache-2.0。外部链接用 Custom Tabs 打开，不换 App。
+androidx-browser = { module = "androidx.browser:browser", version.ref = "androidx-browser" }
+androidx-media3-session = { module = "androidx.media3:media3-session", version.ref = "androidx-media3" }
+unifiedpush-connector = { module = "org.unifiedpush.android:connector", version.ref = "unifiedpush-connector" }
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "androidx-camera" }
+androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "androidx-camera" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "androidx-camera" }
+# Apache-2.0。Bot 状态头像的静音循环播放（ExoPlayer）和主人选取的视频转码（Transformer、CropEffect）。
+media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "androidx-media3" }
+media3-transformer = { module = "androidx.media3:media3-transformer", version.ref = "androidx-media3" }
+media3-effect = { module = "androidx.media3:media3-effect", version.ref = "androidx-media3" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
+# EPL-1.0。单元测试的断言和 runner。
+junit = { module = "junit:junit", version.ref = "junit" }
+# MIT。JVM 上跑 Android 界面测试。
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+# Apache-2.0。Robolectric 的 AndroidJUnit4 runner。
+androidx-test-junit = { module = "androidx.test.ext:junit", version.ref = "androidx-test-junit" }
+# Apache-2.0。createComposeRule 和语义树断言；版本跟 compose-multiplatform 走。
+compose-ui-test-junit4 = { module = "org.jetbrains.compose.ui:ui-test-junit4", version.ref = "compose-multiplatform" }
+# Apache-2.0。测试用的 ComponentActivity 声明。
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version.ref = "compose-ui-test-manifest" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-kmp-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+detekt = { id = "dev.detekt", version.ref = "detekt" }

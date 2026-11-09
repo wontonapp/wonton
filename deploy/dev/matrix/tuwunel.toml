@@ -1,0 +1,30 @@
+# Wonton 本地开发与测试用的 Tuwunel 配置，compose.yaml 和 crates/wonton-matrix 的测试共用。
+#
+# 核心的 JWT 公钥不写在这里，经环境变量 TUWUNEL_JWT__KEY 注入（PEM）。
+# 选项说明见 Tuwunel 仓库的 tuwunel-example.toml。
+
+[global]
+server_name = "wonton.localhost"
+database_path = "/var/lib/tuwunel"
+address = "0.0.0.0"
+port = 8008
+
+# 家里服务器默认不联邦（ADR-0003）。
+allow_federation = false
+
+# 账号只由核心签发：设备和 Bot 用 JWT 登录，首次登录自动建号。不开放注册，也不接受密码登录。
+allow_registration = false
+login_with_password = false
+
+# 不给新用户的显示名追加 Tuwunel 默认的表情后缀。
+new_user_displayname_suffix = ""
+
+[global.jwt]
+enable = true
+# 核心持有 Ed25519 私钥，Tuwunel 只拿公钥验签，自己签不出令牌。
+format = "EDDSA"
+algorithm = "EdDSA"
+# 令牌必须带 exp，并声明签发方和接收方，避免核心签给别处的令牌被拿来登录。
+require_exp = true
+issuer = ["wonton-core"]
+audience = ["tuwunel"]

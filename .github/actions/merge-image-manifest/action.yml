@@ -1,0 +1,45 @@
+name: 合成多架构 manifest 并推送
+description: >-
+  下载本 run 里各架构构建上传的 digest artifact（push-image 以 push-by-digest 推的单架构镜像），
+  用 buildx imagetools create 合成 manifest list 并打上输入的标签。
+inputs:
+  tags:
+    description: 完整的镜像 tag 列表，逗号分隔；第一个 tag 的仓库名是 digest 引用的仓库
+    required: true
+  artifact:
+    description: 装着 digest 的 artifact 名（每个文件一行 sha256:…）
+    required: true
+  github-token:
+    description: 登录 ghcr.io 的令牌
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    # 本地组合 action 在作业开始前就要解析：调用方必须先 actions/checkout。
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      with:
+        name: ${{ inputs.artifact }}
+        path: digests
+    - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.github-token }}
+    - name: 合成并推送
+      shell: bash
+      env:
+        TAGS: ${{ inputs.tags }}
+      run: |
+        image="${TAGS%%,*}"
+        refs=()
+        for digest_file in digests/*; do
+          refs+=("$image@$(cat "$digest_file")")
+        done
+        tags=()
+        while IFS= read -r tag; do
+          tags+=(--tag "$tag")
+        done < <(tr ',' '\n' <<<"$TAGS")
+        docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+        docker buildx imagetools inspect "${tags[1]}"

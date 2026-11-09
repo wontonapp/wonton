@@ -1,0 +1,94 @@
+name: lint
+
+# 轻检查，草稿 PR 也跑。冲突标记和密钥可能写在任何文件里（.md 也算），不按路径过滤，所以不能并进
+# 带 paths-ignore 的工作流。结构门禁只查源码文件，只改文档的提交跳过。
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 同一个 PR 又推了新提交，旧的运行就取消，别占着 runner；main 上的每次合并都跑完。
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  structure:
+    name: 结构门禁
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # 插件包的版本检查只比当前提交和它的第一个父提交：PR 上检出的是合并提交，第一个父提交就是 base 的最新提交；
+          # push 到 main 时是上一个提交。拉全部历史太重。
+          fetch-depth: 2
+          persist-credentials: false
+      - name: 只改了文档就不跑（结构门禁只查源码文件）
+        id: changes
+        run: |
+          if git diff --name-only HEAD^1 HEAD | grep -qvE '(^docs/|\.md$)'; then
+            echo "source=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "source=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 源码文件不超过 800 行
+        if: steps.changes.outputs.source == 'true'
+        run: bash scripts/check-file-size.sh
+      - name: 界面文字检查自己的用例
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s scripts/ui_text -t scripts
+      - name: 开发栈端口检查自己的用例
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s scripts/dev_ports -t scripts
+      - name: dev.sh 实例标签的用例
+        if: steps.changes.outputs.source == 'true'
+        run: python3 deploy/dev/core/instance-label_test.py
+      - name: 界面文字不写死，四种语言的字符串目录完整
+        if: steps.changes.outputs.source == 'true'
+        run: python3 scripts/check-ui-text.py
+      - name: 开发栈端口只绑 127.0.0.1
+        if: steps.changes.outputs.source == 'true'
+        run: python3 scripts/check-dev-compose-ports.py
+      - name: 随核心带的插件包改了文件就升版本号
+        if: steps.changes.outputs.source == 'true'
+        run: bash scripts/check-bundled-plugin-versions.sh HEAD^1
+      - name: 生成绑定的 crate 的文档注释能进 Swift 和 Kotlin 的块注释
+        if: steps.changes.outputs.source == 'true'
+        run: bash scripts/check-uniffi-comments.sh
+      - name: 安装脚本的行为测试（假 docker，不用真的 Docker）
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -q -s scripts/install -t scripts
+
+  conflict-markers:
+    name: 冲突标记检查
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 残留的合并冲突标记
+        run: bash scripts/check-conflict-markers.sh
+
+  gitleaks:
+    name: 密钥扫描
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # PR 上检出的是合并提交，第一个父提交就是 base 的最新提交；push 到 main 时是上一个提交。
+          # HEAD^1..HEAD 恰好是这次带进来的提交的合并差异；main 每次 squash 合并推一个提交。
+          fetch-depth: 2
+          persist-credentials: false
+      - name: 装 gitleaks（版本和 sha256 固定）
+        run: |
+          curl -fsSL --retry 3 -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+      - name: 扫描这次带进来的提交
+        run: ./gitleaks git --log-opts="HEAD^1..HEAD" --config .gitleaks.toml --redact --no-banner
+      - name: 行为测试：扫得出也挡得住
+        run: PATH="$PWD:$PATH" bash scripts/test-gitleaks.sh

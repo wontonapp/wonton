@@ -1,0 +1,11 @@
+# 由 xcodegen 从 project.yml 生成
+Wonton.xcodeproj/
+Wonton/Info.plist
+
+# 由 scripts/build-core.sh 生成
+WontonClient/build/
+WontonClient/Sources/WontonClient/Generated/
+
+# Swift Package Manager
+WontonClient/.build/
+WontonClient/.swiftpm/

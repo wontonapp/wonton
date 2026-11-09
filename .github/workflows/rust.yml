@@ -1,0 +1,120 @@
+name: rust
+
+# PR 只在改到 Rust 或测试读的文件时才跑：测试会读 deploy/ 和 plugins/ 里的文件。没有分支保护，跳过的检查不挡合并。
+# 草稿 PR 只跑格式（很快）；转 ready 或每天的定时全量才跑 Clippy 和测试（rust-docker.yml 是依赖 Docker 的另一半）。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "crates/**"
+      - "deploy/**"
+      - "plugins/**"
+      - "Cargo.toml"
+      - "vendor/**"
+      - "Cargo.lock"
+      - "clippy.toml"
+      - ".config/nextest.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/rust.yml"
+      - "!**/*.md"
+  schedule:
+    # 每天全量兜底（PR 已在最新 main 上跑过，main 上不重跑）。
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+# 同一个 PR 又推了新提交，旧的运行就取消，别占着 runner；定时运行都跑完。
+concurrency:
+  group: rust-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# CI 不需要增量编译的缓存，调试信息只留行号：构建缓存小一半以上。
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+permissions:
+  contents: read
+
+# 缓存只在 main 上存（定时运行），PR 恢复不写：PR 各自的分支都会写满 10 GB 的 actions 缓存。
+# 同一族作业用同一个 shared-key：三个测试分片编的是同一套测试二进制，谁先存都一样。
+jobs:
+  format:
+    name: 格式
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 安装 rust-toolchain.toml 指定的工具链
+        run: rustup toolchain install
+      - name: 格式
+        run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy（含函数不超过 100 行）
+    # 草稿 PR 只跑轻检查（见工作流开头的说明）。
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 安装 rust-toolchain.toml 指定的工具链
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-nextest@0.9.151
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: rust-clippy
+          save-if: github.ref == 'refs/heads/main'
+      - name: Clippy（含函数不超过 100 行）
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test:
+    name: 测试（不含依赖 Docker 的集成测试）${{ matrix.shard }}/3
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      # 故意让 Docker 不可用，保证默认的测试不依赖它：依赖 Docker 的测试标了 #[ignore]，由“Rust Docker 测试”运行。
+      DOCKER_HOST: unix:///nonexistent/docker.sock
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 安装 rust-toolchain.toml 指定的工具链
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-nextest@0.9.151
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: rust-test
+          save-if: github.ref == 'refs/heads/main'
+      - name: 测试（按名字的哈希分三片并行）
+        shell: bash
+        # 完整输出另存一份：失败时作为 artifact 上传，重跑覆盖不了失败那次的日志。
+        run: cargo nextest run --workspace --locked --partition hash:${{ matrix.shard }}/3 2>&1 | tee "$RUNNER_TEMP/test-output.log"
+      - name: 文档测试（nextest 不跑 doctest，分不了片，只在第一片跑）
+        if: matrix.shard == 1
+        shell: bash
+        # 接在上一条的日志后面：失败时一起进 artifact。
+        run: cargo test --doc --workspace --locked 2>&1 | tee -a "$RUNNER_TEMP/test-output.log"
+        env:
+          DOCKER_HOST: unix:///nonexistent/docker.sock
+      - name: 失败时留下测试输出
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          # 名字带上第几次运行：重跑另存一份，不覆盖失败那次。
+          name: rust-test-output-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/test-output.log
+          retention-days: 7
+          if-no-files-found: ignore

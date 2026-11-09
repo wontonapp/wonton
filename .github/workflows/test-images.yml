@@ -1,0 +1,46 @@
+name: test-images
+
+# 把 Docker 集成测试要拉的上游镜像每周复制到 ghcr.io/<owner>/test-images（crane copy，digest 原样
+# 保留，测试里按 digest 固定的引用照样校验得过）：托管 runner 的出口 IP 拉不动 Docker Hub 和 ECR Public，
+# 测试作业经 WONTON_TEST_IMAGES 指到副本（wonton-test-images 改写引用），镜像构建经 `*_IMAGE` build-arg 指过去。
+# 仓库主人取 GITHUB_REPOSITORY_OWNER。
+# 每次合进 main 也跑一遍：main-image 的构建要用副本，合并时就把它补上（同一 push 里两边并发，第一次可能
+# 谁先谁后；main-image 先到就等这边绿了重跑一次）。PR 只在改到本文件时跑。
+# 测试拉取失败说缺镜像时，把引用补进 scripts/mirror-test-images.sh 的来源。
+on:
+  schedule:
+    # 周一 02:00 UTC，赶在每天的全量测试（03:00 起）前面。
+    - cron: "0 2 * * 1"
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - ".github/workflows/test-images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  mirror:
+    name: 镜像复制
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 装 crane（版本和 sha256 固定）
+        run: |
+          curl -fsSL --retry 3 -o crane.tar.gz \
+            https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz
+          echo "0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0  crane.tar.gz" | sha256sum -c -
+          tar -xzf crane.tar.gz crane
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: 复制到 ghcr.io/<owner>/test-images
+        run: scripts/mirror-test-images.sh "$PWD/crane"

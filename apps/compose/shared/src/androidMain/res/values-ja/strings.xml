@@ -1,0 +1,1508 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Destructive menu action or confirmation button that removes an item from this device. No arguments; short label. -->
+    <string name="common_remove">削除</string>
+    <!-- Menu action and dialog title for renaming an item. No arguments; short label. -->
+    <string name="common_rename">名前を変更</string>
+    <!-- 资源实际落到的语言标签，App 靠它知道界面用的是哪种语言，再告诉核心（见 AppLanguage.kt）。
+         每种语言的这一条都保留原值，不要翻译。 -->
+    <string name="language_tag">ja</string>
+    <!-- Section title for the accent color, and accessibility label prefix of the accent color swatches. -->
+    <string name="appearance_accent">アクセントカラー</string>
+    <!-- Accessibility state of the More row while the extra colors are hidden. -->
+    <string name="appearance_collapsed">折りたたみ</string>
+    <!-- Label of the color input field for a hex value like #RRGGBB. -->
+    <string name="appearance_color_value">カラーコード</string>
+    <!-- Accessibility state of the More row while the extra colors are shown. -->
+    <string name="appearance_expanded">展開</string>
+    <!-- Section title for the font. -->
+    <string name="appearance_font">フォント</string>
+    <!-- Choice row: the system default font. -->
+    <string name="appearance_font_default">デフォルト</string>
+    <!-- Choice row: the monospaced system font design. -->
+    <string name="appearance_font_monospaced">等幅</string>
+    <!-- Choice row: the rounded system font design. -->
+    <string name="appearance_font_rounded">丸ゴシック</string>
+    <!-- Choice row: the serif system font design. -->
+    <string name="appearance_font_serif">セリフ</string>
+    <!-- Error under the color input field when the text isn't a valid #RRGGBB value. -->
+    <string name="appearance_hex_invalid">色は #RRGGBB の形式で入力してください</string>
+    <!-- Row that expands the extra color swatches and the color input field. -->
+    <string name="appearance_more">その他</string>
+    <!-- Accessibility label prefix of the extra color swatches behind the More row. -->
+    <string name="appearance_more_colors">その他の色</string>
+    <!-- Sample chat bubble on the appearance page, hidden from accessibility; it shows how the theme looks. -->
+    <string name="appearance_preview_message">今夜の夕飯、何にする？</string>
+    <!-- Sender name in the sample chat bubble on the appearance page: the app's own name. -->
+    <string name="appearance_preview_name">Wonton</string>
+    <!-- Choice row: extra large text size. -->
+    <string name="appearance_size_extra_large">特大</string>
+    <!-- Choice row: large text size. -->
+    <string name="appearance_size_large">大</string>
+    <!-- Choice row: small text size. -->
+    <string name="appearance_size_small">小</string>
+    <!-- Choice row: standard text size. -->
+    <string name="appearance_size_standard">標準</string>
+    <!-- Choice row for theme mode and text size: follow the system setting. -->
+    <string name="appearance_system">システムに合わせる</string>
+    <!-- Section title for the text size. -->
+    <string name="appearance_text_size">文字サイズ</string>
+    <!-- Section title on the appearance page for light and dark mode. -->
+    <string name="appearance_theme">テーマ</string>
+    <!-- Choice row: dark mode. -->
+    <string name="appearance_theme_dark">ダーク</string>
+    <!-- Choice row: light mode. -->
+    <string name="appearance_theme_light">ライト</string>
+    <!-- Button that copies the recovery key to the local clipboard only. -->
+    <string name="chat_empty">チャットはまだありません</string>
+    <string name="chat_signing_in">サインインしています…</string>
+    <string name="chat_signed_out">自宅サーバーにまだ接続していません</string>
+    <string name="chat_encrypted">暗号化済み</string>
+    <string name="chat_own_preview">あなた：%1$s</string>
+    <string name="chat_unread_count">未読%1$d件</string>
+    <string name="chat_yesterday">昨日</string>
+    <string name="chat_invite_direct">%1$sがあなたをダイレクトチャットに招待しました</string>
+    <string name="chat_invite_room">%1$sがあなたをルームに招待しました</string>
+    <string name="chat_invite_accept">参加</string>
+    <string name="chat_invite_decline">拒否</string>
+    <string name="chat_start_direct">ダイレクトチャットを開始</string>
+    <string name="chat_peer_placeholder">ユーザー名またはMatrix ID</string>
+    <string name="chat_start">開始</string>
+    <!-- Install row subtitle while images are downloaded. No arguments. -->
+    <string name="chat_install_stage_pulling_images">イメージを取得中</string>
+    <!-- Install row subtitle while networks, volumes and data folders are set up. No arguments. -->
+    <string name="chat_install_stage_preparing">準備中</string>
+    <!-- Install row subtitle while containers start. No arguments. -->
+    <string name="chat_install_stage_starting">起動中</string>
+    <!-- Install row subtitle while health checks pass and the bot comes online. No arguments. -->
+    <string name="chat_install_stage_waiting_for_bot">Bot の準備を待っています</string>
+    <!-- Button on an install row when the source is unknown or the result is uncertain; opens the app's page. No arguments; short label. -->
+    <string name="chat_install_open_page">アプリのページを開く</string>
+    <string name="chat_backup_copy">コピー</string>
+    <!-- Explanation under the heading when backup is on. -->
+    <string name="chat_backup_detail_enabled">機種変更などの際に復旧キーを入力すると、過去のメッセージが表示されます。</string>
+    <!-- Explanation when the recovery key is missing on this device. -->
+    <string name="chat_backup_detail_incomplete">バックアップを有効にしたときに保存した復旧キーを入力してください。キーを紛失した場合はバックアップをリセットしてください。</string>
+    <!-- Explanation when the backup status can't be confirmed because the server isn't reachable. -->
+    <string name="chat_backup_detail_unknown">自宅サーバーに接続すると確認できます。</string>
+    <!-- Explanation when backup is off because this device isn't verified; the earliest paired device turns it on. -->
+    <string name="chat_backup_detail_unverified">最初にペアリングしたデバイスで開くと、バックアップは自動的に有効になります。そのデバイスが手元になければバックアップをリセットしてください。</string>
+    <!-- Explanation when this device is verified: backup turns on by itself. -->
+    <string name="chat_backup_detail_verified">デバイスの認証後にバックアップは自動的に有効になります。</string>
+    <!-- Primary button under the recovery key field: fetch past messages with the entered key. -->
+    <string name="chat_backup_recover">過去のメッセージを復元</string>
+    <!-- Placeholder of the recovery key field and the clipboard label when copying the key. The key restores past messages. -->
+    <string name="chat_backup_recovery_key">復旧キー</string>
+    <!-- Banner in the chat list asking for the recovery key to restore past messages. -->
+    <string name="chat_backup_reminder_enter_key">復旧キーを入力すると過去のメッセージを復元できます</string>
+    <!-- Banner in the chat list asking the owner to save their recovery key. -->
+    <string name="chat_backup_reminder_save_key">復旧キーを保存しましょう。機種変更時に必要です</string>
+    <!-- Button that opens the reset confirmation; it replaces the recovery key with a new one. -->
+    <string name="chat_backup_reset">バックアップをリセット</string>
+    <!-- Danger button that confirms the reset in the dialog. -->
+    <string name="chat_backup_reset_confirm">リセット</string>
+    <!-- Body of the reset confirmation dialog: a new recovery key is issued, the old one stops working. -->
+    <string name="chat_backup_reset_message">新しい復旧キーが発行され、古いキーは使えなくなります。リセット後は過去のメッセージが読めなくなることがあり、他のデバイスでは新しいキーの入力が必要です。</string>
+    <!-- Title of the reset confirmation dialog. -->
+    <string name="chat_backup_reset_title">チャットのバックアップをリセットしますか？</string>
+    <!-- Note under the freshly issued recovery key: it is only shown once. -->
+    <string name="chat_backup_save_key_note">機種変更時に必要です。表示されるのは一度だけです。「保存しました」をタップすると、このデバイスには残りません。</string>
+    <!-- Heading above the freshly issued recovery key. -->
+    <string name="chat_backup_save_key_title">復旧キーを保存</string>
+    <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
+    <string name="chat_backup_saved">保存しました</string>
+    <!-- Page heading when chat backup hasn't been set up. -->
+    <string name="chat_backup_status_disabled">チャットはまだバックアップされていません</string>
+    <!-- Page heading when chat backup is on and verified. -->
+    <string name="chat_backup_status_enabled">チャットはバックアップ済みです</string>
+    <!-- Page heading while backup or recovery runs. -->
+    <string name="chat_backup_status_in_progress">処理中…</string>
+    <!-- Page heading when the recovery key is missing on this device, so past messages can't be shown. -->
+    <string name="chat_backup_status_incomplete">このデバイスではまだ過去のメッセージを表示できません</string>
+    <!-- Page heading when the backup status isn't known (offline). -->
+    <string name="chat_backup_status_unknown">バックアップの状態はまだ不明です</string>
+    <!-- Title of the chat backup page. -->
+    <string name="chat_backup_title">チャットのバックアップ</string>
+    <!-- Value on the Settings row: backup is off. -->
+    <string name="chat_backup_value_disabled">オフ</string>
+    <!-- Value on the Settings row for chat backup: backup is on. -->
+    <string name="chat_backup_value_enabled">オン</string>
+    <!-- Value on the Settings row: backup or recovery is running. -->
+    <string name="chat_backup_value_in_progress">処理中</string>
+    <!-- Value on the Settings row: backup needs the recovery key on this device. -->
+    <string name="chat_backup_value_incomplete">復旧キーが必要</string>
+    <!-- Value on the Settings row: the status can't be determined. -->
+    <string name="chat_backup_value_unknown">不明</string>
+    <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
+    <string name="chat_status_reconnecting">再接続しています…</string>
+    <!-- Dialog button that closes the dialog without doing anything. -->
+    <string name="common_cancel">キャンセル</string>
+    <!-- Icon button that dismisses a tip or a dialog without doing anything. -->
+    <!-- Accessibility label for a Bot's avatar: the Bot's name, then what it is doing right now. -->
+    <string name="bot_avatar_label">%1$s、%2$s</string>
+    <!-- Button under the large avatar on the Bot profile: pick a new profile picture. -->
+    <string name="bot_avatar_choose">写真を選択</string>
+    <!-- Sheet action on a status avatar cell: pick a new picture or video. -->
+    <string name="bot_avatar_choose_media">写真か動画を選択</string>
+    <!-- Text inside an empty status avatar cell; tapping it picks a picture or video. -->
+    <string name="bot_avatar_add">追加</string>
+    <!-- Sheet action that removes the Bot's static avatar or one status avatar. -->
+    <string name="bot_avatar_remove">削除</string>
+    <!-- Section on an installed Agent app's page: the Bot's name, avatar and status avatars. -->
+    <string name="bot_profile_title">プロフィール</string>
+    <!-- Label of the field for editing the Bot's name. -->
+    <string name="bot_name_title">名前</string>
+    <!-- The Bot name was empty. -->
+    <string name="bot_name_empty">名前を入力してください</string>
+    <!-- The Bot name was longer than the limit; the number isn\'t shown. -->
+    <string name="bot_name_too_long">名前が長すぎます</string>
+    <!-- The Bot name contains line breaks or control characters. -->
+    <string name="bot_name_control">使えない文字が含まれています</string>
+    <!-- The Bot name collides with Wonton\'s or the owner\'s name, so Bots can\'t use it. -->
+    <string name="bot_name_reserved">ボットはWontonやあなたと同じ名前を名乗れません</string>
+    <!-- The Bot name failed validation for another reason. -->
+    <string name="bot_name_other">この名前は使えません</string>
+    <!-- Saving the Bot profile failed because the home server couldn\'t be reached. -->
+    <string name="bot_problem_transport">自宅サーバーに接続できません</string>
+    <!-- Saving failed because the app isn\'t installed, has no Bot, or its Matrix login isn\'t ready. -->
+    <string name="bot_problem_not_ready">アプリの準備がまだできていません</string>
+    <!-- Saving failed because the home server or Matrix reported an error. -->
+    <string name="bot_problem_upstream">自宅サーバーでエラーが発生しました</string>
+    <string name="bot_problem_owner_only">ボットのプロフィールを変更できるのはホームのオーナーだけです</string>
+    <!-- Saving the Bot profile failed for another reason. -->
+    <string name="bot_problem_other">プロフィールを保存できませんでした</string>
+    <!-- The picked avatar file is in a format the home server doesn\'t accept. -->
+    <string name="bot_media_format">対応していない形式のファイルです</string>
+    <!-- The picked avatar file exceeds the size limit; the number isn\'t shown. -->
+    <string name="bot_media_too_large">ファイルが大きすぎます</string>
+    <!-- The picked avatar image is larger in pixels than the home server accepts. -->
+    <string name="bot_media_too_big">画像のサイズが上限を超えています</string>
+    <!-- The picked avatar image isn\'t square. -->
+    <string name="bot_media_not_square">画像が正方形ではありません</string>
+    <!-- The picked avatar animation or video exceeds the duration limit; the number isn\'t shown. -->
+    <string name="bot_media_too_long">アニメーションか動画が長すぎます</string>
+    <!-- The home server couldn\'t read the picked avatar file. -->
+    <string name="bot_media_unreadable">ファイルを読み取れません</string>
+    <!-- The picked file failed for another reason. -->
+    <string name="bot_media_other">このファイルはアイコンに使えません</string>
+    <!-- An animated GIF or WebP was too large to send as-is; the Bot profile accepts videos instead. -->
+    <string name="bot_media_use_video">このアニメーション画像は大きすぎます。短い動画を使ってください</string>
+    <!-- The four states of a Bot, shown as status avatar grid labels and read out for the avatar. -->
+    <string name="bot_state_idle">待機</string>
+    <!-- Status: the Bot has model requests, tool calls, or is typing. -->
+    <string name="bot_state_working">作業中</string>
+    <!-- Status: a confirmation card from the Bot is waiting for the owner. -->
+    <string name="bot_state_waiting">確認待ち</string>
+    <!-- Status: the app isn\'t running, or is installing, updating or starting. -->
+    <string name="bot_state_offline">オフライン</string>
+    <string name="timeline_new_messages_below">以下が新着メッセージです</string>
+    <string name="timeline_start">チャットの最初です</string>
+    <string name="timeline_edited">編集済み</string>
+    <string name="timeline_sending">送信中</string>
+    <string name="timeline_read">既読</string>
+    <string name="timeline_send_failed_retrying">送信できませんでした。自動で再試行します</string>
+    <string name="timeline_send_failed">送信できませんでした：%1$s</string>
+    <string name="timeline_resend">再送信</string>
+    <string name="timeline_undecryptable">復号できません：このデバイスにこのメッセージの鍵がありません</string>
+    <string name="timeline_redacted">メッセージは削除されました</string>
+    <string name="timeline_unsupported">まだ表示に対応していないメッセージ（%1$s）</string>
+    <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
+    <string name="timeline_profile_rename">%1$sの名前が%2$sに変わりました</string>
+    <!-- Timeline note: someone changed their avatar. Argument: their name. -->
+    <string name="timeline_profile_avatar">%1$sのアイコンが変わりました</string>
+    <!-- Icon button that dismisses an inline notice. -->
+    <string name="common_close">閉じる</string>
+    <!-- Trash button that removes the item after you confirm. -->
+    <string name="common_delete">削除</string>
+    <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
+    <string name="common_details">詳細</string>
+    <!-- Button that closes the video player after watching. -->
+    <string name="common_done">完了</string>
+    <!-- Button that loads the page's data again after it failed. -->
+    <string name="common_retry">再試行</string>
+    <!-- Toolbar button that saves the page's settings. Short, fits a small pill button. -->
+    <string name="common_save">保存</string>
+    <!-- Icon button at the left of the chat composer: opens the attachment menu (photo or file). Also its screen-reader label. -->
+    <string name="composer_attach">添付</string>
+    <!-- Title of the problem shown when the file picker fails. The detail is the system's reason. -->
+    <string name="composer_choose_failed">このファイルを選択できません</string>
+    <!-- Item in the composer's attachment menu: pick files to send. -->
+    <string name="composer_file">ファイル</string>
+    <!-- Placeholder in the chat composer's empty text field. -->
+    <string name="composer_message">メッセージ</string>
+    <!-- Item in the composer's attachment menu: pick a photo to send. -->
+    <string name="composer_photo">写真</string>
+    <!-- Screen-reader label of the round send button at the right of the chat composer. -->
+    <string name="composer_send">送信</string>
+    <!-- Status line on an approval request card: the request expired, so nothing was carried out. -->
+    <string name="confirmation_card_expired">期限切れのため実行されていません</string>
+    <!-- Status line on an approval request card: the action ran but failed. Argument: the home server's result message, shown as is. -->
+    <string name="confirmation_card_failed_result">実行できませんでした：%1$s</string>
+    <!-- Status line on an approval request card: it was denied, so nothing was carried out. -->
+    <string name="confirmation_card_rejected">拒否したため実行されていません</string>
+    <!-- Status line on an approval request card while the action is being carried out, next to a spinner. -->
+    <string name="confirmation_card_running">実行中</string>
+    <!-- Button on an approval request card: stop the approval window during which further actions run without asking. -->
+    <string name="confirmation_card_stop_window">停止</string>
+    <!-- Status line on an approval request card: the action ran, but whether it worked is unknown. Argument: the home server's result message, shown as is. -->
+    <string name="confirmation_card_uncertain_result">結果を確認できません：%1$s</string>
+    <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
+    <string name="confirmation_card_window_until">%1$sまで許可</string>
+    <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
+    <string name="connection_unpaired">未ペアリング</string>
+    <string name="connection_connected">接続済み</string>
+    <string name="connection_waiting_network">ネットワークを待っています…</string>
+    <string name="connection_connecting">接続しています…</string>
+    <string name="connection_updating">アップデートしています…</string>
+    <string name="connection_server_offline">自宅サーバーがオフラインのようです</string>
+    <string name="connection_device_rejected">このスマートフォンは自宅サーバーに認識されていません</string>
+    <string name="connection_version_mismatch">Wontonまたは自宅サーバーのアップデートが必要です</string>
+    <string name="connection_pair_again">ペアリングし直す</string>
+    <string name="connection_view">接続を表示</string>
+    <string name="connection_lan">ローカルネットワーク</string>
+    <string name="connection_relay">リレー</string>
+    <string name="connection_direct">直接接続</string>
+    <string name="connection_details_title">詳細</string>
+    <string name="connection_new_version">新しいバージョンあり</string>
+    <string name="connection_add_device">デバイスを追加</string>
+    <string name="connection_mobile_network">モバイルネットワーク</string>
+    <string name="connection_ok">正常</string>
+    <string name="connection_failing">接続不可</string>
+    <string name="connection_unknown">不明</string>
+    <string name="connection_path">経路</string>
+    <string name="connection_latency">遅延</string>
+    <string name="connection_lost_packets">パケット損失</string>
+    <string name="connection_last_handshake">最後のハンドシェイク</string>
+    <string name="connection_disconnects">切断回数</string>
+    <string name="connection_last_connected">最後に接続した日時</string>
+    <string name="connection_last_failure">最後の失敗</string>
+    <string name="home_connection">接続</string>
+    <string name="home_awaiting">確認待ち</string>
+    <plurals name="home_cards">
+        <item quantity="other">%1$d件</item>
+    </plurals>
+    <string name="home_none">なし</string>
+    <string name="home_storage">ストレージ</string>
+    <string name="home_storage_value">空き%1$s／全体%2$s</string>
+    <string name="connection_addresses_stale">サーバーのアドレスが古い可能性があります。自動で取り直します</string>
+    <!-- Danger button while the update is running and can still be cancelled: nothing was touched yet. -->
+    <string name="core_upgrade_cancel_upgrade">アップデートをキャンセル</string>
+    <!-- Stage line after the owner cancelled the update. -->
+    <string name="core_upgrade_canceled">アップデートをキャンセルしました</string>
+    <!-- Secondary button when the update's outcome is unknown: ask the home server again. -->
+    <string name="core_upgrade_check_again">もう一度確認</string>
+    <!-- Channel state while the check is running. -->
+    <string name="core_upgrade_check_checking">新しいバージョンを確認中</string>
+    <!-- Channel state while the new version downloads; a progress bar with sizes is shown below. -->
+    <string name="core_upgrade_check_downloading">新しいバージョンをダウンロード中</string>
+    <!-- Button on the update page that checks the channel for a new version. -->
+    <string name="core_upgrade_check_for_update">アップデートを確認</string>
+    <!-- Channel state on the update page: the server wasn't installed with the install script, so one-tap updates aren't available. -->
+    <string name="core_upgrade_check_not_installed">このサーバーはインストールスクリプトで導入されていないため、ワンタップではアップデートできません</string>
+    <!-- Channel state: the home server reported something this app doesn't understand. -->
+    <string name="core_upgrade_check_other">自宅サーバーからWontonが認識できない状態が返されました。Wontonをアップデートしてから確認してください</string>
+    <!-- Channel state: this installation is pinned to one version and doesn't follow the channel. -->
+    <string name="core_upgrade_check_pinned">このインストールは特定のバージョンに固定されているため、アップデートチャンネルに従いません</string>
+    <!-- Channel state: the server already runs the newest version. -->
+    <string name="core_upgrade_check_up_to_date">最新です</string>
+    <!-- Button on the update page while the channel check is running. -->
+    <string name="core_upgrade_checking">確認中</string>
+    <!-- Stage line after the update finished. Argument: the version now running. -->
+    <string name="core_upgrade_completed_to">%1$sにアップデートしました</string>
+    <!-- Primary button in the confirm step: start the update. -->
+    <string name="core_upgrade_confirm_upgrade">アップデート</string>
+    <!-- Heading of the offer card in the confirm step. Argument: the new version. -->
+    <string name="core_upgrade_confirm_version">%1$sにアップデートしますか？</string>
+    <!-- Row label in the update page and in the collapsed details: the core version currently running. -->
+    <string name="core_upgrade_current_version">現在のバージョン</string>
+    <!-- Secondary button in the confirm step: don't update now. -->
+    <string name="core_upgrade_decline_upgrade">後で</string>
+    <!-- Collapsed details row: the update channel's name. -->
+    <string name="core_upgrade_detail_channel">アップデートチャンネル</string>
+    <!-- Collapsed details row: the data kinds this version migrates, as a localized list. -->
+    <string name="core_upgrade_detail_migrates">移行されるデータ</string>
+    <!-- Collapsed details row: the new version's full digest. -->
+    <string name="core_upgrade_detail_new_version">新しいバージョン</string>
+    <!-- Collapsed details row on the update page: the core's own reason for the failed update, shown verbatim. -->
+    <string name="core_upgrade_detail_reason">理由</string>
+    <!-- Version label when the core reports no version and no digest: a development build. -->
+    <string name="core_upgrade_dev_version">開発版</string>
+    <!-- Stage line after the update failed early, before anything was changed. -->
+    <string name="core_upgrade_failed_no_changes">アップデートは失敗しました。何も変更されていません</string>
+    <!-- Update failure summary: an update is already running. -->
+    <string name="core_upgrade_failure_busy">すでにアップデート中です</string>
+    <!-- Update failure summary: the version on the channel changed since the owner approved it. -->
+    <string name="core_upgrade_failure_changed">チャンネルのバージョンが変わりました。もう一度確認してください</string>
+    <!-- Update failure summary: the new version crashed after it started. -->
+    <string name="core_upgrade_failure_crashed">新しいバージョンが起動後にクラッシュしました</string>
+    <!-- Update failure summary: the new version rejected the update, for example because it needs an older core first. -->
+    <string name="core_upgrade_failure_init_failed">新しいバージョンがこのアップデートを拒否しました</string>
+    <!-- Update failure summary: the computer is out of disk space. -->
+    <string name="core_upgrade_failure_no_space">ディスクの空きが足りません</string>
+    <!-- Update failure summary: the new version hasn't finished downloading. -->
+    <string name="core_upgrade_failure_not_ready">新しいバージョンがまだダウンロードされていません</string>
+    <!-- Update failure summary for the protocol and unknown reasons: the app and the home server version don't match. -->
+    <string name="core_upgrade_failure_protocol">Wontonと自宅サーバーのバージョンが合っていません</string>
+    <!-- Update failure summary: the image registry can't be reached. -->
+    <string name="core_upgrade_failure_registry_unavailable">イメージレジストリに接続できません</string>
+    <!-- Update failure summary: a step of the update exceeded its time limit. -->
+    <string name="core_upgrade_failure_timed_out">制限時間を超えました</string>
+    <!-- Update failure summary: cancelling came too late, the update already started changing things. -->
+    <string name="core_upgrade_failure_too_late">すでに処理が始まっているためキャンセルできません</string>
+    <!-- Update failure summary: the new version didn't pass the health check. -->
+    <string name="core_upgrade_failure_unhealthy">新しいバージョンがヘルスチェックに合格しませんでした</string>
+    <!-- Update failure summary: the updater itself stopped working. -->
+    <string name="core_upgrade_failure_updater_failed">アップデーターに問題が発生しました</string>
+    <!-- Update failure summary: Docker reported an error. -->
+    <string name="core_upgrade_failure_upstream">Dockerでエラーが発生しました</string>
+    <!-- Warning in the confirm step of the update: this version migrates data and the update can't be undone. -->
+    <string name="core_upgrade_migrates_warning">このバージョンはデータを移行します。アップデート後は元に戻せません。</string>
+    <!-- Heading of the offer card while the new version is shown for review. Argument: the new version, like 1.2.3 or a short digest. -->
+    <string name="core_upgrade_new_version">新しいバージョン%1$s</string>
+    <!-- Update phase: backing up data before switching. -->
+    <string name="core_upgrade_phase_backing_up">データをバックアップ中</string>
+    <!-- Update phase: watching the new version for a few minutes to make sure it is healthy. -->
+    <string name="core_upgrade_phase_observing">新しいバージョンの安定性を確認中</string>
+    <!-- Update phase for a step this app doesn't know. -->
+    <string name="core_upgrade_phase_other">処理中</string>
+    <!-- Update phase shown under the stage line: pulling the new image. Nothing was touched yet. -->
+    <string name="core_upgrade_phase_pulling">新しいバージョンをダウンロード中</string>
+    <!-- Update phase: restoring the old version after a failure. -->
+    <string name="core_upgrade_phase_rolling_back">旧バージョンにロールバック中</string>
+    <!-- Update phase: waiting for the new core to start. -->
+    <string name="core_upgrade_phase_starting">新しいバージョンの起動を待っています</string>
+    <!-- Update phase: switching the services to the new version. -->
+    <string name="core_upgrade_phase_switching">新しいバージョンに切り替え中</string>
+    <!-- Detail under the updating stage line: the app lost its connection and is reconnecting. -->
+    <string name="core_upgrade_reconnecting">現在、自宅サーバーに接続できません</string>
+    <!-- Stage line right after the owner confirmed: the request is on its way. -->
+    <string name="core_upgrade_requesting_upgrade">アップデートを開始しています</string>
+    <!-- Stage line after the update failed and the old version was restored. Argument: the version now running. -->
+    <string name="core_upgrade_rolled_back_to">%1$sにロールバックしました</string>
+    <!-- Secondary button on the offer card: skip this version and don't ask again until the channel changes. -->
+    <string name="core_upgrade_skip_version">このバージョンをスキップ</string>
+    <!-- Note on the offer card after the owner skipped this version. -->
+    <string name="core_upgrade_skipped">スキップ済み</string>
+    <!-- Title of the home server update page, shown in the top bar while it is pushed. -->
+    <string name="core_upgrade_title">サーバーをアップデート</string>
+    <!-- Stage line when the connection dropped mid-update and the outcome is not known yet. -->
+    <string name="core_upgrade_uncertain">結果は不明</string>
+    <!-- Primary button on the offer card: open the confirm step. -->
+    <string name="core_upgrade_upgrade">アップデート</string>
+    <!-- Stage line while the update runs and the target version is unknown. -->
+    <string name="core_upgrade_upgrading">アップデート中</string>
+    <!-- Stage line while the update runs. Argument: the target version. -->
+    <string name="core_upgrade_upgrading_to">%1$sにアップデート中</string>
+    <!-- Label of the back button in pushed pages' top bars. -->
+    <string name="design_back">戻る</string>
+    <!-- Accessibility label of the small spinner shown while a step's action runs. Android only. -->
+    <string name="design_busy">処理中</string>
+    <!-- Label of the button that empties the search field. -->
+    <string name="design_clear">消去</string>
+    <!-- Label of the close button in modal pages' top bars. -->
+    <string name="design_close">閉じる</string>
+    <!-- Default single button of the app's dialog, which just closes it. -->
+    <string name="design_ok">OK</string>
+    <!-- Button on setup steps: skip this step. -->
+    <string name="design_skip">スキップ</string>
+    <!-- Button on setup steps: go back to the previous step. -->
+    <string name="design_step_back">前へ</string>
+    <!-- Accessibility label of the step counter on setup steps, shown as 2/4. Arguments: the current step and the total. -->
+    <string name="design_step_progress">ステップ%1$d／%2$d</string>
+    <!-- Name of the custom accessibility action that opens a tab's menu. Android only. -->
+    <string name="design_tab_menu">タブメニュー</string>
+    <!-- Accessibility state of a list row with the update badge dot. -->
+    <string name="design_update_badge">アップデートあり</string>
+    <!-- Section title and text field label for the proxy address (like http://192.0.2.10:7890). -->
+    <string name="egress_address">プロキシのアドレス</string>
+    <!-- Radio option: type a proxy address by hand instead of using an app's proxy. -->
+    <string name="egress_address_enter">プロキシのアドレスを入力</string>
+    <!-- Radio option: use the proxy that an installed app provides. Argument: that app's name. -->
+    <string name="egress_address_use_provider">%1$sを使用</string>
+    <!-- Row title on the Internet proxy page: whether apps on the home server can reach the internet through the proxy. The value on the right is a reachability status. -->
+    <string name="egress_path_apps">アプリ</string>
+    <!-- Status value: the internet can't be reached through the proxy. A reason is shown below the row. -->
+    <string name="egress_path_failed">接続不可</string>
+    <!-- Row title on the Internet proxy page: whether the home server itself can reach the internet through the proxy. -->
+    <string name="egress_path_home_server">自宅サーバー</string>
+    <!-- Status value next to Apps / Home Server while the proxy is being checked. -->
+    <string name="egress_path_probing">確認中…</string>
+    <!-- Status value: the internet can be reached through the proxy. -->
+    <string name="egress_path_reachable">接続可能</string>
+    <!-- Status value: the check couldn't tell whether the proxy works. A reason is shown below the row. -->
+    <string name="egress_path_uncertain">不明</string>
+    <!-- Section title and text field label for network ranges (CIDR, like 100.64.0.0/10) that skip the proxy and are reached directly. -->
+    <string name="egress_ranges">プロキシを経由しないネットワーク</string>
+    <!-- Note under the bypass ranges field. Argument: the computer's own network ranges (CIDR), comma-separated. -->
+    <string name="egress_ranges_host">サーバーのネットワーク：%1$s</string>
+    <!-- Explanation under the bypass ranges field. -->
+    <string name="egress_ranges_note">これらのネットワークにはプロキシを経由せずに接続します。インターネットに接続できるアプリはすべてアクセスできます。</string>
+    <!-- Confirmation dialog title before turning off the Internet proxy; the message lists the apps on the home server that will restart. -->
+    <string name="egress_restart_cancel_title">プロキシを解除すると、次のアプリが再起動します</string>
+    <!-- Primary button in the proxy confirmation dialog: restart the listed apps. -->
+    <string name="egress_restart_confirm">再起動</string>
+    <!-- Body of the proxy restart confirmation. Argument: the names of the apps that restart, already formatted as a list. The second line says their data is kept. -->
+    <string name="egress_restart_message">%1$s\nデータはそのまま残ります。</string>
+    <!-- Confirmation dialog title before turning on the Internet proxy; the message lists the apps on the home server that will restart. -->
+    <string name="egress_restart_set_title">プロキシを設定すると、次のアプリが再起動します</string>
+    <!-- Note under the proxy address when the installer detected it on the computer. -->
+    <string name="egress_source_detected">インストール時に検出されました。</string>
+    <!-- Note under the proxy address when it was set by an environment variable at install time. Keep WONTON_EGRESS_PROXY as is. -->
+    <string name="egress_source_env">アドレスはWONTON_EGRESS_PROXYで指定されています。変更するには、インストール先の設定を変更してから、インストールスクリプトをもう一度実行してください。</string>
+    <!-- Note under the proxy address when the proxy comes from an installed app. Argument: that app's name. -->
+    <string name="egress_source_provider">提供元：%1$s</string>
+    <!-- Title of the Internet proxy settings page and its row in Settings > Home Server. The proxy is what apps on the home server use to reach the internet. -->
+    <string name="egress_title">プロキシ</string>
+    <!-- Destructive full-width button that stops using the Internet proxy. -->
+    <string name="egress_turn_off">プロキシを解除</string>
+    <!-- Button in the video player's failure view: download the file, then open it in another app. -->
+    <string name="file_download_and_open">ダウンロードしてほかのアプリで開く</string>
+    <!-- Title of the problem shown when no installed app can open a downloaded file. Android only. -->
+    <string name="file_no_app_opens_it">このファイルを開けるアプリがありません</string>
+    <!-- Link under a file card: open the downloaded file with another app. -->
+    <string name="file_open_elsewhere">ほかのアプリで開く</string>
+    <!-- Line under a file card while its download is paused. Argument: the home server's reason, shown as is. -->
+    <string name="file_paused">一時停止：%1$s</string>
+    <!-- Line under a file card while its download is paused without a reason: it resumes when the connection recovers. -->
+    <string name="file_paused_waiting">接続の回復後にダウンロードを再開</string>
+    <!-- Caption under a file card: which bot sent the file. First argument: the bot's name; second: the plugin's name. -->
+    <string name="file_source_bot">%1$s（%2$s）から</string>
+    <!-- Caption under a file card: the sender is unknown. -->
+    <string name="file_source_unknown">提供元不明</string>
+    <!-- Reason in the collapsed details of an upload problem: the system didn't provide the picked file. Android only. -->
+    <string name="file_system_no_file">システムがこのファイルを提供しませんでした</string>
+    <!-- Fallback name for an uploaded file when the system doesn't provide one. Shown as the file's name. Android only. -->
+    <string name="file_unnamed">ファイル</string>
+    <!-- Confirm button and title of the page that installs an app from the Store or a file. -->
+    <string name="install_action_install">インストール</string>
+    <!-- Confirm button and title of the page that updates an installed app to a newer version. -->
+    <string name="install_action_upgrade">アップデート</string>
+    <!-- Warning under the Always Allow switches in the install preview. -->
+    <string name="install_always_allowed_risk">これらのボットは、このアプリのツールを確認なしで使えます。新しいバージョンで追加されたツールも含まれます。</string>
+    <!-- Title of the page that switches an installed app to a version from another source or a file. -->
+    <string name="install_change_version">バージョンを変更</string>
+    <!-- Status when the install succeeded. -->
+    <string name="install_completion_done">インストール完了</string>
+    <!-- Status while the app installs. -->
+    <string name="install_completion_installing">インストール中…</string>
+    <!-- Title of the page that stays open while the app installs. -->
+    <string name="install_completion_title">アプリをインストール</string>
+    <!-- Problem title when the core couldn't confirm the install result. -->
+    <string name="install_completion_uncertain">インストール結果が不確定です</string>
+    <!-- Button that closes the install page. -->
+    <string name="install_done">完了</string>
+    <!-- Button in the install preview when the app needs profile details you haven't filled in yet. -->
+    <string name="install_fill_profile">プロフィールを入力</string>
+    <!-- Section title above the permissions the app asks for, in the install preview and the detail page. -->
+    <string name="install_permissions">権限</string>
+    <!-- Section title above the release notes in the install preview. -->
+    <string name="install_release_notes">更新内容</string>
+    <!-- Notice title when the pairing code ran out of time. -->
+    <string name="invite_expired">このコードの有効期限が切れています。</string>
+    <!-- Under the QR code: how long the code is still valid. Argument: the remaining time as m:ss. -->
+    <string name="invite_expires_in">有効期限まで残り%1$s</string>
+    <!-- Notice title when the pairing code couldn't be fetched; the core's reason is shown below. -->
+    <string name="invite_failed_title">ペアリングコードを取得できませんでした</string>
+    <!-- Explanation under the QR code: what the new device's owner should do. The code works only once. -->
+    <string name="invite_instructions">新しいデバイスでWontonを開いてこのコードをスキャンすると、デバイスを追加できます。コードは1回だけ使えます。</string>
+    <!-- Label above the pairing code as text, for when the QR code can't be scanned. -->
+    <string name="invite_paste_fallback">スキャンできない場合はこのテキストを貼り付けてください</string>
+    <!-- Accessibility label of the QR code image with the pairing code. -->
+    <string name="invite_qr_label">ペアリング用QRコード</string>
+    <!-- Button under the expired notice: get a new code. -->
+    <string name="invite_renew">新しいコードを発行</string>
+    <!-- Shown next to a spinner while the pairing code is being requested. -->
+    <string name="invite_requesting">自宅サーバーにペアリングコードを要求しています…</string>
+    <!-- Button under the failed notice: request a pairing code again. -->
+    <string name="invite_try_again">再試行</string>
+    <!-- Title of the page that pairs this phone with the home server by scanning. -->
+    <string name="pairing_title">ペアリング</string>
+    <!-- Title of the page for pairing the same phone again from the server settings. -->
+    <string name="pairing_title_again">再ペアリング</string>
+    <!-- Explanation above the paste field: where the pairing QR code lives. May wrap. -->
+    <string name="pairing_instructions">自宅のローカルネットワークで、ブラウザーでサーバーのIPアドレス（インストール時にターミナルに表示されます）を開くと、ペアリング用QRコードが表示されます。</string>
+    <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
+    <string name="pairing_paste_placeholder">ペアリングコードをペースト</string>
+    <!-- Button under the paste field: pair with the code. -->
+    <string name="pairing_submit">ペアリング</string>
+    <!-- Shown next to a spinner while pairing is in progress. -->
+    <string name="pairing_in_progress">ペアリング中…</string>
+    <!-- Label of the field for this device's name. -->
+    <string name="pairing_device_name">このデバイスの名前</string>
+    <!-- Failure title when the server rejected the pairing code. -->
+    <string name="pairing_failure_rejected">サーバーがこのペアリングコードを受け付けません</string>
+    <!-- Failure title when the pairing code ran out of time. -->
+    <string name="pairing_failure_expired">ペアリングコードの有効期限が切れています</string>
+    <!-- Failure title when the pairing code was deactivated. -->
+    <string name="pairing_failure_closed">このペアリングコードは無効化されています</string>
+    <!-- Failure title when none of the pairing code's server addresses can be reached. No arguments. -->
+    <string name="pairing_failure_transport">このペアリングコードのサーバーに接続できません</string>
+    <!-- Button under the failed notice: retry pairing with the same code. -->
+    <string name="pairing_next_new_code">新しいコードを取得してください。ペアリング済みのデバイスで「デバイスを追加」を選ぶか、ホストでsudo wonton pairを実行します。</string>
+    <string name="pairing_next_closed">このサーバーにはすでにペアリング済みのデバイスがあるため、最初のペアリングコードはもう使えません。ペアリング済みのデバイスから追加するか、ホストでsudo wonton pairを実行して新しいコードを発行してください。</string>
+    <string name="pairing_retry_same_code">このコードでもう一度試す</string>
+    <!-- Failure title when the app and the server speak different versions. -->
+    <string name="pairing_failure_protocol">Appとサーバーのバージョンが一致していません</string>
+    <!-- Next step under the transport failure. May wrap. -->
+    <string name="pairing_hint_transport">自宅サーバーの電源とネットワーク接続を確認して、もう一度試してください。</string>
+    <!-- Next step under the protocol failure. May wrap. -->
+    <string name="pairing_hint_protocol">Appとサーバーを最新バージョンに更新してください。</string>
+    <!-- Title of the "Other servers" page and the settings row that opens it. -->
+    <string name="peers_title">他のサーバー</string>
+    <!-- Top-right button on the peers page that offers the two ways to add a server. -->
+    <string name="peers_add">追加</string>
+    <!-- Action that shows this server's pairing QR code for the other owner to scan. -->
+    <string name="peers_show_code">自分のコードを表示</string>
+    <!-- Action that scans the other server's pairing code; also the scan page's title. -->
+    <string name="peers_scan_code">相手のコードをスキャン</string>
+    <!-- Empty page: the one sentence above the two add actions. -->
+    <string name="peers_empty">ほかのサーバとはまだ接続していません</string>
+    <!-- Row subtitle when the other server can't be reached. -->
+    <string name="peers_status_offline">相手のサーバーに接続できません</string>
+    <!-- Under the offline subtitle. Argument: relative time like "3 hours ago". -->
+    <string name="peers_last_connected">最終接続：%1$s</string>
+    <!-- Used when the last connection was less than a minute ago. -->
+    <string name="peers_just_now">たった今</string>
+    <!-- Row subtitle when the other side removed the pairing. -->
+    <string name="peers_status_removed">相手が接続を切断しました</string>
+    <!-- Row subtitle while the other owner hasn't approved the pairing yet. -->
+    <string name="peers_status_awaiting">相手の承認待ち</string>
+    <!-- Row subtitle when the other owner declined my pairing request. -->
+    <string name="peers_status_declined">相手に拒否されました</string>
+    <!-- Row subtitle while the first reachability check after pairing hasn't returned yet. -->
+    <string name="peers_status_checking">確認中</string>
+    <!-- Row subtitle for a status this version doesn't know. -->
+    <string name="peers_status_unknown">状態不明</string>
+    <!-- Section heading above the pairing requests other servers sent. -->
+    <string name="peers_requests_title">リクエスト</string>
+    <!-- Approve button on a request row. -->
+    <string name="peers_request_approve">承認</string>
+    <!-- Reject button on a request row. -->
+    <string name="peers_request_reject">拒否</string>
+    <!-- Warning on a request row whose self-reported name matches a paired server. Argument: that server's display name. -->
+    <string name="peers_request_conflicts">接続済みの「%1$s」と同じ名前ですが、別のサーバーです</string>
+    <!-- Collapsed section heading at the bottom for requests I declined. -->
+    <string name="peers_rejected_title">拒否済み</string>
+    <!-- Undo button on a declined-request row: they can ask again. -->
+    <string name="peers_rejected_undo">取り消す</string>
+    <!-- Confirmation dialog title for removing a paired server. Argument: the other owner's display name. -->
+    <string name="peers_remove_title">「%1$s」を削除しますか？</string>
+    <!-- Confirmation dialog body: what removing does. -->
+    <string name="peers_remove_message">削除するとこのサーバとメッセージのやり取りができなくなります。</string>
+    <!-- Failure title when the scanned text isn't a pairing code. -->
+    <string name="peers_error_code_invalid">これはサーバーのペアリングコードではありません</string>
+    <!-- Failure title when the code was replaced by a reset and no longer works. -->
+    <string name="peers_error_code_revoked">このコードは無効になっています。相手にもう一度送ってもらってください。</string>
+    <!-- Failure title when the other server can't be reached. -->
+    <string name="peers_error_peer_unreachable">相手のサーバーに接続できません</string>
+    <!-- Failure title when the other owner declined the pairing. -->
+    <string name="peers_error_peer_rejected">相手が承認しませんでした</string>
+    <!-- Failure title when the two servers are already paired. -->
+    <string name="peers_error_already_paired">このサーバーにはすでに接続しています</string>
+    <!-- Failure title when the scanned code is from your own server. -->
+    <string name="peers_error_self_pairing">これは自分のサーバーのコードです</string>
+    <!-- Failure title when this server isn't paired. -->
+    <string name="peers_error_not_paired">このサーバーはまだ接続されていません</string>
+    <!-- Failure title when this device isn't the owner's. -->
+    <string name="peers_error_unauthenticated">サーバーのオーナーだけが他のサーバーを管理できます</string>
+    <!-- Failure title when the home server can't be reached. -->
+    <string name="peers_error_transport">自宅サーバーに接続できません</string>
+    <!-- Failure title for the remaining categories. -->
+    <string name="peers_error_other">問題が発生しました。後でもう一度お試しください。</string>
+    <!-- Failure title when the other server can't take more requests right now. -->
+    <string name="peers_error_too_many_requests">相手は現在リクエストを受け付けられません。しばらくしてからもう一度お試しください。</string>
+    <!-- Notice when the request just handled was already processed elsewhere; the list refreshes itself. -->
+    <string name="peers_error_request_not_found">このリクエストはすでに処理されています</string>
+    <!-- Shown while waiting for the camera permission. -->
+    <string name="camera_waiting">カメラの権限を待っています…</string>
+    <!-- Notice when the camera permission was declined but can be asked again. -->
+    <string name="camera_denied">Wontonにカメラの権限がないため、コードをスキャンできません。</string>
+    <!-- Button to ask for the camera permission again. -->
+    <string name="camera_allow">カメラを許可</string>
+    <!-- Notice when the camera permission was declined permanently. -->
+    <string name="camera_blocked">Wontonにカメラの権限がありません。システム設定で許可してください。</string>
+    <!-- Button that opens the app's page in system settings. -->
+    <string name="camera_settings">システム設定を開く</string>
+    <!-- Notice when the device has no camera at all. -->
+    <string name="camera_missing">このデバイスにはカメラがありません。</string>
+    <!-- Accessibility label of the server pairing QR code image. -->
+    <string name="peers_code_qr_label">サーバーのペアリング用QRコード</string>
+    <!-- Button under the QR code: hands the code text to the system share sheet. -->
+    <string name="peers_code_share">共有</string>
+    <!-- Button under the QR code: replaces the code so the old one stops working. -->
+    <string name="peers_code_reset">リセット</string>
+    <!-- Confirmation dialog title for resetting the pairing code. -->
+    <string name="peers_reset_title">ペアリングコードをリセットしますか？</string>
+    <!-- Confirmation dialog body: what resetting does. -->
+    <string name="peers_reset_message">古いコードは使えなくなり、そのコードで届いたリクエストも削除されます</string>
+    <!-- Placeholder of the field for pasting the code when scanning is not possible. -->
+    <string name="peers_paste_placeholder">コードをペースト</string>
+    <!-- Button under the paste field: submit the pasted code. -->
+    <string name="peers_paste_submit">ペアリング</string>
+    <!-- Label before an address that a third-party client uses to connect to the app. -->
+    <string name="lan_client_address">アドレス</string>
+    <!-- Label before the password a third-party client uses to sign in to the app. -->
+    <string name="lan_client_password">パスワード</string>
+    <!-- Label before the username a third-party client uses to sign in to the app. -->
+    <string name="lan_client_username">ユーザー名</string>
+    <!-- Note under the Open on Local Network switch. First argument: number of ports; second: the port numbers, comma-separated. -->
+    <plurals name="lan_webui_ports">
+        <item quantity="other">ポート：%1$s</item>
+    </plurals>
+    <!-- Switch on an app's page: make the app's web page reachable from other devices on the local network. The ports are listed below. -->
+    <string name="lan_webui_toggle">ローカルネットワークに公開</string>
+    <!-- Title of the default agent picker, opened from Settings. -->
+    <string name="launcher_default_agent">デフォルトのエージェント</string>
+    <!-- Shown on the launcher when no apps are installed yet. -->
+    <string name="launcher_empty">アプリはまだインストールされていません</string>
+    <!-- Button under it that opens the Store. -->
+    <string name="launcher_go_to_store">ストアを開く</string>
+    <!-- Action-sheet item that opens the app's web page. -->
+    <string name="launcher_open_web">Webページを開く</string>
+    <!-- Action-sheet item that pins one of the app's web pages to the bottom navigation bar. -->
+    <string name="launcher_pin_to_bar">ナビゲーションバーに追加</string>
+    <!-- Title of the launcher screen with the installed apps. -->
+    <string name="launcher_title">アプリ</string>
+    <!-- Badge in the Store entry row: how many installed apps have updates. Argument: the count. -->
+    <plurals name="launcher_updates_available">
+        <item quantity="other">アップデート%1$d件あり</item>
+    </plurals>
+    <!-- Action-sheet item that updates the app. Argument: the new version. -->
+    <string name="launcher_upgrade_to">%1$sにアップデート</string>
+    <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
+    <string name="message_clip_label">メッセージ</string>
+    <!-- Item in the message menu: copy the message text. Android only. -->
+    <string name="message_copy">コピー</string>
+    <!-- Item in the message menu: remove the message for everyone in the chat. Android only. -->
+    <string name="message_delete_everyone">全員のメッセージを削除</string>
+    <!-- Confirm button in the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_confirm">送信取り消し</string>
+    <!-- Body of the dialog that removes a message for everyone, saying the scope of it. Android only. -->
+    <string name="message_delete_everyone_message">このルームの全員の画面から消えます。</string>
+    <!-- Title of the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_title">全員のメッセージを削除しますか？</string>
+    <!-- Item in the message menu: send the message to another room. Android only. -->
+    <string name="message_forward">転送</string>
+    <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_empty">他のチャットはありません</string>
+    <!-- Title of the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_title">転送先</string>
+    <!-- Fallback under an image message when it can't be decoded: the format isn't supported. Android only. -->
+    <string name="message_image_format_unsupported">この画像形式はサポートされていません</string>
+    <!-- Fallback under an image message when it can't be loaded and the error carries no reason. Android only. -->
+    <string name="message_image_unavailable">画像を読み込めません</string>
+    <!-- Item in the message menu: reply to the message. Android only. -->
+    <string name="message_reply">返信</string>
+    <!-- Screen-reader label of the cross that stops replying above the composer. Android only. -->
+    <string name="message_reply_cancel">返信をやめる</string>
+    <!-- Short stand-in for a quoted message type that can be shown but has nothing to summarize. Android only. -->
+    <string name="message_quote_image">写真</string>
+    <!-- Short stand-in in a quote for a message type with no text, like an approval card. Android only. -->
+    <string name="message_quote_other">メッセージ</string>
+    <!-- Stand-in in a quote for a message the core couldn't load from the server. Android only. -->
+    <string name="message_quote_unavailable">元のメッセージを表示できません</string>
+    <!-- Stand-in in a quote for a message this device can't decrypt. Android only. -->
+    <string name="message_quote_undecryptable">暗号化されたメッセージ</string>
+    <string name="message_image_save">アルバムに保存</string>
+    <string name="message_image_save_failed">アルバムに保存できませんでした</string>
+    <string name="message_image_saved">アルバムに保存しました</string>
+    <string name="message_image_share">共有</string>
+    <string name="message_image_share_failed">画像を共有できませんでした</string>
+    <!-- Description of an agent row in setup when it has no account login. -->
+    <string name="onboarding_agent_connection_key">APIキー</string>
+    <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
+    <string name="onboarding_agent_connection_logins">%1$s、またはAPIキー</string>
+    <!-- Problem title in setup when no agent can be chosen. -->
+    <string name="onboarding_agent_empty">選べるエージェントがありません。再読み込みして再試行できます。</string>
+    <!-- Trailing label on a recommended app row that is already installed. -->
+    <string name="onboarding_app_installed">インストール済み</string>
+    <!-- Dialog title for choosing the default agent. -->
+    <string name="onboarding_default_agent_title">デフォルトのエージェント</string>
+    <!-- Primary button that finishes setup. -->
+    <string name="onboarding_done">完了</string>
+    <!-- Primary button after setup finished: leave setup and open chat. -->
+    <string name="onboarding_enter_chat">チャットへ</string>
+    <!-- Bar title of the in-app browser that opens the model gateway's settings. -->
+    <string name="onboarding_gateway_title">モデル設定</string>
+    <!-- Button that keeps the agent that a new one replaces. -->
+    <string name="onboarding_keep">残す</string>
+    <!-- Loading spinner shown while setup data loads. -->
+    <string name="onboarding_loading">読み込み中</string>
+    <!-- Row title: type a model provider by hand instead of picking a recommended one. -->
+    <string name="onboarding_model_custom">カスタム</string>
+    <!-- Label of the password field for the provider's API key. -->
+    <string name="onboarding_model_form_api_key">APIキー</string>
+    <!-- Label of the field for the provider's API base URL (like https://api.example.com/v1). -->
+    <string name="onboarding_model_form_base_url">Base URL</string>
+    <!-- Label of the field for the model's name (like gpt-4o). -->
+    <string name="onboarding_model_form_model_name">モデル名</string>
+    <!-- Button that opens the provider's website to get an API key. -->
+    <string name="onboarding_model_get_key">APIキーを取得</string>
+    <!-- Button that collapses the list of less common model providers. -->
+    <string name="onboarding_model_less">プロバイダーを折りたたむ</string>
+    <!-- Button that expands the list of less common model providers. -->
+    <string name="onboarding_model_more">その他のプロバイダー</string>
+    <!-- Notice when tapping "Get API key" found no browser to open the link. -->
+    <string name="onboarding_model_no_browser">このリンクを開けるブラウザがありません。ブラウザをインストールまたは有効にしてから再試行してください。</string>
+    <!-- Button that opens the model gateway's settings page. -->
+    <string name="onboarding_model_open_settings">モデル設定を開く</string>
+    <!-- Button that checks the typed API key against the model provider. -->
+    <string name="onboarding_model_test">テスト</string>
+    <!-- Warning under a model provider row: testing couldn't reach the provider, but it's saved anyway when setup finishes. -->
+    <string name="onboarding_model_unreachable">プロバイダーに接続できませんが、完了時に保存されます。</string>
+    <!-- Row title: keep the models already configured in the model gateway. -->
+    <string name="onboarding_model_use_current">現在のモデルを使用</string>
+    <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
+    <string name="onboarding_model_use_login">%1$sを使用</string>
+    <!-- Primary button that advances to the next setup step. -->
+    <string name="onboarding_next">次へ</string>
+    <!-- Banner when several approval cards are waiting. Argument: the number of cards. -->
+    <plurals name="onboarding_pending_card_many">
+        <item quantity="other">確認待ちのカードが%1$d枚あります</item>
+    </plurals>
+    <!-- Banner when one approval card is waiting. Argument: the card's title. -->
+    <string name="onboarding_pending_card_one">%1$sの確認待ちです</string>
+    <!-- Problem title in setup: the model gateway on the home server isn't ready. -->
+    <string name="onboarding_problem_model_gateway_not_ready">モデルゲートウェイの準備ができていません。再試行するか、このステップをスキップしてください。</string>
+    <!-- Problem title in setup: the provider rejected the API key. -->
+    <string name="onboarding_problem_model_key_rejected">プロバイダーがこのAPIキーを拒否しました。修正して再テストしてください。</string>
+    <!-- Problem title in setup: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_model_protocol">Wontonと自宅サーバーのバージョンに互換性がありません。更新して再試行してください。</string>
+    <!-- Problem title in setup: the provider's address can't be reached. -->
+    <string name="onboarding_problem_model_provider_unreachable">プロバイダーに接続できません。アドレスかネットワークを確認して再試行してください。</string>
+    <!-- Problem title in setup: the home server can't be reached. -->
+    <string name="onboarding_problem_model_transport_unavailable">自宅サーバーに接続できません。ネットワークを確認して再試行してください。</string>
+    <!-- Problem title in setup: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_model_unauthorized">自宅サーバーがこのデバイスを未認証です。アクセス権限を確認して再試行してください。</string>
+    <!-- Problem title in setup: the home server hit an error answering the request. -->
+    <string name="onboarding_problem_model_upstream">自宅サーバーがリクエストを完了できませんでした。しばらくしてから再試行してください。</string>
+    <!-- Problem title while installing: the app changed after it was confirmed. -->
+    <string name="onboarding_problem_plugin_changed">アプリが確認後に変更されました。もう一度確認してください。</string>
+    <!-- Problem title while installing: the app is already installed or another task is busy. -->
+    <string name="onboarding_problem_plugin_conflict">このアプリはインストール済みか使用中です。現在の処理が終わったら更新してください。</string>
+    <!-- Problem title while installing: the home server is updating itself right now. -->
+    <string name="onboarding_problem_plugin_core_upgrading">自宅サーバーをアップデート中です。終わってから再試行してください。</string>
+    <!-- Problem title while installing: the device the app needs is unavailable. -->
+    <string name="onboarding_problem_plugin_device_unavailable">選択したデバイスが利用できません。選び直してください。</string>
+    <!-- Problem title while installing: the home server's internet proxy can't be reached. -->
+    <string name="onboarding_problem_plugin_egress_proxy_unavailable">サーバーのプロキシに接続できません。確認してから再試行してください。</string>
+    <!-- Problem title while installing: the request was rejected as invalid. -->
+    <string name="onboarding_problem_plugin_invalid">この操作は受け付けられませんでした。詳細を確認して修正し、再試行してください。</string>
+    <!-- Problem title while installing: a port the app opens on the local network is used by another container or program. -->
+    <string name="onboarding_problem_plugin_lan_port_taken">このアプリがローカルネットワークに開くポートが使用中です。使っているコンテナかプログラムを止めてから、もう一度お試しください。</string>
+    <!-- Problem title while installing: no local network address is available for the app. -->
+    <string name="onboarding_problem_plugin_lan_unavailable">利用できるローカルネットワークのアドレスがありません。サーバーのネットワーク設定を確認してください。</string>
+    <!-- Problem title while installing: the app wasn't found. -->
+    <string name="onboarding_problem_plugin_not_found">このアプリが見つかりません。一覧を更新してから再試行してください。</string>
+    <!-- Problem title while installing: the owner profile isn't complete. -->
+    <string name="onboarding_problem_plugin_owner_profile_incomplete">プロフィールが未入力です。入力してから再試行してください。</string>
+    <!-- Problem title while installing: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_plugin_protocol">Wontonと自宅サーバーのバージョンが一致していません。Wontonかサーバーを更新してください。</string>
+    <!-- Problem title while installing: the home server is older than the app needs. -->
+    <string name="onboarding_problem_plugin_server_too_old">自宅サーバーのバージョンが古すぎます。先にサーバーをアップデートしてください。</string>
+    <!-- Problem title while installing: the app's source is temporarily unreachable. -->
+    <string name="onboarding_problem_plugin_source_unavailable">アプリの情報を取得できません。提供元が復旧してから再試行してください。</string>
+    <!-- Problem title while installing: the home server can't be reached. -->
+    <string name="onboarding_problem_plugin_transport_unavailable">自宅サーバーに接続できません。ネットワークを確認して再試行してください。</string>
+    <!-- Problem title while installing: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_plugin_unauthorized">自宅サーバーがこのデバイスを認識していません。QRコードをスキャンしてもう一度ペアリングしてください。</string>
+    <!-- Problem title while installing: the home server doesn't support this app. -->
+    <string name="onboarding_problem_plugin_unsupported">自宅サーバーがこのアプリに対応していません。先にサーバーをアップデートしてください。</string>
+    <!-- Problem title while installing: the home server hit an error. -->
+    <string name="onboarding_problem_plugin_upstream">自宅サーバーでエラーが発生しました。しばらくしてから再試行してください。</string>
+    <!-- Problem title in setup: the recommendation source is turned off. -->
+    <string name="onboarding_problem_store_disabled">おすすめの提供元が無効になっています。スキップできます。</string>
+    <!-- Problem title in setup: some recommendations didn't load. -->
+    <string name="onboarding_problem_store_incomplete">一部のおすすめを読み込めませんでした。再試行するかスキップできます。</string>
+    <!-- Problem title in setup: the recommendation list needs a newer home server. -->
+    <string name="onboarding_problem_store_index_too_new">おすすめの表示には新しい自宅サーバーが必要です。アップデートするか、スキップしてください。</string>
+    <!-- Problem title in setup: the recommendation list can't be read. -->
+    <string name="onboarding_problem_store_invalid_index">おすすめを読み取れません。再試行するかスキップできます。</string>
+    <!-- Problem title in setup: recommendations are unavailable for another reason. -->
+    <string name="onboarding_problem_store_other">おすすめを読み込めません。再試行するかスキップできます。</string>
+    <!-- Problem title in setup: too many requests to the recommendation source. -->
+    <string name="onboarding_problem_store_rate_limited">おすすめへのリクエストが多すぎます。後で再試行するかスキップできます。</string>
+    <!-- Problem title in setup: the recommendation source responds too slowly. -->
+    <string name="onboarding_problem_store_timeout">おすすめの提供元の応答に時間がかかっています。再試行するか、スキップしてください。</string>
+    <!-- Problem title in setup: the recommendation source can't be reached. -->
+    <string name="onboarding_problem_store_unreachable">おすすめの提供元に接続できません。再試行するかスキップできます。</string>
+    <!-- Problem title in setup: the recommendation source hit an error. -->
+    <string name="onboarding_problem_store_upstream">おすすめの提供元でエラーが発生しました。再試行するかスキップできます。</string>
+    <!-- Dialog title when a new agent replaces an installed one. Argument: the old agent's name. -->
+    <string name="onboarding_replaced_agent_title">「%1$s」をアンインストールしますか？</string>
+    <!-- Fallback when the core gives no reason why an app can't be installed. -->
+    <string name="onboarding_review_blocked">インストールできません</string>
+    <!-- Checkmark icon for a finished install task. -->
+    <string name="onboarding_review_done">完了</string>
+    <!-- Row description in the review step: the already-configured models are kept. -->
+    <string name="onboarding_review_keep_current">現在のものを使用</string>
+    <!-- Label next to a spinner while an install task is being prepared. -->
+    <string name="onboarding_review_preparing">準備中</string>
+    <!-- Row description in the review step: the item is set as the default agent. -->
+    <string name="onboarding_review_set_default">デフォルトに設定</string>
+    <!-- Row description in the review step: the agent signs in from chat after setup. -->
+    <string name="onboarding_review_sign_in_after_setup">セットアップ後にチャットでログイン</string>
+    <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
+    <string name="onboarding_review_uncertain">インストールされたか確認できません。アプリのページを確認してください。</string>
+    <!-- Row description in the review step: the model couldn't be reached during the test. -->
+    <string name="onboarding_review_unreachable">テスト時に接続できませんでした</string>
+    <!-- Row description in the review step. Argument: the model's name. -->
+    <string name="onboarding_review_unreachable_model">%1$s · テスト時に接続できませんでした</string>
+    <!-- Label while an install task waits for others to finish. -->
+    <string name="onboarding_review_waiting">待機中</string>
+    <!-- Busy label while a setup step or an install task is running. -->
+    <string name="onboarding_running">処理中</string>
+    <!-- Secondary button on the setup error screen: leave setup without finishing. -->
+    <string name="onboarding_skip_anyway">スキップ</string>
+    <!-- Card title at the top of the agent step in setup: pick the agent to use. -->
+    <string name="onboarding_step_agent">エージェントの選択</string>
+    <!-- Card title at the top of the apps step in setup: pick the apps to install. -->
+    <string name="onboarding_step_apps">アプリの選択</string>
+    <!-- Card title after setup finished. -->
+    <string name="onboarding_step_finished">完了</string>
+    <!-- Card title at the top of the model step in setup: connect a model provider. -->
+    <string name="onboarding_step_model">モデルの接続</string>
+    <!-- Card title fallback in setup when the step is unknown. -->
+    <string name="onboarding_step_other">セットアップ</string>
+    <!-- Card title at the top of the profile step in setup. -->
+    <string name="onboarding_step_profile">プロフィール</string>
+    <!-- Card title at the top of the review step in setup: check everything before finishing. -->
+    <string name="onboarding_step_review">確認</string>
+    <!-- Dismissable tip after an app installed: it can be pinned to the bottom navigation bar. -->
+    <string name="onboarding_tip_app_installed">アプリをインストールしたら、ナビゲーションバーに追加できます。</string>
+    <!-- Dismissable tip above the chat input: confirm approval requests on the card in chat. -->
+    <string name="onboarding_tip_confirmation_card">確認が必要なときは、チャットのカードで確認してください。</string>
+    <!-- Button that uninstalls the agent that a new one replaces. -->
+    <string name="onboarding_uninstall">アンインストール</string>
+    <!-- Section title, field label and accessibility label for the owner's email address. -->
+    <string name="owner_profile_email">メールアドレス</string>
+    <!-- Placeholder in the empty email field. -->
+    <string name="owner_profile_email_optional">任意</string>
+    <!-- Section title, field label and accessibility label for the owner's display name. -->
+    <string name="owner_profile_name">名前</string>
+    <!-- Title of the owner profile page (name and email) and its entry point in Settings. -->
+    <string name="owner_profile_title">プロフィール</string>
+    <!-- Row label for the account name the home server assigned; shown under the form. -->
+    <string name="owner_profile_username">ユーザー名</string>
+    <!-- Detail of the photo problem: the GIF's header is invalid. Android only. -->
+    <string name="photo_gif_unreadable">このGIFを読み込めません</string>
+    <!-- Next step under a photo problem: pick a different photo. -->
+    <string name="photo_try_another">別の写真でお試しください。</string>
+    <!-- Title of the photo problem on iOS, detail on Android: the photo was decoded but couldn't be re-encoded for sending. -->
+    <string name="photo_unencodable">写真を変換できません</string>
+    <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
+    <string name="photo_unreadable">この写真を読み込めません</string>
+    <!-- Small tag next to a permission that's newly requested in this update. -->
+    <string name="plugin_save_folders">保存できるフォルダ</string>
+    <string name="plugin_save_revoke">取り消す</string>
+    <string name="plugin_updates_section">アップデート</string>
+    <string name="plugin_ask_every_update">毎回確認</string>
+    <string name="plugin_written_by_agent">あなたのエージェント・%1$s</string>
+    <string name="plugin_requirements">要件</string>
+    <string name="plugin_info">情報</string>
+    <string name="plugin_tags">タグ</string>
+    <string name="plugin_author">作者</string>
+    <string name="plugin_license">ライセンス</string>
+    <string name="plugin_source">提供元</string>
+    <string name="plugin_stars">スター数</string>
+    <string name="plugin_homepage">ホームページ</string>
+    <string name="plugin_repository">リポジトリ</string>
+    <string name="plugin_permission_added">追加</string>
+    <!-- Small tag next to a permission the core doesn't support. -->
+    <string name="plugin_permission_unsupported">非対応</string>
+    <string name="plugin_permission_optional">任意</string>
+    <string name="plugin_permission_risk_high">高リスク</string>
+    <string name="plugin_permission_risk_very_high">非常に高いリスク</string>
+    <string name="plugin_permission_risk_highest">最高リスク</string>
+    <string name="plugin_root_permission_badge">このプラグインはホスト全体を操作できます</string>
+    <string name="plugin_permission_open_title">「%1$s」をオンにしますか？</string>
+    <string name="plugin_permission_understand_title">このプラグインがホスト全体を操作できることを理解しました</string>
+    <string name="plugin_permission_host_root">オンにすると、root としてこのホストのコンテナを操作します。</string>
+    <string name="plugin_permission_continue">続ける</string>
+    <string name="plugin_permission_open">オン</string>
+    <string name="plugin_permission_close_title">「%1$s」をオフにしますか？</string>
+    <string name="plugin_permission_close">オフ</string>
+    <string name="plugin_permission_opened_owner">%1$s にあなたがオン</string>
+    <string name="plugin_permission_opened_bot">%2$s に Bot %1$s がオン</string>
+    <!-- Button that adds the typed source address. -->
+    <string name="plugin_sources_add">追加</string>
+    <!-- Button that proceeds with the typed source address when changing versions. -->
+    <string name="plugin_sources_continue">続ける</string>
+    <!-- Reason shown when the picked archive is bigger than the server accepts. Argument: the size limit, formatted as a file size. -->
+    <string name="plugin_sources_file_too_large">ファイルが大きすぎます。最大 %1$s です。</string>
+    <!-- Reason shown when the picked file can't be opened. -->
+    <string name="plugin_sources_file_unreadable">このファイルを開けません</string>
+    <!-- Button that opens the file picker to install from an archive. -->
+    <string name="plugin_sources_install_from_file">ファイルからインストール</string>
+    <!-- Section title above the sources you added, in the store list and on the Add Source page. -->
+    <string name="plugin_sources_mine">追加した提供元</string>
+    <!-- Title of the page where you add a source by address or install from a file. -->
+    <string name="plugin_sources_title">提供元を追加</string>
+    <!-- Warning at the top of the Add Source page. -->
+    <string name="plugin_sources_unreviewed_warning">ここに追加したアプリとファイルは審査されていません。信頼できるものだけをインストールしてください。</string>
+    <!-- Succeeded task line listing the tools the app gained. Argument: the tool names, formatted as a list. -->
+    <string name="plugin_task_added_tools">追加されたツール：%1$s</string>
+    <!-- Succeeded task line when the core couldn't compare the app's tools. -->
+    <string name="plugin_task_added_tools_unknown">今回追加されたツールは確認できません</string>
+    <!-- Status of a finished install task. -->
+    <string name="plugin_task_install_done">インストールしました</string>
+    <!-- Failed install task line. Argument: the reason from the core. -->
+    <string name="plugin_task_install_failed">インストールに失敗しました：%1$s</string>
+    <!-- Status of a running install task. -->
+    <string name="plugin_task_install_running">インストール中</string>
+    <!-- Button on a failed task whose app package changed after the confirmation: reopen the confirmation. -->
+    <string name="plugin_task_review">再確認</string>
+    <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
+    <string name="plugin_task_uncertain">結果が不確定です：%1$s</string>
+    <!-- Status of a finished uninstall task. -->
+    <string name="plugin_task_uninstall_done">アンインストールしました</string>
+    <!-- Failed uninstall task line. Argument: the reason from the core. -->
+    <string name="plugin_task_uninstall_failed">アンインストールに失敗しました：%1$s</string>
+    <!-- Status of a running uninstall task. -->
+    <string name="plugin_task_uninstall_running">アンインストール中</string>
+    <!-- Status of a finished update task. -->
+    <string name="plugin_task_upgrade_done">アップデートしました</string>
+    <!-- Failed update task line. Argument: the reason from the core. -->
+    <string name="plugin_task_upgrade_failed">アップデートに失敗しました：%1$s</string>
+    <!-- Status of a running update task. -->
+    <string name="plugin_task_upgrade_running">アップデート中</string>
+    <!-- Small tag on a store row and the install preview: the app is reviewed. -->
+    <string name="plugin_trust_official">審査済み</string>
+    <!-- Small tag: a system app that's always installed. -->
+    <string name="plugin_trust_system">システム</string>
+    <!-- Small tag: the app isn't reviewed. -->
+    <string name="plugin_trust_unreviewed">未審査</string>
+    <!-- Action-sheet item that uninstalls the app. -->
+    <string name="plugin_uninstall_action">アンインストール</string>
+    <!-- Destructive button that uninstalls and deletes the app's data. -->
+    <string name="plugin_uninstall_delete_data">アンインストール（データも削除）</string>
+    <!-- Message of the uninstall confirmation. -->
+    <string name="plugin_uninstall_delete_data_warning">データを削除すると、鍵とボットのアカウントも一緒に削除され、元に戻せません。</string>
+    <!-- Button that uninstalls but keeps the app's data. -->
+    <string name="plugin_uninstall_keep_data">アンインストール（データを残す）</string>
+    <!-- Title of the uninstall confirmation. Argument: the app's name. -->
+    <string name="plugin_uninstall_title">「%1$s」をアンインストールしますか？</string>
+    <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
+    <string name="problem_appearance_title">外観設定を保存できませんでした</string>
+    <string name="problem_apps_not_ready">アプリのリストの準備ができていません。しばらくしてからもう一度お試しください。</string>
+    <string name="problem_no_default_agent">デフォルトのエージェントがありません。セットアップで選択してインストールしてください。</string>
+    <string name="problem_invalid_input_title">この操作は実行できません</string>
+    <!-- Accessibility label of the skeleton list placeholder while content loads. -->
+    <string name="problem_loading">読み込み中</string>
+    <!-- Problem title when the core says the action can't run yet; the core's own reason is shown as the next step. -->
+    <string name="problem_not_ready_title">まだ実行できません</string>
+    <!-- Next step: look at the app again and approve it again. -->
+    <string name="problem_plugin_changed_next_step">内容をもう一度確認してください。</string>
+    <!-- Problem title: the app changed after the owner approved the install. -->
+    <string name="problem_plugin_changed_title">アプリは確認後に変更されました</string>
+    <!-- Next step: the app is installed or installing, updating or uninstalling; wait for that to finish. -->
+    <string name="problem_plugin_conflict_next_step">インストール済みか、インストール・アップデート・アンインストールの途中です。終わるまでお待ちください。</string>
+    <!-- Problem title: the app is busy with another task. -->
+    <string name="problem_plugin_conflict_title">このアプリは処理中です</string>
+    <!-- Next step: try after the update finishes. -->
+    <string name="problem_plugin_core_upgrading_next_step">アップデートが終わってからもう一度お試しください。</string>
+    <!-- Problem title: the home server is updating itself right now. -->
+    <string name="problem_plugin_core_upgrading_title">自宅サーバーはアップデート中です</string>
+    <!-- Next step: look at the devices again and choose one that's available. -->
+    <string name="problem_plugin_device_unavailable_next_step">デバイスを確認してからもう一度お試しください。</string>
+    <!-- Problem title: the device the app should run on isn't available. -->
+    <string name="problem_plugin_device_unavailable_title">選択したデバイスを利用できません</string>
+    <!-- Next step: check the proxy on the home server, or change the address in the internet proxy settings. -->
+    <string name="problem_plugin_egress_proxy_unavailable_next_step">自宅サーバー上のプロキシを確認するか、プロキシ設定でアドレスを変えてから、もう一度お試しください。</string>
+    <!-- Problem title: the app can't reach the internet through the internet proxy. -->
+    <string name="problem_plugin_egress_proxy_unavailable_title">プロキシに接続できません</string>
+    <!-- Next step: contact the app's author. -->
+    <string name="problem_plugin_invalid_next_step">アプリの作者に連絡してください。</string>
+    <!-- Problem title: the app's package is broken. -->
+    <string name="problem_plugin_invalid_title">このアプリのパッケージに問題があります</string>
+    <!-- Next step: stop the container or program using this port, then try again. -->
+    <string name="problem_plugin_lan_port_taken_next_step">このポートを使っているコンテナかプログラムを止めてから、もう一度お試しください。</string>
+    <!-- Problem title: a port the app opens on the local network is used by another container or program. -->
+    <string name="problem_plugin_lan_port_taken_title">ポートが使用中です</string>
+    <!-- Next step: choose an interface or address in the local network settings, then try again. -->
+    <string name="problem_plugin_lan_unavailable_next_step">ローカルネットワークの設定でインターフェースかアドレスを選んでから、もう一度お試しください。</string>
+    <!-- Problem title: no local network address could be picked for the app. -->
+    <string name="problem_plugin_lan_unavailable_title">ローカルネットワークのアドレスを選べません</string>
+    <!-- Next step: refresh the store and try again. -->
+    <string name="problem_plugin_not_found_next_step">ストアを更新してからもう一度お試しください。</string>
+    <!-- Problem title: the app is gone from its source. -->
+    <string name="problem_plugin_not_found_title">このアプリが見つかりません</string>
+    <!-- Next step: fill it in in Settings, then try again. -->
+    <string name="problem_plugin_owner_profile_incomplete_next_step">設定で入力してから、もう一度お試しください。</string>
+    <!-- Problem title: the owner's profile (name and email) isn't filled in yet, and the app needs it. -->
+    <string name="problem_plugin_owner_profile_incomplete_title">プロフィールがまだ入力されていません</string>
+    <!-- Next step: update the app or the home server. -->
+    <string name="problem_plugin_protocol_next_step">Wontonか自宅サーバーをアップデートしてください。</string>
+    <!-- Problem title: the app and the home server versions don't match. -->
+    <string name="problem_plugin_protocol_title">Wontonと自宅サーバーのバージョンが合っていません</string>
+    <!-- Problem title when the proxy settings were rejected as invalid; the core's own reason is shown as the next step. -->
+    <string name="problem_plugin_save_invalid_title">入力内容が正しくありません</string>
+    <!-- Next step: look at the proxy settings again once the server is reachable. -->
+    <string name="problem_plugin_save_uncertain_next_step">自宅サーバーに接続してからもう一度確認してください。</string>
+    <!-- Problem title after saving the internet proxy while offline: whether it saved isn't known. -->
+    <string name="problem_plugin_save_uncertain_title">保存されたかどうか不明です</string>
+    <!-- Problem title: the home server is older than this app needs. -->
+    <string name="problem_plugin_server_too_old_title">自宅サーバーのバージョンが古すぎます</string>
+    <!-- Next step: the home server can't reach the app's source, try later. -->
+    <string name="problem_plugin_source_unavailable_next_step">自宅サーバーからアプリの提供元に接続できません。しばらくしてからもう一度お試しください。</string>
+    <!-- Problem title: the app's information can't be fetched from its source right now. -->
+    <string name="problem_plugin_source_unavailable_title">アプリの情報を今は取得できません</string>
+    <!-- Problem title: the home server is too old for this app. -->
+    <string name="problem_plugin_unsupported_title">自宅サーバーはこのアプリに対応していません</string>
+    <!-- Shown after a few seconds under a spinner: the network is slow, loading still goes on. -->
+    <string name="problem_slow_loading">読み込み中です。ネットワークが遅いと時間がかかります</string>
+    <!-- Next step under the storage problem. Also used when settings couldn't be saved. -->
+    <string name="problem_storage_next_step">ストレージを確認して、もう一度お試しください。</string>
+    <!-- Problem title: this device failed to read or write its own data. -->
+    <string name="problem_storage_title">このデバイスでデータの読み書きに失敗しました</string>
+    <!-- Problem title: the community source is switched off, so its apps are missing. -->
+    <string name="problem_store_disabled_title">コミュニティの提供元が無効になっています</string>
+    <!-- Problem title: some apps couldn't be loaded into the list. -->
+    <string name="problem_store_incomplete_title">一部のアプリが読み込まれていません</string>
+    <!-- Problem title: the store's index is newer than the home server understands. -->
+    <string name="problem_store_index_too_new_title">アプリの一覧が自宅サーバーより新しくなっています</string>
+    <!-- Problem title: the store's index can't be read. -->
+    <string name="problem_store_invalid_index_title">アプリの一覧を読み込めません</string>
+    <!-- Problem title: the app list may be incomplete for an unknown reason. -->
+    <string name="problem_store_other_title">アプリの一覧が不完全な可能性があります</string>
+    <!-- Next step: wait a few minutes and try again. -->
+    <string name="problem_store_rate_limited_next_step">数分待ってからもう一度お試しください。</string>
+    <!-- Problem title: the source is answering too many requests. -->
+    <string name="problem_store_rate_limited_title">リクエストが多すぎます</string>
+    <!-- Problem title: the app's source answered too slowly, the list may be stale. -->
+    <string name="problem_store_timeout_title">アプリの提供元の応答が遅すぎます。一覧が最新でない可能性があります</string>
+    <!-- Problem title shown above the store list: the app's source can't be reached, the list may be stale. -->
+    <string name="problem_store_unreachable_title">アプリの提供元に接続できません。一覧が最新でない可能性があります</string>
+    <!-- Problem title: the app's source itself reported a problem. -->
+    <string name="problem_store_upstream_title">アプリの提供元で問題が発生しました</string>
+    <!-- Next step under the can't-reach-the-server problem. -->
+    <string name="problem_transport_unavailable_next_step">ネットワークを確認して、接続後にもう一度お試しください。</string>
+    <!-- Problem title used for plugin, chat and connection failures: the home server can't be reached. -->
+    <string name="problem_transport_unavailable_title">自宅サーバーに接続できません</string>
+    <!-- Next step under the not-recognized problem: pair again by scanning the code. -->
+    <string name="problem_unauthorized_next_step">ペアリングコードをもう一度スキャンしてください。</string>
+    <!-- Problem title: the home server no longer accepts this device. -->
+    <string name="problem_unauthorized_title">自宅サーバーがこのデバイスを認識していません</string>
+    <!-- Next step: update the home server first. Used when the server is too old. -->
+    <string name="problem_upgrade_server_next_step">まず自宅サーバーをアップデートしてください。</string>
+    <!-- Next step under the server-error problem. Also used for other problems that only say to try later. -->
+    <string name="problem_upstream_next_step">しばらくしてからもう一度お試しください。</string>
+    <!-- Problem title used for plugin, chat and connection failures: the home server itself reported an error. -->
+    <string name="problem_upstream_title">自宅サーバーでエラーが発生しました</string>
+    <!-- Reason shown when system policy disabled the camera. -->
+    <string name="qr_scanner_camera_disabled">カメラはシステムポリシーにより無効です</string>
+    <!-- Reason shown for other CameraX errors. Argument: the numeric CameraX error code. -->
+    <string name="qr_scanner_camera_error_code">カメラエラー（CameraX エラーコード %1$d）</string>
+    <!-- Reason shown when the camera can't open at all; the pairing code can be pasted instead. -->
+    <string name="qr_scanner_camera_failed">カメラを開けません。ペアリングコードを貼り付けてください</string>
+    <!-- Reason shown when the camera is used by another app. -->
+    <string name="qr_scanner_camera_in_use">カメラはほかのアプリで使用中です</string>
+    <!-- Reason shown when Do Not Disturb mode blocks the camera. -->
+    <string name="qr_scanner_do_not_disturb">サイレントモード中はカメラを開けません</string>
+    <!-- Reason shown when the device has no rear camera to scan with. -->
+    <string name="qr_scanner_no_back_camera">このデバイスには背面カメラがありません</string>
+    <!-- Radio option for typing a mirror address that isn't in the list. -->
+    <string name="registry_mirror_custom">カスタム</string>
+    <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->
+    <string name="registry_mirror_custom_address">カスタムミラーのアドレス</string>
+    <!-- Row title for the speed test result of Docker Hub reached directly, without a mirror. Keep Docker Hub as is. -->
+    <string name="registry_mirror_docker_hub_direct">Docker Hub（直接接続）</string>
+    <!-- Speed test result: the mirror works but no latency was measured. -->
+    <string name="registry_mirror_probe_available">利用可能</string>
+    <!-- Speed test result: the mirror returned content whose digest doesn't match. -->
+    <string name="registry_mirror_probe_digest_mismatch">ダイジェスト不一致</string>
+    <!-- Speed test result: some other failure; details are collapsed below. -->
+    <string name="registry_mirror_probe_other">その他のエラー</string>
+    <!-- Speed test result: the mirror refused the request. -->
+    <string name="registry_mirror_probe_rejected">拒否されました</string>
+    <!-- Speed test result when this address hasn't been tested. -->
+    <string name="registry_mirror_probe_unknown">不明</string>
+    <!-- Speed test result: the mirror can't be reached. -->
+    <string name="registry_mirror_probe_unreachable">接続できません</string>
+    <!-- Warning on the Download Mirror page when Docker Hub can't be reached directly. Keep Docker Hub as is. -->
+    <string name="registry_mirror_recommended">Docker Hubに接続できません。ダウンロードミラーをオンにすることをおすすめします。</string>
+    <!-- Explanation under the Download Mirror switch: the mirrors are run by third parties, can see what is downloaded, but can't tamper with it because every image is checked against its digest. -->
+    <string name="registry_mirror_risk">これらは第三者が無料で提供しているサービスです。どのイメージをダウンロードしたかは見えますが、ダイジェストを1つずつ照合するため、内容を書き換えることはできません。</string>
+    <!-- Problem title when the typed mirror address is invalid and wasn't saved. The server's reason is in the collapsed details. -->
+    <string name="registry_mirror_save_failed">ミラーのアドレスは保存されていません</string>
+    <!-- Button that measures how fast each mirror and Docker Hub respond. -->
+    <string name="registry_mirror_test">速度をテスト</string>
+    <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
+    <string name="registry_mirror_title">ダウンロードミラー</string>
+    <!-- Server list button that opens pairing to add another server. No arguments; short button label. -->
+    <string name="servers_add">サーバーを追加</string>
+    <!-- Navigation title while pairing an additional server. No arguments; fits a phone navigation bar. -->
+    <string name="servers_add_title">サーバーを追加</string>
+    <!-- Default display name for server number 1 in the server list and Settings. No arguments; keep it short enough for a settings row. -->
+    <string name="servers_default_first">自宅サーバー</string>
+    <!-- Default server name in the server list and Settings. Argument: the stable server number, not the number of servers. Keep it short enough for a settings row. -->
+    <plurals name="servers_default_numbered">
+        <item quantity="other">サーバー%1$d</item>
+    </plurals>
+    <!-- Accessibility long-press action label for a server row; opens rename and remove actions. No arguments; short action label. -->
+    <string name="servers_manage">サーバーを管理</string>
+    <!-- Text field label in the server rename dialog. The value is the owner's editable server name. No format arguments; short label. -->
+    <string name="servers_name">名前</string>
+    <!-- Problem dialog title when a notification targets a server that cannot be connected. The upstream reason is shown separately in collapsed details. No arguments; may wrap. -->
+    <string name="servers_notification_unreachable">この通知のサーバーに接続できません</string>
+    <!-- Body of the server removal confirmation. Only this phone's chat history and files are deleted; data on the server is unaffected. No arguments; wraps in a dialog. -->
+    <string name="servers_remove_message">このスマートフォンに保存されたチャット履歴とファイルが削除されます。サーバー上のデータは削除されません。</string>
+    <!-- Destructive confirmation title for removing a server from this phone. Argument: the server's displayed name, including a localized default or the owner's unmodified name. May wrap. -->
+    <string name="servers_remove_title">「%1$s」を削除しますか？</string>
+    <string name="settings_profile">プロフィール</string>
+    <string name="settings_appearance">外観</string>
+    <string name="settings_nav_bar">ナビゲーションバー</string>
+    <string name="settings_default_agent">デフォルトのエージェント</string>
+    <string name="settings_about">Wontonについて</string>
+    <string name="settings_version">バージョン</string>
+    <string name="settings_toolbar">設定</string>
+    <string name="settings_toolbar_update">設定、新しいバージョンあり</string>
+    <string name="settings_show_setup_again">セットアップをもう一度見る</string>
+    <string name="settings_language">言語</string>
+    <string name="settings_language_system">システムのデフォルト</string>
+    <string name="shortcuts_not_updated">ショートカットを更新できませんでした</string>
+    <string name="shortcuts_rejected">システムがショートカットを受け付けませんでした。</string>
+    <string name="shortcuts_unlock">デバイスのロックを解除して、Wontonをもう一度開いてください。</string>
+    <string name="shortcuts_not_allowed">システムがショートカットの更新を許可していません。</string>
+    <string name="shortcuts_rate_limited">システムがショートカットの更新を一時的に制限しています。しばらくしてからWontonをもう一度開いてください。</string>
+    <string name="shortcuts_update_refused">システムがショートカットの更新を受け付けませんでした。しばらくしてからWontonをもう一度開いてください。</string>
+    <string name="shortcuts_app_uninstalled">このアプリはアンインストールされました</string>
+    <string name="shortcut_icon_missing">「%1$s」のアイコンを取得できませんでした。接続を確認して、Wontonをもう一度開いてください。</string>
+    <string name="shortcut_icon_convert_failed">「%1$s」のアイコンを変換できません。Wontonをもう一度開いてください。</string>
+    <string name="shortcut_new_chat">新しいチャット</string>
+    <string name="shortcut_agent_chat">ボットに質問</string>
+    <string name="shortcuts_too_few">システムが許可するショートカットは%1$d個だけなので、「新しいチャット」と「ボットに質問」を同時に表示できません。</string>
+    <string name="shortcuts_too_many">システムが許可するショートカットは最大%1$d個です。「新しいチャット」「ボットに質問」を優先し、アプリのページはナビゲーションバーの順に表示します。</string>
+    <!-- Toolbar button that opens the Add Source page. -->
+    <string name="store_add_source">提供元を追加</string>
+    <!-- Button on a store row to install an app you don't have. -->
+    <string name="store_get">入手</string>
+    <!-- Small tag on a store row for an app that asks for risky permissions. -->
+    <string name="store_high_permissions">高い権限</string>
+    <!-- Shown when a store search found nothing. -->
+    <string name="store_no_results">見つかりません</string>
+    <!-- Button on a store row to open an installed app. -->
+    <string name="store_open">開く</string>
+    <!-- Problem title in the store with the source it came from. Arguments: the provider's name, the problem title from the core. -->
+    <string name="store_problem_from_source">%1$s：%2$s</string>
+    <!-- Placeholder under an added source whose list hasn't been fetched yet. Argument: the source's provider name. -->
+    <string name="store_reading">%1$sを読み込み中…</string>
+    <!-- Placeholder of the search field on the Store screen. -->
+    <string name="store_search_prompt">検索</string>
+    <!-- Section title above community apps in the store. -->
+    <string name="store_section_community">コミュニティ</string>
+    <!-- Section title above reviewed apps in the store. -->
+    <string name="store_section_reviewed">審査済み</string>
+    <!-- Chip that clears the tag filter in the store. -->
+    <string name="store_tag_all">すべて</string>
+    <!-- Title of the Store screen and of the row that opens it. -->
+    <string name="store_title">ストア</string>
+    <!-- Notice for an app in a source whose manifest can't be read. Arguments: the source address, the reason from the core. -->
+    <string name="store_unreadable">%1$sを読み込めません：%2$s</string>
+    <!-- Button on a store row to update an installed app. -->
+    <string name="store_update">アップデート</string>
+    <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
+    <string name="store_via_index">%1$s経由</string>
+    <!-- 全画面ページのカプセルで全画面を終了するボタン。 -->
+    <string name="takeover_hand_back">操作を返す</string>
+    <string name="takeover_start">操作する</string>
+    <string name="takeover_got_it">了解</string>
+    <string name="takeover_not_started">操作を開始できませんでした：%1$s</string>
+    <string name="takeover_lost">操作を返しました。接続が切れました</string>
+    <string name="takeover_lost_reason">操作を返しました：%1$s</string>
+    <string name="tab_webview_too_old">Android System WebViewを更新してもう一度お試しください</string>
+    <string name="tab_stopped">%1$sは停止しました</string>
+    <string name="tab_problem">%1$sで問題が発生しました</string>
+    <string name="tab_page_removed">このページは新しいバージョンでは提供されません</string>
+    <string name="tab_status_unknown">アプリの状態を確認できません</string>
+    <string name="tab_starting">起動しています…</string>
+    <string name="tab_uninstalling">アンインストールしています…</string>
+    <string name="tab_upgrading">アップデートしています…</string>
+    <string name="tab_open_anyway">そのまま開く</string>
+    <string name="tab_unpin_from_bar">ナビゲーションバーから外す</string>
+    <string name="tab_start">起動</string>
+    <string name="tab_view_details">詳細を表示</string>
+    <string name="tab_cross_origin_title">このアプリはWontonのAndroid版ではまだ開けません</string>
+    <string name="tab_cross_origin_detail">現在のAndroid System WebView：%1$s。156以降が必要です。</string>
+    <string name="tab_webview_version_unknown">バージョンを取得できません</string>
+    <string name="tab_load_not_ready">アプリの準備ができていません</string>
+    <string name="tab_load_upstream">アプリのページを開けません</string>
+    <string name="tab_uninstalled_notice">%1$sはアンインストールされ、ナビゲーションバーから外されました</string>
+    <string name="tab_settings_unreadable">ナビゲーションバーの設定を読み込めません</string>
+    <string name="tab_open_settings">ナビゲーションバーの設定</string>
+    <string name="tab_menu_open_fullscreen">全画面で開く</string>
+    <string name="tab_edit_bar">ナビゲーションバーを編集</string>
+    <string name="tab_fullscreen">全画面</string>
+    <string name="tab_choose_page">ページを選択</string>
+    <string name="tab_choose_replace">置き換える項目を選択</string>
+    <string name="tab_bar_full">ナビゲーションバーがいっぱいです：%1$sを追加</string>
+    <string name="tab_pin_a11y">%1$s、%2$s</string>
+    <string name="tab_add_more">さらに追加</string>
+    <string name="tab_show_labels">ラベルを表示</string>
+    <string name="tab_move_up">上へ移動</string>
+    <string name="tab_move_down">下へ移動</string>
+    <string name="tab_add_to_bar">ナビゲーションバーに追加</string>
+    <string name="tab_defaults_shown">デフォルトのナビゲーションバーを表示しています。変更すると設定が保存されます。</string>
+    <string name="tab_no_browser">ブラウザを開けません</string>
+    <string name="tab_chat">チャット</string>
+    <string name="tab_apps">アプリ</string>
+    <string name="tab_settings">設定</string>
+    <string name="tab_app_page">アプリのページ</string>
+    <string name="tab_exit_fullscreen">全画面を終了</string>
+    <!-- 全画面カプセルのメニュー項目:タブバーから開いたときに全画面にするスイッチ。 -->
+    <string name="tab_menu_always_fullscreen">常に全画面</string>
+    <!-- 全画面カプセルのメニュー項目:ページ履歴を一つ戻る。 -->
+    <string name="tab_menu_back">戻る</string>
+    <!-- 全画面カプセルのメニュー項目:アプリの詳細ページを開く。 -->
+    <string name="tab_menu_details">アプリ詳細</string>
+    <!-- 全画面カプセルのメニュー項目:ページを再読み込みする。 -->
+    <string name="tab_menu_reload">再読み込み</string>
+    <!-- Small button on an approval request card: open the app that was just installed. -->
+    <string name="tab_open">開く</string>
+    <!-- 全画面ページのカプセル左ボタンのラベル。タップでメニューを開く。 -->
+    <string name="tab_page_menu">ページメニュー</string>
+    <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
+    <string name="tab_pin_to_bar">タブバーに追加</string>
+    <!-- Warning under the allow-all switches. -->
+    <string name="tool_policy_allow_all_risk">このボットは、すべてのアプリのツールを確認なしで使えます。あとからインストールしたアプリも含まれます。プロンプトインジェクションによって、確認なしでデータの変更や削除、外部への送信が行われるおそれがあります。</string>
+    <!-- Section title for bots that may use every app's tools without asking. -->
+    <string name="tool_policy_allow_all_title">常に許可（すべてのアプリ）</string>
+    <!-- Warning under the Always Allow switches. -->
+    <string name="tool_policy_always_risk">このボットは、このアプリのツールを確認なしで使えます。データを変更するツールも含まれます。</string>
+    <!-- Section title for bots that may use this app's tools without asking; also in the install preview. -->
+    <string name="tool_policy_always_title">常に許可</string>
+    <!-- Explanation shown when the tool list is expanded. -->
+    <string name="tool_policy_read_only_hint">オンにしたツールは読み取り専用として扱われ、すべてのボットが確認なしで呼び出せます</string>
+    <!-- Caption in place of the switch for tools the app itself marks read-only. -->
+    <string name="tool_policy_read_only_tag">読み取り専用</string>
+    <!-- Button that ends a bot's open time window. -->
+    <string name="tool_policy_stop">停止</string>
+    <!-- Collapsible section title for the app's tools. -->
+    <string name="tool_policy_tools_title">ツール</string>
+    <!-- Next step under that problem. -->
+    <string name="tool_policy_unreadable_next">現在は毎回確認を求められ、ここでは変更できません。</string>
+    <!-- Problem title when the tool policy can't be read. -->
+    <string name="tool_policy_unreadable_title">設定を読み込めません</string>
+    <!-- Row for an open time window. Arguments: the bot's name, the time it ends. -->
+    <string name="tool_policy_window_until">%1$sは%2$sまで許可</string>
+    <!-- Section title for the time windows during which a bot may act without asking. -->
+    <string name="tool_policy_windows_title">一時的に許可</string>
+    <!-- Icon button on a downloaded transfer: opens the dialog asking what to clean up. -->
+    <string name="transfer_clean_up">削除</string>
+    <!-- Destructive action in the cleanup dialog: remove the record and also delete the downloaded file on this phone. -->
+    <string name="transfer_cleanup_delete_file">このデバイス上のファイルも削除</string>
+    <!-- Action in the cleanup dialog: remove the transfer record, keep the downloaded file. -->
+    <string name="transfer_cleanup_record_only">記録だけ削除</string>
+    <!-- Title of the cleanup dialog for a downloaded transfer. Argument: the file's name. -->
+    <string name="transfer_cleanup_title">「%1$s」を削除</string>
+    <!-- Icon button on a transfer: remove it from the strip without deleting anything. -->
+    <string name="transfer_clear">クリア</string>
+    <!-- Title of the sheet listing downloaded transfers. -->
+    <string name="transfer_downloaded">ダウンロード済み</string>
+    <!-- Caption button above the chat composer: opens the list of downloaded transfers. Argument: their count. -->
+    <plurals name="transfer_downloaded_count">
+        <item quantity="other">%1$d件ダウンロード済み</item>
+    </plurals>
+    <!-- Line under an upload: it finished, but the link never reached the room. Argument: the home server's reason, shown as is. -->
+    <string name="transfer_link_not_sent">アップロードは完了しましたが、リンクを送信できませんでした：%1$s</string>
+    <!-- Icon button on a downloaded transfer: open the file. -->
+    <string name="transfer_open">開く</string>
+    <!-- Line under a paused transfer. First argument: the transferred size, already formatted as a byte count; second: the home server's reason, shown as is. -->
+    <string name="transfer_paused_progress">一時停止、%1$s転送済み：%2$s</string>
+    <!-- Line under a paused transfer without a reason. Argument: the transferred size, already formatted as a byte count. -->
+    <string name="transfer_paused_waiting">接続の回復後に転送を再開、%1$s転送済み</string>
+    <!-- Text button on a finished upload whose link wasn't sent: send the link again. -->
+    <string name="transfer_resend_link">リンクを再送</string>
+    <!-- Line under a transfer that lives in another room: that room isn't in the home server's room list. -->
+    <string name="transfer_room_missing">送信先のルームが自宅サーバーのリストにありません</string>
+    <!-- Caption under a transfer that was sent to another room. Argument: that room's name. -->
+    <string name="transfer_sent_to">%1$sに送信</string>
+    <!-- Icon button on a downloaded transfer: share the file. -->
+    <string name="transfer_share">共有</string>
+    <!-- Text button on an upload whose link hasn't been sent: cancel it. -->
+    <string name="transfer_stop_sending">送信を中止</string>
+    <!-- Name of the notification channel for audio playing in plugin pages. -->
+    <string name="page_media_channel">再生</string>
+    <!-- Log when the media foreground service cannot be started from the background. Arguments: reason, foreground service reason. -->
+    <string name="page_media_start_failed">バックグラウンドでサービスを開始できません。再生は続け、後で再試行します：%1$s（フォアグラウンドサービス：%2$s）</string>
+    <!-- 通知設定ページのスイッチ：オン = フォアグラウンドサービスがホームサーバーとのトンネルを維持し、新着メッセージはアプリがローカル通知で表示する。オフ = UnifiedPush で通知（ADR-0003）。 -->
+    <string name="notification_title">通知</string>
+    <string name="notification_system">システム通知</string>
+    <string name="notification_push">プッシュ通知</string>
+    <string name="notification_channel_message">チャットメッセージ</string>
+    <string name="notification_channel_confirmation">確認待ち</string>
+    <string name="notification_channel_plugin">アプリからの通知</string>
+    <string name="notification_value_on">オン</string>
+    <string name="notification_value_off">オフ</string>
+    <string name="notification_value_registering">登録中</string>
+    <string name="notification_value_not_set">未設定</string>
+    <string name="notification_value_unavailable">受信できません</string>
+    <string name="notification_channel_created">作成済み</string>
+    <string name="notification_channel_not_created">未作成</string>
+    <string name="push_status_no_endpoint">未登録</string>
+    <string name="push_status_registering">登録中</string>
+    <string name="push_status_registered">登録済み</string>
+    <string name="push_status_unavailable">プッシュを受信できません。システムの通知とディストリビューターを確認してください</string>
+    <string name="push_status_failed_transport">登録に失敗しました。自宅サーバーに接続できたらもう一度お試しください</string>
+    <string name="push_status_failed_unauthorized">登録に失敗しました。ペアリングをやり直してください</string>
+    <string name="push_status_failed_upstream">登録に失敗しました。自宅サーバーでエラーが発生しました</string>
+    <string name="push_status_failed_not_ready">登録に失敗しました。チャットの接続が整うまでお待ちください</string>
+    <string name="push_status_failed_invalid_input">登録に失敗しました。プッシュアドレスが正しくありません</string>
+    <string name="keepalive_toggle">接続を維持</string>
+    <!-- システムで通知が無効のとき、スイッチの下に出る説明：サービスは動き続けるが、新着メッセージは通知されない。 -->
+    <string name="keepalive_without_permission">通知権限がないため、新着メッセージは通知として表示されません。接続は維持されます。</string>
+    <string name="message_summary_files">[ファイル]</string>
+    <string name="message_summary_image">[画像]</string>
+    <string name="message_summary_undecryptable">[暗号化されたメッセージ]</string>
+    <string name="message_summary_redacted">[削除されたメッセージ]</string>
+    <!-- Device verification (ADR-0046): confirm a new device with an already-verified one. -->
+    <string name="common_ok">OK</string>
+    <string name="verification_title">デバイスの確認</string>
+    <string name="verification_incoming_message">このデバイスで「%1$s」を確認しますか？</string>
+    <string name="verification_accept">確認を開始</string>
+    <string name="verification_deny">拒否</string>
+    <string name="verification_same">同じ</string>
+    <string name="verification_different">違う</string>
+    <string name="verification_compare_title">両方のデバイスに同じものが表示されていますか？</string>
+    <string name="verification_requested">もう一方のデバイスの承認を待っています…</string>
+    <string name="verification_requested_hint">もう一方のスマホでWontonを開いてください。</string>
+    <string name="verification_starting">確認を準備しています…</string>
+    <string name="verification_waiting_for_other">もう一方のデバイスの確認を待っています…</string>
+    <string name="verification_fetching_keys">鍵を取得しています…</string>
+    <string name="verification_done_here">確認できました。以前のメッセージも読めます。</string>
+    <string name="verification_done_other">確認が完了しました</string>
+    <string name="verification_retry">再試行</string>
+    <string name="verification_use_recovery_key">復旧キーを入力</string>
+    <string name="verification_verify_with_other_device">別のデバイスで確認</string>
+    <string name="verification_cancelled_by_me">確認を取り消しました。</string>
+    <string name="verification_cancelled_by_other">もう一方のデバイスが確認を取り消しました。</string>
+    <string name="verification_cancelled_mismatch">両方のデバイスで絵文字が一致しなかったため、確認を取り消しました。</string>
+    <string name="verification_cancelled_timeout">もう一方のデバイスが時間内に応答しなかったため、確認を取り消しました。</string>
+    <string name="verification_cancelled_accepted_elsewhere">別のデバイスがこの確認を引き継ぎました。</string>
+    <string name="verification_cancelled_concurrent_request">同時に別の確認リクエストが届いたため、両方取り消しました。</string>
+    <string name="verification_cancelled_keys_missing">もう一方のデバイスから鍵をすべて受け取れなかったため、以前のメッセージは開けません。</string>
+    <string name="verification_cancelled_failed">問題が発生したため、確認が完了しませんでした。</string>
+    <string name="verification_cancelled_other">確認が完了しませんでした。</string>
+    <!-- Localized names of the 64 SAS verification emoji, by index in the Matrix spec table
+         (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0). -->
+    <string-array name="verification_emoji">
+        <item>犬</item>
+        <item>猫</item>
+        <item>ライオン</item>
+        <item>馬</item>
+        <item>ユニコーン</item>
+        <item>ブタ</item>
+        <item>ゾウ</item>
+        <item>うさぎ</item>
+        <item>パンダ</item>
+        <item>ニワトリ</item>
+        <item>ペンギン</item>
+        <item>亀</item>
+        <item>魚</item>
+        <item>たこ</item>
+        <item>ちょうちょ</item>
+        <item>花</item>
+        <item>木</item>
+        <item>サボテン</item>
+        <item>きのこ</item>
+        <item>地球</item>
+        <item>月</item>
+        <item>雲</item>
+        <item>炎</item>
+        <item>バナナ</item>
+        <item>リンゴ</item>
+        <item>いちご</item>
+        <item>とうもろこし</item>
+        <item>ピザ</item>
+        <item>ケーキ</item>
+        <item>ハート</item>
+        <item>スマイル</item>
+        <item>ロボット</item>
+        <item>帽子</item>
+        <item>めがね</item>
+        <item>スパナ</item>
+        <item>サンタ</item>
+        <item>いいね</item>
+        <item>傘</item>
+        <item>砂時計</item>
+        <item>時計</item>
+        <item>ギフト</item>
+        <item>電球</item>
+        <item>本</item>
+        <item>鉛筆</item>
+        <item>クリップ</item>
+        <item>はさみ</item>
+        <item>錠前</item>
+        <item>鍵</item>
+        <item>金槌</item>
+        <item>電話機</item>
+        <item>旗</item>
+        <item>電車</item>
+        <item>自転車</item>
+        <item>飛行機</item>
+        <item>ロケット</item>
+        <item>トロフィー</item>
+        <item>ボール</item>
+        <item>ギター</item>
+        <item>トランペット</item>
+        <item>ベル</item>
+        <item>いかり</item>
+        <item>ヘッドホン</item>
+        <item>フォルダー</item>
+        <item>ピン</item>
+    </string-array>
+    <string name="secret_section_title">このアプリに必要な鍵</string>
+    <string name="secret_optional">任意</string>
+    <string name="secret_get_one">取得先</string>
+    <string name="secret_show">値を表示</string>
+    <string name="secret_hide">値を隠す</string>
+    <string name="secret_edit">変更</string>
+    <string name="secret_clear">クリア</string>
+    <string name="secret_filled">入力済み</string>
+    <string name="secret_unfilled">未入力</string>
+    <string name="pin_to_bar">ナビゲーションバーに追加</string>
+    <!-- サイドバーの行を長押しして、アプリのページをナビゲーションバーから外す。 -->
+    <string name="unpin_from_bar">ナビゲーションバーから外す</string>
+    <!-- サイドバーに表示するアプリの名前。 -->
+    <string name="sidebar_title">Wonton</string>
+    <!-- ルートページの左上にあるサイドバーを開くボタン。 -->
+    <string name="sidebar_open">サイドバー</string>
+    <!-- サイドバーが開いているときにメイン画面を覆う層。タップするとサイドバーを閉じる。 -->
+    <string name="sidebar_collapse">サイドバーを閉じる</string>
+    <!-- サイドバーのタイトル下の状態：自宅サーバーに接続済み。 -->
+    <string name="sidebar_status_connected">自宅サーバー · 接続済み</string>
+    <!-- サイドバーのタイトル下の状態：自宅サーバーに接続中。 -->
+    <string name="sidebar_status_connecting">自宅サーバー · 接続中</string>
+    <!-- サイドバーのタイトル下の状態：自宅サーバーに接続できない。 -->
+    <string name="sidebar_status_disconnected">自宅サーバー · 接続できない</string>
+    <!-- サイドバーのタイトル下の状態：まだ自宅サーバーとペアリングしていない。 -->
+    <string name="sidebar_status_not_configured">まだ自宅サーバーに接続していません</string>
+    <!-- サイドバーでチャット一覧に戻る行。 -->
+    <string name="sidebar_chats">チャット</string>
+    <!-- サイドバーでストアを開く行。 -->
+    <string name="sidebar_store">ストア</string>
+    <!-- サイドバーで開けるアプリの上にある小見出し。 -->
+    <string name="sidebar_my_apps">マイアプリ</string>
+    <!-- マイアプリの右側でアプリ一覧を開くリンク。 -->
+    <string name="sidebar_all">すべて</string>
+    <!-- アプリが8個を超えるときのサイドバーの最後の行。アプリ一覧を開く。 -->
+    <string name="sidebar_all_apps">すべてのアプリ</string>
+    <!-- サイドバー下部で設定を開く丸いボタン。 -->
+    <string name="sidebar_settings">設定</string>
+    <!-- サイドバー下部で新しいチャットを始めるアクセント色のカプセル。 -->
+    <string name="sidebar_new_chat">新しいチャット</string>
+    <!-- ストアの行にある赤い数字バッジの読み上げ：アップデートのあるアプリの数。 -->
+    <string name="sidebar_updates_badge">%1$d件のアップデートあり</string>
+    <!-- アプリの行にある赤い点の読み上げ：このアプリにアップデートがある。 -->
+    <string name="sidebar_updatable">アップデートあり</string>
+    <!-- アプリの行にある小さなピンの読み上げ：このアプリのページがナビゲーションバーに固定されている。 -->
+    <string name="sidebar_pinned">ナビゲーションバーに固定済み</string>
+    <!-- アップデートのあるアプリをまとめて更新する前のボトムシートのタイトル。 -->
+    <string name="store_update_all_title">%1$d個のアプリをアップデート</string>
+    <!-- そのシートですべてのアップデートを始めるボタン。 -->
+    <string name="store_update_all">すべてアップデート</string>
+    <!-- そのシートを開くツールバーのダウンロードアイコンの読み上げ。 -->
+    <string name="store_update_all_a11y">すべてアップデート、%1$d件</string>
+    <!-- 一行の注意：このアプリのアップデートは確認してから始まる。 -->
+    <string name="sidebar_needs_attention">対応が必要です</string>
+</resources>
