@@ -38,6 +38,9 @@ impl Deref for Phone {
 
 impl Phone {
     pub(crate) fn open(dir: &std::path::Path) -> Self {
+        // 和 chat 用同一个装订器（一次全局初始化）：`WONTON_TEST_LOG` 有值时这些测试的日志也写得出来，
+        // 且两边不会各自抢先装一个、把对方的捕获层挤掉。
+        crate::chat::support::init_test_logging();
         Self::with_network(dir, Network::DirectOnly)
     }
 

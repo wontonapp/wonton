@@ -4,11 +4,13 @@
 //! 任务里：等它的请求超时走了，建连也不会被丢下重来。
 
 mod attempt;
+mod check;
 mod ports;
-mod streams;
+pub(crate) mod streams;
 mod suspend;
 
 use attempt::Attempt;
+use check::SlowPath;
 pub use streams::TunnelStreamStats;
 use streams::{StreamCounters, StreamLease, open_stream};
 pub use suspend::SuspendClock;
@@ -98,6 +100,8 @@ pub struct TunnelStats {
     pub disconnects: u32,
     /// 当前连接发出的 QUIC 包数。
     pub sent_packets: u64,
+    /// 当前连接收到的 QUIC 包数：判活用确认帧，这只是给日志和测试用的。
+    pub received_packets: u64,
     /// 当前连接判定丢失的 QUIC 包数。
     pub lost_packets: u64,
     /// 距上次确认连上，建连已经失败的次数，连上就清零：判断“这一轮是不是已经失败过”用。给人看的
@@ -168,31 +172,6 @@ struct Inner {
     datagrams: Mutex<Option<Arc<crate::udp::mux::DatagramMux>>>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct CheckedPath {
-    conn_id: usize,
-    remote: TransportAddr,
-    relay: bool,
-}
-
-impl CheckedPath {
-    fn selected(conn: &Connection) -> Option<Self> {
-        let paths = conn.paths();
-        let path = paths.iter().find(|path| path.is_selected())?;
-        Some(Self {
-            conn_id: conn.stable_id(),
-            remote: path.remote_addr().clone(),
-            relay: path.is_relay(),
-        })
-    }
-}
-
-#[derive(Debug)]
-struct SlowPath {
-    path: CheckedPath,
-    samples: u8,
-}
-
 /// 隧道上的一条流，已写入请求类型。
 #[derive(Debug)]
 pub(crate) struct TunnelStream {
@@ -204,6 +183,11 @@ pub(crate) struct TunnelStream {
 }
 
 impl TunnelStream {
+    /// 这条流所属客户端的计数：判活看它记下的新数据。
+    pub(crate) fn counters(&self) -> &Arc<StreamCounters> {
+        self._lease.counters()
+    }
+
     /// 复位流的两个方向。
     pub(crate) fn abort(&mut self) {
         forward::abort(&mut self.send, &mut self.recv);
@@ -296,151 +280,6 @@ impl TunnelClient {
         Ok(started.elapsed())
     }
 
-    /// 确认现有连接仍然可用。App 从挂起中恢复（回到前台）时调用。
-    ///
-    /// 挂起超过路径的空闲超时后，服务端会放弃这条连接，关闭帧却到不了挂起的设备：不检查的话，要等本机的
-    /// 空闲超时（iroh 默认 30 秒）才发现，期间所有请求都挂着。这里限时做一次往返，没有回应就关掉旧连接、
-    /// 立刻建新连接。检查期间新开的流等检查结果，再走确认过的连接或新连接。没有连接时等同于 [`ping`]。
-    ///
-    /// [`ping`]: Self::ping
-    pub async fn revalidate(&self) -> Result<Duration, TunnelError> {
-        if self.inner.closed.load(Ordering::SeqCst) {
-            return Err(TunnelError::Closed);
-        }
-        let started = Instant::now();
-        let attempt = self.start_revalidation();
-        let conn = match attempt.finished().await {
-            Some(result) => result?,
-            None => return self.ping().await,
-        };
-        if let Some(reason) = conn.close_reason() {
-            return Err(from_connection_error(&reason));
-        }
-        if !attempt.revalidating {
-            self.ping_on(&conn).await?;
-        }
-        self.inner.confirm(conn.stable_id());
-        Ok(started.elapsed())
-    }
-
-    fn start_revalidation(&self) -> Arc<Attempt> {
-        lock(&self.inner.pacing).reset();
-        let mut current = lock(&self.inner.attempt);
-        let mut live = None;
-        if let Some(attempt) = current.as_ref() {
-            match attempt.outcome() {
-                None => return attempt.clone(),
-                Some(Ok(conn)) if was_rejected(&conn) => return attempt.clone(),
-                Some(Err(TunnelError::Unauthorized)) => return attempt.clone(),
-                Some(result) => {
-                    let usable = match &result {
-                        Ok(conn) => conn.close_reason().is_none(),
-                        Err(_) => true,
-                    };
-                    if usable
-                        && attempt.recently_revalidated(suspend::now(self.inner.clock.as_deref()))
-                    {
-                        return attempt.clone();
-                    }
-                    live = result.ok().filter(|conn| conn.close_reason().is_none());
-                }
-            }
-        }
-        let attempt = if let Some(conn) = live {
-            Attempt::spawn(
-                false,
-                true,
-                &self.inner,
-                self.clone().confirm_or_replace(conn),
-            )
-        } else {
-            let client = self.clone();
-            Attempt::spawn(true, true, &self.inner, async move {
-                let conn = client.inner.clone().dial().await?;
-                if let Err(err) = client.ping_on(&conn).await {
-                    client
-                        .inner
-                        .set_status(TunnelStatus::Disconnected(err.clone()));
-                    return Err(err);
-                }
-                Ok(conn)
-            })
-        };
-        *current = Some(attempt.clone());
-        attempt
-    }
-
-    /// 若现在 [`revalidate`]，会用多长的确认窗口。给测试把「慢路径的证据是否改变了决策」钉成确定性
-    /// 断言用：窗口只取决于连接、路径和探测证据，与机器负载无关。
-    ///
-    /// [`revalidate`]: Self::revalidate
-    #[doc(hidden)]
-    pub fn next_revalidate_window(&self) -> Duration {
-        self.inner
-            .live_connection()
-            .map_or(REVALIDATE_DEADLINE, |conn| self.revalidate_deadline(&conn))
-    }
-
-    /// 限时确认隧道真的通：有连接时在它上面做一次往返，没有回应就断开它，连接状态和路径随之更新；没有连接时
-    /// 等同于 [`ping`]。
-    ///
-    /// QUIC 自己的判断不够：心跳和确认这些小包还能往返时，连接算活着，请求却可能过不去（#154）。和
-    /// [`revalidate`] 不同，检查期间新开的流照常走现有连接，所以可以定时调用，不拖慢请求。
-    ///
-    /// [`ping`]: Self::ping
-    /// [`revalidate`]: Self::revalidate
-    pub async fn probe(&self, deadline: Duration) -> Result<Duration, TunnelError> {
-        let Some(conn) = self.inner.live_connection() else {
-            return self.ping().await;
-        };
-        let path = CheckedPath::selected(&conn);
-        let started = Instant::now();
-        match tokio::time::timeout(deadline, self.ping_on(&conn)).await {
-            Ok(Ok(())) => {
-                let elapsed = started.elapsed();
-                if self.inner.is_current(conn.stable_id()) && path == CheckedPath::selected(&conn) {
-                    self.record_checked_path(path, elapsed);
-                }
-                Ok(elapsed)
-            }
-            Ok(Err(err)) => Err(err),
-            Err(_) => {
-                info!(?deadline, "现有连接限时内没有回应，断开");
-                let err = TunnelError::transport("连接限时内没有回应");
-                // 先断开再写状态：订阅状态的人读路径时，这条连接已经不算了。
-                conn.close(CLOSE_NORMAL, b"no response");
-                self.inner
-                    .mark(conn.stable_id(), TunnelStatus::Disconnected(err.clone()));
-                Err(err)
-            }
-        }
-    }
-
-    fn record_checked_path(&self, path: Option<CheckedPath>, elapsed: Duration) {
-        let mut proof = lock(&self.inner.slow_path);
-        let Some(path) = path.filter(|_| elapsed >= REVALIDATE_DEADLINE) else {
-            *proof = None;
-            return;
-        };
-        match proof.as_mut() {
-            Some(previous) if previous.path == path => {
-                previous.samples = previous.samples.saturating_add(1).min(2);
-            }
-            _ => *proof = Some(SlowPath { path, samples: 1 }),
-        }
-    }
-
-    fn revalidate_deadline(&self, conn: &Connection) -> Duration {
-        let Some(path) = CheckedPath::selected(conn) else {
-            return REVALIDATE_DEADLINE;
-        };
-        let slow = lock(&self.inner.slow_path);
-        let proven_slow = slow
-            .as_ref()
-            .is_some_and(|proof| proof.path == path && proof.samples == 2);
-        revalidation_window(path.relay, proven_slow)
-    }
-
     /// 别等了，马上重试：清零退避，取消正在进行的建连。回到前台、网络变化、主人点“重试”时调用。
     ///
     /// 换网之后，旧网络上的握手已经没有意义，它的重传间隔也退避到了几秒。现有连接不动，要不要换由
@@ -468,6 +307,7 @@ impl TunnelClient {
             let current = conn.stats();
             stats.sent_packets = current.sent_packets;
             stats.lost_packets = current.lost_packets;
+            stats.received_packets = current.udp_rx.datagrams;
         }
         stats
     }
@@ -539,6 +379,7 @@ impl TunnelClient {
             .map_err(|err| from_read_exact_error(&err))?;
         let status = Status::from_byte(byte[0])
             .ok_or_else(|| TunnelError::protocol(format!("未知的状态字节 {}", byte[0])))?;
+        self.inner.streams.note_received(1);
         self.inner.confirm(conn_id);
         match status {
             Status::Ok => Ok(()),
@@ -548,24 +389,6 @@ impl TunnelClient {
             Status::PortNotDeclared => Err(TunnelError::protocol("插件没有声明请求的端口和协议")),
             Status::PluginNotRunning => Err(TunnelError::protocol("请求指定的插件没有运行")),
         }
-    }
-
-    /// 限时在 `conn` 上做一次往返；没有回应或已经出错，就关掉它，建一条新连接。
-    async fn confirm_or_replace(self, conn: Connection) -> Result<Connection, TunnelError> {
-        let deadline = self.revalidate_deadline(&conn);
-        match tokio::time::timeout(deadline, self.ping_on(&conn)).await {
-            Ok(Ok(())) => return Ok(conn),
-            Ok(Err(err)) => info!("现有连接不可用，重新建连：{err}"),
-            Err(_) => info!(?deadline, "现有连接限时内没有回应，换新连接"),
-        }
-        conn.close(CLOSE_NORMAL, b"no response");
-        let conn = self.inner.clone().dial().await?;
-        if let Err(err) = self.ping_on(&conn).await {
-            self.inner
-                .set_status(TunnelStatus::Disconnected(err.clone()));
-            return Err(err);
-        }
-        Ok(conn)
     }
 
     /// 在指定的连接上做一次往返，不经过 [`Self::connection`]。

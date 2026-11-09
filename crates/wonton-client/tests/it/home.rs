@@ -286,7 +286,7 @@ async fn a_failing_address_refresh_keeps_the_connection_usable() {
     assert!(view.details.addresses_stale, "{view:?}");
     assert_eq!(view.status, HomeStatus::Connected);
     let (status, _) = get(&proxy, WEB_URL, "/still-stale", true).await;
-    assert_eq!(status, 200);
+    assert_eq!(status, 200, "{:?}", phone.home());
 }
 
 #[tokio::test]

@@ -27,7 +27,7 @@ mod send;
 mod server_switch;
 mod stale_join;
 mod subscriptions;
-mod support;
+pub(crate) mod support;
 mod sync_order;
 mod timeline;
 mod upload_progress;

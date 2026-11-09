@@ -10,6 +10,7 @@ mod pacing;
 mod pairing;
 mod peer_pair;
 mod plugin_ports;
+mod probe;
 mod relay;
 mod relay_table;
 mod reset_resume;

@@ -69,9 +69,10 @@ impl PortStream {
     pub async fn forward(mut self, tcp: TcpStream) {
         let (mut read, mut write) = tcp.into_split();
         let stream = &mut self.stream;
+        let delivered = stream.counters().clone();
         let pumped = tokio::try_join!(
             forward::tcp_to_tunnel(&mut read, &mut stream.send),
-            forward::tunnel_to_tcp(&mut stream.recv, &mut write),
+            forward::tunnel_to_tcp(&mut stream.recv, &mut write, Some(&delivered)),
         );
         if let Err(err) = pumped {
             debug!("plugin port connection ended with an error: {err}");

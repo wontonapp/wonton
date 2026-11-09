@@ -139,6 +139,27 @@ pub enum Timeouts {
     Short,
 }
 
+/// 收包数静止多久算“对端不再发包”：盖住最后一个延迟转发落地到手机的那一段。
+const QUIET: Duration = Duration::from_millis(300);
+
+/// 开始丢包之后先等切换前的在途包全落地：排在延迟转发里的按计数排空，再要一个静默窗口排掉内核里最后几毫秒。
+/// 不排干净，它们会晚一步到达，在确认窗口里冒充“连接还活着”。
+pub async fn wait_until_quiet(flaky: &crate::stall::Flaky, phone: &Phone) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while flaky.pending() > 0 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(tokio::time::Instant::now() < deadline, "延迟转发一直没排空");
+    }
+    loop {
+        let before = phone.client.stats().received_packets;
+        tokio::time::sleep(QUIET).await;
+        if phone.client.stats().received_packets == before {
+            return;
+        }
+        assert!(tokio::time::Instant::now() < deadline, "对端一直没停下来");
+    }
+}
+
 /// 只走回环地址的 endpoint：不连中继，不做地址发现。
 pub async fn loopback_endpoint(key: SecretKey, port: u16, timeouts: Timeouts) -> Endpoint {
     endpoint_on((Ipv4Addr::LOCALHOST, port).into(), key, timeouts).await
@@ -178,16 +199,32 @@ pub struct Upstream {
 }
 
 impl Upstream {
+    /// 慢慢回正文的上游：请求路径以 `/slow` 开头时，正文分成 60 块、每块隔 100ms，共约 6 秒。
+    pub async fn spawn_slow() -> Self {
+        Self::start(Some((60, Duration::from_millis(100)))).await
+    }
+
     pub async fn spawn() -> Self {
+        Self::start(None).await
+    }
+
+    async fn start(slow: Option<(usize, Duration)>) -> Self {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let addr = listener.local_addr().unwrap();
         let hits = Arc::new(AtomicUsize::new(0));
         let counter = hits.clone();
         let task = tokio::spawn(async move {
             loop {
-                let (tcp, _) = listener.accept().await.unwrap();
+                let (mut tcp, _) = listener.accept().await.unwrap();
                 let counter = counter.clone();
-                tokio::spawn(async move { serve_one(tcp, &counter).await });
+                let slow = slow.filter(|_| true);
+                tokio::spawn(async move {
+                    if let Some((chunks, gap)) = slow {
+                        serve_slow(&mut tcp, &counter, chunks, gap).await;
+                    } else {
+                        serve_one(&mut tcp, &counter).await;
+                    }
+                });
             }
         });
         Self { addr, hits, task }
@@ -204,16 +241,38 @@ impl Drop for Upstream {
     }
 }
 
-async fn serve_one(mut tcp: TcpStream, hits: &AtomicUsize) {
-    let head = read_head(&mut tcp).await;
-    let path = head.split_whitespace().nth(1).unwrap_or("/").to_owned();
-    hits.fetch_add(1, Ordering::SeqCst);
+async fn serve_one(tcp: &mut TcpStream, hits: &AtomicUsize) {
+    let path = answer_head(tcp, hits).await;
     let response = format!(
         "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{path}",
         path.len()
     );
     tcp.write_all(response.as_bytes()).await.unwrap();
     tcp.shutdown().await.unwrap();
+}
+
+/// 慢慢回：正文是路径重复 `chunks` 遍，每块隔 `gap`。
+async fn serve_slow(tcp: &mut TcpStream, hits: &AtomicUsize, chunks: usize, gap: Duration) {
+    let path = answer_head(tcp, hits).await;
+    let head = format!(
+        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+        path.len() * chunks
+    );
+    tcp.write_all(head.as_bytes()).await.unwrap();
+    for i in 0..chunks {
+        if i > 0 {
+            tokio::time::sleep(gap).await;
+        }
+        tcp.write_all(path.as_bytes()).await.unwrap();
+    }
+    tcp.shutdown().await.unwrap();
+}
+
+/// 读掉请求头、计一次命中，返回请求路径。
+async fn answer_head(tcp: &mut TcpStream, hits: &AtomicUsize) -> String {
+    let head = read_head(tcp).await;
+    hits.fetch_add(1, Ordering::SeqCst);
+    head.split_whitespace().nth(1).unwrap_or("/").to_owned()
 }
 
 /// 逐字节读到请求头结束（空行），返回请求头文本。

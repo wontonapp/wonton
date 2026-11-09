@@ -25,7 +25,7 @@ use tokio::{
 use tracing::{Instrument, debug, debug_span, error, warn};
 
 use crate::{
-    client::{TunnelClient, TunnelStream},
+    client::{TunnelClient, TunnelStream, streams::StreamCounters},
     credential::ProxyAccess,
     error::{TunnelError, from_write_error},
     forward::{self, PumpError},
@@ -215,6 +215,7 @@ async fn relay(
     tcp_write: &mut OwnedWriteHalf,
     accepted: Instant,
 ) -> Result<(), RelayError> {
+    let counters = stream.counters().clone();
     let TunnelStream {
         send,
         recv,
@@ -223,7 +224,9 @@ async fn relay(
     } = stream;
     {
         let mut upload = pin!(forward::tcp_to_tunnel(tcp_read, send));
-        let mut download = pin!(download(client, recv, *conn_id, tcp_write, accepted));
+        let mut download = pin!(download(
+            client, recv, *conn_id, tcp_write, accepted, &counters
+        ));
         let mut upload_done = false;
         loop {
             tokio::select! {
@@ -259,6 +262,7 @@ async fn download(
     conn_id: usize,
     tcp_write: &mut OwnedWriteHalf,
     accepted: Instant,
+    delivered: &StreamCounters,
 ) -> Result<(), RelayError> {
     client
         .read_status(recv, conn_id)
@@ -273,7 +277,7 @@ async fn download(
         );
     }
     // 接受了却一直没有正文：长轮询本来就会静一会儿，这里只留个记号，和真的卡住分开看。
-    let mut body = pin!(forward::tunnel_to_tcp(recv, tcp_write));
+    let mut body = pin!(forward::tunnel_to_tcp(recv, tcp_write, Some(delivered)));
     match tokio::time::timeout(SLOW_STAGE, &mut body).await {
         Ok(result) => result.map_err(RelayError::Aborted),
         Err(_) => {

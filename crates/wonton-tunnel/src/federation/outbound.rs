@@ -256,7 +256,7 @@ async fn relay(mut stream: ForwardStream, tcp: TcpStream) {
     let (mut tcp_read, mut tcp_write) = tcp.into_split();
     if let Err(err) = tokio::try_join!(
         forward::tcp_to_tunnel(&mut tcp_read, &mut stream.send),
-        forward::tunnel_to_tcp(&mut stream.recv, &mut tcp_write),
+        forward::tunnel_to_tcp(&mut stream.recv, &mut tcp_write, None),
     ) {
         debug!("federation forwarding interrupted: {err}");
         stream.abort();
