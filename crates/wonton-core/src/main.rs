@@ -21,8 +21,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, bail};
-use hyper::Method;
-use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 use wonton_core::config::Config;
 mod serve;
