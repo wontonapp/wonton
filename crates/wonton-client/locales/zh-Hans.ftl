@@ -313,7 +313,7 @@ tabs-config-corrupt = 底栏设置文件 { $path } 已损坏：{ $reason }
 tabs-config-too-many-items = 底栏最多只能有 { $count } 项。
 tabs-config-duplicate-page = 底栏里有重复页面。
 tabs-config-plugin-page-incomplete = 插件页面缺少标题和图标。
-tabs-config-missing-fixed = 底栏缺少聊天或应用。
+tabs-config-missing-fixed = 底栏缺少聊天。
 # $path 是设置文件的路径，$reason 是原始的写入错误。
 tabs-config-write-failed = 写不了底栏设置文件 { $path }：{ $reason }
 
@@ -546,3 +546,4 @@ chat-window-ended =
 home-pairing-timeout = 配对未能在 { $seconds } 秒内完成。
 home-pairing-aborted = 配对没有完成就中断了，再试一次。
 home-pairing-failed-detail = 直连地址：{ $addresses }。中继：[{ $relays }]。已用时 { $milliseconds } 毫秒，限时 { $seconds } 秒。原因：{ $error }
+plugin-now-start-failed = 一键操作开始不了：{ $error }

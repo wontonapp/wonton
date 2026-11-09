@@ -184,7 +184,8 @@ async fn automatic_fullscreen_returns_to_previous_tab_and_overlay_can_close() {
             json!({"mode":"inline"}),
         );
         assert_eq!(response(&reply)["result"]["mode"], "inline");
-        assert_eq!(rig.app.tabs().selected, TabRef::Apps);
+        // 底栏只剩"聊天"后，进来之前所在的就是聊天页，自动退出回到它。
+        assert_eq!(rig.app.tabs().selected, TabRef::Chat);
         assert!(rig.app.tabs().overlay.is_none());
     }
 }

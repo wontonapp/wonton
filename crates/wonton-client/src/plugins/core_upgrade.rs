@@ -309,6 +309,7 @@ impl PluginsLink {
             plugins.core_upgrade = view;
             changed
         });
+        self.refresh_derived();
     }
 
     /// 写不进去只影响 App 被杀后接不接得上，这次的显示不受影响。

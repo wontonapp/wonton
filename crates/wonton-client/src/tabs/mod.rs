@@ -571,12 +571,30 @@ fn refresh_state(state: &mut TabsState, plugins: &PluginsViewModel, home: &HomeV
         if state.config.server_id.is_some() && state.config.server_id != home.server_id {
             clear_plugin_config(state);
         }
+        // 第一次配上服务器：入口都在侧边栏里，底栏重置为只有“聊天”。
+        if state.config.server_id.is_none() {
+            state.config.items = vec![StoredItem {
+                tab: TabRef::Chat,
+                page: None,
+            }];
+            state.config.displays.clear();
+        }
+        state.config.items.retain(|item| item.tab != TabRef::Apps);
         state.config.server_id = home.server_id.clone();
         config_changed = true;
         state.previous_plugins.clear();
         state.failures.clear();
         state.reloads.clear();
         state.connected = matches!(home.status, HomeStatus::Connected);
+    } else if home.server_id.is_some() {
+        // “应用”网格页不再是栏上的一项（ADR-0033）；没配对时它还在，是配对页。老安装的文件里带它，这里退场。
+        let had_apps = state
+            .config
+            .items
+            .iter()
+            .any(|item| item.tab == TabRef::Apps);
+        state.config.items.retain(|item| item.tab != TabRef::Apps);
+        config_changed |= had_apps;
     }
     update_reload_counters(state, plugins, home, server_changed);
     if let Some(installed) = &plugins.installed {
@@ -723,7 +741,12 @@ fn ensure_selection(state: &mut TabsState, plugins: &PluginsViewModel) {
         .iter()
         .any(|item| item.tab == state.selected)
     {
-        state.selected = TabRef::Apps;
+        // 没配对时回到“应用”（配对页）；配上了就回“聊天”。
+        state.selected = if state.config.server_id.is_some() {
+            TabRef::Chat
+        } else {
+            TabRef::Apps
+        };
         state.overlay = None;
         state.fullscreen = None;
     }

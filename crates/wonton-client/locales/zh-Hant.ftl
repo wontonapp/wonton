@@ -314,7 +314,7 @@ tabs-config-corrupt = 底部導覽列設定檔 { $path } 已損毀：{ $reason }
 tabs-config-too-many-items = 底部導覽列最多只能有 { $count } 個項目。
 tabs-config-duplicate-page = 底部導覽列裡有重複的頁面。
 tabs-config-plugin-page-incomplete = 應用程式頁面缺少標題和圖示。
-tabs-config-missing-fixed = 底部導覽列缺少聊天或應用程式。
+tabs-config-missing-fixed = 底部導覽列缺少聊天。
 # $path 是設定檔的路徑，$reason 是原始的寫入錯誤。
 tabs-config-write-failed = 無法寫入底部導覽列設定檔 { $path }：{ $reason }
 
@@ -547,3 +547,4 @@ chat-window-ended =
 home-pairing-timeout = 配對未能在 { $seconds } 秒內完成。
 home-pairing-aborted = 配對沒有完成就中斷了，再試一次。
 home-pairing-failed-detail = 直連位址：{ $addresses }。中繼：[{ $relays }]。已用時 { $milliseconds } 毫秒，時限 { $seconds } 秒。原因：{ $error }
+plugin-now-start-failed = 一鍵操作開始不了：{ $error }
