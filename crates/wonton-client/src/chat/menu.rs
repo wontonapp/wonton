@@ -6,6 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::mpsc;
+use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_matrix::OwnedEventId;
 use wonton_protocol::{
@@ -134,18 +135,24 @@ impl Menus {
     }
 }
 
-/// 时间线订阅发增量的出口：发给壳之前先应用到菜单上。
+/// 时间线订阅发增量的出口：发给壳之前先应用到菜单上，再带上房间面板的当前视图（ADR-0052）。
 pub(super) struct Outbox {
     sender: mpsc::UnboundedSender<TimelineUpdate>,
     menus: Arc<Mutex<Menus>>,
+    room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
 }
 
 impl Outbox {
     pub(super) fn new(
         sender: mpsc::UnboundedSender<TimelineUpdate>,
         menus: Arc<Mutex<Menus>>,
+        room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
     ) -> Self {
-        Self { sender, menus }
+        Self {
+            sender,
+            menus,
+            room_view,
+        }
     }
 
     pub(super) fn send(
@@ -156,15 +163,20 @@ impl Outbox {
         anchor: Option<String>,
     ) -> Result<(), ()> {
         lock(&self.menus).apply(&diffs);
+        let room_view = self.room_view.borrow().clone();
+        let (panel, panel_selected, entry_blocked) = match room_view {
+            Some(view) => (view.panel.clone(), view.selected.clone(), view.blocked),
+            None => (Vec::new(), None, false),
+        };
         self.sender
             .send(TimelineUpdate {
                 diffs,
                 back_pagination,
                 viewport,
                 anchor,
-                panel: Vec::new(),
-                panel_selected: None,
-                entry_blocked: false,
+                panel,
+                panel_selected,
+                entry_blocked,
             })
             .map_err(|_| ())
     }
