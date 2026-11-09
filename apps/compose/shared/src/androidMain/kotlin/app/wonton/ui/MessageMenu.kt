@@ -47,10 +47,14 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import app.wonton.client.ClientCore
 import app.wonton.protocol.MessageAction
+import app.wonton.protocol.QuotedMessage
 import app.wonton.protocol.TimelineMessage
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Copy
+import app.wonton.ui.icons.Forward
+import app.wonton.ui.icons.Reply
+import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -73,6 +77,9 @@ fun MessageMenu(
     bubble: Rect,
     visible: Rect,
     core: ClientCore,
+    onReply: (QuotedMessage) -> Unit,
+    onForward: () -> Unit,
+    onRedact: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var origin by remember { mutableStateOf(Offset.Zero) }
@@ -98,7 +105,7 @@ fun MessageMenu(
                     Box(Modifier.width(width).clearAndSetSemantics {}) {
                         BubbleSurface(message, core, false, false, Modifier, {}, {}, {})
                     }
-                    MenuSurface(message.actions, onDismiss)
+                    MenuSurface(message.actions, onReply, onForward, onRedact, onDismiss)
                 },
                 modifier = Modifier
                     .fillMaxSize()
@@ -133,35 +140,55 @@ fun MessageMenu(
 }
 
 @Composable
-private fun MenuSurface(actions: List<MessageAction>, onDismiss: () -> Unit) {
+private fun MenuSurface(
+    actions: List<MessageAction>,
+    reply: (QuotedMessage) -> Unit,
+    forward: () -> Unit,
+    redact: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val copyLabel = stringResource(R.string.message_copy)
     // 剪贴板条目的标签：别的 App 粘贴时可能显示。
     val clipLabel = stringResource(R.string.message_clip_label)
+    val replyLabel = stringResource(R.string.message_reply)
+    val forwardLabel = stringResource(R.string.message_forward)
+    val redactLabel = stringResource(R.string.message_delete_everyone)
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = WontonTheme.colors.surface.toColor(),
         shadowElevation = WontonTheme.size.menuElevation,
     ) {
         Column(Modifier.width(WontonTheme.size.menuWidth)) {
+            // 顺序照核心给的 `actions`，核心和 App 分开升级时不认识的不显示。
             actions.forEach { action ->
-                when (action) {
-                    is MessageAction.Copy -> DropdownMenuItem(
-                        text = { Text(copyLabel) },
-                        leadingIcon = {
-                            Icon(WontonIcon.Copy, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall))
-                        },
-                        onClick = {
+                val run: () -> Unit = when (action) {
+                    is MessageAction.Copy -> {
+                        {
                             scope.launch {
                                 clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(clipLabel, action.text)))
                             }
-                            onDismiss()
-                        },
-                    )
-                    // 核心和 App 分开升级时，不认识的菜单项不显示。
-                    else -> Unit
+                        }
+                    }
+                    is MessageAction.Reply -> { { reply(action.message) } }
+                    MessageAction.Forward -> forward
+                    MessageAction.Redact -> redact
                 }
+                val (label, icon) = when (action) {
+                    is MessageAction.Copy -> copyLabel to WontonIcon.Copy
+                    is MessageAction.Reply -> replyLabel to WontonIcon.Reply
+                    MessageAction.Forward -> forwardLabel to WontonIcon.Forward
+                    MessageAction.Redact -> redactLabel to WontonIcon.Trash
+                }
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    leadingIcon = { Icon(icon, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall)) },
+                    onClick = {
+                        run()
+                        onDismiss()
+                    },
+                )
             }
         }
     }

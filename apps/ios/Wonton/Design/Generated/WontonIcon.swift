@@ -59,6 +59,7 @@ enum WontonIcon: String {
     case playFill
     case qrCode
     case refresh
+    case reply
     case search
     case send
     case server

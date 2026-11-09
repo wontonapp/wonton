@@ -126,8 +126,10 @@ fun ChatRoute(
                     isReadOnly = row?.isReadOnly == true,
                     bot = viewModel.bots.directBot(row),
                     plugins = plugins,
+                    rooms = viewModel.rooms,
                     onAction = onAction,
                     onReject = { rejection = it },
+                    onOpenRoom = { navigation.openRoom = it },
                     onClose = { if (navigation.openRoom == room) navigation.closeRoom() },
                 )
             }

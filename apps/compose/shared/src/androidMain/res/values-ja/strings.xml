@@ -673,14 +673,40 @@
     <string name="message_clip_label">メッセージ</string>
     <!-- Item in the message menu: copy the message text. Android only. -->
     <string name="message_copy">コピー</string>
+    <!-- Item in the message menu: remove the message for everyone in the chat. Android only. -->
+    <string name="message_delete_everyone">全員のメッセージを削除</string>
+    <!-- Confirm button in the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_confirm">送信取り消し</string>
+    <!-- Body of the dialog that removes a message for everyone, saying the scope of it. Android only. -->
+    <string name="message_delete_everyone_message">このルームの全員の画面から消えます。</string>
+    <!-- Title of the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_title">全員のメッセージを削除しますか？</string>
+    <!-- Item in the message menu: send the message to another room. Android only. -->
+    <string name="message_forward">転送</string>
+    <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_empty">他のチャットはありません</string>
+    <!-- Title of the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_title">転送先</string>
     <!-- Fallback under an image message when it can't be decoded: the format isn't supported. Android only. -->
     <string name="message_image_format_unsupported">この画像形式はサポートされていません</string>
     <!-- Fallback under an image message when it can't be loaded and the error carries no reason. Android only. -->
     <string name="message_image_unavailable">画像を読み込めません</string>
+    <!-- Item in the message menu: reply to the message. Android only. -->
+    <string name="message_reply">返信</string>
+    <!-- Screen-reader label of the cross that stops replying above the composer. Android only. -->
+    <string name="message_reply_cancel">返信をやめる</string>
+    <!-- Short stand-in for a quoted message type that can be shown but has nothing to summarize. Android only. -->
+    <string name="message_quote_image">写真</string>
+    <!-- Short stand-in in a quote for a message type with no text, like an approval card. Android only. -->
+    <string name="message_quote_other">メッセージ</string>
+    <!-- Stand-in in a quote for a message the core couldn't load from the server. Android only. -->
+    <string name="message_quote_unavailable">元のメッセージを表示できません</string>
+    <!-- Stand-in in a quote for a message this device can't decrypt. Android only. -->
+    <string name="message_quote_undecryptable">暗号化されたメッセージ</string>
     <string name="message_image_save">アルバムに保存</string>
-    <string name="message_image_share">共有</string>
-    <string name="message_image_saved">アルバムに保存しました</string>
     <string name="message_image_save_failed">アルバムに保存できませんでした</string>
+    <string name="message_image_saved">アルバムに保存しました</string>
+    <string name="message_image_share">共有</string>
     <string name="message_image_share_failed">画像を共有できませんでした</string>
     <!-- Description of an agent row in setup when it has no account login. -->
     <string name="onboarding_agent_connection_key">APIキー</string>

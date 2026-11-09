@@ -47,6 +47,7 @@ person = { phosphor = "user-plus" }
 play = { phosphor = "play", fill = true }
 qrCode = { phosphor = "qr-code" }
 refresh = { phosphor = "arrows-clockwise" }
+reply = { phosphor = "arrow-elbow-down-left", mirror = true }
 search = { phosphor = "magnifying-glass" }
 send = { phosphor = "arrow-up" }
 server = { phosphor = "hard-drives" }

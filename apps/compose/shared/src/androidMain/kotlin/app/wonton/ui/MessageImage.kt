@@ -2,7 +2,7 @@ package app.wonton.ui
 
 import android.graphics.ImageDecoder
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,7 +40,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun MessageImage(image: ImageContent, core: ClientCore, sendState: SendState) {
+fun MessageImage(
+    image: ImageContent,
+    core: ClientCore,
+    sendState: SendState,
+    onLongPress: (() -> Unit)? = null,
+) {
     val shown = image.thumbnail ?: image.media
     val preview by loadedImage(core, shown)
     var showingViewer by remember { mutableStateOf(false) }
@@ -54,7 +59,8 @@ fun MessageImage(image: ImageContent, core: ClientCore, sendState: SendState) {
         Modifier.widthIn(max = WontonTheme.size.messageImage)
             .aspectRatio(image.ratio())
             .clip(RoundedCornerShape(WontonTheme.radii.control))
-            .clickable { showingViewer = true },
+            // 点开看图；长按给消息菜单（图片盖满气泡，菜单的手势要从这里来）。
+            .combinedClickable(onClick = { showingViewer = true }, onLongClick = { onLongPress?.invoke() }),
         contentAlignment = Alignment.Center,
     ) {
         LoadedImage(preview, ContentScale.Crop)

@@ -42,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -49,7 +51,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ReplyQuote
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonSheetAction
@@ -63,13 +67,22 @@ import kotlinx.coroutines.launch
 
 private const val MAX_LINES = 6
 
-/** 聊天页底部的输入栏。 */
+/**
+ * 聊天页底部的输入栏。`reply` 是正在回复的消息，画在输入框上方；`focusToken` 变一次就把光标放回输入框（开始回复时）。
+ * 发送时把回复对象的事件 ID 一起交给核心。
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Composer(
     roomId: String,
     draft: String,
+    reply: ReplyQuote?,
+    focusToken: Int,
+    core: ClientCore,
     onDraftChange: (String) -> Unit,
+    onSent: () -> Unit,
+    onReplySent: () -> Unit,
+    onReplyCancel: () -> Unit,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
 ) {
@@ -100,7 +113,10 @@ fun Composer(
         if (uri != null) {
             scope.launch {
                 PhotoUpload.make(context, uri).fold(
-                    onSuccess = { upload -> onAction(Action.SendImage(roomId, upload)) },
+                    onSuccess = { upload ->
+                        onAction(Action.SendImage(roomId, upload, reply?.eventId))
+                        if (reply != null) onReplySent()
+                    },
                     onFailure = { failure -> onReject(Problem(photoUnreadable, photoTryAnother, failure.message)) },
                 )
             }
@@ -112,7 +128,10 @@ fun Composer(
     val spacing = WontonTheme.spacing
     val size = WontonTheme.size
     val isEmpty = draft.isBlank()
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(focusToken) { if (focusToken > 0) focusRequester.requestFocus() }
     OnboardingChatPrompts(roomId)
+    if (reply != null) ComposerReply(reply, core, onReplyCancel)
     Row(Modifier.fillMaxWidth().padding(spacing.s4), verticalAlignment = Alignment.Bottom) {
         WontonIconButton(WontonIcon.Attach, stringResource(R.string.composer_attach), { isChoosingAttachment = true })
         ComposerField(
@@ -120,6 +139,7 @@ fun Composer(
             onDraftChange,
             pasteListener,
             modifier = Modifier.weight(1f)
+                .focusRequester(focusRequester)
                 .padding(vertical = (size.target - size.composerField) / 2)
                 .padding(end = if (isEmpty) spacing.s12 else 0.dp),
         )
@@ -130,8 +150,8 @@ fun Composer(
             exit = scaleOut(motion) + fadeOut(motion),
         ) {
             SendButton {
-                onAction(Action.SendText(roomId, draft))
-                onDraftChange("")
+                onAction(Action.SendText(roomId, draft, reply?.eventId))
+                onSent()
             }
         }
     }
@@ -151,7 +171,10 @@ fun Composer(
     pendingPaste?.let { uri ->
         PastePreviewSheet(
             uri,
-            onSend = { upload -> onAction(Action.SendImage(roomId, upload)) },
+            onSend = { upload ->
+                onAction(Action.SendImage(roomId, upload, reply?.eventId))
+                if (reply != null) onReplySent()
+            },
             onDismiss = { pendingPaste = null },
             onReject = onReject,
         )

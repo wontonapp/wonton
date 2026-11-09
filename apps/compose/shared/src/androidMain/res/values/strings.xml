@@ -736,20 +736,46 @@
     <string name="message_clip_label">Message</string>
     <!-- Item in the message menu: copy the message text. Android only. -->
     <string name="message_copy">Copy</string>
+    <!-- Item in the message menu: remove the message for everyone in the chat. Android only. -->
+    <string name="message_delete_everyone">Delete for everyone</string>
+    <!-- Confirm button in the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_confirm">Delete</string>
+    <!-- Body of the dialog that removes a message for everyone, saying the scope of it. Android only. -->
+    <string name="message_delete_everyone_message">It disappears from the chat for everyone in this room.</string>
+    <!-- Title of the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_title">Delete this message for everyone?</string>
+    <!-- Item in the message menu: send the message to another room. Android only. -->
+    <string name="message_forward">Forward</string>
+    <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_empty">No other chats</string>
+    <!-- Title of the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_title">Forward to</string>
     <!-- Fallback under an image message when it can't be decoded: the format isn't supported. Android only. -->
     <string name="message_image_format_unsupported">This image format isn\'t supported</string>
     <!-- Fallback under an image message when it can't be loaded and the error carries no reason. Android only. -->
     <string name="message_image_unavailable">Can\'t load this image</string>
-    <!-- Label of the fullscreen viewer action that saves the picture into the system gallery. Android only. -->
-    <string name="message_image_save">Save to gallery</string>
+    <!-- Item in the message menu: reply to the message. Android only. -->
+    <string name="message_reply">Reply</string>
     <!-- Label of the fullscreen viewer action that hands the picture to the system share sheet. Android only. -->
     <string name="message_image_share">Share</string>
+    <!-- Label of the fullscreen viewer action that saves the picture into the system gallery. Android only. -->
+    <string name="message_image_save">Save to gallery</string>
     <!-- Notice after the picture was saved into the gallery. Android only. -->
     <string name="message_image_saved">Saved to the gallery</string>
-    <!-- Notice when saving the picture into the gallery failed. Android only. -->
-    <string name="message_image_save_failed">Couldn\'t save to the gallery</string>
     <!-- Notice when handing the picture to the share sheet failed. Android only. -->
     <string name="message_image_share_failed">Couldn\'t share this picture</string>
+    <!-- Notice when saving the picture into the gallery failed. Android only. -->
+    <string name="message_image_save_failed">Couldn\'t save to the gallery</string>
+    <!-- Screen-reader label of the cross that stops replying above the composer. Android only. -->
+    <string name="message_reply_cancel">Stop replying</string>
+    <!-- Short stand-in for a quoted message type that can be shown but has nothing to summarize. Android only. -->
+    <string name="message_quote_image">Photo</string>
+    <!-- Short stand-in in a quote for a message type with no text, like an approval card. Android only. -->
+    <string name="message_quote_other">Message</string>
+    <!-- Stand-in in a quote for a message the core couldn't load from the server. Android only. -->
+    <string name="message_quote_unavailable">Original message unavailable</string>
+    <!-- Stand-in in a quote for a message this device can't decrypt. Android only. -->
+    <string name="message_quote_undecryptable">Encrypted message</string>
     <!-- Description of an agent row in setup when it has no account login. -->
     <string name="onboarding_agent_connection_key">API key</string>
     <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->

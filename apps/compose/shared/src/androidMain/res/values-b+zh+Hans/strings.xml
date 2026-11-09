@@ -673,14 +673,40 @@
     <string name="message_clip_label">消息</string>
     <!-- Item in the message menu: copy the message text. Android only. -->
     <string name="message_copy">复制</string>
+    <!-- Item in the message menu: remove the message for everyone in the chat. Android only. -->
+    <string name="message_delete_everyone">撤回</string>
+    <!-- Confirm button in the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_confirm">撤回</string>
+    <!-- Body of the dialog that removes a message for everyone, saying the scope of it. Android only. -->
+    <string name="message_delete_everyone_message">这个房间里所有人都会看到它被撤回。</string>
+    <!-- Title of the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_title">对所有人生效，撤回这条消息？</string>
+    <!-- Item in the message menu: send the message to another room. Android only. -->
+    <string name="message_forward">转发</string>
+    <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_empty">没有别的聊天</string>
+    <!-- Title of the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_title">转发到</string>
     <!-- Fallback under an image message when it can't be decoded: the format isn't supported. Android only. -->
     <string name="message_image_format_unsupported">图片格式不支持</string>
     <!-- Fallback under an image message when it can't be loaded and the error carries no reason. Android only. -->
     <string name="message_image_unavailable">取不到图片</string>
+    <!-- Item in the message menu: reply to the message. Android only. -->
+    <string name="message_reply">回复</string>
+    <!-- Screen-reader label of the cross that stops replying above the composer. Android only. -->
+    <string name="message_reply_cancel">取消回复</string>
+    <!-- Short stand-in for a quoted message type that can be shown but has nothing to summarize. Android only. -->
+    <string name="message_quote_image">图片</string>
+    <!-- Short stand-in in a quote for a message type with no text, like an approval card. Android only. -->
+    <string name="message_quote_other">一条消息</string>
+    <!-- Stand-in in a quote for a message the core couldn't load from the server. Android only. -->
+    <string name="message_quote_unavailable">原消息不可用</string>
+    <!-- Stand-in in a quote for a message this device can't decrypt. Android only. -->
+    <string name="message_quote_undecryptable">加密消息</string>
     <string name="message_image_save">保存到相册</string>
-    <string name="message_image_share">分享</string>
-    <string name="message_image_saved">已保存到相册</string>
     <string name="message_image_save_failed">没能保存到相册</string>
+    <string name="message_image_saved">已保存到相册</string>
+    <string name="message_image_share">分享</string>
     <string name="message_image_share_failed">没能分享这张图片</string>
     <!-- Description of an agent row in setup when it has no account login. -->
     <string name="onboarding_agent_connection_key">key</string>

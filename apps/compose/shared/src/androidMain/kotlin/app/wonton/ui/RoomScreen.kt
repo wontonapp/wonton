@@ -1,6 +1,5 @@
 package app.wonton.ui
 
-import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +26,6 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -38,18 +36,24 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.RoomMembership
+import app.wonton.protocol.RoomRow
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineMessage
 import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.LocalWontonTopInset
+import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonDialog
+import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
@@ -100,8 +104,10 @@ fun RoomRoute(
     isReadOnly: Boolean,
     bot: BotView?,
     plugins: PluginsState,
+    rooms: List<RoomRow>,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
+    onOpenRoom: (String) -> Unit,
     onClose: () -> Unit,
 ) {
     val timeline = remember(roomId) { TimelineState() }
@@ -126,12 +132,26 @@ fun RoomRoute(
     val first = remember(core) { core.transfers() }
     val transfers by produceState(first, core) { core.transfersUpdates().collect { value = it } }
     CompositionLocalProvider(LocalFiles provides FilesContext(transfers, onAction, onReject)) {
-        RoomScreen(core, roomId, title, isDirect, isReadOnly, bot, plugins, timeline, onAction, onReject, onClose)
+        RoomScreen(
+            core,
+            roomId,
+            title,
+            isDirect,
+            isReadOnly,
+            bot,
+            plugins,
+            rooms,
+            timeline,
+            onAction,
+            onReject,
+            onOpenRoom,
+            onClose,
+        )
     }
 }
 
 /** 长按的是哪条消息，它的气泡在屏幕上的位置。 */
-private class MessageMenuTarget(val message: TimelineMessage, val bubble: Rect)
+private class MessageMenuTarget(val itemId: String, val message: TimelineMessage, val bubble: Rect)
 
 @Composable
 private fun RoomScreen(
@@ -142,13 +162,17 @@ private fun RoomScreen(
     isReadOnly: Boolean,
     bot: BotView?,
     plugins: PluginsState,
+    rooms: List<RoomRow>,
     timeline: TimelineState,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
+    onOpenRoom: (String) -> Unit,
     onClose: () -> Unit,
 ) {
     var menu by remember { mutableStateOf<MessageMenuTarget?>(null) }
-    val openMenu = { message: TimelineMessage, bounds: Rect -> menu = MessageMenuTarget(message, bounds) }
+    val openMenu = { item: TimelineItem, message: TimelineMessage, bounds: Rect ->
+        menu = MessageMenuTarget(item.id, message, bounds)
+    }
     // 菜单能画在哪儿：窗口减去系统栏和键盘。弹层是另一个窗口，在里面拿不到这些，在这里算好传进去。
     // 横屏时导航栏或挖孔在侧边，左右也要让。
     val windowSize = LocalWindowInfo.current.containerSize
@@ -161,20 +185,10 @@ private fun RoomScreen(
         (windowSize.width - safe.getRight(density, direction)).toFloat(),
         (windowSize.height - safe.getBottom(density)).toFloat(),
     )
-    // 草稿在核心里，按房间存：退出房间、重启 App 都还在。进房间读一次；先读回来之前已经打了字就不盖掉。
-    // 写只在主人改输入框时发，别把读到的初值也写回去：房间还没同步到本机时读会失败，写一个空串会把存的草稿清掉。
-    var draft by rememberSaveable(roomId) { mutableStateOf("") }
-    LaunchedEffect(core, roomId) {
-        runCatching { core.draft(roomId) }.onSuccess { stored ->
-            if (draft.isEmpty()) draft = stored?.body.orEmpty()
-        }.onFailure { failure ->
-            Log.w(TAG, "could not load the draft for this room", failure)
-        }
-    }
-    val changeDraft = { text: String ->
-        draft = text
-        onAction(Action.SetDraft(roomId, text))
-    }
+    val draft = rememberRoomDraft(core, roomId, onAction)
+    // 转发、撤回都要时间线条目的 id，菜单开着的那条。
+    var forwarding by remember { mutableStateOf<String?>(null) }
+    var redacting by remember { mutableStateOf<String?>(null) }
     // 和 Bot 的私聊：顶栏显示 Bot 的状态头像和名字（ADR-0044），名字下面不写状态文字。
     val barTitle = if (isDirect) bot?.name ?: title else title
     val barAvatar: (@Composable () -> Unit)? = if (isDirect && bot != null) {
@@ -186,30 +200,120 @@ private fun RoomScreen(
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
         Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
             WontonScreen(bar = { WontonPushedBar(barTitle, onClose, showsStatus = true, avatar = barAvatar) }) {
-                // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
-                // 房间列表倒着排、贴底，稳态下旧消息正对着顶栏：让位不能像普通滚动页那样走 contentPadding
-                // （随滚动消失，消息仍画到标题和状态栏上），视口本身要从顶栏下面开始。
-                Column(
-                    Modifier.fillMaxSize()
-                        .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
-                        .padding(top = LocalWontonTopInset.current),
-                ) {
-                    val failure = timeline.failure
-                    if (failure != null) {
-                        Box(Modifier.weight(1f).fillMaxWidth()) {
-                            ProblemView(failure) { timeline.attempt++ }
-                        }
-                    } else {
-                        val showsSender = !isDirect
-                        Messages(core, roomId, timeline, showsSender, onAction, openMenu, Modifier.weight(1f))
-                    }
-                    TransfersStrip(roomId, core)
-                    if (!isReadOnly) Composer(roomId, draft, changeDraft, onAction, onReject)
-                }
+Conversation(core, roomId, isDirect, isReadOnly, timeline, draft, onAction, onReject, openMenu)
             }
         }
-        menu?.let { target -> MessageMenu(target.message, target.bubble, visible, core) { menu = null } }
+        menu?.let { target ->
+            MessageMenu(
+                message = target.message,
+                bubble = target.bubble,
+                visible = visible,
+                core = core,
+                onReply = draft::replyTo,
+                onForward = { forwarding = target.itemId },
+                onRedact = { redacting = target.itemId },
+                onDismiss = { menu = null },
+            )
+        }
+        forwarding?.let { itemId ->
+            ForwardSheet(
+                rooms = rooms.filter { it.forwardTarget(roomId) },
+                onPick = { row ->
+                    onAction(Action.ForwardMessage(roomId, itemId, row.roomId))
+                    onOpenRoom(row.roomId)
+                },
+                onDismiss = { forwarding = null },
+            )
+        }
+        redacting?.let { itemId ->
+            RedactConfirm(
+                onConfirm = {
+                    onAction(Action.RedactMessage(roomId, itemId))
+                    redacting = null
+                },
+                onDismiss = { redacting = null },
+            )
+        }
     }
+}
+
+/** 消息列表、传输条和输入栏。打开失败时列表位置换成原因和重试。 */
+@Composable
+private fun Conversation(
+    core: ClientCore,
+    roomId: String,
+    isDirect: Boolean,
+    isReadOnly: Boolean,
+    timeline: TimelineState,
+    draft: RoomDraft,
+    onAction: (Action) -> Unit,
+    onReject: (Problem) -> Unit,
+    onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
+) {
+    // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
+    // 房间列表倒着排、贴底，稳态下旧消息正对着顶栏：让位不能像普通滚动页那样走 contentPadding
+    // （随滚动消失，消息仍画到标题和状态栏上），视口本身要从顶栏下面开始。
+    Column(
+        Modifier.fillMaxSize()
+            .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
+            .padding(top = LocalWontonTopInset.current),
+    ) {
+        val failure = timeline.failure
+        if (failure != null) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                ProblemView(failure) { timeline.attempt++ }
+            }
+        } else {
+            Messages(
+                core,
+                roomId,
+                timeline,
+                showsSender = !isDirect,
+                onAction = onAction,
+                onOpenMenu = onOpenMenu,
+                onReply = { message -> message.replyAction?.let { draft.replyTo(it.message) } },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        TransfersStrip(roomId, core)
+        if (!isReadOnly) {
+            Composer(
+                roomId = roomId,
+                draft = draft.text,
+                reply = draft.reply,
+                focusToken = draft.focusToken,
+                core = core,
+                onDraftChange = draft::change,
+                onSent = draft::sent,
+                onReplySent = draft::replySent,
+                onReplyCancel = draft::stopReplying,
+                onAction = onAction,
+                onReject = onReject,
+            )
+        }
+    }
+}
+
+/** 转发能去的房间：别的、已经加入、能发的房间。 */
+private fun RoomRow.forwardTarget(roomId: String): Boolean =
+    this.roomId != roomId && membership == RoomMembership.JOINED && !isReadOnly
+
+/** 撤回对所有人生效，发出去之前先确认。 */
+@Composable
+private fun RedactConfirm(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    WontonDialog(
+        title = stringResource(R.string.message_delete_everyone_title),
+        message = stringResource(R.string.message_delete_everyone_message),
+        onDismiss = onDismiss,
+        actions = listOf(
+            WontonDialogAction(stringResource(R.string.common_cancel), onClick = onDismiss),
+            WontonDialogAction(
+                stringResource(R.string.message_delete_everyone_confirm),
+                WontonButtonKind.DANGER,
+                onConfirm,
+            ),
+        ),
+    )
 }
 
 @Composable
@@ -219,7 +323,8 @@ private fun Messages(
     timeline: TimelineState,
     showsSender: Boolean,
     onAction: (Action) -> Unit,
-    onOpenMenu: (TimelineMessage, Rect) -> Unit,
+    onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
+    onReply: (TimelineMessage) -> Unit,
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -276,6 +381,7 @@ private fun Messages(
                     onCancel = { onAction(Action.CancelSend(roomId, item.id)) },
                     onCardAction = onAction,
                     onOpenMenu = onOpenMenu,
+                    onReply = onReply,
                 )
             }
         }
