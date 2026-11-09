@@ -22,29 +22,51 @@ struct ComposerView: View {
     @State private var isPickingFiles = false
     /// 粘贴进来还没发的图：转码完成待确认。
     @State private var pendingImage: ImageUpload?
+    @FocusState private var isFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         let isEmpty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        HStack(alignment: .bottom, spacing: 0) {
-            WontonIconButton(icon: .attach, label: String(localized: .composerAttach)) { isChoosingAttachment = true }
-            ComposerField(
-                text: draft,
-                onPasteImage: { providers in Task { await pasteImage(from: providers) } },
-                onPasteFiles: { pasteFiles($0) }
-            )
-                .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.composerField) / 2)
-                .padding(.trailing, isEmpty ? WontonTheme.spacing.s12 : 0)
-            if !isEmpty {
-                SendButton {
-                    pin.pin()
-                    model.send(.sendText(roomId: roomId, body: draft.wrappedValue))
-                    draft.wrappedValue = ""
-                }
-                .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+        VStack(spacing: 0) {
+            if let reply = model.replies[roomId] {
+                ReplyQuoteView(
+                    quote: reply, core: model.core, ink: Color(colors.textSecondary),
+                    cancel: { model.cancelReply(in: roomId) }
+                )
+                .padding(.horizontal, WontonTheme.spacing.s16)
+                .padding(.top, WontonTheme.spacing.s8)
             }
+            HStack(alignment: .bottom, spacing: 0) {
+                WontonIconButton(icon: .attach, label: String(localized: .composerAttach)) {
+                    isChoosingAttachment = true
+                }
+                ComposerField(
+                    text: draft,
+                    focused: $isFocused,
+                    onPasteImage: { providers in Task { await pasteImage(from: providers) } },
+                    onPasteFiles: { pasteFiles($0) }
+                )
+                    .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.composerField) / 2)
+                    .padding(.trailing, isEmpty ? WontonTheme.spacing.s12 : 0)
+                if !isEmpty {
+                    SendButton {
+                        pin.pin()
+                        model.send(.sendText(
+                            roomId: roomId, body: draft.wrappedValue, replyTo: model.replies[roomId]?.eventId
+                        ))
+                        draft.wrappedValue = ""
+                        model.cancelReply(in: roomId)
+                    }
+                    .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+                }
+            }
+            .padding(WontonTheme.spacing.s4)
         }
-        .padding(WontonTheme.spacing.s4)
+        // 点了回复就把光标放进输入框。
+        .onChange(of: model.replies[roomId] != nil) { _, replying in
+            if replying { isFocused = true }
+        }
         .animation(.easeOut(duration: WontonTheme.motion.feedback), value: isEmpty)
         .onAppear { model.acceptPendingDraft(in: roomId) }
         .wontonActionSheet(isPresented: $isChoosingAttachment, actions: [
@@ -143,7 +165,9 @@ struct ComposerView: View {
     private func deliver(_ image: ImageUpload) {
         pendingImage = nil
         pin.pin()
-        model.send(.sendImage(roomId: roomId, image: image))
+        model.send(.sendImage(roomId: roomId, image: image, replyTo: model.replies[roomId]?.eventId))
+        // 回复用掉了：图片不带输入框里的字，正文的草稿留着。
+        model.cancelReply(in: roomId)
     }
 }
 

@@ -301,10 +301,11 @@ private struct RoomRowView: View {
 }
 
 /// Bot 的私聊行用 Bot 头像（状态头像优先，ADR-0044），其他装了应用的用应用图标，其余人用名字的第一个字。
-private struct RoomAvatar: View {
+struct RoomAvatar: View {
     let row: RoomRow
     let model: ChatModel
     let plugins: PluginsModel
+    var size = WontonTheme.size.avatar
     @Environment(\.wontonColors) private var colors
 
     private var plugin: InstalledPlugin? {
@@ -313,7 +314,6 @@ private struct RoomAvatar: View {
     }
 
     var body: some View {
-        let size = WontonTheme.size.avatar
         if let bot = row.directUserId.flatMap({ id in model.viewModel.bots.first { $0.userId == id } }) {
             BotAvatarView(bot: bot, pluginIcon: plugin?.icon, core: plugins.core, model: plugins, size: size)
         } else if let plugin {

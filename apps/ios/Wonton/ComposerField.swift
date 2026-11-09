@@ -7,6 +7,7 @@ import WontonClient
 /// 在那里把要发的图片和文件截下来，交给上层走发图、发文件的流程。
 struct ComposerField: View {
     @Binding var text: String
+    @FocusState.Binding var focused: Bool
     var onPasteImage: ([NSItemProvider]) -> Void
     var onPasteFiles: ([URL]) -> Void
 
@@ -17,6 +18,7 @@ struct ComposerField: View {
     var body: some View {
         ComposerTextField(
             text: $text,
+            focused: $focused,
             onPasteImage: onPasteImage,
             onPasteFiles: onPasteFiles,
             fontSize: fontSize,
@@ -31,6 +33,7 @@ struct ComposerField: View {
 
 private struct ComposerTextField: UIViewRepresentable {
     @Binding var text: String
+    @FocusState.Binding var focused: Bool
     var onPasteImage: ([NSItemProvider]) -> Void
     var onPasteFiles: ([URL]) -> Void
     var fontSize: CGFloat
@@ -58,6 +61,8 @@ private struct ComposerTextField: UIViewRepresentable {
         view.refreshStyle(fontSize: fontSize, line: line, colors: colors)
         // 输入法组词（marked text）期间 text 和绑定对不上，别动它，等上屏。
         if view.markedTextRange == nil, view.text != text { view.setText(text) }
+        // 点了回复要把光标放进来；取消回复再回到普通状态。
+        if focused, !view.isFirstResponder { view.becomeFirstResponder() }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -76,6 +81,10 @@ private struct ComposerTextField: UIViewRepresentable {
             parent.text = view.text
             view.placeholderLabel.isHidden = !view.text.isEmpty
             view.fitHeight()
+        }
+
+        func textViewDidBeginEditing(_ view: UITextView) {
+            parent.focused = true
         }
     }
 }

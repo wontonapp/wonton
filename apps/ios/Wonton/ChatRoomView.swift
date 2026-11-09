@@ -11,6 +11,11 @@ struct ChatRoomView: View {
     @State private var pin = BottomPin()
     @State private var isKeyboardVisible = false
     @State private var pageAnchor: String?
+    /// 正在选转发目标的条目、正在确认撤回的条目。
+    @State private var forwarding: String?
+    @State private var pickingForwardRoom = false
+    @State private var redactItem: String?
+    @State private var showingRedact = false
     @Environment(OnboardingModel.self) private var onboarding
     @Environment(TabsModel.self) private var tabs
 
@@ -44,6 +49,27 @@ struct ChatRoomView: View {
             }
         }
         .modifier(RoomPresentations(presenter: presenter))
+        .wontonSheet(isPresented: $pickingForwardRoom, title: String(localized: .messageForwardTitle)) { close in
+            ForwardRoomSheet(model: model, plugins: plugins, rooms: forwardRooms) { room in
+                close {
+                    guard let item = forwarding else { return }
+                    model.forward(item, from: roomId, to: room.roomId)
+                    forwarding = nil
+                }
+            }
+        }
+        .wontonDialog(
+            String(localized: .messageRedactTitle),
+            message: String(localized: .messageRedactMessage),
+            isPresented: $showingRedact,
+            actions: [
+                WontonDialogAction(title: String(localized: .commonCancel)),
+                WontonDialogAction(title: String(localized: .messageRedact), kind: .danger) {
+                    if let item = redactItem { model.send(.redactMessage(roomId: roomId, itemId: item)) }
+                }
+            ],
+            afterDismiss: { redactItem = nil }
+        )
         .environment(model.files)
         .environment(presenter)
         // 和 Bot 的私聊：顶栏是它的头像和 Matrix 名字，不写状态文字（ADR-0044）。
@@ -95,10 +121,22 @@ struct ChatRoomView: View {
                         joinsPrevious: joinsPrevious, joinsNext: joinsNext,
                         retry: { model.send(.retrySend(roomId: roomId, itemId: item.id)) },
                         cancel: { model.send(.cancelSend(roomId: roomId, itemId: item.id)) },
-                        cardAction: { model.send($0) }
+                        cardAction: { model.send($0) },
+                        reply: { model.startReply(.ready(message: $0), in: roomId) },
+                        forward: {
+                            forwarding = item.id
+                            pickingForwardRoom = true
+                        },
+                        redact: {
+                            redactItem = item.id
+                            showingRedact = true
+                        }
                     )
                     .id(item.id)
                     .timelineListRow(joinsPrevious: joinsPrevious, joinsNext: joinsNext)
+                    .modifier(ReplySwipe(quote: replyQuote(of: item)) { quote in
+                        model.startReply(.ready(message: quote), in: roomId)
+                    })
                 }
             }
             .listStyle(.plain)
@@ -157,8 +195,45 @@ struct ChatRoomView: View {
         ).accessibilityIdentifier("roomTopBarAvatar"))
     }
 
+    /// 可以转发到的房间：已加入、能写。
+    private var forwardRooms: [RoomRow] {
+        model.viewModel.rooms.filter { $0.membership == .joined && !$0.isReadOnly }
+    }
+
+    private func replyQuote(of item: TimelineItem) -> QuotedMessage? {
+        guard case let .message(message) = item.content else { return nil }
+        for action in message.actions {
+            if case let .reply(quote) = action { return quote }
+        }
+        return nil
+    }
+
     private var isReadOnly: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
+    }
+}
+
+/// 有 `Reply` 的消息可以右滑回复（ADR-0073）：滑过阈值系统给一次触感，松手进入回复状态。
+private struct ReplySwipe: ViewModifier {
+    let quote: QuotedMessage?
+    let reply: (QuotedMessage) -> Void
+    @Environment(\.wontonColors) private var colors
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if let quote {
+            content.swipeActions(edge: .leading, allowsFullSwipe: true) {
+                Button {
+                    reply(quote)
+                } label: {
+                    Label { Text(.messageReply) } icon: { WontonIcon.reply.image }
+                        .foregroundStyle(Color(colors.accentInkOnFill))
+                }
+                .tint(Color(colors.accentFill))
+                .accessibilityIdentifier("swipeReply")
+            }
+        } else {
+            content
+        }
     }
 }
 
