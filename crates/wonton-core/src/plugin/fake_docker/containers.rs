@@ -165,7 +165,8 @@ fn inspect_container(docker: &Resources, name: &str) -> Response {
     json_reply(
         StatusCode::OK,
         json!({"Name": format!("/{name}"), "State": state, "Image": image,
-               "Config": {"Image": config_image, "Labels": created["Labels"], "Env": created["Env"]},
+               "Config": {"Image": config_image, "Labels": created["Labels"], "Env": created["Env"],
+                          "Healthcheck": created["Healthcheck"]},
                "HostConfig": created["HostConfig"],
                "NetworkSettings": {"Networks": networks}}),
     )

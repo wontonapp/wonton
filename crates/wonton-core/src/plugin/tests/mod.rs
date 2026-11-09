@@ -28,6 +28,7 @@ mod egress_switch;
 mod github;
 mod gpu;
 mod health;
+mod health_gate;
 mod host_check;
 mod host_facts;
 mod host_name;

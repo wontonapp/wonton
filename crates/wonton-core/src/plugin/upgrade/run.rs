@@ -358,7 +358,8 @@ impl PluginManager {
             self.hydra(&langs)?.upsert_client(&spec).await?;
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-        let deadline = Instant::now() + self.cfg.install_timeout;
+        let deadline =
+            super::super::health_gate::deadline(&plan, self.cfg.install_timeout, Instant::now());
         self.stage(&manifest.id, InstallStage::Starting);
         let health = self
             .start_containers(
