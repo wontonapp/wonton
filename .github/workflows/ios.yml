@@ -1,7 +1,9 @@
 name: ios
 
 # 自托管 runner（ADR-0012 的“CI”），都在 macOS 上：SwiftLint，和一次模拟器构建（只编译 Apple 芯片模拟器一个
-# target，不签名、不跑模拟器）。
+# target，不签名、不跑模拟器）。模拟器构建前先跑 Linux 上的“Swift 接口没变”判定（swift-api 作业）。
+# PR 上模拟器构建只在两类情况跑：改到 iOS 相关文件（清单在 scripts/ci-ios-needed.sh），或 base 与 HEAD 生成的
+# Swift 绑定不同；判成不需要就是 skipped，不挡合并。main 上每次合并都跑，红了谁合的谁修（看板会列“main 上 ios 红了”）。
 # 触发的 crate 是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
 # 加了依赖要同步改这两份列表。
 # 只改测试的 PR（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉，省模拟器构建的排队。
@@ -11,6 +13,7 @@ on:
       - "apps/ios/**"
       - "design/**"
       - "scripts/generate-design.py"
+      - "scripts/ci-ios-needed.sh"
       - "crates/wonton-client/**"
       - "crates/wonton-l10n/**"
       - "crates/wonton-matrix/**"
@@ -32,6 +35,7 @@ on:
       - "apps/ios/**"
       - "design/**"
       - "scripts/generate-design.py"
+      - "scripts/ci-ios-needed.sh"
       - "crates/wonton-client/**"
       - "crates/wonton-l10n/**"
       - "crates/wonton-matrix/**"
@@ -48,6 +52,8 @@ on:
       - "!crates/**/tests.rs"
       - "!crates/**/*_tests.rs"
 
+# 同一个 PR 又推了新提交，旧的整个取消，判成需要后排上的模拟器构建也不许再起（build 的条件用 !cancelled()）；
+# main 上同一时间只留最新一次。
 concurrency:
   group: ios-${{ github.ref }}
   cancel-in-progress: true
@@ -79,8 +85,46 @@ jobs:
           swiftlint version
           swiftlint lint --strict --no-cache
 
+  swift-api:
+    name: Swift 接口没变
+    # 只在 PR 上判定：push 到 main 时跳过，模拟器构建无条件跑。要编两次 staticlib 才比得出绑定变没变，
+    # 跑在带 rust 标签的 Linux 机器上；HEAD 用“Rust”作业的构建缓存，base 每次全量编
+    # （为什么不能和 HEAD 共用一个 target 目录，见 scripts/ci-ios-needed.sh）。
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: [rust]
+    timeout-minutes: 30
+    env:
+      # 同 rust.yml：不留增量编译的缓存，调试信息只留行号。
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+    outputs:
+      needed: ${{ steps.judge.outputs.needed }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # 判定只比当前提交和它的第一个父提交：PR 上检出的是合并提交，第一个父提交就是 base 的最新提交。
+          # 拉全部历史太重，机器网络一抖 --unshallow 就断。
+          fetch-depth: 2
+      - name: 构建缓存目录
+        # 与“Rust”作业同一个目录：同一台 runner 一次只跑一个作业，跨次沿用，依赖不用重编。
+        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/rust" >> "$GITHUB_ENV"
+      - name: 构建缓存超过上限就清掉
+        run: |
+          if [ -d "$CARGO_TARGET_DIR" ] && [ "$(du -sm "$CARGO_TARGET_DIR/" | cut -f1)" -gt $(( ${WONTON_CI_CACHE_MAX_GB:-30} * 1024 )) ]; then
+            rm -rf "$CARGO_TARGET_DIR/debug"
+          fi
+      - name: 安装 rust-toolchain.toml 指定的工具链
+        run: rustup toolchain install
+      - name: 判定 Swift 接口有没有变
+        id: judge
+        run: bash scripts/ci-ios-needed.sh HEAD^1
+
   build:
     name: 模拟器构建
+    needs: swift-api
+    # 判定作业自己失败时宁可多跑一次模拟器构建，也不把接口真的变了的情况当成没变；被新提交取消时不能再起，
+    # 所以用 !cancelled() 不用 always()。
+    if: ${{ !cancelled() && (github.event_name == 'push' || needs.swift-api.result != 'success' || needs.swift-api.outputs.needed == 'true') }}
     runs-on: [self-hosted, macOS, ARM64, xcode]
     timeout-minutes: 30
     env:

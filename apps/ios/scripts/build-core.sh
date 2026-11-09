@@ -39,13 +39,8 @@ for target in "${targets[@]}"; do
   libraries+=("$target_dir/$target/$profile/libwonton_client.a")
 done
 
-rm -rf "$work_dir"
-mkdir -p "$work_dir/headers" "$work_dir/swift"
-cargo run -q -p wonton-client --features bindgen --bin uniffi-bindgen-swift --locked -- \
-  --swift-sources --headers --modulemap \
-  --module-name WontonClientFFI --modulemap-filename module.modulemap \
-  "${libraries[0]}" "$work_dir/headers"
-mv "$work_dir"/headers/*.swift "$work_dir/swift/"
+# 绑定怎么生成只写在这一处：CI 的“Swift 接口没变”判定（scripts/ci-ios-needed.sh）也调它。
+"$repo_root/apps/ios/scripts/generate-swift-bindings.sh" "${libraries[0]}" "$work_dir"
 
 rm -rf "$generated_dir" "$xcframework"
 mkdir -p "$generated_dir"
