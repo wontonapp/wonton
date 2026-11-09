@@ -27,7 +27,8 @@
 # 检出目录外，同项目名的各份检出共用一份；DOCKER_HOST 指向远端时也生成在本机，经环境变量传给容器）、
 # WONTON_DEV_PROJECT（compose 项目名，也是核心的容器名，默认 wonton-dev-core）、
 # WONTON_CORE_IMAGE_TAG（核心镜像标签，默认 dev；并行冒烟用它换成自己的名字，别互相覆盖 wonton-core:dev）、
-# WONTON_DEV_INSTANCE（核心的实例名，插件的资源名和标签都带上它；默认按项目名取，默认项目没有实例名，设成空也没有）、
+# WONTON_DEV_INSTANCE（核心的实例名，插件的资源名和标签都带上它；默认按项目名取，去了标点时加项目名哈希
+# 后缀免得和别的项目名撞，默认项目没有实例名，设成空也没有）、
 # WONTON_BUILD_COMMIT（编进核心、打在启动日志里的提交号，默认按当前检出算）、
 # WONTON_DEV_BUILD_PROXY（构建镜像时经 Docker 主机上的这个代理下载依赖，如 npchy 本机的 http://127.0.0.1:7899）、
 # WONTON_DEV_BUILD_JOBS（构建镜像时编译的并发数，和别的任务共用一台主机时用）、
@@ -49,12 +50,33 @@ export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-dev-core}"
 # 签名密钥，插件的 OIDC 客户端不用重发。检出目录里旧的 .secrets/ 不再读，也不迁移。
 export WONTON_DEV_SECRETS="${WONTON_DEV_SECRETS:-${XDG_STATE_HOME:-$HOME/.local/state}/wonton-dev/$WONTON_DEV_PROJECT/secrets}"
 secrets="$WONTON_DEV_SECRETS"
-# 实例名只能有小写字母和数字，最长 16 个字符（WONTON_INSTANCE）。
+# FNV-1a 的 32 位哈希，十六进制输出。不用 cksum：GNU 和 BSD 的 CRC 不一样，Mac 上经 DOCKER_HOST
+# 起的栈要和 Linux 上算出同一个标签。只用 bash 内建，本地设 LC_ALL=C 按字节算，不随语言环境变。
+fnv1a32() {
+  local LC_ALL=C
+  local hash=2166136261 byte i
+  for ((i = 0; i < ${#1}; i++)); do
+    printf -v byte '%d' "'${1:i:1}"
+    hash=$(((hash ^ byte) * 16777619 & 0xffffffff))
+  done
+  printf '%08x' "$hash"
+}
+
+# 实例名只能有小写字母和数字，最长 16 个字符（WONTON_INSTANCE）。去掉非字母数字会丢信息（#855：
+# wonton-chat-image 和 wonton-chatimage 都变成 chatimage，down 会清到对方的资源）：名字变了就在截短后
+# 接上完整项目名哈希的前 5 位十六进制，两个只差标点的项目名不会再得到同一个标签。没丢字符的保持原样，
+# 已有的栈标签不变。
 default_instance() {
   [[ "$WONTON_DEV_PROJECT" == wonton-dev-core ]] && return
   local name="${WONTON_DEV_PROJECT#wonton-}"
-  name="${name//[^a-z0-9]/}"
-  printf '%s' "${name:0:16}"
+  local stripped="${name//[^a-z0-9]/}"
+  if [[ "$stripped" == "$name" ]]; then
+    printf '%s' "${name:0:16}"
+    return
+  fi
+  local hash
+  hash="$(fnv1a32 "$WONTON_DEV_PROJECT")"
+  printf '%s%s' "${stripped:0:11}" "${hash:0:5}"
 }
 export WONTON_DEV_INSTANCE="${WONTON_DEV_INSTANCE-$(default_instance)}"
 # 端口没给时沿用这套栈上次起的端口（.data/dev-port）。up 时远端选的是别的端口的场景靠它，
@@ -417,6 +439,9 @@ note_plugin_leftovers() {
   if [[ ${#volumes[@]} -gt 0 ]]; then echo "  docker volume rm ${volumes[*]}"; fi
 }
 
+# 被 source（instance-label_test.py 测实例标签）时只拿函数定义和上面的环境，不执行子命令。
+# return 0 要写全：不带参数的 return 会把左边失败的 [[ ]] 的状态带出去，source 它的脚本开着 set -e 就会退出。
+[[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
 case "${1:-}" in
   up)
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac

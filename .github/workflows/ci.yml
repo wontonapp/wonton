@@ -29,6 +29,8 @@ jobs:
         run: python3 -m unittest discover -s scripts/ui_text -t scripts
       - name: 开发栈端口检查自己的用例
         run: python3 -m unittest discover -s scripts/dev_ports -t scripts
+      - name: dev.sh 实例标签的用例
+        run: python3 deploy/dev/core/instance-label_test.py
       - name: 界面文字不写死，四种语言的字符串目录完整
         run: python3 scripts/check-ui-text.py
       - name: 开发栈端口只绑 127.0.0.1
