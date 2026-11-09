@@ -5,19 +5,20 @@
 
 mod attempt;
 mod check;
+mod path;
 mod ports;
 pub(crate) mod streams;
 mod suspend;
 
 use attempt::Attempt;
 use check::SlowPath;
+pub use path::{PathInfo, PathKind};
 pub use streams::TunnelStreamStats;
 use streams::{StreamCounters, StreamLease, open_stream};
 pub use suspend::SuspendClock;
 
 use std::{
     fmt,
-    net::IpAddr,
     sync::{
         Arc, Mutex, MutexGuard, PoisonError, Weak,
         atomic::{AtomicBool, Ordering},
@@ -26,7 +27,7 @@ use std::{
 };
 
 use iroh::{
-    Endpoint, EndpointAddr, EndpointId, TransportAddr,
+    Endpoint, EndpointAddr, EndpointId,
     endpoint::{Connection, ConnectionError, PathEventStream, RecvStream, SendStream},
 };
 use tokio::sync::watch;
@@ -52,41 +53,6 @@ pub enum TunnelStatus {
     Disconnected(TunnelError),
     /// 客户端已关闭，不再重连。
     Closed,
-}
-
-/// 传输路径的类型。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PathKind {
-    /// 局域网直连或打洞成功的 P2P 直连。
-    Direct,
-    /// 经中继服务器转发。
-    Relay,
-}
-
-/// 当前连接正在使用的传输路径。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PathInfo {
-    /// 直连还是中继。
-    pub kind: PathKind,
-    /// 对端在这条路径上的地址：直连时是 IP 和端口，中继时是中继服务器。
-    pub remote: TransportAddr,
-    /// QUIC 对这条路径的往返时间估计。
-    pub rtt: Duration,
-}
-
-impl PathInfo {
-    /// 直连的对端是局域网地址。
-    pub fn is_lan(&self) -> bool {
-        let TransportAddr::Ip(addr) = &self.remote else {
-            return false;
-        };
-        match addr.ip() {
-            IpAddr::V4(ip) => ip.is_private() || ip.is_link_local() || ip.is_loopback(),
-            IpAddr::V6(ip) => {
-                ip.is_unique_local() || ip.is_unicast_link_local() || ip.is_loopback()
-            }
-        }
-    }
 }
 
 /// 连接质量的指标，给连接页和日志用。
@@ -311,10 +277,16 @@ impl TunnelClient {
         } else {
             PathKind::Direct
         };
+        let stats = selected.stats();
         Some(PathInfo {
+            connection_id: conn.stable_id(),
             kind,
             remote: selected.remote_addr().clone(),
-            rtt: selected.rtt(),
+            rtt: stats.rtt,
+            sent_packets: stats.sent_packets,
+            lost_packets: stats.lost_packets,
+            sent_bytes: stats.sent_bytes,
+            lost_bytes: stats.lost_bytes,
         })
     }
 

@@ -34,6 +34,15 @@ impl ClientCore {
     pub fn test_release_card_success(&self) {
         self.scope().card_success_hook.release();
     }
+
+    /// 推进连接质量判定的时钟并采样真实 QUIC 计数；窗口和滞回门槛保持生产值。
+    #[doc(hidden)]
+    pub async fn test_sample_connection_quality(
+        &self,
+        elapsed: std::time::Duration,
+    ) -> wonton_protocol::HomeViewModel {
+        self.scope().home.test_sample_quality(elapsed).await
+    }
 }
 
 impl ClientCore {

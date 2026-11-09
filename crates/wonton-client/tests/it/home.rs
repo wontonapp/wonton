@@ -4,6 +4,7 @@
 mod migration;
 pub(crate) mod support;
 
+mod quality;
 pub(crate) use support::{Home, Phone};
 use support::{WEB_URL, get, wait_until_ticket_has};
 
