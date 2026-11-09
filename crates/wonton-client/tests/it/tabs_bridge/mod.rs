@@ -6,7 +6,9 @@ mod support;
 use serde_json::json;
 use wonton_client::{Action, TabBridgeAction, TabDisplay, TabDisplayChoice, TabRef};
 
-use support::{PAGE_ORIGIN, environment, initialize, open_page, request, response, selected_page};
+use support::{
+    PAGE_ORIGIN, bar, environment, initialize, open_page, request, response, selected_page,
+};
 
 #[tokio::test]
 async fn initialization_exposes_only_standard_context_and_supported_capabilities() {
@@ -39,7 +41,7 @@ async fn initialization_exposes_only_standard_context_and_supported_capabilities
         wonton_client::accent_hex(rig.app.appearance().light.canvas)
     );
     let initialized = rig.app.tab_handle_message(
-        tab.clone(),
+        bar(&tab),
         true,
         PAGE_ORIGIN.to_owned(),
         json!({"jsonrpc":"2.0","method":"ui/notifications/initialized"}).to_string(),
@@ -48,7 +50,7 @@ async fn initialization_exposes_only_standard_context_and_supported_capabilities
     assert!(initialized.initialized);
     assert!(initialized.reply_script.is_none());
     let size = rig.app.tab_handle_message(
-        tab,
+        bar(&tab),
         true,
         PAGE_ORIGIN.to_owned(),
         json!({"jsonrpc":"2.0","method":"ui/notifications/size-changed","params":{"height":800}})
@@ -101,7 +103,7 @@ async fn subframes_and_notifications_have_no_request_side_effects() {
         ),
     ] {
         let reply = rig.app.tab_handle_message(
-            tab.clone(),
+            bar(&tab),
             false,
             PAGE_ORIGIN.to_owned(),
             json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string(),
@@ -111,7 +113,7 @@ async fn subframes_and_notifications_have_no_request_side_effects() {
         assert!(reply.action.is_none());
         assert!(!reply.initialized);
         let notification = rig.app.tab_handle_message(
-            tab.clone(),
+            bar(&tab),
             true,
             PAGE_ORIGIN.to_owned(),
             json!({"jsonrpc":"2.0","method":method,"params":params}).to_string(),
@@ -269,7 +271,7 @@ async fn malformed_messages_do_not_panic_or_change_state() {
         r#"{"jsonrpc":"2.0","id":{},"method":"ui/request-display-mode","params":{"mode":"fullscreen"}}"#,
     ] {
         let reply = rig.app.tab_handle_message(
-            tab.clone(),
+            bar(&tab),
             true,
             PAGE_ORIGIN.to_owned(),
             message.to_owned(),

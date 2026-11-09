@@ -1,10 +1,10 @@
-//! 底栏 ViewModel 的页面和状态映射。
+//! 底栏和面板的 ViewModel 的页面和状态映射。
 
 use url::Url;
 use wonton_protocol::{
-    CandidatePlugin, CoreError, InstalledPlugin, PluginState, PluginsViewModel, TabCandidate,
-    TabDisplay, TabDisplayChoice, TabIcon, TabItem, TabLayout, TabPage, TabRef, TabState,
-    TabsViewModel,
+    CandidatePlugin, CoreError, InstalledPlugin, PanelEntry, PanelItem, PanelScope, PanelSource,
+    PlacedTab, PluginState, PluginsViewModel, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon,
+    TabItem, TabLayout, TabPage, TabRef, TabState, TabsViewModel,
 };
 
 use super::{Fullscreen, StoredItem, StoredPage, TabsState, invalid};
@@ -16,13 +16,14 @@ pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsVi
         .config
         .items
         .iter()
-        .map(|item| build_item(state, item, plugins, true))
+        .map(|item| build_item(state, item, plugins))
         .collect();
     let show_bar = items.len() > 1;
     let overlay = state
         .overlay
         .as_ref()
-        .map(|item| build_item(state, item, plugins, false));
+        .map(|item| build_item(state, item, plugins));
+    let main = PanelScope::Main;
     TabsViewModel {
         items,
         show_bar,
@@ -33,16 +34,46 @@ pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsVi
         problem: state.problem.clone(),
         labels: state.config.labels,
         candidates: candidates(state, plugins),
-        panel: Vec::new(),
-        panel_candidates: Vec::new(),
-        panel_selected: None,
+        panel: state
+            .config
+            .panel
+            .iter()
+            .map(|entry| build_panel_item(state, entry, &main, plugins))
+            .collect(),
+        panel_candidates: plugin_pages(plugins)
+            .filter(|candidate| {
+                !state
+                    .config
+                    .panel
+                    .iter()
+                    .any(|entry| entry.tab == candidate.tab)
+            })
+            .collect(),
+        panel_selected: state.panel_selected.clone(),
     }
 }
 
 /// 设置在前，然后按已装插件的顺序列出每个能打开的页面，去掉已经在栏上的。没有网页的插件没有页面可放。
 fn candidates(state: &TabsState, plugins: &PluginsViewModel) -> Vec<TabCandidate> {
+    std::iter::once(TabCandidate {
+        tab: TabRef::Settings,
+        plugin: None,
+    })
+    .chain(plugin_pages(plugins))
+    .filter(|candidate| {
+        !state
+            .config
+            .items
+            .iter()
+            .any(|item| item.tab == candidate.tab)
+    })
+    .collect()
+}
+
+/// 每个能打开的插件页：声明了 `tabs` 的按页，没声明的是网页入口。没有网页的插件没有页面。
+fn plugin_pages(plugins: &PluginsViewModel) -> impl Iterator<Item = TabCandidate> + '_ {
     let installed = plugins.installed.iter().flat_map(|list| &list.plugins);
-    let pages = installed
+    installed
         .filter(|plugin| plugin.web_url.is_some())
         .flat_map(|plugin| {
             let candidate = |page: Option<&wonton_protocol::PluginTab>| TabCandidate {
@@ -67,39 +98,40 @@ fn candidates(state: &TabsState, plugins: &PluginsViewModel) -> Vec<TabCandidate
                     .map(|page| candidate(Some(page)))
                     .collect()
             }
-        });
-    std::iter::once(TabCandidate {
-        tab: TabRef::Settings,
-        plugin: None,
-    })
-    .chain(pages)
-    .filter(|candidate| {
-        !state
-            .config
-            .items
-            .iter()
-            .any(|item| item.tab == candidate.tab)
-    })
-    .collect()
+        })
 }
 
-fn build_item(
-    state: &TabsState,
-    stored: &StoredItem,
-    plugins: &PluginsViewModel,
-    fixed: bool,
-) -> TabItem {
+/// 底栏上的一项（含盖在主界面上的页面覆盖层）。
+fn build_item(state: &TabsState, stored: &StoredItem, plugins: &PluginsViewModel) -> TabItem {
+    let placed = PlacedTab::Bar {
+        tab: stored.tab.clone(),
+    };
     let page = match &stored.tab {
-        // 接口先行（#652）：插件里的某一页和公网网页在实现 PR 里接上显示数据。
         TabRef::Chat | TabRef::Apps | TabRef::Settings | TabRef::SharedApp { .. } => None,
-        TabRef::PluginPath { .. } | TabRef::Url { .. } => None,
         TabRef::Plugin { plugin_id, page } => {
             let plugin = plugins
                 .installed
                 .as_ref()
                 .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == *plugin_id));
-            Some(build_page(state, stored, plugin, page.as_deref(), plugins))
+            Some(build_page(
+                state,
+                &placed,
+                stored,
+                plugin,
+                page.as_deref(),
+                plugins,
+            ))
         }
+        // 钉上来的插件里的某一页：插件在就照插件页合成，不在了按缓存的标题显示。
+        TabRef::PluginPath { plugin_id, .. } => {
+            let plugin = plugins
+                .installed
+                .as_ref()
+                .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == *plugin_id));
+            Some(build_page(state, &placed, stored, plugin, None, plugins))
+        }
+        // 公网网页：没有插件，标题按域名，失败按手机自己的网络算。
+        TabRef::Url { .. } => Some(build_page(state, &placed, stored, None, None, plugins)),
     };
     let badge = match (&stored.tab, &page) {
         (TabRef::Settings, _) => plugins.core_upgrade.is_prompting(),
@@ -108,19 +140,127 @@ fn build_item(
     };
     TabItem {
         tab: stored.tab.clone(),
-        removable: fixed && is_removable(&stored.tab),
+        removable: is_removable(&stored.tab),
         badge,
         page,
     }
 }
 
+/// 面板里的一项。面板页照全屏渲染（ADR-0052：WebView 一直是第 2 级的大小）。
+pub(super) fn build_panel_item(
+    state: &TabsState,
+    entry: &PanelEntry,
+    scope: &PanelScope,
+    plugins: &PluginsViewModel,
+) -> PanelItem {
+    let placed = PlacedTab::Panel {
+        scope: scope.clone(),
+        tab: entry.tab.clone(),
+    };
+    let plugin = match &entry.tab {
+        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => plugins
+            .installed
+            .as_ref()
+            .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == *plugin_id)),
+        _ => None,
+    };
+    let page_id = match &entry.tab {
+        TabRef::Plugin {
+            page: Some(page), ..
+        } => Some(page.as_str()),
+        _ => None,
+    };
+    let mut page = build_page(
+        state,
+        &placed,
+        &StoredItem {
+            tab: entry.tab.clone(),
+            page: None,
+        },
+        plugin,
+        page_id,
+        plugins,
+    );
+    if let Some(title) = &entry.title {
+        page.title = title.clone();
+    }
+    PanelItem {
+        tab: entry.tab.clone(),
+        page,
+        attention: state.attention.contains(&placed),
+        source: PanelSource::User,
+    }
+}
+
 fn build_page(
     state: &TabsState,
+    placed: &PlacedTab,
     stored: &StoredItem,
     plugin: Option<&InstalledPlugin>,
     page_id: Option<&str>,
     plugins: &PluginsViewModel,
 ) -> TabPage {
+    match &stored.tab {
+        // 插件里的某一页和公网网页：网址核心直接拼，插件不在了还能用缓存的标题显示。
+        TabRef::PluginPath { plugin_id, path } => {
+            let url = plugin.and_then(|plugin| page_url(plugin.web_url.as_deref(), Some(path)));
+            let state_value = match plugin {
+                Some(plugin) if url.is_some() => page_state(state, placed, plugin, true),
+                _ => TabState::PageRemoved,
+            };
+            let metadata = stored.page.clone().unwrap_or_else(|| StoredPage {
+                plugin_title: plugin_title_of(plugin_id, plugins),
+                title: path_title(path),
+                icon: TabIcon::Plugin {
+                    icon: plugin.and_then(|plugin| plugin.icon.clone()),
+                },
+                layout: TabLayout::Inset,
+            });
+            return page_from_metadata(
+                state,
+                placed,
+                metadata,
+                url,
+                state_value,
+                TabDisplayChoice::Fullscreen,
+                plugins,
+            );
+        }
+        TabRef::Url { url } => {
+            let metadata = stored.page.clone().unwrap_or_else(|| StoredPage {
+                plugin_title: url
+                    .parse::<Url>()
+                    .ok()
+                    .and_then(|parsed| parsed.host_str().map(str::to_owned))
+                    .unwrap_or_else(|| url.clone()),
+                title: url
+                    .parse::<Url>()
+                    .ok()
+                    .and_then(|parsed| parsed.host_str().map(str::to_owned))
+                    .unwrap_or_else(|| url.clone()),
+                icon: TabIcon::Plugin { icon: None },
+                layout: TabLayout::Inset,
+            });
+            // 公网网页不经隧道，连不上是手机自己的网络，按上游出错显示（ADR-0052）。
+            let state_value = match state.failures.get(placed) {
+                Some((failure, status)) => TabState::LoadFailed {
+                    failure: *failure,
+                    status: *status,
+                },
+                None => TabState::Ready,
+            };
+            return page_from_metadata(
+                state,
+                placed,
+                metadata,
+                Some(url.clone()),
+                state_value,
+                TabDisplayChoice::Fullscreen,
+                plugins,
+            );
+        }
+        _ => {}
+    }
     let choice = display_for(state, &stored.tab);
     let Some(plugin) = plugin else {
         let metadata = stored
@@ -129,7 +269,7 @@ fn build_page(
             .expect("plugin tab item must keep its page metadata");
         return page_from_metadata(
             state,
-            stored,
+            placed,
             metadata,
             None,
             TabState::Loading,
@@ -144,7 +284,7 @@ fn build_page(
             .expect("plugin tab item must keep its page metadata");
         return page_from_metadata(
             state,
-            stored,
+            placed,
             metadata,
             None,
             TabState::PageRemoved,
@@ -155,13 +295,33 @@ fn build_page(
     let declared = page_id.and_then(|id| plugin.tabs.iter().find(|tab| tab.id == id));
     let path = declared.map(|page| page.path.as_str());
     let url = page_url(plugin.web_url.as_deref(), path);
-    let state_value = page_state(state, &stored.tab, plugin, url.is_some());
-    page_from_metadata(state, stored, metadata, url, state_value, choice, plugins)
+    let state_value = page_state(state, placed, plugin, url.is_some());
+    page_from_metadata(state, placed, metadata, url, state_value, choice, plugins)
+}
+
+fn plugin_title_of(plugin_id: &str, plugins: &PluginsViewModel) -> String {
+    plugins
+        .installed
+        .as_ref()
+        .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == plugin_id))
+        .map(|plugin| plugin.title.clone())
+        .unwrap_or_else(|| plugin_id.to_owned())
+}
+
+/// 插件里的某一页没起名字时，拿路径的末段当标题。
+fn path_title(path: &str) -> String {
+    path.split(['?', '#'])
+        .next()
+        .unwrap_or(path)
+        .rsplit('/')
+        .find(|segment| !segment.is_empty())
+        .unwrap_or(path)
+        .to_owned()
 }
 
 fn page_from_metadata(
     state: &TabsState,
-    stored: &StoredItem,
+    placed: &PlacedTab,
     metadata: StoredPage,
     url: Option<String>,
     state_value: TabState,
@@ -177,18 +337,18 @@ fn page_from_metadata(
         state: state_value,
         dimmed,
         display: choice,
-        opens_fullscreen: opens_fullscreen(&stored.tab, choice, plugins),
+        opens_fullscreen: opens_fullscreen(placed_tab_ref(placed), choice, plugins),
         fullscreen: state
             .fullscreen
             .as_ref()
-            .is_some_and(|full| full.tab == stored.tab),
-        reload: state.reloads.get(&stored.tab).copied().unwrap_or_default(),
+            .is_some_and(|full| full.tab == *placed_tab_ref(placed)),
+        reload: state.reloads.get(placed).copied().unwrap_or_default(),
     }
 }
 
 pub(super) fn page_state(
     state: &TabsState,
-    tab: &TabRef,
+    placed: &PlacedTab,
     plugin: &InstalledPlugin,
     has_url: bool,
 ) -> TabState {
@@ -198,7 +358,7 @@ pub(super) fn page_state(
     if matches!(plugin.status, PluginState::Stopped) {
         return TabState::Stopped;
     }
-    if let Some((failure, status)) = state.failures.get(tab) {
+    if let Some((failure, status)) = state.failures.get(placed) {
         return TabState::LoadFailed {
             failure: *failure,
             status: *status,
@@ -255,6 +415,15 @@ pub(super) fn stored_item_for_tab(
     tab: &TabRef,
     plugins: &PluginsViewModel,
 ) -> Result<StoredItem, CoreError> {
+    stored_item_with_title(tab, plugins, None)
+}
+
+/// 钉页面上来的带用户起的名字；候选页来的没有，按插件或域名补。
+pub(super) fn stored_item_with_title(
+    tab: &TabRef,
+    plugins: &PluginsViewModel,
+    title: Option<String>,
+) -> Result<StoredItem, CoreError> {
     match tab {
         TabRef::Settings => Ok(StoredItem {
             tab: tab.clone(),
@@ -265,9 +434,50 @@ pub(super) fn stored_item_for_tab(
             language(),
             "tabs-view-always-pinned"
         ))),
-        TabRef::SharedApp { .. } | TabRef::PluginPath { .. } | TabRef::Url { .. } => Err(invalid(
-            &l10n!(CATALOG, language(), "tabs-view-unknown-plugin"),
-        )),
+        TabRef::SharedApp { .. } => Err(invalid(&l10n!(
+            CATALOG,
+            language(),
+            "tabs-view-unknown-plugin"
+        ))),
+        TabRef::Url { url } => {
+            let host = url
+                .parse::<Url>()
+                .ok()
+                .and_then(|parsed| parsed.host_str().map(str::to_owned));
+            Ok(StoredItem {
+                tab: tab.clone(),
+                page: Some(StoredPage {
+                    plugin_title: host.clone().unwrap_or_else(|| url.clone()),
+                    title: title.or(host).unwrap_or_else(|| url.clone()),
+                    icon: TabIcon::Plugin { icon: None },
+                    layout: TabLayout::Inset,
+                }),
+            })
+        }
+        TabRef::PluginPath { plugin_id, path: _ } => {
+            let installed = plugins
+                .installed
+                .as_ref()
+                .ok_or_else(|| CoreError::NotReady {
+                    reason: l10n!(CATALOG, language(), "tabs-view-plugin-list-not-ready"),
+                })?;
+            let plugin = installed
+                .plugins
+                .iter()
+                .find(|plugin| plugin.id == *plugin_id)
+                .ok_or_else(|| invalid(&l10n!(CATALOG, language(), "tabs-view-unknown-plugin")))?;
+            Ok(StoredItem {
+                tab: tab.clone(),
+                page: Some(StoredPage {
+                    plugin_title: plugin.title.clone(),
+                    title: title.unwrap_or_else(|| plugin.title.clone()),
+                    icon: TabIcon::Plugin {
+                        icon: plugin.icon.clone(),
+                    },
+                    layout: TabLayout::Inset,
+                }),
+            })
+        }
         TabRef::Plugin { plugin_id, page } => {
             let Some(installed) = plugins.installed.as_ref() else {
                 return Err(CoreError::NotReady {
@@ -285,13 +495,16 @@ pub(super) fn stored_item_for_tab(
                     "tabs-view-unknown-plugin"
                 )));
             };
-            let Some(metadata) = metadata_for_plugin(plugin, page.as_deref()) else {
+            let Some(mut metadata) = metadata_for_plugin(plugin, page.as_deref()) else {
                 return Err(invalid(&l10n!(
                     CATALOG,
                     language(),
                     "tabs-view-plugin-no-page"
                 )));
             };
+            if let Some(title) = title {
+                metadata.title = title;
+            }
             Ok(StoredItem {
                 tab: tab.clone(),
                 page: Some(metadata),
@@ -375,8 +588,9 @@ pub(super) fn display_for(state: &TabsState, tab: &TabRef) -> TabDisplayChoice {
 }
 
 pub(super) fn plugin_is_running(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
-    let TabRef::Plugin { plugin_id, .. } = tab else {
-        return false;
+    let plugin_id = match tab {
+        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => plugin_id,
+        _ => return false,
     };
     plugins
         .installed
@@ -385,35 +599,90 @@ pub(super) fn plugin_is_running(tab: &TabRef, plugins: &PluginsViewModel) -> boo
         .is_some_and(|plugin| matches!(plugin.status, PluginState::Running { .. }))
 }
 
-pub(super) fn state_has_page(state: &TabsState, tab: &TabRef) -> bool {
-    state.config.items.iter().any(|item| item.tab == *tab)
-        || state.overlay.as_ref().is_some_and(|item| item.tab == *tab)
+/// 这个实例所在的地方现在有没有这个页面：底栏的看栏和覆盖层，面板的看那块面板。
+pub(super) fn state_has_page(state: &TabsState, placed: &PlacedTab) -> bool {
+    match placed {
+        PlacedTab::Bar { tab } => {
+            state.config.items.iter().any(|item| item.tab == *tab)
+                || state.overlay.as_ref().is_some_and(|item| item.tab == *tab)
+        }
+        PlacedTab::Panel { scope, tab } => panel_pages(state, scope)
+            .is_some_and(|panel| panel.iter().any(|entry| entry.tab == *tab)),
+    }
 }
 
+fn panel_pages<'a>(state: &'a TabsState, scope: &PanelScope) -> Option<&'a Vec<PanelEntry>> {
+    match scope {
+        PanelScope::Main => Some(&state.config.panel),
+        PanelScope::Room { room_id } => state
+            .open_room
+            .as_ref()
+            .filter(|(open, _)| open.as_str() == room_id)
+            .map(|(_, panel)| &panel.pages),
+    }
+}
+
+/// 插件的页面变了或起来了：它放在哪儿的每一份实例都重新加载。
 pub(super) fn reload_plugin_pages(state: &mut TabsState, plugin_id: &str) {
-    let mut tabs: Vec<TabRef> = state
-        .config
-        .items
-        .iter()
-        .filter_map(|item| match &item.tab {
-            TabRef::Plugin { plugin_id: id, .. } if id == plugin_id => Some(item.tab.clone()),
-            _ => None,
-        })
-        .collect();
-    if let Some(item) = &state.overlay
-        && let TabRef::Plugin { plugin_id: id, .. } = &item.tab
-        && id == plugin_id
-    {
-        tabs.push(item.tab.clone());
+    let mut placed = Vec::new();
+    let mut consider = |tab: &TabRef, placed_tab: PlacedTab| {
+        if tab_ref_plugin_id(tab) == Some(plugin_id) {
+            placed.push(placed_tab);
+        }
+    };
+    for item in &state.config.items {
+        consider(
+            &item.tab,
+            PlacedTab::Bar {
+                tab: item.tab.clone(),
+            },
+        );
     }
-    for tab in tabs {
-        state.failures.remove(&tab);
-        increment_reload(state, &tab);
+    if let Some(item) = &state.overlay {
+        consider(
+            &item.tab,
+            PlacedTab::Bar {
+                tab: item.tab.clone(),
+            },
+        );
+    }
+    for entry in &state.config.panel {
+        consider(
+            &entry.tab,
+            PlacedTab::Panel {
+                scope: PanelScope::Main,
+                tab: entry.tab.clone(),
+            },
+        );
+    }
+    if let Some((room_id, panel)) = &state.open_room {
+        for entry in &panel.pages {
+            consider(
+                &entry.tab,
+                PlacedTab::Panel {
+                    scope: PanelScope::Room {
+                        room_id: room_id.to_string(),
+                    },
+                    tab: entry.tab.clone(),
+                },
+            );
+        }
+    }
+    for instance in placed {
+        state.failures.remove(&instance);
+        increment_reload(state, &instance);
     }
 }
 
-pub(super) fn increment_reload(state: &mut TabsState, tab: &TabRef) {
-    let reload = state.reloads.entry(tab.clone()).or_default();
+fn tab_ref_plugin_id(tab: &TabRef) -> Option<&str> {
+    match tab {
+        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => Some(plugin_id),
+        _ => None,
+    }
+}
+
+pub(super) fn increment_reload(state: &mut TabsState, placed: &PlacedTab) {
+    let reload = state.reloads.entry(placed.clone()).or_default();
     *reload = reload.saturating_add(1);
 }
 
@@ -423,6 +692,13 @@ pub(super) fn item_title(item: &StoredItem) -> String {
         .expect("plugin tab item must keep its page metadata")
         .plugin_title
         .clone()
+}
+
+/// 这个实例指的是哪个页面。PlacedTab 在 protocol 里，这里放个取值的自由函数。
+pub(super) fn placed_tab_ref(placed: &PlacedTab) -> &TabRef {
+    match placed {
+        PlacedTab::Bar { tab } | PlacedTab::Panel { tab, .. } => tab,
+    }
 }
 
 pub(super) fn normalize_layout(layout: TabLayout) -> TabLayout {

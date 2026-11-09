@@ -82,6 +82,7 @@ impl ChatLink {
         };
         lock(&self.relogin.0).failures = 0;
         *lock(&self.session) = Some(session.clone());
+        self.session_out.send_replace(Some(session.clone()));
         self.bots.set_session(Some(session.clone()));
         self.apply_pending_display_name(&session);
         self.view.send_modify(|view| {
