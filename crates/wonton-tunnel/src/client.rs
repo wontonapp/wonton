@@ -158,17 +158,6 @@ impl TunnelStream {
     pub(crate) fn abort(&mut self) {
         forward::abort(&mut self.send, &mut self.recv);
     }
-
-    /// 测试用的假服务端拿这个类型包它接到的流，不算进任何客户端的计数。
-    #[cfg(feature = "test-hooks")]
-    pub(crate) fn untracked(send: SendStream, recv: RecvStream, conn_id: usize) -> Self {
-        Self {
-            send,
-            recv,
-            conn_id,
-            _lease: Arc::<StreamCounters>::default().lease(Request::Forward),
-        }
-    }
 }
 
 impl TunnelClient {

@@ -50,7 +50,7 @@ struct TabPageCapsule: View {
                     Button(TabText.back) { session.webView?.goBack() }
                 }
                 if let takeover { TakeoverButton(takeover: takeover) }
-                Button(TabText.reload) { tabs.send(.reloadTab(tab: tab)) }
+                Button(TabText.reload) { tabs.send(.reloadTab(page: .bar(tab: tab))) }
                 Toggle(TabText.alwaysFullscreen, isOn: Binding(
                     get: { page.opensFullscreen },
                     set: { tabs.send(.setTabDisplay(tab: tab, display: $0 ? .fullscreen : .standard)) }

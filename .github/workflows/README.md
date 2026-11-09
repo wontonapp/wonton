@@ -24,6 +24,22 @@
   副本，本地不设、按上游引用拉；main-image 和 release 给 Dockerfile 的 `*_IMAGE` build-arg 传副本引用。
   仓库公开当天先手动跑一次 test-images.yml，再让 main-image 跑（副本空着时镜像构建会拉取失败）。
 
+## 合并队列
+
+仓库开着合并队列时，入队的 PR 会在队列里的合并提交上重跑一遍必需检查；`merge_group` 事件没报告，入队就
+直接判失败。所以凡是必需检查所在的五个工作流（`lint`、`rust`、`rust-docker`、`android`、`ios`）都带
+`merge_group` 触发（`types: [checks_requested]`，只对 `main`）：lint 的三个作业（结构门禁、冲突标记、
+密钥扫描）、rust 的三个作业（格式、Clippy、测试）、rust-docker 的 Docker 测试作业（含官方索引检查）、
+android 的构建、ios 的 SwiftLint 和模拟器构建，都必须在队列里跑到。`main-image` 和 `test-images` 不用带，
+队列合进 main 时该跑的照常由 `push` 触发。
+
+`merge_group` 只支持 `branches`/`branches-ignore`，不认 `paths`，因此路径过滤只挂在 `pull_request` 下、
+只在 PR 上生效；队列里不管改了什么都跑全套（`lint.yml` 本来就不按路径过滤）。作业里判断草稿的
+`github.event_name != 'pull_request' || github.event.pull_request.draft == false` 在 `merge_group` 上靠前半句
+成立（队列只收已转 ready 的 PR）；`github.sha` 是队列里的合并提交、`github.ref` 是
+`refs/heads/gh-merge-queue/main`，所以并发组在 `merge_group` 上取 `github.event.merge_group.head_sha`，
+不让几次入队挤进同一组互相取消。缓存仍只在 main 上写，队列运行和 PR 一样只读。
+
 ## 缓存
 
 - Rust 作业用 Swatinem/rust-cache：缓存只在 main 上写（`save-if: github.ref == 'refs/heads/main'`，
