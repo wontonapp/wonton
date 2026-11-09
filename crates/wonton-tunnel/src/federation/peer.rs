@@ -1,7 +1,7 @@
 //! 到一台对方服务器的出站连接：所有流复用一条连接，断开后下一次使用时按退避重连，定时探活。
 //!
 //! 接口对齐 [`TunnelClient`](crate::TunnelClient)（共享连接、退避、探活、按连接确认授权）。不直接用它
-//! 的原因：它的 ALPN 固定为隧道的，而隧道负责人正在改客户端（#506），合并后这里整体换成 `TunnelClient`。
+//! 的原因：它的 ALPN 固定为隧道的。`TunnelClient` 能按调用方换 ALPN 后，这里整体换成它。
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
