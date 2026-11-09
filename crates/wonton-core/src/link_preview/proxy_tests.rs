@@ -325,10 +325,20 @@ async fn without_a_proxy_the_local_resolver_is_used() {
 }
 
 /// 真的经代理问 1.1.1.1：TLS 按 IP 校验、RFC 8484 报文和解析都走一遍。跑的时候要有 `https_proxy`。
+///
+/// Docker 作业带着 `--include-ignored`，没有外网的机器上也会跑到这条：没有 `https_proxy` 时不算失败，说明一声跳过。
 #[tokio::test]
 #[ignore = "需要外网和出网代理，CI 不跑"]
 async fn real_doh_through_the_owner_proxy_resolves_a_public_name() {
-    let text = std::env::var("https_proxy").expect("要设置 https_proxy");
+    let text = std::env::var("https_proxy")
+        .ok()
+        .filter(|text| !text.is_empty());
+    let Some(text) = text else {
+        eprintln!(
+            "跳过：没有 https_proxy。要跑这条，先在能出网的机器上设 https_proxy=http://127.0.0.1:7899（或本机的代理地址）。"
+        );
+        return;
+    };
     let proxy = crate::plugin::egress::core_proxy::CoreProxy::default();
     use_proxy(&proxy, &text);
     let net = super::Net::system(proxy);
