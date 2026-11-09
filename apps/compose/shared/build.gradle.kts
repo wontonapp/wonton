@@ -24,6 +24,10 @@ abstract class BuildRustCore : Exec() {
     @get:OutputDirectory
     abstract val kotlinDir: DirectoryProperty
 
+    /** 每个 ABI 一个 .so，产物只有这些；目录本身仍要声明，AGP 拿它当生成的 jniLibs 源目录。 */
+    @get:OutputFiles
+    abstract val libraries: ConfigurableFileCollection
+
     init {
         argumentProviders.add {
             listOf(
@@ -47,12 +51,21 @@ val buildRustCore = tasks.register<BuildRustCore>("buildRustCore") {
     kotlinDir.set(layout.buildDirectory.dir("generated/uniffi/kotlin"))
     val script = rootDir.resolve("scripts/build-core.sh")
     executable = script.path
+    libraries.from(
+        jniLibsDir.zip(abis) { dir: Directory, names: List<String> ->
+            names.map { dir.file("$it/libwonton_client.so") }
+        },
+    )
+    // 产物取决于整个工作区：清单、锁文件、工具链和全部源码（vendor/ 的补丁 crate 也算）。漏一项，Gradle 就判输入没变，
+    // 拿旧 .so 配新源码。target/ 不列，cargo 自己按它增量重编。
     inputs.file(script)
-    inputs.dir(repoRoot.resolve("crates/wonton-client"))
-    inputs.dir(repoRoot.resolve("crates/wonton-matrix"))
-    inputs.dir(repoRoot.resolve("crates/wonton-protocol"))
-    inputs.dir(repoRoot.resolve("crates/wonton-tunnel"))
+    inputs.file(repoRoot.resolve("Cargo.toml"))
     inputs.file(repoRoot.resolve("Cargo.lock"))
+    inputs.file(repoRoot.resolve("rust-toolchain.toml"))
+    // 仓库现在没有 .cargo/，以后加了不列就会漏；fileTree 在目录不存在时为空。
+    inputs.files(fileTree(repoRoot.resolve(".cargo")))
+    inputs.dir(repoRoot.resolve("crates"))
+    inputs.dir(repoRoot.resolve("vendor"))
 }
 
 kotlin {
