@@ -85,10 +85,17 @@ jobs:
       - name: 一次拉齐测试镜像
         # 测试里 ensure_image 见本机已有就不再联网，跑起来后不依赖 ghcr 的临时令牌还能用多久
         # （实测跑了几分钟后换令牌开始 401）。
+        # 单个镜像拉不到不算失败：GHCR 偶尔对某个 tag 回 `manifest unknown`，同一时刻别的作业却能拉；
+        # 预热失败就让测试自己按摘要拉一次，真拿不到时那条测试会带着镜像名失败，比整个作业停在预拉更有信息。
+        # 缺的镜像记在末尾的汇总里，一眼看得出这次预热少了什么。
         run: |
-          scripts/mirror-test-images.sh --list | while IFS= read -r image; do
-            docker pull "$image"
-          done
+          missing=()
+          while IFS= read -r image; do
+            docker pull "$image" || missing+=("$image")
+          done < <(scripts/mirror-test-images.sh --list)
+          if ((${#missing[@]})); then
+            printf '::warning::预热这些镜像没拉到，交给测试自己拉：%s\n' "${missing[*]}"
+          fi
       - name: 预构建桥镜像
         # 测试只验启动行为，构建本身先在这里做掉、给 docker 构建缓存预热，测试里的同名 build 就只走缓存。
         run: >-
