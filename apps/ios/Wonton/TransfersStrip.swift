@@ -66,6 +66,9 @@ private struct TransferRow: View {
             (transfer.direction == .upload ? WontonIcon.upload : WontonIcon.download)
                 .view(size: WontonTheme.size.iconSmall)
                 .foregroundStyle(Color(colors.textSecondary))
+                .accessibilityLabel(
+                    String(localized: transfer.direction == .upload ? .transferUpload : .transferDownload)
+                )
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                 Text(transfer.name)
                     .wontonText(WontonTheme.typography.supporting)

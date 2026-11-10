@@ -176,6 +176,7 @@ internal fun ScrollToBottomButton(
         ) {
             // 角标叠在圆钮外面：FAB 的 Surface 会按圆形裁剪内容，放进 BadgedBox 超出的部分会被切掉。
             Box {
+                // 装饰：圆钮外层已经带了名字。
                 Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
                 if (count > 0) {
                     Badge(

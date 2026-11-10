@@ -344,6 +344,7 @@ private struct MediaImage: View {
         .contentShape(Rectangle())
         .onTapGesture { presenter.showOriginal(image) }
         .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(Text(.messagePhoto))
         .task(id: image.thumbnail ?? image.media) {
             preview = await MediaFailure.load(image.thumbnail ?? image.media, from: core)
         }
