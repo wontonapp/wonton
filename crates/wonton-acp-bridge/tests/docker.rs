@@ -35,9 +35,12 @@ fn bridge_image_starts_and_reports_missing_configuration() {
     // 基础镜像在 CI 经 WONTON_TEST_IMAGES 指到镜像仓库副本（wonton-test-images）；本地用默认值。
     let rust_image = format!("RUST_IMAGE={}", wonton_test_images::image(RUST_IMAGE));
     let debian_image = format!("DEBIAN_IMAGE={}", wonton_test_images::image(DEBIAN_IMAGE));
+    // `--load`：CI 用 docker-container 构建器（层缓存要从 registry 导出，docker 驱动不行），镜像得装回 docker
+    // 才跑得起来；本地没装 buildx 构建器时，`docker build` 本身就是装回本机，照样认这个参数。
     let build_args = [
         "build",
         "--quiet",
+        "--load",
         "--file",
         DOCKERFILE,
         "--tag",

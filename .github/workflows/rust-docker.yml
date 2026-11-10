@@ -95,6 +95,10 @@ jobs:
           # 和“测试”分片同一份缓存：编出来的测试二进制一样，恢复完就能直接跑。
           shared-key: rust-test
           save-if: false
+      # 层缓存只能从 docker-container 之类的构建器导出（经典镜像存储的 docker 驱动不支持 cache export，实测报
+      # `Cache export is not supported for the docker driver`）。它会成为当前构建器，后面的 `docker build`
+      # 也走它，所以测试里的构建要带 `--load` 把镜像装回 docker。
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
