@@ -58,8 +58,8 @@
 - 比对失败时差异图和报告作为 `paparazzi-<运行次数>` 产物留 7 天，下载下来看差在哪。
 - 重录：本地 `cd apps/compose && ./gradlew :shared:recordPaparazziAndroidMain` 后提交 `snapshots/` 下的
   PNG，和预览一起提交。或者在 PR 上打 `record-snapshots` 标签，构建作业改成跑
-  `recordPaparazziAndroidMain`、把新图提交回分支并去掉标签：只对仓库里的分支有效，外部 PR 的分支在别人仓库
-  里推不进去，标签只让作业重录一遍（工作区里的图不会提交），作者要自己录、自己提交。
+  `recordPaparazziAndroidMain`、把新图提交回分支，然后摘掉标签。外部 PR 的分支在别人仓库里推不进去：
+  标签照样会摘掉，但图只在这次的 `paparazzi` 产物里，作者下载后自己提交。
 - 用 `GITHUB_TOKEN` 推的提交不再触发 CI，重录之后点重跑或者推一个空提交，让新参考图自己过一遍比对。
   打任何标签都会触发一次 android 运行，草稿 PR 上打标签要等转 ready 才跑。
 
