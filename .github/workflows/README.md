@@ -74,7 +74,26 @@ android 的构建、ios 的 SwiftLint 和模拟器构建，都必须在队列里
 - 所有 `actions/checkout` 都带 `persist-credentials: false`，不在工作区留 git 凭据。
 - 第三方 action 固定到提交 SHA（行尾注释写版本号）；SwiftLint、XcodeGen、gitleaks、crane、actionlint
   这类下载的二进制都校验 sha256。
-- 不用 `pull_request_target`；artifact 只留测试输出，保留 7 天。
+- 不用 `pull_request_target`；artifact 只留测试输出，保留 7 天（夜跑的截图、录屏为查失败留 14 天）。
+
+## 界面测试夜跑（`nightly-ui.yml`）
+
+两端的界面测试每晚在模拟器上各跑一遍，只定时和手动触发，不挂 PR、不进合并队列、不设必需检查。时间沿用
+`ios.yml` 和 `android.yml` 的定时（一个工作流两条 cron，作业按 `github.event.schedule` 分开），不另占窗口。
+
+- iOS 只开一台模拟器跑全部 `WontonUITests`；要两台的用例（粘贴的对方视角、好友两端）在工作流里排除或
+  `XCTSkip`。要后端的用例没有配对码时 `XCTSkip`，不静默通过。手动触发可以填 `pairing_code`，把开发栈的
+  配对码带进来；`PAIR_CODES` 也一并给。
+- 不需要后端的两个用例是冷启动：全新安装落在配对页，和 `WONTON_UI_FAKE` 的假数据首屏。假数据入口只在
+  Debug 里由壳调用（`#if DEBUG`），生产路径不变。
+- Android 在 `ubuntu-24.04` 上开 KVM，用 `ReactiveCircus/android-emulator-runner`（Apache-2.0）起一台
+  x86_64 模拟器跑 `connectedDebugAndroidTest`；首屏用例不依赖服务端。
+- 用例的时限由 xcodebuild 的 `-test-timeouts-enabled YES` 和 Gradle 自己的超时兜底，不加测试重试。
+- 失败自动开 issue（标题 `夜跑失败：<端> <测试>`）；同一条测试已经有开着的同名 issue 就在上面留言，不重复开。
+  解析不到失败用例（构建或前置步骤挂了）时报一条作业级 issue。截图、录屏和测试报告（iOS 的 `.xcresult`、
+  `simctl io recordVideo`；Android 的 `screenrecord`、测试报告）存成产物保留 14 天。
+- 连续两周稳定、这期间的失败都查清是真问题之后，再把“启动到首屏 + 一个关键流程”挪进 PR 的必需检查。
+  挪的时候放进已有作业的步骤里、作业名不改，规则集不用动。
 
 ## 已知边界
 

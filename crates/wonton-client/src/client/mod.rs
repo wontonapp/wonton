@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::sync::watch;
@@ -36,6 +37,7 @@ mod switch;
 #[cfg(feature = "test-hooks")]
 mod test_hooks;
 mod tool_policy;
+mod ui_fake;
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
 ///
@@ -59,6 +61,8 @@ pub struct ClientCore {
     visits: Arc<Visits>,
     /// 正在给哪台后台登记哪个推送地址，`push_route` 拿它和落盘记录一起去重。
     in_flight_registrations: push_route::InFlightRegistrations,
+    /// 测试用的假数据入口（`new_ui_fake`）开着：操作不落到作用域，ViewModel 保持塞进去的假数据。
+    ui_fake: AtomicBool,
 }
 
 #[uniffi::export]
@@ -612,6 +616,7 @@ impl ClientCore {
             switching,
             visits,
             in_flight_registrations: Arc::default(),
+            ui_fake: AtomicBool::new(false),
         });
         core.attach(&scope);
         Ok(core)

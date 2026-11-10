@@ -154,6 +154,7 @@ final class InstallingRowUITests: XCTestCase {
     }
 
     func testInstallRow() throws {
+        try XCTSkipIf(pairCodes.isEmpty, "需要开发栈：没有 PAIR_CODE / PAIR_CODES")
         pairIfNeeded()
         XCTAssertTrue(
             waitAnyButton(["Apps", "应用"], timeout: 40) != nil

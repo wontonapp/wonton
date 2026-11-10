@@ -1,5 +1,7 @@
 //! 用户操作分到各个作用域（ADR-0042）：这里是分派表，具体的活在各自的链路里。
 
+use std::sync::atomic::Ordering;
+
 use wonton_l10n::l10n;
 use wonton_protocol::DeviceNetwork;
 
@@ -44,6 +46,10 @@ impl ClientCore {
     ///
     /// 这个调用不阻塞，可以在主线程上直接调用。连接家里服务器这类网络操作在后台执行。
     pub fn dispatch(&self, action: Action) -> Result<(), CoreError> {
+        // 假数据入口（`new_ui_fake`）没有后端：动作不落到作用域，免得把塞进去的 ViewModel 又改回空。
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         let scope = self.scope();
         match action {
             action @ (Action::CreateSession { .. }

@@ -18,6 +18,7 @@ final class PasteUITests: XCTestCase {
     }
 
     func testPasteImageSends() throws {
+        try UITestBackend.require()
         try launch()
         UIPasteboard.general.setData(renderPNG(), forPasteboardType: UTType.png.identifier)
         openRoom()
@@ -52,6 +53,7 @@ final class PasteUITests: XCTestCase {
     }
 
     func testPeerShowsImage() throws {
+        try UITestBackend.require()
         try launch()
         openRoom()
         // 发送方先跑：这里等它的图片消息同步过来。第二台设备有没有消息的密钥看核心的恢复设置：
