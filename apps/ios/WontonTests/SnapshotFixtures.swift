@@ -2,8 +2,11 @@
 import SwiftUI
 import WontonClient
 
-/// 截图测试（`WontonTests/SnapshotTests`）的固定数据和界面组装。
-/// 模型走 DEBUG 的固定 ViewModel 初始化，不订阅核心；核心只用来给视图取不用网络也能拿到的空列表。
+@testable import Wonton
+
+/// 截图测试（`SnapshotTests`）的固定数据和界面组装。
+/// 模型走 App 里 DEBUG 的固定 ViewModel 初始化，不订阅核心；核心只用来给视图取不用网络也能拿到的空列表。
+/// 放在测试目标里：界面的文字检查不查这里，假数据不用进 String Catalog。
 @MainActor
 enum SnapshotFixtures {
     /// 画布大小和预览一致（ADR-0026 的竖屏尺寸），参考图按这个尺寸录。

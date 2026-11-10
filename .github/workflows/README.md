@@ -56,6 +56,8 @@ android 的构建、ios 的 SwiftLint 和模拟器构建，都必须在队列里
 - 参考图绑定那台模拟器和系统版本，外观、语言（en、US）和时区（UTC）钉在 scheme 和测试里。换了模拟器或系统
   要整体重录，只换图不换参数会一直红。
 - 每个用例默认 10 秒、最多 60 秒，失败不自动重试。
+- 平时（PR、队列、定时）用 `SNAPSHOT_TESTING_RECORD=never`：参考图缺一张也直接红，不在 CI 里悄悄补图；只有打标签
+  那一轮用 `all` 重录。
 - 比较失败时“失败时存结果”一步把差异图（`SNAPSHOT_ARTIFACTS`）和 `.xcresult` 存成产物，保留 7 天。
 - 重录：在 PR 上打 `record-snapshots` 标签（草稿 PR 不跑，转 ready 之后再打），`labeled` 事件起一轮。作业用
   `SNAPSHOT_TESTING_RECORD=all` 把参考图全部重画，在同一个作业里提交回分支并摘掉标签。录制那一轮本身是红的

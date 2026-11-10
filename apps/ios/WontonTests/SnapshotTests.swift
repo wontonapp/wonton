@@ -1,3 +1,4 @@
+#if DEBUG
 import SnapshotTesting
 import SwiftUI
 import UIKit
@@ -62,3 +63,4 @@ final class SnapshotTests: XCTestCase {
         return try ClientCore(dataDir: directory.path)
     }
 }
+#endif

@@ -115,6 +115,7 @@ jobs:
       contents: write
       # 录完摘掉标签，不然之后每次推送都重录。
       pull-requests: write
+      issues: write
     env:
       XCODEGEN_VERSION: "2.46.0"
       # 参考图绑定这台模拟器和这个系统版本：改了就整体重录（打 record-snapshots 标签）。系统版本取 Xcode 27.1 支持的，
@@ -129,8 +130,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
           repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-          # 只有本仓库的 PR 才推得回去；外部 fork 的 PR 不落凭据，录制结果由作者自己取。
-          persist-credentials: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+          persist-credentials: false
       - name: 用 Xcode 27.1（和开发机 mini 上的一致）
         run: sudo xcode-select -s /Applications/Xcode_27.1.app
       - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
@@ -169,12 +169,13 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
-      # 打 record-snapshots 标签时重录（旧参考图也全部重画），否则只比较、缺图才补录。
+      # 打 record-snapshots 标签时重录（旧参考图也全部重画）；其余运行一律只比较、缺图也报错，不让 CI 悄悄补图。
       # 每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。录制模式本身是红的：
       # 每录一张都会报一条“Automatically recorded snapshot”，由后面的提交步骤把图推回去。
       - name: 单元测试和截图测试
+        id: tests
         env:
-          SNAPSHOT_TESTING_RECORD: ${{ contains(github.event.pull_request.labels.*.name, 'record-snapshots') && 'all' || 'missing' }}
+          SNAPSHOT_TESTING_RECORD: ${{ github.event.label.name == 'record-snapshots' && 'all' || 'never' }}
           # 比较失败的原因图写进这里，和 .xcresult 一起当产物存。
           SNAPSHOT_ARTIFACTS: ${{ runner.temp }}/snapshot-artifacts
         run: |
@@ -185,6 +186,8 @@ jobs:
             -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
             -only-testing:WontonTests \
             -parallel-testing-enabled NO \
+            -testLanguage en \
+            -testRegion US \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 10 \
             -maximum-test-execution-time-allowance 60 \
@@ -192,17 +195,13 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO
       # 令牌推的提交不会再触发工作流（GitHub 的规则），所以录完作者要自己推一个空提交或在 PR 上重跑。
+      # 只在本仓库 PR 打上标签的那一轮做；构建失败时测试步骤被跳过，什么都没录，保留标签等下一次。
       - name: 录制模式：提交参考图并摘掉标签
-        if: ${{ !cancelled() && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'record-snapshots') && github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.label.name == 'record-snapshots' && steps.tests.outcome != 'skipped' && github.event.pull_request.head.repo.full_name == github.repository }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
-          # 构建失败时测试步骤没跑，什么都没录，保留标签等下一次。
-          if [ ! -d "$RUNNER_TEMP/Tests.xcresult" ]; then
-            echo "测试没跑到，保留标签。"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           mkdir -p apps/ios/WontonTests/__Snapshots__
@@ -211,7 +210,8 @@ jobs:
             echo "参考图没有变化，不提交。"
           else
             git commit -m "test(ios): 录制截图测试参考图"
-            git push origin "HEAD:$BRANCH"
+            # 检出时没落凭据，令牌只出现在这一条命令里。
+            git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
           fi
           gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/${{ github.event.pull_request.number }}/labels/record-snapshots" \
             || echo "标签已经不在了。"
