@@ -485,30 +485,35 @@ impl Files {
     }
 
     /// 把这个房间的 Bot 加进访问范围，返回加了哪些。房间里没有 Bot 时也会清掉过期：App 授权之后马上发链接，这时链接就算发出去了。
+    /// 和到期清理排同一个队：清理已经取了过期名单也不会在授权之后把文件删掉。
     pub async fn grant_room(
         self: &Arc<Self>,
         id: &FileId,
         room: &str,
         langs: &Languages,
     ) -> Result<Vec<String>, Failure> {
-        let (id, room, langs) = (id.clone(), room.to_owned(), langs.clone());
-        self.blocking(move |files| {
-            files.authorize(&id, &Accessor::Owner, &langs)?;
-            // 主人已经在范围里，`grant` 也负责清掉过期时间（ADR-0020 的“生命周期”）。
-            files
-                .registry
-                .grant(&id, Accessor::Owner, now_secs())?
-                .ok_or_else(|| Failure::unknown(&langs))?;
-            let bots = files.host.bots_in_room(&room)?;
-            for bot in &bots {
+        let (task, room, langs) = (id.clone(), room.to_owned(), langs.clone());
+        let turn = self.uploads.turn(id).await;
+        let bots = self
+            .blocking(move |files| {
+                files.authorize(&task, &Accessor::Owner, &langs)?;
+                // 主人已经在范围里，`grant` 也负责清掉过期时间（ADR-0020 的“生命周期”）。
                 files
                     .registry
-                    .grant_by_owner(&id, bot, now_secs())?
+                    .grant(&task, Accessor::Owner, now_secs())?
                     .ok_or_else(|| Failure::unknown(&langs))?;
-            }
-            Ok(bots)
-        })
-        .await
+                let bots = files.host.bots_in_room(&room)?;
+                for bot in &bots {
+                    files
+                        .registry
+                        .grant_by_owner(&task, bot, now_secs())?
+                        .ok_or_else(|| Failure::unknown(&langs))?;
+                }
+                Ok(bots)
+            })
+            .await;
+        drop(turn);
+        bots
     }
 
     /// 单独收回一个 Bot 的访问：来源插件的授权收回时，主人亲手授权过的 Bot 不受影响，要靠这个。这个 Bot 再经工具找到同一个文件时，
@@ -531,12 +536,26 @@ impl Files {
         .await
     }
 
-    /// 把链接发到“Wonton”私聊：主人所有设备都看得到卡片。发之前先清掉过期，发不出去时文件多留一阵也好过链接被删掉。
-    pub async fn send_to_devices(&self, id: &FileId, langs: &Languages) -> Result<(), Failure> {
-        self.authorize(id, &Accessor::Owner, langs)?;
-        self.registry
-            .grant(id, Accessor::Owner, now_secs())?
-            .ok_or_else(|| Failure::unknown(langs))?;
+    /// 把链接发到“Wonton”私聊：主人所有设备都看得到卡片。发之前先清掉过期（和到期清理排同一个队），发不出去时文件多留一阵也好过链接被删掉。
+    pub async fn send_to_devices(
+        self: &Arc<Self>,
+        id: &FileId,
+        langs: &Languages,
+    ) -> Result<(), Failure> {
+        let (task, langs) = (id.clone(), langs.clone());
+        let turn = self.uploads.turn(id).await;
+        let granted = self
+            .blocking(move |files| {
+                files.authorize(&task, &Accessor::Owner, &langs)?;
+                files
+                    .registry
+                    .grant(&task, Accessor::Owner, now_secs())?
+                    .ok_or_else(|| Failure::unknown(&langs))?;
+                Ok(())
+            })
+            .await;
+        drop(turn);
+        granted?;
         self.host.notify_owner(&id.link()).await
     }
 

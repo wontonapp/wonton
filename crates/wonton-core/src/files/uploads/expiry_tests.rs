@@ -160,9 +160,13 @@ async fn a_delete_that_keeps_failing_keeps_the_record_and_file() {
     let transfers = f.shares_dir.join(TRANSFERS);
     fs::remove_dir_all(transfers.join(".wonton-trash")).unwrap();
 
-    for _ in 0..2 {
-        f.files.sweep(now).await;
-        assert!(public.exists());
-        assert!(matches!(f.files.registry.get(&id, now), Lookup::Expired(_)));
-    }
+    f.files.sweep(now).await;
+    // 第二次跑过 24 小时：`purge_expired` 会清过期的记录，上传的记录要跳过，否则文件成了孤儿。
+    let later = now.saturating_add(2 * UPLOAD_TTL_SECS);
+    f.files.sweep(later).await;
+    assert!(public.exists());
+    assert!(matches!(
+        f.files.registry.get(&id, later),
+        Lookup::Expired(_)
+    ));
 }
