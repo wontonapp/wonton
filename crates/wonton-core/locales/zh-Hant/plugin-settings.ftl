@@ -7,11 +7,6 @@
 ## with_note 把原訊息和補充說明拼成一句。
 plugin-settings-note-appended = { $message }（{ $note }）
 
-# ── 還沒填電子郵件（owner.rs，安裝和網頁連接埠用）────────────────────────────
-
-plugin-settings-email-missing = 你還沒填電子郵件：在雲吞的設定裡填好再試
-plugin-settings-email-needed = 這個應用程式會用到你的電子郵件，填好才能安裝
-
 # ── 網頁的區域網路連接埠的風險說明（lan/webui.rs，App 詳細頁顯示）────────────
 
 plugin-settings-lan-webui-risk-impersonate = 區域網路裡的裝置，以及這部主機上能出網的應用程式，不用密碼就能以你的身分開啟它

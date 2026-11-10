@@ -574,6 +574,7 @@ impl PluginManager {
             self.engine.disconnect_network(network, core).await?;
         }
         self.detach_relay(network).await?;
+        self.detach_mailpit(network).await?;
         self.engine.remove_network(network).await?;
         let labels = self.cfg.instance.labels(&manifest.id);
         self.engine

@@ -151,6 +151,11 @@ impl PluginManager {
                 ),
                 result.map_err(|e| e.to_string()),
             );
+            let result = self.detach_mailpit(network).await;
+            note(
+                format!("Mailpit 离开网络 {network}"),
+                result.map_err(|e| e.to_string()),
+            );
             note(
                 l10n::text(
                     langs,

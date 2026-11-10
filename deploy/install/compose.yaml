@@ -71,6 +71,7 @@ services:
       WONTON_OIDC_PUBLIC_URL: http://hydra.wonton.internal:4444
       WONTON_MATRIX_URL: http://tuwunel.wonton.internal:8008
       WONTON_TUSD_URL: http://tusd.wonton.internal:8080
+      WONTON_MAILPIT_URL: http://mailpit.wonton.internal:8025
       WONTON_MATRIX_JWT_KEY_FILE: ${WONTON_INSTALL_DIR:?}/secrets/matrix-jwt.pem
       WONTON_MATRIX_REGISTRATION_SECRET_FILE: ${WONTON_INSTALL_DIR:?}/secrets/matrix-registration-secret
       # 第一次安装时由 init 定下，之后不变（ADR-0009 的“Matrix 的服务器名”）。
@@ -149,6 +150,46 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/metrics"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 1s
+
+  mailpit:
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
+    restart: unless-stopped
+    user: "${WONTON_PUID:-1000}:${WONTON_PGID:-1000}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    sysctls:
+      - net.ipv4.ip_unprivileged_port_start=0
+      - net.ipv4.ip_forward=0
+    entrypoint: ["/bin/sh", "-ec", ". /wonton-config/runtime.env; exec /mailpit"]
+    environment:
+      <<: *no-proxy
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_BIND_ADDR: 0.0.0.0:25
+      MP_UI_BIND_ADDR: 0.0.0.0:8025
+      MP_UI_AUTH_FILE: /wonton-config/auth.htpasswd
+      MP_MAX_MESSAGE_SIZE: "25"
+      MP_MAX_MESSAGES: "0"
+      MP_MAX_AGE: 7d
+      MP_DISABLE_VERSION_CHECK: "true"
+      # 宣告 AUTH 并接受任何凭据，给服务器不宣告 AUTH 就发不出信的应用；不配证书，认证照走明文。认插件只按来源网段。
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    volumes:
+      - ${WONTON_DATA_DIR}/core/mailpit/data:/data
+      - ${WONTON_DATA_DIR}/core/mailpit/config:/wonton-config:ro
+    networks:
+      core:
+        aliases: [mailpit.wonton.internal]
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
       interval: 10s
       timeout: 5s
       start_period: 30s

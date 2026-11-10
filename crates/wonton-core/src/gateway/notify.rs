@@ -60,7 +60,7 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
     notice.plugin_name = display_name(gateway, &source.id);
 
     if let Err(denied) = gateway.notify_limiter.admit(&source.id) {
-        return drop_and_tell(notices, &notice, denied).await;
+        return drop_and_tell(gateway, notices, &notice, denied).await;
     }
 
     let mut body = format!("{}：{}", notice.plugin_name, notice.title);
@@ -188,23 +188,19 @@ fn read_notice(gateway: &Gateway, id: &PluginId, input: &Value) -> Result<Plugin
 
 /// 超了频率：这条丢弃并返回 429；第一次超限还在私聊里告诉主人，到什么时候恢复。
 async fn drop_and_tell(
+    gateway: &Gateway,
     notices: &crate::matrix::NoticeRoom,
     notice: &PluginNotice,
     denied: super::notify_limit::Denied,
 ) -> Response {
     let wait = wait_text(denied.retry_after);
-    if denied.first {
-        let body = format!(
-            "插件 {} 发通知太频繁，被暂时拦下，约 {}后自动恢复",
-            notice.plugin_name, wait
-        );
-        if let Err(e) = notices
-            .send(&json!({"msgtype": "m.notice", "body": body}))
-            .await
-        {
-            tracing::error!(error = %e, plugin = %notice.plugin_id, "发通知的超限提示失败");
-        }
-    }
+    tell_limit(
+        notices,
+        &notice.plugin_name,
+        &denied,
+        &gateway.plugins.owner_languages(),
+    )
+    .await;
     error_response(
         StatusCode::TOO_MANY_REQUESTS,
         "rate_limited",
@@ -215,6 +211,47 @@ async fn drop_and_tell(
             wait
         ),
     )
+}
+
+pub(crate) async fn tell_limit(
+    notices: &crate::matrix::NoticeRoom,
+    plugin_name: &str,
+    denied: &super::notify_limit::Denied,
+    languages: &crate::plugin::languages::Languages,
+) {
+    if let Some(body) = limit_hint(plugin_name, denied, languages)
+        && let Err(error) = notices
+            .send(&json!({"msgtype": "m.notice", "body": body}))
+            .await
+    {
+        tracing::error!(%error, %plugin_name, "发通知的超限提示失败");
+    }
+}
+
+pub(crate) fn limit_hint(
+    plugin_name: &str,
+    denied: &super::notify_limit::Denied,
+    languages: &crate::plugin::languages::Languages,
+) -> Option<String> {
+    denied.first.then(|| {
+        crate::l10n::text(
+            languages,
+            "chat-notify-rate-limited",
+            &[
+                ("plugin", plugin_name.into()),
+                (
+                    "seconds",
+                    denied
+                        .retry_after
+                        .as_secs()
+                        .max(1)
+                        .to_string()
+                        .as_str()
+                        .into(),
+                ),
+            ],
+        )
+    })
 }
 
 /// 插件的显示名：清单的 title，中文优先（同确认卡片）；没有时用 ID。

@@ -521,12 +521,12 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
         email: Some("owner@wonton.localhost".into()),
     };
     let auth = m.route("app-test").unwrap().proxy.unwrap();
-    let header = auth.headers(&owner, &super::langs()).unwrap();
+    let header = auth.headers(&owner);
     assert_eq!(
         (header[0].0.as_str(), header[0].1.as_str()),
         ("remote-user", "owner")
     );
-    let cookies = auth.cookies(&owner, &super::langs()).unwrap();
+    let cookies = auth.cookies(&owner);
     let (name, key) = (&cookies[0].0, cookies[0].1.clone());
     assert_eq!((*name, key.len()), ("app_web", 64), "32 字节的十六进制");
     assert_eq!(auth.secrets(), [key.as_str()]);
@@ -534,7 +534,7 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
     let restarted = manager_with(engine, &dir);
     restarted.restore().await.unwrap();
     let auth = restarted.route("app-test").unwrap().proxy.unwrap();
-    assert_eq!(auth.cookies(&owner, &super::langs()).unwrap()[0].1, key);
+    assert_eq!(auth.cookies(&owner)[0].1, key);
 }
 
 #[tokio::test]
@@ -561,7 +561,7 @@ async fn sso_plugins_that_ask_for_the_identity_get_the_owner_name_and_email() {
     .unwrap();
     let env = env_of_container(&docker, "wonton-app-test--web");
     assert_eq!(env["ADMIN"], "owner");
-    assert_eq!(env["MAIL"], "owner@example.com");
+    assert_eq!(env["MAIL"], "owner@wonton.internal");
 }
 
 #[test]

@@ -62,12 +62,26 @@ impl NoticeRoom {
 
     /// 以核心账号发一条消息。核对之后才被踢出去的话再试一次，那时会换一个房间。
     pub async fn send(&self, content: &Value) -> Result<Posted, MatrixError> {
+        self.send_with_txn(content, &crate::secret::random_token())
+            .await
+    }
+
+    pub(crate) async fn send_with_txn(
+        &self,
+        content: &Value,
+        transaction: &str,
+    ) -> Result<Posted, MatrixError> {
         let room = self.room().await?;
         let core = self.matrix.core_session();
-        let (room, event) = match core.send_message(&room, content).await {
+        let (room, event) = match core
+            .send_message_with_txn(&room, content, transaction)
+            .await
+        {
             Err(e) if gone(&e) => {
                 let room = self.room().await?;
-                let event = core.send_message(&room, content).await?;
+                let event = core
+                    .send_message_with_txn(&room, content, transaction)
+                    .await?;
                 (room, event)
             }
             sent => (room, sent?),

@@ -500,6 +500,7 @@ impl PluginManager {
         core: &str,
         manifest: &Manifest,
     ) -> Result<(), InstallError> {
+        self.attach_mailpit(network, manifest).await?;
         let address = self.engine.core_address(network).await?.to_string();
         let current = self.engine.endpoint_address(core, network).await?;
         if current.as_deref() == Some(address.as_str()) {

@@ -116,7 +116,7 @@ impl PluginManager {
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
         // 只要资源字段，用和安装前检查一样的占位环境：Bot 的令牌之类核心不存，真的环境凑不齐。
-        let mut ctx = dry_run_context(&package, Some("owner@wonton.invalid"));
+        let mut ctx = dry_run_context(&package);
         ctx.memory_total = self.memory_total().await;
         ctx.limits = limits;
         let slug = package.manifest.id.slug();

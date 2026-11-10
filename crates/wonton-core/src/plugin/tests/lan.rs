@@ -487,7 +487,7 @@ async fn an_address_change_reruns_consuming_one_shots_in_dependency_order() {
 }
 
 #[tokio::test]
-async fn a_rebuild_that_needs_a_missing_email_leaves_the_old_container_alone() {
+async fn a_rebuild_without_a_real_email_keeps_the_internal_address() {
     let (docker, mut m, detected, dir) = on(office()).await;
     let compose = package(
         "  samba:\n    image: example/samba\n    environment: {MAIL: '${WONTON_OWNER_EMAIL:?}'}",
@@ -504,13 +504,11 @@ async fn a_rebuild_that_needs_a_missing_email_leaves_the_old_container_alone() {
     let before = docker.writes().len();
     *detected.lock().unwrap() = Ok(host(&["192.168.0.14"]));
     m.lan_pass(&Languages::default()).await.unwrap();
-    assert_eq!(docker.writes().len(), before, "旧容器不动");
-    let PluginStatus::Degraded { reason } = status(&m) else {
-        panic!("应标为异常：{:?}", status(&m));
-    };
-    assert!(
-        reason.contains(&super::message("plugin-settings-email-missing", &[])),
-        "{reason}"
+    assert!(docker.writes().len() > before);
+    assert_eq!(status(&m), PluginStatus::Running);
+    assert_eq!(
+        super::env_of_container(&docker, "wonton-app-test--samba")["MAIL"],
+        "owner@wonton.internal"
     );
 }
 

@@ -82,6 +82,7 @@ pub struct PluginManager {
     pub(super) http: HttpClient,
     pub(super) oidc: Option<Hydra>,
     pub(super) matrix: Option<Arc<Matrix>>,
+    pub(super) mailpit: Option<Arc<crate::mailbox::Component>>,
     pub(super) profiles: super::bot_profile::ProfileState,
     pub(super) cfg: LifecycleConfig,
     /// 核心看到的宿主路径，探测显卡用（见 [`super::gpu`]）。
@@ -165,6 +166,7 @@ impl PluginManager {
             http,
             oidc,
             matrix: None,
+            mailpit: None,
             profiles: Default::default(),
             host: HostPaths::new(host_dev),
             nvidia_memory: NvidiaMemory::default(),

@@ -54,7 +54,7 @@ pub struct LifecycleConfig {
     pub install_timeout: Duration,
     /// 主人的用户名，也是主人的 Matrix 用户名（localpart）。
     pub owner: String,
-    /// 主人的显示名和邮箱，随时会改。邮箱注入给要身份的插件。
+    /// 主人的可变资料；插件邮箱由固定用户名派生，不取真实邮箱（ADR-0056）。
     pub profile: Arc<crate::owner::OwnerStore>,
     /// 核心网关监听的端口：插件经核心在插件网络里的别名（如 `matrix.wonton.internal`）访问它。
     pub gateway_port: u16,
@@ -390,11 +390,6 @@ impl PluginManager {
         granted: &[Permission],
         langs: &Languages,
     ) -> Result<InstallContext, InstallError> {
-        if self.cfg.profile.email().is_none() && super::manifest_oidc::needs_owner_email(manifest) {
-            return Err(InstallError::OwnerProfileIncomplete(
-                crate::owner::no_email(langs),
-            ));
-        }
         let public = &self.cfg.public;
         let slug = manifest.id.slug();
         let app_url = manifest
@@ -443,7 +438,7 @@ impl PluginManager {
             oidc,
             owner: manifest.gets_owner_identity().then(|| OwnerVars {
                 name: self.cfg.owner.clone(),
-                email: self.cfg.profile.email(),
+                email: crate::owner::internal_email(&self.cfg.owner),
             }),
             matrix: None,
             bots: Default::default(),

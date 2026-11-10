@@ -11,24 +11,17 @@ use hyper::header::{COOKIE, HeaderMap, HeaderName, HeaderValue, SET_COOKIE};
 use super::isolation::sent_name;
 use super::session::strip_cookies;
 use crate::owner::Owner;
-use crate::plugin::languages::Languages;
 use crate::plugin::proxy_auth::ProxyAuth;
 
-/// 转发前：换上代加的请求头和 Cookie。值写不进 HTTP 或者主人没填模板要的邮箱时报错，
-/// 不转发。
-pub fn attach(
-    headers: &mut HeaderMap,
-    auth: &ProxyAuth,
-    owner: &Owner,
-    langs: &Languages,
-) -> Result<(), String> {
-    for (name, value) in auth.headers(owner, langs).map_err(|e| e.to_string())? {
+/// 转发前：换上代加的请求头和 Cookie；值写不进 HTTP 时报错，不转发。
+pub fn attach(headers: &mut HeaderMap, auth: &ProxyAuth, owner: &Owner) -> Result<(), String> {
+    for (name, value) in auth.headers(owner) {
         let value = HeaderValue::from_bytes(value.as_bytes())
             .map_err(|_| format!("代加的请求头 {name} 的值写不进 HTTP"))?;
         // 同名的（请求头名不分大小写）全部换掉。
         headers.insert(name, value);
     }
-    let cookies = auth.cookies(owner, langs).map_err(|e| e.to_string())?;
+    let cookies = auth.cookies(owner);
     if cookies.is_empty() {
         return Ok(());
     }

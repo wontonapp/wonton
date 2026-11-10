@@ -172,3 +172,8 @@ chat-help-docs-age = { $problem } This copy is { $days ->
 } old
 chat-help-topic-missing = No topic “{ $topic }”. Available topics: { $topics }
 chat-help-page-needs-core = This page covers features that need the home server to be { $required } or later; this one is { $core }. Update the server first
+
+chat-mail-convert-failed = The HTML body of this email could not be converted to text. The original is attached as message.html.
+chat-mail-unknown-source = An app email came from an unknown source or an app without mail permission. It wasn't delivered to anyone.
+chat-mail-recipients-failed = Couldn't update who can receive app mail: { $error }. Wonton will try again when household membership changes or the server restarts.
+chat-notify-rate-limited = { $plugin } is sending notifications and mail too often. They are paused for about { $seconds } seconds.

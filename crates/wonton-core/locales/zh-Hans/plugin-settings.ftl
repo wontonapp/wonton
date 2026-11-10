@@ -7,11 +7,6 @@
 ## with_note 把原消息和补充说明拼成一句。en 用半角括号加空格。
 plugin-settings-note-appended = { $message }（{ $note }）
 
-# ── 还没填邮箱（owner.rs，安装和网页端口用）──────────────────────────────────
-
-plugin-settings-email-missing = 你还没填邮箱：在 App 的设置里填好再试
-plugin-settings-email-needed = 这个应用要用你的邮箱，填好才能装
-
 # ── 网页的局域网端口的风险说明（lan/webui.rs，App 详情页显示）────────────────
 
 plugin-settings-lan-webui-risk-impersonate = 局域网里的设备和这台主机上能出网的应用，不用密码就能以你的身份打开它

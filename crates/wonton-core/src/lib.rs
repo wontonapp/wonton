@@ -25,6 +25,7 @@ pub mod http;
 pub mod install;
 pub(crate) mod l10n;
 pub(crate) mod link_preview;
+pub mod mailbox;
 pub mod matrix;
 pub mod mcp;
 pub mod members;

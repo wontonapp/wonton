@@ -318,12 +318,6 @@ pub(super) async fn installable(bus: &Bus, id: &str) -> Result<PluginPackage, To
     dry_run(&package, &langs)
         .map_err(InstallError::from)
         .map_err(|e| ToolFailure::new(e.kind(), format!("没有装上 {id}（{}）：{e}", e.kind())))?;
-    if bus.plugins.missing_profile(&package, &langs).is_some() {
-        return Err(ToolFailure::new(
-            "owner_profile_incomplete",
-            format!("{id} 要用你的邮箱，你还没填：请你在 App 的设置里填好再装"),
-        ));
-    }
     Ok(package)
 }
 

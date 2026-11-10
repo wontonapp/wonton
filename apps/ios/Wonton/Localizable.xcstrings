@@ -11932,66 +11932,6 @@
         }
       }
     },
-    "problem.plugin.ownerProfileIncomplete.nextStep": {
-      "comment": "Next step: fill it in in Settings, then try again.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fill it in in Settings, then try again."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在设置里填好后再试。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在設定裡填好後再試。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "設定で入力してから、もう一度お試しください。"
-          }
-        }
-      }
-    },
-    "problem.plugin.ownerProfileIncomplete.title": {
-      "comment": "Problem title: the owner's profile (name and email) isn't filled in yet, and the app needs it.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your profile isn't filled in yet"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你的资料还没填好"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "你的資料還沒填好"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロフィールがまだ入力されていません"
-          }
-        }
-      }
-    },
     "problem.plugin.protocol.nextStep": {
       "comment": "Next step: update the app or the home server.",
       "extractionState": "manual",

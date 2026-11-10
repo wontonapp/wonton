@@ -147,6 +147,7 @@ impl PluginManager {
                 self.engine.disconnect_network(&network, core).await?;
             }
             self.detach_relay(&network).await?;
+            self.detach_mailpit(&network).await?;
             self.engine.remove_network(&network).await?;
             self.engine
                 .create_network_at(

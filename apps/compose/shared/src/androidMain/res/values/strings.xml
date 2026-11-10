@@ -985,8 +985,6 @@
     <string name="onboarding_problem_plugin_lan_unavailable">No local network address is available. Check the server\'s network settings.</string>
     <!-- Problem title while installing: the app wasn't found. -->
     <string name="onboarding_problem_plugin_not_found">This app wasn\'t found. Refresh the list and try again.</string>
-    <!-- Problem title while installing: the owner profile isn't complete. -->
-    <string name="onboarding_problem_plugin_owner_profile_incomplete">Your profile isn\'t complete. Fill it in and try again.</string>
     <!-- Problem title while installing: the app and the home server versions don't work together. -->
     <string name="onboarding_problem_plugin_protocol">Wonton and your home server versions don\'t match. Update Wonton or the server.</string>
     <!-- Problem title while installing: the home server is older than the app needs. -->
@@ -1260,10 +1258,6 @@
     <string name="problem_plugin_not_found_next_step">Refresh the store and try again.</string>
     <!-- Problem title: the app is gone from its source. -->
     <string name="problem_plugin_not_found_title">This app wasn\'t found</string>
-    <!-- Next step: fill it in in Settings, then try again. -->
-    <string name="problem_plugin_owner_profile_incomplete_next_step">Fill it in in Settings, then try again.</string>
-    <!-- Problem title: the owner's profile (name and email) isn't filled in yet, and the app needs it. -->
-    <string name="problem_plugin_owner_profile_incomplete_title">Your profile isn\'t filled in yet</string>
     <!-- Next step: update the app or the home server. -->
     <string name="problem_plugin_protocol_next_step">Update Wonton or your home server.</string>
     <!-- Problem title: the app and the home server versions don't match. -->

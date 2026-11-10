@@ -216,7 +216,7 @@ pub(super) async fn loopback_endpoint(key: SecretKey) -> Endpoint {
 
 /// 测试用的隧道：空的设备登记表和家人记录，加一个只走回环地址的 endpoint。返回家人记录，
 /// 和隧道里的配对用的是同一份。局域网地址给一个测试值（ADR-0032 的直连地址选择）。
-pub(super) async fn loopback_tunnel(dir: &Path) -> (Tunnel, Arc<Members>) {
+pub(crate) async fn loopback_tunnel(dir: &Path) -> (Tunnel, Arc<Members>) {
     loopback_tunnel_with(dir, ["192.168.1.2".parse().unwrap()].into()).await
 }
 

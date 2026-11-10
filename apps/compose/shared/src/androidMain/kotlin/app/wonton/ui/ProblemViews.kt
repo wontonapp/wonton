@@ -197,11 +197,6 @@ fun PluginFailure.problem(detail: String?): Problem = when (this) {
         nextStepRes = R.string.problem_plugin_egress_proxy_unavailable_next_step,
         detail = detail,
     )
-    PluginFailure.OWNER_PROFILE_INCOMPLETE -> Problem(
-        titleRes = R.string.problem_plugin_owner_profile_incomplete_title,
-        nextStepRes = R.string.problem_plugin_owner_profile_incomplete_next_step,
-        detail = detail,
-    )
     PluginFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
     PluginFailure.PROTOCOL -> Problem(
         titleRes = R.string.problem_plugin_protocol_title,

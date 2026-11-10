@@ -66,6 +66,12 @@ impl PluginManager {
     /// 插件在运行，标签和残留一模一样。这时什么都不删。
     async fn check_no_strangers(&self, found: &LabeledResources) -> Result<(), InstallError> {
         let langs = self.owner_languages();
+        let mailpit = match &self.mailpit {
+            Some(component) => component.optional_container().await.map_err(|error| {
+                InstallError::Conflict(format!("Mailpit 组件查询失败：{error:#}"))
+            })?,
+            None => None,
+        };
         for network in &found.networks {
             let endpoints = self.engine.network_endpoints(network).await?;
             let strangers: Vec<String> = endpoints
@@ -74,6 +80,7 @@ impl PluginManager {
                     !found.containers.contains(name)
                         && self.cfg.core_container.as_ref() != Some(name)
                         && *name != self.cfg.instance.egress()
+                        && mailpit.as_ref() != Some(name)
                 })
                 .collect();
             if !strangers.is_empty() {
@@ -97,6 +104,7 @@ impl PluginManager {
                 self.engine.disconnect_network(network, core).await?;
             }
             self.detach_relay(network).await?;
+            self.detach_mailpit(network).await?;
             self.engine.remove_network(network).await?;
         }
         Ok(())

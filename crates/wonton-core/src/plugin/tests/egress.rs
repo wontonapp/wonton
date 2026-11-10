@@ -165,7 +165,7 @@ async fn on_the_host_oidc_plugins_reach_the_provider_through_their_own_network_g
 }
 
 fn with_proxy(package: &PluginPackage) -> (InstallContext, Deployment) {
-    let mut ctx = dry_run_context(package, None);
+    let mut ctx = dry_run_context(package);
     ctx.egress = Some(EgressVars);
     let plan = render(package, &ctx, &super::langs()).unwrap();
     (ctx, plan)
@@ -296,7 +296,7 @@ fn without_a_proxy_only_the_empty_url_variable_is_injected() {
         "  permissions: [network.egress]",
     );
     let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
-    let plan = render(&package, &dry_run_context(&package, None), &super::langs()).unwrap();
+    let plan = render(&package, &dry_run_context(&package), &super::langs()).unwrap();
     let web = service(&plan, "web");
     assert_eq!(super::env_of(web), ["SEARX_PROXY="]);
     let test = web.body.healthcheck.clone().unwrap().test.unwrap();
@@ -310,7 +310,7 @@ fn a_plugin_without_egress_cannot_reference_the_proxy_url() {
         "  permissions: []",
     );
     let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
-    let error = render(&package, &dry_run_context(&package, None), &super::langs()).unwrap_err();
+    let error = render(&package, &dry_run_context(&package), &super::langs()).unwrap_err();
     assert!(error.to_string().contains("WONTON_PROXY_URL"), "{error}");
 }
 
@@ -339,7 +339,7 @@ async fn image_healthchecks_are_rewritten_only_when_a_proxy_is_configured() {
     assert_eq!(check.interval, Some(5_000_000_000));
     assert_eq!(service(&plan, "sealed").body.healthcheck, None);
 
-    let ctx = dry_run_context(&package, None);
+    let ctx = dry_run_context(&package);
     let mut plan = render(&package, &ctx, &super::langs()).unwrap();
     m.rewrite_image_healthchecks(&ctx, &mut plan).await.unwrap();
     assert_eq!(service(&plan, "web").body.healthcheck, None);
@@ -386,7 +386,7 @@ async fn proxy_plugins_get_the_core_address_and_others_do_not() {
     );
     let compose = package_with_env_ref();
     let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
-    let error = render(&package, &dry_run_context(&package, None), &super::langs()).unwrap_err();
+    let error = render(&package, &dry_run_context(&package), &super::langs()).unwrap_err();
     assert!(error.to_string().contains("WONTON_CORE_ADDRESS"), "{error}");
 }
 

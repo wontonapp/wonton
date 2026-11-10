@@ -48,6 +48,7 @@ pub mod lifecycle;
 pub mod limits;
 mod limits_update;
 mod listed;
+mod mailpit;
 pub mod manager;
 mod manager_options;
 pub mod manifest;

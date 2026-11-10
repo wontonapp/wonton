@@ -19,7 +19,8 @@ mod hosts;
 
 pub use hosts::{
     FILE_HOOKS_HOST, HostKind, PLUGIN_AUTH_HOST, PLUGIN_HEALTH_HOST, PLUGIN_MATRIX_HOST,
-    PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PLUGIN_NOTIFY_HOST, PUSH_GATEWAY_HOST, PublicUrls,
+    PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PLUGIN_NOTIFY_HOST, PLUGIN_SMTP_HOST, PUSH_GATEWAY_HOST,
+    PublicUrls,
 };
 
 /// 插件安装等待容器就绪的默认期限。
@@ -99,6 +100,8 @@ pub struct Config {
     pub matrix: Option<MatrixConfig>,
     /// tusd 的 `host:port`（`WONTON_TUSD_URL`）：设备上传转发到这里，文件钩子只接受这个地址（ADR-0020）。
     pub tusd: Option<String>,
+    /// Mailpit 的内部 API 地址（`WONTON_MAILPIT_URL`），认证密码由核心私有密钥库生成。
+    pub mailpit: Option<String>,
     /// 安装器预装的系统插件包所在的目录，每个子目录一个插件包（`WONTON_SYSTEM_PLUGINS`）。
     pub system_plugins: Option<PathBuf>,
     /// 随核心附带的默认插件（如默认 Agent）所在的目录，格式同系统插件的目录，只自动装一次
@@ -257,10 +260,8 @@ impl Config {
             people_limits: people_limits(&get)?,
             oidc,
             matrix,
-            tusd: get("WONTON_TUSD_URL")
-                .map(|url| http_authority(&url))
-                .transpose()
-                .map_err(|e| invalid("WONTON_TUSD_URL", &e))?,
+            tusd: optional_authority(&get, "WONTON_TUSD_URL")?,
+            mailpit: optional_authority(&get, "WONTON_MAILPIT_URL")?,
             tz: get("TZ").unwrap_or_else(|| "UTC".into()),
             puid: parse(&get, "WONTON_PUID", 1000)?,
             pgid: parse(&get, "WONTON_PGID", 1000)?,
@@ -424,6 +425,16 @@ pub fn check_owner_settings(get: &impl Fn(&str) -> Option<String>) -> Result<(),
     };
     check("WONTON_OWNER_NAME", owner::check_username)?;
     check("TZ", owner::check_time_zone)
+}
+
+fn optional_authority(
+    get: &impl Fn(&str) -> Option<String>,
+    name: &'static str,
+) -> Result<Option<String>, ConfigError> {
+    get(name)
+        .map(|url| http_authority(&url))
+        .transpose()
+        .map_err(|error| invalid(name, &error))
 }
 
 /// `WONTON_MATRIX_URL` 设了就要同时给出签发私钥和注册共享密钥；都没设表示核心不接 Matrix。

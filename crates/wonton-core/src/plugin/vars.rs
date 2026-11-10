@@ -35,7 +35,7 @@ impl std::fmt::Debug for OidcVars {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnerVars {
     pub name: String,
-    pub email: Option<String>,
+    pub email: String,
 }
 
 /// 注入给 Bot 的 Matrix 身份（`matrix.bot`）。`Debug` 不打印访问令牌。
@@ -125,9 +125,7 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     }
     if let Some(owner) = &ctx.owner {
         set("WONTON_OWNER_NAME", owner.name.clone());
-        if let Some(email) = &owner.email {
-            set("WONTON_OWNER_EMAIL", email.clone());
-        }
+        set("WONTON_OWNER_EMAIL", owner.email.clone());
     }
     if let Some(models) = &ctx.models {
         set("WONTON_MODEL_BASE_URL", models.base_url.clone());
@@ -147,6 +145,17 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     }
     if let Some(url) = &ctx.notify_url {
         set("WONTON_NOTIFY_URL", url.clone());
+    }
+    if manifest.permissions.contains(&Permission::Notify) {
+        set(
+            "WONTON_SMTP_HOST",
+            crate::config::PLUGIN_SMTP_HOST.to_owned(),
+        );
+        set("WONTON_SMTP_PORT", "25".to_owned());
+        set(
+            "WONTON_MAIL_FROM",
+            format!("{}@plugins.wonton.internal", manifest.id),
+        );
     }
     if let Some(grant) = &ctx.lan {
         set(lan::ADDRESSES_VAR, grant.var());

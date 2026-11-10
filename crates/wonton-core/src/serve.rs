@@ -83,4 +83,5 @@ pub(super) fn spawn_plugin_monitors(manager: &Arc<PluginManager>) {
     manager.spawn_upgrade_checks();
     manager.spawn_oom_watch();
     manager.spawn_container_watch();
+    manager.spawn_mailpit_watch();
 }

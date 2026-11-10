@@ -87,7 +87,6 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         InstallError::Conflict(_)
         | InstallError::NameTaken(_)
         | InstallError::Changed(_)
-        | InstallError::OwnerProfileIncomplete(_)
         | InstallError::PortTaken(_)
         | InstallError::CoreUpgrading(_) => StatusCode::CONFLICT,
         InstallError::NotInstalled(_) | InstallError::NotFound(_) => StatusCode::NOT_FOUND,

@@ -535,6 +535,20 @@ impl Engine {
         }
     }
 
+    /// 停止但保留容器及卷；已停止视为成功。
+    pub async fn stop_container(&self, name: &str) -> Result<()> {
+        let stop = StopContainerOptionsBuilder::default().t(10).build();
+        match self.patient().stop_container(name, Some(stop)).await {
+            Ok(()) => Ok(()),
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 304, ..
+            }) => Ok(()),
+            Err(error) => {
+                Err(self.fail_name("plugin-install-docker-context-stop-container", name, error))
+            }
+        }
+    }
+
     /// 停止并删除容器（连同匿名卷）；不存在视为成功。
     pub async fn remove_container(&self, name: &str) -> Result<()> {
         let stop = StopContainerOptionsBuilder::default().t(10).build();
