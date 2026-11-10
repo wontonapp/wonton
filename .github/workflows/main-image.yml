@@ -35,6 +35,8 @@ jobs:
             echo "rust=$mirror/rust:1.99.1-slim-trixie"
             echo "debian=$mirror/debian:trixie-slim"
             echo "compose=$mirror/docker:29.9.2-cli"
+            # 层缓存放镜像仓库，不占 10 GB 的 actions 缓存（之前 buildkit 的 gha 缓存一份就吃掉 9 GB）。
+            echo "cache=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:core-image"
           } >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/push-image
         with:
@@ -47,4 +49,6 @@ jobs:
             RUST_IMAGE=${{ steps.meta.outputs.rust }}
             DEBIAN_IMAGE=${{ steps.meta.outputs.debian }}
             COMPOSE_IMAGE=${{ steps.meta.outputs.compose }}
-          cache: "true"
+          cache-ref: ${{ steps.meta.outputs.cache }}
+          # 只有 main 写缓存，发版和 PR 只读。
+          cache-write: "true"

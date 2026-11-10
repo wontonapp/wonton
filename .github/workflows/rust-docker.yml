@@ -32,8 +32,9 @@ env:
 
 permissions:
   contents: read
-  # 镜像副本在仓库还是私有的时候是私有包，拉取要 GITHUB_TOKEN。
-  packages: read
+  # 镜像副本在仓库还是私有的时候是私有包，拉取要 GITHUB_TOKEN；main 上的运行还把桥镜像的层缓存写回
+  # wonton-ci-cache（PR、队列只读）。
+  packages: write
 
 jobs:
   changes:
@@ -94,6 +95,10 @@ jobs:
           # 和“测试”分片同一份缓存：编出来的测试二进制一样，恢复完就能直接跑。
           shared-key: rust-test
           save-if: false
+      # 层缓存只能从 docker-container 之类的构建器导出（经典镜像存储的 docker 驱动不支持 cache export，实测报
+      # `Cache export is not supported for the docker driver`）。它会成为当前构建器，后面的 `docker build`
+      # 也走它，所以测试里的构建要带 `--load` 把镜像装回 docker。
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
@@ -123,12 +128,23 @@ jobs:
           fi
       - name: 预构建桥镜像
         # 测试只验启动行为，构建本身先在这里做掉、给 docker 构建缓存预热，测试里的同名 build 就只走缓存。
-        run: >-
-          docker build -q
-          -f deploy/dev/acp-bridge/Dockerfile
-          --build-arg "RUST_IMAGE=$WONTON_TEST_IMAGES/rust:1.99.1-slim-trixie"
-          --build-arg "DEBIAN_IMAGE=$WONTON_TEST_IMAGES/debian:trixie-slim"
-          -t wonton-acp-bridge-docker-test:prebuilt .
+        # 层缓存放在镜像仓库里（ghcr.io 的 wonton-ci-cache），不占 10 GB 的 actions 缓存：缓存从 main 上的
+        # 构建恢复，只在 main 上写回（定时、手动），PR 和队列只读。构建必须走 buildx —— `docker build`
+        # 读不了 registry 缓存；镜像用 --load 装回 docker，测试里的 `docker build` 才拿得到这份本机缓存。
+        shell: bash
+        run: |
+          ref="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:acp-bridge"
+          extra=()
+          if [[ $GITHUB_REF == refs/heads/main || $GITHUB_EVENT_NAME == workflow_dispatch ]]; then
+            extra+=(--cache-to "type=registry,ref=$ref,mode=max")
+          fi
+          docker buildx build "${extra[@]}" \
+            --cache-from "type=registry,ref=$ref" \
+            -f deploy/dev/acp-bridge/Dockerfile \
+            --build-arg "RUST_IMAGE=$WONTON_TEST_IMAGES/rust:1.99.1-slim-trixie" \
+            --build-arg "DEBIAN_IMAGE=$WONTON_TEST_IMAGES/debian:trixie-slim" \
+            -t wonton-acp-bridge-docker-test:prebuilt \
+            --load .
       - name: 准备日志目录
         # 步骤里用 tee 往 $RUNNER_TEMP/test-logs 写输出，目录得先有：shell 带 pipefail，tee 打不开文件就让整步非零。
         run: mkdir -p "$RUNNER_TEMP/test-logs"
