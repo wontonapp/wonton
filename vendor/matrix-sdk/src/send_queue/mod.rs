@@ -224,13 +224,15 @@ impl SendQueue {
             return;
         }
 
-        let room_ids =
-            self.client.state_store().load_rooms_with_unsent_requests().await.unwrap_or_else(
-                |err| {
-                    warn!("error when loading rooms with unsent requests: {err}");
-                    Vec::new()
-                },
-            );
+        let room_ids = self
+            .client
+            .state_store()
+            .load_rooms_with_unsent_requests()
+            .await
+            .unwrap_or_else(|err| {
+                warn!("error when loading rooms with unsent requests: {err}");
+                Vec::new()
+            });
 
         // Getting the [`RoomSendQueue`] is sufficient to spawn the task if needs be.
         for room_id in room_ids {
@@ -286,7 +288,9 @@ impl SendQueue {
     pub async fn set_enabled(&self, enabled: bool) {
         debug!(?enabled, "setting global send queue enablement");
 
-        self.data().globally_enabled.store(enabled, Ordering::SeqCst);
+        self.data()
+            .globally_enabled
+            .store(enabled, Ordering::SeqCst);
 
         // Wake up individual rooms we already know about.
         for room in self.data().rooms.read().unwrap().values() {
@@ -306,7 +310,9 @@ impl SendQueue {
 
     /// Enable or disable progress reporting for media uploads.
     pub fn enable_upload_progress(&self, enabled: bool) {
-        self.data().report_media_upload_progress.store(enabled, Ordering::SeqCst);
+        self.data()
+            .report_media_upload_progress
+            .store(enabled, Ordering::SeqCst);
     }
 
     /// Subscribe to all updates for all rooms.
@@ -321,21 +327,25 @@ impl SendQueue {
     pub async fn local_echoes(
         &self,
     ) -> Result<BTreeMap<OwnedRoomId, Vec<LocalEcho>>, RoomSendQueueError> {
-        let room_ids =
-            self.client.state_store().load_rooms_with_unsent_requests().await.unwrap_or_else(
-                |err| {
-                    warn!("error when loading rooms with unsent requests: {err}");
-                    Vec::new()
-                },
-            );
+        let room_ids = self
+            .client
+            .state_store()
+            .load_rooms_with_unsent_requests()
+            .await
+            .unwrap_or_else(|err| {
+                warn!("error when loading rooms with unsent requests: {err}");
+                Vec::new()
+            });
 
         let mut local_echoes: BTreeMap<OwnedRoomId, Vec<LocalEcho>> = BTreeMap::new();
 
         for room_id in room_ids {
             if let Some(room) = self.client.get_room(&room_id) {
                 let queue = self.for_room(room);
-                local_echoes
-                    .insert(room_id.to_owned(), queue.inner.queue.local_echoes(&queue).await?);
+                local_echoes.insert(
+                    room_id.to_owned(),
+                    queue.inner.queue.local_echoes(&queue).await?,
+                );
             }
         }
 
@@ -479,7 +489,10 @@ impl RoomSendQueue {
         room_id: OwnedRoomId,
         report_media_upload_progress: Arc<AtomicBool>,
     ) -> Self {
-        let (update_sender, _) = broadcast::channel(32);
+        // 这个房间的发送更新（本地回显、发出、失败、上传进度）共用一条广播，满了挤掉最旧的。进度节流后也还有
+        // 10 条/秒，慢盘、慢网下接收方停一会儿就会丢；最终状态跟着进度一起被挤掉时，界面上那条一直停在“发送中”。
+        // 留 256 格，按节流后的速率给接收方 25 秒余地。
+        let (update_sender, _) = broadcast::channel(256);
 
         let queue = QueueStorage::new(WeakClient::from_client(client), room_id.clone());
         let notifier = Arc::new(Notify::new());
@@ -544,7 +557,11 @@ impl RoomSendQueue {
         let content = SerializableEventContent::from_raw(content, event_type);
 
         let created_at = MilliSecondsSinceUnixEpoch::now();
-        let transaction_id = self.inner.queue.push(content.clone().into(), created_at).await?;
+        let transaction_id = self
+            .inner
+            .queue
+            .push(content.clone().into(), created_at)
+            .await?;
         trace!(%transaction_id, "manager sends a raw event to the background task");
 
         self.inner.notifier.notify_one();
@@ -583,7 +600,11 @@ impl RoomSendQueue {
     /// manually re-enabled by the caller (e.g. after network is back, or when
     /// something has been done about the faulty requests).
     pub fn send(&self, content: AnyMessageLikeEventContent) -> SendEvent<'_> {
-        SendEvent { queue: self, content, extra_content: None }
+        SendEvent {
+            queue: self,
+            content,
+            extra_content: None,
+        }
     }
 
     /// Queues a redaction of another event for sending it to this room.
@@ -623,8 +644,10 @@ impl RoomSendQueue {
 
         self.inner.notifier.notify_one();
 
-        let send_handle =
-            SendRedactionHandle { room: self.clone(), transaction_id: transaction_id.clone() };
+        let send_handle = SendRedactionHandle {
+            room: self.clone(),
+            transaction_id: transaction_id.clone(),
+        };
 
         self.send_update(RoomSendQueueUpdate::NewLocalEvent(LocalEcho {
             transaction_id,
@@ -771,7 +794,11 @@ impl RoomSendQueue {
                             Default::default()
                         };
 
-                    (Some(related_to.clone()), media_upload_progress_info, http_progress)
+                    (
+                        Some(related_to.clone()),
+                        media_upload_progress_info,
+                        http_progress,
+                    )
                 } else {
                     Default::default()
                 };
@@ -783,7 +810,11 @@ impl RoomSendQueue {
                     .await
                 {
                     Ok(()) => match parent_key {
-                        SentRequestKey::Event { event_id, event, event_type } => {
+                        SentRequestKey::Event {
+                            event_id,
+                            event,
+                            event_type,
+                        } => {
                             send_update(
                                 &global_update_sender,
                                 &update_sender,
@@ -880,15 +911,21 @@ impl RoomSendQueue {
                         SentRequestKey::Media(sent_media_info) => {
                             // Generate some final progress information, even if incremental
                             // progress wasn't requested.
-                            let index =
-                                media_upload_progress_info.as_ref().map_or(0, |info| info.index);
+                            let index = media_upload_progress_info
+                                .as_ref()
+                                .map_or(0, |info| info.index);
                             let progress = media_upload_progress_info
                                 .as_ref()
                                 .map(|info| {
-                                    AbstractProgress { current: info.bytes, total: info.bytes }
-                                        + info.offsets
+                                    AbstractProgress {
+                                        current: info.bytes,
+                                        total: info.bytes,
+                                    } + info.offsets
                                 })
-                                .unwrap_or(AbstractProgress { current: 1, total: 1 });
+                                .unwrap_or(AbstractProgress {
+                                    current: 1,
+                                    total: 1,
+                                });
 
                             // Purposefully don't use `send_update` here, because we don't want to
                             // notify the global listeners about an upload progress update.
@@ -900,7 +937,11 @@ impl RoomSendQueue {
                             });
                         }
 
-                        SentRequestKey::Redaction { event_id, redacts, reason } => {
+                        SentRequestKey::Redaction {
+                            event_id,
+                            redacts,
+                            reason,
+                        } => {
                             send_update(
                                 &global_update_sender,
                                 &update_sender,
@@ -1036,8 +1077,9 @@ impl RoomSendQueue {
                         // Mark the request as wedged, so it's not picked at any future point;
                         // it will also block subsequent requests in the same room from being
                         // sent, until it's unwedged or removed, so as to preserve ordering.
-                        if let Err(storage_error) =
-                            queue.mark_as_wedged(&txn_id, QueueWedgeError::from(&err)).await
+                        if let Err(storage_error) = queue
+                            .mark_as_wedged(&txn_id, QueueWedgeError::from(&err))
+                            .await
                         {
                             warn!("unable to mark request as wedged: {storage_error}");
                         }
@@ -1123,7 +1165,9 @@ impl RoomSendQueue {
 
                     let mime = Mime::from_str(&content_type).map_err(|_| {
                         crate::Error::SendQueueWedgeError(Box::new(
-                            QueueWedgeError::InvalidMimeType { mime_type: content_type.clone() },
+                            QueueWedgeError::InvalidMimeType {
+                                mime_type: content_type.clone(),
+                            },
                         ))
                     })?;
 
@@ -1148,7 +1192,9 @@ impl RoomSendQueue {
                         let request_config = RequestConfig::short_retry()
                             .timeout(Media::reasonable_upload_timeout(&data));
                         let mut req =
-                            room.client().media().upload(&mime, data, Some(request_config));
+                            room.client()
+                                .media()
+                                .upload(&mime, data, Some(request_config));
                         if let Some(progress) = progress {
                             req = req.with_send_progress_observable(progress);
                         }
@@ -1162,7 +1208,9 @@ impl RoomSendQueue {
                         let request_config = RequestConfig::short_retry()
                             .timeout(Media::reasonable_upload_timeout(&data));
                         let mut req =
-                            room.client().media().upload(&mime, data, Some(request_config));
+                            room.client()
+                                .media()
+                                .upload(&mime, data, Some(request_config));
                         if let Some(progress) = progress {
                             req = req.with_send_progress_observable(progress);
                         }
@@ -1210,13 +1258,21 @@ impl RoomSendQueue {
 
             QueuedRequestKind::Redaction { redacts, reason } => {
                 let result = room
-                    .redact(&redacts, reason.as_deref(), Some(request.transaction_id.clone()))
+                    .redact(
+                        &redacts,
+                        reason.as_deref(),
+                        Some(request.transaction_id.clone()),
+                    )
                     .await?;
 
                 trace!(txn_id = %request.transaction_id, event_id = %result.event_id, "redaction successfully sent");
 
                 Ok((
-                    Some(SentRequestKey::Redaction { event_id: result.event_id, redacts, reason }),
+                    Some(SentRequestKey::Redaction {
+                        event_id: result.event_id,
+                        redacts,
+                        reason,
+                    }),
                     None,
                 ))
             }
@@ -1244,10 +1300,10 @@ impl RoomSendQueue {
     /// [`SendQueueUpdate`].
     fn send_update(&self, update: RoomSendQueueUpdate) {
         let _ = self.inner.update_sender.send(update.clone());
-        let _ = self
-            .inner
-            .global_update_sender
-            .send(SendQueueUpdate { room_id: self.inner.room.room_id().to_owned(), update });
+        let _ = self.inner.global_update_sender.send(SendQueueUpdate {
+            room_id: self.inner.room.room_id().to_owned(),
+            update,
+        });
     }
 }
 
@@ -1258,7 +1314,10 @@ fn send_update(
     update: RoomSendQueueUpdate,
 ) {
     let _ = update_sender.send(update.clone());
-    let _ = global_update_sender.send(SendQueueUpdate { room_id: room_id.to_owned(), update });
+    let _ = global_update_sender.send(SendQueueUpdate {
+        room_id: room_id.to_owned(),
+        update,
+    });
 }
 
 impl From<&crate::Error> for QueueWedgeError {
@@ -1268,11 +1327,15 @@ impl From<&crate::Error> for QueueWedgeError {
             crate::Error::OlmError(error) => match &**error {
                 OlmError::SessionRecipientCollectionError(error) => match error {
                     SessionRecipientCollectionError::VerifiedUserHasUnsignedDevice(user_map) => {
-                        QueueWedgeError::InsecureDevices { user_device_map: user_map.clone() }
+                        QueueWedgeError::InsecureDevices {
+                            user_device_map: user_map.clone(),
+                        }
                     }
 
                     SessionRecipientCollectionError::VerifiedUserChangedIdentity(users) => {
-                        QueueWedgeError::IdentityViolations { users: users.clone() }
+                        QueueWedgeError::IdentityViolations {
+                            users: users.clone(),
+                        }
                     }
 
                     SessionRecipientCollectionError::CrossSigningNotSetup
@@ -1280,13 +1343,17 @@ impl From<&crate::Error> for QueueWedgeError {
                         QueueWedgeError::CrossVerificationRequired
                     }
                 },
-                _ => QueueWedgeError::GenericApiError { msg: value.to_string() },
+                _ => QueueWedgeError::GenericApiError {
+                    msg: value.to_string(),
+                },
             },
 
             // Flatten errors of `Self` type.
             crate::Error::SendQueueWedgeError(error) => *error.clone(),
 
-            _ => QueueWedgeError::GenericApiError { msg: value.to_string() },
+            _ => QueueWedgeError::GenericApiError {
+                msg: value.to_string(),
+            },
         }
     }
 }
@@ -1391,7 +1458,9 @@ struct StoreLockGuard {
 impl StoreLockGuard {
     /// Get a client from the locked state, useful to get a handle on a store.
     fn client(&self) -> Result<Client, RoomSendQueueStorageError> {
-        self.client.get().ok_or(RoomSendQueueStorageError::ClientShuttingDown)
+        self.client
+            .get()
+            .ok_or(RoomSendQueueStorageError::ClientShuttingDown)
     }
 }
 
@@ -1430,7 +1499,10 @@ impl QueueStorage {
     fn new(client: WeakClient, room: OwnedRoomId) -> Self {
         Self {
             room_id: room,
-            store: StoreLock { client, being_sent: Default::default() },
+            store: StoreLock {
+                client,
+                being_sent: Default::default(),
+            },
             thumbnail_file_sizes: Default::default(),
         }
     }
@@ -1471,8 +1543,11 @@ impl QueueStorage {
     ) -> Result<Option<(QueuedRequest, Option<oneshot::Receiver<()>>)>, RoomSendQueueStorageError>
     {
         let mut guard = self.store.lock().await;
-        let queued_requests =
-            guard.client()?.state_store().load_send_queue_requests(&self.room_id).await?;
+        let queued_requests = guard
+            .client()?
+            .state_store()
+            .load_send_queue_requests(&self.room_id)
+            .await?;
 
         // Only ever consider the head of the queue: requests must be sent in the
         // order they were queued, so a wedged request (which failed to be sent with an
@@ -1512,7 +1587,9 @@ impl QueueStorage {
     async fn mark_as_not_being_sent(&self, transaction_id: &TransactionId) {
         let was_being_sent = self.store.lock().await.being_sent.take();
 
-        let prev_txn = was_being_sent.as_ref().map(|info| info.transaction_id.as_ref());
+        let prev_txn = was_being_sent
+            .as_ref()
+            .map(|info| info.transaction_id.as_ref());
         if prev_txn != Some(transaction_id) {
             error!(prev_txn = ?prev_txn, "previous active request didn't match that we expect (after transient error)");
         }
@@ -1530,7 +1607,9 @@ impl QueueStorage {
         let mut guard = self.store.lock().await;
         let was_being_sent = guard.being_sent.take();
 
-        let prev_txn = was_being_sent.as_ref().map(|info| info.transaction_id.as_ref());
+        let prev_txn = was_being_sent
+            .as_ref()
+            .map(|info| info.transaction_id.as_ref());
         if prev_txn != Some(transaction_id) {
             error!(
                 ?prev_txn,
@@ -1572,7 +1651,9 @@ impl QueueStorage {
         let mut guard = self.store.lock().await;
         let was_being_sent = guard.being_sent.take();
 
-        let prev_txn = was_being_sent.as_ref().map(|info| info.transaction_id.as_ref());
+        let prev_txn = was_being_sent
+            .as_ref()
+            .map(|info| info.transaction_id.as_ref());
         if prev_txn != Some(transaction_id) {
             error!(
                 ?prev_txn,
@@ -1588,7 +1669,9 @@ impl QueueStorage {
             .mark_dependent_queued_requests_as_ready(&self.room_id, transaction_id, parent_key)
             .await?;
 
-        let removed = store.remove_send_queue_request(&self.room_id, transaction_id).await?;
+        let removed = store
+            .remove_send_queue_request(&self.room_id, transaction_id)
+            .await?;
 
         if !removed {
             warn!(txn_id = %transaction_id, "request marked as sent was missing from storage");
@@ -1612,7 +1695,10 @@ impl QueueStorage {
     ) -> Result<bool, RoomSendQueueStorageError> {
         let guard = self.store.lock().await;
 
-        if guard.being_sent.as_ref().map(|info| info.transaction_id.as_ref())
+        if guard
+            .being_sent
+            .as_ref()
+            .map(|info| info.transaction_id.as_ref())
             == Some(transaction_id)
         {
             // Save the intent to redact the event.
@@ -1655,7 +1741,10 @@ impl QueueStorage {
     ) -> Result<bool, RoomSendQueueStorageError> {
         let guard = self.store.lock().await;
 
-        if guard.being_sent.as_ref().map(|info| info.transaction_id.as_ref())
+        if guard
+            .being_sent
+            .as_ref()
+            .map(|info| info.transaction_id.as_ref())
             == Some(transaction_id)
         {
             // Save the intent to edit the associated event.
@@ -1667,7 +1756,9 @@ impl QueueStorage {
                     transaction_id,
                     ChildTransactionId::new(),
                     MilliSecondsSinceUnixEpoch::now(),
-                    DependentQueuedRequestKind::EditEvent { new_content: serializable },
+                    DependentQueuedRequestKind::EditEvent {
+                        new_content: serializable,
+                    },
                 )
                 .await?;
 
@@ -1733,7 +1824,9 @@ impl QueueStorage {
             )
             .await?;
 
-        self.thumbnail_file_sizes.lock().insert(send_event_txn, thumbnail_file_sizes);
+        self.thumbnail_file_sizes
+            .lock()
+            .insert(send_event_txn, thumbnail_file_sizes);
 
         Ok(())
     }
@@ -1761,8 +1854,12 @@ impl QueueStorage {
             return Ok(());
         };
 
-        let GalleryItemQueueInfo { content_type, upload_file_txn, file_media_request, thumbnail } =
-            first;
+        let GalleryItemQueueInfo {
+            content_type,
+            upload_file_txn,
+            file_media_request,
+            thumbnail,
+        } = first;
 
         let thumbnail_info = self
             .push_thumbnail_and_media_uploads(
@@ -1776,8 +1873,10 @@ impl QueueStorage {
             )
             .await?;
 
-        finish_item_infos
-            .push(FinishGalleryItemInfo { file_upload: upload_file_txn.clone(), thumbnail_info });
+        finish_item_infos.push(FinishGalleryItemInfo {
+            file_upload: upload_file_txn.clone(),
+            thumbnail_info,
+        });
         thumbnail_file_sizes.push(thumbnail.as_ref().map(|t| t.file_size));
 
         let mut last_upload_file_txn = upload_file_txn.clone();
@@ -1863,7 +1962,9 @@ impl QueueStorage {
             )
             .await?;
 
-        self.thumbnail_file_sizes.lock().insert(send_event_txn, thumbnail_file_sizes);
+        self.thumbnail_file_sizes
+            .lock()
+            .insert(send_event_txn, thumbnail_file_sizes);
 
         Ok(())
     }
@@ -1966,7 +2067,10 @@ impl QueueStorage {
         let requests = store.load_send_queue_requests(&self.room_id).await?;
 
         // If the target event has been already sent, abort immediately.
-        if !requests.iter().any(|item| item.transaction_id == transaction_id) {
+        if !requests
+            .iter()
+            .any(|item| item.transaction_id == transaction_id)
+        {
             // We didn't find it as a queued request; try to find it as a dependent queued
             // request.
             let dependent_requests = store.load_dependent_queued_requests(&self.room_id).await?;
@@ -2013,9 +2117,10 @@ impl QueueStorage {
         let mut media_upload_errors: HashMap<OwnedTransactionId, QueueWedgeError> = queued_requests
             .iter()
             .filter_map(|queued| match queued.kind {
-                QueuedRequestKind::MediaUpload { .. } => {
-                    queued.error.clone().map(|error| (queued.transaction_id.clone(), error))
-                }
+                QueuedRequestKind::MediaUpload { .. } => queued
+                    .error
+                    .clone()
+                    .map(|error| (queued.transaction_id.clone(), error)),
                 _ => None,
             })
             .collect();
@@ -2059,82 +2164,87 @@ impl QueueStorage {
         let dependent_requests = store.load_dependent_queued_requests(&self.room_id).await?;
 
         let reactions_and_medias =
-            dependent_requests.into_iter().filter_map(|dep| match dep.kind {
-                DependentQueuedRequestKind::EditEvent { .. }
-                | DependentQueuedRequestKind::RedactEvent
-                | DependentQueuedRequestKind::RedactEventWithReason { .. } => {
-                    // TODO: reflect local edits/redacts too?
-                    None
-                }
+            dependent_requests
+                .into_iter()
+                .filter_map(|dep| match dep.kind {
+                    DependentQueuedRequestKind::EditEvent { .. }
+                    | DependentQueuedRequestKind::RedactEvent
+                    | DependentQueuedRequestKind::RedactEventWithReason { .. } => {
+                        // TODO: reflect local edits/redacts too?
+                        None
+                    }
 
-                DependentQueuedRequestKind::ReactEvent { key } => Some(LocalEcho {
-                    transaction_id: dep.own_transaction_id.clone().into(),
-                    content: LocalEchoContent::React {
-                        key,
-                        send_handle: SendReactionHandle {
-                            room: room.clone(),
-                            transaction_id: dep.own_transaction_id,
-                        },
-                        applies_to: dep.parent_transaction_id,
-                    },
-                }),
-
-                DependentQueuedRequestKind::UploadFileOrThumbnail { .. } => {
-                    // Don't reflect these: only the associated event is interesting to observers.
-                    None
-                }
-
-                DependentQueuedRequestKind::FinishUpload {
-                    local_echo,
-                    file_upload,
-                    thumbnail_info,
-                    extra_content,
-                } => {
-                    let upload_thumbnail_txn = thumbnail_info.map(|info| info.txn);
-
-                    // If one of the uploads wedged, the media event is wedged too.
-                    let send_error = media_upload_errors.remove(&file_upload).or_else(|| {
-                        upload_thumbnail_txn
-                            .as_ref()
-                            .and_then(|txn| media_upload_errors.remove(&**txn))
-                    });
-
-                    // Materialize as an event local echo.
-                    Some(LocalEcho {
+                    DependentQueuedRequestKind::ReactEvent { key } => Some(LocalEcho {
                         transaction_id: dep.own_transaction_id.clone().into(),
-                        content: LocalEchoContent::Event {
-                            serialized_event: upload::merge_extra_content(
-                                SerializableEventContent::new(&(*local_echo).into()).ok()?,
-                                extra_content,
-                            )
-                            .ok()?,
-                            send_handle: SendHandle {
+                        content: LocalEchoContent::React {
+                            key,
+                            send_handle: SendReactionHandle {
                                 room: room.clone(),
-                                transaction_id: dep.own_transaction_id.into(),
-                                media_handles: vec![MediaHandles {
-                                    upload_thumbnail_txn,
-                                    upload_file_txn: file_upload,
-                                }],
-                                created_at: dep.created_at,
+                                transaction_id: dep.own_transaction_id,
                             },
-                            send_error,
+                            applies_to: dep.parent_transaction_id,
                         },
-                    })
-                }
+                    }),
 
-                #[cfg(feature = "unstable-msc4274")]
-                DependentQueuedRequestKind::FinishGallery { local_echo, item_infos } => {
-                    // Materialize as an event local echo.
-                    self.create_gallery_local_echo(
-                        dep.own_transaction_id,
-                        room,
-                        dep.created_at,
+                    DependentQueuedRequestKind::UploadFileOrThumbnail { .. } => {
+                        // Don't reflect these: only the associated event is interesting to observers.
+                        None
+                    }
+
+                    DependentQueuedRequestKind::FinishUpload {
+                        local_echo,
+                        file_upload,
+                        thumbnail_info,
+                        extra_content,
+                    } => {
+                        let upload_thumbnail_txn = thumbnail_info.map(|info| info.txn);
+
+                        // If one of the uploads wedged, the media event is wedged too.
+                        let send_error = media_upload_errors.remove(&file_upload).or_else(|| {
+                            upload_thumbnail_txn
+                                .as_ref()
+                                .and_then(|txn| media_upload_errors.remove(&**txn))
+                        });
+
+                        // Materialize as an event local echo.
+                        Some(LocalEcho {
+                            transaction_id: dep.own_transaction_id.clone().into(),
+                            content: LocalEchoContent::Event {
+                                serialized_event: upload::merge_extra_content(
+                                    SerializableEventContent::new(&(*local_echo).into()).ok()?,
+                                    extra_content,
+                                )
+                                .ok()?,
+                                send_handle: SendHandle {
+                                    room: room.clone(),
+                                    transaction_id: dep.own_transaction_id.into(),
+                                    media_handles: vec![MediaHandles {
+                                        upload_thumbnail_txn,
+                                        upload_file_txn: file_upload,
+                                    }],
+                                    created_at: dep.created_at,
+                                },
+                                send_error,
+                            },
+                        })
+                    }
+
+                    #[cfg(feature = "unstable-msc4274")]
+                    DependentQueuedRequestKind::FinishGallery {
                         local_echo,
                         item_infos,
-                        &mut media_upload_errors,
-                    )
-                }
-            });
+                    } => {
+                        // Materialize as an event local echo.
+                        self.create_gallery_local_echo(
+                            dep.own_transaction_id,
+                            room,
+                            dep.created_at,
+                            local_echo,
+                            item_infos,
+                            &mut media_upload_errors,
+                        )
+                    }
+                });
 
         Ok(local_requests.chain(reactions_and_medias).collect())
     }
@@ -2153,7 +2263,9 @@ impl QueueStorage {
         // If any of the uploads wedged, the gallery event is wedged too.
         let send_error = item_infos.iter().find_map(|i| {
             media_upload_errors.remove(&i.file_upload).or_else(|| {
-                i.thumbnail_info.as_ref().and_then(|info| media_upload_errors.remove(&*info.txn))
+                i.thumbnail_info
+                    .as_ref()
+                    .and_then(|info| media_upload_errors.remove(&*info.txn))
             })
         });
 
@@ -2411,7 +2523,10 @@ impl QueueStorage {
             }
 
             #[cfg(feature = "unstable-msc4274")]
-            DependentQueuedRequestKind::FinishGallery { local_echo, item_infos } => {
+            DependentQueuedRequestKind::FinishGallery {
+                local_echo,
+                item_infos,
+            } => {
                 let Some(parent_key) = parent_key else {
                     // Not finished yet, we should retry later => false.
                     return Ok(false);
@@ -2477,7 +2592,10 @@ impl QueueStorage {
         for dependent in canonicalized_dependent_requests {
             let dependent_id = dependent.own_transaction_id.clone();
 
-            match self.try_apply_single_dependent_request(&client, dependent, new_updates).await {
+            match self
+                .try_apply_single_dependent_request(&client, dependent, new_updates)
+                .await
+            {
                 Ok(should_remove) => {
                     if should_remove {
                         // The dependent request has been successfully applied, forget about it.
@@ -2820,7 +2938,12 @@ impl SendHandle {
         transaction_id: OwnedTransactionId,
         created_at: MilliSecondsSinceUnixEpoch,
     ) -> Self {
-        Self { room, transaction_id, media_handles: vec![], created_at }
+        Self {
+            room,
+            transaction_id,
+            media_handles: vec![],
+            created_at,
+        }
     }
 
     fn nyi_for_uploads(&self) -> Result<(), RoomSendQueueStorageError> {
@@ -2864,9 +2987,10 @@ impl SendHandle {
                 self.room.inner.notifier.notify_one();
 
                 // Propagate a cancelled update.
-                self.room.send_update(RoomSendQueueUpdate::CancelledLocalEvent {
-                    transaction_id: self.transaction_id.clone(),
-                });
+                self.room
+                    .send_update(RoomSendQueueUpdate::CancelledLocalEvent {
+                        transaction_id: self.transaction_id.clone(),
+                    });
 
                 return Ok(true);
             }
@@ -2883,9 +3007,10 @@ impl SendHandle {
             self.room.inner.notifier.notify_one();
 
             // Propagate a cancelled update too.
-            self.room.send_update(RoomSendQueueUpdate::CancelledLocalEvent {
-                transaction_id: self.transaction_id.clone(),
-            });
+            self.room
+                .send_update(RoomSendQueueUpdate::CancelledLocalEvent {
+                    transaction_id: self.transaction_id.clone(),
+                });
 
             Ok(true)
         } else {
@@ -2909,17 +3034,24 @@ impl SendHandle {
 
         let serializable = SerializableEventContent::from_raw(new_content, event_type);
 
-        if self.room.inner.queue.replace_event(&self.transaction_id, serializable.clone()).await? {
+        if self
+            .room
+            .inner
+            .queue
+            .replace_event(&self.transaction_id, serializable.clone())
+            .await?
+        {
             trace!("successful edit");
 
             // Wake up the queue, in case the room was asleep before the edit.
             self.room.inner.notifier.notify_one();
 
             // Propagate a replaced update too.
-            self.room.send_update(RoomSendQueueUpdate::ReplacedLocalEvent {
-                transaction_id: self.transaction_id.clone(),
-                new_content: serializable,
-            });
+            self.room
+                .send_update(RoomSendQueueUpdate::ReplacedLocalEvent {
+                    transaction_id: self.transaction_id.clone(),
+                    new_content: serializable,
+                });
 
             Ok(true)
         } else {
@@ -2969,10 +3101,11 @@ impl SendHandle {
                 .map_err(RoomSendQueueStorageError::JsonSerialization)?;
 
             // Propagate a replaced update too.
-            self.room.send_update(RoomSendQueueUpdate::ReplacedLocalEvent {
-                transaction_id: self.transaction_id.clone(),
-                new_content,
-            });
+            self.room
+                .send_update(RoomSendQueueUpdate::ReplacedLocalEvent {
+                    transaction_id: self.transaction_id.clone(),
+                    new_content,
+                });
 
             Ok(true)
         } else {
@@ -3004,7 +3137,10 @@ impl SendHandle {
                 .map_err(RoomSendQueueError::StorageError)?;
 
             if let Some(txn) = &handles.upload_thumbnail_txn {
-                room.queue.mark_as_unwedged(txn).await.map_err(RoomSendQueueError::StorageError)?;
+                room.queue
+                    .mark_as_unwedged(txn)
+                    .await
+                    .map_err(RoomSendQueueError::StorageError)?;
             }
         }
 
@@ -3030,8 +3166,12 @@ impl SendHandle {
         trace!("received an intent to react");
 
         let created_at = MilliSecondsSinceUnixEpoch::now();
-        if let Some(reaction_txn_id) =
-            self.room.inner.queue.react(&self.transaction_id, key.clone(), created_at).await?
+        if let Some(reaction_txn_id) = self
+            .room
+            .inner
+            .queue
+            .react(&self.transaction_id, key.clone(), created_at)
+            .await?
         {
             trace!("successfully queued react");
 
@@ -3044,16 +3184,17 @@ impl SendHandle {
                 transaction_id: reaction_txn_id.clone(),
             };
 
-            self.room.send_update(RoomSendQueueUpdate::NewLocalEvent(LocalEcho {
-                // Note: we do want to use the `txn_id` we're going to use for the reaction, not
-                // the one for the event we're reacting to.
-                transaction_id: reaction_txn_id.into(),
-                content: LocalEchoContent::React {
-                    key,
-                    send_handle: send_handle.clone(),
-                    applies_to: self.transaction_id.clone(),
-                },
-            }));
+            self.room
+                .send_update(RoomSendQueueUpdate::NewLocalEvent(LocalEcho {
+                    // Note: we do want to use the `txn_id` we're going to use for the reaction, not
+                    // the one for the event we're reacting to.
+                    transaction_id: reaction_txn_id.into(),
+                    content: LocalEchoContent::React {
+                        key,
+                        send_handle: send_handle.clone(),
+                        applies_to: self.transaction_id.clone(),
+                    },
+                }));
 
             Ok(Some(send_handle))
         } else {
@@ -3076,7 +3217,10 @@ impl SendReactionHandle {
     /// Creates a new [`SendReactionHandle`].
     #[cfg(test)]
     pub(crate) fn new(room: RoomSendQueue, transaction_id: ChildTransactionId) -> Self {
-        Self { room, transaction_id }
+        Self {
+            room,
+            transaction_id,
+        }
     }
 
     /// Abort the sending of the reaction.
@@ -3084,13 +3228,20 @@ impl SendReactionHandle {
     /// Will return true if the reaction could be aborted, false if it's been
     /// sent (and there's no matching local echo anymore).
     pub async fn abort(&self) -> Result<bool, RoomSendQueueStorageError> {
-        if self.room.inner.queue.remove_dependent_send_queue_request(&self.transaction_id).await? {
+        if self
+            .room
+            .inner
+            .queue
+            .remove_dependent_send_queue_request(&self.transaction_id)
+            .await?
+        {
             // Simple case: the reaction was found in the dependent event list.
 
             // Propagate a cancelled update too.
-            self.room.send_update(RoomSendQueueUpdate::CancelledLocalEvent {
-                transaction_id: self.transaction_id.clone().into(),
-            });
+            self.room
+                .send_update(RoomSendQueueUpdate::CancelledLocalEvent {
+                    transaction_id: self.transaction_id.clone().into(),
+                });
 
             return Ok(true);
         }
@@ -3128,7 +3279,10 @@ impl SendRedactionHandle {
     /// Creates a new [`SendRedactionHandle`].
     #[cfg(test)]
     pub(crate) fn new(room: RoomSendQueue, transaction_id: OwnedTransactionId) -> Self {
-        Self { room, transaction_id }
+        Self {
+            room,
+            transaction_id,
+        }
     }
 
     /// Abort the sending of the redaction.
@@ -3147,9 +3301,10 @@ impl SendRedactionHandle {
             self.room.inner.notifier.notify_one();
 
             // Propagate a cancelled update too.
-            self.room.send_update(RoomSendQueueUpdate::CancelledLocalEvent {
-                transaction_id: self.transaction_id.clone(),
-            });
+            self.room
+                .send_update(RoomSendQueueUpdate::CancelledLocalEvent {
+                    transaction_id: self.transaction_id.clone(),
+                });
 
             Ok(true)
         } else {
@@ -3217,7 +3372,10 @@ fn canonicalize_dependent_requests(
         }
     }
 
-    by_txn.into_values().flat_map(|entries| entries.into_iter().cloned()).collect()
+    by_txn
+        .into_values()
+        .flat_map(|entries| entries.into_iter().cloned())
+        .collect()
 }
 
 #[cfg(all(test, not(target_family = "wasm")))]
@@ -3385,7 +3543,10 @@ mod tests {
         let res = canonicalize_dependent_requests(&inputs);
 
         assert_eq!(res.len(), 1);
-        assert_matches!(&res[0].kind, DependentQueuedRequestKind::RedactEventWithReason { .. });
+        assert_matches!(
+            &res[0].kind,
+            DependentQueuedRequestKind::RedactEventWithReason { .. }
+        );
         assert_eq!(res[0].parent_transaction_id, txn);
     }
 
@@ -3481,7 +3642,9 @@ mod tests {
         let react_id = ChildTransactionId::new();
         let react = DependentQueuedRequest {
             own_transaction_id: react_id.clone(),
-            kind: DependentQueuedRequestKind::ReactEvent { key: "🧠".to_owned() },
+            kind: DependentQueuedRequestKind::ReactEvent {
+                key: "🧠".to_owned(),
+            },
             parent_transaction_id: txn.clone(),
             parent_key: None,
             created_at: MilliSecondsSinceUnixEpoch::now(),
