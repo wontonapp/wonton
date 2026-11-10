@@ -111,11 +111,16 @@ impl LatestEvents {
             Arc::new(RegisteredRooms::new(weak_client, &event_cache, &latest_event_queue_sender));
 
         // The task listening to the event cache, the send queue, and the room infos
-        // updates.
+        // updates. The task must NOT hold the `EventCache` or the `SendQueue`: the
+        // `SendQueue` keeps a strong reference to the `Client`, and holding either
+        // value would keep the senders of the channels below alive, so the task
+        // could never observe their closure and would pin the `Client` forever
+        // (wonton #816). Subscribe here instead and pass the receivers, like
+        // `room_info_updates` above.
         let listen_task_handle = spawn(listen_to_updates_task(
             registered_rooms.clone(),
-            event_cache,
-            send_queue,
+            event_cache.subscribe_to_room_generic_updates(),
+            send_queue.subscribe(),
             room_info_updates,
             latest_event_queue_sender,
         ))
@@ -463,14 +468,11 @@ enum LatestEventQueueUpdate {
 /// `latest_event_queue_sender` channel. See [`compute_latest_events_task`].
 async fn listen_to_updates_task(
     registered_rooms: Arc<RegisteredRooms>,
-    event_cache: EventCache,
-    send_queue: SendQueue,
+    mut event_cache_generic_updates_subscriber: broadcast::Receiver<RoomEventCacheGenericUpdate>,
+    mut send_queue_generic_updates_subscriber: broadcast::Receiver<SendQueueUpdate>,
     room_info_updates: broadcast::Receiver<RoomInfoNotableUpdate>,
     latest_event_queue_sender: mpsc::UnboundedSender<LatestEventQueueUpdate>,
 ) {
-    let mut event_cache_generic_updates_subscriber =
-        event_cache.subscribe_to_room_generic_updates();
-    let mut send_queue_generic_updates_subscriber = send_queue.subscribe();
     let mut room_info_updates_subscriber = room_info_updates.resubscribe();
 
     loop {

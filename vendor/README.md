@@ -34,6 +34,28 @@ matrix-sdk-crypto 已经公开的 `OlmMachine::query_missing_secrets_from_other_
 （读回存下的位置、取 Olm 机器、读房间订阅）。这一段原本没有任何日志，同步卡在起步时只能看见前后两个时间点，分不出卡在哪，
 补上才能用 `WONTON_TEST_LOG` 定位。
 
+### 观察 Client 生命周期的弱引用
+
+`src/client/mod.rs` 加了公开方法 `Client::downgrade`，并把 `WeakClient` 从 `pub(crate)` 放宽为 `pub`、
+在 `src/lib.rs` 转出 crate 根（`client` 模块本身仍是私有的，crate 根转出是唯一可达路径）。
+回归测试要从外面观察客户端是否被 SDK 内部钉住：弱引用 `get()` 在全部强引用
+丢掉后应取回 `None`，见 `crates/wonton-matrix/tests/tuwunel/leak816.rs`。
+
+### LatestEvents 后台任务不持有 Client
+
+`src/latest_events/mod.rs`：`LatestEvents::new` 原来把 `EventCache` 和 `SendQueue` 整个 move 进
+`listen_to_updates_task`（行 115-121 的 spawn 调用）；现在 spawn 前先调
+`event_cache.subscribe_to_room_generic_updates()` 和 `send_queue.subscribe()`，只把两个
+`broadcast::Receiver` 传进任务。`listen_to_updates_task`（行 464 起）签名相应从收两个值改为收两个
+receiver，任务体开头两行订阅删掉，`select!` 循环不动；`room_info_updates` 本来就以 receiver 传入，这次对齐同款。
+
+为什么：`SendQueue { client: Client }` 持强引用，而任务唯一的退出条件是三条 broadcast 通道关闭，
+三条通道的 sender 全在 `ClientInner` 里（EventCache 的 `generic_update_sender`、
+`send_queue_data.global_update_sender`、room info broadcaster）——任务把客户端按住就永远等不到
+通道关闭，同步过一次的 Client 从此释放不掉（#816），进程内重建会话时旧实例全部滞留。改成 receiver 后，
+客户端 drop 时 `_listen_task_handle` 的 `AbortOnDrop` 生效、通道随之关闭，两条退出路径都通。
+回归见 `crates/wonton-matrix/tests/tuwunel/leak816.rs`（修前红、修后绿）。
+
 ## matrix-sdk-ui 0.19.1（Apache-2.0，`matrix-sdk-ui/LICENSE`）
 
 crates.io 包原样导入，sha256 `e43a190b56df060b5a901d0e783e04002612981d1fef9562a44bf69330bb5257`，
@@ -54,8 +76,9 @@ crates.io 包原样导入，sha256 `e43a190b56df060b5a901d0e783e04002612981d1fef
 
 ## 升级
 
-1. 先查新版 SDK 是否同时含 SDK-ui 的快照交接修复、matrix-sdk 的公开等价取密钥方法，
-   以及网络等待期间启用备份后状态不被旧检查覆盖的修复。
+1. 先查新版 SDK 是否同时含 SDK-ui 的快照交接修复、matrix-sdk 的公开等价取密钥方法、
+   网络等待期间启用备份后状态不被旧检查覆盖的修复，以及 LatestEvents 后台任务不持有
+   `Client` 的修复（连同 `Client::downgrade`/`WeakClient` 公开导出）。
    各自已有上游实现时，迁移调用并删除对应 vendor 目录、workspace exclude 和 patch 项。
 2. 没有：根 `Cargo.toml` 里 matrix-sdk 系的版本一起改，`cargo fetch` 后从
    `~/.cargo/registry/cache/*/matrix-sdk-<版本>.crate` 解包，核对 sha256 和 `Cargo.lock` 的 checksum 一致，整个目录替换
