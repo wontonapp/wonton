@@ -268,12 +268,6 @@ impl MatrixSession {
         })
     }
 
-    /// 测试用，拿弱引用观察 Client 释放。
-    #[cfg(feature = "testkit")]
-    pub fn client(&self) -> &Client {
-        &self.client
-    }
-
     /// 当前的登录状态，用来存到本机。访问令牌刷新后（[`SessionEvent::TokensRefreshed`]）要重新取一次存下。
     pub fn saved(&self) -> Option<SavedSession> {
         self.client.matrix_auth().session().map(SavedSession)
