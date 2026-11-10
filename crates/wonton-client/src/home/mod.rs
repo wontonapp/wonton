@@ -495,14 +495,26 @@ impl HomeLink {
         let Some((endpoint, client)) = self.current_link().await else {
             return;
         };
+        tracing::info!(elapsed = ?started.elapsed(), "STEP link");
         // 挂起期间网络可能变了（换 Wi-Fi、切蜂窝），让 iroh 重新检查网卡和路径。
         endpoint.network_change().await;
+        tracing::info!(elapsed = ?started.elapsed(), "STEP network_change");
         client.retry_now();
+        tracing::info!(elapsed = ?started.elapsed(), "STEP retry_now");
         // 挂起久了，服务端已经放弃这条连接，手机却收不到关闭帧：限时确认，没有回应就立刻换新连接，
         // 不等 30 秒的空闲超时（见 ADR-0004 的真机实测）。
         if let Err(err) = client.revalidate().await {
             tracing::info!("tunnel check failed: {err}");
         }
+        tracing::info!(elapsed = ?started.elapsed(), "STEP revalidate");
+        // 这一趟可能撞上刚结束、已经失败的另一次检查（回来的确认、挂起检测自己那次），那样它立刻返回、连接还是
+        // 死的：连接不是好的就再拨一次，别让它拖到空闲超时。
+        if client.status() != TunnelStatus::Connected
+            && let Err(err) = client.ping().await
+        {
+            tracing::info!("tunnel redial failed: {err}");
+        }
+        tracing::info!(elapsed = ?started.elapsed(), "STEP redial");
         {
             let current = self.lock_lifecycle_client();
             if let Some(client) = current.as_ref() {
