@@ -12,15 +12,8 @@ struct ChatPull {
     let ended: (CGFloat, CGFloat) -> Void
 }
 
-private struct ChatPullKey: EnvironmentKey {
-    static var defaultValue: ChatPull? { nil }
-}
-
 extension EnvironmentValues {
-    var chatPull: ChatPull? {
-        get { self[ChatPullKey.self] }
-        set { self[ChatPullKey.self] = newValue }
-    }
+    @Entry var chatPull: ChatPull?
 }
 
 /// 面板拉开了（或正在拉）：主界面的左边缘手势（侧边栏）要让开。

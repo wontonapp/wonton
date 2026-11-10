@@ -16,15 +16,8 @@ struct PanelDependencies {
     let openCardRoom: (String) -> Void
 }
 
-private struct PanelDepsKey: EnvironmentKey {
-    static var defaultValue: PanelDependencies? { nil }
-}
-
 extension EnvironmentValues {
-    var panelDeps: PanelDependencies? {
-        get { self[PanelDepsKey.self] }
-        set { self[PanelDepsKey.self] = newValue }
-    }
+    @Entry var panelDeps: PanelDependencies?
 }
 
 /// 面板里的页面容器要的东西：展开没展开、下面被盖住多少、退出和编辑。
