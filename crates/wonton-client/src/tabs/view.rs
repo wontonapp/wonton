@@ -192,6 +192,53 @@ pub(super) fn build_panel_item(
     }
 }
 
+/// 公网网页的一项：网址照原样，非 https 的不打开并说清原因。房间账号数据由别的客户端直接写，
+/// 不经过入口校验，所以加载时也查一遍（ADR-0052 只收 `https://`）。
+fn build_url_page(
+    state: &TabsState,
+    placed: &PlacedTab,
+    stored: &StoredItem,
+    url: &str,
+    plugins: &PluginsViewModel,
+) -> TabPage {
+    let host = || {
+        url.parse::<Url>()
+            .ok()
+            .and_then(|parsed| parsed.host_str().map(str::to_owned))
+            .unwrap_or_else(|| url.to_owned())
+    };
+    let metadata = stored.page.clone().unwrap_or_else(|| StoredPage {
+        plugin_title: host(),
+        title: host(),
+        icon: TabIcon::Plugin { icon: None },
+        layout: TabLayout::Inset,
+    });
+    // 公网网页不经隧道，连不上是手机自己的网络，按上游出错显示（ADR-0052）。
+    let https = is_https_url(url);
+    let state_value = if https {
+        match state.failures.get(placed) {
+            Some((failure, status)) => TabState::LoadFailed {
+                failure: *failure,
+                status: *status,
+            },
+            None => TabState::Ready,
+        }
+    } else {
+        TabState::Failed {
+            reason: l10n!(CATALOG, language(), "panel-pin-not-https"),
+        }
+    };
+    page_from_metadata(
+        state,
+        placed,
+        metadata,
+        https.then(|| url.to_owned()),
+        state_value,
+        TabDisplayChoice::Fullscreen,
+        plugins,
+    )
+}
+
 fn build_page(
     state: &TabsState,
     placed: &PlacedTab,
@@ -226,39 +273,7 @@ fn build_page(
                 plugins,
             );
         }
-        TabRef::Url { url } => {
-            let metadata = stored.page.clone().unwrap_or_else(|| StoredPage {
-                plugin_title: url
-                    .parse::<Url>()
-                    .ok()
-                    .and_then(|parsed| parsed.host_str().map(str::to_owned))
-                    .unwrap_or_else(|| url.clone()),
-                title: url
-                    .parse::<Url>()
-                    .ok()
-                    .and_then(|parsed| parsed.host_str().map(str::to_owned))
-                    .unwrap_or_else(|| url.clone()),
-                icon: TabIcon::Plugin { icon: None },
-                layout: TabLayout::Inset,
-            });
-            // 公网网页不经隧道，连不上是手机自己的网络，按上游出错显示（ADR-0052）。
-            let state_value = match state.failures.get(placed) {
-                Some((failure, status)) => TabState::LoadFailed {
-                    failure: *failure,
-                    status: *status,
-                },
-                None => TabState::Ready,
-            };
-            return page_from_metadata(
-                state,
-                placed,
-                metadata,
-                Some(url.clone()),
-                state_value,
-                TabDisplayChoice::Fullscreen,
-                plugins,
-            );
-        }
+        TabRef::Url { url } => return build_url_page(state, placed, stored, url, plugins),
         _ => {}
     }
     let choice = display_for(state, &stored.tab);
@@ -403,12 +418,42 @@ pub(super) fn metadata_for_plugin(
     })
 }
 
+/// 公网网页只收 `https://`（ADR-0052）：明文网页和插件页并排出现，容易被当成自家页面。
+pub(super) fn is_https_url(url: &str) -> bool {
+    Url::parse(url).is_ok_and(|url| url.scheme() == "https" && url.host_str().is_some())
+}
+
+/// 插件里的路径必须落在插件自己的网站上，落在外面就按公网网页、别的插件的页算，不是这个插件的。
+pub(super) fn checked_plugin_path(
+    tab: &TabRef,
+    plugin: &InstalledPlugin,
+) -> Result<TabRef, CoreError> {
+    let TabRef::PluginPath { path, .. } = tab else {
+        return Ok(tab.clone());
+    };
+    if page_url(plugin.web_url.as_deref(), Some(path)).is_some() {
+        return Ok(tab.clone());
+    }
+    Err(invalid(&l10n!(
+        CATALOG,
+        language(),
+        "panel-pin-path-outside"
+    )))
+}
+
+/// 插件网页入口下的网址。路径只留在插件网站内：以 `/` 开头的路径直接接在来源后面，
+/// 不能交给 `Url::join`，否则 `//evil.example/x` 会被当成协议相对网址跳到别的主机（ADR-0052）。
 pub(super) fn page_url(base: Option<&str>, page: Option<&str>) -> Option<String> {
     let base = Url::parse(base?).ok()?;
-    match page {
-        Some(path) => base.join(path).ok().map(|url| url.to_string()),
-        None => Some(base.to_string()),
-    }
+    let Some(path) = page else {
+        return Some(base.to_string());
+    };
+    let url = if path.starts_with('/') {
+        Url::parse(&format!("{}{path}", base.origin().ascii_serialization())).ok()?
+    } else {
+        base.join(path).ok()?
+    };
+    (url.origin() == base.origin()).then(|| url.to_string())
 }
 
 pub(super) fn stored_item_for_tab(
@@ -440,6 +485,9 @@ pub(super) fn stored_item_with_title(
             "tabs-view-unknown-plugin"
         ))),
         TabRef::Url { url } => {
+            if !is_https_url(url) {
+                return Err(invalid(&l10n!(CATALOG, language(), "panel-pin-not-https")));
+            }
             let host = url
                 .parse::<Url>()
                 .ok()
@@ -467,7 +515,8 @@ pub(super) fn stored_item_with_title(
                 .find(|plugin| plugin.id == *plugin_id)
                 .ok_or_else(|| invalid(&l10n!(CATALOG, language(), "tabs-view-unknown-plugin")))?;
             Ok(StoredItem {
-                tab: tab.clone(),
+                // 手填的路径必须留在插件网站里（ADR-0052）。
+                tab: checked_plugin_path(tab, plugin)?,
                 page: Some(StoredPage {
                     plugin_title: plugin.title.clone(),
                     title: title.unwrap_or_else(|| plugin.title.clone()),
@@ -711,6 +760,19 @@ pub(super) fn normalize_layout(layout: TabLayout) -> TabLayout {
 
 pub(super) fn is_plugin(tab: &TabRef) -> bool {
     matches!(tab, TabRef::Plugin { .. })
+}
+
+/// 绑在插件上的页面：插件页和插件里的某一页。换服务器时它们跟着走，公网网页不绑服务器。
+pub(super) fn is_plugin_page(tab: &TabRef) -> bool {
+    matches!(tab, TabRef::Plugin { .. } | TabRef::PluginPath { .. })
+}
+
+/// 是网页的三种页面：插件页、插件里的某一页、公网网页。加载失败和重新加载都按网页处理。
+pub(super) fn is_web_page(tab: &TabRef) -> bool {
+    matches!(
+        tab,
+        TabRef::Plugin { .. } | TabRef::PluginPath { .. } | TabRef::Url { .. }
+    )
 }
 
 pub(super) fn is_removable(tab: &TabRef) -> bool {

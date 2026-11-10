@@ -286,36 +286,28 @@ fn not_in_panel() -> CoreError {
 fn check_placeable(tab: &TabRef, plugins: &PluginsViewModel) -> Result<(), CoreError> {
     match tab {
         TabRef::Plugin { .. } | TabRef::PluginPath { .. } => {
-            let known = plugins.installed.as_ref().is_some_and(|installed| {
-                let id = match tab {
-                    TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
-                        plugin_id
-                    }
-                    _ => unreachable!("matched above"),
-                };
-                installed.plugins.iter().any(|plugin| plugin.id == *id)
-            });
-            if known {
-                return Ok(());
-            }
-            plugins.installed.as_ref().map_or_else(
-                || {
-                    Err(CoreError::NotReady {
-                        reason: l10n!(CATALOG, language(), "tabs-view-plugin-list-not-ready"),
-                    })
-                },
-                |_| {
-                    Err(invalid(&l10n!(
-                        CATALOG,
-                        language(),
-                        "tabs-view-unknown-plugin"
-                    )))
-                },
-            )
+            let Some(installed) = plugins.installed.as_ref() else {
+                return Err(CoreError::NotReady {
+                    reason: l10n!(CATALOG, language(), "tabs-view-plugin-list-not-ready"),
+                });
+            };
+            let id = match tab {
+                TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
+                    plugin_id
+                }
+                _ => unreachable!("matched above"),
+            };
+            let Some(plugin) = installed.plugins.iter().find(|plugin| plugin.id == *id) else {
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-view-unknown-plugin"
+                )));
+            };
+            checked_plugin_path(tab, plugin).map(|_| ())
         }
         TabRef::Url { url } => {
-            if Url::parse(url).is_ok_and(|url| url.scheme() == "https" && url.host_str().is_some())
-            {
+            if is_https_url(url) {
                 return Ok(());
             }
             Err(invalid(&l10n!(CATALOG, language(), "panel-pin-not-https")))

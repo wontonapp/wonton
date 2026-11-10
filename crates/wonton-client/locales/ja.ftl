@@ -487,6 +487,7 @@ plugins-start-busy = { $id }はすでに起動、インストール、更新、�
 # アプリページのブリッジ（crates/wonton-client/src/tabs/bridge/）。
 tabs-bridge-page-not-open = このアプリのページは開かれていないか、固定されていません
 tabs-bridge-invalid-environment = ページのインセットとセーフエリアは有限の非負の数である必要があります
+tabs-bridge-public-page = 公開ウェブページには Wonton のブリッジがありません。
 
 # チャットの接続問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailableの理由と失敗した操作のメッセージ。
 chat-not-connected = 自宅サーバーに接続してから、もう一度試してください
@@ -560,6 +561,7 @@ panel-room-not-open = このチャットのパネルを変えるには、先に�
 panel-room-unknown = このチャットが見つかりません。
 panel-pin-invalid-url = そのアドレスは読み取れません。
 panel-pin-not-https = ピンできるのは https:// のウェブページだけです。
+panel-pin-path-outside = そのページはアプリ自身のサイトの外です。
 panel-attention-panel-only = パネル内のページだけに注意の印を付けられます。
 panel-config-too-many = パネルには最大 { $count } ページまで入ります。
 panel-config-duplicate = 同じページがパネルに二つあります。

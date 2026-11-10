@@ -4,7 +4,12 @@ mod sdk;
 mod support;
 
 use serde_json::json;
-use wonton_client::{Action, TabBridgeAction, TabDisplay, TabDisplayChoice, TabRef};
+use wonton_client::{
+    Action, CoreError, PlacedTab, TabBridgeAction, TabDisplay, TabDisplayChoice, TabRef,
+};
+use wonton_protocol::PanelScope;
+
+use crate::plugins::rig::Rig;
 
 use support::{
     PAGE_ORIGIN, bar, environment, initialize, open_page, request, response, selected_page,
@@ -60,6 +65,66 @@ async fn initialization_exposes_only_standard_context_and_supported_capabilities
     assert!(!size.initialized);
     assert!(size.reply_script.is_none());
     assert!(size.action.is_none());
+}
+
+#[tokio::test]
+async fn public_pages_get_no_document_script_or_bridge() {
+    let rig = Rig::new().await;
+    rig.app.stop_periodic_checks();
+    let tab = TabRef::Url {
+        url: "https://example.com/news".to_owned(),
+    };
+    rig.app
+        .dispatch(Action::PinTab {
+            tab: tab.clone(),
+            replacing: None,
+        })
+        .unwrap();
+    rig.app
+        .dispatch(Action::AddPanelPage {
+            scope: PanelScope::Main,
+            tab: tab.clone(),
+        })
+        .unwrap();
+
+    for placed in [
+        bar(&tab),
+        PlacedTab::Panel {
+            scope: PanelScope::Main,
+            tab: tab.clone(),
+        },
+    ] {
+        for error in [
+            rig.app.tab_document_script(placed.clone(), environment()),
+            rig.app.tab_context_script(placed.clone(), environment()),
+        ] {
+            assert!(matches!(error, Err(CoreError::InvalidInput { .. })));
+        }
+        let reply = rig.app.tab_handle_message(
+            placed,
+            true,
+            "https://example.com".to_owned(),
+            json!({"jsonrpc":"2.0","id":"draft","method":"ui/message","params":
+                {"role":"user","content":[{"type":"text","text":"hello"}]}})
+            .to_string(),
+            environment(),
+        );
+        assert!(reply.action.is_none());
+        let reply = response(&reply);
+        assert_eq!(reply["id"], "draft");
+        assert_eq!(reply["error"]["code"], -32001);
+    }
+
+    // 通知没有 id，不回话，也不算初始化完成。
+    let notification = rig.app.tab_handle_message(
+        bar(&tab),
+        true,
+        "https://example.com".to_owned(),
+        json!({"jsonrpc":"2.0","method":"ui/notifications/initialized"}).to_string(),
+        environment(),
+    );
+    assert!(notification.reply_script.is_none());
+    assert!(!notification.initialized);
 }
 
 #[tokio::test]

@@ -486,6 +486,7 @@ plugins-start-busy = { $id } 正在启动、安装、更新或卸载
 # 应用页面的桥（crates/wonton-client/src/tabs/bridge/）。
 tabs-bridge-page-not-open = 这个插件页面没有打开或固定
 tabs-bridge-invalid-environment = 页面栏高和安全区必须是有限的非负数
+tabs-bridge-public-page = 公网网页没有 Wonton 的桥。
 
 # 聊天的连接问题（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailable 的原因和失败操作的消息。
 chat-not-connected = 连上家里的服务器后再试
@@ -559,6 +560,7 @@ panel-room-not-open = 先打开这个聊天，才能改它的面板。
 panel-room-unknown = 找不到这个聊天。
 panel-pin-invalid-url = 这个网址读不出来。
 panel-pin-not-https = 只能钉 https:// 的网页。
+panel-pin-path-outside = 这一页不在插件自己的网站里。
 panel-attention-panel-only = 只有面板里的页面能挂红点。
 panel-config-too-many = 面板最多放 { $count } 页。
 panel-config-duplicate = 同一个页面在面板里出现了两次。
