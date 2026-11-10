@@ -31,6 +31,8 @@ use crate::plugin::store::{
 
 /// 这么久没有进度的上传被清掉。tusd 没有实现 tus 的 expiration，只能由核心来清。
 pub const STALE_SECS: u64 = 24 * 60 * 60;
+/// 传完放好、链接还没发出去的上传留这么久。授权给房间或者发到设备时不再过期（ADR-0020 的“生命周期”）。
+pub const UPLOAD_TTL_SECS: u64 = 24 * 60 * 60;
 /// 放下上传后磁盘上至少还要空着这个比例。
 const KEEP_FREE_PERCENT: u64 = 5;
 /// 客户端走了的编号记这么久：tusd 的 pre-create 钩子晚到时要认得出来，钩子不会晚这么多。
@@ -62,7 +64,7 @@ struct Placing {
 
 impl Pending {
     /// 放在 `name` 上的文件的记录。`name` 是目录里现在的名字，主人和插件都能改，显示给人看的要和别的不可信的名字一样清洗；引用保留原样，
-    /// 否则找不到文件。
+    /// 否则找不到文件。链接没发出去之前一直带过期时间，授权给房间或者发到设备时清掉。
     fn record(&self, name: String, placed: Snapshot) -> FileRecord {
         FileRecord {
             id: self.id.clone(),
@@ -81,7 +83,7 @@ impl Pending {
             owner_granted: Default::default(),
             registered: None,
             created_at: now_secs(),
-            expires_at: None,
+            expires_at: Some(now_secs().saturating_add(UPLOAD_TTL_SECS)),
         }
     }
 }
@@ -695,5 +697,7 @@ impl Files {
 
 #[cfg(test)]
 mod abandon_tests;
+#[cfg(test)]
+mod expiry_tests;
 #[cfg(test)]
 mod tests;
