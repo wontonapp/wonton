@@ -8,6 +8,8 @@
 //! - `wonton-core plugin …`：插件检查、打包、索引与构建期锁文件取包（见 `plugin_command`）。
 //! - `wonton-core image <icon.png|icon.svg|screenshot>`：核心内部用，在子进程里处理插件的图片
 //!   （`wonton_core::plugin::image_worker`）。
+//! - `wonton-core image-host <程序>`：核心内部用，常驻的图片助手，由它起上面那些处理图片的子进程；
+//!   核心启动时、绑隧道之前就先起它（`wonton_core::plugin::image_worker`）。
 //! - `wonton-core lan-probe`：核心内部用，在宿主网络里的一次性容器里读宿主的路由和网卡
 //!   （`wonton_core::plugin::lan::probe`）；`lan-probe listen <地址:端口,…>` 报告哪些端口有程序在用。
 //! - `wonton-core egress-proxy-check`：查代理连不连得上，安装脚本和核心都在出口网络上的一次性容器里跑它
@@ -161,6 +163,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some(image_worker::COMMAND) => return image_worker::child(&args[2..]),
+        Some(image_worker::HOST_COMMAND) => return image_worker::host(&args[2..]),
         // 检测容器的结果打印在标准输出上，同样不初始化日志。
         Some(lan::probe::COMMAND) => return lan::probe::command(&args[2..]),
         Some(check::COMMAND) => return check::command(),
@@ -641,6 +644,11 @@ async fn start_plugin_manager(
     let store = Store::open(cfg.core_state_dir().join("plugins"))?;
     let images = ImageWorker::current_in(store.people_languages(), cfg.username.clone())
         .context("找不到核心自己的可执行文件（处理图片要用）")?;
+    // 助手要在隧道绑 UDP 之前起好：之后图片任务的子进程都在它里面 fork，核心不再在 iroh 重绑的窗口里
+    // fork（#66）。起不来不挡住启动，图片任务会如实报不可用，预装会重试。
+    if let Err(e) = images.start().await {
+        tracing::warn!("图片助手没起来，图片处理要等它重起：{e}");
+    }
     let images = Arc::new(images);
     let manager = Arc::new(open_plugin_manager(
         cfg,
