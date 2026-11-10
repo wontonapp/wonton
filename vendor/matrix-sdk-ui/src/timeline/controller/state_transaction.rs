@@ -95,6 +95,7 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
         room_data_provider: &P,
         settings: &TimelineSettings,
     ) {
+        tracing::debug!(?diffs, "applying remote event diffs");
         let mut date_divider_adjuster =
             DateDividerAdjuster::new(settings.date_divider_mode.clone());
 
@@ -109,9 +110,16 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
                         let recycled_timeline_id = event
                             .event_id()
                             .and_then(|event_id| recycled_timeline_ids.remove(event_id));
+                        // 同一条事件可能被再投一次（解密前后各来一遍）：已经有的按更新处理，不再插一条。
+                        let position = match self.existing_item(&event) {
+                            Some(timeline_item_index) => TimelineItemPosition::UpdateAt {
+                                timeline_item_index,
+                            },
+                            None => TimelineItemPosition::End { origin },
+                        };
                         self.handle_remote_event(
                             event,
-                            TimelineItemPosition::End { origin },
+                            position,
                             room_data_provider,
                             settings,
                             &mut date_divider_adjuster,
@@ -142,9 +150,15 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
                     let recycled_timeline_id = event
                         .event_id()
                         .and_then(|event_id| recycled_timeline_ids.remove(event_id));
+                    let position = match self.existing_item(&event) {
+                        Some(timeline_item_index) => TimelineItemPosition::UpdateAt {
+                            timeline_item_index,
+                        },
+                        None => TimelineItemPosition::End { origin },
+                    };
                     self.handle_remote_event(
                         event,
-                        TimelineItemPosition::End { origin },
+                        position,
                         room_data_provider,
                         settings,
                         &mut date_divider_adjuster,
@@ -154,13 +168,25 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
                     .await;
                 }
 
-                VectorDiff::Insert { index: event_index, value: event } => {
+                VectorDiff::Insert {
+                    index: event_index,
+                    value: event,
+                } => {
                     let recycled_timeline_id = event
                         .event_id()
                         .and_then(|event_id| recycled_timeline_ids.remove(event_id));
+                    let position = match self.existing_item(&event) {
+                        Some(timeline_item_index) => TimelineItemPosition::UpdateAt {
+                            timeline_item_index,
+                        },
+                        None => TimelineItemPosition::At {
+                            event_index,
+                            origin,
+                        },
+                    };
                     self.handle_remote_event(
                         event,
-                        TimelineItemPosition::At { event_index, origin },
+                        position,
                         room_data_provider,
                         settings,
                         &mut date_divider_adjuster,
@@ -170,28 +196,74 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
                     .await;
                 }
 
-                VectorDiff::Set { index: event_index, value: event } => {
-                    if let Some(timeline_item_index) = self
-                        .items
-                        .all_remote_events()
-                        .get(event_index)
-                        .and_then(|meta| meta.timeline_item_index)
-                    {
-                        self.handle_remote_event(
-                            event,
-                            TimelineItemPosition::UpdateAt { timeline_item_index },
-                            room_data_provider,
-                            settings,
-                            &mut date_divider_adjuster,
-                            &mut cached_profiles,
-                            None,
-                        )
-                        .await;
+                VectorDiff::Set {
+                    index: event_index,
+                    value: event,
+                } => {
+                    // 缓存按下标发 `Set`，条目这边也按下标查；两边一旦错位（本地回显、隐藏事件
+                    // 交错时会），更新就落在别人身上。事件带着 ID，先核对，对不上按 ID 找回来。
+                    let expected = event.event_id();
+                    let matches_at = |meta: Option<&EventMeta>| matches!((meta, expected.as_ref()), (Some(meta), Some(id)) if &meta.event_id == id);
+                    let resolved = if matches_at(self.items.all_remote_events().get(event_index)) {
+                        Some(event_index)
                     } else {
-                        warn!(
-                            event_index,
-                            "Set update dropped because there wasn't any attached timeline item index."
-                        );
+                        expected.as_ref().and_then(|id| {
+                            self.items
+                                .all_remote_events()
+                                .iter()
+                                .position(|meta| &meta.event_id == id)
+                        })
+                    };
+                    match resolved {
+                        Some(index) => {
+                            if let Some(timeline_item_index) = self
+                                .items
+                                .all_remote_events()
+                                .get(index)
+                                .and_then(|meta| meta.timeline_item_index)
+                            {
+                                self.handle_remote_event(
+                                    event,
+                                    TimelineItemPosition::UpdateAt {
+                                        timeline_item_index,
+                                    },
+                                    room_data_provider,
+                                    settings,
+                                    &mut date_divider_adjuster,
+                                    &mut cached_profiles,
+                                    None,
+                                )
+                                .await;
+                            } else {
+                                // 事件在 map 里但没有条目（隐藏事件）：map 已有这一份，别再插一条同 ID
+                                // 的 meta，否则 map 比缓存多一条，后面的 `Remove` 只删其中一份。
+                                debug!(
+                                    event_index,
+                                    resolved = index,
+                                    "Set update for an event without a timeline item"
+                                );
+                            }
+                        }
+                        None => {
+                            // 缓存里有、map 里完全没有：按缓存位置补一条。缓存下标可能比 map 长，
+                            // 插入前夹到 map 长度内（`VecDeque::insert` 越界会 panic）。
+                            let event_index =
+                                event_index.min(self.items.all_remote_events().iter().count());
+                            debug!(event_index, "Set update inserted a missing remote event");
+                            self.handle_remote_event(
+                                event,
+                                TimelineItemPosition::At {
+                                    event_index,
+                                    origin,
+                                },
+                                room_data_provider,
+                                settings,
+                                &mut date_divider_adjuster,
+                                &mut cached_profiles,
+                                None,
+                            )
+                            .await;
+                        }
                     }
                 }
 
@@ -213,6 +285,20 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
 
         self.adjust_date_dividers(date_divider_adjuster);
         self.check_invariants();
+    }
+
+    /// 这条事件已经在时间线里时，返回它的条目位置：缓存重复投递同一条事件时按更新处理。
+    fn existing_item(&self, event: &TimelineEvent) -> Option<usize> {
+        let event_id = event.event_id()?;
+        let index = self
+            .items
+            .all_remote_events()
+            .iter()
+            .position(|meta| &meta.event_id == event_id)?;
+        self.items
+            .all_remote_events()
+            .get(index)
+            .and_then(|meta| meta.timeline_item_index)
     }
 
     async fn handle_remote_aggregation(
@@ -280,7 +366,9 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
         // FIXME: Continuation of the hackjob to get UTDs for focused timelines
         // working from `handle_remote_aggregations()`.
         if let [TimelineAction::AddItem { .. }] = timeline_actions.as_slice()
-            && let TimelineItemPosition::UpdateAt { timeline_item_index } = position
+            && let TimelineItemPosition::UpdateAt {
+                timeline_item_index,
+            } = position
             && let Some(item) = self.items.get(timeline_item_index)
             && item
                 .as_event()
@@ -348,17 +436,26 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
                     .await;
                 }
 
-                VectorDiff::Insert { index: event_index, value: event } => {
+                VectorDiff::Insert {
+                    index: event_index,
+                    value: event,
+                } => {
                     self.handle_remote_aggregation(
                         event,
-                        TimelineItemPosition::At { event_index, origin },
+                        TimelineItemPosition::At {
+                            event_index,
+                            origin,
+                        },
                         room_data_provider,
                         &mut date_divider_adjuster,
                     )
                     .await;
                 }
 
-                VectorDiff::Set { index: event_index, value: event } => {
+                VectorDiff::Set {
+                    index: event_index,
+                    value: event,
+                } => {
                     if let Some(timeline_item_index) = self
                         .items
                         .all_remote_events()
@@ -367,7 +464,9 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
                     {
                         self.handle_remote_aggregation(
                             event,
-                            TimelineItemPosition::UpdateAt { timeline_item_index },
+                            TimelineItemPosition::UpdateAt {
+                                timeline_item_index,
+                            },
                             room_data_provider,
                             &mut date_divider_adjuster,
                         )
@@ -400,7 +499,9 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
                         // Relevant issue: https://github.com/matrix-org/matrix-rust-sdk/issues/5954.
                         self.handle_remote_aggregation(
                             event,
-                            TimelineItemPosition::UpdateAt { timeline_item_index },
+                            TimelineItemPosition::UpdateAt {
+                                timeline_item_index,
+                            },
                             room_data_provider,
                             &mut date_divider_adjuster,
                         )
@@ -442,7 +543,11 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
         let mut by_user_and_thread = HashMap::new();
         let mut duplicates = HashSet::new();
 
-        for item in self.items.iter_remotes_region().filter_map(|(_, item)| item.as_event()) {
+        for item in self
+            .items
+            .iter_remotes_region()
+            .filter_map(|(_, item)| item.as_event())
+        {
             if let Some(event_id) = item.event_id() {
                 for (user_id, read_receipt) in item.read_receipts() {
                     let key = (user_id, read_receipt.thread.as_str());
@@ -478,7 +583,10 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
 
         if !duplicates.is_empty() {
             #[cfg(any(debug_assertions, test))]
-            panic!("duplicate unique ids in this timeline: {duplicates:?}\n{:?}", self.items);
+            panic!(
+                "duplicate unique ids in this timeline: {duplicates:?}\n{:?}",
+                self.items
+            );
 
             #[cfg(not(any(debug_assertions, test)))]
             tracing::error!(
@@ -521,7 +629,9 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
                     | TimelineItemPosition::Start { origin }
                     | TimelineItemPosition::At { origin, .. } => origin,
 
-                    TimelineItemPosition::UpdateAt { timeline_item_index: idx } => self
+                    TimelineItemPosition::UpdateAt {
+                        timeline_item_index: idx,
+                    } => self
                         .items
                         .get(idx)
                         .and_then(|item| item.as_event()?.as_remote())
@@ -535,7 +645,10 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
                 }
             }
 
-            TimelineFocusKind::Live { hide_threaded_events, .. } => {
+            TimelineFocusKind::Live {
+                hide_threaded_events,
+                ..
+            } => {
                 // If the timeline's filtering out in-thread events, don't add items for
                 // threaded events.
                 thread_root.is_none() || !hide_threaded_events
@@ -558,11 +671,15 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
     ) -> bool {
         match event {
             AnySyncTimelineEvent::State(_) => {
-                matches!(settings.track_read_receipts, TimelineReadReceiptTracking::AllEvents)
+                matches!(
+                    settings.track_read_receipts,
+                    TimelineReadReceiptTracking::AllEvents
+                )
             }
-            AnySyncTimelineEvent::MessageLike(_) => {
-                !matches!(settings.track_read_receipts, TimelineReadReceiptTracking::Disabled)
-            }
+            AnySyncTimelineEvent::MessageLike(_) => !matches!(
+                settings.track_read_receipts,
+                TimelineReadReceiptTracking::Disabled
+            ),
         }
     }
 
@@ -598,9 +715,15 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
             raw.get_field("type")
                 .ok()
                 .flatten()
-                .map(|event_type| FailedToParseEvent::State { event_type, state_key })
+                .map(|event_type| FailedToParseEvent::State {
+                    event_type,
+                    state_key,
+                })
         } else {
-            raw.get_field("type").ok().flatten().map(FailedToParseEvent::MsgLike)
+            raw.get_field("type")
+                .ok()
+                .flatten()
+                .map(FailedToParseEvent::MsgLike)
         };
 
         let event_id: Option<OwnedEventId> = raw.get_field("event_id").ok().flatten();
@@ -641,7 +764,10 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
                     sender,
                     origin_server_ts,
                     transaction_id,
-                    vec![TimelineAction::failed_to_parse(event_type, deserialization_error)],
+                    vec![TimelineAction::failed_to_parse(
+                        event_type,
+                        deserialization_error,
+                    )],
                     None,
                     true,
                     true,
@@ -712,12 +838,14 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
         profiles: &mut HashMap<OwnedUserId, Option<Profile>>,
         recycled_timeline_id: Option<TimelineUniqueId>,
     ) -> RemovedItem {
-        let is_highlighted =
-            event.push_actions().is_some_and(|actions| actions.iter().any(Action::is_highlight));
+        let is_highlighted = event
+            .push_actions()
+            .is_some_and(|actions| actions.iter().any(Action::is_highlight));
 
         let thread_summary = if let ThreadSummaryStatus::Some(ref summary) = event.thread_summary {
             let latest_reply_item = if let Some(ref latest_reply) = summary.latest_reply {
-                self.fetch_latest_thread_reply(latest_reply, room_data_provider).await
+                self.fetch_latest_thread_reply(latest_reply, room_data_provider)
+                    .await
             } else {
                 None
             };
@@ -733,7 +861,9 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
         let encryption_info = event.kind.encryption_info().cloned();
 
         let bundled_edit_encryption_info = event.kind.unsigned_encryption_map().and_then(|map| {
-            map.get(&UnsignedEventLocation::RelationsReplace)?.encryption_info().cloned()
+            map.get(&UnsignedEventLocation::RelationsReplace)?
+                .encryption_info()
+                .cloned()
         });
 
         let (forwarder, forwarder_profile) = get_forwarder_info(&event, room_data_provider).await;
@@ -797,8 +927,9 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
 
             // The event seems invalid…
             Err(e) => {
-                if let Some(tuple) =
-                    self.maybe_add_error_item(position, room_data_provider, &raw, e, settings).await
+                if let Some(tuple) = self
+                    .maybe_add_error_item(position, room_data_provider, &raw, e, settings)
+                    .await
                 {
                     tuple
                 } else {
@@ -889,7 +1020,10 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
         if !item_added {
             trace!("No new item added");
 
-            if let TimelineItemPosition::UpdateAt { timeline_item_index } = position {
+            if let TimelineItemPosition::UpdateAt {
+                timeline_item_index,
+            } = position
+            {
                 // If add was not called, that means the UTD event is one that
                 // wouldn't normally be visible. Remove it.
                 trace!("Removing UTD that was successfully retried");
@@ -956,11 +1090,28 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
                 }
             });
 
+            // 缓存已经整块重置，没有时间线条目、上面那条循环走不到的远程事件（例如主人自己的成员事件）也要删。
+            // 留着它们会让 `all_remote_events` 和缓存位置从下一刻起错位一格，后面的 Set/Remove 按下标命中别人
+            // 的消息。倒着删，删除不动还没访问的下标。
+            let orphaned: Vec<usize> = self
+                .items
+                .all_remote_events()
+                .iter()
+                .enumerate()
+                .filter_map(|(index, event)| event.timeline_item_index.is_none().then_some(index))
+                .collect();
+            for index in orphaned.into_iter().rev() {
+                self.items.remove_remote_event(index);
+            }
+
             // Remove adjacent date dividers.
             let mut idx = 0;
             while idx < self.items.len() {
                 if self.items[idx].is_date_divider()
-                    && self.items.get(idx + 1).is_none_or(|item| item.is_date_divider())
+                    && self
+                        .items
+                        .get(idx + 1)
+                        .is_none_or(|item| item.is_date_divider())
                 {
                     self.items.remove(idx);
                     // don't increment idx because all elements have shifted
@@ -980,7 +1131,12 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
     #[instrument(skip_all)]
     pub(super) fn set_fully_read_event(&mut self, fully_read_event_id: OwnedEventId) {
         // A similar event has been handled already. We can ignore it.
-        if self.meta.fully_read_event.as_ref().is_some_and(|id| *id == fully_read_event_id) {
+        if self
+            .meta
+            .fully_read_event
+            .as_ref()
+            .is_some_and(|id| *id == fully_read_event_id)
+        {
             return;
         }
 
@@ -1036,8 +1192,9 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
             }
 
             TimelineItemPosition::UpdateAt { .. } => {
-                if let Some(event) =
-                    self.items.get_remote_event_by_event_id_mut(&event_meta.event_id)
+                if let Some(event) = self
+                    .items
+                    .get_remote_event_by_event_id_mut(&event_meta.event_id)
                     && (event.visible != event_meta.visible
                         || event.can_show_read_receipts != event_meta.can_show_read_receipts)
                 {
@@ -1061,7 +1218,8 @@ impl<'a, P: RoomDataProvider> TimelineStateTransaction<'a, P> {
                     | TimelineItemPosition::At { .. }
             )
         {
-            self.load_read_receipts_for_event(&event_id, room_data_provider).await;
+            self.load_read_receipts_for_event(&event_id, room_data_provider)
+                .await;
 
             self.maybe_add_implicit_read_receipt(&event_id, sender, timestamp);
         }
@@ -1160,8 +1318,14 @@ mod tests {
 
         // Given a timeline with clashing receipts
         let mut items = create_items_with_receipts(vec![
-            (owned_user_id!("@user1:s.co"), create_receipt(ReceiptThread::Unthreaded)),
-            (owned_user_id!("@user1:s.co"), create_receipt(ReceiptThread::Unthreaded)),
+            (
+                owned_user_id!("@user1:s.co"),
+                create_receipt(ReceiptThread::Unthreaded),
+            ),
+            (
+                owned_user_id!("@user1:s.co"),
+                create_receipt(ReceiptThread::Unthreaded),
+            ),
         ]);
 
         // When we check for duplicates
@@ -1193,8 +1357,14 @@ mod tests {
 
         // Given a timeline with receipts, but no clashes (users are different)
         let mut items = create_items_with_receipts(vec![
-            (owned_user_id!("@user1:s.co"), create_receipt(ReceiptThread::Unthreaded)),
-            (owned_user_id!("@user2:s.co"), create_receipt(ReceiptThread::Unthreaded)),
+            (
+                owned_user_id!("@user1:s.co"),
+                create_receipt(ReceiptThread::Unthreaded),
+            ),
+            (
+                owned_user_id!("@user2:s.co"),
+                create_receipt(ReceiptThread::Unthreaded),
+            ),
         ]);
 
         // When we check for duplicates
@@ -1226,7 +1396,10 @@ mod tests {
 
         // Given a timeline with receipts, but no clashes (users are different)
         let mut items = create_items_with_receipts(vec![
-            (owned_user_id!("@user1:s.co"), create_receipt(ReceiptThread::Unthreaded)),
+            (
+                owned_user_id!("@user1:s.co"),
+                create_receipt(ReceiptThread::Unthreaded),
+            ),
             (
                 owned_user_id!("@user1:s.co"),
                 create_receipt(ReceiptThread::Thread(owned_event_id!("$thread_root"))),
@@ -1264,7 +1437,10 @@ mod tests {
                 let event_id = OwnedEventId::try_from(format!("$event-{num}")).unwrap();
                 let timeline_id = format!("timeline-{num}");
 
-                t.push_front(event_with_receipt_item(event_id, timeline_id, receipt), None);
+                t.push_front(
+                    event_with_receipt_item(event_id, timeline_id, receipt),
+                    None,
+                );
             }
             t.commit();
         }
