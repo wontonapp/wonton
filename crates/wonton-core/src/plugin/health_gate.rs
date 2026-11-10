@@ -1,5 +1,6 @@
 //! 等健康门的时限：装不动 300 秒的插件（大模型类要装载几分钟）按它声明的 `start_period` 放宽，
-//! 其余照旧用配置的安装时限。安装、启动、升级、局域网重建和加 Bot 用同一条规则。
+//! 其余照旧用配置的安装时限。安装、启动、升级、局域网重建和加 Bot 用同一条规则；开机恢复和容器监视
+//! 是串行核对的，用固定的安装时限（见 [`Gate`]）。
 
 use std::time::Duration;
 
@@ -14,6 +15,32 @@ const START_PERIOD_MARGIN: Duration = Duration::from_secs(5 * 60);
 /// 等待的上限：声明得再长也不能让主人无限等，超时照实报错（失败即停）。60 分钟盖住大模型类插件
 /// 实测的装载时间。
 const MAX_WAIT: Duration = Duration::from_secs(60 * 60);
+
+/// 重建容器时等健康门用哪条时限。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::plugin) enum Gate {
+    /// 按插件声明的 `start_period` 放宽（见 [`deadline`]）：安装、启动、升级这类主人等着的长操作。
+    StartPeriod,
+    /// 固定 `install_timeout`，不看 `start_period`：开机恢复和容器监视是一个插件接一个插件串行核对的，
+    /// 一个起不来的慢插件不能拖住排在后面的所有插件几十分钟。超时照实标成异常，容器留着，健康以后由
+    /// 容器监视捡回来。
+    InstallTimeout,
+}
+
+impl Gate {
+    /// 现在起的时限。
+    pub(super) fn deadline(
+        self,
+        plan: &Deployment,
+        install_timeout: Duration,
+        now: Instant,
+    ) -> Instant {
+        match self {
+            Self::StartPeriod => deadline(plan, install_timeout, now),
+            Self::InstallTimeout => now + install_timeout,
+        }
+    }
+}
 
 /// 插件的等待时限：渲染计划（已经过 `rewrite_image_healthchecks`，镜像自带的 healthcheck 也算）里各
 /// 容器 `healthcheck.start_period` 的最大值加余量，下限 `install_timeout`，上限 max(60 分钟,

@@ -7,6 +7,7 @@ use tokio::time::Instant;
 
 use super::compose::DependCondition;
 use super::health::{self, Target};
+use super::health_gate::Gate;
 use super::languages::Languages;
 use super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, PluginView, busy, detached,
@@ -160,10 +161,10 @@ impl PluginManager {
         if let ContainersState::Stopped = state {
             self.set(id, PluginStatus::Installing, None);
             // 复用恢复核对，先把核心接回网络；依赖核心内部别名的服务才能启动。
-            self.reconcile(&package, &record).await?;
+            self.reconcile(&package, &record, Gate::StartPeriod).await?;
             // 渲染变了就重建，免得主人启动的还是旧配置的容器。
             if !self
-                .recreate_on_drift(&package, &record, langs, true)
+                .recreate_on_drift(&package, &record, langs, true, Gate::StartPeriod)
                 .await?
             {
                 self.start_resident_containers(&package, &record, deadline, langs)

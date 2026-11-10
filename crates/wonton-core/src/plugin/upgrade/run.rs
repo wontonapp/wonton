@@ -13,6 +13,7 @@ use wonton_protocol::InstallStage;
 use super::super::bots::is_bot;
 use super::super::compose::PullPolicy;
 use super::super::gpu::GpuGrant;
+use super::super::health_gate::Gate;
 use super::super::lan::LanGrant;
 use super::super::lan::webui::switched;
 use super::super::languages::Languages;
@@ -675,7 +676,8 @@ impl PluginManager {
         }
         let mut plan = render(&old.package, &ctx, &langs)?;
         pin_images(&mut plan, &old.images);
-        self.replace_containers(&ctx, plan).await?;
+        self.replace_containers(&ctx, plan, Gate::StartPeriod)
+            .await?;
         self.reconcile_running(&old.package, &old.record).await
     }
 

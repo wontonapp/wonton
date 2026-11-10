@@ -10,6 +10,7 @@ use std::sync::Arc;
 use wonton_protocol::PluginDetail;
 
 use super::entry::PluginStatus;
+use super::health_gate::Gate;
 use super::languages::Languages;
 use super::listed::Listed;
 use super::manager::{InstallError, PluginManager, detached};
@@ -122,7 +123,8 @@ impl PluginManager {
         let mut plan = after;
         plan.retain_services(&changed);
         let ctx = self.switch_context(listed, package, to, &langs).await?;
-        self.replace_containers(&ctx, plan).await?;
+        self.replace_containers(&ctx, plan, Gate::StartPeriod)
+            .await?;
         self.store.save(to)?;
         Ok(())
     }

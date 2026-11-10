@@ -15,6 +15,7 @@ use wonton_protocol::{LanChoice, LanFailure};
 use super::select::{self, Bound, Host, Plan, Problem};
 use super::{LanGrant, LanSpec, published};
 use crate::l10n;
+use crate::plugin::health_gate::Gate;
 use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::Undo;
 use crate::plugin::manager::{Deployed, Entry, InstallError, PluginManager, PluginStatus};
@@ -392,7 +393,9 @@ impl PluginManager {
             }
             _ => unreachable!("迁移标记和预留成对出现"),
         }
-        self.replace_containers(&ctx, render_plan).await
+        // 局域网重建是主人正在等着的一次性操作，和安装、启动同一条规则。
+        self.replace_containers(&ctx, render_plan, Gate::StartPeriod)
+            .await
     }
 
     /// 重建已装插件的容器时的上下文：和安装时一样，凭据用存下的。Bot 的 Matrix 变量另外填（见 [`crate::plugin::egress`]）。
@@ -452,11 +455,12 @@ impl PluginManager {
         Ok(ctx)
     }
 
-    /// 先把镜像拉好，再换掉计划里的容器：拉不到时旧容器还在跑。
+    /// 先把镜像拉好，再换掉计划里的容器：拉不到时旧容器还在跑。等健康的时限按 `gate` 取。
     pub(in crate::plugin) async fn replace_containers(
         &self,
         ctx: &InstallContext,
         mut plan: Deployment,
+        gate: Gate,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
         self.prepare_images(&mut plan, None, &langs).await?;
@@ -465,8 +469,7 @@ impl PluginManager {
             self.engine.remove_container(&container.name).await?;
         }
         self.rewrite_image_healthchecks(ctx, &mut plan).await?;
-        let deadline =
-            crate::plugin::health_gate::deadline(&plan, self.cfg.install_timeout, Instant::now());
+        let deadline = gate.deadline(&plan, self.cfg.install_timeout, Instant::now());
         self.start_containers(&plan, None, &mut Undo::default(), deadline, &langs)
             .await?;
         Ok(())

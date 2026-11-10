@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::health_gate::Gate;
 use super::manager::{Deployed, Entry, Health, InstallError, PluginManager, PluginStatus};
 use super::manifest::PluginId;
 use super::package::PluginPackage;
@@ -160,11 +161,12 @@ impl PluginManager {
     }
 
     /// 容器好了不等于插件好了：和核心启动时一样核对一遍，路由才回来。
+    /// 监视是一个插件接一个插件串行的，漂移重建只等 `install_timeout`（见 [`Gate`]）。
     async fn recover(&self, id: &PluginId, package: &PluginPackage, record: &InstalledRecord) {
         if !self.begin_rebuild(id) {
             return;
         }
-        let result = self.reconcile(package, record).await;
+        let result = self.reconcile(package, record, Gate::InstallTimeout).await;
         self.lan.end(id);
         let deployed = match result {
             Ok(Some(deployed)) => deployed,
