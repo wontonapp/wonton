@@ -101,6 +101,24 @@ jobs:
       - name: detekt（函数 ≤ 100 行）、单元测试与 Debug APK
         working-directory: apps/compose
         run: ./gradlew detekt :androidApp:testDebugUnitTest :androidApp:assembleDebug
+      # 界面参考图：预览用固定假数据，在 JVM 上渲染，不加载 .so。重录在 snapshots-record.yml，这里只比对。
+      - name: 比对界面参考图
+        working-directory: apps/compose
+        run: ./gradlew :shared:verifyPaparazziAndroidMain
+      - name: 差异图和报告
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: paparazzi-${{ github.run_attempt }}
+          path: |
+            apps/compose/shared/build/paparazzi
+            apps/compose/shared/build/reports/paparazzi
+          retention-days: 7
+          if-no-files-found: ignore
+      # 只编不跑：设备上的测试要在设备上加载原生核心、还要模拟器，日常 PR 上太重；编译能挡住 API 和清单错误。
+      - name: 编译设备测试（androidTest）
+        working-directory: apps/compose
+        run: ./gradlew :androidApp:assembleDebugAndroidTest
 
   # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
   # 草稿 PR 上其余作业全被跳过时它也照样起来并报通过，不用为此先起别的 runner。

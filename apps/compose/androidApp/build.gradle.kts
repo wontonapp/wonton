@@ -118,6 +118,11 @@ dependencies {
     testImplementation(libs.compose.foundation)
     testImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
+
+    // Apache-2.0。设备上的启动测试：rule、runner 和参数化 Activity 场景。
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
 
 /** Robolectric 要读 strings.xml 和各语言的 values-*，资源得进单元测试。 */

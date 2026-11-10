@@ -47,6 +47,22 @@
   副本，本地不设、按上游引用拉；main-image 和 release 给 Dockerfile 的 `*_IMAGE` build-arg 传副本引用。
   仓库公开当天先手动跑一次 test-images.yml，再让 main-image 跑（副本空着时镜像构建会拉取失败）。
 
+## 界面参考图（Android）
+
+- `apps/compose/shared` 的 host test 里有 Paparazzi 截图测试（Apache-2.0，版本钉在
+  `gradle/libs.versions.toml`）。它按布局在 JVM 上把 `@Preview` 渲染成 PNG，不加载 Rust 的 .so；预览自己带
+  固定假数据。参考图在 `apps/compose/shared/src/androidHostTest/snapshots/`，直接进 git，不用 LFS。
+- 跑在 android 工作流的构建作业里（`verifyPaparazziAndroidMain`），不新开作业：同一个 PR 上的新检查放进已有
+  作业，合并队列的必需检查列表不用动。设备固定成 PIXEL_5、语言 en、浅色，另有深色的一份；参考图在 Linux
+  runner 上生成，本机字体不同也可能有差异，以 CI 的为准。
+- 比对失败时差异图和报告作为 `paparazzi-<运行次数>` 产物留 7 天，下载下来看差在哪。
+- 重录：本地 `cd apps/compose && ./gradlew :shared:recordPaparazziAndroidMain` 后提交 `snapshots/` 下的
+  PNG，和预览一起提交。或者在 PR 上打 `record-snapshots` 标签，构建作业改成跑
+  `recordPaparazziAndroidMain`、把新图提交回分支并去掉标签：只对仓库里的分支有效，外部 PR 的分支在别人仓库
+  里推不进去，标签只让作业重录一遍（工作区里的图不会提交），作者要自己录、自己提交。
+- 用 `GITHUB_TOKEN` 推的提交不再触发 CI，重录之后点重跑或者推一个空提交，让新参考图自己过一遍比对。
+  打任何标签都会触发一次 android 运行，草稿 PR 上打标签要等转 ready 才跑。
+
 ## 合并队列
 
 仓库开着合并队列时，入队的 PR 会在队列里的合并提交上重跑一遍必需检查；`merge_group` 事件没报告，入队就
