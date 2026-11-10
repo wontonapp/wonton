@@ -11242,6 +11242,336 @@
         }
       }
     },
+    "portMapping.title": {
+      "comment": "Switch on an installed app's page: map the ports the app declares to 127.0.0.1 on this iPhone.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Map to This Device"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "映射到本机"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "映射到本機"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末にマッピング"
+          }
+        }
+      }
+    },
+    "portMapping.foregroundOnly": {
+      "comment": "Note under the mapping switch: the mapping only lives while the app is in the foreground, so other apps can't use it on iOS.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only while Wonton is open. Switching to another app stops it, so other apps on this iPhone can't connect."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只在云吞开着时有效；切到别的 App 就停，iPhone 上的其他 App 连不上。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只在雲吞開著時有效；切到別的 App 就停，iPhone 上的其他 App 連不上。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton を開いている間だけ使えます。ほかのアプリに切り替えると止まるため、iPhone 上のほかのアプリからは接続できません。"
+          }
+        }
+      }
+    },
+    "portMapping.protocolOther": {
+      "comment": "Protocol of a mapped port when a newer home server reports one this app doesn't know.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他"
+          }
+        }
+      }
+    },
+    "portMapping.reason.portInUse": {
+      "comment": "Port mapping failed: another app on the phone already uses the port.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The port is already used by another app on this iPhone."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口被 iPhone 上的其他 App 占用了。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連接埠被 iPhone 上的其他 App 佔用了。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このポートは iPhone 上のほかのアプリが使用中です。"
+          }
+        }
+      }
+    },
+    "portMapping.reason.serverTooOld": {
+      "comment": "Port mapping failed: the home server is too old to map ports.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your home server is too old and needs an update."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家里的服务器版本太旧，需要先升级。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家用伺服器版本太舊，需要先升級。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバーのバージョンが古いため、先にアップデートが必要です。"
+          }
+        }
+      }
+    },
+    "portMapping.reason.tunnelDisconnected": {
+      "comment": "Port mapping failed: the tunnel to the home server isn't connected.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The tunnel to your home server isn't connected."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到家里服务器的隧道没连上。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到家用伺服器的隧道沒連上。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバーへのトンネルに接続していません。"
+          }
+        }
+      }
+    },
+    "portMapping.reason.pluginNotInstalled": {
+      "comment": "Port mapping failed: the app isn't installed on the home server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app isn't installed on your home server."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器上没有安装这个 App。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伺服器上沒有安裝這個 App。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリは自宅サーバーにインストールされていません。"
+          }
+        }
+      }
+    },
+    "portMapping.reason.portNotDeclared": {
+      "comment": "Port mapping failed: the app's manifest doesn't declare the port.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app doesn't declare that port."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 App 没有声明这个端口。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個 App 沒有宣告這個連接埠。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリはそのポートを宣言していません。"
+          }
+        }
+      }
+    },
+    "portMapping.reason.pluginNotRunning": {
+      "comment": "Port mapping failed: the app isn't running.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app isn't running on your home server."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 App 没有在运行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個 App 沒有在執行。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリが動いていません。"
+          }
+        }
+      }
+    },
+    "portMapping.reason.pluginUnreachable": {
+      "comment": "Port mapping failed: the home server can't reach the app's service.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your home server can't reach this app."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器连不上这个 App。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伺服器連不上這個 App。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバーからこのアプリに接続できません。"
+          }
+        }
+      }
+    },
+    "portMapping.reason.other": {
+      "comment": "Port mapping failed for another reason.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port mapping ran into a problem."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "映射出错了。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "映射出錯了。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マッピングで問題が発生しました。"
+          }
+        }
+      }
+    },
     "problem.appearance.title": {
       "comment": "Problem title when the appearance settings couldn't be saved on the home server.",
       "extractionState": "manual",
