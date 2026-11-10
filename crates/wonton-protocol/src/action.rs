@@ -291,6 +291,14 @@ pub enum Action {
         plugin_id: String,
         enabled: bool,
     },
+    /// 屏幕上正显示着哪个插件的页面；没有插件页面在屏幕上时发 `None`。
+    ///
+    /// 壳在页面换走、被盖住、重新露出来时发。App 进后台不用补发：核心按 [`Action::AppBackgrounded`] 一律当作
+    /// 不可见，回前台恢复，壳也不用重报。核心照它自动开关这个插件的端口映射（ADR-0072），不动
+    /// [`Action::SetPortMapping`] 记下的手动开关：手动打开的不因页面看不见而关掉。
+    SetVisiblePlugin {
+        plugin_id: Option<String>,
+    },
     /// 取商店的列表。`force` 为真时家里的服务器不等缓存过期，直接去来源取（下拉刷新）。
     RefreshStore {
         force: bool,
