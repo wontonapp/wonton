@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,22 +32,29 @@ class NotificationPermission(private val activity: ComponentActivity) {
             pending.forEach { it(granted) }
         }
 
-    /** Android 13 起才要单独授权，更早的版本装着就有。 */
+    /** 系统里这个 App 的通知开着没有：Android 13 起就是通知权限，更早的版本是设置里的开关。 */
     val granted: Boolean
-        get() = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
+        get() = NotificationManagerCompat.from(activity).areNotificationsEnabled()
 
     /** 已经有权限时直接回调，不弹框；正在弹时等同一个结果。 */
     fun request(onResult: (Boolean) -> Unit) {
-        if (granted) {
-            grantedState.value = true
-            return onResult(true)
+        when {
+            granted -> {
+                grantedState.value = true
+                onResult(true)
+            }
+            // 权限已经给过、只是通知被关掉（Android 13 前的开关或渠道）时，再弹权限框没有用。
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED -> onResult(false)
+            else -> {
+                callbacks += onResult
+                if (!asking) {
+                    asking = true
+                    launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
         }
-        callbacks += onResult
-        if (asking) return
-        asking = true
-        launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     /** 从系统设置回来时重查：权限可能在别处改过。 */
