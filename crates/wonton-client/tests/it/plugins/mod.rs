@@ -9,6 +9,7 @@ mod detail;
 mod egress;
 mod now;
 mod onboarding;
+mod owner_secrets;
 mod registry_mirror;
 pub mod rig;
 mod share_recipients;

@@ -10,6 +10,7 @@ mod egress;
 mod me;
 mod media;
 mod now;
+mod owner_secrets;
 mod polling;
 mod registry_mirror;
 mod roles;
@@ -95,6 +96,7 @@ pub(crate) struct PluginsLink {
     upgrade_polling_paused: AtomicBool,
     registry: Mutex<registry_mirror::RegistryLocal>,
     takeover: Mutex<takeover::Slot>,
+    owner_secrets: Mutex<owner_secrets::Local>,
     starts: Mutex<HashMap<String, u64>>,
     data_dir: PathBuf,
     /// 发起安装、升级时的预览，按插件 ID 记着：失败后重试要来源，聊天列表的安装行要 `has_bot`。做完被主人清掉时删。
@@ -163,6 +165,7 @@ impl PluginsLink {
             upgrade_polling_paused: AtomicBool::new(false),
             registry: Mutex::new(registry_mirror::RegistryLocal::default()),
             takeover: Mutex::new(takeover::Slot::default()),
+            owner_secrets: Mutex::new(owner_secrets::Local::default()),
             starts: Mutex::new(HashMap::new()),
             data_dir: data_dir.to_owned(),
             previews: Mutex::new(HashMap::new()),
@@ -281,6 +284,7 @@ impl PluginsLink {
             }
             *current = languages;
         }
+        self.forget_owner_secrets();
         let (installed, store) = {
             let view = self.view.borrow();
             (view.installed.is_some(), view.store.is_some())
@@ -433,6 +437,7 @@ impl PluginsLink {
         let _registry = lock(&self.registry);
         self.generation.fetch_add(1, Ordering::SeqCst);
         lock(&self.starts).clear();
+        self.forget_owner_secrets();
         cache::forget(&self.installed_cache);
         let mut installed_server = lock(&self.installed_server);
         *installed_server = None;

@@ -230,3 +230,5 @@ tabs-load-details-transport = 自宅サーバに接続できるようになる�
 tabs-load-details-not-ready = ページの読み込み時にアプリの準備ができていません（HTTP {$code}）。
 
 tabs-load-details-upstream = アプリのページがエラーを返しました（HTTP {$code}）。
+# Owner-only generated plugin keys; input and collected secrets are never returned.
+plugins-owner-secret-not-listed = 開いている一覧にこのキーはありません：{ $name }
