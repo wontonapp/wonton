@@ -66,8 +66,7 @@ impl Install {
         ]);
         install.start_matrix(&config["services"]["tuwunel"], &network);
         install.start_core(&config["services"]["core"], &network);
-        let port = docker(&["port", &install.matrix, "8008/tcp"]);
-        install.address = format!("http://{}", port.lines().next().unwrap());
+        install.address = matrix_url(&install.matrix, &network);
         let deadline = Instant::now() + WAIT;
         loop {
             let output = Command::new("docker")
@@ -134,8 +133,6 @@ impl Install {
             self.matrix.clone(),
             "--network".into(),
             network.into(),
-            "-p".into(),
-            "127.0.0.1::8008".into(),
             "--label".into(),
             format!("com.docker.compose.project={}", self.core),
             "--label".into(),
@@ -323,6 +320,25 @@ fn append_mounts(args: &mut Vec<String>, service: &Value) {
             ]);
         }
     }
+}
+
+/// 测试进程访问这台 Tuwunel 的地址。
+///
+/// 测试进程在 Docker 的宿主上，直接连容器在测试网络里的地址：宿主上不发布端口，Docker 就不会挑到一个正被
+/// 别的套接字占着的号（配上就是 `address already in use`，和并行测试抢临时端口段，2026-11-10 的 CI 红在
+/// 这里）。Docker Desktop、OrbStack 上宿主到不了容器地址，仍发布一个宿主端口再用它。
+fn matrix_url(container: &str, network: &str) -> String {
+    if cfg!(target_os = "linux") {
+        let ip = docker(&[
+            "inspect",
+            "--format",
+            &format!("{{{{(index .NetworkSettings.Networks \"{network}\").IPAddress}}}}"),
+            container,
+        ]);
+        return format!("http://{ip}:8008");
+    }
+    let port = docker(&["port", container, "8008/tcp"]);
+    format!("http://{}", port.lines().next().unwrap())
 }
 
 fn docker<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> String {
