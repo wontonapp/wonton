@@ -38,13 +38,21 @@ use crate::error::from_connection_error;
 /// 长轮询和下载本来就会被调用方重来。
 const RETIRE_GRACE: Duration = Duration::from_secs(2);
 
+/// 一次限时确认的结论。
+enum Verdict {
+    /// ping 有了结果：通了，或者当场出错。
+    Ping(std::result::Result<(), TunnelError>),
+    /// ping 到点没回；带的是窗口后半段还能用的证据（新数据和确认都没有时是 `None`）。
+    Silent(Option<((u64, u64), u64)>),
+}
+
 impl TunnelClient {
     /// 确认现有连接仍然可用。App 从挂起中恢复（回到前台）时调用。
     ///
     /// 挂起超过路径的空闲超时后，服务端会放弃这条连接，关闭帧却到不了挂起的设备：不检查的话，要等本机的
     /// 空闲超时（iroh 默认 30 秒）才发现，期间所有请求都挂着。这里限时做一次往返，没有回应就拨新连接、让旧连接
-    /// 收完手上的流；窗口里既有新数据又有对端的确认才算它活着（见 [`probe`](Self::probe) 的判据）。检查期间新开的流
-    /// 等检查结果，再走确认过的连接或新连接。没有连接时等同于 [`ping`]。
+    /// 收完手上的流；窗口**后半段**里既有新数据又有对端的确认才算它活着。检查期间新开的流等检查结果，再走确认过的
+    /// 连接或新连接。没有连接时等同于 [`ping`]。
     ///
     /// [`ping`]: Self::ping
     pub async fn revalidate(&self) -> Result<Duration, TunnelError> {
@@ -63,6 +71,11 @@ impl TunnelClient {
         if !attempt.revalidating {
             self.ping_on(&conn).await?;
         }
+        tracing::info!(
+            reused = !attempt.revalidating,
+            elapsed = ?started.elapsed(),
+            "revalidate: kept the connection"
+        );
         self.inner.confirm(conn.stable_id());
         Ok(started.elapsed())
     }
@@ -72,6 +85,11 @@ impl TunnelClient {
         let mut current = lock(&self.inner.attempt);
         let mut live = None;
         if let Some(attempt) = current.as_ref() {
+            tracing::info!(
+                outcome = ?attempt.outcome().map(|result| result.map(|conn| conn.close_reason())),
+                revalidating = attempt.revalidating,
+                "revalidate: existing attempt"
+            );
             match attempt.outcome() {
                 None => return attempt.clone(),
                 Some(Ok(conn)) if was_rejected(&conn) => return attempt.clone(),
@@ -214,31 +232,67 @@ impl TunnelClient {
         revalidation_window(path.relay, proven_slow)
     }
 
-    /// 限时在 `conn` 上做一次往返；没回应就换新连接。窗口里既有新数据又有确认时算它活着：对端忙不是路断了。
+    /// 限时在 `conn` 上做一次往返；没回应就换新连接。
+    ///
+    /// 到点时还看一条证据：**窗口后半段**里既有新数据又有确认才算它活着——对端忙不是路断了。只看整个窗口
+    /// 有没有涨是不够的：服务端换了 endpoint（同一身份、同一端口，手机上收不到任何通知）时，断掉那一刻在路上的
+    /// 几个包会落在窗口前段，旧连接于是被当成“还活着”留下来，和空闲超时一样要等三十秒。后半段还涨，才说明
+    /// 对端**现在**还在送、还在确认。
     async fn confirm_or_replace(self, conn: Connection) -> Result<Connection, TunnelError> {
         let deadline = self.revalidate_deadline(&conn);
-        let delivered = self.inner.streams.received();
-        let acked = ack_frames(&conn);
-        let received = conn.stats().udp_rx.datagrams;
-        match tokio::time::timeout(deadline, self.ping_on(&conn)).await {
-            Ok(Ok(())) => return Ok(conn),
-            Ok(Err(err)) => info!("现有连接不可用，重新建连：{err}"),
-            Err(_) => match still_usable(&self.inner.streams, &conn, delivered, acked) {
-                Some(proof) => {
-                    let received = received_since(&conn, received).unwrap_or(0);
-                    debug!(
-                        ?deadline,
-                        bytes = proof.0,
-                        acked = proof.1,
-                        received,
-                        "现有连接在窗口里还能用，不换"
-                    );
-                    return Ok(conn);
+        let probed = Instant::now();
+        tracing::info!(
+            ?deadline,
+            path = ?CheckedPath::selected(&conn),
+            "confirm: probing"
+        );
+        // 借用（`self`、`conn`）到这一块结束为止：结论先算出来，再决定拿谁往下走。
+        let verdict = {
+            let ping = self.ping_on(&conn);
+            tokio::pin!(ping);
+            tokio::select! {
+                result = &mut ping => Verdict::Ping(result),
+                () = tokio::time::sleep(deadline / 2) => {
+                    // 窗口过半，从这一拍起算“还有没有动静”。
+                    let delivered = self.inner.streams.received();
+                    let acked = ack_frames(&conn);
+                    let received = conn.stats().udp_rx.datagrams;
+                    let left = deadline.saturating_sub(probed.elapsed());
+                    match tokio::time::timeout(left, &mut ping).await {
+                        Ok(result) => Verdict::Ping(result),
+                        Err(_) => Verdict::Silent(
+                            still_usable(&self.inner.streams, &conn, delivered, acked)
+                                .map(|proof| (proof, received_since(&conn, received).unwrap_or(0))),
+                        ),
+                    }
                 }
-                None => info!(?deadline, "现有连接限时内没有回应，换新连接"),
-            },
+            }
+        };
+        match verdict {
+            Verdict::Ping(Ok(())) => {
+                tracing::info!(elapsed = ?probed.elapsed(), "confirm: ping ok");
+                Ok(conn)
+            }
+            Verdict::Ping(Err(err)) => {
+                info!("现有连接不可用，重新建连：{err}");
+                self.dial_replacement(Some(conn)).await
+            }
+            Verdict::Silent(Some((proof, received))) => {
+                tracing::info!(
+                    ?deadline,
+                    bytes = proof.0,
+                    acked = proof.1,
+                    received,
+                    elapsed = ?probed.elapsed(),
+                    "confirm: still sending and acking, keeping the connection"
+                );
+                Ok(conn)
+            }
+            Verdict::Silent(None) => {
+                info!(?deadline, "现有连接窗口后半段没有回应，换新连接");
+                self.dial_replacement(Some(conn)).await
+            }
         }
-        self.dial_replacement(Some(conn)).await
     }
 
     /// 换掉一条判死的连接：先拨新的并做一次往返，旧连接这时才交给 [`retire`]，让还在跑的流收完。
