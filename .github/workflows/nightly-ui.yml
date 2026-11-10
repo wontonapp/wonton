@@ -59,8 +59,8 @@ jobs:
           rustup target add aarch64-apple-ios-sim
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          # 缓存只在 main 上写，夜跑和 PR 一样只读。
-          shared-key: rust-ios-nightly
+          # 和 ios.yml 共用 key：cache.yml 在 main 上用同一个 key 编，夜跑才不用每次冷编。
+          shared-key: rust-ios
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: 安装 XcodeGen（版本和 sha256 固定）
         run: |
@@ -163,7 +163,8 @@ jobs:
           tool: cargo-ndk@4.1.2
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          shared-key: rust-android-nightly
+          # 和 android.yml 共用 key（cache.yml 在 main 上编）。
+          shared-key: rust-android
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
       # 模拟器要 KVM：官方文档的 udev 规则写法（ubuntu-24.04 默认只有 root 能读写 /dev/kvm）。
@@ -184,15 +185,10 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: |
             # screenrecord 的 --time-limit 最多 180 秒；用例超过就截到 180 秒，失败截图另有测试报告。
-            adb shell screenrecord --size 720x1280 --time-limit 180 /sdcard/ui.mp4 &
-            set +e
-            cd apps/compose
-            ./gradlew --no-daemon -Pwonton.abis=x86_64 :androidApp:connectedDebugAndroidTest
-            status=$?
-            adb pull /sdcard/ui.mp4 "$RUNNER_TEMP/ui.mp4" || true
-            mkdir -p "$RUNNER_TEMP/shots"
-            adb pull /sdcard/Pictures/WontonUITests "$RUNNER_TEMP/shots" || true
-            exit $status
+            # /data/local/tmp 是 shell 能写的地方（API 36 上 /sdcard 根目录不行）。
+            adb shell screenrecord --size 720x1280 --time-limit 180 /data/local/tmp/ui.mp4 &
+            # 脚本的每行是单独的 sh：构建、抓产物和退出码要写在同一行里。
+            (cd apps/compose && ./gradlew --no-daemon --no-build-cache -Pwonton.abis=x86_64 :androidApp:connectedDebugAndroidTest); status=$?; adb pull /data/local/tmp/ui.mp4 "$RUNNER_TEMP/ui.mp4" || true; mkdir -p "$RUNNER_TEMP/shots"; adb pull /sdcard/Pictures/WontonUITests "$RUNNER_TEMP/shots" || true; exit $status
       - name: 上传结果和录屏
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
