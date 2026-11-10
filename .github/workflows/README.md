@@ -11,12 +11,17 @@
 
 ## 什么时候跑
 
-- 每个工作流都按 `paths` 跳过不相关的改动，范围写在各个工作流开头（lint 例外：冲突标记和密钥可能写在
-  任何文件里，不按路径过滤；它里面的结构门禁在只改文档时自己跳过）。没有分支保护，跳过的检查不挡合并。
-- 草稿 PR 只跑轻检查（lint 全部、Rust 的格式）；`ready_for_review` 事件触发 Clippy、测试、Docker、
-  Android、iOS（各作业 `if` 里判断 `github.event.pull_request.draft`）。
-- 合并进 main 不重跑全套（PR 已在最新 main 上跑过）；只有 main-image 继续构建核心镜像。每天定时
-  （`schedule`，02:00 起错开）把 Rust、Docker、Android、iOS 全量跑一遍兜底。
+- 路径不在触发器上过滤：合并队列的必需检查每次入队都要有结果，工作流不触发的话检查一直“等待中”，队列
+  直接判失败。改动范围改由各工作流开头的 `changes` 作业判断（`dorny/paths-filter`，只在 PR 上跑），
+  没改到的重作业挂在它上面、自己报 skipped，范围还是写在各个工作流开头；跳过的检查算通过，没有分支保护，
+  不挡合并。lint 例外：冲突标记和密钥可能写在任何文件里，不按路径过滤；它里面的结构门禁在只改文档时自己跳过。
+- 草稿 PR 只跑轻检查（lint 全部、Rust 的格式）和 `changes`；`ready_for_review` 事件触发 Clippy、测试、Docker、
+  Android、iOS（各作业 `if` 里判断 `github.event.pull_request.draft`）。Rust 测试的三个分片作业会起来、步骤
+  全部跳过（作业算成功）：matrix 作业被 `if` 跳过时 matrix 不展开，检查名会留成带 `${{ matrix.shard }}` 的
+  字面量，规则集按 `1/3`、`2/3`、`3/3` 配就一直等这三片。所以它的草稿和路径判断在步骤上（`env.RUN`）。
+- 合并进 main 不重跑全套（PR 已在最新 main 上跑过）；只有 main-image 继续构建核心镜像，`cache.yml` 用
+  和 PR 作业一样的 key 把编译缓存编一遍存下来（只编不跑）。每天定时（`schedule`，02:00 起错开）把
+  Rust、Docker、Android、iOS 全量跑一遍兜底。
 - `test-images.yml` 每周一 02:00 UTC 把测试和镜像构建要拉的上游镜像复制到 `ghcr.io/<owner>/test-images`
   （`scripts/mirror-test-images.sh` + crane copy，digest 原样保留），也可以手动触发。托管 runner 的
   出口 IP 拉不动 Docker Hub 和 ECR Public（实测 `registry:2` 返回 toomanyrequests、构建基础镜像 429），
@@ -33,28 +38,39 @@
 android 的构建、ios 的 SwiftLint 和模拟器构建，都必须在队列里跑到。`main-image` 和 `test-images` 不用带，
 队列合进 main 时该跑的照常由 `push` 触发。
 
-`merge_group` 只支持 `branches`/`branches-ignore`，不认 `paths`，因此路径过滤只挂在 `pull_request` 下、
-只在 PR 上生效；队列里不管改了什么都跑全套（`lint.yml` 本来就不按路径过滤）。作业里判断草稿的
-`github.event_name != 'pull_request' || github.event.pull_request.draft == false` 在 `merge_group` 上靠前半句
-成立（队列只收已转 ready 的 PR）；`github.sha` 是队列里的合并提交、`github.ref` 是
-`refs/heads/gh-merge-queue/main`，所以并发组在 `merge_group` 上取 `github.event.merge_group.head_sha`，
-不让几次入队挤进同一组互相取消。缓存仍只在 main 上写，队列运行和 PR 一样只读。
+`changes` 作业只在 `pull_request` 上跑，`merge_group`、`schedule`、`workflow_dispatch` 上重作业靠
+`if` 里的 `github.event_name != 'pull_request'` 直接放行，队列里不管改了什么都跑全套（`lint.yml` 本来也
+不按路径过滤）。所以重作业的 `if` 都以 `!cancelled()` 开头：`changes` 跳过时下游作业才不会被连坐跳过。
+作业里判断草稿的 `github.event.pull_request.draft == false` 也只在 PR 上求值（队列只收已转 ready 的 PR）；
+`github.sha` 是队列里的合并提交、`github.ref` 是 `refs/heads/gh-merge-queue/main`，所以并发组在
+`merge_group` 上取 `github.event.merge_group.head_sha`，不让几次入队挤进同一组互相取消。缓存仍只在 main 上写，
+队列运行和 PR 一样只读。
 
 ## 缓存
 
-- Rust 作业用 Swatinem/rust-cache：缓存只在 main 上写（`save-if: github.ref == 'refs/heads/main'`，
-  定时运行），PR 只读。三个测试分片共用 `rust-test` 一个 key（编的是同一套测试二进制），“Rust Docker
-  测试”也恢复它；Clippy 和 iOS 各有各的 key（iOS 是 macOS 产物，不能和 Linux 混）。测试用 cargo-nextest
-  按测试名哈希分三片并行；并发上限、卡死时限和 Docker 重活的分组在 `.config/nextest.toml`。nextest 不跑
-  doctest，第一片里单列一步 `cargo test --doc`。
-- 镜像构建用 buildx 的 `type=gha` 缓存。`RUN --mount=type=cache` 不会随层导出，所以 Dockerfile 用
-  cargo-chef 把依赖编进独立的依赖层：清单不变就不重编依赖，gha 缓存才能省到时间。
-- 仓库的 actions 缓存上限 10 GB，Rust、Gradle、buildx 的缓存都从这里出，超了按最久未用逐出。
+- 缓存只在 main 上写，PR、合并队列和定时运行只读：仓库公开，外部 PR 写的条目会把 main 的挤掉。
+  main 上不跑测试（只有 push），所以另开 `cache.yml`：push 到 main 或手动触发时，用和 PR 作业**完全相同**
+  的 rust-cache key 前缀、缓存目录和编译目标只编不跑（测试二进制、Clippy、iOS 模拟器核心、Android 核心、
+  桥镜像）。改这几个工作流的 rust-cache 参数（`shared-key`、`workspaces`、环境变量）时要和 `cache.yml`
+  一起改，少一处 PR 就恢复不到。手动触发也写缓存：换分支验证能不能恢复时用它。
+- `save-if` 要写成 `${{ … }}`：不包的时候 runner 把表达式原样当字符串交给动作，动作只认字面量 `true`，
+  结果一次也存不下来（之前就是没包，调度器日志里能看到传给动作的是 `github.ref == 'refs/heads/main'` 本身）。
+- Rust 作业用 Swatinem/rust-cache，三个测试分片共用 `rust-test` 一个 key（编的是同一套测试二进制），
+  “Rust Docker 测试”也恢复它；Clippy、iOS、Android 各有各的 key（iOS 是 macOS 产物，不能和 Linux 混）。
+  测试用 cargo-nextest 按测试名哈希分三片并行；并发上限、卡死时限和 Docker 重活的分组在
+  `.config/nextest.toml`。nextest 不跑 doctest，第一片里单列一步 `cargo test --doc`，`cache.yml` 也先把
+  doctest 编好。
+- 镜像构建的层缓存走 registry（`type=registry`，包是 `ghcr.io/<owner>/wonton-ci-cache`），不占 10 GB 的
+  actions 缓存：main-image 每次合并写回，发版只读；桥镜像的预构建从 main 的缓存恢复、只在 main 写回，
+  构建完 `--load` 回本机给测试用。Dockerfile 用 cargo-chef 把依赖编进独立的依赖层：清单不变就不重编依赖，
+  缓存要 `mode=max` 才存得下这一层。
+- actions 缓存上限 10 GB，只剩 rust-cache 在用，超了按最久未用逐出。
 
 ## 安全（仓库公开后对外部 PR 也会执行）
 
 - 每个工作流顶层 `permissions: contents: read`，需要的作业单独放开（`packages: write` 推镜像、
-  `packages: read` 拉私有的测试镜像副本）。
+  `packages: read` 拉私有的测试镜像副本）。在 main 上写层缓存用 `packages: write`，PR 上是 `packages: read`
+  （外部 PR 的令牌到不了写）。
 - 所有 `actions/checkout` 都带 `persist-credentials: false`，不在工作区留 git 凭据。
 - 第三方 action 固定到提交 SHA（行尾注释写版本号）；SwiftLint、XcodeGen、gitleaks、crane、actionlint
   这类下载的二进制都校验 sha256。

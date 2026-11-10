@@ -140,6 +140,7 @@ private fun Thumbnail(thumbnail: MediaHandle, core: ClientCore, secondary: Color
     image?.getOrNull()?.let { bitmap ->
         Image(
             bitmap,
+            // 装饰：旁边写着这是图片。
             contentDescription = null,
             modifier = Modifier.size(THUMBNAIL).background(secondary, PLACEHOLDER_SHAPE),
             contentScale = ContentScale.Crop,

@@ -314,7 +314,7 @@ tabs-config-corrupt = 底部導覽列設定檔 { $path } 已損毀：{ $reason }
 tabs-config-too-many-items = 底部導覽列最多只能有 { $count } 個項目。
 tabs-config-duplicate-page = 底部導覽列裡有重複的頁面。
 tabs-config-plugin-page-incomplete = 應用程式頁面缺少標題和圖示。
-tabs-config-missing-fixed = 底部導覽列缺少聊天或應用程式。
+tabs-config-missing-fixed = 底部導覽列缺少聊天。
 # $path 是設定檔的路徑，$reason 是原始的寫入錯誤。
 tabs-config-write-failed = 無法寫入底部導覽列設定檔 { $path }：{ $reason }
 
@@ -547,3 +547,36 @@ chat-window-ended =
 home-pairing-timeout = 配對未能在 { $seconds } 秒內完成。
 home-pairing-aborted = 配對沒有完成就中斷了，再試一次。
 home-pairing-failed-detail = 直連位址：{ $addresses }。中繼：[{ $relays }]。已用時 { $milliseconds } 毫秒，時限 { $seconds } 秒。原因：{ $error }
+plugin-now-start-failed = 一鍵操作開始不了：{ $error }
+
+# 面板（ADR-0052）的錯誤。作為 CoreError 的原因，或 TabsProblem 的說明顯示。
+panel-full = 面板滿了，先拿掉一頁再放。
+panel-page-already-there = 這個頁面已經在面板裡。
+panel-page-not-there = 這個頁面不在面板裡。
+panel-page-unsupported = 面板裡只能放 App 頁面、App 裡的某一頁和 https:// 的網頁。
+panel-index-out-of-range = 那個位置在面板外面。
+panel-not-signed-in = 還沒登入，面板改動存不進帳號；本機先記著，登入後再同步。
+panel-room-not-open = 先打開這個聊天，才能改它的面板。
+panel-room-unknown = 找不到這個聊天。
+panel-pin-invalid-url = 這個網址讀不出來。
+panel-pin-not-https = 只能釘 https:// 的網頁。
+panel-attention-panel-only = 只有面板裡的頁面能掛紅點。
+panel-config-too-many = 面板最多放 { $count } 頁。
+panel-config-duplicate = 同一個頁面在面板裡出現了兩次。
+panel-sync-failed-read = 從伺服器讀面板設定沒有成功。
+panel-sync-unreadable = 伺服器上的面板設定這台裝置讀不懂，先用本機的。
+tabs-page-cannot-reload = 這個頁面不能重新載入。
+
+tabs-bar-not-pinned = 這個頁面沒有固定到底欄。
+tabs-bar-already-pinned = 這個頁面已經固定到底欄。
+tabs-bar-replace-required = 底欄已滿，必須指定要替換的頁面。
+tabs-bar-replacing-missing = 要替換的頁面不在底欄。
+tabs-bar-fixed = 聊天和應用不能被替換。
+tabs-bar-not-full = 底欄未滿時不能指定替換頁面。
+tabs-bar-remove-fixed = 聊天和應用不能拿掉。
+tabs-bar-page-missing = 這個頁面不在底欄。
+tabs-bar-index-out-of-range = 底欄下標越界。
+tabs-open-only-plugins = 只有外掛頁面可以設定開啟方式。
+tabs-fullscreen-only-plugins = 只有外掛頁面可以全螢幕。
+tabs-fullscreen-none = 目前沒有全螢幕頁面。
+tabs-fullscreen-not-current = 退出的頁面不是目前全螢幕頁面。

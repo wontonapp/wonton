@@ -107,42 +107,61 @@ private fun AppContent(
     val native = shown !is TabRef.Plugin || nav.settingsOverlay
     val fullscreen = !native && isFullscreen(tabs, shown)
     FullscreenSystemBars(fullscreen)
-    val showsBar = showsBottomBar(nav, fullscreen, WindowInsets.isImeVisible)
+    // 底栏显不显示由核心算（栏上只有“聊天”时整条不显示）。
+    val showsBar = showsBottomBar(nav, fullscreen, WindowInsets.isImeVisible) && view.showBar
+    var showsSidebar by remember { mutableStateOf(false) }
     var reselected by remember { mutableStateOf<TabRef?>(null) }
     val nativeState = rememberSaveableStateHolder()
     val systemBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val status = connectionBarStatus(home.notice, { tabs.send(Action.RetryConnection) }, nav::settings)
+    val status = connectionBarStatus(home, { tabs.send(Action.RetryConnection) }, nav::settings)
     val cards = chat.pendingConfirmations.filter {
         shown != TabRef.Chat || nav.settingsOverlay || it.roomId != nav.chat.openRoom
     }
+    // 只在聊天的根页面响应左边缘右滑：进了房间或盖了别的页面，左边缘是系统的返回手势。
+    val edgeSwipe = shown == TabRef.Chat && !nav.hidesBar()
     CompositionLocalProvider(LocalWontonBarStatus provides status) {
         WithPendingCards(cards, fullscreen, nav::openRoom) { bannerTop ->
-            WontonEdgeToEdgeScaffold(
-                containerColor = WontonTheme.colors.canvas.toColor(),
-                contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                bottomBar = {
-                    if (showsBar) WontonBottomBar(view, tabs.plugins, { selected ->
-                        if (view.selected == selected) reselected = selected
-                        tabs.send(Action.SelectTab(selected))
-                    }, { nav.tabMenu = it })
-                },
-            ) { padding ->
-                Box(Modifier.fillMaxSize()) {
-                    PluginTabsHost(
-                        tabs, home, appearance, if (showsBar) padding.calculateBottomPadding() else systemBottom,
-                        active = shown.takeUnless { native }, reselected = reselected,
-                        onReselected = { reselected = null }, onDetails = nav::detail,
-                        onDraft = { text -> draft.text = text; tabs.send(Action.SelectTab(TabRef.Chat)) },
-                        bannerTop = bannerTop,
-                    )
-                    if (native) Box(Modifier.fillMaxSize()) {
-                        NativeContent(nav, home, settings, appearance, chat, nativeState)
+            SidebarContainer(
+                isOpen = showsSidebar,
+                edgeSwipe = edgeSwipe,
+                onSetOpen = { showsSidebar = it },
+                panel = { width, interactive ->
+                    SidebarPanel(home, tabs.plugins, tabs, view.selected, width, interactive) { destination ->
+                        showsSidebar = false
+                        nav.sidebar(destination)
                     }
-                    OpeningChat(nav.chat)
+                },
+            ) {
+                WontonEdgeToEdgeScaffold(
+                    containerColor = WontonTheme.colors.canvas.toColor(),
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                    bottomBar = {
+                        if (showsBar) WontonBottomBar(view, tabs.plugins, { selected ->
+                            if (view.selected == selected) reselected = selected
+                            tabs.send(Action.SelectTab(selected))
+                        }, { nav.tabMenu = it })
+                    },
+                ) { padding ->
+                    Box(Modifier.fillMaxSize()) {
+                        PluginTabsHost(
+                            tabs, home, appearance, if (showsBar) padding.calculateBottomPadding() else systemBottom,
+                            active = shown.takeUnless { native }, reselected = reselected,
+                            onReselected = { reselected = null }, onDetails = nav::detail,
+                            onDraft = { text -> draft.text = text; tabs.send(Action.SelectTab(TabRef.Chat)) },
+                            bannerTop = bannerTop,
+                        )
+                        if (native) Box(Modifier.fillMaxSize()) {
+                            CompositionLocalProvider(LocalWontonOpenSidebar provides { showsSidebar = true }) {
+                                NativeContent(nav, home, settings, appearance, chat, nativeState)
+                            }
+                        }
+                        OpeningChat(nav.chat)
+                    }
                 }
             }
         }
     }
+    BackHandler(enabled = showsSidebar) { showsSidebar = false }
     TabNotices(tabs) { nav.settings(SettingsSubpage.TABS) }
     view.items.firstOrNull { it.tab == nav.tabMenu }?.let { item ->
         TabBarMenu(item, tabs, { nav.settings(SettingsSubpage.TABS) }, { nav.tabMenu = null })

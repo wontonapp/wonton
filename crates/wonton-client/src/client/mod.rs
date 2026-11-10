@@ -7,9 +7,9 @@ use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, ComposerDraft, CoreError,
     FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle, OnboardingViewModel,
-    OwnerProfileUpdate, PeersViewModel, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers,
-    SecretString, ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef,
-    TabsViewModel, TransfersViewModel,
+    OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail, PluginImage, PluginsViewModel,
+    RoomTransfers, SecretString, ServersViewModel, SessionListViewModel, SettingsViewModel,
+    StoreItem, TabsViewModel, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -83,13 +83,13 @@ impl ClientCore {
     /// 文档开始前、只在插件自己的主框架注入；原生通道名为 `wontonBridge`。
     pub fn tab_document_script(
         &self,
-        tab: TabRef,
+        page: PlacedTab,
         environment: TabEnvironment,
     ) -> Result<String, CoreError> {
         bridge::document_script(
             &self.scope().tabs,
             &self.appearance.view(),
-            &tab,
+            &page,
             &environment,
         )
     }
@@ -97,7 +97,7 @@ impl ClientCore {
     /// 壳原样交入消息及原生回调的主框架标志、来源；核心校验来源，草稿不发送。
     pub fn tab_handle_message(
         &self,
-        tab: TabRef,
+        page: PlacedTab,
         is_main_frame: bool,
         origin: String,
         message: String,
@@ -106,7 +106,7 @@ impl ClientCore {
         bridge::handle_message(
             &self.scope().tabs,
             &self.appearance,
-            &tab,
+            &page,
             is_main_frame,
             &origin,
             &message,
@@ -117,13 +117,13 @@ impl ClientCore {
     /// 外观、字号、布局或全屏状态变化后注入，不重新加载页面。
     pub fn tab_context_script(
         &self,
-        tab: TabRef,
+        page: PlacedTab,
         environment: TabEnvironment,
     ) -> Result<String, CoreError> {
         bridge::context_script(
             &self.scope().tabs,
             &self.appearance.view(),
-            &tab,
+            &page,
             &environment,
         )
     }
@@ -230,8 +230,9 @@ impl ClientCore {
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
         let scope = self.scope();
         let chat = scope.chat.clone();
+        let room_view = scope.tabs.subscribe_room_view();
         scope
-            .run(async move { chat.open_timeline(&room_id).await })
+            .run(async move { chat.open_timeline(&room_id, room_view).await })
             .await
     }
 
@@ -642,6 +643,13 @@ impl ClientCore {
             }
             Action::InstallPlugin { preview, secrets } => scope.plugins.install(preview, secrets),
             Action::UpgradePlugin { preview, secrets } => scope.plugins.upgrade(preview, secrets),
+            Action::InstallNow { source } => scope.plugins.install_now(source),
+            Action::UpgradeNow { plugin_id } => scope.plugins.upgrade_now(plugin_id),
+            Action::UpgradeAll => scope.plugins.upgrade_all(),
+            Action::DismissStoreConfirmation => {
+                scope.plugins.dismiss_confirmation();
+                Ok(())
+            }
             Action::UninstallPlugin { id, delete_data } => scope.plugins.uninstall(id, delete_data),
             Action::DismissPluginTask { id } => scope.plugins.dismiss_task(&id),
             Action::StartTakeover { id } => {

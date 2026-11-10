@@ -208,10 +208,13 @@ impl Tracker {
         }
     }
 
-    /// 多久之后要重新算一次；连接正常时不用定时。
-    pub(super) fn next_tick(&self) -> Option<Duration> {
-        (self.outage_since.is_some() || self.retry_running || self.relay_lost_since.is_some())
-            .then_some(TICK)
+    /// 多久之后要重新算一次。连着的时候也要：连接质量的窗口要每秒采样。
+    pub(super) fn next_tick(&self, connected: bool) -> Option<Duration> {
+        (connected
+            || self.outage_since.is_some()
+            || self.retry_running
+            || self.relay_lost_since.is_some())
+        .then_some(TICK)
     }
 }
 

@@ -211,6 +211,10 @@
     <string name="bot_state_offline">Offline</string>
     <!-- Marker between read and new messages in the timeline. No arguments. -->
     <string name="timeline_new_messages_below">New messages below</string>
+    <!-- Accessibility label of the scroll-to-bottom button. -->
+    <string name="room_scroll_to_bottom">Back to bottom</string>
+    <!-- Accessibility label of the scroll-to-bottom button with new messages. Argument: the new message count. -->
+    <string name="room_scroll_to_bottom_count">Back to bottom, %1$d new messages</string>
     <!-- Marker at the start of the timeline. No arguments. -->
     <string name="timeline_start">Start of the chat</string>
     <!-- Footer label of an edited message. No arguments. -->
@@ -318,8 +322,20 @@
     <string name="connection_path">Path</string>
     <!-- Label of the round-trip time in the connection details. -->
     <string name="connection_latency">Latency</string>
-    <!-- Label of the lost and sent packet counts in the connection details. -->
-    <string name="connection_lost_packets">Packet loss</string>
+    <!-- Label of the connection quality in the connection details. -->
+    <string name="connection_quality">Connection quality</string>
+    <!-- Value of the connection quality: the connection is fine. -->
+    <string name="connection_quality_good">Good</string>
+    <!-- Value of the connection quality: connected, but lossy or slow. -->
+    <string name="connection_quality_poor">Poor</string>
+    <!-- Label of the recent loss rate in the connection details; a percentage with one decimal. -->
+    <string name="connection_loss_rate">Packet loss</string>
+    <!-- Value of a number the core couldn\'t measure: a dash, never 0. -->
+    <string name="connection_value_none">—</string>
+    <!-- Short status shown while connected and the connection quality is poor. -->
+    <string name="connection_poor">Poor connection, things may lag</string>
+    <!-- Short status shown while connected, the quality is poor, and the traffic goes through a relay. -->
+    <string name="connection_poor_relay">Poor connection, going through a relay</string>
     <!-- Label of the last handshake time in the connection details. -->
     <string name="connection_last_handshake">Last handshake</string>
     <!-- Label of the disconnect count in the connection details. -->
@@ -1696,4 +1712,60 @@
     <string name="secret_clear">Clear</string>
     <string name="secret_filled">Filled</string>
     <string name="secret_unfilled">Not filled</string>
+    <string name="pin_to_bar">Pin to navigation bar</string>
+    <!-- Menu item that removes an app\'s page from the navigation bar (long press in the sidebar). -->
+    <string name="unpin_from_bar">Remove from navigation bar</string>
+    <!-- Title of the app on the sidebar. -->
+    <string name="sidebar_title">Wonton</string>
+    <!-- Toolbar button that opens the sidebar on a root page. -->
+    <string name="sidebar_open">Sidebar</string>
+    <!-- Tap target covering the pushed main screen while the sidebar is open; tapping collapses the sidebar. -->
+    <string name="sidebar_collapse">Collapse sidebar</string>
+    <!-- Sidebar row under the title: the home server is connected. -->
+    <string name="sidebar_status_connected">Home server · Connected</string>
+    <!-- Sidebar row under the title: connecting to the home server. -->
+    <string name="sidebar_status_connecting">Home server · Connecting</string>
+    <!-- Sidebar row under the title: can\'t reach the home server. -->
+    <string name="sidebar_status_disconnected">Home server · Can\'t connect</string>
+    <!-- Sidebar row under the title: no home server paired yet. -->
+    <string name="sidebar_status_not_configured">No home server paired yet</string>
+    <!-- Sidebar row that shows the chat list. -->
+    <string name="sidebar_chats">Chats</string>
+    <!-- Sidebar row that opens the app store. -->
+    <string name="sidebar_store">Store</string>
+    <!-- Sidebar section title above the installed apps that can be opened. -->
+    <string name="sidebar_my_apps">My apps</string>
+    <!-- Sidebar link at the right of My apps that opens the app grid. -->
+    <string name="sidebar_all">All</string>
+    <!-- Sidebar row shown when more than eight apps are installed; opens the app grid. -->
+    <string name="sidebar_all_apps">All apps</string>
+    <!-- Round button at the bottom of the sidebar that opens Settings. -->
+    <string name="sidebar_settings">Settings</string>
+    <!-- Accent capsule at the bottom of the sidebar that starts a new chat. -->
+    <string name="sidebar_new_chat">New chat</string>
+    <!-- Content description of the red count badge on the Store row: how many apps have updates. -->
+    <string name="sidebar_updates_badge">%1$d updates available</string>
+    <!-- Content description of the red dot on an app row: the app has an update. -->
+    <string name="sidebar_updatable">Update available</string>
+    <!-- Content description of the small pin on an app row: the app\'s page is pinned to the navigation bar. -->
+    <string name="sidebar_pinned">Pinned to the navigation bar</string>
+    <!-- Sheet title before updating every app that has an update at once. -->
+    <string name="store_update_all_title">Update %1$d apps</string>
+    <!-- Button in that sheet that starts all the updates. -->
+    <string name="store_update_all">Update all</string>
+    <!-- Content description of the toolbar download icon that opens that sheet. -->
+    <string name="store_update_all_a11y">Update all, %1$d apps</string>
+    <!-- Row note for an app whose update needs confirmation before it can start. -->
+    <!-- Content description of the red dot on the settings button in the sidebar. -->
+    <string name="sidebar_needs_attention">Needs your attention</string>
+    <!-- Content description of the warning badge on a launcher tile: the app has a problem. -->
+    <string name="launcher_badge_degraded">Has a problem</string>
+    <!-- Content description of a screenshot on the app detail page. -->
+    <string name="plugin_screenshot">Screenshot</string>
+    <!-- Content description of the direction icon on an upload. -->
+    <string name="transfer_upload">Upload</string>
+    <!-- Content description of the direction icon on a download. -->
+    <string name="transfer_download">Download</string>
+    <!-- Content description of a state picture in the bot profile. Argument: the state name. -->
+    <string name="bot_avatar_pick_state">Change the %1$s picture</string>
 </resources>

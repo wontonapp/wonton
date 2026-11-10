@@ -1575,11 +1575,21 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "\u30db\u30fc\u30e0\u306e\u30aa\u30fc\u30ca\u30fc\u306e\u7aef\u672b\u304b\u3089\u5909\u66f4\u3057\u3066\u3082\u3089\u3063\u3066\u304f\u3060\u3055\u3044\u3002"
+            "value": "ホームのオーナーの端末から変更してもらってください。"
           }
         },
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "请主人用自己的设备改。"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "請主人用自己的裝置改。"}}
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请主人用自己的设备改。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請主人用自己的裝置改。"
+          }
+        }
       }
     },
     "botProfile.title": {
@@ -6992,36 +7002,6 @@
         }
       }
     },
-    "message.copy": {
-      "comment": "Item in the message menu: copy the message text. Android only.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copy"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "复制"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "複製"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "コピー"
-          }
-        }
-      }
-    },
     "message.codeCopied": {
       "comment": "Accessibility label of that copy button right after the code was copied.",
       "extractionState": "manual",
@@ -7082,6 +7062,126 @@
         }
       }
     },
+    "message.copy": {
+      "comment": "Item in the message menu: copy the message text. Android only.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "複製"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コピー"
+          }
+        }
+      }
+    },
+    "message.forward": {
+      "comment": "Item in the message menu: send a copy to another room.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转发"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轉發"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送"
+          }
+        }
+      }
+    },
+    "message.forwardEmpty": {
+      "comment": "Shown in the room picker when there is no room to forward to.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No rooms yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有可以转发的房间"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還沒有可以轉發的房間"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送できるルームがまだありません"
+          }
+        }
+      }
+    },
+    "message.forwardTitle": {
+      "comment": "Title of the room picker shown when forwarding a message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward to"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转发到"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轉發到"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送先"
+          }
+        }
+      }
+    },
     "message.imageFormatUnsupported": {
       "comment": "Fallback under an image message when it can't be decoded: the format isn't supported. Android only.",
       "extractionState": "manual",
@@ -7138,6 +7238,306 @@
           "stringUnit": {
             "state": "translated",
             "value": "画像を読み込めません"
+          }
+        }
+      }
+    },
+    "message.originalUnavailable": {
+      "comment": "Title of the failure notice in the original-image preview.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't load the original"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取不到原图"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法取得原圖"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元の画像を読み込めません"
+          }
+        }
+      }
+    },
+    "message.quoteOther": {
+      "comment": "The quoted message is a card or a type the app can't preview.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一条消息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一則訊息"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージ"
+          }
+        }
+      }
+    },
+    "message.quoteRedacted": {
+      "comment": "The quoted original message was deleted.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message deleted"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已撤回的消息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已收回的訊息"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除されたメッセージ"
+          }
+        }
+      }
+    },
+    "message.quoteUnavailable": {
+      "comment": "The quoted original message can't be shown.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original message unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原消息不可用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原訊息無法顯示"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元のメッセージを表示できません"
+          }
+        }
+      }
+    },
+    "message.quoteUndecryptable": {
+      "comment": "The quoted original message can't be decrypted on this device.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't decrypt"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法解密"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法解密"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復号できません"
+          }
+        }
+      }
+    },
+    "message.redact": {
+      "comment": "Item in the message menu: delete this message for everyone.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete for Everyone"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤回"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收回"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全員に送信取消"
+          }
+        }
+      }
+    },
+    "message.redactMessage": {
+      "comment": "Explanation under the redaction confirmation: it happens on every device.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It turns into a deleted message on everyone's devices."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有人那里都会变成已撤回的消息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有人那裡都會變成已收回的訊息。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全員の端末で削除されたメッセージに変わります。"
+          }
+        }
+      }
+    },
+    "message.redactTitle": {
+      "comment": "Title of the confirmation before redacting a message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete for everyone?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤回这条消息？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收回這則訊息？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全員のメッセージを送信取消にしますか？"
+          }
+        }
+      }
+    },
+    "message.reply": {
+      "comment": "Item in the message menu: reply to this message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reply"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回复"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回覆"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信"
+          }
+        }
+      }
+    },
+    "message.replyCancel": {
+      "comment": "Remove the reply quote above the composer.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Reply"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消回复"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消回覆"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信をやめる"
           }
         }
       }
@@ -10812,6 +11212,36 @@
         }
       }
     },
+    "preview.botName": {
+      "comment": "预览里的假 Bot 名，只给 Xcode 预览走查用。",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Assistant"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家庭助手"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家庭助手"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アシスタント"
+          }
+        }
+      }
+    },
     "problem.appearance.title": {
       "comment": "Problem title when the appearance settings couldn't be saved on the home server.",
       "extractionState": "manual",
@@ -13628,6 +14058,112 @@
           "stringUnit": {
             "state": "translated",
             "value": "ストア"
+          }
+        }
+      }
+    },
+    "store.updateAllTitle": {
+      "comment": "Title of the update-all dialog listing the apps to update. Argument: the count.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@count@ apps?"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Update 1 app"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "Update %lld apps"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@count@個のアプリをアップデートしますか？"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "1個のアプリ"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld個のアプリ"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新 %#@count@？"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld 个应用"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新 %#@count@？"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld 個應用程式"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -20312,6 +20848,66 @@
         }
       }
     },
+    "connection.notice.poor": {
+      "comment": "Short status when connected but the recent connection quality is poor.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poor connection, things may be slow"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络较差，可能会卡"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "網路較差，可能會卡"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通信が不安定です"
+          }
+        }
+      }
+    },
+    "connection.notice.poorRelay": {
+      "comment": "Short status when connected but the recent connection quality is poor and traffic goes through a relay. One complete sentence, not assembled from parts.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poor connection, going through a relay"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "网络较差，正在经中转连接"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "網路較差，正在經中繼連線"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リレー経由のため通信が不安定です"
+          }
+        }
+      }
+    },
     "connection.pairAgain": {
       "comment": "Button when the server no longer recognizes this phone; also the settings row.",
       "extractionState": "manual",
@@ -20522,6 +21118,36 @@
         }
       }
     },
+    "connection.detail.quality": {
+      "comment": "Row in the connection details page: quality of the recent window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quality"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接质量"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連線品質"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続品質"
+          }
+        }
+      }
+    },
     "connection.detail.latency": {
       "comment": "Row in the connection details page: round-trip time.",
       "extractionState": "manual",
@@ -20552,32 +21178,32 @@
         }
       }
     },
-    "connection.detail.loss": {
-      "comment": "Row in the connection details page: lost of sent packets. Two numbers, lost first.",
+    "connection.detail.lossRate": {
+      "comment": "Row in the connection details page: window packet loss as a percentage; a dash when there aren't enough samples.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Packet Loss"
+            "value": "Loss Rate"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "丢包"
+            "value": "丢包率"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "封包遺失"
+            "value": "封包遺失率"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "パケット損失"
+            "value": "パケット損失率"
           }
         }
       }
@@ -20698,6 +21324,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "前回の失敗"
+          }
+        }
+      }
+    },
+    "connection.quality.good": {
+      "comment": "Row in the connection details page: quality of the recent window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Good"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "好"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "良好"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "良好"
+          }
+        }
+      }
+    },
+    "connection.quality.poor": {
+      "comment": "Row in the connection details page: quality of the recent window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poor"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "较差"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "較差"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不良"
           }
         }
       }
@@ -22962,6 +23648,66 @@
         }
       }
     },
+    "room.scrollToBottom": {
+      "comment": "Accessibility label of the scroll-to-bottom button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to bottom"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到底部"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到底部"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一番下へ戻る"
+          }
+        }
+      }
+    },
+    "room.scrollToBottom.count": {
+      "comment": "Accessibility label of the scroll-to-bottom button with new messages. %1$@ is the count.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to bottom, %1$@ new messages"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到底部，还有 %1$@ 条新消息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回到底部，還有 %1$@ 條新訊息"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一番下へ戻る、新着 %1$@ 件"
+          }
+        }
+      }
+    },
     "timeline.start": {
       "comment": "Divider above the first message of a chat.",
       "extractionState": "manual",
@@ -23828,6 +24574,306 @@
           "stringUnit": {
             "state": "translated",
             "value": "ストアを開く"
+          }
+        }
+      }
+    },
+    "sidebar.all": {
+      "comment": "Button next to the section title: opens the grid of all apps.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべて"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部"
+          }
+        }
+      }
+    },
+    "sidebar.allApps": {
+      "comment": "Row shown when more apps are installed than the sidebar lists.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All Apps"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのアプリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部应用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部應用程式"
+          }
+        }
+      }
+    },
+    "sidebar.collapse": {
+      "comment": "Accessibility label of the exposed strip that closes the sidebar.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collapse sidebar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバーを閉じる"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起侧边栏"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起側邊欄"
+          }
+        }
+      }
+    },
+    "sidebar.myApps": {
+      "comment": "Section title for the installed apps that open with a tap.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My Apps"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイアプリ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的应用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的應用程式"
+          }
+        }
+      }
+    },
+    "sidebar.needsAttention": {
+      "comment": "Accessibility label of the red dot on the settings button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs your attention"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "対応が必要です"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有要处理的事"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有要處理的事"
+          }
+        }
+      }
+    },
+    "sidebar.open": {
+      "comment": "Accessibility label of the top-left button that opens the sidebar.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sidebar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドバー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "侧边栏"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "側邊欄"
+          }
+        }
+      }
+    },
+    "sidebar.pinned": {
+      "comment": "Accessibility label of the pin shown on a row pinned to the bar.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pinned to the navigation bar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バーに固定済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已固定到底栏"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已釘選到底欄"
+          }
+        }
+      }
+    },
+    "sidebar.title": {
+      "comment": "Title at the top of the sidebar.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワンタン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "云吞"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雲吞"
+          }
+        }
+      }
+    },
+    "sidebar.updatable": {
+      "comment": "Accessibility label of the red dot on a row with an update.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update available"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデートあり"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可更新"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可更新"
+          }
+        }
+      }
+    },
+    "store.updateAll": {
+      "comment": "Confirm button of the update-all dialog.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update All"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてアップデート"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部更新"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部更新"
           }
         }
       }
@@ -24948,6 +25994,156 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@を開く"
+          }
+        }
+      }
+    },
+    "launcher.badgeDegraded": {
+      "comment": "Accessibility label of the warning badge on an app icon in the launcher: the app has a problem.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Has a problem"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有问题"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有問題"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "問題があります"
+          }
+        }
+      }
+    },
+    "message.photo": {
+      "comment": "Accessibility label of an image message; double-tapping opens the viewer.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真"
+          }
+        }
+      }
+    },
+    "plugin.screenshot": {
+      "comment": "Accessibility label of a screenshot on the app detail page, including its placeholder while it loads.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screenshot"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截图"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截圖"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スクリーンショット"
+          }
+        }
+      }
+    },
+    "transfer.upload": {
+      "comment": "Accessibility label of the direction icon on an upload.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上传"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上傳"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップロード"
+          }
+        }
+      }
+    },
+    "transfer.download": {
+      "comment": "Accessibility label of the direction icon on a download.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下載"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダウンロード"
           }
         }
       }

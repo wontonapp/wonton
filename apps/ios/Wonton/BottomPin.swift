@@ -1,11 +1,13 @@
 import SwiftUI
 import UIKit
+import Observation
 
 /// 时间线贴着底部：内容高度或可见高度一变，就按真实高度滚到最底下；主人往上翻走了就不再跟。
 ///
 /// 直接操作 List 底下的 `UIScrollView`，不用 `ScrollViewProxy.scrollTo`：scrollTo 调用时就把 id 换算成下标，
 /// 真正滚动前条目变少（回复到达时常有）就越界，整个 App 崩掉（iOS 26.5 模拟器实测）。
 @MainActor
+@Observable
 final class BottomPin {
     /// 停在离底部这么近也算贴着，不用主人滑到分毫不差。
     private static let slack: CGFloat = 20
@@ -30,12 +32,21 @@ final class BottomPin {
             }
         ]
         stick()
+        // 内容可能在注册观察之前就整套排好了（有缓存历史的房间一进就满）：注册后再没有 contentSize
+        // 变化，上面那次 stick 量到的是注册前的高度。补一次异步 stick，等这一帧排完再贴底；落点摆放
+        // 的异步滚动排在它后面，会按落点覆盖。
+        DispatchQueue.main.async { self.stick() }
     }
 
     /// 主人发了东西：不管翻到哪，回到底部看结果。
     func pin() {
         isPinned = true
         stick()
+    }
+
+    /// 摆进房间的落点（ADR-0071）：停在别处，不跟着贴底。之后主人滚回底部会经 KVO 再 pin 回来。
+    func unpin() {
+        isPinned = false
     }
 
     func stick() {

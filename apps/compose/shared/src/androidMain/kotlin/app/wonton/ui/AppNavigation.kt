@@ -98,6 +98,31 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
         plugins.detail = PluginRoute.Installed(id)
     }
 
+    /** 侧边栏的入口：先收起侧边栏（WontonApp 做），再按目的地跳。 */
+    fun sidebar(destination: SidebarDestination) {
+        when (destination) {
+            SidebarDestination.Chat -> selectChatList(startingChat = false)
+            SidebarDestination.Store -> {
+                tabs.send(Action.SelectTab(TabRef.Apps))
+                appsPage = HomePage.STORE
+            }
+            SidebarDestination.AllApps -> {
+                tabs.send(Action.SelectTab(TabRef.Apps))
+                appsPage = HomePage.LAUNCHER
+            }
+            SidebarDestination.Settings -> settings()
+            SidebarDestination.NewChat -> selectChatList(startingChat = true)
+            is SidebarDestination.Plugin -> plugins.open(destination.entry)
+        }
+    }
+
+    private fun selectChatList(startingChat: Boolean) {
+        tabs.send(Action.SelectTab(TabRef.Chat))
+        chat.openRoom = null
+        chat.showingBackup = false
+        chat.startingChat = startingChat
+    }
+
     fun hidesBar(): Boolean = settingsOverlay || when (tabs.viewModel.selected) {
         TabRef.Chat -> chat.openRoom != null || chat.showingBackup || chat.startingChat
         TabRef.Apps -> appsPage != HomePage.LAUNCHER || plugins.detail != null || plugins.confirmation != null

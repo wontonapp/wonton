@@ -98,6 +98,9 @@ impl Scope {
     ) -> Result<Arc<Self>, CoreError> {
         let runtime = ScopeRuntime::new();
         let handle = runtime.handle().expect("the runtime was just built");
+        // 会话和打开着的房间的面板（ADR-0052）：chat 往里喂，tabs 用来同步账号数据、合成房间面板的视图。
+        let session_out = watch::channel(None);
+        let room_panel = watch::channel(None);
         let storage = Storage::open(root, dir)?;
         // 方式是整机设置（设置页一个开关管所有服务器），放在设备级的 root，不放每台服务器一个的槽位目录。
         let push_method = PushMethodLink::new(root);
@@ -130,8 +133,12 @@ impl Scope {
             dir,
             card_success,
             plugins.clone(),
-            views.map(|v| v.chat.clone()),
-            push_method.subscribe(),
+            crate::chat::ChatChannels {
+                view: views.map(|v| v.chat.clone()),
+                method: push_method.subscribe(),
+                session_out: session_out.0.clone(),
+                room_panel_out: room_panel.0.clone(),
+            },
         )?;
         let push = PushLink::new(
             handle.clone(),
@@ -146,6 +153,8 @@ impl Scope {
             plugins.clone(),
             dir,
             views.map(|v| v.tabs.clone()),
+            session_out.1,
+            (room_panel.0.clone(), room_panel.1),
         );
         let files = FilesLink::new(
             handle.clone(),

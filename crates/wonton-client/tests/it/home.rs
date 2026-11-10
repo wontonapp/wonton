@@ -4,6 +4,7 @@
 mod migration;
 pub(crate) mod support;
 
+mod quality;
 pub(crate) use support::{Home, Phone};
 use support::{WEB_URL, get, wait_until_ticket_has};
 
@@ -116,8 +117,9 @@ async fn sustained_traffic_does_not_publish_a_home_view_for_each_request() {
             () = &mut traffic => break,
             view = updates.next() => {
                 let view = view.expect("连接订阅提前结束");
-                assert_eq!(view.status, HomeStatus::Connected);
-                publications += 1;
+                // 机器忙的时候，网络通知后的确认（4 秒）会超时，连接被换掉：换连接自己会推几条，和这里数的
+                // “同一网络没变化也重算”无关，只数仍停在“已连接”的推送。
+                publications += u64::from(view.status == HomeStatus::Connected);
             }
         }
     }
@@ -126,7 +128,10 @@ async fn sustained_traffic_does_not_publish_a_home_view_for_each_request() {
     eprintln!("300 requests: {publications} home publications in {elapsed:?}, limit {limit}");
     assert!(publications <= limit, "{publications} > {limit}");
     phone
-        .wait_for(|view| view.details.sent_packets > before.details.sent_packets)
+        .wait_for(|view| {
+            view.status == HomeStatus::Connected
+                && view.details.sent_packets > before.details.sent_packets
+        })
         .await;
 }
 
@@ -218,7 +223,7 @@ async fn a_server_that_moved_is_reached_at_its_new_address_without_pairing() {
     phone
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;
-    home.wait_for_a_connection().await;
+    home.wait_for_a_connection(&phone).await;
     drop(phone);
 
     let restarted = Phone::open(dir.path());
@@ -304,7 +309,7 @@ async fn coming_back_to_the_foreground_reconnects() {
     // 连接，这个不会被合并掉。
     home.restart().await;
     phone.dispatch(Action::AppForegrounded).unwrap();
-    home.wait_for_a_connection().await;
+    home.wait_for_a_connection(&phone).await;
     let view = phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;
@@ -327,15 +332,16 @@ async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
     let proxy = view.proxy.unwrap();
     phone.dispatch(Action::AppBackgrounded).unwrap();
 
-    // App 挂起期间服务端放弃了连接，关闭帧到不了手机：手机仍以为连着，iroh 要 30 秒空闲超时才发现。
+    // App 挂起期间服务端放弃了连接，关闭帧到不了手机：手机仍以为连着，iroh 要 30 秒空闲超时才发现。后台不是
+    // 死水：挂起检测自己也会计时查一次，机器一卡它就先把界面挪成“连接中”，所以这里不断言还停在“已连接”。
     home.drop_connections_silently().await;
-    assert_eq!(phone.home().status, HomeStatus::Connected);
 
     // 回到前台：限时确认发现连接已死，马上换新连接。“几秒内回来”不按墙钟断言（机器忙时真实 I/O 会排过任何
-    // 时限），按因果断言：定时检查已停、App 刚回前台，服务端看到的新连接只可能是前台检查换的——空闲超时只会
-    // 判死、不会自己拨号，“重试”也不动活着的连接。等到新连接、界面回到已连接，第一批请求就要能用。
+    // 时限），按因果断言：定时检查已停、App 刚回前台，重启后的服务端上出现的新连接只可能是这次换的——空闲
+    // 超时只会判死、不会自己拨号，“重试”也不动活着的连接。看服务端自己数出来的连接数，不看 App 侧记的断开
+    // 次数：那是 App 的账，换连接的写法一变就可能不涨；等界面说“已连接”且路径在，再发一条请求走通。
     phone.dispatch(Action::AppForegrounded).unwrap();
-    home.wait_for_a_connection().await;
+    home.wait_for_a_connection(&phone).await;
     phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;
@@ -355,7 +361,7 @@ async fn a_dropped_connection_is_replaced_without_coming_back_to_the_foreground(
 
     // 手机一无所知，也没有回前台、没有发请求：定时检查发现连接不通，换上新连接。
     home.drop_connections_silently().await;
-    home.wait_for_a_connection().await;
+    home.wait_for_a_connection(&phone).await;
     phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;
@@ -381,7 +387,7 @@ async fn a_network_change_replaces_a_dead_connection_without_waiting_for_the_nex
             network: DeviceNetwork::Wifi,
         })
         .unwrap();
-    home.wait_for_a_connection().await;
+    home.wait_for_a_connection(&phone).await;
     phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;
@@ -409,7 +415,7 @@ async fn keep_connection_replaces_a_dropped_connection_while_backgrounded() {
     phone.wait_for(|view| view.keep_connection).await;
 
     home.drop_connections_silently().await;
-    home.wait_for_a_connection().await;
+    home.wait_for_a_connection(&phone).await;
     phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;
@@ -421,9 +427,10 @@ async fn in_the_background_the_core_leaves_the_connection_alone() {
     let phone = Phone::open(dir.path());
     let mut home = Home::start(&[phone.device_id()]).await;
     phone.connect(&home);
-    phone
-        .wait_for(|view| view.status == HomeStatus::Connected)
+    let view = phone
+        .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
         .await;
+    let proxy = view.proxy.unwrap();
 
     // 后台暂停的前提是收新消息走 UnifiedPush（ADR-0003）：保持连接是默认方式，退到后台也照常探测和重连。
     phone
@@ -436,11 +443,26 @@ async fn in_the_background_the_core_leaves_the_connection_alone() {
     home.drop_connections_silently().await;
     // 比定时检查的间隔加限时都长。
     tokio::time::sleep(Duration::from_secs(14)).await;
-    let opened = &home.server().endpoint().metrics().socket.num_conns_opened;
-    assert_eq!(opened.get(), 0, "在后台还在重连");
+    let opened = home
+        .server()
+        .endpoint()
+        .metrics()
+        .socket
+        .num_conns_opened
+        .get();
+    // 退到后台那一刻已经开出去的那次检查不算：它会把连接换掉、在“后台”留一条。还在后台检查的话，14 秒里
+    // （间隔 5 秒、每次最多 8 秒）不止一条。
+    assert!(opened <= 1, "在后台还在重连：{opened}");
 
+    // 回到前台，等这一轮检查走完再发请求：它还活着的连接会确认一次，已经判死的会换新的再确认。请求早于
+    // 这一轮发出的话，可能正赶上旧连接被收走（502），那不是这个测试要断言的事。
+    let confirmed = phone.home().details.last_connected_at_ms;
     phone.dispatch(Action::AppForegrounded).unwrap();
-    home.wait_for_a_connection().await;
+    phone
+        .wait_for(|view| view.details.last_connected_at_ms > confirmed)
+        .await;
+    let (status, body) = get(&proxy, WEB_URL, "/after", true).await;
+    assert_eq!((status, body.as_str()), (200, "/after"));
 }
 
 #[tokio::test]

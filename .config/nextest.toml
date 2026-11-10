@@ -1,6 +1,6 @@
 # nextest 自己的配置（cargo test 不读）。CI 用 `cargo nextest run` 跑测试，本机手动跑也一样。
 # nextest 把每个测试放在独立进程里，和 cargo test 同一二进制里按核数开线程的方式不一样：
-# 一个二进制里的测试不再共享进程，不同二进制会同时跑，所以两个档案都固定了并发数。
+# 一个二进制里的测试不再共享进程，不同二进制会同时跑，所以默认档案固定了并发数，Docker 档案按核数来。
 
 [profile.default]
 # 不按核数并发：托管 runner 只有 4 核，编译和测试还同时占着 CPU；槽全占满时，靠墙钟计时的测试
@@ -13,10 +13,13 @@ retries = 0
 # 卡住时先报慢，再按周期数杀掉；否则一个卡死的测试拖到作业超时才结束。
 slow-timeout = { period = "60s", terminate-after = 10 }
 
-# Docker 作业：每个测试自己起容器，同时跑的越多，Docker 操作和镜像拉取等的越久。
+# Docker 作业：每个测试自己起容器，同时跑的越多，Docker 操作和镜像拉取等的越久，抢宿主临时端口也会撞上
+# （install_push 用 `-p 127.0.0.1::8008` 让 Docker 自己挑端口，并发 8 时实测报 address already in use）。
+# 按核数来，不写死：托管 runner 只有 4 核，8 条一起起容器时机器一卡就超时，合并队列被这类假红踢。
+# 负数是在核数上减几条：留一条给宿主上的 dockerd 和容器调度，核多的本机自动多开，核少跟着少。
 # 这几个重活测试另放一组，最多 2 条同时跑：compose 起服务、建网络、拉镜像互相错开，其余测试照常用剩下的槽。
 [profile.docker]
-test-threads = 8
+test-threads = -1
 fail-fast = false
 retries = 0
 # Docker 测试起容器、拉镜像，一条几百秒也算正常；10 分钟还没完就杀掉。
@@ -29,9 +32,10 @@ compose = { max-threads = 2 }
 filter = 'binary(core_upgrade) | binary(docker_network) | test(plugin::tests::lan_docker) | test(install::tuwunel_tests) | test(registry_mirror::docker_tests)'
 test-group = 'compose'
 
-# bridge 镜像冒烟：测试自己 docker build 整张镜像（cargo 全家桶），4 核托管机上超过 10 分钟才算正常。
-# 放进重活组，窗口放到 10 分钟 × 6；作业里另外有一步预构建，平时命中缓存用不到这么长。
+# bridge 镜像冒烟：测试自己 docker build 整张镜像（cargo 全家桶），4 核托管机上超过 10 分钟才算正常；
+# 改到 vendor/ 或 Cargo.lock 的 PR 会让预构建的缓存整层失效，实测整编 17–20 分钟，10 分钟的窗口必挂。
+# 窗口放到 30 分钟 × 3（作业时限 75 分钟兜底）；作业里另外有一步预构建，平时命中缓存用不到这么长。
 [[profile.docker.overrides]]
 filter = 'binary(docker)'
 test-group = 'compose'
-slow-timeout = { period = "600s", terminate-after = 6 }
+slow-timeout = { period = "1800s", terminate-after = 3 }

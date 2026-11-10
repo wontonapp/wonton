@@ -28,6 +28,8 @@ final class ChatModel {
     /// 插件网页交给主人的草稿；只在聊天输入框出现，不自动发送。
     var pendingDraft: String?
     var drafts: [String: String] = [:]
+    /// 每个房间里正在回复的消息；和草稿一起存，换房间、杀 App 再回来还在。
+    var replies: [String: ReplyQuote] = [:]
     /// 聊天页打开的页面。
     var path: [ChatRoute] = []
     var visiting: VisitingRoom?
@@ -83,13 +85,50 @@ final class ChatModel {
 
     /// 草稿在核心里，按房间存，退出房间、重启 App 都还在。进房间时读回来，打完字写回去。
     func loadDraft(_ roomId: String) async {
-        guard let stored = try? await core.draft(roomId: roomId) else { return }
-        // 读回来之前已经打了字就不盖掉。
-        if drafts[roomId, default: ""].isEmpty { drafts[roomId] = stored.body }
+        // `try?` 会把错误和“没有草稿”都折成 nil，这里要分开。
+        let stored: ComposerDraft?
+        do {
+            stored = try await core.draft(roomId: roomId)
+        } catch {
+            return
+        }
+        // 读回来之前已经打了字、已经点了回复就不盖掉。
+        if drafts[roomId, default: ""].isEmpty { drafts[roomId] = stored?.body ?? "" }
+        if replies[roomId] == nil { replies[roomId] = stored?.reply }
     }
 
+    /// 每次写草稿都带上正在回复的那条，不带核心会把存着的回复对象清掉。
     func saveDraft(_ roomId: String) {
-        send(.setDraft(roomId: roomId, body: drafts[roomId, default: ""]))
+        send(.setDraft(
+            roomId: roomId, body: drafts[roomId, default: ""], replyTo: replies[roomId]?.eventId
+        ))
+    }
+
+    /// 回复按钮或右滑进入回复状态（ADR-0073）。
+    func startReply(_ quote: ReplyQuote, in roomId: String) {
+        replies[roomId] = quote
+        saveDraft(roomId)
+    }
+
+    func cancelReply(in roomId: String) {
+        replies[roomId] = nil
+        saveDraft(roomId)
+    }
+
+    /// 转发到另一个房间，随后打开它。
+    func forward(_ itemId: String, from roomId: String, to target: String) {
+        send(.forwardMessage(roomId: roomId, itemId: itemId, toRoomId: target))
+        openRoom(target)
+    }
+
+    /// 换了房间还在同一页：从应用页打开的就留在应用页，否则留在聊天页。
+    func openRoom(_ roomId: String) {
+        if let visiting {
+            guard visiting.roomId != roomId else { return }
+            self.visiting = VisitingRoom(tab: visiting.tab, roomId: roomId)
+        } else if path.last != .room(roomId) {
+            path = [.room(roomId)]
+        }
     }
 
     /// `tab` 这一页正在显示的房间。

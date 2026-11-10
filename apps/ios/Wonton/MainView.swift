@@ -19,6 +19,8 @@ struct MainView: View {
     @State var pendingSettingsPresentation = false
     @EnvironmentObject private var orientation: FullscreenOrientation
     @State var onboardingGateway: TabChoice?
+    @State var showsSidebar = false
+    @State var storeRequest = 0
     @State private var addingReturn: (serverID: String?, settingsModal: Bool)?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
@@ -99,7 +101,7 @@ struct MainView: View {
         .onChange(of: onboarding.viewModel.step) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .onChange(of: home.servers) { old, new in updatePairingPresentation(from: old, to: new) }
         .environment(plugins)
-        .environment(\.wontonBarStatus, WontonBarStatus(notice: home.viewModel.notice) {
+        .environment(\.wontonBarStatus, WontonBarStatus(home: home.viewModel) {
             ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showServerRoute)
         })
     }
@@ -110,7 +112,7 @@ struct MainView: View {
                 page(item).tag(item.tab).toolbar(.hidden, for: .tabBar)
             }
         }
-        .environment(\.wontonTabBar, isKeyboardVisible ? nil : AnyView(bottomBar))
+        .environment(\.wontonTabBar, isKeyboardVisible || !tabs.viewModel.showBar ? nil : AnyView(bottomBar))
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             isKeyboardVisible = true
         }
@@ -127,7 +129,8 @@ struct MainView: View {
                 model: home, plugins: plugins, chat: chat, settings: settings, open: open,
                 pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
                 showSettings: { settings.path = []; showsSettings = true },
-                showServer: { showServerRoute(.server) }, settingsPresented: showsSettings, devWebURL: devWebURL
+                showServer: { showServerRoute(.server) }, settingsPresented: showsSettings, devWebURL: devWebURL,
+                storeRequest: storeRequest
             )
         case .settings:
             SettingsTab(model: settings, appearance: appearance, chat: chat, home: home, plugins: plugins,
@@ -207,7 +210,8 @@ struct MainView: View {
         }
     }
 
-    private var isPaired: Bool { home.viewModel.status != .notConfigured }
+    /// 深链接的 `wonton://pair` 也要看它（`MainView+Navigation.swift` 在别的文件里，`private` 看不到）。
+    var isPaired: Bool { home.viewModel.status != .notConfigured }
     var overlayPresented: Binding<Bool> {
         Binding(get: { tabs.viewModel.overlay != nil && onboardingGateway == nil },
                 set: { if !$0 { tabs.send(.closeTabOverlay) } })
@@ -272,7 +276,14 @@ extension MainView {
                         PendingCardBanner(cards: pendingElsewhere, open: openCardRoom)
                     }
                     notices
-                    pages
+                    SidebarContainer(isOpen: $showsSidebar, edgeSwipe: allowsEdgeSwipe) {
+                        pages.environment(\.wontonOpenSidebar) { showsSidebar = true }
+                    } panel: {
+                        SidebarPanel(
+                            home: home, plugins: plugins, current: tabs.viewModel.selected,
+                            navigate: navigate
+                        )
+                    }
                 }
             })
         }

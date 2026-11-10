@@ -17,7 +17,7 @@ impl CertificateManager {
     pub(super) async fn run_lego(&self, command: Vec<String>) -> Result<()> {
         let image = self
             .engine
-            .ensure_image(LEGO_IMAGE, PullPolicy::Missing, None)
+            .ensure_image(LEGO_IMAGE, PullPolicy::Missing, &[])
             .await?;
         let mut random = [0u8; 12];
         getrandom::fill(&mut random).context("generate ACME container name")?;

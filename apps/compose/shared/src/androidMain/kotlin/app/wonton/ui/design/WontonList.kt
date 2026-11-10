@@ -85,6 +85,7 @@ fun WontonRow(
         if (showsForward) {
             Icon(
                 WontonIcon.Forward,
+                // 装饰：箭头只表示这一行能点。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconSmall),
                 tint = colors.textSecondary.toColor(),

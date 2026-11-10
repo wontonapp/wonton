@@ -107,15 +107,23 @@ impl LatestEvents {
     ) -> Self {
         let (latest_event_queue_sender, latest_event_queue_receiver) = mpsc::unbounded_channel();
 
-        let registered_rooms =
-            Arc::new(RegisteredRooms::new(weak_client, &event_cache, &latest_event_queue_sender));
+        let registered_rooms = Arc::new(RegisteredRooms::new(
+            weak_client,
+            &event_cache,
+            &latest_event_queue_sender,
+        ));
 
         // The task listening to the event cache, the send queue, and the room infos
-        // updates.
+        // updates. The task must NOT hold the `EventCache` or the `SendQueue`: the
+        // `SendQueue` keeps a strong reference to the `Client`, and holding either
+        // value would keep the senders of the channels below alive, so the task
+        // could never observe their closure and would pin the `Client` forever
+        // (wonton #816). Subscribe here instead and pass the receivers, like
+        // `room_info_updates` above.
         let listen_task_handle = spawn(listen_to_updates_task(
             registered_rooms.clone(),
-            event_cache,
-            send_queue,
+            event_cache.subscribe_to_room_generic_updates(),
+            send_queue.subscribe(),
             room_info_updates,
             latest_event_queue_sender,
         ))
@@ -141,7 +149,12 @@ impl LatestEvents {
     ///
     /// It returns `true` if the room exists, `false` otherwise.
     pub async fn listen_to_room(&self, room_id: &RoomId) -> Result<bool, LatestEventsError> {
-        Ok(self.state.registered_rooms.for_room(room_id).await?.is_some())
+        Ok(self
+            .state
+            .registered_rooms
+            .for_room(room_id)
+            .await?
+            .is_some())
     }
 
     /// Check whether the system listens to a particular room.
@@ -149,7 +162,12 @@ impl LatestEvents {
     /// Note: It's a test only method.
     #[cfg(test)]
     pub async fn is_listening_to_room(&self, room_id: &RoomId) -> bool {
-        self.state.registered_rooms.rooms.read().await.contains_key(room_id)
+        self.state
+            .registered_rooms
+            .rooms
+            .read()
+            .await
+            .contains_key(room_id)
     }
 
     /// Start listening to updates (if not already) for a particular room, and
@@ -180,7 +198,12 @@ impl LatestEvents {
         room_id: &RoomId,
         thread_id: &EventId,
     ) -> Result<bool, LatestEventsError> {
-        Ok(self.state.registered_rooms.for_thread(room_id, thread_id).await?.is_some())
+        Ok(self
+            .state
+            .registered_rooms
+            .for_thread(room_id, thread_id)
+            .await?
+            .is_some())
     }
 
     /// Start listening to updates (if not already) for a particular room and a
@@ -193,8 +216,11 @@ impl LatestEvents {
         room_id: &RoomId,
         thread_id: &EventId,
     ) -> Result<Option<Subscriber<LatestEventValue, AsyncLock>>, LatestEventsError> {
-        let Some(room_latest_events) =
-            self.state.registered_rooms.for_thread(room_id, thread_id).await?
+        let Some(room_latest_events) = self
+            .state
+            .registered_rooms
+            .for_thread(room_id, thread_id)
+            .await?
         else {
             return Ok(None);
         };
@@ -225,7 +251,10 @@ impl LatestEvents {
     /// If [`LatestEvents`] is not listening for `room_id` or `thread_id`,
     /// nothing happens.
     pub async fn forget_thread(&self, room_id: &RoomId, thread_id: &EventId) {
-        self.state.registered_rooms.forget_thread(room_id, thread_id).await;
+        self.state
+            .registered_rooms
+            .forget_thread(room_id, thread_id)
+            .await;
     }
 }
 
@@ -294,8 +323,9 @@ impl RegisteredRooms {
             // and the `LatestEventValue` has been erased, while it is still possible to
             // compute a correct value.
             if is_latest_event_value_none {
-                let _ = latest_event_queue_sender
-                    .send(LatestEventQueueUpdate::EventCache { room_id: room_id.to_owned() });
+                let _ = latest_event_queue_sender.send(LatestEventQueueUpdate::EventCache {
+                    room_id: room_id.to_owned(),
+                });
             }
         }
 
@@ -463,14 +493,11 @@ enum LatestEventQueueUpdate {
 /// `latest_event_queue_sender` channel. See [`compute_latest_events_task`].
 async fn listen_to_updates_task(
     registered_rooms: Arc<RegisteredRooms>,
-    event_cache: EventCache,
-    send_queue: SendQueue,
+    mut event_cache_generic_updates_subscriber: broadcast::Receiver<RoomEventCacheGenericUpdate>,
+    mut send_queue_generic_updates_subscriber: broadcast::Receiver<SendQueueUpdate>,
     room_info_updates: broadcast::Receiver<RoomInfoNotableUpdate>,
     latest_event_queue_sender: mpsc::UnboundedSender<LatestEventQueueUpdate>,
 ) {
-    let mut event_cache_generic_updates_subscriber =
-        event_cache.subscribe_to_room_generic_updates();
-    let mut send_queue_generic_updates_subscriber = send_queue.subscribe();
     let mut room_info_updates_subscriber = room_info_updates.resubscribe();
 
     loop {
@@ -577,7 +604,11 @@ async fn compute_latest_events_task(
 
     let mut buffer = Vec::with_capacity(BUFFER_SIZE);
 
-    while latest_event_queue_receiver.recv_many(&mut buffer, BUFFER_SIZE).await > 0 {
+    while latest_event_queue_receiver
+        .recv_many(&mut buffer, BUFFER_SIZE)
+        .await
+        > 0
+    {
         compute_latest_events(&registered_rooms, &buffer).await;
         buffer.clear();
     }
@@ -707,16 +738,30 @@ mod tests {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
 
-        client.base_client().get_or_create_room(room_id_0, RoomState::Joined);
-        client.base_client().get_or_create_room(room_id_1, RoomState::Joined);
-        client.base_client().get_or_create_room(room_id_2, RoomState::Joined);
+        client
+            .base_client()
+            .get_or_create_room(room_id_0, RoomState::Joined);
+        client
+            .base_client()
+            .get_or_create_room(room_id_1, RoomState::Joined);
+        client
+            .base_client()
+            .get_or_create_room(room_id_2, RoomState::Joined);
 
         client.event_cache().subscribe().unwrap();
 
         let latest_events = client.latest_events().await;
 
         // Despites there are many rooms, zero `RoomLatestEvents` are created.
-        assert!(latest_events.state.registered_rooms.rooms.read().await.is_empty());
+        assert!(
+            latest_events
+                .state
+                .registered_rooms
+                .rooms
+                .read()
+                .await
+                .is_empty()
+        );
 
         // Now let's listen to two rooms.
         assert!(latest_events.listen_to_room(room_id_0).await.unwrap());
@@ -731,14 +776,40 @@ mod tests {
             assert!(rooms.contains_key(room_id_1));
 
             // Room 0 contains zero thread latest events.
-            assert!(rooms.get(room_id_0).unwrap().read().await.per_thread().is_empty());
+            assert!(
+                rooms
+                    .get(room_id_0)
+                    .unwrap()
+                    .read()
+                    .await
+                    .per_thread()
+                    .is_empty()
+            );
             // Room 1 contains zero thread latest events.
-            assert!(rooms.get(room_id_1).unwrap().read().await.per_thread().is_empty());
+            assert!(
+                rooms
+                    .get(room_id_1)
+                    .unwrap()
+                    .read()
+                    .await
+                    .per_thread()
+                    .is_empty()
+            );
         }
 
         // Now let's listen to one thread respectively for two rooms.
-        assert!(latest_events.listen_to_thread(room_id_1, thread_id_1_0).await.unwrap());
-        assert!(latest_events.listen_to_thread(room_id_2, thread_id_2_0).await.unwrap());
+        assert!(
+            latest_events
+                .listen_to_thread(room_id_1, thread_id_1_0)
+                .await
+                .unwrap()
+        );
+        assert!(
+            latest_events
+                .listen_to_thread(room_id_2, thread_id_2_0)
+                .await
+                .unwrap()
+        );
 
         {
             let rooms = latest_events.state.registered_rooms.rooms.read().await;
@@ -750,7 +821,15 @@ mod tests {
             assert!(rooms.contains_key(room_id_2));
 
             // Room 0 contains zero thread latest events.
-            assert!(rooms.get(room_id_0).unwrap().read().await.per_thread().is_empty());
+            assert!(
+                rooms
+                    .get(room_id_0)
+                    .unwrap()
+                    .read()
+                    .await
+                    .per_thread()
+                    .is_empty()
+            );
             // Room 1 contains one thread latest event…
             let room_1 = rooms.get(room_id_1).unwrap().read().await;
             assert_eq!(room_1.per_thread().len(), 1);
@@ -772,8 +851,12 @@ mod tests {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
 
-        client.base_client().get_or_create_room(room_id_0, RoomState::Joined);
-        client.base_client().get_or_create_room(room_id_1, RoomState::Joined);
+        client
+            .base_client()
+            .get_or_create_room(room_id_0, RoomState::Joined);
+        client
+            .base_client()
+            .get_or_create_room(room_id_1, RoomState::Joined);
 
         client.event_cache().subscribe().unwrap();
 
@@ -790,7 +873,15 @@ mod tests {
             assert!(rooms.contains_key(room_id_0));
 
             // Room 0 contains zero thread latest events.
-            assert!(rooms.get(room_id_0).unwrap().read().await.per_thread().is_empty());
+            assert!(
+                rooms
+                    .get(room_id_0)
+                    .unwrap()
+                    .read()
+                    .await
+                    .per_thread()
+                    .is_empty()
+            );
         }
 
         // Now let's forget about room 0.
@@ -812,15 +903,24 @@ mod tests {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
 
-        client.base_client().get_or_create_room(room_id_0, RoomState::Joined);
-        client.base_client().get_or_create_room(room_id_1, RoomState::Joined);
+        client
+            .base_client()
+            .get_or_create_room(room_id_0, RoomState::Joined);
+        client
+            .base_client()
+            .get_or_create_room(room_id_1, RoomState::Joined);
 
         client.event_cache().subscribe().unwrap();
 
         let latest_events = client.latest_events().await;
 
         // Now let's fetch one thread .
-        assert!(latest_events.listen_to_thread(room_id_0, thread_id_0_0).await.unwrap());
+        assert!(
+            latest_events
+                .listen_to_thread(room_id_0, thread_id_0_0)
+                .await
+                .unwrap()
+        );
 
         {
             let rooms = latest_events.state.registered_rooms.rooms.read().await;
@@ -847,7 +947,15 @@ mod tests {
             assert!(rooms.contains_key(room_id_0));
 
             // But the thread has been removed.
-            assert!(rooms.get(room_id_0).unwrap().read().await.per_thread().is_empty());
+            assert!(
+                rooms
+                    .get(room_id_0)
+                    .unwrap()
+                    .read()
+                    .await
+                    .per_thread()
+                    .is_empty()
+            );
         }
     }
 
@@ -873,7 +981,9 @@ mod tests {
         // New event cache update, but the `LatestEvents` isn't listening to it.
         {
             room_event_cache_generic_update_sender
-                .send(RoomEventCacheGenericUpdate { room_id: room_id.clone() })
+                .send(RoomEventCacheGenericUpdate {
+                    room_id: room_id.clone(),
+                })
                 .unwrap();
 
             // Run the task.
@@ -900,7 +1010,9 @@ mod tests {
                 With::inner(RoomLatestEvents::new(weak_room, event_cache)),
             );
             room_event_cache_generic_update_sender
-                .send(RoomEventCacheGenericUpdate { room_id: room_id.clone() })
+                .send(RoomEventCacheGenericUpdate {
+                    room_id: room_id.clone(),
+                })
                 .unwrap();
 
             assert!(
@@ -1098,10 +1210,10 @@ mod tests {
         let (room_info_update_sender, mut room_info_update_receiver) = broadcast::channel(1);
         let (latest_event_queue_sender, latest_event_queue_receiver) = mpsc::unbounded_channel();
 
-        registered_rooms
-            .write()
-            .await
-            .insert(room_id.clone(), With::inner(RoomLatestEvents::new(weak_room, event_cache)));
+        registered_rooms.write().await.insert(
+            room_id.clone(),
+            With::inner(RoomLatestEvents::new(weak_room, event_cache)),
+        );
 
         // - `RoomInfoNotableUpdateReasons::LATEST_EVENT` is forbidden, otherwise it
         //   could create loops.
@@ -1114,7 +1226,10 @@ mod tests {
             all.iter()
         } {
             room_info_update_sender
-                .send(RoomInfoNotableUpdate { room_id: room_id.clone(), reasons: reason })
+                .send(RoomInfoNotableUpdate {
+                    room_id: room_id.clone(),
+                    reasons: reason,
+                })
                 .unwrap();
 
             assert!(
@@ -1260,7 +1375,9 @@ mod tests {
         let client = server.client_builder().build().await;
 
         // Create the room.
-        client.base_client().get_or_create_room(&room_id, RoomState::Joined);
+        client
+            .base_client()
+            .get_or_create_room(&room_id, RoomState::Joined);
 
         let event_cache = client.event_cache();
         event_cache.subscribe().unwrap();
@@ -1268,8 +1385,11 @@ mod tests {
         let latest_events = client.latest_events().await;
 
         // Subscribe to the latest event values for this room.
-        let mut latest_event_stream =
-            latest_events.listen_and_subscribe_to_room(&room_id).await.unwrap().unwrap();
+        let mut latest_event_stream = latest_events
+            .listen_and_subscribe_to_room(&room_id)
+            .await
+            .unwrap()
+            .unwrap();
 
         // The stream is pending: no new latest event for the moment.
         assert_pending!(latest_event_stream);
@@ -1318,7 +1438,9 @@ mod tests {
         // Prelude.
         {
             // Create the room.
-            client.base_client().get_or_create_room(&room_id, RoomState::Joined);
+            client
+                .base_client()
+                .get_or_create_room(&room_id, RoomState::Joined);
 
             // Initialise the event cache store.
             client
@@ -1353,8 +1475,11 @@ mod tests {
 
         let latest_events = client.latest_events().await;
 
-        let mut latest_event_stream =
-            latest_events.listen_and_subscribe_to_room(&room_id).await.unwrap().unwrap();
+        let mut latest_event_stream = latest_events
+            .listen_and_subscribe_to_room(&room_id)
+            .await
+            .unwrap()
+            .unwrap();
 
         // We have a race if the system is busy. Initially, the latest event
         // value is `LatestEventValue::None`, then an Event Cache generic update
@@ -1362,7 +1487,10 @@ mod tests {
         // wait on the system to finish this, and assert the final
         // `LatestEventValue`.
         yield_now().await;
-        assert_matches!(latest_event_stream.next_now().await, LatestEventValue::Remote(_));
+        assert_matches!(
+            latest_event_stream.next_now().await,
+            LatestEventValue::Remote(_)
+        );
 
         assert_pending!(latest_event_stream);
     }
@@ -1383,14 +1511,20 @@ mod tests {
         let client = server.client_builder().build().await;
 
         // Create the rooms.
-        let room_0 = client.base_client().get_or_create_room(&room_id_0, RoomState::Joined);
-        let room_1 = client.base_client().get_or_create_room(&room_id_1, RoomState::Joined);
+        let room_0 = client
+            .base_client()
+            .get_or_create_room(&room_id_0, RoomState::Joined);
+        let room_1 = client
+            .base_client()
+            .get_or_create_room(&room_id_1, RoomState::Joined);
 
         // Set up the rooms.
         // `room_0` always has a `LatestEventValue::None` as its the default value.
         let mut room_info_1 = room_0.clone_info();
         room_info_1.set_latest_event(LatestEventValue::LocalIsSending(local_room_message("foo")));
-        room_1.update_room_info(|_| (room_info_1, Default::default())).await;
+        room_1
+            .update_room_info(|_| (room_info_1, Default::default()))
+            .await;
 
         let weak_client = WeakClient::from_client(&client);
 
@@ -1406,7 +1540,11 @@ mod tests {
         // Room 0 has a `LatestEventValue::None`, a
         // `LatestEventQueueUpdate::EventCache` will be broadcasted.
         {
-            let room_latest_events = registered_rooms.for_room(&room_id_0).await.unwrap().unwrap();
+            let room_latest_events = registered_rooms
+                .for_room(&room_id_0)
+                .await
+                .unwrap()
+                .unwrap();
             assert_matches!(
                 room_latest_events.read().await.for_room().get().await,
                 LatestEventValue::None
@@ -1423,7 +1561,11 @@ mod tests {
         // Room 1 has a `LatestEventValue::Local*`, a
         // `LatestEventQueueUpdate::EventCache` will NOT be broadcasted.
         {
-            let room_latest_events = registered_rooms.for_room(&room_id_1).await.unwrap().unwrap();
+            let room_latest_events = registered_rooms
+                .for_room(&room_id_1)
+                .await
+                .unwrap()
+                .unwrap();
             assert_matches!(
                 room_latest_events.read().await.for_room().get().await,
                 LatestEventValue::LocalIsSending(_)
@@ -1450,8 +1592,11 @@ mod tests {
         let latest_events = client.latest_events().await;
 
         // Subscribe to the latest event values for this room.
-        let mut latest_event_stream =
-            latest_events.listen_and_subscribe_to_room(&room_id).await.unwrap().unwrap();
+        let mut latest_event_stream = latest_events
+            .listen_and_subscribe_to_room(&room_id)
+            .await
+            .unwrap()
+            .unwrap();
 
         // The stream is pending: no new latest event for the moment.
         assert_pending!(latest_event_stream);
@@ -1507,7 +1652,11 @@ mod tests {
             // update, which has been received by `LatestEvents` tasks, up to the
             // `compute_latest_events` which has NOT updated the latest event value because
             // a previous `RemoteInvite` was already computed.
-            assert!(timeout(Duration::from_secs(1), latest_event_stream.next()).await.is_err());
+            assert!(
+                timeout(Duration::from_secs(1), latest_event_stream.next())
+                    .await
+                    .is_err()
+            );
 
             assert_pending!(latest_event_stream);
         }

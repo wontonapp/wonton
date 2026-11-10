@@ -107,6 +107,7 @@ fun SwipeHint(swipe: SwipeToReplyState) {
     val gap = with(LocalDensity.current) { WontonTheme.spacing.s8.toPx() }
     Icon(
         WontonIcon.Reply,
+        // 装饰：跟手的临时箭头，松手就看结果。
         contentDescription = null,
         modifier = Modifier
             .padding(start = WontonTheme.spacing.s8)

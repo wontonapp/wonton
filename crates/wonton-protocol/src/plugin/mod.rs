@@ -7,6 +7,8 @@
 
 mod capability_deps;
 mod forms;
+pub mod store;
+use store::{StoreConfirmation, UpdatablePlugin};
 pub mod hint;
 mod owner_secrets;
 mod permission;
@@ -689,12 +691,26 @@ pub struct PluginsViewModel {
     pub installed: Option<InstalledPlugins>,
     /// 商店；还没取过时为空。
     pub store: Option<StoreListing>,
+    /// 侧边栏的内容。
+    #[serde(default)]
+    pub sidebar: crate::SidebarViewModel,
     /// 正在从家里的服务器取已安装列表或商店。
     pub refreshing: bool,
     /// 最近一次取列表失败的原因，这时显示的是上次取到的列表；再取成功后清空。
     pub problem: Option<PluginProblem>,
     /// 安装、升级、卸载的进展，按发起的先后。同一个插件同时只有一个。
     pub tasks: Vec<PluginTask>,
+    /// 有新版本可升级的应用：商店页更新图标的角标、"全部更新"弹窗和侧边栏的红点都是它。顺序同已安装列表。
+    #[serde(default)]
+    pub updatable: Vec<UpdatablePlugin>,
+    /// 主人点了一键装、一键升级（ [`Action::InstallNow`](crate::Action::InstallNow) 一类）、核心正在取预览的插件 ID：
+    /// 行尾按钮转圈。取完要么开始（进 [`PluginsViewModel::tasks`]），要么要主人拿主意（进 [`PluginsViewModel::confirmation`]）。
+    #[serde(default)]
+    pub pending: Vec<String>,
+    /// 核心取好预览、要主人拿主意的一键操作：壳照着打开确认页，主人在页上点安装或升级（ [`Action::InstallPlugin`]、
+    /// [`Action::UpgradePlugin`]），或者关掉（ [`Action::DismissStoreConfirmation`]）。"全部更新"排队时一次一条。
+    #[serde(default)]
+    pub confirmation: Option<StoreConfirmation>,
     /// 出网代理的设置页。
     pub egress: EgressViewModel,
     /// Docker Hub 镜像加速的设置页。

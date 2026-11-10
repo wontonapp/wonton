@@ -1,8 +1,10 @@
 package app.wonton.ui
 
 import android.icu.text.CompactDecimalFormat
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
@@ -29,15 +32,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.AddedSource
+import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginTrust
 import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
+import app.wonton.protocol.StoreConfirmation
+import app.wonton.protocol.UpdatablePlugin
 import app.wonton.protocol.StoreSection
 import app.wonton.ui.design.wontonContentPaddingValues
 import app.wonton.ui.design.WontonChip
@@ -68,6 +79,7 @@ fun StoreRoute(plugins: PluginsState, navigation: PluginNavigation, onBack: () -
 private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onBack: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var tag by remember { mutableStateOf<String?>(null) }
+    var showsUpdateAll by remember { mutableStateOf(false) }
     val viewModel = plugins.viewModel
     val store = viewModel.store
     val row: @Composable (StoreItem) -> Unit = { StoreRow(it, plugins, navigation) }
@@ -75,6 +87,9 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
         bar = {
             Column {
                 WontonPushedBar(stringResource(R.string.store_title), onBack, showsStatusLine = true) {
+                    if (viewModel.updatable.isNotEmpty()) {
+                        UpdateAllButton(viewModel.updatable.size) { showsUpdateAll = true }
+                    }
                     WontonIconButton(
                         WontonIcon.Add,
                         stringResource(R.string.store_add_source),
@@ -136,6 +151,17 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
                 }
             }
         }
+    }
+
+    // 全部更新只确认这一次（主人 2026-11-09 定）：列出可更新的应用，点“全部更新”逐个升级。
+    if (showsUpdateAll && viewModel.updatable.isNotEmpty()) {
+        UpdateAllSheet(plugins, viewModel.updatable, onDismiss = { showsUpdateAll = false }) {
+            plugins.send(Action.UpgradeAll)
+        }
+    }
+    // 核心判断要主人拿主意的一键操作：照着打开确认页，预览已经取好。
+    LaunchedEffect(viewModel.confirmation) {
+        navigation.confirmation = viewModel.confirmation?.let(PluginConfirmation::Store)
     }
 }
 
@@ -268,37 +294,75 @@ private fun TagChips(
 @Composable
 private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginNavigation) {
     val colors = WontonTheme.colors
-    Row(
-        Modifier.fillMaxWidth()
-            .clickable { navigation.detail = PluginRoute.Store(item.source) }
-            .padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP),
-        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        PluginIconImage(item.icon, WontonTheme.size.storeIcon, plugins)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-            Text(
-                item.title,
-                style = WontonTheme.typography.itemTitle,
-                color = colors.textPrimary.toColor(),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                item.summary,
-                style = WontonTheme.typography.supporting,
-                color = colors.textSecondary.toColor(),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            ItemTags(item)
+    Column {
+        Row(
+            Modifier.fillMaxWidth()
+                .clickable { navigation.detail = PluginRoute.Store(item.source) }
+                .padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP),
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PluginIconImage(item.icon, WontonTheme.size.storeIcon, plugins)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+                Text(
+                    item.title,
+                    style = WontonTheme.typography.itemTitle,
+                    color = colors.textPrimary.toColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    item.summary,
+                    style = WontonTheme.typography.supporting,
+                    color = colors.textSecondary.toColor(),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                ItemTags(item)
+            }
+            when (val button = storeButton(item, plugins, navigation)) {
+                is StoreButton.Get -> WontonSmallButton(button.title, button.perform, button.enabled)
+                StoreButton.Busy ->
+                    CircularProgressIndicator(Modifier.size(WontonTheme.size.icon), strokeWidth = SPINNER_STROKE)
+                StoreButton.Hidden -> Unit
+            }
         }
-        when (val button = storeButton(item, plugins, navigation)) {
-            is StoreButton.Get -> WontonSmallButton(button.title, button.perform, button.enabled)
-            StoreButton.Busy ->
-                CircularProgressIndicator(Modifier.size(WontonTheme.size.icon), strokeWidth = SPINNER_STROKE)
-            StoreButton.Hidden -> Unit
-        }
+        // 一键操作在取预览时失败：行下面一行红字配“重试”，不弹窗（ADR-0017）。
+        plugins.viewModel.tasks.firstOrNull { it.id == item.id }?.state
+            ?.takeIf { !plugins.viewModel.hasRunningTask(item.id) && item.id !in plugins.viewModel.pending }
+            ?.let { state ->
+                if (state is PluginTaskState.Failed) {
+                    val problem = state.reason.problem(state.message)
+                    Row(
+                        Modifier.padding(start = WontonTheme.size.storeIcon + WontonTheme.spacing.s12)
+                            .padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP),
+                        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(
+                            Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+                        ) {
+                            Text(
+                                problem.title,
+                                style = WontonTheme.typography.supporting,
+                                color = colors.danger.toColor(),
+                            )
+                            ProblemDetail(state.message)
+                        }
+                        WontonSmallButton(
+                            stringResource(R.string.common_retry),
+                            {
+                                if (item.installedVersion == null) {
+                                    plugins.send(Action.InstallNow(source = item.source))
+                                } else {
+                                    plugins.send(Action.UpgradeNow(pluginId = item.id))
+                                }
+                            },
+                        )
+                    }
+                }
+            }
     }
 }
 
@@ -333,7 +397,7 @@ private fun ItemTags(item: StoreItem) {
                 ) {
                     Icon(
                         WontonIcon.StarFill,
-                        contentDescription = null,
+                        contentDescription = stringResource(R.string.plugin_stars),
                         modifier = Modifier.size(WontonTheme.size.iconTiny),
                         tint = colors.textSecondary.toColor(),
                     )
@@ -366,12 +430,13 @@ private fun storeButton(item: StoreItem, plugins: PluginsState, navigation: Plug
     val installed = item.installedVersion
     val entry = viewModel.installed?.plugins?.firstOrNull { it.id == item.id }?.entries?.firstOrNull()
     return when {
-        viewModel.hasRunningTask(item.id) -> StoreButton.Busy
+        // 取预览、装、升、卸都在转圈。
+        viewModel.hasRunningTask(item.id) || item.id in viewModel.pending -> StoreButton.Busy
         installed == null -> StoreButton.Get(stringResource(R.string.store_get), item.blocked == null) {
-            navigation.confirmation = PluginConfirmation.Install(item.source)
+            plugins.send(Action.InstallNow(source = item.source))
         }
         installed != item.version -> StoreButton.Get(stringResource(R.string.store_update), enabled = true) {
-            navigation.confirmation = PluginConfirmation.Upgrade(item.id)
+            plugins.send(Action.UpgradeNow(pluginId = item.id))
         }
         entry != null -> StoreButton.Get(stringResource(R.string.store_open), enabled = true) { navigation.open(entry) }
         else -> StoreButton.Hidden

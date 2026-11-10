@@ -314,7 +314,7 @@ tabs-config-corrupt = ナビゲーションバーの設定ファイル { $path }
 tabs-config-too-many-items = ナビゲーションバーには最大 { $count } 個までしか項目を追加できません。
 tabs-config-duplicate-page = ナビゲーションバーに重複したページがあります。
 tabs-config-plugin-page-incomplete = アプリのページにタイトルとアイコンがありません。
-tabs-config-missing-fixed = ナビゲーションバーにチャットかアプリがありません。
+tabs-config-missing-fixed = ナビゲーションバーにチャットがありません。
 # $path は設定ファイルのパス、$reason は元の書き込みエラーです。
 tabs-config-write-failed = ナビゲーションバーの設定ファイル { $path } に書き込めません：{ $reason }
 
@@ -547,3 +547,36 @@ chat-window-ended =
 home-pairing-timeout = { $seconds } 秒以内にペアリングを完了できませんでした。
 home-pairing-aborted = ペアリングが完了する前に中断しました。もう一度お試しください。
 home-pairing-failed-detail = 直接接続先：{ $addresses }。リレー：[{ $relays }]。経過時間：{ $milliseconds } ミリ秒、制限時間：{ $seconds } 秒。原因：{ $error }
+plugin-now-start-failed = ワンタップ操作を開始できません：{ $error }
+
+# パネル（ADR-0052）のエラー。CoreError の理由、または TabsProblem の説明として表示する。
+panel-full = パネルがいっぱいです。先にページを外してください。
+panel-page-already-there = このページはすでにパネルにあります。
+panel-page-not-there = このページはパネルにありません。
+panel-page-unsupported = パネルに入れられるのはアプリのページ、アプリ内のページ、https:// のウェブページだけです。
+panel-index-out-of-range = その位置はパネルの外です。
+panel-not-signed-in = まだログインしていないため、パネルの変更をアカウントに保存できませんでした。端末には記録してあります。
+panel-room-not-open = このチャットのパネルを変えるには、先に開いてください。
+panel-room-unknown = このチャットが見つかりません。
+panel-pin-invalid-url = そのアドレスは読み取れません。
+panel-pin-not-https = ピンできるのは https:// のウェブページだけです。
+panel-attention-panel-only = パネル内のページだけに注意の印を付けられます。
+panel-config-too-many = パネルには最大 { $count } ページまで入ります。
+panel-config-duplicate = 同じページがパネルに二つあります。
+panel-sync-failed-read = サーバーからパネルの設定を読み取れませんでした。
+panel-sync-unreadable = サーバーのパネル設定をこの端末では読めないため、端末のものを使います。
+tabs-page-cannot-reload = このページは再読み込みできません。
+
+tabs-bar-not-pinned = このページはナビゲーションバーに固定されていません。
+tabs-bar-already-pinned = このページはすでにナビゲーションバーに固定されています。
+tabs-bar-replace-required = ナビゲーションバーがいっぱいです。置き換えるページを指定してください。
+tabs-bar-replacing-missing = 置き換えるページがナビゲーションバーにありません。
+tabs-bar-fixed = チャットとアプリは置き換えられません。
+tabs-bar-not-full = ナビゲーションバーがいっぱいではないので、置き換えるページは指定できません。
+tabs-bar-remove-fixed = チャットとアプリは外せません。
+tabs-bar-page-missing = このページはナビゲーションバーにありません。
+tabs-bar-index-out-of-range = その位置はナビゲーションバーの範囲外です。
+tabs-open-only-plugins = 開き方を設定できるのはアプリのページだけです。
+tabs-fullscreen-only-plugins = 全画面にできるのはアプリのページだけです。
+tabs-fullscreen-none = 全画面のページはありません。
+tabs-fullscreen-not-current = そのページは全画面のページではありません。

@@ -29,7 +29,8 @@ ANDROID_EN_SUFFIX = "/res/values/strings.xml"
 
 def list_tracked_files(root: str) -> List[str]:
     out = subprocess.run(["git", "ls-files", "-z"], cwd=root, check=True, capture_output=True).stdout
-    return [p for p in out.decode("utf-8").split("\0") if p]
+    # 删掉但还没提交的文件还留在索引里；它在工作区已经不存在，读不到。
+    return [p for p in out.decode("utf-8").split("\0") if p and os.path.isfile(os.path.join(root, p))]
 
 
 def read(root: str, path: str) -> str:

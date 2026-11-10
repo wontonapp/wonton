@@ -337,7 +337,7 @@ tabs-config-too-many-items = { $count ->
 }
 tabs-config-duplicate-page = The Navigation bar has duplicate pages.
 tabs-config-plugin-page-incomplete = An app page is missing its title and icon.
-tabs-config-missing-fixed = The Navigation bar is missing Chat or Apps.
+tabs-config-missing-fixed = The Navigation bar is missing Chat.
 # $path is the settings file's path, $reason is the original I/O error.
 tabs-config-write-failed = Can't write the Navigation bar settings file { $path }: { $reason }
 
@@ -609,3 +609,36 @@ chat-window-ended =
 home-pairing-timeout = Pairing did not finish within { $seconds } seconds.
 home-pairing-aborted = Pairing stopped before it finished. Try again.
 home-pairing-failed-detail = Direct addresses: { $addresses }. Relays: [{ $relays }]. Elapsed: { $milliseconds } ms; time limit: { $seconds } seconds. Reason: { $error }
+plugin-now-start-failed = Could not start the update: { $error }
+
+# Panel (ADR-0052) errors. Shown as the reason of a CoreError, or as a TabsProblem message.
+panel-full = The panel is full; remove a page first.
+panel-page-already-there = This page is already in the panel.
+panel-page-not-there = This page isn't in the panel.
+panel-page-unsupported = Only app pages, pages inside an app, and https websites can go into the panel.
+panel-index-out-of-range = That position is outside the panel.
+panel-not-signed-in = Sign in first to change the panel; the change wasn't saved.
+panel-room-not-open = Open this chat first to change its panel.
+panel-room-unknown = Can't find this chat.
+panel-pin-invalid-url = Can't read that address.
+panel-pin-not-https = Only https:// websites can be pinned.
+panel-attention-panel-only = Only pages in the panel can show the attention dot.
+panel-config-too-many = The panel holds at most { $count } pages.
+panel-config-duplicate = The same page appears twice in the panel.
+panel-sync-failed-read = Couldn't read the panel settings from the server.
+panel-sync-unreadable = The panel settings from the server can't be read here; keeping the ones on this device.
+tabs-page-cannot-reload = This page can't be reloaded.
+
+tabs-bar-not-pinned = This page isn't pinned to the Navigation bar.
+tabs-bar-already-pinned = This page is already pinned to the Navigation bar.
+tabs-bar-replace-required = The Navigation bar is full; pick a page to replace.
+tabs-bar-replacing-missing = The page to replace isn't in the Navigation bar.
+tabs-bar-fixed = Chat and Apps can't be replaced.
+tabs-bar-not-full = The Navigation bar isn't full, so there's nothing to replace.
+tabs-bar-remove-fixed = Chat and Apps can't be removed.
+tabs-bar-page-missing = This page isn't in the Navigation bar.
+tabs-bar-index-out-of-range = That position is past the end of the Navigation bar.
+tabs-open-only-plugins = Only app pages have an opening mode.
+tabs-fullscreen-only-plugins = Only app pages can go full screen.
+tabs-fullscreen-none = Nothing is full screen right now.
+tabs-fullscreen-not-current = That page isn't the full-screen one.

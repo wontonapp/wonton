@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
@@ -89,7 +91,7 @@ fun LauncherScreen(
     ) {
         Column(Modifier.fillMaxSize()) {
             val installed = plugins.viewModel.installed
-            StoreEntry(installed?.plugins?.count { it.upgrade != null }, onShowStore)
+            StoreEntry(plugins.viewModel.updatable.size, onShowStore)
             PullToRefreshBox(
                 isRefreshing = plugins.viewModel.refreshing,
                 onRefresh = { plugins.send(Action.RefreshPlugins) },
@@ -162,7 +164,7 @@ private fun LauncherPlaceholder(plugins: PluginsState) {
 }
 
 @Composable
-private fun StoreEntry(upgradeCount: Int?, onClick: () -> Unit) {
+private fun StoreEntry(upgradeCount: Int, onClick: () -> Unit) {
     val colors = WontonTheme.colors
     val shape = RoundedCornerShape(WontonTheme.radii.control)
     Row(
@@ -175,14 +177,16 @@ private fun StoreEntry(upgradeCount: Int?, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
         Icon(
-            WontonIcon.Store, contentDescription = null,
+            WontonIcon.Store,
+            // 装饰：右边就是“去应用商店”。
+            contentDescription = null,
             modifier = Modifier.size(WontonTheme.size.icon), tint = colors.accentInkOnFill.toColor(),
         )
         Text(
             stringResource(R.string.store_title), Modifier.weight(1f), style = WontonTheme.typography.body,
             color = colors.textOnAccentFill.toColor(),
         )
-        if (upgradeCount != null && upgradeCount > 0) {
+        if (upgradeCount > 0) {
             Text(
                 pluralStringResource(R.plurals.launcher_updates_available, upgradeCount, upgradeCount),
                 style = WontonTheme.typography.supporting,
@@ -252,7 +256,7 @@ private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigat
             overflow = TextOverflow.Ellipsis,
         )
     }
-    if (showingMenu) LauncherMenu(plugin, navigation, onPin = {
+    if (showingMenu) LauncherMenu(plugin, plugins, navigation, onPin = {
         val choices = plugin.tabChoices.filter { choice -> tabs.viewModel.items.none { it.tab == choice.tab } }
         if (choices.size == 1) tabs.pin(choices.single().tab, choices.single().title)
         else if (choices.isNotEmpty()) choosingPage = true
@@ -263,17 +267,19 @@ private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigat
 @Composable
 private fun Badge(plugin: InstalledPlugin, modifier: Modifier) {
     val colors = WontonTheme.colors
+    val updateLabel = stringResource(R.string.design_update_badge)
     when {
         plugin.status is PluginState.Degraded -> Icon(
             WontonIcon.WarningCircleFill,
-            contentDescription = null,
+            contentDescription = stringResource(R.string.launcher_badge_degraded),
             modifier = modifier.size(WontonTheme.size.iconSmall).background(colors.canvas.toColor(), CircleShape),
             tint = colors.danger.toColor(),
         )
         plugin.upgrade != null -> Box(
             modifier.size(12.dp)
                 .background(colors.primary.toColor(), CircleShape)
-                .border(2.dp, colors.canvas.toColor(), CircleShape),
+                .border(2.dp, colors.canvas.toColor(), CircleShape)
+                .semantics { contentDescription = updateLabel },
         )
     }
 }
@@ -281,6 +287,7 @@ private fun Badge(plugin: InstalledPlugin, modifier: Modifier) {
 @Composable
 private fun LauncherMenu(
     plugin: InstalledPlugin,
+    plugins: PluginsState,
     navigation: PluginNavigation,
     onPin: () -> Unit,
     onDismiss: () -> Unit,
@@ -300,7 +307,7 @@ private fun LauncherMenu(
         plugin.upgrade?.let { upgrade ->
             add(
                 WontonSheetAction(stringResource(R.string.launcher_upgrade_to, upgrade.version), WontonIcon.Download) {
-                    navigation.confirmation = PluginConfirmation.Upgrade(plugin.id)
+                    plugins.send(Action.UpgradeNow(pluginId = plugin.id))
                 },
             )
         }

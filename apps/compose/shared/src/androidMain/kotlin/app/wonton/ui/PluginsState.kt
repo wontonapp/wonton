@@ -16,8 +16,10 @@ import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PluginImage
 import app.wonton.protocol.PluginKind
 import app.wonton.protocol.PluginState
+import app.wonton.protocol.InstallPreview
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginsViewModel
+import app.wonton.protocol.StoreConfirmation
 import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
 import app.wonton.protocol.TabRef
@@ -138,8 +140,16 @@ sealed interface PluginConfirmation {
     /** 换到主人选的压缩包。 */
     class UpgradeUpload(val id: String, val archive: ByteArray) : PluginConfirmation
 
+    /** 核心取好预览、请主人拿主意的一键操作（ADR-0017）：预览不再重新取。 */
+    data class Store(val confirmation: StoreConfirmation) : PluginConfirmation
+
+    /** 核心已经取好的预览；确认页不再自己取。 */
+    val preloaded: InstallPreview?
+        get() = (this as? Store)?.confirmation?.preview
+
     val isUpgrade: Boolean
-        get() = this is Upgrade || this is UpgradeFrom || this is UpgradeUpload
+        get() = this is Upgrade || this is UpgradeFrom || this is UpgradeUpload ||
+            (this is Store && confirmation is StoreConfirmation.Upgrade)
 
     /** 主人选的版本可能比装着的旧，不叫升级。 */
     val actionTitle: String
@@ -147,6 +157,11 @@ sealed interface PluginConfirmation {
             is Install, is Upload -> stringResource(R.string.install_action_install)
             is Upgrade -> stringResource(R.string.install_action_upgrade)
             is UpgradeFrom, is UpgradeUpload -> stringResource(R.string.install_change_version)
+            is Store -> if (confirmation is StoreConfirmation.Upgrade) {
+                stringResource(R.string.install_action_upgrade)
+            } else {
+                stringResource(R.string.install_action_install)
+            }
         }
 }
 
@@ -156,3 +171,10 @@ val StoreListing.allPlugins: List<StoreItem>
 
 /** 要卸载的插件，确认对话框用。 */
 data class UninstallTarget(val id: String, val title: String)
+
+/** 核心取好的预览：确认页不再重新取。 */
+val StoreConfirmation.preview: InstallPreview
+    get() = when (this) {
+        is StoreConfirmation.Install -> preview
+        is StoreConfirmation.Upgrade -> preview
+    }

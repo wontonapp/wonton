@@ -16,7 +16,8 @@ use tokio::task::JoinHandle;
 use wonton_client::{Action, ClientCore, HomeViewModel, Network, ProxySettings};
 use wonton_tunnel::{Allowlist, TunnelServer};
 
-// 只用作等状态的上限，等到就往下走。要盖住定时检查发现死连接的最长用时（间隔 5 秒加时限 8 秒）和之后的重连。
+// 只用作等状态的上限，等到就往下走。要盖住核心自己的时限：确认死连接（确认窗口）和拨新连接（建连时限），
+// 不是“几秒内必须回来”的断言。
 const WAIT: Duration = Duration::from_secs(30);
 /// 同一端口重建时等端口空出来的总预算。iroh 关掉 endpoint 以后套接字还要过一阵才真的释放，并行的测试
 /// 的 `bind(0)` 也可能临时拿走这个端口；这笔账比 [`WAIT`] 长，但只管重建这一处。
@@ -133,8 +134,12 @@ impl Home {
     }
 
     pub(super) fn ticket(&self) -> String {
+        self.ticket_at(self.server().endpoint().bound_sockets()[0])
+    }
+
+    /// 连接信息里的直连地址换成 `addr`（拦在中间的回环代理）。
+    pub(super) fn ticket_at(&self, addr: SocketAddr) -> String {
         let id = self.server().endpoint().id();
-        let addr = self.server().endpoint().bound_sockets()[0];
         format!(
             r#"{{"server": {{"endpoint_id": "{id}", "direct_addrs": ["{addr}"]}},
                 "base_domain": "wonton.localhost", "web_url": "{WEB_URL}"}}"#
@@ -163,12 +168,17 @@ impl Home {
         self.start_again(port).await;
     }
 
-    /// 等手机建一条新连接。
-    pub(super) async fn wait_for_a_connection(&self) {
+    /// 等手机建一条新连接。带了 `phone` 一起报：没重连时，手机那边的状态和这套端点的监听地址都要能看见。
+    pub(super) async fn wait_for_a_connection(&self, phone: &Phone) {
         let deadline = tokio::time::Instant::now() + WAIT;
-        let socket = &self.server().endpoint().metrics().socket;
-        while socket.num_conns_opened.get() == 0 {
-            assert!(tokio::time::Instant::now() < deadline, "手机一直没有重连");
+        let endpoint = self.server().endpoint();
+        while endpoint.metrics().socket.num_conns_opened.get() == 0 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "手机一直没有重连：{:?}，服务端在 {:?}",
+                phone.home(),
+                endpoint.bound_sockets()
+            );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     }

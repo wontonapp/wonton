@@ -45,6 +45,7 @@ mod session;
 mod settings;
 mod share_transport;
 mod sharing;
+mod sidebar;
 mod tabs;
 mod timeline;
 mod verification;
@@ -162,6 +163,7 @@ pub use plugin::LanClient;
 pub use plugin::StoreUnreadable;
 pub use plugin::hint::{PluginHint, PluginHintCategory};
 pub use plugin::ports::{PortProtocol, PortSpec, TunnelSpec};
+pub use plugin::store::{StoreConfirmation, UpdatablePlugin};
 pub use plugin::{
     AddSourceRequest, AddedSource, AddedTools, AskEveryUpdate, BlockedCategory, BotSwitch,
     CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef, CapabilityProviderSettings,
@@ -205,6 +207,7 @@ pub use sharing::{
     ShareProblem, ShareRecipient, SharedAppRow, SharedAppsSource, SharedAppsState,
     SharedAppsViewModel, SharedPlugin,
 };
+pub use sidebar::{SidebarApp, SidebarOpen, SidebarViewModel};
 pub use tabs::{
     CandidatePlugin, PluginTab, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem,
     TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,

@@ -138,12 +138,14 @@ fun InstallConfirmScreen(
 }
 
 private suspend fun loadInstallPreview(plugins: PluginsState, confirmation: PluginConfirmation): InstallPreview =
-    when (confirmation) {
+    // 核心取好预览请主人拿主意的一键操作（ADR-0017）：不再重新取。
+    confirmation.preloaded ?: when (confirmation) {
         is PluginConfirmation.Install -> plugins.core.previewInstall(confirmation.source)
         is PluginConfirmation.Upgrade -> plugins.core.previewUpgrade(confirmation.id)
         is PluginConfirmation.Upload -> plugins.core.previewUpload(confirmation.archive)
         is PluginConfirmation.UpgradeFrom -> plugins.core.previewUpgradeFrom(confirmation.id, confirmation.source)
         is PluginConfirmation.UpgradeUpload -> plugins.core.previewUpgradeUpload(confirmation.id, confirmation.archive)
+        is PluginConfirmation.Store -> error("core preview already returned above")
     }
 
 /** 留在安装页等核心任务完成，成功后才提供固定入口。 */

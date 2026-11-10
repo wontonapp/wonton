@@ -63,7 +63,7 @@ impl Fixture {
     pub async fn start(&mut self) {
         for image in [&registry(), &base()] {
             self.engine
-                .ensure_image(image, PullPolicy::Missing, None)
+                .ensure_image(image, PullPolicy::Missing, &[])
                 .await
                 .unwrap();
         }

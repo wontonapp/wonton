@@ -63,7 +63,7 @@ fun MessageImage(
             .combinedClickable(onClick = { showingViewer = true }, onLongClick = { onLongPress?.invoke() }),
         contentAlignment = Alignment.Center,
     ) {
-        LoadedImage(preview, ContentScale.Crop)
+        LoadedImage(preview, ContentScale.Crop, stringResource(R.string.message_quote_image))
         if (sendState is SendState.Sending) {
             val bar = Modifier.align(Alignment.BottomStart).fillMaxWidth()
             val progress = sendState.progress
@@ -83,12 +83,13 @@ private fun ImageContent.ratio(): Float {
 }
 
 @Composable
-private fun LoadedImage(state: Result<ImageBitmap>?, scale: ContentScale) {
+private fun LoadedImage(state: Result<ImageBitmap>?, scale: ContentScale, label: String) {
     val unavailable = stringResource(R.string.message_image_unavailable)
     when {
         state == null -> CircularProgressIndicator()
+        // 整张图就是消息内容，点开还有查看器，读屏要有名字。
         state.isSuccess ->
-            Image(state.getOrThrow(), contentDescription = null, Modifier.fillMaxSize(), contentScale = scale)
+            Image(state.getOrThrow(), contentDescription = label, Modifier.fillMaxSize(), contentScale = scale)
         else -> Text(
             (state.exceptionOrNull() as? CoreException)?.problem?.titleText
                 ?: state.exceptionOrNull()?.message ?: unavailable,

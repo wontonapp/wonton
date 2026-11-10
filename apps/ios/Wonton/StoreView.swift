@@ -8,6 +8,7 @@ struct StoreView: View {
     @State private var query = ""
     @State private var filter: String?
     @State private var confirmation: PluginConfirmation?
+    @State private var showsUpdateAll = false
     @State private var isAddingSource = false
     /// “添加来源”那一页选好的文件：那一页关上以后才能再盖确认页。
     @State private var chosen: PluginConfirmation?
@@ -47,9 +48,30 @@ struct StoreView: View {
             .refreshable { model.send(.refreshStore(force: true)) }
         }
         .wontonPushedScreen(String(localized: .storeTitle), showsStatusLine: true) {
-            WontonIconButton(icon: .add, label: String(localized: .storeAddSource)) { isAddingSource = true }
+            HStack(spacing: 0) {
+                if model.viewModel.updatable.count > 0 {
+                    UpdateAllButton(count: model.viewModel.updatable.count) { showsUpdateAll = true }
+                }
+                WontonIconButton(icon: .add, label: String(localized: .storeAddSource)) { isAddingSource = true }
+            }
         }
         .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
+        // 关掉确认页没装也没升：告诉核心放下一条（“全部更新”排队时）。
+        .onChange(of: confirmation) { old, new in
+            if old != nil, new == nil { model.send(.dismissStoreConfirmation) }
+        }
+        // 核心判断要主人拿主意的一键操作：照着打开确认页，预览已经取好。
+        .onChange(of: model.viewModel.confirmation) { _, confirmation in
+            self.confirmation = confirmation.map(PluginConfirmation.store)
+        }
+        .confirmationDialog(
+            String(localized: .storeUpdateAllTitle(count: model.viewModel.updatable.count)),
+            isPresented: $showsUpdateAll,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: .storeUpdateAll)) { model.send(.upgradeAll) }
+            Button(String(localized: .commonCancel), role: .cancel) {}
+        }
         .fullScreenCover(isPresented: $isAddingSource, onDismiss: {
             confirmation = chosen
             chosen = nil
@@ -159,19 +181,27 @@ struct StoreView: View {
     }
 
     private func row(_ item: StoreItem) -> some View {
-        StoreItemRow(model: model, item: item, button: button(for: item))
+        StoreItemRow(model: model, item: item, button: button(for: item), failure: failure(for: item))
     }
 
-    /// 行尾的按钮：没装的“获取”，装着旧版本的“更新”，装着的“打开”；正在装、升级、卸载时转圈。
+    /// 一键操作在取预览或开始之前出的错：行下面一行红字配“重试”，不弹窗（ADR-0017）。
+    private func failure(for item: StoreItem) -> PluginTaskState? {
+        guard !model.isWorking(on: item.id), !model.viewModel.pending.contains(item.id),
+              case let .failed(reason, message) = model.viewModel.tasks.first(where: { $0.id == item.id })?.state
+        else { return nil }
+        return .failed(reason: reason, message: message)
+    }
+
+    /// 行尾的按钮：没装的“获取”，装着旧版本的“更新”，装着的“打开”；取预览和装、升级、卸载时转圈。点了就开始，不跳页。
     private func button(for item: StoreItem) -> StoreButton {
-        if model.isWorking(on: item.id) {
+        if model.isWorking(on: item.id) || model.viewModel.pending.contains(item.id) {
             return .busy
         }
         guard let version = item.installedVersion else {
-            return .get(enabled: item.blocked == nil) { confirmation = .install(source: item.source) }
+            return .get(enabled: item.blocked == nil) { model.send(.installNow(source: item.source)) }
         }
         if version != item.version {
-            return .get(title: String(localized: .storeUpdate)) { confirmation = .upgrade(id: item.id) }
+            return .get(title: String(localized: .storeUpdate)) { model.send(.upgradeNow(pluginId: item.id)) }
         }
         let installed = model.viewModel.installed?.plugins.first { $0.id == item.id }
         guard let entry = installed?.entries.first else { return .hidden }
@@ -222,10 +252,13 @@ private struct StoreItemRow: View {
     let model: PluginsModel
     let item: StoreItem
     let button: StoreButton
+    /// 一键操作取预览时失败的原因；行下面一行红字配“重试”。
+    var failure: PluginTaskState?
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        HStack(spacing: WontonTheme.spacing.s12) {
+        VStack(spacing: WontonTheme.spacing.s4) {
+            HStack(spacing: WontonTheme.spacing.s12) {
             NavigationLink(value: PluginRoute.store(source: item.source)) {
                 HStack(spacing: WontonTheme.spacing.s12) {
                     PluginIconView(
@@ -257,9 +290,40 @@ private struct StoreItemRow: View {
             case .hidden:
                 EmptyView()
             }
+            }
+            if let failure {
+                HStack(alignment: .firstTextBaseline, spacing: WontonTheme.spacing.s8) {
+                    failureRow(failure)
+                    Spacer(minLength: 0)
+                    Button(String(localized: .commonRetry)) { retry() }
+                        .buttonStyle(WontonSmallButtonStyle())
+                }
+                .padding(.leading, WontonTheme.size.storeIcon + WontonTheme.spacing.s12)
+            }
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .padding(.vertical, WontonTheme.spacing.s8)
+    }
+
+    /// 再点一次“获取”或“更新”。
+    private func retry() {
+        if item.installedVersion == nil {
+            model.send(.installNow(source: item.source))
+        } else {
+            model.send(.upgradeNow(pluginId: item.id))
+        }
+    }
+
+    @ViewBuilder private func failureRow(_ state: PluginTaskState) -> some View {
+        if case let .failed(reason, message) = state {
+            let problem = reason.problem(detail: message)
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                Text(problem.title)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.danger))
+                ProblemDetail(text: message)
+            }
+        }
     }
 
     /// 已审核的插件在自己的分组里，不再标来源。
@@ -278,6 +342,7 @@ private struct StoreItemRow: View {
                 if let stars = item.stars {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         WontonIcon.starFill.view(size: WontonTheme.size.iconTiny)
+                            .accessibilityLabel(String(localized: .pluginInfoStars))
                         Text(stars.formatted(.number.notation(.compactName)))
                             .wontonText(WontonTheme.typography.caption)
                     }
@@ -374,5 +439,26 @@ extension PluginTask {
         case .notCompared: true
         case nil: false
         }
+    }
+}
+
+/// 商店页右上角的更新图标（向下的箭头），带红色数字角标；点了弹一次确认。
+private struct UpdateAllButton: View {
+    let count: Int
+    let action: () -> Void
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        WontonIconButton(icon: .download, label: String(localized: .storeUpdateAll)) { action() }
+            .overlay(alignment: .topTrailing) {
+                Text("\(count)")
+                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .frame(minWidth: 18, minHeight: 18)
+                    .background(Color(colors.danger), in: Capsule())
+                    .offset(x: 4, y: -4)
+                    .accessibilityLabel(String(localized: .launcherUpdatesAvailable(count: count)))
+            }
     }
 }

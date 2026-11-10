@@ -8,6 +8,12 @@ final class TimelineModel {
     private(set) var backPagination: BackPagination = .idle
     /// 收到第一批（全部条目）之后才能翻页：核心要先打开这个房间的时间线。
     private(set) var isLoaded = false
+    /// 核心算的位置：在不在底部、离开底部时的新消息数（ADR-0071）。
+    private(set) var viewport: TimelineViewport = .bottom
+    /// 第一批的落点：进房间停在这一条上（ADR-0071）。
+    private(set) var anchor: String?
+    /// 时间线被清空重建的次数：重建的 Reset 里带新落点，视图要重新摆。
+    private(set) var generation = 0
     private(set) var failure: Problem?
     /// 打不开时点“重试”加一，视图按它重新订阅。
     var attempt = 0
@@ -35,6 +41,10 @@ final class TimelineModel {
                 apply(diff)
             }
             backPagination = update.backPagination
+            viewport = update.viewport
+            if let anchor = update.anchor {
+                self.anchor = anchor
+            }
             isLoaded = true
         }
         return !Task.isCancelled
@@ -46,6 +56,7 @@ final class TimelineModel {
             items.append(contentsOf: more)
         case .clear:
             items.removeAll()
+            generation += 1
         case let .pushFront(item):
             items.insert(item, at: 0)
         case let .pushBack(item):

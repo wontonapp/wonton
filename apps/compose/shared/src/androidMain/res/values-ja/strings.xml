@@ -196,6 +196,8 @@
     <!-- Status: the app isn\'t running, or is installing, updating or starting. -->
     <string name="bot_state_offline">オフライン</string>
     <string name="timeline_new_messages_below">以下が新着メッセージです</string>
+    <string name="room_scroll_to_bottom">一番下へ戻る</string>
+    <string name="room_scroll_to_bottom_count">一番下へ戻る、新着 %1$d 件</string>
     <string name="timeline_start">チャットの最初です</string>
     <string name="timeline_edited">編集済み</string>
     <string name="timeline_sending">送信中</string>
@@ -271,7 +273,13 @@
     <string name="connection_unknown">不明</string>
     <string name="connection_path">経路</string>
     <string name="connection_latency">遅延</string>
-    <string name="connection_lost_packets">パケット損失</string>
+    <string name="connection_loss_rate">パケット損失率</string>
+    <string name="connection_value_none">—</string>
+    <string name="connection_poor">通信状態が悪く、動作が遅くなることがあります</string>
+    <string name="connection_poor_relay">通信状態が悪く、リレー経由で接続しています</string>
+    <string name="connection_quality">通信品質</string>
+    <string name="connection_quality_good">良い</string>
+    <string name="connection_quality_poor">悪い</string>
     <string name="connection_last_handshake">最後のハンドシェイク</string>
     <string name="connection_disconnects">切断回数</string>
     <string name="connection_last_connected">最後に接続した日時</string>
@@ -1486,4 +1494,54 @@
     <string name="secret_clear">クリア</string>
     <string name="secret_filled">入力済み</string>
     <string name="secret_unfilled">未入力</string>
+    <string name="pin_to_bar">ナビゲーションバーに追加</string>
+    <!-- サイドバーの行を長押しして、アプリのページをナビゲーションバーから外す。 -->
+    <string name="unpin_from_bar">ナビゲーションバーから外す</string>
+    <!-- サイドバーに表示するアプリの名前。 -->
+    <string name="sidebar_title">Wonton</string>
+    <!-- ルートページの左上にあるサイドバーを開くボタン。 -->
+    <string name="sidebar_open">サイドバー</string>
+    <!-- サイドバーが開いているときにメイン画面を覆う層。タップするとサイドバーを閉じる。 -->
+    <string name="sidebar_collapse">サイドバーを閉じる</string>
+    <!-- サイドバーのタイトル下の状態：自宅サーバーに接続済み。 -->
+    <string name="sidebar_status_connected">自宅サーバー · 接続済み</string>
+    <!-- サイドバーのタイトル下の状態：自宅サーバーに接続中。 -->
+    <string name="sidebar_status_connecting">自宅サーバー · 接続中</string>
+    <!-- サイドバーのタイトル下の状態：自宅サーバーに接続できない。 -->
+    <string name="sidebar_status_disconnected">自宅サーバー · 接続できない</string>
+    <!-- サイドバーのタイトル下の状態：まだ自宅サーバーとペアリングしていない。 -->
+    <string name="sidebar_status_not_configured">まだ自宅サーバーに接続していません</string>
+    <!-- サイドバーでチャット一覧に戻る行。 -->
+    <string name="sidebar_chats">チャット</string>
+    <!-- サイドバーでストアを開く行。 -->
+    <string name="sidebar_store">ストア</string>
+    <!-- サイドバーで開けるアプリの上にある小見出し。 -->
+    <string name="sidebar_my_apps">マイアプリ</string>
+    <!-- マイアプリの右側でアプリ一覧を開くリンク。 -->
+    <string name="sidebar_all">すべて</string>
+    <!-- アプリが8個を超えるときのサイドバーの最後の行。アプリ一覧を開く。 -->
+    <string name="sidebar_all_apps">すべてのアプリ</string>
+    <!-- サイドバー下部で設定を開く丸いボタン。 -->
+    <string name="sidebar_settings">設定</string>
+    <!-- サイドバー下部で新しいチャットを始めるアクセント色のカプセル。 -->
+    <string name="sidebar_new_chat">新しいチャット</string>
+    <!-- ストアの行にある赤い数字バッジの読み上げ：アップデートのあるアプリの数。 -->
+    <string name="sidebar_updates_badge">%1$d件のアップデートあり</string>
+    <!-- アプリの行にある赤い点の読み上げ：このアプリにアップデートがある。 -->
+    <string name="sidebar_updatable">アップデートあり</string>
+    <!-- アプリの行にある小さなピンの読み上げ：このアプリのページがナビゲーションバーに固定されている。 -->
+    <string name="sidebar_pinned">ナビゲーションバーに固定済み</string>
+    <!-- アップデートのあるアプリをまとめて更新する前のボトムシートのタイトル。 -->
+    <string name="store_update_all_title">%1$d個のアプリをアップデート</string>
+    <!-- そのシートですべてのアップデートを始めるボタン。 -->
+    <string name="store_update_all">すべてアップデート</string>
+    <!-- そのシートを開くツールバーのダウンロードアイコンの読み上げ。 -->
+    <string name="store_update_all_a11y">すべてアップデート、%1$d件</string>
+    <!-- 一行の注意：このアプリのアップデートは確認してから始まる。 -->
+    <string name="sidebar_needs_attention">対応が必要です</string>
+    <string name="launcher_badge_degraded">問題があります</string>
+    <string name="plugin_screenshot">スクリーンショット</string>
+    <string name="transfer_upload">アップロード</string>
+    <string name="transfer_download">ダウンロード</string>
+    <string name="bot_avatar_pick_state">%1$sの画像を変更</string>
 </resources>
