@@ -6,6 +6,7 @@ enum TabText {
     static var apps: String { String(localized: .launcherTitle) }
     static var settings: String { String(localized: .tabSettings) }
     static var bottomBar: String { String(localized: .tabBottomBar) }
+    static var bottomPanel: String { String(localized: .tabBottomPanel) }
     static var showLabels: String { String(localized: .tabShowLabels) }
     static var addMore: String { String(localized: .tabAddMore) }
     static var addToBar: String { String(localized: .tabAddToBar) }
@@ -34,6 +35,17 @@ enum TabText {
     static var done: String { String(localized: .commonDone) }
     static var start: String { String(localized: .tabStart) }
     static var failed: String { String(localized: .tabHasProblem) }
+    static var openPanel: String { String(localized: .panelOpen) }
+    static var addPanelPages: String { String(localized: .panelAddPages) }
+    static var editPanel: String { String(localized: .panelEdit) }
+    static var inPanel: String { String(localized: .panelInPanel) }
+    static var canAddToPanel: String { String(localized: .panelCanAdd) }
+    static var removePanelPage: String { String(localized: .panelRemove) }
+    static var panelURL: String { String(localized: .panelUrl) }
+    static var addPanelURL: String { String(localized: .panelAddUrl) }
+    static var pinToPanel: String { String(localized: .panelPin) }
+    static var panelBadURL: String { String(localized: .panelBadUrl) }
+    static var panelAttention: String { String(localized: .panelAttention) }
 
     static func stopped(_ title: String) -> String {
         String(localized: .tabStopped(title))

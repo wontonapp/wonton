@@ -5,6 +5,8 @@ struct TabPageStateView: View {
     let page: TabPage
     let session: TabWebSession
     let connected: Bool
+    /// 面板里的这一份：失败时多一个“从面板移除”（ADR-0052）。
+    let isPanel: Bool
     let details: () -> Void
     let remove: () -> Void
     @State private var startProblem: Problem?
@@ -52,19 +54,26 @@ struct TabPageStateView: View {
             failure(String(localized: .tabFailedTitle(page.title)), detail: reason) {
                 Button(TabText.details, action: details)
                 Button(TabText.retry, action: session.retry)
+                if isPanel { Button(TabText.removePanelPage, action: remove) }
             }
         case .pageRemoved:
-            failure(TabText.pageRemoved) { Button(TabText.unpin, action: remove) }
+            failure(TabText.pageRemoved) {
+                Button(isPanel ? TabText.removePanelPage : TabText.unpin, action: remove)
+            }
         case let .loadFailed(reason, status):
             if reason == .transport, !connected {
                 if !session.ready { skeleton() }
             } else {
                 failure(TabText.pageFailed, detail: status.map { "HTTP \($0)" }, next: reason.label) {
                     Button(TabText.retry, action: session.retry)
+                    if isPanel { Button(TabText.removePanelPage, action: remove) }
                 }
             }
         case .unknown:
-            failure(TabText.unknown) { Button(TabText.details, action: details) }
+            failure(TabText.unknown) {
+                Button(TabText.details, action: details)
+                if isPanel { Button(TabText.removePanelPage, action: remove) }
+            }
         }
     }
 
@@ -93,6 +102,7 @@ struct TabPageStateView: View {
         .background(Color(colors.canvas))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title ?? TabText.loading)
+        .allowsHitTesting(false)
     }
 
     private func failure<Buttons: View>(

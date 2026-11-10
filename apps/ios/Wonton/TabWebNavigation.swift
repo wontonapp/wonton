@@ -11,7 +11,7 @@ extension TabWebSession: WKNavigationDelegate {
         components.host = origin.host
         if origin.port > 0 { components.port = origin.port }
         let result = core.tabHandleMessage(
-            page: PlacedTab.bar(tab: tab), isMainFrame: message.frameInfo.isMainFrame,
+            page: placed, isMainFrame: message.frameInfo.isMainFrame,
             origin: components.string ?? "", message: body, environment: input.environment
         )
         if result.initialized { ready = true }
@@ -38,7 +38,7 @@ extension TabWebSession: WKNavigationDelegate {
         recoveryURL = nil
         canGoBack = webView.canGoBack
         do {
-            try core.dispatch(action: .tabLoadSucceeded(page: .bar(tab: tab)))
+            try core.dispatch(action: .tabLoadSucceeded(page: placed))
             try updateContext(webView, force: true)
         } catch { problem = error.problem }
         #if DEBUG
@@ -116,7 +116,7 @@ extension TabWebSession: WKNavigationDelegate {
         ready = hasContent
         if recoveryURL == nil { recoveryURL = navigationURL }
         do {
-            try core.dispatch(action: .tabLoadFailed(page: .bar(tab: tab), status: status))
+            try core.dispatch(action: .tabLoadFailed(page: placed, status: status))
         } catch { problem = error.problem }
     }
 }
