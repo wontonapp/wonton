@@ -132,7 +132,7 @@ jobs:
         with:
           # 和 rust.yml 的测试分片、rust-docker.yml 同一个 key：编出来的是同一套测试二进制。
           shared-key: rust-test
-          save-if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - name: 编测试二进制
         # nextest 不跑，只让依赖和测试二进制进 target/，PR 恢复完直接开跑。
         run: cargo nextest run --workspace --locked --no-run
@@ -155,7 +155,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: rust-clippy
-          save-if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - name: Clippy
         # 和 rust.yml 的 Clippy 作业一条命令，编出来的东西一样。
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -181,7 +181,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: rust-ios
-          save-if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - name: 编译 Rust 核心
         # 和 ios.yml 的模拟器构建同一步（绑定和 XCFramework 也一起生成，很快）。
         run: apps/ios/scripts/build-core.sh debug
@@ -210,7 +210,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: rust-android
-          save-if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
       - name: 编译 Rust 核心
         # 走 android.yml 同一条 Gradle 任务，ABI、minSdk 和那边一致；不跑 detekt 和单元测试。
