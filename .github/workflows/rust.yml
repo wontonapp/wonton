@@ -32,7 +32,8 @@ env:
 permissions:
   contents: read
 
-# 缓存只在 main 上存（定时运行），PR 恢复不写：PR 各自的分支都会写满 10 GB 的 actions 缓存。
+# 缓存只在 main 上存，PR 恢复不写：PR 各自的分支都会写满 10 GB 的 actions 缓存。main 上的条目不靠这个
+# 工作流（main 上只有 push，这里不跑），由 cache.yml 在 push 到 main 时用同样的 key 编一遍存下来。
 # 同一族作业用同一个 shared-key：三个测试分片编的是同一套测试二进制，谁先存都一样。
 jobs:
   changes:
@@ -103,7 +104,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: rust-clippy
-          save-if: github.ref == 'refs/heads/main'
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - name: Clippy（含函数不超过 100 行）
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
@@ -142,7 +143,7 @@ jobs:
         if: env.RUN == 'true'
         with:
           shared-key: rust-test
-          save-if: github.ref == 'refs/heads/main'
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - name: 测试（按名字的哈希分三片并行）
         if: env.RUN == 'true'
         shell: bash

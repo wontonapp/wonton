@@ -44,6 +44,8 @@ jobs:
             echo "rust=$mirror/rust:1.99.1-slim-trixie"
             echo "debian=$mirror/debian:trixie-slim"
             echo "compose=$mirror/docker:29.9.2-cli"
+            # 层缓存读 main-image 写的那份；发版不写，免得把发版的层塞进 main 的缓存。
+            echo "cache=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:core-image"
           } >> "$GITHUB_OUTPUT"
       - id: push
         uses: ./.github/actions/push-image
@@ -57,6 +59,7 @@ jobs:
             DEBIAN_IMAGE=${{ steps.meta.outputs.debian }}
             COMPOSE_IMAGE=${{ steps.meta.outputs.compose }}
           image: ${{ steps.meta.outputs.image }}
+          cache-ref: ${{ steps.meta.outputs.cache }}
           push-by-digest: "true"
       - name: 记下本架构的 digest
         env:
@@ -122,6 +125,8 @@ jobs:
             echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-acp-bridge"
             echo "rust=$mirror/rust:1.99.1-slim-trixie"
             echo "debian=$mirror/debian:trixie-slim"
+            # 层缓存读 main 上存的那份（cache.yml 的桥镜像作业），发版不写。
+            echo "cache=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:acp-bridge"
           } >> "$GITHUB_OUTPUT"
       - id: push
         uses: ./.github/actions/push-image
@@ -133,6 +138,7 @@ jobs:
             RUST_IMAGE=${{ steps.meta.outputs.rust }}
             DEBIAN_IMAGE=${{ steps.meta.outputs.debian }}
           image: ${{ steps.meta.outputs.image }}
+          cache-ref: ${{ steps.meta.outputs.cache }}
           push-by-digest: "true"
       - name: 记下本架构的 digest
         env:
