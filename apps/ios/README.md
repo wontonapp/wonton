@@ -45,7 +45,8 @@ WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期�
 
 快捷指令、Siri 和 Spotlight 的入口在 `Wonton/Intents/`，共用 App 启动时创建的核心和导航模型。
 `AppNavigation` 与 `MainView+Navigation` 接收系统链接；链接编解码遵循 [ADR-0041](../../docs/adr/0041-app-links-and-shortcuts.md)。
-未配对或引导未完成时忽略导航链接，带文字的“问 Bot”明确向 Siri 报错，不发送消息；扫码和粘贴配对码仍走 `PairingView`。
+未配对或引导未完成时忽略导航链接，带文字的“问 Bot”明确向 Siri 报错，不发送消息；配对链接的确认边界见
+[ADR-0009](../../docs/adr/0009-identity-pairing-sso.md#接口扫码配对m1)。扫码和粘贴仍走 `PairingView`。
 已配对设备冷启动时先等核心恢复引导状态，再判断是否导航；“问 Bot”在核心接受操作后打开私聊，
 建房、接受邀请和发送在核心后台执行，后续失败由聊天页按原有错误类别显示。
 
@@ -113,5 +114,15 @@ swiftlint lint --strict --config apps/ios/.swiftlint.yml apps/ios
 ```
 
 函数体超过 100 行即报错。CI 见 `.github/workflows/ios.yml`。
+
+配对链接回归在 `WontonTests/PairingLinkTests`（真实核心，临时数据目录）和 `WontonUITests/PairingLinkUITests`。
+界面用例通过 Debug 环境变量 `WONTON_DEV_DATA_SUFFIX` 使用独立的 App 数据目录，不读取或改动其他用例的配对信息。
+
+```bash
+xcodebuild test -project apps/ios/Wonton.xcodeproj -scheme Wonton \
+  -destination 'platform=iOS Simulator,name=<模拟器名称>' \
+  -only-testing:WontonTests/PairingLinkTests \
+  -only-testing:WontonUITests/PairingLinkUITests CODE_SIGNING_ALLOWED=NO
+```
 
 Bundle ID `app.wonton.ios` 是临时的，上架前确定正式的。

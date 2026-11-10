@@ -1,13 +1,13 @@
 import SwiftUI
-import UIKit
 import WontonClient
 
 extension MainView {
     func receiveAppURL(_ url: URL) {
-        // `wonton://pair?...`：配对码的深链接（状态页"在 App 里打开"、测试经 simctl openurl）。
-        // 只在还没配对、也不在"添加服务器"流程里认；配上后核心自会切回主界面。
-        if url.scheme == "wonton", url.host == "pair", !isPaired, !home.servers.adding {
-            home.pair(code: url.absoluteString, deviceName: UIDevice.current.name)
+        if home.prefillPairing(from: url) {
+            showsSettings = false
+            showsTabSettings = false
+            tabs.send(.closeTabOverlay)
+            tabs.select(.apps)
             return
         }
         navigation.receive(url)
