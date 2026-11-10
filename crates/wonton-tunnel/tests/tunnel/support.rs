@@ -18,7 +18,9 @@ use tokio::{
     net::{TcpListener, TcpStream},
     task::JoinHandle,
 };
-use wonton_tunnel::{Allowlist, LocalProxy, ProxyAccess, TunnelClient, TunnelServer, TunnelStatus};
+use wonton_tunnel::{
+    Allowlist, LocalProxy, ProxyAccess, TunnelClient, TunnelServer, TunnelStatus, off_workers,
+};
 
 /// 等待异步事件的上限。正常情况下都在几百毫秒内完成，超过即视为失败。
 pub const WAIT: Duration = Duration::from_secs(15);
@@ -178,7 +180,8 @@ pub async fn endpoint_on(addr: SocketAddr, key: SecretKey, timeouts: Timeouts) -
                 .build();
             builder = builder.transport_config(config);
         }
-        match builder.bind().await {
+        // iroh 的 `bind` 在 await 里同步跑整段网卡枚举（见 `off_workers`），别占住调用方的 worker。
+        match off_workers(move || builder.bind()).await.unwrap() {
             Ok(endpoint) => return endpoint,
             // 同一端口重建：旧 endpoint 的套接字可能还没释放，或者刚空出来就被并行的测试 bind(0) 拿走。
             Err(error) if port_in_use(&error) => {
