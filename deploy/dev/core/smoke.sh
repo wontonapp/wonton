@@ -359,6 +359,16 @@ probe="$(docker run --rm --network "container:$core" "$echo_image" probe --homes
   --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" --room "$home_room" \
   --bot "$bot_user" 2>&1)" || fail "加密收发失败：$probe"
 ok "经隧道发出加密消息，收到 Bot 的加密回声"
+# `/delay` 到点才回：记时间，早回就是没延迟。
+jwt="$(t -X POST "$core_url/_wonton/matrix/login-token" | json token)"
+started="$(date +%s)"
+delay_probe="$(docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
+  --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" --room "$home_room" --bot "$bot_user" \
+  --reply any --match "回声：等一会儿" --text "/delay 5 等一会儿" --wait 30 2>&1)" ||
+  fail "延迟回声失败：$delay_probe"
+elapsed=$(( $(date +%s) - started ))
+((elapsed >= 5)) || fail "回声没有延迟，${elapsed} 秒就回了"
+ok "/delay 5 的回声 ${elapsed} 秒后才到"
 report="$("$dev" uninstall agent.echo)"
 expect "卸载时吊销 Bot 的设备" "$(json bots.0.devices_removed <<<"$report") $(json bots.0.deactivated <<<"$report")" "1 false"
 expect "Bot 的令牌立即失效" \
