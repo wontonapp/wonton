@@ -9,7 +9,7 @@ use wonton_protocol::{
     FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
     OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail, PluginImage,
     PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
-    SettingsViewModel, StoreItem, TabRef, TabsViewModel, TransfersViewModel,
+    SettingsViewModel, StoreItem, TabsViewModel, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
