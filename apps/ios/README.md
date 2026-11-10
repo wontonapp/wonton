@@ -16,7 +16,7 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
   默认名由壳按核心给的固定编号和 App 语言显示，自定义名字原样显示；改名预填显示名，只在主人保存时写回（ADR-0043）。
 - `WontonClient/`：Rust 核心的 Swift 包。`build/WontonClientFFI.xcframework` 和
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
-  等几行胶水代码。
+  等几行胶水代码。Rust 静态库依赖的系统框架由包声明，App 和测试目标不各自补链接选项。
 - `project.yml`：XcodeGen 工程描述。`Wonton.xcodeproj` 和 `Wonton/Info.plist` 由它生成，不提交。
 - `scripts/build-core.sh`：编译 Rust 核心、生成 XCFramework 和 Swift 绑定。
 
