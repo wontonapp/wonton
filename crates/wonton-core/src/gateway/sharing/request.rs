@@ -101,13 +101,10 @@ async fn plugin(gateway: &Gateway, slug: &str, mut req: Request) -> Response {
             Ok(response) => response,
             Err(error) => return error.response(route.id.as_str(), &langs, format),
         };
-    // Only accepted upstream access counts, never authentication or listing.
-    if sharing
-        .friends
-        .record_opened(&peer.user_id, now_ms())
-        .is_err()
-    {
-        return refused(GatewayRefusal::ShareRevoked, &langs, format);
+    // Only accepted upstream access counts, never authentication or listing. 记不上只是“最近打开过”的
+    // 流水账（成百上千个资源各自 fsync 一次），上游已经处理完的请求不能因此被报成授权失效。
+    if let Err(error) = sharing.friends.record_opened(&peer.user_id, now_ms()) {
+        tracing::warn!(user = %peer.user_id, %error, "记录好友打开时间失败，照常返回上游响应");
     }
     isolation::sanitize_set_cookies(response.headers_mut());
     if let Some(auth) = &route.proxy {

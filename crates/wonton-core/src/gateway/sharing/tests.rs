@@ -7,6 +7,7 @@ use crate::plugin::manifest::PluginId;
 use crate::{friends::Friends, share_identity::IdentityVerifier, shares::Shares};
 use axum::{body::Body, extract::Request};
 use hyper::{Method, StatusCode};
+use std::os::unix::fs::PermissionsExt;
 use std::{sync::Arc, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tower::ServiceExt;
@@ -333,4 +334,25 @@ async fn revocation_resets_an_http_response_body_after_its_headers_were_forwarde
     f.sharing.shares.revoke(&grant.id).unwrap();
     closed(client).await;
     hold.notify_one();
+}
+
+#[tokio::test]
+async fn a_failed_open_record_still_returns_the_upstream_response() {
+    // 记“最近打开过”只是一条流水账；写盘失败（磁盘满、只读）时上游已经处理完的请求
+    // 不能被报成 share_revoked，恢复后下一次照常记上。
+    let f = Fixture::new().await;
+    f.grant(None);
+    std::fs::set_permissions(&f.h.data_dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let reply = f.get(&format!("app-whoami.{CORE}"), "/").await;
+    std::fs::set_permissions(&f.h.data_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
+    let opened = |f: &Fixture| {
+        f.sharing.friends.snapshot().friends[0]
+            .last_opened_share_at_ms
+            .unwrap_or_default()
+    };
+    let before = opened(&f);
+    let reply = f.get(&format!("app-whoami.{CORE}"), "/").await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert!(opened(&f) > before, "恢复后要记上");
 }
