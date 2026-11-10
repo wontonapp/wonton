@@ -4,6 +4,8 @@
 #   <路径> | <原因> | <到期日 YYYY-MM-DD>
 # 到期后例外失效，CI 重新失败。
 # vendor/ 下是原样导入的第三方源码（见 vendor/README.md），不按我们的上限拆。
+#
+# 给了参数就只查这些文件（`lefthook.yml` 的 pre-commit 传暂存的文件），不给就查全部跟踪的源码文件。
 set -euo pipefail
 
 limit="${WONTON_MAX_FILE_LINES:-800}"
@@ -40,15 +42,26 @@ is_allowed() {
   return 1
 }
 
+emit_files() {
+  if (($# > 0)); then
+    printf '%s\0' "$@"
+  else
+    git ls-files -z -- \
+      '*.rs' '*.swift' '*.kt' '*.kts' '*.ts' '*.tsx' '*.js' '*.mjs' '*.py' '*.go' '*.sh' \
+      ':(exclude)**/generated/**' ':(exclude)vendor/**'
+  fi
+}
+
 while IFS= read -r -d '' file; do
+  # 参数里可能有已删除的文件；vendor 和生成的文件在两种模式下都跳过。
+  [[ -f "$file" ]] || continue
+  case "$file" in vendor/* | generated/* | */generated/*) continue ;; esac
   lines="$(wc -l <"$file" | tr -d ' ')"
   if (( lines > limit )) && ! is_allowed "$file"; then
     echo "超过 ${limit} 行：$file（${lines} 行）" >&2
     status=1
   fi
-done < <(git ls-files -z -- \
-  '*.rs' '*.swift' '*.kt' '*.kts' '*.ts' '*.tsx' '*.js' '*.mjs' '*.py' '*.go' '*.sh' \
-  ':(exclude)**/generated/**' ':(exclude)vendor/**')
+done < <(emit_files "$@")
 
 if (( status == 0 )); then
   echo "文件行数检查通过（上限 ${limit} 行）"

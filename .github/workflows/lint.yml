@@ -40,9 +40,21 @@ jobs:
           else
             echo "source=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: 源码文件不超过 800 行
+      - name: 装 lefthook（版本和 sha256 固定）
         if: steps.changes.outputs.source == 'true'
-        run: bash scripts/check-file-size.sh
+        run: |
+          curl -fsSL --retry 3 -o lefthook.gz \
+            https://github.com/evilmartians/lefthook/releases/download/v2.2.2/lefthook_2.2.2_Linux_x86_64.gz
+          echo "2b8d7fd52771f26d7a50260ef10cd6fe704d66f60102e566362b84da09884ab7  lefthook.gz" | sha256sum -c -
+          gunzip lefthook.gz
+          chmod +x lefthook
+      # 行数门禁、界面文字：和本地提交前的检查是同一份 lefthook.yml，这里查全部文件。
+      # 格式不在这里查：rustfmt 会直接把文件改对，挡不住没格式化的提交；它由 rust 工作流的“格式”作业（cargo fmt --check）管。
+      - name: lefthook 的 pre-commit（行数门禁、界面文字）
+        if: steps.changes.outputs.source == 'true'
+        env:
+          LEFTHOOK_EXCLUDE: rustfmt
+        run: ./lefthook run pre-commit --all-files
       - name: 界面文字检查自己的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -s scripts/ui_text -t scripts
@@ -52,9 +64,6 @@ jobs:
       - name: dev.sh 实例标签的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 deploy/dev/core/instance-label_test.py
-      - name: 界面文字不写死，四种语言的字符串目录完整
-        if: steps.changes.outputs.source == 'true'
-        run: python3 scripts/check-ui-text.py
       - name: 开发栈端口只绑 127.0.0.1
         if: steps.changes.outputs.source == 'true'
         run: python3 scripts/check-dev-compose-ports.py
