@@ -441,7 +441,6 @@ pub struct RequirementLine {
     pub problem: Option<String>,
 }
 
-
 /// `PUT /_wonton/api/plugins/{id}/ask-every-update` 的请求体，响应是更新后的 [`PluginDetail`]。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
