@@ -19,8 +19,7 @@ pub fn render(
     let mut compose: Value = serde_saphyr::from_str(base)?;
     compose["services"]["tuwunel"]["volumes"] = json!([
         "tuwunel:/var/lib/tuwunel",
-        "${WONTON_INSTALL_DIR}/secrets:/etc/tuwunel:ro",
-        "${WONTON_INSTALL_DIR}/fed/config.toml:/etc/wonton-fed.toml:ro"
+        "${WONTON_INSTALL_DIR}/secrets/tuwunel:/etc/tuwunel:ro"
     ]);
     let Some(settings) = settings else {
         return Ok(serde_json::to_string_pretty(&compose)?);
@@ -170,4 +169,78 @@ pub fn prepare_permissions(dir: &Path) -> anyhow::Result<()> {
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entry_settings::EntrySettings;
+    use serde_json::Value;
+
+    fn settings() -> EntrySettings {
+        EntrySettings {
+            domain: "home.example".to_owned(),
+            service_url: None,
+            service_ca: None,
+            relay_ca: None,
+            registration: None,
+            acme_directory: None,
+            acme_ca: None,
+            acme_resolvers: Vec::new(),
+            acme_email: None,
+            acme_accept_terms: false,
+            acme_network: "bridge".to_owned(),
+            dns_provider: None,
+            dns_env_file: None,
+            external_certificate: false,
+        }
+    }
+
+    fn tuwenel(rendered: &str) -> Value {
+        serde_json::from_str::<Value>(rendered).unwrap()["services"]["tuwunel"].clone()
+    }
+
+    /// 联邦容器只该看见自己的文件：`secrets/` 根上的 `matrix-jwt.pem`（能签登录令牌）和
+    /// `hydra-secret`/`hydra.env`（`SECRETS_SYSTEM`）都不该挂进去。
+    #[test]
+    fn only_tuwunel_files_are_mounted_into_the_federation_container() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
+        std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
+        for rendered in [
+            render(crate::install::COMPOSE, None, dir.path()).unwrap(),
+            render(crate::install::COMPOSE, Some(&settings()), dir.path()).unwrap(),
+        ] {
+            let tuwenel = tuwenel(&rendered);
+            let sources: Vec<String> = tuwenel["volumes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|volume| {
+                    let volume = volume.as_str().unwrap();
+                    volume.split(':').next().unwrap().to_owned()
+                })
+                .collect();
+            assert_eq!(
+                sources,
+                ["tuwunel", "${WONTON_INSTALL_DIR}/secrets/tuwunel"],
+                "{sources:?}"
+            );
+            for source in &sources {
+                assert!(!source.ends_with("/secrets"), "{source} 是 secrets 整目录");
+                assert!(!source.contains("matrix-jwt"), "{source} 是核心私钥");
+                assert!(!source.contains("hydra"), "{source} 是 Hydra 的主密钥");
+            }
+            assert_eq!(
+                tuwenel["command"],
+                json!([
+                    "-c",
+                    "/etc/tuwunel/tuwunel.toml",
+                    "-c",
+                    "/etc/tuwunel/wonton-fed.toml"
+                ]),
+                "第二份配置要落在挂进来的目录里"
+            );
+        }
+    }
 }

@@ -78,7 +78,7 @@ def verify_entry(home):
     assert keys["server_name"] == home.name and keys["verify_keys"] and keys["signatures"][home.name]
     cert = run("openssl", "x509", "-in", home.install / "entry/certs/site.pem", "-noout", "-ext", "subjectAltName").stdout
     assert "DNS:" + home.name in cert and "DNS:*." + home.name in cert
-    config = tomllib.loads((home.install / "secrets/tuwunel.toml").read_text())["global"]
+    config = tomllib.loads((home.install / "secrets/tuwunel/tuwunel.toml").read_text())["global"]
     assert not config["allow_invalid_tls_certificates"]
     assert "allowed_remote_server_names_experimental" not in config
     status, _ = curl(home.cloud["network"], "https://" + home.name + "/_wonton/api/devices",
@@ -114,7 +114,7 @@ def pair(a, b):
             return any(row["server_name"] == other.name and row["status"] == "connected" for row in rows)
         wait_for("paired iroh", connected)
         def scoped():
-            cfg = tomllib.loads((home.install / "fed/config.toml").read_text())["global"]
+            cfg = tomllib.loads((home.install / "secrets/tuwunel/wonton-fed.toml").read_text())["global"]
             return isinstance(cfg["proxy"], dict) and cfg["proxy"]["by_domain"][0]["include"] == [other.name]
         wait_for("paired proxy hot reload", scoped)
     print("PASS real owner devices approve pairing; only paired names use iroh", flush=True)

@@ -49,6 +49,12 @@ pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
     fs::create_dir_all(&secrets).with_context(|| format!("建立 {}", secrets.display()))?;
     fs::set_permissions(&secrets, fs::Permissions::from_mode(0o700))
         .with_context(|| format!("设置 {} 的权限", secrets.display()))?;
+    // Tuwunel 只挂这个子目录：同目录下的 `matrix-jwt.pem`、`hydra-secret` 是核心和 Hydra 的东西，
+    // 联邦容器读不到才对（ADR-0051）。
+    let tuwenel = secrets.join("tuwunel");
+    fs::create_dir_all(&tuwenel).with_context(|| format!("建立 {}", tuwenel.display()))?;
+    fs::set_permissions(&tuwenel, fs::Permissions::from_mode(0o700))
+        .with_context(|| format!("设置 {} 的权限", tuwenel.display()))?;
     let mut report = Report::default();
 
     let key_path = secrets.join("matrix-jwt.pem");
@@ -60,16 +66,24 @@ pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
         &format!("SECRETS_SYSTEM={hydra}\n"),
     )?;
 
-    let tuwunel = secrets.join("tuwunel.toml");
-    let server_name = server_name(&secrets, &tuwunel, requested, &mut report)?;
+    let config = tuwenel.join("tuwunel.toml");
+    let server_name = server_name(&secrets, &config, requested, &mut report)?;
     if federation_config::is_private(&server_name) {
-        tls_cert(&secrets, &server_name, &mut report)?;
+        tls_cert(&tuwenel, &server_name, &mut report)?;
     }
     write_private(
-        &tuwunel,
+        &config,
         &tuwunel_config(&server_name, &registration, &public_key),
     )?;
-    fed_files(dir, &server_name, &mut report)?;
+    fed_files(&tuwenel, &server_name, &mut report)?;
+    // 这份 PR 之前配置和名单在 `secrets/` 根和 `fed/` 下；现在都不挂了，删掉免得两处内容分叉。
+    for stale in [secrets.join("tuwunel.toml"), dir.join("fed/config.toml")] {
+        match fs::remove_file(&stale) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e).with_context(|| format!("删除 {}", stale.display())),
+        }
+    }
     let settings = crate::entry_settings::EntrySettings::load(dir)?;
     write_private(
         &dir.join("compose.yaml"),
@@ -83,7 +97,7 @@ pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
 /// 换名字要重装 Matrix 的数据。都没有时用指定的，没指定就随机生成。
 fn server_name(
     secrets: &Path,
-    tuwunel: &Path,
+    tuwenel: &Path,
     requested: Option<&str>,
     report: &mut Report,
 ) -> anyhow::Result<String> {
@@ -93,7 +107,11 @@ fn server_name(
             report.kept.push(record.clone());
             Some(text.trim().to_owned())
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => read_server_name(tuwunel)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => match read_server_name(tuwenel)? {
+            Some(name) => Some(name),
+            // 这份 PR 之前装在 `secrets/tuwunel.toml`，升级时照旧认它。
+            None => read_server_name(&secrets.join("tuwunel.toml"))?,
+        },
         Err(e) => return Err(e).with_context(|| format!("读取 {}", record.display())),
     };
     let name = match (existing, requested) {
@@ -262,11 +280,21 @@ key = """
     )
 }
 
-/// 为本机服务器名生成自签证书，放进 `secrets/`（0600）。已有的成对保留：重装、升级不换。
-fn tls_cert(secrets: &Path, server_name: &str, report: &mut Report) -> anyhow::Result<()> {
-    let cert = secrets.join("tuwunel-tls.crt");
-    let key = secrets.join("tuwunel-tls.key");
+/// 为本机服务器名生成自签证书，放进 Tuwunel 的配置目录（0600）。已有的成对保留：重装、升级不换。
+/// 这份 PR 之前它和 `tuwunel.toml` 一起放在 `secrets/` 根上，升级时挪进子目录。
+fn tls_cert(tuwenel: &Path, server_name: &str, report: &mut Report) -> anyhow::Result<()> {
+    let cert = tuwenel.join("tuwunel-tls.crt");
+    let key = tuwenel.join("tuwunel-tls.key");
     if cert.exists() && key.exists() {
+        report.kept.push(cert);
+        report.kept.push(key);
+        return Ok(());
+    }
+    let old = tuwenel.parent().context("secrets 没有上级目录")?;
+    let (old_cert, old_key) = (old.join("tuwunel-tls.crt"), old.join("tuwunel-tls.key"));
+    if old_cert.exists() && old_key.exists() {
+        fs::rename(&old_cert, &cert)?;
+        fs::rename(&old_key, &key)?;
         report.kept.push(cert);
         report.kept.push(key);
         return Ok(());
@@ -280,21 +308,18 @@ fn tls_cert(secrets: &Path, server_name: &str, report: &mut Report) -> anyhow::R
     Ok(())
 }
 
-/// 联邦名单的初值（`fed/config.toml`，ADR-0050）。只在还没有时创建：第一次 `docker compose up` 把它挂进
-/// Tuwunel 需要文件已经存在，之后的内容由核心运行时原地重写（不换 inode——单文件绑定挂载钉住的是挂载时的
-/// inode，换了名字容器读到的还是旧文件）。
-fn fed_files(dir: &Path, server_name: &str, report: &mut Report) -> anyhow::Result<()> {
-    let fed = dir.join("fed");
-    fs::create_dir_all(&fed).with_context(|| format!("建立 {}", fed.display()))?;
-    let path = fed.join("config.toml");
+/// 联邦名单的初值（`secrets/tuwunel/wonton-fed.toml`，ADR-0050）。只在还没有时创建：第一次
+/// `docker compose up` 把它挂进 Tuwunel 需要文件已经存在，之后的内容由核心运行时原地重写（不换 inode——
+/// 容器可能还开着旧文件）。
+fn fed_files(tuwenel: &Path, server_name: &str, report: &mut Report) -> anyhow::Result<()> {
+    let path = tuwenel.join("wonton-fed.toml");
     if path.exists() {
         report.kept.push(path);
         return Ok(());
     }
-    write_file(
+    write_private(
         &path,
         &federation_config::config_toml(server_name, &BTreeSet::new(), &BTreeSet::new()),
-        0o644,
     )?;
     report.created.push(path);
     Ok(())
@@ -341,7 +366,7 @@ mod tests {
                 .contains(&dir.path().join("secrets/matrix-jwt.pem"))
         );
         let key = fs::read_to_string(dir.path().join("secrets/matrix-jwt.pem")).unwrap();
-        let config = fs::read_to_string(dir.path().join("secrets/tuwunel.toml")).unwrap();
+        let config = fs::read_to_string(dir.path().join("secrets/tuwunel/tuwunel.toml")).unwrap();
         let mode = |path: &str| {
             fs::metadata(dir.path().join(path))
                 .unwrap()
@@ -351,10 +376,19 @@ mod tests {
         };
         assert_eq!(mode("secrets"), 0o700);
         assert_eq!(mode("secrets/matrix-jwt.pem"), 0o600);
-        assert_eq!(mode("secrets/tuwunel.toml"), 0o600);
-        assert_eq!(mode("secrets/tuwunel-tls.crt"), 0o600, "联邦的自签证书");
-        assert_eq!(mode("secrets/tuwunel-tls.key"), 0o600, "联邦的证书私钥");
-        assert_eq!(mode("fed/config.toml"), 0o644);
+        assert_eq!(mode("secrets/tuwunel"), 0o700);
+        assert_eq!(mode("secrets/tuwunel/tuwunel.toml"), 0o600);
+        assert_eq!(
+            mode("secrets/tuwunel/tuwunel-tls.crt"),
+            0o600,
+            "联邦的自签证书"
+        );
+        assert_eq!(
+            mode("secrets/tuwunel/tuwunel-tls.key"),
+            0o600,
+            "联邦的证书私钥"
+        );
+        assert_eq!(mode("secrets/tuwunel/wonton-fed.toml"), 0o600);
         assert_eq!(mode("wonton"), 0o755, "主机上的 wonton 命令要能执行");
 
         let again = init(dir.path(), None).unwrap();
@@ -364,7 +398,7 @@ mod tests {
             key
         );
         assert_eq!(
-            fs::read_to_string(dir.path().join("secrets/tuwunel.toml")).unwrap(),
+            fs::read_to_string(dir.path().join("secrets/tuwunel/tuwunel.toml")).unwrap(),
             config
         );
         assert!(
@@ -404,18 +438,35 @@ mod tests {
     }
 
     /// 记录之前装的服务器：Tuwunel 的数据库里全是原来的名字，接着用它。
+    /// 这份 PR 之前 `tuwunel.toml` 和证书就放在 `secrets/` 根上，升级时既认旧位置也把文件挪进子目录。
     #[test]
-    fn an_install_from_before_the_record_keeps_its_name() {
+    fn an_install_from_before_the_record_keeps_its_name_and_moves_its_files() {
         let dir = tempfile::tempdir().unwrap();
-        init(dir.path(), Some("wonton.localhost")).unwrap();
-        fs::remove_file(dir.path().join("secrets/matrix-server-name")).unwrap();
+        // 私用名才有自签证书，三种文件都得跟着搬。
+        init(dir.path(), Some("home.wonton.internal")).unwrap();
+        let secrets = dir.path().join("secrets");
+        fs::remove_file(secrets.join("matrix-server-name")).unwrap();
+        for name in ["tuwunel.toml", "tuwunel-tls.crt", "tuwunel-tls.key"] {
+            fs::rename(secrets.join("tuwunel").join(name), secrets.join(name)).unwrap();
+        }
         let report = init(dir.path(), None).unwrap();
-        assert_eq!(recorded(dir.path()), "wonton.localhost");
+        assert_eq!(recorded(dir.path()), "home.wonton.internal");
         assert!(
             report
                 .created
                 .contains(&dir.path().join("secrets/matrix-server-name"))
         );
+        assert!(!secrets.join("tuwunel.toml").exists(), "旧位置的配置挪走");
+        for name in ["tuwunel.toml", "tuwunel-tls.crt", "tuwunel-tls.key"] {
+            assert!(
+                !secrets.join(name).exists(),
+                "旧位置的 {name} 还在，容器读不到"
+            );
+            assert!(
+                secrets.join("tuwunel").join(name).exists(),
+                "{name} 挪进子目录"
+            );
+        }
         assert!(init(dir.path(), Some("home.example")).is_err());
     }
 
@@ -425,7 +476,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         init(dir.path(), None).unwrap();
         let private = fs::read_to_string(dir.path().join("secrets/matrix-jwt.pem")).unwrap();
-        let config = fs::read_to_string(dir.path().join("secrets/tuwunel.toml")).unwrap();
+        let config = fs::read_to_string(dir.path().join("secrets/tuwunel/tuwunel.toml")).unwrap();
         let public = config
             .split("key = \"\"\"\n")
             .nth(1)

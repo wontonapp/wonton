@@ -204,14 +204,14 @@ impl Stack {
         crate::install::init(dir, None).unwrap();
         let secrets = dir.join("secrets");
         let read = |name: &str| std::fs::read_to_string(secrets.join(name)).unwrap();
-        let config = std::fs::read_to_string(dir.join("fed/config.toml")).unwrap();
+        let config = std::fs::read_to_string(dir.join("secrets/tuwunel/wonton-fed.toml")).unwrap();
         let proxy_host = if HOST_NETWORK {
             "127.0.0.1"
         } else {
             "host.docker.internal"
         };
         let config = config.replace(PROXY_ADDR, &format!("{proxy_host}:{proxy_port}"));
-        std::fs::write(dir.join("fed/config.toml"), config).unwrap();
+        std::fs::write(dir.join("secrets/tuwunel/wonton-fed.toml"), config).unwrap();
         let token = crate::secret::random_token();
         let mut stack = Self {
             dir: dir.to_owned(),
@@ -319,7 +319,7 @@ impl Stack {
     /// 把对方放进名单并热加载（核心配对成立时做的事）。
     fn allow(&self, peer: &str) {
         std::fs::write(
-            self.dir.join("fed/config.toml"),
+            self.dir.join("secrets/tuwunel/wonton-fed.toml"),
             super::config_toml(
                 &self.server_name,
                 &BTreeSet::from([peer.to_owned()]),

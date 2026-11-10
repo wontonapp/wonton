@@ -32,7 +32,7 @@ fn the_real_server_hot_reloads_the_allowlist_from_the_second_file() {
         let registration_secret = crate::secret::random_token();
 
         let dir = tempfile::tempdir().unwrap();
-        // 本机名单来自第二份配置文件（fed/config.toml 的角色），另两台把本机放进各自名单。
+        // 本机名单来自第二份配置文件（secrets/tuwunel/wonton-fed.toml 的角色），另两台把本机放进各自名单。
         std::fs::write(
             dir.path().join("self.toml"),
             cluster_config(&self_name, &[], &registration_secret),
@@ -307,11 +307,11 @@ impl Cluster {
         let fed_path = match fed {
             Some(fed) => {
                 let path = dir.path().join(fed);
-                let mount = format!("{}:/etc/wonton-fed.toml:ro", path.display());
+                let mount = format!("{}:/etc/tuwunel/wonton-fed.toml:ro", path.display());
                 docker_args.push("--volume".to_owned());
                 docker_args.push(mount);
                 command_args.push("-c".to_owned());
-                command_args.push("/etc/wonton-fed.toml".to_owned());
+                command_args.push("/etc/tuwunel/wonton-fed.toml".to_owned());
                 Some(path)
             }
             None => None,

@@ -37,7 +37,7 @@ const SERVICE_LABEL: &str = "com.docker.compose.service";
 /// 盯着配对名单，变了就把 Tuwunel 的配置跟上来。
 pub struct FederationConfig {
     engine: Engine,
-    /// 安装目录，`fed/config.toml` 由这里重写。
+    /// 安装目录，`secrets/tuwunel/wonton-fed.toml` 由这里重写。
     install_dir: PathBuf,
     /// 核心自己的容器名，用它找同一个 Compose 项目里的 Tuwunel。
     core_container: Option<String>,
@@ -111,7 +111,7 @@ impl FederationConfig {
             routing::validate_name(name)?;
         }
         self.write_in_place(
-            &self.install_dir.join("fed/config.toml"),
+            &self.install_dir.join("secrets/tuwunel/wonton-fed.toml"),
             &config_toml(&self.server_name, names, forbidden),
         )
         .await?;
