@@ -59,7 +59,7 @@ final class ChatPanelUITests: XCTestCase {
         }
         XCTAssertNotNil(room, "列表里没有房间（先装回声 Bot）")
         room?.tap()
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30), "没进房间")
+        XCTAssertTrue(composer(timeout: 30)?.exists == true, "没进房间")
 
         let panel = app.otherElements["chatPanel"]
         pullUpInRoom()
@@ -130,6 +130,20 @@ final class ChatPanelUITests: XCTestCase {
                 $0.isHittable && $0.frame.width > 250 && $0.frame.height > 50 && $0.frame.minY > 80
             }) {
                 return row
+            }
+            _ = app.wait(for: .runningForeground, timeout: 0.5)
+        }
+        return nil
+    }
+
+    /// 输入框：聊天列表本身也是滚动视图，等它出现才算进了房间。
+    private func composer(timeout: TimeInterval) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            for label in ["Message", "消息", "訊息", "メッセージ"] {
+                for view in app.textViews.allElementsBoundByIndex where view.label == label && view.exists {
+                    return view
+                }
             }
             _ = app.wait(for: .runningForeground, timeout: 0.5)
         }

@@ -631,6 +631,23 @@ async fn url_page_load_failure_is_upstream() {
     );
 
     rig.tabs
+        .dispatch(Action::TabLoadFailed {
+            page: PlacedTab::Panel {
+                scope: main_scope(),
+                tab: url.clone(),
+            },
+            status: Some(404),
+        })
+        .unwrap();
+    assert_eq!(
+        rig.tabs.view().panel[0].page.state,
+        TabState::LoadFailed {
+            failure: wonton_protocol::TabLoadFailure::Upstream,
+            status: Some(404)
+        }
+    );
+
+    rig.tabs
         .dispatch(Action::TabLoadSucceeded {
             page: PlacedTab::Panel {
                 scope: main_scope(),

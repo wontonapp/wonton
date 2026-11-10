@@ -258,13 +258,15 @@ extension ChatPanelHost {
     }
 
     @ViewBuilder private func pager(height: CGFloat, safe: EdgeInsets) -> some View {
-        // 网页框一直是整屏高：露出来的只有上面 chatOffset 那么多，其余都在聊天页底下或屏幕外。
-        let covered = level == .full ? safe.bottom : max(0, height - chatOffset(height))
+        // 网页框一直是整屏高：主面板被聊天页盖住的是聊天页顶边以下，房间是滑出屏幕的那段。
+        let covered = level == .full
+            ? safe.bottom
+            : max(0, height - chatOffset(height) - (edge == .top ? safe.top : 0))
         let top = max(0, safe.top - panelTop(height))
         ZStack(alignment: .bottom) {
             if items.isEmpty {
                 PanelEmpty(add: { editing = true })
-                    .frame(height: chatOffset(height))
+                    .frame(height: chatOffset(height) + (edge == .top ? safe.top : 0))
                     .frame(maxHeight: .infinity, alignment: .top)
             } else {
                 pages(height: height, insetTop: top, insetBottom: covered)
@@ -276,6 +278,7 @@ extension ChatPanelHost {
         .background(Color(colors.canvas))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("chatPanel")
+        .accessibilityHidden(level == .closed && drag == 0)
     }
 
     private var selectedIsURL: Bool {
