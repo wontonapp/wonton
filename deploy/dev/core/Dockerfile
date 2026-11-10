@@ -111,8 +111,12 @@ RUN mkdir -p /docs/user /unpacked \
 
 # 取包只在构建机架构上执行；交叉编译的目标二进制不能在这里运行。
 FROM build AS system-plugins
+# 构建机没有 IPv6 时，Rust 的解析先拿到 AAAA 会卡到超时。
+RUN echo 'precedence ::ffff:0:0/96 100' >> /etc/gai.conf
+# 连不上 github.com 的构建机换成镜像（dev.sh 默认给一个，发布构建用 github.com）。
+ARG WONTON_GITHUB_GIT=https://github.com
 COPY plugins/system.lock /system.lock
-RUN /usr/local/bin/wonton-core-native plugin fetch-locked /system.lock /plugins
+RUN WONTON_GITHUB_GIT=$WONTON_GITHUB_GIT /usr/local/bin/wonton-core-native plugin fetch-locked /system.lock /plugins
 
 FROM ${DEBIAN_IMAGE} AS core
 # 推送代理把推送发到设备给的地址，可能是 https，要系统的根证书；HTTP 客户端在核心启动时就加载它们。根证书从编译阶段

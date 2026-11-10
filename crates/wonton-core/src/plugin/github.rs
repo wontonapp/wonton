@@ -72,7 +72,8 @@ impl GitHub {
         let client = client(proxy).build().expect("GitHub 客户端的配置是固定的");
         Self {
             client,
-            git: "https://github.com".to_owned(),
+            git: std::env::var("WONTON_GITHUB_GIT")
+                .unwrap_or_else(|_| "https://github.com".to_owned()),
             raw: "https://raw.githubusercontent.com".to_owned(),
             api: "https://api.github.com".to_owned(),
         }

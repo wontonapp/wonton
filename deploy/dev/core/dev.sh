@@ -213,7 +213,13 @@ build_image() {
     for var in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy; do
       flags+=(--build-arg "$var=$WONTON_DEV_BUILD_PROXY")
     done
+  else
+    local var
+    for var in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy; do
+      flags+=(--build-arg "$var=")
+    done
   fi
+  flags+=(--build-arg "WONTON_GITHUB_GIT=${WONTON_DEV_GITHUB_GIT:-https://ghfast.top/https://github.com}")
   if [[ -n "${WONTON_DEV_BUILD_JOBS:-}" ]]; then
     flags+=(--build-arg "CARGO_BUILD_JOBS=$WONTON_DEV_BUILD_JOBS")
   fi
@@ -676,12 +682,8 @@ case "${1:-}" in
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
     export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
     mkdir -p "$here/.data" && printf '%s' "$WONTON_DEV_PORT" > "$here/.data/dev-port"
-    if [[ -n "${WONTON_DEV_BUILD_PROXY:-}" ]]; then
-      build_image -q --target dev --build-arg WONTON_BUILD_COMMIT -t "wonton-core:${WONTON_CORE_IMAGE_TAG:-dev}" -f "$here/Dockerfile" "$repo" >/dev/null
-      compose up -d --wait
-    else
-      compose up -d --build --wait
-    fi
+    build_image -q --target dev --build-arg WONTON_BUILD_COMMIT -t "wonton-core:${WONTON_CORE_IMAGE_TAG:-dev}" -f "$here/Dockerfile" "$repo" >/dev/null
+    compose up -d --wait
     fill_dev_profile
     echo "核心已就绪：$base_url（提交 $WONTON_BUILD_COMMIT，主人令牌：$0 token）"
     ;;
