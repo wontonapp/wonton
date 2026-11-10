@@ -2,6 +2,7 @@
 //! 在本机解密。推送本身只带房间和事件 ID，正文只在这里解密。
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedTimelineEvent;
 use matrix_sdk::ruma::{
@@ -15,13 +16,18 @@ use matrix_sdk::ruma::{
 };
 use matrix_sdk::{Client, sync::Notification as SdkNotification};
 use matrix_sdk_ui::notification_client::{
-    NotificationClient, NotificationEvent, NotificationItem, NotificationProcessSetup,
-    NotificationStatus, RawNotificationEvent,
+    NotificationClient, NotificationClientTimeouts, NotificationEvent, NotificationItem,
+    NotificationProcessSetup, NotificationStatus, RawNotificationEvent,
 };
 use matrix_sdk_ui::sync_service::SyncService;
 use serde_json::{Map, Value};
 
 use crate::{Error, MatrixSession, MessageBody, Result};
+
+/// 保持连接的后台通知等房间密钥的上限。App 在后台没人等这几秒，密钥在同步被压住时常迟到十几秒；
+/// SDK 默认 6 秒到点就交回解不开的消息，通知里只剩一句正文缺失。推送路径不放宽：那边有系统的后台时限，
+/// 调用方另有 15 秒兜底。
+const BACKGROUND_KEY_WAIT: Duration = Duration::from_secs(15);
 
 /// 本设备的 HTTP pusher。`Debug` 不输出 pushkey：它兼作家里推送代理的凭据。
 #[derive(Clone)]
@@ -112,7 +118,7 @@ impl MatrixSession {
         room_id: &RoomId,
         event_id: &EventId,
     ) -> Result<Option<Notification>> {
-        self.fetcher().notification(room_id, event_id).await
+        self.fetcher().notification(room_id, event_id, None).await
     }
 
     /// 能取回并解密通知的那部分会话状态（client 和同步服务），Clone，matrix-sdk 的通知回调里要用。
@@ -158,17 +164,28 @@ pub(crate) struct NotificationFetcher {
 }
 
 impl NotificationFetcher {
-    /// 同 [`MatrixSession::notification`]：取回那条消息并在本机解密。
+    /// 同 [`MatrixSession::notification`]：取回那条消息并在本机解密。`key_wait` 有值时覆盖 SDK 缺密钥时的
+    /// 等待上限（默认 6 秒），见 [`BACKGROUND_KEY_WAIT`]。
     async fn notification(
         &self,
         room_id: &RoomId,
         event_id: &EventId,
+        key_wait: Option<Duration>,
     ) -> Result<Option<Notification>> {
         // 和 App 同一个进程（Android 上推送唤醒的就是 App 的进程）：和正在跑的同步共用加密同步，不另起一个。
         let setup = NotificationProcessSetup::SingleProcess {
             sync_service: self.sync.clone(),
         };
         let client = NotificationClient::new(self.client.clone(), setup).await?;
+        let client = match key_wait {
+            Some(wait) => client.with_timeouts(NotificationClientTimeouts {
+                decryption_deadline: wait,
+                // 单进程里加密同步由主同步跑，这个值实际用不上；按默认的比例跟着放大。
+                encryption_sync_poll_timeout: wait / 2,
+                ..Default::default()
+            }),
+            None => client,
+        };
         match client.get_notification(room_id, event_id).await? {
             NotificationStatus::Event(item) => {
                 // 两个人的房间按一对一显示，同推送规则（`room_member_count == 2`）：刚加入的私聊，`m.direct` 可能
@@ -202,7 +219,10 @@ impl NotificationFetcher {
             return;
         };
         let event_id = event.event_id().to_owned();
-        match self.notification(&room_id, &event_id).await {
+        match self
+            .notification(&room_id, &event_id, Some(BACKGROUND_KEY_WAIT))
+            .await
+        {
             Ok(Some(message)) => on_notification(BackgroundNotification {
                 room_id,
                 event_id,
