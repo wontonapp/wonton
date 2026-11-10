@@ -737,3 +737,57 @@ fn a_file_system_out_of_inodes_has_no_room() {
     assert!(!out_of_inodes(100, 1));
     assert!(!out_of_inodes(0, 0), "btrfs 不报 inode 数");
 }
+
+struct CrossVolume;
+
+impl CrossVolume {
+    fn on() -> Self {
+        crate::files::share_fs::tests::CROSS_VOLUME
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        Self
+    }
+}
+
+impl Drop for CrossVolume {
+    fn drop(&mut self) {
+        crate::files::share_fs::tests::CROSS_VOLUME
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// 链接在名字写进待完成记录之后才失败：临时文件删掉，记下的 inode 不能留（跨卷时会被别的文件复用）。
+#[tokio::test]
+async fn a_failed_placement_forgets_the_temporary_inode() {
+    let f = Fixture::new();
+    let _volume = CrossVolume::on();
+    let id = f
+        .files
+        .create_upload(new_upload(5), &any_langs())
+        .await
+        .unwrap();
+    fs::write(f.uploads_dir().join(id.as_str()), "hello").unwrap();
+    *crate::files::share_fs::tests::LINK_FAILS.lock().unwrap() = Some(id.to_string());
+    assert!(
+        f.files.place_for_test(&id, &any_langs()).await.is_err(),
+        "链接失败"
+    );
+    let pending = f.files.uploads.load_pending(&id).unwrap().unwrap();
+    assert!(
+        pending.placing.is_none(),
+        "临时文件已经删了，不能留着它的 inode"
+    );
+
+    let record = f.files.finish_upload(&id, &any_langs()).await.unwrap();
+    assert_eq!(record.name, "a.txt");
+    assert_eq!(
+        fs::read_to_string(f.shares_dir.join(TRANSFERS).join("a.txt")).unwrap(),
+        "hello"
+    );
+    assert!(f.files.uploads.load_pending(&id).unwrap().is_none());
+    assert!(
+        !f.shares_dir
+            .join(TRANSFERS)
+            .join(format!("{UPLOAD_TEMP_PREFIX}{id}"))
+            .exists()
+    );
+}
