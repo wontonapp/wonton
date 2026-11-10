@@ -477,9 +477,16 @@ host_model_key_id="$(magpie gateway-key list 2>/dev/null | awk -v n="$host_model
 magpie gateway-key models "$host_model_key_id" "$model" >/dev/null || fail "一次性凭据限定模型失败"
 
 # 只加 provider，不建路由组：默认路由组由 magpie 插件建好，成员跟着 provider 变。
+# 模型名去掉上游的 provider 前缀（`zcode/GLM-5.3-Flash` → `GLM-5.3-Flash`）：带斜杠时插件把它当成别的
+# provider 的模型，`models=` 挑不中，模型目录和默认组都是空的（magpie 0.1.1327 实测）。
 docker exec -e no_proxy="$model_no_proxy" -e NO_PROXY="$model_no_proxy" "$magpie" \
   magpie provider add upstream url="$model_url" key="$model_key" \
-  models="$model" >/dev/null || fail "magpie 连不上开发机上的 magpie（$model_url）"
+  models="${model##*/}" >/dev/null || fail "magpie 连不上开发机上的 magpie（$model_url）"
+# 默认组由插件里的 default-model 服务每两秒按 provider 对一次，这里等它，和上面等 Navidrome 扫描一样。
+for _ in $(seq 15); do
+  [[ " $(hermes_models) " == *" group/wonton-default "* ]] && break
+  sleep 1
+done
 [[ " $(hermes_models) " == *" group/wonton-default "* ]] ||
   fail "加了 provider，默认路由组应当可用：$(hermes_models)"
 ok "加了 provider，默认路由组自动有了它的模型，不用手动建组"
