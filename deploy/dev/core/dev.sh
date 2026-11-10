@@ -6,7 +6,8 @@
 #   dev.sh reset [--keep-tunnel-identity]
 #                                      停止并删除 Hydra、Tuwunel 的数据、核心数据目录和插件卷；
 #                                      给了开关时保留隧道私钥和设备登记（endpoint ID 不变，已配对的设备不用重配）
-#   dev.sh status | logs               查看状态 / 跟随核心日志
+#   dev.sh status | logs [<服务>]      查看状态 / 跟随日志：核心栈的服务（core、hydra 等）或插件的服务名
+#   dev.sh diag                        只读诊断：插件登录用的主机名解析、出口代理设置和可达性、注入的代理变量
 #   dev.sh token                       输出主人令牌
 #   dev.sh install <compose 文件或插件包目录> [--yes]  预览插件和权限，确认后安装（一条命令装好插件）
 #   dev.sh uninstall <插件 ID> [--purge]   卸载；--purge 同时删除插件数据
@@ -178,6 +179,64 @@ build_commit() {
     commit="$commit-dirty"
   fi
   echo "$commit"
+}
+
+# 容器的名字前缀：有实例名时 wonton-<实例>--，默认项目没有实例名时只有 wonton-。
+container_prefix() {
+  if [[ -n "$WONTON_DEV_INSTANCE" ]]; then
+    printf 'wonton-%s--' "$WONTON_DEV_INSTANCE"
+  else
+    printf 'wonton-'
+  fi
+}
+
+# 容器名 <前缀><插件>--<服务>[--<Bot>] 里的服务名。插件和服务名都不含 `--`；核心容器没有分隔符。
+service_of() {
+  local rest="${1#"$(container_prefix)"}"
+  rest="${rest#*--}"
+  printf '%s\n' "${rest%%--*}"
+}
+
+# 这套栈的插件容器。核心栈自己的容器（hydra 之类）不带 `--`，默认项目里的核心容器按名字排掉。
+plugin_containers() {
+  local name
+  docker ps -a --filter "name=^$(container_prefix)" --format '{{.Names}}' |
+    while read -r name; do
+      [[ "$name" != "$core" && "$name" == *--* ]] && printf '%s\n' "$name"
+    done
+}
+
+# 跟着看日志：先认核心栈的 compose 服务，再认插件的服务；都没有时列出可选的。
+logs() {
+  local service="${1:-core}" name candidates services
+  local -a names=()
+  services="$(compose config --services 2>/dev/null)" || true
+  if [[ -z "${1:-}" ]] || grep -qxF -- "$service" <<<"$services"; then
+    compose logs -f --tail 200 "$service"
+    return
+  fi
+  while read -r name; do
+    [[ "$(service_of "$name")" == "$service" ]] && names+=("$name")
+  done < <(plugin_containers) || true
+  if [[ ${#names[@]} -eq 1 ]]; then
+    docker logs -f --tail 200 "${names[@]}"
+    return
+  fi
+  if [[ ${#names[@]} -gt 1 ]]; then
+    # docker logs 一次只能跟一个容器：各起一个后台跟着，Ctrl-C 一起收到，等它们都结束。
+    local -a pids=()
+    for name in "${names[@]}"; do
+      docker logs -f --tail 200 "$name" &
+      pids+=("$!")
+    done
+    wait "${pids[@]}" || true
+    return
+  fi
+  candidates="$( {
+    printf '%s\n' "$services"
+    plugin_containers | while read -r name; do service_of "$name"; done
+  } | sed '/^$/d' | sort -u | paste -sd ' ' -)"
+  die "没有叫 $service 的服务。可选：${candidates:-没有取到}"
 }
 
 # 在与核心共享网络命名空间的容器里运行 curl：*.localhost 由 curl 解析到 127.0.0.1，即核心网关。
@@ -439,6 +498,9 @@ note_plugin_leftovers() {
   if [[ ${#volumes[@]} -gt 0 ]]; then echo "  docker volume rm ${volumes[*]}"; fi
 }
 
+# shellcheck source=deploy/dev/core/diag.sh
+. "$here/diag.sh"
+
 # 被 source（instance-label_test.py 测实例标签）时只拿函数定义和上面的环境，不执行子命令。
 # return 0 要写全：不带参数的 return 会把左边失败的 [[ ]] 的状态带出去，source 它的脚本开着 set -e 就会退出。
 [[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
@@ -494,7 +556,8 @@ case "${1:-}" in
       plugins_table || die "取不到插件列表"
     fi
     ;;
-  logs) compose logs -f core ;;
+  logs) logs "${@:2}" ;;
+  diag) diag ;;
   api)
     shift
     api "$@"
@@ -546,5 +609,5 @@ case "${1:-}" in
     esac
     docker exec "$core" wonton-core pair "$addr"
     ;;
-  *) die "用法：$0 up|down|reset [--keep-tunnel-identity]|status|logs|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]" ;;
+  *) die "用法：$0 up|down|reset [--keep-tunnel-identity]|status|logs [<服务>]|diag|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]" ;;
 esac
