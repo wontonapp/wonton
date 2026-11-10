@@ -907,8 +907,6 @@
     <string name="onboarding_problem_plugin_lan_unavailable">利用できるローカルネットワークのアドレスがありません。サーバーのネットワーク設定を確認してください。</string>
     <!-- Problem title while installing: the app wasn't found. -->
     <string name="onboarding_problem_plugin_not_found">このアプリが見つかりません。一覧を更新してから再試行してください。</string>
-    <!-- Problem title while installing: the owner profile isn't complete. -->
-    <string name="onboarding_problem_plugin_owner_profile_incomplete">プロフィールが未入力です。入力してから再試行してください。</string>
     <!-- Problem title while installing: the app and the home server versions don't work together. -->
     <string name="onboarding_problem_plugin_protocol">Wontonと自宅サーバーのバージョンが一致していません。Wontonかサーバーを更新してください。</string>
     <!-- Problem title while installing: the home server is older than the app needs. -->
@@ -1164,10 +1162,6 @@
     <string name="problem_plugin_not_found_next_step">ストアを更新してからもう一度お試しください。</string>
     <!-- Problem title: the app is gone from its source. -->
     <string name="problem_plugin_not_found_title">このアプリが見つかりません</string>
-    <!-- Next step: fill it in in Settings, then try again. -->
-    <string name="problem_plugin_owner_profile_incomplete_next_step">設定で入力してから、もう一度お試しください。</string>
-    <!-- Problem title: the owner's profile (name and email) isn't filled in yet, and the app needs it. -->
-    <string name="problem_plugin_owner_profile_incomplete_title">プロフィールがまだ入力されていません</string>
     <!-- Next step: update the app or the home server. -->
     <string name="problem_plugin_protocol_next_step">Wontonか自宅サーバーをアップデートしてください。</string>
     <!-- Problem title: the app and the home server versions don't match. -->

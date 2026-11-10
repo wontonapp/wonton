@@ -57,10 +57,6 @@ extension PluginFailure {
             categorizedProblem(
                 .problemPluginEgressProxyUnavailableTitle, .problemPluginEgressProxyUnavailableNextStep, detail
             )
-        case .ownerProfileIncomplete:
-            categorizedProblem(
-                .problemPluginOwnerProfileIncompleteTitle, .problemPluginOwnerProfileIncompleteNextStep, detail
-            )
         case .protocol: categorizedProblem(.problemPluginProtocolTitle, .problemPluginProtocolNextStep, detail)
         case .serverTooOld:
             categorizedProblem(.problemPluginServerTooOldTitle, .problemUpgradeServerNextStep, detail)

@@ -20,7 +20,7 @@ use super::manager::{Entry, Health, InstallError, PluginManager, PluginStatus, s
 use super::manifest::{AgentSpec, Manifest, Permission, PluginId, PluginKind, Sso};
 use super::manifest_tabs;
 use super::package::PluginPackage;
-use super::render::{dry_run, dry_run_with_email};
+use super::render::dry_run;
 use super::{
     gallery::{IconSource, Variant},
     github_source::{Origin, Trust},
@@ -285,7 +285,8 @@ impl PluginManager {
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,
             blocked_category: None,
-            missing_profile: self.missing_profile(package, langs),
+            // 协议及客户端保留此字段，以便新客户端继续处理旧核心的资料门禁。
+            missing_profile: None,
             devices: None,
             lan_webui: webui::switched(package).map(|switched| switched.offer(false, langs)),
             always_allowed: Vec::new(),
@@ -387,18 +388,6 @@ impl PluginManager {
     }
 
     /// 这台主机上装不了的原因，和安装时的检查一致，但什么也不改。
-    /// 主人还没填邮箱、插件又非要不可时的说明。
-    pub(crate) fn missing_profile(
-        &self,
-        package: &PluginPackage,
-        langs: &Languages,
-    ) -> Option<String> {
-        let needs_email = super::manifest_oidc::needs_owner_email(&package.manifest)
-            || dry_run_with_email(package, None, &Languages::default()).is_err();
-        (self.cfg.profile.email().is_none() && needs_email)
-            .then(|| crate::owner::email_needed(langs))
-    }
-
     async fn precheck(&self, m: &Manifest, langs: &Languages) -> Result<(), InstallError> {
         if m.kind == PluginKind::System {
             return Err(InstallError::Unsupported(l10n::text(

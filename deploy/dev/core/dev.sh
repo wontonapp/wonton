@@ -312,7 +312,6 @@ api() {
   client -sS --fail-with-body -X "$method" -H "Authorization: Bearer $(token)" "$@" "$base_url$path"
 }
 
-# 开发环境填一份资料，要邮箱的插件才用得了。
 fill_dev_profile() {
   [[ "${WONTON_DEV_OWNER_PROFILE:-}" != off ]] || return 0
   local current

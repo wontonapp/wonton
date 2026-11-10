@@ -7,11 +7,6 @@
 ## with_note joins the original message and an added note into one sentence.
 plugin-settings-note-appended = { $message } ({ $note })
 
-# ── Missing email (owner.rs, used by installs and the web port) ──────────────
-
-plugin-settings-email-missing = You haven't set your email yet. Add it in Wonton's settings and try again
-plugin-settings-email-needed = This app needs your email. Set it before installing
-
 # ── Risks of the web page's local network port (lan/webui.rs, shown in details) ──
 
 plugin-settings-lan-webui-risk-impersonate = Devices on your local network, and apps on this computer that can reach the internet, can open it as you without a password

@@ -1,7 +1,7 @@
 //! 网关代登录（`sso: proxy`，插件规范的“网关代登录”）：清单声明的请求头和 Cookie 的值模板。网关认出主人后把它们
 //! 加在转发给插件网页的请求上（见 `gateway::proxy_sso`），浏览器拿不到其中的密钥。
 //!
-//! 值模板里可以用 `{user}`、`{name}`、`{email}`（主人的用户名、显示名和邮箱），以及 `{secret:<名字>}`（插件自己的
+//! 值模板里可以用 `{user}`、`{name}`、`{email}`（用户名、显示名和内部邮箱），以及 `{secret:<名字>}`（插件自己的
 //! `secrets` 里由核心生成的一项），其余文字原样保留。
 
 use std::collections::{BTreeMap, HashMap};
@@ -10,11 +10,10 @@ use hyper::header::{HeaderName, HeaderValue};
 
 use super::manifest::{Manifest, ManifestError, SecretSpec, Sso};
 use super::secrets::Secrets;
-use crate::owner::Owner;
+use crate::owner::{Owner, internal_email};
 
 use super::languages::Languages;
 use crate::l10n::text;
-use crate::owner::no_email;
 
 /// 代登录用的密钥至少这么长：网关按值从响应里找出并去掉它，值太短会误伤别的内容。
 const MIN_SECRET_BYTES: usize = 16;
@@ -107,26 +106,18 @@ impl ProxyAuth {
     }
 
     /// 代加的请求头：名字和这次请求的值。
-    pub fn headers(
-        &self,
-        owner: &Owner,
-        langs: &Languages,
-    ) -> Result<Vec<(HeaderName, String)>, NoEmail> {
+    pub fn headers(&self, owner: &Owner) -> Vec<(HeaderName, String)> {
         self.headers
             .iter()
-            .map(|(name, parts)| Ok((name.clone(), render(parts, owner, langs)?)))
+            .map(|(name, parts)| (name.clone(), render(parts, owner)))
             .collect()
     }
 
     /// 代加的 Cookie：名字和这次请求的值。
-    pub fn cookies(
-        &self,
-        owner: &Owner,
-        langs: &Languages,
-    ) -> Result<Vec<(&str, String)>, NoEmail> {
+    pub fn cookies(&self, owner: &Owner) -> Vec<(&str, String)> {
         self.cookies
             .iter()
-            .map(|(name, parts)| Ok((name.as_str(), render(parts, owner, langs)?)))
+            .map(|(name, parts)| (name.as_str(), render(parts, owner)))
             .collect()
     }
 
@@ -155,26 +146,18 @@ impl ProxyAuth {
     }
 }
 
-/// 模板用了 `{email}`，主人却没填邮箱：不代加一个空值。消息按请求的语言写好（ADR-0043）。
-#[derive(Debug, thiserror::Error)]
-#[error("{0}")]
-pub struct NoEmail(pub String);
-
-fn render(parts: &[Part], owner: &Owner, langs: &Languages) -> Result<String, NoEmail> {
-    parts
-        .iter()
-        .map(|part| {
-            Ok(match part {
-                Part::Text(text) | Part::Secret(text) => text.as_str(),
-                Part::User => owner.username.as_str(),
-                Part::Name => owner.display_name.as_str(),
-                Part::Email => owner
-                    .email
-                    .as_deref()
-                    .ok_or_else(|| NoEmail(no_email(langs)))?,
-            })
-        })
-        .collect()
+fn render(parts: &[Part], owner: &Owner) -> String {
+    let mut value = String::new();
+    let mut email = None;
+    for part in parts {
+        value.push_str(match part {
+            Part::Text(text) | Part::Secret(text) => text,
+            Part::User => &owner.username,
+            Part::Name => &owner.display_name,
+            Part::Email => email.get_or_insert_with(|| internal_email(&owner.username)),
+        });
+    }
+    value
 }
 
 /// 值模板的写法对，`{secret:…}` 只引用插件自己由核心生成、够长的密钥。局域网客户端的账号（`lan.client`）也用这套模板。
@@ -210,7 +193,7 @@ pub fn fill_template(
             other => Ok(other),
         })
         .collect::<Result<Vec<_>, String>>()?;
-    render(&parts, owner, langs).map_err(|e| e.to_string())
+    Ok(render(&parts, owner))
 }
 
 fn secret_ok(manifest: &Manifest, name: &str) -> bool {
@@ -234,11 +217,6 @@ fn secret_missing(langs: &Languages, name: &str) -> String {
         "plugin-install-proxy-secret-missing",
         &[("name", name.into())],
     )
-}
-
-/// 清单的代登录模板用没用 `{email}`。
-pub(super) fn uses_email(manifest: &Manifest) -> bool {
-    any_part(manifest, |part| matches!(part, Part::Email))
 }
 
 /// 清单的代登录模板会不会把主人的身份带给应用。

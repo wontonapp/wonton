@@ -37,7 +37,7 @@ x-wonton:
     port: 80
     sso: proxy
     proxy:
-      headers: {Remote-User: '{user}'}
+      headers: {Remote-User: '{user}', Remote-Email: '{email}'}
       cookies: {vault_web: '{secret:web_key}'}
   secrets:
     web_key: {generate: {bytes: 32}}
@@ -150,6 +150,7 @@ async fn the_owner_is_signed_in_with_credentials_the_browser_cannot_forge() {
         [format!("theme=dark; vault_web={KEY}")]
     );
     assert_eq!(received(&body, "remote-user"), ["owner"]);
+    assert_eq!(received(&body, "remote-email"), ["owner@wonton.internal"]);
     assert_eq!(hits.load(Ordering::SeqCst), 1);
 }
 

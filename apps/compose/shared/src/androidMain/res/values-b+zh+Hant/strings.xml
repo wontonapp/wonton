@@ -907,8 +907,6 @@
     <string name="onboarding_problem_plugin_lan_unavailable">沒有可用的區域網路位址，請檢查伺服器的網路設定。</string>
     <!-- Problem title while installing: the app wasn't found. -->
     <string name="onboarding_problem_plugin_not_found">沒有找到這個應用程式，重新整理清單後再試。</string>
-    <!-- Problem title while installing: the owner profile isn't complete. -->
-    <string name="onboarding_problem_plugin_owner_profile_incomplete">你的個人資料還沒填好，填好後再試。</string>
     <!-- Problem title while installing: the app and the home server versions don't work together. -->
     <string name="onboarding_problem_plugin_protocol">應用程式和家用伺服器的版本對不上，請更新應用程式或伺服器。</string>
     <!-- Problem title while installing: the home server is older than the app needs. -->
@@ -1164,10 +1162,6 @@
     <string name="problem_plugin_not_found_next_step">重新整理商店後再試。</string>
     <!-- Problem title: the app is gone from its source. -->
     <string name="problem_plugin_not_found_title">找不到這個應用程式</string>
-    <!-- Next step: fill it in in Settings, then try again. -->
-    <string name="problem_plugin_owner_profile_incomplete_next_step">在設定裡填好後再試。</string>
-    <!-- Problem title: the owner's profile (name and email) isn't filled in yet, and the app needs it. -->
-    <string name="problem_plugin_owner_profile_incomplete_title">你的資料還沒填好</string>
     <!-- Next step: update the app or the home server. -->
     <string name="problem_plugin_protocol_next_step">請更新雲吞或家用伺服器。</string>
     <!-- Problem title: the app and the home server versions don't match. -->
