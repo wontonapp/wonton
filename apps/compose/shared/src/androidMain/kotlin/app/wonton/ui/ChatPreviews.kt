@@ -11,7 +11,10 @@ import app.wonton.protocol.CodeOverflow
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
 
-/** 聊天列表的预览。列表和邀请行是 ChatScreen.kt 里的私有函数，所以预览和它的假数据放在这个文件里。 */
+/**
+ * 聊天列表的预览：ChatScreen.kt 已经到 detekt 每文件 11 个函数的上限，预览和它的假数据挪到这里，
+ * `Notices`、`InviteItem` 为此外提成 internal。
+ */
 
 private fun previewInviteRow() = RoomRow(
     roomId = "!design:home.example",

@@ -260,4 +260,7 @@ internal fun HomeStatusPanelDarkPreview() {
     }
 }
 
-/** 聊天列表顶部的状态提示、邀请行和错误页的预览在各自文件里，同一个文件才够得着私有函数。 */
+/**
+ * 聊天提示、邀请行和错误页的预览在 ChatPreviews.kt、ProblemPreview.kt 里：
+ * ChatScreen.kt 和 ProblemViews.kt 都撞到 detekt 的函数数上限。
+ */
