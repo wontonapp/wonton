@@ -82,9 +82,10 @@ jobs:
           UDID=$(python3 - <<'PY'
           import json, subprocess
           devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"]))["devices"]
+          # 折屏（Duo）有两个显示，simctl recordVideo 不指定 --display 会等 5 分钟再报错，跳过它。
           for runtime in sorted(devices, reverse=True):
               for device in devices[runtime]:
-                  if device["name"].startswith("iPhone"):
+                  if device["name"].startswith("iPhone") and "Duo" not in device["name"]:
                       print(device["udid"])
                       raise SystemExit
           raise SystemExit("镜像里没有可用的 iPhone 模拟器")

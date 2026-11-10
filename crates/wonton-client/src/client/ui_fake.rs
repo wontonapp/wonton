@@ -52,7 +52,7 @@ impl ClientCore {
             servers: vec![ServerRow {
                 id: "ui-fake".into(),
                 name: ServerName::Named {
-                    name: "家里".into(),
+                    name: "Home".into(),
                 },
                 kind: ServerKind::Wonton,
                 current: true,
@@ -78,17 +78,17 @@ impl ClientCore {
         chat.installing_bots.clear();
         chat.rooms = vec![RoomRow {
             room_id: ROOM_ID.into(),
-            name: "回声".into(),
+            name: "Echo".into(),
             is_direct: true,
             direct_user_id: Some("@echo:home.example".into()),
             is_encrypted: true,
             is_read_only: false,
             membership: RoomMembership::Joined,
             preview: Some(RoomPreview {
-                sender_name: "回声".into(),
+                sender_name: "Echo".into(),
                 is_own: false,
                 body: MessageSummary::Text {
-                    text: "测试用的假消息".into(),
+                    text: "Fake message from the UI test fixture".into(),
                 },
                 timestamp_ms: 1_792_000_000_000,
             }),
