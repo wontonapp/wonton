@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 import WontonClient
 
@@ -9,6 +10,8 @@ final class HomeModel {
     private(set) var servers: ServersViewModel
     /// 核心拒绝上一个操作的原因，由界面弹窗展示。
     var rejection: Problem?
+    /// 深链接和手动输入共用草稿；只有配对页确认后才交给核心。
+    var pairingCode = ""
 
     private let core: ClientCore
 
@@ -21,6 +24,7 @@ final class HomeModel {
     /// 在视图的 `.task` 里调用；视图消失时 Task 被取消，订阅随之结束。
     func observe() async {
         for await viewModel in core.subscribeHome().updates() {
+            if viewModel.serverId != nil { pairingCode = "" }
             self.viewModel = viewModel
         }
     }
@@ -37,6 +41,16 @@ final class HomeModel {
         } catch {
             rejection = error.problem
         }
+    }
+
+    func prefillPairing(from url: URL) -> Bool {
+        guard url.scheme == "wonton", url.host == "pair" else { return false }
+        let current = core.home()
+        guard current.status == .notConfigured, !core.servers().adding,
+              current.pairing != .inProgress else { return false }
+        pairingCode = url.absoluteString
+        if case .failed? = current.pairing { send(.dismissPairingFailure) }
+        return true
     }
 
     /// 扫到的不是配对码时核心当场拒绝，原因返回给配对页就地显示，不弹窗；之后的进展在 `viewModel.pairing` 里。
