@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -20,7 +21,10 @@ import app.wonton.client.ClientCore
 import app.wonton.client.initLogging
 import app.wonton.client.parseAppLink
 import app.wonton.protocol.Action
+import app.wonton.protocol.PluginsViewModel
 import app.wonton.ui.AppLinkRequest
+import app.wonton.ui.LocalNotificationPermission
+import app.wonton.ui.NotificationPermission
 import app.wonton.ui.StartupFailure
 import app.wonton.ui.RoomRequest
 import app.wonton.ui.WontonApp
@@ -29,6 +33,7 @@ import app.wonton.ui.homeUpdates
 import app.wonton.ui.pluginsUpdates
 import app.wonton.ui.send
 import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -37,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private var requestedRoom by mutableStateOf<RoomRequest?>(null)
     private var requestedLink by mutableStateOf<AppLinkRequest?>(null)
     private var networkWatcher: NetworkWatcher? = null
+    private lateinit var notificationPermission: NotificationPermission
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,20 +68,24 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val devWebUrl = if (debuggable) intent.getStringExtra("wonton_open_web") else null
-        PushRegistration(this, core).start()
+        notificationPermission = NotificationPermission(this)
+        PushRegistration(this, core, notificationPermission).start()
         keepConnectionService(core)
         portMappingService(core)
+        refreshMappingNotificationOnGrant(core)
         requestRoom(intent)
         requestLink(intent)
         setContent {
-            WontonApp(
-                core,
-                devWebUrl = devWebUrl,
-                requestedRoom = requestedRoom,
-                onRoomRequestHandled = { requestedRoom = null },
-                requestedLink = requestedLink,
-                onCardsSettled = { server, cards -> PushNotifications.cancelCards(this, server, cards) },
-            )
+            CompositionLocalProvider(LocalNotificationPermission provides notificationPermission) {
+                WontonApp(
+                    core,
+                    devWebUrl = devWebUrl,
+                    requestedRoom = requestedRoom,
+                    onRoomRequestHandled = { requestedRoom = null },
+                    requestedLink = requestedLink,
+                    onCardsSettled = { server, cards -> PushNotifications.cancelCards(this, server, cards) },
+                )
+            }
         }
     }
 
@@ -125,18 +135,36 @@ class MainActivity : AppCompatActivity() {
                 .distinctUntilChangedBy { plugins -> plugins.portMappings.any { it.enabled } }
                 .collect { plugins ->
                     if (plugins.portMappings.any { it.enabled }) {
-                        ContextCompat.startForegroundService(
-                            this@MainActivity,
-                            Intent(this@MainActivity, PortMappingService::class.java)
-                                .putStringArrayListExtra(
-                                    PortMappingService.EXTRA_TITLES,
-                                    ArrayList(enabledPluginTitles(plugins)),
-                                ),
-                        )
+                        startPortMappingService(plugins)
                     } else {
                         stopService(Intent(this@MainActivity, PortMappingService::class.java))
                     }
                 }
+        }
+    }
+
+    private fun startPortMappingService(plugins: PluginsViewModel) {
+        ContextCompat.startForegroundService(
+            this@MainActivity,
+            Intent(this@MainActivity, PortMappingService::class.java)
+                .putStringArrayListExtra(
+                    PortMappingService.EXTRA_TITLES,
+                    ArrayList(enabledPluginTitles(plugins)),
+                ),
+        )
+    }
+
+    /** 没有权限时贴出的前台服务通知不会自己补进通知栏：权限变成有时把映射服务再启动一次，重贴通知。 */
+    private fun refreshMappingNotificationOnGrant(core: ClientCore) {
+        lifecycleScope.launch {
+            var granted = notificationPermission.granted
+            notificationPermission.grantedUpdates.collect { now ->
+                if (now && !granted) {
+                    val plugins = core.pluginsUpdates().first()
+                    if (plugins.portMappings.any { it.enabled }) startPortMappingService(plugins)
+                }
+                granted = now
+            }
         }
     }
 
@@ -151,8 +179,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // 回到前台：网络可能变了，让核心检查隧道并重连。
+        // 回到前台：网络可能变了，让核心检查隧道并重连；通知权限也可能在系统设置里改过。
         (application as WontonApplication).core.getOrNull()?.send(Action.AppForegrounded)
+        if (::notificationPermission.isInitialized) notificationPermission.refresh()
     }
 
     override fun onStart() {

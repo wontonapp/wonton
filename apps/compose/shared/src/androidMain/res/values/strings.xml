@@ -1108,6 +1108,8 @@
     <string name="port_mapping_reason_plugin_unreachable">Your home server can\'t reach this app.</string>
     <!-- Reason shown while the mapping is on and failed for a reason Wonton doesn't recognize. -->
     <string name="port_mapping_reason_other">Port mapping ran into a problem.</string>
+    <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
+    <string name="port_mapping_no_notification_permission">Without the notification permission, you won\'t see the mapping notification. Mapping still works.</string>
     <!-- Problem title when the appearance settings couldn't be saved on the home server. -->
     <string name="problem_appearance_title">Appearance settings weren\'t saved</string>
     <!-- Problem reason when a link to an app page opens before the installed app list loaded. -->
