@@ -139,6 +139,7 @@ chat-help-docs-age = { $problem }。这是 { $days } 天前的文档
 chat-help-topic-missing = 没有主题 { $topic }。可选的主题：{ $topics }
 chat-help-page-needs-core = 这一页讲的功能要服务器更新到 { $required } 以上（这台是 { $core }）：先更新服务器
 
+chat-mail-convert-failed = 这封信只有 HTML，正文没能转成文字，原文已作为 message.html 附上。
 chat-mail-unknown-source = 收到一封来源不明或没有发信权限的应用邮件，未投递给任何人。
 chat-mail-recipients-failed = 无法更新应用邮件的收件人：{ $error }。家人变动或服务器重启时会再试。
 chat-notify-rate-limited = { $plugin } 发通知和信太频繁，已暂停，约 { $seconds } 秒后自动恢复。

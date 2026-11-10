@@ -121,10 +121,15 @@ async fn an_html_body_that_cannot_be_converted_still_delivers_with_the_original_
     let mut delivery = Delivery::new(mailpit.api(), home.gateway.clone(), home.dir.path()).unwrap();
     delivery.deliver("narrow").await.unwrap();
     let matrix = home.matrix.state();
-    let mail = &matrix.sent[0].1;
-    assert_eq!(
-        mail[MAIL_FIELD]["body"],
-        super::content::CONVERT_FAILED_BODY
+    let content = &matrix.sent[0].1;
+    let mail = content;
+    // 提示按收件人（这里是主人）的语言现场生成，不写死文案。
+    let key = super::content::CONVERT_FAILED_KEY;
+    let expected = crate::l10n::text(&home.gateway.plugins.owner_languages(), key, &[]);
+    assert_eq!(mail[MAIL_FIELD]["body"], "");
+    assert!(
+        content["body"].as_str().unwrap().ends_with(&expected),
+        "{content}"
     );
     assert_eq!(
         mail[MAIL_FIELD]["attachments"],

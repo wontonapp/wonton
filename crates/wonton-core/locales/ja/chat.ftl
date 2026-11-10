@@ -144,6 +144,7 @@ chat-help-docs-age = { $problem }。これは{ $days }日前のヘルプです
 chat-help-topic-missing = トピック「{ $topic }」はありません。選べるトピック：{ $topics }
 chat-help-page-needs-core = このページの機能を使うには、サーバーを{ $required }以上にアップデートする必要があります（このサーバーは{ $core }）。先にサーバーをアップデートしてください
 
+chat-mail-convert-failed = メールの HTML 本文をテキストに変換できませんでした。元の HTML を message.html として添付しています。
 chat-mail-unknown-source = 送信元が不明、またはメール送信権限のないアプリからのメールを受信しました。誰にも配信していません。
 chat-mail-recipients-failed = アプリのメール受信者を更新できませんでした：{ $error }。家族の変更時かサーバーの再起動時に再試行します。
 chat-notify-rate-limited = { $plugin } の通知とメールが多すぎるため、一時停止しました。約{ $seconds }秒後に自動で再開します。

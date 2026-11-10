@@ -11,9 +11,8 @@ pub(super) const ATTACHMENT_LIMIT: u64 = 20 * 1024 * 1024;
 /// 交给 html2text 的 HTML 上限（字符数）。转换在阻塞线程里跑，封顶保证一份几 MB 的 HTML 不会长时间占住线程；
 /// 整封原始 HTML 仍作为 `message.html` 附件，转换只看到一段时也照样附带。
 pub(super) const HTML_INPUT_LIMIT: usize = 1024 * 1024;
-/// 转不出来时替给收件人的正文（原始 HTML 在附件里）。
-pub(super) const CONVERT_FAILED_BODY: &str =
-    "这封信是 HTML，正文转换失败；请用附件 message.html 查看原文。";
+/// 转不出来时替给收件人的正文键；每个收件人用自己的语言（原始 HTML 在附件里）。
+pub(super) const CONVERT_FAILED_KEY: &str = "chat-mail-convert-failed";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -104,6 +103,9 @@ pub(super) enum BodySource<'a> {
 pub(super) struct Body {
     pub(super) text: String,
     pub(super) attach_html: bool,
+    /// 转换失败：`text` 为空，投递时按收件人的语言现填提示，不缓存译文。
+    #[serde(default)]
+    pub(super) convert_failed: bool,
 }
 
 #[cfg(test)]
@@ -153,6 +155,7 @@ impl Message {
         Body {
             text,
             attach_html: !self.html.is_empty() && (html_truncated || body_truncated),
+            convert_failed: false,
         }
     }
 

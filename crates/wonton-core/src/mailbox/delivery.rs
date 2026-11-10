@@ -8,12 +8,13 @@ use wonton_protocol::{MAIL_FIELD, MemberStatus, PluginMail, PluginMailAttachment
 
 use super::api::Api;
 use super::content::{
-    ATTACHMENT_LIMIT, Body, BodySource, CONVERT_FAILED_BODY, Message, convert, received_ip,
+    ATTACHMENT_LIMIT, Body, BodySource, CONVERT_FAILED_KEY, Message, convert, received_ip,
 };
 use super::progress::{Decision, Progress, Store, Uploaded};
 use crate::gateway::Gateway;
 use crate::matrix::NoticeRoom;
 use crate::plugin::Permission;
+use crate::plugin::languages::Languages;
 
 pub(super) struct Delivery {
     pub(super) api: Api,
@@ -117,7 +118,7 @@ impl Delivery {
         };
         for username in recipients {
             if !progress.delivered.contains(username) {
-                self.send_to(id, username, &mail, &progress.uploaded)
+                self.send_to(id, username, &mail, body.convert_failed, &progress.uploaded)
                     .await?;
                 progress.delivered.insert(username.to_owned());
                 self.progress.save(id, &progress)?;
@@ -127,7 +128,13 @@ impl Delivery {
         self.progress.remove(id)
     }
 
-    /// 正文：有纯文本直接用；只有 HTML 时把限长的一段交给阻塞线程转换，转不出来就用固定提示并附原文。
+    fn failed_body(&self, message: &Message, truncated: bool) -> Body {
+        let mut body = message.finish_body("", truncated);
+        body.convert_failed = true;
+        body
+    }
+
+    /// 正文：有纯文本直接用；只有 HTML 时把限长的一段交给阻塞线程转换，转不出来就留空待按语言填提示并附原文。
     async fn prepare_body(&self, message: &Message) -> Body {
         match message.body_source() {
             BodySource::Text(text) => message.finish_body(text, false),
@@ -138,11 +145,11 @@ impl Delivery {
                     Ok(Ok(text)) => message.finish_body(&text, truncated),
                     Ok(Err(error)) => {
                         tracing::warn!(error = %error, "HTML 正文转不成文本，附原文继续投递");
-                        message.finish_body(CONVERT_FAILED_BODY, true)
+                        self.failed_body(&message, true)
                     }
                     Err(error) => {
                         tracing::warn!(error = %error, "转换邮件正文的线程挂了，附原文继续投递");
-                        message.finish_body(CONVERT_FAILED_BODY, true)
+                        self.failed_body(&message, true)
                     }
                 }
             }
@@ -281,10 +288,16 @@ impl Delivery {
         id: &str,
         username: &str,
         mail: &PluginMail,
+        convert_failed: bool,
         uploaded: &BTreeMap<String, Uploaded>,
     ) -> anyhow::Result<()> {
         let room = self.room(username)?;
-        let body = format!("{}：{}\n{}", mail.plugin_name, mail.subject, mail.body);
+        let text = if convert_failed {
+            crate::l10n::text(&self.languages(username), CONVERT_FAILED_KEY, &[])
+        } else {
+            mail.body.clone()
+        };
+        let body = format!("{}：{}\n{}", mail.plugin_name, mail.subject, text);
         room.send_with_txn(
             &json!({"msgtype":"m.text", "body":body, MAIL_FIELD:mail}),
             &format!("mail-{id}-{username}-text"),
@@ -301,6 +314,14 @@ impl Delivery {
             .await?;
         }
         Ok(())
+    }
+
+    /// 收件人的语言；没记录就按主人的。
+    fn languages(&self, username: &str) -> Languages {
+        let header = self.gateway.plugins.person_languages(username);
+        header
+            .map(|header| Languages::from_header(Some(&header)))
+            .unwrap_or_else(|| self.gateway.plugins.owner_languages())
     }
 
     fn room(&mut self, username: &str) -> anyhow::Result<Arc<NoticeRoom>> {
