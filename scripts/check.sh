@@ -5,6 +5,13 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
+# 装上提交、推送前的 hook（规则在 lefthook.yml，重复运行没有副作用）。
+if command -v lefthook >/dev/null; then
+  lefthook install
+else
+  echo "没装 lefthook：git hook 没装，提交前不会自动格式化和挡结构问题。装法：brew install lefthook，或 bash scripts/install-hooks.sh"
+fi
+
 # 集成测试用 testcontainers 起容器，它只认 DOCKER_HOST 和 /var/run/docker.sock。
 # OrbStack、Colima 等把 socket 放在别处时，从当前 Docker context 取地址。
 if [[ -z "${DOCKER_HOST:-}" && ! -S /var/run/docker.sock ]] && command -v docker >/dev/null; then

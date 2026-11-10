@@ -62,6 +62,10 @@
 ## 开发环境与检查
 
 - Rust 工具链版本由 `rust-toolchain.toml` 固定，所有 crate 在 `crates/` 下，同属一个 workspace。
+- git hook 用 lefthook（MIT，单个可执行文件，只是开发工具；`brew install lefthook`）。`bash scripts/check.sh` 开头会装上（幂等），
+  只想装 hook 用 `bash scripts/install-hooks.sh`。提交前自动 rustfmt、SwiftLint 修正并 stage，行数门禁和界面文字检查不过就拦下；
+  推送前对改到的 crate 跑 Clippy，改到 `apps/ios/`、`apps/compose/` 才跑 SwiftLint、detekt，本机没装的工具打印“跳过”，由 CI 兜底。
+  规则只在 `lefthook.yml` 一处，CI 用同一份配置查全部文件。不要用 `--no-verify` 绕过。
 - 提交前运行 `bash scripts/check.sh`（行数门禁、冲突标记检查、格式、Clippy、测试），和 CI 的 Rust 部分一致；Swift、Kotlin 的检查在各自的工作流里。
 - 依赖 Docker 的测试标 `#[ignore = "需要 Docker，…"]`。`check.sh` 连得上 Docker 就一起运行，连不上就跳过并打印手动运行的
   命令。跳过不等于通过：PR 说明里写明没跑。CI 分两个作业：“Rust”跑默认的测试，故意让 Docker 不可用，保证它们不依赖

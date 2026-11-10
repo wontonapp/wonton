@@ -1,0 +1,88 @@
+# 本地 git hook：提交前自动格式化、挡住结构问题，推送前跑本机有的 linter。
+# 规则只写在这里：CI 的 lint 工作流用同一份配置查全部文件（`lefthook run pre-commit --all-files`）。
+# 都是开发用的工具，不链接进产品：lefthook（MIT）、rustfmt、SwiftLint、detekt。
+# 本机没有的工具打印“跳过：没装 X”，不算失败，CI 兜底。
+min_version: "2.2.2"
+
+pre-commit:
+  commands:
+    rustfmt:
+      glob: "*.rs"
+      # cargo 是 rustup 的转发，按 rust-toolchain.toml 选版本；交给 cargo 是为了拿到各 crate 的 edition。
+      run: |
+        echo "rustfmt 格式化："
+        printf '  %s\n' {staged_files}
+        cargo fmt --all -- {staged_files}
+      stage_fixed: true
+    swiftlint-fix:
+      glob: "apps/ios/**/*.swift"
+      run: |
+        if ! command -v swiftlint >/dev/null; then
+          echo "跳过：没装 swiftlint"
+          exit 0
+        fi
+        swiftlint --fix --no-cache --config apps/ios/.swiftlint.yml {staged_files}
+      stage_fixed: true
+    file-size:
+      glob: "*.{rs,swift,kt,kts,ts,tsx,js,mjs,py,go,sh}"
+      run: "bash scripts/check-file-size.sh {staged_files}"
+      fail_text: "源码文件不能超过 800 行：拆开模块，或用 .size-allowlist 写明例外（格式见 scripts/check-file-size.sh 开头）"
+    ui-text:
+      # 要读整个仓库的字符串目录，传文件只为了让无关的提交跳过。
+      glob:
+        - "*.swift"
+        - "*.kt"
+        - "*.rs"
+        - "*.xcstrings"
+        - "*.xml"
+        - ".ui-text-allowlist"
+      run: "python3 scripts/check-ui-text.py"
+      fail_text: "界面文字要放进本地化资源（ADR-0043），改法见报错的文件和行"
+
+pre-push:
+  commands:
+    clippy:
+      glob: "{crates/**,Cargo.toml,Cargo.lock,clippy.toml,rust-toolchain.toml}"
+      # 只跑这次推送改到的 crate；改了 workspace 的清单或工具链配置就跑整个 workspace。
+      run: |
+        set -eu
+        if ! command -v cargo >/dev/null; then
+          echo "跳过：没装 cargo"
+          exit 0
+        fi
+        files=$(printf '%s\n' {push_files})
+        crates=$(printf '%s\n' "$files" | sed -n 's|^crates/\([^/]*\)/.*|\1|p' | sort -u)
+        targets=""
+        if [ -n "$crates" ]; then
+          targets=$(printf '%s\n' "$crates" | sed 's|^|-p |' | tr '\n' ' ')
+        fi
+        if printf '%s\n' "$files" | grep -qE '^(Cargo\.toml|Cargo\.lock|clippy\.toml|rust-toolchain\.toml)$'; then
+          targets="--workspace"
+        fi
+        if [ -z "${targets% }" ]; then
+          echo "跳过：这次推送没改到 Rust"
+          exit 0
+        fi
+        echo "==> cargo clippy ${targets% } --all-targets --locked -- -D warnings"
+        # targets 是按空格分开的参数，不能加引号。
+        cargo clippy ${targets% } --all-targets --locked -- -D warnings
+    swiftlint:
+      glob: "apps/ios/**"
+      run: |
+        set -eu
+        if ! command -v swiftlint >/dev/null; then
+          echo "跳过：没装 swiftlint"
+          exit 0
+        fi
+        cd apps/ios
+        swiftlint lint --strict --no-cache
+    detekt:
+      glob: "apps/compose/**"
+      run: |
+        set -eu
+        if ! command -v java >/dev/null; then
+          echo "跳过：没装 java"
+          exit 0
+        fi
+        cd apps/compose
+        ./gradlew detekt
