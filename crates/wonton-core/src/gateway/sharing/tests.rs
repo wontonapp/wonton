@@ -347,8 +347,10 @@ async fn a_failed_open_record_still_returns_the_upstream_response() {
     std::fs::set_permissions(&f.h.data_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text);
     let opened = |f: &Fixture| {
-        f.sharing.friends.snapshot().friends[0]
-            .last_opened_share_at_ms
+        f.sharing
+            .friends
+            .get(&f.peer.user_id)
+            .and_then(|friend| friend.last_opened_share_at_ms)
             .unwrap_or_default()
     };
     let before = opened(&f);
