@@ -201,7 +201,8 @@ expect "默认模型由网关决定" "$(client_env MODEL)" group/wonton-default
 in_client() { docker exec "$model_client" curl -sS -o /dev/null -w '%{http_code}' "$@" "$(client_env BASE)/models"; }
 expect "凭据能用" "$(in_client -H "Authorization: Bearer $model_key")" 200
 expect "不带凭据被网关拒绝" "$(in_client)" 401
-gateway_keys() { docker exec "$magpie" magpie gateway-key list | awk 'NR > 1 { print $2 }'; }
+# 网关里的使用方凭据。健康探测凭据（`<网关>/health`）是核心自己的，不算使用方。
+gateway_keys() { docker exec "$magpie" magpie gateway-key list | awk 'NR > 1 && $2 !~ /\/health$/ { print $2 }'; }
 # 核心同时在后台装默认 Agent，网关里可能已经有 Hermes 的凭据，这里只看使用方的。
 expect "网关里的凭据以使用方命名" "$(gateway_keys | grep -cx app.model-client)" 1
 expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
