@@ -484,7 +484,7 @@ impl Files {
         })
     }
 
-    /// 把这个房间的 Bot 加进访问范围，返回加了哪些。房间里没有 Bot 时什么都不做：App 发链接时不用先判断。
+    /// 把这个房间的 Bot 加进访问范围，返回加了哪些。房间里没有 Bot 时也会清掉过期：App 授权之后马上发链接，这时链接就算发出去了。
     pub async fn grant_room(
         self: &Arc<Self>,
         id: &FileId,
@@ -494,6 +494,11 @@ impl Files {
         let (id, room, langs) = (id.clone(), room.to_owned(), langs.clone());
         self.blocking(move |files| {
             files.authorize(&id, &Accessor::Owner, &langs)?;
+            // 主人已经在范围里，`grant` 也负责清掉过期时间（ADR-0020 的“生命周期”）。
+            files
+                .registry
+                .grant(&id, Accessor::Owner, now_secs())?
+                .ok_or_else(|| Failure::unknown(&langs))?;
             let bots = files.host.bots_in_room(&room)?;
             for bot in &bots {
                 files
@@ -526,9 +531,12 @@ impl Files {
         .await
     }
 
-    /// 把链接发到“Wonton”私聊：主人所有设备都看得到卡片。
+    /// 把链接发到“Wonton”私聊：主人所有设备都看得到卡片。发之前先清掉过期，发不出去时文件多留一阵也好过链接被删掉。
     pub async fn send_to_devices(&self, id: &FileId, langs: &Languages) -> Result<(), Failure> {
         self.authorize(id, &Accessor::Owner, langs)?;
+        self.registry
+            .grant(id, Accessor::Owner, now_secs())?
+            .ok_or_else(|| Failure::unknown(langs))?;
         self.host.notify_owner(&id.link()).await
     }
 
@@ -596,6 +604,43 @@ impl Files {
                 FileFailure::FileChanged,
                 l10n::text(langs, "files-path-collision", &[]),
             )),
+        }
+    }
+
+    /// 传完但链接没发出去的上传到期了：和 App 里删同一条核对，记录跟着删。调用方排着这个上传的队，没有请求头，里面的错误按英文说。
+    /// 开始之后才授权出去（链接又发了）的不删；名字上已经换成主人的文件时不再过期，留着记录。返回审计要写的结果。
+    fn delete_expired_now(&self, id: &FileId, now: u64) -> Result<&'static str, Failure> {
+        let record = match self.registry.get(id, now) {
+            Lookup::Expired(record) => record,
+            // 已经被删掉或者刚刚授权出去。
+            _ => return Ok("kept"),
+        };
+        let Origin::Upload { reference, placed } = &record.origin else {
+            return Ok("kept");
+        };
+        let langs = Languages::from_header(None);
+        if !self.forget_now(id, true) {
+            return Err(Failure::internal(l10n::text(
+                &langs,
+                "files-residual-undeletable",
+                &[],
+            )));
+        }
+        match self.shares.delete_if_unchanged(reference, placed, &langs) {
+            Ok(Deleted::AlreadyGone) => {
+                self.registry.remove(id)?;
+                Ok("expired")
+            }
+            Ok(Deleted::Removed { durable }) => {
+                // 文件已经没了，记录留着就删不掉这个编号。
+                self.registry.remove(id)?;
+                Ok(if durable { "expired" } else { DELETED_UNSYNCED })
+            }
+            Ok(Deleted::Changed) => {
+                self.registry.keep(id)?;
+                Ok("file_changed")
+            }
+            Err(e) => Err(share_failure(e, &langs)),
         }
     }
 }
