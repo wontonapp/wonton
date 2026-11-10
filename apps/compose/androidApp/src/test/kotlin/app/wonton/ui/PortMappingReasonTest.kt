@@ -15,6 +15,15 @@ class PortMappingReasonTest {
     }
 
     @Test
+    fun permissionNoticeShowsOnlyWhileMappingAndDenied() {
+        val key = R.string.port_mapping_no_notification_permission
+        assertEquals(key, portMappingNotificationRes(enabled = true, notificationGranted = false))
+        assertNull(portMappingNotificationRes(enabled = false, notificationGranted = false))
+        assertNull(portMappingNotificationRes(enabled = true, notificationGranted = true))
+        assertNull(portMappingNotificationRes(enabled = false, notificationGranted = true))
+    }
+
+    @Test
     fun everyFailureStateHasItsOwnKey() {
         val keys = mapOf(
             PortMappingState.PORT_IN_USE to R.string.port_mapping_reason_port_in_use,
