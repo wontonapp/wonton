@@ -30,9 +30,9 @@ pub(crate) mod media;
 
 mod config;
 mod helpers;
-pub(super) use helpers::{clear_plugin_config, invalid, lock, storage_problem};
 mod sharing;
 use config::*;
+pub(super) use helpers::{clear_plugin_config, invalid, lock, storage_problem};
 
 mod view;
 use uninstall::*;

@@ -5,16 +5,16 @@ use std::sync::Mutex;
 use wonton_protocol::{CoreError, TabRef};
 
 use super::TabsState;
-use super::view::is_plugin;
+use super::view::is_plugin_page;
 use crate::l10n::{CATALOG, language};
 use wonton_l10n::l10n;
 
 pub(crate) fn clear_plugin_config(state: &mut TabsState) {
-    state.config.items.retain(|item| !is_plugin(&item.tab));
+    state.config.items.retain(|item| !is_plugin_page(&item.tab));
     state.config.displays.clear();
     state.overlay = None;
     state.fullscreen = None;
-    if is_plugin(&state.selected) {
+    if is_plugin_page(&state.selected) {
         state.selected = TabRef::Apps;
     }
 }
