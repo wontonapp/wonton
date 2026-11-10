@@ -28,12 +28,13 @@ deploy/dev/core/dev.sh reset                 # 停掉并删除数据、密钥、
 `dev.sh open app.grafana` 替你把同样的登录走完（核心 → 会话交接 → 插件的 OIDC），打印能直接打开的地址和一个
 Cookie 罐路径，curl 加 `-b` 复用。
 
-- 端口 `WONTON_DEV_PORT`（默认 18480），基础域名 `WONTON_DEV_DOMAIN`（默认 `wonton.localhost`）。
-  端口也是浏览器看到的地址的一部分，Hydra 的签发方地址随之变化，改端口后要重新安装 SSO 插件。
+- 端口 `WONTON_DEV_PORT`（默认 18480），基础域名 `WONTON_DEV_DOMAIN`（默认项目用 `wonton.localhost`，其他项目默认用 `<项目名>.wonton.localhost`）。
+  端口也是浏览器看到的地址的一部分，改端口后要重新安装 SSO 插件；需要并行栈时可显式覆盖基础域名。
 - 一台 Docker 上跑几套：每套设自己的 `WONTON_DEV_PROJECT`、端口和 `WONTON_DEV_DATA`。实例名 `WONTON_DEV_INSTANCE` 默认取
   项目名（去掉开头的 `wonton-` 和非字母数字，最多 16 个字符；去了标点时在截短后的名字后面接项目名哈希的前 5 位
   十六进制，只差标点的两个项目名不会得到同一个实例名），插件的资源名和标签都带上它，各管各的。
   默认项目 `wonton-dev-core` 没有实例名。已有数据的环境换了实例名，插件要重装；想留着旧的资源名，把它设成空。
+  数据目录同时当作安装目录（`WONTON_INSTALL_DIR`）：联邦名单和整台服务器黑名单由核心原地重写并热加载。
   没有实例名时 `down`、`reset` 按标签分不出插件资源是这套栈的还是同一台 Docker 上正式安装的，只列出、不删，
   并打出要手删的命令。
 - 数据目录 `WONTON_DEV_DATA`（默认本目录下的 `.data`）在核心容器内外路径相同，因为插件的绑定挂载由

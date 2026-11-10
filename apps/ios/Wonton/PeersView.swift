@@ -5,6 +5,8 @@ import WontonClient
 /// 这里只渲染 ViewModel、把操作发回核心。
 struct PeersView: View {
     @State private var model: PeersModel
+    /// 好友请求也在这里露出来（ADR-0051）：请求就是 Matrix 私聊邀请，和配对请求不在一个名单里。
+    @State private var friends: FriendsModel
     @Environment(\.wontonColors) private var colors
     @State private var showsAdd = false
     /// 主人要求出码：码到了才弹层。推入动画还没结束或上一个弹层还在收起时就开，这次呈现会被系统丢掉，
@@ -20,6 +22,7 @@ struct PeersView: View {
 
     init(core: ClientCore, focusRequests: Int = 0) {
         _model = State(initialValue: PeersModel(core: core))
+        _friends = State(initialValue: FriendsModel(core: core))
         self.focusRequests = focusRequests
     }
 
@@ -30,7 +33,11 @@ struct PeersView: View {
                     WontonIconButton(icon: .add, label: String(localized: .peersAdd)) { showsAdd = true }
                 }
                 .task { await model.observe() }
-                .refreshable { await model.refresh() }
+                .task { await friends.observe() }
+                .refreshable {
+                    await model.refresh()
+                    await friends.refresh()
+                }
                 .task(id: focusRequests) { scrollToRequests(proxy) }
                 .onChange(of: model.viewModel.requests.count) { scrollToRequests(proxy) }
                 .onChange(of: model.viewModel.state) { _, state in
@@ -54,6 +61,7 @@ struct PeersView: View {
                 }
                 .peersRemoveDialog($removing, model: model)
                 .peersRejectionDialog(model: model)
+                .friendsRejectionDialog(model: friends)
                 .onDisappear {
                     // 离开页面必须让核心停下取码：出码页开着时它每 3 秒取一次列表。
                     model.send(.hidePeerCode)
@@ -66,7 +74,8 @@ struct PeersView: View {
     }
 
     @ViewBuilder private func content(_ proxy: ScrollViewProxy) -> some View {
-        if model.viewModel.peers.isEmpty, model.viewModel.requests.isEmpty, model.viewModel.rejected.isEmpty {
+        if model.viewModel.peers.isEmpty, model.viewModel.requests.isEmpty, model.viewModel.rejected.isEmpty,
+           friends.viewModel.incoming.isEmpty {
             emptyState
         } else {
             list(proxy)
@@ -104,6 +113,23 @@ struct PeersView: View {
             if case let .failed(error, message) = model.viewModel.state {
                 ProblemRow(problem: peersProblem(error, message: message), retry: retry)
                     .listRowSeparator(.hidden)
+            }
+            if !friends.viewModel.incoming.isEmpty {
+                // 好友请求排最前：对方正在等答复，比配对请求更要紧。
+                Section {
+                    ForEach(friends.viewModel.incoming, id: \.roomId) { request in
+                        FriendRequestRowView(
+                            request: request,
+                            accept: { friends.send(.approveFriendRequest(roomId: request.roomId)) },
+                            decline: { friends.send(.rejectFriendRequest(roomId: request.roomId)) }
+                        )
+                        .listRowBackground(Color(colors.surfaceSubtle))
+                        .listRowSeparatorTint(Color(colors.separator))
+                    }
+                } header: {
+                    Text(.friendsRequests)
+                        .foregroundStyle(Color(colors.textSecondary))
+                }
             }
             if !model.viewModel.requests.isEmpty {
                 Section {

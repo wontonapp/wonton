@@ -10,6 +10,7 @@ mod files;
 mod files_cards;
 mod files_services;
 mod files_support;
+mod friends;
 mod home;
 mod pairing;
 mod peers;

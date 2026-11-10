@@ -1,15 +1,15 @@
 //! Matrix 好友（ADR-0051）：请求就是私聊邀请，不另建配对或身份协议。
 //!
-//! `app.wonton.friend` 是状态键为空、内容为 [`FriendEvent`] 的房间状态事件；发邀请时
+//! `app.wonton.friend` 是 `m.room.create` 内容里的布尔标记（建完不能改）；发邀请时
 //! `is_direct` 为真。普通私聊邀请也进请求列表，由 [`FriendRequestKind`] 区分。
 //! 接受邀请才成为好友；删好友同时收回直接授权及组授权对这个人的访问，私聊不退出。
 
 use serde::{Deserialize, Serialize};
 
-/// 好友请求的 Matrix 房间状态事件类型。
+/// 好友请求的标记键，放在 `m.room.create` 内容里，取值 `true`。
 pub const FRIEND_EVENT: &str = "app.wonton.friend";
 
-/// 标记好友请求，不携带凭据、授权或身份；身份取 Matrix 事件的发送者。
+/// 标记好友请求，不携带凭据、授权或身份；身份取 Matrix 事件的发送者。只用于文档和类型说明。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FriendEvent {}
 
@@ -83,7 +83,7 @@ pub struct FriendRequest {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum FriendRequestKind {
-    /// 带 [`FRIEND_EVENT`] 的私聊邀请。
+    /// 创建内容带 [`FRIEND_EVENT`] 的私聊邀请。
     Friend,
     DirectChat,
     #[serde(other)]

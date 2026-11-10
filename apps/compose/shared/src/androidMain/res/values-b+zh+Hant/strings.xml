@@ -421,6 +421,8 @@
     <string name="design_tab_menu">標籤選單</string>
     <!-- Accessibility state of a list row with the update badge dot. -->
     <string name="design_update_badge">有新版本</string>
+    <!-- Accessibility state of a list row with a counted badge. Argument: the count. -->
+    <string name="design_badge_count">%1$d 則待處理</string>
     <!-- Section title and text field label for the proxy address (like http://192.0.2.10:7890). -->
     <string name="egress_address">代理伺服器位址</string>
     <!-- Radio option: type a proxy address by hand instead of using an app's proxy. -->
@@ -647,6 +649,105 @@
     <string name="peers_paste_placeholder">貼上配對碼</string>
     <!-- Button under the paste field: submit the pasted code. -->
     <string name="peers_paste_submit">配對</string>
+    <!-- Title of the friends page and the settings row that opens it. -->
+    <string name="friends_title">好友</string>
+    <!-- Top-right button on the friends page that opens the add-friend sheet. -->
+    <string name="friends_add">新增</string>
+    <!-- Title of the add-friend sheet. -->
+    <string name="friends_add_title">加好友</string>
+    <!-- Placeholder of the Matrix ID field; the example is a full Matrix ID. -->
+    <string name="friends_add_placeholder">@bob:example.org</string>
+    <!-- Submit button under the Matrix ID field. -->
+    <string name="friends_add_submit">傳送邀請</string>
+    <!-- Section heading above the pending requests, received and sent. -->
+    <string name="friends_requests_title">邀請</string>
+    <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
+    <string name="friends_request_label">好友邀請</string>
+    <!-- Subtitle on a request I sent: it stays until they answer. -->
+    <string name="friends_request_waiting">等對方同意</string>
+    <!-- Approve button on a received request. -->
+    <string name="friends_request_approve">同意</string>
+    <!-- Reject button on a received request. -->
+    <string name="friends_request_reject">拒絕</string>
+    <!-- Cancel button on a request I sent. -->
+    <string name="friends_request_cancel">取消</string>
+    <!-- Section heading above the friend list. -->
+    <string name="friends_list_title">好友</string>
+    <!-- Empty page: the one sentence above the add button. -->
+    <string name="friends_empty">還沒有好友</string>
+    <!-- Row subtitle when a friend is in no group. -->
+    <string name="friends_no_group">沒有群組</string>
+    <!-- Separator between group names on a friend row. -->
+    <string name="friends_group_separator">、</string>
+    <!-- Row subtitle: how many plugins this friend can open. -->
+    <plurals name="friends_shared_plugins">
+        <item quantity="other">已分享 %1$d 個外掛</item>
+    </plurals>
+    <!-- Section heading above the groups and their actions. -->
+    <string name="friends_groups_title">群組</string>
+    <!-- Row that opens the new-group dialog. -->
+    <string name="friends_group_new">新增群組</string>
+    <!-- Title of the new-group dialog. -->
+    <string name="friends_group_create_title">新增群組</string>
+    <!-- Title of the rename-group dialog. Argument: the current name. -->
+    <string name="friends_group_rename_title">將「%1$s」改名</string>
+    <!-- Placeholder of the group name field. -->
+    <string name="friends_group_name_placeholder">群組名稱</string>
+    <!-- Confirmation dialog title for deleting a group. Argument: the group name. -->
+    <string name="friends_group_delete_title">刪除「%1$s」？</string>
+    <!-- Confirmation dialog body: what deleting a group does. -->
+    <string name="friends_group_delete_message">群組裡的人還是好友，發給這個群組的外掛權限會收回。</string>
+    <!-- Sheet title for choosing a friend's groups. Argument: the friend. -->
+    <string name="friends_choose_groups_title">%1$s 的群組</string>
+    <!-- Sheet action on a friend row that opens the group chooser. -->
+    <string name="friends_groups">群組</string>
+    <!-- Sheet action on a friend row: remove the friend. -->
+    <string name="friends_remove_friend">刪除好友</string>
+    <string name="friends_block_user">封鎖邀請</string>
+    <!-- Confirmation dialog title for removing a friend. Argument: the friend. -->
+    <string name="friends_remove_title">刪除「%1$s」？</string>
+    <!-- Confirmation dialog body: what removing a friend does. -->
+    <string name="friends_remove_message">你分享給他的外掛會收回，私聊留著。</string>
+    <!-- Section heading above blocked people and servers. -->
+    <string name="friends_blocked_title">已封鎖</string>
+    <!-- Row that opens the block-a-server dialog; only shown to the server's owner. -->
+    <string name="friends_block_server">封鎖整台伺服器</string>
+    <!-- Title of the block-a-server dialog. -->
+    <string name="friends_block_server_title">封鎖整台伺服器</string>
+    <!-- Placeholder of the server name field; no scheme, no wildcards. -->
+    <string name="friends_block_server_placeholder">example.org</string>
+    <!-- Submit button under the server name field. -->
+    <string name="friends_block_submit">封鎖</string>
+    <!-- Row subtitle for a blocked person. -->
+    <string name="friends_block_invitations">已封鎖邀請</string>
+    <!-- Row subtitle for a server blocked for the whole server. -->
+    <string name="friends_block_federation">已封鎖伺服器</string>
+    <!-- Row subtitle for a blocked target this version doesn't know. -->
+    <string name="friends_block_unknown">已封鎖</string>
+    <!-- Undo button on a blocked row. -->
+    <string name="friends_unblock">復原</string>
+    <!-- Failure title when the Matrix server can't be reached. -->
+    <string name="friends_error_transport">連不上 Matrix 伺服器</string>
+    <!-- Failure title when the session is no longer signed in. -->
+    <string name="friends_error_unauthorized">登入已失效</string>
+    <!-- Next step under the unauthorized failure. -->
+    <string name="friends_error_unauthorized_next">重新登入後再開啟好友。</string>
+    <!-- Failure title when the typed ID isn't a full Matrix ID. -->
+    <string name="friends_error_invalid_user_id">不是 Matrix ID</string>
+    <!-- Next step under the invalid-ID failure. -->
+    <string name="friends_error_invalid_user_id_next">寫完整的 ID，例如 @bob:example.org。</string>
+    <!-- Failure title when the request was already accepted or rejected elsewhere. -->
+    <string name="friends_error_request_not_found">這則邀請已經處理過了</string>
+    <!-- Failure title when the server asks to wait before trying again. Argument: seconds to wait. -->
+    <string name="friends_error_rate_limited">請求太多，等 %1$d 秒</string>
+    <!-- Failure title when the server asks to wait but didn't say how long. -->
+    <string name="friends_error_rate_limited_later">請求太多，稍後再試</string>
+    <!-- Failure title when the server refused the change. -->
+    <string name="friends_error_upstream">伺服器沒有接受</string>
+    <!-- Failure title for the remaining categories. -->
+    <string name="friends_error_other">出了點問題，稍後再試。</string>
+    <!-- Section heading on the peers page above the friend requests. -->
+    <string name="friends_peers_title">好友邀請</string>
     <!-- Label before an address that a third-party client uses to connect to the app. -->
     <string name="lan_client_address">位址</string>
     <!-- Label before the password a third-party client uses to sign in to the app. -->

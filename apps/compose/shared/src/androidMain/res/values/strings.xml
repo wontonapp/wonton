@@ -488,6 +488,8 @@
     <string name="design_tab_menu">Tab menu</string>
     <!-- Accessibility state of a list row with the update badge dot. -->
     <string name="design_update_badge">Update available</string>
+    <!-- Accessibility state of a list row with a counted badge. Argument: the count. -->
+    <string name="design_badge_count">%1$d pending</string>
     <!-- Section title and text field label for the proxy address (like http://192.0.2.10:7890). -->
     <string name="egress_address">Proxy address</string>
     <!-- Radio option: type a proxy address by hand instead of using an app's proxy. -->
@@ -716,6 +718,106 @@
     <string name="peers_paste_placeholder">Paste their code</string>
     <!-- Button under the paste field: submit the pasted code. -->
     <string name="peers_paste_submit">Pair</string>
+    <!-- Title of the friends page and the settings row that opens it. -->
+    <string name="friends_title">Friends</string>
+    <!-- Top-right button on the friends page that opens the add-friend sheet. -->
+    <string name="friends_add">Add</string>
+    <!-- Title of the add-friend sheet. -->
+    <string name="friends_add_title">Add friend</string>
+    <!-- Placeholder of the Matrix ID field; the example is a full Matrix ID. -->
+    <string name="friends_add_placeholder">@bob:example.org</string>
+    <!-- Submit button under the Matrix ID field. -->
+    <string name="friends_add_submit">Send request</string>
+    <!-- Section heading above the pending requests, received and sent. -->
+    <string name="friends_requests_title">Requests</string>
+    <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
+    <string name="friends_request_label">Friend request</string>
+    <!-- Subtitle on a request I sent: it stays until they answer. -->
+    <string name="friends_request_waiting">Waiting for them to accept</string>
+    <!-- Approve button on a received request. -->
+    <string name="friends_request_approve">Approve</string>
+    <!-- Reject button on a received request. -->
+    <string name="friends_request_reject">Reject</string>
+    <!-- Cancel button on a request I sent. -->
+    <string name="friends_request_cancel">Cancel</string>
+    <!-- Section heading above the friend list. -->
+    <string name="friends_list_title">Friends</string>
+    <!-- Empty page: the one sentence above the add button. -->
+    <string name="friends_empty">No friends yet</string>
+    <!-- Row subtitle when a friend is in no group. -->
+    <string name="friends_no_group">No group</string>
+    <!-- Separator between group names on a friend row. -->
+    <string name="friends_group_separator">", "</string>
+    <!-- Row subtitle: how many plugins this friend can open. -->
+    <plurals name="friends_shared_plugins">
+        <item quantity="one">%1$d plugin shared</item>
+        <item quantity="other">%1$d plugins shared</item>
+    </plurals>
+    <!-- Section heading above the groups and their actions. -->
+    <string name="friends_groups_title">Groups</string>
+    <!-- Row that opens the new-group dialog. -->
+    <string name="friends_group_new">New group</string>
+    <!-- Title of the new-group dialog. -->
+    <string name="friends_group_create_title">New group</string>
+    <!-- Title of the rename-group dialog. Argument: the current name. -->
+    <string name="friends_group_rename_title">Rename “%1$s”</string>
+    <!-- Placeholder of the group name field. -->
+    <string name="friends_group_name_placeholder">Group name</string>
+    <!-- Confirmation dialog title for deleting a group. Argument: the group name. -->
+    <string name="friends_group_delete_title">Delete “%1$s”?</string>
+    <!-- Confirmation dialog body: what deleting a group does. -->
+    <string name="friends_group_delete_message">Friends in it stay friends. Plugin access given to this group is withdrawn.</string>
+    <!-- Sheet title for choosing a friend's groups. Argument: the friend. -->
+    <string name="friends_choose_groups_title">Groups for %1$s</string>
+    <!-- Sheet action on a friend row that opens the group chooser. -->
+    <string name="friends_groups">Groups</string>
+    <!-- Sheet action on a friend row: remove the friend. -->
+    <string name="friends_remove_friend">Remove friend</string>
+    <string name="friends_block_user">Block invitations</string>
+    <!-- Confirmation dialog title for removing a friend. Argument: the friend. -->
+    <string name="friends_remove_title">Remove “%1$s”?</string>
+    <!-- Confirmation dialog body: what removing a friend does. -->
+    <string name="friends_remove_message">They stop getting the plugins you share. The chat stays.</string>
+    <!-- Section heading above blocked people and servers. -->
+    <string name="friends_blocked_title">Blocked</string>
+    <!-- Row that opens the block-a-server dialog; only shown to the server's owner. -->
+    <string name="friends_block_server">Block a server</string>
+    <!-- Title of the block-a-server dialog. -->
+    <string name="friends_block_server_title">Block a server</string>
+    <!-- Placeholder of the server name field; no scheme, no wildcards. -->
+    <string name="friends_block_server_placeholder">example.org</string>
+    <!-- Submit button under the server name field. -->
+    <string name="friends_block_submit">Block</string>
+    <!-- Row subtitle for a blocked person. -->
+    <string name="friends_block_invitations">Invitations blocked</string>
+    <!-- Row subtitle for a server blocked for the whole server. -->
+    <string name="friends_block_federation">Server blocked</string>
+    <!-- Row subtitle for a blocked target this version doesn't know. -->
+    <string name="friends_block_unknown">Blocked</string>
+    <!-- Undo button on a blocked row. -->
+    <string name="friends_unblock">Undo</string>
+    <!-- Failure title when the Matrix server can't be reached. -->
+    <string name="friends_error_transport">Can\'t reach the Matrix server</string>
+    <!-- Failure title when the session is no longer signed in. -->
+    <string name="friends_error_unauthorized">Your session expired</string>
+    <!-- Next step under the unauthorized failure. -->
+    <string name="friends_error_unauthorized_next">Sign in again, then open Friends.</string>
+    <!-- Failure title when the typed ID isn't a full Matrix ID. -->
+    <string name="friends_error_invalid_user_id">Not a Matrix ID</string>
+    <!-- Next step under the invalid-ID failure. -->
+    <string name="friends_error_invalid_user_id_next">Use the whole ID, like @bob:example.org.</string>
+    <!-- Failure title when the request was already accepted or rejected elsewhere. -->
+    <string name="friends_error_request_not_found">That request was already handled</string>
+    <!-- Failure title when the server asks to wait before trying again. Argument: seconds to wait. -->
+    <string name="friends_error_rate_limited">Too many requests. Wait %1$d seconds.</string>
+    <!-- Failure title when the server asks to wait but didn't say how long. -->
+    <string name="friends_error_rate_limited_later">Too many requests. Try again later.</string>
+    <!-- Failure title when the server refused the change. -->
+    <string name="friends_error_upstream">The server refused it</string>
+    <!-- Failure title for the remaining categories. -->
+    <string name="friends_error_other">Something went wrong. Try again later.</string>
+    <!-- Section heading on the peers page above the friend requests. -->
+    <string name="friends_peers_title">Friend requests</string>
     <!-- Label before an address that a third-party client uses to connect to the app. -->
     <string name="lan_client_address">Address</string>
     <!-- Label before the password a third-party client uses to sign in to the app. -->

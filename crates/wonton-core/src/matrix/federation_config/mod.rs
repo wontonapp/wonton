@@ -17,13 +17,15 @@ use tokio::sync::watch;
 use super::NoticeRoom;
 use crate::plugin::docker::{Engine, LabeledResources};
 
+mod blocks;
 mod files;
 #[cfg(test)]
 mod proxy_tests;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use files::allowlist_toml;
+pub use blocks::FederationBlocks;
+pub(crate) use files::{allowlist_toml, blocks_toml};
 
 /// 核心给 Tuwunel 开的联邦出站代理：核心在内部网络上的别名和端口。`deploy/install/compose.yaml` 里核心的
 /// 网络别名和 `WONTON_FEDERATION_LISTEN` 用的是同一个值，一起改。
@@ -50,6 +52,7 @@ impl FederationConfig {
         core_container: Option<String>,
         notice: Option<Arc<NoticeRoom>>,
         mut peers: watch::Receiver<BTreeSet<String>>,
+        blocks: Option<Arc<FederationBlocks>>,
     ) {
         let (Some(install_dir), Some(core_container)) = (install_dir, core_container) else {
             tracing::debug!("没有安装目录或核心容器名，联邦名单交给 Tuwunel 的安装配置");
@@ -62,20 +65,36 @@ impl FederationConfig {
             notice,
         });
         tokio::spawn(async move {
-            // 启动时先把名单对齐（配对组件还没合时集合一直是空的，写出来的和安装时一样）。
-            let initial = peers.borrow_and_update().clone();
-            config.apply(initial).await;
-            while peers.changed().await.is_ok() {
+            let mut blocked = blocks.as_ref().map(|blocks| blocks.subscribe());
+            loop {
+                // 两份名单各自的最新值一起写：只改一份时另一份照旧。
                 let names = peers.borrow_and_update().clone();
-                config.apply(names).await;
+                let denied = blocked
+                    .as_mut()
+                    .map(|changed| changed.borrow_and_update().clone())
+                    .unwrap_or_default();
+                config.apply(names, denied).await;
+                match blocked.as_mut() {
+                    Some(changed) => {
+                        tokio::select! {
+                            result = peers.changed() => if result.is_err() { break },
+                            result = changed.changed() => if result.is_err() { break },
+                        }
+                    }
+                    None => {
+                        if peers.changed().await.is_err() {
+                            break;
+                        }
+                    }
+                }
             }
             // 发送方没了：名单停在最后的值上，如实记一条。
             tracing::warn!("联邦名单的来源已关闭，名单停在最后的值");
         });
     }
 
-    async fn apply(&self, names: BTreeSet<String>) {
-        if let Err(error) = self.apply_inner(&names).await {
+    async fn apply(&self, names: BTreeSet<String>, blocked: BTreeSet<String>) {
+        if let Err(error) = self.apply_inner(&names, &blocked).await {
             tracing::error!(%error, "联邦名单更新失败");
             self.notify(&format!(
                 "联邦名单更新失败：{error}\n下次配对变化或核心重启时会自动重试。"
@@ -84,10 +103,14 @@ impl FederationConfig {
         }
     }
 
-    async fn apply_inner(&self, names: &BTreeSet<String>) -> anyhow::Result<()> {
+    async fn apply_inner(
+        &self,
+        names: &BTreeSet<String>,
+        blocked: &BTreeSet<String>,
+    ) -> anyhow::Result<()> {
         self.write_in_place(
             &self.install_dir.join("fed/config.toml"),
-            &allowlist_toml(names),
+            &format!("{}{}", allowlist_toml(names), blocks_toml(blocked)),
         )
         .await?;
         // SIGUSR1 无条件发：热加载是幂等的，也补上上次核心死在“写完文件、信号没发出去”之间的可能。

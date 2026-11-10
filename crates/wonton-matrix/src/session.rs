@@ -268,12 +268,6 @@ impl MatrixSession {
         })
     }
 
-    /// 测试用，拿弱引用观察 Client 释放。
-    #[cfg(feature = "testkit")]
-    pub fn client(&self) -> &Client {
-        &self.client
-    }
-
     /// 当前的登录状态，用来存到本机。访问令牌刷新后（[`SessionEvent::TokensRefreshed`]）要重新取一次存下。
     pub fn saved(&self) -> Option<SavedSession> {
         self.client.matrix_auth().session().map(SavedSession)
@@ -282,6 +276,11 @@ impl MatrixSession {
     /// 本设备登录的用户。
     pub fn user_id(&self) -> &UserId {
         &self.user_id
+    }
+
+    /// 底层 SDK 客户端：本 crate 的封装之外的操作（如自定义状态事件、账号数据）用它。
+    pub fn client(&self) -> &Client {
+        &self.client
     }
 
     /// 本设备在服务器上的 ID，核心吊销设备时用它。

@@ -67,36 +67,24 @@ impl ClientCore {
             | Action::RejectPeerRequest { .. }
             | Action::UnrejectPeerRequest { .. }
             | Action::RemovePeer { .. }) => scope.peers.dispatch(peers),
-            Action::AppForegrounded => {
-                scope.foregrounded();
-                Ok(())
-            }
-            Action::AppBackgrounded => {
-                scope.backgrounded();
-                Ok(())
-            }
-            Action::NetworkChanged { network } => {
-                self.replay().network = Some(network);
-                scope.home.network_changed(network);
-                if network != DeviceNetwork::None {
-                    // 连接可能没断、只是迁移了路径：同步和发送队列的退避不用等完。
-                    scope.chat.foregrounded();
-                }
-                Ok(())
-            }
-            Action::RetryConnection => scope.home.retry(),
-            Action::SetPushEndpoint { endpoint } => {
-                scope.push.set_endpoint(endpoint.clone())?;
-                self.register_others(&scope, endpoint.clone());
-                self.replay().push = Some(PushInput::Endpoint(endpoint));
-                Ok(())
-            }
-            Action::PushUnavailable { message } => {
-                scope.push.unavailable(message.clone());
-                self.replay().push = Some(PushInput::Unavailable(message));
-                Ok(())
-            }
-            Action::SetPushMethod { method } => scope.push_method.set(method),
+            friends @ (Action::RefreshFriends
+            | Action::AddFriend { .. }
+            | Action::ApproveFriendRequest { .. }
+            | Action::RejectFriendRequest { .. }
+            | Action::CancelFriendRequest { .. }
+            | Action::RemoveFriend { .. }
+            | Action::BlockFriend { .. }
+            | Action::UnblockFriend { .. }
+            | Action::SaveFriendGroup { .. }
+            | Action::RemoveFriendGroup { .. }
+            | Action::SetFriendGroups { .. }) => scope.friends.dispatch(friends),
+            action @ (Action::AppForegrounded
+            | Action::AppBackgrounded
+            | Action::NetworkChanged { .. }
+            | Action::RetryConnection
+            | Action::SetPushEndpoint { .. }
+            | Action::PushUnavailable { .. }
+            | Action::SetPushMethod { .. }) => self.lifecycle_action(&scope, action),
             action @ (Action::RefreshOnboarding
             | Action::RestartOnboarding
             | Action::ChooseOnboardingAgent { .. }
@@ -160,4 +148,45 @@ fn is_tab_action(action: &Action) -> bool {
             | Action::DismissUninstalledTabs
             | Action::SetRoomEntryBlocked { .. }
     )
+}
+
+impl ClientCore {
+    /// 前台、网络和推送方式这些会话级的操作。
+    fn lifecycle_action(&self, scope: &Scope, action: Action) -> Result<(), CoreError> {
+        match action {
+            Action::AppForegrounded => {
+                scope.foregrounded();
+                Ok(())
+            }
+            Action::AppBackgrounded => {
+                scope.backgrounded();
+                Ok(())
+            }
+            Action::NetworkChanged { network } => {
+                self.replay().network = Some(network);
+                scope.home.network_changed(network);
+                if network != DeviceNetwork::None {
+                    // 连接可能没断、只是迁移了路径：同步和发送队列的退避不用等完。
+                    scope.chat.foregrounded();
+                }
+                Ok(())
+            }
+            Action::RetryConnection => scope.home.retry(),
+            Action::SetPushEndpoint { endpoint } => {
+                scope.push.set_endpoint(endpoint.clone())?;
+                self.register_others(scope, endpoint.clone());
+                self.replay().push = Some(PushInput::Endpoint(endpoint));
+                Ok(())
+            }
+            Action::PushUnavailable { message } => {
+                scope.push.unavailable(message.clone());
+                self.replay().push = Some(PushInput::Unavailable(message));
+                Ok(())
+            }
+            Action::SetPushMethod { method } => scope.push_method.set(method),
+            _ => Err(CoreError::InvalidInput {
+                reason: l10n!(CATALOG, language(), "sessions-invalid-action"),
+            }),
+        }
+    }
 }

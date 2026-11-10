@@ -13,6 +13,7 @@
 mod chat;
 mod egress;
 mod encryption;
+mod friends;
 mod layout;
 mod leak816;
 mod login;

@@ -15,9 +15,9 @@ use crate::l10n;
 
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
-    Gateway, TunnelPeer, api, bots, confirmations, core_upgrade, devices, family, files, isolation,
-    matrix, me, model_providers, onboarding, pages, peers, push, same_origin_path, settings_api,
-    sso, store_api, tool_policy, with_cookie,
+    Gateway, TunnelPeer, api, bots, confirmations, core_upgrade, devices, family, files, friends,
+    isolation, matrix, me, model_providers, onboarding, pages, peers, push, same_origin_path,
+    settings_api, sso, store_api, tool_policy, with_cookie,
 };
 
 /// 确认卡片，和主人对确认的放宽（ADR-0016、ADR-0024）。
@@ -249,6 +249,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         )
         .route("/_wonton/api/tunnel", get(devices::tunnel))
         .merge(peer_routes())
+        .merge(friend_routes())
         .route(
             "/_wonton/api/devices",
             get(devices::list).post(devices::add),
@@ -288,6 +289,29 @@ fn link_preview_routes() -> Router<Arc<Gateway>> {
         .route(
             &wonton_protocol::link_preview_image_path("{id}"),
             get(super::link_preview::image),
+        )
+}
+
+/// 好友名单和联邦黑名单（ADR-0051）。个人屏蔽走 Matrix 账号数据，不在这里。
+fn friend_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route("/_wonton/api/friends", get(friends::list))
+        .route(
+            "/_wonton/api/friends/{user_id}",
+            put(friends::accept).delete(friends::remove),
+        )
+        .route(
+            "/_wonton/api/friends/{user_id}/groups",
+            put(friends::set_groups),
+        )
+        .route("/_wonton/api/friend-groups", post(friends::save_group))
+        .route(
+            "/_wonton/api/friend-groups/{id}",
+            delete(friends::remove_group),
+        )
+        .route(
+            "/_wonton/api/federation-blocks/{server_name}",
+            post(friends::block_server).delete(friends::unblock_server),
         )
 }
 

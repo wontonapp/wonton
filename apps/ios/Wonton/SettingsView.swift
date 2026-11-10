@@ -25,6 +25,7 @@ struct SettingsTab: View {
         }
         .fullScreenCover(isPresented: $isEditingProfile) { OwnerProfileView(model: plugins) }
         .fullScreenCover(isPresented: $isChoosingAgent) { PrimaryAgentPicker(model: onboarding) }
+        .task { try? chat.core.dispatch(action: .refreshFriends) }
         .wontonDialog(problem: home.rejection, isPresented: Binding(
             get: { isActive && home.rejection != nil }, set: { if !$0 && isActive { home.rejection = nil } }
         ))
@@ -47,6 +48,7 @@ struct SettingsTab: View {
                 .wontonPushedScreen(String(localized: .pairingTitleAgain))
         case .peers:
             PeersView(core: chat.core, focusRequests: model.peersFocusRequests)
+        case .friends: FriendsView(core: chat.core)
         case .egress: EgressSettingsView(model: plugins)
         case .registryMirror: RegistryMirrorSettingsView(model: plugins)
         case .coreUpgrade: CoreUpgradeView(model: plugins)
@@ -108,6 +110,15 @@ struct SettingsView: View {
             NavigationLink(value: SettingsRoute.peers) {
                 WontonRow(title: String(localized: .peersTitle), value: String(count), showsForward: true)
             }
+        case let .friends(count, requests):
+            NavigationLink(value: SettingsRoute.friends) {
+                WontonRow(
+                    title: String(localized: .friendsTitle),
+                    value: String(count),
+                    badgeText: requests > 0 ? String(requests) : nil,
+                    showsForward: true
+                )
+            }
         case .bottomBar:
             NavigationLink(value: SettingsRoute.bottomBar) { WontonRow(title: TabText.bottomBar, showsForward: true) }
         case .notifications:
@@ -132,7 +143,7 @@ struct SettingsView: View {
             NavigationLink(value: SettingsRoute.about) {
                 WontonRow(title: String(localized: .settingsAbout), value: AppVersion.full, showsForward: true)
             }
-        case .matrixAccount, .matrixDevices, .addWontonServer, .friends, .other:
+        case .matrixAccount, .matrixDevices, .addWontonServer, .other:
             EmptyView()
         }
     }

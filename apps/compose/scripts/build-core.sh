@@ -32,6 +32,11 @@ for tool in cargo cargo-ndk; do
     exit 1
   fi
 done
+# cargo 经本机的名额脚本走，同时开好几个构建时不把机器压塌；没有这个脚本就直接调 cargo。
+# 函数遮住同名的可执行文件；名额脚本另起进程，找的还是 PATH 里的 cargo。
+if [ -x "$HOME/wonton-dev/cargo-slot.sh" ]; then
+  cargo() { "$HOME/wonton-dev/cargo-slot.sh" cargo "$@"; }
+fi
 
 repo_root="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 cd "$repo_root"

@@ -26,11 +26,13 @@ use anyhow::{Context, bail};
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 use wonton_core::config::Config;
+mod serve;
 use wonton_core::device::Devices;
 use wonton_core::files::{CoreHost, Files, FilesConfig};
+use wonton_core::friends::Friends;
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
-use wonton_core::matrix::{FederationConfig, Matrix, NoticeRoom};
+use wonton_core::matrix::{FederationBlocks, FederationConfig, Matrix, NoticeRoom};
 use wonton_core::mcp;
 use wonton_core::mcp::audit::Audit;
 use wonton_core::members::Members;
@@ -235,14 +237,12 @@ fn plugin_engine(cfg: &Config) -> anyhow::Result<Engine> {
     Ok(Engine::connect()?.with_network_pool(cfg.plugin_network_pool, detector))
 }
 
-/// 联邦名单的运行时（ADR-0050）：盯配对组件的已配对名单（[`peers::Peers::paired_names`]），
-/// 变了就重写 Tuwunel 的第二份配置。没接 Matrix 的核心没有配对，也就没有名单可盯。
-/// 核心每次启动都会按启动时的名单对齐一次，补上上次没发出去的更新。
 fn spawn_federation_config(
     engine: &Engine,
     cfg: &Config,
     peers: &Option<Arc<peers::Peers>>,
     notices: &Option<Arc<NoticeRoom>>,
+    blocks: Option<Arc<FederationBlocks>>,
 ) {
     let Some(names) = peers.as_ref().map(|peers| peers.paired_names()) else {
         return;
@@ -253,10 +253,10 @@ fn spawn_federation_config(
         cfg.core_container.clone(),
         notices.clone(),
         names,
+        blocks,
     );
 }
 
-/// 主人令牌：第一次启动生成一个，之后原样读。
 fn owner_token(cfg: &Config) -> anyhow::Result<String> {
     let path = cfg.core_state_dir().join("owner-token");
     let token = secret::load_or_create(&path)
@@ -283,11 +283,7 @@ async fn serve() -> anyhow::Result<()> {
         .with_context(|| format!("监听 {}", cfg.listen))?;
 
     let upgrades = open_upgrades(&cfg, &engine);
-    let http = HttpClient::new();
-    let system_http =
-        HttpClient::for_system_services(&engine, cfg.core_container.as_deref()).await?;
-    let hydra = connect_hydra(&cfg, &system_http).await?;
-    let matrix = connect_matrix(&cfg, &system_http).await?;
+    let (http, system_http, hydra, matrix) = serve::open_clients(&cfg, &engine).await?;
     let hydra_for_manager = hydra.as_ref().map(|(h, _)| h.clone());
     let (manager, images) = start_plugin_manager(
         &cfg,
@@ -300,6 +296,7 @@ async fn serve() -> anyhow::Result<()> {
     )
     .await?;
 
+    let (friends, federation_blocks) = serve::open_friends(&cfg)?;
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
     let members = Arc::new(
         Members::open(cfg.core_state_dir().join("members.json"))
@@ -328,7 +325,7 @@ async fn serve() -> anyhow::Result<()> {
     let (peers, federation, _forwarder) =
         open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
-    spawn_federation_config(&engine, &cfg, &peers, &notices);
+    spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
     let push = open_push(&cfg, &tunnel, &manager)?;
     let upgrades_after_serve = upgrades.clone();
     let gateway = Arc::new(
@@ -345,6 +342,9 @@ async fn serve() -> anyhow::Result<()> {
         .with_system_http(system_http)
         .with_matrix(matrix)
         .with_send_limiter(Arc::new(gateway::SendLimiter::new(cfg.send_limits.clone())))
+        .with_people_limiter(Arc::new(gateway::people_limits::PeopleLimiter::new(
+            cfg.people_limits,
+        )))
         .with_push(Some(Arc::new(push)))
         .with_mcp(Some(bus.endpoint()))
         .with_notices(notices)
@@ -352,52 +352,19 @@ async fn serve() -> anyhow::Result<()> {
         .with_audit(Some(audit))
         .with_tusd(cfg.tusd.clone())
         .with_upgrades(Some(upgrades))
-        .with_peers(peers.clone()),
+        .with_peers(peers.clone())
+        .with_friends(Some(friends))
+        .with_federation_blocks(federation_blocks),
     );
-    let push_listener = push_listener::bind(cfg.push_listen.as_deref()).await?;
-    let app = gateway::router(gateway.clone());
-    let entry = spawn_tunnel(&tunnel, app.clone(), peers, federation, &manager);
-    tracing::info!(
-        listen = %cfg.listen,
-        url = %cfg.public.origin(cfg.public.core_host()),
-        "网关已启动"
-    );
-    let served = tokio::spawn(push_listener::serve(
+    serve::run_gateway(
+        &cfg,
         listener,
-        app,
-        push_listener.map(|listener| (listener, gateway::push_router(gateway))),
-    ));
-    // 网关开始接了才核对插件：核对时渲染变了会重建容器，里面的一次性服务要经核心的地址访问核心。
-    start_restored_plugins(&cfg, &manager, upgrades_after_serve).await?;
-    // 隧道跟网关同生命周期：网关结束（收到退出信号）后才关。放在核对之后、网关结束之前关，
-    // 核心一启动完隧道就没了，手机配不上也连不回家。
-    let served = served.await.context("网关任务退出");
-    entry.shutdown().await;
-    served?
-}
-
-/// 隧道入口：网关路由、联邦和服务器配对处理器、插件端口解析器一起挂上。
-fn spawn_tunnel(
-    tunnel: &Tunnel,
-    app: axum::Router,
-    peers: Option<Arc<peers::Peers>>,
-    federation: Option<FederationProtocol>,
-    manager: &Arc<PluginManager>,
-) -> TunnelEntry {
-    TunnelEntry::spawn_with_protocols(
         tunnel,
-        app,
-        extra_protocols(peers, federation),
-        Arc::new(tunnel::PluginPortResolver::new(manager.clone())),
+        (peers, federation),
+        gateway,
+        (manager, upgrades_after_serve),
     )
-}
-
-fn spawn_plugin_monitors(manager: &Arc<PluginManager>) {
-    manager.spawn_lan_monitor();
-    manager.spawn_egress_monitor();
-    manager.spawn_upgrade_checks();
-    manager.spawn_oom_watch();
-    manager.spawn_container_watch();
+    .await
 }
 
 fn lifecycle_config(cfg: &Config, owner: Arc<OwnerStore>) -> LifecycleConfig {
@@ -674,7 +641,7 @@ async fn start_restored_plugins(
     upgrades: Arc<Upgrades>,
 ) -> anyhow::Result<()> {
     manager.restore().await.context("恢复已安装的插件")?;
-    spawn_plugin_monitors(manager);
+    serve::spawn_plugin_monitors(manager);
     upgrades.spawn();
     preinstall(cfg, manager.clone(), upgrades)?;
     Ok(())

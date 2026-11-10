@@ -33,6 +33,8 @@ mod core_upgrade;
 mod devices;
 pub mod family;
 mod files;
+mod friends;
+mod friends_wiring;
 mod health;
 mod isolation;
 mod lan;
@@ -48,6 +50,7 @@ mod onboarding;
 mod owner_secrets;
 mod pages;
 mod peers;
+pub mod people_limits;
 mod plugin_scope;
 mod plugin_start;
 mod plugin_web;
@@ -56,10 +59,12 @@ mod proxy_sso;
 mod push;
 mod pushers;
 mod registry_mirror;
+mod request_guards;
 mod room_rules;
 pub(crate) mod send_limits;
 
 pub use push::router as push_router;
+pub(crate) use request_guards::{same_origin_path, with_cookie};
 pub use send_limits::{SendLimiter, SendLimits};
 mod session;
 mod settings_api;
@@ -85,9 +90,10 @@ use wonton_protocol::{MemberStatus, Role};
 pub(crate) struct MissingMember(pub(crate) String);
 
 use crate::config::{self, HostKind, PublicUrls};
+use crate::friends::Friends;
 use crate::http::HttpClient;
 use crate::l10n;
-use crate::matrix::Matrix;
+use crate::matrix::{FederationBlocks, Matrix};
 use crate::members::Members;
 use crate::oidc::Hydra;
 use crate::owner::{Owner, OwnerStore};
@@ -150,6 +156,8 @@ pub struct Gateway {
     pub matrix: Option<Arc<Matrix>>,
     /// Bot 发消息的频率和跳数（ADR-0045）。计数在内存里，核心重启从头算。
     pub(crate) send_limits: Arc<send_limits::SendLimiter>,
+    /// 本机每个人发邀请、发消息的频率（ADR-0051）。计数只在内存里，重启从头算。
+    pub(crate) people_limits: Arc<people_limits::PeopleLimiter>,
     /// 推送代理；没启用时登记和推送都如实报不可用。
     pub push: Option<Arc<Push>>,
     /// MCP 总线；没启用时 `mcp.wonton.internal` 如实报不可用。
@@ -169,6 +177,10 @@ pub struct Gateway {
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     /// 服务器配对（ADR-0050）；没接 Matrix 的核心没有它，接口如实报不可用。
     pub peers: Option<Arc<crate::peers::Peers>>,
+    /// 好友名单（ADR-0051）；记录同意过的好友和固定的插件用户名。
+    friends: Option<Arc<Friends>>,
+    /// 整台服务器的联邦黑名单（`forbidden_remote_server_names`）；只有能热加载配置的安装才有。
+    pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
     pub(crate) onboarding: Arc<onboarding::OnboardingState>,
     /// `plugins.health` 的限频表（[`health`]）。
     health_limits: health::RateLimits,
@@ -220,6 +232,9 @@ impl Gateway {
             send_limits: Arc::new(send_limits::SendLimiter::new(
                 send_limits::SendLimits::default(),
             )),
+            people_limits: Arc::new(people_limits::PeopleLimiter::new(
+                people_limits::PeopleLimits::default(),
+            )),
             push: None,
             mcp: None,
             notices: None,
@@ -229,6 +244,8 @@ impl Gateway {
             tusd: None,
             upgrades: None,
             peers: None,
+            friends: None,
+            federation_blocks: None,
             onboarding,
             health_limits: health::RateLimits::new(),
             link_previews,
@@ -570,10 +587,10 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
     let credentials = isolation::credentials_allowed(req.method(), req.headers(), &origin);
     let person = gateway.plugin_person(&host, &req);
     if !credentials {
-        return unauthenticated(gateway, &host, &req, false);
+        return request_guards::unauthenticated(gateway, &host, &req, false);
     }
     let Some(person) = person else {
-        return unauthenticated(gateway, &host, &req, true);
+        return request_guards::unauthenticated(gateway, &host, &req, true);
     };
     // 插件对家人只看“家人能用”开关：主人开放了才放行（ADR-0045）。核心不查 setup_done（ADR-0021），
     // 家人这一侧没有别的门槛。
@@ -667,51 +684,6 @@ fn attach_proxy_credentials(
 
 /// 未登录：浏览器的页面导航跳到核心换取插件会话，其余请求（XHR、API）直接 401。`credentials` 为假的
 /// 跨站请求换到会话也不认，同样 401。
-fn unauthenticated(gateway: &Gateway, host: &str, req: &Request, credentials: bool) -> Response {
-    let langs = api::languages(req.headers());
-    let format = pages::Format::of(req.headers());
-    if !credentials {
-        return pages::error(
-            StatusCode::UNAUTHORIZED,
-            "unauthenticated",
-            &l10n::text(&langs, "gateway-cross-site-login", &[]),
-            &langs,
-            format,
-        );
-    }
-    if req.method() == Method::GET && format == pages::Format::Html {
-        let path = req.uri().path_and_query().map_or("/", |p| p.as_str());
-        let to = format!("{}{path}", gateway.public.origin(host));
-        let query = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("to", &to)
-            .finish();
-        return Redirect::to(&format!("{}/_wonton/sso?{query}", gateway.core_origin()))
-            .into_response();
-    }
-    pages::error(
-        StatusCode::UNAUTHORIZED,
-        "unauthenticated",
-        &l10n::text(&langs, "gateway-login-required", &[]),
-        &langs,
-        format,
-    )
-}
-
-/// 把跳转目标相对 `origin` 解析，只接受同源结果，返回站内路径（含查询）。浏览器会把 http(s)
-/// 地址里的 `\` 当成 `/`，只拒绝 `//` 开头不够（`/\evil.example` 会跳到 `http://evil.example`）。
-fn same_origin_path(origin: &str, target: &str) -> Option<String> {
-    let base = url::Url::parse(origin).ok()?;
-    let joined = base.join(target).ok()?;
-    (joined.origin() == base.origin()).then(|| joined[url::Position::BeforePath..].to_owned())
-}
-
-fn with_cookie(mut response: Response, cookie: String) -> Response {
-    if let Ok(value) = cookie.parse() {
-        response.headers_mut().append(SET_COOKIE, value);
-    }
-    response
-}
-
 #[cfg(test)]
 mod bot_activity_tests;
 #[cfg(test)]
@@ -744,6 +716,8 @@ mod files_upload_failure_tests;
 mod files_upload_tests;
 #[cfg(test)]
 mod first_run_tests;
+#[cfg(test)]
+mod friends_tests;
 #[cfg(test)]
 mod health_tests;
 #[cfg(test)]

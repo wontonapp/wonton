@@ -45,6 +45,20 @@ peers-invalid-proxy = 本機代理不可用：{ $reason }
 peers-server-status = 家裡的伺服器回了 HTTP { $status }
 # $reason 是 JSON 解析器的原始錯誤。
 peers-invalid-response = 家裡的伺服器給的回應讀不懂：{ $reason }
+friends-transport = 連不上家裡的伺服器：{ $reason }
+friends-server-status = 家裡的伺服器回了 HTTP { $status }
+friends-invalid-response = 家裡的伺服器給的回應讀不懂：{ $reason }
+friends-not-signed-in = 還沒登入這個帳號。
+friends-not-connected = 還沒連上家用伺服器。
+friends-invalid-action = 不是好友操作。
+friends-local-open = 本機好友清單打不開：{ $reason }
+friends-invalid-proxy = 本機代理位址不可用：{ $reason }
+friends-http-client = 本機 HTTP 用戶端建立失敗：{ $reason }
+friends-invalid-url = 好友服務位址不合法：{ $reason }
+friends-request-body = 好友請求編碼失敗：{ $reason }
+friends-timeout = 好友服務沒有及時回應。
+friends-group-name-required = 請填寫分組名稱。
+friends-group-not-found = 沒有這個分組：{ $id }
 # $reason 是隧道拒絕的原話。
 peers-rejected = 家裡的伺服器拒絕了這台裝置：{ $reason }
 

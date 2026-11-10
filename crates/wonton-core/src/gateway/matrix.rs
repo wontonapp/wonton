@@ -98,6 +98,14 @@ pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
     if let Some(room) = send_limits::counted_room(req.method(), req.uri().path()) {
         gateway.send_limits.device_sent(&room);
     }
+    // 每人每分钟的发邀请、发消息上限（ADR-0051）：按设备认人，超了 SDK 按 retry_after_ms 自己等。
+    if let Some(person) = gateway.device_user(req.extensions().get().copied()) {
+        let req = match gateway.people_limits.check(req, &person).await {
+            Ok(req) => req,
+            Err(refused) => return *refused,
+        };
+        return forward_client_api(gateway, req).await;
+    }
     forward_client_api(gateway, req).await
 }
 
@@ -296,7 +304,7 @@ pub(super) fn percent_decode(segment: &str) -> Vec<u8> {
     out
 }
 
-pub(super) fn matrix_error(
+pub(crate) fn matrix_error(
     status: StatusCode,
     errcode: &str,
     kind: &'static str,

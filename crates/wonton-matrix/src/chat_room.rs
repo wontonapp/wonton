@@ -11,7 +11,7 @@ use matrix_sdk::{
     Room, RoomMemberships,
     event_cache::PaginationStatus,
     ruma::{
-        EventId, OwnedEventId, RoomId,
+        EventId, OwnedEventId, RoomId, UserId,
         api::client::receipt::create_receipt::v3::ReceiptType,
         api::client::state::get_state_events,
         events::{
@@ -263,6 +263,11 @@ impl ChatRoom {
     }
 
     /// 发一个房间状态事件；`state_key` 为空串时是房间级状态。内容原样发，不需要 ruma 认识事件类型。
+    pub async fn invite(&self, user: &UserId) -> Result<()> {
+        self.room.invite_user_by_id(user).await?;
+        Ok(())
+    }
+
     pub async fn send_state_event_raw(
         &self,
         event_type: &str,

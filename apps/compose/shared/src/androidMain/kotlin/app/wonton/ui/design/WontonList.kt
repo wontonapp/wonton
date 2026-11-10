@@ -43,7 +43,7 @@ fun WontonGroup(content: @Composable () -> Unit) {
     }
 }
 
-/** 列表行，有 `onClick` 时能点。 */
+/** 列表行，有 `onClick` 时能点。[badgeCount] 大于 0 时在行尾显示数字角标。 */
 @Composable
 fun WontonRow(
     title: String,
@@ -52,15 +52,25 @@ fun WontonRow(
     showsForward: Boolean = false,
     titleTint: Rgb? = null,
     badge: Boolean = false,
+    badgeCount: Int? = null,
     onClick: (() -> Unit)? = null,
 ) {
     val colors = WontonTheme.colors
     val badgeState = stringResource(R.string.design_update_badge)
+    val countedBadge = badgeCount?.takeIf { it > 0 }
+    val countedBadgeState = countedBadge?.let { stringResource(R.string.design_badge_count, it) }
     Row(
         Modifier.fillMaxWidth()
             .heightIn(min = WontonTheme.size.target)
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .then(if (badge) Modifier.semantics { stateDescription = badgeState } else Modifier)
+            .then(
+                if (countedBadgeState != null) {
+                    Modifier.semantics { stateDescription = countedBadgeState }
+                } else {
+                    Modifier
+                },
+            )
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
@@ -72,6 +82,18 @@ fun WontonRow(
                     it,
                     style = WontonTheme.typography.body.copy(textAlign = TextAlign.End),
                     color = (valueTint ?: colors.textSecondary).toColor(),
+                )
+            }
+        }
+        countedBadge?.let {
+            Box(
+                Modifier.background(colors.primary.toColor(), CircleShape)
+                    .padding(horizontal = WontonTheme.spacing.s8, vertical = 2.dp),
+            ) {
+                Text(
+                    it.toString(),
+                    style = WontonTheme.typography.caption,
+                    color = colors.onPrimary.toColor(),
                 )
             }
         }
