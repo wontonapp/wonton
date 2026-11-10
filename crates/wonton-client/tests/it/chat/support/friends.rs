@@ -31,6 +31,7 @@ pub(super) fn respond(core: &super::Core, head: &str, body: &[u8]) -> Option<(u1
                 "blocked_servers": state.blocked,
                 "removed": state.removed,
                 "can_block_federation": true,
+                "owner_scope": true,
             })
             .to_string(),
         ));

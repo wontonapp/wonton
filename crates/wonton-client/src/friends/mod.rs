@@ -134,6 +134,7 @@ impl FriendsLink {
                 self.view.send_modify(|current| *current = view);
             }
             Err(problem) => {
+                tracing::debug!(reason = %problem.message, "friends list unavailable");
                 self.view.send_modify(|view| {
                     view.state = FriendsState::Failed {
                         problem: problem.problem,
