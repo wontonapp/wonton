@@ -1539,4 +1539,9 @@
     <string name="store_update_all_a11y">すべてアップデート、%1$d件</string>
     <!-- 一行の注意：このアプリのアップデートは確認してから始まる。 -->
     <string name="sidebar_needs_attention">対応が必要です</string>
+    <string name="launcher_badge_degraded">問題があります</string>
+    <string name="plugin_screenshot">スクリーンショット</string>
+    <string name="transfer_upload">アップロード</string>
+    <string name="transfer_download">ダウンロード</string>
+    <string name="bot_avatar_pick_state">%1$sの画像を変更</string>
 </resources>

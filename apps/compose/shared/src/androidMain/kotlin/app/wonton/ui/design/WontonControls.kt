@@ -124,6 +124,7 @@ fun WontonIconButton(icon: ImageVector, label: String, onClick: () -> Unit, tint
     ) {
         Icon(
             icon,
+            // 装饰：外层 WontonIconButton 已经带了名字。
             contentDescription = null,
             modifier = Modifier.size(WontonTheme.size.icon),
             tint = tint ?: WontonTheme.colors.textPrimary.toColor(),
@@ -196,6 +197,7 @@ fun WontonNotice(
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            // 装饰：标题就在右边。
             Icon(icon, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall), tint = titleColor)
             Text(title, style = WontonTheme.typography.body, color = titleColor)
         }

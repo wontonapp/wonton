@@ -120,6 +120,7 @@ private fun ImageViewerContent(image: ImageContent, core: ClientCore, onDismiss:
     }
 
     val failed = loaded != null && loaded.isFailure
+    val photo = stringResource(R.string.message_quote_image)
     Box(
         Modifier.fillMaxSize()
             .onSizeChanged { transform.viewport = it }
@@ -132,7 +133,10 @@ private fun ImageViewerContent(image: ImageContent, core: ClientCore, onDismiss:
     ) {
         when {
             loaded == null -> LoadingOriginal()
-            loaded.isSuccess -> OriginalImage(loaded.getOrThrow(), transform, onDismiss)
+            loaded.isSuccess -> {
+                val label = image.filename.ifEmpty { photo }
+                OriginalImage(loaded.getOrThrow(), transform, onDismiss, label)
+            }
             else -> OriginalFailed(loaded.exceptionOrNull()) { attempt++ }
         }
         TopBar(
@@ -179,11 +183,12 @@ private fun LoadingOriginal() {
     }
 }
 
+/** 原图：文件名当读屏名字，和 iOS 的查看器一致；没有文件名时用“图片”。 */
 @Composable
-private fun OriginalImage(bitmap: ImageBitmap, transform: ViewerTransform, onDismiss: () -> Unit) {
+private fun OriginalImage(bitmap: ImageBitmap, transform: ViewerTransform, onDismiss: () -> Unit, label: String) {
     Image(
         bitmap,
-        contentDescription = null,
+        contentDescription = label,
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(Unit) { viewerGestures(transform, onDismiss) }

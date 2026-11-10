@@ -329,13 +329,22 @@ private fun Screenshot(source: PluginImage, plugins: PluginsState) {
     val shape = RoundedCornerShape(WontonTheme.radii.card)
     val height = WontonTheme.size.screenshot
     if (image != null) {
-        Image(image, contentDescription = null, Modifier.height(height).clip(shape), contentScale = ContentScale.Fit)
+        Image(
+            image,
+            contentDescription = stringResource(R.string.plugin_screenshot),
+            Modifier.height(height).clip(shape),
+            contentScale = ContentScale.Fit,
+        )
     } else {
         Box(
             Modifier.height(height).aspectRatio(SCREENSHOT_RATIO).background(colors.surfaceSubtle.toColor(), shape),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(WontonIcon.ImageBroken, contentDescription = null, tint = colors.textSecondary.toColor())
+            Icon(
+                WontonIcon.ImageBroken,
+                contentDescription = stringResource(R.string.plugin_screenshot),
+                tint = colors.textSecondary.toColor(),
+            )
         }
     }
 }

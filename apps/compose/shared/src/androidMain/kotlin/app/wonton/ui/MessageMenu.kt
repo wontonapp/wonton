@@ -183,6 +183,7 @@ private fun MenuSurface(
                 }
                 DropdownMenuItem(
                     text = { Text(label) },
+                    // 装饰：菜单项有文字。
                     leadingIcon = { Icon(icon, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall)) },
                     onClick = {
                         run()

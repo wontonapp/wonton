@@ -324,6 +324,7 @@ private fun FailedSend(state: SendState.Failed, onRetry: () -> Unit, onCancel: (
         ) {
             Icon(
                 WontonIcon.WarningCircle,
+                // 装饰：失败原因写在右边的文字里。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconTiny),
                 tint = danger,
@@ -366,6 +367,7 @@ private fun MessageBody(
         is MessageContent.Image -> MessageImage(body.image, core, sendState, onLongPress)
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onCardAction)
         MessageContent.Undecryptable -> Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            // 装饰：右边就是说明文字。
             Icon(WontonIcon.LockKey, contentDescription = null, modifier = Modifier.size(WontonTheme.size.iconSmall))
             Text(stringResource(R.string.timeline_undecryptable), style = WontonTheme.typography.supporting)
         }

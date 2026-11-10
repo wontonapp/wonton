@@ -314,6 +314,7 @@ fun ProblemDetail(
             Text(label, style = style, color = tint)
             Icon(
                 WontonIcon.Forward,
+                // 装饰：标签文字在左边，箭头只表示能展开。
                 contentDescription = null,
                 Modifier.size(WontonTheme.size.iconTiny).rotate(if (expanded) EXPANDED_DEGREES else 0f),
                 tint = tint,
@@ -336,6 +337,7 @@ fun ProblemView(problem: Problem, onRetry: (() -> Unit)? = null) {
     ) {
         Icon(
             WontonIcon.Warning,
+            // 装饰：下面就是标题。
             contentDescription = null,
             Modifier.size(WontonTheme.size.icon),
             tint = colors.textSecondary.toColor(),
@@ -389,6 +391,7 @@ fun ProblemRow(problem: Problem, onRetry: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Icon(
             WontonIcon.Info,
+            // 装饰：提示文字在右边。
             contentDescription = null,
             Modifier.size(WontonTheme.size.iconSmall),
             tint = colors.textSecondary.toColor(),

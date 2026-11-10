@@ -192,6 +192,7 @@ private fun StageCard(plugins: PluginsState, stage: CoreUpgradeStage, target: Co
             if (line.icon != null) {
                 Icon(
                     line.icon,
+                    // 装饰：状态由右边的文字说。
                     contentDescription = null,
                     Modifier.size(WontonTheme.size.icon),
                     tint = line.tint(colors).toColor(),
@@ -286,6 +287,7 @@ private fun Details(status: CoreUpgradeStatus, offer: CoreUpgradeOffer?, stage: 
             )
             Icon(
                 WontonIcon.Forward,
+                // 装饰：整行可点，箭头只表示能展开。
                 contentDescription = null,
                 Modifier.size(WontonTheme.size.iconSmall).rotate(if (open) DETAILS_OPEN_DEGREES else 0f),
                 tint = colors.textSecondary.toColor(),

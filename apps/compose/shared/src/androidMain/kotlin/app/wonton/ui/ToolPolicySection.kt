@@ -215,6 +215,7 @@ private fun Tools(
             )
             Icon(
                 WontonIcon.Forward,
+                // 装饰：整行可点，箭头只表示能展开。
                 contentDescription = null,
                 Modifier.size(WontonTheme.size.iconSmall).rotate(if (expanded) EXPANDED_DEGREES else 0f),
                 tint = colors.textSecondary.toColor(),

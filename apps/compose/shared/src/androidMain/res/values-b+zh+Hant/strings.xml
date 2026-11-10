@@ -1538,5 +1538,10 @@
     <!-- 開啟那個面板的工具列下載圖示的讀屏描述。 -->
     <string name="store_update_all_a11y">全部更新，%1$d 個</string>
     <!-- 一行提示：這個應用程式的更新要先確認才能開始。 -->
-    <string name="sidebar_needs_attention">有要處理的事</string>
+    <string name="sidebar_needs_attention">需要你處理</string>
+    <string name="launcher_badge_degraded">有問題</string>
+    <string name="plugin_screenshot">截圖</string>
+    <string name="transfer_upload">上傳</string>
+    <string name="transfer_download">下載</string>
+    <string name="bot_avatar_pick_state">更換%1$s頭像</string>
 </resources>

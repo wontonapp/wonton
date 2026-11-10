@@ -112,9 +112,11 @@ private fun CapsuleArtwork(trailingIcon: ImageVector) {
 @Composable
 private fun CapsuleGlyph(icon: ImageVector) {
     Box(Modifier.size(WontonTheme.size.target, WontonTheme.size.smallButton), contentAlignment = Alignment.Center) {
+        // 装饰：这是同一个图形的阴影层。
         Icon(icon, null, Modifier.size(WontonTheme.size.iconSmall)
             .blur(capsuleShadowRadius, BlurredEdgeTreatment.Unbounded),
             tint = Color.Black.copy(alpha = CAPSULE_SHADOW_ALPHA))
+        // 装饰：旁边叠着的命中区自己带名字。
         Icon(icon, null, Modifier.size(WontonTheme.size.iconSmall), tint = Color.White)
     }
 }

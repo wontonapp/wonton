@@ -321,6 +321,7 @@ private struct Screenshot: View {
         }
         .frame(height: WontonTheme.size.screenshot)
         .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.card))
+        .accessibilityLabel(String(localized: .pluginScreenshot))
         .task(id: source.path) { image = try? await model.image(source) }
     }
 }

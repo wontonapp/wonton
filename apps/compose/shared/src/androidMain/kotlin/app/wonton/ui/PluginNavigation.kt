@@ -203,6 +203,7 @@ fun StateLine(icon: ImageVector, text: String, tint: Rgb) {
     Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         Icon(
             icon,
+            // 装饰：小图标紧贴说明文字。
             contentDescription = null,
             modifier = Modifier.padding(top = STATE_ICON_OFFSET).size(WontonTheme.size.iconTiny),
             tint = tint.toColor(),

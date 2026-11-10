@@ -60,6 +60,7 @@ fun WontonSearchField(value: String, onValueChange: (String) -> Unit, prompt: St
             ) {
                 Icon(
                     WontonIcon.Search,
+                    // 装饰：输入框自己有提示文字。
                     contentDescription = null,
                     modifier = Modifier.size(WontonTheme.size.iconSmall),
                     tint = colors.textSecondary.toColor(),

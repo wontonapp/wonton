@@ -114,7 +114,9 @@ private fun ServerItem(server: ServerRow, send: (Action) -> Unit, rename: () -> 
                 color = WontonTheme.colors.textPrimary.toColor(),
             )
             if (server.current) Icon(
-                Icons.Default.Check, contentDescription = null,
+                Icons.Default.Check,
+                // 装饰：这一行有 selected 状态。
+                contentDescription = null,
                 tint = WontonTheme.colors.primary.toColor(),
             )
         }
@@ -179,7 +181,12 @@ private fun AddServerRow(add: () -> Unit) {
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Default.Add, contentDescription = null, tint = WontonTheme.colors.primary.toColor())
+        Icon(
+            Icons.Default.Add,
+            // 装饰：右边的文字就是“添加服务器”。
+            contentDescription = null,
+            tint = WontonTheme.colors.primary.toColor(),
+        )
         Text(
             stringResource(R.string.servers_add), Modifier.padding(start = WontonTheme.spacing.s12),
             style = WontonTheme.typography.body, color = WontonTheme.colors.primary.toColor(),

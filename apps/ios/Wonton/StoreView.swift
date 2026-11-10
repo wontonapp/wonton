@@ -342,6 +342,7 @@ private struct StoreItemRow: View {
                 if let stars = item.stars {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         WontonIcon.starFill.view(size: WontonTheme.size.iconTiny)
+                            .accessibilityLabel(String(localized: .pluginInfoStars))
                         Text(stars.formatted(.number.notation(.compactName)))
                             .wontonText(WontonTheme.typography.caption)
                     }

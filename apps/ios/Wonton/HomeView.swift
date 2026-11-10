@@ -317,9 +317,11 @@ private struct LauncherIcon: View {
             WontonIcon.warningCircleFill.view(size: WontonTheme.size.iconSmall)
                 .foregroundStyle(Color(colors.danger))
                 .background(Circle().fill(Color(colors.canvas)))
+                .accessibilityLabel(String(localized: .launcherBadgeDegraded))
         } else if plugin.upgrade != nil {
             Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
                 .overlay(Circle().strokeBorder(Color(colors.canvas), lineWidth: 2))
+                .accessibilityLabel(String(localized: .sidebarUpdatable))
         }
     }
 }

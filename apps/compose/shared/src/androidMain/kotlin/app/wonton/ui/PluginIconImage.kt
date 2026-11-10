@@ -47,6 +47,7 @@ fun PluginIconImage(icon: PluginIcon?, size: Dp, plugins: PluginsState) {
     when (val current = state) {
         is IconState.Loaded -> Image(
             current.image,
+            // 装饰：图标旁边总有这个名字。
             contentDescription = null,
             Modifier.size(size).clip(shape).border(WontonTheme.size.hairline, colors.separator.toColor(), shape),
             contentScale = ContentScale.Crop,
@@ -55,6 +56,7 @@ fun PluginIconImage(icon: PluginIcon?, size: Dp, plugins: PluginsState) {
         IconState.Missing -> Box(Modifier.size(size).accentFill(shape), contentAlignment = Alignment.Center) {
             Icon(
                 WontonIcon.AppsFill,
+                // 装饰：占位图，旁边总有名字。
                 contentDescription = null,
                 modifier = Modifier.size(size * GLYPH_RATIO),
                 tint = colors.accentInkOnFill.toColor(),

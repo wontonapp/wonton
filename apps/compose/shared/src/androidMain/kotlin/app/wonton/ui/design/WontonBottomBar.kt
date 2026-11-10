@@ -125,6 +125,7 @@ internal fun TabBarIcon(item: TabItem, selected: Boolean, tint: Color, plugins: 
         is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Url, is TabRef.SharedApp -> null
     }
     if (builtIn != null) {
+        // 装饰：底栏每一格都有标题。
         Icon(builtIn, null, Modifier.size(size), tint)
         return
     }
@@ -132,8 +133,10 @@ internal fun TabBarIcon(item: TabItem, selected: Boolean, tint: Color, plugins: 
         is TabIcon.Plugin -> PluginIconImage(icon.icon, size, plugins)
         is TabIcon.Monochrome -> {
             val image = rememberPluginImage(plugins, if (selected) icon.selected ?: icon.icon else icon.icon)
+            // 装饰：底栏每一格都有标题。
             if (image != null) Image(image, null, Modifier.size(size), colorFilter = ColorFilter.tint(tint))
         }
+        // 装饰：底栏每一格都有标题。
         null -> Icon(WontonIcon.Apps, null, Modifier.size(size), tint)
     }
 }
