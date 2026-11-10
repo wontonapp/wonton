@@ -29,6 +29,7 @@ pub mod gpu;
 pub(crate) mod gpu_fake_host;
 mod grant;
 pub mod health;
+mod health_gate;
 pub mod health_probe;
 pub mod host_check;
 pub mod host_facts;

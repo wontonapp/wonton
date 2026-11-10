@@ -7,6 +7,7 @@ use tokio::time::Instant;
 
 use super::compose::DependCondition;
 use super::health::{self, Target};
+use super::health_gate::Gate;
 use super::languages::Languages;
 use super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, PluginView, busy, detached,
@@ -145,39 +146,34 @@ impl PluginManager {
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
         let checked = self.check_containers(&package, langs).await?;
-        match checked.ready(langs)? {
-            ContainersState::Running(health) if *before == PluginStatus::Running => {
-                return Ok(Started {
-                    health,
-                    serving: checked.serving().clone(),
-                    deployed: None,
-                });
-            }
-            ContainersState::Running(_) => {}
-            ContainersState::Stopped => {
-                self.set(id, PluginStatus::Installing, None);
-                // 复用恢复核对，先把核心接回网络；依赖核心内部别名的服务才能启动。
-                self.reconcile(&package, &record).await?;
-                // 渲染变了就重建，免得主人启动的还是旧配置的容器。
-                if !self
-                    .recreate_on_drift(&package, &record, langs, true)
-                    .await?
-                {
-                    self.start_resident_containers(&package, &record, langs)
-                        .await?;
-                }
+        let state = checked.ready(langs)?;
+        if let ContainersState::Running(health) = &state
+            && *before == PluginStatus::Running
+        {
+            return Ok(Started {
+                health: *health,
+                serving: checked.serving().clone(),
+                deployed: None,
+            });
+        }
+        // 没有渲染计划：等待时限从生效的 healthcheck（在容器配置里）算，和安装、升级同一条规则。
+        let deadline = self.wait_deadline(&package).await?;
+        if let ContainersState::Stopped = state {
+            self.set(id, PluginStatus::Installing, None);
+            // 复用恢复核对，先把核心接回网络；依赖核心内部别名的服务才能启动。
+            self.reconcile(&package, &record, Gate::StartPeriod).await?;
+            // 渲染变了就重建，免得主人启动的还是旧配置的容器。
+            if !self
+                .recreate_on_drift(&package, &record, langs, true, Gate::StartPeriod)
+                .await?
+            {
+                self.start_resident_containers(&package, &record, deadline, langs)
+                    .await?;
             }
         }
         let deployed = self.reconcile_running(&package, &record).await?;
         if let (Some(upstream), Some(webui)) = (&deployed.upstream, &package.manifest.webui) {
-            health::wait_webui(
-                &self.http,
-                upstream,
-                &webui.path,
-                Instant::now() + self.cfg.install_timeout,
-                langs,
-            )
-            .await?;
+            health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
         }
         Ok(Started {
             health: deployed.health,
@@ -186,10 +182,41 @@ impl PluginManager {
         })
     }
 
+    /// 启动不重渲染计划：生效的 healthcheck（安装时把镜像自带的并了进去）在容器配置里，等待时限据此算。
+    async fn wait_deadline(&self, package: &PluginPackage) -> Result<Instant, InstallError> {
+        let slug = package.manifest.id.slug();
+        let bot_services = super::bot_services::bot_services(&package.manifest);
+        let bots = self.bot_names(&package.manifest.id);
+        let mut configs = Vec::new();
+        for service in package.service_names() {
+            let instances: Vec<String> = if bot_services.contains(service) && !bots.is_empty() {
+                bots.iter()
+                    .map(|bot| self.cfg.instance.bot_container(&slug, service, bot))
+                    .collect()
+            } else {
+                vec![self.cfg.instance.container(&slug, service)]
+            };
+            for name in instances {
+                let config = self
+                    .engine
+                    .inspect_container(&name)
+                    .await?
+                    .and_then(|info| info.config);
+                configs.push(config.and_then(|config| config.healthcheck));
+            }
+        }
+        Ok(super::health_gate::deadline_from_configs(
+            configs.iter().map(Option::as_ref),
+            self.cfg.install_timeout,
+            Instant::now(),
+        ))
+    }
+
     async fn start_resident_containers(
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
+        deadline: Instant,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let id = &package.manifest.id;
@@ -253,7 +280,6 @@ impl PluginManager {
         }
         self.register_source(&package.manifest, &self.cfg.instance.network(&slug))
             .await?;
-        let deadline = Instant::now() + self.cfg.install_timeout;
         for (service, bot) in &group {
             // 一次性服务不重跑（见文件头）：它上次以 0 退出才算满足。
             let deps: Vec<(String, DependCondition)> = dependencies[service]
