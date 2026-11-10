@@ -100,7 +100,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: 确认 Docker 可用
-        run: docker version
+        # 顺带把核数记进日志：nextest 的并发按核数算，改并发后要能从日志核对落到了几条。
+        run: |
+          docker version
+          nproc
+          cat /sys/fs/cgroup/cpu.max 2>/dev/null || true
       - name: 腾出预装 SDK 占的盘
         # 托管 runner 根盘只有约 70 GB，预装的 Android、.NET 等 SDK 占掉二十几 GB；测试要拉十来 GB 镜像，
         # 而核心按磁盘 5% 留空（files/uploads.rs），挤到线以下连 0 字节的上传也会被报 storage_full。
