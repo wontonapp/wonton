@@ -278,7 +278,7 @@ impl TabsLink {
 
     pub(super) fn reload(&self, page: PlacedTab) -> Result<(), CoreError> {
         self.runtime_change(|state, _| {
-            if !is_plugin(placed_tab_ref(&page)) || !state_has_page(state, &page) {
+            if !is_web_page(placed_tab_ref(&page)) || !state_has_page(state, &page) {
                 return Err(invalid(&l10n!(
                     CATALOG,
                     language(),
@@ -297,7 +297,7 @@ impl TabsLink {
         status: Option<u16>,
     ) -> Result<(), CoreError> {
         self.runtime_change(|state, plugins| {
-            if !is_plugin(placed_tab_ref(&page)) || !state_has_page(state, &page) {
+            if !is_web_page(placed_tab_ref(&page)) || !state_has_page(state, &page) {
                 return Err(invalid(&l10n!(
                     CATALOG,
                     language(),
@@ -305,13 +305,11 @@ impl TabsLink {
                 )));
             }
             let tab = placed_tab_ref(&page);
-            let failure = if status.is_none() {
-                if matches!(tab, TabRef::Url { .. }) {
-                    // 公网网页不经隧道：连不上是手机自己的网络，按上游出错显示（ADR-0052）。
-                    TabLoadFailure::Upstream
-                } else {
-                    TabLoadFailure::Transport
-                }
+            let failure = if matches!(tab, TabRef::Url { .. }) {
+                // 公网网页不经隧道：连不上是手机自己的网络，按上游出错显示（ADR-0052）。
+                TabLoadFailure::Upstream
+            } else if status.is_none() {
+                TabLoadFailure::Transport
             } else if !plugin_is_running(tab, plugins) {
                 TabLoadFailure::PluginNotReady
             } else {

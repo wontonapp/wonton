@@ -534,6 +534,7 @@ plugins-start-busy = { $id } is already starting, installing, updating, or unins
 # The bridge of app pages (crates/wonton-client/src/tabs/bridge/).
 tabs-bridge-page-not-open = This app page isn't open or pinned.
 tabs-bridge-invalid-environment = The page insets and safe area must be finite, non-negative numbers.
+tabs-bridge-public-page = Public web pages get no Wonton bridge.
 
 # Chat transport problems (crates/wonton-client/src/chat/view.rs): the reason
 # of a CoreError::TransportUnavailable and the message of a failed chat action.
@@ -622,6 +623,7 @@ panel-room-not-open = Open this chat first to change its panel.
 panel-room-unknown = Can't find this chat.
 panel-pin-invalid-url = Can't read that address.
 panel-pin-not-https = Only https:// websites can be pinned.
+panel-pin-path-outside = That page is outside the app's own site.
 panel-attention-panel-only = Only pages in the panel can show the attention dot.
 panel-config-too-many = The panel holds at most { $count } pages.
 panel-config-duplicate = The same page appears twice in the panel.
