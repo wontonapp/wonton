@@ -21,9 +21,10 @@ thread_local! {
     pub(super) static EXDEV: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// 数据不在 `transfers` 所在的卷上：链接临时文件回 `XDEV`。要跨线程，不是 `thread_local`。
-pub(in crate::files) static CROSS_VOLUME: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+/// 这个上传的数据不在 `transfers` 所在的卷上：链接临时文件回 `XDEV`。要跨线程，不是 `thread_local`；按编号收窄，
+/// 同时跑的其他放置照常走硬链接。
+pub(in crate::files) static CROSS_VOLUME: std::sync::Mutex<Option<String>> =
+    std::sync::Mutex::new(None);
 /// 这个上传链接临时文件时失败一次（名字已经写进待完成记录之后）。
 pub(in crate::files) static LINK_FAILS: std::sync::Mutex<Option<String>> =
     std::sync::Mutex::new(None);

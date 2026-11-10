@@ -257,7 +257,12 @@ pub(super) fn link_to_temp(
     langs: &Languages,
 ) -> Result<Option<File>, ShareError> {
     #[cfg(test)]
-    if super::tests::CROSS_VOLUME.load(std::sync::atomic::Ordering::Relaxed) {
+    if super::tests::CROSS_VOLUME
+        .lock()
+        .expect("跨卷替身锁中毒")
+        .as_deref()
+        == Some(id)
+    {
         return Ok(None);
     }
     match linkat(data_dir, id, dir, temp, AtFlags::empty()) {

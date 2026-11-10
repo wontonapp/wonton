@@ -738,20 +738,22 @@ fn a_file_system_out_of_inodes_has_no_room() {
     assert!(!out_of_inodes(0, 0), "btrfs 不报 inode 数");
 }
 
-struct CrossVolume;
+/// 这个上传的数据“在另一个卷上”：链接临时文件回 `XDEV`，走复制。按编号收窄，别的测试照常走硬链接。
+struct CrossVolume(String);
 
 impl CrossVolume {
-    fn on() -> Self {
-        crate::files::share_fs::tests::CROSS_VOLUME
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        Self
+    fn on(id: &FileId) -> Self {
+        *crate::files::share_fs::tests::CROSS_VOLUME.lock().unwrap() = Some(id.to_string());
+        Self(id.to_string())
     }
 }
 
 impl Drop for CrossVolume {
     fn drop(&mut self) {
-        crate::files::share_fs::tests::CROSS_VOLUME
-            .store(false, std::sync::atomic::Ordering::Relaxed);
+        let mut current = crate::files::share_fs::tests::CROSS_VOLUME.lock().unwrap();
+        if current.as_deref() == Some(self.0.as_str()) {
+            *current = None;
+        }
     }
 }
 
@@ -759,12 +761,12 @@ impl Drop for CrossVolume {
 #[tokio::test]
 async fn a_failed_placement_forgets_the_temporary_inode() {
     let f = Fixture::new();
-    let _volume = CrossVolume::on();
     let id = f
         .files
         .create_upload(new_upload(5), &any_langs())
         .await
         .unwrap();
+    let _volume = CrossVolume::on(&id);
     fs::write(f.uploads_dir().join(id.as_str()), "hello").unwrap();
     *crate::files::share_fs::tests::LINK_FAILS.lock().unwrap() = Some(id.to_string());
     assert!(
