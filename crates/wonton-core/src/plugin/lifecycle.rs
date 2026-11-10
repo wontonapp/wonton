@@ -244,7 +244,8 @@ impl PluginManager {
             undo.oidc_client = Some(manifest.id.to_string());
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-        let deadline = Instant::now() + self.cfg.install_timeout;
+        let deadline =
+            super::health_gate::deadline(&plan, self.cfg.install_timeout, Instant::now());
         self.stage(&manifest.id, InstallStage::Starting);
         let health = self
             .start_containers(&plan, Some(&manifest.id), undo, deadline, langs)

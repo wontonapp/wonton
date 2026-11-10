@@ -9,6 +9,7 @@ use wonton_protocol::{BotKeeper, BotRef, NewSharedBot};
 
 use super::bot_services::BotVars;
 use super::bots::{BotEntry, check_bot_name, is_bot};
+use super::health_gate;
 use super::lifecycle::Undo;
 use super::manager::{BotReport, InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, SecretSpec};
@@ -462,7 +463,10 @@ impl PluginManager {
                 .await?;
             self.stage(&package.manifest.id, InstallStage::Preparing);
             self.prepare_dirs(&ctx, &plan.dirs, &mut undo, &langs)?;
-            let deadline = tokio::time::Instant::now() + self.cfg.install_timeout;
+            // 镜像自带的 healthcheck 也算进时限：和 replace_bot_containers 一样先并入计划。
+            self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
+            let deadline =
+                health_gate::deadline(&plan, self.cfg.install_timeout, tokio::time::Instant::now());
             self.stage(&package.manifest.id, InstallStage::Starting);
             self.start_containers(
                 &plan,
@@ -513,7 +517,8 @@ impl PluginManager {
             self.engine.remove_container(name).await?;
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-        let deadline = tokio::time::Instant::now() + self.cfg.install_timeout;
+        let deadline =
+            health_gate::deadline(&plan, self.cfg.install_timeout, tokio::time::Instant::now());
         self.stage(id, InstallStage::Starting);
         self.start_containers(&plan, Some(id), &mut Undo::default(), deadline, &langs)
             .await?;

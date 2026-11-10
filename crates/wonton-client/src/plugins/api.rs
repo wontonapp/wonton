@@ -27,8 +27,8 @@ const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 /// 家里的服务器要去来源（GitHub）取东西：商店、商店里的详情、预览，以及引导要取的官方索引和图标。
 pub(crate) const SOURCE_TIMEOUT: Duration = Duration::from_secs(120);
 /// 安装和升级：响应要等拉完镜像、通过健康检查。Hermes 的镜像约 1 GB，慢的网络要很久；超时后核心照样做完，
-/// 结果从已安装列表里看。
-pub(super) const INSTALL_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+/// 结果从已安装列表里看。核心等健康至多 60 分钟（按插件的 healthcheck.start_period 放宽），再留出拉镜像的时间。
+pub(super) const INSTALL_TIMEOUT: Duration = Duration::from_secs(90 * 60);
 
 const IMAGE_PREFIX: &str = "/_wonton/api/images/";
 

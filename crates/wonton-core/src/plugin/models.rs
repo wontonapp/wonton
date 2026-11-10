@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use super::health_gate::Gate;
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, Permission, PluginId};
@@ -690,7 +691,8 @@ impl PluginManager {
             )
             .await?;
         }
-        self.replace_containers(&ctx, plan).await?;
+        self.replace_containers(&ctx, plan, Gate::StartPeriod)
+            .await?;
         self.reconcile_running(package, record).await?;
         Ok(())
     }

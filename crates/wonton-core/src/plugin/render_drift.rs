@@ -7,6 +7,7 @@
 
 use sha2::{Digest, Sha256};
 
+use super::health_gate::Gate;
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
 use super::package::PluginPackage;
@@ -65,13 +66,15 @@ struct Drift {
 
 impl PluginManager {
     /// 渲染和容器上的摘要对不上就重建全部容器；`when_stopped` 时全停着的插件也重建。返回重建过没有。
-    /// 失败照实往外报，不回退成用旧容器。
+    /// 失败照实往外报，不回退成用旧容器。`gate` 是等健康的时限：开机恢复和容器监视串行核对，用固定的
+    /// 安装时限，别人触发的重建按插件声明。
     pub(super) async fn recreate_on_drift(
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
         langs: &Languages,
         when_stopped: bool,
+        gate: Gate,
     ) -> Result<bool, InstallError> {
         // 局域网端口照检测出来的地址渲染，和局域网巡检、按代理/模型重建走同一条路。
         let lan = self.lan_grant(package, record.lan_webui, langs).await?;
@@ -83,7 +86,7 @@ impl PluginManager {
             return Ok(false);
         }
         tracing::info!(plugin = %package.manifest.id, "插件容器的渲染变了，按安装的路径重建");
-        self.replace_containers(&ctx, plan).await?;
+        self.replace_containers(&ctx, plan, gate).await?;
         Ok(true)
     }
 

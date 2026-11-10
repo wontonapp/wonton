@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use super::docker::NetworkReach;
 use super::health::{self, Checked};
+use super::health_gate::Gate;
 use super::languages::Languages;
 use super::lifecycle::client_spec;
 use super::manager::{Deployed, Health, InstallError, PluginManager};
@@ -65,11 +66,12 @@ impl PluginManager {
     ///
     /// 有容器没就绪不算核对失败：照样给出能用的服务、上游、代登录凭据和 MCP 地址，原因放进 `problem`，
     /// 由网关、MCP 和模型按服务如实回答（见 [`Deployed`]）。网络、relay、密钥、OIDC 这些地址和凭据本身
-    /// 的问题仍然整体失败。
+    /// 的问题仍然整体失败。核对里的漂移重建按 `gate` 等健康。
     pub(super) async fn reconcile(
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
+        gate: Gate,
     ) -> Result<Option<Deployed>, InstallError> {
         let manifest = &package.manifest;
         let slug = manifest.id.slug();
@@ -94,7 +96,7 @@ impl PluginManager {
         }
         // 渲染和容器上的摘要对不上（核心升级换了注入的值，或旧容器没有摘要）就照安装的路径重建。全停着的
         // 插件不在这里动，留给启动流程（见 start.rs）。
-        self.recreate_on_drift(package, record, &langs, false)
+        self.recreate_on_drift(package, record, &langs, false, gate)
             .await?;
         let checked = self.check_containers(package, &langs).await?;
         let health = match checked.state {
@@ -135,12 +137,13 @@ impl PluginManager {
         }))
     }
 
+    /// 跟着重建之后核对：重建刚按 `start_period` 等过健康，这里再漂移重建也按它等。
     pub(super) async fn reconcile_running(
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
     ) -> Result<Deployed, InstallError> {
-        match self.reconcile(package, record).await? {
+        match self.reconcile(package, record, Gate::StartPeriod).await? {
             Some(deployed) => Ok(deployed),
             None => Err(InstallError::Unhealthy(l10n::text(
                 &self.owner_languages(),
