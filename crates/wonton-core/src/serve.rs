@@ -4,6 +4,7 @@ use super::*;
 pub(super) async fn open_clients(
     cfg: &Config,
     engine: &Engine,
+    _registries: &sharing_start::Registries,
 ) -> anyhow::Result<(
     HttpClient,
     HttpClient,
