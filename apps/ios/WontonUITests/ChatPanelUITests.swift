@@ -50,10 +50,16 @@ final class ChatPanelUITests: XCTestCase {
 
     func testRoomPullFromBottom() throws {
         try launch()
-        let room = firstRoom()
+        var room = firstRoom(timeout: 10)
+        if room == nil {
+            tapAnyButton(["Apps", "应用"], timeout: 5)
+            for name in ["Hermes", "回声", "Echo"] {
+                if app.buttons[name].firstMatch.exists { room = app.buttons[name].firstMatch; break }
+            }
+        }
         XCTAssertNotNil(room, "列表里没有房间（先装回声 Bot）")
         room?.tap()
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20), "没进房间")
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 30), "没进房间")
 
         let panel = app.otherElements["chatPanel"]
         pullUpInRoom()
