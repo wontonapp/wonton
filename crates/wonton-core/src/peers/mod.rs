@@ -626,15 +626,18 @@ impl Peers {
         } else {
             request.owner_display_name.clone()
         };
-        let text = crate::l10n::text(
-            &langs,
-            "peers-new-request",
-            &[
-                ("owner", who.into()),
-                ("server", request.server_name.as_str().into()),
-            ],
-        ) + "\n"
-            + &wonton_protocol::AppLink::Peers.to_url();
+        let text = format!(
+            "{}\n{}",
+            crate::l10n::text(
+                &langs,
+                "peers-new-request",
+                &[
+                    ("owner", who.into()),
+                    ("server", request.server_name.as_str().into()),
+                ],
+            ),
+            wonton_protocol::AppLink::Peers.to_url()
+        );
         let server_name = request.server_name.clone();
         tokio::spawn(async move {
             let content = serde_json::json!({"msgtype": "m.text", "body": text});

@@ -7,21 +7,27 @@
 //!   `Set-Cookie` 或跳转地址）。响应体网关不改：插件不应把凭据写进页面。
 
 use hyper::header::{COOKIE, HeaderMap, HeaderName, HeaderValue, SET_COOKIE};
+use wonton_protocol::Role;
 
 use super::isolation::sent_name;
 use super::session::strip_cookies;
 use crate::owner::Owner;
 use crate::plugin::proxy_auth::ProxyAuth;
 
-/// 转发前：换上代加的请求头和 Cookie；值写不进 HTTP 时报错，不转发。
-pub fn attach(headers: &mut HeaderMap, auth: &ProxyAuth, owner: &Owner) -> Result<(), String> {
-    for (name, value) in auth.headers(owner) {
+/// 转发前：换上代加的请求头和 Cookie。值写不进 HTTP 或者模板要了不认识的角色时报错，不转发。
+pub fn attach(
+    headers: &mut HeaderMap,
+    auth: &ProxyAuth,
+    owner: &Owner,
+    role: Role,
+) -> Result<(), String> {
+    for (name, value) in auth.headers(owner, role).map_err(|e| e.to_string())? {
         let value = HeaderValue::from_bytes(value.as_bytes())
             .map_err(|_| format!("代加的请求头 {name} 的值写不进 HTTP"))?;
         // 同名的（请求头名不分大小写）全部换掉。
         headers.insert(name, value);
     }
-    let cookies = auth.cookies(owner);
+    let cookies = auth.cookies(owner, role).map_err(|e| e.to_string())?;
     if cookies.is_empty() {
         return Ok(());
     }

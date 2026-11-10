@@ -25,6 +25,7 @@ mod egress_plugin_docker;
 mod egress_probe;
 mod egress_relay;
 mod egress_switch;
+mod friend_namespace;
 mod github;
 mod gpu;
 mod health;

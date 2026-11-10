@@ -181,6 +181,19 @@ fn peer_routes() -> Router<Arc<Gateway>> {
         )
 }
 
+/// Owner-managed sharing; invitations remain standard Matrix requests (ADR-0051).
+fn sharing_routes() -> Router<Arc<Gateway>> {
+    use super::sharing::api;
+
+    Router::new()
+        .route("/_wonton/api/friends", get(api::friends))
+        .route("/_wonton/api/shares", post(api::create))
+        .route(
+            "/_wonton/api/shares/{id}",
+            put(api::update).delete(api::revoke),
+        )
+}
+
 pub fn routes(gateway: Arc<Gateway>) -> Router {
     Router::new()
         .route("/", get(home))
@@ -247,6 +260,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .route("/_wonton/api/tunnel", get(devices::tunnel))
         .merge(peer_routes())
         .merge(friend_routes())
+        .merge(sharing_routes())
         .route(
             "/_wonton/api/devices",
             get(devices::list).post(devices::add),

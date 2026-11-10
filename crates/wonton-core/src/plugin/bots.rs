@@ -285,12 +285,16 @@ impl PluginManager {
         let mut plugin_bots = store.load(id)?;
         // 同一个 Bot 重试安装时沿用账号；其他 Bot 的令牌不变。
         let existing = plugin_bots.bots.get(bot).cloned();
-        let taken: BTreeSet<String> = store
+        let mut taken: BTreeSet<String> = store
             .all()?
             .into_values()
             .flat_map(|bots| bots.bots.into_values())
             .filter_map(|entry| localpart(&entry.account.user_id).map(str::to_owned))
             .collect();
+        self.reserve_friend_names(&mut taken);
+        if let Some(members) = self.person_members.get() {
+            taken.extend(members.list().into_iter().map(|member| member.username));
+        }
         let langs = self.owner_languages();
         let spec = BotSpec {
             localpart: &bot_localpart(id, bot),

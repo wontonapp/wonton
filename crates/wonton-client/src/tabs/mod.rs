@@ -29,6 +29,7 @@ pub(crate) mod bridge;
 pub(crate) mod media;
 
 mod config;
+mod sharing;
 use config::*;
 
 mod view;
@@ -91,6 +92,8 @@ struct TabsState {
     bot_pin_consents: Vec<wonton_protocol::BotPinOwner>,
     /// 拉 Bot 钉页失败的原因（和配置文件的 problem 分开）。
     pins_problem: Option<String>,
+    previous_sources: HashMap<String, wonton_protocol::ProxySettings>,
+    external: bool,
 }
 
 pub(crate) struct TabsLink {
@@ -135,6 +138,7 @@ pub(crate) struct RoomPanelView {
 }
 
 impl TabsLink {
+    #[allow(clippy::too_many_arguments)] // 链路和会话通道都是调用方已有的，包结构体只是搬家。
     pub(crate) fn new(
         runtime: Handle,
         home: Arc<HomeLink>,
@@ -143,6 +147,7 @@ impl TabsLink {
         view: Option<watch::Sender<TabsViewModel>>,
         session: watch::Receiver<Option<Arc<MatrixSession>>>,
         room_panel: RoomPanelChannel,
+        external: bool,
     ) -> Arc<Self> {
         let path = data_dir.join(TABS_FILE);
         let home_view = home.view();
@@ -159,6 +164,11 @@ impl TabsLink {
             home_view.server_id.is_some() && config.server_id != home_view.server_id;
         let mut config = config;
         normalize_for_server(&mut config, home_view.server_id.clone());
+        if external {
+            config
+                .items
+                .retain(|item| matches!(item.tab, TabRef::Chat | TabRef::Apps));
+        }
         if server_changed {
             match persist(&path, &config) {
                 Ok(()) => problem = None,
@@ -187,6 +197,8 @@ impl TabsLink {
             core_url: home.core_url(),
             bot_pin_consents: Vec::new(),
             pins_problem: None,
+            previous_sources: HashMap::new(),
+            external,
         };
         let room_view = watch::Sender::new(None);
         let sync_problem = watch::Sender::new(None);
@@ -535,6 +547,7 @@ fn refresh_state(state: &mut TabsState, plugins: &PluginsViewModel, home: &HomeV
     if let Some(installed) = &plugins.installed {
         config_changed |= remove_uninstalled(state, installed);
         config_changed |= update_metadata(state, installed);
+        config_changed |= sharing::refresh_pages(state, plugins);
     }
     ensure_selection(state, plugins);
     config_changed

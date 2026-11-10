@@ -20,13 +20,14 @@ impl Rig {
         let (_, method_rx) = tokio::sync::watch::channel(wonton_protocol::PushMethod::default());
         let home_link = HomeLink::new(
             runtime.clone(),
+            crate::sharing::hub::bind(runtime.clone()).unwrap(),
             crate::home::Storage::open(dir.path(), dir.path()).unwrap(),
             crate::home::Network::DirectOnly,
             None,
             method_rx,
         )
         .unwrap();
-        let plugins_link = PluginsLink::new(runtime.clone(), home_link.clone(), dir.path(), None);
+        let plugins_link = PluginsLink::new(runtime.clone(), home_link, dir.path(), None, false);
         let home = watch::Sender::new(home("old-server"));
         let plugins = watch::Sender::new(plugins("old-content"));
         let (panel_sender, panel_receiver) = watch::channel(None);
@@ -59,6 +60,8 @@ impl Rig {
                 core_url: None,
                 bot_pin_consents: Vec::new(),
                 pins_problem: None,
+                previous_sources: HashMap::new(),
+                external: false,
             }),
             writing: Mutex::new(()),
             session: watch::channel(None).1,

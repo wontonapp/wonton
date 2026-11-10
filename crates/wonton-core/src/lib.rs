@@ -43,5 +43,7 @@ pub mod peers;
 pub mod plugin;
 pub mod push;
 pub mod secret;
+pub mod share_identity;
+pub mod shares;
 pub mod tunnel;
 pub mod upgrade;

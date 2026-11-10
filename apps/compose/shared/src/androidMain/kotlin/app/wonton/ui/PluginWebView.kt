@@ -20,7 +20,6 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -41,7 +40,6 @@ import app.wonton.protocol.ProxySettings
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.media.PageMediaPage
-import java.util.concurrent.Executor
 
 private const val TAG = "WontonWeb"
 
@@ -180,6 +178,7 @@ fun PluginWebView(
     visible: Boolean = true,
     textZoom: Int = 100,
     publicPage: Boolean = false,
+    profileName: String? = null,
 ) {
     val loaded by rememberUpdatedState(onLoaded)
     val failed by rememberUpdatedState(onFailed)
@@ -200,7 +199,13 @@ fun PluginWebView(
         overrideProxy(proxy) { if (active) proxyReady = proxy }
         onDispose { active = false }
     }
-    key(controller, generation) {
+    val route = LocalPluginProxy.current
+    val account = LocalPluginAccount.current
+    val profile = profileName ?: account?.let { pluginProfileName(it) }
+    if (route?.contains(proxy) != true) return
+    val multiProfile = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
+    if (profileName != null && !multiProfile) return
+    key(controller, generation, profile) {
         AndroidView(
             modifier = modifier.fillMaxSize(),
             factory = { context ->
@@ -208,6 +213,7 @@ fun PluginWebView(
                 val debuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
                 WebView.setWebContentsDebuggingEnabled(debuggable)
                 ThemedPluginWebView(wrapped, darkTheme, controller).apply {
+                    if (multiProfile && profile != null) WebViewCompat.setProfile(this, profile)
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
                     )
@@ -352,25 +358,6 @@ private fun configureAppearance(view: WebView, canvas: Int, dark: Boolean) {
         "algorithmicSupported=$algorithmic algorithmicAllowed=false")
 }
 
-private fun overrideProxy(proxy: ProxySettings, onReady: () -> Unit) {
-    check(
-        WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE) &&
-            WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE_REVERSE_BYPASS),
-    ) {
-        "this device's WebView is too old to set a proxy per domain, app pages can't open"
-    }
-    val config = ProxyConfig.Builder()
-        .addProxyRule("${proxy.host}:${proxy.port}")
-        .addBypassRule(proxy.domain)
-        .addBypassRule("*.${proxy.domain}")
-        .setReverseBypassEnabled(true)
-        .build()
-    val sameThread = Executor { it.run() }
-    ProxyController.getInstance().setProxyOverride(config, sameThread) {
-        Log.i(TAG, "WebView proxy set to ${proxy.host}:${proxy.port}")
-        onReady()
-    }
-}
 
 /** 只把本地代理的凭据交给本地代理自己：别的主机（例如插件网页）要认证时不给。 */
 private class ProxyAuthClient(
@@ -485,7 +472,7 @@ private class ProxyAuthClient(
         if (current != null && (host == current.host || host == "${current.host}:${current.port}")) {
             handler.proceed(current.username, current.password)
         } else {
-            super.onReceivedHttpAuthRequest(view, handler, host, realm)
+            handler.cancel()
         }
     }
 

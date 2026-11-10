@@ -44,6 +44,7 @@ mod scope;
 mod servers;
 mod session_store;
 mod settings;
+mod sharing;
 mod subscription;
 mod tabs;
 #[cfg(feature = "test-hooks")]
@@ -57,6 +58,7 @@ pub use files::{FileOpenError, FileOpener};
 pub use home::Network;
 pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
+pub use sharing::discover_share_source;
 pub use subscription::{
     AppearanceSubscription, ChatSubscription, FriendsSubscription, HomeSubscription,
     OnboardingSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,

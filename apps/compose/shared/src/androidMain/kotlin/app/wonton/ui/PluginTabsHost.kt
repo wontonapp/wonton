@@ -5,12 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,30 +21,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import app.wonton.ui.design.LocalWontonBarStatus
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.webkit.WebViewFeature
 import app.wonton.client.TabBridgeAction
 import app.wonton.client.TabEnvironment
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.CoreException
-import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.InstalledPlugin
+import app.wonton.protocol.ProxySettings
 import app.wonton.protocol.TabItem
 import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.TabState
-import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.toColor
 import kotlin.math.roundToInt
 
 @Composable
@@ -69,7 +57,7 @@ fun PluginTabsHost(
     val items = tabs.viewModel.items + listOfNotNull(tabs.viewModel.overlay)
     SideEffect {
         visited.keys.retainAll(items.map { it.tab }.toSet())
-        if (active is TabRef.Plugin) visited[active] = true
+        if (active is TabRef.Plugin || active is TabRef.SharedApp) visited[active] = true
     }
     items.filter { it.page != null && (it.tab == active || visited[it.tab] == true) }.forEach { item ->
         key(item.tab) {
@@ -96,7 +84,6 @@ internal fun PlacedTab.tab(): TabRef = when (this) {
 
 internal class WebPageState(val place: PlacedTab, val tabs: TabsState) {
     val tab: TabRef get() = place.tab()
-
     val controller = PluginWebViewController()
     val capsule = TabCapsuleVisibility()
     var loaded by mutableStateOf(false)
@@ -134,7 +121,7 @@ internal class WebPageState(val place: PlacedTab, val tabs: TabsState) {
         failed = false
         tabs.send(Action.TabLoadSucceeded(place))
         script(environment)?.let { controller.evaluateJavascript(it) }
-        controller.evaluateJavascript(tabs.core.tabConnectionScript())
+        controller.evaluateJavascript(tabs.core.tabConnectionScript(tab))
         capsule.show()
     }
 
@@ -153,6 +140,7 @@ private fun PluginTabContainer(
 ) {
     val plugin = tabs.installedPlugin(item.tab)
     val page = item.page ?: return
+    val connection = sharedPageConnection(item.tab, tabs, home)
     val state = remember { WebPageState(PlacedTab.Bar(item.tab), tabs) }
     var top by remember { mutableStateOf(0.dp) }
     val viewport = tabViewport(page, overlay, active, top, bottom)
@@ -164,58 +152,18 @@ private fun PluginTabContainer(
         onDispose { state.controller.touchObserver = null }
     }
     val environment = viewport.environment
-    val script = remember(page.url, page.fullscreen, page.display, appearance, environment) {
-        state.script(environment, document = true)
-    }
     val openLink = externalLinkOpener { state.problem = it }
-    val supported = remember { tabFeaturesSupported() }
+    val supported = connection.supported
     val crossOriginBlocked = isCrossOriginIsolationBlocked(plugin)
-    PageEffects(state, page, home, active, appearance, environment)
+    PageEffects(state, page, connection.connected, active, appearance, environment)
     ReselectedEffect(state, reselected, onReselected)
     val back = { state.back(page.fullscreen, overlay) }
     TabBackHandler(state, active, page.fullscreen, overlay, back)
     val cover = state.covers(page)
     val takeover = pageTakeover(item.tab, tabs, active)
-    Box(
-        Modifier.zIndex(if (active) 1f else 0f).fillMaxSize().imePadding(),
-    ) {
-        if (active) Box(Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor()))
-        if (state.started && supported && script != null) {
-            PageWebView(state, page, plugin, home, environment, script, viewport.inset, active && !cover, openLink,
-                onDraft)
-        }
-        if (active && page.fullscreen) state.controller.customView?.let { video ->
-            AndroidView(factory = { video }, modifier = Modifier.padding(viewport.inset).fillMaxSize())
-        }
-        if (active) {
-            PageStatusOverlay(state, page, item.tab, supported, crossOriginBlocked,
-                PaddingValues(top = viewport.chromeTop, bottom = viewport.bottom), onDetails)
-            PageChrome(item.tab, page, tabs, state.capsule, state.controller, viewport.safe, bannerTop,
-                top = { top = it }, overlay, back, takeover, onDetails)
-        }
-    }
-}
-
-@Composable
-internal fun PageChrome(
-    tab: TabRef, page: TabPage, tabs: TabsState, capsule: TabCapsuleVisibility,
-    controller: PluginWebViewController, safe: PaddingValues, bannerTop: Dp, top: (Dp) -> Unit,
-    overlay: Boolean, back: () -> Unit, takeover: PageTakeover?, onDetails: (String) -> Unit,
-) {
-    if (page.fullscreen) {
-        PluginPageChrome(tab, page, tabs, safe, bannerTop, shortStatus(page), capsule, controller, takeover,
-            onClose = { controller.closeCustomView(); tabs.send(Action.ExitFullscreen(tab)) },
-            onReload = { tabs.send(Action.ReloadTab(PlacedTab.Bar(tab))) }, onDetails = onDetails)
-    } else {
-        val density = LocalDensity.current
-        Column(Modifier.onSizeChanged { top(with(density) { it.height.toDp() }) }) {
-            PluginTabBar(page, controller.canGoBack, overlay, back,
-                { tabs.send(Action.CloseTabOverlay) }, takeover,
-                onExpand = { tabs.send(Action.EnterFullscreen(tab)) },
-                onReload = { tabs.send(Action.ReloadTab(PlacedTab.Bar(tab))) })
-            takeover?.let { TakeoverNotice(it) }
-        }
-    }
+    PageLayers(state, item, page, tabs, connection, plugin, appearance, environment, viewport, supported,
+        crossOriginBlocked, active, overlay, cover, takeover, bannerTop, { top = it }, onDetails, onDraft, openLink,
+        back)
 }
 
 /** 胶囊上方的一条短状态:连接提示由壳给,升级中由这里说。 */
@@ -266,11 +214,10 @@ private fun TabBackHandler(
 }
 
 @Composable
-internal fun PageEffects(
-    state: WebPageState, page: TabPage, home: HomeViewModel, active: Boolean,
+private fun PageEffects(
+    state: WebPageState, page: TabPage, connected: Boolean, active: Boolean,
     appearance: AppearanceViewModel, environment: TabEnvironment,
 ) {
-    val connected = home.status is HomeStatus.Connected
     val fontScale = LocalDensity.current.fontScale
     LaunchedEffect(active, connected, page.state) {
         if (active && connected && page.state is TabState.Ready) state.started = true
@@ -284,16 +231,17 @@ internal fun PageEffects(
     LaunchedEffect(appearance, environment, page.fullscreen, page.display, fontScale) {
         if (state.started) state.script(environment)?.let { state.controller.evaluateJavascript(it) }
     }
-    LaunchedEffect(home.status) { state.controller.evaluateJavascript(state.tabs.core.tabConnectionScript()) }
+    LaunchedEffect(connected) { state.controller.evaluateJavascript(state.tabs.core.tabConnectionScript(state.tab)) }
 }
 
 @Composable
 internal fun PageWebView(
-    state: WebPageState, page: TabPage, plugin: InstalledPlugin?, home: HomeViewModel, environment: TabEnvironment,
+    state: WebPageState, page: TabPage, plugin: InstalledPlugin?, proxy: ProxySettings?, environment: TabEnvironment,
     script: String, inset: PaddingValues, visible: Boolean, openLink: (String) -> Unit, onDraft: (String) -> Unit,
+    profile: String?,
 ) {
     val url = page.url?.takeIf { !isCrossOriginIsolationBlocked(plugin) } ?: return
-    val proxy = home.proxy ?: return
+    proxy ?: return
     PluginWebView(
         url, proxy, page.reload,
         onLoaded = { state.loadFinished(environment) }, onFailed = state::loadFailed,
@@ -313,6 +261,7 @@ internal fun PageWebView(
         },
         onOpenLink = openLink, onRendererGone = state::loadStarted, onLoadStarted = state::loadStarted,
         visible = visible, textZoom = (LocalDensity.current.fontScale * 100).roundToInt(),
+        profileName = profile,
     )
 }
 

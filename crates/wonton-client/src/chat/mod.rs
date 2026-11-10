@@ -83,13 +83,9 @@ pub(crate) struct ChatLink {
     home: Arc<HomeLink>,
     storage: ChatStorage,
     view: watch::Sender<ChatViewModel>,
-    /// 当前的会话和它的后台任务；换代理或重新登录时整个替换。锁保证同一时刻只有一次登录。
     active: tokio::sync::Mutex<Option<Active>>,
-    /// 当前会话，给不阻塞的 `dispatch` 用。
     session: Mutex<Option<Arc<MatrixSession>>>,
-    /// 登录状态流出的口：tabs 的面板配置同步跟着它走（ADR-0052）。
     session_out: watch::Sender<Option<Arc<MatrixSession>>>,
-    /// 打开的房间的面板内容流出口：账号数据在这里读，tabs 合成给壳的视图。
     room_panel_out: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
     /// 订阅着时间线的房间。同一时间只打开一个房间。
     open_room: Mutex<Option<(OwnedRoomId, Arc<ChatRoom>)>>,
@@ -277,6 +273,10 @@ impl ChatLink {
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<ChatViewModel> {
         self.view.subscribe()
+    }
+
+    pub(crate) fn sharing_sessions(&self) -> watch::Receiver<Option<Arc<MatrixSession>>> {
+        self.bots.session.subscribe()
     }
 
     pub(crate) fn subscribe_sent(&self) -> watch::Receiver<Vec<String>> {

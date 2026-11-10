@@ -65,6 +65,7 @@ mod registry_mirror;
 mod request_guards;
 mod room_rules;
 pub(crate) mod send_limits;
+pub mod sharing;
 
 pub use entry::router as entry_router;
 pub use push::router as push_router;
@@ -175,22 +176,15 @@ pub struct Gateway {
     /// 审计日志（`core/audit.jsonl`，见 [`crate::mcp::audit`]）：总线和文件服务共用一份，
     /// 主人查看插件密钥的取值审计也从这里写。
     pub(crate) audit: Option<Arc<crate::mcp::audit::Audit>>,
-    /// tusd 的 `host:port`；没配置时上传如实报不可用。
     pub tusd: Option<String>,
-    /// 核心的一键升级（ADR-0025）；没接时接口如实报不可用。
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
-    /// 服务器配对（ADR-0050）；没接 Matrix 的核心没有它，接口如实报不可用。
     pub peers: Option<Arc<crate::peers::Peers>>,
-    /// 好友名单（ADR-0051）；记录同意过的好友和固定的插件用户名。
     friends: Option<Arc<Friends>>,
-    /// 整台服务器的联邦黑名单（`forbidden_remote_server_names`）；只有能热加载配置的安装才有。
     pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
+    pub sharing: Option<Arc<sharing::Sharing>>,
     pub(crate) onboarding: Arc<onboarding::OnboardingState>,
-    /// `plugins.health` 的限频表（[`health`]）。
     health_limits: health::RateLimits,
-    /// 链接预览（ADR-0065），缓存在核心数据目录，出网跟着核心的代理设置。
     pub(crate) link_previews: Arc<crate::link_preview::LinkPreviews>,
-    /// MCP Apps 界面发起的工具调用：先返回标识，页面轮询结果。
     pub(crate) app_calls: Arc<mcp_apps::AppCalls>,
     sessions: session::SessionStore,
 }
@@ -209,6 +203,7 @@ impl Gateway {
         http: HttpClient,
         tunnel: Tunnel,
     ) -> Self {
+        plugins.attach_person_members(members.clone());
         let (hydra, hydra_public) = match hydra {
             Some((hydra, public_url)) => {
                 let authority = config::http_authority(&public_url)
@@ -252,12 +247,19 @@ impl Gateway {
             peers: None,
             friends: None,
             federation_blocks: None,
+            sharing: None,
             onboarding,
             health_limits: health::RateLimits::new(),
             link_previews,
             app_calls: Arc::default(),
             sessions: session::SessionStore::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_sharing(mut self, sharing: Option<Arc<sharing::Sharing>>) -> Self {
+        self.sharing = sharing;
+        self
     }
 
     #[must_use]
@@ -423,6 +425,18 @@ impl Gateway {
         if person.is_owner() {
             return Ok(self.owner.owner());
         }
+        if person.role == Role::Friend {
+            let record = self
+                .sharing
+                .as_ref()
+                .and_then(|sharing| sharing.friends.find_username(&person.username))
+                .ok_or_else(|| MissingMember(person.username.clone()))?;
+            return Ok(Owner {
+                username: record.username,
+                display_name: record.display_name.unwrap_or_default(),
+                email: None,
+            });
+        }
         let record = self
             .members
             .get(&person.username)
@@ -505,6 +519,9 @@ fn request_host(req: &Request) -> String {
 }
 
 async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response {
+    if req.extensions().get::<sharing::SharePeer>().is_some() {
+        return sharing::dispatch(gateway, core, req).await;
+    }
     let host = request_host(&req);
     match gateway.public.classify(&host) {
         HostKind::Core => match core.oneshot(req).await {
@@ -671,7 +688,7 @@ fn attach_proxy_credentials(
             )));
         }
     };
-    proxy_sso::attach(headers, auth, &identity).map_err(|e| {
+    proxy_sso::attach(headers, auth, &identity, person.role).map_err(|e| {
         Box::new(pages::error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "proxy_credentials",

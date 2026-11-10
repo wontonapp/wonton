@@ -43,6 +43,7 @@ use crate::l10n;
 use crate::matrix::Matrix;
 
 pub(super) mod busy;
+mod uninstall;
 mod views;
 
 pub use views::{PluginView, Route};
@@ -119,6 +120,9 @@ pub struct PluginManager {
     pub(super) staged: StagedUploads,
     /// 写“每个人的语言”表时串行化：读改整份文件，两个人同时来不能互相盖掉。
     pub(super) people_writes: std::sync::Mutex<()>,
+    pub(super) sharing:
+        std::sync::OnceLock<(Arc<crate::friends::Friends>, Arc<crate::shares::Shares>)>,
+    pub(super) person_members: std::sync::OnceLock<Arc<crate::members::Members>>,
 }
 
 pub(super) use super::grant::{check_permissions, supported};
@@ -190,6 +194,8 @@ impl PluginManager {
             upgrades: Upgrades::default(),
             staged: StagedUploads::default(),
             people_writes: std::sync::Mutex::new(()),
+            sharing: std::sync::OnceLock::new(),
+            person_members: std::sync::OnceLock::new(),
         }
     }
 

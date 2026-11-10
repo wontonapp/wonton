@@ -1,4 +1,4 @@
-//! 启动接线的另一半：外部客户、好友记录、监听与隧道入口、插件核对。
+//! 启动接线的另一半：外部客户、好友记录、分享登记、监听与隧道入口、插件核对。
 use super::*;
 
 pub(super) async fn open_clients(
@@ -42,7 +42,15 @@ pub(super) async fn run_gateway(
     let push_listener = push_listener::bind(cfg.push_listen.as_deref()).await?;
     let app = gateway::router(gateway.clone());
     let public_entry = wonton_core::entry_runtime::bind().await?;
-    let entry = spawn_tunnel(&tunnel, app.clone(), peers, federation, &manager);
+    let share_protocol = sharing_start::protocol(gateway.clone())?;
+    let entry = spawn_tunnel(
+        &tunnel,
+        app.clone(),
+        peers,
+        federation,
+        share_protocol,
+        &manager,
+    );
     tracing::info!(
         listen = %cfg.listen,
         url = %cfg.public.origin(cfg.public.core_host()),
@@ -63,18 +71,19 @@ pub(super) async fn run_gateway(
     served?
 }
 
-/// 隧道入口：网关路由、联邦和服务器配对处理器、插件端口解析器一起挂上。
+/// 隧道入口：网关路由、联邦、服务器配对和分享处理器、插件端口解析器一起挂上。
 fn spawn_tunnel(
     tunnel: &Tunnel,
     app: axum::Router,
     peers: Option<Arc<peers::Peers>>,
     federation: Option<FederationProtocol>,
+    share: sharing_start::LimitedShares,
     manager: &Arc<PluginManager>,
 ) -> TunnelEntry {
     TunnelEntry::spawn_with_protocols(
         tunnel,
         app,
-        extra_protocols(peers, federation),
+        extra_protocols(peers, federation, share),
         Arc::new(tunnel::PluginPortResolver::new(manager.clone())),
     )
 }
