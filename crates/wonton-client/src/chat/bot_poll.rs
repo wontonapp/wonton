@@ -118,7 +118,7 @@ fn apply(bots: &Arc<Bots>, report: BotActivityReport) {
         let facts = report
             .bots
             .iter()
-            .find(|fact| fact.plugin_id == *id && fact.user_id == record.user_id);
+            .find(|fact| fact.bot.plugin_id == *id && fact.user_id == record.user_id);
         if let Some(facts) = facts
             && record.profile_rev != Some(facts.profile_rev)
         {

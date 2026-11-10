@@ -8,7 +8,7 @@ use wonton_client::{
     BotNameProblem, BotProfileFailure, BotView, CoreError, MediaHandle, TimelineContent,
 };
 use wonton_matrix::MatrixSession;
-use wonton_protocol::{AVATARS_FIELD, PushMethod};
+use wonton_protocol::{AVATARS_FIELD, BotRef, PushMethod};
 
 use super::PNG;
 use super::bot_profile_support::{set_field, typing};
@@ -114,7 +114,10 @@ async fn bot_profiles_actions_activity_and_cached_video_through_the_tunnel() {
 
 fn facts(bot: &MatrixSession) -> BotActivityFacts {
     BotActivityFacts {
-        plugin_id: PLUGIN.to_owned(),
+        bot: BotRef {
+            plugin_id: PLUGIN.to_owned(),
+            bot: "default".into(),
+        },
         user_id: bot.user_id().to_string(),
         running: true,
         model_requests: 0,
@@ -228,7 +231,7 @@ async fn wait_bot(phone: &Phone, check: impl Fn(&BotView) -> bool) -> BotView {
         .wait_chat("Bot ViewModel", |view| {
             view.bots
                 .iter()
-                .find(|bot| bot.plugin_id == PLUGIN && check(bot))
+                .find(|bot| bot.bot.plugin_id == PLUGIN && check(bot))
                 .cloned()
         })
         .await

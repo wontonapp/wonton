@@ -81,14 +81,14 @@ fn tool_calls(s: &Setup) -> u32 {
     let source = report
         .bots
         .iter()
-        .find(|bot| bot.plugin_id == s.caller.id.as_str())
+        .find(|bot| bot.bot.plugin_id == s.caller.id.as_str())
         .unwrap();
     assert_eq!(source.user_id, "@source:example.com");
     assert!(
         report
             .bots
             .iter()
-            .filter(|bot| bot.plugin_id != source.plugin_id)
+            .filter(|bot| bot.bot.plugin_id != source.bot.plugin_id)
             .all(|bot| bot.tool_calls == 0)
     );
     source.tool_calls

@@ -148,10 +148,13 @@ fn assert_count(h: &Harness, expected: u32) {
     let report = report(h);
     assert_eq!(report.bots.len(), 2);
     for bot in report.bots {
-        assert_eq!(bot.user_id, format!("@{}:wonton.localhost", bot.plugin_id));
+        assert_eq!(
+            bot.user_id,
+            format!("@{}:wonton.localhost", bot.bot.plugin_id)
+        );
         assert_eq!(
             bot.model_requests,
-            if bot.plugin_id == "app.bot" {
+            if bot.bot.plugin_id == "app.bot" {
                 expected
             } else {
                 0
@@ -167,7 +170,7 @@ async fn wait_count(h: &Harness, expected: u32) {
             if report(h)
                 .bots
                 .iter()
-                .find(|bot| bot.plugin_id == "app.bot")
+                .find(|bot| bot.bot.plugin_id == "app.bot")
                 .unwrap()
                 .model_requests
                 == expected

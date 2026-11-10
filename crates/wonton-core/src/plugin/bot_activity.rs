@@ -1,4 +1,4 @@
-use wonton_protocol::BotActivityFacts;
+use wonton_protocol::{BotActivityFacts, BotRef};
 
 use super::bots::is_bot;
 use super::store::StoreError;
@@ -19,9 +19,12 @@ impl PluginManager {
             let records = self.store.bots().load(id)?;
             let running =
                 entry.status == PluginStatus::Running && entry.health == Some(Health::Healthy);
-            for bot in records.bots.values() {
+            for (name, bot) in &records.bots {
                 bots.push(BotActivityFacts {
-                    plugin_id: id.to_string(),
+                    bot: BotRef {
+                        plugin_id: id.to_string(),
+                        bot: name.clone(),
+                    },
                     user_id: bot.account.user_id.clone(),
                     running,
                     model_requests: 0,

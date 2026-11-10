@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BotChatSettings, MediaHandle};
+use crate::{BotChatSettings, BotRef, BotWebView, MediaHandle};
 
 /// Bot 资料里状态头像那个字段的名字。
 pub const AVATARS_FIELD: &str = "app.wonton.avatars";
@@ -164,11 +164,11 @@ pub struct BotActivityReport {
     pub bots: Vec<BotActivityFacts>,
 }
 
-/// 一个 Bot 此刻的事实。
+/// 一个 Bot 此刻的事实；不包含按请求者计算的网页访问权限。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct BotActivityFacts {
-    pub plugin_id: String,
+    pub bot: BotRef,
     /// Bot 的 Matrix 用户 ID。
     pub user_id: String,
     /// 插件在运行，健康检查过了。
@@ -253,7 +253,10 @@ pub fn check_bot_name(name: &str) -> Result<(), BotNameProblem> {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct BotView {
     pub user_id: String,
-    pub plugin_id: String,
+    pub bot: BotRef,
+    /// 由当前请求者的身份决定；未核实、断线或切换账号时为空，不能借用插件的默认网页地址。
+    #[serde(default)]
+    pub web: Option<BotWebView>,
     /// Matrix 显示名；还没取到资料时是插件名。
     pub name: String,
     /// 静态头像；没设时为空，壳用插件图标。
@@ -470,7 +473,11 @@ mod tests {
         let mut bot = BotView {
             chat: Default::default(),
             user_id: "@b:h".into(),
-            plugin_id: "a.b".into(),
+            bot: BotRef {
+                plugin_id: "a.b".into(),
+                bot: "default".into(),
+            },
+            web: None,
             name: "B".into(),
             avatar: None,
             state_avatars: vec![StateAvatar {

@@ -376,7 +376,7 @@ async fn snapshots_only_include_bot_manifests_with_records() {
         snapshot
             .bots
             .iter()
-            .map(|bot| bot.plugin_id.as_str())
+            .map(|bot| bot.bot.plugin_id.as_str())
             .collect::<Vec<_>>(),
         ["app.activity"]
     );
