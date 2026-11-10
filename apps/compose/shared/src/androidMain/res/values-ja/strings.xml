@@ -421,6 +421,8 @@
     <string name="design_tab_menu">タブメニュー</string>
     <!-- Accessibility state of a list row with the update badge dot. -->
     <string name="design_update_badge">アップデートあり</string>
+    <!-- Accessibility state of a list row with a counted badge. Argument: the count. -->
+    <string name="design_badge_count">未処理 %1$d 件</string>
     <!-- Section title and text field label for the proxy address (like http://192.0.2.10:7890). -->
     <string name="egress_address">プロキシのアドレス</string>
     <!-- Radio option: type a proxy address by hand instead of using an app's proxy. -->
@@ -647,6 +649,105 @@
     <string name="peers_paste_placeholder">コードをペースト</string>
     <!-- Button under the paste field: submit the pasted code. -->
     <string name="peers_paste_submit">ペアリング</string>
+    <!-- Title of the friends page and the settings row that opens it. -->
+    <string name="friends_title">友だち</string>
+    <!-- Top-right button on the friends page that opens the add-friend sheet. -->
+    <string name="friends_add">追加</string>
+    <!-- Title of the add-friend sheet. -->
+    <string name="friends_add_title">友だちを追加</string>
+    <!-- Placeholder of the Matrix ID field; the example is a full Matrix ID. -->
+    <string name="friends_add_placeholder">@bob:example.org</string>
+    <!-- Submit button under the Matrix ID field. -->
+    <string name="friends_add_submit">招待を送る</string>
+    <!-- Section heading above the pending requests, received and sent. -->
+    <string name="friends_requests_title">リクエスト</string>
+    <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
+    <string name="friends_request_label">友だちリクエスト</string>
+    <!-- Subtitle on a request I sent: it stays until they answer. -->
+    <string name="friends_request_waiting">相手の返事待ち</string>
+    <!-- Approve button on a received request. -->
+    <string name="friends_request_approve">承認</string>
+    <!-- Reject button on a received request. -->
+    <string name="friends_request_reject">拒否</string>
+    <!-- Cancel button on a request I sent. -->
+    <string name="friends_request_cancel">取り消す</string>
+    <!-- Section heading above the friend list. -->
+    <string name="friends_list_title">友だち</string>
+    <!-- Empty page: the one sentence above the add button. -->
+    <string name="friends_empty">まだ友だちがいません</string>
+    <!-- Row subtitle when a friend is in no group. -->
+    <string name="friends_no_group">グループなし</string>
+    <!-- Separator between group names on a friend row. -->
+    <string name="friends_group_separator">、</string>
+    <!-- Row subtitle: how many plugins this friend can open. -->
+    <plurals name="friends_shared_plugins">
+        <item quantity="other">%1$d 個のプラグインを共有中</item>
+    </plurals>
+    <!-- Section heading above the groups and their actions. -->
+    <string name="friends_groups_title">グループ</string>
+    <!-- Row that opens the new-group dialog. -->
+    <string name="friends_group_new">グループを作成</string>
+    <!-- Title of the new-group dialog. -->
+    <string name="friends_group_create_title">グループを作成</string>
+    <!-- Title of the rename-group dialog. Argument: the current name. -->
+    <string name="friends_group_rename_title">「%1$s」の名前を変更</string>
+    <!-- Placeholder of the group name field. -->
+    <string name="friends_group_name_placeholder">グループ名</string>
+    <!-- Confirmation dialog title for deleting a group. Argument: the group name. -->
+    <string name="friends_group_delete_title">「%1$s」を削除しますか？</string>
+    <!-- Confirmation dialog body: what deleting a group does. -->
+    <string name="friends_group_delete_message">グループの人は友だちのままです。このグループに与えたプラグインのアクセスは取り消されます。</string>
+    <!-- Sheet title for choosing a friend's groups. Argument: the friend. -->
+    <string name="friends_choose_groups_title">%1$s のグループ</string>
+    <!-- Sheet action on a friend row that opens the group chooser. -->
+    <string name="friends_groups">グループ</string>
+    <!-- Sheet action on a friend row: remove the friend. -->
+    <string name="friends_remove_friend">友だちを削除</string>
+    <string name="friends_block_user">招待をブロック</string>
+    <!-- Confirmation dialog title for removing a friend. Argument: the friend. -->
+    <string name="friends_remove_title">「%1$s」を削除しますか？</string>
+    <!-- Confirmation dialog body: what removing a friend does. -->
+    <string name="friends_remove_message">共有したプラグインは使えなくなります。チャットは残ります。</string>
+    <!-- Section heading above blocked people and servers. -->
+    <string name="friends_blocked_title">ブロック中</string>
+    <!-- Row that opens the block-a-server dialog; only shown to the server's owner. -->
+    <string name="friends_block_server">サーバーをブロック</string>
+    <!-- Title of the block-a-server dialog. -->
+    <string name="friends_block_server_title">サーバーをブロック</string>
+    <!-- Placeholder of the server name field; no scheme, no wildcards. -->
+    <string name="friends_block_server_placeholder">example.org</string>
+    <!-- Submit button under the server name field. -->
+    <string name="friends_block_submit">ブロック</string>
+    <!-- Row subtitle for a blocked person. -->
+    <string name="friends_block_invitations">招待をブロック中</string>
+    <!-- Row subtitle for a server blocked for the whole server. -->
+    <string name="friends_block_federation">サーバーをブロック中</string>
+    <!-- Row subtitle for a blocked target this version doesn't know. -->
+    <string name="friends_block_unknown">ブロック中</string>
+    <!-- Undo button on a blocked row. -->
+    <string name="friends_unblock">元に戻す</string>
+    <!-- Failure title when the Matrix server can't be reached. -->
+    <string name="friends_error_transport">Matrix サーバーに接続できません</string>
+    <!-- Failure title when the session is no longer signed in. -->
+    <string name="friends_error_unauthorized">ログインが切れています</string>
+    <!-- Next step under the unauthorized failure. -->
+    <string name="friends_error_unauthorized_next">もう一度ログインしてから友だちを開いてください。</string>
+    <!-- Failure title when the typed ID isn't a full Matrix ID. -->
+    <string name="friends_error_invalid_user_id">Matrix ID ではありません</string>
+    <!-- Next step under the invalid-ID failure. -->
+    <string name="friends_error_invalid_user_id_next">@bob:example.org のような完全な ID を入れてください。</string>
+    <!-- Failure title when the request was already accepted or rejected elsewhere. -->
+    <string name="friends_error_request_not_found">そのリクエストは処理済みです</string>
+    <!-- Failure title when the server asks to wait before trying again. Argument: seconds to wait. -->
+    <string name="friends_error_rate_limited">リクエストが多すぎます。%1$d 秒お待ちください。</string>
+    <!-- Failure title when the server asks to wait but didn't say how long. -->
+    <string name="friends_error_rate_limited_later">リクエストが多すぎます。後でもう一度お試しください。</string>
+    <!-- Failure title when the server refused the change. -->
+    <string name="friends_error_upstream">サーバーに断られました</string>
+    <!-- Failure title for the remaining categories. -->
+    <string name="friends_error_other">問題が起きました。後でもう一度お試しください。</string>
+    <!-- Section heading on the peers page above the friend requests. -->
+    <string name="friends_peers_title">友だちリクエスト</string>
     <!-- Label before an address that a third-party client uses to connect to the app. -->
     <string name="lan_client_address">アドレス</string>
     <!-- Label before the password a third-party client uses to sign in to the app. -->

@@ -9,12 +9,14 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    ChatViewModel, CoreError, HomeViewModel, OnboardingViewModel, PeersViewModel, PluginsViewModel,
-    ServersViewModel, SettingsViewModel, TabsViewModel, TransfersViewModel,
+    ChatViewModel, CoreError, FriendsViewModel, HomeViewModel, OnboardingViewModel, PeersViewModel,
+    PluginsViewModel, RoomPanel, ServersViewModel, SettingsViewModel, TabsViewModel,
+    TransfersViewModel,
 };
 
-use crate::chat::ChatLink;
+use crate::chat::{CardSuccess, ChatLink};
 use crate::files::FilesLink;
+use crate::friends::FriendsLink;
 use crate::home::{HomeLink, Network, Storage};
 use crate::onboarding::OnboardingLink;
 use crate::peers::PeersLink;
@@ -25,6 +27,7 @@ use crate::settings::SettingsLink;
 use crate::tabs::TabsLink;
 pub(crate) use runtime::ScopeRuntime;
 pub(crate) use visit::{Entered, Visits};
+use wonton_matrix::{MatrixSession, OwnedRoomId};
 
 pub(crate) struct Scope {
     pub(crate) slot: String,
@@ -37,6 +40,7 @@ pub(crate) struct Scope {
     pub(crate) files: Arc<FilesLink>,
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) peers: Arc<PeersLink>,
+    pub(crate) friends: Arc<FriendsLink>,
     pub(crate) settings: SettingsLink,
     /// 卡片成功的测试钩子，只给集成测试用（feature `test-hooks`，生产构建没有）。挂在作用域上：
     /// 换服务器换作用域，测试不换服务器就一直是同一个。
@@ -56,6 +60,7 @@ pub(crate) struct Views {
     pub(crate) transfers: watch::Sender<TransfersViewModel>,
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
     pub(crate) peers: watch::Sender<PeersViewModel>,
+    pub(crate) friends: watch::Sender<FriendsViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
 
@@ -69,6 +74,7 @@ impl Views {
             transfers: scope.files.sender(),
             onboarding: scope.onboarding.sender(),
             peers: scope.peers.sender(),
+            friends: scope.friends.sender(),
             settings: scope.settings.sender(),
         }
     }
@@ -83,6 +89,124 @@ pub(crate) fn reuse<T>(sender: Option<watch::Sender<T>>, initial: T) -> watch::S
         }
         None => watch::Sender::new(initial),
     }
+}
+
+/// 建各个联系模块时共用的东西（作用域自己的句柄、已有链接和目录）。
+struct Shared<'a> {
+    handle: &'a tokio::runtime::Handle,
+    home: &'a Arc<HomeLink>,
+    plugins: &'a Arc<PluginsLink>,
+    push_method: &'a PushMethodLink,
+    dir: &'a Path,
+    views: Option<&'a Views>,
+}
+
+/// 聊天这一支建出来的链接：聊天、推送、底栏、文件和引导。
+struct ChatLinks {
+    chat: Arc<ChatLink>,
+    push: Arc<PushLink>,
+    tabs: Arc<TabsLink>,
+    files: Arc<FilesLink>,
+    onboarding: Arc<OnboardingLink>,
+}
+
+fn chat_links(
+    shared: &Shared<'_>,
+    card_success: CardSuccess,
+    channels: crate::chat::ChatChannels,
+    session_in: watch::Receiver<Option<Arc<MatrixSession>>>,
+    room_sender: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
+    room_receiver: watch::Receiver<Option<(OwnedRoomId, RoomPanel)>>,
+) -> Result<ChatLinks, CoreError> {
+    let Shared {
+        handle,
+        home,
+        plugins,
+        push_method,
+        dir,
+        views,
+    } = *shared;
+    let chat = ChatLink::new(
+        handle.clone(),
+        home.clone(),
+        dir,
+        card_success,
+        plugins.clone(),
+        channels,
+    )?;
+    let push = PushLink::new(
+        handle.clone(),
+        home.clone(),
+        chat.clone(),
+        dir,
+        push_method.subscribe(),
+    );
+    let tabs = TabsLink::new(
+        handle.clone(),
+        home.clone(),
+        plugins.clone(),
+        dir,
+        views.map(|v| v.tabs.clone()),
+        session_in,
+        (room_sender, room_receiver),
+    );
+    let files = FilesLink::new(
+        handle.clone(),
+        home.clone(),
+        chat.clone(),
+        dir,
+        views.map(|v| v.transfers.clone()),
+    );
+    let onboarding = OnboardingLink::new(
+        handle.clone(),
+        home.clone(),
+        chat.clone(),
+        plugins.clone(),
+        dir,
+        views.map(|v| v.onboarding.clone()),
+    );
+    Ok(ChatLinks {
+        chat,
+        push,
+        tabs,
+        files,
+        onboarding,
+    })
+}
+
+fn people_links(
+    shared: &Shared<'_>,
+    servers: watch::Receiver<ServersViewModel>,
+    chat: &Arc<ChatLink>,
+) -> Result<(Arc<PeersLink>, Arc<FriendsLink>, SettingsLink), CoreError> {
+    let Shared {
+        handle,
+        home,
+        plugins,
+        push_method,
+        dir,
+        views,
+    } = *shared;
+    let peers = PeersLink::new(handle.clone(), home.clone(), views.map(|v| v.peers.clone()));
+    let friends = FriendsLink::new(
+        handle.clone(),
+        home.clone(),
+        chat.clone(),
+        dir,
+        views.map(|v| v.friends.clone()),
+    )?;
+    let settings = SettingsLink::new(
+        handle,
+        home.subscribe(),
+        chat.subscribe(),
+        plugins.subscribe(),
+        peers.subscribe(),
+        friends.subscribe(),
+        servers,
+        push_method.subscribe(),
+        views.map(|v| v.settings.clone()),
+    );
+    Ok((peers, friends, settings))
 }
 
 impl Scope {
@@ -127,73 +251,42 @@ impl Scope {
             let plugins = plugins.clone();
             Arc::new(move |plugin_id: &str| plugins.card_succeeded(plugin_id))
         };
-        let chat = ChatLink::new(
-            handle.clone(),
-            home.clone(),
+        let channels = crate::chat::ChatChannels {
+            view: views.map(|v| v.chat.clone()),
+            method: push_method.subscribe(),
+            session_out: session_out.0.clone(),
+            room_panel_out: room_panel.0.clone(),
+        };
+        let shared = Shared {
+            handle: &handle,
+            home: &home,
+            plugins: &plugins,
+            push_method: &push_method,
             dir,
+            views,
+        };
+        let links = chat_links(
+            &shared,
             card_success,
-            plugins.clone(),
-            crate::chat::ChatChannels {
-                view: views.map(|v| v.chat.clone()),
-                method: push_method.subscribe(),
-                session_out: session_out.0.clone(),
-                room_panel_out: room_panel.0.clone(),
-            },
-        )?;
-        let push = PushLink::new(
-            handle.clone(),
-            home.clone(),
-            chat.clone(),
-            dir,
-            push_method.subscribe(),
-        );
-        let tabs = TabsLink::new(
-            handle.clone(),
-            home.clone(),
-            plugins.clone(),
-            dir,
-            views.map(|v| v.tabs.clone()),
+            channels,
             session_out.1,
-            (room_panel.0.clone(), room_panel.1),
-        );
-        let files = FilesLink::new(
-            handle.clone(),
-            home.clone(),
-            chat.clone(),
-            dir,
-            views.map(|v| v.transfers.clone()),
-        );
-        let onboarding = OnboardingLink::new(
-            handle.clone(),
-            home.clone(),
-            chat.clone(),
-            plugins.clone(),
-            dir,
-            views.map(|v| v.onboarding.clone()),
-        );
-        let peers = PeersLink::new(handle.clone(), home.clone(), views.map(|v| v.peers.clone()));
-        let settings = SettingsLink::new(
-            &handle,
-            home.subscribe(),
-            chat.subscribe(),
-            plugins.subscribe(),
-            peers.subscribe(),
-            servers,
-            push_method.subscribe(),
-            views.map(|v| v.settings.clone()),
-        );
+            room_panel.0,
+            room_panel.1,
+        )?;
+        let people = people_links(&shared, servers, &links.chat)?;
         Ok(Arc::new(Self {
             slot: slot.to_owned(),
             home,
-            chat,
-            push,
+            chat: links.chat,
+            push: links.push,
             push_method,
             plugins,
-            tabs,
-            files,
-            onboarding,
-            peers,
-            settings,
+            tabs: links.tabs,
+            files: links.files,
+            onboarding: links.onboarding,
+            peers: people.0,
+            friends: people.1,
+            settings: people.2,
             #[cfg(feature = "test-hooks")]
             card_success_hook,
             runtime,

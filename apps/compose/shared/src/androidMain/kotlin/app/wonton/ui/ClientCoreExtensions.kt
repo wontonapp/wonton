@@ -5,6 +5,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.FriendsViewModel
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PeersViewModel
 import app.wonton.protocol.PluginsViewModel
@@ -110,6 +111,7 @@ fun ClientCore.peersUpdates(): Flow<PeersViewModel> = flow {
         }
     }
 }
+
 
 /**
  * 订阅聊天状态：首帧用当前值，之后跟着更新。详情页的 Bot 资料一节用它（`ChatViewModel.bots`）；

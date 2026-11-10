@@ -316,7 +316,7 @@ fn fed_files(dir: &Path, report: &mut Report) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn write_private(path: &Path, text: &str) -> anyhow::Result<()> {
+pub(crate) fn write_private(path: &Path, text: &str) -> anyhow::Result<()> {
     write_file(path, text, 0o600)
 }
 

@@ -4,6 +4,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::gateway::people_limits::PeopleLimits;
 use crate::gateway::send_limits::SendLimits;
 use crate::owner;
 use crate::plugin::egress::address::ProxyAddress;
@@ -113,6 +114,8 @@ pub struct Config {
     pub confirmation_window: Duration,
     /// 网关管 Bot 发消息的数字（ADR-0045），由 `WONTON_BOT_MSG_*` 环境变量改，见 [`SendLimits`] 的字段。
     pub send_limits: SendLimits,
+    /// 本机每个人发邀请、发消息的每分钟上限（ADR-0051），由 `WONTON_PEOPLE_*` 环境变量改。
+    pub people_limits: PeopleLimits,
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
@@ -192,19 +195,8 @@ impl Config {
         if !data_dir.is_absolute() {
             return Err(invalid("WONTON_DATA_DIR", "必须是绝对路径"));
         }
-        let base_domain = get("WONTON_BASE_DOMAIN").unwrap_or_else(|| "wonton.localhost".into());
-        if !is_domain(&base_domain) {
-            return Err(invalid(
-                "WONTON_BASE_DOMAIN",
-                "必须是小写域名，如 wonton.localhost",
-            ));
-        }
-        if base_domain == "wonton.internal" || base_domain.ends_with(".wonton.internal") {
-            return Err(invalid(
-                "WONTON_BASE_DOMAIN",
-                "不能用 wonton.internal：它留给插件网络里的内部别名",
-            ));
-        }
+        let base_domain =
+            base_domain(get("WONTON_BASE_DOMAIN").unwrap_or_else(|| "wonton.localhost".into()))?;
         let port = parse(&get, "WONTON_PUBLIC_PORT", 8080u16)?;
         let listen = parse(
             &get,
@@ -262,6 +254,7 @@ impl Config {
             confirmation_ttl: secs(&get, "WONTON_CONFIRMATION_TTL_SECS", 600)?,
             confirmation_window: secs(&get, "WONTON_CONFIRMATION_WINDOW_SECS", 1800)?,
             send_limits: send_limits(&get)?,
+            people_limits: people_limits(&get)?,
             oidc,
             matrix,
             tusd: get("WONTON_TUSD_URL")
@@ -350,6 +343,46 @@ fn send_limits(get: &impl Fn(&str) -> Option<String>) -> Result<SendLimits, Conf
             .ok_or_else(|| invalid(name, "必须是正整数"))?;
     }
     Ok(limits)
+}
+
+/// 本机每个人发邀请、发消息的上限（ADR-0051）。0 没有意义：要不限就把数字放大。
+fn people_limits(get: &impl Fn(&str) -> Option<String>) -> Result<PeopleLimits, ConfigError> {
+    let limits = PeopleLimits {
+        invites_per_minute: parse(get, "WONTON_PEOPLE_INVITES_PER_MINUTE", 20)?,
+        messages_per_minute: parse(get, "WONTON_PEOPLE_MESSAGES_PER_MINUTE", 60)?,
+    };
+    for (name, value) in [
+        (
+            "WONTON_PEOPLE_INVITES_PER_MINUTE",
+            limits.invites_per_minute,
+        ),
+        (
+            "WONTON_PEOPLE_MESSAGES_PER_MINUTE",
+            limits.messages_per_minute,
+        ),
+    ] {
+        (value > 0)
+            .then_some(())
+            .ok_or_else(|| invalid(name, "必须是正整数"))?;
+    }
+    Ok(limits)
+}
+
+/// 基础域名：小写、不能是留给插件内部网络的 `.wonton.internal`。
+fn base_domain(value: String) -> Result<String, ConfigError> {
+    if !is_domain(&value) {
+        return Err(invalid(
+            "WONTON_BASE_DOMAIN",
+            "必须是小写域名，如 wonton.localhost",
+        ));
+    }
+    if value == "wonton.internal" || value.ends_with(".wonton.internal") {
+        return Err(invalid(
+            "WONTON_BASE_DOMAIN",
+            "不能用 wonton.internal：它留给插件网络里的内部别名",
+        ));
+    }
+    Ok(value)
 }
 
 fn host_dev(configured: Option<String>, on_host: bool) -> Result<Option<PathBuf>, ConfigError> {

@@ -37,9 +37,14 @@ services:
     environment:
       <<: *no-proxy
       WONTON_DATA_DIR: ${WONTON_DEV_DATA:?请用 deploy/dev/core/dev.sh up 启动}
+      # 开发栈把数据目录也当安装目录：联邦名单和整台服务器黑名单像正式安装一样由核心原地重写、热加载。
+      WONTON_INSTALL_DIR: ${WONTON_DEV_DATA}
       WONTON_BASE_DOMAIN: ${WONTON_DEV_DOMAIN:-wonton.localhost}
       WONTON_PUBLIC_PORT: ${WONTON_DEV_PORT:-18480}
       WONTON_TUNNEL_PORT: ${WONTON_DEV_TUNNEL_PORT:-18482}
+      # 联邦出站代理只绑在核心网络的别名上；Tuwunel 通过它按配对名单经 iroh 转发。
+      WONTON_FEDERATION_LISTEN: federation-proxy.wonton.internal:8448
+      WONTON_MATRIX_FEDERATION_ADDR: tuwunel.wonton.internal:8448
       WONTON_CORE_CONTAINER: ${WONTON_DEV_PROJECT:-wonton-dev-core}
       WONTON_INSTANCE: ${WONTON_DEV_INSTANCE:-}
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
@@ -95,8 +100,8 @@ services:
           recursive: disabled
     networks:
       core:
-        # 文件钩子和推送监听只在这个网络上，与正式安装一致。
-        aliases: [files-hooks.wonton.internal, push.wonton.internal]
+        # 文件钩子、联邦出站代理和推送监听只在这个网络上，与正式安装一致。
+        aliases: [files-hooks.wonton.internal, federation-proxy.wonton.internal, push.wonton.internal]
     depends_on:
       hydra:
         condition: service_healthy
@@ -191,32 +196,28 @@ services:
       start_period: 1m
       start_interval: 1s
 
-  # Matrix 服务器，配置和 deploy/dev/matrix/tuwunel.toml 一致，这里全用环境变量给出：DOCKER_HOST 指向远端
-  # 主机时，本机的配置文件挂不进去。只在核心的私有网络里，App 和 Bot 都经核心网关访问它（ADR-0009）。
+  # Matrix 服务器；开发栈保留和正式安装相同的联邦端口、TLS 和 CONNECT 代理接线。
+  # Tuwunel 的嵌套数组配置放在第二份 TOML，不能写成 TUWUNEL_PROXY__BY_DOMAIN__0__* 环境变量。
   tuwunel:
     image: ghcr.io/matrix-construct/tuwunel:v1.9.4
     restart: unless-stopped
-    # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
     stop_grace_period: 5m
     environment:
       <<: *no-proxy
       TUWUNEL_SERVER_NAME: ${WONTON_DEV_DOMAIN:-wonton.localhost}
       TUWUNEL_DATABASE_PATH: /var/lib/tuwunel
       TUWUNEL_ADDRESS: 0.0.0.0
-      TUWUNEL_PORT: 8008
-      # 联邦只对配对过的服务器开：正式安装里名单文件由核心生成和热加载（ADR-0050）；这个栈挂不进
-      # 文件（DOCKER_HOST 可能是远端），也没有那份名单，等于没有限制，8448 不发布到主机出不去。
+      TUWUNEL_PORT: "[8008, 8448]"
       TUWUNEL_ALLOW_FEDERATION: "true"
       TUWUNEL_TRUSTED_SERVERS: "[]"
-      # 默认值含 10/8、127/8，会拦掉到转发组件的出站（ADR-0050）。
       TUWUNEL_IP_RANGE_DENYLIST: "[]"
-      # 联邦对端证书是自签的，出站不校验（ADR-0050）。
       TUWUNEL_ALLOW_INVALID_TLS_CERTIFICATES: "true"
-      # 账号只由核心签发：设备和 Bot 用 JWT 登录，首次登录自动建号。不开放注册，也不接受密码登录。
+      TUWUNEL_TLS__CERTS: /etc/tuwunel/tls.crt
+      TUWUNEL_TLS__KEY: /etc/tuwunel/tls.key
+      TUWUNEL_TLS__DUAL_PROTOCOL: "true"
       TUWUNEL_ALLOW_REGISTRATION: "false"
       TUWUNEL_LOGIN_WITH_PASSWORD: "false"
       TUWUNEL_NEW_USER_DISPLAYNAME_SUFFIX: ""
-      # 核心持有 Ed25519 私钥，Tuwunel 只拿公钥验签；令牌必须带 exp 和对应的签发方、接收方。
       TUWUNEL_JWT__ENABLE: "true"
       TUWUNEL_JWT__FORMAT: EDDSA
       TUWUNEL_JWT__ALGORITHM: EdDSA
@@ -224,10 +225,14 @@ services:
       TUWUNEL_JWT__ISSUER: '["wonton-core"]'
       TUWUNEL_JWT__AUDIENCE: '["tuwunel"]'
       TUWUNEL_JWT__KEY: ${WONTON_DEV_MATRIX_JWT_PUBLIC_KEY:?请用 deploy/dev/core/dev.sh up 启动}
-      # 核心用它注册自己的管理账号（Synapse 兼容的管理接口）。
       TUWUNEL_REGISTRATION_SHARED_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
     volumes:
       - tuwunel:/var/lib/tuwunel
+      - ${WONTON_DEV_DATA}/fed/proxy.toml:/etc/tuwunel/proxy.toml:ro
+      - ${WONTON_DEV_DATA}/fed/config.toml:/etc/tuwunel/fed.toml:ro
+      - ${WONTON_DEV_SECRETS}/tuwunel-tls.crt:/etc/tuwunel/tls.crt:ro
+      - ${WONTON_DEV_SECRETS}/tuwunel-tls.key:/etc/tuwunel/tls.key:ro
+    command: ["-c", "/etc/tuwunel/proxy.toml", "-c", "/etc/tuwunel/fed.toml"]
     networks:
       core:
         aliases: [tuwunel.wonton.internal]

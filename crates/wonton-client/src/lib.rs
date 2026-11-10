@@ -29,6 +29,7 @@ mod appearance;
 mod chat;
 mod client;
 mod files;
+mod friends;
 mod home;
 mod l10n;
 mod link;
@@ -57,9 +58,9 @@ pub use home::Network;
 pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
 pub use subscription::{
-    AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
-    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
-    SettingsSubscription, TabsSubscription, TransfersSubscription,
+    AppearanceSubscription, ChatSubscription, FriendsSubscription, HomeSubscription,
+    OnboardingSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
+    SessionListSubscription, SettingsSubscription, TabsSubscription, TransfersSubscription,
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,

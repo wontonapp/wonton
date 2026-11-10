@@ -103,6 +103,8 @@ pub struct RoomInfo {
     pub is_encrypted: bool,
     /// 本账号的成员状态。
     pub membership: Membership,
+    /// 建房时带了好友标记（ADR-0051）：邀请是一条好友请求，加入后是好友私聊。
+    pub is_friend: bool,
     /// 最新一条消息；还没有消息或者还没算出来时为 `None`。
     pub latest: Option<LatestMessage>,
     /// 未读消息数，按本账号的已读回执在本机算出。
@@ -191,8 +193,11 @@ impl MatrixSession {
             .client
             .get_room(room_id)
             .filter(|room| room.state() == RoomState::Invited);
+        // 好友邀请也记成私聊：它的邀请请求本身不带 `is_direct`，靠建房时的标记认。
         let inviter = match &invited {
-            Some(room) if invited_as_direct(room).await => {
+            Some(room)
+                if invited_as_direct(room).await || crate::friends::marked_friend(room).await =>
+            {
                 Some(room.invite_details().await?.inviter_id)
             }
             _ => None,
@@ -417,7 +422,7 @@ impl MatrixSession {
         Ok(room)
     }
 
-    fn room(&self, room_id: &RoomId) -> Result<Room> {
+    pub(crate) fn room(&self, room_id: &RoomId) -> Result<Room> {
         self.client.get_room(room_id).ok_or_else(|| {
             Error::NotReady("这个聊天还没有同步到这台设备，稍等一会儿再试".to_owned())
         })
@@ -500,12 +505,14 @@ async fn room_info(room: &Room) -> RoomInfo {
 
 /// 按给定的成员状态拼一行；`room` 的实际状态变到别处时由 [`room_info`] 重拼。
 async fn room_info_in(room: &Room, state: RoomState) -> RoomInfo {
-    // 私聊标记和对方从同一份数据取：收到邀请时标记在邀请事件里，加入后是 `m.direct` 里的唯一对方。
+    // 私聊标记和对方从同一份数据取：好友邀请不一定能从邀请 stripped state 恢复 `is_direct`，但好友标记仍应进请求列表。
     let (is_direct, direct_user_id) = if state == RoomState::Invited {
-        let is_direct = room.is_direct().await.unwrap_or_else(|error| {
-            tracing::warn!(room = %room.room_id(), "读不到私聊标记，按群聊显示：{error}");
-            false
-        });
+        let friend = crate::friends::marked_friend(room).await;
+        let is_direct = friend
+            || room.is_direct().await.unwrap_or_else(|error| {
+                tracing::warn!(room = %room.room_id(), "读不到私聊标记，按群聊显示：{error}");
+                false
+            });
         let peer = if is_direct {
             direct_peer(room).await
         } else {
@@ -514,8 +521,8 @@ async fn room_info_in(room: &Room, state: RoomState) -> RoomInfo {
         (is_direct, peer)
     } else {
         let targets = room.direct_targets();
-        let is_direct = !targets.is_empty();
-        let peer = if is_direct && targets.len() == 1 {
+        let is_direct = !targets.is_empty() || crate::friends::marked_friend(room).await;
+        let peer = if !targets.is_empty() && targets.len() == 1 {
             targets
                 .iter()
                 .next()
@@ -549,6 +556,7 @@ async fn room_info_in(room: &Room, state: RoomState) -> RoomInfo {
         room_id: room.room_id().to_owned(),
         name,
         is_direct,
+        is_friend: crate::friends::marked_friend(room).await,
         direct_user_id,
         is_encrypted: room.encryption_state().is_encrypted(),
         membership: state.into(),

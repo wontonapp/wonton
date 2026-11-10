@@ -45,6 +45,20 @@ peers-invalid-proxy = 本地代理不可用：{ $reason }
 peers-server-status = 家里的服务器回了 HTTP { $status }
 # $reason 是 JSON 解析器的原始错误。
 peers-invalid-response = 家里的服务器给的回应读不懂：{ $reason }
+friends-transport = 连不上家里的服务器：{ $reason }
+friends-server-status = 家里的服务器回了 HTTP { $status }
+friends-invalid-response = 家里的服务器给的回应读不懂：{ $reason }
+friends-not-signed-in = 还没登录这个账号。
+friends-not-connected = 还没连上家里的服务器。
+friends-invalid-action = 不是好友操作。
+friends-local-open = 本机好友清单打不开：{ $reason }
+friends-invalid-proxy = 本地代理地址不可用：{ $reason }
+friends-http-client = 本地 HTTP 客户端建不起来：{ $reason }
+friends-invalid-url = 好友服务地址不合法：{ $reason }
+friends-request-body = 好友请求编码失败：{ $reason }
+friends-timeout = 好友服务没有及时回应。
+friends-group-name-required = 请填写分组名。
+friends-group-not-found = 没有这个分组：{ $id }
 # $reason 是隧道拒绝的原话。
 peers-rejected = 家里的服务器拒绝了这台设备：{ $reason }
 

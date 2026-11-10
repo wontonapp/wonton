@@ -89,6 +89,8 @@ struct WontonRow: View {
     var value: String?
     var valueTint: Rgb?
     var badge = false
+    /// 数字角标：等着处理的件事有多少（比如好友请求）。和只表示“有新的”的 `badge` 圆点分开。
+    var badgeText: String?
     var showsForward = false
     @Environment(\.wontonColors) private var colors
 
@@ -108,6 +110,15 @@ struct WontonRow: View {
             if badge {
                 Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
                     .accessibilityLabel(String(localized: .designUpdateBadge))
+            }
+            if let badgeText {
+                Text(badgeText)
+                    .wontonText(WontonTheme.typography.caption)
+                    .foregroundStyle(Color(colors.onPrimary))
+                    .padding(.horizontal, WontonTheme.spacing.s4)
+                    .frame(minWidth: 20, minHeight: 20)
+                    .background(Capsule().fill(Color(colors.primary)))
+                    .accessibilityLabel(String(localized: .friendsRequestsBadge(Int(badgeText) ?? 0)))
             }
             if showsForward {
                 WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
