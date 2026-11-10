@@ -10,6 +10,10 @@ let package = Package(
     ],
     targets: [
         .binaryTarget(name: "WontonClientFFI", path: "build/WontonClientFFI.xcframework"),
-        .target(name: "WontonClient", dependencies: ["WontonClientFFI"])
+        .target(
+            name: "WontonClient",
+            dependencies: ["WontonClientFFI"],
+            linkerSettings: [.linkedFramework("Network"), .linkedFramework("SystemConfiguration")]
+        )
     ]
 )

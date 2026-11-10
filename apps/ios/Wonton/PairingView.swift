@@ -15,7 +15,6 @@ struct PairingView: View {
     @State private var camera = CameraAccess.current
     @State private var scannerProblem: String?
     @State private var deviceName = UIDevice.current.name
-    @State private var pastedCode = ""
     /// 核心当场拒绝的原因，比如扫到的不是配对码。
     @State private var refusal: Problem?
     /// 最近一次出示的码。扫到同一个码不再自动出示，失败后由“再试一次”重来。
@@ -63,6 +62,7 @@ struct PairingView: View {
         .onDisappear {
             if hasFailedPairing { model.send(.dismissPairingFailure) }
         }
+        .onChange(of: model.pairingCode) { _, _ in refusal = nil }
         .onChange(of: scenePhase) { _, phase in
             // 可能刚从系统设置里改了相机权限回来。
             if phase == .active { camera = .current }
@@ -81,27 +81,38 @@ struct PairingView: View {
                     .foregroundStyle(Color(colors.textSecondary))
             }
             VStack(spacing: WontonTheme.spacing.s8) {
-                TextField(String(localized: .pairingPastePlaceholder), text: $pastedCode, axis: .vertical)
+                TextField(String(localized: .pairingPastePlaceholder), text: $model.pairingCode, axis: .vertical)
+                    .accessibilityIdentifier("pairing-code")
                     .textFieldStyle(.plain)
-                    .font(pastedCode.isEmpty ? nil : .caption.monospaced())
+                    .font(model.pairingCode.isEmpty ? nil : .caption.monospaced())
                     .focused($isEditingCode)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .lineLimit(1...5)
                     .wontonField()
+                if let domain = pairingDomain {
+                    Text(domain)
+                        .wontonText(WontonTheme.typography.body)
+                        .textSelection(.enabled)
+                }
                 Button {
-                    pair(pastedCode)
+                    pair(model.pairingCode)
                 } label: {
                     Text(.pairingSubmit).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle())
-                .disabled(pastedCode.isEmpty || isPairing)
+                .accessibilityIdentifier("pairing-submit")
+                .disabled(model.pairingCode.isEmpty || isPairing)
             }
             if let refusal {
                 ProblemNotice(problem: refusal, icon: .error)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("pairing-refusal")
             }
             if let pairing = model.viewModel.pairing {
                 PairingProgress(status: pairing, retry: nil, back: leaveFailure)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("pairing-progress")
             }
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 Text(.pairingDeviceName)
@@ -109,6 +120,7 @@ struct PairingView: View {
                     .foregroundStyle(Color(colors.textSecondary))
                     .accessibilityHidden(true)
                 TextField(String(localized: .pairingDeviceName), text: $deviceName)
+                    .accessibilityIdentifier("pairing-device-name")
                     .textFieldStyle(.plain)
                     .wontonField()
             }
@@ -144,6 +156,10 @@ struct PairingView: View {
         case .unsupported:
             WontonNotice(icon: .cameraOff, title: String(localized: .qrScannerUnsupportedPaste), isError: false)
         }
+    }
+
+    private var pairingDomain: String? {
+        URLComponents(string: model.pairingCode)?.queryItems?.last(where: { $0.name == "domain" })?.value
     }
 
     private var isPairing: Bool {

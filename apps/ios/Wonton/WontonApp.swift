@@ -106,6 +106,11 @@ private enum Launch {
         let base = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
         )
+        #if DEBUG
+        if let suffix = ProcessInfo.processInfo.environment["WONTON_DEV_DATA_SUFFIX"] {
+            return base.appending(path: "wonton-\(suffix)", directoryHint: .isDirectory)
+        }
+        #endif
         return base.appending(path: "wonton", directoryHint: .isDirectory)
     }
 }
