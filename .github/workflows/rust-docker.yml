@@ -3,30 +3,17 @@ name: rust-docker
 # 依赖 Docker 的集成测试（标了 #[ignore] 的都在 wonton-core、wonton-client、wonton-matrix、wonton-acp-bridge 里）
 # 和官方索引检查。草稿 PR 不跑；转 ready 或每天的定时全量才跑。测试镜像拉的是 ghcr.io/<owner>/test-images
 # 的副本（test-images.yml 每周和每次 main 合并时同步），托管 runner 的出口 IP 拉不动 Docker Hub 和 ECR Public。
+# 路径不写在触发器上：合并队列的必需检查每次入队都要有结果，工作流没触发的话检查一直“等待中”，队列合不了。
+# 改成由 changes 作业判断改动范围，作业挂在它上面，没改到时自己报 skipped（跳过的检查算通过）。
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "crates/wonton-acp-bridge/**"
-      - "crates/wonton-client/**"
-      - "crates/wonton-core/**"
-      - "crates/wonton-matrix/**"
-      - "deploy/**"
-      - "plugins/**"
-      - "Cargo.toml"
-      - "vendor/**"
-      - "Cargo.lock"
-      - "clippy.toml"
-      - ".config/nextest.toml"
-      - "rust-toolchain.toml"
-      - ".github/workflows/rust-docker.yml"
-      - "!**/*.md"
   schedule:
     # 每天全量兜底（PR 已在最新 main 上跑过，main 上不重跑）。
     - cron: "30 3 * * *"
   workflow_dispatch:
   # 合并队列：Docker 集成测试和官方索引检查也是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
-  # merge_group 不认 paths，上面的路径过滤只对 PR 生效。
+  # 队列里不判断改动范围，作业照跑（作业的 if 按事件名放行）。
   merge_group:
     types: [checks_requested]
     branches: [main]
@@ -49,9 +36,47 @@ permissions:
   packages: read
 
 jobs:
+  changes:
+    name: 改动范围（rust-docker）
+    # 这次 PR 有没有改到下面这些路径，替代原来触发器的 paths 过滤。
+    # 只在 PR 上判断：队列、定时和手动运行一律跑全套，作业的 if 里按事件名放行。
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # 按 REST 接口列 PR 改动的文件，不用检出代码。
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+    steps:
+      # MIT
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
+          predicate-quantifier: some-with-excludes
+          filters: |
+            changed:
+              - "crates/wonton-acp-bridge/**"
+              - "crates/wonton-client/**"
+              - "crates/wonton-core/**"
+              - "crates/wonton-matrix/**"
+              - "deploy/**"
+              - "plugins/**"
+              - "Cargo.toml"
+              - "vendor/**"
+              - "Cargo.lock"
+              - "clippy.toml"
+              - ".config/nextest.toml"
+              - "rust-toolchain.toml"
+              - ".github/workflows/rust-docker.yml"
+              - "!**/*.md"
+
   docker:
     name: Rust Docker 测试
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.changed == 'true')) }}
     runs-on: ubuntu-24.04
     # 桥镜像要整编一遍（预构建 + 测试缓存），45 分钟紧，留出余量。
     timeout-minutes: 75

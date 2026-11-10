@@ -11,10 +11,14 @@
 
 ## 什么时候跑
 
-- 每个工作流都按 `paths` 跳过不相关的改动，范围写在各个工作流开头（lint 例外：冲突标记和密钥可能写在
-  任何文件里，不按路径过滤；它里面的结构门禁在只改文档时自己跳过）。没有分支保护，跳过的检查不挡合并。
-- 草稿 PR 只跑轻检查（lint 全部、Rust 的格式）；`ready_for_review` 事件触发 Clippy、测试、Docker、
-  Android、iOS（各作业 `if` 里判断 `github.event.pull_request.draft`）。
+- 路径不在触发器上过滤：合并队列的必需检查每次入队都要有结果，工作流不触发的话检查一直“等待中”，队列
+  直接判失败。改动范围改由各工作流开头的 `changes` 作业判断（`dorny/paths-filter`，只在 PR 上跑），
+  没改到的重作业挂在它上面、自己报 skipped，范围还是写在各个工作流开头；跳过的检查算通过，没有分支保护，
+  不挡合并。lint 例外：冲突标记和密钥可能写在任何文件里，不按路径过滤；它里面的结构门禁在只改文档时自己跳过。
+- 草稿 PR 只跑轻检查（lint 全部、Rust 的格式）和 `changes`；`ready_for_review` 事件触发 Clippy、测试、Docker、
+  Android、iOS（各作业 `if` 里判断 `github.event.pull_request.draft`）。Rust 测试的三个分片作业会起来、步骤
+  全部跳过（作业算成功）：matrix 作业被 `if` 跳过时 matrix 不展开，检查名会留成带 `${{ matrix.shard }}` 的
+  字面量，规则集按 `1/3`、`2/3`、`3/3` 配就一直等这三片。所以它的草稿和路径判断在步骤上（`env.RUN`）。
 - 合并进 main 不重跑全套（PR 已在最新 main 上跑过）；只有 main-image 继续构建核心镜像。每天定时
   （`schedule`，02:00 起错开）把 Rust、Docker、Android、iOS 全量跑一遍兜底。
 - `test-images.yml` 每周一 02:00 UTC 把测试和镜像构建要拉的上游镜像复制到 `ghcr.io/<owner>/test-images`
@@ -33,12 +37,13 @@
 android 的构建、ios 的 SwiftLint 和模拟器构建，都必须在队列里跑到。`main-image` 和 `test-images` 不用带，
 队列合进 main 时该跑的照常由 `push` 触发。
 
-`merge_group` 只支持 `branches`/`branches-ignore`，不认 `paths`，因此路径过滤只挂在 `pull_request` 下、
-只在 PR 上生效；队列里不管改了什么都跑全套（`lint.yml` 本来就不按路径过滤）。作业里判断草稿的
-`github.event_name != 'pull_request' || github.event.pull_request.draft == false` 在 `merge_group` 上靠前半句
-成立（队列只收已转 ready 的 PR）；`github.sha` 是队列里的合并提交、`github.ref` 是
-`refs/heads/gh-merge-queue/main`，所以并发组在 `merge_group` 上取 `github.event.merge_group.head_sha`，
-不让几次入队挤进同一组互相取消。缓存仍只在 main 上写，队列运行和 PR 一样只读。
+`changes` 作业只在 `pull_request` 上跑，`merge_group`、`schedule`、`workflow_dispatch` 上重作业靠
+`if` 里的 `github.event_name != 'pull_request'` 直接放行，队列里不管改了什么都跑全套（`lint.yml` 本来也
+不按路径过滤）。所以重作业的 `if` 都以 `!cancelled()` 开头：`changes` 跳过时下游作业才不会被连坐跳过。
+作业里判断草稿的 `github.event.pull_request.draft == false` 也只在 PR 上求值（队列只收已转 ready 的 PR）；
+`github.sha` 是队列里的合并提交、`github.ref` 是 `refs/heads/gh-merge-queue/main`，所以并发组在
+`merge_group` 上取 `github.event.merge_group.head_sha`，不让几次入队挤进同一组互相取消。缓存仍只在 main 上写，
+队列运行和 PR 一样只读。
 
 ## 缓存
 
