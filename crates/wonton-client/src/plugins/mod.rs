@@ -188,6 +188,11 @@ impl PluginsLink {
         self.ports.set_enabled(plugin_id, enabled)
     }
 
+    /// `SetVisiblePlugin`：屏幕上换的是哪个插件的页面，`None` 是屏幕上没有插件页面。
+    pub(crate) fn set_visible_plugin(&self, plugin_id: Option<String>) {
+        self.ports.set_visible(plugin_id);
+    }
+
     pub(crate) fn subscribe(&self) -> watch::Receiver<PluginsViewModel> {
         self.view.subscribe()
     }
@@ -215,6 +220,7 @@ impl PluginsLink {
 
     pub(crate) fn foregrounded(self: &Arc<Self>) {
         self.foreground.store(true, Ordering::SeqCst);
+        self.ports.set_foreground(true);
         self.poll_changed.notify_one();
         self.refresh_installed();
         self.fetch_core_upgrade();
