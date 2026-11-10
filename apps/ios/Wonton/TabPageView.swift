@@ -117,12 +117,8 @@ struct TabPageView: View {
                 }
             }
             .task(id: inputs) { updateSession(inputs) }
-            .onChange(of: keepAlive) { _, keep in
-                if keep, session.webView == nil { revive(inputs) }
-            }
-            .task(id: store.generation) {
-                if keepAlive, session.webView == nil { revive(inputs) }
-            }
+            .onChange(of: keepAlive) { _, keep in keepSessionAlive(inputs, when: keep) }
+            .task(id: store.generation) { keepSessionAlive(inputs, when: keepAlive) }
             .onChange(of: geometry.size) { showCapsule() }
         }
         // 键盘交给 WebKit 自己让（和 Safari 一样：可视区域缩小，焦点输入框滚进来）。SwiftUI 默认再把网页框缩到键盘上面，
@@ -164,7 +160,7 @@ extension TabPageView {
         if let panel {
             // 面板里的网页一直是整页大小，级之间只挪位置、不缩放（ADR-0052）：顶边的状态栏和底边的
             // 遮挡经 `obscuredContentInsets` 让出，不改网页框。
-            return EdgeInsets(leading: safe.leading, trailing: safe.trailing)
+            return EdgeInsets(top: 0, leading: safe.leading, bottom: 0, trailing: safe.trailing)
         }
         if edgeToEdge { return EdgeInsets() }
         let frame = insetFrame(safe: safe)
@@ -282,7 +278,12 @@ extension TabPageView {
         )
     }
 
-    /// 会话被释放过：重新要一份并加载。面板只留当前页和左右各一页（ADR-0052）。
+    /// 会话被释放过（`TabWebViewStore.retain` 放掉的）：重新要一份并加载。
+    /// 面板只留当前页和左右各一页（ADR-0052）。
+    private func keepSessionAlive(_ inputs: TabWebInputs, when keep: Bool) {
+        if keep, session.webView == nil { revive(inputs) }
+    }
+
     private func revive(_ inputs: TabWebInputs) {
         session = store.session(for: placed, core: tabs.core)
         updateSession(inputs)
