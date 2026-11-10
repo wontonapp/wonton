@@ -504,13 +504,27 @@ EOF
   exit 1
 }
 
+# 配置的解析器转成 init 容器的 --dns：每项是 IP:端口，容器只要 IP。默认 bridge 没有
+# Docker 内置 DNS，和 lego 一样不补 127.0.0.11。
+resolver_dns_args() {
+  for server in $(printf '%s' "${WONTON_ACME_RESOLVERS:-}" | tr ',' ' '); do
+    server=${server%:*}
+    server=${server#[}
+    server=${server%]}
+    printf '%s\n%s\n' --dns "$server"
+  done
+}
+
 write_config() {
   info "生成密钥和配置（已有的沿用）"
   # 带上主人的设置：核心启动时也查，但那时容器会一直重启，要等满 10 分钟才报错，这里当场说清楚。
   [ -z "$relays" ] || fits_env "$relays" ||
     die "WONTON_RELAYS 里不能有空格和引号这些字符，令牌里的特殊字符写成百分号编码"
   prepare_entry_env
+  # resolver_dns_args 输出成对的 --dns 和 IP，靠分词拆成参数。
+  # shellcheck disable=SC2046
   docker run --rm --network "${WONTON_ACME_NETWORK:-bridge}" \
+    $(resolver_dns_args) \
     --env-file "$install_dir/entry-input/init.env" \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v "$install_dir:$install_dir" -v "$data_dir:$data_dir" \
