@@ -7,7 +7,9 @@ use serde_json::json;
 use wonton_protocol::{MAIL_FIELD, MemberStatus, PluginMail, PluginMailAttachment};
 
 use super::api::Api;
-use super::content::{ATTACHMENT_LIMIT, Message, received_ip};
+use super::content::{
+    ATTACHMENT_LIMIT, Body, BodySource, CONVERT_FAILED_BODY, Message, convert, received_ip,
+};
 use super::progress::{Decision, Progress, Store, Uploaded};
 use crate::gateway::Gateway;
 use crate::matrix::NoticeRoom;
@@ -16,7 +18,7 @@ use crate::plugin::Permission;
 pub(super) struct Delivery {
     pub(super) api: Api,
     gateway: Arc<Gateway>,
-    progress: Store,
+    pub(super) progress: Store,
     rooms: BTreeMap<String, Arc<NoticeRoom>>,
 }
 
@@ -70,9 +72,18 @@ impl Delivery {
         };
         let existing = self.recipients();
         let recipients = message.recipients(&existing);
-        let prepared = message.prepare().context("转换邮件正文失败")?;
+        // 正文只算一次：转换在阻塞线程里跑并留进进度，重扫和重启都不再重复。
+        let body = match progress.prepared.take() {
+            Some(body) => body,
+            None => {
+                let body = self.prepare_body(&message).await;
+                progress.prepared = Some(body.clone());
+                self.progress.save(id, &progress)?;
+                body
+            }
+        };
         let mut attachments = Vec::new();
-        for part in &prepared.attachments {
+        for part in message.attachments() {
             let attachment = part.attachment;
             if part.upload {
                 self.upload_part(id, attachment, &mut progress).await?;
@@ -83,7 +94,8 @@ impl Delivery {
                 uploaded: part.upload,
             });
         }
-        if let Some(html) = prepared.html_attachment {
+        if body.attach_html && !message.html.is_empty() {
+            let html = message.html.as_str();
             self.upload_html(id, html, &mut progress).await?;
             attachments.push(PluginMailAttachment {
                 name: "message.html".into(),
@@ -100,7 +112,7 @@ impl Delivery {
                 .map_or("", |address| address.address.as_str())
                 .to_owned(),
             subject: message.subject.clone(),
-            body: prepared.body,
+            body: body.text.clone(),
             attachments,
         };
         for username in recipients {
@@ -113,6 +125,28 @@ impl Delivery {
         }
         self.api.delete(id).await?;
         self.progress.remove(id)
+    }
+
+    /// 正文：有纯文本直接用；只有 HTML 时把限长的一段交给阻塞线程转换，转不出来就用固定提示并附原文。
+    async fn prepare_body(&self, message: &Message) -> Body {
+        match message.body_source() {
+            BodySource::Text(text) => message.finish_body(text, false),
+            BodySource::Empty => message.finish_body("", false),
+            BodySource::Html { html, truncated } => {
+                let capped = html.clone();
+                match tokio::task::spawn_blocking(move || convert(&capped)).await {
+                    Ok(Ok(text)) => message.finish_body(&text, truncated),
+                    Ok(Err(error)) => {
+                        tracing::warn!(error = %error, "HTML 正文转不成文本，附原文继续投递");
+                        message.finish_body(CONVERT_FAILED_BODY, true)
+                    }
+                    Err(error) => {
+                        tracing::warn!(error = %error, "转换邮件正文的线程挂了，附原文继续投递");
+                        message.finish_body(CONVERT_FAILED_BODY, true)
+                    }
+                }
+            }
+        }
     }
 
     async fn admit(&self, id: &str) -> anyhow::Result<Decision> {

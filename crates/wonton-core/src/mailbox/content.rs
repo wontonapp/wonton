@@ -1,6 +1,5 @@
 //! Mailpit v1.33.0 的内容契约；来源只认 Mailpit 加在最前面的 Received。
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 
@@ -9,6 +8,12 @@ use serde_json::Value;
 
 pub(super) const BODY_LIMIT: usize = 4000;
 pub(super) const ATTACHMENT_LIMIT: u64 = 20 * 1024 * 1024;
+/// 交给 html2text 的 HTML 上限（字符数）。转换在阻塞线程里跑，封顶保证一份几 MB 的 HTML 不会长时间占住线程；
+/// 整封原始 HTML 仍作为 `message.html` 附件，转换只看到一段时也照样附带。
+pub(super) const HTML_INPUT_LIMIT: usize = 1024 * 1024;
+/// 转不出来时替给收件人的正文（原始 HTML 在附件里）。
+pub(super) const CONVERT_FAILED_BODY: &str =
+    "这封信是 HTML，正文转换失败；请用附件 message.html 查看原文。";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -83,6 +88,25 @@ pub(super) fn received_ip(headers: &Value) -> Result<IpAddr, ReceivedError> {
     remote.parse().map_err(|_| ReceivedError::Invalid)
 }
 
+/// 交给收件人（或后台转换）的正文来源。
+pub(super) enum BodySource<'a> {
+    Text(&'a str),
+    /// 只有 HTML：`html` 已按 [`HTML_INPUT_LIMIT`] 截断，`truncated` 表示只给了前一段。
+    Html {
+        html: String,
+        truncated: bool,
+    },
+    Empty,
+}
+
+/// 转换后的正文；`attach_html` 表示整封原始 HTML 要作为附件（转换只看到一段或正文超长时）。
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(super) struct Body {
+    pub(super) text: String,
+    pub(super) attach_html: bool,
+}
+
+#[cfg(test)]
 #[derive(Debug)]
 pub(super) struct Prepared<'a> {
     pub(super) body: String,
@@ -111,44 +135,73 @@ impl Message {
             .collect()
     }
 
+    /// 正文来源：有 text 就用 text（空白也是实际的 text，不擅自改选 HTML），否则给截断后的 HTML。
+    pub(super) fn body_source(&self) -> BodySource<'_> {
+        if !self.text.is_empty() {
+            return BodySource::Text(&self.text);
+        }
+        if self.html.is_empty() {
+            return BodySource::Empty;
+        }
+        let (html, truncated) = truncate_chars(&self.html, HTML_INPUT_LIMIT);
+        BodySource::Html { html, truncated }
+    }
+
+    /// 正文裁到 [`BODY_LIMIT`]；转换只看到 HTML 前一段或正文超长时，附整封原始 HTML。
+    pub(super) fn finish_body(&self, text: &str, html_truncated: bool) -> Body {
+        let (text, body_truncated) = truncate_chars(text, BODY_LIMIT);
+        Body {
+            text,
+            attach_html: !self.html.is_empty() && (html_truncated || body_truncated),
+        }
+    }
+
+    pub(super) fn attachments(&self) -> Vec<PreparedAttachment<'_>> {
+        self.attachments
+            .iter()
+            .chain(&self.inline)
+            .map(|attachment| PreparedAttachment {
+                attachment,
+                upload: attachment.size <= ATTACHMENT_LIMIT,
+            })
+            .collect()
+    }
+
+    /// 同步准备（只在测试里用；投递走缓存和阻塞线程）：转换出错就 `?` 抛出，不走进附件兜底。
+    #[cfg(test)]
     pub(super) fn prepare(&self) -> Result<Prepared<'_>, html2text::Error> {
-        // 空白也是实际的 text 内容，不能擅自改选 HTML。
-        let body = if !self.text.is_empty() {
-            Cow::Borrowed(self.text.as_str())
-        } else if !self.html.is_empty() {
-            Cow::Owned(
-                html2text::config::plain()
-                    .no_link_wrapping()
-                    .link_footnotes(true)
-                    .string_from_read(self.html.as_bytes(), BODY_LIMIT)?,
-            )
-        } else {
-            Cow::Borrowed("")
-        };
-        let cutoff = body.char_indices().nth(BODY_LIMIT).map(|(byte, _)| byte);
-        let body = match body {
-            Cow::Borrowed(text) => text[..cutoff.unwrap_or(text.len())].to_owned(),
-            Cow::Owned(mut text) => {
-                if let Some(byte) = cutoff {
-                    text.truncate(byte);
-                }
-                text
+        let (body, attach_html) = match self.body_source() {
+            BodySource::Text(text) => {
+                let body = self.finish_body(text, false);
+                (body.text, body.attach_html)
+            }
+            BodySource::Empty => (String::new(), false),
+            BodySource::Html { html, truncated } => {
+                let body = self.finish_body(&convert(&html)?, truncated);
+                (body.text, body.attach_html)
             }
         };
         Ok(Prepared {
             body,
-            html_attachment: (cutoff.is_some() && !self.html.is_empty())
-                .then_some(self.html.as_str()),
-            attachments: self
-                .attachments
-                .iter()
-                .chain(&self.inline)
-                .map(|attachment| PreparedAttachment {
-                    attachment,
-                    upload: attachment.size <= ATTACHMENT_LIMIT,
-                })
-                .collect(),
+            html_attachment: (attach_html && !self.html.is_empty()).then_some(self.html.as_str()),
+            attachments: self.attachments(),
         })
+    }
+}
+
+/// 把 HTML 转成纯文本。调用方负责限长（见 [`HtmlInputLimit`](HTML_INPUT_LIMIT)）。
+pub(super) fn convert(html: &str) -> Result<String, html2text::Error> {
+    html2text::config::plain()
+        .no_link_wrapping()
+        .link_footnotes(true)
+        .string_from_read(html.as_bytes(), BODY_LIMIT)
+}
+
+/// 按字符边界截到最多 `limit` 字节；返回是否截过。
+fn truncate_chars(text: &str, limit: usize) -> (String, bool) {
+    match text.char_indices().nth(limit) {
+        Some((byte, _)) => (text[..byte].to_owned(), true),
+        None => (text.to_owned(), false),
     }
 }
 
