@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 use url::Url;
-use wonton_protocol::{PlacedTab, TabDisplayChoice};
+use wonton_protocol::{PlacedTab, TabDisplayChoice, TabRef};
 
 use crate::appearance::AppearanceLink;
 
@@ -16,6 +16,15 @@ pub(crate) fn handle_message(
     message: &str,
     environment: &TabEnvironment,
 ) -> TabBridgeResult {
+    if matches!(placed_tab_ref(page), TabRef::Url { .. }) {
+        // 公网网页没有桥（ADR-0052）：壳不该把脚本注进来，注了也如实说没有桥。
+        let id = serde_json::from_str::<Value>(message)
+            .ok()
+            .and_then(|value| value.get("id").cloned());
+        return id.map_or_else(TabBridgeResult::default, |id| {
+            failure(id, -32001, "Public page has no bridge")
+        });
+    }
     if !is_main_frame || !accepts_origin(tabs, page, origin) {
         return TabBridgeResult::default();
     }
