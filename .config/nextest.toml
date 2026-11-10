@@ -29,9 +29,10 @@ compose = { max-threads = 2 }
 filter = 'binary(core_upgrade) | binary(docker_network) | test(plugin::tests::lan_docker) | test(install::tuwunel_tests) | test(registry_mirror::docker_tests)'
 test-group = 'compose'
 
-# bridge 镜像冒烟：测试自己 docker build 整张镜像（cargo 全家桶），4 核托管机上超过 10 分钟才算正常。
-# 放进重活组，窗口放到 10 分钟 × 6；作业里另外有一步预构建，平时命中缓存用不到这么长。
+# bridge 镜像冒烟：测试自己 docker build 整张镜像（cargo 全家桶），4 核托管机上超过 10 分钟才算正常；
+# 改到 vendor/ 或 Cargo.lock 的 PR 会让预构建的缓存整层失效，实测整编 17–20 分钟，10 分钟的窗口必挂。
+# 窗口放到 30 分钟 × 3（作业时限 75 分钟兜底）；作业里另外有一步预构建，平时命中缓存用不到这么长。
 [[profile.docker.overrides]]
 filter = 'binary(docker)'
 test-group = 'compose'
-slow-timeout = { period = "600s", terminate-after = 6 }
+slow-timeout = { period = "1800s", terminate-after = 3 }
