@@ -10,6 +10,8 @@ deploy/dev/core/dev.sh up                    # 构建核心镜像，启动核心
 deploy/dev/core/dev.sh install plugins/examples/grafana   # 预览权限，确认后安装
 deploy/dev/core/dev.sh token                 # 主人令牌（M0 代替配对，用来登录网关）
 deploy/dev/core/dev.sh list
+deploy/dev/core/dev.sh logs hydra            # 跟日志：核心栈的服务（core、hydra 等）或插件的服务名
+deploy/dev/core/dev.sh diag                  # 只读诊断：插件登录用的主机名、出口代理和 no_proxy
 deploy/dev/core/dev.sh open app.grafana     # 主人身份走完登录，打印网页地址和 Cookie 罐路径
 deploy/dev/core/dev.sh uninstall app.grafana --purge
 deploy/dev/core/dev.sh down                  # 停止，顺带删掉核心按插件起的容器和网络

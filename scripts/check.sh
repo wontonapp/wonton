@@ -36,6 +36,7 @@ python3 -m unittest discover -q -s scripts/ui_text -t scripts
 python3 -m unittest discover -q -s scripts/install -t scripts
 python3 -m unittest discover -q -s scripts/dev_ports -t scripts
 python3 deploy/dev/core/instance-label_test.py
+python3 deploy/dev/core/dev_test.py
 python3 scripts/check-ui-text.py
 python3 scripts/check-dev-compose-ports.py
 bash scripts/check-conflict-markers.sh
