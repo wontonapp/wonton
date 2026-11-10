@@ -57,7 +57,7 @@ pub fn init_test_logging() {
             tracing_subscriber::registry().with(super::rebuild_reason::Capture.with_filter(
                 filter_fn(|m| super::rebuild_reason::TARGETS.contains(&m.target())),
             ));
-        match std::env::var("WONTON_TEST_LOG") {
+        match std::env::var("WONTON_TEST_LOG").or_else(|_| Ok::<_, ()>("info".to_owned())) {
             Ok(filter) => {
                 let filter = tracing_subscriber::EnvFilter::try_new(&filter)
                     .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));

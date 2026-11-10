@@ -168,12 +168,17 @@ impl Home {
         self.start_again(port).await;
     }
 
-    /// 等手机建一条新连接。
-    pub(super) async fn wait_for_a_connection(&self) {
+    /// 等手机建一条新连接。带了 `phone` 一起报：没重连时，手机那边的状态和这套端点的监听地址都要能看见。
+    pub(super) async fn wait_for_a_connection(&self, phone: &Phone) {
         let deadline = tokio::time::Instant::now() + WAIT;
-        let socket = &self.server().endpoint().metrics().socket;
-        while socket.num_conns_opened.get() == 0 {
-            assert!(tokio::time::Instant::now() < deadline, "手机一直没有重连");
+        let endpoint = self.server().endpoint();
+        while endpoint.metrics().socket.num_conns_opened.get() == 0 {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "手机一直没有重连：{:?}，服务端在 {:?}",
+                phone.home(),
+                endpoint.bound_sockets()
+            );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     }

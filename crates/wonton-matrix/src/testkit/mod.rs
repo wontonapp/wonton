@@ -67,9 +67,7 @@ const PORT: u16 = 8008;
 fn init_test_logging() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        let Ok(filter) = std::env::var("WONTON_TEST_LOG") else {
-            return;
-        };
+        let filter = std::env::var("WONTON_TEST_LOG").unwrap_or_else(|_| "info".to_owned());
         let filter = tracing_subscriber::EnvFilter::try_new(filter)
             .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
         tracing_subscriber::fmt()
