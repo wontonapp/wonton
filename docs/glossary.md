@@ -17,6 +17,7 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 配对 | pair | 配對 | ペアリング | 手机和家里的服务器建立信任 |
 | 添加设备 | Add Device | 新增裝置 | デバイスを追加 | 让另一台手机配对同一台服务器 |
 | 设备 | device | 裝置 | デバイス | |
+| 已安装 | Installed | 已安裝 | インストール済み | 应用装好以后的状态 |
 | 主机 | computer | 主機 | ホスト | 跑家里服务器的那台机器，讲安装命令时用 |
 | 底栏 | iOS：Tab Bar；Android：Navigation bar | iOS：標籤列；Android：底部導覽列 | iOS：タブバー；Android：ナビゲーションバー | |
 | 固定到底栏 | iOS：Add to Tab Bar；Android：Pin to navigation bar | iOS：加到標籤列；Android：固定到底部導覽列 | iOS：タブバーに追加；Android：ナビゲーションバーに追加 | |
