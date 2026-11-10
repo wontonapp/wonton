@@ -24,8 +24,14 @@ inputs:
     description: 追加的 build-arg，一行一个
     required: false
     default: ""
-  cache:
-    description: 用 GitHub Actions 缓存（读层 + 写回），只给 main-image 传 true；release 只读缓存，发版产物不带新缓存状态
+  cache-ref:
+    description: >-
+      层缓存的 registry 引用（type=registry，形如 ghcr.io/<owner>/wonton-ci-cache:core-image）；空着不用层缓存。
+      缓存放镜像仓库里，不占 10 GB 的 actions 缓存。
+    required: false
+    default: ""
+  cache-write:
+    description: 构建后把层缓存写回 cache-ref；只有 main 上的构建传 true，发版和 PR 只读
     required: false
     default: "false"
   push-by-digest:
@@ -63,9 +69,10 @@ runs:
         push: ${{ inputs.push-by-digest == 'true' && 'false' || 'true' }}
         tags: ${{ inputs.push-by-digest == 'true' && '' || inputs.tags }}
         build-args: ${{ inputs.extra-build-args }}
-        # 层缓存经 GitHub Actions 缓存导出；Dockerfile 的依赖在 cargo-chef 依赖层里，改源码不用重编依赖。
-        cache-from: type=gha
-        cache-to: ${{ inputs.cache == 'true' && 'type=gha,mode=max' || '' }}
+        # 层缓存走镜像仓库（type=registry）：gha 缓存曾让 main-image 一份占掉 10 GB 里的 9 GB，把 rust-cache
+        # 全挤掉。mode=max 才存 cargo-chef 的依赖层，改源码不用重编依赖。
+        cache-from: ${{ inputs.cache-ref != '' && format('type=registry,ref={0}', inputs.cache-ref) || '' }}
+        cache-to: ${{ inputs.cache-ref != '' && inputs.cache-write == 'true' && format('type=registry,ref={0},mode=max', inputs.cache-ref) || '' }}
         labels: |
           org.opencontainers.image.source=https://github.com/${{ github.repository }}
           org.opencontainers.image.version=${{ inputs.version }}

@@ -32,8 +32,9 @@ env:
 
 permissions:
   contents: read
-  # 镜像副本在仓库还是私有的时候是私有包，拉取要 GITHUB_TOKEN。
-  packages: read
+  # 镜像副本在仓库还是私有的时候是私有包，拉取要 GITHUB_TOKEN；main 上的运行还把桥镜像的层缓存写回
+  # wonton-ci-cache（PR、队列只读）。
+  packages: write
 
 jobs:
   changes:
@@ -123,12 +124,23 @@ jobs:
           fi
       - name: 预构建桥镜像
         # 测试只验启动行为，构建本身先在这里做掉、给 docker 构建缓存预热，测试里的同名 build 就只走缓存。
-        run: >-
-          docker build -q
-          -f deploy/dev/acp-bridge/Dockerfile
-          --build-arg "RUST_IMAGE=$WONTON_TEST_IMAGES/rust:1.99.1-slim-trixie"
-          --build-arg "DEBIAN_IMAGE=$WONTON_TEST_IMAGES/debian:trixie-slim"
-          -t wonton-acp-bridge-docker-test:prebuilt .
+        # 层缓存放在镜像仓库里（ghcr.io 的 wonton-ci-cache），不占 10 GB 的 actions 缓存：缓存从 main 上的
+        # 构建恢复，只在 main 上写回（定时、手动），PR 和队列只读。构建必须走 buildx —— `docker build`
+        # 读不了 registry 缓存；镜像用 --load 装回 docker，测试里的 `docker build` 才拿得到这份本机缓存。
+        shell: bash
+        run: |
+          ref="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:acp-bridge"
+          extra=()
+          if [[ $GITHUB_REF == refs/heads/main || $GITHUB_EVENT_NAME == workflow_dispatch ]]; then
+            extra+=(--cache-to "type=registry,ref=$ref,mode=max")
+          fi
+          docker buildx build "${extra[@]}" \
+            --cache-from "type=registry,ref=$ref" \
+            -f deploy/dev/acp-bridge/Dockerfile \
+            --build-arg "RUST_IMAGE=$WONTON_TEST_IMAGES/rust:1.99.1-slim-trixie" \
+            --build-arg "DEBIAN_IMAGE=$WONTON_TEST_IMAGES/debian:trixie-slim" \
+            -t wonton-acp-bridge-docker-test:prebuilt \
+            --load .
       - name: 准备日志目录
         # 步骤里用 tee 往 $RUNNER_TEMP/test-logs 写输出，目录得先有：shell 带 pipefail，tee 打不开文件就让整步非零。
         run: mkdir -p "$RUNNER_TEMP/test-logs"
