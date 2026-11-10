@@ -253,6 +253,7 @@ private fun SendButton(onClick: () -> Unit) {
         ) {
             Icon(
                 WontonIcon.Send,
+                // 装饰：外层的可点区域已经带了“发送”。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconSmall),
                 tint = colors.onPrimary.toColor(),

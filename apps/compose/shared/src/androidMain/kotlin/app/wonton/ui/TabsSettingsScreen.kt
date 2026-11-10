@@ -262,11 +262,13 @@ private fun TabCandidateRow(candidate: TabCandidate) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
+        // 装饰：图标旁边就是行标题。
         if (plugin != null) PluginIconImage(plugin.icon, WontonTheme.size.icon, tabs.plugins)
         else Icon(WontonIcon.Settings, null, Modifier.size(WontonTheme.size.icon),
             tint = WontonTheme.colors.textPrimary.toColor())
         Text(title, Modifier.weight(1f), style = WontonTheme.typography.body,
             color = WontonTheme.colors.textPrimary.toColor())
+        // 装饰：整行可点，加号只表示点了会固定。
         Icon(WontonIcon.Add, null, Modifier.size(WontonTheme.size.icon),
             tint = WontonTheme.colors.textPrimary.toColor())
     }

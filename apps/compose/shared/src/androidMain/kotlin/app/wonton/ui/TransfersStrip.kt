@@ -97,9 +97,10 @@ private fun TransferRow(transfer: Transfer, destination: Destination? = null) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
+        val upload = transfer.direction == TransferDirection.UPLOAD
         Icon(
-            if (transfer.direction == TransferDirection.UPLOAD) WontonIcon.Upload else WontonIcon.Download,
-            contentDescription = null,
+            if (upload) WontonIcon.Upload else WontonIcon.Download,
+            contentDescription = stringResource(if (upload) R.string.transfer_upload else R.string.transfer_download),
             modifier = Modifier.size(WontonTheme.size.iconSmall),
             tint = colors.textSecondary.toColor(),
         )

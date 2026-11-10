@@ -397,7 +397,7 @@ private fun ItemTags(item: StoreItem) {
                 ) {
                     Icon(
                         WontonIcon.StarFill,
-                        contentDescription = null,
+                        contentDescription = stringResource(R.string.plugin_stars),
                         modifier = Modifier.size(WontonTheme.size.iconTiny),
                         tint = colors.textSecondary.toColor(),
                     )

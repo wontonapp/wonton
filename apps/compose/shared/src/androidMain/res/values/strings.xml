@@ -1758,4 +1758,14 @@
     <!-- Row note for an app whose update needs confirmation before it can start. -->
     <!-- Content description of the red dot on the settings button in the sidebar. -->
     <string name="sidebar_needs_attention">Needs your attention</string>
+    <!-- Content description of the warning badge on a launcher tile: the app has a problem. -->
+    <string name="launcher_badge_degraded">Has a problem</string>
+    <!-- Content description of a screenshot on the app detail page. -->
+    <string name="plugin_screenshot">Screenshot</string>
+    <!-- Content description of the direction icon on an upload. -->
+    <string name="transfer_upload">Upload</string>
+    <!-- Content description of the direction icon on a download. -->
+    <string name="transfer_download">Download</string>
+    <!-- Content description of a state picture in the bot profile. Argument: the state name. -->
+    <string name="bot_avatar_pick_state">Change the %1$s picture</string>
 </resources>

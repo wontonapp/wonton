@@ -60,7 +60,10 @@ fun WontonRadioRow(
         }
         if (selected) {
             Icon(
-                WontonIcon.Check, contentDescription = null, modifier = Modifier.size(WontonTheme.size.iconSmall),
+                WontonIcon.Check,
+                // 装饰：选中状态由单选项本身朗读。
+                contentDescription = null,
+                modifier = Modifier.size(WontonTheme.size.iconSmall),
                 tint = colors.accentInkOnFill.toColor(),
             )
         }

@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
@@ -175,7 +177,9 @@ private fun StoreEntry(upgradeCount: Int, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
         Icon(
-            WontonIcon.Store, contentDescription = null,
+            WontonIcon.Store,
+            // 装饰：右边就是“去应用商店”。
+            contentDescription = null,
             modifier = Modifier.size(WontonTheme.size.icon), tint = colors.accentInkOnFill.toColor(),
         )
         Text(
@@ -263,17 +267,19 @@ private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigat
 @Composable
 private fun Badge(plugin: InstalledPlugin, modifier: Modifier) {
     val colors = WontonTheme.colors
+    val updateLabel = stringResource(R.string.design_update_badge)
     when {
         plugin.status is PluginState.Degraded -> Icon(
             WontonIcon.WarningCircleFill,
-            contentDescription = null,
+            contentDescription = stringResource(R.string.launcher_badge_degraded),
             modifier = modifier.size(WontonTheme.size.iconSmall).background(colors.canvas.toColor(), CircleShape),
             tint = colors.danger.toColor(),
         )
         plugin.upgrade != null -> Box(
             modifier.size(12.dp)
                 .background(colors.primary.toColor(), CircleShape)
-                .border(2.dp, colors.canvas.toColor(), CircleShape),
+                .border(2.dp, colors.canvas.toColor(), CircleShape)
+                .semantics { contentDescription = updateLabel },
         )
     }
 }

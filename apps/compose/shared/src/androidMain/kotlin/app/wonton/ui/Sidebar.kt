@@ -320,6 +320,7 @@ internal fun SidebarMenuButton(onClick: () -> Unit) {
     ) {
         Icon(
             WontonIcon.List,
+            // 装饰：按钮外层已经带了名字。
             contentDescription = null,
             Modifier.size(WontonTheme.size.icon),
             tint = WontonTheme.colors.textPrimary.toColor(),
@@ -362,6 +363,7 @@ internal fun SidebarPanel(
                 icon = {
                     Icon(
                         if (current == TabRef.Chat) WontonIcon.ChatFill else WontonIcon.Chat,
+                        // 装饰：行的文字在右边。
                         contentDescription = null,
                         Modifier.size(ROW_ICON),
                         tint = colors.textPrimary.toColor(),
@@ -377,6 +379,7 @@ internal fun SidebarPanel(
                 icon = {
                     Icon(
                         WontonIcon.Store,
+                        // 装饰：行的文字在右边。
                         contentDescription = null,
                         Modifier.size(ROW_ICON),
                         tint = colors.textPrimary.toColor(),
@@ -467,6 +470,7 @@ private fun SidebarApps(
             icon = {
                 Icon(
                     WontonIcon.Apps,
+                    // 装饰：行的文字在右边。
                     contentDescription = null,
                     Modifier.size(ROW_ICON),
                     tint = colors.textPrimary.toColor(),
@@ -508,6 +512,7 @@ private fun SidebarFooter(
         ) {
             Icon(
                 WontonIcon.Settings,
+                // 装饰：按钮外层已经带了名字。
                 contentDescription = null,
                 Modifier.size(WontonTheme.size.icon),
                 tint = colors.textPrimary.toColor(),
@@ -539,6 +544,7 @@ private fun SidebarFooter(
         ) {
             Icon(
                 WontonIcon.Compose,
+                // 装饰：按钮里有文字。
                 contentDescription = null,
                 Modifier.size(WontonTheme.size.iconSmall),
                 tint = colors.onPrimary.toColor(),

@@ -58,6 +58,7 @@ fun PendingCardBanner(cards: List<PendingConfirmation>, onOpen: (String) -> Unit
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         ) {
+            // 装饰：提示文字在右边。
             Icon(WontonIcon.Notify, null, Modifier.size(WontonTheme.size.iconSmall), tint = text)
             Text(
                 pendingCardsText(cards),
@@ -67,6 +68,7 @@ fun PendingCardBanner(cards: List<PendingConfirmation>, onOpen: (String) -> Unit
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            // 装饰：整条可点，箭头只表示能过去。
             Icon(WontonIcon.Forward, null, Modifier.size(WontonTheme.size.iconSmall), tint = text)
         }
         colors.accentFillBorder?.let { border ->

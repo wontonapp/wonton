@@ -208,6 +208,7 @@ private fun AvatarDecodedImage(state: Result<ImageBitmap>?, size: Dp, onFailed: 
 private fun CircularImage(bitmap: ImageBitmap, size: Dp) {
     Image(
         bitmap,
+        // 装饰：外层的 BotAvatar 或者可点区域已经带了名字。
         contentDescription = null,
         modifier = Modifier.size(size).clip(CircleShape),
         contentScale = ContentScale.Crop,

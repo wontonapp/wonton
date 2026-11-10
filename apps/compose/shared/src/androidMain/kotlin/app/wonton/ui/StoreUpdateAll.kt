@@ -44,6 +44,7 @@ internal fun UpdateAllButton(count: Int, onClick: () -> Unit) {
     ) {
         Icon(
             WontonIcon.Download,
+            // 装饰：按钮外层已经带了名字。
             contentDescription = null,
             Modifier.size(WontonTheme.size.icon),
             tint = colors.textPrimary.toColor(),
