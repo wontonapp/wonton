@@ -145,11 +145,11 @@ impl Delivery {
                     Ok(Ok(text)) => message.finish_body(&text, truncated),
                     Ok(Err(error)) => {
                         tracing::warn!(error = %error, "HTML 正文转不成文本，附原文继续投递");
-                        self.failed_body(&message, true)
+                        self.failed_body(message, true)
                     }
                     Err(error) => {
                         tracing::warn!(error = %error, "转换邮件正文的线程挂了，附原文继续投递");
-                        self.failed_body(&message, true)
+                        self.failed_body(message, true)
                     }
                 }
             }
