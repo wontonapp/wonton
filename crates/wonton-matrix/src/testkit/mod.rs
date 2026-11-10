@@ -148,7 +148,7 @@ impl TestServer {
     }
 
     /// `host_network` 为真时容器用宿主的网络，端口由 Tuwunel 自己挑、从它的日志里读；否则容器在自己的网络里，
-    /// 发布 8008。
+    /// 听 8008，宿主经容器的地址连（Docker Desktop 这类到不了容器地址的平台才发布到宿主端口）。
     async fn start_container(
         overrides: &[(&str, &str)],
         host_network: bool,
@@ -158,8 +158,10 @@ impl TestServer {
         let (name, tag) = image();
         let image = GenericImage::new(name, tag)
             .with_wait_for(WaitFor::message_on_either_std("Listening on"));
+        // 走 Docker 的网络时，只在宿主到不了容器地址的平台（Docker Desktop、OrbStack）才发布到宿主端口。
         let image = match host_network {
             true => image,
+            false if cfg!(target_os = "linux") => image,
             false => image.with_exposed_port(PORT.tcp()),
         };
         let mut request = image
@@ -181,6 +183,12 @@ impl TestServer {
         let container = request.start().await?;
         let url = match host_network {
             true => format!("http://127.0.0.1:{}", listening_port(&container).await),
+            // 测试进程在 Docker 的宿主上，直接走容器的地址：不发布宿主端口，就没有 Docker 挑中的那个号被宿主上
+            // 别的套接字占掉这回事——临时端口段里一直在发生，配上就是 `address already in use`。
+            false if cfg!(target_os = "linux") => {
+                let ip = container.get_bridge_ip_address().await.expect("容器地址");
+                format!("http://{ip}:{PORT}")
+            }
             false => {
                 let host = container.get_host().await.expect("容器地址");
                 let port = container.get_host_port_ipv4(PORT).await.expect("容器端口");
@@ -263,7 +271,7 @@ impl TestServer {
     }
 }
 
-/// 本机一个空闲的 TCP 端口。放开后到 Tuwunel 绑上之间可能被别人占去，测试里这个窗口可以接受。
+/// 起不来时把 Docker 的原始报错连同本机需要的东西一起抛出去。
 fn start_failed(error: &TestcontainersError) -> ! {
     panic!(
         "启动 Tuwunel 容器失败：{error}。测试需要 Docker；testcontainers 不读 docker context，\
