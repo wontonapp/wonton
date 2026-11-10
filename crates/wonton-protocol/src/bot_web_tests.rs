@@ -96,3 +96,42 @@ fn unknown_web_status_or_failure_never_supplies_a_page() {
         }
     );
 }
+
+#[test]
+fn saved_bot_pages_and_links_preserve_the_exact_bot_in_one_plugin() {
+    use crate::{AppLink, LayoutSettings, TabRef};
+
+    let settings: LayoutSettings = serde_json::from_value(serde_json::json!({
+        "items": [
+            {"type": "bot", "bot": {"plugin_id": "app.agent", "bot": "alice"}},
+            {"type": "bot", "bot": {"plugin_id": "app.agent", "bot": "bob"},
+             "path": "/login?mode=account#active"}
+        ]
+    }))
+    .unwrap();
+    assert_eq!(
+        settings.items,
+        vec![
+            TabRef::Bot {
+                bot: bot("app.agent", "alice"),
+                path: None
+            },
+            TabRef::Bot {
+                bot: bot("app.agent", "bob"),
+                path: Some("/login?mode=account#active".into()),
+            },
+        ]
+    );
+    assert_ne!(settings.items[0], settings.items[1]);
+    let alice = AppLink::parse("wonton://tab/bot/app.agent/alice").unwrap();
+    assert_eq!(
+        alice,
+        AppLink::Tab {
+            tab: settings.items[0].clone()
+        }
+    );
+    let bob = AppLink::Tab {
+        tab: settings.items[1].clone(),
+    };
+    assert_eq!(AppLink::parse(&bob.to_url()), Some(bob));
+}

@@ -70,7 +70,7 @@ pub enum BotWebView {
     Other,
 }
 
-/// 独立 Bot 网页的页面身份：缓存和打开操作按 `bot` 区分，不能作为插件默认页或无身份的公网页打开。
+/// 独立 Bot 网页的元数据；导航使用 [`crate::TabRef::Bot`]，URL 只从同一身份已核实的 `BotView.web` 取得。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct BotWebPage {
@@ -92,8 +92,6 @@ pub enum BotWebFailure {
     NotFound,
     NoWebui,
     NotReady,
-    /// 客户端连不上服务器；不由服务器作为权限判定返回。
-    TransportUnavailable,
     #[serde(other)]
     Other,
 }

@@ -13,8 +13,8 @@ pub struct BotWebConflict {
 
 /// 登记前查出的同标签占用者。`None` 表示空闲；同一身份重复登记保持幂等。
 ///
-/// 调用方须把查询和登记放在同一把锁内；冲突时保留原登记并向用户返回 409 `conflict`。
-/// 标签仅负责寻址，不能替代身份或网页授权检查。
+/// 调用方须把查询和登记放在同一把锁内，并在创建 Matrix 身份、凭据、数据目录或容器前完成占用检查。
+/// 冲突时保留原登记并返回 409 `conflict`，不能带着部分资源继续。标签不替代身份或网页授权检查。
 pub fn bot_web_registration(
     requested: &BotRef,
     registered: Option<&BotRef>,

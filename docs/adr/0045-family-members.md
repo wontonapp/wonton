@@ -95,16 +95,19 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
 
 ### 插件、网页和工具
 
-- 插件全家一份，由主人（和授权了的家人）装。每个插件有一个开关“家人能用”，默认关，安装页和插件设置里都能开：只有一个管理员账号的应用，开了就等于家人用主人的账号。家人的插件列表和底栏只有开放给他的插件，看不到商店。
+- 插件全家一份，由主人（和授权了的家人）装。每个插件有一个开关“家人能用”，默认关，安装页和插件设置里都能开；应用是否按人隔离由上游自己的账号模型决定。只有一个管理员账号或共用会话凭据时，开关旁明确提醒主人家人会共用该登录状态。家人的插件列表和底栏只有开放给他的插件，看不到商店。
 - **网页**：每 Bot 网页复用插件现有的同一个“家人能用”开关（记录字段 `family`，`family_enabled` 读取），默认关，
   即默认只给主人；打开后家人能访问这个插件各 Bot 的网页。私人 Bot 的归属人、共享 Bot 的聊天参与者不另获权限，
   不增加 Bot 专用开关。好友只在核心支持既有插件分享时按同一授权开放，不在 Bot 网页里另建分享规则。
   家人未获准沿用 403 `not_shared`，不是另一套 Bot 权限错误。
+  开关开放的是同一个 Bot 的应用及登录入口，家人可能看到或修改同一份应用状态，不承诺按人隔离；也不把支持
+  多用户的应用一概描述为共用一个登录。
 - **每 Bot 一页**：清单不变，`webui.service` 在 `bots.services` 时每个 Bot 一份 UI，路由到自己的容器。
   默认 Bot 沿用插件 slug 的 origin；非默认 Bot 用 `bot--<Bot 名>-<截短的插件 slug>-<8 位摘要>` 标签。
   标签最多 63 字节，只截插件 slug，保留完整 Bot 名；摘要是 `SHA256(plugin_id UTF-8 + 一个 NUL 字节 + Bot 名 UTF-8)`
   的小写十六进制前 8 位。登记撞名回 409 `conflict`，不改名、不回退默认 Bot，不能拆 URL 推算身份。
-  查同标签占用者和登记须在同一把锁下原子完成，避免并发登记漏掉冲突；相同 Bot 重复登记不算冲突。
+  查同标签占用者和预留须在现有分配锁下原子完成，并先于创建 Matrix 身份、凭据、数据目录或容器；
+  409 冲突不得留下这些部分副作用。相同 Bot 重复登记不算冲突；崩溃恢复和重试留给运行时实现，不承诺跨系统回滚。
   精确截断算法见[插件规范的每 Bot 网页约定](https://github.com/geraldpeng6/wonton-docs/blob/main/plugin-spec.md#每个-bot-的网页)。
   仅 origin 分开，入口仍原样追加 `webui.path`；插件级入口使用默认 Bot，也经过同一权限检查。
 - **登录边界**：Bot 名由已有 `WONTON_BOT_NAME` 传入容器；Bot 服务的 `WONTON_APP_URL` 指向自己的 origin，
@@ -114,13 +117,24 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
 - **网关边界**：Agent、Bot 和其他插件的插件网络来源打开 Bot 网页时先回 403 `permission_denied`，
   再考虑普通插件网页的 `self_request` 例外，带人的凭据也不能绕过。同插件网络容器仍能直连彼此端口，
   网关不能阻止，不把独立 origin 称为容器间沙箱。不新增局域网端口、宿主权限，既有 Agent／Bot 禁令不变。
+  默认和非默认 Bot 的 origin 主机名都须在自己的插件网络作为核心网关的 DNS 别名；取消的只是自请求豁免。
+  Bot 容器内 `curl "$WONTON_APP_URL"` 的目标行为因此改为网关的 403 `permission_denied`，不是 DNS 失败。
 - **网页接口**：网页类型由 [`bot_web`](../../crates/wonton-protocol/src/bot_web.rs) 定义，
   撞名契约见 [`bot_web_registration`](../../crates/wonton-protocol/src/bot_web_registration.rs)；
   `GET /_wonton/api/bots/{plugin_id}/{bot}/webui` 的元数据按请求者权限给出 `BotWebView`。
-  就绪时 `BotWebPage` 带完整 `BotRef`、URL、显示方式和跨源隔离要求，不借 `TabRef::Plugin` 或 `TabRef::Url`
-  充当 Bot 页身份。`BotView.web` 未提供时是未验证访问权，不能猜 URL；运行事实只带 Bot 身份和运行计数，不混入访问授权。
+  就绪时 `BotWebPage` 带完整 `BotRef`、URL、显示方式和跨源隔离要求；页面身份专用
+  `TabRef::Bot { bot: BotRef, path: Option<String> }`，不存 URL，不借 `TabRef::Plugin` 或 `TabRef::Url`。
+  `path: None` 打开同一个 `BotRef` 的 `BotView.web` 在 `Ready` 时给出的 `page.url`；`Some(path)` 只允许该
+  origin 内的路径，可含查询和片段。选择／打开沿用 `Action::SelectTab`，固定沿用 `PinTab`、`PinCurrentPage`
+  和 `Panel`；`PlacedTab` 保留相同的 Bot 身份和路径。桥、媒体、`--wonton-*` 走既有 `TabRef`／`PlacedTab`
+  和页面容器，不另建壳层 WebView，也不省略桥。
+  实现时把聊天已有的 `BotView` watch 通道传给 `TabsLink`，Bot 网页状态变化时重算 `TabsViewModel` 的
+  `TabPage`，桥和媒体使用它的精确页面 URL／origin。URL 只来自该 `BotRef` 的 `BotView.web.Ready.page.url`，
+  不读 `plugin.web_url`。`BotView.web: None` 表示没有验证可用的 URL，包括断连或身份变化；未知、缺失或错误时
+  不给页面 URL，断连或身份变化时清空，不猜 URL、不回退默认 Bot。运行事实只带 Bot 身份和运行计数，不混入访问授权。
   Bot 不存在为 404 `not_found`，未认证为 401 `unauthenticated`，服务未就绪为 503 `not_ready`，
-  无网页为 404 `no_webui`；不因失败转开默认 Bot。这些是接口和目标行为约定，不是网关路由、App 打开行为或端到端验证结论。
+  无网页为 404 `no_webui`。这些是接口和目标行为约定，不是网关路由、App 打开行为或端到端验证结论；
+  接口阶段不暴露运行时入口，客户端对不支持的 Bot 页面明确拒绝，不能转开其他页面。
 - **身份**：OIDC 的 `sub`、`preferred_username` 是当前这个人的用户名，`groups` 主人默认是 `["owner"]`、家人是 `["member"]`；代登录的
   `{user}`、`{name}`、`{email}` 也是当前这个人。`owner.identity` 不变，注入的是主人（服务器管理员）；在 `bots.services` 里注入的是这个 Bot 的归属人，
   共享 Bot 是主人。

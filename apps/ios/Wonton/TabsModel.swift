@@ -60,7 +60,7 @@ extension TabItem {
         case .chat: TabText.chat
         case .apps: TabText.apps
         case .settings: TabText.settings
-        case .plugin, .pluginPath, .url, .sharedApp: page?.title ?? TabText.apps
+        case .plugin, .pluginPath, .bot, .url, .sharedApp: page?.title ?? TabText.apps
         }
     }
 }

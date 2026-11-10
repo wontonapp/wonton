@@ -160,14 +160,27 @@ App 打开插件网页时，WebView 以客户端核心的本地代理为 HTTP �
 
 每 Bot 网页的目标契约不改清单：`webui.service` 属于 `bots.services` 时，每个 Bot 一份 UI 和独立 origin。
 默认 Bot 沿用插件 slug；非默认 Bot 用 `bot--<Bot 名>-<截短的插件 slug>-<8 位 SHA-256 十六进制摘要>`，
-只截 slug，不截 Bot 名，标签最多 63 字节，登记撞名明确报错、不改名或回退默认 Bot；入口仍原样追加 `webui.path`。
+只截 slug，不截 Bot 名，标签最多 63 字节；在现有分配锁下先检查并预留主机标签，再创建 Matrix 身份、凭据、
+数据目录或容器，撞名回 409 且不产生这些部分副作用，不改名或回退默认 Bot；崩溃恢复不承诺跨系统回滚。
+入口仍原样追加 `webui.path`，精确命名算法见插件规范，不从主机名反推 Bot 身份。
 Bot 服务的 `WONTON_APP_URL`、OIDC 回调登记和精确主机 Cookie 跟随对应 origin，不设父域 Cookie。
 网页权限复用插件的同一个“家人能用”开关，默认只给主人；不按 Bot 归属或聊天参与者另行放行，好友沿用已支持的插件分享授权。
-Agent／插件网络来源在 `self_request` 例外前拒绝；同插件网络容器仍可直连彼此端口，网关不提供这条路上的沙箱。
-不增加局域网端口或宿主权限。家人登录前由四语言壳资源说明服务器主人可以查看、管理登录状态。
+开关旁提醒主人开放的是同一个 Bot 的应用及登录入口，家人可能读取、修改同一应用状态；是否按人隔离由上游账号模型决定，
+共用会话凭据时须明确提示共用登录状态，不把多用户应用一概视为同一个登录。
+Agent／插件网络来源在 `self_request` 例外前拒绝；默认与非默认 Bot 主机名仍在自己的插件网络解析到网关，
+容器内 `curl "$WONTON_APP_URL"` 的目标行为改为 403 `permission_denied`，不是 DNS 失败。
+同插件网络容器仍可直连彼此端口，网关不提供这条路上的沙箱；不增加局域网端口或宿主权限。
+家人登录前由四语言壳资源说明服务器主人可以查看、管理登录状态。
 完整规则和错误类别见 [ADR-0045](adr/0045-family-members.md#插件网页和工具)；
-[`bot_web` 协议](../crates/wonton-protocol/src/bot_web.rs)区分 Bot 页身份、可用性和失败原因，
-`BotView.web` 缺失不代表有权打开，客户端不能猜 URL。接口定义不等于网关／UI 已实现，也不代表端到端验证通过。
+[`bot_web` 协议](../crates/wonton-protocol/src/bot_web.rs)区分 Bot 页身份、可用性和失败原因。
+Bot 页使用 `TabRef::Bot { bot: BotRef, path: Option<String> }`，不保存 URL，不降为插件页或公网网页。
+`None` 路径打开对应 `BotView.web.Ready.page.url`，`Some(path)` 仅允许同 origin 内的路径（含查询和片段）；
+选择沿用 `Action::SelectTab`，固定沿用 `PinTab`、`PinCurrentPage` 和 `Panel`，`PlacedTab` 保留同一 Bot 身份及路径。
+实现时把聊天的 `BotView` watch 通道接入 `TabsLink`，网页状态变化时重算 `TabsViewModel` 的 `TabPage`；
+URL 只来自精确匹配该 `BotRef` 的 Ready 页面，不读 `plugin.web_url`，桥和媒体以 `TabPage.url` 的精确 origin 为准。
+`BotView.web: None` 没有验证可用的 URL；未知、缺失或错误时不发页面 URL，断连或身份变化时清空，不猜 URL 或回退默认 Bot。
+Bot 页复用既有页面容器、桥、媒体和 `--wonton-*`，不另造壳层 WebView、不省略桥。
+这是接口契约，不暴露每 Bot 网页运行时入口；尚不支持该页面的客户端明确拒绝，不转开其他页面，也不代表端到端验证通过。
 
 插件整体异常时网关按服务看：清单 `webui` 指向的服务现在能用（容器在运行、健康检查没失败）就照常转发，网页里
 依赖坏掉的部分由应用自己报错，插件在列表里照旧是异常（原因列出坏掉的容器和它的探针）；它停了或不健康、插件在
