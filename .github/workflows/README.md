@@ -46,6 +46,24 @@ android 的构建、ios 的 SwiftLint 和模拟器构建，都必须在队列里
 `merge_group` 上取 `github.event.merge_group.head_sha`，不让几次入队挤进同一组互相取消。缓存仍只在 main 上写，
 队列运行和 PR 一样只读。
 
+## iOS 单测和截图测试
+
+`ios.yml` 的“模拟器构建”作业用 `build-for-testing` 加 `test-without-building`，在一台固定型号和系统版本的
+模拟器（工作流开头的 `SIMULATOR_NAME`、`SIMULATOR_OS`）上只跑 `WontonTests`，包括 `SnapshotTests`
+（pointfreeco/swift-snapshot-testing，MIT，钉版本，只进测试目标不链接 App）。UI 测试在夜跑里跑，这个作业
+不编。参考图在 `apps/ios/WontonTests/__Snapshots__/`，直接进 git，不用 LFS。
+
+- 参考图绑定那台模拟器和系统版本，外观、语言（en、US）和时区（UTC）钉在 scheme 和测试里。换了模拟器或系统
+  要整体重录，只换图不换参数会一直红。
+- 每个用例默认 10 秒、最多 60 秒，失败不自动重试。
+- 比较失败时“失败时存结果”一步把差异图（`SNAPSHOT_ARTIFACTS`）和 `.xcresult` 存成产物，保留 7 天。
+- 重录：在 PR 上打 `record-snapshots` 标签（草稿 PR 不跑，转 ready 之后再打），`labeled` 事件起一轮。作业用
+  `SNAPSHOT_TESTING_RECORD=all` 把参考图全部重画，在同一个作业里提交回分支并摘掉标签。录制那一轮本身是红的
+  （每录一张报一条“Automatically recorded snapshot”），以提交回去的图为准。
+- GITHUB_TOKEN 推的提交不会触发工作流（GitHub 的规则），仓库也没有单独的机器人令牌，所以录完要自己推一个
+  空提交或点重跑，新图才会被比较一遍。外部 fork 的 PR 令牌推不回对方的分支：录制照跑，作者从产物里取图自己提交。
+- 新增截图用 `SnapshotFixtures`（Debug 专用）搭界面，只放有代表性的界面，不逐页全录。
+
 ## 缓存
 
 - 缓存只在 main 上写，PR、合并队列和定时运行只读：仓库公开，外部 PR 写的条目会把 main 的挤掉。

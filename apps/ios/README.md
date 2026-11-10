@@ -125,4 +125,8 @@ xcodebuild test -project apps/ios/Wonton.xcodeproj -scheme Wonton \
   -only-testing:WontonUITests/PairingLinkUITests CODE_SIGNING_ALLOWED=NO
 ```
 
+界面截图回归在 `WontonTests/SnapshotTests`：真实界面配固定假数据（`SnapshotFixtures`，Debug 专用），逐像素比较
+`WontonTests/__Snapshots__/` 下的参考图。参考图绑定模拟器型号和系统版本，语言、地区和时区由 scheme 钉住；怎么重录、
+失败产物在哪见 [`.github/workflows/README.md`](../../.github/workflows/README.md)。新增截图先挑有代表性的界面，不逐页全录。
+
 Bundle ID `app.wonton.ios` 是临时的，上架前确定正式的。
