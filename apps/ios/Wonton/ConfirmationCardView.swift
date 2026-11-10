@@ -4,12 +4,14 @@ import WontonClient
 /// 确认卡片：文字是家里的服务器写好的，按钮有没有、能不能点都由核心决定。
 struct ConfirmationCardView: View {
     let view: ConfirmationView
-    let answer: (CardChoice) -> Void
+    let answer: (CardChoice, [String: String]) -> Void
     let stopWindow: () -> Void
     @Environment(TabsModel.self) private var tabs
     @Environment(PluginsModel.self) private var plugins
     @State private var showsPages = false
     @State private var pinRequest: TabRef?
+    @State private var secrets: [String: String] = [:]
+    @State private var shownSecrets = false
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -20,6 +22,11 @@ struct ConfirmationCardView: View {
                     .wontonText(WontonTheme.typography.supporting)
                     .fontWeight(line.emphasis ? .semibold : .regular)
                     .foregroundStyle(line.emphasis ? Color(colors.danger) : Color(colors.textPrimary))
+            }
+            if !view.card.secretInputs.isEmpty {
+                SecretInputsSection(
+                    inputs: view.card.secretInputs, values: $secrets, enabled: isPending
+                ) { shownSecrets = $0 }
             }
             state
             if let window = view.window {
@@ -57,6 +64,16 @@ struct ConfirmationCardView: View {
         }
         // 时间线第一次量这一行时给的高度可能不够，主人没读完不该按确认。
         .fixedSize(horizontal: false, vertical: true)
+        .onChange(of: view.card.id) {
+            secrets = [:]
+            shownSecrets = false
+        }
+        // 框里有值或点过“显示”、卡片还没答完时，这一块在快照里要盖住。
+        .overlay {
+            if isPending, hidesValues {
+                Color(colors.canvas)
+            }
+        }
     }
 
     @ViewBuilder private var state: some View {
@@ -121,6 +138,17 @@ struct ConfirmationCardView: View {
         return (plugin?.tabChoices.isEmpty == false) ? plugin : nil
     }
 
+    private var isPending: Bool {
+        if case .pending = view.card.state { return true }
+        return false
+    }
+
+    /// 有密钥、框里有值或点过“显示”、卡片还没答完。
+    private var hidesValues: Bool {
+        !view.card.secretInputs.isEmpty
+            && (shownSecrets || view.card.secretInputs.contains { !(secrets[$0.name] ?? "").isEmpty })
+    }
+
     private var pinned: Bool {
         installed?.tabChoices.contains { tabs.isPinned($0.tab) } == true
     }
@@ -134,10 +162,15 @@ struct ConfirmationCardView: View {
         .foregroundStyle(Color(color))
     }
 
+    /// 必填项没填时只有拒绝能点。
+    private var secretsReady: Bool {
+        !missingRequiredSecret(view.card.secretInputs, secrets)
+    }
+
     private var buttons: some View {
         ForEach(view.card.choices, id: \.self) { choice in
             Button {
-                answer(choice)
+                answer(choice, secretValues(view.card.secretInputs, secrets))
             } label: {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     if view.sending == choice.answer, view.sendingChoiceId == choice.choiceId { ProgressView() }
@@ -145,7 +178,7 @@ struct ConfirmationCardView: View {
                 }
             }
             .buttonStyle(WontonButtonStyle(kind: choice.answer == .approve ? .primary : .secondary))
-            .disabled(view.sending != nil)
+            .disabled(view.sending != nil || (choice.answer != .reject && !secretsReady))
         }
     }
 }

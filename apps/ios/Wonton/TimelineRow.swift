@@ -237,13 +237,13 @@ private struct MessageBubble: View {
         case let .confirmation(view):
             ConfirmationCardView(
                 view: view,
-                answer: {
+                answer: { choice, secrets in
                     cardAction(
                         .answerConfirmation(
                             id: view.card.id,
-                            answer: $0.answer,
-                            choiceId: $0.choiceId,
-                            secrets: [:],
+                            answer: choice.answer,
+                            choiceId: choice.choiceId,
+                            secrets: secrets,
                             settings: [:]
                         )
                     )

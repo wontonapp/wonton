@@ -77,6 +77,9 @@ struct PluginDetailView: View {
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                     }
+                    if detail.installed != nil {
+                        SecretSection(model: model, detail: detail) { loaded = .success($0) }
+                    }
                     if let installed = detail.installed, let offer = detail.lanWebui {
                         InstalledLanWebui(model: model, id: installed.id, offer: offer) { loaded = .success($0) }
                     }
