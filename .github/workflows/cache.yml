@@ -1,0 +1,254 @@
+name: cache
+
+# 在 main 上存编译缓存，PR、合并队列和定时运行只读。缓存只在 main 上写（仓库公开，外部 PR 写的条目会把
+# main 的挤掉）；PR 作业的 save-if 都要求 ref 是 refs/heads/main，main 上又不跑测试（见各工作流开头），
+# 所以缓存一直存不下来，每个作业都在冷编。这个工作流补上这一步：用和 PR 作业完全相同的 rust-cache 前缀、
+# 缓存目录和编译目标，只编不跑。
+#
+# 手动触发也会写：换分支验证缓存能不能被恢复时用它，写完的条目在分支自己的作用域里，不影响 main。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 又推了一个提交就取消上一次，别让两次编译抢同一个 key。
+concurrency:
+  group: cache-${{ github.ref }}
+  cancel-in-progress: true
+
+# 和 rust.yml、rust-docker.yml、ios.yml、android.yml 里的值一致：rust-cache 的 key 里带这些环境变量的
+# 哈希（CARGO_ 前缀都算），这边少写一个、写别的值，PR 作业就换一个 key、恢复不到这里存的条目。
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: 改动范围（缓存）
+    # 只在 push 上判断：手动触发就是为了把四份缓存都存一遍，不看改了什么。
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # push 上按提交判断改动，要检出上一提交（PR 事件走 REST 接口，才不用检出）。
+          fetch-depth: 20
+          persist-credentials: false
+      # MIT
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          base: ${{ github.event.before }}
+          # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
+          predicate-quantifier: some-with-excludes
+          filters: |
+            rust:
+              - "crates/**"
+              - "deploy/**"
+              - "plugins/**"
+              - "Cargo.toml"
+              - "vendor/**"
+              - "Cargo.lock"
+              - "clippy.toml"
+              - ".config/nextest.toml"
+              - "rust-toolchain.toml"
+              - ".github/workflows/cache.yml"
+              - ".github/workflows/rust.yml"
+              - "!**/*.md"
+            ios:
+              - "apps/ios/**"
+              - "design/**"
+              - "scripts/generate-design.py"
+              - "crates/wonton-client/**"
+              - "crates/wonton-l10n/**"
+              - "crates/wonton-matrix/**"
+              - "crates/wonton-protocol/**"
+              - "crates/wonton-tunnel/**"
+              - "Cargo.toml"
+              - "vendor/**"
+              - "Cargo.lock"
+              - "rust-toolchain.toml"
+              - ".github/workflows/cache.yml"
+              - ".github/workflows/ios.yml"
+              - "!**/*.md"
+            android:
+              - "apps/compose/**"
+              - "apps/ios/Wonton/Assets.xcassets/**"
+              - "apps/ios/Wonton/Design/Generated/**"
+              - "design/**"
+              - "scripts/generate-design.py"
+              - "crates/wonton-client/**"
+              - "crates/wonton-matrix/**"
+              - "crates/wonton-protocol/**"
+              - "crates/wonton-tunnel/**"
+              - "Cargo.toml"
+              - "vendor/**"
+              - "Cargo.lock"
+              - "rust-toolchain.toml"
+              - ".github/workflows/cache.yml"
+              - ".github/workflows/android.yml"
+            bridge:
+              - "crates/wonton-acp-bridge/**"
+              - "crates/wonton-client/**"
+              - "crates/wonton-core/**"
+              - "crates/wonton-matrix/**"
+              - "deploy/**"
+              - "plugins/**"
+              - "Cargo.toml"
+              - "vendor/**"
+              - "Cargo.lock"
+              - "clippy.toml"
+              - ".config/nextest.toml"
+              - "rust-toolchain.toml"
+              - ".github/workflows/cache.yml"
+              - ".github/workflows/rust-docker.yml"
+              - "!**/*.md"
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      ios: ${{ steps.filter.outputs.ios }}
+      android: ${{ steps.filter.outputs.android }}
+      bridge: ${{ steps.filter.outputs.bridge }}
+
+  rust:
+    name: 测试二进制（只编不跑）
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.rust == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 安装 rust-toolchain.toml 指定的工具链
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-nextest@0.9.151
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # 和 rust.yml 的测试分片、rust-docker.yml 同一个 key：编出来的是同一套测试二进制。
+          shared-key: rust-test
+          save-if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+      - name: 编测试二进制
+        # nextest 不跑，只让依赖和测试二进制进 target/，PR 恢复完直接开跑。
+        run: cargo nextest run --workspace --locked --no-run
+      - name: 编文档测试
+        # nextest 不编 doctest，测试的第一片单列了 `cargo test --doc`，这边也先编好。
+        run: cargo test --doc --workspace --locked --no-run
+
+  clippy:
+    name: Clippy 产物（只编不跑）
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.rust == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 安装 rust-toolchain.toml 指定的工具链
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: rust-clippy
+          save-if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+      - name: Clippy
+        # 和 rust.yml 的 Clippy 作业一条命令，编出来的东西一样。
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  ios:
+    name: iOS 模拟器核心（只编不跑）
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.ios == 'true') }}
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      WONTON_IOS_TARGETS: aarch64-apple-ios-sim
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 用 Xcode 27.1（和开发机 mini 上的一致）
+        run: sudo xcode-select -s /Applications/Xcode_27.1.app
+      - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: rust-ios
+          save-if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+      - name: 编译 Rust 核心
+        # 和 ios.yml 的模拟器构建同一步（绑定和 XCFramework 也一起生成，很快）。
+        run: apps/ios/scripts/build-core.sh debug
+
+  android:
+    name: Android 核心（只编不跑）
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.android == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: 安装 rust-toolchain.toml 指定的工具链和 Android target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-linux-android
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-ndk@4.1.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: rust-android
+          save-if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: 编译 Rust 核心
+        # 走 android.yml 同一条 Gradle 任务，ABI、minSdk 和那边一致；不跑 detekt 和单元测试。
+        working-directory: apps/compose
+        run: ./gradlew :shared:buildRustCore
+
+  bridge:
+    name: 桥镜像（层缓存写回镜像仓库）
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.bridge == 'true') }}
+    runs-on: ubuntu-24.04
+    # 整编（cargo-chef 依赖层）在 4 核托管机上 18 分钟左右，留余量。
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      # 层缓存推到 ghcr.io 的 wonton-ci-cache（main 的 GITHUB_TOKEN 可以写）。
+      packages: write
+    env:
+      # 和 rust-docker.yml 一致：基础镜像走副本，build-arg 一样，PR 的构建才命中同一份缓存。
+      WONTON_TEST_IMAGES: ghcr.io/${{ github.repository_owner }}/test-images
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: 构建并写回层缓存
+        # registry 缓存放在镜像仓库里，不占 10 GB 的 actions 缓存（main-image 的 buildkit 缓存曾占掉 9 GB）。
+        # mode=max 才把 cargo-chef 的依赖层存进去，只存最后一层的话改源码就得整编。
+        run: >-
+          docker buildx build
+          --file deploy/dev/acp-bridge/Dockerfile
+          --build-arg "RUST_IMAGE=$WONTON_TEST_IMAGES/rust:1.99.1-slim-trixie"
+          --build-arg "DEBIAN_IMAGE=$WONTON_TEST_IMAGES/debian:trixie-slim"
+          --tag wonton-acp-bridge-docker-test:prebuilt
+          --cache-from "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:acp-bridge"
+          --cache-to "type=registry,ref=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:acp-bridge,mode=max"
+          --load .
