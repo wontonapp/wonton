@@ -108,12 +108,13 @@ pub use wonton_protocol::{
     OnboardingReviewKind, OnboardingStep, OnboardingTip, OnboardingTips, OnboardingViewModel,
     OpenWindow, OwnerProfileUpdate, PairingFailure, PairingStage, PairingStatus, PeerCode,
     PeerError, PeerRequestRow, PeerRow, PeerStatus, PeersState, PeersViewModel,
-    PendingConfirmation, PermissionLine, PermissionRisk, PlacedTab, PluginAuthor, PluginDetail,
+    PendingConfirmation, PermissionLine, PermissionRisk, PlacedTab, PluginAuthor, PluginDetail, PluginDetailOutcome, PluginDetailRoute,
     PluginDevice, PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind,
     PluginMediaGrant, PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginState,
     PluginTab, PluginTakeover, PluginTask, PluginTaskNextStep, PluginTaskState, PluginTrust,
     PluginsViewModel, ProxySettings, PushConfirmation, PushContent, PushEndpoint, PushMethod,
     PushNotification, PushStatus, RecoveryNextStep, RecoveryStatus, RegistryFailure,
+
     RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest, RegistryMirrorTests,
     RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe, RegistryProblem, RejectedPeerRow,
     ReplacedAgent, RequirementLine, RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow,
@@ -128,6 +129,7 @@ pub use wonton_protocol::{
     TransferDirection, TransferElsewhere, TransferState, TransfersViewModel, UpdatablePlugin,
     UpgradeOffer, UploadSource, VerificationCancel, VerificationEmoji, VerificationFlow,
     VerificationStage, WindowView,
+
 };
 pub use wonton_protocol::{
     AppsAction, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendGroup,
