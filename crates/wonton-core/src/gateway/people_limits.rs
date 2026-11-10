@@ -93,7 +93,8 @@ impl PeopleLimiter {
         let Some((kind, txn)) = classify(req.method(), req.uri().path()) else {
             return Ok(req);
         };
-        let mut empty_invites = false;
+        // 一次 createRoom 邀请几个人就扣几次；两处都对不上的按一次算，不猜。
+        let mut cost = 1;
         let req = if kind == Kind::Invite && req.uri().path().ends_with("/createRoom") {
             let (mut parts, body) = req.into_parts();
             let bytes = to_bytes(body, MAX_BODY).await.map_err(|_| {
@@ -104,13 +105,9 @@ impl PeopleLimiter {
                     "请求体太大，无法判断邀请数量",
                 ))
             })?;
-            empty_invites = serde_json::from_slice::<serde_json::Value>(&bytes)
+            cost = serde_json::from_slice::<serde_json::Value>(&bytes)
                 .ok()
-                .and_then(|v| {
-                    v.get("invite")
-                        .map(|list| list.as_array().is_some_and(|a| a.is_empty()))
-                })
-                .unwrap_or(false);
+                .map_or(1, |body| invite_cost(&body));
             parts.headers.remove(hyper::header::TRANSFER_ENCODING);
             parts.headers.insert(
                 hyper::header::CONTENT_LENGTH,
@@ -120,14 +117,14 @@ impl PeopleLimiter {
         } else {
             req
         };
-        // 空邀请表（建空房间）不算一次邀请；读不懂的按一次算，不猜。
-        if empty_invites {
+        // 空邀请表（建空房间）不算一次邀请。
+        if cost == 0 {
             return Ok(req);
         }
         let now = (self.now)();
         let decision = {
             let mut state = self.state.lock().expect("people limiter lock");
-            state.decide(&self.limits, person, kind, txn.as_deref(), now)
+            state.decide(&self.limits, person, kind, txn.as_deref(), now, cost)
         };
         match decision {
             Some(retry_after_ms) => {
@@ -148,6 +145,7 @@ impl State {
         kind: Kind,
         txn: Option<&str>,
         now: u64,
+        cost: u64,
     ) -> Option<u64> {
         if now.saturating_sub(self.last_sweep) >= SWEEP_EVERY.as_millis() as u64 {
             self.last_sweep = now;
@@ -175,11 +173,12 @@ impl State {
         {
             return None;
         }
-        if bucket.tokens < 1.0 {
+        let need = cost as f64;
+        if bucket.tokens < need {
             let ms_per_token = 60_000.0 / per_minute as f64;
-            return Some(((1.0 - bucket.tokens) * ms_per_token).ceil() as u64);
+            return Some(((need - bucket.tokens) * ms_per_token).ceil() as u64);
         }
-        bucket.tokens -= 1.0;
+        bucket.tokens -= need;
         if let Some(txn) = txn {
             if bucket.txns.len() >= 64 {
                 bucket.txns.remove(0);
@@ -188,6 +187,15 @@ impl State {
         }
         None
     }
+}
+
+/// 一次 createRoom 要扣的次数：`invite` 和 `invite_3pid` 的条目数之和，两处都没有时为零。
+fn invite_cost(body: &serde_json::Value) -> u64 {
+    ["invite", "invite_3pid"]
+        .iter()
+        .filter_map(|key| body.get(key))
+        .map(|list| list.as_array().map_or(0, |items| items.len()))
+        .sum::<usize>() as u64
 }
 
 /// 数得上的请求：(种类, 去重用的 txn)。
@@ -313,6 +321,110 @@ mod tests {
                 .check(req(Method::POST, "/_matrix/client/v3/createRoom"), "mia")
                 .await
                 .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_invite_charges_one_token_per_invited_person() {
+        let limiter = PeopleLimiter::with_clock(
+            PeopleLimits {
+                invites_per_minute: 5,
+                messages_per_minute: 5,
+            },
+            || 0,
+        );
+        let create = |body: &'static str| {
+            Request::builder()
+                .method(Method::POST)
+                .uri("http://x/_matrix/client/v3/createRoom")
+                .body(axum::body::Body::from(body))
+                .unwrap()
+        };
+        // 一次邀请 3 个人扣 3：配额 5，第一次之后剩 2 个。
+        let three = r#"{"invite":["@a:b","@c:d","@e:f"]}"#;
+        assert!(limiter.check(create(three), "owner").await.is_ok());
+        let refused = limiter.check(create(three), "owner").await;
+        assert!(refused.is_err(), "只剩 2 个，第二次要 3 个");
+        // 剩 2 个：邀请 2 个人正好放下，再 1 个就不够。
+        assert!(
+            limiter
+                .check(create(r#"{"invite":["@g:h","@i:j"]}"#), "owner")
+                .await
+                .is_ok()
+        );
+        assert!(
+            limiter
+                .check(create(r#"{"invite":["@k:l"]}"#), "owner")
+                .await
+                .is_err()
+        );
+        // invite_3pid 也按条数扣。
+        let limiter = PeopleLimiter::with_clock(
+            PeopleLimits {
+                invites_per_minute: 2,
+                messages_per_minute: 2,
+            },
+            || 0,
+        );
+        assert!(
+            limiter
+                .check(
+                    create(
+                        r#"{"invite_3pid":[{"id_server":"x","medium":"email","address":"a@b"}]}"#
+                    ),
+                    "owner"
+                )
+                .await
+                .is_ok()
+        );
+        assert!(
+            limiter
+                .check(
+                    create(r#"{"invite_3pid":[{"id_server":"x","medium":"email","address":"c@d"},{"id_server":"x","medium":"email","address":"e@f"}]}"#),
+                    "owner"
+                )
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_create_room_without_invites_does_not_count() {
+        let limiter = PeopleLimiter::with_clock(
+            PeopleLimits {
+                invites_per_minute: 1,
+                messages_per_minute: 1,
+            },
+            || 0,
+        );
+        // 一个 `invite` 都没有：跟空邀请表一样不算邀请，配额 1 也能连开。
+        for _ in 0..3 {
+            let again = Request::builder()
+                .method(Method::POST)
+                .uri("http://x/_matrix/client/v3/createRoom")
+                .body(axum::body::Body::from(r#"{"name":"空房间"}"#))
+                .unwrap();
+            assert!(limiter.check(again, "owner").await.is_ok());
+        }
+        // 邀请 1 个人才占 1 个。
+        let one = Request::builder()
+            .method(Method::POST)
+            .uri("http://x/_matrix/client/v3/createRoom")
+            .body(axum::body::Body::from(r#"{"invite":["@a:b"]}"#))
+            .unwrap();
+        assert!(limiter.check(one, "owner").await.is_ok());
+        assert!(
+            limiter
+                .check(
+                    Request::builder()
+                        .method(Method::POST)
+                        .uri("http://x/_matrix/client/v3/createRoom")
+                        .body(axum::body::Body::from(r#"{"invite":["@a:b"]}"#))
+                        .unwrap(),
+                    "owner"
+                )
+                .await
+                .is_err()
         );
     }
 

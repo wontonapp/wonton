@@ -48,6 +48,8 @@ pub(crate) struct FriendsLink {
     local: Mutex<local::Local>,
     /// 取到过列表：设置首页的入口要显示人数。
     listed: AtomicBool,
+    /// 核心名单是不是主人的；家人（与外部账号一样）只留本机清单。
+    server_scope: AtomicBool,
 }
 
 impl FriendsLink {
@@ -83,6 +85,7 @@ impl FriendsLink {
             queue: tokio::sync::Mutex::default(),
             local: Mutex::new(local),
             listed: AtomicBool::new(false),
+            server_scope: AtomicBool::new(true),
         }))
     }
 
@@ -222,6 +225,7 @@ impl FriendsLink {
     /// 名单在服务器上时：取列表，并把同意过但没记上的补记（删掉的墓碑不补）。
     async fn server_view(&self, joined: &[(String, String, u64)]) -> Result<api::View, Failure> {
         let first = self.api()?.list().await?;
+        self.server_scope.store(first.owner_scope, Ordering::SeqCst);
         tracing::debug!(
             friends = first.friends.len(),
             removed = first.removed.len(),
@@ -520,9 +524,9 @@ impl FriendsLink {
         });
     }
 
-    /// 这个槽位有没有自家服务器（外部 Matrix 账号没有）。
+    /// 名单在服务器上：有自家服务器，而且这台设备登录的是主人（核心名单只归主人）。
     fn uses_server(&self) -> bool {
-        self.home.core_url().is_some()
+        self.home.core_url().is_some() && self.server_scope.load(Ordering::SeqCst)
     }
 
     fn api(&self) -> Result<api::Api, Failure> {

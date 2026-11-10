@@ -169,7 +169,7 @@ async fn groups_are_created_assigned_and_deleted() {
 }
 
 #[tokio::test]
-async fn a_family_member_has_her_own_list_but_cannot_block_a_server() {
+async fn a_family_member_reads_an_empty_core_list_and_cannot_write_it() {
     let dir = tempfile::tempdir().unwrap();
     let home = home(&dir).await;
     let owner = home.owner_device();
@@ -189,9 +189,47 @@ async fn a_family_member_has_her_own_list_but_cannot_block_a_server() {
         .unwrap();
     let member = home.member_device("mia");
 
-    add(&home, member, "@bob:b.test", "Bob").await;
-    let (_, body) = call(&home, Some(member), Method::GET, FRIENDS, Value::Null).await;
+    add(&home, owner, "@bob:b.test", "Bob").await;
+
+    let (status, body) = call(&home, Some(member), Method::GET, FRIENDS, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["owner_scope"], false, "{body}");
     assert_eq!(body["can_block_federation"], false, "{body}");
+    // 家人的好友在客户端本机，核心名单是主人的，不给他们看。
+    assert!(body["friends"].as_array().unwrap().is_empty(), "{body}");
+
+    // 写接口只给主人：接受、删、分组、建组、删组都对家人回 owner_only。
+    let writes = [
+        (Method::PUT, "/_wonton/api/friends/@eve:e.test".to_owned()),
+        (
+            Method::DELETE,
+            "/_wonton/api/friends/@bob:b.test".to_owned(),
+        ),
+        (
+            Method::PUT,
+            "/_wonton/api/friends/@bob:b.test/groups".to_owned(),
+        ),
+        (Method::POST, "/_wonton/api/friend-groups".to_owned()),
+        (Method::DELETE, "/_wonton/api/friend-groups/x".to_owned()),
+    ];
+    for (method, path) in writes {
+        let body = match method {
+            Method::PUT if path.ends_with("/groups") => json!({"groups": []}),
+            Method::PUT => json!({}),
+            Method::POST => json!({"name": "朋友"}),
+            _ => Value::Null,
+        };
+        let (status, reply) = call(&home, Some(member), method.clone(), &path, body).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}: {reply}");
+        assert_eq!(
+            reply["error"]["kind"], "owner_only",
+            "{method} {path}: {reply}"
+        );
+    }
+
+    // 主人照常写，名单不变。
+    let (_, body) = call(&home, Some(owner), Method::GET, FRIENDS, Value::Null).await;
+    assert_eq!(body["owner_scope"], true, "{body}");
     assert_eq!(body["friends"][0]["user_id"], "@bob:b.test", "{body}");
 
     let (status, _) = call(

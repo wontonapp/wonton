@@ -23,13 +23,10 @@ use serde_json::{Value, json};
 
 use crate::{Error, Result};
 
-/// `m.room.create` 内容里的标记键，取值是 `true`。同名的房间状态事件也写一份。
+/// `m.room.create` 内容里的标记键，取值是 `true`。
 pub const FRIEND_CREATE_KEY: &str = "app.wonton.friend";
 /// MSC4155 的规则列表事件类型（Tuwunel 只认这个不稳定名称）。
 const MSC4155_TYPE: &str = "org.matrix.msc4155.invite_permission_config";
-
-/// 标记好友请求的房间状态事件类型。
-pub const FRIEND_EVENT: &str = "app.wonton.friend";
 
 /// MSC4155 的拒绝名单：个人屏蔽的用户和整台服务器。空集合表示都不拒绝。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -102,15 +99,7 @@ impl super::MatrixSession {
             serde_json::from_value::<Raw<_>>(json!({ FRIEND_CREATE_KEY: true }))
                 .expect("固定的 JSON 一定能读出 Raw"),
         );
-        request.initial_state = vec![
-            encryption,
-            serde_json::from_value::<Raw<_>>(json!({
-                "type": FRIEND_EVENT,
-                "state_key": "",
-                "content": {},
-            }))
-            .expect("固定的 JSON 一定能读出 Raw"),
-        ];
+        request.initial_state = vec![encryption];
         request.is_direct = true;
         request.preset = Some(RoomPreset::TrustedPrivateChat);
         let room = self.client.create_room(request).await?;
@@ -349,16 +338,16 @@ async fn created_at_ms(room: &Room) -> u64 {
 }
 
 /// 房间建的时候带没带好友标记。
+///
+/// 只认 `m.room.create` 里那个不可改的标记：同名的状态事件谁都能后加，一条普通私聊补上它就会突然变成好友，
+/// 删掉的好友也会因此复活。代价是外部客户端建的房间认不出来，第一个外部用户之前不需要兼容。
 async fn is_friend(room: &Room) -> bool {
-    if let Ok(Some(raw)) = room.get_state_event(StateEventType::RoomCreate, "").await
-        && let Ok(value) = serde_json::to_value(raw)
-        && value["content"][FRIEND_CREATE_KEY].as_bool() == Some(true)
-    {
-        return true;
-    }
-    room.get_state_event(StateEventType::from(FRIEND_EVENT), "")
+    room.get_state_event(StateEventType::RoomCreate, "")
         .await
-        .is_ok_and(|event| event.is_some())
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::to_value(raw).ok())
+        .is_some_and(|value| value["content"][FRIEND_CREATE_KEY].as_bool() == Some(true))
 }
 
 async fn is_direct(room: &Room) -> bool {

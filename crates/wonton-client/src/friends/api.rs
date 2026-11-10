@@ -28,6 +28,8 @@ pub(super) struct View {
     /// 删过的人；他们留在私聊里的好友标记不算数，除非重新收到邀请再同意。
     pub(super) removed: Vec<RemovedFriend>,
     pub(super) can_block_federation: bool,
+    /// 名单是不是主人的；家人只留本机清单。
+    pub(super) owner_scope: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

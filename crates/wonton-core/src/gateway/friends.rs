@@ -44,6 +44,8 @@ pub struct FriendsView {
     pub removed: Vec<RemovedFriend>,
     /// 这台设备的人能不能改整台服务器的黑名单：只有主人，且服务器能热加载配置。
     pub can_block_federation: bool,
+    /// 名单是不是主人的：家人没有核心名单，好友只存在客户端本机。
+    pub owner_scope: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,30 +73,40 @@ pub struct FriendGroupSave {
 }
 
 /// 认设备的人：只给经隧道接入的已配对设备，不接受别的网页发来的请求。
+/// 错误分支是拼好的拒绝页（`Response` 本身大），不装箱。
+#[allow(clippy::result_large_err)]
 fn person_denied(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
-) -> Option<Response> {
-    if gateway
-        .device_person(peer.map(|Extension(peer)| peer))
-        .is_none()
-    {
-        return Some(error_response(
+) -> Result<super::Person, Response> {
+    let Some(person) = gateway.device_person(peer.map(|Extension(peer)| peer)) else {
+        return Err(error_response(
             StatusCode::UNAUTHORIZED,
             "unauthenticated",
             "好友接口只给经隧道接入的已配对设备",
         ));
-    }
+    };
     if super::isolation::not_from_another_page(headers, &gateway.core_origin()) {
-        None
+        Ok(person)
     } else {
-        Some(error_response(
+        Err(error_response(
             StatusCode::FORBIDDEN,
             "cross_site",
             "好友接口不接受其他网页发来的请求",
         ))
     }
+}
+
+/// 核心存的名单是主人的（ADR-0051）；家人的好友在客户端本机，写接口只给主人。
+fn owner_denied(person: &super::Person) -> Option<Response> {
+    (!person.is_owner()).then(|| {
+        error_response(
+            StatusCode::FORBIDDEN,
+            "owner_only",
+            "核心里的好友名单只有主人能改",
+        )
+    })
 }
 
 fn parse<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, Box<Response>> {
@@ -133,8 +145,14 @@ fn friends_error(error: FriendsError) -> Response {
     }
 }
 
-fn view(gateway: &Gateway, is_owner: bool) -> FriendsView {
-    let snapshot = gateway.friends().map(|friends| friends.snapshot());
+fn view(gateway: &Gateway, person: &super::Person) -> FriendsView {
+    let is_owner = person.is_owner();
+    // 家人没有核心名单：主人的名单不给他们看，客户端按 `owner_scope` 换成本机清单。
+    let snapshot = if is_owner {
+        gateway.friends().map(|friends| friends.snapshot())
+    } else {
+        None
+    };
     let friends = snapshot
         .as_ref()
         .map(|snapshot| {
@@ -181,6 +199,7 @@ fn view(gateway: &Gateway, is_owner: bool) -> FriendsView {
             .map(|blocks| blocks.names().into_iter().collect())
             .unwrap_or_default(),
         can_block_federation: is_owner && gateway.federation_blocks.is_some(),
+        owner_scope: is_owner,
     }
 }
 
@@ -189,21 +208,11 @@ pub async fn list(
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = person_denied(&gateway, peer, &headers) {
-        return denied;
-    }
-    let Some(friends) = gateway.friends() else {
-        return error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "unavailable",
-            "这台核心没有好友名单",
-        );
+    let person = match person_denied(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(denied) => return denied,
     };
-    let _ = friends;
-    let is_owner = gateway
-        .device_person(peer.map(|Extension(peer)| peer))
-        .is_some_and(|person| person.is_owner());
-    Json(view(&gateway, is_owner)).into_response()
+    Json(view(&gateway, &person)).into_response()
 }
 
 pub async fn accept(
@@ -213,7 +222,11 @@ pub async fn accept(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = person_denied(&gateway, peer, &headers) {
+    let person = match person_denied(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(denied) => return denied,
+    };
+    if let Some(denied) = owner_denied(&person) {
         return denied;
     }
     let Some(friends) = gateway.friends() else {
@@ -252,7 +265,11 @@ pub async fn remove(
     Path(user_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = person_denied(&gateway, peer, &headers) {
+    let person = match person_denied(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(denied) => return denied,
+    };
+    if let Some(denied) = owner_denied(&person) {
         return denied;
     }
     let Some(friends) = gateway.friends() else {
@@ -279,7 +296,11 @@ pub async fn set_groups(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = person_denied(&gateway, peer, &headers) {
+    let person = match person_denied(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(denied) => return denied,
+    };
+    if let Some(denied) = owner_denied(&person) {
         return denied;
     }
     let Some(friends) = gateway.friends() else {
@@ -309,7 +330,11 @@ pub async fn save_group(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = person_denied(&gateway, peer, &headers) {
+    let person = match person_denied(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(denied) => return denied,
+    };
+    if let Some(denied) = owner_denied(&person) {
         return denied;
     }
     let Some(friends) = gateway.friends() else {
@@ -335,7 +360,11 @@ pub async fn remove_group(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = person_denied(&gateway, peer, &headers) {
+    let person = match person_denied(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(denied) => return denied,
+    };
+    if let Some(denied) = owner_denied(&person) {
         return denied;
     }
     let Some(friends) = gateway.friends() else {
@@ -379,26 +408,12 @@ async fn set_block(
     _body: Bytes,
     blocked: bool,
 ) -> Response {
-    let Some(person) = gateway.device_person(peer.map(|Extension(peer)| peer)) else {
-        return error_response(
-            StatusCode::UNAUTHORIZED,
-            "unauthenticated",
-            "黑名单只给经隧道接入的已配对设备",
-        );
+    let person = match person_denied(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(denied) => return denied,
     };
-    if !person.is_owner() {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "owner_only",
-            "整台服务器的黑名单只有主人能改",
-        );
-    }
-    if !super::isolation::not_from_another_page(&headers, &gateway.core_origin()) {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "cross_site",
-            "黑名单不接受其他网页发来的请求",
-        );
+    if let Some(denied) = owner_denied(&person) {
+        return denied;
     }
     let Some(blocks) = &gateway.federation_blocks else {
         return error_response(
