@@ -330,23 +330,18 @@ async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
         .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
         .await;
     let proxy = view.proxy.unwrap();
-    // 旧连接被判死时断开计数加一（换连接先写“连接中”，同样算一次断开）。提前记下来：关闭帧偶尔能送到，
-    // 这一步就会涨；之后涨得比它多只可能来自前台检查对旧连接的判死。
-    let disconnects = phone.home().details.disconnects;
     phone.dispatch(Action::AppBackgrounded).unwrap();
 
-    // App 挂起期间服务端放弃了连接，关闭帧到不了手机：手机仍以为连着，iroh 要 30 秒空闲超时才发现。
+    // App 挂起期间服务端放弃了连接，关闭帧到不了手机：手机仍以为连着，iroh 要 30 秒空闲超时才发现。后台不是
+    // 死水：挂起检测自己也会计时查一次，机器一卡它就先把界面挪成“连接中”，所以这里不断言还停在“已连接”。
     home.drop_connections_silently().await;
-    assert_eq!(phone.home().status, HomeStatus::Connected);
 
     // 回到前台：限时确认发现连接已死，马上换新连接。“几秒内回来”不按墙钟断言（机器忙时真实 I/O 会排过任何
-    // 时限），按因果断言：定时检查已停、App 刚回前台，先等旧连接被判死（断开计数涨），再等界面重新说“已连接”
-    // ——那之后只可能是前台检查换的新连接：空闲超时只会判死、不会自己拨号，“重试”也不动活着的连接。等旧连接
-    // 判死之前，界面的“已连接”可能是旧连接的残影。
+    // 时限），按因果断言：定时检查已停、App 刚回前台，重启后的服务端上出现的新连接只可能是这次换的——空闲
+    // 超时只会判死、不会自己拨号，“重试”也不动活着的连接。看服务端自己数出来的连接数，不看 App 侧记的断开
+    // 次数：那是 App 的账，换连接的写法一变就可能不涨；等界面说“已连接”且路径在，再发一条请求走通。
     phone.dispatch(Action::AppForegrounded).unwrap();
-    phone
-        .wait_for(|view| view.details.disconnects > disconnects)
-        .await;
+    home.wait_for_a_connection().await;
     phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;

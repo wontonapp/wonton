@@ -223,15 +223,21 @@ pub(super) fn can_commit(entries: &[ReviewEntry]) -> bool {
 pub(super) fn follow_tasks(entries: &mut [ReviewEntry], tasks: &[PluginTask]) -> bool {
     let mut changed = false;
     for entry in entries.iter_mut().filter(|entry| entry.installs()) {
+        // 失败和不确定都不是这一项在这里的终点：重试以后上一份快照还带着旧的那次失败，不能让它把刚起来的
+        // 安装卡住。
         if !matches!(
             entry.state,
-            OnboardingItemState::Waiting | OnboardingItemState::Running
+            OnboardingItemState::Waiting
+                | OnboardingItemState::Running
+                | OnboardingItemState::Failed { .. }
+                | OnboardingItemState::Uncertain { .. }
         ) {
             continue;
         }
         let Some(task) = tasks.iter().find(|task| task.id == entry.id) else {
             continue;
         };
+        tracing::debug!(id = entry.id.as_str(), ?entry.state, ?task.state, "followed a task");
         let next = match &task.state {
             PluginTaskState::Running => OnboardingItemState::Running,
             PluginTaskState::Succeeded => OnboardingItemState::Done,
