@@ -70,6 +70,8 @@ pub struct ModelVars {
     /// 插件级的凭据（凭据名是插件 `id`），全插件一份的服务用。
     pub plugin_key: Option<String>,
     /// 每个 Bot 的凭据（凭据名 `<id>/<Bot 名>`，键是 Bot 名），声明了 `bots` 时 Bot 服务用。
+    /// 较早的核心没记这一项：缺省按空表读，整份记录还能读出来。
+    #[serde(default)]
     pub bot_keys: BTreeMap<String, String>,
     pub default_model: String,
 }
