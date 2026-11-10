@@ -343,7 +343,7 @@ extension ChatPanelHost {
 
     /// 面板收着时把红点画在聊天页挨着面板的那条边上。
     @ViewBuilder private func attention(height: CGFloat) -> some View {
-        if level != .full, items.contains(where: \.attention) {
+        if level == .peek, items.contains(where: \.attention) {
             let edgeY = edge == .top
                 ? chatOffset(height) + safeTop + 8
                 : max(0, height - chatOffset(height) - 16)

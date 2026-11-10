@@ -73,6 +73,22 @@ extension TabWebSession: WKNavigationDelegate {
             decisionHandler(.allow)
             return
         }
+        // 公网网页在同一个 WebView 里随便走 http/https，别的 scheme（mailto 等）交给系统。
+        if case .url = placed.tab {
+            let scheme = url.scheme?.lowercased()
+            if scheme == "http" || scheme == "https" {
+                if navigation.targetFrame == nil {
+                    decisionHandler(.cancel)
+                    webView.load(navigation.request)
+                } else {
+                    decisionHandler(.allow)
+                }
+            } else {
+                decisionHandler(.cancel)
+                action?(.openLink(url: url.absoluteString))
+            }
+            return
+        }
         let entry = input?.page.url.flatMap(URL.init(string:))
         let domain = input?.proxy?.domain
         let authHost = domain.map { "auth.\($0)" }

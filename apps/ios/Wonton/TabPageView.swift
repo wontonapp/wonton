@@ -247,8 +247,10 @@ extension TabPageView {
     private var contentBottom: CGFloat { fullscreen || isOverlay || bottomBar == nil ? 0 : bottomHeight }
     private var connected: Bool { home.viewModel.status == .connected }
     private var pluginId: String? {
-        if case let .plugin(id, _) = tab { return id }
-        return nil
+        switch tab {
+        case let .plugin(id, _), let .pluginPath(id, _): id
+        default: nil
+        }
     }
 
     private var takeover: PageTakeover? {
