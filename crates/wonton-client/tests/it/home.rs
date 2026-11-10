@@ -223,7 +223,7 @@ async fn a_server_that_moved_is_reached_at_its_new_address_without_pairing() {
     phone
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;
-    home.wait_for_a_connection().await;
+    home.wait_for_a_connection(&phone).await;
     drop(phone);
 
     let restarted = Phone::open(dir.path());
@@ -309,7 +309,7 @@ async fn coming_back_to_the_foreground_reconnects() {
     // 连接，这个不会被合并掉。
     home.restart().await;
     phone.dispatch(Action::AppForegrounded).unwrap();
-    home.wait_for_a_connection().await;
+    home.wait_for_a_connection(&phone).await;
     let view = phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;
@@ -341,7 +341,7 @@ async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
     // 超时只会判死、不会自己拨号，“重试”也不动活着的连接。看服务端自己数出来的连接数，不看 App 侧记的断开
     // 次数：那是 App 的账，换连接的写法一变就可能不涨；等界面说“已连接”且路径在，再发一条请求走通。
     phone.dispatch(Action::AppForegrounded).unwrap();
-    home.wait_for_a_connection().await;
+    home.wait_for_a_connection(&phone).await;
     phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;
@@ -361,7 +361,7 @@ async fn a_dropped_connection_is_replaced_without_coming_back_to_the_foreground(
 
     // 手机一无所知，也没有回前台、没有发请求：定时检查发现连接不通，换上新连接。
     home.drop_connections_silently().await;
-    home.wait_for_a_connection().await;
+    home.wait_for_a_connection(&phone).await;
     phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;
@@ -387,7 +387,7 @@ async fn a_network_change_replaces_a_dead_connection_without_waiting_for_the_nex
             network: DeviceNetwork::Wifi,
         })
         .unwrap();
-    home.wait_for_a_connection().await;
+    home.wait_for_a_connection(&phone).await;
     phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;
@@ -415,7 +415,7 @@ async fn keep_connection_replaces_a_dropped_connection_while_backgrounded() {
     phone.wait_for(|view| view.keep_connection).await;
 
     home.drop_connections_silently().await;
-    home.wait_for_a_connection().await;
+    home.wait_for_a_connection(&phone).await;
     phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
         .await;
