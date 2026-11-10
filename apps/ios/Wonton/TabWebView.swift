@@ -138,7 +138,8 @@ final class TabWebSession: NSObject {
 
     private func configure(_ view: WKWebView) throws {
         guard let input else { return }
-        if let proxy = input.proxy, configuredProxy != proxy || view !== webView {
+        // 公网网页直接连，不经家里的隧道代理（ADR-0052）。
+        if bridged, let proxy = input.proxy, configuredProxy != proxy || view !== webView {
             guard let port = NWEndpoint.Port(rawValue: proxy.port) else {
                 throw CoreError.InvalidInput(reason: String(localized: .tabProxyPortInvalid))
             }
