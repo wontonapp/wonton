@@ -74,7 +74,7 @@ fn build_item(state: &TabsState, stored: &StoredItem, plugins: &PluginsViewModel
     };
     let page = match &stored.tab {
         TabRef::Chat | TabRef::Apps | TabRef::Settings => None,
-        TabRef::SharedApp { .. } | TabRef::Bot { .. } | TabRef::UiResource { .. } => None,
+        TabRef::SharedApp { .. } | TabRef::Bot { .. } => None,
         TabRef::Plugin { plugin_id, page } => {
             let plugin = plugins
                 .installed
