@@ -14,7 +14,7 @@ struct InstallCompletionView: View {
                 TaskRow(model: model, task: task, review: review, showsDismiss: false)
                 if task.state == .succeeded {
                     if onboarding.viewModel.tips.appInstalled {
-                        OnboardingTipView(text: String(localized: .onboardingTipAppInstalled)) {
+                        OnboardingTipView(text: String(localized: .Onboarding5.onboardingTipAppInstalled)) {
                             onboarding.send(.dismissOnboardingTip(tip: .appInstalled))
                         }
                     }

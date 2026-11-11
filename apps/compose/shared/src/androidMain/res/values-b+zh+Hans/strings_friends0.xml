@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Top-right button on the friends page that opens the add-friend sheet. -->
+    <string name="friends_add">添加</string>
+    <!-- Section heading above the pending requests, received and sent. -->
+    <string name="friends_requests_title">请求</string>
+    <!-- Section heading above the friend list. -->
+    <string name="friends_list_title">好友</string>
+    <!-- Row subtitle when a friend is in no group. -->
+    <string name="friends_no_group">没有分组</string>
+    <!-- Title of the new-group dialog. -->
+    <string name="friends_group_create_title">新建分组</string>
+    <!-- Title of the rename-group dialog. Argument: the current name. -->
+    <string name="friends_group_rename_title">给“%1$s”改名</string>
+    <!-- Confirmation dialog body: what deleting a group does. -->
+    <string name="friends_group_delete_message">组里的人还是好友，发给这个组的插件权限会收回。</string>
+    <!-- Title of the block-a-server dialog. -->
+    <string name="friends_block_server_title">拉黑整台服务器</string>
+    <!-- Placeholder of the server name field; no scheme, no wildcards. -->
+    <string name="friends_block_server_placeholder">example.org</string>
+    <!-- Submit button under the server name field. -->
+    <string name="friends_block_submit">拉黑</string>
+    <!-- Failure title when the Matrix server can't be reached. -->
+    <string name="friends_error_transport">连不上 Matrix 服务器</string>
+    <!-- Next step under the invalid-ID failure. -->
+    <string name="friends_error_invalid_user_id_next">写完整的 ID，比如 @bob:example.org。</string>
+    <!-- Failure title when the server asks to wait before trying again. Argument: seconds to wait. -->
+    <string name="friends_error_rate_limited">请求太多，等 %1$d 秒</string>
+    <!-- Failure title for the remaining categories. -->
+    <string name="friends_error_other">出了点问题，稍后再试。</string>
+</resources>

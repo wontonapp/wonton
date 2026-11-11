@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings row and page title for the owner's profile. No arguments. -->
+    <string name="settings_profile">Your profile</string>
+    <!-- Settings row and page title for colors, font and text size. No arguments. -->
+    <string name="settings_appearance">Appearance</string>
+    <!-- Settings row and page title for the navigation bar buttons. No arguments. -->
+    <string name="settings_nav_bar">Navigation bar</string>
+    <!-- Settings row title and value of the default agent; the value is the agent's name. -->
+    <string name="settings_default_agent">Default agent</string>
+    <!-- Settings row and page title for the version and licenses. No arguments. -->
+    <string name="settings_about">About</string>
+    <!-- Row on the About page and value label of the version. No arguments. -->
+    <string name="settings_version">Version</string>
+    <!-- Settings row title that restarts the setup steps. No arguments. -->
+    <string name="settings_show_setup_again">Watch setup again</string>
+    <!-- Accessibility label of the Settings toolbar button. No arguments. -->
+    <string name="settings_toolbar">Settings</string>
+    <!-- Accessibility label of the Settings toolbar button while a server update is available. No arguments. -->
+    <string name="settings_toolbar_update">Settings, update available</string>
+    <!-- Row title on the Settings home page: the app's display language. The value on the right is the current choice. -->
+    <string name="settings_language">Language</string>
+    <!-- Value of the language row when the app follows the system language. -->
+    <string name="settings_language_system">System default</string>
+    <!-- Shortcut problem detail when a plugin icon couldn't be fetched. Argument: the app's name. -->
+    <string name="shortcut_icon_missing">Couldn\'t get the icon for “%1$s”. Check the connection and open Wonton again.</string>
+    <!-- Shortcut problem detail when a plugin icon couldn't be converted to a bitmap. Argument: the app's name. -->
+    <string name="shortcut_icon_convert_failed">The icon for “%1$s” can\'t be converted. Open Wonton again.</string>
+    <!-- Title of the fixed shortcut that opens a new chat. Short label; launcher may truncate it. -->
+    <string name="shortcut_new_chat">New chat</string>
+    <!-- Title of the fixed shortcut that opens a chat with the default agent. Short label; launcher may truncate it. -->
+    <string name="shortcut_agent_chat">Ask a Bot</string>
+    <!-- Title of the notification settings page. -->
+    <string name="notification_title">Notifications</string>
+    <!-- Row title on the notification settings page that opens the system notification settings for Wonton. -->
+    <string name="notification_system">System notifications</string>
+    <!-- Row title on the notification settings page that shows the UnifiedPush registration status. -->
+    <string name="notification_push">Push</string>
+    <!-- Notification channel name for new chat messages. Shown in the system notification settings. -->
+    <string name="notification_channel_message">Chat messages</string>
+    <!-- Notification channel name for approval requests waiting for the owner. Shown in the system notification settings. -->
+    <string name="notification_channel_confirmation">Waiting for you</string>
+    <!-- Notification channel name for notices from apps. Shown in the system notification settings. -->
+    <string name="notification_channel_plugin">App notifications</string>
+    <!-- Notification state value: notifications are allowed. -->
+    <string name="notification_value_on">On</string>
+    <!-- Notification state value: notifications are turned off. -->
+    <string name="notification_value_off">Off</string>
+    <!-- Notification state value: push registration is in progress. -->
+    <string name="notification_value_registering">Registering</string>
+    <!-- Notification state value: the user never turned on push. -->
+    <string name="notification_value_not_set">Not on</string>
+    <!-- Notification state value: no push can arrive. -->
+    <string name="notification_value_unavailable">Not receiving</string>
+    <!-- Channel state value: the system has a channel for this category. -->
+    <string name="notification_channel_created">Created</string>
+    <!-- Channel state value: the system has no channel for this category yet. -->
+    <string name="notification_channel_not_created">Not created</string>
+    <!-- Push status line: no push address is registered yet. -->
+    <string name="push_status_no_endpoint">Not registered</string>
+    <!-- Push status line: the push address is being registered. -->
+    <string name="push_status_registering">Registering</string>
+    <!-- Push status line: the push address is registered. -->
+    <string name="push_status_registered">Registered</string>
+    <!-- Push status line: the distributor is unavailable. -->
+    <string name="push_status_unavailable">Not receiving pushes. Check system notifications and the distributor</string>
+    <!-- Push status line when registering failed because the home server can't be reached. -->
+    <string name="push_status_failed_transport">Registration failed. Try again once the home server is reachable</string>
+    <!-- Push status line when registering failed because this device isn't recognized. -->
+    <string name="push_status_failed_unauthorized">Registration failed. Pair again</string>
+    <!-- Push status line when registering failed because the home server hit an error. -->
+    <string name="push_status_failed_upstream">Registration failed. Your home server hit an error</string>
+    <!-- Push status line when registering failed because the chat connection isn't ready. -->
+    <string name="push_status_failed_not_ready">Registration failed. Wait until the chat connection is ready</string>
+    <!-- Push status line when registering failed because the push address is invalid. -->
+    <string name="push_status_failed_invalid_input">Registration failed. The push address is invalid</string>
+</resources>

@@ -47,7 +47,7 @@ private struct QualityHintPreview: View {
         Group {
             if chat {
                 Color(colors.canvas).ignoresSafeArea()
-                    .wontonPushedScreen(String(localized: .previewBotName), showsStatus: true) { EmptyView() }
+                    .wontonPushedScreen(String(localized: .Plugins.previewBotName), showsStatus: true) { EmptyView() }
             } else {
                 Color(colors.canvas).ignoresSafeArea()
                     .wontonRootScreen("Wonton", hasActions: false) { EmptyView() }
@@ -69,7 +69,7 @@ private struct QualityDetailsPreview: View {
             ConnectionDetailsRows(details: home.details, path: home.path)
                 .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .commonDetails))
+        .wontonPushedScreen(String(localized: .Common.commonDetails))
     }
 }
 

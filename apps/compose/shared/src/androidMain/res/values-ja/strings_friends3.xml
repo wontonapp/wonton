@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the add-friend sheet. -->
+    <string name="friends_add_title">友だちを追加</string>
+    <!-- Placeholder of the Matrix ID field; the example is a full Matrix ID. -->
+    <string name="friends_add_placeholder">@bob:example.org</string>
+    <!-- Submit button under the Matrix ID field. -->
+    <string name="friends_add_submit">招待を送る</string>
+    <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
+    <string name="friends_request_label">友だちリクエスト</string>
+    <!-- Subtitle on a request I sent: it stays until they answer. -->
+    <string name="friends_request_waiting">相手の返事待ち</string>
+    <!-- Separator between group names on a friend row. -->
+    <string name="friends_group_separator">、</string>
+    <!-- Section heading above the groups and their actions. -->
+    <string name="friends_groups_title">グループ</string>
+    <!-- Placeholder of the group name field. -->
+    <string name="friends_group_name_placeholder">グループ名</string>
+    <!-- Sheet title for choosing a friend's groups. Argument: the friend. -->
+    <string name="friends_choose_groups_title">%1$s のグループ</string>
+    <!-- Row subtitle for a server blocked for the whole server. -->
+    <string name="friends_block_federation">サーバーをブロック中</string>
+    <!-- Row subtitle for a blocked target this version doesn't know. -->
+    <string name="friends_block_unknown">ブロック中</string>
+    <!-- Undo button on a blocked row. -->
+    <string name="friends_unblock">元に戻す</string>
+    <!-- Failure title when the session is no longer signed in. -->
+    <string name="friends_error_unauthorized">ログインが切れています</string>
+    <!-- Next step under the unauthorized failure. -->
+    <string name="friends_error_unauthorized_next">もう一度ログインしてから友だちを開いてください。</string>
+    <!-- Failure title when the typed ID isn't a full Matrix ID. -->
+    <string name="friends_error_invalid_user_id">Matrix ID ではありません</string>
+    <!-- Failure title when the request was already accepted or rejected elsewhere. -->
+    <string name="friends_error_request_not_found">そのリクエストは処理済みです</string>
+    <!-- Failure title when the server refused the change. -->
+    <string name="friends_error_upstream">サーバーに断られました</string>
+</resources>

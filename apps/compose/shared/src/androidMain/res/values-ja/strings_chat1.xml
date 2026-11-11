@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Button that copies the recovery key to the local clipboard only. -->
+    <string name="chat_empty">チャットはまだありません</string>
+    <string name="chat_signed_out">自宅サーバーにまだ接続していません</string>
+    <string name="chat_own_preview">あなた：%1$s</string>
+    <string name="chat_yesterday">昨日</string>
+    <string name="chat_invite_room">%1$sがあなたをルームに招待しました</string>
+    <string name="chat_invite_decline">拒否</string>
+    <string name="chat_start_direct">ダイレクトチャットを開始</string>
+    <string name="chat_peer_placeholder">ユーザー名またはMatrix ID</string>
+    <!-- Install row subtitle while images are downloaded. No arguments. -->
+    <string name="chat_install_stage_pulling_images">イメージを取得中</string>
+    <!-- Install row subtitle while networks, volumes and data folders are set up. No arguments. -->
+    <string name="chat_install_stage_preparing">準備中</string>
+    <!-- Button on an install row when the source is unknown or the result is uncertain; opens the app's page. No arguments; short label. -->
+    <string name="chat_install_open_page">アプリのページを開く</string>
+    <!-- Explanation when the backup status can't be confirmed because the server isn't reachable. -->
+    <string name="chat_backup_detail_unknown">自宅サーバーに接続すると確認できます。</string>
+    <!-- Primary button under the recovery key field: fetch past messages with the entered key. -->
+    <string name="chat_backup_recover">過去のメッセージを復元</string>
+    <!-- Banner in the chat list asking the owner to save their recovery key. -->
+    <string name="chat_backup_reminder_save_key">復旧キーを保存しましょう。機種変更時に必要です</string>
+    <!-- Danger button that confirms the reset in the dialog. -->
+    <string name="chat_backup_reset_confirm">リセット</string>
+    <!-- Title of the reset confirmation dialog. -->
+    <string name="chat_backup_reset_title">チャットのバックアップをリセットしますか？</string>
+    <!-- Note under the freshly issued recovery key: it is only shown once. -->
+    <string name="chat_backup_save_key_note">機種変更時に必要です。表示されるのは一度だけです。「保存しました」をタップすると、このデバイスには残りません。</string>
+    <!-- Page heading when chat backup hasn't been set up. -->
+    <string name="chat_backup_status_disabled">チャットはまだバックアップされていません</string>
+    <!-- Page heading when the backup status isn't known (offline). -->
+    <string name="chat_backup_status_unknown">バックアップの状態はまだ不明です</string>
+    <!-- Value on the Settings row: backup is off. -->
+    <string name="chat_backup_value_disabled">オフ</string>
+    <!-- Value on the Settings row for chat backup: backup is on. -->
+    <string name="chat_backup_value_enabled">オン</string>
+    <!-- Value on the Settings row: backup or recovery is running. -->
+    <string name="chat_backup_value_in_progress">処理中</string>
+</resources>

@@ -66,20 +66,22 @@ struct ConfirmationCardView: View {
         case .running:
             HStack(spacing: WontonTheme.spacing.s8) {
                 ProgressView()
-                Text(.confirmationCardRunning).wontonText(WontonTheme.typography.supporting)
+                Text(.ConfirmationCard.confirmationCardRunning).wontonText(WontonTheme.typography.supporting)
             }
         case let .succeeded(message):
             note(message, icon: .checkCircleFill, color: colors.success)
         case let .failed(message):
-            note(String(localized: .confirmationCardFailedResult(message)), icon: .error, color: colors.danger)
+            note(String(localized: .ConfirmationCard.confirmationCardFailedResult(message)), icon: .error,
+                color: colors.danger)
         case let .uncertain(message):
-            note(String(localized: .confirmationCardUncertainResult(message)), icon: .help, color: colors.warning)
+            note(String(localized: .ConfirmationCard.confirmationCardUncertainResult(message)), icon: .help,
+                color: colors.warning)
         case .rejected:
-            Text(.confirmationCardRejected)
+            Text(.ConfirmationCard.confirmationCardRejected)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
         case .expired:
-            Text(.confirmationCardExpired)
+            Text(.ConfirmationCard.confirmationCardExpired)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
         }
@@ -95,13 +97,13 @@ struct ConfirmationCardView: View {
             let until = Date(timeIntervalSince1970: Double(expiresAtMs) / 1000)
                 .formatted(date: .omitted, time: .shortened)
             HStack(spacing: WontonTheme.spacing.s8) {
-                Text(.confirmationCardWindowUntil(until)).wontonText(WontonTheme.typography.supporting)
+                Text(.ConfirmationCard.confirmationCardWindowUntil(until)).wontonText(WontonTheme.typography.supporting)
                 Button {
                     stopWindow()
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s8) {
                         if stopping { ProgressView() }
-                        Text(.confirmationCardStopWindow)
+                        Text(.ConfirmationCard.confirmationCardStopWindow)
                     }
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))

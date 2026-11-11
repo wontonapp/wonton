@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Top-right button on the peers page that offers the two ways to add a server. -->
+    <string name="peers_add">新增</string>
+    <!-- Warning on a request row whose self-reported name matches a paired server. Argument: that server's display name. -->
+    <string name="peers_request_conflicts">和已配對的「%1$s」重名，不是同一台</string>
+    <!-- Undo button on a declined-request row: they can ask again. -->
+    <string name="peers_rejected_undo">撤銷</string>
+    <!-- Confirmation dialog body: what removing does. -->
+    <string name="peers_remove_message">移除後不再和這台伺服器互通訊息。</string>
+    <!-- Failure title when the code was replaced by a reset and no longer works. -->
+    <string name="peers_error_code_revoked">這張碼已經作廢，請對方重新發一張</string>
+    <!-- Failure title when the scanned code is from your own server. -->
+    <string name="peers_error_self_pairing">這是你自己伺服器的碼</string>
+    <!-- Failure title when this server isn't paired. -->
+    <string name="peers_error_not_paired">這台伺服器還沒連線</string>
+    <!-- Failure title for the remaining categories. -->
+    <string name="peers_error_other">出了點問題，請稍後再試</string>
+    <!-- Button under the QR code: replaces the code so the old one stops working. -->
+    <string name="peers_code_reset">重設</string>
+    <!-- Button under the paste field: submit the pasted code. -->
+    <string name="peers_paste_submit">配對</string>
+</resources>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Notice while the account is signing in. No arguments. -->
+    <string name="chat_signing_in">Signing in…</string>
+    <!-- Accessibility label of the lock icon on an encrypted room row. No arguments. -->
+    <string name="chat_encrypted">Encrypted</string>
+    <!-- Accessibility label of the unread badge. Argument: the unread count. -->
+    <string name="chat_unread_count">%1$d unread</string>
+    <!-- Invite row text for a direct chat. Argument: the inviter's name. -->
+    <string name="chat_invite_direct">%1$s invited you to a direct chat</string>
+    <!-- Button on an invite row that joins the room. No arguments; short label. -->
+    <string name="chat_invite_accept">Accept</string>
+    <!-- Button that starts the chat with the entered person. No arguments; short label. -->
+    <string name="chat_start">Start</string>
+    <!-- Install row subtitle while containers start. No arguments. -->
+    <string name="chat_install_stage_starting">Starting</string>
+    <!-- Install row subtitle while health checks pass and the bot comes online. No arguments. -->
+    <string name="chat_install_stage_waiting_for_bot">Waiting for the bot</string>
+    <string name="chat_backup_copy">Copy</string>
+    <!-- Explanation under the heading when backup is on. -->
+    <string name="chat_backup_detail_enabled">When you switch to a new phone, enter your recovery key to see your past messages.</string>
+    <!-- Explanation when the recovery key is missing on this device. -->
+    <string name="chat_backup_detail_incomplete">Enter the recovery key you saved when you turned on backup. If you lost it, reset the backup.</string>
+    <!-- Explanation when backup is off because this device isn't verified; the earliest paired device turns it on. -->
+    <string name="chat_backup_detail_unverified">Open the device that was paired first; backup turns on by itself. If it isn\'t at hand, reset the backup.</string>
+    <!-- Explanation when this device is verified: backup turns on by itself. -->
+    <string name="chat_backup_detail_verified">Backup turns on by itself after the device is verified.</string>
+    <!-- Placeholder of the recovery key field and the clipboard label when copying the key. The key restores past messages. -->
+    <string name="chat_backup_recovery_key">Recovery key</string>
+    <!-- Banner in the chat list asking for the recovery key to restore past messages. -->
+    <string name="chat_backup_reminder_enter_key">Enter your recovery key to restore past messages</string>
+    <!-- Button that opens the reset confirmation; it replaces the recovery key with a new one. -->
+    <string name="chat_backup_reset">Reset backup</string>
+    <!-- Body of the reset confirmation dialog: a new recovery key is issued, the old one stops working. -->
+    <string name="chat_backup_reset_message">You\'ll get a new recovery key and the old one stops working. Old messages may become unreadable, and your other devices will need the new key.</string>
+    <!-- Heading above the freshly issued recovery key. -->
+    <string name="chat_backup_save_key_title">Save your recovery key</string>
+    <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
+    <string name="chat_backup_saved">Saved</string>
+    <!-- Page heading when chat backup is on and verified. -->
+    <string name="chat_backup_status_enabled">Chat backup is on</string>
+    <!-- Page heading while backup or recovery runs. -->
+    <string name="chat_backup_status_in_progress">Working…</string>
+    <!-- Page heading when the recovery key is missing on this device, so past messages can't be shown. -->
+    <string name="chat_backup_status_incomplete">This device can\'t see past messages yet</string>
+    <!-- Title of the chat backup page. -->
+    <string name="chat_backup_title">Chat backup</string>
+    <!-- Value on the Settings row: backup needs the recovery key on this device. -->
+    <string name="chat_backup_value_incomplete">Recovery key needed</string>
+    <!-- Value on the Settings row: the status can't be determined. -->
+    <string name="chat_backup_value_unknown">Unknown</string>
+    <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
+    <string name="chat_status_reconnecting">Reconnecting…</string>
+</resources>

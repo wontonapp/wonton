@@ -32,7 +32,9 @@ final class AppNavigation {
     }
 
     static func requireShared() throws -> AppNavigation {
-        guard let shared else { throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadyLaunchFailed)) }
+        guard let shared else {
+            throw CoreError.NotReady(reason: String(localized: .Shortcuts.shortcutsNotReadyLaunchFailed))
+        }
         return shared
     }
 
@@ -125,7 +127,7 @@ final class AppNavigation {
 
     func askAgent(_ text: String) async throws {
         guard try await navigationReady() else {
-            throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadyAskAgent))
+            throw CoreError.NotReady(reason: String(localized: .Shortcuts.shortcutsNotReadyAskAgent))
         }
         let bot = try primaryBot()
         // 新操作不能被上一次后台失败留下的 problem 提前判成失败。
@@ -147,7 +149,7 @@ final class AppNavigation {
             if let step = view.step { return step == .finished }
             if let problem = view.problem { throw IntentProblem(problem: problem.problem) }
             if let end, clock.now >= end {
-                throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadySlowServer))
+                throw CoreError.NotReady(reason: String(localized: .Shortcuts.shortcutsNotReadySlowServer))
             }
             try await Task.sleep(for: .milliseconds(100))
         }
@@ -163,7 +165,7 @@ final class AppNavigation {
             guard allowsNavigation else { return }
             if let problem = chat.core.plugins().problem { throw IntentProblem(problem: problem.problem) }
             if let end, clock.now >= end {
-                throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadyPluginsNotLoaded))
+                throw CoreError.NotReady(reason: String(localized: .Shortcuts.shortcutsNotReadyPluginsNotLoaded))
             }
             try await Task.sleep(for: .milliseconds(100))
         }
@@ -171,7 +173,7 @@ final class AppNavigation {
 
     private func primaryBot() throws -> String {
         guard let bot = chat.core.onboarding().primaryBotUserId else {
-            throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadyNoDefaultAgent))
+            throw CoreError.NotReady(reason: String(localized: .Shortcuts.shortcutsNotReadyNoDefaultAgent))
         }
         return bot
     }

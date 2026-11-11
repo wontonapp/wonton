@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Problem title when the device's Android System WebView is too old. No arguments. -->
+    <string name="tab_webview_too_old">Update Android System WebView and try again</string>
+    <!-- Line above the skeleton while the app starts. No arguments. -->
+    <string name="tab_starting">Starting…</string>
+    <!-- Button that opens a page the cross-origin isolation would block. No arguments. -->
+    <string name="tab_open_anyway">Open anyway</string>
+    <!-- Problem title when the tab bar settings can't be read. No arguments. -->
+    <string name="tab_settings_unreadable">Can\'t read the navigation bar settings</string>
+    <!-- Button that opens the navigation bar settings from that problem. No arguments. -->
+    <string name="tab_open_settings">Navigation bar settings</string>
+    <!-- Menu row and sheet title that opens the navigation bar editor. No arguments. -->
+    <string name="tab_edit_bar">Edit navigation bar</string>
+    <!-- Sheet title that asks which tab the pinned page replaces. No arguments. -->
+    <string name="tab_choose_replace">Choose a tab to replace</string>
+    <!-- Row that opens the page for adding more tabs. No arguments. -->
+    <string name="tab_add_more">Add more</string>
+    <!-- Accessibility action that moves a tab up one position. No arguments. -->
+    <string name="tab_move_up">Move up</string>
+    <!-- Problem title when no browser app can open the link. No arguments. -->
+    <string name="tab_no_browser">Can\'t open the browser</string>
+    <!-- Tab bar and navigation title for settings. -->
+    <string name="tab_settings">Settings</string>
+    <string name="tab_exit_fullscreen">Exit fullscreen</string>
+    <!-- Fullscreen capsule menu item that opens the app's detail page. -->
+    <string name="tab_menu_details">App details</string>
+</resources>

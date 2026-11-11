@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Name of the notification channel for the ongoing "keep connection" foreground service (ADR-0003). Shown in the system notification settings. -->
+    <string name="keepalive_channel_name">Keep connection</string>
+    <!-- Title of the ongoing notification of the "keep connection" foreground service. -->
+    <string name="keepalive_notification_title">Staying connected to your home server</string>
+</resources>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
+    <string name="message_clip_label">メッセージ</string>
+    <!-- Item in the message menu: copy the message text. Android only. -->
+    <string name="message_copy">コピー</string>
+    <!-- Accessibility label of the copy button on a code block in a message. -->
+    <string name="message_code_copy">コードをコピー</string>
+    <!-- Confirm button in the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_confirm">送信取り消し</string>
+    <!-- Body of the dialog that removes a message for everyone, saying the scope of it. Android only. -->
+    <string name="message_delete_everyone_message">このルームの全員の画面から消えます。</string>
+    <!-- Title of the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_title">全員のメッセージを削除しますか？</string>
+    <string name="message_image_save">アルバムに保存</string>
+    <string name="message_image_saved">アルバムに保存しました</string>
+    <string name="message_image_share">共有</string>
+    <string name="message_summary_files">[ファイル]</string>
+    <string name="message_summary_image">[画像]</string>
+</resources>

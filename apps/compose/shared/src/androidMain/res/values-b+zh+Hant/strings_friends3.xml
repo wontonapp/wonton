@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the add-friend sheet. -->
+    <string name="friends_add_title">加好友</string>
+    <!-- Placeholder of the Matrix ID field; the example is a full Matrix ID. -->
+    <string name="friends_add_placeholder">@bob:example.org</string>
+    <!-- Submit button under the Matrix ID field. -->
+    <string name="friends_add_submit">傳送邀請</string>
+    <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
+    <string name="friends_request_label">好友邀請</string>
+    <!-- Subtitle on a request I sent: it stays until they answer. -->
+    <string name="friends_request_waiting">等對方同意</string>
+    <!-- Separator between group names on a friend row. -->
+    <string name="friends_group_separator">、</string>
+    <!-- Section heading above the groups and their actions. -->
+    <string name="friends_groups_title">群組</string>
+    <!-- Placeholder of the group name field. -->
+    <string name="friends_group_name_placeholder">群組名稱</string>
+    <!-- Sheet title for choosing a friend's groups. Argument: the friend. -->
+    <string name="friends_choose_groups_title">%1$s 的群組</string>
+    <!-- Row subtitle for a server blocked for the whole server. -->
+    <string name="friends_block_federation">已封鎖伺服器</string>
+    <!-- Row subtitle for a blocked target this version doesn't know. -->
+    <string name="friends_block_unknown">已封鎖</string>
+    <!-- Undo button on a blocked row. -->
+    <string name="friends_unblock">復原</string>
+    <!-- Failure title when the session is no longer signed in. -->
+    <string name="friends_error_unauthorized">登入已失效</string>
+    <!-- Next step under the unauthorized failure. -->
+    <string name="friends_error_unauthorized_next">重新登入後再開啟好友。</string>
+    <!-- Failure title when the typed ID isn't a full Matrix ID. -->
+    <string name="friends_error_invalid_user_id">不是 Matrix ID</string>
+    <!-- Failure title when the request was already accepted or rejected elsewhere. -->
+    <string name="friends_error_request_not_found">這則邀請已經處理過了</string>
+    <!-- Failure title when the server refused the change. -->
+    <string name="friends_error_upstream">伺服器沒有接受</string>
+</resources>

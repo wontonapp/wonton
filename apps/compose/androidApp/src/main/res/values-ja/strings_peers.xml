@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 「接続を維持」フォアグラウンドサービスの常設通知チャンネル名（ADR-0003）。システムの通知設定に表示される。 -->
+    <string name="keepalive_channel_name">接続を維持</string>
+    <!-- 「接続を維持」フォアグラウンドサービスの常設通知のタイトル。 -->
+    <string name="keepalive_notification_title">ホームサーバーとの接続を維持しています</string>
+</resources>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_stopped">%1$s 已停止</string>
+    <string name="tab_problem">%1$s 出了問題</string>
+    <string name="tab_page_removed">新版本不再提供這個頁面</string>
+    <string name="tab_status_unknown">無法確定應用程式狀態</string>
+    <string name="tab_start">啟動</string>
+    <string name="tab_view_details">查看詳細資訊</string>
+    <string name="tab_cross_origin_title">這個應用程式暫時無法在 Android 版雲吞裡開啟</string>
+    <string name="tab_cross_origin_detail">目前的 Android System WebView：%1$s；需要 156 或更新版本。</string>
+    <string name="tab_webview_version_unknown">取不到版本號</string>
+    <string name="tab_load_upstream">應用程式的網頁打不開</string>
+    <string name="tab_uninstalled_notice">%1$s 已解除安裝，已從底部導覽列移除</string>
+    <string name="tab_menu_open_fullscreen">全螢幕開啟</string>
+    <string name="tab_choose_page">選擇頁面</string>
+    <string name="tab_bar_full">底部導覽列已滿：固定%1$s</string>
+    <string name="tab_pin_a11y">%1$s，%2$s</string>
+    <string name="tab_show_labels">顯示文字</string>
+    <string name="tab_move_down">下移</string>
+    <string name="tab_defaults_shown">已顯示預設底部導覽列。修改後會重新儲存設定。</string>
+    <!-- 全屏膠囊選單項:帶開關,控制這個頁面從底欄打開時是否直接全屏。 -->
+    <string name="tab_menu_always_fullscreen">總是全螢幕</string>
+    <!-- 全屏膠囊選單項:在頁面的歷史裡後退一步。 -->
+    <string name="tab_menu_back">返回</string>
+    <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
+    <string name="tab_pin_to_bar">放到標籤列</string>
+</resources>

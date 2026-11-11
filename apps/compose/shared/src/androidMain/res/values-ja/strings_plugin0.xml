@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Small tag next to a permission that's newly requested in this update. -->
+    <string name="plugin_save_folders">保存できるフォルダ</string>
+    <string name="plugin_ask_every_update">毎回確認</string>
+    <string name="plugin_info">情報</string>
+    <string name="plugin_author">作者</string>
+    <string name="plugin_root_permission_badge">このプラグインはホスト全体を操作できます</string>
+    <string name="plugin_permission_open_title">「%1$s」をオンにしますか？</string>
+    <string name="plugin_permission_continue">続ける</string>
+    <string name="plugin_permission_close_title">「%1$s」をオフにしますか？</string>
+    <string name="plugin_permission_close">オフ</string>
+    <!-- Button that proceeds with the typed source address when changing versions. -->
+    <string name="plugin_sources_continue">続ける</string>
+    <!-- Warning at the top of the Add Source page. -->
+    <string name="plugin_sources_unreviewed_warning">ここに追加したアプリとファイルは審査されていません。信頼できるものだけをインストールしてください。</string>
+    <!-- Succeeded task line when the core couldn't compare the app's tools. -->
+    <string name="plugin_task_added_tools_unknown">今回追加されたツールは確認できません</string>
+    <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
+    <string name="plugin_task_uncertain">結果が不確定です：%1$s</string>
+    <!-- Failed uninstall task line. Argument: the reason from the core. -->
+    <string name="plugin_task_uninstall_failed">アンインストールに失敗しました：%1$s</string>
+    <!-- Small tag: the app isn't reviewed. -->
+    <string name="plugin_trust_unreviewed">未審査</string>
+    <!-- Action-sheet item that uninstalls the app. -->
+    <string name="plugin_uninstall_action">アンインストール</string>
+</resources>

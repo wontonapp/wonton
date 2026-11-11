@@ -161,11 +161,15 @@ enum PluginConfirmation: Identifiable, Equatable {
     /// 主人选的版本可能比装着的旧，不叫升级。
     var actionTitle: String {
         switch self {
-        case .install, .upload: return String(localized: .installActionInstall)
-        case .upgrade: return String(localized: .installActionUpgrade)
-        case .upgradeFrom, .upgradeUpload: return String(localized: .installChangeVersion)
+        case .install, .upload: return String(localized: .Install.installActionInstall)
+        case .upgrade: return String(localized: .Install.installActionUpgrade)
+        case .upgradeFrom, .upgradeUpload: return String(localized: .Install.installChangeVersion)
         case let .store(confirmation):
-            return String(localized: confirmation.isUpgrade ? .installActionUpgrade : .installActionInstall)
+            return String(
+                localized: confirmation.isUpgrade
+                    ? .Install.installActionUpgrade
+                    : .Install.installActionInstall
+            )
         }
     }
 }

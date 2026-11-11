@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Top-right button on the peers page that offers the two ways to add a server. -->
+    <string name="peers_add">追加</string>
+    <!-- Warning on a request row whose self-reported name matches a paired server. Argument: that server's display name. -->
+    <string name="peers_request_conflicts">接続済みの「%1$s」と同じ名前ですが、別のサーバーです</string>
+    <!-- Undo button on a declined-request row: they can ask again. -->
+    <string name="peers_rejected_undo">取り消す</string>
+    <!-- Confirmation dialog body: what removing does. -->
+    <string name="peers_remove_message">削除するとこのサーバとメッセージのやり取りができなくなります。</string>
+    <!-- Failure title when the code was replaced by a reset and no longer works. -->
+    <string name="peers_error_code_revoked">このコードは無効になっています。相手にもう一度送ってもらってください。</string>
+    <!-- Failure title when the scanned code is from your own server. -->
+    <string name="peers_error_self_pairing">これは自分のサーバーのコードです</string>
+    <!-- Failure title when this server isn't paired. -->
+    <string name="peers_error_not_paired">このサーバーはまだ接続されていません</string>
+    <!-- Failure title for the remaining categories. -->
+    <string name="peers_error_other">問題が発生しました。後でもう一度お試しください。</string>
+    <!-- Button under the QR code: replaces the code so the old one stops working. -->
+    <string name="peers_code_reset">リセット</string>
+    <!-- Button under the paste field: submit the pasted code. -->
+    <string name="peers_paste_submit">ペアリング</string>
+</resources>

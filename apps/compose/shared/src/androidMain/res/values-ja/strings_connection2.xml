@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connection_waiting_network">ネットワークを待っています…</string>
+    <string name="connection_server_offline">自宅サーバーがオフラインのようです</string>
+    <string name="connection_new_version">新しいバージョンあり</string>
+    <string name="connection_mobile_network">モバイルネットワーク</string>
+    <string name="connection_unknown">不明</string>
+    <string name="connection_latency">遅延</string>
+    <string name="connection_loss_rate">パケット損失率</string>
+    <string name="connection_poor">通信状態が悪く、動作が遅くなることがあります</string>
+    <string name="connection_poor_relay">通信状態が悪く、リレー経由で接続しています</string>
+    <string name="connection_quality">通信品質</string>
+    <string name="connection_quality_good">良い</string>
+    <string name="connection_quality_poor">悪い</string>
+</resources>

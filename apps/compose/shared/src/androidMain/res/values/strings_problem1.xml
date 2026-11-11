@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Problem title when the appearance settings couldn't be saved on the home server. -->
+    <string name="problem_appearance_title">Appearance settings weren\'t saved</string>
+    <!-- Next step: check the proxy on the home server, or change the address in the internet proxy settings. -->
+    <string name="problem_plugin_egress_proxy_unavailable_next_step">Check the proxy on your home server, or change the address in the Internet proxy settings.</string>
+    <!-- Problem title: the app can't reach the internet through the internet proxy. -->
+    <string name="problem_plugin_egress_proxy_unavailable_title">Can\'t reach the proxy</string>
+    <!-- Problem title: the app and the home server versions don't match. -->
+    <string name="problem_plugin_protocol_title">Wonton and your home server aren\'t compatible</string>
+    <!-- Next step: uninstall the app (its data can be kept) and install it again. -->
+    <string name="problem_plugin_record_unusable_next_step">Uninstall this app and install it again.</string>
+    <!-- Problem title when the proxy settings were rejected as invalid; the core's own reason is shown as the next step. -->
+    <string name="problem_plugin_save_invalid_title">This doesn\'t look right</string>
+    <!-- Problem title: the home server is older than this app needs. -->
+    <string name="problem_plugin_server_too_old_title">Your home server is too old</string>
+    <!-- Problem title: some apps couldn't be loaded into the list. -->
+    <string name="problem_store_incomplete_title">Some apps didn\'t load</string>
+    <!-- Next step: wait a few minutes and try again. -->
+    <string name="problem_store_rate_limited_next_step">Wait a few minutes and try again.</string>
+    <!-- Problem title: the app's source answered too slowly, the list may be stale. -->
+    <string name="problem_store_timeout_title">The app\'s source is too slow. The list may be out of date</string>
+    <!-- Next step under the not-recognized problem: pair again by scanning the code. -->
+    <string name="problem_unauthorized_next_step">Scan the pairing code again.</string>
+    <!-- Problem title: the home server no longer accepts this device. -->
+    <string name="problem_unauthorized_title">Your home server doesn\'t recognize this device</string>
+    <!-- Next step under the server-error problem. Also used for other problems that only say to try later. -->
+    <string name="problem_upstream_next_step">Try again later.</string>
+</resources>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
+    <string name="onboarding_agent_connection_logins">%1$s或 API 金鑰</string>
+    <!-- Button that collapses the list of less common model providers. -->
+    <string name="onboarding_model_less">收起供應商</string>
+    <!-- Problem title in setup: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_model_protocol">應用程式和家用伺服器的版本不相容，請更新後重試。</string>
+    <!-- Problem title in setup: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_model_unauthorized">家用伺服器未授權這部裝置，請檢查存取權限後重試。</string>
+    <!-- Problem title while installing: the app wasn't found. -->
+    <string name="onboarding_problem_plugin_not_found">沒有找到這個應用程式，重新整理清單後再試。</string>
+    <!-- Problem title while installing: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_plugin_unauthorized">家用伺服器不認得這部裝置，請重新掃描 QR 碼配對。</string>
+    <!-- Problem title in setup: the recommendation list needs a newer home server. -->
+    <string name="onboarding_problem_store_index_too_new">推薦清單需要更新的伺服器，可以升級或跳過。</string>
+    <!-- Problem title in setup: the recommendation source hit an error. -->
+    <string name="onboarding_problem_store_upstream">推薦清單的來源出錯了，可以重試或跳過。</string>
+    <!-- Dialog title when a new agent replaces an installed one. Argument: the old agent's name. -->
+    <string name="onboarding_replaced_agent_title">要解除安裝「%1$s」嗎？</string>
+    <!-- Checkmark icon for a finished install task. -->
+    <string name="onboarding_review_done">完成</string>
+    <!-- Label while an install task waits for others to finish. -->
+    <string name="onboarding_review_waiting">排隊中</string>
+    <!-- Card title at the top of the agent step in setup: pick the agent to use. -->
+    <string name="onboarding_step_agent">選擇 Agent</string>
+    <!-- Card title at the top of the model step in setup: connect a model provider. -->
+    <string name="onboarding_step_model">連接模型</string>
+</resources>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plugin_requirements">需求</string>
+    <string name="plugin_stars">星數</string>
+    <string name="plugin_repository">程式碼儲存庫</string>
+    <string name="plugin_permission_risk_high">高風險</string>
+    <string name="plugin_permission_risk_very_high">很高風險</string>
+    <string name="plugin_permission_understand_title">我知道這個外掛能控制整台主機</string>
+    <string name="plugin_permission_host_root">開啟後它能以 root 身分管理這台主機上的容器。</string>
+    <!-- Reason shown when the picked archive is bigger than the server accepts. Argument: the size limit, formatted as a file size. -->
+    <string name="plugin_sources_file_too_large">檔案太大了，最多 %1$s</string>
+    <!-- Section title above the sources you added, in the store list and on the Add Source page. -->
+    <string name="plugin_sources_mine">我新增的</string>
+    <!-- Succeeded task line listing the tools the app gained. Argument: the tool names, formatted as a list. -->
+    <string name="plugin_task_added_tools">新增的工具：%1$s</string>
+    <!-- Status of a finished install task. -->
+    <string name="plugin_task_install_done">已安裝</string>
+    <!-- Status of a running install task. -->
+    <string name="plugin_task_install_running">正在安裝</string>
+    <!-- Status of a finished uninstall task. -->
+    <string name="plugin_task_uninstall_done">已解除安裝</string>
+    <!-- Status of a running uninstall task. -->
+    <string name="plugin_task_uninstall_running">正在解除安裝</string>
+    <!-- Status of a running update task. -->
+    <string name="plugin_task_upgrade_running">正在升級</string>
+    <!-- Small tag on a store row and the install preview: the app is reviewed. -->
+    <string name="plugin_trust_official">已審核</string>
+    <!-- Small tag: a system app that's always installed. -->
+    <string name="plugin_trust_system">系統</string>
+    <!-- Destructive button that uninstalls and deletes the app's data. -->
+    <string name="plugin_uninstall_delete_data">解除安裝並刪除資料</string>
+    <!-- Message of the uninstall confirmation. -->
+    <string name="plugin_uninstall_delete_data_warning">刪除資料會一併刪掉它的金鑰和 Bot 帳號，無法復原。</string>
+    <!-- Title of the uninstall confirmation. Argument: the app's name. -->
+    <string name="plugin_uninstall_title">解除安裝「%1$s」？</string>
+    <string name="plugin_screenshot">截圖</string>
+</resources>

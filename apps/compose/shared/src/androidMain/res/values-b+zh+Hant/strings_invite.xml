@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Notice title when the pairing code ran out of time. -->
+    <string name="invite_expired">這個配對碼已過期。</string>
+    <!-- Under the QR code: how long the code is still valid. Argument: the remaining time as m:ss. -->
+    <string name="invite_expires_in">%1$s 後過期</string>
+    <!-- Notice title when the pairing code couldn't be fetched; the core's reason is shown below. -->
+    <string name="invite_failed_title">無法取得配對碼</string>
+    <!-- Explanation under the QR code: what the new device's owner should do. The code works only once. -->
+    <string name="invite_instructions">在新裝置上開啟雲吞並掃描這個 QR 碼，就能新增這台裝置。QR 碼只能使用一次。</string>
+    <!-- Label above the pairing code as text, for when the QR code can't be scanned. -->
+    <string name="invite_paste_fallback">無法掃描時，請貼上這段文字</string>
+    <!-- Accessibility label of the QR code image with the pairing code. -->
+    <string name="invite_qr_label">配對 QR 碼</string>
+    <!-- Button under the expired notice: get a new code. -->
+    <string name="invite_renew">產生新的配對碼</string>
+    <!-- Shown next to a spinner while the pairing code is being requested. -->
+    <string name="invite_requesting">正在向家用伺服器取得配對碼…</string>
+    <!-- Button under the failed notice: request a pairing code again. -->
+    <string name="invite_try_again">重試</string>
+</resources>

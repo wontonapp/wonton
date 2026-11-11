@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Icon button at the left of the chat composer: opens the attachment menu (photo or file). Also its screen-reader label. -->
+    <string name="composer_attach">Attach</string>
+    <!-- Title of the problem shown when the file picker fails. The detail is the system's reason. -->
+    <string name="composer_choose_failed">Can\'t access that file</string>
+    <!-- Item in the composer's attachment menu: pick files to send. -->
+    <string name="composer_file">File</string>
+    <!-- Placeholder in the chat composer's empty text field. -->
+    <string name="composer_message">Message</string>
+    <!-- Item in the composer's attachment menu: pick a photo to send. -->
+    <string name="composer_photo">Photo</string>
+    <!-- Screen-reader label of the round send button at the right of the chat composer. -->
+    <string name="composer_send">Send</string>
+</resources>

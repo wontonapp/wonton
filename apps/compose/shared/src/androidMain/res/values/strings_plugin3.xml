@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Meta row: where the app came from. -->
+    <string name="plugin_source">Source</string>
+    <string name="plugin_permission_added">New</string>
+    <!-- Small tag next to a permission the core doesn't support. -->
+    <string name="plugin_permission_unsupported">Unsupported</string>
+    <string name="plugin_permission_optional">Optional</string>
+    <string name="plugin_permission_risk_highest">Highest risk</string>
+    <string name="plugin_permission_opened_bot">Bot %1$s turned this on %2$s</string>
+    <!-- Reason shown when the picked file can't be opened. -->
+    <string name="plugin_sources_file_unreadable">Can\'t open this file</string>
+    <!-- Button that opens the file picker to install from an archive. -->
+    <string name="plugin_sources_install_from_file">Install from file</string>
+    <!-- Title of the page where you add a source by address or install from a file. -->
+    <string name="plugin_sources_title">Add source</string>
+    <!-- Failed install task line. Argument: the reason from the core. -->
+    <string name="plugin_task_install_failed">Install failed: %1$s</string>
+    <!-- Button on a failed task whose app package changed after the confirmation: reopen the confirmation. -->
+    <string name="plugin_task_review">Review again</string>
+    <!-- Failed update task line. Argument: the reason from the core. -->
+    <string name="plugin_task_upgrade_failed">Update failed: %1$s</string>
+    <!-- Button that uninstalls but keeps the app's data. -->
+    <string name="plugin_uninstall_keep_data">Uninstall and keep data</string>
+</resources>

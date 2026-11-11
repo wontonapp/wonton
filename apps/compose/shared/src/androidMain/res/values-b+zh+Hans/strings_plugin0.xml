@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Small tag next to a permission that's newly requested in this update. -->
+    <string name="plugin_save_folders">能存文件的文件夹</string>
+    <string name="plugin_ask_every_update">每次都问</string>
+    <string name="plugin_info">信息</string>
+    <string name="plugin_author">作者</string>
+    <string name="plugin_root_permission_badge">这个插件能控制整台主机</string>
+    <string name="plugin_permission_open_title">打开“%1$s”？</string>
+    <string name="plugin_permission_continue">继续</string>
+    <string name="plugin_permission_close_title">关掉“%1$s”？</string>
+    <string name="plugin_permission_close">关掉</string>
+    <!-- Button that proceeds with the typed source address when changing versions. -->
+    <string name="plugin_sources_continue">继续</string>
+    <!-- Warning at the top of the Add Source page. -->
+    <string name="plugin_sources_unreviewed_warning">这里添加的应用和文件都没有经过审核，只装你信任的。</string>
+    <!-- Succeeded task line when the core couldn't compare the app's tools. -->
+    <string name="plugin_task_added_tools_unknown">不知道这次多了哪些工具</string>
+    <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
+    <string name="plugin_task_uncertain">结果不确定：%1$s</string>
+    <!-- Failed uninstall task line. Argument: the reason from the core. -->
+    <string name="plugin_task_uninstall_failed">卸载失败：%1$s</string>
+    <!-- Small tag: the app isn't reviewed. -->
+    <string name="plugin_trust_unreviewed">未审核</string>
+    <!-- Action-sheet item that uninstalls the app. -->
+    <string name="plugin_uninstall_action">卸载</string>
+</resources>

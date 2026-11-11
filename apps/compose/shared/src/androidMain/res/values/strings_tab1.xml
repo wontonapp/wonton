@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Line above the skeleton while the app uninstalls. No arguments. -->
+    <string name="tab_uninstalling">Uninstalling…</string>
+    <!-- Line while the app updates. No arguments. -->
+    <string name="tab_upgrading">Updating…</string>
+    <!-- Button that removes the page from the navigation bar. No arguments. -->
+    <string name="tab_unpin_from_bar">Remove from navigation bar</string>
+    <!-- Problem title when the app isn't ready to show its page. No arguments. -->
+    <string name="tab_load_not_ready">The app isn\'t ready</string>
+    <!-- Accessibility label of the fullscreen button in the page bar. No arguments. -->
+    <string name="tab_fullscreen">Full screen</string>
+    <!-- Navigation title of the page that lists tabs to add. No arguments. -->
+    <string name="tab_add_to_bar">Add to navigation bar</string>
+    <string name="tab_chat">Chats</string>
+    <!-- Tab bar and navigation title for the app list. -->
+    <string name="tab_apps">Apps</string>
+    <!-- Fallback tab title when a plugin page has no title. -->
+    <string name="tab_app_page">App page</string>
+    <!-- Fullscreen capsule menu item that loads the page again. -->
+    <string name="tab_menu_reload">Reload</string>
+    <!-- Small button on an approval request card: open the app that was just installed. -->
+    <string name="tab_open">Open</string>
+    <!-- Accessibility label of the left button on the fullscreen page capsule, which opens its menu. -->
+    <string name="tab_page_menu">Page menu</string>
+</resources>

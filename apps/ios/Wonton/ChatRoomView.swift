@@ -66,7 +66,8 @@ struct ChatRoomView: View {
             }
         }
         .modifier(RoomPresentations(presenter: presenter))
-        .wontonSheet(isPresented: $pickingForwardRoom, title: String(localized: .messageForwardTitle)) { close in
+        .wontonSheet(isPresented: $pickingForwardRoom,
+            title: String(localized: .Message0.messageForwardTitle)) { close in
             ForwardRoomSheet(model: model, plugins: plugins, rooms: forwardRooms) { room in
                 close {
                     guard let item = forwarding else { return }
@@ -76,12 +77,12 @@ struct ChatRoomView: View {
             }
         }
         .wontonDialog(
-            String(localized: .messageRedactTitle),
-            message: String(localized: .messageRedactMessage),
+            String(localized: .Message1.messageRedactTitle),
+            message: String(localized: .Message2.messageRedactMessage),
             isPresented: $showingRedact,
             actions: [
-                WontonDialogAction(title: String(localized: .commonCancel)),
-                WontonDialogAction(title: String(localized: .messageRedact), kind: .danger) {
+                WontonDialogAction(title: String(localized: .Common.commonCancel)),
+                WontonDialogAction(title: String(localized: .Message1.messageRedact), kind: .danger) {
                     if let item = redactItem { model.send(.redactMessage(roomId: roomId, itemId: item)) }
                 }
             ],
@@ -114,7 +115,7 @@ struct ChatRoomView: View {
 
     /// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
     private func keyNotice(_ notice: KeyNotice) -> some View {
-        WontonNotice(icon: .lockKey, title: String(localized: .messageUndecryptableNotice), isError: false) {
+        WontonNotice(icon: .lockKey, title: String(localized: .Message2.messageUndecryptableNotice), isError: false) {
             // 更新的核心给出的类别没有按钮，说明照常显示。
             if let action = notice.action {
                 NavigationLink(value: ChatRoute.chatBackup) {
@@ -306,7 +307,7 @@ private struct ReplySwipe: ViewModifier {
                 Button {
                     reply(quote)
                 } label: {
-                    Label { Text(.messageReply) } icon: { WontonIcon.reply.image }
+                    Label { Text(.Message0.messageReply) } icon: { WontonIcon.reply.image }
                         .foregroundStyle(Color(colors.accentInkOnFill))
                 }
                 .tint(Color(colors.accentFill))

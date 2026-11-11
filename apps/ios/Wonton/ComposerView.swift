@@ -38,7 +38,7 @@ struct ComposerView: View {
                 .padding(.top, WontonTheme.spacing.s8)
             }
             HStack(alignment: .bottom, spacing: 0) {
-                WontonIconButton(icon: .attach, label: String(localized: .composerAttach)) {
+                WontonIconButton(icon: .attach, label: String(localized: .Composer.composerAttach)) {
                     isChoosingAttachment = true
                 }
                 ComposerField(
@@ -70,8 +70,9 @@ struct ComposerView: View {
         .animation(.easeOut(duration: WontonTheme.motion.feedback), value: isEmpty)
         .onAppear { model.acceptPendingDraft(in: roomId) }
         .wontonActionSheet(isPresented: $isChoosingAttachment, actions: [
-            WontonSheetAction(title: String(localized: .composerPhoto), icon: .image) { isPickingPhoto = true },
-            WontonSheetAction(title: String(localized: .composerFile), icon: .attach) { isPickingFiles = true }
+            WontonSheetAction(title: String(localized: .Composer.composerPhoto),
+                icon: .image) { isPickingPhoto = true },
+            WontonSheetAction(title: String(localized: .Composer.composerFile), icon: .attach) { isPickingFiles = true }
         ])
         .photosPicker(isPresented: $isPickingPhoto, selection: $photo, matching: .images)
         .onChange(of: photo) { _, item in
@@ -86,7 +87,7 @@ struct ComposerView: View {
                 for url in urls { model.files.upload(url, room: roomId) }
             case let .failure(error):
                 model.rejection = Problem(
-                    title: String(localized: .composerChooseFailed), detail: error.localizedDescription
+                    title: String(localized: .Composer.composerChooseFailed), detail: error.localizedDescription
                 )
             }
         }
@@ -113,7 +114,7 @@ struct ComposerView: View {
     private func send(_ item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self) else {
             model.rejection = Problem(
-                title: String(localized: .photoUnreadable), nextStep: String(localized: .photoTryAnother)
+                title: String(localized: .Photo.photoUnreadable), nextStep: String(localized: .Photo.photoTryAnother)
             )
             return
         }
@@ -124,7 +125,7 @@ struct ComposerView: View {
     private func pasteImage(from providers: [NSItemProvider]) async {
         guard let (data, type) = await ComposerPaste.image(from: providers) else {
             model.rejection = Problem(
-                title: String(localized: .photoUnreadable), nextStep: String(localized: .photoTryAnother)
+                title: String(localized: .Photo.photoUnreadable), nextStep: String(localized: .Photo.photoTryAnother)
             )
             return
         }
@@ -152,11 +153,11 @@ struct ComposerView: View {
             switch error {
             case let failure as PhotoUpload.Failure:
                 model.rejection = Problem(
-                    title: String(localized: failure.text), nextStep: String(localized: .photoTryAnother)
+                    title: String(localized: failure.text), nextStep: String(localized: .Photo.photoTryAnother)
                 )
             default:
                 model.rejection = Problem(
-                    title: String(describing: error), nextStep: String(localized: .photoTryAnother)
+                    title: String(describing: error), nextStep: String(localized: .Photo.photoTryAnother)
                 )
             }
         }
@@ -185,7 +186,7 @@ private struct SendButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text(.composerSend))
+        .accessibilityLabel(Text(.Composer.composerSend))
     }
 }
 
@@ -209,11 +210,11 @@ private struct PastePreview: View {
             }
             HStack(spacing: WontonTheme.spacing.s8) {
                 Button(action: onCancel) {
-                    Text(.commonCancel).frame(maxWidth: .infinity)
+                    Text(.Common.commonCancel).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
                 Button(action: onSend) {
-                    Text(.composerSend).frame(maxWidth: .infinity)
+                    Text(.Composer.composerSend).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
             }

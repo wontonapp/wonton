@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Section title for the accent color, and accessibility label prefix of the accent color swatches. -->
+    <string name="appearance_accent">強調色</string>
+    <!-- Accessibility state of the More row while the extra colors are hidden. -->
+    <string name="appearance_collapsed">已收起</string>
+    <!-- Label of the color input field for a hex value like #RRGGBB. -->
+    <string name="appearance_color_value">顏色值</string>
+    <!-- Choice row: the serif system font design. -->
+    <string name="appearance_font_serif">襯線</string>
+    <!-- Error under the color input field when the text isn't a valid #RRGGBB value. -->
+    <string name="appearance_hex_invalid">顏色要寫成 #RRGGBB</string>
+    <!-- Accessibility label prefix of the extra color swatches behind the More row. -->
+    <string name="appearance_more_colors">更多顏色</string>
+    <!-- Sender name in the sample chat bubble on the appearance page: the app's own name. -->
+    <string name="appearance_preview_name">雲吞</string>
+    <!-- Choice row: extra large text size. -->
+    <string name="appearance_size_extra_large">特大</string>
+    <!-- Choice row: small text size. -->
+    <string name="appearance_size_small">小</string>
+    <!-- Choice row for theme mode and text size: follow the system setting. -->
+    <string name="appearance_system">跟隨系統</string>
+    <!-- Section title for the text size. -->
+    <string name="appearance_text_size">字型大小</string>
+    <!-- Choice row: dark mode. -->
+    <string name="appearance_theme_dark">深色</string>
+    <!-- Choice row: light mode. -->
+    <string name="appearance_theme_light">淺色</string>
+</resources>

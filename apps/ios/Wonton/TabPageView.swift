@@ -336,7 +336,7 @@ extension TabPageView {
                 guard let url = URL(string: value) else { return }
                 openURL(url) { accepted in
                     if !accepted {
-                        session?.problem = Problem(title: String(localized: .tabOpenLinkFailed))
+                        session?.problem = Problem(title: String(localized: .Tab0.tabOpenLinkFailed))
                     }
                 }
             case let .draftMessage(text): draft(text)

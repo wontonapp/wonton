@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the friends page and the settings row that opens it. -->
+    <string name="friends_title">好友</string>
+    <!-- Reject button on a received request. -->
+    <string name="friends_request_reject">拒絕</string>
+    <!-- Row subtitle: how many plugins this friend can open. -->
+    <plurals name="friends_shared_plugins">
+        <item quantity="other">已分享 %1$d 個外掛</item>
+    </plurals>
+    <string name="friends_block_user">封鎖邀請</string>
+    <!-- Confirmation dialog title for removing a friend. Argument: the friend. -->
+    <string name="friends_remove_title">刪除「%1$s」？</string>
+    <!-- Failure title when the server asks to wait but didn't say how long. -->
+    <string name="friends_error_rate_limited_later">請求太多，稍後再試</string>
+</resources>

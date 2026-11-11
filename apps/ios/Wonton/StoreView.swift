@@ -16,7 +16,7 @@ struct StoreView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            WontonSearchField(text: $query, prompt: String(localized: .storeSearchPrompt))
+            WontonSearchField(text: $query, prompt: String(localized: .Store.storeSearchPrompt))
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
                 .padding(.bottom, WontonTheme.spacing.s8)
             ScrollView {
@@ -47,12 +47,12 @@ struct StoreView: View {
             }
             .refreshable { model.send(.refreshStore(force: true)) }
         }
-        .wontonPushedScreen(String(localized: .storeTitle), showsStatusLine: true) {
+        .wontonPushedScreen(String(localized: .Store.storeTitle), showsStatusLine: true) {
             HStack(spacing: 0) {
                 if model.viewModel.updatable.count > 0 {
                     UpdateAllButton(count: model.viewModel.updatable.count) { showsUpdateAll = true }
                 }
-                WontonIconButton(icon: .add, label: String(localized: .storeAddSource)) { isAddingSource = true }
+                WontonIconButton(icon: .add, label: String(localized: .Store.storeAddSource)) { isAddingSource = true }
             }
         }
         .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
@@ -65,12 +65,12 @@ struct StoreView: View {
             self.confirmation = confirmation.map(PluginConfirmation.store)
         }
         .confirmationDialog(
-            String(localized: .storeUpdateAllTitle(count: model.viewModel.updatable.count)),
+            String(localized: .Store.storeUpdateAllTitle(count: model.viewModel.updatable.count)),
             isPresented: $showsUpdateAll,
             titleVisibility: .visible
         ) {
-            Button(String(localized: .storeUpdateAll)) { model.send(.upgradeAll) }
-            Button(String(localized: .commonCancel), role: .cancel) {}
+            Button(String(localized: .Store.storeUpdateAll)) { model.send(.upgradeAll) }
+            Button(String(localized: .Common.commonCancel), role: .cancel) {}
         }
         .fullScreenCover(isPresented: $isAddingSource, onDismiss: {
             confirmation = chosen
@@ -97,15 +97,15 @@ struct StoreView: View {
         if present.count > 1 {
             TagChips(tags: present, selected: $filter)
         }
-        section(String(localized: .storeSectionReviewed), store.official)
+        section(String(localized: .Store.storeSectionReviewed), store.official)
         added(store.added)
-        section(String(localized: .storeSectionCommunity), store.community)
+        section(String(localized: .Store.storeSectionCommunity), store.community)
     }
 
     /// 主人添加的来源合成一段，取不到的来源写明是哪一个。
     @ViewBuilder private func added(_ sources: [AddedSource]) -> some View {
         if !sources.isEmpty {
-            sectionTitle(String(localized: .pluginSourcesMine))
+            sectionTitle(String(localized: .PluginSources.pluginSourcesMine))
             ForEach(sources, id: \.address) { source in
                 ForEach(source.section.plugins.filter(matchesTag), id: \.source) { row($0) }
                 unreadable(source.section.unreadable)
@@ -118,7 +118,7 @@ struct StoreView: View {
                     .padding(.vertical, WontonTheme.spacing.s8)
                 } else if source.section.fetchedAtMs == nil {
                     // 核心重启后还没读过：不显示成空。
-                    Text(.storeReading(source.provider))
+                    Text(.Store.storeReading(source.provider))
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.textSecondary))
                         .padding(.horizontal, WontonTheme.spacing.pageInset)
@@ -161,7 +161,7 @@ struct StoreView: View {
 
     private func unreadable(_ plugins: [StoreUnreadable]) -> some View {
         ForEach(plugins, id: \.source) { plugin in
-            WontonNotice(icon: .warning, title: String(localized: .storeUnreadable(plugin.source, plugin.reason)))
+            WontonNotice(icon: .warning, title: String(localized: .Store.storeUnreadable(plugin.source, plugin.reason)))
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
                 .padding(.vertical, WontonTheme.spacing.s8)
         }
@@ -170,7 +170,7 @@ struct StoreView: View {
     @ViewBuilder private var results: some View {
         let items = model.core.searchStore(query: query)
         if items.isEmpty {
-            Text(.storeNoResults)
+            Text(.Store.storeNoResults)
                 .wontonText(WontonTheme.typography.body)
                 .foregroundStyle(Color(colors.textSecondary))
                 .frame(maxWidth: .infinity)
@@ -201,11 +201,11 @@ struct StoreView: View {
             return .get(enabled: item.blocked == nil) { model.send(.installNow(source: item.source)) }
         }
         if version != item.version {
-            return .get(title: String(localized: .storeUpdate)) { model.send(.upgradeNow(pluginId: item.id)) }
+            return .get(title: String(localized: .Store.storeUpdate)) { model.send(.upgradeNow(pluginId: item.id)) }
         }
         let installed = model.viewModel.installed?.plugins.first { $0.id == item.id }
         guard let entry = installed?.entries.first else { return .hidden }
-        return .get(title: String(localized: .storeOpen)) { open(entry) }
+        return .get(title: String(localized: .Store.storeOpen)) { open(entry) }
     }
 
     /// 列表里出现过的标签，按第一次出现的顺序。
@@ -221,7 +221,11 @@ struct StoreView: View {
 private extension Problem {
     /// 添加了好几个来源时，要写明是哪一个出了问题。
     func titled(from provider: String) -> Problem {
-        Problem(title: String(localized: .storeProblemFromSource(provider, title)), nextStep: nextStep, detail: detail)
+        Problem(
+            title: String(localized: .Store.storeProblemFromSource(provider, title)),
+            nextStep: nextStep,
+            detail: detail
+        )
     }
 }
 
@@ -232,7 +236,7 @@ private struct TagChips: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: WontonTheme.spacing.s8) {
-                WontonChip(title: String(localized: .storeTagAll), isSelected: selected == nil) { selected = nil }
+                WontonChip(title: String(localized: .Store.storeTagAll), isSelected: selected == nil) { selected = nil }
                 ForEach(tags, id: \.self) { tag in
                     WontonChip(title: tag, isSelected: selected == tag) { selected = tag }
                 }
@@ -243,7 +247,7 @@ private struct TagChips: View {
 }
 
 enum StoreButton {
-    case get(title: String = String(localized: .storeGet), enabled: Bool = true, perform: () -> Void)
+    case get(title: String = String(localized: .Store.storeGet), enabled: Bool = true, perform: () -> Void)
     case busy
     case hidden
 }
@@ -295,7 +299,7 @@ private struct StoreItemRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: WontonTheme.spacing.s8) {
                     failureRow(failure)
                     Spacer(minLength: 0)
-                    Button(String(localized: .commonRetry)) { retry() }
+                    Button(String(localized: .Common.commonRetry)) { retry() }
                         .buttonStyle(WontonSmallButtonStyle())
                 }
                 .padding(.leading, WontonTheme.size.storeIcon + WontonTheme.spacing.s12)
@@ -333,17 +337,17 @@ private struct StoreItemRow: View {
         if showsTrust || item.provider != nil || highTier || item.stars != nil {
             HStack(spacing: WontonTheme.spacing.s8) {
                 if showsTrust { Tag(text: item.trust.label, tint: item.trust.tint(colors)) }
-                if let provider = item.viaIndex.map({ String(localized: .storeViaIndex($0)) }) ?? item.provider {
+                if let provider = item.viaIndex.map({ String(localized: .Store.storeViaIndex($0)) }) ?? item.provider {
                     Text(provider)
                         .wontonText(WontonTheme.typography.caption)
                         .foregroundStyle(Color(colors.textSecondary))
                         .lineLimit(1)
                 }
-                if highTier { Tag(text: String(localized: .storeHighPermissions), tint: colors.danger) }
+                if highTier { Tag(text: String(localized: .Store.storeHighPermissions), tint: colors.danger) }
                 if let stars = item.stars {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         WontonIcon.starFill.view(size: WontonTheme.size.iconTiny)
-                            .accessibilityLabel(String(localized: .pluginInfoStars))
+                            .accessibilityLabel(String(localized: .Plugin1.pluginInfoStars))
                         Text(stars.formatted(.number.notation(.compactName)))
                             .wontonText(WontonTheme.typography.caption)
                     }
@@ -374,7 +378,7 @@ struct TaskRow: View {
             if task.state == .running {
                 ProgressView()
             } else if showsDismiss {
-                WontonIconButton(icon: .close, label: String(localized: .commonClose)) {
+                WontonIconButton(icon: .close, label: String(localized: .Common.commonClose)) {
                     model.send(.dismissPluginTask(id: task.id))
                 }
             }
@@ -396,9 +400,9 @@ struct TaskRow: View {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                 let problem = reason.problem(detail: message)
                 let failed = switch task.operation {
-                case .install: String(localized: .pluginTaskInstallFailed(problem.title))
-                case .upgrade: String(localized: .pluginTaskUpgradeFailed(problem.title))
-                case .uninstall: String(localized: .pluginTaskUninstallFailed(problem.title))
+                case .install: String(localized: .Plugin3.pluginTaskInstallFailed(problem.title))
+                case .upgrade: String(localized: .Plugin0.pluginTaskUpgradeFailed(problem.title))
+                case .uninstall: String(localized: .Plugin0.pluginTaskUninstallFailed(problem.title))
                 }
                 Text(failed).foregroundStyle(Color(colors.danger))
                 if let nextStep = problem.nextStep {
@@ -406,13 +410,14 @@ struct TaskRow: View {
                 }
                 ProblemDetail(text: message)
                 if reason == .changed {
-                    Button(String(localized: .pluginTaskReview), action: review).buttonStyle(WontonSmallButtonStyle())
+                    Button(String(localized: .Plugin3.pluginTaskReview), action: review)
+                        .buttonStyle(WontonSmallButtonStyle())
                 }
             }
         case let .uncertain(message):
             HStack(alignment: .top, spacing: WontonTheme.spacing.s4) {
                 WontonIcon.help.view(size: WontonTheme.size.iconTiny).padding(.top, 3)
-                Text(.pluginTaskUncertain(message))
+                Text(.Plugin2.pluginTaskUncertain(message))
             }
             .foregroundStyle(Color(colors.warning))
         }
@@ -421,10 +426,10 @@ struct TaskRow: View {
     @ViewBuilder private var addedTools: some View {
         switch task.addedTools {
         case let .compared(names) where !names.isEmpty:
-            Text(.pluginTaskAddedTools(names.formatted(.list(type: .and))))
+            Text(.Plugin0.pluginTaskAddedTools(names.formatted(.list(type: .and))))
                 .foregroundStyle(Color(colors.textSecondary))
         case let .notCompared(reason):
-            Text(.pluginTaskAddedToolsUnknown).foregroundStyle(Color(colors.warning))
+            Text(.Plugin2.pluginTaskAddedToolsUnknown).foregroundStyle(Color(colors.warning))
             ProblemDetail(text: reason)
         default:
             EmptyView()
@@ -450,7 +455,7 @@ private struct UpdateAllButton: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        WontonIconButton(icon: .download, label: String(localized: .storeUpdateAll)) { action() }
+        WontonIconButton(icon: .download, label: String(localized: .Store.storeUpdateAll)) { action() }
             .overlay(alignment: .topTrailing) {
                 Text("\(count)")
                     .font(.system(size: 11, weight: .semibold).monospacedDigit())
@@ -459,7 +464,7 @@ private struct UpdateAllButton: View {
                     .frame(minWidth: 18, minHeight: 18)
                     .background(Color(colors.danger), in: Capsule())
                     .offset(x: 4, y: -4)
-                    .accessibilityLabel(String(localized: .launcherUpdatesAvailable(count: count)))
+                    .accessibilityLabel(String(localized: .Launcher.launcherUpdatesAvailable(count: count)))
             }
     }
 }

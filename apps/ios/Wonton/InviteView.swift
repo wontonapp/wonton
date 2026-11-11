@@ -19,7 +19,7 @@ struct InviteView: View {
                 case nil, .requesting:
                     HStack(spacing: WontonTheme.spacing.s12) {
                         ProgressView()
-                        Text(.inviteRequesting)
+                        Text(.Invite.inviteRequesting)
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                     }
@@ -28,15 +28,16 @@ struct InviteView: View {
                         model.send(.inviteDevice)
                     }
                 case let .failed(_, message):
-                    WontonNotice(icon: .warning, title: String(localized: .inviteFailedTitle), lines: [message]) {
-                        Button(String(localized: .inviteTryAgain)) { model.send(.inviteDevice) }
+                    WontonNotice(icon: .warning, title: String(localized: .Invite.inviteFailedTitle),
+                        lines: [message]) {
+                        Button(String(localized: .Invite.inviteTryAgain)) { model.send(.inviteDevice) }
                             .buttonStyle(WontonButtonStyle(kind: .secondary))
                     }
                 }
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .inviteTitle))
+        .wontonPushedScreen(String(localized: .Invite.inviteTitle))
         .task { model.send(.inviteDevice) }
     }
 }
@@ -60,9 +61,9 @@ private struct InviteCode: View {
                             .scaledToFit()
                             .frame(maxWidth: 260)
                             .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
-                            .accessibilityLabel(String(localized: .inviteQrLabel))
+                            .accessibilityLabel(String(localized: .Invite.inviteQrLabel))
                     }
-                    Text(.inviteExpiresIn(
+                    Text(.Invite.inviteExpiresIn(
                         Duration.seconds(TimeInterval(remaining)).formatted(.time(pattern: .minuteSecond))
                     ))
                         .wontonText(WontonTheme.typography.supporting)
@@ -71,17 +72,17 @@ private struct InviteCode: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                WontonNotice(icon: .warning, title: String(localized: .inviteExpired)) {
-                    Button(String(localized: .inviteRenew), action: renew)
+                WontonNotice(icon: .warning, title: String(localized: .Invite.inviteExpired)) {
+                    Button(String(localized: .Invite.inviteRenew), action: renew)
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             }
         }
-        Text(.inviteInstructions)
+        Text(.Invite.inviteInstructions)
             .wontonText(WontonTheme.typography.supporting)
             .foregroundStyle(Color(colors.textSecondary))
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            Text(.invitePasteFallback)
+            Text(.Invite.invitePasteFallback)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
             Text(code)

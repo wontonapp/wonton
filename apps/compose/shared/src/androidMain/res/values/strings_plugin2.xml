@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Section title for the app's requirements. No arguments. -->
+    <string name="plugin_requirements">Requirements</string>
+    <!-- Meta row: the star count of the app's repository. -->
+    <string name="plugin_stars">Stars</string>
+    <!-- Meta row link: the app's source repository. -->
+    <string name="plugin_repository">Repository</string>
+    <string name="plugin_permission_risk_high">High risk</string>
+    <string name="plugin_permission_risk_very_high">Very high risk</string>
+    <string name="plugin_permission_understand_title">I know this plugin can control the whole host</string>
+    <string name="plugin_permission_host_root">Once it is on, the plugin manages this host\'s containers as root.</string>
+    <!-- Reason shown when the picked archive is bigger than the server accepts. Argument: the size limit, formatted as a file size. -->
+    <string name="plugin_sources_file_too_large">File is too large. The limit is %1$s.</string>
+    <!-- Section title above the sources you added, in the store list and on the Add Source page. -->
+    <string name="plugin_sources_mine">My sources</string>
+    <!-- Succeeded task line listing the tools the app gained. Argument: the tool names, formatted as a list. -->
+    <string name="plugin_task_added_tools">New tools: %1$s</string>
+    <!-- Status of a finished install task. -->
+    <string name="plugin_task_install_done">Installed</string>
+    <!-- Status of a running install task. -->
+    <string name="plugin_task_install_running">Installing</string>
+    <!-- Status of a finished uninstall task. -->
+    <string name="plugin_task_uninstall_done">Uninstalled</string>
+    <!-- Status of a running uninstall task. -->
+    <string name="plugin_task_uninstall_running">Uninstalling</string>
+    <!-- Status of a running update task. -->
+    <string name="plugin_task_upgrade_running">Updating</string>
+    <!-- Small tag on a store row and the install preview: the app is reviewed. -->
+    <string name="plugin_trust_official">Reviewed</string>
+    <!-- Small tag: a system app that's always installed. -->
+    <string name="plugin_trust_system">System</string>
+    <!-- Destructive button that uninstalls and deletes the app's data. -->
+    <string name="plugin_uninstall_delete_data">Uninstall and delete data</string>
+    <!-- Message of the uninstall confirmation. -->
+    <string name="plugin_uninstall_delete_data_warning">Deleting data also removes its keys and bot accounts. This can\'t be undone.</string>
+    <!-- Title of the uninstall confirmation. Argument: the app's name. -->
+    <string name="plugin_uninstall_title">Uninstall %1$s?</string>
+    <!-- Content description of a screenshot on the app detail page. -->
+    <string name="plugin_screenshot">Screenshot</string>
+</resources>

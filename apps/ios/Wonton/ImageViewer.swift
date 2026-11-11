@@ -76,16 +76,16 @@ struct ImageViewer: View {
     @ToolbarContentBuilder private var actions: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             Button { dismiss() } label: { WontonIcon.close.view() }
-                .accessibilityLabel(Text(.commonClose))
+                .accessibilityLabel(Text(.Common.commonClose))
         }
         if case let .loaded(loaded) = original {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { save(loaded) } label: {
                     (justSaved ? WontonIcon.checkCircleFill : WontonIcon.download).view()
                 }
-                .accessibilityLabel(Text(.viewerSavePhoto))
+                .accessibilityLabel(Text(.Viewer.viewerSavePhoto))
                 Button { share(loaded) } label: { WontonIcon.share.view() }
-                    .accessibilityLabel(Text(.viewerShare))
+                    .accessibilityLabel(Text(.Viewer.viewerShare))
             }
         }
     }
@@ -95,7 +95,7 @@ struct ImageViewer: View {
             WontonNotice(icon: .imageBroken, title: problem.title, lines: problem.nextStep.map { [$0] } ?? []) {
                 if let detail = problem.detail { ProblemDetail(text: detail) }
             }
-            Button(.commonRetry) { attempt += 1 }
+            Button(.Common.commonRetry) { attempt += 1 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
         }
         .padding(WontonTheme.spacing.pageInset)
@@ -109,7 +109,7 @@ struct ImageViewer: View {
         ) {
             if let detail = saveProblem.problem.detail { ProblemDetail(text: detail) }
             if saveProblem.isDenied {
-                Button(.commonOpenSettings) {
+                Button(.Common.commonOpenSettings) {
                     openedSettings = true
                     if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                 }
@@ -122,7 +122,7 @@ struct ImageViewer: View {
                         .foregroundStyle(Color(colors.textSecondary))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(String(localized: .commonClose))
+                .accessibilityLabel(String(localized: .Common.commonClose))
             }
         }
     }
@@ -143,8 +143,8 @@ struct ImageViewer: View {
             guard status == .authorized || status == .limited else {
                 saveProblem = SaveProblem(
                     problem: Problem(
-                        title: String(localized: .viewerPhotoPermission),
-                        nextStep: String(localized: .viewerPhotoPermissionHint)
+                        title: String(localized: .Viewer.viewerPhotoPermission),
+                        nextStep: String(localized: .Viewer.viewerPhotoPermissionHint)
                     ),
                     isDenied: true
                 )
@@ -158,7 +158,7 @@ struct ImageViewer: View {
             } catch {
                 saveProblem = SaveProblem(
                     problem: Problem(
-                        title: String(localized: .viewerSaveFailed),
+                        title: String(localized: .Viewer.viewerSaveFailed),
                         nextStep: error.localizedDescription
                     ),
                     isDenied: false
@@ -173,7 +173,7 @@ struct ImageViewer: View {
         } catch {
             saveProblem = SaveProblem(
                 problem: Problem(
-                    title: String(localized: .viewerShareFailed),
+                    title: String(localized: .Viewer.viewerShareFailed),
                     nextStep: error.localizedDescription
                 ),
                 isDenied: false
@@ -198,7 +198,7 @@ struct ImageViewer: View {
         do {
             let data = try await core.loadMedia(media: media)
             guard let image = UIImage(data: data) else {
-                return .failed(Problem(title: String(localized: .messageImageFormatUnsupported)))
+                return .failed(Problem(title: String(localized: .Message0.messageImageFormatUnsupported)))
             }
             return .loaded(Original(image: image, data: data))
         } catch {

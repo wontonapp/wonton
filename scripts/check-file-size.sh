@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 源码文件行数门禁：超过上限即失败。
+# 源码文件行数门禁：超过上限即失败。文案文件（.xcstrings、strings*.xml、.ftl）也算在内：
+# 键按前缀分文件（ADR-0043），装不下就在前缀上再拆细。
 # 例外写进仓库根目录的 .size-allowlist，每行一条：
 #   <路径> | <原因> | <到期日 YYYY-MM-DD>
 # 到期后例外失效，CI 重新失败。
@@ -48,6 +49,7 @@ emit_files() {
   else
     git ls-files -z -- \
       '*.rs' '*.swift' '*.kt' '*.kts' '*.ts' '*.tsx' '*.js' '*.mjs' '*.py' '*.go' '*.sh' \
+      '*.xcstrings' '*.xml' '*.ftl' \
       ':(exclude)**/generated/**' ':(exclude)vendor/**'
   fi
 }

@@ -55,7 +55,8 @@
 - 加载和出错的界面写给普通用户看：一句人话说发生了什么、能做什么，配重试；仓库名、超时秒数、错误码收进默认收起的“详情”；
   部分失败是一条轻提示。类别由核心给，文字按类别写在壳里，不伪装成功、不藏错误。
 - 界面文字放进各平台的本地化资源（iOS 的 String Catalog、Android 的 `strings.xml`），四种语言齐全，不在代码里写死或拼句子；
-  核心只给类别和原始值，“详情”由核心按 App 的语言写。见 [ADR-0043](docs/adr/0043-app-languages.md)。
+  核心只给类别和原始值，“详情”由核心按 App 的语言写。文字按功能分文件、按前缀放（`scripts/ui_text/groups.py`），见
+  [ADR-0043](docs/adr/0043-app-languages.md)。
 - App 的界面走 [ADR-0026](docs/adr/0026-design-system.md) 的设计系统，哪些共用、哪些按平台走以
   [ADR-0029](docs/adr/0029-platform-material.md) 为准。
 

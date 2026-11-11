@@ -43,7 +43,7 @@ struct OnboardingGate<Content: View>: View {
                 ProblemView(problem: model.rejection ?? model.viewModel.problem!.problem) {
                     model.send(.refreshOnboarding)
                 }
-                Button(String(localized: .onboardingSkipAnyway)) { model.skipsUnavailableGate = true }
+                Button(String(localized: .Onboarding2.onboardingSkipAnyway)) { model.skipsUnavailableGate = true }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
                 Spacer(minLength: 0)
             }

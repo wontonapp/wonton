@@ -24,7 +24,7 @@ struct ComposerField: View {
             fontSize: fontSize,
             line: line,
             colors: colors,
-            placeholder: String(localized: .composerMessage)
+            placeholder: String(localized: .Composer.composerMessage)
         )
         .padding(.horizontal, WontonTheme.spacing.s16)
         .background(RoundedRectangle(cornerRadius: WontonTheme.radii.composerField).fill(Color(colors.surfaceSubtle)))

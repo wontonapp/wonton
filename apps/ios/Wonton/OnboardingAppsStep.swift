@@ -41,7 +41,7 @@ struct OnboardingAppsStep: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if item.installedVersion != nil {
-                Text(.onboardingAppInstalled)
+                Text(.Onboarding4.onboardingAppInstalled)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.success))
             }

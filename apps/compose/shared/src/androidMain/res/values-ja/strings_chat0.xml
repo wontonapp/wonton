@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_signing_in">サインインしています…</string>
+    <string name="chat_encrypted">暗号化済み</string>
+    <string name="chat_unread_count">未読%1$d件</string>
+    <string name="chat_invite_direct">%1$sがあなたをダイレクトチャットに招待しました</string>
+    <string name="chat_invite_accept">参加</string>
+    <string name="chat_start">開始</string>
+    <!-- Install row subtitle while containers start. No arguments. -->
+    <string name="chat_install_stage_starting">起動中</string>
+    <!-- Install row subtitle while health checks pass and the bot comes online. No arguments. -->
+    <string name="chat_install_stage_waiting_for_bot">Bot の準備を待っています</string>
+    <string name="chat_backup_copy">コピー</string>
+    <!-- Explanation under the heading when backup is on. -->
+    <string name="chat_backup_detail_enabled">機種変更などの際に復旧キーを入力すると、過去のメッセージが表示されます。</string>
+    <!-- Explanation when the recovery key is missing on this device. -->
+    <string name="chat_backup_detail_incomplete">バックアップを有効にしたときに保存した復旧キーを入力してください。キーを紛失した場合はバックアップをリセットしてください。</string>
+    <!-- Explanation when backup is off because this device isn't verified; the earliest paired device turns it on. -->
+    <string name="chat_backup_detail_unverified">最初にペアリングしたデバイスで開くと、バックアップは自動的に有効になります。そのデバイスが手元になければバックアップをリセットしてください。</string>
+    <!-- Explanation when this device is verified: backup turns on by itself. -->
+    <string name="chat_backup_detail_verified">デバイスの認証後にバックアップは自動的に有効になります。</string>
+    <!-- Placeholder of the recovery key field and the clipboard label when copying the key. The key restores past messages. -->
+    <string name="chat_backup_recovery_key">復旧キー</string>
+    <!-- Banner in the chat list asking for the recovery key to restore past messages. -->
+    <string name="chat_backup_reminder_enter_key">復旧キーを入力すると過去のメッセージを復元できます</string>
+    <!-- Button that opens the reset confirmation; it replaces the recovery key with a new one. -->
+    <string name="chat_backup_reset">バックアップをリセット</string>
+    <!-- Body of the reset confirmation dialog: a new recovery key is issued, the old one stops working. -->
+    <string name="chat_backup_reset_message">新しい復旧キーが発行され、古いキーは使えなくなります。リセット後は過去のメッセージが読めなくなることがあり、他のデバイスでは新しいキーの入力が必要です。</string>
+    <!-- Heading above the freshly issued recovery key. -->
+    <string name="chat_backup_save_key_title">復旧キーを保存</string>
+    <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
+    <string name="chat_backup_saved">保存しました</string>
+    <!-- Page heading when chat backup is on and verified. -->
+    <string name="chat_backup_status_enabled">チャットはバックアップ済みです</string>
+    <!-- Page heading while backup or recovery runs. -->
+    <string name="chat_backup_status_in_progress">処理中…</string>
+    <!-- Page heading when the recovery key is missing on this device, so past messages can't be shown. -->
+    <string name="chat_backup_status_incomplete">このデバイスではまだ過去のメッセージを表示できません</string>
+    <!-- Title of the chat backup page. -->
+    <string name="chat_backup_title">チャットのバックアップ</string>
+    <!-- Value on the Settings row: backup needs the recovery key on this device. -->
+    <string name="chat_backup_value_incomplete">復旧キーが必要</string>
+    <!-- Value on the Settings row: the status can't be determined. -->
+    <string name="chat_backup_value_unknown">不明</string>
+    <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
+    <string name="chat_status_reconnecting">再接続しています…</string>
+</resources>

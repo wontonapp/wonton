@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Banner when several approval cards are waiting. Argument: the number of cards. -->
+    <plurals name="onboarding_pending_card_many">
+        <item quantity="other">確認待ちのカードが%1$d枚あります</item>
+    </plurals>
+    <!-- Problem title in setup: the model gateway on the home server isn't ready. -->
+    <string name="onboarding_problem_model_gateway_not_ready">モデルゲートウェイの準備ができていません。再試行するか、このステップをスキップしてください。</string>
+    <!-- Problem title while installing: the home server's internet proxy can't be reached. -->
+    <string name="onboarding_problem_plugin_egress_proxy_unavailable">サーバーのプロキシに接続できません。確認してから再試行してください。</string>
+    <!-- Problem title while installing: no local network address is available for the app. -->
+    <string name="onboarding_problem_plugin_lan_unavailable">利用できるローカルネットワークのアドレスがありません。サーバーのネットワーク設定を確認してください。</string>
+    <!-- Problem title while installing: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_plugin_protocol">Wontonと自宅サーバーのバージョンが一致していません。Wontonかサーバーを更新してください。</string>
+    <!-- Problem title in setup: the recommendation source is turned off. -->
+    <string name="onboarding_problem_store_disabled">おすすめの提供元が無効になっています。スキップできます。</string>
+    <!-- Button that uninstalls the agent that a new one replaces. -->
+    <string name="onboarding_uninstall">アンインストール</string>
+</resources>

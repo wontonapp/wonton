@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_webview_too_old">請更新 Android System WebView 後再試</string>
+    <string name="tab_starting">正在啟動…</string>
+    <string name="tab_open_anyway">仍然開啟</string>
+    <string name="tab_settings_unreadable">無法讀取底部導覽列設定</string>
+    <string name="tab_open_settings">底部導覽列設定</string>
+    <string name="tab_edit_bar">編輯底部導覽列</string>
+    <string name="tab_choose_replace">選擇要取代的項目</string>
+    <string name="tab_add_more">新增更多</string>
+    <string name="tab_move_up">上移</string>
+    <string name="tab_no_browser">無法開啟瀏覽器</string>
+    <string name="tab_settings">設定</string>
+    <string name="tab_exit_fullscreen">退出全螢幕</string>
+    <!-- 全屏膠囊選單項:打開應用的詳情頁。 -->
+    <string name="tab_menu_details">插件詳情</string>
+</resources>

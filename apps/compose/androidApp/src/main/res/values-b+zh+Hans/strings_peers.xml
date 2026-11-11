@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- “保持连接”前台服务的常驻通知渠道名（ADR-0003），显示在系统的通知设置里。 -->
+    <string name="keepalive_channel_name">保持连接</string>
+    <!-- “保持连接”前台服务的常驻通知标题。 -->
+    <string name="keepalive_notification_title">正在保持与家里的服务器的连接</string>
+</resources>

@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Switch on an app's page: map the ports the app declares onto this device's loopback interface, so other apps on the phone can reach them (ADR-0072). -->
+    <string name="port_mapping_toggle">映射到本機</string>
+    <!-- One declared port under the switch: the loopback address with the port number, then the protocol. -->
+    <string name="port_mapping_port_line">127.0.0.1:%1$d · %2$s</string>
+    <!-- Protocol label of a declared port whose protocol Wonton doesn't recognize. -->
+    <string name="port_mapping_protocol_other">其他</string>
+    <!-- Reason shown while the mapping is on but another app on this phone has taken the port. -->
+    <string name="port_mapping_reason_port_in_use">連接埠被手機上的其他應用程式佔用了。</string>
+    <!-- Reason shown while the mapping is on but the home server is too old to map ports. -->
+    <string name="port_mapping_reason_server_too_old">家用伺服器版本太舊，需要先升級。</string>
+    <!-- Reason shown while the mapping is on but the tunnel isn't connected. -->
+    <string name="port_mapping_reason_tunnel_disconnected">到家用伺服器的隧道沒連上。</string>
+    <!-- Reason shown while the mapping is on but the app isn't installed on the home server. -->
+    <string name="port_mapping_reason_plugin_not_installed">伺服器上沒有安裝這個應用程式。</string>
+    <!-- Reason shown while the mapping is on but the app doesn't declare that port. -->
+    <string name="port_mapping_reason_port_not_declared">這個應用程式沒有宣告這個連接埠。</string>
+    <!-- Reason shown while the mapping is on but the app isn't running. -->
+    <string name="port_mapping_reason_plugin_not_running">這個應用程式沒有在執行。</string>
+    <!-- Reason shown while the mapping is on but the home server can't reach the app. -->
+    <string name="port_mapping_reason_plugin_unreachable">伺服器連不上這個應用程式。</string>
+    <!-- Reason shown while the mapping is on and failed for a reason Wonton doesn't recognize. -->
+    <string name="port_mapping_reason_other">映射出錯了。</string>
+    <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
+    <string name="port_mapping_no_notification_permission">沒有通知權限，映射開著時通知列看不到；映射照常可用。</string>
+    <!-- Radio option for typing a mirror address that isn't in the list. -->
+    <string name="registry_mirror_custom">自訂</string>
+    <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->
+    <string name="registry_mirror_custom_address">自訂鏡像站位址</string>
+    <!-- Row title for the speed test result of Docker Hub reached directly, without a mirror. Keep Docker Hub as is. -->
+    <string name="registry_mirror_docker_hub_direct">Docker Hub 直接連線</string>
+    <!-- Speed test result: the mirror works but no latency was measured. -->
+    <string name="registry_mirror_probe_available">可用</string>
+    <!-- Speed test result: the mirror returned content whose digest doesn't match. -->
+    <string name="registry_mirror_probe_digest_mismatch">摘要不符</string>
+    <!-- Speed test result: some other failure; details are collapsed below. -->
+    <string name="registry_mirror_probe_other">其他錯誤</string>
+    <!-- Speed test result: the mirror refused the request. -->
+    <string name="registry_mirror_probe_rejected">遭拒絕</string>
+    <!-- Speed test result when this address hasn't been tested. -->
+    <string name="registry_mirror_probe_unknown">不確定</string>
+    <!-- Speed test result: the mirror can't be reached. -->
+    <string name="registry_mirror_probe_unreachable">無法連線</string>
+    <!-- Warning on the Download Mirror page when Docker Hub can't be reached directly. Keep Docker Hub as is. -->
+    <string name="registry_mirror_recommended">無法連上 Docker Hub，建議開啟下載鏡像站。</string>
+    <!-- Explanation under the Download Mirror switch: the mirrors are run by third parties, can see what is downloaded, but can't tamper with it because every image is checked against its digest. -->
+    <string name="registry_mirror_risk">這些是第三方的公益服務，能看到你下載了哪些映像檔，但無法修改映像檔的內容，因為每個映像檔的摘要都會逐一核對。</string>
+    <!-- Problem title when the typed mirror address is invalid and wasn't saved. The server's reason is in the collapsed details. -->
+    <string name="registry_mirror_save_failed">鏡像站位址沒有儲存</string>
+    <!-- Button that measures how fast each mirror and Docker Hub respond. -->
+    <string name="registry_mirror_test">測速</string>
+    <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
+    <string name="registry_mirror_title">下載鏡像站</string>
+    <!-- Warning under the allow-all switches. -->
+    <string name="tool_policy_allow_all_risk">這個 Bot 用所有應用程式的工具都不再問，以後裝的也算。提示注入能讓它不經確認改資料、刪東西、往外發內容</string>
+    <!-- Section title for bots that may use every app's tools without asking. -->
+    <string name="tool_policy_allow_all_title">一律允許</string>
+    <!-- Warning under the Always Allow switches. -->
+    <string name="tool_policy_always_risk">這個 Bot 用這個應用程式的工具不再問，包括會改資料的</string>
+    <!-- Section title for bots that may use this app's tools without asking; also in the install preview. -->
+    <string name="tool_policy_always_title">始終允許</string>
+    <!-- Explanation shown when the tool list is expanded. -->
+    <string name="tool_policy_read_only_hint">開啟的工具算唯讀，所有 Bot 呼叫它都不再問</string>
+    <!-- Caption in place of the switch for tools the app itself marks read-only. -->
+    <string name="tool_policy_read_only_tag">唯讀</string>
+    <!-- Button that ends a bot's open time window. -->
+    <string name="tool_policy_stop">停止</string>
+    <!-- Collapsible section title for the app's tools. -->
+    <string name="tool_policy_tools_title">工具</string>
+    <!-- Next step under that problem. -->
+    <string name="tool_policy_unreadable_next">現在每次呼叫都會問你，這裡也改不了。</string>
+    <!-- Problem title when the tool policy can't be read. -->
+    <string name="tool_policy_unreadable_title">放寬的設定讀不出來</string>
+    <!-- Row for an open time window. Arguments: the bot's name, the time it ends. -->
+    <string name="tool_policy_window_until">%1$s 允許至 %2$s</string>
+    <!-- Section title for the time windows during which a bot may act without asking. -->
+    <string name="tool_policy_windows_title">暫時允許</string>
+    <string name="secret_section_title">要填的密鑰</string>
+    <string name="secret_optional">可選</string>
+    <string name="secret_get_one">去哪裡拿</string>
+    <string name="secret_show">顯示</string>
+    <string name="secret_hide">隱藏</string>
+    <string name="secret_edit">修改</string>
+    <string name="secret_clear">清空</string>
+    <string name="secret_filled">已填寫</string>
+    <string name="secret_unfilled">未填寫</string>
+</resources>

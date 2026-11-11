@@ -6,10 +6,10 @@ private enum ShareExpiry: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .indefinite: String(localized: .shareIndefinite)
-        case .hour: String(localized: .shareHour)
-        case .today: String(localized: .shareToday)
-        case .custom: String(localized: .shareCustom)
+        case .indefinite: String(localized: .Share0.shareIndefinite)
+        case .hour: String(localized: .Share2.shareHour)
+        case .today: String(localized: .Share1.shareToday)
+        case .custom: String(localized: .Share0.shareCustom)
         }
     }
 }
@@ -37,40 +37,40 @@ struct PluginShareEditor: View {
             Form {
                 if loading { ProgressView() }
                 if let recipients { recipientPicker(recipients) }
-                Section(String(localized: .shareExpires)) {
-                    Picker(String(localized: .shareExpires), selection: $expiry) {
+                Section(String(localized: .Share1.shareExpires)) {
+                    Picker(String(localized: .Share1.shareExpires), selection: $expiry) {
                         ForEach(ShareExpiry.allCases, id: \.rawValue) { value in
                             Text(value.title).tag(value)
                         }
                     }
                     if expiry == .custom {
-                        DatePicker(String(localized: .shareCustom), selection: $date)
+                        DatePicker(String(localized: .Share0.shareCustom), selection: $date)
                     }
                 }
                 if !shares.friendsSupported {
                     Section {
-                        WontonNotice(icon: .warning, title: String(localized: .shareRisk))
-                        Toggle(String(localized: .shareAcknowledge), isOn: $acknowledged)
+                        WontonNotice(icon: .warning, title: String(localized: .Share2.shareRisk))
+                        Toggle(String(localized: .Share1.shareAcknowledge), isOn: $acknowledged)
                     }
                 }
                 if let problem {
                     Section {
                         ProblemNotice(problem: problem)
-                        Button(.commonRetry) { perform(lastOperation) }
+                        Button(.Common.commonRetry) { perform(lastOperation) }
                     }
                 }
                 Section {
-                    Button(.shareSave) { perform(.save) }.disabled(!canSave)
+                    Button(.Share1.shareSave) { perform(.save) }.disabled(!canSave)
                     if grant != nil {
-                        Button(.shareRevoke, role: .destructive) { perform(.revoke) }.disabled(busy)
+                        Button(.Share2.shareRevoke, role: .destructive) { perform(.revoke) }.disabled(busy)
                     }
                 }
             }
             .disabled(busy)
-            .navigationTitle(grant == nil ? String(localized: .shareAdd) : String(localized: .shareEdit))
+            .navigationTitle(grant == nil ? String(localized: .Share2.shareAdd) : String(localized: .Share2.shareEdit))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(.shareCancel) { dismiss() }.disabled(busy)
+                    Button(.Share0.shareCancel) { dismiss() }.disabled(busy)
                 }
             }
             .task { initialize(); await load() }
@@ -78,17 +78,17 @@ struct PluginShareEditor: View {
     }
 
     @ViewBuilder private func recipientPicker(_ view: FriendsViewModel) -> some View {
-        Section(String(localized: .shareRecipient)) {
-            if view.friends.isEmpty && view.groups.isEmpty { Text(.shareEmpty) }
-            Picker(String(localized: .shareRecipient), selection: $recipient) {
-                Text(.shareRecipient).tag(ShareRecipient?.none)
-                Section(String(localized: .shareFriends)) {
+        Section(String(localized: .Share1.shareRecipient)) {
+            if view.friends.isEmpty && view.groups.isEmpty { Text(.Share1.shareEmpty) }
+            Picker(String(localized: .Share1.shareRecipient), selection: $recipient) {
+                Text(.Share1.shareRecipient).tag(ShareRecipient?.none)
+                Section(String(localized: .Share2.shareFriends)) {
                     ForEach(view.friends, id: \.userId) { friend in
                         Text(friend.displayName.flatMap { $0.isEmpty ? nil : $0 } ?? friend.userId)
                             .tag(ShareRecipient?.some(.friend(userId: friend.userId)))
                     }
                 }
-                Section(String(localized: .shareGroups)) {
+                Section(String(localized: .Share2.shareGroups)) {
                     ForEach(view.groups, id: \.id) { group in
                         Text(group.name).tag(ShareRecipient?.some(.group(groupId: group.id)))
                     }

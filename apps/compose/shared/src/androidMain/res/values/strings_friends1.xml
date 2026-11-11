@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Approve button on a received request. -->
+    <string name="friends_request_approve">Approve</string>
+    <!-- Cancel button on a request I sent. -->
+    <string name="friends_request_cancel">Cancel</string>
+    <!-- Empty page: the one sentence above the add button. -->
+    <string name="friends_empty">No friends yet</string>
+    <!-- Row that opens the new-group dialog. -->
+    <string name="friends_group_new">New group</string>
+    <!-- Confirmation dialog title for deleting a group. Argument: the group name. -->
+    <string name="friends_group_delete_title">Delete “%1$s”?</string>
+    <!-- Sheet action on a friend row that opens the group chooser. -->
+    <string name="friends_groups">Groups</string>
+    <!-- Sheet action on a friend row: remove the friend. -->
+    <string name="friends_remove_friend">Remove friend</string>
+    <!-- Confirmation dialog body: what removing a friend does. -->
+    <string name="friends_remove_message">They stop getting the plugins you share. The chat stays.</string>
+    <!-- Section heading above blocked people and servers. -->
+    <string name="friends_blocked_title">Blocked</string>
+    <!-- Row that opens the block-a-server dialog; only shown to the server's owner. -->
+    <string name="friends_block_server">Block a server</string>
+    <!-- Row subtitle for a blocked person. -->
+    <string name="friends_block_invitations">Invitations blocked</string>
+    <!-- Section heading on the peers page above the friend requests. -->
+    <string name="friends_peers_title">Friend requests</string>
+</resources>

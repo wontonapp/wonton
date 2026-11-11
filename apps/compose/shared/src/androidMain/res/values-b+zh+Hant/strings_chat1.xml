@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Button that copies the recovery key to the local clipboard only. -->
+    <string name="chat_empty">還沒有聊天</string>
+    <string name="chat_signed_out">還沒連上家用伺服器</string>
+    <string name="chat_own_preview">你：%1$s</string>
+    <string name="chat_yesterday">昨天</string>
+    <string name="chat_invite_room">%1$s 邀請你加入房間</string>
+    <string name="chat_invite_decline">拒絕</string>
+    <string name="chat_start_direct">發起私訊</string>
+    <string name="chat_peer_placeholder">使用者名稱或 Matrix ID</string>
+    <!-- Install row subtitle while images are downloaded. No arguments. -->
+    <string name="chat_install_stage_pulling_images">正在拉取映像</string>
+    <!-- Install row subtitle while networks, volumes and data folders are set up. No arguments. -->
+    <string name="chat_install_stage_preparing">正在準備</string>
+    <!-- Button on an install row when the source is unknown or the result is uncertain; opens the app's page. No arguments; short label. -->
+    <string name="chat_install_open_page">前往應用程式頁面</string>
+    <!-- Explanation when the backup status can't be confirmed because the server isn't reachable. -->
+    <string name="chat_backup_detail_unknown">連上家用伺服器後才能確認。</string>
+    <!-- Primary button under the recovery key field: fetch past messages with the entered key. -->
+    <string name="chat_backup_recover">取回以前的訊息</string>
+    <!-- Banner in the chat list asking the owner to save their recovery key. -->
+    <string name="chat_backup_reminder_save_key">儲存復原金鑰，換手機時會用到</string>
+    <!-- Danger button that confirms the reset in the dialog. -->
+    <string name="chat_backup_reset_confirm">重置</string>
+    <!-- Title of the reset confirmation dialog. -->
+    <string name="chat_backup_reset_title">重置聊天記錄備份？</string>
+    <!-- Note under the freshly issued recovery key: it is only shown once. -->
+    <string name="chat_backup_save_key_note">換手機時會用到。只會顯示這一次，點一下「已儲存」後，這台裝置就不會再保留。</string>
+    <!-- Page heading when chat backup hasn't been set up. -->
+    <string name="chat_backup_status_disabled">還沒有備份聊天記錄</string>
+    <!-- Page heading when the backup status isn't known (offline). -->
+    <string name="chat_backup_status_unknown">還無法確認備份狀態</string>
+    <!-- Value on the Settings row: backup is off. -->
+    <string name="chat_backup_value_disabled">未開啟</string>
+    <!-- Value on the Settings row for chat backup: backup is on. -->
+    <string name="chat_backup_value_enabled">已開啟</string>
+    <!-- Value on the Settings row: backup or recovery is running. -->
+    <string name="chat_backup_value_in_progress">處理中</string>
+</resources>

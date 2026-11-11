@@ -44,16 +44,16 @@ struct StepCardFrame<Content: View>: View {
 
     private var navigation: some View {
         HStack(spacing: WontonTheme.spacing.s8) {
-            WontonIconButton(icon: .back, label: String(localized: .designStepBack), action: back)
+            WontonIconButton(icon: .back, label: String(localized: .Design.designStepBack), action: back)
                 .disabled(!nav.canBack)
                 .opacity(nav.canBack ? 1 : WontonTheme.ratio.secondaryContent)
             Spacer(minLength: 0)
             Text("\(nav.position)/\(nav.total)")
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
-                .accessibilityLabel(String(localized: .designStepProgress(Int(nav.position), Int(nav.total))))
+                .accessibilityLabel(String(localized: .Design.designStepProgress(Int(nav.position), Int(nav.total))))
             Spacer(minLength: 0)
-            Button(String(localized: .designSkip), action: skip)
+            Button(String(localized: .Design.designSkip), action: skip)
                 .buttonStyle(.plain)
                 .wontonText(WontonTheme.typography.body)
                 .foregroundStyle(Color(colors.textPrimary))

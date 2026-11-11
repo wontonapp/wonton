@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
+    <string name="message_clip_label">訊息</string>
+    <!-- Item in the message menu: copy the message text. Android only. -->
+    <string name="message_copy">複製</string>
+    <!-- Accessibility label of the copy button on a code block in a message. -->
+    <string name="message_code_copy">複製程式碼</string>
+    <!-- Confirm button in the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_confirm">收回</string>
+    <!-- Body of the dialog that removes a message for everyone, saying the scope of it. Android only. -->
+    <string name="message_delete_everyone_message">這個房間裡所有成員都會看到它被收回。</string>
+    <!-- Title of the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_title">對所有人生效，收回這則訊息？</string>
+    <string name="message_image_save">儲存到相簿</string>
+    <string name="message_image_saved">已儲存到相簿</string>
+    <string name="message_image_share">分享</string>
+    <string name="message_summary_files">[檔案]</string>
+    <string name="message_summary_image">[圖片]</string>
+</resources>
