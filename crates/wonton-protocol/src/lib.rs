@@ -195,8 +195,8 @@ pub use plugin::{
     OpenWindow, OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets, OwnerSecretFailure,
     OwnerSecretProblem, OwnerSecretView, OwnerSecretsView, PermissionLine, PermissionOpened,
     PermissionRisk, PermissionUpdate, PluginAuthor, PluginDetail, PluginDevice, PluginFailure,
-    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginOperation,
-    PluginProblem, PluginRuntime, PluginScope, PluginSettingField, PluginSettingKind,
+    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginMediaGrant,
+    PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginSettingField, PluginSettingKind,
     PluginSettingOption, PluginSettingsUpdate, PluginSettingsView, PluginState, PluginTakeover,
     PluginTask, PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel, RequirementLine,
     RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues, SecurityTier,
@@ -238,7 +238,8 @@ pub use sharing::{
 pub use sidebar::{SidebarApp, SidebarOpen, SidebarViewModel};
 pub use tabs::{
     CandidatePlugin, PluginTab, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem,
-    TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,
+    TabLayout, TabLoadFailure, TabMediaPrompt, TabPage, TabRef, TabState, TabsProblem,
+    TabsViewModel,
 };
 pub use timeline::{
     BackPagination, ImageContent, KeyNotice, MatrixTarget, MediaHandle, MessageAction,

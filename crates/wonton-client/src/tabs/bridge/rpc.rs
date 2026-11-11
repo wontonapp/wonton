@@ -70,10 +70,7 @@ fn accepts_origin(tabs: &TabsLink, page: &PlacedTab, origin: &str) -> bool {
     let Some(url) = current.url.as_deref().and_then(|url| Url::parse(url).ok()) else {
         return false;
     };
-    origin.scheme() == url.scheme()
-        && origin.host().is_some()
-        && origin.host() == url.host()
-        && origin.port_or_known_default() == url.port_or_known_default()
+    super::super::media_permission::same_origin(&url, &origin)
 }
 
 type RpcError = (i32, String);

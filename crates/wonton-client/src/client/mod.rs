@@ -11,7 +11,7 @@ use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, ComposerDraft, CoreError,
     FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
-    OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail, PluginImage,
+    OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PluginDetail, PluginImage,
     PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
     SettingsViewModel, StoreItem, TabRef, TabsViewModel, TransfersViewModel,
 };
@@ -29,7 +29,6 @@ use crate::subscription::{
     OnboardingSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
     SessionListSubscription, SettingsSubscription, TabsSubscription, TransfersSubscription,
 };
-use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 use switch::Replay;
 
 mod dispatch;
@@ -38,6 +37,7 @@ mod media;
 mod push_route;
 mod sharing;
 mod switch;
+mod tabs;
 #[cfg(feature = "test-hooks")]
 mod test_hooks;
 mod tool_policy;
@@ -692,6 +692,9 @@ impl ClientCore {
             Action::SetVisiblePlugin { plugin_id } => {
                 scope.plugins.set_visible_plugin(plugin_id);
                 Ok(())
+            }
+            Action::SetPluginMediaPermission { plugin_id, allow } => {
+                scope.plugins.set_media_permission(plugin_id, allow)
             }
             Action::RefreshStore { force } => {
                 scope.plugins.refresh_store(force);

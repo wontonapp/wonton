@@ -137,6 +137,7 @@ fn sidebar_view_model_round_trip() {
         shared_apps: None,
         port_mappings: Vec::new(),
         owner_secrets: None,
+        media_grants: Vec::new(),
         sidebar: crate::SidebarViewModel {
             apps: vec![crate::SidebarApp {
                 plugin_id: "app.memos".into(),

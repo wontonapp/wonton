@@ -64,6 +64,16 @@ pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsVi
             .collect(),
         panel_selected: state.panel_selected.clone(),
         bot_pin_consents: state.bot_pin_consents.clone(),
+        // 询问跟着页面走：页面不在了就不显示（state 里的清理由改动助手做）。
+        media_prompt: state
+            .media_prompt
+            .as_ref()
+            .map(|pending| wonton_protocol::TabMediaPrompt {
+                plugin_id: pending.plugin_id.clone(),
+                plugin_title: plugin_title_of(&pending.plugin_id, plugins),
+                camera: pending.camera,
+                microphone: pending.microphone,
+            }),
     }
 }
 

@@ -537,6 +537,16 @@ pub struct AskEveryUpdate {
     pub enabled: bool,
 }
 
+/// 插件网页用摄像头和麦克风的记下的决定，按插件 ID 存在设备本机：
+/// 插件详情页一行开关，没问过（没有记录）不显示。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginMediaGrant {
+    pub plugin_id: String,
+    /// `true` 是允许过；`false` 是拒绝过（只在询问弹窗里产生）。
+    pub allowed: bool,
+}
+
 /// 开关 `lan_webui`：网页的局域网端口默认不开，主人看过风险后可以打开（ADR-0023 的“网页的局域网端口”）。
 /// 改开关时核心重建开端口的容器，数据不动。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

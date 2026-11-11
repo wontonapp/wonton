@@ -597,6 +597,12 @@ pub enum Action {
         bot: String,
         allowed: bool,
     },
+    /// 插件详情页里改网页用摄像头/麦克风的决定：`true` 是允许，`false` 是改回没问过（清掉，下次再问）。
+    /// 拒绝只在询问弹窗里产生，详情页的开关给不出拒绝；没问过时给 `false` 返回 `InvalidInput`。
+    SetPluginMediaPermission {
+        plugin_id: String,
+        allow: bool,
+    },
     /// 把正在看的页面钉到面板或底栏（胶囊“···”菜单里的“钉到面板”“钉到底栏”）。
     ///
     /// `url` 是页面此刻的网址，核心按它算出要钉的是哪一种页面：装着的插件的网页入口下的路径，
