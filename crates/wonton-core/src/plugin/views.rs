@@ -264,6 +264,7 @@ impl PluginManager {
             written_by,
             commit: package.origin.as_ref().map(|o| o.commit.clone()),
             digest: package.digest(),
+            plan: String::new(),
             id: m.id.to_string(),
             title: langs.pick_owned(&m.title),
             summary: langs.pick_owned(&m.description),

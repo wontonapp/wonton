@@ -425,6 +425,7 @@ pub fn preview(id: &str) -> InstallPreview {
         source: Some(format!("github:owner/{id}@v1.0.0")),
         commit: None,
         digest: "sha256:abc".to_owned(),
+        plan: "opaque-install-plan".to_owned(),
         id: id.to_owned(),
         title: format!("标题 {id}"),
         summary: String::new(),

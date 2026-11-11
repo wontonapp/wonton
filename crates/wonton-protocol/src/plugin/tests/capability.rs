@@ -87,6 +87,7 @@ fn request_without_extras() -> InstallRequest {
     InstallRequest {
         source: "github:example/wonton-jellyfin@v1.0.0".into(),
         digest: format!("sha256:{}", "cd".repeat(32)),
+        plan: "provider-plan".into(),
         scope: None,
         grant: vec![],
         devices: vec![],
