@@ -32,11 +32,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import app.wonton.protocol.ImageUpload
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonSheet
 import app.wonton.ui.design.WontonTheme
+import app.wonton.protocol.Action
+import app.wonton.protocol.ImageUpload
+import app.wonton.protocol.ReplyQuote
 import java.nio.ByteBuffer
 import kotlin.math.max
 import kotlin.math.min
@@ -156,4 +158,38 @@ private fun previewBitmap(upload: ImageUpload): ImageBitmap {
             (info.size.height * scale).toInt().coerceAtLeast(1),
         )
     }.asImageBitmap()
+}
+
+@Composable
+internal fun ComposerAttachmentSheets(
+    roomId: String,
+    reply: ReplyQuote?,
+    pendingPaste: Uri?,
+    pastedImage: Boolean,
+    onDismissPaste: () -> Unit,
+    onAction: (Action) -> Unit,
+    onReplySent: () -> Unit,
+    onReject: (Problem) -> Unit,
+) {
+    pendingPaste?.let { uri ->
+        if (pastedImage) {
+            PastePreviewSheet(
+                uri,
+                onSend = { upload ->
+                    onAction(Action.SendImage(roomId, upload, reply?.eventId))
+                    if (reply != null) onReplySent()
+                },
+                onDismiss = onDismissPaste,
+                onReject = onReject,
+            )
+        } else {
+            FilePastePreviewSheet(
+                uri,
+                roomId,
+                onSend = onAction,
+                onDismiss = onDismissPaste,
+                onReject = onReject,
+            )
+        }
+    }
 }

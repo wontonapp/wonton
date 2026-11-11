@@ -17,33 +17,40 @@ internal fun Modifier.hardwareMessageKeys(state: TextFieldState, onSend: (String
     var handledReturn by remember(state) { mutableStateOf(false) }
     return onPreviewKeyEvent { event ->
         val native = event.nativeKeyEvent
-        val isReturn = native.keyCode == NativeKeyEvent.KEYCODE_ENTER ||
-            native.keyCode == NativeKeyEvent.KEYCODE_NUMPAD_ENTER
-        if (!isReturn || native.flags and NativeKeyEvent.FLAG_SOFT_KEYBOARD != 0 ||
-            native.device?.isVirtual != false
-        ) {
-            return@onPreviewKeyEvent false
-        }
+        if (!native.isPhysicalReturn()) return@onPreviewKeyEvent false
         if (native.action == NativeKeyEvent.ACTION_UP) {
             val consumed = handledReturn
             handledReturn = false
             return@onPreviewKeyEvent consumed
         }
-        if (native.action != NativeKeyEvent.ACTION_DOWN || state.composition != null ||
-            native.isCtrlPressed || native.isAltPressed || native.isMetaPressed
-        ) return@onPreviewKeyEvent false
+        if (!native.isSendKeyDown(state)) return@onPreviewKeyEvent false
         handledReturn = true
-        if (native.repeatCount == 0) {
-            if (native.isShiftPressed) {
-                state.edit {
-                    val start = selection.min
-                    replace(start, selection.max, "\n")
-                    placeCursorAfterCharAt(start)
-                }
-            } else {
-                state.text.toString().takeIf { it.isNotBlank() }?.let(onSend)
-            }
-        }
+        if (native.repeatCount == 0) sendOrInsertNewline(native, state, onSend)
         true
+    }
+}
+
+private fun NativeKeyEvent.isPhysicalReturn(): Boolean {
+    val returnKey = keyCode == NativeKeyEvent.KEYCODE_ENTER || keyCode == NativeKeyEvent.KEYCODE_NUMPAD_ENTER
+    val physicalDevice = device?.isVirtual == false
+    val notSoft = flags and NativeKeyEvent.FLAG_SOFT_KEYBOARD == 0
+    return returnKey && physicalDevice && notSoft
+}
+
+private fun NativeKeyEvent.isSendKeyDown(state: TextFieldState): Boolean {
+    val plainModifiers = !isCtrlPressed && !isAltPressed && !isMetaPressed
+    val noComposition = state.composition == null
+    return action == NativeKeyEvent.ACTION_DOWN && plainModifiers && noComposition
+}
+
+private fun sendOrInsertNewline(event: NativeKeyEvent, state: TextFieldState, onSend: (String) -> Unit) {
+    if (event.isShiftPressed) {
+        state.edit {
+            val start = selection.min
+            replace(start, selection.max, "\n")
+            placeCursorAfterCharAt(start)
+        }
+    } else {
+        state.text.toString().takeIf { it.isNotBlank() }?.let(onSend)
     }
 }

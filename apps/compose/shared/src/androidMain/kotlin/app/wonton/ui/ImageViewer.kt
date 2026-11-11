@@ -1,3 +1,4 @@
+@file:Suppress("TooManyFunctions")
 package app.wonton.ui
 
 import android.content.Context
@@ -164,7 +165,7 @@ private suspend fun saveToGallery(context: Context, core: ClientCore, image: Ima
 } catch (failure: CancellationException) {
     throw failure
 } catch (failure: Exception) {
-    imageOperationProblem(failure, R.string.message_image_save_failed)
+    imageProblem(failure, R.string.message_image_save_failed)
 }
 
 @Suppress("TooGenericExceptionCaught")
@@ -178,15 +179,9 @@ private suspend fun shareWithOthers(context: Context, core: ClientCore, image: I
 } catch (failure: CancellationException) {
     throw failure
 } catch (failure: Exception) {
-    imageOperationProblem(failure, R.string.message_image_share_failed)
+    imageProblem(failure, R.string.message_image_share_failed)
 }
 
-private fun imageOperationProblem(failure: Exception, title: Int): Problem = when (failure) {
-    is CoreException -> failure.problem
-    is SecurityException -> Problem(titleRes = title, nextStepRes = R.string.message_image_permission_denied,
-        detail = failure.message)
-    else -> Problem(titleRes = title, detail = failure.message)
-}
 
 @Composable
 private fun LoadingOriginal() {

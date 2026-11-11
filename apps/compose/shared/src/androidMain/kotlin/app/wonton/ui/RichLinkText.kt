@@ -83,17 +83,26 @@ internal fun RichLinkText(
 
 private fun linkAt(layout: TextLayoutResult, spans: List<RichSpan>, position: Offset): RichLink? {
     val line = layout.getLineForVerticalPosition(position.y)
-    if (position.y < 0 || position.y > layout.size.height ||
-        position.x < layout.getLineLeft(line) || position.x > layout.getLineRight(line)
-    ) return null
+    return if (outsideLine(layout, line, position)) null else spanLinkAt(layout, spans, position)
+}
+
+private fun outsideLine(layout: TextLayoutResult, line: Int, position: Offset): Boolean {
+    val vertical = position.y >= 0 && position.y <= layout.size.height
+    val horizontalStart = position.x >= layout.getLineLeft(line)
+    val horizontalEnd = position.x <= layout.getLineRight(line)
+    return !vertical || !horizontalStart || !horizontalEnd
+}
+
+private fun spanLinkAt(layout: TextLayoutResult, spans: List<RichSpan>, position: Offset): RichLink? {
     val offset = layout.getOffsetForPosition(position)
     var start = 0
+    var result: RichLink? = null
     for (span in spans) {
         val end = start + span.text.length
-        if (offset in start until end) return span.link
+        if (result == null && offset in start until end) result = span.link
         start = end
     }
-    return null
+    return result
 }
 
 @Composable

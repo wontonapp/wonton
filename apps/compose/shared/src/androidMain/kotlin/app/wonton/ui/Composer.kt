@@ -1,10 +1,5 @@
 package app.wonton.ui
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
-import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
-import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -33,19 +28,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -54,16 +44,11 @@ import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.ReplyQuote
-import app.wonton.ui.design.WontonActionSheet
-import app.wonton.ui.design.WontonIconButton
-import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.Attach
-import app.wonton.ui.icons.Image
+import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.icons.Send
 import app.wonton.ui.icons.WontonIcon
-import kotlinx.coroutines.launch
 
 private const val MAX_LINES = 6
 
@@ -86,44 +71,10 @@ fun Composer(
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
 ) {
-    val incoming = LocalTabDraft.current
-    LaunchedEffect(incoming.text) {
-        incoming.text?.let { text ->
-            onDraftChange(if (draft.isBlank()) text else "$draft\n$text")
-            incoming.text = null
-        }
-    }
-    var isChoosingAttachment by rememberSaveable { mutableStateOf(false) }
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    // 字符串资源在协程里取不到，弹窗前先取好。
-    val photoUnreadable = stringResource(R.string.photo_unreadable)
-    val photoTryAnother = stringResource(R.string.photo_try_another)
-    var pendingPaste by rememberSaveable(roomId) { mutableStateOf<Uri?>(null) }
-    var pastedImage by rememberSaveable(roomId) { mutableStateOf(false) }
-    val pasteListener = remember(roomId) {
-        pasteContentListener(
-            context.applicationContext.contentResolver,
-            onImage = { pastedImage = true; pendingPaste = it },
-            onFile = { pastedImage = false; pendingPaste = it },
-        )
-    }
-    val pickPhoto = rememberLauncherForActivityResult(PickVisualMedia()) { uri ->
-        if (uri != null) {
-            scope.launch {
-                PhotoUpload.make(context, uri).fold(
-                    onSuccess = { upload ->
-                        onAction(Action.SendImage(roomId, upload, reply?.eventId))
-                        if (reply != null) onReplySent()
-                    },
-                    onFailure = { failure -> onReject(Problem(photoUnreadable, photoTryAnother, failure.message)) },
-                )
-            }
-        }
-    }
-    val pickFiles = rememberLauncherForActivityResult(OpenMultipleDocuments()) { uris ->
-        uris.forEach { uri -> onAction(uploadAction(context, uri, roomId)) }
-    }
+    val attachments = rememberComposerAttachments(roomId, reply, onAction, onReplySent, onReject)
+    val pasteListener = attachments.pasteListener
+    val pendingPaste = attachments.pendingPaste
+    val pastedImage = attachments.pastedImage
     val spacing = WontonTheme.spacing
     val size = WontonTheme.size
     val isEmpty = draft.isBlank()
@@ -132,7 +83,7 @@ fun Composer(
     OnboardingChatPrompts(roomId)
     if (reply != null) ComposerReply(reply, core, onReplyCancel)
     Row(Modifier.fillMaxWidth().padding(spacing.s4), verticalAlignment = Alignment.Bottom) {
-        WontonIconButton(WontonIcon.Attach, stringResource(R.string.composer_attach), { isChoosingAttachment = true })
+        WontonIconButton(WontonIcon.Attach, stringResource(R.string.composer_attach), attachments.showChooser)
         ComposerField(
             draft,
             onDraftChange,
@@ -158,40 +109,18 @@ fun Composer(
             }
         }
     }
-    if (isChoosingAttachment) {
-        WontonActionSheet(
-            actions = listOf(
-                WontonSheetAction(stringResource(R.string.composer_photo), WontonIcon.Image) {
-                    pickPhoto.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly))
-                },
-                WontonSheetAction(stringResource(R.string.composer_file), WontonIcon.Attach) {
-                    pickFiles.launch(arrayOf("*/*"))
-                },
-            ),
-            onDismiss = { isChoosingAttachment = false },
-        )
-    }
-    pendingPaste?.let { uri ->
-        if (pastedImage) {
-            PastePreviewSheet(
-                uri,
-                onSend = { upload ->
-                    onAction(Action.SendImage(roomId, upload, reply?.eventId))
-                    if (reply != null) onReplySent()
-                },
-                onDismiss = { pendingPaste = null },
-                onReject = onReject,
-            )
-        } else {
-            FilePastePreviewSheet(
-                uri,
-                onSend = { action -> onAction(action) },
-                roomId = roomId,
-                onDismiss = { pendingPaste = null },
-                onReject = onReject,
-            )
-        }
-    }
+    ComposerAttachmentChooser(attachments)
+    ComposerAttachmentSheets(
+        roomId = roomId,
+        reply = reply,
+        pendingPaste = pendingPaste,
+        pastedImage = pastedImage,
+        onDismissPaste = attachments.dismissPaste,
+        onAction = onAction,
+        onReplySent = onReplySent,
+        onReject = onReject,
+    )
+    ComposerIncomingDraft(draft, onDraftChange)
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -272,6 +201,17 @@ private fun SendButton(onClick: () -> Unit) {
                 modifier = Modifier.size(WontonTheme.size.iconSmall),
                 tint = colors.onPrimary.toColor(),
             )
+        }
+    }
+}
+
+@Composable
+private fun ComposerIncomingDraft(draft: String, onDraftChange: (String) -> Unit) {
+    val incoming = LocalTabDraft.current
+    LaunchedEffect(incoming.text) {
+        incoming.text?.let { text ->
+            onDraftChange(if (draft.isBlank()) text else "$draft\n$text")
+            incoming.text = null
         }
     }
 }
