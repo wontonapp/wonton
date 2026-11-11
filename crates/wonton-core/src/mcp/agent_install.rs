@@ -87,6 +87,17 @@ async fn official(
         }
     };
     let mut draft = cards::install(&caller.name, &package.manifest, inputs, &langs);
+    draft.settings = match bus.plugins.card_settings(&package, None, &langs) {
+        Ok(settings) => settings,
+        Err(e) => {
+            return bus.deny(
+                caller,
+                name,
+                value,
+                &ToolFailure::new(e.kind(), e.to_string()),
+            );
+        }
+    };
     match bus
         .plugins
         .retained_data(&package.manifest.id, &langs)
@@ -109,7 +120,9 @@ async fn official(
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, &langs));
     let granted = package.manifest.permissions.clone();
     let langs = langs.clone();
-    let run = move |bus: Arc<Bus>, secrets: SecretValues| async move {
+    let run = move |bus: Arc<Bus>,
+                    secrets: SecretValues,
+                    settings: wonton_protocol::SettingValues| async move {
         if let Err(e) = bus
             .plugins
             .store_input_values(&package.manifest, &secrets, None, &langs)
@@ -123,9 +136,15 @@ async fn official(
                 ),
             );
         }
+        let values = match card_settings(&package, &settings, &langs) {
+            Ok(values) => values,
+            Err(e) => {
+                return Outcome::failed(e.kind(), e.to_string());
+            }
+        };
         match bus
             .plugins
-            .install_detached(package, granted, false, langs.clone())
+            .install_detached(package, granted, false, values, langs.clone())
             .await
         {
             Ok(view) => installed_outcome(&view, None, &langs),
@@ -286,6 +305,17 @@ async fn first_install(
         }
     };
     let mut draft = cards::agent_install(&caller.name, &package, inputs, langs);
+    draft.settings = match bus.plugins.card_settings(&package, None, langs) {
+        Ok(settings) => settings,
+        Err(e) => {
+            return bus.deny(
+                caller,
+                name,
+                value,
+                &ToolFailure::new(e.kind(), e.to_string()),
+            );
+        }
+    };
     match bus.plugins.retained_data(&id, langs).await {
         Ok(Some(notice)) => draft.lines.insert(1, notice),
         Ok(None) => {}
@@ -309,7 +339,9 @@ async fn first_install(
     };
     let id_for_run = id.clone();
     let langs = langs.clone();
-    let run = move |bus: Arc<Bus>, secrets: SecretValues| async move {
+    let run = move |bus: Arc<Bus>,
+                    secrets: SecretValues,
+                    settings: wonton_protocol::SettingValues| async move {
         if let Err(e) = bus
             .plugins
             .store_input_values(&package.manifest, &secrets, None, &langs)
@@ -323,9 +355,15 @@ async fn first_install(
                 ),
             );
         }
+        let values = match card_settings(&package, &settings, &langs) {
+            Ok(values) => values,
+            Err(e) => {
+                return Outcome::failed(e.kind(), e.to_string());
+            }
+        };
         match bus
             .plugins
-            .install_detached(package, granted, false, langs.clone())
+            .install_detached(package, granted, false, values, langs.clone())
             .await
         {
             Ok(view) => {
@@ -388,6 +426,7 @@ async fn quiet_update(
             granted,
             record.enabled_permissions.clone(),
             record.lan_webui,
+            &Default::default(),
             &bus.plugins.owner_languages(),
         )
         .await;
@@ -607,7 +646,7 @@ async fn card_update(
             );
         }
     };
-    let draft = cards::agent_update(
+    let mut draft = cards::agent_update(
         &caller.name,
         &package,
         &header,
@@ -616,17 +655,30 @@ async fn card_update(
         inputs,
         langs,
     );
+    draft.settings = match bus.plugins.card_settings(&package, Some(&record), langs) {
+        Ok(settings) => settings,
+        Err(e) => {
+            return bus.deny(
+                caller,
+                name,
+                value,
+                &ToolFailure::new(e.kind(), e.to_string()),
+            );
+        }
+    };
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, langs));
     let id_for_run = id;
     let writer = adopt.then(|| PluginWriter {
         plugin_id: caller.id.to_string(),
         title: caller.name.clone(),
     });
-    let run = move |bus: Arc<Bus>, secrets: SecretValues| {
-        upgrade_ran(
-            bus, id_for_run, version, package, granted, enabled, lan_webui, secrets, writer,
-        )
-    };
+    let run =
+        move |bus: Arc<Bus>, secrets: SecretValues, settings: wonton_protocol::SettingValues| {
+            upgrade_ran(
+                bus, id_for_run, version, package, granted, enabled, lan_webui, secrets, settings,
+                writer,
+            )
+        };
     bus.confirmed_twice(
         caller,
         name,
@@ -649,6 +701,7 @@ async fn upgrade_ran(
     enabled: Vec<EnabledPermission>,
     lan_webui: bool,
     secrets: SecretValues,
+    settings: wonton_protocol::SettingValues,
     writer: Option<PluginWriter>,
 ) -> Outcome {
     let langs = bus.plugins.owner_languages();
@@ -668,7 +721,7 @@ async fn upgrade_ran(
     }
     match bus
         .plugins
-        .upgrade_upload(&id, package, granted, enabled, lan_webui, &langs)
+        .upgrade_upload(&id, package, granted, enabled, lan_webui, &settings, &langs)
         .await
     {
         Ok(()) => {
@@ -729,5 +782,29 @@ async fn upgrade_ran(
                 ],
             ),
         ),
+    }
+}
+
+/// 卡片里填的设置：安装时按新 Schema 校验并补默认值。
+fn card_settings(
+    package: &PluginPackage,
+    given: &wonton_protocol::SettingValues,
+    langs: &Languages,
+) -> Result<crate::plugin::settings::Values, crate::plugin::InstallError> {
+    match crate::plugin::settings::load(package, langs)? {
+        Some(schema) => crate::plugin::settings::value::initial(&schema, given, langs)
+            .map_err(|fields| crate::plugin::settings::value_error(fields, langs)),
+        None if given.is_empty() => Ok(Default::default()),
+        None => Err(crate::plugin::settings::value_error(
+            given
+                .keys()
+                .map(|name| wonton_protocol::SettingsFieldError {
+                    name: name.clone(),
+                    kind: wonton_protocol::SettingsFieldProblemKind::UnknownField,
+                    message: l10n::text(langs, "plugin-settings-value-unknown-field", &[]),
+                })
+                .collect(),
+            langs,
+        )),
     }
 }

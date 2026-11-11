@@ -572,6 +572,7 @@ impl PluginManager {
         granted: &[Permission],
         enabled: &[EnabledPermission],
         lan_webui: bool,
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
     ) -> Result<PluginView, InstallError> {
         super::install_entry::check_runtime(&package.manifest, langs)?;
@@ -591,7 +592,7 @@ impl PluginManager {
         self.reserve(&listed, langs)?;
         tracing::info!(plugin = %manifest.id, gpu = ?gpu, lan = ?lan, "开始安装插件");
         match self
-            .deploy(&package, granted, enabled, gpu, lan, langs)
+            .deploy(&package, granted, enabled, gpu, lan, settings, langs)
             .await
         {
             Ok(deployed) => {

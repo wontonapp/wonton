@@ -55,6 +55,7 @@ mod panel_pins;
 mod peers;
 pub mod people_limits;
 mod plugin_scope;
+mod plugin_settings;
 mod plugin_start;
 mod plugin_web;
 mod proxy;

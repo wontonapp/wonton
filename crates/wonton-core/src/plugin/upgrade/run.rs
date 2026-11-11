@@ -106,6 +106,7 @@ impl PluginManager {
         granted: &[Permission],
         requested: &[EnabledPermission],
         lan_webui: bool,
+        settings: super::super::settings::Values,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
         super::super::install_entry::check_runtime(&package.manifest, &langs)?;
@@ -147,7 +148,14 @@ impl PluginManager {
         let before = self.begin_upgrade(id)?;
         tracing::info!(plugin = %id, version = %manifest.version, "开始升级插件");
         let outcome = self
-            .upgrade_begun(&package, granted, &enabled, (gpu, lan), &langs)
+            .upgrade_begun(
+                &package,
+                granted,
+                &enabled,
+                (gpu, lan),
+                settings.clone(),
+                &langs,
+            )
             .await;
         self.lan.end(id);
         let result = self.finish_upgrade(&package, lan_webui, before, outcome);
@@ -249,6 +257,7 @@ impl PluginManager {
         granted: &[Permission],
         enabled: &[EnabledPermission],
         grants: (Option<GpuGrant>, Option<LanGrant>),
+        settings: super::super::settings::Values,
         langs: &Languages,
     ) -> Outcome {
         let old = match self.read_old(&package.manifest.id).await {
@@ -257,7 +266,15 @@ impl PluginManager {
         };
         let mut progress = Progress::default();
         let error = match self
-            .replace_version(&old, package, granted, enabled, grants, &mut progress)
+            .replace_version(
+                &old,
+                package,
+                granted,
+                enabled,
+                grants,
+                settings,
+                &mut progress,
+            )
             .await
         {
             Ok(deployed) => {
@@ -334,11 +351,12 @@ impl PluginManager {
         granted: &[Permission],
         enabled: &[EnabledPermission],
         grants: (Option<GpuGrant>, Option<LanGrant>),
+        settings: super::super::settings::Values,
         progress: &mut Progress,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
         let prepared = self
-            .prepare_new(old, package, enabled, grants, progress)
+            .prepare_new(old, package, enabled, grants, settings, progress)
             .await?;
         let langs = self.owner_languages();
         let Prepared {
@@ -399,6 +417,8 @@ impl PluginManager {
             written_by: old.record.written_by.clone(),
             ask_every_update: old.record.ask_every_update,
             family: old.record.family,
+            settings: ctx.settings.clone().into_iter().collect(),
+            settings_changed_ms: old.record.settings_changed_ms,
         })?;
         Ok(Deployed {
             upstream,
@@ -423,6 +443,7 @@ impl PluginManager {
         package: &PluginPackage,
         enabled: &[EnabledPermission],
         (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
+        settings: super::super::settings::Values,
         progress: &mut Progress,
     ) -> Result<Prepared, InstallError> {
         let manifest = &package.manifest;
@@ -448,6 +469,7 @@ impl PluginManager {
         ctx.limits = old.record.limits;
         ctx.gpu = gpu;
         ctx.lan = lan;
+        ctx.settings = settings;
         // 新版本才接入 Matrix 的插件：先代 Bot 登录新设备，模型凭据签发后再把变量填进上下文。
         let mut new_bot = None;
         if is_bot(manifest) && !is_bot(&old.package.manifest) {
@@ -756,6 +778,7 @@ impl PluginManager {
                 &granted,
                 &installed.enabled_permissions,
                 installed.lan_webui,
+                installed.settings.clone(),
             )
             .await
         {

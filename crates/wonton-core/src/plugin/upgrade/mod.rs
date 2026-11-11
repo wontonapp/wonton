@@ -326,6 +326,7 @@ impl PluginManager {
                 blocked,
                 record.written_by.clone(),
                 &record.enabled_permissions,
+                Some(&record),
             )
             .await?;
         preview.upgrade_from = Some(record.version.clone());
@@ -442,7 +443,8 @@ impl PluginManager {
         }
         let filled = self.store.secrets().load(id).ok().flatten();
         self.store_input_values(&package.manifest, &request.secrets, filled.as_ref(), langs)?;
-        self.upgrade_detached(package, granted, requested, request.lan_webui)
+        let settings = upgrade_values(&package, &record, &request.settings, langs)?;
+        self.upgrade_detached(package, granted, requested, request.lan_webui, settings)
             .await?;
         self.staged.remove(&digest);
         Ok(())
@@ -456,12 +458,20 @@ impl PluginManager {
         granted: Vec<Permission>,
         enabled: Vec<EnabledPermission>,
         lan_webui: bool,
+        given: &wonton_protocol::SettingValues,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let record = self.upgradable_record(id, langs)?;
         Self::check_same_plugin(&package, &record, langs)?;
-        self.upgrade_detached(package, granted, enabled, lan_webui || record.lan_webui)
-            .await
+        let settings = upgrade_values(&package, &record, given, langs)?;
+        self.upgrade_detached(
+            package,
+            granted,
+            enabled,
+            lan_webui || record.lan_webui,
+            settings,
+        )
+        .await
     }
 
     async fn upgrade_detached(
@@ -470,12 +480,42 @@ impl PluginManager {
         granted: Vec<Permission>,
         requested: Vec<EnabledPermission>,
         lan_webui: bool,
+        settings: super::settings::Values,
     ) -> Result<(), InstallError> {
         let this = Arc::clone(self);
         detached(async move {
-            this.upgrade_checked(package, &granted, &requested, lan_webui)
+            this.upgrade_checked(package, &granted, &requested, lan_webui, settings)
                 .await
         })
         .await
+    }
+}
+
+/// 升级要用的设置值：旧值叠在请求上，再按新 Schema 校验。新版本删掉了设置时值一起丢掉。
+fn upgrade_values(
+    package: &PluginPackage,
+    record: &InstalledRecord,
+    given: &wonton_protocol::SettingValues,
+    langs: &Languages,
+) -> Result<super::settings::Values, InstallError> {
+    let update: std::collections::HashMap<_, _> = given
+        .iter()
+        .map(|(name, value)| (name.clone(), Some(value.clone())))
+        .collect();
+    match super::settings::load(package, langs)? {
+        Some(schema) => super::settings::value::merged(&schema, &record.settings, &update, langs)
+            .map_err(|fields| super::settings::value_error(fields, langs)),
+        None if given.is_empty() => Ok(super::settings::Values::new()),
+        None => {
+            let fields = given
+                .keys()
+                .map(|name| wonton_protocol::SettingsFieldError {
+                    name: name.clone(),
+                    kind: wonton_protocol::SettingsFieldProblemKind::UnknownField,
+                    message: crate::l10n::text(langs, "plugin-settings-value-unknown-field", &[]),
+                })
+                .collect();
+            Err(super::settings::value_error(fields, langs))
+        }
     }
 }

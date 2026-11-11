@@ -24,6 +24,7 @@ use crate::plugin::privileges::{self, CapabilityRisk};
 use crate::plugin::store::InstalledRecord;
 use crate::plugin::views::{cross_origin_isolation_notice, permission_line};
 use crate::plugin::{PluginPackage, render};
+use wonton_protocol::SettingsForm;
 
 /// 还没编号、没定到期时间的卡片内容。
 pub struct Draft {
@@ -36,6 +37,8 @@ pub struct Draft {
     pub plugin_id: Option<String>,
     /// 卡片要主人填的密钥（ADR-0064）；不填密钥的卡片是空的。
     pub secret_inputs: Vec<SecretInput>,
+    /// 卡片要主人填的设置（ADR-0077）；没有设置的应用为空。
+    pub settings: Option<SettingsForm>,
 }
 
 impl Draft {
@@ -250,6 +253,7 @@ pub fn install(
         scope: None,
         plugin_id: Some(manifest.id.to_string()),
         secret_inputs,
+        settings: None,
     }
 }
 
@@ -318,6 +322,7 @@ pub fn agent_install(
         scope: None,
         plugin_id: Some(manifest.id.to_string()),
         secret_inputs,
+        settings: None,
     }
 }
 
@@ -372,6 +377,7 @@ pub fn agent_update(
         scope: None,
         plugin_id: Some(manifest.id.to_string()),
         secret_inputs,
+        settings: None,
     }
 }
 
@@ -433,6 +439,7 @@ pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
         scope: None,
         plugin_id: Some(manifest.id.to_string()),
         secret_inputs: Vec::new(),
+        settings: None,
     }
 }
 
@@ -457,6 +464,7 @@ pub fn uninstall(requester: &str, title: &str, delete_data: bool, langs: &Langua
         scope: None,
         plugin_id: None,
         secret_inputs: Vec::new(),
+        settings: None,
     }
 }
 
@@ -492,6 +500,7 @@ pub fn tool_call(
         scope: None,
         plugin_id: None,
         secret_inputs: Vec::new(),
+        settings: None,
     }
 }
 
@@ -568,6 +577,7 @@ pub fn agent_permission(
         scope: None,
         plugin_id: None,
         secret_inputs: Vec::new(),
+        settings: None,
     }
 }
 
@@ -657,6 +667,7 @@ pub fn save_file(
         scope: None,
         plugin_id: None,
         secret_inputs: Vec::new(),
+        settings: None,
     }
 }
 

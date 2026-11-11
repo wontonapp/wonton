@@ -96,6 +96,7 @@ pub async fn answer(
         answer.answer,
         answer.choice_id.as_deref(),
         answer.secrets,
+        answer.settings,
         &by,
     ) {
         Ok(state) => Json(ConfirmationReply { state }).into_response(),

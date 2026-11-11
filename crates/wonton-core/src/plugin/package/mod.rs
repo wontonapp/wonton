@@ -421,6 +421,12 @@ impl PluginPackage {
         &self.files
     }
 
+    /// 清单 `x-wonton.settings` 指向的设置 Schema 原文；没声明时为空（引用在解析包时已核对存在并是 UTF-8）。
+    pub fn settings(&self) -> Option<&[u8]> {
+        let path = self.manifest.settings.as_deref()?;
+        self.files.get(path).map(Vec::as_slice)
+    }
+
     pub fn has_config(&self, name: &str) -> bool {
         self.configs.contains_key(name)
     }
