@@ -82,15 +82,14 @@ Wonton MCP 入口按插件网络来源授权，C1–C3 不引入 bearer token；
 
 桥用 Rust，原因是仓库已有 Matrix 的 Rust 边界、厚核心的错误分类和低常驻开销；桥是独立插件进程，不能调用核心内部 API。桥及其复用的 `wonton-matrix` 随私有主仓库的 `LicenseRef-Proprietary` 发布；公共插件仓库只引用已构建的镜像，不暴露桥源代码。桥只在客户端说 MCP（查用户语言），`rmcp`（Apache-2.0）由 `wonton-core` 和桥共用；桥及其依赖不引入 GPL/AGPL。Agent 的专有许可证、适配器许可证和上游 notices 随 Agent 插件清单分发；不能满足某个 Agent 的许可证时不上架。
 
-### 报文类型：自己定义，不用官方 crate
+### 报文类型：网关换官方库之前桥用自己的类型
 
-ACP 的官方 Rust SDK 是 [`agent-client-protocol`](https://crates.io/crates/agent-client-protocol)（Apache-2.0；2026-11 实测最新 5.2.0，MSRV 1.88）。桥不用它做实现，只在测试里当报文契约的对照物（`acp_contract_tests.rs`，双向断言字段映射不漂移）：
+[ADR-0061 第 11 节](0061-agent-runtime-and-frontends.md)定了方向：网关用官方的 `agent-client-protocol`，桥的 ACP 层跟网关一起换，不单独重写桥。换之前桥保留手写类型；官方 crate（Apache-2.0）在测试里当报文契约的对照物（`acp_contract_tests.rs`，双向断言字段映射不漂移），换库时照着它核对。
 
-- 桥只用 v1 十来个方法的报文子集；SDK 是完整的客户端/代理/Agent 三角色连接机（传输、builder、futures 运行时），为拿 serde 结构把它编译进常驻桥不划算。
-- 依赖面重：关掉全部可选特性后，normal 依赖仍有 futures、futures-concurrency、uuid、anyhow、tracing 和自家 derive + 钉死的 schema crate。
-- 新版官方 crate 进不了 workspace 测试图：1.0 起给 serde_json 硬编码 `preserve_order`（抽查 1.3.0/2.2.0/3.5.0/3.6.0/5.2.0），该特性经 cargo 统一进整个 workspace 的测试图，撑大 `serde_json::Value`，实测触发 `wonton-core` 的 `clippy::result_large_err`（`-p wonton-core` 单独跑不触发，差异只在桥 dev-dependency 带进来的统一特性）。契约测试因此钉 0.13.1（schema 0.13.5，只有 raw_value），其 v1 类型已覆盖桥用到的全部报文；升级等核心缩小那两处 `CallToolResult`，或官方去掉该依赖。
-- 跟进成本高：schema crate 按 patch 钉死（5.0.0→5.2.0 三天三版），类型标 `#[non_exhaustive]`；桥依赖的 `configOptions`（dsh 0.2.2 的模式切换）在 1.17 还挂进 `unstable_session_options` 特性——桥的实测行为走在这类面的稳定承诺前面。
-- 桥有自己的扩展和容错：`_session/steering`（Claude/Codex 私有）、`_wonton/task`（ADR-0059）、`-32099` 自有错误码、`mcpCapabilities.http` 对象/布尔两种写法、错误 `data` 的多形状——这些官方 schema 不覆盖，官方类型只能当对照物。
+换的时候要处理的（2026-11 实测，5.2.0）：
+
+- 官方 schema 给 serde_json 硬编码 `preserve_order`，特性统一进整个 workspace 的测试图后 `serde_json::Value` 撑大，`cargo clippy --workspace --all-targets -- -D warnings` 会让 `wonton-core` 两处（`mcp/takeover.rs:232`、`mcp/mod.rs:381` 的 `CallToolResult`）触发 `clippy::result_large_err`（`-p wonton-core` 单独跑不触发，差异只在桥 dev-dependency 带来的统一特性）。换库前先把这两处装箱或缩小，契约测试的对照物才能跟着钉到网关同款版本（现在钉 0.13.1，见 `crates/wonton-acp-bridge/Cargo.toml`）。
+- 桥的私有扩展和容错官方 schema 不覆盖：`_session/steering`（Claude/Codex 私有）、`_wonton/task`（ADR-0059）、`-32099` 自有错误码、`mcpCapabilities.http` 对象/布尔两种写法、错误 `data` 的多形状——换的时候按 ADR-0061 第 11 节走无类型处理。
 
 每个活跃 ACP session 的内存预算按实测值留余量：Claude 约 200 MiB/会话增量，Qwen 有 2.7–2.9 GiB 的瞬时多会话峰值；插件清单声明限制，Qwen 默认单 session 并设容器内存上限，超限显示插件被杀/未就绪，不静默重试。空闲 10 分钟后 `session/close`，不删除持久状态。
 
