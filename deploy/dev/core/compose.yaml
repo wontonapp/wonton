@@ -51,6 +51,8 @@ services:
       WONTON_HOST_DEV: /host/dev
       # 出网代理（ADR-0023）：开发环境没有安装脚本，要用时自己设 WONTON_EGRESS_PROXY。核心自己访问外网也用它。
       WONTON_EGRESS_PROXY: ${WONTON_EGRESS_PROXY:-}
+      # 连不上 github.com 的构建机/运行机可以换镜像；不设时用镜像，发布镜像不受影响。
+      WONTON_GITHUB_GIT: ${WONTON_DEV_GITHUB_GIT:-https://ghfast.top/https://github.com}
       WONTON_EGRESS_PROXY_DETECTED: ${WONTON_EGRESS_PROXY_DETECTED:-}
       WONTON_DOH_URL: ${WONTON_DOH_URL:-}
       # 空时核心自动选插件的局域网端口开在哪个地址上（ADR-0019）。
