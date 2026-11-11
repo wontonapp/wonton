@@ -9,7 +9,89 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 
-use super::{BASE_DOMAIN, Core, matrix, read_body, respond};
+use serde_json::{Value, json};
+use std::sync::atomic::Ordering;
+use wonton_matrix::testkit::PushGateway;
+
+use super::{BASE_DOMAIN, Core, OWNER, friends, matrix, read_body};
+
+/// 核心自己的接口；不认识的请求回 `None`（404）。
+fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
+    let push = |method: &str, body: Value| {
+        core.push_requests
+            .lock()
+            .unwrap()
+            .push((method.to_owned(), body));
+        core.push_registrations_seen
+            .send_modify(|count| *count += 1);
+    };
+    if let Some(rest) = head.strip_prefix("post /_wonton/confirmations/") {
+        let id = rest
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        let answer: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+        let state = match answer["answer"].as_str() {
+            Some("approve") => "running",
+            _ => "rejected",
+        };
+        core.answers.lock().unwrap().push((id, answer));
+        let (status, reply) = core
+            .answer_replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| (200, json!({"state": {"type": state}})));
+        return Some((status, reply.to_string()));
+    }
+    if let Some(rest) = head.strip_prefix("delete /_wonton/confirmations/") {
+        let id = rest.split('/').next().unwrap_or_default().to_owned();
+        core.window_stops.lock().unwrap().push(id);
+        let reply = core.answer_replies.lock().unwrap().pop_front();
+        return Some(reply.map_or((204, String::new()), |(status, reply)| {
+            (status, reply.to_string())
+        }));
+    }
+    if let Some(reply) = friends::respond(core, head, body) {
+        return Some(reply);
+    }
+    if head.starts_with("get /_wonton/api/plugins ") {
+        core.installed_requests.fetch_add(1, Ordering::SeqCst);
+        let installed = core.installed.lock().unwrap().clone()?;
+        return Some((200, installed.to_string()));
+    }
+    let response = if head.starts_with("post /_wonton/matrix/login-token ") {
+        if core
+            .failing_login_tokens
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .is_ok()
+        {
+            return Some((502, String::new()));
+        }
+        core.login_tokens.fetch_add(1, Ordering::SeqCst);
+        json!({
+            "homeserver_url": format!("http://matrix.{BASE_DOMAIN}"),
+            "server_name": BASE_DOMAIN,
+            "user_id": OWNER,
+            "login_type": "org.matrix.login.jwt",
+            "token": core.issuer.login_token("owner"),
+            "expires_in": 120,
+        })
+    } else if head.starts_with("put /_wonton/push/registration ") {
+        push("PUT", serde_json::from_slice(body).unwrap_or(Value::Null));
+        json!({"pushkey": core.pushkey, "gateway_url": PushGateway::URL})
+    } else if head.starts_with("get /_wonton/api/onboarding ") {
+        let value = core.onboarding.lock().unwrap().clone()?;
+        return Some((200, value.to_string()));
+    } else if head.starts_with("delete /_wonton/push/registration ") {
+        push("DELETE", Value::Null);
+        json!({"removed": true})
+    } else {
+        return None;
+    };
+    Some((200, response.to_string()))
+}
 
 pub(super) async fn fake_core(core: Arc<Core>) -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
@@ -41,12 +123,17 @@ async fn serve(mut tcp: TcpStream, core: Arc<Core>) {
         return;
     }
     let request = super::request_arrived(&text);
-    answer_core_route(&core, &text, &mut tcp).await;
+    let raw = String::from_utf8_lossy(&head).into_owned();
+    answer_core_route(&core, &text, &raw, &mut tcp).await;
     super::request_done(request);
 }
 
-/// 假核心自己的接口：读完请求体，交给 Bot 的应答或 `respond`，没有就回 404。
-async fn answer_core_route(core: &Core, text: &str, tcp: &mut TcpStream) {
+/// 假核心自己的接口：tus 的路由自己写应答（要带 tus 的头），读完请求体，交给 Bot 的应答或 `respond`，没有就回 404。
+/// `raw` 是没转小写的请求头：`Upload-Metadata` 里的 base64 分大小写。
+async fn answer_core_route(core: &Arc<Core>, text: &str, raw: &str, tcp: &mut TcpStream) {
+    if super::files::serve(core, text, raw, tcp).await {
+        return;
+    }
     let Some(body) = read_body(tcp, text).await else {
         return;
     };

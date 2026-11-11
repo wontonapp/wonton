@@ -11,6 +11,7 @@ mod card_plugin_refresh;
 mod confirmation;
 mod device_name;
 mod draft;
+mod file_link;
 mod key_upload_order;
 mod layout;
 mod message_actions;
