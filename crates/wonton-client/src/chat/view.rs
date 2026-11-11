@@ -190,6 +190,7 @@ fn timeline_message(
             .map(|reply| reply_quote(reply, cards.core_account(), links)),
         actions,
         body,
+        failure: None,
         read_by,
     }
 }

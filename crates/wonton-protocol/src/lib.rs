@@ -17,6 +17,7 @@ mod bot_web;
 mod bot_web_registration;
 mod chat;
 mod chat_layout;
+mod agent_failure;
 mod confirmation;
 mod core_upgrade;
 mod egress;
@@ -185,6 +186,9 @@ pub use plugin::{
     StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
     ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
     UpgradeRequest, UpgradeResult, plugin_scope_path, secret_input_path,
+};
+pub use agent_failure::{
+    AGENT_FAILURE_FIELD, AgentFailure, AgentFailureAction, AgentFailureCard, AgentFailureCategory,
 };
 pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};

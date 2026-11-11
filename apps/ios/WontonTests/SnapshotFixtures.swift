@@ -95,6 +95,7 @@ enum SnapshotFixtures {
                     RichSpan(text: text, bold: false, italic: false, code: false, strike: false, link: nil)
                 ])
             ], files: []),
+            failure: nil,
             edited: false, readBy: readBy, reply: nil, actions: [.copy(text: text)]
         )))
     }

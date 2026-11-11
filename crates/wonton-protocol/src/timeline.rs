@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ConfirmationView, FileId, QuotedMessage, ReplyQuote};
+use crate::{AgentFailureCard, ConfirmationView, FileId, QuotedMessage, ReplyQuote};
 
 /// 一批时间线变化，以及向前翻页的状态和列表该停在哪。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -196,6 +196,8 @@ pub struct TimelineMessage {
     pub timestamp_ms: u64,
     pub send_state: SendState,
     pub body: MessageContent,
+    /// 一轮失败的结构化说明：这条是 Bot 报告一轮失败的消息时才有，壳画成失败卡；普通消息为空。
+    pub failure: Option<AgentFailureCard>,
     /// 是否被编辑过（显示的是最新内容）。Bot 的流式回复靠编辑消息实现。
     pub edited: bool,
     /// 读过这条的其他人（显示名）。只有自己发的、别人读到的最后一条才有，壳有就显示“已读”。
@@ -414,6 +416,7 @@ mod tests {
     use crate::{
         Answer, CardChoice, CardLine, ChatFailure, ChatProblem, ConfirmationCard, ConfirmationState,
     };
+    use crate::{AgentFailureAction, AgentFailureCategory};
 
     /// 条目列表的样例，从下面的往返测试里挪出来，函数保持在门禁行数内。
     fn sample_items() -> Vec<TimelineItem> {
@@ -469,6 +472,19 @@ mod tests {
                         }),
                     ),
                     SendState::Sent,
+                ),
+            ),
+            item(
+                "4c",
+                message_with_failure(
+                    AgentFailureCard {
+                        category: AgentFailureCategory::Unreachable,
+                        detail: "Provider said: Post \"http://192.0.2.10:8080/v1/chat/completions\": 502 Bad Gateway".into(),
+                        actions: vec![
+                            AgentFailureAction::Retry,
+                            AgentFailureAction::OpenModelSettings,
+                        ],
+                    },
                 ),
             ),
             item("5", TimelineContent::ReadMarker),
@@ -700,6 +716,7 @@ mod tests {
                 timestamp_ms: 1_793_000_000_000,
                 send_state,
                 body,
+                failure: None,
                 edited: true,
                 read_by: vec!["主人".into()],
                 reply: None,
@@ -715,5 +732,21 @@ mod tests {
             id: id.into(),
             content,
         }
+    }
+
+    fn message_with_failure(failure: AgentFailureCard) -> TimelineContent {
+        let mut content = message(
+            MessageContent::Text {
+                body: "模型服务连不上，稍后再试。".into(),
+                blocks: Vec::new(),
+                files: Vec::new(),
+            },
+            SendState::Sent,
+        );
+        let TimelineContent::Message { message } = &mut content else {
+            unreachable!("message() builds a Message")
+        };
+        message.failure = Some(failure);
+        content
     }
 }

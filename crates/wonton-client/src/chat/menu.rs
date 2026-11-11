@@ -301,6 +301,7 @@ mod tests {
                     timestamp_ms: 0,
                     send_state: wonton_protocol::SendState::Sent,
                     body: MessageContent::Redacted,
+                    failure: None,
                     edited: false,
                     read_by: Vec::new(),
                     reply: None,
