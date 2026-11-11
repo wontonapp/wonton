@@ -1,17 +1,17 @@
 //! 测试里的家：一次性的 Tuwunel，加一个模拟的核心（签发 Matrix 登录令牌，把 `matrix.<基础域名>` 转给 Tuwunel），
 //! 前面接真实的隧道服务端。手机是真实的客户端核心，经隧道和本地代理访问，和 App 一样。
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use super::stale_join::StaleJoin;
 use iroh::{EndpointId, SecretKey};
-use serde_json::{Value, json};
+use serde_json::Value;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing_subscriber::Layer as _;
@@ -33,6 +33,7 @@ use wonton_tunnel::{Allowlist, TunnelServer};
 mod diagnostics;
 mod endpoint;
 mod fake_core;
+mod files;
 mod friends;
 mod io;
 mod matrix;
@@ -149,6 +150,8 @@ struct Core {
     device_keys_wait_started: watch::Sender<bool>,
     /// 为真时 Tuwunel 像挂了一样：转发中的请求断开，新请求一接上就断开。
     matrix_down: watch::Sender<bool>,
+    /// 为真时发消息的请求回 502：核心连不上 Tuwunel。matrix-sdk 会自己重试很久。
+    fail_sends: watch::Sender<bool>,
     /// 为真时取房间成员的请求一接上就断开，别的请求不受影响。
     members_down: AtomicBool,
     members_requests_dropped: AtomicUsize,
@@ -183,6 +186,18 @@ struct Core {
     bot_api: Arc<super::bot_profile_support::BotApi>,
     /// 好友接口的假名单（ADR-0051）。
     friends: Mutex<friends::FakeFriends>,
+    /// 文件服务的 tus 上传：编号和内容，传完发链接的测试用。
+    files: Mutex<HashMap<String, FakeFile>>,
+    file_grants: Mutex<Vec<(String, String)>>,
+    next_file: AtomicU64,
+}
+
+/// 假核心记下的一个 tus 上传。
+#[derive(Default)]
+pub(crate) struct FakeFile {
+    pub length: u64,
+    pub bytes: Vec<u8>,
+    pub name: String,
 }
 
 impl Home {
@@ -210,6 +225,7 @@ impl Home {
             key_uploads_completed: watch::Sender::new(0),
             device_keys_wait_started: watch::Sender::new(false),
             matrix_down: watch::Sender::new(false),
+            fail_sends: watch::Sender::new(false),
             members_down: AtomicBool::new(false),
             members_requests_dropped: AtomicUsize::new(0),
             layout_down: AtomicBool::new(false),
@@ -232,6 +248,9 @@ impl Home {
             installed_requests: AtomicUsize::new(0),
             bot_api: Arc::default(),
             friends: Mutex::default(),
+            files: Mutex::default(),
+            file_grants: Mutex::default(),
+            next_file: AtomicU64::new(0),
         });
         let (addr, task) = fake_core(core.clone()).await;
         let tunnel_key = SecretKey::generate();
@@ -265,6 +284,11 @@ impl Home {
     /// Tuwunel 挂了或恢复了，隧道不受影响。
     pub fn set_matrix_down(&self, down: bool) {
         self.core.matrix_down.send_replace(down);
+    }
+
+    /// 发消息的请求回 502：核心连不上 Tuwunel。matrix-sdk 会自己重试很久，客户端这边不设期限就一直挂着。
+    pub fn fail_sends(&self, fail: bool) {
+        self.core.fail_sends.send_replace(fail);
     }
 
     /// 服务器丢了房间列表那条 Sliding Sync 连接的位置：下一个请求回 `M_UNKNOWN_POS`，SDK 从头同步。
@@ -588,84 +612,6 @@ impl Home {
         bot.start_sync().await.expect("Bot 开始同步");
         bot
     }
-}
-
-/// 核心自己的接口；不认识的请求回 `None`（404）。
-fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
-    let push = |method: &str, body: Value| {
-        core.push_requests
-            .lock()
-            .unwrap()
-            .push((method.to_owned(), body));
-        core.push_registrations_seen
-            .send_modify(|count| *count += 1);
-    };
-    if let Some(rest) = head.strip_prefix("post /_wonton/confirmations/") {
-        let id = rest
-            .split_whitespace()
-            .next()
-            .unwrap_or_default()
-            .to_owned();
-        let answer: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
-        let state = match answer["answer"].as_str() {
-            Some("approve") => "running",
-            _ => "rejected",
-        };
-        core.answers.lock().unwrap().push((id, answer));
-        let (status, reply) = core
-            .answer_replies
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or_else(|| (200, json!({"state": {"type": state}})));
-        return Some((status, reply.to_string()));
-    }
-    if let Some(rest) = head.strip_prefix("delete /_wonton/confirmations/") {
-        let id = rest.split('/').next().unwrap_or_default().to_owned();
-        core.window_stops.lock().unwrap().push(id);
-        let reply = core.answer_replies.lock().unwrap().pop_front();
-        return Some(reply.map_or((204, String::new()), |(status, reply)| {
-            (status, reply.to_string())
-        }));
-    }
-    if let Some(reply) = friends::respond(core, head, body) {
-        return Some(reply);
-    }
-    if head.starts_with("get /_wonton/api/plugins ") {
-        core.installed_requests.fetch_add(1, Ordering::SeqCst);
-        let installed = core.installed.lock().unwrap().clone()?;
-        return Some((200, installed.to_string()));
-    }
-    let response = if head.starts_with("post /_wonton/matrix/login-token ") {
-        if core
-            .failing_login_tokens
-            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-            .is_ok()
-        {
-            return Some((502, String::new()));
-        }
-        core.login_tokens.fetch_add(1, Ordering::SeqCst);
-        json!({
-            "homeserver_url": format!("http://matrix.{BASE_DOMAIN}"),
-            "server_name": BASE_DOMAIN,
-            "user_id": OWNER,
-            "login_type": "org.matrix.login.jwt",
-            "token": core.issuer.login_token("owner"),
-            "expires_in": 120,
-        })
-    } else if head.starts_with("put /_wonton/push/registration ") {
-        push("PUT", serde_json::from_slice(body).unwrap_or(Value::Null));
-        json!({"pushkey": core.pushkey, "gateway_url": PushGateway::URL})
-    } else if head.starts_with("get /_wonton/api/onboarding ") {
-        let value = core.onboarding.lock().unwrap().clone()?;
-        return Some((200, value.to_string()));
-    } else if head.starts_with("delete /_wonton/push/registration ") {
-        push("DELETE", Value::Null);
-        json!({"removed": true})
-    } else {
-        return None;
-    };
-    Some((200, response.to_string()))
 }
 
 /// 测试里的手机：一个客户端核心，连同它的数据目录。

@@ -179,6 +179,7 @@ chat-unknown-answer = 這個版本的雲吞不認得這個回答
 chat-action-not-connected = 還沒連上家用伺服器
 # 還沒登入 Matrix 就有聊天操作時顯示。
 chat-not-signed-in = 還沒登入 Matrix
+chat-send-no-response = Matrix 伺服器沒有回應
 # $error 是房間 ID 剖析器的原始錯誤。
 chat-invalid-room-id = 聊天室 ID 無效：{ $error }
 # 在只放通知的房間裡送東西時顯示。
@@ -409,7 +410,6 @@ files-name-required = 檔案名稱不能為空
 files-download-already-running = 這個檔案已經在下載了
 files-transfer-not-found = 找不到這筆傳輸
 # 這筆傳輸不在「等著傳送連結」的狀態時要重新傳送連結。
-files-resend-not-waiting = 這筆傳輸沒有等著重新傳送的連結
 files-transfer-server-changed = 換了家用伺服器，這筆傳輸屬於之前那一台
 files-dismiss-transfer-running = 這筆傳輸還在進行，要先取消
 # 移除上傳並要求刪除本機檔案時：原檔案是系統給的，App 刪不了它。
