@@ -46,19 +46,13 @@ struct ComposerView: View {
                     text: draft,
                     focused: $isFocused,
                     onPasteImage: { providers in Task { await pasteImage(from: providers) } },
-                    onPasteFiles: { pasteFiles($0) }
+                    onPasteFiles: { pasteFiles($0) },
+                    onSend: sendText
                 )
                     .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.composerField) / 2)
                     .padding(.trailing, isEmpty ? WontonTheme.spacing.s12 : 0)
                 if !isEmpty {
-                    SendButton {
-                        pin.pin()
-                        model.send(.sendText(
-                            roomId: roomId, body: draft.wrappedValue, replyTo: model.replies[roomId]?.eventId
-                        ))
-                        draft.wrappedValue = ""
-                        model.cancelReply(in: roomId)
-                    }
+                    SendButton(action: sendText)
                     .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
                 }
             }
@@ -182,6 +176,15 @@ struct ComposerView: View {
                 )
             }
         }
+    }
+
+    private func sendText() {
+        guard !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !isPreviewing.wrappedValue else { return }
+        pin.pin()
+        model.send(.sendText(roomId: roomId, body: draft.wrappedValue, replyTo: model.replies[roomId]?.eventId))
+        draft.wrappedValue = ""
+        model.cancelReply(in: roomId)
     }
 
     private func deliver(_ image: ImageUpload) {

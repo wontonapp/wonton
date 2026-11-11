@@ -10,6 +10,7 @@ struct ComposerField: View {
     @FocusState.Binding var focused: Bool
     var onPasteImage: ([NSItemProvider]) -> Void
     var onPasteFiles: ([URL]) -> Void
+    var onSend: () -> Void
 
     @Environment(\.wontonColors) private var colors
     @ScaledMetric(relativeTo: .body) private var fontSize: CGFloat = WontonTheme.typography.body.size
@@ -21,6 +22,7 @@ struct ComposerField: View {
             focused: $focused,
             onPasteImage: onPasteImage,
             onPasteFiles: onPasteFiles,
+            onSend: onSend,
             fontSize: fontSize,
             line: line,
             colors: colors,
@@ -36,6 +38,7 @@ private struct ComposerTextField: UIViewRepresentable {
     @FocusState.Binding var focused: Bool
     var onPasteImage: ([NSItemProvider]) -> Void
     var onPasteFiles: ([URL]) -> Void
+    var onSend: () -> Void
     var fontSize: CGFloat
     var line: CGFloat
     var colors: ThemeColors
@@ -46,6 +49,7 @@ private struct ComposerTextField: UIViewRepresentable {
         view.delegate = context.coordinator
         view.onPasteImage = onPasteImage
         view.onPasteFiles = onPasteFiles
+        view.onSend = onSend
         view.accessibilityLabel = placeholder
         // 系统的粘贴建议（键盘上方那一枚）要声明接受什么才出现。
         view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [
@@ -58,6 +62,7 @@ private struct ComposerTextField: UIViewRepresentable {
         context.coordinator.parent = self
         view.onPasteImage = onPasteImage
         view.onPasteFiles = onPasteFiles
+        view.onSend = onSend
         view.refreshStyle(fontSize: fontSize, line: line, colors: colors)
         // 输入法组词（marked text）期间 text 和绑定对不上，别动它，等上屏。
         if view.markedTextRange == nil, view.text != text { view.setText(text) }
@@ -99,6 +104,39 @@ final class ComposerTextView: UITextView {
 
     var onPasteImage: (([NSItemProvider]) -> Void)?
     var onPasteFiles: (([URL]) -> Void)?
+    var onSend: (() -> Void)?
+    private var sendingReturnKeys: Set<UIKeyboardHIDUsage> = []
+
+    // UIPress.key exists only for physical keys; software Return still goes through UITextInput unchanged.
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        var remaining = presses
+        for press in presses {
+            guard let key = press.key,
+                  key.keyCode == .keyboardReturnOrEnter || key.keyCode == .keypadEnter,
+                  key.modifierFlags.intersection([.shift, .control, .alternate, .command]).isEmpty,
+                  markedTextRange == nil else { continue }
+            remaining.remove(press)
+            if sendingReturnKeys.insert(key.keyCode).inserted { onSend?() }
+        }
+        if !remaining.isEmpty { super.pressesBegan(remaining, with: event) }
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let remaining = removeSendingReturns(from: presses)
+        if !remaining.isEmpty { super.pressesEnded(remaining, with: event) }
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let remaining = removeSendingReturns(from: presses)
+        if !remaining.isEmpty { super.pressesCancelled(remaining, with: event) }
+    }
+
+    private func removeSendingReturns(from presses: Set<UIPress>) -> Set<UIPress> {
+        Set(presses.filter { press in
+            guard let key = press.key else { return true }
+            return sendingReturnKeys.remove(key.keyCode) == nil
+        })
+    }
 
     let placeholderLabel = UILabel()
     private var placeholderTop: NSLayoutConstraint!
