@@ -9,9 +9,6 @@ name: nightly-ui
 #
 # 安卓托管机器的模拟器跑不了 ARM 的 .so，构建传 -Pwonton.abis=x86_64。
 on:
-  # 临时：新工作流要先在默认分支上存在才能手动触发，验完删。
-  pull_request:
-    types: [opened, synchronize]
   schedule:
     - cron: "30 4 * * *"
     - cron: "0 4 * * *"
