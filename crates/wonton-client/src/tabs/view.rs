@@ -739,3 +739,5 @@ pub(super) fn is_removable(tab: &TabRef) -> bool {
     // “应用”只在没配对时在栏上，那时它是配对页，也不能拿。
     !matches!(tab, TabRef::Chat | TabRef::Apps)
 }
+pub(crate) mod rules;
+pub(crate) use rules::*;

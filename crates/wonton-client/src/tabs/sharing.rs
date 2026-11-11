@@ -154,7 +154,7 @@ pub(super) fn refresh_pages(state: &mut TabsState, plugins: &PluginsViewModel) -
     for tab in tabs {
         let placed = PlacedTab::Bar { tab };
         state.failures.remove(&placed);
-        super::view::increment_reload(state, &placed);
+        super::reload::increment_reload(state, &placed);
     }
     state.previous_sources = ready;
     changed
