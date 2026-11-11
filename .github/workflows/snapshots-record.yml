@@ -99,8 +99,8 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO
       # 令牌推的提交不会再触发工作流（GitHub 的规则），所以录完要在 PR 上推一个空提交或点重跑。
-      # 只在本仓库的 PR 上提交；外部 fork 的令牌推不回对方的分支，参考图走下面的产物。
-      - name: 提交参考图并摘掉标签
+      # 只在本仓库的 PR 上提交；外部 fork 的令牌推不回对方的分支，参考图走下面的产物，标签由后面的步骤摘。
+      - name: 提交参考图
         if: ${{ !cancelled() && steps.tests.outcome != 'skipped' && github.event.pull_request.head.repo.full_name == github.repository }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -117,8 +117,6 @@ jobs:
             # 检出时没落凭据，令牌只出现在这一条命令里。
             git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
           fi
-          gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/${{ github.event.pull_request.number }}/labels/record-snapshots" \
-            || echo "标签已经不在了。"
       # 外部 fork 推不回去，录好的图由作者从产物里取。
       - name: 外部 PR：把参考图存成产物
         if: ${{ !cancelled() && github.event.pull_request.head.repo.full_name != github.repository }}
@@ -128,6 +126,14 @@ jobs:
           path: apps/ios/WontonTests/__Snapshots__
           retention-days: 7
           if-no-files-found: ignore
+      # 外部 fork 的令牌够得着 PR，标签照样摘；不摘的话以后每次打标签都会再录。
+      - name: 摘掉标签
+        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/${{ github.event.pull_request.number }}/labels/record-snapshots" \
+            || echo "标签已经不在了。"
       # 录制模式下每个用例都会报“已录制”，失败结果包里有每张新图和旧图。
       - name: 失败时存测试结果包
         if: ${{ failure() }}
