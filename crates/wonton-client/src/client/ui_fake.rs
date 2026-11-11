@@ -103,6 +103,8 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
         recovery_next_step: RecoveryNextStep::None,
         verification_flow: None,
     };
+    // 和真核心同一份推导，备份页在假核心下也按真值表显示。
+    crate::chat::recovery::refresh(&mut chat.encryption);
     chat.installing_bots.clear();
     chat.rooms = vec![RoomRow {
         room_id: ROOM_ID.into(),

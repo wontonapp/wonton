@@ -30,7 +30,7 @@ mod onboarding;
 mod ops;
 mod pending;
 mod read_mark;
-mod recovery;
+pub(crate) mod recovery;
 mod reply;
 mod rich;
 mod room_rows;
@@ -205,7 +205,7 @@ impl ChatLink {
             recovery_next_step: RecoveryNextStep::None,
             verification_flow: None,
         };
-        recovery::update_reminder(&mut encryption);
+        recovery::refresh(&mut encryption);
         let view = reuse(
             view,
             ChatViewModel {
@@ -398,7 +398,7 @@ impl ChatLink {
         self.storage.forget_recovery_key()?;
         self.view.send_modify(|view| {
             view.encryption.recovery_key = None;
-            recovery::update_reminder(&mut view.encryption);
+            recovery::refresh(&mut view.encryption);
         });
         Ok(())
     }
@@ -619,8 +619,7 @@ impl ChatLink {
         self.sent.send_replace(Vec::new());
         self.home.set_catching_up(false);
         self.view.send_modify(|view| {
-            view.encryption.can_verify_with_other_device = false;
-            view.encryption.verification_flow = None;
+            recovery::forgot_session(&mut view.encryption);
             view.pending_confirmations.clear();
             view.settled_confirmations.clear();
         });

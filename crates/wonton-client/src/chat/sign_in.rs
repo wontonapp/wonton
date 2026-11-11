@@ -103,7 +103,7 @@ impl ChatLink {
             view.problem = None;
             view.encryption.verification = DeviceVerification::Unknown;
             view.encryption.recovery = RecoveryStatus::Unknown;
-            super::recovery::update_reminder(&mut view.encryption);
+            super::recovery::refresh(&mut view.encryption);
         });
         Ok(None)
     }
