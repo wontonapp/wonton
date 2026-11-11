@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    CoreError, FileId, FileProblem, Transfer, TransferAction, TransferDirection, TransferState,
-    TransfersViewModel, UploadSource,
+    CoreError, FileId, FileProblem, FileSource, Transfer, TransferAction, TransferDirection,
+    TransferState, TransfersViewModel, UploadSource,
 };
 
 use crate::home::write_private;
@@ -27,6 +27,9 @@ pub(super) struct Record {
     pub(super) server: String,
     pub(super) name: String,
     pub(super) file: Option<FileId>,
+    /// 文件的来源，问到名字时记下：连不上家里的时候，手机上这份的卡片还要写明来源。
+    #[serde(default)]
+    pub(super) source: Option<FileSource>,
     pub(super) transferred_bytes: u64,
     pub(super) total_bytes: Option<u64>,
     pub(super) state: TransferState,
@@ -62,6 +65,16 @@ pub(super) struct SourceStamp {
     pub(super) size: u64,
     /// 不用 i128：serde 的带标签枚举读不了。
     pub(super) modified_ns: u64,
+}
+
+impl Record {
+    /// 下载的内容对应的 ETag：接着下、核对新旧都用它。
+    pub(super) fn etag(&self) -> Option<String> {
+        match &self.job {
+            Job::Download { etag, .. } => etag.clone(),
+            Job::Upload { .. } => None,
+        }
+    }
 }
 
 pub(super) struct Store {
@@ -129,6 +142,18 @@ impl Store {
 
     pub(super) fn get(&self, id: &str) -> Option<Record> {
         self.lock().iter().find(|record| record.id == id).cloned()
+    }
+
+    /// 手机上有完整文件的下载记录，最新的那条：接着下、核对新旧、离线给卡片都用它。
+    pub(super) fn finished_download(&self, file: &FileId) -> Option<Record> {
+        self.lock()
+            .iter()
+            .find(|record| {
+                record.state == TransferState::Done
+                    && matches!(record.job, Job::Download { .. })
+                    && record.file.as_ref() == Some(file)
+            })
+            .cloned()
     }
 
     pub(super) fn paused(&self) -> Vec<String> {

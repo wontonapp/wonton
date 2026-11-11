@@ -162,6 +162,18 @@ impl Api {
         Ok(bytes.to_vec())
     }
 
+    /// 内容现在的强 `ETag`：核对手机上下载的那份新旧。核心没写（不该发生）时为空。
+    pub(super) async fn content_etag(&self, id: &FileId) -> Option<String> {
+        let response = self
+            .control(Method::HEAD, &Api::content_path(id))
+            .send()
+            .await
+            .ok()?;
+        let etag = header(response.headers(), "etag").map(str::to_owned);
+        checked(response).await.ok()?;
+        etag
+    }
+
     pub(super) async fn delete(&self, id: &FileId) -> Result<(), Problem> {
         let path = format!("/_wonton/files/{id}");
         self.finish(self.control(Method::DELETE, &path)).await

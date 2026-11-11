@@ -13,6 +13,7 @@ use wonton_protocol::{
 use super::FilesLink;
 use super::api::{Api, Problem, checked, interrupted};
 use super::download::relative_path;
+use super::lock;
 use crate::l10n::{CATALOG, language};
 
 /// 问核心的期限：播放器已经放不了了，不能让主人再等很久。
@@ -90,18 +91,20 @@ impl FilesLink {
                 TransferState::Running | TransferState::Paused
             )
         });
-        // 记录清掉了文件也可能还在：主人选了只清记录。
+        // 记录清掉了文件也可能还在：主人选了只清记录。服务器上的文件改过了就不算在手上：打开是旧的，给重新下载。
         let path = self.downloads_dir.join(relative_path(&info.id, &info.name));
+        let on_phone = !busy && path.is_file() && !lock(&self.stale).contains(&info.id);
         let fetch = if busy {
             FileCardAction::Wait
-        } else if path.is_file() {
+        } else if on_phone {
             FileCardAction::Open {
                 path: path.to_string_lossy().into_owned(),
             }
         } else {
             FileCardAction::Download
         };
-        if playable(info) {
+        if playable(info) && !on_phone {
+            // 能播还没下：边下边播。手机上已经有这份的就直接打开：走中继也不用等，没网也能用。
             FileCardActions {
                 tap: FileCardAction::Play,
                 open_elsewhere: Some(fetch),
