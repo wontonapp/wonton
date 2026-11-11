@@ -14,6 +14,16 @@ case "$profile" in
   release) cargo_profile=release ;;
   *) echo "未知的构建类型：${profile}（只支持 debug 或 release）" >&2; exit 2 ;;
 esac
+
+# 假数据入口（cargo feature ui-fake）：Debug 默认带上（原生壳只在 Debug 里调它），Release 不带，发布包
+# 编不进去。WONTON_UI_FAKE=1/0 强制开/关，夜跑的 UI 测试显式传 1。
+ui_fake_args=()
+case "${WONTON_UI_FAKE:-auto}" in
+  1|true) ui_fake_args=(--features ui-fake) ;;
+  0|false) : ;;
+  auto) if [ "$profile" = debug ]; then ui_fake_args=(--features ui-fake); fi ;;
+  *) echo "WONTON_UI_FAKE 只接受 1、0 或 auto，得到：${WONTON_UI_FAKE}" >&2; exit 2 ;;
+esac
 read -r -a targets <<<"${WONTON_IOS_TARGETS:-aarch64-apple-ios aarch64-apple-ios-sim}"
 if (( ${#targets[@]} == 0 )); then
   echo "WONTON_IOS_TARGETS 不能为空" >&2
@@ -35,6 +45,7 @@ export IPHONEOS_DEPLOYMENT_TARGET=17.0
 libraries=()
 for target in "${targets[@]}"; do
   cargo rustc -p wonton-client --lib --crate-type staticlib --locked \
+    ${ui_fake_args[@]+"${ui_fake_args[@]}"} \
     --target "$target" --profile "$cargo_profile"
   libraries+=("$target_dir/$target/$profile/libwonton_client.a")
 done
