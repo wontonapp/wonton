@@ -146,8 +146,10 @@ async fn the_link_goes_out_after_a_restart_without_resending() {
     timeline.until("链接发进房间", link_in_room).await;
 }
 
-/// Matrix 停着时发不出去：传输在期限内停到「已传完，链接没发出」，恢复了点重发就发出去。期限是发送的 60 秒，
-/// 恢复后 SDK 的发送队列还要按自己的退避把放弃的那条排完，重发的等在后面，多给些余量。
+/// Matrix 停着时发不出去：传输在期限内停到「已传完，链接没发出」，恢复了点重发就发出去。发送的期限是 60 秒。
+/// 假服务端回 502 后立刻关连接，客户端多半吃到的不是 502 而是断连：这种错没有设重试上限的请求不重试，传输当场
+/// 就停（整条几秒）；502 完整到达时 SDK 会按退避一直重试到 60 秒期限才停（整条约 90 秒）。下面的期限和重发的
+/// 余量都按慢的这条给。链接的发送走 `send_text_to` 直连，不经 SDK 的发送队列，重发也不用在队列里等。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_link_that_cannot_go_out_stops_within_a_minute() {
