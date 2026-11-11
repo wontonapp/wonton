@@ -7,8 +7,12 @@ inputs:
     description: 完整的镜像 tag 列表，逗号分隔；第一个 tag 的仓库名是 digest 引用的仓库
     required: true
   artifact:
-    description: 装着 digest 的 artifact 名（每个文件一行 sha256:…）
+    description: 装着 digest 的 artifact 名前缀，各架构上传为 <前缀>-<序号>（每个文件一行 sha256:…，文件名是架构）
     required: true
+  platforms:
+    description: 合出来的 manifest 必须包含的平台，逗号分隔；少一个就失败，不推半套
+    required: false
+    default: linux/amd64,linux/arm64
   github-token:
     description: 登录 ghcr.io 的令牌
     required: false
@@ -20,7 +24,8 @@ runs:
     # 本地组合 action 在作业开始前就要解析：调用方必须先 actions/checkout。
     - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
       with:
-        name: ${{ inputs.artifact }}
+        pattern: ${{ inputs.artifact }}-*
+        merge-multiple: true
         path: digests
     - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
       with:
@@ -31,6 +36,7 @@ runs:
       shell: bash
       env:
         TAGS: ${{ inputs.tags }}
+        PLATFORMS: ${{ inputs.platforms }}
       run: |
         image="${TAGS%%,*}"
         refs=()
@@ -43,3 +49,8 @@ runs:
         done < <(tr ',' '\n' <<<"$TAGS")
         docker buildx imagetools create "${tags[@]}" "${refs[@]}"
         docker buildx imagetools inspect "${tags[1]}"
+        got=$(docker buildx imagetools inspect --raw "${TAGS%%,*}" \
+          | jq -r '.manifests[] | select(.platform.os != "unknown") | .platform.os + "/" + .platform.architecture')
+        for platform in $(tr ',' ' ' <<<"$PLATFORMS"); do
+          grep -qx "$platform" <<<"$got" || { echo "合出来的 manifest 缺 $platform（实有：$got）" >&2; exit 1; }
+        done
