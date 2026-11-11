@@ -11,7 +11,7 @@ use wonton_client::{
 };
 
 use super::rig::{
-    CONNECT_BACKSTOP, Canned, FakeHome, Rig, core_error, installed, preview, running, ticket,
+    CONNECT_BACKSTOP, Canned, FakeHome, Rig, WAIT, core_error, installed, preview, running, ticket,
 };
 
 /// 建连尝试可能要等到握手超时。
@@ -304,6 +304,51 @@ async fn a_dropped_install_waits_for_a_connection_and_then_reports_the_result() 
     assert!(!rig.app.plugins().tasks[0].waiting_for_connection);
 }
 
+/// 请求还吊着时断网：不等请求报错就先说在等连接，连回来再回到在做。
+#[tokio::test]
+async fn losing_the_network_while_the_request_is_out_waits_at_once() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    rig.core.hold(Method::POST, "/_wonton/api/plugins");
+    rig.app
+        .dispatch(Action::InstallPlugin {
+            preview: preview("app.photos"),
+            secrets: Default::default(),
+        })
+        .unwrap();
+
+    // 请求还挂着，连接断了：不等请求报错就说在等连接。
+    rig.drop_home().await;
+    let view = rig
+        .wait_for(|view| {
+            view.tasks
+                .iter()
+                .any(|task| task.id == "app.photos" && task.waiting_for_connection)
+        })
+        .await;
+    assert_eq!(view.tasks[0].state, PluginTaskState::Running);
+    assert!(matches!(
+        rig.app.dispatch(Action::DismissPluginTask {
+            id: "app.photos".to_owned()
+        }),
+        Err(CoreError::NotReady { .. })
+    ));
+
+    // 连接回来：回到在做。断开期间隧道自己会按自己的节奏重新发布状态，多设几次直到被接住。
+    let deadline = Instant::now() + WAIT;
+    while rig
+        .app
+        .plugins()
+        .tasks
+        .iter()
+        .any(|task| task.waiting_for_connection)
+    {
+        assert!(Instant::now() < deadline, "一直停在等连接");
+        rig.app.set_home_status_for_test(HomeStatus::Connected);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 /// 请求可能根本没到：连回来以后列表里也一直没有它，结果不确定，下一步是去已安装列表看。
 #[tokio::test]
 async fn an_install_that_never_shows_up_is_uncertain_and_points_at_the_installed_list() {
@@ -431,13 +476,12 @@ async fn pairing_with_another_server_forgets_the_previous_one() {
     next.core.set_lists(vec![vec![running("app.notes")]]);
     rig.connect_to(next.ticket());
 
-    let state = rig
-        .task("app.photos", |state| *state != PluginTaskState::Running)
-        .await;
+    let state = rig.task("app.photos", |state| !state.in_progress()).await;
     assert!(
         matches!(state, PluginTaskState::Uncertain { .. }),
         "{state:?}"
     );
+    assert!(!rig.app.plugins().tasks[0].waiting_for_connection);
     let view = rig
         .wait_for(|view| {
             view.installed

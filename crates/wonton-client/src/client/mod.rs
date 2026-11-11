@@ -10,10 +10,10 @@ use wonton_l10n::l10n;
 use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, ComposerDraft, CoreError,
     FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
-    FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
-    OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail, PluginImage,
-    PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
-    SettingsViewModel, StoreItem, TabRef, TabsViewModel, TransfersViewModel,
+    FriendsViewModel, HomeStatus, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me,
+    MediaHandle, OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail,
+    PluginImage, PluginsViewModel, RoomTransfers, SecretString, ServersViewModel,
+    SessionListViewModel, SettingsViewModel, StoreItem, TabRef, TabsViewModel, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -225,6 +225,11 @@ impl ClientCore {
     /// 当前和家里服务器的连接，用于首帧渲染。
     pub fn home(&self) -> HomeViewModel {
         self.views().home.borrow().clone()
+    }
+
+    /// 测试用：只改连接状态，隧道本身不动，观测任务和界面怎么反应。
+    pub fn set_home_status_for_test(&self, status: HomeStatus) {
+        self.views.home.send_modify(|view| view.status = status);
     }
 
     /// 订阅和家里服务器的连接，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。

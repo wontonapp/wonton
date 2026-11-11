@@ -166,7 +166,15 @@ private fun InstallCompletion(
     val task = plugins.viewModel.tasks.firstOrNull { it.id == id }?.takeUnless { it == previousTask }
     val installed = plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id }
     val succeeded = task?.state is PluginTaskState.Succeeded
-    WontonScreen(bar = { WontonPushedBar(stringResource(R.string.install_completion_title), onClose) }) {
+    WontonScreen(
+        bar = {
+            WontonPushedBar(
+                stringResource(R.string.install_completion_title),
+                onClose,
+                showsStatus = true,
+            )
+        },
+    ) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
