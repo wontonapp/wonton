@@ -39,6 +39,7 @@ x-wonton:
   title: {zh: 笔记, en: Notes}
   description: {zh: 记笔记, en: Notes}
   mcp: {service: mcp, port: 8080, transport: streamable-http}
+  webui: {service: mcp, port: 8080}
   permissions: []
 ";
 
@@ -322,6 +323,19 @@ impl Setup {
         let request = CallToolRequestParams::new(name.to_owned())
             .with_arguments(args.as_object().cloned().unwrap_or_default());
         self.bus.call(caller, request, std::future::pending()).await
+    }
+
+    /// 以另一个调用方在后台调用，好在等确认时回答。
+    pub(super) fn spawn_as(
+        &self,
+        caller: &Caller,
+        name: &str,
+        args: Value,
+    ) -> tokio::task::JoinHandle<CallToolResult> {
+        let (bus, caller, name) = (self.bus.clone(), caller.clone(), name.to_owned());
+        let request = CallToolRequestParams::new(name)
+            .with_arguments(args.as_object().cloned().unwrap_or_default());
+        tokio::spawn(async move { bus.call(&caller, request, std::future::pending()).await })
     }
 
     /// 在后台调用，好在等确认时回答。

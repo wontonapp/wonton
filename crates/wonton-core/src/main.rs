@@ -316,7 +316,6 @@ async fn serve() -> anyhow::Result<()> {
         mailpit.clone(),
     )
     .await?;
-
     let (friends, federation_blocks) = serve::open_friends(&cfg)?;
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
     gateway::family::spawn_member_event_logger(members.clone());
@@ -327,7 +326,7 @@ async fn serve() -> anyhow::Result<()> {
         .matrix
         .as_ref()
         .map_or_else(|| cfg.public.base_domain.clone(), |m| m.server_name.clone());
-    bus.attach_people(server_name, members.clone());
+    attach_identity(&bus, matrix.as_ref(), &cfg, server_name, members.clone());
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
     let host = Arc::new(CoreHost::new(
         manager.clone(),
@@ -561,6 +560,18 @@ fn open_plugin_manager(
     )
     .with_store(cfg.store.clone())
     .with_upgrade_freeze(upgrades.frozen())
+}
+
+/// 把总线认人用的资料和 Matrix 接上：家人记录、服务器名，以及 Bot 钉页卡片的发送方。
+fn attach_identity(
+    bus: &Arc<mcp::Bus>,
+    matrix: Option<&Arc<Matrix>>,
+    cfg: &Config,
+    server_name: String,
+    members: Arc<Members>,
+) {
+    bus.attach_people(server_name, members);
+    bus.attach_matrix(matrix.cloned(), cfg.username.clone());
 }
 
 /// MCP 总线（ADR-0016）：确认卡片发进和主人的通知房间。没接 Matrix 时敏感的调用如实报“没法请主人确认”。

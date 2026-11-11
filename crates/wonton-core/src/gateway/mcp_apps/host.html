@@ -1,0 +1,214 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MCP App</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--color-background-primary, Canvas); color: var(--color-text-primary, CanvasText);
+         font: -apple-system-body, system-ui, sans-serif; }
+  iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  #loading { position: absolute; inset: 0; display: grid; place-content: center; gap: 12px;
+             text-align: center; padding: 24px; }
+  #loading[hidden] { display: none; }
+  button { font: inherit; padding: 8px 16px; border-radius: 8px; border: 1px solid currentColor;
+           background: transparent; color: inherit; }
+</style>
+</head>
+<body>
+<div id="loading" hidden><p id="message"></p><p id="error" hidden></p></div>
+<iframe id="app" sandbox="allow-scripts allow-forms allow-popups allow-downloads allow-modals"
+        allow="clipboard-write"></iframe>
+<script>
+const P = __PAYLOAD__;
+const frame = document.getElementById("app");
+const loading = document.getElementById("loading");
+const message = document.getElementById("message");
+const error = document.getElementById("error");
+const pending = new Map();
+
+function native() {
+  return window.webkit?.messageHandlers?.wontonBridge || window.wontonBridge;
+}
+function toNative(message) {
+  const channel = native();
+  if (!channel?.postMessage) return false;
+  channel.postMessage(JSON.stringify(message));
+  return true;
+}
+function reply(id, body) {
+  if (id === undefined || id === null) return;
+  frame.contentWindow.postMessage({jsonrpc: "2.0", id, ...body}, "*");
+}
+function styleValue(name) {
+  const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+  return Number.isFinite(value) ? value : 0;
+}
+const STYLE_VARIABLES = [
+  "--color-background-primary", "--color-background-secondary", "--color-text-primary",
+  "--color-text-secondary", "--color-border-primary", "--color-background-danger",
+  "--color-text-danger", "--color-background-success", "--color-text-success",
+  "--color-background-warning", "--color-text-warning", "--wonton-accent-fill",
+  "--wonton-accent-ink", "--wonton-accent-ink-on-fill", "--border-radius-xs",
+  "--border-radius-md", "--border-radius-lg", "--border-radius-full", "--font-sans",
+];
+function context() {
+  const styles = getComputedStyle(document.documentElement);
+  const variables = {};
+  for (const name of STYLE_VARIABLES) {
+    const value = styles.getPropertyValue(name).trim();
+    if (value) variables[name] = value;
+  }
+  return {
+    theme: styles.colorScheme.includes("dark") ? "dark" : "light",
+    styles: {variables},
+    locale: navigator.language,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    platform: "mobile",
+    displayMode: "fullscreen",
+    availableDisplayModes: ["fullscreen"],
+    containerDimensions: {width: innerWidth, height: innerHeight},
+    safeAreaInsets: {
+      top: styleValue("--wonton-inset-top"),
+      right: styleValue("--wonton-inset-right"),
+      bottom: styleValue("--wonton-inset-bottom"),
+      left: styleValue("--wonton-inset-left"),
+    },
+  };
+}
+function failure(message, kind) {
+  return {content: [{type: "text", text: message}], isError: true,
+          _meta: kind ? {"app.wonton/failure": kind} : {}};
+}
+
+async function post(path, body) {
+  const response = await fetch(path, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {"content-type": "application/json"},
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await response.text() || `HTTP ${response.status}`);
+  return response.status === 204 ? {} : response.json();
+}
+
+async function call(params) {
+  const started = await post("/_wonton/api/mcp-apps/calls",
+    {pin: P.app.pin, tool: params.name, arguments: params.arguments || {}});
+  const deadline = Date.now() + 15 * 60 * 1000;
+  while (Date.now() < deadline) {
+    const state = await fetch("/_wonton/api/mcp-apps/calls/" + started.id, {credentials: "same-origin"}).then(r => r.json());
+    if (state.done) {
+      if (state.error) return failure(state.error.message, state.error.kind);
+      return state.result;
+    }
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  return failure("Timed out", "tool_timed_out");
+}
+
+async function request(message) {
+  const params = message.params || {};
+  switch (message.method) {
+    case "ui/initialize":
+      return {
+        protocolVersion: "2026-01-26",
+        hostInfo: {name: "Wonton", version: "1"},
+        hostCapabilities: {
+          openLinks: {}, message: {text: {}}, serverTools: {}, serverResources: {},
+        },
+        hostContext: context(),
+      };
+    case "ui/request-display-mode":
+      return {mode: "fullscreen"};
+    case "tools/list":
+      return await post("/_wonton/api/mcp-apps/tools", {pin: P.app.pin});
+    case "tools/call":
+      return await call(params);
+    case "resources/read":
+      return await post("/_wonton/api/mcp-apps/read", {pin: P.app.pin, uri: params.uri});
+    case "ui/open-link":
+      if (!toNative({jsonrpc: "2.0", id: message.id, method: "ui/open-link", params})) {
+        window.open(params.url, "_blank");
+      } else {
+        pending.set(message.id, {local: true});
+      }
+      return undefined;
+    case "ui/message": {
+      const blocks = Array.isArray(params.content) ? params.content : [params.content || {}];
+      await post("/_wonton/api/mcp-apps/message", {pin: P.app.pin, text: blocks
+        .filter(block => block.type === "text").map(block => block.text).join("\n")});
+      return {};
+    }
+    default:
+      throw Object.assign(new Error("Method not found"), {code: -32601});
+  }
+}
+
+frame.addEventListener("load", () => { if (frame.srcdoc) loading.hidden = true; });
+setTimeout(() => {
+  if (!loading.hidden || loading.dataset.ready) return;
+  message.textContent = P.texts.failed;
+  error.textContent = P.texts.retry;
+  error.hidden = false;
+  error.onclick = () => location.reload();
+  loading.hidden = false;
+}, 15000);
+if (P.app.error) {
+  loading.hidden = false;
+  message.textContent = P.texts.failed;
+  error.innerHTML = P.app.error;
+  error.hidden = false;
+  loading.dataset.ready = "1";
+} else {
+  const policy = `<meta http-equiv="Content-Security-Policy" content="${P.app.csp.replace(/"/g, "&quot;")}">`;
+  const html = P.app.html;
+  const head = html.search(/<head[^>]*>/i);
+  const doctype = html.search(/<!doctype[^>]*>/i);
+  if (head >= 0) {
+    const at = head + html.slice(head).indexOf(">") + 1;
+    frame.srcdoc = html.slice(0, at) + policy + html.slice(at);
+  } else if (doctype >= 0) {
+    const at = doctype + html.slice(doctype).indexOf(">") + 1;
+    frame.srcdoc = html.slice(0, at) + policy + html.slice(at);
+  } else {
+    frame.srcdoc = policy + html;
+  }
+}
+
+window.addEventListener("message", async event => {
+  // 核心回来的回答：合成事件，来源是页面自己，origin 为空。
+  if (event.source === window && event.origin === "" && event.data?.jsonrpc === "2.0") {
+    if (event.data.method === "ui/notifications/host-context-changed") {
+      frame.contentWindow.postMessage(event.data, "*");
+      return;
+    }
+    const waiting = pending.get(event.data.id);
+    if (waiting) {
+      pending.delete(event.data.id);
+      frame.contentWindow.postMessage(event.data, "*");
+    }
+    return;
+  }
+  if (event.source !== frame.contentWindow || event.data?.jsonrpc !== "2.0") return;
+  const message = event.data;
+  if (message.id === undefined || message.id === null) {
+    if (message.method === "ui/notifications/initialized") {
+      loading.hidden = true;
+      loading.dataset.ready = "1";
+      frame.contentWindow.postMessage({jsonrpc: "2.0",
+        method: "ui/notifications/host-context-changed", params: context()}, "*");
+    }
+    return;
+  }
+  try {
+    const result = await request(message);
+    if (result !== undefined) reply(message.id, {result});
+  } catch (e) {
+    reply(message.id, {error: {code: e.code || -32603, message: e.message}});
+  }
+});
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@
 
 mod agent_install;
 mod agent_permission;
+mod apps;
 pub mod audit;
 mod authoring_tools;
 mod bounded_http;
@@ -14,6 +15,7 @@ mod file_results;
 mod file_tools;
 mod naming;
 mod notifier;
+mod panel_tools;
 mod people_tools;
 mod profile_tools;
 mod save_tools;
@@ -23,7 +25,7 @@ mod tool_policy;
 pub mod upstream;
 mod windows;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -74,6 +76,12 @@ pub struct Endpoint {
 }
 
 /// `wonton__user_locale` 认人用的本服务器身份资料：Matrix 服务器名和家人记录。
+/// Bot 钉页的卡片需要的 Matrix 入口。
+pub struct Cards {
+    matrix: Option<Arc<crate::matrix::Matrix>>,
+    owner: String,
+}
+
 pub struct People {
     server_name: String,
     members: Arc<crate::members::Members>,
@@ -93,6 +101,10 @@ pub struct Bus {
     help: OnceLock<Arc<Help>>,
     /// 家人记录和本服务器的 Matrix 服务器名：`wonton__user_locale` 认人用（[`Bus::attach_people`]）。
     people: OnceLock<People>,
+    /// Matrix 和主人：Bot 钉进主面板的同意卡片要发进 Bot 的房间里（[`Bus::attach_matrix`]）。
+    matrix: OnceLock<Cards>,
+    /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
+    pin_cards: Mutex<HashSet<PluginId>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
     peers: Mutex<Vec<Peer<RoleServer>>>,
 }
@@ -124,6 +136,8 @@ impl Bus {
             files: OnceLock::new(),
             help: OnceLock::new(),
             people: OnceLock::new(),
+            matrix: OnceLock::new(),
+            pin_cards: Mutex::new(HashSet::new()),
             peers: Mutex::new(Vec::new()),
         });
         bus.watch_plugins();
@@ -160,6 +174,17 @@ impl Bus {
         {
             tracing::error!("家人记录接了两次，用先接上的");
         }
+    }
+
+    /// 接上 Matrix 和主人：Bot 往主面板钉页的同意卡片发在 Bot 自己的房间里。
+    pub fn attach_matrix(&self, matrix: Option<Arc<crate::matrix::Matrix>>, owner: String) {
+        let _ = self.matrix.set(Cards { matrix, owner });
+    }
+
+    fn cards(&self) -> Result<&Cards, String> {
+        self.matrix
+            .get()
+            .ok_or_else(|| "service_unavailable: the core has no Matrix connection".to_owned())
     }
 
     fn people(&self) -> Result<&People, String> {
@@ -722,6 +747,8 @@ mod help_tests;
 mod highest_tool_tests;
 #[cfg(test)]
 mod optional_permission_tests;
+#[cfg(test)]
+mod panel_tests;
 #[cfg(test)]
 mod people_tests;
 #[cfg(test)]

@@ -67,8 +67,19 @@ impl ServerHandler for Notes {
         _ctx: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         let search = Tool::new("search", "找笔记", schema())
-            .with_annotations(ToolAnnotations::new().read_only(true));
-        let delete = Tool::new("delete", "删笔记", schema());
+            .with_annotations(ToolAnnotations::new().read_only(true))
+            .with_meta(rmcp::model::MetaObject(
+                json!({"ui": {"visibility": ["app"]}})
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default(),
+            ));
+        let delete = Tool::new("delete", "删笔记", schema()).with_meta(rmcp::model::MetaObject(
+            json!({"ui": {"visibility": ["app"]}})
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+        ));
         let find = Tool::new("find", "找文件", schema())
             .with_annotations(ToolAnnotations::new().read_only(true));
         let archive = Tool::new("archive", "归档文件", schema());
@@ -129,6 +140,17 @@ impl ServerHandler for Notes {
 fn resource(uri: &str) -> Result<ResourceContents, ErrorData> {
     match uri {
         "notes://text" => Ok(ResourceContents::text("一条笔记", uri)),
+        "ui://monitor" => Ok(ResourceContents::TextResourceContents {
+            uri: uri.to_owned(),
+            mime_type: Some("text/html;profile=mcp-app".to_owned()),
+            text: "<p>ok</p>".to_owned(),
+            meta: Some(rmcp::model::MetaObject(
+                json!({"ui": {"csp": {"connectDomains": ["https://api.example.com"]}}})
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default(),
+            )),
+        }),
         "notes://huge" => Ok(ResourceContents::text(
             "x".repeat(crate::files::MAX_RESOURCE_BYTES + 1),
             uri,

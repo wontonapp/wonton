@@ -612,6 +612,42 @@ impl Upstreams {
         uri: &str,
         limit: usize,
     ) -> Result<Vec<u8>, ReadError> {
+        let result = self.read_contents(server, uri).await?;
+        let Some(contents) = result.contents.into_iter().next() else {
+            return Err(ReadError::Upstream(format!(
+                "插件 {} 的资源 {uri} 是空的",
+                server.id
+            )));
+        };
+        let bytes = match contents {
+            ResourceContents::TextResourceContents { text, .. } => text.into_bytes(),
+            ResourceContents::BlobResourceContents { blob, .. } => {
+                STANDARD.decode(blob).map_err(|e| {
+                    ReadError::Upstream(format!(
+                        "插件 {} 的资源 {uri} 不是合法的 base64：{e}",
+                        server.id
+                    ))
+                })?
+            }
+            other => {
+                return Err(ReadError::Upstream(format!(
+                    "插件 {} 的资源 {uri} 是读不懂的类型：{other:?}",
+                    server.id
+                )));
+            }
+        };
+        if bytes.len() > limit {
+            return Err(ReadError::TooLarge);
+        }
+        Ok(bytes)
+    }
+
+    /// 读插件的资源，连同内容的 `_meta`（MCP Apps 界面要按它设 CSP）。大小上限同上。
+    pub async fn read_contents(
+        &self,
+        server: &McpServer,
+        uri: &str,
+    ) -> Result<rmcp::model::ReadResourceResult, ReadError> {
         let connection = self
             .connection(server)
             .await
@@ -648,33 +684,7 @@ impl Upstreams {
                 )));
             }
         };
-        let Some(contents) = result.contents.into_iter().next() else {
-            return Err(ReadError::Upstream(format!(
-                "插件 {} 的资源 {uri} 是空的",
-                server.id
-            )));
-        };
-        let bytes = match contents {
-            ResourceContents::TextResourceContents { text, .. } => text.into_bytes(),
-            ResourceContents::BlobResourceContents { blob, .. } => {
-                STANDARD.decode(blob).map_err(|e| {
-                    ReadError::Upstream(format!(
-                        "插件 {} 的资源 {uri} 不是合法的 base64：{e}",
-                        server.id
-                    ))
-                })?
-            }
-            other => {
-                return Err(ReadError::Upstream(format!(
-                    "插件 {} 的资源 {uri} 是读不懂的类型：{other:?}",
-                    server.id
-                )));
-            }
-        };
-        if bytes.len() > limit {
-            return Err(ReadError::TooLarge);
-        }
-        Ok(bytes)
+        Ok(result)
     }
 
     /// 只留下还在运行的插件、地址和请求头都没变的客户端：头变了（密钥换了）就丢掉，下次重连。

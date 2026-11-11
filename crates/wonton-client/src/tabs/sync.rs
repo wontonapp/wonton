@@ -21,6 +21,22 @@ impl TabsLink {
                 link.recompute();
             }
         });
+        let mut home = self.home.clone();
+        let weak = Arc::downgrade(self);
+        self.runtime.spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+            loop {
+                tokio::select! {
+                    _ = tick.tick() => {}
+                    changed = home.changed() => if changed.is_err() { break },
+                }
+                let Some(link) = weak.upgrade() else { break };
+                let connected = matches!(link.home.borrow().status, HomeStatus::Connected);
+                if connected && link.home.borrow().proxy.is_some() {
+                    link.refresh_bot_pins().await;
+                }
+            }
+        });
         let mut session = self.session.clone();
         let weak = Arc::downgrade(self);
         self.runtime.spawn(async move {

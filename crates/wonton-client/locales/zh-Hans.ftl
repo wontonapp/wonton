@@ -565,6 +565,9 @@ plugin-now-start-failed = 一键操作开始不了：{ $error }
 
 # 面板（ADR-0052）的报错。作为 CoreError 的原因，或 TabsProblem 的说明显示。
 panel-full = 面板满了，先拿掉一页再放。
+panel-pins-not-connected = 还没有连上家里的服务器。
+panel-pins-api-failed = { $status }：{ $body }
+
 panel-page-already-there = 这个页面已经在面板里。
 panel-page-not-there = 这个页面不在面板里。
 panel-page-unsupported = 面板里只能放插件页、插件里的某一页和 https:// 的网页。
@@ -595,3 +598,4 @@ tabs-open-only-plugins = 只有插件页面可以设置打开方式。
 tabs-fullscreen-only-plugins = 只有插件页面可以全屏。
 tabs-fullscreen-none = 当前没有全屏页面。
 tabs-fullscreen-not-current = 退出的页面不是当前全屏页面。
+panel-pins-refresh-failed = 面板里 Bot 钉的页面取不到:{ $error }

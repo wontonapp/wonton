@@ -105,6 +105,15 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
     error_response(status, error.kind(), &error.to_string())
 }
 
+/// 带没带主人令牌。
+pub(crate) fn has_owner_token(gateway: &Gateway, headers: &HeaderMap) -> bool {
+    headers
+        .get(AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .is_some_and(|token| gateway.check_owner_token(token))
+}
+
 /// 只接受 `Authorization: Bearer <主人令牌>`：浏览器 Cookie 随请求自动带上，插件网页可以借此发起跨站请求。未授权时
 /// 返回要直接回给客户端的响应。
 pub(crate) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response> {

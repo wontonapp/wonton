@@ -130,3 +130,9 @@ gateway-owner-secrets-not-text = 金鑰 { $name } 存的值不是文字
 gateway-owner-secrets-audit-unavailable = 家用伺服器沒有接審計日誌，不能查看金鑰的值
 gateway-plugin-scope-unsupported = 這個核心不支援修改外掛給哪些 Bot 用，請先升級核心。
 gateway-bot-plugin-access-unsupported = 這個核心不支援為個別 Bot 開關外掛，請先升級核心。
+
+# MCP Apps 宿主页（#35）。
+mcp-app-loading = 正在載入…
+mcp-app-failed = 介面沒能載入：{ $error }
+mcp-app-page-failed = 介面沒能載入。
+mcp-app-retry = 重試

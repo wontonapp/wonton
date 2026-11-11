@@ -22,6 +22,7 @@ use super::languages::Languages;
 use super::manifest::{Manifest, Permission, PluginId};
 use super::models::ModelKeyStore;
 use super::package_files::PackageFiles;
+use super::pins::PinStore;
 use super::preinstall::PreinstallMarks;
 use super::save_grants::SaveGrantStore;
 use super::secrets::SecretStore;
@@ -167,6 +168,7 @@ pub struct Store {
     dir: PathBuf,
     secrets: SecretStore,
     bots: BotStore,
+    pins: PinStore,
     model_keys: ModelKeyStore,
     preinstalled: PreinstallMarks,
     save_grants: SaveGrantStore,
@@ -183,6 +185,7 @@ impl Store {
         Ok(Self {
             secrets: SecretStore::new(dir.join("secrets")),
             bots: BotStore::new(dir.join("bots")),
+            pins: PinStore::new(dir.join("pins")),
             model_keys: ModelKeyStore::new(dir.join("model-keys")),
             preinstalled: PreinstallMarks::new(dir.join("preinstalled")),
             save_grants: SaveGrantStore::new(dir.join("save-grants")),
@@ -204,6 +207,11 @@ impl Store {
     /// 插件的 Bot 记录，在记录目录下的 `bots/` 里，保留的规则同密钥。
     pub fn bots(&self) -> &BotStore {
         &self.bots
+    }
+
+    /// Bot 钉在面板上的页面，在记录目录下的 `pins/` 里。
+    pub fn pins(&self) -> &PinStore {
+        &self.pins
     }
 
     /// 插件的模型网关凭据，在记录目录下的 `model-keys/` 里，卸载时删除。

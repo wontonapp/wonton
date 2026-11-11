@@ -11,8 +11,14 @@ pub(super) fn state_has_page(state: &TabsState, placed: &PlacedTab) -> bool {
             state.config.items.iter().any(|item| item.tab == *tab)
                 || state.overlay.as_ref().is_some_and(|item| item.tab == *tab)
         }
-        PlacedTab::Panel { scope, tab } => panel_pages(state, scope)
-            .is_some_and(|panel| panel.iter().any(|entry| entry.tab == *tab)),
+        PlacedTab::Panel { scope, tab } => {
+            panel_pages(state, scope)
+                .is_some_and(|panel| panel.iter().any(|entry| entry.tab == *tab))
+                || state
+                    .bot_pins
+                    .iter()
+                    .any(|pin| pin.scope == *scope && pin.tab == *tab)
+        }
     }
 }
 
@@ -73,6 +79,15 @@ pub(super) fn reload_plugin_pages(state: &mut TabsState, plugin_id: &str) {
             );
         }
     }
+    for pin in &state.bot_pins {
+        consider(
+            &pin.tab,
+            PlacedTab::Panel {
+                scope: pin.scope.clone(),
+                tab: pin.tab.clone(),
+            },
+        );
+    }
     for instance in placed {
         state.failures.remove(&instance);
         increment_reload(state, &instance);
@@ -81,7 +96,9 @@ pub(super) fn reload_plugin_pages(state: &mut TabsState, plugin_id: &str) {
 
 fn tab_ref_plugin_id(tab: &TabRef) -> Option<&str> {
     match tab {
-        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => Some(plugin_id),
+        TabRef::Plugin { plugin_id, .. }
+        | TabRef::PluginPath { plugin_id, .. }
+        | TabRef::UiResource { plugin_id, .. } => Some(plugin_id),
         _ => None,
     }
 }

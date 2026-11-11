@@ -179,7 +179,7 @@
 
 **MCP Apps 界面怎么显示**：App 当 MCP Apps 规范里的宿主。
 
-- 核心经总线向那个插件读资源（`resources/read`），交给 App；App 在单独的、不留存储的 WebView 里显示，规范要求界面放在 iframe 里，壳先加载一个自带的宿主页，再把界面放进带 `sandbox` 的 iframe，按资源的 `_meta.ui.csp` 设内容安全策略。
+- 核心经总线向那个插件读资源（`resources/read`），按资源内容生成宿主页；App 在单独的、不留存储的 WebView 里打开这个页面。规范要求界面放在 iframe 里，宿主页把界面放进带 `sandbox` 的 iframe，按资源的 `_meta.ui.csp` 设内容安全策略；工具调用、资源读取和发消息都由宿主页经核心转。
 - 界面没有 Wonton 的桥，只能经 postMessage 说 MCP Apps 的话：
   - `ui/initialize`、`ui/notifications/host-context-changed`：主题、语言、显示方式。第 1、2 级都按 `fullscreen` 报。
   - `tools/call`：只能调提供这个界面的那个 MCP 服务器上、`_meta.ui.visibility` 含 `app` 的工具，经核心总线转发，调用方记成主人，敏感的照常走确认卡片。

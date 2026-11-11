@@ -143,3 +143,16 @@ chat-mail-convert-failed = 這封信用 HTML 寫成，內文沒能轉成文字�
 chat-mail-unknown-source = 收到一封來源不明或沒有寄信權限的應用程式郵件，未投遞給任何人。
 chat-mail-recipients-failed = 無法更新應用程式郵件的收件人：{ $error }。家人變動或伺服器重新啟動時會再試。
 chat-notify-rate-limited = { $plugin } 傳送通知和郵件太頻繁，已暫停，約 { $seconds } 秒後自動恢復。
+# Bot 往面板釘頁（ADR-0052）。
+panel-pin-card-title = { $bot } 想往你的面板裡放頁面
+panel-pin-card-line = 同意後，這個 Bot 以後再往主面板放頁面不再問；可以在設定裡收回。
+panel-pin-allowed = 已同意
+panel-pin-bot-only = 只有 Bot 能釘頁面；外掛 { $plugin } 沒有 Bot 身分
+panel-pin-bot-missing = 找不到 Bot { $bot } 的記錄
+panel-pin-full = 面板已經滿了（最多 { $max } 頁），先拿掉一頁再釘
+panel-pin-already-asking = 已經有一張往主面板釘頁的確認卡片在等主人回答
+panel-pin-matrix = 連不上 Matrix：{ $error }
+panel-pin-not-there = 這個頁面沒有釘在面板上
+
+# MCP Apps 界面里的调用在卡片上把调用方写成主人。
+mcp-app-owner = 你
