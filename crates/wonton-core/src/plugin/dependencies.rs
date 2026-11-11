@@ -180,6 +180,16 @@ impl PluginManager {
             if !declared {
                 return Err(CapabilityAccessError::Denied);
             }
+            let required = plugins
+                .get(consumer)
+                .and_then(|entry| entry.listed.as_ref())
+                .is_some_and(|listed| {
+                    listed
+                        .manifest
+                        .requires
+                        .iter()
+                        .any(|c| c == capability)
+                });
             self.dependencies
                 .inspect(|state| {
                     let id = state
@@ -187,8 +197,19 @@ impl PluginManager {
                         .get(consumer.as_str())
                         .and_then(|s| s.get(capability))
                         .or_else(|| state.defaults.get(capability));
-                    let (id, entry) = id
-                        .and_then(|id| plugins.iter().find(|(key, _)| key.as_str() == id))
+                    // 必需能力还没获准连接是权限问题（gateway-capability-permission 的文案）；
+                    // 可选能力没有提供方是可用性问题，主人随时可以再装一个。
+                    let Some(id) = id else {
+                        if required {
+                            return Err(CapabilityAccessError::Denied);
+                        }
+                        return Err(CapabilityAccessError::Unavailable(
+                            self.capability_missing(capability, langs),
+                        ));
+                    };
+                    let (id, entry) = plugins
+                        .iter()
+                        .find(|(key, _)| key.as_str() == id)
                         .ok_or_else(|| {
                             CapabilityAccessError::Unavailable(
                                 self.capability_missing(capability, langs),
