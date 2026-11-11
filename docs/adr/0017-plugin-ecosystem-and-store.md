@@ -1,6 +1,6 @@
 # ADR-0017 插件生态：独立仓库、商店和来源
 
-- 状态：已接受（2026-10-30）。“App 只按来源安装”“没有降级”和 `Local` 的标签已被 [ADR-0031](0031-plugin-sources.md) 取代；“谁能装”里 Bot 的部分和小程序 JS SDK 已被 [ADR-0033](0033-plugin-tabs.md) 取代；导入 CasaOS 已撤销（主人 2026-11-04 定）；挑语言的规则已被 [ADR-0043](0043-app-languages.md) 取代
+- 状态：已接受（2026-10-30）。“App 只按来源安装”“没有降级”和 `Local` 的标签已被 [ADR-0031](0031-plugin-sources.md) 取代；“谁能装”里 Bot 的部分和小程序 JS SDK 已被 [ADR-0033](0033-plugin-tabs.md) 取代；导入 CasaOS 已撤销（主人 2026-11-04 定）；挑语言的规则已被 [ADR-0043](0043-app-languages.md) 取代；“一个插件一个 Git 仓库”已被 [ADR-0079](0079-agent-plugins-monorepo.md) 修改：插件包也可以是仓库里的一个子目录
 
 ## 背景
 
@@ -24,7 +24,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 
 ### 插件仓库和版本
 
-- 一个插件一个 Git 仓库，仓库根目录就是插件包：`docker-compose.yml` 加它引用的文件（插件规范的“插件包”）。仓库里的其他
+- 一个插件一个 Git 仓库，仓库根目录就是插件包（已被 ADR-0079 修改：也可以是仓库里的一个子目录，来源带子目录，tag 为 `<子目录>/v<版本>`）：`docker-compose.yml` 加它引用的文件（插件规范的“插件包”）。仓库里的其他
   文件（README、没有被 `notices` 引用的 LICENSE、Dockerfile、源码、测试脚本）核心不取。
 - 发布就是打 tag `v<版本>`，`<版本>` 是这个提交里清单的 `version`（语义化版本）。核心取包时核对两者一致，不一致拒绝。带
   预发布后缀的版本（`v1.2.0-beta.1`）可以按 tag 明确安装，不进商店，也不作为升级提示。
