@@ -1,13 +1,15 @@
 name: lint
 
 # 轻检查，草稿 PR 也跑。冲突标记和密钥可能写在任何文件里（.md 也算），不按路径过滤，所以不能并进
-# 带 paths-ignore 的工作流。结构门禁只查源码文件，只改文档的提交跳过。
+# 带 paths-ignore 的工作流。结构门禁只查源码文件，只改文档的提交和草稿 PR 上跳过。
+# 三件事在一个作业里依次做完：各起一台 runner 只为了报检查，占并发名额，却都不是重活。
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
-  # 合并队列：这三个作业都是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
-  # merge_group 不认 paths，路径过滤只留在 pull_request 下自己生效。
+  # 合并队列：入队后的合并提交上也要报告，否则队列直接判失败。merge_group 不认 paths，
+  # 路径过滤只留在 pull_request 下自己生效。
   merge_group:
     types: [checks_requested]
     branches: [main]
@@ -22,20 +24,36 @@ permissions:
   contents: read
 
 jobs:
-  structure:
-    name: 结构门禁
+  lint:
+    name: 冲突标记、密钥扫描与结构门禁
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          # 插件包的版本检查只比当前提交和它的第一个父提交：PR 上检出的是合并提交，第一个父提交就是 base 的最新提交；
+          # 结构门禁和密钥扫描只比当前提交和它的第一个父提交：PR 上检出的是合并提交，第一个父提交就是 base 的最新提交；
           # push 到 main 时是上一个提交。拉全部历史太重。
           fetch-depth: 2
           persist-credentials: false
-      - name: 只改了文档就不跑（结构门禁只查源码文件）
+      - name: 残留的合并冲突标记
+        run: bash scripts/check-conflict-markers.sh
+      - name: 装 gitleaks（版本和 sha256 固定）
+        run: |
+          curl -fsSL --retry 3 -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+      - name: 扫描这次带进来的提交
+        # HEAD^1..HEAD 恰好是这次带进来的提交的合并差异；main 每次 squash 合并推一个提交。
+        run: ./gitleaks git --log-opts="HEAD^1..HEAD" --config .gitleaks.toml --redact --no-banner
+      - name: 行为测试：扫得出也挡得住
+        run: PATH="$PWD:$PATH" bash scripts/test-gitleaks.sh
+      - name: 结构门禁跑不跑：只改了文档、或草稿 PR 上就跳过
         id: changes
         run: |
-          if git diff --name-only HEAD^1 HEAD | grep -qvE '(^docs/|\.md$)'; then
+          if [[ $GITHUB_EVENT_NAME == pull_request ]] && [[ '${{ github.event.pull_request.draft }}' == true ]]; then
+            echo "source=false" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only HEAD^1 HEAD | grep -qvE '(^docs/|\.md$)'; then
             echo "source=true" >> "$GITHUB_OUTPUT"
           else
             echo "source=false" >> "$GITHUB_OUTPUT"
@@ -80,33 +98,23 @@ jobs:
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -q -s scripts/install -t scripts
 
-  conflict-markers:
-    name: 冲突标记检查
+  # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
+  # 草稿 PR 上只跑冲突标记和密钥扫描，汇总跟着来。
+  summary:
+    name: lint 汇总
+    needs: [lint]
+    if: always()
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      RESULTS: ${{ join(needs.*.result, ' ') }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: 残留的合并冲突标记
-        run: bash scripts/check-conflict-markers.sh
-
-  gitleaks:
-    name: 密钥扫描
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          # PR 上检出的是合并提交，第一个父提交就是 base 的最新提交；push 到 main 时是上一个提交。
-          # HEAD^1..HEAD 恰好是这次带进来的提交的合并差异；main 每次 squash 合并推一个提交。
-          fetch-depth: 2
-          persist-credentials: false
-      - name: 装 gitleaks（版本和 sha256 固定）
+      - name: 各作业的结果
         run: |
-          curl -fsSL --retry 3 -o gitleaks.tar.gz \
-            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
-          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
-          tar -xzf gitleaks.tar.gz gitleaks
-      - name: 扫描这次带进来的提交
-        run: ./gitleaks git --log-opts="HEAD^1..HEAD" --config .gitleaks.toml --redact --no-banner
-      - name: 行为测试：扫得出也挡得住
-        run: PATH="$PWD:$PATH" bash scripts/test-gitleaks.sh
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) exit 1 ;;
+            esac
+          done
