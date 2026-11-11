@@ -13,7 +13,10 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || root="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$root"
 
-name=share-smoke
+# 联系人冒烟（smoke-contacts.sh）借这套夹具：换名字、驱动，最后一步改由它分步跑。
+name="${SHARE_SMOKE_NAME:-share-smoke}"
+driver="${SHARE_SMOKE_DRIVER:-fr_share_smoke}"
+export SHARE_SMOKE_DRIVER="$driver"
 project="wonton-$name"
 fixture="deploy/dev/core/share-smoke"
 bin_dir="${WONTON_SHARE_SMOKE_BIN_DIR:-$HOME/wonton-dev/share-smoke-bin}"
@@ -27,6 +30,9 @@ cleanup() {
     docker compose -p "$project" -f "$fixture/compose.yaml" logs --tail 60 relay core-owner core-friend >&2 || true
   fi
   if (( started )); then
+    if [[ -z "${SHARE_SMOKE_KEEP:-}" ]]; then
+      remove_plugins
+    fi
     if [[ -n "${SHARE_SMOKE_KEEP:-}" ]]; then
       echo "保留栈：docker compose -p $project -f $fixture/compose.yaml down -v --remove-orphans" >&2
     else
@@ -40,7 +46,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for binary in fr_share_smoke share-smoke-relay; do
+# 两个核心装的插件不归 compose 管：按本次的实例标签删容器、网络和卷。
+remove_plugins() {
+  local instance ids
+  [[ -n "${SHARE_SMOKE_INSTANCE:-}" ]] || return 0
+  for instance in "${SHARE_SMOKE_INSTANCE}o" "${SHARE_SMOKE_INSTANCE}f"; do
+    ids="$(docker ps -aq --filter "label=wonton.instance=$instance")"
+    [[ -z "$ids" ]] || docker rm -f $ids >/dev/null 2>&1 || true
+    ids="$(docker network ls -q --filter "label=wonton.instance=$instance")"
+    [[ -z "$ids" ]] || docker network rm $ids >/dev/null 2>&1 || true
+    ids="$(docker volume ls -q --filter "label=wonton.instance=$instance")"
+    [[ -z "$ids" ]] || docker volume rm $ids >/dev/null 2>&1 || true
+  done
+}
+
+for binary in fr_share_smoke "$driver" share-smoke-relay; do
   [[ -x "$bin_dir/$binary" ]] || { echo "缺少 $bin_dir/$binary，先按文件头的命令编译" >&2; exit 2; }
 done
 
@@ -114,4 +134,9 @@ if ! "${compose[@]}" up -d --remove-orphans --wait --wait-timeout 300; then
   exit 1
 fi
 
-"${compose[@]}" --profile driver run --rm -T driver
+if [[ -n "${SHARE_SMOKE_SCENARIO:-}" ]]; then
+  # shellcheck source=/dev/null
+  source "$SHARE_SMOKE_SCENARIO"
+else
+  "${compose[@]}" --profile driver run --rm -T driver
+fi

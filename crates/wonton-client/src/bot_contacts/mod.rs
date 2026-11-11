@@ -10,8 +10,8 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use tokio::runtime::Handle;
-use tokio::sync::watch;
 use tokio::sync::watch::Sender as WatchSender;
+use tokio::sync::{mpsc, watch};
 use wonton_l10n::l10n;
 use wonton_protocol::{
     Action, BotContactsState, BotContactsViewModel, BotRef, ContactError, ContactKind,
@@ -33,8 +33,15 @@ pub(crate) struct BotContactsLink {
     view: WatchSender<BotContactsViewModel>,
     languages: std::sync::Mutex<Vec<String>>,
     client: std::sync::Mutex<Option<(wonton_protocol::ProxySettings, reqwest::Client)>>,
-    /// 同一时刻只发一个请求：操作后的列表排在正在跑的后面，最后落地的是最新的。
-    queue: tokio::sync::Mutex<()>,
+    /// 请求按动作的先后一个一个发：连着点了拒绝和删除，后点的结果最后落地，ViewModel 不会停在先点的那份上。
+    jobs: mpsc::UnboundedSender<Job>,
+}
+
+struct Job {
+    bot: BotRef,
+    op: Op,
+    /// 壳点的动作失败要报；后台重取失败不盖掉正显示的列表。
+    report: bool,
 }
 
 impl BotContactsLink {
@@ -48,14 +55,16 @@ impl BotContactsLink {
             state: BotContactsState::Ready,
             contacts: Vec::new(),
         };
+        let (jobs, queued) = mpsc::unbounded_channel();
         let link = Arc::new(Self {
             handle,
             home,
             view: reuse(view, initial),
             languages: std::sync::Mutex::new(Vec::new()),
             client: std::sync::Mutex::new(None),
-            queue: tokio::sync::Mutex::new(()),
+            jobs,
         });
+        link.handle.spawn(work(Arc::downgrade(&link), queued));
         link.handle.spawn(follow_home(Arc::downgrade(&link)));
         link.handle.spawn(follow_waiting(Arc::downgrade(&link)));
         link
@@ -82,9 +91,7 @@ impl BotContactsLink {
             }
         };
         self.select(&bot);
-        let link = self.clone();
-        self.handle
-            .spawn(async move { link.run(bot, op, true).await });
+        self.enqueue(bot, op, true);
         Ok(())
     }
 
@@ -97,10 +104,8 @@ impl BotContactsLink {
             }
             *current = languages;
         }
-        if let Some(bot) = self.view.borrow().bot.clone() {
-            let link = self.clone();
-            self.handle
-                .spawn(async move { link.run(bot, Op::List, false).await });
+        if let Some(bot) = self.viewed() {
+            self.enqueue(bot, Op::List, false);
         }
     }
 
@@ -116,8 +121,7 @@ impl BotContactsLink {
     }
 
     /// 做一件事。结果只在 ViewModel 还看着这个 Bot 时落地：期间壳切到了别的 Bot，就不拿旧 Bot 的结果盖掉。
-    async fn run(self: Arc<Self>, bot: BotRef, op: Op, report: bool) {
-        let _queue = self.queue.lock().await;
+    async fn run(&self, Job { bot, op, report }: Job) {
         let outcome = match self.api() {
             Ok(api) => api.run(&bot, &op).await,
             Err(failure) => Err(failure),
@@ -167,6 +171,18 @@ impl BotContactsLink {
     fn viewed(&self) -> Option<BotRef> {
         self.view.borrow().bot.clone()
     }
+
+    fn enqueue(&self, bot: BotRef, op: Op, report: bool) {
+        // 只在运行时关停、工作任务已经没了时发不出去，那时也没有界面等结果。
+        let _ = self.jobs.send(Job { bot, op, report });
+    }
+}
+
+async fn work(link: Weak<BotContactsLink>, mut queued: mpsc::UnboundedReceiver<Job>) {
+    while let Some(job) = queued.recv().await {
+        let Some(link) = link.upgrade() else { return };
+        link.run(job).await;
+    }
 }
 
 fn request(user_id: String, kind: ContactKind) -> Op {
@@ -210,7 +226,7 @@ async fn follow_waiting(link: Weak<BotContactsLink>) {
             continue;
         }
         if let Some(bot) = link.viewed() {
-            link.run(bot, Op::List, false).await;
+            link.enqueue(bot, Op::List, false);
         }
     }
 }
@@ -228,10 +244,7 @@ async fn follow_home(link: Weak<BotContactsLink>) {
             && !connected
             && let Some(bot) = strong.viewed()
         {
-            let link = strong.clone();
-            strong
-                .handle
-                .spawn(async move { link.run(bot, Op::List, false).await });
+            strong.enqueue(bot, Op::List, false);
         }
         connected = now_connected;
         drop(strong);

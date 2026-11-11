@@ -639,7 +639,7 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         Err(response) => return *response,
     };
     if let Err(response) =
-        attach_proxy_credentials(gateway, &route, &person, req.headers_mut(), &langs, format)
+        proxy_sso::attach_credentials(gateway, &route, &person, req.headers_mut(), &langs, format)
     {
         return *response;
     }
@@ -664,49 +664,6 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         proxy::add_document_isolation_policy(&mut response);
     }
     response
-}
-
-/// 代登录（`sso: proxy`）：拿这个人的身份写进请求头。拿不到身份或值写不进去时，回错误（形状按请求协商）。
-fn attach_proxy_credentials(
-    gateway: &Gateway,
-    route: &crate::plugin::manager::Route,
-    person: &Person,
-    headers: &mut hyper::HeaderMap,
-    langs: &crate::plugin::languages::Languages,
-    format: pages::Format,
-) -> Result<(), Box<Response>> {
-    let Some(auth) = &route.proxy else {
-        return Ok(());
-    };
-    let identity = match gateway.identity_of(person) {
-        Ok(identity) => identity,
-        Err(e) => {
-            tracing::warn!(plugin = %route.id, error = %e, "代登录拿不到身份");
-            return Err(Box::new(pages::error(
-                StatusCode::FORBIDDEN,
-                "permission_denied",
-                &l10n::text(langs, "gateway-proxy-sso-member-missing", &[]),
-                langs,
-                format,
-            )));
-        }
-    };
-    proxy_sso::attach(headers, auth, &identity, person.role).map_err(|e| {
-        Box::new(pages::error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "proxy_credentials",
-            &l10n::text(
-                langs,
-                "gateway-proxy-sso-failed",
-                &[
-                    ("id", route.id.as_str().into()),
-                    ("error", e.to_string().into()),
-                ],
-            ),
-            langs,
-            format,
-        ))
-    })
 }
 
 /// 未登录：浏览器的页面导航跳到核心换取插件会话，其余请求（XHR、API）直接 401。`credentials` 为假的
