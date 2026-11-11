@@ -114,7 +114,7 @@ fn docker_test_files_use_unique_resource_names() {
     );
 }
 
-/// 收集目录下的 `.rs` 文件（相对 crate 根的路径，配上内容）。
+/// 收集目录下的 `.rs` 文件（相对 `base` 的路径，配上内容）。
 fn collect(dir: &Path, base: &Path, into: &mut Vec<(String, String)>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
