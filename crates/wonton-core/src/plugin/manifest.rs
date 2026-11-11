@@ -13,6 +13,7 @@ use super::gpu::GpuSpec;
 use super::lan::LanSpec;
 use super::languages::Languages;
 pub use super::manifest_agent::{AgentLogin, AgentProtocol, AgentSpec};
+pub use super::manifest_static::{LinkSpec, StaticWebSpec};
 use super::manifest_tabs;
 pub use super::manifest_tabs::ManifestTab;
 use super::provides::Provides;
@@ -121,6 +122,10 @@ pub enum Runtime {
     Compose,
     RemoteMcp,
     Skills,
+    /// 静态网页，交给提供能力 `static_web` 的插件托管（ADR-0080）。
+    StaticWeb,
+    /// 外部网页，只存一个地址（ADR-0080）。
+    Link,
 }
 
 impl Runtime {
@@ -129,6 +134,8 @@ impl Runtime {
             Self::Compose => "compose",
             Self::RemoteMcp => "remote_mcp",
             Self::Skills => "skills",
+            Self::StaticWeb => "static_web",
+            Self::Link => "link",
         }
     }
 }
@@ -139,6 +146,8 @@ impl From<Runtime> for wonton_protocol::PluginRuntime {
             Runtime::Compose => Self::Compose,
             Runtime::RemoteMcp => Self::RemoteMcp,
             Runtime::Skills => Self::Skills,
+            Runtime::StaticWeb => Self::StaticWeb,
+            Runtime::Link => Self::Link,
         }
     }
 }
@@ -496,6 +505,12 @@ pub struct Manifest {
     pub webui: Option<WebUi>,
     #[serde(default)]
     pub tabs: Option<Vec<ManifestTab>>,
+    /// `runtime: static_web` 的静态文件目录和出网白名单（ADR-0080）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub static_web: Option<StaticWebSpec>,
+    /// `runtime: link` 的地址（ADR-0080）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<LinkSpec>,
     #[serde(default)]
     pub mcp: Option<McpEndpoint>,
     #[serde(default)]
@@ -593,6 +608,7 @@ impl Manifest {
         validate_tunnel(self)?;
         super::provides::validate(self, langs)?;
         super::capabilities::validate(self, langs)?;
+        super::manifest_static::validate(self)?;
         super::proxy_auth::validate(self, langs)?;
         super::proxy_auth::validate_mcp_headers(self, langs)?;
         if let Some(webui) = &self.webui {
