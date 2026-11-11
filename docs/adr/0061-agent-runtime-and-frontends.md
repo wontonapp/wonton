@@ -209,6 +209,7 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
   3. 按行读消息由我们自己写，带长度上限。
   4. WebSocket 入口我们自己写：注入 `X-Wonton-*` 头（第 3 节），把 axum 的默认上限（单条消息 64 MiB、单帧 16 MiB）改小。
 - 它的 schema 给整个 workspace 的 serde_json 打开 `preserve_order`：同一次构建里所有 crate 的 JSON 对象都按插入顺序。
+  `serde_json::Value` 因此变大，wonton-core 里两处返回 `CallToolResult` 的地方会触发 `clippy::result_large_err`（#255 发现），换库前先把它们装箱或改小。
 
 ## 考虑过的做法
 
