@@ -35,6 +35,26 @@ mod view;
 use view::*;
 mod reload;
 use reload::*;
+
+
+pub(super) fn empty_view() -> TabsViewModel {
+    TabsViewModel {
+        items: Vec::new(),
+        show_bar: false,
+        selected: TabRef::Apps,
+        overlay: None,
+        full: false,
+        uninstalled: Vec::new(),
+        problem: None,
+        labels: true,
+        candidates: Vec::new(),
+        panel: Vec::new(),
+        panel_candidates: Vec::new(),
+        panel_selected: None,
+        bot_pin_consents: Vec::new(),
+    }
+}
+
 mod actions;
 mod panel;
 mod sync;

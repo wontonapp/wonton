@@ -154,7 +154,7 @@ struct MainView: View {
         case .settings:
             SettingsTab(model: settings, appearance: appearance, chat: chat, home: home, plugins: plugins,
                         isActive: tabs.viewModel.selected == .settings && !showsSettings)
-        case .plugin, .pluginPath, .bot, .url, .sharedApp:
+        case .plugin, .pluginPath, .bot, .url, .sharedApp, .uiResource:
             if visited.contains(tab), let page = tabs.viewModel.items.first(where: { $0.tab == tab })?.page {
                 pluginPage(tab, page: page, overlay: false)
             }
@@ -213,7 +213,7 @@ struct MainView: View {
         } else {
             shown = switch tabs.viewModel.selected {
             case .chat, .apps, .settings: chat.shownRoom(in: nativeTab)
-            case .plugin, .pluginPath, .bot, .url, .sharedApp: nil
+            case .plugin, .pluginPath, .bot, .url, .sharedApp, .uiResource: nil
             }
         }
         return chat.viewModel.pendingConfirmations.filter { shown != $0.roomId }
@@ -228,7 +228,7 @@ struct MainView: View {
     var nativeTab: AppTab {
         switch tabs.viewModel.selected {
         case .chat: .chat
-        case .apps, .plugin, .pluginPath, .bot, .url, .sharedApp: .apps
+        case .apps, .plugin, .pluginPath, .bot, .url, .sharedApp, .uiResource: .apps
         case .settings: .settings
         }
     }
