@@ -43,7 +43,12 @@ struct Call {
 #[derive(Default)]
 pub(crate) struct AppCalls {
     calls: Mutex<HashMap<String, Call>>,
+    /// 界面发消息用的主人会话：核心跑着就一直复用这一台设备，不每条消息登进登出刷设备列表。
+    owner_session: tokio::sync::Mutex<Option<crate::matrix::Login>>,
 }
+
+/// 界面替主人发消息用的设备名。
+const APP_SENDER_DEVICE: &str = "Wonton 核心（界面发消息）";
 
 impl AppCalls {
     fn start(&self, id: &str) {
@@ -79,6 +84,28 @@ impl AppCalls {
         if let Some(call) = self.calls.lock().expect("界面调用表锁中毒").get_mut(id) {
             call.done = true;
             call.error = Some((kind, message));
+        }
+    }
+
+    /// 复用的主人会话；服务器拒了令牌（设备被删）就清掉，下次重登。
+    async fn owner_login(
+        &self,
+        matrix: &crate::matrix::Matrix,
+        owner: &str,
+    ) -> Result<crate::matrix::Login, crate::matrix::MatrixError> {
+        let mut guard = self.owner_session.lock().await;
+        if let Some(login) = guard.as_ref() {
+            return Ok(login.clone());
+        }
+        let login = matrix.login(owner, APP_SENDER_DEVICE).await?;
+        *guard = Some(login.clone());
+        Ok(login)
+    }
+
+    async fn drop_owner_session(&self, stale: &crate::matrix::Login) {
+        let mut guard = self.owner_session.lock().await;
+        if guard.as_ref() == Some(stale) {
+            *guard = None;
         }
     }
 
@@ -183,8 +210,16 @@ fn resource_pin(
     Ok((owner, provider, bot, found, resource_uri))
 }
 
-/// 界面和资源的安全策略：默认什么都不许，再按资源声明的域名放开。
-fn content_policy(csp: Option<&Value>) -> String {
+/// 宿主页自己的策略：它要 fetch 核心的同源接口，并放进界面的 iframe。
+fn host_policy() -> String {
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; \
+     img-src data:; connect-src 'self'; frame-src 'self' about: data:; form-action 'self';"
+        .to_owned()
+}
+
+/// 界面的策略：不给 `'self'`，界面是 opaque origin，不能拿主人会话直接打核心接口；
+/// 只按资源声明的域名放开，所有工具和资源都经宿主页。
+fn frame_policy(csp: Option<&Value>) -> String {
     let domains = |key: &str| {
         csp.and_then(|csp| csp.get(key))
             .and_then(Value::as_array)
@@ -208,7 +243,7 @@ fn content_policy(csp: Option<&Value>) -> String {
     };
     format!(
         "default-src 'none'; script-src 'unsafe-inline'{}; style-src 'unsafe-inline'{}; \
-         img-src data:{}; font-src{}; connect-src 'self'{}; frame-src 'self' about: data:{}; \
+         img-src data:{}; font-src{}; connect-src{}; frame-src 'self' about: data:{}; \
          base-uri{}; form-action 'self';",
         list(&resources),
         list(&resources),
@@ -326,11 +361,11 @@ pub(super) async fn host(
     let payload = json!({
         "pin": pin,
         "html": app,
-        "csp": content_policy(csp),
+        "csp": frame_policy(csp),
         "origin": gateway.core_origin(),
     });
     let mut response = host_page(&gateway, payload).into_response();
-    let policy = content_policy(csp);
+    let policy = host_policy();
     if let Ok(value) = policy.parse() {
         response
             .headers_mut()
@@ -519,8 +554,9 @@ pub(super) async fn message(
     if text.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "invalid_input", "消息是空的");
     }
-    let login = match matrix
-        .login(gateway.owner.username(), "Wonton 核心（界面发消息）")
+    let login = match gateway
+        .app_calls
+        .owner_login(matrix, gateway.owner.username())
         .await
     {
         Ok(login) => login,
@@ -530,9 +566,28 @@ pub(super) async fn message(
     let sent = session
         .send_message(&room, &json!({"msgtype": "m.text", "body": text}))
         .await;
-    let _ = session.logout().await;
     match sent {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        // 令牌被拒（设备被删了）：清掉缓存重登一次，再发。
+        Err(crate::matrix::MatrixError::Rejected { status: 401, .. }) => {
+            gateway.app_calls.drop_owner_session(&login).await;
+            let login = match gateway
+                .app_calls
+                .owner_login(matrix, gateway.owner.username())
+                .await
+            {
+                Ok(login) => login,
+                Err(e) => return failed(&gateway, StatusCode::BAD_GATEWAY, e),
+            };
+            let session = matrix.session(&login);
+            match session
+                .send_message(&room, &json!({"msgtype": "m.text", "body": text}))
+                .await
+            {
+                Ok(_) => StatusCode::NO_CONTENT.into_response(),
+                Err(e) => failed(&gateway, StatusCode::BAD_GATEWAY, e),
+            }
+        }
         Err(e) => failed(&gateway, StatusCode::BAD_GATEWAY, e),
     }
 }

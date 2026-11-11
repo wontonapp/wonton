@@ -3,23 +3,27 @@
 use rmcp::model::ResourceContents;
 use serde_json::json;
 
-use super::{MAX_RESOURCE, content_policy, html};
+use super::{HOST_PAGE, MAX_RESOURCE, frame_policy, host_policy, html};
 
 #[test]
-fn the_policy_opens_only_declared_domains_and_keeps_self() {
+fn the_frame_policy_opens_only_declared_domains() {
     let csp = json!({
         "connectDomains": ["https://api.example.com/path", "not a url"],
         "resourceDomains": ["https://cdn.example.com"],
         "frameDomains": ["https://frame.example.com"],
         "baseUriDomains": ["https://base.example.com"],
     });
-    let policy = content_policy(Some(&csp));
-    assert!(policy.contains("connect-src 'self' https://api.example.com"));
+    let policy = frame_policy(Some(&csp));
+    // 界面是 opaque origin：不给 'self'，只能打声明的域名，核心接口都经宿主页。
+    assert!(policy.contains("connect-src https://api.example.com"));
+    assert!(!policy.contains("connect-src 'self'"));
+    assert!(host_policy().contains("connect-src 'self'"));
+    assert!(!HOST_PAGE.contains("allow-same-origin"));
     assert!(policy.contains("script-src 'unsafe-inline' https://cdn.example.com"));
     assert!(policy.contains("frame-src 'self' about: data: https://frame.example.com"));
     assert!(policy.contains("base-uri https://base.example.com"));
     assert!(!policy.contains("not a url"));
-    assert!(content_policy(None).contains("default-src 'none'"));
+    assert!(frame_policy(None).contains("default-src 'none'"));
 }
 
 #[test]

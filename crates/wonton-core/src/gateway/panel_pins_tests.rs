@@ -8,6 +8,7 @@ use http_body_util::BodyExt;
 use hyper::{Method, StatusCode, header};
 use iroh::SecretKey;
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 use tower::ServiceExt;
 use wonton_protocol::{
     BOT_PANEL_PINS_PATH, PanelScope, bot_panel_consent_path, bot_panel_pin_path,
@@ -203,4 +204,47 @@ async fn unknown_pins_are_404_and_unpaired_or_cross_site_is_rejected() {
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn ui_message_reuses_one_owner_device() {
+    let h = Home::start().await;
+    let pin = h.pin(
+        PanelScope::Room {
+            room_id: "!room:test".into(),
+        },
+        false,
+    );
+    // Bed 里 Bot 的家是 !room:test，但假服务器里还没这个房间：造一个，主人在里面。
+    h.bed.fake.state().rooms.insert(
+        "!room:test".into(),
+        crate::matrix::fake::Room {
+            members: BTreeSet::from(["@owner:test".into()]),
+            ..Default::default()
+        },
+    );
+    let before = h.bed.fake.state().devices("@owner:test").len();
+    let body = |text: &str| json!({"pin": pin, "text": text});
+    let (status, why) = h
+        .request(
+            Method::POST,
+            wonton_protocol::MCP_APP_MESSAGE_PATH,
+            Some(body("进展如何")),
+            Some(h.peer),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{why}");
+    let (status, _) = h
+        .request(
+            Method::POST,
+            wonton_protocol::MCP_APP_MESSAGE_PATH,
+            Some(body("还差多少")),
+            Some(h.peer),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let after = h.bed.fake.state().devices("@owner:test").len();
+    assert_eq!(after - before, 1, "两条消息只应登一台设备");
 }
