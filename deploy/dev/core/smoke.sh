@@ -431,19 +431,27 @@ hermes_reply() {
 print(sys.stdin.read().partition("第 1 轮：收到加密的回复：")[2].strip())' <"$1"
 }
 model_usage() { docker exec "$magpie" magpie usage --last 15m --csv; }
-expect_model_reply() {
-  local usage
-  usage="$(model_usage)" || fail "读取 magpie 用量失败"
-  # 同一轮可调模型多次；逐轮取增量，不能拿第一轮的成功记录替第二轮作证。
+# 这一轮有没有记上一条成功的调用：$1 是第一轮开始前的用量。空字段或还没写下的行会让它先失败。
+round_used() {
   python3 -c 'import csv, io, sys
 def hermes_rows(raw):
     return [r for r in csv.DictReader(io.StringIO(raw))
             if r["caller_key_name"] == "com.nousresearch.hermes/default"]
 before = {r["request_id"] for r in hermes_rows(sys.argv[1]) if r["request_id"]}
 rows = [r for r in hermes_rows(sys.stdin.read()) if r["request_id"] not in before]
-valid = any(r["request_id"] and 200 <= int(r["status"]) < 300
-            and r["error"] == "false" and int(r["output_tokens"]) > 0 for r in rows)
-sys.exit(not valid)' "$2" <<<"$usage" || fail "模型没有正常回答：$(hermes_reply "$1")"
+valid = any(r["request_id"] and 200 <= int(r["status"] or 0) < 300
+            and r["error"] == "false" and int(r["output_tokens"] or 0) > 0 for r in rows)
+sys.exit(not valid)' "$1" <<<"$(model_usage)"
+}
+expect_model_reply() {
+  local before="$2"
+  # 同一轮可调模型多次；逐轮取增量，不能拿第一轮的成功记录替第二轮作证。
+  # 用量在生成结束时才记下，回答可能先到（流式），等它，最多 30 秒。
+  for _ in $(seq 30); do
+    round_used "$before" && break
+    sleep 1
+  done
+  round_used "$before" || fail "模型没有正常回答：$(hermes_reply "$1")"
   ok "第 $3 轮模型调用成功且有输出 token，用量记在 Hermes 的凭据名下"
 }
 expect_hermes_memory() {
