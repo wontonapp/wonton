@@ -120,7 +120,6 @@ App 被杀后收不到任何消息。
 - 只有计数、没有事件的通知（Tuwunel 在未读数变化时发）不转发。
 - 发给设备的明文（加密前）是 Matrix 推送通知的子集，加上发推送的服务器：
   `{"server", "room_id", "event_id", "sender", "sender_display_name", "room_name", "prio"}`，只有前三项一定有。
-  可选的 `category` 标类别（`confirmation` 是等你回答的确认卡片，卡片标题在发送者位上）；普通消息不带，App 按消息显示。
   `server` 是核心隧道的 endpoint ID，手机配了多台服务器时靠它找到该连哪台（ADR-0042）。
 - Web Push 请求带 `Content-Encoding: aes128gcm`、`TTL: 86400`，`Urgency` 为 `high`（`prio` 为 `low` 时为
   `normal`）。
