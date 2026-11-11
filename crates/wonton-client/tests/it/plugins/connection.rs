@@ -252,6 +252,7 @@ async fn a_dropped_install_waits_for_a_connection_and_then_reports_the_result() 
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     let view = rig
@@ -273,6 +274,7 @@ async fn a_dropped_install_waits_for_a_connection_and_then_reports_the_result() 
         rig.app.dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
+            settings: Default::default(),
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -314,6 +316,7 @@ async fn losing_the_network_while_the_request_is_out_waits_at_once() {
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
 
@@ -366,6 +369,7 @@ async fn an_install_that_never_shows_up_is_uncertain_and_points_at_the_installed
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     rig.wait_for(|view| view.tasks.iter().any(|task| task.waiting_for_connection))
