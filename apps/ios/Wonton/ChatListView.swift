@@ -251,7 +251,7 @@ private struct RoomRowView: View {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         Text(row.name)
                             .wontonText(WontonTheme.typography.itemTitle)
-                            .foregroundStyle(Color(colors.textPrimary))
+                            .foregroundStyle(.red)
                             .lineLimit(1)
                         if row.isEncrypted {
                             WontonIcon.lockFill.view(size: WontonTheme.size.iconTiny)
