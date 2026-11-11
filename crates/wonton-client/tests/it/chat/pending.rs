@@ -275,12 +275,14 @@ async fn a_refused_answer_shows_why() {
     assert_eq!(view.problem.unwrap().reason, ChatFailure::InvalidInput);
     assert!(view.card.choices.is_empty());
     assert_eq!(view.sending, None);
-    assert!(
-        phone
-            .chat()
-            .settled_confirmations
-            .contains(&"answered".to_owned())
-    );
+    // vm 和聊天视图是两个发送端（见 answering_shows_progress_then_the_result），等聊天视图跟上来再断言。
+    phone
+        .wait_chat("卡片列进不用回答的", |view| {
+            view.settled_confirmations
+                .contains(&"answered".to_owned())
+                .then_some(())
+        })
+        .await;
 }
 
 /// 长轮询断了：问题按类别报成传输类，上次的列表保留；重试后恢复。
@@ -373,13 +375,14 @@ async fn a_card_that_runs_out_is_settled_without_a_core_update() {
     })
     .await;
     assert_eq!(view.card.choices, vec![] as Vec<wonton_client::CardChoice>);
-    assert!(
-        phone
-            .chat()
-            .settled_confirmations
-            .contains(&"flaky".to_owned())
-    );
-    assert!(phone.chat().pending_confirmations.is_empty());
+    // vm 和聊天视图是两个发送端（见 answering_shows_progress_then_the_result），等聊天视图跟上来再断言。
+    phone
+        .wait_chat("过期卡片列进不用回答的", |view| {
+            (view.settled_confirmations.contains(&"flaky".to_owned())
+                && view.pending_confirmations.is_empty())
+            .then_some(())
+        })
+        .await;
 
     // 核心的列表更新成过期：还是同一张，不再冒出按钮。
     home.set_confirmations(
