@@ -17,6 +17,14 @@ output-limited = Upstream error: the agent's reply passed the output limit; the 
 no-text = The agent produced no text this turn (stopReason={ $stop_reason }).
 transport-disconnected = Transport unavailable: the ACP agent connection dropped; it reconnects shortly.
 
+catch-up-dropped =
+    I was offline; the {$count} below were not processed:
+    {$list}
+catch-up-dropped-more =
+    I was offline; the {$count} below were not processed:
+    {$list}
+    …and {$rest} more are not listed
+
 # Only shown in logs (logs stay untranslated; these read with the detail prefix).
 agent-connect-socket = Can't connect to the ACP socket { $path }: { $error }
 agent-init-timeout = The ACP initialize timed out.
