@@ -65,14 +65,15 @@ struct ChatBackupView: View {
     }
 
     @ViewBuilder private var nextStep: some View {
-        switch encryption.recovery {
-        case .incomplete:
+        // 类别由核心按恢复状态算好（ADR-0076），这里只按类别画。
+        switch encryption.recoveryNextStep {
+        case .enterKey:
+            recoveryKeyEntry
+        case .chooseDeviceOrKey:
+            // 账号里有别的已验证设备：确认和恢复密钥两条路并列（ADR-0046）。
             if showKeyEntry {
                 recoveryKeyEntry
-            } else if encryption.verificationFlow != nil {
-                EmptyView()
-            } else if encryption.canVerifyWithOtherDevice {
-                // 账号里有别的已验证设备：确认和恢复密钥两条路并列（ADR-0046）。
+            } else {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     Button { model.send(.startDeviceVerification) } label: {
                         Text(.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
@@ -83,20 +84,20 @@ struct ChatBackupView: View {
                     }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
-            } else {
-                recoveryKeyEntry
             }
-        case .disabled:
-            // 账号没有备份，输恢复密钥没用；只有另一台已验证的设备能把密钥直接发过来。
-            if encryption.canVerifyWithOtherDevice, encryption.verificationFlow == nil {
+        case .showFlow:
+            // 设备确认是这一步：流程在上面那一屏；还没开始时给入口按钮（账号没有备份，输恢复密钥没用）。
+            if encryption.verificationFlow == nil {
                 Button { model.send(.startDeviceVerification) } label: {
                     Text(.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
+            } else if showKeyEntry {
+                recoveryKeyEntry
             }
-        case .inProgress:
+        case .progress:
             ProgressView().frame(maxWidth: .infinity)
-        case .enabled, .unknown:
+        case .none, .other:
             EmptyView()
         }
     }
@@ -145,16 +146,6 @@ extension RecoveryStatus {
 }
 
 extension EncryptionStatus {
-    /// 恢复密钥丢了、备份残缺或者开启不了时的出路。正在显示新密钥时不出现，免得主人还没抄下来就把它作废。
-    var canReset: Bool {
-        guard recoveryKey == nil else { return false }
-        switch recovery {
-        case .enabled, .incomplete: return true
-        case .disabled: return verification == .unverified
-        case .inProgress, .unknown: return false
-        }
-    }
-
     var backupDetail: String? {
         switch recovery {
         case .enabled: return String(localized: .chatBackupDetailEnabled)

@@ -62,6 +62,20 @@ struct Flow {
 }
 
 impl ChatLink {
+    /// 重置恢复前取消进行中的确认（ADR-0076）：取消发不出去（没在跑、任务没了）就什么都不做，重置照常。
+    /// 流程还在它自己的任务里收尾，对端随后收到“对方取消”。
+    pub(super) fn cancel_active_verification(&self) {
+        let flow = self.view.borrow().encryption.verification_flow.clone();
+        if let Some(flow) = flow
+            && active(&flow.stage)
+            && let Some(control) = lock(&self.verification).as_mut()
+        {
+            let _ = control
+                .commands
+                .send(Command::Operate(flow.flow_id, Operation::Cancel));
+        }
+    }
+
     /// 设备确认的几个 `Action`。
     pub(super) fn verification_action(&self, action: Action) -> Result<(), CoreError> {
         let (flow_id, operation) = match action {
@@ -319,6 +333,7 @@ async fn apply_command(
                             reason: VerificationCancel::ByMe,
                         };
                     }
+                    super::recovery::refresh(&mut view.encryption);
                 });
                 if let Some(flow) = flow.as_mut() {
                     flow.finished = true;
@@ -436,7 +451,7 @@ fn finish_keys(link: &ChatLink, session: &MatrixSession, flow: &mut Option<Flow>
         if complete {
             view.encryption.can_verify_with_other_device = false;
         }
-        super::recovery::update_reminder(&mut view.encryption);
+        super::recovery::refresh(&mut view.encryption);
         if let Some(snapshot) = view.encryption.verification_flow.as_mut() {
             snapshot.stage = if complete {
                 VerificationStage::Done
@@ -536,6 +551,7 @@ fn fail(link: &ChatLink, flow: &mut Option<Flow>, error: &Error) {
                 reason: VerificationCancel::Failed,
             };
         }
+        super::recovery::refresh(&mut view.encryption);
     });
     if let Some(flow) = flow.as_mut() {
         flow.finished = true;
@@ -562,6 +578,7 @@ fn set_snapshot(link: &ChatLink, snapshot: VerificationFlow) {
             return false;
         }
         view.encryption.verification_flow = Some(snapshot);
+        super::recovery::refresh(&mut view.encryption);
         true
     });
 }
@@ -628,11 +645,14 @@ async fn watch_availability(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
                     view.encryption.can_verify_with_other_device = available
                         && session.encryption_state().verification
                             == wonton_matrix::Verification::Unverified;
+                    super::recovery::refresh(&mut view.encryption);
                 });
             }
             Err(error) => {
-                link.view
-                    .send_modify(|view| view.encryption.can_verify_with_other_device = false);
+                link.view.send_modify(|view| {
+                    view.encryption.can_verify_with_other_device = false;
+                    super::recovery::refresh(&mut view.encryption);
+                });
                 report(&link, &error);
             }
         }

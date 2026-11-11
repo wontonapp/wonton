@@ -590,7 +590,7 @@ async fn another_trusted_device_taking_over_marks_the_request_accepted_elsewhere
     cancelled(&first, &id, VerificationCancel::ByOther).await;
 }
 
-async fn available(phone: &Phone) {
+pub(super) async fn available(phone: &Phone) {
     phone
         .wait_chat("可以请另一台设备确认", |view| {
             view.encryption.can_verify_with_other_device.then_some(())
@@ -623,7 +623,7 @@ async fn incoming(first: &Phone, second: &Phone) -> String {
     received.flow_id
 }
 
-async fn compare(first: &Phone, second: &Phone) -> String {
+pub(super) async fn compare(first: &Phone, second: &Phone) -> String {
     let id = incoming(first, second).await;
     first
         .dispatch(Action::AcceptDeviceVerification {
@@ -707,7 +707,7 @@ async fn confirm_and_observe(
     stages.expect("原有 60 秒等待内设备确认必须结束")
 }
 
-async fn cancelled(phone: &Phone, id: &str, reason: VerificationCancel) {
+pub(super) async fn cancelled(phone: &Phone, id: &str, reason: VerificationCancel) {
     phone
         .wait_chat("指定设备确认流程以预期原因取消", |view| {
             view.encryption
