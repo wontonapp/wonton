@@ -9,9 +9,6 @@ name: nightly-ui
 #
 # 安卓托管机器的模拟器跑不了 ARM 的 .so，构建传 -Pwonton.abis=x86_64。
 on:
-  # 临时：新工作流要先在默认分支上存在才能手动触发，先在分支上跑通，验收完删掉这一段。
-  pull_request:
-    types: [opened, synchronize]
   schedule:
     - cron: "30 4 * * *"
     - cron: "0 4 * * *"
@@ -61,7 +58,7 @@ jobs:
         with:
           # 和 ios.yml 共用 key：cache.yml 在 main 上用同一个 key 编，夜跑才不用每次冷编。
           shared-key: rust-ios
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: 安装 XcodeGen（版本和 sha256 固定）
         run: |
           curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
@@ -191,7 +188,7 @@ jobs:
         with:
           # 和 android.yml 共用 key（cache.yml 在 main 上编）。
           shared-key: rust-android
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
       # 模拟器要 KVM：官方文档的 udev 规则写法（ubuntu-24.04 默认只有 root 能读写 /dev/kvm）。
       - name: 打开 KVM
