@@ -6,6 +6,7 @@ struct ChatListView: View {
     let plugins: PluginsModel
     @Environment(\.wontonColors) private var colors
     @Environment(TabsModel.self) private var tabs
+    @Environment(\.chatPull) private var pull
     @State private var confirmation: PluginConfirmation?
 
     var body: some View {
@@ -40,6 +41,7 @@ struct ChatListView: View {
                         }
                     }
                 }
+                .background { if let pull { ChatPullDetector(pull: pull) } }
             }
             .overlay {
                 if isEmpty { NoChats() }

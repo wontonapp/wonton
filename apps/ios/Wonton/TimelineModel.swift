@@ -14,6 +14,12 @@ final class TimelineModel {
     private(set) var anchor: String?
     /// 时间线被清空重建的次数：重建的 Reset 里带新落点，视图要重新摆。
     private(set) var generation = 0
+    /// 房间面板里的页面（ADR-0052）：列表为空时壳画大加号。每一批都带当前值。
+    private(set) var panel: [PanelItem] = []
+    /// 房间面板上次看的那一页（本机记住，不同步）。
+    private(set) var panelSelected: TabRef?
+    /// 房间里盖着消息列表的东西开着：上推拉面板的入口不响应。核心合成，壳只读。
+    private(set) var entryBlocked = false
     private(set) var failure: Problem?
     /// 打不开时点“重试”加一，视图按它重新订阅。
     var attempt = 0
@@ -42,6 +48,9 @@ final class TimelineModel {
             }
             backPagination = update.backPagination
             viewport = update.viewport
+            panel = update.panel
+            panelSelected = update.panelSelected
+            entryBlocked = update.entryBlocked
             if let anchor = update.anchor {
                 self.anchor = anchor
             }

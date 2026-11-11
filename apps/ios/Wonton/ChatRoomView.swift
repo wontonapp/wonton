@@ -18,6 +18,8 @@ struct ChatRoomView: View {
     @State private var showingRedact = false
     /// 进房间的落点摆好之前不标已读（ADR-0071）：标早了已读行会跳到最新一条，落点就丢了。
     @State private var placed = false
+    /// 在最新一条之后往上推，拉出房间的面板（ADR-0052）。
+    @State private var roomPull = PullAnchor(attachesToAncestor: false, edge: .bottom)
     @Environment(OnboardingModel.self) private var onboarding
     @Environment(TabsModel.self) private var tabs
 
@@ -31,6 +33,16 @@ struct ChatRoomView: View {
     }
 
     var body: some View {
+        RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
+                      blocked: entryBlocked, pullAnchor: roomPull) {
+            roomContent
+        }
+    }
+
+    /// 房间里另有东西开着：长按菜单之外的转发、删除确认不响应上推入口（ADR-0052）。
+    private var entryBlocked: Bool { pickingForwardRoom || showingRedact }
+
+    private var roomContent: some View {
         VStack(spacing: 0) {
             if let failure = timeline.failure {
                 ProblemView(problem: failure) { timeline.attempt += 1 }
@@ -80,6 +92,9 @@ struct ChatRoomView: View {
         ) { EmptyView() }
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
+        .onChange(of: entryBlocked, initial: true) { _, blocked in
+            model.send(.setRoomEntryBlocked(roomId: roomId, blocked: blocked))
+        }
         .task(id: roomId) { await model.loadDraft(roomId) }
         .task(id: timeline.attempt) {
             if await timeline.observe() {
@@ -115,7 +130,10 @@ struct ChatRoomView: View {
                     }
                 }
                 // 进房间时列表从头排起，这一行一定会出现。
-                .background(EnclosingScrollView { pin.attach($0) })
+                .background(EnclosingScrollView { scrollView in
+                    pin.attach(scrollView)
+                    roomPull.attach(to: scrollView)
+                })
                 .timelineListRow()
                 ForEach(Array(timeline.items.enumerated()), id: \.element.id) { index, item in
                     let joinsPrevious = index > 0 && item.joins(timeline.items[index - 1])

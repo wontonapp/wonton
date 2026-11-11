@@ -768,11 +768,14 @@ pub(super) fn is_plugin_page(tab: &TabRef) -> bool {
     matches!(tab, TabRef::Plugin { .. } | TabRef::PluginPath { .. })
 }
 
-/// 是网页的三种页面：插件页、插件里的某一页、公网网页。加载失败和重新加载都按网页处理。
+/// 是网页的页面：插件页、插件里的某一页、公网网页、朋友分享的插件页。加载失败和重新加载都按网页处理。
 pub(super) fn is_web_page(tab: &TabRef) -> bool {
     matches!(
         tab,
-        TabRef::Plugin { .. } | TabRef::PluginPath { .. } | TabRef::Url { .. }
+        TabRef::Plugin { .. }
+            | TabRef::PluginPath { .. }
+            | TabRef::Url { .. }
+            | TabRef::SharedApp { .. }
     )
 }
 
