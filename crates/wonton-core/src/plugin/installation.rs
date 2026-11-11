@@ -51,7 +51,9 @@ impl PluginManager {
             targets: None,
         };
         let manifest = decision.package.manifest.clone();
-        match self.install_checked_retained(decision, settings, langs).await {
+        // 保持 install 子树的 future 状态机在堆上：默认 2 MiB 测试线程栈装不下整条线性 await 链
+        // （egress_plugin_failures… 的栈溢出）。
+        match Box::pin(self.install_checked_retained(decision, settings, langs)).await {
             Ok((view, undo)) => {
                 if let Err(error) = self.capabilities_installed(&manifest, &[], false).await {
                     let mut failures = Vec::new();
