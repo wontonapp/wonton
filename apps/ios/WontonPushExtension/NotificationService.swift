@@ -40,18 +40,26 @@ final class NotificationService: UNNotificationServiceExtension {
             content.body = String(localized: .pushNewMessage)
             return content
         }
-        // 标题和 Android 一致：群聊用房间名，私聊用发送者；确认卡片推来时发送者位上是卡片标题。
-        // 正文按类别：确认卡片不重复标题，用一句类别文案。
-        content.title = payload.roomName
-            ?? payload.senderDisplayName ?? payload.sender ?? String(localized: .pushUnknownSender)
-        content.body = payload.category == "confirmation"
-            ? String(localized: .pushWaitingConfirmation)
-            : String(localized: .pushNewMessage)
-        content.threadIdentifier = payload.roomId
-        // 点开通知的跳转用：通知来自哪台服务器、进哪个房间。
-        content.userInfo = content.userInfo.merging([
-            "server": payload.server, "room_id": payload.roomId,
-        ]) { current, _ in current }
+        switch payload {
+        case .message(let message):
+            // 标题和 Android 一致：群聊用房间名，私聊用发送者。
+            content.title = message.roomName
+                ?? message.senderDisplayName ?? message.sender ?? String(localized: .pushUnknownSender)
+            content.body = String(localized: .pushNewMessage)
+            content.threadIdentifier = message.roomId
+            content.userInfo = content.userInfo.merging([
+                "server": message.server, "room_id": message.roomId,
+            ]) { current, _ in current }
+        case .confirmation(let direct):
+            // 标题就是卡片标题（核心已按收推送那台设备的语言写好），正文一句类别文案，不重复标题。
+            content.title = direct.confirmation.title
+            content.body = String(localized: .pushWaitingConfirmation)
+            content.threadIdentifier = direct.confirmation.origin?.roomId ?? direct.confirmation.id
+            // 没有来源会话的卡片 room_id 为空，点开后壳落到会话列表的“等你确认”入口。
+            content.userInfo = content.userInfo.merging([
+                "server": direct.server, "room_id": direct.confirmation.origin?.roomId ?? "",
+            ]) { current, _ in current }
+        }
         return content
     }
 

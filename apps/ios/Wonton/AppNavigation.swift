@@ -227,7 +227,8 @@ final class AppNavigation {
                 }
             }
             try navigation.select(.chat)
-            navigation.chat.openRoom(id: roomId)
+            // 没有来源会话的卡片（核心自己发起的，ADR-0016）room_id 为空：落在会话列表，待确认的卡片就在那里。
+            if !roomId.isEmpty { navigation.chat.openRoom(id: roomId) }
         }
     }
 
