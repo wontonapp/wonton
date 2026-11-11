@@ -4,7 +4,7 @@
 mod reset;
 mod stuck_bind;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::ops::Deref;
 use std::str::FromStr;
@@ -42,7 +42,14 @@ struct Codes {
     /// 要码时回这个 HTTP 状态码的错误，为空时发一个新码。
     refuse: Mutex<Option<u16>>,
     reported_addrs: Mutex<Vec<SocketAddr>>,
+    /// 接下来这么多个配对请求都拖住：每个都在处理里睡 [`SLOW_REPLY`] 才回，模拟慢中继上的回应。
+    slow: Mutex<u32>,
+    /// 已经见过的（码, 设备）。
+    seen: Mutex<HashSet<(String, EndpointId)>>,
 }
+
+/// 比测试里的时限长得多：回应到之前就已经超时。
+const SLOW_REPLY: Duration = Duration::from_secs(8);
 
 impl Codes {
     /// 发一个码，配对时按 `outcome` 回应。
@@ -65,12 +72,19 @@ impl Codes {
 
 impl PairHandler for Codes {
     fn pair(&self, device: EndpointId, secret: &PairingSecret, device_name: &str) -> PairResponse {
+        let key = (secret.expose().to_owned(), device);
+        let first = self.seen.lock().unwrap().insert(key);
+        // 登记先于回应，和真的核心一样：回应慢不代表登记慢，确认请求也不跟着一起慢。
+        if first && matches!(self.codes.lock().unwrap().get(secret.expose()), Some(None)) {
+            self.allowlist.allow(device);
+            self.names.lock().unwrap().push(device_name.to_owned());
+        }
+        if *self.slow.lock().unwrap() > 0 {
+            *self.slow.lock().unwrap() -= 1;
+            std::thread::sleep(SLOW_REPLY);
+        }
         match self.codes.lock().unwrap().get(secret.expose()) {
-            Some(None) => {
-                self.allowlist.allow(device);
-                self.names.lock().unwrap().push(device_name.to_owned());
-                PairResponse::Paired
-            }
+            Some(None) => PairResponse::Paired,
             Some(Some(reason)) => PairResponse::Rejected {
                 reason: *reason,
                 message: format!("{reason:?}"),
@@ -128,6 +142,8 @@ impl Home {
             invites: Mutex::new(Vec::new()),
             refuse: Mutex::new(None),
             reported_addrs: Mutex::new(Vec::new()),
+            slow: Mutex::new(0),
+            seen: Mutex::new(HashSet::new()),
         });
         let (server, listener) = TunnelServer::spawn_embedded_with_pairing(
             endpoint,
@@ -522,4 +538,63 @@ async fn a_refused_invite_says_why() {
             _ => unreachable!(),
         }
     }
+}
+
+/// 测试里的每一段时限：留够冷启动的绑定和建连，慢回应还是它的两倍多。多线程运行时是必需的：假服务端
+/// 用阻塞睡眠拖住回应，单线程运行时里客户端自己的计时器也会跟着停住。
+const STAGE: Duration = Duration::from_secs(3);
+const WATCH: Duration = Duration::from_secs(30);
+
+/// 回应在超时之后才到（中继慢）：请求已经送到、服务端也登记了，客户端不能报失败——确认一次就配上。
+/// 确认和第一次都赶不上才报失败，那时码已经用掉，回 `used`。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_reply_after_the_deadline_still_pairs() {
+    let home = Home::start().await;
+    *home.codes.slow.lock().unwrap() = 1;
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    phone.test_set_pair_deadlines(STAGE, WATCH);
+    phone.pair(&home.code(None)).unwrap();
+    let view = phone
+        .wait_for(|view| view.pairing.is_none() && view.status == HomeStatus::Connected)
+        .await;
+    assert_eq!(
+        view.server_id,
+        Some(home.server.endpoint().id().to_string())
+    );
+    assert_eq!(*home.codes.names.lock().unwrap(), vec!["Alice 的 iPhone"]);
+    // 存的是服务端地址，不是码：重启后直接连上。
+    drop(phone);
+    let restarted = Phone::open(dir.path());
+    restarted
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+}
+
+/// 第一次和自动的确认都超过时限才报失败；服务端已经登记了这台设备，拿同一个码手动重试还能配上，
+/// 不会停在“码已经用过”的死胡同里。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn retrying_the_same_code_after_a_failure_pairs() {
+    let home = Home::start().await;
+    *home.codes.slow.lock().unwrap() = 2;
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    phone.test_set_pair_deadlines(STAGE, WATCH);
+    let code = home.code(None);
+    phone.pair(&code).unwrap();
+    let (failure, message) = phone.pairing_failure().await;
+    assert_eq!(failure, PairingFailure::TransportUnavailable, "{message}");
+    assert_eq!(phone.home().status, HomeStatus::NotConfigured);
+    let device: EndpointId = phone.home().device_id.parse().unwrap();
+    assert!(
+        home.codes.allowlist.contains(&device),
+        "服务端已经登记了这台设备"
+    );
+
+    // 手动重试本身也可能是冷启动：给它宽一点的一段，码已经不再慢，配上就完事。
+    phone.test_set_pair_deadlines(Duration::from_secs(10), WATCH);
+    phone.pair(&code).unwrap();
+    phone
+        .wait_for(|view| view.pairing.is_none() && view.status == HomeStatus::Connected)
+        .await;
 }
