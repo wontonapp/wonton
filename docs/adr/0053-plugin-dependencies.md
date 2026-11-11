@@ -68,10 +68,10 @@ x-wonton:
   也不一次取全部候选。
 - `InstallTogether` 是 `{ id, request: InstallRequest }`：内层是提供方自己的完整决定，带它的来源、摘要、计划、
   权限、可选项、输入密钥、设备、局域网开关和范围。只允许一层，内层 `install_together` 或 `connect_plugins`
-  非空时，整个请求报 `invalid_input`，不递归装依赖。
+  非空时，整个请求报 `invalid_input`，不递归装依赖。`request` 是必填项，缺失时直接解码失败，不补空请求。
 - `InstallPreview.plan` 是不透明字符串，`InstallRequest.plan` 原样带回。核心按使用方的插件包摘要、当时已装的
   提供方和全局默认、使用方—提供方—能力的连接集合计算；确认时重算不符就返回 HTTP 409 `changed`，App 重新预览，
-  不自动授权变更后的连接。提供方各自的摘要和计划由内层请求核对；新增字段带 serde 默认值只是通用解码兼容，
+  不自动授权变更后的连接。提供方各自的摘要和计划由内层请求核对；`plan` 的 serde 默认值只是通用解码兼容，
   不代表空计划可以跳过核对，也不保留旧请求写法。
   此计划绑定只适用于 `InstallRequest` 安装流程。升级预览虽复用 `InstallPreview`，`UpgradeRequest` 不携带
   `plan`，不提供这项升级连接状态绑定。

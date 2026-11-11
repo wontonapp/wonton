@@ -87,7 +87,7 @@ pub struct InstallPreview {
 }
 
 /// `POST /_wonton/api/plugins` 的请求体（JSON）：按来源安装。
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct InstallRequest {
     /// 预览给的 `source`。

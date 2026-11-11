@@ -47,7 +47,7 @@ pub struct InstallTogether {
     /// 插件 ID。
     pub id: String,
     /// 提供方自己的完整安装决定。内层 `install_together`、`connect_plugins` 都必须为空，否则输入非法。
-    #[serde(default, deserialize_with = "provider_request")]
+    #[serde(deserialize_with = "provider_request")]
     pub request: InstallRequest,
 }
 

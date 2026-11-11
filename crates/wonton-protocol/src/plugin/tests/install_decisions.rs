@@ -70,9 +70,13 @@ fn provider_requests_reject_both_kinds_of_nested_decisions() {
 }
 
 #[test]
-fn omitted_provider_request_defaults_but_required_request_fields_do_not() {
-    let provider: InstallTogether = serde_json::from_value(json!({"id": "app.provider"})).unwrap();
-    assert_eq!(provider.request, InstallRequest::default());
+fn missing_provider_request_or_mandatory_fields_fail_to_decode() {
+    let mut wire = decisions();
+    wire["install_together"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("request");
+    assert!(serde_json::from_value::<InstallRequest>(wire).is_err());
 
     for required in ["source", "digest", "grant"] {
         let mut wire = decisions();
