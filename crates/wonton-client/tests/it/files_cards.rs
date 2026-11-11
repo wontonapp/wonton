@@ -435,17 +435,19 @@ async fn stopping_after_the_bytes_are_up_leaves_the_file_on_the_server() {
     assert_eq!(core.uploaded_bytes(), 1024);
 }
 
+/// 不欠链接的传输上点重发：不算错（壳不弹窗），什么都不做；再跑一遍会重复副作用（带房间的上传多发一条链接）。
 #[tokio::test]
 async fn only_a_link_that_was_not_sent_can_be_resent() {
     let world = World::start().await;
     let file = world.core.lock().serve("a.pdf", b"abc", "v1");
     let done = download(&world, &file).await;
-    assert!(matches!(
-        world
-            .phone()
-            .dispatch(Action::ResendFileLink { id: done.id }),
-        Err(CoreError::InvalidInput { .. })
-    ));
+    world
+        .phone()
+        .dispatch(Action::ResendFileLink {
+            id: done.id.clone(),
+        })
+        .unwrap();
+    assert_eq!(world.phone().transfers().downloaded, [done], "什么都不做");
 }
 
 #[tokio::test]

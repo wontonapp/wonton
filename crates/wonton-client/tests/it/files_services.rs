@@ -1,6 +1,9 @@
 //! 家里的系统服务不可用（ADR-0020）：传输暂停而不是失败，说得清是服务的问题，服务恢复后接着传。整套服务重启时隧道通了而 tusd 还没起来，核心回
 //! `service_unavailable`；tusd 真坏了时一直如此。
 
+use std::time::Duration;
+
+use super::files::{path_source, upload as upload_a_file, upload_with_room};
 use crate::files_support::{World, source_bytes};
 use wonton_client::{Action, Transfer, TransferAction, TransferState, UploadSource};
 
@@ -30,6 +33,7 @@ async fn services_come_back(world: &World) -> Transfer {
         let mut core = world.core.lock();
         core.services_down = false;
         core.patches_down = false;
+        core.patches_down_unread = false;
     }
     world.phone().dispatch(Action::AppForegrounded).unwrap();
     let done = world
@@ -68,6 +72,28 @@ async fn an_upload_waits_out_the_services_while_sending_bytes() {
     world.core.lock().patches_down = true;
     world.phone().dispatch(upload(&source, None)).unwrap();
     paused_by_the_services(&world).await;
+
+    let done = services_come_back(&world).await;
+    assert_eq!(
+        world.core.lock().uploads[done.file.unwrap().as_str()].bytes,
+        bytes
+    );
+}
+
+/// 核心不读请求体就回 503 时，客户端可能先看到写失败：第一次暂停就要说得出是服务的毛病，不用等重试。
+#[tokio::test]
+async fn an_upload_the_core_refuses_unread_still_names_the_services() {
+    let world = World::start().await;
+    let bytes = source_bytes(MIB);
+    let source = world.write("a.mp4", &bytes);
+    // PATCH 不读就关，`HEAD` 也回 503：问进度问得到服务的毛病。
+    world.core.lock().patches_down_unread = true;
+    world.core.lock().services_down = true;
+    world.phone().dispatch(upload(&source, None)).unwrap();
+    // 第一次暂停（10 秒内）就得带上说明：旧的做法这一次只说等连接恢复，要等下一轮重试才说得出。
+    tokio::time::timeout(Duration::from_secs(10), paused_by_the_services(&world))
+        .await
+        .expect("第一次暂停就该说得出是服务的毛病");
 
     let done = services_come_back(&world).await;
     assert_eq!(
@@ -165,4 +191,64 @@ async fn stopping_while_the_link_is_on_its_way_leaves_the_file_on_the_server() {
     let core = world.core.lock();
     assert!(core.terminated.is_empty() && core.deleted.is_empty());
     assert_eq!(core.uploaded_bytes(), 1024);
+}
+
+/// 连点「重发链接」：第二下不算错（壳不弹窗），也不多跑一遍；字节不重传。
+#[tokio::test]
+async fn resending_a_link_twice_rapidly_is_not_an_error() {
+    let world = World::start().await;
+    let bytes = source_bytes(MIB);
+    let source = world.write("a.mp4", &bytes);
+    world
+        .phone()
+        .dispatch(upload_with_room(path_source(&source), "a.mp4"))
+        .unwrap();
+    let transfer = world
+        .wait_transfer(|t| matches!(t.state, TransferState::LinkNotSent { .. }))
+        .await;
+
+    // 两下连点：第一下开工，第二下落在进行中的状态上，什么都不做也不报错。
+    let id = transfer.id.clone();
+    world
+        .phone()
+        .dispatch(Action::ResendFileLink { id: id.clone() })
+        .unwrap();
+    world
+        .phone()
+        .dispatch(Action::ResendFileLink { id: id.clone() })
+        .unwrap();
+    world.wait_core(|core| core.grants.len() == 2).await;
+    assert_eq!(world.core.lock().patches.len(), 1, "字节不重传");
+
+    // 这里的聊天没登录，链接还是没发出去：回到等重发，再点一下照常重发。
+    let again = world
+        .wait_transfer(|t| t.id == id && matches!(t.state, TransferState::LinkNotSent { .. }))
+        .await;
+    world
+        .phone()
+        .dispatch(Action::ResendFileLink { id: again.id })
+        .unwrap();
+    world.wait_core(|core| core.grants.len() == 3).await;
+}
+
+/// 做完的传输上点重发：不算错，什么都不做（再跑一遍会多发一条链接）。
+#[tokio::test]
+async fn resending_a_finished_transfer_does_nothing() {
+    let world = World::start().await;
+    let bytes = source_bytes(1024);
+    let source = world.write("a.mp4", &bytes);
+    world
+        .phone()
+        .dispatch(upload_a_file(path_source(&source), "a.mp4"))
+        .unwrap();
+    let transfer = world
+        .wait_transfer(|t| t.state == TransferState::Done)
+        .await;
+
+    world
+        .phone()
+        .dispatch(Action::ResendFileLink { id: transfer.id })
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(world.core.lock().patches.len(), 1, "字节不重传");
 }

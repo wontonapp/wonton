@@ -279,25 +279,16 @@ impl FilesLink {
         })
     }
 
-    /// 只重发链接。先改状态再开工：连点两下时第二下就不算了。
+    /// 只重发链接。不欠链接时什么都不做：连点两下第二下不算错（壳不弹窗），也不重跑一遍；做完的、失败的
+    /// 更不该再跑，带房间的上传会多发一条链接。
     fn resend_link(self: &Arc<Self>, id: &str) -> Result<(), CoreError> {
-        let Some(record) = self.store.get(id) else {
+        if self.store.get(id).is_none() {
             return Err(invalid(&l10n!(
                 CATALOG,
                 language(),
                 "files-transfer-not-found"
             )));
-        };
-        if !matches!(record.state, TransferState::LinkNotSent { .. }) {
-            return Err(invalid(&l10n!(
-                CATALOG,
-                language(),
-                "files-resend-not-waiting"
-            )));
         }
-        self.store.update(id, |record| {
-            record.state = TransferState::Running;
-        });
         self.spawn_worker(id);
         Ok(())
     }
@@ -321,21 +312,67 @@ impl FilesLink {
         if workers.contains_key(id) {
             return;
         }
+        // 登记和接手是一步（同一把锁），收尾的 worker 把终态写进同一个锁才注销：撞上收尾的接手在锁外等一拍，
+        // 接手时状态已经落定，不会吞掉一拍重发或恢复。不看原状态就改成进行中的话，两次撞上会把做完的改回去
+        // 再跑一遍（带房间的上传多发一条链接）。
+        let Some(record) = self.store.update(id, |record| {
+            if matches!(
+                record.state,
+                TransferState::Running | TransferState::Paused | TransferState::LinkNotSent { .. }
+            ) {
+                record.state = TransferState::Running;
+                record.paused_because = None;
+            }
+        }) else {
+            return;
+        };
+        if !matches!(record.state, TransferState::Running) {
+            return;
+        }
         let (link, owned) = (self.clone(), id.to_owned());
         let worker = self.runtime.spawn(async move {
-            link.work(&owned).await;
-            lock(&link.workers).remove(&owned);
+            let Some((outcome, started_at)) = link.work(&owned).await else {
+                lock(&link.workers).remove(&owned);
+                return;
+            };
+            // 终态的写入和注销是一步（同一把锁）：重发、恢复撞上收尾时，在锁外等一拍，接手时状态已经落定，
+            // 不会有一拍被吞掉、也不会接手到还没写完的中间状态。
+            let mut workers = lock(&link.workers);
+            let updated = link.store.update(&owned, |record| {
+                record.state = match outcome {
+                    Ok(()) => TransferState::Done,
+                    Err(Problem::Interrupted(message)) => {
+                        tracing::info!(transfer = %record.id, %message, "transfer interrupted; it will resume once connected");
+                        TransferState::Paused
+                    }
+                    Err(Problem::ServicesDown(message)) => {
+                        record.paused_because = Some(message);
+                        TransferState::Paused
+                    }
+                    Err(Problem::Failed(reason, message)) => TransferState::Failed { reason, message },
+                    Err(Problem::LinkNotSent(reason, message)) => {
+                        TransferState::LinkNotSent { reason, message }
+                    }
+                };
+            });
+            workers.remove(&owned);
+            if updated.is_some_and(|record| {
+                record.state == TransferState::Paused && record.transferred_bytes > started_at
+            }) {
+                drop(workers);
+                let kick = link.clone();
+                link.runtime.spawn(async move {
+                    tokio::time::sleep(RETRY_SOON).await;
+                    kick.foregrounded();
+                });
+            }
         });
         workers.insert(id.to_owned(), worker);
     }
 
-    async fn work(self: &Arc<Self>, id: &str) {
-        let Some(record) = self.store.update(id, |record| {
-            record.state = TransferState::Running;
-            record.paused_because = None;
-        }) else {
-            return;
-        };
+    async fn work(self: &Arc<Self>, id: &str) -> Option<(Result<(), Problem>, u64)> {
+        // 接手时状态已经是进行中了（spawn_worker 在登记的同时改写），这里只读。
+        let record = self.store.get(id)?;
         let started_at = record.transferred_bytes;
         let current = self.home.view().server_id;
         let outcome = if current.as_deref() == Some(record.server.as_str()) {
@@ -346,33 +383,7 @@ impl FilesLink {
                 l10n!(CATALOG, language(), "files-transfer-server-changed"),
             ))
         };
-        let updated = self.store.update(id, |record| {
-            record.state = match outcome {
-                Ok(()) => TransferState::Done,
-                Err(Problem::Interrupted(message)) => {
-                    tracing::info!(transfer = %record.id, %message, "transfer interrupted; it will resume once connected");
-                    TransferState::Paused
-                }
-                Err(Problem::ServicesDown(message)) => {
-                    record.paused_because = Some(message);
-                    TransferState::Paused
-                }
-                Err(Problem::Failed(reason, message)) => TransferState::Failed { reason, message },
-                Err(Problem::LinkNotSent(reason, message)) => {
-                    TransferState::LinkNotSent { reason, message }
-                }
-            };
-        });
-        let moved = updated.is_some_and(|record| {
-            record.state == TransferState::Paused && record.transferred_bytes > started_at
-        });
-        if moved {
-            let link = self.clone();
-            self.runtime.spawn(async move {
-                tokio::time::sleep(RETRY_SOON).await;
-                link.foregrounded();
-            });
-        }
+        Some((outcome, started_at))
     }
 
     async fn transfer(self: &Arc<Self>, record: Record) -> Result<(), Problem> {
@@ -683,15 +694,9 @@ fn core_error(problem: Problem) -> CoreError {
 }
 
 /// 跟着家里的连接：连上了就接着传。还有暂停的传输而隧道断着时，隔一会儿主动检查连接：本地代理的连接断了要有人用才会重连。
+/// 先看现在的状态再等变化：订阅之前就连上的话（换了服务器、重开了作用域），只等变化要多等一轮。
 async fn follow_home(link: Weak<FilesLink>, mut home: watch::Receiver<HomeViewModel>) {
     loop {
-        let changed = tokio::select! {
-            changed = home.changed() => changed.is_ok(),
-            () = tokio::time::sleep(RETRY) => true,
-        };
-        if !changed {
-            return;
-        }
         let connected = home.borrow_and_update().status == HomeStatus::Connected;
         let Some(link) = link.upgrade() else {
             return;
@@ -700,6 +705,13 @@ async fn follow_home(link: Weak<FilesLink>, mut home: watch::Receiver<HomeViewMo
             link.resume();
         } else if !link.store.paused().is_empty() {
             link.home.foregrounded();
+        }
+        let changed = tokio::select! {
+            changed = home.changed() => changed.is_ok(),
+            () = tokio::time::sleep(RETRY) => true,
+        };
+        if !changed {
+            return;
         }
     }
 }

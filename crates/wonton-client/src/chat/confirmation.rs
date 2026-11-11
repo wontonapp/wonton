@@ -16,8 +16,8 @@ use wonton_matrix::{EntryKind, Message, OwnedUserId, TimelineEntry, UserId, Vect
 use wonton_protocol::{
     Answer, CARD_FIELD, CORE_LOCALPART, ChatFailure, ChatProblem, ConfirmationAnswer,
     ConfirmationCard, ConfirmationReply, ConfirmationState, ConfirmationView, ConfirmationWindow,
-    PendingConfirmation, ProxySettings, PushConfirmation, WindowEnd, WindowView, answer_path,
-    window_path,
+    CoreError, PendingConfirmation, ProxySettings, PushConfirmation, WindowEnd, WindowView,
+    answer_path, window_path,
 };
 
 use super::login::{ErrorBody, proxy_url};
@@ -569,4 +569,69 @@ fn ended_note(end: WindowEnd, allowed: Option<u32>) -> String {
         reason = reason,
         count = allowed.unwrap_or(0)
     )
+}
+
+impl super::ChatLink {
+    /// 主人点了确认卡片上的按钮：经隧道发给核心，进展放进 `answers`。同一张卡片在发或者答完了就不再发：核心那边
+    /// 也只收一次，这里是不让连点变成“回答过了”的报错。
+    pub(super) fn answer_confirmation(
+        &self,
+        id: String,
+        answer: Answer,
+        choice_id: Option<String>,
+        secrets: wonton_protocol::SecretValues,
+        settings: wonton_protocol::SettingValues,
+    ) -> Result<(), CoreError> {
+        if answer == Answer::Unknown {
+            return Err(super::invalid(&l10n!(
+                CATALOG,
+                language(),
+                "chat-unknown-answer"
+            )));
+        }
+        let not_connected = || CoreError::NotReady {
+            reason: l10n!(CATALOG, language(), "chat-action-not-connected"),
+        };
+        let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
+        let core_url = self.home.core_url().ok_or_else(not_connected)?;
+        if !self
+            .answers
+            .send_if_modified(|answers| answers.start(&id, answer, choice_id.clone()))
+        {
+            return Ok(());
+        }
+        let answers = self.answers.clone();
+        self.runtime.spawn(async move {
+            let body = ConfirmationAnswer {
+                answer,
+                choice_id,
+                secrets,
+                settings,
+            };
+            let outcome = send_answer(&core_url, &proxy, &id, body).await;
+            answers.send_modify(|answers| answers.finish(id, outcome));
+        });
+        Ok(())
+    }
+
+    /// 主人点了卡片上放行时段的“停止”：经隧道发给核心，进展放进 `answers`。
+    pub(super) fn stop_confirmation_window(&self, id: String) -> Result<(), CoreError> {
+        let not_connected = || CoreError::NotReady {
+            reason: l10n!(CATALOG, language(), "chat-action-not-connected"),
+        };
+        let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
+        let core_url = self.home.core_url().ok_or_else(not_connected)?;
+        if !self
+            .answers
+            .send_if_modified(|answers| answers.start_stop(&id))
+        {
+            return Ok(());
+        }
+        let answers = self.answers.clone();
+        self.runtime.spawn(async move {
+            let outcome = send_stop(&core_url, &proxy, &id).await;
+            answers.send_modify(|answers| answers.finish_stop(id, outcome));
+        });
+        Ok(())
+    }
 }
