@@ -2,7 +2,7 @@
 //!
 //! - [`ME_PATH`]：这台设备的人是谁、什么角色，每个人都能读。
 //! - [`MEMBERS_PATH`] 和 [`member_path`] 之下：主人邀请、管理、移除家人，给家人出配对码。
-//! - [`SHARED_BOTS_PATH`]：主人建共享 Bot。[`bot_contacts_path`]：Bot 的联系人，归属人管。
+//! - [`SHARED_BOTS_PATH`]：主人建共享 Bot。Bot 的联系人在 [`crate::bot_contacts_path`]，归属人管。
 //! - 网关拒绝 Bot 的 Matrix 请求时，在 [`GATEWAY_REFUSAL_HEADER`] 里写 [`GatewayRefusal`]。
 //!
 //! 核心可能比 App 新：核心多给的字段被忽略；枚举遇到不认识的取值时落到 `Other`。
@@ -35,16 +35,6 @@ pub const MEMBER_PAIRING_CODE_TTL_SECS: u64 = 24 * 60 * 60;
 
 /// `POST`：请求体 [`NewSharedBot`]，返回 [`BotRef`]。只有主人能用。
 pub const SHARED_BOTS_PATH: &str = "/_wonton/api/bots";
-
-/// `GET`：[`BotContacts`]。`POST`：请求体 [`ContactRequest`]，返回 [`BotContacts`]。归属人能用，共享 Bot 是主人。
-pub fn bot_contacts_path(bot: &BotRef) -> String {
-    format!("/_wonton/api/bots/{}/{}/contacts", bot.plugin_id, bot.bot)
-}
-
-/// `DELETE`：删掉这个联系人，返回 [`BotContacts`]。任何一方的归属人都能删。
-pub fn bot_contact_path(bot: &BotRef, user_id: &str) -> String {
-    format!("{}/{user_id}", bot_contacts_path(bot))
-}
 
 /// `PUT`：请求体 [`FamilyAccess`]，返回 [`InstalledPlugin`](crate::InstalledPlugin)。只有主人能用。
 pub fn plugin_family_path(plugin_id: &str) -> String {
@@ -200,45 +190,6 @@ pub struct NewSharedBot {
     pub bot: String,
 }
 
-/// [`bot_contacts_path`] 的响应。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct BotContacts {
-    pub contacts: Vec<BotContact>,
-}
-
-/// 一个联系人：另一个 Bot。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct BotContact {
-    /// 对方 Bot 的 Matrix 用户 ID。
-    pub user_id: String,
-    pub display_name: Option<String>,
-    /// 对方归属人的显示名；共享 Bot 为空。
-    pub keeper_display_name: Option<String>,
-    pub state: ContactState,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum ContactState {
-    /// 等对方的归属人在卡片上同意。
-    Pending,
-    /// 双方都同意了：能互相邀请，互相的话会被处理。
-    Active,
-    #[serde(other)]
-    Other,
-}
-
-/// 请对方 Bot 做联系人。发起的归属人算同意了自己这一方。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct ContactRequest {
-    /// 对方 Bot 的 Matrix 用户 ID。
-    pub user_id: String,
-}
-
 /// 主人设一个插件给不给家人用。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -313,10 +264,6 @@ mod tests {
             MemberStatus::Other
         );
         assert_eq!(
-            serde_json::from_value::<ContactState>(json!("blocked")).unwrap(),
-            ContactState::Other
-        );
-        assert_eq!(
             serde_json::from_value::<BotKeeper>(json!({"type": "team"})).unwrap(),
             BotKeeper::Other
         );
@@ -356,17 +303,5 @@ mod tests {
         let invite: MemberInvite =
             serde_json::from_value(json!({"display_name": "妈妈", "private_bot": true})).unwrap();
         assert_eq!(invite.username, None);
-    }
-
-    #[test]
-    fn bots_are_addressed_by_plugin_and_bot_name() {
-        let bot = BotRef {
-            plugin_id: "ai.nous.hermes".into(),
-            bot: "alice".into(),
-        };
-        assert_eq!(
-            bot_contact_path(&bot, "@hermes-bob:x.wonton.internal"),
-            "/_wonton/api/bots/ai.nous.hermes/alice/contacts/@hermes-bob:x.wonton.internal"
-        );
     }
 }

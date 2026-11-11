@@ -67,6 +67,7 @@ impl Payload {
             content: PushContent::Unavailable { reason, message },
             category: NotificationCategory::Message,
             confirmation: None,
+            contact_request: None,
         }
     }
 }
@@ -232,6 +233,7 @@ pub(crate) fn push_notification(
             NotificationCategory::Message
         },
         confirmation,
+        contact_request: None,
     })
 }
 

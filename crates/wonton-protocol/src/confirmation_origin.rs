@@ -82,6 +82,8 @@ pub struct ConfirmationsViewModel {
     pub pending: Vec<ConfirmationView>,
     /// 结束不到 24 小时的（答了、拒了、过期、执行完），最近结束的在前。
     pub finished: Vec<ConfirmationView>,
+    /// 等处理的联系人请求（[`ConfirmationList::contact_requests`](crate::ConfirmationList::contact_requests)），最早收到的在前。
+    pub contact_requests: Vec<crate::PendingContactRequest>,
     /// 还没取到过列表。
     pub loading: bool,
     /// 最近一次取列表没成：连不上、没权限。上面两个列表是上次取到的，可能已经过时，壳照实提示并给重试

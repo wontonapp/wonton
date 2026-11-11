@@ -496,6 +496,7 @@ mod tests {
                 },
                 category: NotificationCategory::Message,
                 confirmation: None,
+                contact_request: None,
             }],
             bots: Vec::new(),
         }

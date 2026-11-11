@@ -72,6 +72,10 @@ pub struct PushNotification {
     pub category: NotificationCategory,
     /// 这条消息是确认卡片时才有。
     pub confirmation: Option<PushConfirmation>,
+    /// 这条通知是新的联系人请求时才有；这时不对应房间里的消息，`room_id`、`event_id` 为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub contact_request: Option<crate::ContactRequestPush>,
 }
 
 /// 通知的类别。Android 每个类别一个通知渠道，主人在系统设置里分别开关；iOS 当作通知的分类。
@@ -81,7 +85,7 @@ pub struct PushNotification {
 pub enum NotificationCategory {
     /// 聊天消息。
     Message,
-    /// 等主人回答的确认卡片：Agent 停在那里等，默认比消息更醒目。
+    /// 等主人回答的确认卡片：Agent 停在那里等，默认比消息更醒目。新的联系人请求也用这个类别（“等你确认”）。
     Confirmation,
     /// 插件通知（ADR-0047）的 `warning`、`critical` 级别，以及应用邮件（ADR-0056）。
     PluginNotice,
@@ -189,6 +193,7 @@ mod tests {
                     thread_id: None,
                 }),
             }),
+            contact_request: None,
         };
         assert_eq!(round_trip(&notification), notification);
     }
