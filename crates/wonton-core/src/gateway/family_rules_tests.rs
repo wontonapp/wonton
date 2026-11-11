@@ -59,15 +59,31 @@ pub(super) struct Home {
     pub(super) bus: Arc<Bus>,
     clock: Arc<AtomicU64>,
     phone: EndpointId,
-    _tunnel: Tunnel,
+    tunnel: Tunnel,
+    members: Arc<crate::members::Members>,
     _dir: tempfile::TempDir,
 }
 
-/// 两个插件各有一个 Bot、带 `matrix.bot` 权限。
-fn register_bots(plugins: &PluginManager) {
-    for (plugin, network, user, token) in [
-        ("app.echo", "172.30.1.0/24", "@hermes:test", BOT_TOKEN),
-        ("app.other", "172.30.2.0/24", "@claw:test", OTHER_TOKEN),
+/// 两个插件各有一个 Bot、带 `matrix.bot` 权限：`hermes` 归主人，`claw` 归 `other_keeper`。
+fn register_bots(plugins: &PluginManager, other_keeper: BotKeeper) {
+    let owner = BotKeeper::User {
+        username: "owner".to_owned(),
+    };
+    for (plugin, network, user, token, keeper) in [
+        (
+            "app.echo",
+            "172.30.1.0/24",
+            "@hermes:test",
+            BOT_TOKEN,
+            owner,
+        ),
+        (
+            "app.other",
+            "172.30.2.0/24",
+            "@claw:test",
+            OTHER_TOKEN,
+            other_keeper,
+        ),
     ] {
         plugins.register_source_for_test(
             plugin,
@@ -76,21 +92,22 @@ fn register_bots(plugins: &PluginManager) {
         );
         plugins.bot_records_for_test(
             &PluginId::parse(plugin).unwrap(),
-            &[(
-                "default",
-                user,
-                BotKeeper::User {
-                    username: "owner".to_owned(),
-                },
-                token,
-            )],
+            &[("default", user, keeper, token)],
         );
     }
 }
 
 impl Home {
-    /// 核心接着假的 Tuwunel 和总线；两个插件各有一个 Bot、带 `matrix.bot` 权限，一台设备经隧道接入。
+    /// 核心接着假的 Tuwunel 和总线；两个插件各有一个 Bot、带 `matrix.bot` 权限，都归主人；一台设备经隧道接入。
     pub(super) async fn start(limits: SendLimits) -> Self {
+        let owner = BotKeeper::User {
+            username: "owner".to_owned(),
+        };
+        Self::with_keeper(limits, owner).await
+    }
+
+    /// 同 [`Self::start`]，`claw` 归 `other_keeper`。
+    pub(super) async fn with_keeper(limits: SendLimits, other_keeper: BotKeeper) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let (fake, config) = crate::matrix::fake::start().await;
         let matrix = Matrix::connect(&config, dir.path(), HttpClient::new())
@@ -127,7 +144,7 @@ impl Home {
             lifecycle,
             ImageWorker::in_process(),
         ));
-        register_bots(&plugins);
+        register_bots(&plugins, other_keeper);
         let (tunnel, members) = loopback_tunnel(dir.path()).await;
         let phone = SecretKey::generate().public();
         tunnel.devices.add(phone, None).unwrap();
@@ -160,7 +177,7 @@ impl Home {
             public,
             profile,
             TOKEN.into(),
-            members,
+            members.clone(),
             plugins,
             None,
             http,
@@ -176,7 +193,8 @@ impl Home {
             bus,
             clock,
             phone,
-            _tunnel: tunnel,
+            tunnel,
+            members,
             _dir: dir,
         }
     }
@@ -312,6 +330,59 @@ impl Home {
             json!({"msgtype": "m.text", "body": "我在"}),
         )
         .await
+    }
+
+    /// 家人 `username` 的一台已配对设备。
+    pub(super) fn member_device(&self, username: &str) -> EndpointId {
+        self.members
+            .invite(crate::members::MemberRecord {
+                username: username.to_owned(),
+                user_id: format!("@{username}:test"),
+                display_name: username.to_owned(),
+                email: None,
+                status: wonton_protocol::MemberStatus::Invited,
+                can_install_plugins: false,
+                wants_private_bot: true,
+                private_bot: None,
+                pairing_code_hash: None,
+                pairing_code_expires_at_ms: None,
+            })
+            .unwrap();
+        let device = SecretKey::generate().public();
+        self.tunnel
+            .devices
+            .add_if(device, None, Some(username.to_owned()), |_| true)
+            .unwrap();
+        device
+    }
+
+    /// 某台设备请求核心的接口（`/_wonton/…`）。
+    pub(super) async fn core_as(
+        &self,
+        device: EndpointId,
+        method: Method,
+        path: &str,
+        body: Value,
+    ) -> (StatusCode, HeaderMap, Value) {
+        let body = if body.is_null() {
+            String::new()
+        } else {
+            body.to_string()
+        };
+        self.send(
+            method,
+            CORE,
+            path,
+            Some(device),
+            "127.0.0.1:50000",
+            None,
+            body,
+        )
+        .await
+    }
+
+    pub(super) fn phone(&self) -> EndpointId {
+        self.phone
     }
 
     pub(super) fn refusal<'a>(&self, headers: &'a HeaderMap) -> Option<&'a str> {

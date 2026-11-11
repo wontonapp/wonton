@@ -194,7 +194,7 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
         Ok(req) => req,
         Err(refused) => {
             if let Some(stopped) = refused.stopped {
-                hop_card::ask_to_continue(gateway, &source.id, stopped);
+                hop_card::ask_to_continue(gateway, stopped);
             }
             return refused.response;
         }

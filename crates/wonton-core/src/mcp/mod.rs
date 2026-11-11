@@ -49,7 +49,7 @@ use audit::{Audit, Basis, Decision, Grounds, Record};
 pub use cards::Draft;
 pub use cards::content as card_content;
 pub use cards::text as card_text;
-pub use confirm::{AnswerError, Confirmations, Notifier, Refusal};
+pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Refusal};
 pub use notifier::NoMatrix;
 pub use server::Caller;
 use takeover::Takeovers;

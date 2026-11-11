@@ -3,9 +3,12 @@
 
 use std::time::Duration;
 
-use hyper::StatusCode;
-use serde_json::json;
-use wonton_protocol::{Answer, ConfirmationCard, ConfirmationState, HOP_LIMIT_ERRCODE};
+use hyper::{Method, StatusCode};
+use serde_json::{Value, json};
+use wonton_protocol::{
+    Answer, BotKeeper, ConfirmationCard, ConfirmationRequester, ConfirmationState,
+    HOP_LIMIT_ERRCODE,
+};
 
 use super::family_rules_tests::{Home, ROOM};
 use super::send_limits::SendLimits;
@@ -24,19 +27,46 @@ async fn take_turns(home: &Home, from: usize, to: usize) {
     }
 }
 
-/// 等卡片 `id` 变成“已继续”：卡片的任务这时已经清零了。
-async fn wait_resumed(home: &Home, id: &str) {
+/// 等主人的卡片 `id` 结束成 `done` 这一类：卡片的任务这时已经决定清不清零了。
+async fn wait_settled(home: &Home, id: &str, done: fn(&ConfirmationState) -> bool) {
     for _ in 0..500 {
-        let states = home.cards.states(id);
-        if states
-            .iter()
-            .any(|state| matches!(state, ConfirmationState::Succeeded { .. }))
-        {
+        if home.cards.states(id).iter().any(done) {
             return;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    panic!("等了 5 秒卡片还没变成“已继续”：{:?}", home.cards.states(id));
+    panic!("等了 5 秒卡片还没结束：{:?}", home.cards.states(id));
+}
+
+async fn wait_resumed(home: &Home, id: &str) {
+    wait_settled(home, id, |state| {
+        matches!(state, ConfirmationState::Succeeded { .. })
+    })
+    .await;
+}
+
+/// 等家人 `alice` 的“等你确认”列表里出现卡片。
+async fn alices_card(home: &Home) -> ConfirmationCard {
+    for _ in 0..500 {
+        if let Some(card) = home.bus.confirmations().pending_for(Some("alice")).pop() {
+            return card;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("等了 5 秒 alice 还没收到卡片");
+}
+
+fn requested_by(card: &ConfirmationCard) -> &str {
+    match &card.requester {
+        Some(ConfirmationRequester::Bot { user_id, .. }) => user_id,
+        other => panic!("卡片的发起者不是 Bot：{other:?}"),
+    }
+}
+
+fn alice() -> BotKeeper {
+    BotKeeper::User {
+        username: "alice".to_owned(),
+    }
 }
 
 /// 来回到顶：`hermes` 和 `claw` 轮流说 21 条（20 跳），第 22 条换人时被挡，主人收到卡片。
@@ -212,4 +242,139 @@ async fn the_configured_hop_limit_is_enforced() {
         "卡片写的是配置里的 5：{}",
         card.title
     );
+}
+
+#[tokio::test]
+async fn each_keeper_gets_a_card_in_the_stopped_room() {
+    let home = Home::with_keeper(SendLimits::default(), alice()).await;
+    home.seed_room(ROOM);
+    let owners = stop_the_pair(&home).await;
+    let alices = alices_card(&home).await;
+    assert_ne!(owners.id, alices.id);
+    assert_eq!(
+        requested_by(&owners),
+        "@hermes:test",
+        "主人的卡片以他的 Bot 的名义"
+    );
+    assert_eq!(
+        requested_by(&alices),
+        "@claw:test",
+        "alice 的卡片以她的 Bot 的名义"
+    );
+    for card in [&owners, &alices] {
+        assert_eq!(card.origin.as_ref().map(|o| o.room_id.as_str()), Some(ROOM));
+    }
+    // 各看各的：主人的列表里没有 alice 的卡片。
+    let owner_list = home.bus.confirmations().pending_for(None);
+    assert_eq!(owner_list.len(), 1);
+    assert_eq!(owner_list[0].id, owners.id);
+    assert_eq!(
+        home.cards.posted.lock().unwrap().len(),
+        1,
+        "alice 的卡片不进主人的通知房间"
+    );
+}
+
+#[tokio::test]
+async fn a_shared_bot_and_the_owners_bot_share_one_card() {
+    let home = Home::with_keeper(SendLimits::default(), BotKeeper::Household).await;
+    home.seed_room(ROOM);
+    stop_the_pair(&home).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(home.cards.posted.lock().unwrap().len(), 1);
+    assert_eq!(home.bus.confirmations().pending_for(None).len(), 1);
+}
+
+#[tokio::test]
+async fn both_keepers_must_choose_continue() {
+    let home = Home::with_keeper(SendLimits::default(), alice()).await;
+    home.seed_room(ROOM);
+    let owners = stop_the_pair(&home).await;
+    let alices = alices_card(&home).await;
+    let confirmations = home.bus.confirmations();
+    confirmations
+        .answer(&owners.id, Answer::Approve, None)
+        .expect("主人选继续");
+    home.tick(3000);
+    let (status, _, _) = home.other_says(ROOM, "only-one-said-yes").await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "alice 还没回答");
+    confirmations
+        .answer(&alices.id, Answer::Approve, None)
+        .expect("alice 选继续");
+    wait_resumed(&home, &owners.id).await;
+    home.tick(3000);
+    let (status, _, body) = home.other_says(ROOM, "both-said-yes").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+#[tokio::test]
+async fn one_keeper_keeping_it_stopped_keeps_the_room_stopped() {
+    let home = Home::with_keeper(SendLimits::default(), alice()).await;
+    home.seed_room(ROOM);
+    let owners = stop_the_pair(&home).await;
+    let alices = alices_card(&home).await;
+    let confirmations = home.bus.confirmations();
+    confirmations
+        .answer(&owners.id, Answer::Approve, None)
+        .expect("主人选继续");
+    confirmations
+        .answer(&alices.id, Answer::Reject, None)
+        .expect("alice 选先停着");
+    wait_settled(&home, &owners.id, |state| {
+        matches!(state, ConfirmationState::Failed { .. })
+    })
+    .await;
+    home.tick(3000);
+    let (status, _, _) = home.other_says(ROOM, "still-stopped").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+/// 某台设备在卡片 `id` 上选“继续”。
+async fn approve_as(
+    home: &Home,
+    device: iroh::EndpointId,
+    id: &str,
+) -> (StatusCode, hyper::HeaderMap, Value) {
+    let path = format!("/_wonton/confirmations/{id}");
+    home.core_as(device, Method::POST, &path, json!({"answer": "approve"}))
+        .await
+}
+
+#[tokio::test]
+async fn keepers_only_see_and_answer_their_own_cards() {
+    let home = Home::with_keeper(SendLimits::default(), alice()).await;
+    home.seed_room(ROOM);
+    let owners = stop_the_pair(&home).await;
+    let alices = alices_card(&home).await;
+    let hers = home.member_device("alice");
+    let list = |device| {
+        home.core_as(
+            device,
+            Method::GET,
+            "/_wonton/api/confirmations",
+            Value::Null,
+        )
+    };
+    let ids = |body: &Value| -> Vec<String> {
+        body["confirmations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|card| card["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let (status, _, body) = list(hers).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(ids(&body), vec![alices.id.clone()]);
+    let (status, _, body) = list(home.phone()).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(ids(&body), vec![owners.id.clone()]);
+
+    let (status, _, body) = approve_as(&home, hers, &owners.id).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(body["error"]["kind"], "not_yours", "{body}");
+    let (status, _, body) = approve_as(&home, home.phone(), &alices.id).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    let (status, _, body) = approve_as(&home, hers, &alices.id).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
 }

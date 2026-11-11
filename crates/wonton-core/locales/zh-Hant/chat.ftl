@@ -162,3 +162,4 @@ chat-card-hop-limit-title = { $bots } 來回說了 { $hops } 次，已停下
 chat-choice-hop-limit-continue = 繼續
 chat-choice-hop-limit-stay = 先停著
 chat-hop-limit-resumed = 已繼續
+chat-hop-limit-kept-by-other = 另一方選了先停著，房間還停著

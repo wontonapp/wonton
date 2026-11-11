@@ -167,3 +167,4 @@ chat-card-hop-limit-title = { $bots }が{ $hops }回やり取りしたため、�
 chat-choice-hop-limit-continue = 続ける
 chat-choice-hop-limit-stay = 止めておく
 chat-hop-limit-resumed = 再開しました
+chat-hop-limit-kept-by-other = 相手が止めておくを選んだため、停止したままです
