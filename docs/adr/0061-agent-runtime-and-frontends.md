@@ -38,6 +38,7 @@ ADR-0015 要求组件只经标准接口连接、每个都能单独替换。这�
   的 WebSocket 那一种：端点 `/acp`，`GET` 带 `Upgrade: websocket` 升级，升级的响应头里带 `Acp-Connection-Id`，每个文本帧一条 JSON-RPC 消息；
   一条连接是一个 ACP 客户端。认证 RFD 留给上层，我们的认证和 `X-Wonton-*` 头（第 3、10 节）就是那一层。
   前端连自己网络里的 `agent_acp.wonton.internal/acp`，核心转发给主人选定的运行时和 Bot。
+  RFD 定的是断开即清理会话；断线后保留进程、重连 `session/load` 是我们加的（第 2 节）。
 
 ### 2. 运行时一侧有一道 ACP 网关，前端的话只经它
 
@@ -46,13 +47,13 @@ ADR-0015 要求组件只经标准接口连接、每个都能单独替换。这�
 - **`session/new` 的字段由网关定**：丢掉前端给的 `mcpServers`，换成运行时自己的 Wonton MCP 入口（不然 stdio 类型的条目就是在运行时容器里
   起任意命令）；`cwd` 固定为运行时配置的工作区（或其下按前端分的子目录），不接受前端给的；去掉前端的 `_meta`。
 - **权限请求由网关回答**：Agent 的 `session/request_permission` 由网关转成核心的确认卡片（`POST /agent/permissions`），卡片写明是哪个前端、
-  替谁在问；前端只收到“在等主人确认”。ADR-0058 的“改同一个文件时排队”也挪到网关：它看得到所有前端的所有会话改了哪些文件，
+  替谁在问；前端只收到“在等主人确认”。卡片过期时，网关先对这个会话发 `session/cancel`，再回 `cancelled`（照官方库 cookbook 的建议）。ADR-0058 的“改同一个文件时排队”也挪到网关：它看得到所有前端的所有会话改了哪些文件，
   排队因此跨前端也有效。
 - **工作模式只许配置好的那一个**：模式 ID 是各家自定的字符串，分不出宽严，所以网关只放行配置里那个模式的 `session/set_mode`
   和类别为 `mode` 的 `session/set_config_option`，别的一律拒绝；要换由主人在运行时的设置里改。
 - **会话按（前端、用户）归属**：别人的会话 `session/load`、`session/resume` 拒绝（`permission_denied`），`session/list` 只列自己的。
 - **一个连接一个 Agent 进程**；运行时声明连接数上限，满了返回 `busy`。连接断开后进程保留 10 分钟，前端重连后 `session/load` 接着用
-  （核心重启、升级时所有连接都会断）。
+  （核心重启、升级时所有连接都会断）。这是我们在 RFD 之上加的：手机换网络重连时要靠 `session/load` 接回原来的会话。
 
 网关用 Rust 写，从桥里拆出来（第 5 节），ACP 层用官方库（第 11 节）：桥已经做了权限卡片、模式切换、MCP 入口和工具调用合并，不在 Python 里重写一遍。
 
@@ -125,11 +126,11 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
 - **Wonton MCP 加两个核心工具**（ADR-0016 的总线，确认规则照它）：
   - `wonton__hand_off`（交给另一个 Agent）：参数是目标 Bot 和要交代的话。调用方的插件要 `wants` 或 `requires` 了 `agent_acp`。
     核心作为这个插件的使用方，经 `agent_acp` 给目标 Bot 开一个新会话（第 2 节的网关照常把关），会话属于第 10 节的同一条调用链，
-    并带上发起的对话（房间、话题）。目标 Bot 一轮结束时工具返回它的结论和结束原因；10 分钟没结束先返回“还在做”和会话 ID，
-    之后的进展由目标 Bot 自己在对话里说。
-    - **按调用 ID 幂等**：同一个调用方会话里，MCP `tools/call` 的请求 ID 相同的重试或重复调用返回已开的那个会话，不开第二个。
-      Alma 出过同一条消息派了两次活（[alma-releases#163](https://github.com/yetone/alma-releases/issues/163)）。
-    - **B 结束时核心不叫醒 A**，也没有“交回结果”的机制：上面的返回只是 A 这一轮里等到的；10 分钟以后 B 才结束的，A 不会被叫起来。
+    并带上发起的对话（房间、话题）。工具开好会话就立即返回会话 ID 和链 ID，不等 B 做完；B 的进度和结果由 B 自己在对话里说。
+    - **不重复交接**：Alma 出过同一条消息派了两次活（[alma-releases#163](https://github.com/yetone/alma-releases/issues/163)），下面两条都返回已开的那个会话，不开新的：
+      - 同一个调用方会话里，MCP `tools/call` 的请求 ID 相同的重试或重复调用；
+      - 同一个调用方会话交给同一个目标 Bot、交代的话一字不差，且它之前交出的那个会话还在做。只比原文，不做模糊匹配。
+    - **B 结束时核心不叫醒 A**，也没有“交回结果”的机制：A 要知道进展，用下面的 `wonton__hand_off_status` 查，或者等 B 点名。
       要 A 接着干，B 在对话里叫 A 的名字，规则见 [ADR-0083](0083-bot-contacts-and-group-chat.md)（#248）第 4 节的“互相认名字”。
   - `wonton__hand_off_status`（查交出去的会话）：只读，不改任何东西，不算轮数，不叫醒 B。调用方要求同 `wonton__hand_off`。
     - 参数：`session`（可选，会话 ID）；不填时列出调用的这个 Bot 从同一个对话（房间、话题）交出去的全部会话。
@@ -178,7 +179,7 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
   - 到了上限，核心停下这条链（新的轮次、新的 `agent_acp` 请求、链上的模型请求都返回 `limit_reached`），给链代表的人和链上各 Bot 的
     归属人发卡片“这条链用到上限了”，按钮“再给一份”和“先停着”。
 - **随时能停整条链**：链代表的人和链上各 Bot 的归属人，不等到上限，随时能停下整条链（App 里这条链的那一行和链上的卡片上）。
-  - 停时核心对链上每个经 `agent_acp` 的会话发 `session/cancel`；发起的那一轮在桥里，核心经 `/agent/permissions` 那道门叫桥发。
+  - 停时核心对链上每个经 `agent_acp` 的会话发 `session/cancel`；发起的那一轮在桥里，核心通知桥取消这一轮，走哪条通道由实现定。
   - 网关和桥把各自未决的权限请求都回 `cancelled`，这是 [ACP 规范](https://agentclientprotocol.com/protocol/v1/prompt-turn#cancellation)
     对发 `session/cancel` 一方的要求；核心撤回对应的卡片。
   - 停下的链不再接新的轮次、`agent_acp` 请求和模型请求，返回 `stopped`；要接着做，人重新说一句，开一条新链。
