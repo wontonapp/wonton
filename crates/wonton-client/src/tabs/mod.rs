@@ -33,6 +33,8 @@ use config::*;
 
 mod view;
 use view::*;
+mod reload;
+use reload::*;
 mod actions;
 mod panel;
 mod sync;
