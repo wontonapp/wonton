@@ -13,6 +13,7 @@ struct StoreView: View {
     /// “添加来源”那一页选好的文件：那一页关上以后才能再盖确认页。
     @State private var chosen: PluginConfirmation?
     @Environment(\.wontonColors) private var colors
+    @Environment(\.goToInstalledApps) private var goToInstalledApps
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,9 +23,9 @@ struct StoreView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(model.viewModel.tasks, id: \.id) { task in
-                        TaskRow(model: model, task: task) {
+                        TaskRow(model: model, task: task, review: {
                             confirmation = model.reconfirmation(for: task)
-                        }
+                        }, checkInstalled: { goToInstalledApps() })
                         .padding(.horizontal, WontonTheme.spacing.pageInset)
                         .padding(.vertical, WontonTheme.spacing.s8)
                     }
@@ -358,6 +359,8 @@ struct TaskRow: View {
     let model: PluginsModel
     let task: PluginTask
     let review: () -> Void
+    /// The result is uncertain: go look in the installed apps instead of installing again.
+    var checkInstalled: () -> Void = {}
     var showsDismiss = true
     @Environment(\.wontonColors) private var colors
 
@@ -384,7 +387,12 @@ struct TaskRow: View {
     @ViewBuilder private var state: some View {
         switch task.state {
         case .running:
-            Text(task.operation.runningText).foregroundStyle(Color(colors.textSecondary))
+            Text(
+                task.waitingForConnection
+                    ? String(localized: .pluginTaskWaitingForConnection)
+                    : task.operation.runningText
+            )
+            .foregroundStyle(Color(colors.textSecondary))
         case .succeeded:
             HStack(spacing: WontonTheme.spacing.s4) {
                 WontonIcon.checkCircleFill.view(size: WontonTheme.size.iconTiny)
@@ -409,12 +417,18 @@ struct TaskRow: View {
                     Button(String(localized: .pluginTaskReview), action: review).buttonStyle(WontonSmallButtonStyle())
                 }
             }
-        case let .uncertain(message, _):
-            HStack(alignment: .top, spacing: WontonTheme.spacing.s4) {
-                WontonIcon.help.view(size: WontonTheme.size.iconTiny).padding(.top, 3)
-                Text(.pluginTaskUncertain(message))
+        case let .uncertain(message, nextStep):
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                HStack(alignment: .top, spacing: WontonTheme.spacing.s4) {
+                    WontonIcon.help.view(size: WontonTheme.size.iconTiny).padding(.top, 3)
+                    Text(.pluginTaskUncertain(message))
+                }
+                .foregroundStyle(Color(colors.warning))
+                if nextStep == .checkInstalled {
+                    Button(String(localized: .pluginTaskCheckInstalled), action: checkInstalled)
+                        .buttonStyle(WontonSmallButtonStyle())
+                }
             }
-            .foregroundStyle(Color(colors.warning))
         }
     }
 
@@ -461,5 +475,17 @@ private struct UpdateAllButton: View {
                     .offset(x: 4, y: -4)
                     .accessibilityLabel(String(localized: .launcherUpdatesAvailable(count: count)))
             }
+    }
+}
+
+private struct GoToInstalledAppsKey: EnvironmentKey {
+    static let defaultValue: () -> Void = {}
+}
+
+extension EnvironmentValues {
+    /// 关掉叠着的页面、回到已安装的应用格子（结果不确定时用）。
+    var goToInstalledApps: () -> Void {
+        get { self[GoToInstalledAppsKey.self] }
+        set { self[GoToInstalledAppsKey.self] = newValue }
     }
 }

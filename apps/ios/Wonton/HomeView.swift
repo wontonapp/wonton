@@ -64,6 +64,10 @@ struct HomeView: View {
         }
         .wontonDialog(problem: plugins.rejection, isPresented: isShowingPluginRejection)
         .tabPinRequests($pin)
+        .environment(\.goToInstalledApps, {
+            path = NavigationPath()
+            tabs.select(.apps)
+        })
     }
 
     private var launcher: some View {

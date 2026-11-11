@@ -10882,6 +10882,66 @@
         }
       }
     },
+    "plugin.task.waitingForConnection": {
+      "comment": "Status of a running task while the connection to the home server is down.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for connection"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待连接"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待連線"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続を待っています"
+          }
+        }
+      }
+    },
+    "plugin.task.checkInstalled": {
+      "comment": "Button on an uncertain task that opens the installed list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check installed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查已安装"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檢查已安裝"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール済みを確認"
+          }
+        }
+      }
+    },
     "plugin.task.uninstallDone": {
       "comment": "Status of a finished uninstall task.",
       "extractionState": "manual",
