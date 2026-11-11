@@ -1,6 +1,6 @@
 # ADR-0079 ACP Agent 插件：一个仓库、一个底座，每家一份配置
 
-- 状态：已接受（2026-11-11）；第 6 节“自带 Matrix 的 Agent”待主人定
+- 状态：已接受（2026-11-11）
 
 ## 背景
 
@@ -49,8 +49,9 @@ CI 机器人定时读 ACP 注册表，某家有新版本时提一个改 `agent.t
 
 ### 4. 收录哪些
 
-- 第一批 Codex、Claude Code、omp 并进来：Codex、omp 删掉自己的入口，改成 `agent.toml` 加网关钩子；Codex 的适配器换成
-  `@agentclientprotocol/codex-acp`；Claude Code 原样搬过来。插件 id 不变，旧仓库归档，商店改指向新来源，不写迁移。
+- 第一批 Codex、Claude Code、omp、dsh 并进来：Codex、omp 删掉自己的入口，改成 `agent.toml` 加网关钩子；Codex 的适配器换成
+  `@agentclientprotocol/codex-acp`；Claude Code 原样搬过来；dsh（`geraldpeng6/wonton-plugin-dsh`）已是 ACP 加底座的结构，
+  和 Claude Code 一样原样搬进 `agents/dsh/`。插件 id 不变，旧仓库归档，商店改指向新来源，不写迁移。
 - 第二批 Kimi Code、Qwen Code、OpenCode。每家要实测最严格模式、网关钩子和只放行 Wonton MCP 的配置，通过冒烟才上架。
 - Google 的命令行 Agent 不收录。Gemini CLI 已不面向个人账号；Antigravity CLI 是专有软件，条款把“配非 Google 的产品用它的服务”
   算作违约。条款或接法有变化时再写新 ADR。
@@ -61,9 +62,9 @@ CI 机器人定时读 ACP 注册表，某家有新版本时提一个改 `agent.t
 - 不在桥或核心里写任何一家的特例；每家的不同只放在自己的 `agents/<id>/` 里。
 - 闭源、条款没写能不能再分发的 Agent CLI，不打进镜像，由底座在第一次启动时从官方来源按摘要下载（和 Claude Code 一样）。
 
-### 6. 自带 Matrix 的 Agent（待主人定）
+### 6. 自带 Matrix 的 Agent
 
-Hermes、OpenClaw 用它们自带的 Matrix 客户端接入（`agent.protocol: matrix`），不经桥，也不用底座。建议：
+Hermes、OpenClaw 用它们自带的 Matrix 客户端接入（`agent.protocol: matrix`），不经桥，也不用底座。已定（2026-11-11）：
 
 - **保持一家一个仓库，不放进 `wonton-agents`。** 它们跑的是上游原版镜像，接网关的写法各不相同，用不到这个仓库共用的桥、底座和
   `agent.toml`；放在一起，桥或底座一改，就会挡住和它们无关的发版。它们直接说 Matrix，ACP Agent 经桥说 ACP，按 ADR-0015 是两类组件、
@@ -71,6 +72,8 @@ Hermes、OpenClaw 用它们自带的 Matrix 客户端接入（`agent.protocol: m
 - **不改走 ACP。** 两家上游都有 ACP 模式。换过去，Agent 自己的工具也能走确认卡片；但 Hermes 的 ACP 模式不能主动发消息、没有定时任务，
   OpenClaw 的 ACP 模式不接受会话里传入的 `mcpServers`。需要“每一步都确认”的 Hermes 时，再在 `wonton-agents` 里加一个子目录
   当另一种选择。
+- **审批。** Hermes 用自己的 smart 审批，只有主人能关；OpenClaw 保持上游默认，不在聊天里问，靠容器隔离。经 Wonton MCP 的
+  操作，两家都照样走 Wonton 的确认卡片。
 
 ## 理由
 
