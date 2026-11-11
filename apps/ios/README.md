@@ -11,7 +11,7 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
   共用固定页、覆盖页的 WKWebView 容器，HTTP CONNECT 代理带会话凭据，插件网页经隧道打开。`ChatPanelHost` 是聊天页和房间的下拉面板（ADR-0052）：两级、
   跟手、翻页的小圆点，页面按全页大小放着不缩放，面板里的 WKWebView 和底栏的各一份；`PanelEditor` 增删面板里的页面。`PairingView` 是扫码配对页，
   `QRScannerView` 用 VisionKit 的 `DataScannerViewController` 识别二维码；`InviteView` 是“添加设备”，用 Core Image
-  把核心要来的配对码画成二维码。`HomeView` 是底栏的“应用”页，商店入口独立放在已装插件网格上方，有更新时显示数量；连接和“添加设备”在设置的“家里的服务器”里。`StoreView`、
+  把核心要来的配对码画成二维码。`HomeView` 是侧边栏进入的“应用”页，商店入口独立放在已装插件网格上方，有更新时显示数量；连接和“添加设备”在设置的“家里的服务器”里。`StoreView`、
   `PluginDetailView`、`InstallConfirmView` 是商店、详情和安装确认页（ADR-0017）。`SettingsModel` 订阅核心的设置首页，`SettingsView` 按核心的分组渲染，外观、通知和关于在二级页（ADR-0028）；`NotificationSettingsView` 只提供系统通知设置入口并说明这个版本收不到推送，不放无效的类别开关。`EgressSettingsView` 是“家里的服务器”里的出网代理设置，也放着插件网页局域网端口的开关（ADR-0023）。`CoreUpgradeView` 是“家里的服务器”里的升级服务器（ADR-0025）。
   “家里的服务器”顶部始终显示服务器列表和“添加服务器”，当前这台带勾，点另一台切换。长按可改名或移除；移除前确认只删手机上的聊天记录和文件，不影响服务器。添加时配对页左上角可取消，首次配对不显示取消（ADR-0042）。
   默认名由壳按核心给的固定编号和 App 语言显示，自定义名字原样显示；改名预填显示名，只在主人保存时写回（ADR-0043）。
