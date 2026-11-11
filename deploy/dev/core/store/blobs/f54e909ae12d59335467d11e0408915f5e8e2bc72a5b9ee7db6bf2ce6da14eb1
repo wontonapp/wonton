@@ -1,7 +1,7 @@
 """Wonton 给 Hermes 的两个钩子。
 
 模型网关没接上（注入的模型变量为空）、或网关里还没有默认模型时（主人还没在「模型设置」里添加模型服务商），
-直接回一句该怎么做，不调模型。
+直接回一句该怎么做，不调模型。提示按说话人自己的语言写（核心按人记着 App 的语言），只有一种，不把几种语言拼在一起。
 
 不拦的话，网关的报错会原样发进聊天：magpie 说没有这个模型的报错很长，绕过了 Hermes 对模型报错的改写。
 
@@ -19,16 +19,10 @@ import os
 
 import httpx
 
-logger = logging.getLogger(__name__)
+from .locale import language
+from .texts import NO_DEFAULT, NO_MODELS
 
-NO_MODELS = (
-    "还没有可用的模型：请在「模型设置」里添加一个模型服务商和它的 API key，再给我发消息。\n"
-    "No model is available yet: add a model provider and its API key in Models, then message me again."
-)
-NO_DEFAULT = (
-    "默认模型 {model} 里没有可用的模型：请在「模型设置」里检查名为 {group} 的路由组。\n"
-    "The default model {model} has no usable model: check the routing group {group} in Models."
-)
+logger = logging.getLogger(__name__)
 
 SEND_FILES = (
     "发给主人的文件来自工具结果里的编号时（「文件 …，编号 …」）：调 wonton__share_file，把返回的 wonton://file/ 链接原样放进回复，"
@@ -47,10 +41,13 @@ TOOL_RESULTS = (
 )
 
 
-async def missing_model_hint(text="", **_):
+async def missing_model_hint(text="", source=None, **_):
     """``post_gateway_admission``：默认模型不在网关的模型列表里时，回复提示，这条消息不再交给模型。"""
     if text.lstrip().startswith("/"):
         return None
+    source = source or {}
+    user = source.get("user_id")
+    sender = user if source.get("platform") == "matrix" and isinstance(user, str) and user.startswith("@") else None
     base = os.environ.get("WONTON_MODEL_BASE_URL", "").rstrip("/")
     key = os.environ.get("WONTON_MODEL_API_KEY", "")
     model = os.environ.get("WONTON_MODEL_DEFAULT", "")
@@ -58,10 +55,11 @@ async def missing_model_hint(text="", **_):
         # 模型网关没接上（变量为空，spec：“models”是“有网关就用”）：主人的模型还配在网关这个 provider 上时，
         # 直接给指引，不把 Hermes 对空地址的原始报错发进聊天；主人已经换成自己的服务商就不拦。
         if _gateway_provider_active():
-            return {"action": "handled", "reply": NO_MODELS}
+            return {"action": "handled", "reply": NO_MODELS[await language(sender)]}
         return None
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
+        # 网关在插件网络里，不走代理环境变量（Hermes 的 gateway.trust_env 也是关的）。
+        async with httpx.AsyncClient(timeout=5, trust_env=False) as client:
             response = await client.get(f"{base}/models", headers={"Authorization": f"Bearer {key}"})
             response.raise_for_status()
             ids = {item["id"] for item in response.json()["data"]}
@@ -70,10 +68,11 @@ async def missing_model_hint(text="", **_):
         return None
     if model in ids:
         return None
+    lang = await language(sender)
     if ids:
-        reply = NO_DEFAULT.format(model=model, group=model.removeprefix("group/"))
+        reply = NO_DEFAULT[lang].format(model=model, group=model.removeprefix("group/"))
     else:
-        reply = NO_MODELS
+        reply = NO_MODELS[lang]
     return {"action": "handled", "reply": reply}
 
 

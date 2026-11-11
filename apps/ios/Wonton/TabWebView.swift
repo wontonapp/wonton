@@ -6,22 +6,40 @@ import WontonClient
 
 @MainActor
 final class TabWebViewStore {
-    private var sessions: [TabRef: TabWebSession] = [:]
+    private var sessions: [PlacedTab: TabWebSession] = [:]
+    /// 释放过 WebView 的计数：页面视图据此判断手里的会话还能不能用、要不要重新要一份。
+    private(set) var generation = 0
 
-    func session(for tab: TabRef, core: ClientCore) -> TabWebSession {
-        if let session = sessions[tab] { return session }
-        let session = TabWebSession(tab: tab, core: core)
-        sessions[tab] = session
+    func session(for placed: PlacedTab, core: ClientCore) -> TabWebSession {
+        if let session = sessions[placed] { return session }
+        let session = TabWebSession(placed: placed, core: core)
+        sessions[placed] = session
         return session
     }
 
-    func retain(_ tabs: Set<TabRef>) {
-        for tab in Array(sessions.keys) where !tabs.contains(tab) {
-            sessions.removeValue(forKey: tab)?.dispose()
+    /// 底栏和面板里的同一个页面各一份（ADR-0052）：不在这一份里的释放掉。
+    func retain(_ placed: Set<PlacedTab>) {
+        for key in Array(sessions.keys) where !placed.contains(key) {
+            sessions.removeValue(forKey: key)?.dispose()
         }
+        generation += 1
     }
 
-    func reselect(_ tab: TabRef) { sessions[tab]?.reselect() }
+    func reselect(_ placed: PlacedTab) { sessions[placed]?.reselect() }
+
+    func releaseAll() {
+        for session in sessions.values { session.dispose() }
+        sessions.removeAll()
+        generation += 1
+    }
+}
+
+extension PlacedTab {
+    var tab: TabRef {
+        switch self {
+        case let .bar(tab), let .panel(_, tab): tab
+        }
+    }
 }
 
 struct TabWebInputs: Equatable {
@@ -37,8 +55,9 @@ struct TabWebInputs: Equatable {
 @MainActor
 @Observable
 final class TabWebSession: NSObject {
-    let tab: TabRef
+    let placed: PlacedTab
     let core: ClientCore
+    var tab: TabRef { placed.tab }
     private(set) var webView: WKWebView?
     var ready = false
     var canGoBack = false
@@ -58,8 +77,8 @@ final class TabWebSession: NSObject {
     @ObservationIgnored private var lastTextScale: CGFloat?
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
 
-    init(tab: TabRef, core: ClientCore) {
-        self.tab = tab
+    init(placed: PlacedTab, core: ClientCore) {
+        self.placed = placed
         self.core = core
     }
 
@@ -93,8 +112,11 @@ final class TabWebSession: NSObject {
 
     private func create() throws {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
-        configuration.userContentController.add(WeakTabMessageHandler(self), name: "wontonBridge")
+        configuration.websiteDataStore = Self.dataStore(for: placed)
+        // 公网网页没有桥，也不注入变量和脚本（ADR-0052）。
+        if bridged {
+            configuration.userContentController.add(WeakTabMessageHandler(self), name: "wontonBridge")
+        }
         // 和 Safari 一样，页面写了 user-scalable=no 或 maximum-scale 也能双指缩放；
         // 配合 focusZoomScript 的 maximum-scale=1，只拦住聚焦输入框时的自动放大。
         configuration.ignoresViewportScaleLimits = true
@@ -116,7 +138,8 @@ final class TabWebSession: NSObject {
 
     private func configure(_ view: WKWebView) throws {
         guard let input else { return }
-        if let proxy = input.proxy, configuredProxy != proxy || view !== webView {
+        // 公网网页直接连，不经家里的隧道代理（ADR-0052）。
+        if bridged, let proxy = input.proxy, configuredProxy != proxy || view !== webView {
             guard let port = NWEndpoint.Port(rawValue: proxy.port) else {
                 throw CoreError.InvalidInput(reason: String(localized: .tabProxyPortInvalid))
             }
@@ -131,7 +154,8 @@ final class TabWebSession: NSObject {
         let background = UIColor(Color(colors.canvas))
         view.backgroundColor = background
         view.pageZoom = 1
-        let script = try core.tabDocumentScript(page: PlacedTab.bar(tab: tab), environment: input.environment)
+        guard bridged else { return }
+        let script = try core.tabDocumentScript(page: placed, environment: input.environment)
             + "\n" + textSizeScript(input.textScale)
         if script != documentScript || view !== webView {
             let controller = view.configuration.userContentController
@@ -147,13 +171,13 @@ final class TabWebSession: NSObject {
     }
 
     func updateContext(_ view: WKWebView, force: Bool = false) throws {
-        guard let input, view.url != nil else { return }
+        guard bridged, let input, view.url != nil else { return }
         let textChanged = input.textScale != lastTextScale
         if force || textChanged {
             evaluate(textSizeScript(input.textScale), in: view)
             lastTextScale = input.textScale
         }
-        let context = try core.tabContextScript(page: PlacedTab.bar(tab: tab), environment: input.environment)
+        let context = try core.tabContextScript(page: placed, environment: input.environment)
         if force || textChanged || context != lastContext {
             evaluate(context, in: view)
             lastContext = context
@@ -170,6 +194,20 @@ final class TabWebSession: NSObject {
             guard let self, self.webView === view, let error else { return }
             self.problem = error.problem
         }
+    }
+
+    /// 公网网页没有桥：不注入脚本和变量，不装消息处理。
+    private var bridged: Bool {
+        if case .url = placed.tab { return false }
+        return true
+    }
+
+    /// 公网网页不和插件页共用 Cookie 和存储（ADR-0052）：公网页面共用一个单独的存储。
+    private static let publicPanelStore = UUID(uuidString: "6C3B0E7A-6C61-4A0E-9E2B-5C5A0B7C8F61")!
+
+    private static func dataStore(for placed: PlacedTab) -> WKWebsiteDataStore {
+        guard case .url = placed.tab else { return .default() }
+        return WKWebsiteDataStore(forIdentifier: publicPanelStore)
     }
 
     /// WebKit 在输入框字号小于 16px 时聚焦会放大页面，失焦不缩回（#442）。聚焦放大的上限
@@ -204,6 +242,12 @@ final class TabWebSession: NSObject {
         """
     }
 
+    /// 面板拉开、翻到这一页：经桥告诉页面它被看到了，同底栏的“再点一次”。
+    func seen() {
+        guard let webView else { return }
+        evaluate(core.tabReselectedScript(), in: webView)
+    }
+
     func reselect() {
         guard let webView else { return }
         webView.scrollView.setContentOffset(.zero, animated: !UIAccessibility.isReduceMotionEnabled)
@@ -214,7 +258,7 @@ final class TabWebSession: NSObject {
         problem = nil
         do {
             try core.dispatch(action: .refreshPlugins)
-            try core.dispatch(action: .reloadTab(page: .bar(tab: tab)))
+            try core.dispatch(action: .reloadTab(page: placed))
         } catch { problem = error.problem }
     }
 
@@ -239,7 +283,9 @@ final class TabWebSession: NSObject {
         backObservation = nil
         webView?.stopLoading()
         webView?.navigationDelegate = nil
-        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "wontonBridge")
+        if bridged {
+            webView?.configuration.userContentController.removeScriptMessageHandler(forName: "wontonBridge")
+        }
         webView = nil
         action = nil
     }

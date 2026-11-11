@@ -35,6 +35,7 @@ fn one_tap_requests_round_trip() {
     let request = InstallRequest {
         source: "github:someone/wonton-samba@v1.0.0".into(),
         digest: preview().digest,
+        plan: "consumer-plan".into(),
         scope: None,
         grant: vec!["network.host".into()],
         enabled_permissions: vec!["docker.socket".into()],
@@ -43,7 +44,19 @@ fn one_tap_requests_round_trip() {
         lan_webui: true,
         install_together: vec![InstallTogether {
             id: "app.model.gateway".into(),
-            source: "github:example/wonton-model-gateway".into(),
+            request: InstallRequest {
+                source: "github:example/wonton-model-gateway".into(),
+                digest: format!("sha256:{}", "ab".repeat(32)),
+                plan: "provider-plan".into(),
+                scope: None,
+                grant: Vec::new(),
+                enabled_permissions: Vec::new(),
+                secrets: SecretValues::new(),
+                devices: Vec::new(),
+                lan_webui: false,
+                install_together: Vec::new(),
+                connect_plugins: Vec::new(),
+            },
         }],
         connect_plugins: Vec::new(),
     };

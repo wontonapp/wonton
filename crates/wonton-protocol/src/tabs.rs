@@ -81,6 +81,14 @@ pub enum TabRef {
         plugin_id: String,
         path: String,
     },
+    /// 独立 Bot 网页。选择、固定、面板、桥及媒体操作都保留这个身份，不借用插件默认页。
+    /// URL 来自同一 BotRef 的 BotView.web；没有已核实的 Ready 时不能用插件 web_url 代替。
+    Bot {
+        bot: crate::BotRef,
+        /// 空值打开清单入口；非空为同一 Bot origin 内的路径，固定当前页时使用，不存完整 URL。
+        #[serde(default)]
+        path: Option<String>,
+    },
     /// 公网网页，只收 `https://`。手机直接访问，不经隧道：没有登录身份、桥和 `--wonton-*` 变量，
     /// 存储和插件页面分开。
     Url {

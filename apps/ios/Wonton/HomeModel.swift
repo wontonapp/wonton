@@ -10,6 +10,9 @@ final class HomeModel {
     private(set) var servers: ServersViewModel
     /// 核心拒绝上一个操作的原因，由界面弹窗展示。
     var rejection: Problem?
+    private(set) var connectionRecovered = false
+    private var recoveryFeedback: Task<Void, Never>?
+    private var connectionInterrupted = false
     /// 深链接和手动输入共用草稿；只有配对页确认后才交给核心。
     var pairingCode = ""
 
@@ -21,9 +24,36 @@ final class HomeModel {
         servers = core.servers()
     }
 
+    #if DEBUG
+        /// 截图测试拿固定 ViewModel 画界面，不订阅核心推送。
+        init(core: ClientCore, viewModel: HomeViewModel, servers: ServersViewModel) {
+            self.core = core
+            self.viewModel = viewModel
+            self.servers = servers
+        }
+    #endif
+
     /// 在视图的 `.task` 里调用；视图消失时 Task 被取消，订阅随之结束。
     func observe() async {
         for await viewModel in core.subscribeHome().updates() {
+            if viewModel.serverId != self.viewModel.serverId {
+                connectionInterrupted = false
+                recoveryFeedback?.cancel()
+                connectionRecovered = false
+            } else if viewModel.status != .connected {
+                recoveryFeedback?.cancel()
+                connectionRecovered = false
+                connectionInterrupted = connectionInterrupted || viewModel.notice != nil
+            } else if connectionInterrupted {
+                connectionInterrupted = false
+                connectionRecovered = true
+                recoveryFeedback = Task {
+                    do {
+                        try await Task.sleep(for: .seconds(4))
+                        connectionRecovered = false
+                    } catch {}
+                }
+            }
             if viewModel.serverId != nil { pairingCode = "" }
             self.viewModel = viewModel
         }

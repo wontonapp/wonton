@@ -306,7 +306,7 @@ impl TabsLink {
             }
             let tab = placed_tab_ref(&page);
             let failure = if matches!(tab, TabRef::Url { .. }) {
-                // 公网网页不经隧道：连不上是手机自己的网络，按上游出错显示（ADR-0052）。
+                // 公网网页不经隧道：连不上是手机自己的网络，拿到状态码也是上游出错（ADR-0052）。
                 TabLoadFailure::Upstream
             } else if status.is_none() {
                 TabLoadFailure::Transport
