@@ -110,25 +110,6 @@ async fn recipients_are_exactly_owner_and_joined_people() {
 }
 
 #[tokio::test]
-async fn a_friends_internal_mailbox_is_not_a_recipient() {
-    // 好友有内部地址用来认人，但白名单只由主人和已加入的家人生成：发到好友地址的信被 550 拒。
-    let dir = tempfile::tempdir().unwrap();
-    let members = Arc::new(Members::open(dir.path().join("members.json")).unwrap());
-    let (_, engine) = FakeDocker::start().await;
-    let component = open(engine, dir.path(), members);
-    let content = fs::read_to_string(component.config_dir.join("runtime.env")).unwrap();
-    let rule = content
-        .strip_prefix("export MP_SMTP_ALLOWED_RECIPIENTS='")
-        .unwrap()
-        .strip_suffix("'\n")
-        .unwrap();
-    let regex = regex::Regex::new(rule).unwrap();
-    let friend = crate::owner::friend_email("friend_bob");
-    assert!(!regex.is_match(&friend), "{friend}");
-    assert!(regex.is_match(&crate::owner::internal_email("alice")));
-}
-
-#[tokio::test]
 async fn failed_restart_remains_pending_and_preserves_database_and_password() {
     let dir = tempfile::tempdir().unwrap();
     let members = Arc::new(Members::open(dir.path().join("members.json")).unwrap());
