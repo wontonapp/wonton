@@ -225,7 +225,6 @@ final class ComposerTextView: UITextView {
         if !fileProviders.isEmpty {
             Task {
                 let urls = await ComposerPaste.fileURLs(from: fileProviders)
-                guard !urls.isEmpty else { return }
                 onPasteFiles?(urls)
             }
             return
@@ -252,14 +251,14 @@ enum ComposerPaste {
         return (data, UTType(identifier))
     }
 
-    /// 文件 App“拷贝”出来的 file URL，可能多个。一个都取不出来时返回空数组。
+    /// 文件 App“拷贝”出来的 file URL，可能多个。任一文件读不出时整批交给上层报错。
     /// 停在主线程:调用方在主线程拿到 NSItemProvider,Swift 6 不让非 Sendable 的它跨 isolation 传递。
     @MainActor
     static func fileURLs(from providers: [NSItemProvider]) async -> [URL] {
         var urls: [URL] = []
         for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
             guard let data = await data(provider, UTType.fileURL.identifier),
-                  let url = URL(dataRepresentation: data, relativeTo: nil) else { continue }
+                  let url = URL(dataRepresentation: data, relativeTo: nil), url.isFileURL else { return [] }
             urls.append(url)
         }
         return urls

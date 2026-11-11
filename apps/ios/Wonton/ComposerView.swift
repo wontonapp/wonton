@@ -22,6 +22,7 @@ struct ComposerView: View {
     @State private var isPickingFiles = false
     /// 粘贴进来还没发的图：转码完成待确认。
     @State private var pendingImage: ImageUpload?
+    @State private var pendingFiles: [URL] = []
     @FocusState private var isFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.wontonColors) private var colors
@@ -97,15 +98,32 @@ struct ComposerView: View {
                     onSend: { close { deliver(image) } },
                     onCancel: { close {} }
                 )
+            } else if !pendingFiles.isEmpty {
+                PasteFilesPreview(
+                    urls: pendingFiles,
+                    onSend: {
+                        let urls = pendingFiles
+                        close {
+                            pin.pin()
+                            for url in urls { model.files.upload(url, room: roomId) }
+                        }
+                    },
+                    onCancel: { close {} }
+                )
             }
         }
     }
 
-    /// 预览面板开着表示有待确认的图；往下拖、点空白也走这里取消。
+    /// 关闭确认面板只丢弃待发送内容，不创建上传。
     private var isPreviewing: Binding<Bool> {
         Binding(
-            get: { pendingImage != nil },
-            set: { if !$0 { pendingImage = nil } }
+            get: { pendingImage != nil || !pendingFiles.isEmpty },
+            set: {
+                if !$0 {
+                    pendingImage = nil
+                    pendingFiles = []
+                }
+            }
         )
     }
 
@@ -131,10 +149,13 @@ struct ComposerView: View {
         await transcode(data, type, confirm: true)
     }
 
-    /// 粘贴的文件：和文件选择器一样交核心上传，传完链接发进房间。
     private func pasteFiles(_ urls: [URL]) {
-        pin.pin()
-        for url in urls { model.files.upload(url, room: roomId) }
+        guard !urls.isEmpty, urls.allSatisfy(\.isFileURL) else {
+            model.rejection = Problem(title: String(localized: .composerChooseFailed))
+            return
+        }
+        pendingImage = nil
+        pendingFiles = urls
     }
 
     /// 解码和转码放到后台：大照片在主线程上转码会卡住界面。`confirm` 为真先出预览再发。
@@ -144,6 +165,7 @@ struct ComposerView: View {
                 try PhotoUpload.make(data: data, type: type)
             }.value
             if confirm {
+                pendingFiles = []
                 pendingImage = upload
             } else {
                 deliver(upload)
