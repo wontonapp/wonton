@@ -137,6 +137,10 @@ fun Composer(
             draft,
             onDraftChange,
             pasteListener,
+            onHardwareSend = { text ->
+                onAction(Action.SendText(roomId, text, reply?.eventId))
+                onSent()
+            },
             modifier = Modifier.weight(1f)
                 .focusRequester(focusRequester)
                 .padding(vertical = (size.target - size.composerField) / 2)
@@ -196,6 +200,7 @@ private fun ComposerField(
     draft: String,
     onDraftChange: (String) -> Unit,
     pasteListener: ReceiveContentListener,
+    onHardwareSend: (String) -> Unit,
     modifier: Modifier,
 ) {
     val colors = WontonTheme.colors
@@ -221,7 +226,7 @@ private fun ComposerField(
     }
     BasicTextField(
         state = fieldState,
-        modifier = modifier.contentReceiver(pasteListener),
+        modifier = modifier.contentReceiver(pasteListener).hardwareMessageKeys(fieldState, onHardwareSend),
         lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = MAX_LINES),
         textStyle = typography.body.copy(color = colors.textPrimary.toColor()),
         cursorBrush = SolidColor(colors.textPrimary.toColor()),
