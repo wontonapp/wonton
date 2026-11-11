@@ -60,7 +60,7 @@ internal fun RichLinkText(
                             (it.position - down.position).getDistance() > viewConfiguration.touchSlop
                         }) result = false
                         if (event.changes.none { it.pressed } && result == null) result = true
-                        event.changes.forEach { it.consume() }
+                        if (result == true) event.changes.forEach { it.consume() }
                     }
                     result
                 }
