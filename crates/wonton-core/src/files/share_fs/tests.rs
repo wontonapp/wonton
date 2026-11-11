@@ -17,7 +17,17 @@ thread_local! {
     pub(in crate::files) static DIR_SYNC_FAILS: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
     /// 这个线程上 `RENAME_NOREPLACE` 不被支持，像 NFS、CIFS。
     pub(super) static NO_NOREPLACE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// 这个线程上跨目录改名回 `EXDEV`，像 mergerfs 的两个分支。
+    pub(super) static EXDEV: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
+
+/// 这个上传的数据不在 `transfers` 所在的卷上：链接临时文件回 `XDEV`。要跨线程，不是 `thread_local`；按编号收窄，
+/// 同时跑的其他放置照常走硬链接。
+pub(in crate::files) static CROSS_VOLUME: std::sync::Mutex<Option<String>> =
+    std::sync::Mutex::new(None);
+/// 这个上传链接临时文件时失败一次（名字已经写进待完成记录之后）。
+pub(in crate::files) static LINK_FAILS: std::sync::Mutex<Option<String>> =
+    std::sync::Mutex::new(None);
 
 struct Fixture {
     _dir: tempfile::TempDir,

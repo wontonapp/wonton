@@ -73,6 +73,8 @@ rmcp = { workspace = true, features = ["server", "client", "transport-streamable
 # Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT。处理图片的子进程给自己设资源上限（setrlimit）；逐级 openat 打开共享文件夹
 # 里的文件。都不用写 unsafe。
 rustix = { version = "1.1.6", default-features = false, features = ["fs", "process", "std"] }
+# MIT OR Apache-2.0。`quotactl_fd` 查用户配额（libc 还没有这个函数，只有 syscall 号和 `dqblk`）。
+libc = "0.2.189"
 # 存文件的审计里记内容的哈希（MIT OR Apache-2.0）。
 sha2 = { workspace = true }
 # MIT OR Apache-2.0。rmcp 已经在用：MCP 响应要边读边限制大小，SSE 由总线自己解析（mcp::bounded_http）。
