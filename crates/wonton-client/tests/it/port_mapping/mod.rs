@@ -219,6 +219,188 @@ async fn mappings_wait_out_a_tunnel_drop_and_work_again_after_it() {
     assert_eq!(tcp_round_trip(home.tcp, b"tcp after").await, b"tcp after");
 }
 
+/// 插件页在屏幕上就映射，看不见就放掉；自动映射不改主人手动打开的开关。
+#[tokio::test]
+async fn showing_a_plugin_page_maps_its_ports_and_leaving_releases_them() {
+    let home = MapHome::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let app = App::open(dir.path());
+    app.connect(&home);
+    app.mapping(PortMappingState::Off).await;
+
+    app.show(Some(PLUGIN));
+    let mapping = app.mapping(PortMappingState::On).await;
+    assert!(!mapping.enabled, "自动映射不动手动开关");
+    assert_eq!(tcp_round_trip(home.tcp, b"visible").await, b"visible");
+
+    // 屏幕上换成了别的插件（这台服务器上没装）：PLUGIN 的端口全放掉。
+    app.show(Some("app.other"));
+    app.mapping(PortMappingState::Off).await;
+    std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, home.tcp))).unwrap();
+    let held = bind_udp_until_free(home.udp).await;
+    assert!(!app.mapping(PortMappingState::Off).await.enabled);
+    // 没声明端口的插件不多出条目。
+    assert_eq!(app.core.plugins().port_mappings.len(), 1);
+    drop(held);
+
+    // 页面换回来，不用动开关又映射上。
+    app.show(Some(PLUGIN));
+    app.mapping(PortMappingState::On).await;
+    assert_eq!(tcp_round_trip(home.tcp, b"again").await, b"again");
+}
+
+/// 手动打开的映射不被页面看不见关掉：再连一次，服务器拒绝的原因照样经还开着的监听报上来。
+#[tokio::test]
+async fn a_manually_opened_mapping_survives_the_page_becoming_invisible() {
+    let home = MapHome::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let app = App::open(dir.path());
+    app.connect(&home);
+    app.mapping(PortMappingState::Off).await;
+    app.map(true);
+    app.mapping(PortMappingState::On).await;
+    app.show(Some(PLUGIN));
+    app.show(None);
+
+    home.refuse(Some(PortResolveError::PluginNotRunning));
+    let mut tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, home.tcp))
+        .await
+        .unwrap();
+    tcp.write_all(b"x").await.unwrap();
+    assert!(
+        app.mapping(PortMappingState::PluginNotRunning)
+            .await
+            .enabled
+    );
+    home.refuse(None);
+    assert!(
+        std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, home.tcp))).is_err()
+    );
+    assert_eq!(tcp_round_trip(home.tcp, b"still").await, b"still");
+}
+
+/// App 进后台一律算不可见，回前台恢复，壳不用重报。
+#[tokio::test]
+async fn going_to_the_background_counts_as_invisible_and_foreground_restores_the_page() {
+    let home = MapHome::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let app = App::open(dir.path());
+    app.connect(&home);
+    app.mapping(PortMappingState::Off).await;
+    app.show(Some(PLUGIN));
+    app.mapping(PortMappingState::On).await;
+
+    app.core
+        .dispatch(wonton_client::Action::AppBackgrounded)
+        .unwrap();
+    app.mapping(PortMappingState::Off).await;
+    std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, home.tcp))).unwrap();
+    let held = bind_udp_until_free(home.udp).await;
+    drop(held);
+
+    app.core
+        .dispatch(wonton_client::Action::AppForegrounded)
+        .unwrap();
+    app.mapping(PortMappingState::On).await;
+    assert_eq!(tcp_round_trip(home.tcp, b"back").await, b"back");
+}
+
+/// 后台期间页面被换走：回前台不吃旧的可见性。
+#[tokio::test]
+async fn a_page_left_while_backgrounded_stays_invisible_on_foreground() {
+    let home = MapHome::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let app = App::open(dir.path());
+    app.connect(&home);
+    app.mapping(PortMappingState::Off).await;
+    app.show(Some(PLUGIN));
+    app.mapping(PortMappingState::On).await;
+
+    app.core
+        .dispatch(wonton_client::Action::AppBackgrounded)
+        .unwrap();
+    app.mapping(PortMappingState::Off).await;
+    app.show(None);
+    app.core
+        .dispatch(wonton_client::Action::AppForegrounded)
+        .unwrap();
+    assert_eq!(
+        app.core.plugins().port_mappings[0].state,
+        PortMappingState::Off
+    );
+    app.show(Some(PLUGIN));
+    app.mapping(PortMappingState::On).await;
+}
+
+/// 页面开着时把开关关掉仍映射；开关只代表手动，页面看不见了才停。
+#[tokio::test]
+async fn turning_the_switch_off_while_the_page_is_visible_keeps_mapping() {
+    let home = MapHome::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let app = App::open(dir.path());
+    app.connect(&home);
+    app.mapping(PortMappingState::Off).await;
+    app.show(Some(PLUGIN));
+    app.mapping(PortMappingState::On).await;
+
+    app.map(false);
+    // 关掉开关后仍映射：再连一次，服务器拒绝的原因照样经还开着的监听报上来。
+    home.refuse(Some(PortResolveError::PluginNotRunning));
+    let mut tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, home.tcp))
+        .await
+        .unwrap();
+    tcp.write_all(b"x").await.unwrap();
+    let mapping = app.mapping(PortMappingState::PluginNotRunning).await;
+    assert!(!mapping.enabled, "页面可见时关开关只是去掉手动");
+    home.refuse(None);
+    assert_eq!(
+        tcp_round_trip(home.tcp, b"still visible").await,
+        b"still visible"
+    );
+
+    app.show(None);
+    app.mapping(PortMappingState::Off).await;
+    std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, home.tcp))).unwrap();
+    bind_udp_until_free(home.udp).await;
+}
+
+/// 手动映射是给第三方 App 用的，App 进后台照常。
+#[tokio::test]
+async fn a_manually_opened_mapping_stays_on_in_the_background() {
+    let home = MapHome::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let app = App::open(dir.path());
+    app.connect(&home);
+    app.mapping(PortMappingState::Off).await;
+    app.map(true);
+    app.mapping(PortMappingState::On).await;
+
+    app.core
+        .dispatch(wonton_client::Action::AppBackgrounded)
+        .unwrap();
+    // 拒绝同步：能等到拒绝原因，说明监听还在，后台那次核对也处理完了。
+    home.refuse(Some(PortResolveError::PluginNotRunning));
+    let mut tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, home.tcp))
+        .await
+        .unwrap();
+    tcp.write_all(b"x").await.unwrap();
+    assert!(
+        app.mapping(PortMappingState::PluginNotRunning)
+            .await
+            .enabled
+    );
+    home.refuse(None);
+    assert!(
+        std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, home.tcp))).is_err()
+    );
+
+    app.core
+        .dispatch(wonton_client::Action::AppForegrounded)
+        .unwrap();
+    assert_eq!(tcp_round_trip(home.tcp, b"back").await, b"back");
+    assert!(app.mapping(PortMappingState::On).await.enabled);
+}
+
 #[tokio::test]
 async fn turning_mapping_off_frees_the_ports_and_the_switch_is_remembered() {
     let home = MapHome::start().await;

@@ -226,6 +226,15 @@ impl App {
             .unwrap();
     }
 
+    /// 壳报“屏幕上在显示哪个插件的页面”：`None` 是屏幕上没有插件页面。
+    pub fn show(&self, plugin: Option<&str>) {
+        self.core
+            .dispatch(Action::SetVisiblePlugin {
+                plugin_id: plugin.map(str::to_owned),
+            })
+            .unwrap();
+    }
+
     pub async fn mapping(&self, state: PortMappingState) -> PluginPortMapping {
         let view = self
             .plugins(|view| {

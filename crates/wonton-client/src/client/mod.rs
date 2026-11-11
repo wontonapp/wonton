@@ -681,6 +681,10 @@ impl ClientCore {
             Action::SetPortMapping { plugin_id, enabled } => {
                 scope.plugins.set_port_mapping(plugin_id, enabled)
             }
+            Action::SetVisiblePlugin { plugin_id } => {
+                scope.plugins.set_visible_plugin(plugin_id);
+                Ok(())
+            }
             Action::RefreshStore { force } => {
                 scope.plugins.refresh_store(force);
                 Ok(())

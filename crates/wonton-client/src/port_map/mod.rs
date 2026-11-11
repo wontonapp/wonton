@@ -1,6 +1,7 @@
 //! 插件端口在本机同号映射（ADR-0072）：只监听 `127.0.0.1`，TCP 一条本机连接一条 `Port` 流，UDP 每个来源地址
-//! 一个流向。主人的开关按服务器存在槽位目录里；绑定和解绑都在一个后台任务里按顺序做，ViewModel 只在做完之后
-//! 发出：看到“关”时端口已经空出来了。
+//! 一个流向。屏幕上显示着插件的页面时自动映射（`SetVisiblePlugin`），页面看不见、App 进后台就停，回前台恢复，
+//! 手动开关不受影响；主人的开关按服务器存在槽位目录里。绑定和解绑都在一个后台任务里按顺序做，ViewModel 只在做完
+//! 之后发出：看到“关”时端口已经空出来了。
 
 mod listen;
 mod store;
@@ -37,6 +38,10 @@ enum Outcome {
 #[derive(Debug, Default)]
 struct Shared {
     enabled: BTreeSet<String>,
+    /// 屏幕上正显示着页面的插件（`SetVisiblePlugin`），进后台留着，页面换走才清。
+    visible: Option<String>,
+    /// App 在前台。进后台自动映射失效，回前台恢复，壳不用重报。
+    foreground: bool,
     /// 已安装列表里声明了 `tunnel.ports` 的插件。
     declared: BTreeMap<String, Vec<MappedPort>>,
     connected: bool,
@@ -69,6 +74,7 @@ impl PortMapper {
         let mapper = Arc::new(Self {
             shared: Mutex::new(Shared {
                 enabled: store::load(&file),
+                foreground: true,
                 ..Shared::default()
             }),
             home,
@@ -108,6 +114,28 @@ impl PortMapper {
         Ok(())
     }
 
+    /// `SetVisiblePlugin`：屏幕上换了页面。看不见的插件只要手动开关还开着就继续映射。
+    pub(crate) fn set_visible(&self, plugin_id: Option<String>) {
+        let mut shared = lock(&self.shared);
+        if shared.visible == plugin_id {
+            return;
+        }
+        shared.visible = plugin_id;
+        drop(shared);
+        self.wake.notify_one();
+    }
+
+    /// `AppForegrounded`/`AppBackgrounded`：自动映射只在 App 看得见时算数，页面的可见性留着。
+    pub(crate) fn set_foreground(&self, foreground: bool) {
+        let mut shared = lock(&self.shared);
+        if shared.foreground == foreground {
+            return;
+        }
+        shared.foreground = foreground;
+        drop(shared);
+        self.wake.notify_one();
+    }
+
     /// 已安装列表变了：按里面的 `tunnel_ports` 重新对一遍。
     fn set_declared(&self, declared: BTreeMap<String, Vec<MappedPort>>) {
         let declared: BTreeMap<_, _> = declared
@@ -138,7 +166,7 @@ impl PortMapper {
             shared
                 .declared
                 .iter()
-                .filter(|(id, _)| shared.enabled.contains(*id))
+                .filter(|(id, _)| maps(&shared, id))
                 .map(|(id, ports)| (id.clone(), ports.clone()))
                 .collect()
         };
@@ -204,7 +232,7 @@ impl PortMapper {
                     PluginPortMapping {
                         plugin_id: id.clone(),
                         enabled,
-                        state: state(enabled, active.get(id), shared.connected),
+                        state: state(maps(&shared, id), active.get(id), shared.connected),
                         ports: ports.clone(),
                     }
                 })
@@ -225,8 +253,14 @@ impl Drop for PortMapper {
     }
 }
 
-fn state(enabled: bool, active: Option<&Active>, connected: bool) -> PortMappingState {
-    let Some(active) = active.filter(|_| enabled) else {
+/// 这个插件要不要映射：主人手动打开了，或者 App 看得见它的页面。手动映射进后台照常。
+fn maps(shared: &Shared, plugin: &str) -> bool {
+    shared.enabled.contains(plugin)
+        || (shared.foreground && shared.visible.as_deref() == Some(plugin))
+}
+
+fn state(mapped: bool, active: Option<&Active>, connected: bool) -> PortMappingState {
+    let Some(active) = active.filter(|_| mapped) else {
         return PortMappingState::Off;
     };
     match active.outcome {
