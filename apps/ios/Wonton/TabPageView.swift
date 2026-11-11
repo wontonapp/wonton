@@ -123,8 +123,8 @@ struct TabPageView: View {
                     .ignoresSafeArea(.container)
                 }
                 TabPageStateView(
-                    page: page, session: session, connected: connected, isPanel: panel != nil,
-                    shareProblem: plugins.viewModel.sharedProblem(for: tab),
+                    page: page, session: session, connected: connected,
+                    shareProblem: plugins.viewModel.sharedProblem(for: tab), isPanel: panel != nil,
                     details: { showsDetails = true },
                     remove: {
                         if let remove {
