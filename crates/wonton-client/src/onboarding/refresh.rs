@@ -110,5 +110,4 @@ async fn refresh(link: &Arc<OnboardingLink>) {
         state.revision += 1;
     }
     link.publish();
-    link.maybe_mark_prompt_used();
 }

@@ -35,6 +35,20 @@ impl ClientCore {
         self.scope().card_success_hook.release();
     }
 
+    /// 每次发布引导视图前先回调（发布用的那把锁持着，回调里看到的是即将发出去的那份视图和已记下发过消息的房间）。
+    #[doc(hidden)]
+    pub fn test_set_onboarding_publish_hook(
+        &self,
+        hook: Option<crate::onboarding::TestPublishHook>,
+    ) {
+        *self
+            .scope()
+            .onboarding
+            .test_publish_hook
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = hook;
+    }
+
     /// 推进连接质量判定的时钟并采样真实 QUIC 计数；窗口和滞回门槛保持生产值。
     #[doc(hidden)]
     pub async fn test_sample_connection_quality(
