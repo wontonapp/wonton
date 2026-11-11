@@ -20,10 +20,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -45,8 +47,10 @@ import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.KeyNotice
+import app.wonton.protocol.PanelItem
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
+import app.wonton.protocol.TabRef
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineItem
@@ -93,6 +97,12 @@ internal class TimelineState {
 
     /** 打不开时点“重试”加一，按它重新订阅。 */
     var attempt by mutableIntStateOf(0)
+
+    /** 这个房间的面板（ADR-0052）：核心每一批带上。 */
+    var panel by mutableStateOf<List<PanelItem>>(emptyList())
+    var panelSelected by mutableStateOf<TabRef?>(null)
+    /** 另有东西盖着消息列表（长按菜单、转发、删除确认），上推拉面板的入口不响应。 */
+    var entryBlocked by mutableStateOf(false)
 
     fun apply(diff: TimelineDiff) {
         when (diff) {
@@ -143,6 +153,9 @@ fun RoomRoute(
                 timeline.viewport = update.viewport
                 timeline.notice = update.keyNotice
                 update.anchor?.let { timeline.anchor = it }
+                timeline.panel = update.panel
+                timeline.panelSelected = update.panelSelected
+                timeline.entryBlocked = update.entryBlocked
                 timeline.loaded = true
             }
             currentCoroutineContext().ensureActive()
@@ -210,6 +223,19 @@ private fun RoomScreen(
         (windowSize.height - safe.getBottom(density)).toFloat(),
     )
     val draft = rememberRoomDraft(core, roomId, onAction)
+    val panel = LocalChatPanel.current
+    // 在组合里读一遍，面板数据变了才会重组，下面的 SideEffect 才会跟着跑。
+    val panelPages = timeline.panel
+    val panelSelected = timeline.panelSelected
+    val entryBlocked = timeline.entryBlocked
+    SideEffect {
+        panel?.feed(panelPages, panelSelected)
+        panel?.blocked = entryBlocked
+    }
+    DisposableEffect(panel, draft) {
+        panel?.draftSink = { text -> draft.change(if (draft.text.isBlank()) text else "${draft.text}\n$text") }
+        onDispose { panel?.draftSink = null }
+    }
     // 转发、撤回都要时间线条目的 id，菜单开着的那条。
     var forwarding by remember { mutableStateOf<String?>(null) }
     var redacting by remember { mutableStateOf<String?>(null) }
@@ -220,6 +246,9 @@ private fun RoomScreen(
     } else {
         null
     }
+    // 有东西盖着列表时上推的入口不响应，由核心合成（ADR-0052）。
+    val covers = menu != null || forwarding != null || redacting != null
+    LaunchedEffect(covers, roomId) { onAction(Action.SetRoomEntryBlocked(roomId, covers)) }
     Box(Modifier.fillMaxSize()) {
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
         Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
@@ -381,6 +410,7 @@ private fun Messages(
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
+    val panel = LocalChatPanel.current
     ScrollEffects(listState, timeline, roomId, onAction)
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
@@ -393,9 +423,12 @@ private fun Messages(
     }
     Box(modifier) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize()
+                .panelAction(panel)
+                .chatPanelPull(panel, { !listState.canScrollForward }, !timeline.entryBlocked),
             state = listState,
             reverseLayout = true,
+            overscrollEffect = null,
             // 顶栏让位已垫在视口上（上面的 Column），这里不再叠加；底部照旧让开手势条。
             contentPadding = PaddingValues(
                 start = WontonTheme.spacing.pageInset,

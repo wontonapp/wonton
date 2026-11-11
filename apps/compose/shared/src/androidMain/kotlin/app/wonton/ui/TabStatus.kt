@@ -32,7 +32,7 @@ import app.wonton.ui.design.toColor
 @Composable
 internal fun PluginTabStatus(
     page: TabPage, tab: TabRef, tabs: TabsState, problem: Problem?, supported: Boolean,
-    crossOriginBlocked: Boolean, onDetails: (String) -> Unit,
+    crossOriginBlocked: Boolean, onDetails: (String) -> Unit, place: PlacedTab? = null,
 ) {
     val state = page.state
     val isolationWarning = crossOriginBlocked && supported && problem == null &&
@@ -67,7 +67,7 @@ internal fun PluginTabStatus(
             Text(failure.titleText, style = WontonTheme.typography.itemTitle,
                 color = WontonTheme.colors.textPrimary.toColor())
             failure.detail?.let { ProblemDetail(it, stringResource(R.string.common_details)) }
-            TabStatusActions(state, tab, tabs, isolationWarning, onDetails)
+            TabStatusActions(state, tab, tabs, isolationWarning, onDetails, place)
         }
     }
 }
@@ -75,10 +75,14 @@ internal fun PluginTabStatus(
 @Composable
 private fun TabStatusActions(
     state: TabState, tab: TabRef, tabs: TabsState, crossOriginBlocked: Boolean,
-    onDetails: (String) -> Unit,
+    onDetails: (String) -> Unit, place: PlacedTab?,
 ) {
     if (crossOriginBlocked && tab is TabRef.Plugin) {
         WontonButton(stringResource(R.string.tab_open_anyway), { allowCrossOriginIsolationAnyway(tab.pluginId) })
+    } else if (state is TabState.PageRemoved && place is PlacedTab.Panel) {
+        WontonButton(stringResource(R.string.panel_remove), {
+            tabs.send(Action.RemovePanelPage(place.scope, tab))
+        })
     } else if (state is TabState.PageRemoved) {
         val pinned = tabs.viewModel.items.any { it.tab == tab }
         val label = if (pinned) stringResource(R.string.tab_unpin_from_bar) else stringResource(R.string.common_close)
@@ -88,7 +92,9 @@ private fun TabStatusActions(
     } else if (state is TabState.Stopped && tab is TabRef.Plugin) {
         WontonButton(stringResource(R.string.tab_start), { tabs.send(Action.StartPlugin(tab.pluginId)) })
     } else {
-        WontonButton(stringResource(R.string.common_retry), { tabs.send(Action.ReloadTab(PlacedTab.Bar(tab))) })
+        WontonButton(stringResource(R.string.common_retry), {
+            tabs.send(Action.ReloadTab(place ?: PlacedTab.Bar(tab)))
+        })
         if (state is TabState.Failed && tab is TabRef.Plugin) {
             WontonButton(stringResource(R.string.tab_view_details), { onDetails(tab.pluginId) })
         }
