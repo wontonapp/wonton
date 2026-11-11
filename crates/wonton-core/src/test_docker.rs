@@ -5,7 +5,28 @@
 //! 单元测试经 `crate::test_docker` 用它；`tests/` 里的集成测试经 `#[path]` 把本文件编进自己的测试
 //! crate，所以这里只引用 `wonton_core` 的公开接口。
 
+use wonton_core::plugin::compose::PullPolicy;
+use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::names::{Instance, LABEL_INSTANCE};
+
+/// 拉测试镜像，失败时挂上“基础设施失败”和镜像引用：和断言失败分开，一眼看得出是拉不到而不是行为不对。
+/// 返回实际能用的引用（可能是加速站），建容器用它，和预拉用的是同一个。
+#[allow(dead_code)]
+pub async fn ensure_image(engine: &Engine, image: &str) -> String {
+    ensure_image_through(engine, image, &[]).await
+}
+
+/// 同 [`ensure_image`]，带加速站列表。
+#[allow(dead_code)]
+pub async fn ensure_image_through(engine: &Engine, image: &str, accelerated: &[String]) -> String {
+    match engine
+        .ensure_image(image, PullPolicy::Missing, accelerated)
+        .await
+    {
+        Ok(resolved) => resolved,
+        Err(error) => panic!("基础设施失败：拉不到镜像 {image}：{error}"),
+    }
+}
 
 /// 每次运行唯一的实例名：进程号加随机数。同一进程里并行的测试靠随机数区分，不同进程靠进程号；进程号
 /// 复用（上次运行被杀留下的资源）时还有随机数兜底。

@@ -16,6 +16,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/test-images.yml"
+      - "scripts/mirror-test-images.sh"
   workflow_dispatch:
 
 # PR 上又推了一个提交就取消上一次；定时、main 上的复制和手动触发都跑完（main-image 等 main 上这一次的结果）。

@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 use bollard::models::{ContainerConfig, ContainerCreateBody, HostConfig, PortBinding};
 use bollard::query_parameters::{CommitContainerOptionsBuilder, RemoveImageOptionsBuilder};
 
-use super::super::compose::PullPolicy;
 use super::super::docker::Engine;
 use super::super::lan::probe::HostNetwork;
 use super::super::lan::{Detector, Lan};
@@ -331,13 +330,10 @@ async fn a_port_published_by_another_container_fails_the_install_right_away() {
         .unwrap();
     // 别的容器占着 0.0.0.0 上的一个端口，和报出来的现象一样。宿主端口让 Docker 分配、事后再问它：先在测试里绑一个
     // 再放掉，放掉到 Docker 绑上之间，并行的测试或别的进程可能拿走同一个端口。
-    engine
-        .ensure_image(&image(), PullPolicy::Missing, &[])
-        .await
-        .unwrap();
+    let image = crate::test_docker::ensure_image(&engine, &image()).await;
     let hold = names.oneshot_container("occupy");
     let body = ContainerCreateBody {
-        image: Some(image()),
+        image: Some(image),
         cmd: Some(vec![
             "httpd".to_owned(),
             "-f".to_owned(),

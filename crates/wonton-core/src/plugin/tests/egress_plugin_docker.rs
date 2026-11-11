@@ -7,7 +7,6 @@ use std::time::Duration;
 use bollard::models::{ContainerCreateBody, HostConfig};
 use wonton_protocol::{EgressFailure, EgressProxyUpdate};
 
-use super::super::compose::PullPolicy;
 use super::super::core_address::Endpoint;
 use super::super::docker::Engine;
 use super::super::egress::gost;
@@ -166,10 +165,7 @@ async fn egress_plugin_relay_uses_provider_dns_and_fails_closed() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
     for image in [gost::image(), busybox()] {
-        engine
-            .ensure_image(&image, PullPolicy::Missing, &[])
-            .await
-            .unwrap();
+        crate::test_docker::ensure_image(&engine, &image).await;
     }
     let names = Names::new();
     let dir = tempfile::tempdir().unwrap();

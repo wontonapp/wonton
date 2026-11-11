@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Docker 集成测试要拉的上游镜像，逐个复制到 ghcr.io/<owner>/test-images/<名字>:<标签>。
+# Docker 集成测试要拉的上游镜像，逐个复制到 ghcr.io/<owner>/test-images/<名字>。
 # 仓库主人取 GITHUB_REPOSITORY_OWNER（GitHub Actions 自带），本地跑用 WONTON_TEST_IMAGES_PREFIX 指定完整前缀。
 # crane copy 原样保留 manifest 和 index 的字节，digest 不变：测试里按 digest 固定的引用照样校验得过。
-# 只按摘要固定、没有标签的引用推成 <名字>:sha256-<摘要>，测试的引用只带 digest，照样拉得到。
+# 带摘要的引用推成 <名字>@<摘要>，镜像仓库里不留标签：预拉和测试建容器用的就是摘要引用；
+# 不带摘要的用 <名字>:<标签>。
 #
 # 引用来源：测试代码里 wonton_test_images::image("…") 的字面量、生产镜像常量（gost、socat）、
 # acp-bridge Dockerfile 的 ARG 默认值，外加 tusd（tusd_tests 从 deploy/install/compose.yaml
@@ -26,6 +27,12 @@ refs=$(
     # fmt 会把长调用折成两行（引用在下一行），调用行加后面一行都取。
     grep -rhA1 -E 'wonton_test_images::image\(' crates --include='*.rs' |
       grep -oE '"[^"]+"' | tr -d '"'
+    # 引用放在常量里、调用处只传常量名（`wonton_test_images::image(IMAGE)`）时，调用行和下一行都没有
+    # 字面量：回到同一文件的常量定义里取。
+    while IFS=: read -r file name; do
+      grep -hA1 -E "^((pub )?const ${name}: &str =)" "$file" | grep -oE '"[^"]+"' | tr -d '"'
+    done < <(grep -rHoE 'wonton_test_images::image\([A-Z][A-Z0-9_]*' crates --include='*.rs' |
+      sed 's/wonton_test_images::image(//')
     # gost 和 socat 的镜像常量跨两行，常量名后面的第一行带引用。
     grep -hA1 -E '^pub const IMAGE: &str =' \
       crates/wonton-core/src/plugin/egress/gost.rs crates/wonton-core/src/plugin/host_relay.rs |
@@ -36,7 +43,8 @@ refs=$(
   } | grep -E ':' | grep -vE '[{}]' | sort -u
 )
 
-# 源引用 → 目标引用。仓库最后一段做名字，标签和 digest 原样保留。
+# 源引用 → 目标引用。仓库最后一段做名字。带摘要时只留摘要（和 wonton-test-images::image 一致），
+# 不带摘要原样保留标签。
 map_ref() {
   local ref="$1" digest="" name_and_tag base tag
   case "$ref" in
@@ -45,17 +53,14 @@ map_ref() {
   name_and_tag=${ref%@*}
   name_and_tag=${name_and_tag##*/} # library/busybox:1.37 → busybox:1.37
   base=${name_and_tag%%:*}
-  tag=""
+  if [ -n "$digest" ]; then
+    printf '%s/%s@%s\n' "$destination_prefix" "$base" "$digest"
+    return
+  fi
+  tag=latest
   case "$name_and_tag" in
     *:*) tag=${name_and_tag#*:} ;;
   esac
-  if [ -z "$tag" ]; then
-    if [ -n "$digest" ]; then
-      tag="sha256-${digest#sha256:}"
-    else
-      tag=latest
-    fi
-  fi
   printf '%s/%s:%s\n' "$destination_prefix" "$base" "$tag"
 }
 

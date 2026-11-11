@@ -17,7 +17,6 @@ use ipnet::Ipv4Net;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
-use wonton_core::plugin::compose::PullPolicy;
 use wonton_core::plugin::core_address::{Endpoint, last_usable};
 use wonton_core::plugin::docker::{Engine, NetworkReach};
 use wonton_core::plugin::lan::detect::Detector;
@@ -296,10 +295,7 @@ async fn leaving_an_egress_plugin_network_keeps_connections_through_published_po
         .unwrap()
         .with_network_pool(pool, Detector::Here);
     engine.check_server().await.unwrap();
-    engine
-        .ensure_image(&image(), PullPolicy::Missing, &[])
-        .await
-        .unwrap();
+    test_docker::ensure_image(&engine, &image()).await;
     let labels = HashMap::new();
     engine
         .create_network(&names.core_network, &labels, NetworkReach::Egress)
@@ -420,10 +416,7 @@ async fn plugin_networks_created_at_the_same_time_all_keep_the_core_address_free
         .unwrap()
         .with_network_pool(pool, Detector::Here);
     engine.check_server().await.unwrap();
-    engine
-        .ensure_image(&image(), PullPolicy::Missing, &[])
-        .await
-        .unwrap();
+    test_docker::ensure_image(&engine, &image()).await;
     let labels = HashMap::new();
     let networks: Vec<String> = (0..20)
         .map(|i| names.oneshot_network(&format!("concurrent-{i}")))
@@ -467,10 +460,7 @@ async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_rec
     let engine = Engine::connect()
         .unwrap()
         .with_network_pool(pool, Detector::Here);
-    engine
-        .ensure_image(&image(), PullPolicy::Missing, &[])
-        .await
-        .unwrap();
+    test_docker::ensure_image(&engine, &image()).await;
     for reach in [
         NetworkReach::Egress,
         NetworkReach::Internal,
@@ -540,10 +530,7 @@ async fn a_network_already_on_the_next_subnet_is_skipped() {
     let engine = Engine::connect()
         .unwrap()
         .with_network_pool(pool, Detector::Here);
-    engine
-        .ensure_image(&image(), PullPolicy::Missing, &[])
-        .await
-        .unwrap();
+    test_docker::ensure_image(&engine, &image()).await;
     let taken = names.oneshot_network("occupied-taken");
     let plugin = names.oneshot_network("occupied-plugin");
     let core = names.oneshot_container("occupied-core");
@@ -657,10 +644,7 @@ async fn a_core_with_forwarding_off_still_reaches_plugin_networks() {
     let engine = Engine::connect()
         .unwrap()
         .with_network_pool(pool, Detector::Here);
-    engine
-        .ensure_image(&image(), PullPolicy::Missing, &[])
-        .await
-        .unwrap();
+    test_docker::ensure_image(&engine, &image()).await;
     let plugin = names.oneshot_network("forward");
     let own = names.oneshot_network("forward-core");
     let core = names.oneshot_container("forward-core");
