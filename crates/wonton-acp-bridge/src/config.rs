@@ -3,7 +3,10 @@ use std::{path::PathBuf, time::Duration};
 use anyhow::{Context, Result, bail};
 use wonton_matrix::{OwnedRoomId, OwnedUserId};
 
-pub const MAX_FRAME_BYTES: usize = 512 * 1024;
+/// 桥与 Agent 之间 stdin/stdout 单行帧的上限。实测 qwen-code 会把全部技能全文
+/// （availableSkillDetails，约 650 KiB）塞进一条 available_commands_update；
+/// 上限必须容下这类富负载，否则整条连接被误判为协议错误而断开。
+pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct Limits {
