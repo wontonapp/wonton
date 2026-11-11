@@ -1871,4 +1871,8 @@
     <string name="bot_avatar_pick_state">Change the %1$s picture</string>
     <string name="message_image_permission_denied">Android denied access. Check this app\'s permissions in Settings and try again.</string>
     <string name="composer_file_unreadable">Couldn\'t read this file. Copy it again or choose another file.</string>
+    <string name="message_link_browser">Open in browser</string>
+    <string name="message_link_open_failed">Couldn\'t open this link</string>
+    <string name="message_link_share_failed">Couldn\'t share this link</string>
+    <string name="message_link_no_handler">Install an app that can open this type of link, then try again.</string>
 </resources>

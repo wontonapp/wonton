@@ -1645,4 +1645,8 @@
     <string name="bot_avatar_pick_state">更换%1$s头像</string>
     <string name="message_image_permission_denied">Android 拒绝了访问。请在设置中检查此 App 的权限，再试一次。</string>
     <string name="composer_file_unreadable">无法读取这个文件。请重新复制，或选择其他文件。</string>
+    <string name="message_link_browser">在浏览器中打开</string>
+    <string name="message_link_open_failed">无法打开这个链接</string>
+    <string name="message_link_share_failed">无法分享这个链接</string>
+    <string name="message_link_no_handler">请安装能打开此类链接的 App，再试一次。</string>
 </resources>

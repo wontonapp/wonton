@@ -1645,4 +1645,8 @@
     <string name="bot_avatar_pick_state">%1$sの画像を変更</string>
     <string name="message_image_permission_denied">Android がアクセスを拒否しました。設定でこのアプリの権限を確認して、もう一度お試しください。</string>
     <string name="composer_file_unreadable">このファイルを読み込めませんでした。もう一度コピーするか、別のファイルを選んでください。</string>
+    <string name="message_link_browser">ブラウザで開く</string>
+    <string name="message_link_open_failed">このリンクを開けませんでした</string>
+    <string name="message_link_share_failed">このリンクを共有できませんでした</string>
+    <string name="message_link_no_handler">この種類のリンクを開けるアプリをインストールして、もう一度お試しください。</string>
 </resources>
