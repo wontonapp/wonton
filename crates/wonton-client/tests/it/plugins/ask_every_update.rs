@@ -35,6 +35,7 @@ fn detail(ask: bool) -> Canned {
         requirements: Vec::new(),
         secret_inputs: Vec::new(),
         has_web: true,
+        has_settings: false,
         installed: None,
         blocked: None,
         notices: Vec::new(),

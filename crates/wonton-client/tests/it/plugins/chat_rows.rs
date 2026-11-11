@@ -61,6 +61,7 @@ async fn a_failed_install_leaves_a_retry_row_until_dismissed() {
         .dispatch(Action::InstallPlugin {
             preview: shown,
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
 

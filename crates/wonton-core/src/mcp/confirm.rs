@@ -243,6 +243,7 @@ impl Confirmations {
             expires_at_ms: now_ms(created + self.ttl),
             plugin_id: draft.plugin_id,
             secret_inputs: draft.secret_inputs.clone(),
+            settings: None,
             window: None,
         };
         let (waiter, answered) = oneshot::channel();

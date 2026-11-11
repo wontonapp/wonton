@@ -119,8 +119,11 @@ fun InstallConfirmScreen(
                     title,
                     secretsReady = !missingRequiredSecret(chosen.secretInputs, secrets),
                 ) {
-                    val action =
-                        if (isUpgrade) Action.UpgradePlugin(chosen, sent) else Action.InstallPlugin(chosen, sent)
+                    val action = if (isUpgrade) {
+                        Action.UpgradePlugin(chosen, sent, emptyMap())
+                    } else {
+                        Action.InstallPlugin(chosen, sent, emptyMap())
+                    }
                     previousTask = plugins.viewModel.tasks.firstOrNull { it.id == chosen.id }
                     rejection = plugins.core.send(action)
                     if (rejection == null) {

@@ -7,15 +7,16 @@
 
 mod capability_deps;
 mod forms;
+mod install;
 pub mod store;
 use store::{StoreConfirmation, UpdatablePlugin};
 pub mod hint;
-mod install;
 mod owner_secrets;
 pub use install::{InstallPreview, InstallRequest, UpgradeRequest};
 mod permission;
 pub(super) mod ports;
 mod secret_input;
+mod settings;
 mod takeover;
 #[path = "task.rs"]
 mod task;
@@ -39,6 +40,13 @@ pub use secret_input::{
     SecretInput, SecretInputState, SecretUpdate, SecretValues, secret_input_path,
 };
 use serde::{Deserialize, Serialize};
+pub use settings::{
+    PluginSettingField, PluginSettingKind, PluginSettingOption, PluginSettingsUpdate,
+    PluginSettingsView, SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
+    SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsProblem,
+    SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, plugin_settings_path,
+    plugin_settings_preview_path,
+};
 pub use takeover::{PluginTakeover, TakeoverState};
 pub use task::{PluginOperation, PluginTask, PluginTaskState, UpgradeResult};
 pub use tool_policy::{
@@ -474,6 +482,9 @@ pub struct PluginDetail {
     pub secret_inputs: Vec<SecretInputState>,
     /// 装好后有网页（小程序）。
     pub has_web: bool,
+    /// 这个版本的清单带设置（ADR-0077）：详情页显示设置入口，读 `GET …/settings`。
+    #[serde(default)]
+    pub has_settings: bool,
     /// 装着时是它的状态；没装时为空。
     pub installed: Option<InstalledPlugin>,
     /// 装不了的原因；能装时为空。
@@ -622,6 +633,9 @@ pub struct PluginProblem {
     /// “服务器太旧”时要的最低服务器版本；别的类别和不知道时为空。
     #[serde(default)]
     pub min_version: Option<String>,
+    /// 设置校验失败的明细（ADR-0077）：壳按字段标红、按类别写文字。别的类别和没有明细时为空。
+    #[serde(default)]
+    pub settings: Option<SettingsProblem>,
 }
 
 /// 失败的原因，壳据此提示主人下一步。
@@ -657,6 +671,10 @@ pub enum PluginFailure {
     EgressProxyUnavailable,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
+    /// 设置值没通过 Schema（ADR-0077），明细在 [`PluginProblem::settings`]。
+    SettingsInvalid,
+    /// 插件包的设置 Schema 自己不合格（ADR-0077），明细在 [`PluginProblem::settings`]。
+    SettingsSchemaInvalid,
     /// App 和家里服务器的版本对不上，有一边要更新。
     Protocol,
     /// 服务器比 App 旧，还没有这个接口（[`crate::minimum_server_version`]）：升级服务器后可用。

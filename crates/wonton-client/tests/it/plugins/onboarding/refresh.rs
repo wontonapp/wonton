@@ -71,6 +71,7 @@ async fn a_finished_task_refreshes_rows_even_when_installed_list_is_unchanged() 
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     wait_requests(&rig, Method::POST, PLUGINS, 1).await;
@@ -221,6 +222,7 @@ async fn a_failed_first_get_is_fetched_again_once_plugins_change() {
         Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
+            settings: Default::default(),
         },
     );
     rig.core.release(Method::POST, PLUGINS);

@@ -10,7 +10,7 @@ use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, InstallPreview, InstallRequest, PluginDetail, PluginFailure, PluginIcon,
     PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskState, SecretString,
-    SecretUpdate, SecretValues, UpgradeRequest, UpgradeResult,
+    SecretUpdate, SecretValues, SettingValues, UpgradeRequest, UpgradeResult,
 };
 
 use super::api::{CoreApi, INSTALL_TIMEOUT, to_core_error};
@@ -39,6 +39,7 @@ impl PluginsLink {
         self: &Arc<Self>,
         preview: InstallPreview,
         secrets: SecretValues,
+        settings: SettingValues,
     ) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
         self.resolve_confirmation(&preview);
@@ -64,6 +65,7 @@ impl PluginsLink {
             grant,
             enabled_permissions,
             secrets,
+            settings,
             devices: Vec::new(),
             lan_webui,
             install_together: Vec::new(),
@@ -108,6 +110,7 @@ impl PluginsLink {
         self: &Arc<Self>,
         preview: InstallPreview,
         secrets: SecretValues,
+        settings: SettingValues,
     ) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
         self.resolve_confirmation(&preview);
@@ -127,6 +130,7 @@ impl PluginsLink {
             grant,
             enabled_permissions,
             secrets,
+            settings,
             lan_webui,
         };
         let link = self.clone();

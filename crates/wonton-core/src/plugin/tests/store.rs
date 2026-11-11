@@ -101,6 +101,7 @@ async fn official_plugins_come_from_the_index_and_are_checked_against_it() {
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
         secrets: Default::default(),
+        settings: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
         install_together: Vec::new(),

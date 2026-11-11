@@ -457,6 +457,7 @@ fn storage_problem(error: CoreError) -> PluginProblem {
         reason: PluginFailure::Upstream,
         min_version: None,
         message: error.to_string(),
+        settings: None,
     }
 }
 

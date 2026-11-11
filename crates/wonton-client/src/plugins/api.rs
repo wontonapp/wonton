@@ -1,6 +1,10 @@
 //! 核心的插件管理接口（ADR-0017 的“管理接口”）：请求走本地代理，核心凭隧道身份认出这台已配对设备。请求不带
 //! `Origin` 和 `Sec-Fetch-Site`，核心据此知道它不是网页发起的。
 
+#[path = "api_error.rs"]
+mod error;
+use error::core_error;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -13,7 +17,8 @@ use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, CoreUpgradeFailure, CoreUpgradeProblem, CoreUpgradeStatus, PluginFailure,
-    PluginImage, PluginProblem, is_older, minimum_server_version, window_path,
+    PluginImage, PluginProblem, SettingsFieldError, SettingsSchemaProblem, minimum_server_version,
+    window_path,
 };
 
 use crate::chat::proxy_url;
@@ -44,6 +49,10 @@ struct ErrorDetail {
     message: String,
     #[serde(default)]
     problem: Option<String>,
+    #[serde(default)]
+    fields: Vec<SettingsFieldError>,
+    #[serde(default)]
+    problems: Vec<SettingsSchemaProblem>,
 }
 pub(crate) enum CoreApiError {
     Transport(PluginProblem),
@@ -144,6 +153,7 @@ pub(super) fn proxied_client(
                     "plugins-api-invalid-proxy",
                     reason = e.to_string()
                 ),
+                settings: None,
             })?,
         )
         .build()
@@ -156,6 +166,7 @@ pub(super) fn proxied_client(
                 "plugins-api-http-client",
                 reason = e.to_string()
             ),
+            settings: None,
         })
 }
 
@@ -299,6 +310,7 @@ impl CoreApi {
                 "plugins-api-invalid-request",
                 reason = e.to_string()
             ),
+            settings: None,
         })?;
         let bytes = self
             .send(Method::POST, self.url(segments, &[]), Some(body), timeout)
@@ -341,6 +353,7 @@ impl CoreApi {
                 "plugins-api-invalid-request",
                 reason = e.to_string()
             ),
+            settings: None,
         })?;
         let bytes = self
             .send(Method::PUT, self.url(segments, &[]), Some(body), timeout)
@@ -509,6 +522,7 @@ impl CoreApi {
                 "plugins-api-invalid-request",
                 reason = e.to_string()
             ),
+            settings: None,
         })?;
         self.send(Method::POST, self.url(segments, &[]), Some(body), timeout)
             .await
@@ -548,6 +562,7 @@ impl CoreApi {
                     "plugins-api-not-image-url",
                     reason = image.path.as_str()
                 ),
+                settings: None,
             });
         }
         let url = self.base.join(&image.path).map_err(|e| PluginProblem {
@@ -559,6 +574,7 @@ impl CoreApi {
                 "plugins-api-not-image-url",
                 reason = e.to_string()
             ),
+            settings: None,
         })?;
         // 上面看的是规范化之前的写法，`images/../devices` 也能通过。
         if !url.path().starts_with(IMAGE_PREFIX) {
@@ -571,6 +587,7 @@ impl CoreApi {
                     "plugins-api-not-image-url",
                     reason = image.path.as_str()
                 ),
+                settings: None,
             });
         }
         self.send(Method::GET, url, None, READ_TIMEOUT).await
@@ -587,6 +604,7 @@ fn http_error(status: u16, bytes: &[u8]) -> CoreApiError {
             kind,
             message,
             problem,
+            ..
         }) => (Some(kind), message, problem),
         None => (
             None,
@@ -617,6 +635,7 @@ fn parse<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, PluginProblem> {
             "plugins-api-invalid-response",
             reason = e.to_string()
         ),
+        settings: None,
     })
 }
 
@@ -635,80 +654,7 @@ pub(super) fn not_connected() -> PluginProblem {
         reason: PluginFailure::TransportUnavailable,
         min_version: None,
         message: l10n!(CATALOG, language(), "plugins-api-not-connected"),
-    }
-}
-
-/// 按核心的错误类别区分原因（ADR-0017）；没有错误体的响应来自核心之外：本地代理连不上隧道时回 502，隧道拒绝这台设备时
-/// 回 403。这两种都是连接的事，由 `HomeViewModel` 说。
-fn core_error(
-    status: u16,
-    body: &[u8],
-    minimum: Option<&str>,
-    version: Option<&str>,
-) -> PluginProblem {
-    // 服务器比这个接口要的版本旧：不是对象不存在，升级服务器后可用。
-    if let (Some(minimum), Some(version)) = (minimum, version)
-        && is_older(version, minimum)
-    {
-        return PluginProblem {
-            reason: PluginFailure::ServerTooOld,
-            message: l10n!(
-                CATALOG,
-                language(),
-                "plugins-api-server-too-old",
-                version = version,
-                minimum = minimum
-            ),
-            min_version: Some(minimum.to_owned()),
-        };
-    }
-    let detail = serde_json::from_slice::<ErrorBody>(body)
-        .ok()
-        .map(|body| body.error);
-    let reason = match detail.as_ref().map(|detail| detail.kind.as_str()) {
-        Some("unauthenticated" | "cross_site" | "owner_only" | "install_not_allowed") => {
-            PluginFailure::Unauthorized
-        }
-        // 授权列表和插件清单对不上，和设备身份无关：重新看预览、确认，重新配对解决不了。
-        Some("changed" | "permission_denied") => PluginFailure::Changed,
-        Some("source_unavailable") => PluginFailure::SourceUnavailable,
-        Some("not_found" | "not_installed") => PluginFailure::NotFound,
-        Some("unsupported" | "gpu_unavailable") => PluginFailure::Unsupported,
-        Some("device_unavailable") => PluginFailure::DeviceUnavailable,
-        Some("conflict") => PluginFailure::Conflict,
-        Some("not_ready") => PluginFailure::Upstream,
-        Some("invalid_input") => PluginFailure::Invalid,
-        Some("lan_unavailable") => PluginFailure::LanUnavailable,
-        Some("port_taken") => PluginFailure::LanPortTaken,
-        Some("egress_proxy_unavailable") => PluginFailure::EgressProxyUnavailable,
-        Some("core_upgrading") => PluginFailure::CoreUpgrading,
-        Some(_) if status >= 500 => PluginFailure::Upstream,
-        Some(_) => PluginFailure::Protocol,
-        None => match status {
-            403 | 502 => PluginFailure::TransportUnavailable,
-            401 => PluginFailure::Unauthorized,
-            500..=599 => PluginFailure::Upstream,
-            _ => PluginFailure::Protocol,
-        },
-    };
-    if reason == PluginFailure::TransportUnavailable {
-        return not_connected();
-    }
-    let message = detail.map_or_else(
-        || {
-            l10n!(
-                CATALOG,
-                language(),
-                "plugins-api-server-status",
-                status = status
-            )
-        },
-        |detail| detail.message,
-    );
-    PluginProblem {
-        reason,
-        message,
-        min_version: None,
+        settings: None,
     }
 }
 
@@ -751,9 +697,11 @@ pub(super) fn to_core_error(problem: PluginProblem) -> CoreError {
     match problem.reason {
         PluginFailure::TransportUnavailable => CoreError::TransportUnavailable { reason },
         PluginFailure::Unauthorized => CoreError::Unauthorized { reason },
-        PluginFailure::NotFound | PluginFailure::Invalid | PluginFailure::Changed => {
-            CoreError::InvalidInput { reason }
-        }
+        PluginFailure::NotFound
+        | PluginFailure::Invalid
+        | PluginFailure::Changed
+        | PluginFailure::SettingsInvalid
+        | PluginFailure::SettingsSchemaInvalid => CoreError::InvalidInput { reason },
         PluginFailure::Unsupported
         | PluginFailure::Conflict
         | PluginFailure::DeviceUnavailable

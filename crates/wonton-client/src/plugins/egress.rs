@@ -223,6 +223,7 @@ fn save_problem(problem: PluginProblem) -> PluginProblem {
             "plugins-egress-save-uncertain",
             reason = problem.message
         ),
+        settings: None,
     }
 }
 

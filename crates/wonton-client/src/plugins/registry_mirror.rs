@@ -38,6 +38,7 @@ fn choices_problem(settings: &RegistryMirrorSettings) -> Option<PluginProblem> {
             reason: PluginFailure::Upstream,
             message: message.clone(),
             min_version: None,
+            settings: None,
         })
 }
 

@@ -6,6 +6,7 @@ use super::{
     BlockedCategory, BotSwitch, CapabilityProviderRef, InstallTogether, LanWebuiOffer,
     MissingCapability, PermissionLine, PluginAuthor, PluginDevice, PluginIcon, PluginKind,
     PluginRuntime, PluginScope, PluginTrust, PluginWriter, SecretInput, SecretValues,
+    SettingValues, SettingsForm,
 };
 use crate::CardLine;
 
@@ -53,6 +54,10 @@ pub struct InstallPreview {
     /// 要主人填的密钥（ADR-0064）；值不在预览里，跟着安装、升级请求上行。升级预览只列新增的和还没填的。
     #[serde(default)]
     pub secret_inputs: Vec<SecretInput>,
+    /// 要主人填的设置（ADR-0077）：按清单的 Schema 展开成表单，值跟安装、升级请求上行。没有设置时为空。
+    /// 升级预览里带上装着版本的值；新 Schema 下不合法的项带 `problem`，改好才能确认。
+    #[serde(default)]
+    pub settings: Option<SettingsForm>,
     /// 确认前要看到的其他说明：未审核、镜像来自哪里、留着旧数据、降级、换来源、对宿主的要求等，按顺序显示，`emphasis` 的醒目显示。
     pub notices: Vec<CardLine>,
     /// 缺的 `requires` 能力（ADR-0053）：索引里有提供方的列出插件，主人确认一起装；没有的装不上。
@@ -109,6 +114,10 @@ pub struct InstallRequest {
     /// 主人填的密钥值（[`SecretValues`]），键是预览里 [`SecretInput::name`]。
     #[serde(default)]
     pub secrets: SecretValues,
+    /// 主人填的设置值（[`SettingValues`]），键是预览里 [`super::PluginSettingField::name`]。没带的项用默认值；必填项缺了
+    /// 返回 400 `settings_invalid`。
+    #[serde(default)]
+    pub settings: SettingValues,
     /// 主人选择的设备 ID；没有设备选择时为空。
     #[serde(default)]
     pub devices: Vec<String>,
@@ -143,6 +152,9 @@ pub struct UpgradeRequest {
     /// 同 [`InstallRequest::secrets`]：升级只要新增的、还没填的项。
     #[serde(default)]
     pub secrets: SecretValues,
+    /// 同 [`InstallRequest::settings`]：只带改了的项，没带的沿用装着版本的值。
+    #[serde(default)]
+    pub settings: SettingValues,
     /// 同 [`InstallRequest::lan_webui`]。
     #[serde(default)]
     pub lan_webui: bool,

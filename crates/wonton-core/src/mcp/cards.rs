@@ -725,6 +725,7 @@ mod tests {
         let langs = Languages::default();
         let card = ConfirmationCard {
             secret_inputs: Vec::new(),
+            settings: None,
             id: "abc".into(),
             state: ConfirmationState::Pending,
             title: "Hermes 想安装 Grafana".into(),
@@ -745,6 +746,7 @@ mod tests {
     fn the_card_body_follows_the_requested_language() {
         let card = ConfirmationCard {
             secret_inputs: Vec::new(),
+            settings: None,
             id: "abc".into(),
             state: ConfirmationState::Pending,
             title: "Hermes 想安装 Grafana".into(),
