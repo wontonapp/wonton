@@ -67,7 +67,7 @@
 - 或者在 PR 上打 `record-snapshots` 标签，`snapshots-record` 工作流跑 `recordPaparazziAndroidMain`、
   把新图提交到分支头，然后摘掉标签。它是单独的工作流、不是必需检查：打标签不会起一整轮 android 构建，也不会
   取消正在跑的那轮，草稿 PR 上也照跑；重录这一轮红或跳过，不会把之前失败的必需检查盖成通过。录制和提交都由
-  它做，作者点重跑或推一个空提交让新图自己过一遍比对（`GITHUB_TOKEN` 推的提交不再触发 CI）。外部 PR 的分支
+  它做，新图怎么过一遍比对见 iOS 一节的“重录推回之后”。外部 PR 的分支
   在别人仓库里推不进去：标签照样摘掉，图放在这次的 paparazzi 产物里，作者下载后自己提交。
 - 标签用完就摘：GitHub 不会给已经贴着的标签再发一次 `labeled`，留着就发不出下一轮重录。摘标签是单独一步、
   只看标签（外部 PR 也摘），不跟着提交步骤的成败走。
@@ -105,8 +105,11 @@
 - 重录在 `snapshots-record.yml`：在 PR 上打 `record-snapshots` 标签（草稿 PR 的事件不跑日常作业，但重录作业
   照跑）。作业用 `WontonSnapshots` scheme 把参考图全部重画，提交回分支并摘掉标签。录制那一轮本身是红的
   （每录一张报一条“Automatically recorded snapshot”），以提交回去的图为准；它不算必需检查。
-- GITHUB_TOKEN 推的提交不会触发工作流（GitHub 的规则），仓库也没有单独的机器人令牌，所以录完要自己推一个
-  空提交或点重跑，新图才会被比较一遍。外部 fork 的 PR 令牌推不回对方的分支：图存成 `ios-snapshots` 产物，作者自己取。
+- 重录推回之后：`GITHUB_TOKEN` 推的提交照常触发 `pull_request`，但仓库要求外部贡献者的运行先批准
+  （`all_external_contributors`），github-actions[bot] 也算外部，五个日常工作流停在 `action_required`、
+  分支头上没有必需检查。`snapshots-record.yml` 末尾的 `checks` 作业用同一个令牌批准这几次运行；分支头已经
+  不是重录推的提交（有人在那之后推过）时不处理。`workflow_dispatch` 重新触发不行：实测手动运行的检查不进
+  PR 的检查汇总，规则集不认。外部 fork 的 PR 令牌推不回对方的分支：图存成 `ios-snapshots` 产物，作者自己取。
 - 新增截图用 `WontonTests/SnapshotFixtures`（Debug 专用）搭界面，只放有代表性的界面，不逐页全录。
 
 ## 缓存
