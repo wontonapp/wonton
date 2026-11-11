@@ -150,6 +150,7 @@ async fn answers_that_do_not_land_and_cards_that_run_out_show_what_happened() {
             answer: Answer::Unknown,
             choice_id: None,
             secrets: Default::default(),
+            settings: Default::default(),
         }),
         Err(CoreError::InvalidInput { .. })
     ));
@@ -298,6 +299,7 @@ async fn the_secrets_filled_on_a_card_are_answered() {
             answer: Answer::Approve,
             choice_id: None,
             secrets: [("token".to_owned(), SecretString::new("s3cret"))].into(),
+            settings: Default::default(),
         })
         .unwrap();
     until_card(&mut timeline, "install", "回答上行", |view| {
@@ -418,6 +420,7 @@ async fn buttons_with_the_same_answer_are_told_apart() {
             answer: Answer::Approve,
             choice_id: Some("always".to_owned()),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     until_card(&mut timeline, "agent", "正在发", |view| {
@@ -685,6 +688,7 @@ pub(crate) fn answer(phone: &Phone, id: &str, answer: Answer) {
             answer,
             choice_id: None,
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
 }

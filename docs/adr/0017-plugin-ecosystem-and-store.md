@@ -206,6 +206,9 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 | POST | `plugins` | `InstallRequest`（JSON），或者插件包加 `?grant=` | 201 `InstalledPlugin` |
 | POST | `plugins/{id}/upgrade/preview` | 空（升到提示的版本），或者插件包 | `InstallPreview` |
 | POST | `plugins/{id}/upgrade` | `UpgradeRequest`（JSON），或者插件包加 `?grant=` | `InstalledPlugin` |
+| GET | `plugins/{id}/settings` | — | `PluginSettingsView`（ADR-0077） |
+| POST | `plugins/{id}/settings/preview` | `PluginSettingsUpdate` | `PluginSettingsView`（只校验） |
+| PUT | `plugins/{id}/settings` | `PluginSettingsUpdate` | `PluginSettingsView`（保存并重建） |
 | DELETE | `plugins/{id}?purge=true` | — | 卸载报告 |
 | GET | `PluginImage.path` 给出的地址 | — | `image/png` 或 `image/jpeg`，可以一直缓存 |
 | GET | `storage` | — | `StorageUsage`（存数据的那块盘） |
@@ -216,7 +219,8 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 - 新的错误类别：`source_unavailable`（503，家里的服务器连不上插件的来源，如 GitHub）、`not_found`（404，来源里没有这个
   仓库或版本）、`changed`（409，插件包在预览之后变了，摘要对不上，要重新预览）、`images_unavailable`（503，核心起不了
   处理图片的进程；图片本身处理不了是 `invalid_input`）。原有的类别照旧（`invalid_input`、`permission_denied`、
-  `unsupported`、`conflict`、`not_installed` 等）。
+  `unsupported`、`conflict`、`not_installed` 等）。设置另有 `settings_schema_invalid`（包的 Schema 不合格）和
+  `settings_invalid`（值过不了 Schema），见 [ADR-0077](0077-plugin-settings.md)。
 - 安装、升级和卸载在核心里单独执行：请求断开了也照样做完，结果体现在已安装列表里。
 
 **客户端核心**（`ClientCore`）：
@@ -225,12 +229,12 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
   进展（`tasks`）、可更新的应用（`updatable`）、侧边栏的内容（`sidebar`），以及一键装、一键升的进展
   （`pending`）和要主人拿主意的确认（`confirmation`）。
 - 操作：`SetLanguages`（壳把系统的语言偏好告诉核心，核心据此带 `Accept-Language`）、`RefreshPlugins`、
-  `RefreshStore { force }`、`InstallPlugin { preview }`、`UpgradePlugin { preview }`、`UninstallPlugin`、
+  `RefreshStore { force }`、`InstallPlugin { preview, secrets, settings }`、`UpgradePlugin { preview, secrets, settings }`、`UninstallPlugin`、
   `DismissPluginTask`，以及一键装、一键升：`InstallNow { source }`、`UpgradeNow { plugin_id }`、`UpgradeAll`、
   `DismissStoreConfirmation`。安装和升级把确认页渲染的那份预览原样交回，核心按它授予列出的全部权限：确认页上看到的
   就是授予的，壳不用自己拼权限列表。
 - 直接返回结果的调用：`store_plugin(source)`、`installed_plugin(id)`（详情页）、`preview_install(source)`、
-  `preview_upgrade(id)`（确认页）、`load_plugin_image(image)`（经隧道取图片并缓存，返回 PNG 或 JPEG 的字节，同
+  `preview_upgrade(id)`（确认页）、`plugin_settings(id)`、`preview_plugin_settings(id, update)`、`set_plugin_settings(id, update)`（ADR-0077）、`load_plugin_image(image)`（经隧道取图片并缓存，返回 PNG 或 JPEG 的字节，同
   `load_media`）、`search_store(query)`（在取到的商店列表里按名字、说明、标签和 ID 找）。
 - 失败的原因（`PluginFailure`）按核心的错误类别区分，壳据此提示下一步：连不上家里的服务器、本设备不被认、家里的服务器
   连不上来源、来源里没有、插件包变了、核心不支持（权限、架构、规范版本）、冲突（已经装了或正在装）、插件包不合法、

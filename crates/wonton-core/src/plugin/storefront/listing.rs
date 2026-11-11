@@ -211,6 +211,7 @@ impl PluginManager {
             requirements: requirement_checks(m, &facts, langs),
             secret_inputs: Vec::new(),
             has_web: m.webui.is_some(),
+            has_settings: m.settings.is_some(),
             installed,
             blocked: blocked(m, &facts, langs),
             notices: cross_origin_isolation_notice(m, langs)

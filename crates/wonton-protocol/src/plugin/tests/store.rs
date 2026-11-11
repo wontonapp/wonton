@@ -40,6 +40,7 @@ fn one_tap_requests_round_trip() {
         grant: vec!["network.host".into()],
         enabled_permissions: vec!["docker.socket".into()],
         secrets: SecretValues::from([("brave_key".into(), crate::SecretString::new("s3cret"))]),
+        settings: SettingValues::from([("months".into(), SettingValue::Integer { value: 6 })]),
         devices: vec!["usb-1".into()],
         lan_webui: true,
         install_together: vec![InstallTogether {
@@ -68,6 +69,7 @@ fn one_tap_requests_round_trip() {
         grant: vec![],
         enabled_permissions: vec![],
         secrets: SecretValues::new(),
+        settings: SettingValues::new(),
         lan_webui: false,
     };
     assert_eq!(round_trip(&upgrade), upgrade);

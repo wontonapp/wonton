@@ -126,6 +126,7 @@ async fn one_tap_upgrade_asks_when_permissions_grow_and_clears_on_confirm() {
         .dispatch(Action::UpgradePlugin {
             preview: taking_confirmation(&view, PHOTOS),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     let state = rig
@@ -180,6 +181,7 @@ async fn upgrade_all_starts_the_plain_ones_and_queues_the_rest() {
         .dispatch(Action::UpgradePlugin {
             preview: taking_confirmation(&view, "app.risky"),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     let view = rig
@@ -192,6 +194,7 @@ async fn upgrade_all_starts_the_plain_ones_and_queues_the_rest() {
         .dispatch(Action::UpgradePlugin {
             preview: taking_confirmation(&view, "app.risky2"),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     rig.wait_for(|view| view.confirmation.is_none()).await;

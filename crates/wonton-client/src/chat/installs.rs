@@ -347,6 +347,7 @@ mod tests {
             author: None,
             permissions: Vec::new(),
             secret_inputs: Vec::new(),
+            settings: None,
             notices: Vec::new(),
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),

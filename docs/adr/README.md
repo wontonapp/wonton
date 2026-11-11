@@ -84,3 +84,4 @@
 | [0074](0074-registry-mirrors-per-registry.md) | 镜像加速按仓库分开：ghcr 和 quay 各有自己的名单，一个站不行换下一个 |
 | [0075](0075-image-helper-process.md) | 图片处理：常驻助手进程 |
 | [0076](0076-device-verification-fallback.md) | 新设备验证：确认方式的取舍，和没有已验证设备时的出路 |
+| [0077](0077-plugin-settings.md) | 插件设置：Schema 定义，核心校验，只重建用到的服务 |

@@ -84,6 +84,7 @@ async fn run(dir: &str, code: &str, answer: Answer) -> Result<ConfirmationState,
         answer,
         choice_id: None,
         secrets: Default::default(),
+        settings: Default::default(),
     })
     .map_err(|e| e.to_string())?;
     let view = next_view(&timeline, &mut items, |view| {

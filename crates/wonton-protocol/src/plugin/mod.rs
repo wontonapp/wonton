@@ -7,15 +7,16 @@
 
 mod capability_deps;
 mod forms;
+mod install;
 pub mod store;
 use store::{StoreConfirmation, UpdatablePlugin};
 pub mod hint;
-mod install;
 mod owner_secrets;
 pub use install::{InstallPreview, InstallRequest, UpgradeRequest};
 mod permission;
 pub(super) mod ports;
 mod secret_input;
+mod settings;
 mod takeover;
 #[path = "task.rs"]
 mod task;
@@ -39,6 +40,13 @@ pub use secret_input::{
     SecretInput, SecretInputState, SecretUpdate, SecretValues, secret_input_path,
 };
 use serde::{Deserialize, Serialize};
+pub use settings::{
+    PluginSettingField, PluginSettingKind, PluginSettingOption, PluginSettingsUpdate,
+    PluginSettingsView, SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
+    SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsSchemaError,
+    SettingsSchemaProblem, SettingsSchemaProblemKind, plugin_settings_path,
+    plugin_settings_preview_path,
+};
 pub use takeover::{PluginTakeover, TakeoverState};
 pub use task::{PluginOperation, PluginTask, PluginTaskState, UpgradeResult};
 pub use tool_policy::{
@@ -474,6 +482,9 @@ pub struct PluginDetail {
     pub secret_inputs: Vec<SecretInputState>,
     /// 装好后有网页（小程序）。
     pub has_web: bool,
+    /// 这个版本的清单带设置（ADR-0077）：详情页显示设置入口，读 `GET …/settings`。
+    #[serde(default)]
+    pub has_settings: bool,
     /// 装着时是它的状态；没装时为空。
     pub installed: Option<InstalledPlugin>,
     /// 装不了的原因；能装时为空。
@@ -553,7 +564,6 @@ pub struct InstallSource {
     /// 商店给的来源，或者 `github:<owner>/<repo>`，可以带 `@<tag>` 或 `@<40 位提交号>`；不带时是最新的正式版本。
     pub source: String,
 }
-
 /// 插件页面的 ViewModel：已安装的插件、商店，以及安装、升级、卸载的进展。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

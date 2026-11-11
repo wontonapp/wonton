@@ -142,6 +142,7 @@ async fn installing_grants_what_the_preview_listed_and_reports_the_result() {
         .dispatch(Action::InstallPlugin {
             preview: shown.clone(),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     let view = rig.app.plugins();
@@ -207,6 +208,7 @@ async fn a_chosen_file_goes_up_as_is_and_installs_by_the_source_in_its_preview()
         .dispatch(Action::InstallPlugin {
             preview: shown,
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     rig.task("app.photos", |state| *state != PluginTaskState::Running)
@@ -288,7 +290,8 @@ async fn a_preview_that_says_no_is_not_sent() {
     assert!(matches!(
         rig.app.dispatch(Action::InstallPlugin {
             preview: blocked,
-            secrets: Default::default()
+            secrets: Default::default(),
+            settings: Default::default(),
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -310,6 +313,7 @@ async fn a_preview_that_needs_the_profile_is_not_sent() {
         rig.app.dispatch(Action::InstallPlugin {
             preview: needs_email,
             secrets: Default::default(),
+            settings: Default::default(),
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -411,6 +415,7 @@ async fn failures_keep_their_reason() {
             .dispatch(Action::InstallPlugin {
                 preview: preview("app.photos"),
                 secrets: Default::default(),
+                settings: Default::default(),
             })
             .unwrap();
         let state = rig
@@ -469,6 +474,7 @@ async fn a_dropped_connection_waits_for_the_result_on_the_server() {
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     let state = rig
@@ -488,6 +494,7 @@ async fn a_dropped_connection_waits_for_the_result_on_the_server() {
         .dispatch(Action::InstallPlugin {
             preview: preview("app.other"),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     let state = rig
@@ -519,6 +526,7 @@ async fn a_stalled_list_read_does_not_fail_the_install() {
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
 
@@ -632,6 +640,7 @@ async fn an_upgrade_says_which_tools_the_new_version_added() {
         .dispatch(Action::UpgradePlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     let view = rig
@@ -662,6 +671,7 @@ async fn an_upgrade_whose_answer_cannot_be_read_still_succeeded() {
         .dispatch(Action::UpgradePlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     let view = rig
@@ -691,6 +701,7 @@ async fn the_secret_values_the_owner_filled_are_posted_and_updated() {
         .dispatch(Action::InstallPlugin {
             preview: shown,
             secrets: [("token".to_owned(), SecretString::new("s3cret"))].into(),
+            settings: Default::default(),
         })
         .unwrap();
     rig.task("app.photos", |state| *state != PluginTaskState::Running)

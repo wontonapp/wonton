@@ -604,6 +604,7 @@ mod tests {
             view: ConfirmationView {
                 card: ConfirmationCard {
                     secret_inputs: Vec::new(),
+                    settings: None,
                     id: "abc".into(),
                     state: ConfirmationState::Pending,
                     title: "Hermes 想安装 Grafana".into(),
