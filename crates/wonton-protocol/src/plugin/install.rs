@@ -21,7 +21,8 @@ pub struct InstallPreview {
     /// 插件包摘要（`sha256:…`）：安装请求原样带回，插件包在预览后变了就装不上。
     pub digest: String,
     /// 不透明的安装计划：绑定本包摘要、已装提供方与全局默认、使用方—提供方—能力连接集合。
-    /// 安装请求原样带回；核心重算不符时返回 409 `changed`，重新预览，不能自动授权新连接。
+    /// [`InstallRequest`] 原样带回；核心重算不符时返回 409 `changed`，重新预览，不能自动授权新连接。
+    /// 升级预览复用此类型，但 [`UpgradeRequest`] 不携带此字段，不适用这项计划绑定。
     #[serde(default)]
     pub plan: String,
     pub id: String,
