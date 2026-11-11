@@ -121,7 +121,10 @@ impl FilesLink {
 
     pub(crate) async fn playback_problem(&self, id: FileId) -> FileProblem {
         let (reason, detail) = match self.stream.take_interruption(&id) {
-            Some(detail) => (FileFailure::TransportUnavailable, detail),
+            // 播放的这一趟在家里碰上过什么：按当时说。等问的时候家里可能已经恢复了，再问一遍会把
+            // 没了的文件、报错的插件说成“放不了这个格式”。
+            Some(problem) => problem.into_parts(),
+            // 没断过：放不了就是格式。再问一次核心，给得出内容就是这台手机放不了。
             None => self.probe(&id).await,
         };
         FileProblem {
@@ -157,18 +160,22 @@ impl FilesLink {
 
 fn explain(reason: FileFailure, detail: &str) -> String {
     match reason {
-        // 断在哪一步对主人没用，连接状态由标题栏说。
+        // 断在哪一步对主人没用，连接状态由标题栏说。连不上家也下载不到：不提示下载。
         FileFailure::TransportUnavailable => {
             l10n!(CATALOG, language(), "files-playback-transport")
         }
+        // 放不了是这台手机的事，下载不受限：可以下载后用其他 App 打开。
         FileFailure::UnsupportedFormat => {
             l10n!(CATALOG, language(), "files-playback-unsupported")
         }
-        // 文件拿不到，下载也一样，不提示。
+        // 这些原因下载一样拿不到文件：不说下载。
         FileFailure::Unauthenticated
         | FileFailure::NotShared
+        | FileFailure::PermissionDenied
         | FileFailure::FileUnknown
-        | FileFailure::FileGone => l10n!(
+        | FileFailure::FileExpired
+        | FileFailure::FileGone
+        | FileFailure::PluginUnavailable => l10n!(
             CATALOG,
             language(),
             "files-playback-unavailable",

@@ -266,13 +266,13 @@ files-download-incomplete = 連線中斷，沒有收完
 files-download-stalled = 收不到資料，隧道可能卡住了
 
 # 連線中斷導致播放失敗時顯示。
-files-playback-transport = 連不上家用伺服器。可以下載後用其他 App 開啟。
+files-playback-transport = 連不上家用伺服器。
 # 這部裝置無法播放這個格式時顯示。
 files-playback-unsupported = 這部手機無法播放這個格式。可以下載後用其他 App 開啟。
 # $detail 是家用伺服器或連線的原始原因。
 files-playback-unavailable = 家用伺服器無法提供這個檔案：{ $detail }
 # $detail 是家用伺服器或連線的原始原因。
-files-playback-error = 家用伺服器發生錯誤：{ $detail }。可以下載後用其他 App 開啟。
+files-playback-error = 家用伺服器發生錯誤：{ $detail }。
 # 播放探測逾時時顯示。
 files-playback-no-response = 家用伺服器一直沒有回應
 

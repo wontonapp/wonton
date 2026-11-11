@@ -281,13 +281,13 @@ files-download-incomplete = The connection dropped before the file was complete
 files-download-stalled = No data is arriving; the tunnel may be stuck
 
 # Shown when playback fails because the connection is down.
-files-playback-transport = Can't reach your home server. You can download the file and open it in another app.
+files-playback-transport = Can't reach your home server.
 # Shown when playback fails because this device can't decode the format.
 files-playback-unsupported = This phone can't play this format. You can download the file and open it in another app.
 # $detail is the unchanged reason from the home server or the connection.
 files-playback-unavailable = Your home server can't provide this file: { $detail }
 # $detail is the unchanged reason from the home server or the connection.
-files-playback-error = Something went wrong on your home server: { $detail }. You can download the file and open it in another app.
+files-playback-error = Something went wrong on your home server: { $detail }.
 # Shown when the playback probe times out.
 files-playback-no-response = Your home server stopped responding
 

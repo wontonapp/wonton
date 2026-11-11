@@ -615,6 +615,25 @@ async fn a_connection_lost_while_playing_is_remembered() {
     assert_eq!(problem.reason, FileFailure::TransportUnavailable);
 }
 
+/// 播放的这一趟核心报了错：壳问起来按当时说。等问的时候已经恢复了的话，再问一遍会把
+/// 核心报过的错说成“放不了这个格式”。
+#[tokio::test]
+async fn a_playback_failure_names_what_the_core_said_at_the_time() {
+    let world = World::start().await;
+    let file = world.core.lock().serve("a.mp4", b"abc", "v1");
+    let url = world.phone().file_stream_url(file.clone()).await.unwrap();
+
+    world.core.lock().services_down = true;
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let answer = client.get(&url).send().await.unwrap();
+    assert_eq!(answer.status(), 503);
+    // 等壳问原因的时候家里已经恢复了。
+    world.core.lock().services_down = false;
+
+    let problem = playback_problem(&world, file).await;
+    assert_eq!(problem.reason, FileFailure::ServiceUnavailable);
+}
+
 #[tokio::test]
 async fn players_asking_at_the_same_time_get_one_address() {
     let world = World::start().await;
