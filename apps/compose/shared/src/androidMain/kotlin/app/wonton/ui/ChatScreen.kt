@@ -130,6 +130,7 @@ fun ChatRoute(
                     onAction = onAction,
                     onReject = { rejection = it },
                     onOpenRoom = { navigation.openRoom = it },
+                    onOpenBackup = { navigation.showingBackup = true },
                     onClose = { if (navigation.openRoom == room) navigation.closeRoom() },
                 )
             }

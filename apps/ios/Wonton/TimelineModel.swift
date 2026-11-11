@@ -12,6 +12,8 @@ final class TimelineModel {
     private(set) var viewport: TimelineViewport = .bottom
     /// 第一批的落点：进房间停在这一条上（ADR-0071）。
     private(set) var anchor: String?
+    /// 有消息解不开时给主人的入口，核心按加密状态给。
+    private(set) var notice: KeyNotice?
     /// 时间线被清空重建的次数：重建的 Reset 里带新落点，视图要重新摆。
     private(set) var generation = 0
     /// 房间面板里的页面（ADR-0052）：列表为空时壳画大加号。每一批都带当前值。
@@ -51,6 +53,7 @@ final class TimelineModel {
             panel = update.panel
             panelSelected = update.panelSelected
             entryBlocked = update.entryBlocked
+            notice = update.keyNotice
             if let anchor = update.anchor {
                 self.anchor = anchor
             }

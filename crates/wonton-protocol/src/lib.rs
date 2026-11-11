@@ -219,9 +219,10 @@ pub use tabs::{
     TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,
 };
 pub use timeline::{
-    BackPagination, ImageContent, MatrixTarget, MediaHandle, MessageAction, MessageContent,
-    RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan, SendState, TimelineContent,
-    TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
+    BackPagination, ImageContent, KeyNotice, MatrixTarget, MediaHandle, MessageAction,
+    MessageContent, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan, SendState,
+    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll, TimelineUpdate,
+    TimelineViewport,
 };
 pub use verification::{
     VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,

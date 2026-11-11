@@ -9,7 +9,7 @@ use wonton_matrix::{
     BackPaginationStatus, ChatRoom, EntryKind, MissedEvent, TimelineEntry, Vector, VectorDiff,
 };
 use wonton_protocol::{
-    BackPagination, TimelineDiff, TimelineScroll, TimelineUpdate, TimelineViewport,
+    BackPagination, KeyNotice, TimelineDiff, TimelineScroll, TimelineUpdate, TimelineViewport,
 };
 
 use super::confirmation::{Cards, CardsView};
@@ -31,7 +31,8 @@ pub struct TimelineSubscription {
 impl TimelineSubscription {
     /// 在核心的运行时里开始转发 `room` 的时间线。订阅释放或取消后转发自动停止。
     ///
-    /// `room_view` 是 tabs 合成的房间面板视图（ADR-0052）：每一批都带上当前值，变了也发一批空的。
+    /// `room_view` 是 tabs 合成的房间面板视图（ADR-0052）：每一批都带上当前值，变了也发一批空的。`chat` 读加密状态，
+    /// 决定解不开的消息旁给什么入口。
     pub(crate) fn start(
         runtime: &Handle,
         room: Arc<ChatRoom>,
@@ -39,14 +40,15 @@ impl TimelineSubscription {
         plugins: Arc<crate::plugins::PluginsLink>,
         menus: Arc<std::sync::Mutex<Menus>>,
         room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
+        chat: watch::Receiver<wonton_protocol::ChatViewModel>,
     ) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
         let (scroll, mut scrolled) = watch::channel(TimelineScroll::Bottom);
         runtime.spawn(async move {
-            let outbox = Outbox::new(sender, menus, room_view.clone());
+            let outbox = Outbox::new(sender, menus, room_view.clone(), chat.clone());
             tokio::select! {
-                () = forward(&room, cards, &plugins, &outbox, &mut scrolled, room_view) => {}
+                () = forward(&room, cards, &plugins, &outbox, &mut scrolled, room_view, chat) => {}
                 () = outbox.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}
             }
@@ -93,6 +95,8 @@ struct View {
     unread: u32,
     /// 上一批送出去的未读数：同步之后未读数变了才补发一批，一样的数字不重复发。
     sent_unread: u32,
+    /// 上一批送出去的加密入口：加密状态变了时入口跟着变才补发一批，没变不重复发。
+    notice: Option<KeyNotice>,
 }
 
 impl View {
@@ -143,6 +147,7 @@ async fn forward(
     sender: &Outbox,
     scrolled: &mut watch::Receiver<TimelineScroll>,
     mut room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
+    mut chat: watch::Receiver<wonton_protocol::ChatViewModel>,
 ) {
     let mut rebuilt_for: Option<wonton_matrix::OwnedEventId> = None;
     'outer: loop {
@@ -190,7 +195,7 @@ async fn forward(
                     if view.scroll == TimelineScroll::Bottom || view.unread == view.sent_unread {
                         continue;
                     }
-                    Batch::Sent(send(sender, Vec::new(), &mut view, None), false)
+                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                 }
                 _ = check.tick() => {
                     match room.missed_cached_event(rebuilt_for.as_deref()).await {
@@ -207,7 +212,7 @@ async fn forward(
                         return;
                     }
                     // 面板、红点或入口状态变了：增量是空的，壳只更新那几个字段。
-                    Batch::Sent(send(sender, Vec::new(), &mut view, None), false)
+                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                 }
                 changed = plugin_changes.changed() => {
                     if changed.is_err() {
@@ -225,7 +230,7 @@ async fn forward(
                         continue;
                     }
                     view.status = next;
-                    Batch::Sent(send(sender, Vec::new(), &mut view, None), false)
+                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                 }
                 changed = scrolled.changed() => {
                     if changed.is_err() {
@@ -237,7 +242,18 @@ async fn forward(
                     }
                     view.scroll = next;
                     view.refresh_unread(room);
-                    Batch::Sent(send(sender, Vec::new(), &mut view, None), false)
+                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
+                }
+                changed = chat.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    // 加密状态变了：入口跟着变才补发一批（增量是空的，壳只换那一行）。
+                    let notice = sender.key_notice(&entries);
+                    if notice == view.notice {
+                        continue;
+                    }
+                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                 }
                 changed = cards.changed() => {
                     if changed.is_err() {
@@ -249,7 +265,7 @@ async fn forward(
                     refreshed!(entries, shown, cards, read, plugins, sender, &mut view)
                 }
             };
-            match settle(sent, room, sender, &mut view).await {
+            match settle(sent, room, &entries, sender, &mut view).await {
                 Next::End => return,
                 Next::Rebuild => continue 'outer,
                 Next::Continue => fetches.request(room, &entries),
@@ -274,6 +290,7 @@ async fn start_batch(
         scroll: TimelineScroll::Bottom,
         unread: 0,
         sent_unread: 0,
+        notice: None,
     };
     view.refresh_unread(room);
     let position = read_index(room, entries).await;
@@ -287,7 +304,7 @@ async fn start_batch(
             .map(|entry| timeline_item(entry.clone(), shown, read, links))
             .collect(),
     };
-    send(sender, vec![reset], &mut view, anchor).ok()?;
+    send(sender, entries, vec![reset], &mut view, anchor).ok()?;
     Some(view)
 }
 
@@ -306,7 +323,7 @@ fn relinked_batch(
     if diffs.is_empty() {
         return None;
     }
-    Some(Batch::Sent(send(sender, diffs, view, None), false))
+    Some(Batch::Sent(send(sender, entries, diffs, view, None), false))
 }
 
 /// 整条时间线按给定的插件表重画：链接的类别可能变。
@@ -359,7 +376,7 @@ fn apply(
     }
     out.extend(move_read_mark(entries, shown, read, &links));
     // 对账不放在每批之后：它会读一遍整个缓存，批多一点就把时间线的更新通道挤到跟不上（15 秒一次都嫌多）。
-    Batch::Sent(send(sender, out, view, None), false)
+    Batch::Sent(send(sender, entries, out, view, None), false)
 }
 
 /// 一批送出后的下一步。
@@ -370,12 +387,18 @@ enum Next {
     Rebuild,
 }
 
-async fn settle(sent: Batch, room: &ChatRoom, sender: &Outbox, view: &mut View) -> Next {
+async fn settle(
+    sent: Batch,
+    room: &ChatRoom,
+    entries: &Vector<TimelineEntry>,
+    sender: &Outbox,
+    view: &mut View,
+) -> Next {
     match sent {
         Batch::Sent(Err(_), _) => Next::End,
         Batch::Sent(Ok(()), true) => {
             // 告诉壳从头来，换一条时间线，从缓存重新读。房间对象不换，壳因为这个清空往回翻页时还落在同一个房间上。
-            if send(sender, vec![TimelineDiff::Clear], view, None).is_err() {
+            if send(sender, entries, vec![TimelineDiff::Clear], view, None).is_err() {
                 return Next::End;
             }
             if room.rebuild_timeline().await.is_err() {
@@ -403,10 +426,13 @@ fn clear_batch(
     let replaced = reset_diffs(entries, &batch, shown, read, links);
     tracing::info!(room_id = %room.room_id(), reason = "sdk-clear", silent = replaced.is_some(), "timeline got a Clear");
     let Some(mut out) = replaced else {
-        return Batch::Sent(send(sender, vec![TimelineDiff::Clear], view, None), true);
+        return Batch::Sent(
+            send(sender, entries, vec![TimelineDiff::Clear], view, None),
+            true,
+        );
     };
     out.extend(move_read_mark(entries, shown, read, links));
-    Batch::Sent(send(sender, out, view, None), false)
+    Batch::Sent(send(sender, entries, out, view, None), false)
 }
 
 /// 把一次重置折成增删：返回 `Some` 时已经换上新的条目，`None` 表示这次重置动到了开头或丢了条目，要清空重建。
@@ -474,7 +500,10 @@ fn refreshed_batch(
     if refreshed.is_empty() {
         return None;
     }
-    Some(Batch::Sent(send(sender, refreshed, view, None), false))
+    Some(Batch::Sent(
+        send(sender, entries, refreshed, view, None),
+        false,
+    ))
 }
 
 /// 记下这次重建时间线的原因，失败时能从日志看出是哪条路。
@@ -549,12 +578,14 @@ fn links_of(plugins: &crate::plugins::PluginsLink) -> LinkTargets {
 
 fn send(
     sender: &Outbox,
+    entries: &Vector<TimelineEntry>,
     diffs: Vec<TimelineDiff>,
     view: &mut View,
     anchor: Option<String>,
 ) -> Result<(), ()> {
     view.sent_unread = view.unread;
-    sender.send(diffs, view.status, view.viewport(), anchor)
+    view.notice = sender.key_notice(entries);
+    sender.send(entries, diffs, view.status, view.viewport(), anchor)
 }
 
 /// 本账号已读位置在 `entries` 里的下标：回执指着的事件不在这一批里时为空。

@@ -206,6 +206,7 @@
     <string name="timeline_send_failed">送信できませんでした：%1$s</string>
     <string name="timeline_resend">再送信</string>
     <string name="timeline_undecryptable">復号できません：このデバイスにこのメッセージの鍵がありません</string>
+    <string name="timeline_undecryptable_notice">このデバイスでは以前の暗号化メッセージを読めません。</string>
     <string name="timeline_redacted">メッセージは削除されました</string>
     <string name="timeline_unsupported">まだ表示に対応していないメッセージ（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->

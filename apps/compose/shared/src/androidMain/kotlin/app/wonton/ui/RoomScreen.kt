@@ -44,6 +44,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.KeyNotice
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
 import app.wonton.protocol.TimelineContent
@@ -53,12 +54,16 @@ import app.wonton.protocol.TimelineMessage
 import app.wonton.protocol.TimelineViewport
 import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.LocalWontonTopInset
+import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
+import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.icons.LockKey
+import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -79,6 +84,9 @@ internal class TimelineState {
 
     /** 第一批的落点：进房间停在这一条上（ADR-0071）。 */
     var anchor by mutableStateOf<String?>(null)
+
+    /** 有消息解不开时给主人的入口，核心按加密状态给。 */
+    var notice by mutableStateOf<KeyNotice?>(null)
 
     /** 时间线被清空重建的次数：重建的 Reset 里带新落点，壳要重新摆。 */
     var clears by mutableIntStateOf(0)
@@ -122,6 +130,7 @@ fun RoomRoute(
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
     onOpenRoom: (String) -> Unit,
+    onOpenBackup: () -> Unit,
     onClose: () -> Unit,
 ) {
     val timeline = remember(roomId) { TimelineState() }
@@ -132,6 +141,7 @@ fun RoomRoute(
                 update.diffs.forEach(timeline::apply)
                 timeline.backPagination = update.backPagination
                 timeline.viewport = update.viewport
+                timeline.notice = update.keyNotice
                 update.anchor?.let { timeline.anchor = it }
                 timeline.loaded = true
             }
@@ -157,6 +167,7 @@ fun RoomRoute(
             onAction,
             onReject,
             onOpenRoom,
+            onOpenBackup,
             onClose,
         )
     }
@@ -179,6 +190,7 @@ private fun RoomScreen(
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
     onOpenRoom: (String) -> Unit,
+    onOpenBackup: () -> Unit,
     onClose: () -> Unit,
 ) {
     var menu by remember { mutableStateOf<MessageMenuTarget?>(null) }
@@ -218,7 +230,10 @@ private fun RoomScreen(
                     )
                 },
             ) {
-Conversation(core, roomId, isDirect, isReadOnly, timeline, draft, onAction, onReject, openMenu)
+                Conversation(
+                    core, roomId, isDirect, isReadOnly, timeline, draft, onAction, onReject, openMenu,
+                    onOpenBackup,
+                )
             }
         }
         menu?.let { target ->
@@ -267,6 +282,7 @@ private fun Conversation(
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
     onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
+    onOpenBackup: () -> Unit,
 ) {
     // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
     // 房间列表倒着排、贴底，稳态下旧消息正对着顶栏：让位不能像普通滚动页那样走 contentPadding
@@ -293,6 +309,7 @@ private fun Conversation(
                 modifier = Modifier.weight(1f),
             )
         }
+        timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
         TransfersStrip(roomId, core)
         if (!isReadOnly) {
             Composer(
@@ -308,6 +325,24 @@ private fun Conversation(
                 onAction = onAction,
                 onReject = onReject,
             )
+        }
+    }
+}
+
+/**
+ * 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
+ * 更新的核心给出的类别没有按钮，说明照常显示。
+ */
+@Composable
+private fun KeyNoticeRow(notice: KeyNotice, onOpenBackup: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth()
+            .padding(horizontal = WontonTheme.spacing.pageInset, vertical = WontonTheme.spacing.s8),
+    ) {
+        WontonNotice(WontonIcon.LockKey, stringResource(R.string.timeline_undecryptable_notice), isError = false) {
+            notice.action?.let { action ->
+                WontonButton(stringResource(action), onOpenBackup, Modifier.fillMaxWidth(), WontonButtonKind.PRIMARY)
+            }
         }
     }
 }

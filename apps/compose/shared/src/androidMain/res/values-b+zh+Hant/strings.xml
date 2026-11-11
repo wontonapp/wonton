@@ -206,6 +206,7 @@
     <string name="timeline_send_failed">傳送失敗：%1$s</string>
     <string name="timeline_resend">重新傳送</string>
     <string name="timeline_undecryptable">無法解密：這支裝置還沒有這則訊息的金鑰</string>
+    <string name="timeline_undecryptable_notice">這台裝置讀不了先前的加密訊息。</string>
     <string name="timeline_redacted">訊息已收回</string>
     <string name="timeline_unsupported">暫不支援顯示的訊息（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->

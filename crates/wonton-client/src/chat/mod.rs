@@ -468,6 +468,7 @@ impl ChatLink {
             self.plugins.clone(),
             menus,
             room_view,
+            self.view.subscribe(),
         );
         *lock(&self.open_timeline) = Some((room_id, Arc::downgrade(&subscription)));
         Ok(subscription)

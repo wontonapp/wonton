@@ -32,13 +32,18 @@ struct ChatBackupView: View {
                     DeviceVerificationFlowView(flow: flow, model: model, useRecoveryKey: { showKeyEntry = true })
                 }
                 nextStep
+                // 新设备进来第一件事是输恢复密钥；重置只是丢了钥匙时的退路，做成不抢眼的文字按钮放在最下面。
                 if encryption.canReset {
                     Button {
                         isConfirmingReset = true
                     } label: {
-                        Text(.chatBackupReset).frame(maxWidth: .infinity)
+                        Text(.chatBackupReset)
+                            .wontonText(WontonTheme.typography.supporting)
+                            .foregroundStyle(Color(colors.textSecondary))
+                            .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(WontonButtonStyle(kind: .secondary))
+                    .buttonStyle(.plain)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -81,9 +86,17 @@ struct ChatBackupView: View {
             } else {
                 recoveryKeyEntry
             }
+        case .disabled:
+            // 账号没有备份，输恢复密钥没用；只有另一台已验证的设备能把密钥直接发过来。
+            if encryption.canVerifyWithOtherDevice, encryption.verificationFlow == nil {
+                Button { model.send(.startDeviceVerification) } label: {
+                    Text(.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
         case .inProgress:
             ProgressView().frame(maxWidth: .infinity)
-        case .disabled, .enabled, .unknown:
+        case .enabled, .unknown:
             EmptyView()
         }
     }
@@ -153,6 +166,17 @@ extension EncryptionStatus {
         case .incomplete: return String(localized: .chatBackupDetailIncomplete)
         case .inProgress: return nil
         case .unknown: return String(localized: .chatBackupDetailUnknown)
+        }
+    }
+}
+
+extension KeyNotice {
+    /// 按钮上的字；`other` 是更新的核心给的新类别，只显示说明。
+    var action: String? {
+        switch self {
+        case .enterRecoveryKey: return String(localized: .verificationUseRecoveryKey)
+        case .verifyWithOtherDevice: return String(localized: .verificationVerifyWithOtherDevice)
+        case .other: return nil
         }
     }
 }

@@ -7,11 +7,14 @@ import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,19 +25,23 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.DeviceVerification
 import app.wonton.protocol.EncryptionStatus
+import app.wonton.protocol.KeyNotice
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
@@ -83,12 +90,22 @@ fun ChatBackupScreen(encryption: EncryptionStatus, onAction: (Action) -> Unit, o
     }
 }
 
+/**
+ * 新设备进来第一件事是输恢复密钥；重置只是丢了钥匙时的退路，做成不抢眼的文字按钮放在最下面。
+ */
 @Composable
 private fun ResetBackup(onAction: (Action) -> Unit) {
     var confirming by rememberSaveable { mutableStateOf(false) }
-    WontonButton(
-        stringResource(R.string.chat_backup_reset), { confirming = true },
-        Modifier.fillMaxWidth(), WontonButtonKind.SECONDARY,
+    val interaction = remember { MutableInteractionSource() }
+    Text(
+        stringResource(R.string.chat_backup_reset),
+        Modifier.fillMaxWidth()
+            .clickable(interaction, indication = null, role = Role.Button) { confirming = true }
+            .heightIn(min = WontonTheme.size.target)
+            .padding(vertical = WontonTheme.spacing.s8),
+        style = WontonTheme.typography.supporting,
+        color = WontonTheme.colors.textSecondary.toColor(),
+        textAlign = TextAlign.Center,
     )
     if (confirming) {
         val dismiss = { confirming = false }
@@ -123,8 +140,16 @@ private fun NextStep(
             encryption.canVerifyWithOtherDevice -> VerificationChoices(onAction, onUseRecoveryKey)
             else -> RecoveryKeyEntry(key, onKey, onAction)
         }
+        // 账号没有备份，输恢复密钥没用；只有另一台已验证的设备能把密钥直接发过来。
+        RecoveryStatus.DISABLED -> if (encryption.canVerifyWithOtherDevice && encryption.verificationFlow == null) {
+            WontonButton(
+                stringResource(R.string.verification_verify_with_other_device),
+                { onAction(Action.StartDeviceVerification) },
+                Modifier.fillMaxWidth(),
+            )
+        }
         RecoveryStatus.IN_PROGRESS -> CircularProgressIndicator()
-        RecoveryStatus.DISABLED, RecoveryStatus.ENABLED, RecoveryStatus.UNKNOWN -> Unit
+        RecoveryStatus.ENABLED, RecoveryStatus.UNKNOWN -> Unit
     }
 }
 
@@ -215,6 +240,14 @@ val RecoveryStatus.backupValue: String
         RecoveryStatus.INCOMPLETE -> stringResource(R.string.chat_backup_value_incomplete)
         RecoveryStatus.IN_PROGRESS -> stringResource(R.string.chat_backup_value_in_progress)
         RecoveryStatus.UNKNOWN -> stringResource(R.string.chat_backup_value_unknown)
+    }
+
+/** 按钮上的字；`OTHER` 是更新的核心给的新类别，只显示说明。 */
+val KeyNotice.action: Int?
+    get() = when (this) {
+        KeyNotice.ENTER_RECOVERY_KEY -> R.string.verification_use_recovery_key
+        KeyNotice.VERIFY_WITH_OTHER_DEVICE -> R.string.verification_verify_with_other_device
+        KeyNotice.OTHER -> null
     }
 
 val BackupReminder.text: String?
