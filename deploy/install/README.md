@@ -50,7 +50,7 @@ curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_SERVER_NAME=chat.examp
 | `WONTON_ACME_DIRECTORY` | 显式指定 ACME directory 的 HTTPS URL；使用 ACME 签证书时必填 |
 | `WONTON_ACME_ACCEPT_TERMS=true` | 运营者明确接受所选 CA 的条款后才设置；ACME 模式缺少此确认就停止 |
 | `WONTON_ACME_CA_FILE` | ACME 和 acme-dns 使用的 PEM CA 文件；测试 CA 显式传入，不关闭 TLS 验证 |
-| `WONTON_ACME_RESOLVERS` | 可选 DNS 解析器，逗号分隔、每项首尾空白忽略，例如 `192.0.2.10:53`；安装容器、挑战记录和 CAA 查询都经它 |
+| `WONTON_ACME_RESOLVERS` | 可选 DNS 解析器，逗号分隔的 IP 或 IP:端口（端口可省略，默认 53），每项首尾空白忽略，例如 `192.0.2.10,198.51.100.10:5353`；安装容器、挑战记录和 CAA 查询都经它 |
 | `WONTON_ACME_EMAIL` | 可选 ACME 账号联系邮箱 |
 | `WONTON_ACME_NETWORK` | 已存在的 Docker 网络，默认 `bridge`；初始化和 lego 必须能经它访问家名服务、ACME、acme-dns 和所选 DNS |
 | `WONTON_ACME_DNS_PROVIDER`、`WONTON_ACME_DNS_ENV_FILE` | 自己的域名使用的 lego DNS provider 及其 dotenv 凭据文件，必须成对提供；送的名字使用注册结果中的 acme-dns 凭据，不混用自定义 provider |

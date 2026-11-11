@@ -1,5 +1,6 @@
 //! 安装模式和入口配置落盘；升级重用它们，不重新注册身份。
 
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, ensure};
@@ -29,25 +30,39 @@ fn setting(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|s| !s.is_empty())
 }
 
-/// 逗号分隔的解析器列表，忽略各项首尾空白和空项。
-pub fn parse_resolvers(raw: &str) -> Vec<String> {
+/// 单项归一成 `SocketAddr`：`IP:端口` 照旧，裸 IP（IPv6 带或不带方括号）补默认的 53 端口。
+/// 解析不了的项报错指名——静默丢掉会让装好的解析器悄悄不生效（#226）。
+fn resolver_address(item: &str) -> anyhow::Result<SocketAddr> {
+    let item = item.trim();
+    if let Ok(address) = item.parse::<SocketAddr>() {
+        return Ok(address);
+    }
+    let host = if item.starts_with('[') {
+        item.to_owned()
+    } else if item.contains(':') {
+        format!("[{item}]")
+    } else {
+        item.to_owned()
+    };
+    format!("{host}:53")
+        .parse::<SocketAddr>()
+        .map_err(|_| anyhow::anyhow!("DNS 解析器必须是 IP 或 IP:端口：{item}"))
+}
+
+/// 逗号分隔的解析器列表，忽略各项首尾空白和空项；裸 IP 补 53，归一成 `IP:端口`。
+pub fn parse_resolvers(raw: &str) -> anyhow::Result<Vec<String>> {
     raw.split(',')
         .map(str::trim)
         .filter(|server| !server.is_empty())
-        .map(str::to_owned)
+        .map(|server| resolver_address(server).map(|address| address.to_string()))
         .collect()
 }
 
-/// Docker 的 `dns` 字段只要 IP；解析不了的表项丢掉。
-pub fn resolver_ips(servers: &[String]) -> Vec<String> {
+/// Docker 的 `dns` 字段只要 IP。
+pub fn resolver_ips(servers: &[String]) -> anyhow::Result<Vec<String>> {
     servers
         .iter()
-        .filter_map(|server| {
-            server
-                .parse::<std::net::SocketAddr>()
-                .ok()
-                .map(|address| address.ip().to_string())
-        })
+        .map(|server| Ok(resolver_address(server)?.ip().to_string()))
         .collect()
 }
 
@@ -55,9 +70,18 @@ impl EntrySettings {
     pub fn load(install_dir: &Path) -> anyhow::Result<Option<Self>> {
         let path = install_dir.join("entry/settings.json");
         match std::fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .with_context(|| format!("入口设置 {} 读不了", path.display()))
-                .map(Some),
+            Ok(bytes) => {
+                let mut settings: Self = serde_json::from_slice(&bytes)
+                    .with_context(|| format!("入口设置 {} 读不了", path.display()))?;
+                // 旧配置可能存着裸 IP 或非法项：读入即归一，非法项在 init 和开机时报错而不是静默丢。
+                settings.acme_resolvers = settings
+                    .acme_resolvers
+                    .iter()
+                    .map(|item| resolver_address(item).map(|address| address.to_string()))
+                    .collect::<anyhow::Result<Vec<_>>>()
+                    .with_context(|| format!("入口设置 {} 的 DNS 解析器不合法", path.display()))?;
+                Ok(Some(settings))
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e).with_context(|| format!("读取 {}", path.display())),
         }
@@ -169,9 +193,10 @@ impl EntrySettings {
             registration,
             acme_directory,
             acme_ca: setting("WONTON_ACME_CA_FILE").map(PathBuf::from),
-            acme_resolvers: setting("WONTON_ACME_RESOLVERS")
-                .map(|raw| parse_resolvers(&raw))
-                .unwrap_or_default(),
+            acme_resolvers: match setting("WONTON_ACME_RESOLVERS") {
+                Some(raw) => parse_resolvers(&raw)?,
+                None => Vec::new(),
+            },
             acme_email: setting("WONTON_ACME_EMAIL"),
             acme_accept_terms: setting("WONTON_ACME_ACCEPT_TERMS").as_deref() == Some("true"),
             acme_network: setting("WONTON_ACME_NETWORK").unwrap_or_else(|| "bridge".into()),
@@ -245,9 +270,76 @@ mod tests {
     #[test]
     fn resolver_lists_drop_surrounding_whitespace_and_empty_items() {
         assert_eq!(
-            parse_resolvers("192.0.2.53:53, 198.51.100.53:53 ,"),
+            parse_resolvers("192.0.2.53:53, 198.51.100.53:53 ,").unwrap(),
             ["192.0.2.53:53", "198.51.100.53:53"]
         );
-        assert!(parse_resolvers(" , ").is_empty());
+        assert!(parse_resolvers(" , ").unwrap().is_empty());
+    }
+
+    /// 裸 IPv4 列表（逗号后带空格）默认补 53 端口（#226）。
+    #[test]
+    fn bare_ipv4_items_get_the_default_dns_port() {
+        let resolvers = parse_resolvers("192.0.2.53, 198.51.100.53").unwrap();
+        assert_eq!(resolvers, ["192.0.2.53:53", "198.51.100.53:53"]);
+    }
+
+    #[test]
+    fn bare_ipv6_with_and_without_brackets_gets_the_default_port() {
+        let resolvers = parse_resolvers("2001:db8::53, [2001:db8::54]").unwrap();
+        assert_eq!(resolvers, ["[2001:db8::53]:53", "[2001:db8::54]:53"]);
+    }
+
+    #[test]
+    fn explicit_ports_stay_and_empty_items_are_skipped() {
+        let resolvers = parse_resolvers(" 192.0.2.53:5353 , [2001:db8::53]:53 , , ").unwrap();
+        assert_eq!(resolvers, ["192.0.2.53:5353", "[2001:db8::53]:53"]);
+    }
+
+    /// 既不是 IP 也不是 IP:端口的项报错并指出是哪一项，不静默丢。
+    #[test]
+    fn unparseable_items_error_with_the_item_named() {
+        let error = parse_resolvers("192.0.2.53, dns.internal").unwrap_err();
+        assert!(error.to_string().contains("dns.internal"), "{error}");
+    }
+
+    /// settings.json 里存的裸 IP（旧版本写进去的）读入时补上端口，续期和渲染才不至于拿裸 IP 撞严格解析。
+    #[test]
+    fn stored_bare_ips_are_normalized_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("entry/settings.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let write_settings = |resolvers: &str| {
+            std::fs::write(
+                &path,
+                format!(
+                    r#"{{
+                        "domain": "abcdefgh.homes.test",
+                        "service_url": null,
+                        "service_ca": null,
+                        "relay_ca": null,
+                        "registration": null,
+                        "acme_directory": "https://acme.test/dir",
+                        "acme_ca": null,
+                        "acme_resolvers": [{resolvers}],
+                        "acme_email": null,
+                        "acme_accept_terms": true,
+                        "acme_network": "bridge",
+                        "dns_provider": null,
+                        "dns_env_file": null,
+                        "external_certificate": false
+                    }}"#
+                ),
+            )
+            .unwrap();
+        };
+        write_settings(r#""192.0.2.53", "[2001:db8::54]""#);
+        let settings = EntrySettings::load(dir.path()).unwrap().unwrap();
+        assert_eq!(
+            settings.acme_resolvers,
+            ["192.0.2.53:53", "[2001:db8::54]:53"]
+        );
+        write_settings(r#""dns.internal""#);
+        let error = EntrySettings::load(dir.path()).err().unwrap();
+        assert!(format!("{error:#}").contains("dns.internal"), "{error:#}");
     }
 }

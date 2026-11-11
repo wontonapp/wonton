@@ -43,7 +43,7 @@ pub fn render(
     compose["services"]["core"]["networks"]["clients"] =
         json!({"aliases":["entry-gateway.wonton.internal"]});
     // 配了解析器时核心和 lego 都用它：入口的 ACME 目录、acme-dns 和 CAA 都靠这些名字。
-    let resolvers = crate::entry_settings::resolver_ips(&settings.acme_resolvers);
+    let resolvers = crate::entry_settings::resolver_ips(&settings.acme_resolvers)?;
     if !resolvers.is_empty() {
         // Docker 的 127.0.0.11 在前：容器名、插件别名只有它认识；它认不出的名字转发给配置的解析器。
         // 反过来先问真实解析器时，它们在区外名字上回 NXDOMAIN，glibc 不再回退，内部名就解析不到。
@@ -200,7 +200,7 @@ mod tests {
         std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
         let mut settings = settings();
         settings.acme_resolvers =
-            crate::entry_settings::parse_resolvers("192.0.2.53:53, 198.51.100.53:53");
+            crate::entry_settings::parse_resolvers("192.0.2.53:53, 198.51.100.53:53").unwrap();
         let compose: Value = serde_json::from_str(
             &render(crate::install::COMPOSE, Some(&settings), dir.path()).unwrap(),
         )
@@ -253,5 +253,34 @@ mod tests {
                 "第二份配置要落在挂进来的目录里"
             );
         }
+    }
+
+    /// 裸 IP（不带端口）也要渲染进核心的 `dns`，不能被静默丢掉（#226）。
+    #[test]
+    fn bare_resolver_ips_render_into_core_dns() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
+        std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
+        let mut settings = settings();
+        settings.acme_resolvers = vec![
+            "192.0.2.53".to_owned(),
+            "198.51.100.53:5353".to_owned(),
+            "2001:db8::53".to_owned(),
+            "[2001:db8::54]:53".to_owned(),
+        ];
+        let compose: Value = serde_json::from_str(
+            &render(crate::install::COMPOSE, Some(&settings), dir.path()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            compose["services"]["core"]["dns"],
+            json!([
+                "127.0.0.11",
+                "192.0.2.53",
+                "198.51.100.53",
+                "2001:db8::53",
+                "2001:db8::54"
+            ])
+        );
     }
 }

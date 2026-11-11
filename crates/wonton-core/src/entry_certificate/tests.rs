@@ -34,6 +34,30 @@ fn credentials(label: &str) -> AcmeDnsCredentials {
     }
 }
 
+/// lego 容器的 `dns` 同样收裸 IP（#226），且只有配置的解析器，不带 127.0.0.11（#48）。
+#[test]
+fn lego_container_dns_takes_bare_resolver_ips() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut manager = manager(dir.path());
+    manager.initialize_files("abcdefgh.homes.test").unwrap();
+    manager.config.dns_resolvers = vec![
+        "192.0.2.53".to_owned(),
+        "198.51.100.53:5353".to_owned(),
+        "[2001:db8::53]:53".to_owned(),
+        "2001:db8::54".to_owned(),
+    ];
+    let body = manager.container_body(manager.account_command()).unwrap();
+    assert_eq!(
+        body.host_config.unwrap().dns.unwrap(),
+        [
+            "192.0.2.53",
+            "198.51.100.53",
+            "2001:db8::53",
+            "2001:db8::54"
+        ]
+    );
+}
+
 #[test]
 fn preparing_files_preserves_leaf_identity_and_keeps_private_key_out_of_lego() {
     let dir = tempfile::tempdir().unwrap();
