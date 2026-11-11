@@ -99,7 +99,7 @@
 - 只维护：README、本文件、`docs/GOAL.md`、`docs/ARCHITECTURE.md`、`docs/glossary.md`（术语表）、公开仓库里的插件规范、
   `docs/adr/`，以及各模块目录下简短的 README。
 - 改变架构、协议或用户可见行为的 PR，必须在同一个 PR 里更新对应文档。
-- 插件规范在公开仓库 [wonton-docs](https://github.com/geraldpeng6/wonton-docs)，插件作者要看，主仓库是私有的。改规范的核心 PR
+- 插件规范在公开仓库 [wonton-docs](https://github.com/wontonapp/wonton-docs)，插件作者要看，主仓库是私有的。改规范的核心 PR
   同时在那边提 PR，核心合并后再合。那边是公开文档，不引用 ADR 和里程碑。
 - 重大决策写 ADR，写法见 [docs/adr/README.md](docs/adr/README.md)。
 - 不写进度报告、按日期的笔记和已完成的实施计划。进度看 GitHub issue 和里程碑。
