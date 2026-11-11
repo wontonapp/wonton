@@ -20,6 +20,8 @@ fn detail(ask: bool) -> Canned {
         tags: Vec::new(),
         kind: PluginKind::App,
         runtime: Default::default(),
+        security_tier: None,
+        link_url: None,
         scope: None,
         version: "1.0.0".to_owned(),
         trust: PluginTrust::Official,

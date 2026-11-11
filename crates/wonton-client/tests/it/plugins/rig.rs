@@ -442,6 +442,7 @@ pub fn preview(id: &str) -> InstallPreview {
         version: "1.0.0".to_owned(),
         kind: PluginKind::App,
         runtime: Default::default(),
+        security_tier: None,
         scope_choices: Vec::new(),
         has_bot: false,
         icon: None,
@@ -495,7 +496,7 @@ pub fn item(id: &str, title: &str, tags: &[&str]) -> StoreItem {
         author: None,
         stars: None,
         installed_version: None,
-        high_permissions: false,
+        security_tier: None,
         blocked: None,
     }
 }

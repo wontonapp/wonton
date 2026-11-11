@@ -57,7 +57,7 @@ pub fn permission_text(permission: &Permission, langs: &Languages) -> String {
     }
 }
 
-fn permission_risk(permission: &Permission) -> Option<PermissionRisk> {
+pub(super) fn permission_risk(permission: &Permission) -> Option<PermissionRisk> {
     match permission {
         Permission::EgressProxy
         | Permission::NetworkLan

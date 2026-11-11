@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     BlockedCategory, BotSwitch, CapabilityProviderRef, InstallTogether, LanWebuiOffer,
     MissingCapability, PermissionLine, PluginAuthor, PluginDevice, PluginIcon, PluginKind,
-    PluginRuntime, PluginScope, PluginTrust, PluginWriter, SecretInput, SecretValues,
+    PluginRuntime, PluginScope, PluginTrust, PluginWriter, SecretInput, SecretValues, SecurityTier,
     SettingValues, SettingsForm,
 };
 use crate::CardLine;
@@ -33,6 +33,9 @@ pub struct InstallPreview {
     pub kind: PluginKind,
     #[serde(default)]
     pub runtime: PluginRuntime,
+    /// 核心按清单算出的安全档位（ADR-0080）；旧核心不给时为空。
+    #[serde(default)]
+    pub security_tier: Option<SecurityTier>,
     /// 可供主人选择的 Bot；只有一个 Bot 时为空，壳不显示范围选择。
     #[serde(default)]
     pub scope_choices: Vec<crate::BotRef>,

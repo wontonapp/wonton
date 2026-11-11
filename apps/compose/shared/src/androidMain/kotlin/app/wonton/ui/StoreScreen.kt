@@ -45,6 +45,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.AddedSource
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginTrust
+import app.wonton.protocol.SecurityTier
 import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
 import app.wonton.protocol.StoreConfirmation
@@ -374,7 +375,8 @@ private fun ItemTags(item: StoreItem) {
     val stars = item.stars
     val provider = item.viaIndex?.let { stringResource(R.string.store_via_index, it) } ?: item.provider
     val hasSource = showsTrust || provider != null
-    if (hasSource || item.highPermissions || stars != null) {
+    val highTier = item.securityTier.let { it != null && it != SecurityTier.MINIMAL && it != SecurityTier.STANDARD }
+    if (hasSource || highTier || stars != null) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             verticalAlignment = Alignment.CenterVertically,
@@ -389,7 +391,7 @@ private fun ItemTags(item: StoreItem) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (item.highPermissions) Tag(stringResource(R.string.store_high_permissions), colors.danger)
+            if (highTier) Tag(stringResource(R.string.store_high_permissions), colors.danger)
             stars?.let {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),

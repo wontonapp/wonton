@@ -105,7 +105,7 @@ fn store() -> StoreListing {
         }),
         stars: None,
         installed_version: Some("2.0.0".into()),
-        high_permissions: false,
+        security_tier: Some(SecurityTier::Standard),
         blocked: None,
     };
     StoreListing {
@@ -137,7 +137,7 @@ fn store() -> StoreListing {
                 source: "github:someone/wonton-samba".into(),
                 trust: PluginTrust::Community,
                 stars: Some(42),
-                high_permissions: true,
+                security_tier: Some(SecurityTier::Highest),
                 blocked: Some("宿主是 arm64，这个插件只支持 amd64".into()),
                 ..item
             }],
@@ -166,6 +166,7 @@ fn preview() -> InstallPreview {
         version: "1.0.0".into(),
         kind: PluginKind::App,
         runtime: PluginRuntime::Compose,
+        security_tier: Some(SecurityTier::High),
         scope_choices: vec![],
         has_bot: false,
         icon: None,
@@ -263,6 +264,8 @@ fn detail() -> PluginDetail {
         tags: vec![],
         kind: PluginKind::App,
         runtime: PluginRuntime::Compose,
+        security_tier: Some(SecurityTier::Standard),
+        link_url: None,
         scope: None,
         version: "2.1.0".into(),
         trust: PluginTrust::Official,

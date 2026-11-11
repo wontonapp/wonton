@@ -68,6 +68,7 @@ mod settings_l10n;
 mod setup;
 mod sources;
 mod start_recreate;
+mod static_web;
 mod stopped;
 mod stopped_docker;
 mod store;

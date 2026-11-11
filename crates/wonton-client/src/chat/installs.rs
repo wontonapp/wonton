@@ -337,6 +337,7 @@ mod tests {
             version: "1.0.0".into(),
             kind: wonton_protocol::PluginKind::Agent,
             runtime: Default::default(),
+            security_tier: None,
             scope_choices: Vec::new(),
             has_bot,
             icon: None,

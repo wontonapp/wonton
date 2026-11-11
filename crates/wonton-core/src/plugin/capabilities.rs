@@ -5,7 +5,7 @@
 //! 不缓冲、不限时，Agent 协议会用到），第 2 步实现转发时不得另起一套。
 
 use super::languages::Languages;
-use super::manifest::{Manifest, ManifestError};
+use super::manifest::{Manifest, ManifestError, Runtime};
 use super::provides::Provides;
 use crate::l10n::text;
 
@@ -20,6 +20,26 @@ pub struct Capability {
     /// 是不是高权限能力（ADR-0053 的“高权限能力”）：使用方连上它要主人确认。第三方能力不在这张表里，
     /// 按提供方算——提供方申请了 ADR-0036 的任一级高权限，或者它是 Agent 插件，就算高权限。
     pub high_privilege: bool,
+    /// 托管形态（ADR-0080）：核心不执行，交给提供方。要挂目录的，提供方在 `provides.<名字>.mount`
+    /// 写挂载点；不是托管能力的写了 `mount` 不合法。
+    pub hosted: Option<HostedForm>,
+}
+
+/// 托管能力交给提供方的目录（`<核心数据目录>/hosted/<能力名>/`，每个插件一个子目录）怎么挂。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HostedForm {
+    /// 能写在清单 `runtime` 里的形态；只能被 `requires`/`wants` 的为空。
+    pub runtime: Option<Runtime>,
+    /// 包里交给提供方的目录取自哪个清单字段；没有包内目录的为空。
+    pub package_dir: Option<&'static str>,
+    /// 交给提供方的目录怎么挂；不挂目录的托管形态（提供方只靠清单字段干活）为空，这时提供方不写 `mount`。
+    pub mount: Option<HostedMount>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostedMount {
+    ReadOnly,
+    ReadWrite,
 }
 
 /// 提供方要不要声明签发和吊销凭据的命令（ADR-0053）。
@@ -39,6 +59,7 @@ pub const MODELS: Capability = Capability {
     interface: "OpenAI 兼容 API（provides.models.apis），凭据按使用方隔离",
     credentials: Credentials::Required,
     high_privilege: false,
+    hosted: None,
 };
 
 /// 出网代理（ADR-0039）：没有使用方声明，申请了 `network.egress` 的插件都经它，不能写在 requires/wants 里。
@@ -48,6 +69,7 @@ pub const EGRESS_PROXY: Capability = Capability {
     interface: "HTTP 代理：出口设置在提供方（provides.egress_proxy）",
     credentials: Credentials::None,
     high_privilege: false,
+    hosted: None,
 };
 
 /// 种子下载器：Flood、Prowlarr 这些使用方连它。
@@ -56,6 +78,7 @@ pub const TORRENT_CLIENT: Capability = Capability {
     interface: "qBittorrent Web API v2（/api/v2/）",
     credentials: Credentials::None,
     high_privilege: false,
+    hosted: None,
 };
 
 /// 媒体服务器：Seerr 这些使用方连它，凭据是每个使用方一把的 API key。
@@ -64,10 +87,45 @@ pub const JELLYFIN: Capability = Capability {
     interface: "Jellyfin 的 HTTP API",
     credentials: Credentials::Required,
     high_privilege: false,
+    hosted: None,
+};
+
+/// 静态网页托管（ADR-0080）：HTTP 静态文件语义，按 `X-Wonton-Plugin` 选子目录。
+pub const STATIC_WEB: Capability = Capability {
+    name: "static_web",
+    interface: "HTTP 静态文件（RFC 9110 的 GET/HEAD、条件请求、Range），站点根是挂载点下的 <X-Wonton-Plugin>/",
+    credentials: Credentials::None,
+    high_privilege: false,
+    hosted: Some(HostedForm {
+        runtime: Some(Runtime::StaticWeb),
+        package_dir: Some("static_web.root"),
+        mount: Some(HostedMount::ReadOnly),
+    }),
+};
+
+/// 静态网页的数据存储（ADR-0080）：WebDAV 整文件读写的子集。
+pub const WEB_STORAGE: Capability = Capability {
+    name: "web_storage",
+    interface: "WebDAV（RFC 4918）整文件子集：GET/HEAD/PUT/DELETE/MKCOL/PROPFIND（Depth 0、1）加 RFC 9110 条件请求；\
+                每个插件 64 MiB、1024 个文件、单文件 8 MiB，超了回 507",
+    credentials: Credentials::None,
+    high_privilege: false,
+    hosted: Some(HostedForm {
+        runtime: None,
+        package_dir: None,
+        mount: Some(HostedMount::ReadWrite),
+    }),
 };
 
 /// 全部核心定义的能力。加一项要改核心、发版：第三方插件作者不能自己发明不带 `x-` 的能力。
-pub const ALL: &[Capability] = &[MODELS, EGRESS_PROXY, TORRENT_CLIENT, JELLYFIN];
+pub const ALL: &[Capability] = &[
+    MODELS,
+    EGRESS_PROXY,
+    TORRENT_CLIENT,
+    JELLYFIN,
+    STATIC_WEB,
+    WEB_STORAGE,
+];
 
 pub fn lookup(name: &str) -> Option<&'static Capability> {
     ALL.iter().find(|capability| capability.name == name)
@@ -205,6 +263,25 @@ fn validate_provides(provides: &Provides, langs: &Languages) -> Result<(), Manif
                 "plugin-capability-port-zero",
                 &[("capability", name.as_str().into())],
             )));
+        }
+        let hosted = lookup(name)
+            .and_then(|capability| capability.hosted)
+            .and_then(|hosted| hosted.mount);
+        match (&service.mount, hosted) {
+            (None, Some(_)) => {
+                return Err(ManifestError::Invalid(format!(
+                    "provides.{name}.mount 必填：托管能力要声明核心把目录挂到哪里"
+                )));
+            }
+            (Some(_), None) => {
+                return Err(ManifestError::Invalid(format!(
+                    "provides.{name}.mount 只能写在要挂目录的托管能力上"
+                )));
+            }
+            (Some(mount), Some(_)) => {
+                super::manifest_agent::validate_mount(&format!("provides.{name}.mount"), mount)?;
+            }
+            (None, None) => {}
         }
         let required = matches!(
             lookup(name).map(|capability| capability.credentials),
