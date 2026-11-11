@@ -28,16 +28,17 @@ extension ConnectionNotice {
 
     fileprivate var isShort: Bool {
         switch self {
-        case .waitingForNetwork, .connecting, .updating: true
-        case .serverOffline, .unreachable, .deviceRejected, .versionMismatch: false
+        case .waitingForNetwork, .updating: true
+        case .connecting, .serverOffline, .unreachable, .deviceRejected, .versionMismatch: false
         }
     }
 
-    /// 能重试时给出是否正在重试。
+    /// 以核心通知为准，避免 HomeStatus.Connecting 掩盖超时后恢复的重试入口。
     var retrying: Bool? {
         switch self {
         case let .serverOffline(retrying), let .unreachable(retrying): retrying
-        case .waitingForNetwork, .connecting, .updating, .deviceRejected, .versionMismatch: nil
+        case .connecting: true
+        case .waitingForNetwork, .updating, .deviceRejected, .versionMismatch: nil
         }
     }
 }
@@ -66,39 +67,55 @@ enum ConnectionQualityHint: Equatable {
 
 extension WontonBarStatus {
     /// 同一时刻只显示一条：核心的通知优先，没有通知且质量差时轮到轻提示。
-    init<Line: View>(home: HomeViewModel, @ViewBuilder line: (ConnectionNotice) -> Line) {
+    init<Line: View>(home: HomeViewModel, recovered: Bool = false, @ViewBuilder line: (ConnectionNotice) -> Line) {
         let hint = ConnectionQualityHint.current(
             connected: home.status == .connected,
             notice: home.notice,
             quality: home.details.quality,
             pathRelay: home.path?.relay
         )
+        let connected = recovered && home.notice == nil ? String(localized: .connectionConnected) : nil
         self.init(
-            title: home.notice.flatMap { $0.isShort ? $0.sentence : nil } ?? hint?.sentence,
-            subtitle: home.notice?.sentence ?? hint?.sentence,
+            title: home.notice.flatMap { $0.isShort ? $0.sentence : nil }
+                ?? connected ?? hint?.sentence,
+            subtitle: home.notice?.sentence ?? connected ?? hint?.sentence,
             line: home.notice.flatMap { $0.isShort ? nil : AnyView(line($0)) }
         )
     }
 }
 
-/// 长时间连不上：一句话和下一步。不用红色：还在自动重试，也不是主人做错了什么；要主人动手的用警告色。
+/// 进度与失败原因互斥，等待结束后由核心重新给出原因和下一步。
 struct ConnectionLine: View {
     let notice: ConnectionNotice
     let retry: () -> Void
     let open: (SettingsRoute) -> Void
     @Environment(\.wontonColors) private var colors
 
+    private var retrying: Bool { notice.retrying == true }
+
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            Text(notice.sentence)
-                .wontonText(WontonTheme.typography.body)
-                .foregroundStyle(Color(notice == .deviceRejected ? colors.warning : colors.textPrimary))
+            if retrying {
+                HStack(spacing: WontonTheme.spacing.s8) {
+                    ProgressView().controlSize(.small)
+                    Text(.connectionNoticeRetrying)
+                        .wontonText(WontonTheme.typography.body)
+                        .foregroundStyle(Color(colors.textPrimary))
+                }
+            } else {
+                Text(notice.sentence)
+                    .wontonText(WontonTheme.typography.body)
+                    .foregroundStyle(Color(notice == .deviceRejected ? colors.warning : colors.textPrimary))
+            }
             HStack(spacing: WontonTheme.spacing.s8) {
                 if notice == .deviceRejected {
                     Button(.connectionPairAgain) { open(.pairing) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 } else {
-                    if let retrying = notice.retrying { RetryButton(retrying: retrying, retry: retry) }
+                    if notice.retrying == false {
+                        Button(.commonRetry, action: retry)
+                            .buttonStyle(WontonButtonStyle(kind: .secondary))
+                    }
                     Button(.connectionViewConnection) { open(.server) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
