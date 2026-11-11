@@ -4,6 +4,8 @@ import WontonClient
 extension EnvironmentValues {
     /// 根页面左上角打开侧边栏的按钮；没有时不显示。
     @Entry var wontonOpenSidebar: (() -> Void)?
+    /// 侧边栏的收起拖动刚被认出来：这次触点抬手时不再算点按（左滑收起不误进应用）。
+    @Entry var wontonSidebarTapCancelled: Bool = false
 }
 
 /// 侧边栏打开时把主界面整页推到右边、缩小、变圆角，只露出一条（学 ChatGPT、Grok）。
@@ -15,6 +17,7 @@ struct SidebarContainer<Main: View, Panel: View>: View {
     @ViewBuilder let panel: Panel
     @State private var drag: CGFloat = 0
     @State private var isDragging = false
+    @State private var tapCancelled = false
     @Environment(\.wontonColors) private var colors
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -28,6 +31,7 @@ struct SidebarContainer<Main: View, Panel: View>: View {
             ZStack(alignment: .leading) {
                 Color(colors.surfaceSubtle).ignoresSafeArea()
                 panel
+                    .environment(\.wontonSidebarTapCancelled, tapCancelled)
                     .frame(width: width)
                     .offset(x: -width * 0.18 * (1 - progress))
                     .opacity(0.3 + 0.7 * progress)
@@ -75,12 +79,21 @@ struct SidebarContainer<Main: View, Panel: View>: View {
                 guard abs(value.translation.width) > abs(value.translation.height) || isDragging else { return }
                 isDragging = true
                 drag = value.translation.width
+                // 横向拖动一旦被认作收起手势，这次触点抬手时不再算点按： simultaneousGesture 不拦按钮，
+                // 抬手的点按由面板那侧看这个标记自己放弃。
+                tapCancelled = true
             }
             .onEnded { value in
                 guard isDragging else { return }
                 isDragging = false
                 let projected = (isOpen ? width : 0) + value.predictedEndTranslation.width
                 set(open: projected > width / 2)
+                // 抬手时按钮动作和拖动的 onEnded 先后不定：留一小段窗口让被取消的点按落进来；
+                // 窗口过了点按照常。拖动还在走时标记会被 onChanged 立刻置回。
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(350))
+                    tapCancelled = false
+                }
             }
     }
 
@@ -100,7 +113,14 @@ struct SidebarPanel: View {
     let navigate: (SidebarDestination) -> Void
     @Environment(TabsModel.self) private var tabs
     @Environment(\.wontonColors) private var colors
+    @Environment(\.wontonSidebarTapCancelled) private var tapCancelled
     @State private var pin: TabRef?
+
+    /// 收起拖动认出来之后的抬手不算点按：左滑收起侧边栏时不误进应用；轻点和竖滑照常。
+    private func openDestination(_ destination: SidebarDestination) {
+        guard !tapCancelled else { return }
+        navigate(destination)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -112,14 +132,14 @@ struct SidebarPanel: View {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                     SidebarRow(title: TabText.chat, selected: current == .chat) {
                         (current == .chat ? WontonIcon.chatFill : WontonIcon.chat).view()
-                    } action: { navigate(.chat) }
+                    } action: { openDestination(.chat) }
                     SidebarRow(
                         title: String(localized: .storeTitle),
                         badge: Int(sidebar.updates),
                         selected: false
                     ) {
                         WontonIcon.store.view()
-                    } action: { navigate(.store) }
+                    } action: { openDestination(.store) }
                     myApps
                 }
                 .padding(.horizontal, WontonTheme.spacing.s12)
@@ -161,7 +181,7 @@ struct SidebarPanel: View {
                 .foregroundStyle(Color(colors.textSecondary))
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
-            Button(String(localized: .sidebarAll)) { navigate(.allApps) }
+            Button(String(localized: .sidebarAll)) { openDestination(.allApps) }
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.accentInk))
                 .buttonStyle(.plain)
@@ -179,14 +199,14 @@ struct SidebarPanel: View {
             ) {
                 PluginIconView(icon: app.icon, size: 28, model: plugins)
             } action: {
-                navigate(.app(app))
+                openDestination(.app(app))
             }
             .contextMenu { pinMenu(app) }
         }
         if sidebar.moreApps {
             SidebarRow(title: String(localized: .sidebarAllApps), selected: current == .apps) {
                 WontonIcon.apps.view()
-            } action: { navigate(.allApps) }
+            } action: { openDestination(.allApps) }
         }
     }
 
@@ -214,7 +234,7 @@ struct SidebarPanel: View {
 
     private var footer: some View {
         HStack(spacing: WontonTheme.spacing.s12) {
-            Button { navigate(.settings) } label: {
+            Button { openDestination(.settings) } label: {
                 WontonIcon.settings.view()
                     .foregroundStyle(Color(colors.textPrimary))
                     .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
@@ -233,7 +253,7 @@ struct SidebarPanel: View {
             .buttonStyle(.plain)
             .accessibilityLabel(TabText.settings)
             Spacer(minLength: 0)
-            Button { navigate(.newChat) } label: {
+            Button { openDestination(.newChat) } label: {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     WontonIcon.compose.view(size: WontonTheme.size.iconSmall)
                     Text(.chatNewChat).wontonText(WontonTheme.typography.itemTitle)

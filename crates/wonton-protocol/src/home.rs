@@ -48,13 +48,29 @@ pub enum DeviceInvite {
     },
 }
 
+/// 配对进行到哪一步：类别由核心给，壳据此写“还在连接”一行的话。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PairingStage {
+    /// 正在建立到服务器的连接（连中继、握手、交出配对码），服务器还没有收到码。
+    Connecting,
+    /// 配对码已经交出，正在等服务器登记并回应。
+    Confirming,
+}
+
 /// 扫码配对的进展。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PairingStatus {
-    /// 正在连服务器、出示配对码。
-    InProgress,
+    /// 正在连服务器、出示配对码。`elapsed_ms` 是这一次已经进行的时间，核心按秒推进；壳按它决定何时补
+    /// “还在连接”一行和取消按钮，不在壳里自己计时。取消走 [`crate::Action::CancelPairing`]，
+    /// 进行中的每一步都能取消：本机只是放弃这一次尝试，服务端按设备幂等登记，同一个码再配对仍能配上。
+    InProgress {
+        elapsed_ms: u64,
+        stage: PairingStage,
+    },
     Failed {
         reason: PairingFailure,
         /// 原始说明，壳只在“详情”里显示。被服务器拒绝的几类（`Rejected`、`Expired`、`Closed`）是服务器按它主人的语言

@@ -535,10 +535,13 @@
     <string name="pairing_instructions">在家用區域網路裡，用瀏覽器開啟伺服器的 IP 位址（安裝時終端裡會給出），頁面上有配對 QR 碼。</string>
     <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
     <string name="pairing_paste_placeholder">貼上配對碼</string>
+    <string name="pairing_paste_label">配對碼</string>
     <!-- Button under the paste field: pair with the code. -->
     <string name="pairing_submit">配對</string>
     <!-- Shown next to a spinner while pairing is in progress. -->
     <string name="pairing_in_progress">正在配對…</string>
+    <string name="pairing_still_connecting">還在連線…</string>
+    <string name="pairing_still_confirming">還在等伺服器確認…</string>
     <!-- Label of the field for this device's name. -->
     <string name="pairing_device_name">這台裝置的名字</string>
     <!-- Failure title when the server rejected the pairing code. -->

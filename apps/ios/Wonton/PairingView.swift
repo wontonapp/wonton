@@ -44,7 +44,8 @@ struct PairingView: View {
                     PairingProgress(
                         status: pairing,
                         retry: lastCode.map { code in { pair(code) } },
-                        back: leaveFailure
+                        back: leaveFailure,
+                        cancel: nil
                     )
                 } else {
                     pairingForm
@@ -83,7 +84,10 @@ struct PairingView: View {
             if phase == .active { camera = .current }
         }
         .onChange(of: model.viewModel.pairing) { old, new in
-            if !model.servers.adding, old == .inProgress, new == nil { onPaired() }
+            // 配上才会连上服务器；取消也回到没有配对，但 serverId 还是空，不当作配上了。
+            if !model.servers.adding, inProgress(old), new == nil, model.viewModel.serverId != nil {
+                onPaired()
+            }
         }
     }
 
@@ -95,9 +99,14 @@ struct PairingView: View {
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
-            VStack(spacing: WontonTheme.spacing.s8) {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                Text(.pairingPasteLabel)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .accessibilityHidden(true)
                 TextField(String(localized: .pairingPastePlaceholder), text: $model.pairingCode, axis: .vertical)
                     .accessibilityIdentifier("pairing-code")
+                    .accessibilityLabel(String(localized: .pairingPasteLabel))
                     .textFieldStyle(.plain)
                     .font(model.pairingCode.isEmpty ? nil : .caption.monospaced())
                     .focused($isEditingCode)
@@ -125,9 +134,14 @@ struct PairingView: View {
                     .accessibilityIdentifier("pairing-refusal")
             }
             if let pairing = model.viewModel.pairing {
-                PairingProgress(status: pairing, retry: nil, back: leaveFailure)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("pairing-progress")
+                PairingProgress(
+                    status: pairing,
+                    retry: nil,
+                    back: leaveFailure,
+                    cancel: { model.send(.cancelPairing) }
+                )
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("pairing-progress")
             }
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 Text(.pairingDeviceName)
@@ -178,11 +192,17 @@ struct PairingView: View {
     }
 
     private var isPairing: Bool {
-        model.viewModel.pairing == .inProgress
+        inProgress(model.viewModel.pairing)
     }
 
     private var hasFailedPairing: Bool {
         if case .failed? = model.viewModel.pairing { return true }
+        return false
+    }
+
+    /// 配对正在进行中：进展带上了时间和步骤，判断不再用相等比较。
+    private func inProgress(_ status: PairingStatus?) -> Bool {
+        if case .inProgress = status { return true }
         return false
     }
 
@@ -245,16 +265,37 @@ private struct PairingProgress: View {
     /// 用最近一次的码再试一次；只对可能是暂时的失败显示。
     let retry: (() -> Void)?
     let back: () -> Void
+    /// 取消这次配对；只在“正在配对”的进展里用。
+    let cancel: (() -> Void)?
     @Environment(\.wontonColors) private var colors
+
+    /// 壳的显示门槛：等了这么久还没好就补“还在连接”和取消；时间本身来自核心的进展。
+    private static let slowAfterMs: UInt64 = 5_000
 
     var body: some View {
         switch status {
-        case .inProgress:
-            HStack(spacing: WontonTheme.spacing.s12) {
-                ProgressView()
-                Text(.pairingInProgress).wontonText(WontonTheme.typography.body)
+        case let .inProgress(elapsed, stage):
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                HStack(spacing: WontonTheme.spacing.s12) {
+                    ProgressView()
+                    Text(.pairingInProgress).wontonText(WontonTheme.typography.body)
+                }
+                .foregroundStyle(Color(colors.textPrimary))
+                if elapsed >= Self.slowAfterMs {
+                    HStack(spacing: WontonTheme.spacing.s12) {
+                        Text(stage == .connecting ? .pairingStillConnecting : .pairingStillConfirming)
+                            .wontonText(WontonTheme.typography.supporting)
+                            .foregroundStyle(Color(colors.textSecondary))
+                        if let cancel {
+                            Button(action: cancel) {
+                                Text(.commonCancel)
+                            }
+                            .buttonStyle(.plain)
+                            .frame(minHeight: WontonTheme.size.target)
+                        }
+                    }
+                }
             }
-            .foregroundStyle(Color(colors.textPrimary))
         case let .failed(reason, message):
             WontonNotice(
                 icon: .warning,

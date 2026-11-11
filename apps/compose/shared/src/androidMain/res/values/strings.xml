@@ -603,10 +603,16 @@
     <string name="pairing_instructions">On your home network, open the server\'s IP address in a browser (the installer prints it), then scan the pairing QR code on that page.</string>
     <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
     <string name="pairing_paste_placeholder">Paste the pairing code</string>
+    <!-- Persistent label above the paste field; also the field's accessibility label. -->
+    <string name="pairing_paste_label">Pairing code</string>
     <!-- Button under the paste field: pair with the code. -->
     <string name="pairing_submit">Pair</string>
     <!-- Shown next to a spinner while pairing is in progress. -->
     <string name="pairing_in_progress">Pairing…</string>
+    <!-- Shown after a while under the spinner while the pairing request has not reached the server yet. -->
+    <string name="pairing_still_connecting">Still connecting…</string>
+    <!-- Shown after a while under the spinner once the pairing request has reached the server and it hasn't answered. -->
+    <string name="pairing_still_confirming">Still waiting for the server…</string>
     <!-- Label of the field for this device's name. -->
     <string name="pairing_device_name">This device\'s name</string>
     <!-- Failure title when the server rejected the pairing code. -->

@@ -535,10 +535,13 @@
     <string name="pairing_instructions">自宅のローカルネットワークで、ブラウザーでサーバーのIPアドレス（インストール時にターミナルに表示されます）を開くと、ペアリング用QRコードが表示されます。</string>
     <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
     <string name="pairing_paste_placeholder">ペアリングコードをペースト</string>
+    <string name="pairing_paste_label">ペアリングコード</string>
     <!-- Button under the paste field: pair with the code. -->
     <string name="pairing_submit">ペアリング</string>
     <!-- Shown next to a spinner while pairing is in progress. -->
     <string name="pairing_in_progress">ペアリング中…</string>
+    <string name="pairing_still_connecting">まだ接続中…</string>
+    <string name="pairing_still_confirming">まだサーバーの確認待ち…</string>
     <!-- Label of the field for this device's name. -->
     <string name="pairing_device_name">このデバイスの名前</string>
     <!-- Failure title when the server rejected the pairing code. -->
