@@ -77,11 +77,11 @@ struct ChatPanelHost<Content: View>: View {
     @State private var buzzes = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.wontonColors) private var colors
-    static let mainPeekChatFraction: CGFloat = 0.18
+    private static var mainPeekChatFraction: CGFloat { 0.18 }
     /// 房间第 1 级让面板占约 55%，聊天仍留在上方约 45%。
-    static let roomPeekChatFraction: CGFloat = 0.45
-    static let pullThreshold: CGFloat = 80
-    static let pushThreshold: CGFloat = 50
+    private static var roomPeekChatFraction: CGFloat { 0.45 }
+    private static var pullThreshold: CGFloat { 80 }
+    private static var pushThreshold: CGFloat { 50 }
 
     var body: some View {
         GeometryReader { geometry in
@@ -134,7 +134,7 @@ struct ChatPanelHost<Content: View>: View {
         ChatPull(
             enabled: level == .closed && !blocked,
             changed: { distance in pullChanged(distance) },
-            ended: { distance, velocity in settle(distance: distance, velocity: velocity, height) }
+            ended: { distance, velocity in settle(distance: distance, velocity: velocity, height: height) }
         )
     }
 
@@ -142,11 +142,11 @@ struct ChatPanelHost<Content: View>: View {
 
     private func base(_ level: PanelLevel, _ height: CGFloat) -> CGFloat {
         switch level {
-        case .closed: 0
+        case .closed: return 0
         case .peek:
             let chatFraction = edge == .top ? Self.mainPeekChatFraction : Self.roomPeekChatFraction
             return height * (1 - chatFraction) - (edge == .top ? safeTop : 0)
-        case .full: height
+        case .full: return height
         }
     }
 
@@ -163,7 +163,7 @@ struct ChatPanelHost<Content: View>: View {
         arm(distance: drag, height: screenHeight)
     }
 
-    private func settle(distance: CGFloat, velocity: CGFloat, _ height: CGFloat) {
+    private func settle(distance: CGFloat, velocity: CGFloat, height: CGFloat) {
         move(to: target(distance: distance + velocity * 0.15, height: height))
     }
 
