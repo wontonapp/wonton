@@ -136,6 +136,8 @@ pub struct Chosen {
 
 struct Slot {
     caller: PluginId,
+    /// 这张卡片的发送方：默认是通知房间，Bot 钉页的同意是它自己的房间。
+    notifier: Arc<dyn Notifier>,
     /// 这张卡片能打开放行时段时，时段管哪个插件。
     scope: Option<String>,
     /// 见 [`Ticket::window`]。
@@ -188,6 +190,16 @@ impl Confirmations {
         }
     }
 
+    /// 默认的卡片发送方（通知房间）。
+    pub(super) fn default_notifier(&self) -> &dyn Notifier {
+        &*self.notifier
+    }
+
+    /// 同 [`Self::default_notifier`]，给要留着发送方的调用。
+    pub(super) fn default_notifier_arc(&self) -> Arc<dyn Notifier> {
+        self.notifier.clone()
+    }
+
     pub fn ttl(&self) -> Duration {
         self.ttl
     }
@@ -198,8 +210,19 @@ impl Confirmations {
 
     /// 请主人确认，等到主人回答或者过期。确认了返回 [`Ticket`]，执行完要调 [`Self::finish`]。
     pub async fn ask(&self, caller: &PluginId, draft: Draft) -> Result<Ticket, Refusal> {
-        let (card, answered) = self.open(caller, draft)?;
-        let chosen = self.deliver(&card, answered).await?;
+        self.ask_with(self.notifier.clone(), caller, draft).await
+    }
+
+    /// 同 [`Self::ask`]，卡片用别的发送方：Bot 往面板钉页的同意发在 Bot 自己的房间里。
+    /// 之后的更新仍走默认的通知房间，它按卡片发出去的房间编辑。
+    pub async fn ask_with(
+        &self,
+        notifier: Arc<dyn Notifier>,
+        caller: &PluginId,
+        draft: Draft,
+    ) -> Result<Ticket, Refusal> {
+        let (card, answered) = self.open(notifier.clone(), caller, draft)?;
+        let chosen = self.deliver(&*notifier, &card, answered).await?;
         self.publish(&card.id).await;
         match chosen.answer {
             answer @ (Answer::Approve | Answer::ApproveWider | Answer::AllowWindow) => {
@@ -223,13 +246,17 @@ impl Confirmations {
                 Err(Refusal::Superseded)
             }
             // 不认识的回答到不了这里（`answer` 挡掉了）；真到了也不算同意。
-            Answer::Reject | Answer::Unknown => Err(Refusal::Rejected),
+            Answer::Reject | Answer::Unknown => {
+                self.publish(&card.id).await;
+                Err(Refusal::Rejected)
+            }
         }
     }
 
     /// 登记一张等回答的卡片，还没发出去。
     pub(super) fn open(
         &self,
+        notifier: Arc<dyn Notifier>,
         caller: &PluginId,
         draft: Draft,
     ) -> Result<(ConfirmationCard, oneshot::Receiver<Chosen>), Refusal> {
@@ -263,6 +290,7 @@ impl Confirmations {
         }
         let slot = Slot {
             caller: caller.clone(),
+            notifier,
             scope: draft.scope,
             released_by: None,
             card: card.clone(),
@@ -279,13 +307,14 @@ impl Confirmations {
     /// 把 [`Self::open`] 登记的卡片发给主人，等回答。回答之后卡片的变化由调用方发布。
     pub(super) async fn deliver(
         &self,
+        notifier: &dyn Notifier,
         card: &ConfirmationCard,
         answered: oneshot::Receiver<Chosen>,
     ) -> Result<Chosen, Refusal> {
         let expires =
             Duration::from_millis(card.expires_at_ms.saturating_sub(now_ms(SystemTime::now())));
         let deadline = tokio::time::Instant::now() + expires;
-        let handle = match tokio::time::timeout_at(deadline, self.notifier.post(card)).await {
+        let handle = match tokio::time::timeout_at(deadline, notifier.post(card)).await {
             Ok(Ok(handle)) => handle,
             Ok(Err(e)) => {
                 self.lock().slots.remove(&card.id);
@@ -499,7 +528,13 @@ impl Confirmations {
         let Some((handle, card)) = current else {
             return;
         };
-        match self.notifier.update(&handle, &card).await {
+        let notifier = self
+            .lock()
+            .slots
+            .get(id)
+            .map(|slot| slot.notifier.clone())
+            .unwrap_or_else(|| self.notifier.clone());
+        match notifier.update(&handle, &card).await {
             Ok(None) => {}
             Ok(Some(moved)) => {
                 tracing::warn!(confirmation = %id, "原房间不能用了，确认卡片重发到了当前的房间");

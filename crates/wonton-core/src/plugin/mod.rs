@@ -76,6 +76,7 @@ pub mod package;
 pub mod package_archive;
 pub mod package_files;
 mod permissions_switch;
+pub mod pins;
 pub mod preinstall;
 pub mod privileges;
 pub mod provides;

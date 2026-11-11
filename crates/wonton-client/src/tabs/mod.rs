@@ -14,9 +14,9 @@ use tokio::sync::watch;
 use url::Url;
 use wonton_matrix::{LayoutContent, MatrixSession, OwnedRoomId};
 use wonton_protocol::{
-    Action, CoreError, HomeStatus, HomeViewModel, LayoutSettings, MAX_PANEL_PAGES, PanelEntry,
-    PanelItem, PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel, RoomPanel,
-    TabDisplayChoice, TabIcon, TabLoadFailure, TabRef, TabsProblem, TabsViewModel,
+    Action, BotPanelPin, CoreError, HomeStatus, HomeViewModel, LayoutSettings, MAX_PANEL_PAGES,
+    PanelEntry, PanelItem, PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel,
+    RoomPanel, TabDisplayChoice, TabIcon, TabLoadFailure, TabRef, TabsProblem, TabsViewModel,
 };
 
 use crate::home::HomeLink;
@@ -38,6 +38,7 @@ use reload::*;
 
 mod actions;
 mod panel;
+mod pins;
 mod sync;
 
 #[cfg(test)]
@@ -80,11 +81,17 @@ struct TabsState {
     entry_blocked: bool,
     /// 卸载插件时从打开房间的面板里拿掉的插件：recompute 收尾时把房间账号数据也清一遍。
     room_panel_removed: Vec<String>,
+    /// 服务器上 Bot 钉的页面（全部位置）。和用户自己放的合在视图里，也占 5 页的上限。
+    bot_pins: Vec<BotPanelPin>,
+    /// 核心地址：MCP Apps 的宿主页按它拼。
+    core_url: Option<Url>,
 }
 
 pub(crate) struct TabsLink {
     runtime: Handle,
     home: watch::Receiver<HomeViewModel>,
+    /// 连家里的服务器要的地址和代理。
+    home_link: Arc<HomeLink>,
     plugins: Arc<PluginsLink>,
     plugins_view: watch::Receiver<PluginsViewModel>,
     path: PathBuf,
@@ -170,12 +177,15 @@ impl TabsLink {
             room_panel_selected: None,
             entry_blocked: false,
             room_panel_removed: Vec::new(),
+            bot_pins: Vec::new(),
+            core_url: home.core_url(),
         };
         let room_view = watch::Sender::new(None);
         let sync_problem = watch::Sender::new(None);
         let link = Arc::new(Self {
             runtime: runtime.clone(),
             home: home.subscribe(),
+            home_link: home,
             plugins_view: plugins.subscribe(),
             plugins,
             path,
@@ -224,6 +234,11 @@ impl TabsLink {
             Action::RemovePanelPage { scope, tab } => self.remove_panel_page(scope, tab),
             Action::MovePanelPage { scope, tab, index } => self.move_panel_page(scope, tab, index),
             Action::SelectPanelPage { scope, tab } => self.select_panel_page(scope, tab),
+            Action::SetBotPinConsent {
+                plugin_id,
+                bot,
+                allowed,
+            } => self.set_bot_consent(plugin_id, bot, allowed),
             Action::PinCurrentPage {
                 url,
                 title,
@@ -238,6 +253,28 @@ impl TabsLink {
                 reason: "不是底栏操作".to_owned(),
             }),
         }
+    }
+
+    /// 收回或给回一个 Bot 往主面板钉页的同意：写服务器，成了才更新本机。
+    pub(super) fn set_bot_consent(
+        &self,
+        plugin_id: String,
+        bot: String,
+        allowed: bool,
+    ) -> Result<(), CoreError> {
+        let weak = lock(&self.weak).clone();
+        self.runtime.spawn(async move {
+            let Some(link) = weak.upgrade() else { return };
+            if let Err(error) = link.put_bot_consent(&plugin_id, &bot, allowed).await {
+                let message = error.to_string();
+                link.runtime_change(|state, _| {
+                    state.problem = Some(TabsProblem { message });
+                    Ok(())
+                })
+                .ok();
+            }
+        });
+        Ok(())
     }
 
     pub(crate) fn room_view(&self) -> Option<Arc<RoomPanelView>> {
@@ -266,6 +303,7 @@ impl TabsLink {
         let _writing = lock(&self.writing);
         let (plugins, home, open_room) = self.inputs();
         let mut state = lock(&self.state).clone();
+        state.core_url = self.home_link.core_url();
         // 换了房间：上次看的那页、入口状态和红点都是那个房间的，清掉。
         let room_changed = match (&state.open_room, &open_room) {
             (Some((old, _)), Some((new, _))) => old != new,
@@ -339,6 +377,7 @@ impl TabsLink {
         let (plugins, home, open_room) = self.inputs();
         let previous = lock(&self.state).clone();
         let mut state = previous.clone();
+        state.core_url = self.home_link.core_url();
         state.open_room = open_room;
         refresh_state(&mut state, &plugins, &home);
         change(&mut state, &plugins)?;
@@ -377,6 +416,7 @@ impl TabsLink {
         let _writing = lock(&self.writing);
         let (plugins, home, open_room) = self.inputs();
         let mut state = lock(&self.state).clone();
+        state.core_url = self.home_link.core_url();
         state.open_room = open_room;
         let config_changed = refresh_state(&mut state, &plugins, &home);
         change(&mut state, &plugins)?;
@@ -406,11 +446,7 @@ impl TabsLink {
                 room_id: room_id.to_string(),
             };
             RoomPanelView {
-                panel: panel
-                    .pages
-                    .iter()
-                    .map(|entry| build_panel_item(&state, entry, &scope, plugins))
-                    .collect(),
+                panel: room_panel_items(&state, panel, &scope, plugins),
                 selected: state.room_panel_selected.clone(),
                 blocked: state.entry_blocked,
             }

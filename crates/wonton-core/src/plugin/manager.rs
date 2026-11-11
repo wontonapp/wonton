@@ -315,6 +315,18 @@ impl PluginManager {
         plugins.get(id).map(|entry| entry.title.clone())
     }
 
+    /// 一个 Bot 的显示名：清单 `bot.display_name`，没写时用插件标题。
+    pub fn bot_name(&self, id: &PluginId, _bot: &str) -> Option<LocalizedText> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        let entry = plugins.get(id)?;
+        entry
+            .listed
+            .as_ref()
+            .and_then(|listed| listed.manifest.bot.as_ref())
+            .and_then(|bot| bot.display_name.clone())
+            .or_else(|| Some(entry.title.clone()))
+    }
+
     /// 插件有没有网页：通知里带 `path` 的前提。
     pub fn has_webui(&self, id: &PluginId) -> bool {
         self.plugins
@@ -740,6 +752,9 @@ impl PluginManager {
                 self.lan.clear_degraded(id);
                 self.plugins.write().expect("插件表锁中毒").remove(id);
                 self.tool_policy().forget_plugin(id.as_str());
+                if let Err(e) = self.store.pins().forget_plugin(id, purge) {
+                    tracing::warn!(plugin = %id, error = %e, "清掉 Bot 钉在面板上的页面失败");
+                }
                 self.changed();
                 tracing::info!(plugin = %id, "插件已卸载");
                 Ok(report)

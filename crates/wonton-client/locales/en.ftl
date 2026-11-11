@@ -628,6 +628,9 @@ plugin-now-start-failed = Could not start the update: { $error }
 
 # Panel (ADR-0052) errors. Shown as the reason of a CoreError, or as a TabsProblem message.
 panel-full = The panel is full; remove a page first.
+panel-pins-not-connected = Not connected to the home server yet.
+panel-pins-api-failed = { $status }: { $body }
+
 panel-page-already-there = This page is already in the panel.
 panel-page-not-there = This page isn't in the panel.
 panel-page-unsupported = Only app pages, pages inside an app, and https websites can go into the panel.

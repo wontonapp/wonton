@@ -25,13 +25,14 @@ impl Rig {
             method_rx,
         )
         .unwrap();
-        let plugins_link = PluginsLink::new(runtime.clone(), home_link, dir.path(), None);
+        let plugins_link = PluginsLink::new(runtime.clone(), home_link.clone(), dir.path(), None);
         let home = watch::Sender::new(home("old-server"));
         let plugins = watch::Sender::new(plugins("old-content"));
         let (panel_sender, panel_receiver) = watch::channel(None);
         let tabs = TabsLink {
             runtime,
             home: home.subscribe(),
+            home_link,
             plugins: plugins_link,
             plugins_view: plugins.subscribe(),
             path: dir.path().join(TABS_FILE),
@@ -53,6 +54,8 @@ impl Rig {
                 room_panel_selected: None,
                 entry_blocked: false,
                 room_panel_removed: Vec::new(),
+                bot_pins: Vec::new(),
+                core_url: None,
             }),
             writing: Mutex::new(()),
             session: watch::channel(None).1,
@@ -290,7 +293,7 @@ async fn added_pages_keep_order_and_duplicates_are_rejected() {
 #[tokio::test]
 async fn panel_holds_at_most_five_pages() {
     let rig = Rig::new();
-    for index in 0..5 {
+    for index in 0..4 {
         rig.tabs
             .dispatch(Action::AddPanelPage {
                 scope: main_scope(),
@@ -298,6 +301,12 @@ async fn panel_holds_at_most_five_pages() {
             })
             .unwrap();
     }
+    rig.tabs
+        .dispatch(Action::AddPanelPage {
+            scope: main_scope(),
+            tab: url_tab("https://example.com/fifth"),
+        })
+        .unwrap();
     let sixth = rig
         .tabs
         .dispatch(Action::AddPanelPage {
@@ -307,6 +316,72 @@ async fn panel_holds_at_most_five_pages() {
         .unwrap_err();
     assert!(matches!(sixth, CoreError::InvalidInput { .. }));
     assert_eq!(panel_tabs(&rig).len(), 5);
+}
+
+fn bot_pin(id: &str, tab: TabRef, attention: bool) -> wonton_protocol::BotPanelPin {
+    wonton_protocol::BotPanelPin {
+        id: id.to_owned(),
+        scope: main_scope(),
+        tab,
+        title: format!("Bot 的 {id}"),
+        attention,
+        plugin_id: "app.shared".to_owned(),
+        bot: "hermes".to_owned(),
+        name: "Hermes".to_owned(),
+    }
+}
+
+#[tokio::test]
+async fn bot_pinned_pages_come_after_user_pages_and_count_toward_the_limit() {
+    let rig = Rig::new();
+    rig.tabs
+        .dispatch(Action::AddPanelPage {
+            scope: main_scope(),
+            tab: page_tab(),
+        })
+        .unwrap();
+    {
+        let mut state = lock(&rig.tabs.state);
+        state.bot_pins = vec![
+            bot_pin("a", page_tab(), false),
+            bot_pin("b", url_tab("https://example.com/bot-1"), true),
+            bot_pin("c", url_tab("https://example.com/bot-2"), false),
+            bot_pin("d", url_tab("https://example.com/bot-3"), true),
+        ];
+    }
+    rig.tabs.recompute();
+    let view = rig.tabs.view();
+    // 和用户页同一个页面的那一项只画一次。
+    assert_eq!(view.panel.len(), 4);
+    assert_eq!(view.panel[0].source, wonton_protocol::PanelSource::User);
+    assert!(matches!(
+        view.panel[1].source,
+        wonton_protocol::PanelSource::Bot { .. }
+    ));
+    assert!(view.panel[1].attention);
+
+    rig.tabs
+        .dispatch(Action::AddPanelPage {
+            scope: main_scope(),
+            tab: url_tab("https://example.com/fifth"),
+        })
+        .unwrap();
+    let sixth = rig
+        .tabs
+        .dispatch(Action::AddPanelPage {
+            scope: main_scope(),
+            tab: url_tab("https://example.com/sixth"),
+        })
+        .unwrap_err();
+    assert!(matches!(sixth, CoreError::InvalidInput { .. }));
+
+    rig.tabs
+        .dispatch(Action::SelectPanelPage {
+            scope: main_scope(),
+            tab: url_tab("https://example.com/bot-3"),
+        })
+        .unwrap();
+    assert!(!rig.tabs.view().panel[1].attention);
 }
 
 #[tokio::test]

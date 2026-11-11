@@ -234,6 +234,46 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             get(super::bot_activity::get),
         )
         .route(
+            wonton_protocol::BOT_PANEL_PINS_PATH,
+            get(super::panel_pins::list),
+        )
+        .route(
+            &wonton_protocol::bot_panel_pin_path("{id}"),
+            delete(super::panel_pins::remove),
+        )
+        .route(
+            &wonton_protocol::bot_panel_pin_seen_path("{id}"),
+            post(super::panel_pins::seen),
+        )
+        .route(
+            &wonton_protocol::bot_panel_consent_path("{plugin_id}", "{bot}"),
+            put(super::panel_pins::consent),
+        )
+        .route(
+            &wonton_protocol::mcp_app_host_path("{pin}"),
+            get(super::mcp_apps::host),
+        )
+        .route(
+            wonton_protocol::MCP_APP_CALLS_PATH,
+            post(super::mcp_apps::call),
+        )
+        .route(
+            &wonton_protocol::mcp_app_call_path("{id}"),
+            get(super::mcp_apps::result),
+        )
+        .route(
+            wonton_protocol::MCP_APP_READ_PATH,
+            post(super::mcp_apps::read),
+        )
+        .route(
+            wonton_protocol::MCP_APP_TOOLS_PATH,
+            post(super::mcp_apps::tools),
+        )
+        .route(
+            wonton_protocol::MCP_APP_MESSAGE_PATH,
+            post(super::mcp_apps::message),
+        )
+        .route(
             wonton_protocol::ONBOARDING_PATH,
             get(onboarding::get).put(onboarding::put),
         )

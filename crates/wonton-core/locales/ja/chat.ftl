@@ -148,3 +148,13 @@ chat-mail-convert-failed = メールの HTML 本文をテキストに変換で�
 chat-mail-unknown-source = 送信元が不明、またはメール送信権限のないアプリからのメールを受信しました。誰にも配信していません。
 chat-mail-recipients-failed = アプリのメール受信者を更新できませんでした：{ $error }。家族の変更時かサーバーの再起動時に再試行します。
 chat-notify-rate-limited = { $plugin } の通知とメールが多すぎるため、一時停止しました。約{ $seconds }秒後に自動で再開します。
+# Bot がパネルにページをピン留めする（ADR-0052）。
+panel-pin-card-title = { $bot } がパネルにページを置こうとしています
+panel-pin-card-line = 許可すると、この Bot は以後メインパネルに確認なしでページを追加できます。設定で取り消せます。
+panel-pin-allowed = 許可しました
+panel-pin-bot-only = ページをピン留めできるのは Bot だけです。プラグイン { $plugin } に Bot の身元がありません
+panel-pin-bot-missing = Bot { $bot } の記録がありません
+panel-pin-full = パネルは満杯です（最大 { $max } ページ）。先にページを外してください
+panel-pin-already-asking = メインパネルへの確認カードがすでに回答待ちです
+panel-pin-matrix = Matrix に接続できません：{ $error }
+panel-pin-not-there = そのページはパネルにピン留めされていません

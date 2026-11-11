@@ -566,6 +566,9 @@ plugin-now-start-failed = ワンタップ操作を開始できません：{ $err
 
 # パネル（ADR-0052）のエラー。CoreError の理由、または TabsProblem の説明として表示する。
 panel-full = パネルがいっぱいです。先にページを外してください。
+panel-pins-not-connected = まだ自宅サーバーに接続していません。
+panel-pins-api-failed = { $status }：{ $body }
+
 panel-page-already-there = このページはすでにパネルにあります。
 panel-page-not-there = このページはパネルにありません。
 panel-page-unsupported = パネルに入れられるのはアプリのページ、アプリ内のページ、https:// のウェブページだけです。

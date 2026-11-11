@@ -328,6 +328,7 @@ async fn serve() -> anyhow::Result<()> {
         .as_ref()
         .map_or_else(|| cfg.public.base_domain.clone(), |m| m.server_name.clone());
     bus.attach_people(server_name, members.clone());
+    bus.attach_matrix(matrix.clone(), cfg.username.clone());
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
     let host = Arc::new(CoreHost::new(
         manager.clone(),

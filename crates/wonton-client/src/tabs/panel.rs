@@ -24,7 +24,13 @@ impl TabsLink {
                     "panel-page-already-there"
                 )));
             }
-            if entries.len() >= MAX_PANEL_PAGES {
+            let bot_pages = state
+                .bot_pins
+                .iter()
+                .filter(|pin| pin.scope == scope)
+                .filter(|pin| !entries.iter().any(|entry| entry.tab == pin.tab))
+                .count();
+            if entries.len() + bot_pages >= MAX_PANEL_PAGES {
                 return Err(invalid(&l10n!(CATALOG, language(), "panel-full")));
             }
         }
@@ -47,6 +53,44 @@ impl TabsLink {
         scope: PanelScope,
         tab: TabRef,
     ) -> Result<(), CoreError> {
+        // Bot 钉的页在服务器上：没有用户自己放的同名页时，经接口拿掉。
+        let bot_pin = {
+            let state = lock(&self.state);
+            let user_has = panel_entries(&state, &scope)
+                .is_ok_and(|entries| entries.iter().any(|entry| entry.tab == tab));
+            (!user_has)
+                .then(|| {
+                    state
+                        .bot_pins
+                        .iter()
+                        .find(|pin| pin.scope == scope && pin.tab == tab)
+                        .cloned()
+                })
+                .flatten()
+        };
+        if let Some(pin) = bot_pin {
+            let weak = lock(&self.weak).clone();
+            self.runtime.spawn(async move {
+                let Some(link) = weak.upgrade() else { return };
+                match link.remove_bot_pin(&pin.id).await {
+                    Ok(()) => {
+                        let mut state = lock(&link.state);
+                        state.bot_pins.retain(|candidate| candidate.id != pin.id);
+                        drop(state);
+                        link.recompute();
+                    }
+                    Err(error) => {
+                        let message = error.to_string();
+                        link.runtime_change(|state, _| {
+                            state.problem = Some(TabsProblem { message });
+                            Ok(())
+                        })
+                        .ok();
+                    }
+                }
+            });
+            return Ok(());
+        }
         match &scope {
             PanelScope::Main => self.config_change(|state, _| {
                 let index = state
@@ -124,18 +168,43 @@ impl TabsLink {
         scope: PanelScope,
         tab: TabRef,
     ) -> Result<(), CoreError> {
+        let seen_tab = tab.clone();
         self.runtime_change(|state, _| {
             let placed = PlacedTab::Panel {
                 scope: scope.clone(),
                 tab: tab.clone(),
             };
             state.attention.remove(&placed);
+            if let Some(pin) = state
+                .bot_pins
+                .iter_mut()
+                .find(|pin| pin.scope == scope && pin.tab == tab)
+            {
+                pin.attention = false;
+            }
             match scope {
                 PanelScope::Main => state.panel_selected = Some(tab),
                 PanelScope::Room { .. } => state.room_panel_selected = Some(tab),
             }
             Ok(())
-        })
+        })?;
+        let seen = {
+            let state = lock(&self.state);
+            state
+                .bot_pins
+                .iter()
+                .find(|pin| pin.scope == scope && pin.tab == seen_tab)
+                .map(|pin| pin.id.clone())
+        };
+        if let Some(id) = seen {
+            let weak = lock(&self.weak).clone();
+            self.runtime.spawn(async move {
+                if let Some(link) = weak.upgrade() {
+                    let _ = link.seen_bot_pin(&id).await;
+                }
+            });
+        }
+        Ok(())
     }
 
     /// 把正在看的页面钉到面板或底栏：按网址算出是哪一种页面。

@@ -566,6 +566,9 @@ plugin-now-start-failed = 一鍵操作開始不了：{ $error }
 
 # 面板（ADR-0052）的錯誤。作為 CoreError 的原因，或 TabsProblem 的說明顯示。
 panel-full = 面板滿了，先拿掉一頁再放。
+panel-pins-not-connected = 還沒有連上家裡的伺服器。
+panel-pins-api-failed = { $status }：{ $body }
+
 panel-page-already-there = 這個頁面已經在面板裡。
 panel-page-not-there = 這個頁面不在面板裡。
 panel-page-unsupported = 面板裡只能放 App 頁面、App 裡的某一頁和 https:// 的網頁。
