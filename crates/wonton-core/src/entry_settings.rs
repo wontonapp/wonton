@@ -29,6 +29,28 @@ fn setting(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|s| !s.is_empty())
 }
 
+/// 逗号分隔的解析器列表，忽略各项首尾空白和空项。
+pub fn parse_resolvers(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|server| !server.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Docker 的 `dns` 字段只要 IP；解析不了的表项丢掉。
+pub fn resolver_ips(servers: &[String]) -> Vec<String> {
+    servers
+        .iter()
+        .filter_map(|server| {
+            server
+                .parse::<std::net::SocketAddr>()
+                .ok()
+                .map(|address| address.ip().to_string())
+        })
+        .collect()
+}
+
 impl EntrySettings {
     pub fn load(install_dir: &Path) -> anyhow::Result<Option<Self>> {
         let path = install_dir.join("entry/settings.json");
@@ -148,7 +170,7 @@ impl EntrySettings {
             acme_directory,
             acme_ca: setting("WONTON_ACME_CA_FILE").map(PathBuf::from),
             acme_resolvers: setting("WONTON_ACME_RESOLVERS")
-                .map(|s| s.split(',').map(str::to_owned).collect())
+                .map(|raw| parse_resolvers(&raw))
                 .unwrap_or_default(),
             acme_email: setting("WONTON_ACME_EMAIL"),
             acme_accept_terms: setting("WONTON_ACME_ACCEPT_TERMS").as_deref() == Some("true"),
@@ -213,5 +235,19 @@ impl EntrySettings {
             crate::entry_dns::verify_caa(&self.domain, &account_uri, &self.acme_resolvers).await?;
         }
         cert.issue(&self.domain).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolver_lists_drop_surrounding_whitespace_and_empty_items() {
+        assert_eq!(
+            parse_resolvers("192.0.2.53:53, 198.51.100.53:53 ,"),
+            ["192.0.2.53:53", "198.51.100.53:53"]
+        );
+        assert!(parse_resolvers(" , ").is_empty());
     }
 }

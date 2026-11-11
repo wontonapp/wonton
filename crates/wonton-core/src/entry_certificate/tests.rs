@@ -67,6 +67,35 @@ fn preparing_files_preserves_leaf_identity_and_keeps_private_key_out_of_lego() {
     assert!(manager.initialize_files("abcdefgh.homes.test").is_err());
 }
 
+/// 默认 bridge 网络没有 Docker 内置 DNS。lego 只解析区和 CAA 的外部名字，所以只该拿到配置的
+/// 解析器，不能带在最前面干等超时的 127.0.0.11；没配解析器时交给 Docker 的默认值。
+#[test]
+fn lego_dns_omits_the_embedded_resolver_missing_on_bridge() {
+    for network in ["bridge", "entry-test-egress"] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manager = manager(dir.path());
+        manager.config.network = network.to_owned();
+        manager.initialize_files("abcdefgh.homes.test").unwrap();
+        let host = manager
+            .container_body(manager.account_command())
+            .unwrap()
+            .host_config
+            .unwrap();
+        assert_eq!(host.network_mode.as_deref(), Some(network));
+        assert_eq!(host.dns, Some(vec!["192.0.2.53".to_owned()]), "{network}");
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let mut manager = manager(dir.path());
+    manager.config.dns_resolvers.clear();
+    manager.initialize_files("abcdefgh.homes.test").unwrap();
+    let host = manager
+        .container_body(manager.account_command())
+        .unwrap()
+        .host_config
+        .unwrap();
+    assert_eq!(host.dns, None);
+}
+
 #[test]
 fn managed_dns_uses_supplied_apex_and_lan_accounts_without_registration_or_cli_secrets() {
     let dir = tempfile::tempdir().unwrap();

@@ -43,21 +43,12 @@ pub fn render(
     compose["services"]["core"]["networks"]["clients"] =
         json!({"aliases":["entry-gateway.wonton.internal"]});
     // 配了解析器时核心和 lego 都用它：入口的 ACME 目录、acme-dns 和 CAA 都靠这些名字。
-    let resolvers: Vec<_> = settings
-        .acme_resolvers
-        .iter()
-        .filter_map(|server| {
-            server
-                .parse::<std::net::SocketAddr>()
-                .ok()
-                .map(|address| address.ip().to_string())
-        })
-        .collect();
+    let resolvers = crate::entry_settings::resolver_ips(&settings.acme_resolvers);
     if !resolvers.is_empty() {
-        // 配置的解析器在前：Docker 的 127.0.0.11 对认不出的名字回 NXDOMAIN，会截断回退；
-        // 测试解析器对区外名字回 REFUSED，才落到 127.0.0.11 去解析内部别名。
-        let mut servers = resolvers;
-        servers.push("127.0.0.11".to_owned());
+        // Docker 的 127.0.0.11 在前：容器名、插件别名只有它认识；它认不出的名字转发给配置的解析器。
+        // 反过来先问真实解析器时，它们在区外名字上回 NXDOMAIN，glibc 不再回退，内部名就解析不到。
+        let mut servers = vec!["127.0.0.11".to_owned()];
+        servers.extend(resolvers);
         compose["services"]["core"]["dns"] = json!(servers);
     }
     compose["services"]["core"]["environment"]["WONTON_ENTRY_LISTEN"] =
@@ -198,6 +189,26 @@ mod tests {
 
     fn tuwenel(rendered: &str) -> Value {
         serde_json::from_str::<Value>(rendered).unwrap()["services"]["tuwunel"].clone()
+    }
+
+    /// 内部名（`entry.wonton.internal`、插件别名）只有 Docker 的 127.0.0.11 认识；真实解析器
+    /// 对区外名字回 NXDOMAIN 时 glibc 不再回退，所以内置 DNS 必须排在最前。
+    #[test]
+    fn core_resolvers_ask_the_embedded_dns_before_the_configured_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
+        std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
+        let mut settings = settings();
+        settings.acme_resolvers =
+            crate::entry_settings::parse_resolvers("192.0.2.53:53, 198.51.100.53:53");
+        let compose: Value = serde_json::from_str(
+            &render(crate::install::COMPOSE, Some(&settings), dir.path()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            compose["services"]["core"]["dns"],
+            json!(["127.0.0.11", "192.0.2.53", "198.51.100.53"])
+        );
     }
 
     /// 联邦容器只该看见自己的文件：`secrets/` 根上的 `matrix-jwt.pem`（能签登录令牌）和

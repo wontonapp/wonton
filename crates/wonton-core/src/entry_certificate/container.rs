@@ -82,6 +82,7 @@ impl CertificateManager {
                 "SSL_CERT_FILE=/acme/ca.pem".to_owned(),
             ]);
         }
+        let resolvers = crate::entry_settings::resolver_ips(&self.config.dns_resolvers);
         // No cert directory, leaf key, Docker socket or parent directory mount.
         Ok(ContainerCreateBody {
             image: Some(LEGO_IMAGE.to_owned()),
@@ -96,22 +97,10 @@ impl CertificateManager {
             host_config: Some(HostConfig {
                 mounts: Some(mounts),
                 network_mode: Some(self.config.network.clone()),
-                // 显式配了解析器时用它：ACME 目录、acme-dns 的更新接口和 CAA 都在这些名字上。
-                // 配置的解析器在前，Docker 的 127.0.0.11 兜底内部别名：前者对区外名字回 REFUSED，
-                // 后者认不出才回 NXDOMAIN。
-                dns: Some(
-                    self.config
-                        .dns_resolvers
-                        .iter()
-                        .filter_map(|server| {
-                            server
-                                .parse::<std::net::SocketAddr>()
-                                .ok()
-                                .map(|address| address.ip().to_string())
-                        })
-                        .chain(std::iter::once("127.0.0.11".to_owned()))
-                        .collect(),
-                ),
+                // 配了解析器时只用它：ACME 目录、acme-dns 的更新接口和 CAA 都在这些名字上。
+                // lego 不需要容器内部名，不能带 127.0.0.11：默认 bridge 网络没有 Docker 内置 DNS，
+                // 列在最前的 127.0.0.11 每个查询先等一次超时。
+                dns: (!resolvers.is_empty()).then_some(resolvers),
                 readonly_rootfs: Some(true),
                 cap_drop: Some(vec!["ALL".to_owned()]),
                 security_opt: Some(vec!["no-new-privileges:true".to_owned()]),
