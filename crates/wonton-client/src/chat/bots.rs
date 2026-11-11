@@ -235,9 +235,10 @@ impl Bots {
                     .report
                     .as_ref()
                     .and_then(|report| {
-                        report.bots.iter().find(|facts| {
-                            facts.bot.plugin_id == plugin.id && facts.user_id == *user
-                        })
+                        report
+                            .bots
+                            .iter()
+                            .find(|facts| facts.plugin_id == plugin.id && facts.user_id == *user)
                     })
                     .cloned();
                 local.records.insert(plugin.id.clone(), record);

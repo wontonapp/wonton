@@ -92,11 +92,11 @@ impl BotActivity {
     ) -> BotActivityReport {
         let counts = self.counts.lock().expect("活动表锁中毒");
         for bot in &mut bots {
-            if let Some(counts) = counts.get(bot.bot.plugin_id.as_str()) {
+            if let Some(counts) = counts.get(bot.plugin_id.as_str()) {
                 bot.model_requests = counts.model_requests;
                 bot.tool_calls = counts.tool_calls;
             }
-            bot.waiting = waiting.get(&bot.bot.plugin_id).copied().unwrap_or_default();
+            bot.waiting = waiting.get(&bot.plugin_id).copied().unwrap_or_default();
         }
         BotActivityReport {
             rev: self.rev(),

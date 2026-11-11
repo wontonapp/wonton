@@ -8,7 +8,7 @@ use wonton_client::{
     BotNameProblem, BotProfileFailure, BotView, CoreError, MediaHandle, TimelineContent,
 };
 use wonton_matrix::MatrixSession;
-use wonton_protocol::{AVATARS_FIELD, BotRef, PushMethod};
+use wonton_protocol::{AVATARS_FIELD, PushMethod};
 
 use super::PNG;
 use super::bot_profile_support::{set_field, typing};
@@ -114,10 +114,8 @@ async fn bot_profiles_actions_activity_and_cached_video_through_the_tunnel() {
 
 fn facts(bot: &MatrixSession) -> BotActivityFacts {
     BotActivityFacts {
-        bot: BotRef {
-            plugin_id: PLUGIN.to_owned(),
-            bot: "default".into(),
-        },
+        plugin_id: PLUGIN.to_owned(),
+        bot: Some("default".into()),
         user_id: bot.user_id().to_string(),
         running: true,
         model_requests: 0,

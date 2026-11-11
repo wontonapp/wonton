@@ -68,14 +68,11 @@ pub(super) fn synthesize(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wonton_protocol::BotRef;
 
     fn facts() -> BotActivityFacts {
         BotActivityFacts {
-            bot: BotRef {
-                plugin_id: "bot".into(),
-                bot: "default".into(),
-            },
+            plugin_id: "bot".into(),
+            bot: Some("default".into()),
             user_id: "@bot:home".into(),
             running: true,
             model_requests: 0,

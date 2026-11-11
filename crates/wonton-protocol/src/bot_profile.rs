@@ -168,7 +168,10 @@ pub struct BotActivityReport {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct BotActivityFacts {
-    pub bot: BotRef,
+    pub plugin_id: String,
+    /// 核心记录的 Bot 名；缺少时表示未提供，不从 Matrix 用户名反推，也不补成默认 Bot。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot: Option<String>,
     /// Bot 的 Matrix 用户 ID。
     pub user_id: String,
     /// 插件在运行，健康检查过了。
@@ -417,6 +420,29 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(report.bots[0].model_requests, 1);
+    }
+
+    #[test]
+    fn reports_keep_named_bots_without_inventing_missing_names() {
+        let report: BotActivityReport = serde_json::from_value(json!({
+            "rev": 4,
+            "bots": [
+                {"plugin_id": "a.b", "user_id": "@b:h", "running": true,
+                 "model_requests": 1, "tool_calls": 0, "waiting": 0, "profile_rev": 2},
+                {"plugin_id": "a.b", "bot": "alice", "user_id": "@b-alice:h", "running": true,
+                 "model_requests": 0, "tool_calls": 2, "waiting": 1, "profile_rev": 3, "future": true},
+            ],
+        }))
+        .unwrap();
+        assert_eq!(report.bots[0].plugin_id, "a.b");
+        assert_eq!(report.bots[0].bot, None);
+        assert_eq!(report.bots[1].plugin_id, "a.b");
+        assert_eq!(report.bots[1].bot.as_deref(), Some("alice"));
+        assert_eq!(report.bots[1].tool_calls, 2);
+        let encoded = serde_json::to_value(&report).unwrap();
+        assert_eq!(encoded["bots"][0]["plugin_id"], "a.b");
+        assert!(encoded["bots"][0].get("bot").is_none());
+        assert_eq!(encoded["bots"][1]["bot"], "alice");
     }
 
     #[test]
