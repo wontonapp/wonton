@@ -87,7 +87,9 @@ struct LinkedMessageText: UIViewRepresentable {
         var parent: LinkedMessageText
         init(parent: LinkedMessageText) { self.parent = parent }
 
-        func textView(_ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction) -> UIAction? {
+        func textView(
+            _ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction
+        ) -> UIAction? {
             guard case let .link(url) = textItem.content, let link = link(for: url) else { return defaultAction }
             return UIAction { _ in AppNavigation.shared?.openLink(link) }
         }

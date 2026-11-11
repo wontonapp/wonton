@@ -51,7 +51,7 @@ struct ChatRoomView: View {
                 messages
             }
             if let notice = timeline.notice {
-                keyNotice(notice)
+                KeyNoticeBanner(notice: notice)
             }
             TransfersStrip(roomId: roomId)
             if !isReadOnly {
@@ -112,21 +112,6 @@ struct ChatRoomView: View {
         }
     }
 
-    /// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
-    private func keyNotice(_ notice: KeyNotice) -> some View {
-        WontonNotice(icon: .lockKey, title: String(localized: .messageUndecryptableNotice), isError: false) {
-            // 更新的核心给出的类别没有按钮，说明照常显示。
-            if let action = notice.action {
-                NavigationLink(value: ChatRoute.chatBackup) {
-                    Text(action).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(WontonButtonStyle(kind: .primary))
-            }
-        }
-        .padding(.horizontal, WontonTheme.spacing.pageInset)
-        .padding(.vertical, WontonTheme.spacing.s8)
-    }
-
     private var messages: some View {
         ScrollViewReader { scroller in
             // 不用 ScrollView + LazyVStack：行高相差悬殊时（一行和六十行）它的内容高度全靠估算，同样的数据几毫秒内差出几千点，
@@ -178,7 +163,7 @@ struct ChatRoomView: View {
                     )
                     .id(item.id)
                     .timelineListRow(joinsPrevious: joinsPrevious, joinsNext: joinsNext)
-                    .modifier(ReplySwipe(quote: replyQuote(of: item)) { quote in
+                    .modifier(ReplySwipe(quote: item.replyQuote()) { quote in
                         model.startReply(.ready(message: quote), in: roomId)
                     })
                 }
@@ -289,25 +274,44 @@ struct ChatRoomView: View {
         model.viewModel.rooms.filter { $0.membership == .joined && !$0.isReadOnly }
     }
 
-    private func replyQuote(of item: TimelineItem) -> QuotedMessage? {
-        guard case let .message(message) = item.content else { return nil }
-        for action in message.actions {
-            if case let .reply(quote) = action { return quote }
-        }
-        return nil
-    }
-
     private var isReadOnly: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
     }
 }
-
 
 private extension TimelineItem {
     /// 同一个人连着发的消息并成一组：气泡挨紧，相接的角收小。
     func joins(_ other: TimelineItem) -> Bool {
         guard case let .message(mine) = content, case let .message(theirs) = other.content else { return false }
         return mine.senderId == theirs.senderId
+    }
+
+    /// 这条消息带的回复引用：核心把引用作为消息动作下发。
+    func replyQuote() -> QuotedMessage? {
+        guard case let .message(message) = content else { return nil }
+        for action in message.actions {
+            if case let .reply(quote) = action { return quote }
+        }
+        return nil
+    }
+}
+
+/// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
+private struct KeyNoticeBanner: View {
+    let notice: KeyNotice
+
+    var body: some View {
+        WontonNotice(icon: .lockKey, title: String(localized: .messageUndecryptableNotice), isError: false) {
+            // 更新的核心给出的类别没有按钮，说明照常显示。
+            if let action = notice.action {
+                NavigationLink(value: ChatRoute.chatBackup) {
+                    Text(action).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
+        }
+        .padding(.horizontal, WontonTheme.spacing.pageInset)
+        .padding(.vertical, WontonTheme.spacing.s8)
     }
 }
 

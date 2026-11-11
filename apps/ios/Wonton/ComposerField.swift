@@ -115,7 +115,7 @@ final class ComposerTextView: UITextView {
         for press in presses {
             guard let key = press.key,
                   key.keyCode == .keyboardReturnOrEnter || key.keyCode == .keypadEnter,
-                  key.modifierFlags.intersection([.shift, .control, .alternate, .command]).isEmpty,
+                  key.modifierFlags.isDisjoint(with: [.shift, .control, .alternate, .command]),
                   markedTextRange == nil else { continue }
             remaining.remove(press)
             if sendingReturnKeys.insert(key.keyCode).inserted { onSend?() }
