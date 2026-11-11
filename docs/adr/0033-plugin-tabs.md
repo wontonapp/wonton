@@ -78,7 +78,7 @@ MCP Apps 也能写，但没有比网页多给什么：底栏页本来就有自�
 
 ### 清单：`tabs`
 
-进公开规范，写法以 [wonton-docs](https://github.com/geraldpeng6/wonton-docs) 为准。
+进公开规范，写法以 [wonton-docs](https://github.com/wontonapp/wonton-docs) 为准。
 
 ```yaml
 x-wonton:
