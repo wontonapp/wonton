@@ -4,6 +4,7 @@ use wonton_protocol::{PluginSettingsUpdate, PluginSettingsView};
 
 use super::{ClientCore, CoreError};
 
+#[uniffi::export]
 impl ClientCore {
     /// 读插件设置页：字段、当前值、默认值、用到它的服务。装着的版本没有设置时报 `unsupported`。
     pub async fn plugin_settings(&self, id: String) -> Result<PluginSettingsView, CoreError> {
