@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use wonton_client::{Action, Answer, MessageContent, TimelineContent};
 use wonton_matrix::{ChatRoom, MatrixSession};
-use wonton_protocol::{AgentRunChoice, AgentRunState};
+use wonton_protocol::{AgentRunChoice, AgentRunState, BotActivityFacts};
 
 use super::confirmation::{card, content, core_room, in_ten_minutes, joined_direct_chat, send};
 use super::support::{Home, Phone, Timeline};
@@ -40,10 +40,10 @@ async fn edit_status(room: &ChatRoom, event: &str, state: &str, extra: Value) {
     send(room, edit).await;
 }
 
-/// 时间线里的一条 AgentRun 条目：`run` 和状态的拷贝。
-fn agent_run(item: &TimelineContent) -> Option<(String, AgentRunState)> {
+/// 时间线里的一条 AgentRun 条目的状态拷贝；夹具可以不带 `run`，这里不拿它当匹配条件。
+fn agent_run(item: &TimelineContent) -> Option<AgentRunState> {
     match item {
-        TimelineContent::AgentRun { run, state, .. } => Some((run.clone()?, state.clone())),
+        TimelineContent::AgentRun { state, .. } => Some(state.clone()),
         _ => None,
     }
 }
@@ -67,6 +67,25 @@ async fn setup() -> Setup {
     let mut installed = running(PLUGIN);
     installed.bot_user_id = Some(hermes.user_id().to_string());
     home.set_installed_plugins(vec![installed]);
+    // 状态行按 Bot 的活动合成：先给一份“在运行”的报告，等 Bot 列表带上活动，之后的断言才不会撞上不确定。
+    home.bot_api.facts(BotActivityFacts {
+        plugin_id: PLUGIN.to_owned(),
+        bot: Some("default".into()),
+        user_id: hermes.user_id().to_string(),
+        running: true,
+        model_requests: 0,
+        tool_calls: 0,
+        waiting: 0,
+        profile_rev: 0,
+    });
+    phone
+        .wait_chat("Bot 列表里有 Hermes", |view| {
+            view.bots
+                .iter()
+                .any(|bot| bot.user_id == *hermes.user_id() && bot.activity.is_some())
+                .then_some(())
+        })
+        .await;
     let room = joined_direct_chat(&phone, &hermes).await;
     let timeline = Timeline::open(&phone, room.as_str()).await;
     let bot_room = hermes.open_room(&room).await.expect("Bot 打开房间");
@@ -123,9 +142,8 @@ async fn a_round_with_edits_is_one_agent_run_following_the_latest_edit() {
         .unwrap();
     let entry = timeline
         .until("状态行出现了", |item| {
-            agent_run(&item.content).and_then(|(run, state)| {
-                (run == request && state == AgentRunState::Working).then(|| item.id.clone())
-            })
+            agent_run(&item.content)
+                .and_then(|state| (state == AgentRunState::Working).then(|| item.id.clone()))
         })
         .await;
 
@@ -181,7 +199,7 @@ async fn unknown_states_fall_back_and_v2_stays_a_plain_message() {
         .expect("Bot 发消息");
     timeline
         .until("未知状态落到 Other", |item| {
-            agent_run(&item.content).and_then(|(_, state)| {
+            agent_run(&item.content).and_then(|state| {
                 matches!(&state, AgentRunState::Other(raw) if raw == "brewing").then_some(())
             })
         })
@@ -212,8 +230,15 @@ async fn unknown_states_fall_back_and_v2_stays_a_plain_message() {
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_non_bot_sender_stays_a_plain_message() {
     let mut setup = setup().await;
-    let (home, room, timeline) = (&setup._home, &setup.room, &mut setup.timeline);
+    let (home, room, timeline, bot_room) = (
+        &setup._home,
+        &setup.room,
+        &mut setup.timeline,
+        &setup.bot_room,
+    );
     let other = home.bot("colleague", "同事").await;
+    bot_room.invite(other.user_id()).await.expect("邀请同事");
+    other.join_room(room).await.expect("同事加入");
     let other_room = other.open_room(room).await.expect("同事打开房间");
 
     other_room
@@ -245,7 +270,7 @@ async fn an_offline_bot_shows_uncertain_until_it_is_back() {
         &mut setup.timeline,
         &setup.bot_room,
     );
-    let mut facts = wonton_protocol::BotActivityFacts {
+    let mut facts = BotActivityFacts {
         plugin_id: PLUGIN.to_owned(),
         bot: Some("default".into()),
         user_id: hermes.user_id().to_string(),
@@ -264,7 +289,7 @@ async fn an_offline_bot_shows_uncertain_until_it_is_back() {
     timeline
         .until("离线的 Bot 是不确定", |item| {
             agent_run(&item.content)
-                .and_then(|(_, state)| (state == AgentRunState::Uncertain).then_some(()))
+                .and_then(|state| (state == AgentRunState::Uncertain).then_some(()))
         })
         .await;
 
@@ -273,7 +298,7 @@ async fn an_offline_bot_shows_uncertain_until_it_is_back() {
     timeline
         .until("回到在线恢复 working", |item| {
             agent_run(&item.content)
-                .and_then(|(_, state)| (state == AgentRunState::Working).then_some(()))
+                .and_then(|state| (state == AgentRunState::Working).then_some(()))
         })
         .await;
 }
@@ -291,8 +316,10 @@ async fn waiting_carries_the_pending_card_until_it_is_answered() {
         &setup.bot_room,
     );
 
-    // 核心在这个房间里发一张这个 Bot 发起的卡片，等主人回答。
+    // 核心在这个房间里发一张这个 Bot 发起的卡片，等主人回答。核心得先进房间才能发。
     let (core, _notices) = core_room(phone, home).await;
+    bot_room.invite(core.user_id()).await.expect("邀请核心");
+    core.join_room(room).await.expect("核心加入");
     let core_room = core.open_room(room).await.expect("核心打开房间");
     let mut pending = card("card-1", in_ten_minutes());
     pending["requester"] = json!({

@@ -6,6 +6,7 @@ use wonton_matrix::{
     ChatRoom, Error, ImageContent, ImageUpload, MISSED_GRACE, MatrixSession, Membership, Message,
     MessageBody, SendStatus, UserId,
 };
+use wonton_protocol::AgentRunState;
 
 use crate::support::{TempStore, TestServer, eventually, random_bytes, unique};
 
@@ -127,8 +128,13 @@ async fn wait_for_text(room: &ChatRoom, what: &str, sender: &UserId, text: &str)
     .await
 }
 
-/// 等到 `sender` 发的 Agent 状态消息出现且已送达，返回带解析结果的消息。
-async fn wait_for_agent_run(room: &ChatRoom, what: &str, sender: &UserId) -> Message {
+/// 等到 `sender` 发的 Agent 状态消息出现、已送达且解析出的状态是 `state`，返回带解析结果的消息。
+async fn wait_for_agent_run(
+    room: &ChatRoom,
+    what: &str,
+    sender: &UserId,
+    state: &AgentRunState,
+) -> Message {
     eventually(what, room.message_updates().await, |messages| {
         messages
             .iter()
@@ -136,7 +142,10 @@ async fn wait_for_agent_run(room: &ChatRoom, what: &str, sender: &UserId) -> Mes
                 message.sender == sender
                     && message.status == SendStatus::Sent
                     && message.event_id.is_some()
-                    && message.agent_run.is_some()
+                    && message
+                        .agent_run
+                        .as_ref()
+                        .is_some_and(|run| &run.state == state)
             })
             .cloned()
     })
@@ -148,7 +157,6 @@ async fn wait_for_agent_run(room: &ChatRoom, what: &str, sender: &UserId) -> Mes
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn an_agent_status_message_and_its_edit_read_as_one() {
     use serde_json::json;
-    use wonton_protocol::AgentRunState;
 
     let server = TestServer::start().await;
     let bot = server.login(&unique("bot"), "Bot").await;
@@ -179,7 +187,13 @@ async fn an_agent_status_message_and_its_edit_read_as_one() {
         }))
         .await
         .expect("Bot 发状态");
-    let first = wait_for_agent_run(&owner_room, "Owner 看到状态", bot.user_id()).await;
+    let first = wait_for_agent_run(
+        &owner_room,
+        "Owner 看到状态",
+        bot.user_id(),
+        &AgentRunState::Working,
+    )
+    .await;
     let run = first.agent_run.expect("解析出状态对象");
     assert_eq!(run.state, AgentRunState::Working);
     assert_eq!(run.steps, Some(1));
@@ -200,7 +214,13 @@ async fn an_agent_status_message_and_its_edit_read_as_one() {
         }))
         .await
         .expect("Bot 编辑状态");
-    let edited = wait_for_agent_run(&owner_room, "编辑推进到完成", bot.user_id()).await;
+    let edited = wait_for_agent_run(
+        &owner_room,
+        "编辑推进到完成",
+        bot.user_id(),
+        &AgentRunState::Done,
+    )
+    .await;
     assert_eq!(edited.event_id, first.event_id, "编辑还是同一条消息");
     let run = edited.agent_run.expect("编辑后还是状态消息");
     assert_eq!(run.state, AgentRunState::Done);
