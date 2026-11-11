@@ -35,6 +35,7 @@ mod view;
 use view::*;
 mod reload;
 use reload::*;
+
 mod actions;
 mod panel;
 mod sync;
@@ -444,6 +445,7 @@ fn empty_view() -> TabsViewModel {
         panel: Vec::new(),
         panel_candidates: Vec::new(),
         panel_selected: None,
+        bot_pin_consents: Vec::new(),
     }
 }
 

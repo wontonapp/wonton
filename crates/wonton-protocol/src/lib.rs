@@ -156,8 +156,11 @@ pub use owner::{
     check_email, check_email_change, normalized_email,
 };
 pub use panel::{
-    LAYOUT_EVENT, LayoutSettings, MAX_PANEL_PAGES, PanelEntry, PanelItem, PanelScope, PanelSource,
-    PinTarget, PlacedTab, ROOM_PANEL_EVENT, RoomPanel, TabDisplaySetting,
+    BOT_PANEL_PINS_PATH, BotPanelPin, BotPanelPins, BotPinConsent, BotPinOwner, LAYOUT_EVENT,
+    LayoutSettings, MAX_PANEL_PAGES, MCP_APP_CALLS_PATH, MCP_APP_MESSAGE_PATH, MCP_APP_READ_PATH,
+    MCP_APP_TOOLS_PATH, PanelEntry, PanelItem, PanelScope, PanelSource, PinTarget, PlacedTab,
+    ROOM_PANEL_EVENT, RoomPanel, TabDisplaySetting, bot_panel_consent_path, bot_panel_pin_path,
+    bot_panel_pin_seen_path, mcp_app_call_path, mcp_app_host_path,
 };
 pub use peers::{
     PEER_ERROR_HEADER, PEERS_PATH, PeerCode, PeerError, PeerErrorBody, PeerProblem, PeerRequestRow,
