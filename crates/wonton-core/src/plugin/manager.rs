@@ -773,7 +773,7 @@ impl PluginManager {
 }
 
 /// 记录读不懂时给主人看的原因：比如核心升级后不再认记录里的字段。
-fn unreadable_record(error: &dyn std::fmt::Display, langs: &Languages) -> String {
+pub(super) fn unreadable_record(error: &dyn std::fmt::Display, langs: &Languages) -> String {
     l10n::text(
         langs,
         "plugin-install-record-unreadable",

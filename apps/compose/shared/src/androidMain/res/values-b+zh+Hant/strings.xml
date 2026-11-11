@@ -1171,6 +1171,10 @@
     <string name="problem_plugin_protocol_next_step">請更新雲吞或家用伺服器。</string>
     <!-- Problem title: the app and the home server versions don't match. -->
     <string name="problem_plugin_protocol_title">雲吞和家用伺服器的版本不相符</string>
+    <!-- Problem title: the home server can't read this app's install record. -->
+    <string name="problem_plugin_record_unusable_title">應用程式的安裝記錄不可用</string>
+    <!-- Next step: uninstall the app (its data can be kept) and install it again. -->
+    <string name="problem_plugin_record_unusable_next_step">解除安裝這個應用程式（資料可以保留）後重新安裝。</string>
     <!-- Problem title when the proxy settings were rejected as invalid; the core's own reason is shown as the next step. -->
     <string name="problem_plugin_save_invalid_title">填寫的內容不正確</string>
     <!-- Next step: look at the proxy settings again once the server is reachable. -->

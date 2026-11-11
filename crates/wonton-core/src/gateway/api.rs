@@ -88,6 +88,7 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         | InstallError::NameTaken(_)
         | InstallError::Changed(_)
         | InstallError::PortTaken(_)
+        | InstallError::RecordUnusable(_)
         | InstallError::CoreUpgrading(_) => StatusCode::CONFLICT,
         InstallError::NotInstalled(_) | InstallError::NotFound(_) => StatusCode::NOT_FOUND,
         InstallError::DockerUnavailable(_)

@@ -66,6 +66,7 @@ mod secrets;
 mod settings_l10n;
 mod setup;
 mod sources;
+mod start_recreate;
 mod stopped;
 mod stopped_docker;
 mod store;

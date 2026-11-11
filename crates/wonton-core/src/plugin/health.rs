@@ -494,6 +494,8 @@ pub enum Checked {
     Running,
     /// 常驻容器已退出或已创建但未启动。
     Stopped,
+    /// 容器不在：Docker 数据丢了、被手动删了，或者还没建出来。原因如实给出。
+    Missing(String),
     /// 不在应有的状态，原因如实给出。
     Failed(String),
 }
@@ -507,7 +509,7 @@ pub async fn check_now(
     langs: &Languages,
 ) -> Result<Checked, EngineError> {
     let Some(info) = engine.inspect_container(container).await? else {
-        return Ok(Checked::Failed(l10n::text(
+        return Ok(Checked::Missing(l10n::text(
             langs,
             "plugin-install-container-missing",
             &[("name", container.into())],
