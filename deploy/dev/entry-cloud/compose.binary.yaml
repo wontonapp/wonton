@@ -1,0 +1,11 @@
+# Use a cargo-slot-built ELF without building Rust inside Docker.
+services:
+  home:
+    image: ${WONTON_HOME_RUNTIME_IMAGE:-debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc}
+    pull_policy: missing
+    entrypoint: ["/usr/local/bin/wonton-home"]
+    command: ["serve"]
+    environment:
+      SSL_CERT_FILE: /control-ca.pem
+    volumes:
+      - ${WONTON_HOME_BINARY:?Set an absolute cargo-slot-built binary path}:/usr/local/bin/wonton-home:ro

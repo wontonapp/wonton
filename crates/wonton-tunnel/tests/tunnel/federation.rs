@@ -275,8 +275,12 @@ impl TestPeer {
 /// 经本方转发器 CONNECT 到 `name` 的联邦端口，确认回 200 后发 `payload`，半关写端，读回经隧道
 /// 回来的全部字节。
 async fn federate(listen: SocketAddr, name: &str, payload: &[u8]) -> Vec<u8> {
-    let (mut tcp, status) = connect(listen, &format!("{name}:8448")).await;
-    assert_eq!(status, 200, "CONNECT {name} 没有成功");
+    federate_on_port(listen, name, 8448, payload).await
+}
+
+async fn federate_on_port(listen: SocketAddr, name: &str, port: u16, payload: &[u8]) -> Vec<u8> {
+    let (mut tcp, status) = connect(listen, &format!("{name}:{port}")).await;
+    assert_eq!(status, 200, "CONNECT {name}:{port} 没有成功");
     tcp.write_all(payload).await.unwrap();
     tcp.shutdown().await.unwrap();
     let mut reply = Vec::new();
@@ -368,6 +372,62 @@ async fn forwards_a_connect_to_the_paired_server() {
     assert_eq!(reply, REPLY);
 }
 
+#[tokio::test]
+async fn forwards_named_server_discovery_on_port_443() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    pair_quietly(&a, &b, &table);
+
+    let payload = b"GET /.well-known/matrix/server HTTP/1.1\r\n\r\n";
+    let reply = federate_on_port(a.listen, B_NAME, 443, payload).await;
+    assert_eq!(b.upstream.received(), payload);
+    assert_eq!(b.upstream.connections(), 1);
+    assert_eq!(reply, REPLY);
+    assert_eq!(a.forwarder().outbound_errors(), OutboundErrors::default());
+}
+
+#[tokio::test]
+async fn refuses_private_server_discovery_but_forwards_its_federation_port() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let private_name = "b.wonton.internal";
+    table
+        .lock()
+        .unwrap()
+        .insert(private_name.to_owned(), (b.id, b.addr.clone()));
+    a.server_allowlist.allow(b.id);
+    b.server_allowlist.allow(a.id);
+
+    let (tcp, status) = connect(a.listen, &format!("{private_name}:443")).await;
+    assert_eq!(status, 502);
+    closed_after(tcp).await;
+    assert_eq!(a.forwarder().outbound_errors(), OutboundErrors::default());
+    assert!(a.states.borrow().is_empty());
+    assert_eq!(b.upstream.connections(), 0);
+
+    let reply = federate(a.listen, private_name, b"private-federation").await;
+    assert_eq!(reply, REPLY);
+    assert_eq!(b.upstream.received(), b"private-federation");
+}
+
+#[tokio::test]
+async fn refuses_unknown_server_discovery_without_using_another_pairing() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    pair_quietly(&a, &b, &table);
+
+    let (tcp, status) = connect(a.listen, "stranger.example.internal:443").await;
+    assert_eq!(status, 403);
+    closed_after(tcp).await;
+    assert_eq!(a.forwarder().outbound_errors().unknown_server, 1);
+    assert_eq!(a.forwarder().outbound_errors().invalid_request, 0);
+    assert!(a.states.borrow().is_empty());
+    assert_eq!(b.upstream.connections(), 0);
+}
+
 /// 服务器名不认识：回 403 后关闭，转发器记下原因，状态表里没有这个服务器。
 #[tokio::test]
 async fn refuses_connects_to_unknown_server_names() {
@@ -380,7 +440,7 @@ async fn refuses_connects_to_unknown_server_names() {
     assert!(a.states.borrow().is_empty());
 }
 
-/// 不是联邦端口（Tuwunel 先拨 443 取 well-known）：回 502，它才会改拨 8448。不算错误，也不碰对方。
+/// 不支持的端口回 502；不计入出站错误，也不碰对方。
 #[tokio::test]
 async fn answers_bad_gateway_for_other_ports() {
     let table = pairings();
@@ -392,7 +452,7 @@ async fn answers_bad_gateway_for_other_ports() {
         .insert(B_NAME.to_owned(), (b.id, b.addr.clone()));
     a.server_allowlist.allow(b.id);
     b.server_allowlist.allow(a.id);
-    let (tcp, status) = connect(a.listen, &format!("{B_NAME}:443")).await;
+    let (tcp, status) = connect(a.listen, &format!("{B_NAME}:9448")).await;
     assert_eq!(status, 502);
     closed_after(tcp).await;
     assert_eq!(a.forwarder().outbound_errors(), OutboundErrors::default());

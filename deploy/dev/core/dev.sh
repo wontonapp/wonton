@@ -2,6 +2,7 @@
 # 本地开发用的核心（插件管理器 + 网关）、身份提供方（Ory Hydra）和 Matrix 服务器（Tuwunel）。
 #
 #   dev.sh up                          构建核心镜像，启动核心、Hydra 和 Tuwunel，等到健康
+#   dev.sh status --entry-cloud        跑 deploy/dev/entry-cloud 的双机入口验收（远端 stack-remote.sh 只转发固定子命令）
 #   dev.sh down                        停止，删掉核心按插件起的容器和网络，保留数据和卷
 #   dev.sh reset [--keep-tunnel-identity]
 #                                      停止并删除 Hydra、Tuwunel 的数据、核心数据目录和插件卷；
@@ -539,6 +540,105 @@ note_plugin_leftovers() {
 
 # shellcheck source=deploy/dev/core/diag.sh
 . "$here/diag.sh"
+
+if [[ " $* " == *" --entry-cloud "* ]]; then
+  # 远端 stack-remote.sh 只转发固定子命令、且各自校验参数：带上 --entry-cloud 的子命令都跑家名/入口云栈验收。
+  # --entry-cloud-bg 脱离终端跑（远端 ssh 一断就收不到输出，日志写进副本根目录的 .entry-cloud-smoke.log）。
+  rest=() detach=0
+  for arg in "$@"; do
+    case $arg in
+      --entry-cloud) ;;
+      --entry-cloud-bg) detach=1 ;;
+      *) rest+=("$arg") ;;
+    esac
+  done
+  # 前面带的那个子命令只是给 stack-remote.sh 做载体，真参数从 --entry-cloud 之后算。
+  [[ ${rest[0]:-} == status || ${rest[0]:-} == up || ${rest[0]:-} == logs ]] && rest=("${rest[@]:1}")
+  export WONTON_CORE_BINARY="${WONTON_CORE_BINARY:-$repo/target/debug/wonton-core}"
+  export WONTON_HOME_BINARY="${WONTON_HOME_BINARY:-$repo/target/debug/wonton-home}"
+  if [[ ${rest[0]:-} == destroy ]]; then
+    pkill -f 'deploy/dev/entry-cloud/smoke\.py' 2>/dev/null || true
+    exec bash "$repo/deploy/dev/entry-cloud/dev.sh" destroy
+  fi
+  if [[ ${rest[0]:-} == down || ${rest[0]:-} == logs ]]; then
+    exec bash "$repo/deploy/dev/entry-cloud/dev.sh" "${rest[@]}"
+  fi
+  if [[ ${rest[0]:-} == net ]]; then
+    for h in a b; do
+      echo "== $h"
+      docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{println $k $v.IPAddress}}{{end}}{{range .Config.Env}}{{println .}}{{end}}' "wonton-fr-entry-$h-core" | grep -E 'wonton|WONTON_PORT|WONTON_PUBLIC_PORT|WONTON_TUNNEL_PORT|WONTON_ANNOUNCE'
+    done
+    net=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{if eq $k "wonton-fr-entry-entry"}}{{$k}}{{end}}{{end}}' wonton-fr-entry-b-core)
+    img='public.ecr.aws/docker/library/debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4'
+    docker exec wonton-fr-entry-a-core sh -c 'ip route 2>/dev/null || cat /proc/net/route' || true
+    docker run --rm --network "$net" "$img" bash -c 'exec 3<>/dev/tcp/10.214.5.31/47403; printf "GET /_wonton/api/tunnel HTTP/1.0\r\nHost: wonton.localhost\r\n\r\n" >&3; timeout 3 head -c 60 <&3; echo tcp_rc=$?' || true
+    exit 0
+  fi
+  if [[ ${rest[0]:-} == tlsprobe ]]; then
+    echo "probe roots: $(ls -d /tmp/wonton-fr-entry-*/a/install 2>/dev/null | tr '\n' ' ')"
+    install=$(ls -d /tmp/wonton-fr-entry-*/a/install 2>/dev/null | head -1); root=$(dirname "$(dirname "$install")")
+    name=$(cat "$root/a/install/secrets/matrix-server-name")
+    relay=$(grep WONTON_ENTRY_RELAY_IP "$root/a/install/entry-input/init.env" | cut -d= -f2)
+    img='public.ecr.aws/docker/library/debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4'
+    echo "name=$name relay=$relay root=$root"
+    docker run --rm --network "${root:+$(basename "$root")_entry}" "$img" bash -c "echo | openssl s_client -connect $relay:443 -servername $name 2>&1 | head -20" || true
+    exit 0
+  fi
+  if [[ ${rest[0]:-} == wipe-homes ]]; then
+    docker ps -aq --filter name=wonton-fr-entry-a- | xargs -r docker rm -f >/dev/null
+    docker ps -aq --filter name=wonton-fr-entry-b- | xargs -r docker rm -f >/dev/null
+    docker network ls -q --filter name=wonton-fr-entry-a | xargs -r docker network rm >/dev/null 2>&1 || true
+    docker volume ls -q --filter name=wonton-fr-entry-a | xargs -r docker volume rm >/dev/null 2>&1 || true
+    docker network ls -q --filter name=wonton-fr-entry-b | xargs -r docker network rm >/dev/null 2>&1 || true
+    docker volume ls -q --filter name=wonton-fr-entry-b | xargs -r docker volume rm >/dev/null 2>&1 || true
+    echo wiped
+    exit 0
+  fi
+  if [[ ${rest[0]:-} == release-mine ]]; then
+    for d in "$HOME/wonton-dev/stack-slots"/*/; do
+      owner=$(cat "$d/owner" 2>/dev/null || true)
+      case $owner in
+        fr-entry* | wonton-fr-entry*) echo "释放 $(basename "$d")：$owner"; rm -rf "$d" ;;
+      esac
+    done
+    exit 0
+  fi
+  if [[ ${rest[0]:-} == stop ]]; then
+    pkill -f 'deploy/dev/entry-cloud/smoke\.py' 2>/dev/null || true
+    exit 0
+  fi
+  if [[ ${rest[0]:-} == bg-prio ]]; then
+    extra="${rest[*]:1}"; export extra
+    setsid nohup bash -c 'cd "$0" && WONTON_CORE_BINARY="$1/target/debug/wonton-core" WONTON_HOME_BINARY="$1/target/debug/wonton-home" exec "$HOME/wonton-dev/stack-slot.sh" acquire --priority --project wonton-fr-entry fr-entry -- python3 -u deploy/dev/entry-cloud/smoke.py $extra' "$repo" "$repo" >"$repo/.entry-cloud-smoke.log" 2>&1 </dev/null &
+    echo "已按优先排队（参数：${extra:-}），日志：$repo/.entry-cloud-smoke.log"
+    exit 0
+  fi
+  if [[ ${rest[0]:-} == release ]]; then
+    for n in fr-entry wonton-fr-entry-a wonton-fr-entry-b; do bash "$HOME/wonton-dev/stack-slot.sh" release "$n" 2>&1 || true; done
+    exit 0
+  fi
+  if [[ ${rest[0]:-} == hlogs ]]; then
+    for h in a b; do echo "===== $h core ====="; docker logs --tail 100 "wonton-fr-entry-$h-core" 2>&1; for svc in entry connector; do echo "===== $h $svc ====="; docker logs --tail 60 "wonton-fr-entry-$h-$svc-1" 2>&1; done; done; echo "===== relay ====="; docker logs --tail 40 wonton-fr-entry-iroh-1 2>&1; docker inspect -f "{{json .State.Health}}" wonton-fr-entry-iroh-1 2>&1
+    exit 0
+  fi
+  if [[ ${rest[0]:-} == cloud-up ]]; then
+    export WONTON_DEV_CORE_SUBNET="${WONTON_DEV_CORE_SUBNET:-$(bash "$HOME/wonton-dev/stack-slot.sh" subnet fr-entry)}"
+    exec bash "$repo/deploy/dev/entry-cloud/dev.sh" up
+  fi
+  if [[ ${rest[0]:-} == debug ]]; then
+    exec bash -c 'cd "$0"; set -a; . .runtime/stack.env; set +a; echo port=$WONTON_ENTRY_PEBBLE_MANAGEMENT_PORT; docker compose --env-file .runtime/stack.env -f compose.yaml -f compose.binary.yaml ps; docker inspect wonton-fr-entry-pebble-1 -f "bindings={{json .HostConfig.PortBindings}} net={{.HostConfig.NetworkMode}}"; grep -nE "_PORT=" .runtime/stack.env; ss -ltn | grep -E ":(52185|46757|36865|43367)\b" || echo no-host-listen; docker info -f "rootless={{json .SecurityOptions}} driver={{.Driver}}"; curl -s -o /dev/null -w "api=%{http_code}\n" http://127.0.0.1:$(grep WONTON_ENTRY_API_PORT .runtime/stack.env | cut -d= -f2)/ || true; ss -ltn | grep -F ":$WONTON_ENTRY_PEBBLE_MANAGEMENT_PORT" || true; curl -sv --max-time 5 --noproxy "*" --cacert .runtime/ca/control-ca.pem --resolve "pebble.$WONTON_HOME_ZONE:$WONTON_ENTRY_PEBBLE_MANAGEMENT_PORT:127.0.0.1" "https://pebble.$WONTON_HOME_ZONE:$WONTON_ENTRY_PEBBLE_MANAGEMENT_PORT/roots/0" 2>&1 | tail -20' "$repo/deploy/dev/entry-cloud"
+  fi
+  if [[ ${rest[0]:-} == roots ]]; then
+    exec bash "$repo/deploy/dev/entry-cloud/dev.sh" roots
+  fi
+  if (( detach )); then
+    setsid nohup python3 -u "$repo/deploy/dev/entry-cloud/smoke.py" "${rest[@]}" \
+      >"$repo/.entry-cloud-smoke.log" 2>&1 </dev/null &
+    echo "已脱离运行（参数：${rest[*]}），日志：$repo/.entry-cloud-smoke.log"
+    exit 0
+  fi
+  exec python3 "$repo/deploy/dev/entry-cloud/smoke.py" "${rest[@]}"
+fi
 
 # 被 source（instance-label_test.py 测实例标签）时只拿函数定义和上面的环境，不执行子命令。
 # return 0 要写全：不带参数的 return 会把左边失败的 [[ ]] 的状态带出去，source 它的脚本开着 set -e 就会退出。

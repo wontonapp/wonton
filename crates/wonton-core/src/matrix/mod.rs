@@ -7,7 +7,7 @@ mod admin;
 mod api;
 mod bot;
 mod bot_profile;
-pub(crate) mod federation_config;
+pub mod federation_config;
 pub(crate) mod issuer;
 mod notices;
 mod session;

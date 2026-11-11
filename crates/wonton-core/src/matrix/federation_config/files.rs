@@ -1,4 +1,4 @@
-//! 联邦名单文件 `fed/config.toml` 的生成（ADR-0050）。纯函数，运行时在 [super]。
+//! 联邦名单文件 `secrets/tuwunel/wonton-fed.toml` 的生成（ADR-0050）。纯函数，运行时在 [super]。
 
 use std::collections::BTreeSet;
 

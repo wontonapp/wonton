@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 
 use anyhow::Context;
 use axum::Router;
+use axum::serve::ListenerExt;
 use tokio::net::TcpListener;
 
 pub(crate) async fn bind(configured: Option<&str>) -> anyhow::Result<Option<TcpListener>> {
@@ -32,13 +33,14 @@ pub(crate) async fn bind(configured: Option<&str>) -> anyhow::Result<Option<TcpL
 }
 
 pub(crate) async fn serve(
-    listener: TcpListener,
+    listener: wonton_core::entry_runtime::MainListener,
     app: Router,
     push: Option<(TcpListener, Router)>,
+    entry: Option<(TcpListener, Router)>,
 ) -> anyhow::Result<()> {
     let gateway = async move {
         axum::serve(
-            listener,
+            listener.tap_io(|_| {}),
             app.into_make_service_with_connect_info::<SocketAddr>(),
         )
         .with_graceful_shutdown(super::shutdown())
@@ -57,7 +59,19 @@ pub(crate) async fn serve(
         .await
         .context("推送监听异常退出")
     };
-    // 任一监听失败都让核心退出，不能留下健康的公开网关却静默丢失推送。
-    tokio::try_join!(gateway, push)?;
+    let entry = async move {
+        let Some((listener, app)) = entry else {
+            return Ok(());
+        };
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(super::shutdown())
+        .await
+        .context("联邦入口监听异常退出")
+    };
+    // 任一监听失败都让核心退出，不留健康的状态页掩盖入口丢失。
+    tokio::try_join!(gateway, push, entry)?;
     Ok(())
 }

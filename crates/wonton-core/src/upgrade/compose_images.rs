@@ -34,7 +34,12 @@ pub fn images(compose: &str) -> anyhow::Result<Vec<String>> {
 
 pub fn command() -> ExitCode {
     match images(crate::install::COMPOSE) {
-        Ok(images) => {
+        Ok(mut images) => {
+            images.extend([
+                crate::entry_compose::HAPROXY_IMAGE.to_owned(),
+                crate::entry_runtime::FRPC_IMAGE.to_owned(),
+                crate::entry_certificate::LEGO_IMAGE.to_owned(),
+            ]);
             for image in images {
                 println!("{image}");
             }

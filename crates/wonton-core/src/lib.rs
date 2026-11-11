@@ -17,10 +17,16 @@ pub mod bot_media;
 
 pub mod config;
 pub mod device;
+pub mod entry_certificate;
+pub mod entry_compose;
+pub mod entry_dns;
+pub mod entry_runtime;
+pub mod entry_settings;
 pub mod files;
 pub mod friends;
 pub mod gateway;
 pub mod help;
+pub mod home_service;
 pub mod http;
 pub mod install;
 pub(crate) mod l10n;

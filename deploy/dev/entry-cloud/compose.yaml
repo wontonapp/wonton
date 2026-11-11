@@ -1,0 +1,210 @@
+name: ${COMPOSE_PROJECT_NAME:-wonton-entry-cloud}
+
+services:
+  pdns:
+    image: powerdns/pdns-auth-49:4.9.11@sha256:69e0e8ce5671f5f18e19c86746783ff6990555884cb9673b9845959fe05cdb46
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        if [ ! -f /var/lib/powerdns/pdns.sqlite3 ]; then
+          sqlite3 /var/lib/powerdns/pdns.sqlite3 < /usr/local/share/doc/pdns/schema.sqlite3.sql
+        fi
+        exec /usr/local/sbin/pdns_server --config-dir=/config --disable-syslog --daemon=no --guardian=no
+    volumes:
+      - pdns:/var/lib/powerdns
+      - ./.runtime/pdns:/config:ro
+    networks:
+      entry:
+        ipv4_address: ${WONTON_ENTRY_PDNS_IP:?Run dev.sh prepare}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1',8081),2).close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  acme-dns:
+    image: joohoi/acme-dns:v1.0@sha256:08435bf0c6cfe7c29816ff48beabcc333743b5bb060cae3867777d9b0d956517
+    platform: linux/amd64
+    volumes:
+      - ./.runtime/acme-dns:/etc/acme-dns:ro
+      - acme-dns:/var/lib/acme-dns
+    networks:
+      entry:
+        ipv4_address: ${WONTON_ENTRY_ACME_DNS_IP:?}
+    healthcheck:
+      test: ["CMD-SHELL", "env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy wget -q -O /dev/null http://127.0.0.1:8080/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  dnsdist:
+    image: powerdns/dnsdist-19:1.9.10@sha256:7495affd85c450050eb2fce1cb99964cb439482ffada22e9d312a761b6bf138d
+    command: ["--config", "/config/dnsdist.conf"]
+    volumes:
+      - ./.runtime/dnsdist:/config:ro
+    depends_on:
+      pdns:
+        condition: service_healthy
+      acme-dns:
+        condition: service_started
+    networks:
+      entry:
+        ipv4_address: ${WONTON_ENTRY_DNSDIST_IP:?}
+    ports:
+      - "127.0.0.1:${WONTON_ENTRY_AUTH_PORT:-15354}:53/udp"
+      - "127.0.0.1:${WONTON_ENTRY_AUTH_PORT:-15354}:53/tcp"
+
+  resolver:
+    image: powerdns/pdns-recursor-51:5.1.9@sha256:b22dc4d05a9dc897b0e23211ab9551f5d9b69e239f86461485360951c7211b88
+    command: ["--config-dir=/config"]
+    volumes:
+      - ./.runtime/resolver:/config:ro
+    depends_on:
+      dnsdist:
+        condition: service_started
+    networks:
+      entry:
+        ipv4_address: ${WONTON_ENTRY_RESOLVER_IP:?}
+    ports:
+      - "127.0.0.1:${WONTON_ENTRY_DNS_PORT:-15353}:53/udp"
+      - "127.0.0.1:${WONTON_ENTRY_DNS_PORT:-15353}:53/tcp"
+
+  dns-bootstrap:
+    image: powerdns/pdns-auth-49:4.9.11@sha256:69e0e8ce5671f5f18e19c86746783ff6990555884cb9673b9845959fe05cdb46
+    entrypoint: ["python3", "/bootstrap.py"]
+    environment:
+      WONTON_HOME_ZONE: ${WONTON_HOME_ZONE:?}
+      WONTON_ENTRY_PDNS_IP: ${WONTON_ENTRY_PDNS_IP:?}
+    volumes:
+      - ./dns-bootstrap.py:/bootstrap.py:ro
+      - ./.runtime/dns-records.json:/records.json:ro
+      - ./.runtime/secrets/pdns-key:/pdns-key:ro
+    depends_on:
+      pdns:
+        condition: service_healthy
+    user: "0:0"
+    networks:
+      entry:
+        ipv4_address: ${WONTON_ENTRY_BOOTSTRAP_IP:?}
+
+  iroh:
+    image: n0computer/iroh-relay:v1.4.1@sha256:f73d0028e9dcb08372d65ae48ec84e4c875812d754877c074a10658e3948d5d3
+    command: ["-c", "/config/relay.toml"]
+    volumes:
+      - ./.runtime/iroh:/config:ro
+      - ./.runtime/ca/ca.pem:/etc/ssl/certs/ca-certificates.crt:ro
+    networks:
+      entry:
+        ipv4_address: ${WONTON_ENTRY_IROH_IP:?}
+    healthcheck:
+      test: ["CMD-SHELL", "env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy wget -q -O /dev/null https://127.0.0.1/"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  pebble:
+    image: ghcr.io/letsencrypt/pebble:2.8.0@sha256:d9080f68f6cb6af8d82134ab26de0aaaf312ac9cba42aecc6d3aede6cb63007b
+    command: ["-config", "/config/pebble.json", "-dnsserver", "${WONTON_ENTRY_RESOLVER_IP}:53", "-strict=false"]
+    environment:
+      PEBBLE_VA_NOSLEEP: "1"
+      PEBBLE_VA_ALWAYS_VALID: "0"
+      PEBBLE_WFE_NONCEREJECT: "0"
+    volumes:
+      - ./.runtime/pebble:/config:ro
+    # 记录由 dns-bootstrap 生成，它在 dev.sh 的第二遍启动里跑完；Pebble 只在签发时才需要这些记录。
+    depends_on:
+      resolver:
+        condition: service_started
+    user: "0:0"
+    networks:
+      entry:
+        ipv4_address: ${WONTON_ENTRY_PEBBLE_IP:?}
+    ports:
+      - "127.0.0.1:${WONTON_ENTRY_PEBBLE_PORT:-14000}:14000"
+      - "127.0.0.1:${WONTON_ENTRY_PEBBLE_MANAGEMENT_PORT:-15000}:15000"
+
+  frps:
+    image: fatedier/frps:v0.71.1@sha256:48720c81f048e842f7f0b8053753c1a8514053d59d2dee8a953f67995de73a18
+    command: ["-c", "/config/frps.toml"]
+    volumes:
+      - ./.runtime/frps:/config:ro
+      - ./.runtime/secrets/frps-password:/metrics-password:ro
+    networks:
+      entry:
+        ipv4_address: ${WONTON_ENTRY_RELAY_IP:?}
+    ports:
+      - "127.0.0.1:${WONTON_ENTRY_RELAY_PORT:-9443}:443"
+    healthcheck:
+      test: ["CMD-SHELL", "env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy wget -q -O /dev/null --header=\"Authorization: Basic $$(printf 'wonton:%s' \"$$(cat /metrics-password)\" | base64 | tr -d '\\n')\" http://127.0.0.1:7500/metrics"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  home:
+    build:
+      context: ../../..
+      dockerfile: deploy/dev/entry-cloud/Dockerfile
+    network_mode: service:frps
+    environment:
+      WONTON_HOME_LISTEN: 0.0.0.0:8080
+      WONTON_HOME_HOOK_LISTEN: 0.0.0.0:8081
+      WONTON_HOME_STATE: /state/state.json
+      WONTON_HOME_ZONE: ${WONTON_HOME_ZONE:?}
+      WONTON_HOME_RELAY_IP: ${WONTON_ENTRY_RELAY_IP:?}
+      WONTON_HOME_RELAY_HOST: relay.${WONTON_HOME_ZONE}
+      WONTON_HOME_RELAY_PORT: "443"
+      WONTON_HOME_RELAY_SERVER_NAME: relay.${WONTON_HOME_ZONE}
+      WONTON_HOME_ACME_URL: https://names.${WONTON_HOME_ZONE}:8443/acme
+      WONTON_HOME_ACME_INTERNAL_URL: http://${WONTON_ENTRY_ACME_DNS_IP}:8080
+      WONTON_HOME_PDNS_URL: http://${WONTON_ENTRY_PDNS_IP}:8081
+      WONTON_HOME_PDNS_KEY_FILE: /secrets/pdns-key
+      WONTON_HOME_CAA_ISSUER: pebble
+      WONTON_HOME_FRPS_METRICS_URL: http://127.0.0.1:7500/metrics
+      WONTON_HOME_FRPS_METRICS_USER: wonton
+      WONTON_HOME_FRPS_METRICS_PASSWORD_FILE: /secrets/frps-password
+    volumes:
+      - home:/state
+      - ./.runtime/secrets/pdns-key:/secrets/pdns-key:ro
+      - ./.runtime/secrets/frps-password:/secrets/frps-password:ro
+      - ./.runtime/ca/control-ca.pem:/control-ca.pem:ro
+    depends_on:
+      frps:
+        condition: service_healthy
+      dns-bootstrap:
+        condition: service_completed_successfully
+      acme-dns:
+        condition: service_healthy
+      pebble:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "bash", "-ec", "exec 3<>/dev/tcp/127.0.0.1/8080; printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3; IFS= read -r status <&3; [[ $$status == *' 200 '* ]]; exec 4<>/dev/tcp/${WONTON_ENTRY_PEBBLE_IP}/14000"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    image: haproxy:3.2.8-alpine@sha256:8c6b55d891584afded3ab1b91063a703ecc8ff2481302b691773648ffa806226
+    user: "0:0"
+    volumes:
+      - ./.runtime/api:/usr/local/etc/haproxy:ro
+    depends_on:
+      home:
+        condition: service_healthy
+    networks:
+      entry:
+        ipv4_address: ${WONTON_ENTRY_API_IP:?}
+    ports:
+      - "127.0.0.1:${WONTON_ENTRY_API_PORT:-8443}:8443"
+
+networks:
+  entry:
+    name: ${WONTON_ENTRY_NETWORK:?}
+    internal: true
+    ipam:
+      config:
+        - subnet: ${WONTON_DEV_CORE_SUBNET:?Acquire a stack slot first}
+
+volumes:
+  pdns:
+  acme-dns:
+  home:
