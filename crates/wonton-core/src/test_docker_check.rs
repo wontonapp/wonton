@@ -1,5 +1,6 @@
-//! 真实 Docker 测试的命名检查：这些文件里不许出现写死的 `wonton-` 资源名或默认实例（正式安装的名字），
-//! CI 的几个 runner 共用一台 Docker，写死的名字会被并行的作业或清理脚本撞掉、删掉（#569）。
+//! 真实 Docker 测试的文件检查：不许出现写死的 `wonton-` 资源名或默认实例（正式安装的名字），
+//! 用到的镜像引用必须在 `scripts/mirror-test-images.sh` 的清单里。CI 的几个 runner 共用一台 Docker，
+//! 写死的名字会被并行的作业或清理脚本撞掉、删掉（#569）；清单外的镜像预拉会跳过，测试才 `No such image`。
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
