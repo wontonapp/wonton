@@ -55,13 +55,27 @@ impl Bot {
         Ok(serde_json::from_str(&text).unwrap_or(Value::Null))
     }
 
-    /// 建一个不加密的私聊并邀请对方。
+    /// 建一个不加密的私聊并邀请对方。邀请单独发：建房时顺带的邀请失败了只记服务器日志；刚配对时联邦要一会儿才通，
+    /// 失败了隔几秒再发。
     pub async fn direct_room(&self, invitee: &str) -> Result<String> {
-        let body = json!({"preset": "private_chat", "is_direct": true, "invite": [invitee]});
+        let body = json!({"preset": "private_chat", "is_direct": true});
         let room = self
             .call(Method::POST, "/_matrix/client/v3/createRoom", Some(body))
             .await?;
-        Ok(room["room_id"].as_str().context("room id")?.to_owned())
+        let room = room["room_id"].as_str().context("room id")?.to_owned();
+        let path = format!("/_matrix/client/v3/rooms/{}/invite", encode(&room));
+        let mut last = None;
+        for _ in 0..12 {
+            match self
+                .call(Method::POST, &path, Some(json!({"user_id": invitee})))
+                .await
+            {
+                Ok(_) => return Ok(room),
+                Err(e) => last = Some(e),
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+        Err(last.context("invite")?)
     }
 
     pub async fn membership(&self, room: &str, user: &str) -> Result<String> {

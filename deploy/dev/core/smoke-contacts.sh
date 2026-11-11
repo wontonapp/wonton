@@ -3,6 +3,10 @@
 # Tuwunel、隔离网段和测试 CA），两边各装一个回声 Bot，依次走：不是联系人时不理 → 请求、对方在“等你确认”里看到并同意
 # → 两边的 Bot 互相私聊、点名对方 → 删除后又不理 → 请求被拒绝 → 请求后取消。要名额、要 Docker。
 #
+# 夹具里的 Tuwunel 不经核心的 iroh 转发联邦（那要正式安装渲染的联邦配置，见 entry-cloud 的冒烟），而是信任测试 CA、
+# 经夹具的 TLS 前门互相联邦（share-smoke/contacts.yaml）。配对、对方在不在线由 iroh 给出，Matrix 事件和私聊走前门。
+# 别的栈的插件网络占了按名额算的地址段时，设 WONTON_SHARE_SMOKE_PLUGIN_POOL 换一段私有 /24。
+#
 # 用法：deploy/dev/core/smoke-contacts.sh            （在仓库根目录跑）
 # 依赖：
 #   - 回声 Bot 的镜像 wonton-echo-bot:dev（见 plugins/examples/echo-bot/README.md）；
@@ -19,6 +23,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   root="$(git rev-parse --show-toplevel 2>/dev/null)" || root="$(cd "$(dirname "$0")/../../.." && pwd)"
   [[ -n "$(docker image ls -q wonton-echo-bot:dev)" ]] || { echo "缺少镜像 wonton-echo-bot:dev" >&2; exit 2; }
   exec env SHARE_SMOKE_NAME=contacts-smoke SHARE_SMOKE_DRIVER=fr_contacts_smoke \
+    SHARE_SMOKE_COMPOSE_EXTRA="$root/deploy/dev/core/share-smoke/contacts.yaml" \
     SHARE_SMOKE_SCENARIO="$root/deploy/dev/core/smoke-contacts.sh" bash "$root/deploy/dev/core/smoke-sharing.sh"
 fi
 
@@ -46,7 +51,8 @@ allowed() {
 wait_allowed() {
   local side="$1" user="$2" want="$3" i
   for i in $(seq 1 60); do
-    if docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$(echo_bot "$side")" 2>/dev/null |
+    # 重建时有一会儿没有容器，找不到就接着等。
+    if docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$(echo_bot "$side" 2>/dev/null)" 2>/dev/null |
       grep '^WONTON_MATRIX_ALLOWED_USERS=' | grep -q -- "$user"; then
       [[ "$want" == yes ]] && { allowed "$side"; return 0; }
     else

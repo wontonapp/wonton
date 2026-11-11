@@ -72,7 +72,10 @@ async fn install(owner: &Owner) -> Result<()> {
     tar.append_dir_all(".", "/plugins/echo-bot")?;
     let response = owner
         .http
-        .post(format!("http://{}:8080/_wonton/api/plugins", owner.domain))
+        .post(format!(
+            "http://{}:8080/_wonton/api/plugins?grant=matrix.bot",
+            owner.domain
+        ))
         .header("Content-Type", "application/x-tar")
         .timeout(Duration::from_secs(300))
         .body(tar.into_inner()?)

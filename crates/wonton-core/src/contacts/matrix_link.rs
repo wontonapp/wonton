@@ -118,8 +118,9 @@ impl MatrixLink {
         self.matrix.server_name()
     }
 
-    /// 本机名字更小的已配对服务器：建房、补邀请。
-    async fn ensure_rooms(&self) {
+    /// 本机名字更小的已配对服务器：建房、补邀请。有没办成的返回 `false`。
+    async fn ensure_rooms(&self) -> bool {
+        let mut done = true;
         let paired: Vec<String> = self.peers.paired_names().borrow().iter().cloned().collect();
         for server in paired
             .into_iter()
@@ -145,6 +146,7 @@ impl MatrixLink {
                     }
                     Err(e) => {
                         tracing::warn!(%server, error = %e, "建联系人房间失败，稍后再试");
+                        done = false;
                         continue;
                     }
                 },
@@ -156,10 +158,12 @@ impl MatrixLink {
                     }
                 }),
                 Err(e) => {
-                    tracing::info!(%server, error = %e, "联系人房间的邀请没发到对方，稍后再试")
+                    tracing::info!(%server, error = %e, "联系人房间的邀请没发到对方，稍后再试");
+                    done = false;
                 }
             }
         }
+        done
     }
 
     /// 一次同步：先收邀请，再收事件，处理完才记下 `next_batch`。
@@ -332,15 +336,24 @@ async fn keep_rooms(link: Weak<MatrixLink>) {
     let Some(mut names) = link.upgrade().map(|link| link.peers.paired_names()) else {
         return;
     };
+    // 刚配对时对方的联邦常常还没通，第一次邀请会失败；没办成就几秒后再试，不让刚配对就加联系人的人等满一轮。
+    let mut retry = Duration::from_secs(2);
     loop {
         let Some(strong) = link.upgrade() else {
             return;
         };
-        strong.ensure_rooms().await;
+        let wait = if strong.ensure_rooms().await {
+            retry = Duration::from_secs(2);
+            ROOMS_INTERVAL
+        } else {
+            let wait = retry;
+            retry = (retry * 2).min(ROOMS_INTERVAL);
+            wait
+        };
         drop(strong);
         tokio::select! {
             changed = names.changed() => if changed.is_err() { return },
-            () = tokio::time::sleep(ROOMS_INTERVAL) => {}
+            () = tokio::time::sleep(wait) => {}
         }
     }
 }
