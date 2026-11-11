@@ -221,6 +221,8 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
                 let keys
             else { return }
             print("PUSH_KEYS p256dh=\(keys.p256dh) auth=\(keys.auth)")
+            // 模拟器验证里 simctl terminate 是 SIGKILL，缓冲不冲；不冲的话密钥到不了抓取脚本。
+            fflush(stdout)
         }
     #endif
 }
