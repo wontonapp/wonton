@@ -98,21 +98,3 @@ private fun PageChrome(
     }
 }
 
-/** 胶囊上方的一条短状态:连接提示由壳给,升级中由这里说。 */
-@Composable
-private fun shortStatus(page: TabPage): String? =
-    LocalWontonBarStatus.current.title
-        ?: if (page.state is TabState.Upgrading) stringResource(R.string.tab_upgrading) else null
-
-@Composable
-private fun PageStatusOverlay(
-    state: WebPageState, page: TabPage, tab: TabRef, supported: Boolean, crossOriginBlocked: Boolean,
-    inset: PaddingValues, onDetails: (String) -> Unit,
-) {
-    val platformBlocked = !supported || crossOriginBlocked
-    if (state.covers(page) || platformBlocked || state.problem != null) {
-        Box(Modifier.padding(inset).fillMaxSize().background(WontonTheme.colors.canvas.toColor())) {
-            PluginTabStatus(page, tab, state.tabs, state.problem, supported, crossOriginBlocked, onDetails)
-        }
-    }
-}

@@ -5,6 +5,7 @@
 //! 否则经隧道向核心要一次性的登录令牌，用它登录 `matrix.<基础域名>`。所有 Matrix 请求都走本地代理，Tuwunel 只被当成
 //! 标准的 Matrix 服务器（ADR-0015）。
 
+mod accessors;
 mod ask;
 mod avatar_files;
 mod background;
@@ -260,44 +261,6 @@ impl ChatLink {
         runtime.spawn(draft::write_drafts(Arc::downgrade(&chat), draft_receiver));
         runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
         Ok(chat)
-    }
-
-    pub(crate) fn view(&self) -> ChatViewModel {
-        self.view.borrow().clone()
-    }
-
-    /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
-    pub(crate) fn sender(&self) -> watch::Sender<ChatViewModel> {
-        self.view.clone()
-    }
-
-    pub(crate) fn subscribe(&self) -> watch::Receiver<ChatViewModel> {
-        self.view.subscribe()
-    }
-
-    pub(crate) fn sharing_sessions(&self) -> watch::Receiver<Option<Arc<MatrixSession>>> {
-        self.bots.session.subscribe()
-    }
-
-    pub(crate) fn subscribe_sent(&self) -> watch::Receiver<Vec<String>> {
-        self.sent.subscribe()
-    }
-
-    pub(crate) fn set_primary_bot(&self, bot: Option<String>) {
-        let changed = {
-            let mut current = lock(&self.primary_bot);
-            if *current == bot {
-                false
-            } else {
-                *current = bot.clone();
-                true
-            }
-        };
-        if changed {
-            let rows = self.room_order.display(bot.as_deref());
-            self.view.send_modify(|view| view.rooms = rows);
-            self.installs.refresh();
-        }
     }
 
     /// App 回到前台或家里的连接恢复：登录失败（不是被吊销）或正在等着重连的话马上重新登录；已经登录的接着用同一个

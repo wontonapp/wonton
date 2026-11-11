@@ -78,7 +78,7 @@ internal fun PanelPage(
         if (!public && state.started) state.script(environmentKey)?.let { state.controller.evaluateJavascript(it) }
     }
     LaunchedEffect(home.status) {
-        if (!public) state.controller.evaluateJavascript(state.tabs.core.tabConnectionScript())
+        if (!public) state.controller.evaluateJavascript(state.tabs.core.tabConnectionScript(state.tab))
     }
     val capsule = state.capsule
     TabCapsuleEffects(capsule, current && panel.level == PanelLevel.FULL, true)

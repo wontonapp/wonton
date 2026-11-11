@@ -73,6 +73,7 @@ impl PluginsLink {
                 view.problem = Some(wonton_protocol::PluginProblem {
                     reason: wonton_protocol::PluginFailure::Upstream,
                     min_version: None,
+                    settings: None,
                     message: error.to_string(),
                 })
             });

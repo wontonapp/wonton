@@ -5,7 +5,12 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,23 +26,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import app.wonton.ui.design.LocalWontonBarStatus
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.WebViewFeature
 import app.wonton.client.TabBridgeAction
 import app.wonton.client.TabEnvironment
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
-import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.ProxySettings
+import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.TabItem
 import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.TabState
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
 import kotlin.math.roundToInt
 
 @Composable
