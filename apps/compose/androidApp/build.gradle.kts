@@ -119,9 +119,8 @@ dependencies {
     testImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
 
-    // Apache-2.0。设备上的启动测试：rule、runner 和参数化 Activity 场景。
-    androidTestImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.test.junit)
+    // Apache-2.0。设备上跑 androidTest 的 runner（testInstrumentationRunner 指它）；
+    // AndroidJUnitRunner 在这个包里，ext:junit 不带。
     androidTestImplementation(libs.androidx.test.runner)
 }
 
