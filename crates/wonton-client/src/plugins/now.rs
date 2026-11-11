@@ -321,6 +321,7 @@ impl PluginsLink {
                     reason: problem.reason,
                     message: problem.message,
                 },
+                waiting_for_connection: false,
                 added_tools: None,
                 id,
             });
