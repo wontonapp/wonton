@@ -246,7 +246,7 @@ private fun ChatListScreen(
 }
 
 @Composable
-private fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
+internal fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
     val account = viewModel.account
     val sync = viewModel.sync
     val reminder = viewModel.encryption.backupReminder?.text
@@ -410,7 +410,7 @@ private fun roomTime(timestampMs: Long): String {
 }
 
 @Composable
-private fun InviteItem(row: RoomRow, onAction: (Action) -> Unit) {
+internal fun InviteItem(row: RoomRow, onAction: (Action) -> Unit) {
     Column(
         Modifier.fillMaxWidth().padding(WontonTheme.spacing.s16),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),

@@ -118,6 +118,10 @@ dependencies {
     testImplementation(libs.compose.foundation)
     testImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
+
+    // Apache-2.0。设备上跑 androidTest 的 runner（testInstrumentationRunner 指它）；
+    // AndroidJUnitRunner 在这个包里，ext:junit 不带。
+    androidTestImplementation(libs.androidx.test.runner)
 }
 
 /** Robolectric 要读 strings.xml 和各语言的 values-*，资源得进单元测试。 */
