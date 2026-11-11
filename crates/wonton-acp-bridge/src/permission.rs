@@ -230,6 +230,7 @@ pub fn parse_pending(
             options,
             // 会话的来源会话（ADR-0016），核心当不可信输入核对；没报时卡片落到 Bot 的主房间。
             origin,
+            session: None,
         },
         option_ids,
         locations,
@@ -307,6 +308,7 @@ mod tests {
                     name: "允许一次".into(),
                 }],
                 origin: None,
+                session: None,
             },
             option_ids: HashMap::from([(String::from("acp-0"), String::from("allow_once"))]),
             locations: Vec::new(),
