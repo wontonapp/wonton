@@ -10,6 +10,7 @@ uniffi::setup_scaffolding!();
 
 mod action;
 mod agent_permission;
+mod agent_run;
 mod appearance;
 mod bot_commands;
 mod bot_contacts;
@@ -59,6 +60,7 @@ pub use agent_permission::{
     AGENT_PERMISSION_PATH, AGENT_PERMISSION_TTL_SECS, AgentPermissionKind, AgentPermissionOption,
     AgentPermissionOutcome, AgentPermissionRequest,
 };
+pub use agent_run::{AgentRunChoice, AgentRunEnd, AgentRunState};
 pub use appearance::{
     AppearanceProblem, AppearanceViewModel, FontStyle, Rgb, TextSize, ThemeColors, ThemeMode,
 };
