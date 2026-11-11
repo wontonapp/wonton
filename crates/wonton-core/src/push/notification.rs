@@ -50,6 +50,10 @@ pub struct DevicePayload {
     /// 新的联系人请求（ADR-0045）：不对应房间里的消息，`room_id`、`event_id` 为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact_request: Option<wonton_protocol::ContactRequestPush>,
+    /// 推送的类别（ADR-0047 的类别）：`confirmation` 是等你回答的确认卡片，卡片标题在发送者位上。
+    /// 现在只有客户端核心直推的确认卡片带它（那边的 PR 定数据），消息类推送不带，App 按普通消息显示。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
 }
 
 impl Notification {
@@ -64,6 +68,7 @@ impl Notification {
             room_name: self.room_name.clone(),
             prio: self.prio.clone(),
             contact_request: None,
+            category: None,
         })
     }
 
@@ -95,6 +100,7 @@ mod tests {
             room_name: None,
             prio: Some("high".into()),
             contact_request: None,
+            category: None,
         };
         assert_eq!(
             serde_json::to_value(&payload).unwrap(),
@@ -107,6 +113,15 @@ mod tests {
                 "prio": "high",
             })
         );
+        // 确认卡片的推送带类别，卡片标题在发送者位上；没有的字段不出现。
+        let card = DevicePayload {
+            sender_display_name: Some("Hermes 想安装 Grafana".into()),
+            category: Some("confirmation".into()),
+            ..payload
+        };
+        let value = serde_json::to_value(&card).unwrap();
+        assert_eq!(value["category"], json!("confirmation"));
+        assert_eq!(value["sender_display_name"], json!("Hermes 想安装 Grafana"));
     }
 
     /// Tuwunel 完整格式的通知里有正文，转发给设备的内容里不能有。

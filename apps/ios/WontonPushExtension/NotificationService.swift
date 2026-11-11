@@ -40,10 +40,13 @@ final class NotificationService: UNNotificationServiceExtension {
             content.body = String(localized: .pushNewMessage)
             return content
         }
-        // 标题和 Android 一致：群聊用房间名，私聊用发送者（推送里没有正文可显示）。
+        // 标题和 Android 一致：群聊用房间名，私聊用发送者；确认卡片推来时发送者位上是卡片标题。
+        // 正文按类别：确认卡片不重复标题，用一句类别文案。
         content.title = payload.roomName
             ?? payload.senderDisplayName ?? payload.sender ?? String(localized: .pushUnknownSender)
-        content.body = String(localized: .pushNewMessage)
+        content.body = payload.category == "confirmation"
+            ? String(localized: .pushWaitingConfirmation)
+            : String(localized: .pushNewMessage)
         content.threadIdentifier = payload.roomId
         // 点开通知的跳转用：通知来自哪台服务器、进哪个房间。
         content.userInfo = content.userInfo.merging([
