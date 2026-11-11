@@ -24,7 +24,7 @@ ACP 桥是每个 ACP Agent 插件的一部分，不进核心，也不在核心�
 
 桥以一个普通 Matrix 设备运行，核心把 Matrix access token 只注入 bridge 服务。核心创建主人与 Bot 的加密私聊并把房间 ID 交给桥；桥只接受主人的消息，群聊和其他发送者按 Bot 权限拒绝。桥复用 `wonton-matrix` 的 Sliding Sync、设备密钥、交叉签名和恢复密钥，不自己实现 Olm/Megolm。bridge 的 crypto store、Bot 登录状态、恢复密钥和房间→session 映射在 `${WONTON_BOT_DATA}/bridge`，目录权限 0700；agent 的 HOME、workspace 和官方登录态在 `${WONTON_BOT_DATA}/agent`，Agent 看不到 bridge 目录。恢复密钥只在核心收集/保管的文件中出现，不进日志、环境变量或 Matrix 消息。加密初始化失败就让插件不健康，绝不退回明文。
 
-收到普通文本后，桥按房间查 session；没有就调用 `session/new`，随后切到插件配置的模式（见下文）。文本成为一个 `session/prompt`，ACP 的 `agent_message_chunk` 只在该轮结束后拼成一条 Matrix `m.text`；中间不展示 thought、tool call、usage、plan 或执行轨迹，只发送 typing 状态。图片和文件 C1 不转，收到时返回明确的输入不支持错误。桥限制输入、输出、队列长度和单轮时间，超限报错误，不截断成成功。
+收到普通文本后，桥按房间查 session；没有就调用 `session/new`，随后切到插件配置的模式（见下文）。文本成为一个 `session/prompt`，ACP 的 `agent_message_chunk` 只在该轮结束后拼成一条 Matrix `m.text`；中间不展示 thought、tool call、usage、plan 或执行轨迹，只发送 typing 状态和每轮一条状态消息（[ADR-0082](0082-agent-run-status.md)）。图片和文件 C1 不转，收到时返回明确的输入不支持错误。桥限制输入、输出、队列长度和单轮时间，超限报错误，不截断成成功。
 
 同一 session 同时只有一个 `session/prompt`。默认排队，队列满返回 busy。主人发送“打断重来”操作时，桥先 `session/cancel`，等原 prompt 的响应（包括 `cancelled`）后再用新文本调用 `session/prompt`；取消后的迟到 chunk 在该 prompt 的边界外丢弃。桥在 ACP `initialize` 的顶层 `_meta.steering.supported` 为真时支持现成的 `_session/steering`：进行中直接发送，返回 `injected`；空闲返回 `promptRequired`，再走普通 prompt。没有该能力就排队，不调用 Qwen 私有方法。Matrix 控制消息只由桥识别，不发给 ACP：`/wonton interrupt <文字>` 是打断重来，`/wonton queue <文字>` 是显式排队；普通聊天文本默认排队。
 
