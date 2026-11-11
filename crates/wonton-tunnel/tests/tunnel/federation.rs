@@ -506,6 +506,29 @@ async fn goes_offline_when_the_peer_stops_and_recovers_when_it_returns() {
         .await;
 }
 
+/// 对方重启、连接整个换掉：下一次联邦请求经隧道客户端自动重连成功，不用等下一次探活。
+#[tokio::test]
+async fn reconnects_the_next_request_after_the_peer_restarts() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let mut b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    pair_a_to_b(&a, &b, &table, b"before").await;
+    b.stop().await;
+    a.wait_for(B_NAME, |status| {
+        matches!(status, PeerStatus::Offline { .. })
+    })
+    .await;
+    b.restart().await;
+    // 不等探活，直接发下一次请求：客户端自己建新连接。
+    let before = b.upstream.received();
+    let reply = federate(a.listen, B_NAME, b"after-restart").await;
+    assert_eq!(
+        b.upstream.received(),
+        [before, b"after-restart".to_vec()].concat()
+    );
+    assert_eq!(reply, REPLY);
+}
+
 /// 两边互相放进名单、名字绑上查找表，但一个字节的联邦流量都不发。
 fn pair_quietly(a: &TestPeer, b: &TestPeer, table: &Pairings) {
     table

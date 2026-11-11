@@ -2,6 +2,8 @@
 //!
 //! 同一时刻最多一次建连，失败后按 [`Pacing`] 退避，等待期间的请求共享下一次的结果（ADR-0032）。建连放在独立的
 //! 任务里：等它的请求超时走了，建连也不会被丢下重来。
+//!
+//! 默认只连隧道的 ALPN；联邦转发用 [`TunnelClient::with_alpn`] 换成自己的，连接、退避、探活都一样。
 
 mod attempt;
 mod check;
@@ -122,6 +124,8 @@ pub struct TunnelClient {
 struct Inner {
     endpoint: Endpoint,
     server: Mutex<EndpointAddr>,
+    /// 建连时用的 ALPN。隧道用 [`ALPN`]，联邦转发换成自己的。
+    alpn: Vec<u8>,
     /// 当前的建连尝试。同一时刻最多一次建连，并发请求共享它的结果。
     attempt: Mutex<Option<Arc<Attempt>>>,
     status: watch::Sender<TunnelStatus>,
@@ -166,7 +170,16 @@ impl TunnelClient {
     /// `server` 可以只有 endpoint ID（靠 endpoint 配置的地址发现找到服务端），也可以带上中继地址和
     /// 直连地址。
     pub fn new(endpoint: Endpoint, server: impl Into<EndpointAddr>) -> Self {
-        Self::with_clock(endpoint, server.into(), None)
+        Self::with_clock(endpoint, server.into(), ALPN.to_vec(), None)
+    }
+
+    /// 用指定的 ALPN 连接 `server`，其余同 [`new`](Self::new)。联邦转发用它换成 `wonton/federation/0`。
+    pub fn with_alpn(
+        endpoint: Endpoint,
+        server: impl Into<EndpointAddr>,
+        alpn: impl Into<Vec<u8>>,
+    ) -> Self {
+        Self::with_clock(endpoint, server.into(), alpn.into(), None)
     }
 
     /// 注入挂起检测的双时钟；不改变 QUIC 和主动检查的时限。
@@ -176,12 +189,13 @@ impl TunnelClient {
         server: impl Into<EndpointAddr>,
         clock: Arc<dyn SuspendClock>,
     ) -> Self {
-        Self::with_clock(endpoint, server.into(), Some(clock))
+        Self::with_clock(endpoint, server.into(), ALPN.to_vec(), Some(clock))
     }
 
     fn with_clock(
         endpoint: Endpoint,
         server: EndpointAddr,
+        alpn: Vec<u8>,
         clock: Option<Arc<dyn SuspendClock>>,
     ) -> Self {
         let (status, _) = watch::channel(TunnelStatus::Idle);
@@ -189,6 +203,7 @@ impl TunnelClient {
             inner: Arc::new(Inner {
                 endpoint,
                 server: Mutex::new(server),
+                alpn,
                 attempt: Mutex::new(None),
                 status,
                 closed: AtomicBool::new(false),
@@ -222,6 +237,20 @@ impl TunnelClient {
     /// 订阅状态变化。watch 只保留最新状态，订阅方处理慢也不会积压事件。
     pub fn watch_status(&self) -> watch::Receiver<TunnelStatus> {
         self.inner.status.subscribe()
+    }
+
+    /// 有没有可用连接。
+    pub(crate) fn has_connection(&self) -> bool {
+        self.inner.live_connection().is_some()
+    }
+
+    /// 退避还要等多久；没在退避时为 0。联邦探活在退避期间不试，等到点再探。
+    pub(crate) fn backoff_left(&self) -> Duration {
+        lock(&self.inner.pacing)
+            .not_before()
+            .map_or(Duration::ZERO, |at| {
+                at.saturating_duration_since(tokio::time::Instant::now())
+            })
     }
 
     /// 确认隧道可用：必要时建连，再和服务端做一次往返，确认本设备已获授权。
@@ -429,8 +458,11 @@ impl Inner {
         let server_addr = lock(&self.server).clone();
         let server = server_addr.id.fmt_short();
         let started = Instant::now();
-        let dialed =
-            tokio::time::timeout(DIAL_DEADLINE, self.endpoint.connect(server_addr, ALPN)).await;
+        let dialed = tokio::time::timeout(
+            DIAL_DEADLINE,
+            self.endpoint.connect(server_addr, &self.alpn),
+        )
+        .await;
         let conn = match dialed {
             Ok(Ok(conn)) => conn,
             Ok(Err(err)) => return Err(self.dial_failed(from_connect_error(&err), &server)),
