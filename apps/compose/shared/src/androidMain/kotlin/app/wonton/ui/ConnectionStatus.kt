@@ -69,9 +69,10 @@ private val ConnectionNotice.isShort: Boolean
     get() = this is ConnectionNotice.WaitingForNetwork ||
         this is ConnectionNotice.Updating
 
-/** 能重试时给出是否正在重试。 */
+/** 以核心通知为准，避免 HomeStatus.Connecting 掩盖超时后恢复的重试入口。 */
 private val ConnectionNotice.retrying: Boolean?
     get() = when (this) {
+        is ConnectionNotice.Connecting -> true
         is ConnectionNotice.ServerOffline -> retrying
         is ConnectionNotice.Unreachable -> retrying
         else -> null
@@ -153,7 +154,7 @@ fun connectionBarStatus(
 @Composable
 private fun ConnectionLine(notice: ConnectionNotice, onRetry: () -> Unit, onOpen: (SettingsSubpage) -> Unit) {
     val colors = WontonTheme.colors
-    val retrying = notice is ConnectionNotice.Connecting || notice.retrying == true
+    val retrying = notice.retrying == true
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         if (retrying) {
             Row(

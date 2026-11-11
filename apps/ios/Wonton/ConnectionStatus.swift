@@ -33,11 +33,12 @@ extension ConnectionNotice {
         }
     }
 
-    /// 能重试时给出是否正在重试。
+    /// 以核心通知为准，避免 HomeStatus.Connecting 掩盖超时后恢复的重试入口。
     var retrying: Bool? {
         switch self {
         case let .serverOffline(retrying), let .unreachable(retrying): retrying
-        case .waitingForNetwork, .connecting, .updating, .deviceRejected, .versionMismatch: nil
+        case .connecting: true
+        case .waitingForNetwork, .updating, .deviceRejected, .versionMismatch: nil
         }
     }
 }
@@ -90,7 +91,7 @@ struct ConnectionLine: View {
     let open: (SettingsRoute) -> Void
     @Environment(\.wontonColors) private var colors
 
-    private var retrying: Bool { notice == .connecting || notice.retrying == true }
+    private var retrying: Bool { notice.retrying == true }
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
