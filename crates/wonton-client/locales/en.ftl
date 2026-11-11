@@ -584,6 +584,15 @@ plugins-core-upgrade-not-cancellable = The update can't be cancelled right now.
 # $reason is the connection problem's original detail.
 plugins-core-upgrade-start-uncertain = It isn't certain that the update was started. Check again once you're connected: { $reason }
 
+# Details of the compatibility check before the update (ADR-0085): one line per reason,
+# with the manifest's own value in { $raw }. Written by the client core in the App's
+# language; the update page lists them under each app the new version can't read.
+plugins-core-upgrade-compat-spec = Its manifest is written against spec { $raw }, which the new version doesn't support: it will be marked as broken after the update.
+plugins-core-upgrade-compat-feature = Its manifest uses { $raw }, which the new version doesn't recognize: it will be marked as broken after the update.
+plugins-core-upgrade-compat-capability = It depends on the capability { $raw }, which the new version doesn't provide: it will be marked as broken after the update.
+plugins-core-upgrade-compat-other = The new version can't read this app, so it will be marked as broken after the update.
+plugins-core-upgrade-compat-other-raw = The new version can't read part of this app ({ $raw }), so it will be marked as broken after the update.
+
 # Profile step: why the name or email can't be saved. $max is the longest name allowed.
 onboarding-profile-name-empty = Enter a name.
 onboarding-profile-name-too-long = The name can be at most { $max } characters.

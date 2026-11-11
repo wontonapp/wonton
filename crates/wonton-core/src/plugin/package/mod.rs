@@ -598,7 +598,7 @@ fn pathed<E: fmt::Display>(error: &serde_path_to_error::Error<E>) -> String {
 
 /// 从 YAML 文本直接反序列化清单：`serde_json::from_value` 丢掉了位置，失败时用它把报错写到
 /// 字段和行号（如 `x-wonton.description.Y`，加 serde-saphyr 给的 at line N, column M）。
-fn manifest_from_yaml(source: &str) -> Result<Manifest, ManifestError> {
+pub(crate) fn manifest_from_yaml(source: &str) -> Result<Manifest, ManifestError> {
     #[derive(Deserialize)]
     struct ManifestDocument {
         #[serde(rename = "x-wonton")]

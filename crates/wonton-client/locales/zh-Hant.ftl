@@ -532,6 +532,14 @@ plugins-core-upgrade-not-cancellable = 現在無法取消
 # $reason 是連線問題的原始詳細資訊。
 plugins-core-upgrade-start-uncertain = 不確定發起了沒有，連上後再看一下：{ $reason }
 
+# 相容性檢查（ADR-0085）的詳情：每個原因一行，{ $raw } 是清單裡的原值。用戶端核心按
+# App 的語言寫，升級頁列在新版本讀不了的應用程式下面。
+plugins-core-upgrade-compat-spec = 它按規範 { $raw } 寫成，新版本不支援：升級後會被標為異常。
+plugins-core-upgrade-compat-feature = 它的清單用了新版本不認得的 { $raw }：升級後會被標為異常。
+plugins-core-upgrade-compat-capability = 它依賴能力 { $raw }，新版本不提供：升級後會被標為異常。
+plugins-core-upgrade-compat-other = 新版本讀不了這個應用程式：升級後會被標為異常。
+plugins-core-upgrade-compat-other-raw = 新版本讀不了這個應用程式的 { $raw }：升級後會被標為異常。
+
 # 個人資料這一步：名字或電子郵件為什麼無法儲存。$max 是名字最多幾個字。
 onboarding-profile-name-empty = 名字不能空白
 onboarding-profile-name-too-long = 名字太長：最多 { $max } 個字
