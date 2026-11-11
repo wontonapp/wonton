@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use super::{BASE, CORE, docker};
+use super::{CORE, base, docker};
 
 /// 把本次编译的核心及其动态库装成镜像，核心自行起的局域网探针也运行同一个程序。
 pub(super) struct Image(pub(super) String);
@@ -29,10 +29,11 @@ impl Image {
         fs::write(
             context.path().join("Dockerfile"),
             format!(
-                "FROM {BASE}\nCOPY core /usr/local/bin/wonton-core\n\
+                "FROM {}\nCOPY core /usr/local/bin/wonton-core\n\
              COPY libs /usr/lib/{}-linux-gnu/\n\
              COPY ca.crt /etc/ssl/certs/ca-certificates.crt\n\
              ENTRYPOINT [\"wonton-core\"]\nCMD [\"serve\"]\n",
+                base(),
                 std::env::consts::ARCH,
             ),
         )

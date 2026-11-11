@@ -12,11 +12,12 @@ use std::process::Command;
 fn docker_test_images_are_in_the_mirror_list() {
     const PREFIX: &str = "ghcr.io/example/test-images";
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace = root.join("../..").canonicalize().unwrap();
     let mut sources = Vec::new();
-    collect(&root.join("src"), &mut sources);
-    collect(&root.join("tests"), &mut sources);
+    collect(&workspace.join("crates"), &workspace, &mut sources);
 
-    let listed = Command::new(root.join("../../scripts/mirror-test-images.sh"))
+    let listed = Command::new("bash")
+        .arg(workspace.join("scripts/mirror-test-images.sh"))
         .arg("--list")
         .env("WONTON_TEST_IMAGES_PREFIX", PREFIX)
         .output()
@@ -66,7 +67,7 @@ fn quoted_literals(line: &str) -> impl Iterator<Item = &str> {
 /// 像镜像引用的字面量：带仓库路径，并且带摘要或标签。路径、URL、格式串靠这几条排除。
 fn image_like(literal: &str) -> bool {
     if literal.starts_with("http")
-        || literal.contains(['{', '$'])
+        || literal.contains(['{', '$', '\\'])
         || literal.contains(char::is_whitespace)
     {
         return false;
@@ -90,8 +91,8 @@ fn sha256(digest: &str) -> bool {
 fn docker_test_files_use_unique_resource_names() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut sources = Vec::new();
-    collect(&root.join("src"), &mut sources);
-    collect(&root.join("tests"), &mut sources);
+    collect(&root.join("src"), &root, &mut sources);
+    collect(&root.join("tests"), &root, &mut sources);
     let hardcoded = sources
         .into_iter()
         .filter(|(_, content)| content.contains("#[ignore = \"需要 Docker"))
@@ -114,19 +115,16 @@ fn docker_test_files_use_unique_resource_names() {
 }
 
 /// 收集目录下的 `.rs` 文件（相对 crate 根的路径，配上内容）。
-fn collect(dir: &Path, into: &mut Vec<(String, String)>) {
+fn collect(dir: &Path, base: &Path, into: &mut Vec<(String, String)>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.map_while(Result::ok) {
         let path = entry.path();
         if path.is_dir() {
-            collect(&path, into);
+            collect(&path, base, into);
         } else if path.extension().is_some_and(|ext| ext == "rs") {
-            let relative = path
-                .strip_prefix(env!("CARGO_MANIFEST_DIR"))
-                .unwrap()
-                .display();
+            let relative = path.strip_prefix(base).unwrap_or(&path).display();
             into.push((
                 relative.to_string(),
                 std::fs::read_to_string(&path).unwrap(),

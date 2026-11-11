@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Docker 集成测试要拉的上游镜像，逐个复制到 ghcr.io/<owner>/test-images/<名字>:<标签>（带摘要的按摘要）。
+# Docker 集成测试要拉的上游镜像，逐个复制到 ghcr.io/<owner>/test-images/<名字>。
 # 仓库主人取 GITHUB_REPOSITORY_OWNER（GitHub Actions 自带），本地跑用 WONTON_TEST_IMAGES_PREFIX 指定完整前缀。
 # crane copy 原样保留 manifest 和 index 的字节，digest 不变：测试里按 digest 固定的引用照样校验得过。
-# 带摘要的引用推成 <名字>@<摘要>（丢标签）：预拉和测试建容器用的是同一个引用，不靠标签解析。
+# 带摘要的引用推成 <名字>@<摘要>，镜像仓库里不留标签：预拉和测试建容器用的就是摘要引用；
+# 不带摘要的用 <名字>:<标签>。
 #
 # 引用来源：测试代码里 wonton_test_images::image("…") 的字面量、生产镜像常量（gost、socat）、
 # acp-bridge Dockerfile 的 ARG 默认值，外加 tusd（tusd_tests 从 deploy/install/compose.yaml
@@ -10,7 +11,6 @@
 #
 #   scripts/mirror-test-images.sh            用 PATH 里的 crane 复制
 #   scripts/mirror-test-images.sh <crane>    用指定的 crane 二进制（CI 下载后传入）
-#   scripts/mirror-test-images.sh --sources  只打印来源引用（不带改写，test_docker_check 的清单检查用）
 #   scripts/mirror-test-images.sh --list     只打印要拉的目标引用（CI 开跑前预拉用），不调用 crane
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -63,11 +63,6 @@ map_ref() {
   esac
   printf '%s/%s:%s\n' "$destination_prefix" "$base" "$tag"
 }
-
-if [ "${1:-}" = --sources ]; then
-  printf '%s\n' "$refs"
-  exit 0
-fi
 
 if [ "${1:-}" = --list ]; then
   while IFS= read -r ref; do

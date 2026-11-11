@@ -16,6 +16,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/test-images.yml"
+      - "scripts/mirror-test-images.sh"
   workflow_dispatch:
 
 permissions:
