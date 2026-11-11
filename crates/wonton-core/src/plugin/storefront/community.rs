@@ -159,7 +159,7 @@ async fn read_repo(
         Err(GitHubError::NotFound(why)) => return skip(why),
         other => other?,
     };
-    let Some(tag) = latest(tags) else {
+    let Some(tag) = latest(tags, None) else {
         return skip(crate::l10n::text(
             langs,
             "plugin-settings-github-no-release-tag",

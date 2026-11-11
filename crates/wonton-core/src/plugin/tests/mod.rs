@@ -66,6 +66,7 @@ mod runtime;
 mod secrets;
 mod settings_l10n;
 mod setup;
+mod source_subdir;
 mod sources;
 mod start_recreate;
 mod static_web;

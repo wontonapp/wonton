@@ -11,11 +11,12 @@ use super::super::package_files::PackageFiles;
 use super::super::storefront::index::IndexEntry;
 use super::super::{PluginId, PluginManager, PluginPackage, UpgradeTo};
 use super::github::{FakeGitHub, zh};
+
 use super::manager::manager_with;
 
-const REPO: &str = "acme/hello";
+pub(super) const REPO: &str = "acme/hello";
 
-fn hello(version: &str, manifest: &str) -> String {
+pub(super) fn hello(version: &str, manifest: &str) -> String {
     format!(
         "services:\n  web:\n    image: ghcr.io/acme/web:{version}\n    volumes: ['data:/data']\nvolumes:\n  data: {{}}\n\
          x-wonton:\n  spec: \"0.2\"\n  id: app.hello\n  version: {version}\n  kind: app\n  title: {{zh: 你好, en: Hello}}\n  \
@@ -23,7 +24,7 @@ fn hello(version: &str, manifest: &str) -> String {
     )
 }
 
-fn package(compose: &str) -> PluginPackage {
+pub(super) fn package(compose: &str) -> PluginPackage {
     PluginPackage::parse(compose, &super::langs()).unwrap()
 }
 
@@ -31,11 +32,11 @@ fn secret(value: &str) -> wonton_protocol::SecretString {
     wonton_protocol::SecretString::new(value)
 }
 
-fn id() -> PluginId {
+pub(super) fn id() -> PluginId {
     PluginId::parse("app.hello").unwrap()
 }
 
-async fn manager() -> (
+pub(super) async fn manager() -> (
     FakeGitHub,
     FakeDocker,
     Arc<PluginManager>,
@@ -52,7 +53,7 @@ fn texts(preview: &InstallPreview) -> Vec<&str> {
     preview.notices.iter().map(|n| n.text.as_str()).collect()
 }
 
-fn install_request(preview: &InstallPreview) -> InstallRequest {
+pub(super) fn install_request(preview: &InstallPreview) -> InstallRequest {
     InstallRequest {
         scope: None,
         devices: Vec::new(),
