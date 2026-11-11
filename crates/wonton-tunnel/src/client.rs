@@ -121,6 +121,8 @@ pub struct TunnelClient {
 #[derive(Debug)]
 struct Inner {
     endpoint: Endpoint,
+    /// 这台客户端建连用的 ALPN。隧道的默认 [`ALPN`]，联邦用 [`crate::federation::FEDERATION_ALPN`]。
+    alpn: &'static [u8],
     server: Mutex<EndpointAddr>,
     /// 当前的建连尝试。同一时刻最多一次建连，并发请求共享它的结果。
     attempt: Mutex<Option<Arc<Attempt>>>,
@@ -166,7 +168,17 @@ impl TunnelClient {
     /// `server` 可以只有 endpoint ID（靠 endpoint 配置的地址发现找到服务端），也可以带上中继地址和
     /// 直连地址。
     pub fn new(endpoint: Endpoint, server: impl Into<EndpointAddr>) -> Self {
-        Self::with_clock(endpoint, server.into(), None)
+        Self::with_clock(endpoint, server.into(), ALPN, None)
+    }
+
+    /// ALPN 不同的调用方（如联邦，[`crate::federation::FEDERATION_ALPN`]）用它换协议名；重连、退避、
+    /// 探活都和 [`Self::new`] 的一样。
+    pub fn with_alpn(
+        endpoint: Endpoint,
+        server: impl Into<EndpointAddr>,
+        alpn: &'static [u8],
+    ) -> Self {
+        Self::with_clock(endpoint, server.into(), alpn, None)
     }
 
     /// 注入挂起检测的双时钟；不改变 QUIC 和主动检查的时限。
@@ -176,18 +188,20 @@ impl TunnelClient {
         server: impl Into<EndpointAddr>,
         clock: Arc<dyn SuspendClock>,
     ) -> Self {
-        Self::with_clock(endpoint, server.into(), Some(clock))
+        Self::with_clock(endpoint, server.into(), ALPN, Some(clock))
     }
 
     fn with_clock(
         endpoint: Endpoint,
         server: EndpointAddr,
+        alpn: &'static [u8],
         clock: Option<Arc<dyn SuspendClock>>,
     ) -> Self {
         let (status, _) = watch::channel(TunnelStatus::Idle);
         Self {
             inner: Arc::new(Inner {
                 endpoint,
+                alpn,
                 server: Mutex::new(server),
                 attempt: Mutex::new(None),
                 status,
@@ -430,7 +444,8 @@ impl Inner {
         let server = server_addr.id.fmt_short();
         let started = Instant::now();
         let dialed =
-            tokio::time::timeout(DIAL_DEADLINE, self.endpoint.connect(server_addr, ALPN)).await;
+            tokio::time::timeout(DIAL_DEADLINE, self.endpoint.connect(server_addr, self.alpn))
+                .await;
         let conn = match dialed {
             Ok(Ok(conn)) => conn,
             Ok(Err(err)) => return Err(self.dial_failed(from_connect_error(&err), &server)),
