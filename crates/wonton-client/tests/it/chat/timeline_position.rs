@@ -69,8 +69,9 @@ impl Chat {
             .await;
     }
 
-    /// 主人看见了最新一条，壳发已读回执，等未读清零。
+    /// 每次调用前都有新消息：先等未读出现，再等回执把它清零，避免把同步前的初始 0 当成完成。
     async fn read(&self) {
+        self.wait_unread(1).await;
         self.phone
             .dispatch(Action::MarkRoomRead {
                 room_id: self.room_id.to_string(),
@@ -126,18 +127,33 @@ impl Chat {
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn new_messages_only_raise_the_number_until_the_shell_reports_the_bottom() {
     let chat = Chat::open(tempfile::tempdir().unwrap()).await;
-    chat.bot_says("先来一条").await;
     let mut timeline = chat.timeline().await;
-    timeline
-        .until("先来的消息到了", |item| text(item, "先来一条"))
-        .await;
+    for body in ["先来一条", "再来一条"] {
+        chat.bot_says(body).await;
+        timeline
+            .until("先来的消息到了", |item| text(item, body))
+            .await;
+    }
+    chat.wait_unread(2).await;
+    drop(timeline);
+
+    // 两条已加载的未读让重进落点在最新一条之前，固定首批 Away，不能误当成之后翻走的回报。
+    let mut timeline = chat.timeline().await;
+    timeline.next().await;
+    assert_eq!(
+        timeline.viewport(),
+        TimelineViewport::Away { new_messages: 2 }
+    );
+    timeline.report_scroll(TimelineScroll::Bottom).await;
     chat.read().await;
 
     timeline.report_scroll(TimelineScroll::Away).await;
     assert_eq!(
         timeline.viewport(),
         TimelineViewport::Away { new_messages: 0 },
-        "还没有新消息，按钮只画箭头"
+        "还没有新消息，按钮只画箭头；时间线 {:?}，聊天列表未读 {}",
+        timeline.viewport(),
+        chat.unread()
     );
 
     for body in ["一", "二", "三"] {
