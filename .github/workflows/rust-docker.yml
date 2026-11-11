@@ -15,7 +15,7 @@ on:
     - cron: "30 3 * * *"
   workflow_dispatch:
   # 合并队列：末尾的汇总作业是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
-  # 队列里不判断改动范围，作业照跑（作业的 if 按事件名放行）。
+  # 队列用 base_sha..head_sha 判断范围，包含排在前面的 PR，沿用 PR 的路径规则。
   merge_group:
     types: [checks_requested]
     branches: [main]
@@ -41,9 +41,8 @@ permissions:
 jobs:
   changes:
     name: 改动范围（rust-docker）
-    # 这次 PR 有没有改到下面这些路径，替代原来触发器的 paths 过滤。
-    # 只在非草稿 PR 上判断：队列、定时和手动运行一律跑全套，作业的 if 里按事件名放行；草稿上整份都不起。
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    # PR 用 REST 列改动文件，队列比较整个合并组；定时和手动运行全量，草稿 PR 跳过。
+    if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -53,10 +52,17 @@ jobs:
     outputs:
       changed: ${{ steps.filter.outputs.changed }}
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        if: github.event_name == 'merge_group'
+        with:
+          ref: ${{ github.event.merge_group.head_sha }}
+          persist-credentials: false
       # MIT
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
+          base: ${{ github.event.merge_group.base_sha }}
+          ref: ${{ github.event.merge_group.head_sha }}
           # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
           predicate-quantifier: some-with-excludes
           filters: |
@@ -87,7 +93,7 @@ jobs:
   docker:
     name: Rust Docker 测试
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.changed == 'true')) }}
+    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || (github.event_name != 'pull_request' && github.event_name != 'merge_group')) }}
     runs-on: ubuntu-24.04
     # 桥镜像要整编一遍（预构建 + 测试缓存），45 分钟紧，留出余量。
     timeout-minutes: 75
