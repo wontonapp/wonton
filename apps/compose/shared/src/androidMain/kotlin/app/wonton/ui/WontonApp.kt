@@ -106,7 +106,8 @@ private fun AppContent(
     val shown = view.overlay?.tab ?: view.selected
     val native = nav.settingsOverlay || when (shown) {
         TabRef.Chat, TabRef.Apps, TabRef.Settings -> true
-        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp -> false
+        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
+        is TabRef.UiResource -> false
     }
     val fullscreen = !native && isFullscreen(tabs, shown)
     FullscreenSystemBars(fullscreen)
@@ -218,7 +219,8 @@ private fun NativeTab(
             peersOpenRequests = nav.peersOpenRequests,
             onPeersOpenRequestsHandled = { nav.peersOpenRequests = false },
         ) { nav.settingsPage = it }
-        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp -> Unit
+        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
+        is TabRef.UiResource -> Unit
     }
 }
 
