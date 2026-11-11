@@ -171,7 +171,7 @@ impl super::MatrixSession {
                 None
             }
         };
-        let invited_at_ms = created_at_ms(&room).await;
+        let invited_at_ms = created_at_ms(self, &room).await;
         Ok(Some(FriendInvite {
             room_id: room.room_id().to_owned(),
             inviter_name,
@@ -214,7 +214,7 @@ impl super::MatrixSession {
         let pending_invitee_name = first
             .as_ref()
             .and_then(|member| member.display_name().map(str::to_owned));
-        let invited_at_ms = created_at_ms(&room).await;
+        let invited_at_ms = created_at_ms(self, &room).await;
         let created_by_me = room
             .get_state_event(StateEventType::RoomCreate, "")
             .await
@@ -326,15 +326,22 @@ impl super::MatrixSession {
     }
 }
 
-/// 房间建的时刻，Unix 毫秒；邀请里的其他事件常常没有时间戳，拿建房时间当邀请时间。读不到时为零。
-async fn created_at_ms(room: &Room) -> u64 {
-    room.get_state_event(StateEventType::RoomCreate, "")
+/// 房间建的时刻，Unix 毫秒；邀请里的其他事件常常没有时间戳，拿建房时间当邀请时间。
+/// Tuwunel 2.0 剥掉了邀请状态里的时间戳（stripped create 只剩 content/sender/state_key/type），
+/// 读不到时用本会话第一次看到这个房间的时刻代替，两版都只用于给请求排序。
+async fn created_at_ms(session: &super::MatrixSession, room: &Room) -> u64 {
+    let ts = room
+        .get_state_event(StateEventType::RoomCreate, "")
         .await
         .ok()
         .flatten()
         .and_then(|raw| serde_json::to_value(raw).ok())
         .and_then(|value| value["origin_server_ts"].as_u64())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if ts > 0 {
+        return ts;
+    }
+    session.invited_seen_ms(room.room_id()).await
 }
 
 /// 房间建的时候带没带好友标记。
