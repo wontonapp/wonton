@@ -21,7 +21,7 @@ struct LinkedMessageText: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
+        let view = MessageLinkTextView()
         view.delegate = context.coordinator
         view.isEditable = false
         view.isScrollEnabled = false
@@ -96,7 +96,9 @@ struct LinkedMessageText: UIViewRepresentable {
             _ textView: UITextView, menuConfigurationFor textItem: UITextItem, defaultMenu: UIMenu
         ) -> UITextItem.MenuConfiguration? {
             guard case let .link(url) = textItem.content, link(for: url) != nil else { return nil }
-            let copy = UIAction(title: String(localized: .messageCopy)) { _ in UIPasteboard.general.url = url }
+            let copy = UIAction(title: String(localized: .messageCopy)) { _ in
+                UIPasteboard.general.string = url.absoluteString
+            }
             let browser = UIAction(title: String(localized: .messageLinkOpenBrowser)) { _ in
                 UIApplication.shared.open(url)
             }
@@ -113,5 +115,19 @@ struct LinkedMessageText: UIViewRepresentable {
 
     private func presentShare(_ url: URL) {
         presenter.sharing = SharedFile(url: url)
+    }
+}
+
+/// Non-link touches belong to the enclosing message (its menu and swipe action), not text selection.
+private final class MessageLinkTextView: UITextView {
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        guard super.point(inside: point, with: event), attributedText.length > 0 else { return false }
+        let location = CGPoint(x: point.x - textContainerInset.left, y: point.y - textContainerInset.top)
+        let glyph = layoutManager.glyphIndex(for: location, in: textContainer)
+        guard glyph < layoutManager.numberOfGlyphs,
+              layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
+                .contains(location) else { return false }
+        let character = layoutManager.characterIndexForGlyph(at: glyph)
+        return attributedText.attribute(.link, at: character, effectiveRange: nil) != nil
     }
 }
