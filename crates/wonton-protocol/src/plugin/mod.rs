@@ -564,6 +564,7 @@ pub struct InstallSource {
     /// 商店给的来源，或者 `github:<owner>/<repo>`，可以带 `@<tag>` 或 `@<40 位提交号>`；不带时是最新的正式版本。
     pub source: String,
 }
+
 /// 插件页面的 ViewModel：已安装的插件、商店，以及安装、升级、卸载的进展。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -632,7 +633,7 @@ pub struct PluginProblem {
     /// “服务器太旧”时要的最低服务器版本；别的类别和不知道时为空。
     #[serde(default)]
     pub min_version: Option<String>,
-    /// 设置校验失败的明细（ADR-0076）：壳按字段标红、按类别写文字。别的类别和没有明细时为空。
+    /// 设置校验失败的明细（ADR-0077）：壳按字段标红、按类别写文字。别的类别和没有明细时为空。
     #[serde(default)]
     pub settings: Option<SettingsProblem>,
 }
@@ -670,9 +671,9 @@ pub enum PluginFailure {
     EgressProxyUnavailable,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
-    /// 设置值没通过 Schema（ADR-0076），明细在 [`PluginProblem::settings`]。
+    /// 设置值没通过 Schema（ADR-0077），明细在 [`PluginProblem::settings`]。
     SettingsInvalid,
-    /// 插件包的设置 Schema 自己不合格（ADR-0076），明细在 [`PluginProblem::settings`]。
+    /// 插件包的设置 Schema 自己不合格（ADR-0077），明细在 [`PluginProblem::settings`]。
     SettingsSchemaInvalid,
     /// App 和家里服务器的版本对不上，有一边要更新。
     Protocol,
