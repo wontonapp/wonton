@@ -489,7 +489,26 @@ async fn reports_removed_by_peer_when_the_peer_revokes_us() {
         .await;
 }
 
-/// B 停掉：A 变 Offline；B 回来后 A 恢复 Connected。
+/// B 把 A 移出名单又加回：A 在一个探活周期内回到 Connected，下一次联邦请求成功。
+/// 这是 `PeerStatus::RemovedByPeer` 的承诺（对方的名单恢复后自动恢复），#222 的回归。
+#[tokio::test]
+async fn recovers_connected_when_the_peer_adds_us_back() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    pair_a_to_b(&a, &b, &table, b"before").await;
+    b.server_allowlist.revoke(&a.id);
+    a.wait_for(B_NAME, |status| *status == PeerStatus::RemovedByPeer)
+        .await;
+    b.server_allowlist.allow(a.id);
+    a.wait_for(B_NAME, |status| *status == PeerStatus::Connected)
+        .await;
+    let reply = federate(a.listen, B_NAME, b"after").await;
+    assert_eq!(reply, REPLY);
+    assert_eq!(b.upstream.received(), [&b"before"[..], b"after"].concat());
+}
+
+/// B 停掉后 A 变 Offline；回来后 A 恢复 Connected。
 #[tokio::test]
 async fn goes_offline_when_the_peer_stops_and_recovers_when_it_returns() {
     let table = pairings();
@@ -506,10 +525,10 @@ async fn goes_offline_when_the_peer_stops_and_recovers_when_it_returns() {
         .await;
 }
 
-/// 对端重启（连接换了）以后，下一次联邦请求不等探活，自己经 TunnelClient 重连成功：
-/// 请求撞上还在退避的建连时等它的结果，重连是隧道客户端的职责（ADR-0032）。
+/// B 停掉后，撞上退避的联邦请求立刻 502，不替本机 Tuwunel 等退避中的建连（它自己会重试）；
+/// B 回来后 TunnelClient 自动重连，重试的请求成功（ADR-0032 的重连职责不变）。
 #[tokio::test]
-async fn reconnects_on_the_next_request_after_the_peer_restarts() {
+async fn request_during_backoff_fails_at_once_and_a_later_one_reconnects() {
     let table = pairings();
     let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
     let mut b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
@@ -519,8 +538,47 @@ async fn reconnects_on_the_next_request_after_the_peer_restarts() {
         matches!(status, PeerStatus::Offline { .. })
     })
     .await;
+    // B 停着：退避里的请求立刻 502，撞上正在跑的那次建连的请求等它失败（本机回环上约 3 秒）。
+    // 连发几次，至少有一次是退避里立刻回来的，而不是每次都等退避结束加一次建连（最多 15 秒）。
+    let mut fastest: Option<Duration> = None;
+    timeout(WAIT, async {
+        for _ in 0..5 {
+            let began = std::time::Instant::now();
+            let (_, status) = connect(a.listen, &format!("{B_NAME}:8448")).await;
+            let took = began.elapsed();
+            assert_eq!(status, 502, "停着的对方没有回 502，等了 {took:?}");
+            fastest = Some(match fastest {
+                Some(fastest) if fastest < took => fastest,
+                _ => took,
+            });
+            if fastest.is_some_and(|fastest| fastest < Duration::from_secs(1)) {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("B 停着时请求一直不回 502");
+    let fastest = fastest.expect("至少发了一次请求");
+    assert!(
+        fastest < Duration::from_secs(1),
+        "退避里的请求没有一次是立刻失败的，最快 {fastest:?}（应远小于 15 秒）"
+    );
     b.restart().await;
-    let reply = federate(a.listen, B_NAME, b"after").await;
+    let reply = timeout(WAIT, async {
+        loop {
+            let (mut tcp, status) = connect(a.listen, &format!("{B_NAME}:8448")).await;
+            if status == 200 {
+                tcp.write_all(b"after").await.unwrap();
+                tcp.shutdown().await.unwrap();
+                let mut reply = Vec::new();
+                tcp.read_to_end(&mut reply).await.unwrap();
+                return reply;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("退避结束后重试的请求仍然失败");
     assert_eq!(reply, REPLY);
     assert_eq!(b.upstream.received(), [&b"before"[..], b"after"].concat());
     a.wait_for(B_NAME, |status| *status == PeerStatus::Connected)

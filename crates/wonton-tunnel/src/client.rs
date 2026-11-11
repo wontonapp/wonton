@@ -133,6 +133,9 @@ struct Inner {
     streams: Arc<StreamCounters>,
     /// 服务端确认过的连接：没确认就断开的（比如被拒绝）要退避，确认过的断开了可以马上重连。
     confirmed: Mutex<Option<usize>>,
+    /// 退避期间的新请求立即失败，不等正在退避的那次建连。设备隧道保持默认（等，最多
+    /// [`HOLD_DEADLINE`]）；联邦出站打开它，见 [`TunnelClient::set_fail_fast_during_backoff`]。
+    fail_fast: AtomicBool,
     slow_path: Mutex<Option<SlowPath>>,
     clock: Option<Arc<dyn SuspendClock>>,
     suspension: Mutex<suspend::Suspension>,
@@ -210,6 +213,7 @@ impl TunnelClient {
                 stats: Mutex::default(),
                 streams: Arc::default(),
                 confirmed: Mutex::new(None),
+                fail_fast: AtomicBool::new(false),
                 slow_path: Mutex::new(None),
                 clock,
                 suspension: Mutex::default(),
@@ -226,6 +230,13 @@ impl TunnelClient {
     /// 换服务端的地址，下一次建连时生效。服务器换了 IP 时，新地址由核心告诉 App（ADR-0032）。
     pub fn set_server_addr(&self, server: EndpointAddr) {
         *lock(&self.inner.server) = server;
+    }
+
+    /// 退避期间的新请求立即失败（transport 错误），不共用正在退避的那次建连的结果。默认关闭：
+    /// 等当前尝试，最多 [`HOLD_DEADLINE`]（ADR-0032）。联邦出站打开它：本机 Tuwunel 的联邦请求
+    /// 自己会重试，替它等只会把 CONNECT 挂满退避。第一次使用前调用。
+    pub fn set_fail_fast_during_backoff(&self) {
+        self.inner.fail_fast.store(true, Ordering::Relaxed);
     }
 
     /// 当前状态。
@@ -327,6 +338,16 @@ impl TunnelClient {
     /// 开一条流并写入请求类型，不等服务端回状态，调用方可以紧接着发送数据。
     pub(crate) async fn open(&self, request: Request) -> Result<TunnelStream, TunnelError> {
         self.inner.observe_resume(false);
+        // 打开了 fail-fast 的调用方（联邦出站）：退避期间立刻失败，调用方自己会重试。建连正在进行
+        // （不在退避）时照常共用它的结果（ADR-0032）；有连接时照常在现有连接上开流。
+        if self.inner.fail_fast.load(Ordering::Relaxed)
+            && self.inner.live_connection().is_none()
+            && lock(&self.inner.pacing)
+                .not_before()
+                .is_some_and(|not_before| not_before > tokio::time::Instant::now())
+        {
+            return Err(TunnelError::transport("建连在退避中"));
+        }
         let mut retried = false;
         loop {
             let conn = self.connection().await?;

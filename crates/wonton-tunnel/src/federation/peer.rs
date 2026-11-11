@@ -27,8 +27,8 @@ use crate::{
 pub enum PeerStatus {
     /// 最近一次探活或数据往返成功。
     Connected,
-    /// 连不上对方：`since` 是变成离线的时刻，`last_error` 是最近一次失败的原因。下一次使用或下一次
-    /// 探活时自动重连。
+    /// 连不上对方：`since` 是变成离线的时刻，`last_error` 是最近一次失败的原因。退避结束后，下一次
+    /// 使用或下一次探活时自动重连。
     Offline {
         since: SystemTime,
         last_error: TunnelError,
@@ -164,10 +164,9 @@ pub(crate) struct PeerClient {
 
 impl PeerClient {
     fn new(name: String, addr: EndpointAddr, endpoint: Endpoint) -> Arc<Self> {
-        Arc::new(Self {
-            name,
-            client: TunnelClient::with_alpn(endpoint, addr, FEDERATION_ALPN),
-        })
+        let client = TunnelClient::with_alpn(endpoint, addr, FEDERATION_ALPN);
+        client.set_fail_fast_during_backoff();
+        Arc::new(Self { name, client })
     }
 
     /// 用最新的查找结果更新对方的地址；endpoint ID 变了由 [`PeerTable::get_or_create`] 整台换新。
@@ -198,6 +197,19 @@ impl PeerClient {
         self.client.probe(timeout).await
     }
 
+    /// 对方把本机移除后又加回时，`TunnelClient` 自己不重拨：被拒后停在原地等
+    /// [`TunnelClient::retry_now`]（设备被移除后不该自己反复重拨打扰服务器，ADR-0032）。联邦不同，
+    /// 名单恢复不需要本机动作，探活周期里在这里清退避、强制重拨一次，名单恢复后一个探活周期内
+    /// 回到 [`PeerStatus::Connected`]（`RemovedByPeer` 的承诺）。
+    fn retry_now_if_removed(&self) {
+        if matches!(
+            self.client.status(),
+            TunnelStatus::Disconnected(TunnelError::Unauthorized)
+        ) {
+            self.client.retry_now();
+        }
+    }
+
     fn close(&self) {
         self.client.close();
     }
@@ -225,6 +237,7 @@ async fn ping_loop(
         // 配对成立马上探第一次，之后按周期。
         tokio::time::sleep(if first { Duration::ZERO } else { interval }).await;
         first = false;
+        client.retry_now_if_removed();
         let _ = client.probe(timeout).await;
     }
 }
