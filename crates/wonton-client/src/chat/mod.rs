@@ -6,6 +6,7 @@
 //! 标准的 Matrix 服务器（ADR-0015）。
 
 mod accessors;
+mod agent_run;
 mod ask;
 mod avatar_files;
 mod background;
@@ -333,6 +334,11 @@ impl ChatLink {
                 to_room_id,
             } => self.forward_message(&room_id, &item_id, &to_room_id),
             Action::RedactMessage { room_id, item_id } => self.redact_message(&room_id, &item_id),
+            Action::AnswerAgentChoice {
+                room_id,
+                item_id,
+                key,
+            } => self.answer_agent_choice(&room_id, &item_id, &key),
             Action::RetrySend { room_id, item_id } => {
                 let room = self.opened(&room_id)?;
                 let sent = self.sent.clone();

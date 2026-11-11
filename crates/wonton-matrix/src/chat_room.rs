@@ -15,8 +15,8 @@ use matrix_sdk::{
         api::client::receipt::create_receipt::v3::ReceiptType,
         api::client::state::get_state_events,
         events::{
-            AnySyncMessageLikeEvent, AnySyncTimelineEvent, relation::RelationType,
-            room::message::RoomMessageEventContent,
+            AnySyncMessageLikeEvent, AnySyncTimelineEvent, reaction::ReactionEventContent,
+            relation::Annotation, relation::RelationType, room::message::RoomMessageEventContent,
         },
     },
     send_queue::SendHandle,
@@ -32,7 +32,7 @@ use tokio::{
 
 use crate::{
     Error, Message, Result,
-    message::{MemberNames, RedactionPower},
+    message::{MemberNames, RedactionPower, message},
     timeline::{self, EntryKind, TimelineEntry, entry},
 };
 
@@ -332,6 +332,35 @@ impl ChatRoom {
             .parse()
             .map_err(|_| Error::InvalidInput(format!("不是事件 ID：{event_id}")))?;
         self.room.redact(&event_id, Some(reason), None).await?;
+        Ok(())
+    }
+
+    /// 以反应回答 Bot 的提问（MSC4564 的 `choices`，ADR-0082）：对状态消息发 `m.annotation` 反应，
+    /// `item_id` 是它的 [`TimelineEntry::id`]，`key` 是选项的键。只对现在还是状态消息、还带这个选项的
+    /// 条目发；条目不在时间线里或选项没有了报 `InvalidInput`。发送者是不是 Bot 由调用方判断。
+    pub async fn answer_agent_choice(&self, item_id: &str, key: &str) -> Result<()> {
+        let timeline = self.timeline().await;
+        let items = timeline.items().await;
+        let item = items
+            .iter()
+            .find(|item| item.unique_id().0 == item_id)
+            .and_then(|item| item.as_event())
+            .ok_or_else(|| Error::InvalidInput("状态行不在时间线里".to_owned()))?;
+        let names = self.names.borrow().clone();
+        let status = message(item, &names)
+            .and_then(|message| message.agent_run)
+            .ok_or_else(|| Error::InvalidInput("这条不是 Agent 状态消息".to_owned()))?;
+        if !status.choices.iter().any(|choice| choice.key == key) {
+            return Err(Error::InvalidInput("这个选项没有了".to_owned()));
+        }
+        let event_id = item
+            .event_id()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| Error::InvalidInput("状态消息还没发出去".to_owned()))?;
+        ensure_recipient_devices(&self.room).await?;
+        timeline
+            .send(ReactionEventContent::new(Annotation::new(event_id, key.to_owned())).into())
+            .await?;
         Ok(())
     }
 

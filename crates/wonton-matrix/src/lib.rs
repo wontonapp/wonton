@@ -14,6 +14,7 @@
 // matrix-sdk 的 future 嵌套很深，默认的 128 层不够算出 `room.timeline()` 的类型布局。
 #![recursion_limit = "256"]
 
+mod agent_run;
 mod chat_room;
 mod encryption;
 mod error;
@@ -37,6 +38,7 @@ pub mod testkit;
 mod timeline;
 mod verification;
 
+pub use agent_run::AgentRunStatus;
 pub use chat_room::{
     BackPaginationStatus, ChatRoom, ImageThumbnail, ImageUpload, MISSED_GRACE, MissedEvent,
 };
