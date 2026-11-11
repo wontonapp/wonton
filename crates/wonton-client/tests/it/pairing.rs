@@ -18,7 +18,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use url::Url;
 use wonton_client::{
     Action, ClientCore, CoreError, DeviceInvite, HomeFailure, HomeStatus, HomeViewModel, Network,
-    PairingFailure, PairingStatus, SecretString,
+    PairingFailure, PairingStage, PairingStatus, SecretString,
 };
 use wonton_tunnel::pair::{
     PairHandler, PairProtocol, PairResponse, PairingCode, PairingSecret, RejectReason, SECRET_LEN,
@@ -290,7 +290,10 @@ async fn unreachable_pairing_stops_before_cleanup_and_retry_starts_again() {
     }
     .to_uri();
     phone.pair(&code).unwrap();
-    assert_eq!(phone.home().pairing, Some(PairingStatus::InProgress));
+    assert!(matches!(
+        phone.home().pairing,
+        Some(PairingStatus::InProgress { .. })
+    ));
     // Existing pairing deadline is 30s. Two seconds only cover scheduling; QUIC cleanup must not delay the visible result.
     let (failure, message) = tokio::time::timeout(Duration::from_secs(32), phone.pairing_failure())
         .await
@@ -302,7 +305,91 @@ async fn unreachable_pairing_stops_before_cleanup_and_retry_starts_again() {
     assert!(phone.home().pairing.is_none());
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
     phone.pair(&code).unwrap();
-    assert_eq!(phone.home().pairing, Some(PairingStatus::InProgress));
+    assert!(matches!(
+        phone.home().pairing,
+        Some(PairingStatus::InProgress { .. })
+    ));
+}
+
+/// 连不上的地址：配对码交不出去，进度一直停在“正在连接”，已等待的时间由核心按秒推进——壳的“还在连接”
+/// 和取消按钮就从这个状态来。取消后回到没有配对的状态；没有配对时取消是输入错误。
+#[tokio::test]
+async fn an_unreachable_server_stays_connecting_and_the_wait_grows() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let dead = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let code = PairingCode {
+        server_id: SecretKey::generate().public(),
+        relays: Vec::new(),
+        direct_addrs: vec![dead.local_addr().unwrap()],
+        base_domain: "wonton.localhost".into(),
+        core_url: Url::parse("http://wonton.localhost:18480/").unwrap(),
+        secret: PairingSecret::from_bytes([42; SECRET_LEN]),
+    }
+    .to_uri();
+    phone.pair(&code).unwrap();
+    // 5 秒是壳补“还在连接”的门槛：到那时核心已经给出了真实的等待时间和步骤。
+    phone
+        .wait_for(|view| {
+            matches!(
+                view.pairing,
+                Some(PairingStatus::InProgress {
+                    elapsed_ms: 5_000..,
+                    stage: PairingStage::Connecting
+                })
+            )
+        })
+        .await;
+    phone.dispatch(Action::CancelPairing).unwrap();
+    assert!(phone.home().pairing.is_none());
+    assert_eq!(phone.home().status, HomeStatus::NotConfigured);
+    assert!(
+        matches!(
+            phone.dispatch(Action::CancelPairing),
+            Err(CoreError::InvalidInput { .. })
+        ),
+        "没有正在进行的配对时取消该报输入错误"
+    );
+}
+
+/// 慢回应：配对码交出后进度翻到“等服务器确认”；取消回到可以重新输入的状态，服务端迟到的登记不算数，
+/// 同一个码再配一次，服务端对已登记的设备幂等地回成功。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelling_a_slow_pairing_returns_to_the_form_and_a_retry_pairs() {
+    let home_side = Home::start().await;
+    *home_side.codes.slow.lock().unwrap() = 1;
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let code = home_side.code(None);
+    phone.pair(&code).unwrap();
+    // 直连建连很快，码交出就翻步；时间由心跳按秒推进，第一次翻步时至少过了一秒。
+    phone
+        .wait_for(|view| {
+            matches!(
+                view.pairing,
+                Some(PairingStatus::InProgress {
+                    elapsed_ms: 1_000..,
+                    stage: PairingStage::Confirming
+                })
+            )
+        })
+        .await;
+    phone.dispatch(Action::CancelPairing).unwrap();
+    assert!(phone.home().pairing.is_none());
+    assert_eq!(phone.home().status, HomeStatus::NotConfigured);
+    // 取消不是配上：serverId 还是空，壳的“配上了”判定（进展消失且 serverId 非空）不会把取消当成功。
+    assert!(phone.home().server_id.is_none());
+    // 迟到的回应不算数：取消之后状态不再变。
+    tokio::time::sleep(SLOW_REPLY).await;
+    assert!(phone.home().pairing.is_none(), "{:?}", phone.home());
+    phone.pair(&code).unwrap();
+    let view = phone
+        .wait_for(|view| view.pairing.is_none() && view.status == HomeStatus::Connected)
+        .await;
+    assert_eq!(
+        view.server_id,
+        Some(home_side.server.endpoint().id().to_string())
+    );
 }
 
 #[tokio::test]

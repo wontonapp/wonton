@@ -76,8 +76,9 @@ final class HomeModel {
     func prefillPairing(from url: URL) -> Bool {
         guard url.scheme == "wonton", url.host == "pair" else { return false }
         let current = core.home()
-        guard current.status == .notConfigured, !core.servers().adding,
-              current.pairing != .inProgress else { return false }
+        guard current.status == .notConfigured, !core.servers().adding else { return false }
+        // 配对正在进行时不接新的码。
+        if case .inProgress = current.pairing { return false }
         pairingCode = url.absoluteString
         if case .failed? = current.pairing { send(.dismissPairingFailure) }
         return true

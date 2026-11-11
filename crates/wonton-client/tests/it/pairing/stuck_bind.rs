@@ -24,7 +24,10 @@ async fn a_bind_that_never_returns_fails_at_the_bind_deadline() {
     // 看门线程等得比测试还久：失败只能来自绑定自己那一段时限，证明绑定卡住时计时器照常在走。
     phone.test_set_pair_deadlines(SHORT, NEVER);
     phone.pair(&home_side.code(None)).unwrap();
-    assert_eq!(phone.home().pairing, Some(PairingStatus::InProgress));
+    assert!(matches!(
+        phone.home().pairing,
+        Some(PairingStatus::InProgress { .. })
+    ));
     let (failure, message) = tokio::time::timeout(SLACK, phone.pairing_failure())
         .await
         .unwrap_or_else(|_| panic!("绑定卡住时绑定的时限没触发：{:?}", phone.home()));
@@ -55,7 +58,10 @@ async fn the_watchdog_fails_a_stuck_pairing_and_leaves_a_newer_one_alone() {
     phone.test_set_pair_deadlines(NEVER, NEVER);
     phone.pair(&home_side.code(None)).unwrap();
     tokio::time::sleep(old_watchdog + SHORT).await;
-    assert_eq!(phone.home().pairing, Some(PairingStatus::InProgress));
+    assert!(matches!(
+        phone.home().pairing,
+        Some(PairingStatus::InProgress { .. })
+    ));
 
     // 放行以后旧的几次也做完了交换，它们迟到的结果不算数，新的一次照常配上、连通。
     gate.open();

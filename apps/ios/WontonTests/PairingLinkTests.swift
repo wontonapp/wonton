@@ -17,7 +17,7 @@ final class PairingLinkTests: XCTestCase {
         XCTAssertEqual(core.home(), before)
         XCTAssertEqual(core.servers(), servers)
         XCTAssertNil(home.pair(code: home.pairingCode, deviceName: "Test phone"))
-        XCTAssertEqual(core.home().pairing, .inProgress)
+        XCTAssertTrue(core.home().pairing.isPairing, "点确认后核心应报正在配对：\(String(describing: core.home().pairing))")
     }
 
     func testLinkCannotReplaceAnActivePairingAttempt() async throws {
@@ -26,11 +26,11 @@ final class PairingLinkTests: XCTestCase {
         let original = pairingURL()
         XCTAssertTrue(home.prefillPairing(from: original))
         XCTAssertNil(home.pair(code: home.pairingCode, deviceName: "Test phone"))
-        XCTAssertEqual(core.home().pairing, .inProgress)
+        XCTAssertTrue(core.home().pairing.isPairing)
 
         XCTAssertFalse(home.prefillPairing(from: pairingURL(domain: "other.example")))
         XCTAssertEqual(home.pairingCode, original.absoluteString)
-        XCTAssertEqual(core.home().pairing, .inProgress)
+        XCTAssertTrue(core.home().pairing.isPairing)
     }
 
     private func makeCore() throws -> ClientCore {
@@ -50,5 +50,13 @@ final class PairingLinkTests: XCTestCase {
             URLQueryItem(name: "secret", value: String(repeating: "ab", count: 16))
         ]
         return url.url!
+    }
+}
+
+extension PairingStatus? {
+    /// 正在配对：进展带上了时间和步骤，判断用模式匹配。
+    var isPairing: Bool {
+        if case .inProgress = self { return true }
+        return false
     }
 }

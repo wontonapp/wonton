@@ -56,6 +56,7 @@ import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.wontonContentPaddingValues
+import app.wonton.ui.design.LocalWontonTopInset
 import app.wonton.ui.design.accentFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Download
@@ -168,8 +169,10 @@ private fun StoreEntry(upgradeCount: Int, onClick: () -> Unit) {
     val colors = WontonTheme.colors
     val shape = RoundedCornerShape(WontonTheme.radii.control)
     Row(
+        // 固定在滚动内容之外，先让开顶栏（含状态栏），再按页面的节奏留边；顶栏是透明的，不垫底色。
         Modifier.padding(horizontal = WontonTheme.spacing.pageInset)
-            .padding(top = WontonTheme.spacing.pageInset, bottom = WontonTheme.spacing.s8).fillMaxWidth()
+            .padding(top = LocalWontonTopInset.current + WontonTheme.spacing.pageInset, bottom = WontonTheme.spacing.s8)
+            .fillMaxWidth()
             .accentFill(shape).clickable(role = Role.Button, onClick = onClick)
             .heightIn(min = WontonTheme.size.target)
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),

@@ -125,8 +125,8 @@ pub use friends::{
 };
 pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
-    DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStatus,
-    ProxySettings,
+    DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStage,
+    PairingStatus, ProxySettings,
 };
 pub use lan::{
     LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort,

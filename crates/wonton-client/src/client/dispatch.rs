@@ -60,6 +60,7 @@ impl ClientCore {
             Action::ConnectHome { ticket } => scope.home.connect(&ticket),
             Action::PairHome { code, device_name } => self.pair_home(code.expose(), &device_name),
             Action::DismissPairingFailure => scope.home.dismiss_pairing_failure(),
+            Action::CancelPairing => scope.home.cancel_pairing(),
             Action::InviteDevice => scope.home.invite(),
             action @ (Action::AddServer
             | Action::CancelAddServer

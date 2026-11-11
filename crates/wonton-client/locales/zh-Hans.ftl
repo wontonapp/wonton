@@ -560,6 +560,7 @@ chat-window-ended =
 # 配对详情。地址和中继 URL 不含配对密钥；error 保留上游原文。
 home-pairing-timeout = 配对未能在 { $seconds } 秒内完成。
 home-pairing-aborted = 配对没有完成就中断了，再试一次。
+home-pairing-not-pairing = 没有正在进行的配对。
 home-pairing-failed-detail = 直连地址：{ $addresses }。中继：[{ $relays }]。已用时 { $milliseconds } 毫秒，限时 { $seconds } 秒。原因：{ $error }
 plugin-now-start-failed = 一键操作开始不了：{ $error }
 

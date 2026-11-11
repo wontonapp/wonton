@@ -83,7 +83,8 @@ internal fun PairingPage(
             )
         },
     ) {
-        PairingScreen(core, pairing, onPaired = { onBack?.invoke() }, onBack = onBack)
+        // 配上才会连上服务器；取消也回到没有配对，但 serverId 还是空，不当作配上了。
+        PairingScreen(core, pairing, onPaired = { if (core.home().serverId != null) onBack?.invoke() }, onBack = onBack)
     }
 }
 

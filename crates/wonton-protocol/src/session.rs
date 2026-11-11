@@ -108,6 +108,7 @@ mod tests {
                 code: SecretString::new("wonton://pair?v=0"),
                 device_name: "phone".into(),
             },
+            Action::CancelPairing,
             Action::InviteDevice,
             Action::AppForegrounded,
             Action::AppBackgrounded,
