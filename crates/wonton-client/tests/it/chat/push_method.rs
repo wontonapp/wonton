@@ -3,15 +3,15 @@
 //! `background_notifications`，回到前台清空。
 
 use wonton_client::{
-    Action, ChatViewModel, CoreError, DeviceNetwork, MessageSummary, PushContent, PushMethod,
-    PushStatus,
+    Action, ChatFailure, ChatViewModel, CoreError, DeviceNetwork, MessageSummary, PushContent,
+    PushMethod, PushStatus,
 };
 use wonton_matrix::ChatRoom;
 use wonton_protocol::SettingsEntry;
 
 use super::accept_the_bots_invite;
 use super::push::endpoint;
-use super::support::{Home, Phone, WAIT};
+use super::support::{Home, Phone, ToDeviceHold, WAIT};
 
 /// 自己带出去的那条会同步回来，但不该进后台通知；同一条别的照常收集。
 async fn own_message_is_not_notified(phone: &Phone, bot_room: &ChatRoom, room_id: &str) {
@@ -300,4 +300,68 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
         !phone.chat().background_notifications.is_empty(),
         "后台的网络变化不该清空后台通知"
     );
+}
+
+/// 房间密钥晚于等待上限才到时（同步被压住时实测晚 6.6–9.1 秒），占位先进后台通知；密钥到了核心回填，
+/// 同一条通知换成正文，不追加第二条。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_late_room_key_replaces_the_unavailable_background_notification() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+
+    // Bot 经扣下 to-device 的中转登录：发消息时房间密钥被扣下（回 200 让它当已送达），消息事件照发，
+    // 手机只收到解不开的消息。重放之后密钥才到，和密钥晚到是同一件事。
+    let hold = ToDeviceHold::start(&home.matrix.url).await;
+    let bot = home.bot_via(hold.url(), "hermes", "Hermes").await;
+    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
+
+    phone.dispatch(Action::AppBackgrounded).unwrap();
+    hold.hold(true);
+    let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
+    bot_room.send_text("在吗").await.expect("Bot 发消息");
+
+    let event_id = phone
+        .wait_chat("解不开的占位先到", |view| {
+            view.background_notifications
+                .iter()
+                .find(|notice| {
+                    notice.room_id == room_id.as_str()
+                        && matches!(
+                            notice.content,
+                            PushContent::Unavailable {
+                                reason: ChatFailure::NotReady,
+                                ..
+                            }
+                        )
+                })
+                .map(|notice| notice.event_id.clone())
+        })
+        .await;
+
+    // 密钥这时才到：核心重取正文、同一条通知再交一次，占位换成正文，也只有这一条。
+    hold.replay().await;
+    let replaced = phone
+        .wait_chat("密钥到了回填成正文", |view| {
+            let mut entries = view
+                .background_notifications
+                .iter()
+                .filter(|notice| notice.event_id == event_id)
+                .cloned()
+                .collect::<Vec<_>>();
+            (entries.len() == 1
+                && entries[0].content
+                    == PushContent::Message {
+                        summary: MessageSummary::Text {
+                            text: "在吗".to_owned(),
+                        },
+                    })
+            .then(|| entries.remove(0))
+        })
+        .await;
+    assert_eq!(replaced.room_id, room_id.as_str());
+    assert_eq!(replaced.sender.as_deref(), Some("Hermes"));
 }
