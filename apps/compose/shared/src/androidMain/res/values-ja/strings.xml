@@ -1171,6 +1171,10 @@
     <string name="problem_plugin_protocol_next_step">Wontonか自宅サーバーをアップデートしてください。</string>
     <!-- Problem title: the app and the home server versions don't match. -->
     <string name="problem_plugin_protocol_title">Wontonと自宅サーバーのバージョンが合っていません</string>
+    <!-- Problem title: the home server can't read this app's install record. -->
+    <string name="problem_plugin_record_unusable_title">アプリのインストール記録が壊れています</string>
+    <!-- Next step: uninstall the app (its data can be kept) and install it again. -->
+    <string name="problem_plugin_record_unusable_next_step">このアプリをアンインストール（データは残せます）して、もう一度インストールしてください。</string>
     <!-- Problem title when the proxy settings were rejected as invalid; the core's own reason is shown as the next step. -->
     <string name="problem_plugin_save_invalid_title">入力内容が正しくありません</string>
     <!-- Next step: look at the proxy settings again once the server is reachable. -->

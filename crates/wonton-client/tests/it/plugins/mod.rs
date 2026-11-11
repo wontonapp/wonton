@@ -398,7 +398,7 @@ async fn failures_keep_their_reason() {
         ),
         (
             core_error(502, "image_pull_failed", "拉不下镜像"),
-            PluginFailure::Upstream,
+            PluginFailure::SourceUnavailable,
         ),
         (
             core_error(403, "permission_denied", "权限对不上"),

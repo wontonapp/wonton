@@ -265,6 +265,40 @@ async fn uninstalling_a_broken_plugin_over_a_dropped_connection_is_uncertain() {
     );
 }
 
+/// 启动失败按核心的类别说下一步，不笼统按“服务器出错”：拉不到镜像是来源的事（#126），
+/// 记录读不懂要重新安装。
+#[tokio::test]
+async fn a_failed_start_keeps_the_core_error_category() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![installed(
+        "app.photos",
+        PluginState::Degraded {
+            reason: "容器不存在".to_owned(),
+        },
+    )]]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+
+    for (kind, expected) in [
+        ("image_pull_failed", PluginFailure::SourceUnavailable),
+        ("record_unusable", PluginFailure::RecordUnusable),
+    ] {
+        rig.core.answer(
+            Method::POST,
+            "/_wonton/api/plugins/app.photos/start",
+            core_error(502, kind, "镜像拉不到"),
+        );
+        rig.app
+            .dispatch(Action::StartPlugin {
+                plugin_id: "app.photos".to_owned(),
+            })
+            .unwrap();
+        // 派发时上一次启动的问题先被同一个来源清掉，看到的是这一轮的原因。
+        let view = rig.wait_for(|view| view.problem.is_some()).await;
+        assert_eq!(view.problem.unwrap().reason, expected, "{kind}");
+    }
+}
+
 /// 上一台上的卸载没有结果：新服务器的列表里没有那个插件，不能算卸载成功。
 #[tokio::test]
 async fn pairing_with_another_server_forgets_the_previous_one() {
