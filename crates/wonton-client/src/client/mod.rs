@@ -8,12 +8,13 @@ use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, ComposerDraft, CoreError,
-    FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
-    FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
-    OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail, PluginImage,
-    PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
-    SettingsViewModel, StoreItem, TabRef, TabsViewModel, TransfersViewModel,
+    Action, AddedSource, AppearanceViewModel, BotContactsViewModel, ChatContact, ChatViewModel,
+    ComposerDraft, CoreError, FileCard, FileCardActions, FileFailure, FileId, FileInfo,
+    FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview, LanChoice,
+    LanSettings, Me, MediaHandle, OnboardingViewModel, OwnerProfileUpdate, PeersViewModel,
+    PlacedTab, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers, SecretString,
+    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef, TabsViewModel,
+    TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -25,9 +26,10 @@ use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
-    AppearanceSubscription, ChatSubscription, FriendsSubscription, HomeSubscription,
-    OnboardingSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
-    SessionListSubscription, SettingsSubscription, TabsSubscription, TransfersSubscription,
+    AppearanceSubscription, BotContactsSubscription, ChatSubscription, FriendsSubscription,
+    HomeSubscription, OnboardingSubscription, PeersSubscription, PluginsSubscription,
+    ServersSubscription, SessionListSubscription, SettingsSubscription, TabsSubscription,
+    TransfersSubscription,
 };
 use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 use switch::Replay;
@@ -197,6 +199,18 @@ impl ClientCore {
     /// 订阅“其他服务器”页面，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_peers(&self) -> Arc<PeersSubscription> {
         Arc::new(PeersSubscription::new(self.views().peers.subscribe()))
+    }
+
+    /// 当前的 Bot 联系人页（ADR-0045、ADR-0050），用于首帧渲染。
+    pub fn bot_contacts(&self) -> BotContactsViewModel {
+        self.views().bot_contacts.borrow().clone()
+    }
+
+    /// 订阅 Bot 联系人页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_bot_contacts(&self) -> Arc<BotContactsSubscription> {
+        Arc::new(BotContactsSubscription::new(
+            self.views().bot_contacts.subscribe(),
+        ))
     }
 
     /// 当前的好友页（ADR-0051），用于首帧渲染。

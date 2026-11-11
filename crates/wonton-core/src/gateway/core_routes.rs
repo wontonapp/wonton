@@ -221,6 +221,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             put(super::plugin_scope::bot_access),
         )
         .route(wonton_protocol::SHARED_BOTS_PATH, post(bots::create_shared))
+        .merge(super::bot_contacts::routes())
         .route(
             "/_wonton/api/lan",
             get(settings_api::lan).put(settings_api::set_lan),

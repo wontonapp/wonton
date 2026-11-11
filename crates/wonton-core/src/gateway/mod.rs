@@ -25,6 +25,7 @@ mod api_body;
 mod api_switch;
 mod auth;
 mod bot_activity;
+mod bot_contacts;
 mod bot_profile;
 mod bots;
 mod confirmations;
@@ -180,6 +181,8 @@ pub struct Gateway {
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     pub peers: Option<Arc<crate::peers::Peers>>,
     friends: Option<Arc<Friends>>,
+    /// Bot 的联系人（ADR-0045、ADR-0050）；没接 Matrix 的核心没有。
+    contacts: Option<Arc<crate::contacts::Contacts>>,
     pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
     pub sharing: Option<Arc<sharing::Sharing>>,
     pub(crate) onboarding: Arc<onboarding::OnboardingState>,
@@ -245,6 +248,7 @@ impl Gateway {
             upgrades: None,
             peers: None,
             friends: None,
+            contacts: None,
             federation_blocks: None,
             sharing: None,
             onboarding,
@@ -709,6 +713,8 @@ fn attach_proxy_credentials(
 /// 跨站请求换到会话也不认，同样 401。
 #[cfg(test)]
 mod bot_activity_tests;
+#[cfg(test)]
+mod bot_contacts_tests;
 #[cfg(test)]
 mod bot_profile_tests;
 #[cfg(test)]
