@@ -51,6 +51,21 @@ looks_like_registry_outage() {
   grep -qiE 'dial tcp|connection refused|network is (unreachable|down)|i/o timeout|connection reset|no such host|server misbehaving|temporary failure|context deadline exceeded|TLS handshake timeout|proxyconnect|connect through proxy' "$1"
 }
 
+# 镜像或标签不存在时 Docker 报的是清单不存在；仓库名走错也是这一句。
+looks_like_missing_image() {
+  grep -qiE 'manifest unknown|not found|no such manifest|name unknown' "$1"
+}
+
+# 仓库不让拉：未登录、没有权限，或者包还没公开（ghcr 对不存在的仓库也报 denied，不泄露仓库在不在）。
+looks_like_registry_denied() {
+  grep -qiE 'unauthorized|denied|authentication required' "$1"
+}
+
+# 这两类原因都不是网络问题，要的是换一个镜像，不是修代理。
+specific_image_help() {
+  echo "要装指定版本，用 WONTON_CORE_IMAGE=<镜像> 再执行一次安装，镜像问给版本的人要，不用猜标签；等这个渠道发布也可以。" >&2
+}
+
 # 连不上镜像仓库时给的做法，地址用文档网段占位。
 registry_outage_help() {
   cat >&2 <<'EOF'
@@ -183,13 +198,40 @@ else
   info "拉取核心镜像 $pull_image"
   pull_err=$(mktemp "${TMPDIR:-/tmp}/wonton-pull.XXXXXX")
   docker pull "$pull_image" >/dev/null 2>"$pull_err" || {
-    cat "$pull_err" >&2
+    # 先按原因说人话，Docker 的原文收在后面当详情；别让人对着原文猜。
     if looks_like_registry_outage "$pull_err"; then
+      cat "$pull_err" >&2
       rm -f "$pull_err"
       registry_outage_help
     fi
+    if looks_like_missing_image "$pull_err" || looks_like_registry_denied "$pull_err"; then
+      pull_channel=
+      case $pull_image in
+        *@*) ;;
+        *)
+          pull_channel=${pull_image##*/}
+          case $pull_channel in
+            *:*) pull_channel="，渠道 ${pull_channel##*:} 还没有发布的版本" ;;
+            *) pull_channel= ;;
+          esac
+          ;;
+      esac
+      if looks_like_missing_image "$pull_err"; then
+        echo "安装失败：镜像仓库里没有 $pull_image$pull_channel。" >&2
+      else
+        echo "安装失败：镜像仓库拒绝了 $pull_image，这个镜像可能还没公开。" >&2
+      fi
+      specific_image_help
+      echo "详情：" >&2
+      cat "$pull_err" >&2
+      rm -f "$pull_err"
+      exit 1
+    fi
+    echo "安装失败：拉不到镜像 $pull_image。" >&2
+    echo "详情：" >&2
+    cat "$pull_err" >&2
     rm -f "$pull_err"
-    die "拉不到镜像 $pull_image"
+    exit 1
   }
   rm -f "$pull_err"
 fi

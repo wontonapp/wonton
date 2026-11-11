@@ -46,6 +46,10 @@ def main():
         elif "Proxy" in fmt:
             out("\n")
     elif command == "pull":
+        error = os.environ.get("FAKE_DOCKER_PULL_ERROR")
+        if error:
+            print(error, file=sys.stderr)
+            sys.exit(1)
         out("pulled " + args[-1])
     elif command == "image":
         fmt = value("--format")
@@ -203,6 +207,53 @@ class InstallTest(unittest.TestCase):
         result = self.run_install(WONTON_INSTALL_TIMEOUT_SECS="")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("WONTON_INSTALL_TIMEOUT_SECS", self.env())
+
+    def pull_failure(self, error, **extra):
+        result = self.run_install(FAKE_DOCKER_PULL_ERROR=error, **extra)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.install_dir / ".env").exists())
+        return result
+
+    def test_a_missing_tag_says_the_channel_has_no_release(self):
+        result = self.pull_failure("Error response from daemon: manifest unknown")
+
+        self.assertIn("渠道 stable 还没有发布的版本", result.stderr)
+        self.assertIn("WONTON_CORE_IMAGE", result.stderr)
+        self.assertNotIn("配代理", result.stderr)
+        # 人话在前，Docker 原文收在“详情”后面。
+        self.assertLess(result.stderr.index("详情："), result.stderr.index("manifest unknown"))
+
+        # 给的是 digest 时没有渠道可说。
+        digest = "sha256:" + "f" * 64
+        result = self.pull_failure(
+            "Error response from daemon: manifest unknown",
+            WONTON_CORE_IMAGE="ghcr.io/wontonapp/wonton-core@" + digest,
+        )
+        self.assertNotIn("渠道", result.stderr.splitlines()[0])
+
+    def test_a_denied_pull_says_the_image_may_not_be_public(self):
+        result = self.pull_failure(
+            'Error response from daemon: Head "https://ghcr.io/v2/wontonapp/wonton-core/manifests/stable": unauthorized'
+        )
+
+        self.assertIn("可能还没公开", result.stderr)
+        self.assertIn("WONTON_CORE_IMAGE", result.stderr)
+        self.assertNotIn("配代理", result.stderr)
+        self.assertLess(result.stderr.index("详情："), result.stderr.index("unauthorized"))
+
+    def test_a_registry_outage_keeps_the_proxy_help(self):
+        result = self.pull_failure(
+            'Error response from daemon: Get "https://ghcr.io/v2/": dial tcp 192.0.2.10:443: i/o timeout'
+        )
+
+        self.assertIn("连不上 Docker 镜像仓库", result.stderr)
+        self.assertIn("proxy.conf", result.stderr)
+
+    def test_an_unknown_pull_error_shows_the_docker_output_as_details(self):
+        result = self.pull_failure("Error response from daemon: unexpected EOF")
+
+        self.assertIn("拉不到镜像", result.stderr)
+        self.assertLess(result.stderr.index("详情："), result.stderr.index("unexpected EOF"))
 
 
 if __name__ == "__main__":
