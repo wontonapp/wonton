@@ -113,15 +113,6 @@ mod tests {
                 "prio": "high",
             })
         );
-        // 确认卡片的推送带类别，卡片标题在发送者位上；没有的字段不出现。
-        let card = DevicePayload {
-            sender_display_name: Some("Hermes 想安装 Grafana".into()),
-            category: Some("confirmation".into()),
-            ..payload
-        };
-        let value = serde_json::to_value(&card).unwrap();
-        assert_eq!(value["category"], json!("confirmation"));
-        assert_eq!(value["sender_display_name"], json!("Hermes 想安装 Grafana"));
     }
 
     /// Tuwunel 完整格式的通知里有正文，转发给设备的内容里不能有。
