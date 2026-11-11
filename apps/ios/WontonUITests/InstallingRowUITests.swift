@@ -11,12 +11,6 @@ final class InstallingRowUITests: XCTestCase {
     private var plugin: String {
         (ProcessInfo.processInfo.environment["PLUGIN"] ?? "Claude Code").replacingOccurrences(of: "%20", with: " ")
     }
-    /// 逗号分隔的一串配对码：排队的机器上等锁很慢，最早的码可能已经过期，逐个试。
-    private var pairCodes: [String] {
-        let raw = ProcessInfo.processInfo.environment["PAIR_CODES"] ?? ProcessInfo.processInfo.environment["PAIR_CODE"] ?? ""
-        let codes = raw.split(separator: ",").map(String.init)
-        return codes.isEmpty ? [UITestBackend.code].compactMap { $0 } : codes
-    }
 
     override func setUpWithError() throws {
         continueAfterFailure = true
@@ -91,7 +85,7 @@ final class InstallingRowUITests: XCTestCase {
     }
 
     /// 还在配对页时粘贴配对码，配不上就换下一个码。已经配上就什么都不做。
-    private func pairIfNeeded() {
+    private func pairIfNeeded(_ pairCodes: [String]) {
         let field = app.textFields.firstMatch
         guard field.waitForExistence(timeout: 20) else { return }
         for (index, code) in pairCodes.enumerated() {
@@ -155,8 +149,10 @@ final class InstallingRowUITests: XCTestCase {
     }
 
     func testInstallRow() throws {
+        // 排队的机器上等锁很慢，最早的码可能已经过期：逐个试。
+        let pairCodes = try UITestBackend.codes()
         try XCTSkipIf(pairCodes.isEmpty, "需要开发栈：没有 PAIRING_CODE")
-        pairIfNeeded()
+        pairIfNeeded(pairCodes)
         XCTAssertTrue(
             waitAnyButton(["Apps", "应用"], timeout: 40) != nil
                 || waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 90) != nil,
