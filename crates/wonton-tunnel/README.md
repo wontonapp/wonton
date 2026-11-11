@@ -90,8 +90,9 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
   和地址）选路，对方接上它的 Tuwunel 后回 200，之后的字节（两台 Tuwunel 之间的 TLS）原样转发，不终结 TLS。
   别的端口（Tuwunel 先拨 443 取 well-known）回 502，Tuwunel 随即改拨 8448；名字不在配对名单里回 403，
   记一次 `unknown_server`；开头不是能读懂的 CONNECT 回 400，记一次 `invalid_request`；对方连不上回 502。
-- **每台对方服务器一条共享连接**（`TunnelClient` 的形状：复用、退避、探活）。断了下次用时按退避重连；
-  定时 ping 探活，周期和超时由 `bind` 的参数给。名字从查找函数里消失（对方被删除）时，连接和探活一起停。
+- **每台对方服务器一条共享连接**：就是 [`TunnelClient`](src/client.rs)，ALPN 换成 `wonton/federation/0`
+  （`TunnelClient::with_alpn`），复用、退避、判死都归它。断了下次用时自动重连；定时 ping 探活，周期和
+  超时由 `bind` 的参数给。名字从查找函数里消失（对方被删除）时，连接和探活一起停。
 - **状态**：`watch_status` 给出每台对方服务器的 `PeerStatus`。`Connected` 是最近一次探活或数据往返成功；
   `Offline { since, last_error }` 是连不上（传输问题，不是对方的态度）；`RemovedByPeer` 是握手后被对方用
   403 关闭（对方名单里没有本机），对方的名单恢复后自动回到 `Connected`。Tuwunel 分不清“对方离线”和
