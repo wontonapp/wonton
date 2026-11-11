@@ -196,3 +196,4 @@ chat-card-hop-limit-title = { $bots } went back and forth { $hops } times and we
 chat-choice-hop-limit-continue = Continue
 chat-choice-hop-limit-stay = Keep stopped
 chat-hop-limit-resumed = Continued
+chat-hop-limit-kept-by-other = The other side chose to keep it stopped
