@@ -94,6 +94,18 @@ jobs:
           echo "SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
+      # 先只编测试包：录屏和跑测试分开，安装 App 时不和启动的模拟器抢。
+      - name: 编测试包
+        run: |
+          xcodebuild build-for-testing \
+            -project apps/ios/Wonton.xcodeproj \
+            -scheme Wonton \
+            -configuration Debug \
+            -destination "id=$SIMULATOR_UDID" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -only-testing:WontonUITests \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO
       - name: 跑 WontonUITests 并录屏
         run: |
           set -o pipefail
@@ -102,7 +114,7 @@ jobs:
           recorder=$!
           # recordVideo 收到 SIGINT 才把文件收尾。
           trap 'kill -INT "$recorder" 2>/dev/null; wait "$recorder" 2>/dev/null || true' EXIT
-          xcodebuild test \
+          xcodebuild test-without-building \
             -project apps/ios/Wonton.xcodeproj \
             -scheme Wonton \
             -configuration Debug \
