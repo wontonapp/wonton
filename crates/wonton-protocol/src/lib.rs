@@ -18,6 +18,7 @@ mod bot_web_registration;
 mod chat;
 mod chat_layout;
 mod confirmation;
+mod confirmation_origin;
 mod core_upgrade;
 mod egress;
 mod error;
@@ -90,6 +91,11 @@ pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
     ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView, ConfirmationWindow,
     WindowEnd, WindowView, answer_path, window_path,
+};
+pub use confirmation_origin::{
+    CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ConfirmationOrigin, ConfirmationRequester,
+    ConfirmationsViewModel, DeviceConfirmationPush, ORIGIN_META_KEY, ORIGIN_ROOM_HEADER,
+    ORIGIN_THREAD_HEADER, confirmation_path,
 };
 pub use core_upgrade::{
     CORE_UPGRADE_CHECK_PATH, CORE_UPGRADE_PATH, CoreUpgradeCheck, CoreUpgradeCheckRequest,

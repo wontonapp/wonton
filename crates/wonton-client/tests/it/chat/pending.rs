@@ -62,7 +62,10 @@ async fn cards_are_known_from_another_room_until_they_are_answered() {
     send(&room, content(&later)).await;
     wait_pending(&phone, "第一张卡片", &["later"]).await;
     let view = phone.chat();
-    assert_eq!(view.pending_confirmations[0].room_id, notices.as_str());
+    assert_eq!(
+        view.pending_confirmations[0].room_id.as_deref(),
+        Some(notices.as_str())
+    );
     assert_eq!(
         view.pending_confirmations[0].title,
         later["title"].as_str().unwrap()
