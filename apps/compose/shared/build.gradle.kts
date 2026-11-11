@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.android.kmp.library)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.detekt)
+    // Apache-2.0。截图测试只在 JVM 的 host test 里跑，不加载 Rust 的 .so。
+    alias(libs.plugins.paparazzi)
 }
 
 /** 编译 Rust 客户端核心（cargo-ndk）并生成 Kotlin 绑定，输出交给 AGP 和 Kotlin 编译。 */
@@ -82,6 +84,11 @@ kotlin {
         minSdk = libs.versions.android.minSdk.get().toInt()
         // 噪点贴图（ADR-0026）。
         androidResources { enable = true }
+        // 截图测试（Paparazzi）在 JVM 上按布局渲染，要读资源；targetSdk 和 App 一致。
+        withHostTest {
+            isIncludeAndroidResources = true
+            targetSdk { version = release(libs.versions.android.targetSdk.get().toInt()) }
+        }
     }
 
     sourceSets {
@@ -92,6 +99,8 @@ kotlin {
                 implementation(libs.compose.runtime)
                 implementation(libs.compose.foundation)
                 implementation(libs.compose.material3)
+                // Apache-2.0。@Preview 注解，界面预览和截图测试只看它标注的函数。
+                implementation(libs.compose.ui.tooling.preview)
                 // Apache-2.0。服务器行使用 Material 的加号和勾选图标。
                 implementation("org.jetbrains.compose.material:material-icons-core:1.7.3")
                 implementation(libs.kotlinx.coroutines.core)
@@ -117,6 +126,12 @@ kotlin {
                 implementation(libs.media3.transformer)
                 implementation(libs.media3.effect)
                 implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
+            }
+        }
+        // 截图测试（Paparazzi）。预览自己带固定假数据，这里只要断言用的 JUnit。
+        getByName("androidHostTest") {
+            dependencies {
+                implementation(libs.junit)
             }
         }
     }
