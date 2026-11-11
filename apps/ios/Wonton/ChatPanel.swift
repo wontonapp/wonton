@@ -94,6 +94,9 @@ struct ChatPanelHost<Content: View>: View {
                         .ignoresSafeArea()
                 }
                 chat(height: height)
+                if level != .closed {
+                    strip(height: height)
+                }
                 attention(height: height)
                 #if DEBUG
                     BuzzMark(count: buzzes)
@@ -232,29 +235,35 @@ extension ChatPanelHost {
 
     private func chat(height: CGFloat) -> some View {
         content()
+            // 拉开后聊天页不接点击：它的整屏底色背景还留在原位，会把面板整块盖住（房间有 WontonCanvas 的底色时实测）。
+            // 露出的那一条由上面的 `strip` 单独接点按和拖动；收起时聊天页照常可点。
+            .allowsHitTesting(level == .closed)
             .offset(y: sign * chatOffset(height))
-            .overlay {
-                if level != .closed {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { move(to: .closed) }
-                        .gesture(
-                            // 按屏幕算：聊天页跟着手指动，按它自己的坐标算的话手指一直停在原处。
-                            DragGesture(minimumDistance: 4, coordinateSpace: .global)
-                                .onChanged {
-                                    drag = sign * $0.translation.height
-                                    arm(distance: drag, height: height)
-                                }
-                                .onEnded { value in
-                                    settle(distance: sign * value.translation.height,
-                                           velocity: sign * value.velocity.height, height)
-                                }
-                        )
-                }
-            }
-            .background { if let pullAnchor { RoomPullBinder(anchor: pullAnchor, pull: pull(height: height)) } }
+            .background { if let pullAnchor { RoomPullBinder(anchor: pullAnchor, pull: pull(height: height)).allowsHitTesting(false) } }
             .shadow(color: .black.opacity(level == .closed && drag == 0 ? 0 : 0.15), radius: 12)
             .accessibilityAction(named: Text(TabText.openPanel)) { openPanel() }
+    }
+
+    /// 露出的那条聊天页：点一下收起，往外推换级。单独一层放在聊天页上面，不靠它的位移决定命中区——
+    /// 叠在聊天页上的点按区不跟着 `.offset` 走，面板会被整块盖住，第 1 级里点加号、圆点、网页都会被吃掉。
+    private func strip(height: CGFloat) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .frame(height: max(0, height - chatOffset(height)))
+            .frame(maxHeight: .infinity, alignment: edge == .top ? .bottom : .top)
+            .onTapGesture { move(to: .closed) }
+            .gesture(
+                // 按屏幕算：聊天页跟着手指动，按它自己的坐标算的话手指一直停在原处。
+                DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                    .onChanged {
+                        drag = sign * $0.translation.height
+                        arm(distance: drag, height: height)
+                    }
+                    .onEnded { value in
+                        settle(distance: sign * value.translation.height,
+                               velocity: sign * value.velocity.height, height)
+                    }
+            )
     }
 
     @ViewBuilder private func pager(height: CGFloat, safe: EdgeInsets) -> some View {
@@ -463,6 +472,7 @@ private struct PanelEmpty: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
     }
 }
 
