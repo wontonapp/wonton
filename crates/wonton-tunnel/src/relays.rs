@@ -126,9 +126,10 @@ impl RelayTable {
         }
     }
 
-    /// 从连接信息或配对码里带来的表项组表。表项要先用 [`Relay::validate`] 校验过。
+    /// 从连接信息或配对码里带来的表项组表。表项要先用 [`Relay::validate`] 校验过；地址规范成
+    /// [`canonical_url`] 的一种写法。
     pub fn from_relays(relays: Vec<Relay>) -> Self {
-        let mut relays = relays;
+        let mut relays: Vec<_> = relays.into_iter().map(canonical_relay).collect();
         relays.sort_by_key(|relay| relay.tier);
         Self { relays }
     }
@@ -194,6 +195,34 @@ pub fn relay_map(relays: &[Relay], tiers: usize) -> RelayMap {
         .collect()
 }
 
+/// 中继域名不带 FQDN 尾点，使配对码、中继表和连接状态使用同一个 key（#200）。
+///
+/// iroh 内置中继带尾点，webpki 允许它作为 TLS 参照名；用户报告在其网络中去掉尾点才能配对。
+/// 在配置和连接信息入口统一写法，不改 TLS 校验或信任根。
+pub fn canonical_url(url: RelayUrl) -> RelayUrl {
+    let Some(domain) = url.domain() else {
+        return url;
+    };
+    let host = domain.trim_end_matches('.');
+    if host == domain || host.is_empty() {
+        return url;
+    }
+    let host = host.to_owned();
+    let mut inner = Url::from(url);
+    inner
+        .set_host(Some(&host))
+        .expect("removing the DNS root dot preserves a valid host");
+    RelayUrl::from(inner)
+}
+
+/// [`Relay`] 的地址规范成一种写法（[`canonical_url`]）。
+pub fn canonical_relay(relay: Relay) -> Relay {
+    Relay {
+        url: canonical_url(relay.url),
+        ..relay
+    }
+}
+
 /// 解析一项中继地址：`https://TOKEN@relay.example.org`。令牌取 userinfo 的用户名（按百分号编码
 /// 解码），解析后从地址里去掉。
 fn relay_from_url(item: &str, tier: u8) -> Result<Relay, String> {
@@ -222,7 +251,7 @@ fn relay_from_url(item: &str, tier: u8) -> Result<Relay, String> {
     url.set_username("")
         .map_err(|_| format!("{item}：去不掉 userinfo"))?;
     Ok(Relay {
-        url: RelayUrl::from(url),
+        url: canonical_url(RelayUrl::from(url)),
         token,
         tier,
     })
@@ -236,7 +265,8 @@ fn n0_relays(tier: u8) -> impl Iterator<Item = Relay> {
         .relays::<Vec<_>>()
         .into_iter()
         .map(move |config| Relay {
-            url: config.url.clone(),
+            // iroh 内置的主机名带 FQDN 尾点，规范成我们的一种写法（canonical_url 的说明）。
+            url: canonical_url(config.url.clone()),
             token: None,
             tier,
         })

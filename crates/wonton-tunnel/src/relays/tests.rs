@@ -91,6 +91,49 @@ fn wire_entries_must_not_carry_the_token_in_the_url() {
     assert!(entry.validate().unwrap_err().contains("空"));
 }
 
+/// 中继地址只认一种写法：FQDN 尾点在哪个入口都规范掉（canonical_url 的说明）。
+#[test]
+fn relay_urls_are_canonicalized_without_the_fqdn_trailing_dot() {
+    assert_eq!(
+        canonical_url(url("https://a.example./")),
+        url("https://a.example/")
+    );
+    // 只改域名，保留端口、路径和查询。
+    assert_eq!(
+        canonical_url(url("https://a.example.:8443/relay?x=1")),
+        url("https://a.example:8443/relay?x=1")
+    );
+    // 没有尾点、IP 地址原样通过。
+    assert_eq!(
+        canonical_url(url("https://a.example/")),
+        url("https://a.example/")
+    );
+    assert_eq!(
+        canonical_url(url("https://127.0.0.1:1/")),
+        url("https://127.0.0.1:1/")
+    );
+}
+
+#[test]
+fn every_entry_point_yields_the_same_relay_for_both_spellings() {
+    // 配置里的两种写法是同一台中继：去重合并，后面的档位和令牌为准。
+    let table = RelayTable::parse("https://a.example;https://tok@a.example.").unwrap();
+    assert!(table.tier(0).is_empty());
+    assert_eq!(table.tier(1)[0].url, url("https://a.example/"));
+    assert_eq!(table.tier(1)[0].token.as_ref().unwrap().expose(), "tok");
+    // 从连接信息或配对码组表也一样。
+    let table = RelayTable::from_relays(vec![relay("https://a.example./", 0)]);
+    assert_eq!(table.tier(0), [relay("https://a.example/", 0)]);
+    // iroh 的默认 n0 表里也没有带尾点的写法。
+    assert!(
+        RelayTable::builtin_n0().relays().iter().all(|relay| !relay
+            .url
+            .host_str()
+            .unwrap_or_default()
+            .ends_with('.'))
+    );
+}
+
 #[test]
 fn the_map_only_holds_the_requested_tiers() {
     let table = RelayTable::parse("https://a.example;n0").unwrap();
