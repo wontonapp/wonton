@@ -71,6 +71,15 @@ enum SnapshotFixtures {
         .environment(OnboardingModel(core: core))
     }
 
+    /// 插件问题视图（#230）：「安装记录不可用」类别，标题和下一步按类别写在壳里，核心的原始说明收进“详情”。
+    static func pluginProblem() -> some View {
+        ProblemNotice(
+            problem: PluginFailure.recordUnusable.problem(
+                detail: "install record for app.example.photos is not readable: unknown schema"
+            )
+        )
+    }
+
     private static func row(_ item: TimelineItem, core: ClientCore, showsSender: Bool) -> some View {
         TimelineRow(
             item: item, core: core, showsSender: showsSender,
