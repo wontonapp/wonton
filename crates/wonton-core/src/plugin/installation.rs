@@ -305,7 +305,8 @@ impl PluginManager {
     ) -> Result<UninstallReport, InstallError> {
         self.check_uninstall_state(id, langs)?;
         let _dependencies = self.dependencies.changing.lock().await;
-        self.uninstall_locked(id, purge, true, langs).await
+        self.uninstall_locked(id, purge, std::slice::from_ref(id), true, langs)
+            .await
     }
 
     pub(in crate::plugin) fn check_uninstall_state(
@@ -345,14 +346,12 @@ impl PluginManager {
         &self,
         id: &PluginId,
         purge: bool,
+        removing: &[PluginId],
         approve_connections: bool,
         langs: &Languages,
     ) -> Result<UninstallReport, InstallError> {
         self.check_uninstall_state(id, langs)?;
-        self.check_capability_removal(id, None, langs)?;
-        if !approve_connections {
-            self.check_uninstall_connections(id, langs)?;
-        }
+        self.check_uninstall_dependencies(removing, approve_connections, langs)?;
         let _changing = self.egress.changing.lock().await;
         if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
             && self.egress_provider(langs)?.id == *id
@@ -397,7 +396,7 @@ impl PluginManager {
                 self.lan.clear_degraded(id);
                 self.plugins.write().expect("插件表锁中毒").remove(id);
                 self.tool_policy().forget_plugin(id.as_str());
-                self.remove_capability_records(id, approve_connections, langs)
+                self.remove_capability_records(id, removing, approve_connections, langs)
                     .await?;
                 self.changed();
                 tracing::info!(plugin = %id, "插件已卸载");

@@ -218,6 +218,7 @@ impl PluginManager {
     pub(in crate::plugin) async fn remove_capability_records(
         &self,
         id: &PluginId,
+        removing: &[PluginId],
         approve_connections: bool,
         langs: &Languages,
     ) -> Result<(), InstallError> {
@@ -225,12 +226,12 @@ impl PluginManager {
         let providers: Vec<_> = self
             .capability_providers()
             .into_iter()
-            .filter(|p| p.id != *id)
+            .filter(|p| !removing.contains(&p.id))
             .collect();
         let consumers = self.capability_consumers();
         let affected: Vec<_> = consumers
             .iter()
-            .filter(|c| c.manifest.id != *id)
+            .filter(|c| !removing.contains(&c.manifest.id))
             .flat_map(|consumer| {
                 declarations(&consumer.manifest)
                     .filter(|capability| {
@@ -239,7 +240,7 @@ impl PluginManager {
                             .get(consumer.manifest.id.as_str())
                             .and_then(|s| s.get(*capability))
                             .or_else(|| before.defaults.get(*capability))
-                            .is_some_and(|p| p == id.as_str())
+                            .is_some_and(|p| removing.iter().any(|removed| removed.as_str() == p))
                     })
                     .map(|capability| (consumer.manifest.id.clone(), capability.clone()))
                     .collect::<Vec<_>>()
@@ -251,11 +252,11 @@ impl PluginManager {
                 .retain(|c| c.consumer != id.as_str() && c.provider != id.as_str());
             state.selected.remove(id.as_str());
             for selected in state.selected.values_mut() {
-                selected.retain(|_, p| p != id.as_str());
+                selected.retain(|_, p| !removing.iter().any(|removed| removed.as_str() == p));
             }
             state.providers.retain(|p| p != id.as_str());
             for (capability, selected) in &mut state.defaults {
-                if selected == id.as_str() {
+                if removing.iter().any(|removed| removed.as_str() == selected) {
                     *selected = providers
                         .iter()
                         .find(|p| service(&p.listed.manifest, capability).is_some())

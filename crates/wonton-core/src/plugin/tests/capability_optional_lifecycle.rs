@@ -236,6 +236,54 @@ async fn removing_last_optional_provider_rebuilds_url_and_key_to_empty() {
 }
 
 #[tokio::test]
+async fn failed_rebuild_after_optional_provider_removal_reports_a_degraded_consumer() {
+    let (docker, engine) = FakeDocker::start().await;
+    credentials(&docker);
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    manager
+        .install(&provider("jellyfin"), &[], langs())
+        .await
+        .unwrap();
+    manager
+        .install(&consumer("wants", "jellyfin"), &[], langs())
+        .await
+        .unwrap();
+    let container = container_name("app-a-consumer", "app");
+    docker.fail_next_create(&container, "consumer replacement unavailable");
+    let error = manager
+        .uninstall(&id("app.z-provider"), false, &langs())
+        .await
+        .unwrap_err();
+    assert!(!manager.is_installed(&id("app.z-provider")));
+    assert!(!docker.containers().contains(&container));
+    let detail = manager
+        .judged_detail(&id("app.a-consumer"), &langs())
+        .await
+        .unwrap();
+    let Some(installed) = detail.installed else {
+        panic!("consumer record disappeared")
+    };
+    assert!(matches!(installed.status, PluginState::Degraded { .. }));
+    let Some(super::super::PluginStatus::Degraded { reason }) =
+        manager.status_of(&id("app.a-consumer"))
+    else {
+        panic!("failed consumer still reported healthy");
+    };
+    assert_eq!(reason, error.to_string());
+    manager
+        .rebuild_capability_consumer(&id("app.a-consumer"), &langs())
+        .await
+        .unwrap();
+    assert!(matches!(
+        state(&manager, "app.a-consumer"),
+        PluginState::Running { .. }
+    ));
+    assert_eq!(env_of_container(&docker, &container)["URL"], "");
+    assert_eq!(env_of_container(&docker, &container)["KEY"], "");
+}
+
+#[tokio::test]
 async fn partial_credential_revocation_keeps_connections_unavailable_until_same_key_reissue() {
     let (docker, engine) = FakeDocker::start().await;
     let keys = credentials(&docker);

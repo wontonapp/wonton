@@ -267,20 +267,33 @@ impl PluginManager {
         let mut ctx = self.rebuild_context(&package, &record, lan, None).await?;
         self.fill_bot_vars(&package, &mut ctx, langs).await?;
         let plan = super::super::render::render(&package, &ctx, langs)?;
-        self.replace_containers(&ctx, plan, super::super::health_gate::Gate::StartPeriod)
-            .await?;
-        let deployed = self.reconcile_running(&package, &record).await?;
-        let mut plugins = self.plugins.write().expect("插件表锁中毒");
-        if let Some(entry) = plugins.get_mut(id) {
-            let listed = entry
-                .listed
-                .clone()
-                .ok_or_else(|| InstallError::not_installed(langs, id))?;
-            *entry = super::super::entry::Entry::running(listed, deployed);
+        let deployed = async {
+            self.replace_containers(&ctx, plan, super::super::health_gate::Gate::StartPeriod)
+                .await?;
+            self.reconcile_running(&package, &record).await
         }
+        .await;
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        let entry = plugins
+            .get_mut(id)
+            .ok_or_else(|| InstallError::not_installed(langs, id))?;
+        let listed = entry
+            .listed
+            .clone()
+            .ok_or_else(|| InstallError::not_installed(langs, id))?;
+        let result = match deployed {
+            Ok(deployed) => {
+                *entry = super::super::entry::Entry::running(listed, deployed);
+                Ok(())
+            }
+            Err(error) => {
+                *entry = super::super::entry::Entry::containers_failed(listed, error.to_string());
+                Err(error)
+            }
+        };
         drop(plugins);
         self.changed();
-        Ok(())
+        result
     }
 
     pub(in crate::plugin) fn dependency_hints(

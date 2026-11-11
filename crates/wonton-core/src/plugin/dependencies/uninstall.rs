@@ -15,11 +15,9 @@ impl PluginManager {
         self.check_uninstall_state(id, langs)?;
         let _changing = self.dependencies.changing.lock().await;
         let preview = self.uninstall_preview(id, langs)?;
-        if !approve_connections {
-            self.check_uninstall_connections(id, langs)?;
-        }
         let mut seen = BTreeSet::new();
-        let mut providers = Vec::with_capacity(selected.len());
+        let mut removing = Vec::with_capacity(selected.len() + 1);
+        removing.push(id.clone());
         for selected in selected {
             if !seen.insert(selected.clone())
                 || !preview
@@ -32,22 +30,15 @@ impl PluginManager {
             let provider = PluginId::parse(&selected)
                 .map_err(|error| InstallError::Invalid(error.to_string()))?;
             self.check_uninstall_state(&provider, langs)?;
-            let dependents: Vec<_> = self
-                .capability_dependents(&provider, None, langs)?
-                .into_iter()
-                .filter(|consumer| consumer.id != id.as_str())
-                .collect();
-            if !dependents.is_empty() {
-                return Err(selection_error(langs));
-            }
-            providers.push(provider);
+            removing.push(provider);
         }
+        self.check_uninstall_dependencies(&removing, approve_connections, langs)?;
         let mut report = self
-            .uninstall_locked(id, purge, approve_connections, langs)
+            .uninstall_locked(id, purge, &removing, approve_connections, langs)
             .await?;
-        for provider in providers {
+        for provider in removing.iter().skip(1) {
             let removed = self
-                .uninstall_locked(&provider, purge, approve_connections, langs)
+                .uninstall_locked(provider, purge, &removing, approve_connections, langs)
                 .await?;
             report.containers.extend(removed.containers);
             report.networks.extend(removed.networks);
@@ -57,14 +48,21 @@ impl PluginManager {
         Ok(report)
     }
 
-    pub(in crate::plugin) fn check_uninstall_connections(
+    pub(in crate::plugin) fn check_uninstall_dependencies(
         &self,
-        id: &PluginId,
+        removing: &[PluginId],
+        approve_connections: bool,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let state = self.dependencies.load()?;
         let providers = self.capability_providers();
+        let mut blocked = Vec::new();
+        let mut approval = None;
         for consumer in self.capability_consumers() {
+            if removing.contains(&consumer.manifest.id) {
+                continue;
+            }
+            let mut missing = false;
             for capability in consumer
                 .manifest
                 .requires
@@ -72,30 +70,26 @@ impl PluginManager {
                 .filter(|capability| super::generic(capability))
             {
                 if super::chosen(&state, &providers, &consumer.manifest.id, capability)
-                    .is_none_or(|provider| provider.id != *id)
+                    .is_none_or(|provider| !removing.contains(&provider.id))
                 {
                     continue;
                 }
-                let replacement = match state
-                    .defaults
-                    .get(capability)
-                    .filter(|provider| provider.as_str() != id.as_str())
-                {
-                    Some(default) => providers.iter().find(|provider| {
-                        provider.id.as_str() == default
-                            && super::service(&provider.listed.manifest, capability).is_some()
-                    }),
-                    None => providers.iter().find(|provider| {
-                        provider.id != *id
-                            && super::service(&provider.listed.manifest, capability).is_some()
-                    }),
+                let Some(provider) = remaining_provider(
+                    &state,
+                    &providers,
+                    &consumer.manifest.id,
+                    capability,
+                    removing,
+                ) else {
+                    missing = true;
+                    continue;
                 };
-                if let Some(provider) = replacement
+                if !approve_connections
                     && super::high(&provider.listed.manifest, capability)
                     && super::connection(&state, &consumer.manifest.id, &provider.id, capability)
                         .is_none()
                 {
-                    return Err(InstallError::PermissionNotGranted(crate::l10n::text(
+                    approval = Some(InstallError::PermissionNotGranted(crate::l10n::text(
                         langs,
                         "plugin-capability-connect",
                         &[
@@ -112,9 +106,55 @@ impl PluginManager {
                     )));
                 }
             }
+            if missing {
+                blocked.push(wonton_protocol::CapabilityProviderRef {
+                    id: consumer.manifest.id.to_string(),
+                    title: langs.pick_owned(&consumer.manifest.title),
+                    high_privilege: false,
+                });
+            }
         }
-        Ok(())
+        if !blocked.is_empty() {
+            let titles = blocked
+                .iter()
+                .map(|plugin| plugin.title.as_str())
+                .collect::<Vec<_>>();
+            return Err(InstallError::InUse {
+                message: crate::l10n::text(
+                    langs,
+                    "plugin-capability-in-use",
+                    &[("plugins", crate::l10n::list(langs, &titles).into())],
+                ),
+                plugins: blocked,
+            });
+        }
+        approval.map_or(Ok(()), Err)
     }
+}
+
+pub(super) fn remaining_provider<'a>(
+    state: &super::State,
+    providers: &'a [super::Provider],
+    consumer: &PluginId,
+    capability: &str,
+    removing: &[PluginId],
+) -> Option<&'a super::Provider> {
+    let retained = |id: &&String| {
+        !removing
+            .iter()
+            .any(|removed| removed.as_str() == id.as_str())
+    };
+    let selected = state
+        .selected
+        .get(consumer.as_str())
+        .and_then(|choices| choices.get(capability))
+        .filter(retained)
+        .or_else(|| state.defaults.get(capability).filter(retained));
+    providers.iter().find(|provider| {
+        !removing.contains(&provider.id)
+            && super::service(&provider.listed.manifest, capability).is_some()
+            && selected.is_none_or(|selected| selected == provider.id.as_str())
+    })
 }
 
 fn selection_error(langs: &Languages) -> InstallError {

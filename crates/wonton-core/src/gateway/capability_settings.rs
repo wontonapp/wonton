@@ -8,7 +8,7 @@ use hyper::{HeaderMap, StatusCode};
 use serde::de::DeserializeOwned;
 use wonton_protocol::{CapabilityDefaultChoice, ConsumerCapabilityChoice};
 
-use super::api::{install_error, languages, owner_denied};
+use super::api::{install_denied, install_error, languages, owner_denied};
 use super::{Gateway, TunnelPeer};
 use crate::l10n;
 use crate::plugin::languages::Languages;
@@ -90,7 +90,7 @@ pub async fn uninstall_preview(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) = install_denied(&gateway, peer, &headers) {
         return denied;
     }
     let id = match plugin_id(&id) {

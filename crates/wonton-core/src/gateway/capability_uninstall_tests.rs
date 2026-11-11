@@ -165,6 +165,10 @@ async fn replacement_and_member(h: &Harness) -> iroh::EndpointId {
         )
         .await
         .unwrap();
+    install_member(h).await
+}
+
+async fn install_member(h: &Harness) -> iroh::EndpointId {
     h.members
         .invite(crate::members::MemberRecord {
             username: "mia".into(),
@@ -185,6 +189,26 @@ async fn replacement_and_member(h: &Harness) -> iroh::EndpointId {
         .add_if(device, None, Some("mia".into()), |_| true)
         .unwrap();
     device
+}
+
+async fn assert_member_uninstall_preview(h: &Harness, device: iroh::EndpointId) {
+    let path = format!("/_wonton/api/plugins/{CONSUMER}/uninstall/preview");
+    let bearer = format!("Bearer {TOKEN}");
+    let owner = h
+        .send(
+            Method::GET,
+            CORE,
+            &path,
+            &[("authorization", &bearer)],
+            Body::empty(),
+        )
+        .await;
+    let member =
+        super::family_tests::send_as(&h.app, Some(device), Method::GET, CORE, &path, &[], "").await;
+    assert_eq!(owner.status, StatusCode::OK, "{}", owner.text());
+    assert_eq!(member.status, StatusCode::OK, "{}", member.text());
+    assert_eq!(member.json(), owner.json());
+    assert_eq!(member.json()["unused_providers"][0]["id"], PROVIDER);
 }
 
 #[tokio::test]
@@ -210,6 +234,7 @@ async fn capability_uninstall_by_a_member_does_not_authorize_a_high_privilege_re
                 .unwrap();
         }
         let device = replacement_and_member(&h).await;
+        assert_member_uninstall_preview(&h, device).await;
         let before = h.docker.writes();
         let reply = super::family_tests::send_as(
             &h.app,
@@ -255,6 +280,126 @@ async fn capability_uninstall_by_a_member_does_not_authorize_a_high_privilege_re
                     .await,
                 Err(crate::plugin::dependencies::CapabilityAccessError::Denied)
             ));
+        }
+    }
+}
+
+async fn batch_uninstall_fixture(retain_alternative: bool) -> Harness {
+    let h = Harness::start(None).await;
+    h.manager.install(
+        &package(PROVIDER, &format!("  wants: [x-acme.database]\n  provides:\n    {CAPABILITY}: {{service: api, port: 8080}}")),
+        &[], Languages::default(),
+    ).await.unwrap();
+    h.manager
+        .install(
+            &package(CONSUMER, &format!("  requires: [{CAPABILITY}]")),
+            &[],
+            Languages::default(),
+        )
+        .await
+        .unwrap();
+    let provider = package("app.selected", &format!("  provides:\n    {CAPABILITY}: {{service: api, port: 8080}}\n    x-acme.database: {{service: api, port: 8080}}"))
+        .replace("  permissions: []", "  permissions: [docker.socket]")
+        .replace("    image: nginx", "    image: nginx\n    volumes: ['/var/run/docker.sock:/var/run/docker.sock']");
+    h.manager
+        .install(
+            &provider,
+            &[crate::plugin::manifest::Permission::DockerSocket],
+            Languages::default(),
+        )
+        .await
+        .unwrap();
+    if retain_alternative {
+        h.manager
+            .install(
+                &package(
+                    "app.retained",
+                    &format!("  provides:\n    {CAPABILITY}: {{service: api, port: 8080}}"),
+                ),
+                &[],
+                Languages::default(),
+            )
+            .await
+            .unwrap();
+    }
+    h
+}
+
+#[tokio::test]
+async fn capability_batch_uninstall_only_uses_providers_that_survive_the_whole_request() {
+    for retain_alternative in [false, true] {
+        for member in [false, true] {
+            let h = batch_uninstall_fixture(retain_alternative).await;
+            let device = if member {
+                Some(install_member(&h).await)
+            } else {
+                None
+            };
+            let preview = h
+                .manager
+                .uninstall_preview(&PluginId::parse(PROVIDER).unwrap(), &Languages::default())
+                .unwrap();
+            assert_eq!(
+                preview
+                    .unused_providers
+                    .iter()
+                    .map(|provider| provider.id.as_str())
+                    .collect::<Vec<_>>(),
+                ["app.selected"]
+            );
+            let before = h.docker.writes();
+            let body = json!({"providers": ["app.selected"]}).to_string();
+            let bearer = format!("Bearer {TOKEN}");
+            let headers = if member {
+                vec![("content-type", "application/json")]
+            } else {
+                vec![
+                    ("content-type", "application/json"),
+                    ("authorization", bearer.as_str()),
+                ]
+            };
+            let reply = super::family_tests::send_as(
+                &h.app,
+                device,
+                Method::DELETE,
+                CORE,
+                &format!("/_wonton/api/plugins/{PROVIDER}"),
+                &headers,
+                &body,
+            )
+            .await;
+            let expected_provider = if retain_alternative {
+                assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+                assert!(!h.manager.is_installed(&PluginId::parse(PROVIDER).unwrap()));
+                assert!(
+                    !h.manager
+                        .is_installed(&PluginId::parse("app.selected").unwrap())
+                );
+                still_running(&h, "app.retained");
+                "app.retained"
+            } else {
+                assert_eq!(reply.status, StatusCode::CONFLICT, "{}", reply.text());
+                assert_eq!(reply.json()["error"]["kind"], "in_use");
+                assert_eq!(reply.json()["error"]["plugins"][0]["id"], CONSUMER);
+                assert_eq!(h.docker.writes(), before);
+                still_running(&h, PROVIDER);
+                still_running(&h, "app.selected");
+                PROVIDER
+            };
+            still_running(&h, CONSUMER);
+            assert_eq!(
+                h.manager
+                    .capability_route(
+                        &PluginId::parse(CONSUMER).unwrap(),
+                        CAPABILITY,
+                        &Languages::default(),
+                    )
+                    .await
+                    .unwrap()
+                    .provider
+                    .as_str(),
+                expected_provider
+            );
         }
     }
 }

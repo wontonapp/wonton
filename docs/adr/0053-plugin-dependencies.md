@@ -129,6 +129,8 @@ x-wonton:
   获准管理插件的家人不能借卸载确认新的高权限连接：必需使用方要接到未确认的高权限替代方时，在卸载前拒绝；
   可选使用方允许断开，但不自动授权新的高权限提供方。
 - 卸载使用方后，有提供方再没有别的插件在用，问主人要不要一起卸，不自动卸。
+  一起卸载的请求先按整批结束后仍存在的提供方检查必需依赖与连接确认；本批选中删除的插件不作为替代方，
+  检查拒绝时不卸任何插件。替代连接需要重建使用方而重建失败时，保留其安装记录并标为异常，不继续显示运行中。
 - 停止提供方不拦，确认页写明谁会受影响。
 - 升级提供方时，新版本不再提供某个有人 `requires` 的能力、又没有别的提供方，拦下这次升级，说清是谁在用。
 - 启动 `requires` 了某能力的插件时，它选用的提供方停着就先启动提供方。
@@ -150,7 +152,7 @@ x-wonton:
 | GET | `capabilities` | 返回已装提供方、全局默认和受影响的使用方（`CapabilityProviderSettings`） |
 | PUT | `capabilities/{capability}` | 以 `CapabilityDefaultChoice` 修改全局默认 |
 | PUT | `plugins/{id}/capabilities` | 以 `ConsumerCapabilityChoice` 修改使用方的一项选择，可跟随默认 |
-| GET | `plugins/{id}/uninstall/preview` | 返回 `UninstallPreview`，列出卸载后不再被使用的提供方 |
+| GET | `plugins/{id}/uninstall/preview` | 返回 `UninstallPreview`，列出卸载后不再被使用的提供方；与卸载同样允许获准管理插件的家人 |
 | DELETE | `plugins/{id}?purge=true` | `purge` 控制是否删除数据；可选 JSON 请求体 `UninstallRequest` 的 `providers` 列出主人确认一起卸载的提供方，不带请求体就只卸指定插件 |
 
 ## 理由
