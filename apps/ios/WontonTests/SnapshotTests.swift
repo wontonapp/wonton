@@ -44,6 +44,20 @@ final class SnapshotTests: XCTestCase {
 
     func testPluginProblem() throws {
         assert(SnapshotFixtures.pluginProblem(), testName: "testPluginProblem", line: #line)
+
+    func testConfirmationsList() throws {
+        let core = try makeCore()
+        assert(SnapshotFixtures.confirmationsList(core: core), testName: "testConfirmationsList", line: #line)
+    }
+
+    func testConfirmationsListProblem() throws {
+        let core = try makeCore()
+        assert(SnapshotFixtures.confirmationsListProblem(core: core), testName: "testConfirmationsListProblem", line: #line)
+    }
+
+    func testConfirmationsBar() throws {
+        let core = try makeCore()
+        assert(SnapshotFixtures.confirmationsBar(core: core), testName: "testConfirmationsBar", line: #line)
     }
 
     /// 逐像素比较；系统字体和矢量图标在同一台模拟器上是确定的，放宽精度要写明原因。

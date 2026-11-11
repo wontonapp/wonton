@@ -181,5 +181,103 @@ enum SnapshotFixtures {
             SettingsSection(entries: [.about])
         ]))
     }
+
+    // MARK: - 确认卡片（ADR-0016）
+
+    /// 会话里的卡片行（输入栏上方）：两张等回答，点开是第一张的完整卡片。
+    static func confirmationsBar(core: ClientCore) -> some View {
+        let plugins = PluginsModel(core: core)
+        return NavigationStack {
+            ConfirmationCardBar(
+                views: [
+                    confirmation(
+                        id: "c1", title: "Hermes wants to install File Search", state: .pending,
+                        requester: .bot(bot: BotRef(pluginId: "app.hermes", bot: "owner"), userId: "@hermes:home.example"),
+                        lines: [CardLine(text: "The plugin can read your photo library.", emphasis: true)],
+                        choices: [
+                            CardChoice(answer: .approve, label: "Install", choiceId: nil),
+                            CardChoice(answer: .reject, label: "Not now", choiceId: nil),
+                        ]
+                    ),
+                    confirmation(id: "c2", title: "File Sync wants to save into Shared folder", state: .pending, requester: .plugin(pluginId: "app.files")),
+                ],
+                bots: [hermesBot], plugins: plugins,
+                answer: { _ in }, stopWindow: {}
+            )
+            .environment(TabsModel(core: core))
+            .environment(plugins)
+        }
+    }
+
+    /// “等你确认”列表：等回答的在前（Bot 和插件各一张），结束的在后面。
+    static func confirmationsList(core: ClientCore) -> some View {
+        let plugins = PluginsModel(core: core)
+        return NavigationStack {
+            ConfirmationsListView(
+                view: ConfirmationsViewModel(
+                    pending: [
+                        confirmation(id: "c1", title: "Hermes wants to install File Search", state: .pending, requester: .bot(bot: BotRef(pluginId: "app.hermes", bot: "owner"), userId: "@hermes:home.example")),
+                        confirmation(id: "c2", title: "File Sync wants to save into Shared folder", state: .pending, requester: .plugin(pluginId: "app.files")),
+                    ],
+                    finished: [
+                        confirmation(id: "c3", title: "Hermes wants to install Grafana", state: .succeeded(message: "Installed Grafana 10.2"), requester: .bot(bot: BotRef(pluginId: "app.hermes", bot: "owner"), userId: "@hermes:home.example")),
+                    ],
+                    loading: false, problem: nil
+                ),
+                bots: [hermesBot], plugins: plugins,
+                answer: { _, _ in }, stopWindow: { _ in }, retry: {}
+            )
+            .environment(TabsModel(core: core))
+            .environment(plugins)
+        }
+    }
+
+    /// 断网时的列表：上次的列表还在，顶上是可重试的问题提示。
+    static func confirmationsListProblem(core: ClientCore) -> some View {
+        let plugins = PluginsModel(core: core)
+        return NavigationStack {
+            ConfirmationsListView(
+                view: ConfirmationsViewModel(
+                    pending: [confirmation(id: "c1", title: "Hermes wants to install File Search", state: .pending, requester: .bot(bot: BotRef(pluginId: "app.hermes", bot: "owner"), userId: "@hermes:home.example"))],
+                    finished: [],
+                    loading: false,
+                    problem: ChatProblem(reason: .transportUnavailable, message: "GET /_wonton/api/confirmations: connection refused")
+                ),
+                bots: [hermesBot], plugins: plugins,
+                answer: { _, _ in }, stopWindow: { _ in }, retry: {}
+            )
+            .environment(TabsModel(core: core))
+            .environment(plugins)
+        }
+    }
+
+    private static func confirmation(
+        id: String, title: String, state: ConfirmationState, requester: ConfirmationRequester?,
+        lines: [CardLine] = [], choices: [CardChoice] = []
+    ) -> ConfirmationView {
+        ConfirmationView(
+            card: ConfirmationCard(
+                id: id, state: state, title: title, lines: lines, choices: choices,
+                expiresAtMs: timestampMs + 5 * 60_000,
+                window: nil, pluginId: nil, secretInputs: [], settings: nil,
+                requester: requester, origin: nil
+            ),
+            sending: nil, sendingChoiceId: nil, problem: nil, window: nil
+        )
+    }
+
+    /// Hermes 的 Bot 资料：没取到头像，行里落回插件图标占位。
+    private static var hermesBot: BotView {
+        BotView(
+            userId: "@hermes:home.example",
+            bot: BotRef(pluginId: "app.hermes", bot: "owner"),
+            web: nil, name: "Hermes", avatar: nil, stateAvatars: [], activity: nil,
+            saving: false, problem: nil,
+            chat: BotChatSettings(
+                default: ChatLayoutChoice(form: nil, textScale: nil, code: nil),
+                choice: ChatLayoutChoice(form: nil, textScale: nil, code: nil)
+            )
+        )
+    }
 }
 #endif
