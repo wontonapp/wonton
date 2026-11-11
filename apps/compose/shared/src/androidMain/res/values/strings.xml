@@ -1870,4 +1870,5 @@
     <!-- Content description of a state picture in the bot profile. Argument: the state name. -->
     <string name="bot_avatar_pick_state">Change the %1$s picture</string>
     <string name="message_image_permission_denied">Android denied access. Check this app\'s permissions in Settings and try again.</string>
+    <string name="composer_file_unreadable">Couldn\'t read this file. Copy it again or choose another file.</string>
 </resources>

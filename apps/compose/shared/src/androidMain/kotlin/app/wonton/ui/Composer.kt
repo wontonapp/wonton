@@ -100,13 +100,12 @@ fun Composer(
     val photoUnreadable = stringResource(R.string.photo_unreadable)
     val photoTryAnother = stringResource(R.string.photo_try_another)
     var pendingPaste by rememberSaveable(roomId) { mutableStateOf<Uri?>(null) }
-    // 监听器只建一次；发送文件要带的房间以最新一次组成为准（预览面板是模态的，开着时换不了房间）。
-    val sendPastedFile by rememberUpdatedState { uri: Uri -> onAction(uploadAction(context, uri, roomId)) }
+    var pastedImage by rememberSaveable(roomId) { mutableStateOf(false) }
     val pasteListener = remember {
         pasteContentListener(
             context.applicationContext.contentResolver,
-            onImage = { pendingPaste = it },
-            onFile = { sendPastedFile(it) },
+            onImage = { pastedImage = true; pendingPaste = it },
+            onFile = { pastedImage = false; pendingPaste = it },
         )
     }
     val pickPhoto = rememberLauncherForActivityResult(PickVisualMedia()) { uri ->
@@ -169,15 +168,25 @@ fun Composer(
         )
     }
     pendingPaste?.let { uri ->
-        PastePreviewSheet(
-            uri,
-            onSend = { upload ->
-                onAction(Action.SendImage(roomId, upload, reply?.eventId))
-                if (reply != null) onReplySent()
-            },
-            onDismiss = { pendingPaste = null },
-            onReject = onReject,
-        )
+        if (pastedImage) {
+            PastePreviewSheet(
+                uri,
+                onSend = { upload ->
+                    onAction(Action.SendImage(roomId, upload, reply?.eventId))
+                    if (reply != null) onReplySent()
+                },
+                onDismiss = { pendingPaste = null },
+                onReject = onReject,
+            )
+        } else {
+            FilePastePreviewSheet(
+                uri,
+                onSend = { action -> onAction(action) },
+                roomId = roomId,
+                onDismiss = { pendingPaste = null },
+                onReject = onReject,
+            )
+        }
     }
 }
 

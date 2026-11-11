@@ -1644,4 +1644,5 @@
     <string name="transfer_download">下載</string>
     <string name="bot_avatar_pick_state">更換%1$s頭像</string>
     <string name="message_image_permission_denied">Android 拒絕存取。請在設定中檢查此應用程式的權限，再試一次。</string>
+    <string name="composer_file_unreadable">無法讀取這個檔案。請重新複製，或選擇其他檔案。</string>
 </resources>
