@@ -1,4 +1,4 @@
-# UniFFI 生成绑定时的命名，与 crates/wonton-protocol/uniffi.toml 保持一致。
+# 绑定生成命名须与 crates/wonton-protocol/uniffi.toml 一致。
 [bindings.swift]
 ffi_module_name = "WontonClientFFI"
 ffi_module_filename = "wonton_clientFFI"
