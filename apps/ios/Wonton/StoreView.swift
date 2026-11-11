@@ -479,7 +479,7 @@ private struct UpdateAllButton: View {
 }
 
 private struct GoToInstalledAppsKey: EnvironmentKey {
-    static let defaultValue: () -> Void = {}
+    nonisolated(unsafe) static let defaultValue: () -> Void = {}
 }
 
 extension EnvironmentValues {
