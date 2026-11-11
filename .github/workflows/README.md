@@ -22,17 +22,17 @@
 ## 什么时候跑
 
 - 路径不在触发器上过滤：合并队列的必需检查每次入队都要有结果，工作流不触发的话检查一直“等待中”，队列
-  直接判失败。改动范围改由各工作流开头的 `changes` 作业判断（`dorny/paths-filter`，只在非草稿 PR 上跑），
-  没改到的重作业挂在它上面、自己报 skipped，范围还是写在各个工作流开头；跳过的检查算通过，没有分支保护，
-  不挡合并。lint 例外：冲突标记和密钥可能写在任何文件里，不按路径过滤；它里面的结构门禁只查源码文件，
+  直接判失败。改动范围改由各工作流开头的 `changes` 作业判断（`dorny/paths-filter`，在非草稿 PR 和合并队列上跑），
+  没改到的重作业挂在它上面、自己报 skipped，范围还是写在各个工作流开头；汇总作业把成功和跳过都算通过。
+  lint 例外：冲突标记和密钥可能写在任何文件里，不按路径过滤；它里面的结构门禁只查源码文件，
   只改文档的提交和草稿 PR 上跳过。
 - 过滤范围按“这个工作流真会读什么”列：Rust 只列测试和预热读的部署文件（`deploy/install/`、
   `deploy/dev/{acp-bridge,matrix}/`、`deploy/dev/core/compose.yaml`、`deploy/dev/core/Dockerfile`），
   `deploy/dev` 其余的只给本机开发栈（开发索引 `core/store/`、`experiments/`、smoke 脚本），改了不跑重作业；
   新的 `include_str!` 指向 `deploy/` 时要补进列表。只改 `.md` 的 PR 每个工作流都跳过（`apps/compose/` 下的也算）。
-  漏列不会漏进 main：队列不按路径判断，入队那一轮一定全套跑。
+  PR 和队列共用同一份路径规则，新增依赖或测试输入时必须同步维护；定时和手动运行不按路径过滤。
 - 草稿 PR 上 `rust`、`rust-docker`、`ios`、`android` 一个作业都不起（`changes` 也算在内），只有各自的汇总
-  起来报通过；lint 只跑冲突标记和密钥扫描（同一个作业的相邻两步）。转 ready（`ready_for_review`）跑全套。
+  起来报通过；lint 只跑冲突标记和密钥扫描（同一个作业的相邻两步）。转 ready（`ready_for_review`）按改动范围运行。
 - 所有 PR 运行都 `cancel-in-progress`：反正要重跑，旧的别继续占名额；定时运行跑完。
 - 合并进 main 不重跑全套（PR 已在最新 main 上跑过）；只有 main-image 继续构建核心镜像，`cache.yml` 用
   和 PR 作业一样的 key 把编译缓存编一遍存下来（只编不跑）。每天定时（`schedule`，02:00 起错开）把
@@ -58,16 +58,18 @@
 仓库开着合并队列时，入队的 PR 会在队列里的合并提交上重跑一遍必需检查；`merge_group` 事件没报告，入队就
 直接判失败。所以凡是必需检查所在的五个工作流（`lint`、`rust`、`rust-docker`、`android`、`ios`）都带
 `merge_group` 触发（`types: [checks_requested]`，只对 `main`）：各工作流的汇总作业要在队列里报告，
-它们 `needs` 了本工作流的全部作业，队列里又只是放行不跳过，所以全套都得跑到。`main-image` 和 `test-images`
+它们 `needs` 了本工作流的全部作业，没改到的模块重作业跳过，汇总照常报成功。`main-image` 和 `test-images`
 不用带，队列合进 main 时该跑的照常由 `push` 触发。
 
-`changes` 作业只在非草稿 `pull_request` 上跑，`merge_group`、`schedule`、`workflow_dispatch` 上重作业靠
-`if` 里的 `github.event_name != 'pull_request'` 直接放行（重作业的 `if` 都以 `!cancelled()` 开头：
-`changes` 被跳过时下游作业才不会被连坐跳过；汇总作业用 `always()`，`changes` 跳过也照样报告）。
-作业里判断草稿的 `github.event.pull_request.draft == false` 也只在 PR 上求值（队列只收已转 ready 的 PR）；
-`github.sha` 是队列里的合并提交、`github.ref` 是 `refs/heads/gh-merge-queue/main`，所以并发组在
-`merge_group` 上取 `github.event.merge_group.head_sha`，不让几次入队挤进同一组互相取消。缓存仍只在 main 上写，
-队列运行和 PR 一样只读。
+`changes` 在非草稿 `pull_request` 和 `merge_group` 上运行：PR 通过 REST 列文件，不检出代码；队列检出
+`github.event.merge_group.head_sha`，用 `dorny/paths-filter` 比较 `base_sha..head_sha`，缺的提交由 action
+浅拉取。这段差异包含排在前面的 PR，不能只比较本 PR，也不能只看合并提交的第一个父提交。两种事件沿用各工作流
+同一份 `filters`，只有 `changed == 'true'` 才跑对应重作业；范围判断失败会让汇总变红，不会伪装成没改动。
+
+`schedule` 和 `workflow_dispatch` 跳过 `changes`，重作业全量运行。重作业的 `if` 以 `!cancelled()` 开头，
+防止 `changes` 跳过时下游被连坐跳过；汇总用 `always()`，判断成功、跳过或失败都照常报告。
+草稿 PR 不运行 `changes` 和重作业。并发组在 `merge_group` 上取 `github.event.merge_group.head_sha`，
+不让几次入队挤进同一组互相取消。缓存仍只在 main 上写，队列运行和 PR 一样只读。
 
 ## iOS 单测和截图测试
 
