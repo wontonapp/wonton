@@ -37,7 +37,7 @@ cargo test -p wonton-core --lib model_gateway_contract -- --ignored
 
 第一条不依赖 Docker。第二条需要 Docker、GitHub 取包及锁定的官方镜像；运行时的模型上游只在测试进程里，
 不使用真实服务商、宿主凭据或已有网关的数据。容器在独立的内部网络里，测试守卫清理本次创建的资源。
-契约覆盖模型列表、Chat Completions 与 Responses 的文本、SSE 及工具调用往返、图像消息，
+契约覆盖模型列表、Chat Completions 与 Responses 的文本、SSE 及工具调用往返、图像消息、结构化输出字段透传，
 以及服务商测试不落盘、被拒不保存、断连保存但如实报错和凭据隔离、对账、吊销。
 它不验证模型回答质量，也不等同于完整 Agent 的端到端冒烟。
 
