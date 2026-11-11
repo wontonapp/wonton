@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use wonton_client::{
-    Action, BackPagination, ClientCore, TimelineDiff, TimelineItem, TimelineScroll,
+    Action, BackPagination, ClientCore, KeyNotice, TimelineDiff, TimelineItem, TimelineScroll,
     TimelineSubscription, TimelineViewport,
 };
 
@@ -22,6 +22,8 @@ pub struct Timeline {
     viewport: TimelineViewport,
     /// 壳现在报告的位置，发 `SetTimelineScroll` 用。
     scroll: TimelineScroll,
+    /// 核心给的加密入口，和壳一样逐批换。
+    pub notice: Option<KeyNotice>,
     dispatched: usize,
     started: bool,
     cleared: bool,
@@ -51,6 +53,7 @@ impl Timeline {
             back_pagination: BackPagination::Idle,
             viewport: TimelineViewport::Bottom,
             scroll: TimelineScroll::Bottom,
+            notice: None,
             dispatched: 0,
             started: false,
             cleared: false,
@@ -64,6 +67,7 @@ impl Timeline {
     /// 应用一批增量。首批之后的 `Clear`、`Reset` 是列表被清空重来。
     fn apply_update(&mut self, update: wonton_client::TimelineUpdate) {
         self.viewport = update.viewport;
+        self.notice = update.key_notice;
         let diffs = update.diffs;
         let back_pagination = update.back_pagination;
         // 翻页开始了，或者翻回来的条目到了：这一页算翻过，下回还在顶上就再翻。
@@ -189,6 +193,27 @@ impl Timeline {
     ) -> R {
         self.until_items(what, |items| items.iter().find_map(&mut check))
             .await
+    }
+
+    /// 应用增量，直到核心给的加密入口变成 `wanted`（解密失败时给的入口、拿到密钥后收起）。
+    pub async fn until_notice(&mut self, what: &str, wanted: Option<KeyNotice>) {
+        let waiting = async {
+            loop {
+                if self.notice == wanted {
+                    return;
+                }
+                let update = self.subscription.next().await.expect("时间线订阅提前结束");
+                self.apply_update(update);
+            }
+        };
+        tokio::time::timeout(WAIT, waiting)
+            .await
+            .unwrap_or_else(|_| {
+                panic!(
+                    "{what}：{WAIT:?} 内入口没有变成 {wanted:?}，现在是 {:?}",
+                    self.notice
+                )
+            });
     }
 
     /// 应用增量，直到整个列表满足条件。

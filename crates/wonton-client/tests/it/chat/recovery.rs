@@ -1,11 +1,15 @@
 use wonton_client::{
-    Action, BackupReminder, DeviceVerification, EncryptionStatus, RecoveryStatus, SecretString,
+    Action, BackupReminder, DeviceVerification, EncryptionStatus, KeyNotice, MessageContent,
+    RecoveryStatus, SecretString, TimelineContent,
 };
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{Recovery, Verification};
 
 use super::accept_the_bots_invite;
-use super::support::{Home, Phone};
+use super::support::{Home, Phone, Timeline};
+
+/// 第二台设备存在之前就发出的消息：它自己的设备密钥不在这条消息的收信人里。
+const HISTORY: &str = "第二台设备配对之前发的消息";
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
@@ -59,6 +63,15 @@ async fn a_second_device_keeps_the_existing_backup_and_recovers_with_the_first_d
     first.signed_in().await;
     let key = automatic_recovery_key(&first).await;
     first.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    // 私聊和一条消息都在第二台设备存在之前：它进房间时这条历史解不开。
+    let bot = home.bot("hermes", "Hermes").await;
+    let room_id = accept_the_bots_invite(&home, &first, &bot).await;
+    bot.open_room(&room_id)
+        .await
+        .expect("Bot 打开私聊")
+        .send_text(HISTORY)
+        .await
+        .expect("Bot 发消息");
     drop(first);
 
     second.connect(&home);
@@ -85,15 +98,34 @@ async fn a_second_device_keeps_the_existing_backup_and_recovers_with_the_first_d
         DeviceVerification::Unverified,
     )
     .await;
-    // 跨过真实同步和加入房间的往返，不只检查登录时的初始快照。
-    let bot = home.bot("hermes", "Hermes").await;
-    accept_the_bots_invite(&home, &second, &bot).await;
+    // 跨过真实同步的往返，不只检查登录时的初始快照：等房间同步到再打开。
+    second
+        .wait_chat("同步到已有的私聊", |view| {
+            view.rooms
+                .iter()
+                .any(|row| row.room_id == room_id.as_str())
+                .then_some(())
+        })
+        .await;
     assert_recovery(
         &second.chat().encryption,
         RecoveryStatus::Incomplete,
         DeviceVerification::Unverified,
         Some(BackupReminder::EnterRecoveryKey),
     );
+    let mut timeline = Timeline::open(&second, room_id.as_str()).await;
+    timeline
+        .until("历史解不开", |item| match &item.content {
+            TimelineContent::Message { message }
+                if message.body == MessageContent::Undecryptable =>
+            {
+                Some(())
+            }
+            _ => None,
+        })
+        .await;
+    // 房间里有解不开的消息、本设备缺密钥：给输入恢复密钥的入口，不只是聊天列表顶上那条提醒。
+    assert_eq!(timeline.notice, Some(KeyNotice::EnterRecoveryKey));
 
     second
         .dispatch(Action::RecoverEncryption { recovery_key: key })
@@ -110,6 +142,7 @@ async fn a_second_device_keeps_the_existing_backup_and_recovers_with_the_first_d
         DeviceVerification::Verified,
         None,
     );
+    timeline.until_notice("拿到密钥后入口收起", None).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

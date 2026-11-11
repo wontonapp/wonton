@@ -50,6 +50,9 @@ struct ChatRoomView: View {
             } else {
                 messages
             }
+            if let notice = timeline.notice {
+                keyNotice(notice)
+            }
             TransfersStrip(roomId: roomId)
             if !isReadOnly {
                 if let bot = onboarding.viewModel.primaryBotUserId,
@@ -90,6 +93,10 @@ struct ChatRoomView: View {
         .wontonPushedScreen(
             bot?.name ?? title, avatar: barAvatar, showsStatus: true, showsStatusLine: true
         ) { EmptyView() }
+        // 入口按钮压进这一页。房间也能从别的标签页打开，那边的导航栈不认聊天页的路由，所以在这里登记一次。
+        .navigationDestination(for: ChatRoute.self) { route in
+            if case .chatBackup = route { ChatBackupView(model: model) }
+        }
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
         .onChange(of: entryBlocked, initial: true) { _, blocked in
@@ -103,6 +110,21 @@ struct ChatRoomView: View {
                 tabs.select(.chat)
             }
         }
+    }
+
+    /// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
+    private func keyNotice(_ notice: KeyNotice) -> some View {
+        WontonNotice(icon: .lockKey, title: String(localized: .messageUndecryptableNotice), isError: false) {
+            // 更新的核心给出的类别没有按钮，说明照常显示。
+            if let action = notice.action {
+                NavigationLink(value: ChatRoute.chatBackup) {
+                    Text(action).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
+        }
+        .padding(.horizontal, WontonTheme.spacing.pageInset)
+        .padding(.vertical, WontonTheme.spacing.s8)
     }
 
     private var messages: some View {

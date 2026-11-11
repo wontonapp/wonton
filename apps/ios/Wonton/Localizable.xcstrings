@@ -25478,6 +25478,36 @@
         }
       }
     },
+    "message.undecryptableNotice": {
+      "comment": "Notice above the composer while some messages can't be decrypted; the button under it gets the keys back.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Earlier encrypted messages can't be read on this device."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备读不了之前的加密消息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台裝置讀不了先前的加密訊息。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスでは以前の暗号化メッセージを読めません。"
+          }
+        }
+      }
+    },
     "message.redacted": {
       "comment": "Placeholder for a message that was withdrawn.",
       "extractionState": "manual",
