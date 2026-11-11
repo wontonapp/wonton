@@ -186,7 +186,6 @@ fn sharing_routes() -> Router<Arc<Gateway>> {
     use super::sharing::api;
 
     Router::new()
-        .route("/_wonton/api/friends", get(api::friends))
         .route("/_wonton/api/shares", post(api::create))
         .route(
             "/_wonton/api/shares/{id}",

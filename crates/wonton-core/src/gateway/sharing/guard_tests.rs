@@ -177,7 +177,7 @@ async fn friend_deletion_and_plugin_uninstall_reset_existing_upgrades() {
         if uninstall {
             f.sharing.shares.revoke_plugin("app.whoami").unwrap();
         } else {
-            f.sharing.friends.remove(&f.peer.user_id).unwrap();
+            f.sharing.friends.remove(&f.peer.user_id, 0).unwrap();
         }
         closed(client).await;
         assert_eq!(f.get(PLUGIN, "/").await.error_kind(), Some("share_revoked"));
@@ -202,7 +202,7 @@ async fn expiry_deletion_and_uninstall_reset_http_bodies() {
                     .unwrap();
             }
             1 => {
-                f.sharing.friends.remove(&f.peer.user_id).unwrap();
+                f.sharing.friends.remove(&f.peer.user_id, 0).unwrap();
             }
             _ => {
                 f.sharing.shares.revoke_plugin("app.whoami").unwrap();

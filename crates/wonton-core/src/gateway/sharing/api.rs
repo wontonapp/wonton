@@ -14,13 +14,12 @@ use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
-use wonton_protocol::{FriendRow, FriendsState, FriendsViewModel, ShareGrantUpdate};
+use wonton_protocol::ShareGrantUpdate;
 
 use crate::gateway::{Gateway, TunnelPeer, api};
 use crate::plugin::PluginId;
 use crate::shares::SharesError;
 
-use super::now_ms;
 
 fn unavailable() -> Response {
     api::error_response(
@@ -45,43 +44,6 @@ pub(in crate::gateway) fn share_error(error: &SharesError) -> Response {
         }
     };
     api::error_response(status, kind, &error.to_string())
-}
-
-pub async fn friends(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: HeaderMap,
-) -> Response {
-    if let Some(denied) = api::owner_denied(&gateway, peer, &headers) {
-        return denied;
-    }
-    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
-    let Some(sharing) = gateway.sharing.as_ref() else {
-        return unavailable();
-    };
-    let snapshot = sharing.friends.snapshot();
-    let now = now_ms();
-    let friends = snapshot
-        .active()
-        .map(|friend| FriendRow {
-            user_id: friend.user_id.clone(),
-            display_name: friend.display_name.clone(),
-            groups: friend.groups.clone(),
-            shared_plugins: sharing.shares.active_plugin_ids(&friend.user_id, now),
-            last_opened_share_at_ms: friend.last_opened_share_at_ms,
-        })
-        .collect();
-    Json(FriendsViewModel {
-        state: FriendsState::Ready,
-        friends,
-        groups: snapshot.groups.clone(),
-        // Matrix invitations and invitation blocks belong to the account's Matrix client.
-        incoming: Vec::new(),
-        outgoing: Vec::new(),
-        blocked: Vec::new(),
-        can_block_federation: true,
-    })
-    .into_response()
 }
 
 pub async fn create(

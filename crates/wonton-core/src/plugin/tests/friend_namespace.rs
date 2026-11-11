@@ -39,7 +39,7 @@ async fn a_checked_friend_name_stays_reserved_across_matrix_accounts_and_bots() 
         .await
         .unwrap();
     // 删掉再接受沿用同一个墓碑名字，所以先把这个名字在 Matrix 里占用。
-    friends.remove("@alice:test").unwrap();
+    friends.remove("@alice:test", 0).unwrap();
     assert_eq!(
         friends.candidate_username("@alice:test").unwrap(),
         friend.username

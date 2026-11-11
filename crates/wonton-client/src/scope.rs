@@ -100,7 +100,6 @@ struct Shared<'a> {
     push_method: &'a PushMethodLink,
     dir: &'a Path,
     views: Option<&'a Views>,
-    external: bool,
 }
 
 /// 聊天这一支建出来的链接：聊天、推送、底栏、文件和引导。
@@ -119,6 +118,7 @@ fn chat_links(
     session_in: watch::Receiver<Option<Arc<MatrixSession>>>,
     room_sender: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
     room_receiver: watch::Receiver<Option<(OwnedRoomId, RoomPanel)>>,
+    external: bool,
 ) -> Result<ChatLinks, CoreError> {
     let Shared {
         handle,
@@ -127,7 +127,6 @@ fn chat_links(
         push_method,
         dir,
         views,
-        external,
     } = *shared;
     let chat = ChatLink::new(
         handle.clone(),
@@ -275,7 +274,6 @@ impl Scope {
             push_method: &push_method,
             dir,
             views,
-            external,
         };
         let links = chat_links(
             &shared,

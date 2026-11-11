@@ -416,7 +416,7 @@ async fn share_identity_never_falls_back_to_the_owner_cookie() {
     fixture
         .sharing
         .friends
-        .remove(&fixture.peer.user_id)
+        .remove(&fixture.peer.user_id, 0)
         .unwrap();
     assert!(person(&fixture.gateway, &req).is_err());
     let query = Query::<sso::LoginChallenge>::try_from_uri(req.uri()).unwrap();

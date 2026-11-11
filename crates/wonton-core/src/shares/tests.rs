@@ -159,7 +159,7 @@ fn friendship_reacceptance_never_revives_direct_or_old_group_grants_after_reopen
         .unwrap()
         .friend
         .access_generation;
-    rig.friends.remove(ALICE).unwrap();
+    rig.friends.remove(ALICE, 0).unwrap();
     assert_eq!(rig.shares.evaluate(ALICE, "game", 100), Err(ShareRevoked));
     rig.friends.accept(ALICE, None, 101, |_| false).unwrap();
     rig.friends

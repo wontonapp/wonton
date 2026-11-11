@@ -170,7 +170,7 @@ async fn headers_cannot_manufacture_share_identity_and_each_request_checks_the_g
         std::sync::atomic::Ordering::SeqCst,
     );
     assert_eq!(f.get(PLUGIN, "/").await.error_kind(), Some("share_expired"));
-    f.sharing.friends.remove(&f.peer.user_id).unwrap();
+    f.sharing.friends.remove(&f.peer.user_id, 0).unwrap();
     f.sharing
         .friends
         .accept(&f.peer.user_id, Some("Alice"), now_ms(), |_| false)
