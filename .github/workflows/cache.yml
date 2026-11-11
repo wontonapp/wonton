@@ -136,9 +136,10 @@ jobs:
       - name: 编测试二进制
         # nextest 不跑，只让依赖和测试二进制进 target/，PR 恢复完直接开跑。
         run: cargo nextest run --workspace --locked --no-run
-      - name: 编文档测试
-        # nextest 不编 doctest，测试的第一片单列了 `cargo test --doc`，这边也先编好。
-        run: cargo test --doc --workspace --locked --no-run
+      - name: 编文档测试要链接的库
+        # nextest 不编 doctest，测试的第一片单列了 `cargo test --doc`。doctest 本身只能在运行时由 rustdoc 编
+        # （`cargo test --doc --no-run` 直接报错），能预先进 target/ 的是它们链接的各 crate 的库。
+        run: cargo build --workspace --locked --lib
 
   clippy:
     name: Clippy 产物（只编不跑）
