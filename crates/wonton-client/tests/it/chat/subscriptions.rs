@@ -1,4 +1,4 @@
-//! 房间订阅按状态挂稳（#370）：列表行抖动不退订打开着或关注着的房间，同步重启后把订阅补挂回去。用模拟核心
+//! 房间订阅按状态挂稳（#370）：列表行抖动不退订打开着的房间，同步重启后把订阅补挂回去。用模拟核心
 //! 记下的同步请求体断言，不靠睡眠。
 
 use std::time::Duration;
@@ -93,8 +93,9 @@ async fn flicker(phone: &Phone, home: &Home, poke_room: &ChatRoom, room_id: &str
         .await;
 }
 
-/// 打开着的私聊，它的列表行在关注集合里进出几次，订阅不能跟着退：只要房间还被打开着或关注着，
-/// 房间列表连接的每一次增量同步都带着它的订阅。
+/// 打开着的私聊，它的列表行在同步重启里被错标成受邀再恢复几次，订阅不能跟着退：只要房间还打开着，
+/// 房间列表连接的每一次增量同步都带着它的订阅。卡片不再走 Matrix（ADR-0016），客户端不再关注核心的
+/// 私聊，没打开的房间没有这份订阅，也就没有靠关注集合撑着的那一段了。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn the_room_stays_subscribed_while_its_row_flickers() {
@@ -110,20 +111,10 @@ async fn the_room_stays_subscribed_while_its_row_flickers() {
     let poke = joined_direct_chat(&phone, &hermes).await;
     let poke_room = hermes.open_room(&poke).await.expect("Bot 打开戳人的房间");
 
-    wait_for_sync("核心私聊被关注集合订阅", &home, || {
-        room_list_requests(&home, 0)
-            .iter()
-            .any(|(_, subs)| subs.iter().any(|room| room.as_str() == room_id.as_str()))
-            .then_some(())
-    })
-    .await;
-
-    // 第一轮抖动：还没打开房间，订阅只靠关注集合这一份撑着。
-    flicker(&phone, &home, &poke_room, room_id.as_str(), "第一轮").await;
-    // 打开房间：订阅多一份要的人。
+    // 打开房间：卡片改从列表来之后，这是订阅唯一的来源。
     let _timeline = Timeline::open(&phone, room_id.as_str()).await;
-    // 第二轮抖动：打开着抖。
-    flicker(&phone, &home, &poke_room, room_id.as_str(), "第二轮").await;
+    // 打开着的抖动：行错标成受邀再恢复，订阅不能跟着退。
+    flicker(&phone, &home, &poke_room, room_id.as_str(), "打开着").await;
 
     // 恢复名单和启动串行，首条无 pos 请求及后续长轮询都不能丢订阅。
     let requests = room_list_requests(&home, 0);
