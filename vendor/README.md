@@ -28,6 +28,18 @@ matrix-sdk-crypto 已经公开的 `OlmMachine::query_missing_secrets_from_other_
 旧检查随后回写 `Incomplete`，界面又要求输入恢复密钥。网络后读本地状态保留原来的“已启用或明确禁用”判断，不重试、不改变等待上限。
 回归用真实 Tuwunel、只延迟真实 HTTP 应答，见 `crates/wonton-matrix/tests/tuwunel/recovery_order.rs`。
 
+### 重置身份期间挡住 keys/query
+
+`src/client/mod.rs` 的 `ClientLocks` 加 `cross_signing_reset_lock`（读写锁）；`src/encryption/mod.rs` 的 `keys_query`
+从发请求到处理完应答拿读锁，`reset_cross_signing` 在生成新身份之前拿写锁，新公钥和签名上传完才放（要 UIA 时锁跟着
+`CrossSigningResetHandle` 走，`auth` 成功、取消或句柄丢掉时放）。拿锁顺序都是先这把锁、后 Olm 机器。
+
+为什么：新私钥生成后、新公钥上传前，服务器只会答旧身份。这期间处理的自己账号的 keys/query 发现公钥和私钥对不上，
+matrix-sdk-crypto 当成身份被别处换掉，把刚生成的私钥删了（上游 matrix-org/matrix-rust-sdk#4728，0.19.1 未修）。
+随后开启恢复时秘密存储里没有交叉签名私钥，重置的设备和之后输新密钥的设备都停在 `Incomplete`。Tuwunel 换身份要过 UIA，
+第一次上传必然 401，窗口是一整个往返，开着同步的设备容易撞上。
+回归用真实 Tuwunel，见 `crates/wonton-matrix/tests/tuwunel/reset_order.rs`。
+
 ### 同步起步的日志
 
 `src/sliding_sync/mod.rs` 的 `generate_sync_request` 加几条 `debug!`，记下从拿到 `pos` 到发出请求之间每一步
@@ -112,7 +124,7 @@ crates.io 包原样导入，sha256 `e43a190b56df060b5a901d0e783e04002612981d1fef
 ## 升级
 
 1. 先查新版 SDK 是否同时含 SDK-ui 的快照交接修复、清空时间线时清掉没有条目的远程事件、`Set` 按事件 ID 核对位置、
-   matrix-sdk 的公开等价取密钥方法、网络等待期间启用备份后状态不被旧检查覆盖的修复、LatestEvents 后台任务不持有
+   matrix-sdk 的公开等价取密钥方法、网络等待期间启用备份后状态不被旧检查覆盖的修复、重置身份期间 keys/query 不删新私钥的修复（#4728）、LatestEvents 后台任务不持有
    `Client` 的修复（连同 `Client::downgrade`/`WeakClient` 公开导出），以及上传进度节流。
    各自已有上游实现时，迁移调用并删除对应 vendor 目录、workspace exclude 和 patch 项。
 2. 没有：根 `Cargo.toml` 里 matrix-sdk 系的版本一起改，`cargo fetch` 后从
