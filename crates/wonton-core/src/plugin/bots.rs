@@ -577,6 +577,17 @@ impl PluginManager {
             .map(|(bot, entry)| (bot, entry.keeper))
     }
 
+    /// 一个 Bot 的 Matrix 账号和主房间；没有这个 Bot 的记录、或记录读不出来时为空。
+    pub fn bot_account(&self, id: &PluginId, bot: &str) -> Option<BotAccount> {
+        let bots = self
+            .store
+            .bots()
+            .load(id)
+            .inspect_err(|error| tracing::warn!(plugin = %id, %error, "读 Bot 记录失败"))
+            .ok()?;
+        bots.bots.get(bot).map(|entry| entry.account.clone())
+    }
+
     /// 一个 Bot 的 Matrix 用户名（localpart）；没有这个 Bot 的记录时为空。
     pub fn bot_localpart(&self, id: &PluginId, bot: &str) -> Result<Option<String>, StoreError> {
         let bots = self.store.bots().load(id)?;

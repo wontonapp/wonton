@@ -220,12 +220,7 @@ impl Confirmations {
         *self.push.write().expect("推送代理锁中毒") = push;
     }
 
-    /// 默认的卡片发送方（通知房间）。
-    pub(super) fn default_notifier(&self) -> &dyn Notifier {
-        &*self.notifier
-    }
-
-    /// 同 [`Self::default_notifier`]，给要留着发送方的调用。
+    /// 默认的卡片发送方（主人的通知房间）。
     pub(crate) fn default_notifier_arc(&self) -> Arc<dyn Notifier> {
         self.notifier.clone()
     }
@@ -293,17 +288,8 @@ impl Confirmations {
         }
     }
 
-    /// 登记一张发给主人、等回答的卡片，还没发出去。
-    pub(super) fn open(
-        &self,
-        notifier: Arc<dyn Notifier>,
-        caller: &PluginId,
-        draft: Draft,
-    ) -> Result<(ConfirmationCard, oneshot::Receiver<Chosen>), Refusal> {
-        self.open_as(notifier, caller, draft, Audience::default())
-    }
-
-    fn open_as(
+    /// 登记一张等回答的卡片，还没发出去。
+    pub(super) fn open_as(
         &self,
         notifier: Arc<dyn Notifier>,
         caller: &PluginId,
@@ -358,7 +344,7 @@ impl Confirmations {
         Ok((card, answered))
     }
 
-    /// 把 [`Self::open`] 登记的卡片发给主人，等回答。回答之后卡片的变化由调用方发布。
+    /// 把 [`Self::open_as`] 登记的卡片发给收件人，等回答。回答之后卡片的变化由调用方发布。
     pub(super) async fn deliver(
         &self,
         notifier: &dyn Notifier,
