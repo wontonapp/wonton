@@ -56,6 +56,7 @@ enum WontonPush {
             inputKeyMaterial: ikm, salt: salt,
             info: Data("Content-Encoding: nonce\u{0}".utf8), outputByteCount: 12
         )
+        .withUnsafeBytes { Data($0) }
         // 单条记录，记录序号为 0，nonce 不用异或；nonce 从 HKDF 来、进 SealedBox 的头部。
         let sealed: AES.GCM.SealedBox
         do {

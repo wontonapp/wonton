@@ -80,6 +80,8 @@ final class PushDecryptTests: XCTestCase {
             inputKeyMaterial: ikm, salt: Data(body[0..<16]),
             info: Data("Content-Encoding: nonce\u{0}".utf8), outputByteCount: 12
         )
+        .withUnsafeBytes { Data($0) }
+        let record = Data(body[(21 + keyIdLength)...])
         let sealed = try AES.GCM.SealedBox(
             nonce: AES.GCM.Nonce(data: nonce), ciphertext: record.dropLast(16), tag: record.suffix(16)
         )
@@ -110,6 +112,7 @@ final class PushDecryptTests: XCTestCase {
             inputKeyMaterial: ikm, salt: salt,
             info: Data("Content-Encoding: nonce\u{0}".utf8), outputByteCount: 12
         )
+        .withUnsafeBytes { Data($0) }
         var padded = Data(json.utf8)
         padded.append(0x02)
         let sealed = try AES.GCM.seal(padded, using: cek, nonce: AES.GCM.Nonce(data: nonce))
