@@ -39,6 +39,7 @@ matrix-sdk-crypto 当成身份被别处换掉，把刚生成的私钥删了（�
 随后开启恢复时秘密存储里没有交叉签名私钥，重置的设备和之后输新密钥的设备都停在 `Incomplete`。Tuwunel 换身份要过 UIA，
 第一次上传必然 401，窗口是一整个往返，开着同步的设备容易撞上。
 回归用真实 Tuwunel，见 `crates/wonton-matrix/tests/tuwunel/reset_order.rs`。
+上游修好 #4728 后，升级到含修复的版本时删掉这条补丁（锁字段、`keys_query` 和 `reset_cross_signing` 里的改动），回归测试留着。
 
 ### 同步起步的日志
 
