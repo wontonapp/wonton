@@ -65,7 +65,7 @@ struct MainView: View {
 
         .fullScreenCover(isPresented: $showsSettings) {
             SettingsTab(model: settings, appearance: appearance, appLock: lock, chat: chat,
-                        home: home, plugins: plugins,
+                        home: home, plugins: plugins, push: navigation.push,
                         // 设置里的应用行进了详情后，“打开”和“查看已安装”都要先收起设置，再走主界面这一层。
                         open: { showsSettings = false; open($0) },
                         checkInstalled: { showsSettings = false; pages.open(.apps) },
@@ -106,6 +106,10 @@ struct MainView: View {
         .task { await chat.files.observe() }
         .task { await settings.observe() }
         .environment(pages)
+        .task { await navigation.push.start() }
+        .task {
+            for await network in DeviceNetwork.changes() { home.send(.networkChanged(network: network)) }
+        }
         .environment(onboarding)
         .environment(\.panelDeps, PanelDependencies(
             pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,

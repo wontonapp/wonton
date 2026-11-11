@@ -13,6 +13,8 @@ final class AppNavigation {
     let home: HomeModel
     let plugins: PluginsModel
     let pages: PagesModel
+    /// 推送：登记和通知点开的跳转都在这里（ADR-0003 的“设计：加密推送”）。
+    let push: PushModel
     let onboarding: OnboardingModel
     let shareIn: ShareInModel
     private(set) var presentationRevision = 0
@@ -28,6 +30,7 @@ final class AppNavigation {
         self.home = home
         self.plugins = plugins
         pages = PagesModel(core: chat.core)
+        push = PushModel(core: chat.core)
         onboarding = OnboardingModel(core: chat.core)
         shareIn = ShareInModel(core: chat.core)
         Self.shared = self
@@ -182,6 +185,49 @@ final class AppNavigation {
         case .settings:
             opensSettings = true
             presentationRevision += 1
+        }
+    }
+
+    /// 点开推送通知：通知来自哪台服务器就切到哪台（ADR-0042 的“推送带上服务器 ID”），进了聊天页打开那个房间。
+    /// 切不过去（服务器已从手机上移除、或者连不上）时如实说，不假装打开了。
+    func openPushRoom(server: String?, roomId: String) {
+        request { navigation in
+            guard try await navigation.navigationReady() else { return }
+            if let server {
+                // 通知里的 server 是 endpoint ID；就是当前这台就不用换。已连着的记录在 `home.serverId`
+                // 里（配对票据里的 endpoint ID，和推送里的同一个东西）。
+                if navigation.home.viewModel.serverId != server {
+                    guard let slot = navigation.chat.core.pushServerSlot(server: server) else {
+                        navigation.pages.rejection = Problem(
+                            title: String(localized: .serversNotificationUnreachable), detail: server
+                        )
+                        return
+                    }
+                    do {
+                        try navigation.chat.core.dispatch(action: .switchServer(id: slot))
+                    } catch {
+                        navigation.pages.rejection = error.problem
+                        return
+                    }
+                    // 等切完：连上了就进房间，连不上（自动重试也失败）如实说。
+                    var settled = false
+                    for await home in navigation.chat.core.subscribeHome().updates()
+                    where home.serverId == server {
+                        if case .connected = home.status {
+                            settled = true
+                        }
+                        if case let .disconnected(_, message) = home.status {
+                            navigation.pages.rejection = Problem(
+                                title: String(localized: .serversNotificationUnreachable), detail: message
+                            )
+                        }
+                        if settled || navigation.pages.rejection != nil { break }
+                    }
+                    guard settled, navigation.pages.rejection == nil else { return }
+                }
+            }
+            try navigation.select(.chat)
+            navigation.chat.openRoom(id: roomId)
         }
     }
 
