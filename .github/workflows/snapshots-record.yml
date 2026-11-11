@@ -120,8 +120,19 @@ jobs:
             echo "参考图没有变化，不提交。"
           else
             git commit -m "test(ios): 录制截图测试参考图"
-            # 检出时没落凭据，令牌只出现在这一条命令里。
-            git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
+            # android 作业同时也在往这条分支推：先取分支头，把这次提交变基上去再推，推不动就重试。
+            # 两边的参考图路径不相交，变基本身不会冲突。
+            ok=false
+            for attempt in 1 2 3; do
+              if git fetch origin "$BRANCH" && git rebase "origin/$BRANCH" \
+                 && git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"; then
+                ok=true
+                break
+              fi
+              git rebase --abort 2>/dev/null || true
+              sleep 5
+            done
+            $ok || { echo "推送失败" >&2; exit 1; }
           fi
       # 外部 fork 推不回去，录好的图由作者从产物里取。
       - name: 外部 PR：把参考图存成产物
@@ -211,9 +222,20 @@ jobs:
             exit 0
           fi
           git commit -m "test(android): 重录界面参考图"
-          # 通过请求头带令牌，不把令牌拼进 remote 地址。
-          git -c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" \
-            push origin "HEAD:${GITHUB_HEAD_REF}"
+          # ios 作业同时也在往这条分支推：先取分支头，把这次提交变基上去再推，推不动就重试。
+          # 两边的参考图路径不相交，变基本身不会冲突。通过请求头带令牌，不把令牌拼进 remote 地址。
+          ok=false
+          for attempt in 1 2 3; do
+            if git fetch origin "${GITHUB_HEAD_REF}" && git rebase "origin/${GITHUB_HEAD_REF}" \
+               && git -c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" \
+                    push origin "HEAD:${GITHUB_HEAD_REF}"; then
+              ok=true
+              break
+            fi
+            git rebase --abort 2>/dev/null || true
+            sleep 5
+          done
+          $ok || { echo "推送失败" >&2; exit 1; }
           echo "已提交重录的参考图。这个提交由 GITHUB_TOKEN 推上去，不再触发 CI：请点重跑或推一个空提交让参考图过一遍比对。" >> "$GITHUB_STEP_SUMMARY"
       # 标签必须摘掉：GitHub 不会给已经贴着的标签再发一次 labeled，留着就发不出下一轮重录。单独一步、
       # 只看标签（外部 PR 的分支推不回去也照摘），不跟着提交步骤的成败走。
