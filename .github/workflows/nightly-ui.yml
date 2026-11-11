@@ -116,7 +116,8 @@ jobs:
         run: |
           set -o pipefail
           rm -rf "$RUNNER_TEMP/ui.xcresult"
-          xcrun simctl io "$SIMULATOR_UDID" recordVideo --codec=h264 "$RUNNER_TEMP/ui.mp4" &
+          # 等测试包装好、App 起起来再录：模拟器刚启动时最容易被安装和录屏一起拽死。
+          (sleep 30; exec xcrun simctl io "$SIMULATOR_UDID" recordVideo --codec=h264 "$RUNNER_TEMP/ui.mp4") &
           recorder=$!
           # recordVideo 收到 SIGINT 才把文件收尾。
           trap 'kill -INT "$recorder" 2>/dev/null; wait "$recorder" 2>/dev/null || true' EXIT
