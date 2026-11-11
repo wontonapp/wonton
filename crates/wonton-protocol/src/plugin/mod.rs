@@ -394,6 +394,10 @@ pub struct StoreItem {
     pub security_tier: Option<SecurityTier>,
     /// 装不了的原因（宿主架构不符、需要核心不支持的权限、规范版本比核心新）；能装时为空。
     pub blocked: Option<String>,
+    /// 安全档位到了要醒目提示的程度（ADR-0080 的 High 及以上，比这个 App 新的档位也算）：商店里
+    /// 标红。档位比较只在核心这一处，壳不重复。旧核心不给时按没有算。
+    #[serde(default)]
+    pub high_permissions: bool,
 }
 
 /// 主人给插件定的资源上限，对它的每个服务生效（ADR-0037）。也是 `PUT /_wonton/api/plugins/{id}/limits` 的请求体。

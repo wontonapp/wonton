@@ -329,8 +329,8 @@ private struct StoreItemRow: View {
     /// 已审核的插件在自己的分组里，不再标来源。
     @ViewBuilder private var tags: some View {
         let showsTrust = item.trust != .official
-        let highTier = item.securityTier.map { $0 != .minimal && $0 != .standard } ?? false
-        if showsTrust || item.provider != nil || highTier || item.stars != nil {
+        let highPermissions = item.highPermissions
+        if showsTrust || item.provider != nil || highPermissions || item.stars != nil {
             HStack(spacing: WontonTheme.spacing.s8) {
                 if showsTrust { Tag(text: item.trust.label, tint: item.trust.tint(colors)) }
                 if let provider = item.viaIndex.map({ String(localized: .storeViaIndex($0)) }) ?? item.provider {
@@ -339,7 +339,7 @@ private struct StoreItemRow: View {
                         .foregroundStyle(Color(colors.textSecondary))
                         .lineLimit(1)
                 }
-                if highTier { Tag(text: String(localized: .storeHighPermissions), tint: colors.danger) }
+                if highPermissions { Tag(text: String(localized: .storeHighPermissions), tint: colors.danger) }
                 if let stars = item.stars {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         WontonIcon.starFill.view(size: WontonTheme.size.iconTiny)

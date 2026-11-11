@@ -106,6 +106,7 @@ fn store() -> StoreListing {
         stars: None,
         installed_version: Some("2.0.0".into()),
         security_tier: Some(SecurityTier::Standard),
+        high_permissions: false,
         blocked: None,
     };
     StoreListing {
@@ -138,6 +139,7 @@ fn store() -> StoreListing {
                 trust: PluginTrust::Community,
                 stars: Some(42),
                 security_tier: Some(SecurityTier::Highest),
+                high_permissions: true,
                 blocked: Some("宿主是 arm64，这个插件只支持 amd64".into()),
                 ..item
             }],
