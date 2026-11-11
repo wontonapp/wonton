@@ -3,6 +3,9 @@
 //! 消息按所属话题分给会话，每轮开头注入别的会话的动态；话题做完一轮在主对话里留一条
 //! `m.notice`；改同一个文件时权限卡片排队。会话状态、工作板和改文件表都在本模块的
 //! 子模块里，`run_room` 只做事件分发。
+//!
+//! 停机期间（容器重建、升级）发来的消息在重启后的首屏快照里：按已读位置（`LastSeen`）
+//! 认出来，补处理最近几条，超出的在房间里如实列出（`routing::route_backlog`）。
 
 mod permissions;
 mod routing;
@@ -43,7 +46,7 @@ use crate::{
     matrix::IncomingText,
     room::Room,
     room_owner::room_owner,
-    state::SessionStore,
+    state::{LastSeen, SessionStore},
     topics::{SessionKey, Topics},
 };
 
@@ -54,6 +57,7 @@ struct Bridge {
     config: Config,
     acp: Arc<AcpClient>,
     sessions: Arc<SessionStore>,
+    last_seen: Arc<LastSeen>,
     bot: OwnedUserId,
     locales: Arc<Locales<Origin>>,
 }
@@ -263,6 +267,7 @@ pub async fn run() -> Result<()> {
         socket: config.socket.clone(),
     });
     let sessions = Arc::new(SessionStore::open(config.bridge_data.join("sessions.json")).await?);
+    let last_seen = Arc::new(LastSeen::open(config.bridge_data.join("last_seen.json")).await?);
     let locales = Arc::new(Locales::new(
         Origin::core(&config.mcp_url),
         config.owner.clone(),
@@ -271,6 +276,7 @@ pub async fn run() -> Result<()> {
         config,
         acp,
         sessions,
+        last_seen,
         bot,
         locales,
     };
@@ -367,6 +373,29 @@ async fn connect_agent(config: &Config) -> BridgeResult<AcpClient> {
     }
 }
 
+/// 循环起跑前的准备：认主人、按主人的语言摆桥自己的命令（Agent 可能一直不报命令表）。
+/// 返回主人和这个房间说话用的语言。
+async fn prepare_room<R: Room>(
+    bridge: &Bridge,
+    room: &R,
+    bot: &UserId,
+    commands: &mut Commands,
+) -> (OwnedUserId, Lang) {
+    let owner = room_owner(room, bot, &bridge.config.owner).await;
+    let lang = bridge.lang(&owner).await;
+    commands
+        .reset(
+            &RoomSink {
+                room,
+                bot,
+                thread: None,
+            },
+            lang,
+        )
+        .await;
+    (owner, lang)
+}
+
 async fn run_room<R: Room>(
     bridge: Bridge,
     room: Arc<R>,
@@ -375,20 +404,8 @@ async fn run_room<R: Room>(
     login: Arc<LoginService<R>>,
 ) -> BridgeResult<()> {
     let bot = bridge.bot.clone();
-    let owner = room_owner(room.as_ref(), &bot, &bridge.config.owner).await;
-    let start_lang = bridge.lang(&owner).await;
-    // 连上 Agent 前先摆出桥自己的命令，Agent 可能一直不报命令表。
     let mut commands = Commands::new();
-    commands
-        .reset(
-            &RoomSink {
-                room: room.as_ref(),
-                bot: &bot,
-                thread: None,
-            },
-            start_lang,
-        )
-        .await;
+    let (owner, start_lang) = prepare_room(&bridge, room.as_ref(), &bot, &mut commands).await;
     let mut topics = open_topics(bridge.config.bridge_data.join("topics"), room.as_ref()).await?;
     let mut updates = room.updates().await;
     let mut acp_notices = bridge.acp.subscribe();
@@ -397,10 +414,9 @@ async fn run_room<R: Room>(
         return stop_for_agent_disconnect(room.as_ref(), &mut commands, &bot, start_lang).await;
     }
     let initial: Vec<Message> = updates.next().await.unwrap_or_default();
-    let mut seen = initial
-        .iter()
-        .filter_map(|message| message.event_id.as_ref().map(ToString::to_string))
-        .collect::<HashSet<_>>();
+    let mut seen = HashSet::new();
+    // 本轮到过的事件（含没解开的）：迟解密重投、重启竞态下旧消息当增量到达，都靠它分辨。
+    let mut arrived = HashSet::new();
     let (finished_tx, mut finished_rx) = mpsc::channel(16);
     let (ask_tx, mut ask_rx) = mpsc::channel(8);
     let (cards_tx, mut cards_rx) = mpsc::channel(8);
@@ -421,6 +437,16 @@ async fn run_room<R: Room>(
         history: VecDeque::new(),
         last_activity: Instant::now(),
     };
+    // 进循环前先分发首屏快照：补上停机期间发来的，超出上限的如实列出。
+    routing::route_backlog(
+        &context,
+        &mut state,
+        &mut topics,
+        &initial,
+        &mut seen,
+        &mut arrived,
+    )
+    .await?;
     let mut idle_tick = tokio::time::interval(bridge.config.limits.idle_tick);
     loop {
         tokio::select! {
@@ -431,6 +457,7 @@ async fn run_room<R: Room>(
                     &mut topics,
                     &messages,
                     &mut seen,
+                    &mut arrived,
                 )
                 .await?;
             }

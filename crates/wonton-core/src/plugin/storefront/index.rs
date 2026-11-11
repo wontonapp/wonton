@@ -56,7 +56,7 @@ pub struct DocsSpec {
 /// 索引里的一个插件。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IndexEntry {
-    /// `github:<owner>/<repo>`，不带版本。
+    /// `github:<owner>/<repo>` 或 `github:<owner>/<repo>/<子目录>`，不带版本。
     pub source: String,
     pub version: String,
     pub commit: String,
@@ -67,8 +67,8 @@ pub struct IndexEntry {
 }
 
 impl IndexEntry {
-    /// 插件包在仓库 `source`（不带版本）的提交 `commit` 上的那一项：`plugin index-entry` 用它生成索引条目。核心不连
-    /// Git，插件包要是那个提交的检出，由调用的人保证；装的时候按 sha256 核对，对不上就装不了。
+    /// 插件包在仓库 `source`（不带版本，可以带子目录）的提交 `commit` 上的那一项：`plugin index-entry` 用它生成索引
+    /// 条目。核心不连 Git，插件包要是那个提交（子目录）的检出，由调用的人保证；装的时候按 sha256 核对，对不上就装不了。
     pub fn of(package: &PluginPackage, source: &str, commit: &str) -> Result<Self, String> {
         let entry = Self {
             source: source.to_owned(),
@@ -128,10 +128,17 @@ impl IndexEntry {
 pub struct Listed {
     pub entry: IndexEntry,
     pub repo: Repo,
+    /// 插件包在仓库里的子目录；根目录时为空。
+    pub subdir: Option<String>,
     pub manifest: Manifest,
 }
 
 impl Listed {
+    /// 给主人看的提供方，如 `github.com/owner/repo`：子目录不影响。
+    pub fn provider(&self) -> String {
+        format!("github.com/{}", self.repo)
+    }
+
     /// 装的就是索引里的这个版本。
     pub fn origin(&self) -> Origin {
         Origin {
@@ -146,6 +153,7 @@ impl Listed {
     /// 来源要的是不是索引里的这个版本：不带版本、tag 是 `v<索引里的版本>`、或者就是索引里的提交。
     pub fn matches(&self, source: &SourceRef) -> bool {
         source.repo == self.repo
+            && source.subdir == self.subdir
             && match &source.wanted {
                 Wanted::Latest => true,
                 Wanted::Tag(tag) => tag.strip_prefix('v') == Some(self.entry.version.as_str()),
@@ -284,7 +292,9 @@ impl Index {
     }
 
     pub fn find(&self, source: &SourceRef) -> Option<&Listed> {
-        self.plugins.iter().find(|p| p.repo == source.repo)
+        self.plugins
+            .iter()
+            .find(|p| p.repo == source.repo && p.subdir == source.subdir)
     }
 }
 
@@ -314,7 +324,10 @@ fn check(entry: IndexEntry, before: &[Listed], langs: &Languages) -> Result<List
             ],
         ));
     }
-    if before.iter().any(|p| p.repo == source.repo) {
+    if before
+        .iter()
+        .any(|p| p.repo == source.repo && p.subdir == source.subdir)
+    {
         return Err(text("plugin-settings-store-index-source-duplicate", &[]));
     }
     if before.iter().any(|p| p.manifest.id == manifest.id) {
@@ -326,6 +339,7 @@ fn check(entry: IndexEntry, before: &[Listed], langs: &Languages) -> Result<List
     Ok(Listed {
         entry,
         repo: source.repo,
+        subdir: source.subdir,
         manifest,
     })
 }
@@ -362,23 +376,32 @@ impl Files {
                 ],
             ))
         })?;
-        self.verified(&listed.repo, &listed.entry.commit, path, sha256, langs)
-            .await
+        self.verified(
+            &listed.repo,
+            listed.subdir.as_deref(),
+            &listed.entry.commit,
+            path,
+            sha256,
+            langs,
+        )
+        .await
     }
 
     /// 仓库在某个提交里的一个文件，按索引记的 sha256 核对。
     pub async fn verified(
         &self,
         repo: &Repo,
+        subdir: Option<&str>,
         commit: &str,
         path: &str,
         sha256: &str,
         langs: &Languages,
     ) -> Result<Vec<u8>, InstallError> {
+        let full = subdir.map_or_else(|| path.to_owned(), |subdir| format!("{subdir}/{path}"));
         let data = match self {
             Self::Dir(dir) => read_blob(dir, sha256, langs)?,
             Self::GitHub(github) => github
-                .file(repo, commit, path, MAX_FILE_BYTES, langs)
+                .file(repo, commit, &full, MAX_FILE_BYTES, langs)
                 .await
                 .map_err(github_error)?,
             Self::Third { location, github } => {
@@ -386,7 +409,7 @@ impl Files {
                 match location.read(github, &blob, MAX_FILE_BYTES, langs).await {
                     Ok(data) => data,
                     Err(_) => github
-                        .file(repo, commit, path, MAX_FILE_BYTES, langs)
+                        .file(repo, commit, &full, MAX_FILE_BYTES, langs)
                         .await
                         .map_err(github_error)?,
                 }
@@ -552,5 +575,81 @@ mod tests {
 
         assert_eq!(index.onboarding, None);
         assert_eq!(index.onboarding_problem, None);
+    }
+
+    fn compose(id: &str) -> String {
+        format!(
+            "services:\n  web:\n    image: ghcr.io/acme/web:1\n\
+             x-wonton:\n  spec: \"0.2\"\n  id: {id}\n  version: 1.0.0\n  kind: app\n  \
+             title: {{zh: 你好, en: Hello}}\n  description: {{zh: 打个招呼, en: Say hi}}\n  permissions: []\n"
+        )
+    }
+
+    fn entry(id: &str, source: &str) -> IndexEntry {
+        let package =
+            PluginPackage::parse(&compose(id), &Languages::default()).expect("compose 合法");
+        IndexEntry::of(&package, source, &"a".repeat(40)).expect("条目合法")
+    }
+
+    /// 子目录来源的条目能读懂，且同一仓库的另一个子目录不算重复来源（完成标准 6 的一部分）。
+    #[test]
+    fn subdirectory_entries_are_understood_and_distinct_per_subdirectory() {
+        let index = Index::parse(
+            serde_json::to_vec(&serde_json::json!({
+                "format": 1,
+                "plugins": [
+                    entry("app.codex", "github:acme/hello/agents/codex"),
+                    entry("app.kimi", "github:acme/hello/apps/kimi"),
+                ],
+            }))
+            .unwrap()
+            .as_slice(),
+            &Languages::default(),
+        )
+        .map_err(|e| panic!("{e}"))
+        .unwrap();
+        assert_eq!(index.plugins.len(), 2);
+        assert_eq!(index.plugins[0].subdir.as_deref(), Some("agents/codex"));
+        assert_eq!(index.plugins[1].subdir.as_deref(), Some("apps/kimi"));
+
+        // 同一个来源两次才是重复；同一个插件 ID 两次也是重复。
+        let duplicate = Index::parse(
+            serde_json::to_vec(&serde_json::json!({
+                "format": 1,
+                "plugins": [
+                    entry("app.codex", "github:acme/hello/agents/codex"),
+                    entry("app.codex", "github:acme/hello/agents/codex"),
+                ],
+            }))
+            .unwrap()
+            .as_slice(),
+            &Languages::default(),
+        )
+        .unwrap();
+        assert_eq!(duplicate.plugins.len(), 1);
+        assert_eq!(duplicate.skipped.len(), 1);
+    }
+
+    /// 读不懂的来源只跳过这一项，别的照常（老核心碰到子目录来源也是这样，完成标准 6 的一部分）。
+    #[test]
+    fn an_unreadable_source_is_skipped_but_the_rest_survives() {
+        let index = Index::parse(
+            serde_json::to_vec(&serde_json::json!({
+                "format": 1,
+                "plugins": [
+                    {"source": "github:acme", "version": "1.0.0", "commit": "a".repeat(40), "files": {}, "compose": ""},
+                    entry("app.codex", "github:acme/hello/agents/codex"),
+                ],
+            }))
+            .unwrap()
+            .as_slice(),
+            &Languages::default(),
+        )
+        .unwrap();
+        assert_eq!(index.plugins.len(), 1);
+        let [skipped] = &index.skipped[..] else {
+            panic!("{index:?}");
+        };
+        assert_eq!(skipped.source, "github:acme");
     }
 }
