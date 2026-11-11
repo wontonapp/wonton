@@ -12,6 +12,7 @@ struct PluginDetailView: View {
     @State private var uninstalling: UninstallTarget?
     @State private var pluginId: String?
     @State private var changingVersionOf: String?
+    @State private var showsSettings = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.wontonColors) private var colors
 
@@ -69,6 +70,16 @@ struct PluginDetailView: View {
                         NoticeLines(lines: installed.notices)
                     }
                     if let installed = detail.installed { PluginTabPins(plugin: installed) }
+                    if detail.installed != nil, detail.hasSettings {
+                        WontonGroup {
+                            Button {
+                                showsSettings = true
+                            } label: {
+                                WontonRow(title: String(localized: .pluginSettingsTitle), showsForward: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                     if !detail.screenshots.isEmpty {
                         Screenshots(model: model, images: detail.screenshots)
                     }
@@ -112,6 +123,9 @@ struct PluginDetailView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(WontonTheme.spacing.pageInset)
+            }
+            .navigationDestination(isPresented: $showsSettings) {
+                PluginSettingsScreen(model: model, pluginId: pluginId ?? "")
             }
         }
     }

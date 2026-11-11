@@ -451,6 +451,7 @@ impl PluginManager {
     }
 
     /// 升到上传的插件包（开发时用）。开关开着的继续开着，`lan_webui` 时打开。
+    #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
     pub async fn upgrade_upload(
         self: &Arc<Self>,
         id: &PluginId,

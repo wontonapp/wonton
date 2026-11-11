@@ -139,146 +139,183 @@ fn check_value(
                 );
             }
         }
-        Kind::Integer { min, max } => {
-            let Some(number) = value.as_i64() else {
-                bad(
-                    SettingsFieldProblemKind::WrongType,
-                    "plugin-settings-value-wrong-type",
-                    &[("type", "integer".into())],
-                );
-                return;
-            };
-            if min.is_some_and(|min| number < min) {
-                bad(
-                    SettingsFieldProblemKind::BelowMinimum,
-                    "plugin-settings-value-below-minimum",
-                    &[("min", min.unwrap().to_string().into())],
-                );
-            }
-            if max.is_some_and(|max| number > max) {
-                bad(
-                    SettingsFieldProblemKind::AboveMaximum,
-                    "plugin-settings-value-above-maximum",
-                    &[("max", max.unwrap().to_string().into())],
-                );
-            }
-        }
+        Kind::Integer { min, max } => check_integer(value, *min, *max, &mut bad),
         Kind::Decimal { min, max } => {
-            let Some(number) = value.as_f64() else {
-                bad(
-                    SettingsFieldProblemKind::WrongType,
-                    "plugin-settings-value-wrong-type",
-                    &[("type", "number".into())],
-                );
-                return;
-            };
-            if min
-                .as_ref()
-                .is_some_and(|min| number < min.parse().unwrap_or_default())
-            {
-                bad(
-                    SettingsFieldProblemKind::BelowMinimum,
-                    "plugin-settings-value-below-minimum",
-                    &[("min", min.clone().into())],
-                );
-            }
-            if max
-                .as_ref()
-                .is_some_and(|max| number > max.parse().unwrap_or_default())
-            {
-                bad(
-                    SettingsFieldProblemKind::AboveMaximum,
-                    "plugin-settings-value-above-maximum",
-                    &[("max", max.clone().into())],
-                );
-            }
+            check_decimal(value, min.as_deref(), max.as_deref(), &mut bad)
         }
         Kind::Text {
             min_length,
             max_length,
             pattern,
-        } => {
-            let Some(text) = value.as_str() else {
+        } => check_text(
+            value,
+            *min_length,
+            *max_length,
+            pattern.as_deref(),
+            &mut bad,
+        ),
+        Kind::Choice {
+            values, multiple, ..
+        } => check_choice(value, values, *multiple, &mut bad),
+    }
+}
+
+/// 整数要真是整数，min/max 都比了才算数。
+fn check_integer<'a>(
+    value: &'a Value,
+    min: Option<i64>,
+    max: Option<i64>,
+    bad: &mut impl FnMut(SettingsFieldProblemKind, &'static str, &[(&'a str, wonton_l10n::Arg<'a>)]),
+) {
+    let Some(number) = value.as_i64() else {
+        bad(
+            SettingsFieldProblemKind::WrongType,
+            "plugin-settings-value-wrong-type",
+            &[("type", "integer".into())],
+        );
+        return;
+    };
+    if min.is_some_and(|min| number < min) {
+        bad(
+            SettingsFieldProblemKind::BelowMinimum,
+            "plugin-settings-value-below-minimum",
+            &[("min", min.unwrap().to_string().into())],
+        );
+    }
+    if max.is_some_and(|max| number > max) {
+        bad(
+            SettingsFieldProblemKind::AboveMaximum,
+            "plugin-settings-value-above-maximum",
+            &[("max", max.unwrap().to_string().into())],
+        );
+    }
+}
+
+/// 小数要真是数，min/max 按字面量解析，解析不了就当没有。
+fn check_decimal<'a>(
+    value: &'a Value,
+    min: Option<&'a str>,
+    max: Option<&'a str>,
+    bad: &mut impl FnMut(SettingsFieldProblemKind, &'static str, &[(&'a str, wonton_l10n::Arg<'a>)]),
+) {
+    let Some(number) = value.as_f64() else {
+        bad(
+            SettingsFieldProblemKind::WrongType,
+            "plugin-settings-value-wrong-type",
+            &[("type", "number".into())],
+        );
+        return;
+    };
+    if min.is_some_and(|min| number < min.parse().unwrap_or_default()) {
+        bad(
+            SettingsFieldProblemKind::BelowMinimum,
+            "plugin-settings-value-below-minimum",
+            &[("min", min.into())],
+        );
+    }
+    if max.is_some_and(|max| number > max.parse().unwrap_or_default()) {
+        bad(
+            SettingsFieldProblemKind::AboveMaximum,
+            "plugin-settings-value-above-maximum",
+            &[("max", max.into())],
+        );
+    }
+}
+
+/// 文字要真是字符串，长度按字符数，pattern 是插件自己声明的正则。
+fn check_text<'a>(
+    value: &'a Value,
+    min_length: Option<u32>,
+    max_length: Option<u32>,
+    pattern: Option<&'a str>,
+    bad: &mut impl FnMut(SettingsFieldProblemKind, &'static str, &[(&'a str, wonton_l10n::Arg<'a>)]),
+) {
+    let Some(text) = value.as_str() else {
+        bad(
+            SettingsFieldProblemKind::WrongType,
+            "plugin-settings-value-wrong-type",
+            &[("type", "string".into())],
+        );
+        return;
+    };
+    let length = text.chars().count() as u32;
+    if let Some(min) = min_length.filter(|min| length < *min) {
+        bad(
+            SettingsFieldProblemKind::TooShort,
+            "plugin-settings-value-too-short",
+            &[("min", min.to_string().into())],
+        );
+    }
+    if let Some(max) = max_length.filter(|max| length > *max) {
+        bad(
+            SettingsFieldProblemKind::TooLong,
+            "plugin-settings-value-too-long",
+            &[("max", max.to_string().into())],
+        );
+    }
+    if let Some(pattern) = pattern
+        && let Ok(regex) = regex::Regex::new(pattern)
+        && !regex.is_match(text)
+    {
+        bad(
+            SettingsFieldProblemKind::Pattern,
+            "plugin-settings-value-pattern",
+            &[],
+        );
+    }
+}
+
+/// 选项里的值必须在清单列出的 values 里；多选还要去重、每项都是字符串。
+fn check_choice<'a>(
+    value: &'a Value,
+    values: &'a [String],
+    multiple: bool,
+    bad: &mut impl FnMut(SettingsFieldProblemKind, &'static str, &[(&'a str, wonton_l10n::Arg<'a>)]),
+) {
+    if !multiple {
+        if !value
+            .as_str()
+            .is_some_and(|text| values.iter().any(|value| value == text))
+        {
+            bad(
+                SettingsFieldProblemKind::NotInOptions,
+                "plugin-settings-value-not-in-options",
+                &[],
+            );
+        }
+        return;
+    }
+    let Some(items) = value.as_array() else {
+        bad(
+            SettingsFieldProblemKind::WrongType,
+            "plugin-settings-value-wrong-type",
+            &[("type", "array".into())],
+        );
+        return;
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    for item in items {
+        match item.as_str() {
+            Some(text) if !seen.insert(text) => {
                 bad(
-                    SettingsFieldProblemKind::WrongType,
-                    "plugin-settings-value-wrong-type",
-                    &[("type", "string".into())],
-                );
-                return;
-            };
-            let length = text.chars().count() as u32;
-            if let Some(min) = min_length.filter(|min| length < *min) {
-                bad(
-                    SettingsFieldProblemKind::TooShort,
-                    "plugin-settings-value-too-short",
-                    &[("min", min.to_string().into())],
-                );
-            }
-            if let Some(max) = max_length.filter(|max| length > *max) {
-                bad(
-                    SettingsFieldProblemKind::TooLong,
-                    "plugin-settings-value-too-long",
-                    &[("max", max.to_string().into())],
-                );
-            }
-            if let Some(pattern) = pattern
-                && let Ok(regex) = regex::Regex::new(pattern)
-                && !regex.is_match(text)
-            {
-                bad(
-                    SettingsFieldProblemKind::Pattern,
-                    "plugin-settings-value-pattern",
+                    SettingsFieldProblemKind::DuplicateItems,
+                    "plugin-settings-value-duplicate",
                     &[],
                 );
             }
-        }
-        Kind::Choice {
-            values, multiple, ..
-        } => {
-            if *multiple {
-                let Some(items) = value.as_array() else {
-                    bad(
-                        SettingsFieldProblemKind::WrongType,
-                        "plugin-settings-value-wrong-type",
-                        &[("type", "array".into())],
-                    );
-                    return;
-                };
-                let mut seen = std::collections::BTreeSet::new();
-                for item in items {
-                    match item.as_str() {
-                        Some(text) if !seen.insert(text) => {
-                            bad(
-                                SettingsFieldProblemKind::DuplicateItems,
-                                "plugin-settings-value-duplicate",
-                                &[],
-                            );
-                        }
-                        Some(text) if !values.iter().any(|value| value == text) => {
-                            bad(
-                                SettingsFieldProblemKind::NotInOptions,
-                                "plugin-settings-value-not-in-options",
-                                &[],
-                            );
-                        }
-                        Some(_) => {}
-                        None => bad(
-                            SettingsFieldProblemKind::WrongType,
-                            "plugin-settings-value-wrong-type",
-                            &[("type", "string".into())],
-                        ),
-                    }
-                }
-            } else if !value
-                .as_str()
-                .is_some_and(|text| values.iter().any(|value| value == text))
-            {
+            Some(text) if !values.iter().any(|value| value == text) => {
                 bad(
                     SettingsFieldProblemKind::NotInOptions,
                     "plugin-settings-value-not-in-options",
                     &[],
                 );
             }
+            Some(_) => {}
+            None => bad(
+                SettingsFieldProblemKind::WrongType,
+                "plugin-settings-value-wrong-type",
+                &[("type", "string".into())],
+            ),
         }
     }
 }

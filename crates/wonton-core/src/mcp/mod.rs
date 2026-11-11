@@ -2,6 +2,7 @@
 //! 插件声明的工具。调用方由网关按来源地址认出（[`Caller`]）；没标只读、主人也没放宽（ADR-0024）的工具先请主人确认
 //! （[`confirm`]）；每次调用写一行审计（[`audit`]）。
 
+mod agent_cards;
 mod agent_install;
 mod agent_permission;
 mod apps;

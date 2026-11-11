@@ -11,6 +11,7 @@ mod now;
 mod polling;
 mod registry_mirror;
 mod sharing;
+mod settings;
 mod start;
 mod support;
 mod takeover;
@@ -29,9 +30,9 @@ use tokio::sync::{Notify, watch};
 use wonton_protocol::{
     AddSourceRequest, AddedSource, AskEveryUpdate, CoreError, CoreUpgradeViewModel,
     EgressViewModel, HomeStatus, InstallPreview, InstallSource, InstalledPlugins, LanWebuiUpdate,
-    PermissionUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem,
-    PluginSettingsUpdate, PluginSettingsView, PluginTaskState, PluginsViewModel, ProxySettings,
-    StorageUsage, StoreConfirmation, StoreItem, StoreListing, TabRef,
+    PermissionUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginTaskState,
+    PluginsViewModel, ProxySettings, StorageUsage, StoreConfirmation, StoreItem, StoreListing,
+    TabRef,
 };
 
 use crate::home::HomeLink;
@@ -510,45 +511,6 @@ impl PluginsLink {
             client,
             languages,
         })
-    }
-
-    /// 读插件设置页（ADR-0077）。
-    pub(crate) async fn plugin_settings(&self, id: &str) -> Result<PluginSettingsView, CoreError> {
-        let api = self.api().map_err(to_core_error)?;
-        api.get(&["plugins", id, "settings"], &[], READ_TIMEOUT)
-            .await
-            .map_err(to_core_error)
-    }
-
-    /// 只校验、不保存设置：返回填上候选值的视图。
-    pub(crate) async fn preview_plugin_settings(
-        &self,
-        id: &str,
-        update: &PluginSettingsUpdate,
-    ) -> Result<PluginSettingsView, CoreError> {
-        let api = self.api().map_err(to_core_error)?;
-        api.post(
-            &["plugins", id, "settings", "preview"],
-            update,
-            READ_TIMEOUT,
-        )
-        .await
-        .map_err(to_core_error)
-    }
-
-    /// 保存插件设置（ADR-0077）：核心按 Schema 校验，然后只重建用到它的服务；返回保存后的视图。
-    pub(crate) async fn set_plugin_settings(
-        self: &Arc<Self>,
-        id: &str,
-        update: &PluginSettingsUpdate,
-    ) -> Result<PluginSettingsView, CoreError> {
-        let api = self.api().map_err(to_core_error)?;
-        let result = api
-            .put(&["plugins", id, "settings"], update, INSTALL_TIMEOUT)
-            .await
-            .map_err(to_core_error);
-        self.refresh_installed();
-        result
     }
 
     pub(crate) async fn store_plugin(&self, source: &str) -> Result<PluginDetail, CoreError> {

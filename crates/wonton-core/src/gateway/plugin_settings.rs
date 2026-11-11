@@ -18,6 +18,7 @@ use super::api::{error_response, install_error, languages, owner_denied};
 use super::{Gateway, TunnelPeer};
 use crate::plugin::PluginId;
 
+#[allow(clippy::result_large_err)] // 网关的错误响应直接回给 HTTP 层。
 fn plugin_id(raw: &str) -> Result<PluginId, Response> {
     PluginId::parse(raw).map_err(|e| {
         error_response(
@@ -28,6 +29,7 @@ fn plugin_id(raw: &str) -> Result<PluginId, Response> {
     })
 }
 
+#[allow(clippy::result_large_err)] // 网关的错误响应直接回给 HTTP 层。
 fn update(body: &[u8]) -> Result<PluginSettingsUpdate, Response> {
     serde_json::from_slice(body).map_err(|e| {
         error_response(
