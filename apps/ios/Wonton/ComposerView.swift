@@ -24,7 +24,6 @@ struct ComposerView: View {
     @State private var pendingImage: ImageUpload?
     @State private var pendingFiles: [URL] = []
     @FocusState private var isFocused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -50,11 +49,9 @@ struct ComposerView: View {
                     onSend: sendText
                 )
                     .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.composerField) / 2)
-                    .padding(.trailing, isEmpty ? WontonTheme.spacing.s12 : 0)
-                if !isEmpty {
-                    SendButton(action: sendText)
-                    .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
-                }
+                SendButton(action: sendText)
+                    .disabled(isEmpty)
+                    .opacity(isEmpty ? WontonTheme.ratio.secondaryContent : 1)
             }
             .padding(WontonTheme.spacing.s4)
         }
@@ -62,7 +59,6 @@ struct ComposerView: View {
         .onChange(of: model.replyFocusRevision) {
             if model.replies[roomId] != nil { isFocused = true }
         }
-        .animation(.easeOut(duration: WontonTheme.motion.feedback), value: isEmpty)
         .onAppear { model.acceptPendingDraft(in: roomId) }
         .wontonActionSheet(isPresented: $isChoosingAttachment, actions: [
             WontonSheetAction(title: String(localized: .composerPhoto), icon: .image) { isPickingPhoto = true },
