@@ -71,6 +71,7 @@ services:
       WONTON_OIDC_PUBLIC_URL: http://hydra.wonton.internal:4444
       WONTON_MATRIX_URL: http://tuwunel.wonton.internal:8008
       WONTON_TUSD_URL: http://tusd.wonton.internal:8080
+      WONTON_MAILPIT_URL: http://mailpit.wonton.internal:8025
       WONTON_MATRIX_JWT_KEY_FILE: ${WONTON_INSTALL_DIR:?}/secrets/matrix-jwt.pem
       WONTON_MATRIX_REGISTRATION_SECRET_FILE: ${WONTON_INSTALL_DIR:?}/secrets/matrix-registration-secret
       # 第一次安装时由 init 定下，之后不变（ADR-0009 的“Matrix 的服务器名”）。
@@ -154,6 +155,46 @@ services:
       start_period: 30s
       start_interval: 1s
 
+  mailpit:
+    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
+    restart: unless-stopped
+    user: "${WONTON_PUID:-1000}:${WONTON_PGID:-1000}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    sysctls:
+      - net.ipv4.ip_unprivileged_port_start=0
+      - net.ipv4.ip_forward=0
+    entrypoint: ["/bin/sh", "-ec", ". /wonton-config/runtime.env; exec /mailpit"]
+    environment:
+      <<: *no-proxy
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_BIND_ADDR: 0.0.0.0:25
+      MP_UI_BIND_ADDR: 0.0.0.0:8025
+      MP_UI_AUTH_FILE: /wonton-config/auth.htpasswd
+      MP_MAX_MESSAGE_SIZE: "25"
+      MP_MAX_MESSAGES: "0"
+      MP_MAX_AGE: 7d
+      MP_DISABLE_VERSION_CHECK: "true"
+      # 宣告 AUTH 并接受任何凭据，给服务器不宣告 AUTH 就发不出信的应用；不配证书，认证照走明文。认插件只按来源网段。
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    volumes:
+      - ${WONTON_DATA_DIR}/core/mailpit/data:/data
+      - ${WONTON_DATA_DIR}/core/mailpit/config:/wonton-config:ro
+    networks:
+      core:
+        aliases: [mailpit.wonton.internal]
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 1s
+
   hydra-migrate:
     image: oryd/hydra:v26.2.0@sha256:ff67c7fb5f95074fa53374d41151713554960504b340cd3f95b09e65deaea2a9
     command: migrate sql up -e --yes
@@ -205,20 +246,18 @@ services:
     restart: unless-stopped
     # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
     stop_grace_period: 5m
-    # 两份配置（ADR-0050）：第一份是安装时的主体配置，第二份只有联邦名单，由核心重写并热加载。
-    command: ["-c", "/etc/tuwunel/tuwunel.toml", "-c", "/etc/tuwunel/fed.toml"]
+    # 配对代理范围与黑名单在第二份配置一起热加载（ADR-0051）；私用名另有允许名单。
+    command: ["-c", "/etc/tuwunel/tuwunel.toml", "-c", "/etc/tuwunel/wonton-fed.toml"]
     environment:
       <<: *no-proxy
       # 配置和 JWT 公钥都在文件里：轮换签发密钥时核心改写它、发 SIGUSR1 热加载（ADR-0009）。
       TUWUNEL_CONFIG: /etc/tuwunel/tuwunel.toml
     volumes:
       - tuwunel:/var/lib/tuwunel
-      - ${WONTON_INSTALL_DIR}/secrets/tuwunel.toml:/etc/tuwunel/tuwunel.toml:ro
-      - ${WONTON_INSTALL_DIR}/fed/config.toml:/etc/tuwunel/fed.toml:ro
-      # 联邦进站的自签证书，tuwunel.toml 按这两个容器里的路径读。
-      - ${WONTON_INSTALL_DIR}/secrets/tuwunel-tls.crt:/etc/tuwunel/tls.crt:ro
-      - ${WONTON_INSTALL_DIR}/secrets/tuwunel-tls.key:/etc/tuwunel/tls.key:ro
-    # 只在核心的私有网络里，App 和 Bot 都经核心网关访问它（ADR-0009）；8448 不映射到主机，联邦只经隧道进出。
+      # 只挂 Tuwunel 自己的文件：`secrets/` 根上还有核心的 `matrix-jwt.pem`、`hydra-secret`/`hydra.env`，
+      # 联邦容器读不到才对（ADR-0051）。整目录一次挂完，不用在只读目录里再建挂载点。
+      - ${WONTON_INSTALL_DIR}/secrets/tuwunel:/etc/tuwunel:ro
+    # 不发布任何端口；公网联邦经过隔离入口容器和核心的专用监听。
     networks:
       core:
         aliases: [tuwunel.wonton.internal]

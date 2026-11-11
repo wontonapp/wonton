@@ -206,6 +206,7 @@
     <string name="timeline_send_failed">发送失败：%1$s</string>
     <string name="timeline_resend">重发</string>
     <string name="timeline_undecryptable">无法解密：本设备还没有这条消息的密钥</string>
+    <string name="timeline_undecryptable_notice">这台设备读不了之前的加密消息。</string>
     <string name="timeline_redacted">消息已撤回</string>
     <string name="timeline_unsupported">暂不支持显示的消息（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
@@ -255,6 +256,7 @@
     <string name="connection_connected">已连接</string>
     <string name="connection_waiting_network">等待网络…</string>
     <string name="connection_connecting">连接中…</string>
+    <string name="connection_retrying">正在连接家里的服务器…</string>
     <string name="connection_updating">正在更新…</string>
     <string name="connection_server_offline">家里的服务器好像离线了</string>
     <string name="connection_device_rejected">家里的服务器已不认这台手机</string>
@@ -907,8 +909,6 @@
     <string name="onboarding_problem_plugin_lan_unavailable">没有可用的局域网地址，请检查服务器的网络设置。</string>
     <!-- Problem title while installing: the app wasn't found. -->
     <string name="onboarding_problem_plugin_not_found">没有找到这个应用，刷新列表后再试。</string>
-    <!-- Problem title while installing: the owner profile isn't complete. -->
-    <string name="onboarding_problem_plugin_owner_profile_incomplete">你的资料还没填好，填好后再试。</string>
     <!-- Problem title while installing: the app and the home server versions don't work together. -->
     <string name="onboarding_problem_plugin_protocol">App 和家里的服务器版本对不上，请更新 App 或服务器。</string>
     <!-- Problem title while installing: the home server is older than the app needs. -->
@@ -1164,10 +1164,6 @@
     <string name="problem_plugin_not_found_next_step">刷新应用商店后再试。</string>
     <!-- Problem title: the app is gone from its source. -->
     <string name="problem_plugin_not_found_title">没有找到这个应用</string>
-    <!-- Next step: fill it in in Settings, then try again. -->
-    <string name="problem_plugin_owner_profile_incomplete_next_step">在设置里填好后再试。</string>
-    <!-- Problem title: the owner's profile (name and email) isn't filled in yet, and the app needs it. -->
-    <string name="problem_plugin_owner_profile_incomplete_title">你的资料还没填好</string>
     <!-- Next step: update the app or the home server. -->
     <string name="problem_plugin_protocol_next_step">请更新 App 或家里的服务器。</string>
     <!-- Problem title: the app and the home server versions don't match. -->

@@ -44,6 +44,12 @@ impl PluginManager {
         self
     }
 
+    #[must_use]
+    pub fn with_mailpit(mut self, mailpit: Option<Arc<crate::mailbox::Component>>) -> Self {
+        self.mailpit = mailpit;
+        self
+    }
+
     /// 核心看到的宿主路径（`WONTON_HOST_DEV`），申请了 `devices.gpu` 的插件按它探测显卡。
     #[must_use]
     pub fn with_host(mut self, host: HostPaths) -> Self {

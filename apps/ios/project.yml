@@ -15,6 +15,10 @@ settings:
 packages:
   WontonClient:
     path: WontonClient
+  # 截图测试。MIT，只进测试目标，不链接进 App。
+  SnapshotTesting:
+    url: https://github.com/pointfreeco/swift-snapshot-testing
+    exactVersion: 1.19.7
 targets:
   Wonton:
     type: application
@@ -67,6 +71,7 @@ targets:
     dependencies:
       - target: Wonton
       - package: WontonClient
+      - package: SnapshotTesting
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios.tests
@@ -97,3 +102,25 @@ schemes:
       targets:
         - WontonTests
         - WontonUITests
+      # 截图参考图按英文、美式日期和 UTC 录制；界面的语言、地区和时区都由这里钉住，不受模拟器的系统设置影响。
+      # 环境变量要写在 scheme 里：xcodebuild 步骤的 env 传不进模拟器里跑的 App。
+      language: en
+      region: US
+      environmentVariables:
+        TZ: UTC
+        # 只比较，缺图也报错。
+        SNAPSHOT_TESTING_RECORD: never
+  # 重录参考图：同样的 App 和测试目标，把录制模式打开；只跑单测，不编 UI 测试。
+  WontonSnapshots:
+    build:
+      targets:
+        Wonton: all
+        WontonTests: [test]
+    test:
+      targets:
+        - WontonTests
+      language: en
+      region: US
+      environmentVariables:
+        TZ: UTC
+        SNAPSHOT_TESTING_RECORD: all

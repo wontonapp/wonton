@@ -206,6 +206,7 @@
     <string name="timeline_send_failed">送信できませんでした：%1$s</string>
     <string name="timeline_resend">再送信</string>
     <string name="timeline_undecryptable">復号できません：このデバイスにこのメッセージの鍵がありません</string>
+    <string name="timeline_undecryptable_notice">このデバイスでは以前の暗号化メッセージを読めません。</string>
     <string name="timeline_redacted">メッセージは削除されました</string>
     <string name="timeline_unsupported">まだ表示に対応していないメッセージ（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
@@ -255,6 +256,7 @@
     <string name="connection_connected">接続済み</string>
     <string name="connection_waiting_network">ネットワークを待っています…</string>
     <string name="connection_connecting">接続しています…</string>
+    <string name="connection_retrying">自宅サーバーに接続しています…</string>
     <string name="connection_updating">アップデートしています…</string>
     <string name="connection_server_offline">自宅サーバーがオフラインのようです</string>
     <string name="connection_device_rejected">このスマートフォンは自宅サーバーに認識されていません</string>
@@ -907,8 +909,6 @@
     <string name="onboarding_problem_plugin_lan_unavailable">利用できるローカルネットワークのアドレスがありません。サーバーのネットワーク設定を確認してください。</string>
     <!-- Problem title while installing: the app wasn't found. -->
     <string name="onboarding_problem_plugin_not_found">このアプリが見つかりません。一覧を更新してから再試行してください。</string>
-    <!-- Problem title while installing: the owner profile isn't complete. -->
-    <string name="onboarding_problem_plugin_owner_profile_incomplete">プロフィールが未入力です。入力してから再試行してください。</string>
     <!-- Problem title while installing: the app and the home server versions don't work together. -->
     <string name="onboarding_problem_plugin_protocol">Wontonと自宅サーバーのバージョンが一致していません。Wontonかサーバーを更新してください。</string>
     <!-- Problem title while installing: the home server is older than the app needs. -->
@@ -1164,10 +1164,6 @@
     <string name="problem_plugin_not_found_next_step">ストアを更新してからもう一度お試しください。</string>
     <!-- Problem title: the app is gone from its source. -->
     <string name="problem_plugin_not_found_title">このアプリが見つかりません</string>
-    <!-- Next step: fill it in in Settings, then try again. -->
-    <string name="problem_plugin_owner_profile_incomplete_next_step">設定で入力してから、もう一度お試しください。</string>
-    <!-- Problem title: the owner's profile (name and email) isn't filled in yet, and the app needs it. -->
-    <string name="problem_plugin_owner_profile_incomplete_title">プロフィールがまだ入力されていません</string>
     <!-- Next step: update the app or the home server. -->
     <string name="problem_plugin_protocol_next_step">Wontonか自宅サーバーをアップデートしてください。</string>
     <!-- Problem title: the app and the home server versions don't match. -->

@@ -6,6 +6,7 @@
 //! tusd 的 pre-finish 钩子有 15 秒的硬超时，放不下跨卷复制，所以放文件走 post-finish；它不等钩子就回客户端，
 //! 网关要在最后一个 PATCH 的响应之前等 [`Files::finish_upload`]，204 才等于文件可用（实测见 ADR-0020 的“验证结果”）。
 
+mod room;
 mod sweep;
 
 use std::collections::{HashMap, HashSet};
@@ -14,6 +15,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+pub(super) use room::{has_room, out_of_inodes, quota};
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{FileFailure, FileId, FileSource};
 
@@ -31,6 +33,8 @@ use crate::plugin::store::{
 
 /// 这么久没有进度的上传被清掉。tusd 没有实现 tus 的 expiration，只能由核心来清。
 pub const STALE_SECS: u64 = 24 * 60 * 60;
+/// 传完放好、链接还没发出去的上传留这么久。授权给房间或者发到设备时不再过期（ADR-0020 的“生命周期”）。
+pub const UPLOAD_TTL_SECS: u64 = 24 * 60 * 60;
 /// 放下上传后磁盘上至少还要空着这个比例。
 const KEEP_FREE_PERCENT: u64 = 5;
 /// 客户端走了的编号记这么久：tusd 的 pre-create 钩子晚到时要认得出来，钩子不会晚这么多。
@@ -62,7 +66,7 @@ struct Placing {
 
 impl Pending {
     /// 放在 `name` 上的文件的记录。`name` 是目录里现在的名字，主人和插件都能改，显示给人看的要和别的不可信的名字一样清洗；引用保留原样，
-    /// 否则找不到文件。
+    /// 否则找不到文件。链接没发出去之前一直带过期时间，授权给房间或者发到设备时清掉。
     fn record(&self, name: String, placed: Snapshot) -> FileRecord {
         FileRecord {
             id: self.id.clone(),
@@ -81,7 +85,7 @@ impl Pending {
             owner_granted: Default::default(),
             registered: None,
             created_at: now_secs(),
-            expires_at: None,
+            expires_at: Some(now_secs().saturating_add(UPLOAD_TTL_SECS)),
         }
     }
 }
@@ -249,10 +253,27 @@ impl Uploads {
     }
 
     fn cannot_hold(&self, left: u64, langs: &Languages) -> Option<Failure> {
+        let storage_full = |key: &str| {
+            Some(Failure::new(
+                FileFailure::StorageFull,
+                l10n::text(langs, key, &[]),
+            ))
+        };
+        if let Some(quota) = quota(&self.dir, self.owner.uid) {
+            if quota.space_left.is_some_and(|room| room < left) {
+                return storage_full("files-upload-quota-full");
+            }
+            if quota.inodes_left == Some(0) {
+                return storage_full("files-upload-inodes-full");
+            }
+        }
         let stats = rustix::fs::statvfs(&self.dir).ok()?;
+        if out_of_inodes(stats.f_files, stats.f_favail) {
+            return storage_full("files-upload-inodes-full");
+        }
         let free = stats.f_bavail.saturating_mul(stats.f_frsize.max(1));
         (free < left).then(|| {
-            Failure::new(
+            Some(Failure::new(
                 FileFailure::StorageFull,
                 l10n::text(
                     langs,
@@ -262,25 +283,9 @@ impl Uploads {
                         ("left", wonton_l10n::Arg::from(left)),
                     ],
                 ),
-            )
-        })
+            ))
+        })?
     }
-}
-
-/// 这个目录所在的磁盘放下 `size` 字节后，还空着 [`KEEP_FREE_PERCENT`]。
-pub(super) fn has_room(dir: &Path, size: u64) -> Result<bool, Failure> {
-    let stats = rustix::fs::statvfs(dir)
-        .map_err(|e| Failure::internal(format!("查 {} 的磁盘空间失败：{e}", dir.display())))?;
-    let frsize = stats.f_frsize.max(1);
-    let free = stats.f_bavail.saturating_mul(frsize);
-    let keep = stats.f_blocks.saturating_mul(frsize) / 100 * KEEP_FREE_PERCENT;
-    let enough = size.checked_add(keep).is_some_and(|needed| needed <= free);
-    Ok(enough && !out_of_inodes(stats.f_files, stats.f_favail))
-}
-
-/// inode 用完了也放不下。总数是 0 表示这个文件系统没有这个限制（btrfs）。
-fn out_of_inodes(total: u64, free: u64) -> bool {
-    total > 0 && free == 0
 }
 
 impl Files {
@@ -322,7 +327,7 @@ impl Files {
                 files.uploads.dir.as_path(),
                 files.shares.root().join(TRANSFERS).as_path(),
             ] {
-                if !has_room(dir, size)? {
+                if !has_room(dir, size, files.uploads.owner.uid)? {
                     return Err(Failure::new(
                         FileFailure::StorageFull,
                         l10n::text(
@@ -511,7 +516,7 @@ impl Files {
         langs: &Languages,
     ) -> Result<(String, Snapshot), ShareError> {
         let mut marked = pending.clone();
-        self.shares.place_upload(
+        let placed = self.shares.place_upload(
             &self.uploads.dir,
             pending.id.as_str(),
             pending.size,
@@ -541,7 +546,39 @@ impl Files {
                 }
                 Ok(())
             },
-        )
+        );
+        if placed.is_err() {
+            self.forget_failed_placement(&pending.id);
+        }
+        placed
+    }
+
+    /// 链接、复制失败后临时文件已经删掉了：记下的 inode 会被别的文件复用（跨卷的临时文件是复制出来的，inode 和下一条记录无关），
+    /// 不清掉的话下次会把它当成放好的那个。公开名字上不是这个文件才会走到这里（[`Shares::place_upload`] 只在失败后删临时文件）。
+    fn forget_failed_placement(&self, id: &FileId) {
+        // 调用前的克隆里没有这一趟写下的放置信息，从盘上重新读。
+        let Some(mut current) = self.uploads.load_pending(id).ok().flatten() else {
+            return;
+        };
+        if current.placing.is_none() {
+            return;
+        }
+        let temps = match self.shares.upload_temps() {
+            Ok(temps) => temps,
+            Err(e) => {
+                tracing::warn!(file = %id, error = %e, "读不了临时文件，放置记录留着");
+                return;
+            }
+        };
+        if temps.iter().any(|temp| temp == id.as_str()) {
+            return;
+        }
+        current.placing = None;
+        match write_json_synced(&self.uploads.pending_path(id), &current) {
+            Ok(true) => {}
+            Ok(false) => tracing::warn!(file = %id, "清掉的放置记录没能落盘"),
+            Err(e) => tracing::warn!(file = %id, error = %e, "清掉放置记录失败"),
+        }
     }
 
     /// 传完放好了，不再管它。调用方排着这个上传的队。
@@ -695,5 +732,9 @@ impl Files {
 
 #[cfg(test)]
 mod abandon_tests;
+#[cfg(test)]
+mod expiry_tests;
+#[cfg(test)]
+mod quota_tests;
 #[cfg(test)]
 mod tests;

@@ -57,24 +57,19 @@ const SYSTEM_NAMES: &[&str] = &[
     "xfs",
 ];
 
-/// 主人的身份，单点登录和插件从这里取。
+/// 主人或家人的身份；真实邮箱只用于资料读写，插件身份统一派生内部邮箱。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Owner {
     pub username: String,
     /// 还没填时是用户名：应用要显示点什么，用户名是真的，不另外编一个。
     pub display_name: String,
-    /// 还没填时没有：核心不拼一个收不到信的地址（ADR-0022）。
+    /// 资料页保存的真实邮箱，不向插件公开（ADR-0056）。
     pub email: Option<String>,
 }
 
-/// 还没填邮箱、插件又要用时的错误，写明怎么修。语言按请求或主人最近的语言写（ADR-0043）。
-pub fn no_email(langs: &crate::plugin::languages::Languages) -> String {
-    crate::l10n::text(langs, "plugin-settings-email-missing", &[])
-}
-
-/// 安装页上的说明，旁边就是去填的按钮。
-pub fn email_needed(langs: &crate::plugin::languages::Languages) -> String {
-    crate::l10n::text(langs, "plugin-settings-email-needed", &[])
+/// 用户名固定且不复用，内部地址因此不受真实邮箱修改影响（ADR-0056）。
+pub fn internal_email(username: &str) -> String {
+    format!("{username}@wonton.internal")
 }
 
 /// 可移植的 POSIX 用户名（`^[a-z][a-z0-9_-]{0,31}$`），同时是合法的 Matrix localpart。

@@ -46,6 +46,10 @@ def main():
         elif "Proxy" in fmt:
             out("\n")
     elif command == "pull":
+        error = os.environ.get("FAKE_DOCKER_PULL_ERROR")
+        if error:
+            print(error, file=sys.stderr)
+            sys.exit(1)
         out("pulled " + args[-1])
     elif command == "image":
         fmt = value("--format")
@@ -55,6 +59,9 @@ def main():
                 out(digest)
         elif reference not in digests:
             sys.exit(1)
+    elif command == "run":
+        if "init" in args and not os.environ.get("WONTON_CLIENT_SERVICE"):
+            sys.exit(7)
     elif command == "inspect":
         # 没有 updater 容器，也没有别的容器要查。
         sys.exit(1)
@@ -84,6 +91,10 @@ class InstallTest(unittest.TestCase):
             "case \"$last\" in /usr/local/*) exit 0 ;; esac\nexec /bin/mkdir \"$@\"\n",
         )
         (self.temp / "docker-config").mkdir()
+        self.invite = self.temp / "invite"
+        self.invite.write_text("invite\n")
+        self.ca = self.temp / "ca.pem"
+        self.ca.write_text("ca\n")
         self.digests = {}
 
     def write_fake(self, name, body):
@@ -91,7 +102,7 @@ class InstallTest(unittest.TestCase):
         path.write_text(body)
         path.chmod(0o755)
 
-    def run_install(self, **extra):
+    def run_install(self, entry=True, **extra):
         (self.state / "digests.json").write_text(json.dumps(self.digests))
         (self.state / "log").write_text("")
         env = {
@@ -105,6 +116,14 @@ class InstallTest(unittest.TestCase):
             "FAKE_DOCKER_STATE": str(self.state),
             **extra,
         }
+        if entry:
+            env.update({
+                "WONTON_CLIENT_SERVICE": "https://names.test",
+                "WONTON_CLIENT_INVITE_FILE": str(self.invite),
+                "WONTON_FRP_CA_FILE": str(self.ca),
+                "WONTON_ACME_DIRECTORY": "https://pebble.test/dir",
+                "WONTON_ACME_ACCEPT_TERMS": "true",
+            })
         return subprocess.run(
             ["sh", str(SCRIPT)],
             env=env,
@@ -158,6 +177,18 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(env["WONTON_CORE_IMAGE"], "192.0.2.10:5000/wonton/core@" + digest)
         self.assertEqual(env["WONTON_CORE_SOURCE"], reference)
 
+    def test_missing_given_name_configuration_stops_at_init(self):
+        self.digests["ghcr.io/geraldpeng6/wonton-core:beta"] = [
+            "ghcr.io/geraldpeng6/wonton-core@sha256:" + "e" * 64
+        ]
+
+        result = self.run_install(entry=False, WONTON_CORE_IMAGE="ghcr.io/geraldpeng6/wonton-core:beta")
+
+        self.assertNotEqual(result.returncode, 0)
+        log = (self.state / "log").read_text()
+        self.assertIn("init", log)
+        self.assertFalse((self.install_dir / ".env").exists())
+
     def test_no_matching_repository_digest_stops_instead_of_writing_the_tag(self):
         reference = "ghcr.io/wontonapp/wonton-core:stable"
         self.digests[reference] = ["ghcr.io/elsewhere/core@sha256:" + "c" * 64]
@@ -203,6 +234,53 @@ class InstallTest(unittest.TestCase):
         result = self.run_install(WONTON_INSTALL_TIMEOUT_SECS="")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("WONTON_INSTALL_TIMEOUT_SECS", self.env())
+
+    def pull_failure(self, error, **extra):
+        result = self.run_install(FAKE_DOCKER_PULL_ERROR=error, **extra)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.install_dir / ".env").exists())
+        return result
+
+    def test_a_missing_tag_says_the_channel_has_no_release(self):
+        result = self.pull_failure("Error response from daemon: manifest unknown")
+
+        self.assertIn("渠道 stable 还没有发布的版本", result.stderr)
+        self.assertIn("WONTON_CORE_IMAGE", result.stderr)
+        self.assertNotIn("配代理", result.stderr)
+        # 人话在前，Docker 原文收在“详情”后面。
+        self.assertLess(result.stderr.index("详情："), result.stderr.index("manifest unknown"))
+
+        # 给的是 digest 时没有渠道可说。
+        digest = "sha256:" + "f" * 64
+        result = self.pull_failure(
+            "Error response from daemon: manifest unknown",
+            WONTON_CORE_IMAGE="ghcr.io/wontonapp/wonton-core@" + digest,
+        )
+        self.assertNotIn("渠道", result.stderr.splitlines()[0])
+
+    def test_a_denied_pull_says_the_image_may_not_be_public(self):
+        result = self.pull_failure(
+            'Error response from daemon: Head "https://ghcr.io/v2/wontonapp/wonton-core/manifests/stable": unauthorized'
+        )
+
+        self.assertIn("可能还没公开", result.stderr)
+        self.assertIn("WONTON_CORE_IMAGE", result.stderr)
+        self.assertNotIn("配代理", result.stderr)
+        self.assertLess(result.stderr.index("详情："), result.stderr.index("unauthorized"))
+
+    def test_a_registry_outage_keeps_the_proxy_help(self):
+        result = self.pull_failure(
+            'Error response from daemon: Get "https://ghcr.io/v2/": dial tcp 192.0.2.10:443: i/o timeout'
+        )
+
+        self.assertIn("连不上 Docker 镜像仓库", result.stderr)
+        self.assertIn("proxy.conf", result.stderr)
+
+    def test_an_unknown_pull_error_shows_the_docker_output_as_details(self):
+        result = self.pull_failure("Error response from daemon: unexpected EOF")
+
+        self.assertIn("拉不到镜像", result.stderr)
+        self.assertLess(result.stderr.index("详情："), result.stderr.index("unexpected EOF"))
 
 
 if __name__ == "__main__":

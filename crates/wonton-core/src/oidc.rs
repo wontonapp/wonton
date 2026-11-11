@@ -352,10 +352,11 @@ pub fn id_token_claims(
             claims.insert("locale".into(), json!(locale));
         }
     }
-    if has("email")
-        && let Some(email) = &owner.email
-    {
-        claims.insert("email".into(), json!(email));
+    if has("email") {
+        claims.insert(
+            "email".into(),
+            json!(crate::owner::internal_email(&owner.username)),
+        );
         claims.insert("email_verified".into(), json!(true));
     }
     if has("groups") {
@@ -389,15 +390,25 @@ mod tests {
         let granted = granted_scopes(&requested);
         assert_eq!(granted, ["openid", "profile", "email", "groups"]);
         let claims = id_token_claims(&owner, Role::Owner, &granted, &[], None);
-        assert_eq!(claims["email"], "owner@wonton.localhost");
+        assert_eq!(claims["email"], "owner@wonton.internal");
+        assert_eq!(claims["email_verified"], true);
         assert_eq!(claims["groups"], serde_json::json!(["owner"]));
         assert_eq!(claims["name"], "云吞");
+        let changed = Owner {
+            email: Some("changed@example.com".into()),
+            ..owner.clone()
+        };
+        assert_eq!(
+            id_token_claims(&changed, Role::Owner, &granted, &[], None),
+            claims
+        );
         let no_email = Owner {
             email: None,
             ..owner
         };
         let claims = id_token_claims(&no_email, Role::Owner, &granted, &[], None);
-        assert!(claims.get("email").is_none() && claims.get("email_verified").is_none());
+        assert_eq!(claims["email"], "owner@wonton.internal");
+        assert_eq!(claims["email_verified"], true);
         let member = Owner {
             username: "alice".into(),
             display_name: "爱丽丝".into(),
@@ -406,6 +417,15 @@ mod tests {
         let claims = id_token_claims(&member, Role::Member, &granted, &[], None);
         assert_eq!(claims["groups"], serde_json::json!(["member"]));
         assert_eq!(claims["preferred_username"], "alice");
+        assert_eq!(claims["email"], "alice@wonton.internal");
+        assert_eq!(claims["email_verified"], true);
+        let profile: Vec<String> = ["openid", "profile"].map(String::from).into();
+        let claims = id_token_claims(&member, Role::Member, &profile, &[], None);
+        assert!(claims.get("email").is_none() && claims.get("email_verified").is_none());
+        let email: Vec<String> = ["openid", "email"].map(String::from).into();
+        let claims = id_token_claims(&member, Role::Member, &email, &[], None);
+        assert_eq!(claims["email"], "alice@wonton.internal");
+        assert!(claims.get("name").is_none() && claims.get("preferred_username").is_none());
     }
 
     #[test]

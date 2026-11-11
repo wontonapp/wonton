@@ -163,7 +163,7 @@ read -r code final redirects <<<"$reply"
 expect "落在 Grafana 首页（经过 $redirects 次跳转：会话交接 + OIDC）" "$code $final" "200 $grafana_url/"
 user="$(b "$grafana_url/api/user")"
 expect "Grafana 里的用户是主人" "$(json login <<<"$user")" owner
-expect "邮箱来自核心签发的 ID 令牌" "$(json email <<<"$user")" "owner@$WONTON_DEV_DOMAIN"
+expect "邮箱来自核心签发的 ID 令牌" "$(json email <<<"$user")" "owner@wonton.internal"
 expect "按 groups 声明映射为管理员" "$(b "$grafana_url/api/user/orgs" | json 0.role)" Admin
 
 step "模型网关（models）：核心预装 magpie，给使用方签发只属于它的凭据，经 models.wonton.internal 转发"
@@ -201,7 +201,8 @@ expect "默认模型由网关决定" "$(client_env MODEL)" group/wonton-default
 in_client() { docker exec "$model_client" curl -sS -o /dev/null -w '%{http_code}' "$@" "$(client_env BASE)/models"; }
 expect "凭据能用" "$(in_client -H "Authorization: Bearer $model_key")" 200
 expect "不带凭据被网关拒绝" "$(in_client)" 401
-gateway_keys() { docker exec "$magpie" magpie gateway-key list | awk 'NR > 1 { print $2 }'; }
+# 网关里的使用方凭据。健康探测凭据（`<网关>/health`）是核心自己的，不算使用方。
+gateway_keys() { docker exec "$magpie" magpie gateway-key list | awk 'NR > 1 && $2 !~ /\/health$/ { print $2 }'; }
 # 核心同时在后台装默认 Agent，网关里可能已经有 Hermes 的凭据，这里只看使用方的。
 expect "网关里的凭据以使用方命名" "$(gateway_keys | grep -cx app.model-client)" 1
 expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
@@ -359,6 +360,16 @@ probe="$(docker run --rm --network "container:$core" "$echo_image" probe --homes
   --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" --room "$home_room" \
   --bot "$bot_user" 2>&1)" || fail "加密收发失败：$probe"
 ok "经隧道发出加密消息，收到 Bot 的加密回声"
+# `/delay` 到点才回：记时间，早回就是没延迟。
+jwt="$(t -X POST "$core_url/_wonton/matrix/login-token" | json token)"
+started="$(date +%s)"
+delay_probe="$(docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
+  --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" --room "$home_room" --bot "$bot_user" \
+  --reply any --match "回声：等一会儿" --text "/delay 5 等一会儿" --wait 30 2>&1)" ||
+  fail "延迟回声失败：$delay_probe"
+elapsed=$(( $(date +%s) - started ))
+((elapsed >= 5)) || fail "回声没有延迟，${elapsed} 秒就回了"
+ok "/delay 5 的回声 ${elapsed} 秒后才到"
 report="$("$dev" uninstall agent.echo)"
 expect "卸载时吊销 Bot 的设备" "$(json bots.0.devices_removed <<<"$report") $(json bots.0.deactivated <<<"$report")" "1 false"
 expect "Bot 的令牌立即失效" \
@@ -420,19 +431,27 @@ hermes_reply() {
 print(sys.stdin.read().partition("第 1 轮：收到加密的回复：")[2].strip())' <"$1"
 }
 model_usage() { docker exec "$magpie" magpie usage --last 15m --csv; }
-expect_model_reply() {
-  local usage
-  usage="$(model_usage)" || fail "读取 magpie 用量失败"
-  # 同一轮可调模型多次；逐轮取增量，不能拿第一轮的成功记录替第二轮作证。
+# 这一轮有没有记上一条成功的调用：$1 是第一轮开始前的用量。空字段或还没写下的行会让它先失败。
+round_used() {
   python3 -c 'import csv, io, sys
 def hermes_rows(raw):
     return [r for r in csv.DictReader(io.StringIO(raw))
             if r["caller_key_name"] == "com.nousresearch.hermes/default"]
 before = {r["request_id"] for r in hermes_rows(sys.argv[1]) if r["request_id"]}
 rows = [r for r in hermes_rows(sys.stdin.read()) if r["request_id"] not in before]
-valid = any(r["request_id"] and 200 <= int(r["status"]) < 300
-            and r["error"] == "false" and int(r["output_tokens"]) > 0 for r in rows)
-sys.exit(not valid)' "$2" <<<"$usage" || fail "模型没有正常回答：$(hermes_reply "$1")"
+valid = any(r["request_id"] and 200 <= int(r["status"] or 0) < 300
+            and r["error"] == "false" and int(r["output_tokens"] or 0) > 0 for r in rows)
+sys.exit(not valid)' "$1" <<<"$(model_usage)"
+}
+expect_model_reply() {
+  local before="$2"
+  # 同一轮可调模型多次；逐轮取增量，不能拿第一轮的成功记录替第二轮作证。
+  # 用量在生成结束时才记下，回答可能先到（流式），等它，最多 30 秒。
+  for _ in $(seq 30); do
+    round_used "$before" && break
+    sleep 1
+  done
+  round_used "$before" || fail "模型没有正常回答：$(hermes_reply "$1")"
   ok "第 $3 轮模型调用成功且有输出 token，用量记在 Hermes 的凭据名下"
 }
 expect_hermes_memory() {
@@ -466,9 +485,16 @@ host_model_key_id="$(magpie gateway-key list 2>/dev/null | awk -v n="$host_model
 magpie gateway-key models "$host_model_key_id" "$model" >/dev/null || fail "一次性凭据限定模型失败"
 
 # 只加 provider，不建路由组：默认路由组由 magpie 插件建好，成员跟着 provider 变。
+# 模型名去掉上游的 provider 前缀（`zcode/GLM-5.3-Flash` → `GLM-5.3-Flash`）：带斜杠时插件把它当成别的
+# provider 的模型，`models=` 挑不中，模型目录和默认组都是空的（magpie 0.1.1327 实测）。
 docker exec -e no_proxy="$model_no_proxy" -e NO_PROXY="$model_no_proxy" "$magpie" \
   magpie provider add upstream url="$model_url" key="$model_key" \
-  models="$model" >/dev/null || fail "magpie 连不上开发机上的 magpie（$model_url）"
+  models="${model##*/}" >/dev/null || fail "magpie 连不上开发机上的 magpie（$model_url）"
+# 默认组由插件里的 default-model 服务每两秒按 provider 对一次，这里等它，和上面等 Navidrome 扫描一样。
+for _ in $(seq 15); do
+  [[ " $(hermes_models) " == *" group/wonton-default "* ]] && break
+  sleep 1
+done
 [[ " $(hermes_models) " == *" group/wonton-default "* ]] ||
   fail "加了 provider，默认路由组应当可用：$(hermes_models)"
 ok "加了 provider，默认路由组自动有了它的模型，不用手动建组"

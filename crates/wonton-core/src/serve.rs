@@ -33,7 +33,7 @@ pub(super) fn open_friends(
 
 pub(super) async fn run_gateway(
     cfg: &Config,
-    listener: TcpListener,
+    listener: wonton_core::entry_runtime::MainListener,
     tunnel: Tunnel,
     (peers, federation): (Option<Arc<peers::Peers>>, Option<FederationProtocol>),
     gateway: Arc<Gateway>,
@@ -41,6 +41,7 @@ pub(super) async fn run_gateway(
 ) -> anyhow::Result<()> {
     let push_listener = push_listener::bind(cfg.push_listen.as_deref()).await?;
     let app = gateway::router(gateway.clone());
+    let public_entry = wonton_core::entry_runtime::bind().await?;
     let entry = spawn_tunnel(&tunnel, app.clone(), peers, federation, &manager);
     tracing::info!(
         listen = %cfg.listen,
@@ -50,7 +51,8 @@ pub(super) async fn run_gateway(
     let served = tokio::spawn(push_listener::serve(
         listener,
         app,
-        push_listener.map(|listener| (listener, gateway::push_router(gateway))),
+        push_listener.map(|listener| (listener, gateway::push_router(gateway.clone()))),
+        public_entry.map(|listener| (listener, wonton_core::entry_runtime::router(gateway))),
     ));
     // 网关开始接了才核对插件：核对时渲染变了会重建容器，里面的一次性服务要经核心的地址访问核心。
     start_restored_plugins(cfg, &manager, upgrades_after_serve).await?;
@@ -83,4 +85,5 @@ pub(super) fn spawn_plugin_monitors(manager: &Arc<PluginManager>) {
     manager.spawn_upgrade_checks();
     manager.spawn_oom_watch();
     manager.spawn_container_watch();
+    manager.spawn_mailpit_watch();
 }

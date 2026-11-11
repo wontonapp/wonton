@@ -12,10 +12,10 @@ use wonton_matrix::{
     SendStatus, TimelineEntry, UserId, VectorDiff, Verification,
 };
 use wonton_protocol::{
-    ChatFailure, ChatLayout, CoreError, DeviceVerification, FileLinks, ImageContent, MediaHandle,
-    MessageContent, MessageSummary, QuotedMessage, RecoveryStatus, RoomMembership, RoomPreview,
-    RoomRow, SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
-    extract_file_links,
+    ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus, FileLinks,
+    ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary, QuotedMessage,
+    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SendState, TimelineContent, TimelineDiff,
+    TimelineItem, TimelineMessage, extract_file_links,
 };
 
 use crate::l10n::{CATALOG, language};
@@ -32,6 +32,26 @@ pub(crate) fn sort_rooms(rows: &mut [RoomRow]) {
             .then_with(|| a.name.cmp(&b.name))
             .then_with(|| a.room_id.cmp(&b.room_id))
     });
+}
+
+/// 时间线里有解不开的消息时给主人的下一步。本设备已经能拿到密钥（恢复完成、正在恢复）或者账号里没有别的路时为空。
+///
+/// 账号设过备份就输恢复密钥：备份带得回旧消息，别的设备确认不一定有。账号没有备份时，只有另一台已验证的设备能把
+/// 密钥直接发过来。
+pub(crate) fn key_notice(
+    encryption: &EncryptionStatus,
+    has_undecryptable: bool,
+) -> Option<KeyNotice> {
+    if !has_undecryptable {
+        return None;
+    }
+    match encryption.recovery {
+        RecoveryStatus::Incomplete => Some(KeyNotice::EnterRecoveryKey),
+        RecoveryStatus::Disabled if encryption.can_verify_with_other_device => {
+            Some(KeyNotice::VerifyWithOtherDevice)
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn room_row(room: RoomInfo, core: &UserId, layout: ChatLayout) -> RoomRow {
@@ -303,6 +323,56 @@ mod tests {
     use super::*;
     use wonton_matrix::UploadProgress;
     use wonton_protocol::{FileId, RichLinkKind};
+
+    fn encryption(
+        recovery: RecoveryStatus,
+        can_verify_with_other_device: bool,
+    ) -> EncryptionStatus {
+        EncryptionStatus {
+            verification: DeviceVerification::Unverified,
+            recovery,
+            recovery_key: None,
+            backup_reminder: None,
+            can_verify_with_other_device,
+            verification_flow: None,
+        }
+    }
+
+    /// 行为：解不开的消息只在账号里有现成的路时给入口；设过备份走恢复密钥，没设过才让别的设备确认。
+    #[test]
+    fn the_key_notice_offers_the_way_the_account_actually_has() {
+        for (recovery, can_verify, expected) in [
+            (
+                RecoveryStatus::Incomplete,
+                true,
+                Some(KeyNotice::EnterRecoveryKey),
+            ),
+            (
+                RecoveryStatus::Incomplete,
+                false,
+                Some(KeyNotice::EnterRecoveryKey),
+            ),
+            (
+                RecoveryStatus::Disabled,
+                true,
+                Some(KeyNotice::VerifyWithOtherDevice),
+            ),
+            (RecoveryStatus::Disabled, false, None),
+            (RecoveryStatus::Enabled, true, None),
+            (RecoveryStatus::InProgress, true, None),
+            (RecoveryStatus::Unknown, true, None),
+        ] {
+            assert_eq!(
+                key_notice(&encryption(recovery, can_verify), true),
+                expected,
+                "{recovery:?} {can_verify}"
+            );
+        }
+        assert_eq!(
+            key_notice(&encryption(RecoveryStatus::Incomplete, true), false),
+            None
+        );
+    }
 
     #[test]
     fn timeline_exposes_upload_fractions_without_hiding_regressions() {

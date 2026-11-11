@@ -13,6 +13,8 @@ mod agent_permission;
 mod appearance;
 mod bot_commands;
 mod bot_profile;
+mod bot_web;
+mod bot_web_registration;
 mod chat;
 mod chat_layout;
 mod confirmation;
@@ -70,6 +72,10 @@ pub use bot_profile::{
     MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE, MAX_BOT_NAME_CHARS, StateAvatar,
     StateAvatars, bot_plugin_access_path, bot_profile_path, check_bot_name,
 };
+pub use bot_web::{
+    BOT_WEB_LABEL_PREFIX, BotWebFailure, BotWebPage, BotWebView, bot_web_label, bot_web_path,
+};
+pub use bot_web_registration::{BotWebConflict, bot_web_registration};
 pub use chat::{
     BackupReminder, BotInstallRow, BotInstallState, ChatAccount, ChatContact, ChatFailure,
     ChatProblem, ChatSync, ChatViewModel, DeviceVerification, EncryptionStatus, ImageThumbnail,
@@ -213,9 +219,10 @@ pub use tabs::{
     TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,
 };
 pub use timeline::{
-    BackPagination, ImageContent, MatrixTarget, MediaHandle, MessageAction, MessageContent,
-    RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan, SendState, TimelineContent,
-    TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
+    BackPagination, ImageContent, KeyNotice, MatrixTarget, MediaHandle, MessageAction,
+    MessageContent, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan, SendState,
+    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll, TimelineUpdate,
+    TimelineViewport,
 };
 pub use verification::{
     VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,

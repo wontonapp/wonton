@@ -20,6 +20,7 @@ struct MainView: View {
     @EnvironmentObject private var orientation: FullscreenOrientation
     @State var onboardingGateway: TabChoice?
     @State var showsSidebar = false
+    @State var showsPanel = false
     @State var storeRequest = 0
     @State private var addingReturn: (serverID: String?, settingsModal: Bool)?
 
@@ -37,6 +38,7 @@ struct MainView: View {
     var body: some View {
         @Bindable var navigation = navigation
         return rootContent
+        .onPreferenceChange(ChatPanelOpenKey.self) { showsPanel = $0 }
         .overlay { if chat.isOpeningChat { ProgressView() } }
         .modifier(ChatDialogs(model: chat))
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
@@ -48,7 +50,8 @@ struct MainView: View {
             }, content: { choice in
                 if let page = onboardingGatewayPage {
                     TabPageView(tabs: tabs, home: home, plugins: plugins, chat: chat, appearance: appearance,
-                                tab: choice.tab, page: page, isOverlay: true, draft: receiveDraft, open: open,
+                                tab: choice.tab, placed: .bar(tab: choice.tab), store: tabs.webViews,
+                                page: page, isOverlay: true, draft: receiveDraft, open: open,
                                 pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom, close: {
                         tabs.send(.closeTabOverlay)
                         onboardingGateway = nil
@@ -61,7 +64,7 @@ struct MainView: View {
                         home: home, plugins: plugins, isModal: true)
         }
         .fullScreenCover(isPresented: $showsTabSettings, onDismiss: presentPendingSettings) {
-            NavigationStack { TabSettingsView(plugins: plugins).wontonModalScreen(TabText.bottomBar) }
+            NavigationStack { TabSettingsView(plugins: plugins).wontonModalScreen(TabText.bottomPanel) }
         }
         .wontonDialog(problem: tabs.rejection, isPresented: Binding(
             get: { tabs.rejection != nil }, set: { if !$0 { tabs.rejection = nil } }
@@ -85,6 +88,11 @@ struct MainView: View {
         }
         .environment(tabs)
         .environment(onboarding)
+        .environment(\.panelDeps, PanelDependencies(
+            tabs: tabs, home: home, plugins: plugins, chat: chat, appearance: appearance,
+            draft: receiveDraft, open: open, pendingCards: chat.viewModel.pendingConfirmations,
+            openCardRoom: openCardRoom
+        ))
         .onChange(of: onboarding.viewModel.step) { _, step in
             if step == .profile { showsSettings = false; showsTabSettings = false }
         }
@@ -101,7 +109,7 @@ struct MainView: View {
         .onChange(of: onboarding.viewModel.step) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .onChange(of: home.servers) { old, new in updatePairingPresentation(from: old, to: new) }
         .environment(plugins)
-        .environment(\.wontonBarStatus, WontonBarStatus(home: home.viewModel) {
+        .environment(\.wontonBarStatus, WontonBarStatus(home: home.viewModel, recovered: home.connectionRecovered) {
             ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showServerRoute)
         })
     }
@@ -123,7 +131,18 @@ struct MainView: View {
 
     @ViewBuilder private func page(_ item: TabItem) -> some View {
         switch item.tab {
-        case .chat: ChatListView(model: chat, plugins: plugins)
+        case .chat:
+            ChatPanelHost(
+                tabs: tabs, home: home, plugins: plugins, chat: chat, appearance: appearance,
+                scope: .main, edge: .top, items: tabs.viewModel.panel, selected: tabs.viewModel.panelSelected,
+                blocked: false, draft: receiveDraft, open: open,
+                pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
+                select: { tabs.send(.selectPanelPage(scope: .main, tab: $0)) },
+                remove: { tabs.send(.removePanelPage(scope: .main, tab: $0)) },
+                move: { tabs.send(.movePanelPage(scope: .main, tab: $0, index: UInt32($1))) },
+                pullAnchor: nil,
+                content: { ChatListView(model: chat, plugins: plugins) }
+            )
         case .apps:
             HomeView(
                 model: home, plugins: plugins, chat: chat, settings: settings, open: open,
@@ -135,7 +154,7 @@ struct MainView: View {
         case .settings:
             SettingsTab(model: settings, appearance: appearance, chat: chat, home: home, plugins: plugins,
                         isActive: tabs.viewModel.selected == .settings && !showsSettings)
-        case .plugin, .pluginPath, .url, .sharedApp:
+        case .plugin, .pluginPath, .bot, .url, .sharedApp:
             if visited.contains(item.tab), let page = item.page { pluginPage(item.tab, page: page, overlay: false) }
         }
     }
@@ -154,7 +173,8 @@ struct MainView: View {
     private func pluginPage(_ tab: TabRef, page: TabPage, overlay: Bool) -> some View {
         TabPageView(
             tabs: tabs, home: home, plugins: plugins, chat: chat, appearance: appearance,
-            tab: tab, page: page, isOverlay: overlay, draft: receiveDraft, open: open,
+            tab: tab, placed: .bar(tab: tab), store: tabs.webViews,
+            page: page, isOverlay: overlay, draft: receiveDraft, open: open,
             pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom
         )
         .id(tab)
@@ -188,10 +208,11 @@ struct MainView: View {
         let shown: String?
         if tabs.viewModel.overlay != nil {
             shown = nil
-        } else if case .plugin = tabs.viewModel.selected {
-            shown = nil
         } else {
-            shown = chat.shownRoom(in: nativeTab)
+            shown = switch tabs.viewModel.selected {
+            case .chat, .apps, .settings: chat.shownRoom(in: nativeTab)
+            case .plugin, .pluginPath, .bot, .url, .sharedApp: nil
+            }
         }
         return chat.viewModel.pendingConfirmations.filter { shown != $0.roomId }
     }
@@ -205,7 +226,7 @@ struct MainView: View {
     var nativeTab: AppTab {
         switch tabs.viewModel.selected {
         case .chat: .chat
-        case .apps, .plugin, .pluginPath, .url, .sharedApp: .apps
+        case .apps, .plugin, .pluginPath, .bot, .url, .sharedApp: .apps
         case .settings: .settings
         }
     }

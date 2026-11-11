@@ -22,7 +22,9 @@ D 禁改都没选）。要求：用现成的开源组件收信，不自己写 SM
   （Django、egulias、govalidator、PocketBase、`net/mail`、zod 等）都接受；它们都不查 MX，信只交给配置的 SMTP 服务器。
   地址必须带点：单段的 `alice@internal` 会被 Django、Nextcloud、Vikunja、PocketBase 拒掉。
 - 插件自己的发信地址是 `<插件 ID>@plugins.wonton.internal`，和人的地址分开，插件 ID 和用户名重名也不撞。
-- 好友（ADR-0051）在这台服务器上没有内部地址。
+- 好友（ADR-0051）也有内部地址 `<好友的本机用户名>@wonton.internal`，和主人、家人在同一个命名空间，用户名不会撞。
+  它只用来认人（OIDC 的 `email`、`{email}`），不收信：收件人白名单里没有好友，发给好友的信在 RCPT 阶段回 550。
+  好友移除后地址不回收、不分给别人，免得新人继承旧人在应用里的账号。
 
 ### 身份的取值
 
@@ -42,13 +44,18 @@ D 禁改都没选）。要求：用现成的开源组件收信，不自己写 SM
 
 - 核心组件 `mailpit`（MIT，Go，镜像约 15 MB，`axllent/mailpit` 固定版本），和 tusd 一样只在核心的私有网络里，
   另外接入申请了 `notify` 的插件网络，在那里的别名是 `smtp.wonton.internal`，SMTP 端口 25。
-- **不认证、不加 TLS。** Go 写的应用（Gitea、Vikunja、Memos）在明文连接上不肯做 PLAIN 认证，要认证就得给每个应用配
+- **不要求认证、不加 TLS。** Go 写的应用（Gitea、Vikunja、Memos）在明文连接上不肯做 PLAIN 认证，要认证就得给每个应用配
   证书信任，Memos 还关不掉证书校验。插件网络本来就隔离，核心认插件一直按来源网段（ADR-0047，`notify`、`mcp` 都是），
   这里照旧：Mailpit 把来源 IP 写进最上面一行 `Received` 头，核心按网段认出是哪个插件。插件伪造的 `Received` 只能
   写在它下面，核心只看最上面一行。`From` 头不作为来源依据。
+- **宣告 AUTH，但接受任何凭据**（`MP_SMTP_AUTH_ACCEPT_ANY`、`MP_SMTP_AUTH_ALLOW_INSECURE`）：给“服务器不宣告 AUTH 就
+  发不出信”的应用用，填什么都收。但 **Go 应用反过来要留空**：`net/smtp` 的 `PlainAuth` 在没 TLS 且主机不是 localhost 时
+  直接报 `unencrypted connection`（Go 1.27.3 `net/smtp/auth.go` 实测，`smtp.wonton.internal` 报错，`localhost`、
+  `127.0.0.1` 才放行），填了反而发不出去。仍然不配证书：一配 Mailpit 就宣告 STARTTLS，Go 客户端校验自签证书会失败，
+  换个地方卡住。认插件只看网段，不看认证用的用户名。
 - **收件人在 RCPT 阶段就挡**：`MP_SMTP_ALLOWED_RECIPIENTS` 由核心按当前的人生成，只放
-  `^(alice|bob|…)@wonton\.internal$`。外部地址、`plugins.wonton.internal`、不存在或已移除的人都回 550，应用当场
-  报发送失败（失败即停，不悄悄丢）。家人加入、移除时核心改写这一项并重启 Mailpit（几秒；信存在卷上的 SQLite 里，
+  `^(alice|bob|…)@wonton\.internal$`。外部地址、`plugins.wonton.internal`、好友、不存在或已移除的人都回 550，应用当场
+  报发送失败（失败即停，不悄悄丢；这几种在 SMTP 阶段是同一句 550，应用分不出是哪种）。家人加入、移除时核心改写这一项并重启 Mailpit（几秒；信存在卷上的 SQLite 里，
   `MP_DATABASE`，重启不丢）。
 - 网页和 API 用 `MP_UI_AUTH_FILE` 的密码保护，密码由核心生成、只有核心拿着；插件网络里能连到这个端口，但读不了别的
   插件发的信（比如找回密码的链接）。
@@ -58,8 +65,10 @@ D 禁改都没选）。要求：用现成的开源组件收信，不自己写 SM
 
 - 核心订阅 Mailpit 的 websocket（新信事件），启动时和断线重连后再按 API 列一遍未处理的信，补上漏掉的。每封信投递成功
   才从 Mailpit 删掉；聊天服务不可用时留着，恢复后再投。不用 webhook：它默认一秒最多发一次，失败会不会重试没核实。
-- **投给收件人本人的“Wonton”私聊**（每人一个，ADR-0045），不是 Bot 房间，也不是主人的私聊。一封信有几个内部
-  收件人（To、Cc、Bcc 里的）就各投一份；只看 Mailpit 放行的信封收件人，不按 To 头猜。
+- **投给收件人本人的“Wonton”私聊**（每人一个，ADR-0045），不是 Bot 房间，也不是主人的私聊。取 Mailpit API 的
+  To、Cc、Bcc 并集，只保留家里现有的人，每封信每人只投一份。Mailpit 会把信封里有、头里没有的人补进 Bcc。
+  RCPT 已允许插件发给家里所有人，头里多列一个人没有增加插件的权限；代价是头里列了、信封里没有的人也会收到，
+  应用逐个发送同一封群发信时可能重复。Mailpit v1.33.0 不单独保存可查询的信封收件人，不改上游来增加这套记录。
 - 消息由核心账号发，`m.text`（照常推送：信是发给这个人的，找回密码时人正等着），通知类别和插件通知同一个
   `plugin_notice`（ADR-0047），主人能在系统设置里一起关。结构化字段 `app.wonton.plugin_mail`：插件 ID、插件名、
   主题、正文、附件列表。纯文本 `body` 是“插件名：主题”加正文，给别的客户端和不认识这个字段的旧 App 看。
@@ -80,7 +89,7 @@ D 禁改都没选）。要求：用现成的开源组件收信，不自己写 SM
 | `WONTON_SMTP_PORT` | `25` |
 | `WONTON_MAIL_FROM` | `<插件 ID>@plugins.wonton.internal` |
 
-规范写明：不配用户名和密码、不开 TLS / STARTTLS。各应用的写法（调研里核实过）：Paperless 的 `PAPERLESS_EMAIL_HOST`
+规范写明：不配用户名和密码、不开 TLS / STARTTLS；非要填凭据的应用随便填，服务器都接受，Go 应用留空。各应用的写法（调研里核实过）：Paperless 的 `PAPERLESS_EMAIL_HOST`
 不能是 `localhost`，用别名正好；Gitea `PROTOCOL=smtp`、不填 `USER`；Vikunja 不填用户名；Memos 不填用户名；
 Nextcloud `SMTP_SECURE` 留空（Mailpit 不提供 STARTTLS，不会被自动升级）；Audiobookshelf 端口改 25、关 secure。
 

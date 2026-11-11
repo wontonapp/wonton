@@ -5,6 +5,8 @@
 运行，和产品一致：系统服务里只有它挂载 Docker socket，自己加入每个插件网络；浏览器只经核心网关访问插件网页，App 也只经
 核心网关访问 Tuwunel。
 
+Mailpit 与正式部署使用同一个固定摘要的官方镜像，等核心健康、生成配置后启动。SMTP 25 和 API 8025 不发布到宿主；仅授权了 `notify` 的插件网络有 `smtp.wonton.internal` 别名。配置、API 私密密码和 SQLite 位于 `<数据目录>/core/mailpit/`；家人加入或移除会重启 Mailpit 载入名单，保留邮件数据（ADR-0056）。
+
 ```bash
 deploy/dev/core/dev.sh up                    # 构建核心镜像，启动核心、Hydra 和 Tuwunel，等到健康
 deploy/dev/core/dev.sh install plugins/examples/grafana   # 预览权限，确认后安装
@@ -157,6 +159,30 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 三种错误的原因各不相同。GitHub 连不上时 export `https_proxy`；「错的 key」和「断网」两个用例要经出口容器到真实
 上游，设 `WONTON_SMOKE_EGRESS_PROXY=http://host.docker.internal:<宿主代理端口>`，不设时这两个用例跳过。
 
+内部邮箱有单独的一条（ADR-0056），**在目标主机的本机 Docker 上运行**，由调用方申请并释放栈名额：
+
+```bash
+(
+  export WONTON_DEV_PROJECT="wonton-mailbox-$(date +%s)-$$"
+  slot="$WONTON_DEV_PROJECT"
+  trap '"$HOME/wonton-dev/stack-slot.sh" release "$slot"' EXIT
+  "$HOME/wonton-dev/stack-slot.sh" acquire --project "$WONTON_DEV_PROJECT" "$slot" -- \
+    deploy/dev/core/smoke-mailbox.sh
+)
+```
+
+需要 Bash、Docker/buildx、Python 3 和 OpenSSL 3；端口默认 18561/18563，可用 `WONTON_DEV_PORT` /
+`WONTON_DEV_TUNNEL_PORT` 改。脚本构建本检出的核心，以临时 Compose override 关闭系统/默认插件（不改正式配置），
+安装上游官方 Python 镜像的最小 `notify` 插件，不接真实模型、不装 Hermes。验证插件无宿主端口、三项 SMTP 注入、
+服务器宣告 AUTH 但不宣告 STARTTLS、外部/不存在/插件地址在 RCPT 阶段被 550 拒绝、信封独有收件人经 Mailpit 补入 Bcc、
+主人自己的 Wonton 私聊收到
+`app.wonton.plugin_mail`；短 HTML 转文本保留链接，长 HTML 截到 4000 字并附原文，小附件和原文都从 Matrix 下载核对，
+另有一封随便填凭据、经 AUTH LOGIN 发出的信也照常投进私聊。
+还会停掉本栈 Tuwunel，观察 Mailpit 至少 40 秒不删信，再恢复并等到投递后队列清空。身份认证用本次临时栈新生成的
+Ed25519 密钥签一次主人 JWT，直接登录真实 Tuwunel；不覆盖设备配对/隧道（由主冒烟覆盖），也不注入家人记录来假造加入，
+家人加入/移除流程不在此脚本范围。凭据只在私有临时文件和本栈容器内使用，不进命令参数或输出；退出 trap 清本栈
+容器、网络、卷和临时目录（不保留现场、不 prune）。
+
 ```bash
 deploy/dev/core/smoke.sh        # 本机 Docker；要设 WONTON_SMOKE_MODEL（见下）
 DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
@@ -182,8 +208,9 @@ DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 `models`、`tools` 的插件进不了对应的内部地址；
 核心重启后插件恢复，卸掉的 Hermes 不会被装回来；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经
-`WONTON_SMOKE_MODEL` 传入（magpie 里一个能对话的模型），冒烟里的 magpie 经 `host.docker.internal:3425` 用它
-（同 `deploy/dev/agent`），不读取开发机 magpie 的配置和密钥。
+`WONTON_SMOKE_MODEL` 传入（magpie 里一个能对话的模型；`/v1/models` 里的 id 带 provider 前缀，冒烟在交给
+插件前会去掉了它），冒烟里的 magpie 经 `host.docker.internal:3425` 用它（同 `deploy/dev/agent`），
+不读取开发机 magpie 的配置和密钥。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例），传完删掉本机的 amd64 副本。核心镜像的 Rust、
 Debian 基础镜像从 ECR Public 拉（见 Dockerfile），不用传：

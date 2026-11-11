@@ -465,6 +465,8 @@ async fn oidc_claims_come_from_the_current_person() {
     let claims = claims_of(&accepted, 0);
     assert_eq!(claims["preferred_username"], "mia");
     assert_eq!(claims["groups"], json!(["member"]));
+    assert_eq!(claims["email"], "mia@wonton.internal");
+    assert_eq!(claims["email_verified"], true);
 
     // 主人的声明照旧（主人令牌登录的核心会话）。假 Hydra 对这个 challenge 返回主人的 subject。
     let core = h.login(TOKEN).await.cookie(super::CORE_COOKIE);
@@ -482,6 +484,8 @@ async fn oidc_claims_come_from_the_current_person() {
     let claims = claims_of(&accepted, 1);
     assert_eq!(claims["preferred_username"], "owner");
     assert_eq!(claims["groups"], json!(["owner"]));
+    assert_eq!(claims["email"], "owner@wonton.internal");
+    assert_eq!(claims["email_verified"], true);
 }
 
 fn claims_of(accepted: &Mutex<Vec<Value>>, nth: usize) -> Value {

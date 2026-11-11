@@ -14,6 +14,9 @@ pub const PLUGIN_MODELS_HOST: &str = "models.wonton.internal";
 /// 插件经核心在插件网络里的这个别名发通知（`WONTON_NOTIFY_URL`，ADR-0047）。
 pub const PLUGIN_NOTIFY_HOST: &str = "notify.wonton.internal";
 
+/// 申请了 `notify` 的插件经这个 Mailpit 别名向家里人发信（ADR-0056）。
+pub const PLUGIN_SMTP_HOST: &str = "smtp.wonton.internal";
+
 /// Tuwunel 经核心私有网络上的这个别名直连推送专用监听（ADR-0003 的“接口：推送”）。
 pub const PUSH_GATEWAY_HOST: &str = "push.wonton.internal";
 

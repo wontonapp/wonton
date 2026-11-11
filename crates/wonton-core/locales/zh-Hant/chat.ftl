@@ -138,3 +138,8 @@ chat-help-refresh-needs-core = 有新的說明文件，但伺服器要更新到 
 chat-help-docs-age = { $problem }。這是 { $days } 天前的文件
 chat-help-topic-missing = 沒有主題 { $topic }。可選的主題：{ $topics }
 chat-help-page-needs-core = 這一頁講的功能要伺服器更新到 { $required } 以上（這台是 { $core }）：先更新伺服器
+
+chat-mail-convert-failed = 這封信用 HTML 寫成，內文沒能轉成文字，原文已另存為 message.html 附件。
+chat-mail-unknown-source = 收到一封來源不明或沒有寄信權限的應用程式郵件，未投遞給任何人。
+chat-mail-recipients-failed = 無法更新應用程式郵件的收件人：{ $error }。家人變動或伺服器重新啟動時會再試。
+chat-notify-rate-limited = { $plugin } 傳送通知和郵件太頻繁，已暫停，約 { $seconds } 秒後自動恢復。

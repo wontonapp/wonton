@@ -23,7 +23,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, bail};
-use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 use wonton_core::config::Config;
 mod serve;
@@ -149,7 +148,10 @@ fn extra_protocols(
 }
 
 mod federation_addrs;
+mod init_command;
 mod lifecycle_commands;
+mod mailbox_startup;
+use mailbox_startup::{open_mailpit, start_mailpit};
 mod pair_command;
 mod plugin_command;
 mod push_listener;
@@ -190,7 +192,10 @@ async fn run() -> ExitCode {
         None | Some("serve") => serve().await,
         Some("healthcheck") => lifecycle_commands::healthcheck().await,
         Some("pair") => pair_command::run(std::env::args().skip(2).collect()).await,
-        Some("init") => lifecycle_commands::init(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("init") => init_command::init(&std::env::args().skip(2).collect::<Vec<_>>()).await,
+        Some("federation-block") => {
+            init_command::federation_block(&std::env::args().skip(2).collect::<Vec<_>>())
+        }
         Some("updater") => {
             lifecycle_commands::run_updater(&std::env::args().skip(2).collect::<Vec<_>>()).await
         }
@@ -247,14 +252,29 @@ fn spawn_federation_config(
     let Some(names) = peers.as_ref().map(|peers| peers.paired_names()) else {
         return;
     };
+    let (Some(server_name), Some(blocks)) =
+        (cfg.matrix.as_ref().map(|m| m.server_name.clone()), blocks)
+    else {
+        return;
+    };
     FederationConfig::spawn(
         engine.clone(),
         cfg.install_dir.clone(),
         cfg.core_container.clone(),
         notices.clone(),
         names,
+        server_name,
         blocks,
     );
+}
+
+/// 网关监听先建好再装配：核对插件时的一次性服务要连核心，连接先在内核队列等着。
+async fn open_listener(
+    listen: std::net::SocketAddr,
+) -> anyhow::Result<wonton_core::entry_runtime::MainListener> {
+    wonton_core::entry_runtime::MainListener::bind(listen)
+        .await
+        .with_context(|| format!("监听 {listen}"))
 }
 
 fn owner_token(cfg: &Config) -> anyhow::Result<String> {
@@ -276,11 +296,11 @@ async fn serve() -> anyhow::Result<()> {
     tracing::info!(version = %docker.version, arch = %docker.arch, "Docker 已连接");
 
     let owner_token = owner_token(&cfg)?;
+    let members = Arc::new(Members::open(cfg.core_state_dir().join("members.json"))?);
+    let mailpit = open_mailpit(&cfg, &engine, members.clone())?;
     // 监听先建起来：核心启动时核对插件，渲染变了会重建容器，里面的一次性服务（比如登记 OIDC 源）要经核心
     // 的地址访问核心。网关这时还没开始接，连接先进内核的队列等着。
-    let listener = TcpListener::bind(cfg.listen)
-        .await
-        .with_context(|| format!("监听 {}", cfg.listen))?;
+    let listener = open_listener(cfg.listen).await?;
 
     let upgrades = open_upgrades(&cfg, &engine);
     let (http, system_http, hydra, matrix) = serve::open_clients(&cfg, &engine).await?;
@@ -293,15 +313,12 @@ async fn serve() -> anyhow::Result<()> {
         hydra_for_manager,
         &matrix,
         owner.clone(),
+        mailpit.clone(),
     )
     .await?;
 
     let (friends, federation_blocks) = serve::open_friends(&cfg)?;
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
-    let members = Arc::new(
-        Members::open(cfg.core_state_dir().join("members.json"))
-            .context("读取家人记录 members.json")?,
-    );
     gateway::family::spawn_member_event_logger(members.clone());
     let notices = notice_room(&cfg, matrix.as_ref(), owner_languages(&manager));
     // Bot 调用的确认卡片（ADR-0016）。
@@ -326,6 +343,15 @@ async fn serve() -> anyhow::Result<()> {
         open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
+    if let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) {
+        wonton_core::entry_runtime::spawn(
+            dir,
+            &cfg.data_dir,
+            engine.clone(),
+            container.clone(),
+            notices.clone(),
+        )?;
+    }
     let push = open_push(&cfg, &tunnel, &manager)?;
     let upgrades_after_serve = upgrades.clone();
     let gateway = Arc::new(
@@ -339,7 +365,7 @@ async fn serve() -> anyhow::Result<()> {
             http,
             tunnel.clone(),
         )
-        .with_system_http(system_http)
+        .with_system_http(system_http.clone())
         .with_matrix(matrix)
         .with_send_limiter(Arc::new(gateway::SendLimiter::new(cfg.send_limits.clone())))
         .with_people_limiter(Arc::new(gateway::people_limits::PeopleLimiter::new(
@@ -347,7 +373,7 @@ async fn serve() -> anyhow::Result<()> {
         )))
         .with_push(Some(Arc::new(push)))
         .with_mcp(Some(bus.endpoint()))
-        .with_notices(notices)
+        .with_notices(notices.clone())
         .with_files(Some(files))
         .with_audit(Some(audit))
         .with_tusd(cfg.tusd.clone())
@@ -356,6 +382,7 @@ async fn serve() -> anyhow::Result<()> {
         .with_friends(Some(friends))
         .with_federation_blocks(federation_blocks),
     );
+    let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
     serve::run_gateway(
         &cfg,
         listener,
@@ -599,6 +626,7 @@ fn open_files(
 }
 
 /// 装配插件管理器：恢复已安装的插件、起监控、装默认插件（ADR-0025 的预装在后台跑）。
+#[allow(clippy::too_many_arguments)]
 async fn start_plugin_manager(
     cfg: &Config,
     engine: Engine,
@@ -607,6 +635,7 @@ async fn start_plugin_manager(
     hydra: Option<Hydra>,
     matrix: &Option<Arc<Matrix>>,
     owner: Arc<OwnerStore>,
+    mailpit: Option<Arc<wonton_core::mailbox::Component>>,
 ) -> anyhow::Result<(Arc<PluginManager>, Arc<ImageWorker>)> {
     let store = Store::open(cfg.core_state_dir().join("plugins"))?;
     let images = ImageWorker::current_in(store.people_languages(), cfg.username.clone())
@@ -617,17 +646,20 @@ async fn start_plugin_manager(
         tracing::warn!("图片助手没起来，图片处理要等它重起：{e}");
     }
     let images = Arc::new(images);
-    let manager = Arc::new(open_plugin_manager(
-        cfg,
-        engine,
-        store,
-        http.clone(),
-        hydra,
-        matrix.clone(),
-        owner.clone(),
-        &upgrades,
-        images.clone(),
-    ));
+    let manager = Arc::new(
+        open_plugin_manager(
+            cfg,
+            engine,
+            store,
+            http.clone(),
+            hydra,
+            matrix.clone(),
+            owner.clone(),
+            &upgrades,
+            images.clone(),
+        )
+        .with_mailpit(mailpit),
+    );
     manager.spawn_registry_mirror_probe();
     // 启动时把宿主主机名取好缓存起来，装插件、重建容器时不再查 Docker；没取到时下次安装再取。
     manager.host_name().await;

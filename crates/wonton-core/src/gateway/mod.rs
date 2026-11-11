@@ -31,6 +31,7 @@ mod confirmations;
 mod core_routes;
 mod core_upgrade;
 mod devices;
+mod entry;
 pub mod family;
 mod files;
 mod friends;
@@ -44,8 +45,8 @@ mod mcp;
 mod me;
 mod model_providers;
 mod models;
-mod notify;
-mod notify_limit;
+pub(crate) mod notify;
+pub(crate) mod notify_limit;
 mod onboarding;
 mod owner_secrets;
 mod pages;
@@ -63,6 +64,7 @@ mod request_guards;
 mod room_rules;
 pub(crate) mod send_limits;
 
+pub use entry::router as entry_router;
 pub use push::router as push_router;
 pub(crate) use request_guards::{same_origin_path, with_cookie};
 pub use send_limits::{SendLimiter, SendLimits};
@@ -165,7 +167,7 @@ pub struct Gateway {
     /// 通知房间；没接 Matrix 时插件发通知如实报不可用。
     pub notices: Option<Arc<crate::matrix::NoticeRoom>>,
     /// 插件通知的频率限制（ADR-0047），计数只在内存里。
-    notify_limiter: notify_limit::Limiter,
+    pub(crate) notify_limiter: notify_limit::Limiter,
     /// 文件服务；没启用时文件接口如实报不可用。
     pub files: Option<Arc<crate::files::Files>>,
     /// 审计日志（`core/audit.jsonl`，见 [`crate::mcp::audit`]）：总线和文件服务共用一份，
@@ -410,8 +412,8 @@ impl Gateway {
             })
     }
 
-    /// 代登录和 OIDC 声明要的身份值（用户名、显示名、邮箱）：主人来自 `owner.json`，家人来自
-    /// `members.json`。字段结构相同，复用 [`Owner`] 值类型。家人的记录找不到了就报错：不编一个身份出来。
+    /// 从 `owner.json` / `members.json` 取本人资料；插件出口只用用户名派生内部邮箱，不公开真实邮箱。
+    /// 复用 [`Owner`] 值类型；家人的记录找不到就报错，不编一个身份出来。
     pub(crate) fn identity_of(&self, person: &Person) -> Result<Owner, MissingMember> {
         if person.is_owner() {
             return Ok(self.owner.owner());
@@ -664,7 +666,7 @@ fn attach_proxy_credentials(
             )));
         }
     };
-    proxy_sso::attach(headers, auth, &identity, langs).map_err(|e| {
+    proxy_sso::attach(headers, auth, &identity).map_err(|e| {
         Box::new(pages::error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "proxy_credentials",
@@ -697,7 +699,7 @@ mod degraded_webui_tests;
 #[cfg(test)]
 mod egress_api_tests;
 #[cfg(test)]
-mod fakes;
+pub(crate) mod fakes;
 #[cfg(test)]
 mod family_plugin_tests;
 #[cfg(test)]

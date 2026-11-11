@@ -27,9 +27,6 @@ pub enum InstallError {
     Unsupported(String),
     #[error("{0}")]
     UnsupportedRuntime(String),
-    /// 插件要用的资料（如邮箱）还没填（ADR-0030）。
-    #[error("{0}")]
-    OwnerProfileIncomplete(String),
     #[error("{0}")]
     Conflict(String),
     /// 插件要用的网络或卷的名字被别的插件或主人占了（见 [`super::leftovers`]）。对外也是 `conflict`；预装时和
@@ -97,7 +94,6 @@ impl InstallError {
             Self::Invalid(_) => "invalid_input",
             Self::PermissionNotGranted(_) => "permission_denied",
             Self::Unsupported(_) | Self::UnsupportedRuntime(_) => "unsupported",
-            Self::OwnerProfileIncomplete(_) => "owner_profile_incomplete",
             Self::Conflict(_) | Self::NameTaken(_) => "conflict",
             Self::NotInstalled(_) => "not_installed",
             Self::DockerUnavailable(_) => "docker_unavailable",
@@ -146,7 +142,6 @@ impl InstallError {
             Self::PermissionNotGranted(list) => Self::PermissionNotGranted(list),
             Self::Unsupported(m) => Self::Unsupported(add(m)),
             Self::UnsupportedRuntime(m) => Self::UnsupportedRuntime(add(m)),
-            Self::OwnerProfileIncomplete(m) => Self::OwnerProfileIncomplete(m),
             Self::Conflict(m) => Self::Conflict(add(m)),
             Self::NameTaken(m) => Self::NameTaken(add(m)),
             Self::NotInstalled(m) => Self::NotInstalled(m),
@@ -190,8 +185,6 @@ impl From<PackageError> for InstallError {
 impl From<RenderError> for InstallError {
     fn from(e: RenderError) -> Self {
         match e {
-            // 插件没写错，是还没填邮箱。
-            RenderError::NoOwnerEmail(message) => Self::OwnerProfileIncomplete(message),
             // 插件没写错，是这台主机放不下。
             RenderError::HostPath(message) => Self::Unsupported(message),
             e => Self::Invalid(e.to_string()),
