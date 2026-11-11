@@ -101,7 +101,7 @@ fun Composer(
     val photoTryAnother = stringResource(R.string.photo_try_another)
     var pendingPaste by rememberSaveable(roomId) { mutableStateOf<Uri?>(null) }
     var pastedImage by rememberSaveable(roomId) { mutableStateOf(false) }
-    val pasteListener = remember {
+    val pasteListener = remember(roomId) {
         pasteContentListener(
             context.applicationContext.contentResolver,
             onImage = { pastedImage = true; pendingPaste = it },
