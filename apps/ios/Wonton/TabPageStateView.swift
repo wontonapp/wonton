@@ -5,6 +5,7 @@ struct TabPageStateView: View {
     let page: TabPage
     let session: TabWebSession
     let connected: Bool
+    let shareProblem: Problem?
     /// 面板里的这一份：失败时多一个“从面板移除”（ADR-0052）。
     let isPanel: Bool
     let details: () -> Void
@@ -14,10 +15,15 @@ struct TabPageStateView: View {
 
     var body: some View {
         Group {
-            if let problem = session.problem {
-                ProblemView(problem: problem, retry: session.retry)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(colors.canvas))
+            if let problem = shareProblem ?? session.problem {
+                VStack {
+                    ProblemView(problem: problem, retry: session.retry)
+                    if case .sharedApp = session.tab {
+                        Button(TabText.close, action: remove).buttonStyle(WontonButtonStyle(kind: .secondary))
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(colors.canvas))
             } else {
                 state
             }
@@ -34,8 +40,13 @@ struct TabPageStateView: View {
             skeleton(TabText.starting)
         case .stopped:
             failure(TabText.stopped(page.title)) {
-                Button(TabText.start, action: startPlugin)
-                if let startProblem { ProblemNotice(problem: startProblem) }
+                if case .plugin = session.tab {
+                    Button(TabText.start, action: startPlugin)
+                    if let startProblem { ProblemNotice(problem: startProblem) }
+                } else {
+                    Button(TabText.retry, action: session.retry)
+                    Button(TabText.close, action: remove)
+                }
             }
         case .upgrading:
             if session.webView != nil {
@@ -52,13 +63,15 @@ struct TabPageStateView: View {
             skeleton(TabText.uninstalling)
         case let .failed(reason):
             failure(String(localized: .tabFailedTitle(page.title)), detail: reason) {
-                Button(TabText.details, action: details)
+                if case .plugin = session.tab { Button(TabText.details, action: details) }
                 Button(TabText.retry, action: session.retry)
                 if isPanel { Button(TabText.removePanelPage, action: remove) }
             }
         case .pageRemoved:
             failure(TabText.pageRemoved) {
-                Button(isPanel ? TabText.removePanelPage : TabText.unpin, action: remove)
+                if case .sharedApp = session.tab {
+                    Button(TabText.close, action: remove)
+                } else { Button(isPanel ? TabText.removePanelPage : TabText.unpin, action: remove) }
             }
         case let .loadFailed(reason, status):
             if reason == .transport, !connected {
@@ -71,7 +84,8 @@ struct TabPageStateView: View {
             }
         case .unknown:
             failure(TabText.unknown) {
-                Button(TabText.details, action: details)
+                if case .plugin = session.tab { Button(TabText.details, action: details) }
+                Button(TabText.retry, action: session.retry)
                 if isPanel { Button(TabText.removePanelPage, action: remove) }
             }
         }

@@ -5,22 +5,41 @@ use axum::extract::Request;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
 
+use super::sharing::{self, SharePeer, oidc};
 use super::{Gateway, api, client_addr, pages, proxy};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 
-pub(super) async fn request(gateway: &Gateway, req: Request) -> Response {
+pub(super) async fn request(gateway: &Gateway, mut req: Request) -> Response {
+    let langs = api::languages(req.headers());
+    let format = pages::Format::of(req.headers());
+    if let Some(peer) = req.extensions().get::<SharePeer>().cloned() {
+        let plugin = match oidc::authorize_auth(gateway, &peer, req.method(), req.uri()) {
+            Ok(plugin) => plugin,
+            Err(error) => return sharing::refused(error, &langs, format),
+        };
+        if let Some(plugin) = plugin
+            && let Err(error) = sharing::guard_request(gateway, &mut req, &plugin)
+        {
+            return sharing::refused(error, &langs, format);
+        }
+        if let Err(error) = oidc::consume_auth(gateway, &peer, req.method(), req.uri()) {
+            return sharing::refused(error, &langs, format);
+        }
+        // Preserve Hydra's code-flow CSRF cookies; challenge handlers bind their subject
+        // to SharePeer and never authenticate an owner cookie or bearer token.
+        req.headers_mut().remove(hyper::header::AUTHORIZATION);
+    }
     if req.uri().path() == crate::oidc::DISCOVERY_PATH {
         return discovery(gateway, req).await;
     }
-    let langs = api::languages(req.headers());
     let Some(authority) = &gateway.hydra_public else {
         return pages::error(
             StatusCode::SERVICE_UNAVAILABLE,
             "oidc_unavailable",
             &l10n::text(&langs, "gateway-oidc-unconfigured", &[]),
             &langs,
-            pages::Format::of(req.headers()),
+            format,
         );
     };
     let fwd = proxy::Forwarded {
@@ -33,7 +52,18 @@ pub(super) async fn request(gateway: &Gateway, req: Request) -> Response {
         endpoint: &endpoint,
         name: &name,
     };
-    proxy::forward(&gateway.system_http, target, req, fwd, &langs).await
+    // Keep a guard clone outside the consumed request so revocation also interrupts forwarding.
+    let guard = req.extensions().get::<sharing::AccessGuard>().cloned();
+    let forward = proxy::forward(&gateway.system_http, target, req, fwd, &langs);
+    if let Some(guard) = guard {
+        tokio::select! {
+            biased;
+            _ = guard.cancelled() => sharing::refused(wonton_protocol::GatewayRefusal::ShareRevoked, &langs, format),
+            response = forward => response,
+        }
+    } else {
+        forward.await
+    }
 }
 
 /// 发现文档不原样转发：Hydra 给浏览器和插件后端的端点各错一半，由核心按谁来访问改写

@@ -318,6 +318,8 @@ home-port-mapping-save-failed = 連接埠映射的開關存不下來：{ $error 
 tabs-view-always-pinned = 聊天和應用程式已經固定到底部導覽列。
 tabs-view-plugin-list-not-ready = 還沒載入應用程式清單，暫時無法操作應用程式頁面。
 tabs-view-unknown-plugin = 找不到這個應用程式。
+# $error 是本地儲存的原始錯誤。
+tabs-storage-problem = 底欄設定存不下，下次啟動可能恢復舊狀態：{ $error }
 tabs-view-plugin-no-page = 這個應用程式沒有可開啟的網頁。
 tabs-page-not-placed = 這個頁面不在面板裡。
 

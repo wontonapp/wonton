@@ -9,6 +9,7 @@ pub(super) struct Link {
     pub(super) endpoint: Endpoint,
     pub(super) client: TunnelClient,
     pub(super) proxy: LocalProxy,
+    pub(super) registration: wonton_tunnel::sharing::ProxyRegistration,
     pub(super) watcher: JoinHandle<()>,
     pub(super) checker: JoinHandle<()>,
 }
@@ -17,6 +18,7 @@ impl Link {
     pub(super) async fn close(self) {
         self.watcher.abort();
         self.checker.abort();
+        drop(self.registration);
         self.proxy.shutdown().await;
         self.client.close();
         self.endpoint.close().await;

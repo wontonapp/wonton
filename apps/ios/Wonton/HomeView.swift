@@ -27,7 +27,8 @@ struct HomeView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                if case .notConfigured = model.viewModel.status {
+                if case .notConfigured = model.viewModel.status,
+                   model.servers.adding || !model.servers.servers.contains(where: { $0.current }) {
                     PairingView(model: model)
                         .wontonRootScreen(String(localized: .pairingTitle), hasActions: !tabs.isPinned(.settings)) {
                             if !tabs.isPinned(.settings) {
@@ -68,21 +69,28 @@ struct HomeView: View {
     private var launcher: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s24) {
-                storeEntry
+                if plugins.viewModel.actions.contains(.store) { storeEntry }
                 if let installed = plugins.viewModel.installed {
                     installedPlugins(installed)
                     HomeStatusPanel(
                         home: model.viewModel, plugins: plugins.viewModel, cards: pendingCards,
                         showConnection: showServer, openCardRoom: openCardRoom
                     )
-                } else {
+                } else if plugins.viewModel.actions.contains(.store) {
                     placeholder.frame(maxWidth: .infinity)
                 }
+                SharedAppsSection(model: plugins)
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .refreshable { plugins.send(.refreshPlugins) }
-        .task { plugins.refresh(.refreshPlugins) }
+        .refreshable {
+            if plugins.viewModel.actions.contains(.store) { plugins.send(.refreshPlugins) }
+            plugins.send(.refreshSharedApps(ownerUserId: nil))
+        }
+        .task {
+            if plugins.viewModel.actions.contains(.store) { plugins.refresh(.refreshPlugins) }
+            plugins.send(.refreshSharedApps(ownerUserId: nil))
+        }
         .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
         .uninstallDialog($uninstalling, model: plugins)
         .wontonActionSheet(

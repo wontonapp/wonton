@@ -29,9 +29,10 @@ fun HomeRoute(
     settingsUpgrade: Boolean,
     onSettings: (() -> Unit)? = null,
 ) {
+    val servers = LocalServers.current
     BackHandler(enabled = page != HomePage.LAUNCHER) { onPage(HomePage.LAUNCHER) }
     when {
-        viewModel.status is HomeStatus.NotConfigured ->
+        viewModel.status is HomeStatus.NotConfigured && (servers.adding || servers.servers.none { it.current }) ->
             PairingPage(
                 stringResource(R.string.pairing_title), core, viewModel.pairing, onBack = null,
                 actions = if (onSettings != null) {
@@ -39,7 +40,7 @@ fun HomeRoute(
                 } else null,
             )
         else -> PluginPages(plugins, navigation) {
-            if (page == HomePage.STORE) {
+            if (page == HomePage.STORE && app.wonton.protocol.AppsAction.STORE in plugins.viewModel.actions) {
                 StoreRoute(plugins, navigation, onBack = { onPage(HomePage.LAUNCHER) })
             } else {
                 LauncherScreen(

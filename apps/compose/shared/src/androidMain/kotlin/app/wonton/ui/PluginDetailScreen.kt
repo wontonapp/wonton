@@ -145,6 +145,7 @@ private fun DetailContent(
         }
         detail.about?.let { Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor()) }
         detail.installed?.let { InstalledDetailSections(detail, plugins, onToggled) }
+        detail.shares?.let { PluginSharesSection(detail.id, it, plugins, onToggled) }
         DetailSections(detail, plugins, onToggled)
         detail.installed?.takeIf { it.removable && !working }?.let { installed ->
             WontonButton(

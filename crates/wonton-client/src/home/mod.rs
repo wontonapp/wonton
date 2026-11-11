@@ -80,22 +80,17 @@ const STATS_INTERVAL: Duration = Duration::from_secs(1);
 
 pub(crate) struct HomeLink {
     runtime: Handle,
+    hub: Arc<wonton_tunnel::sharing::ProxyHub>,
     storage: Storage,
     device_key: SecretKey,
     network: Network,
     view: watch::Sender<HomeViewModel>,
-    /// 当前用的连接信息（原文）。
     ticket: std::sync::Mutex<Option<String>>,
-    /// 当前连接信息里核心自己的地址，聊天从这里取 Matrix 登录令牌。
     core_url: std::sync::Mutex<Option<Url>>,
-    /// 当前的连接。换服务器时整个替换；锁保证同一时刻只有一次建连或检查。
     link: Mutex<Option<Link>>,
-    /// 同步生命周期动作不能等异步的 link 锁；保护挂起检测布防用的当前客户端，换 Link 时整个替换。
     lifecycle_client: std::sync::Mutex<Option<TunnelClient>>,
     tracker: std::sync::Mutex<Tracker>,
-    /// 连接质量的判定；连接断开或换路径时从头来。
     quality: std::sync::Mutex<Quality>,
-    /// 提示要重新算了。
     recount: watch::Sender<()>,
     /// 上次把每包变化的计数写进主 ViewModel 的时间。
     stats_at: std::sync::Mutex<Option<Instant>>,
@@ -133,6 +128,7 @@ impl HomeLink {
     /// 读取设备密钥；上次连过服务器时自动重连。
     pub(crate) fn new(
         runtime: Handle,
+        hub: Arc<wonton_tunnel::sharing::ProxyHub>,
         storage: Storage,
         network: Network,
         view: Option<watch::Sender<HomeViewModel>>,
@@ -159,6 +155,7 @@ impl HomeLink {
         );
         let home = Arc::new(Self {
             runtime,
+            hub,
             storage,
             device_key,
             network,
@@ -459,6 +456,11 @@ impl HomeLink {
                     error = e.to_string()
                 )
             })?;
+        let registration = self
+            .hub
+            .register(proxy.local_addr(), credential, domain.clone())
+            .map_err(|_| "proxy route registration failed".to_owned())?;
+        let credential = registration.credential();
         {
             let mut current = self.lock_lifecycle_client();
             client.set_suspendable(self.app_backgrounded.load(Ordering::SeqCst));
@@ -466,7 +468,7 @@ impl HomeLink {
         }
         let settings = ProxySettings {
             host: Ipv4Addr::LOCALHOST.to_string(),
-            port: proxy.local_addr().port(),
+            port: registration.local_addr().port(),
             username: credential.username().to_owned(),
             password: credential.password().to_owned(),
             domain,
@@ -488,6 +490,7 @@ impl HomeLink {
             endpoint,
             client,
             proxy,
+            registration,
             watcher,
             checker,
         })

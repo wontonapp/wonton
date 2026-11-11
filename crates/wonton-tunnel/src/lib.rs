@@ -33,6 +33,7 @@ mod ports;
 mod proxy;
 pub mod relays;
 mod server;
+pub mod sharing;
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub mod test_support;

@@ -7,12 +7,28 @@ import WontonClient
 @MainActor
 final class TabWebViewStore {
     private var sessions: [PlacedTab: TabWebSession] = [:]
+    private var sharedStores: [String: WKWebsiteDataStore] = [:]
+    private var accountId: String?
     /// 释放过 WebView 的计数：页面视图据此判断手里的会话还能不能用、要不要重新要一份。
     private(set) var generation = 0
 
     func session(for placed: PlacedTab, core: ClientCore) -> TabWebSession {
+        let currentAccount = core.servers().servers.first(where: { $0.current })?.id
+        if accountId != currentAccount {
+            for session in sessions.values { session.dispose() }
+            sessions.removeAll()
+            sharedStores.removeAll()
+            accountId = currentAccount
+        }
         if let session = sessions[placed] { return session }
-        let session = TabWebSession(placed: placed, core: core)
+        let store: WKWebsiteDataStore
+        if case let .sharedApp(ownerUserId, _) = placed.tab {
+            if let retained = sharedStores[ownerUserId] { store = retained } else {
+                store = .nonPersistent()
+                sharedStores[ownerUserId] = store
+            }
+        } else { store = .default() }
+        let session = TabWebSession(placed: placed, core: core, dataStore: store)
         sessions[placed] = session
         return session
     }
@@ -76,15 +92,22 @@ final class TabWebSession: NSObject {
     @ObservationIgnored var documentScript: String?
     @ObservationIgnored private var lastTextScale: CGFloat?
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
+    @ObservationIgnored private let dataStore: WKWebsiteDataStore
 
-    init(placed: PlacedTab, core: ClientCore) {
+    init(placed: PlacedTab, core: ClientCore, dataStore: WKWebsiteDataStore) {
         self.placed = placed
         self.core = core
+        self.dataStore = dataStore
     }
 
     func update(_ input: TabWebInputs, action: @escaping (TabBridgeAction) -> Void) {
         self.input = input
         self.action = action
+        if case .sharedApp = tab, !input.connected {
+            webView?.stopLoading()
+            ready = false
+            return
+        }
         do {
             if let webView {
                 try configure(webView)
@@ -182,7 +205,7 @@ final class TabWebSession: NSObject {
             evaluate(context, in: view)
             lastContext = context
         }
-        let connection = core.tabConnectionScript()
+        let connection = core.tabConnectionScript(tab: tab)
         if force || connection != lastConnection {
             evaluate(connection, in: view)
             lastConnection = connection
@@ -257,7 +280,11 @@ final class TabWebSession: NSObject {
     func retry() {
         problem = nil
         do {
-            try core.dispatch(action: .refreshPlugins)
+            if case let .sharedApp(ownerUserId, _) = tab {
+                try core.dispatch(action: .refreshSharedApps(ownerUserId: ownerUserId))
+            } else {
+                try core.dispatch(action: .refreshPlugins)
+            }
             try core.dispatch(action: .reloadTab(page: placed))
         } catch { problem = error.problem }
     }

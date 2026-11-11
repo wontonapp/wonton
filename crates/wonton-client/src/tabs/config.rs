@@ -281,5 +281,5 @@ pub(super) fn persist(path: &Path, file: &TabsFile) -> Result<(), CoreError> {
 }
 
 fn is_plugin(tab: &TabRef) -> bool {
-    matches!(tab, TabRef::Plugin { .. })
+    matches!(tab, TabRef::Plugin { .. } | TabRef::SharedApp { .. })
 }

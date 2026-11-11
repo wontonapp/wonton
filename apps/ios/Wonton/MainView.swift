@@ -179,7 +179,7 @@ struct MainView: View {
             page: page, isOverlay: overlay, draft: receiveDraft, open: open,
             pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom
         )
-        .id(tab)
+        .id(TabPageIdentity(accountId: home.servers.servers.first(where: { $0.current })?.id, tab: tab))
     }
 
     private var selectedFullscreen: Bool {
@@ -246,6 +246,19 @@ struct MainView: View {
         return tabs.viewModel.overlay?.page
     }
 
+}
+private struct TabPageIdentity: Hashable {
+    let accountId: String?
+    let tab: TabRef
+}
+
+extension TabRef {
+    var isWebPage: Bool {
+        switch self {
+        case .plugin, .sharedApp: true
+        default: false
+        }
+    }
 }
 
 extension MainView {

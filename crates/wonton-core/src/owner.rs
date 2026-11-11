@@ -72,6 +72,11 @@ pub fn internal_email(username: &str) -> String {
     format!("{username}@wonton.internal")
 }
 
+/// 好友的内部邮箱：只认人不收信，按固定的本机用户名派生，删好友再加回也不变、不给人重复用。
+pub fn friend_email(username: &str) -> String {
+    internal_email(username)
+}
+
 /// 可移植的 POSIX 用户名（`^[a-z][a-z0-9_-]{0,31}$`），同时是合法的 Matrix localpart。
 pub fn check_username(name: &str) -> Result<(), String> {
     let mut bytes = name.bytes();

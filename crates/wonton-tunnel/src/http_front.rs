@@ -31,6 +31,25 @@ pub(crate) async fn accept(
     domain: &str,
     #[cfg(feature = "test-hooks")] sequence: u64,
 ) -> Option<Vec<u8>> {
+    accept_selected(
+        tcp_read,
+        tcp_write,
+        |header| credential.matches(header).then_some(((), domain)),
+        #[cfg(feature = "test-hooks")]
+        sequence,
+    )
+    .await
+    .map(|(_, prefix)| prefix)
+}
+
+/// Select an immutable route by credentials before checking its domain. Used by
+/// the Android proxy hub, which has one listener but no global current source.
+pub(crate) async fn accept_selected<T, D: AsRef<str>>(
+    tcp_read: &mut OwnedReadHalf,
+    tcp_write: &mut OwnedWriteHalf,
+    select: impl FnOnce(Option<&[u8]>) -> Option<(T, D)>,
+    #[cfg(feature = "test-hooks")] sequence: u64,
+) -> Option<(T, Vec<u8>)> {
     let head = match read_head(tcp_read).await {
         Ok(head) => head?,
         Err(rejection) => {
@@ -38,13 +57,16 @@ pub(crate) async fn accept(
             return None;
         }
     };
-    if !credential.matches(head.header("proxy-authorization")) {
+    let Some((route, domain)) = select(head.header("proxy-authorization")) else {
         debug!("local proxy rejected a connection without session credentials");
         reject(tcp_write, tcp_read, Rejection::Unauthorized).await;
         return None;
-    }
+    };
     let host = head.target_host();
-    if !host.as_deref().is_some_and(|host| in_domain(host, domain)) {
+    if !host
+        .as_deref()
+        .is_some_and(|host| in_domain(host, domain.as_ref()))
+    {
         debug!(
             host = host.as_deref().unwrap_or("-"),
             "local proxy rejected an address outside the home server"
@@ -58,7 +80,7 @@ pub(crate) async fn accept(
             .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             .await
             .ok()?;
-        return Some(head.rest);
+        return Some((route, head.rest));
     }
     // 只记主机：路径和查询里可能有 OAuth 授权码等秘密。
     debug!(method = %head.method, host = host.as_deref().unwrap_or("-"), "local proxy received a request");
@@ -70,7 +92,7 @@ pub(crate) async fn accept(
         "x-wonton-test-sequence".to_owned(),
         sequence.to_string().into_bytes(),
     ));
-    Some(head.rewrite())
+    Some((route, head.rewrite()))
 }
 
 /// `host` 是 `domain` 本身或它的子域名（不区分大小写，忽略末尾的点）。

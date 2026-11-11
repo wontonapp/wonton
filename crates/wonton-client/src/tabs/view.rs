@@ -74,7 +74,8 @@ fn build_item(state: &TabsState, stored: &StoredItem, plugins: &PluginsViewModel
     };
     let page = match &stored.tab {
         TabRef::Chat | TabRef::Apps | TabRef::Settings => None,
-        TabRef::SharedApp { .. } | TabRef::Bot { .. } => None,
+        TabRef::Bot { .. } => None,
+        TabRef::SharedApp { .. } => Some(super::sharing::page(state, stored, plugins)),
         TabRef::Plugin { plugin_id, page } => {
             let plugin = plugins
                 .installed
@@ -308,7 +309,7 @@ fn path_title(path: &str) -> String {
         .to_owned()
 }
 
-fn page_from_metadata(
+pub(super) fn page_from_metadata(
     state: &TabsState,
     placed: &PlacedTab,
     metadata: StoredPage,
@@ -453,9 +454,12 @@ pub(super) fn stored_item_with_title(
             language(),
             "tabs-view-always-pinned"
         ))),
-        TabRef::SharedApp { .. } | TabRef::Bot { .. } | TabRef::UiResource { .. } => Err(invalid(
-            &l10n!(CATALOG, language(), "tabs-view-unknown-plugin"),
-        )),
+        TabRef::SharedApp { .. } => super::sharing::stored(tab, plugins),
+        TabRef::Bot { .. } | TabRef::UiResource { .. } => Err(invalid(&l10n!(
+            CATALOG,
+            language(),
+            "tabs-view-unknown-plugin"
+        ))),
         TabRef::Url { url } => {
             if !is_https_url(url) {
                 return Err(invalid(&l10n!(CATALOG, language(), "panel-pin-not-https")));
@@ -567,6 +571,9 @@ pub(super) fn opens_fullscreen(
 }
 
 fn manifest_display(tab: &TabRef, plugins: &PluginsViewModel) -> Option<TabDisplay> {
+    if matches!(tab, TabRef::SharedApp { .. }) {
+        return super::sharing::shared_row(tab, plugins).map(|(_, row)| row.plugin.display);
+    }
     let TabRef::Plugin { plugin_id, page } = tab else {
         return None;
     };
@@ -585,6 +592,9 @@ fn manifest_display(tab: &TabRef, plugins: &PluginsViewModel) -> Option<TabDispl
 }
 
 pub(super) fn page_available(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
+    if matches!(tab, TabRef::SharedApp { .. }) {
+        return super::sharing::usable(tab, plugins);
+    }
     let TabRef::Plugin { plugin_id, page } = tab else {
         return false;
     };
@@ -646,14 +656,17 @@ pub(super) fn normalize_layout(layout: TabLayout) -> TabLayout {
 }
 
 pub(super) fn is_plugin(tab: &TabRef) -> bool {
-    matches!(tab, TabRef::Plugin { .. })
+    matches!(tab, TabRef::Plugin { .. } | TabRef::SharedApp { .. })
 }
 
 /// 绑在插件上的页面：插件页和插件里的某一页。换服务器时它们跟着走，公网网页不绑服务器。
 pub(super) fn is_plugin_page(tab: &TabRef) -> bool {
     matches!(
         tab,
-        TabRef::Plugin { .. } | TabRef::PluginPath { .. } | TabRef::UiResource { .. }
+        TabRef::Plugin { .. }
+            | TabRef::PluginPath { .. }
+            | TabRef::SharedApp { .. }
+            | TabRef::UiResource { .. }
     )
 }
 

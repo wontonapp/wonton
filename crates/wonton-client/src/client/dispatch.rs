@@ -4,7 +4,7 @@
 use std::sync::atomic::Ordering;
 
 use wonton_l10n::l10n;
-use wonton_protocol::DeviceNetwork;
+use wonton_protocol::{DeviceNetwork, PlacedTab};
 
 use super::switch::PushInput;
 use super::*;
@@ -54,6 +54,7 @@ impl ClientCore {
         }
         let scope = self.scope();
         match action {
+            action if is_sharing_action(&action) => self.dispatch_sharing(&scope, action),
             action @ (Action::CreateSession { .. }
             | Action::SelectSession { .. }
             | Action::DeleteSession { .. }) => self.session_action(action),
@@ -131,6 +132,27 @@ impl ClientCore {
             other => self.dispatch_plugins_or_chat(&scope, other),
         }
     }
+}
+
+/// 分享相关的操作（含分享页的加载结果），整组交给 `dispatch_sharing`。
+fn is_sharing_action(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::TabLoadFailed {
+            page: PlacedTab::Bar {
+                tab: TabRef::SharedApp { .. },
+            },
+            ..
+        } | Action::TabLoadSucceeded {
+            page: PlacedTab::Bar {
+                tab: TabRef::SharedApp { .. },
+            },
+        } | Action::RefreshSharedApps { .. }
+            | Action::OpenSharedApp { .. }
+            | Action::CreatePluginShare { .. }
+            | Action::UpdatePluginShare { .. }
+            | Action::RevokePluginShare { .. }
+    )
 }
 
 /// 底栏和面板自己的操作，整组交给 [`TabsLink`](crate::tabs::TabsLink)。

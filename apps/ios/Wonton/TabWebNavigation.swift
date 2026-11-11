@@ -56,7 +56,12 @@ extension TabWebSession: WKNavigationDelegate {
             return
         }
         let tunnelFailed = http.value(forHTTPHeaderField: "x-wonton-tunnel-error") != nil
-        guard tunnelFailed || http.statusCode >= 500 else {
+        let sharedRefusal: Bool
+        if case .sharedApp = tab {
+            sharedRefusal = ["share_identity", "share_required", "share_revoked", "share_expired"]
+                .contains(http.value(forHTTPHeaderField: "x-wonton-error") ?? "")
+        } else { sharedRefusal = false }
+        guard tunnelFailed || sharedRefusal || http.statusCode >= 500 else {
             decisionHandler(.allow)
             return
         }

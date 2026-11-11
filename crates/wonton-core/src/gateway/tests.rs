@@ -254,16 +254,15 @@ impl Harness {
             base_domain: CORE.into(),
             port: self.addr.port(),
         };
-        let (tunnel, members) = loopback_tunnel(self._dir.path()).await;
         let gateway = Gateway::new(
             public,
             OwnerStore::for_test(self._dir.path(), &owner()),
             TOKEN.into(),
-            members,
+            self.members.clone(),
             self.manager.clone(),
             None,
             self.http.clone(),
-            tunnel,
+            self.tunnel.clone(),
         );
         let app = router(Arc::new(gateway));
         let mut request = hyper::Request::builder()

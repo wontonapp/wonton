@@ -96,7 +96,7 @@ extension MainView {
         case let .chat(botUserId):
             let origin: AppTab = if tabs.viewModel.overlay != nil {
                 .chat
-            } else if case .plugin = tabs.viewModel.selected {
+            } else if tabs.viewModel.selected.isWebPage {
                 .chat
             } else { nativeTab }
             if chat.openDirectChat(with: botUserId, from: origin) { tabs.select(.chat) }

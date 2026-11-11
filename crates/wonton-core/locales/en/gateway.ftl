@@ -136,3 +136,9 @@ mcp-app-loading = Loading…
 mcp-app-failed = Can't load the app: { $error }
 mcp-app-page-failed = The app didn't load.
 mcp-app-retry = Retry
+
+# Friends opening a page over a share connection (ADR-0051).
+gateway-share-identity = This server can't confirm who you are
+gateway-share-required = The owner hasn't shared this app with you
+gateway-share-revoked = The owner stopped sharing this app
+gateway-share-expired = This share has expired

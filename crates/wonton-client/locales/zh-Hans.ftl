@@ -317,6 +317,8 @@ home-port-mapping-save-failed = 端口映射的开关存不下：{ $error }
 tabs-view-always-pinned = 聊天和应用已经固定到底栏。
 tabs-view-plugin-list-not-ready = 插件列表还没读到，暂时不能操作插件页面。
 tabs-view-unknown-plugin = 没有这个插件。
+# $error 是本地存储的原始错误。
+tabs-storage-problem = 底栏设置存不下，下次启动可能恢复旧状态：{ $error }
 tabs-view-plugin-no-page = 插件没有可打开的网页。
 tabs-page-not-placed = 这个页面不在面板里。
 

@@ -27,6 +27,8 @@ enum Added {
     NetworkModeService,
     /// `security_opt` 里的 `no-new-privileges` 不用申请 `security.opt`。
     NoNewPrivilegesWithoutPermission,
+    /// 网页代登录模板里的 `{role}`。
+    ProxyRole,
 }
 
 const V0_7: SpecVersion = SpecVersion::new(0, 7);
@@ -60,6 +62,7 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_8, Added::Field(&["secrets", "*", "show_owner"])),
     (V0_8, Added::Field(&["secrets", "*", "input"])),
     (V0_9, Added::Field(&["webui", "friends"])),
+    (V0_9, Added::ProxyRole),
     (V0_10, Added::Field(&["runtime"])),
     (V0_10, Added::Field(&["agent", "skills", "mount"])),
     (V0_11, Added::Field(&["tunnel", "ports"])),
@@ -125,6 +128,17 @@ fn places(
             walk(manifest, path, &mut String::from("x-wonton"), &mut found);
             found
         }
+        Added::ProxyRole => ["headers", "cookies"]
+            .into_iter()
+            .flat_map(|kind| {
+                manifest["webui"]["proxy"][kind]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .filter(|(_, value)| value.as_str().is_some_and(|v| v.contains("{role}")))
+                    .map(move |(name, _)| format!("x-wonton.webui.proxy.{kind}.{name}"))
+            })
+            .collect(),
         Added::Permission(name) => permissions
             .contains(name)
             .then(|| format!("permission {name}"))

@@ -2,14 +2,14 @@
 
 use std::sync::Arc;
 
-use axum::Extension;
 use axum::extract::{Query, Request, State};
 use axum::response::{IntoResponse, Redirect, Response};
-use hyper::{HeaderMap, StatusCode};
+use hyper::StatusCode;
 use serde::Deserialize;
 
 use super::session::{APP_COOKIE, APP_TTL, set_cookie};
-use super::{Gateway, TunnelPeer, api, pages, same_origin_path, with_cookie};
+use super::sharing::{self, oidc};
+use super::{Gateway, Person, api, pages, same_origin_path, with_cookie};
 use crate::config::HostKind;
 use crate::l10n;
 use crate::oidc::{OidcError, granted_scopes, id_token_claims};
@@ -140,20 +140,53 @@ fn oidc_failure(e: &OidcError, langs: &Languages, format: pages::Format) -> Resp
     tracing::warn!(error = %e, "OIDC 流程失败");
     pages::error(status, kind, &e.to_string(), langs, format)
 }
+fn accepted_redirect(
+    gateway: &Gateway,
+    req: &Request,
+    client: &str,
+    step: oidc::Step,
+    result: Result<Result<String, OidcError>, wonton_protocol::GatewayRefusal>,
+    langs: &Languages,
+    format: pages::Format,
+) -> Response {
+    match result {
+        Ok(Ok(to)) => match oidc::remember_redirect(gateway, req, client, step, &to) {
+            Ok(()) => Redirect::to(&to).into_response(),
+            Err(error) => sharing::refused(error, langs, format),
+        },
+        Ok(Err(error)) => oidc_failure(&error, langs, format),
+        Err(error) => sharing::refused(error, langs, format),
+    }
+}
+
+/// 错误分支给的是已经拼好的拒绝页（`Response` 本身就大），不装箱。
+#[allow(clippy::result_large_err)]
+fn challenge_person(
+    gateway: &Gateway,
+    req: &mut Request,
+    client: &str,
+    person: Person,
+) -> Result<Person, Response> {
+    let langs = api::languages(req.headers());
+    let format = pages::Format::of(req.headers());
+    oidc::authorize_challenge(gateway, req, client)
+        .map(|friend| friend.unwrap_or(person))
+        .map_err(|error| sharing::refused(error, &langs, format))
+}
 
 /// Hydra 的登录端点：用核心会话或隧道设备的身份直接接受登录，用户不会看到第二个登录页。subject 是当前
 /// 这个人（主人和家人各有自己的账号，ADR-0045）。
 pub async fn oidc_login(
     State(gateway): State<Arc<Gateway>>,
     Query(query): Query<LoginChallenge>,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: HeaderMap,
-    uri: hyper::Uri,
+    mut req: Request,
 ) -> Response {
-    let langs = api::languages(&headers);
-    let format = pages::Format::of(&headers);
-    let Some(person) = gateway.core_person(peer.map(|Extension(peer)| peer), &headers) else {
-        return login_redirect(&gateway, &path_and_query(&uri));
+    let langs = api::languages(req.headers());
+    let format = pages::Format::of(req.headers());
+    let person = match oidc::person(&gateway, &req) {
+        Ok(Some(person)) => person,
+        Ok(None) => return login_redirect(&gateway, &path_and_query(req.uri())),
+        Err(error) => return sharing::refused(error, &langs, format),
     };
     let Some(hydra) = &gateway.hydra else {
         return pages::error(
@@ -168,6 +201,10 @@ pub async fn oidc_login(
         Ok(request) => request,
         Err(e) => return oidc_failure(&e, &langs, format),
     };
+    let person = match challenge_person(&gateway, &mut req, &request.client.client_id, person) {
+        Ok(person) => person,
+        Err(response) => return response,
+    };
     if request.skip && request.subject != person.username {
         return pages::error(
             StatusCode::CONFLICT,
@@ -178,13 +215,20 @@ pub async fn oidc_login(
         );
     }
     tracing::info!(client = %request.client.client_id, person = %person.username, "接受 OIDC 登录");
-    match hydra
-        .accept_login(&query.login_challenge, &person.username)
-        .await
-    {
-        Ok(to) => Redirect::to(&to).into_response(),
-        Err(e) => oidc_failure(&e, &langs, format),
-    }
+    let accepted = oidc::while_active(
+        req.extensions().get::<sharing::AccessGuard>().cloned(),
+        hydra.accept_login(&query.login_challenge, &person.username),
+    )
+    .await;
+    accepted_redirect(
+        &gateway,
+        &req,
+        &request.client.client_id,
+        oidc::Step::Login,
+        accepted,
+        &langs,
+        format,
+    )
 }
 
 /// Hydra 的授权确认端点：插件由主人安装，即视为已授权；只发放清单内的 scope 和对应的声明。声明按当前
@@ -192,14 +236,14 @@ pub async fn oidc_login(
 pub async fn oidc_consent(
     State(gateway): State<Arc<Gateway>>,
     Query(query): Query<ConsentChallenge>,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: HeaderMap,
-    uri: hyper::Uri,
+    mut req: Request,
 ) -> Response {
-    let langs = api::languages(&headers);
-    let format = pages::Format::of(&headers);
-    let Some(person) = gateway.core_person(peer.map(|Extension(peer)| peer), &headers) else {
-        return login_redirect(&gateway, &path_and_query(&uri));
+    let langs = api::languages(req.headers());
+    let format = pages::Format::of(req.headers());
+    let person = match oidc::person(&gateway, &req) {
+        Ok(Some(person)) => person,
+        Ok(None) => return login_redirect(&gateway, &path_and_query(req.uri())),
+        Err(error) => return sharing::refused(error, &langs, format),
     };
     let Some(hydra) = &gateway.hydra else {
         return pages::error(
@@ -213,6 +257,10 @@ pub async fn oidc_consent(
     let request = match hydra.consent_request(&query.consent_challenge).await {
         Ok(request) => request,
         Err(e) => return oidc_failure(&e, &langs, format),
+    };
+    let person = match challenge_person(&gateway, &mut req, &request.client.client_id, person) {
+        Ok(person) => person,
+        Err(response) => return response,
     };
     if request.subject != person.username {
         return pages::error(
@@ -246,11 +294,18 @@ pub async fn oidc_consent(
         gateway.plugins.person_locale(&person.username).as_deref(),
     );
     tracing::info!(client = %request.client.client_id, ?granted, ?groups, person = %person.username, "接受 OIDC 授权");
-    match hydra
-        .accept_consent(&query.consent_challenge, &granted, claims)
-        .await
-    {
-        Ok(to) => Redirect::to(&to).into_response(),
-        Err(e) => oidc_failure(&e, &langs, format),
-    }
+    let accepted = oidc::while_active(
+        req.extensions().get::<sharing::AccessGuard>().cloned(),
+        hydra.accept_consent(&query.consent_challenge, &granted, claims),
+    )
+    .await;
+    accepted_redirect(
+        &gateway,
+        &req,
+        &request.client.client_id,
+        oidc::Step::Consent,
+        accepted,
+        &langs,
+        format,
+    )
 }

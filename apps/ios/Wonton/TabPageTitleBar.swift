@@ -20,12 +20,18 @@ struct TabPageTitleBar: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                Text(page.title)
-                    .wontonText(WontonTheme.typography.itemTitle)
-                    .foregroundStyle(Color(colors.textPrimary))
-                    .lineLimit(1)
-                    .padding(.horizontal, max(leadingWidth, trailingWidth) + WontonTheme.spacing.s8)
-                    .accessibilityAddTraits(.isHeader)
+                VStack(spacing: WontonTheme.spacing.s4) {
+                    Text(page.title)
+                        .wontonText(WontonTheme.typography.itemTitle)
+                        .foregroundStyle(Color(colors.textPrimary))
+                        .lineLimit(1)
+                        .padding(.horizontal, max(leadingWidth, trailingWidth) + WontonTheme.spacing.s8)
+                        .accessibilityAddTraits(.isHeader)
+                    if case .sharedApp = session.tab, let owner = status.subtitle {
+                        Text(owner).wontonText(WontonTheme.typography.caption)
+                            .foregroundStyle(Color(colors.textSecondary))
+                    }
+                }
                 HStack(spacing: 0) {
                     HStack(spacing: 0) {
                         if session.canGoBack {

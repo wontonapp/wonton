@@ -144,11 +144,15 @@ pub(crate) fn build_pin_item(
 
 /// 设置在前，然后按已装插件的顺序列出每个能打开的页面，去掉已经在栏上的。没有网页的插件没有页面可放。
 pub(crate) fn candidates(state: &TabsState, plugins: &PluginsViewModel) -> Vec<TabCandidate> {
+    if state.external {
+        return Vec::new();
+    }
     std::iter::once(TabCandidate {
         tab: TabRef::Settings,
         plugin: None,
     })
     .chain(plugin_pages(plugins))
+    .chain(super::super::sharing::candidates(plugins))
     .filter(|candidate| {
         !state
             .config

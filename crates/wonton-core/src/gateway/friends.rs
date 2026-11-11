@@ -155,6 +155,7 @@ fn view(gateway: &Gateway, person: &super::Person) -> FriendsView {
     } else {
         None
     };
+    let now = now_ms();
     let friends = snapshot
         .as_ref()
         .map(|snapshot| {
@@ -164,8 +165,11 @@ fn view(gateway: &Gateway, person: &super::Person) -> FriendsView {
                     user_id: record.user_id.clone(),
                     display_name: record.display_name.clone(),
                     groups: record.groups.clone(),
-                    // 插件的有效授权由分享模块填，这里先不给。
-                    shared_plugins: Vec::new(),
+                    shared_plugins: gateway
+                        .sharing
+                        .as_ref()
+                        .map(|sharing| sharing.shares.active_plugin_ids(&record.user_id, now))
+                        .unwrap_or_default(),
                     last_opened_share_at_ms: record.last_opened_share_at_ms,
                 })
                 .collect()

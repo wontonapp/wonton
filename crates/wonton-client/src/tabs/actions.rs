@@ -3,7 +3,7 @@
 use super::*;
 
 impl TabsLink {
-    pub(super) fn select(&self, tab: TabRef) -> Result<(), CoreError> {
+    pub(crate) fn select(&self, tab: TabRef) -> Result<(), CoreError> {
         self.runtime_change(|state, plugins| {
             if state.selected == tab
                 && state
@@ -33,7 +33,7 @@ impl TabsLink {
                 state.fullscreen = None;
                 return Ok(());
             }
-            if !matches!(tab, TabRef::Plugin { .. }) {
+            if !is_plugin(&tab) {
                 return Err(invalid(&l10n!(CATALOG, language(), "tabs-bar-not-pinned")));
             }
             let item = stored_item_for_tab(&tab, plugins)?;
@@ -66,6 +66,9 @@ impl TabsLink {
         title: Option<String>,
     ) -> Result<(), CoreError> {
         self.config_change(|state, plugins| {
+            if state.external {
+                return Err(invalid("external Matrix account navigation is fixed"));
+            }
             if state.config.items.iter().any(|item| item.tab == tab) {
                 return Err(invalid(&l10n!(
                     CATALOG,
@@ -194,7 +197,7 @@ impl TabsLink {
         display: TabDisplayChoice,
     ) -> Result<(), CoreError> {
         self.config_change(|state, plugins| {
-            if !matches!(tab, TabRef::Plugin { .. }) {
+            if !is_plugin(&tab) {
                 return Err(invalid(&l10n!(
                     CATALOG,
                     language(),
@@ -223,7 +226,7 @@ impl TabsLink {
 
     pub(super) fn enter_fullscreen(&self, tab: TabRef) -> Result<(), CoreError> {
         self.runtime_change(|state, plugins| {
-            if !matches!(tab, TabRef::Plugin { .. }) {
+            if !is_plugin(&tab) {
                 return Err(invalid(&l10n!(
                     CATALOG,
                     language(),
@@ -291,7 +294,7 @@ impl TabsLink {
         })
     }
 
-    pub(super) fn load_failed(
+    pub(crate) fn load_failed(
         &self,
         page: PlacedTab,
         status: Option<u16>,
@@ -320,7 +323,7 @@ impl TabsLink {
         })
     }
 
-    pub(super) fn load_succeeded(&self, page: PlacedTab) -> Result<(), CoreError> {
+    pub(crate) fn load_succeeded(&self, page: PlacedTab) -> Result<(), CoreError> {
         // 没有失败记录时什么都不发布：runtime_change 无条件发新状态，会白白唤醒壳。
         if !lock(&self.state).failures.contains_key(&page) {
             return Ok(());

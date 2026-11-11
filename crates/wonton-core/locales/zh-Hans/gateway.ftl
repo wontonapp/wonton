@@ -136,3 +136,9 @@ mcp-app-loading = 正在载入…
 mcp-app-failed = 界面没能载入：{ $error }
 mcp-app-page-failed = 界面没能载入。
 mcp-app-retry = 重试
+
+# 好友经分享连接打开网页（ADR-0051）。
+gateway-share-identity = 这台服务器认不出你是谁
+gateway-share-required = 主人没有把这个应用分享给你
+gateway-share-revoked = 主人停止分享这个应用了
+gateway-share-expired = 分享已到期

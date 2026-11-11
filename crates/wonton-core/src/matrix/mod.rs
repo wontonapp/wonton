@@ -8,7 +8,7 @@ mod api;
 mod bot;
 mod bot_profile;
 pub mod federation_config;
-pub(crate) mod issuer;
+pub mod issuer;
 mod notices;
 mod session;
 use std::path::Path;

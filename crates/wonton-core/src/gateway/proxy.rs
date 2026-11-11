@@ -186,9 +186,14 @@ async fn forward_with_limit(
     limit: Duration,
     langs: &Languages,
 ) -> Result<Response, ForwardError> {
+    let guard = req
+        .extensions()
+        .get::<super::sharing::AccessGuard>()
+        .cloned();
     let upgrade = is_upgrade(req.headers());
     let client_upgrade = upgrade.then(|| hyper::upgrade::on(&mut req));
     let limit = response_header_deadline(&req, upgrade, limit);
+    let format = pages::Format::of(req.headers());
     let (mut parts, body) = req.into_parts();
     let path = parts
         .uri
@@ -205,7 +210,7 @@ async fn forward_with_limit(
             "invalid_input",
             &l10n::text(langs, "gateway-invalid-path", &[]),
             langs,
-            pages::Format::of(&parts.headers),
+            format,
         ));
     };
     let host = parts.headers.get(header::HOST).cloned();
@@ -230,7 +235,16 @@ async fn forward_with_limit(
     parts.version = Version::HTTP_11;
     let outbound = Request::from_parts(parts, body);
 
-    let sent = send_upstream(http, target.endpoint, outbound, limit).await;
+    let sent = if let Some(guard) = &guard {
+        tokio::select! {
+            biased;
+            _ = guard.cancelled() => return Ok(super::sharing::refused(
+                wonton_protocol::GatewayRefusal::ShareRevoked, langs, format)),
+            result = send_upstream(http, target.endpoint, outbound, limit) => result,
+        }
+    } else {
+        send_upstream(http, target.endpoint, outbound, limit).await
+    };
     let mut response = match sent {
         Ok(response) => response,
         Err(e @ HttpError::ResponseHeadersTimeout(_)) => {
@@ -250,22 +264,39 @@ async fn forward_with_limit(
         && let Some(client_upgrade) = client_upgrade
     {
         let upstream_upgrade = hyper::upgrade::on(&mut response);
-        tokio::spawn(async move {
-            match (client_upgrade.await, upstream_upgrade.await) {
-                (Ok(client), Ok(upstream)) => {
-                    let (mut a, mut b) = (TokioIo::new(client), TokioIo::new(upstream));
-                    let _ = tokio::io::copy_bidirectional(&mut a, &mut b).await;
-                }
-                (c, u) => tracing::warn!(client = c.is_ok(), upstream = u.is_ok(), "协议升级失败"),
-            }
-        });
+        tokio::spawn(copy_upgraded(client_upgrade, upstream_upgrade, guard));
         let (mut parts, _) = response.into_parts();
         strip_hop_by_hop(&mut parts.headers, true);
         return Ok(Response::from_parts(parts, Body::empty()));
     }
     let (mut parts, body) = response.into_parts();
     strip_hop_by_hop(&mut parts.headers, false);
-    Ok(Response::from_parts(parts, Body::new(body)).into_response())
+    let body = match guard {
+        Some(guard) => super::sharing::guard_body(body, guard),
+        None => Body::new(body),
+    };
+    Ok(Response::from_parts(parts, body).into_response())
+}
+
+async fn copy_upgraded(
+    client: hyper::upgrade::OnUpgrade,
+    upstream: hyper::upgrade::OnUpgrade,
+    guard: Option<super::sharing::AccessGuard>,
+) {
+    let copy = async {
+        match (client.await, upstream.await) {
+            (Ok(client), Ok(upstream)) => {
+                let (mut a, mut b) = (TokioIo::new(client), TokioIo::new(upstream));
+                let _ = tokio::io::copy_bidirectional(&mut a, &mut b).await;
+            }
+            (c, u) => tracing::warn!(client = c.is_ok(), upstream = u.is_ok(), "协议升级失败"),
+        }
+    };
+    if let Some(guard) = guard {
+        tokio::select! { _ = copy => {}, _ = guard.cancelled() => {} }
+    } else {
+        copy.await;
+    }
 }
 
 /// 插件声明跨源隔离时覆盖上游的同名头；核心和其他上游不调用这个函数。

@@ -18,6 +18,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use iroh::endpoint::presets;
+use iroh::tls::CaTlsConfig;
 use iroh::{Endpoint, RelayMode, RelayUrl, SecretKey, Watcher};
 use rustls_pki_types::{CertificateDer, pem::PemObject};
 use tokio::sync::watch;
@@ -157,6 +158,16 @@ fn relay_roots() -> Option<Vec<CertificateDer<'static>>> {
     (!roots.is_empty()).then_some(roots)
 }
 
+fn rustls_pemfile_roots(
+    pem: &[u8],
+) -> anyhow::Result<Vec<rustls_pki_types::CertificateDer<'static>>> {
+    let mut roots = Vec::new();
+    for item in rustls_pemfile::certs(&mut std::io::Cursor::new(pem)) {
+        roots.push(item.context("读取 PEM 证书")?);
+    }
+    Ok(roots)
+}
+
 pub async fn bind(key: SecretKey, port: u16, table: &RelayTable) -> anyhow::Result<Endpoint> {
     let mut builder = Endpoint::builder(presets::N0)
         .secret_key(key)
@@ -180,6 +191,12 @@ pub async fn bind(key: SecretKey, port: u16, table: &RelayTable) -> anyhow::Resu
         builder = builder
             .bind_addr((Ipv4Addr::UNSPECIFIED, port))?
             .bind_addr((Ipv6Addr::UNSPECIFIED, port))?;
+    }
+    // iroh 默认只信编译进去的根；冒烟和私有部署用 WONTON_SHARE_CA_FILE 显式加一份。
+    if let Some(path) = std::env::var_os("WONTON_SHARE_CA_FILE") {
+        let pem = std::fs::read(path).context("读取隧道额外的根证书")?;
+        let roots = rustls_pemfile_roots(&pem).context("解析隧道额外的根证书")?;
+        builder = builder.ca_tls_config(CaTlsConfig::custom_roots(roots));
     }
     let endpoint = builder.bind().await.context("绑定隧道 endpoint")?;
     let _fallback = wonton_tunnel::relays::spawn_tier_fallback(

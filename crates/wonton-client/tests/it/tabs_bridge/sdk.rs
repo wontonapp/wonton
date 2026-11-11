@@ -1,5 +1,5 @@
 use serde_json::{Value, json};
-use wonton_client::{Action, Rgb, TabBridgeAction, TabDisplay, TabPlatform, accent_hex};
+use wonton_client::{Action, Rgb, TabBridgeAction, TabDisplay, TabPlatform, TabRef, accent_hex};
 
 use super::driver::Driver;
 use super::support::{environment, open_page, selected_page};
@@ -82,13 +82,13 @@ async fn official_sdk_roundtrip() {
             driver.command("inspect", Value::Null)["context"]["theme"],
             "light"
         );
-        assert_page_actions(&mut driver, &rig);
+        assert_page_actions(&mut driver, &rig, &tab);
         driver.finish();
     }
 }
 
 /// 页面发起的动作交给壳，壳发来的事件页面收得到。
-fn assert_page_actions(driver: &mut Driver, rig: &Rig) {
+fn assert_page_actions(driver: &mut Driver, rig: &Rig, tab: &TabRef) {
     driver.command("openLink", json!({"url":"https://example.org/"}));
     driver.command(
         "sendMessage",
@@ -107,7 +107,7 @@ fn assert_page_actions(driver: &mut Driver, rig: &Rig) {
         ]
     );
     driver.send(json!({"script":rig.app.tab_reselected_script()}));
-    driver.send(json!({"script":rig.app.tab_connection_script()}));
+    driver.send(json!({"script":rig.app.tab_connection_script(tab.clone())}));
     let events = driver.command("inspect", Value::Null);
     assert_eq!(
         events["events"],

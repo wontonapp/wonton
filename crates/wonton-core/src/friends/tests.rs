@@ -518,7 +518,7 @@ fn access_time_is_monotonic_durable_and_noops_do_not_invalidate_readers() {
     store.record_opened(ALICE, 100).unwrap();
     let mut changes = store.subscribe();
     changes.borrow_and_update();
-    let before = store.snapshot();
+    assert_eq!(store.get(ALICE).unwrap().last_opened_share_at_ms, Some(100));
     assert_eq!(
         store
             .record_opened(ALICE, 50)
@@ -527,15 +527,52 @@ fn access_time_is_monotonic_durable_and_noops_do_not_invalidate_readers() {
         Some(100)
     );
     store.record_opened(ALICE, 100).unwrap();
+    store.record_opened(ALICE, 101).unwrap();
     store.update_display_name(ALICE, None).unwrap();
     store.set_groups(ALICE, &[]).unwrap();
-    assert_eq!(store.snapshot(), before);
+    assert_eq!(store.get(ALICE).unwrap().last_opened_share_at_ms, Some(101));
     assert!(!changes.has_changed().unwrap());
-    store.record_opened(ALICE, 101).unwrap();
-    assert!(changes.has_changed().unwrap());
+    // 到点落盘也不叫醒守着授权快照的连接：打开时间不进 access_generation。
+    store.record_opened(ALICE, 100 + 5 * 60 * 1000).unwrap();
+    assert!(!changes.has_changed().unwrap());
     assert_eq!(
         open(&temp).get(ALICE).unwrap().last_opened_share_at_ms,
-        Some(101)
+        Some(100 + 5 * 60 * 1000)
+    );
+}
+
+#[test]
+fn a_hundred_opens_within_five_minutes_write_once_and_never_wake_the_watch() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = open(&temp);
+    accept(&store, ALICE, "friend-alice");
+    let path = temp.path().join("core/friends.json");
+    store.record_opened(ALICE, 0).unwrap();
+    let mut changes = store.subscribe();
+    changes.borrow_and_update();
+    let before = fs::read(&path).unwrap();
+    let revision = store.snapshot().revision;
+    for step in 0..100 {
+        store.record_opened(ALICE, 1_000 + step * 1_000).unwrap();
+    }
+    assert!(!changes.has_changed().unwrap());
+    assert_eq!(store.snapshot().revision, revision);
+    assert_eq!(fs::read(&path).unwrap(), before);
+    // 内存里是最新的：界面和这次的返回值都看得到，只是还没落盘。
+    assert_eq!(
+        store.get(ALICE).unwrap().last_opened_share_at_ms,
+        Some(100_000)
+    );
+    // 间隔从上次真正写盘的时刻（0）算，窗口内看到的更晚时间不会把写盘一直往后推。
+    store.record_opened(ALICE, 5 * 60 * 1000 - 1).unwrap();
+    assert!(!changes.has_changed().unwrap());
+    assert_eq!(fs::read(&path).unwrap(), before);
+    store.record_opened(ALICE, 5 * 60 * 1000).unwrap();
+    assert!(!changes.has_changed().unwrap());
+    assert_ne!(fs::read(&path).unwrap(), before);
+    assert_eq!(
+        open(&temp).get(ALICE).unwrap().last_opened_share_at_ms,
+        Some(5 * 60 * 1000)
     );
 }
 
