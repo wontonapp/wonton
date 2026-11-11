@@ -124,7 +124,8 @@ enum SnapshotFixtures {
             sync: .running,
             encryption: EncryptionStatus(
                 verification: .verified, recovery: .enabled, recoveryKey: nil,
-                backupReminder: nil, canVerifyWithOtherDevice: false, verificationFlow: nil
+                backupReminder: nil, canVerifyWithOtherDevice: false, canReset: false,
+                recoveryNextStep: .none, verificationFlow: nil
             ),
             installingBots: [],
             rooms: [

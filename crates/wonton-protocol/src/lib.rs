@@ -80,8 +80,8 @@ pub use bot_web_registration::{BotWebConflict, bot_web_registration};
 pub use chat::{
     BackupReminder, BotInstallRow, BotInstallState, ChatAccount, ChatContact, ChatFailure,
     ChatProblem, ChatSync, ChatViewModel, DeviceVerification, EncryptionStatus, ImageThumbnail,
-    ImageUpload, MessageSummary, PendingConfirmation, RecoveryStatus, RoomMembership, RoomPreview,
-    RoomRow,
+    ImageUpload, MessageSummary, PendingConfirmation, RecoveryNextStep, RecoveryStatus,
+    RoomMembership, RoomPreview, RoomRow,
 };
 pub use chat_layout::{
     BotChatSettings, CHAT_LAYOUT_EVENT, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings,

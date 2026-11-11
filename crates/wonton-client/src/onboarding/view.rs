@@ -236,8 +236,8 @@ fn replaced_agent(onboarding: &Onboarding) -> Option<ReplacedAgent> {
 mod tests {
     use super::*;
     use wonton_protocol::{
-        ChatAccount, ChatSync, DeviceVerification, EncryptionStatus, PushStatus, RecoveryStatus,
-        RoomRow,
+        ChatAccount, ChatSync, DeviceVerification, EncryptionStatus, PushStatus, RecoveryNextStep,
+        RecoveryStatus, RoomRow,
     };
 
     fn onboarding() -> Onboarding {
@@ -276,6 +276,8 @@ mod tests {
                 recovery_key: None,
                 backup_reminder: None,
                 can_verify_with_other_device: false,
+                can_reset: false,
+                recovery_next_step: RecoveryNextStep::None,
                 verification_flow: None,
             },
             installing_bots: Vec::new(),

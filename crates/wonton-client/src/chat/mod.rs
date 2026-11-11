@@ -56,7 +56,7 @@ use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, Ro
 use wonton_protocol::{
     Action, Answer, ChatAccount, ChatFailure, ChatSync, ChatViewModel, ConfirmationAnswer,
     CoreError, DeviceVerification, EncryptionStatus, MediaHandle, PushMethod, PushStatus,
-    RecoveryStatus, RoomPanel, TimelineScroll,
+    RecoveryNextStep, RecoveryStatus, RoomPanel, TimelineScroll,
 };
 
 pub use bots::bot_current_avatar;
@@ -199,6 +199,8 @@ impl ChatLink {
             recovery_key: storage.recovery_key()?,
             backup_reminder: None,
             can_verify_with_other_device: false,
+            can_reset: false,
+            recovery_next_step: RecoveryNextStep::None,
             verification_flow: None,
         };
         recovery::update_reminder(&mut encryption);
