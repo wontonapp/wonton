@@ -111,7 +111,7 @@ enum SnapshotFixtures {
                     quality: .unknown, lossPerMille: nil, rttMs: nil, lastFailure: nil,
                     addressesStale: false, udpFlows: [], udpBufferEvictedDatagrams: nil
                 ),
-                proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false
+                proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false, justRecovered: false
             ),
             servers: ServersViewModel(servers: [], adding: false, matrixLogin: nil)
         )

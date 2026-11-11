@@ -150,6 +150,7 @@ internal fun previewHome() = HomeViewModel(
     pairing = null,
     invite = null,
     keepConnection = false,
+    justRecovered = false,
 )
 
 internal fun previewPlugins() = PluginsViewModel(

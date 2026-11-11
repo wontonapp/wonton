@@ -27,6 +27,9 @@ pub struct HomeViewModel {
     pub invite: Option<DeviceInvite>,
     /// 已配对、收新消息的方式是 [`PushMethod::Keepalive`](crate::PushMethod::Keepalive)：Android 的壳按它启停“保持连接”的前台服务。
     pub keep_connection: bool,
+    /// 断过又连上了：短暂为真，期间壳把短状态换成“已连接”；什么时候清由核心掌握，壳不计时。
+    #[serde(default)]
+    pub just_recovered: bool,
 }
 
 /// 给新设备扫的配对码。
