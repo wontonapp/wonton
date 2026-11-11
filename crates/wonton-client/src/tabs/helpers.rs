@@ -12,8 +12,13 @@ use wonton_l10n::l10n;
 pub(crate) fn clear_plugin_config(state: &mut TabsState) {
     state.config.items.retain(|item| !is_plugin_page(&item.tab));
     state.config.displays.clear();
+    state.config.panel.clear();
+    state.bot_pins.clear();
+    state.bot_pin_consents.clear();
     state.overlay = None;
     state.fullscreen = None;
+    state.attention.clear();
+    state.panel_selected = None;
     if is_plugin_page(&state.selected) {
         state.selected = TabRef::Apps;
     }

@@ -27,7 +27,7 @@ impl Rig {
             method_rx,
         )
         .unwrap();
-        let plugins_link = PluginsLink::new(runtime.clone(), home_link, dir.path(), None, false);
+        let plugins_link = PluginsLink::new(runtime.clone(), home_link.clone(), dir.path(), None, false);
         let home = watch::Sender::new(home("old-server"));
         let plugins = watch::Sender::new(plugins("old-content"));
         let (panel_sender, panel_receiver) = watch::channel(None);
