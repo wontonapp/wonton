@@ -478,14 +478,7 @@ private struct UpdateAllButton: View {
     }
 }
 
-private struct GoToInstalledAppsKey: EnvironmentKey {
-    nonisolated(unsafe) static let defaultValue: () -> Void = {}
-}
-
 extension EnvironmentValues {
     /// 关掉叠着的页面、回到已安装的应用格子（结果不确定时用）。
-    var goToInstalledApps: () -> Void {
-        get { self[GoToInstalledAppsKey.self] }
-        set { self[GoToInstalledAppsKey.self] = newValue }
-    }
+    @Entry var goToInstalledApps: () -> Void = {}
 }
