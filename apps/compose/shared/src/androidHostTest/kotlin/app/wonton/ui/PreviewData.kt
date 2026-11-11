@@ -1,4 +1,4 @@
-// 预览和截图测试的假数据、预览函数都在这个文件：假核心给的原文就是写死的字面量，
+// 截图测试的假 ViewModel 数据和预览都在测试源集里，不进 App 包；假核心给的原文就是写死的字面量，
 // 预览多了也超过了 detekt 每文件 11 个函数的上限。`Notices`、`InviteItem` 为此外提成 internal。
 @file:Suppress("MagicNumber", "TooManyFunctions")
 
