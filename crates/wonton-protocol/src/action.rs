@@ -488,7 +488,8 @@ pub enum Action {
         delete_local_file: bool,
     },
     /// 只重发链接：再授权一次，再把链接发进上传时的房间，不重传文件。只对
-    /// [`TransferState::LinkNotSent`](crate::TransferState::LinkNotSent) 的传输有效，其他返回 `InvalidInput`。
+    /// [`TransferState::LinkNotSent`](crate::TransferState::LinkNotSent) 的传输有动作；不欠链接的传输什么都不做
+    /// （连点两下第二下不算错，壳不用弹窗），记录不在了返回 `InvalidInput`。
     ResendFileLink {
         id: String,
     },

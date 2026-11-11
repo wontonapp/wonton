@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use wonton_l10n::l10n;
 use wonton_matrix::OwnedEventId;
-use wonton_protocol::{CoreError, ImageUpload};
+use wonton_protocol::{ChatAccount, CoreError, ImageUpload};
 
 use super::draft::DraftWrite;
 use super::{ChatLink, invalid, onboarding};
@@ -110,5 +110,32 @@ impl ChatLink {
             move || onboarding::record_sent(&sent, sent_room),
         );
         Ok(())
+    }
+}
+
+/// 等登录出结果：登录好了返回真；停在要用户处理的失败上、或者一直没动静过了期限，返回假。
+/// （传完文件发链接时用：App 重启后 Matrix 可能还没登录好，等它，别让主人点重发。）
+pub(super) async fn signed_in_within(
+    mut view: tokio::sync::watch::Receiver<super::ChatViewModel>,
+    wait: std::time::Duration,
+) -> bool {
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        match view.borrow().account {
+            ChatAccount::SignedIn { .. } => return true,
+            // 没在登录、也不会自己登录的，等也没用。
+            ChatAccount::SignedOut | ChatAccount::Failed { .. } => return false,
+            _ => {}
+        }
+        // 等变化也卡在期限内：一直没动静（登录卡住了）就到期走人。
+        let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
+            return false;
+        };
+        if tokio::time::timeout(remaining, view.changed())
+            .await
+            .is_err()
+        {
+            return false;
+        }
     }
 }

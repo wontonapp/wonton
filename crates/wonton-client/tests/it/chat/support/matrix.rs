@@ -84,6 +84,9 @@ pub(super) async fn serve_matrix(
         core.members_requests_dropped.fetch_add(1, Ordering::SeqCst);
         return;
     }
+    if fail_send(&core, text, &mut tcp).await {
+        return;
+    }
     if text.contains("/account_data/app.wonton.chat_layout")
         && core.layout_down.load(Ordering::SeqCst)
     {
@@ -312,6 +315,23 @@ async fn forward_to(core: &Core, head: &[u8]) -> Option<TcpStream> {
             None
         }
     }
+}
+
+/// 发消息的请求回 502：像网关连不上 Tuwunel。matrix-sdk 收到 5xx 会自己重试很久，客户端这边不设期限就一直挂着。
+/// 认下请求（要自己写应答）返回真。
+async fn fail_send(core: &Core, text: &str, tcp: &mut TcpStream) -> bool {
+    if !text
+        .lines()
+        .next()
+        .is_some_and(|line| line.contains("/send/"))
+        || !*core.fail_sends.borrow()
+    {
+        return false;
+    }
+    tcp.write_all(b"HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+        .await
+        .ok();
+    true
 }
 
 /// 下一条房间列表请求回 M_UNKNOWN_POS，过期注入先于房间状态改写。
