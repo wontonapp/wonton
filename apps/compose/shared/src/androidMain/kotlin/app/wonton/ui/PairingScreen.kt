@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
@@ -138,7 +139,7 @@ private fun PairingForm(
             WontonTextField(
                 value = pastedCode,
                 onValueChange = onPastedCode,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("pairing-code"),
                 placeholder = stringResource(R.string.pairing_paste_placeholder),
                 textStyle = WontonTheme.typography.caption.copy(fontFamily = FontFamily.Monospace),
                 maxLines = PASTED_CODE_LINES,
@@ -147,7 +148,7 @@ private fun PairingForm(
             WontonButton(
                 stringResource(R.string.pairing_submit),
                 onClick = { pair(pastedCode) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("pairing-submit"),
                 enabled = pastedCode.isNotBlank() && !inProgress,
             )
         }

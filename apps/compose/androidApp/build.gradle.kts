@@ -83,6 +83,7 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // 只打包编译了 Rust 核心的 ABI：其他 ABI 的设备直接装不上，而不是装上后因缺 .so 崩溃。
         ndk {
@@ -107,6 +108,11 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.junit)
+    // 仪器测试（夜跑用）：启动 App 到首屏的骨架和 Compose 语义树断言。
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.compose.ui.test.junit4)
     // shared 用 implementation 引 Compose，测试编译 StepCardFrame 要自己拿到这些类型。
     testImplementation(libs.compose.runtime)
     testImplementation(libs.compose.foundation)

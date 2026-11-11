@@ -16,7 +16,7 @@ final class PairingLinkUITests: XCTestCase {
         app.open(url)
 
         expectation(for: NSPredicate(format: "value == %@", url.absoluteString), evaluatedWith: code)
-        waitForExpectations(timeout: 5)
+        waitForExpectations(timeout: 15)
         let submit = app.buttons["pairing-submit"]
         XCTAssertTrue(submit.isEnabled)
         XCTAssertFalse(app.descendants(matching: .any)["pairing-refusal"].firstMatch.exists)

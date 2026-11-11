@@ -204,7 +204,8 @@ jobs:
       - name: 安装 rust-toolchain.toml 指定的工具链和 Android target
         run: |
           rustup toolchain install
-          rustup target add aarch64-linux-android
+          # 夜跑在 x86_64 模拟器上跑，缓存里两套 ABI 都要（见下面的两个构建步骤）。
+          rustup target add aarch64-linux-android x86_64-linux-android
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
           tool: cargo-ndk@4.1.2
@@ -217,6 +218,10 @@ jobs:
         # 走 android.yml 同一条 Gradle 任务，ABI、minSdk 和那边一致；不跑 detekt 和单元测试。
         working-directory: apps/compose
         run: ./gradlew :shared:buildRustCore
+      - name: 编译 Rust 核心（模拟器的 x86_64；夜跑机器用）
+        # 夜跑在 x86_64 模拟器上跑，ABI 和上面的手机包不同，缓存里两套都要有。
+        working-directory: apps/compose
+        run: ./gradlew :shared:buildRustCore -Pwonton.abis=x86_64
 
   bridge:
     name: 桥镜像（层缓存写回镜像仓库）
