@@ -9,12 +9,13 @@
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use tokio::sync::watch;
 
 use wonton_protocol::{
-    ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, CoreError, DeviceNetwork,
-    DeviceVerification, EncryptionStatus, HomePath, HomeStatus, MessageSummary, OnboardingStep,
-    PushStatus, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, ServerKind, ServerName,
-    ServerRow, ServersViewModel, TabItem, TabRef,
+    ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, ChatViewModel, CoreError, DeviceNetwork,
+    DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel, MessageSummary,
+    OnboardingStep, OnboardingViewModel, PushStatus, RecoveryStatus, RoomMembership, RoomPreview,
+    RoomRow, ServerKind, ServerName, ServerRow, ServersViewModel, TabItem, TabRef, TabsViewModel,
 };
 
 use super::ClientCore;
@@ -35,108 +36,133 @@ impl ClientCore {
 
 impl ClientCore {
     fn seed_ui_fake(&self) {
-        let views = &self.views;
-        let mut home = self.home();
-        home.server_id = Some("ui-fake".into());
-        home.status = HomeStatus::Connected;
-        home.path = Some(HomePath {
-            relay: false,
-            lan: true,
-            rtt_ms: 12,
-        });
-        home.details.network = Some(DeviceNetwork::Wifi);
-        home.details.relay = Default::default();
-        views.home.send_replace(home);
-
-        self.servers.seed_ui_fake(ServersViewModel {
-            servers: vec![ServerRow {
-                id: "ui-fake".into(),
-                name: ServerName::Named {
-                    name: "Home".into(),
-                },
-                kind: ServerKind::Wonton,
-                current: true,
-            }],
-            adding: false,
-            matrix_login: None,
-        });
-
-        let mut chat = self.chat();
-        chat.account = ChatAccount::SignedIn {
-            user_id: "@owner:home.example".into(),
-            device_id: "UIFAKE".into(),
+        // 换成独立的一组发送端：真实作用域读盘算完的首帧还会发出来，接在同一组通道上就会把假数据盖回去。
+        let current = self.views();
+        let views = crate::scope::Views {
+            home: watch::Sender::new(fake_home(current.home.borrow().clone())),
+            chat: watch::Sender::new(fake_chat(current.chat.borrow().clone())),
+            plugins: watch::Sender::new(current.plugins.borrow().clone()),
+            tabs: watch::Sender::new(fake_tabs(current.tabs.borrow().clone())),
+            transfers: watch::Sender::new(current.transfers.borrow().clone()),
+            onboarding: watch::Sender::new(fake_onboarding(current.onboarding.borrow().clone())),
+            peers: watch::Sender::new(current.peers.borrow().clone()),
+            friends: watch::Sender::new(current.friends.borrow().clone()),
+            settings: watch::Sender::new(current.settings.borrow().clone()),
         };
-        chat.sync = ChatSync::Running;
-        chat.encryption = EncryptionStatus {
-            verification: DeviceVerification::Unverified,
-            recovery: RecoveryStatus::Incomplete,
-            recovery_key: None,
-            backup_reminder: None,
-            can_verify_with_other_device: false,
-            verification_flow: None,
-        };
-        chat.installing_bots.clear();
-        chat.rooms = vec![RoomRow {
-            room_id: ROOM_ID.into(),
-            name: "Echo".into(),
-            is_direct: true,
-            direct_user_id: Some("@echo:home.example".into()),
-            is_encrypted: true,
-            is_read_only: false,
-            membership: RoomMembership::Joined,
-            preview: Some(RoomPreview {
-                sender_name: "Echo".into(),
-                is_own: false,
-                body: MessageSummary::Text {
-                    text: "Fake message from the UI test fixture".into(),
-                },
-                timestamp_ms: 1_792_000_000_000,
-            }),
-            unread_count: 1,
-            layout: ChatLayout::default(),
-        }];
-        chat.problem = None;
-        chat.push = PushStatus::NoEndpoint;
-        chat.pending_confirmations.clear();
-        chat.settled_confirmations.clear();
-        chat.background_notifications.clear();
-        chat.bots.clear();
-        chat.chat_layout_default = ChatLayoutChoice::default();
-        views.chat.send_replace(chat);
-
-        let mut tabs = self.tabs();
-        tabs.items = vec![
-            TabItem {
-                tab: TabRef::Chat,
-                removable: false,
-                badge: false,
-                page: None,
-            },
-            TabItem {
-                tab: TabRef::Apps,
-                removable: true,
-                badge: false,
-                page: None,
-            },
-            TabItem {
-                tab: TabRef::Settings,
-                removable: true,
-                badge: false,
-                page: None,
-            },
-        ];
-        tabs.show_bar = true;
-        tabs.selected = TabRef::Chat;
-        tabs.overlay = None;
-        views.tabs.send_replace(tabs);
-
-        let mut onboarding = self.onboarding();
-        onboarding.step = Some(OnboardingStep::Finished);
-        onboarding.nav = None;
-        onboarding.loading = false;
-        onboarding.problem = None;
-        views.onboarding.send_replace(onboarding);
+        drop(current);
+        self.servers.seed_ui_fake(fake_servers());
+        *self
+            .views
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = views;
     }
+}
+
+fn fake_home(mut home: HomeViewModel) -> HomeViewModel {
+    home.server_id = Some("ui-fake".into());
+    home.status = HomeStatus::Connected;
+    home.path = Some(HomePath {
+        relay: false,
+        lan: true,
+        rtt_ms: 12,
+    });
+    home.details.network = Some(DeviceNetwork::Wifi);
+    home.details.relay = Default::default();
+    home
+}
+
+fn fake_servers() -> ServersViewModel {
+    ServersViewModel {
+        servers: vec![ServerRow {
+            id: "ui-fake".into(),
+            name: ServerName::Named {
+                name: "Home".into(),
+            },
+            kind: ServerKind::Wonton,
+            current: true,
+        }],
+        adding: false,
+        matrix_login: None,
+    }
+}
+
+fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
+    chat.account = ChatAccount::SignedIn {
+        user_id: "@owner:home.example".into(),
+        device_id: "UIFAKE".into(),
+    };
+    chat.sync = ChatSync::Running;
+    chat.encryption = EncryptionStatus {
+        verification: DeviceVerification::Unverified,
+        recovery: RecoveryStatus::Incomplete,
+        recovery_key: None,
+        backup_reminder: None,
+        can_verify_with_other_device: false,
+        verification_flow: None,
+    };
+    chat.installing_bots.clear();
+    chat.rooms = vec![RoomRow {
+        room_id: ROOM_ID.into(),
+        name: "Echo".into(),
+        is_direct: true,
+        direct_user_id: Some("@echo:home.example".into()),
+        is_encrypted: true,
+        is_read_only: false,
+        membership: RoomMembership::Joined,
+        preview: Some(RoomPreview {
+            sender_name: "Echo".into(),
+            is_own: false,
+            body: MessageSummary::Text {
+                text: "Fake message from the UI test fixture".into(),
+            },
+            timestamp_ms: 1_792_000_000_000,
+        }),
+        unread_count: 1,
+        layout: ChatLayout::default(),
+    }];
+    chat.problem = None;
+    chat.push = PushStatus::NoEndpoint;
+    chat.pending_confirmations.clear();
+    chat.settled_confirmations.clear();
+    chat.background_notifications.clear();
+    chat.bots.clear();
+    chat.chat_layout_default = ChatLayoutChoice::default();
+    chat
+}
+
+fn fake_tabs(mut tabs: TabsViewModel) -> TabsViewModel {
+    tabs.items = vec![
+        TabItem {
+            tab: TabRef::Chat,
+            removable: false,
+            badge: false,
+            page: None,
+        },
+        TabItem {
+            tab: TabRef::Apps,
+            removable: true,
+            badge: false,
+            page: None,
+        },
+        TabItem {
+            tab: TabRef::Settings,
+            removable: true,
+            badge: false,
+            page: None,
+        },
+    ];
+    tabs.show_bar = true;
+    tabs.selected = TabRef::Chat;
+    tabs.overlay = None;
+    tabs
+}
+
+fn fake_onboarding(mut onboarding: OnboardingViewModel) -> OnboardingViewModel {
+    onboarding.step = Some(OnboardingStep::Finished);
+    onboarding.nav = None;
+    onboarding.loading = false;
+    onboarding.problem = None;
+    onboarding
 }
 
 #[cfg(test)]
@@ -153,6 +179,12 @@ mod tests {
         assert_eq!(core.home().status, HomeStatus::Connected);
         assert_eq!(core.servers().servers.len(), 1);
         assert_eq!(core.chat().rooms[0].room_id, ROOM_ID);
+        assert_eq!(core.tabs().selected, TabRef::Chat);
+        assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
+        // 作用域的首帧是后台算完才发的：等一会儿，确认它盖不掉假数据。
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        assert_eq!(core.home().status, HomeStatus::Connected);
+        assert_eq!(core.chat().rooms[0].name, "Echo");
         assert_eq!(core.tabs().selected, TabRef::Chat);
         assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
         // 操作不落到作用域。

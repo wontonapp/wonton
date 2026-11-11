@@ -28,7 +28,10 @@ final class FirstScreenUITests: XCTestCase {
     func testFakeDataShowsChatList() throws {
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
         app.launch()
-        XCTAssertTrue(app.staticTexts["Echo"].waitForExistence(timeout: 20), "假数据没进聊天列表")
+        XCTAssertTrue(
+            app.staticTexts["Echo"].waitForExistence(timeout: 20),
+            "假数据没进聊天列表\n\(app.debugDescription)"
+        )
         XCTAssertTrue(app.buttons["Apps"].exists, "主界面没有底栏")
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "fake-chat-list"

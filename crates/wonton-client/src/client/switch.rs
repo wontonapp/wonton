@@ -94,13 +94,14 @@ impl ClientCore {
     }
 
     fn open_scope(&self, slot: &str) -> Result<Arc<Scope>, CoreError> {
+        let views = self.views();
         Scope::open(
             slot,
             &self.root,
             &self.servers.slot_dir(slot),
             self.network,
             self.servers.subscribe(),
-            Some(&self.views),
+            Some(&views),
         )
     }
 

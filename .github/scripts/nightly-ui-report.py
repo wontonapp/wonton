@@ -30,7 +30,7 @@ def ios_failures(bundle: str) -> list[str]:
         name = node.get("name", "")
         if node_type == "Test Case":
             if node.get("result") == "Failed":
-                failures.append(".".join([*suites, name]))
+                failures.append(".".join([*suites, name.removesuffix("()")]))
             return
         next_suites = [*suites, name] if node_type in ("Test Suite", "Unit test bundle") and name else suites
         for child in node.get("children", []):
@@ -86,7 +86,8 @@ def main() -> int:
             "--search", f'"{TITLE_PREFIX}" in:title', "--json", "number,title",
         )
     )
-    by_title = {issue["title"]: issue["number"] for issue in open_issues}
+    # 之前开出来的标题带 xcresult 的 "()" 后缀，按去掉后的比。
+    by_title = {issue["title"].removesuffix("()"): issue["number"] for issue in open_issues}
 
     workflow = os.environ.get("GITHUB_WORKFLOW", "nightly-ui")
     platform_name = "iOS" if args.platform == "ios" else "Android"
@@ -99,8 +100,8 @@ def main() -> int:
             f"`{workflow}` 夜跑自动开的 issue；同一条测试再失败就在这条上留言。查清原因后关掉。"
         )
         try:
-            if title in by_title:
-                gh("issue", "comment", str(by_title[title]), "--repo", args.repo, "--body", args.run_url)
+            if title.removesuffix("()") in by_title:
+                gh("issue", "comment", str(by_title[title.removesuffix("()")]), "--repo", args.repo, "--body", args.run_url)
                 print(f"留言：{title}")
             else:
                 gh("issue", "create", "--repo", args.repo, "--title", title, "--body", body)

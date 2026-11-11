@@ -52,7 +52,8 @@ pub struct ClientCore {
     root: PathBuf,
     network: Network,
     scope: RwLock<Arc<Scope>>,
-    views: Views,
+    /// 壳订阅的 ViewModel 发送端。假数据入口会整组换成独立的发送端，真实作用域再发也盖不掉。
+    views: RwLock<Views>,
     /// 切换后要在新作用域里重放的、壳只发一次的输入。
     replay: Mutex<Replay>,
     /// 串行化切换：列表改动和换作用域要一起做完。
@@ -76,12 +77,12 @@ impl ClientCore {
 
     /// 当前的底栏和插件页面，用于首帧渲染。
     pub fn tabs(&self) -> TabsViewModel {
-        self.views.tabs.borrow().clone()
+        self.views().tabs.borrow().clone()
     }
 
     /// 订阅底栏，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_tabs(&self) -> Arc<TabsSubscription> {
-        Arc::new(TabsSubscription::new(self.views.tabs.subscribe()))
+        Arc::new(TabsSubscription::new(self.views().tabs.subscribe()))
     }
 
     /// 文档开始前、只在插件自己的主框架注入；原生通道名为 `wontonBridge`。
@@ -163,32 +164,32 @@ impl ClientCore {
 
     /// 当前的设置首页，用于首帧渲染。
     pub fn settings(&self) -> SettingsViewModel {
-        self.views.settings.borrow().clone()
+        self.views().settings.borrow().clone()
     }
 
     /// 订阅设置首页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_settings(&self) -> Arc<SettingsSubscription> {
-        Arc::new(SettingsSubscription::new(self.views.settings.subscribe()))
+        Arc::new(SettingsSubscription::new(self.views().settings.subscribe()))
     }
 
     /// 当前的“其他服务器”页面（ADR-0050），用于首帧渲染。
     pub fn peers(&self) -> PeersViewModel {
-        self.views.peers.borrow().clone()
+        self.views().peers.borrow().clone()
     }
 
     /// 订阅“其他服务器”页面，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_peers(&self) -> Arc<PeersSubscription> {
-        Arc::new(PeersSubscription::new(self.views.peers.subscribe()))
+        Arc::new(PeersSubscription::new(self.views().peers.subscribe()))
     }
 
     /// 当前的好友页（ADR-0051），用于首帧渲染。
     pub fn friends(&self) -> FriendsViewModel {
-        self.views.friends.borrow().clone()
+        self.views().friends.borrow().clone()
     }
 
     /// 订阅好友页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_friends(&self) -> Arc<FriendsSubscription> {
-        Arc::new(FriendsSubscription::new(self.views.friends.subscribe()))
+        Arc::new(FriendsSubscription::new(self.views().friends.subscribe()))
     }
 
     /// 当前的会话列表，用于首帧渲染。
@@ -203,22 +204,22 @@ impl ClientCore {
 
     /// 当前和家里服务器的连接，用于首帧渲染。
     pub fn home(&self) -> HomeViewModel {
-        self.views.home.borrow().clone()
+        self.views().home.borrow().clone()
     }
 
     /// 订阅和家里服务器的连接，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_home(&self) -> Arc<HomeSubscription> {
-        Arc::new(HomeSubscription::new(self.views.home.subscribe()))
+        Arc::new(HomeSubscription::new(self.views().home.subscribe()))
     }
 
     /// 当前的聊天状态（账号、同步、加密、房间列表），用于首帧渲染。
     pub fn chat(&self) -> ChatViewModel {
-        self.views.chat.borrow().clone()
+        self.views().chat.borrow().clone()
     }
 
     /// 订阅聊天状态，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_chat(&self) -> Arc<ChatSubscription> {
-        Arc::new(ChatSubscription::new(self.views.chat.subscribe()))
+        Arc::new(ChatSubscription::new(self.views().chat.subscribe()))
     }
 
     /// 发起私聊时能直接选的人：已装插件的 Bot 在前，然后是私聊过的人。`query` 不为空时按名字和 ID 筛。
@@ -275,22 +276,22 @@ impl ClientCore {
 
     /// 当前的插件页面（已安装的插件、商店、安装的进展），用于首帧渲染。
     pub fn plugins(&self) -> PluginsViewModel {
-        self.views.plugins.borrow().clone()
+        self.views().plugins.borrow().clone()
     }
 
     /// 订阅插件页面，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_plugins(&self) -> Arc<PluginsSubscription> {
-        Arc::new(PluginsSubscription::new(self.views.plugins.subscribe()))
+        Arc::new(PluginsSubscription::new(self.views().plugins.subscribe()))
     }
     /// 当前的新用户引导状态，用于首帧渲染。
     pub fn onboarding(&self) -> OnboardingViewModel {
-        self.views.onboarding.borrow().clone()
+        self.views().onboarding.borrow().clone()
     }
 
     /// 订阅新用户引导，第一次 `next()` 立即返回当前值。
     pub fn subscribe_onboarding(&self) -> Arc<OnboardingSubscription> {
         Arc::new(OnboardingSubscription::new(
-            self.views.onboarding.subscribe(),
+            self.views().onboarding.subscribe(),
         ))
     }
 
@@ -494,7 +495,7 @@ impl ClientCore {
 
     /// 当前的传输列表，用于首帧渲染。
     pub fn transfers(&self) -> TransfersViewModel {
-        self.views.transfers.borrow().clone()
+        self.views().transfers.borrow().clone()
     }
 
     /// 这个房间的传输条列什么。不走网络，传输列表一变就可以重新取。
@@ -508,7 +509,9 @@ impl ClientCore {
 
     /// 订阅传输列表，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_transfers(&self) -> Arc<TransfersSubscription> {
-        Arc::new(TransfersSubscription::new(self.views.transfers.subscribe()))
+        Arc::new(TransfersSubscription::new(
+            self.views().transfers.subscribe(),
+        ))
     }
 
     /// 消息下面的文件卡片：取信息并缓存。结果写在卡片里，壳等待时画 [`FileCard::Loading`]。
@@ -579,6 +582,12 @@ impl ClientCore {
 }
 
 impl ClientCore {
+    pub(crate) fn views(&self) -> std::sync::RwLockReadGuard<'_, Views> {
+        self.views
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// 关掉隧道的定时检查和升级状态的定时轮询，只留回到前台、网络变化和重试触发的检查。只给测试用。
     #[doc(hidden)]
     pub fn stop_periodic_checks(&self) {
@@ -607,7 +616,7 @@ impl ClientCore {
         let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             appearance: AppearanceLink::new(&root),
-            views: Views::of(&scope),
+            views: RwLock::new(Views::of(&scope)),
             scope: RwLock::new(scope.clone()),
             servers,
             root,
