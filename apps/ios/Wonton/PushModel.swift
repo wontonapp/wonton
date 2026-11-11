@@ -75,8 +75,19 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
         guard !running else { return }
         running = true
         defer { running = false }
-        // 密钥先备好：不依赖配对和权限，通知扩展只认它。
-        keys = try? PushKeys.registration()
+        // 密钥先备好：不依赖配对和权限，通知扩展只认它。失败要说出口：模拟器验证抓不到密钥时
+        // 至少知道是哪一步坏了（未签名的构建读不了共享钥匙串，就是在这暴露的）。
+        do {
+            keys = try PushKeys.registration()
+        } catch {
+            keys = nil
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["WONTON_DEV_PUSH_KEYS"] != nil {
+                print("PUSH_KEYS_ERR \(error)")
+                fflush(stdout)
+            }
+            #endif
+        }
         #if DEBUG
         devPrintKeys()
         #endif
