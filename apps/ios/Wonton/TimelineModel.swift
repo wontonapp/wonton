@@ -35,7 +35,7 @@ final class TimelineModel {
     }
 
     /// 在视图的 `.task` 里调用：订阅时间线，视图消失时订阅随之结束。
-    func observe() async -> Bool {
+    func observe(pin: BottomPin) async -> Bool {
         failure = nil
         let subscription: TimelineSubscription
         do {
@@ -45,6 +45,16 @@ final class TimelineModel {
             return false
         }
         for await update in subscription.updates() {
+            // 翻页由房间的锚点恢复处理；仅保留不改变开头的实时追加和编辑。
+            let prepends = update.diffs.contains { diff in
+                switch diff {
+                case .pushFront, .clear, .reset: true
+                case let .insert(index, _): index == 0
+                default: false
+                }
+            }
+            if !prepends { pin.prepareForUpdate() }
+            if update.scrollToBottom { pin.pin() }
             for diff in update.diffs {
                 apply(diff)
             }
@@ -57,6 +67,7 @@ final class TimelineModel {
             if let anchor = update.anchor {
                 self.anchor = anchor
             }
+            if isLoaded { pin.stick() }
             isLoaded = true
         }
         return !Task.isCancelled

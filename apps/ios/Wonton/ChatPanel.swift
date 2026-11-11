@@ -20,7 +20,6 @@ extension EnvironmentValues {
     @Entry var panelDeps: PanelDependencies?
 }
 
-/// 面板里的页面容器要的东西：展开没展开、下面被盖住多少、退出和编辑。
 struct TabPanelMode {
     let expanded: Bool
     /// 这一页是当前页、面板也拉着：加载好或被翻到时发“被看到了”，页面据此刷新（ADR-0052）。
@@ -28,8 +27,9 @@ struct TabPanelMode {
     /// 网页框顶边在面板里的位置：第 2 级让出状态栏，第 1 级贴着面板顶边。
     let insetTop: CGFloat
     let insetBottom: CGFloat
-    /// 第 1 级、当前页、面板在上：页面滚到顶后继续拉能进第 2 级。
+    /// 继续拖动网页时监听哪一端；第 1 级往打开方向、第 2 级往收回方向。
     let pagePull: Bool
+    let pageEdge: PanelEdge
     let pageChanged: (CGFloat) -> Void
     let pageEnded: (CGFloat, CGFloat) -> Void
     let close: () -> Void
@@ -77,10 +77,11 @@ struct ChatPanelHost<Content: View>: View {
     @State private var buzzes = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.wontonColors) private var colors
-
-    static var peekFraction: CGFloat { 0.18 }
-    static var pullThreshold: CGFloat { 80 }
-    static var pushThreshold: CGFloat { 50 }
+    static let mainPeekChatFraction: CGFloat = 0.18
+    /// 房间第 1 级让面板占约 55%，聊天仍留在上方约 45%。
+    static let roomPeekChatFraction: CGFloat = 0.45
+    static let pullThreshold: CGFloat = 80
+    static let pushThreshold: CGFloat = 50
 
     var body: some View {
         GeometryReader { geometry in
@@ -139,11 +140,12 @@ struct ChatPanelHost<Content: View>: View {
 
     // MARK: - 级
 
-    /// 主聊天页在安全区里排版，露出的是它的顶上；房间露出的是它的底下（最新几条和输入框），按屏幕底边算。
     private func base(_ level: PanelLevel, _ height: CGFloat) -> CGFloat {
         switch level {
         case .closed: 0
-        case .peek: height * (1 - Self.peekFraction) - (edge == .top ? safeTop : 0)
+        case .peek:
+            let chatFraction = edge == .top ? Self.mainPeekChatFraction : Self.roomPeekChatFraction
+            return height * (1 - chatFraction) - (edge == .top ? safeTop : 0)
         case .full: height
         }
     }
@@ -251,23 +253,28 @@ extension ChatPanelHost {
     /// 露出的那条聊天页：点一下收起，往外推换级。单独一层放在聊天页上面，不靠它的位移决定命中区——
     /// 叠在聊天页上的点按区不跟着 `.offset` 走，面板会被整块盖住，第 1 级里点加号、圆点、网页都会被吃掉。
     private func strip(height: CGFloat) -> some View {
-        Color.clear
-            .contentShape(Rectangle())
-            .frame(height: max(0, height - chatOffset(height)))
-            .frame(maxHeight: .infinity, alignment: edge == .top ? .bottom : .top)
-            .onTapGesture { move(to: .closed) }
-            .gesture(
-                // 按屏幕算：聊天页跟着手指动，按它自己的坐标算的话手指一直停在原处。
-                DragGesture(minimumDistance: 4, coordinateSpace: .global)
-                    .onChanged {
-                        drag = sign * $0.translation.height
-                        arm(distance: drag, height: height)
-                    }
-                    .onEnded { value in
-                        settle(distance: sign * value.translation.height,
-                               velocity: sign * value.velocity.height, height)
-                    }
-            )
+        ZStack(alignment: edge == .top ? .top : .bottom) {
+            Color.clear
+            if level == .peek {
+                PanelGrabber()
+            }
+        }
+        .contentShape(Rectangle())
+        .frame(height: max(0, height - chatOffset(height)))
+        .frame(maxHeight: .infinity, alignment: edge == .top ? .bottom : .top)
+        .onTapGesture { move(to: .closed) }
+        .gesture(
+            // 按屏幕算：聊天页跟着手指动，按它自己的坐标算的话手指一直停在原处。
+            DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                .onChanged {
+                    drag = sign * $0.translation.height
+                    arm(distance: drag, height: height)
+                }
+                .onEnded { value in
+                    settle(distance: sign * value.translation.height,
+                           velocity: sign * value.velocity.height, height: height)
+                }
+        )
     }
 
     @ViewBuilder private func pager(height: CGFloat, safe: EdgeInsets) -> some View {
@@ -318,18 +325,26 @@ extension ChatPanelHost {
     private func page(_ item: PanelItem, height: CGFloat, insetTop: CGFloat, insetBottom: CGFloat) -> some View {
         let placed = PlacedTab.panel(scope: scope, tab: item.tab)
         let selectedPage = selection == item.tab
+        let pageDirection: CGFloat = level == .full ? -1 : 1
+        let pageEdge: PanelEdge = level == .full ? .top : edge
         let mode = TabPanelMode(
             expanded: level == .full,
             visible: level != .closed && selectedPage,
             insetTop: insetTop,
             insetBottom: insetBottom,
-            pagePull: edge == .top && level == .peek && selectedPage,
+            pagePull: selectedPage && ((edge == .top && level == .peek) ||
+                (edge == .bottom && (level == .peek || level == .full))),
+            pageEdge: pageEdge,
             pageChanged: { distance in
-                drag = max(0, distance)
+                drag = pageDirection * distance
                 arm(distance: drag, height: height)
             },
             pageEnded: { distance, velocity in
-                settle(distance: distance, velocity: velocity, height)
+                settle(
+                    distance: pageDirection * distance,
+                    velocity: pageDirection * velocity,
+                    height: height
+                )
             },
             close: { move(to: .closed) },
             edit: { editing = true }
@@ -394,6 +409,18 @@ extension ChatPanelHost {
             move: { tab, index in tabs.send(.movePanelPage(scope: scope, tab: tab, index: UInt32(index))) },
             addURL: { tabs.send(.addPanelPage(scope: scope, tab: .url(url: $0))) }
         )
+    }
+}
+
+private struct PanelGrabber: View {
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        Capsule()
+            .fill(Color(colors.separator))
+            .frame(width: WontonTheme.size.grabberWidth, height: WontonTheme.size.grabberHeight)
+            .padding(.vertical, WontonTheme.spacing.s8)
+            .accessibilityHidden(true)
     }
 }
 

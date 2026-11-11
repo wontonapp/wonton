@@ -104,7 +104,7 @@ struct ChatRoomView: View {
         }
         .task(id: roomId) { await model.loadDraft(roomId) }
         .task(id: timeline.attempt) {
-            if await timeline.observe() {
+            if await timeline.observe(pin: pin) {
                 model.path = []
                 model.visiting = nil
                 tabs.select(.chat)
@@ -202,16 +202,11 @@ struct ChatRoomView: View {
             }
             .onChange(of: timeline.items.last?.id) { _, last in
                 guard last != nil else { return }
-                // 只有停在底部才标已读；翻上去读历史时不标，回到底部再标（贴底那一下的 onChange 在下面）。
-                // 落点摆好之前不标：标早了已读行跳到最新一条，进房的落点就丢了。
-                if pin.isPinned, placed { model.send(.markRoomRead(roomId: roomId)) }
-                // 自己发的消息（包括别的设备发的）到了：不管翻到哪都回到底部看结果。
-                if case let .message(message) = timeline.items.last?.content, message.isOwn { pin.pin() }
+                if pin.isPinned, placed { reportPosition(true) }
             }
             .onChange(of: pin.isPinned) { _, pinned in
-                // 跨过底部报告方向（ADR-0071）：核心按它算“回到底部”按钮和新消息数；贴底时标已读。
-                model.send(.setTimelineScroll(roomId: roomId, scroll: pinned ? .bottom : .away))
-                if pinned { model.send(.markRoomRead(roomId: roomId)) }
+                // 报告发生在实际滚动之后，不把按钮意图或尚未摆好的首屏当成已读。
+                if placed { reportPosition(pinned) }
             }
             // 摆进房间的落点（ADR-0071）：落点不是最新一条就停在它上面（落点行在视野顶部），解开贴底；
             // 没有落点或落点就是最新一条，维持贴底。unpin 触发上面的方向报告，核心的落点由此知道没被当成到底。
@@ -249,11 +244,24 @@ struct ChatRoomView: View {
     /// 一条，维持贴底。摆好（或决定贴底）后放开标已读的闸门。
     private func placeAnchor(_ scroller: ScrollViewProxy) {
         guard timeline.isLoaded, !placed else { return }
-        if let anchor = timeline.anchor, timeline.items.last?.id != anchor {
+        if let anchor = timeline.anchor, timeline.items.last?.id != anchor,
+           timeline.items.contains(where: { $0.id == anchor }) {
             pin.unpin()
-            DispatchQueue.main.async { scroller.scrollTo(anchor, anchor: .top) }
+            DispatchQueue.main.async {
+                scroller.scrollTo(anchor, anchor: .top)
+                placed = true
+                reportPosition(false)
+            }
+        } else {
+            pin.pin()
+            placed = true
+            reportPosition(true)
         }
-        placed = true
+    }
+
+    private func reportPosition(_ pinned: Bool) {
+        model.send(.setTimelineScroll(roomId: roomId, scroll: pinned ? .bottom : .away))
+        if pinned { model.send(.markRoomRead(roomId: roomId)) }
     }
 
     private var isDirect: Bool {
@@ -294,29 +302,6 @@ struct ChatRoomView: View {
     }
 }
 
-/// 有 `Reply` 的消息可以右滑回复（ADR-0073）：滑过阈值系统给一次触感，松手进入回复状态。
-private struct ReplySwipe: ViewModifier {
-    let quote: QuotedMessage?
-    let reply: (QuotedMessage) -> Void
-    @Environment(\.wontonColors) private var colors
-
-    @ViewBuilder func body(content: Content) -> some View {
-        if let quote {
-            content.swipeActions(edge: .leading, allowsFullSwipe: true) {
-                Button {
-                    reply(quote)
-                } label: {
-                    Label { Text(.messageReply) } icon: { WontonIcon.reply.image }
-                        .foregroundStyle(Color(colors.accentInkOnFill))
-                }
-                .tint(Color(colors.accentFill))
-                .accessibilityIdentifier("swipeReply")
-            }
-        } else {
-            content
-        }
-    }
-}
 
 private extension TimelineItem {
     /// 同一个人连着发的消息并成一组：气泡挨紧，相接的角收小。

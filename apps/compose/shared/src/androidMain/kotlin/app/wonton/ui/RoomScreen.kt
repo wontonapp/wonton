@@ -95,6 +95,11 @@ internal class TimelineState {
     /** 时间线被清空重建的次数：重建的 Reset 里带新落点，壳要重新摆。 */
     var clears by mutableIntStateOf(0)
 
+    /** 每一批更新的序号，编辑流和内容增高都要触发布局跟随。 */
+    var revision by mutableIntStateOf(0)
+    /** 核心要求自己发出的消息回到底部的次数。 */
+    var bottomRequest by mutableIntStateOf(0)
+    var handledBottomRequest by mutableIntStateOf(0)
     /** 打不开时点“重试”加一，按它重新订阅。 */
     var attempt by mutableIntStateOf(0)
 
@@ -122,6 +127,7 @@ internal class TimelineState {
             is TimelineDiff.Reset -> {
                 items.clear()
                 items.addAll(diff.items)
+                clears++
             }
         }
     }
@@ -156,6 +162,8 @@ fun RoomRoute(
                 timeline.panel = update.panel
                 timeline.panelSelected = update.panelSelected
                 timeline.entryBlocked = update.entryBlocked
+                if (update.scrollToBottom) timeline.bottomRequest++
+                timeline.revision++
                 timeline.loaded = true
             }
             currentCoroutineContext().ensureActive()
