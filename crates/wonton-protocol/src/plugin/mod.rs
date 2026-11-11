@@ -626,6 +626,8 @@ pub enum PluginFailure {
     SettingsInvalid,
     /// 插件包的设置 Schema 自己不合格（ADR-0077），明细在 [`PluginProblem::settings`]。
     SettingsSchemaInvalid,
+    /// 这台服务器读不出这个应用的安装记录：卸载（可以保留数据）后重新安装。
+    RecordUnusable,
     /// App 和家里服务器的版本对不上，有一边要更新。
     Protocol,
     /// 服务器比 App 旧，还没有这个接口（[`crate::minimum_server_version`]）：升级服务器后可用。
