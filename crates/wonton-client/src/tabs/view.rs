@@ -56,6 +56,7 @@ pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsVi
             })
             .collect(),
         panel_selected: state.panel_selected.clone(),
+        bot_pin_consents: Vec::new(),
     }
 }
 
@@ -114,7 +115,7 @@ fn build_item(state: &TabsState, stored: &StoredItem, plugins: &PluginsViewModel
     };
     let page = match &stored.tab {
         TabRef::Chat | TabRef::Apps | TabRef::Settings => None,
-        TabRef::SharedApp { .. } | TabRef::Bot { .. } => None,
+        TabRef::SharedApp { .. } | TabRef::Bot { .. } | TabRef::UiResource { .. } => None,
         TabRef::Plugin { plugin_id, page } => {
             let plugin = plugins
                 .installed
@@ -196,6 +197,7 @@ pub(super) fn build_panel_item(
         page,
         attention: state.attention.contains(&placed),
         source: PanelSource::User,
+        movable: true,
     }
 }
 
@@ -486,11 +488,9 @@ pub(super) fn stored_item_with_title(
             language(),
             "tabs-view-always-pinned"
         ))),
-        TabRef::SharedApp { .. } | TabRef::Bot { .. } => Err(invalid(&l10n!(
-            CATALOG,
-            language(),
-            "tabs-view-unknown-plugin"
-        ))),
+        TabRef::SharedApp { .. } | TabRef::Bot { .. } | TabRef::UiResource { .. } => Err(invalid(
+            &l10n!(CATALOG, language(), "tabs-view-unknown-plugin"),
+        )),
         TabRef::Url { url } => {
             if !is_https_url(url) {
                 return Err(invalid(&l10n!(CATALOG, language(), "panel-pin-not-https")));
