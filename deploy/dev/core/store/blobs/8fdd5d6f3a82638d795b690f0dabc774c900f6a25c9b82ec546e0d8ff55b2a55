@@ -20,7 +20,7 @@ services:
       - -c
       - >-
         mkdir -p /opt/data/plugins/wonton /opt/data/skills/wonton-help &&
-        cp /seed/wonton/plugin.yaml /seed/wonton/__init__.py /opt/data/plugins/wonton/ &&
+        cp /seed/wonton/plugin.yaml /seed/wonton/*.py /opt/data/plugins/wonton/ &&
         cp /seed/skills/wonton-help/SKILL.md /opt/data/skills/wonton-help/ &&
         { test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml; } &&
         /opt/hermes/.venv/bin/python /seed/init_config.py &&
@@ -39,6 +39,10 @@ services:
         target: /seed/wonton/plugin.yaml
       - source: wonton_hooks
         target: /seed/wonton/__init__.py
+      - source: wonton_texts
+        target: /seed/wonton/texts.py
+      - source: wonton_locale
+        target: /seed/wonton/locale.py
       - source: init_config
         target: /seed/init_config.py
       - source: wonton_help_skill
@@ -82,6 +86,8 @@ services:
       WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT}
       # tools：核心的 MCP 总线（核心和其他插件的工具），config.yaml 的 mcp_servers.wonton 引用。
       WONTON_MCP_URL: ${WONTON_MCP_URL}
+      # owner.identity：说话人是主人时不用再退一级问主人的语言。核心只在被引用时才注入。
+      WONTON_OWNER_NAME: ${WONTON_OWNER_NAME:?核心没有注入用户名}
       # 默认放行 MEDIA: 发黑名单以外的任何文件，恢复密钥 platforms/matrix/recovery-key.txt 不在黑名单里。这样只放行缓存目录
       # 和刚产生的文件。
       HERMES_MEDIA_DELIVERY_STRICT: "1"
@@ -127,6 +133,10 @@ configs:
     file: ./wonton/plugin.yaml
   wonton_hooks:
     file: ./wonton/__init__.py
+  wonton_texts:
+    file: ./wonton/texts.py
+  wonton_locale:
+    file: ./wonton/locale.py
   init_config:
     file: ./init_config.py
   wonton_help_skill:
@@ -137,7 +147,7 @@ configs:
 x-wonton:
   spec: "0.9"
   id: com.nousresearch.hermes
-  version: 0.6.5
+  version: 0.6.6
   kind: agent
   title: { zh: Hermes, en: Hermes }
   description:
@@ -153,18 +163,18 @@ x-wonton:
     zh: |
       Nous Research 的 Hermes Agent：在 App 里和它私聊，它能联网搜索、用你装的插件提供的工具、读你授权的文件夹。
 
-      消息走加密的 Matrix 私聊。模型默认走模型网关，不用自己填 key；没接网关时在“模型设置”里加自己的模型服务商和 key 也能用，它会提醒你怎么配。经云吞装卸插件这类操作要你在卡片上确认；Hermes 自带的终端、文件和浏览器工具在它自己的容器里直接运行，能读写这个 Bot 的数据（含密钥）、能联网，碰不到你的共享文件夹和别的插件的数据。
+      消息走加密的 Matrix 私聊。模型默认走模型网关，不用自己填 key；没接网关时在“模型设置”里加自己的模型服务商和 key 也能用，它会按你的语言提醒你怎么配。经云吞装卸插件这类操作要你在卡片上确认；Hermes 自带的终端、文件和浏览器工具在它自己的容器里直接运行，能读写这个 Bot 的数据（含密钥）、能联网，碰不到你的共享文件夹和别的插件的数据。
 
       打开插件网页，在 Hermes 原生 Channels 页配置默认 Bot 的 Telegram、飞书或企业微信渠道。Telegram 使用云吞的出网代理。
     en: |
       Hermes Agent by Nous Research: chat with it in the app. It can search the web, use the tools your plugins provide and read the folders you allow.
 
-      Messages travel in an encrypted Matrix chat. The model goes through the model gateway by default, so there is no key to fill in; without a gateway, add your own provider and key in Model settings and it will guide you there. Actions through Wonton, such as installing plugins, wait for your confirmation card. Hermes's own terminal, file and browser tools run directly in its container: they can read and write this Bot's data (including secrets) and reach the network, but not your shared folders or other plugins' data.
+      Messages travel in an encrypted Matrix chat. The model goes through the model gateway by default, so there is no key to fill in; without a gateway, add your own provider and key in Model settings and it will guide you there in your language. Actions through Wonton, such as installing plugins, wait for your confirmation card. Hermes's own terminal, file and browser tools run directly in its container: they can read and write this Bot's data (including secrets) and reach the network, but not your shared folders or other plugins' data.
 
       Open the plugin page to configure Telegram, Feishu or WeCom for the default bot in Hermes' native Channels page. Telegram uses Wonton's outbound proxy.
   release_notes:
-    zh: 改用新的名单变量，Bot 只听名单里的人（核心 0.9 起，不再兼容旧变量）。需要插件规范 0.9。
-    en: Switches to the new allow-list variable so a bot follows the people on the list (core 0.9 and later; the old variable is gone). Requires spec 0.9.
+    zh: 没有模型时的提示按说话人自己的语言回一条，入口名照 App 里的「应用 → 模型设置」；清单补 owner.identity 权限读家人的语言。
+    en: The no-model hint now answers in the speaker's own language, naming the Apps → Models entry as the app shows it; the manifest adds the owner.identity permission to read family members' languages.
   agent:
     protocol: matrix
   bot:
@@ -187,6 +197,9 @@ x-wonton:
     - matrix.bot
     # 经核心的 MCP 总线用工具：装卸插件、在授权的文件夹里找文件等。
     - tools
+    # 查家人的语言（wonton__user_locale）：Bot 跟好几个人说话，没有模型时的提示要按每个人自己的语言写；
+    # 顺带拿到主用户名，判断说话人是不是主人，少问一次。
+    - owner.identity
     # 网页搜索等工具。
     - network.egress
   requirements:
