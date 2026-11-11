@@ -60,7 +60,12 @@ async fn a_friend_request_can_be_approved_and_removed() {
     let room_id = bob.invite_friend(&owner).await.unwrap();
 
     refresh(&phone);
-    let request = until(&phone, "收到好友请求", |view| {
+    // 刷新进行中时页面是 Loading、但保留上一次的列表，所以请求可能先出现在 Loading 的页面上；
+    // 要等这一轮刷新落定成 Ready，再看请求，否则紧接着断言 Ready 会撞上 `until` 刚派出的那次刷新。
+    let request = until(&phone, "收到好友请求且页面就绪", |view| {
+        if view.state != FriendsState::Ready {
+            return None;
+        }
         view.incoming
             .iter()
             .find(|request| request.user_id == bob_id)
@@ -68,7 +73,6 @@ async fn a_friend_request_can_be_approved_and_removed() {
     })
     .await;
     assert_eq!(request.room_id, room_id.to_string());
-    assert_eq!(phone.friends().state, FriendsState::Ready);
 
     phone
         .dispatch(Action::ApproveFriendRequest {
