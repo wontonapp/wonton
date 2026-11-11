@@ -288,6 +288,7 @@ fn owner_token(cfg: &Config) -> anyhow::Result<String> {
     Ok(token)
 }
 
+#[allow(clippy::too_many_lines)] // 启动顺序就是一串有先后的接线，拆开会把顺序藏进多个函数。
 async fn serve() -> anyhow::Result<()> {
     tracing::info!(commit = %BUILD_COMMIT, "核心启动");
     let cfg = Config::from_env()?.lock_owner()?;

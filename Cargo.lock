@@ -5594,6 +5594,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -8414,12 +8415,14 @@ dependencies = [
  "percent-encoding",
  "psl",
  "pulldown-cmark",
+ "rcgen",
  "reqwest",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tokio-rustls",
  "tracing",
  "tracing-subscriber",
  "uniffi",
@@ -8430,6 +8433,7 @@ dependencies = [
  "wonton-protocol",
  "wonton-test-images",
  "wonton-tunnel",
+ "x509-parser",
 ]
 
 [[package]]
@@ -8501,6 +8505,7 @@ dependencies = [
  "unicode-properties",
  "url",
  "web-push-native",
+ "wonton-client",
  "wonton-l10n",
  "wonton-protocol",
  "wonton-test-images",
