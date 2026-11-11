@@ -18,6 +18,11 @@ on:
       - ".github/workflows/test-images.yml"
   workflow_dispatch:
 
+# PR 上又推了一个提交就取消上一次；定时、main 上的复制和手动触发都跑完（main-image 等 main 上这一次的结果）。
+concurrency:
+  group: test-images-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
   packages: write

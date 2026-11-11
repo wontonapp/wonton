@@ -2,23 +2,38 @@
 
 作业全部跑在 GitHub 托管 runner 上（仓库公开后 Linux 和 macOS 分钟都免费，公开仓库不按 10 倍计 macOS）：
 
-- `ubuntu-24.04`：lint（结构门禁、冲突标记、密钥扫描）、Rust 的格式/Clippy/测试、Android（SDK 和 NDK 27 镜像自带）、
+- `ubuntu-24.04`：lint（冲突标记、密钥扫描、结构门禁）、各工作流的汇总作业、Rust 的格式/Clippy/测试、Android（SDK 和 NDK 27 镜像自带）、
   “Rust Docker 测试”（Docker 28 镜像自带）、核心镜像和发版镜像的 amd64 构建。
 - `ubuntu-24.04-arm`：发版镜像的 arm64 构建，和 amd64 各自构建后由 merge 作业合成多架构 manifest。
 - `macos-26`：SwiftLint。
 - `xcode-27`：iOS 模拟器构建。选这个镜像是为对上开发机（mini）的 Xcode 27.1；作业里显式
   `xcode-select /Applications/Xcode_27.1.app`，镜像以后把默认版本升上去也不受影响。
 
+## 必需检查与汇总作业
+
+- 规则集只配每个工作流末尾的汇总作业（`rust 汇总`、`rust-docker 汇总`、`ios 汇总`、`android 汇总`、
+  `lint 汇总`）：`needs` 本工作流的全部作业、`if: always()`，任一依赖 failure 或 cancelled 就红，
+  success 和 skipped 算过。汇总只干这一件事（一小段 shell，不引第三方 action），草稿 PR 上也起来报一个
+  通过；这样才能把其余作业直接在作业级跳过，不用为了报检查先起 runner。
+- 汇总的名字在 `pull_request` 和 `merge_group` 下是同一个，规则集两种事件共用一份。
+- Rust 测试分片被作业级 `if` 跳过时 matrix 不展开，检查名会留成带 `${{ matrix.shard }}` 的字面量；
+  规则集只看汇总，不受影响。所以分片的草稿和路径判断也在作业上。
+
 ## 什么时候跑
 
 - 路径不在触发器上过滤：合并队列的必需检查每次入队都要有结果，工作流不触发的话检查一直“等待中”，队列
-  直接判失败。改动范围改由各工作流开头的 `changes` 作业判断（`dorny/paths-filter`，只在 PR 上跑），
+  直接判失败。改动范围改由各工作流开头的 `changes` 作业判断（`dorny/paths-filter`，只在非草稿 PR 上跑），
   没改到的重作业挂在它上面、自己报 skipped，范围还是写在各个工作流开头；跳过的检查算通过，没有分支保护，
-  不挡合并。lint 例外：冲突标记和密钥可能写在任何文件里，不按路径过滤；它里面的结构门禁在只改文档时自己跳过。
-- 草稿 PR 只跑轻检查（lint 全部、Rust 的格式）和 `changes`；`ready_for_review` 事件触发 Clippy、测试、Docker、
-  Android、iOS（各作业 `if` 里判断 `github.event.pull_request.draft`）。Rust 测试的三个分片作业会起来、步骤
-  全部跳过（作业算成功）：matrix 作业被 `if` 跳过时 matrix 不展开，检查名会留成带 `${{ matrix.shard }}` 的
-  字面量，规则集按 `1/3`、`2/3`、`3/3` 配就一直等这三片。所以它的草稿和路径判断在步骤上（`env.RUN`）。
+  不挡合并。lint 例外：冲突标记和密钥可能写在任何文件里，不按路径过滤；它里面的结构门禁只查源码文件，
+  只改文档的提交和草稿 PR 上跳过。
+- 过滤范围按“这个工作流真会读什么”列：Rust 只列测试和预热读的部署文件（`deploy/install/`、
+  `deploy/dev/{acp-bridge,matrix}/`、`deploy/dev/core/compose.yaml`、`deploy/dev/core/Dockerfile`），
+  `deploy/dev` 其余的只给本机开发栈（开发索引 `core/store/`、`experiments/`、smoke 脚本），改了不跑重作业；
+  新的 `include_str!` 指向 `deploy/` 时要补进列表。只改 `.md` 的 PR 每个工作流都跳过（`apps/compose/` 下的也算）。
+  漏列不会漏进 main：队列不按路径判断，入队那一轮一定全套跑。
+- 草稿 PR 上 `rust`、`rust-docker`、`ios`、`android` 一个作业都不起（`changes` 也算在内），只有各自的汇总
+  起来报通过；lint 只跑冲突标记和密钥扫描（同一个作业的相邻两步）。转 ready（`ready_for_review`）跑全套。
+- 所有 PR 运行都 `cancel-in-progress`：反正要重跑，旧的别继续占名额；定时运行跑完。
 - 合并进 main 不重跑全套（PR 已在最新 main 上跑过）；只有 main-image 继续构建核心镜像，`cache.yml` 用
   和 PR 作业一样的 key 把编译缓存编一遍存下来（只编不跑）。每天定时（`schedule`，02:00 起错开）把
   Rust、Docker、Android、iOS 全量跑一遍兜底。
@@ -36,14 +51,13 @@
 
 仓库开着合并队列时，入队的 PR 会在队列里的合并提交上重跑一遍必需检查；`merge_group` 事件没报告，入队就
 直接判失败。所以凡是必需检查所在的五个工作流（`lint`、`rust`、`rust-docker`、`android`、`ios`）都带
-`merge_group` 触发（`types: [checks_requested]`，只对 `main`）：lint 的三个作业（结构门禁、冲突标记、
-密钥扫描）、rust 的三个作业（格式、Clippy、测试）、rust-docker 的 Docker 测试作业（含官方索引检查）、
-android 的构建、ios 的 SwiftLint 和模拟器构建，都必须在队列里跑到。`main-image` 和 `test-images` 不用带，
-队列合进 main 时该跑的照常由 `push` 触发。
+`merge_group` 触发（`types: [checks_requested]`，只对 `main`）：各工作流的汇总作业要在队列里报告，
+它们 `needs` 了本工作流的全部作业，队列里又只是放行不跳过，所以全套都得跑到。`main-image` 和 `test-images`
+不用带，队列合进 main 时该跑的照常由 `push` 触发。
 
-`changes` 作业只在 `pull_request` 上跑，`merge_group`、`schedule`、`workflow_dispatch` 上重作业靠
-`if` 里的 `github.event_name != 'pull_request'` 直接放行，队列里不管改了什么都跑全套（`lint.yml` 本来也
-不按路径过滤）。所以重作业的 `if` 都以 `!cancelled()` 开头：`changes` 跳过时下游作业才不会被连坐跳过。
+`changes` 作业只在非草稿 `pull_request` 上跑，`merge_group`、`schedule`、`workflow_dispatch` 上重作业靠
+`if` 里的 `github.event_name != 'pull_request'` 直接放行（重作业的 `if` 都以 `!cancelled()` 开头：
+`changes` 被跳过时下游作业才不会被连坐跳过；汇总作业用 `always()`，`changes` 跳过也照样报告）。
 作业里判断草稿的 `github.event.pull_request.draft == false` 也只在 PR 上求值（队列只收已转 ready 的 PR）；
 `github.sha` 是队列里的合并提交、`github.ref` 是 `refs/heads/gh-merge-queue/main`，所以并发组在
 `merge_group` 上取 `github.event.merge_group.head_sha`，不让几次入队挤进同一组互相取消。缓存仍只在 main 上写，
