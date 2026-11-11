@@ -99,7 +99,7 @@ impl Bots {
 
     pub fn dismiss_problem(&self, id: &str) {
         self.view.send_modify(|view| {
-            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.plugin_id == id) {
+            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
                 bot.problem = None;
             }
         });
@@ -107,7 +107,7 @@ impl Bots {
 
     fn problem(&self, id: &str, reason: BotProfileFailure, detail: String) {
         self.view.send_modify(|view| {
-            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.plugin_id == id) {
+            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
                 bot.problem = Some(BotProfileProblem { reason, detail });
             }
         });
@@ -134,7 +134,7 @@ impl Bots {
         let api = self.plugins.api();
         let mut busy = false;
         self.view.send_modify(|view| {
-            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.plugin_id == id) {
+            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
                 busy = bot.saving;
                 if !busy {
                     bot.saving = true;
@@ -170,7 +170,7 @@ impl Bots {
             }
             let success = result.is_ok();
             bots.view.send_modify(|view| {
-                if let Some(bot) = view.bots.iter_mut().find(|bot| bot.plugin_id == id) {
+                if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
                     bot.saving = false;
                     bot.problem = result.err();
                 }

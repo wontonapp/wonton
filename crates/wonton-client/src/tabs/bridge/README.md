@@ -28,6 +28,23 @@
 `reply_script` 派发来源为当前 window 的合成 `MessageEvent`。文档脚本在捕获阶段拦住真实的 self-postMessage，
 避免 SDK 把自己的请求当成宿主请求；原生回复不再次转给原生。`window.wonton` 不存在。
 
+## 每 Bot 网页接口
+
+每 Bot 页面身份使用 `TabRef::Bot { bot: BotRef, path: Option<String> }`，不保存 URL，不降成
+`TabRef::Plugin` 或 `TabRef::Url`。`path: None` 打开对应 Bot 的 `BotView.web.Ready.page.url`；
+`Some(path)` 只接受该 origin 内的路径，可含查询和片段。打开／选择沿用 `Action::SelectTab`，固定沿用
+`PinTab`、`PinCurrentPage` 和 `Panel`，`PlacedTab` 保留同一 Bot 身份和路径。
+
+实现时把聊天已有的 `BotView` watch 通道接入 `TabsLink`，Bot 网页状态变化时重算 `TabsViewModel` 的
+`TabPage`；URL 只能来自精确匹配该 `BotRef` 的 `BotView.web.Ready.page.url`，不能从 `plugin.web_url`
+取值、猜地址或回退默认 Bot。`BotView.web: None` 表示没有验证可用的 URL；未知、缺失或错误时不给页面
+URL，断连或身份变化时清空。桥的来源判定仍按 `TabPage.url` 的 scheme、host 和有效端口，不另写 Bot 来源规则。
+
+Bot 页沿用上述 WebView 容器、文档／消息／上下文接口、`--wonton-*` 和既有媒体授权接口，后者同样通过
+`TabRef`／`PlacedTab` 取得该精确页面 origin；不能另建壳层 WebView，也不能按公网网页跳过桥或令牌注入。
+这是接口约定，不是运行时入口接线或端到端验证结论；接口阶段不暴露 Bot 页面，未支持的客户端明确拒绝，
+不能转开其他页面。
+
 ## 验证
 
 `cargo test -p wonton-client --locked --test it tabs_bridge` 覆盖 Rust 行为，

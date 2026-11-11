@@ -107,7 +107,8 @@ fn build_item(state: &TabsState, stored: &StoredItem, plugins: &PluginsViewModel
         tab: stored.tab.clone(),
     };
     let page = match &stored.tab {
-        TabRef::Chat | TabRef::Apps | TabRef::Settings | TabRef::SharedApp { .. } => None,
+        TabRef::Chat | TabRef::Apps | TabRef::Settings => None,
+        TabRef::SharedApp { .. } | TabRef::Bot { .. } => None,
         TabRef::Plugin { plugin_id, page } => {
             let plugin = plugins
                 .installed
@@ -479,7 +480,7 @@ pub(super) fn stored_item_with_title(
             language(),
             "tabs-view-always-pinned"
         ))),
-        TabRef::SharedApp { .. } => Err(invalid(&l10n!(
+        TabRef::SharedApp { .. } | TabRef::Bot { .. } => Err(invalid(&l10n!(
             CATALOG,
             language(),
             "tabs-view-unknown-plugin"

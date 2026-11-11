@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BotChatSettings, MediaHandle};
+use crate::{BotChatSettings, BotRef, BotWebView, MediaHandle};
 
 /// Bot 资料里状态头像那个字段的名字。
 pub const AVATARS_FIELD: &str = "app.wonton.avatars";
@@ -164,11 +164,14 @@ pub struct BotActivityReport {
     pub bots: Vec<BotActivityFacts>,
 }
 
-/// 一个 Bot 此刻的事实。
+/// 一个 Bot 此刻的事实；不包含按请求者计算的网页访问权限。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct BotActivityFacts {
     pub plugin_id: String,
+    /// 核心记录的 Bot 名；缺少时表示未提供，不从 Matrix 用户名反推，也不补成默认 Bot。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot: Option<String>,
     /// Bot 的 Matrix 用户 ID。
     pub user_id: String,
     /// 插件在运行，健康检查过了。
@@ -253,7 +256,10 @@ pub fn check_bot_name(name: &str) -> Result<(), BotNameProblem> {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct BotView {
     pub user_id: String,
-    pub plugin_id: String,
+    pub bot: BotRef,
+    /// 由当前请求者的身份决定；未核实、断线或切换账号时为空，不能借用插件的默认网页地址。
+    #[serde(default)]
+    pub web: Option<BotWebView>,
     /// Matrix 显示名；还没取到资料时是插件名。
     pub name: String,
     /// 静态头像；没设时为空，壳用插件图标。
@@ -417,6 +423,29 @@ mod tests {
     }
 
     #[test]
+    fn reports_keep_named_bots_without_inventing_missing_names() {
+        let report: BotActivityReport = serde_json::from_value(json!({
+            "rev": 4,
+            "bots": [
+                {"plugin_id": "a.b", "user_id": "@b:h", "running": true,
+                 "model_requests": 1, "tool_calls": 0, "waiting": 0, "profile_rev": 2},
+                {"plugin_id": "a.b", "bot": "alice", "user_id": "@b-alice:h", "running": true,
+                 "model_requests": 0, "tool_calls": 2, "waiting": 1, "profile_rev": 3, "future": true},
+            ],
+        }))
+        .unwrap();
+        assert_eq!(report.bots[0].plugin_id, "a.b");
+        assert_eq!(report.bots[0].bot, None);
+        assert_eq!(report.bots[1].plugin_id, "a.b");
+        assert_eq!(report.bots[1].bot.as_deref(), Some("alice"));
+        assert_eq!(report.bots[1].tool_calls, 2);
+        let encoded = serde_json::to_value(&report).unwrap();
+        assert_eq!(encoded["bots"][0]["plugin_id"], "a.b");
+        assert!(encoded["bots"][0].get("bot").is_none());
+        assert_eq!(encoded["bots"][1]["bot"], "alice");
+    }
+
+    #[test]
     fn an_update_names_only_what_changes() {
         let update = BotProfileUpdate {
             name: Some("小云".into()),
@@ -470,7 +499,11 @@ mod tests {
         let mut bot = BotView {
             chat: Default::default(),
             user_id: "@b:h".into(),
-            plugin_id: "a.b".into(),
+            bot: BotRef {
+                plugin_id: "a.b".into(),
+                bot: "default".into(),
+            },
+            web: None,
             name: "B".into(),
             avatar: None,
             state_avatars: vec![StateAvatar {

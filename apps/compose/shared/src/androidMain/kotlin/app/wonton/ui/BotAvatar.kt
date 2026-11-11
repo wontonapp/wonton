@@ -41,14 +41,14 @@ fun BotAvatar(bot: BotView, plugins: PluginsState, size: Dp, modifier: Modifier 
         label = "botAvatar",
     ) { image ->
         if (image == null) {
-            PluginIconImage(plugins.iconFor(bot.pluginId), size, plugins)
+            PluginIconImage(plugins.iconFor(bot.bot.pluginId), size, plugins)
         } else {
             BotAvatarMedia(
                 image,
                 plugins,
                 size,
                 fallbackStill = bot.avatar.takeIf { it != image },
-                fallbackIcon = plugins.iconFor(bot.pluginId),
+                fallbackIcon = plugins.iconFor(bot.bot.pluginId),
             )
         }
     }

@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn plugin_ids_cannot_occupy_bot_web_host_labels() {
+    let bot = wonton_protocol::BotRef {
+        plugin_id: "com.example.agent".into(),
+        bot: "alice".into(),
+    };
+    let label = wonton_protocol::bot_web_label(&bot);
+    assert_eq!(label, "bot--alice-com-example-agent-f4debdbf");
+    assert!(PluginId::parse(&label).is_err());
+    assert!(PluginId::parse(&format!("{label}.app")).is_err());
+    assert!(PluginId::parse(&format!("bot--.{}", &label[5..])).is_err());
+    assert!(PluginId::parse("bot-.example").is_err());
+    assert_eq!(
+        PluginId::parse("bot.example").unwrap().slug(),
+        "bot-example"
+    );
+}
+
+#[test]
 fn webui_friends_defaults_to_false() {
     let webui: WebUi = serde_json::from_value(serde_json::json!({
         "service": "web",

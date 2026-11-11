@@ -104,7 +104,10 @@ private fun AppContent(
     val view = tabs.viewModel
     val draft = LocalTabDraft.current
     val shown = view.overlay?.tab ?: view.selected
-    val native = shown !is TabRef.Plugin || nav.settingsOverlay
+    val native = nav.settingsOverlay || when (shown) {
+        TabRef.Chat, TabRef.Apps, TabRef.Settings -> true
+        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp -> false
+    }
     val fullscreen = !native && isFullscreen(tabs, shown)
     FullscreenSystemBars(fullscreen)
     // 底栏显不显示由核心算（栏上只有“聊天”时整条不显示）。
@@ -215,7 +218,7 @@ private fun NativeTab(
             peersOpenRequests = nav.peersOpenRequests,
             onPeersOpenRequestsHandled = { nav.peersOpenRequests = false },
         ) { nav.settingsPage = it }
-        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Url, is TabRef.SharedApp -> Unit
+        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp -> Unit
     }
 }
 

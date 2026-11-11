@@ -45,6 +45,18 @@ impl AppLink {
                         URL_SAFE_NO_PAD.encode(path)
                     )
                 }
+                TabRef::Bot { bot, path: None } => {
+                    format!("tab/bot/{}/{}", bot.plugin_id, bot.bot)
+                }
+                TabRef::Bot {
+                    bot,
+                    path: Some(path),
+                } => format!(
+                    "tab/bot/{}/{}/{}",
+                    bot.plugin_id,
+                    bot.bot,
+                    URL_SAFE_NO_PAD.encode(path)
+                ),
                 TabRef::Url { url } => format!("tab/url/{}", URL_SAFE_NO_PAD.encode(url)),
                 TabRef::SharedApp {
                     owner_user_id,
@@ -90,6 +102,23 @@ impl AppLink {
                 tab(TabRef::PluginPath {
                     plugin_id: (*plugin_id).to_owned(),
                     path,
+                })
+            }
+            ["tab", "bot", plugin_id, bot] if is_id(plugin_id) && is_id(bot) => tab(TabRef::Bot {
+                bot: crate::BotRef {
+                    plugin_id: (*plugin_id).to_owned(),
+                    bot: (*bot).to_owned(),
+                },
+                path: None,
+            }),
+            ["tab", "bot", plugin_id, bot, encoded] if is_id(plugin_id) && is_id(bot) => {
+                let path = String::from_utf8(URL_SAFE_NO_PAD.decode(encoded).ok()?).ok()?;
+                tab(TabRef::Bot {
+                    bot: crate::BotRef {
+                        plugin_id: (*plugin_id).to_owned(),
+                        bot: (*bot).to_owned(),
+                    },
+                    path: Some(path),
                 })
             }
             ["tab", "url", encoded] => {

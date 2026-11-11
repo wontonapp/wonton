@@ -71,8 +71,8 @@ pub use wonton_protocol::StoreUnreadable;
 pub use wonton_protocol::{
     AccessSource, AvatarImage, AvatarKind, AvatarMedia, AvatarMediaProblem, AvatarUpload,
     BotActivity, BotActivityFacts, BotActivityReport, BotNameProblem, BotPluginAccess,
-    BotPluginAccessUpdate, BotProfileFailure, BotProfileProblem, BotRef, BotView, StateAvatar,
-    bot_plugin_access_path, plugin_scope_path,
+    BotPluginAccessUpdate, BotProfileFailure, BotProfileProblem, BotRef, BotView, BotWebFailure,
+    BotWebPage, BotWebView, StateAvatar, bot_plugin_access_path, plugin_scope_path,
 };
 pub use wonton_protocol::{
     Action, AddedSource, AddedTools, AgentLogin, Answer, AppLink, AppearanceProblem,
