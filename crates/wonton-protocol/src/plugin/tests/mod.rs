@@ -196,6 +196,7 @@ fn preview() -> InstallPreview {
             url: Some("https://api-dashboard.search.brave.com/app/keys".into()),
             required: true,
         }],
+        settings: None,
         notices: vec![CardLine {
             text: "云吞没有审核过这个应用，代码和镜像由 someone 提供".into(),
             emphasis: true,
@@ -289,6 +290,7 @@ fn detail() -> PluginDetail {
             changed_at_ms: Some(1_793_000_000_000),
         }],
         has_web: true,
+        has_settings: false,
         installed: Some(installed()),
         blocked: None,
         notices: Vec::new(),
@@ -573,4 +575,6 @@ where
 mod capability;
 mod install_decisions;
 mod legacy_fields;
+mod problem;
+mod settings;
 mod store;

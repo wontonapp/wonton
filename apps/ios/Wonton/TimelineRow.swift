@@ -243,7 +243,8 @@ private struct MessageBubble: View {
                             id: view.card.id,
                             answer: $0.answer,
                             choiceId: $0.choiceId,
-                            secrets: [:]
+                            secrets: [:],
+                            settings: [:]
                         )
                     )
                 },

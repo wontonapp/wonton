@@ -94,6 +94,7 @@ fn request_without_extras() -> InstallRequest {
         lan_webui: false,
         enabled_permissions: Vec::new(),
         secrets: Default::default(),
+        settings: Default::default(),
         install_together: vec![],
         connect_plugins: vec![],
     }

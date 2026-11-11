@@ -124,6 +124,7 @@ impl PluginManager {
             requirements: Vec::new(),
             secret_inputs: self.installed_input_states(id, m, langs),
             has_web: m.webui.is_some(),
+            has_settings: false,
             installed: Some(installed),
             blocked: None,
             notices: setup_notice(m, langs)
@@ -278,6 +279,7 @@ impl PluginManager {
             author: author(m),
             permissions: super::views_permissions::permission_lines(m, enabled, langs),
             secret_inputs: super::secret_input::lines(m, &|_| false, false, langs),
+            settings: None,
             notices,
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),
@@ -719,6 +721,7 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         requirements: Vec::new(),
         secret_inputs: Vec::new(),
         has_web: false,
+        has_settings: false,
         installed: Some(installed),
         blocked: None,
         notices: Vec::new(),

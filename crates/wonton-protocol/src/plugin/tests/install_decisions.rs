@@ -9,6 +9,7 @@ fn decisions() -> serde_json::Value {
         "grant": ["models"],
         "enabled_permissions": ["storage.share.documents:read"],
         "secrets": {"api_key": "consumer-secret"},
+        "settings": {"months": {"type": "integer", "value": 3}},
         "devices": ["consumer-usb"],
         "lan_webui": false,
         "install_together": [{
@@ -21,6 +22,7 @@ fn decisions() -> serde_json::Value {
                 "grant": ["network.host"],
                 "enabled_permissions": ["docker.socket"],
                 "secrets": {"api_key": "provider-secret"},
+                "settings": {"months": {"type": "integer", "value": 12}},
                 "devices": ["provider-serial"],
                 "lan_webui": true,
                 "install_together": [],

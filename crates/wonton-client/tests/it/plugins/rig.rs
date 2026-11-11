@@ -453,6 +453,7 @@ pub fn preview(id: &str) -> InstallPreview {
             opened: None,
         }],
         secret_inputs: Vec::new(),
+        settings: None,
         notices: Vec::new(),
         missing_requires: Vec::new(),
         missing_wants: Vec::new(),

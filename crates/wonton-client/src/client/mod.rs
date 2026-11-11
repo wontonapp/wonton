@@ -689,8 +689,16 @@ impl ClientCore {
                 scope.plugins.refresh_store(force);
                 Ok(())
             }
-            Action::InstallPlugin { preview, secrets } => scope.plugins.install(preview, secrets),
-            Action::UpgradePlugin { preview, secrets } => scope.plugins.upgrade(preview, secrets),
+            Action::InstallPlugin {
+                preview,
+                secrets,
+                settings,
+            } => scope.plugins.install(preview, secrets, settings),
+            Action::UpgradePlugin {
+                preview,
+                secrets,
+                settings,
+            } => scope.plugins.upgrade(preview, secrets, settings),
             Action::InstallNow { source } => scope.plugins.install_now(source),
             Action::UpgradeNow { plugin_id } => scope.plugins.upgrade_now(plugin_id),
             Action::UpgradeAll => scope.plugins.upgrade_all(),

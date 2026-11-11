@@ -52,6 +52,9 @@ pub struct ConfirmationCard {
     /// [`ConfirmationAnswer::secrets`] 带回。别的卡片是空列表。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub secret_inputs: Vec<crate::SecretInput>,
+    /// 要主人填的设置（ADR-0077）：壳用同一套原生控件画，值随回答的 [`ConfirmationAnswer::settings`] 带回。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<crate::SettingsForm>,
 }
 
 /// 放行时段：这个 Bot 调这个插件，到期前不再发卡片。卡片只在时段开始和结束时更新。
@@ -155,6 +158,9 @@ pub struct ConfirmationAnswer {
     /// 装插件、升级插件的卡片要主人填的密钥（ADR-0064），键是卡片列的项；别的卡片带上时返回 400 `invalid_input`。
     #[serde(default)]
     pub secrets: crate::SecretValues,
+    /// 装插件、升级插件的卡片要主人填的设置（ADR-0077），键是卡片表单的项；校验不过返回 400 `settings_invalid`。
+    #[serde(default)]
+    pub settings: crate::SettingValues,
 }
 
 /// 回答之后卡片的状态。
@@ -274,10 +280,11 @@ mod tests {
             answer: Answer::Approve,
             choice_id: Some("opaque-2".into()),
             secrets: crate::SecretValues::new(),
+            settings: crate::SettingValues::new(),
         };
         assert_eq!(
             json!(answer),
-            json!({"answer": "approve", "choice_id": "opaque-2", "secrets": {}})
+            json!({"answer": "approve", "choice_id": "opaque-2", "secrets": {}, "settings": {}})
         );
         let answer: ConfirmationAnswer =
             serde_json::from_value(json!({"answer": "reject"})).unwrap();
