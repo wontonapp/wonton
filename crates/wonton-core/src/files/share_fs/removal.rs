@@ -21,7 +21,8 @@ use rustix::process::geteuid;
 
 use super::{
     Deleted, MAX_NAME_TRIES, PRIVATE_PREFIX, ShareError, Snapshot, TRANSFERS, check_segment,
-    classify, is_private, numbered, open_regular, open_subdir, stat_entry, sync_dir,
+    classify, from_io, is_private, is_same_file, numbered, open_regular, open_subdir, stat_entry,
+    sync_dir,
 };
 use crate::l10n;
 use crate::plugin::languages::Languages;
@@ -244,6 +245,8 @@ pub(super) fn remove_if_same(
     let slot = slot.as_fd();
     match rename_no_replace(dir, name, slot, name) {
         Ok(()) => {}
+        // 跨分支的改名（mergerfs 的 epmfs）回 EXDEV：槽在别的分支上，改不过去。只能在原目录里核对后删。
+        Err(Errno::XDEV) => return remove_in_place(dir, name, expected),
         // 目标所在的槽也可能不在了：名字还在就不是“已经没了”。
         Err(Errno::NOENT) if matches!(stat_entry(dir, name), Err(ShareError::Gone)) => {
             return Ok(Deleted::AlreadyGone);
@@ -274,6 +277,45 @@ pub(super) fn remove_if_same(
         }
         durable && synced.is_ok()
     });
+    Ok(Deleted::Removed { durable })
+}
+
+/// 文件系统不支持跨目录改名时（mergerfs 按分支放，`RENAME_NOREPLACE` 回 `EINVAL`，退回的普通改名回 `EXDEV`）：没有回收槽这一步，
+/// 在原目录里打开、核对之后再 `unlinkat`。核对和删除之间名字可能被换掉，比先搬走再核对宽一点：换掉以后删的就是别人的文件。
+/// 最后再 `statat` 一次只能把窗口缩到一次调用。ADR-0020 的“代价与风险”写明了这个取舍。
+fn remove_in_place(
+    dir: BorrowedFd<'_>,
+    name: &str,
+    expected: &Snapshot,
+) -> Result<Deleted, ShareError> {
+    let opened = match open_regular(dir, name) {
+        Ok(opened) => opened,
+        Err(ShareError::Gone) => return Ok(Deleted::AlreadyGone),
+        Err(ShareError::Refused(_)) => return Ok(Deleted::Changed),
+        Err(e) => return Err(e),
+    };
+    if opened.snapshot != *expected {
+        return Ok(Deleted::Changed);
+    }
+    let meta = opened.file.metadata().map_err(|e| from_io(&e, name))?;
+    match stat_entry(dir, name) {
+        Ok(stat) if is_same_file(&stat, &meta) => {}
+        Ok(_) | Err(ShareError::Refused(_)) => return Ok(Deleted::Changed),
+        Err(ShareError::Gone) => return Ok(Deleted::AlreadyGone),
+        Err(e) => return Err(e),
+    }
+    match unlinkat(dir, name, AtFlags::empty()) {
+        Ok(()) => {}
+        Err(Errno::NOENT) => return Ok(Deleted::AlreadyGone),
+        Err(e) => return Err(classify(e, name)),
+    }
+    let durable = match sync_dir(dir, name) {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(name, %error, "删除没能确认落盘，断电后文件可能回来");
+            false
+        }
+    };
     Ok(Deleted::Removed { durable })
 }
 
@@ -346,7 +388,9 @@ fn rename_no_replace(
 ) -> Result<(), Errno> {
     let renamed = {
         #[cfg(test)]
-        if super::tests::NO_NOREPLACE.get() {
+        if super::tests::EXDEV.get() {
+            Err(Errno::XDEV)
+        } else if super::tests::NO_NOREPLACE.get() {
             Err(Errno::INVAL)
         } else {
             renameat_with(from_dir, from, to_dir, to, RenameFlags::NOREPLACE)
