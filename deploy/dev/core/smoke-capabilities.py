@@ -520,15 +520,30 @@ for name in sys.argv[1:]:
                                ('rollback-consumer', 'rollback-provider')]:
         body = transaction(consumer, tokens)
         before = state_file()
-        since = str(int(time.time()) - 1)
-        api(API, 'POST', body, 502)
+        # 事后回放（--since/--until）读的是守护进程的事件环形缓冲（默认 256 条）：
+        # 共享宿主上容器事件每秒几十条，几秒就把 die 挤出去，查询会拿到空。改成
+        # 安装前挂上实时事件流、装完停流，只认这条流里真实发生的 die/31。
         failed = provider if provider == 'failed-provider' else consumer
-        events = docker('events', '--since', since, '--until', str(int(time.time()) + 1),
-                        '--filter', 'type=container', '--filter', 'event=die',
-                        '--filter', 'label=wonton.instance=' + os.environ['WONTON_DEV_INSTANCE'],
-                        '--filter', 'label=wonton.plugin=' + pid(failed), '--format', '{{json .}}')
-        require(any(json.loads(line)['Actor']['Attributes'].get('exitCode') == '31'
-                    for line in events.splitlines()), 'real fault container exits 31 before rollback')
+        stream = subprocess.Popen(
+            ['docker', 'events', '--format', '{{json .}}', '--filter', 'type=container',
+             '--filter', 'event=die', '--filter', 'label=wonton.plugin=' + pid(failed),
+             '--filter', 'label=wonton.instance=' + os.environ['WONTON_DEV_INSTANCE']],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        time.sleep(0.5)
+        api(API, 'POST', body, 502)
+        stream.terminate()
+        try:
+            events = stream.communicate(timeout=15)[0].decode()
+        except subprocess.TimeoutExpired:
+            stream.kill()
+            events = stream.communicate()[0].decode()
+        codes = []
+        for line in events.splitlines():
+            try:
+                codes.append(json.loads(line)['Actor']['Attributes'].get('exitCode'))
+            except ValueError:
+                continue  # 停流时最后一行可能被截断
+        require('31' in codes, 'real fault container exits 31 before rollback')
         absent(consumer, provider)
         require(state_file() == before, 'failed transaction restores exact pre-existing capability state')
         for name in (consumer, provider):
