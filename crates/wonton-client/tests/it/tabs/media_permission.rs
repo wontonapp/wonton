@@ -187,20 +187,15 @@ async fn settings_reset_asks_again_and_rejects_clearing_an_unset_grant() {
 
     // 没问过的插件清不掉。
     assert!(matches!(
-        rig.app.dispatch(Action::SetPluginMediaPermission {
-            plugin_id: "app.other".to_owned(),
-            allow: false,
-        }),
+        rig.app
+            .set_plugin_media_permission("app.other".to_owned(), false),
         Err(CoreError::InvalidInput { .. })
     ));
     assert_eq!(grant_of(&rig.app.plugins(), "app.media"), Some(true));
 
     // 详情页把开关改回没问过：记录清掉，下次请求重新出询问。
     rig.app
-        .dispatch(Action::SetPluginMediaPermission {
-            plugin_id: "app.media".to_owned(),
-            allow: false,
-        })
+        .set_plugin_media_permission("app.media".to_owned(), false)
         .unwrap();
     assert_eq!(grant_of(&rig.app.plugins(), "app.media"), None);
 
@@ -213,10 +208,7 @@ async fn settings_reset_asks_again_and_rejects_clearing_an_unset_grant() {
 
     // 开关给回允许：再请求直接放行。
     rig.app
-        .dispatch(Action::SetPluginMediaPermission {
-            plugin_id: "app.media".to_owned(),
-            allow: true,
-        })
+        .set_plugin_media_permission("app.media".to_owned(), true)
         .unwrap();
     let after = rig
         .app

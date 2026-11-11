@@ -95,70 +95,6 @@ impl ClientCore {
         Arc::new(TabsSubscription::new(self.views().tabs.subscribe()))
     }
 
-    /// 文档开始前、只在插件自己的主框架注入；原生通道名为 `wontonBridge`。
-    pub fn tab_document_script(
-        &self,
-        page: PlacedTab,
-        environment: TabEnvironment,
-    ) -> Result<String, CoreError> {
-        bridge::document_script(
-            &self.scope().tabs,
-            &self.appearance.view(),
-            &page,
-            &environment,
-        )
-    }
-
-    /// 壳原样交入消息及原生回调的主框架标志、来源；核心校验来源，草稿不发送。
-    pub fn tab_handle_message(
-        &self,
-        page: PlacedTab,
-        is_main_frame: bool,
-        origin: String,
-        message: String,
-        environment: TabEnvironment,
-    ) -> TabBridgeResult {
-        bridge::handle_message(
-            &self.scope().tabs,
-            &self.appearance,
-            &page,
-            is_main_frame,
-            &origin,
-            &message,
-            &environment,
-        )
-    }
-
-    /// 外观、字号、布局或全屏状态变化后注入，不重新加载页面。
-    pub fn tab_context_script(
-        &self,
-        page: PlacedTab,
-        environment: TabEnvironment,
-    ) -> Result<String, CoreError> {
-        bridge::context_script(
-            &self.scope().tabs,
-            &self.appearance.view(),
-            &page,
-            &environment,
-        )
-    }
-
-    pub fn tab_reselected_script(&self) -> String {
-        bridge::reselected_script()
-    }
-
-    /// 连接变化时派发真实的核心状态；不把不确定状态当成已连接。
-    pub fn tab_connection_script(&self, tab: TabRef) -> String {
-        let scope = self.scope();
-        let home = scope.home.sender();
-        let plugins = scope.plugins.sender();
-        bridge::connection_script(sharing::tab_connected(
-            &tab,
-            &home.borrow().status,
-            &plugins.borrow(),
-        ))
-    }
-
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
     pub fn appearance(&self) -> AppearanceViewModel {
         self.appearance.view()
@@ -692,9 +628,6 @@ impl ClientCore {
             Action::SetVisiblePlugin { plugin_id } => {
                 scope.plugins.set_visible_plugin(plugin_id);
                 Ok(())
-            }
-            Action::SetPluginMediaPermission { plugin_id, allow } => {
-                scope.plugins.set_media_permission(plugin_id, allow)
             }
             Action::RefreshStore { force } => {
                 scope.plugins.refresh_store(force);

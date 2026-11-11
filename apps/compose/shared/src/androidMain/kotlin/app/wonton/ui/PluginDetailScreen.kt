@@ -41,7 +41,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalUriHandler
 import app.wonton.protocol.CoreException
-import app.wonton.protocol.Action
 import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.PluginImage
 import app.wonton.protocol.PluginOperation
@@ -235,6 +234,7 @@ private fun InstalledDetailSections(
 private fun MediaPermissionSection(plugins: PluginsState, id: String) {
     val grant = plugins.viewModel.mediaGrants.firstOrNull { it.pluginId == id } ?: return
     val title = stringResource(R.string.plugin_media_title)
+    var busy by remember(id) { mutableStateOf(false) }
     var problem by remember(id) { mutableStateOf<Problem?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         WontonGroup {
@@ -254,8 +254,18 @@ private fun MediaPermissionSection(plugins: PluginsState, id: String) {
                 WontonSwitch(
                     checked = grant.allowed,
                     onCheckedChange = { allowed ->
-                        problem = plugins.core.send(Action.SetPluginMediaPermission(pluginId = id, allow = allowed))
+                        busy = true
+                        problem = null
+                        // 本机设置，同步落盘；和别的详情页开关一样失败弹回并显示原因。
+                        problem = try {
+                            plugins.core.setPluginMediaPermission(pluginId = id, allow = allowed)
+                            null
+                        } catch (failure: CoreException) {
+                            failure.problem
+                        }
+                        busy = false
                     },
+                    enabled = !busy,
                     modifier = Modifier.semantics { contentDescription = title },
                 )
             }
