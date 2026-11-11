@@ -5,6 +5,10 @@
 //! - 跨机时，两台核心经各自的核心账号在一个不加密的房间（[`CONTACT_ROOM_TYPE`]）里互发 [`CONTACT_EVENT`]，
 //!   内容是 [`ContactEvent`]。
 //! - 客户端核心把列表放进 [`BotContactsViewModel`]。
+//! - 请求存在核心里、不过期，不是确认卡片。等这个人处理的请求另外放进“等你确认”列表
+//!   （[`ConfirmationList::contact_requests`](crate::ConfirmationList::contact_requests)、
+//!   [`ConfirmationsViewModel::contact_requests`](crate::ConfirmationsViewModel::contact_requests)），新请求推送到他的设备
+//!   （[`ContactRequestPush`]），不往“Wonton”私聊发提醒。在哪里同意都是同一对动作。
 //!
 //! 核心可能比 App 新，两台核心也可能版本不同：多给的字段被忽略；枚举遇到不认识的取值时落到 `Other`。
 
@@ -100,6 +104,36 @@ pub enum ContactState {
 pub struct ContactRequest {
     /// 对方的完整 Matrix 用户 ID，在本机或配对过的服务器上。
     pub user_id: String,
+}
+
+/// 等这个人处理的一条联系人请求（[`ContactState::Incoming`]），“等你确认”列表里的一项。用
+/// [`Action::ApproveBotContact`](crate::Action::ApproveBotContact)、
+/// [`Action::RejectBotContact`](crate::Action::RejectBotContact) 处理，和联系人页是同一对动作。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PendingContactRequest {
+    /// 请求发给的本机 Bot，这个人是它的归属人（共享 Bot 是主人）。
+    pub bot: BotRef,
+    /// 发请求的一方。
+    pub contact: BotContact,
+    /// 收到的时刻（Unix 毫秒）；同一个人再发时是最后一次的时刻。
+    pub received_at_ms: u64,
+}
+
+/// 新联系人请求的推送：推送代理发给归属人设备的明文里的 `contact_request` 段（和确认卡片的 `confirmation` 段并列），
+/// 也是 [`PushNotification::contact_request`](crate::PushNotification::contact_request)。通知类别是
+/// [`NotificationCategory::Confirmation`](crate::NotificationCategory::Confirmation)，文字由壳按这些原值写；点开去这个
+/// Bot 的联系人页。请求不过期，这台设备知道它处理过了（列表里没了）就撤下通知。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ContactRequestPush {
+    pub bot: BotRef,
+    /// 发请求的一方的 Matrix 用户 ID。
+    pub user_id: String,
+    /// 发请求的一方的显示名；跨机时是对方核心自报的。
+    pub display_name: Option<String>,
+    /// 发请求的一方是私人 Bot 时归属人的显示名。
+    pub keeper_display_name: Option<String>,
 }
 
 /// 联系人接口失败的原因。JSON 写法就是 HTTP 错误体的 `kind` 和 [`CONTACT_ERROR_HEADER`] 的值。

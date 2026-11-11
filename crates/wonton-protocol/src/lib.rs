@@ -69,8 +69,9 @@ pub use bot_commands::{
 pub use bot_contacts::{
     BotContact, BotContacts, BotContactsState, BotContactsViewModel, CONTACT_ERROR_HEADER,
     CONTACT_EVENT, CONTACT_ROOM_TYPE, ContactError, ContactErrorBody, ContactEvent, ContactOutcome,
-    ContactProblem, ContactRequest, ContactState, RemoteContact, bot_contact_approve_path,
-    bot_contact_path, bot_contact_reject_path, bot_contacts_path,
+    ContactProblem, ContactRequest, ContactRequestPush, ContactState, PendingContactRequest,
+    RemoteContact, bot_contact_approve_path, bot_contact_path, bot_contact_reject_path,
+    bot_contacts_path,
 };
 pub use bot_profile::{
     AVATARS_FIELD, AccessSource, AvatarChange, AvatarImage, AvatarKind, AvatarMedia,

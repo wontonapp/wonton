@@ -222,3 +222,55 @@ fn error_kinds_are_wire_strings() {
     assert_eq!(ContactError::NotPaired.http_status(), Some(403));
     assert_eq!(ContactError::TransportUnavailable.http_status(), None);
 }
+
+/// 契约：联系人请求跟确认卡片走同一份列表和同一个通知类别；没有请求的旧列表照样解析。
+#[test]
+fn contact_requests_ride_the_confirmation_list_and_push() {
+    let pending = crate::PendingContactRequest {
+        bot: bot(),
+        contact: remote_contact(),
+        received_at_ms: 1_799_000_300_000,
+    };
+    let list: crate::ConfirmationList = serde_json::from_value(json!({
+        "confirmations": [],
+        "contact_requests": [serde_json::to_value(&pending).unwrap()],
+    }))
+    .unwrap();
+    assert_eq!(list.contact_requests, [pending]);
+    let old: crate::ConfirmationList =
+        serde_json::from_value(json!({"confirmations": []})).unwrap();
+    assert!(old.contact_requests.is_empty());
+
+    let push = crate::ContactRequestPush {
+        bot: bot(),
+        user_id: "@hermes-sam:def67890.wonton".into(),
+        display_name: Some("Hermes".into()),
+        keeper_display_name: Some("Sam".into()),
+    };
+    let notification = crate::PushNotification {
+        server_id: Some("a1".into()),
+        room_id: String::new(),
+        event_id: String::new(),
+        sender: None,
+        room_name: None,
+        content: crate::PushContent::Invite,
+        category: crate::NotificationCategory::Confirmation,
+        confirmation: None,
+        contact_request: Some(push),
+    };
+    let value = serde_json::to_value(&notification).unwrap();
+    assert_eq!(
+        serde_json::from_value::<crate::PushNotification>(value).unwrap(),
+        notification
+    );
+    let message = crate::PushNotification {
+        contact_request: None,
+        ..notification
+    };
+    assert!(
+        serde_json::to_value(&message)
+            .unwrap()
+            .get("contact_request")
+            .is_none()
+    );
+}

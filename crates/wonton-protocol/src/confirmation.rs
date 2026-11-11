@@ -160,6 +160,10 @@ pub struct ConfirmationList {
     /// 核心立即返回，客户端见到变小就当成新的列表。
     #[serde(default)]
     pub revision: u64,
+    /// 等这个人处理的联系人请求（ADR-0045、ADR-0050），最早收到的在前。不是卡片：不过期，用联系人的接口处理；
+    /// 变了也算列表变了（`revision` 变大）。
+    #[serde(default)]
+    pub contact_requests: Vec<crate::PendingContactRequest>,
 }
 
 /// `POST /_wonton/confirmations/{id}` 的请求体。
