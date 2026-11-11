@@ -84,7 +84,7 @@ private fun palette(dark: Boolean) = if (dark) {
     ThemeColors(
         canvas = rgb(0xFFFFFF),
         surface = rgb(0xFFFFFF),
-        surfaceSubtle = rgb(0xEDEDED),
+        surfaceSubtle = rgb(0xF2F2F2),
         textPrimary = rgb(0x000000),
         textSecondary = rgb(0x666666),
         separator = rgb(0xDDDDDD),
