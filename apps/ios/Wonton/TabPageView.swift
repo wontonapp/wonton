@@ -68,11 +68,53 @@ struct TabPageView: View {
     }
 
     var body: some View {
+        content
+        // 键盘交给 WebKit 自己让（和 Safari 一样：可视区域缩小，焦点输入框滚进来）。SwiftUI 默认再把网页框缩到键盘上面，
+        // 两边各让一次：网页只剩一条，noVNC 这类按窗口缩放的页面跟着缩，缩放动画里画面被拉成竖条（iOS 26.5 实测）。
+        .ignoresSafeArea(.keyboard)
+        .onChange(of: page.fullscreen, initial: true) { showCapsule() }
+        .onChange(of: panel?.expanded) { showCapsule() }
+        .onChange(of: session.ready) { showCapsule(); notifySeen() }
+        .onChange(of: panel?.visible) { _, visible in
+            if visible == true { seenReady = false; notifySeen() }
+        }
+        .onAppear { notifySeen() }
+        .task(id: capsuleShowings) {
+            try? await Task.sleep(for: .seconds(3))
+            if !Task.isCancelled { capsuleShown = false }
+        }
+        .onChange(of: bottomBar == nil) { _, absent in if absent { bottomHeight = 0 } }
+        .onAppear { isVisible = true }
+        .onDisappear { isVisible = false; takeover?.end() }
+        .sheet(isPresented: $showsDetails) {
+            if let pluginId {
+                NavigationStack {
+                    PluginDetailView(model: plugins, chat: chat, route: .installed(id: pluginId)) { entry in
+                        showsDetails = false
+                        open(entry)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 拆开写：整段放在 `body` 里时，Xcode 27 的编译器会报“类型检查超时”（CI 的模拟器构建因此失败）。
+    private var content: some View {
         GeometryReader { geometry in
             let safe = geometry.safeAreaInsets
             let frame = webFrame(safe: safe)
             let inputs = inputs(safe: safe)
-            ZStack {
+            panelStack(safe: safe, frame: frame, inputs: inputs)
+                .task(id: inputs) { updateSession(inputs) }
+                .onChange(of: keepAlive) { _, keep in keepSessionAlive(inputs, when: keep) }
+                .task(id: store.generation) { keepSessionAlive(inputs, when: keepAlive) }
+                .onChange(of: geometry.size) { showCapsule() }
+        }
+    }
+
+    @ViewBuilder
+    private func panelStack(safe: EdgeInsets, frame: EdgeInsets, inputs: TabWebInputs) -> some View {
+        ZStack {
                 if let webView = session.webView {
                     TabWebView(webView: webView, obscured: obscured(safe: safe))
                     .id(ObjectIdentifier(webView))
@@ -116,38 +158,6 @@ struct TabPageView: View {
                     )
                 }
             }
-            .task(id: inputs) { updateSession(inputs) }
-            .onChange(of: keepAlive) { _, keep in keepSessionAlive(inputs, when: keep) }
-            .task(id: store.generation) { keepSessionAlive(inputs, when: keepAlive) }
-            .onChange(of: geometry.size) { showCapsule() }
-        }
-        // 键盘交给 WebKit 自己让（和 Safari 一样：可视区域缩小，焦点输入框滚进来）。SwiftUI 默认再把网页框缩到键盘上面，
-        // 两边各让一次：网页只剩一条，noVNC 这类按窗口缩放的页面跟着缩，缩放动画里画面被拉成竖条（iOS 26.5 实测）。
-        .ignoresSafeArea(.keyboard)
-        .onChange(of: page.fullscreen, initial: true) { showCapsule() }
-        .onChange(of: panel?.expanded) { showCapsule() }
-        .onChange(of: session.ready) { showCapsule(); notifySeen() }
-        .onChange(of: panel?.visible) { _, visible in
-            if visible { seenReady = false; notifySeen() }
-        }
-        .onAppear { notifySeen() }
-        .task(id: capsuleShowings) {
-            try? await Task.sleep(for: .seconds(3))
-            if !Task.isCancelled { capsuleShown = false }
-        }
-        .onChange(of: bottomBar == nil) { _, absent in if absent { bottomHeight = 0 } }
-        .onAppear { isVisible = true }
-        .onDisappear { isVisible = false; takeover?.end() }
-        .sheet(isPresented: $showsDetails) {
-            if let pluginId {
-                NavigationStack {
-                    PluginDetailView(model: plugins, chat: chat, route: .installed(id: pluginId)) { entry in
-                        showsDetails = false
-                        open(entry)
-                    }
-                }
-            }
-        }
     }
 }
 
