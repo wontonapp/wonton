@@ -86,3 +86,4 @@
 | [0076](0076-device-verification-fallback.md) | 新设备验证：确认方式的取舍，和没有已验证设备时的出路 |
 | [0077](0077-plugin-settings.md) | 插件设置：Schema 定义，核心校验，只重建用到的服务 |
 | [0079](0079-agent-plugins-monorepo.md) | ACP Agent 插件：一个仓库、一个底座，每家一个子目录 |
+| [0080](0080-static-web-plugins.md) | 静态网页插件：文件交给静态托管插件，核心只存文件、转发和记账；外部网页只存一个地址 |
