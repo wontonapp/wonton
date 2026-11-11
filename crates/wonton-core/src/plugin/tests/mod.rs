@@ -47,6 +47,7 @@ mod leftovers;
 mod limits;
 mod manager;
 mod manifest_errors;
+mod model_gateway_contract;
 mod model_providers;
 mod models;
 mod models_route;

@@ -5,7 +5,7 @@ name: test-images
 # 测试作业经 WONTON_TEST_IMAGES 指到副本（wonton-test-images 改写引用），镜像构建经 `*_IMAGE` build-arg 指过去。
 # 仓库主人取 GITHUB_REPOSITORY_OWNER。
 # 每次合进 main 也跑一遍：main-image 的构建要用副本，合并时就把它补上（同一 push 里两边并发，第一次可能
-# 谁先谁后；main-image 先到就等这边绿了重跑一次）。PR 只在改到本文件时跑。
+# 谁先谁后；main-image 先到就等这边绿了重跑一次）。PR 在改到工作流或镜像发现脚本时跑。
 # 测试拉取失败说缺镜像时，把引用补进 scripts/mirror-test-images.sh 的来源。
 on:
   schedule:
