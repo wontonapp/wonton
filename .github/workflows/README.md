@@ -52,16 +52,18 @@
 - `apps/compose/shared` 的 host test 里有 Paparazzi 截图测试（Apache-2.0，版本钉在
   `gradle/libs.versions.toml`）。它按布局在 JVM 上把 `@Preview` 渲染成 PNG，不加载 Rust 的 .so；预览自己带
   固定假数据。参考图在 `apps/compose/shared/src/androidHostTest/snapshots/`，直接进 git，不用 LFS。
-- 跑在 android 工作流的构建作业里（`verifyPaparazziAndroidMain`），不新开作业：同一个 PR 上的新检查放进已有
-  作业，合并队列的必需检查列表不用动。设备固定成 PIXEL_5、语言 en、浅色，另有深色的一份；参考图在 Linux
+- 比对跑在 android 工作流的构建作业里（`verifyPaparazziAndroidMain`），不新开作业：同一个 PR 上的新检查放进
+  已有作业，合并队列的必需检查列表不用动。设备固定成 PIXEL_5、语言 en、浅色，另有深色的一份；参考图在 Linux
   runner 上生成，本机字体不同也可能有差异，以 CI 的为准。
 - 比对失败时差异图和报告作为 `paparazzi-<运行次数>` 产物留 7 天，下载下来看差在哪。
 - 重录：本地 `cd apps/compose && ./gradlew :shared:recordPaparazziAndroidMain` 后提交 `snapshots/` 下的
-  PNG，和预览一起提交。或者在 PR 上打 `record-snapshots` 标签，构建作业改成跑
-  `recordPaparazziAndroidMain`、把新图提交回分支，然后摘掉标签。外部 PR 的分支在别人仓库里推不进去：
-  标签照样会摘掉，但图只在这次的 `paparazzi` 产物里，作者下载后自己提交。
-- 用 `GITHUB_TOKEN` 推的提交不再触发 CI，重录之后点重跑或者推一个空提交，让新参考图自己过一遍比对。
-  打任何标签都会触发一次 android 运行，草稿 PR 上打标签要等转 ready 才跑。
+  PNG，和预览一起提交。
+- 或者在 PR 上打 `record-snapshots` 标签，`snapshots-record` 工作流跑 `recordPaparazziAndroidMain`、
+  把新图提交到分支头，然后摘掉标签。它是单独的工作流、不是必需检查：打标签不会起一整轮 android 构建，也不会
+  取消正在跑的那轮，草稿 PR 上也照跑；重录这一轮红或跳过，不会把之前失败的必需检查盖成通过。录制和提交都由
+  它做，作者点重跑或推一个空提交让新图自己过一遍比对（`GITHUB_TOKEN` 推的提交不再触发 CI）。外部 PR 的分支
+  在别人仓库里推不进去：标签照样摘掉，图放在这次的 paparazzi 产物里，作者下载后自己提交。
+- 摘标签是单独一步，只看标签（外部 PR 也摘），不跟着提交步骤的成败走。
 
 ## 合并队列
 

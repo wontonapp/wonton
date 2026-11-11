@@ -1,5 +1,6 @@
-// 预览的假数据：色值、计数和字节数就是字面量，取名字反而看不出画面。
-@file:Suppress("MagicNumber")
+// 预览和截图测试的假数据、预览函数都在这个文件：假核心给的原文就是写死的字面量，
+// 预览多了也超过了 detekt 每文件 11 个函数的上限。`Notices`、`InviteItem` 为此外提成 internal。
+@file:Suppress("MagicNumber", "TooManyFunctions")
 
 package app.wonton.ui
 
@@ -11,9 +12,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatAccount
+import app.wonton.protocol.ChatFailure
+import app.wonton.protocol.ChatForm
+import app.wonton.protocol.ChatLayout
 import app.wonton.protocol.ChatLayoutChoice
 import app.wonton.protocol.ChatSync
+import app.wonton.protocol.ChatTextScale
 import app.wonton.protocol.ChatViewModel
+import app.wonton.protocol.CodeOverflow
 import app.wonton.protocol.ConnectionCheck
 import app.wonton.protocol.ConnectionDetails
 import app.wonton.protocol.ConnectionQuality
@@ -33,6 +39,8 @@ import app.wonton.protocol.PluginsViewModel
 import app.wonton.protocol.PushStatus
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.protocol.RegistryMirrorViewModel
+import app.wonton.protocol.RoomMembership
+import app.wonton.protocol.RoomRow
 import app.wonton.protocol.Rgb
 import app.wonton.protocol.SidebarViewModel
 import app.wonton.protocol.StorageUsage
@@ -260,7 +268,64 @@ internal fun HomeStatusPanelDarkPreview() {
     }
 }
 
-/**
- * 聊天提示、邀请行和错误页的预览在 ChatPreviews.kt、ProblemPreview.kt 里：
- * ChatScreen.kt 和 ProblemViews.kt 都撞到 detekt 的函数数上限。
- */
+/** 列表里的邀请行，预览用；只填看得见的字段。 */
+private fun previewInviteRow() = RoomRow(
+    roomId = "!design:home.example",
+    name = "Design review",
+    isDirect = false,
+    directUserId = null,
+    isEncrypted = true,
+    isReadOnly = false,
+    membership = RoomMembership.INVITED,
+    preview = null,
+    unreadCount = 0u,
+    layout = ChatLayout(form = ChatForm.BUBBLES, textScale = ChatTextScale.STANDARD, code = CodeOverflow.WRAP),
+)
+
+/** 聊天列表顶部的状态提示（聊天列表）。 */
+@Preview(name = "聊天提示", locale = "en", widthDp = 390, heightDp = 160)
+@Composable
+internal fun ChatNoticesPreview() {
+    PreviewFrame {
+        Notices(viewModel = previewChat(), onOpenBackup = {})
+    }
+}
+
+/** 聊天列表里的失败提示：说清原因、给下一步、详情默认收起。 */
+@Preview(name = "聊天失败提示", locale = "en", widthDp = 390, heightDp = 220)
+@Composable
+internal fun ChatFailurePreview() {
+    PreviewFrame {
+        Notices(
+            viewModel = previewChat().copy(
+                account = ChatAccount.Failed(reason = ChatFailure.UPSTREAM, message = "502 Bad Gateway"),
+            ),
+            onOpenBackup = {},
+        )
+    }
+}
+
+/** 有人邀请进房间（聊天列表）。 */
+@Preview(name = "聊天邀请", locale = "en", widthDp = 390, heightDp = 160)
+@Composable
+internal fun ChatInvitePreview() {
+    PreviewFrame {
+        InviteItem(row = previewInviteRow(), onAction = {})
+    }
+}
+
+/** 整页都显示不出来时的样子（错误页）；文案就是核心给的那三类：发生了什么、能做什么、详情。 */
+@Preview(name = "错误页", locale = "en", widthDp = 390, heightDp = 420)
+@Composable
+internal fun ProblemViewPreview() {
+    PreviewFrame {
+        ProblemView(
+            problem = Problem(
+                title = "Can't reach your home server",
+                nextStep = "Check the network and try again.",
+                detail = "error sending request: connection reset by peer",
+            ),
+            onRetry = {},
+        )
+    }
+}

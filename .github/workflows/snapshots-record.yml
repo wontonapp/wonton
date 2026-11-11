@@ -1,19 +1,25 @@
 name: snapshots-record
 
 # 截图参考图重录：只在给 PR 打 record-snapshots 标签时跑，和每个 PR 的日常作业（ios.yml、android.yml）分开。
-# 打任何标签都会触发这个工作流（触发器只认事件类型），作业里再按标签名过滤；它不算必需检查，录完那轮红是正常的：
-# 每录一张都会报一条“Automatically recorded snapshot”。写权限只给重录作业，日常作业保持只读。
+# 打任何标签都会触发这个工作流（触发器只认事件类型），作业里再按标签名过滤；它不算必需检查。写权限只给重录
+# 作业，日常作业保持只读。
 on:
   pull_request:
     types: [labeled]
 
+concurrency:
+  group: snapshots-record-${{ github.event.pull_request.head.ref }}
+  # 只有 record-snapshots 会取消正在跑的那轮（摘掉后再贴就是再要一次重录）。别的标签也会触发这个工作流、
+  # 作业直接跳过，不跟着取消就把跑到一半的录制连同它的推送一起掐掉了。
+  cancel-in-progress: ${{ github.event.label.name == 'record-snapshots' }}
+
 permissions:
   contents: read
 
-# 同一个分支同时只重录一次：重录会往分支提交，两个作业一起跑会互相把对方的推送顶成非快进。
-concurrency:
-  group: snapshots-record-${{ github.event.pull_request.head.ref }}
-  cancel-in-progress: true
+# 同 android.yml：不留增量编出的中间件，调试信息只留行号。
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
   ios:
@@ -143,3 +149,77 @@ jobs:
           path: ${{ runner.temp }}/Tests.xcresult
           retention-days: 7
           if-no-files-found: ignore
+
+  android:
+    name: 重录 Android 参考图
+    if: github.event.label.name == 'record-snapshots'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      # 把重录的参考图推回 PR 的分支，推完摘掉标签。
+      contents: write
+      pull-requests: write
+    steps:
+      # 检出分支本身而不是默认的合并提交：推回去的分支头才不带 base 的合并提交。
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: 安装 rust-toolchain.toml 指定的工具链和 Android target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-linux-android
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-ndk@4.1.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # 和 android.yml 同一个 key，恢复它编好的依赖。标签运行不写缓存。
+          shared-key: rust-android
+          save-if: false
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: 重录界面参考图
+        working-directory: apps/compose
+        run: ./gradlew :shared:recordPaparazziAndroidMain
+      - name: 差异图和报告
+        # 失败时给差异图；外部 PR 推不回去，录好的图也只在这里拿得到。
+        if: ${{ failure() || github.event.pull_request.head.repo.full_name != github.repository }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: paparazzi-${{ github.run_attempt }}
+          path: |
+            apps/compose/shared/build/paparazzi
+            apps/compose/shared/build/reports/paparazzi
+            apps/compose/shared/src/androidHostTest/snapshots
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: 提交重录的参考图
+        if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/compose/shared/src/androidHostTest/snapshots
+          if git diff --cached --quiet; then
+            echo "参考图没有变化" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git commit -m "test(android): 重录界面参考图"
+          # 通过请求头带令牌，不把令牌拼进 remote 地址。
+          git -c "http.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" \
+            push origin "HEAD:${GITHUB_HEAD_REF}"
+          echo "已提交重录的参考图。这个提交由 GITHUB_TOKEN 推上去，不再触发 CI：请点重跑或推一个空提交让参考图过一遍比对。" >> "$GITHUB_STEP_SUMMARY"
+      # 标签必须摘掉：GitHub 不会给已经贴着的标签再发一次 labeled，留着就发不出下一轮重录。单独一步、
+      # 只看标签（外部 PR 的分支推不回去也照摘），不跟着提交步骤的成败走。
+      - name: 去掉 record-snapshots 标签
+        if: ${{ always() && github.event.label.name == 'record-snapshots' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr edit "${{ github.event.pull_request.number }}" --repo "$GITHUB_REPOSITORY" --remove-label record-snapshots \
+            || echo "标签已经不在了。"

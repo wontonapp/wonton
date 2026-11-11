@@ -2,6 +2,4 @@
 # 每行一条：路径 | 原因 | 到期日（YYYY-MM-DD）。原因里不能有 |。
 # 列出的文件不查界面文字（源码字符串、界面接口的写死文字、字符串目录）；到期后例外失效，CI 重新失败。
 # 文件里的写死文字抽完后，这一行会报错，删掉它。这个列表只减不增：新代码直接写进字符串目录，不要加进来。
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/PreviewData.kt | 预览和截图测试的假数据：假核心给的原文和预览名就是写死的 | 2027-05-11
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ChatPreviews.kt | 预览和截图测试的假数据：假核心给的原文和预览名就是写死的 | 2027-05-11
-apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ProblemPreview.kt | 预览和截图测试的假数据：假核心给的原文和预览名就是写死的 | 2027-05-11
+apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/PreviewData.kt | 预览和截图测试的假数据与预览名：假核心给的原文就是写死的 | 2027-05-11
