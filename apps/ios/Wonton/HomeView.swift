@@ -15,17 +15,14 @@ struct HomeView: View {
     var settingsPresented = false
     /// 开发时经 `WONTON_DEV_OPEN_WEB` 传入的插件网页，本地代理就绪后自动打开，真机上不用点按也能测。
     var devWebURL: URL?
-    /// 侧边栏点“应用商店”时加一，直接进商店。
-    var storeRequest = 0
     @Environment(\.wontonColors) private var colors
     @Environment(TabsModel.self) private var tabs
     @State private var pin: TabRef?
     @State private var openedDevPage = false
-    @State private var path = NavigationPath()
+    @Binding var path: NavigationPath
     @State private var confirmation: PluginConfirmation?
     @State private var uninstalling: UninstallTarget?
     @State private var menuPlugin: InstalledPlugin?
-    @State private var handledStoreRequest = 0
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -63,11 +60,6 @@ struct HomeView: View {
                 tabs.select(choice.tab)
             }
             .wontonDialog(problem: model.rejection, isPresented: isShowingRejection)
-            .onChange(of: storeRequest, initial: true) { _, request in
-                guard request > handledStoreRequest else { return }
-                handledStoreRequest = request
-                path = NavigationPath([AppsRoute.store])
-            }
         }
         .wontonDialog(problem: plugins.rejection, isPresented: isShowingPluginRejection)
         .tabPinRequests($pin)
@@ -247,7 +239,7 @@ struct HomeView: View {
     }
 }
 
-private enum AppsRoute: Hashable {
+enum AppsRoute: Hashable {
     case store
 }
 

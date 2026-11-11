@@ -16,9 +16,10 @@ extension MainView {
             chat.path = []
         case .store:
             tabs.select(.apps)
-            storeRequest += 1
+            appsPath = NavigationPath([AppsRoute.store])
         case .allApps:
             tabs.select(.apps)
+            appsPath = NavigationPath()
         case .settings:
             if tabs.isPinned(.settings) {
                 tabs.select(.settings)

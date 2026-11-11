@@ -105,6 +105,8 @@ pub enum TabRef {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TabsViewModel {
+    /// 主界面可呈现的页面，包含未固定的应用页；底栏仍只渲染 `items`。
+    pub pages: Vec<TabRef>,
     /// 底栏上的项，按显示顺序。
     pub items: Vec<TabItem>,
     /// 要不要显示整条底栏：栏上除了"聊天"还有别的项才显示，只有"聊天"时聊天页铺到底。核心算，壳不自己数。
@@ -356,6 +358,7 @@ mod tests {
             source: crate::PanelSource::User,
         }];
         round_trip(TabsViewModel {
+            pages: items.iter().map(|item| item.tab.clone()).collect(),
             items,
             show_bar: true,
             selected: page(),
