@@ -4,6 +4,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::{StreamExt, pin_mut};
+
 use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedTimelineEvent;
 use matrix_sdk::ruma::{
     EventId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId,
@@ -32,6 +34,10 @@ const BACKGROUND_KEY_WAIT: Duration = Duration::from_secs(12);
 /// 后台通知取回消息的总时限。SDK 的通知客户端在隧道被压住时可能几次尝试都拿不到事件（内部还有 `/context`
 /// 兜底），60 秒一声不吭对后台通知太长；到点按取不到正文发出去，和推送路径的兜底同一个意思。
 const BACKGROUND_FETCH_WAIT: Duration = Duration::from_secs(20);
+
+/// 占位发出后继续等房间密钥的时限。密钥在同步被压住时可能晚到十几秒，[`BACKGROUND_KEY_WAIT`] 只兜住大多数；
+/// 这里接住更晚到的。60 秒够同步慢慢追上，密钥永远不来（比如退过房间）也不把任务一直挂着。
+const BACKGROUND_BACKFILL_WAIT: Duration = Duration::from_secs(60);
 
 /// 本设备的 HTTP pusher。`Debug` 不输出 pushkey：它兼作家里推送代理的凭据。
 #[derive(Clone)]
@@ -135,8 +141,8 @@ impl MatrixSession {
 
     /// 注册一个后台通知的回调（ADR-0003 的“设计：保持连接”）：同步循环里出现该通知的事件（sliding sync 的
     /// 通知在本机按账号的推送规则评估，和服务器给 pusher 的判断一致），取回那条消息、按推送同样的方式映射，
-    /// 交给 `on_notification`。按推送规则不用通知、已撤回的事件不会到这里；取回失败写日志，不回调。会话释放后
-    /// 不再触发。
+    /// 交给 `on_notification`。按推送规则不用通知、已撤回的事件不会到这里；取回失败写日志，不回调。缺房间
+    /// 密钥时先交占位，密钥晚到会再交一次同一个事件的通知，占位要换成正文。会话释放后不再触发。
     pub async fn register_background_notifications(
         &self,
         on_notification: impl Fn(BackgroundNotification) + Send + Sync + Clone + 'static,
@@ -212,7 +218,7 @@ impl NotificationFetcher {
         self,
         notification: SdkNotification,
         room_id: OwnedRoomId,
-        on_notification: impl FnOnce(BackgroundNotification),
+        on_notification: impl Fn(BackgroundNotification) + Send + Clone + 'static,
     ) {
         let event = match notification.event {
             RawAnySyncOrStrippedTimelineEvent::Sync(event) => event,
@@ -224,29 +230,112 @@ impl NotificationFetcher {
         };
         let sender = event.sender().to_owned();
         let event_id = event.event_id().to_owned();
+        // 密钥到没到，取回才见分晓；订阅要赶在取回之前，这中间到达的密钥也不漏（SDK 的 wait_for_room_key
+        // 同款做法）。
+        let room_keys = self.client.encryption().room_keys_received_stream().await;
         let fetched = tokio::time::timeout(
             BACKGROUND_FETCH_WAIT,
             self.notification(&room_id, &event_id, Some(BACKGROUND_KEY_WAIT)),
         )
         .await;
-        let message = match fetched {
-            Ok(Ok(Some(message))) => message,
+        let (message, missing_key) = match fetched {
+            Ok(Ok(Some(message))) => {
+                let missing_key = matches!(message.body, MessageBody::Undecryptable);
+                (message, missing_key)
+            }
             // 按推送规则不该响、已撤回：不通知。
             Ok(Ok(None)) => return,
             Ok(Err(error)) => {
                 tracing::warn!(%error, "background notification: failed to fetch the event");
-                self.unavailable(&room_id, sender).await
+                (self.unavailable(&room_id, sender).await, false)
             }
             Err(_) => {
                 tracing::warn!("background notification: replying without the message content");
-                self.unavailable(&room_id, sender).await
+                (self.unavailable(&room_id, sender).await, false)
             }
         };
         on_notification(BackgroundNotification {
-            room_id,
-            event_id,
+            room_id: room_id.clone(),
+            event_id: event_id.clone(),
             message,
         });
+        // 占位只差密钥：密钥晚于等待上限才到就回填——重取正文、再交一次同一个事件的通知，客户端把占位换成
+        // 正文，壳用同一个通知标识替换。取回失败和取不到正文的占位不回填：原因不是缺密钥。
+        if missing_key && let Some(room_keys) = room_keys {
+            tokio::spawn(async move {
+                pin_mut!(room_keys);
+                let deadline = tokio::time::Instant::now() + BACKGROUND_BACKFILL_WAIT;
+                loop {
+                    // 等到这个房间的密钥才出去重取；流滞后说明可能错过了，也去试一次。到点或流断就停，
+                    // 占位照旧。
+                    loop {
+                        let remaining =
+                            deadline.saturating_duration_since(tokio::time::Instant::now());
+                        if remaining.is_zero() {
+                            tracing::info!(
+                                %event_id,
+                                "background notification: no room key before the backfill deadline"
+                            );
+                            return;
+                        }
+                        match tokio::time::timeout(remaining, room_keys.next()).await {
+                            Ok(Some(Ok(keys))) if keys.iter().any(|key| key.room_id == room_id) => {
+                                break;
+                            }
+                            Ok(Some(Err(_))) => break,
+                            Ok(Some(Ok(_))) => {}
+                            Ok(None) | Err(_) => return,
+                        }
+                    }
+                    tracing::info!(
+                        %event_id,
+                        "background notification: room key arrived, refetching the message"
+                    );
+                    if self
+                        .refetch_and_notify(&room_id, &event_id, on_notification.clone())
+                        .await
+                    {
+                        return;
+                    }
+                }
+            });
+        }
+    }
+
+    /// 回填的重取：解出来了再交一次同一个事件的通知，返回要不要停。还是解不开说明来的是别的会话的钥匙，
+    /// 回去接着等；取回失败写日志就停，不重试。
+    async fn refetch_and_notify(
+        &self,
+        room_id: &RoomId,
+        event_id: &EventId,
+        on_notification: impl Fn(BackgroundNotification),
+    ) -> bool {
+        let fetched = tokio::time::timeout(
+            BACKGROUND_FETCH_WAIT,
+            self.notification(room_id, event_id, Some(BACKGROUND_KEY_WAIT)),
+        )
+        .await;
+        match fetched {
+            Ok(Ok(Some(message))) if !matches!(message.body, MessageBody::Undecryptable) => {
+                on_notification(BackgroundNotification {
+                    room_id: room_id.to_owned(),
+                    event_id: event_id.to_owned(),
+                    message,
+                });
+                true
+            }
+            Ok(Ok(Some(_))) => false,
+            // 按推送规则不该响、已撤回：占位换不了也撤不下，停就是了。
+            Ok(Ok(None)) => true,
+            Ok(Err(error)) => {
+                tracing::warn!(%error, "background notification: backfill refetch failed");
+                true
+            }
+            Err(_) => {
+                tracing::warn!("background notification: backfill refetch timed out");
+                true
+            }
+        }
     }
 
     /// 取不回正文时的占位：照实说解不开（超时和缺密钥对用户是同一句），点开还能看到时间线里的那条。

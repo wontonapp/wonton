@@ -40,6 +40,7 @@ object PushNotifications {
         context: Context,
         notification: PushNotification,
         tag: String = tag(notification.serverId, notification.roomId, notification.confirmation?.id),
+        onlyAlertOnce: Boolean = false,
     ) {
         if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             Log.w(TAG, "no notification permission, dropping this push")
@@ -93,6 +94,10 @@ object PushNotifications {
             .setContentIntent(open)
             .setAutoCancel(true)
             .setShowWhen(true)
+        if (onlyAlertOnce) {
+            // 占位换成正文的回填重弹：同一个通知原地替换，别再响一遍。
+            shown.setOnlyAlertOnce(true)
+        }
         // App 被杀时收不到卡片的变化：到期这件事交给系统。
         if (card != null) {
             val left = card.expiresAtMs.toLong() - System.currentTimeMillis()

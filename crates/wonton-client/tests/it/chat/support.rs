@@ -23,6 +23,7 @@ use wonton_client::{
     Network, OnboardingViewModel, PushMethod,
 };
 use wonton_matrix::MatrixSession;
+pub use wonton_matrix::testkit::ToDeviceHold;
 use wonton_matrix::testkit::{Issuer, PushGateway, TestServer, random_hex};
 use wonton_tunnel::pair::{
     PairHandler, PairProtocol, PairResponse, PairingCode, PairingSecret, SECRET_LEN,
@@ -558,6 +559,29 @@ impl Home {
     /// 一个 Bot 账号：直接连 Tuwunel（Bot 跑在家里的服务器上，不经隧道），设好显示名并开始同步。
     pub async fn bot(&self, localpart: &str, display_name: &str) -> MatrixSession {
         let bot = self.matrix.login(localpart, display_name).await;
+        bot.set_display_name(display_name)
+            .await
+            .expect("Bot 设置显示名");
+        bot.start_sync().await.expect("Bot 开始同步");
+        bot
+    }
+
+    /// 同 [`Self::bot`]，但登录走 `homeserver_url`（比如 [`ToDeviceHold`] 的中转），之后的请求都走它。
+    pub async fn bot_via(
+        &self,
+        homeserver_url: &str,
+        localpart: &str,
+        display_name: &str,
+    ) -> MatrixSession {
+        let bot = self
+            .matrix
+            .login_via(
+                homeserver_url,
+                localpart,
+                display_name,
+                wonton_matrix::StoreConfig::InMemory,
+            )
+            .await;
         bot.set_display_name(display_name)
             .await
             .expect("Bot 设置显示名");
