@@ -39,6 +39,8 @@ impl PluginManager {
         let this = Arc::clone(self);
         let started_id = id.clone();
         let closing = Arc::clone(&this);
+        let langs = this.owner_languages();
+        this.reject_busy_or_rebuilding(&id, &langs)?;
         let (view, probe) = detached(async move {
             let _changing = this.dependencies.changing.lock().await;
             this.start(&started_id).await
@@ -48,6 +50,31 @@ impl PluginManager {
             closing.check_models_once(vec![id]).await;
         }
         Ok(view)
+    }
+
+    /// 与 uninstall 的 `check_uninstall_state` 同形：先把忙/重建中的插件拒掉，再排队等
+    /// `dependencies.changing` 锁——不然并发的 start 会等前一个操作做完才被 `begin_start` 拦下，
+    /// 这期间它会在过期的状态上继续动手（并发卸载测试的第二个断言）。
+    fn reject_busy_or_rebuilding(
+        &self,
+        id: &PluginId,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        let entry = plugins
+            .get(id)
+            .ok_or_else(|| InstallError::not_installed(langs, id))?;
+        if let Some(error) = busy(id, &entry.status, langs) {
+            return Err(error);
+        }
+        if self.lan.is_rebuilding(id) {
+            return Err(InstallError::Conflict(l10n::text(
+                langs,
+                "plugin-install-conflict-rebuilding",
+                &[("id", id.to_string().into())],
+            )));
+        }
+        Ok(())
     }
 
     pub(in crate::plugin) async fn start(
