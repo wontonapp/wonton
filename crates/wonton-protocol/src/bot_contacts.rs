@@ -9,6 +9,9 @@
 //!   （[`ConfirmationList::contact_requests`](crate::ConfirmationList::contact_requests)、
 //!   [`ConfirmationsViewModel::contact_requests`](crate::ConfirmationsViewModel::contact_requests)），新请求推送到他的设备
 //!   （[`ContactRequestPush`]），不往“Wonton”私聊发提醒。在哪里同意都是同一对动作。
+//! - 对象是对方家里的人（[`ContactKind::Person`]）时不经核心之间的请求：Bot 给他发一个标准私聊邀请，`m.room.create`
+//!   的内容里带 [`BOT_CONTACT_CREATE_KEY`]。他在 App 的“请求”里（[`FriendRequestKind::BotContact`](crate::FriendRequestKind::BotContact)）
+//!   或任何 Matrix 客户端里接受邀请，就是同意；不另做查账号是否存在的接口，也不另做一份“给我的联系人请求”列表。
 //!
 //! 核心可能比 App 新，两台核心也可能版本不同：多给的字段被忽略；枚举遇到不认识的取值时落到 `Other`。
 
@@ -40,6 +43,11 @@ pub fn bot_contact_reject_path(bot: &BotRef, user_id: &str) -> String {
 /// 错误响应里写类别的响应头，值是 [`ContactError::as_str`]。和其他管理接口同一个头。
 pub const CONTACT_ERROR_HEADER: &str = "X-Wonton-Error";
 
+/// `m.room.create` 内容里的标记键，取值 `true`：这个私聊邀请是 Bot 请对方家里的人做联系人。放在 create 内容而不是
+/// 状态事件，理由同 [`FRIEND_EVENT`](crate::FRIEND_EVENT)：受邀者接受前只看得到邀请里的 create 内容。邀请人是这个 Bot 的
+/// Matrix 账号，`is_direct` 为真；不带标记的私聊邀请不算联系人请求，接受了也不成联系人。
+pub const BOT_CONTACT_CREATE_KEY: &str = "app.wonton.bot_contact";
+
 /// 两台核心交换联系人请求和结果的事件类型（ADR-0050），内容是 [`ContactEvent`]。
 pub const CONTACT_EVENT: &str = "app.wonton.contact";
 
@@ -64,6 +72,7 @@ pub struct BotContact {
     pub display_name: Option<String>,
     /// 对方归属人的显示名；共享 Bot、远端的人为空。跨机时是对方核心自报的。
     pub keeper_display_name: Option<String>,
+    pub kind: ContactKind,
     pub state: ContactState,
     /// 对方在另一台服务器上时有值；同机的联系人为空。
     #[serde(default)]
@@ -80,19 +89,36 @@ pub struct RemoteContact {
     pub peer_status: Option<PeerStatus>,
 }
 
+/// 联系人是 Bot 还是人，决定请求怎么走、谁同意（ADR-0050）。由发起的归属人选，核心不去对方那里查。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ContactKind {
+    /// 另一个 Bot：经核心（跨机时经 [`CONTACT_EVENT`]）请求，它的归属人同意。
+    Bot,
+    /// 对方家里的人：Bot 发带 [`BOT_CONTACT_CREATE_KEY`] 的私聊邀请，他本人接受。
+    Person,
+    #[serde(other)]
+    Other,
+}
+
+/// 状态对 Bot 和人是同一套：“等对方”“对方拒绝了”的处境一样，只是对方怎么表态不同，壳按 [`ContactKind`] 选文字
+/// （等对方同意 / 等对方接受）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum ContactState {
-    /// 这边发了请求，等对方的归属人同意；这一行的“删除”取消请求。
+    /// 这边发了请求，等对方：Bot 等它的归属人同意，人等他接受私聊邀请，不算已添加。这一行的“删除”取消请求，
+    /// 对人是撤回邀请。对方用 Matrix 的忽略（ignore）不理邀请时一直是这个状态：忽略本来就不让对方知道。
     Pending,
-    /// 对方发来请求，等这个 Bot 的归属人同意或拒绝。
+    /// 对方发来请求，等这个 Bot 的归属人同意或拒绝。只有 Bot 之间有。
     Incoming,
-    /// 双方都同意了：能互相邀请，互相的话会被处理。
+    /// 双方都同意了：能互相邀请，互相的话会被处理。对人是他接受了邀请。
     Active,
-    /// 对方的归属人拒绝了这边的请求；“删除”清掉这一行。
+    /// 对方拒绝了：Bot 的归属人拒绝了请求；人拒绝了邀请，或者屏蔽了这个 Bot 或这台服务器（MSC4155 的拒绝名单让
+    /// 邀请回 403）。“删除”清掉这一行。
     Declined,
-    /// 对方服务器上没有这个用户。
+    /// 对方服务器上没有这个用户：Bot 的请求得到 [`ContactOutcome::NotFound`]，或人的邀请被对方服务器以查无此人拒绝。
     NotFound,
     #[serde(other)]
     Other,
@@ -104,6 +130,7 @@ pub enum ContactState {
 pub struct ContactRequest {
     /// 对方的完整 Matrix 用户 ID，在本机或配对过的服务器上。
     pub user_id: String,
+    pub kind: ContactKind,
 }
 
 /// 等这个人处理的一条联系人请求（[`ContactState::Incoming`]），“等你确认”列表里的一项。用
@@ -153,6 +180,8 @@ pub enum ContactError {
     ContactNotFound,
     /// 不是这个 Bot 的归属人；共享 Bot 只有主人能管。
     NotKeeper,
+    /// 给人的私聊邀请发不过去：对方服务器连不上。什么都没记下，稍后再试。
+    PeerUnreachable,
     /// 不是经隧道的已配对设备（ADR-0017 的设备门）。
     Unauthenticated,
     /// 核心把请求或结果写进 Matrix 时，Matrix 服务出错。
@@ -176,6 +205,7 @@ impl ContactError {
             Self::BotNotFound => "bot_not_found",
             Self::ContactNotFound => "contact_not_found",
             Self::NotKeeper => "not_keeper",
+            Self::PeerUnreachable => "peer_unreachable",
             Self::Unauthenticated => "unauthenticated",
             Self::Upstream => "upstream",
             Self::TransportUnavailable => "transport_unavailable",
@@ -192,7 +222,7 @@ impl ContactError {
             Self::NotPaired | Self::NotKeeper => Some(403),
             Self::BotNotFound | Self::ContactNotFound => Some(404),
             Self::AlreadyContact => Some(409),
-            Self::Upstream => Some(502),
+            Self::Upstream | Self::PeerUnreachable => Some(502),
             Self::TransportUnavailable | Self::Protocol | Self::Other => None,
         }
     }

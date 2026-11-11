@@ -699,8 +699,13 @@ pub enum Action {
     RefreshBotContacts {
         bot: BotRef,
     },
-    /// 请对方做这个 Bot 的联系人：本机的 Bot，或配对过的服务器上的人或 Bot。
+    /// 请另一个 Bot（本机的，或配对过的服务器上的）做这个 Bot 的联系人，等它的归属人同意。
     RequestBotContact {
+        bot: BotRef,
+        user_id: String,
+    },
+    /// 请配对过的服务器上的一个人做这个 Bot 的联系人：Bot 给他发带标记的私聊邀请，他接受才算数，之前一直是“等对方接受”。
+    RequestPersonContact {
         bot: BotRef,
         user_id: String,
     },

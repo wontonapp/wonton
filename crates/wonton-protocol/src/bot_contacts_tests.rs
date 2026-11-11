@@ -15,6 +15,7 @@ fn remote_contact() -> BotContact {
         user_id: "@hermes-sam:def67890.wonton".into(),
         display_name: Some("Sam 的 Hermes".into()),
         keeper_display_name: Some("Sam".into()),
+        kind: ContactKind::Bot,
         state: ContactState::Incoming,
         remote: Some(RemoteContact {
             server_name: "def67890.wonton".into(),
@@ -56,6 +57,7 @@ fn contact_types_round_trip_through_json() {
         "user_id": "@hermes-bob:x.wonton.internal",
         "display_name": null,
         "keeper_display_name": "Bob",
+        "kind": "bot",
         "state": "active",
     }))
     .unwrap();
@@ -89,6 +91,10 @@ fn contact_types_round_trip_through_json() {
         Action::RequestBotContact {
             bot: bot(),
             user_id: user_id.clone(),
+        },
+        Action::RequestPersonContact {
+            bot: bot(),
+            user_id: "@sam:def67890.wonton".into(),
         },
         Action::ApproveBotContact {
             bot: bot(),
@@ -185,10 +191,12 @@ fn values_a_newer_peer_adds_fall_back_to_other() {
         "user_id": "@hermes-sam:def67890.wonton",
         "display_name": null,
         "keeper_display_name": null,
+        "kind": "team",
         "state": "active",
         "remote": {"server_name": "def67890.wonton", "peer_status": "hibernating"},
     }))
     .unwrap();
+    assert_eq!(contact.kind, ContactKind::Other);
     assert_eq!(contact.remote.unwrap().peer_status, Some(PeerStatus::Other));
 }
 
@@ -202,6 +210,7 @@ fn error_kinds_are_wire_strings() {
         ContactError::BotNotFound,
         ContactError::ContactNotFound,
         ContactError::NotKeeper,
+        ContactError::PeerUnreachable,
         ContactError::Unauthenticated,
         ContactError::Upstream,
         ContactError::TransportUnavailable,
@@ -272,5 +281,19 @@ fn contact_requests_ride_the_confirmation_list_and_push() {
             .unwrap()
             .get("contact_request")
             .is_none()
+    );
+}
+
+/// 契约：请人做联系人的请求体和私聊邀请的标记。标记放在 create 内容里，和好友请求同一种做法。
+#[test]
+fn a_person_is_asked_with_a_marked_direct_invite() {
+    let request: ContactRequest =
+        serde_json::from_value(json!({"user_id": "@sam:def67890.wonton", "kind": "person"}))
+            .unwrap();
+    assert_eq!(request.kind, ContactKind::Person);
+    assert_ne!(BOT_CONTACT_CREATE_KEY, crate::FRIEND_EVENT);
+    assert_eq!(
+        serde_json::from_value::<crate::FriendRequestKind>(json!("bot_contact")).unwrap(),
+        crate::FriendRequestKind::BotContact
     );
 }

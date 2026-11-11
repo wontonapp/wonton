@@ -86,6 +86,9 @@ pub enum FriendRequestKind {
     /// 创建内容带 [`FRIEND_EVENT`] 的私聊邀请。
     Friend,
     DirectChat,
+    /// 创建内容带 [`BOT_CONTACT_CREATE_KEY`](crate::BOT_CONTACT_CREATE_KEY) 的私聊邀请：别人家的 Bot（邀请人）请这个人做
+    /// 它的联系人（ADR-0050）。接受就是同意，之后那个 Bot 会理他的话；不因此成为好友。
+    BotContact,
     #[serde(other)]
     Other,
 }
