@@ -58,6 +58,7 @@ fn install_request(preview: &InstallPreview) -> InstallRequest {
         devices: Vec::new(),
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
+        plan: preview.plan.clone(),
         grant: preview
             .permissions
             .iter()

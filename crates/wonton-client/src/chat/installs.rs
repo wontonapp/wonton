@@ -330,6 +330,7 @@ mod tests {
             source: Some(format!("github:owner/{id}@v1.0.0")),
             commit: None,
             digest: "sha256:abc".into(),
+            plan: "opaque-install-plan".into(),
             id: id.into(),
             title: format!("标题 {id}"),
             summary: String::new(),

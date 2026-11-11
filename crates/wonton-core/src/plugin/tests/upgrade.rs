@@ -79,6 +79,7 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
         scope: None,
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
+        plan: preview.plan.clone(),
         grant: preview
             .permissions
             .iter()

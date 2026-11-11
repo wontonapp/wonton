@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::InstallRequest;
+
 /// 一项能力在索引里的提供方（ADR-0053）。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -11,7 +13,7 @@ pub struct CapabilityProvider {
     pub id: String,
     /// 插件标题。
     pub title: String,
-    /// 安装来源，安装请求原样带回。
+    /// 安装来源：选中后用现有预览接口取该提供方完整的 [`super::InstallPreview`]。
     pub source: String,
     /// 是不是高权限能力（ADR-0053）：核心定义的按能力表，第三方的按这个提供方算（它申请了
     /// ADR-0036 的任一级高权限，或者它是 Agent 插件）。确认页照它醒目标注。
@@ -44,8 +46,22 @@ pub struct InUseError {
 pub struct InstallTogether {
     /// 插件 ID。
     pub id: String,
-    /// 安装来源，和预览里 `providers[].source` 一致。
-    pub source: String,
+    /// 提供方自己的完整安装决定。内层 `install_together`、`connect_plugins` 都必须为空，否则输入非法。
+    #[serde(default, deserialize_with = "provider_request")]
+    pub request: InstallRequest,
+}
+
+fn provider_request<'de, D>(deserializer: D) -> Result<InstallRequest, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let request = InstallRequest::deserialize(deserializer)?;
+    if !request.install_together.is_empty() || !request.connect_plugins.is_empty() {
+        return Err(serde::de::Error::custom(
+            "provider install request must not include install_together or connect_plugins",
+        ));
+    }
+    Ok(request)
 }
 
 /// 一个装着的提供方插件（ADR-0053）。
