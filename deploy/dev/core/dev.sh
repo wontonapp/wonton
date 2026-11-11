@@ -7,6 +7,9 @@
 #   dev.sh reset [--keep-tunnel-identity]
 #                                      停止并删除 Hydra、Tuwunel 的数据、核心数据目录和插件卷；
 #                                      给了开关时保留隧道私钥和设备登记（endpoint ID 不变，已配对的设备不用重配）
+#   dev.sh clean-data                  把数据目录（WONTON_DEV_DATA，默认 .data）整个删掉：先确认栈已 down，再在一次性
+#                                      容器里删（里面的文件常属 root，普通用户删不掉）。路径必须在 deploy/dev 下，
+#                                      指到别处（远端 Docker 的 /tmp/wonton-dev、家目录）时拒绝；Docker 卷和密钥不动，reset 才管
 #   dev.sh status | logs [<服务>]      查看状态 / 跟随日志：核心栈的服务（core、hydra 等）或插件的服务名
 #   dev.sh diag                        只读诊断：插件登录用的主机名解析、出口代理设置和可达性、注入的代理变量
 #   dev.sh token                       输出主人令牌
@@ -22,6 +25,11 @@
 #   dev.sh commit                      构建镜像用的提交号（工作区的 Cargo 源码有没提交的改动时带 -dirty）
 #
 # 浏览器打开 http://wonton.localhost:18480 ，用 `dev.sh token` 的输出登录。
+# 用 IP 当 Host 打核心 API 会一律 404 not_found：网关按 Host 分类，IP 只回 GET / 的局域网状态页（局域网防 DNS
+# 重绑定，crates/wonton-core/src/gateway/lan.rs）。在核心容器外取证要带域名 Host；本机 *.localhost 本就解析到
+# 127.0.0.1，直接用域名的 URL 也行：
+#   curl -sS -H "Host: wonton.localhost:18480" http://127.0.0.1:18480/_wonton/api/me
+# 实例名不是默认的（WONTON_DEV_PROJECT 不是 wonton-dev-core）时，域名是 <实例>.wonton.localhost，端口看 WONTON_DEV_PORT。
 # 环境变量：WONTON_DEV_PORT（默认 18480）、WONTON_DEV_DOMAIN（默认 wonton.localhost）、
 # WONTON_DEV_TUNNEL_PORT（隧道 UDP 端口，默认 18482）、WONTON_DEV_TUNNEL_BIND（默认只给本机 127.0.0.1）、
 # WONTON_DEV_DATA（数据目录，默认本目录下的 .data；DOCKER_HOST 指向远端时默认 /tmp/wonton-dev）、
@@ -448,6 +456,26 @@ wipe_data() {
   docker run --rm --user 0 --entrypoint sh -v "$WONTON_DEV_DATA:/wipe" "$curl_image" -c "${before}rm -rf /wipe/core /wipe/apps /wipe/shares /wipe/open${after}"
 }
 
+# down 之后删掉本实例的数据目录：里面的文件常属 root（Docker 建的目录、容器写的），宿主用户删不掉，所以用一次性容器删
+# （smoke-cleanup 的删法）。只在路径落在 deploy/dev 里时动手：数据目录指到检出外（远端 Docker 的 /tmp/wonton-dev、
+# 手滑指到家目录）时拒绝，绝不 rm 到别处。
+clean_data() {
+  if [[ -n "$(docker ps -q --filter "label=com.docker.compose.project=$core")" ]] ||
+    [[ -n "$WONTON_DEV_INSTANCE" && -n "$(docker ps -q --filter "label=$label_instance=$WONTON_DEV_INSTANCE")" ]]; then
+    die "这套栈还有在跑的容器：先 $0 down 再 clean-data"
+  fi
+  local data deploy
+  data="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$WONTON_DEV_DATA")"
+  deploy="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$here/..")"
+  [[ "$data" == "$deploy/"* && "$data" != "$deploy" ]] ||
+    die "数据目录 $WONTON_DEV_DATA 不在 $deploy 下，clean-data 不删（远端 Docker 的数据目录在那台主机上清）"
+  [[ -e "$data" ]] || { echo "数据目录 $data 不存在，无需清理"; return 0; }
+  docker run --rm --user 0 --entrypoint rm -v "$(dirname "$data"):/host-data" "$curl_image" \
+    -rf "/host-data/$(basename "$data")"
+  [[ ! -e "$data" ]] || die "数据目录 $data 没删掉：里面可能还有容器挂着的文件"
+  echo "已删掉数据目录 $data"
+}
+
 # 密钥属于这个项目，reset 连它一起删。手滑把家目录、检出目录设成 WONTON_DEV_SECRETS 时拒绝删除。
 reset_secrets() {
   local dir="${secrets%/}"
@@ -689,6 +717,7 @@ case "${1:-}" in
       echo "隧道身份已换，已配对的 App 要用新码添加服务器；旧服务器的数据保留。"
     fi
     ;;
+  clean-data) clean_data ;;
   status)
     compose ps
     if docker inspect -f '{{.State.Running}}' "$core" >/dev/null 2>&1; then
@@ -748,5 +777,5 @@ case "${1:-}" in
     esac
     docker exec "$core" wonton-core pair "$addr"
     ;;
-  *) die "用法：$0 up|down|reset [--keep-tunnel-identity]|status|logs [<服务>]|diag|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]" ;;
+  *) die "用法：$0 up|down|reset [--keep-tunnel-identity]|clean-data|status|logs [<服务>]|diag|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]" ;;
 esac
