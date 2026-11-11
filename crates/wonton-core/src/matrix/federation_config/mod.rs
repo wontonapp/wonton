@@ -17,6 +17,8 @@ mod blocks;
 pub use blocks::FederationBlocks;
 mod routing;
 pub use routing::{config_toml, is_private};
+#[cfg(test)]
+mod failure_tests;
 mod files;
 #[cfg(test)]
 mod proxy_tests;
@@ -93,12 +95,9 @@ impl FederationConfig {
     }
 
     async fn apply(&self, names: BTreeSet<String>, forbidden: BTreeSet<String>) {
-        if let Err(error) = self.apply_inner(&names, &forbidden).await {
-            tracing::error!(%error, "联邦名单更新失败");
-            self.notify(&format!(
-                "联邦名单更新失败：{error}\n下次配对变化或核心重启时会自动重试。"
-            ))
-            .await;
+        if let Err(failure) = self.apply_inner(&names, &forbidden).await {
+            tracing::error!(error = %failure.error, kind = ?failure.kind, "联邦名单更新失败");
+            self.notify(failure.kind).await;
         }
     }
 
@@ -106,34 +105,26 @@ impl FederationConfig {
         &self,
         names: &BTreeSet<String>,
         forbidden: &BTreeSet<String>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), Failure> {
         for name in names.iter().chain(forbidden) {
-            routing::validate_name(name)?;
+            routing::validate_name(name).map_err(Failure::of(FailureKind::InvalidName))?;
         }
-        self.write_in_place(
-            &self.install_dir.join("secrets/tuwunel/wonton-fed.toml"),
+        write_in_place(
+            &self.install_dir.join(FILE),
             &config_toml(&self.server_name, names, forbidden),
         )
-        .await?;
+        .await
+        .map_err(Failure::of(FailureKind::Write))?;
         // SIGUSR1 无条件发：热加载是幂等的，也补上上次核心死在“写完文件、信号没发出去”之间的可能。
-        let container = self.tuwunel_container().await?;
-        self.engine.kill_container(&container, "SIGUSR1").await?;
-        tracing::info!(%container, "联邦名单已重写并热加载");
-        Ok(())
-    }
-
-    /// 原地截断写：不换 inode（单文件绑定挂载钉住挂载时的 inode，换名字容器读不到新内容）。
-    async fn write_in_place(&self, path: &Path, content: &str) -> anyhow::Result<()> {
-        use tokio::io::AsyncWriteExt;
-        let mut file = tokio::fs::OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open(path)
+        let container = self
+            .tuwunel_container()
             .await
-            .with_context(|| format!("打开 {}", path.display()))?;
-        file.write_all(content.as_bytes()).await?;
-        file.flush().await?;
-        file.sync_all().await?;
+            .map_err(Failure::of(FailureKind::Reload))?;
+        self.engine
+            .kill_container(&container, "SIGUSR1")
+            .await
+            .map_err(|error| Failure::of(FailureKind::Reload)(error.into()))?;
+        tracing::info!(%container, "联邦名单已重写并热加载");
         Ok(())
     }
 
@@ -172,11 +163,69 @@ impl FederationConfig {
         }
     }
 
-    async fn notify(&self, body: &str) {
+    /// 主人只看到类别；路径和原始错误在核心日志里（AGENTS.md“界面设计”，ADR-0043）。
+    async fn notify(&self, kind: FailureKind) {
         let Some(notice) = &self.notice else { return };
+        let body = crate::l10n::text(&(notice.languages)(), kind.message_id(), &[]);
         let content = serde_json::json!({"msgtype": "m.text", "body": body});
         if let Err(error) = notice.send(&content).await {
             tracing::error!(%error, "联邦名单的失败通知发不出去");
         }
     }
+}
+
+/// 名单文件，相对安装目录。
+const FILE: &str = "secrets/tuwunel/wonton-fed.toml";
+
+/// 更新失败的类别，决定通知房间里给主人的那句话。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FailureKind {
+    /// 名单里有不合法的服务器名（黑名单文件是主人能编辑的）。
+    InvalidName,
+    /// 名单文件写不进去：权限、磁盘，或安装目录不完整。
+    Write,
+    /// 文件写好了，但找不到 Tuwunel 容器或 Docker 不让发热加载信号。
+    Reload,
+}
+
+impl FailureKind {
+    fn message_id(self) -> &'static str {
+        match self {
+            Self::InvalidName => "federation-update-invalid-name",
+            Self::Write => "federation-update-write-failed",
+            Self::Reload => "federation-update-reload-failed",
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Failure {
+    kind: FailureKind,
+    error: anyhow::Error,
+}
+
+impl Failure {
+    fn of(kind: FailureKind) -> impl FnOnce(anyhow::Error) -> Self {
+        move |error| Self { kind, error }
+    }
+}
+
+/// 原地截断写：不换 inode（单文件绑定挂载钉住挂载时的 inode，换名字容器读不到新内容）。
+///
+/// 文件不在就新建（权限同安装时的 0600）：这份文件是核心写给 Tuwunel 的输出，不是输入，缺了照名单写出来
+/// 就是对的。目录不在不建：`secrets/tuwunel/` 由安装创建、整目录挂给 Tuwunel，它不在说明安装不完整，如实报错。
+async fn write_in_place(path: &Path, content: &str) -> anyhow::Result<()> {
+    use tokio::io::AsyncWriteExt;
+    let mut file = tokio::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .await
+        .with_context(|| format!("打开 {}", path.display()))?;
+    file.write_all(content.as_bytes()).await?;
+    file.flush().await?;
+    file.sync_all().await?;
+    Ok(())
 }
