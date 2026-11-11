@@ -193,7 +193,7 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// App 在前台不弹推送：消息从同步来，界面已经显示。
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
@@ -201,12 +201,14 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// 点开通知：扩展解开的 payload 里带着服务器和房间，跳转交给导航（和 Android 点通知同一个去向）。
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) {
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) {
         let userInfo = response.notification.request.content.userInfo
-        guard let roomId = userInfo["room_id"] as? String,
-            let navigation = try? AppNavigation.requireShared()
-        else { return }
-        navigation.openPushRoom(server: userInfo["server"] as? String, roomId: roomId)
+        guard let roomId = userInfo["room_id"] as? String else { return }
+        let server = userInfo["server"] as? String
+        Task { @MainActor in
+            guard let navigation = try? AppNavigation.requireShared() else { return }
+            navigation.openPushRoom(server: server, roomId: roomId)
+        }
     }
 
     #if DEBUG
