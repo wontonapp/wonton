@@ -60,8 +60,25 @@ def main():
         elif reference not in digests:
             sys.exit(1)
     elif command == "run":
-        if "init" in args and not os.environ.get("WONTON_CLIENT_SERVICE"):
-            sys.exit(7)
+        env_file = value("--env-file")
+        entries = {}
+        if env_file:
+            with open(env_file, encoding="utf-8") as file:
+                for line in file:
+                    key, _, item = line.rstrip("\n").partition("=")
+                    entries[key] = item
+        if "init" in args:
+            # init 要读复制进来的文件；读不到就是安装失败。
+            for key, item in entries.items():
+                if key.endswith("_FILE") and not os.path.isfile(item):
+                    out(f"missing input {key}={item}")
+                    sys.exit(8)
+            if not entries.get("WONTON_CLIENT_SERVICE"):
+                sys.exit(7)
+            install = args[args.index("init") + 1]
+            os.makedirs(os.path.join(install, "entry"), exist_ok=True)
+            with open(os.path.join(install, "entry", "settings.json"), "w", encoding="utf-8") as file:
+                json.dump({}, file)
     elif command == "inspect":
         # 没有 updater 容器，也没有别的容器要查。
         sys.exit(1)
@@ -120,6 +137,7 @@ class InstallTest(unittest.TestCase):
             env.update({
                 "WONTON_CLIENT_SERVICE": "https://names.test",
                 "WONTON_CLIENT_INVITE_FILE": str(self.invite),
+                "WONTON_CLIENT_CA_FILE": str(self.ca),
                 "WONTON_FRP_CA_FILE": str(self.ca),
                 "WONTON_ACME_DIRECTORY": "https://pebble.test/dir",
                 "WONTON_ACME_ACCEPT_TERMS": "true",
@@ -188,6 +206,31 @@ class InstallTest(unittest.TestCase):
         log = (self.state / "log").read_text()
         self.assertIn("init", log)
         self.assertFalse((self.install_dir / ".env").exists())
+
+    def test_rerun_keeps_recorded_entry_inputs(self):
+        self.digests["ghcr.io/wontonapp/wonton-core:stable"] = [
+            "ghcr.io/wontonapp/wonton-core@sha256:" + "f" * 64
+        ]
+        result = self.run_install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        inputs = self.install_dir / "entry-input"
+
+        # 升级常是直接再跑一次安装，不给入口变量：记录和副本都还在，续期才读得到。
+        result = self.run_install(entry=False)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        recorded = (inputs / "init.env").read_text()
+        for key in [
+            "WONTON_CLIENT_SERVICE",
+            "WONTON_CLIENT_INVITE_FILE",
+            "WONTON_CLIENT_CA_FILE",
+            "WONTON_FRP_CA_FILE",
+        ]:
+            self.assertIn(key + "=", recorded)
+        for line in recorded.splitlines():
+            key, _, value = line.partition("=")
+            if key.endswith("_FILE"):
+                self.assertTrue(Path(value).is_file(), f"{key} 的副本被清掉了")
 
     def test_no_matching_repository_digest_stops_instead_of_writing_the_tag(self):
         reference = "ghcr.io/wontonapp/wonton-core:stable"

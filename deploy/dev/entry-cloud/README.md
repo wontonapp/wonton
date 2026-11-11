@@ -115,8 +115,8 @@ Recursor 必不可少：Pebble 的 DNS-01 实现只读回答中的 TXT，不自�
 
 ## 家庭网络与信任配置
 
-在云栈启动后，在家里的 Compose 添加一个外部网络（以下 `core`、`tuwunel`、`frpc`
-代表家庭实际的相应 service；原有私有网络要保留）：
+在云栈启动后，在家里的 Compose 添加一个外部网络（以下 `core`、`tuwunel`、`connector`
+是安装生成的 service 名，原有的私有网络要保留）：
 
 ```yaml
 networks:
@@ -135,10 +135,11 @@ services:
       WONTON_ACME_DIRECTORY: https://pebble.${WONTON_HOME_ZONE}:14000/dir
       WONTON_ACME_CA_FILE: /entry-cloud-ca/control-ca.pem
       WONTON_ACME_RESOLVERS: ${WONTON_ENTRY_RESOLVER_IP}:53
+      WONTON_ACME_NETWORK: ${WONTON_ENTRY_NETWORK}
   tuwunel:
     networks: [default, entry-cloud]
     dns: ["${WONTON_ENTRY_RESOLVER_IP}"]
-  frpc:
+  connector:
     networks: [default, entry-cloud]
     dns: ["${WONTON_ENTRY_RESOLVER_IP}"]
     volumes:
@@ -148,9 +149,9 @@ services:
 从云目录 `set -a; source .runtime/stack.env; set +a`，再导出
 `ENTRY_CLOUD_CA_DIR="$(pwd)/.runtime/ca"` 给家庭 Compose（使用绝对路径）。家庭自身的
 网络必须使用另一个已分配子网，不能重新声明云的 IPAM/子网。
-核心动态容器的网络配置使用 `WONTON_CLOUD_NETWORK="$WONTON_ENTRY_NETWORK"`；
-把它传给家庭核心，而不是把家庭自己的私有网络名填成云网络。
-动态创建的 frpc/lego/入口容器也必须接上该外部网络并用同一个 resolver，不能只给 core 接网。
+核心起的 lego 容器按 `WONTON_ACME_NETWORK` 接到云网络上（值就是 `${WONTON_ENTRY_NETWORK}`），
+和上面 core 的 `dns` 一样用云自己的 resolver；不能只给 core 接网。连接器这类固定服务的网络
+和 `dns` 写在家庭 Compose 里：上面的片段给 `connector` 接了云网络和云的 resolver（它要解析中继主机名）。
 Docker 内置 DNS 仍处理家庭服务名；`.test` 由配置的 resolver 处理。
 
 此 `ca` 目录只含下面的公开证书；CA 私钥独立留在云 `.runtime/secrets`，不挂载给家庭：
@@ -209,32 +210,39 @@ export ACME_DNS_URL="$(jq -r .acme_dns_url "$HOME_CASE/registration.json")"
 export HOME_NETWORK="$(pwd)/.runtime/stack.env"
 set -a; source "$HOME_NETWORK"; set +a
 export CLOUD_CA="$(pwd)/.runtime/ca"
-export LEGO_IMAGE=goacme/lego:v4.26.0@sha256:39e65153badce8c67fa16caed2f89ebb15db5747ffbbd502603ce0bbaf2ed218
-# 先注册真正 ACME 账号（无证书申请）；账号私钥只在 HOME_CASE。
-python3 acme-account.py --home "$HOME_CASE" --email "admin@$HOME_DOMAIN"
+export LEGO_IMAGE=goacme/lego:v5.5.2@sha256:1944e8c36055beec47c7de6f15202b41128be75eea0ffa257f0c14d93c5155fd
+# 先注册真正 ACME 账号（无证书申请）；账号私钥只在 HOME_CASE。--account-id 要和签发命令一致，
+# 账号写在核心读的 <主机>/wonton/ 下。
+docker run --rm --network "$WONTON_ENTRY_NETWORK" --dns "$WONTON_ENTRY_RESOLVER_IP" \
+  --user "$(id -u):$(id -g)" -e HOME=/tmp \
+  -v "$HOME_CASE:/home" -v "$CLOUD_CA/control-ca.pem:/ca.pem:ro" \
+  -e LEGO_CA_CERTIFICATES=/ca.pem -e SSL_CERT_FILE=/ca.pem "$LEGO_IMAGE" \
+  accounts register --path /home/lego --server "https://pebble.$WONTON_HOME_ZONE:14000/dir" \
+  --email "admin@$HOME_DOMAIN" --account-id wonton --accept-tos
 ```
 
 从真实账号文件取得 account URI，然后签名绑定 CAA，必须等服务返回 `effective:true` 才申请证书：
 
 ```bash
 ACCOUNT_FILE="$(find "$HOME_CASE/lego/accounts" -name account.json -print -quit)"
-jq '{account_uri:.registration.uri}' "$ACCOUNT_FILE" > "$HOME_CASE/caa.json"
+jq '{account_uri:.registration.accountURL}' "$ACCOUNT_FILE" > "$HOME_CASE/caa.json"
 python3 signed-request.py PUT "/homes/$HOME_LABEL/caa" --key "$HOME_CASE/endpoint.pem" \
   --body "$HOME_CASE/caa.json" --output "$HOME_CASE/caa-response.json"
 jq -e '.effective == true' "$HOME_CASE/caa-response.json"
 docker run --rm --network "$WONTON_ENTRY_NETWORK" --dns "$WONTON_ENTRY_RESOLVER_IP" \
+  --user "$(id -u):$(id -g)" -e HOME=/tmp \
   -v "$HOME_CASE:/home" -v "$CLOUD_CA/control-ca.pem:/ca.pem:ro" \
-  -e LEGO_CA_CERTIFICATES=/ca.pem -e ACME_DNS_API_BASE="$ACME_DNS_URL" \
+  -e LEGO_CA_CERTIFICATES=/ca.pem -e SSL_CERT_FILE=/ca.pem \
+  -e ACME_DNS_API_BASE="$ACME_DNS_URL" \
   -e ACME_DNS_STORAGE_PATH=/home/acme-dns.json "$LEGO_IMAGE" \
-  --path /home/lego --server "https://pebble.$WONTON_HOME_ZONE:14000/dir" \
-  --email "admin@$HOME_DOMAIN" --accept-tos --dns acme-dns \
+  run --path /home/lego --server "https://pebble.$WONTON_HOME_ZONE:14000/dir" \
+  --email "admin@$HOME_DOMAIN" --account-id wonton --accept-tos --dns acme-dns \
   --dns.resolvers "$WONTON_ENTRY_RESOLVER_IP:53" \
-  --domains "$HOME_DOMAIN" --domains "*.$HOME_DOMAIN" run
+  --domains "$HOME_DOMAIN" --domains "*.$HOME_DOMAIN"
 ```
 
-lego 4.26.0 CLI 没有单独的注册子命令；`acme-account.py` 使用真实 ACME newNonce/newAccount
-和 OpenSSL RS256 签名，把账号存成 lego 原生格式，不申请订单或家庭叶子证书。接着 lego
-复用同一账号申请证书，而不是先发证再绑定 CAA。证书和私钥在
+`accounts register` 只向真实 ACME newNonce/newAccount 注册账号，不申请订单或家庭叶子证书，
+账号是 lego v5 自己的存储布局。接着 lego 用同一个 `--account-id` 复用账号申请证书，而不是先发证再绑定 CAA。证书和私钥在
 `$HOME_CASE/lego/certificates/`，只给家里的 TLS 入口；**不要复制给云端**。
 用 `dig @127.0.0.1 -p "$WONTON_ENTRY_AUTH_PORT" "_acme-challenge.$HOME_DOMAIN" CNAME`、
 以及 `dig ... TXT` 经 resolver 查看真实委派与 TXT，不是 mock。
@@ -276,7 +284,7 @@ Rust 构建使用仓库 lockfile，系统包依赖 Debian 仓库（镜像摘要�
 | acme-dns | 1.0 | [MIT](https://github.com/joohoi/acme-dns/tree/v1.0) |
 | Pebble | 2.8.0 | [MPL-2.0](https://github.com/letsencrypt/pebble/tree/v2.8.0) |
 | HAProxy | 3.2.8 | [GPL-2.0 / LGPL-2.1（部分库）](https://www.haproxy.org/#licence) |
-| lego（家庭验收工具） | 4.26.0 | [MIT](https://github.com/go-acme/lego/tree/v4.26.0) |
+| lego（家庭验收工具） | 5.5.2 | [MIT](https://github.com/go-acme/lego/tree/v5.5.2) |
 | Rust / 标准库（构建） | 1.99.1 | MIT / Apache-2.0；GNU toolchain 仅构建工具 |
 | Debian / Alpine（镜像 OS） | 各镜像指定版本 | 各包许可证，不链接 PowerDNS/HAProxy GPL 代码进 Rust |
 
@@ -288,9 +296,9 @@ Rust 构建使用仓库 lockfile，系统包依赖 Debian 仓库（镜像摘要�
 [acme-dns 配置](https://github.com/joohoi/acme-dns/blob/v1.0/config.cfg)、
 [Pebble DNS-01 源码](https://github.com/letsencrypt/pebble/blob/v2.8.0/va/va.go)、
 [随机签发根说明](https://github.com/letsencrypt/pebble/tree/v2.8.0#management-interface)、
-[lego acme-dns provider](https://github.com/go-acme/lego/blob/v4.26.0/providers/dns/acmedns/acmedns.go)。
-账号初始化的存储字段按 [lego 原生账号存储](https://github.com/go-acme/lego/blob/v4.26.0/cmd/accounts_storage.go)
-与 [注册资源](https://github.com/go-acme/lego/blob/v4.26.0/registration/registar.go) 实现。
+[lego 账号存储](https://github.com/go-acme/lego/blob/v5.5.2/cmd/internal/storage/storage_accounts.go)、
+[lego acme-dns provider](https://github.com/go-acme/lego/blob/v5.5.2/providers/dns/acmedns/acmedns.go)。
+账号由 [lego `accounts register`](https://github.com/go-acme/lego/blob/v5.5.2/cmd/cmd_accounts_register.go) 自己写。
 未执行 build/test/lint/format、Compose 配置检查、启动、镜像 pull 或上述验收命令。
 合并后的负责人须实跑：配置生成与健康门、双家庭 apex/wildcard DNS-01、严格 TLS 联邦、
 带旧 DNS 缓存的停用/已有长连接断开、iroh 配对路径不受影响，以及项目专属 destroy/release。
