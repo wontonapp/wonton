@@ -20,7 +20,6 @@ use crate::gateway::{Gateway, TunnelPeer, api};
 use crate::plugin::PluginId;
 use crate::shares::SharesError;
 
-
 fn unavailable() -> Response {
     api::error_response(
         StatusCode::SERVICE_UNAVAILABLE,
