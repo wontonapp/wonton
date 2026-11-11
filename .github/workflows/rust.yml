@@ -107,6 +107,9 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - name: Clippy（含函数不超过 100 行）
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # 假数据入口（src/client/ui_fake.rs）在 cargo feature 后面，默认的 workspace 构建编不到它，门禁得单独开一遍。
+      - name: Clippy 假数据入口（feature ui-fake）
+        run: cargo clippy -p wonton-client --all-targets --locked --features ui-fake -- -D warnings
 
   test:
     name: 测试（不含依赖 Docker 的集成测试）${{ matrix.shard }}/3
@@ -157,6 +160,11 @@ jobs:
         run: cargo test --doc --workspace --locked 2>&1 | tee -a "$RUNNER_TEMP/test-output.log"
         env:
           DOCKER_HOST: unix:///nonexistent/docker.sock
+      # 假数据入口的模块和测试都在 cargo feature 后面，默认的 workspace 测试跑不到；只在第一片跑一遍。
+      - name: 测试假数据入口（feature ui-fake）
+        if: env.RUN == 'true' && matrix.shard == 1
+        shell: bash
+        run: cargo nextest run -p wonton-client --lib --locked --features ui-fake ui_fake 2>&1 | tee -a "$RUNNER_TEMP/test-output.log"
       - name: 失败时留下测试输出
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
