@@ -21,7 +21,7 @@ struct MainView: View {
     @State var onboardingGateway: TabChoice?
     @State var showsSidebar = false
     @State var showsPanel = false
-    @State var storeRequest = 0
+    @State var appsPath = NavigationPath()
     @State private var addingReturn: (serverID: String?, settingsModal: Bool)?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
@@ -116,8 +116,8 @@ struct MainView: View {
 
     private var pages: some View {
         TabView(selection: Binding(get: { tabs.viewModel.selected }, set: { tabs.select($0) })) {
-            ForEach(tabs.viewModel.items, id: \.tab) { item in
-                page(item).tag(item.tab).toolbar(.hidden, for: .tabBar)
+            ForEach(tabs.viewModel.pages, id: \.self) { tab in
+                page(tab).tag(tab).toolbar(.hidden, for: .tabBar)
             }
         }
         .environment(\.wontonTabBar, isKeyboardVisible || !tabs.viewModel.showBar ? nil : AnyView(bottomBar))
@@ -129,8 +129,8 @@ struct MainView: View {
         }
     }
 
-    @ViewBuilder private func page(_ item: TabItem) -> some View {
-        switch item.tab {
+    @ViewBuilder private func page(_ tab: TabRef) -> some View {
+        switch tab {
         case .chat:
             ChatPanelHost(
                 tabs: tabs, home: home, plugins: plugins, chat: chat, appearance: appearance,
@@ -149,13 +149,15 @@ struct MainView: View {
                 pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
                 showSettings: { settings.path = []; showsSettings = true },
                 showServer: { showServerRoute(.server) }, settingsPresented: showsSettings, devWebURL: devWebURL,
-                storeRequest: storeRequest
+                path: $appsPath
             )
         case .settings:
             SettingsTab(model: settings, appearance: appearance, chat: chat, home: home, plugins: plugins,
                         isActive: tabs.viewModel.selected == .settings && !showsSettings)
         case .plugin, .pluginPath, .bot, .url, .sharedApp:
-            if visited.contains(item.tab), let page = item.page { pluginPage(item.tab, page: page, overlay: false) }
+            if visited.contains(tab), let page = tabs.viewModel.items.first(where: { $0.tab == tab })?.page {
+                pluginPage(tab, page: page, overlay: false)
+            }
         }
     }
 

@@ -18,6 +18,11 @@ pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsVi
         .iter()
         .map(|item| build_item(state, item, plugins))
         .collect();
+    let mut pages = Vec::with_capacity(items.len() + 1);
+    pages.extend(items.iter().map(|item| item.tab.clone()));
+    if !pages.contains(&TabRef::Apps) {
+        pages.push(TabRef::Apps);
+    }
     let show_bar = items.len() > 1;
     let overlay = state
         .overlay
@@ -25,6 +30,7 @@ pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsVi
         .map(|item| build_item(state, item, plugins));
     let main = PanelScope::Main;
     TabsViewModel {
+        pages,
         items,
         show_bar,
         selected: state.selected.clone(),
@@ -695,20 +701,4 @@ pub(super) fn is_web_page(tab: &TabRef) -> bool {
 pub(super) fn is_removable(tab: &TabRef) -> bool {
     // “应用”只在没配对时在栏上，那时它是配对页，也不能拿。
     !matches!(tab, TabRef::Chat | TabRef::Apps)
-}
-pub(super) fn empty_view() -> TabsViewModel {
-    TabsViewModel {
-        items: Vec::new(),
-        show_bar: false,
-        selected: TabRef::Apps,
-        overlay: None,
-        full: false,
-        uninstalled: Vec::new(),
-        problem: None,
-        labels: true,
-        candidates: Vec::new(),
-        panel: Vec::new(),
-        panel_candidates: Vec::new(),
-        panel_selected: None,
-    }
 }
