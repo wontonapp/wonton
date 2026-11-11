@@ -84,6 +84,7 @@ Bot 资料里多一个 [MSC4133](https://github.com/matrix-org/matrix-spec-propo
 - 和 Muse 的对应：启动、连接中 → `offline`；工作中、做东西 → `working`；待机 → `idle`。`waiting` 是主人要做的事，Muse 没有确认卡片。
 - 状态是一个 Bot 的，不分房间：模型请求和工具调用核心分不出是为哪个房间。M1 的 Bot 只在自己的主房间里。
 - 顶栏和列表都不写状态文字，只看头像。
+- 这是 Bot 在不在线、忙不忙；一轮任务做到哪由 Agent 在时间线里发一条状态消息，见 [ADR-0082](0082-agent-run-status.md)，头像不读它。
 
 ### 状态怎么到 App：核心的长轮询接口
 
