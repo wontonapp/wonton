@@ -102,6 +102,10 @@ flowchart LR
 同一来源的网页共用 `SharedAppsSource.state` 在 `Ready` 中提供的本地代理；连接结束便撤下代理，保留的旧列表不代表授权。
 两端沿用插件页面容器与主题、语言桥，保留分享方的 `web_url`，不借用自家 `HomeViewModel` 的代理。
 
+插件详情页的主人密钥由 `ListOwnerSecrets` 展开后列出，`ShowOwnerSecret` 才向服务器取一项值。
+`PluginsViewModel.owner_secrets` 只保留展开中的临时显示状态，不写入缓存；收起、离页、进入后台或换服务器时清除，
+晚到的请求不能重新显示。再次展开重新取列表和值，复制由原生壳使用系统剪贴板完成。
+
 服务端 `friends` 模块持有 `core/friends.json`：Matrix 好友、本机插件用户名、分组及最后打开分享时间。
 Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须同时保留好友墓碑里的用户名，避免和插件账号混淆。
 授权消费者先订阅完整快照再校验，连接与授权绑定 `access_generation` 和分组成员代次；删好友再加回、移出组再加回都不能恢复旧连接。

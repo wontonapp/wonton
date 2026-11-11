@@ -7,12 +7,13 @@
 
 mod capability_deps;
 mod forms;
-mod install;
-pub mod store;
-use store::{StoreConfirmation, UpdatablePlugin};
 pub mod hint;
+mod install;
 mod owner_secrets;
+pub mod store;
+mod view_model;
 pub use install::{InstallPreview, InstallRequest, UpgradeRequest};
+pub use view_model::PluginsViewModel;
 mod permission;
 pub(super) mod ports;
 mod secret_input;
@@ -21,10 +22,7 @@ mod takeover;
 #[path = "task.rs"]
 mod task;
 mod tool_policy;
-use crate::{
-    CardLine, CoreUpgradeViewModel, EgressViewModel, LanPort, PluginChat, PluginTab,
-    RegistryMirrorViewModel, TabDisplay,
-};
+use crate::{CardLine, LanPort, PluginChat, PluginTab, TabDisplay};
 pub use capability_deps::{
     BlockedCategory, CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef,
     CapabilityProviderSettings, CapabilitySetting, ConsumerCapabilityChoice,
@@ -33,6 +31,9 @@ pub use capability_deps::{
 };
 pub use forms::{PluginKind, PluginRuntime, PluginScope, plugin_scope_path};
 pub use owner_secrets::{OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets};
+pub use owner_secrets::{
+    OwnerSecretFailure, OwnerSecretProblem, OwnerSecretView, OwnerSecretsView,
+};
 pub use permission::{
     PermissionLine, PermissionOpened, PermissionRisk, PermissionUpdate, PluginDevice,
 };
@@ -563,56 +564,6 @@ pub struct LanClient {
 pub struct InstallSource {
     /// 商店给的来源，或者 `github:<owner>/<repo>`，可以带 `@<tag>` 或 `@<40 位提交号>`；不带时是最新的正式版本。
     pub source: String,
-}
-
-/// 插件页面的 ViewModel：已安装的插件、商店，以及安装、升级、卸载的进展。
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct PluginsViewModel {
-    /// 已安装的插件；还没取到过时为空，不代表没装插件。
-    pub installed: Option<InstalledPlugins>,
-    /// 商店；还没取过时为空。
-    pub store: Option<StoreListing>,
-    /// 侧边栏的内容。
-    #[serde(default)]
-    pub sidebar: crate::SidebarViewModel,
-    /// 正在从家里的服务器取已安装列表或商店。
-    pub refreshing: bool,
-    /// 最近一次取列表失败的原因，这时显示的是上次取到的列表；再取成功后清空。
-    pub problem: Option<PluginProblem>,
-    /// 安装、升级、卸载的进展，按发起的先后。同一个插件同时只有一个。
-    pub tasks: Vec<PluginTask>,
-    /// 有新版本可升级的应用：商店页更新图标的角标、"全部更新"弹窗和侧边栏的红点都是它。顺序同已安装列表。
-    #[serde(default)]
-    pub updatable: Vec<UpdatablePlugin>,
-    /// 主人点了一键装、一键升级（ [`Action::InstallNow`](crate::Action::InstallNow) 一类）、核心正在取预览的插件 ID：
-    /// 行尾按钮转圈。取完要么开始（进 [`PluginsViewModel::tasks`]），要么要主人拿主意（进 [`PluginsViewModel::confirmation`]）。
-    #[serde(default)]
-    pub pending: Vec<String>,
-    /// 核心取好预览、要主人拿主意的一键操作：壳照着打开确认页，主人在页上点安装或升级（ [`Action::InstallPlugin`]、
-    /// [`Action::UpgradePlugin`]），或者关掉（ [`Action::DismissStoreConfirmation`]）。"全部更新"排队时一次一条。
-    #[serde(default)]
-    pub confirmation: Option<StoreConfirmation>,
-    /// 出网代理的设置页。
-    pub egress: EgressViewModel,
-    /// Docker Hub 镜像加速的设置页。
-    pub registry_mirror: RegistryMirrorViewModel,
-    /// 核心的升级页。
-    pub core_upgrade: CoreUpgradeViewModel,
-    /// 家里服务器存数据的那块盘；还没取到、或者连不上时为空，这时不知道还剩多少。
-    pub storage: Option<StorageUsage>,
-    /// 连着家里的服务器却查不到磁盘空间的原因。
-    pub storage_problem: Option<PluginProblem>,
-    /// “我来操作”；没在操作时为空。结束了但不是主人交还的，留着告诉主人，等 `EndTakeover` 或者下一次 `StartTakeover`。
-    pub takeover: Option<PluginTakeover>,
-    /// 由核心给出的应用页入口；壳不按槽位种类自行判断，未知操作不显示。
-    #[serde(default)]
-    pub actions: Vec<crate::AppsAction>,
-    /// 朋友分享的应用，来源独立于自家已装插件；未取到时为空。
-    pub shared_apps: Option<crate::SharedAppsViewModel>,
-    /// 这台设备上的插件端口映射；未取到或尚无映射时为空，不代表插件没有声明端口。
-    #[serde(default)]
-    pub port_mappings: Vec<crate::PluginPortMapping>,
 }
 
 /// 家里服务器存数据的那块盘。

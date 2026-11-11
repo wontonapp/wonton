@@ -288,6 +288,24 @@ pub enum Action {
     },
     /// 重新取已安装的插件和它们能不能升级。
     RefreshPlugins,
+    /// 展开插件生成给主人的密钥分组；每次重新取列表，不预取值。
+    ListOwnerSecrets {
+        plugin_id: String,
+    },
+    /// 展开一项密钥，每次向服务器重新取值；只接受列表里的名字。
+    ShowOwnerSecret {
+        plugin_id: String,
+        name: String,
+    },
+    /// 收起一项并清除值；作废尚未完成的取值请求。
+    HideOwnerSecret {
+        plugin_id: String,
+        name: String,
+    },
+    /// 收起分组或离开详情页，清除列表、值和问题；晚到的请求不能恢复它们。
+    DismissOwnerSecrets {
+        plugin_id: String,
+    },
     /// 启动已停止的插件；已经运行时由核心幂等处理。
     StartPlugin {
         plugin_id: String,
