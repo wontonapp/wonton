@@ -738,6 +738,8 @@ mod tests {
         let card = ConfirmationCard {
             secret_inputs: Vec::new(),
             settings: None,
+            requester: None,
+            origin: None,
             id: "abc".into(),
             state: ConfirmationState::Pending,
             title: "Hermes 想安装 Grafana".into(),
@@ -759,6 +761,8 @@ mod tests {
         let card = ConfirmationCard {
             secret_inputs: Vec::new(),
             settings: None,
+            requester: None,
+            origin: None,
             id: "abc".into(),
             state: ConfirmationState::Pending,
             title: "Hermes 想安装 Grafana".into(),

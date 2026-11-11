@@ -32,7 +32,7 @@ ACP 桥是每个 ACP Agent 插件的一部分，不进核心，也不在核心�
 
 ### 权限请求和确认
 
-Agent 的 `session/request_permission` 不是 Matrix 消息里的普通按钮，而是核心确认系统的一个请求。桥把 ACP 的 `toolCallId`、标题、说明、已收到的 `tool_call`/`tool_call_update` 参数和选项原样整理成核心可渲染的结构化卡片；同一 `toolCallId` 的增量合并，秘密字段和 token 永不进卡片、日志或审计。卡片发在 Wonton 私聊，包含 ACP 提供的选项名称，不让模型文字决定按钮。
+Agent 的 `session/request_permission` 不是 Matrix 消息里的普通按钮，而是核心确认系统的一个请求。桥把 ACP 的 `toolCallId`、标题、说明、已收到的 `tool_call`/`tool_call_update` 参数和选项原样整理成核心可渲染的结构化卡片；同一 `toolCallId` 的增量合并，秘密字段和 token 永不进卡片、日志或审计。请求带上这个 ACP 会话所在的房间和话题（`origin`，核心按 ADR-0016 核对），卡片显示在那个会话里，包含 ACP 提供的选项名称，不让模型文字决定按钮。
 
 核心复用现有确认卡片的通用 `approve`/`reject` 方向，不新增 `allow_always`、`reject_always` 或 `allow_window` 的 Answer 枚举。为让一张卡片保留多个 ACP 选项，卡片的按钮和主人的回答扩展一个 opaque `choice_id`，由桥为这次请求生成，核心只原样放到卡片上再原样带回，不认识 ACP `optionId`；回答对不上卡片上的按钮时返回 400 `invalid_input`。`allow_once`/`allow_always` 都显示为 Agent 给的同意选项，`reject_once`/`reject_always` 都显示为拒绝选项，桥再按自己的映射回原始 ACP `optionId`。`allow_always` 是 Agent 自己的作用域，不转成 `ApproveWider`，不写 Wonton `tool-policy`；Wonton MCP 工具的持续放行仍只按 ADR-0024，两个策略不互相扩大。若 ACP 没有拒绝选项，核心另加一个不带 `choice_id` 的拒绝按钮“取消”，桥回 ACP `cancelled`。核心审计决定，不让桥或 Agent 自己批准。
 

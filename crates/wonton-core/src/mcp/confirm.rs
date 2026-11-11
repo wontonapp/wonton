@@ -270,6 +270,8 @@ impl Confirmations {
             secret_inputs: draft.secret_inputs.clone(),
             settings: None,
             window: None,
+            requester: None,
+            origin: None,
         };
         let (waiter, answered) = oneshot::channel();
         let mut table = self.lock();

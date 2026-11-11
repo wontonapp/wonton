@@ -46,7 +46,7 @@ fun HomeStatusPanel(
                 stringResource(R.string.home_awaiting),
                 pluralStringResource(R.plurals.home_cards, cards.size, cards.size),
                 showsForward = true,
-                onClick = { onOpenCardRoom(first.roomId) },
+                onClick = { first.roomId?.let(onOpenCardRoom) },
             )
         } else {
             WontonRow(stringResource(R.string.home_awaiting), stringResource(R.string.home_none))

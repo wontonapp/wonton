@@ -82,6 +82,8 @@ fn confirmation_cards_and_answers_carry_settings() {
         plugin_id: Some("app.actual".into()),
         secret_inputs: Vec::new(),
         settings: Some(form()),
+        requester: None,
+        origin: None,
     };
     let back: ConfirmationCard = round_trip(&card);
     assert_eq!(back.settings, card.settings);

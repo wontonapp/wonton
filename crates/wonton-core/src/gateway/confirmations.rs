@@ -42,6 +42,8 @@ pub async fn pending(
         // 卡片都发给主人：家人这里没有自己的卡片。
         return Json(ConfirmationList {
             confirmations: Vec::new(),
+            finished: Vec::new(),
+            revision: 0,
         })
         .into_response();
     }
@@ -49,7 +51,12 @@ pub async fn pending(
         return mcp_unavailable(&languages(&headers));
     };
     let confirmations = mcp.bus.confirmations().pending();
-    Json(ConfirmationList { confirmations }).into_response()
+    Json(ConfirmationList {
+        confirmations,
+        finished: Vec::new(),
+        revision: 0,
+    })
+    .into_response()
 }
 
 /// `POST /_wonton/confirmations/{id}`

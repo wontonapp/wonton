@@ -53,6 +53,10 @@ pub struct TimelineUpdate {
     /// 由核心按账号的恢复状态给出，壳在输入栏上方显示一行说明和按钮，按类别跳到备份页。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_notice: Option<KeyNotice>,
+    /// 显示在这个房间的确认卡片（ADR-0016）：等回答的，以及这台设备这次打开 App 后看着结束的，最早到期的在前。
+    /// 每一批都给当前的列表。壳画在输入栏上方，点开是完整的卡片，能直接回答。话题里发起的也在这里。
+    #[serde(default)]
+    pub confirmations: Vec<ConfirmationView>,
 }
 
 /// 解不开的消息旁边的入口，壳按它写按钮。
@@ -251,6 +255,10 @@ pub enum SendState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "serialized by value across FFI, so variant sizes do not matter; UniFFI record fields do not support Box"
+)]
 pub enum MessageContent {
     /// 文字，包括 Bot 常用的 `m.notice`。`body` 是去掉文件链接后的原文，消息只有链接时为空；`blocks` 是它排好版的样子，
     /// 壳画这个，不解析 Markdown；`files` 是认出的文件，壳在消息下面按编号画卡片（ADR-0020）。
@@ -520,6 +528,7 @@ mod tests {
             panel_selected: None,
             entry_blocked: true,
             key_notice: Some(KeyNotice::EnterRecoveryKey),
+            confirmations: Vec::new(),
         };
         assert_eq!(round_trip(&update), update);
         assert!(
@@ -569,6 +578,7 @@ mod tests {
             panel_selected: None,
             entry_blocked: false,
             key_notice: Some(KeyNotice::VerifyWithOtherDevice),
+            confirmations: Vec::new(),
         };
         let mut value = serde_json::to_value(empty()).unwrap();
         value.as_object_mut().unwrap().remove("key_notice");
@@ -605,6 +615,8 @@ mod tests {
                 card: ConfirmationCard {
                     secret_inputs: Vec::new(),
                     settings: None,
+                    requester: None,
+                    origin: None,
                     id: "abc".into(),
                     state: ConfirmationState::Pending,
                     title: "Hermes 想安装 Grafana".into(),

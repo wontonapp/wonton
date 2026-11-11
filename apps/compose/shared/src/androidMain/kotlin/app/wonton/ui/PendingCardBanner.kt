@@ -48,7 +48,8 @@ fun PendingCardBanner(cards: List<PendingConfirmation>, onOpen: (String) -> Unit
         Modifier
             .fillMaxWidth()
             .background(colors.accentFill.toColor())
-            .clickable(role = Role.Button) { onOpen(cards[0].roomId) }
+            // 没有会话的卡片该去“等你确认”列表；列表页还没有，先不跳。
+            .clickable(role = Role.Button) { cards[0].roomId?.let(onOpen) }
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
         Row(
