@@ -243,5 +243,6 @@ jobs:
         if: ${{ always() && github.event.label.name == 'record-snapshots' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr edit "${{ github.event.pull_request.number }}" --repo "$GITHUB_REPOSITORY" --remove-label record-snapshots \
+        run: |
+          gh pr edit "${{ github.event.pull_request.number }}" --repo "$GITHUB_REPOSITORY" --remove-label record-snapshots \
             || echo "标签已经不在了。"
