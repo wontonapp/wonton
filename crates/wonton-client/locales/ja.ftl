@@ -182,6 +182,7 @@ chat-not-signed-in = Matrixにまだログインしていません
 chat-send-no-response = Matrixサーバーが応答しなくなりました
 # $error はルームID解析の元のエラーです。
 chat-invalid-room-id = ルームIDが正しくありません：{ $error }
+chat-link-room-not-joined = このルームにはまだ参加していません。先にチャットで招待を承認してください。
 # 通知専用のルームに送ろうとしたときに表示します。
 chat-read-only-room = このルームは通知専用のため、メッセージを送信できません
 # $room は元のルームIDです。

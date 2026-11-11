@@ -166,7 +166,9 @@ fn matrix_target(url: &Url) -> Option<MatrixTarget> {
     if !matches!(url.scheme(), "http" | "https") || url.host_str()? != "matrix.to" {
         return None;
     }
-    let fragment = percent_decode_str(url.fragment()?).decode_utf8().ok()?;
+    // matrix.to 把 via 等查询参数放在片段里；它们不是 Matrix 标识的一部分。
+    let fragment = url.fragment()?.split('?').next()?;
+    let fragment = percent_decode_str(fragment).decode_utf8().ok()?;
     let path = fragment.strip_prefix('/')?;
     let (id, event) = match path.split_once('/') {
         Some((id, rest)) => (id, Some(rest)),
@@ -379,6 +381,30 @@ mod tests {
             kind(&targets, "https://matrix.to/#/not-a-link", LinkKind::Url),
             RichLinkKind::External
         );
+    }
+    #[test]
+    fn matrix_routing_parameters_do_not_change_the_target() {
+        let targets = LinkTargets::default();
+        for (url, event_id) in [
+            (
+                "https://matrix.to/#/%23room:example.com?via=example.com",
+                None,
+            ),
+            (
+                "https://matrix.to/#/%23room:example.com/%24event?via=example.com",
+                Some("$event".to_owned()),
+            ),
+        ] {
+            assert_eq!(
+                kind(&targets, url, LinkKind::Url),
+                RichLinkKind::Matrix {
+                    target: MatrixTarget::Room {
+                        room_id: "#room:example.com".into(),
+                        event_id
+                    },
+                }
+            );
+        }
     }
 
     /// 显式写的 Markdown 目标要带协议：相对路径（`main.rs`、`docs/a.md`）不是网址。

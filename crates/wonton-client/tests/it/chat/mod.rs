@@ -429,6 +429,13 @@ async fn bot_receives<R>(
 
 /// 标为已读后未读清零；等待自动开启恢复并得到恢复密钥。
 async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> SecretString {
+    let timeline = phone.subscribe_timeline(room_id.to_string()).await.unwrap();
+    phone
+        .dispatch(Action::SetTimelineScroll {
+            room_id: room_id.to_string(),
+            scroll: wonton_client::TimelineScroll::Bottom,
+        })
+        .unwrap();
     phone
         .dispatch(Action::MarkRoomRead {
             room_id: room_id.to_string(),
@@ -442,6 +449,7 @@ async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> Sec
                 .then_some(())
         })
         .await;
+    drop(timeline);
     phone
         .wait_chat("恢复自动开启", |view| {
             (view.encryption.recovery == RecoveryStatus::Enabled)

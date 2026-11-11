@@ -183,6 +183,16 @@ impl MatrixSession {
             .unwrap_or_default())
     }
 
+    /// 解出房间链接的实际 ID，不改变成员关系；是否已加入由调用方按自己的导航边界决定。
+    pub async fn resolve_room_id(&self, input: &str) -> Result<OwnedRoomId> {
+        let target = <&matrix_sdk::ruma::RoomOrAliasId>::try_from(input)
+            .map_err(|error| Error::InvalidInput(error.to_string()))?;
+        match <&RoomId>::try_from(target) {
+            Ok(id) => Ok(id.to_owned()),
+            Err(alias) => Ok(self.client.resolve_room_alias(alias).await?.room_id),
+        }
+    }
+
     /// 加入房间，用于接受邀请。私聊邀请加入后记进 `m.direct`，之后列表里仍标为私聊。等同步把房间标成已加入才返回，
     /// 调用方接着就能往里发消息。
     pub async fn join_room(&self, room_id: &RoomId) -> Result<()> {

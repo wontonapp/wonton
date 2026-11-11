@@ -44,7 +44,8 @@ impl TimelineSubscription {
     ) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
-        let (scroll, mut scrolled) = watch::channel(TimelineScroll::Bottom);
+        // 落点摆好并由壳确认之前，不能把首屏量出来的默认位置当成已经读到底。
+        let (scroll, mut scrolled) = watch::channel(TimelineScroll::Away);
         runtime.spawn(async move {
             let outbox = Outbox::new(sender, menus, room_view.clone(), chat.clone());
             tokio::select! {
@@ -58,6 +59,10 @@ impl TimelineSubscription {
             cancelled,
             scroll,
         })
+    }
+
+    pub(super) fn is_at_bottom(&self) -> bool {
+        *self.scroll.borrow() == TimelineScroll::Bottom && !*self.cancelled.borrow()
     }
 }
 

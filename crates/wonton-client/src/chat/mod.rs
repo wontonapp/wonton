@@ -32,6 +32,7 @@ mod read_mark;
 mod recovery;
 mod reply;
 mod rich;
+mod room_link;
 mod room_rows;
 mod send;
 mod session;
@@ -397,14 +398,7 @@ impl ChatLink {
             Action::SetTimelineScroll { room_id, scroll } => {
                 self.set_timeline_scroll(&room_id, scroll)
             }
-            Action::MarkRoomRead { room_id } => {
-                let chat = self.clone();
-                let (_, room_id) = self.target(&room_id)?;
-                self.spawn_op("chat-op-mark-read-failed", async move {
-                    chat.room(&room_id).await?.mark_as_read().await.map(drop)
-                });
-                Ok(())
-            }
+            Action::MarkRoomRead { room_id } => self.mark_room_read(&room_id),
             Action::SetDraft {
                 room_id,
                 body,

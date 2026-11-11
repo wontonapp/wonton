@@ -246,6 +246,16 @@ impl ClientCore {
         self.scope().chat.resolve_user_id(&input)
     }
 
+    /// 把 Matrix 房间 ID 或别名解成已加入的房间 ID；不自动加入房间。
+    /// 取不到、未加入和输入非法分别返回对应的错误，壳不按别名等待一个永远不会出现的 ID。
+    pub async fn resolve_chat_room(&self, input: String) -> Result<String, CoreError> {
+        let scope = self.scope();
+        let chat = scope.chat.clone();
+        scope
+            .run(async move { chat.resolve_chat_room(&input).await })
+            .await
+    }
+
     /// 订阅一个已加入房间的时间线：第一批是全部条目，之后是按顺序应用的增量。同一时间只打开一个房间，
     /// 打开另一个房间后前一个的订阅不再更新。还没登录、房间还没同步到本机时返回 `NotReady`。
     pub async fn subscribe_timeline(

@@ -46,6 +46,22 @@ impl Chat {
     async fn bot_says(&self, body: &str) {
         self.bot_room.send_text(body).await.expect("Bot 发消息");
     }
+    async fn next_message(
+        &self,
+        timeline: &mut Timeline,
+        body: &str,
+    ) -> wonton_client::TimelineUpdate {
+        tokio::time::timeout(WAIT, async {
+            loop {
+                let update = timeline.next().await;
+                if timeline.items.iter().any(|item| text(item, body).is_some()) {
+                    return update;
+                }
+            }
+        })
+        .await
+        .expect("消息到达时间线")
+    }
 
     /// 聊天列表那一行现在的未读数。
     fn unread(&self) -> u64 {
@@ -72,6 +88,12 @@ impl Chat {
     /// 每次调用前都有新消息：先等未读出现，再等回执把它清零，避免把同步前的初始 0 当成完成。
     async fn read(&self) {
         self.wait_unread(1).await;
+        self.phone
+            .dispatch(Action::SetTimelineScroll {
+                room_id: self.room_id.to_string(),
+                scroll: TimelineScroll::Bottom,
+            })
+            .unwrap();
         self.phone
             .dispatch(Action::MarkRoomRead {
                 room_id: self.room_id.to_string(),
@@ -120,6 +142,66 @@ impl Chat {
             dir,
         }
     }
+}
+
+/// 旧壳或排队中的回调仍发 MarkRoomRead 时，核心以最后报告的位置拒绝错误已读。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn stale_read_requests_do_not_advance_a_scrolled_away_room() {
+    let chat = Chat::open(tempfile::tempdir().unwrap()).await;
+    let mut timeline = chat.timeline().await;
+    chat.bot_says("先看完").await;
+    timeline
+        .until("先来的消息到了", |item| text(item, "先看完"))
+        .await;
+    timeline.report_scroll(TimelineScroll::Bottom).await;
+    chat.read().await;
+    timeline.report_scroll(TimelineScroll::Away).await;
+    chat.bot_says("尚未读到").await;
+    let update = chat.next_message(&mut timeline, "尚未读到").await;
+    assert!(!update.scroll_to_bottom);
+    chat.wait_unread(1).await;
+    chat.phone
+        .dispatch(Action::MarkRoomRead {
+            room_id: chat.room_id.to_string(),
+        })
+        .unwrap();
+    // 重开后服务器已读落点仍在新消息之前，不能只断言异步回执尚未到达时的旧数字。
+    drop(timeline);
+    let mut reopened = chat.timeline().await;
+    let first = reopened.next().await;
+    assert_ne!(
+        first.anchor,
+        reopened.items.last().map(|item| item.id.clone())
+    );
+    assert!(matches!(
+        first.viewport,
+        TimelineViewport::Away { new_messages: 1 }
+    ));
+    reopened.report_scroll(TimelineScroll::Bottom).await;
+    chat.read().await;
+    assert_eq!(chat.unread(), 0);
+}
+
+/// 翻走时自己的新消息才要求壳回到底部，消息的发送状态和编辑更新不重复强制滚动。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn an_own_message_requests_the_bottom_while_reading_history() {
+    let chat = Chat::open(tempfile::tempdir().unwrap()).await;
+    let mut timeline = chat.timeline().await;
+    chat.bot_says("历史").await;
+    timeline.until("历史到了", |item| text(item, "历史")).await;
+    timeline.report_scroll(TimelineScroll::Away).await;
+    chat.phone
+        .dispatch(Action::SendText {
+            room_id: chat.room_id.to_string(),
+            body: "回到底部看自己发的".into(),
+            reply_to: None,
+        })
+        .unwrap();
+    let update = chat.next_message(&mut timeline, "回到底部看自己发的").await;
+    assert!(update.scroll_to_bottom);
+    assert!(matches!(update.viewport, TimelineViewport::Away { .. }));
 }
 
 /// 翻走以后来的消息只让数字变大，列表不跟着滚；报到底以后数字归零，已读回执照旧等壳在到底时发。
