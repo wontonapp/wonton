@@ -192,8 +192,39 @@ pub struct EncryptionStatus {
     ///
     /// [`Action::StartDeviceVerification`]: crate::Action::StartDeviceVerification
     pub can_verify_with_other_device: bool,
+    /// 备份页显不显示“重置备份”（[`Action::ResetRecovery`]）：只在缺密钥、备份残缺时显示——恢复残缺，或者账号
+    /// 还没有备份而本设备又没验证。备份完好不显示，新密钥还没确认保存也不显示（还没抄下来就作废）。
+    ///
+    /// [`Action::ResetRecovery`]: crate::Action::ResetRecovery
+    #[serde(default)]
+    pub can_reset: bool,
+    /// 备份页的下一步给主人看什么。核心按恢复状态算好（ADR-0076），壳只按类别画，不再自己判断。
+    #[serde(default)]
+    pub recovery_next_step: RecoveryNextStep,
     /// 正在进行或刚结束的设备确认（ADR-0046），本设备发起的和收到的都在这里。
     pub verification_flow: Option<VerificationFlow>,
+}
+
+/// 备份页的下一步给主人看什么（ADR-0076）。核心按恢复状态算好，壳只按类别画，不自己判断。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryNextStep {
+    /// 输入恢复密钥：账号设过备份、本设备缺密钥，账号里也没有能确认本设备的其他已验证设备。
+    EnterKey,
+    /// 两条路并列：请账号里别的已验证设备确认本设备，或者输入恢复密钥，主人选一条。
+    ChooseDeviceOrKey,
+    /// 走设备确认这条路：流程已经在进行时这一屏就是流程，还没开始时壳画“请另一台设备确认”的入口按钮
+    /// （账号还没有备份，输恢复密钥没用，确认是拿到密钥的唯一路）。
+    ShowFlow,
+    /// 恢复正在进行，壳画进度。
+    Progress,
+    /// 没有要主人做的：备份完好，或者状态还没同步到。
+    #[default]
+    None,
+    /// 更新的核心给出的类别：壳不画下一步。
+    #[serde(other)]
+    Other,
 }
 
 /// 聊天备份需要主人处理的事项。
@@ -396,6 +427,8 @@ mod tests {
                 recovery_key: Some(SecretString::new(KEY)),
                 backup_reminder: Some(BackupReminder::SaveRecoveryKey),
                 can_verify_with_other_device: true,
+                can_reset: true,
+                recovery_next_step: RecoveryNextStep::ChooseDeviceOrKey,
                 verification_flow: None,
             },
             installing_bots: vec![BotInstallRow {
@@ -558,5 +591,31 @@ mod tests {
             .unwrap(),
             serde_json::json!({"state": "failed", "reason": "upstream", "message": "Docker 报错"})
         );
+    }
+
+    /// 契约：备份页的下一步类别都能经 JSON 往返；新核心的新类别落 `Other`，旧核心没有这两个字段时
+    /// `can_reset` 落假、下一步落 `None`，壳不画重置也不画下一步。
+    #[test]
+    fn recovery_next_step_falls_back_on_old_cores_and_new_categories() {
+        for step in [
+            RecoveryNextStep::EnterKey,
+            RecoveryNextStep::ChooseDeviceOrKey,
+            RecoveryNextStep::ShowFlow,
+            RecoveryNextStep::Progress,
+            RecoveryNextStep::None,
+        ] {
+            assert_eq!(round_trip(&step), step);
+        }
+        assert_eq!(
+            serde_json::from_value::<RecoveryNextStep>(serde_json::json!("recalibrating")).unwrap(),
+            RecoveryNextStep::Other
+        );
+        let mut value = serde_json::to_value(sample_view_model().encryption).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("can_reset");
+        object.remove("recovery_next_step");
+        let status: EncryptionStatus = serde_json::from_value(value).unwrap();
+        assert!(!status.can_reset);
+        assert_eq!(status.recovery_next_step, RecoveryNextStep::None);
     }
 }

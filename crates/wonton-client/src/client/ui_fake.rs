@@ -14,8 +14,9 @@ use tokio::sync::watch;
 use wonton_protocol::{
     ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, ChatViewModel, CoreError, DeviceNetwork,
     DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel, MessageSummary,
-    OnboardingStep, OnboardingViewModel, PushStatus, RecoveryStatus, RoomMembership, RoomPreview,
-    RoomRow, ServerKind, ServerName, ServerRow, ServersViewModel, TabItem, TabRef, TabsViewModel,
+    OnboardingStep, OnboardingViewModel, PushStatus, RecoveryNextStep, RecoveryStatus,
+    RoomMembership, RoomPreview, RoomRow, ServerKind, ServerName, ServerRow, ServersViewModel,
+    TabItem, TabRef, TabsViewModel,
 };
 
 use super::ClientCore;
@@ -98,6 +99,8 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
         recovery_key: None,
         backup_reminder: None,
         can_verify_with_other_device: false,
+        can_reset: false,
+        recovery_next_step: RecoveryNextStep::None,
         verification_flow: None,
     };
     chat.installing_bots.clear();

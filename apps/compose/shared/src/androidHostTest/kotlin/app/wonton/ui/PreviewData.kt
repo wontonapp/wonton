@@ -37,6 +37,7 @@ import app.wonton.protocol.InstalledPlugins
 import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.PluginsViewModel
 import app.wonton.protocol.PushStatus
+import app.wonton.protocol.RecoveryNextStep
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.protocol.RegistryMirrorViewModel
 import app.wonton.protocol.RoomMembership
@@ -207,6 +208,8 @@ internal fun previewEncryption() = EncryptionStatus(
     recoveryKey = null,
     backupReminder = null,
     canVerifyWithOtherDevice = false,
+    canReset = false,
+    recoveryNextStep = RecoveryNextStep.NONE,
     verificationFlow = null,
 )
 
