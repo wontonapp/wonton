@@ -183,13 +183,7 @@ impl PluginManager {
             let required = plugins
                 .get(consumer)
                 .and_then(|entry| entry.listed.as_ref())
-                .is_some_and(|listed| {
-                    listed
-                        .manifest
-                        .requires
-                        .iter()
-                        .any(|c| c == capability)
-                });
+                .is_some_and(|listed| listed.manifest.requires.iter().any(|c| c == capability));
             self.dependencies
                 .inspect(|state| {
                     let id = state
