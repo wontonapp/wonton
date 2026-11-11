@@ -78,10 +78,10 @@ impl Previews {
             Some(mut received) => received
                 .wait_for(|state| state.is_some())
                 .await
-                .expect("取预览的任务活着，落定时一定有结果")
+                .expect("the preview task stays alive and always sends a result")
                 .clone()
-                .expect("落定时一定有结果"),
-            None => self.get(&url).expect("已在缓存里"),
+                .expect("a settled result is always present"),
+            None => self.get(&url).expect("already in the cache"),
         }
     }
 
@@ -251,13 +251,19 @@ fn bundled_image(entry: &Value) -> Option<LinkPreviewCardImage> {
         // 事件里是裸的 EncryptedFile；`encrypted_media_token` 包上媒体句柄认的那一层 `"file"`，
         // 不包会被当成未加密的 mxc，取回来就是密文。
         let token = encrypted_media_token(file)
-            .inspect_err(|error| tracing::warn!("预览图片的加密信息读不了，卡片不带图：{error}"))
+            .inspect_err(|error| {
+                tracing::warn!(
+                    "unreadable preview image encryption info, card goes without image: {error}"
+                )
+            })
             .ok()?;
         (MediaHandle { token }, text_field(entry, "og:image:type"))
     } else {
         let mxc = text_field(entry, "og:image")?;
         let token = media_token(&mxc)
-            .inspect_err(|error| tracing::warn!("预览图片的地址读不了，卡片不带图：{error}"))
+            .inspect_err(|error| {
+                tracing::warn!("unreadable preview image URL, card goes without image: {error}")
+            })
             .ok()?;
         (MediaHandle { token }, text_field(entry, "og:image:type"))
     };
@@ -386,7 +392,9 @@ impl ChatLink {
                 let source = room
                     .upload_preview_image(&image.mime_type, bytes)
                     .await
-                    .map_err(|error| Error::Upstream(format!("预览图片传不上去：{error}")))?;
+                    .map_err(|error| {
+                        Error::Upstream(format!("failed to upload the preview image: {error}"))
+                    })?;
                 Some((source, image))
             }
             // 事件里带来的 Matrix 来源只出现在收到的消息上，核心给的预览里不会有。
@@ -432,7 +440,7 @@ impl ChatLink {
 /// 预览的接口失败：给发送框的横幅用，不挡正文。
 fn attachment_error(error: CoreApiError) -> Error {
     let reason = match error {
-        CoreApiError::Transport(_) => "连不上家里的核心".to_owned(),
+        CoreApiError::Transport(_) => "couldn't reach the home core".to_owned(),
         CoreApiError::Http { message, .. } | CoreApiError::Protocol(message) => message,
     };
     Error::Upstream(reason)
