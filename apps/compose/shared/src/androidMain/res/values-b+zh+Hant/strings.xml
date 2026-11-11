@@ -1093,7 +1093,7 @@
     <!-- Destructive button that uninstalls and deletes the app's data. -->
     <string name="plugin_uninstall_delete_data">解除安裝並刪除資料</string>
     <!-- Message of the uninstall confirmation. -->
-    <string name="plugin_uninstall_delete_data_warning">刪除資料會一併刪掉它的金鑰和 Bot 帳號，無法復原。</string>
+    <string name="plugin_uninstall_delete_data_warning">刪除資料會一併刪掉它的金鑰和 Bot 帳號，與 Bot 的舊加密訊息將無法再查看，無法復原。</string>
     <!-- Button that uninstalls but keeps the app's data. -->
     <string name="plugin_uninstall_keep_data">解除安裝，保留資料</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->

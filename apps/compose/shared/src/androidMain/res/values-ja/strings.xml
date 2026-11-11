@@ -1093,7 +1093,7 @@
     <!-- Destructive button that uninstalls and deletes the app's data. -->
     <string name="plugin_uninstall_delete_data">アンインストール（データも削除）</string>
     <!-- Message of the uninstall confirmation. -->
-    <string name="plugin_uninstall_delete_data_warning">データを削除すると、鍵とボットのアカウントも一緒に削除され、元に戻せません。</string>
+    <string name="plugin_uninstall_delete_data_warning">データを削除すると、鍵とボットのアカウントも一緒に削除され、ボットとの過去の暗号化メッセージも読めなくなります。元に戻せません。</string>
     <!-- Button that uninstalls but keeps the app's data. -->
     <string name="plugin_uninstall_keep_data">アンインストール（データを残す）</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
