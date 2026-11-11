@@ -213,7 +213,14 @@ pub(super) async fn checked(response: Response) -> Result<Response, Problem> {
 async fn problem(response: Response) -> Problem {
     let status = response.status();
     let headers = response.headers().clone();
-    let tunnel = header(&headers, ERROR_HEADER).map(str::to_owned);
+    let body = response.bytes().await.unwrap_or_default();
+    classify(status, &headers, &body)
+}
+
+/// 没写类别的响应算什么问题。状态行、响应头和响应体都在手上（已经读完，不用再碰响应），流服务转发
+/// 播放器的错误时也用它。
+pub(super) fn classify(status: StatusCode, headers: &HeaderMap, body: &[u8]) -> Problem {
+    let tunnel = header(headers, ERROR_HEADER).map(str::to_owned);
     if let Some(code) = tunnel {
         return if code == "unauthorized" {
             Problem::Failed(
@@ -229,11 +236,10 @@ async fn problem(response: Response) -> Problem {
             ))
         };
     }
-    let body = response.bytes().await.unwrap_or_default();
-    if let Ok(parsed) = serde_json::from_slice::<FileErrorBody>(&body) {
+    if let Ok(parsed) = serde_json::from_slice::<FileErrorBody>(body) {
         return Problem::Failed(parsed.error.kind, parsed.error.message);
     }
-    let named = header(&headers, FILE_ERROR_HEADER)
+    let named = header(headers, FILE_ERROR_HEADER)
         .and_then(|kind| serde_json::from_value(serde_json::json!(kind)).ok());
     if let Some(kind) = named {
         return Problem::Failed(
