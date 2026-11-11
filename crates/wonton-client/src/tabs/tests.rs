@@ -587,6 +587,78 @@ async fn failures_are_kept_per_instance() {
 }
 
 #[tokio::test]
+async fn url_page_load_failure_is_upstream() {
+    let rig = Rig::new();
+    let url = url_tab("https://example.com/report");
+    rig.tabs
+        .dispatch(Action::AddPanelPage {
+            scope: main_scope(),
+            tab: url.clone(),
+        })
+        .unwrap();
+    rig.tabs
+        .dispatch(Action::TabLoadFailed {
+            page: PlacedTab::Panel {
+                scope: main_scope(),
+                tab: url.clone(),
+            },
+            status: None,
+        })
+        .unwrap();
+    assert_eq!(
+        rig.tabs.view().panel[0].page.state,
+        TabState::LoadFailed {
+            failure: wonton_protocol::TabLoadFailure::Upstream,
+            status: None
+        }
+    );
+
+    rig.tabs
+        .dispatch(Action::TabLoadFailed {
+            page: PlacedTab::Panel {
+                scope: main_scope(),
+                tab: url.clone(),
+            },
+            status: Some(503),
+        })
+        .unwrap();
+    assert_eq!(
+        rig.tabs.view().panel[0].page.state,
+        TabState::LoadFailed {
+            failure: wonton_protocol::TabLoadFailure::Upstream,
+            status: Some(503)
+        }
+    );
+
+    rig.tabs
+        .dispatch(Action::TabLoadFailed {
+            page: PlacedTab::Panel {
+                scope: main_scope(),
+                tab: url.clone(),
+            },
+            status: Some(404),
+        })
+        .unwrap();
+    assert_eq!(
+        rig.tabs.view().panel[0].page.state,
+        TabState::LoadFailed {
+            failure: wonton_protocol::TabLoadFailure::Upstream,
+            status: Some(404)
+        }
+    );
+
+    rig.tabs
+        .dispatch(Action::TabLoadSucceeded {
+            page: PlacedTab::Panel {
+                scope: main_scope(),
+                tab: url,
+            },
+        })
+        .unwrap();
+    assert_eq!(rig.tabs.view().panel[0].page.state, TabState::Ready);
+}
+
+#[tokio::test]
 async fn room_panel_view_reports_selection_and_blocking() {
     let rig = Rig::new();
     let room: wonton_matrix::OwnedRoomId = "!r:home.example".parse().unwrap();

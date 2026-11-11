@@ -5,6 +5,7 @@ import WontonClient
 struct TabPageCapsule: View {
     let page: TabPage
     let tab: TabRef
+    let placed: PlacedTab
     let tabs: TabsModel
     let session: TabWebSession
     let takeover: PageTakeover?
@@ -13,6 +14,8 @@ struct TabPageCapsule: View {
     let shown: Bool
     /// 碰了胶囊，重新计时再藏。
     let touched: () -> Void
+    /// 在聊天页的下拉面板里（ADR-0052）：退出按钮关掉面板，菜单多一项“编辑面板”，没有“总是全屏”。
+    let panel: TabPanelMode?
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
 
@@ -46,17 +49,33 @@ struct TabPageCapsule: View {
 
     private var capsule: some View {
         HStack(spacing: 0) {
+            if let host = sourceHost {
+                HStack(spacing: WontonTheme.spacing.s4) {
+                    WontonIcon.globe.view(size: WontonTheme.size.iconTiny)
+                    Text(host)
+                        .wontonText(WontonTheme.typography.caption)
+                        .lineLimit(1)
+                        .frame(maxWidth: 130, alignment: .leading)
+                }
+                .foregroundStyle(ink)
+                .padding(.leading, WontonTheme.spacing.s8)
+            }
             Menu {
                 if session.canGoBack {
                     Button(TabText.back) { session.webView?.goBack() }
                 }
                 if let takeover { TakeoverButton(takeover: takeover) }
-                Button(TabText.reload) { tabs.send(.reloadTab(page: .bar(tab: tab))) }
-                Toggle(TabText.alwaysFullscreen, isOn: Binding(
-                    get: { page.opensFullscreen },
-                    set: { tabs.send(.setTabDisplay(tab: tab, display: $0 ? .fullscreen : .standard)) }
-                ))
-                Button(TabText.details, action: details)
+                Button(TabText.reload) { tabs.send(.reloadTab(page: placed)) }
+                if let panel {
+                    Button(TabText.editPanel, action: panel.edit)
+                } else {
+                    Toggle(TabText.alwaysFullscreen, isOn: Binding(
+                        get: { page.opensFullscreen },
+                        set: { tabs.send(.setTabDisplay(tab: tab, display: $0 ? .fullscreen : .standard)) }
+                    ))
+                }
+                pin
+                if hasDetails { Button(TabText.details, action: details) }
             } label: {
                 glyph(.more)
             }
@@ -73,12 +92,40 @@ struct TabPageCapsule: View {
     }
 
     private var trailing: some View {
-        Button { tabs.send(.exitFullscreen(tab: tab)) } label: { glyph(.leave) }
+        Button {
+            if let panel { panel.close() } else { tabs.send(.exitFullscreen(tab: tab)) }
+        } label: { glyph(.leave) }
             .buttonStyle(.plain)
             .accessibilityLabel(TabText.close)
     }
 
     private var ink: Color { .white }
+
+    /// 公网网页没有插件详情。
+    private var hasDetails: Bool {
+        switch tab {
+        case .plugin, .pluginPath: true
+        default: false
+        }
+    }
+
+    /// 公网网页标出来源网站的域名，和插件页面一眼分开（ADR-0052）。
+    private var sourceHost: String? {
+        guard case let .url(value) = tab else { return nil }
+        return URL(string: value)?.host()
+    }
+
+    /// 钉住正在看的这一页：面板里的钉到底栏，底栏的钉到主面板（ADR-0052）。
+    @ViewBuilder private var pin: some View {
+        if let url = session.webView?.url {
+            Button(panel == nil ? TabText.pinToPanel : TabText.pinToBar) {
+                let target: PinTarget = panel == nil ? .panel(scope: .main) : .bar
+                tabs.send(.pinCurrentPage(
+                    url: url.absoluteString, title: session.webView?.title, to: target, replacing: nil
+                ))
+            }
+        }
+    }
 
     private func glyph(_ icon: WontonIcon) -> some View {
         icon.view(size: WontonTheme.size.iconSmall)

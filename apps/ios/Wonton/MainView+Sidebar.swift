@@ -5,7 +5,7 @@ extension MainView {
     /// 只在聊天的根页面响应左边缘右滑：进了房间，左边缘是系统的返回手势。
     /// 聊天页内的下拉面板（ADR-0052）展开时也不响应：手势归面板翻页，等面板那边把“展开了”交到根视图。
     var allowsEdgeSwipe: Bool {
-        tabs.viewModel.selected == .chat && chat.path.isEmpty && tabs.viewModel.overlay == nil
+        tabs.viewModel.selected == .chat && chat.path.isEmpty && tabs.viewModel.overlay == nil && !showsPanel
     }
 
     func navigate(_ destination: SidebarDestination) {
