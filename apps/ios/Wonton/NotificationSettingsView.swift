@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import WontonClient
 
 struct NotificationSettingsView: View {
     @Environment(\.openURL) private var openURL
