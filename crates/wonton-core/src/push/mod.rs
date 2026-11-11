@@ -8,15 +8,19 @@ mod notification;
 mod store;
 mod webpush;
 
+use futures_util::FutureExt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use iroh::EndpointId;
+use serde_json::json;
+use wonton_protocol::DeviceConfirmationPush;
 
 pub use notification::{DevicePayload, Notification, NotifyRequest, NotifyResponse};
 pub use store::{Registration, Subscription};
 
 use crate::device::Devices;
+use crate::mcp::RecipientPush;
 use crate::plugin::egress::core_proxy::CoreProxy;
 use store::Registrations;
 use webpush::{Delivery, WebPush};
@@ -112,8 +116,14 @@ impl Push {
             }
             // 只有计数的通知不转发：App 不靠它更新什么，转发只会白白唤醒手机。
             let Some(payload) = &payload else { continue };
+            let plaintext = serde_json::to_vec(payload).expect("推送内容总能序列化");
             match self
-                .deliver(&registration, payload, notification.urgency())
+                .deliver(
+                    &registration,
+                    plaintext,
+                    notification.urgency(),
+                    &payload.event_id,
+                )
                 .await
             {
                 Ok(true) => {}
@@ -131,18 +141,18 @@ impl Push {
     async fn deliver(
         &self,
         registration: &Registration,
-        payload: &DevicePayload,
+        plaintext: Vec<u8>,
         urgency: &'static str,
+        event: &str,
     ) -> Result<bool, PushError> {
         let device = registration.device.fmt_short();
-        let plaintext = serde_json::to_vec(payload).expect("推送内容总能序列化");
         let delivery = self
             .sender
             .send(&registration.subscription, plaintext, urgency)
             .await;
         match delivery {
             Ok(Delivery::Accepted) => {
-                tracing::info!(%device, event = %payload.event_id, urgency, "推送已交给推送服务");
+                tracing::info!(%device, %event, urgency, "推送已交给推送服务");
                 Ok(true)
             }
             Ok(Delivery::Gone) => {
@@ -168,11 +178,81 @@ impl Push {
         }
     }
 
+    /// 发给一个人名下的已配对设备：确认卡片直推（ADR-0016）。家人的卡片不在任何 Matrix 房间里，
+    /// 直推是它到设备的唯一通道；明文里是 `confirmation` 段，加密同消息推送。返回发到的设备数；
+    /// 一台都没发成时给原因（设备没配对、没登记推送或推送服务不可用），个别设备失败只记日志。
+    pub async fn send_confirmation(
+        &self,
+        person: &str,
+        card: &DeviceConfirmationPush,
+    ) -> Result<usize, PushError> {
+        // 字段名是和 App 之间的契约（wonton-protocol 的 `DeviceConfirmationPush`），App 靠 `confirmation`
+        // 认出这不是房间里的消息。
+        let plaintext = serde_json::to_vec(&json!({
+            "server": self.server,
+            "confirmation": card,
+        }))
+        .expect("确认推送总能序列化");
+        let devices = self.devices.of_user(person);
+        if devices.is_empty() {
+            return Err(PushError::Invalid(format!(
+                "{person} 名下没有已配对的设备，确认卡片推不出去"
+            )));
+        }
+        let mut sent = 0usize;
+        let mut unavailable = None;
+        for device in &devices {
+            let Some(registration) = self.registrations.get(&device.id) else {
+                tracing::warn!(person, device = %device.id.fmt_short(), "设备没登记推送，确认卡片推不到它");
+                continue;
+            };
+            if !self.devices.contains(&registration.device) {
+                tracing::warn!(device = %registration.device.fmt_short(), "设备已吊销，不再推送");
+                self.forget(&registration);
+                continue;
+            }
+            match self
+                .deliver(&registration, plaintext.clone(), "high", &card.id)
+                .await
+            {
+                Ok(true) => sent += 1,
+                Ok(false) => {}
+                Err(e) => unavailable = Some(e),
+            }
+        }
+        match (sent, unavailable) {
+            (0, Some(e)) => Err(e),
+            (0, None) => Err(PushError::Invalid(format!(
+                "{person} 的设备都没登记推送，确认卡片推不出去"
+            ))),
+            _ => Ok(sent),
+        }
+    }
+
     /// 删不掉也照样告诉 Tuwunel 删 pusher：推送前会再查设备登记表，留在表里的订阅不会再被用到。
     fn forget(&self, registration: &Registration) {
         if let Err(e) = self.registrations.remove(&registration.device) {
             tracing::error!(device = %registration.device.fmt_short(), error = %e, "删除推送登记失败");
         }
+    }
+}
+
+/// 确认卡片的收件人推送（ADR-0016）：核心把卡片推到他名下的已配对设备。
+impl RecipientPush for Push {
+    fn push<'a>(
+        &'a self,
+        person: &'a str,
+        card: &'a DeviceConfirmationPush,
+    ) -> futures_util::future::BoxFuture<'a, Result<(), String>> {
+        async move {
+            self.send_confirmation(person, card)
+                .await
+                .map(|sent| {
+                    tracing::info!(person, sent, confirmation = %card.id, "确认卡片已推送给收件人");
+                })
+                .map_err(|e| e.to_string())
+        }
+        .boxed()
     }
 }
 
