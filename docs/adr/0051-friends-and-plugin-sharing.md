@@ -82,7 +82,8 @@ YunoHost、Sandstorm 给免费子域名但要求公网 IP；Home Assistant Cloud
 - 好友是任何 Matrix 用户（`@bob:B`、`@xiaohong:matrix.org`）。主人的好友名单记在 `core/friends.json`：Matrix 用户 ID、显示名、主人给的分组、
   一个本机用户名（给插件用，见“分享插件”）。
 - **加好友**：主人在 App 里点“加好友”，输入对方的 Matrix ID 或扫他的二维码（`https://matrix.to/#/@bob:B`）。App 发一个标准的私聊邀请
-  （`is_direct`），房间里带一个状态事件 `app.wonton.friend`，标明“这是好友请求”。对方用任何 Matrix 客户端都看得到这个邀请。
+  （`is_direct`），`m.room.create` 的内容里带 `app.wonton.friend: true`，标明“这是好友请求”。不用状态事件：Tuwunel 不给受邀者读
+  房间状态，邀请里带的只有 create、name 这类固定状态，create 内容受邀者接受前就看得到，建完也改不了。对方用任何 Matrix 客户端都看得到这个邀请。
 - **同意**就是接受邀请：对方加入私聊，主人的 App 看到后把他记进好友名单。**拒绝**就是拒绝邀请。没理会，就一直是待处理的邀请。
 - 反过来，别人发来的私聊邀请出现在云吞 App 的“请求”里（和服务器配对的请求放在一起的那一节，ADR-0050），不混在聊天列表里；
   带 `app.wonton.friend` 的标为“好友请求”。接受就成为好友。

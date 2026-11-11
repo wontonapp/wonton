@@ -44,6 +44,7 @@ pub async fn pending(
             confirmations: Vec::new(),
             finished: Vec::new(),
             revision: 0,
+            contact_requests: Vec::new(),
         })
         .into_response();
     }
@@ -55,6 +56,7 @@ pub async fn pending(
         confirmations,
         finished: Vec::new(),
         revision: 0,
+        contact_requests: Vec::new(),
     })
     .into_response()
 }
