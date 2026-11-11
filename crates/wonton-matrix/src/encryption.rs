@@ -9,9 +9,9 @@ use matrix_sdk::encryption::{
     recovery::{RecoveryError, RecoveryState},
     secret_storage::SecretStorageError,
 };
-use matrix_sdk::ruma::api::client::uiaa::AuthData;
 #[cfg(feature = "testkit")]
 use matrix_sdk::ruma::DeviceId;
+use matrix_sdk::ruma::api::client::uiaa::AuthData;
 
 use crate::{Error, MatrixSession, Result};
 
