@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +44,7 @@ import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PendingConfirmation
+import app.wonton.protocol.PanelScope
 import app.wonton.protocol.SettingsViewModel
 import app.wonton.protocol.TabRef
 import app.wonton.ui.design.LocalWontonBarStatus
@@ -95,6 +97,7 @@ internal fun ServerApp(
 
 
 @OptIn(ExperimentalLayoutApi::class)
+@Suppress("CyclomaticComplexMethod") // 整个主界面的层叠在一处，拆开要带一屏参数。
 @Composable
 private fun AppContent(
     nav: AppNavigation, home: HomeViewModel, settings: SettingsViewModel,
@@ -120,50 +123,76 @@ private fun AppContent(
     val cards = chat.pendingConfirmations.filter {
         shown != TabRef.Chat || nav.settingsOverlay || it.roomId != nav.chat.openRoom
     }
+    // 面板只在聊天页和房间里；拉开时左边缘归面板（A 块的手势用来关它）。
+    val panelScope = nav.chat.openRoom?.let { PanelScope.Room(it) } ?: PanelScope.Main
+    val panelActive = shown == TabRef.Chat && !nav.settingsOverlay && !nav.chat.showingBackup &&
+        !nav.chat.startingChat
+    val panel = if (panelActive) {
+        rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope)
+    } else null
+    if (panel != null && panel.scope == PanelScope.Main) {
+        SideEffect { panel.feed(tabs.viewModel.panel, tabs.viewModel.panelSelected) }
+    }
     // 只在聊天的根页面响应左边缘右滑：进了房间或盖了别的页面，左边缘是系统的返回手势。
-    val edgeSwipe = shown == TabRef.Chat && !nav.hidesBar()
+    val edgeSwipe = shown == TabRef.Chat && !nav.hidesBar() && panel?.visible != true
     CompositionLocalProvider(LocalWontonBarStatus provides status) {
         WithPendingCards(cards, fullscreen, nav::openRoom) { bannerTop ->
-            SidebarContainer(
-                isOpen = showsSidebar,
-                edgeSwipe = edgeSwipe,
-                onSetOpen = { showsSidebar = it },
-                panel = { width, interactive ->
-                    SidebarPanel(home, tabs.plugins, tabs, view.selected, width, interactive) { destination ->
-                        showsSidebar = false
-                        nav.sidebar(destination)
-                    }
-                },
-            ) {
-                WontonEdgeToEdgeScaffold(
-                    containerColor = WontonTheme.colors.canvas.toColor(),
-                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                    bottomBar = {
-                        if (showsBar) WontonBottomBar(view, tabs.plugins, { selected ->
-                            if (view.selected == selected) reselected = selected
-                            tabs.send(Action.SelectTab(selected))
-                        }, { nav.tabMenu = it })
-                    },
-                ) { padding ->
-                    Box(Modifier.fillMaxSize()) {
-                        PluginTabsHost(
-                            tabs, home, appearance, if (showsBar) padding.calculateBottomPadding() else systemBottom,
-                            active = shown.takeUnless { native }, reselected = reselected,
-                            onReselected = { reselected = null }, onDetails = nav::detail,
-                            onDraft = { text -> draft.text = text; tabs.send(Action.SelectTab(TabRef.Chat)) },
-                            bannerTop = bannerTop,
-                        )
-                        if (native) Box(Modifier.fillMaxSize()) {
-                            CompositionLocalProvider(LocalWontonOpenSidebar provides { showsSidebar = true }) {
-                                NativeContent(nav, home, settings, appearance, chat, nativeState)
-                            }
+            val page: @Composable () -> Unit = {
+                SidebarContainer(
+                    isOpen = showsSidebar,
+                    edgeSwipe = edgeSwipe,
+                    onSetOpen = { showsSidebar = it },
+                    panel = { width, interactive ->
+                        SidebarPanel(home, tabs.plugins, tabs, view.selected, width, interactive) { destination ->
+                            showsSidebar = false
+                            nav.sidebar(destination)
                         }
-                        OpeningChat(nav.chat)
+                    },
+                ) {
+                    WontonEdgeToEdgeScaffold(
+                        containerColor = WontonTheme.colors.canvas.toColor(),
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                        bottomBar = {
+                            if (showsBar) WontonBottomBar(view, tabs.plugins, { selected ->
+                                if (view.selected == selected) reselected = selected
+                                tabs.send(Action.SelectTab(selected))
+                            }, { nav.tabMenu = it })
+                        },
+                    ) { padding ->
+                        Box(Modifier.fillMaxSize()) {
+                            PluginTabsHost(
+                                tabs, home, appearance,
+                                if (showsBar) padding.calculateBottomPadding() else systemBottom,
+                                active = shown.takeUnless { native }, reselected = reselected,
+                                onReselected = { reselected = null }, onDetails = nav::detail,
+                                onDraft = { text -> draft.text = text; tabs.send(Action.SelectTab(TabRef.Chat)) },
+                                bannerTop = bannerTop,
+                            )
+                            if (native) Box(Modifier.fillMaxSize()) {
+                                CompositionLocalProvider(LocalWontonOpenSidebar provides { showsSidebar = true }) {
+                                    NativeContent(nav, home, settings, appearance, chat, nativeState)
+                                }
+                            }
+                            OpeningChat(nav.chat)
+                        }
                     }
+                }
+            }
+            CompositionLocalProvider(LocalChatPanel provides panel) {
+                if (panel != null) {
+                    ChatPanelHost(
+                        panel, tabs, home, appearance,
+                        onDraft = { text -> draft.text = text; tabs.send(Action.SelectTab(TabRef.Chat)) },
+                        onDetails = nav::detail,
+                        content = page,
+                    )
+                } else {
+                    page()
                 }
             }
         }
     }
+    if (panel != null && panel.editing) ChatPanelEditor(panel, tabs) { panel.editing = false }
     BackHandler(enabled = showsSidebar) { showsSidebar = false }
     TabNotices(tabs) { nav.settings(SettingsSubpage.TABS) }
     view.items.firstOrNull { it.tab == nav.tabMenu }?.let { item ->

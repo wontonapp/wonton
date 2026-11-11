@@ -1643,4 +1643,14 @@
     <string name="transfer_upload">アップロード</string>
     <string name="transfer_download">ダウンロード</string>
     <string name="bot_avatar_pick_state">%1$sの画像を変更</string>
+    <string name="panel_add">追加</string>
+    <string name="panel_add_pages">ページを追加</string>
+    <string name="panel_can_add">パネルに入れられるページ</string>
+    <string name="panel_close">パネルを閉じる</string>
+    <string name="panel_edit">パネルを編集</string>
+    <string name="panel_in_panel">パネル内のページ</string>
+    <string name="panel_open">パネルを開く</string>
+    <string name="panel_public_unsupported">この端末の WebView は公開ウェブページとプラグインのページの保存領域を分けられないため、ここでは開けません</string>
+    <string name="panel_remove">削除</string>
+    <string name="panel_url">URL を入力</string>
 </resources>

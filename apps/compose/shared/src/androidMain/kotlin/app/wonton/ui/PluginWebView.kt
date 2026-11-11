@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.ProfileStore
 import androidx.webkit.ProxyConfig
 import androidx.webkit.ProxyController
 import androidx.webkit.WebSettingsCompat
@@ -149,11 +150,21 @@ private class WebViewSnapshot {
  * reload/url 改变才导航；其他重组只更新回调。桥来源来自 WebView，不读取消息正文。
  * document-start 更新仅影响未来文档；当前页 context 由父层通过 controller 注入。
  */
+/** 公网网页单独一个网站数据存储，不和插件页共用 Cookie 和存储（ADR-0052）。 */
+private const val PUBLIC_PROFILE = "wonton-public"
+
+/** 设备支持多 Profile 才打公网网页，不支持时不退回共用插件页的存储。 */
+internal fun publicProfilesSupported(): Boolean = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
+
+private val publicProfile by lazy(LazyThreadSafetyMode.NONE) {
+    ProfileStore.getInstance().getOrCreateProfile(PUBLIC_PROFILE)
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun PluginWebView(
     url: String,
-    proxy: ProxySettings,
+    proxy: ProxySettings?,
     reload: ULong,
     onLoaded: () -> Unit,
     onFailed: (Int?) -> Unit,
@@ -168,6 +179,7 @@ fun PluginWebView(
     onLoadStarted: () -> Unit = {},
     visible: Boolean = true,
     textZoom: Int = 100,
+    publicPage: Boolean = false,
 ) {
     val loaded by rememberUpdatedState(onLoaded)
     val failed by rememberUpdatedState(onFailed)
@@ -180,6 +192,10 @@ fun PluginWebView(
     val snapshot = remember(controller) { WebViewSnapshot() }
     var proxyReady by remember { mutableStateOf<ProxySettings?>(null) }
     DisposableEffect(proxy) {
+        if (proxy == null) {
+            proxyReady = null
+            return@DisposableEffect onDispose { }
+        }
         var active = true
         overrideProxy(proxy) { if (active) proxyReady = proxy }
         onDispose { active = false }
@@ -201,6 +217,7 @@ fun PluginWebView(
                     settings.mediaPlaybackRequiresUserGesture = false
                     settings.builtInZoomControls = true
                     settings.displayZoomControls = false
+                    if (publicPage) WebViewCompat.setProfile(this, publicProfile.getName())
                     configureAppearance(this, canvas, darkTheme)
                     controller.view = this
                     webChromeClient = PluginChromeClient(this, controller)
@@ -216,8 +233,10 @@ fun PluginWebView(
                 if (!view.rendererGone) view.destroy()
             },
             update = { view ->
-                view.updateBridge(allowedOrigins, documentStartScript) { origin, main, message ->
-                    bridge(origin, main, message)
+                if (!publicPage) {
+                    view.updateBridge(allowedOrigins, documentStartScript) { origin, main, message ->
+                        bridge(origin, main, message)
+                    }
                 }
                 configureBackground(view, canvas)
                 view.updateTheme(darkTheme, canvas)
@@ -225,7 +244,7 @@ fun PluginWebView(
                 if (view.settings.textZoom != textZoom) view.settings.textZoom = textZoom
                 val client = view.webViewClient as ProxyAuthClient
                 client.proxy = proxy
-                if (proxyReady == proxy) client.navigate(view, url, reload)
+                if (proxy == null || proxyReady == proxy) client.navigate(view, url, reload)
             },
         )
     }
@@ -355,7 +374,7 @@ private fun overrideProxy(proxy: ProxySettings, onReady: () -> Unit) {
 
 /** 只把本地代理的凭据交给本地代理自己：别的主机（例如插件网页）要认证时不给。 */
 private class ProxyAuthClient(
-    var proxy: ProxySettings,
+    var proxy: ProxySettings?,
     private var reload: ULong,
     private var url: String,
     private val controller: PluginWebViewController,
@@ -397,10 +416,11 @@ private class ProxyAuthClient(
         val uri = request.url
         val isHttp = uri.scheme == "http" || uri.scheme == "https"
         // OIDC 登录会经过核心的这段路径；系统浏览器没有隧道和设备身份，走不完。
-        val coreLogin = uri.host.equals(proxy.domain, ignoreCase = true) &&
+        val coreLogin = uri.host.equals(proxy?.domain, ignoreCase = true) &&
             uri.path.orEmpty().startsWith("/_wonton/oidc/")
+        val authHost = proxy?.let { "auth.${it.domain}" }
         val staysInside = isHttp && (pluginOrigin(uri.toString()) == pluginOrigin(url) ||
-            uri.host.equals("auth.${proxy.domain}", ignoreCase = true) || coreLogin)
+            uri.host.equals(authHost, ignoreCase = true) || coreLogin)
         if (isHttp && !staysInside) onOpenLink(uri.toString())
         return !staysInside
     }
@@ -461,8 +481,9 @@ private class ProxyAuthClient(
     }
 
     override fun onReceivedHttpAuthRequest(view: WebView, handler: HttpAuthHandler, host: String, realm: String) {
-        if (host == proxy.host || host == "${proxy.host}:${proxy.port}") {
-            handler.proceed(proxy.username, proxy.password)
+        val current = proxy
+        if (current != null && (host == current.host || host == "${current.host}:${current.port}")) {
+            handler.proceed(current.username, current.password)
         } else {
             super.onReceivedHttpAuthRequest(view, handler, host, realm)
         }

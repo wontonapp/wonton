@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -111,7 +112,11 @@ fun ChatRoute(
             )
         }
         room != null -> {
-            BackHandler { navigation.closeRoom() }
+            // 面板开着时返回键先关面板，不关房间。
+            val panel = LocalChatPanel.current
+            BackHandler {
+                if (panel != null && panel.level != PanelLevel.CLOSED) panel.back() else navigation.closeRoom()
+            }
             val row = viewModel.rooms.firstOrNull { it.roomId == room }
             val context = LocalContext.current
             val opener = remember(core, navigation, context) {
@@ -163,12 +168,18 @@ private fun ChatListScreen(
     onStartChat: () -> Unit,
 ) {
     val installing = viewModel.installingBots
+    val panel = LocalChatPanel.current
+    val listState = rememberLazyListState()
     WontonScreen(
         bar = { WontonRootBar(stringResource(R.string.tab_chat)) },
     ) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
-                Modifier.fillMaxSize(),
+                Modifier.fillMaxSize()
+                    .panelAction(panel)
+                    .chatPanelPull(panel, { !listState.canScrollBackward }, panel != null),
+                state = listState,
+                overscrollEffect = null,
                 contentPadding = wontonContentPaddingValues(
                     bottom = WontonTheme.size.floatingActionButton + WontonTheme.spacing.pageInset * 2,
                 ),

@@ -1,3 +1,4 @@
+@file:Suppress("TooManyFunctions") // 底栏页和面板页共用的网页、桥、状态都集中在这里。
 package app.wonton.ui
 
 import android.content.ActivityNotFoundException
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
@@ -21,6 +23,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.zIndex
@@ -79,7 +82,21 @@ fun PluginTabsHost(
     }
 }
 
-private class WebPageState(val tab: TabRef, val tabs: TabsState) {
+/** 插件页要的 WebView 能力。公网网页另看多 Profile。 */
+internal fun tabFeaturesSupported(): Boolean =
+    listOf(
+        WebViewFeature.WEB_MESSAGE_LISTENER, WebViewFeature.DOCUMENT_START_SCRIPT,
+        WebViewFeature.PROXY_OVERRIDE, WebViewFeature.PROXY_OVERRIDE_REVERSE_BYPASS,
+    ).all(WebViewFeature::isFeatureSupported)
+
+internal fun PlacedTab.tab(): TabRef = when (this) {
+    is PlacedTab.Bar -> tab
+    is PlacedTab.Panel -> tab
+}
+
+internal class WebPageState(val place: PlacedTab, val tabs: TabsState) {
+    val tab: TabRef get() = place.tab()
+
     val controller = PluginWebViewController()
     val capsule = TabCapsuleVisibility()
     var loaded by mutableStateOf(false)
@@ -94,9 +111,9 @@ private class WebPageState(val tab: TabRef, val tabs: TabsState) {
 
     fun script(environment: TabEnvironment, document: Boolean = false): String? = try {
         if (document) {
-            tabs.core.tabDocumentScript(PlacedTab.Bar(tab), environment)
+            tabs.core.tabDocumentScript(place, environment)
         } else {
-            tabs.core.tabContextScript(PlacedTab.Bar(tab), environment)
+            tabs.core.tabContextScript(place, environment)
         }
     } catch (failure: CoreException) {
         problem = failure.problem
@@ -115,7 +132,7 @@ private class WebPageState(val tab: TabRef, val tabs: TabsState) {
     fun loadFinished(environment: TabEnvironment) {
         loaded = true
         failed = false
-        tabs.send(Action.TabLoadSucceeded(PlacedTab.Bar(tab)))
+        tabs.send(Action.TabLoadSucceeded(place))
         script(environment)?.let { controller.evaluateJavascript(it) }
         controller.evaluateJavascript(tabs.core.tabConnectionScript())
         capsule.show()
@@ -123,7 +140,7 @@ private class WebPageState(val tab: TabRef, val tabs: TabsState) {
 
     fun loadFailed(status: Int?) {
         failed = true
-        tabs.send(Action.TabLoadFailed(PlacedTab.Bar(tab), status?.toUShort()))
+        tabs.send(Action.TabLoadFailed(place, status?.toUShort()))
     }
 }
 
@@ -136,7 +153,7 @@ private fun PluginTabContainer(
 ) {
     val plugin = tabs.installedPlugin(item.tab)
     val page = item.page ?: return
-    val state = remember { WebPageState(item.tab, tabs) }
+    val state = remember { WebPageState(PlacedTab.Bar(item.tab), tabs) }
     var top by remember { mutableStateOf(0.dp) }
     val viewport = tabViewport(page, overlay, active, top, bottom)
     // 胶囊和它的手势旁听只挂在全屏页;带栏页有标题栏,不显示胶囊。
@@ -151,11 +168,7 @@ private fun PluginTabContainer(
         state.script(environment, document = true)
     }
     val openLink = externalLinkOpener { state.problem = it }
-    val supported = remember {
-        listOf(WebViewFeature.WEB_MESSAGE_LISTENER, WebViewFeature.DOCUMENT_START_SCRIPT,
-            WebViewFeature.PROXY_OVERRIDE, WebViewFeature.PROXY_OVERRIDE_REVERSE_BYPASS)
-            .all(WebViewFeature::isFeatureSupported)
-    }
+    val supported = remember { tabFeaturesSupported() }
     val crossOriginBlocked = isCrossOriginIsolationBlocked(plugin)
     PageEffects(state, page, home, active, appearance, environment)
     ReselectedEffect(state, reselected, onReselected)
@@ -184,7 +197,7 @@ private fun PluginTabContainer(
 }
 
 @Composable
-private fun PageChrome(
+internal fun PageChrome(
     tab: TabRef, page: TabPage, tabs: TabsState, capsule: TabCapsuleVisibility,
     controller: PluginWebViewController, safe: PaddingValues, bannerTop: Dp, top: (Dp) -> Unit,
     overlay: Boolean, back: () -> Unit, takeover: PageTakeover?, onDetails: (String) -> Unit,
@@ -207,20 +220,28 @@ private fun PageChrome(
 
 /** 胶囊上方的一条短状态:连接提示由壳给,升级中由这里说。 */
 @Composable
-private fun shortStatus(page: TabPage): String? =
+internal fun shortStatus(page: TabPage): String? =
     LocalWontonBarStatus.current.title
         ?: if (page.state is TabState.Upgrading) stringResource(R.string.tab_upgrading) else null
 
 
 @Composable
-private fun PageStatusOverlay(
+internal fun PageStatusOverlay(
     state: WebPageState, page: TabPage, tab: TabRef, supported: Boolean, crossOriginBlocked: Boolean,
-    inset: PaddingValues, onDetails: (String) -> Unit,
+    inset: PaddingValues, onDetails: (String) -> Unit, unsupported: String? = null,
 ) {
     val platformBlocked = !supported || crossOriginBlocked
     if (state.covers(page) || platformBlocked || state.problem != null) {
         Box(Modifier.padding(inset).fillMaxSize().background(WontonTheme.colors.canvas.toColor())) {
-            PluginTabStatus(page, tab, state.tabs, state.problem, supported, crossOriginBlocked, onDetails)
+            if (unsupported != null && !supported) {
+                Box(Modifier.fillMaxSize().padding(WontonTheme.spacing.s32), contentAlignment = Alignment.Center) {
+                    Text(unsupported, color = WontonTheme.colors.textPrimary.toColor())
+                }
+            } else {
+                PluginTabStatus(
+                    page, tab, state.tabs, state.problem, supported, crossOriginBlocked, onDetails, state.place,
+                )
+            }
         }
     }
 }
@@ -245,7 +266,7 @@ private fun TabBackHandler(
 }
 
 @Composable
-private fun PageEffects(
+internal fun PageEffects(
     state: WebPageState, page: TabPage, home: HomeViewModel, active: Boolean,
     appearance: AppearanceViewModel, environment: TabEnvironment,
 ) {
@@ -267,7 +288,7 @@ private fun PageEffects(
 }
 
 @Composable
-private fun PageWebView(
+internal fun PageWebView(
     state: WebPageState, page: TabPage, plugin: InstalledPlugin?, home: HomeViewModel, environment: TabEnvironment,
     script: String, inset: PaddingValues, visible: Boolean, openLink: (String) -> Unit, onDraft: (String) -> Unit,
 ) {
@@ -280,7 +301,7 @@ private fun PageWebView(
         controller = state.controller, documentStartScript = script,
         onBridgeMessage = { origin, main, message ->
             val reply = state.tabs.core.tabHandleMessage(
-                PlacedTab.Bar(state.tab), main, origin.toString(), message, environment,
+                state.place, main, origin.toString(), message, environment,
             )
             reply.replyScript?.let { state.controller.evaluateJavascript(it) }
             if (reply.initialized) state.loaded = true
@@ -296,7 +317,7 @@ private fun PageWebView(
 }
 
 @Composable
-private fun pageTakeover(tab: TabRef, tabs: TabsState, active: Boolean): PageTakeover? {
+internal fun pageTakeover(tab: TabRef, tabs: TabsState, active: Boolean): PageTakeover? {
     val pluginId = (tab as? TabRef.Plugin)?.pluginId
     val tools = tabs.plugins.viewModel.installed?.plugins?.any { it.id == pluginId && it.declaresTools } == true
     val takeover = if (tools && pluginId != null) {
