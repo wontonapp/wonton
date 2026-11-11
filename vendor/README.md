@@ -82,22 +82,45 @@ crates.io 包原样导入，sha256 `e43a190b56df060b5a901d0e783e04002612981d1fef
 行为回归见 `crates/wonton-matrix/src/chat_room/bootstrap_tests.rs`，用真实 Megolm 密文、重叠翻页和迟到房间密钥验证，
 包含 SQLite 持久化后重建客户端的场景。
 
-核查上游时，[crates.io](https://crates.io/api/v1/crates/matrix-sdk-ui) 的最新发布版仍为 `0.19.1`；其
+核对上游时，[crates.io](https://crates.io/api/v1/crates/matrix-sdk-ui) 的最新发布版仍为 `0.19.1`；其
+
 `CHANGELOG.md` 未记录此修复，`TimelineBuilder::build` 丢弃订阅快照，live `init_focus` 另调 `events()`。
 上游未发布的 [e3a21fd8](https://github.com/matrix-org/matrix-rust-sdk/commit/e3a21fd842a6e653f366b8cf51cb9f0bd17a3f70)
 已修相同问题（`changelog.d/7284.fixed.md`），本补丁回移同一快照交接，不追随未发布的整套 SDK API 改动。
 等包含该修复的版本发布后，整套 SDK 同版升级并核验下述回归；通过即可删除 SDK-ui vendor、exclude 和 patch 项。
 
+### 缓存重置时没有条目的远程事件也清掉
+
+`src/timeline/controller/state_transaction.rs` 的 `clear()` 在时间线里有本地回显时，只经时间线条目删远程事件。
+没有条目的隐藏事件（例如主人自己的成员事件）留在 `all_remote_events` 里，条目位置和缓存位置从此错位一格；
+发送成功后的回显去重按缓存下标发 `Remove{1}`，删掉的是别人的消息，自己的消息出现两次，而且不会自己恢复。
+清空时把没有条目的远程事件一起删掉（倒着删，删除不动还没访问的下标）。
+
+为什么：隧道断开期间主人发的消息先有本地回显，同步恢复时缓存整块重置（`initial: true, limited: true`）就走到上面这条
+分支；`chat::resume::the_chat_recovers_when_the_tunnel_comes_back` 偶发失败（#25）时抓到的终态正是这个。
+回归用假服务端驱动真实时间线，见 `crates/wonton-matrix/src/chat_room/bootstrap_tests/reset_echo.rs`。
+
+只清孤儿还不够：有的失败里时间线根本没收到 `Clear`（`清空原因 []`），错位来自别处。`VectorDiff::Set` 带着事件，
+`VectorDiff::Remove` 只带下标，所以在 `Set` 的处理里按事件 ID 核对缓存的条目位置：对不上就按 ID 找回条目；
+按 ID 找到了但它是没有条目的隐藏事件就不动（map 里已经有一份），只有完全找不到才按缓存位置补一条
+（插入前夹到 map 长度内，`VecDeque::insert` 越界会 panic）。`Remove` 仍在错位时按位置删，
+因此清空侧的对齐是前提。
+
+缓存还会把同一条事件再投一遍（解密前和密钥到达后的 UTD 版本各来一次 `Append`）：`Append`/`PushBack`/`Insert`
+先按事件 ID 找已有条目，有就按更新处理，不再插第二条（否则时间线里同一条出现两次，读回执也认不出条目）。
+
 ## 升级
 
-1. 先查新版 SDK 是否同时含 SDK-ui 的快照交接修复、matrix-sdk 的公开等价取密钥方法、
-   网络等待期间启用备份后状态不被旧检查覆盖的修复、LatestEvents 后台任务不持有
+1. 先查新版 SDK 是否同时含 SDK-ui 的快照交接修复、清空时间线时清掉没有条目的远程事件、`Set` 按事件 ID 核对位置、
+   matrix-sdk 的公开等价取密钥方法、网络等待期间启用备份后状态不被旧检查覆盖的修复、LatestEvents 后台任务不持有
    `Client` 的修复（连同 `Client::downgrade`/`WeakClient` 公开导出），以及上传进度节流。
    各自已有上游实现时，迁移调用并删除对应 vendor 目录、workspace exclude 和 patch 项。
 2. 没有：根 `Cargo.toml` 里 matrix-sdk 系的版本一起改，`cargo fetch` 后从
    `~/.cargo/registry/cache/*/matrix-sdk-<版本>.crate` 解包，核对 sha256 和 `Cargo.lock` 的 checksum 一致，整个目录替换
    `vendor/matrix-sdk`，再从 `.cargo_vcs_info.json` 记的上游提交取 `LICENSE`。这一步单独提交，提交信息写版本和校验和。
-3. 重打仍需要的补丁；matrix-sdk-ui 也按同样方式核对包摘要、导入、取 LICENSE。未含快照修复时，
+3. 重打仍需要的补丁；matrix-sdk-ui 也按同样方式核对包摘要、导入、取 LICENSE。清空时间线时把没有条目的远程事件一并删掉；
+   `Set` 处理按事件 ID 核对位置、对不上时按 ID 找回、仍没有就按位置补条目；`Append`/`PushBack`/`Insert` 按 ID 去重。
+   未含快照修复时，
    把 `subscribe()` 返回的事件传给 live `init_focus`，不用后续 `events()` 重读；其他 focus 保持上游行为。
    运行 `cargo test -p wonton-matrix --lib chat_room::bootstrap_tests`，核验重叠翻页、隐藏事件和持久化重启都不重不漏、
    迟到密钥解开唯一消息。包含修复的新版通过这些回归后删除 SDK-ui 补丁。
