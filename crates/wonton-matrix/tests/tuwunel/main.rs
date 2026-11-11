@@ -11,11 +11,11 @@
 #![recursion_limit = "256"]
 
 mod chat;
+mod client_lifetime;
 mod egress;
 mod encryption;
 mod friends;
 mod layout;
-mod leak816;
 mod login;
 mod messaging;
 mod profile;

@@ -39,7 +39,7 @@ matrix-sdk-crypto 已经公开的 `OlmMachine::query_missing_secrets_from_other_
 `src/client/mod.rs` 加了公开方法 `Client::downgrade`，并把 `WeakClient` 从 `pub(crate)` 放宽为 `pub`、
 在 `src/lib.rs` 转出 crate 根（`client` 模块本身仍是私有的，crate 根转出是唯一可达路径）。
 回归测试要从外面观察客户端是否被 SDK 内部钉住：弱引用 `get()` 在全部强引用
-丢掉后应取回 `None`，见 `crates/wonton-matrix/tests/tuwunel/leak816.rs`。
+丢掉后应取回 `None`，见 `crates/wonton-matrix/tests/tuwunel/client_lifetime.rs`。
 
 ### LatestEvents 后台任务不持有 Client
 
@@ -54,7 +54,7 @@ receiver，任务体开头两行订阅删掉，`select!` 循环不动；`room_in
 `send_queue_data.global_update_sender`、room info broadcaster）——任务把客户端按住就永远等不到
 通道关闭，同步过一次的 Client 从此释放不掉（#816），进程内重建会话时旧实例全部滞留。改成 receiver 后，
 客户端 drop 时 `_listen_task_handle` 的 `AbortOnDrop` 生效、通道随之关闭，两条退出路径都通。
-回归见 `crates/wonton-matrix/tests/tuwunel/leak816.rs`（修前红、修后绿）。
+回归见 `crates/wonton-matrix/tests/tuwunel/client_lifetime.rs`（修前红、修后绿）。
 
 ### 上传进度节流、发送更新通道留足缓冲
 
