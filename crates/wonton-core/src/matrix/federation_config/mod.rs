@@ -95,10 +95,7 @@ impl FederationConfig {
     async fn apply(&self, names: BTreeSet<String>, forbidden: BTreeSet<String>) {
         if let Err(error) = self.apply_inner(&names, &forbidden).await {
             tracing::error!(%error, "联邦名单更新失败");
-            self.notify(&format!(
-                "联邦名单更新失败：{error}\n下次配对变化或核心重启时会自动重试。"
-            ))
-            .await;
+            self.notify(&format!("{error:#}")).await;
         }
     }
 
@@ -172,8 +169,20 @@ impl FederationConfig {
         }
     }
 
-    async fn notify(&self, body: &str) {
+    /// 失败通知发进“Wonton”私聊：第一段是一句人话（AGENTS.md 的界面设计），宿主路径和错误原文只进
+    /// 详情段，正文里认不出它们。
+    async fn notify(&self, error: &str) {
         let Some(notice) = &self.notice else { return };
+        let langs = (notice.languages)();
+        let body = format!(
+            "{}\n\n{}",
+            crate::l10n::text(&langs, "fed-update-failed", &[]),
+            crate::l10n::text(
+                &langs,
+                "fed-update-failed-detail",
+                &[("error", error.into())],
+            ),
+        );
         let content = serde_json::json!({"msgtype": "m.text", "body": body});
         if let Err(error) = notice.send(&content).await {
             tracing::error!(%error, "联邦名单的失败通知发不出去");

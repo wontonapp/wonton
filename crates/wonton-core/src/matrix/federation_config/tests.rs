@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::process::Command;
+use std::sync::Arc;
 use std::time::Duration;
 
 use hyper::{Method, StatusCode};
@@ -7,6 +8,7 @@ use hyper::{Method, StatusCode};
 use super::{allowlist_toml, files::regex_escape};
 use crate::http::{HttpClient, RequestBody};
 use crate::plugin::docker::Engine;
+use crate::plugin::languages::Languages;
 
 /// Tuwunel：本地按标签拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
 pub(super) fn image() -> String {
@@ -535,4 +537,53 @@ pub(super) async fn join(server: &ClusterServer, token: &str, room: &str) -> Res
         "加入返回 {status}：{}",
         value["error"].as_str().unwrap_or_default()
     ))
+}
+
+/// 名单写不进去时发给主人的通知（ADR-0043）：开头一段是一句人话，认不出宿主路径；路径和错误原文
+/// 只在详情段。
+#[tokio::test]
+async fn the_failure_notice_leaves_host_paths_to_the_details_paragraph() {
+    let dir = tempfile::tempdir().unwrap();
+    // 名单文件的位置被一个同名目录占住：写名单在打开文件这步就失败，走不到碰 Docker 的那几步。
+    let fed = dir.path().join("secrets/tuwunel/wonton-fed.toml");
+    std::fs::create_dir_all(&fed).unwrap();
+
+    let (fake, config) = crate::matrix::fake::start().await;
+    let matrix =
+        crate::matrix::Matrix::connect(&config, &dir.path().join("state"), HttpClient::new())
+            .await
+            .unwrap();
+    let fed_config = super::FederationConfig {
+        engine: Engine::for_test(),
+        install_dir: dir.path().to_owned(),
+        core_container: Some("wonton-core-1".to_owned()),
+        notice: Some(Arc::new(crate::matrix::NoticeRoom::new(
+            Arc::new(matrix),
+            "owner",
+            dir.path().join("notice-room"),
+            Arc::new(Languages::default),
+        ))),
+        server_name: "self.example.org".to_owned(),
+    };
+
+    fed_config
+        .apply(
+            BTreeSet::from(["peer.example.org".to_owned()]),
+            BTreeSet::new(),
+        )
+        .await;
+
+    let body = fake.state().sent.last().expect("失败通知应已发出").1["body"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (plain, detail) = body.split_once("\n\n").expect("通知应有人话段和详情段");
+    assert!(
+        !plain.contains(fed.to_str().unwrap()),
+        "人话段里不能有宿主路径：{plain}"
+    );
+    assert!(
+        detail.contains(fed.to_str().unwrap()),
+        "详情段里要有宿主路径：{detail}"
+    );
 }
