@@ -88,7 +88,7 @@ use ruma::{
 };
 use serde::{Deserialize, de::Error as _};
 use tasks::BundleReceiverTask;
-use tokio::sync::{Mutex, RwLockReadGuard};
+use tokio::sync::{Mutex, OwnedRwLockWriteGuard, RwLockReadGuard};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tracing::{Instrument, Span, debug, error, instrument, warn};
 use url::Url;
@@ -339,6 +339,9 @@ pub struct CrossSigningResetHandle {
     signatures_request: UploadSignaturesRequest,
     auth_type: CrossSigningResetAuthType,
     is_cancelled: Mutex<bool>,
+    /// Wonton patch: keeps `/keys/query` on hold until the new keys are uploaded or the handle is
+    /// dropped; see `ClientLocks::cross_signing_reset_lock`.
+    reset_guard: Mutex<Option<OwnedRwLockWriteGuard<()>>>,
 }
 
 impl CrossSigningResetHandle {
@@ -355,6 +358,7 @@ impl CrossSigningResetHandle {
             signatures_request,
             auth_type,
             is_cancelled: Mutex::new(false),
+            reset_guard: Mutex::new(None),
         }
     }
 
@@ -385,6 +389,7 @@ impl CrossSigningResetHandle {
                 );
                 while let Err(e) = self.client.send(upload_request.clone()).await {
                     if *self.is_cancelled.lock().await {
+                        self.reset_guard.lock().await.take();
                         return Ok(());
                     }
 
@@ -409,6 +414,7 @@ impl CrossSigningResetHandle {
                 }
 
                 self.client.send(self.signatures_request.clone()).await?;
+                self.reset_guard.lock().await.take();
 
                 Ok(())
             },
@@ -570,6 +576,9 @@ impl Client {
     ) -> Result<get_keys::v3::Response> {
         let request = assign!(get_keys::v3::Request::new(), { device_keys });
 
+        // Wonton patch: see `ClientLocks::cross_signing_reset_lock`. Held until the response is
+        // processed, so a reset waits for queries already on the wire.
+        let _reset = self.locks().cross_signing_reset_lock.read().await;
         let response = self.send(request).await?;
         self.mark_request_as_sent(request_id, &response).await?;
         self.encryption().update_state_after_keys_query(&response).await;
@@ -1611,6 +1620,9 @@ impl Encryption {
     /// # anyhow::Ok(()) };
     /// ```
     pub async fn reset_cross_signing(&self) -> Result<Option<CrossSigningResetHandle>> {
+        // Wonton patch: taken before the Olm machine, in the same order as `keys_query`.
+        let reset_guard =
+            self.client.locks().cross_signing_reset_lock.clone().write_owned().await;
         let olm = self.client.olm_machine().await;
         let olm = olm.as_ref().ok_or(Error::NoOlmMachine)?;
 
@@ -1635,12 +1647,14 @@ impl Encryption {
             if let Ok(Some(auth_type)) = CrossSigningResetAuthType::new(&error) {
                 let client = self.client.clone();
 
-                Ok(Some(CrossSigningResetHandle::new(
+                let mut handle = CrossSigningResetHandle::new(
                     client,
                     upload_signing_keys_req,
                     upload_signatures_req,
                     auth_type,
-                )))
+                );
+                *handle.reset_guard.get_mut() = Some(reset_guard);
+                Ok(Some(handle))
             } else {
                 Err(error.into())
             }

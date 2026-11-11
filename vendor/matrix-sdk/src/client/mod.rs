@@ -250,6 +250,14 @@ pub(crate) struct ClientLocks {
     #[cfg(feature = "e2e-encryption")]
     pub(crate) key_claim_lock: Mutex<()>,
 
+    /// Wonton patch: held for writing while our own cross-signing identity is
+    /// being replaced, and for reading around every `/keys/query`. A query
+    /// answered before the new public keys reach the server would otherwise
+    /// see the old identity and drop the freshly generated private keys
+    /// (matrix-org/matrix-rust-sdk#4728).
+    #[cfg(feature = "e2e-encryption")]
+    pub(crate) cross_signing_reset_lock: Arc<RwLock<()>>,
+
     /// Handler to ensure that only one members request is running at a time,
     /// given a room.
     pub(crate) members_request_deduplicated_handler: DeduplicatingHandler<OwnedRoomId>,
