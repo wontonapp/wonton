@@ -137,3 +137,7 @@ pub(crate) fn defaults(package: &PluginPackage) -> BTreeMap<String, Value> {
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "value_tests.rs"]
+mod value_tests;
