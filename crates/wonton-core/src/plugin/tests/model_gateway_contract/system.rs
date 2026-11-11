@@ -59,7 +59,8 @@ pub(super) async fn start(socket: &Path) -> super::Target {
     let volume = data_volume(&guard.names);
     let main = services.get(&spec.service).unwrap();
     assert!(main.network_mode.is_none());
-    initialize_volume(&mut guard.names, &volume, main);
+    let image = resolve_image(&main.image);
+    initialize_volume(&mut guard.names, &volume, main, &image);
     let container = guard.names.oneshot_container("gateway");
     run_service(
         &package,
@@ -67,8 +68,8 @@ pub(super) async fn start(socket: &Path) -> super::Target {
         &container,
         &network,
         &volume,
-        &vars,
-        guard.files.path(),
+        (&vars, guard.files.path()),
+        &image,
     );
     let upstream = container_address(&container, &network, spec.port);
     wait_for_gateway(&upstream, &spec.apis.openai).await;
@@ -92,14 +93,15 @@ pub(super) async fn start(socket: &Path) -> super::Target {
         if name != &spec.service {
             assert_eq!(service.network_mode, Some(NetworkMode::None));
             let container = guard.names.oneshot_container(name);
+            let image = resolve_image(&service.image);
             run_service(
                 &package,
                 service,
                 &container,
                 "none",
                 &volume,
-                &vars,
-                guard.files.path(),
+                (&vars, guard.files.path()),
+                &image,
             );
         }
     }
@@ -161,9 +163,40 @@ fn data_volume(names: &Names) -> String {
     volume
 }
 
-fn initialize_volume(names: &mut Names, volume: &str, service: &Service) {
+/// The mirror copy when it is there; otherwise the locked digest. CI copies new images only after the
+/// mirror workflow runs, so a job can start before that copy exists.
+fn resolve_image(locked: &str) -> String {
+    let mirrored = wonton_test_images::image(locked);
+    if mirrored == locked {
+        return mirrored;
+    }
+    let present = docker()
+        .args(["image", "inspect", &mirrored])
+        .output()
+        .unwrap()
+        .status
+        .success();
+    if present {
+        return mirrored;
+    }
+    let pulled = docker()
+        .args(["pull", "--quiet", &mirrored])
+        .output()
+        .unwrap()
+        .status
+        .success();
+    if pulled {
+        return mirrored;
+    }
+    require_success(
+        docker().args(["pull", "--quiet", locked]).output().unwrap(),
+        "pulling the locked gateway image",
+    );
+    locked.to_owned()
+}
+
+fn initialize_volume(names: &mut Names, volume: &str, service: &Service, image: &str) {
     let container = names.oneshot_container("gateway-data");
-    let image = wonton_test_images::image(&service.image);
     let user = service
         .user
         .as_ref()
@@ -182,7 +215,7 @@ fn initialize_volume(names: &mut Names, volume: &str, service: &Service) {
         &mount,
         "--entrypoint",
         "sh",
-        &image,
+        image,
         "-c",
         "chown \"$1\" /config",
         "sh",
@@ -196,9 +229,10 @@ fn run_service(
     container: &str,
     network: &str,
     volume: &str,
-    vars: &Vars,
-    root: &Path,
+    fixture: (&Vars, &Path),
+    image: &str,
 ) {
+    let (vars, root) = fixture;
     let mut command = docker();
     command.args(["run", "--detach", "--name", container, "--network", network]);
     // Docker's embedded DNS can otherwise forward external lookups even on an internal network.
@@ -228,7 +262,7 @@ fn run_service(
         assert!(!entrypoint.is_empty());
         command.args(["--entrypoint", &entrypoint[0]]);
     }
-    command.arg(wonton_test_images::image(&service.image));
+    command.arg(image);
     if let Some(entrypoint) = &entrypoint {
         command.args(&entrypoint[1..]);
     }
