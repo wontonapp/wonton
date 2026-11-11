@@ -113,6 +113,7 @@ private fun AppContent(
         is TabRef.UiResource -> false
     }
     val fullscreen = !native && isFullscreen(tabs, shown)
+    VisiblePluginReporting(tabs, shown.takeUnless { native })
     FullscreenSystemBars(fullscreen)
     // 底栏显不显示由核心算（栏上只有“聊天”时整条不显示）。
     val showsBar = showsBottomBar(nav, fullscreen, WindowInsets.isImeVisible) && view.showBar
