@@ -285,7 +285,7 @@ mod tests {
         let mut tracker = Tracker::default();
         tracker.observe(&DOWN, ConnectionCheck::Failing, 0, start);
         assert_eq!(
-            after(&mut tracker, start, 91, 0),
+            after(&mut tracker, start, 30, 0),
             Some(ConnectionNotice::Unreachable { retrying: false })
         );
     }
