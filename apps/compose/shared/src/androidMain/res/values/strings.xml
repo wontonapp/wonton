@@ -286,6 +286,8 @@
     <string name="connection_waiting_network">Waiting for the network…</string>
     <!-- Connection notice: the tunnel is being established. -->
     <string name="connection_connecting">Connecting…</string>
+    <!-- Connection progress while a real connection attempt or manual retry is running. -->
+    <string name="connection_retrying">Trying to reach your home server…</string>
     <!-- Connection notice: the home server is updating itself. -->
     <string name="connection_updating">Updating…</string>
     <!-- Connection notice: the tunnel dropped and the home server doesn't answer. -->
