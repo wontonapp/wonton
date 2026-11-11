@@ -94,6 +94,12 @@ pub enum TabRef {
     Url {
         url: String,
     },
+    /// 插件的 MCP Apps 界面（`ui://` 资源），Bot 钉上来的（ADR-0052）。核心另给宿主页，
+    /// 界面在隔离的 iframe 里，只经 MCP Apps 的 postMessage 说话。
+    UiResource {
+        plugin_id: String,
+        resource_uri: String,
+    },
     /// 分享页与本机插件页、其他来源的同名插件分别持有网页状态；不授予主人管理操作。
     SharedApp {
         owner_user_id: String,
@@ -136,6 +142,9 @@ pub struct TabsViewModel {
     /// 主面板上次看的那一页（本机记住，不同步），下次拉开还是它。没记住时为 `None`，壳从第一页开。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub panel_selected: Option<TabRef>,
+    /// 每个 Bot 往主面板钉页的同意（服务器上的）；设置里按它显示和收回。
+    #[serde(default)]
+    pub bot_pin_consents: Vec<crate::BotPinOwner>,
 }
 
 /// 底栏上的一项。
@@ -356,12 +365,14 @@ mod tests {
             page: sample_page(TabState::Ready, colored),
             attention: true,
             source: crate::PanelSource::User,
+            movable: true,
         }];
         round_trip(TabsViewModel {
             pages: items.iter().map(|item| item.tab.clone()).collect(),
             items,
             show_bar: true,
             selected: page(),
+            bot_pin_consents: Vec::new(),
             overlay: Some(TabItem {
                 tab: TabRef::Plugin {
                     plugin_id: "app.example.other".into(),

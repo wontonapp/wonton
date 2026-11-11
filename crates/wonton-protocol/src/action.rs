@@ -559,6 +559,12 @@ pub enum Action {
         scope: crate::PanelScope,
         tab: TabRef,
     },
+    /// 收回或给回一个 Bot 往主面板钉页的同意（设置里）；只改以后还问不问，已经钉上的页面不动。
+    SetBotPinConsent {
+        plugin_id: String,
+        bot: String,
+        allowed: bool,
+    },
     /// 把正在看的页面钉到面板或底栏（胶囊“···”菜单里的“钉到面板”“钉到底栏”）。
     ///
     /// `url` 是页面此刻的网址，核心按它算出要钉的是哪一种页面：装着的插件的网页入口下的路径，

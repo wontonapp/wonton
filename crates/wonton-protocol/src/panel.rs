@@ -18,6 +18,44 @@ pub const ROOM_PANEL_EVENT: &str = "app.wonton.room_panel";
 /// 面板最多放几页。每多一页多一份 WebView 的内存，和底栏的上限同一个考虑。
 pub const MAX_PANEL_PAGES: usize = 5;
 
+/// Bot 钉的页面的列表，以及收回同意。
+pub const BOT_PANEL_PINS_PATH: &str = "/_wonton/api/panel/pins";
+
+/// 移除一个 Bot 钉的页面。
+pub fn bot_panel_pin_path(id: &str) -> String {
+    format!("{BOT_PANEL_PINS_PATH}/{id}")
+}
+
+/// 用户看到了这一页，清掉红点。
+pub fn bot_panel_pin_seen_path(id: &str) -> String {
+    format!("{BOT_PANEL_PINS_PATH}/{id}/seen")
+}
+
+/// 一个 Bot 往主面板钉页的同意。
+pub fn bot_panel_consent_path(plugin_id: &str, bot: &str) -> String {
+    format!("{BOT_PANEL_PINS_PATH}/consent/{plugin_id}/{bot}")
+}
+
+/// MCP Apps 的宿主页：一个钉页的界面。
+pub fn mcp_app_host_path(pin_id: &str) -> String {
+    format!("/_wonton/api/mcp-apps/host/{pin_id}")
+}
+
+/// 从 MCP Apps 界面发起的工具调用：新建和查结果。
+pub const MCP_APP_CALLS_PATH: &str = "/_wonton/api/mcp-apps/calls";
+pub fn mcp_app_call_path(id: &str) -> String {
+    format!("{MCP_APP_CALLS_PATH}/{id}")
+}
+
+/// MCP Apps 界面读同一个插件的资源。
+pub const MCP_APP_READ_PATH: &str = "/_wonton/api/mcp-apps/read";
+
+/// 界面能调的工具列表（只列声明给界面用的）。
+pub const MCP_APP_TOOLS_PATH: &str = "/_wonton/api/mcp-apps/tools";
+
+/// 界面以主人的名义发一条消息。
+pub const MCP_APP_MESSAGE_PATH: &str = "/_wonton/api/mcp-apps/message";
+
 /// 面板在哪个面上：主聊天页，或某个房间。每个房间的面板单独设，互不影响。
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -116,16 +154,66 @@ pub enum PinTarget {
 }
 
 /// 面板里一项的来源。用户随时可以拿掉任何来源的页面。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "source", rename_all = "snake_case")]
 pub enum PanelSource {
     /// 用户自己放的。
     #[default]
     User,
+    /// Bot 钉上来的，壳标明“由 <名字> 钉上”。
+    Bot {
+        /// 钉页的标识，移除、标已看时用。
+        pin_id: String,
+        plugin_id: String,
+        bot: String,
+        /// 显示用的名字（Bot 的显示名）。
+        name: String,
+    },
     /// 比这个 App 新的核心给的取值，按用户放的显示。
     #[serde(other)]
     Other,
+}
+
+/// 一个 Bot 钉的页面（服务器核心存着，App 读出来和用户放的合在一起显示）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct BotPanelPin {
+    pub id: String,
+    pub scope: PanelScope,
+    pub tab: TabRef,
+    pub title: String,
+    pub attention: bool,
+    /// 钉它的插件和 Bot，及 Bot 的显示名。
+    pub plugin_id: String,
+    pub bot: String,
+    pub name: String,
+}
+
+/// 全部 Bot 钉的页面。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct BotPanelPins {
+    pub pins: Vec<BotPanelPin>,
+    /// 每个钉过页或有同意的 Bot，设置里按它显示和收回。
+    pub consents: Vec<BotPinOwner>,
+}
+
+/// 一个 Bot 往主面板钉页的同意。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct BotPinOwner {
+    pub plugin_id: String,
+    pub bot: String,
+    pub name: String,
+    pub main_consent: bool,
+}
+
+/// 收回或给回一个 Bot 往主面板钉页的同意。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct BotPinConsent {
+    pub allowed: bool,
 }
 
 /// 面板里的一项，壳按它画页面容器和圆点。
@@ -139,6 +227,13 @@ pub struct PanelItem {
     pub attention: bool,
     /// 钉上来的来源；Bot 钉的壳要标明。
     pub source: PanelSource,
+    /// 能不能在面板里拖动排序。Bot 钉的按钉的先后固定，不能拖。
+    #[serde(default = "movable_default")]
+    pub movable: bool,
+}
+
+fn movable_default() -> bool {
+    true
 }
 
 /// 账号数据里不认识的页面整条丢掉：旧 App 读新 App 写的配置时，不认识的按钮不显示
@@ -246,8 +341,22 @@ mod tests {
 
     #[test]
     fn unknown_source_falls_back_to_user() {
-        let item: PanelSource = serde_json::from_str("\"hydra\"").unwrap();
+        let item: PanelSource = serde_json::from_str("{\"source\": \"hydra\"}").unwrap();
         assert_eq!(item, PanelSource::Other);
+    }
+
+    #[test]
+    fn a_bot_source_carries_the_pin_id_and_falls_back_for_new_values() {
+        let source = PanelSource::Bot {
+            pin_id: "pin".into(),
+            plugin_id: "app.example.agent".into(),
+            bot: "hermes".into(),
+            name: "Hermes".into(),
+        };
+        let json = serde_json::to_value(&source).unwrap();
+        assert_eq!(json["source"], "bot");
+        assert_eq!(json["pin_id"], "pin");
+        assert_eq!(serde_json::from_value::<PanelSource>(json).unwrap(), source);
     }
 
     #[test]
