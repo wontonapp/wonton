@@ -70,7 +70,8 @@ jobs:
           echo "$DIGEST" > "digests/${PLATFORM##*/}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: digests-core
+          # 每个架构一个 artifact：同名的话 v4 只留下一份，合出来的 manifest 少一个架构（v0.2.0 就这样只有单架构）。
+          name: digests-core-${{ strategy.job-index }}
           path: digests/*
           retention-days: 1
 
@@ -149,7 +150,8 @@ jobs:
           echo "$DIGEST" > "digests/${PLATFORM##*/}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: digests-acp-bridge
+          # 每个架构一个 artifact：同名的话 v4 只留下一份，合出来的 manifest 少一个架构（v0.2.0 就这样只有单架构）。
+          name: digests-acp-bridge-${{ strategy.job-index }}
           path: digests/*
           retention-days: 1
 
