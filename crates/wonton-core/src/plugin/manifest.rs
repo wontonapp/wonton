@@ -147,7 +147,9 @@ impl From<Runtime> for wonton_protocol::PluginRuntime {
 #[serde(rename_all = "lowercase")]
 pub enum Sso {
     Oidc,
-    /// 网关代登录（插件规范的“网关代登录”）：核心认得，但还没实现，安装预览时如实报“尚未支持”。
+    /// 网关代登录（插件规范的“网关代登录”）：应用认反向代理传来的用户名或固定密钥，网关在转发给插件网页的
+    /// 请求上代加 `webui.proxy` 声明的请求头和 Cookie。凭据只加在网关认出用户的请求上，也不会回到浏览器
+    /// （网关按值从响应头里剥除）。webui 服务不能跑在宿主网络，安装时按 `super::privileges` 拒绝。
     Proxy,
     #[default]
     None,
