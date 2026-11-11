@@ -9,7 +9,7 @@
 //! | GET | `/_wonton/api/plugins/{id}` | 已安装插件的详情（`PluginDetail`） |
 //! | POST | `/_wonton/api/plugins/preview` | 请求体是来源（`InstallSource`）或插件包，返回要主人确认的内容（`InstallPreview`）；上传的包暂存到确认，`source` 是 `upload:sha256:…` |
 //! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`（可加 `&lan_webui=true`）；`grant` 含全部必需权限，可选项放在 `enabled_permissions`（201 `InstalledPlugin`） |
-//! | POST | `/_wonton/api/plugins/{id}/start` | 启动已停止的插件；已运行时不重复启动，就绪并核对完成后返回（200 `InstalledPlugin`） |
+//! | POST | `/_wonton/api/plugins/{id}/start` | 启动已停止的插件；已运行时不重复启动，就绪并核对完成后返回（200 `InstalledPlugin`）。容器不在时按安装记录照安装的路径重建再启动（网络不在也重建），做不到按原因报类别：镜像拉不到 `image_pull_failed`，安装记录读不出 `record_unusable` |
 //! | PUT | `/_wonton/api/plugins/{id}/permissions/{permission}` | 开关一项可选权限（`PermissionUpdate`），重建完返回详情（200 `PluginDetail`） |
 //! | PUT | `/_wonton/api/plugins/{id}/scope` | 主人提交 `PluginScope`；不支持范围设置时返回 501 `unsupported`，不保存 |
 //! | PUT | `/_wonton/api/bots/{id}/{bot}/plugin-access/{target}` | 主人提交 `BotPluginAccessUpdate`；不支持 Bot 开关时返回 501 `unsupported`，不保存 |

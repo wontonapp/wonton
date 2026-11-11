@@ -3,10 +3,12 @@
 
 use std::sync::Arc;
 
-use super::super::PluginStatus;
+use super::super::egress::settings::Egress;
 use super::super::fake_docker::FakeDocker;
 use super::super::names::container_name;
-use super::manager::manager_with;
+use super::super::{PluginPackage, PluginStatus};
+use super::lan::add_default_bridge;
+use super::manager::{manager_in_container, manager_with};
 use super::package;
 
 fn compose() -> String {
@@ -68,6 +70,70 @@ async fn a_deleted_network_is_rebuilt_when_started() {
         docker.networks()
     );
     assert_eq!(docker.creations(&app()), 2);
+}
+
+/// 出网插件的网络重建后，出口容器要接回去（安装时就是它建的端点），不然插件起来了也出不了网。
+#[tokio::test]
+async fn a_rebuilt_egress_network_gets_the_relay_back() {
+    let (docker, engine) = FakeDocker::start().await;
+    add_default_bridge(&docker);
+    docker.add_image_container("wonton-core", "wonton/core:test");
+    let dir = tempfile::tempdir().unwrap();
+    let manager =
+        Arc::new(manager_in_container(engine.clone(), &dir).with_egress(Egress::default()));
+    manager
+        .store
+        .save_egress_settings(&super::super::egress::settings::StoredEgress {
+            url: Some("http://proxy.lan:1".to_owned()),
+            ..Default::default()
+        })
+        .unwrap();
+    let compose = package(
+        "  web:\n    image: nginx\n",
+        "  permissions: [network.egress]",
+    );
+    let grants = PluginPackage::parse(&compose, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions;
+    let installed = manager
+        .install(&compose, &grants, super::langs())
+        .await
+        .unwrap();
+    let relay = "wonton-egress";
+    let web = container_name("app-test", "web");
+    assert!(
+        docker.endpoint(&network(), relay).is_some(),
+        "安装时出口容器接在插件网络上"
+    );
+
+    // 开发栈 down 的形态：核心、出口容器、插件容器都从网络上下来，网络才删得掉（有端点挂着时
+    // Docker 不让删网络）。
+    engine
+        .disconnect_network(&network(), "wonton-core")
+        .await
+        .unwrap();
+    engine
+        .disconnect_network(&network(), "wonton-egress")
+        .await
+        .unwrap();
+    engine.remove_container(&web).await.unwrap();
+    for name in ["wonton-core", "wonton-egress", &web] {
+        assert!(
+            docker.endpoint(&network(), name).is_none(),
+            "{name} 还挂在网络上"
+        );
+    }
+    // 安装时验过代理的一次性容器可能还留着（down 也会把它清掉）。
+    let _ = engine.remove_container("wonton-egress-check").await;
+    engine.remove_network(&network()).await.unwrap();
+
+    let started = manager.start_detached(installed.id).await.unwrap();
+    assert_eq!(started.status, PluginStatus::Running);
+    assert!(
+        docker.endpoint(&network(), relay).is_some(),
+        "重建的网络要接回出口容器"
+    );
 }
 
 #[tokio::test]
