@@ -1,8 +1,9 @@
 name: ios
 
-# 托管 macOS（仓库公开后 macOS 分钟免费）：SwiftLint，和一次模拟器构建（只编译 Apple 芯片模拟器一个
-# target，不签名、不跑模拟器）。PR 上只在改到 iOS 相关文件时跑；草稿 PR 不跑，转 ready 或每天的定时
-# 全量才跑。main 上不重跑（PR 已在最新 main 上跑过），定时兜底。
+# 托管 macOS（仓库公开后 macOS 分钟免费）：SwiftLint，和一次模拟器构建：在固定型号和系统版本的模拟器上
+# 跑 WontonTests（单测和截图测试，不跑 UI 测试，不签名）。PR 上只在改到 iOS 相关文件时跑；草稿 PR 不跑，
+# 转 ready 或每天的定时全量才跑。main 上不重跑（PR 已在最新 main 上跑过），定时兜底。
+# 重录参考图不在这个工作流里：另开 snapshots-record.yml，只在打 record-snapshots 标签时跑，见 workflows/README.md。
 # 触发的 crate 是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
 # 加了依赖要同步改这份列表。只改测试的 PR（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉。
 # 路径不写在触发器上：合并队列的必需检查每次入队都要有结果，工作流没触发的话检查一直“等待中”，队列合不了。
@@ -110,6 +111,12 @@ jobs:
     timeout-minutes: 45
     env:
       XCODEGEN_VERSION: "2.46.0"
+      # 参考图绑定这台模拟器和这个系统版本：改了就整体重录（打 record-snapshots 标签）。系统版本取 Xcode 27.1 支持的，
+      # 设备取装机列表里的普通 iPhone。模拟器名字带空格，走变量拼进 -destination。
+      SIMULATOR_NAME: iPhone 17
+      SIMULATOR_OS: "27.0"
+      # 截图测试并行会同时开好几个窗口、失败时也不好定位，单台模拟器顺序跑；日期按 UTC、en_US 排版，参考图才可复现。
+      TZ: UTC
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -139,14 +146,45 @@ jobs:
         run: apps/ios/scripts/build-core.sh debug
       - name: 生成 Xcode 工程
         run: xcodegen generate --spec apps/ios/project.yml
-      - name: 构建 App
+      # 只编 WontonTests：UI 测试（WontonUITests）在夜跑里跑，这里不编。
+      - name: 构建测试
         run: |
           xcodebuild -version
-          xcodebuild build \
+          xcodebuild build-for-testing \
             -project apps/ios/Wonton.xcodeproj \
             -scheme Wonton \
             -configuration Debug \
-            -destination "generic/platform=iOS Simulator" \
+            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
+            -only-testing:WontonTests \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
+      # 录制模式由 scheme 的环境变量切（`Wonton` 是 never）：只比较、缺图也报错，不在 CI 里悄悄补图；
+      # 重录在 snapshots-record.yml。每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。
+      - name: 单元测试和截图测试
+        run: |
+          xcodebuild test-without-building \
+            -project apps/ios/Wonton.xcodeproj \
+            -scheme Wonton \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
+            -only-testing:WontonTests \
+            -parallel-testing-enabled NO \
+            -testLanguage en \
+            -testRegion US \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 10 \
+            -maximum-test-execution-time-allowance 60 \
+            -resultBundlePath "$RUNNER_TEMP/Tests.xcresult" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO
+      # 对比失败的新图和差异图作为附注在 .xcresult 里。
+      - name: 失败时存测试结果包
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-test-failure
+          path: ${{ runner.temp }}/Tests.xcresult
+          retention-days: 7
+          if-no-files-found: ignore
+

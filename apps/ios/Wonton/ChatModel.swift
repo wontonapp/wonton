@@ -49,6 +49,14 @@ final class ChatModel {
         viewModel = core.chat()
     }
 
+    #if DEBUG
+        /// 截图测试拿固定 ViewModel 画界面，不订阅核心推送。
+        init(core: ClientCore, viewModel: ChatViewModel) {
+            self.core = core
+            self.viewModel = viewModel
+        }
+    #endif
+
     /// 在主界面的 `.task` 里调用；视图消失时 Task 被取消，订阅随之结束。
     func observe() async {
         for await _ in core.subscribeChat().updates() {
