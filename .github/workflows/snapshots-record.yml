@@ -1,0 +1,138 @@
+name: snapshots-record
+
+# 截图参考图重录：只在给 PR 打 record-snapshots 标签时跑，和每个 PR 的日常作业（ios.yml、android.yml）分开。
+# 打任何标签都会触发这个工作流（触发器只认事件类型），作业里再按标签名过滤；它不算必需检查，录完那轮红是正常的：
+# 每录一张都会报一条“Automatically recorded snapshot”。写权限只给重录作业，日常作业保持只读。
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    name: 重录 iOS 截图
+    if: github.event.label.name == 'record-snapshots'
+    # macOS 托管机：和 ios.yml 一样要 Xcode 27.1 的镜像。
+    runs-on: xcode-27
+    timeout-minutes: 45
+    permissions:
+      # 把录好的参考图推回 PR 分支。
+      contents: write
+      # 录完摘掉标签，不然之后每次推送都重录。
+      pull-requests: write
+      issues: write
+    env:
+      XCODEGEN_VERSION: "2.46.0"
+      # 参考图绑定这台模拟器和这个系统版本：改了要整体重录。设备取装机列表里的普通 iPhone。
+      SIMULATOR_NAME: iPhone 17
+      SIMULATOR_OS: "27.0"
+      # 和三方库的录制目录约定一致；日期按 UTC、en_US 排版，参考图才可复现。
+      TZ: UTC
+      SNAPSHOT_TESTING_RECORD: all
+    steps:
+      # 重录要把参考图推到 PR 的分支，检出的是分支本身。
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          persist-credentials: false
+      - name: 用 Xcode 27.1（和开发机 mini 上的一致）
+        run: sudo xcode-select -s /Applications/Xcode_27.1.app
+      - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # PR 只恢复缓存，不写（缓存只在 main 上由 cache.yml 存）。
+          shared-key: rust-ios
+          save-if: false
+      - name: 安装 XcodeGen（版本和 sha256 固定）
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/xcodegen"
+          unzip -q -o "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
+          echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: 编译 Rust 核心并生成 Swift 绑定
+        env:
+          WONTON_IOS_TARGETS: aarch64-apple-ios-sim
+        run: apps/ios/scripts/build-core.sh debug
+      - name: 生成 Xcode 工程
+        run: xcodegen generate --spec apps/ios/project.yml
+      - name: 构建测试
+        run: |
+          xcodebuild -version
+          xcodebuild build-for-testing \
+            -project apps/ios/Wonton.xcodeproj \
+            -scheme Wonton \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
+            -only-testing:WontonTests \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO
+      - name: 重录截图测试
+        id: tests
+        env:
+          # 对比失败时的原因图（录制模式下就是旧图和新图）也一样存。
+          SNAPSHOT_ARTIFACTS: ${{ runner.temp }}/snapshot-artifacts
+        run: |
+          xcodebuild test-without-building \
+            -project apps/ios/Wonton.xcodeproj \
+            -scheme Wonton \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
+            -only-testing:WontonTests \
+            -parallel-testing-enabled NO \
+            -testLanguage en \
+            -testRegion US \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 10 \
+            -maximum-test-execution-time-allowance 60 \
+            -resultBundlePath "$RUNNER_TEMP/Tests.xcresult" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO
+      # 令牌推的提交不会再触发工作流（GitHub 的规则），所以录完要在 PR 上推一个空提交或点重跑。
+      # 只在本仓库的 PR 上提交；外部 fork 的令牌推不回对方的分支，参考图走下面的产物。
+      - name: 提交参考图并摘掉标签
+        if: ${{ !cancelled() && steps.tests.outcome != 'skipped' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p apps/ios/WontonTests/__Snapshots__
+          git add -A apps/ios/WontonTests/__Snapshots__
+          if git diff --cached --quiet; then
+            echo "参考图没有变化，不提交。"
+          else
+            git commit -m "test(ios): 录制截图测试参考图"
+            # 检出时没落凭据，令牌只出现在这一条命令里。
+            git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
+          fi
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/${{ github.event.pull_request.number }}/labels/record-snapshots" \
+            || echo "标签已经不在了。"
+      # 外部 fork 推不回去，录好的图由作者从产物里取。
+      - name: 外部 PR：把参考图存成产物
+        if: ${{ !cancelled() && github.event.pull_request.head.repo.full_name != github.repository }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-snapshots
+          path: apps/ios/WontonTests/__Snapshots__
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: 失败时存结果（旧图和新图、测试结果包）
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-record-failure
+          path: |
+            ${{ runner.temp }}/snapshot-artifacts
+            ${{ runner.temp }}/Tests.xcresult
+          retention-days: 7
+          if-no-files-found: ignore

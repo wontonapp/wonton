@@ -3,7 +3,7 @@ name: ios
 # 托管 macOS（仓库公开后 macOS 分钟免费）：SwiftLint，和一次模拟器构建：在固定型号和系统版本的模拟器上
 # 跑 WontonTests（单测和截图测试，不跑 UI 测试，不签名）。PR 上只在改到 iOS 相关文件时跑；草稿 PR 不跑，
 # 转 ready 或每天的定时全量才跑。main 上不重跑（PR 已在最新 main 上跑过），定时兜底。
-# 截图参考图改起来麻烦：打 record-snapshots 标签会在同一个作业里重录并提交回分支，见 workflows/README.md。
+# 重录参考图不在这个工作流里：另开 snapshots-record.yml，只在打 record-snapshots 标签时跑，见 workflows/README.md。
 # 触发的 crate 是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
 # 加了依赖要同步改这份列表。只改测试的 PR（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉。
 # 路径不写在触发器上：合并队列的必需检查每次入队都要有结果，工作流没触发的话检查一直“等待中”，队列合不了。
@@ -110,12 +110,6 @@ jobs:
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.changed == 'true')) }}
     runs-on: xcode-27
     timeout-minutes: 45
-    permissions:
-      # 打 record-snapshots 标签时把录好的参考图推回 PR 分支。
-      contents: write
-      # 录完摘掉标签，不然之后每次推送都重录。
-      pull-requests: write
-      issues: write
     env:
       XCODEGEN_VERSION: "2.46.0"
       # 参考图绑定这台模拟器和这个系统版本：改了就整体重录（打 record-snapshots 标签）。系统版本取 Xcode 27.1 支持的，
@@ -125,11 +119,8 @@ jobs:
       # 截图测试并行会同时开好几个窗口、失败时也不好定位，单台模拟器顺序跑；日期按 UTC、en_US 排版，参考图才可复现。
       TZ: UTC
     steps:
-      # 录制要把参考图推到 PR 的分支，检出的是分支本身；队列、定时和手动运行仍检出默认的 ref。
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || github.ref }}
-          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
           persist-credentials: false
       - name: 用 Xcode 27.1（和开发机 mini 上的一致）
         run: sudo xcode-select -s /Applications/Xcode_27.1.app
@@ -169,13 +160,11 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
-      # 打 record-snapshots 标签时重录（旧参考图也全部重画）；其余运行一律只比较、缺图也报错，不让 CI 悄悄补图。
-      # 每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。录制模式本身是红的：
-      # 每录一张都会报一条“Automatically recorded snapshot”，由后面的提交步骤把图推回去。
+      # 只比较、缺图也报错，不在 CI 里悄悄补图；重录在 snapshots-record.yml。
+      # 每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。
       - name: 单元测试和截图测试
-        id: tests
         env:
-          SNAPSHOT_TESTING_RECORD: ${{ github.event.label.name == 'record-snapshots' && 'all' || 'never' }}
+          SNAPSHOT_TESTING_RECORD: never
           # 比较失败的原因图写进这里，和 .xcresult 一起当产物存。
           SNAPSHOT_ARTIFACTS: ${{ runner.temp }}/snapshot-artifacts
         run: |
@@ -194,27 +183,6 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/Tests.xcresult" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO
-      # 令牌推的提交不会再触发工作流（GitHub 的规则），所以录完作者要自己推一个空提交或在 PR 上重跑。
-      # 只在本仓库 PR 打上标签的那一轮做；构建失败时测试步骤被跳过，什么都没录，保留标签等下一次。
-      - name: 录制模式：提交参考图并摘掉标签
-        if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.label.name == 'record-snapshots' && steps.tests.outcome != 'skipped' && github.event.pull_request.head.repo.full_name == github.repository }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          mkdir -p apps/ios/WontonTests/__Snapshots__
-          git add -A apps/ios/WontonTests/__Snapshots__
-          if git diff --cached --quiet; then
-            echo "参考图没有变化，不提交。"
-          else
-            git commit -m "test(ios): 录制截图测试参考图"
-            # 检出时没落凭据，令牌只出现在这一条命令里。
-            git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
-          fi
-          gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/${{ github.event.pull_request.number }}/labels/record-snapshots" \
-            || echo "标签已经不在了。"
       - name: 失败时存结果（截图差异、测试结果包）
         if: ${{ failure() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

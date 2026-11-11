@@ -22,6 +22,9 @@
 - 合并进 main 不重跑全套（PR 已在最新 main 上跑过）；只有 main-image 继续构建核心镜像，`cache.yml` 用
   和 PR 作业一样的 key 把编译缓存编一遍存下来（只编不跑）。每天定时（`schedule`，02:00 起错开）把
   Rust、Docker、Android、iOS 全量跑一遍兜底。
+- 打标签（`labeled`）不进 `ios.yml`、`android.yml`：那会用一次标签事件重跑整轮日常作业，而且跳过的那轮会把之前
+  失败的必需检查盖成“通过”。重录统一走 `snapshots-record.yml`，只在标签是 `record-snapshots` 时跑一个作业，
+  不算必需检查。
 - `test-images.yml` 每周一 02:00 UTC 把测试和镜像构建要拉的上游镜像复制到 `ghcr.io/<owner>/test-images`
   （`scripts/mirror-test-images.sh` + crane copy，digest 原样保留），也可以手动触发。托管 runner 的
   出口 IP 拉不动 Docker Hub 和 ECR Public（实测 `registry:2` 返回 toomanyrequests、构建基础镜像 429），
@@ -56,15 +59,14 @@ android 的构建、ios 的 SwiftLint 和模拟器构建，都必须在队列里
 - 参考图绑定那台模拟器和系统版本，外观、语言（en、US）和时区（UTC）钉在 scheme 和测试里。换了模拟器或系统
   要整体重录，只换图不换参数会一直红。
 - 每个用例默认 10 秒、最多 60 秒，失败不自动重试。
-- 平时（PR、队列、定时）用 `SNAPSHOT_TESTING_RECORD=never`：参考图缺一张也直接红，不在 CI 里悄悄补图；只有打标签
-  那一轮用 `all` 重录。
+- 日常作业用 `SNAPSHOT_TESTING_RECORD=never`：参考图缺一张也直接红，不在 CI 里悄悄补图。
 - 比较失败时“失败时存结果”一步把差异图（`SNAPSHOT_ARTIFACTS`）和 `.xcresult` 存成产物，保留 7 天。
-- 重录：在 PR 上打 `record-snapshots` 标签（草稿 PR 不跑，转 ready 之后再打），`labeled` 事件起一轮。作业用
-  `SNAPSHOT_TESTING_RECORD=all` 把参考图全部重画，在同一个作业里提交回分支并摘掉标签。录制那一轮本身是红的
-  （每录一张报一条“Automatically recorded snapshot”），以提交回去的图为准。
+- 重录在 `snapshots-record.yml`：在 PR 上打 `record-snapshots` 标签（草稿 PR 的事件不跑日常作业，但重录作业
+  照跑）。作业用 `SNAPSHOT_TESTING_RECORD=all` 把参考图全部重画，提交回分支并摘掉标签。录制那一轮本身是红的
+  （每录一张报一条“Automatically recorded snapshot”），以提交回去的图为准；它不算必需检查。
 - GITHUB_TOKEN 推的提交不会触发工作流（GitHub 的规则），仓库也没有单独的机器人令牌，所以录完要自己推一个
-  空提交或点重跑，新图才会被比较一遍。外部 fork 的 PR 令牌推不回对方的分支：录制照跑，作者从产物里取图自己提交。
-- 新增截图用 `SnapshotFixtures`（Debug 专用）搭界面，只放有代表性的界面，不逐页全录。
+  空提交或点重跑，新图才会被比较一遍。外部 fork 的 PR 令牌推不回对方的分支：图存成 `ios-snapshots` 产物，作者自己取。
+- 新增截图用 `WontonTests/SnapshotFixtures`（Debug 专用）搭界面，只放有代表性的界面，不逐页全录。
 
 ## 缓存
 
