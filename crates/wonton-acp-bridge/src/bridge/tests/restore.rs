@@ -9,7 +9,7 @@ async fn restart_loads_the_topic_session() {
     let prompts = harness.wait_prompts(1).await;
     let topic = prompts[0].0.clone();
     harness.respond(&topic, "好").await;
-    harness.restart();
+    harness.restart().await;
 
     harness.send_in_thread("$t2", "$r1", "接着做");
     harness.wait_prompts(1).await;

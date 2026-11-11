@@ -22,3 +22,11 @@ agent-connect-socket = ACP ソケット { $path } に接続できません：{ $
 agent-init-timeout = ACP initialize がタイムアウトしました
 direct-task-failed = ダイレクトメッセージの処理に失敗しました：{ $error }
 stream-closed = Matrix ルームのメッセージストリームが閉じました
+catch-up-dropped =
+    ただいまオフラインでした。次の { $count } 件は処理していません：
+    { $list }
+catch-up-dropped-more =
+    ただいまオフラインでした。次の { $count } 件は処理していません：
+    { $list }
+    ……ほか { $rest } 件は省略しています
+

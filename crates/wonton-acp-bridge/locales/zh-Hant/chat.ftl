@@ -21,3 +21,11 @@ agent-connect-socket = 連線 ACP socket { $path } 失敗：{ $error }
 agent-init-timeout = ACP initialize 逾時
 direct-task-failed = 私訊處理工作失敗：{ $error }
 stream-closed = Matrix 房間訊息串流已關閉
+catch-up-dropped =
+    我剛才不在線，下面這 { $count } 條沒有處理：
+    { $list }
+catch-up-dropped-more =
+    我剛才不在線，下面這 { $count } 條沒有處理：
+    { $list }
+    ……還有 { $rest } 條沒有列出來
+
