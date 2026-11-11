@@ -328,7 +328,7 @@ async fn serve() -> anyhow::Result<()> {
     gateway::family::spawn_member_event_logger(members.clone());
     let notices = notice_room(&cfg, matrix.as_ref(), owner_languages(&manager));
     // Bot 调用的确认卡片（ADR-0016）。
-    let (bus, _confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
+    let (bus, confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
     let server_name = cfg
         .matrix
         .as_ref()
@@ -360,7 +360,7 @@ async fn serve() -> anyhow::Result<()> {
             notices.clone(),
         )?;
     }
-    let push = open_push(&cfg, &tunnel, &manager)?;
+    let push = open_push_for_confirmations(&cfg, &tunnel, &manager, &confirmations)?;
     let upgrades_after_serve = upgrades.clone();
     let gateway = Arc::new(
         Gateway::new(
@@ -379,7 +379,7 @@ async fn serve() -> anyhow::Result<()> {
         .with_people_limiter(Arc::new(gateway::people_limits::PeopleLimiter::new(
             cfg.people_limits,
         )))
-        .with_push(Some(Arc::new(push)))
+        .with_push(Some(push))
         .with_mcp(Some(bus.endpoint()))
         .with_notices(notices.clone())
         .with_files(Some(files))
@@ -611,6 +611,19 @@ fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::
     Push::open(&path, tunnel.devices.clone(), tunnel.endpoint.id())
         .and_then(|push| push.with_proxy(manager.core_proxy()))
         .with_context(|| format!("打开推送登记表 {}", path.display()))
+}
+
+/// 打开推送代理并接到确认流程上：发给家人的卡片直接推到他的设备（ADR-0016）；主人的卡片走通知房间的
+/// 消息推送，不走这里。Gateway 和确认流程用同一个 `Arc<Push>`。
+fn open_push_for_confirmations(
+    cfg: &Config,
+    tunnel: &Tunnel,
+    manager: &PluginManager,
+    confirmations: &Arc<mcp::Confirmations>,
+) -> anyhow::Result<Arc<Push>> {
+    let push = Arc::new(open_push(cfg, tunnel, manager)?);
+    confirmations.attach_push(Some(push.clone() as Arc<dyn mcp::RecipientPush>));
+    Ok(push)
 }
 
 /// 帮助文档（ADR-0034）。版本号和升级接口报的是同一个。

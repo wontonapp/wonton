@@ -16,7 +16,7 @@ use futures_util::future::BoxFuture;
 use tokio::sync::oneshot;
 use wonton_protocol::{
     Answer, CardChoice, ConfirmationCard, ConfirmationOrigin, ConfirmationRequester,
-    ConfirmationState, SecretInput, SecretValues,
+    ConfirmationState, DeviceConfirmationPush, SecretInput, SecretValues,
 };
 
 use super::cards::Draft;
@@ -47,6 +47,16 @@ pub trait Notifier: Send + Sync {
         handle: &'a str,
         card: &'a ConfirmationCard,
     ) -> BoxFuture<'a, Result<Option<String>, String>>;
+}
+
+/// 给收件人的设备发确认推送（ADR-0016）：发给家人的卡片不在任何 Matrix 房间里，直推是它到设备的
+/// 唯一通道。主人的卡片不发：发进通知房间的消息自己会推（ADR-0003）。
+pub trait RecipientPush: Send + Sync {
+    fn push<'a>(
+        &'a self,
+        person: &'a str,
+        card: &'a DeviceConfirmationPush,
+    ) -> BoxFuture<'a, Result<(), String>>;
 }
 
 /// 卡片发给谁、谁发起的、显示在哪个会话。默认（全空）是发给主人、没有发起者和来源会话。
@@ -181,6 +191,8 @@ pub struct Confirmations {
     /// 确认状态变化要唤醒的活动表。挂它的 Bus 可能重建（测试里共用 Confirmations），
     /// 所以允许换接：新 Bus 的活动表才是当前事实源。
     activity: RwLock<Option<Arc<crate::bot_activity::BotActivity>>>,
+    /// 推送代理：发给家人的卡片直接推到他的设备（ADR-0016）。没接时（如测试）只记列表。
+    push: RwLock<Option<Arc<dyn RecipientPush>>>,
 }
 
 fn now_ms(at: SystemTime) -> u64 {
@@ -199,7 +211,13 @@ impl Confirmations {
             windows_file: None,
             table: Mutex::new(Table::default()),
             activity: RwLock::new(None),
+            push: RwLock::new(None),
         }
+    }
+
+    /// 接上推送代理（ADR-0003）：发给家人的卡片直接推到他的设备。
+    pub fn attach_push(&self, push: Option<Arc<dyn RecipientPush>>) {
+        *self.push.write().expect("推送代理锁中毒") = push;
     }
 
     /// 默认的卡片发送方（通知房间）。
@@ -365,12 +383,43 @@ impl Confirmations {
         if let Some(slot) = self.lock().slots.get_mut(&card.id) {
             slot.handle = Some(handle);
         }
+        self.push_recipient(card).await;
         match tokio::time::timeout_at(deadline, answered).await {
             Ok(Ok(chosen)) => Ok(chosen),
             Err(_) | Ok(Err(_)) => {
                 self.settle(&card.id, ConfirmationState::Expired).await;
                 Err(Refusal::Expired)
             }
+        }
+    }
+
+    /// 收件人的卡片直接推送到他的设备（ADR-0016）。推送发不出去不挡确认：卡片已经在他的“等你确认”
+    /// 列表里，打开 App 照样答得了，失败如实记日志。
+    async fn push_recipient(&self, card: &ConfirmationCard) {
+        let recipient = {
+            let table = self.lock();
+            match table.slots.get(&card.id) {
+                Some(slot) => slot.recipient.clone(),
+                None => return,
+            }
+        };
+        let push = self.push.read().expect("推送代理锁中毒").clone();
+        let (Some(push), Some(recipient)) = (push, recipient) else {
+            return;
+        };
+        let direct = DeviceConfirmationPush {
+            id: card.id.clone(),
+            title: card.title.clone(),
+            expires_at_ms: card.expires_at_ms,
+            origin: card.origin.clone(),
+        };
+        if let Err(error) = push.push(&recipient, &direct).await {
+            tracing::error!(
+                confirmation = %card.id,
+                person = %recipient,
+                %error,
+                "确认卡片推送到收件人的设备失败"
+            );
         }
     }
 

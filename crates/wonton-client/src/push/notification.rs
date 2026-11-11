@@ -12,8 +12,9 @@ use wonton_matrix::{
     EventId, MatrixSession, MessageBody, Notification, OwnedEventId, OwnedRoomId, RoomId, UserId,
 };
 use wonton_protocol::{
-    ChatAccount, ChatFailure, CoreError, HomeStatus, NOTICE_FIELD, NotificationCategory,
-    PluginNotice, PushContent, PushNotification,
+    ChatAccount, ChatFailure, CoreError, DeviceConfirmationPush, HomeStatus, MessageSummary,
+    NOTICE_FIELD, NotificationCategory, PluginNotice, PushConfirmation, PushContent,
+    PushNotification,
 };
 
 use super::PushLink;
@@ -67,6 +68,51 @@ impl Payload {
             content: PushContent::Unavailable { reason, message },
             category: NotificationCategory::Message,
             confirmation: None,
+            contact_request: None,
+        }
+    }
+}
+
+/// 确认卡片的直推（ADR-0016）：发给家人的卡片不在任何 Matrix 房间里，卡片内容就在推送里，取不到房间里的
+/// 消息。明文里是 `confirmation` 段和服务器的 endpoint ID，和核心发的格式对着（核心有行为测试）。
+#[derive(Clone, Deserialize)]
+pub(crate) struct DirectConfirmation {
+    /// 发推送的服务器的 endpoint ID。
+    pub(crate) server: String,
+    confirmation: DeviceConfirmationPush,
+}
+
+impl DirectConfirmation {
+    /// 不是确认卡片直推的格式（房间消息的推送没有 `confirmation` 段）时返回 `None`，调用方按消息推送解析。
+    pub(crate) fn parse(payload: &[u8]) -> Option<Self> {
+        serde_json::from_slice(payload).ok()
+    }
+
+    /// 卡片不是房间里的消息：`room_id` 是来源会话（没有时为空），`event_id` 是卡片 ID（`PushConfirmation`
+    /// 的约定），标题两处都给（壳拿它当通知标题，消息推送的正文也是它）。
+    pub(crate) fn notification(&self) -> PushNotification {
+        let card = &self.confirmation;
+        PushNotification {
+            // 槽位由 `ClientCore` 填：推送这一层不知道自己属于哪个槽位。
+            server_id: None,
+            room_id: card
+                .origin
+                .as_ref()
+                .map_or(String::new(), |origin| origin.room_id.clone()),
+            event_id: card.id.clone(),
+            sender: Some(card.title.clone()),
+            room_name: None,
+            content: PushContent::Message {
+                summary: MessageSummary::Text {
+                    text: card.title.clone(),
+                },
+            },
+            category: NotificationCategory::Confirmation,
+            confirmation: Some(PushConfirmation {
+                id: card.id.clone(),
+                expires_at_ms: card.expires_at_ms,
+                origin: card.origin.clone(),
+            }),
             contact_request: None,
         }
     }
@@ -261,6 +307,43 @@ mod tests {
     use wonton_matrix::OwnedUserId;
 
     use super::*;
+
+    /// 契约：核心直推的确认卡片（ADR-0016）解析成确认通知；不是房间消息，没有房间的 event 可取。
+    #[test]
+    fn a_confirmation_push_parses_into_a_confirmation_notification() {
+        let direct = DirectConfirmation::parse(
+            r#"{"server":"srv","confirmation":{"id":"c1","title":"claw 想安装 Grafana","expires_at_ms":42,"origin":{"room_id":"!room:test"}}}"#.as_bytes(),
+        )
+        .expect("核心发的确认推送要能解析");
+        assert_eq!(direct.server, "srv");
+        let shown = direct.notification();
+        assert_eq!(shown.category, NotificationCategory::Confirmation);
+        assert_eq!(shown.room_id, "!room:test");
+        assert_eq!(shown.event_id, "c1");
+        let card = shown.confirmation.expect("确认通知带卡片");
+        assert_eq!(card.id, "c1");
+        assert_eq!(card.expires_at_ms, 42);
+        assert_eq!(
+            card.origin.as_ref().map(|o| o.room_id.as_str()),
+            Some("!room:test")
+        );
+        // 没有来源会话的卡片（核心自己发起的）点开去“等你确认”列表：room_id 为空。
+        let direct = DirectConfirmation::parse(
+            r#"{"server":"srv","confirmation":{"id":"c2","title":"服务器配对","expires_at_ms":7}}"#
+                .as_bytes(),
+        )
+        .unwrap();
+        let shown = direct.notification();
+        assert_eq!(shown.room_id, "");
+        assert!(shown.confirmation.unwrap().origin.is_none());
+        // 房间消息的推送没有 `confirmation` 段：不走这条，按消息推送解析。
+        assert!(
+            DirectConfirmation::parse(
+                br#"{"server":"srv","room_id":"!room:test","event_id":"$e"}"#
+            )
+            .is_none()
+        );
+    }
 
     fn custom(field: Value) -> Map<String, Value> {
         [(NOTICE_FIELD.to_owned(), field)].into_iter().collect()

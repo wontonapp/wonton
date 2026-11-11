@@ -71,10 +71,11 @@ async fn ask_all(
     asks: Vec<Ask>,
     stopped: HopLimitReached,
 ) {
-    let langs = bus.owner_languages();
     let hops = limiter.hop_limit();
     let answers = join_all(asks.into_iter().map(|ask| {
         let bus = bus.clone();
+        // 卡片文字按收件人的语言（ADR-0043）：主人的用主人的，家人的用他最近一次请求的。
+        let langs = bus.languages_for(ask.recipient.as_deref());
         let draft = draft(&stopped, hops, &langs);
         let audience = Audience {
             recipient: ask.recipient.clone(),
@@ -96,17 +97,19 @@ async fn ask_all(
             Some(_) => Arc::new(ListOnly) as Arc<dyn Notifier>,
         };
         async move {
-            bus.confirmations()
+            let answer = bus
+                .confirmations()
                 .ask_as(notifier, &ask.plugin, draft, audience)
-                .await
+                .await;
+            (langs, answer)
         }
     }))
     .await;
-    let all_continue = answers.iter().all(Result::is_ok);
+    let all_continue = answers.iter().all(|(_, answer)| answer.is_ok());
     if all_continue {
         limiter.resume(&stopped.room_id);
     }
-    for answer in answers {
+    for (langs, answer) in answers {
         match answer {
             Ok(ticket) => {
                 let state = if all_continue {
