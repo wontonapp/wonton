@@ -6,14 +6,15 @@ use futures_util::StreamExt;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, broadcast, mpsc, watch};
 use wonton_matrix::{
-    BackPaginationStatus, ChatRoom, EntryKind, MissedEvent, TimelineEntry, Vector, VectorDiff,
+    BackPaginationStatus, ChatRoom, EntryKind, MissedEvent, OwnedRoomId, TimelineEntry, Vector,
+    VectorDiff,
 };
 use wonton_protocol::{
-    BackPagination, KeyNotice, TimelineDiff, TimelineScroll, TimelineUpdate, TimelineViewport,
+    BackPagination, ConfirmationView, KeyNotice, TimelineDiff, TimelineScroll, TimelineUpdate,
+    TimelineViewport,
 };
 
 use super::agent_run::BotsView;
-use super::confirmation::{Cards, CardsView};
 use super::links::LinkTargets;
 use super::menu::{Menus, Outbox};
 use super::read_mark::ReadMark;
@@ -29,28 +30,50 @@ pub struct TimelineSubscription {
     scroll: watch::Sender<TimelineScroll>,
 }
 
+/// 一个房间的时间线订阅要用的部件：房间、能显示的卡片和各路账号数据。[`TimelineSubscription::start`] 一次带走。
+pub struct TimelineSource {
+    pub room: Arc<ChatRoom>,
+    /// 打开的房间：卡片行按 `origin.room_id` 等于它过滤（ADR-0016）。
+    pub room_id: OwnedRoomId,
+    /// 这个房间能显示的确认卡片。
+    pub confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
+    pub plugins: Arc<crate::plugins::PluginsLink>,
+    pub menus: Arc<std::sync::Mutex<Menus>>,
+    pub room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
+    pub chat: watch::Receiver<wonton_protocol::ChatViewModel>,
+}
+
 impl TimelineSubscription {
     /// 在核心的运行时里开始转发 `room` 的时间线。订阅释放或取消后转发自动停止。
     ///
     /// `room_view` 是 tabs 合成的房间面板视图（ADR-0052）：每一批都带上当前值，变了也发一批空的。`chat` 读加密状态，
-    /// 决定解不开的消息旁给什么入口。
-    pub(crate) fn start(
-        runtime: &Handle,
-        room: Arc<ChatRoom>,
-        cards: Cards,
-        plugins: Arc<crate::plugins::PluginsLink>,
-        menus: Arc<std::sync::Mutex<Menus>>,
-        room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
-        chat: watch::Receiver<wonton_protocol::ChatViewModel>,
-    ) -> Arc<Self> {
+    /// 决定解不开的消息旁给什么入口。`confirmations` 是这个房间能显示的确认卡片（ADR-0016），出口按
+    /// `origin.room_id` 过滤后随每一批带上，变了也发一批空的。
+    pub(crate) fn start(runtime: &Handle, source: TimelineSource) -> Arc<Self> {
+        let TimelineSource {
+            room,
+            room_id,
+            confirmations,
+            plugins,
+            menus,
+            room_view,
+            chat,
+        } = source;
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
         // 落点摆好并由壳确认之前，不能把首屏量出来的默认位置当成已经读到底。
         let (scroll, mut scrolled) = watch::channel(TimelineScroll::Away);
         runtime.spawn(async move {
-            let outbox = Outbox::new(sender, menus, room_view.clone(), chat.clone());
+            let outbox = Outbox::new(
+                sender,
+                menus,
+                room_view.clone(),
+                chat.clone(),
+                room_id,
+                confirmations,
+            );
             tokio::select! {
-                () = forward(&room, cards, &plugins, &outbox, &mut scrolled, room_view, chat) => {}
+                () = forward(&room, &plugins, &outbox, &mut scrolled, room_view, chat) => {}
                 () = outbox.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}
             }
@@ -120,36 +143,15 @@ impl View {
     }
 }
 
-/// 先发当前条目，再逐批转发增量；翻页状态、滚动位置变了也发一批（增量为空）。确认卡片的显示还取决于这台设备回答的进展和
-/// 现在的时间，它们变了时比较前后的显示，变了的卡片发 `Set`，所以这里留着一份 SDK 的条目。
+/// 先发当前条目，再逐批转发增量；翻页状态、滚动位置变了也发一批（增量为空）。
 /// `select!` 分支的结果：这一批送出去没有，以及这一批里有没有清空。
 enum Batch {
     Sent(Result<(), ()>, bool),
 }
 
-/// 卡片显示变了就重发受影响的条目，没变就等下一轮。用在 [`forward`] 的选择分支里，展开成 `continue` 或一批。
-macro_rules! refreshed {
-    ($entries:ident, $shown:ident, $cards:ident, $read:ident, $plugins:ident, $sender:ident, $view:expr, $bots:expr) => {
-        match refreshed_batch(
-            &$entries,
-            &mut $shown,
-            &$cards,
-            &$read,
-            &links_of($plugins),
-            $sender,
-            $view,
-            &mut $bots,
-        ) {
-            Some(batch) => batch,
-            None => continue,
-        }
-    };
-}
-
 #[allow(clippy::too_many_lines)] // 一个循环里就是这些分支，拆出去只是把 select 用到的状态搬来搬去。
 async fn forward(
     room: &Arc<ChatRoom>,
-    mut cards: Cards,
     plugins: &crate::plugins::PluginsLink,
     sender: &Outbox,
     scrolled: &mut watch::Receiver<TimelineScroll>,
@@ -162,7 +164,6 @@ async fn forward(
         let fetches = QuoteFetches::default();
         let (entries, diffs) = room.entries().await;
         let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
-        let mut shown = cards.view();
         let mut read = ReadMark::of(&entries);
         let mut statuses = std::pin::pin!(room.back_pagination_status().await);
         let status = match statuses.next().await {
@@ -171,9 +172,9 @@ async fn forward(
         };
         let links = LinkTargets::of(&plugins.view());
         // Bot 列表、活动和等回答的卡片变了，AgentRun 条目的显示跟着变：每批都带上现在的情况，变了就重算。
-        let mut bots = BotsView::of(&chat.borrow_and_update(), &entries, &shown);
+        let mut bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations());
         let Some(mut view) =
-            start_batch(room, &entries, &shown, &read, &links, sender, status, &bots).await
+            start_batch(room, &entries, &read, &links, sender, status, &bots).await
         else {
             return;
         };
@@ -188,11 +189,10 @@ async fn forward(
         check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             view.refresh_unread(room);
-            let next_expiry = shown.next_expiry(&entries);
             let sent = tokio::select! {
                 batch = diffs.next() => {
                     let Some(batch) = batch else { return };
-                    apply(room, &mut entries, &mut shown, &cards, &mut read, plugins, sender, &mut view, &mut bots, batch)
+                    apply(room, &mut entries, &mut read, plugins, sender, &mut view, &bots, batch)
                 }
                 update = room_info.recv() => {
                     match update {
@@ -227,7 +227,9 @@ async fn forward(
                     if changed.is_err() {
                         return;
                     }
-                    let Some(batch) = relinked_batch(&entries, &cards, &read, plugins, sender, &mut view, &bots) else {
+                    let Some(batch) =
+                        relinked_batch(&entries, &read, plugins, sender, &mut view, &bots)
+                    else {
                         continue;
                     };
                     batch
@@ -257,11 +259,10 @@ async fn forward(
                     if changed.is_err() {
                         return;
                     }
-                    // 加密状态变了入口跟着变；Bot 列表、活动或等回答的卡片变了，AgentRun 条目跟着重算（ADR-0082）。
-                    let new_bots = BotsView::of(&chat.borrow_and_update(), &entries, &shown);
+                    // 加密状态变了入口跟着变；Bot 列表或活动变了，AgentRun 条目跟着重算（ADR-0082）。
+                    let new_bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations());
                     let diffs = refreshed_agent_runs(
                         &entries,
-                        &shown,
                         &read,
                         &links_of(plugins),
                         &bots,
@@ -273,14 +274,22 @@ async fn forward(
                     bots = new_bots;
                     Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
                 }
-                changed = cards.changed() => {
+                changed = sender.confirmations_changed() => {
                     if changed.is_err() {
                         return;
                     }
-                    refreshed!(entries, shown, cards, read, plugins, sender, &mut view, bots)
-                }
-                () = tokio::time::sleep(next_expiry.unwrap_or_default()), if next_expiry.is_some() => {
-                    refreshed!(entries, shown, cards, read, plugins, sender, &mut view, bots)
+                    // 确认卡片变了（新卡片、回答的进展、到期）：每一批都带现在的列表，壳换输入栏上方那几行；
+                    // 等回答的卡片变了，AgentRun 条目跟着重算（ADR-0082）。
+                    let new_bots = bots.with_waiting_cards(&sender.confirmations());
+                    let diffs = refreshed_agent_runs(
+                        &entries,
+                        &read,
+                        &links_of(plugins),
+                        &bots,
+                        &new_bots,
+                    );
+                    bots = new_bots;
+                    Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
                 }
             };
             match settle(sent, room, &entries, sender, &mut view).await {
@@ -298,7 +307,6 @@ async fn forward(
 async fn start_batch(
     room: &ChatRoom,
     entries: &Vector<TimelineEntry>,
-    shown: &CardsView,
     read: &ReadMark,
     links: &LinkTargets,
     sender: &Outbox,
@@ -321,7 +329,7 @@ async fn start_batch(
     let reset = TimelineDiff::Reset {
         items: entries
             .iter()
-            .map(|entry| timeline_item(entry.clone(), shown, read, links, bots))
+            .map(|entry| timeline_item(entry.clone(), read, links, bots))
             .collect(),
     };
     send(sender, entries, vec![reset], &mut view, anchor).ok()?;
@@ -331,7 +339,6 @@ async fn start_batch(
 /// 插件表变了：整条时间线按现在的插件表重画一遍；没有条目时返回 `None`。
 fn relinked_batch(
     entries: &Vector<TimelineEntry>,
-    cards: &Cards,
     read: &ReadMark,
     plugins: &crate::plugins::PluginsLink,
     sender: &Outbox,
@@ -339,8 +346,7 @@ fn relinked_batch(
     bots: &BotsView,
 ) -> Option<Batch> {
     let links = LinkTargets::of(&plugins.view());
-    let shown = cards.view();
-    let diffs = relinked(entries, &shown, read, &links, bots);
+    let diffs = relinked(entries, read, &links, bots);
     if diffs.is_empty() {
         return None;
     }
@@ -350,7 +356,6 @@ fn relinked_batch(
 /// 整条时间线按给定的插件表重画：链接的类别可能变。
 fn relinked(
     entries: &Vector<TimelineEntry>,
-    shown: &CardsView,
     read: &ReadMark,
     links: &LinkTargets,
     bots: &BotsView,
@@ -360,7 +365,7 @@ fn relinked(
         .enumerate()
         .map(|(index, entry)| TimelineDiff::Set {
             index: u32::try_from(index).unwrap_or(u32::MAX),
-            item: timeline_item(entry.clone(), shown, read, links, bots),
+            item: timeline_item(entry.clone(), read, links, bots),
         })
         .collect()
 }
@@ -370,41 +375,23 @@ fn relinked(
 fn apply(
     room: &ChatRoom,
     entries: &mut Vector<TimelineEntry>,
-    shown: &mut CardsView,
-    cards: &Cards,
     read: &mut ReadMark,
     plugins: &crate::plugins::PluginsLink,
     sender: &Outbox,
     view: &mut View,
-    bots: &mut BotsView,
+    bots: &BotsView,
     batch: Vec<VectorDiff<TimelineEntry>>,
 ) -> Batch {
     if batch.iter().any(|diff| matches!(diff, VectorDiff::Clear)) {
-        return clear_batch(
-            room,
-            entries,
-            batch,
-            shown,
-            read,
-            &links_of(plugins),
-            sender,
-            view,
-            bots,
-        );
+        return clear_batch(room, entries, batch, read, &links_of(plugins), sender, view, bots);
     }
     let links = LinkTargets::of(&plugins.view());
-    let mut out = refresh(entries, shown, cards, read, &links, bots);
+    let mut out = Vec::new();
     for diff in batch {
-        out.push(timeline_diff(diff.clone(), shown, read, &links, bots));
+        out.push(timeline_diff(diff.clone(), read, &links, bots));
         diff.apply(entries);
     }
-    // 这一批带来了新的卡片或回答：房间里的等回答卡片变了，AgentRun 条目跟着重算。
-    let new_bots = bots.with_waiting_cards(entries, shown);
-    out.extend(refreshed_agent_runs(
-        entries, shown, read, &links, bots, &new_bots,
-    ));
-    *bots = new_bots;
-    out.extend(move_read_mark(entries, shown, read, &links, bots));
+    out.extend(move_read_mark(entries, read, &links, bots));
     // 对账不放在每批之后：它会读一遍整个缓存，批多一点就把时间线的更新通道挤到跟不上（15 秒一次都嫌多）。
     Batch::Sent(send(sender, entries, out, view, None), false)
 }
@@ -447,14 +434,13 @@ fn clear_batch(
     room: &ChatRoom,
     entries: &mut Vector<TimelineEntry>,
     batch: Vec<VectorDiff<TimelineEntry>>,
-    shown: &CardsView,
     read: &mut ReadMark,
     links: &LinkTargets,
     sender: &Outbox,
     view: &mut View,
-    bots: &mut BotsView,
+    bots: &BotsView,
 ) -> Batch {
-    let replaced = reset_diffs(entries, &batch, shown, read, links, bots);
+    let replaced = reset_diffs(entries, &batch, read, links, bots);
     tracing::info!(room_id = %room.room_id(), reason = "sdk-clear", silent = replaced.is_some(), "timeline got a Clear");
     let Some(mut out) = replaced else {
         return Batch::Sent(
@@ -462,12 +448,7 @@ fn clear_batch(
             true,
         );
     };
-    out.extend(move_read_mark(entries, shown, read, links, bots));
-    let new_bots = bots.with_waiting_cards(entries, shown);
-    out.extend(refreshed_agent_runs(
-        entries, shown, read, links, bots, &new_bots,
-    ));
-    *bots = new_bots;
+    out.extend(move_read_mark(entries, read, links, bots));
     Batch::Sent(send(sender, entries, out, view, None), false)
 }
 
@@ -477,7 +458,6 @@ fn clear_batch(
 fn reset_diffs(
     entries: &mut Vector<TimelineEntry>,
     batch: &[VectorDiff<TimelineEntry>],
-    shown: &CardsView,
     read: &ReadMark,
     links: &LinkTargets,
     bots: &BotsView,
@@ -489,7 +469,7 @@ fn reset_diffs(
     let render = |items: &Vector<TimelineEntry>| {
         items
             .iter()
-            .map(|entry| timeline_item(entry.clone(), shown, read, links, bots))
+            .map(|entry| timeline_item(entry.clone(), read, links, bots))
             .collect::<Vec<_>>()
     };
     let (old, new) = (render(entries), render(&replacement));
@@ -523,31 +503,6 @@ fn reset_diffs(
     Some(out)
 }
 
-/// 卡片显示变了时要发的 `Set`；没变时返回 `None`，这一批不发。
-#[allow(clippy::too_many_arguments)] // 同 [`apply`]，参数就是批处理要用的那几个。
-fn refreshed_batch(
-    entries: &Vector<TimelineEntry>,
-    shown: &mut CardsView,
-    cards: &Cards,
-    read: &ReadMark,
-    links: &LinkTargets,
-    sender: &Outbox,
-    view: &mut View,
-    bots: &mut BotsView,
-) -> Option<Batch> {
-    let mut diffs = refresh(entries, shown, cards, read, links, bots);
-    // 回答有了进展（卡片结束）：房间里的等回答卡片变了，AgentRun 条目跟着重算。
-    let new_bots = bots.with_waiting_cards(entries, shown);
-    diffs.extend(refreshed_agent_runs(
-        entries, shown, read, links, bots, &new_bots,
-    ));
-    *bots = new_bots;
-    if diffs.is_empty() {
-        return None;
-    }
-    Some(Batch::Sent(send(sender, entries, diffs, view, None), false))
-}
-
 /// 记下这次重建时间线的原因，失败时能从日志看出是哪条路。
 fn log_rebuild(room: &ChatRoom, reason: &'static str, missed: Option<&MissedEvent>) {
     match missed {
@@ -562,38 +517,9 @@ fn log_rebuild(room: &ChatRoom, reason: &'static str, missed: Option<&MissedEven
     }
 }
 
-/// 换成卡片现在的显示，返回显示变了的卡片。
-fn refresh(
-    entries: &Vector<TimelineEntry>,
-    shown: &mut CardsView,
-    cards: &Cards,
-    read: &ReadMark,
-    links: &LinkTargets,
-    bots: &BotsView,
-) -> Vec<TimelineDiff> {
-    let now = cards.view();
-    let mut diffs = Vec::new();
-    for (index, entry) in entries.iter().enumerate() {
-        if !now.is_card(entry) {
-            continue;
-        }
-        let before = timeline_item(entry.clone(), shown, read, links, bots);
-        let after = timeline_item(entry.clone(), &now, read, links, bots);
-        if before != after {
-            diffs.push(TimelineDiff::Set {
-                index: u32::try_from(index).unwrap_or(u32::MAX),
-                item: after,
-            });
-        }
-    }
-    *shown = now;
-    diffs
-}
-
 /// “已读”换了地方时，换下来和换上去的两条各发一个 `Set`。
 fn move_read_mark(
     entries: &Vector<TimelineEntry>,
-    cards: &CardsView,
     read: &mut ReadMark,
     links: &LinkTargets,
     bots: &BotsView,
@@ -608,7 +534,7 @@ fn move_read_mark(
         .filter(|(_, entry)| read.marks(&entry.id) || now.marks(&entry.id))
         .map(|(index, entry)| TimelineDiff::Set {
             index: u32::try_from(index).unwrap_or(u32::MAX),
-            item: timeline_item(entry.clone(), cards, &now, links, bots),
+            item: timeline_item(entry.clone(), &now, links, bots),
         })
         .collect();
     *read = now;
@@ -618,7 +544,6 @@ fn move_read_mark(
 /// Bot 列表、活动或等回答的卡片变了：AgentRun 条目按新的 Bot 情况重算，返回显示变了的。
 fn refreshed_agent_runs(
     entries: &Vector<TimelineEntry>,
-    shown: &CardsView,
     read: &ReadMark,
     links: &LinkTargets,
     before: &BotsView,
@@ -634,8 +559,8 @@ fn refreshed_agent_runs(
             matches!(&entry.kind, EntryKind::Message(message) if message.agent_run.is_some())
         })
         .filter_map(|(index, entry)| {
-            let item = timeline_item(entry.clone(), shown, read, links, after);
-            (timeline_item(entry.clone(), shown, read, links, before) != item)
+            let item = timeline_item(entry.clone(), read, links, after);
+            (timeline_item(entry.clone(), read, links, before) != item)
                 .then_some(TimelineDiff::Set {
                     index: u32::try_from(index).unwrap_or(u32::MAX),
                     item,
@@ -707,7 +632,7 @@ fn back_pagination(status: BackPaginationStatus) -> BackPagination {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wonton_matrix::{Message, MessageBody, OwnedUserId, SendStatus};
+    use wonton_matrix::{Message, MessageBody, SendStatus};
     use wonton_protocol::{MessageContent, RichLinkKind, TimelineContent};
 
     fn text_entry(id: &str, body: &str) -> TimelineEntry {
@@ -754,9 +679,6 @@ mod tests {
     /// 行为：先把插件网址渲染成外部网页，插件装好以后同一段文字重算成插件页。
     #[test]
     fn an_arriving_plugin_reclassifies_links() {
-        let owner: OwnedUserId = "@owner:wonton.localhost".parse().unwrap();
-        let (_, answers) = watch::channel(Default::default());
-        let cards = Cards::new(&owner, answers).view();
         let read = ReadMark::default();
         let entries: Vector<TimelineEntry> = vec![text_entry(
             "1",
@@ -765,20 +687,14 @@ mod tests {
         .into_iter()
         .collect();
 
-        let before = relinked(
-            &entries,
-            &cards,
-            &read,
-            &LinkTargets::default(),
-            &BotsView::default(),
-        );
+        let before = relinked(&entries, &read, &LinkTargets::default(), &BotsView::default());
         assert_eq!(kind(&before[0]), RichLinkKind::External);
 
         let links = super::super::links::test_targets(&[(
             "app.grafana",
             "http://app-grafana.home.example:18480/",
         )]);
-        let after = relinked(&entries, &cards, &read, &links, &BotsView::default());
+        let after = relinked(&entries, &read, &links, &BotsView::default());
         assert_eq!(
             kind(&after[0]),
             RichLinkKind::Plugin {

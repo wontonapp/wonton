@@ -41,3 +41,10 @@ impl ChatLink {
         }
     }
 }
+
+impl ChatLink {
+    /// 「等你确认」列表的发送端，同上。
+    pub(crate) fn confirmations_sender(&self) -> watch::Sender<ConfirmationsViewModel> {
+        self.confirmations.clone()
+    }
+}
