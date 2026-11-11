@@ -39,18 +39,54 @@ impl PluginManager {
         let this = Arc::clone(self);
         let started_id = id.clone();
         let closing = Arc::clone(&this);
-        let (view, probe) = detached(async move { this.start(&started_id).await }).await?;
+        let (view, probe) = detached(async move {
+            let _changing = this.dependencies.changing.lock().await;
+            this.start(&started_id).await
+        })
+        .await?;
         if probe {
             closing.check_models_once(vec![id]).await;
         }
         Ok(view)
     }
 
-    async fn start(&self, id: &PluginId) -> Result<(PluginView, bool), InstallError> {
+    pub(in crate::plugin) async fn start(
+        &self,
+        id: &PluginId,
+    ) -> Result<(PluginView, bool), InstallError> {
         let langs = self.owner_languages();
         self.check_not_upgrading(&langs)?;
         let before = self.begin_start(id, &langs)?;
         let result = self.start_existing(id, &before, &langs).await;
+        let (result, recovered) = self.finish_start(id, result, &langs);
+        self.lan.end(id);
+        self.changed();
+        let (mut view, probe) = result?;
+        if recovered {
+            let manifest = self
+                .plugins
+                .read()
+                .expect("插件表锁中毒")
+                .get(id)
+                .and_then(|entry| entry.listed.as_ref())
+                .map(|listed| listed.manifest.clone());
+            if let Some(manifest) = manifest {
+                self.capabilities_installed(&manifest, &[], true).await?;
+                if let Some(entry) = self.plugins.read().expect("插件表锁中毒").get(id) {
+                    view = self.view(id, entry);
+                }
+            }
+        }
+        Ok((view, probe))
+    }
+
+    fn finish_start(
+        &self,
+        id: &PluginId,
+        result: Result<Started, InstallError>,
+        langs: &Languages,
+    ) -> (Result<(PluginView, bool), InstallError>, bool) {
+        let recovered;
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let entry = plugins.get_mut(id).expect("启动期间其他操作不能删除插件");
         let result = match result {
@@ -60,6 +96,7 @@ impl PluginManager {
                 deployed,
             }) => {
                 let started = deployed.is_some();
+                recovered = started;
                 if let Some(deployed) = deployed {
                     let listed = entry.listed.clone().expect("启动前检查了插件记录");
                     *entry = Entry::running(listed, deployed);
@@ -77,9 +114,10 @@ impl PluginManager {
                 Ok((self.view(id, entry), probe))
             }
             Err(error) => {
+                recovered = false;
                 entry.status = PluginStatus::Degraded {
                     reason: l10n::text(
-                        &langs,
+                        langs,
                         "plugin-install-start-failed",
                         &[("error", error.to_string().into())],
                     ),
@@ -91,10 +129,7 @@ impl PluginManager {
             }
         };
         drop(plugins);
-        self.lan.end(id);
-        self.changed();
-        let (view, probe) = result?;
-        Ok((view, probe))
+        (result, recovered)
     }
 
     fn begin_start(&self, id: &PluginId, langs: &Languages) -> Result<PluginStatus, InstallError> {
@@ -150,6 +185,8 @@ impl PluginManager {
             .ok_or_else(|| InstallError::not_installed(langs, id))?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
+        self.start_dependency_providers(&package.manifest, langs)
+            .await?;
         let checked = self.check_containers(&package, langs).await?;
         // 有容器不在：先照安装的路径重建再启动（见本文件头），不看别的核对结果——重建会把它们一起修好。
         let state = if checked.has_missing() {

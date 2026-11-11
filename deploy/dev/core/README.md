@@ -200,6 +200,28 @@ Ed25519 密钥签一次主人 JWT，直接登录真实 Tuwunel；不覆盖设备
 家人加入/移除流程不在此脚本范围。凭据只在私有临时文件和本栈容器内使用，不进命令参数或输出；退出 trap 清本栈
 容器、网络、卷和临时目录（不保留现场、不 prune）。
 
+通用能力依赖有单独的一条（ADR-0053），同样只在目标主机的本机 Docker 上运行。**先用当前检出构建开发核心镜像**，显式传入
+`WONTON_CAPABILITY_CORE_IMAGE`；脚本不构建、不用已有的 main 镜像兜底。调用方提供未占用的独立 Docker 子网：
+
+```bash
+(
+  export WONTON_CAPABILITY_CORE_IMAGE='wonton-core:<当前检出的开发镜像标签>'
+  export WONTON_DEV_PROJECT="wonton-capability-$(date +%s)-$$"
+  export WONTON_DEV_CORE_SUBNET='10.214.1.0/24' # 换成测试主机未占用的子网
+  deploy/dev/core/smoke-capabilities.sh
+)
+```
+
+需要 Bash、Docker Compose、Python 3 和 OpenSSL 3；默认端口 18571/18573，可用 `WONTON_DEV_PORT` /
+`WONTON_DEV_TUNNEL_PORT` 改。脚本沿用开发栈的联邦/TLS 准备，以临时 override 关闭系统/默认插件。用待测核心镜像的
+`plugin index-entry` 从本地测试包生成私有索引，服务和使用方都是固定摘要的官方 Python 镜像；真实核心、Hydra、Tuwunel
+和 Docker Engine 执行安装与网关请求，不连接模型或外部业务服务。覆盖完整提供方安装决定及独立输入、真实凭据签发/校验、可信来源头、
+必需依赖卸载拦截、可选依赖后装自动连接/卸载提示、过期计划零副作用、真实非零退出后的整批回滚和保留数据。
+停止本栈提供方后验证 503，重启核心核对原凭据和选择，再显式启动必需使用方，验证先启动提供方且同一凭据恢复 HTTP；
+不把重启核心描述为自动取消手动停止。退出时只清本次精确项目/实例的容器、网络、卷和临时目录，清理完成后才输出最终成功；
+失败仅保留私有服务日志路径，不输出密钥或输入值。此段是运行说明，不代表已执行通过。
+
+
 ```bash
 deploy/dev/core/smoke.sh        # 本机 Docker；要设 WONTON_SMOKE_MODEL（见下）
 DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机

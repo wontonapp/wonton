@@ -119,16 +119,47 @@ async fn official(
         }
     }
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, &langs));
-    let granted = package.manifest.permissions.clone();
+    let mut proposed = match super::dependencies::propose(
+        &bus.plugins,
+        &package,
+        &mut draft,
+        second,
+        &langs,
+    )
+    .await
+    {
+        Ok(proposed) => proposed,
+        Err(failure) => return bus.deny(caller, name, value, &failure),
+    };
+    let second = proposed.second.take();
     let langs = langs.clone();
     let id_for_run = package.manifest.id.clone();
     let run = move |bus: Arc<Bus>,
                     secrets: SecretValues,
                     settings: wonton_protocol::SettingValues| async move {
-        install_ran(
-            bus, id_for_run, package, granted, false, secrets, settings, None, langs,
-        )
-        .await
+        let mut request = proposed.with_secrets(secrets);
+        request.settings = settings;
+        match bus
+            .plugins
+            .install_with_dependencies(
+                package,
+                crate::plugin::dependencies::DependencyInstall {
+                    request,
+                    langs: langs.clone(),
+                },
+            )
+            .await
+        {
+            Ok(view) => installed_outcome(&view, None, &langs),
+            Err(e) => Outcome::failed(
+                e.kind(),
+                crate::l10n::text(
+                    &langs,
+                    "chat-install-failed",
+                    &[("kind", e.kind().into()), ("error", e.to_string().into())],
+                ),
+            ),
+        }
     };
     bus.confirmed_twice(
         caller,
@@ -312,7 +343,13 @@ async fn first_install(
         }
     }
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, langs));
-    let granted = package.manifest.permissions.clone();
+    let mut proposed =
+        match super::dependencies::propose(&bus.plugins, &package, &mut draft, second, langs).await
+        {
+            Ok(proposed) => proposed,
+            Err(failure) => return bus.deny(caller, name, value, &failure),
+        };
+    let second = proposed.second.take();
     let writer = PluginWriter {
         plugin_id: caller.id.to_string(),
         title: caller.name.clone(),
@@ -322,18 +359,47 @@ async fn first_install(
     let run = move |bus: Arc<Bus>,
                     secrets: SecretValues,
                     settings: wonton_protocol::SettingValues| async move {
-        install_ran(
-            bus,
-            id_for_run,
-            package,
-            granted,
-            false,
-            secrets,
-            settings,
-            Some(writer),
-            langs,
-        )
-        .await
+        let mut request = proposed.with_secrets(secrets);
+        request.settings = settings;
+        match bus
+            .plugins
+            .install_with_dependencies(
+                package,
+                crate::plugin::dependencies::DependencyInstall {
+                    request,
+                    langs: langs.clone(),
+                },
+            )
+            .await
+        {
+            Ok(view) => {
+                // 归属没记下来时更新就装不上，如实告诉 Agent。
+                let note = match bus.plugins.set_writer(&id_for_run, Some(writer)) {
+                    Ok(()) => None,
+                    Err(e) => {
+                        tracing::error!(plugin = %id_for_run, error = %e, "记插件的归属失败");
+                        Some(l10n::text(
+                            &langs,
+                            "chat-install-note-writer",
+                            &[("error", e.to_string().into())],
+                        ))
+                    }
+                };
+                installed_outcome(&view, note, &langs)
+            }
+            Err(e) => Outcome::failed(
+                e.kind(),
+                l10n::text(
+                    &langs,
+                    "chat-install-failed-id",
+                    &[
+                        ("id", id_for_run.as_str().into()),
+                        ("kind", e.kind().into()),
+                        ("error", e.to_string().into()),
+                    ],
+                ),
+            ),
+        }
     };
     bus.confirmed_twice(
         caller,

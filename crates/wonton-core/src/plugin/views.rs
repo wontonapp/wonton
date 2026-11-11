@@ -48,7 +48,10 @@ impl PluginManager {
         drop(plugins);
         listed.sort_by(|(a, x), (b, y)| a.cmp(b).then_with(|| x.id.cmp(&y.id)));
         InstalledPlugins {
-            plugins: listed.into_iter().map(|(_, p)| self.with_bot(p)).collect(),
+            plugins: listed
+                .into_iter()
+                .map(|(_, plugin)| self.with_dependency_status(self.with_bot(plugin), langs))
+                .collect(),
             upgrade_check: self.upgrades.problem(),
         }
     }
@@ -58,7 +61,7 @@ impl PluginManager {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         let plugin = self.listing(id, plugins.get(id)?, langs);
         drop(plugins);
-        Some(self.with_bot(plugin))
+        Some(self.with_dependency_status(self.with_bot(plugin), langs))
     }
 
     /// 给主人的详情，返回详情的接口都走这里：要求逐条判断过（要问 Docker），开关开着时带上第三方客户端的连接信息。
@@ -149,10 +152,14 @@ impl PluginManager {
                         .then(|| line(l10n::text(langs, "plugin-egress-proxy-select", &[]))),
                 )
                 .collect(),
-            hints: self.models_hint(id, m).into_iter().collect(),
+            hints: self
+                .models_hint(id, m)
+                .into_iter()
+                .chain(self.dependency_hints(m, langs))
+                .collect(),
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),
-            capability_providers: Vec::new(),
+            capability_providers: self.consumer_capabilities(m, langs).unwrap_or_default(),
             lan_webui: listed
                 .lan_switched
                 .as_ref()
@@ -171,6 +178,7 @@ impl PluginManager {
         package: &PluginPackage,
         langs: &Languages,
     ) -> Result<InstallPreview, InstallError> {
+        let _changing = self.dependencies.changing.lock().await;
         let blocked = blocked_by(self.precheck(&package.manifest, langs).await)?;
         let mut preview = self
             .preview_with(package, langs, blocked, None, &[], None)
@@ -237,8 +245,10 @@ impl PluginManager {
             .await?;
         let lan = self.lan_preview(package, langs).await?;
         let egress = self.egress_problem_for(m, langs).await?;
+        let dependencies = self.dependency_preview(m, langs).await?;
         let egress_block = egress.as_ref().filter(|p| blocks(p));
         let blocked = blocked
+            .or(dependencies.blocked)
             .or(gpu.blocked)
             .or(lan.blocked)
             .or_else(|| egress_block.map(|p| p.message.clone()))
@@ -272,6 +282,7 @@ impl PluginManager {
         // 不挡安装的问题：探测只试了一个网站。
         let uncertain = egress.filter(|p| !blocks(p));
         notices.extend(uncertain.map(|p| line(p.message)));
+        notices.extend(dependencies.notices);
         // 缺默认模型的提醒不挡安装：先接模型，Bot 才能回话。只读模型列表，不发计费补全。
         if let Some(notice) = self.model_route_notice(m, langs).await {
             notices.push(notice);
@@ -283,7 +294,7 @@ impl PluginManager {
             written_by,
             commit: package.origin.as_ref().map(|o| o.commit.clone()),
             digest: package.digest(),
-            plan: String::new(),
+            plan: self.dependency_plan(package)?,
             id: m.id.to_string(),
             title: langs.pick_owned(&m.title),
             summary: langs.pick_owned(&m.description),
@@ -300,9 +311,9 @@ impl PluginManager {
             secret_inputs: super::secret_input::lines(m, &|_| false, false, langs),
             settings,
             notices,
-            missing_requires: Vec::new(),
-            missing_wants: Vec::new(),
-            wanting_plugins: Vec::new(),
+            missing_requires: dependencies.missing_requires,
+            missing_wants: dependencies.missing_wants,
+            wanting_plugins: dependencies.wanting_plugins,
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,
@@ -467,6 +478,29 @@ impl PluginManager {
             return Ok(Some(l10n::text(langs, "install-system-preinstalled", &[])));
         }
         blocked_by(self.fits_host(m, langs).await)
+    }
+
+    fn with_dependency_status(
+        &self,
+        mut plugin: InstalledPlugin,
+        langs: &Languages,
+    ) -> InstalledPlugin {
+        if !matches!(plugin.status, PluginState::Running { .. }) {
+            return plugin;
+        }
+        let listed = self
+            .plugins
+            .read()
+            .expect("插件表锁中毒")
+            .iter()
+            .find(|(id, _)| id.as_str() == plugin.id)
+            .and_then(|(_, entry)| entry.listed.clone());
+        if let Some(listed) = listed
+            && let Some(reason) = self.dependency_problem(&listed.manifest, langs)
+        {
+            plugin.status = PluginState::Degraded { reason };
+        }
+        plugin
     }
 
     /// 列表里的一项，还没填 Bot。

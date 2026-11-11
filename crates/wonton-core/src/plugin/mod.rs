@@ -17,6 +17,7 @@ pub mod contacts;
 pub mod core_address;
 #[cfg(test)]
 mod core_address_tests;
+pub(crate) mod dependencies;
 pub mod docker;
 pub mod docker_exec;
 mod docker_limits;
@@ -42,6 +43,7 @@ pub mod images;
 pub mod index_location;
 mod install_entry;
 mod install_error;
+mod installation;
 pub mod interpolate;
 pub mod lan;
 pub mod languages;

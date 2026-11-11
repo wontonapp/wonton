@@ -109,6 +109,8 @@ pub struct InstallContext {
     pub bots: BTreeMap<String, BotVars>,
     /// 声明了 `models` 时：模型网关的地址、凭据和默认模型。
     pub models: Option<ModelVars>,
+    /// 通用能力的地址和凭据，仅用于清单插值；Debug 不打印值。
+    pub capabilities: BTreeMap<String, String>,
     /// 声明了 `tools` 时：MCP 总线的地址。
     pub mcp_url: Option<String>,
     /// 声明了 `notify` 时：发通知的地址（ADR-0047）。
@@ -278,6 +280,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
                     .unwrap_or_default(),
                 default_model: "dry-run".into(),
             }),
+        capabilities: dry_run_capabilities(manifest),
         mcp_url: manifest
             .permissions
             .contains(&Permission::Tools)
@@ -320,6 +323,23 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
                 .collect::<Vec<_>>(),
         ),
     }
+}
+
+fn dry_run_capabilities(manifest: &Manifest) -> BTreeMap<String, String> {
+    super::dependencies::declarations(manifest)
+        .flat_map(|capability| {
+            [
+                (
+                    super::capabilities::var_url(capability),
+                    format!("http://{}.wonton.internal", capability),
+                ),
+                (
+                    super::capabilities::var_key(capability),
+                    "dry-run".to_owned(),
+                ),
+            ]
+        })
+        .collect()
 }
 
 pub fn render(

@@ -640,7 +640,10 @@ async fn an_uninstall_finishes_after_its_request_goes_away() {
     ));
     let request = tokio::spawn({
         let (m, id) = (m.clone(), id.clone());
-        async move { m.uninstall_detached(id, true, super::langs()).await }
+        async move {
+            m.uninstall_detached(id, true, Vec::new(), true, super::langs())
+                .await
+        }
     });
     hold.reached().await;
     // 请求断开时 hyper 丢弃处理它的 future。
@@ -649,7 +652,7 @@ async fn an_uninstall_finishes_after_its_request_goes_away() {
 
     // 卸载还在进行：再来一次如实回答，不另起一次。
     let err = m
-        .uninstall_detached(id.clone(), true, super::langs())
+        .uninstall_detached(id.clone(), true, Vec::new(), true, super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "conflict");
