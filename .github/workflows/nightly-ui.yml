@@ -83,11 +83,17 @@ jobs:
           import json, subprocess
           devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"]))["devices"]
           # 折屏（Duo）有两个显示，simctl recordVideo 不指定 --display 会等 5 分钟再报错，跳过它。
-          for runtime in sorted(devices, reverse=True):
-              for device in devices[runtime]:
-                  if device["name"].startswith("iPhone") and "Duo" not in device["name"]:
+          # 同系统上优先成熟型号：最新那一代在镜像里刚上线，装测试包时崩过 CoreSimulator。
+          available = [d for runtime in sorted(devices, reverse=True) for d in devices[runtime]]
+          for name in ["iPhone 17 Pro", "iPhone 17", "iPhone 16 Pro", "iPhone 16"]:
+              for device in available:
+                  if device["name"] == name:
                       print(device["udid"])
                       raise SystemExit
+          for device in available:
+              if device["name"].startswith("iPhone") and "Duo" not in device["name"]:
+                  print(device["udid"])
+                  raise SystemExit
           raise SystemExit("镜像里没有可用的 iPhone 模拟器")
           PY
           )
