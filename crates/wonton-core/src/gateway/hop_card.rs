@@ -1,46 +1,131 @@
-//! 跳数到顶时问主人要不要继续（ADR-0045 的“频率和跳数”）：核心发一张确认卡片，“继续”清零放行，“先停着”什么都
-//! 不做，房间等人说话或闲置够了再清零。卡片走总线的确认机制（ADR-0016），发起者记成被停下的那个 Bot 的插件。
+//! 跳数到顶时问 Bot 的归属人要不要继续（ADR-0045 的“频率和跳数”）。
+//!
+//! 每个归属人一张卡片：私人 Bot 发给它的归属人，共享 Bot 发给主人，两个 Bot 归同一个人时一张。卡片的发起者是这个
+//! 归属人的 Bot，来源会话是被停下的房间。所有卡片都选了“继续”才清零放行：任何一方选“先停着”或没回答，房间就停着，
+//! 等人说话或闲置够了再清零。只要一方同意就放行，等于替另一方的 Bot 决定接着说。卡片走总线的确认机制（ADR-0016）。
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use wonton_protocol::{Answer, CardChoice, ConfirmationState};
+use futures_util::FutureExt;
+use futures_util::future::{BoxFuture, join_all};
+use wonton_protocol::{
+    Answer, BotRef, CardChoice, ConfirmationCard, ConfirmationOrigin, ConfirmationRequester,
+    ConfirmationState,
+};
 
 use super::Gateway;
 use super::send_limits::{HopLimitReached, SendLimiter};
 use crate::l10n;
-use crate::mcp::{Bus, Draft};
-use crate::plugin::PluginId;
+use crate::mcp::{Audience, Bus, Draft, Notifier};
 use crate::plugin::languages::Languages;
+use crate::plugin::{PluginId, PluginManager};
 
-/// 发卡片、等主人回答都在后台：Bot 的这次发送已经拿到 403，不等卡片。
-pub(super) fn ask_to_continue(gateway: &Gateway, plugin: &PluginId, stopped: HopLimitReached) {
+/// 一张卡片：发给谁（`None` 是主人），用哪个 Bot 的名义。
+struct Ask {
+    recipient: Option<String>,
+    plugin: PluginId,
+    bot: String,
+    user_id: String,
+}
+
+/// 发卡片、等回答都在后台：Bot 的这次发送已经拿到 403，不等卡片。
+pub(super) fn ask_to_continue(gateway: &Gateway, stopped: HopLimitReached) {
     let Some(mcp) = &gateway.mcp else {
-        // 没有总线就没法问主人：如实记下，房间照样停着，等人说话再清零。
+        // 没有总线就没法问归属人：如实记下，房间照样停着，等人说话再清零。
         tracing::error!(room = %stopped.room_id, "跳数到顶，但总线没启用，发不了“继续”卡片");
         return;
     };
+    let asks = asks(&gateway.plugins, gateway.owner.username(), &stopped);
+    if asks.is_empty() {
+        tracing::error!(room = %stopped.room_id, bots = ?stopped.bot_user_ids, "跳数到顶，但认不出 Bot 的归属人，发不了卡片");
+        return;
+    }
     let bus = mcp.bus.clone();
     let limiter = gateway.send_limits.clone();
-    let plugin = plugin.clone();
-    tokio::spawn(ask(bus, limiter, plugin, stopped));
+    tokio::spawn(ask_all(bus, limiter, asks, stopped));
 }
 
-async fn ask(bus: Arc<Bus>, limiter: Arc<SendLimiter>, plugin: PluginId, stopped: HopLimitReached) {
+/// 按归属人分卡片：同一个人的 Bot 只占一张，用排在前面的那个 Bot 的名义。
+fn asks(plugins: &PluginManager, owner: &str, stopped: &HopLimitReached) -> Vec<Ask> {
+    let mut by_keeper: BTreeMap<Option<String>, Ask> = BTreeMap::new();
+    for user_id in &stopped.bot_user_ids {
+        let Some((plugin, bot, keeper)) = plugins.bot_by_user(user_id) else {
+            tracing::warn!(bot = %user_id, "跳数到顶的 Bot 不在 Bot 记录里，不给它发卡片");
+            continue;
+        };
+        let recipient = (keeper != owner).then_some(keeper);
+        by_keeper.entry(recipient.clone()).or_insert(Ask {
+            recipient,
+            plugin,
+            bot,
+            user_id: user_id.clone(),
+        });
+    }
+    by_keeper.into_values().collect()
+}
+
+async fn ask_all(
+    bus: Arc<Bus>,
+    limiter: Arc<SendLimiter>,
+    asks: Vec<Ask>,
+    stopped: HopLimitReached,
+) {
     let langs = bus.owner_languages();
-    let draft = draft(&stopped, limiter.hop_limit(), &langs);
-    match bus.confirmations().ask(&plugin, draft).await {
-        Ok(ticket) => {
-            limiter.resume(&stopped.room_id);
-            let message = l10n::text(&langs, "chat-hop-limit-resumed", &[]);
+    let hops = limiter.hop_limit();
+    let answers = join_all(asks.into_iter().map(|ask| {
+        let bus = bus.clone();
+        let draft = draft(&stopped, hops, &langs);
+        let audience = Audience {
+            recipient: ask.recipient.clone(),
+            requester: Some(ConfirmationRequester::Bot {
+                bot: BotRef {
+                    plugin_id: ask.plugin.to_string(),
+                    bot: ask.bot.clone(),
+                },
+                user_id: ask.user_id.clone(),
+            }),
+            origin: Some(ConfirmationOrigin {
+                room_id: stopped.room_id.clone(),
+                thread_id: None,
+            }),
+        };
+        // 主人的卡片照常进通知房间；家人的卡片只在他的“等你确认”列表里（ADR-0016 的会话内显示）。
+        let notifier = match ask.recipient {
+            None => bus.confirmations().default_notifier_arc(),
+            Some(_) => Arc::new(ListOnly) as Arc<dyn Notifier>,
+        };
+        async move {
             bus.confirmations()
-                .finish(ticket, ConfirmationState::Succeeded { message })
-                .await;
+                .ask_as(notifier, &ask.plugin, draft, audience)
+                .await
         }
-        Err(refusal) => tracing::info!(
-            room = %stopped.room_id,
-            reason = refusal.kind(),
-            "主人没选继续，房间停着"
-        ),
+    }))
+    .await;
+    let all_continue = answers.iter().all(Result::is_ok);
+    if all_continue {
+        limiter.resume(&stopped.room_id);
+    }
+    for answer in answers {
+        match answer {
+            Ok(ticket) => {
+                let state = if all_continue {
+                    ConfirmationState::Succeeded {
+                        message: l10n::text(&langs, "chat-hop-limit-resumed", &[]),
+                    }
+                } else {
+                    ConfirmationState::Failed {
+                        message: l10n::text(&langs, "chat-hop-limit-kept-by-other", &[]),
+                    }
+                };
+                bus.confirmations().finish(ticket, state).await;
+            }
+            Err(refusal) => tracing::info!(
+                room = %stopped.room_id,
+                reason = refusal.kind(),
+                "归属人没选继续，房间停着"
+            ),
+        }
     }
 }
 
@@ -70,5 +155,22 @@ fn draft(stopped: &HopLimitReached, hops: u32, langs: &Languages) -> Draft {
         scope: None,
         plugin_id: None,
         secret_inputs: Vec::new(),
+    }
+}
+
+/// 家人的卡片不发进任何 Matrix 房间：核心记着，家人的 App 从“等你确认”列表取，画在来源会话里。
+struct ListOnly;
+
+impl Notifier for ListOnly {
+    fn post<'a>(&'a self, card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>> {
+        async move { Ok(card.id.clone()) }.boxed()
+    }
+
+    fn update<'a>(
+        &'a self,
+        _handle: &'a str,
+        _card: &'a ConfirmationCard,
+    ) -> BoxFuture<'a, Result<Option<String>, String>> {
+        async { Ok(None) }.boxed()
     }
 }

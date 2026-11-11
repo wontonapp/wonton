@@ -15,7 +15,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use futures_util::future::BoxFuture;
 use tokio::sync::oneshot;
 use wonton_protocol::{
-    Answer, CardChoice, ConfirmationCard, ConfirmationState, SecretInput, SecretValues,
+    Answer, CardChoice, ConfirmationCard, ConfirmationOrigin, ConfirmationRequester,
+    ConfirmationState, SecretInput, SecretValues,
 };
 
 use super::cards::Draft;
@@ -46,6 +47,15 @@ pub trait Notifier: Send + Sync {
         handle: &'a str,
         card: &'a ConfirmationCard,
     ) -> BoxFuture<'a, Result<Option<String>, String>>;
+}
+
+/// 卡片发给谁、谁发起的、显示在哪个会话。默认（全空）是发给主人、没有发起者和来源会话。
+#[derive(Clone, Debug, Default)]
+pub struct Audience {
+    /// 回答这张卡片的家人的用户名；`None` 是主人。只有这个人能在列表里看到、能回答。
+    pub recipient: Option<String>,
+    pub requester: Option<ConfirmationRequester>,
+    pub origin: Option<ConfirmationOrigin>,
 }
 
 /// 没能执行的原因。
@@ -136,6 +146,8 @@ pub struct Chosen {
 
 struct Slot {
     caller: PluginId,
+    /// 见 [`Audience::recipient`]。
+    recipient: Option<String>,
     /// 这张卡片的发送方：默认是通知房间，Bot 钉页的同意是它自己的房间。
     notifier: Arc<dyn Notifier>,
     /// 这张卡片能打开放行时段时，时段管哪个插件。
@@ -196,7 +208,7 @@ impl Confirmations {
     }
 
     /// 同 [`Self::default_notifier`]，给要留着发送方的调用。
-    pub(super) fn default_notifier_arc(&self) -> Arc<dyn Notifier> {
+    pub(crate) fn default_notifier_arc(&self) -> Arc<dyn Notifier> {
         self.notifier.clone()
     }
 
@@ -221,7 +233,19 @@ impl Confirmations {
         caller: &PluginId,
         draft: Draft,
     ) -> Result<Ticket, Refusal> {
-        let (card, answered) = self.open(notifier.clone(), caller, draft)?;
+        self.ask_as(notifier, caller, draft, Audience::default())
+            .await
+    }
+
+    /// 同 [`Self::ask_with`]，卡片发给 `audience` 说的人、带上发起者和来源会话。
+    pub async fn ask_as(
+        &self,
+        notifier: Arc<dyn Notifier>,
+        caller: &PluginId,
+        draft: Draft,
+        audience: Audience,
+    ) -> Result<Ticket, Refusal> {
+        let (card, answered) = self.open_as(notifier.clone(), caller, draft, audience)?;
         let chosen = self.deliver(&*notifier, &card, answered).await?;
         self.publish(&card.id).await;
         match chosen.answer {
@@ -251,12 +275,22 @@ impl Confirmations {
         }
     }
 
-    /// 登记一张等回答的卡片，还没发出去。
+    /// 登记一张发给主人、等回答的卡片，还没发出去。
     pub(super) fn open(
         &self,
         notifier: Arc<dyn Notifier>,
         caller: &PluginId,
         draft: Draft,
+    ) -> Result<(ConfirmationCard, oneshot::Receiver<Chosen>), Refusal> {
+        self.open_as(notifier, caller, draft, Audience::default())
+    }
+
+    fn open_as(
+        &self,
+        notifier: Arc<dyn Notifier>,
+        caller: &PluginId,
+        draft: Draft,
+        audience: Audience,
     ) -> Result<(ConfirmationCard, oneshot::Receiver<Chosen>), Refusal> {
         let created = SystemTime::now();
         let card = ConfirmationCard {
@@ -270,8 +304,8 @@ impl Confirmations {
             secret_inputs: draft.secret_inputs.clone(),
             settings: None,
             window: None,
-            requester: None,
-            origin: None,
+            requester: audience.requester,
+            origin: audience.origin,
         };
         let (waiter, answered) = oneshot::channel();
         let mut table = self.lock();
@@ -291,6 +325,7 @@ impl Confirmations {
         }
         let slot = Slot {
             caller: caller.clone(),
+            recipient: audience.recipient,
             notifier,
             scope: draft.scope,
             released_by: None,
@@ -351,6 +386,26 @@ impl Confirmations {
             .collect();
         cards.sort_by_key(|card| card.expires_at_ms);
         cards
+    }
+
+    /// 发给某个人的、等回答的卡片（`None` 是主人），最早到期的在前。
+    pub fn pending_for(&self, recipient: Option<&str>) -> Vec<ConfirmationCard> {
+        let now = now_ms(SystemTime::now());
+        let mut cards: Vec<_> = self
+            .lock()
+            .slots
+            .values()
+            .filter(|slot| slot.waiter.is_some() && slot.card.expires_at_ms > now)
+            .filter(|slot| slot.recipient.as_deref() == recipient)
+            .map(|slot| slot.card.clone())
+            .collect();
+        cards.sort_by_key(|card| card.expires_at_ms);
+        cards
+    }
+
+    /// 卡片 `id` 发给谁（`Some(None)` 是主人）；没有这张卡片时是 `None`。
+    pub fn recipient(&self, id: &str) -> Option<Option<String>> {
+        self.lock().slots.get(id).map(|slot| slot.recipient.clone())
     }
 
     /// 主人的回答。确认后卡片变成“正在执行”，拒绝后变成“已拒绝”。
