@@ -1,17 +1,20 @@
 //! 跳数的行为测试（ADR-0045 的“频率和跳数”）：只数不同 Bot 之间的来回，到顶时主人收到“已停下”卡片，选“继续”
 //! 或有人说话就清零。网关后面接假的 Tuwunel，时钟是注入的。
 
+use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::FutureExt as _;
 use hyper::{Method, StatusCode};
 use serde_json::{Value, json};
 use wonton_protocol::{
     Answer, BotKeeper, ConfirmationCard, ConfirmationRequester, ConfirmationState,
-    HOP_LIMIT_ERRCODE,
+    DeviceConfirmationPush, HOP_LIMIT_ERRCODE,
 };
 
 use super::family_rules_tests::{Home, ROOM};
 use super::send_limits::SendLimits;
+use crate::mcp::RecipientPush;
 
 /// 两个 Bot 轮流说话，每条隔 3 秒（频率不挡）：`hermes` 先说，`from..to` 条全都放行。
 async fn take_turns(home: &Home, from: usize, to: usize) {
@@ -377,4 +380,77 @@ async fn keepers_only_see_and_answer_their_own_cards() {
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     let (status, _, body) = approve_as(&home, hers, &alices.id).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+/// 收件人推送的替身：记下推给了谁、哪张卡（ADR-0016）。
+#[derive(Default)]
+struct RecordedPushes(std::sync::Mutex<Vec<(String, DeviceConfirmationPush)>>);
+
+impl RecipientPush for RecordedPushes {
+    fn push<'a>(
+        &'a self,
+        person: &'a str,
+        card: &'a DeviceConfirmationPush,
+    ) -> futures_util::future::BoxFuture<'a, Result<(), String>> {
+        async move {
+            self.0
+                .lock()
+                .unwrap()
+                .push((person.to_owned(), card.clone()));
+            Ok(())
+        }
+        .boxed()
+    }
+}
+
+#[tokio::test]
+async fn the_family_card_is_pushed_to_her_and_the_owners_is_not() {
+    let home = Home::with_keeper(SendLimits::default(), alice()).await;
+    home.seed_room(ROOM);
+    let pushes = Arc::new(RecordedPushes::default());
+    home.bus.confirmations().attach_push(Some(pushes.clone()));
+    let owners = stop_the_pair(&home).await;
+    let alices = alices_card(&home).await;
+    let recorded = pushes.0.lock().unwrap();
+    assert_eq!(recorded.len(), 1, "只有收件人的卡片走直推：{recorded:?}");
+    let (person, card) = &recorded[0];
+    assert_eq!(person, "alice");
+    assert_eq!(card.id, alices.id);
+    assert_ne!(alices.id, owners.id, "两边的卡片不是同一张");
+    assert_eq!(card.title, alices.title);
+    assert_eq!(card.origin.as_ref().map(|o| o.room_id.as_str()), Some(ROOM));
+    drop(recorded);
+    // 主人的卡片照常进通知房间（消息推送自己会响），不走直推。
+    assert_eq!(home.cards.posted.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn the_family_card_is_written_in_her_language() {
+    let home = Home::with_keeper(SendLimits::default(), alice()).await;
+    home.seed_room(ROOM);
+    // alice 的 App 用日语（ADR-0043）：她的卡片按她的语言写，主人的照旧按主人的（这里记成中文）。
+    home.plugins.note_person_languages("alice", Some("ja"));
+    home.plugins.note_person_languages("owner", Some("zh-Hans"));
+    let owners = stop_the_pair(&home).await;
+    let alices = alices_card(&home).await;
+    assert!(
+        alices.title.contains("やり取りしたため"),
+        "alice 的卡片是日语：{}",
+        alices.title
+    );
+    assert!(
+        alices.choices.iter().any(|choice| choice.label == "続ける"),
+        "alice 的按钮是日语：{:?}",
+        alices.choices
+    );
+    assert!(
+        owners.title.contains("来回说了"),
+        "主人的卡片还是中文：{}",
+        owners.title
+    );
+    assert!(
+        owners.choices.iter().any(|choice| choice.label == "继续"),
+        "主人的按钮还是中文：{:?}",
+        owners.choices
+    );
 }

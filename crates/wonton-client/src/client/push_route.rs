@@ -11,7 +11,7 @@ use wonton_protocol::{ChatFailure, CoreError, PushEndpoint, PushNotification, Pu
 use super::ClientCore;
 use super::switch::lock;
 use crate::l10n::{CATALOG, language};
-use crate::push::{Payload, record};
+use crate::push::{DirectConfirmation, Payload, record};
 use crate::scope::{Entered, Scope, Visits};
 use crate::servers::ServerList;
 
@@ -43,6 +43,10 @@ impl ClientCore {
         &self,
         payload: Vec<u8>,
     ) -> Result<Option<PushNotification>, CoreError> {
+        // 家人的确认卡片直推（ADR-0016）：卡片内容就在推送里，认出槽位就行，不用连上服务器取消息。
+        if let Some(direct) = DirectConfirmation::parse(&payload) {
+            return Ok(Some(self.route_direct(direct)?));
+        }
         let payload = Payload::parse(&payload)?;
         let (slot, notification) = match self.route(&payload.server)? {
             Route::Current(scope) => (scope.slot.clone(), in_scope(&scope, &payload).await?),
@@ -79,6 +83,17 @@ impl ClientCore {
 }
 
 impl ClientCore {
+    /// 确认卡片直推不用连上那台服务器：卡片内容是全的，认出本机的槽位就行。推送来自已移除的服务器时
+    /// `server_id` 留空，壳照实说。
+    fn route_direct(&self, direct: DirectConfirmation) -> Result<PushNotification, CoreError> {
+        let slot = self.servers.slot_of(&direct.server);
+        Ok(slot.map(|slot| PushNotification {
+            server_id: Some(slot),
+            ..direct.notification()
+        })
+        .unwrap_or_else(|| direct.notification()))
+    }
+
     /// 和换服务器串行：判断是不是当前这台、为它开临时作用域，中间不会换服务器。
     fn route(&self, server: &str) -> Result<Route, CoreError> {
         let _switching = lock(&self.switching);

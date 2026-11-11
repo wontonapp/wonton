@@ -49,7 +49,7 @@ use audit::{Audit, Basis, Decision, Grounds, Record};
 pub use cards::Draft;
 pub use cards::content as card_content;
 pub use cards::text as card_text;
-pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Refusal};
+pub use confirm::{AnswerError, Audience, Confirmations, Notifier, RecipientPush, Refusal};
 pub use notifier::NoMatrix;
 pub use server::Caller;
 use takeover::Takeovers;
@@ -254,6 +254,15 @@ impl Bus {
     /// 主人最近一次请求用的语言：Agent 和 Bot 的调用没有请求头，文字按它写（ADR-0043）。
     pub fn owner_languages(&self) -> Languages {
         self.plugins.owner_languages()
+    }
+
+    /// 卡片文字用谁的语言：发给家人的按他最近一次请求的 `Accept-Language`（ADR-0043）；他还没打开过 App、
+    /// 没有记录时按主人的语言（协商空列表会落到英文，不是主人的语言）。主人的卡片按主人的。
+    pub fn languages_for(&self, recipient: Option<&str>) -> Languages {
+        match recipient.and_then(|person| self.plugins.person_languages(person)) {
+            Some(header) => Languages::from_header(Some(&header)),
+            None => self.owner_languages(),
+        }
     }
 
     pub fn endpoint(self: &Arc<Self>) -> Endpoint {
