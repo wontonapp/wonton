@@ -7,8 +7,9 @@ use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 use wonton_matrix::{MatrixSession, UserProfile};
 use wonton_protocol::{
-    AVATARS_FIELD, AvatarImage, AvatarKind, AvatarMedia, BotActivity, BotActivityFacts, BotView,
-    ChatForm, ChatViewModel, HomeStatus, InstalledPlugins, MediaHandle, StateAvatar, StateAvatars,
+    AVATARS_FIELD, AvatarImage, AvatarKind, AvatarMedia, BotActivity, BotActivityFacts, BotRef,
+    BotView, ChatForm, ChatViewModel, HomeStatus, InstalledPlugins, MediaHandle, StateAvatar,
+    StateAvatars,
 };
 
 use super::bot_activity::{Activity, synthesize};
@@ -170,7 +171,7 @@ impl Bots {
                 }
             };
             bots.view.send_modify(|view| {
-                if let Some(bot) = view.bots.iter_mut().find(|bot| bot.plugin_id == id) {
+                if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
                     bot.name = name;
                     bot.avatar = avatar;
                     bot.state_avatars = state_avatars;
@@ -197,12 +198,16 @@ impl Bots {
                     .filter(|record| record.user_id == *user);
                 let mut bot = previous
                     .as_ref()
-                    .and_then(|_| old.iter().find(|bot| bot.plugin_id == plugin.id))
+                    .and_then(|_| old.iter().find(|bot| bot.bot.plugin_id == plugin.id))
                     .cloned()
                     .unwrap_or_else(|| BotView {
                         chat: Default::default(),
                         user_id: user.clone(),
-                        plugin_id: plugin.id.clone(),
+                        bot: BotRef {
+                            plugin_id: plugin.id.clone(),
+                            bot: "default".into(),
+                        },
+                        web: None,
                         name: plugin.title.clone(),
                         avatar: None,
                         state_avatars: Vec::new(),
@@ -274,7 +279,7 @@ impl Bots {
                 let plugin = installed
                     .plugins
                     .iter()
-                    .find(|plugin| plugin.id == bot.plugin_id);
+                    .find(|plugin| plugin.id == bot.bot.plugin_id);
                 bot.chat = layout::bot_settings(
                     &settings,
                     plugin.and_then(|plugin| plugin.chat.as_ref()),
@@ -320,7 +325,7 @@ impl Bots {
             for bot in &mut view.bots {
                 let activity = local
                     .records
-                    .get(&bot.plugin_id)
+                    .get(&bot.bot.plugin_id)
                     .and_then(|record| record.activity.state);
                 changed |= bot.activity != activity;
                 bot.activity = activity;
@@ -432,7 +437,11 @@ mod tests {
         BotView {
             chat: Default::default(),
             user_id: "@bot:home".into(),
-            plugin_id: "app.bot".into(),
+            bot: BotRef {
+                plugin_id: "app.bot".into(),
+                bot: "default".into(),
+            },
+            web: None,
             name: "Bot".into(),
             avatar: None,
             state_avatars: states
