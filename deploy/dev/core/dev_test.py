@@ -43,7 +43,35 @@ compose() {
 }
 docker() {
   case "${1:-}" in
-    ps) names ;;
+    ps)
+      # clean-data 的“栈 down 没有”检查用 ps -q 按标签数容器；FAKE_RUNNING_STACKS 非空时当作有在跑的。
+      if [[ " $* " == *" -q "* ]]; then
+        [[ -n "${FAKE_RUNNING_STACKS:-}" ]] && printf 'c1\nc2\n'
+      else
+        names
+      fi ;;
+    run)
+      # 模拟一次性容器：wipe_data 的 sh -c 整段脚本换算；clean_data 的 --entrypoint rm 把镜像后的参数换算后执行，
+      # 挂载点（-v <宿主>:<容器路径>）里的容器路径换成宿主路径，让删除真的发生。
+      local -a args=("${@:2}") cmd=()
+      local i entry="" mount="" point="" script="" started=0
+      for i in "${!args[@]}"; do
+        case ${args[i]} in
+          --entrypoint) entry="${args[i + 1]}" ;;
+          -v) mount="${args[i + 1]}"; point="${mount#*:}" ;;
+          -c) script="${args[i + 1]}" ;;
+        esac
+      done
+      if [[ -n $script ]]; then
+        bash -c "${script//${point}/${mount%%:*}}"
+      else
+        for i in "${!args[@]}"; do
+          (( started )) && cmd+=("${args[i]//$point/${mount%%:*}}")
+          [[ ${args[i]} == "$curl_image" ]] && started=1
+        done
+        if [[ -n $entry ]]; then "$entry" "${cmd[@]}"; else "${cmd[@]}"; fi
+      fi
+      ;;
     logs) printf 'plugin-logs:%s\n' "$*" ;;
     inspect) printf '%s\n' "${FAKE_RUNNING:-true}" ;;
     exec)
@@ -80,7 +108,7 @@ class DevScriptTest(unittest.TestCase):
         self.temp = Path(tempfile.mkdtemp(prefix="dev-script-"))
         self.addCleanup(shutil.rmtree, self.temp)
 
-    def run_dev(self, *args, **extra):
+    def run_dev(self, *args, dev_sh=None, **extra):
         env = {
             "PATH": os.environ["PATH"],
             "HOME": str(self.temp),
@@ -91,9 +119,18 @@ class DevScriptTest(unittest.TestCase):
         }
         script = f'source "$1"\n{STUBS}\n' + " ".join(args)
         return subprocess.run(
-            ["bash", "-c", script, "bash", str(DEV_SH)],
+            ["bash", "-c", script, "bash", str(dev_sh or DEV_SH)],
             env=env, capture_output=True, text=True, timeout=60,
         )
+
+    def fake_core(self):
+        """dev.sh 的副本放在假的检出树里：clean-data 的路径守卫拿 $here/..（deploy/dev）当边界，
+        数据目录要在它下面，测试得有自己的一份 deploy/dev，不往真检出里写。"""
+        core = self.temp / "deploy/dev/core"
+        core.mkdir(parents=True)
+        shutil.copy(DEV_SH, core / "dev.sh")
+        shutil.copy(HERE / "diag.sh", core / "diag.sh")
+        return core
 
     def test_logs_follows_core_service(self):
         result = self.run_dev("logs", "hydra")
@@ -157,6 +194,44 @@ class DevScriptTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("读不到设置", result.stdout)
         self.assertIn("http_proxy=", result.stdout, "接口失败后后面的项照样跑")
+
+    def test_clean_data_removes_data_dir_inside_deploy_dev(self):
+        core = self.fake_core()
+        data = core / ".data"
+        (data / "core").mkdir(parents=True)
+        (data / "core" / "db").write_text("x")
+        (data / ".hidden").write_text("x")
+        result = self.run_dev("clean_data", dev_sh=core / "dev.sh", WONTON_DEV_DATA=str(data))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(data.exists(), "数据目录整个删掉")
+        self.assertIn("已删掉数据目录", result.stdout)
+
+    def test_clean_data_refuses_while_stack_is_running(self):
+        core = self.fake_core()
+        data = core / ".data"
+        (data / "core").mkdir(parents=True)
+        result = self.run_dev(
+            "clean_data", dev_sh=core / "dev.sh", WONTON_DEV_DATA=str(data), FAKE_RUNNING_STACKS="1"
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("还有在跑的容器", result.stderr)
+        self.assertTrue(data.exists(), "栈在跑时不能删数据目录")
+
+    def test_clean_data_refuses_outside_deploy_dev(self):
+        outside = self.temp / "elsewhere" / "data"
+        outside.mkdir(parents=True)
+        result = self.run_dev("clean_data", WONTON_DEV_DATA=str(outside))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("不在", result.stderr)
+        self.assertTrue(outside.exists(), "检出外的目录不动")
+
+    def test_clean_data_refuses_deploy_dev_itself(self):
+        core = self.fake_core()
+        deploy = self.temp / "deploy" / "dev"
+        result = self.run_dev("clean_data", dev_sh=core / "dev.sh", WONTON_DEV_DATA=str(deploy))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("不在", result.stderr)
+        self.assertTrue(deploy.exists())
 
 
 if __name__ == "__main__":

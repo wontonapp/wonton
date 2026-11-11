@@ -169,7 +169,7 @@ USER = '@' + OWNER + ':wonton.localhost'
 
 def request(base, path, method='GET', value=None, token=None, raw=False, content_type=None, timeout=15):
     headers = {}
-    # 127.0.0.1 会被当成局域网地址去走 LAN 路由；核心接口要按公开域名分类才进得了核心。
+    # 127.0.0.1 会被当成局域网地址去走 LAN 路由；核心接口要按公开域名分类才进得了核心（dev.sh 头部有完整说明）。
     if base == CORE:
         headers['Host'] = os.environ['SMOKE_DOMAIN']
     if token:
