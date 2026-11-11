@@ -30,6 +30,8 @@ pub trait Room: Send + Sync + 'static {
     /// 发一条不推送的 `m.notice`。
     fn send_notice(&self, text: &str) -> impl Future<Output = Result<()>> + Send;
     fn typing(&self, typing: bool) -> impl Future<Output = Result<()>> + Send;
+    /// 重发被服务器拒收、卡在队首的消息，返回几条。
+    fn resend_refused(&self) -> impl Future<Output = Result<usize>> + Send;
     fn redact(&self, event_id: &str, reason: &str) -> impl Future<Output = Result<()>> + Send;
     fn set_state(
         &self,
@@ -81,6 +83,10 @@ impl<R: Room> Room for std::sync::Arc<R> {
 
     async fn typing(&self, typing: bool) -> Result<()> {
         (**self).typing(typing).await
+    }
+
+    async fn resend_refused(&self) -> Result<usize> {
+        (**self).resend_refused().await
     }
 
     async fn redact(&self, event_id: &str, reason: &str) -> Result<()> {
@@ -145,6 +151,10 @@ impl Room for ChatRoom {
 
     async fn typing(&self, typing: bool) -> Result<()> {
         Ok(ChatRoom::typing_notice(self, typing).await?)
+    }
+
+    async fn resend_refused(&self) -> Result<usize> {
+        Ok(ChatRoom::resend_refused(self).await?)
     }
 
     async fn redact(&self, event_id: &str, reason: &str) -> Result<()> {

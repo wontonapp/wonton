@@ -5,6 +5,7 @@
 //! 子模块里，`run_room` 只做事件分发。
 
 mod permissions;
+mod refused;
 mod routing;
 mod sessions;
 mod tasks;
@@ -214,6 +215,8 @@ struct RoomState {
     /// 主对话最近的文字消息（事件 ID 和原文），拼话题开局时取话题起点和前文。
     history: VecDeque<(String, String)>,
     last_activity: Instant,
+    /// 被网关拒收的自己的消息。
+    refused: refused::Refused,
 }
 
 /// 主对话里存多少条最近消息；开局最多带 6 条前文，留够余量。
@@ -420,19 +423,13 @@ async fn run_room<R: Room>(
         waiters: Vec::new(),
         history: VecDeque::new(),
         last_activity: Instant::now(),
+        refused: refused::Refused::default(),
     };
     let mut idle_tick = tokio::time::interval(bridge.config.limits.idle_tick);
     loop {
         tokio::select! {
             Some(messages) = updates.next() => {
-                routing::route_owner_messages(
-                    &context,
-                    &mut state,
-                    &mut topics,
-                    &messages,
-                    &mut seen,
-                )
-                .await?;
+                on_messages(&context, &mut state, &mut topics, &messages, &mut seen).await?;
             }
             notice = acp_notices.recv() => {
                 handle_acp_notice(&context, &mut state, &mut topics, &mut commands, notice).await?;
@@ -473,6 +470,18 @@ async fn run_room<R: Room>(
             }
         }
     }
+}
+
+/// 房间时间线变了：先看自己被拒收的消息，再把人的新消息交给会话。
+async fn on_messages<R: Room>(
+    context: &TurnContext<R>,
+    state: &mut RoomState,
+    topics: &mut Topics,
+    messages: &[Message],
+    seen: &mut HashSet<String>,
+) -> BridgeResult<()> {
+    refused::handle(context, &mut state.refused, messages, seen, &state.owner).await?;
+    routing::route_owner_messages(context, state, topics, messages, seen).await
 }
 
 /// 一条 ACP 通知：任务事件开话题，其余交给命令菜单和改文件表。

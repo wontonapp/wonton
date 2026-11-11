@@ -3,7 +3,8 @@
 //! - [`ME_PATH`]：这台设备的人是谁、什么角色，每个人都能读。
 //! - [`MEMBERS_PATH`] 和 [`member_path`] 之下：主人邀请、管理、移除家人，给家人出配对码。
 //! - [`SHARED_BOTS_PATH`]：主人建共享 Bot。Bot 的联系人在 [`crate::bot_contacts_path`]，归属人管。
-//! - 网关拒绝 Bot 的 Matrix 请求时，在 [`GATEWAY_REFUSAL_HEADER`] 里写 [`GatewayRefusal`]。
+//! - 网关拒绝 Bot 的 Matrix 请求时，在 [`GATEWAY_REFUSAL_HEADER`] 里写 [`GatewayRefusal`]；跳数到顶另用
+//!   [`HOP_LIMIT_ERRCODE`] 作 `errcode`。
 //!
 //! 核心可能比 App 新：核心多给的字段被忽略；枚举遇到不认识的取值时落到 `Other`。
 
@@ -49,6 +50,10 @@ pub const TOOL_CALL_USER_META: &str = "app.wonton/user";
 
 /// 网关拒绝请求时在此头写类别；Matrix 规则拒绝为 403，分享身份失败为 401，其他分享拒绝为 403。
 pub const GATEWAY_REFUSAL_HEADER: &str = "x-wonton-error";
+
+/// 跳数到顶（[`GatewayRefusal::HopLimit`]）时 403 响应体的 `errcode`。Bot 用的 Matrix SDK 读不到响应头，
+/// `M_FORBIDDEN` 的其余字段也会丢掉，只有自定义的 `errcode` 原样留在错误里，Bot 一侧靠它认出类别。
+pub const HOP_LIMIT_ERRCODE: &str = "APP.WONTON.HOP_LIMIT";
 
 /// 这台设备的人在这台服务器上的身份。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -205,7 +210,7 @@ pub enum GatewayRefusal {
     ContactRequired,
     /// 建公开房间，或把房间改成公开。
     PublicRoom,
-    /// 人上次在这个房间说话之后，Bot 连着发得太多了。
+    /// 人上次在这个房间说话之后，不同 Bot 之间来回说得太多了。
     HopLimit,
     /// OpenID token 失效、发现失败或 userinfo 的服务器名不符（401）。
     ShareIdentity,
