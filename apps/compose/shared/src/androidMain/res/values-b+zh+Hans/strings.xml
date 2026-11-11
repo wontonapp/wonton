@@ -206,6 +206,7 @@
     <string name="timeline_send_failed">发送失败：%1$s</string>
     <string name="timeline_resend">重发</string>
     <string name="timeline_undecryptable">无法解密：本设备还没有这条消息的密钥</string>
+    <string name="timeline_undecryptable_notice">这台设备读不了之前的加密消息。</string>
     <string name="timeline_redacted">消息已撤回</string>
     <string name="timeline_unsupported">暂不支持显示的消息（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->

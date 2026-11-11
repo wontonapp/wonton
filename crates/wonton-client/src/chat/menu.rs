@@ -8,10 +8,10 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 use wonton_l10n::l10n;
-use wonton_matrix::OwnedEventId;
+use wonton_matrix::{EntryKind, MessageBody, OwnedEventId, TimelineEntry, Vector};
 use wonton_protocol::{
-    BackPagination, CoreError, MessageAction, MessageContent, QuotedMessage, TimelineContent,
-    TimelineDiff, TimelineItem, TimelineUpdate, TimelineViewport,
+    BackPagination, ChatViewModel, CoreError, KeyNotice, MessageAction, MessageContent,
+    QuotedMessage, TimelineContent, TimelineDiff, TimelineItem, TimelineUpdate, TimelineViewport,
 };
 
 use super::{ChatLink, invalid, lock, rich};
@@ -135,11 +135,12 @@ impl Menus {
     }
 }
 
-/// 时间线订阅发增量的出口：发给壳之前先应用到菜单上，再带上房间面板的当前视图（ADR-0052）。
+/// 时间线订阅发增量的出口：发给壳之前先应用到菜单上，再带上房间面板的当前视图（ADR-0052）和加密入口。
 pub(super) struct Outbox {
     sender: mpsc::UnboundedSender<TimelineUpdate>,
     menus: Arc<Mutex<Menus>>,
     room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
+    chat: watch::Receiver<ChatViewModel>,
 }
 
 impl Outbox {
@@ -147,16 +148,28 @@ impl Outbox {
         sender: mpsc::UnboundedSender<TimelineUpdate>,
         menus: Arc<Mutex<Menus>>,
         room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
+        chat: watch::Receiver<ChatViewModel>,
     ) -> Self {
         Self {
             sender,
             menus,
             room_view,
+            chat,
         }
+    }
+
+    /// 这一批之后该显示的加密入口。`entries` 是壳那边的整条时间线：只要还有解不开的消息，就看本设备缺的是哪条路。
+    pub(super) fn key_notice(&self, entries: &Vector<TimelineEntry>) -> Option<KeyNotice> {
+        let has_undecryptable = entries.iter().any(|entry| {
+            matches!(&entry.kind, EntryKind::Message(message)
+                if message.body == MessageBody::Undecryptable)
+        });
+        super::view::key_notice(&self.chat.borrow().encryption, has_undecryptable)
     }
 
     pub(super) fn send(
         &self,
+        entries: &Vector<TimelineEntry>,
         diffs: Vec<TimelineDiff>,
         back_pagination: BackPagination,
         viewport: TimelineViewport,
@@ -168,6 +181,7 @@ impl Outbox {
             Some(view) => (view.panel.clone(), view.selected.clone(), view.blocked),
             None => (Vec::new(), None, false),
         };
+        let key_notice = self.key_notice(entries);
         self.sender
             .send(TimelineUpdate {
                 diffs,
@@ -177,6 +191,7 @@ impl Outbox {
                 panel,
                 panel_selected,
                 entry_blocked,
+                key_notice,
             })
             .map_err(|_| ())
     }
