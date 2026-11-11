@@ -1,4 +1,4 @@
-//! 核心网关：按 Host 头把请求分给核心自己、身份提供方或插件网页，所有插件请求先鉴权。
+//! 核心网关：按 Host 头分发请求；插件网页鉴权，登记的 OIDC 回调表单由应用校验（ADR-0078）。
 //!
 //! | Host | 去向 |
 //! | --- | --- |
@@ -7,7 +7,7 @@
 //! | `matrix.<base>` | Matrix 客户端接口，只给经隧道的已配对设备（`matrix`） |
 //! | `push.wonton.internal` | 推送代理，只给 Tuwunel（`push`） |
 //! | `notify.wonton.internal` | 插件发通知进"Wonton"私聊，只放行申请了 `notify` 的插件（`notify`） |
-//! | `<slug>.<base>` | 插件网页，需要插件会话；这个插件自己网络里的容器访问它时不要（ADR-0063） |
+//! | `<slug>.<base>` | 插件网页，需要插件会话；本插件容器自访及受限的 OIDC 回调表单例外 |
 //!
 //! 经隧道接入的已配对设备不需要 Cookie：隧道入口（`crate::tunnel`）把设备身份放进请求扩展
 //! （[`TunnelPeer`]），网关按设备登记表认出它的人（[`Person`]，ADR-0045）。局域网浏览器仍走核心会话加
@@ -413,8 +413,7 @@ impl Gateway {
         })
     }
 
-    /// 插件子域名上的当前人：经隧道的已配对设备，或者这个子域名的插件会话。只在
-    /// [`isolation::credentials_allowed`] 放行的请求上调用。
+    /// 插件域上的当前人：已配对设备或本域插件会话。来源隔离或受限 OIDC 回调允许后才使用。
     fn plugin_person(&self, host: &str, req: &Request) -> Option<Person> {
         self.device_person(req.extensions().get().copied())
             .or_else(|| {
@@ -587,7 +586,7 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
     let host = gateway.public.plugin_host(slug);
     let langs = api::languages(req.headers());
     let format = pages::Format::of(req.headers());
-    let Some(route) = gateway.plugins.route(slug) else {
+    let Some(route) = gateway.plugins.route(slug, req.uri().path()) else {
         return pages::error(
             StatusCode::NOT_FOUND,
             "not_installed",
@@ -613,16 +612,21 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
     }
     let origin = gateway.public.origin(&host);
     let credentials = isolation::credentials_allowed(req.method(), req.headers(), &origin);
+    // 登记 OIDC 回调表单（精确路径、urlencoded、来源限签发方/本插件/缺失）无会话可达，身份由应用校验（ADR-0078）。
+    let callback = plugin_web::oidc_callback_post(&route, &req, &gateway.public, &origin);
     let person = gateway.plugin_person(&host, &req);
-    if !credentials {
+    if !credentials && !callback {
         return request_guards::unauthenticated(gateway, &host, &req, false);
     }
-    let Some(person) = person else {
-        return request_guards::unauthenticated(gateway, &host, &req, true);
+    let person = match person {
+        Some(person) => Some(person),
+        None if callback => None,
+        None => return request_guards::unauthenticated(gateway, &host, &req, true),
     };
     // 插件对家人只看“家人能用”开关：主人开放了才放行（ADR-0045）。核心不查 setup_done（ADR-0021），
     // 家人这一侧没有别的门槛。
-    if !person.is_owner() && !gateway.plugins.family_enabled(&route.id) {
+    if person.as_ref().is_some_and(|p| !p.is_owner()) && !gateway.plugins.family_enabled(&route.id)
+    {
         return pages::error(
             StatusCode::FORBIDDEN,
             "not_shared",
@@ -639,8 +643,15 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         Ok(upstream) => upstream,
         Err(response) => return *response,
     };
-    if let Err(response) =
-        proxy_sso::attach_credentials(gateway, &route, &person, req.headers_mut(), &langs, format)
+    if let Some(person) = &person
+        && let Err(response) = proxy_sso::attach_credentials(
+            gateway,
+            &route,
+            person,
+            req.headers_mut(),
+            &langs,
+            format,
+        )
     {
         return *response;
     }
@@ -729,6 +740,8 @@ mod model_providers_tests;
 mod models_tests;
 #[cfg(test)]
 mod notify_tests;
+#[cfg(test)]
+mod oidc_callback_tests;
 #[cfg(test)]
 mod oidc_consent_tests;
 #[cfg(test)]
