@@ -39,10 +39,13 @@ cleanup() {
   set +e
   if (( status != 0 )); then
     logs="$(mktemp -d /tmp/wonton-capability-logs.XXXXXXXX)"
-    for resource in prepare.log up.log; do
+    for resource in prepare.log up.log command-failure.log; do
       [[ ! -f "$work/$resource" ]] || cp "$work/$resource" "$logs/$resource"
     done
     if (( started )); then compose logs --no-color >"$logs/services.log" 2>&1; fi
+    docker inspect --format '{{json .State}}' "$probe" >"$logs/probe-state.json" 2>&1
+    docker logs "$probe" >"$logs/probe.log" 2>&1
+    docker cp "$probe:/tmp/http-failure.log" "$logs/http-failure.log" >/dev/null 2>&1
     printf '失败日志（私有，未打印凭据）：%s\n' "$logs" >&2
   fi
   docker rm -f "$probe" >/dev/null 2>&1

@@ -122,7 +122,11 @@ def require(condition, label):
 def docker(*args, data=None):
     result = subprocess.run(['docker', *args], input=data, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, check=False)
-    require(result.returncode == 0, 'Docker command failed: ' + ' '.join(args[:2]))
+    if result.returncode != 0:
+        diagnostic = Path(os.environ['WONTON_DEV_DATA']).parent / 'command-failure.log'
+        diagnostic.write_bytes(b'stdout:\n' + result.stdout + b'\nstderr:\n' + result.stderr)
+        diagnostic.chmod(0o600)
+        raise AssertionError(f'Docker command failed ({result.returncode}): ' + ' '.join(args[:2]))
     return result.stdout
 
 
@@ -214,6 +218,10 @@ def request(path, method='GET', body=None, expected=200, raw=False):
             code, data = reply.status, reply.read()
     except HTTPError as error:
         code, data = error.code, error.read()
+    if code != expected:
+        fd = os.open('/tmp/http-failure.log', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'wb') as diagnostic:
+            diagnostic.write(f'{method} {path}: expected {expected}, got {code}\n'.encode() + data)
     # Do not include bodies: an unexpected service response can contain credentials.
     require(code == expected, f'{method} {path}: expected {expected}, got {code}')
     return json.loads(data) if data else None
@@ -226,6 +234,7 @@ def probe():
 
 
 def api(path, method='GET', body=None, expected=200):
+    print(f'STEP: {method} {path}', flush=True)
     payload = {'path': path, 'method': method, 'body': body, 'expected': expected}
     output = docker('exec', '-i', '-e', 'SMOKE_PORT=' + os.environ['WONTON_DEV_PORT'],
                     '-e', 'SMOKE_DOMAIN=' + os.environ['WONTON_DEV_DOMAIN'],
