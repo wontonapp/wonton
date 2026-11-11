@@ -45,7 +45,8 @@
 - 按职责拆模块。新功能放进职责清晰的小模块，不往已经很大的文件末尾追加。
 - 客户端遵循“厚 Rust 核心 + 薄原生壳”：状态、业务逻辑、网络、存储、ViewModel 都在 Rust；
   Swift/Kotlin 只渲染 ViewModel、把用户操作发回核心，以及调用平台能力（推送、相册、文件选择、
-  后台音频等）。
+  后台音频等）。核心导出的 ViewModel 项只有一个壳用到时，CI 的 `scripts/check-shell-parity.py` 报警告、不挡合并；
+  有意只在一边的写进 `.shell-parity-allowlist` 并写明原因。
 
 ## 界面设计
 
