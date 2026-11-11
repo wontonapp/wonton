@@ -46,7 +46,7 @@ impl Engine {
         progress: &mut (dyn FnMut(LayerProgress<'_>) + Send),
     ) -> Result<String> {
         if policy != PullPolicy::Always {
-            if self.image_present(image).await? {
+            if self.image_present(image).await? && self.digest_matches(image).await {
                 return Ok(image.to_owned());
             }
             for reference in accelerated {
@@ -143,6 +143,11 @@ impl Engine {
                 }
             }
         }
+    }
+
+    /// 引用带摘要时要求本机那份的内容也是这个摘要：只按标签拉到过、标签换了指向的镜像照样算没有。
+    async fn digest_matches(&self, image: &str) -> bool {
+        digest(image).is_none() || self.check_digest(image).await.is_ok()
     }
 
     async fn check_digest(&self, image: &str) -> Result<()> {

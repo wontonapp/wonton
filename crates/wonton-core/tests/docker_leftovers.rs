@@ -17,7 +17,6 @@ mod test_docker;
 use bollard::models::ContainerCreateBody;
 use wonton_core::config::PublicUrls;
 use wonton_core::http::HttpClient;
-use wonton_core::plugin::compose::PullPolicy;
 use wonton_core::plugin::docker::{Engine, NetworkReach};
 use wonton_core::plugin::image_worker::ImageWorker;
 use wonton_core::plugin::lifecycle::LifecycleConfig;
@@ -79,10 +78,7 @@ impl Core {
     /// 连上 Docker，先把镜像拉好（下面等容器跑起来的时间不算拉镜像），再起扮演核心的容器。
     async fn prepare(&self) {
         self.engine.check_server().await.unwrap();
-        self.engine
-            .ensure_image(&image(), PullPolicy::Missing, &[])
-            .await
-            .unwrap();
+        test_docker::ensure_image(&self.engine, &image()).await;
         self.start_idle(&self.core_container).await;
     }
 

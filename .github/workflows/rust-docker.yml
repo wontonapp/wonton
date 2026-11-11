@@ -116,19 +116,34 @@ jobs:
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
           df -h /
+      - name: 检查 Docker 测试用到的镜像都在镜像清单里
+        # 引用绕开 wonton_test_images::image 写死时预拉会跳过它，测试跑到一半才 `No such image`。
+        # 这是写法错误，不进重试：命中就整步失败，带上文件和镜像名。
+        run: cargo test -p wonton-core --lib test_docker_check -- --nocapture
       - name: 一次拉齐测试镜像
         # 测试里 ensure_image 见本机已有就不再联网，跑起来后不依赖 ghcr 的临时令牌还能用多久
-        # （实测跑了几分钟后换令牌开始 401）。
-        # 单个镜像拉不到不算失败：GHCR 偶尔对某个 tag 回 `manifest unknown`，同一时刻别的作业却能拉；
-        # 预热失败就让测试自己按摘要拉一次，真拿不到时那条测试会带着镜像名失败，比整个作业停在预拉更有信息。
-        # 缺的镜像记在末尾的汇总里，一眼看得出这次预热少了什么。
+        # （实测跑了几分钟后换令牌开始 401）。预拉和测试建容器用同一个引用（mirror 脚本带摘要），
+        # 测试按自己的引用 inspect 得到，不会再按名字拉一次。
+        # 每个镜像最多拉 3 次（5 s、15 s 退避）：GHCR 偶尔对某个 tag 回 `manifest unknown` 或 5xx，
+        # 这是基础设施抖动，只重试拉取本身，不给测试加重试。
+        # 还拉不到就整步失败：交给测试自己拉的话，会停在一个看不出是基础设施的测试里；
+        # 镜像名写进 `::error::`，一眼分得清是拉不到还是断言失败。
         run: |
-          missing=()
+          failed=()
           while IFS= read -r image; do
-            docker pull "$image" || missing+=("$image")
+            for attempt in 1 2 3; do
+              docker pull "$image" && continue 2
+              if ((attempt < 3)); then
+                sleep $((attempt == 1 ? 5 : 15))
+              fi
+            done
+            failed+=("$image")
           done < <(scripts/mirror-test-images.sh --list)
-          if ((${#missing[@]})); then
-            printf '::warning::预热这些镜像没拉到，交给测试自己拉：%s\n' "${missing[*]}"
+          if ((${#failed[@]})); then
+            for image in "${failed[@]}"; do
+              printf '::error::基础设施失败：拉不到镜像 %s（重试 3 次）\n' "$image"
+            done
+            exit 1
           fi
       - name: 预构建桥镜像
         # 测试只验启动行为，构建本身先在这里做掉、给 docker 构建缓存预热，测试里的同名 build 就只走缓存。

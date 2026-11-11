@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use bollard::models::{ContainerCreateBody, HostConfig};
-use wonton_core::plugin::compose::PullPolicy;
 use wonton_core::plugin::core_address::Endpoint;
 use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::egress::address::ProxyAddress;
@@ -324,10 +323,7 @@ async fn the_relay_goes_through_the_owners_proxy_and_follows_its_lists() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
     for image in [gost::image(), busybox()] {
-        engine
-            .ensure_image(&image, PullPolicy::Missing, &[])
-            .await
-            .unwrap();
+        test_docker::ensure_image(&engine, &image).await;
     }
     let mut names = test_docker::Names::new();
     let names = Names::new(&mut names);

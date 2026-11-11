@@ -9,7 +9,6 @@ use super::api::Api;
 use super::test_support::{PASSWORD, PLUGIN, home};
 use crate::http::HttpClient;
 use crate::plugin::Permission;
-use crate::plugin::compose::PullPolicy;
 use crate::plugin::docker::Engine;
 
 fn image() -> String {
@@ -24,12 +23,11 @@ async fn smtp_mail_reaches_each_persons_private_room() {
     let home = home().await;
     let mut names = crate::test_docker::Names::new();
     let engine = Engine::connect().unwrap();
-    engine
-        .ensure_image(&image(), PullPolicy::Missing, &[])
-        .await
-        .unwrap();
+    // 建容器用 ensure_image 返回的引用：它可能和 image() 不同（加速站），按另一个名字建容器会
+    // 报 `No such image`，即使镜像其实已经在本地。
+    let image = crate::test_docker::ensure_image(&engine, &image()).await;
     let name = names.oneshot_container("mailpit");
-    create_mailpit(&engine, &name, home.dir.path()).await;
+    create_mailpit(&engine, &name, &image, home.dir.path()).await;
     engine.start_container(&name).await.unwrap();
     let settings = engine
         .inspect_container(&name)
@@ -110,7 +108,7 @@ async fn smtp_mail_reaches_each_persons_private_room() {
     engine.remove_container(&name).await.unwrap();
 }
 
-async fn create_mailpit(engine: &Engine, name: &str, dir: &std::path::Path) {
+async fn create_mailpit(engine: &Engine, name: &str, image: &str, dir: &std::path::Path) {
     let auth = dir.join("auth.htpasswd");
     std::fs::write(&auth, format!("core:{PASSWORD}\n")).unwrap();
     let ports = ["1025/tcp", "8025/tcp"];
@@ -118,7 +116,7 @@ async fn create_mailpit(engine: &Engine, name: &str, dir: &std::path::Path) {
         .create_container(
             name,
             ContainerCreateBody {
-                image: Some(image()),
+                image: Some(image.to_owned()),
                 env: Some(vec![
                     "MP_SMTP_BIND_ADDR=0.0.0.0:1025".into(),
                     "MP_UI_BIND_ADDR=0.0.0.0:8025".into(),
