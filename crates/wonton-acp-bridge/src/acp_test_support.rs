@@ -19,6 +19,9 @@ use tokio::{
 
 use super::*;
 
+#[path = "acp_test_support/driver.rs"]
+mod driver;
+
 #[derive(Clone)]
 pub(crate) enum Scenario {
     Normal,
