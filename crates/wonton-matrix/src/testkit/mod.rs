@@ -7,6 +7,7 @@ mod issuer;
 mod keys;
 mod push;
 mod relay;
+mod to_device;
 
 use std::{fmt::Debug, path::PathBuf, time::Duration};
 
@@ -23,6 +24,7 @@ pub use self::{
     issuer::{Claims, Issuer, now},
     push::{PushGateway, Received},
     relay::Relay,
+    to_device::ToDeviceHold,
 };
 
 /// 本会话当前生效的令牌：（访问令牌，刷新令牌）。刷新令牌登录时申请过才有；停用后旧会话
