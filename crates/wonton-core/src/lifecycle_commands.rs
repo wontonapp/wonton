@@ -77,23 +77,3 @@ pub(super) async fn manual_rollback(args: &[String]) -> anyhow::Result<()> {
     );
     rollback.run(&host).await
 }
-
-/// 第二个参数是基础域名：旧版本的升级器照这个格式调新镜像的 `init`，所以留着，`init` 不再用它。Matrix 服务器名只在
-/// 第一次安装时由 `WONTON_MATRIX_SERVER_NAME` 指定。
-pub(super) fn init(args: &[String]) -> anyhow::Result<()> {
-    let [dir, _base_domain] = args else {
-        bail!("用法：wonton-core init <安装目录> <基础域名>");
-    };
-    check_owner_before_install()?;
-    let requested = std::env::var("WONTON_MATRIX_SERVER_NAME")
-        .ok()
-        .filter(|v| !v.is_empty());
-    let report = wonton_core::install::init(std::path::Path::new(dir), requested.as_deref())?;
-    for path in &report.created {
-        println!("已生成 {}", path.display());
-    }
-    for path in &report.kept {
-        println!("沿用 {}", path.display());
-    }
-    Ok(())
-}

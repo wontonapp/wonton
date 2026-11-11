@@ -5,8 +5,7 @@
 //! 配对时记下的 endpoint ID，经共享的 iroh 连接转发。对方确认接上它那台 Tuwunel 之后才回 200，之后的
 //! 字节（两台 Tuwunel 之间的 TLS）双向原样转发，转发器不终结 TLS，断开也不当协议错误。
 //!
-//! 只接 8448：Tuwunel 先 CONNECT `<名字>:443` 取 well-known，这里回 502，它就改连 Matrix 的默认联邦端口
-//! `<名字>:8448`（实测见 ADR-0050 的“验证”）。转发器不查 DNS，名字在配对名单里才转。
+//! 有名字的配对服务器也通过此代理取 443 上的发现文件；私用名保留 8448。其余端口拒绝。
 use std::{
     collections::BTreeSet,
     io,
@@ -185,9 +184,10 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
         }
     };
     let name = request.host;
-    if request.port != FEDERATION_PORT {
-        // well-known（443）这类请求：回 502，Tuwunel 就改连联邦端口。
-        debug!(server = %name, port = request.port, "federation outbound: not the federation port");
+    if (request.port != FEDERATION_PORT && request.port != 443)
+        || (request.port == 443 && name.ends_with(".wonton.internal"))
+    {
+        debug!(server = %name, port = request.port, "federation outbound: unsupported port");
         respond(&mut tcp, BAD_GATEWAY).await;
         return;
     }

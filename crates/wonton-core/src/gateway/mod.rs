@@ -31,6 +31,7 @@ mod confirmations;
 mod core_routes;
 mod core_upgrade;
 mod devices;
+mod entry;
 pub mod family;
 mod files;
 mod friends;
@@ -63,6 +64,7 @@ mod request_guards;
 mod room_rules;
 pub(crate) mod send_limits;
 
+pub use entry::router as entry_router;
 pub use push::router as push_router;
 pub(crate) use request_guards::{same_origin_path, with_cookie};
 pub use send_limits::{SendLimiter, SendLimits};

@@ -23,7 +23,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, bail};
-use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 use wonton_core::config::Config;
 mod serve;
@@ -149,6 +148,7 @@ fn extra_protocols(
 }
 
 mod federation_addrs;
+mod init_command;
 mod lifecycle_commands;
 mod mailbox_startup;
 use mailbox_startup::{open_mailpit, start_mailpit};
@@ -192,7 +192,10 @@ async fn run() -> ExitCode {
         None | Some("serve") => serve().await,
         Some("healthcheck") => lifecycle_commands::healthcheck().await,
         Some("pair") => pair_command::run(std::env::args().skip(2).collect()).await,
-        Some("init") => lifecycle_commands::init(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("init") => init_command::init(&std::env::args().skip(2).collect::<Vec<_>>()).await,
+        Some("federation-block") => {
+            init_command::federation_block(&std::env::args().skip(2).collect::<Vec<_>>())
+        }
         Some("updater") => {
             lifecycle_commands::run_updater(&std::env::args().skip(2).collect::<Vec<_>>()).await
         }
@@ -249,14 +252,29 @@ fn spawn_federation_config(
     let Some(names) = peers.as_ref().map(|peers| peers.paired_names()) else {
         return;
     };
+    let (Some(server_name), Some(blocks)) =
+        (cfg.matrix.as_ref().map(|m| m.server_name.clone()), blocks)
+    else {
+        return;
+    };
     FederationConfig::spawn(
         engine.clone(),
         cfg.install_dir.clone(),
         cfg.core_container.clone(),
         notices.clone(),
         names,
+        server_name,
         blocks,
     );
+}
+
+/// 网关监听先建好再装配：核对插件时的一次性服务要连核心，连接先在内核队列等着。
+async fn open_listener(
+    listen: std::net::SocketAddr,
+) -> anyhow::Result<wonton_core::entry_runtime::MainListener> {
+    wonton_core::entry_runtime::MainListener::bind(listen)
+        .await
+        .with_context(|| format!("监听 {listen}"))
 }
 
 fn owner_token(cfg: &Config) -> anyhow::Result<String> {
@@ -282,9 +300,7 @@ async fn serve() -> anyhow::Result<()> {
     let mailpit = open_mailpit(&cfg, &engine, members.clone())?;
     // 监听先建起来：核心启动时核对插件，渲染变了会重建容器，里面的一次性服务（比如登记 OIDC 源）要经核心
     // 的地址访问核心。网关这时还没开始接，连接先进内核的队列等着。
-    let listener = TcpListener::bind(cfg.listen)
-        .await
-        .with_context(|| format!("监听 {}", cfg.listen))?;
+    let listener = open_listener(cfg.listen).await?;
 
     let upgrades = open_upgrades(&cfg, &engine);
     let (http, system_http, hydra, matrix) = serve::open_clients(&cfg, &engine).await?;
@@ -327,6 +343,15 @@ async fn serve() -> anyhow::Result<()> {
         open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
+    if let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) {
+        wonton_core::entry_runtime::spawn(
+            dir,
+            &cfg.data_dir,
+            engine.clone(),
+            container.clone(),
+            notices.clone(),
+        )?;
+    }
     let push = open_push(&cfg, &tunnel, &manager)?;
     let upgrades_after_serve = upgrades.clone();
     let gateway = Arc::new(

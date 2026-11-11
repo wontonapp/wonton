@@ -85,10 +85,40 @@ fn init_reports_bad_owner_settings_before_writing_anything() {
 }
 
 #[test]
-fn init_needs_no_owner_settings() {
-    // 一键升级在新镜像里执行 `init`，什么都不传。
+fn explicitly_nameless_install_survives_an_offline_upgrade() {
     let install = tempfile::tempdir().unwrap();
+    let data = tempfile::tempdir().unwrap();
     let init = ["init", install.path().to_str().unwrap(), "wonton.localhost"];
-    let output = run(&init, &[]);
-    assert!(output.status.success(), "{output:?}");
+    let first = run(
+        &init,
+        &[
+            ("WONTON_DATA_DIR", data_dir(data.path())),
+            ("WONTON_MATRIX_NAME_MODE", "none"),
+        ],
+    );
+    assert!(first.status.success(), "{first:?}");
+    let identity = std::fs::read(install.path().join("secrets/matrix-server-name")).unwrap();
+    std::fs::write(
+        install.path().join(".env"),
+        format!("WONTON_DATA_DIR={}\n", data.path().display()),
+    )
+    .unwrap();
+    let upgraded = run(&init, &[]);
+    assert!(upgraded.status.success(), "{upgraded:?}");
+    assert_eq!(
+        std::fs::read(install.path().join("secrets/matrix-server-name")).unwrap(),
+        identity
+    );
+}
+
+#[test]
+fn a_fresh_install_requires_a_service_or_an_explicit_advanced_choice() {
+    let install = tempfile::tempdir().unwrap();
+    let data = tempfile::tempdir().unwrap();
+    let output = run(
+        &["init", data_dir(install.path()), "wonton.localhost"],
+        &[("WONTON_DATA_DIR", data_dir(data.path()))],
+    );
+    assert!(!output.status.success());
+    assert!(!install.path().join("secrets/matrix-server-name").exists());
 }
