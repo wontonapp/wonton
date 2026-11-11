@@ -1,0 +1,4 @@
+{
+  "security": { "auth": { "selectedType": "openai" } },
+  "privacy": { "usageStatisticsEnabled": false }
+}

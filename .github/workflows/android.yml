@@ -1,0 +1,100 @@
+name: android
+
+# PR 只在改到 App 或 Rust 绑定时才跑；草稿 PR 不跑，转 ready 或每天的定时全量才跑。
+# 路径不写在触发器上：合并队列的必需检查每次入队都要有结果，工作流没触发的话检查一直“等待中”，队列合不了。
+# 改成由 changes 作业判断改动范围，作业挂在它上面，没改到时自己报 skipped（跳过的检查算通过）。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # 每天全量兜底（PR 已在最新 main 上跑过，main 上不重跑）。
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+  # 合并队列：detekt、单元测试和 Debug 构建是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
+  # 队列里不判断改动范围，作业照跑（作业的 if 按事件名放行）。
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
+
+# 队列里的 ref 一律是 gh-merge-queue/main，按它分组会把几次入队挤进同一组，改用这次入队的合并提交。
+concurrency:
+  group: android-${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: 改动范围（android）
+    # 这次 PR 有没有改到下面这些路径，替代原来触发器的 paths 过滤。
+    # 只在 PR 上判断：队列、定时和手动运行一律跑全套，作业的 if 里按事件名放行。
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # 按 REST 接口列 PR 改动的文件，不用检出代码。
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+    steps:
+      # MIT
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
+          predicate-quantifier: some-with-excludes
+          filters: |
+            changed:
+              - "apps/compose/**"
+              - "apps/ios/Wonton/Assets.xcassets/**"
+              - "apps/ios/Wonton/Design/Generated/**"
+              - "design/**"
+              - "scripts/generate-design.py"
+              - "crates/wonton-client/**"
+              - "crates/wonton-matrix/**"
+              - "crates/wonton-protocol/**"
+              - "crates/wonton-tunnel/**"
+              - "Cargo.toml"
+              - "vendor/**"
+              - "Cargo.lock"
+              - "rust-toolchain.toml"
+              - ".github/workflows/android.yml"
+
+  build:
+    name: detekt、单元测试与 Debug 构建
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.changes.outputs.changed == 'true')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: 安装 rust-toolchain.toml 指定的工具链和 Android target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-linux-android
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-ndk@4.1.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # 只在 main 上存（cache.yml 用同一个 key 编一遍），PR 只恢复。
+          shared-key: rust-android
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+      - name: 设计生成结果和 design/ 一致
+        run: python3 scripts/generate-design.py --check
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: detekt（函数 ≤ 100 行）、单元测试与 Debug APK
+        working-directory: apps/compose
+        run: ./gradlew detekt :androidApp:testDebugUnitTest :androidApp:assembleDebug

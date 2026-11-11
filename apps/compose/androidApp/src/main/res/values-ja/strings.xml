@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Wonton</string>
+    <!-- 「接続を維持」フォアグラウンドサービスの常設通知チャンネル名（ADR-0003）。システムの通知設定に表示される。 -->
+    <string name="keepalive_channel_name">接続を維持</string>
+    <!-- 「接続を維持」フォアグラウンドサービスの常設通知のタイトル。 -->
+    <string name="keepalive_notification_title">ホームサーバーとの接続を維持しています</string>
+    <!-- 「ポートマッピング」フォアグラウンドサービスの常設通知チャンネル名（ADR-0072）。システムの通知設定に表示される。 -->
+    <string name="mapping_channel_name">ポートマッピング</string>
+    <!-- ポートマッピングの常設通知のタイトル：マッピングが有効なアプリが 1 つ。引数はアプリ名。 -->
+    <string name="mapping_notification_title">%1$sのポートをマッピング中</string>
+    <!-- ポートマッピングの常設通知のタイトル：マッピングが有効なアプリが複数。引数はアプリの数。 -->
+    <string name="mapping_notification_title_multiple">%1$d 個のアプリのポートをマッピング中</string>
+    <string name="push_in_room">%1$s：%2$s</string>
+    <string name="push_unknown_sender">だれか</string>
+    <string name="push_invite">あなたを招待しました</string>
+    <string name="push_unavailable">新着メッセージ（今は内容を読み込めません）</string>
+    <string name="push_hidden">新着メッセージ</string>
+    <string name="startup_core_failed">Wontonを起動できませんでした：%1$s</string>
+    <string name="startup_code_rejected">開発用に渡されたペアリングコードが拒否されました：%1$s</string>
+    <string name="push_no_permission">通知の権限がありません。Wontonが終了していたり画面がロックされていると、新着メッセージを表示できません</string>
+    <string name="push_no_distributor">UnifiedPushのディストリビューター（ntfyなど）がインストールされていません。Wontonが終了していたり画面がロックされていると、新着メッセージが届きません</string>
+    <string name="push_no_public_key">ディストリビューターがWeb Pushの公開鍵を返さないため、プッシュを暗号化できません</string>
+    <string name="push_registration_rejected">ディストリビューターが登録を拒否しました：%1$s</string>
+    <string name="push_unregistered">ディストリビューターがWontonの登録を解除しました</string>
+</resources>

@@ -1,0 +1,99 @@
+# XcodeGen 工程描述。Wonton.xcodeproj 由它生成，不提交：xcodegen generate --spec apps/ios/project.yml
+name: Wonton
+options:
+  bundleIdPrefix: app.wonton
+  # 资源的基础语言，系统语言不在支持范围里时用它（ADR-0043）。
+  developmentLanguage: en
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+packages:
+  WontonClient:
+    path: WontonClient
+targets:
+  Wonton:
+    type: application
+    platform: iOS
+    sources:
+      - Wonton
+    dependencies:
+      - package: WontonClient
+    # 由 xcodegen 生成，和下面的 INFOPLIST_KEY_* 合并；生成的文件不提交。
+    info:
+      path: Wonton/Info.plist
+      properties:
+        UIBackgroundModes: [audio]
+        CFBundleURLTypes:
+          - CFBundleURLName: app.wonton.navigation
+            CFBundleURLSchemes:
+              - wonton
+        # M0 的网关和插件网页只有 http（HTTPS 方案在 M1 定），只对 WebView 里的内容放开。
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoadsInWebContent: true
+          # 文件的播放器经核心在回环地址上的 http 地址取数据（ADR-0020）。
+          NSAllowsLocalNetworking: true
+        # iroh 经局域网直连家里的服务器时，iOS 要先征得用户同意。
+        # 这三句和 App 名字的各语言版本在 InfoPlist.xcstrings，这里是英文的基础值。
+        NSLocalNetworkUsageDescription: Wonton connects directly to your home server over the local network.
+        NSCameraUsageDescription: Wonton uses the camera to scan the pairing QR code from your home server.
+        NSPhotoLibraryAddUsageDescription: Wonton saves photos from your chats to your photo library.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchGlyph
+          UIImageRespectsSafeAreaInsets: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Wonton
+        # 文字按含义起名的键写在 String Catalog 里，代码用生成的符号（`Text(.settingsLanguage)`），键写错编译不过；
+        # 不让编译器从 `Text("…")` 里自动抽取，免得写死的字面量混进目录。
+        STRING_CATALOG_GENERATE_SYMBOLS: YES
+        SWIFT_EMIT_LOC_STRINGS: NO
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        TARGETED_DEVICE_FAMILY: "1"
+
+  WontonTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - WontonTests
+    dependencies:
+      - target: Wonton
+      - package: WontonClient
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+  WontonUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - WontonUITests
+    dependencies:
+      - target: Wonton
+      - package: WontonClient
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Wonton
+
+schemes:
+  Wonton:
+    build:
+      targets:
+        Wonton: all
+        WontonUITests: [test]
+        WontonTests: [test]
+    test:
+      targets:
+        - WontonTests
+        - WontonUITests

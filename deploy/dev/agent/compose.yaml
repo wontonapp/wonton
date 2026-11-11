@@ -1,0 +1,177 @@
+# M0-4 开发环境：Tuwunel（不联邦）+ magpie 模型网关 + Hermes（以 Matrix bot 身份接入）。
+# 用 dev.sh 起停：它扮演核心，生成密钥、注册账号、给 Hermes 发 magpie 网关凭据。
+#
+# 网络按插件规范划分：Hermes 和 Tuwunel 在 matrix 网络；Hermes 经内部网络 models 访问 magpie，
+# 那里没有出口；只有 magpie 加入 egress 去访问上游 provider。
+#
+# 数据卷和网络都以项目名为前缀。同一台机器上再起一套环境（比如另一个 git worktree 里验证改动）时，
+# 用 WONTON_AGENT_PROJECT 换项目名，并同时换两个端口，否则会和已有的那套共用数据卷和端口。
+name: ${WONTON_AGENT_PROJECT:-wonton-dev-agent}
+
+x-hermes-image: &hermes-image nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
+
+services:
+  tuwunel:
+    image: ghcr.io/matrix-construct/tuwunel:v1.9.4@sha256:0e86c6164d6c9f5b60291938eb61ad8395021c37fe58d47a963ea7edddbedaec
+    restart: unless-stopped
+    # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
+    stop_grace_period: 5m
+    env_file:
+      - path: .secrets/tuwunel.env # TUWUNEL_REGISTRATION_TOKEN
+        required: true
+    environment:
+      TUWUNEL_SERVER_NAME: ${WONTON_SERVER_NAME:-wonton.test}
+      TUWUNEL_DATABASE_PATH: /var/lib/tuwunel
+      TUWUNEL_ADDRESS: 0.0.0.0
+      TUWUNEL_PORT: 8008
+      TUWUNEL_ALLOW_FEDERATION: "false"
+      TUWUNEL_TRUSTED_SERVERS: "[]"
+      # 只能凭注册令牌注册：dev.sh 用它建主人和 Bot 的账号。
+      TUWUNEL_ALLOW_REGISTRATION: "true"
+      TUWUNEL_NEW_USER_DISPLAYNAME_SUFFIX: ""
+    volumes:
+      - tuwunel-data:/var/lib/tuwunel
+    ports:
+      # 监听所有网卡，方便同一局域网里的手机客户端直连测试。
+      - "${WONTON_AGENT_MATRIX_PORT:-18008}:8008"
+    networks: [matrix]
+    healthcheck:
+      test: ["CMD", "tuwunel", "--health-check"]
+      interval: 10s
+      timeout: 5s
+      start_period: 5m
+      start_interval: 1s
+
+  magpie:
+    image: ghcr.io/yetone/magpie:0.1.1327@sha256:85e5b25a9b72ffc4de4bccb94743f4afb17a86a74d90b6260c03f29268d2f45e
+    restart: unless-stopped
+    # 同一个进程同时提供网关（3425）和网页（3430，即“模型设置”）。
+    command: ["web", "--addr", "0.0.0.0:3430", "--no-open"]
+    env_file:
+      - path: .secrets/magpie.env # MAGPIE_WEB_KEY
+        required: true
+    environment:
+      # 网关监听在容器网卡上：来自容器外的请求必须带启用中的网关凭据，否则 401。
+      MAGPIE_ADDR: 0.0.0.0:3425
+    volumes:
+      - magpie-config:/config
+    ports:
+      # 只开网页，且只在本机回环；网关端口不发布到宿主机。
+      - "127.0.0.1:${WONTON_AGENT_MAGPIE_WEB_PORT:-13430}:3430"
+    networks:
+      models:
+        # 带点的名字：Hermes 把不带点的主机名当成本机模型服务，会去探测 Ollama 接口，
+        # 而 magpie 恰好兼容 Ollama 的 /api/tags，结果每个请求都被加上 Ollama 专用参数。
+        aliases: [magpie.wonton.internal]
+      egress: {}
+    healthcheck:
+      test: ["CMD", "/magpie", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      start_period: 1m
+      start_interval: 1s
+
+  # 同插件包里的 init：把 Wonton 的 Hermes 插件放进数据卷；Hermes 配置只在首次启动前写入，已有 config.yaml 时不覆盖。
+  hermes-init:
+    image: *hermes-image
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        mkdir -p /opt/data/plugins/wonton &&
+        cp /seed/wonton/plugin.yaml /seed/wonton/__init__.py /opt/data/plugins/wonton/ &&
+        { test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml; }
+    volumes:
+      - hermes-data:/opt/data
+      - ./.secrets/packages/default-plugins/hermes/config.yaml:/seed/config.yaml:ro
+      - ./.secrets/packages/default-plugins/hermes/wonton:/seed/wonton:ro
+    network_mode: none
+    restart: "no"
+
+  hermes:
+    image: *hermes-image
+    restart: unless-stopped
+    command: ["gateway", "run"]
+    depends_on:
+      hermes-init:
+        condition: service_completed_successfully
+      tuwunel:
+        condition: service_healthy
+      magpie:
+        condition: service_healthy
+    env_file:
+      # MATRIX_USER_ID、MATRIX_ACCESS_TOKEN、MATRIX_ALLOWED_USERS、MATRIX_HOME_ROOM、
+      # WONTON_MODEL_API_KEY：相当于核心安装插件时注入的变量，由 dev.sh 生成。
+      - path: .secrets/hermes.env
+        required: true
+    environment:
+      MATRIX_HOMESERVER: http://tuwunel:8008
+      # 主流客户端默认加密私聊；依赖缺失时直接失败，不静默退回明文。
+      MATRIX_E2EE_MODE: required
+      MATRIX_RECOVERY_KEY_OUTPUT_FILE: /opt/data/platforms/matrix/recovery-key.txt
+      WONTON_MODEL_BASE_URL: http://magpie.wonton.internal:3425/v1
+      WONTON_MODEL_DEFAULT: group/wonton-default
+    volumes:
+      - hermes-data:/opt/data
+    networks: [matrix, models]
+    healthcheck:
+      # Matrix 连上才算健康：用 Hermes 自己生成的本机 API 密钥查详细状态。
+      test:
+        - CMD-SHELL
+        - >-
+          k="$$(sed -n 's/^API_SERVER_KEY=//p' /opt/data/.env)" &&
+          curl -fsS -H "Authorization: Bearer $$k" http://127.0.0.1:8642/health/detailed |
+          python3 -c 'import json, sys; sys.exit(json.load(sys.stdin)["platforms"]["matrix"]["state"] != "connected")'
+      interval: 30s
+      timeout: 10s
+      start_period: 3m
+      start_interval: 2s
+
+  # 可选：CPU 上跑的小模型，没有模型上游时也能跑通整条链路（首轮要一两分钟，只用于开发）。
+  # WONTON_AGENT_LOCAL_MODEL=1 时 dev.sh 会启动它，并像本地模型插件一样注册成 magpie 的 provider。
+  # Hermes 要求至少 64K 窗口，Qwen2.5 原生 32K，用 YaRN 扩到 64K。
+  # 国内访问不了 Hugging Face 时，可以加环境变量 HF_ENDPOINT=https://hf-mirror.com。
+  local-model:
+    image: ghcr.io/ggml-org/llama.cpp:server@sha256:8ee4ec7ce58a921313d07390c6699af13aa5ec083f3cdf67e5f4155767047373
+    profiles: [local-model]
+    restart: unless-stopped
+    command:
+      - -hf
+      - Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M
+      - --ctx-size
+      - "65536"
+      - --parallel
+      - "1"
+      - --rope-scaling
+      - yarn
+      - --rope-scale
+      - "2"
+      - --yarn-orig-ctx
+      - "32768"
+      - --jinja
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+    volumes:
+      - local-model-cache:/root/.cache/huggingface
+    # 只有 magpie 访问它；下载模型需要出网。
+    networks: [egress]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10m
+      start_interval: 2s
+
+networks:
+  matrix: {}
+  models:
+    internal: true
+  egress: {}
+
+volumes:
+  tuwunel-data: {}
+  magpie-config: {}
+  hermes-data: {}
+  local-model-cache: {}
