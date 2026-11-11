@@ -48,7 +48,6 @@ struct ConfirmationCardBar: View {
     let stopWindow: () -> Void
 
     @State private var expanded = false
-    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
@@ -60,7 +59,7 @@ struct ConfirmationCardBar: View {
                     requester: first.card.requester,
                     bots: bots,
                     plugins: plugins,
-                    secondary: views.count > 1 ? String(localized: .confirmationsMoreCards(views.count - 1)) : nil,
+                    secondary: barSecondary,
                     trailing: views.count > 1 ? nil : CardRowLine.text(of: first),
                     expanded: expanded
                 )
@@ -77,6 +76,12 @@ struct ConfirmationCardBar: View {
     }
 
     private var first: ConfirmationView { views[0] }
+
+    /// 多张时显示“还有 N 张”；xcstrings 复数符号的参数是 Int32。
+    private var barSecondary: String? {
+        let more = views.count - 1
+        return more > 0 ? String(localized: .confirmationsMoreCards(Int32(more))) : nil
+    }
 }
 
 /// 收起的卡片行：发起者头像、标题和一行次要信息，右侧箭头指示能不能展开。
@@ -172,9 +177,11 @@ private enum CardRowLine {
         case .succeeded:
             return String(localized: .confirmationsStateSucceeded)
         case let .failed(message):
-            return message.isEmpty ? String(localized: .confirmationsStateFailed) : String(localized: .confirmationCardFailedResult(message))
+            if message.isEmpty { return String(localized: .confirmationsStateFailed) }
+            return String(localized: .confirmationCardFailedResult(message))
         case let .uncertain(message):
-            return message.isEmpty ? String(localized: .confirmationsStateUncertain) : String(localized: .confirmationCardUncertainResult(message))
+            if message.isEmpty { return String(localized: .confirmationsStateUncertain) }
+            return String(localized: .confirmationCardUncertainResult(message))
         case .rejected:
             return String(localized: .confirmationCardRejected)
         case .expired:
