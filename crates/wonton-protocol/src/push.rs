@@ -100,6 +100,11 @@ pub struct PushConfirmation {
     pub id: String,
     /// 过期的时刻，Unix 毫秒。
     pub expires_at_ms: u64,
+    /// 卡片显示在哪个会话：点开通知进这个房间。为空时（核心自己发起的卡片）打开“等你确认”列表。确认卡片的通知
+    /// 不对应房间里的消息，[`PushNotification::room_id`] 是这里的房间（没有时为空），`event_id` 是卡片 ID。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub origin: Option<crate::ConfirmationOrigin>,
 }
 
 /// 通知的正文。核心只给类别和原文，通知上的文字（图片、文件的占位，邀请，取不到时的说明）由壳按系统语言写。
@@ -179,6 +184,10 @@ mod tests {
             confirmation: Some(PushConfirmation {
                 id: "card".into(),
                 expires_at_ms: 1_793_000_000_000,
+                origin: Some(crate::ConfirmationOrigin {
+                    room_id: "!bot:home.example".into(),
+                    thread_id: None,
+                }),
             }),
         };
         assert_eq!(round_trip(&notification), notification);

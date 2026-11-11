@@ -88,10 +88,19 @@ pub enum BotInstallState {
 pub struct PendingConfirmation {
     /// 卡片 ID。
     pub id: String,
-    /// 卡片所在的房间。
+    /// 卡片显示在哪个会话（[`ConfirmationCard::origin`](crate::ConfirmationCard::origin) 的房间）：点提示条进这个房间，
+    /// 主人正在这个房间时不提示。卡片没有会话时为空，点了打开“等你确认”列表。
     pub room_id: String,
     /// 卡片的标题，如“Hermes 想安装 文件搜索”。
     pub title: String,
+    /// 谁请主人确认，壳按它画头像。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub requester: Option<crate::ConfirmationRequester>,
+    /// 到期时间，Unix 毫秒。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = 0))]
+    pub expires_at_ms: u64,
 }
 
 /// 发起私聊时能直接选的人。
@@ -435,8 +444,10 @@ mod tests {
             push: PushStatus::Registering,
             pending_confirmations: vec![PendingConfirmation {
                 id: "card".into(),
-                room_id: "!notices:home.example".into(),
+                room_id: "!bot:home.example".into(),
                 title: "Hermes 想安装 文件搜索".into(),
+                requester: None,
+                expires_at_ms: 1_793_000_000_000,
             }],
             settled_confirmations: vec!["older-card".into()],
             background_notifications: vec![PushNotification {

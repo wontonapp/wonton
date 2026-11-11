@@ -28,6 +28,10 @@ pub struct AgentPermissionRequest {
     pub arguments: Option<serde_json::Value>,
     /// 按顺序显示成卡片上的按钮。没有拒绝类的选项时，核心加一个“取消”按钮。
     pub options: Vec<AgentPermissionOption>,
+    /// 这次请求来自哪个会话（适配层知道 Agent 在哪个房间、哪个话题里干活）。核心当不可信输入核对，规则同 MCP 的
+    /// [`ORIGIN_META_KEY`](crate::ORIGIN_META_KEY)；不带时卡片落到 Bot 的主房间。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<crate::ConfirmationOrigin>,
 }
 
 /// 主人可选的一项。

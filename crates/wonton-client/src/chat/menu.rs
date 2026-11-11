@@ -192,6 +192,7 @@ impl Outbox {
                 panel_selected,
                 entry_blocked,
                 key_notice,
+                confirmations: Vec::new(),
             })
             .map_err(|_| ())
     }

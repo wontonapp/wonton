@@ -216,8 +216,8 @@ pub enum Action {
     /// 清掉 `ChatViewModel::problem`。
     DismissChatProblem,
     /// 主人点了确认卡片上的按钮：`id` 是 [`ConfirmationCard::id`](crate::ConfirmationCard::id)，`answer` 原样用
-    /// [`CardChoice::answer`](crate::CardChoice::answer)。核心经隧道发出去，进展和结果都在时间线里的卡片上
-    /// （[`ConfirmationView`](crate::ConfirmationView)），不进 `ChatViewModel::problem`。这张卡片已经在发、或者已经答完时
+    /// [`CardChoice::answer`](crate::CardChoice::answer)。核心经隧道发出去，进展和结果都在卡片上
+    /// （[`ConfirmationView`](crate::ConfirmationView)，会话里和“等你确认”列表里是同一份），不进 `ChatViewModel::problem`。这张卡片已经在发、或者已经答完时
     /// 什么都不做。[`Answer::Unknown`] 返回 `InvalidInput`，家里的服务器还没连上时返回 `NotReady`。`choice_id` 原样用
     /// [`CardChoice::choice_id`](crate::CardChoice::choice_id)。
     AnswerConfirmation {
@@ -237,6 +237,8 @@ pub enum Action {
     StopConfirmationWindow {
         id: String,
     },
+    /// 重新取“等你确认”列表（[`ConfirmationsViewModel::problem`](crate::ConfirmationsViewModel::problem) 之后）。
+    RetryConfirmations,
 
     // Bot 的资料（ADR-0044）。进展和结果在 `ChatViewModel::bots` 对应那一项的 `saving`、`problem` 里。
     /// 改 Bot 的名字。名字先过 [`check_bot_name`](crate::check_bot_name)，不行时返回 `InvalidInput`。

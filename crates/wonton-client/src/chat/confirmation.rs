@@ -133,6 +133,7 @@ pub(crate) fn pushed_card(
                 PushedCard::Waiting(PushConfirmation {
                     id: card.id,
                     expires_at_ms: card.expires_at_ms,
+                    origin: None,
                 })
             }
         }
@@ -298,6 +299,8 @@ impl CardsView {
                         id: card.id,
                         room_id: room_id.to_owned(),
                         title: card.title,
+                        requester: card.requester,
+                        expires_at_ms: card.expires_at_ms,
                     },
                 ));
             } else if view.problem.is_some() {
