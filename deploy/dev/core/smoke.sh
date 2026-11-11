@@ -561,6 +561,7 @@ card_id="${card%% *}"
 ok "Hermes 发起安装，核心在 Wonton 房间里发了确认卡片，还没有装"
 expect "插件还没装" "$(plugin_state app.wonton.files)" absent
 confirm_url="$core_url/_wonton/confirmations/$card_id"
+# 按 IP 打核心接口必须带域名 Host：IP 只回局域网状态页，API 一律 404（防 DNS 重绑定，dev.sh 头部有完整说明）。
 expect "Hermes 的插件网络里来的请求答不了确认" "$(answer docker run --rm --network "$hermes_network" \
   "$curl_image" --noproxy '*' -H "Host: $WONTON_DEV_DOMAIN:$WONTON_DEV_PORT" "http://$core:$WONTON_DEV_PORT/_wonton/confirmations/$card_id")" 401
 expect "局域网浏览器（有核心会话）答不了确认" "$(answer b "$confirm_url")" 401
