@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use wonton_protocol::{CardLine, InstallPreview, InstallRequest, InstallTogether, SecretValues};
+use wonton_protocol::{
+    CardLine, InstallPreview, InstallRequest, InstallTogether, SecretValues, SettingValues,
+};
 
 use super::{ToolFailure, cards};
 use crate::l10n;
@@ -62,6 +64,8 @@ fn request(preview: &InstallPreview, langs: &Languages) -> Result<InstallRequest
             .collect(),
         enabled_permissions: Vec::new(),
         secrets: SecretValues::new(),
+        // MCP 的能力安装路径不收集设置表单（ADR-0077）：没带的项由核心按清单默认值补。
+        settings: SettingValues::default(),
         devices: Vec::new(),
         lan_webui: false,
         install_together: Vec::new(),

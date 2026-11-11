@@ -136,6 +136,7 @@ fn request(preview: InstallPreview, token: &str) -> InstallRequest {
             .collect(),
         enabled_permissions: Vec::new(),
         secrets: [("token".to_owned(), SecretString::new(token))].into(),
+        settings: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
         install_together: Vec::new(),

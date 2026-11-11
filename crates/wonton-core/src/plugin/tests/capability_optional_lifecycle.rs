@@ -26,6 +26,7 @@ async fn install_optional_consumer(manager: &Arc<PluginManager>, source: &str, c
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
         secrets: Default::default(),
+        settings: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
         install_together: Vec::new(),

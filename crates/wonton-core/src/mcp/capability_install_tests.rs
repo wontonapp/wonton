@@ -283,6 +283,7 @@ async fn capability_confirmation_does_not_recompute_the_approved_plan() {
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
         secrets: SecretValues::new(),
+        settings: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
         install_together: Vec::new(),
