@@ -68,7 +68,7 @@ Wonton MCP 入口按插件网络来源授权，C1–C3 不引入 bearer token；
 
 ### 代码、依赖和镜像
 
-桥代码放主仓库私有的 `crates/wonton-acp-bridge`，因为它复用私有 workspace 的 `wonton-matrix`；插件仓库是公开的，不能复制或依赖主仓库源代码。主仓库 CI 构建多架构 `ghcr.io/wontonapp/wonton-acp-bridge:<version>`，发布后按 digest 固定；公开插件仓库只放 Compose、Agent 层、配置和 notices，并引用这个 digest。推荐这个边界；把桥源代码另开公开仓库需要先抽出 Matrix 边界和单独处理许可证，不属于 C1。
+桥代码放主仓库私有的 `crates/wonton-acp-bridge`，因为它复用私有 workspace 的 `wonton-matrix`；插件仓库是公开的，不能复制或依赖主仓库源代码。主仓库 CI 构建多架构 `ghcr.io/wontonapp/wonton-acp-bridge:<version>`，发布后按 digest 固定；公开插件仓库只放 Compose、Agent 层、配置和 notices，并引用这个 digest；ACP Agent 插件合在一个仓库、每家一个子目录，见 [ADR-0079](0079-agent-plugins-monorepo.md)。推荐这个边界；把桥源代码另开公开仓库需要先抽出 Matrix 边界和单独处理许可证，不属于 C1。
 
 桥用 Rust，原因是仓库已有 Matrix 的 Rust 边界、厚核心的错误分类和低常驻开销；桥是独立插件进程，不能调用核心内部 API。桥及其复用的 `wonton-matrix` 随私有主仓库的 `LicenseRef-Proprietary` 发布；公共插件仓库只引用已构建的镜像，不暴露桥源代码。桥不说 MCP，`rmcp`（Apache-2.0）只留在已实现 MCP 总线的 `wonton-core`；桥及其依赖不引入 GPL/AGPL。Agent 的专有许可证、适配器许可证和上游 notices 随 Agent 插件清单分发；不能满足某个 Agent 的许可证时不上架。
 
