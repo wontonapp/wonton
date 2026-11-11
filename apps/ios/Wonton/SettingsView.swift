@@ -10,6 +10,7 @@ struct SettingsTab: View {
     let plugins: PluginsModel
     let open: (PluginEntry) -> Void
     let checkInstalled: () -> Void
+    let push: PushModel
     var isModal = false
     var isActive = true
     @Environment(\.dismiss) private var dismiss
@@ -75,7 +76,7 @@ struct SettingsTab: View {
         case .myApps:
             MyAppsSettingsView(chat: chat, open: open, checkInstalled: checkInstalled)
                 .wontonPushedScreen(TabText.myApps, usesSystemToolbar: true)
-        case .notifications: NotificationSettingsView()
+        case .notifications: NotificationSettingsView(settings: model, push: push)
         case .appLock: AppLockSettingsView(model: appLock).wontonPushedScreen(String(localized: .Settings.appLockTitle))
         case .about: AboutView()
         }
@@ -142,9 +143,9 @@ struct SettingsView: View {
             }
         case .myApps:
             NavigationLink(value: SettingsRoute.myApps) { WontonRow(title: TabText.myApps, showsForward: true) }
-        case .notifications:
+        case let .notifications(_, pushStatus, _):
             NavigationLink(value: SettingsRoute.notifications) {
-                WontonRow(title: String(localized: .Settings.notificationTitle), showsForward: true)
+                WontonRow(title: String(localized: .Settings.notificationTitle), value: value(pushStatus), showsForward: true)
             }
         case let .appLock(enabled, timeout):
             NavigationLink(value: SettingsRoute.appLock) {
@@ -175,6 +176,16 @@ struct SettingsView: View {
             }
         case .matrixAccount, .matrixDevices, .addWontonServer, .other:
             EmptyView()
+        }
+    }
+
+    /// 设置列表里“通知”条目的值，短的；设置页里是整句话。
+    private func value(_ status: PushStatus) -> String {
+        switch status {
+        case .registered: String(localized: .pushValueOn)
+        case .registering: String(localized: .pushValueRegistering)
+        case .noEndpoint: String(localized: .pushValueNotSet)
+        case .unavailable, .failed: String(localized: .pushValueUnavailable)
         }
     }
 }
