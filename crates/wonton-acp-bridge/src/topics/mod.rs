@@ -26,6 +26,7 @@ use crate::error::Result;
 use crate::l10n::text;
 use board::{Board, NAME_MAX_CHARS, Row, SUMMARY_LINES, Status, TEXT_MAX_CHARS};
 use wonton_l10n::Lang;
+use wonton_protocol::ConfirmationOrigin;
 
 /// 会话键：主对话是 [`SessionKey::Main`]，话题用它的根消息事件 ID。
 ///
@@ -40,6 +41,17 @@ pub enum SessionKey {
 impl SessionKey {
     pub(crate) fn is_topic(&self) -> bool {
         matches!(self, SessionKey::Topic(_))
+    }
+
+    /// 这个会话报给核心的来源会话（ADR-0016）：主对话只带房间，话题带话题根。
+    pub(crate) fn origin(&self, room_id: &str) -> ConfirmationOrigin {
+        ConfirmationOrigin {
+            room_id: room_id.to_owned(),
+            thread_id: match self {
+                SessionKey::Main => None,
+                SessionKey::Topic(root) => Some(root.clone()),
+            },
+        }
     }
 
     /// 会话的持久化键：主对话是 `main`，话题是根消息事件 ID。

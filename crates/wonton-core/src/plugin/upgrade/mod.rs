@@ -260,8 +260,8 @@ impl PluginManager {
             return Err(none_or_unknown());
         }
         let source = SourceRef {
-            repo: SourceRef::parse(&origin.repo, &langs)?.repo,
             wanted: Wanted::Latest,
+            ..SourceRef::parse(&origin.repo, &langs)?
         };
         let latest = github_source::resolve(&self.github, &source, &langs).await?;
         let package = github_source::fetch(&self.github, &latest, &langs).await?;
