@@ -7,17 +7,15 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use futures_util::FutureExt;
-use futures_util::future::{BoxFuture, join_all};
+use futures_util::future::join_all;
 use wonton_protocol::{
-    Answer, BotRef, CardChoice, ConfirmationCard, ConfirmationOrigin, ConfirmationRequester,
-    ConfirmationState,
+    Answer, BotRef, CardChoice, ConfirmationOrigin, ConfirmationRequester, ConfirmationState,
 };
 
 use super::{HopLimitReached, SendLimiter};
 use crate::gateway::Gateway;
 use crate::l10n;
-use crate::mcp::{Audience, Bus, Draft, Notifier};
+use crate::mcp::{Audience, Bus, Draft, ListOnly, Notifier};
 use crate::plugin::languages::Languages;
 use crate::plugin::{PluginId, PluginManager};
 
@@ -158,22 +156,5 @@ fn draft(stopped: &HopLimitReached, hops: u32, langs: &Languages) -> Draft {
         scope: None,
         plugin_id: None,
         secret_inputs: Vec::new(),
-    }
-}
-
-/// 家人的卡片不发进任何 Matrix 房间：核心记着，家人的 App 从“等你确认”列表取，画在来源会话里。
-struct ListOnly;
-
-impl Notifier for ListOnly {
-    fn post<'a>(&'a self, card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>> {
-        async move { Ok(card.id.clone()) }.boxed()
-    }
-
-    fn update<'a>(
-        &'a self,
-        _handle: &'a str,
-        _card: &'a ConfirmationCard,
-    ) -> BoxFuture<'a, Result<Option<String>, String>> {
-        async { Ok(None) }.boxed()
     }
 }

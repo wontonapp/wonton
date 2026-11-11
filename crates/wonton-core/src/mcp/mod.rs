@@ -5,11 +5,13 @@
 mod agent_install;
 mod agent_permission;
 mod apps;
+mod audience;
 pub mod audit;
 mod authoring_tools;
 mod bounded_http;
 mod cards;
 mod confirm;
+mod confirmed;
 mod core_tools;
 mod file_results;
 mod file_tools;
@@ -45,12 +47,13 @@ use crate::plugin::languages::Languages;
 use crate::plugin::tool_policy::Clearance;
 use crate::plugin::{McpServer, PluginId, PluginManager};
 pub use agent_permission::AgentPermissionError;
+use audience::Subject;
 use audit::{Audit, Basis, Decision, Grounds, Record};
 pub use cards::Draft;
 pub use cards::content as card_content;
 pub use cards::text as card_text;
 pub use confirm::{AnswerError, Audience, Confirmations, Notifier, RecipientPush, Refusal};
-pub use notifier::NoMatrix;
+pub use notifier::{ListOnly, NoMatrix};
 pub use server::Caller;
 use takeover::Takeovers;
 pub use tool_policy::PolicyChange;
@@ -485,9 +488,10 @@ impl Bus {
             };
         }
         let plugin = cards::text(&server.title);
-        let langs = self.plugins.owner_languages();
+        let langs = self.card_languages(caller, Subject::Tool);
         let mut draft = cards::tool_call(&caller.name, &plugin, tool, &args, highest, &langs);
-        if !highest {
+        // 放行时段按插件记，不分 Bot：家人打开的时段会连主人的 Bot 一起放行，所以发给家人的卡片不给这个选项。
+        if !highest && self.recipient(caller, Subject::Tool).is_none() {
             draft = draft.with_window(
                 server.id.as_str(),
                 self.confirmations.window_length(),
@@ -507,151 +511,15 @@ impl Bus {
             )
             .await
         };
-        self.confirmed_after_hold(caller, name, args, (draft, activity), run, held_ms)
-            .await
-    }
-
-    /// 请主人确认，确认了再执行 `run`。整个过程在后台任务里跑：Agent 等不及断开了，确认照样有效到过期，主人确认后
-    /// 照样执行，结果在卡片上（ADR-0016）。
-    async fn confirmed<F, Fut>(
-        self: &Arc<Self>,
-        caller: &Caller,
-        name: &str,
-        args: Value,
-        (draft, activity): (Draft, Guard),
-        run: F,
-    ) -> CallToolResult
-    where
-        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
-        Fut: Future<Output = Outcome> + Send,
-    {
-        self.confirmed_after_hold(caller, name, args, (draft, activity), run, None)
-            .await
-    }
-
-    /// `held_ms`：发卡片之前先停住了多久（“我来操作”），写进审计。
-    async fn confirmed_after_hold<F, Fut>(
-        self: &Arc<Self>,
-        caller: &Caller,
-        name: &str,
-        args: Value,
-        (draft, activity): (Draft, Guard),
-        run: F,
-        held_ms: Option<u64>,
-    ) -> CallToolResult
-    where
-        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
-        Fut: Future<Output = Outcome> + Send,
-    {
-        drop(activity);
-        let bus = self.clone();
-        let caller = caller.clone();
-        let name = name.to_owned();
-        let task = tokio::spawn(async move {
-            let decision = bus.confirmations.ask(&caller.id, draft).await;
-            match decision {
-                Ok(ticket) => {
-                    let activity = bus.plugins.activity.start_tool(&caller.id);
-                    let outcome = run(bus.clone(), ticket.secrets.clone()).await;
-                    drop(activity);
-                    // `window` 有值：不是这次调用自己的卡片，是主人先前批准的放行时段。
-                    let confirmation = if ticket.window.is_some() {
-                        "window"
-                    } else {
-                        "card"
-                    };
-                    bus.record(
-                        &caller,
-                        &name,
-                        &args,
-                        Decision::Approved,
-                        Some(Grounds {
-                            basis: ticket.window.clone().map_or(Basis::Card, Basis::Window),
-                            held_ms,
-                        }),
-                        &outcome,
-                    );
-                    bus.confirmations.finish(ticket, outcome.state).await;
-                    with_confirmation(outcome.result, confirmation)
-                }
-                Err(refusal) => bus.refused(&caller, &name, &args, &refusal, held_ms),
-            }
-        });
-        task.await
-            .unwrap_or_else(|e| with_failure(&format!("确认流程意外中止：{e}"), "internal_error"))
-    }
-
-    /// 最高级的安装和更新（ADR-0036）：第一张批准后，再请主人点一张“我知道这个插件能控制整台主机”
-    /// 的卡片，两张都同意才执行。`second` 是第二张的内容；没有最高级权限时是一次普通确认。
-    /// 两张卡片都没有放宽选项：安装和更新不进放行时段（ADR-0024 对它们不适用）。
-    async fn confirmed_twice<F, Fut>(
-        self: &Arc<Self>,
-        caller: &Caller,
-        name: &str,
-        args: Value,
-        (draft, second, held_ms, activity): (Draft, Option<Draft>, Option<u64>, Guard),
-        run: F,
-    ) -> CallToolResult
-    where
-        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
-        Fut: Future<Output = Outcome> + Send,
-    {
-        let Some(second) = second else {
-            return self
-                .confirmed_after_hold(caller, name, args, (draft, activity), run, held_ms)
-                .await;
-        };
-        drop(activity);
-        let bus = self.clone();
-        let caller = caller.clone();
-        let name = name.to_owned();
-        let task = tokio::spawn(async move {
-            let ticket = match bus.confirmations.ask(&caller.id, draft).await {
-                Ok(ticket) => ticket,
-                Err(refusal) => return bus.refused(&caller, &name, &args, &refusal, None),
-            };
-            // 第一张批准了还没执行：第二张拒绝或过期时什么都不装，两张卡片都说清楚。
-            let second_ticket = match bus.confirmations.ask(&caller.id, second).await {
-                Ok(second) => second,
-                Err(refusal) => {
-                    let message = refusal.message();
-                    bus.confirmations
-                        .finish(
-                            ticket,
-                            ConfirmationState::Failed {
-                                message: message.clone(),
-                            },
-                        )
-                        .await;
-                    return bus.refused(&caller, &name, &args, &refusal, None);
-                }
-            };
-            let activity = bus.plugins.activity.start_tool(&caller.id);
-            let outcome = run(bus.clone(), ticket.secrets.clone()).await;
-            drop(activity);
-            let confirmation = if ticket.window.is_some() {
-                "window"
-            } else {
-                "card"
-            };
-            bus.record(
-                &caller,
-                &name,
-                &args,
-                Decision::Approved,
-                Some(Grounds {
-                    basis: Basis::Card,
-                    held_ms,
-                }),
-                &outcome,
-            );
-            let state = outcome.state.clone();
-            bus.confirmations.finish(ticket, state.clone()).await;
-            bus.confirmations.finish(second_ticket, state).await;
-            with_confirmation(outcome.result, confirmation)
-        });
-        task.await
-            .unwrap_or_else(|e| with_failure(&format!("确认流程意外中止：{e}"), "internal_error"))
+        self.confirmed_after_hold(
+            caller,
+            name,
+            args,
+            (draft, activity),
+            run,
+            (held_ms, Subject::Tool),
+        )
+        .await
     }
 
     /// 主人没同意：拒绝了、过期了，或者卡片发不出去。
