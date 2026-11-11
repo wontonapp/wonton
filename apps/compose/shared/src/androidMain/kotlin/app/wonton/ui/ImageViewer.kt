@@ -64,7 +64,6 @@ import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Download
 import app.wonton.ui.icons.Share
 import app.wonton.ui.icons.WontonIcon
-import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
