@@ -8,7 +8,7 @@ final class ChatPanelUITests: XCTestCase {
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
-        continueAfterFailure = true
+        continueAfterFailure = false
     }
 
     func testPullPanelLevelsAndCapsule() throws {
@@ -42,7 +42,7 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertFalse(app.buttons["panelAdd"].waitForExistence(timeout: 2), "加了网址后还是空面板")
         shot("05-page")
 
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 20), "面板网页没加载出来")
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10), "面板网页没加载出来")
         pullPageDown()
         XCTAssertTrue(capsule.waitForExistence(timeout: 5), "页面滚到顶后接着拉没到第 2 级")
         shot("06-page-full")
@@ -59,7 +59,7 @@ final class ChatPanelUITests: XCTestCase {
         }
         XCTAssertNotNil(room, "列表里没有房间（先装回声 Bot）")
         room?.tap()
-        XCTAssertTrue(composer(timeout: 30)?.exists == true, "没进房间")
+        XCTAssertTrue(composer(timeout: 10)?.exists == true, "没进房间")
 
         let panel = app.otherElements["chatPanel"]
         pullUpInRoom()
@@ -81,14 +81,14 @@ final class ChatPanelUITests: XCTestCase {
         }
         app.launch()
         XCTAssertNotNil(
-            waitAnyButton(["Apps", "应用", "Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 60),
+            waitAnyButton(["Apps", "应用", "Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 10),
             "既没到标签栏也没到引导页"
         )
         passOnboarding()
-        let chat = waitAnyButton(["Chats", "聊天"], timeout: 30)
+        let chat = waitAnyButton(["Chats", "聊天"], timeout: 10)
         XCTAssertNotNil(chat, "没到标签栏")
         chat?.tap()
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20), "没到聊天页")
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 10), "没到聊天页")
     }
 
     private enum Direction { case up, down }
@@ -113,7 +113,7 @@ final class ChatPanelUITests: XCTestCase {
 
     /// 从列表里往上下拖。用慢速拖动，不让惯性把列表甩走。
     private func pull(_ direction: Direction) {
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 15), "找不到聊天列表")
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 10), "找不到聊天列表")
         let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.28))
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.92))
         switch direction {
@@ -123,8 +123,8 @@ final class ChatPanelUITests: XCTestCase {
     }
 
     /// 列表里第一行聊天：整行宽、在底栏上面（底栏的按钮窄）。
-    private func firstRoom(timeout: TimeInterval = 20) -> XCUIElement? {
-        let deadline = Date().addingTimeInterval(timeout)
+    private func firstRoom(timeout: TimeInterval = 10) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(min(timeout, 10))
         while Date() < deadline {
             if let row = app.buttons.allElementsBoundByIndex.first(where: {
                 $0.isHittable && $0.frame.width > 250 && $0.frame.height > 50 && $0.frame.minY > 80
@@ -138,7 +138,7 @@ final class ChatPanelUITests: XCTestCase {
 
     /// 输入框：聊天列表本身也是滚动视图，等它出现才算进了房间。
     private func composer(timeout: TimeInterval) -> XCUIElement? {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(min(timeout, 10))
         while Date() < deadline {
             for label in ["Message", "消息", "訊息", "メッセージ"] {
                 for view in app.textViews.allElementsBoundByIndex where view.label == label && view.exists {
@@ -173,7 +173,7 @@ final class ChatPanelUITests: XCTestCase {
 
     @discardableResult
     private func waitAnyButton(_ labels: [String], timeout: TimeInterval, required: Bool = false) -> XCUIElement? {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(min(timeout, 10))
         while Date() < deadline {
             for label in labels {
                 let element = app.buttons[label].firstMatch
