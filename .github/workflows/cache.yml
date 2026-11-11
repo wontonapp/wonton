@@ -203,7 +203,8 @@ jobs:
       - name: 安装 rust-toolchain.toml 指定的工具链和 Android target
         run: |
           rustup toolchain install
-          rustup target add aarch64-linux-android
+          # 夜跑在 x86_64 模拟器上跑，缓存里两套 ABI 都要（见下面的两个构建步骤）。
+          rustup target add aarch64-linux-android x86_64-linux-android
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
           tool: cargo-ndk@4.1.2

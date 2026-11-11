@@ -78,6 +78,7 @@ jobs:
         run: xcodegen generate --spec apps/ios/project.yml
       # 只开一台模拟器：型号取镜像里最新系统上的第一台 iPhone，镜像换了也不用改工作流。
       - name: 选一台 iPhone 模拟器并启动
+        timeout-minutes: 10
         run: |
           UDID=$(python3 - <<'PY'
           import json, subprocess
@@ -98,10 +99,14 @@ jobs:
           PY
           )
           echo "SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
+          # 上一轮结束不干净时 CoreSimulator 会卡住或崩（Mach -308），先全停再擦掉这台。
+          xcrun simctl shutdown all || true
+          xcrun simctl erase "$UDID" || true
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
       # 先只编测试包：录屏和跑测试分开，安装 App 时不和启动的模拟器抢。
       - name: 编测试包
+        timeout-minutes: 30
         run: |
           xcodebuild build-for-testing \
             -project apps/ios/Wonton.xcodeproj \
@@ -113,6 +118,7 @@ jobs:
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
       - name: 跑 WontonUITests 并录屏
+        timeout-minutes: 20
         run: |
           set -o pipefail
           rm -rf "$RUNNER_TEMP/ui.xcresult"
