@@ -62,6 +62,36 @@
         }
       }
     },
+    "push.waitingConfirmation" : {
+      "comment" : "Body of a push notification for a confirmation card: the title already carries the card title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for you"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "確認待ち"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等你确认"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等你確認"
+          }
+        }
+      }
+    },
     "push.unknownSender" : {
       "comment" : "Title of a push notification whose sender isn't in the payload.",
       "extractionState" : "manual",

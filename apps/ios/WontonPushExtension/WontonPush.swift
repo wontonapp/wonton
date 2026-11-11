@@ -9,6 +9,8 @@ struct WontonPushPayload: Decodable {
     let sender: String?
     let senderDisplayName: String?
     let roomName: String?
+    /// 推送的类别：`confirmation` 是等你回答的确认卡片。没有就是普通消息；不认识的取值也当普通消息显示。
+    let category: String?
 }
 
 /// RFC 8291 的 aes128gcm 解密：用主 App 生成、存在共享钥匙串里的私钥和认证密钥，解开家里推送代理
@@ -76,7 +78,10 @@ enum WontonPush {
         // 填充分隔符是记录的最后一个字节，单条记录必须是 0x02（RFC 8291 第 5 节）；它前面的 0x00 是填充。
         guard plaintext.popLast() == 0x02 else { throw DecryptError.undecryptable }
         while plaintext.last == 0x00 { plaintext.removeLast() }
-        guard let payload = try? JSONDecoder().decode(WontonPushPayload.self, from: plaintext) else {
+        // 明文的字段名是 snake_case 的契约（核心锁住），Swift 侧用驼峰。
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let payload = try? decoder.decode(WontonPushPayload.self, from: plaintext) else {
             throw DecryptError.undecryptable
         }
         return payload
