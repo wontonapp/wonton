@@ -49,20 +49,26 @@ step() {
   fi
   last_step="$name"
   want "$name" || return 1
+  step_now="$*"
   printf '\n== %s\n' "$*"
 }
+
+# 探针的 curl 统一走 smoke-curl.sh 里的 curl_in：都带超时，超时报出是哪一步（见该文件）。
+# shellcheck source=deploy/dev/core/smoke-curl.sh
+source "$(dirname "${BASH_SOURCE[0]}")/smoke-curl.sh"
 
 # 浏览器：同一个 Cookie 罐，跨请求保持会话。它共享核心容器的网络命名空间，核心重启后要重建。
 # 直连探针忽略 Docker CLI 注入的代理；隧道探针则清空 NO_PROXY，避免 *.localhost 绕过显式的本地代理。
 start_browser() {
   docker rm -f "$browser" >/dev/null 2>&1 || true
-  docker run -d --name "$browser" --network "container:$core" --entrypoint sleep "$curl_image" 1800 >/dev/null
+  # 活 7200 秒：慢模型下一整套会跑一个多小时，1800 秒会在中途退出，后面的探针全部打到死容器上。
+  docker run -d --name "$browser" --network "container:$core" --entrypoint sleep "$curl_image" 7200 >/dev/null
 }
-b() { docker exec "$browser" curl --noproxy '*' -sS -c /tmp/jar -b /tmp/jar "$@"; }
+b() { curl_in "$browser" --noproxy '*' -sS -c /tmp/jar -b /tmp/jar "$@"; }
 # 经手机的本地代理访问，和 App 一样带会话凭据（$credential）。t 像 Android WebView：http 地址直接发绝对形式的
 # 请求行；tc 像 iOS WKWebView：每条连接先 CONNECT。两者各用一个 Cookie 罐，与上面的浏览器分开。
-t() { docker exec "$browser" curl --noproxy '' -sS -c /tmp/phone-jar -b /tmp/phone-jar -x http://127.0.0.1:18008 -U "$credential" "$@"; }
-tc() { docker exec "$browser" curl --noproxy '' -sS -c /tmp/ios-jar -b /tmp/ios-jar -p -x http://127.0.0.1:18008 -U "$credential" "$@"; }
+t() { curl_in "$browser" --noproxy '' -sS -c /tmp/phone-jar -b /tmp/phone-jar -x http://127.0.0.1:18008 -U "$credential" "$@"; }
+tc() { curl_in "$browser" --noproxy '' -sS -c /tmp/ios-jar -b /tmp/ios-jar -p -x http://127.0.0.1:18008 -U "$credential" "$@"; }
 
 labeled() {
   local id="$1"

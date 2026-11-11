@@ -53,11 +53,16 @@
 # WONTON_TASK、WONTON_TTL（打在这套栈容器上的 com.wonton.task、com.wonton.ttl 标签：归哪个任务、到期时刻 ISO 8601；
 # 共用开发机的回收脚本按它们认主，没设时不打值）。
 # 所有 HTTP 请求都在一个与核心共享网络的 curl 容器里发出，所以 DOCKER_HOST 指向远端主机时同样可用。
+# 每个请求都带超时（接口 600 秒、网页 120 秒、连接 10 秒，SMOKE_API_MAX_TIME / SMOKE_WEB_MAX_TIME /
+# SMOKE_CONNECT_TIMEOUT 覆盖）：核心或插件不回时，开发栈和冒烟不跟着挂死。
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 curl_image="curlimages/curl:8.23.0"
+: "${SMOKE_API_MAX_TIME:=600}"
+: "${SMOKE_WEB_MAX_TIME:=120}"
+: "${SMOKE_CONNECT_TIMEOUT:=10}"
 
 export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-dev-core}"
 # 密钥按项目名放在检出目录外：换个检出（worktree）起同一个项目名的栈，用的还是同一份，Hydra 才读得出库里的
@@ -287,7 +292,8 @@ logs() {
 # 在与核心共享网络命名空间的容器里运行 curl：*.localhost 由 curl 解析到 127.0.0.1，即核心网关。
 # Docker CLI 会注入客户端代理配置；这些内部请求必须直连，不能依赖客户端的 NO_PROXY 名单。
 client() {
-  docker run --rm -i --network "container:$core" "$curl_image" --noproxy '*' "$@"
+  docker run --rm -i --network "container:$core" "$curl_image" --noproxy '*' \
+    --max-time "$SMOKE_API_MAX_TIME" --connect-timeout "$SMOKE_CONNECT_TIMEOUT" "$@"
 }
 
 # open 用的 Cookie 罐：数据目录在 Docker 主机上一定存在（compose 挂着它），curl 容器挂进去写，宿主上直接
@@ -304,7 +310,8 @@ ensure_jar_dir() {
 browser_curl() {
   docker run --rm --network "container:$core" -v "$WONTON_DEV_DATA/open:/jar" \
     --user "${WONTON_DEV_PUID:-1000}:${WONTON_DEV_PGID:-1000}" \
-    "$curl_image" --noproxy '*' -sS -c /jar/cookies.txt -b /jar/cookies.txt "$@"
+    "$curl_image" --noproxy '*' --max-time "$SMOKE_WEB_MAX_TIME" --connect-timeout "$SMOKE_CONNECT_TIMEOUT" \
+    -sS -c /jar/cookies.txt -b /jar/cookies.txt "$@"
 }
 
 token() {
