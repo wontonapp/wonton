@@ -621,6 +621,14 @@ impl ClientCore {
         self.replay().no_periodic_checks = true;
     }
 
+    /// 把当前的隧道 endpoint 关掉，模拟本机 socket 死掉：这条 socket 上的连接和中继一起失效，客户端的
+    /// 退避重连拨的全是死 socket。endpoint 重建的触发条件靠它验证。只给测试用。
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub fn test_close_home_endpoint(&self) {
+        self.scope().home.test_close_endpoint();
+    }
+
     /// 指定 iroh 的网络配置。[`Network::DirectOnly`] 不连中继、不做地址发现，本机和局域网测试用。
     pub fn with_network(data_dir: &str, network: Network) -> Result<Arc<Self>, CoreError> {
         crate::l10n::init();
