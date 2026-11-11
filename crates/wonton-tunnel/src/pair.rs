@@ -196,7 +196,10 @@ impl Fields {
             Some(text) => serde_json::from_str::<Vec<Relay>>(text)
                 .map_err(|e| malformed("relay table", &e.to_string()))?,
             None => Vec::new(),
-        };
+        }
+        .into_iter()
+        .map(crate::relays::canonical_relay)
+        .collect::<Vec<_>>();
         for relay in &relays {
             relay
                 .validate()
@@ -326,7 +329,7 @@ mod tests {
         PairingCode {
             server_id: SecretKey::generate().public(),
             relays: vec![crate::relays::Relay {
-                url: "https://relay.example.com./".parse().unwrap(),
+                url: "https://relay.example.com/".parse().unwrap(),
                 token: Some(crate::relays::RelayToken::new("tok")),
                 tier: 0,
             }],
@@ -348,6 +351,19 @@ mod tests {
         assert_eq!(PairingCode::parse(&uri).unwrap(), code);
         // 二维码扫出来的文字常带首尾空白。
         assert_eq!(PairingCode::parse(&format!(" {uri}\n")).unwrap(), code);
+    }
+
+    /// 带尾点的中继地址解析成不带的：同一个中继在码里、表里、状态里只有一个写法（#200）。
+    #[test]
+    fn a_dotted_relay_url_parses_to_the_canonical_spelling() {
+        let mut dotted = code();
+        dotted.relays[0].url = "https://relay.example.com./".parse().unwrap();
+        let parsed = PairingCode::parse(&dotted.to_uri()).unwrap();
+        assert_eq!(parsed.relays[0].url.as_str(), "https://relay.example.com/");
+        assert!(parsed.relays[0].validate().is_ok());
+        // 直连地址和其余字段不跟规范。
+        assert_eq!(parsed.direct_addrs, dotted.direct_addrs);
+        assert_eq!(parsed.secret, dotted.secret);
     }
 
     #[test]
