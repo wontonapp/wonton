@@ -82,7 +82,7 @@ impl CertificateManager {
                 "SSL_CERT_FILE=/acme/ca.pem".to_owned(),
             ]);
         }
-        let resolvers = crate::entry_settings::resolver_ips(&self.config.dns_resolvers);
+        let resolvers = crate::entry_settings::resolver_ips(&self.config.dns_resolvers)?;
         // No cert directory, leaf key, Docker socket or parent directory mount.
         Ok(ContainerCreateBody {
             image: Some(LEGO_IMAGE.to_owned()),
