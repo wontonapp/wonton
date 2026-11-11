@@ -225,6 +225,10 @@ fn wire_format_is_stable() {
         json!("core_upgrading")
     );
     assert_eq!(
+        serde_json::to_value(PluginFailure::RecordUnusable).unwrap(),
+        json!("record_unusable")
+    );
+    assert_eq!(
         serde_json::to_value(PluginTrust::Community).unwrap(),
         json!("community")
     );
