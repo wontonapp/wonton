@@ -62,8 +62,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 uniffi = { workspace = true }
 url = { workspace = true }
-# MIT OR Apache-2.0. Explicit discovery roots must be valid CA certificates.
-x509-parser = "0.18.1"
 wonton-l10n = { path = "../wonton-l10n" }
 wonton-matrix = { path = "../wonton-matrix" }
 wonton-protocol = { path = "../wonton-protocol", features = ["uniffi"] }
@@ -85,9 +83,6 @@ wonton-tunnel = { path = "../wonton-tunnel", features = ["test-hooks"] }
 # MIT。插件和文件接口的行为测试用它在本机假扮核心（文件还假扮 tusd）。
 axum = { workspace = true }
 tempfile = { workspace = true }
-# MIT OR Apache-2.0. Local TLS discovery fixtures; no external homeserver calls.
-rcgen = "0.14.10"
-tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }
 tokio = { workspace = true, features = ["rt", "time", "net", "io-util"] }
 # 聊天的集成测试：一次性的 Tuwunel 和模拟核心的 JWT 签发。
 wonton-matrix = { path = "../wonton-matrix", features = ["testkit"] }

@@ -188,7 +188,6 @@ pub struct Gateway {
     pub(crate) app_calls: Arc<mcp_apps::AppCalls>,
     sessions: session::SessionStore,
 }
-
 impl Gateway {
     /// `hydra` 带上身份提供方公开端点的地址，必须来自 [`crate::config::Config`]：配置层已经校验过它是
     /// `http://主机:端口`。

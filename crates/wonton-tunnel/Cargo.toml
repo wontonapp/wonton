@@ -29,7 +29,6 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-
 tracing = { workspace = true }
 # MIT OR Apache-2.0。二维码里的配对码是一个 wonton:// 地址。
 url = { workspace = true }
-
 wonton-protocol = { path = "../wonton-protocol" }
 
 [features]
