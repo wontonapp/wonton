@@ -159,13 +159,9 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
-      # 只比较、缺图也报错，不在 CI 里悄悄补图；重录在 snapshots-record.yml。
-      # 每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。
+      # 录制模式由 scheme 的环境变量切（`Wonton` 是 never）：只比较、缺图也报错，不在 CI 里悄悄补图；
+      # 重录在 snapshots-record.yml。每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。
       - name: 单元测试和截图测试
-        env:
-          SNAPSHOT_TESTING_RECORD: never
-          # 比较失败的原因图写进这里，和 .xcresult 一起当产物存。
-          SNAPSHOT_ARTIFACTS: ${{ runner.temp }}/snapshot-artifacts
         run: |
           xcodebuild test-without-building \
             -project apps/ios/Wonton.xcodeproj \
@@ -182,14 +178,13 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/Tests.xcresult" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO
-      - name: 失败时存结果（截图差异、测试结果包）
+      # 对比失败的新图和差异图作为附注在 .xcresult 里。
+      - name: 失败时存测试结果包
         if: ${{ failure() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ios-test-failure
-          path: |
-            ${{ runner.temp }}/snapshot-artifacts
-            ${{ runner.temp }}/Tests.xcresult
+          path: ${{ runner.temp }}/Tests.xcresult
           retention-days: 7
           if-no-files-found: ignore
 

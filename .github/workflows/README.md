@@ -59,10 +59,12 @@ android 的构建、ios 的 SwiftLint 和模拟器构建，都必须在队列里
 - 参考图绑定那台模拟器和系统版本，外观、语言（en、US）和时区（UTC）钉在 scheme 和测试里。换了模拟器或系统
   要整体重录，只换图不换参数会一直红。
 - 每个用例默认 10 秒、最多 60 秒，失败不自动重试。
-- 日常作业用 `SNAPSHOT_TESTING_RECORD=never`：参考图缺一张也直接红，不在 CI 里悄悄补图。
-- 比较失败时“失败时存结果”一步把差异图（`SNAPSHOT_ARTIFACTS`）和 `.xcresult` 存成产物，保留 7 天。
+- 录制模式靠 scheme 的环境变量切：`Wonton` 是 `SNAPSHOT_TESTING_RECORD=never`（只比较，缺一张参考图也直接红，
+  不在 CI 里悄悄补图），`WontonSnapshots` 是 `all`。xcodebuild 步骤的 `env` 传不进模拟器里跑的 App，只有 scheme
+  的环境变量进得去。
+- 比较失败时“失败时存测试结果包”一步把 `.xcresult` 存成产物，保留 7 天；新图和差异图是里面的附注。
 - 重录在 `snapshots-record.yml`：在 PR 上打 `record-snapshots` 标签（草稿 PR 的事件不跑日常作业，但重录作业
-  照跑）。作业用 `SNAPSHOT_TESTING_RECORD=all` 把参考图全部重画，提交回分支并摘掉标签。录制那一轮本身是红的
+  照跑）。作业用 `WontonSnapshots` scheme 把参考图全部重画，提交回分支并摘掉标签。录制那一轮本身是红的
   （每录一张报一条“Automatically recorded snapshot”），以提交回去的图为准；它不算必需检查。
 - GITHUB_TOKEN 推的提交不会触发工作流（GitHub 的规则），仓库也没有单独的机器人令牌，所以录完要自己推一个
   空提交或点重跑，新图才会被比较一遍。外部 fork 的 PR 令牌推不回对方的分支：图存成 `ios-snapshots` 产物，作者自己取。

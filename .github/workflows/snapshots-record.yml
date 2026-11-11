@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+# 同一个分支同时只重录一次：重录会往分支提交，两个作业一起跑会互相把对方的推送顶成非快进。
+concurrency:
+  group: snapshots-record-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: true
+
 jobs:
   ios:
     name: 重录 iOS 截图
@@ -28,9 +33,9 @@ jobs:
       # 参考图绑定这台模拟器和这个系统版本：改了要整体重录。设备取装机列表里的普通 iPhone。
       SIMULATOR_NAME: iPhone 17
       SIMULATOR_OS: "27.0"
-      # 和三方库的录制目录约定一致；日期按 UTC、en_US 排版，参考图才可复现。
+      # 日期按 UTC、en_US 排版，参考图才可复现。录制模式由 `WontonSnapshots` scheme 的环境变量打开：
+      # xcodebuild 步骤的 env 传不进模拟器里跑的 App。
       TZ: UTC
-      SNAPSHOT_TESTING_RECORD: all
     steps:
       # 重录要把参考图推到 PR 的分支，检出的是分支本身。
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -68,7 +73,7 @@ jobs:
           xcodebuild -version
           xcodebuild build-for-testing \
             -project apps/ios/Wonton.xcodeproj \
-            -scheme Wonton \
+            -scheme WontonSnapshots \
             -configuration Debug \
             -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
             -only-testing:WontonTests \
@@ -77,13 +82,10 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
       - name: 重录截图测试
         id: tests
-        env:
-          # 对比失败时的原因图（录制模式下就是旧图和新图）也一样存。
-          SNAPSHOT_ARTIFACTS: ${{ runner.temp }}/snapshot-artifacts
         run: |
           xcodebuild test-without-building \
             -project apps/ios/Wonton.xcodeproj \
-            -scheme Wonton \
+            -scheme WontonSnapshots \
             -configuration Debug \
             -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
             -only-testing:WontonTests \
@@ -126,13 +128,12 @@ jobs:
           path: apps/ios/WontonTests/__Snapshots__
           retention-days: 7
           if-no-files-found: ignore
-      - name: 失败时存结果（旧图和新图、测试结果包）
+      # 录制模式下每个用例都会报“已录制”，失败结果包里有每张新图和旧图。
+      - name: 失败时存测试结果包
         if: ${{ failure() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ios-record-failure
-          path: |
-            ${{ runner.temp }}/snapshot-artifacts
-            ${{ runner.temp }}/Tests.xcresult
+          path: ${{ runner.temp }}/Tests.xcresult
           retention-days: 7
           if-no-files-found: ignore
