@@ -1,8 +1,8 @@
 //! UI 测试用的假数据入口：把 App 直接开进主界面，不需要家里的服务器。
 //!
-//! 假数据不进生产路径：`new_ui_fake` 仍然建一个正常的 `ClientCore`（没有后端），再把塞进订阅的 ViewModel 换成
-//! 写死的值；开着时 `dispatch` 不落到作用域，免得网络链路把 ViewModel 改回空的。壳只在 `#if DEBUG` 里调它，
-//! 入口跟着绑定一起编进包里，Release 构建也能生成同一份 Swift 绑定。
+//! 整个模块在 cargo feature `ui-fake` 后面，生产 Release 包不带（构建脚本按 profile 开）；Swift 侧的调用
+//! 另在 `#if DEBUG` 里。开着时 `new_ui_fake` 仍然建一个正常的 `ClientCore`（没有后端），再把塞进订阅的
+//! ViewModel 换成写死的值；开着时 `dispatch` 不落到作用域，免得网络链路把 ViewModel 改回空的。
 //!
 //! 只够渲染首屏：一台“家里”的服务器、一个 Bot 私聊、引导已经走完。时间线、媒体和操作后的新状态不在里面，
 //! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。

@@ -15,6 +15,10 @@ abstract class BuildRustCore : Exec() {
     @get:Input
     abstract val minSdk: Property<Int>
 
+    /** 假数据入口（cargo feature ui-fake）：`auto` 按构建类型开关，`1`/`0` 强制。 */
+    @get:Input
+    abstract val uiFake: Property<String>
+
     @get:Input
     abstract val abis: ListProperty<String>
 
@@ -35,6 +39,7 @@ abstract class BuildRustCore : Exec() {
                 kotlinDir.get().asFile.path,
                 rustProfile.get(),
                 minSdk.get().toString(),
+                uiFake.get(),
             ) + abis.get()
         }
     }
@@ -46,6 +51,8 @@ val buildRustCore = tasks.register<BuildRustCore>("buildRustCore") {
     group = "build"
     description = "用 cargo-ndk 编译 Rust 客户端核心，并生成 UniFFI Kotlin 绑定"
     rustProfile.set(providers.gradleProperty("wonton.rustProfile"))
+    // 假数据入口默认按构建类型开关（Debug 带、Release 不带）；夜跑用 -Pwonton.uiFake=1 显式带上。
+    uiFake.set(providers.gradleProperty("wonton.uiFake").orElse("auto"))
     minSdk.set(libs.versions.android.minSdk.map { it.toInt() })
     abis.set(providers.gradleProperty("wonton.abis").map { value -> value.split(" ").filter { it.isNotBlank() } })
     kotlinDir.set(layout.buildDirectory.dir("generated/uniffi/kotlin"))

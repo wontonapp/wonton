@@ -70,6 +70,8 @@ jobs:
       - name: 编译 Rust 核心并生成 Swift 绑定
         env:
           WONTON_IOS_TARGETS: aarch64-apple-ios-sim
+          # 假数据入口（cargo feature ui-fake）：UI 测试显式带上；Release 包不带。
+          WONTON_UI_FAKE: "1"
         run: apps/ios/scripts/build-core.sh debug
       - name: 生成 Xcode 工程
         run: xcodegen generate --spec apps/ios/project.yml
@@ -211,7 +213,7 @@ jobs:
             # /data/local/tmp 是 shell 能写的地方（API 36 上 /sdcard 根目录不行）。
             adb shell screenrecord --size 720x1280 --time-limit 180 /data/local/tmp/ui.mp4 &
             # 脚本的每行是单独的 sh：构建、抓产物和退出码要写在同一行里。
-            (cd apps/compose && ./gradlew --no-daemon --no-build-cache -Pwonton.abis=x86_64 :androidApp:connectedDebugAndroidTest); status=$?; adb pull /data/local/tmp/ui.mp4 "$RUNNER_TEMP/ui.mp4" || true; mkdir -p "$RUNNER_TEMP/shots"; adb pull /sdcard/Pictures/WontonUITests "$RUNNER_TEMP/shots" || true; exit $status
+            (cd apps/compose && ./gradlew --no-daemon --no-build-cache -Pwonton.abis=x86_64 -Pwonton.uiFake=1 :androidApp:connectedDebugAndroidTest); status=$?; adb pull /data/local/tmp/ui.mp4 "$RUNNER_TEMP/ui.mp4" || true; mkdir -p "$RUNNER_TEMP/shots"; adb pull /sdcard/Pictures/WontonUITests "$RUNNER_TEMP/shots" || true; exit $status
       - name: 上传结果和录屏
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

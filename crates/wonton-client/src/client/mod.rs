@@ -1,4 +1,7 @@
 use std::path::PathBuf;
+#[cfg(feature = "ui-fake")]
+use std::sync::RwLockReadGuard;
+#[cfg(feature = "ui-fake")]
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -37,6 +40,7 @@ mod switch;
 #[cfg(feature = "test-hooks")]
 mod test_hooks;
 mod tool_policy;
+#[cfg(feature = "ui-fake")]
 mod ui_fake;
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
@@ -52,8 +56,12 @@ pub struct ClientCore {
     root: PathBuf,
     network: Network,
     scope: RwLock<Arc<Scope>>,
-    /// 壳订阅的 ViewModel 发送端。假数据入口会整组换成独立的发送端，真实作用域再发也盖不掉。
+    /// 壳订阅的 ViewModel 发送端。有假数据入口时整组换成独立的发送端，包一层锁；没有这个 feature 时保持
+    /// 直接字段，生产构建不多一次读锁。
+    #[cfg(feature = "ui-fake")]
     views: RwLock<Views>,
+    #[cfg(not(feature = "ui-fake"))]
+    views: Views,
     /// 切换后要在新作用域里重放的、壳只发一次的输入。
     replay: Mutex<Replay>,
     /// 串行化切换：列表改动和换作用域要一起做完。
@@ -63,6 +71,7 @@ pub struct ClientCore {
     /// 正在给哪台后台登记哪个推送地址，`push_route` 拿它和落盘记录一起去重。
     in_flight_registrations: push_route::InFlightRegistrations,
     /// 测试用的假数据入口（`new_ui_fake`）开着：操作不落到作用域，ViewModel 保持塞进去的假数据。
+    #[cfg(feature = "ui-fake")]
     ui_fake: AtomicBool,
 }
 
@@ -582,10 +591,16 @@ impl ClientCore {
 }
 
 impl ClientCore {
-    pub(crate) fn views(&self) -> std::sync::RwLockReadGuard<'_, Views> {
+    #[cfg(feature = "ui-fake")]
+    pub(crate) fn views(&self) -> RwLockReadGuard<'_, Views> {
         self.views
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    #[cfg(not(feature = "ui-fake"))]
+    pub(crate) fn views(&self) -> &Views {
+        &self.views
     }
 
     /// 关掉隧道的定时检查和升级状态的定时轮询，只留回到前台、网络变化和重试触发的检查。只给测试用。
@@ -616,7 +631,10 @@ impl ClientCore {
         let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             appearance: AppearanceLink::new(&root),
+            #[cfg(feature = "ui-fake")]
             views: RwLock::new(Views::of(&scope)),
+            #[cfg(not(feature = "ui-fake"))]
+            views: Views::of(&scope),
             scope: RwLock::new(scope.clone()),
             servers,
             root,
@@ -625,6 +643,7 @@ impl ClientCore {
             switching,
             visits,
             in_flight_registrations: Arc::default(),
+            #[cfg(feature = "ui-fake")]
             ui_fake: AtomicBool::new(false),
         });
         core.attach(&scope);

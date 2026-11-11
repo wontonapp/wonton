@@ -93,6 +93,7 @@ impl ServerList {
     }
 
     /// 测试用的假数据入口（`ClientCore::new_ui_fake`）直接塞一台当前服务器的视图；落盘记录不动。
+    #[cfg(feature = "ui-fake")]
     pub(crate) fn seed_ui_fake(&self, view: ServersViewModel) {
         self.view.send_replace(view);
     }

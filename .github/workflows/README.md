@@ -84,8 +84,10 @@ android 的构建、ios 的 SwiftLint 和模拟器构建，都必须在队列里
 - iOS 只开一台模拟器跑全部 `WontonUITests`；要两台的用例（粘贴的对方视角、好友两端）在工作流里排除或
   `XCTSkip`。要后端的用例没有配对码时 `XCTSkip`，不静默通过。手动触发可以填 `pairing_code`，把开发栈的
   配对码带进来；`PAIR_CODES` 也一并给。
-- 不需要后端的两个用例是冷启动：全新安装落在配对页，和 `WONTON_UI_FAKE` 的假数据首屏。假数据入口只在
-  Debug 里由壳调用（`#if DEBUG`），生产路径不变。
+- 不需要后端的两个用例是冷启动：全新安装落在配对页，和 `WONTON_UI_FAKE` 的假数据首屏。假数据入口整个
+  在 cargo feature `ui-fake` 后面（`crates/wonton-client`）：Debug 构建默认带上，Release 不带；夜跑在
+  构建时显式传开关（iOS 的 `WONTON_UI_FAKE=1`、Android 的 `-Pwonton.uiFake=1`），壳的调用在 `#if DEBUG`
+  里，生产 Release 包编不进去。
 - Android 在 `ubuntu-24.04` 上开 KVM，用 `ReactiveCircus/android-emulator-runner`（Apache-2.0）起一台
   x86_64 模拟器跑 `connectedDebugAndroidTest`；首屏用例不依赖服务端。
 - 用例的时限由 xcodebuild 的 `-test-timeouts-enabled YES` 和 Gradle 自己的超时兜底，不加测试重试。
