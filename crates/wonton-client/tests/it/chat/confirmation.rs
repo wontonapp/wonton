@@ -62,7 +62,7 @@ async fn the_owner_answers_cards_and_sees_how_they_end() {
         home.confirmation_answers(),
         [(
             "install".to_owned(),
-            json!({"answer": "approve", "secrets": {}})
+            json!({"answer": "approve", "secrets": {}, "settings": {}})
         )]
     );
 
@@ -99,7 +99,7 @@ async fn the_owner_answers_cards_and_sees_how_they_end() {
         home.confirmation_answers().last().unwrap(),
         &(
             "uninstall".to_owned(),
-            json!({"answer": "reject", "secrets": {}})
+            json!({"answer": "reject", "secrets": {}, "settings": {}})
         )
     );
 
@@ -310,7 +310,7 @@ async fn the_secrets_filled_on_a_card_are_answered() {
         home.confirmation_answers(),
         [(
             "install".to_owned(),
-            json!({"answer": "approve", "secrets": {"token": "s3cret"}})
+            json!({"answer": "approve", "secrets": {"token": "s3cret"}, "settings": {}})
         )]
     );
 }
@@ -437,7 +437,7 @@ async fn buttons_with_the_same_answer_are_told_apart() {
         home.confirmation_answers(),
         [(
             "agent".to_owned(),
-            json!({"answer": "approve", "choice_id": "always", "secrets": {}})
+            json!({"answer": "approve", "choice_id": "always", "secrets": {}, "settings": {}})
         )]
     );
 }
