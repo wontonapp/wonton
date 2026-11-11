@@ -339,6 +339,7 @@ mod tests {
                     read_by: Vec::new(),
                     reply: None,
                     side_chat: None,
+                    preview: None,
                     actions,
                     group: None,
                 },

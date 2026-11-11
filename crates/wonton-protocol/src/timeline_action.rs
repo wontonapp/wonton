@@ -123,4 +123,10 @@ pub enum TimelineAction {
         target: TimelineTarget,
         outgoing_id: String,
     },
+    /// 去掉发送框当前的链接预览（ADR-0065）。行为细节在 `ClientCore::draft` 的返回和
+    /// [`LinkPreviewState`](crate::LinkPreviewState) 上：这条草稿不再出预览，第一个链接换成别的或草稿发出去就作废。
+    /// 旁聊的输入框也有链接预览，预览状态和主时间线的分开。
+    DismissLinkPreview {
+        target: TimelineTarget,
+    },
 }

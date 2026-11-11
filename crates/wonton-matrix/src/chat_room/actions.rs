@@ -1,9 +1,13 @@
 //! 长按消息的菜单要做的事（ADR-0073）：回复、转发、撤回，以及取回复引用的原消息。
 
-use matrix_sdk::ruma::{
-    EventId, RoomId,
-    events::room::message::{
-        MessageType, RoomMessageEventContent, RoomMessageEventContentWithoutRelation,
+use matrix_sdk::{
+    room::reply::{EnforceThread, Reply},
+    ruma::{
+        EventId, RoomId,
+        events::room::message::{
+            AddMentions, MessageType, RoomMessageEventContent,
+            RoomMessageEventContentWithoutRelation,
+        },
     },
 };
 
@@ -38,6 +42,37 @@ impl ChatRoom {
                 RoomMessageEventContentWithoutRelation::text_plain(body),
                 in_reply_to.to_owned(),
             )
+            .await?;
+        Ok(())
+    }
+
+    /// 回复一条消息，事件内容里带上额外字段（链接预览的 `com.beeper.linkpreviews`，ADR-0065）。其余同
+    /// [`Self::send_reply`]。
+    pub async fn send_reply_with_extra(
+        &self,
+        body: &str,
+        in_reply_to: &EventId,
+        extra: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<()> {
+        self.check_reply_target(in_reply_to).await?;
+        ensure_recipient_devices(&self.room).await?;
+        // 时间线的 `send_reply` 不收额外字段，这里自己组回复事件：不强制开话题、提及对方，和它推断出的一样。
+        let reply = Reply {
+            event_id: in_reply_to.to_owned(),
+            enforce_thread: EnforceThread::MaybeThreaded,
+            add_mentions: AddMentions::Yes,
+        };
+        let content = self
+            .room
+            .make_reply_event(
+                RoomMessageEventContentWithoutRelation::text_plain(body),
+                reply,
+            )
+            .await
+            .map_err(|error| Error::Upstream(format!("组回复失败：{error}")))?;
+        self.timeline()
+            .await
+            .send_with_extra_content(content.into(), Some(extra))
             .await?;
         Ok(())
     }
