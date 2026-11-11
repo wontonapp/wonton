@@ -13,6 +13,9 @@
 #   DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  远端 Linux 主机（远端只需要 Docker，DEV_HOST 是它的 SSH 目标）
 #
 # 使用独立的 compose 项目、端口和临时数据目录，结束时清理全部容器、网络、卷和数据；KEEP=1 保留现场。
+# 分段跑（步骤名见 smoke-lib.sh）：SMOKE_UNTIL=<步骤> 跑到这一步为止（配 KEEP=1 留下栈）；SMOKE_ONLY=<步骤>[,<步骤>…]
+# 只跑列出的步骤，对着已经在跑的栈（KEEP=1 留下的，或用 WONTON_DEV_PROJECT、WONTON_DEV_INSTANCE、WONTON_DEV_DOMAIN、
+# WONTON_DEV_PORT 指定的别的开发栈），不起栈也不拆栈；用到前面步骤里的变量、函数的步骤单跑会直接报错。
 # 本机需要 bash、docker、python3；HTTP 请求都在与核心共享网络的 curl 容器里发出。
 set -euo pipefail
 
@@ -20,13 +23,19 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 dev="$here/dev.sh"
 
-export WONTON_DEV_PROJECT=wonton-smoke
+# shellcheck source=deploy/dev/core/smoke-lib.sh
+source "$here/smoke-lib.sh"
+
 # 带实例名：下面的清理只动这个实例的插件，同一台 Docker 上别的核心不受影响。冒烟一次只跑一个。
-export WONTON_DEV_INSTANCE=smoke
+# 只有 SMOKE_ONLY 对着已有的栈跑时才认外面给的项目、实例、域名和数据目录。
+if [[ -z "${SMOKE_ONLY:-}" ]]; then
+  WONTON_DEV_PROJECT=wonton-smoke WONTON_DEV_INSTANCE=smoke WONTON_DEV_DOMAIN=wonton.localhost
+  WONTON_DEV_DATA="/tmp/wonton-smoke-$(date +%s)-$$"
+fi
+export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-smoke}" WONTON_DEV_INSTANCE="${WONTON_DEV_INSTANCE-smoke}"
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18481}"
 export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18483}"
-export WONTON_DEV_DOMAIN=wonton.localhost
-export WONTON_DEV_DATA="/tmp/wonton-smoke-$(date +%s)-$$"
+export WONTON_DEV_DOMAIN="${WONTON_DEV_DOMAIN:-wonton.localhost}" WONTON_DEV_DATA="${WONTON_DEV_DATA:-/tmp/wonton-smoke}"
 # 核心镜像和隧道客户端镜像用同一个提交号构建，共用 Dockerfile 里的编译阶段。
 WONTON_BUILD_COMMIT="$("$dev" commit)"
 export WONTON_BUILD_COMMIT
@@ -63,72 +72,43 @@ build_failed() {
 }
 build() { "$dev" build -q "$@" >/dev/null || build_failed "镜像构建失败"; }
 # 真实模型：冒烟的 magpie 容器直连宿主上的 magpie（地址见模型段的按 Docker 种类区分），凭据见文件头。
-model="${WONTON_SMOKE_MODEL:?未设 WONTON_SMOKE_MODEL：Hermes 一步要真实模型，填开发机 magpie 里能对话的模型名}"
+if reaches hermes; then
+  model="${WONTON_SMOKE_MODEL:?未设 WONTON_SMOKE_MODEL：Hermes 一步要真实模型，填开发机 magpie 里能对话的模型名}"
+fi
 
-step() { printf '\n== %s\n' "$*"; }
-ok() { printf '   ✓ %s\n' "$*"; }
-fail() {
-  printf '   ✗ %s\n' "$*" >&2
-  exit 1
-}
-expect() {
-  if [[ "$2" == "$3" ]]; then ok "$1"; else fail "$1：期望 $3，实际 $2"; fi
-}
-json() {
-  python3 -c 'import json,sys
-value = json.load(sys.stdin)
-for key in sys.argv[1].split("."):
-    value = value[int(key)] if isinstance(value, list) else value[key]
-print(json.dumps(value) if isinstance(value, (bool, dict, list)) else value)' "$1"
-}
-# 浏览器：同一个 Cookie 罐，跨请求保持会话。它共享核心容器的网络命名空间，核心重启后要重建。
-# 直连探针忽略 Docker CLI 注入的代理；隧道探针则清空 NO_PROXY，避免 *.localhost 绕过显式的本地代理。
-start_browser() {
-  docker rm -f "$browser" >/dev/null 2>&1 || true
-  docker run -d --name "$browser" --network "container:$core" --entrypoint sleep "$curl_image" 1800 >/dev/null
-}
-b() { docker exec "$browser" curl --noproxy '*' -sS -c /tmp/jar -b /tmp/jar "$@"; }
-# 经手机的本地代理访问，和 App 一样带会话凭据（$credential）。t 像 Android WebView：http 地址直接发绝对形式的
-# 请求行；tc 像 iOS WKWebView：每条连接先 CONNECT。两者各用一个 Cookie 罐，与上面的浏览器分开。
-t() { docker exec "$browser" curl --noproxy '' -sS -c /tmp/phone-jar -b /tmp/phone-jar -x http://127.0.0.1:18008 -U "$credential" "$@"; }
-tc() { docker exec "$browser" curl --noproxy '' -sS -c /tmp/ios-jar -b /tmp/ios-jar -p -x http://127.0.0.1:18008 -U "$credential" "$@"; }
-
-labeled() {
-  local id="$1"
-  {
-    docker ps -aq --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"
-    docker network ls -q --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"
-    docker volume ls -q --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"
-  } | tr -d '[:space:]'
-}
-
-
-step "预检"
+if step preflight "预检"; then
 docker version --format '   Docker {{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}'
 for id in "${plugins[@]}"; do
   [[ -z "$(labeled "$id")" ]] || fail "Docker 上已经有插件 $id 的资源，先卸载它再跑冒烟"
 done
 ok "没有残留的示例插件资源"
-trap cleanup EXIT
+fi
+# 对着已有的栈跑时不拆栈，只删自己起的探针容器。
+if [[ -n "${SMOKE_ONLY:-}" ]]; then
+  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null; docker rm -f "$browser" "$phone" >/dev/null 2>&1 || true' EXIT
+else trap cleanup EXIT; fi
 
-step "启动核心和身份提供方（项目 $core，端口 $WONTON_DEV_PORT）"
+if step core "启动核心和身份提供方（项目 $core，端口 $WONTON_DEV_PORT）"; then
 # 核心一启动就在后台装 Hermes：从现在起记下它的网关容器的健康状态变化，量它就绪后多久私聊出现。
 hermes_events="$(mktemp)"
 docker events --filter "container=$hermes" --filter event=health_status --format '{{.TimeNano}} {{.Action}}' \
   >"$hermes_events" 2>/dev/null &
 events_pid=$!
-"$dev" up >/dev/null || build_failed "核心启动失败"
+if [[ -z "${SMOKE_ONLY:-}" ]]; then "$dev" up >/dev/null || build_failed "核心启动失败"; fi
 start_browser
-ok "核心健康：$core_url"
+expect "核心容器健康" "$(docker inspect -f '{{.State.Health.Status}}' "$core")" healthy
+expect "网关应答（$core_url）" "$(b -o /dev/null -w '%{http_code}' "$core_url/_wonton/health")" 200
 
-step "一条命令安装 Grafana 示例插件"
+fi
+if step install "一条命令安装 Grafana 示例插件"; then
 started=$(date +%s)
 installed="$("$dev" install "$repo/plugins/examples/grafana" --yes 2>/dev/null)"
 install_seconds=$(($(date +%s) - started))
 expect "安装完成且健康检查通过（${install_seconds}s）" "$(json status.state <<<"$installed")" running
 expect "网页地址" "$(json web_url <<<"$installed")" "$grafana_url/"
 
-step "隔离"
+fi
+if step isolation "隔离"; then
 expect "插件容器不向宿主暴露端口" \
   "$(docker inspect -f '{{len .HostConfig.PortBindings}}' "$grafana")" 0
 expect "插件容器只在自己的网络里" \
@@ -147,7 +127,8 @@ if docker exec "$grafana" wget -q -T 3 -O /dev/null http://hydra.wonton.internal
 fi
 ok "插件访问不到身份提供方的管理端口"
 
-step "未登录的请求被拒"
+fi
+if step unauth "未登录的请求被拒"; then
 reply="$(b -o /dev/null -w '%{http_code} %{redirect_url}' -H 'Accept: text/html' "$grafana_url/")"
 expect "页面请求跳到核心换取会话" "${reply%% *}" 303
 [[ "${reply#* }" == "$core_url/_wonton/sso?to="* ]] || fail "跳转地址不对：${reply#* }"
@@ -155,7 +136,8 @@ expect "API 请求返回 401" "$(b -o /dev/null -w '%{http_code}' -H 'Accept: ap
 expect "伪造的插件会话无效" \
   "$(b -o /dev/null -w '%{http_code}' -H 'Cookie: wonton_app=forged' "$grafana_url/api/user")" 401
 
-step "像浏览器一样打开插件：登录核心一次，插件自动登录"
+fi
+if step sso "像浏览器一样打开插件：登录核心一次，插件自动登录"; then
 expect "主人令牌登录核心" \
   "$(b -o /dev/null -w '%{http_code}' -X POST --data-urlencode "token=$("$dev" token)" "$core_url/_wonton/login")" 303
 reply="$(b -L -H 'Accept: text/html' -o /dev/null -w '%{http_code} %{url_effective} %{num_redirects}' "$grafana_url/")"
@@ -166,7 +148,8 @@ expect "Grafana 里的用户是主人" "$(json login <<<"$user")" owner
 expect "邮箱来自核心签发的 ID 令牌" "$(json email <<<"$user")" "owner@wonton.internal"
 expect "按 groups 声明映射为管理员" "$(b "$grafana_url/api/user/orgs" | json 0.role)" Admin
 
-step "模型网关（models）：核心预装 magpie，给使用方签发只属于它的凭据，经 models.wonton.internal 转发"
+fi
+if step models "模型网关（models）：核心预装 magpie，给使用方签发只属于它的凭据，经 models.wonton.internal 转发"; then
 plugin_state() {
   "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
 }
@@ -234,7 +217,8 @@ expect "吊销后旧凭据换不到网关的上游凭据（网关回 HTTP $revok
 docker exec "$magpie" magpie provider rm smoke-fake >/dev/null || fail "删不掉假上游"
 docker rm -f "$fake_upstream" >/dev/null
 
-step "已配对设备经隧道打开插件：不用登录，直接是主人"
+fi
+if step tunnel "已配对设备经隧道打开插件：不用登录，直接是主人"; then
 build --target tunnel-client --build-arg WONTON_BUILD_COMMIT -t "$phone_image" -f "$here/Dockerfile" "$repo"
 server_id="$("$dev" tunnel | json endpoint_id)"
 # 手机：隧道客户端示例跑在核心的网络命名空间里，经回环地址直连隧道入口，本地代理在 127.0.0.1:18008，
@@ -298,7 +282,8 @@ expect "devices 接口经隧道也认已配对设备（ADR-0046 起 App 要读�
 expect "经隧道的已配对设备能读 tunnel 接口（ADR-0032：App 连上后跟着服务器地址走）" \
   "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/tunnel")" 200
 
-step "已配对设备经隧道登录 Matrix（ADR-0009 的 App 接口）"
+fi
+if step matrix "已配对设备经隧道登录 Matrix（ADR-0009 的 App 接口）"; then
 matrix_url="http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 login="$(t -X POST "$core_url/_wonton/matrix/login-token")"
 expect "登录令牌给出 homeserver 地址" "$(json homeserver_url <<<"$login")" "$matrix_url"
@@ -329,7 +314,8 @@ reply="$(t -o /dev/null -D - -H "Authorization: Bearer $access" \
 ! grep -qi '^x-wonton-error' <<<"$reply" || fail "网关挡下了会话 ID 带 %2F 的请求：$reply"
 ok "会话 ID 带 %2F 的密钥备份请求转给了 Tuwunel（HTTP $(head -1 <<<"$reply" | cut -d' ' -f2)）"
 
-step "回声 Bot（matrix.bot）：核心代它登录、建好加密私聊，手机经隧道和它加密收发"
+fi
+if step echo "回声 Bot（matrix.bot）：核心代它登录、建好加密私聊，手机经隧道和它加密收发"; then
 build --target echo-bot --build-arg WONTON_BUILD_COMMIT -t "$echo_image" -f "$here/Dockerfile" "$repo"
 install_echo() {
   local installed
@@ -383,7 +369,8 @@ members="$(owner_api "/rooms/$home_room/joined_members")"
 expect "停用的 Bot 退出了主房间" \
   "$(python3 -c 'import json, sys; print(sys.argv[1] in json.load(sys.stdin)["joined"])' "$bot_user" <<<"$members")" False
 
-step "Hermes（默认 Agent）：核心自己装好，就绪后私聊才出现；没有模型时提示，加了 provider 就能对话"
+fi
+if step hermes "Hermes（默认 Agent）：核心自己装好，就绪后私聊才出现；没有模型时提示，加了 provider 就能对话"; then
 # 核心启动后在后台装 Hermes（WONTON_DEFAULT_PLUGINS），比主人配对、登录 Matrix 早：冒烟没有手动安装它。
 # 本机没有它的镜像时要先拉约 4 GB；装不上时核心会自动重试，插件列表里写着原因。
 for _ in $(seq 900); do [[ "$(plugin_state com.nousresearch.hermes)" == running ]] && break; sleep 1; done
@@ -511,7 +498,8 @@ expect_hermes_memory "$said"
 ok "经隧道和 Hermes 加密对话两轮"
 rm -f "$said"
 
-step "让 Agent 动手（MCP 总线）：Hermes 请主人确认后装上文件搜索，再用它在授权的文件夹里找文件"
+fi
+if step mcp "让 Agent 动手（MCP 总线）：Hermes 请主人确认后装上文件搜索，再用它在授权的文件夹里找文件"; then
 hermes_mcp="$(hermes_env WONTON_MCP_URL)"
 case "$hermes_mcp" in
   "http://mcp.wonton.internal:$WONTON_DEV_PORT/mcp/"?*) ;;
@@ -597,7 +585,8 @@ ok "审计日志记下了确认过的安装、找文件和分享文件"
 grep -q 'wonton://file/' "$asked" || fail "Hermes 的回答里没有文件链接（App 显示不成文件卡片）：$(cat "$asked")"
 ok "Hermes 发出了文件链接，App 显示成文件卡片"
 
-step "Bot 存文件（ADR-0027）：主人按路径批准一次，Hermes 就能往里存，Navidrome 看得到"
+fi
+if step files "Bot 存文件（ADR-0027）：主人按路径批准一次，Hermes 就能往里存，Navidrome 看得到"; then
 navidrome_src="$(mktemp -d)"
 git clone -q --depth 1 --branch v0.1.1 -c advice.detachedHead=false https://github.com/geraldpeng6/wonton-plugin-navidrome "$navidrome_src"
 installed="$("$dev" install "$navidrome_src" --yes 2>&1)" || fail "Navidrome 安装失败：$installed"
@@ -677,7 +666,8 @@ expect "Hermes 的 Matrix 令牌失效" \
 expect "网关里 Hermes 的凭据吊销了" "$(gateway_keys)" ""
 expect "卸载 Hermes：存文件的授权清掉了" "$(docker exec "$core" find "$WONTON_DEV_DATA" -path '*save-grants*' -name 'com.nousresearch.hermes.json')" ""
 
-step "“模型设置”网页（sso: proxy）：主人不用输网页密钥就能打开，密钥不出网关"
+fi
+if step model-page "“模型设置”网页（sso: proxy）：主人不用输网页密钥就能打开，密钥不出网关"; then
 magpie_url="http://ai-usemagpie-magpie.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 # 核心生成、注入 magpie 容器的网页密钥，只用来检查它没有出现在任何响应和 Cookie 罐里。
 web_key="$(docker inspect "$magpie" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^MAGPIE_WEB_KEY=//p')"
@@ -723,13 +713,15 @@ seen+="$reply"
   fail "浏览器或手机的 Cookie 罐里有 magpie 的网页密钥"
 ok "网页密钥不在任何响应头、响应体和 Cookie 罐里"
 
-step "吊销手机"
+fi
+if step revoke "吊销手机"; then
 "$dev" revoke "$device_id" >/dev/null
 reply="$(t -o /dev/null -w '%{http_code}' -D - "$grafana_url/api/user")"
 expect "吊销后立即被拒" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 403
 docker rm -f "$phone" >/dev/null
 
-step "没有 OIDC 的插件：网关转发并剥离网关 Cookie"
+fi
+if step whoami "没有 OIDC 的插件：网关转发并剥离网关 Cookie"; then
 installed="$("$dev" install "$repo/plugins/examples/whoami" --yes 2>/dev/null)"
 expect "whoami 安装完成" "$(json status.state <<<"$installed")" running
 echoed="$(b -L -H 'Accept: text/html' -H 'X-Forwarded-For: 6.6.6.6' "$whoami_url/")"
@@ -750,7 +742,8 @@ for internal in "matrix.wonton.internal /_matrix/client/versions" "models.wonton
 done
 expect "whoami 卸载" "$("$dev" uninstall app.whoami --purge | json data_removed)" true
 
-step "核心重启后恢复插件"
+fi
+if step restart "核心重启后恢复插件"; then
 docker restart "$core" >/dev/null
 for _ in $(seq 60); do
   [[ "$(docker inspect -f '{{.State.Health.Status}}' "$core")" == healthy ]] && break
@@ -772,7 +765,8 @@ for _ in $(seq 60); do docker logs "$core" 2>&1 | grep '默认插件装过一次
 docker logs "$core" 2>&1 | grep '默认插件装过一次' >/dev/null || fail "核心重启后没有核对默认插件"
 expect "主人卸掉的 Hermes，核心重启后不装回来" "$(plugin_state com.nousresearch.hermes) $(labeled com.nousresearch.hermes)" "absent "
 
-step "卸载干净"
+fi
+if step uninstall "卸载干净"; then
 started=$(date +%s)
 report="$("$dev" uninstall app.grafana --purge)"
 uninstall_seconds=$(($(date +%s) - started))
@@ -789,5 +783,7 @@ fi
 ok "身份提供方里没有 app.grafana 客户端"
 expect "网关不再路由这个插件" \
   "$(b -o /dev/null -w '%{http_code}' -H 'Accept: application/json' "$grafana_url/")" 404
+fi
 
+[[ -n "${SMOKE_ONLY:-}" ]] && { printf '\n选中的步骤通过：%s\n' "$SMOKE_ONLY"; exit 0; }
 printf '\n端到端冒烟通过：安装 %ss，卸载 %ss\n' "$install_seconds" "$uninstall_seconds"

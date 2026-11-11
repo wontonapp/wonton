@@ -668,6 +668,8 @@ case "${1:-}" in
   up)
     # 分流机的入口只放行固定的几个子命令；工作区里有标记时把 up 让给分享冒烟。
     if [[ -f "$repo/.share-smoke" ]]; then exec bash "$0" share-smoke; fi
+    # 端口冲突在构建之前查出来：compose 要到绑定时才报，那时已经构建完了。
+    "$here/port-preflight.sh" "$core" "$WONTON_DEV_PORT" "$WONTON_DEV_TUNNEL_PORT" || exit 1
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
     export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
     mkdir -p "$here/.data" && printf '%s' "$WONTON_DEV_PORT" > "$here/.data/dev-port"
@@ -741,14 +743,8 @@ case "${1:-}" in
     ;;
   list) plugins_table || die "取不到插件列表"; echo ;;
   open) open_plugin "${2:?用法：$0 open <插件 ID>}" ;;
-  tunnel)
-    api GET /_wonton/api/tunnel
-    echo
-    ;;
-  devices)
-    api GET /_wonton/api/devices
-    echo
-    ;;
+  tunnel) api GET /_wonton/api/tunnel; echo ;;
+  devices) api GET /_wonton/api/devices; echo ;;
   revoke)
     api DELETE "/_wonton/api/devices/${2:?用法：$0 revoke <endpoint ID>}"
     echo
