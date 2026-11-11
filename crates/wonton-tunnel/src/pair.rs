@@ -16,7 +16,7 @@ use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-pub use client::{PAIR_TIMEOUT, pair};
+pub use client::{PAIR_TIMEOUT, pair, pair_with_timeout};
 pub use server::{PairHandler, PairProtocol};
 
 use crate::relays::Relay;
@@ -303,7 +303,7 @@ pub enum RejectReason {
     UnknownCode,
     /// 码过期了，要换一个新码。
     Expired,
-    /// 码已经用过。
+    /// 码已经被别的设备用过；用它的那台设备重发是幂等的 `Paired`。
     Used,
     /// 这种码已经不能再用来配对，例如服务器上已经有配对的设备，首次配对码随之作废。
     Closed,

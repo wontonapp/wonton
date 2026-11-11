@@ -235,11 +235,14 @@ async fn member_pairing_codes_are_single_use_and_voidable() {
         Some(RejectReason::UnknownCode),
         "再出一个以后旧的不能用"
     );
-    let (_, _phone) = pair_member_phone(&home, &second).await;
-    // 码只能用一次。
+    let (key, _phone) = pair_member_phone(&home, &second).await;
+    // 同一台设备重发同一个码是幂等的（回应可能在慢中继上丢了）；别的设备再来是“用过”。
+    let same = loopback_endpoint(key.clone()).await;
+    let response = pair(&same, &second, "家人的手机").await.unwrap();
+    assert_eq!(reject_reason(response), None);
     let again = loopback_endpoint(SecretKey::generate()).await;
     let rejected = pair(&again, &second, "再用").await.unwrap();
-    assert_eq!(reject_reason(rejected), Some(RejectReason::UnknownCode));
+    assert_eq!(reject_reason(rejected), Some(RejectReason::Used));
 
     // 作废以后不能用。
     invite(&home, json!({"display_name": "Bob", "private_bot": true})).await;

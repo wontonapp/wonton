@@ -50,7 +50,8 @@ pub struct IssuedCode {
 struct Entry {
     kind: CodeKind,
     expires_at: Instant,
-    used: bool,
+    /// 用掉这个码的设备。同一台设备再发一次幂等地回 `Paired`：回应可能在慢中继上丢了，设备会拿同一个码重试。
+    used_by: Option<EndpointId>,
     /// 出码的人（ADR-0045）：主人的码为空，家人的设备出的码是这个家人的用户名，配上时设备登记在他名下。
     user: Option<String>,
 }
@@ -120,7 +121,7 @@ impl Pairing {
         let now = Instant::now();
         let current = codes.iter().find(|(_, entry)| {
             entry.kind == CodeKind::First
-                && !entry.used
+                && entry.used_by.is_none()
                 && entry.expires_at > now + REFRESH_BEFORE.min(self.ttl / 2)
         });
         if let Some((secret, entry)) = current {
@@ -146,7 +147,7 @@ impl Pairing {
             Entry {
                 kind,
                 expires_at: Instant::now() + self.ttl,
-                used: false,
+                used_by: None,
                 user,
             },
         );
@@ -170,9 +171,14 @@ impl PairHandler for Pairing {
         let name = (!name.is_empty()).then_some(name);
         let Some(entry) = codes.get_mut(secret.expose()) else {
             // 内存表里没有：可能是归家人的码，存在家人记录里，核心重启后还在（ADR-0045）。
-            return self.pair_with_member_code(device, secret.expose(), &name, &langs);
+            return self.pair_with_member_code(&mut codes, device, secret.expose(), &name, &langs);
         };
-        if entry.used {
+        if let Some(used_by) = entry.used_by {
+            // 同一台设备重发、而且它还在登记表里：第一次已经配上，回应可能只是没赶上（慢中继），幂等地再回一次。
+            // 其他设备拿用过的码来、或者用过以后这台设备又被吊销了，都是 `used`。
+            if used_by == device && self.devices.contains(&device) {
+                return PairResponse::Paired;
+            }
             return rejected(
                 RejectReason::Used,
                 &l10n::text(&langs, "gateway-pair-code-used", &[]),
@@ -192,7 +198,7 @@ impl PairHandler for Pairing {
         });
         match added {
             Ok(Some(_)) => {
-                entry.used = true;
+                entry.used_by = Some(device);
                 tracing::info!(device = %device.fmt_short(), ?kind, "设备扫码配对");
                 PairResponse::Paired
             }
@@ -219,8 +225,11 @@ impl Pairing {
     /// 归家人的码：设备登记在这个家人名下，第一次用上时家人改成“已加入”（ADR-0045）。
     /// 码在 [`Members::take_code`] 里一次取走：两台设备同时扫码只有一台配上。登记失败时码
     /// 已经作废，回服务器错误，主人重发一个。
+    ///
+    /// 家人记录里的码取用时就清掉了，同一台设备重发只能靠内存表里的记号认出“已经配上过”。
     fn pair_with_member_code(
         &self,
+        codes: &mut HashMap<String, Entry>,
         device: EndpointId,
         secret_hex: &str,
         name: &Option<String>,
@@ -255,6 +264,16 @@ impl Pairing {
                         if let Err(e) = self.members.consume_code(&username) {
                             tracing::error!(member = %username, error = %e, "配上后记家人已加入失败");
                         }
+                        codes.insert(
+                            secret_hex.to_owned(),
+                            Entry {
+                                // 记号只用 `used_by`：重发在 `pair` 里就回 `Paired`，走不到按 kind 判断的那一步。
+                                kind: CodeKind::Invite,
+                                expires_at: Instant::now(),
+                                used_by: Some(device),
+                                user: None,
+                            },
+                        );
                         tracing::info!(device = %device.fmt_short(), member = %username, "家人的设备扫码配对");
                         PairResponse::Paired
                     }
@@ -355,6 +374,9 @@ mod tests {
         assert_eq!(reason(&pairing.pair(phone, &first.secret, "手机")), None);
         assert!(pairing.devices().contains(&phone));
         assert!(pairing.first_code().is_none(), "有设备后状态页不再出码");
+        // 回应可能在慢中继上丢了：同一台设备拿同一个码重发，幂等地再回一次 `paired`，登记表不变。
+        assert_eq!(reason(&pairing.pair(phone, &first.secret, "重发")), None);
+        assert_eq!(pairing.devices().list().len(), 1);
         assert_eq!(
             reason(&pairing.pair(device(), &first.secret, "别人")),
             Some(RejectReason::Used)
@@ -470,10 +492,11 @@ mod tests {
             None,
             "配上后码清掉"
         );
-        // 码只能用一次：同一台设备再来、别的设备拿同一个码都不行。
+        // 同一台设备重发同一个码是幂等的（回应可能在慢中继上丢了）；别的设备拿这个码不行。
+        assert_eq!(reason(&pairing.pair(phone, &code.secret, "再来")), None);
         assert_eq!(
-            reason(&pairing.pair(phone, &code.secret, "再来")),
-            Some(RejectReason::UnknownCode)
+            reason(&pairing.pair(device(), &code.secret, "别人")),
+            Some(RejectReason::Used)
         );
         assert_eq!(pairing.devices().list().len(), 1);
         // 主人发的码照样登记在主人名下。
@@ -490,5 +513,83 @@ mod tests {
             .find(|d| d.id == tablet)
             .expect("平板已在登记表里");
         assert_eq!(tablet_device.user, None, "主人的码配上还是主人的设备");
+    }
+
+    /// 重发的记号只在内存里：核心重启后码已经不作数了，重发按没发过处理，主人重发一个。
+    #[test]
+    fn a_retry_is_not_recognized_after_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let devices = Arc::new(Devices::open(dir.path().join("devices.json")).unwrap());
+        let members = Arc::new(Members::open(dir.path().join("members.json")).unwrap());
+        let langs = Arc::new(|| Languages::from_header(None));
+        let pairing = Pairing::with_ttl(devices.clone(), members.clone(), langs.clone(), CODE_TTL);
+        members
+            .invite(crate::members::MemberRecord {
+                username: "alice".to_owned(),
+                user_id: "@alice:wonton.localhost".to_owned(),
+                display_name: "Alice".to_owned(),
+                email: None,
+                status: MemberStatus::Invited,
+                can_install_plugins: false,
+                wants_private_bot: false,
+                private_bot: None,
+                pairing_code_hash: None,
+                pairing_code_expires_at_ms: None,
+            })
+            .unwrap();
+        let code = members.issue_pairing_code("alice").unwrap();
+        let phone = device();
+        assert_eq!(reason(&pairing.pair(phone, &code.secret, "手机")), None);
+        drop(pairing);
+
+        let restarted = Pairing::with_ttl(devices, members, langs, CODE_TTL);
+        assert_eq!(
+            reason(&restarted.pair(phone, &code.secret, "重发")),
+            Some(RejectReason::UnknownCode)
+        );
+    }
+
+    /// 吊销以后同一台设备拿用过的码重发，不能因为幂等又配回来：回 `used`，登记表里仍然没有它。
+    #[test]
+    fn a_revoked_device_cannot_reuse_its_code() {
+        let (_dir, pairing, _) = pairing(CODE_TTL);
+        let invite = pairing.issue(CodeKind::Invite, None);
+        let phone = device();
+        assert_eq!(reason(&pairing.pair(phone, &invite.secret, "手机")), None);
+        assert!(pairing.devices().remove(&phone).unwrap());
+        assert_eq!(
+            reason(&pairing.pair(phone, &invite.secret, "重发")),
+            Some(RejectReason::Used)
+        );
+        assert!(!pairing.devices().contains(&phone));
+    }
+
+    /// 家人码配上以后吊销，同样不能重发配回来。
+    #[test]
+    fn a_revoked_member_device_cannot_reuse_the_member_code() {
+        let (_dir, pairing, members) = pairing(CODE_TTL);
+        members
+            .invite(crate::members::MemberRecord {
+                username: "alice".to_owned(),
+                user_id: "@alice:wonton.localhost".to_owned(),
+                display_name: "Alice".to_owned(),
+                email: None,
+                status: MemberStatus::Invited,
+                can_install_plugins: false,
+                wants_private_bot: false,
+                private_bot: None,
+                pairing_code_hash: None,
+                pairing_code_expires_at_ms: None,
+            })
+            .unwrap();
+        let code = members.issue_pairing_code("alice").unwrap();
+        let phone = device();
+        assert_eq!(reason(&pairing.pair(phone, &code.secret, "手机")), None);
+        assert!(pairing.devices().remove(&phone).unwrap());
+        assert_eq!(
+            reason(&pairing.pair(phone, &code.secret, "重发")),
+            Some(RejectReason::Used)
+        );
+        assert!(!pairing.devices().contains(&phone));
     }
 }

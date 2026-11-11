@@ -83,6 +83,6 @@ impl HomeLink {
 pub(crate) struct TestHooks {
     /// 在阻塞线程里、iroh 绑定之前调用：一直不返回就是卡住的网卡枚举。
     pub(crate) bind: std::sync::Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>>,
-    /// 配对交换的时限和看门线程的时限，替掉生产的那两份。
+    /// 配对的每一段时限（绑定、一次交换、一次确认）和看门线程的时限，替掉生产的那两份。
     pub(crate) pair_deadlines: std::sync::Mutex<Option<(std::time::Duration, std::time::Duration)>>,
 }

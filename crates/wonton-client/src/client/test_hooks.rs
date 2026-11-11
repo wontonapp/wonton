@@ -58,15 +58,15 @@ impl ClientCore {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = hook;
     }
 
-    /// 替掉配对交换的时限（`exchange`）和看门线程的时限（`watchdog`），免得测试等满生产的 30 多秒。
+    /// 替掉配对的每一段时限（绑定、一次交换、一次确认）和看门线程的时限，免得测试等满生产的三段 30 秒。
     #[doc(hidden)]
-    pub fn test_set_pair_deadlines(&self, exchange: Duration, watchdog: Duration) {
+    pub fn test_set_pair_deadlines(&self, stage: Duration, watchdog: Duration) {
         *self
             .scope()
             .home
             .test_hooks
             .pair_deadlines
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((exchange, watchdog));
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((stage, watchdog));
     }
 }
