@@ -17,6 +17,10 @@
 //! 只为认编辑读一遍请求体：`m.relates_to` 在加密消息里也是明文（Matrix 规范要求，matrix-sdk 照做），读到的原始
 //! 字节原样装回。Bot 的用户 ID 用 `whoami` 取，按令牌哈希缓存；取不到不挡消息，按令牌哈希认 Bot。
 
+pub(super) mod hop_card;
+#[cfg(test)]
+mod hop_limit_tests;
+
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

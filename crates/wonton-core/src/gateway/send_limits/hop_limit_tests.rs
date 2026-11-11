@@ -12,8 +12,8 @@ use wonton_protocol::{
     DeviceConfirmationPush, HOP_LIMIT_ERRCODE,
 };
 
-use super::family_rules_tests::{Home, ROOM};
-use super::send_limits::SendLimits;
+use super::SendLimits;
+use crate::gateway::family_rules_tests::{Home, ROOM};
 use crate::mcp::RecipientPush;
 
 /// 两个 Bot 轮流说话，每条隔 3 秒（频率不挡）：`hermes` 先说，`from..to` 条全都放行。

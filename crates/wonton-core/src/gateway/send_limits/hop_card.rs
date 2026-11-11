@@ -14,8 +14,8 @@ use wonton_protocol::{
     ConfirmationState,
 };
 
-use super::Gateway;
-use super::send_limits::{HopLimitReached, SendLimiter};
+use super::{HopLimitReached, SendLimiter};
+use crate::gateway::Gateway;
 use crate::l10n;
 use crate::mcp::{Audience, Bus, Draft, Notifier};
 use crate::plugin::languages::Languages;
@@ -30,7 +30,7 @@ struct Ask {
 }
 
 /// 发卡片、等回答都在后台：Bot 的这次发送已经拿到 403，不等卡片。
-pub(super) fn ask_to_continue(gateway: &Gateway, stopped: HopLimitReached) {
+pub(in crate::gateway) fn ask_to_continue(gateway: &Gateway, stopped: HopLimitReached) {
     let Some(mcp) = &gateway.mcp else {
         // 没有总线就没法问归属人：如实记下，房间照样停着，等人说话再清零。
         tracing::error!(room = %stopped.room_id, "跳数到顶，但总线没启用，发不了“继续”卡片");

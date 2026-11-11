@@ -37,7 +37,6 @@ mod files;
 mod friends;
 mod friends_wiring;
 mod health;
-mod hop_card;
 mod isolation;
 mod lan;
 mod link_preview;
@@ -744,8 +743,6 @@ mod first_run_tests;
 mod friends_tests;
 #[cfg(test)]
 mod health_tests;
-#[cfg(test)]
-mod hop_limit_tests;
 #[cfg(test)]
 mod isolation_policy_tests;
 #[cfg(test)]
