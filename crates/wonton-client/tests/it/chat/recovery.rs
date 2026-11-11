@@ -1,12 +1,14 @@
 use wonton_client::{
-    Action, BackupReminder, DeviceVerification, EncryptionStatus, KeyNotice, MessageContent,
-    RecoveryStatus, SecretString, TimelineContent,
+    Action, BackupReminder, ChatFailure, DeviceVerification, EncryptionStatus, KeyNotice,
+    MessageContent, RecoveryNextStep, RecoveryStatus, SecretString, TimelineContent,
+    VerificationCancel, VerificationFlow, VerificationStage,
 };
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{Recovery, Verification};
 
 use super::accept_the_bots_invite;
-use super::support::{Home, Phone, Timeline};
+use super::support::{Home, Phone, Timeline, WAIT};
+use super::verification::{available, cancelled, compare};
 
 /// 第二台设备存在之前就发出的消息：它自己的设备密钥不在这条消息的收信人里。
 const HISTORY: &str = "第二台设备配对之前发的消息";
@@ -275,4 +277,219 @@ fn assert_recovery(
     assert_eq!(encryption.verification, verification);
     assert_eq!(encryption.recovery_key, None);
     assert_eq!(encryption.backup_reminder, reminder);
+}
+
+/// 等设备确认达到预期阶段（同 verification.rs 的助手，这里只有重置用例用到）。
+async fn flow_at(phone: &Phone, check: impl Fn(&VerificationStage) -> bool) -> VerificationFlow {
+    phone
+        .wait_chat_within("设备确认达到预期阶段", WAIT * 2, |view| {
+            view.encryption
+                .verification_flow
+                .as_ref()
+                .filter(|flow| check(&flow.stage))
+                .cloned()
+        })
+        .await
+}
+
+/// 备份页的核心判断（ADR-0076）在真实客户端链路上成立：残缺时有别的设备就两条路并列加重置入口。
+fn assert_incomplete_page(second: &Phone) {
+    let encryption = second.chat().encryption;
+    assert_eq!(
+        encryption.recovery_next_step,
+        RecoveryNextStep::ChooseDeviceOrKey
+    );
+    assert!(encryption.can_reset);
+}
+
+/// 残缺设备的重置（ADR-0076）：经核心要登录令牌、过 UIA，换新身份、开新备份、新密钥只显示一次；旧密钥作废，
+/// 新密钥能让下一台设备取回。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn reset_gives_a_fresh_backup_and_invalidates_the_old_key() {
+    let first_dir = tempfile::tempdir().unwrap();
+    let second_dir = tempfile::tempdir().unwrap();
+    let third_dir = tempfile::tempdir().unwrap();
+    let first = Phone::open(first_dir.path());
+    let second = Phone::open(second_dir.path());
+    let third = Phone::open(third_dir.path());
+    let home = Home::start(&[first.device_id(), second.device_id(), third.device_id()]).await;
+    first.connect(&home);
+    first.signed_in().await;
+    let old_key = automatic_recovery_key(&first).await;
+    first.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+
+    second.connect(&home);
+    second.signed_in().await;
+    available(&second).await;
+    wait_for_recovery(
+        &second,
+        RecoveryStatus::Incomplete,
+        DeviceVerification::Unverified,
+    )
+    .await;
+    assert_incomplete_page(&second);
+
+    second.dispatch(Action::ResetRecovery).unwrap();
+    second
+        .wait_chat("重置换来新身份、新备份和新密钥", |view| {
+            let encryption = &view.encryption;
+            (encryption.verification == DeviceVerification::Verified
+                && encryption.recovery == RecoveryStatus::Enabled
+                && encryption.recovery_key.is_some()
+                && !encryption.can_reset
+                && encryption.recovery_next_step == RecoveryNextStep::None)
+                .then_some(())
+        })
+        .await;
+    let new_key = second.chat().encryption.recovery_key.clone().unwrap();
+    second.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    second
+        .wait_chat("新密钥确认后不再显示", |view| {
+            (view.encryption.recovery_key.is_none() && !view.encryption.can_reset).then_some(())
+        })
+        .await;
+
+    third.connect(&home);
+    third.signed_in().await;
+    wait_for_recovery(
+        &third,
+        RecoveryStatus::Incomplete,
+        DeviceVerification::Unverified,
+    )
+    .await;
+    third
+        .dispatch(Action::RecoverEncryption {
+            recovery_key: old_key,
+        })
+        .unwrap();
+    third
+        .wait_chat("旧密钥作废，如实报出来", |view| {
+            matches!(&view.problem, Some(problem) if problem.reason == ChatFailure::InvalidInput)
+                .then_some(())
+        })
+        .await;
+    third
+        .dispatch(Action::RecoverEncryption {
+            recovery_key: new_key,
+        })
+        .unwrap();
+    wait_for_recovery(
+        &third,
+        RecoveryStatus::Enabled,
+        DeviceVerification::Verified,
+    )
+    .await;
+}
+
+/// 断网时重置：要不到登录令牌就不开始，账号和密钥原地不动，原密钥照样能让新设备取回。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_reset_without_connection_leaves_the_account_alone() {
+    let first_dir = tempfile::tempdir().unwrap();
+    let second_dir = tempfile::tempdir().unwrap();
+    let third_dir = tempfile::tempdir().unwrap();
+    let first = Phone::open(first_dir.path());
+    let second = Phone::open(second_dir.path());
+    let third = Phone::open(third_dir.path());
+    let mut home = Home::start(&[first.device_id(), second.device_id(), third.device_id()]).await;
+    first.connect(&home);
+    first.signed_in().await;
+    let old_key = automatic_recovery_key(&first).await;
+    first.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    drop(first);
+
+    second.connect(&home);
+    second.signed_in().await;
+    second
+        .dispatch(Action::RecoverEncryption {
+            recovery_key: old_key.clone(),
+        })
+        .unwrap();
+    wait_for_recovery(
+        &second,
+        RecoveryStatus::Enabled,
+        DeviceVerification::Verified,
+    )
+    .await;
+
+    home.stop_tunnel().await;
+    second.dispatch(Action::ResetRecovery).unwrap();
+    second
+        .wait_chat("要不到登录令牌，如实报错", |view| {
+            matches!(
+                &view.problem,
+                Some(problem) if problem.reason == ChatFailure::TransportUnavailable
+            )
+            .then_some(())
+        })
+        .await;
+    assert_recovery(
+        &second.chat().encryption,
+        RecoveryStatus::Enabled,
+        DeviceVerification::Verified,
+        None,
+    );
+    assert!(!second.chat().encryption.can_reset);
+
+    home.start_tunnel().await;
+    third.connect(&home);
+    third.signed_in().await;
+    wait_for_recovery(
+        &third,
+        RecoveryStatus::Incomplete,
+        DeviceVerification::Unverified,
+    )
+    .await;
+    third
+        .dispatch(Action::RecoverEncryption {
+            recovery_key: old_key,
+        })
+        .unwrap();
+    wait_for_recovery(
+        &third,
+        RecoveryStatus::Enabled,
+        DeviceVerification::Verified,
+    )
+    .await;
+}
+
+/// 流程进行中也能重置（ADR-0076）：先取消进行中的确认，对端收到“对方取消”；重置换了新身份后，流程重新发起。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn resetting_while_verifying_cancels_the_flow_for_both_sides() {
+    let first_dir = tempfile::tempdir().unwrap();
+    let second_dir = tempfile::tempdir().unwrap();
+    let first = Phone::open(first_dir.path());
+    let second = Phone::open(second_dir.path());
+    let home = Home::start(&[first.device_id(), second.device_id()]).await;
+    first.connect(&home);
+    first.signed_in().await;
+    // 只要自动开启过备份：第二台设备才是有重置出路的残缺状态。密钥本身这条用例用不上。
+    let _old_key = automatic_recovery_key(&first).await;
+    first.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    second.connect(&home);
+    second.signed_in().await;
+    available(&second).await;
+    let id = compare(&first, &second).await;
+    second.dispatch(Action::ResetRecovery).unwrap();
+    cancelled(&first, &id, VerificationCancel::ByOther).await;
+    second
+        .wait_chat("重置换来新身份，流程一并收掉", |view| {
+            (view.encryption.verification == DeviceVerification::Verified
+                && view.encryption.recovery == RecoveryStatus::Enabled
+                && view.encryption.recovery_key.is_some()
+                && view.encryption.verification_flow.is_none())
+            .then_some(())
+        })
+        .await;
+    let new_key = second.chat().encryption.recovery_key.clone().unwrap();
+    second.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+
+    // 旧设备成了新身份下的未验证设备，等它能请确认了就重新发起，新身份的设备照常收到请求。
+    available(&first).await;
+    first.dispatch(Action::StartDeviceVerification).unwrap();
+    flow_at(&first, |stage| *stage == VerificationStage::Requested).await;
+    flow_at(&second, |stage| *stage == VerificationStage::Incoming).await;
+    drop(new_key);
 }
