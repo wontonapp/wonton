@@ -237,7 +237,8 @@ services:
       start_interval: 1s
 
   # Matrix 服务器；开发栈保留和正式安装相同的联邦端口、TLS 和 CONNECT 代理接线。
-  # Tuwunel 的嵌套数组配置放在第二份 TOML，不能写成 TUWUNEL_PROXY__BY_DOMAIN__0__* 环境变量。
+  # 联邦名单、黑名单和出站代理范围在第二份 TOML，由核心原地重写、SIGUSR1 热加载（ADR-0050、ADR-0051）；
+  # 单文件挂载钉住 inode，核心只做原地截断写。
   tuwunel:
     image: ghcr.io/matrix-construct/tuwunel:v1.9.4
     restart: unless-stopped
@@ -268,11 +269,10 @@ services:
       TUWUNEL_REGISTRATION_SHARED_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
     volumes:
       - tuwunel:/var/lib/tuwunel
-      - ${WONTON_DEV_DATA}/fed/proxy.toml:/etc/tuwunel/proxy.toml:ro
-      - ${WONTON_DEV_DATA}/fed/config.toml:/etc/tuwunel/fed.toml:ro
+      - ${WONTON_DEV_DATA}/secrets/tuwunel/wonton-fed.toml:/etc/tuwunel/wonton-fed.toml:ro
       - ${WONTON_DEV_SECRETS}/tuwunel-tls.crt:/etc/tuwunel/tls.crt:ro
       - ${WONTON_DEV_SECRETS}/tuwunel-tls.key:/etc/tuwunel/tls.key:ro
-    command: ["-c", "/etc/tuwunel/proxy.toml", "-c", "/etc/tuwunel/fed.toml"]
+    command: ["-c", "/etc/tuwunel/wonton-fed.toml"]
     networks:
       core:
         aliases: [tuwunel.wonton.internal]

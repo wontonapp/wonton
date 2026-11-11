@@ -166,28 +166,20 @@ ensure_matrix_secrets() {
   export WONTON_DEV_MATRIX_JWT_KEY WONTON_DEV_MATRIX_JWT_PUBLIC_KEY WONTON_DEV_MATRIX_SECRET
 }
 
-# Tuwunel 先于核心启动，名单文件必须已经在：缺失时先写一份放行全部兜底；核心起来后按配对名单原地重写，
-# 所以不在每次 compose 调用时覆盖它。代理文件核心不改，每次写。
+# Tuwunel 先于核心启动，名单文件必须已经在：缺失时先写一份空的（没有名单、没有黑名单，Tuwunel 用默认值）；
+# 核心起来后按配对名单和黑名单原地重写整份（含出站代理），所以不在每次 compose 调用时覆盖它。
+# 路径和正式安装相同（安装目录下的 secrets/tuwunel/wonton-fed.toml），开发栈的安装目录就是数据目录。
 ensure_dev_federation() {
-  local path="$WONTON_DEV_DATA/fed/config.toml"
-  local proxy="$WONTON_DEV_DATA/fed/proxy.toml"
+  local path="$WONTON_DEV_DATA/secrets/tuwunel/wonton-fed.toml"
   mkdir -p "${path%/*}"
   if [[ ! -s "$path" ]]; then
-    cat >"$path" <<'EOF'
-# 开发栈联邦名单；正式安装由核心按配对记录重写，不使用这份放行全部的配置。
-allowed_remote_server_names_experimental = ['^.*$']
+    cat >"$path" <<'EOF2'
+# 开发栈联邦配置的初值；核心起来后按配对记录原地重写（ADR-0050）。
+[global]
 forbidden_remote_server_names = []
-EOF
+EOF2
   fi
-  cat >"$proxy" <<'EOF'
-# 开发栈联邦出站代理；单独成文件，避免名单文件被核心原地重写时丢掉代理规则。
-[global.proxy]
-[[global.proxy.by_domain]]
-url = "http://federation-proxy.wonton.internal:8448"
-include = []
-exclude = ["push.wonton.internal"]
-EOF
-  chmod 644 "$path" "$proxy"
+  chmod 644 "$path"
 }
 
 compose() {
