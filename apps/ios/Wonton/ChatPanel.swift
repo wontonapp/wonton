@@ -239,7 +239,11 @@ extension ChatPanelHost {
             // 露出的那一条由上面的 `strip` 单独接点按和拖动；收起时聊天页照常可点。
             .allowsHitTesting(level == .closed)
             .offset(y: sign * chatOffset(height))
-            .background { if let pullAnchor { RoomPullBinder(anchor: pullAnchor, pull: pull(height: height)).allowsHitTesting(false) } }
+            .background {
+                if let pullAnchor {
+                    RoomPullBinder(anchor: pullAnchor, pull: pull(height: height)).allowsHitTesting(false)
+                }
+            }
             .shadow(color: .black.opacity(level == .closed && drag == 0 ? 0 : 0.15), radius: 12)
             .accessibilityAction(named: Text(TabText.openPanel)) { openPanel() }
     }
