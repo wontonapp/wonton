@@ -34,6 +34,8 @@ jobs:
       # 录完摘掉标签，不然之后每次推送都重录。
       pull-requests: write
       issues: write
+    outputs:
+      pushed: ${{ steps.commit.outputs.sha }}
     env:
       XCODEGEN_VERSION: "2.46.0"
       # 参考图绑定这台模拟器和这个系统版本：改了要整体重录。设备取装机列表里的普通 iPhone。
@@ -104,9 +106,10 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/Tests.xcresult" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO
-      # 令牌推的提交不会再触发工作流（GitHub 的规则），所以录完要在 PR 上推一个空提交或点重跑。
+      # 推上去的提交记进作业输出，末尾的 checks 作业据此在分支上触发必需检查。
       # 只在本仓库的 PR 上提交；外部 fork 的令牌推不回对方的分支，参考图走下面的产物，标签由后面的步骤摘。
       - name: 提交参考图
+        id: commit
         if: ${{ !cancelled() && steps.tests.outcome != 'skipped' && github.event.pull_request.head.repo.full_name == github.repository }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -133,6 +136,7 @@ jobs:
               sleep 5
             done
             $ok || { echo "推送失败" >&2; exit 1; }
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           fi
       # 外部 fork 推不回去，录好的图由作者从产物里取。
       - name: 外部 PR：把参考图存成产物
@@ -170,6 +174,8 @@ jobs:
       # 把重录的参考图推回 PR 的分支，推完摘掉标签。
       contents: write
       pull-requests: write
+    outputs:
+      pushed: ${{ steps.commit.outputs.sha }}
     steps:
       # 检出分支本身而不是默认的合并提交：推回去的分支头才不带 base 的合并提交。
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -210,6 +216,7 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
       - name: 提交重录的参考图
+        id: commit
         if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -236,7 +243,8 @@ jobs:
             sleep 5
           done
           $ok || { echo "推送失败" >&2; exit 1; }
-          echo "已提交重录的参考图。这个提交由 GITHUB_TOKEN 推上去，不再触发 CI：请点重跑或推一个空提交让参考图过一遍比对。" >> "$GITHUB_STEP_SUMMARY"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "已提交重录的参考图，必需检查由 checks 作业在新提交上触发。" >> "$GITHUB_STEP_SUMMARY"
       # 标签必须摘掉：GitHub 不会给已经贴着的标签再发一次 labeled，留着就发不出下一轮重录。单独一步、
       # 只看标签（外部 PR 的分支推不回去也照摘），不跟着提交步骤的成败走。
       - name: 去掉 record-snapshots 标签
@@ -246,3 +254,40 @@ jobs:
         run: |
           gh pr edit "${{ github.event.pull_request.number }}" --repo "$GITHUB_REPOSITORY" --remove-label record-snapshots \
             || echo "标签已经不在了。"
+
+  # GITHUB_TOKEN 推的提交不触发任何工作流，新分支头上没有必需检查，规则集一直挡着 PR。workflow_dispatch
+  # 是例外：用同一个令牌在分支上手动触发五个必需检查所在的工作流，检查落在分支头的提交上，规则集认。
+  # 不改用 PAT 或 GitHub App 推送：那要另建、轮换一份凭据。
+  # 手动运行跑的是分支头本身（不是 PR 的合并提交），不按改动范围跳过、全套跑；缓存不写（只有 main 写）。
+  checks:
+    name: 在重录的提交上跑必需检查
+    needs: [ios, android]
+    if: ${{ always() && (needs.ios.outputs.pushed != '' || needs.android.outputs.pushed != '') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BRANCH: ${{ github.event.pull_request.head.ref }}
+      PR: ${{ github.event.pull_request.number }}
+      PUSHED: ${{ needs.ios.outputs.pushed }} ${{ needs.android.outputs.pushed }}
+    steps:
+      - name: 触发 lint、rust、rust-docker、ios、android
+        run: |
+          # 草稿 PR 的日常作业本来就不跑，转 ready 时 ready_for_review 会在分支头上跑全套。
+          if [[ $(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft) == true ]]; then
+            echo "草稿 PR，不触发。" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # 分支头已经不是这次推的提交：有人在那之后推过，那次推送自己触发了检查。
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BRANCH" --jq .object.sha)
+          if [[ " $PUSHED " != *" $head "* ]]; then
+            echo "分支头 $head 不是重录推的提交，不触发。" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          for wf in lint rust rust-docker ios android; do
+            gh workflow run "$wf.yml" --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
+          done
+          echo "已在 $head 上触发必需检查。" >> "$GITHUB_STEP_SUMMARY"

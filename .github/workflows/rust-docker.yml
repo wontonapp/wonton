@@ -164,7 +164,7 @@ jobs:
         run: |
           ref="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:acp-bridge"
           extra=()
-          if [[ $GITHUB_REF == refs/heads/main || $GITHUB_EVENT_NAME == workflow_dispatch ]]; then
+          if [[ $GITHUB_REF == refs/heads/main ]]; then
             extra+=(--cache-to "type=registry,ref=$ref,mode=max")
           fi
           docker buildx build "${extra[@]}" \
