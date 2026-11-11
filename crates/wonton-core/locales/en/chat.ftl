@@ -177,3 +177,16 @@ chat-mail-convert-failed = The HTML body of this email could not be converted to
 chat-mail-unknown-source = An app email came from an unknown source or an app without mail permission. It wasn't delivered to anyone.
 chat-mail-recipients-failed = Couldn't update who can receive app mail: { $error }. Wonton will try again when household membership changes or the server restarts.
 chat-notify-rate-limited = { $plugin } is sending notifications and mail too often. They are paused for about { $seconds } seconds.
+# A bot pinning pages onto the panel (ADR-0052).
+panel-pin-card-title = { $bot } wants to put a page on your panel
+panel-pin-card-line = Once you allow it, this bot can add pages to the main panel without asking; you can take that back in Settings.
+panel-pin-allowed = Allowed
+panel-pin-bot-only = Only bots can pin pages; plugin { $plugin } has no bot identity
+panel-pin-bot-missing = No record of bot { $bot }
+panel-pin-full = The panel is full ({ $max } pages at most); remove a page first
+panel-pin-already-asking = A confirmation card for the main panel is already waiting for the owner
+panel-pin-matrix = Can't reach Matrix: { $error }
+panel-pin-not-there = That page isn't pinned on the panel
+
+# MCP Apps 界面里的调用在卡片上把调用方写成主人。
+mcp-app-owner = You

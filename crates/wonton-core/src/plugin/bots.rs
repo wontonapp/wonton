@@ -72,6 +72,11 @@ impl BotStore {
         Ok(read_json::<PluginBots>(&self.path(id))?.unwrap_or_default())
     }
 
+    /// 一个 Bot 的记录。
+    pub fn entry(&self, id: &PluginId, bot: &str) -> Result<Option<BotEntry>, StoreError> {
+        Ok(self.load(id)?.bots.get(bot).cloned())
+    }
+
     pub fn save(&self, id: &PluginId, bots: &PluginBots) -> Result<(), StoreError> {
         create_private_dir(&self.dir)?;
         write_json(&self.path(id), bots)

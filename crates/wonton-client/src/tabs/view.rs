@@ -4,12 +4,15 @@ use url::Url;
 use wonton_protocol::{
     CandidatePlugin, CoreError, InstalledPlugin, PanelEntry, PanelItem, PanelScope, PanelSource,
     PlacedTab, PluginState, PluginsViewModel, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon,
-    TabItem, TabLayout, TabPage, TabRef, TabState, TabsViewModel,
+    TabItem, TabLayout, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,
 };
 
 use super::{Fullscreen, StoredItem, StoredPage, TabsState, invalid};
 use crate::l10n::{CATALOG, language};
 use wonton_l10n::l10n;
+
+mod panel;
+pub(crate) use panel::*;
 
 pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsViewModel {
     let items: Vec<_> = state
@@ -37,15 +40,15 @@ pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsVi
         overlay,
         full: state.config.items.len() >= super::MAX_ITEMS,
         uninstalled: state.uninstalled.clone(),
-        problem: state.problem.clone(),
+        problem: state.problem.clone().or_else(|| {
+            state
+                .pins_problem
+                .clone()
+                .map(|message| TabsProblem { message })
+        }),
         labels: state.config.labels,
         candidates: candidates(state, plugins),
-        panel: state
-            .config
-            .panel
-            .iter()
-            .map(|entry| build_panel_item(state, entry, &main, plugins))
-            .collect(),
+        panel: main_panel(state, plugins),
         panel_candidates: plugin_pages(plugins)
             .filter(|candidate| {
                 !state
@@ -53,59 +56,15 @@ pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsVi
                     .panel
                     .iter()
                     .any(|entry| entry.tab == candidate.tab)
+                    && !state
+                        .bot_pins
+                        .iter()
+                        .any(|pin| pin.scope == main && pin.tab == candidate.tab)
             })
             .collect(),
         panel_selected: state.panel_selected.clone(),
-        bot_pin_consents: Vec::new(),
+        bot_pin_consents: state.bot_pin_consents.clone(),
     }
-}
-
-/// 设置在前，然后按已装插件的顺序列出每个能打开的页面，去掉已经在栏上的。没有网页的插件没有页面可放。
-fn candidates(state: &TabsState, plugins: &PluginsViewModel) -> Vec<TabCandidate> {
-    std::iter::once(TabCandidate {
-        tab: TabRef::Settings,
-        plugin: None,
-    })
-    .chain(plugin_pages(plugins))
-    .filter(|candidate| {
-        !state
-            .config
-            .items
-            .iter()
-            .any(|item| item.tab == candidate.tab)
-    })
-    .collect()
-}
-
-/// 每个能打开的插件页：声明了 `tabs` 的按页，没声明的是网页入口。没有网页的插件没有页面。
-fn plugin_pages(plugins: &PluginsViewModel) -> impl Iterator<Item = TabCandidate> + '_ {
-    let installed = plugins.installed.iter().flat_map(|list| &list.plugins);
-    installed
-        .filter(|plugin| plugin.web_url.is_some())
-        .flat_map(|plugin| {
-            let candidate = |page: Option<&wonton_protocol::PluginTab>| TabCandidate {
-                tab: TabRef::Plugin {
-                    plugin_id: plugin.id.clone(),
-                    page: page.map(|page| page.id.clone()),
-                },
-                plugin: Some(CandidatePlugin {
-                    title: plugin.title.clone(),
-                    page_title: page
-                        .filter(|_| plugin.tabs.len() > 1)
-                        .map(|page| page.title.clone()),
-                    icon: plugin.icon.clone(),
-                }),
-            };
-            if plugin.tabs.is_empty() {
-                vec![candidate(None)]
-            } else {
-                plugin
-                    .tabs
-                    .iter()
-                    .map(|page| candidate(Some(page)))
-                    .collect()
-            }
-        })
 }
 
 /// 底栏上的一项（含盖在主界面上的页面覆盖层）。
@@ -115,7 +74,7 @@ fn build_item(state: &TabsState, stored: &StoredItem, plugins: &PluginsViewModel
     };
     let page = match &stored.tab {
         TabRef::Chat | TabRef::Apps | TabRef::Settings => None,
-        TabRef::SharedApp { .. } | TabRef::Bot { .. } | TabRef::UiResource { .. } => None,
+        TabRef::SharedApp { .. } | TabRef::Bot { .. } => None,
         TabRef::Plugin { plugin_id, page } => {
             let plugin = plugins
                 .installed
@@ -128,6 +87,7 @@ fn build_item(state: &TabsState, stored: &StoredItem, plugins: &PluginsViewModel
                 plugin,
                 page.as_deref(),
                 plugins,
+                None,
             ))
         }
         // 钉上来的插件里的某一页：插件在就照插件页合成，不在了按缓存的标题显示。
@@ -136,10 +96,24 @@ fn build_item(state: &TabsState, stored: &StoredItem, plugins: &PluginsViewModel
                 .installed
                 .as_ref()
                 .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == *plugin_id));
-            Some(build_page(state, &placed, stored, plugin, None, plugins))
+            Some(build_page(
+                state, &placed, stored, plugin, None, plugins, None,
+            ))
         }
         // 公网网页：没有插件，标题按域名，失败按手机自己的网络算。
-        TabRef::Url { .. } => Some(build_page(state, &placed, stored, None, None, plugins)),
+        TabRef::Url { .. } => Some(build_page(
+            state, &placed, stored, None, None, plugins, None,
+        )),
+        // MCP Apps 界面：栏上不放（Bot 只钉面板），照插件页显示。
+        TabRef::UiResource { plugin_id, .. } => {
+            let plugin = plugins
+                .installed
+                .as_ref()
+                .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == *plugin_id));
+            Some(build_page(
+                state, &placed, stored, plugin, None, plugins, None,
+            ))
+        }
     };
     let badge = match (&stored.tab, &page) {
         (TabRef::Settings, _) => plugins.core_upgrade.is_prompting(),
@@ -151,53 +125,6 @@ fn build_item(state: &TabsState, stored: &StoredItem, plugins: &PluginsViewModel
         removable: is_removable(&stored.tab),
         badge,
         page,
-    }
-}
-
-/// 面板里的一项。面板页照全屏渲染（ADR-0052：WebView 一直是第 2 级的大小）。
-pub(super) fn build_panel_item(
-    state: &TabsState,
-    entry: &PanelEntry,
-    scope: &PanelScope,
-    plugins: &PluginsViewModel,
-) -> PanelItem {
-    let placed = PlacedTab::Panel {
-        scope: scope.clone(),
-        tab: entry.tab.clone(),
-    };
-    let plugin = match &entry.tab {
-        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => plugins
-            .installed
-            .as_ref()
-            .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == *plugin_id)),
-        _ => None,
-    };
-    let page_id = match &entry.tab {
-        TabRef::Plugin {
-            page: Some(page), ..
-        } => Some(page.as_str()),
-        _ => None,
-    };
-    let mut page = build_page(
-        state,
-        &placed,
-        &StoredItem {
-            tab: entry.tab.clone(),
-            page: None,
-        },
-        plugin,
-        page_id,
-        plugins,
-    );
-    if let Some(title) = &entry.title {
-        page.title = title.clone();
-    }
-    PanelItem {
-        tab: entry.tab.clone(),
-        page,
-        attention: state.attention.contains(&placed),
-        source: PanelSource::User,
-        movable: true,
     }
 }
 
@@ -255,6 +182,7 @@ fn build_page(
     plugin: Option<&InstalledPlugin>,
     page_id: Option<&str>,
     plugins: &PluginsViewModel,
+    pin: Option<&wonton_protocol::BotPanelPin>,
 ) -> TabPage {
     match &stored.tab {
         // 插件里的某一页和公网网页：网址核心直接拼，插件不在了还能用缓存的标题显示。
@@ -272,6 +200,43 @@ fn build_page(
                 },
                 layout: TabLayout::Inset,
             });
+            return page_from_metadata(
+                state,
+                placed,
+                metadata,
+                url,
+                state_value,
+                TabDisplayChoice::Fullscreen,
+                plugins,
+            );
+        }
+        // MCP Apps 界面：宿主页由核心给，界面放在它的 iframe 里。
+        TabRef::UiResource { plugin_id, .. } => {
+            let url = pin
+                .zip(state.core_url.as_ref())
+                .and_then(|(pin, base)| {
+                    base.join(&wonton_protocol::mcp_app_host_path(&pin.id)).ok()
+                })
+                .map(|url| url.to_string());
+            let state_value = if url.is_some() {
+                match state.failures.get(placed) {
+                    Some((failure, status)) => TabState::LoadFailed {
+                        failure: *failure,
+                        status: *status,
+                    },
+                    None => TabState::Ready,
+                }
+            } else {
+                TabState::PageRemoved
+            };
+            let metadata = StoredPage {
+                plugin_title: plugin_title_of(plugin_id, plugins),
+                title: pin.map(|pin| pin.title.clone()).unwrap_or_default(),
+                icon: TabIcon::Plugin {
+                    icon: plugin.and_then(|plugin| plugin.icon.clone()),
+                },
+                layout: TabLayout::EdgeToEdge,
+            };
             return page_from_metadata(
                 state,
                 placed,
@@ -645,7 +610,9 @@ pub(super) fn display_for(state: &TabsState, tab: &TabRef) -> TabDisplayChoice {
 
 pub(super) fn plugin_is_running(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
     let plugin_id = match tab {
-        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => plugin_id,
+        TabRef::Plugin { plugin_id, .. }
+        | TabRef::PluginPath { plugin_id, .. }
+        | TabRef::UiResource { plugin_id, .. } => plugin_id,
         _ => return false,
     };
     plugins
@@ -684,7 +651,10 @@ pub(super) fn is_plugin(tab: &TabRef) -> bool {
 
 /// 绑在插件上的页面：插件页和插件里的某一页。换服务器时它们跟着走，公网网页不绑服务器。
 pub(super) fn is_plugin_page(tab: &TabRef) -> bool {
-    matches!(tab, TabRef::Plugin { .. } | TabRef::PluginPath { .. })
+    matches!(
+        tab,
+        TabRef::Plugin { .. } | TabRef::PluginPath { .. } | TabRef::UiResource { .. }
+    )
 }
 
 /// 是网页的页面：插件页、插件里的某一页、公网网页、朋友分享的插件页。加载失败和重新加载都按网页处理。
@@ -693,8 +663,10 @@ pub(super) fn is_web_page(tab: &TabRef) -> bool {
         tab,
         TabRef::Plugin { .. }
             | TabRef::PluginPath { .. }
+            | TabRef::UiResource { .. }
             | TabRef::Url { .. }
             | TabRef::SharedApp { .. }
+            | TabRef::Bot { .. }
     )
 }
 

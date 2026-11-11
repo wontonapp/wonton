@@ -144,6 +144,7 @@ fn is_tab_action(action: &Action) -> bool {
             | Action::RemovePanelPage { .. }
             | Action::MovePanelPage { .. }
             | Action::SelectPanelPage { .. }
+            | Action::SetBotPinConsent { .. }
             | Action::PinCurrentPage { .. }
             | Action::MoveTab { .. }
             | Action::SetTabLabels { .. }
