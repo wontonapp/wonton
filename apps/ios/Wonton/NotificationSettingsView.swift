@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import WontonClient
 
 /// 设置里的通知页：系统权限的入口，加上推送登记的状态和原因。入口先把权限问到手，再去系统设置里云吞自己的那一页。
 struct NotificationSettingsView: View {
