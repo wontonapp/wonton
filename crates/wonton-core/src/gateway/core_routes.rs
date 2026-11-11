@@ -229,50 +229,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .route(wonton_protocol::ME_PATH, get(me::read).put(me::save))
         .merge(link_preview_routes())
         .merge(member_routes())
-        .route(
-            wonton_protocol::BOT_ACTIVITY_PATH,
-            get(super::bot_activity::get),
-        )
-        .route(
-            wonton_protocol::BOT_PANEL_PINS_PATH,
-            get(super::panel_pins::list),
-        )
-        .route(
-            &wonton_protocol::bot_panel_pin_path("{id}"),
-            delete(super::panel_pins::remove),
-        )
-        .route(
-            &wonton_protocol::bot_panel_pin_seen_path("{id}"),
-            post(super::panel_pins::seen),
-        )
-        .route(
-            &wonton_protocol::bot_panel_consent_path("{plugin_id}", "{bot}"),
-            put(super::panel_pins::consent),
-        )
-        .route(
-            &wonton_protocol::mcp_app_host_path("{pin}"),
-            get(super::mcp_apps::host),
-        )
-        .route(
-            wonton_protocol::MCP_APP_CALLS_PATH,
-            post(super::mcp_apps::call),
-        )
-        .route(
-            &wonton_protocol::mcp_app_call_path("{id}"),
-            get(super::mcp_apps::result),
-        )
-        .route(
-            wonton_protocol::MCP_APP_READ_PATH,
-            post(super::mcp_apps::read),
-        )
-        .route(
-            wonton_protocol::MCP_APP_TOOLS_PATH,
-            post(super::mcp_apps::tools),
-        )
-        .route(
-            wonton_protocol::MCP_APP_MESSAGE_PATH,
-            post(super::mcp_apps::message),
-        )
+        .merge(panel_routes())
         .route(
             wonton_protocol::ONBOARDING_PATH,
             get(onboarding::get).put(onboarding::put),
@@ -317,6 +274,55 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             reject_cross_site_writes,
         ))
         .with_state(gateway)
+}
+
+/// 聊天页面板（ADR-0052）和 MCP Apps：Bot 活动、钉页，以及界面的宿主页和转发。
+fn panel_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route(
+            wonton_protocol::BOT_ACTIVITY_PATH,
+            get(super::bot_activity::get),
+        )
+        .route(
+            wonton_protocol::BOT_PANEL_PINS_PATH,
+            get(super::panel_pins::list),
+        )
+        .route(
+            &wonton_protocol::bot_panel_pin_path("{id}"),
+            delete(super::panel_pins::remove),
+        )
+        .route(
+            &wonton_protocol::bot_panel_pin_seen_path("{id}"),
+            post(super::panel_pins::seen),
+        )
+        .route(
+            &wonton_protocol::bot_panel_consent_path("{plugin_id}", "{bot}"),
+            put(super::panel_pins::consent),
+        )
+        .route(
+            &wonton_protocol::mcp_app_host_path("{pin}"),
+            get(super::mcp_apps::host),
+        )
+        .route(
+            wonton_protocol::MCP_APP_CALLS_PATH,
+            post(super::mcp_apps::call),
+        )
+        .route(
+            &wonton_protocol::mcp_app_call_path("{id}"),
+            get(super::mcp_apps::result),
+        )
+        .route(
+            wonton_protocol::MCP_APP_READ_PATH,
+            post(super::mcp_apps::read),
+        )
+        .route(
+            wonton_protocol::MCP_APP_TOOLS_PATH,
+            post(super::mcp_apps::tools),
+        )
+        .route(
+            wonton_protocol::MCP_APP_MESSAGE_PATH,
+            post(super::mcp_apps::message),
+        )
 }
 
 /// 链接预览（ADR-0065）：核心去取网页摘要和预览图。

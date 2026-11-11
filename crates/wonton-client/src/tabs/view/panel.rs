@@ -85,6 +85,7 @@ pub(crate) fn build_panel_item(
         page,
         attention: state.attention.contains(&placed),
         source: PanelSource::User,
+        movable: true,
     }
 }
 
@@ -137,6 +138,7 @@ pub(crate) fn build_pin_item(
             bot: pin.bot.clone(),
             name: pin.name.clone(),
         },
+        movable: false,
     }
 }
 

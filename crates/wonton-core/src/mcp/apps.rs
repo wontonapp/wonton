@@ -8,8 +8,11 @@ use std::sync::Arc;
 use rmcp::model::{CallToolResult, JsonObject, Tool};
 use serde_json::Value;
 
+use super::server::BotIdentity;
 use super::{Bus, Caller, ToolFailure, naming, upstream::ReadError};
+use crate::l10n;
 use crate::plugin::{McpServer, PluginId};
+use wonton_protocol::BotKeeper;
 
 /// 工具声明了给界面用（`_meta.ui.visibility` 含 `app`）。
 pub(super) fn visible(tool: &Tool) -> bool {
@@ -72,7 +75,17 @@ impl Bus {
                 format!("工具 {tool} 没有声明给界面用"),
             ));
         }
-        let caller = Caller::new(server.id.clone(), Some(&server.title));
+        let owner = self
+            .cards()
+            .map_err(|e| ToolFailure::new("service_unavailable", e))?
+            .owner
+            .clone();
+        let mut caller = Caller::new(server.id.clone(), Some(&server.title));
+        caller.name = l10n::text(&self.owner_languages(), "mcp-app-owner", &[]);
+        caller.bot = Some(BotIdentity {
+            bot: "app".to_owned(),
+            keeper: BotKeeper::User { username: owner },
+        });
         let name = naming::join(&server.id.slug(), tool);
         let activity = self.plugins.activity.start_tool(&server.id);
         Ok(self

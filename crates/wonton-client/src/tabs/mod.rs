@@ -32,6 +32,7 @@ mod config;
 use config::*;
 
 mod view;
+use uninstall::*;
 use view::*;
 mod reload;
 use reload::*;
@@ -40,6 +41,7 @@ mod actions;
 mod panel;
 mod pins;
 mod sync;
+mod uninstall;
 
 #[cfg(test)]
 mod tests;
@@ -85,6 +87,10 @@ struct TabsState {
     bot_pins: Vec<BotPanelPin>,
     /// 核心地址：MCP Apps 的宿主页按它拼。
     core_url: Option<Url>,
+    /// Bot 往主面板钉页的同意，设置里显示和收回。
+    bot_pin_consents: Vec<wonton_protocol::BotPinOwner>,
+    /// 拉 Bot 钉页失败的原因（和配置文件的 problem 分开）。
+    pins_problem: Option<String>,
 }
 
 pub(crate) struct TabsLink {
@@ -179,6 +185,8 @@ impl TabsLink {
             room_panel_removed: Vec::new(),
             bot_pins: Vec::new(),
             core_url: home.core_url(),
+            bot_pin_consents: Vec::new(),
+            pins_problem: None,
         };
         let room_view = watch::Sender::new(None);
         let sync_problem = watch::Sender::new(None);
@@ -265,13 +273,16 @@ impl TabsLink {
         let weak = lock(&self.weak).clone();
         self.runtime.spawn(async move {
             let Some(link) = weak.upgrade() else { return };
-            if let Err(error) = link.put_bot_consent(&plugin_id, &bot, allowed).await {
-                let message = error.to_string();
-                link.runtime_change(|state, _| {
-                    state.problem = Some(TabsProblem { message });
-                    Ok(())
-                })
-                .ok();
+            match link.put_bot_consent(&plugin_id, &bot, allowed).await {
+                Ok(()) => link.recompute(),
+                Err(error) => {
+                    let message = error.to_string();
+                    link.runtime_change(|state, _| {
+                        state.problem = Some(TabsProblem { message });
+                        Ok(())
+                    })
+                    .ok();
+                }
             }
         });
         Ok(())
@@ -576,125 +587,6 @@ fn update_reload_counters(
     state.connected = connected;
 }
 
-fn remove_uninstalled(
-    state: &mut TabsState,
-    installed: &wonton_protocol::InstalledPlugins,
-) -> bool {
-    let gone = |plugin_id: &str| {
-        !installed
-            .plugins
-            .iter()
-            .any(|plugin| plugin.id == plugin_id)
-    };
-    let mut removed = Vec::new();
-    state.config.items.retain(|item| {
-        let keep = match &item.tab {
-            TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
-                !gone(plugin_id)
-            }
-            _ => true,
-        };
-        if !keep {
-            removed.push((item.tab.clone(), item_title(item)));
-        }
-        keep
-    });
-    if let Some(overlay) = state.overlay.take() {
-        let missing = match &overlay.tab {
-            TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
-                gone(plugin_id)
-            }
-            _ => false,
-        };
-        if missing {
-            state.selected = TabRef::Chat;
-            state.fullscreen = None;
-        } else {
-            state.overlay = Some(overlay);
-        }
-    }
-    // 主面板里的页面一起拿掉，提示一次（和底栏一样）。
-    state.config.panel.retain(|entry| {
-        let keep = match &entry.tab {
-            TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
-                !gone(plugin_id)
-            }
-            _ => true,
-        };
-        if !keep
-            && let Some(title) = panel_entry_title(entry, installed)
-            && !state.uninstalled.contains(&title)
-        {
-            state.uninstalled.push(title);
-        }
-        keep
-    });
-    // 打开的房间的面板也拿掉；写回房间账号数据的活儿交给 recompute 收尾（记下是哪几个插件）。
-    if let Some((_, panel)) = &mut state.open_room {
-        panel.pages.retain(|entry| match &entry.tab {
-            TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
-                let removed = gone(plugin_id);
-                if removed && !state.room_panel_removed.contains(plugin_id) {
-                    state.room_panel_removed.push(plugin_id.clone());
-                }
-                !removed
-            }
-            _ => true,
-        });
-    }
-    for (tab, title) in &removed {
-        let key = |place: fn(TabRef) -> PlacedTab| place(tab.clone());
-        state.config.displays.retain(|display| display.tab != *tab);
-        state.failures.remove(&key(|tab| PlacedTab::Bar { tab }));
-        state.failures.remove(&key(|tab| PlacedTab::Panel {
-            scope: PanelScope::Main,
-            tab,
-        }));
-        state.attention.remove(&key(|tab| PlacedTab::Bar { tab }));
-        state.attention.remove(&key(|tab| PlacedTab::Panel {
-            scope: PanelScope::Main,
-            tab,
-        }));
-        if !state.uninstalled.contains(title) {
-            state.uninstalled.push(title.clone());
-        }
-        if state.selected == *tab {
-            state.selected = TabRef::Apps;
-            state.fullscreen = None;
-        }
-        if state
-            .overlay
-            .as_ref()
-            .is_some_and(|overlay| overlay.tab == *tab)
-        {
-            state.overlay = None;
-            state.fullscreen = None;
-        }
-        if state.panel_selected.as_ref() == Some(tab) {
-            state.panel_selected = None;
-        }
-    }
-    !removed.is_empty() || !state.room_panel_removed.is_empty()
-}
-
-/// 面板条目的提示名：用户起的名字，没有时按插件补。
-fn panel_entry_title(
-    entry: &PanelEntry,
-    installed: &wonton_protocol::InstalledPlugins,
-) -> Option<String> {
-    if let Some(title) = &entry.title {
-        return Some(title.clone());
-    }
-    match &entry.tab {
-        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => installed
-            .plugins
-            .iter()
-            .find(|plugin| plugin.id == *plugin_id)
-            .map(|plugin| plugin.title.clone()),
-        _ => None,
-    }
-}
-
 fn update_metadata(state: &mut TabsState, installed: &wonton_protocol::InstalledPlugins) -> bool {
     let mut changed = false;
     for item in &mut state.config.items {
@@ -748,6 +640,8 @@ fn clear_plugin_config(state: &mut TabsState) {
     state.config.items.retain(|item| !is_plugin_page(&item.tab));
     state.config.displays.clear();
     state.config.panel.clear();
+    state.bot_pins.clear();
+    state.bot_pin_consents.clear();
     state.overlay = None;
     state.fullscreen = None;
     state.attention.clear();

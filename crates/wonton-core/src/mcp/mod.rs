@@ -78,7 +78,7 @@ pub struct Endpoint {
 /// `wonton__user_locale` 认人用的本服务器身份资料：Matrix 服务器名和家人记录。
 /// Bot 钉页的卡片需要的 Matrix 入口。
 pub struct Cards {
-    matrix: Arc<crate::matrix::Matrix>,
+    matrix: Option<Arc<crate::matrix::Matrix>>,
     owner: String,
 }
 
@@ -178,9 +178,7 @@ impl Bus {
 
     /// 接上 Matrix 和主人：Bot 往主面板钉页的同意卡片发在 Bot 自己的房间里。
     pub fn attach_matrix(&self, matrix: Option<Arc<crate::matrix::Matrix>>, owner: String) {
-        if let Some(matrix) = matrix {
-            let _ = self.matrix.set(Cards { matrix, owner });
-        }
+        let _ = self.matrix.set(Cards { matrix, owner });
     }
 
     fn cards(&self) -> Result<&Cards, String> {

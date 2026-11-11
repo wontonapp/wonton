@@ -130,3 +130,9 @@ gateway-owner-secrets-not-text = The secret { $name } isn't stored as text
 gateway-owner-secrets-audit-unavailable = The audit log isn't wired on this server, so secret values can't be shown
 gateway-plugin-scope-unsupported = This core does not support changing which bots can use a plugin. Upgrade the core first.
 gateway-bot-plugin-access-unsupported = This core does not support switching plugin access for a bot. Upgrade the core first.
+
+# MCP Apps 宿主页（#35）。
+mcp-app-loading = Loading…
+mcp-app-failed = Can't load the app: { $error }
+mcp-app-page-failed = The app didn't load.
+mcp-app-retry = Retry

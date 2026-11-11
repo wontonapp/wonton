@@ -187,3 +187,6 @@ panel-pin-full = The panel is full ({ $max } pages at most); remove a page first
 panel-pin-already-asking = A confirmation card for the main panel is already waiting for the owner
 panel-pin-matrix = Can't reach Matrix: { $error }
 panel-pin-not-there = That page isn't pinned on the panel
+
+# MCP Apps 界面里的调用在卡片上把调用方写成主人。
+mcp-app-owner = You

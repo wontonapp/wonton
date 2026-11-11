@@ -133,6 +133,17 @@ impl TabsLink {
     ) -> Result<(), CoreError> {
         match &scope {
             PanelScope::Main => {
+                let fixed = {
+                    let state = lock(&self.state);
+                    !state.config.panel.iter().any(|entry| entry.tab == tab)
+                        && state
+                            .bot_pins
+                            .iter()
+                            .any(|pin| pin.scope == scope && pin.tab == tab)
+                };
+                if fixed {
+                    return Ok(());
+                }
                 self.config_change(|state, _| move_entry(&mut state.config.panel, &tab, index))
             }
             PanelScope::Room { room_id } => {
@@ -141,6 +152,14 @@ impl TabsLink {
                     let state = lock(&self.state);
                     let entries = panel_entries(&state, &scope)?;
                     if !entries.iter().any(|entry| entry.tab == tab) {
+                        // Bot 钉的页按钉的先后固定，拖动当成功但不动。
+                        if state
+                            .bot_pins
+                            .iter()
+                            .any(|pin| pin.scope == scope && pin.tab == tab)
+                        {
+                            return Ok(());
+                        }
                         return Err(not_in_panel());
                     }
                     if index as usize >= entries.len() {

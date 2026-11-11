@@ -116,21 +116,42 @@ impl TabsLink {
             .send()
             .await
             .map_err(|e| invalid(&e.to_string()))?;
-        Self::expect(response).await.map(|_| ())
+        Self::expect(response).await?;
+        let mut state = lock(&self.state);
+        if let Some(entry) = state
+            .bot_pin_consents
+            .iter_mut()
+            .find(|entry| entry.plugin_id == plugin_id && entry.bot == bot)
+        {
+            entry.main_consent = allowed;
+        }
+        Ok(())
     }
 
-    /// 拉一次，把视图需要的红点跟着更新。失败记进 problem，保留原来的列表。
+    /// 拉一次，把视图需要的红点和同意跟着更新。失败记进 problem，保留原来的列表。
     pub(super) async fn refresh_bot_pins(self: &Arc<Self>) {
-        let Ok(pins) = self.fetch_bot_pins().await else {
-            return;
-        };
+        let result = self.fetch_bot_pins().await;
         let changed = {
             let mut state = lock(&self.state);
-            if state.bot_pins == pins.pins {
-                false
-            } else {
-                state.bot_pins = pins.pins;
-                true
+            match result {
+                Err(error) => {
+                    let message = l10n!(
+                        CATALOG,
+                        language(),
+                        "panel-pins-refresh-failed",
+                        error = error.to_string()
+                    );
+                    let changed = state.pins_problem.as_deref() != Some(&message);
+                    state.pins_problem = Some(message);
+                    changed
+                }
+                Ok(pins) => {
+                    let changed = state.pins_problem.is_some() || state.bot_pins != pins.pins;
+                    state.pins_problem = None;
+                    state.bot_pins = pins.pins;
+                    state.bot_pin_consents = pins.consents;
+                    changed
+                }
             }
         };
         if changed {

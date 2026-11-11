@@ -158,3 +158,6 @@ panel-pin-full = パネルは満杯です（最大 { $max } ページ）。先�
 panel-pin-already-asking = メインパネルへの確認カードがすでに回答待ちです
 panel-pin-matrix = Matrix に接続できません：{ $error }
 panel-pin-not-there = そのページはパネルにピン留めされていません
+
+# MCP Apps 界面里的调用在卡片上把调用方写成主人。
+mcp-app-owner = あなた

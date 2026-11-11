@@ -74,7 +74,12 @@ impl ServerHandler for Notes {
                     .cloned()
                     .unwrap_or_default(),
             ));
-        let delete = Tool::new("delete", "删笔记", schema());
+        let delete = Tool::new("delete", "删笔记", schema()).with_meta(rmcp::model::MetaObject(
+            json!({"ui": {"visibility": ["app"]}})
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+        ));
         let find = Tool::new("find", "找文件", schema())
             .with_annotations(ToolAnnotations::new().read_only(true));
         let archive = Tool::new("archive", "归档文件", schema());

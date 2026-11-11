@@ -599,3 +599,4 @@ tabs-open-only-plugins = 開き方を設定できるのはアプリのページ�
 tabs-fullscreen-only-plugins = 全画面にできるのはアプリのページだけです。
 tabs-fullscreen-none = 全画面のページはありません。
 tabs-fullscreen-not-current = そのページは全画面のページではありません。
+panel-pins-refresh-failed = Bot がピン留めしたページを読み込めません：{ $error }

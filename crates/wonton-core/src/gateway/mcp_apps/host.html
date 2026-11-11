@@ -115,9 +115,13 @@ async function request(message) {
       return {
         protocolVersion: "2026-01-26",
         hostInfo: {name: "Wonton", version: "1"},
-        hostCapabilities: {openLinks: {}, message: {text: {}}},
+        hostCapabilities: {
+          openLinks: {}, message: {text: {}}, serverTools: {}, serverResources: {},
+        },
         hostContext: context(),
       };
+    case "ui/request-display-mode":
+      return {mode: "fullscreen"};
     case "tools/list":
       return await post("/_wonton/api/mcp-apps/tools", {pin: P.app.pin});
     case "tools/call":
@@ -159,7 +163,18 @@ if (P.app.error) {
   loading.dataset.ready = "1";
 } else {
   const policy = `<meta http-equiv="Content-Security-Policy" content="${P.app.csp.replace(/"/g, "&quot;")}">`;
-  frame.srcdoc = policy + P.app.html;
+  const html = P.app.html;
+  const head = html.search(/<head[^>]*>/i);
+  const doctype = html.search(/<!doctype[^>]*>/i);
+  if (head >= 0) {
+    const at = head + html.slice(head).indexOf(">") + 1;
+    frame.srcdoc = html.slice(0, at) + policy + html.slice(at);
+  } else if (doctype >= 0) {
+    const at = doctype + html.slice(doctype).indexOf(">") + 1;
+    frame.srcdoc = html.slice(0, at) + policy + html.slice(at);
+  } else {
+    frame.srcdoc = policy + html;
+  }
 }
 
 window.addEventListener("message", async event => {

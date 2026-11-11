@@ -56,6 +56,8 @@ impl Rig {
                 room_panel_removed: Vec::new(),
                 bot_pins: Vec::new(),
                 core_url: None,
+                bot_pin_consents: Vec::new(),
+                pins_problem: None,
             }),
             writing: Mutex::new(()),
             session: watch::channel(None).1,
@@ -358,7 +360,15 @@ async fn bot_pinned_pages_come_after_user_pages_and_count_toward_the_limit() {
         view.panel[1].source,
         wonton_protocol::PanelSource::Bot { .. }
     ));
+    assert!(!view.panel[1].movable);
     assert!(view.panel[1].attention);
+    rig.tabs
+        .dispatch(Action::MovePanelPage {
+            scope: main_scope(),
+            tab: url_tab("https://example.com/bot-3"),
+            index: 0,
+        })
+        .unwrap();
 
     rig.tabs
         .dispatch(Action::AddPanelPage {

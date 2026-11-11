@@ -246,10 +246,8 @@ impl Confirmations {
                 Err(Refusal::Superseded)
             }
             // 不认识的回答到不了这里（`answer` 挡掉了）；真到了也不算同意。
-            Answer::Reject | Answer::Unknown => {
-                self.publish(&card.id).await;
-                Err(Refusal::Rejected)
-            }
+            // 拒绝时 `deliver` 已经发布过卡片状态。
+            Answer::Reject | Answer::Unknown => Err(Refusal::Rejected),
         }
     }
 

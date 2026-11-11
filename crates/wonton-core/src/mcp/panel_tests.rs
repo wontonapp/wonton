@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use wonton_protocol::{Answer, BotKeeper, CARD_FIELD, PanelScope};
+use wonton_protocol::{Answer, BotKeeper, CARD_FIELD, PanelScope, TOOL_CALL_USER_META};
 
 use super::test_setup::setup_with_upstreams;
 use super::upstream::Upstreams;
@@ -97,6 +97,21 @@ async fn bot(plugin: &str) -> (super::test_setup::Setup, Bot, crate::matrix::fak
 
 fn pin_args(plugin: &str, path: &str, target: &str) -> Value {
     json!({"plugin": plugin, "path": path, "target": target})
+}
+
+async fn wait_card(fake: &crate::matrix::fake::Fake) -> String {
+    for _ in 0..500 {
+        if let Some((_, content)) = fake
+            .state()
+            .sent
+            .iter()
+            .find(|(_, content)| content.get(CARD_FIELD).is_some())
+        {
+            return content[CARD_FIELD]["id"].as_str().unwrap().to_owned();
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("等了 5 秒还没有确认卡片");
 }
 
 async fn wait_for_card(
@@ -350,6 +365,62 @@ async fn only_bots_can_pin_and_urls_must_be_https() {
 }
 
 #[tokio::test]
+async fn cancelling_the_pin_call_still_asks_and_pins() {
+    let (s, b, fake) = bot("com.example.agent").await;
+    let handle = s.spawn_as(
+        &b.caller,
+        "wonton__pin_page",
+        pin_args("app.example.notes", "/one", "main"),
+    );
+    let card = wait_card(&fake).await;
+    handle.abort();
+    s.bus
+        .confirmations()
+        .answer(&card, Answer::Approve, None)
+        .unwrap();
+    for _ in 0..200 {
+        if s.bus.plugins.store().pins().load(&b.id).unwrap().bots["hermes"].main_consent {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("取消后没有接着钉上");
+}
+
+#[tokio::test]
+async fn app_calls_run_as_the_owner() {
+    let (s, b, _fake) = bot("com.example.agent").await;
+    s.call_as(
+        &b.caller,
+        "wonton__pin_page",
+        json!({"plugin": "app.example.notes", "resource_uri": "ui://monitor", "target": "room"}),
+    )
+    .await;
+    let plugin = b.plugin();
+    let bus = s.bus.clone();
+    let call = tokio::spawn(async move {
+        bus.app_call(
+            &plugin,
+            "delete",
+            json!({"name": "x"}).as_object().cloned().unwrap(),
+        )
+        .await
+    });
+    let card = s.cards.wait_for(1).await;
+    assert!(card.title.contains("你"), "{}", card.title);
+    s.bus
+        .confirmations()
+        .answer(&card.id, Answer::Approve, None)
+        .unwrap();
+    assert!(call.await.unwrap().is_ok());
+    let metas = s.notes.received_meta.lock().unwrap();
+    assert_eq!(
+        metas.last().unwrap().as_ref().unwrap().0[TOOL_CALL_USER_META],
+        "owner"
+    );
+}
+
+#[tokio::test]
 async fn only_tools_declared_for_the_app_are_callable() {
     let (s, b, _fake) = bot("com.example.agent").await;
     s.call_as(
@@ -359,8 +430,8 @@ async fn only_tools_declared_for_the_app_are_callable() {
     )
     .await;
     let tools = s.bus.app_tools(&b.plugin()).await.unwrap();
-    assert_eq!(tools.len(), 1);
-    assert_eq!(tools[0].name, "search");
+    let names: Vec<&str> = tools.iter().map(|tool| tool.name.as_ref()).collect();
+    assert_eq!(names, ["search", "delete"]);
 
     let called = s
         .bus
@@ -379,8 +450,10 @@ async fn only_tools_declared_for_the_app_are_callable() {
             "delete",
             json!({"name": "x"}).as_object().cloned().unwrap(),
         )
-        .await;
-    assert!(refused.is_err());
+        .await
+        .unwrap();
+    // delete 声明给了界面，但没标只读：要确认，没人回答时结果是一条错误，不是调度错误。
+    assert_eq!(refused.is_error, Some(true));
 }
 
 #[tokio::test]

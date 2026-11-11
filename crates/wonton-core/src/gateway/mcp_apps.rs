@@ -15,7 +15,7 @@ use hyper::{HeaderMap, StatusCode};
 use rmcp::model::ResourceContents;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use wonton_protocol::PanelScope;
+use wonton_protocol::{PanelScope, TabRef};
 
 use super::api::error_response;
 use super::{Gateway, TunnelPeer, isolation};
@@ -159,8 +159,8 @@ pub(super) struct PinRef {
 fn resource_pin(
     gateway: &Gateway,
     pin: &str,
-) -> Result<(PluginId, String, PanelPin, String), Response> {
-    let Some((plugin, bot, found)) = find_pin(gateway, pin)? else {
+) -> Result<(PluginId, PluginId, String, PanelPin, String), Response> {
+    let Some((owner, bot, found)) = find_pin(gateway, pin)? else {
         return Err(error_response(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -174,8 +174,13 @@ fn resource_pin(
             "这一页不是 MCP Apps 界面",
         ));
     };
+    let TabRef::UiResource { plugin_id, .. } = &found.tab else {
+        unreachable!("already matched");
+    };
+    let provider = PluginId::parse(plugin_id)
+        .map_err(|_| error_response(StatusCode::NOT_FOUND, "not_found", "界面的插件 ID 不对"))?;
     let resource_uri = resource_uri.to_owned();
-    Ok((plugin, bot, found, resource_uri))
+    Ok((owner, provider, bot, found, resource_uri))
 }
 
 /// 界面和资源的安全策略：默认什么都不许，再按资源声明的域名放开。
@@ -290,7 +295,7 @@ pub(super) async fn host(
     if let Some(response) = unauthorized(&gateway, peer, &headers) {
         return response;
     }
-    let (plugin, _, _, uri) = match resource_pin(&gateway, &pin) {
+    let (_, plugin, _, _, uri) = match resource_pin(&gateway, &pin) {
         Ok(found) => found,
         Err(response) => return response,
     };
@@ -346,7 +351,7 @@ pub(super) async fn tools(
     if let Some(response) = unauthorized(&gateway, peer, &headers) {
         return response;
     }
-    let (plugin, _, _, _) = match resource_pin(&gateway, &body.pin) {
+    let (_, plugin, _, _, _) = match resource_pin(&gateway, &body.pin) {
         Ok(found) => found,
         Err(response) => return response,
     };
@@ -380,7 +385,7 @@ pub(super) async fn call(
     if let Some(response) = unauthorized(&gateway, peer, &headers) {
         return response;
     }
-    let (plugin, _, _, _) = match resource_pin(&gateway, &body.pin) {
+    let (_, plugin, _, _, _) = match resource_pin(&gateway, &body.pin) {
         Ok(found) => found,
         Err(response) => return response,
     };
@@ -449,7 +454,7 @@ pub(super) async fn read(
     if let Some(response) = unauthorized(&gateway, peer, &headers) {
         return response;
     }
-    let (plugin, _, _, _) = match resource_pin(&gateway, &body.pin) {
+    let (_, plugin, _, _, _) = match resource_pin(&gateway, &body.pin) {
         Ok(found) => found,
         Err(response) => return response,
     };

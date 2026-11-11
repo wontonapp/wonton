@@ -4,7 +4,7 @@ use url::Url;
 use wonton_protocol::{
     CandidatePlugin, CoreError, InstalledPlugin, PanelEntry, PanelItem, PanelScope, PanelSource,
     PlacedTab, PluginState, PluginsViewModel, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon,
-    TabItem, TabLayout, TabPage, TabRef, TabState, TabsViewModel,
+    TabItem, TabLayout, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,
 };
 
 use super::{Fullscreen, StoredItem, StoredPage, TabsState, invalid};
@@ -40,7 +40,12 @@ pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsVi
         overlay,
         full: state.config.items.len() >= super::MAX_ITEMS,
         uninstalled: state.uninstalled.clone(),
-        problem: state.problem.clone(),
+        problem: state.problem.clone().or_else(|| {
+            state
+                .pins_problem
+                .clone()
+                .map(|message| TabsProblem { message })
+        }),
         labels: state.config.labels,
         candidates: candidates(state, plugins),
         panel: main_panel(state, plugins),
@@ -58,7 +63,7 @@ pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsVi
             })
             .collect(),
         panel_selected: state.panel_selected.clone(),
-        bot_pin_consents: Vec::new(),
+        bot_pin_consents: state.bot_pin_consents.clone(),
     }
 }
 
@@ -605,7 +610,9 @@ pub(super) fn display_for(state: &TabsState, tab: &TabRef) -> TabDisplayChoice {
 
 pub(super) fn plugin_is_running(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
     let plugin_id = match tab {
-        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => plugin_id,
+        TabRef::Plugin { plugin_id, .. }
+        | TabRef::PluginPath { plugin_id, .. }
+        | TabRef::UiResource { plugin_id, .. } => plugin_id,
         _ => return false,
     };
     plugins
@@ -644,7 +651,10 @@ pub(super) fn is_plugin(tab: &TabRef) -> bool {
 
 /// 绑在插件上的页面：插件页和插件里的某一页。换服务器时它们跟着走，公网网页不绑服务器。
 pub(super) fn is_plugin_page(tab: &TabRef) -> bool {
-    matches!(tab, TabRef::Plugin { .. } | TabRef::PluginPath { .. })
+    matches!(
+        tab,
+        TabRef::Plugin { .. } | TabRef::PluginPath { .. } | TabRef::UiResource { .. }
+    )
 }
 
 /// 是网页的页面：插件页、插件里的某一页、公网网页、朋友分享的插件页。加载失败和重新加载都按网页处理。
@@ -653,8 +663,10 @@ pub(super) fn is_web_page(tab: &TabRef) -> bool {
         tab,
         TabRef::Plugin { .. }
             | TabRef::PluginPath { .. }
+            | TabRef::UiResource { .. }
             | TabRef::Url { .. }
             | TabRef::SharedApp { .. }
+            | TabRef::Bot { .. }
     )
 }
 

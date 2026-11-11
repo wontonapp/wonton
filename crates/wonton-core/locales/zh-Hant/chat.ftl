@@ -153,3 +153,6 @@ panel-pin-full = 面板已經滿了（最多 { $max } 頁），先拿掉一頁�
 panel-pin-already-asking = 已經有一張往主面板釘頁的確認卡片在等主人回答
 panel-pin-matrix = 連不上 Matrix：{ $error }
 panel-pin-not-there = 這個頁面沒有釘在面板上
+
+# MCP Apps 界面里的调用在卡片上把调用方写成主人。
+mcp-app-owner = 你

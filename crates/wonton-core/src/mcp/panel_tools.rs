@@ -132,6 +132,7 @@ pub(super) async fn call(
     }
 }
 
+#[derive(Clone)]
 struct BotContext {
     plugin: PluginId,
     bot: String,
@@ -279,9 +280,7 @@ fn page(bus: &Bus, args: &JsonObject) -> Result<(TabRef, String), ToolFailure> {
 fn locate(args: &JsonObject) -> Result<TabRef, ToolFailure> {
     let text = |key: &str| args.get(key).and_then(Value::as_str);
     if let Some(url) = text("url") {
-        return Ok(TabRef::Url {
-            url: url.to_owned(),
-        });
+        return Ok(url_page(url)?.0);
     }
     let Some(plugin_id) = text("plugin") else {
         return Err(ToolFailure::new("invalid_input", "要给页面"));
@@ -289,10 +288,10 @@ fn locate(args: &JsonObject) -> Result<TabRef, ToolFailure> {
     if let Some(uri) = text("resource_uri") {
         return Ok(TabRef::UiResource {
             plugin_id: plugin_id.to_owned(),
-            resource_uri: uri.to_owned(),
+            resource_uri: uri.trim().to_owned(),
         });
     }
-    let path = text("path").unwrap_or_default();
+    let path = text("path").unwrap_or_default().trim();
     let path = if path.is_empty() || path.starts_with('/') {
         path.to_owned()
     } else {
@@ -353,8 +352,17 @@ async fn user_pages(bus: &Bus, scope: &PanelScope) -> Result<Vec<TabRef>, ToolFa
         .cards()
         .map_err(|e| ToolFailure::new("service_unavailable", e))?;
     let langs = bus.owner_languages();
-    let login = cards
-        .matrix
+    let Some(matrix) = cards.matrix.clone() else {
+        return Err(ToolFailure::new(
+            "service_unavailable",
+            l10n::text(
+                &langs,
+                "panel-pin-matrix",
+                &[("error", "核心没有接上 Matrix".into())],
+            ),
+        ));
+    };
+    let login = matrix
         .login(&cards.owner, "Wonton 核心（读面板）")
         .await
         .map_err(|e| {
@@ -367,7 +375,7 @@ async fn user_pages(bus: &Bus, scope: &PanelScope) -> Result<Vec<TabRef>, ToolFa
                 ),
             )
         })?;
-    let session = cards.matrix.session(&login);
+    let session = matrix.session(&login);
     let read = match scope {
         PanelScope::Main => session.account_data(LAYOUT_EVENT).await,
         PanelScope::Room { room_id } => session.room_account_data(room_id, ROOM_PANEL_EVENT).await,
@@ -469,9 +477,6 @@ async fn pin(
         .get(&context.bot)
         .is_some_and(|entry| entry.main_consent);
     let needs_consent = target == "main" && !consented;
-    if needs_consent {
-        confirm_main(bus, &context, &record).await?;
-    }
     let pin = PanelPin {
         id: random_token(),
         scope: scope.clone(),
@@ -479,62 +484,116 @@ async fn pin(
         title,
         attention,
     };
-    let saved = pin.clone();
-    store
-        .with(&context.plugin, |record| {
-            let entry = record.bots.entry(bot).or_default();
-            if needs_consent {
-                entry.main_consent = true;
-            }
-            entry.pins.push(saved);
-        })
-        .map_err(storage)?;
-    Ok(json!({
+    let answer = json!({
         "id": pin.id,
         "target": target,
         "scope": scope,
         "title": pin.title,
         "attention": pin.attention,
         "count": pages.len(),
-    }))
+    });
+    if !needs_consent {
+        save_pin(bus, &context, pin, false).await?;
+        return Ok(answer);
+    }
+    // 同意要等主人：放进独立任务，Agent 断开、这次调用被取消时卡片照样等，答应后页面照样钉上。
+    let bus = bus.clone();
+    let context = context.clone();
+    let task = tokio::spawn(async move {
+        let _guard = PinCardGuard::new(&bus, &context.plugin)?;
+        confirm_main(&bus, &context).await?;
+        save_pin(&bus, &context, pin, true).await?;
+        Ok(answer)
+    });
+    task.await
+        .map_err(|e| ToolFailure::new("internal", format!("钉页的确认意外中止：{e}")))?
 }
 
-/// 第一次往主面板钉：在 Bot 自己的房间里发确认卡片，等到主人回答。同一个插件同时只问一张。
-async fn confirm_main(
-    bus: &Arc<Bus>,
+/// 把钉页写进记录：同一页面已经在了就更新，否则追加；`consented` 时同时记下同意。
+async fn save_pin(
+    bus: &Bus,
     context: &BotContext,
-    record: &crate::plugin::pins::PluginPins,
+    pin: PanelPin,
+    consented: bool,
 ) -> Result<(), ToolFailure> {
-    let cards = bus
-        .cards()
-        .map_err(|e| ToolFailure::new("service_unavailable", e))?;
-    {
+    let bot = context.bot.clone();
+    bus.plugins
+        .store()
+        .pins()
+        .with(&context.plugin, |record| {
+            let entry = record.bots.entry(bot).or_default();
+            if consented {
+                entry.main_consent = true;
+            }
+            if let Some(found) = existing(entry, &pin.scope, &pin.tab) {
+                found.title = pin.title.clone();
+                found.attention = pin.attention;
+            } else {
+                entry.pins.push(pin);
+            }
+        })
+        .map_err(storage)
+}
+
+/// 正在问主人同意时占着这个插件：任务被取消也会在退出时清掉，不留下永远“已经在问”。
+struct PinCardGuard {
+    bus: Arc<Bus>,
+    plugin: PluginId,
+}
+
+impl PinCardGuard {
+    fn new(bus: &Arc<Bus>, plugin: &PluginId) -> Result<Self, ToolFailure> {
         let mut pending = bus.pin_cards.lock().expect("钉页卡片表锁中毒");
-        if !pending.insert(context.plugin.clone()) {
+        if !pending.insert(plugin.clone()) {
             return Err(ToolFailure::new(
                 "too_many_pending",
                 words(bus, "panel-pin-already-asking", &[]),
             ));
         }
+        drop(pending);
+        Ok(Self {
+            bus: bus.clone(),
+            plugin: plugin.clone(),
+        })
     }
-    let result = ask_card(bus, context, record, cards).await;
-    bus.pin_cards
-        .lock()
-        .expect("钉页卡片表锁中毒")
-        .remove(&context.plugin);
-    result
+}
+
+impl Drop for PinCardGuard {
+    fn drop(&mut self) {
+        self.bus
+            .pin_cards
+            .lock()
+            .expect("钉页卡片表锁中毒")
+            .remove(&self.plugin);
+    }
+}
+
+/// 第一次往主面板钉：在 Bot 自己的房间里发确认卡片，等到主人回答。同一个插件同时只问一张。
+async fn confirm_main(bus: &Arc<Bus>, context: &BotContext) -> Result<(), ToolFailure> {
+    let cards = bus
+        .cards()
+        .map_err(|e| ToolFailure::new("service_unavailable", e))?;
+    let Some(matrix) = cards.matrix.clone() else {
+        return Err(ToolFailure::new(
+            "service_unavailable",
+            words(
+                bus,
+                "panel-pin-matrix",
+                &[("error", "核心没有接上 Matrix".into())],
+            ),
+        ));
+    };
+    ask_card(bus, context, &matrix).await
 }
 
 async fn ask_card(
     bus: &Arc<Bus>,
     context: &BotContext,
-    _record: &crate::plugin::pins::PluginPins,
-    cards: &super::Cards,
+    matrix: &Arc<crate::matrix::Matrix>,
 ) -> Result<(), ToolFailure> {
     let langs = bus.owner_languages();
     let localpart = localpart_of(&bot_user(bus, context)?).to_owned();
-    let login = cards
-        .matrix
+    let login = matrix
         .login(&localpart, "Wonton 核心（面板确认）")
         .await
         .map_err(|e| {
@@ -549,7 +608,7 @@ async fn ask_card(
         })?;
     let draft = cards_for(&context.name, &langs);
     let notifier = std::sync::Arc::new(BotRoom {
-        matrix: cards.matrix.clone(),
+        matrix: matrix.clone(),
         login: login.clone(),
         room: context.room.clone(),
         languages: langs,
@@ -573,7 +632,7 @@ async fn ask_card(
         Err(refusal) => Err(ToolFailure::new(refusal.kind(), refusal.message())),
     };
     // 卡片已经结束（状态也改过），这台临时设备可以退出登录了；记录里留着的发送方不再更新。
-    let _ = cards.matrix.session(&login).logout().await;
+    let _ = matrix.session(&login).logout().await;
     finished
 }
 
