@@ -95,9 +95,14 @@ struct PairingView: View {
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
-            VStack(spacing: WontonTheme.spacing.s8) {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                Text(.pairingPasteLabel)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .accessibilityHidden(true)
                 TextField(String(localized: .pairingPastePlaceholder), text: $model.pairingCode, axis: .vertical)
                     .accessibilityIdentifier("pairing-code")
+                    .accessibilityLabel(String(localized: .pairingPasteLabel))
                     .textFieldStyle(.plain)
                     .font(model.pairingCode.isEmpty ? nil : .caption.monospaced())
                     .focused($isEditingCode)

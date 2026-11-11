@@ -535,6 +535,7 @@
     <string name="pairing_instructions">在家里的局域网里，用浏览器打开服务器的 IP 地址（装好时终端里给出），页面上有配对二维码。</string>
     <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
     <string name="pairing_paste_placeholder">粘贴配对码</string>
+    <string name="pairing_paste_label">配对码</string>
     <!-- Button under the paste field: pair with the code. -->
     <string name="pairing_submit">配对</string>
     <!-- Shown next to a spinner while pairing is in progress. -->

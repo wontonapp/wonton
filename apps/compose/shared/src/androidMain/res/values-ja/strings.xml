@@ -535,6 +535,7 @@
     <string name="pairing_instructions">自宅のローカルネットワークで、ブラウザーでサーバーのIPアドレス（インストール時にターミナルに表示されます）を開くと、ペアリング用QRコードが表示されます。</string>
     <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
     <string name="pairing_paste_placeholder">ペアリングコードをペースト</string>
+    <string name="pairing_paste_label">ペアリングコード</string>
     <!-- Button under the paste field: pair with the code. -->
     <string name="pairing_submit">ペアリング</string>
     <!-- Shown next to a spinner while pairing is in progress. -->

@@ -136,11 +136,19 @@ private fun PairingForm(
             )
         }
         Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            val codeLabel = stringResource(R.string.pairing_paste_label)
+            Text(
+                codeLabel,
+                Modifier.semantics { hideFromAccessibility() },
+                style = WontonTheme.typography.supporting,
+                color = secondary,
+            )
             WontonTextField(
                 value = pastedCode,
                 onValueChange = onPastedCode,
                 modifier = Modifier.fillMaxWidth().testTag("pairing-code"),
                 placeholder = stringResource(R.string.pairing_paste_placeholder),
+                label = codeLabel,
                 textStyle = WontonTheme.typography.caption.copy(fontFamily = FontFamily.Monospace),
                 maxLines = PASTED_CODE_LINES,
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
