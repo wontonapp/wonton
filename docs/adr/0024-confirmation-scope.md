@@ -1,6 +1,6 @@
 # ADR-0024 确认的授权粒度：放宽、撤销和主人亲自操作
 
-- 状态：已接受（2026-11-03）。取舍由主人确认（见“已定”）。补充 ADR-0016。判定的第 1 步已被 [ADR-0027](0027-bot-save-file.md) 和 [ADR-0033](0033-plugin-tabs.md) 取代：Bot 更新自己写的插件，权限没变宽时不发卡片；家人和有 Bot 联系人的 Bot 怎么放宽由 [ADR-0045](0045-family-members.md) 定
+- 状态：已接受（2026-11-03）。取舍由主人确认（见“已定”）。补充 ADR-0016。判定的第 1 步已被 [ADR-0027](0027-bot-save-file.md) 和 [ADR-0033](0033-plugin-tabs.md) 取代：Bot 更新自己写的插件，权限没变宽时不发卡片；家人和有 Bot 联系人的 Bot 怎么放宽由 [ADR-0045](0045-family-members.md) 定；非归属人发起的轮次不放宽，见 [ADR-0083](0083-bot-contacts-and-group-chat.md)
 
 ## 背景
 

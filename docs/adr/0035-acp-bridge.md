@@ -22,7 +22,7 @@ ACP 桥是每个 ACP Agent 插件的一部分，不进核心，也不在核心�
 
 ### Matrix 到 ACP
 
-桥以一个普通 Matrix 设备运行，核心把 Matrix access token 只注入 bridge 服务。核心创建主人与 Bot 的加密私聊并把房间 ID 交给桥；桥只接受主人的消息，群聊和其他发送者按 Bot 权限拒绝。桥复用 `wonton-matrix` 的 Sliding Sync、设备密钥、交叉签名和恢复密钥，不自己实现 Olm/Megolm。bridge 的 crypto store、Bot 登录状态、恢复密钥和房间→session 映射在 `${WONTON_BOT_DATA}/bridge`，目录权限 0700；agent 的 HOME、workspace 和官方登录态在 `${WONTON_BOT_DATA}/agent`，Agent 看不到 bridge 目录。恢复密钥只在核心收集/保管的文件中出现，不进日志、环境变量或 Matrix 消息。加密初始化失败就让插件不健康，绝不退回明文。
+桥以一个普通 Matrix 设备运行，核心把 Matrix access token 只注入 bridge 服务。核心创建主人与 Bot 的加密私聊并把房间 ID 交给桥；桥只接受主人的消息，群聊和其他发送者按 Bot 权限拒绝（群里听谁的、什么时候回由 [ADR-0083](0083-bot-contacts-and-group-chat.md) 修订）。桥复用 `wonton-matrix` 的 Sliding Sync、设备密钥、交叉签名和恢复密钥，不自己实现 Olm/Megolm。bridge 的 crypto store、Bot 登录状态、恢复密钥和房间→session 映射在 `${WONTON_BOT_DATA}/bridge`，目录权限 0700；agent 的 HOME、workspace 和官方登录态在 `${WONTON_BOT_DATA}/agent`，Agent 看不到 bridge 目录。恢复密钥只在核心收集/保管的文件中出现，不进日志、环境变量或 Matrix 消息。加密初始化失败就让插件不健康，绝不退回明文。
 
 收到普通文本后，桥按房间查 session；没有就调用 `session/new`，随后切到插件配置的模式（见下文）。文本成为一个 `session/prompt`，ACP 的 `agent_message_chunk` 只在该轮结束后拼成一条 Matrix `m.text`；中间不展示 thought、tool call、usage、plan 或执行轨迹，只发送 typing 状态和每轮一条状态消息（[ADR-0082](0082-agent-run-status.md)）。图片和文件 C1 不转，收到时返回明确的输入不支持错误。桥限制输入、输出、队列长度和单轮时间，超限报错误，不截断成成功。
 
