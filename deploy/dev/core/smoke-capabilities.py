@@ -312,8 +312,10 @@ def install(name, tokens, together=False):
 
 
 def state_file():
-    path = os.environ['WONTON_DEV_DATA'] + '/core/plugins/capabilities/connections.json'
-    archive = docker('cp', os.environ['WONTON_DEV_PROJECT'] + ':' + path, '-')
+    path = Path(os.environ['WONTON_DEV_DATA']) / 'core/plugins/capabilities/connections.json'
+    if not path.is_file():
+        return {'defaults': {}, 'selected': {}, 'providers': [], 'connections': []}
+    archive = docker('cp', os.environ['WONTON_DEV_PROJECT'] + ':' + str(path), '-')
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         return json.load(tar.extractfile(tar.getmembers()[0]))
 
