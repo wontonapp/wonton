@@ -38,6 +38,8 @@ use crate::{ChatRoom, Draft, Error, MatrixSession, MessageBody, Result, message:
 const PAGE_SIZE: usize = 500;
 /// 加入房间时等邀请事件落库的上限。邀请事件和房间在同一批同步里，等的只是这批写完。
 const INVITE_WAIT: Duration = Duration::from_secs(10);
+/// 发消息时等房间同步到本地的上限：传完文件发链接时，App 重启后同步刚开头；过了期限按没同步到/没加入报。
+const ROOM_SYNC_WAIT: Duration = Duration::from_secs(20);
 /// 加入后等同步把房间标成已加入的上限。加入事件会唤醒在等的同步，平时一秒内就到；超过这个时间按下面
 /// [`MatrixSession::until_joined`] 说的 Tuwunel 的问题处理。
 const JOIN_ECHO_WAIT: Duration = Duration::from_secs(3);
@@ -369,11 +371,27 @@ impl MatrixSession {
     }
 
     /// 往已加入的房间发一条文字，不打开它：不动 Sliding Sync 的房间订阅，正在看的房间的时间线不受影响。不经发送队列，也没有本地
-    /// 回显，发出去之后经同步出现；失败当场返回。
+    /// 回显，发出去之后经同步出现；失败当场返回。房间还没同步到本地时等它一会儿：传完文件发链接时，App 重启后同步刚开头。
     pub async fn send_text_to(&self, room_id: &RoomId, body: &str) -> Result<()> {
-        let room = self.joined(room_id)?;
+        let room = self.joined_within(room_id, ROOM_SYNC_WAIT).await?;
         room.send(RoomMessageEventContent::text_plain(body)).await?;
         Ok(())
+    }
+
+    /// 房间同步到本地并成为已加入；等过了期限还没有，按原来的错报（没同步到，或者没加入）。
+    async fn joined_within(&self, room_id: &RoomId, wait: Duration) -> Result<Room> {
+        let deadline = tokio::time::Instant::now() + wait;
+        loop {
+            if let Some(room) = self.client.get_room(room_id)
+                && room.state() == RoomState::Joined
+            {
+                return Ok(room);
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return self.joined(room_id);
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
     }
 
     /// 这个房间输入框里的草稿，没打过字也没在回复时是 `None`。存在本机状态库里，关掉 App 也还在；不上服务器。
