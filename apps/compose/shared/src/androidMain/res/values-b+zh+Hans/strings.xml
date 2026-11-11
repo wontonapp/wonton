@@ -540,6 +540,8 @@
     <string name="pairing_submit">配对</string>
     <!-- Shown next to a spinner while pairing is in progress. -->
     <string name="pairing_in_progress">正在配对…</string>
+    <string name="pairing_still_connecting">还在连接…</string>
+    <string name="pairing_still_confirming">还在等服务器确认…</string>
     <!-- Label of the field for this device's name. -->
     <string name="pairing_device_name">这台设备的名字</string>
     <!-- Failure title when the server rejected the pairing code. -->

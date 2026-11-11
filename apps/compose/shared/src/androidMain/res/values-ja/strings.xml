@@ -540,6 +540,8 @@
     <string name="pairing_submit">ペアリング</string>
     <!-- Shown next to a spinner while pairing is in progress. -->
     <string name="pairing_in_progress">ペアリング中…</string>
+    <string name="pairing_still_connecting">まだ接続中…</string>
+    <string name="pairing_still_confirming">まだサーバーの確認待ち…</string>
     <!-- Label of the field for this device's name. -->
     <string name="pairing_device_name">このデバイスの名前</string>
     <!-- Failure title when the server rejected the pairing code. -->

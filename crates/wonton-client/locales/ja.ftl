@@ -561,6 +561,7 @@ chat-window-ended =
 # ペアリングの詳細。アドレスとリレー URL にペアリングキーは含まれません。error は上流の原文です。
 home-pairing-timeout = { $seconds } 秒以内にペアリングを完了できませんでした。
 home-pairing-aborted = ペアリングが完了する前に中断しました。もう一度お試しください。
+home-pairing-not-pairing = 進行中のペアリングはありません。
 home-pairing-failed-detail = 直接接続先：{ $addresses }。リレー：[{ $relays }]。経過時間：{ $milliseconds } ミリ秒、制限時間：{ $seconds } 秒。原因：{ $error }
 plugin-now-start-failed = ワンタップ操作を開始できません：{ $error }
 

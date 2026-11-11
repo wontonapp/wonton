@@ -8,6 +8,7 @@ mod background;
 mod bind;
 mod connection;
 mod invite;
+mod link;
 mod pairing;
 mod quality;
 mod refresh;
@@ -38,6 +39,7 @@ use wonton_tunnel::{
 use crate::l10n::{CATALOG, language};
 use crate::scope::reuse;
 use connection::{LONG_OUTAGE, Tracker};
+use link::Link;
 use quality::Quality;
 pub(crate) use storage::{Storage, write_private};
 use ticket::Ticket;
@@ -119,17 +121,12 @@ pub(crate) struct HomeLink {
     address_refresh: std::sync::Mutex<Option<JoinHandle<()>>>,
     /// 第几次配对。旧一次的看门线程和迟到的结果只认自己那次，不盖掉后来的配对。
     pair_attempt: AtomicU64,
+    /// 正在进行的配对从什么时候开始、到了哪一步；进度心跳从这里反映进 ViewModel。
+    pairing_progress: std::sync::Mutex<Option<pairing::PairingProgress>>,
+    /// 正在跑的配对任务。取消时中止它：被放弃的配对不该在后台继续连到自己的时限。
+    pairing_task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     #[cfg(feature = "test-hooks")]
     pub(crate) test_hooks: bind::TestHooks,
-}
-
-/// 到一台服务器的连接：endpoint、隧道客户端和本地代理同生共死。
-struct Link {
-    endpoint: Endpoint,
-    client: TunnelClient,
-    proxy: LocalProxy,
-    watcher: JoinHandle<()>,
-    checker: JoinHandle<()>,
 }
 
 impl HomeLink {
@@ -185,6 +182,8 @@ impl HomeLink {
             addresses_stale: AtomicBool::new(false),
             address_refresh: std::sync::Mutex::default(),
             pair_attempt: AtomicU64::new(0),
+            pairing_progress: std::sync::Mutex::new(None),
+            pairing_task: std::sync::Mutex::new(None),
             #[cfg(feature = "test-hooks")]
             test_hooks: bind::TestHooks::default(),
         });
@@ -673,16 +672,6 @@ impl HomeLink {
 enum Published {
     Superseded,
     Tick(Option<Duration>),
-}
-
-impl Link {
-    async fn close(self) {
-        self.watcher.abort();
-        self.checker.abort();
-        self.proxy.shutdown().await;
-        self.client.close();
-        self.endpoint.close().await;
-    }
 }
 
 /// 一直确认隧道真的通：不通就断开换新连接，连不上就接着重试，不等 App 回到前台，也不等下一个请求。连接状态和路径
