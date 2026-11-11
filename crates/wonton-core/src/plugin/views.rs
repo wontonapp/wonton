@@ -124,7 +124,7 @@ impl PluginManager {
             requirements: Vec::new(),
             secret_inputs: self.installed_input_states(id, m, langs),
             has_web: m.webui.is_some(),
-            has_settings: m.settings.is_some(),
+            has_settings: false,
             installed: Some(installed),
             blocked: None,
             notices: setup_notice(m, langs)

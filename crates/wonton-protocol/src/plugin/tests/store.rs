@@ -90,6 +90,7 @@ fn sidebar_view_model_round_trip() {
             reason: PluginFailure::TransportUnavailable,
             min_version: None,
             message: "连不上家里的服务器".into(),
+            settings: None,
         }),
         tasks: vec![PluginTask {
             id: "app.samba".into(),
@@ -127,6 +128,7 @@ fn sidebar_view_model_round_trip() {
                     reason: PluginFailure::TransportUnavailable,
                     min_version: None,
                     message: "连不上家里的服务器".into(),
+                    settings: None,
                 },
             },
         }),

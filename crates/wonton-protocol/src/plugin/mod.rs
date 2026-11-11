@@ -43,8 +43,8 @@ use serde::{Deserialize, Serialize};
 pub use settings::{
     PluginSettingField, PluginSettingKind, PluginSettingOption, PluginSettingsUpdate,
     PluginSettingsView, SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
-    SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsSchemaError,
-    SettingsSchemaProblem, SettingsSchemaProblemKind, plugin_settings_path,
+    SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsProblem,
+    SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, plugin_settings_path,
     plugin_settings_preview_path,
 };
 pub use takeover::{PluginTakeover, TakeoverState};
@@ -632,6 +632,9 @@ pub struct PluginProblem {
     /// “服务器太旧”时要的最低服务器版本；别的类别和不知道时为空。
     #[serde(default)]
     pub min_version: Option<String>,
+    /// 设置校验失败的明细（ADR-0076）：壳按字段标红、按类别写文字。别的类别和没有明细时为空。
+    #[serde(default)]
+    pub settings: Option<SettingsProblem>,
 }
 
 /// 失败的原因，壳据此提示主人下一步。
@@ -667,6 +670,10 @@ pub enum PluginFailure {
     EgressProxyUnavailable,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
+    /// 设置值没通过 Schema（ADR-0076），明细在 [`PluginProblem::settings`]。
+    SettingsInvalid,
+    /// 插件包的设置 Schema 自己不合格（ADR-0076），明细在 [`PluginProblem::settings`]。
+    SettingsSchemaInvalid,
     /// App 和家里服务器的版本对不上，有一边要更新。
     Protocol,
     /// 服务器比 App 旧，还没有这个接口（[`crate::minimum_server_version`]）：升级服务器后可用。

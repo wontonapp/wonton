@@ -575,5 +575,6 @@ where
 mod capability;
 mod install_decisions;
 mod legacy_fields;
+mod problem;
 mod settings;
 mod store;

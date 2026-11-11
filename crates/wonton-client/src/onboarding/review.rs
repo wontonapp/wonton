@@ -247,6 +247,7 @@ pub(super) fn follow_tasks(entries: &mut [ReviewEntry], tasks: &[PluginTask]) ->
                         reason: *reason,
                         min_version: None,
                         message: message.clone(),
+                        settings: None,
                     },
                 },
             },
@@ -282,6 +283,7 @@ fn core_problem(error: &CoreError) -> PluginProblem {
         reason,
         message: error.to_string(),
         min_version: None,
+        settings: None,
     }
 }
 

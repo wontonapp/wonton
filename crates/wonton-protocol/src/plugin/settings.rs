@@ -3,6 +3,9 @@
 //!
 //! 设置页由壳照 [`PluginSettingsView`] 画原生控件。不认识的类型落到 [`PluginSettingKind::Other`]，壳画 JSON 文本编辑框，
 //! 核心照样按 Schema 校验。文字由核心按请求的语言选好，壳原样显示。
+//!
+//! 读接口：插件没装返回 404 `not_installed`，装着的版本没有设置返回 400 `unsupported`。写接口的成功、冲突和校验失败见
+//! [`PluginSettingsUpdate`] 和 [`SettingsInvalidError`]。
 
 use std::collections::HashMap;
 
@@ -43,7 +46,7 @@ pub enum SettingValue {
     Json {
         value: String,
     },
-    /// 比这个 App 新的核心给的值类型，壳按空值显示。
+    /// 比这个 App 新的值类型：显示“不支持此值类型”，禁止编辑和提交，不当成空值或清空。
     #[serde(other)]
     Other,
 }
@@ -192,7 +195,7 @@ pub enum SettingsFieldProblemKind {
     Other,
 }
 
-/// `settings_invalid` 错误响应的额外字段（400）：一个或多个值过不了 Schema，原值不动、不重建。
+/// `settings_invalid` 的附加字段（400），直接合并到 `error` 对象；原值不动、不重建。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SettingsInvalidError {
@@ -210,7 +213,18 @@ pub struct SettingsFieldError {
     pub message: String,
 }
 
-/// `settings_schema_invalid` 错误响应的额外字段（400）：插件包里的 Schema 自己不合格，安装、升级在动资源之前失败。
+/// 设置相关失败的明细，放在 [`PluginProblem::settings`](super::PluginProblem::settings) 里交给壳：
+/// `settings_invalid` 时 `fields` 有值，`settings_schema_invalid` 时 `problems` 有值。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SettingsProblem {
+    #[serde(default)]
+    pub fields: Vec<SettingsFieldError>,
+    #[serde(default)]
+    pub problems: Vec<SettingsSchemaProblem>,
+}
+
+/// `settings_schema_invalid` 的附加字段（400），直接合并到 `error` 对象；安装、升级在动资源前失败。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SettingsSchemaError {
@@ -237,7 +251,7 @@ pub enum SettingsSchemaProblemKind {
     InvalidJson,
     /// 不是 Draft 2020-12 的对象 Schema，或根上不符合要求。
     InvalidSchema,
-    /// 用到了这版处理不了的写法（如远程 `$ref`）。
+    /// 用到了这版处理不了的写法（`$ref` 等）。
     UnsupportedKeyword,
     /// 属性没有 `x-wonton-title`。
     MissingTitle,
@@ -389,10 +403,10 @@ mod tests {
             }],
         };
         assert_eq!(
-            json!({"error": {"kind": "settings_invalid", "message": "设置不合法", "fields": invalid}}),
-            json!({"error": {"kind": "settings_invalid", "message": "设置不合法", "fields": {
-                "fields": [{"name": "months", "kind": "above_maximum", "message": "最多 12"}],
-            }}})
+            json!(invalid),
+            json!({"fields": [
+                {"name": "months", "kind": "above_maximum", "message": "最多 12"},
+            ]})
         );
 
         let schema = SettingsSchemaError {
