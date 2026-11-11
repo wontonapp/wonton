@@ -48,6 +48,7 @@ impl ClientCore {
             onboarding: watch::Sender::new(fake_onboarding(current.onboarding.borrow().clone())),
             peers: watch::Sender::new(current.peers.borrow().clone()),
             friends: watch::Sender::new(current.friends.borrow().clone()),
+            bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
             settings: watch::Sender::new(current.settings.borrow().clone()),
         };
         drop(current);

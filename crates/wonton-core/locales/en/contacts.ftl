@@ -1,0 +1,9 @@
+contacts-error-invalid-user-id = Enter a full Matrix ID like @name:server, and not this bot itself
+contacts-error-not-paired = That server is not paired with yours; pair the servers first
+contacts-error-already-contact = Already a contact, or a request is already waiting
+contacts-error-bot-not-found = This bot no longer exists
+contacts-error-contact-not-found = This request or contact is gone; it may have been handled elsewhere
+contacts-error-not-keeper = Only the person who keeps this bot can manage its contacts
+contacts-error-peer-unreachable = Cannot reach the other server right now; nothing was sent, try again later
+contacts-error-unauthenticated = Pair this device with your server first, then open this from the app
+contacts-error-upstream = The server could not save or send this; try again later
