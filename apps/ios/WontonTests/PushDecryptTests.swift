@@ -59,7 +59,7 @@ final class PushDecryptTests: XCTestCase {
     /// 只解到原始字节：RFC 向量的明文不是 JSON。
     private func decryptRaw(_ base64: String) throws -> Data {
         let keys = (
-            ua: P256.KeyAgreement.PrivateKey(rawRepresentation: base64URL(Self.uaPrivate)),
+            ua: try P256.KeyAgreement.PrivateKey(rawRepresentation: base64URL(Self.uaPrivate)),
             auth: base64URL(Self.authSecret)
         )
         let body = [UInt8](base64URL(base64))
@@ -94,7 +94,7 @@ final class PushDecryptTests: XCTestCase {
     /// 测试用的加密（RFC 8291 第 5 节，单条记录，salt 固定成 RFC 的那个）。
     private func encrypt(_ json: String) throws -> (Data, (ua: P256.KeyAgreement.PrivateKey, auth: Data)) {
         let ua = P256.KeyAgreement.PrivateKey()
-        let sender = P256.KeyAgreement.PrivateKey(rawRepresentation: base64URL(Self.senderPrivate))
+        let sender = try P256.KeyAgreement.PrivateKey(rawRepresentation: base64URL(Self.senderPrivate))
         let auth = base64URL(Self.authSecret)
         let salt = base64URL(Self.salt)
         let shared = try sender.sharedSecretFromKeyAgreement(with: ua.publicKey)
