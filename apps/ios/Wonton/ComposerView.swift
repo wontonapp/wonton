@@ -64,8 +64,8 @@ struct ComposerView: View {
             .padding(WontonTheme.spacing.s4)
         }
         // 点了回复就把光标放进输入框。
-        .onChange(of: model.replies[roomId] != nil) { _, replying in
-            if replying { isFocused = true }
+        .onChange(of: model.replyFocusRevision) {
+            if model.replies[roomId] != nil { isFocused = true }
         }
         .animation(.easeOut(duration: WontonTheme.motion.feedback), value: isEmpty)
         .onAppear { model.acceptPendingDraft(in: roomId) }

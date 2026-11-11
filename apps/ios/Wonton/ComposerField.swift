@@ -86,6 +86,10 @@ private struct ComposerTextField: UIViewRepresentable {
         func textViewDidBeginEditing(_ view: UITextView) {
             parent.focused = true
         }
+
+        func textViewDidEndEditing(_ view: UITextView) {
+            parent.focused = false
+        }
     }
 }
 
