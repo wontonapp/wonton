@@ -48,7 +48,7 @@ pub use friends::{Blocked, FRIEND_CREATE_KEY, FriendChat, FriendInvite};
 pub use layout::{CHAT_LAYOUT_EVENT, ChatLayoutContent};
 pub use matrix_sdk::ruma::{
     DeviceId, EventId, OwnedDeviceId, OwnedEventId, OwnedRoomId, OwnedServerName, OwnedUserId,
-    RoomId, ServerName, UserId,
+    RoomId, ServerName, UserId, events::relation::RelationType,
 };
 pub use matrix_sdk_ui::eyeball_im::{Vector, VectorDiff};
 pub use media::media_token;

@@ -133,7 +133,7 @@ macro_rules! refreshed {
             &links_of($plugins),
             $sender,
             $view,
-            &$bots,
+            &mut $bots,
         ) {
             Some(batch) => batch,
             None => continue,
@@ -166,7 +166,7 @@ async fn forward(
         };
         let links = LinkTargets::of(&plugins.view());
         // Bot 列表、活动和等回答的卡片变了，AgentRun 条目的显示跟着变：每批都带上现在的情况，变了就重算。
-        let mut bots = BotsView::of(&chat.borrow_and_update(), room.room_id().as_str());
+        let mut bots = BotsView::of(&chat.borrow_and_update(), &entries, &shown);
         let Some(mut view) =
             start_batch(room, &entries, &shown, &read, &links, sender, status, &bots).await
         else {
@@ -187,7 +187,7 @@ async fn forward(
             let sent = tokio::select! {
                 batch = diffs.next() => {
                     let Some(batch) = batch else { return };
-                    apply(room, &mut entries, &mut shown, &cards, &mut read, plugins, sender, &mut view, &bots, batch)
+                    apply(room, &mut entries, &mut shown, &cards, &mut read, plugins, sender, &mut view, &mut bots, batch)
                 }
                 update = room_info.recv() => {
                     match update {
@@ -253,7 +253,7 @@ async fn forward(
                         return;
                     }
                     // 加密状态变了入口跟着变；Bot 列表、活动或等回答的卡片变了，AgentRun 条目跟着重算（ADR-0082）。
-                    let new_bots = BotsView::of(&chat.borrow_and_update(), room.room_id().as_str());
+                    let new_bots = BotsView::of(&chat.borrow_and_update(), &entries, &shown);
                     let diffs = refreshed_agent_runs(
                         &entries,
                         &shown,
@@ -371,7 +371,7 @@ fn apply(
     plugins: &crate::plugins::PluginsLink,
     sender: &Outbox,
     view: &mut View,
-    bots: &BotsView,
+    bots: &mut BotsView,
     batch: Vec<VectorDiff<TimelineEntry>>,
 ) -> Batch {
     if batch.iter().any(|diff| matches!(diff, VectorDiff::Clear)) {
@@ -393,6 +393,12 @@ fn apply(
         out.push(timeline_diff(diff.clone(), shown, read, &links, bots));
         diff.apply(entries);
     }
+    // 这一批带来了新的卡片或回答：房间里的等回答卡片变了，AgentRun 条目跟着重算。
+    let new_bots = bots.with_waiting_cards(entries, shown);
+    out.extend(refreshed_agent_runs(
+        entries, shown, read, &links, bots, &new_bots,
+    ));
+    *bots = new_bots;
     out.extend(move_read_mark(entries, shown, read, &links, bots));
     // 对账不放在每批之后：它会读一遍整个缓存，批多一点就把时间线的更新通道挤到跟不上（15 秒一次都嫌多）。
     Batch::Sent(send(sender, entries, out, view, None), false)
@@ -441,7 +447,7 @@ fn clear_batch(
     links: &LinkTargets,
     sender: &Outbox,
     view: &mut View,
-    bots: &BotsView,
+    bots: &mut BotsView,
 ) -> Batch {
     let replaced = reset_diffs(entries, &batch, shown, read, links, bots);
     tracing::info!(room_id = %room.room_id(), reason = "sdk-clear", silent = replaced.is_some(), "timeline got a Clear");
@@ -452,6 +458,11 @@ fn clear_batch(
         );
     };
     out.extend(move_read_mark(entries, shown, read, links, bots));
+    let new_bots = bots.with_waiting_cards(entries, shown);
+    out.extend(refreshed_agent_runs(
+        entries, shown, read, links, bots, &new_bots,
+    ));
+    *bots = new_bots;
     Batch::Sent(send(sender, entries, out, view, None), false)
 }
 
@@ -517,16 +528,19 @@ fn refreshed_batch(
     links: &LinkTargets,
     sender: &Outbox,
     view: &mut View,
-    bots: &BotsView,
+    bots: &mut BotsView,
 ) -> Option<Batch> {
-    let refreshed = refresh(entries, shown, cards, read, links, bots);
-    if refreshed.is_empty() {
+    let mut diffs = refresh(entries, shown, cards, read, links, bots);
+    // 回答有了进展（卡片结束）：房间里的等回答卡片变了，AgentRun 条目跟着重算。
+    let new_bots = bots.with_waiting_cards(entries, shown);
+    diffs.extend(refreshed_agent_runs(
+        entries, shown, read, links, bots, &new_bots,
+    ));
+    *bots = new_bots;
+    if diffs.is_empty() {
         return None;
     }
-    Some(Batch::Sent(
-        send(sender, entries, refreshed, view, None),
-        false,
-    ))
+    Some(Batch::Sent(send(sender, entries, diffs, view, None), false))
 }
 
 /// 记下这次重建时间线的原因，失败时能从日志看出是哪条路。

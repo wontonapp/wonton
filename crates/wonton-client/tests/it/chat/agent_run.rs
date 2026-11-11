@@ -6,7 +6,8 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use wonton_client::{Action, Answer, MessageContent, TimelineContent};
-use wonton_matrix::{ChatRoom, MatrixSession};
+use wonton_matrix::testkit::eventually;
+use wonton_matrix::{ChatRoom, MatrixSession, Membership, RelationType};
 use wonton_protocol::{AgentRunChoice, AgentRunState, BotActivityFacts};
 
 use super::confirmation::{card, content, core_room, in_ten_minutes, joined_direct_chat, send};
@@ -61,13 +62,11 @@ async fn setup() -> Setup {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
     let home = Home::start(&[phone.device_id()]).await;
-    phone.connect(&home);
-    phone.signed_in().await;
     let hermes = home.bot("hermes", "Hermes").await;
     let mut installed = running(PLUGIN);
     installed.bot_user_id = Some(hermes.user_id().to_string());
+    // 插件表和活动报告在连接前喂：follow 在连接建立时读一次，连接后再补的不一定被看到。
     home.set_installed_plugins(vec![installed]);
-    // 状态行按 Bot 的活动合成：先给一份“在运行”的报告，等 Bot 列表带上活动，之后的断言才不会撞上不确定。
     home.bot_api.facts(BotActivityFacts {
         plugin_id: PLUGIN.to_owned(),
         bot: Some("default".into()),
@@ -78,6 +77,8 @@ async fn setup() -> Setup {
         waiting: 0,
         profile_rev: 0,
     });
+    phone.connect(&home);
+    phone.signed_in().await;
     phone
         .wait_chat("Bot 列表里有 Hermes", |view| {
             view.bots
@@ -133,7 +134,7 @@ async fn a_round_with_edits_is_one_agent_run_following_the_latest_edit() {
         })
         .await;
 
-    bot_room
+    let status_event = bot_room
         .send_raw_message(status(
             "working",
             json!({"run": request, "step": "在想", "steps": 1}),
@@ -147,16 +148,17 @@ async fn a_round_with_edits_is_one_agent_run_following_the_latest_edit() {
         })
         .await;
 
+    // 编辑的目标是状态消息的事件 ID，不是时间线条目的 ID。
     edit_status(
         bot_room,
-        &entry,
+        status_event.as_str(),
         "working",
         json!({"run": request, "step": "执行命令", "steps": 2}),
     )
     .await;
     edit_status(
         bot_room,
-        &entry,
+        status_event.as_str(),
         "done",
         json!({"run": request, "steps": 2, "result": "查到了"}),
     )
@@ -239,6 +241,18 @@ async fn a_non_bot_sender_stays_a_plain_message() {
     let other = home.bot("colleague", "同事").await;
     bot_room.invite(other.user_id()).await.expect("邀请同事");
     other.join_room(room).await.expect("同事加入");
+    // 加入要同步到自己这边的会话里，房间才算打开得了。
+    eventually(
+        "同事看到自己进了房间",
+        other.rooms().await.unwrap(),
+        |rooms| {
+            rooms
+                .iter()
+                .find(|info| info.room_id == *room && info.membership == Membership::Joined)
+                .map(|_| ())
+        },
+    )
+    .await;
     let other_room = other.open_room(room).await.expect("同事打开房间");
 
     other_room
@@ -320,6 +334,17 @@ async fn waiting_carries_the_pending_card_until_it_is_answered() {
     let (core, _notices) = core_room(phone, home).await;
     bot_room.invite(core.user_id()).await.expect("邀请核心");
     core.join_room(room).await.expect("核心加入");
+    eventually(
+        "核心看到自己进了房间",
+        core.rooms().await.unwrap(),
+        |rooms| {
+            rooms
+                .iter()
+                .find(|info| info.room_id == *room && info.membership == Membership::Joined)
+                .map(|_| ())
+        },
+    )
+    .await;
     let core_room = core.open_room(room).await.expect("核心打开房间");
     let mut pending = card("card-1", in_ten_minutes());
     pending["requester"] = json!({
@@ -328,14 +353,6 @@ async fn waiting_carries_the_pending_card_until_it_is_answered() {
         "user_id": hermes.user_id().to_string(),
     });
     send(&core_room, content(&pending)).await;
-    phone
-        .wait_chat("卡片在等回答", |view| {
-            view.pending_confirmations
-                .iter()
-                .any(|card| card.id == "card-1")
-                .then_some(())
-        })
-        .await;
 
     bot_room
         .send_raw_message(status("waiting", json!({})))
@@ -362,15 +379,6 @@ async fn waiting_carries_the_pending_card_until_it_is_answered() {
             settings: Default::default(),
         })
         .unwrap();
-    phone
-        .wait_chat("卡片回答过了", |view| {
-            (!view
-                .pending_confirmations
-                .iter()
-                .any(|card| card.id == "card-1"))
-            .then_some(())
-        })
-        .await;
     timeline
         .until("卡片结束后不带 ID", |item| match &item.content {
             TimelineContent::AgentRun { card_id, .. } => (card_id.is_none()).then_some(()),
@@ -391,7 +399,7 @@ async fn choices_answer_with_a_reaction_only_when_tapped() {
         &setup.bot_room,
     );
 
-    bot_room
+    let status_event = bot_room
         .send_raw_message(status(
             "waiting",
             json!({"choices": [{"key": "allow", "label": "继续"}]}),
@@ -416,27 +424,24 @@ async fn choices_answer_with_a_reaction_only_when_tapped() {
         }]
     );
 
-    // 还没点不发。反应是对状态消息的 `m.annotation`，聚合在状态事件的 unsigned 里；从 Bot 那边读回来核对。
-    let status_event: wonton_matrix::OwnedEventId = entry.parse().unwrap();
+    // 还没点不发。反应聚合不进事件响应，从 Bot 那边走 `/relations` 读回来核对。
     let annotation_of_status = || async {
-        let event = hermes
+        let (_, relations) = hermes
             .client()
             .get_room(room)
             .expect("Bot 在房间里")
-            .load_or_fetch_event(&status_event, None)
+            .load_or_fetch_event_with_relations(
+                &status_event,
+                Some(vec![RelationType::Annotation]),
+                None,
+            )
             .await
-            .expect("状态消息取得到");
-        let raw = event.raw().json().get();
-        let chunk =
-            serde_json::from_str::<Value>(raw).unwrap()["unsigned"]["m.relations"]["m.annotation"]
-                ["chunk"]
-                .as_array()
-                .cloned()
-                .unwrap_or_default();
-        chunk.iter().any(|reaction| {
-            reaction["sender"] == json!(super::support::OWNER)
-                && reaction["content"]["m.relates_to"]["event_id"] == json!(status_event)
-                && reaction["content"]["m.relates_to"]["key"] == "allow"
+            .expect("状态消息和它的反应取得到");
+        relations.iter().any(|reaction| {
+            let raw = serde_json::from_str::<Value>(reaction.raw().json().get()).unwrap();
+            raw["sender"] == json!(super::support::OWNER)
+                && raw["content"]["m.relates_to"]["event_id"] == json!(status_event)
+                && raw["content"]["m.relates_to"]["key"] == "allow"
         })
     };
     assert!(!annotation_of_status().await, "没点不发反应");
