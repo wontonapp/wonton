@@ -194,9 +194,10 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
 
     /// App 在前台不弹推送：消息从同步来，界面已经显示。
     func userNotificationCenter(
-        _ center: UNUserNotificationCenter, willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        []
+        _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([])
     }
 
     /// 点开通知：扩展解开的 payload 里带着服务器和房间，跳转交给导航（和 Android 点通知同一个去向）。
