@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use iroh::TransportAddr;
 use iroh::{Endpoint, SecretKey, Watcher};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, watch};
@@ -32,7 +33,7 @@ use wonton_protocol::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure,
     HomePath, HomeStatus, HomeViewModel, ProxySettings, PushMethod,
 };
-use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, spawn_tier_fallback};
+use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, is_public_relay, spawn_tier_fallback};
 use wonton_tunnel::{
     LocalProxy, PathInfo, PathKind, ProxyAccess, ProxyCredential, TunnelClient, TunnelError,
     TunnelStatus,
@@ -723,8 +724,13 @@ fn failure(err: &TunnelError) -> HomeFailure {
 }
 
 fn path_view(path: PathInfo) -> HomePath {
+    let public_relay = match &path.remote {
+        TransportAddr::Relay(url) => is_public_relay(url),
+        _ => false,
+    };
     HomePath {
         relay: path.kind == PathKind::Relay,
+        public_relay,
         lan: path.is_lan(),
         rtt_ms: u32::try_from(path.rtt.as_millis()).unwrap_or(u32::MAX),
     }

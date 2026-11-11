@@ -1139,6 +1139,7 @@
     <string name="port_mapping_reason_other">マッピングで問題が発生しました。</string>
     <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
     <string name="port_mapping_no_notification_permission">通知権限がないため、マッピング中でも通知バーに表示されません。マッピングはそのまま使えます。</string>
+    <string name="port_mapping_warning_public_relay_bandwidth">公共リレー経由でしか接続できておらず、映像を送る帯域が足りません。</string>
     <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
     <string name="problem_appearance_title">外観設定を保存できませんでした</string>
     <string name="problem_apps_not_ready">アプリのリストの準備ができていません。しばらくしてからもう一度お試しください。</string>

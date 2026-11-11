@@ -214,7 +214,9 @@ pub use plugin::{
 };
 pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
-pub use port_mapping::{MappedPort, PluginPortMapping, PortMappingState, UdpFlowStats};
+pub use port_mapping::{
+    MappedPort, PluginPortMapping, PortMappingState, PortMappingWarning, UdpFlowStats,
+};
 pub use push::{
     NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushMethod,
     PushNotification, PushStatus,

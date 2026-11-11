@@ -1242,6 +1242,7 @@
     <string name="port_mapping_reason_other">Port mapping ran into a problem.</string>
     <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
     <string name="port_mapping_no_notification_permission">Without the notification permission, you won\'t see the mapping notification. Mapping still works.</string>
+    <string name="port_mapping_warning_public_relay_bandwidth">Connected only through the public relay — not enough bandwidth for streaming.</string>
     <!-- Problem title when the appearance settings couldn't be saved on the home server. -->
     <string name="problem_appearance_title">Appearance settings weren\'t saved</string>
     <!-- Problem reason when a link to an app page opens before the installed app list loaded. -->
