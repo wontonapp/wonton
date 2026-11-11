@@ -26,9 +26,9 @@ use tokio::{
 };
 use tracing::{debug, info, warn};
 
-use crate::{forward, wire::Status};
+use crate::{client::TunnelStream, error::TunnelError, forward};
 
-use super::peer::{ForwardStream, PeerStates, PeerTable};
+use super::peer::{PeerStates, PeerTable};
 
 /// 嵌入方提供的查找函数：Matrix 服务器名 → 配对时记下的对方 endpoint ID 和地址。
 ///
@@ -70,7 +70,6 @@ pub(super) struct ForwarderCtx {
     pub(super) endpoint: Endpoint,
     pub(super) lookup: ServerLookup,
     pub(super) peers: Arc<PeerTable>,
-    pub(super) status: watch::Sender<PeerStates>,
     pub(super) ping_interval: Duration,
     pub(super) ping_timeout: Duration,
 }
@@ -94,8 +93,7 @@ impl FederationForwarder {
         let ctx = Arc::new(ForwarderCtx {
             endpoint,
             lookup,
-            peers: Arc::new(PeerTable::default()),
-            status: status.clone(),
+            peers: Arc::new(PeerTable::new(status.clone())),
             ping_interval,
             ping_timeout,
         });
@@ -149,7 +147,7 @@ async fn sync_loop(mut paired: watch::Receiver<BTreeSet<String>>, ctx: Arc<Forwa
                 continue;
             };
             let peer = ctx.peers.get_or_create(name, id, addr.clone(), &ctx);
-            peer.set_target(id, addr);
+            peer.set_target(addr);
         }
         if paired.changed().await.is_err() {
             return;
@@ -198,7 +196,7 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
         return;
     };
     let peer = ctx.peers.get_or_create(&name, id, addr.clone(), &ctx);
-    peer.set_target(id, addr);
+    peer.set_target(addr);
     let mut stream = match peer.open_forward().await {
         Ok(stream) => stream,
         Err(err) => {
@@ -208,34 +206,23 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
         }
     };
     // 对方先回 1 字节状态，然后是它那台 Tuwunel 的原样字节（TLS 在两台 Tuwunel 之间）。
-    let mut status = [0u8; 1];
-    match stream.recv.read_exact(&mut status).await {
-        Err(err) => {
-            debug!(server = %name, "federation outbound: failed to read the status: {err}");
+    match peer.read_status(&mut stream).await {
+        Ok(()) => established(stream, tcp, request.rest, &name).await,
+        Err(TunnelError::UpstreamUnavailable) => {
+            info!(server = %name, "federation outbound: the peer cannot reach its Tuwunel");
             stream.abort();
             respond(&mut tcp, BAD_GATEWAY).await;
         }
-        Ok(_) => match Status::from_byte(status[0]) {
-            Some(Status::Ok) => {
-                peer.note_confirmed(stream.conn_id);
-                established(stream, tcp, request.rest, &name).await;
-            }
-            Some(Status::UpstreamUnavailable) => {
-                info!(server = %name, "federation outbound: the peer cannot reach its Tuwunel");
-                stream.abort();
-                respond(&mut tcp, BAD_GATEWAY).await;
-            }
-            _ => {
-                warn!(server = %name, kind = status[0], "federation outbound: the peer does not support this request");
-                stream.abort();
-                respond(&mut tcp, BAD_GATEWAY).await;
-            }
-        },
+        Err(err) => {
+            debug!(server = %name, %err, "federation outbound: the stream did not carry the request");
+            stream.abort();
+            respond(&mut tcp, BAD_GATEWAY).await;
+        }
     }
 }
 
 /// 对方已接上它的 Tuwunel：回 200，把请求头之后已经读到的字节先转过去，之后双向原样转发。
-async fn established(mut stream: ForwardStream, mut tcp: TcpStream, rest: Vec<u8>, name: &str) {
+async fn established(mut stream: TunnelStream, mut tcp: TcpStream, rest: Vec<u8>, name: &str) {
     if let Err(err) = tcp.write_all(ESTABLISHED).await {
         debug!(server = %name, "federation outbound: failed to answer the CONNECT: {err}");
         stream.abort();
@@ -252,7 +239,7 @@ async fn established(mut stream: ForwardStream, mut tcp: TcpStream, rest: Vec<u8
 }
 
 /// CONNECT 已确认：之后的字节双向原样转发。
-async fn relay(mut stream: ForwardStream, tcp: TcpStream) {
+async fn relay(mut stream: TunnelStream, tcp: TcpStream) {
     let (mut tcp_read, mut tcp_write) = tcp.into_split();
     if let Err(err) = tokio::try_join!(
         forward::tcp_to_tunnel(&mut tcp_read, &mut stream.send),

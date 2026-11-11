@@ -506,6 +506,27 @@ async fn goes_offline_when_the_peer_stops_and_recovers_when_it_returns() {
         .await;
 }
 
+/// 对端重启（连接换了）以后，下一次联邦请求不等探活，自己经 TunnelClient 重连成功：
+/// 请求撞上还在退避的建连时等它的结果，重连是隧道客户端的职责（ADR-0032）。
+#[tokio::test]
+async fn reconnects_on_the_next_request_after_the_peer_restarts() {
+    let table = pairings();
+    let a = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    let mut b = TestPeer::start(SecretKey::generate(), lookup_from(&table)).await;
+    pair_a_to_b(&a, &b, &table, b"before").await;
+    b.stop().await;
+    a.wait_for(B_NAME, |status| {
+        matches!(status, PeerStatus::Offline { .. })
+    })
+    .await;
+    b.restart().await;
+    let reply = federate(a.listen, B_NAME, b"after").await;
+    assert_eq!(reply, REPLY);
+    assert_eq!(b.upstream.received(), [&b"before"[..], b"after"].concat());
+    a.wait_for(B_NAME, |status| *status == PeerStatus::Connected)
+        .await;
+}
+
 /// 两边互相放进名单、名字绑上查找表，但一个字节的联邦流量都不发。
 fn pair_quietly(a: &TestPeer, b: &TestPeer, table: &Pairings) {
     table
