@@ -598,4 +598,4 @@ tabs-open-only-plugins = 只有插件页面可以设置打开方式。
 tabs-fullscreen-only-plugins = 只有插件页面可以全屏。
 tabs-fullscreen-none = 当前没有全屏页面。
 tabs-fullscreen-not-current = 退出的页面不是当前全屏页面。
-panel-pins-refresh-failed = 面板里 Bot 钉的页面取不到：{ $error }
+panel-pins-refresh-failed = 面板里 Bot 钉的页面取不到:{ $error }

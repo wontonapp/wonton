@@ -661,4 +661,4 @@ tabs-open-only-plugins = Only app pages have an opening mode.
 tabs-fullscreen-only-plugins = Only app pages can go full screen.
 tabs-fullscreen-none = Nothing is full screen right now.
 tabs-fullscreen-not-current = That page isn't the full-screen one.
-panel-pins-refresh-failed = Couldn’t load the pages bots pinned: { $error }
+panel-pins-refresh-failed = Couldn't load the pages bots pinned: { $error }
