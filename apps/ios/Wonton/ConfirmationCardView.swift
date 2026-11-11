@@ -69,11 +69,7 @@ struct ConfirmationCardView: View {
             shownSecrets = false
         }
         // 框里有值或点过“显示”、卡片还没答完时，这一块在快照里要盖住。
-        .overlay {
-            if isPending, hidesValues {
-                Color(colors.canvas)
-            }
-        }
+        .secretSnapshotMask(isPending && hidesValues)
     }
 
     @ViewBuilder private var state: some View {
