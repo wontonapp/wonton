@@ -133,7 +133,7 @@ jobs:
         with:
           # macOS 的产物和 Linux 作业不通用，单独一个 key。main 上的条目由 cache.yml 用同一个 key 编。
           shared-key: rust-ios
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - name: 安装 XcodeGen（版本和 sha256 固定）
         run: |
           curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \

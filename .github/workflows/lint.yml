@@ -8,8 +8,6 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
-  # 重录截图把提交推回 PR 分支后由 snapshots-record.yml 在分支上触发：GITHUB_TOKEN 推的提交不触发工作流。
-  workflow_dispatch:
   # 合并队列：入队后的合并提交上也要报告，否则队列直接判失败。merge_group 不认 paths，
   # 路径过滤只留在 pull_request 下自己生效。
   merge_group:

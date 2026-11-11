@@ -111,7 +111,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: rust-clippy
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - name: Clippy（含函数不超过 100 行）
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # 假数据入口（src/client/ui_fake.rs）在 cargo feature 后面，默认的 workspace 构建编不到它，门禁得单独开一遍。
@@ -145,7 +145,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: rust-test
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - name: 测试（按名字的哈希分三片并行）
         shell: bash
         # 完整输出另存一份：失败时作为 artifact 上传，重跑覆盖不了失败那次的日志。

@@ -105,10 +105,11 @@
 - 重录在 `snapshots-record.yml`：在 PR 上打 `record-snapshots` 标签（草稿 PR 的事件不跑日常作业，但重录作业
   照跑）。作业用 `WontonSnapshots` scheme 把参考图全部重画，提交回分支并摘掉标签。录制那一轮本身是红的
   （每录一张报一条“Automatically recorded snapshot”），以提交回去的图为准；它不算必需检查。
-- 重录推回之后：`GITHUB_TOKEN` 推的提交不会触发工作流（GitHub 的规则），仓库也没有单独的机器人令牌。
-  `snapshots-record.yml` 末尾的 `checks` 作业用同一个令牌对分支 `workflow_dispatch` 五个必需检查所在的工作流
-  （`workflow_dispatch` 是这条规则的例外），检查落在分支头的新提交上。手动运行跑的是分支头本身而不是合并提交，
-  不按改动范围跳过、全套跑。分支头已经不是重录推的提交（有人在那之后推过）或 PR 是草稿时不触发。外部 fork 的 PR 令牌推不回对方的分支：图存成 `ios-snapshots` 产物，作者自己取。
+- 重录推回之后：`GITHUB_TOKEN` 推的提交照常触发 `pull_request`，但仓库要求外部贡献者的运行先批准
+  （`all_external_contributors`），github-actions[bot] 也算外部，五个日常工作流停在 `action_required`、
+  分支头上没有必需检查。`snapshots-record.yml` 末尾的 `checks` 作业用同一个令牌批准这几次运行；分支头已经
+  不是重录推的提交（有人在那之后推过）时不处理。`workflow_dispatch` 重新触发不行：实测手动运行的检查不进
+  PR 的检查汇总，规则集不认。外部 fork 的 PR 令牌推不回对方的分支：图存成 `ios-snapshots` 产物，作者自己取。
 - 新增截图用 `WontonTests/SnapshotFixtures`（Debug 专用）搭界面，只放有代表性的界面，不逐页全录。
 
 ## 缓存
@@ -117,8 +118,7 @@
   main 上不跑测试（只有 push），所以另开 `cache.yml`：push 到 main 或手动触发时，用和 PR 作业**完全相同**
   的 rust-cache key 前缀、缓存目录和编译目标只编不跑（测试二进制、Clippy、iOS 模拟器核心、Android 核心、
   桥镜像）。改这几个工作流的 rust-cache 参数（`shared-key`、`workspaces`、环境变量）时要和 `cache.yml`
-  一起改，少一处 PR 就恢复不到。手动触发也写缓存：换分支验证能不能恢复时用它。日常工作流（`rust`、`ios`
-  等）手动运行时只在 main 上写：重录截图会在 PR 分支上手动触发它们。
+  一起改，少一处 PR 就恢复不到。手动触发也写缓存：换分支验证能不能恢复时用它。
 - `save-if` 要写成 `${{ … }}`：不包的时候 runner 把表达式原样当字符串交给动作，动作只认字面量 `true`，
   结果一次也存不下来（之前就是没包，调度器日志里能看到传给动作的是 `github.ref == 'refs/heads/main'` 本身）。
 - Rust 作业用 Swatinem/rust-cache，三个测试分片共用 `rust-test` 一个 key（编的是同一套测试二进制），

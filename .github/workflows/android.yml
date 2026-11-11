@@ -94,7 +94,7 @@ jobs:
         with:
           # 只在 main 上存（cache.yml 用同一个 key 编一遍），PR 只恢复。
           shared-key: rust-android
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - name: 设计生成结果和 design/ 一致
         run: python3 scripts/generate-design.py --check
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
