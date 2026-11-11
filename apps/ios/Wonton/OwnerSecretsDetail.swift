@@ -81,9 +81,9 @@ struct OwnerSecretsDetail: View {
         role = nil
         identityProblem = nil
         do {
-            let me = try await model.core.me()
+            let profile = try await model.core.me()
             guard !Task.isCancelled else { return }
-            role = me.role
+            role = profile.role
         } catch {
             guard !Task.isCancelled else { return }
             identityProblem = error.problem
