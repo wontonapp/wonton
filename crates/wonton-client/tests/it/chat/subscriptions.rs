@@ -116,13 +116,21 @@ async fn the_room_stays_subscribed_while_its_row_flickers() {
     // 打开着的抖动：行错标成受邀再恢复，订阅不能跟着退。
     flicker(&phone, &home, &poke_room, room_id.as_str(), "打开着").await;
 
-    // 恢复名单和启动串行，首条无 pos 请求及后续长轮询都不能丢订阅。
+    // 恢复名单和启动串行，打开之后每一次同步都得带着订阅。加入流程可能留下一段临时订阅
+    // （`until_joined` 的重订阅窗口，收尾那条又不带），定位从最后一条不带订阅的请求之后开始，不被它咬到；
+    // 最后一条也要带着：订阅要是丢了就回不来，不能被空循环放过。
     let requests = room_list_requests(&home, 0);
-    let first = requests
+    let start = requests
         .iter()
-        .position(|(_, subs)| subs.iter().any(|room| room.as_str() == room_id.as_str()))
-        .expect("有过订阅");
-    for (i, (pos, subs)) in requests.iter().enumerate().skip(first) {
+        .rposition(|(_, subs)| !subs.iter().any(|room| room.as_str() == room_id.as_str()))
+        .map_or(0, |last_absent| last_absent + 1);
+    let (_, tail) = requests.last().expect("有过房间列表的同步请求");
+    assert!(
+        tail.iter().any(|room| room.as_str() == room_id.as_str()),
+        "最后的同步请求丢了 {room_id} 的订阅：{tail:?}; all requests: {:?}",
+        home.sync_requests()
+    );
+    for (i, (pos, subs)) in requests.iter().enumerate().skip(start) {
         assert!(
             subs.iter().any(|room| room.as_str() == room_id.as_str()),
             "sync request {i} (pos={pos:?}) lost the subscription for {room_id}: {subs:?}; all requests: {:?}",
