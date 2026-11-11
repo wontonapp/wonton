@@ -116,6 +116,8 @@ wonton-tunnel = { path = "../wonton-tunnel" }
 wonton-test-images = { path = "../wonton-test-images" }
 zip = { version = "9.3.0", default-features = false, features = ["deflate-flate2"] }
 flate2 = "1.1.10"
+# Apache-2.0 OR MIT。读 WONTON_SHARE_CA_FILE 里额外的根证书，交给 iroh 的中继 TLS。
+rustls-pemfile = "2.2.0"
 
 # MIT。检测局域网地址（ADR-0019）：经 netlink 列出宿主的地址。
 [target.'cfg(target_os = "linux")'.dependencies]
