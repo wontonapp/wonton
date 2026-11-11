@@ -15,8 +15,8 @@ final class FirstScreenUITests: XCTestCase {
     func testFreshInstallShowsPairingScreen() throws {
         app.launch()
         XCTAssertTrue(
-            app.descendants(matching: .any)["pairing-code-missing"].firstMatch.waitForExistence(timeout: 20),
-            "故意第二次失败，应该追加留言"
+            app.descendants(matching: .any)["pairing-code"].firstMatch.waitForExistence(timeout: 20),
+            "全新安装没有落在配对页"
         )
         XCTAssertTrue(app.buttons["pairing-submit"].exists)
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
