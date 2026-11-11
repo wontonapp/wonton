@@ -87,13 +87,10 @@ pub(crate) struct HomeLink {
     view: watch::Sender<HomeViewModel>,
     ticket: std::sync::Mutex<Option<String>>,
     core_url: std::sync::Mutex<Option<Url>>,
-    /// 当前的连接。换服务器时整个替换；锁保证同一时刻只有一次建连或检查。
     link: Mutex<Option<Link>>,
-    /// 同步生命周期动作不能等异步的 link 锁；保护挂起检测布防用的当前客户端，换 Link 时整个替换。
     lifecycle_client: std::sync::Mutex<Option<TunnelClient>>,
     tracker: std::sync::Mutex<Tracker>,
     quality: std::sync::Mutex<Quality>,
-    /// 提示要重新算了。
     recount: watch::Sender<()>,
     /// 上次把每包变化的计数写进主 ViewModel 的时间。
     stats_at: std::sync::Mutex<Option<Instant>>,
