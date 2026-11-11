@@ -486,6 +486,8 @@ mod tests {
                 recovery_key: None,
                 backup_reminder: None,
                 can_verify_with_other_device: false,
+                can_reset: false,
+                recovery_next_step: wonton_protocol::RecoveryNextStep::None,
                 verification_flow: None,
             },
             installing_bots: Vec::new(),
