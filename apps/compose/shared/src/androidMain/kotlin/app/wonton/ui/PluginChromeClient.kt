@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import android.view.View
+import android.webkit.PermissionRequest
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 
@@ -14,5 +15,13 @@ internal class PluginChromeClient(
 
     override fun onHideCustomView() {
         if (controller.view === owner) controller.closeCustomView()
+    }
+
+    override fun onPermissionRequest(request: PermissionRequest) {
+        if (controller.view !== owner) {
+            request.deny()
+            return
+        }
+        controller.onPermissionRequest(request)
     }
 }

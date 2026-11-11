@@ -1010,6 +1010,7 @@
     <string name="photo_unreadable">读不出这张照片</string>
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <string name="plugin_save_folders">能存文件的文件夹</string>
+    <string name="plugin_media_title">网页的摄像头和麦克风</string>
     <string name="plugin_save_revoke">撤销</string>
     <string name="plugin_updates_section">更新</string>
     <string name="plugin_ask_every_update">每次都问</string>
@@ -1436,6 +1437,14 @@
     <string name="tab_load_not_ready">应用还没有准备好</string>
     <string name="tab_load_upstream">应用的网页打不开</string>
     <string name="tab_uninstalled_notice">%1$s 已卸载，已从底栏移除</string>
+    <string name="tab_media_prompt_camera">允许 %1$s 使用摄像头吗？</string>
+    <string name="tab_media_prompt_microphone">允许 %1$s 使用麦克风吗？</string>
+    <string name="tab_media_prompt_both">允许 %1$s 使用摄像头和麦克风吗？</string>
+    <string name="tab_media_allow">允许</string>
+    <string name="tab_media_deny">不允许</string>
+    <string name="tab_media_system_denied_title">摄像头或麦克风用不了</string>
+    <string name="tab_media_system_denied">系统设置里没有允许 Wonton 使用摄像头或麦克风，这次不给网页。可以到系统设置里打开。</string>
+    <string name="tab_media_system_settings">去设置</string>
     <string name="tab_settings_unreadable">底栏设置读不了</string>
     <string name="tab_open_settings">查看底栏设置</string>
     <string name="tab_menu_open_fullscreen">全屏打开</string>

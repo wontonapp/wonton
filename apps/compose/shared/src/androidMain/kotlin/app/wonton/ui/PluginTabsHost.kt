@@ -98,6 +98,8 @@ internal fun PlacedTab.tab(): TabRef = when (this) {
 internal class WebPageState(val place: PlacedTab, val tabs: TabsState) {
     val tab: TabRef get() = place.tab()
     val controller = PluginWebViewController()
+    /** 网页要摄像头/麦克风时的处置；接在控制器上，页面销毁跟着失效。 */
+    val media = TabMediaPermissionFlow(tabs, place)
     val capsule = TabCapsuleVisibility()
     var loaded by mutableStateOf(false)
     var failed by mutableStateOf(false)
@@ -255,6 +257,7 @@ internal fun PageWebView(
 ) {
     val url = page.url?.takeIf { !isCrossOriginIsolationBlocked(plugin) } ?: return
     proxy ?: return
+    state.controller.permissionHandler = state.media::handle
     PluginWebView(
         url, proxy, page.reload,
         onLoaded = { state.loadFinished(environment) }, onFailed = state::loadFailed,

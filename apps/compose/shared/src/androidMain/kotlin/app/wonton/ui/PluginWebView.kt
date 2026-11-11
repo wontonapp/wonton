@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.view.ContextThemeWrapper
 import android.webkit.WebChromeClient
 import android.webkit.HttpAuthHandler
+import android.webkit.PermissionRequest
 import android.webkit.WebResourceError
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
@@ -71,11 +72,18 @@ private val pinchZoomScript = """
 class PluginWebViewController {
     internal var view: WebView? = null
     internal var touchObserver: ((MotionEvent) -> Unit)? = null
+    /** 网页要摄像头/麦克风时的处置（[TabMediaPermissionFlow]）；没接的页面一律拒绝。 */
+    internal var permissionHandler: ((PermissionRequest) -> Unit)? = null
     var canGoBack by mutableStateOf(false)
         private set
     var customView: View? by mutableStateOf(null)
         private set
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+
+    internal fun onPermissionRequest(request: PermissionRequest) {
+        val handler = permissionHandler
+        if (handler == null) request.deny() else handler(request)
+    }
 
     /** 退出网页视频全屏；胶囊和系统返回都走原生回调，不接管 Activity 的窗口。 */
     fun closeCustomView(): Boolean {

@@ -1010,6 +1010,7 @@
     <string name="photo_unreadable">この写真を読み込めません</string>
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <string name="plugin_save_folders">保存できるフォルダ</string>
+    <string name="plugin_media_title">ウェブページのカメラとマイク</string>
     <string name="plugin_save_revoke">取り消す</string>
     <string name="plugin_updates_section">アップデート</string>
     <string name="plugin_ask_every_update">毎回確認</string>
@@ -1436,6 +1437,14 @@
     <string name="tab_load_not_ready">アプリの準備ができていません</string>
     <string name="tab_load_upstream">アプリのページを開けません</string>
     <string name="tab_uninstalled_notice">%1$sはアンインストールされ、ナビゲーションバーから外されました</string>
+    <string name="tab_media_prompt_camera">%1$sにカメラの使用を許可しますか？</string>
+    <string name="tab_media_prompt_microphone">%1$sにマイクの使用を許可しますか？</string>
+    <string name="tab_media_prompt_both">%1$sにカメラとマイクの使用を許可しますか？</string>
+    <string name="tab_media_allow">許可</string>
+    <string name="tab_media_deny">許可しない</string>
+    <string name="tab_media_system_denied_title">カメラまたはマイクが使えません</string>
+    <string name="tab_media_system_denied">システム設定で Wonton にカメラまたはマイクの権限がありません。このページは拒否されました。システム設定で許可できます。</string>
+    <string name="tab_media_system_settings">設定を開く</string>
     <string name="tab_settings_unreadable">ナビゲーションバーの設定を読み込めません</string>
     <string name="tab_open_settings">ナビゲーションバーの設定</string>
     <string name="tab_menu_open_fullscreen">全画面で開く</string>

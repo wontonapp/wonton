@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -20,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalUriHandler
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.Action
 import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.PluginImage
 import app.wonton.protocol.PluginOperation
@@ -219,8 +223,44 @@ private fun InstalledDetailSections(
     if (installed.tunnelPorts.isNotEmpty()) PortMappingSection(plugins, installed)
     if (detail.saveGrants.isNotEmpty()) SaveGrants(plugins, detail.id, detail.saveGrants, onToggled)
     ToolPolicySection(plugins, detail.id, detail.version)
+    MediaPermissionSection(plugins, detail.id)
     if (installed.writtenBy != null) {
         AskEveryUpdateSection(plugins, detail.id, detail.askEveryUpdate ?: false, onToggled)
+    }
+}
+
+/** 详情页的一行开关：网页用摄像头和麦克风的记下的决定，没问过不显示。
+ *  关掉是改回没问过（下次再问）；拒绝只在询问弹窗里产生。 */
+@Composable
+private fun MediaPermissionSection(plugins: PluginsState, id: String) {
+    val grant = plugins.viewModel.mediaGrants.firstOrNull { it.pluginId == id } ?: return
+    val title = stringResource(R.string.plugin_media_title)
+    var problem by remember(id) { mutableStateOf<Problem?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+        WontonGroup {
+            Row(
+                Modifier.fillMaxWidth()
+                    .heightIn(min = WontonTheme.size.target)
+                    .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+            ) {
+                Text(
+                    title,
+                    Modifier.weight(1f),
+                    style = WontonTheme.typography.body,
+                    color = WontonTheme.colors.textPrimary.toColor(),
+                )
+                WontonSwitch(
+                    checked = grant.allowed,
+                    onCheckedChange = { allowed ->
+                        problem = plugins.core.send(Action.SetPluginMediaPermission(pluginId = id, allow = allowed))
+                    },
+                    modifier = Modifier.semantics { contentDescription = title },
+                )
+            }
+        }
+        problem?.let { ProblemNotice(it) }
     }
 }
 

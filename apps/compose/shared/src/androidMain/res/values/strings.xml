@@ -1093,6 +1093,8 @@
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <!-- Section title for the folders the app may save files into. No arguments. -->
     <string name="plugin_save_folders">Folders it can save to</string>
+    <!-- Detail-page switch for the remembered camera/microphone decision of its web page. -->
+    <string name="plugin_media_title">Camera and microphone for its web page</string>
     <!-- Button that revokes one save permission. No arguments; short label. -->
     <string name="plugin_save_revoke">Revoke</string>
     <!-- Section title for the app's updates. No arguments. -->
@@ -1587,6 +1589,15 @@
     <string name="tab_load_upstream">Can\'t open the app\'s page</string>
     <!-- Dialog text when apps were uninstalled and their tabs removed. Argument: list of app names. -->
     <string name="tab_uninstalled_notice">%1$s was uninstalled and removed from the navigation bar</string>
+    <!-- Camera and microphone permission for plugin web pages. Arguments: app title. -->
+    <string name="tab_media_prompt_camera">Allow %1$s to use your camera?</string>
+    <string name="tab_media_prompt_microphone">Allow %1$s to use your microphone?</string>
+    <string name="tab_media_prompt_both">Allow %1$s to use your camera and microphone?</string>
+    <string name="tab_media_allow">Allow</string>
+    <string name="tab_media_deny">Don\'t allow</string>
+    <string name="tab_media_system_denied_title">Camera or microphone unavailable</string>
+    <string name="tab_media_system_denied">Wonton doesn\'t have camera or microphone permission in system settings. The page was denied.</string>
+    <string name="tab_media_system_settings">Open settings</string>
     <!-- Problem title when the tab bar settings can't be read. No arguments. -->
     <string name="tab_settings_unreadable">Can\'t read the navigation bar settings</string>
     <!-- Button that opens the navigation bar settings from that problem. No arguments. -->
