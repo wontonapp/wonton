@@ -1869,4 +1869,5 @@
     <string name="transfer_download">Download</string>
     <!-- Content description of a state picture in the bot profile. Argument: the state name. -->
     <string name="bot_avatar_pick_state">Change the %1$s picture</string>
+    <string name="message_image_permission_denied">Android denied access. Check this app\'s permissions in Settings and try again.</string>
 </resources>

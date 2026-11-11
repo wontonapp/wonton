@@ -1643,4 +1643,5 @@
     <string name="transfer_upload">アップロード</string>
     <string name="transfer_download">ダウンロード</string>
     <string name="bot_avatar_pick_state">%1$sの画像を変更</string>
+    <string name="message_image_permission_denied">Android がアクセスを拒否しました。設定でこのアプリの権限を確認して、もう一度お試しください。</string>
 </resources>

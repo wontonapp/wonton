@@ -65,6 +65,7 @@ import app.wonton.ui.icons.Download
 import app.wonton.ui.icons.Share
 import app.wonton.ui.icons.WontonIcon
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -104,19 +105,21 @@ private fun ImageViewerContent(image: ImageContent, core: ClientCore, onDismiss:
     val loaded = loadedImage(core, image.media, attempt).value
     var saving by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf(0) }
+    var problem by remember { mutableStateOf<Problem?>(null) }
     LaunchedEffect(hint) { if (hint != 0) { delay(HINT_MS); hint = 0 } }
 
     val save: () -> Unit = {
         if (!saving) {
             saving = true
             scope.launch {
-                hint = saveToGallery(context, core, image)
+                problem = saveToGallery(context, core, image)
+                if (problem == null) hint = R.string.message_image_saved
                 saving = false
             }
         }
     }
     val share: () -> Unit = {
-        scope.launch { hint = shareWithOthers(context, core, image) }
+        scope.launch { problem = shareWithOthers(context, core, image) }
     }
 
     val failed = loaded != null && loaded.isFailure
@@ -148,32 +151,42 @@ private fun ImageViewerContent(image: ImageContent, core: ClientCore, onDismiss:
         )
         if (hint != 0) HintPill(stringResource(hint))
     }
+    problem?.let { ProblemDialog(it) { problem = null } }
 }
 
-/** 存进相册，返回成功或失败的轻提示文字资源。失败原因在轻提示里放不下，人话按结果说，异常细节丢弃。 */
-@Suppress("TooGenericExceptionCaught", "SwallowedException")
-private suspend fun saveToGallery(context: Context, core: ClientCore, image: ImageContent): Int = try {
+/** Android 10+ publishes only the app-created MediaStore entry; no broad storage permission is needed. */
+@Suppress("TooGenericExceptionCaught")
+private suspend fun saveToGallery(context: Context, core: ClientCore, image: ImageContent): Problem? = try {
     withContext(Dispatchers.IO) {
         val bytes = core.loadMedia(image.media)
         saveImageToGallery(context, bytes, image.filename, image.mimeType)
     }
-    R.string.message_image_saved
+    null
+} catch (failure: CancellationException) {
+    throw failure
 } catch (failure: Exception) {
-    R.string.message_image_save_failed
+    imageOperationProblem(failure, R.string.message_image_save_failed)
 }
 
-/** 把图片交给系统的分享面板，返回 0（不打提示）或失败的轻提示文字资源。 */
-@Suppress("TooGenericExceptionCaught", "SwallowedException")
-private suspend fun shareWithOthers(context: Context, core: ClientCore, image: ImageContent): Int = try {
+@Suppress("TooGenericExceptionCaught")
+private suspend fun shareWithOthers(context: Context, core: ClientCore, image: ImageContent): Problem? = try {
     val bytes = withContext(Dispatchers.IO) { core.loadMedia(image.media) }
-    // 写缓存走 IO，拉分享面板回主线程。
     val (path, mime) = withContext(Dispatchers.IO) {
         shareImageFile(context, bytes, image.filename, image.mimeType)
     }
     shareWithSystem(context, path, mime)
-    0
+    null
+} catch (failure: CancellationException) {
+    throw failure
 } catch (failure: Exception) {
-    R.string.message_image_share_failed
+    imageOperationProblem(failure, R.string.message_image_share_failed)
+}
+
+private fun imageOperationProblem(failure: Exception, title: Int): Problem = when (failure) {
+    is CoreException -> failure.problem
+    is SecurityException -> Problem(titleRes = title, nextStepRes = R.string.message_image_permission_denied,
+        detail = failure.message)
+    else -> Problem(titleRes = title, detail = failure.message)
 }
 
 @Composable
