@@ -4,10 +4,12 @@
 //! 渲染走的是安装前的 [`dry_run`]，和 `plugin check` 同一条路。索引里只有文件的 sha256、没有内容，所以被引用的
 //! 文件按路径填占位内容：渲染只看得到文件在不在，看不到图标格式、表单内容这些（`plugin check` 的活）。
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::ExitCode;
 
 use wonton_core::plugin::capabilities;
+use wonton_core::plugin::github_source::SourceRef;
 use wonton_core::plugin::languages::Languages;
 use wonton_core::plugin::package::PluginPackage;
 use wonton_core::plugin::package_files::COMPOSE_FILE;
@@ -46,9 +48,42 @@ fn problems(index: &Index) -> Vec<String> {
         .map(|plugin| format!("读不懂 {}：{}", plugin.source, plugin.reason))
         .collect();
     problems.extend(uncovered(index));
+    problems.extend(colliding_subdirs(index));
     for listed in &index.plugins {
         if let Err(reason) = dry_render(&listed.entry) {
             problems.push(format!("{}：{reason}", listed.entry.source));
+        }
+    }
+    problems
+}
+
+/// 同一仓库里两个子目录的最后一段相同：它们的 tag 前缀会撞（规范的“插件仓库”）。
+/// [`Index::parse`] 只逐项看来源，看不出这一对；`check-index` 看得到整份索引，在这里把关。
+fn colliding_subdirs(index: &Index) -> Vec<String> {
+    let langs = Languages::default();
+    let mut seen: BTreeMap<(String, String), &str> = BTreeMap::new();
+    let mut problems = Vec::new();
+    for listed in &index.plugins {
+        // 读不懂的来源已经在 skipped 里报过。
+        let Ok(source) = SourceRef::parse(&listed.entry.source, &langs) else {
+            continue;
+        };
+        let Some(last) = source
+            .subdir
+            .as_deref()
+            .and_then(|subdir| subdir.rsplit('/').next())
+        else {
+            continue;
+        };
+        let key = (source.repo.to_string(), last.to_owned());
+        match seen.get(&key) {
+            Some(previous) => problems.push(format!(
+                "同一仓库的子目录最后一段重复：{previous} 和 {}，tag 前缀 {last}/v 会撞上",
+                listed.entry.source
+            )),
+            None => {
+                seen.insert(key, listed.entry.source.as_str());
+            }
         }
     }
     problems

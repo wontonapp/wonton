@@ -276,23 +276,30 @@ impl AddedSources {
                 &[("repo", source.repo.to_string().into())],
             )));
         }
-        let at_head = |path: &'static str| {
+        let at_head = |path: String| {
             let github = self.github.clone();
             let repo = source.repo.clone();
             let langs = langs.clone();
             async move {
                 github
-                    .file(&repo, "HEAD", path, MAX_INDEX_BYTES, &langs)
+                    .file(&repo, "HEAD", &path, MAX_INDEX_BYTES, &langs)
                     .await
             }
         };
-        match at_head(COMPOSE_FILE).await {
+        let dir = source
+            .subdir
+            .as_ref()
+            .map_or(String::new(), |s| format!("{s}/"));
+        match at_head(format!("{dir}{COMPOSE_FILE}")).await {
             Ok(_) => return Ok(Target::Repo(source)),
             Err(GitHubError::NotFound(_)) => {}
             Err(e) => return Err(github_error(e)),
         }
-        match at_head(super::INDEX_FILE).await {
-            Ok(_) => Ok(Target::Index(IndexLocation::Repo(source.repo))),
+        match at_head(format!("{dir}{}", super::INDEX_FILE)).await {
+            Ok(_) => Ok(Target::Index(IndexLocation::Repo {
+                repo: source.repo,
+                subdir: source.subdir,
+            })),
             Err(GitHubError::NotFound(_)) => Err(InstallError::Invalid(l10n::text(
                 langs,
                 "plugin-settings-store-source-neither",

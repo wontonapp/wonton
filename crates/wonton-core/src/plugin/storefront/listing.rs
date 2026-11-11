@@ -304,7 +304,7 @@ impl PluginManager {
             }
             let shown = Shown {
                 source: listed.entry.source.clone(),
-                provider: listed.entry.source.replacen("github:", "github.com/", 1),
+                provider: listed.provider(),
                 via_index: None,
                 manifest: &listed.manifest,
                 icon,
