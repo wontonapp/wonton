@@ -144,3 +144,7 @@ gateway-share-required = The owner hasn't shared this app with you
 gateway-share-revoked = The owner stopped sharing this app
 gateway-share-expired = This share has expired
 gateway-confirmation-gone = There is no such confirmation, or it ended more than a day ago
+# 静态网页的数据存储（ADR-0080 第 6 节）
+gateway-web-storage-undeclared = This app doesn't store data
+gateway-web-storage-cross-site = Only this app's own pages can change its data
+gateway-web-storage-not-ready = The app that keeps this app's data isn't running; try again later
