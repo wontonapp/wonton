@@ -30,6 +30,7 @@ final class ChatModel {
     var drafts: [String: String] = [:]
     /// 每个房间里正在回复的消息；和草稿一起存，换房间、杀 App 再回来还在。
     var replies: [String: ReplyQuote] = [:]
+    private(set) var replyFocusRevision = 0
     /// 聊天页打开的页面。
     var path: [ChatRoute] = []
     var visiting: VisitingRoom?
@@ -116,6 +117,7 @@ final class ChatModel {
     func startReply(_ quote: ReplyQuote, in roomId: String) {
         replies[roomId] = quote
         saveDraft(roomId)
+        replyFocusRevision += 1
     }
 
     func cancelReply(in roomId: String) {
