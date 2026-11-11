@@ -3,8 +3,8 @@
 - 状态：已接受（2026-11-08）
 - 修订：[ADR-0035](0035-acp-bridge.md) 的桥的拆分（见第 5 节）；[ADR-0058](0058-agent-side-sessions.md) 的“改同一个文件时排队”挪到网关
 - 2026-11-11 修订（主人定）：`agent_acp` 双向，Agent 既能被调也能调别人；编排器插件（[ADR-0059](0059-team-ops-plugins.md)）是使用方；
-  Wonton MCP 加“交给另一个 Agent”“给某人发消息”两个工具；调用链有层数、绕圈、轮数和花费的限制，按链记账（第 9、10 节）。
-  被调的 Agent 在房间里怎么出现见群聊 ADR（待定）
+  Wonton MCP 加“交给另一个 Agent”“给某人发消息”两个工具；调用链有层数、绕圈、轮数和花费的限制，按链记账，随时能停整条链（第 9、10 节）；
+  网关和桥用官方的 Rust ACP 库（第 11 节）。被调的 Agent 在房间里怎么出现见 [ADR-0083](0083-bot-contacts-and-group-chat.md)（#248）
 - 延伸：运行时的 Agent 进程可以在用户自己的电脑上，见 [ADR-0081](0081-local-agent-host.md)
 
 ## 背景
@@ -28,14 +28,16 @@ ADR-0015 要求组件只经标准接口连接、每个都能单独替换。这�
 - 照 [新能力检查单](README.md#新能力检查单)：
   - **契约**：ACP（下面的传输）加核心注入的请求头（`X-Wonton-Plugin`、`X-Wonton-User`、`X-Wonton-Chain`、上限，第 3、10 节）。提供方必须支持
     `initialize`、`session/new`、`session/prompt`、`session/update`、`session/cancel`、`session/load`，并按第 2 节在网关里改写字段、回答权限请求；
-    错误按类别返回：`permission_denied`、`busy`、`limit_reached`、上游出错。
+    错误按类别返回：`permission_denied`、`busy`、`limit_reached`、`stopped`（链被人停了，第 10 节）、上游出错。
   - **提供方**：Agent 插件，网关在 Agent 底座里（ADR-0079），每家 Agent 一样。
   - **使用方**：编排器插件（ADR-0059）；核心替 Bot 调用（第 9 节的“交给另一个 Agent”）；以后的网页对话前端。
   - **契约测试**：`crates/wonton-core/src/plugin/tests/agent_acp_contract/`，照 `model_gateway_contract` 的样子。同一段使用方脚本
     （开会话、发一轮、权限请求变成卡片、取消、断线后 `session/load`、超上限被拒）对两个提供方各跑一遍：底座网关接假 ACP Agent，
     和一个只按契约写的最小提供方；断言使用方一侧的报文和结果一样，换提供方使用方不用改。
-- **传输是我们定的**：ACP 规范只定了 stdio。跨插件走 WebSocket，一条连接是一个 ACP 客户端，每个文本帧一条 JSON-RPC 消息。
-  前端连自己网络里的 `agent_acp.wonton.internal`，核心转发给主人选定的运行时和 Bot。
+- **传输照官方的 [Streamable HTTP & WebSocket 传输 RFD](https://agentclientprotocol.com/rfds/streamable-http-websocket-transport)**（状态 Active）
+  的 WebSocket 那一种：端点 `/acp`，`GET` 带 `Upgrade: websocket` 升级，升级的响应头里带 `Acp-Connection-Id`，每个文本帧一条 JSON-RPC 消息；
+  一条连接是一个 ACP 客户端。认证 RFD 留给上层，我们的认证和 `X-Wonton-*` 头（第 3、10 节）就是那一层。
+  前端连自己网络里的 `agent_acp.wonton.internal/acp`，核心转发给主人选定的运行时和 Bot。
 
 ### 2. 运行时一侧有一道 ACP 网关，前端的话只经它
 
@@ -52,7 +54,7 @@ ADR-0015 要求组件只经标准接口连接、每个都能单独替换。这�
 - **一个连接一个 Agent 进程**；运行时声明连接数上限，满了返回 `busy`。连接断开后进程保留 10 分钟，前端重连后 `session/load` 接着用
   （核心重启、升级时所有连接都会断）。
 
-网关用 Rust 写，从现在的桥里拆出来（见第 5 节）：桥已经做了权限卡片、模式切换、MCP 入口和工具调用合并，不在 Python 里重写一遍。
+网关用 Rust 写，从桥里拆出来（第 5 节），ACP 层用官方库（第 11 节）：桥已经做了权限卡片、模式切换、MCP 入口和工具调用合并，不在 Python 里重写一遍。
 
 ### 3. 身份由核心给，运行时只认这个 Bot 听的人
 
@@ -91,8 +93,8 @@ ADR-0015 要求组件只经标准接口连接、每个都能单独替换。这�
 - `<能力>.wonton.internal` 的转发（#582 第 2 步），加上 WebSocket 升级和不限时的流；
 - 转发时注入 `X-Wonton-Plugin`、`X-Wonton-User` 和提供方令牌，丢掉前端带的同名头；
 - ADR-0053 的路由加 Bot 这一维（第 4 节）。
-- 调用链（第 10 节）：`POST /agent/chains`、`X-Wonton-Chain`、层数和绕圈检查、轮数和花费的计数、模型网关入口认链路径；
-- 总线上的 `wonton__hand_off`、`wonton__send_message` 和 `GET /agent/outbox`（第 9 节）；
+- 调用链（第 10 节）：`POST /agent/chains`、`X-Wonton-Chain`、层数和绕圈检查、轮数和花费的计数、模型网关入口认链路径、停下整条链；
+- 总线上的 `wonton__hand_off`（按调用 ID 幂等）、`wonton__hand_off_status`、`wonton__send_message` 和 `GET /agent/outbox`（第 9 节）；
 - `agent_acp` 的契约测试（第 1 节）。
 
 ### 7. 安全提示要说全
@@ -125,13 +127,22 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
     核心作为这个插件的使用方，经 `agent_acp` 给目标 Bot 开一个新会话（第 2 节的网关照常把关），会话属于第 10 节的同一条调用链，
     并带上发起的对话（房间、话题）。目标 Bot 一轮结束时工具返回它的结论和结束原因；10 分钟没结束先返回“还在做”和会话 ID，
     之后的进展由目标 Bot 自己在对话里说。
+    - **按调用 ID 幂等**：同一个调用方会话里，MCP `tools/call` 的请求 ID 相同的重试或重复调用返回已开的那个会话，不开第二个。
+      Alma 出过同一条消息派了两次活（[alma-releases#163](https://github.com/yetone/alma-releases/issues/163)）。
+    - **B 结束时核心不叫醒 A**，也没有“交回结果”的机制：上面的返回只是 A 这一轮里等到的；10 分钟以后 B 才结束的，A 不会被叫起来。
+      要 A 接着干，B 在对话里叫 A 的名字，规则见 [ADR-0083](0083-bot-contacts-and-group-chat.md)（#248）第 4 节的“互相认名字”。
+  - `wonton__hand_off_status`（查交出去的会话）：只读，不改任何东西，不算轮数，不叫醒 B。调用方要求同 `wonton__hand_off`。
+    - 参数：`session`（可选，会话 ID）；不填时列出调用的这个 Bot 从同一个对话（房间、话题）交出去的全部会话。
+    - 返回每个会话一项：`session`、`bot`（目标 Bot）、`chain`、`status`（`running`、`waiting_permission`、`ended`、`stopped`、
+      `limit_reached`、`failed`）、`stop_reason`（ACP 的结束原因，没结束时为空）、`started_at`、`last_activity_at`、`summary`
+      （B 最近一轮回复的末尾，至多 2000 字）。查别的 Bot 交出去的会话返回 `permission_denied`。
   - `wonton__send_message`（给某人发消息）：参数是收件人和正文，主人让 Agent 主动找家人、好友聊天用。收件人须是这个 Bot
     归属人的家人或好友（ADR-0045、ADR-0051）。每条都发确认卡片给 Bot 的归属人，卡片里是收件人和全文；主人可以按 ADR-0024
     对某个收件人放宽。投递由这个 Bot 的聊天前端以 Bot 的身份发（只有它有 Bot 的加密设备）：核心把批准的消息放进
     `GET /agent/outbox`（和 `/agent/permissions` 同一个地址、同一道门），前端长轮询取走后发进和收件人的私聊，回报发出的事件 ID。
 - **被调的 Agent 以自己的身份说话**：主人原话的意思是把各 Agent 当成真人同事，B 在同一房间、同一话题里自己说话、
   发进度和结果，不由上一层转述。这一篇只管管道：核心把发起的对话随会话交给 B 的运行时；B 怎么进房间、在话题里怎么说、@ 的规则、
-  和群里跳数上限（ADR-0045）的关系，见群聊 ADR（待定）。
+  和群里跳数上限（ADR-0045）的关系，见 [ADR-0083](0083-bot-contacts-and-group-chat.md)（#248）。
 - **身份**：调用链代表最先说话的那个人（第 10 节），不是发起的 Bot；不许 Bot 以自己的名义调别的 Bot。
 - **确认卡片**：
   - `wonton__hand_off` 交给的 Bot 不归这个人，或者是第一次从这个插件连到这个 Bot（ADR-0053 的“新使用方第一次连上”，加 Bot 这一维），
@@ -166,6 +177,11 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
     只受轮数上限管。
   - 到了上限，核心停下这条链（新的轮次、新的 `agent_acp` 请求、链上的模型请求都返回 `limit_reached`），给链代表的人和链上各 Bot 的
     归属人发卡片“这条链用到上限了”，按钮“再给一份”和“先停着”。
+- **随时能停整条链**：链代表的人和链上各 Bot 的归属人，不等到上限，随时能停下整条链（App 里这条链的那一行和链上的卡片上）。
+  - 停时核心对链上每个经 `agent_acp` 的会话发 `session/cancel`；发起的那一轮在桥里，核心经 `/agent/permissions` 那道门叫桥发。
+  - 网关和桥把各自未决的权限请求都回 `cancelled`，这是 [ACP 规范](https://agentclientprotocol.com/protocol/v1/prompt-turn#cancellation)
+    对发 `session/cancel` 一方的要求；核心撤回对应的卡片。
+  - 停下的链不再接新的轮次、`agent_acp` 请求和模型请求，返回 `stopped`；要接着做，人重新说一句，开一条新链。
 - **按链记账，核心记**：核心既在 `agent_acp` 的路上，也在模型网关的入口（`models.wonton.internal`）。运行时一个连接一个 Agent 进程
   （第 2 节），网关起进程时把模型网关的地址设成带链 ID 的路径（`/chains/<链 ID>/…`），核心把这个进程的模型请求记到这条链上，
   转发时去掉这段。桥自己的会话不带链路径，照旧记在 Bot 头上；所以链的花费是交出去的那些会话的，发起的那一轮记在发起的 Bot 上。
@@ -173,6 +189,19 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
 - **并发**：每个使用方同时开着的 `agent_acp` 连接默认最多 4 条，核心数，满了返回 `busy`；运行时自己的连接数上限（第 2 节）照样有效。
 - **上限在哪改**：层数、每条链的轮数和花费在设置的“Agent”一页；每个使用方的并发在它的详情页。只有主人能改，Bot 不能改。
   核心转发时把上限放在请求头里给网关，使用方改不了。默认值按实测再调。
+
+### 11. 网关和桥用官方的 Rust ACP 库
+
+- 网关用官方的 [`agent-client-protocol`](https://github.com/agentclientprotocol/rust-sdk)（5.2.x，Apache-2.0）。网关要在两头之间转发、
+  改写 `session/new`、自己回答权限请求、逐跳传递取消，这正是这个库的 proxy 和 HTTP/WebSocket 传输做的事，手写最容易出错。
+- 桥的 ACP 层跟网关一起换，不单独重写桥：单独换只省两百来行收发，却要先引入整个库。
+- 这个库的风险（2026-11 查，5.2.0）：约 4.5 个月出了 4 个大版本，主要一个人维护；`SessionUpdate` 没有兜底变体，认不出的更新会被丢掉；
+  没有帧大小上限；HTTP 入口拿不到请求头。所以守四条：
+  1. 钉精确版本（`=5.2.x`），照上游的迁移指南升级。
+  2. 网关转发用无类型的处理，认不出的 `SessionUpdate` 落到 `Other` 照样转发，不丢。
+  3. 按行读消息由我们自己写，带长度上限。
+  4. WebSocket 入口我们自己写：注入 `X-Wonton-*` 头（第 3 节），把 axum 的默认上限（单条消息 64 MiB、单帧 16 MiB）改小。
+- 它的 schema 给整个 workspace 的 serde_json 打开 `preserve_order`：同一次构建里所有 crate 的 JSON 对象都按插入顺序。
 
 ## 考虑过的做法
 
@@ -188,6 +217,9 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
 - **按插件间的依赖图防绕圈**：P、Q 互相 `requires` 不等于会绕圈，真绕圈发生在 Bot 之间、在调用时；按调用链拦更准，核心也不用解依赖图。
 - **调用链一律算主人**：家人说的话会以主人的身份使用主人的私人 Bot，等于借了主人的权限。
 - **调用算发起的 Bot 自己**（当作 Bot 联系人）：等于 Bot 指挥 Bot，第 3 节已经不让联系人走这个入口。
+- **B 结束时自动叫醒 A**：省一句话，但会越聊越多。Cindy 旧版做完自动跟进，伙伴被叫醒的次数是用户发言的两倍多，一个委派续跑了近百轮，
+  后来删掉了（[teammate-capability-ledger.md](https://github.com/makecindy/cindy/blob/4312f38/docs/product-rules/teammate-capability-ledger.md#L10-L25)）。
+- **ACP 继续手写**：违反“不造轮子”；网关要做的转发、改写、回权限、传取消，官方库已经有（第 11 节）。
 - **B 的结果由 A 转述**：主人要把 Agent 当真人同事，B 在同一个对话里自己说话；转述还会丢掉 B 的进度和问题。
 - **花费按 Bot 记、不分链**：几个链同时用同一个 Bot 时分不出是谁花的，主人看不懂账，链也停不下来。
 - **立刻把桥抽成独立插件**：同时改了 Bot 账号归属和多 Bot 模型，风险集中；先拆网关、后挪桥。
@@ -202,8 +234,10 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
   核对不了这句话真是他说的。要更强的保证，得让核心看得到加密房间里的消息，代价不值；人跨人交出去时第 9 节的卡片兜底。
 - 带链 ID 的模型网关路径要每家 Agent 的 CLI 都认自定义的网关地址；不认的，那部分花费只能按 Bot 记，链上显示“未知”。
 - `wonton__send_message` 只管住经桥发的消息；自带 Matrix 的 Agent（Hermes、OpenClaw）本来就能给同房间的人发消息，核心拦不住。
-- 3 层、50 轮、200 万 token、并发 4 是参照别家（Claude Code 子代理最多往下 3 层、同时 20 个；OpenAI Agents SDK 默认 10 轮；Comma 120 轮就停）
-  取的值，按真实任务再调。
+- 3 层、50 轮、200 万 token、并发 4 是我们自己定的，按真实任务再调。查实过的参照：ACP 的 [Subagents RFD](https://agentclientprotocol.com/rfds/subagents)
+  不限层数，只禁成环；Cindy 的工人软上限 5、硬上限 8（[orcaTeam.ts](https://github.com/makecindy/cindy/blob/4312f38/packages/maker-shared/src/orcaTeam.ts#L229-L233)），
+  群聊里前 5 位自动接着答、第 6 位起等人点“继续”（[bot-group-chat.md](https://github.com/makecindy/cindy/blob/4312f38/docs/product-rules/bot-group-chat.md#L403)）；
+  Alma 的子代理到 100 步停（[v0.0.729](https://github.com/yetone/alma-releases/releases/tag/v0.0.729)）。
 - 编排器的 ACP 客户端要能指到 `agent_acp.wonton.internal`。AO 按各家找官方程序起 ACP，能不能配置自定义命令没查实，可能要一个
   在容器里冒充某家 ACP 程序的小转发器。
 - 被派活的 Agent 各用自己运行时的工作区，彼此不共享目录，交付靠 git 分支，编排器不能假设工人在同一个目录里。
