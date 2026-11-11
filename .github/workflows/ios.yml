@@ -10,8 +10,7 @@ name: ios
 # 改成由 changes 作业判断改动范围，作业挂在它上面，没改到时自己报 skipped（跳过的检查算通过）。
 on:
   pull_request:
-    # labeled 是截图重录的入口：打上 record-snapshots 标签就起一轮录制，不用再补一次推送。
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
   schedule:
     # 每天全量兜底（PR 已在最新 main 上跑过，main 上不重跑）。
     - cron: "30 4 * * *"
