@@ -57,8 +57,8 @@ AO 的实测见调研报告（`research/orchestrator-probe.md`，2026-11-07）�
 ### 6. 工人用什么 Agent
 
 - 第一步：工人跑在编排器的容器里，用编排器支持的 Agent CLI（Codex、Claude Code、Qwen 等），登录走 Agent 底座的官方登录或模型网关（ADR-0055）。
-- 以后：用户已装的 Agent 插件当工人，经核心的 `agent_acp` 入口（ADR-0061 第 9 节）：编排器插件 `requires: [agent_acp]`、不提供它，
-  连接代表在编排器里下目标的人，派活深度 1，并发和轮数有上限，卡片标题写“编排器任务 → 哪个 Bot → 想做什么”。
+- 以后：用户已装的 Agent 插件当工人，经核心的 `agent_acp` 入口（ADR-0061 第 9、10 节）：编排器插件 `requires: [agent_acp]`，
+  连接代表在编排器里下目标的人，层数、绕圈、轮数和花费按调用链管，卡片标题写“编排器任务 → 哪个 Bot → 想做什么”。
 
 ### 7. 安全
 
