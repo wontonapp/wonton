@@ -16,6 +16,7 @@ use tokio::{
 };
 
 use wonton_l10n::Lang;
+use wonton_protocol::{ConfirmationOrigin, ORIGIN_ROOM_HEADER, ORIGIN_THREAD_HEADER};
 
 use crate::{
     config::MAX_FRAME_BYTES,
@@ -132,6 +133,8 @@ struct Inner {
     cancelled_sessions: Mutex<HashSet<String>>,
     /// 每个会话这一轮说话的语言（权限请求里的卡片文字要用）。
     langs: Mutex<HashMap<String, Lang>>,
+    /// 每个会话的来源会话（ADR-0016）：建会话时登记，权限请求带到核心。
+    origins: Mutex<HashMap<String, ConfirmationOrigin>>,
     closed: watch::Sender<bool>,
     auth: AuthRequests,
 }
@@ -168,6 +171,7 @@ impl AcpClient {
             old_message_ids: Mutex::new(HashMap::new()),
             cancelled_sessions: Mutex::new(HashSet::new()),
             langs: Mutex::new(HashMap::new()),
+            origins: Mutex::new(HashMap::new()),
             closed: watch::channel(false).0,
             auth: AuthRequests::new(),
         });
@@ -240,12 +244,14 @@ impl AcpClient {
 
     /// 建会话并切模式。`topic` 时先试 `ask_mode`（“改前先问”，ADR-0058），Agent 报不出
     /// 这个取值就退回 `mode`，由调用方在话题里如实说明。
+    /// `origin` 是这个会话的来源会话（ADR-0016），进 MCP 服务器的请求头，权限请求也带上。
     pub async fn new_session(
         &self,
         cwd: &str,
         mcp_url: &str,
         mode: &str,
         ask_mode: Option<&str>,
+        origin: &ConfirmationOrigin,
     ) -> Result<NewSession> {
         if !self.capabilities.mcp_http {
             return Err(Error::AgentNotReady(Detail::msg("acp-no-http-mcp")));
@@ -255,7 +261,7 @@ impl AcpClient {
                 "session/new",
                 json!({
                     "cwd": cwd,
-                    "mcpServers": [{"type": "http", "name": "wonton", "url": mcp_url, "headers": []}]
+                    "mcpServers": [http_mcp_server(mcp_url, origin)]
                 }),
             )
             .await
@@ -270,6 +276,11 @@ impl AcpClient {
             .as_str()
             .ok_or_else(|| Error::AgentNotReady(Detail::msg("acp-no-session-id")))?
             .to_owned();
+        self.inner
+            .origins
+            .lock()
+            .await
+            .insert(session_id.clone(), origin.clone());
         let asked = ask_mode.and_then(|asked| {
             mode::topic_request(&result, &session_id, asked).map(|request| (request, asked))
         });
@@ -291,21 +302,33 @@ impl AcpClient {
         })
     }
 
-    pub async fn load_or_resume(&self, session_id: &str, cwd: &str, mcp_url: &str) -> Result<()> {
+    pub async fn load_or_resume(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        mcp_url: &str,
+        origin: &ConfirmationOrigin,
+    ) -> Result<()> {
         let params = json!({
             "sessionId": session_id,
             "cwd": cwd,
-            "mcpServers": [{"type": "http", "name": "wonton", "url": mcp_url, "headers": []}]
+            "mcpServers": [http_mcp_server(mcp_url, origin)]
         });
         if self.capabilities.load_session {
-            return self.restore_with("session/load", params).await;
+            self.restore_with("session/load", params).await?;
+        } else if self.capabilities.resume {
+            self.restore_with("session/resume", params).await?;
+        } else {
+            return Err(Error::SessionUnavailable(Detail::msg(
+                "acp-restore-unsupported",
+            )));
         }
-        if self.capabilities.resume {
-            return self.restore_with("session/resume", params).await;
-        }
-        Err(Error::SessionUnavailable(Detail::msg(
-            "acp-restore-unsupported",
-        )))
+        self.inner
+            .origins
+            .lock()
+            .await
+            .insert(session_id.to_owned(), origin.clone());
+        Ok(())
     }
     async fn restore_with(&self, method: &str, params: Value) -> Result<()> {
         let mut notices = self.subscribe();
@@ -346,6 +369,7 @@ impl AcpClient {
     }
 
     pub async fn close(&self, session_id: &str) -> Result<()> {
+        self.inner.origins.lock().await.remove(session_id);
         if !self.capabilities.close {
             return Ok(());
         }
@@ -744,6 +768,16 @@ fn permission_detail(error: &Error) -> Detail {
 
 fn id_key(id: &Value) -> String {
     id.to_string()
+}
+
+/// 会话的 MCP 服务器配置：带上来源会话的请求头（ADR-0016），Agent 对这个 MCP 服务器的
+/// 每个请求都带着它们，核心据此认出会话在哪个房间、哪个话题里。
+fn http_mcp_server(mcp_url: &str, origin: &ConfirmationOrigin) -> Value {
+    let mut headers = vec![json!({"name": ORIGIN_ROOM_HEADER, "value": origin.room_id})];
+    if let Some(thread) = &origin.thread_id {
+        headers.push(json!({"name": ORIGIN_THREAD_HEADER, "value": thread}));
+    }
+    json!({"type": "http", "name": "wonton", "url": mcp_url, "headers": headers})
 }
 
 fn parse_capabilities(result: &Value) -> Capabilities {

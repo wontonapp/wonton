@@ -74,6 +74,7 @@ pub(super) async fn ensure_session(
     key: &SessionKey,
     state: &mut SessionState,
 ) -> Result<(String, bool, Option<bool>)> {
+    let origin = key.origin(room_id);
     if state.session_id.is_none()
         && let Some(record) = bridge.sessions.get(room_id, key).await
     {
@@ -88,7 +89,12 @@ pub(super) async fn ensure_session(
             };
             match bridge
                 .acp
-                .load_or_resume(&record.session_id, &record.cwd, &bridge.config.mcp_url)
+                .load_or_resume(
+                    &record.session_id,
+                    &record.cwd,
+                    &bridge.config.mcp_url,
+                    &origin,
+                )
                 .await
             {
                 Ok(()) => state.loaded = true,
@@ -116,6 +122,7 @@ pub(super) async fn ensure_session(
             &bridge.config.mcp_url,
             &bridge.config.mode,
             ask_mode,
+            &origin,
         )
         .await?;
     let session_id = created.session_id;

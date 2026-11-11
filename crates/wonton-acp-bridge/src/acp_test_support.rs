@@ -774,3 +774,11 @@ pub(crate) async fn bounded<T>(operation: impl Future<Output = T>, name: &str) -
 pub(crate) fn broker() -> PermissionBroker {
     PermissionBroker::new("http://127.0.0.1:1/mcp").unwrap()
 }
+
+/// 测试用的来源会话：固定房间，`thread` 是话题根事件 ID。
+pub(crate) fn origin(thread: Option<&str>) -> ConfirmationOrigin {
+    ConfirmationOrigin {
+        room_id: "!room:wonton.internal".into(),
+        thread_id: thread.map(str::to_owned),
+    }
+}

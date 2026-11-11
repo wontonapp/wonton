@@ -53,7 +53,13 @@ async fn connected() -> (FakeAgent, AcpClient, broadcast::Receiver<AgentNotice>)
         .await
         .unwrap();
     bounded(
-        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
+        client.new_session(
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            "plan",
+            None,
+            &origin(None),
+        ),
         "session/new",
     )
     .await
