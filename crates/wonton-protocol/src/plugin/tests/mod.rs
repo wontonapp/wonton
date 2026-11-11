@@ -159,6 +159,7 @@ fn preview() -> InstallPreview {
         source: Some("github:someone/wonton-samba@v1.0.0".into()),
         commit: Some("0123456789abcdef0123456789abcdef01234567".into()),
         digest: format!("sha256:{}", "cd".repeat(32)),
+        plan: "consumer-plan".into(),
         id: "app.samba".into(),
         title: "Samba".into(),
         summary: "局域网文件共享".into(),
@@ -570,5 +571,6 @@ where
 }
 
 mod capability;
+mod install_decisions;
 mod legacy_fields;
 mod store;

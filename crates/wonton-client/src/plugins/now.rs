@@ -467,6 +467,7 @@ mod tests {
             source: Some("github:owner/app.photos@v1.0.0".into()),
             commit: None,
             digest: "sha256:abc".into(),
+            plan: "opaque-install-plan".into(),
             id: "app.photos".into(),
             title: "Photos".into(),
             summary: String::new(),

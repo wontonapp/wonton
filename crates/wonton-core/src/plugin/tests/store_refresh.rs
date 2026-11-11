@@ -71,6 +71,7 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
         scope: None,
         source: preview.source.unwrap(),
         digest: preview.digest,
+        plan: preview.plan,
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
         secrets: Default::default(),

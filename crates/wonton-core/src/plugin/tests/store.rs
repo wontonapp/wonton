@@ -97,6 +97,7 @@ async fn official_plugins_come_from_the_index_and_are_checked_against_it() {
         scope: None,
         source: preview.source.unwrap(),
         digest: preview.digest,
+        plan: preview.plan,
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
         secrets: Default::default(),
