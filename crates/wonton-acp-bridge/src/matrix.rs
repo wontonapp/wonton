@@ -9,6 +9,8 @@ pub struct IncomingText {
     pub event_id: String,
     /// 所属话题的根消息事件 ID；在主对话里发的消息是 `None`。
     pub thread_root: Option<String>,
+    /// 服务器分配的发送时间（Unix 毫秒）；重启后拿它和已读位置比，分辨停机期间的积压。
+    pub timestamp_ms: u64,
 }
 
 pub fn new_allowed_messages(
@@ -36,6 +38,7 @@ pub fn new_allowed_messages(
                     text: String::new(),
                     event_id,
                     thread_root,
+                    timestamp_ms: message.timestamp_ms,
                 });
             };
             // 群里有别的 Bot，命令要由主人点名本 Bot；私聊不用。
@@ -49,6 +52,7 @@ pub fn new_allowed_messages(
                 text: text.clone(),
                 event_id,
                 thread_root,
+                timestamp_ms: message.timestamp_ms,
             })
         })
         .collect()

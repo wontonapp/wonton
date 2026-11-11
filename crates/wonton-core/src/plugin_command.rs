@@ -3,8 +3,8 @@
 //! - `plugin check <插件包目录> [--official]`：发布前的检查，规则见 `wonton_core::plugin::check`。
 //! - `plugin pack <插件包目录>`：把插件包（compose 和它引用的文件）打成 tar 写到标准输出，开发工具拿它上传安装；
 //!   README、截图这些不属于插件包的文件不在里面。
-//! - `plugin index-entry <插件包目录> <github:owner/repo> <提交号> [--index <索引目录>]`：插件包在那个提交上的官方索引
-//!   条目（插件规范的“官方索引”）。不带 `--index` 时把条目的 JSON 写到标准输出；带了就写进那个本地的索引目录，
+//! - `plugin index-entry <插件包目录> <github:owner/repo>[/<子目录>] <提交号> [--index <索引目录>]`：插件包在那个提交上的
+//!   官方索引条目（插件规范的“官方索引”）。带子目录时插件包目录是那个子目录的检出。不带 `--index` 时把条目的 JSON 写到标准输出；带了就写进那个本地的索引目录，
 //!   文件按 sha256 放进 `blobs/`，同一个来源的旧条目换掉。插件包目录要是那个提交的检出：核心不连 Git，不核对。
 //! - `plugin fetch-locked <锁文件> <目标目录>`：构建镜像时按提交取插件包，核对锁文件里的来源、提交和摘要。
 //! - `plugin host [插件包目录]`：这台主机实际有什么（内存、系统、架构、显卡），JSON 写到标准输出，读不出来的项写明原因。
@@ -33,7 +33,7 @@ mod locked;
 
 const USAGE: &str = "用法：wonton-core plugin check <插件包目录> [--official]\n      \
                      wonton-core plugin pack <插件包目录> > 插件包.tar\n      \
-                     wonton-core plugin index-entry <插件包目录> <github:owner/repo> <提交号> [--index <索引目录>]\n      \
+                     wonton-core plugin index-entry <插件包目录> <github:owner/repo>[/<子目录>] <提交号> [--index <索引目录>]\n      \
                      wonton-core plugin fetch-locked <锁文件> <目标目录>\n      \
                      wonton-core plugin host [插件包目录]\n      \
                      wonton-core plugin slice-unit\n      \
@@ -286,5 +286,46 @@ fn human_size(bytes: usize) -> String {
         format!("{bytes} B")
     } else {
         format!("{:.1} KiB", bytes as f64 / 1024.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wonton_core::plugin::languages::Languages;
+    use wonton_core::plugin::storefront::index::Index;
+
+    const COMPOSE: &str = "services:\n  web:\n    image: ghcr.io/acme/web:1\n\
+         x-wonton:\n  spec: \"0.2\"\n  id: app.hello\n  version: 1.0.0\n  kind: app\n  \
+         title: {zh: 你好, en: Hello}\n  description: {zh: 打个招呼, en: Say hi}\n  permissions: []\n";
+
+    /// `plugin index-entry` 接受子目录的来源，生成的条目本地索引读得懂（完成标准 7）。
+    #[test]
+    fn index_entry_accepts_a_subdirectory_source() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("docker-compose.yml"), COMPOSE).unwrap();
+        let package = PluginPackage::load_dir(dir.path(), &Languages::default()).unwrap();
+        let entry = IndexEntry::of(&package, "github:acme/hello/agents/codex", &"a".repeat(40))
+            .map_err(|e| panic!("{e}"))
+            .unwrap();
+        let index = tempfile::tempdir().unwrap();
+        entry.write_to(index.path(), &package).unwrap();
+        let parsed = Index::parse(
+            &std::fs::read(index.path().join("index.json")).unwrap(),
+            &Languages::default(),
+        )
+        .map_err(|e| panic!("{e}"))
+        .unwrap();
+        assert_eq!(parsed.plugins.len(), 1);
+        let listed = &parsed.plugins[0];
+        assert_eq!(listed.subdir.as_deref(), Some("agents/codex"));
+        assert_eq!(listed.manifest.id.to_string(), "app.hello");
+        // 按子目录来源能找到它；来源带版本不匹配。
+        let source = wonton_core::plugin::github_source::SourceRef::parse(
+            "github:acme/hello/agents/codex",
+            &Languages::default(),
+        )
+        .unwrap();
+        assert!(parsed.find(&source).is_some());
     }
 }

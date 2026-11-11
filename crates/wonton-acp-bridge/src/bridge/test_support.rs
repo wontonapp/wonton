@@ -4,7 +4,10 @@
 use std::{
     collections::VecDeque,
     future::Future,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -44,12 +47,17 @@ struct Recorded {
 /// 内存房间：`updates` 流由测试 push，发送只记录。
 pub struct FakeRoom {
     id: String,
+    /// 首屏快照：和真时间线一样，updates 流的第一项是订阅时刻已有的消息（重启后停机
+    /// 期间发来的都在里面）。
+    snapshot: Vec<Message>,
     recorded: Arc<Mutex<Recorded>>,
     updates: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<Vec<Message>>>>,
 }
 
 impl FakeRoom {
-    pub fn new(id: &str) -> Self {
+    /// 首屏快照：和真时间线一样，updates 流的第一项是订阅时刻已有的消息（重启后停机
+    /// 期间发来的都在里面）；全新房间传空列表。
+    pub fn with_snapshot(id: &str, snapshot: Vec<Message>) -> Self {
         let (updates, receiver) = mpsc::unbounded_channel();
         let recorded = Arc::new(Mutex::new(Recorded {
             effects: Vec::new(),
@@ -58,6 +66,7 @@ impl FakeRoom {
         }));
         Self {
             id: id.to_owned(),
+            snapshot,
             recorded,
             updates: Arc::new(tokio::sync::Mutex::new(receiver)),
         }
@@ -207,10 +216,11 @@ impl Room for FakeRoom {
     }
 
     async fn updates(&self) -> impl Stream<Item = Vec<Message>> + Unpin + Send {
+        let snapshot = self.snapshot.clone();
         let updates = self.updates.clone();
-        // 和真实时间线一样，第一项是当前的消息（这里是空列表）。
+        // 和真实时间线一样，第一项是当前的消息（重启后的快照，全新房间是空列表）。
         Box::pin(
-            stream::once(async { Vec::new() })
+            stream::once(async { snapshot })
                 .chain(stream::unfold(updates, |updates| async move {
                     let mut receiver = updates.lock().await;
                     let messages = receiver.recv().await;
@@ -332,13 +342,32 @@ async fn serve_cards(
 }
 
 /// 主人发的一条消息；`thread_root` 是它所属话题的根。
+///
+/// 时间戳逐条递增（进程级计数，起点随意）：和真实时间线一样从旧到新；要钉住先后
+/// （停机积压）的测试用 [`owner_message_at`] 自己给。
 pub fn owner_message(event_id: &str, text: &str, thread_root: Option<&str>) -> Message {
+    static NEXT: AtomicU64 = AtomicU64::new(1000);
+    owner_message_at(
+        event_id,
+        text,
+        thread_root,
+        NEXT.fetch_add(1, Ordering::Relaxed),
+    )
+}
+
+/// 同 [`owner_message`]，时间戳自定：停机积压的测试要拿它跟已读位置比先后。
+pub fn owner_message_at(
+    event_id: &str,
+    text: &str,
+    thread_root: Option<&str>,
+    timestamp_ms: u64,
+) -> Message {
     Message {
         event_id: Some(event_id.parse().unwrap()),
         sender: "@owner:example.org".parse::<OwnedUserId>().unwrap(),
         sender_name: String::new(),
         is_own: false,
-        timestamp_ms: 1,
+        timestamp_ms,
         status: SendStatus::Sent,
         body: MessageBody::Text(text.into()),
         custom: Default::default(),
