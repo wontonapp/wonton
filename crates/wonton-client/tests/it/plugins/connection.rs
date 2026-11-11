@@ -6,7 +6,8 @@ use std::time::{Duration, Instant};
 use axum::http::Method;
 use iroh::SecretKey;
 use wonton_client::{
-    Action, ConnectionNotice, HomeFailure, HomeStatus, PluginFailure, PluginState, PluginTaskState,
+    Action, ConnectionNotice, CoreError, HomeFailure, HomeStatus, PluginFailure, PluginState,
+    PluginTaskNextStep, PluginTaskState,
 };
 
 use super::rig::{
@@ -231,6 +232,106 @@ async fn a_state_from_a_newer_core_is_not_taken_for_success() {
         matches!(state, PluginTaskState::Uncertain { .. }),
         "{state:?}"
     );
+}
+
+/// 请求发出后连接断了：任务要说在等连接，不能一直像在做；连回来就接着报结果。
+#[tokio::test]
+async fn a_dropped_install_waits_for_a_connection_and_then_reports_the_result() {
+    let rig = Rig::new().await;
+    rig.core
+        .set_lists(vec![vec![installed("app.photos", PluginState::Installing)]]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins",
+        Canned(502, String::new()),
+    );
+    rig.app
+        .dispatch(Action::InstallPlugin {
+            preview: preview("app.photos"),
+            secrets: Default::default(),
+        })
+        .unwrap();
+    let view = rig
+        .wait_for(|view| {
+            view.tasks
+                .iter()
+                .any(|task| task.id == "app.photos" && task.waiting_for_connection)
+        })
+        .await;
+    assert_eq!(view.tasks[0].state, PluginTaskState::Running);
+    // 等连接时既不能清掉任务，也不能对同一个插件再发一次。
+    assert!(matches!(
+        rig.app.dispatch(Action::DismissPluginTask {
+            id: "app.photos".to_owned()
+        }),
+        Err(CoreError::NotReady { .. })
+    ));
+    assert!(matches!(
+        rig.app.dispatch(Action::InstallPlugin {
+            preview: preview("app.photos"),
+            secrets: Default::default(),
+        }),
+        Err(CoreError::NotReady { .. })
+    ));
+
+    // 列表又问得到了：回到“在做”。
+    let view = rig
+        .wait_for(|view| {
+            view.tasks
+                .iter()
+                .any(|task| task.id == "app.photos" && !task.waiting_for_connection)
+        })
+        .await;
+    assert_eq!(view.tasks[0].state, PluginTaskState::Running);
+
+    // 再断一次，重新说在等连接。
+    rig.core.answer_always(
+        Method::GET,
+        "/_wonton/api/plugins",
+        Canned(502, String::new()),
+    );
+    rig.wait_for(|view| view.tasks.iter().any(|task| task.waiting_for_connection))
+        .await;
+
+    // 连回来时它已经跑起来了：成功。
+    rig.core.stop_answering(Method::GET, "/_wonton/api/plugins");
+    rig.core.set_lists(vec![vec![running("app.photos")]]);
+    let state = rig.task("app.photos", |state| !state.in_progress()).await;
+    assert_eq!(state, PluginTaskState::Succeeded);
+    assert!(!rig.app.plugins().tasks[0].waiting_for_connection);
+}
+
+/// 请求可能根本没到：连回来以后列表里也一直没有它，结果不确定，下一步是去已安装列表看。
+#[tokio::test]
+async fn an_install_that_never_shows_up_is_uncertain_and_points_at_the_installed_list() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![Vec::new()]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins",
+        Canned(502, String::new()),
+    );
+    rig.app
+        .dispatch(Action::InstallPlugin {
+            preview: preview("app.photos"),
+            secrets: Default::default(),
+        })
+        .unwrap();
+    rig.wait_for(|view| view.tasks.iter().any(|task| task.waiting_for_connection))
+        .await;
+
+    let state = rig.task("app.photos", |state| !state.in_progress()).await;
+    let PluginTaskState::Uncertain { next_step, .. } = state else {
+        panic!("结果不是不确定：{state:?}");
+    };
+    assert_eq!(next_step, PluginTaskNextStep::CheckInstalled);
+    assert!(!rig.app.plugins().tasks[0].waiting_for_connection);
 }
 
 /// 它本来就是坏的：请求还没到时列表里也是这样，不能算卸载失败。

@@ -28,6 +28,7 @@ import app.wonton.protocol.AddedTools
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTask
+import app.wonton.protocol.PluginTaskNextStep
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.Rgb
 import app.wonton.ui.design.WontonButtonKind
@@ -48,7 +49,7 @@ private val SPINNER_STROKE = 2.dp
 private val STATE_ICON_OFFSET = 3.dp
 
 /** 主屏或商店里打开的详情页、确认页和卸载确认。[open] 打开已安装的插件。 */
-class PluginNavigation(val open: (PluginEntry) -> Unit) {
+class PluginNavigation(val open: (PluginEntry) -> Unit, val checkInstalled: () -> Unit) {
     var detail by mutableStateOf<PluginRoute?>(null)
     var confirmation by mutableStateOf<PluginConfirmation?>(null)
     var uninstalling by mutableStateOf<UninstallTarget?>(null)
@@ -85,7 +86,12 @@ fun PluginPages(plugins: PluginsState, navigation: PluginNavigation, list: @Comp
         }
         confirmation != null -> {
             BackHandler { navigation.confirmation = null }
-            InstallConfirmScreen(plugins, confirmation, onClose = { navigation.confirmation = null })
+            InstallConfirmScreen(
+                plugins,
+                confirmation,
+                onClose = { navigation.confirmation = null },
+                onCheckInstalled = navigation.checkInstalled,
+            )
         }
         navigation.addingSource -> {
             BackHandler { navigation.addingSource = false }
@@ -129,7 +135,12 @@ internal fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onD
 
 /** 安装、升级、卸载的一项进展。插件包在确认之后变了的，[onReview] 重新打开确认页。 */
 @Composable
-fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit) {
+fun TaskRow(
+    task: PluginTask,
+    plugins: PluginsState,
+    onReview: () -> Unit,
+    onCheckInstalled: () -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
@@ -138,7 +149,7 @@ fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit) {
         PluginIconImage(task.icon, WontonTheme.size.taskIcon, plugins)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             Text(task.title, style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
-            TaskState(task.operation, task.state, onReview)
+            TaskState(task, onReview, onCheckInstalled)
             if (task.state is PluginTaskState.Succeeded) task.addedTools?.let { AddedToolsLine(it) }
         }
         if (task.state is PluginTaskState.Running) {
@@ -154,11 +165,20 @@ fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit) {
 }
 
 @Composable
-private fun TaskState(operation: PluginOperation, state: PluginTaskState, onReview: () -> Unit) {
+private fun TaskState(task: PluginTask, onReview: () -> Unit, onCheckInstalled: () -> Unit) {
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.supporting
-    when (state) {
-        is PluginTaskState.Running -> Text(operation.runningText, style = style, color = colors.textSecondary.toColor())
+    val operation = task.operation
+    when (val state = task.state) {
+        is PluginTaskState.Running -> Text(
+            if (task.waitingForConnection) {
+                stringResource(R.string.plugin_task_waiting_for_connection)
+            } else {
+                operation.runningText
+            },
+            style = style,
+            color = colors.textSecondary.toColor(),
+        )
         is PluginTaskState.Succeeded -> StateLine(WontonIcon.CheckCircleFill, operation.doneText, colors.success)
         is PluginTaskState.Failed -> {
             val problem = state.reason.problem(state.message)
@@ -180,8 +200,12 @@ private fun TaskState(operation: PluginOperation, state: PluginTaskState, onRevi
                 WontonSmallButton(stringResource(R.string.plugin_task_review), onReview)
             }
         }
-        is PluginTaskState.Uncertain ->
+        is PluginTaskState.Uncertain -> {
             StateLine(WontonIcon.Help, stringResource(R.string.plugin_task_uncertain, state.message), colors.warning)
+            if (state.nextStep == PluginTaskNextStep.CHECK_INSTALLED) {
+                WontonSmallButton(stringResource(R.string.plugin_task_check_installed), onCheckInstalled)
+            }
+        }
     }
 }
 

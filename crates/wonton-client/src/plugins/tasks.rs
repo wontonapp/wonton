@@ -202,7 +202,7 @@ impl PluginsLink {
                 });
                 return false;
             };
-            if view.tasks[index].state == PluginTaskState::Running {
+            if view.tasks[index].state.in_progress() {
                 outcome = Err(CoreError::NotReady {
                     reason: l10n!(CATALOG, language(), "plugins-tasks-task-not-done"),
                 });
@@ -240,7 +240,7 @@ impl PluginsLink {
             if view
                 .tasks
                 .iter()
-                .any(|task| task.id == id && task.state == PluginTaskState::Running)
+                .any(|task| task.id == id && task.state.in_progress())
             {
                 outcome = Err(CoreError::NotReady {
                     reason: l10n!(
@@ -292,9 +292,30 @@ impl PluginsLink {
         self.view.send_modify(|view| {
             if let Some(task) = view.tasks.iter_mut().find(|task| task.id == id) {
                 task.state = state;
+                task.waiting_for_connection = false;
             }
         });
         self.refresh_derived();
+    }
+
+    /// 连接断了或者回来了：界面要能说出在等连接，而不是一直像在做。换了服务器以后不再动上一台的任务。
+    fn set_waiting(&self, id: &str, waiting: bool, generation: u64) {
+        let changed = self.view.send_if_modified(|view| {
+            if !self.is_current(generation) {
+                return false;
+            }
+            let Some(task) = view.tasks.iter_mut().find(|task| task.id == id) else {
+                return false;
+            };
+            if task.waiting_for_connection == waiting {
+                return false;
+            }
+            task.waiting_for_connection = waiting;
+            true
+        });
+        if changed {
+            self.refresh_derived();
+        }
     }
 
     /// 升级已经成功了，响应读不出来不算失败：核心比 App 新时形状可以变，这时不显示新增的工具。
@@ -323,6 +344,7 @@ impl PluginsLink {
         let state = match sent.await {
             Ok(()) => PluginTaskState::Succeeded,
             Err(problem) if problem.reason == PluginFailure::TransportUnavailable => {
+                self.set_waiting(id, true, generation);
                 self.settle(id, &outcome, generation).await
             }
             Err(problem) => PluginTaskState::Failed {
@@ -342,11 +364,13 @@ impl PluginsLink {
         }
     }
 
-    /// 连接断了：家里的服务器可能还在做，从已安装列表里等结果。
+    /// 连接断了：家里的服务器可能还在做，从已安装列表里等结果。等的时候不说成在做，也不重试请求。
     async fn settle(&self, id: &str, outcome: &Outcome, generation: u64) -> PluginTaskState {
         let deadline = Instant::now() + SETTLE_TIMEOUT;
         let mut answered = Instant::now();
         let mut missing = 0;
+        // 进来时刚标成在等连接；连上了先回到“在做”，又断了再标回去。
+        let mut waiting = true;
         while Instant::now() < deadline {
             tokio::time::sleep(POLL_INTERVAL).await;
             let result = self.list_installed().await;
@@ -357,9 +381,17 @@ impl PluginsLink {
             let installed = match result {
                 Ok(installed) => {
                     answered = Instant::now();
+                    if waiting {
+                        self.set_waiting(id, false, generation);
+                        waiting = false;
+                    }
                     installed
                 }
                 Err(problem) if problem.reason == PluginFailure::TransportUnavailable => {
+                    if !waiting {
+                        self.set_waiting(id, true, generation);
+                        waiting = true;
+                    }
                     if answered.elapsed() >= UNREACHABLE_LIMIT {
                         return uncertain();
                     }

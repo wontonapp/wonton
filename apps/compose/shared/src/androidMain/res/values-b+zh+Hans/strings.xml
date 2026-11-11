@@ -1074,6 +1074,12 @@
     <string name="plugin_task_review">重新查看</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">结果不确定：%1$s</string>
+    <!-- Status of a running task while the connection to the home server is down. -->
+    <string name="plugin_task_waiting_for_connection">正在等待连接</string>
+    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
+    <string name="plugin_task_check_installed_next_step">到已安装列表看看装上没有。</string>
+    <!-- Button on an uncertain task that opens the installed list. -->
+    <string name="plugin_task_check_installed">检查已安装</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">已卸载</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->
