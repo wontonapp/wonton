@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use super::{
     BlockedCategory, BotSwitch, CapabilityProviderRef, InstallTogether, LanWebuiOffer,
     MissingCapability, PermissionLine, PluginAuthor, PluginDevice, PluginIcon, PluginKind,
-    PluginRuntime, PluginScope, PluginSettingField, PluginTrust, PluginWriter, SecretInput,
-    SecretValues, SettingValues, SettingsForm,
+    PluginRuntime, PluginScope, PluginTrust, PluginWriter, SecretInput, SecretValues,
+    SettingValues, SettingsForm,
 };
 use crate::CardLine;
 
@@ -114,7 +114,7 @@ pub struct InstallRequest {
     /// 主人填的密钥值（[`SecretValues`]），键是预览里 [`SecretInput::name`]。
     #[serde(default)]
     pub secrets: SecretValues,
-    /// 主人填的设置值（[`SettingValues`]），键是预览里 [`PluginSettingField::name`]。没带的项用默认值；必填项缺了
+    /// 主人填的设置值（[`SettingValues`]），键是预览里 [`super::PluginSettingField::name`]。没带的项用默认值；必填项缺了
     /// 返回 400 `settings_invalid`。
     #[serde(default)]
     pub settings: SettingValues,

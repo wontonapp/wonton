@@ -1,8 +1,8 @@
 //! 插件设置（ADR-0077）：清单里的 JSON Schema 就是设置页的形状。核心按 Schema 校验值、把值存进插件记录，改了设置只
 //! 重建渲染结果里用到它的服务。敏感项不在这里，走 ADR-0064 的输入密钥。
 //!
-//! 设置页由壳照 [`PluginSettingsView`] 画原生控件。不认识的类型落到 [`PluginSettingKind::Other`]，壳画 JSON 文本编辑框，
-//! 核心照样按 Schema 校验。文字由核心按请求的语言选好，壳原样显示。
+//! 设置页由壳照 [`PluginSettingsView`] 画原生控件。Schema 超出原生控件子集时返回 `settings_schema_invalid`，不提供 JSON
+//! 编辑器。不认识的新控件或值类型落到 `Other`：该项提示“要更新 App 才能改”，禁止提交，不清空已有值。
 //!
 //! 读接口：插件没装返回 404 `not_installed`，装着的版本没有设置返回 400 `unsupported`。写接口的成功、冲突和校验失败见
 //! [`PluginSettingsUpdate`] 和 [`SettingsInvalidError`]。
@@ -21,7 +21,7 @@ pub fn plugin_settings_preview_path(plugin_id: &str) -> String {
     format!("/_wonton/api/plugins/{plugin_id}/settings/preview")
 }
 
-/// 一个设置的值。类型和 [`PluginSettingKind`] 对应；[`SettingValue::Json`] 用在 App 不认识的字段上。
+/// 一个原生控件的设置值，类型和 [`PluginSettingKind`] 对应。不接收原始 JSON 文本。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -42,11 +42,7 @@ pub enum SettingValue {
     Texts {
         value: Vec<String>,
     },
-    /// JSON 文本，核心解析后按 Schema 校验。
-    Json {
-        value: String,
-    },
-    /// 比这个 App 新的值类型：显示“不支持此值类型”，禁止编辑和提交，不当成空值或清空。
+    /// 比这个 App 新的值类型：该项显示“要更新 App 才能改”，禁止提交，不当成空值或清空。
     #[serde(other)]
     Other,
 }
@@ -76,7 +72,7 @@ pub struct PluginSettingsView {
     pub changed_at_ms: Option<u64>,
 }
 
-/// 设置表单：安装、升级预览和确认卡片里带它，主人用同一套原生控件填。
+/// 原生设置表单：安装、升级预览和确认卡片里带它。包含未知控件或值类型时不能提交，不提供文本编辑兜底。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SettingsForm {
@@ -90,13 +86,14 @@ pub struct SettingsForm {
 pub struct PluginSettingField {
     /// 属性名（清单 `settings` 的 Schema 里的键），写请求的键，也是 `WONTON_SETTING_<名字大写>` 的来源。
     pub name: String,
-    /// 控件的标题，插件包给的，核心按请求的语言选好。
+    /// 控件标题；核心按清单多语言字段的协商规则，从插件包给的 `zh`、`en`、`zh-Hant`、`ja` 等语言中选好。
     pub title: String,
-    /// 一句补充；插件包没写时为空。
+    /// 插件包的一句补充，与标题沿用同一多语言规则；没写时为空。
     #[serde(default)]
     pub description: Option<String>,
     /// 必填项：没有值、也没有默认值时提交不了。
     pub required: bool,
+    /// 未知控件类型提示更新 App，并禁止提交整份表单，不能把该项省略或清空后提交。
     pub kind: PluginSettingKind,
     /// 现在存着的值（升级预览里是装着版本的值）；没设过、用默认值时为空。
     #[serde(default)]
@@ -148,7 +145,7 @@ pub enum PluginSettingKind {
         options: Vec<PluginSettingOption>,
         multiple: bool,
     },
-    /// 核心认、App 不认识的类型：画成 JSON 文本编辑框，值用 [`SettingValue::Json`]。
+    /// 新核心给的未知控件：该项显示“要更新 App 才能改”，禁止提交，不提供 JSON 编辑器。
     #[serde(other)]
     Other,
 }
@@ -158,7 +155,7 @@ pub enum PluginSettingKind {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PluginSettingOption {
     pub value: SettingValue,
-    /// 插件包给这个选项的标题，核心按请求的语言选好。
+    /// 插件包给这个选项的标题，语言键和回退规则与字段标题相同。
     pub title: String,
 }
 
@@ -186,8 +183,6 @@ pub enum SettingsFieldProblemKind {
     Pattern,
     NotInOptions,
     DuplicateItems,
-    /// JSON 文本解析不了。
-    InvalidJson,
     /// Schema 里没有这个属性。
     UnknownField,
     /// 比这个 App 新的核心给的原因。
@@ -251,7 +246,7 @@ pub enum SettingsSchemaProblemKind {
     InvalidJson,
     /// 不是 Draft 2020-12 的对象 Schema，或根上不符合要求。
     InvalidSchema,
-    /// 用到了这版处理不了的写法（`$ref` 等）。
+    /// Schema 超出原生控件子集（嵌套对象、组合约束、非字符串枚举数组、引用等）。
     UnsupportedKeyword,
     /// 属性没有 `x-wonton-title`。
     MissingTitle,
@@ -462,15 +457,40 @@ mod tests {
         assert!(update.values.is_empty());
     }
 
-    /// 契约：不认识的控件和值类型不弄丢整份视图。
+    /// 未知控件和值仍有明确的 `Other` 标记，不变成缺值，也不影响同一表单里的已知项。
     #[test]
-    fn unknown_kinds_fall_back() {
-        let kind: PluginSettingKind =
-            serde_json::from_value(json!({"type": "file", "accept": ["image/png"]})).unwrap();
-        assert_eq!(kind, PluginSettingKind::Other);
-
-        let value: SettingValue = serde_json::from_value(json!({"type": "duration"})).unwrap();
-        assert_eq!(value, SettingValue::Other);
+    fn unknown_kinds_remain_marked_without_clearing_values() {
+        let form: SettingsForm = serde_json::from_value(json!({"fields": [
+            {
+                "name": "budget", "title": "Budget", "required": true,
+                "kind": {"type": "future_picker"},
+                "value": {"type": "text", "value": "household"},
+            },
+            {
+                "name": "duration", "title": "Duration", "required": false,
+                "kind": {"type": "text"},
+                "value": {"type": "future_duration", "value": "1h"},
+            },
+            {
+                "name": "enabled", "title": "Enabled", "required": false,
+                "kind": {"type": "toggle"},
+                "value": {"type": "flag", "value": false},
+            },
+        ]}))
+        .unwrap();
+        assert_eq!(form.fields[0].kind, PluginSettingKind::Other);
+        assert_eq!(
+            form.fields[0].value,
+            Some(SettingValue::Text {
+                value: "household".into()
+            })
+        );
+        assert_eq!(form.fields[1].value, Some(SettingValue::Other));
+        assert_eq!(form.fields[2].kind, PluginSettingKind::Toggle);
+        assert_eq!(
+            form.fields[2].value,
+            Some(SettingValue::Flag { value: false })
+        );
 
         let problem: SettingsFieldProblemKind = serde_json::from_value(json!("too_many")).unwrap();
         assert_eq!(problem, SettingsFieldProblemKind::Other);

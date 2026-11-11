@@ -53,6 +53,7 @@ fn one_tap_requests_round_trip() {
                 grant: Vec::new(),
                 enabled_permissions: Vec::new(),
                 secrets: SecretValues::new(),
+                settings: SettingValues::new(),
                 devices: Vec::new(),
                 lan_webui: false,
                 install_together: Vec::new(),

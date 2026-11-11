@@ -35,10 +35,13 @@ Actual 的预算选择等普通设置需要在安装确认页和插件详情页�
     "budget": {
       "type": "string",
       "enum": ["household", "personal"],
-      "x-wonton-title": { "zh": "预算", "en": "Budget" },
+      "x-wonton-title": { "zh": "预算", "en": "Budget", "zh-Hant": "預算", "ja": "予算" },
+      "x-wonton-description": {
+        "zh": "选择要使用的预算", "en": "Choose the budget to use", "zh-Hant": "選擇要使用的預算", "ja": "使用する予算を選択"
+      },
       "x-wonton-enum-titles": {
-        "household": { "zh": "家庭", "en": "Household" },
-        "personal": { "zh": "个人", "en": "Personal" }
+        "household": { "zh": "家庭", "en": "Household", "zh-Hant": "家庭", "ja": "家計" },
+        "personal": { "zh": "个人", "en": "Personal", "zh-Hant": "個人", "ja": "個人" }
       }
     },
     "months": {
@@ -46,19 +49,38 @@ Actual 的预算选择等普通设置需要在安装确认页和插件详情页�
       "minimum": 1,
       "maximum": 12,
       "default": 3,
-      "x-wonton-title": { "zh": "显示几个月", "en": "Months shown" }
+      "x-wonton-title": { "zh": "显示几个月", "en": "Months shown", "zh-Hant": "顯示幾個月", "ja": "表示する月数" }
     }
   }
 }
 ```
 
 - 属性名是小写字母、数字和下划线，`^[a-z][a-z0-9_]*$`，最长 64；一份 Schema 最多 64 项。
-- `x-wonton-title` 必填，多语言；`x-wonton-description` 可选。显示顺序按 `x-wonton-order`，没列的按属性名排在后面。
-- 表单只展开根上的 `properties`。嵌套对象、`oneOf`/`anyOf`/`allOf`、`const` 等复杂约束照常校验，App 用 JSON 文本
-  编辑对应的顶层值。`$ref`、`$dynamicRef` 一律拒绝，任何子 Schema 中的敏感标记都按敏感项拒绝。
+- `x-wonton-title` 必填，`x-wonton-description` 可选；`x-wonton-enum-titles` 的每个标题也沿用清单的 `LocalizedText`。
+  语言键是相同的 BCP 47 标签：`zh`（简体，`zh-Hans` 同样可协商）、`en`、`zh-Hant`、`ja`，不另设语言格式。
+  至少写一种非空语言；示例列全 App 的四种语言。核心复用 `Languages::pick` / `wonton_l10n::choose_language`，
+  按请求语言和文字系统协商，繁中优先 `zh-Hant`，缺时回退 `zh`，再回退 `en`，最后使用已有语言；不要求插件为缺失翻译改业务值。
+  显示顺序按 `x-wonton-order`，没列的按属性名排在后面。
+- Schema 只描述顶层设置项；App 画不出控件的 Schema 在预览阶段返回 400 `settings_schema_invalid`，
+  类别为 `UnsupportedKeyword`，不装、不保存，也不提供 JSON 文本编辑器。
 - `$schema` 必须是 `https://json-schema.org/draft/2020-12/schema`，不写或写成别的 draft 都算不合格。
-- 支持给 App 生成控件的类型只有：`boolean`、`integer`、`number`、`string`、字符串的 `enum`，以及
-  `array` + `items.enum` 的多选。长度、范围和模式照常被校验，控件只是尽量照着长。
+
+原生控件子集如下，`type` 必须是单个字符串，不能写联合类型：
+
+| 属性 Schema | 原生控件 | 可选约束 |
+| --- | --- | --- |
+| `type: boolean` | 开关 | `default` |
+| `type: integer` | 整数输入 | `minimum`、`maximum`、`default` |
+| `type: number` | 小数输入 | `minimum`、`maximum`、`default` |
+| `type: string`，没有 `enum` | 文本框 | `minLength`、`maxLength`、`pattern`、`default` |
+| `type: string`，`enum` 全为字符串 | 单选 | `default`、`x-wonton-enum-titles` |
+| `type: array`，`items.type: string`，`items.enum` 全为字符串 | 多选 | `uniqueItems: true`（必需）、`default`、`x-wonton-enum-titles` |
+
+根只用 `$schema`、`type`、`properties`、`required`、`additionalProperties: false` 和 `x-wonton-order`。
+属性除表中的类型与约束，只能加 `x-wonton-title`、`x-wonton-description`；选项标题放在该属性的 `x-wonton-enum-titles`。
+`object`、嵌套数组、无字符串枚举的数组、非字符串枚举、`null`、`const`、`oneOf`/`anyOf`/`allOf`、`$ref`、
+`$dynamicRef` 和其他超出上表的写法均拒绝，不默默忽略。任何子 Schema 的敏感标记仍按敏感项拒绝。
+
 - 敏感项不留在设置里：属性带 `writeOnly: true`、`format: "password"` 或 `x-wonton-secret: true` 时算错误（见
   “敏感项”）。
 - 属性名不得和 `x-wonton.secrets` 里的名字重复：同一个东西两头都能填，会分不清哪边生效。
@@ -98,7 +120,7 @@ Schema 自己在校验值之前先校验一遍：能解析、`$schema` 是 2020-
 ### 怎么交给插件
 
 核心提供 Compose 插值变量 `WONTON_SETTING_<属性名大写>`。字符串原样；布尔是 `true`/`false`；整数和数字是十进制；
-数组和对象用 JSON 文本。没有值、也没有默认值时可选项统一注入空串，显式的 `false`、`[]`、`{}` 不算没值。
+多选值为 JSON 字符串数组文本，仅供插件程序读取，不让用户编辑。无值且无默认值的可选项注入空串，显式 `false`、`[]` 不算没值。
 
 变量不会自动进入容器环境，插件在服务的 `environment`、命令或 `configs` 内容里显式引用。
 
@@ -116,10 +138,10 @@ Schema 自己在校验值之前先校验一遍：能解析、`$schema` 是 2020-
 
 ### 接口
 
-设置页是原生页，形状由核心按 Schema 给：字段、标题、说明、类型、范围、枚举、当前值、默认值、用到它的服务，以及校验
-问题。壳只画控件、收值、提交，不认识的新类型画成 JSON 文本编辑器。插件包只给字段的标题和说明，页面标题、保存、
-校验类别的文字在各平台的本地化资源里（ADR-0043）。
-未知控件类型用 JSON 文本控件；未知值类型只显示不支持、禁止提交，不把无法解析的值当空值清掉。
+设置页是原生页，形状由核心按受支持 Schema 子集给：字段、标题、说明、控件类型、范围、枚举、当前值、默认值、
+用到它的服务和校验问题。壳只画控件、收值、提交。插件包给字段标题和说明，其余界面文字走本地化资源（ADR-0043）。
+新核心增加的控件或值类型落到 `Other` 时，该项显示“要更新 App 才能改”，禁止提交整份表单；
+不能省略或清空该项后提交，也不给 JSON 编辑器。Schema 本身不受核心支持与旧 App 不认识新控件是两种不同情况。
 
 - `GET /_wonton/api/plugins/{id}/settings` → `PluginSettingsView`。插件没装时 404 `not_installed`；装着的版本没有
   `settings` 时 400 `unsupported`。
@@ -155,13 +177,13 @@ Schema 自己在校验值之前先校验一遍：能解析、`$schema` 是 2020-
   共用筛选，不用另写一套依赖分析。
 - **存记录**：设置属于这个插件实例，和权限、局域网开关一样，卸载时跟着走。单独目录只有一份文件，没多出任何隔离。
 - **敏感项走密钥**：见上，走已经定好的路径，App 只需按两种来源分别渲染。
-- **未知类型落到 JSON 文本**：核心先认、App 后跟。新核心加一个类型，旧 App 至少能编辑，不至于整页打不开。
+- **未知类型要求更新 App**：不把用户不认识的大括号当原生控件的替代品，也不把解析不了的值改成空值。支持子集之外的 Schema 直接拒绝。
 
 ## 代价与风险
 
 - 值明文可读，进日志和调试接口；放进去的就不该是凭据。
 - 一份设置全插件共用，Bot 服务也一样。每个 Bot 一套设置这次不做。
-- 设置页的能力取决于 App 认得的类型；复杂对象和非字符串枚举数组用 JSON 文本，错误由核心按 Schema 返回。
+- Schema 只支持原生控件子集；需要复杂对象、组合约束或其他数组的插件，应使用应用自己的设置页或调整普通设置的模型。
 - 改设置会重启用到的服务，正在进行的任务会断。
 - 校验库带来一棵依赖树；不收 `$ref` 后，公共的片段只能复制到每个属性里。
 - 升级时删掉的属性丢值，降级回去只能重填。
@@ -172,7 +194,7 @@ Schema 自己在校验值之前先校验一遍：能解析、`$schema` 是 2020-
   原生表单。
 - **值放 `configs` 的配置文件**：改一次就要重写配置、重启全部挂它的服务；一份设置被几个服务用时还会各存一份。
 - **敏感项也允许写在设置里**：多一条回显、多一套打码规则，详情页要按字段区分，存错位置的值会以明文露出来。
-- **通用 JSON 编辑器一把梭**：能跑，但没有开关、下拉和数字范围，普通用户对着大括号填设置。
+- **JSON 文本编辑器兜底**：把插件作者的 Schema 复杂度交给普通用户，不符合原生表单的目标；超出控件子集直接报包的设置 Schema 不合法。
 - **只有插件网页，没有原生页**：就是现状；装的时候还要先起容器再碰网页，Bot 装的时候更没法填。
 - **每改一项就重建全部服务**：简单，但一个预算选择会断掉目录同步和网页。
 
