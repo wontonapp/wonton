@@ -23,6 +23,24 @@ ADR-0017 定义的包摘要；包随镜像发布，首次启动不从 GitHub 取
 取包目标目录必须不存在，失败时删除本次输出，不修改其他目录。构建期命令读取 `https_proxy`（其次 `HTTPS_PROXY`）；
 运行中的核心仍只使用主人的出网代理设置。
 
+## 模型网关契约
+
+`crates/wonton-core/src/plugin/tests/model_gateway_contract/` 把消费方契约与提供方适配器分开。
+消费方只使用注入的地址、凭据和不透明的默认模型 ID；测试替身故意使用不同的命令、接口基础路径和模型 ID。
+系统网关适配器读取 `system.lock` 对应提交的包并核对摘要，执行包内声明的凭据、服务商管理命令和默认模型维护服务。
+这证明实现之间的接口约束，不改变系统插件的安装或替换规则。
+
+```sh
+cargo test -p wonton-core --lib model_gateway_contract
+cargo test -p wonton-core --lib model_gateway_contract -- --ignored
+```
+
+第一条不依赖 Docker。第二条需要 Docker、GitHub 取包及锁定的官方镜像；运行时的模型上游只在测试进程里，
+不使用真实服务商、宿主凭据或已有网关的数据。容器在独立的内部网络里，测试守卫清理本次创建的资源。
+契约覆盖模型列表、Chat Completions 与 Responses 的文本、SSE 及工具调用往返、图像消息，
+以及服务商测试不落盘、被拒不保存、断连保存但如实报错和凭据隔离、对账、吊销。
+它不验证模型回答质量，也不等同于完整 Agent 的端到端冒烟。
+
 ## 自制图标
 
 echo-bot、gpu-check 和 whoami 的 `icon.svg` 由本仓库手写绘制，不使用第三方标志，随[仓库许可](../README.md#许可)保留所有权利。
