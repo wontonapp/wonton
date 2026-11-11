@@ -11,7 +11,8 @@ struct PendingCardBanner: View {
 
     var body: some View {
         Button {
-            open(cards[0].roomId)
+            // 没有会话的卡片该去“等你确认”列表；列表页还没有，先不跳。
+            if let room = cards[0].roomId { open(room) }
         } label: {
             HStack(spacing: WontonTheme.spacing.s8) {
                 WontonIcon.notify.view(size: WontonTheme.size.iconSmall)

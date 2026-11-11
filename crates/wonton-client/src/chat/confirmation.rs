@@ -297,7 +297,7 @@ impl CardsView {
                     card.expires_at_ms,
                     PendingConfirmation {
                         id: card.id,
-                        room_id: room_id.to_owned(),
+                        room_id: Some(room_id.to_owned()),
                         title: card.title,
                         requester: card.requester,
                         expires_at_ms: card.expires_at_ms,
