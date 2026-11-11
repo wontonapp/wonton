@@ -25,9 +25,13 @@ use serde_json::{Map, Value};
 use crate::{Error, MatrixSession, MessageBody, Result};
 
 /// 保持连接的后台通知等房间密钥的上限。App 在后台没人等这几秒，密钥在同步被压住时常迟到十几秒；
-/// SDK 默认 6 秒到点就交回解不开的消息，通知里只剩一句正文缺失。推送路径不放宽：那边有系统的后台时限，
-/// 调用方另有 15 秒兜底。
-const BACKGROUND_KEY_WAIT: Duration = Duration::from_secs(15);
+/// SDK 默认 6 秒到点就交回解不开的消息，通知里只剩一句正文缺失。推送路径不放宽：那边有系统的后台时限。
+/// 比 [`BACKGROUND_FETCH_WAIT`] 短，让 SDK 自己先交出 UTD，按正常通知发出去，不落在外层超时上。
+const BACKGROUND_KEY_WAIT: Duration = Duration::from_secs(12);
+
+/// 后台通知取回消息的总时限。SDK 的通知客户端在隧道被压住时可能几次尝试都拿不到事件（内部还有 `/context`
+/// 兜底），60 秒一声不吭对后台通知太长；到点按取不到正文发出去，和推送路径的兜底同一个意思。
+const BACKGROUND_FETCH_WAIT: Duration = Duration::from_secs(20);
 
 /// 本设备的 HTTP pusher。`Debug` 不输出 pushkey：它兼作家里推送代理的凭据。
 #[derive(Clone)]
@@ -218,20 +222,53 @@ impl NotificationFetcher {
         let Ok(event) = event.deserialize() else {
             return;
         };
+        let sender = event.sender().to_owned();
         let event_id = event.event_id().to_owned();
-        match self
-            .notification(&room_id, &event_id, Some(BACKGROUND_KEY_WAIT))
-            .await
-        {
-            Ok(Some(message)) => on_notification(BackgroundNotification {
-                room_id,
-                event_id,
-                message,
-            }),
-            Ok(None) => {}
-            Err(error) => {
-                tracing::warn!(%error, "background notification: failed to fetch the event")
+        let fetched = tokio::time::timeout(
+            BACKGROUND_FETCH_WAIT,
+            self.notification(&room_id, &event_id, Some(BACKGROUND_KEY_WAIT)),
+        )
+        .await;
+        let message = match fetched {
+            Ok(Ok(Some(message))) => message,
+            // 按推送规则不该响、已撤回：不通知。
+            Ok(Ok(None)) => return,
+            Ok(Err(error)) => {
+                tracing::warn!(%error, "background notification: failed to fetch the event");
+                self.unavailable(&room_id, sender).await
             }
+            Err(_) => {
+                tracing::warn!("background notification: replying without the message content");
+                self.unavailable(&room_id, sender).await
+            }
+        };
+        on_notification(BackgroundNotification {
+            room_id,
+            event_id,
+            message,
+        });
+    }
+
+    /// 取不回正文时的占位：照实说解不开（超时和缺密钥对用户是同一句），点开还能看到时间线里的那条。
+    /// 发送者名取本机已知的成员显示名，取不到用用户 ID；`_no_sync` 是关键——这时外层时限往往已经到了、
+    /// 隧道正被压着，`get_member` 的 lazy-loading 还会发 `/members`（默认 30 秒超时），能再把占位拖慢半分钟。
+    async fn unavailable(&self, room_id: &RoomId, sender: OwnedUserId) -> Notification {
+        let sender_name = match self.client.get_room(room_id) {
+            Some(room) => room
+                .get_member_no_sync(&sender)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|member| member.display_name().map(str::to_owned)),
+            None => None,
+        }
+        .unwrap_or_else(|| sender.to_string());
+        Notification {
+            sender_name,
+            sender,
+            room_name: None,
+            body: MessageBody::Undecryptable,
+            custom: Map::new(),
         }
     }
 
