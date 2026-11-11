@@ -12,12 +12,10 @@ final class FriendsRoleUITests: XCTestCase {
         let env = ProcessInfo.processInfo.environment
         role = env["TEST_RUNNER_ROLE"] ?? ""
         try XCTSkipIf(role.isEmpty, "没给 TEST_RUNNER_ROLE")
-        guard let code = env["TEST_RUNNER_WONTON_DEV_PAIRING_CODE"], !code.isEmpty else {
-            throw XCTSkip("需要开发栈：没有 TEST_RUNNER_WONTON_DEV_PAIRING_CODE")
-        }
+        try UITestBackend.require()
         app = XCUIApplication()
-        app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = code
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        UITestBackend.passPairingCode(to: app)
         app.launch()
     }
 

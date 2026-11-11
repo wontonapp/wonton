@@ -14,7 +14,8 @@ final class InstallingRowUITests: XCTestCase {
     /// 逗号分隔的一串配对码：排队的机器上等锁很慢，最早的码可能已经过期，逐个试。
     private var pairCodes: [String] {
         let raw = ProcessInfo.processInfo.environment["PAIR_CODES"] ?? ProcessInfo.processInfo.environment["PAIR_CODE"] ?? ""
-        return raw.split(separator: ",").map(String.init)
+        let codes = raw.split(separator: ",").map(String.init)
+        return codes.isEmpty ? [UITestBackend.code].compactMap { $0 } : codes
     }
 
     override func setUpWithError() throws {
@@ -154,7 +155,7 @@ final class InstallingRowUITests: XCTestCase {
     }
 
     func testInstallRow() throws {
-        try XCTSkipIf(pairCodes.isEmpty, "需要开发栈：没有 PAIR_CODE / PAIR_CODES")
+        try XCTSkipIf(pairCodes.isEmpty, "需要开发栈：没有 PAIRING_CODE")
         pairIfNeeded()
         XCTAssertTrue(
             waitAnyButton(["Apps", "应用"], timeout: 40) != nil

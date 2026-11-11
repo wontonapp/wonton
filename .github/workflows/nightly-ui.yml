@@ -9,6 +9,9 @@ name: nightly-ui
 #
 # 安卓托管机器的模拟器跑不了 ARM 的 .so，构建传 -Pwonton.abis=x86_64。
 on:
+  # 临时：新工作流要先在默认分支上存在才能手动触发，验完删。
+  pull_request:
+    types: [opened, synchronize]
   schedule:
     - cron: "30 4 * * *"
     - cron: "0 4 * * *"
@@ -42,7 +45,7 @@ jobs:
     env:
       XCODEGEN_VERSION: "2.46.0"
       # 要后端的走屏（好友、粘贴、安装行、图片查看、Bot 资料）读这两个变量；没有就 XCTSkip。
-      WONTON_DEV_PAIRING_CODE: ${{ inputs.pairing_code }}
+      PAIRING_CODE: ${{ inputs.pairing_code }}
       PAIR_CODES: ${{ inputs.pairing_code }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
