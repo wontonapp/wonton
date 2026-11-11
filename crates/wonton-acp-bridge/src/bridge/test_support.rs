@@ -28,11 +28,22 @@ use crate::room::Room;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     MainText(String),
-    ThreadText { root: String, text: String },
+    ThreadText {
+        root: String,
+        text: String,
+    },
     Notice(String),
-    ThreadMention { root: String, text: String },
-    ThreadNotice { root: String, text: String },
+    ThreadMention {
+        root: String,
+        text: String,
+    },
+    ThreadNotice {
+        root: String,
+        text: String,
+    },
     Typing(bool),
+    /// 重发了被拒收的消息。
+    ResendRefused,
     Redact(String),
     State(String),
 }
@@ -95,7 +106,10 @@ impl FakeRoom {
                 Effect::ThreadText { text, .. }
                 | Effect::ThreadMention { text, .. }
                 | Effect::ThreadNotice { text, .. } => Some(text),
-                Effect::Typing(_) | Effect::Redact(_) | Effect::State(_) => None,
+                Effect::Typing(_)
+                | Effect::ResendRefused
+                | Effect::Redact(_)
+                | Effect::State(_) => None,
             })
             .collect()
     }
@@ -203,6 +217,11 @@ impl Room for FakeRoom {
     async fn typing(&self, typing: bool) -> Result<()> {
         self.record(Effect::Typing(typing));
         Ok(())
+    }
+
+    async fn resend_refused(&self) -> Result<usize> {
+        self.record(Effect::ResendRefused);
+        Ok(1)
     }
 
     async fn redact(&self, event_id: &str, _reason: &str) -> Result<()> {
@@ -377,6 +396,17 @@ pub fn owner_message_at(
         read_by: Vec::new(),
         reply: None,
         can_redact: false,
+    }
+}
+
+/// Bot 自己发的一条消息，`status` 是它现在的发送状态。
+pub fn own_message(text: &str, status: SendStatus) -> Message {
+    Message {
+        event_id: None,
+        sender: "@bot:example.org".parse::<OwnedUserId>().unwrap(),
+        is_own: true,
+        status,
+        ..owner_message("$unused", text, None)
     }
 }
 

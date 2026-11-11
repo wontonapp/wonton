@@ -156,3 +156,9 @@ panel-pin-not-there = 這個頁面沒有釘在面板上
 
 # MCP Apps 界面里的调用在卡片上把调用方写成主人。
 mcp-app-owner = 你
+
+# 跳數到頂（ADR-0045）：幾個 Bot 在一個房間裡來回說得太多，閘道停下了。
+chat-card-hop-limit-title = { $bots } 來回說了 { $hops } 次，已停下
+chat-choice-hop-limit-continue = 繼續
+chat-choice-hop-limit-stay = 先停著
+chat-hop-limit-resumed = 已繼續
