@@ -11,7 +11,7 @@ mod store;
 mod stream;
 mod upload;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -22,7 +22,8 @@ use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
 use wonton_protocol::{
     Action, CoreError, FileCard, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
-    HomeStatus, HomeViewModel, TransferDirection, TransferState, TransfersViewModel, UploadSource,
+    FileSource, HomeStatus, HomeViewModel, TransferDirection, TransferState, TransfersViewModel,
+    UploadSource,
 };
 
 use crate::chat::ChatLink;
@@ -55,6 +56,10 @@ pub(crate) struct FilesLink {
     uploads: Arc<Semaphore>,
     downloads: Arc<Semaphore>,
     cards: Mutex<HashMap<FileId, (Instant, FileInfo)>>,
+    /// 卡片问过核心、服务器上的内容和手机上这份对不上的编号：卡片不再让直接打开，给重新下载。
+    stale: Mutex<HashSet<FileId>>,
+    /// 上次对着服务器核对手机这份是什么时候：卡片常被重新取，核对最多隔 [`CARD_TTL`] 一次。
+    checked: Mutex<HashMap<FileId, Instant>>,
     stream: StreamServer,
 }
 
@@ -99,6 +104,8 @@ impl FilesLink {
             uploads: Arc::new(Semaphore::new(MAX_PER_DIRECTION)),
             downloads: Arc::new(Semaphore::new(MAX_PER_DIRECTION)),
             cards: Mutex::new(HashMap::new()),
+            stale: Mutex::new(HashSet::new()),
+            checked: Mutex::new(HashMap::new()),
             stream: StreamServer::new(),
         });
         runtime.spawn(follow_home(Arc::downgrade(&link), home.subscribe()));
@@ -150,6 +157,8 @@ impl FilesLink {
             Action::ResendFileLink { id } => self.resend_link(&id),
             Action::DeleteFile { id } => {
                 lock(&self.cards).remove(&id);
+                lock(&self.stale).remove(&id);
+                lock(&self.checked).remove(&id);
                 self.operate(FileOperation::Delete, id, |api, id| async move {
                     api.delete(&id).await
                 });
@@ -200,6 +209,7 @@ impl FilesLink {
             server: self.current_server()?,
             name,
             file: None,
+            source: None,
             transferred_bytes: 0,
             total_bytes: None,
             state: TransferState::Running,
@@ -243,15 +253,21 @@ impl FilesLink {
         for old in same_file {
             self.store.remove(&old.id);
         }
+        // 旧名字的文件没有入口（服务器上的文件改过名），里面没人认领的东西一起清掉；半截的也从头来。
+        self.remove_download_dir(&id)?;
+        lock(&self.stale).remove(&id);
+        lock(&self.checked).remove(&id);
         // 名字问到之前先用卡片上的，卡片没取过就显示编号。
-        let name = lock(&self.cards)
-            .get(&id)
-            .map_or_else(|| id.to_string(), |(_, info)| info.name.clone());
+        let cached = lock(&self.cards).get(&id).map(|(_, info)| info.clone());
+        let name = cached
+            .as_ref()
+            .map_or_else(|| id.to_string(), |info| info.name.clone());
         self.start(Record {
             id: local_id(),
             server,
             name,
             file: Some(id),
+            source: cached.map(|info| info.source),
             transferred_bytes: 0,
             total_bytes: None,
             state: TransferState::Running,
@@ -409,7 +425,13 @@ impl FilesLink {
                 }
             }
             (Job::Upload { .. }, None) => {}
-            (Job::Download { path, .. }, _) => self.remove_part(path.as_deref()),
+            // 下载的东西都在 downloads/<编号>/ 里：半截的、改名前留下的，连目录一起删。
+            (Job::Download { .. }, Some(file)) => {
+                if let Err(error) = self.remove_download_dir(&file) {
+                    tracing::info!(error = %error, "could not remove the download folder");
+                }
+            }
+            (Job::Download { .. }, None) => {}
         }
         Ok(())
     }
@@ -429,7 +451,7 @@ impl FilesLink {
                 "files-dismiss-transfer-running"
             )));
         }
-        let path = match &record.job {
+        match &record.job {
             Job::Upload { .. } if delete_local_file => {
                 return Err(invalid(&l10n!(
                     CATALOG,
@@ -437,23 +459,29 @@ impl FilesLink {
                     "files-dismiss-upload-source-protected"
                 )));
             }
-            Job::Upload { .. } => None,
-            Job::Download { path, .. } => path.as_deref(),
-        };
-        if delete_local_file && let Some(path) = path {
-            self.delete_local_file(path)?;
+            Job::Upload { .. } => {}
+            // 带删除的清理连目录一起删：里面可能有改名前留下的、没人认领的文件。
+            Job::Download { .. } if delete_local_file => {
+                if let Some(file) = &record.file {
+                    self.remove_download_dir(file)?;
+                }
+            }
+            // 只清记录：文件留着，半截的删掉。
+            Job::Download { path, .. } => self.remove_part(path.as_deref()),
         }
-        self.remove_part(path);
         self.store.remove(id);
         Ok(())
     }
 
-    /// 删不掉时不清记录，如实告诉主人：不然文件还占着地方，却没了入口。
-    fn delete_local_file(&self, path: &str) -> Result<(), CoreError> {
-        let path = self.downloads_dir.join(path);
-        match std::fs::remove_file(&path) {
+    /// 下载的东西都放在 `downloads/<编号>/` 里：半截的、做完的、改名前留下的。连目录一起删，里面不留没人认领的
+    /// 文件。删不掉时如实报错：接着下会把旧内容和新拼在一起。删不掉也不要紧的调用方自己记日志。
+    /// 该是目录的地方是别人放的一个文件时不算我们的没删掉：里面没有我们的东西，下载接着走，建目录时如实报错。
+    fn remove_download_dir(&self, id: &FileId) -> Result<(), CoreError> {
+        let dir = self.downloads_dir.join(id.as_str());
+        match std::fs::remove_dir_all(&dir) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotADirectory => {}
             Err(e) => {
                 return Err(CoreError::Storage {
                     reason: l10n!(
@@ -464,11 +492,6 @@ impl FilesLink {
                     ),
                 });
             }
-        }
-        if let Some(parent) = path.parent()
-            && let Err(e) = std::fs::remove_dir(parent)
-        {
-            tracing::debug!(error = %e, "could not remove the download folder");
         }
         Ok(())
     }
@@ -523,26 +546,108 @@ impl FilesLink {
         });
     }
 
-    /// 消息下面的文件卡片。做成的缓存一会儿，失败的下次再问。
+    /// 消息下面的文件卡片。做成的缓存一会儿，失败的下次再问。连不上家里的服务器时，手机上有这份文件就照常给：
+    /// 打开、分享都用不上网。
     pub(crate) async fn card(&self, id: FileId) -> FileCard {
+        // 卡片常被重新取：顺路核对一次手机上这份新不新，最多隔 [`CARD_TTL`] 一轮。
+        self.check_local_copy(&id).await;
         if let Some((at, info)) = lock(&self.cards).get(&id)
             && at.elapsed() < CARD_TTL
         {
             return FileCard::Ready { info: info.clone() };
         }
-        let fetched = match Api::connect(&self.home) {
-            Ok(api) => api.info::<FileInfo>(&id).await,
-            Err(problem) => Err(problem),
+        let failed = |problem: Problem| {
+            let (reason, message) = problem.into_parts();
+            FileCard::Failed { reason, message }
         };
-        match fetched {
-            Ok(info) => {
-                lock(&self.cards).insert(id, (Instant::now(), info.clone()));
-                FileCard::Ready { info }
+        match Api::connect(&self.home) {
+            Ok(api) => match api.info::<FileInfo>(&id).await {
+                Ok(info) => {
+                    lock(&self.cards).insert(id, (Instant::now(), info.clone()));
+                    FileCard::Ready { info }
+                }
+                Err(problem) => self.local_card(&id).unwrap_or_else(|| failed(problem)),
+            },
+            Err(problem) => self.local_card(&id).unwrap_or_else(|| failed(problem)),
+        }
+    }
+
+    /// 手机上有完整文件时给一张不依赖连接的卡片：名字和大小在下载记录里，类型问不到就空着，卡片按扩展名给按钮。
+    /// 记录清掉了（只清记录）文件也还在：下载目录里这个编号就一个文件。
+    fn local_card(&self, id: &FileId) -> Option<FileCard> {
+        match self.store.finished_download(id) {
+            Some(record) => {
+                let path = self
+                    .downloads_dir
+                    .join(download::relative_path(id, &record.name));
+                path.is_file().then(|| FileCard::Ready {
+                    info: FileInfo {
+                        id: id.clone(),
+                        name: record.name,
+                        mime_type: None,
+                        size: record.total_bytes,
+                        source: record.source.unwrap_or(FileSource::Unknown),
+                        has_thumbnail: false,
+                    },
+                })
             }
-            Err(problem) => {
-                let (reason, message) = problem.into_parts();
-                FileCard::Failed { reason, message }
+            None => {
+                let mut files = std::fs::read_dir(self.downloads_dir.join(id.as_str()))
+                    .ok()?
+                    .filter_map(|entry| entry.ok())
+                    .filter(|entry| entry.file_type().ok().is_some_and(|kind| kind.is_file()))
+                    .collect::<Vec<_>>();
+                files.sort_by_key(|entry| entry.file_name());
+                let file = files.first()?;
+                let name = file.file_name().to_string_lossy().into_owned();
+                let size = file.metadata().ok().map(|meta| meta.len());
+                Some(FileCard::Ready {
+                    info: FileInfo {
+                        id: id.clone(),
+                        name,
+                        mime_type: None,
+                        size,
+                        source: FileSource::Unknown,
+                        has_thumbnail: false,
+                    },
+                })
             }
+        }
+    }
+
+    /// 服务器上的文件改过后手机上这份就是旧的：记下来，卡片不再让直接打开，给重新下载。
+    /// 只核对做完的下载：半截文件接着下时 `If-Range` 对不上会从头来，不用管。连不上就不妄说。
+    async fn check_local_copy(&self, id: &FileId) {
+        let Some(record) = self.store.finished_download(id) else {
+            return;
+        };
+        let due = match lock(&self.checked).get(id) {
+            Some(at) => at.elapsed() >= CARD_TTL,
+            None => true,
+        };
+        if !due {
+            return;
+        }
+        let path = self
+            .downloads_dir
+            .join(download::relative_path(id, &record.name));
+        let (Some(saved), true) = (record.etag(), path.is_file()) else {
+            // 没有 ETag 就对不上，文件不在了也没得核对：不妄说旧的。
+            return;
+        };
+        lock(&self.checked).insert(id.clone(), Instant::now());
+        let Ok(api) = Api::connect(&self.home) else {
+            return;
+        };
+        let Some(etag) = api.content_etag(id).await else {
+            // 核心没答上来：不妄说。
+            return;
+        };
+        if etag == saved {
+            lock(&self.stale).remove(id);
+        } else {
+            tracing::info!(file = %id, "the file at home has changed since it was downloaded");
+            lock(&self.stale).insert(id.clone());
         }
     }
 

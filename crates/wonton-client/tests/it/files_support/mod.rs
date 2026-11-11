@@ -519,6 +519,11 @@ impl World {
         self.wait_connected().await;
     }
 
+    /// 家里的服务器没了时打开手机：连不上，正好试离线的卡片。
+    pub async fn start_phone_without_home(&mut self) {
+        self.phone = Some(open_phone(self.dir.path()));
+    }
+
     pub async fn restart_phone(&mut self) {
         self.stop_phone();
         self.start_phone().await;
