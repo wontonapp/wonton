@@ -91,6 +91,38 @@ async fn the_first_code_on_the_lan_page_makes_a_phone_the_owner_once() {
     );
 }
 
+/// 回应可能在慢中继上丢了：同一台手机拿同一个首次配对码重发，幂等地再回一次“配上”，登记表不变。
+#[tokio::test]
+async fn the_first_code_pairs_the_same_phone_again_when_it_repeats() {
+    let home = Home::start(None).await;
+    let (_, page) = lan_page(&home, LAN_HOST).await;
+    let code = reachable(code_on(&page).expect("状态页上有配对码"), &home);
+    let key = SecretKey::generate();
+    let endpoint = loopback_endpoint(key.clone()).await;
+    assert_eq!(
+        reject_reason(pair(&endpoint, &code, "Alice 的 iPhone").await.unwrap()),
+        None
+    );
+    assert_eq!(
+        reject_reason(pair(&endpoint, &code, "Alice 的 iPhone").await.unwrap()),
+        None
+    );
+    assert_eq!(home.tunnel.devices.list().len(), 1);
+    // 别的手机拿同一个码还是不行。
+    let other = loopback_endpoint(SecretKey::generate()).await;
+    assert_eq!(
+        reject_reason(pair(&other, &code, "别人的手机").await.unwrap()),
+        Some(RejectReason::Used)
+    );
+    // 吊销以后同一台手机重发也配不回来。
+    home.tunnel.devices.remove(&key.public()).unwrap();
+    assert_eq!(
+        reject_reason(pair(&endpoint, &code, "Alice 的 iPhone").await.unwrap()),
+        Some(RejectReason::Used)
+    );
+    assert!(!home.tunnel.devices.contains(&key.public()));
+}
+
 #[tokio::test]
 async fn the_lan_page_only_answers_ip_hosts() {
     let home = Home::start(None).await;
