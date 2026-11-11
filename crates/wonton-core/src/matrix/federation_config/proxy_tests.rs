@@ -36,7 +36,7 @@ const WAIT: Duration = Duration::from_secs(15);
 const HOST_NETWORK: bool = cfg!(target_os = "linux");
 
 /// 服务器名 → 对方的 endpoint ID 和地址，两个转发组件共用（核心按 `core/peers.json` 查的形状）。
-type Pairings = Arc<Mutex<BTreeMap<String, (EndpointId, EndpointAddr)>>>;
+pub(crate) type Pairings = Arc<Mutex<BTreeMap<String, (EndpointId, EndpointAddr)>>>;
 
 #[test]
 #[ignore = "需要 Docker，跑一遍约一分钟"]
@@ -124,18 +124,27 @@ fn two_installs_on_one_host_federate_through_the_core_proxy() {
 }
 
 /// 测试进程里的一台“核心”：endpoint 加联邦转发组件。
-struct Core {
-    endpoint: Endpoint,
+pub(crate) struct Core {
+    pub(crate) endpoint: Endpoint,
     forwarder: FederationForwarder,
-    proxy_port: u16,
-    paired: watch::Sender<BTreeSet<String>>,
+    pub(crate) proxy_port: u16,
+    pub(crate) paired: watch::Sender<BTreeSet<String>>,
 }
 
 impl Core {
+    /// 一台对方服务器现在的转发状态（探活结果）：测试等它变成 Connected 再动手。
+    pub(crate) fn peer_status(&self, server_name: &str) -> Option<PeerStatus> {
+        self.forwarder
+            .watch_status()
+            .borrow()
+            .get(server_name)
+            .cloned()
+    }
+
     /// 和正式的核心一样带中继：宿主上 Docker 增删网卡时 iroh 在原端口重新绑定 UDP，同进程正在起子进程
     /// （docker CLI）时子进程在 exec 前还拿着这个 fd，绑定报 AddrInUse；只有 IP 传输的 endpoint 会因此
     /// 整个关掉，有中继的只丢直连（iroh 1.4.1，Linux 上实测）。
-    async fn start(pairings: &Pairings, relays: &RelayMap) -> Self {
+    pub(crate) async fn start(pairings: &Pairings, relays: &RelayMap) -> Self {
         let endpoint = Endpoint::builder(presets::Minimal)
             .secret_key(SecretKey::generate())
             .clear_ip_transports()
@@ -171,12 +180,12 @@ impl Core {
         }
     }
 
-    fn id(&self) -> EndpointId {
+    pub(crate) fn id(&self) -> EndpointId {
         self.endpoint.addr().id
     }
 
     /// 入站：只认 `peer`，流接到本机 Tuwunel 映射出来的联邦端口。
-    fn accept_from(&self, peer: &Core, federation_port: u16) -> Router {
+    pub(crate) fn accept_from(&self, peer: &Core, federation_port: u16) -> Router {
         let protocol = FederationProtocol::new(
             Allowlist::new([peer.id()]),
             SocketAddr::from((Ipv4Addr::LOCALHOST, federation_port)),
@@ -188,19 +197,19 @@ impl Core {
 }
 
 /// 一套安装：Tuwunel 和（不用宿主网络时）自己的 Docker 网络，Drop 时删掉。
-struct Stack {
-    dir: std::path::PathBuf,
+pub(crate) struct Stack {
+    pub(crate) dir: std::path::PathBuf,
     network: Option<String>,
     container: String,
-    server_name: String,
-    registration_secret: String,
-    federation_port: u16,
-    proxy: String,
+    pub(crate) server_name: String,
+    pub(crate) registration_secret: String,
+    pub(crate) federation_port: u16,
+    pub(crate) proxy: String,
 }
 
 impl Stack {
     /// `wonton-core init` 写出安装目录，把配置里的代理地址换成测试进程里转发组件的地址。
-    fn start(dir: &Path, proxy_port: u16) -> Self {
+    pub(crate) fn start(dir: &Path, proxy_port: u16) -> Self {
         crate::install::init(dir, None).unwrap();
         let secrets = dir.join("secrets");
         let read = |name: &str| std::fs::read_to_string(secrets.join(name)).unwrap();
@@ -316,8 +325,13 @@ impl Stack {
         args
     }
 
+    /// 客户端接口的内部地址（测试kit 上客户端和联邦同一个端口）。
+    pub(crate) fn client_address(&self) -> String {
+        format!("http://127.0.0.1:{}", self.federation_port)
+    }
+
     /// 把对方放进名单并热加载（核心配对成立时做的事）。
-    fn allow(&self, peer: &str) {
+    pub(crate) fn allow(&self, peer: &str) {
         std::fs::write(
             self.dir.join("secrets/tuwunel/wonton-fed.toml"),
             super::config_toml(
@@ -331,7 +345,7 @@ impl Stack {
         docker(&["kill", "--signal", "SIGUSR1", &self.container]);
     }
 
-    fn server(&self) -> ClusterServer {
+    pub(crate) fn server(&self) -> ClusterServer {
         ClusterServer {
             name: self.container.clone(),
             address: format!("http://127.0.0.1:{}", self.federation_port),
@@ -339,7 +353,7 @@ impl Stack {
         }
     }
 
-    async fn register(&self, user: &str) -> Account {
+    pub(crate) async fn register(&self, user: &str) -> Account {
         let address = self.server().address;
         register_user(
             &HttpClient::new(),
@@ -377,7 +391,7 @@ impl Drop for Stack {
     }
 }
 
-fn docker<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> String {
+pub(crate) fn docker<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> String {
     let output = Command::new("docker")
         .args(args)
         .output()
@@ -392,7 +406,7 @@ fn docker<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> String {
 }
 
 /// 重试到成功为止，一分钟内不成功就带最后一次的错误返回。
-async fn until<F, Fut>(what: &str, mut attempt: F) -> Result<(), String>
+pub(crate) async fn until<F, Fut>(what: &str, mut attempt: F) -> Result<(), String>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<(), String>>,
@@ -410,7 +424,7 @@ where
 }
 
 /// 失败时两个转发组件看到的：对方的状态（含最近一次的错误）、出站计数和配对表里对方的地址。
-fn diagnose(a: &Core, b: &Core, pairings: &Pairings) -> String {
+pub(crate) fn diagnose(a: &Core, b: &Core, pairings: &Pairings) -> String {
     let side = |name: &str, core: &Core| {
         format!(
             "{name}（{}）：状态 {:?}，出站错误 {:?}，自己现在的地址 {:?}",

@@ -19,11 +19,11 @@ mod routing;
 pub use routing::{config_toml, is_private};
 mod files;
 #[cfg(test)]
-mod proxy_tests;
+pub(crate) mod proxy_tests;
 #[cfg(test)]
-mod routing_tests;
+pub(crate) mod routing_tests;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub(crate) use files::{allowlist_toml, blocks_toml};
 

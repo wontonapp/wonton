@@ -28,6 +28,7 @@ mod bot_activity;
 mod bot_profile;
 mod bots;
 mod confirmations;
+mod contacts;
 mod core_routes;
 mod core_upgrade;
 mod devices;
@@ -53,6 +54,7 @@ mod owner_secrets;
 mod pages;
 mod panel_pins;
 mod peers;
+mod peers_wiring;
 pub mod people_limits;
 mod plugin_scope;
 mod plugin_start;
@@ -179,6 +181,7 @@ pub struct Gateway {
     pub tusd: Option<String>,
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     pub peers: Option<Arc<crate::peers::Peers>>,
+    pub contacts: Option<Arc<crate::contacts::Contacts>>,
     friends: Option<Arc<Friends>>,
     pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
     pub sharing: Option<Arc<sharing::Sharing>>,
@@ -244,6 +247,7 @@ impl Gateway {
             tusd: None,
             upgrades: None,
             peers: None,
+            contacts: None,
             friends: None,
             federation_blocks: None,
             sharing: None,
@@ -334,11 +338,6 @@ impl Gateway {
 
     /// 接上服务器配对：`/_wonton/api/peers` 和联邦转发这才可用（ADR-0050）。没接 Matrix 的核心没有它。
     #[must_use]
-    pub fn with_peers(mut self, peers: Option<Arc<crate::peers::Peers>>) -> Self {
-        self.peers = peers;
-        self
-    }
-
     fn check_owner_token(&self, token: &str) -> bool {
         constant_time_eq(token.trim(), &self.owner_token)
     }
@@ -709,6 +708,8 @@ fn attach_proxy_credentials(
 /// 跨站请求换到会话也不认，同样 401。
 #[cfg(test)]
 mod bot_activity_tests;
+#[cfg(test)]
+mod bot_contacts_api_tests;
 #[cfg(test)]
 mod bot_profile_tests;
 #[cfg(test)]

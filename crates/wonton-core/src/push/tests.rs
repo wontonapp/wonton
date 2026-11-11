@@ -188,12 +188,13 @@ async fn a_paired_device_gets_an_encrypted_notification_without_the_message_cont
         decrypt(&push.body),
         DevicePayload {
             server: home.server.to_string(),
-            room_id: "!bot:wonton.localhost".into(),
-            event_id: "$reply-1".into(),
+            room_id: Some("!bot:wonton.localhost".into()),
+            event_id: Some("$reply-1".into()),
             sender: Some("@hermes:wonton.localhost".into()),
             sender_display_name: Some("Hermes".into()),
             room_name: Some("Hermes 主房间".into()),
             prio: Some("high".into()),
+            contact_request: None,
         },
         "设备解开后拿到房间和事件，没有正文"
     );

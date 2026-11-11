@@ -665,3 +665,5 @@ tabs-fullscreen-only-plugins = Only app pages can go full screen.
 tabs-fullscreen-none = Nothing is full screen right now.
 tabs-fullscreen-not-current = That page isn't the full-screen one.
 panel-pins-refresh-failed = Couldn't load the pages bots pinned: { $error }
+
+push-payload-no-message = The push payload has neither a message nor a contact request

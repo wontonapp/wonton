@@ -132,6 +132,15 @@ impl Devices {
             .collect()
     }
 
+    /// 主人的设备（`user` 为空的）：共享 Bot 的联系人请求、归属人定向还没有的推送都发给他们。
+    pub fn of_owner(&self) -> Vec<Device> {
+        self.lock()
+            .values()
+            .filter(|device| device.user.is_none())
+            .cloned()
+            .collect()
+    }
+
     /// 登记一台主人的设备。返回它之前是否不在表里；已经在表里时不改原来的记录。
     pub fn add(&self, id: EndpointId, name: Option<String>) -> Result<bool, DeviceError> {
         self.add_if(id, name, None, |_| true)

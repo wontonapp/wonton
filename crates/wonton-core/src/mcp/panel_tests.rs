@@ -85,6 +85,9 @@ async fn bot(plugin: &str) -> (super::test_setup::Setup, Bot, crate::matrix::fak
             invited: Default::default(),
             left: Default::default(),
             encrypted: true,
+            room_type: None,
+            creator: None,
+            invited_by: Default::default(),
         },
     );
     let b = Bot {

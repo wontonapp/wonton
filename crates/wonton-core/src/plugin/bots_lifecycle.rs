@@ -437,7 +437,7 @@ impl PluginManager {
         .flatten();
         Ok(BotVars {
             model_key,
-            matrix: Some(self.stored_matrix_vars(entry)?),
+            matrix: Some(self.stored_matrix_vars(&package.manifest.id, bot, entry)?),
             mcp_url: Some(mcp_url(self.cfg.gateway_port, &entry.bus_token)),
         })
     }

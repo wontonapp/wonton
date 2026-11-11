@@ -20,6 +20,7 @@ fn remote_contact() -> BotContact {
         remote: Some(RemoteContact {
             server_name: "def67890.wonton".into(),
             peer_status: Some(PeerStatus::Offline),
+            room_error: None,
         }),
     }
 }

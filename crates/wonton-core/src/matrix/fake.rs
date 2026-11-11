@@ -12,7 +12,7 @@ use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post, put};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -21,11 +21,13 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use wonton_protocol::AVATARS_FIELD;
 
+use super::rooms::client_router as rooms_client_router;
+
 use super::issuer::tests::verify;
 use crate::config::MatrixConfig;
 
 pub const SECRET: &str = "shared-secret";
-pub const SERVER: &str = "test";
+pub(crate) const SERVER: &str = "test";
 
 #[derive(Default)]
 pub struct User {
@@ -44,6 +46,11 @@ pub struct Room {
     /// 进过房间又退出（或被撤回邀请、停用账号）的人。
     pub left: BTreeSet<String>,
     pub encrypted: bool,
+    /// `m.room.create` 的 `type`（`creation_content.type`），联系人房间用（ADR-0050）。
+    pub room_type: Option<String>,
+    pub creator: Option<String>,
+    /// 谁邀请的：（被邀请人 → 邀请人）。
+    pub invited_by: BTreeMap<String, String>,
 }
 
 /// 假 Tuwunel 的全部状态，测试可以直接读写。
@@ -65,6 +72,12 @@ pub struct Tuwunel {
     pub sent: Vec<(String, Value)>,
     /// 为真时拒绝下一条消息（`M_FORBIDDEN`）：核对之后才被踢出去。
     pub refuse_next_send: bool,
+    /// 发出的事件（含 `m.room.message`），`/sync` 的时间线从这来。
+    pub events: Vec<RoomEvent>,
+    /// 每次房间有变化（事件、成员）加一，`/sync` 靠它等新东西。
+    pub version: u64,
+    /// 为真时 `/sync` 报错（传输断了）。
+    pub refuse_sync: bool,
     /// 为真时读写资料都失败。
     pub refuse_profile: bool,
     pub refuse_avatar_write: bool,
@@ -75,11 +88,20 @@ pub struct Tuwunel {
     pub account_data: BTreeMap<(String, String), Value>,
     /// 房间账号数据：（用户，房间，事件类型）→ 内容。
     pub room_account_data: BTreeMap<(String, String, String), Value>,
-    next: usize,
+    pub(super) next: usize,
+}
+
+/// 发进房间的一条事件，`/sync` 原样给出（发送者、类型、内容都在）。
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoomEvent {
+    pub room: String,
+    pub sender: String,
+    pub event_type: String,
+    pub content: Value,
 }
 
 impl Tuwunel {
-    fn next(&mut self, prefix: &str) -> String {
+    pub(super) fn next(&mut self, prefix: &str) -> String {
         self.next += 1;
         format!("{prefix}{}", self.next)
     }
@@ -112,26 +134,37 @@ pub struct Fake {
     state: Arc<Mutex<Tuwunel>>,
     /// 验签核心签的登录令牌用的公钥。
     pub key: Arc<DecodingKey>,
+    /// `/sync` 长轮询等的变化：`.0` 抬版本（handler 用），`.1` 等变化（sync handler 用）。
+    pub(super) sync: Arc<(
+        tokio::sync::watch::Sender<u64>,
+        tokio::sync::watch::Receiver<u64>,
+    )>,
 }
 
 impl Fake {
     pub fn state(&self) -> MutexGuard<'_, Tuwunel> {
         self.state.lock().expect("假 Tuwunel 的锁中毒")
     }
+
+    /// 房间有变化：抬版本叫醒 `/sync`。状态锁放掉之后调用。
+    pub(super) fn bump(&self) {
+        let version = self.state().version;
+        let _ = self.sync.0.send(version);
+    }
 }
 
-type Reply = (StatusCode, Json<Value>);
+pub(super) type Reply = (StatusCode, Json<Value>);
 
-fn error(status: StatusCode, errcode: &str) -> Reply {
+pub(super) fn error(status: StatusCode, errcode: &str) -> Reply {
     (status, Json(json!({"errcode": errcode, "error": errcode})))
 }
 
-fn ok(body: Value) -> Reply {
+pub(super) fn ok(body: Value) -> Reply {
     (StatusCode::OK, Json(body))
 }
 
 /// 令牌属于谁：（用户，设备）。
-fn auth(state: &Tuwunel, headers: &HeaderMap) -> Result<(String, String), Reply> {
+pub(super) fn auth(state: &Tuwunel, headers: &HeaderMap) -> Result<(String, String), Reply> {
     let token = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -153,7 +186,7 @@ fn admin(state: &Tuwunel, headers: &HeaderMap) -> Result<(), Reply> {
     }
 }
 
-fn reply(result: Result<Reply, Reply>) -> Reply {
+pub(super) fn reply(result: Result<Reply, Reply>) -> Reply {
     result.unwrap_or_else(|e| e)
 }
 
@@ -419,270 +452,6 @@ async fn download(
     ([("content-type", content_type.clone())], data.clone()).into_response()
 }
 
-async fn create_room(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Json(body): Json<Value>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).and_then(|(user, _)| {
-        if state.refuse_rooms {
-            return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
-        }
-        // 房间版本 12：建房的人不能写进 power_levels 的 users。
-        if body["power_level_content_override"]["users"]
-            .get(user.as_str())
-            .is_some()
-        {
-            return Err(error(StatusCode::BAD_REQUEST, "M_INVALID_PARAM"));
-        }
-        let encrypted = body["initial_state"].as_array().is_some_and(|events| {
-            events.iter().any(|e| {
-                e["type"] == "m.room.encryption"
-                    && e["content"]["algorithm"] == "m.megolm.v1.aes-sha2"
-            })
-        });
-        let invited = body["invite"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|u| u.as_str().map(str::to_owned))
-            .collect();
-        let id = format!("!{}:{SERVER}", state.next("room"));
-        let room = Room {
-            members: BTreeSet::from([user]),
-            invited,
-            encrypted,
-            ..Room::default()
-        };
-        state.rooms.insert(id.clone(), room);
-        Ok(ok(json!({"room_id": id})))
-    }))
-}
-
-/// 加入、退出、邀请和撤回邀请（`kick`）。
-async fn membership(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((room, action)): Path<(String, String)>,
-    body: Option<Json<Value>>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).and_then(|(user, _)| {
-        let room_state = state
-            .rooms
-            .get_mut(&room)
-            .ok_or_else(|| error(StatusCode::NOT_FOUND, "M_NOT_FOUND"))?;
-        let target = body.and_then(|Json(b)| b["user_id"].as_str().map(str::to_owned));
-        let target = target.unwrap_or_default();
-        match action.as_str() {
-            "join" if room_state.invited.remove(&user) || room_state.members.contains(&user) => {
-                room_state.left.remove(&user);
-                room_state.members.insert(user);
-            }
-            "leave" => {
-                room_state.members.remove(&user);
-                room_state.left.insert(user);
-            }
-            "invite"
-                if room_state.members.contains(&user) && !room_state.members.contains(&target) =>
-            {
-                room_state.left.remove(&target);
-                room_state.invited.insert(target);
-            }
-            "kick" if room_state.members.contains(&user) => {
-                room_state.invited.remove(&target);
-                room_state.members.remove(&target);
-                room_state.left.insert(target);
-            }
-            _ => return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN")),
-        }
-        Ok(ok(json!({"room_id": room})))
-    }))
-}
-
-/// 不在房间里时发不了。
-async fn send_message(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((room, _txn)): Path<(String, String)>,
-    Json(content): Json<Value>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).and_then(|(user, _)| {
-        let room_state = state
-            .rooms
-            .get(&room)
-            .ok_or_else(|| error(StatusCode::NOT_FOUND, "M_NOT_FOUND"))?;
-        if !room_state.members.contains(&user) || std::mem::take(&mut state.refuse_next_send) {
-            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
-        }
-        let event = format!("$event{}", state.sent.len());
-        state.sent.push((room.clone(), content));
-        Ok(ok(json!({"event_id": event})))
-    }))
-}
-
-/// 房间成员才能查别人的成员状态；从来没进过房间的人没有这个状态事件（404）。
-async fn member_state(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((room, target)): Path<(String, String)>,
-) -> Reply {
-    let state = fake.state();
-    reply(auth(&state, &headers).and_then(|(user, _)| {
-        let room = state
-            .rooms
-            .get(&room)
-            .filter(|r| r.members.contains(&user))
-            .ok_or_else(|| error(StatusCode::FORBIDDEN, "M_FORBIDDEN"))?;
-        let membership = if room.members.contains(&target) {
-            "join"
-        } else if room.invited.contains(&target) {
-            "invite"
-        } else if room.left.contains(&target) {
-            "leave"
-        } else {
-            return Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND"));
-        };
-        Ok(ok(json!({"membership": membership})))
-    }))
-}
-
-async fn join(state: State<Fake>, headers: HeaderMap, Path(room): Path<String>) -> Reply {
-    membership(state, headers, Path((room, "join".to_owned())), None).await
-}
-
-async fn joined_members(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path(room): Path<String>,
-) -> Reply {
-    let state = fake.state();
-    reply(auth(&state, &headers).and_then(|(user, _)| {
-        let room = state
-            .rooms
-            .get(&room)
-            .filter(|r| r.members.contains(&user))
-            .ok_or_else(|| error(StatusCode::FORBIDDEN, "M_FORBIDDEN"))?;
-        let joined: serde_json::Map<String, Value> = room
-            .members
-            .iter()
-            .map(|m| (m.clone(), json!({})))
-            .collect();
-        Ok(ok(json!({"joined": joined})))
-    }))
-}
-
-async fn get_account_data(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, event)): Path<(String, String)>,
-) -> Reply {
-    let state = fake.state();
-    reply(auth(&state, &headers).and_then(|(caller, _)| {
-        if caller != user {
-            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
-        }
-        match state
-            .account_data
-            .get(&(user.clone(), event.clone()))
-            .cloned()
-        {
-            Some(value) => Ok(ok(value)),
-            None => Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND")),
-        }
-    }))
-}
-
-async fn put_account_data(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, event)): Path<(String, String)>,
-    Json(body): Json<Value>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).map(|(caller, _)| {
-        if caller == user {
-            state.account_data.insert((user, event), body);
-            ok(json!({}))
-        } else {
-            error(StatusCode::FORBIDDEN, "M_FORBIDDEN")
-        }
-    }))
-}
-
-async fn get_room_account_data(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, room, event)): Path<(String, String, String)>,
-) -> Reply {
-    let state = fake.state();
-    reply(auth(&state, &headers).and_then(|(caller, _)| {
-        if caller != user {
-            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
-        }
-        match state
-            .room_account_data
-            .get(&(user.clone(), room.clone(), event.clone()))
-            .cloned()
-        {
-            Some(value) => Ok(ok(value)),
-            None => Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND")),
-        }
-    }))
-}
-
-async fn put_room_account_data(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, room, event)): Path<(String, String, String)>,
-    Json(body): Json<Value>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).map(|(caller, _)| {
-        if caller == user {
-            state.room_account_data.insert((user, room, event), body);
-            ok(json!({}))
-        } else {
-            error(StatusCode::FORBIDDEN, "M_FORBIDDEN")
-        }
-    }))
-}
-
-async fn get_direct(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path(user): Path<String>,
-) -> Reply {
-    let state = fake.state();
-    reply(auth(&state, &headers).and_then(|(caller, _)| {
-        let direct = state.users.get(&user).and_then(|u| u.direct.clone());
-        match direct {
-            Some(direct) if caller == user => Ok(ok(direct)),
-            _ if caller != user => Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN")),
-            _ => Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND")),
-        }
-    }))
-}
-
-async fn put_direct(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path(user): Path<String>,
-    Json(body): Json<Value>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).and_then(|(caller, _)| {
-        if caller != user {
-            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
-        }
-        state.users.entry(user).or_default().direct = Some(body);
-        Ok(ok(json!({})))
-    }))
-}
-
-/// 起一个假 Tuwunel，返回它和一份指向它的配置（签发私钥是新生成的）。
 pub async fn start() -> (Fake, MatrixConfig) {
     let pair = Ed25519KeyPair::generate().unwrap();
     let der = pair.to_pkcs8().unwrap();
@@ -690,9 +459,26 @@ pub async fn start() -> (Fake, MatrixConfig) {
     let fake = Fake {
         state: Arc::default(),
         key: Arc::new(DecodingKey::from_ed_der(public.as_ref())),
+        sync: Arc::new(tokio::sync::watch::channel(0u64)),
     };
-    let client = "/_matrix/client/v3";
-    let app = Router::new()
+    let app = client_router(&fake, "/_matrix/client/v3")
+        .merge(rooms_client_router(&fake, "/_matrix/client/v3"));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let body = STANDARD.encode(der.as_ref());
+    let config = MatrixConfig {
+        url: format!("http://{addr}"),
+        server_name: SERVER.into(),
+        jwt_key: format!("-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----\n"),
+        registration_secret: SECRET.into(),
+    };
+    (fake, config)
+}
+
+/// 假 Tuwunel 的账号、资料、媒体和管理接口；房间和账号数据那半在 [`super::rooms::client_router`]。
+fn client_router(fake: &Fake, client: &str) -> Router<()> {
+    Router::new()
         .route(
             "/_matrix/client/versions",
             get(|| async { Json(json!({"versions": ["v1.11"]})) }),
@@ -723,36 +509,6 @@ pub async fn start() -> (Fake, MatrixConfig) {
             "/_matrix/client/v1/media/download/{server}/{id}",
             get(download),
         )
-        .route(&format!("{client}/createRoom"), post(create_room))
-        .route(&format!("{client}/join/{{room}}"), post(join))
-        .route(
-            &format!("{client}/rooms/{{room}}/joined_members"),
-            get(joined_members),
-        )
-        .route(
-            &format!("{client}/rooms/{{room}}/{{action}}"),
-            post(membership),
-        )
-        .route(
-            &format!("{client}/rooms/{{room}}/send/m.room.message/{{txn}}"),
-            put(send_message),
-        )
-        .route(
-            &format!("{client}/rooms/{{room}}/state/m.room.member/{{user}}"),
-            get(member_state),
-        )
-        .route(
-            &format!("{client}/user/{{user}}/account_data/m.direct"),
-            get(get_direct).put(put_direct),
-        )
-        .route(
-            &format!("{client}/user/{{user}}/account_data/{{event}}"),
-            get(get_account_data).put(put_account_data),
-        )
-        .route(
-            &format!("{client}/user/{{user}}/rooms/{{room}}/account_data/{{event}}"),
-            get(get_room_account_data).put(put_room_account_data),
-        )
         // 注册 pusher：回显收到的请求体（原文和解析结果），测试据此确认网关转过来的就是它检查过的那一份。
         .route(
             &format!("{client}/pushers/set"),
@@ -766,16 +522,5 @@ pub async fn start() -> (Fake, MatrixConfig) {
             let body = json!({"errcode": "M_UNRECOGNIZED", "path": uri.path()});
             (StatusCode::NOT_FOUND, Json(body))
         })
-        .with_state(fake.clone());
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let body = STANDARD.encode(der.as_ref());
-    let config = MatrixConfig {
-        url: format!("http://{addr}"),
-        server_name: SERVER.into(),
-        jwt_key: format!("-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----\n"),
-        registration_secret: SECRET.into(),
-    };
-    (fake, config)
+        .with_state(fake.clone())
 }

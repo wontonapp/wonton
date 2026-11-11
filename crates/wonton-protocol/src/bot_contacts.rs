@@ -87,6 +87,11 @@ pub struct RemoteContact {
     pub server_name: String,
     /// 和那台服务器的配对状态，壳按它说明消息为什么过不去；配对已经移除时为空（ADR-0050 状态表的“没配对”）。
     pub peer_status: Option<PeerStatus>,
+    /// 联系人房间还没通（建房或邀请进行不下去）时的原因，壳按类别写“消息可能过不去”；通了或还在
+    /// 被动等对方建房时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub room_error: Option<ContactError>,
 }
 
 /// 联系人是 Bot 还是人，决定请求怎么走、谁同意（ADR-0050）。由发起的归属人选，核心不去对方那里查。

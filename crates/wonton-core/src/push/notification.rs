@@ -1,6 +1,7 @@
 //! Tuwunel 发来的通知（Matrix Push Gateway API v1 的 `POST /_matrix/push/v1/notify`），和加密后发给设备的明文。
 
 use serde::{Deserialize, Serialize};
+use wonton_protocol::ContactRequestPush;
 
 /// 推送网关请求的请求体。只解析用得到的字段：完整格式里还有消息正文（`content`），推送代理不读、不转发。
 #[derive(Debug, Deserialize)]
@@ -37,8 +38,11 @@ pub struct NotifyResponse {
 pub struct DevicePayload {
     /// 发推送的这台服务器的 endpoint ID（配对码里的那个）：手机配了多台服务器，靠它知道该连哪台去取消息。
     pub server: String,
-    pub room_id: String,
-    pub event_id: String,
+    /// 消息通知有房间和事件；联系人请求的推送没有（ADR-0050），这两项不出现。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sender: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,19 +51,24 @@ pub struct DevicePayload {
     pub room_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prio: Option<String>,
+    /// 这条通知是新的联系人请求时才有；不对应房间里的消息，App 直接显示，不去取消息（ADR-0050）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_request: Option<ContactRequestPush>,
 }
 
 impl Notification {
-    /// 要转发给设备的内容；只有计数、没有事件的通知不转发。
+    /// 要转发给设备的内容；只有计数、没有事件的通知不转发（App 不靠它更新什么，转发只会白白唤醒手机）。
     pub fn payload(&self, server: &str) -> Option<DevicePayload> {
-        Some(DevicePayload {
+        let carries_event = self.room_id.is_some() && self.event_id.is_some();
+        carries_event.then(|| DevicePayload {
             server: server.to_owned(),
-            room_id: self.room_id.clone()?,
-            event_id: self.event_id.clone()?,
+            room_id: self.room_id.clone(),
+            event_id: self.event_id.clone(),
             sender: self.sender.clone(),
             sender_display_name: self.sender_display_name.clone(),
             room_name: self.room_name.clone(),
             prio: self.prio.clone(),
+            contact_request: None,
         })
     }
 
@@ -84,18 +93,34 @@ mod tests {
     fn device_payload_fields_match_the_documented_contract() {
         let payload = DevicePayload {
             server: "server-endpoint-id".into(),
-            room_id: "!bot:wonton.localhost".into(),
-            event_id: "$reply".into(),
+            room_id: Some("!bot:wonton.localhost".into()),
+            event_id: Some("$reply".into()),
             sender: Some("@hermes:wonton.localhost".into()),
             sender_display_name: Some("Hermes".into()),
             room_name: None,
             prio: Some("high".into()),
+            contact_request: None,
         };
         assert_eq!(
             serde_json::to_value(&payload).unwrap(),
             json!({
                 "server": "server-endpoint-id",
                 "room_id": "!bot:wonton.localhost",
+                "event_id": "$reply",
+                "sender": "@hermes:wonton.localhost",
+                "sender_display_name": "Hermes",
+                "prio": "high",
+            })
+        );
+        // 没有房间的通知（如推送代理的测试通知）不带 room_id 字段。
+        let no_room = DevicePayload {
+            room_id: None,
+            ..payload
+        };
+        assert_eq!(
+            serde_json::to_value(&no_room).unwrap(),
+            json!({
+                "server": "server-endpoint-id",
                 "event_id": "$reply",
                 "sender": "@hermes:wonton.localhost",
                 "sender_display_name": "Hermes",

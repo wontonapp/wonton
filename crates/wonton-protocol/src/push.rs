@@ -120,6 +120,9 @@ pub enum PushContent {
     Message { summary: MessageSummary },
     /// 有人邀请主人加入这个房间。
     Invite,
+    /// 新的联系人请求，正文在 [`PushNotification::contact_request`]（ADR-0050）。通知不对应房间里的
+    /// 消息；归属人没登记设备时核心不发这条推送，请求照样进“等你确认”。
+    ContactRequest,
     /// 取不到正文（隧道连不上、还没收到房间密钥等），照实说明，不显示成正常的消息。`message` 是给日志和“详情”
     /// 的原因，通知上的文字由壳按 `reason` 写。
     Unavailable {

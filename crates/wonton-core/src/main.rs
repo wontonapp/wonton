@@ -360,7 +360,26 @@ async fn serve() -> anyhow::Result<()> {
             notices.clone(),
         )?;
     }
-    let push = open_push(&cfg, &tunnel, &manager)?;
+    let push = Arc::new(open_push(&cfg, &tunnel, &manager)?);
+    // Bot 联系人（ADR-0045、ADR-0050）：同机管理接口、跨机经核心账号的房间、收件循环。没接 Matrix 的核心没有。
+    let contacts = match (&peers, &matrix) {
+        (Some(peers), Some(matrix)) => {
+            let contacts = wonton_core::contacts::Contacts::open(
+                cfg.core_state_dir().join("contacts.json"),
+                peers.clone(),
+            )
+            .context("读取 Bot 联系人记录")?
+            .with_matrix(matrix.clone())
+            .with_bots(Arc::new(manager.clone()) as Arc<dyn wonton_core::contacts::BotDirectory>)
+            // ContactPush 在 Arc<Push> 上：发送是后台任务，要把句柄整个搬进去。
+            .with_push(Arc::new(push.clone()) as Arc<dyn wonton_core::contacts::ContactPush>);
+            manager.attach_contacts(contacts.clone());
+            bus.attach_contacts(contacts.clone());
+            wonton_core::contacts::exchange::spawn(&contacts);
+            Some(contacts)
+        }
+        _ => None,
+    };
     let upgrades_after_serve = upgrades.clone();
     let gateway = Arc::new(
         Gateway::new(
@@ -379,7 +398,7 @@ async fn serve() -> anyhow::Result<()> {
         .with_people_limiter(Arc::new(gateway::people_limits::PeopleLimiter::new(
             cfg.people_limits,
         )))
-        .with_push(Some(Arc::new(push)))
+        .with_push(Some(push.clone()))
         .with_mcp(Some(bus.endpoint()))
         .with_notices(notices.clone())
         .with_files(Some(files))
@@ -387,6 +406,7 @@ async fn serve() -> anyhow::Result<()> {
         .with_tusd(cfg.tusd.clone())
         .with_upgrades(Some(upgrades))
         .with_peers(peers.clone())
+        .with_contacts(contacts.clone())
         .with_friends(Some(friends))
         .with_federation_blocks(federation_blocks)
         .with_sharing(Some(sharing)),

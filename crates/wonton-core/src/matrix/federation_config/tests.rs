@@ -245,10 +245,10 @@ async fn expect_invite_accepted(cluster: &Cluster, inviter: &Account, room: &str
 }
 
 /// 一台测试用的 Tuwunel：容器名、映射出来的地址、挂进去的名单文件。
-pub(super) struct ClusterServer {
-    pub(super) name: String,
-    pub(super) address: String,
-    pub(super) fed_path: Option<std::path::PathBuf>,
+pub(crate) struct ClusterServer {
+    pub(crate) name: String,
+    pub(crate) address: String,
+    pub(crate) fed_path: Option<std::path::PathBuf>,
 }
 
 /// 一组测试容器和它们的专用网络，Drop 时全部删掉。
@@ -378,7 +378,7 @@ impl Drop for Cluster {
     }
 }
 
-pub(super) async fn wait_ready(base: &str) {
+pub(crate) async fn wait_ready(base: &str) {
     let http = HttpClient::new();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     while std::time::Instant::now() < deadline {
@@ -450,12 +450,12 @@ pub(super) async fn register_user(
     }
 }
 
-pub(super) struct Account {
-    pub(super) token: String,
-    pub(super) user_id: String,
+pub(crate) struct Account {
+    pub(crate) token: String,
+    pub(crate) user_id: String,
 }
 
-pub(super) async fn create_room(server: &ClusterServer, account: &Account) -> String {
+pub(crate) async fn create_room(server: &ClusterServer, account: &Account) -> String {
     let http = HttpClient::new();
     let (_, value) = http
         .request_json(
@@ -471,7 +471,7 @@ pub(super) async fn create_room(server: &ClusterServer, account: &Account) -> St
 }
 
 /// 邀请；被本机名单拒绝时返回带原因的错误（同步 403）。
-pub(super) async fn invite(
+pub(crate) async fn invite(
     server: &ClusterServer,
     account: &Account,
     room: &str,
@@ -498,7 +498,7 @@ pub(super) async fn invite(
 }
 
 /// 对端用户接受邀请并加入：跨机握手走通的唯一客户端可见证据。
-pub(super) async fn join(server: &ClusterServer, token: &str, room: &str) -> Result<(), String> {
+pub(crate) async fn join(server: &ClusterServer, token: &str, room: &str) -> Result<(), String> {
     let http = HttpClient::new();
     // 同步拿到邀请，再加入。
     let (_, value) = http

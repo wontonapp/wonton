@@ -123,6 +123,8 @@ pub struct PluginManager {
     pub(super) sharing:
         std::sync::OnceLock<(Arc<crate::friends::Friends>, Arc<crate::shares::Shares>)>,
     pub(super) person_members: std::sync::OnceLock<Arc<crate::members::Members>>,
+    /// 联系人表：`WONTON_MATRIX_ALLOWED_USERS` 的名单按它算（ADR-0045、ADR-0050）。
+    pub(super) contacts: std::sync::OnceLock<Arc<crate::contacts::Contacts>>,
 }
 
 pub(super) use super::grant::{check_permissions, supported};
@@ -196,6 +198,7 @@ impl PluginManager {
             people_writes: std::sync::Mutex::new(()),
             sharing: std::sync::OnceLock::new(),
             person_members: std::sync::OnceLock::new(),
+            contacts: std::sync::OnceLock::new(),
         }
     }
 

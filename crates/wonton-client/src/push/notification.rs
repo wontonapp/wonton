@@ -28,15 +28,18 @@ const SESSION_WAIT: Duration = Duration::from_secs(12);
 const FETCH_WAIT: Duration = Duration::from_secs(15);
 
 /// 推送解开后的明文，字段同核心的 `DevicePayload`（核心有契约测试锁住字段名）。
+/// 联系人请求的推送没有房间和事件，带 `contact_request` 段（ADR-0050）。
 #[derive(Clone, Deserialize)]
 pub(crate) struct Payload {
     /// 发推送的服务器的 endpoint ID。
     pub(crate) server: String,
-    room_id: String,
-    event_id: String,
+    room_id: Option<String>,
+    event_id: Option<String>,
     sender: Option<String>,
     sender_display_name: Option<String>,
     room_name: Option<String>,
+    #[serde(default)]
+    pub(crate) contact_request: Option<wonton_protocol::ContactRequestPush>,
 }
 
 impl Payload {
@@ -57,8 +60,8 @@ impl Payload {
         PushNotification {
             // 槽位由 `ClientCore` 填：推送这一层不知道自己属于哪个槽位。
             server_id: None,
-            room_id: self.room_id.clone(),
-            event_id: self.event_id.clone(),
+            room_id: self.room_id.clone().unwrap_or_default(),
+            event_id: self.event_id.clone().unwrap_or_default(),
             sender: self
                 .sender_display_name
                 .clone()
@@ -79,7 +82,28 @@ impl PushLink {
         payload: &Payload,
     ) -> Result<Option<PushNotification>, CoreError> {
         let started = Instant::now();
-        let room_id = payload.room_id.parse::<OwnedRoomId>().map_err(|e| {
+        // 新的联系人请求不对应房间里的消息（ADR-0050）：解开就显示，不连聊天、不取消息。
+        if let Some(request) = &payload.contact_request {
+            return Ok(Some(PushNotification {
+                server_id: Some(payload.server.clone()),
+                room_id: String::new(),
+                event_id: String::new(),
+                sender: request.display_name.clone(),
+                room_name: None,
+                content: PushContent::ContactRequest,
+                category: NotificationCategory::Confirmation,
+                confirmation: None,
+                contact_request: Some(request.clone()),
+            }));
+        }
+        let Some(room_id) = payload.room_id.as_deref().map(str::to_owned) else {
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "push-payload-no-message"
+            )));
+        };
+        let room_id = room_id.parse::<OwnedRoomId>().map_err(|e| {
             invalid(&l10n!(
                 CATALOG,
                 language(),
@@ -87,7 +111,14 @@ impl PushLink {
                 reason = e.to_string()
             ))
         })?;
-        let event_id = payload.event_id.parse::<OwnedEventId>().map_err(|e| {
+        let Some(event_id) = payload.event_id.as_deref().map(str::to_owned) else {
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "push-payload-no-message"
+            )));
+        };
+        let event_id = event_id.parse::<OwnedEventId>().map_err(|e| {
             invalid(&l10n!(
                 CATALOG,
                 language(),

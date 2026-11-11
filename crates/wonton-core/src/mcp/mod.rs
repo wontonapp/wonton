@@ -10,6 +10,7 @@ mod authoring_tools;
 mod bounded_http;
 mod cards;
 mod confirm;
+mod contacts_gate;
 mod core_tools;
 mod file_results;
 mod file_tools;
@@ -103,6 +104,8 @@ pub struct Bus {
     people: OnceLock<People>,
     /// Matrix 和主人：Bot 钉进主面板的同意卡片要发进 Bot 的房间里（[`Bus::attach_matrix`]）。
     matrix: OnceLock<Cards>,
+    /// 联系人表：有 Active 远端联系人的 Bot 不给插件工具（ADR-0050）。
+    contacts: OnceLock<Arc<crate::contacts::Contacts>>,
     /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
     pin_cards: Mutex<HashSet<PluginId>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
@@ -137,6 +140,7 @@ impl Bus {
             help: OnceLock::new(),
             people: OnceLock::new(),
             matrix: OnceLock::new(),
+            contacts: OnceLock::new(),
             pin_cards: Mutex::new(HashSet::new()),
             peers: Mutex::new(Vec::new()),
         });
@@ -308,7 +312,11 @@ impl Bus {
 
     /// 调用方能看到的工具：核心自己的，加上所有在运行的插件的。并发地问，一个插件卡住挡不住别的（每个插件有期限，见
     /// [`Upstreams::tools`]）。列不出工具的插件记一条警告后跳过，它的工具这时本来也调不通。
+    /// 有 Active 远端联系人的 Bot 只看到核心的只读工具（ADR-0050）。
     async fn tools(&self, caller: &Caller) -> Vec<Tool> {
+        if self.remote_contact_blocked(caller) {
+            return core_tools::readonly_definitions();
+        }
         let servers = self.plugins.mcp_servers();
         let listed = servers.iter().map(|server| self.upstreams.tools(server));
         let listed = futures_util::future::join_all(listed).await;
@@ -345,7 +353,17 @@ impl Bus {
             );
         };
         if owner == naming::CORE {
+            // 有 Active 远端联系人的 Bot：核心工具只留只读的（ADR-0050），插件工具全挡（下面）。
+            if self.remote_contact_blocked(caller) && !core_tools::remote_contact_allows(tool) {
+                let failure = Self::remote_contact_denial(&name);
+                return self.deny(caller, &name, &args, &failure);
+            }
             return core_tools::call(self, caller, tool, arguments, activity).await;
+        }
+        // 有 Active 远端联系人的 Bot 不给插件工具（ADR-0050）：列工具时已经藏起来，这里兜住直接调的。
+        if self.remote_contact_blocked(caller) {
+            let failure = Self::remote_contact_denial(&name);
+            return self.deny(caller, &name, &args, &failure);
         }
         let Some(server) = self
             .plugins
@@ -737,6 +755,8 @@ mod agent_install_tests;
 mod agent_permission_tests;
 #[cfg(test)]
 mod authoring_tests;
+#[cfg(test)]
+mod contacts_gate_tests;
 #[cfg(test)]
 mod file_block_tests;
 #[cfg(test)]

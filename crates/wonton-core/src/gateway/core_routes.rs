@@ -151,6 +151,14 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
         .route("/_wonton/api/images/{sha256}/{file}", get(api::image))
 }
 
+/// 路由占位里的 Bot：路径模板 `/_wonton/api/bots/{id}/{bot}/contacts`。
+fn route_bot() -> wonton_protocol::BotRef {
+    wonton_protocol::BotRef {
+        plugin_id: "{id}".to_owned(),
+        bot: "{bot}".to_owned(),
+    }
+}
+
 /// 服务器配对的管理接口（ADR-0050）。
 fn peer_routes() -> Router<Arc<Gateway>> {
     Router::new()
@@ -220,6 +228,22 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             &wonton_protocol::bot_plugin_access_path("{id}", "{bot}", "{target}"),
             put(super::plugin_scope::bot_access),
         )
+        .route(
+            &wonton_protocol::bot_contacts_path(&route_bot()),
+            get(super::contacts::list).post(super::contacts::request),
+        )
+        .route(
+            &wonton_protocol::bot_contact_path(&route_bot(), "{user_id}"),
+            delete(super::contacts::delete),
+        )
+        .route(
+            &wonton_protocol::bot_contact_approve_path(&route_bot(), "{user_id}"),
+            post(super::contacts::approve),
+        )
+        .route(
+            &wonton_protocol::bot_contact_reject_path(&route_bot(), "{user_id}"),
+            post(super::contacts::reject),
+        )
         .route(wonton_protocol::SHARED_BOTS_PATH, post(bots::create_shared))
         .route(
             "/_wonton/api/lan",
@@ -239,37 +263,13 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             post(super::registry_mirror::test),
         )
         .route(wonton_protocol::ME_PATH, get(me::read).put(me::save))
+        .merge(account_routes())
         .merge(link_preview_routes())
         .merge(member_routes())
         .merge(panel_routes())
-        .route(
-            wonton_protocol::ONBOARDING_PATH,
-            get(onboarding::get).put(onboarding::put),
-        )
-        .route(
-            wonton_protocol::CORE_UPGRADE_PATH,
-            get(core_upgrade::status)
-                .post(core_upgrade::start)
-                .delete(core_upgrade::cancel),
-        )
-        .route(
-            wonton_protocol::CORE_UPGRADE_CHECK_PATH,
-            post(core_upgrade::check),
-        )
-        .route("/_wonton/api/tunnel", get(devices::tunnel))
         .merge(peer_routes())
         .merge(friend_routes())
         .merge(sharing_routes())
-        .route(
-            "/_wonton/api/devices",
-            get(devices::list).post(devices::add),
-        )
-        .route("/_wonton/api/devices/{id}", delete(devices::remove))
-        .route("/_wonton/api/pairing-codes", post(devices::pairing_code))
-        .route(
-            "/_wonton/api/pairing-codes/first",
-            post(devices::first_pairing_code),
-        )
         .merge(confirmation_routes())
         .merge(files::routes(gateway.clone()))
         .fallback(|headers: HeaderMap| async move {
@@ -287,6 +287,36 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             reject_cross_site_writes,
         ))
         .with_state(gateway)
+}
+
+/// 账号与升级：设置、设备、配对码、升级行动（ADR-0050 的 peers 页也挂在这里）。
+fn account_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route(
+            wonton_protocol::ONBOARDING_PATH,
+            get(onboarding::get).put(onboarding::put),
+        )
+        .route(
+            wonton_protocol::CORE_UPGRADE_PATH,
+            get(core_upgrade::status)
+                .post(core_upgrade::start)
+                .delete(core_upgrade::cancel),
+        )
+        .route(
+            wonton_protocol::CORE_UPGRADE_CHECK_PATH,
+            post(core_upgrade::check),
+        )
+        .route("/_wonton/api/tunnel", get(devices::tunnel))
+        .route(
+            "/_wonton/api/devices",
+            get(devices::list).post(devices::add),
+        )
+        .route("/_wonton/api/devices/{id}", delete(devices::remove))
+        .route("/_wonton/api/pairing-codes", post(devices::pairing_code))
+        .route(
+            "/_wonton/api/pairing-codes/first",
+            post(devices::first_pairing_code),
+        )
 }
 
 /// 聊天页面板（ADR-0052）和 MCP Apps：Bot 活动、钉页，以及界面的宿主页和转发。

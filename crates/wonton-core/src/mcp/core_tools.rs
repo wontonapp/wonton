@@ -29,6 +29,26 @@ const UNINSTALL: &str = "uninstall_plugin";
 const SET_PERMISSION: &str = "set_plugin_permission";
 const HELP: &str = "help";
 
+/// 有 Active 远端联系人的 Bot 还能用的核心工具：只读、无副作用，也不把家里的数据带出去
+/// （ADR-0050“远端联系人默认不能用插件”）。安装/卸载/权限、读写文件、分享、改资料这类一概不给。
+pub(super) const REMOTE_CONTACT_READONLY: &[&str] = &[
+    LIST,
+    SEARCH,
+    HELP,
+    authoring_tools::GUIDE,
+    authoring_tools::CHECK,
+    authoring_tools::STATUS,
+    save_tools::LIST,
+    profile_tools::GET,
+    people_tools::USER_LOCALE,
+    panel_tools::LIST,
+];
+
+/// 有 Active 远端联系人的 Bot 能不能调这个核心工具。
+pub(super) fn remote_contact_allows(tool: &str) -> bool {
+    REMOTE_CONTACT_READONLY.contains(&tool)
+}
+
 fn schema(value: Value) -> Arc<JsonObject> {
     match value {
         Value::Object(map) => Arc::new(map),
@@ -118,6 +138,18 @@ pub fn definitions() -> Vec<Tool> {
     tools.extend(people_tools::definitions());
     tools.extend(panel_tools::definitions());
     tools
+}
+
+/// 有 Active 远端联系人的 Bot 看得到的工具（[`REMOTE_CONTACT_READONLY`]）。
+pub(super) fn readonly_definitions() -> Vec<Tool> {
+    definitions()
+        .into_iter()
+        .filter(|tool| {
+            // 名单里是没加前缀的工具名；列出来的带 wonton__ 前缀。
+            naming::split(&tool.name)
+                .is_some_and(|(_, name)| REMOTE_CONTACT_READONLY.contains(&name))
+        })
+        .collect()
 }
 
 pub(super) fn success(value: &Value) -> CallToolResult {

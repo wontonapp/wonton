@@ -20,6 +20,7 @@ use crate::device::Devices;
 use crate::plugin::egress::core_proxy::CoreProxy;
 use store::Registrations;
 use webpush::{Delivery, WebPush};
+use wonton_protocol::ContactRequestPush;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PushError {
@@ -127,6 +128,32 @@ impl Push {
         }
     }
 
+    /// 联系人请求的推送：明文里只有服务器和 `contact_request` 段，没有房间和事件。设备上已经登记的才发。
+    async fn deliver_payload(
+        &self,
+        payload: DevicePayload,
+        devices: &[crate::device::Device],
+    ) -> Result<(), PushError> {
+        let mut unavailable = None;
+        for device in devices {
+            let Some(registration) = self.registrations.get(&device.id) else {
+                continue;
+            };
+            if !self.devices.contains(&registration.device) {
+                self.forget(&registration);
+                continue;
+            }
+            match self.deliver(&registration, &payload, "high").await {
+                Ok(true) | Ok(false) => {}
+                Err(e) => unavailable = Some(e),
+            }
+        }
+        match unavailable {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+
     /// 发给一台设备。返回订阅是否还有效。
     async fn deliver(
         &self,
@@ -142,7 +169,7 @@ impl Push {
             .await;
         match delivery {
             Ok(Delivery::Accepted) => {
-                tracing::info!(%device, event = %payload.event_id, urgency, "推送已交给推送服务");
+                tracing::info!(%device, event = payload.event_id.as_deref().unwrap_or(""), urgency, "推送已交给推送服务");
                 Ok(true)
             }
             Ok(Delivery::Gone) => {
@@ -173,6 +200,40 @@ impl Push {
         if let Err(e) = self.registrations.remove(&registration.device) {
             tracing::error!(device = %registration.device.fmt_short(), error = %e, "删除推送登记失败");
         }
+    }
+}
+
+/// 新联系人请求的推送发给管它的人的设备（ADR-0045、ADR-0050）：私人 Bot 是归属人，共享 Bot 是主人。
+/// 设备按登记表挑，没登记的收不到；私人 Bot 的归属人没登记设备时不回退推给主人（ADR-0045 没批让主人看
+/// 家人的联系人），请求照样进“等你确认”。
+/// 实现在 `Arc<Push>` 上：发送是后台任务，要把句柄整个搬进去。
+impl crate::contacts::ContactPush for Arc<Push> {
+    fn contact_request(&self, keeper: Option<&str>, push: &ContactRequestPush) {
+        let targets = match keeper {
+            // 私人 Bot：只发归属人自己的设备，没有登记的就不发。
+            Some(username) => self.devices.of_user(username),
+            // 共享 Bot 归主人管：主人的设备是收推送的正路。
+            None => self.devices.of_owner(),
+        };
+        if targets.is_empty() {
+            return;
+        }
+        let payload = DevicePayload {
+            server: self.server.clone(),
+            room_id: None,
+            event_id: None,
+            sender: None,
+            sender_display_name: None,
+            room_name: None,
+            prio: Some("high".to_owned()),
+            contact_request: Some(push.clone()),
+        };
+        let push = self.clone();
+        tokio::spawn(async move {
+            if let Err(error) = push.deliver_payload(payload, &targets).await {
+                tracing::warn!(error = %error, "联系人请求推送没送出去");
+            }
+        });
     }
 }
 

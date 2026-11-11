@@ -205,4 +205,6 @@ mod profile_tests;
 #[cfg(test)]
 mod profile_tuwunel_tests;
 #[cfg(test)]
+mod rooms;
+#[cfg(test)]
 mod tests;

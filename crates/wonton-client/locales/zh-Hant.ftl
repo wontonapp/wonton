@@ -603,3 +603,5 @@ tabs-fullscreen-only-plugins = 只有外掛頁面可以全螢幕。
 tabs-fullscreen-none = 目前沒有全螢幕頁面。
 tabs-fullscreen-not-current = 退出的頁面不是目前全螢幕頁面。
 panel-pins-refresh-failed = 面板裡 Bot 釘的頁面取不到:{ $error }
+
+push-payload-no-message = 推送裡既沒有訊息也沒有聯絡人請求

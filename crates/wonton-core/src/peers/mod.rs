@@ -397,6 +397,18 @@ impl Peers {
         (record.phase == Phase::Paired).then(|| (record.endpoint_id, record.endpoint_addr()))
     }
 
+    /// 联系人行带的配对状态（ADR-0050）：没配对时为空，壳说明“这台服务器还没连接”；配对着给转发组件的状态。
+    pub fn contact_peer_status(&self, server_name: &str) -> Option<PeerStatus> {
+        let paired = {
+            let peers = self.lock();
+            peers
+                .peers
+                .get(server_name)
+                .is_some_and(|record| record.phase == Phase::Paired)
+        };
+        paired.then(|| self.forwarded_status(server_name))
+    }
+
     /// 这次的配对握手里要发给对方的身份。主人的显示名现取，主人改资料后不用重启核心。
     pub(crate) fn own_identity(&self) -> PeerIdentity {
         self.own.to_wire(&self.tunnel, (self.owner_display_name)())

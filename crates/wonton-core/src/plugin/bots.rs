@@ -21,6 +21,7 @@ use super::vars::MatrixVars;
 use crate::config::PLUGIN_MATRIX_HOST;
 use crate::matrix::{Avatar, BotAccount, BotSpec, Matrix, MatrixError, ProvisionedBot};
 use crate::secret::random_token;
+use wonton_protocol::BotRef;
 
 /// 一个 Bot 的记录：Matrix 身份、正在用的设备、归属人和总线令牌。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -409,16 +410,29 @@ impl PluginManager {
         }
     }
 
-    /// 存下来的一个 Bot 的 Matrix 变量：令牌是占位值（重建时从旧容器读回），名单按归属人算
-    /// （私人 Bot 是归属人，共享 Bot 是主人）。
-    pub(super) fn stored_matrix_vars(&self, entry: &BotEntry) -> Result<MatrixVars, InstallError> {
+    /// 存下来的一个 Bot 的 Matrix 变量：令牌是占位值（重建时从旧容器读回），名单是归属人加联系人
+    /// （ADR-0045“成立后”、ADR-0050“对方的用户 ID 加进本机 Bot 的名单”）。
+    pub(super) fn stored_matrix_vars(
+        &self,
+        plugin: &PluginId,
+        bot: &str,
+        entry: &BotEntry,
+    ) -> Result<MatrixVars, InstallError> {
         let matrix = self.matrix()?;
         let owner = self.keeper_user(&entry.keeper);
+        let mut users = vec![matrix.user_id(&owner)];
+        if let Some(contacts) = self.contacts.get() {
+            users.extend(contacts.allowed_users_extra(&BotRef {
+                plugin_id: plugin.to_string(),
+                bot: bot.to_owned(),
+            }));
+        }
+        users.dedup();
         Ok(MatrixVars {
             homeserver: format!("http://{PLUGIN_MATRIX_HOST}:{}", self.cfg.gateway_port),
             user_id: entry.account.user_id.clone(),
             access_token: super::egress::PLACEHOLDER.to_owned(),
-            allowed_users: matrix.user_id(&owner),
+            allowed_users: users.join(","),
             home_room: entry.account.home_room.clone(),
         })
     }

@@ -52,11 +52,17 @@ pub async fn pending(
         return mcp_unavailable(&languages(&headers));
     };
     let confirmations = mcp.bus.confirmations().pending();
+    // “等你确认”里还有等归属人处理的联系人请求（ADR-0045、ADR-0050）。
+    let contact_requests = gateway
+        .contacts
+        .as_ref()
+        .map(|contacts| contacts.pending_requests())
+        .unwrap_or_default();
     Json(ConfirmationList {
         confirmations,
         finished: Vec::new(),
         revision: 0,
-        contact_requests: Vec::new(),
+        contact_requests,
     })
     .into_response()
 }

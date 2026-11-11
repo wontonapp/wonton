@@ -181,18 +181,124 @@ impl<'a> Session<'a> {
         content: &Value,
         transaction: &str,
     ) -> Result<String, MatrixError> {
+        self.send_event(room, "m.room.message", transaction, content)
+            .await
+    }
+
+    /// 发任意类型的事件，返回事件 ID。联系人房间用 `app.wonton.contact`（ADR-0050）。
+    pub async fn send_event(
+        &self,
+        room: &str,
+        event_type: &str,
+        transaction: &str,
+        content: &Value,
+    ) -> Result<String, MatrixError> {
         let path = format!(
-            "/_matrix/client/v3/rooms/{}/send/m.room.message/{}",
+            "/_matrix/client/v3/rooms/{}/send/{}/{}",
             encode(room),
+            encode(event_type),
             encode(transaction)
         );
         let value = self
-            .json(Method::PUT, &path, Some(content), "发消息")
+            .json(Method::PUT, &path, Some(content), "发事件")
             .await?;
         value["event_id"]
             .as_str()
             .map(str::to_owned)
-            .ok_or_else(|| MatrixError::Invalid("发消息接口没有返回 event_id".to_owned()))
+            .ok_or_else(|| MatrixError::Invalid("发事件接口没有返回 event_id".to_owned()))
+    }
+
+    /// `/sync`：`since` 为空时全量（用来重新发现联系人房间），否则取增量；`timeout` 是长轮询时长，
+    /// `filter` 是内联的过滤器 JSON（联系人收件只要自己的事件类型）。
+    pub async fn sync(
+        &self,
+        since: Option<&str>,
+        timeout: std::time::Duration,
+        filter: Option<&str>,
+    ) -> Result<Value, MatrixError> {
+        let timeout_ms = timeout.as_millis();
+        let mut path = match since {
+            Some(since) => format!(
+                "/_matrix/client/v3/sync?since={}&timeout={timeout_ms}",
+                encode(since)
+            ),
+            None => format!("/_matrix/client/v3/sync?timeout={timeout_ms}"),
+        };
+        if let Some(filter) = filter {
+            path.push_str(&format!("&filter={}", encode(filter)));
+        }
+        self.json(Method::GET, &path, None, "收件同步").await
+    }
+
+    /// 和另一台核心账号的联系人房间（ADR-0050）：不加密，`m.room.create` 的 `type` 标出来，邀请对方。
+    pub async fn create_contact_room(&self, invitee: &str) -> Result<String, MatrixError> {
+        let body = json!({
+            "preset": "private_chat",
+            "invite": [invitee],
+            "creation_content": {"type": wonton_protocol::CONTACT_ROOM_TYPE},
+        });
+        self.create_room(&body, "建联系人房间").await
+    }
+
+    /// 联系人房间，不带邀请（ADR-0050）：建房是纯本机操作，不会因联邦送不出邀请卡住；房间 ID 落盘后
+    /// 由调用方单独 `/invite`，失败按退避重试，不会反复建房留孤儿房间。
+    pub async fn create_contact_room_no_invite(&self) -> Result<String, MatrixError> {
+        let body = json!({
+            "preset": "private_chat",
+            "creation_content": {"type": wonton_protocol::CONTACT_ROOM_TYPE},
+        });
+        self.create_room(&body, "建联系人房间").await
+    }
+
+    /// 以这个 Bot 的账号给 `invitee` 发带 `app.wonton.bot_contact` 标记的私聊邀请（ADR-0050“对象是对方家里的人”）：
+    /// 受邀者接受前只看得到 create 内容，接受就是同意。
+    pub async fn create_bot_contact_room(&self, invitee: &str) -> Result<String, MatrixError> {
+        let body = json!({
+            "preset": "trusted_private_chat",
+            "is_direct": true,
+            "invite": [invitee],
+            "creation_content": {wonton_protocol::BOT_CONTACT_CREATE_KEY: true},
+        });
+        self.create_room(&body, "发 Bot 联系人邀请").await
+    }
+
+    async fn create_room(&self, body: &Value, context: &str) -> Result<String, MatrixError> {
+        let value = self
+            .json(
+                Method::POST,
+                "/_matrix/client/v3/createRoom",
+                Some(body),
+                context,
+            )
+            .await?;
+        value["room_id"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| MatrixError::Invalid(format!("{context}没有返回 room_id")))
+    }
+
+    /// 退出房间，也用来拒绝邀请。
+    pub async fn leave(&self, room: &str) -> Result<(), MatrixError> {
+        let path = format!("/_matrix/client/v3/rooms/{}/leave", encode(room));
+        self.json(Method::POST, &path, Some(&json!({})), "退出房间")
+            .await
+            .map(|_| ())
+    }
+
+    /// 房间成员的完整用户 ID（Tuwunel 的 Synapse 兼容管理接口；2026-11-12 对 v1.9.4 实测：已登录用户可查）。
+    /// 核心不在那个房间里也能查，远端的人接没接受邀请靠它核对。
+    pub async fn room_members(&self, room: &str) -> Result<Vec<String>, MatrixError> {
+        let path = format!("/_synapse/admin/v1/rooms/{}/members", encode(room));
+        let value = self.json(Method::GET, &path, None, "查房间成员").await?;
+        Ok(value["members"]
+            .as_array()
+            .map(|members| {
+                members
+                    .iter()
+                    .filter_map(|member| member.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     pub async fn join(&self, room: &str) -> Result<(), MatrixError> {
