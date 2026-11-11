@@ -281,13 +281,13 @@ files-download-incomplete = The connection dropped before the file was complete
 files-download-stalled = No data is arriving; the tunnel may be stuck
 
 # Shown when playback fails because the connection is down.
-files-playback-transport = Can't reach your home server. You can download the file and open it in another app.
+files-playback-transport = Can't reach your home server.
 # Shown when playback fails because this device can't decode the format.
 files-playback-unsupported = This phone can't play this format. You can download the file and open it in another app.
 # $detail is the unchanged reason from the home server or the connection.
 files-playback-unavailable = Your home server can't provide this file: { $detail }
 # $detail is the unchanged reason from the home server or the connection.
-files-playback-error = Something went wrong on your home server: { $detail }. You can download the file and open it in another app.
+files-playback-error = Something went wrong on your home server: { $detail }.
 # Shown when the playback probe times out.
 files-playback-no-response = Your home server stopped responding
 
@@ -628,6 +628,9 @@ plugin-now-start-failed = Could not start the update: { $error }
 
 # Panel (ADR-0052) errors. Shown as the reason of a CoreError, or as a TabsProblem message.
 panel-full = The panel is full; remove a page first.
+panel-pins-not-connected = Not connected to the home server yet.
+panel-pins-api-failed = { $status }: { $body }
+
 panel-page-already-there = This page is already in the panel.
 panel-page-not-there = This page isn't in the panel.
 panel-page-unsupported = Only app pages, pages inside an app, and https websites can go into the panel.
@@ -658,3 +661,4 @@ tabs-open-only-plugins = Only app pages have an opening mode.
 tabs-fullscreen-only-plugins = Only app pages can go full screen.
 tabs-fullscreen-none = Nothing is full screen right now.
 tabs-fullscreen-not-current = That page isn't the full-screen one.
+panel-pins-refresh-failed = Couldn't load the pages bots pinned: { $error }

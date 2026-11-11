@@ -114,13 +114,15 @@ async fn old_identity_stays_unreachable(phone: &Phone, server_id: &str) {
     tokio::time::timeout(WAIT, async {
         let subscription = phone.subscribe_home();
         while let Some(view) = subscription.next().await {
-            if matches!(
-                view.notice,
-                Some(
-                    ConnectionNotice::Unreachable { retrying: false }
-                        | ConnectionNotice::ServerOffline { retrying: false }
+            if view.details.failed_dials > failed.details.failed_dials
+                && matches!(
+                    view.notice,
+                    Some(
+                        ConnectionNotice::Unreachable { retrying: false }
+                            | ConnectionNotice::ServerOffline { retrying: false }
+                    )
                 )
-            ) {
+            {
                 return;
             }
         }

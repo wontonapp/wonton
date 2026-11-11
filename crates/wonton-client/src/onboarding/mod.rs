@@ -58,6 +58,10 @@ struct LocalState {
     too_old: Option<OnboardingTooOld>,
 }
 
+/// `test-hooks` 下发布前交给测试的回调：即将发出去的视图和已记下发过消息的房间。
+#[cfg(feature = "test-hooks")]
+pub(crate) type TestPublishHook = Arc<dyn Fn(&OnboardingViewModel, &HashSet<String>) + Send + Sync>;
+
 pub(crate) struct OnboardingLink {
     runtime: Handle,
     home: Arc<HomeLink>,
@@ -73,6 +77,10 @@ pub(crate) struct OnboardingLink {
     /// 每次取状态或者在设置里改引导状态时加一，只认最后一次的结果。
     operation: AtomicU64,
     sent_rooms: Mutex<HashSet<String>>,
+    /// 每次发布前先把即将发出去的视图和记下发过消息的房间交给它（[`ClientCore::test_set_onboarding_publish_hook`]）。
+    /// [`ClientCore::test_set_onboarding_publish_hook`]: crate::ClientCore::test_set_onboarding_publish_hook
+    #[cfg(feature = "test-hooks")]
+    pub(crate) test_publish_hook: Mutex<Option<TestPublishHook>>,
 }
 
 impl OnboardingLink {
@@ -101,6 +109,8 @@ impl OnboardingLink {
             generation: AtomicU64::new(0),
             operation: AtomicU64::new(0),
             sent_rooms: Mutex::new(sent_rooms),
+            #[cfg(feature = "test-hooks")]
+            test_publish_hook: Mutex::new(None),
         });
         link.publish();
         follow::spawn(&link, &runtime, &home, &chat);
@@ -276,7 +286,6 @@ impl OnboardingLink {
             state.loading = false;
         }
         self.publish();
-        self.maybe_mark_prompt_used();
     }
 
     fn finish_error(&self, generation: u64, operation: u64, problem: PluginProblem) {
@@ -406,11 +415,24 @@ impl OnboardingLink {
     }
 
     fn publish(&self) {
-        let state = lock(&self.state);
-        let records = self.storage.snapshot();
+        let mut state = lock(&self.state);
+        let mut records = self.storage.snapshot();
         let chat = self.chat.view();
         let sent_rooms = lock(&self.sent_rooms).clone();
-        let (view, primary_bot) = render(&state, &records, &chat, &sent_rooms);
+        // 发过消息先落盘再渲染：收起提问的视图发出去时 `prompts_used` 一定已经在盘上。落盘和渲染用
+        // 同一份快照，房间行或私聊标记短暂缺失时不落盘也不收起，回来后的发布再收。
+        if !records.prompts_used && view::prompt_done(state.onboarding.as_ref(), &chat, &sent_rooms)
+        {
+            match self.storage.mark_prompts_used() {
+                Ok(()) => records.prompts_used = true,
+                Err(error) => state.problem = Some(storage_problem(error)),
+            }
+        }
+        let (view, primary_bot) = render(&state, &records);
+        #[cfg(feature = "test-hooks")]
+        if let Some(hook) = lock(&self.test_publish_hook).as_ref() {
+            hook(&view, &sent_rooms);
+        }
         // 快照必须在持锁时发布，不能让较早渲染的 loading 覆盖完成状态。
         self.view.send_replace(view);
         drop(state);
@@ -435,6 +457,7 @@ fn storage_problem(error: CoreError) -> PluginProblem {
         reason: PluginFailure::Upstream,
         min_version: None,
         message: error.to_string(),
+        settings: None,
     }
 }
 

@@ -266,13 +266,13 @@ files-download-incomplete = 連線中斷，沒有收完
 files-download-stalled = 收不到資料，隧道可能卡住了
 
 # 連線中斷導致播放失敗時顯示。
-files-playback-transport = 連不上家用伺服器。可以下載後用其他 App 開啟。
+files-playback-transport = 連不上家用伺服器。
 # 這部裝置無法播放這個格式時顯示。
 files-playback-unsupported = 這部手機無法播放這個格式。可以下載後用其他 App 開啟。
 # $detail 是家用伺服器或連線的原始原因。
 files-playback-unavailable = 家用伺服器無法提供這個檔案：{ $detail }
 # $detail 是家用伺服器或連線的原始原因。
-files-playback-error = 家用伺服器發生錯誤：{ $detail }。可以下載後用其他 App 開啟。
+files-playback-error = 家用伺服器發生錯誤：{ $detail }。
 # 播放探測逾時時顯示。
 files-playback-no-response = 家用伺服器一直沒有回應
 
@@ -566,6 +566,9 @@ plugin-now-start-failed = 一鍵操作開始不了：{ $error }
 
 # 面板（ADR-0052）的錯誤。作為 CoreError 的原因，或 TabsProblem 的說明顯示。
 panel-full = 面板滿了，先拿掉一頁再放。
+panel-pins-not-connected = 還沒有連上家裡的伺服器。
+panel-pins-api-failed = { $status }：{ $body }
+
 panel-page-already-there = 這個頁面已經在面板裡。
 panel-page-not-there = 這個頁面不在面板裡。
 panel-page-unsupported = 面板裡只能放 App 頁面、App 裡的某一頁和 https:// 的網頁。
@@ -596,3 +599,4 @@ tabs-open-only-plugins = 只有外掛頁面可以設定開啟方式。
 tabs-fullscreen-only-plugins = 只有外掛頁面可以全螢幕。
 tabs-fullscreen-none = 目前沒有全螢幕頁面。
 tabs-fullscreen-not-current = 退出的頁面不是目前全螢幕頁面。
+panel-pins-refresh-failed = 面板裡 Bot 釘的頁面取不到:{ $error }

@@ -438,7 +438,13 @@ async fn rejected_and_expired_requests_never_run() {
         failed(&result) && text(&result).contains("拒绝"),
         "{result:?}"
     );
-    assert_eq!(s.cards.states(&card.id), [ConfirmationState::Rejected]);
+    let states = s.cards.states(&card.id);
+    assert!(!states.is_empty());
+    assert!(
+        states
+            .iter()
+            .all(|state| *state == ConfirmationState::Rejected)
+    );
 
     let result = s
         .call("app-example-notes__delete", json!({"name": "d"}))

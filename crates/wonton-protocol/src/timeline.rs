@@ -7,6 +7,9 @@
 //! 列表该停在哪也由核心说：壳用 [`Action::SetTimelineScroll`](crate::Action::SetTimelineScroll) 报告是不是离开了底部，
 //! 核心在每一批里给出重新算过的位置和新消息数（[`TimelineUpdate::viewport`]），并在第一批给出该停在哪一条
 //! （[`TimelineUpdate::anchor`]）。壳只按这两个值画和滚，不自己数。
+//!
+//! 还有解不开的消息时，每一批都带着该显示的加密入口（[`TimelineUpdate::key_notice`]，[`KeyNotice`]）：核心按账号的
+//! 恢复状态决定是输恢复密钥还是请别的设备确认，加密状态变了就补发一批空的。壳只按类别写文字和按钮，不自己判断。
 
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +48,25 @@ pub struct TimelineUpdate {
     /// [`Action::SetRoomEntryBlocked`](crate::Action::SetRoomEntryBlocked) 报告，换房间后按没盖算。
     #[serde(default)]
     pub entry_blocked: bool,
+    /// 时间线里有本设备解不开的消息时，给主人的下一步；没有或者这台设备已经有密钥时长这样。
+    ///
+    /// 由核心按账号的恢复状态给出，壳在输入栏上方显示一行说明和按钮，按类别跳到备份页。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_notice: Option<KeyNotice>,
+}
+
+/// 解不开的消息旁边的入口，壳按它写按钮。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum KeyNotice {
+    /// 账号设过密钥备份，本设备还没拿到密钥：输入恢复密钥就能解开。
+    EnterRecoveryKey,
+    /// 账号没设密钥备份：让账号里已验证的设备确认本设备，那台设备才会把密钥发过来。
+    VerifyWithOtherDevice,
+    /// 更新的核心给出的类别：显示说明，不给按钮。
+    #[serde(other)]
+    Other,
 }
 
 /// 列表该停在哪，方向是核心到壳。核心按已读位置、壳报告的滚动（[`Action::SetTimelineScroll`](crate::Action::SetTimelineScroll)）
@@ -497,6 +519,7 @@ mod tests {
             panel: Vec::new(),
             panel_selected: None,
             entry_blocked: true,
+            key_notice: Some(KeyNotice::EnterRecoveryKey),
         };
         assert_eq!(round_trip(&update), update);
         assert!(
@@ -522,6 +545,35 @@ mod tests {
             serde_json::to_value(TimelineViewport::Away { new_messages: 2 }).unwrap(),
             serde_json::json!({"type": "away", "new_messages": 2})
         );
+    }
+
+    /// 契约：加密入口的每个取值都能经 JSON 往返，不认识的取值落到 `Other`，没有入口时整个字段可以缺。
+    #[test]
+    fn key_notices_round_trip_and_unknown_ones_fall_back() {
+        for notice in [
+            KeyNotice::EnterRecoveryKey,
+            KeyNotice::VerifyWithOtherDevice,
+        ] {
+            assert_eq!(round_trip(&notice), notice);
+        }
+        assert_eq!(
+            serde_json::from_value::<KeyNotice>(serde_json::json!("another")).unwrap(),
+            KeyNotice::Other
+        );
+        let empty = || TimelineUpdate {
+            diffs: Vec::new(),
+            back_pagination: BackPagination::Idle,
+            viewport: TimelineViewport::Bottom,
+            anchor: None,
+            panel: Vec::new(),
+            panel_selected: None,
+            entry_blocked: false,
+            key_notice: Some(KeyNotice::VerifyWithOtherDevice),
+        };
+        let mut value = serde_json::to_value(empty()).unwrap();
+        value.as_object_mut().unwrap().remove("key_notice");
+        let update: TimelineUpdate = serde_json::from_value(value).unwrap();
+        assert_eq!(update.key_notice, None);
     }
 
     fn text_with_file() -> MessageContent {
@@ -552,6 +604,7 @@ mod tests {
             view: ConfirmationView {
                 card: ConfirmationCard {
                     secret_inputs: Vec::new(),
+                    settings: None,
                     id: "abc".into(),
                     state: ConfirmationState::Pending,
                     title: "Hermes 想安装 Grafana".into(),

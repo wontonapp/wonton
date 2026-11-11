@@ -188,6 +188,15 @@ fn headered_response(core: &CoreState, method: &Method, path: &str) -> Option<Re
     Some(builder.body(Body::from(body)).unwrap())
 }
 
+/// 默认没有 Bot 钉页；单独要钉页的测试自己在前面拦。
+fn empty_pins() -> Response {
+    (
+        StatusCode::OK,
+        serde_json::json!({"pins": [], "consents": []}).to_string(),
+    )
+        .into_response()
+}
+
 pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
     let path = parts
@@ -262,6 +271,7 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
             )
         }
         (&Method::GET, "/_wonton/api/store") => json(serde_json::to_string(&listing()).unwrap()),
+        (&Method::GET, "/_wonton/api/panel/pins") => empty_pins(),
         (&Method::POST, "/_wonton/api/plugins/preview") => {
             // 来源 github:owner/<id> 预览出来就是 <id>。
             let id = serde_json::from_slice::<serde_json::Value>(&body)
@@ -425,6 +435,7 @@ pub fn preview(id: &str) -> InstallPreview {
         source: Some(format!("github:owner/{id}@v1.0.0")),
         commit: None,
         digest: "sha256:abc".to_owned(),
+        plan: "opaque-install-plan".to_owned(),
         id: id.to_owned(),
         title: format!("标题 {id}"),
         summary: String::new(),
@@ -452,6 +463,7 @@ pub fn preview(id: &str) -> InstallPreview {
             opened: None,
         }],
         secret_inputs: Vec::new(),
+        settings: None,
         notices: Vec::new(),
         missing_requires: Vec::new(),
         missing_wants: Vec::new(),

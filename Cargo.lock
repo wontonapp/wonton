@@ -8578,6 +8578,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 2.0.21",
  "uniffi",
 ]
@@ -8599,6 +8600,8 @@ dependencies = [
  "iroh",
  "iroh-relay",
  "percent-encoding",
+ "rcgen",
+ "rustls",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

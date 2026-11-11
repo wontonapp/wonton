@@ -33,7 +33,7 @@ final class TabsModel {
     }
 
     func select(_ tab: TabRef) {
-        if viewModel.selected == tab, viewModel.overlay == nil { webViews.reselect(tab) }
+        if viewModel.selected == tab, viewModel.overlay == nil { webViews.reselect(.bar(tab: tab)) }
         send(.selectTab(tab: tab))
     }
 
@@ -48,8 +48,8 @@ final class TabsModel {
 
     private func update(_ view: TabsViewModel) {
         viewModel = view
-        var retained = Set(view.items.map(\.tab))
-        if let overlay = view.overlay { retained.insert(overlay.tab) }
+        var retained = Set(view.items.map { PlacedTab.bar(tab: $0.tab) })
+        if let overlay = view.overlay { retained.insert(.bar(tab: overlay.tab)) }
         webViews.retain(retained)
     }
 }
@@ -60,7 +60,7 @@ extension TabItem {
         case .chat: TabText.chat
         case .apps: TabText.apps
         case .settings: TabText.settings
-        case .plugin, .pluginPath, .url, .sharedApp: page?.title ?? TabText.apps
+        case .plugin, .pluginPath, .bot, .url, .sharedApp, .uiResource: page?.title ?? TabText.apps
         }
     }
 }

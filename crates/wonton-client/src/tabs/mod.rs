@@ -14,9 +14,9 @@ use tokio::sync::watch;
 use url::Url;
 use wonton_matrix::{LayoutContent, MatrixSession, OwnedRoomId};
 use wonton_protocol::{
-    Action, CoreError, HomeStatus, HomeViewModel, LayoutSettings, MAX_PANEL_PAGES, PanelEntry,
-    PanelItem, PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel, RoomPanel,
-    TabDisplayChoice, TabIcon, TabLoadFailure, TabRef, TabsProblem, TabsViewModel,
+    Action, BotPanelPin, CoreError, HomeStatus, HomeViewModel, LayoutSettings, MAX_PANEL_PAGES,
+    PanelEntry, PanelItem, PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel,
+    RoomPanel, TabDisplayChoice, TabIcon, TabLoadFailure, TabRef, TabsProblem, TabsViewModel,
 };
 
 use crate::home::HomeLink;
@@ -32,10 +32,16 @@ mod config;
 use config::*;
 
 mod view;
+use uninstall::*;
 use view::*;
+mod reload;
+use reload::*;
+
 mod actions;
 mod panel;
+mod pins;
 mod sync;
+mod uninstall;
 
 #[cfg(test)]
 mod tests;
@@ -77,11 +83,21 @@ struct TabsState {
     entry_blocked: bool,
     /// 卸载插件时从打开房间的面板里拿掉的插件：recompute 收尾时把房间账号数据也清一遍。
     room_panel_removed: Vec<String>,
+    /// 服务器上 Bot 钉的页面（全部位置）。和用户自己放的合在视图里，也占 5 页的上限。
+    bot_pins: Vec<BotPanelPin>,
+    /// 核心地址：MCP Apps 的宿主页按它拼。
+    core_url: Option<Url>,
+    /// Bot 往主面板钉页的同意，设置里显示和收回。
+    bot_pin_consents: Vec<wonton_protocol::BotPinOwner>,
+    /// 拉 Bot 钉页失败的原因（和配置文件的 problem 分开）。
+    pins_problem: Option<String>,
 }
 
 pub(crate) struct TabsLink {
     runtime: Handle,
     home: watch::Receiver<HomeViewModel>,
+    /// 连家里的服务器要的地址和代理。
+    home_link: Arc<HomeLink>,
     plugins: Arc<PluginsLink>,
     plugins_view: watch::Receiver<PluginsViewModel>,
     path: PathBuf,
@@ -167,12 +183,17 @@ impl TabsLink {
             room_panel_selected: None,
             entry_blocked: false,
             room_panel_removed: Vec::new(),
+            bot_pins: Vec::new(),
+            core_url: home.core_url(),
+            bot_pin_consents: Vec::new(),
+            pins_problem: None,
         };
         let room_view = watch::Sender::new(None);
         let sync_problem = watch::Sender::new(None);
         let link = Arc::new(Self {
             runtime: runtime.clone(),
             home: home.subscribe(),
+            home_link: home,
             plugins_view: plugins.subscribe(),
             plugins,
             path,
@@ -221,6 +242,11 @@ impl TabsLink {
             Action::RemovePanelPage { scope, tab } => self.remove_panel_page(scope, tab),
             Action::MovePanelPage { scope, tab, index } => self.move_panel_page(scope, tab, index),
             Action::SelectPanelPage { scope, tab } => self.select_panel_page(scope, tab),
+            Action::SetBotPinConsent {
+                plugin_id,
+                bot,
+                allowed,
+            } => self.set_bot_consent(plugin_id, bot, allowed),
             Action::PinCurrentPage {
                 url,
                 title,
@@ -235,6 +261,31 @@ impl TabsLink {
                 reason: "不是底栏操作".to_owned(),
             }),
         }
+    }
+
+    /// 收回或给回一个 Bot 往主面板钉页的同意：写服务器，成了才更新本机。
+    pub(super) fn set_bot_consent(
+        &self,
+        plugin_id: String,
+        bot: String,
+        allowed: bool,
+    ) -> Result<(), CoreError> {
+        let weak = lock(&self.weak).clone();
+        self.runtime.spawn(async move {
+            let Some(link) = weak.upgrade() else { return };
+            match link.put_bot_consent(&plugin_id, &bot, allowed).await {
+                Ok(()) => link.recompute(),
+                Err(error) => {
+                    let message = error.to_string();
+                    link.runtime_change(|state, _| {
+                        state.problem = Some(TabsProblem { message });
+                        Ok(())
+                    })
+                    .ok();
+                }
+            }
+        });
+        Ok(())
     }
 
     pub(crate) fn room_view(&self) -> Option<Arc<RoomPanelView>> {
@@ -263,6 +314,7 @@ impl TabsLink {
         let _writing = lock(&self.writing);
         let (plugins, home, open_room) = self.inputs();
         let mut state = lock(&self.state).clone();
+        state.core_url = self.home_link.core_url();
         // 换了房间：上次看的那页、入口状态和红点都是那个房间的，清掉。
         let room_changed = match (&state.open_room, &open_room) {
             (Some((old, _)), Some((new, _))) => old != new,
@@ -336,6 +388,7 @@ impl TabsLink {
         let (plugins, home, open_room) = self.inputs();
         let previous = lock(&self.state).clone();
         let mut state = previous.clone();
+        state.core_url = self.home_link.core_url();
         state.open_room = open_room;
         refresh_state(&mut state, &plugins, &home);
         change(&mut state, &plugins)?;
@@ -374,6 +427,7 @@ impl TabsLink {
         let _writing = lock(&self.writing);
         let (plugins, home, open_room) = self.inputs();
         let mut state = lock(&self.state).clone();
+        state.core_url = self.home_link.core_url();
         state.open_room = open_room;
         let config_changed = refresh_state(&mut state, &plugins, &home);
         change(&mut state, &plugins)?;
@@ -403,11 +457,7 @@ impl TabsLink {
                 room_id: room_id.to_string(),
             };
             RoomPanelView {
-                panel: panel
-                    .pages
-                    .iter()
-                    .map(|entry| build_panel_item(&state, entry, &scope, plugins))
-                    .collect(),
+                panel: room_panel_items(&state, panel, &scope, plugins),
                 selected: state.room_panel_selected.clone(),
                 blocked: state.entry_blocked,
             }
@@ -425,6 +475,25 @@ impl TabsLink {
 
 fn initial_selection(paired: bool) -> TabRef {
     if paired { TabRef::Chat } else { TabRef::Apps }
+}
+
+fn empty_view() -> TabsViewModel {
+    TabsViewModel {
+        pages: vec![TabRef::Apps],
+        items: Vec::new(),
+        show_bar: false,
+        selected: TabRef::Apps,
+        overlay: None,
+        full: false,
+        uninstalled: Vec::new(),
+        problem: None,
+        labels: true,
+        candidates: Vec::new(),
+        panel: Vec::new(),
+        panel_candidates: Vec::new(),
+        panel_selected: None,
+        bot_pin_consents: Vec::new(),
+    }
 }
 
 /// 面板现在有的页面：主面板在配置里，房间面板在打开着的房间里。
@@ -518,125 +587,6 @@ fn update_reload_counters(
     state.connected = connected;
 }
 
-fn remove_uninstalled(
-    state: &mut TabsState,
-    installed: &wonton_protocol::InstalledPlugins,
-) -> bool {
-    let gone = |plugin_id: &str| {
-        !installed
-            .plugins
-            .iter()
-            .any(|plugin| plugin.id == plugin_id)
-    };
-    let mut removed = Vec::new();
-    state.config.items.retain(|item| {
-        let keep = match &item.tab {
-            TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
-                !gone(plugin_id)
-            }
-            _ => true,
-        };
-        if !keep {
-            removed.push((item.tab.clone(), item_title(item)));
-        }
-        keep
-    });
-    if let Some(overlay) = state.overlay.take() {
-        let missing = match &overlay.tab {
-            TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
-                gone(plugin_id)
-            }
-            _ => false,
-        };
-        if missing {
-            state.selected = TabRef::Chat;
-            state.fullscreen = None;
-        } else {
-            state.overlay = Some(overlay);
-        }
-    }
-    // 主面板里的页面一起拿掉，提示一次（和底栏一样）。
-    state.config.panel.retain(|entry| {
-        let keep = match &entry.tab {
-            TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
-                !gone(plugin_id)
-            }
-            _ => true,
-        };
-        if !keep
-            && let Some(title) = panel_entry_title(entry, installed)
-            && !state.uninstalled.contains(&title)
-        {
-            state.uninstalled.push(title);
-        }
-        keep
-    });
-    // 打开的房间的面板也拿掉；写回房间账号数据的活儿交给 recompute 收尾（记下是哪几个插件）。
-    if let Some((_, panel)) = &mut state.open_room {
-        panel.pages.retain(|entry| match &entry.tab {
-            TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
-                let removed = gone(plugin_id);
-                if removed && !state.room_panel_removed.contains(plugin_id) {
-                    state.room_panel_removed.push(plugin_id.clone());
-                }
-                !removed
-            }
-            _ => true,
-        });
-    }
-    for (tab, title) in &removed {
-        let key = |place: fn(TabRef) -> PlacedTab| place(tab.clone());
-        state.config.displays.retain(|display| display.tab != *tab);
-        state.failures.remove(&key(|tab| PlacedTab::Bar { tab }));
-        state.failures.remove(&key(|tab| PlacedTab::Panel {
-            scope: PanelScope::Main,
-            tab,
-        }));
-        state.attention.remove(&key(|tab| PlacedTab::Bar { tab }));
-        state.attention.remove(&key(|tab| PlacedTab::Panel {
-            scope: PanelScope::Main,
-            tab,
-        }));
-        if !state.uninstalled.contains(title) {
-            state.uninstalled.push(title.clone());
-        }
-        if state.selected == *tab {
-            state.selected = TabRef::Apps;
-            state.fullscreen = None;
-        }
-        if state
-            .overlay
-            .as_ref()
-            .is_some_and(|overlay| overlay.tab == *tab)
-        {
-            state.overlay = None;
-            state.fullscreen = None;
-        }
-        if state.panel_selected.as_ref() == Some(tab) {
-            state.panel_selected = None;
-        }
-    }
-    !removed.is_empty() || !state.room_panel_removed.is_empty()
-}
-
-/// 面板条目的提示名：用户起的名字，没有时按插件补。
-fn panel_entry_title(
-    entry: &PanelEntry,
-    installed: &wonton_protocol::InstalledPlugins,
-) -> Option<String> {
-    if let Some(title) = &entry.title {
-        return Some(title.clone());
-    }
-    match &entry.tab {
-        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => installed
-            .plugins
-            .iter()
-            .find(|plugin| plugin.id == *plugin_id)
-            .map(|plugin| plugin.title.clone()),
-        _ => None,
-    }
-}
-
 fn update_metadata(state: &mut TabsState, installed: &wonton_protocol::InstalledPlugins) -> bool {
     let mut changed = false;
     for item in &mut state.config.items {
@@ -690,6 +640,8 @@ fn clear_plugin_config(state: &mut TabsState) {
     state.config.items.retain(|item| !is_plugin_page(&item.tab));
     state.config.displays.clear();
     state.config.panel.clear();
+    state.bot_pins.clear();
+    state.bot_pin_consents.clear();
     state.overlay = None;
     state.fullscreen = None;
     state.attention.clear();

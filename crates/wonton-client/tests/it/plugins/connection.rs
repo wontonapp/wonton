@@ -59,17 +59,17 @@ async fn an_unreachable_server_is_tried_again_and_stays_out_of_the_plugin_page()
     assert_eq!(first_failure(&rig).await, HomeFailure::TransportUnavailable);
 
     let deadline = Instant::now() + Duration::from_secs(20);
-    while rig.app.home().status != HomeStatus::Connecting {
-        assert!(Instant::now() < deadline, "没有再试：{:?}", rig.app.home());
+    let reconnecting = loop {
+        let home = rig.app.home();
+        if home.status == HomeStatus::Connecting {
+            break home;
+        }
+        assert!(Instant::now() < deadline, "没有再试：{home:?}");
         tokio::time::sleep(Duration::from_millis(5)).await;
-    }
+    };
+    assert_eq!(reconnecting.notice, Some(ConnectionNotice::Connecting));
     rig.app.dispatch(Action::RefreshPlugins).unwrap();
     assert_eq!(rig.app.plugins().problem, None);
-    // 第一次建连已经失败过，重连期间说的也是连不上，不再回到“连接中”。
-    assert!(matches!(
-        rig.app.home().notice,
-        Some(ConnectionNotice::Unreachable { .. } | ConnectionNotice::ServerOffline { .. })
-    ));
 }
 
 /// 冷启动没网也能显示主屏：一打开就有上次取到的列表，不等隧道。
@@ -221,6 +221,7 @@ async fn a_state_from_a_newer_core_is_not_taken_for_success() {
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
     let state = rig

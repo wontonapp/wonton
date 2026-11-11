@@ -18,6 +18,8 @@ struct ChatRoomView: View {
     @State private var showingRedact = false
     /// 进房间的落点摆好之前不标已读（ADR-0071）：标早了已读行会跳到最新一条，落点就丢了。
     @State private var placed = false
+    /// 在最新一条之后往上推，拉出房间的面板（ADR-0052）。
+    @State private var roomPull = PullAnchor(attachesToAncestor: false, edge: .bottom)
     @Environment(OnboardingModel.self) private var onboarding
     @Environment(TabsModel.self) private var tabs
 
@@ -31,12 +33,25 @@ struct ChatRoomView: View {
     }
 
     var body: some View {
+        RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
+                      blocked: entryBlocked, pullAnchor: roomPull) {
+            roomContent
+        }
+    }
+
+    /// 房间里另有东西开着：长按菜单之外的转发、删除确认不响应上推入口（ADR-0052）。
+    private var entryBlocked: Bool { pickingForwardRoom || showingRedact }
+
+    private var roomContent: some View {
         VStack(spacing: 0) {
             if let failure = timeline.failure {
                 ProblemView(problem: failure) { timeline.attempt += 1 }
                     .frame(maxHeight: .infinity)
             } else {
                 messages
+            }
+            if let notice = timeline.notice {
+                keyNotice(notice)
             }
             TransfersStrip(roomId: roomId)
             if !isReadOnly {
@@ -75,9 +90,18 @@ struct ChatRoomView: View {
         .environment(model.files)
         .environment(presenter)
         // 和 Bot 的私聊：顶栏是它的头像和 Matrix 名字，不写状态文字（ADR-0044）。
-        .wontonPushedScreen(bot?.name ?? title, avatar: barAvatar, showsStatus: true) { EmptyView() }
+        .wontonPushedScreen(
+            bot?.name ?? title, avatar: barAvatar, showsStatus: true, showsStatusLine: true
+        ) { EmptyView() }
+        // 入口按钮压进这一页。房间也能从别的标签页打开，那边的导航栈不认聊天页的路由，所以在这里登记一次。
+        .navigationDestination(for: ChatRoute.self) { route in
+            if case .chatBackup = route { ChatBackupView(model: model) }
+        }
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
+        .onChange(of: entryBlocked, initial: true) { _, blocked in
+            model.send(.setRoomEntryBlocked(roomId: roomId, blocked: blocked))
+        }
         .task(id: roomId) { await model.loadDraft(roomId) }
         .task(id: timeline.attempt) {
             if await timeline.observe() {
@@ -86,6 +110,21 @@ struct ChatRoomView: View {
                 tabs.select(.chat)
             }
         }
+    }
+
+    /// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
+    private func keyNotice(_ notice: KeyNotice) -> some View {
+        WontonNotice(icon: .lockKey, title: String(localized: .messageUndecryptableNotice), isError: false) {
+            // 更新的核心给出的类别没有按钮，说明照常显示。
+            if let action = notice.action {
+                NavigationLink(value: ChatRoute.chatBackup) {
+                    Text(action).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
+        }
+        .padding(.horizontal, WontonTheme.spacing.pageInset)
+        .padding(.vertical, WontonTheme.spacing.s8)
     }
 
     private var messages: some View {
@@ -113,7 +152,10 @@ struct ChatRoomView: View {
                     }
                 }
                 // 进房间时列表从头排起，这一行一定会出现。
-                .background(EnclosingScrollView { pin.attach($0) })
+                .background(EnclosingScrollView { scrollView in
+                    pin.attach(scrollView)
+                    roomPull.attach(to: scrollView)
+                })
                 .timelineListRow()
                 ForEach(Array(timeline.items.enumerated()), id: \.element.id) { index, item in
                     let joinsPrevious = index > 0 && item.joins(timeline.items[index - 1])

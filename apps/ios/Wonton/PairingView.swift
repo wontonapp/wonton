@@ -22,6 +22,21 @@ struct PairingView: View {
     @FocusState private var isEditingCode: Bool
     @Environment(\.wontonColors) private var colors
 
+    /// 相机状态和设备名都可以传入：截图测试要把它们固定住，模拟器的权限和设备名每次不一样。
+    init(
+        model: HomeModel,
+        camera: CameraAccess = .current,
+        deviceName: String = UIDevice.current.name,
+        onBack: (() -> Void)? = nil,
+        onPaired: @escaping () -> Void = {}
+    ) {
+        self.model = model
+        self.onBack = onBack
+        self.onPaired = onPaired
+        _camera = State(initialValue: camera)
+        _deviceName = State(initialValue: deviceName)
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {

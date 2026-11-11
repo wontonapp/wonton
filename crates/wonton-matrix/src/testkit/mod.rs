@@ -7,6 +7,7 @@ mod issuer;
 mod keys;
 mod push;
 mod relay;
+mod to_device;
 
 use std::{fmt::Debug, path::PathBuf, time::Duration};
 
@@ -23,6 +24,7 @@ pub use self::{
     issuer::{Claims, Issuer, now},
     push::{PushGateway, Received},
     relay::Relay,
+    to_device::ToDeviceHold,
 };
 
 /// 本会话当前生效的令牌：（访问令牌，刷新令牌）。刷新令牌登录时申请过才有；停用后旧会话
@@ -295,14 +297,20 @@ async fn listening_port(container: &ContainerAsync<GenericImage>) -> u16 {
 }
 
 /// compose.yaml 里的镜像，拆成名字和标签；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本
-/// （wonton-test-images），本地按 compose 里的上游引用拉。
+/// （wonton-test-images），本地按 compose 里的上游引用拉。摘要先去掉再拆：testcontainers 只收标签。
 fn image() -> (String, String) {
     let (name, tag) = COMPOSE
         .lines()
         .find_map(|line| line.trim().strip_prefix("image: "))
-        .and_then(|image| image.rsplit_once(':'))
+        .and_then(|image| {
+            image
+                .split_once('@')
+                .map_or(image, |(r, _)| r)
+                .rsplit_once(':')
+        })
         .expect("compose.yaml 里应有带标签的 Tuwunel 镜像");
-    wonton_test_images::image(&format!("{name}:{tag}"))
+    let mapped = wonton_test_images::image(&format!("{name}:{tag}"));
+    mapped
         .rsplit_once(':')
         .map(|(name, tag)| (name.to_owned(), tag.to_owned()))
         .expect("镜像引用应有标签")

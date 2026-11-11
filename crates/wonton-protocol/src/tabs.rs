@@ -81,10 +81,24 @@ pub enum TabRef {
         plugin_id: String,
         path: String,
     },
+    /// 独立 Bot 网页。选择、固定、面板、桥及媒体操作都保留这个身份，不借用插件默认页。
+    /// URL 来自同一 BotRef 的 BotView.web；没有已核实的 Ready 时不能用插件 web_url 代替。
+    Bot {
+        bot: crate::BotRef,
+        /// 空值打开清单入口；非空为同一 Bot origin 内的路径，固定当前页时使用，不存完整 URL。
+        #[serde(default)]
+        path: Option<String>,
+    },
     /// 公网网页，只收 `https://`。手机直接访问，不经隧道：没有登录身份、桥和 `--wonton-*` 变量，
     /// 存储和插件页面分开。
     Url {
         url: String,
+    },
+    /// 插件的 MCP Apps 界面（`ui://` 资源），Bot 钉上来的（ADR-0052）。核心另给宿主页，
+    /// 界面在隔离的 iframe 里，只经 MCP Apps 的 postMessage 说话。
+    UiResource {
+        plugin_id: String,
+        resource_uri: String,
     },
     /// 分享页与本机插件页、其他来源的同名插件分别持有网页状态；不授予主人管理操作。
     SharedApp {
@@ -97,6 +111,8 @@ pub enum TabRef {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TabsViewModel {
+    /// 主界面可呈现的页面，包含未固定的应用页；底栏仍只渲染 `items`。
+    pub pages: Vec<TabRef>,
     /// 底栏上的项，按显示顺序。
     pub items: Vec<TabItem>,
     /// 要不要显示整条底栏：栏上除了"聊天"还有别的项才显示，只有"聊天"时聊天页铺到底。核心算，壳不自己数。
@@ -126,6 +142,9 @@ pub struct TabsViewModel {
     /// 主面板上次看的那一页（本机记住，不同步），下次拉开还是它。没记住时为 `None`，壳从第一页开。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub panel_selected: Option<TabRef>,
+    /// 每个 Bot 往主面板钉页的同意（服务器上的）；设置里按它显示和收回。
+    #[serde(default)]
+    pub bot_pin_consents: Vec<crate::BotPinOwner>,
 }
 
 /// 底栏上的一项。
@@ -346,11 +365,14 @@ mod tests {
             page: sample_page(TabState::Ready, colored),
             attention: true,
             source: crate::PanelSource::User,
+            movable: true,
         }];
         round_trip(TabsViewModel {
+            pages: items.iter().map(|item| item.tab.clone()).collect(),
             items,
             show_bar: true,
             selected: page(),
+            bot_pin_consents: Vec::new(),
             overlay: Some(TabItem {
                 tab: TabRef::Plugin {
                     plugin_id: "app.example.other".into(),

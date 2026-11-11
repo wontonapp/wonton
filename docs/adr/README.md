@@ -83,3 +83,5 @@
 | [0073](0073-message-actions-and-replies.md) | 消息菜单和回复：菜单项由核心按消息给，回复、转发、撤回都用 Matrix 的标准做法 |
 | [0074](0074-registry-mirrors-per-registry.md) | 镜像加速按仓库分开：ghcr 和 quay 各有自己的名单，一个站不行换下一个 |
 | [0075](0075-image-helper-process.md) | 图片处理：常驻助手进程 |
+| [0076](0076-device-verification-fallback.md) | 新设备验证：确认方式的取舍，和没有已验证设备时的出路 |
+| [0077](0077-plugin-settings.md) | 插件设置：Schema 定义，核心校验，只重建用到的服务 |

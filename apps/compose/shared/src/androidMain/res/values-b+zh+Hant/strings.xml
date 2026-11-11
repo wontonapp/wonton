@@ -206,6 +206,7 @@
     <string name="timeline_send_failed">傳送失敗：%1$s</string>
     <string name="timeline_resend">重新傳送</string>
     <string name="timeline_undecryptable">無法解密：這支裝置還沒有這則訊息的金鑰</string>
+    <string name="timeline_undecryptable_notice">這台裝置讀不了先前的加密訊息。</string>
     <string name="timeline_redacted">訊息已收回</string>
     <string name="timeline_unsupported">暫不支援顯示的訊息（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
@@ -255,6 +256,7 @@
     <string name="connection_connected">已連線</string>
     <string name="connection_waiting_network">等待網路…</string>
     <string name="connection_connecting">連線中…</string>
+    <string name="connection_retrying">正在連接家用伺服器…</string>
     <string name="connection_updating">正在更新…</string>
     <string name="connection_server_offline">家用伺服器似乎離線了</string>
     <string name="connection_device_rejected">家用伺服器已不認這支手機</string>
@@ -1641,4 +1643,14 @@
     <string name="transfer_upload">上傳</string>
     <string name="transfer_download">下載</string>
     <string name="bot_avatar_pick_state">更換%1$s頭像</string>
+    <string name="panel_add">加入</string>
+    <string name="panel_add_pages">加入頁面</string>
+    <string name="panel_can_add">可以放進面板的頁面</string>
+    <string name="panel_close">關掉面板</string>
+    <string name="panel_edit">編輯面板</string>
+    <string name="panel_in_panel">面板裡的頁面</string>
+    <string name="panel_open">開啟面板</string>
+    <string name="panel_public_unsupported">這台裝置的 WebView 分不開公開網頁和插件頁面的儲存，開不了公開網頁</string>
+    <string name="panel_remove">移除</string>
+    <string name="panel_url">填寫網址</string>
 </resources>

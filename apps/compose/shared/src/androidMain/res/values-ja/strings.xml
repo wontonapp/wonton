@@ -206,6 +206,7 @@
     <string name="timeline_send_failed">送信できませんでした：%1$s</string>
     <string name="timeline_resend">再送信</string>
     <string name="timeline_undecryptable">復号できません：このデバイスにこのメッセージの鍵がありません</string>
+    <string name="timeline_undecryptable_notice">このデバイスでは以前の暗号化メッセージを読めません。</string>
     <string name="timeline_redacted">メッセージは削除されました</string>
     <string name="timeline_unsupported">まだ表示に対応していないメッセージ（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
@@ -255,6 +256,7 @@
     <string name="connection_connected">接続済み</string>
     <string name="connection_waiting_network">ネットワークを待っています…</string>
     <string name="connection_connecting">接続しています…</string>
+    <string name="connection_retrying">自宅サーバーに接続しています…</string>
     <string name="connection_updating">アップデートしています…</string>
     <string name="connection_server_offline">自宅サーバーがオフラインのようです</string>
     <string name="connection_device_rejected">このスマートフォンは自宅サーバーに認識されていません</string>
@@ -1641,4 +1643,14 @@
     <string name="transfer_upload">アップロード</string>
     <string name="transfer_download">ダウンロード</string>
     <string name="bot_avatar_pick_state">%1$sの画像を変更</string>
+    <string name="panel_add">追加</string>
+    <string name="panel_add_pages">ページを追加</string>
+    <string name="panel_can_add">パネルに入れられるページ</string>
+    <string name="panel_close">パネルを閉じる</string>
+    <string name="panel_edit">パネルを編集</string>
+    <string name="panel_in_panel">パネル内のページ</string>
+    <string name="panel_open">パネルを開く</string>
+    <string name="panel_public_unsupported">この端末の WebView は公開ウェブページとプラグインのページの保存領域を分けられないため、ここでは開けません</string>
+    <string name="panel_remove">削除</string>
+    <string name="panel_url">URL を入力</string>
 </resources>

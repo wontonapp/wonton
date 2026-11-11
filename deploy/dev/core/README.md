@@ -208,8 +208,9 @@ DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 `models`、`tools` 的插件进不了对应的内部地址；
 核心重启后插件恢复，卸掉的 Hermes 不会被装回来；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经
-`WONTON_SMOKE_MODEL` 传入（magpie 里一个能对话的模型），冒烟里的 magpie 经 `host.docker.internal:3425` 用它
-（同 `deploy/dev/agent`），不读取开发机 magpie 的配置和密钥。
+`WONTON_SMOKE_MODEL` 传入（magpie 里一个能对话的模型；`/v1/models` 里的 id 带 provider 前缀，冒烟在交给
+插件前会去掉了它），冒烟里的 magpie 经 `host.docker.internal:3425` 用它（同 `deploy/dev/agent`），
+不读取开发机 magpie 的配置和密钥。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例），传完删掉本机的 amd64 副本。核心镜像的 Rust、
 Debian 基础镜像从 ECR Public 拉（见 Dockerfile），不用传：

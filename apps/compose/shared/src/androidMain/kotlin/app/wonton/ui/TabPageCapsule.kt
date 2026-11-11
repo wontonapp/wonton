@@ -58,6 +58,7 @@ internal fun PluginPageCapsule(
     tab: TabRef, page: TabPage, tabs: TabsState, state: TabCapsuleVisibility,
     controller: PluginWebViewController, takeover: PageTakeover?,
     onClose: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit,
+    onEditPanel: (() -> Unit)? = null,
 ) {
     val opacity by animateFloatAsState(if (state.visible) 1f else 0f, tween(CAPSULE_FADE_MS), label = "capsule")
     val trailingLabel = stringResource(R.string.tab_exit_fullscreen)
@@ -93,7 +94,7 @@ internal fun PluginPageCapsule(
                 CapsuleHitTarget(trailingLabel) { state.show(); onClose() }
             }
             Box(Modifier.size(WontonTheme.size.target, WontonTheme.size.smallButton)) {
-                CapsuleMenu(tab, page, tabs, state, controller, takeover, onReload, onDetails)
+                CapsuleMenu(tab, page, tabs, state, controller, takeover, onReload, onDetails, onEditPanel)
             }
         }
     }
@@ -131,7 +132,7 @@ private fun CapsuleHitTarget(label: String, onClick: () -> Unit) {
 private fun CapsuleMenu(
     tab: TabRef, page: TabPage, tabs: TabsState, state: TabCapsuleVisibility,
     controller: PluginWebViewController, takeover: PageTakeover?,
-    onReload: () -> Unit, onDetails: (String) -> Unit,
+    onReload: () -> Unit, onDetails: (String) -> Unit, onEditPanel: (() -> Unit)?,
 ) {
     val close = { state.menuOpen = false; state.show() }
     DropdownMenu(state.menuOpen, close, containerColor = WontonTheme.colors.surface.toColor()) {
@@ -139,14 +140,19 @@ private fun CapsuleMenu(
             onClick = { close(); controller.goBack() })
         takeover?.let { TakeoverButton(it) }
         DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_reload)) }, onClick = { close(); onReload() })
-        DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_always_fullscreen)) },
-            trailingIcon = { WontonSwitch(page.opensFullscreen, { enabled ->
-                close()
-                tabs.send(Action.SetTabDisplay(tab, displayChoice(enabled)))
-            }) }, onClick = {
-                close()
-                tabs.send(Action.SetTabDisplay(tab, displayChoice(!page.opensFullscreen)))
-            })
+        if (onEditPanel != null) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.panel_edit)) },
+                onClick = { close(); onEditPanel() })
+        } else {
+            DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_always_fullscreen)) },
+                trailingIcon = { WontonSwitch(page.opensFullscreen, { enabled ->
+                    close()
+                    tabs.send(Action.SetTabDisplay(tab, displayChoice(enabled)))
+                }) }, onClick = {
+                    close()
+                    tabs.send(Action.SetTabDisplay(tab, displayChoice(!page.opensFullscreen)))
+                })
+        }
         if (tab is TabRef.Plugin) DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_details)) },
             onClick = { close(); onDetails(tab.pluginId) })
     }

@@ -42,6 +42,7 @@ mod lan;
 mod link_preview;
 pub mod matrix;
 mod mcp;
+mod mcp_apps;
 mod me;
 mod model_providers;
 mod models;
@@ -50,6 +51,7 @@ pub(crate) mod notify_limit;
 mod onboarding;
 mod owner_secrets;
 mod pages;
+mod panel_pins;
 mod peers;
 pub mod people_limits;
 mod plugin_scope;
@@ -188,6 +190,8 @@ pub struct Gateway {
     health_limits: health::RateLimits,
     /// 链接预览（ADR-0065），缓存在核心数据目录，出网跟着核心的代理设置。
     pub(crate) link_previews: Arc<crate::link_preview::LinkPreviews>,
+    /// MCP Apps 界面发起的工具调用：先返回标识，页面轮询结果。
+    pub(crate) app_calls: Arc<mcp_apps::AppCalls>,
     sessions: session::SessionStore,
 }
 
@@ -251,6 +255,7 @@ impl Gateway {
             onboarding,
             health_limits: health::RateLimits::new(),
             link_previews,
+            app_calls: Arc::default(),
             sessions: session::SessionStore::default(),
         }
     }
@@ -752,6 +757,8 @@ mod onboarding_tests;
 mod owner_secrets_tests;
 #[cfg(test)]
 mod pairing_tests;
+#[cfg(test)]
+mod panel_pins_tests;
 #[cfg(test)]
 mod peers_api_tests;
 #[cfg(test)]

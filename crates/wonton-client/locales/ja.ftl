@@ -266,13 +266,13 @@ files-download-incomplete = 接続が切断され、最後まで受信できま�
 files-download-stalled = データを受信できず、トンネルが停止している可能性があります
 
 # 接続の切断によって再生が失敗したときに表示されます。
-files-playback-transport = 自宅サーバーに接続できません。ダウンロードしてから他のアプリで開けます。
+files-playback-transport = 自宅サーバーに接続できません。
 # この端末でこの形式を再生できないときに表示されます。
 files-playback-unsupported = この端末ではこの形式を再生できません。ダウンロードしてから他のアプリで開けます。
 # $detail は自宅サーバーまたは接続の元の理由です。
 files-playback-unavailable = 自宅サーバーがこのファイルを提供できません：{ $detail }
 # $detail は自宅サーバーまたは接続の元の理由です。
-files-playback-error = 自宅サーバーでエラーが発生しました：{ $detail }。ダウンロードしてから他のアプリで開けます。
+files-playback-error = 自宅サーバーでエラーが発生しました：{ $detail }。
 # 再生の確認がタイムアウトしたときに表示されます。
 files-playback-no-response = 自宅サーバーから応答がありません
 
@@ -566,6 +566,9 @@ plugin-now-start-failed = ワンタップ操作を開始できません：{ $err
 
 # パネル（ADR-0052）のエラー。CoreError の理由、または TabsProblem の説明として表示する。
 panel-full = パネルがいっぱいです。先にページを外してください。
+panel-pins-not-connected = まだ自宅サーバーに接続していません。
+panel-pins-api-failed = { $status }：{ $body }
+
 panel-page-already-there = このページはすでにパネルにあります。
 panel-page-not-there = このページはパネルにありません。
 panel-page-unsupported = パネルに入れられるのはアプリのページ、アプリ内のページ、https:// のウェブページだけです。
@@ -596,3 +599,4 @@ tabs-open-only-plugins = 開き方を設定できるのはアプリのページ�
 tabs-fullscreen-only-plugins = 全画面にできるのはアプリのページだけです。
 tabs-fullscreen-none = 全画面のページはありません。
 tabs-fullscreen-not-current = そのページは全画面のページではありません。
+panel-pins-refresh-failed = Bot がピン留めしたページを読み込めません:{ $error }

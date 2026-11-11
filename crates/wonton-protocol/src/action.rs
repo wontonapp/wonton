@@ -227,6 +227,9 @@ pub enum Action {
         choice_id: Option<String>,
         /// 装插件、升级插件的卡片上填的密钥（ADR-0064）；别的卡片是空表。
         secrets: crate::SecretValues,
+        /// 装插件、升级插件的卡片上填的设置（ADR-0077）；别的卡片是空表。
+        #[serde(default)]
+        settings: crate::SettingValues,
     },
     /// 主人点了卡片上放行时段的“停止”：只拦后面的调用，已经发给插件的不撤回（ADR-0024）。进展和结果在
     /// [`ConfirmationView::window`](crate::ConfirmationView::window)。已经在发时什么都不做，家里的服务器还没连上时返回
@@ -309,11 +312,16 @@ pub enum Action {
         preview: InstallPreview,
         /// 主人在确认页上填的密钥（ADR-0064）。
         secrets: crate::SecretValues,
+        /// 主人在确认页上填的设置（ADR-0077）。
+        #[serde(default)]
+        settings: crate::SettingValues,
     },
     /// 主人在升级确认页上点了“升级”，同 [`Action::InstallPlugin`]。
     UpgradePlugin {
         preview: InstallPreview,
         secrets: crate::SecretValues,
+        #[serde(default)]
+        settings: crate::SettingValues,
     },
     /// 卸载。`delete_data` 为真时同时删除它的数据、密钥和 Bot 账号，不可恢复。
     UninstallPlugin {
@@ -558,6 +566,12 @@ pub enum Action {
     SelectPanelPage {
         scope: crate::PanelScope,
         tab: TabRef,
+    },
+    /// 收回或给回一个 Bot 往主面板钉页的同意（设置里）；只改以后还问不问，已经钉上的页面不动。
+    SetBotPinConsent {
+        plugin_id: String,
+        bot: String,
+        allowed: bool,
     },
     /// 把正在看的页面钉到面板或底栏（胶囊“···”菜单里的“钉到面板”“钉到底栏”）。
     ///

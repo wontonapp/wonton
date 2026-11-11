@@ -57,7 +57,7 @@ impl HomeLink {
             let _alive = alive;
             task.await;
         });
-        self.watch_pairing(attempt, limit, watchdog, ended);
+        self.watch_pairing(attempt, watchdog, ended);
     }
 
     /// 看门线程不在任何 tokio 运行时上：配对任务 panic、被停，或者运行时的线程被拖住、没了，状态照样变成失败，
@@ -65,7 +65,6 @@ impl HomeLink {
     fn watch_pairing(
         self: &Arc<Self>,
         attempt: u64,
-        limit: Duration,
         deadline: Duration,
         ended: mpsc::Receiver<()>,
     ) {
@@ -75,7 +74,7 @@ impl HomeLink {
             .spawn(move || {
                 // 发送端跟着配对任务的 future 走、从来不发：断开就是 future 没了（跑完、panic 或运行时停了）。
                 let abandoned = match ended.recv_timeout(deadline) {
-                    Err(mpsc::RecvTimeoutError::Timeout) => Abandoned::Timeout(limit),
+                    Err(mpsc::RecvTimeoutError::Timeout) => Abandoned::Timeout(deadline),
                     Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => Abandoned::Ended,
                 };
                 if let Some(home) = home.upgrade() {
@@ -97,16 +96,16 @@ impl HomeLink {
     ) {
         let started = Instant::now();
         let mut endpoint = None;
-        let exchange = async {
-            // Pairing cannot wait for tier fallback: try every relay tier (ADR-0048).
-            let bound = self
-                .bind_endpoint(&code.relays, usize::MAX, lang)
-                .await
-                .map_err(|reason| TunnelError::TransportUnavailable { reason })?;
-            pair::pair(endpoint.insert(bound), &code, &device_name).await
-        };
-        let outcome = match tokio::time::timeout(limit, exchange).await {
-            Ok(result) => result,
+        // 绑定的时限只包绑定：中继慢、网卡枚举慢不该吃掉交换的预算。
+        let bound =
+            tokio::time::timeout(limit, self.bind_endpoint(&code.relays, usize::MAX, lang)).await;
+        let outcome = match bound {
+            // 交换自己按同样的时限计时，并且请求已经发出去、回应没到时再确认一次：服务端对同一台设备的
+            // 重发幂等地回 `Paired`，慢中继上第一次配对照样能成，不留下一半的配对。
+            Ok(Ok(bound)) => {
+                pair::pair_with_timeout(endpoint.insert(bound), &code, &device_name, limit).await
+            }
+            Ok(Err(reason)) => Err(TunnelError::TransportUnavailable { reason }),
             Err(_) => Err(TunnelError::TransportUnavailable {
                 reason: l10n!(
                     CATALOG,
@@ -185,11 +184,11 @@ impl HomeLink {
     fn abandon_pairing(&self, attempt: u64, abandoned: &Abandoned) {
         let lang = language();
         let message = match abandoned {
-            Abandoned::Timeout(limit) => l10n!(
+            Abandoned::Timeout(deadline) => l10n!(
                 CATALOG,
                 lang,
                 "home-pairing-timeout",
-                seconds = limit.as_secs()
+                seconds = deadline.as_secs()
             ),
             Abandoned::Ended => l10n!(CATALOG, lang, "home-pairing-aborted"),
         };
@@ -206,7 +205,8 @@ impl HomeLink {
         }
     }
 
-    /// 交换的时限，和看门线程的时限：后者多留一段，只兜“交换自己的时限都轮不到”的情况，不和它抢着报。
+    /// 每一段（绑定、一次交换、一次确认）的时限，和看门线程的时限：整次最多三段，看门线程再多留一段，
+    /// 只兜“这几道时限都轮不到”的情况，不和它们抢着报。
     fn pair_deadlines(&self) -> (Duration, Duration) {
         #[cfg(feature = "test-hooks")]
         if let Some(deadlines) = *self
@@ -217,7 +217,10 @@ impl HomeLink {
         {
             return deadlines;
         }
-        (pair::PAIR_TIMEOUT, pair::PAIR_TIMEOUT + PAIR_WATCH_GRACE)
+        (
+            pair::PAIR_TIMEOUT,
+            pair::PAIR_TIMEOUT * 3 + PAIR_WATCH_GRACE,
+        )
     }
 }
 
@@ -226,7 +229,7 @@ const PAIR_WATCH_GRACE: Duration = Duration::from_secs(5);
 /// 配对没有结果就结束的两种情况。
 #[derive(Debug)]
 enum Abandoned {
-    /// 过了看门时限还没结果；带的是交换的时限，报给人看。
+    /// 过了看门时限还没结果；带的是看门时限，报给人看。
     Timeout(Duration),
     /// 任务没留下结果就没了：panic，或者运行时停了。
     Ended,

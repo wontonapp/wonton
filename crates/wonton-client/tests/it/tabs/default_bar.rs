@@ -17,12 +17,21 @@ async fn paired_bar_starts_with_chat_only_and_hides_until_something_is_pinned() 
         vec![TabRef::Chat, TabRef::Apps, TabRef::Settings]
     );
     assert!(unpaired.show_bar);
+    assert_eq!(
+        unpaired
+            .pages
+            .iter()
+            .filter(|tab| **tab == TabRef::Apps)
+            .count(),
+        1
+    );
 
     rig.connected().await;
     // 配上了：底栏默认只有“聊天”，整条底栏不显示。
     let paired = wait_tabs(&rig, |view| view.items.len() == 1).await;
     assert_eq!(paired.items[0].tab, TabRef::Chat);
     assert!(!paired.show_bar);
+    assert!(paired.pages.contains(&TabRef::Apps));
 
     rig.app
         .dispatch(Action::PinTab {
@@ -40,6 +49,8 @@ async fn paired_bar_starts_with_chat_only_and_hides_until_something_is_pinned() 
         vec![TabRef::Chat, TabRef::Settings]
     );
     assert!(pinned.show_bar);
+    assert!(pinned.pages.contains(&TabRef::Apps));
+    assert!(pinned.pages.contains(&TabRef::Settings));
 
     rig.app
         .dispatch(Action::UnpinTab {
@@ -47,6 +58,7 @@ async fn paired_bar_starts_with_chat_only_and_hides_until_something_is_pinned() 
         })
         .unwrap();
     assert!(!rig.app.tabs().show_bar);
+    assert!(!rig.app.tabs().pages.contains(&TabRef::Settings));
 }
 
 #[tokio::test]
@@ -83,24 +95,35 @@ async fn an_old_config_with_the_apps_page_loses_it_on_reconnect() {
         vec![TabRef::Chat, TabRef::Settings]
     );
     assert!(reopened.show_bar);
+    assert_eq!(
+        reopened
+            .pages
+            .iter()
+            .filter(|tab| **tab == TabRef::Apps)
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
-async fn apps_page_stays_selected_without_being_on_the_bar() {
+async fn apps_page_stays_renderable_without_being_on_the_bar() {
     let rig = Rig::new().await;
     rig.connected().await;
     wait_tabs(&rig, |view| view.items.len() == 1).await;
+    assert!(rig.app.tabs().pages.contains(&TabRef::Apps));
     // 网格页从侧边栏进：不在栏上也能选中，整条底栏照旧不显示。
     rig.app
         .dispatch(Action::SelectTab { tab: TabRef::Apps })
         .unwrap();
     assert_eq!(rig.app.tabs().selected, TabRef::Apps);
+    assert!(rig.app.tabs().pages.contains(&rig.app.tabs().selected));
     assert!(!rig.app.tabs().show_bar);
     // 刷新时选中不被弹回聊天。
     rig.app.dispatch(Action::RefreshPlugins).unwrap();
     rig.core.set_lists(vec![Vec::new()]);
     rig.app.dispatch(Action::RefreshPlugins).unwrap();
     assert_eq!(rig.app.tabs().selected, TabRef::Apps);
+    assert!(rig.app.tabs().pages.contains(&TabRef::Apps));
     // 回聊天仍然正常。
     rig.app
         .dispatch(Action::SelectTab { tab: TabRef::Chat })

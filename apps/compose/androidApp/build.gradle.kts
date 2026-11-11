@@ -83,6 +83,7 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "0.0.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // 只打包编译了 Rust 核心的 ABI：其他 ABI 的设备直接装不上，而不是装上后因缺 .so 崩溃。
         ndk {
@@ -107,11 +108,20 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.junit)
+    // 仪器测试（夜跑用）：启动 App 到首屏的骨架和 Compose 语义树断言。
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.compose.ui.test.junit4)
     // shared 用 implementation 引 Compose，测试编译 StepCardFrame 要自己拿到这些类型。
     testImplementation(libs.compose.runtime)
     testImplementation(libs.compose.foundation)
     testImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
+
+    // Apache-2.0。设备上跑 androidTest 的 runner（testInstrumentationRunner 指它）；
+    // AndroidJUnitRunner 在这个包里，ext:junit 不带。
+    androidTestImplementation(libs.androidx.test.runner)
 }
 
 /** Robolectric 要读 strings.xml 和各语言的 values-*，资源得进单元测试。 */

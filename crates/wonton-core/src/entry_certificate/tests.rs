@@ -241,6 +241,8 @@ fn unapproved_terms_and_implicit_public_acme_endpoints_are_rejected() {
     );
 }
 
+/// 手动验收用 lego 5 的 `accounts register --account-id wonton` 预置账号：它写的目录和字段
+/// （`<主机>/wonton/wonton.key`、`registration.accountURL`）核心要能读。
 #[test]
 fn preparation_reads_the_registered_v5_account_uri_and_requires_its_key() {
     let dir = tempfile::tempdir().unwrap();
@@ -256,10 +258,24 @@ fn preparation_reads_the_registered_v5_account_uri_and_requires_its_key() {
         key.serialize_pem().as_bytes(),
     )
     .unwrap();
-    fs::write(account_dir.join("account.json"), serde_json::to_vec(&serde_json::json!({
-        "server": "https://pebble.test:14000/dir",
-        "registration": {"status": "valid", "accountURL": "https://pebble.test:14000/my-account/123"}
-    })).unwrap()).unwrap();
+    fs::write(
+        account_dir.join("account.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "id": "wonton",
+            "email": "admin@example.test",
+            "keyType": "RSA2048",
+            "origin": "command",
+            "server": "https://pebble.test:14000/dir",
+            "registration": {
+                "status": "valid",
+                "contact": ["mailto:admin@example.test"],
+                "termsOfServiceAgreed": true,
+                "accountURL": "https://pebble.test:14000/my-account/123"
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
     assert_eq!(
         manager.account_uri().unwrap(),
         "https://pebble.test:14000/my-account/123"

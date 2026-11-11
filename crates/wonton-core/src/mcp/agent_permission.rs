@@ -134,7 +134,11 @@ impl Bus {
             request,
             settled: true,
         };
-        let (card, answered) = match self.confirmations.open(&caller.id, draft) {
+        let (card, answered) = match self.confirmations.open(
+            self.confirmations.default_notifier_arc(),
+            &caller.id,
+            draft,
+        ) {
             Ok(opened) => opened,
             Err(refusal) => {
                 asked.audit(Decision::Unconfirmed, None);
@@ -143,7 +147,11 @@ impl Bus {
         };
         asked.card.clone_from(&card.id);
         asked.settled = false;
-        match self.confirmations.deliver(&card, answered).await {
+        match self
+            .confirmations
+            .deliver(self.confirmations.default_notifier(), &card, answered)
+            .await
+        {
             Ok(chosen) => Ok(asked.answered(chosen.choice_id.as_deref()).await),
             Err(Refusal::Expired) => {
                 asked.settled = true;

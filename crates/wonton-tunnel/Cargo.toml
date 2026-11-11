@@ -40,6 +40,10 @@ test-hooks = []
 iroh = { workspace = true, features = ["test-utils"] }
 # MIT OR Apache-2.0。持有测试中继的 `Server`：它一掉服务器就停。
 iroh-relay = "1.4.1"
+# MIT OR Apache-2.0。#200 的行为测试给中继签自建 CA 的证书链（后端用核心已有的 aws-lc-rs）。
+rcgen = { workspace = true }
+# ISC AND (Apache-2.0 OR ISC)。测试中继的 TLS 服务端配置，客户端校验在 iroh 里。
+rustls = { workspace = true }
 # 示例的命令行解析。MIT OR Apache-2.0。
 clap = { version = "4.6.7", features = ["derive"] }
 tokio = { workspace = true, features = ["signal", "test-util"] }

@@ -35,15 +35,30 @@ fn one_tap_requests_round_trip() {
     let request = InstallRequest {
         source: "github:someone/wonton-samba@v1.0.0".into(),
         digest: preview().digest,
+        plan: "consumer-plan".into(),
         scope: None,
         grant: vec!["network.host".into()],
         enabled_permissions: vec!["docker.socket".into()],
         secrets: SecretValues::from([("brave_key".into(), crate::SecretString::new("s3cret"))]),
+        settings: SettingValues::from([("months".into(), SettingValue::Integer { value: 6 })]),
         devices: vec!["usb-1".into()],
         lan_webui: true,
         install_together: vec![InstallTogether {
             id: "app.model.gateway".into(),
-            source: "github:example/wonton-model-gateway".into(),
+            request: InstallRequest {
+                source: "github:example/wonton-model-gateway".into(),
+                digest: format!("sha256:{}", "ab".repeat(32)),
+                plan: "provider-plan".into(),
+                scope: None,
+                grant: Vec::new(),
+                enabled_permissions: Vec::new(),
+                secrets: SecretValues::new(),
+                settings: SettingValues::new(),
+                devices: Vec::new(),
+                lan_webui: false,
+                install_together: Vec::new(),
+                connect_plugins: Vec::new(),
+            },
         }],
         connect_plugins: Vec::new(),
     };
@@ -55,6 +70,7 @@ fn one_tap_requests_round_trip() {
         grant: vec![],
         enabled_permissions: vec![],
         secrets: SecretValues::new(),
+        settings: SettingValues::new(),
         lan_webui: false,
     };
     assert_eq!(round_trip(&upgrade), upgrade);
@@ -75,6 +91,7 @@ fn sidebar_view_model_round_trip() {
             reason: PluginFailure::TransportUnavailable,
             min_version: None,
             message: "连不上家里的服务器".into(),
+            settings: None,
         }),
         tasks: vec![PluginTask {
             id: "app.samba".into(),
@@ -112,6 +129,7 @@ fn sidebar_view_model_round_trip() {
                     reason: PluginFailure::TransportUnavailable,
                     min_version: None,
                     message: "连不上家里的服务器".into(),
+                    settings: None,
                 },
             },
         }),

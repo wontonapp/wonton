@@ -20,6 +20,7 @@ fn answer(phone: &Phone, id: &str) {
             answer: Answer::Reject,
             choice_id: None,
             secrets: Default::default(),
+            settings: Default::default(),
         })
         .unwrap();
 }

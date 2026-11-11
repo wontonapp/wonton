@@ -231,6 +231,7 @@
     <string name="timeline_resend">Send again</string>
     <!-- Body placeholder of a message this device can't decrypt. No arguments. -->
     <string name="timeline_undecryptable">Can\'t decrypt: this device doesn\'t have the key for this message</string>
+    <string name="timeline_undecryptable_notice">Earlier encrypted messages can\'t be read on this device.</string>
     <!-- Body placeholder of a redacted message. No arguments. -->
     <string name="timeline_redacted">Message deleted</string>
     <!-- Body placeholder of a message type that can't be shown. Argument: the event type, like m.sticker. -->
@@ -286,6 +287,8 @@
     <string name="connection_waiting_network">Waiting for the network…</string>
     <!-- Connection notice: the tunnel is being established. -->
     <string name="connection_connecting">Connecting…</string>
+    <!-- Connection progress while a real connection attempt or manual retry is running. -->
+    <string name="connection_retrying">Trying to reach your home server…</string>
     <!-- Connection notice: the home server is updating itself. -->
     <string name="connection_updating">Updating…</string>
     <!-- Connection notice: the tunnel dropped and the home server doesn't answer. -->
@@ -1866,4 +1869,14 @@
     <string name="transfer_download">Download</string>
     <!-- Content description of a state picture in the bot profile. Argument: the state name. -->
     <string name="bot_avatar_pick_state">Change the %1$s picture</string>
+    <string name="panel_add">Add</string>
+    <string name="panel_add_pages">Add pages</string>
+    <string name="panel_can_add">Can be added to the panel</string>
+    <string name="panel_close">Close panel</string>
+    <string name="panel_edit">Edit panel</string>
+    <string name="panel_in_panel">In the panel</string>
+    <string name="panel_open">Open panel</string>
+    <string name="panel_public_unsupported">This device\'s WebView cannot keep public web pages apart from plugin pages, so they cannot be opened here</string>
+    <string name="panel_remove">Remove</string>
+    <string name="panel_url">Enter a URL</string>
 </resources>

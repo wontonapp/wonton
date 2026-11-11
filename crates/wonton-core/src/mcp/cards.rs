@@ -514,6 +514,18 @@ fn arguments_line(arguments: &Value, langs: &Languages) -> CardLine {
 }
 
 /// Agent 自己的工具要动手（ADR-0035）：按钮是 Agent 给的选项。没有拒绝类的选项时加一个不带 `choice_id` 的“取消”。
+/// Bot 想往主人的主面板钉页（ADR-0052）：第一次要问，同意后不再问。
+pub fn pin_main(title: String, note: String, allow: &str, deny: &str) -> Draft {
+    Draft {
+        title,
+        lines: vec![line(note)],
+        choices: choices(allow, deny),
+        scope: None,
+        plugin_id: None,
+        secret_inputs: Vec::new(),
+    }
+}
+
 pub fn agent_permission(
     requester: &str,
     request: &AgentPermissionRequest,
@@ -725,6 +737,7 @@ mod tests {
         let langs = Languages::default();
         let card = ConfirmationCard {
             secret_inputs: Vec::new(),
+            settings: None,
             id: "abc".into(),
             state: ConfirmationState::Pending,
             title: "Hermes 想安装 Grafana".into(),
@@ -745,6 +758,7 @@ mod tests {
     fn the_card_body_follows_the_requested_language() {
         let card = ConfirmationCard {
             secret_inputs: Vec::new(),
+            settings: None,
             id: "abc".into(),
             state: ConfirmationState::Pending,
             title: "Hermes 想安装 Grafana".into(),

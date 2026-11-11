@@ -263,9 +263,9 @@ impl PluginsLink {
             }
             Ok(preview) => {
                 let started = if upgrade {
-                    self.upgrade(preview, SecretValues::new())
+                    self.upgrade(preview, SecretValues::new(), Default::default())
                 } else {
-                    self.install(preview, SecretValues::new())
+                    self.install(preview, SecretValues::new(), Default::default())
                 };
                 if let Err(error) = started {
                     // 预览来自家里服务器，总有来源；还剩“同一个插件已有任务在跑”（连点），那条任务就是反馈。
@@ -467,6 +467,7 @@ mod tests {
             source: Some("github:owner/app.photos@v1.0.0".into()),
             commit: None,
             digest: "sha256:abc".into(),
+            plan: "opaque-install-plan".into(),
             id: "app.photos".into(),
             title: "Photos".into(),
             summary: String::new(),
@@ -494,6 +495,7 @@ mod tests {
                 opened: None,
             }],
             secret_inputs: Vec::new(),
+            settings: None,
             notices: Vec::new(),
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),

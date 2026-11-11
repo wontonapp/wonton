@@ -7,7 +7,6 @@ use std::os::unix::fs::MetadataExt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::super::compose::PullPolicy;
 use super::super::docker::Engine;
 use super::super::docker_exec::ExecOutput;
 use super::super::{PluginId, PluginPackage, PluginStatus};
@@ -43,10 +42,7 @@ fn compose(content: &str) -> String {
 async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
-    engine
-        .ensure_image(&image(), PullPolicy::Missing, &[])
-        .await
-        .unwrap();
+    crate::test_docker::ensure_image(&engine, &image()).await;
     let names = Names::new();
     let dir = tempfile::tempdir().unwrap();
     // 默认的 5 秒熬不过无健康检查服务要求的 3 秒稳定运行（STABLE_FOR）加安装步骤。

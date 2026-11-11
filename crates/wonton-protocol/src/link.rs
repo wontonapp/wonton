@@ -45,7 +45,26 @@ impl AppLink {
                         URL_SAFE_NO_PAD.encode(path)
                     )
                 }
+                TabRef::Bot { bot, path: None } => {
+                    format!("tab/bot/{}/{}", bot.plugin_id, bot.bot)
+                }
+                TabRef::Bot {
+                    bot,
+                    path: Some(path),
+                } => format!(
+                    "tab/bot/{}/{}/{}",
+                    bot.plugin_id,
+                    bot.bot,
+                    URL_SAFE_NO_PAD.encode(path)
+                ),
                 TabRef::Url { url } => format!("tab/url/{}", URL_SAFE_NO_PAD.encode(url)),
+                TabRef::UiResource {
+                    plugin_id,
+                    resource_uri,
+                } => format!(
+                    "tab/ui/{plugin_id}/{}",
+                    URL_SAFE_NO_PAD.encode(resource_uri)
+                ),
                 TabRef::SharedApp {
                     owner_user_id,
                     plugin_id,
@@ -80,6 +99,13 @@ impl AppLink {
                     page: Some((*page).to_owned()),
                 })
             }
+            ["tab", "ui", plugin_id, encoded] if is_id(plugin_id) => {
+                let uri = String::from_utf8(URL_SAFE_NO_PAD.decode(encoded).ok()?).ok()?;
+                tab(TabRef::UiResource {
+                    plugin_id: (*plugin_id).to_owned(),
+                    resource_uri: uri,
+                })
+            }
             ["tab", "plugin-path", plugin_id, encoded] if is_id(plugin_id) => {
                 let Ok(path) = URL_SAFE_NO_PAD.decode(encoded) else {
                     return None;
@@ -90,6 +116,23 @@ impl AppLink {
                 tab(TabRef::PluginPath {
                     plugin_id: (*plugin_id).to_owned(),
                     path,
+                })
+            }
+            ["tab", "bot", plugin_id, bot] if is_id(plugin_id) && is_id(bot) => tab(TabRef::Bot {
+                bot: crate::BotRef {
+                    plugin_id: (*plugin_id).to_owned(),
+                    bot: (*bot).to_owned(),
+                },
+                path: None,
+            }),
+            ["tab", "bot", plugin_id, bot, encoded] if is_id(plugin_id) && is_id(bot) => {
+                let path = String::from_utf8(URL_SAFE_NO_PAD.decode(encoded).ok()?).ok()?;
+                tab(TabRef::Bot {
+                    bot: crate::BotRef {
+                        plugin_id: (*plugin_id).to_owned(),
+                        bot: (*bot).to_owned(),
+                    },
+                    path: Some(path),
                 })
             }
             ["tab", "url", encoded] => {
@@ -176,6 +219,12 @@ mod tests {
             AppLink::Tab {
                 tab: TabRef::Url {
                     url: "https://example.com/weather?city=%E5%8C%97%E4%BA%AC".into(),
+                },
+            },
+            AppLink::Tab {
+                tab: TabRef::UiResource {
+                    plugin_id: "app.example.monitor".into(),
+                    resource_uri: "ui://monitor/index.html?x=1".into(),
                 },
             },
             AppLink::Tab {

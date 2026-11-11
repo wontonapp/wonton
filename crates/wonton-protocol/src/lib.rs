@@ -13,6 +13,8 @@ mod agent_permission;
 mod appearance;
 mod bot_commands;
 mod bot_profile;
+mod bot_web;
+mod bot_web_registration;
 mod chat;
 mod chat_layout;
 mod confirmation;
@@ -70,6 +72,10 @@ pub use bot_profile::{
     MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE, MAX_BOT_NAME_CHARS, StateAvatar,
     StateAvatars, bot_plugin_access_path, bot_profile_path, check_bot_name,
 };
+pub use bot_web::{
+    BOT_WEB_LABEL_PREFIX, BotWebFailure, BotWebPage, BotWebView, bot_web_label, bot_web_path,
+};
+pub use bot_web_registration::{BotWebConflict, bot_web_registration};
 pub use chat::{
     BackupReminder, BotInstallRow, BotInstallState, ChatAccount, ChatContact, ChatFailure,
     ChatProblem, ChatSync, ChatViewModel, DeviceVerification, EncryptionStatus, ImageThumbnail,
@@ -150,8 +156,11 @@ pub use owner::{
     check_email, check_email_change, normalized_email,
 };
 pub use panel::{
-    LAYOUT_EVENT, LayoutSettings, MAX_PANEL_PAGES, PanelEntry, PanelItem, PanelScope, PanelSource,
-    PinTarget, PlacedTab, ROOM_PANEL_EVENT, RoomPanel, TabDisplaySetting,
+    BOT_PANEL_PINS_PATH, BotPanelPin, BotPanelPins, BotPinConsent, BotPinOwner, LAYOUT_EVENT,
+    LayoutSettings, MAX_PANEL_PAGES, MCP_APP_CALLS_PATH, MCP_APP_MESSAGE_PATH, MCP_APP_READ_PATH,
+    MCP_APP_TOOLS_PATH, PanelEntry, PanelItem, PanelScope, PanelSource, PinTarget, PlacedTab,
+    ROOM_PANEL_EVENT, RoomPanel, TabDisplaySetting, bot_panel_consent_path, bot_panel_pin_path,
+    bot_panel_pin_seen_path, mcp_app_call_path, mcp_app_host_path,
 };
 pub use peers::{
     PEER_ERROR_HEADER, PEERS_PATH, PeerCode, PeerError, PeerErrorBody, PeerProblem, PeerRequestRow,
@@ -173,12 +182,17 @@ pub use plugin::{
     OpenWindow, OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets, PermissionLine,
     PermissionOpened, PermissionRisk, PermissionUpdate, PluginAuthor, PluginDetail, PluginDevice,
     PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits,
-    PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginState, PluginTakeover,
-    PluginTask, PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel, RequirementLine,
-    RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues, SourceKind,
+    PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginSettingField,
+    PluginSettingKind, PluginSettingOption, PluginSettingsUpdate, PluginSettingsView, PluginState,
+    PluginTakeover, PluginTask, PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel,
+    RequirementLine, RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues,
+    SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
+    SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsProblem,
+    SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, SourceKind,
     StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
     ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
-    UpgradeRequest, UpgradeResult, plugin_scope_path, secret_input_path,
+    UpgradeRequest, UpgradeResult, plugin_scope_path, plugin_settings_path,
+    plugin_settings_preview_path, secret_input_path,
 };
 pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
@@ -213,9 +227,10 @@ pub use tabs::{
     TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,
 };
 pub use timeline::{
-    BackPagination, ImageContent, MatrixTarget, MediaHandle, MessageAction, MessageContent,
-    RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan, SendState, TimelineContent,
-    TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
+    BackPagination, ImageContent, KeyNotice, MatrixTarget, MediaHandle, MessageAction,
+    MessageContent, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan, SendState,
+    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll, TimelineUpdate,
+    TimelineViewport,
 };
 pub use verification::{
     VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,

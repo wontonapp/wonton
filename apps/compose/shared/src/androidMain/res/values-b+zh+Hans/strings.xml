@@ -206,6 +206,7 @@
     <string name="timeline_send_failed">发送失败：%1$s</string>
     <string name="timeline_resend">重发</string>
     <string name="timeline_undecryptable">无法解密：本设备还没有这条消息的密钥</string>
+    <string name="timeline_undecryptable_notice">这台设备读不了之前的加密消息。</string>
     <string name="timeline_redacted">消息已撤回</string>
     <string name="timeline_unsupported">暂不支持显示的消息（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
@@ -255,6 +256,7 @@
     <string name="connection_connected">已连接</string>
     <string name="connection_waiting_network">等待网络…</string>
     <string name="connection_connecting">连接中…</string>
+    <string name="connection_retrying">正在连接家里的服务器…</string>
     <string name="connection_updating">正在更新…</string>
     <string name="connection_server_offline">家里的服务器好像离线了</string>
     <string name="connection_device_rejected">家里的服务器已不认这台手机</string>
@@ -1641,4 +1643,14 @@
     <string name="transfer_upload">上传</string>
     <string name="transfer_download">下载</string>
     <string name="bot_avatar_pick_state">更换%1$s头像</string>
+    <string name="panel_add">添加</string>
+    <string name="panel_add_pages">添加页面</string>
+    <string name="panel_can_add">可以放进面板的页面</string>
+    <string name="panel_close">关掉面板</string>
+    <string name="panel_edit">编辑面板</string>
+    <string name="panel_in_panel">面板里的页面</string>
+    <string name="panel_open">打开面板</string>
+    <string name="panel_public_unsupported">这台设备的 WebView 分不开公网网页和插件页面的存储，打不开公网网页</string>
+    <string name="panel_remove">移除</string>
+    <string name="panel_url">填写网址</string>
 </resources>

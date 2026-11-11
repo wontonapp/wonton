@@ -1,6 +1,7 @@
 use super::*;
 use wonton_protocol::{InstalledPlugin, InstalledPlugins, PlacedTab, PluginHealth, TabState};
 
+mod bot_pins;
 mod page_rules;
 
 struct Rig {
@@ -25,13 +26,14 @@ impl Rig {
             method_rx,
         )
         .unwrap();
-        let plugins_link = PluginsLink::new(runtime.clone(), home_link, dir.path(), None);
+        let plugins_link = PluginsLink::new(runtime.clone(), home_link.clone(), dir.path(), None);
         let home = watch::Sender::new(home("old-server"));
         let plugins = watch::Sender::new(plugins("old-content"));
         let (panel_sender, panel_receiver) = watch::channel(None);
         let tabs = TabsLink {
             runtime,
             home: home.subscribe(),
+            home_link,
             plugins: plugins_link,
             plugins_view: plugins.subscribe(),
             path: dir.path().join(TABS_FILE),
@@ -53,6 +55,10 @@ impl Rig {
                 room_panel_selected: None,
                 entry_blocked: false,
                 room_panel_removed: Vec::new(),
+                bot_pins: Vec::new(),
+                core_url: None,
+                bot_pin_consents: Vec::new(),
+                pins_problem: None,
             }),
             writing: Mutex::new(()),
             session: watch::channel(None).1,
@@ -290,7 +296,7 @@ async fn added_pages_keep_order_and_duplicates_are_rejected() {
 #[tokio::test]
 async fn panel_holds_at_most_five_pages() {
     let rig = Rig::new();
-    for index in 0..5 {
+    for index in 0..4 {
         rig.tabs
             .dispatch(Action::AddPanelPage {
                 scope: main_scope(),
@@ -298,6 +304,12 @@ async fn panel_holds_at_most_five_pages() {
             })
             .unwrap();
     }
+    rig.tabs
+        .dispatch(Action::AddPanelPage {
+            scope: main_scope(),
+            tab: url_tab("https://example.com/fifth"),
+        })
+        .unwrap();
     let sixth = rig
         .tabs
         .dispatch(Action::AddPanelPage {
@@ -580,6 +592,78 @@ async fn failures_are_kept_per_instance() {
             page: PlacedTab::Panel {
                 scope: main_scope(),
                 tab: page_tab(),
+            },
+        })
+        .unwrap();
+    assert_eq!(rig.tabs.view().panel[0].page.state, TabState::Ready);
+}
+
+#[tokio::test]
+async fn url_page_load_failure_is_upstream() {
+    let rig = Rig::new();
+    let url = url_tab("https://example.com/report");
+    rig.tabs
+        .dispatch(Action::AddPanelPage {
+            scope: main_scope(),
+            tab: url.clone(),
+        })
+        .unwrap();
+    rig.tabs
+        .dispatch(Action::TabLoadFailed {
+            page: PlacedTab::Panel {
+                scope: main_scope(),
+                tab: url.clone(),
+            },
+            status: None,
+        })
+        .unwrap();
+    assert_eq!(
+        rig.tabs.view().panel[0].page.state,
+        TabState::LoadFailed {
+            failure: wonton_protocol::TabLoadFailure::Upstream,
+            status: None
+        }
+    );
+
+    rig.tabs
+        .dispatch(Action::TabLoadFailed {
+            page: PlacedTab::Panel {
+                scope: main_scope(),
+                tab: url.clone(),
+            },
+            status: Some(503),
+        })
+        .unwrap();
+    assert_eq!(
+        rig.tabs.view().panel[0].page.state,
+        TabState::LoadFailed {
+            failure: wonton_protocol::TabLoadFailure::Upstream,
+            status: Some(503)
+        }
+    );
+
+    rig.tabs
+        .dispatch(Action::TabLoadFailed {
+            page: PlacedTab::Panel {
+                scope: main_scope(),
+                tab: url.clone(),
+            },
+            status: Some(404),
+        })
+        .unwrap();
+    assert_eq!(
+        rig.tabs.view().panel[0].page.state,
+        TabState::LoadFailed {
+            failure: wonton_protocol::TabLoadFailure::Upstream,
+            status: Some(404)
+        }
+    );
+
+    rig.tabs
+        .dispatch(Action::TabLoadSucceeded {
+            page: PlacedTab::Panel {
+                scope: main_scope(),
+                tab: url,
             },
         })
         .unwrap();

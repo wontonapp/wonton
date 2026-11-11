@@ -1,8 +1,10 @@
 name: android
 
-# PR 只在改到 App 或 Rust 绑定时才跑；草稿 PR 不跑，转 ready 或每天的定时全量才跑。
+# PR 只在改到 App 或 Rust 绑定时才跑；草稿 PR 上一个作业都不起（含改动范围），汇总作业起来报一个通过，
+# 转 ready 或每天的定时全量才跑。
 # 路径不写在触发器上：合并队列的必需检查每次入队都要有结果，工作流没触发的话检查一直“等待中”，队列合不了。
-# 改成由 changes 作业判断改动范围，作业挂在它上面，没改到时自己报 skipped（跳过的检查算通过）。
+# 改成由 changes 作业判断改动范围，没改到时自己报 skipped（跳过的检查算通过）。
+# 必需检查只有末尾的汇总作业，其余作业在作业级直接跳过，不用为了报检查先起 runner。
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -10,7 +12,7 @@ on:
     # 每天全量兜底（PR 已在最新 main 上跑过，main 上不重跑）。
     - cron: "0 4 * * *"
   workflow_dispatch:
-  # 合并队列：detekt、单元测试和 Debug 构建是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
+  # 合并队列：末尾的汇总作业是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
   # 队列里不判断改动范围，作业照跑（作业的 if 按事件名放行）。
   merge_group:
     types: [checks_requested]
@@ -32,8 +34,8 @@ jobs:
   changes:
     name: 改动范围（android）
     # 这次 PR 有没有改到下面这些路径，替代原来触发器的 paths 过滤。
-    # 只在 PR 上判断：队列、定时和手动运行一律跑全套，作业的 if 里按事件名放行。
-    if: github.event_name == 'pull_request'
+    # 只在非草稿 PR 上判断：队列、定时和手动运行一律跑全套，作业的 if 里按事件名放行；草稿上整份都不起。
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -65,6 +67,7 @@ jobs:
               - "Cargo.lock"
               - "rust-toolchain.toml"
               - ".github/workflows/android.yml"
+              - "!**/*.md"
 
   build:
     name: detekt、单元测试与 Debug 构建
@@ -98,3 +101,42 @@ jobs:
       - name: detekt（函数 ≤ 100 行）、单元测试与 Debug APK
         working-directory: apps/compose
         run: ./gradlew detekt :androidApp:testDebugUnitTest :androidApp:assembleDebug
+      # 界面参考图：预览用固定假数据，在 JVM 上渲染，不加载 .so。重录在 snapshots-record.yml，这里只比对。
+      - name: 比对界面参考图
+        working-directory: apps/compose
+        run: ./gradlew :shared:verifyPaparazziAndroidMain
+      - name: 差异图和报告
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: paparazzi-${{ github.run_attempt }}
+          path: |
+            apps/compose/shared/build/paparazzi
+            apps/compose/shared/build/reports/paparazzi
+          retention-days: 7
+          if-no-files-found: ignore
+      # 只编不跑：设备上的测试要在设备上加载原生核心、还要模拟器，日常 PR 上太重；编译能挡住 API 和清单错误。
+      - name: 编译设备测试（androidTest）
+        working-directory: apps/compose
+        run: ./gradlew :androidApp:assembleDebugAndroidTest
+
+  # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
+  # 草稿 PR 上其余作业全被跳过时它也照样起来并报通过，不用为此先起别的 runner。
+  summary:
+    name: android 汇总
+    needs: [changes, build]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      RESULTS: ${{ join(needs.*.result, ' ') }}
+    steps:
+      - name: 各作业的结果
+        run: |
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) exit 1 ;;
+            esac
+          done

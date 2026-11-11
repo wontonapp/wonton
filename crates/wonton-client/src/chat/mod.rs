@@ -416,7 +416,8 @@ impl ChatLink {
                 answer,
                 choice_id,
                 secrets,
-            } => self.answer_confirmation(id, answer, choice_id, secrets),
+                settings,
+            } => self.answer_confirmation(id, answer, choice_id, secrets, settings),
             Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
             Action::SetChatLayout { target, choice } => self.set_chat_layout(target, choice),
             _ => Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action"))),
@@ -468,6 +469,7 @@ impl ChatLink {
             self.plugins.clone(),
             menus,
             room_view,
+            self.view.subscribe(),
         );
         *lock(&self.open_timeline) = Some((room_id, Arc::downgrade(&subscription)));
         Ok(subscription)
@@ -564,6 +566,7 @@ impl ChatLink {
         answer: Answer,
         choice_id: Option<String>,
         secrets: wonton_protocol::SecretValues,
+        settings: wonton_protocol::SettingValues,
     ) -> Result<(), CoreError> {
         if answer == Answer::Unknown {
             return Err(invalid(&l10n!(CATALOG, language(), "chat-unknown-answer")));
@@ -585,6 +588,7 @@ impl ChatLink {
                 answer,
                 choice_id,
                 secrets,
+                settings,
             };
             let outcome = confirmation::send_answer(&core_url, &proxy, &id, body).await;
             answers.send_modify(|answers| answers.finish(id, outcome));

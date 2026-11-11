@@ -183,7 +183,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 | 商店信息、图标、截图 | 做 | 见上 |
 | 主屏入口 | 做 | 底栏的“应用”页按图标和名字列出已安装的插件，最后一格进应用商店，商店不单占一个标签。界面上对普通用户把插件叫“应用”，插件作者看的校验信息和规范仍叫插件：有网页的点开就是小程序（“模型设置”就在这里）；Agent 插件点开是和它的 Bot 的私聊。图标下面列连接、等确认的卡片和存储，拿不到的显示不确定 |
 | 深链 | 先定格式 | `wonton://plugin/<id>`，可选 `?path=/…`，打开插件网页的某一页。格式定下后 Bot 就可以在消息里这样写；App 让消息和通知里的这种链接能点，M2 做 |
-| 设置表单原生渲染（`settings`） | 预留 | JSON Schema 的子集、设置的值怎样交给插件（注入变量、重建容器）待定（插件规范的待定问题）；M1 的插件用自己的网页做设置 |
+| 设置表单原生渲染（`settings`） | 合同见 ADR-0077 | JSON Schema 定义非秘密设置；核心校验、保存和按渲染漂移重建，原生控件由归一化表单驱动 |
 | 多个入口和快捷方式 | 预留 | 清单字段 `shortcuts`（名字、路径、图标），M2 定 |
 | 插件通知（`notify`） | 做 | 插件经核心给主人发通知，进“Wonton”私聊，按级别推送，见 ADR-0047 |
 | 小程序 JS SDK | 不做 | 已被 ADR-0033 取代：用 MCP Apps 的方法名，原生能力按那里的表扩展 |
@@ -206,6 +206,9 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 | POST | `plugins` | `InstallRequest`（JSON），或者插件包加 `?grant=` | 201 `InstalledPlugin` |
 | POST | `plugins/{id}/upgrade/preview` | 空（升到提示的版本），或者插件包 | `InstallPreview` |
 | POST | `plugins/{id}/upgrade` | `UpgradeRequest`（JSON），或者插件包加 `?grant=` | `InstalledPlugin` |
+| GET | `plugins/{id}/settings` | — | `PluginSettingsView`（ADR-0077） |
+| POST | `plugins/{id}/settings/preview` | `PluginSettingsUpdate` | `PluginSettingsView`（只校验） |
+| PUT | `plugins/{id}/settings` | `PluginSettingsUpdate` | `PluginSettingsView`（保存并重建） |
 | DELETE | `plugins/{id}?purge=true` | — | 卸载报告 |
 | GET | `PluginImage.path` 给出的地址 | — | `image/png` 或 `image/jpeg`，可以一直缓存 |
 | GET | `storage` | — | `StorageUsage`（存数据的那块盘） |
@@ -216,7 +219,8 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 - 新的错误类别：`source_unavailable`（503，家里的服务器连不上插件的来源，如 GitHub）、`not_found`（404，来源里没有这个
   仓库或版本）、`changed`（409，插件包在预览之后变了，摘要对不上，要重新预览）、`images_unavailable`（503，核心起不了
   处理图片的进程；图片本身处理不了是 `invalid_input`）。原有的类别照旧（`invalid_input`、`permission_denied`、
-  `unsupported`、`conflict`、`not_installed` 等）。
+  `unsupported`、`conflict`、`not_installed` 等）。设置另有 `settings_schema_invalid`（包的 Schema 不合格）和
+  `settings_invalid`（值过不了 Schema），见 [ADR-0077](0077-plugin-settings.md)。
 - 安装、升级和卸载在核心里单独执行：请求断开了也照样做完，结果体现在已安装列表里。
 
 **客户端核心**（`ClientCore`）：
@@ -225,12 +229,12 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
   进展（`tasks`）、可更新的应用（`updatable`）、侧边栏的内容（`sidebar`），以及一键装、一键升的进展
   （`pending`）和要主人拿主意的确认（`confirmation`）。
 - 操作：`SetLanguages`（壳把系统的语言偏好告诉核心，核心据此带 `Accept-Language`）、`RefreshPlugins`、
-  `RefreshStore { force }`、`InstallPlugin { preview }`、`UpgradePlugin { preview }`、`UninstallPlugin`、
+  `RefreshStore { force }`、`InstallPlugin { preview, secrets, settings }`、`UpgradePlugin { preview, secrets, settings }`、`UninstallPlugin`、
   `DismissPluginTask`，以及一键装、一键升：`InstallNow { source }`、`UpgradeNow { plugin_id }`、`UpgradeAll`、
   `DismissStoreConfirmation`。安装和升级把确认页渲染的那份预览原样交回，核心按它授予列出的全部权限：确认页上看到的
   就是授予的，壳不用自己拼权限列表。
 - 直接返回结果的调用：`store_plugin(source)`、`installed_plugin(id)`（详情页）、`preview_install(source)`、
-  `preview_upgrade(id)`（确认页）、`load_plugin_image(image)`（经隧道取图片并缓存，返回 PNG 或 JPEG 的字节，同
+  `preview_upgrade(id)`（确认页）、`plugin_settings(id)`、`preview_plugin_settings(id, update)`、`set_plugin_settings(id, update)`（ADR-0077）、`load_plugin_image(image)`（经隧道取图片并缓存，返回 PNG 或 JPEG 的字节，同
   `load_media`）、`search_store(query)`（在取到的商店列表里按名字、说明、标签和 ID 找）。
 - 失败的原因（`PluginFailure`）按核心的错误类别区分，壳据此提示下一步：连不上家里的服务器、本设备不被认、家里的服务器
   连不上来源、来源里没有、插件包变了、核心不支持（权限、架构、规范版本）、冲突（已经装了或正在装）、插件包不合法、

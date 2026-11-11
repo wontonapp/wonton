@@ -94,6 +94,8 @@ impl PluginsLink {
         if let Some(id) = going {
             self.end_takeover(&id);
         }
+        // App 看不见了：自动映射一律停，屏幕上那页留着，回前台恢复；手动开关不受影响。
+        self.ports.set_foreground(false);
     }
 
     /// 换了服务器：上一台等租约自己过期，什么都不再发。

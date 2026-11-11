@@ -13,7 +13,10 @@ final class BotProfileUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = true
+        try UITestBackend.require()
         app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        UITestBackend.passPairingCode(to: app)
         app.launch()
     }
 
