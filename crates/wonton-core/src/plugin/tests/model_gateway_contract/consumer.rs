@@ -14,7 +14,9 @@ fn request(env: &Env, content: Value, stream: bool) -> Value {
     json!({"model":env["WONTON_MODEL_DEFAULT"],"messages":[
         {"role":"system","content":"You are a test assistant."},
         {"role":"user","content":content}
-    ],"stream":stream,"max_tokens":32})
+    ],"stream":stream,"max_completion_tokens":32,"reasoning_effort":"low","service_tier":"default",
+      "response_format":{"type":"json_schema","json_schema":{"name":"contract","strict":true,
+        "schema":{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}}}})
 }
 
 pub(super) async fn catalog(bed: &Bed, env: &Env) {
@@ -112,6 +114,12 @@ pub(super) async fn exercise(bed: &Bed, env: &Env, upstream: &Upstream) {
     assert_eq!(reply["choices"][0]["message"]["content"], "contract reply");
     assert_eq!(reply["choices"][0]["finish_reason"], "stop");
     assert_eq!(reply["usage"]["total_tokens"], 14);
+    assert!(upstream.requests().iter().any(|request| {
+        request["response_format"]["type"] == "json_schema"
+            && request["max_completion_tokens"] == 32
+            && request["reasoning_effort"] == "low"
+            && request["service_tier"] == "default"
+    }));
     let mut missing = request(env, json!("hello"), false);
     missing["model"] = json!("does-not-exist");
     let response = bed.chat(env, missing).await;

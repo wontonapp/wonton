@@ -88,11 +88,12 @@ pub(super) async fn configure(bed: &Bed) {
 
 pub(super) async fn finish(bed: &Bed, consumer: &BTreeMap<String, String>) {
     let configured = bed.configured().await;
+    let provider = bed.manager.models_route().unwrap().credentials_container;
     let output = bed
         .target
         .engine
         .exec_output(
-            "contract-provider",
+            &provider,
             &bed.target.spec.providers.as_ref().unwrap().list,
             None,
             std::time::Duration::from_secs(30),

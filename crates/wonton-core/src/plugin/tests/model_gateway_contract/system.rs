@@ -104,9 +104,8 @@ pub(super) async fn start(socket: &Path) -> super::Target {
         }
     }
     let (docker, engine) = FakeDocker::start().await;
-    docker.add_container("contract-provider", "com.example.gateway");
     docker.on_exec_output(move |name, argv, stdin| {
-        assert_eq!(name, "contract-provider");
+        assert!(name.ends_with("contract-provider"), "{name}");
         tokio::task::block_in_place(|| exec(&container, argv, stdin))
     });
     super::Target {

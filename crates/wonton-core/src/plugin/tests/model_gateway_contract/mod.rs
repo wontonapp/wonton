@@ -13,10 +13,12 @@ use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::model_providers::ProviderAction;
 use crate::plugin::models::ModelsRoute;
+use crate::plugin::names::Instance;
 use crate::plugin::provides::ModelsProvider;
 use crate::plugin::{PluginId, PluginManager, PluginPackage, PluginStatus};
+use crate::test_docker::Names;
 
-use super::manager::manager_with;
+use super::manager::manager_in_instance;
 use super::{env_of_container, langs, package};
 
 mod consumer;
@@ -41,13 +43,17 @@ struct Bed {
     target: Target,
     http: reqwest::Client,
     server: tokio::task::JoinHandle<()>,
+    instance: Instance,
+    _names: Names,
     _dir: tempfile::TempDir,
 }
 
 impl Bed {
     async fn new(target: Target) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let mut manager = manager_with(target.engine.clone(), &dir);
+        let mut names = Names::new();
+        let instance = names.instance().clone();
+        let mut manager = manager_in_instance(target.engine.clone(), &dir, names.name());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = listener.local_addr().unwrap();
         manager.cfg.gateway_port = endpoint.port();
@@ -73,14 +79,15 @@ impl Bed {
             egress_proxy: None,
             capabilities: BTreeMap::new(),
         });
+        let provider = names.oneshot_container("contract-provider");
         target
             .docker
-            .add_container("contract-provider", "com.example.gateway");
+            .add_container(&provider, "com.example.gateway");
         let route = ModelsRoute {
             id: manifest.id.clone(),
             spec: target.spec.clone(),
             upstream: target.upstream.clone(),
-            credentials_container: "contract-provider".into(),
+            credentials_container: provider,
         };
         manager.register_for_test(manifest, PluginStatus::Running, None);
         manager.serve_models_for_test(route);
@@ -121,6 +128,8 @@ impl Bed {
             target,
             http,
             server,
+            instance,
+            _names: names,
             _dir: dir,
         }
     }
@@ -175,9 +184,9 @@ impl Bed {
             .unwrap();
         let slug = PluginId::parse(id).unwrap().slug();
         let name = if bot {
-            crate::plugin::names::Instance::default().bot_container(&slug, "client", "default")
+            self.instance.bot_container(&slug, "client", "default")
         } else {
-            crate::plugin::names::container_name(&slug, "client")
+            self.instance.container(&slug, "client")
         };
         env_of_container(&self.target.docker, &name)
     }
@@ -192,6 +201,7 @@ impl Bed {
             .unwrap()
     }
 }
+
 impl Drop for Bed {
     fn drop(&mut self) {
         self.server.abort();
