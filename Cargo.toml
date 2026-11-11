@@ -28,8 +28,12 @@ jsonwebtoken = { version = "11.1.0", default-features = false, features = ["use_
 matrix-sdk = "0.19.1"
 # 客户端核心向核心要登录令牌、核心发 Web Push；各自按需加 TLS 等特性。
 reqwest = { version = "0.13.5", default-features = false }
+# MIT OR Apache-2.0。核心联邦和隧道测试签发证书；使用已有的 aws-lc-rs 后端。
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 # Apache-2.0。MCP 的官方 Rust SDK（ADR-0006、ADR-0016）；各 crate 按需加客户端、服务器和传输的特性。
 rmcp = { version = "3.8.0", default-features = false }
+# ISC AND (Apache-2.0 OR ISC)。核心出站 TLS 和测试中继使用的证书校验与服务端配置。
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"] }
 # MIT OR Apache-2.0。比核心的发布版本：客户端判服务器太旧，核心自己读版本。
 semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
