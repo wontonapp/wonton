@@ -1,5 +1,6 @@
 //! 回声 Bot：最小的 Matrix Bot 示例插件（`plugins/examples/echo-bot`）。核心安装插件时代 Bot 登录、建好和主人的
-//! 加密私聊，经 `WONTON_MATRIX_*` 把身份交给它；它把主人发来的文字原样回过去，加密房间里也一样。
+//! 加密私聊，经 `WONTON_MATRIX_*` 把身份交给它；它把主人发来的文字回过去（`/delay <秒> <文字>` 到点再回），
+//! 加密房间里也一样。
 //!
 //! - `echo-bot run`（默认）：按 `WONTON_MATRIX_*` 恢复会话，同步并回声。加密存储在 `ECHO_STORE`（默认 `/data`）下，
 //!   每台设备一个子目录：重装插件会换一台设备，旧设备的密钥不能拿来用。
@@ -7,6 +8,7 @@
 //! - `echo-bot probe …`：冒烟测试里扮演主人的一台设备，经手机的本地代理发一条加密消息，等 Bot 的加密回声。
 
 mod bot;
+mod command;
 mod probe;
 
 use std::process::ExitCode;

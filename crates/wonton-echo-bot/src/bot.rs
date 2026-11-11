@@ -16,7 +16,7 @@ use matrix_sdk::ruma::{OwnedDeviceId, OwnedUserId};
 use matrix_sdk::store::RoomLoadSettings;
 use matrix_sdk::{Client, LoopCtrl, RoomState, SessionMeta, SessionTokens};
 
-use crate::PREFIX;
+use crate::{PREFIX, command};
 
 /// 最近一次同步成功的时间记在这里，健康检查看它。
 const ALIVE: &str = "/tmp/echo-bot.alive";
@@ -97,7 +97,7 @@ pub async fn run() -> anyhow::Result<()> {
         .context("同步中断")
 }
 
-/// 名单里的人的文字消息原样回过去；别人的、自己的、不是文字的都不理。
+/// 名单里的人的文字消息回过去（`/delay` 延迟，其余原样立刻回）；别人的、自己的、不是文字的都不理。
 async fn echo(event: OriginalSyncRoomMessageEvent, room: Room, allowed_users: &[OwnedUserId]) {
     if room.state() != RoomState::Joined || !allowed_users.contains(&event.sender) {
         return;
@@ -105,7 +105,16 @@ async fn echo(event: OriginalSyncRoomMessageEvent, room: Room, allowed_users: &[
     let MessageType::Text(text) = event.content.msgtype else {
         return;
     };
-    let reply = RoomMessageEventContent::text_plain(format!("{PREFIX}{}", text.body));
+    command::deliver(command::parse(&text.body), move |text| {
+        let room = room.clone();
+        async move { send(&room, &text).await }
+    })
+    .await;
+}
+
+/// 把回声发进房间；发不出去只记日志，一条没回不该拖垮同步。
+async fn send(room: &Room, text: &str) {
+    let reply = RoomMessageEventContent::text_plain(format!("{PREFIX}{text}"));
     if let Err(e) = room.send(reply).await {
         tracing::warn!(room = %room.room_id(), error = %e, "回声没发出去");
     }
