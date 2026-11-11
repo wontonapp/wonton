@@ -47,7 +47,14 @@ pub(super) async fn fetch(
             let data = match reuse.and_then(|dir| unchanged(&dir.join(path), sha256)) {
                 Some(data) => data,
                 None => files
-                    .verified(&source.repo, &spec.commit, path, sha256, langs)
+                    .verified(
+                        &source.repo,
+                        source.subdir.as_deref(),
+                        &spec.commit,
+                        path,
+                        sha256,
+                        langs,
+                    )
                     .await
                     .map_err(|e| e.to_string())?,
             };

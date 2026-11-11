@@ -9,7 +9,13 @@ async fn fake_agent_round_trip_sets_http_mcp_and_mode() {
         .await
         .unwrap();
     let session = bounded(
-        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
+        client.new_session(
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            "plan",
+            None,
+            &origin(None),
+        ),
         "session/new",
     )
     .await
@@ -51,7 +57,13 @@ async fn agent_without_modes_gets_a_session_without_set_mode() {
         .await
         .unwrap();
     let session = bounded(
-        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
+        client.new_session(
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            "plan",
+            None,
+            &origin(None),
+        ),
         "session/new",
     )
     .await
@@ -110,7 +122,12 @@ async fn restored_replay_updates_do_not_leak_into_the_next_prompt() {
         .await
         .unwrap();
     bounded(
-        client.load_or_resume("session-1", "/workspace", "http://mcp.wonton.internal/mcp"),
+        client.load_or_resume(
+            "session-1",
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            &origin(None),
+        ),
         "session/load",
     )
     .await
@@ -135,7 +152,12 @@ async fn missing_restore_support_is_treated_as_a_lost_session() {
             .await
             .unwrap();
         let result = bounded(
-            client.load_or_resume("session-1", "/workspace", "http://mcp.wonton.internal/mcp"),
+            client.load_or_resume(
+                "session-1",
+                "/workspace",
+                "http://mcp.wonton.internal/mcp",
+                &origin(None),
+            ),
             "session/load",
         )
         .await;
@@ -221,6 +243,79 @@ async fn prompt_errors_show_the_reason_from_data() {
     } else {
         panic!("期待 Upstream 错误");
     }
+    drop(client);
+    agent.finish().await;
+}
+
+#[tokio::test]
+async fn session_setup_reports_the_origin_session_in_mcp_headers() {
+    let agent = FakeAgent::start(Scenario::Normal).await;
+    let client = bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+        .await
+        .unwrap();
+    bounded(
+        client.new_session(
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            "plan",
+            None,
+            &origin(None),
+        ),
+        "session/new",
+    )
+    .await
+    .unwrap();
+    bounded(
+        client.new_session(
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            "plan",
+            None,
+            &origin(Some("$thread-1")),
+        ),
+        "session/new",
+    )
+    .await
+    .unwrap();
+    bounded(
+        client.load_or_resume(
+            "session-1",
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            &origin(Some("$thread-2")),
+        ),
+        "session/load",
+    )
+    .await
+    .unwrap();
+    let requests = agent.requests().await;
+    let headers_of = |method: &str, index: usize| -> Value {
+        requests
+            .iter()
+            .filter(|request| request["method"] == method)
+            .nth(index)
+            .unwrap()["params"]["mcpServers"][0]["headers"]
+            .clone()
+    };
+    // 主对话只报房间，话题会话带话题根（ADR-0016）。
+    assert_eq!(
+        headers_of("session/new", 0),
+        json!([{"name": ORIGIN_ROOM_HEADER, "value": "!room:wonton.internal"}])
+    );
+    assert_eq!(
+        headers_of("session/new", 1),
+        json!([
+            {"name": ORIGIN_ROOM_HEADER, "value": "!room:wonton.internal"},
+            {"name": ORIGIN_THREAD_HEADER, "value": "$thread-1"}
+        ])
+    );
+    assert_eq!(
+        headers_of("session/load", 0),
+        json!([
+            {"name": ORIGIN_ROOM_HEADER, "value": "!room:wonton.internal"},
+            {"name": ORIGIN_THREAD_HEADER, "value": "$thread-2"}
+        ])
+    );
     drop(client);
     agent.finish().await;
 }
