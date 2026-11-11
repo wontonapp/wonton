@@ -139,7 +139,7 @@ def package(name, role, capability, required, fault):
     image: {IMAGE}
     entrypoint: [python3, /fixture.py, {mode}]
     user: '${{PUID}}:${{PGID}}'
-    restart: 'no'
+    restart: "{'no' if fault else 'unless-stopped'}"
     environment:
       INPUT: '${{WONTON_SECRET_TOKEN}}'
       PLUGIN_ID: {plugin}
