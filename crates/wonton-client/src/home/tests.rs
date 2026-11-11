@@ -10,6 +10,7 @@ async fn paused_home() -> (
     let (_method_tx, method_rx) = watch::channel(PushMethod::default());
     let home = HomeLink::new(
         tokio::runtime::Handle::current(),
+        wonton_tunnel::sharing::ProxyHub::bind().await.unwrap(),
         storage,
         Network::DirectOnly,
         None,

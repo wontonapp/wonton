@@ -83,6 +83,11 @@ struct PluginDetailView: View {
                     if let installed = detail.installed, !detail.saveGrants.isEmpty {
                         SaveGrants(model: model, id: installed.id, folders: detail.saveGrants) { loaded = .success($0) }
                     }
+                    if let shares = detail.shares {
+                        PluginSharesSection(model: model, pluginId: detail.id, shares: shares) {
+                            loaded = .success($0)
+                        }
+                    }
                     if let installed = detail.installed {
                         ToolPolicySection(model: model, id: installed.id, version: detail.version)
                     }

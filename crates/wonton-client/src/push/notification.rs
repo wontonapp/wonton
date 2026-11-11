@@ -12,8 +12,8 @@ use wonton_matrix::{
     EventId, MatrixSession, MessageBody, Notification, OwnedEventId, OwnedRoomId, RoomId, UserId,
 };
 use wonton_protocol::{
-    ChatAccount, ChatFailure, CoreError, HomeStatus, MAIL_FIELD, NOTICE_FIELD,
-    NotificationCategory, PluginMail, PluginNotice, PushContent, PushNotification,
+    ChatAccount, ChatFailure, CoreError, HomeStatus, NOTICE_FIELD, NotificationCategory,
+    PluginNotice, PushContent, PushNotification,
 };
 
 use super::PushLink;
@@ -207,7 +207,6 @@ pub(crate) fn push_notification(
         PushedCard::Expired => return None,
     };
     let notice = plugin_notice(own_user, &message.sender, &message.custom);
-    let mail = plugin_mail(own_user, &message.sender, &message.custom);
     let content = match message.body {
         MessageBody::Undecryptable => PushContent::Unavailable {
             reason: ChatFailure::NotReady,
@@ -227,7 +226,7 @@ pub(crate) fn push_notification(
         content,
         category: if confirmation.is_some() {
             NotificationCategory::Confirmation
-        } else if notice.is_some() || mail.is_some() {
+        } else if notice.is_some() {
             NotificationCategory::PluginNotice
         } else {
             NotificationCategory::Message
@@ -254,18 +253,6 @@ fn plugin_notice(
         return None;
     }
     serde_json::from_value(custom.get(NOTICE_FIELD)?.clone()).ok()
-}
-
-/// 邮件和插件通知共用可信核心账号与通知类别（ADR-0056）；不认识的结构仍显示纯文本正文。
-fn plugin_mail(
-    own_user: &UserId,
-    sender: &UserId,
-    custom: &Map<String, Value>,
-) -> Option<PluginMail> {
-    if sender != core_account(own_user) {
-        return None;
-    }
-    PluginMail::deserialize(custom.get(MAIL_FIELD)?).ok()
 }
 
 #[cfg(test)]
@@ -328,104 +315,5 @@ mod tests {
         assert!(plugin_notice(&owner, &core, &custom(json!({"level": "warning"}))).is_none());
         // 没有这个字段的是普通消息。
         assert!(plugin_notice(&owner, &core, &Map::new()).is_none());
-    }
-
-    fn mail_field() -> Value {
-        json!({
-            "plugin_id": "app.example.documents",
-            "plugin_name": "Documents",
-            "from": "documents@plugins.wonton.internal",
-            "subject": "Export ready",
-            "body": "Your export is ready.",
-            "attachments": [{"name": "export.pdf", "size": 1024, "uploaded": true}],
-        })
-    }
-
-    fn mail_notification(sender: &str, custom: Map<String, Value>) -> Option<PushNotification> {
-        let owner: OwnedUserId = "@owner:test".parse().unwrap();
-        let room: OwnedRoomId = "!room:test".parse().unwrap();
-        let event: OwnedEventId = "$mail".parse().unwrap();
-        push_notification(
-            None,
-            &owner,
-            &room,
-            &event,
-            Notification {
-                sender: sender.parse().unwrap(),
-                sender_name: "Sender".into(),
-                room_name: Some("Wonton".into()),
-                body: MessageBody::Text("Documents: Export ready".into()),
-                custom,
-            },
-        )
-    }
-
-    #[test]
-    fn only_trusted_well_formed_mail_uses_the_plugin_notice_category() {
-        for (sender, category) in [
-            ("@wonton-core:test", NotificationCategory::PluginNotice),
-            ("@stranger:test", NotificationCategory::Message),
-            ("@wonton-core:other.example", NotificationCategory::Message),
-        ] {
-            let custom = [(MAIL_FIELD.to_owned(), mail_field())]
-                .into_iter()
-                .collect();
-            let shown = mail_notification(sender, custom).unwrap();
-            assert_eq!(shown.category, category);
-            assert!(matches!(shown.content, PushContent::Message { .. }));
-            assert!(shown.confirmation.is_none());
-        }
-    }
-
-    #[test]
-    fn malformed_mail_remains_an_ordinary_message() {
-        let mut missing_from = mail_field();
-        missing_from.as_object_mut().unwrap().remove("from");
-        let mut invalid_size = mail_field();
-        invalid_size["attachments"][0]["size"] = json!(-1);
-        let mut invalid_uploaded = mail_field();
-        invalid_uploaded["attachments"][0]["uploaded"] = json!("yes");
-        for field in [
-            Value::Null,
-            json!({}),
-            missing_from,
-            invalid_size,
-            invalid_uploaded,
-        ] {
-            let custom = [(MAIL_FIELD.to_owned(), field)].into_iter().collect();
-            let shown = mail_notification("@wonton-core:test", custom).unwrap();
-            assert_eq!(shown.category, NotificationCategory::Message);
-            assert!(matches!(shown.content, PushContent::Message { .. }));
-        }
-    }
-
-    #[test]
-    fn confirmation_priority_and_expiry_apply_to_mail() {
-        for expires_at_ms in [u64::MAX, 0] {
-            let custom = [
-                (MAIL_FIELD.to_owned(), mail_field()),
-                (
-                    wonton_protocol::CARD_FIELD.to_owned(),
-                    json!({
-                        "id": "confirm-export",
-                        "state": {"type": "pending"},
-                        "title": "Export documents",
-                        "lines": [],
-                        "choices": [],
-                        "expires_at_ms": expires_at_ms,
-                    }),
-                ),
-            ]
-            .into_iter()
-            .collect();
-            let shown = mail_notification("@wonton-core:test", custom);
-            if expires_at_ms == 0 {
-                assert!(shown.is_none());
-            } else {
-                let shown = shown.unwrap();
-                assert_eq!(shown.category, NotificationCategory::Confirmation);
-                assert_eq!(shown.confirmation.unwrap().id, "confirm-export");
-            }
-        }
     }
 }

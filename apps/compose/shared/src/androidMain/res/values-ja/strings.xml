@@ -1309,6 +1309,74 @@
     <string name="shortcut_agent_chat">ボットに質問</string>
     <string name="shortcuts_too_few">システムが許可するショートカットは%1$d個だけなので、「新しいチャット」と「ボットに質問」を同時に表示できません。</string>
     <string name="shortcuts_too_many">システムが許可するショートカットは最大%1$d個です。「新しいチャット」「ボットに質問」を優先し、アプリのページはナビゲーションバーの順に表示します。</string>
+    <!-- Explicit acknowledgement of the warning about sharing an app without declared friend support. No arguments. -->
+    <string name="share_acknowledge">このリスクを理解し、同意します</string>
+    <!-- Button that creates an app share for a friend or group. No arguments. -->
+    <string name="share_add">共有を追加</string>
+    <!-- Button that dismisses the share editor without saving changes. No arguments. -->
+    <string name="share_cancel">キャンセル</string>
+    <!-- Plugin detail badge showing how many friends can access this app. Argument: count, an integer; use native plural rules. -->
+    <plurals name="share_count">
+        <item quantity="other">%1$d 人の友だちと共有中</item>
+    </plurals>
+    <!-- Expiration choice that opens a date and time picker. No arguments. -->
+    <string name="share_custom">日時を選択</string>
+    <!-- Title of the editor for an existing app share. No arguments. -->
+    <string name="share_edit">共有を編集</string>
+    <!-- Empty state when no friends or groups can be selected for sharing. No arguments. -->
+    <string name="share_empty">選択できる友だち・グループがありません</string>
+    <!-- Label of the share expiration picker. No arguments. -->
+    <string name="share_expires">有効期限</string>
+    <!-- Section title for individual friends in the share recipient picker. No arguments. -->
+    <string name="share_friends">友だち</string>
+    <!-- Section title for friend groups in the share recipient picker. No arguments. -->
+    <string name="share_groups">グループ</string>
+    <!-- Expiration choice that grants access for one hour from now. No arguments. -->
+    <string name="share_hour">1 時間</string>
+    <!-- Identity verification detail when secure discovery of the identity server failed. No arguments. -->
+    <string name="share_identity_discovery">認証サーバーを安全に検出できませんでした。</string>
+    <!-- Identity verification detail for an invalid OpenID identity token. No arguments. -->
+    <string name="share_identity_invalid">認証トークンが無効です。</string>
+    <!-- Identity verification detail when the verified user ID belongs to a different server. No arguments. -->
+    <string name="share_identity_mismatch">確認されたユーザー ID が認証サーバーと一致しません。</string>
+    <!-- Identity verification detail for an unrecognized failure category. No arguments. -->
+    <string name="share_identity_other">本人確認に失敗しました。</string>
+    <!-- Identity verification detail when the identity server could not confirm the user. No arguments. -->
+    <string name="share_identity_userinfo">認証サーバーで本人確認ができませんでした。</string>
+    <!-- Expiration choice that keeps access until the owner revokes it. No arguments. -->
+    <string name="share_indefinite">取り消すまで</string>
+    <!-- Shared app problem when the access grant has expired. No arguments. -->
+    <string name="share_problem_expired">共有の有効期限が切れました</string>
+    <!-- Shared app problem when the sharing friend's server cannot verify the current user. No arguments. -->
+    <string name="share_problem_identity">友だちのサーバーがあなたを認識できません</string>
+    <!-- Shared app problem for an unavailable source not covered by a more specific category. No arguments. -->
+    <string name="share_problem_other">共有アプリを利用できません</string>
+    <!-- Shared app problem when the app is not running; recipients cannot start it. No arguments. -->
+    <string name="share_problem_plugin">このアプリは停止しています</string>
+    <!-- Shared app problem when the current user has no grant for the app. No arguments. -->
+    <string name="share_problem_required">このアプリは友だちから共有されていません</string>
+    <!-- Shared app problem when the owner has revoked access. No arguments. -->
+    <string name="share_problem_revoked">友だちがこのアプリの共有を停止しました</string>
+    <!-- Shared app problem when the sharing friend's server cannot be reached. No arguments. -->
+    <string name="share_problem_unreachable">友だちのサーバーに接続できません</string>
+    <!-- Apps page section title for apps shared by other people. No arguments. -->
+    <string name="share_received">自分と共有されたアプリ</string>
+    <!-- Label of the friend or group picker for an app share. No arguments. -->
+    <string name="share_recipient">友だち・グループ</string>
+    <!-- Button or accessibility label that refreshes apps shared by friends. No arguments. -->
+    <string name="share_refresh">共有を更新</string>
+    <!-- Destructive action that immediately removes access granted by an app share. No arguments. -->
+    <string name="share_revoke">共有を取り消す</string>
+    <!-- Prominent warning before sharing an app without declared friend support. Explain account creation and possible access to the owner's data. No arguments. -->
+    <string name="share_risk">友だちは自分のユーザー名でこのアプリにログインします。アプリが友だちのアカウントを作成し、あなたのデータを閲覧できるようにする可能性があります。</string>
+    <!-- Button that saves a new or edited app share. No arguments. -->
+    <string name="share_save">共有を保存</string>
+    <!-- Plugin detail section and share management page title. No arguments. -->
+    <string name="share_title">友だちと共有</string>
+    <!-- Expiration choice that grants access until the end of today. No arguments. -->
+    <string name="share_today">今日中</string>
+    <!-- Recipient label when the saved friend or group is no longer available. No arguments. -->
+    <string name="share_unknown">不明な共有相手</string>
     <!-- Toolbar button that opens the Add Source page. -->
     <string name="store_add_source">提供元を追加</string>
     <!-- Button on a store row to install an app you don't have. -->

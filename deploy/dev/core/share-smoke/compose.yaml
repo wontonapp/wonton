@@ -1,0 +1,226 @@
+name: ${SHARE_SMOKE_PROJECT:?}
+x-env: &env
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  ALL_PROXY: ""
+  http_proxy: ""
+  https_proxy: ""
+  all_proxy: ""
+  NO_PROXY: "*"
+  SHARE_SMOKE_STATE: ${SHARE_SMOKE_STATE:?}
+  SHARE_SMOKE_PREFIX: ${SHARE_SMOKE_PREFIX:?}
+  SHARE_SMOKE_IDENTITY_PREFIX: ${SHARE_SMOKE_IDENTITY_PREFIX:?}
+x-common: &common
+  restart: "no"
+  dns: ["${SHARE_SMOKE_PREFIX}.2"]
+  volumes:
+    - ${SHARE_SMOKE_STATE}:${SHARE_SMOKE_STATE}
+    - ./:/fixture:ro
+x-tuwunel-env: &matrix
+  <<: *env
+  TUWUNEL_DATABASE_PATH: /var/lib/tuwunel
+  TUWUNEL_ADDRESS: 0.0.0.0
+  TUWUNEL_PORT: 8008
+  TUWUNEL_ALLOW_FEDERATION: "true"
+  TUWUNEL_TRUSTED_SERVERS: "[]"
+  TUWUNEL_ALLOW_INVALID_TLS_CERTIFICATES: "false"
+  TUWUNEL_ALLOW_REGISTRATION: "false"
+  TUWUNEL_LOGIN_WITH_PASSWORD: "false"
+  TUWUNEL_JWT__ENABLE: "true"
+  TUWUNEL_JWT__FORMAT: EDDSA
+  TUWUNEL_JWT__ALGORITHM: EdDSA
+  TUWUNEL_JWT__REQUIRE_EXP: "true"
+  TUWUNEL_JWT__ISSUER: '["wonton-core"]'
+  TUWUNEL_JWT__AUDIENCE: '["tuwunel"]'
+  TUWUNEL_JWT__KEY: ${SHARE_SMOKE_JWT_PUBLIC:?}
+  TUWUNEL_REGISTRATION_SHARED_SECRET: isolated-share-smoke-registration
+x-core-env: &core
+  <<: *env
+  WONTON_OWNER_NAME: smokeowner
+  WONTON_PUBLIC_PORT: 8080
+  WONTON_TUNNEL_PORT: 8082
+  WONTON_RELAYS: https://relay.test/
+  WONTON_SHARE_CA_FILE: ${SHARE_SMOKE_STATE}/ca.pem
+  WONTON_MATRIX_JWT_KEY_FILE: ${SHARE_SMOKE_STATE}/matrix.key
+  WONTON_MATRIX_REGISTRATION_SECRET: isolated-share-smoke-registration
+  WONTON_SYSTEM_PLUGINS: ""
+  WONTON_DEFAULT_PLUGINS: ""
+  WONTON_PLUGIN_SLICE: ""
+  WONTON_PLUGIN_NETWORK_POOL: ${SHARE_SMOKE_PLUGIN_POOL:?}
+  WONTON_PUID: "0"
+  WONTON_PGID: "0"
+  # 安装卡住时尽快报错，并留下定位用的日志。
+  WONTON_INSTALL_TIMEOUT_SECS: "60"
+  RUST_LOG: "wonton_core=debug,iroh=warn,hyper=warn,tower=warn"
+
+services:
+  dns:
+    <<: *common
+    image: ${SHARE_SMOKE_PYTHON_IMAGE:?}
+    entrypoint: [python3, /fixture/fixture.py, dns]
+    environment: *env
+    networks:
+      core: {ipv4_address: "${SHARE_SMOKE_PREFIX}.2"}
+  pebble:
+    <<: *common
+    image: ${SHARE_SMOKE_PEBBLE_IMAGE:?}
+    command: ["-config", "${SHARE_SMOKE_STATE}/pebble.json", "-dnsserver", "${SHARE_SMOKE_PREFIX}.2:53"]
+    environment:
+      <<: *env
+      PEBBLE_VA_NOSLEEP: "1"
+      PEBBLE_WFE_NONCEREJECT: "0"
+    networks:
+      core: {ipv4_address: "${SHARE_SMOKE_PREFIX}.3"}
+  entrance:
+    <<: *common
+    image: ${SHARE_SMOKE_CERTBOT_IMAGE:?}
+    entrypoint: [python3, /fixture/fixture.py, frontend]
+    environment: *env
+    networks:
+      core: {ipv4_address: "${SHARE_SMOKE_PREFIX}.10"}
+      identities: {ipv4_address: "${SHARE_SMOKE_IDENTITY_PREFIX}.10"}
+  bad-cert:
+    <<: *common
+    image: ${SHARE_SMOKE_PYTHON_IMAGE:?}
+    entrypoint: [python3, /fixture/fixture.py, bad-cert]
+    environment: *env
+    networks:
+      core: {ipv4_address: "${SHARE_SMOKE_PREFIX}.11"}
+      identities: {ipv4_address: "${SHARE_SMOKE_IDENTITY_PREFIX}.11"}
+  relay:
+    <<: *common
+    image: ${SHARE_SMOKE_CORE_IMAGE:?}
+    entrypoint: [/smoke/share-smoke-relay]
+    command: ["${SHARE_SMOKE_STATE}/certs/live/share-smoke/fullchain.pem", "${SHARE_SMOKE_STATE}/certs/live/share-smoke/privkey.pem"]
+    # 443/UDP 是 iroh 中继的数据面，443/TCP 只是注册。
+    ports: ["127.0.0.1:443:443/udp"]
+    environment: *env
+    volumes:
+      - ${SHARE_SMOKE_STATE}:${SHARE_SMOKE_STATE}
+      - ${SHARE_SMOKE_BIN_DIR}:/smoke:ro
+    networks:
+      core: {ipv4_address: "${SHARE_SMOKE_PREFIX}.12"}
+  core-owner:
+    <<: *common
+    image: ${SHARE_SMOKE_CORE_IMAGE:?}
+    container_name: ${SHARE_SMOKE_PROJECT}--owner
+    entrypoint: [/bin/sh, -ec]
+    command: ['cat "$${SHARE_SMOKE_STATE}/ca.pem" >> /etc/ssl/certs/ca-certificates.crt; exec wonton-core serve']
+    environment:
+      <<: *core
+      WONTON_DATA_DIR: ${SHARE_SMOKE_STATE}/owner
+      WONTON_BASE_DOMAIN: owner.test
+      WONTON_INSTANCE: ${SHARE_SMOKE_INSTANCE}o
+      WONTON_CORE_CONTAINER: ${SHARE_SMOKE_PROJECT}--owner
+      WONTON_MATRIX_URL: http://tuwunel-owner:8008
+      WONTON_MATRIX_FEDERATION_ADDR: entrance:8448
+      WONTON_SHARE_CA_FILE: ${SHARE_SMOKE_STATE}/ca.pem
+    healthcheck:
+      test: ["CMD", "wonton-core", "healthcheck"]
+      interval: 2s
+      timeout: 3s
+      retries: 90
+    volumes:
+      - ${SHARE_SMOKE_STATE}:${SHARE_SMOKE_STATE}
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      core: {ipv4_address: "${SHARE_SMOKE_PREFIX}.20"}
+      identities: {ipv4_address: "${SHARE_SMOKE_IDENTITY_PREFIX}.20"}
+  core-friend:
+    <<: *common
+    image: ${SHARE_SMOKE_CORE_IMAGE:?}
+    container_name: ${SHARE_SMOKE_PROJECT}--friend
+    entrypoint: [/bin/sh, -ec]
+    command: ['cat "$${SHARE_SMOKE_STATE}/ca.pem" >> /etc/ssl/certs/ca-certificates.crt; exec wonton-core serve']
+    environment:
+      <<: *core
+      WONTON_DATA_DIR: ${SHARE_SMOKE_STATE}/friend
+      WONTON_BASE_DOMAIN: friend.test
+      WONTON_INSTANCE: ${SHARE_SMOKE_INSTANCE}f
+      WONTON_CORE_CONTAINER: ${SHARE_SMOKE_PROJECT}--friend
+      WONTON_MATRIX_URL: http://tuwunel-friend:8008
+      WONTON_MATRIX_FEDERATION_ADDR: entrance:8448
+    healthcheck:
+      test: ["CMD", "wonton-core", "healthcheck"]
+      interval: 2s
+      timeout: 3s
+      retries: 90
+    volumes:
+      - ${SHARE_SMOKE_STATE}:${SHARE_SMOKE_STATE}
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      core: {ipv4_address: "${SHARE_SMOKE_PREFIX}.21"}
+      identities: {ipv4_address: "${SHARE_SMOKE_IDENTITY_PREFIX}.21"}
+  tuwunel-owner:
+    <<: *common
+    image: ${SHARE_SMOKE_TUWUNEL_IMAGE:?}
+    environment:
+      <<: *matrix
+      TUWUNEL_SERVER_NAME: owner.test
+    healthcheck:
+      test: ["CMD", "tuwunel", "--health-check"]
+      interval: 2s
+      timeout: 3s
+      retries: 90
+    volumes: [owner-matrix:/var/lib/tuwunel]
+    networks:
+      core: {ipv4_address: "${SHARE_SMOKE_PREFIX}.30"}
+  tuwunel-friend:
+    <<: *common
+    image: ${SHARE_SMOKE_TUWUNEL_IMAGE:?}
+    environment:
+      <<: *matrix
+      TUWUNEL_SERVER_NAME: friend.test
+    healthcheck:
+      test: ["CMD", "tuwunel", "--health-check"]
+      interval: 2s
+      timeout: 3s
+      retries: 90
+    volumes: [friend-matrix:/var/lib/tuwunel]
+    networks:
+      core: {ipv4_address: "${SHARE_SMOKE_PREFIX}.31"}
+  tuwunel-external:
+    <<: *common
+    image: ${SHARE_SMOKE_TUWUNEL_IMAGE:?}
+    environment:
+      <<: *matrix
+      TUWUNEL_SERVER_NAME: external.test
+    healthcheck:
+      test: ["CMD", "tuwunel", "--health-check"]
+      interval: 2s
+      timeout: 3s
+      retries: 90
+    volumes: [external-matrix:/var/lib/tuwunel]
+    networks:
+      core: {ipv4_address: "${SHARE_SMOKE_PREFIX}.32"}
+  driver:
+    <<: *common
+    image: ${SHARE_SMOKE_CORE_IMAGE:?}
+    profiles: [driver]
+    entrypoint: [/bin/sh, -ec]
+    command: ['cat "$${SHARE_SMOKE_STATE}/ca.pem" >> /etc/ssl/certs/ca-certificates.crt; exec /smoke/fr_share_smoke run']
+    environment:
+      <<: *env
+      WONTON_SHARE_CA_FILE: ${SHARE_SMOKE_STATE}/ca.pem
+    volumes:
+      - ${SHARE_SMOKE_STATE}:${SHARE_SMOKE_STATE}
+      - ./:/fixture:ro
+      - ${SHARE_SMOKE_BIN_DIR}:/smoke:ro
+    networks: [core, identities]
+
+networks:
+  core:
+    internal: true
+    ipam:
+      config: [{subnet: "${SHARE_SMOKE_PREFIX}.0/24"}]
+  # Exercise public-address validation without a host bridge address or an external route.
+  identities:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+    ipam:
+      config: [{subnet: "${SHARE_SMOKE_IDENTITY_PREFIX}.0/24"}]
+volumes:
+  owner-matrix:
+  friend-matrix:
+  external-matrix:

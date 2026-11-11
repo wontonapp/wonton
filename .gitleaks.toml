@@ -34,22 +34,13 @@ paths = ['''^deploy/dev/agent/smoke\.sh$''']
 regexes = ['''temp_key_issuing=0''']
 
 [[allowlists]]
+description = "分享冒烟的 WebSocket 握手用 RFC 6455 文中的示例 nonce（\"the sample nonce\" 的 base64），不是凭据"
+condition = "AND"
+paths = ['''^crates/wonton-core/examples/fr_share_smoke/wire\.rs$''']
+regexes = ['''dGhlIHNhbXBsZSBub25jZQ==''']
+
+[[allowlists]]
 description = "测试里的本地 Hydra 地址带占位用户名密码（user:secret），被 generic-api-key / curl-auth-user 这类规则认成凭据"
 condition = "AND"
 paths = ['''^crates/wonton-core/src/config_tests\.rs$''']
 regexes = ['''user:secret@hydra''']
-
-[[allowlists]]
-description = "出网代理的占位凭据（me:s3cret@proxy.lan），只在测试断言里出现"
-condition = "AND"
-paths = [
-  '''^crates/wonton-core/src/gateway/egress_api_tests\.rs$''',
-  '''^crates/wonton-core/src/plugin/tests/egress_probe\.rs$''',
-]
-regexes = ['''me:s3cret@proxy\.lan''']
-
-[[allowlists]]
-description = "OIDC 客户端的占位 client_secret，测试夹具用"
-condition = "AND"
-paths = ['''^crates/wonton-core/src/plugin/tests/bots\.rs$''']
-regexes = ['''oidc-secret-value''']

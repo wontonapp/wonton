@@ -42,6 +42,7 @@ pub(crate) struct Scope {
     pub(crate) peers: Arc<PeersLink>,
     pub(crate) friends: Arc<FriendsLink>,
     pub(crate) settings: SettingsLink,
+    pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
     /// 卡片成功的测试钩子，只给集成测试用（feature `test-hooks`，生产构建没有）。挂在作用域上：
     /// 换服务器换作用域，测试不换服务器就一直是同一个。
     #[cfg(feature = "test-hooks")]
@@ -117,6 +118,7 @@ fn chat_links(
     session_in: watch::Receiver<Option<Arc<MatrixSession>>>,
     room_sender: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
     room_receiver: watch::Receiver<Option<(OwnedRoomId, RoomPanel)>>,
+    external: bool,
 ) -> Result<ChatLinks, CoreError> {
     let Shared {
         handle,
@@ -149,6 +151,7 @@ fn chat_links(
         views.map(|v| v.tabs.clone()),
         session_in,
         (room_sender, room_receiver),
+        external,
     );
     let files = FilesLink::new(
         handle.clone(),
@@ -212,6 +215,7 @@ fn people_links(
 impl Scope {
     /// `root` 是壳给的数据目录（放设备密钥），`dir` 是这个槽位的目录。`views` 是上一个作用域留下的发送端，
     /// 上一个作用域要先关掉：不然它停下前的最后几次发送会盖掉新作用域的状态。
+    #[allow(clippy::too_many_lines)] // 一个作用域的接线按顺序列在这里，拆开只会把顺序关系藏进多个函数。
     pub(crate) fn open(
         slot: &str,
         root: &Path,
@@ -225,11 +229,16 @@ impl Scope {
         // 会话和打开着的房间的面板（ADR-0052）：chat 往里喂，tabs 用来同步账号数据、合成房间面板的视图。
         let session_out = watch::channel(None);
         let room_panel = watch::channel(None);
+        let hub = crate::sharing::hub::bind(handle.clone())?;
+        let external = servers.borrow().servers.iter().any(|row| {
+            row.id == slot && matches!(row.kind, wonton_protocol::ServerKind::Matrix { .. })
+        });
         let storage = Storage::open(root, dir)?;
         // 方式是整机设置（设置页一个开关管所有服务器），放在设备级的 root，不放每台服务器一个的槽位目录。
         let push_method = PushMethodLink::new(root);
         let home = HomeLink::new(
             handle.clone(),
+            hub.clone(),
             storage,
             network,
             views.map(|v| v.home.clone()),
@@ -240,6 +249,7 @@ impl Scope {
             home.clone(),
             dir,
             views.map(|v| v.plugins.clone()),
+            external,
         );
         #[cfg(feature = "test-hooks")]
         let card_success_hook = Arc::new(crate::test_hooks::CardSuccessHook::new());
@@ -272,8 +282,11 @@ impl Scope {
             session_out.1,
             room_panel.0,
             room_panel.1,
+            external,
         )?;
         let people = people_links(&shared, servers, &links.chat)?;
+        let shared_apps =
+            crate::sharing::SharedAppsLink::new(handle.clone(), &links.chat, &plugins, hub);
         Ok(Arc::new(Self {
             slot: slot.to_owned(),
             home,
@@ -287,6 +300,7 @@ impl Scope {
             peers: people.0,
             friends: people.1,
             settings: people.2,
+            shared_apps,
             #[cfg(feature = "test-hooks")]
             card_success_hook,
             runtime,

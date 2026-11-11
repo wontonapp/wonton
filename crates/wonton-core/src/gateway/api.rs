@@ -306,6 +306,22 @@ pub async fn detail(
             if !person.is_owner() {
                 detail.scope = None;
             }
+            // Sharing settings are never exposed to family members, including installers.
+            detail.shares = None;
+            if person.is_owner()
+                && let Some(sharing) = gateway.sharing.as_ref()
+            {
+                let offer = gateway.plugins.share_offer(&id);
+                if offer.installed && offer.has_webui {
+                    detail.shares = match sharing
+                        .shares
+                        .plugin_shares(&offer, super::sharing::now_ms())
+                    {
+                        Ok(shares) => Some(shares),
+                        Err(error) => return super::sharing::api::share_error(&error),
+                    };
+                }
+            }
             Json(detail).into_response()
         }
         None => install_error(&InstallError::NotInstalled(id.to_string())),
