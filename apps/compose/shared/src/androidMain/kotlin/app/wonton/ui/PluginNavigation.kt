@@ -48,7 +48,7 @@ private val SPINNER_STROKE = 2.dp
 /** 说明行高 20、小图标 14，差的一半。 */
 private val STATE_ICON_OFFSET = 3.dp
 
-/** 主屏或商店里打开的详情页、确认页和卸载确认。[open] 打开已安装的插件。 */
+/** 主屏或商店里打开的详情页、确认页和卸载确认。[open] 打开已安装的插件，[checkInstalled] 回主屏的已安装列表。 */
 class PluginNavigation(val open: (PluginEntry) -> Unit, val checkInstalled: () -> Unit) {
     var detail by mutableStateOf<PluginRoute?>(null)
     var confirmation by mutableStateOf<PluginConfirmation?>(null)
@@ -133,7 +133,7 @@ internal fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onD
     )
 }
 
-/** 安装、升级、卸载的一项进展。插件包在确认之后变了的，[onReview] 重新打开确认页。 */
+/** 安装、升级、卸载的一项进展。插件包在确认之后变了的，[onReview] 重新打开确认页；结果不确定时，[onCheckInstalled] 去已安装列表看。 */
 @Composable
 fun TaskRow(
     task: PluginTask,
