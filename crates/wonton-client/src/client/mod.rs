@@ -538,7 +538,8 @@ impl ClientCore {
         scope.run(async move { files.stream_url(id).await }).await
     }
 
-    /// 播放器放不了时问为什么：连不上家、家里的服务器报错，还是这台手机不支持这个格式。说明里写着可以下载后用其他 App 打开。
+    /// 播放器放不了时问为什么：连不上家、家里的服务器报错，还是这台手机不支持这个格式。只有格式放不了时，
+    /// 说明里才提可以下载后用其他 App 打开。
     pub async fn file_playback_problem(&self, id: FileId) -> FileProblem {
         let scope = self.scope();
         let files = scope.files.clone();
