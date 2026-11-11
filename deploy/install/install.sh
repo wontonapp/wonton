@@ -451,12 +451,17 @@ manual_rollback() {
 }
 
 # 文件凭据只复制到私有安装目录，不把凭据值放到命令行。
+# 重跑（升级、修复）时没再给的变量沿用上次的记录和副本：保存的入口配置继续引用这些文件，状态查询和续期要读。
+# 空值也当作没给：这些输入装好后已固定在 entry/settings.json，重跑不能靠清空取消。
 prepare_entry_env() {
 mkdir -p "$install_dir/entry-input"
 chmod 700 "$install_dir/entry-input"
 umask 077
 output="$install_dir/entry-input/init.env"
-: >"$output"
+temporary="$output.tmp"
+: >"$temporary"
+chmod 600 "$temporary"
+[ ! -f "$output" ] || cat "$output" >"$temporary"
 for key in WONTON_MATRIX_SERVER_NAME WONTON_MATRIX_NAME_MODE WONTON_CLIENT_SERVICE \
   WONTON_ACME_DIRECTORY WONTON_ACME_RESOLVERS WONTON_ACME_EMAIL WONTON_ACME_ACCEPT_TERMS \
   WONTON_ACME_NETWORK WONTON_ACME_DNS_PROVIDER WONTON_ENTRY_CERTIFICATE; do
@@ -464,7 +469,7 @@ for key in WONTON_MATRIX_SERVER_NAME WONTON_MATRIX_NAME_MODE WONTON_CLIENT_SERVI
   [ -n "$value" ] || continue
   case "$value" in *'
 '*) echo "$key 不能包含换行" >&2; exit 1 ;; esac
-  printf '%s=%s\n' "$key" "$value" >>"$output"
+  record_entry_env "$key" "$value"
 done
 for key in WONTON_CLIENT_INVITE_FILE WONTON_CLIENT_CA_FILE WONTON_FRP_CA_FILE \
   WONTON_ACME_CA_FILE WONTON_ACME_DNS_ENV_FILE; do
@@ -474,8 +479,17 @@ for key in WONTON_CLIENT_INVITE_FILE WONTON_CLIENT_CA_FILE WONTON_FRP_CA_FILE \
   target="$install_dir/entry-input/$key"
   if [ "$source" != "$target" ]; then cp "$source" "$target"; fi
   chmod 600 "$target"
-  printf '%s=%s\n' "$key" "$target" >>"$output"
+  record_entry_env "$key" "$target"
 done
+mv "$temporary" "$output"
+sync
+}
+
+# 只换这一行，别的键原样留下；值里可能有斜杠和等号，不引用整份文件重写。
+record_entry_env() {
+  grep -v "^$1=" "$temporary" >"$temporary.next" || true
+  printf '%s=%s\n' "$1" "$2" >>"$temporary.next"
+  mv "$temporary.next" "$temporary"
 }
 
 # 送名字要的家名服务、邀请码和证书输入缺了：给两条能直接抄的路，不写死内部地址。
