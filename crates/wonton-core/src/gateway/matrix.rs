@@ -20,8 +20,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::api::error_response;
+use super::send_limits::hop_card;
 use super::{Gateway, TunnelPeer, client_addr, pages, proxy, pushers};
-use super::{hop_card, room_rules, send_limits};
+use super::{room_rules, send_limits};
 use crate::matrix::{JWT_LOGIN_TYPE, LOGIN_TOKEN_TTL_SECS};
 use crate::plugin::Permission;
 use wonton_protocol::{GATEWAY_REFUSAL_HEADER, GatewayRefusal};
