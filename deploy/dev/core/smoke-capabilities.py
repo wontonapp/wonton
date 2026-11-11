@@ -312,11 +312,14 @@ def install(name, tokens, together=False):
 
 
 def state_file():
+    # 数据目录经同路径 bind 挂载，但宿主上 plugins/ 属 root、权限 0700，只能在容器里读；
+    # docker cp 失败说明文件还没建（尚无任何连接记录），按空状态处理。
     path = Path(os.environ['WONTON_DEV_DATA']) / 'core/plugins/capabilities/connections.json'
-    if not path.is_file():
+    probe = subprocess.run(['docker', 'cp', os.environ['WONTON_DEV_PROJECT'] + ':' + str(path), '-'],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if probe.returncode != 0:
         return {'defaults': {}, 'selected': {}, 'providers': [], 'connections': []}
-    archive = docker('cp', os.environ['WONTON_DEV_PROJECT'] + ':' + str(path), '-')
-    with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+    with tarfile.open(fileobj=io.BytesIO(probe.stdout)) as tar:
         return json.load(tar.extractfile(tar.getmembers()[0]))
 
 
