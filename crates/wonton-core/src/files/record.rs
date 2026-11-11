@@ -366,6 +366,36 @@ impl Registry {
         Ok(write_json_synced(&self.path(id), record)?)
     }
 
+    /// 到期了的设备上传编号：链接一直没发出去，文件和记录都要删。
+    pub fn expired_uploads(&self, now: u64) -> Vec<FileId> {
+        let records = self.records.read().expect("编号记录锁中毒");
+        let mut ids: Vec<FileId> = records
+            .by_id
+            .values()
+            .filter(|r| matches!(r.origin, Origin::Upload { .. }) && r.expired(now))
+            .map(|r| r.id.clone())
+            .collect();
+        ids.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        ids
+    }
+
+    /// 清掉过期时间，已经过期了也一样：到期那天名字上已经是主人的文件，就不再自动删。
+    pub fn keep(&self, id: &FileId) -> Result<(), RegistryError> {
+        self.change(|records| {
+            let Some(record) = records.by_id.get(id).cloned() else {
+                return (None, ());
+            };
+            if record.expires_at.is_none() {
+                return (None, ());
+            }
+            let record = FileRecord {
+                expires_at: None,
+                ..record
+            };
+            (Some(record), ())
+        })
+    }
+
     /// 删掉过期够久的记录，返回删了几条。
     pub fn purge_expired(&self, now: u64) -> Result<usize, RegistryError> {
         let stale: Vec<FileId> = {
@@ -374,8 +404,10 @@ impl Registry {
                 .by_id
                 .values()
                 .filter(|r| {
-                    r.expires_at
-                        .is_some_and(|at| at.saturating_add(EXPIRED_KEEP_SECS) <= now)
+                    // 上传删不掉时记录要留着，否则文件成了没人管的孤儿。
+                    !matches!(r.origin, Origin::Upload { .. })
+                        && r.expires_at
+                            .is_some_and(|at| at.saturating_add(EXPIRED_KEEP_SECS) <= now)
                 })
                 .map(|r| r.id.clone())
                 .collect()

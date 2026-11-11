@@ -784,8 +784,6 @@ pub enum PluginFailure {
     CoreUpgrading,
     /// 主人配的代理连不上或者拒绝了，出网插件装不上：要主人在代理设置里改地址，或者修好代理（ADR-0023）。
     EgressProxyUnavailable,
-    /// 插件要用的资料（如邮箱）还没填：要主人在设置里填好再试（ADR-0030）。
-    OwnerProfileIncomplete,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
     /// App 和家里服务器的版本对不上，有一边要更新。

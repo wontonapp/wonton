@@ -18,6 +18,8 @@ base64 = { workspace = true }
 bollard = { workspace = true }
 futures-util = "0.3.34"
 getrandom = { workspace = true }
+# MIT。内部信件只提取文本和链接，不在聊天里渲染 HTML（ADR-0056）。
+html2text = "0.17.4"
 # MIT OR Apache-2.0。签证书前查询权威 DNS 的 CAA，不自写 DNS 协议。
 hickory-resolver = { version = "0.26.3", default-features = false, features = ["tokio", "system-config"] }
 # MIT OR Apache-2.0。状态页和终端上的配对二维码。
@@ -96,6 +98,8 @@ spdx = "0.13.6"
 tar = { version = "0.4.46", default-features = false }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "fs", "time", "signal", "sync", "io-util", "process"] }
+# MIT。Mailpit 事件走受核心网络约束的 HTTP upgrade；复用 aws-lc-rs 和 getrandom，不启用 TLS。
+tokio-websockets = { version = "0.13.3", default-features = false, features = ["client", "getrandom", "aws_lc_rs"] }
 tower = { version = "0.5.3", features = ["util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
@@ -127,6 +131,8 @@ regex = "1.13.1"
 tempfile = { workspace = true }
 # MIT OR Apache-2.0。按 TOML 语义验证 Tuwunel 的联邦配置。
 toml = "1.1"
+# MIT。测试里和 Tuwunel 的 WebSocket 客户端对话（核心生产代码用不到）。
+tokio-websockets = { version = "0.13.3", default-features = false, features = ["server"] }
 
 [lints]
 workspace = true

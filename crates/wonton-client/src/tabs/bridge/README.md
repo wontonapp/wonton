@@ -10,9 +10,12 @@
    iOS 注册 `webkit.messageHandlers.wontonBridge`，Android 用 `addWebMessageListener("wontonBridge", …)`。
    主框架标志和 `origin` 取自原生回调：iOS 的 `frameInfo.securityOrigin`，Android 的 `sourceOrigin`，不能从消息正文取。
 2. 文档开始前注入 `ClientCore.tab_document_script(tab, environment)`，先于页面脚本执行。
+   公网网页（`TabRef::Url`）没有桥：脚本接口返回 `CoreError.InvalidInput`，壳按页面种类跳过注入和原生通道，
+   `--wonton-*` 和 `--wonton-inset-*` 都没有（ADR-0052“公网网页”）。
    `environment.dark` 是按 App 设置和系统合成的有效明暗；`platform` 只选择平台圆角，对页面统一报 `mobile`。
    安全区和栏高使用 WebView 的 CSS px，`inset_top/bottom` 已包含安全区；核心把 `inset` 布局的两个栏高变量归零。
 3. 原生通道收到字符串后调用 `tab_handle_message(tab, is_main_frame, origin, message, environment)`。
+   公网网页的实例即使注入了也一律回 JSON-RPC `-32001`，`initialized` 恒为假。
    核心比较来源与 `TabPage.url` 的 scheme、host 和有效端口；非主框架、认证域名、其他来源或页面 URL 缺失时均忽略。
    壳不另写来源判定，把 `reply_script` 原样注入同一个页面；`initialized` 为真时可撤骨架。
    只按 `action` 枚举打开系统链接或切到聊天填草稿，不自动发送、不解析 JSON-RPC。

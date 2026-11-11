@@ -1,6 +1,8 @@
 use super::*;
 use wonton_protocol::{InstalledPlugin, InstalledPlugins, PlacedTab, PluginHealth, TabState};
 
+mod page_rules;
+
 struct Rig {
     tabs: TabsLink,
     home: watch::Sender<HomeViewModel>,
@@ -185,6 +187,17 @@ async fn pinning_before_tabs_observes_new_servers_list_does_not_reload() {
 async fn switching_servers_discards_previous_pages_reload_count() {
     let rig = Rig::new();
     rig.pin();
+    let inner = TabRef::PluginPath {
+        plugin_id: "app.shared".to_owned(),
+        path: "/report".to_owned(),
+    };
+    rig.tabs
+        .dispatch(Action::PinTab {
+            tab: inner.clone(),
+            replacing: None,
+        })
+        .unwrap();
+    rig.tabs.select(inner.clone()).unwrap();
     rig.tabs.reload(PlacedTab::Bar { tab: page_tab() }).unwrap();
     assert_eq!(rig.page().reload, 1);
 
@@ -192,6 +205,10 @@ async fn switching_servers_discards_previous_pages_reload_count() {
     rig.tabs.recompute();
     rig.plugins.send_replace(plugins("new-content"));
     rig.tabs.recompute();
+    // 插件里的某一页也绑在上一台服务器上，选中的它退回“应用”。
+    let view = rig.tabs.view();
+    assert!(!view.items.iter().any(|item| item.tab == inner));
+    assert_eq!(view.selected, TabRef::Apps);
     rig.pin();
     assert_eq!(rig.page().reload, 0);
 }
@@ -306,6 +323,16 @@ async fn public_pages_must_be_https_with_a_host() {
         assert!(matches!(error, CoreError::InvalidInput { .. }), "{bad}");
     }
     assert!(rig.tabs.view().panel.is_empty());
+
+    // 钉到底栏同一份规矩。
+    let pinned = rig
+        .tabs
+        .dispatch(Action::PinTab {
+            tab: url_tab("http://example.com"),
+            replacing: None,
+        })
+        .unwrap_err();
+    assert!(matches!(pinned, CoreError::InvalidInput { .. }));
 }
 
 #[tokio::test]

@@ -34,6 +34,8 @@ mod devices;
 mod entry;
 pub mod family;
 mod files;
+mod friends;
+mod friends_wiring;
 mod health;
 mod isolation;
 mod lan;
@@ -43,12 +45,13 @@ mod mcp;
 mod me;
 mod model_providers;
 mod models;
-mod notify;
-mod notify_limit;
+pub(crate) mod notify;
+pub(crate) mod notify_limit;
 mod onboarding;
 mod owner_secrets;
 mod pages;
 mod peers;
+pub mod people_limits;
 mod plugin_scope;
 mod plugin_start;
 mod plugin_web;
@@ -56,13 +59,14 @@ mod proxy;
 mod proxy_sso;
 mod push;
 mod pushers;
-mod redirect;
 mod registry_mirror;
+mod request_guards;
 mod room_rules;
 pub(crate) mod send_limits;
 
 pub use entry::router as entry_router;
 pub use push::router as push_router;
+pub(crate) use request_guards::{same_origin_path, with_cookie};
 pub use send_limits::{SendLimiter, SendLimits};
 mod session;
 mod settings_api;
@@ -76,7 +80,7 @@ use std::sync::Arc;
 use axum::Router;
 use axum::extract::{ConnectInfo, Request};
 use axum::response::{IntoResponse, Redirect, Response};
-use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, HOST};
+use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, HOST, SET_COOKIE};
 use hyper::{HeaderMap, Method, StatusCode};
 use iroh::EndpointId;
 use tower::ServiceExt;
@@ -88,9 +92,10 @@ use wonton_protocol::{MemberStatus, Role};
 pub(crate) struct MissingMember(pub(crate) String);
 
 use crate::config::{self, HostKind, PublicUrls};
+use crate::friends::Friends;
 use crate::http::HttpClient;
 use crate::l10n;
-use crate::matrix::Matrix;
+use crate::matrix::{FederationBlocks, Matrix};
 use crate::members::Members;
 use crate::oidc::Hydra;
 use crate::owner::{Owner, OwnerStore};
@@ -98,7 +103,6 @@ use crate::plugin::PluginManager;
 use crate::push::Push;
 use crate::secret::constant_time_eq;
 use crate::tunnel::Tunnel;
-use redirect::{same_origin_path, with_cookie};
 
 pub use pages::ERROR_HEADER;
 pub use session::{APP_COOKIE, CORE_COOKIE};
@@ -154,6 +158,8 @@ pub struct Gateway {
     pub matrix: Option<Arc<Matrix>>,
     /// Bot 发消息的频率和跳数（ADR-0045）。计数在内存里，核心重启从头算。
     pub(crate) send_limits: Arc<send_limits::SendLimiter>,
+    /// 本机每个人发邀请、发消息的频率（ADR-0051）。计数只在内存里，重启从头算。
+    pub(crate) people_limits: Arc<people_limits::PeopleLimiter>,
     /// 推送代理；没启用时登记和推送都如实报不可用。
     pub push: Option<Arc<Push>>,
     /// MCP 总线；没启用时 `mcp.wonton.internal` 如实报不可用。
@@ -161,7 +167,7 @@ pub struct Gateway {
     /// 通知房间；没接 Matrix 时插件发通知如实报不可用。
     pub notices: Option<Arc<crate::matrix::NoticeRoom>>,
     /// 插件通知的频率限制（ADR-0047），计数只在内存里。
-    notify_limiter: notify_limit::Limiter,
+    pub(crate) notify_limiter: notify_limit::Limiter,
     /// 文件服务；没启用时文件接口如实报不可用。
     pub files: Option<Arc<crate::files::Files>>,
     /// 审计日志（`core/audit.jsonl`，见 [`crate::mcp::audit`]）：总线和文件服务共用一份，
@@ -173,6 +179,10 @@ pub struct Gateway {
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     /// 服务器配对（ADR-0050）；没接 Matrix 的核心没有它，接口如实报不可用。
     pub peers: Option<Arc<crate::peers::Peers>>,
+    /// 好友名单（ADR-0051）；记录同意过的好友和固定的插件用户名。
+    friends: Option<Arc<Friends>>,
+    /// 整台服务器的联邦黑名单（`forbidden_remote_server_names`）；只有能热加载配置的安装才有。
+    pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
     pub(crate) onboarding: Arc<onboarding::OnboardingState>,
     /// `plugins.health` 的限频表（[`health`]）。
     health_limits: health::RateLimits,
@@ -224,6 +234,9 @@ impl Gateway {
             send_limits: Arc::new(send_limits::SendLimiter::new(
                 send_limits::SendLimits::default(),
             )),
+            people_limits: Arc::new(people_limits::PeopleLimiter::new(
+                people_limits::PeopleLimits::default(),
+            )),
             push: None,
             mcp: None,
             notices: None,
@@ -233,6 +246,8 @@ impl Gateway {
             tusd: None,
             upgrades: None,
             peers: None,
+            friends: None,
+            federation_blocks: None,
             onboarding,
             health_limits: health::RateLimits::new(),
             link_previews,
@@ -397,8 +412,8 @@ impl Gateway {
             })
     }
 
-    /// 代登录和 OIDC 声明要的身份值（用户名、显示名、邮箱）：主人来自 `owner.json`，家人来自
-    /// `members.json`。字段结构相同，复用 [`Owner`] 值类型。家人的记录找不到了就报错：不编一个身份出来。
+    /// 从 `owner.json` / `members.json` 取本人资料；插件出口只用用户名派生内部邮箱，不公开真实邮箱。
+    /// 复用 [`Owner`] 值类型；家人的记录找不到就报错，不编一个身份出来。
     pub(crate) fn identity_of(&self, person: &Person) -> Result<Owner, MissingMember> {
         if person.is_owner() {
             return Ok(self.owner.owner());
@@ -574,10 +589,10 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
     let credentials = isolation::credentials_allowed(req.method(), req.headers(), &origin);
     let person = gateway.plugin_person(&host, &req);
     if !credentials {
-        return unauthenticated(gateway, &host, &req, false);
+        return request_guards::unauthenticated(gateway, &host, &req, false);
     }
     let Some(person) = person else {
-        return unauthenticated(gateway, &host, &req, true);
+        return request_guards::unauthenticated(gateway, &host, &req, true);
     };
     // 插件对家人只看“家人能用”开关：主人开放了才放行（ADR-0045）。核心不查 setup_done（ADR-0021），
     // 家人这一侧没有别的门槛。
@@ -651,7 +666,7 @@ fn attach_proxy_credentials(
             )));
         }
     };
-    proxy_sso::attach(headers, auth, &identity, langs).map_err(|e| {
+    proxy_sso::attach(headers, auth, &identity).map_err(|e| {
         Box::new(pages::error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "proxy_credentials",
@@ -671,35 +686,6 @@ fn attach_proxy_credentials(
 
 /// 未登录：浏览器的页面导航跳到核心换取插件会话，其余请求（XHR、API）直接 401。`credentials` 为假的
 /// 跨站请求换到会话也不认，同样 401。
-fn unauthenticated(gateway: &Gateway, host: &str, req: &Request, credentials: bool) -> Response {
-    let langs = api::languages(req.headers());
-    let format = pages::Format::of(req.headers());
-    if !credentials {
-        return pages::error(
-            StatusCode::UNAUTHORIZED,
-            "unauthenticated",
-            &l10n::text(&langs, "gateway-cross-site-login", &[]),
-            &langs,
-            format,
-        );
-    }
-    if req.method() == Method::GET && format == pages::Format::Html {
-        let path = req.uri().path_and_query().map_or("/", |p| p.as_str());
-        let to = format!("{}{path}", gateway.public.origin(host));
-        let query = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("to", &to)
-            .finish();
-        return Redirect::to(&format!("{}/_wonton/sso?{query}", gateway.core_origin()))
-            .into_response();
-    }
-    pages::error(
-        StatusCode::UNAUTHORIZED,
-        "unauthenticated",
-        &l10n::text(&langs, "gateway-login-required", &[]),
-        &langs,
-        format,
-    )
-}
 #[cfg(test)]
 mod bot_activity_tests;
 #[cfg(test)]
@@ -713,7 +699,7 @@ mod degraded_webui_tests;
 #[cfg(test)]
 mod egress_api_tests;
 #[cfg(test)]
-mod fakes;
+pub(crate) mod fakes;
 #[cfg(test)]
 mod family_plugin_tests;
 #[cfg(test)]
@@ -732,6 +718,8 @@ mod files_upload_failure_tests;
 mod files_upload_tests;
 #[cfg(test)]
 mod first_run_tests;
+#[cfg(test)]
+mod friends_tests;
 #[cfg(test)]
 mod health_tests;
 #[cfg(test)]

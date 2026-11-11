@@ -2,18 +2,20 @@
 //! 卷和数据目录留着，重建失败照实报。
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::routing::{get, put};
 use axum::{Json, Router};
 use hyper::StatusCode;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::super::PluginStatus;
 use super::super::fake_docker::FakeDocker;
+use super::super::names::container_name;
 use super::egress::serve;
-use super::manager::manager_with_oidc;
+use super::manager::{manager_with, manager_with_oidc};
 use super::package;
-use crate::config::OidcProviderConfig;
+use crate::config::{DEFAULT_INSTALL_TIMEOUT, OidcProviderConfig};
 use crate::http::HttpClient;
 use crate::oidc::Hydra;
 
@@ -310,4 +312,113 @@ fn the_same_render_always_hashes_the_same() {
         super::super::render_drift::digest(&second.containers[0]),
         "标签、端口这些 HashMap 的顺序不能影响摘要"
     );
+}
+
+fn starting() -> Value {
+    json!({"Status": "running", "Running": true, "Health": {"Status": "starting"}})
+}
+
+fn healthy() -> Value {
+    json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}})
+}
+
+/// 不写 `start_period` 的普通插件。
+fn plain() -> String {
+    package("  app:\n    image: nginx\n", "  permissions: []")
+}
+
+/// 声明了 `start_period` 的插件，id 排在 `app.test` 前，恢复时先轮到它。
+fn slow(start_period: &str) -> String {
+    package(
+        &format!(
+            "  app:\n    image: nginx\n    healthcheck: {{test: ['CMD', 'true'], start_period: {start_period}}}\n"
+        ),
+        "  permissions: []",
+    )
+    .replace("id: app.test", "id: app.aaa")
+}
+
+#[tokio::test(start_paused = true)]
+async fn restore_does_not_wait_a_drifted_plugins_start_period() {
+    let (docker, engine) = FakeDocker::start().await;
+    // 暂停的时钟里推进几分钟时，假 Docker 的请求不许被自己的时限取消。
+    let engine = engine.with_request_limit_for_test(Duration::from_secs(2 * 60 * 60));
+    let dir = tempfile::tempdir().unwrap();
+    let slow_app = container_name("app-aaa", "app");
+    // 测试管理器默认的 5 秒安装时限比 300 秒短得多，这里用默认配置的时限。
+    let mut manager = manager_with(engine.clone(), &dir);
+    manager.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
+    manager
+        .install(&slow("10m"), &[], super::langs())
+        .await
+        .unwrap();
+    manager
+        .install(&plain(), &[], super::langs())
+        .await
+        .unwrap();
+
+    // 旧核心建的容器：有归属，没有渲染摘要。重建出来的那个一直停在 starting。
+    let mut body = docker.created(&slow_app).unwrap();
+    body["Labels"]
+        .as_object_mut()
+        .unwrap()
+        .remove("wonton.render");
+    docker.add_stranger_container(&slow_app, body);
+    docker.add_container(&slow_app, "app.aaa");
+    docker.set_start_state(&slow_app, starting());
+
+    drop(manager);
+    let mut restarted = manager_with(engine, &dir);
+    restarted.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
+    let restarted = Arc::new(restarted);
+    let started = tokio::time::Instant::now();
+    let restore = {
+        let restarted = restarted.clone();
+        tokio::spawn(async move { restarted.restore().await })
+    };
+    // 暂停的时钟在有请求往返打转时不保证一次跳完 `advance` 的整段时间，按 1 秒小步推到线。
+    let waited = || tokio::time::Instant::now() - started;
+    while waited() < Duration::from_secs(240) {
+        tokio::time::advance(Duration::from_secs(1)).await;
+    }
+    assert!(!restore.is_finished(), "还没到 install_timeout 就收尾了");
+    // 开机恢复不等 start_period 的 10 分钟：300 秒照实判失败，接着恢复排在后面的插件。
+    // 还在等 10 分钟的话这里收不了尾，靠 `restore.await` 自己推进时钟就看不出来。
+    while !restore.is_finished() {
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert!(
+            waited() < Duration::from_secs(600),
+            "过了 install_timeout 还在等"
+        );
+    }
+    assert!(
+        waited() >= DEFAULT_INSTALL_TIMEOUT,
+        "等到 install_timeout 才判失败，实际 {:?}",
+        waited()
+    );
+    restore.await.unwrap().unwrap();
+    let status = |id: &str| {
+        restarted
+            .list()
+            .iter()
+            .find(|view| view.id.as_str() == id)
+            .map(|view| view.status.clone())
+            .unwrap()
+    };
+    let (PluginStatus::Degraded { reason }, PluginStatus::Running) =
+        (status("app.aaa"), status("app.test"))
+    else {
+        panic!("慢插件要照实标成异常，普通插件照常恢复");
+    };
+    // 原因指向那个容器，是健康门判的失败。
+    assert!(reason.contains(&slow_app), "{reason}");
+    assert!(
+        docker.containers().contains(&slow_app),
+        "超时不动重建出来的容器"
+    );
+
+    // 容器后来健康了：容器监视把它捡回来，不用主人手点。
+    docker.set_state(&slow_app, healthy());
+    restarted.watch_containers().await;
+    assert_eq!(status("app.aaa"), PluginStatus::Running);
 }

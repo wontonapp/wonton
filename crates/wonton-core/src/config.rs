@@ -4,6 +4,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::gateway::people_limits::PeopleLimits;
 use crate::gateway::send_limits::SendLimits;
 use crate::owner;
 use crate::plugin::egress::address::ProxyAddress;
@@ -18,7 +19,8 @@ mod hosts;
 
 pub use hosts::{
     FILE_HOOKS_HOST, HostKind, PLUGIN_AUTH_HOST, PLUGIN_HEALTH_HOST, PLUGIN_MATRIX_HOST,
-    PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PLUGIN_NOTIFY_HOST, PUSH_GATEWAY_HOST, PublicUrls,
+    PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PLUGIN_NOTIFY_HOST, PLUGIN_SMTP_HOST, PUSH_GATEWAY_HOST,
+    PublicUrls,
 };
 
 /// 插件安装等待容器就绪的默认期限。
@@ -98,6 +100,8 @@ pub struct Config {
     pub matrix: Option<MatrixConfig>,
     /// tusd 的 `host:port`（`WONTON_TUSD_URL`）：设备上传转发到这里，文件钩子只接受这个地址（ADR-0020）。
     pub tusd: Option<String>,
+    /// Mailpit 的内部 API 地址（`WONTON_MAILPIT_URL`），认证密码由核心私有密钥库生成。
+    pub mailpit: Option<String>,
     /// 安装器预装的系统插件包所在的目录，每个子目录一个插件包（`WONTON_SYSTEM_PLUGINS`）。
     pub system_plugins: Option<PathBuf>,
     /// 随核心附带的默认插件（如默认 Agent）所在的目录，格式同系统插件的目录，只自动装一次
@@ -113,6 +117,8 @@ pub struct Config {
     pub confirmation_window: Duration,
     /// 网关管 Bot 发消息的数字（ADR-0045），由 `WONTON_BOT_MSG_*` 环境变量改，见 [`SendLimits`] 的字段。
     pub send_limits: SendLimits,
+    /// 本机每个人发邀请、发消息的每分钟上限（ADR-0051），由 `WONTON_PEOPLE_*` 环境变量改。
+    pub people_limits: PeopleLimits,
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
@@ -192,19 +198,8 @@ impl Config {
         if !data_dir.is_absolute() {
             return Err(invalid("WONTON_DATA_DIR", "必须是绝对路径"));
         }
-        let base_domain = get("WONTON_BASE_DOMAIN").unwrap_or_else(|| "wonton.localhost".into());
-        if !is_domain(&base_domain) {
-            return Err(invalid(
-                "WONTON_BASE_DOMAIN",
-                "必须是小写域名，如 wonton.localhost",
-            ));
-        }
-        if base_domain == "wonton.internal" || base_domain.ends_with(".wonton.internal") {
-            return Err(invalid(
-                "WONTON_BASE_DOMAIN",
-                "不能用 wonton.internal：它留给插件网络里的内部别名",
-            ));
-        }
+        let base_domain =
+            base_domain(get("WONTON_BASE_DOMAIN").unwrap_or_else(|| "wonton.localhost".into()))?;
         let port = parse(&get, "WONTON_PUBLIC_PORT", 8080u16)?;
         let listen = parse(
             &get,
@@ -262,12 +257,11 @@ impl Config {
             confirmation_ttl: secs(&get, "WONTON_CONFIRMATION_TTL_SECS", 600)?,
             confirmation_window: secs(&get, "WONTON_CONFIRMATION_WINDOW_SECS", 1800)?,
             send_limits: send_limits(&get)?,
+            people_limits: people_limits(&get)?,
             oidc,
             matrix,
-            tusd: get("WONTON_TUSD_URL")
-                .map(|url| http_authority(&url))
-                .transpose()
-                .map_err(|e| invalid("WONTON_TUSD_URL", &e))?,
+            tusd: optional_authority(&get, "WONTON_TUSD_URL")?,
+            mailpit: optional_authority(&get, "WONTON_MAILPIT_URL")?,
             tz: get("TZ").unwrap_or_else(|| "UTC".into()),
             puid: parse(&get, "WONTON_PUID", 1000)?,
             pgid: parse(&get, "WONTON_PGID", 1000)?,
@@ -352,6 +346,46 @@ fn send_limits(get: &impl Fn(&str) -> Option<String>) -> Result<SendLimits, Conf
     Ok(limits)
 }
 
+/// 本机每个人发邀请、发消息的上限（ADR-0051）。0 没有意义：要不限就把数字放大。
+fn people_limits(get: &impl Fn(&str) -> Option<String>) -> Result<PeopleLimits, ConfigError> {
+    let limits = PeopleLimits {
+        invites_per_minute: parse(get, "WONTON_PEOPLE_INVITES_PER_MINUTE", 20)?,
+        messages_per_minute: parse(get, "WONTON_PEOPLE_MESSAGES_PER_MINUTE", 60)?,
+    };
+    for (name, value) in [
+        (
+            "WONTON_PEOPLE_INVITES_PER_MINUTE",
+            limits.invites_per_minute,
+        ),
+        (
+            "WONTON_PEOPLE_MESSAGES_PER_MINUTE",
+            limits.messages_per_minute,
+        ),
+    ] {
+        (value > 0)
+            .then_some(())
+            .ok_or_else(|| invalid(name, "必须是正整数"))?;
+    }
+    Ok(limits)
+}
+
+/// 基础域名：小写、不能是留给插件内部网络的 `.wonton.internal`。
+fn base_domain(value: String) -> Result<String, ConfigError> {
+    if !is_domain(&value) {
+        return Err(invalid(
+            "WONTON_BASE_DOMAIN",
+            "必须是小写域名，如 wonton.localhost",
+        ));
+    }
+    if value == "wonton.internal" || value.ends_with(".wonton.internal") {
+        return Err(invalid(
+            "WONTON_BASE_DOMAIN",
+            "不能用 wonton.internal：它留给插件网络里的内部别名",
+        ));
+    }
+    Ok(value)
+}
+
 fn host_dev(configured: Option<String>, on_host: bool) -> Result<Option<PathBuf>, ConfigError> {
     match configured {
         Some(path) if !path.starts_with('/') => Err(invalid("WONTON_HOST_DEV", "必须是绝对路径")),
@@ -391,6 +425,16 @@ pub fn check_owner_settings(get: &impl Fn(&str) -> Option<String>) -> Result<(),
     };
     check("WONTON_OWNER_NAME", owner::check_username)?;
     check("TZ", owner::check_time_zone)
+}
+
+fn optional_authority(
+    get: &impl Fn(&str) -> Option<String>,
+    name: &'static str,
+) -> Result<Option<String>, ConfigError> {
+    get(name)
+        .map(|url| http_authority(&url))
+        .transpose()
+        .map_err(|error| invalid(name, &error))
 }
 
 /// `WONTON_MATRIX_URL` 设了就要同时给出签发私钥和注册共享密钥；都没设表示核心不接 Matrix。

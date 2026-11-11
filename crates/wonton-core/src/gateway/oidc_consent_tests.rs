@@ -56,7 +56,8 @@ async fn oidc_login_and_consent_use_the_core_session() {
         json!(["openid", "profile", "email", "groups"])
     );
     let claims = &accepted[1]["session"]["id_token"];
-    assert_eq!(claims["email"], "owner@wonton.localhost");
+    assert_eq!(claims["email"], "owner@wonton.internal");
+    assert_eq!(claims["email_verified"], true);
     assert_eq!(claims["preferred_username"], "owner");
     assert_eq!(claims["groups"], json!(["owner"]));
 }

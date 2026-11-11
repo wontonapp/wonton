@@ -160,6 +160,35 @@ async fn a_client_port_stays_closed_until_the_switch_then_shows_the_account() {
     assert_eq!(closed.lan_webui.unwrap().client, None);
 }
 
+#[tokio::test]
+async fn a_lan_client_uses_the_internal_email_before_and_after_profile_updates() {
+    let (_docker, m, _detected, _dir) = on(office()).await;
+    let compose = with_client(web_port().await, &CLIENT.replace("{user}", "{email}"));
+    m.install(&compose, &granted(&compose), super::langs())
+        .await
+        .unwrap();
+    let opened = m
+        .set_lan_webui(id(), true, Languages::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        opened.lan_webui.unwrap().client.unwrap().username,
+        "owner@wonton.internal"
+    );
+    m.cfg
+        .profile
+        .update(&wonton_protocol::OwnerProfileUpdate {
+            display_name: "主人".into(),
+            email: Some("changed@example.com".into()),
+        })
+        .unwrap();
+    let detail = m.judged_detail(&id(), &Languages::default()).await.unwrap();
+    assert_eq!(
+        detail.lan_webui.unwrap().client.unwrap().username,
+        "owner@wonton.internal"
+    );
+}
+
 /// 启动器声明了宣告地址时，客户端的连接地址用宣告地址，不用容器记录里的通配地址。
 #[tokio::test]
 async fn the_client_address_uses_the_announced_address() {

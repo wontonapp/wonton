@@ -27,8 +27,8 @@ const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 /// 家里的服务器要去来源（GitHub）取东西：商店、商店里的详情、预览，以及引导要取的官方索引和图标。
 pub(crate) const SOURCE_TIMEOUT: Duration = Duration::from_secs(120);
 /// 安装和升级：响应要等拉完镜像、通过健康检查。Hermes 的镜像约 1 GB，慢的网络要很久；超时后核心照样做完，
-/// 结果从已安装列表里看。
-pub(super) const INSTALL_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+/// 结果从已安装列表里看。核心等健康至多 60 分钟（按插件的 healthcheck.start_period 放宽），再留出拉镜像的时间。
+pub(super) const INSTALL_TIMEOUT: Duration = Duration::from_secs(90 * 60);
 
 const IMAGE_PREFIX: &str = "/_wonton/api/images/";
 
@@ -682,7 +682,6 @@ fn core_error(
         Some("port_taken") => PluginFailure::LanPortTaken,
         Some("egress_proxy_unavailable") => PluginFailure::EgressProxyUnavailable,
         Some("core_upgrading") => PluginFailure::CoreUpgrading,
-        Some("owner_profile_incomplete") => PluginFailure::OwnerProfileIncomplete,
         Some(_) if status >= 500 => PluginFailure::Upstream,
         Some(_) => PluginFailure::Protocol,
         None => match status {
@@ -761,7 +760,6 @@ pub(super) fn to_core_error(problem: PluginProblem) -> CoreError {
         | PluginFailure::LanUnavailable
         | PluginFailure::LanPortTaken
         | PluginFailure::EgressProxyUnavailable
-        | PluginFailure::OwnerProfileIncomplete
         | PluginFailure::CoreUpgrading => CoreError::NotReady { reason },
         PluginFailure::SourceUnavailable | PluginFailure::Upstream | PluginFailure::Protocol => {
             CoreError::Upstream { reason }

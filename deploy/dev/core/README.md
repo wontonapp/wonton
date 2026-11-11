@@ -5,11 +5,15 @@
 运行，和产品一致：系统服务里只有它挂载 Docker socket，自己加入每个插件网络；浏览器只经核心网关访问插件网页，App 也只经
 核心网关访问 Tuwunel。
 
+Mailpit 与正式部署使用同一个固定摘要的官方镜像，等核心健康、生成配置后启动。SMTP 25 和 API 8025 不发布到宿主；仅授权了 `notify` 的插件网络有 `smtp.wonton.internal` 别名。配置、API 私密密码和 SQLite 位于 `<数据目录>/core/mailpit/`；家人加入或移除会重启 Mailpit 载入名单，保留邮件数据（ADR-0056）。
+
 ```bash
 deploy/dev/core/dev.sh up                    # 构建核心镜像，启动核心、Hydra 和 Tuwunel，等到健康
 deploy/dev/core/dev.sh install plugins/examples/grafana   # 预览权限，确认后安装
 deploy/dev/core/dev.sh token                 # 主人令牌（M0 代替配对，用来登录网关）
 deploy/dev/core/dev.sh list
+deploy/dev/core/dev.sh logs hydra            # 跟日志：核心栈的服务（core、hydra 等）或插件的服务名
+deploy/dev/core/dev.sh diag                  # 只读诊断：插件登录用的主机名、出口代理和 no_proxy
 deploy/dev/core/dev.sh open app.grafana     # 主人身份走完登录，打印网页地址和 Cookie 罐路径
 deploy/dev/core/dev.sh uninstall app.grafana --purge
 deploy/dev/core/dev.sh down                  # 停止，顺带删掉核心按插件起的容器和网络
@@ -26,12 +30,13 @@ deploy/dev/core/dev.sh reset                 # 停掉并删除数据、密钥、
 `dev.sh open app.grafana` 替你把同样的登录走完（核心 → 会话交接 → 插件的 OIDC），打印能直接打开的地址和一个
 Cookie 罐路径，curl 加 `-b` 复用。
 
-- 端口 `WONTON_DEV_PORT`（默认 18480），基础域名 `WONTON_DEV_DOMAIN`（默认 `wonton.localhost`）。
-  端口也是浏览器看到的地址的一部分，Hydra 的签发方地址随之变化，改端口后要重新安装 SSO 插件。
+- 端口 `WONTON_DEV_PORT`（默认 18480），基础域名 `WONTON_DEV_DOMAIN`（默认项目用 `wonton.localhost`，其他项目默认用 `<项目名>.wonton.localhost`）。
+  端口也是浏览器看到的地址的一部分，改端口后要重新安装 SSO 插件；需要并行栈时可显式覆盖基础域名。
 - 一台 Docker 上跑几套：每套设自己的 `WONTON_DEV_PROJECT`、端口和 `WONTON_DEV_DATA`。实例名 `WONTON_DEV_INSTANCE` 默认取
   项目名（去掉开头的 `wonton-` 和非字母数字，最多 16 个字符；去了标点时在截短后的名字后面接项目名哈希的前 5 位
   十六进制，只差标点的两个项目名不会得到同一个实例名），插件的资源名和标签都带上它，各管各的。
   默认项目 `wonton-dev-core` 没有实例名。已有数据的环境换了实例名，插件要重装；想留着旧的资源名，把它设成空。
+  数据目录同时当作安装目录（`WONTON_INSTALL_DIR`）：联邦名单和整台服务器黑名单由核心原地重写并热加载。
   没有实例名时 `down`、`reset` 按标签分不出插件资源是这套栈的还是同一台 Docker 上正式安装的，只列出、不删，
   并打出要手删的命令。
 - 数据目录 `WONTON_DEV_DATA`（默认本目录下的 `.data`）在核心容器内外路径相同，因为插件的绑定挂载由
@@ -153,6 +158,30 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 验证官方索引读得懂、引导如实推荐、帮助文档跟着索引更新（更新、失败保旧、min_core 挡旧核心），以及模型网关
 三种错误的原因各不相同。GitHub 连不上时 export `https_proxy`；「错的 key」和「断网」两个用例要经出口容器到真实
 上游，设 `WONTON_SMOKE_EGRESS_PROXY=http://host.docker.internal:<宿主代理端口>`，不设时这两个用例跳过。
+
+内部邮箱有单独的一条（ADR-0056），**在目标主机的本机 Docker 上运行**，由调用方申请并释放栈名额：
+
+```bash
+(
+  export WONTON_DEV_PROJECT="wonton-mailbox-$(date +%s)-$$"
+  slot="$WONTON_DEV_PROJECT"
+  trap '"$HOME/wonton-dev/stack-slot.sh" release "$slot"' EXIT
+  "$HOME/wonton-dev/stack-slot.sh" acquire --project "$WONTON_DEV_PROJECT" "$slot" -- \
+    deploy/dev/core/smoke-mailbox.sh
+)
+```
+
+需要 Bash、Docker/buildx、Python 3 和 OpenSSL 3；端口默认 18561/18563，可用 `WONTON_DEV_PORT` /
+`WONTON_DEV_TUNNEL_PORT` 改。脚本构建本检出的核心，以临时 Compose override 关闭系统/默认插件（不改正式配置），
+安装上游官方 Python 镜像的最小 `notify` 插件，不接真实模型、不装 Hermes。验证插件无宿主端口、三项 SMTP 注入、
+服务器宣告 AUTH 但不宣告 STARTTLS、外部/不存在/插件地址在 RCPT 阶段被 550 拒绝、信封独有收件人经 Mailpit 补入 Bcc、
+主人自己的 Wonton 私聊收到
+`app.wonton.plugin_mail`；短 HTML 转文本保留链接，长 HTML 截到 4000 字并附原文，小附件和原文都从 Matrix 下载核对，
+另有一封随便填凭据、经 AUTH LOGIN 发出的信也照常投进私聊。
+还会停掉本栈 Tuwunel，观察 Mailpit 至少 40 秒不删信，再恢复并等到投递后队列清空。身份认证用本次临时栈新生成的
+Ed25519 密钥签一次主人 JWT，直接登录真实 Tuwunel；不覆盖设备配对/隧道（由主冒烟覆盖），也不注入家人记录来假造加入，
+家人加入/移除流程不在此脚本范围。凭据只在私有临时文件和本栈容器内使用，不进命令参数或输出；退出 trap 清本栈
+容器、网络、卷和临时目录（不保留现场、不 prune）。
 
 ```bash
 deploy/dev/core/smoke.sh        # 本机 Docker；要设 WONTON_SMOKE_MODEL（见下）

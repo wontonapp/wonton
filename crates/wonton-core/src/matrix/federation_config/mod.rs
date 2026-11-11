@@ -25,7 +25,7 @@ mod routing_tests;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use files::allowlist_toml;
+pub(crate) use files::{allowlist_toml, blocks_toml};
 
 /// 核心给 Tuwunel 开的联邦出站代理：核心在内部网络上的别名和端口。`deploy/install/compose.yaml` 里核心的
 /// 网络别名和 `WONTON_FEDERATION_LISTEN` 用的是同一个值，一起改。

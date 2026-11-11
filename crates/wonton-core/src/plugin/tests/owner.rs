@@ -1,4 +1,4 @@
-//! 主人的身份交给插件的规则（ADR-0022）：和 `sso` 解耦，没配邮箱时如实失败。
+//! 插件身份和真实资料分离（ADR-0056）：未填或修改真实邮箱不影响内部地址。
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -79,9 +79,6 @@ async fn owner_identity_gives_an_sso_none_plugin_the_name_and_email() {
         .find(|p| p.permission == "owner.identity")
         .expect("权限列在安装页上");
     assert!(line.supported && line.risk.is_none());
-    // 期望值用目录本身格式化出来（主人没存语言，回退英文）。
-    let identity = crate::l10n::text(&Languages::default(), "permission-owner-identity", &[]);
-    assert_eq!(line.text, identity, "{}", line.text);
     let sso_notice = crate::l10n::text(&Languages::default(), "install-webui-sso", &[]);
     assert!(
         !preview.notices.iter().any(|n| n.text.contains(&sso_notice)),
@@ -94,7 +91,7 @@ async fn owner_identity_gives_an_sso_none_plugin_the_name_and_email() {
         .unwrap();
     let env = env_of_container(&docker, "wonton-app-test--web");
     assert_eq!(env["ADMIN"], "owner");
-    assert_eq!(env["MAIL"], "owner@example.com");
+    assert_eq!(env["MAIL"], "owner@wonton.internal");
 }
 
 #[test]
@@ -107,13 +104,6 @@ fn a_plugin_with_neither_sso_nor_the_permission_gets_no_identity() {
         .unwrap_err()
         .to_string();
     assert!(error.contains("WONTON_OWNER_NAME"), "{error}");
-    assert!(
-        error.contains(&super::message(
-            "plugin-install-render-no-owner-identity",
-            &[("var", "WONTON_OWNER_NAME")]
-        )),
-        "{error}"
-    );
 }
 
 /// 声明了 `sso` 的插件，环境变量 `ADMIN` 引用主人的用户名。
@@ -135,13 +125,7 @@ fn sso_does_not_bring_the_identity_variables() {
         let error = dry_run(&parsed(&sso_app(webui)), &super::langs())
             .unwrap_err()
             .to_string();
-        assert!(
-            error.contains(&super::message(
-                "plugin-install-render-no-owner-identity",
-                &[("var", "WONTON_OWNER_NAME")]
-            )),
-            "{error}"
-        );
+        assert!(error.contains("WONTON_OWNER_NAME"), "{error}");
     }
 }
 
@@ -185,9 +169,9 @@ async fn the_preview_lists_the_identity_whenever_the_app_gets_it() {
 }
 
 #[tokio::test]
-async fn without_an_email_a_plugin_that_requires_it_does_not_install() {
+async fn without_a_real_email_a_plugin_installs_with_the_internal_address() {
     let port = web().await.port();
-    let (_docker, engine) = FakeDocker::start().await;
+    let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = without_email(engine, &dir);
     let compose = identity_app("${WONTON_OWNER_EMAIL:?}", port);
@@ -195,26 +179,17 @@ async fn without_an_email_a_plugin_that_requires_it_does_not_install() {
         .preview_install(&parsed(&compose), &Languages::default())
         .await
         .unwrap();
-    assert_eq!(preview.blocked, None, "填了就能装，不算装不了");
-    assert_eq!(
-        preview.missing_profile.as_deref(),
-        Some(super::message("plugin-settings-email-needed", &[]).as_str())
-    );
-    let error = m
-        .install(&compose, &[Permission::OwnerIdentity], super::langs())
+    assert_eq!(preview.blocked, None);
+    assert_eq!(preview.missing_profile, None);
+    m.install(&compose, &[Permission::OwnerIdentity], super::langs())
         .await
-        .unwrap_err();
-    assert_eq!(error.kind(), "owner_profile_incomplete", "{error}");
-    assert!(
-        error
-            .to_string()
-            .contains(&super::message("plugin-settings-email-missing", &[])),
-        "{error}"
-    );
+        .unwrap();
+    let env = env_of_container(&docker, "wonton-app-test--web");
+    assert_eq!(env["MAIL"], "owner@wonton.internal");
 }
 
 #[tokio::test]
-async fn filling_in_the_email_lets_the_plugin_install_with_it() {
+async fn changing_real_email_keeps_the_same_plugin_identity() {
     let port = web().await.port();
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
@@ -236,31 +211,34 @@ async fn filling_in_the_email_lets_the_plugin_install_with_it() {
         .await
         .unwrap();
     let env = env_of_container(&docker, "wonton-app-test--web");
-    assert_eq!(env["MAIL"], "filled@example.com");
+    assert_eq!(env["MAIL"], "owner@wonton.internal");
+    m.cfg
+        .profile
+        .update(&OwnerProfileUpdate {
+            display_name: "云吞".into(),
+            email: Some("changed@example.com".into()),
+        })
+        .unwrap();
+    let context = m
+        .install_context(
+            &parsed(&compose).manifest,
+            None,
+            Default::default(),
+            &[Permission::OwnerIdentity],
+            &super::langs(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(context.owner.unwrap().email, "owner@wonton.internal");
+    let reopened = OwnerStore::open(&dir.path().join("owner-without-profile")).unwrap();
+    assert_eq!(
+        reopened.profile().email.as_deref(),
+        Some("changed@example.com")
+    );
 }
 
 #[tokio::test]
-async fn without_an_email_a_plugin_that_can_do_without_it_installs() {
-    let port = web().await.port();
-    let (docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let m = without_email(engine, &dir);
-    let compose = identity_app("\"${WONTON_OWNER_EMAIL:-}\"", port);
-    let preview = m
-        .preview_install(&parsed(&compose), &Languages::default())
-        .await
-        .unwrap();
-    assert_eq!(preview.blocked, None);
-    m.install(&compose, &[Permission::OwnerIdentity], super::langs())
-        .await
-        .unwrap();
-    let env = env_of_container(&docker, "wonton-app-test--web");
-    assert_eq!(env["ADMIN"], "owner");
-    assert_eq!(env["MAIL"], "");
-}
-
-#[tokio::test]
-async fn without_an_email_a_proxy_template_that_uses_it_does_not_install() {
+async fn without_a_real_email_a_proxy_template_installs_with_the_internal_address() {
     let port = web().await.port();
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
@@ -276,22 +254,17 @@ async fn without_an_email_a_proxy_template_that_uses_it_does_not_install() {
         .preview_install(&parsed(&compose), &Languages::default())
         .await
         .unwrap();
+    assert_eq!(preview.missing_profile, None);
+    m.install(&compose, &[], super::langs()).await.unwrap();
+    let auth = m.route("app-test").unwrap().proxy.unwrap();
     assert_eq!(
-        preview.missing_profile.as_deref(),
-        Some(super::message("plugin-settings-email-needed", &[]).as_str())
-    );
-    let error = m.install(&compose, &[], super::langs()).await.unwrap_err();
-    assert_eq!(error.kind(), "owner_profile_incomplete", "{error}");
-    assert!(
-        error
-            .to_string()
-            .contains(&super::message("plugin-settings-email-missing", &[])),
-        "{error}"
+        auth.headers(&m.cfg.profile.owner())[0].1,
+        "owner@wonton.internal"
     );
 }
 
 #[tokio::test]
-async fn a_proxy_template_stops_forwarding_when_the_email_is_removed_later() {
+async fn proxy_and_lan_templates_share_stable_person_specific_internal_addresses() {
     let port = web().await.port();
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
@@ -310,15 +283,25 @@ async fn a_proxy_template_stops_forwarding_when_the_email_is_removed_later() {
         display_name: "云吞".into(),
         email: Some("me@example.com".into()),
     };
-    assert_eq!(
-        auth.headers(&owner, &super::langs()).unwrap()[0].1,
-        "me@example.com"
-    );
+    assert_eq!(auth.headers(&owner)[0].1, "owner@wonton.internal");
+    owner.email = Some("changed@example.com".into());
+    assert_eq!(auth.headers(&owner)[0].1, "owner@wonton.internal");
     owner.email = None;
-    assert!(
-        auth.headers(&owner, &super::langs()).is_err(),
-        "不代加一个空值"
-    );
+    assert_eq!(auth.headers(&owner)[0].1, "owner@wonton.internal");
+    let member = Owner {
+        username: "alice".into(),
+        ..owner
+    };
+    let proxy_email = auth.headers(&member)[0].1.clone();
+    assert_eq!(proxy_email, "alice@wonton.internal");
+    let lan_email = super::super::proxy_auth::fill_template(
+        "{email}",
+        &member,
+        &Default::default(),
+        &super::langs(),
+    )
+    .unwrap();
+    assert_eq!(lan_email, proxy_email);
 }
 
 #[tokio::test]

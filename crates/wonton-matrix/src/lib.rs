@@ -17,6 +17,7 @@
 mod chat_room;
 mod encryption;
 mod error;
+mod friends;
 mod layout;
 mod media;
 mod message;
@@ -40,9 +41,11 @@ pub use chat_room::{
 };
 pub use encryption::{EncryptionState, Recovery, Verification};
 pub use error::{Error, Result};
+pub use friends::{Blocked, FRIEND_CREATE_KEY, FriendChat, FriendInvite};
 pub use layout::{CHAT_LAYOUT_EVENT, ChatLayoutContent};
 pub use matrix_sdk::ruma::{
-    DeviceId, EventId, OwnedDeviceId, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId,
+    DeviceId, EventId, OwnedDeviceId, OwnedEventId, OwnedRoomId, OwnedServerName, OwnedUserId,
+    RoomId, ServerName, UserId,
 };
 pub use matrix_sdk_ui::eyeball_im::{Vector, VectorDiff};
 pub use media::media_token;

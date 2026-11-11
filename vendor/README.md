@@ -56,6 +56,20 @@ receiver，任务体开头两行订阅删掉，`select!` 循环不动；`room_in
 客户端 drop 时 `_listen_task_handle` 的 `AbortOnDrop` 生效、通道随之关闭，两条退出路径都通。
 回归见 `crates/wonton-matrix/tests/tuwunel/leak816.rs`（修前红、修后绿）。
 
+### 上传进度节流、发送更新通道留足缓冲
+
+`src/send_queue/progress.rs` 的进度转发从“HTTP 客户端每 8 KB 一条”改成每 100 ms 最多一条，传完的那条不等间隔；
+`src/send_queue/mod.rs` 里每个房间的发送更新广播从 32 格放到 256 格。
+
+为什么：HTTP 客户端每 8 KB 报一次进度，8 MB 的附件是 1024 次。环回上不节流时一次上传就有十几条背靠背的更新
+（`eyeball` 的订阅按调度合并，块越小合并越多），每一条都要时间线改一次本地回显、给订阅方发一次 `Set`。进度又和其他
+发送更新（本地回显、发出、失败）共用同一条广播，满了挤掉最旧的；接收方慢一阵子、同时又有别的消息在发时，被挤掉的
+可能是最后的 100% 和“已发送”，那条消息就一直停在“发送中”，直到服务器回显经同步补上。上游 0.19.1 和 `main`
+都还是每块一条、容量 32。容量按节流后的速率给接收方约 25 秒余地，一串几十条别的更新也挤不掉写完的进度。
+
+行为回归见 `crates/wonton-matrix/tests/tuwunel/send_queue.rs`：`image_progress_updates_are_throttled` 发 8 MB 的图，
+断言进度条数不超过“每 100 ms 一条再加几条不等间隔的（缩略图、原图各自的开头和传完）”；`image_final_state_waits_for_a_late_reader` 发图后再连发
+40 条文字、期间不读广播，断言没有 `Lagged`，图片最后一条更新仍是 100% 之后的已发送。
 ## matrix-sdk-ui 0.19.1（Apache-2.0，`matrix-sdk-ui/LICENSE`）
 
 crates.io 包原样导入，sha256 `e43a190b56df060b5a901d0e783e04002612981d1fef9562a44bf69330bb5257`，
@@ -77,8 +91,8 @@ crates.io 包原样导入，sha256 `e43a190b56df060b5a901d0e783e04002612981d1fef
 ## 升级
 
 1. 先查新版 SDK 是否同时含 SDK-ui 的快照交接修复、matrix-sdk 的公开等价取密钥方法、
-   网络等待期间启用备份后状态不被旧检查覆盖的修复，以及 LatestEvents 后台任务不持有
-   `Client` 的修复（连同 `Client::downgrade`/`WeakClient` 公开导出）。
+   网络等待期间启用备份后状态不被旧检查覆盖的修复、LatestEvents 后台任务不持有
+   `Client` 的修复（连同 `Client::downgrade`/`WeakClient` 公开导出），以及上传进度节流。
    各自已有上游实现时，迁移调用并删除对应 vendor 目录、workspace exclude 和 patch 项。
 2. 没有：根 `Cargo.toml` 里 matrix-sdk 系的版本一起改，`cargo fetch` 后从
    `~/.cargo/registry/cache/*/matrix-sdk-<版本>.crate` 解包，核对 sha256 和 `Cargo.lock` 的 checksum 一致，整个目录替换

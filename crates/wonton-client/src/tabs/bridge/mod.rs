@@ -8,9 +8,11 @@ mod types;
 
 use serde_json::{Value, json};
 use wonton_l10n::l10n;
-use wonton_protocol::{AppearanceViewModel, CoreError, HomeStatus, PanelScope, PlacedTab, TabPage};
+use wonton_protocol::{
+    AppearanceViewModel, CoreError, HomeStatus, PanelScope, PlacedTab, TabPage, TabRef,
+};
 
-use super::TabsLink;
+use super::{TabsLink, placed_tab_ref};
 use crate::l10n::{CATALOG, language};
 pub(crate) use rpc::handle_message;
 pub use types::{TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea};
@@ -23,7 +25,7 @@ pub(crate) fn document_script(
     page: &PlacedTab,
     environment: &TabEnvironment,
 ) -> Result<String, CoreError> {
-    let payload = context::payload(appearance, &page_of(tabs, page)?, environment)?;
+    let payload = context::payload(appearance, &bridge_page(tabs, page)?, environment)?;
     Ok(format!("({SCRIPT})({payload},true);"))
 }
 
@@ -33,7 +35,7 @@ pub(crate) fn context_script(
     page: &PlacedTab,
     environment: &TabEnvironment,
 ) -> Result<String, CoreError> {
-    let payload = context::payload(appearance, &page_of(tabs, page)?, environment)?;
+    let payload = context::payload(appearance, &bridge_page(tabs, page)?, environment)?;
     Ok(format!("({SCRIPT})({payload},false);"))
 }
 
@@ -48,6 +50,20 @@ pub(crate) fn connection_script(status: &HomeStatus) -> String {
 
 fn reply_script(message: Value) -> String {
     format!("window.dispatchEvent(new MessageEvent(\"message\",{{data:{message},source:window}}));")
+}
+
+/// 公网网页没有桥、没有注入脚本（ADR-0052“公网网页”）：壳按这个错误不往页面里放。
+fn bridge_page(tabs: &TabsLink, page: &PlacedTab) -> Result<TabPage, CoreError> {
+    if matches!(placed_tab_ref(page), TabRef::Url { .. }) {
+        return Err(public_page());
+    }
+    page_of(tabs, page)
+}
+
+fn public_page() -> CoreError {
+    CoreError::InvalidInput {
+        reason: l10n!(CATALOG, language(), "tabs-bridge-public-page"),
+    }
 }
 
 /// 查一个页面实例现在显示什么：底栏和覆盖层在 TabsViewModel 里，面板的在面板列表里。

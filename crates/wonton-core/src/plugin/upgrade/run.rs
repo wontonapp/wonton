@@ -13,6 +13,7 @@ use wonton_protocol::InstallStage;
 use super::super::bots::is_bot;
 use super::super::compose::PullPolicy;
 use super::super::gpu::GpuGrant;
+use super::super::health_gate::Gate;
 use super::super::lan::LanGrant;
 use super::super::lan::webui::switched;
 use super::super::languages::Languages;
@@ -358,7 +359,8 @@ impl PluginManager {
             self.hydra(&langs)?.upsert_client(&spec).await?;
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-        let deadline = Instant::now() + self.cfg.install_timeout;
+        let deadline =
+            super::super::health_gate::deadline(&plan, self.cfg.install_timeout, Instant::now());
         self.stage(&manifest.id, InstallStage::Starting);
         let health = self
             .start_containers(
@@ -572,6 +574,7 @@ impl PluginManager {
             self.engine.disconnect_network(network, core).await?;
         }
         self.detach_relay(network).await?;
+        self.detach_mailpit(network).await?;
         self.engine.remove_network(network).await?;
         let labels = self.cfg.instance.labels(&manifest.id);
         self.engine
@@ -674,7 +677,8 @@ impl PluginManager {
         }
         let mut plan = render(&old.package, &ctx, &langs)?;
         pin_images(&mut plan, &old.images);
-        self.replace_containers(&ctx, plan).await?;
+        self.replace_containers(&ctx, plan, Gate::StartPeriod)
+            .await?;
         self.reconcile_running(&old.package, &old.record).await
     }
 

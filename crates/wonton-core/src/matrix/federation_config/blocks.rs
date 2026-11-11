@@ -44,7 +44,7 @@ impl FederationBlocks {
     }
 
     pub fn set(&self, server: &str, blocked: bool) -> anyhow::Result<()> {
-        super::routing::validate_name(server)?;
+        validate_name(server)?;
         let mut names = self.names.lock().unwrap();
         let mut updated = names.clone();
         if blocked {
@@ -65,6 +65,36 @@ impl FederationBlocks {
     }
 }
 
+/// 服务器名只能是小写 DNS 名字，可以带非默认端口（`example.org:8448`）。大小写归一由调用方做。
+fn validate_name(name: &str) -> anyhow::Result<()> {
+    let (host, port) = match name.rsplit_once(':') {
+        Some((host, port)) => (host, Some(port)),
+        None => (name, None),
+    };
+    let bad_port = port.is_some_and(|port| {
+        port.is_empty()
+            || port.len() > 5
+            || !port.bytes().all(|c| c.is_ascii_digit())
+            || port == "0"
+    });
+    anyhow::ensure!(
+        !host.is_empty()
+            && host.len() <= 253
+            && !bad_port
+            && host.split('.').all(|label| {
+                !label.is_empty()
+                    && label.len() <= 63
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    && label
+                        .bytes()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+            }),
+        "服务器名必须是小写 DNS 名字，端口可省：{name}"
+    );
+    Ok(())
+}
+
 fn read(path: &Path) -> anyhow::Result<BTreeSet<String>> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
@@ -74,7 +104,7 @@ fn read(path: &Path) -> anyhow::Result<BTreeSet<String>> {
     let names: BTreeSet<String> = serde_json::from_str(&text)
         .with_context(|| format!("黑名单 {} 不是合法 JSON", path.display()))?;
     for name in &names {
-        super::routing::validate_name(name)?;
+        validate_name(name)?;
     }
     Ok(names)
 }

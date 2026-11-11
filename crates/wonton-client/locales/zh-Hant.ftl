@@ -45,6 +45,20 @@ peers-invalid-proxy = 本機代理不可用：{ $reason }
 peers-server-status = 家裡的伺服器回了 HTTP { $status }
 # $reason 是 JSON 解析器的原始錯誤。
 peers-invalid-response = 家裡的伺服器給的回應讀不懂：{ $reason }
+friends-transport = 連不上家裡的伺服器：{ $reason }
+friends-server-status = 家裡的伺服器回了 HTTP { $status }
+friends-invalid-response = 家裡的伺服器給的回應讀不懂：{ $reason }
+friends-not-signed-in = 還沒登入這個帳號。
+friends-not-connected = 還沒連上家用伺服器。
+friends-invalid-action = 不是好友操作。
+friends-local-open = 本機好友清單打不開：{ $reason }
+friends-invalid-proxy = 本機代理位址不可用：{ $reason }
+friends-http-client = 本機 HTTP 用戶端建立失敗：{ $reason }
+friends-invalid-url = 好友服務位址不合法：{ $reason }
+friends-request-body = 好友請求編碼失敗：{ $reason }
+friends-timeout = 好友服務沒有及時回應。
+friends-group-name-required = 請填寫分組名稱。
+friends-group-not-found = 沒有這個分組：{ $id }
 # $reason 是隧道拒絕的原話。
 peers-rejected = 家裡的伺服器拒絕了這台裝置：{ $reason }
 
@@ -487,6 +501,7 @@ plugins-start-busy = { $id } 正在啟動、安裝、更新或解除安裝
 # 應用程式頁面的橋接（crates/wonton-client/src/tabs/bridge/）。
 tabs-bridge-page-not-open = 這個 App 的頁面沒有開啟或固定
 tabs-bridge-invalid-environment = 頁面欄高與安全區必須是有限的非負數
+tabs-bridge-public-page = 公網網頁沒有 Wonton 的橋。
 
 # 聊天的連線問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailable 的原因和失敗操作的訊息。
 chat-not-connected = 連上家用伺服器後再試
@@ -560,6 +575,7 @@ panel-room-not-open = 先打開這個聊天，才能改它的面板。
 panel-room-unknown = 找不到這個聊天。
 panel-pin-invalid-url = 這個網址讀不出來。
 panel-pin-not-https = 只能釘 https:// 的網頁。
+panel-pin-path-outside = 這一頁不在這個 App 自己的網站裡。
 panel-attention-panel-only = 只有面板裡的頁面能掛紅點。
 panel-config-too-many = 面板最多放 { $count } 頁。
 panel-config-duplicate = 同一個頁面在面板裡出現了兩次。

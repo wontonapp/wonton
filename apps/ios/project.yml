@@ -23,8 +23,6 @@ targets:
       - Wonton
     dependencies:
       - package: WontonClient
-      # Rust 核心里的 iroh 用它读网卡、路由和 DNS 配置（静态库不会自动链接系统框架）。
-      - sdk: SystemConfiguration.framework
     # 由 xcodegen 生成，和下面的 INFOPLIST_KEY_* 合并；生成的文件不提交。
     info:
       path: Wonton/Info.plist
@@ -61,6 +59,19 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         TARGETED_DEVICE_FAMILY: "1"
 
+  WontonTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - WontonTests
+    dependencies:
+      - target: Wonton
+      - package: WontonClient
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
+
   WontonUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -68,6 +79,7 @@ targets:
       - WontonUITests
     dependencies:
       - target: Wonton
+      - package: WontonClient
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios.uitests
@@ -80,6 +92,8 @@ schemes:
       targets:
         Wonton: all
         WontonUITests: [test]
+        WontonTests: [test]
     test:
       targets:
+        - WontonTests
         - WontonUITests

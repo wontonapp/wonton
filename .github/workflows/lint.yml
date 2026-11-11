@@ -64,6 +64,9 @@ jobs:
       - name: dev.sh 实例标签的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 deploy/dev/core/instance-label_test.py
+      - name: dev.sh 的 logs 和 diag（假 docker，不用真的 Docker）
+        if: steps.changes.outputs.source == 'true'
+        run: python3 deploy/dev/core/dev_test.py
       - name: 开发栈端口只绑 127.0.0.1
         if: steps.changes.outputs.source == 'true'
         run: python3 scripts/check-dev-compose-ports.py

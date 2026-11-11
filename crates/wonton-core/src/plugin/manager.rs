@@ -16,6 +16,7 @@ use super::egress::settings::Egress;
 use super::gallery::Gallery;
 use super::github::GitHub;
 use super::gpu::HostPaths;
+use super::health_gate::Gate;
 use super::host_check;
 use super::host_facts::NvidiaMemory;
 use super::image_worker::ImageWorker;
@@ -81,6 +82,7 @@ pub struct PluginManager {
     pub(super) http: HttpClient,
     pub(super) oidc: Option<Hydra>,
     pub(super) matrix: Option<Arc<Matrix>>,
+    pub(super) mailpit: Option<Arc<crate::mailbox::Component>>,
     pub(super) profiles: super::bot_profile::ProfileState,
     pub(super) cfg: LifecycleConfig,
     /// 核心看到的宿主路径，探测显卡用（见 [`super::gpu`]）。
@@ -164,6 +166,7 @@ impl PluginManager {
             http,
             oidc,
             matrix: None,
+            mailpit: None,
             profiles: Default::default(),
             host: HostPaths::new(host_dev),
             nvidia_memory: NvidiaMemory::default(),
@@ -466,6 +469,9 @@ impl PluginManager {
 
     /// 核心启动时：按记录恢复插件状态，把 OIDC 客户端同步到身份提供方。
     /// 单个插件恢复失败（包括它的记录损坏）只把它标为异常，不影响核心和其他插件启动。
+    ///
+    /// 这里是一个插件接一个插件串行的：漂移重建只等 `install_timeout`，不让一个起不来的慢插件把排在后面
+    /// 的所有插件拖住几十分钟（见 [`Gate`]）。超时的插件容器留着，健康以后由容器监视捡回来。
     pub async fn restore(&self) -> Result<(), InstallError> {
         let langs = self.owner_languages();
         let files = self.store.load_all()?;
@@ -515,7 +521,7 @@ impl PluginManager {
                 }
                 let listed = Listed::of_record(&package, record);
                 let lan_ports = listed.open_ports(record.lan_webui);
-                match self.reconcile(&package, record).await {
+                match self.reconcile(&package, record, Gate::InstallTimeout).await {
                     // 有的服务没就绪时路由照样回来了：照常让局域网检测核一遍地址（见下面）。
                     Ok(Some(deployed)) => {
                         if deployed.problem.is_some() && !lan_ports.is_empty() {

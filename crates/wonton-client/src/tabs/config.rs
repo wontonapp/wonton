@@ -6,6 +6,7 @@ use wonton_protocol::{
     TabIcon, TabLayout, TabRef,
 };
 
+use super::{is_https_url, is_plugin_page};
 use crate::l10n::{CATALOG, language};
 use wonton_l10n::l10n;
 
@@ -120,6 +121,7 @@ fn validate_file(file: &TabsFile) -> Result<(), String> {
                 "tabs-config-plugin-page-incomplete"
             ));
         }
+        check_url(&item.tab)?;
     }
     if !file.items.iter().any(|item| item.tab == TabRef::Chat) {
         return Err(l10n!(CATALOG, language(), "tabs-config-missing-fixed"));
@@ -144,6 +146,17 @@ pub(super) fn validate_panel(panel: &[PanelEntry], max: usize) -> Result<(), Str
             return Err(l10n!(CATALOG, language(), "panel-config-duplicate"));
         }
         seen.push(entry.tab.clone());
+        check_url(&entry.tab)?;
+    }
+    Ok(())
+}
+
+/// 存下来的公网网页也只收 `https://`（ADR-0052），本机文件和账号数据都查。
+fn check_url(tab: &TabRef) -> Result<(), String> {
+    if let TabRef::Url { url } = tab
+        && !is_https_url(url)
+    {
+        return Err(l10n!(CATALOG, language(), "panel-pin-not-https"));
     }
     Ok(())
 }
@@ -182,7 +195,8 @@ pub(super) fn default_file(server_id: Option<String>) -> TabsFile {
 pub(super) fn normalize_for_server(file: &mut TabsFile, server_id: Option<String>) {
     let Some(server_id) = server_id else { return };
     if file.server_id.as_ref().is_some_and(|old| old != &server_id) {
-        file.items.retain(|item| !is_plugin(&item.tab));
+        // 插件和插件里的页面绑在上一台服务器上；公网网页和服务器无关，留着。
+        file.items.retain(|item| !is_plugin_page(&item.tab));
         file.displays.clear();
         file.panel.clear();
     }
@@ -194,6 +208,7 @@ pub(super) fn normalize_for_server(file: &mut TabsFile, server_id: Option<String
 pub(super) fn adopt_layout(file: &mut TabsFile, settings: LayoutSettings) -> Result<(), String> {
     let mut items = Vec::with_capacity(settings.items.len());
     for tab in settings.items {
+        check_url(&tab)?;
         let page = file
             .items
             .iter()

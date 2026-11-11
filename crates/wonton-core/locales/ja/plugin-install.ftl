@@ -494,6 +494,9 @@ plugin-install-img-worker-memory-limit = 処理に必要なメモリが{ $mib } 
 plugin-install-img-worker-killed = 画像処理のプロセスが強制終了されました（SIGKILL）。メモリ不足の可能性が高いです
 plugin-install-img-worker-signal = 画像処理のプロセスがシグナル{ $signal }で終了しました
 plugin-install-img-worker-malformed = 画像処理のプロセスの出力形式が不正です
+plugin-install-img-worker-host-exited = 画像処理のヘルパーが終了しました：{ $error }
+plugin-install-img-worker-host-not-ready = 画像処理のヘルパーが準備できませんでした：{ $error }
+plugin-install-img-worker-host-protocol = 画像処理のヘルパーのプロトコルバージョンは { $got } ですが、コアは { $want } です
 
 ## 预装（启动时随服务器带的包）失败的原因。
 plugin-install-preinstall-retrying = プリインストールに失敗しました（{ $attempts } 回試行、自動で再試行します）

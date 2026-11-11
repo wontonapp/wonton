@@ -1,4 +1,5 @@
 use super::*;
+use std::os::unix::fs::PermissionsExt;
 
 /// 起不了处理图片的进程不是图标的问题：下次照样处理。图标本身处理不了的结果记住，不再起进程。
 #[tokio::test]
@@ -18,8 +19,15 @@ async fn only_failures_of_the_icon_itself_are_remembered() {
         "{unavailable:?}"
     );
 
-    // 换成一个总说“不合规格”的程序（退出码 1）：这次真的处理了。
-    std::os::unix::fs::symlink("/usr/bin/false", &program).unwrap();
+    // 换成一个总说“不合规格”的助手：这次真的处理了。
+    let helper = dir.path().join("refusing-helper.sh");
+    std::fs::write(
+        &helper,
+        "#!/bin/sh\nprintf '0 1\\n'\nwhile read -r id timeout lang job input; do\n  head -c \"$input\" >/dev/null\n  printf '%s 1 0 4\\nnope' \"$id\"\ndone\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink(&helper, &program).unwrap();
     let refused = gallery.render(&source).await;
     assert!(
         matches!(refused, Err(ImageError::Refused(_))),

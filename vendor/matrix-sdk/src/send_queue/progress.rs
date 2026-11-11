@@ -14,7 +14,10 @@
 
 //! Progress facilities for the media upload system.
 
-use std::ops::Add;
+use std::{
+    ops::Add,
+    time::{Duration, Instant},
+};
 
 use eyeball::SharedObservable;
 #[cfg(feature = "unstable-msc4274")]
@@ -29,6 +32,10 @@ use crate::{
     Room, TransmissionProgress,
     send_queue::{QueueStorage, RoomSendQueue, RoomSendQueueStorageError, RoomSendQueueUpdate},
 };
+
+/// 上传进度最多每这么久往广播里发一条。HTTP 客户端每 8 KB 报一次，8 MB 的附件约 1000 次，原样转发是白给的
+/// 开销；100 ms 约等于一帧，界面照样连贯。完成的那条不等间隔。
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Progress of an operation in abstract units.
 ///
@@ -50,7 +57,10 @@ impl Add for AbstractProgress {
     type Output = Self;
 
     fn add(self, other: Self) -> Self::Output {
-        Self { current: self.current + other.current, total: self.total + other.total }
+        Self {
+            current: self.current + other.current,
+            total: self.total + other.total,
+        }
     }
 }
 
@@ -154,7 +164,11 @@ impl RoomSendQueue {
             }
         };
 
-        MediaUploadProgressInfo { index: index as u64, bytes, offsets }
+        MediaUploadProgressInfo {
+            index: index as u64,
+            bytes,
+            offsets,
+        }
     }
 
     /// Determine the size of a pending file upload, if this is a thumbnail
@@ -164,8 +178,10 @@ impl RoomSendQueue {
         room: &Room,
     ) -> Result<Option<usize>, RoomSendQueueStorageError> {
         let client = room.client();
-        let dependent_requests =
-            client.state_store().load_dependent_queued_requests(room.room_id()).await?;
+        let dependent_requests = client
+            .state_store()
+            .load_dependent_queued_requests(room.room_id())
+            .await?;
 
         // Try to find a depending request which depends on the target one, and that's a
         // media upload.
@@ -221,7 +237,13 @@ impl RoomSendQueue {
         // the progress observable is dropped, next() will return None and the
         // task will end.
         spawn(async move {
+            let mut reported: Option<Instant> = None;
             while let Some(progress) = subscriber.next().await {
+                let finished = progress.current == progress.total;
+                if !finished && reported.is_some_and(|at| at.elapsed() < PROGRESS_INTERVAL) {
+                    continue;
+                }
+                reported = Some(Instant::now());
                 // Purposefully don't use `send_update` here, because we don't want to notify
                 // the global listeners about an upload progress update.
                 let _ = update_sender.send(RoomSendQueueUpdate::MediaUpload {
@@ -255,12 +277,18 @@ fn estimate_media_upload_progress(
     bytes: usize,
 ) -> AbstractProgress {
     if progress.total == 0 {
-        return AbstractProgress { current: 0, total: 0 };
+        return AbstractProgress {
+            current: 0,
+            total: 0,
+        };
     }
 
     // Did the file finish uploading?
     if progress.current == progress.total {
-        return AbstractProgress { current: bytes, total: bytes };
+        return AbstractProgress {
+            current: bytes,
+            total: bytes,
+        };
     }
 
     // The file is still uploading. Use the rule of 3 to proportionally map the

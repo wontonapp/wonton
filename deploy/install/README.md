@@ -23,6 +23,9 @@ Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要�
 Tuwunel 经 `core` 网络直连核心的推送专用监听，不用发布额外端口；网络、地址和配置约定见
 [ADR-0003 的“接口：推送”](../../docs/adr/0003-matrix-and-encrypted-push.md#接口推送m0-3)。
 
+Mailpit 收取 `notify` 插件发给主人和已加入家人的内部邮件（[ADR-0056](../../docs/adr/0056-internal-mailbox.md)）。SMTP 25 和网页/API 8025 都不发布到宿主；API 密码只由核心持有。
+核心启动时生成 `<数据目录>/core/mailpit/config/`，Mailpit 等核心健康后启动；收件人变化时核心原子改写名单并停止、启动同一容器，`core/mailpit/data/` 中的 SQLite 保留。只按七天过期清理，不使用上游默认的 500 封数量清理，以免聊天离线时提前丢信。备份数据目录时一并备份 `core/mailpit/`，其中含私有 API 密码。
+
 ## 服务器名和证书
 
 第一次安装默认用家名服务送的名字（`WONTON_MATRIX_NAME_MODE=given`，可省略）。没有家名服务时，换一种装法（一条比一条命令，加在原来的安装命令上）：

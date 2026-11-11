@@ -1,12 +1,42 @@
-//! 启动接线的另一半：监听与隧道入口、插件核对。
+//! 启动接线的另一半：外部客户、好友记录、监听与隧道入口、插件核对。
 use super::*;
 
-pub(super) async fn serve_listeners(
+pub(super) async fn open_clients(
+    cfg: &Config,
+    engine: &Engine,
+) -> anyhow::Result<(
+    HttpClient,
+    HttpClient,
+    Option<(Hydra, String)>,
+    Option<Arc<Matrix>>,
+)> {
+    let http = HttpClient::new();
+    let system_http =
+        HttpClient::for_system_services(engine, cfg.core_container.as_deref()).await?;
+    let hydra = connect_hydra(cfg, &system_http).await?;
+    let matrix = connect_matrix(cfg, &system_http).await?;
+    Ok((http, system_http, hydra, matrix))
+}
+
+pub(super) fn open_friends(
+    cfg: &Config,
+) -> anyhow::Result<(Arc<Friends>, Option<Arc<FederationBlocks>>)> {
+    let friends = Arc::new(Friends::open(cfg.core_state_dir().join("friends.json"))?);
+    let blocks = match (&cfg.install_dir, &cfg.core_container) {
+        (Some(_), Some(_)) => Some(Arc::new(FederationBlocks::open(
+            cfg.core_state_dir().join("federation-blocks.json"),
+        )?)),
+        _ => None,
+    };
+    Ok((friends, blocks))
+}
+
+pub(super) async fn run_gateway(
     cfg: &Config,
     listener: wonton_core::entry_runtime::MainListener,
-    gateway: Arc<Gateway>,
     tunnel: Tunnel,
     (peers, federation): (Option<Arc<peers::Peers>>, Option<FederationProtocol>),
+    gateway: Arc<Gateway>,
     (manager, upgrades_after_serve): (Arc<PluginManager>, Arc<Upgrades>),
 ) -> anyhow::Result<()> {
     let push_listener = push_listener::bind(cfg.push_listen.as_deref()).await?;
@@ -55,4 +85,5 @@ pub(super) fn spawn_plugin_monitors(manager: &Arc<PluginManager>) {
     manager.spawn_upgrade_checks();
     manager.spawn_oom_watch();
     manager.spawn_container_watch();
+    manager.spawn_mailpit_watch();
 }

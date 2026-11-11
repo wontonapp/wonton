@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{PROXY_ADDR, allowlist_toml};
+use super::{PROXY_ADDR, allowlist_toml, blocks_toml};
 
 /// 只有私用名保留自签证书、配对名单和 TLS 例外（ADR-0051）。
 pub fn is_private(server_name: &str) -> bool {
@@ -19,12 +19,7 @@ pub fn config_toml(
     if is_private(server_name) {
         text.push_str(&allowlist_toml(paired));
     }
-    let denied = forbidden
-        .iter()
-        .map(|name| format!("'^{}$'", super::files::regex_escape(name)))
-        .collect::<Vec<_>>()
-        .join(", ");
-    text.push_str(&format!("forbidden_remote_server_names = [{denied}]\n"));
+    text.push_str(&blocks_toml(forbidden));
     if !is_private(server_name) && paired.is_empty() {
         text.push_str("proxy = \"none\"\n");
         return text;

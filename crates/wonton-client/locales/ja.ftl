@@ -45,6 +45,20 @@ peers-invalid-proxy = ローカルプロキシを利用できません：{ $reas
 peers-server-status = 自宅サーバーが HTTP { $status } を返しました
 # $reason は JSON パーサーの元のエラーです。
 peers-invalid-response = 自宅サーバーの応答を読み取れません：{ $reason }
+friends-transport = 自宅サーバーに接続できません：{ $reason }
+friends-server-status = 自宅サーバーが HTTP { $status } を返しました
+friends-invalid-response = 自宅サーバーの応答を読み取れません：{ $reason }
+friends-not-signed-in = まだこのアカウントにサインインしていません。
+friends-not-connected = まだ自宅サーバーに接続していません。
+friends-invalid-action = 友だちの操作ではありません。
+friends-local-open = 端末内の友だちリストを開けません：{ $reason }
+friends-invalid-proxy = ローカルプロキシを利用できません：{ $reason }
+friends-http-client = ローカル HTTP クライアントを作成できません：{ $reason }
+friends-invalid-url = 友だちサービスのアドレスが無効です：{ $reason }
+friends-request-body = 友だちリクエストをエンコードできません：{ $reason }
+friends-timeout = 友だちサービスから時間内に応答がありませんでした。
+friends-group-name-required = グループ名を入力してください。
+friends-group-not-found = グループ { $id } が見つかりません。
 # $reason はトンネルに拒否されたときの元の文章です。
 peers-rejected = 自宅サーバーがこのデバイスを拒否しました：{ $reason }
 
@@ -487,6 +501,7 @@ plugins-start-busy = { $id }はすでに起動、インストール、更新、�
 # アプリページのブリッジ（crates/wonton-client/src/tabs/bridge/）。
 tabs-bridge-page-not-open = このアプリのページは開かれていないか、固定されていません
 tabs-bridge-invalid-environment = ページのインセットとセーフエリアは有限の非負の数である必要があります
+tabs-bridge-public-page = 公開ウェブページには Wonton のブリッジがありません。
 
 # チャットの接続問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailableの理由と失敗した操作のメッセージ。
 chat-not-connected = 自宅サーバーに接続してから、もう一度試してください
@@ -560,6 +575,7 @@ panel-room-not-open = このチャットのパネルを変えるには、先に�
 panel-room-unknown = このチャットが見つかりません。
 panel-pin-invalid-url = そのアドレスは読み取れません。
 panel-pin-not-https = ピンできるのは https:// のウェブページだけです。
+panel-pin-path-outside = そのページはアプリ自身のサイトの外です。
 panel-attention-panel-only = パネル内のページだけに注意の印を付けられます。
 panel-config-too-many = パネルには最大 { $count } ページまで入ります。
 panel-config-duplicate = 同じページがパネルに二つあります。
