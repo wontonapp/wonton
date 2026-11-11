@@ -227,7 +227,7 @@ async fn start<H: PeerPairHandler + wonton_tunnel::pair::PairHandler>(handler: A
 fn code_for(issuer: &Server, token: PeerPairToken) -> PeerPairingCode {
     PeerPairingCode {
         server_id: issuer.id,
-        relay_urls: vec!["https://relay.example.com./".parse().unwrap()],
+        relay_urls: vec!["https://relay.example.com/".parse().unwrap()],
         server_name: "issuer.example".to_owned(),
         token,
     }
@@ -636,7 +636,7 @@ async fn the_code_address_holds_the_relay_only() {
     assert_eq!(addr.id, issuer.id);
     assert_eq!(
         addr.relay_urls().collect::<Vec<_>>(),
-        vec![&"https://relay.example.com./".parse().unwrap()]
+        vec![&"https://relay.example.com/".parse().unwrap()]
     );
     assert_eq!(addr.ip_addrs().count(), 0);
     issuer.server.shutdown().await;

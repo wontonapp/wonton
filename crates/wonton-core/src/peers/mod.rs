@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures_util::future::BoxFuture;
-use iroh::{EndpointAddr, EndpointId};
+use iroh::{EndpointAddr, EndpointId, RelayUrl};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use wonton_protocol::{
@@ -34,6 +34,7 @@ use wonton_protocol::{
 use wonton_tunnel::Allowlist;
 use wonton_tunnel::federation::{PeerStates, PeerStatus as FederationStatus};
 use wonton_tunnel::peer_pair::{PeerIdentity, PeerPairingCode};
+use wonton_tunnel::relays::canonical_url;
 
 use crate::plugin::languages::Languages;
 use crate::tunnel::Tunnel;
@@ -133,8 +134,8 @@ pub struct RejectedRequest {
 fn endpoint_addr(id: EndpointId, relays: &[String], addrs: &[SocketAddr]) -> EndpointAddr {
     let mut addr = EndpointAddr::new(id);
     for relay in relays {
-        if let Ok(relay) = relay.parse() {
-            addr = addr.with_relay_url(relay);
+        if let Ok(relay) = relay.parse::<RelayUrl>() {
+            addr = addr.with_relay_url(canonical_url(relay));
         }
     }
     for ip in addrs {

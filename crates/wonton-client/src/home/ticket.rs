@@ -29,7 +29,7 @@ use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use wonton_l10n::l10n;
-use wonton_tunnel::relays::Relay;
+use wonton_tunnel::relays::{Relay, canonical_relay};
 
 use crate::l10n::{CATALOG, language};
 
@@ -61,7 +61,7 @@ struct Server {
 impl Ticket {
     /// 解析连接信息。至少要有一个中继地址或直连地址：只给 endpoint ID 时要靠地址发现，国内靠不住。
     pub(crate) fn parse(text: &str) -> Result<Self, String> {
-        let ticket: Self = serde_json::from_str(text).map_err(|e| {
+        let mut ticket: Self = serde_json::from_str(text).map_err(|e| {
             l10n!(
                 CATALOG,
                 language(),
@@ -82,6 +82,12 @@ impl Ticket {
                 )
             })?;
         }
+        ticket.server.relays = ticket
+            .server
+            .relays
+            .into_iter()
+            .map(canonical_relay)
+            .collect();
         let domain = ticket
             .base_domain
             .trim_end_matches('.')
@@ -207,7 +213,7 @@ impl Ticket {
     ) -> Option<Self> {
         let mut updated = self.clone();
         if !relays.is_empty() {
-            updated.server.relays = relays;
+            updated.server.relays = relays.into_iter().map(canonical_relay).collect();
         }
         if connected.is_some() || !direct_addrs.is_empty() {
             let candidates = if direct_addrs.is_empty() {
@@ -262,7 +268,7 @@ mod tests {
     fn reported_relays_replace_the_saved_table_and_an_empty_report_keeps_the_old_one() {
         let id = SecretKey::generate().public();
         let text = format!(
-            r#"{{"server": {{"endpoint_id": "{id}", "relays": [{{"url": "https://a.example/", "tier": 0}}], "direct_addrs": ["192.168.1.2:18482"]}},
+            r#"{{"server": {{"endpoint_id": "{id}", "relays": [{{"url": "https://a.example./", "tier": 0}}], "direct_addrs": ["192.0.2.2:18482"]}},
                 "base_domain": "wonton.localhost"}}"#
         );
         let ticket = Ticket::parse(&text).unwrap();
@@ -279,7 +285,7 @@ mod tests {
         let updated = ticket
             .with_reported(
                 vec![Relay {
-                    url: "https://b.example/".parse().unwrap(),
+                    url: "https://b.example./".parse().unwrap(),
                     token: Some(RelayToken::new("tok")),
                     tier: 0,
                 }],

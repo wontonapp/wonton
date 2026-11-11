@@ -15,6 +15,7 @@ mod port_udp_fragments;
 mod port_udp_lifecycle;
 mod probe;
 mod relay;
+mod relay_dot;
 mod relay_table;
 mod relay_window;
 mod reset_resume;

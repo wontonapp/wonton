@@ -3,7 +3,7 @@
 use iroh::endpoint::{Builder, QuicTransportConfig, presets};
 use iroh::{Endpoint, RelayMode};
 use wonton_l10n::{Lang, l10n};
-use wonton_tunnel::relays::{Relay, relay_map};
+use wonton_tunnel::relays::{Relay, RelayTable, relay_map};
 
 use super::{HomeLink, Network};
 use crate::l10n::CATALOG;
@@ -58,7 +58,9 @@ impl HomeLink {
         let builder = match (self.network, relays.is_empty()) {
             (Network::Internet, false) => Endpoint::builder(presets::N0)
                 .relay_mode(RelayMode::Custom(relay_map(relays, tiers))),
-            (Network::Internet, true) => Endpoint::builder(presets::N0),
+            (Network::Internet, true) => Endpoint::builder(presets::N0).relay_mode(
+                RelayMode::Custom(relay_map(RelayTable::builtin_n0().relays(), tiers)),
+            ),
             #[cfg(feature = "test-hooks")]
             (Network::TestRelay, _) => Endpoint::builder(presets::Minimal)
                 .clear_ip_transports()
