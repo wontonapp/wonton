@@ -1,16 +1,49 @@
 import CryptoKit
 import Foundation
 
-/// 推送解开后的明文，字段同核心的 `DevicePayload`（ADR-0003 的“接口：推送”，核心有契约测试锁住字段名）。
-struct WontonPushPayload: Decodable {
+/// 推送解开后的两种明文：
+/// - 房间消息（ADR-0003 的“接口：推送”，字段同核心的 `DevicePayload`，核心有契约测试锁住字段名）；
+/// - 确认卡片直推（ADR-0016）：不是房间消息，没有房间事件，卡片标题在 `title` 里，点开的房间在
+///   `origin` 里（核心自己发起的没有，壳落到“等你确认”的入口）。
+enum WontonPushPayload {
+    struct Message: Decodable {
+        let server: String
+        let roomId: String
+        let eventId: String
+        let sender: String?
+        let senderDisplayName: String?
+        let roomName: String?
+    }
+
+    struct Confirmation: Decodable {
+        let server: String
+        let confirmation: Card
+
+        struct Card: Decodable {
+            let id: String
+            let title: String
+            /// 卡片发起的会话；核心自己发起的卡片没有，点开去“等你确认”的入口。
+            let origin: Origin?
+        }
+
+        struct Origin: Decodable {
+            let roomId: String
+        }
+    }
+
+    case message(Message)
+    case confirmation(Confirmation)
+}
+
+/// 按明文的形状解析：带 `confirmation` 段的是卡片直推，其余按房间消息。
+private struct PayloadShim: Decodable {
+    let confirmation: WontonPushPayload.Confirmation.Card?
     let server: String
-    let roomId: String
-    let eventId: String
+    let roomId: String?
+    let eventId: String?
     let sender: String?
     let senderDisplayName: String?
     let roomName: String?
-    /// 推送的类别：`confirmation` 是等你回答的确认卡片。没有就是普通消息；不认识的取值也当普通消息显示。
-    let category: String?
 }
 
 /// RFC 8291 的 aes128gcm 解密：用主 App 生成、存在共享钥匙串里的私钥和认证密钥，解开家里推送代理
@@ -81,9 +114,18 @@ enum WontonPush {
         // 明文的字段名是 snake_case 的契约（核心锁住），Swift 侧用驼峰。
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        guard let payload = try? decoder.decode(WontonPushPayload.self, from: plaintext) else {
+        guard let shim = try? decoder.decode(PayloadShim.self, from: plaintext) else {
             throw DecryptError.undecryptable
         }
-        return payload
+        if let card = shim.confirmation {
+            return .confirmation(.init(server: shim.server, confirmation: card))
+        }
+        guard let roomId = shim.roomId, let eventId = shim.eventId else {
+            throw DecryptError.undecryptable
+        }
+        return .message(.init(
+            server: shim.server, roomId: roomId, eventId: eventId,
+            sender: shim.sender, senderDisplayName: shim.senderDisplayName, roomName: shim.roomName
+        ))
     }
 }

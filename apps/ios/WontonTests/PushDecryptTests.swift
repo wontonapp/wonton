@@ -38,13 +38,39 @@ final class PushDecryptTests: XCTestCase {
              "sender":"@hermes:wonton.localhost","sender_display_name":"Hermes","room_name":"Hermes 主房间"}
             """
         let (encrypted, keys) = try encrypt(json)
-        let payload = try WontonPush.decrypt(encrypted, privateKey: keys.ua, auth: keys.auth)
+        guard case .message(let payload) = try WontonPush.decrypt(encrypted, privateKey: keys.ua, auth: keys.auth) else {
+            return XCTFail("房间消息的明文要解成 .message")
+        }
         XCTAssertEqual(payload.server, "server-endpoint-id")
         XCTAssertEqual(payload.roomId, "!bot:wonton.localhost")
         XCTAssertEqual(payload.eventId, "$reply-1")
         XCTAssertEqual(payload.sender, "@hermes:wonton.localhost")
         XCTAssertEqual(payload.senderDisplayName, "Hermes")
         XCTAssertEqual(payload.roomName, "Hermes 主房间")
+    }
+
+    /// 核心直推的确认卡片（ADR-0016）：带 `confirmation` 段的明文解成 .confirmation，没有来源会话的卡片
+    /// `origin` 为 nil（点开后壳落到“等你确认”的入口）。
+    func testConfirmationPushParses() throws {
+        let withOrigin = """
+            {"server":"srv","confirmation":{"id":"c1","title":"claw 想安装 Grafana",\
+            "expires_at_ms":42,"origin":{"room_id":"!room:test"}}}
+            """
+        let (encrypted, keys) = try encrypt(withOrigin)
+        guard case .confirmation(let direct) = try WontonPush.decrypt(encrypted, privateKey: keys.ua, auth: keys.auth)
+        else { return XCTFail("确认卡片的明文要解成 .confirmation") }
+        XCTAssertEqual(direct.server, "srv")
+        XCTAssertEqual(direct.confirmation.id, "c1")
+        XCTAssertEqual(direct.confirmation.title, "claw 想安装 Grafana")
+        XCTAssertEqual(direct.confirmation.origin?.roomId, "!room:test")
+
+        let withoutOrigin = """
+            {"server":"srv","confirmation":{"id":"c2","title":"服务器配对","expires_at_ms":7}}
+            """
+        let (encrypted2, keys2) = try encrypt(withoutOrigin)
+        guard case .confirmation(let direct2) = try WontonPush.decrypt(encrypted2, privateKey: keys2.ua, auth: keys2.auth)
+        else { return XCTFail("确认卡片的明文要解成 .confirmation") }
+        XCTAssertNil(direct2.confirmation.origin)
     }
 
     func testCorruptedCiphertextIsRejected() throws {
