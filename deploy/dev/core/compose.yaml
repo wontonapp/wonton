@@ -240,25 +240,28 @@ services:
   # 联邦名单、黑名单和出站代理范围在第二份 TOML，由核心原地重写、SIGUSR1 热加载（ADR-0050、ADR-0051）；
   # 单文件挂载钉住 inode，核心只做原地截断写。
   tuwunel:
-    image: ghcr.io/matrix-construct/tuwunel:v1.9.4
+    image: ghcr.io/matrix-construct/tuwunel:v2.0.0
     restart: unless-stopped
     stop_grace_period: 5m
     environment:
       <<: *no-proxy
       TUWUNEL_SERVER_NAME: ${WONTON_DEV_DOMAIN:-wonton.localhost}
       TUWUNEL_DATABASE_PATH: /var/lib/tuwunel
-      TUWUNEL_ADDRESS: 0.0.0.0
-      TUWUNEL_PORT: "[8008, 8448]"
-      TUWUNEL_ALLOW_FEDERATION: "true"
-      TUWUNEL_TRUSTED_SERVERS: "[]"
-      TUWUNEL_IP_RANGE_DENYLIST: "[]"
-      TUWUNEL_ALLOW_INVALID_TLS_CERTIFICATES: "true"
+      TUWUNEL_HTTP__LISTEN__ADDRESS: 0.0.0.0
+      TUWUNEL_HTTP__LISTEN__PORT: "[8008, 8448]"
+      TUWUNEL_FEDERATION__ENABLE: "true"
+      TUWUNEL_FEDERATION__KEYS__TRUSTED_SERVERS: "[]"
+      TUWUNEL_NETWORK__HTTP__IP_RANGE_DENYLIST: "[]"
+      TUWUNEL_NETWORK__HTTP__ALLOW_INVALID_TLS_CERTIFICATES: "true"
       TUWUNEL_TLS__CERTS: /etc/tuwunel/tls.crt
       TUWUNEL_TLS__KEY: /etc/tuwunel/tls.key
       TUWUNEL_TLS__DUAL_PROTOCOL: "true"
-      TUWUNEL_ALLOW_REGISTRATION: "false"
-      TUWUNEL_LOGIN_WITH_PASSWORD: "false"
-      TUWUNEL_NEW_USER_DISPLAYNAME_SUFFIX: ""
+      TUWUNEL_REGISTRATION__ENABLE: "false"
+      TUWUNEL_AUTHENTICATION__LOGIN__WITH_PASSWORD: "false"
+      TUWUNEL_REGISTRATION__DISPLAYNAME_SUFFIX: ""
+      TUWUNEL_WELL_KNOWN__CLIENT: http://matrix.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}
+      # MatrixRTC 的入口（lk-jwt-service），通话插件接上后换成它的地址；这里放示例地址。
+      TUWUNEL_WELL_KNOWN__LIVEKIT_URL: http://192.0.2.10:7880
       TUWUNEL_JWT__ENABLE: "true"
       TUWUNEL_JWT__FORMAT: EDDSA
       TUWUNEL_JWT__ALGORITHM: EdDSA

@@ -216,7 +216,7 @@ DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 Debian 基础镜像从 ECR Public 拉（见 Dockerfile），不用传：
 
 ```bash
-for image in oryd/hydra:v26.2.0 ghcr.io/matrix-construct/tuwunel:v1.9.4 tusproject/tusd:v2.10.1 \
+for image in oryd/hydra:v26.2.0 ghcr.io/matrix-construct/tuwunel:v2.0.0 tusproject/tusd:v2.10.1 \
   grafana/grafana:12.2.1 traefik/whoami:v1.11 curlimages/curl:8.23.0 alpine/socat:1.8.0.3; do
   docker pull --platform linux/amd64 "$image"
   docker save --platform linux/amd64 "$image" | ssh "$DEV_HOST" docker load
