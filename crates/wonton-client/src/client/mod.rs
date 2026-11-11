@@ -12,9 +12,8 @@ use wonton_protocol::{
     FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
     OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail, PluginImage,
-    PluginSettingsUpdate, PluginSettingsView, PluginsViewModel, RoomTransfers, SecretString,
-    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef, TabsViewModel,
-    TransfersViewModel,
+    PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
+    SettingsViewModel, StoreItem, TabRef, TabsViewModel, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -37,8 +36,8 @@ mod dispatch;
 mod limits;
 mod media;
 mod push_route;
-mod sharing;
 mod settings;
+mod sharing;
 mod switch;
 #[cfg(feature = "test-hooks")]
 mod test_hooks;
