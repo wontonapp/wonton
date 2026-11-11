@@ -266,6 +266,7 @@ impl Scope {
             method: push_method.subscribe(),
             session_out: session_out.0.clone(),
             room_panel_out: room_panel.0.clone(),
+            external,
         };
         let shared = Shared {
             handle: &handle,

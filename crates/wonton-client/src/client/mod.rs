@@ -71,6 +71,7 @@ pub struct ClientCore {
     visits: Arc<Visits>,
     /// 正在给哪台后台登记哪个推送地址，`push_route` 拿它和落盘记录一起去重。
     in_flight_registrations: push_route::InFlightRegistrations,
+    matrix_login: Arc<crate::matrix_login::MatrixLogins>,
     /// 测试用的假数据入口（`new_ui_fake`）开着：操作不落到作用域，ViewModel 保持塞进去的假数据。
     #[cfg(feature = "ui-fake")]
     ui_fake: AtomicBool,
@@ -637,6 +638,7 @@ impl ClientCore {
         )?;
         let switching = Arc::new(Mutex::new(()));
         let visits = Visits::new(servers.clone(), root.clone(), network, switching.clone());
+        let servers_for_login = servers.clone();
         let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             appearance: AppearanceLink::new(&root),
@@ -652,9 +654,12 @@ impl ClientCore {
             switching,
             visits,
             in_flight_registrations: Arc::default(),
+            matrix_login: crate::matrix_login::MatrixLogins::new(servers_for_login),
             #[cfg(feature = "ui-fake")]
             ui_fake: AtomicBool::new(false),
         });
+        let switch: std::sync::Weak<Self> = Arc::downgrade(&core);
+        core.matrix_login.bind(switch);
         core.attach(&scope);
         Ok(core)
     }
