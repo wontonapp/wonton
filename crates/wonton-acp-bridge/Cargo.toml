@@ -33,6 +33,8 @@ wonton-protocol = { path = "../wonton-protocol" }
 axum = { workspace = true }
 rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
 tempfile = { workspace = true }
+# 停机重启的集成测试要真 Tuwunel；只进测试构建。
+wonton-matrix = { path = "../wonton-matrix", features = ["testkit"] }
 # MIT OR Apache-2.0。镜像冒烟的基础镜像在 CI 指到镜像仓库副本。
 wonton-test-images = { path = "../wonton-test-images" }
 
