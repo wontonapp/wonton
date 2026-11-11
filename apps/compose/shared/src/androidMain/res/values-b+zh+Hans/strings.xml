@@ -255,6 +255,7 @@
     <string name="connection_connected">已连接</string>
     <string name="connection_waiting_network">等待网络…</string>
     <string name="connection_connecting">连接中…</string>
+    <string name="connection_retrying">正在连接家里的服务器…</string>
     <string name="connection_updating">正在更新…</string>
     <string name="connection_server_offline">家里的服务器好像离线了</string>
     <string name="connection_device_rejected">家里的服务器已不认这台手机</string>

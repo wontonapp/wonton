@@ -87,7 +87,7 @@ internal fun PluginTabBar(
     val status = LocalWontonBarStatus.current
     Column(Modifier.fillMaxWidth().background(colors.canvas.toColor())) {
         TopAppBar(
-            title = { Text(status.title ?: page.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            title = { Text(page.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             navigationIcon = {
                 if (canGoBack) WontonIconButton(WontonIcon.Back, stringResource(R.string.tab_menu_back), onBack)
             },
@@ -99,7 +99,18 @@ internal fun PluginTabBar(
             },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         )
-        status.line?.let { Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset)) { it() } }
+        // 工具按钮占着右边，标题只剩一点：连接原因单独一行，短句也不许挤成省略号（#149）。
+        val line = status.line
+        val sentence = status.subtitle
+        when {
+            line != null -> Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset)) { line() }
+            sentence != null -> Text(
+                sentence,
+                modifier = Modifier.padding(horizontal = WontonTheme.spacing.pageInset),
+                color = colors.textPrimary.toColor(),
+                style = WontonTheme.typography.body,
+            )
+        }
         if (page.state is TabState.Upgrading) Text(
             stringResource(R.string.tab_upgrading), Modifier.padding(horizontal = WontonTheme.spacing.pageInset),
             color = colors.textSecondary.toColor(), style = WontonTheme.typography.supporting,

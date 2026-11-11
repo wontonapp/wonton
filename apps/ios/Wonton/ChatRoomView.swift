@@ -75,7 +75,9 @@ struct ChatRoomView: View {
         .environment(model.files)
         .environment(presenter)
         // 和 Bot 的私聊：顶栏是它的头像和 Matrix 名字，不写状态文字（ADR-0044）。
-        .wontonPushedScreen(bot?.name ?? title, avatar: barAvatar, showsStatus: true) { EmptyView() }
+        .wontonPushedScreen(
+            bot?.name ?? title, avatar: barAvatar, showsStatus: true, showsStatusLine: true
+        ) { EmptyView() }
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
         .task(id: roomId) { await model.loadDraft(roomId) }

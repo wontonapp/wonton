@@ -19,14 +19,6 @@ struct TabPageCapsule: View {
     var body: some View {
         VStack(spacing: WontonTheme.spacing.s8) {
             HStack(spacing: WontonTheme.spacing.s8) {
-                if let title = status.title {
-                    Text(title)
-                        .wontonText(WontonTheme.typography.supporting)
-                        .foregroundStyle(Color(colors.textPrimary))
-                        .padding(.horizontal, WontonTheme.spacing.s12)
-                        .padding(.vertical, WontonTheme.spacing.s8)
-                        .background(.regularMaterial, in: Capsule())
-                }
                 Spacer(minLength: 0)
                 capsule
                     .opacity(shown ? 1 : 0)
@@ -36,8 +28,17 @@ struct TabPageCapsule: View {
                     .simultaneousGesture(TapGesture().onEnded(touched))
             }
             .frame(height: WontonTheme.size.target)
+            // 胶囊占着右边：连接原因单独一行，短句也不许挤成省略号（#149）。
             if let line = status.line {
                 line.padding(WontonTheme.spacing.s12)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WontonTheme.radii.control))
+            } else if let sentence = status.subtitle {
+                Text(sentence)
+                    .wontonText(WontonTheme.typography.body)
+                    .foregroundStyle(Color(colors.textPrimary))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(WontonTheme.spacing.s12)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WontonTheme.radii.control))
             }
         }

@@ -21928,6 +21928,36 @@
         }
       }
     },
+    "connection.notice.retrying": {
+      "comment": "Connection progress while a real connection attempt or manual retry is running.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trying to reach your home server…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在连接家里的服务器…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在連接家用伺服器…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバーに接続しています…"
+          }
+        }
+      }
+    },
     "connection.notice.updating": {
       "comment": "Short connection status while the server updates.",
       "extractionState": "manual",

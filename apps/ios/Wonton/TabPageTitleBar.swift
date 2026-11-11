@@ -20,7 +20,7 @@ struct TabPageTitleBar: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                Text(status.title ?? page.title)
+                Text(page.title)
                     .wontonText(WontonTheme.typography.itemTitle)
                     .foregroundStyle(Color(colors.textPrimary))
                     .lineLimit(1)
@@ -46,8 +46,17 @@ struct TabPageTitleBar: View {
                 .padding(.horizontal, WontonTheme.spacing.s4)
             }
             .frame(minHeight: WontonTheme.size.topBar)
+            // 工具按钮占着右边，标题只剩一点：连接原因单独一行，短句也不许挤成省略号（#149）。
             if let line = status.line {
                 line.padding(.horizontal, WontonTheme.spacing.pageInset)
+                    .padding(.bottom, WontonTheme.spacing.s8)
+            } else if let sentence = status.subtitle {
+                Text(sentence)
+                    .wontonText(WontonTheme.typography.body)
+                    .foregroundStyle(Color(colors.textPrimary))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, WontonTheme.spacing.pageInset)
                     .padding(.bottom, WontonTheme.spacing.s8)
             }
         }

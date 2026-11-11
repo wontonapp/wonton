@@ -37,7 +37,7 @@ use wonton_tunnel::{
 
 use crate::l10n::{CATALOG, language};
 use crate::scope::reuse;
-use connection::Tracker;
+use connection::{LONG_OUTAGE, Tracker};
 use quality::Quality;
 pub(crate) use storage::{Storage, write_private};
 use ticket::Ticket;
@@ -272,7 +272,7 @@ impl HomeLink {
         });
     }
 
-    /// `RetryConnection`：清零退避，马上试一次。提示里的句子不变，只是“重试”在转。
+    /// `RetryConnection`：清零退避，马上确认连接；没回应时限时结束进度，自动重连继续。
     pub(crate) fn retry(self: &Arc<Self>) -> Result<(), CoreError> {
         if self.lock_ticket().is_none() {
             return Err(CoreError::NotReady {
@@ -286,8 +286,12 @@ impl HomeLink {
             if let Some((endpoint, client)) = home.current_link().await {
                 endpoint.network_change().await;
                 client.retry_now();
-                if let Err(err) = client.ping().await {
-                    tracing::info!("retry failed: {err}");
+                match tokio::time::timeout(LONG_OUTAGE, client.revalidate()).await {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(err)) => tracing::info!("retry failed: {err}"),
+                    Err(_) => tracing::info!(
+                        "retry confirmation timed out; automatic reconnect continues"
+                    ),
                 }
             }
             home.lock_tracker().retry_finished();

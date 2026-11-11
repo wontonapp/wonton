@@ -255,6 +255,7 @@
     <string name="connection_connected">接続済み</string>
     <string name="connection_waiting_network">ネットワークを待っています…</string>
     <string name="connection_connecting">接続しています…</string>
+    <string name="connection_retrying">自宅サーバーに接続しています…</string>
     <string name="connection_updating">アップデートしています…</string>
     <string name="connection_server_offline">自宅サーバーがオフラインのようです</string>
     <string name="connection_device_rejected">このスマートフォンは自宅サーバーに認識されていません</string>

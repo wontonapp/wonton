@@ -13,6 +13,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -37,6 +42,9 @@ import app.wonton.ui.design.toColor
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
+
+private const val RECOVERY_FEEDBACK_MS = 4_000L
 
 internal val HomeStatus.connectionText: String
     @Composable get() = when (this) {
@@ -59,12 +67,12 @@ val ConnectionNotice.sentence: String
 
 private val ConnectionNotice.isShort: Boolean
     get() = this is ConnectionNotice.WaitingForNetwork ||
-        this is ConnectionNotice.Connecting ||
         this is ConnectionNotice.Updating
 
-/** 能重试时给出是否正在重试。 */
+/** 以核心通知为准，避免 HomeStatus.Connecting 掩盖超时后恢复的重试入口。 */
 private val ConnectionNotice.retrying: Boolean?
     get() = when (this) {
+        is ConnectionNotice.Connecting -> true
         is ConnectionNotice.ServerOffline -> retrying
         is ConnectionNotice.Unreachable -> retrying
         else -> null
@@ -108,32 +116,75 @@ fun connectionBarStatus(
     onOpen: (SettingsSubpage) -> Unit,
 ): WontonBarStatus {
     val notice = home.notice
+    var interrupted by remember(home.serverId) { mutableStateOf(false) }
+    var recovered by remember(home.serverId) { mutableStateOf(false) }
+    LaunchedEffect(home.serverId, home.status, notice != null) {
+        if (home.status is HomeStatus.Connected) {
+            if (interrupted) {
+                recovered = true
+                interrupted = false
+            }
+        } else {
+            recovered = false
+            if (notice != null) interrupted = true
+        }
+    }
+    LaunchedEffect(recovered) {
+        if (recovered) {
+            delay(RECOVERY_FEEDBACK_MS)
+            recovered = false
+        }
+    }
     val poor = poorNoticeText(
         home.status is HomeStatus.Connected, notice, home.details.quality, home.path?.relay == true,
     )?.let { stringResource(it) }
     return when {
         poor != null -> WontonBarStatus(title = poor, subtitle = poor)
+        recovered && notice == null -> {
+            val connected = stringResource(R.string.connection_connected)
+            WontonBarStatus(title = connected, subtitle = connected)
+        }
         notice == null -> WontonBarStatus()
         notice.isShort -> WontonBarStatus(title = notice.sentence, subtitle = notice.sentence)
         else -> WontonBarStatus(subtitle = notice.sentence, line = { ConnectionLine(notice, onRetry, onOpen) })
     }
 }
 
-/** 长时间连不上：一句话和下一步。不用红色：还在自动重试，也不是主人做错了什么；要主人动手的用警告色。 */
+/** 进度与失败原因互斥，等待结束后由核心重新给出原因和下一步。 */
 @Composable
 private fun ConnectionLine(notice: ConnectionNotice, onRetry: () -> Unit, onOpen: (SettingsSubpage) -> Unit) {
     val colors = WontonTheme.colors
+    val retrying = notice.retrying == true
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-        Text(
-            notice.sentence,
-            style = WontonTheme.typography.body,
-            color = (if (notice is ConnectionNotice.DeviceRejected) colors.warning else colors.textPrimary).toColor(),
-        )
+        if (retrying) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+            ) {
+                CircularProgressIndicator(
+                    Modifier.size(WontonTheme.size.iconSmall),
+                    color = colors.textSecondary.toColor(),
+                    strokeWidth = 2.dp,
+                )
+                Text(
+                    stringResource(R.string.connection_retrying),
+                    style = WontonTheme.typography.body,
+                    color = colors.textPrimary.toColor(),
+                )
+            }
+        } else {
+            Text(
+                notice.sentence,
+                style = WontonTheme.typography.body,
+                color = (if (notice is ConnectionNotice.DeviceRejected) colors.warning else colors.textPrimary)
+                    .toColor(),
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             if (notice is ConnectionNotice.DeviceRejected) {
                 WontonSmallButton(stringResource(R.string.connection_pair_again), { onOpen(SettingsSubpage.PAIRING) })
             } else {
-                notice.retrying?.let { RetryButton(it, onRetry) }
+                if (notice.retrying == false) RetryButton(false, onRetry)
                 WontonSmallButton(stringResource(R.string.connection_view), { onOpen(SettingsSubpage.SERVER) })
             }
         }

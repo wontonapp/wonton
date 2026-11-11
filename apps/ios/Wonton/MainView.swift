@@ -101,7 +101,7 @@ struct MainView: View {
         .onChange(of: onboarding.viewModel.step) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .onChange(of: home.servers) { old, new in updatePairingPresentation(from: old, to: new) }
         .environment(plugins)
-        .environment(\.wontonBarStatus, WontonBarStatus(home: home.viewModel) {
+        .environment(\.wontonBarStatus, WontonBarStatus(home: home.viewModel, recovered: home.connectionRecovered) {
             ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showServerRoute)
         })
     }

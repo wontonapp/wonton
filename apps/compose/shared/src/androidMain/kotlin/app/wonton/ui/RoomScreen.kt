@@ -211,7 +211,13 @@ private fun RoomScreen(
     Box(Modifier.fillMaxSize()) {
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
         Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
-            WontonScreen(bar = { WontonPushedBar(barTitle, onClose, showsStatus = true, avatar = barAvatar) }) {
+            WontonScreen(
+                bar = {
+                    WontonPushedBar(
+                        barTitle, onClose, showsStatus = true, showsStatusLine = true, avatar = barAvatar,
+                    )
+                },
+            ) {
 Conversation(core, roomId, isDirect, isReadOnly, timeline, draft, onAction, onReject, openMenu)
             }
         }
