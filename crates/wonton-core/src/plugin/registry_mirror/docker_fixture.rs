@@ -8,7 +8,6 @@ use bollard::query_parameters::{
 use futures_util::StreamExt;
 
 use crate::plugin::PluginManager;
-use crate::plugin::compose::PullPolicy;
 use crate::plugin::docker::Engine;
 use crate::plugin::manifest::PluginId;
 use crate::test_docker::Names;
@@ -62,10 +61,7 @@ impl Fixture {
     /// 端口，仓库起不来，就绪检查却被占着端口的那个应答（CI 上实测过：另一个测试的仓库应答，它一拆，推镜像就被拒）。
     pub async fn start(&mut self) {
         for image in [&registry(), &base()] {
-            self.engine
-                .ensure_image(image, PullPolicy::Missing, &[])
-                .await
-                .unwrap();
+            crate::test_docker::ensure_image(&self.engine, image).await;
         }
         let storage = self.dir.path().join("registry");
         std::fs::create_dir(&storage).unwrap();

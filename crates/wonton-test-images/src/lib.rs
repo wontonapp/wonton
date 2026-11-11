@@ -6,9 +6,10 @@
 //! 测试作业设 `WONTON_TEST_IMAGES=ghcr.io/<owner>/test-images`，镜像引用就指到副本。
 //! 环境变量没设时原样返回，本地默认不变。
 //!
-//! 改写规则：仓库路径取最后一段做名字，标签和 digest 原样保留。
+//! 改写规则：仓库路径取最后一段做名字。引用带摘要时只留摘要（`<前缀>/<名字>@sha256:…`），
+//! 预拉和测试建容器用同一个引用、不靠标签解析；不带摘要才原样保留标签。
 //! `public.ecr.aws/docker/library/busybox:1.37` → `ghcr.io/<owner>/test-images/busybox:1.37`，
-//! `gogost/gost:3@sha256:…` → `ghcr.io/<owner>/test-images/gost:3@sha256:…`。
+//! `gogost/gost:3@sha256:…` → `ghcr.io/<owner>/test-images/gost@sha256:…`。
 
 /// 改写一个镜像引用；`WONTON_TEST_IMAGES` 没设时原样返回。
 pub fn image(default: &str) -> String {
@@ -31,11 +32,12 @@ pub fn image(default: &str) -> String {
         return default.to_owned();
     };
     let mut mapped = format!("{prefix}/{name}");
-    if !tag.is_empty() {
-        mapped.push(':');
-        mapped.push_str(tag);
-    }
-    if !digest.is_empty() {
+    if digest.is_empty() {
+        if !tag.is_empty() {
+            mapped.push(':');
+            mapped.push_str(tag);
+        }
+    } else {
         mapped.push('@');
         mapped.push_str(digest);
     }
@@ -66,7 +68,7 @@ mod tests {
         );
         assert_eq!(
             image("docker.io/node:22@sha256:18a6"),
-            "ghcr.io/example/test-images/node:22@sha256:18a6"
+            "ghcr.io/example/test-images/node@sha256:18a6"
         );
         assert_eq!(
             image("public.ecr.aws/docker/library/busybox@sha256:a7db"),
@@ -74,7 +76,7 @@ mod tests {
         );
         assert_eq!(
             image("gogost/gost:3@sha256:f266"),
-            "ghcr.io/example/test-images/gost:3@sha256:f266"
+            "ghcr.io/example/test-images/gost@sha256:f266"
         );
         unsafe { std::env::remove_var("WONTON_TEST_IMAGES") };
     }

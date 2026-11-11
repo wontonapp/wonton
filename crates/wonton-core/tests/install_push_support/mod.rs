@@ -18,6 +18,11 @@ mod test_docker;
 
 const CORE: &str = env!("CARGO_BIN_EXE_wonton-core");
 const BASE: &str = "public.ecr.aws/docker/library/debian:trixie-slim";
+
+/// 基础镜像：CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images），本地用原名。
+fn base() -> String {
+    wonton_test_images::image(BASE)
+}
 const WAIT: Duration = Duration::from_secs(60);
 
 pub struct Account {
@@ -105,9 +110,10 @@ impl Install {
         let uid = fs::metadata(&data).unwrap().uid();
         let gid = fs::metadata(&data).unwrap().gid();
         let env = format!(
-            "WONTON_CORE_IMAGE={BASE}\nWONTON_INSTALL_DIR={}\nWONTON_DATA_DIR={}\n\
+            "WONTON_CORE_IMAGE={}\nWONTON_INSTALL_DIR={}\nWONTON_DATA_DIR={}\n\
             WONTON_BASE_DOMAIN=wonton.localhost\nWONTON_PORT=8080\nWONTON_TUNNEL_PORT=8482\n\
             WONTON_PUID={uid}\nWONTON_PGID={gid}\n",
+            base(),
             self.dir.path().display(),
             data.display()
         );

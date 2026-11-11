@@ -46,7 +46,7 @@ impl Engine {
         progress: &mut (dyn FnMut(LayerProgress<'_>) + Send),
     ) -> Result<String> {
         if policy != PullPolicy::Always {
-            if self.image_present(image).await? {
+            if self.image_present(image).await? && self.digest_matches(image).await {
                 return Ok(image.to_owned());
             }
             for reference in accelerated {
@@ -143,6 +143,26 @@ impl Engine {
                 }
             }
         }
+    }
+
+    /// 引用带摘要时要求本机那份的内容也是这个摘要：只按标签拉到过、标签换了指向的镜像照样算没有。
+    /// 防的是这个；没有 `RepoDigests` 的（本地构建、测试替身）不知道来源，按旧行为当作能用，
+    /// 只有登记过摘要且一条都不匹配才拒。
+    async fn digest_matches(&self, image: &str) -> bool {
+        let Some(expected) = digest(image) else {
+            return true;
+        };
+        let Ok(inspect) = self.docker.inspect_image(image).await else {
+            return true;
+        };
+        let Some(digests) = inspect.repo_digests.filter(|digests| !digests.is_empty()) else {
+            return true;
+        };
+        digests.iter().any(|reference| {
+            reference
+                .rsplit_once('@')
+                .is_some_and(|(_, digest)| digest == expected)
+        })
     }
 
     async fn check_digest(&self, image: &str) -> Result<()> {

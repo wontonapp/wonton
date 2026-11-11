@@ -46,6 +46,12 @@
   所以：Docker 集成测试作业设 `WONTON_TEST_IMAGES`，测试代码经 wonton-test-images crate 把镜像引用指到
   副本，本地不设、按上游引用拉；main-image 和 release 给 Dockerfile 的 `*_IMAGE` build-arg 传副本引用。
   仓库公开当天先手动跑一次 test-images.yml，再让 main-image 跑（副本空着时镜像构建会拉取失败）。
+  Docker 集成测试作业开跑前先跑 `cargo test -p wonton-core --lib test_docker_check`：Docker 测试文件里出现的
+  镜像引用不在镜像清单里（典型是绕开 `wonton_test_images::image` 把引用直接传给 `ensure_image`），就当场失败
+  并指出文件和镜像名，那是写法错误，不进重试。然后一次拉齐镜像：单个镜像最多重试 3 次
+  （5 s、15 s 退避），这是基础设施重试，测试本身不重试；预拉用带摘要的引用、测试建容器也用它，
+  本机有就不再联网。还拉不到时整个作业失败，日志里是
+  `::error::基础设施失败：拉不到镜像 <镜像>（重试 3 次）`，和断言失败分开。
 
 ## 合并队列
 
