@@ -281,6 +281,23 @@
     <string name="confirmation_card_uncertain_result">It\'s unclear whether it worked: %1$s</string>
     <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
     <string name="confirmation_card_window_until">Approved until %1$s</string>
+    <!-- Empty state of the awaiting-approval list: no card is waiting and none ended recently. -->
+    <string name="confirmations_empty">Nothing needs your confirmation</string>
+    <!-- Line under the first card in a room when several cards are waiting. Argument: how many besides the first. -->
+    <plurals name="confirmations_more_cards">
+        <item quantity="one">1 more waiting</item>
+        <item quantity="other">%1$d more waiting</item>
+    </plurals>
+    <!-- Collapsed card row: the action ran but failed. The full result is on the card itself. -->
+    <string name="confirmations_state_failed">Didn\'t go through</string>
+    <!-- Collapsed card row: the action was carried out. The full result is on the card itself. -->
+    <string name="confirmations_state_succeeded">Completed</string>
+    <!-- Collapsed card row: the action ran but whether it worked is unknown. The full note is on the card itself. -->
+    <string name="confirmations_state_uncertain">Uncertain</string>
+    <!-- Title of the awaiting-approval list screen. -->
+    <string name="confirmations_title">Waiting for you</string>
+    <!-- Collapsed card row while a card is waiting: when the request expires. Argument: the time, already formatted. -->
+    <string name="confirmations_until">Until %1$s</string>
     <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
     <!-- Connection state value: this device isn't paired with a home server yet. -->
     <string name="connection_unpaired">Not paired</string>

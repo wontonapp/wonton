@@ -253,6 +253,22 @@
     <string name="confirmation_card_uncertain_result">結果を確認できません：%1$s</string>
     <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
     <string name="confirmation_card_window_until">%1$sまで許可</string>
+    <!-- Empty state of the awaiting-approval list: no card is waiting and none ended recently. -->
+    <string name="confirmations_empty">確認が必要なものはありません</string>
+    <!-- Line under the first card in a room when several cards are waiting. Argument: how many besides the first. -->
+    <plurals name="confirmations_more_cards">
+        <item quantity="other">他%1$d件</item>
+    </plurals>
+    <!-- Collapsed card row: the action ran but failed. The full result is on the card itself. -->
+    <string name="confirmations_state_failed">実行できませんでした</string>
+    <!-- Collapsed card row: the action was carried out. The full result is on the card itself. -->
+    <string name="confirmations_state_succeeded">完了</string>
+    <!-- Collapsed card row: the action ran but whether it worked is unknown. The full note is on the card itself. -->
+    <string name="confirmations_state_uncertain">結果は不明</string>
+    <!-- Title of the awaiting-approval list screen. -->
+    <string name="confirmations_title">確認待ち</string>
+    <!-- Collapsed card row while a card is waiting: when the request expires. Argument: the time, already formatted. -->
+    <string name="confirmations_until">%1$s まで</string>
     <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
     <string name="connection_unpaired">未ペアリング</string>
     <string name="connection_connected">接続済み</string>
