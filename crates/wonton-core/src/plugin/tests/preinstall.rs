@@ -68,7 +68,7 @@ fn degraded(status: &Option<PluginStatus>) -> bool {
 
 /// 异常，而且已经重试过一次。
 fn retried(status: &Option<PluginStatus>) -> bool {
-    matches!(status, Some(PluginStatus::Degraded { reason }) if reason.contains("tried 2 time(s)"))
+    matches!(status, Some(PluginStatus::Degraded { reason }) if reason.contains("已试 2 次"))
 }
 
 fn exited() -> Value {
@@ -93,7 +93,7 @@ async fn a_default_plugin_is_installed_once_and_stays_removed_after_the_owner_un
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let defaults = defaults(&dir, "  permissions: []");
-    let revision = PluginPackage::load_dir(&defaults.join("test"), &super::langs())
+    let revision = PluginPackage::load_dir(&defaults.join("test"))
         .unwrap()
         .digest();
     let m = manager_with(engine.clone(), &dir);
@@ -115,7 +115,7 @@ async fn a_default_plugin_is_installed_once_and_stays_removed_after_the_owner_un
             .revision,
         revision
     );
-    m.uninstall(&id(), false, &super::langs()).await.unwrap();
+    m.uninstall(&id(), false).await.unwrap();
     let m = restart(&engine, &dir, &defaults).await;
     assert!(m.list().is_empty(), "主人卸掉的默认插件不能装回来");
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
@@ -164,12 +164,10 @@ async fn an_image_that_cannot_be_pulled_is_named_in_the_reason_until_the_pull_wo
     let Some(PluginStatus::Degraded { reason }) = until(&m, degraded).await else {
         unreachable!()
     };
-    // 镜像名和 Docker 的原话都要在原因里（plugin-install-docker-pull-failed）。
-    let expected = super::message(
-        "plugin-install-docker-pull-failed",
-        &[("image", "nginx"), ("error", cause)],
+    assert!(
+        reason.contains(&format!("拉取镜像失败（nginx）：{cause}")),
+        "{reason}"
     );
-    assert!(reason.contains(&expected), "{reason}");
     // 局域网状态页列出它，用插件的名字。
     let shown = m.bundled_not_running();
     assert_eq!(shown.len(), 1);
@@ -196,15 +194,8 @@ async fn a_preinstall_is_retried_while_the_core_cannot_start_its_image_worker() 
     let Some(PluginStatus::Degraded { reason }) = until(&m, retried).await else {
         unreachable!()
     };
-    assert!(
-        reason.contains(&super::message(
-            "plugin-install-img-worker-unavailable",
-            &[("error", "")],
-        )),
-        "{reason}"
-    );
-    assert!(reason.contains("tried 2 time(s)"), "{reason}");
-    assert!(reason.contains("will retry automatically"), "{reason}");
+    assert!(reason.contains("处理图片的进程不可用"), "{reason}");
+    assert!(reason.contains("稍后自动重试"), "{reason}");
     task.abort();
 }
 
@@ -220,7 +211,7 @@ async fn uninstalling_a_failed_preinstall_stops_the_retries_for_good() {
         async move { m.ensure_defaults(&defaults, NEVER).await }
     });
     until(&m, degraded).await;
-    m.uninstall(&id(), false, &super::langs()).await.unwrap();
+    m.uninstall(&id(), false).await.unwrap();
     // 不等下次重试的时间到：主人一卸掉就停下。
     let stopped = tokio::time::timeout(Duration::from_secs(5), task).await;
     stopped.expect("卸掉后应当马上停止重试").unwrap().unwrap();
@@ -252,7 +243,7 @@ async fn a_retry_due_while_the_owner_is_uninstalling_does_not_bring_the_plugin_b
     let paused = docker.pause().await;
     let uninstall = tokio::spawn({
         let m = m.clone();
-        async move { m.uninstall(&id(), false, &super::langs()).await }
+        async move { m.uninstall(&id(), false).await }
     });
     until(&m, |s| *s == Some(PluginStatus::Uninstalling)).await;
     let stopped = tokio::time::timeout(Duration::from_secs(5), task).await;
@@ -301,16 +292,7 @@ async fn a_default_plugin_needing_a_gpu_the_host_lacks_is_not_retried() {
     let Some(PluginStatus::Degraded { reason }) = status(&m) else {
         panic!("应当标为异常：{:?}", status(&m));
     };
-    assert!(
-        reason.contains(&super::message(
-            "plugin-install-host-gpu-missing",
-            &[(
-                "card",
-                &super::message("plugin-install-req-card-generic", &[])
-            )]
-        )),
-        "{reason}"
-    );
+    assert!(reason.contains("这台主机没有显卡"), "{reason}");
     assert!(!reason.contains("自动重试"), "{reason}");
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
 }

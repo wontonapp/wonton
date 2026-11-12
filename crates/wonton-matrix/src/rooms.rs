@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use futures_util::{Stream, StreamExt, stream};
 use matrix_sdk::{
-    ComposerDraft, ComposerDraftType, Room, RoomDisplayName, RoomMemberships, RoomState,
+    Room, RoomDisplayName, RoomMemberships, RoomState,
     ruma::{
         MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, RoomId, UserId,
         api::{
@@ -32,14 +32,12 @@ use matrix_sdk_ui::{
 };
 use tokio::sync::watch;
 
-use crate::{ChatRoom, Draft, Error, MatrixSession, MessageBody, Result, message::body};
+use crate::{ChatRoom, Error, MatrixSession, MessageBody, Result, message::body};
 
 /// 房间列表一次最多展示的房间数。家里服务器的房间不多，一页就够。
 const PAGE_SIZE: usize = 500;
 /// 加入房间时等邀请事件落库的上限。邀请事件和房间在同一批同步里，等的只是这批写完。
 const INVITE_WAIT: Duration = Duration::from_secs(10);
-/// 发消息时等房间同步到本地的上限：传完文件发链接时，App 重启后同步刚开头；过了期限按没同步到/没加入报。
-const ROOM_SYNC_WAIT: Duration = Duration::from_secs(20);
 /// 加入后等同步把房间标成已加入的上限。加入事件会唤醒在等的同步，平时一秒内就到；超过这个时间按下面
 /// [`MatrixSession::until_joined`] 说的 Tuwunel 的问题处理。
 const JOIN_ECHO_WAIT: Duration = Duration::from_secs(3);
@@ -73,9 +71,7 @@ impl From<RoomState> for Membership {
     }
 }
 
-/// Sliding Sync 订阅完整时间线的房间。`opened`、`watched`、`joining` 是三份互不相干的需要，并集才是发给
-/// 服务器的名单：只要还有一份要这个房间，它就留在名单里——退订的一方动不到别人还需要的房间，这就是
-/// 引用计数（#370）。
+/// Sliding Sync 订阅完整时间线的房间。
 #[derive(Default)]
 pub(crate) struct RoomSubscriptions {
     /// 打开着的房间。
@@ -84,9 +80,6 @@ pub(crate) struct RoomSubscriptions {
     watched: BTreeSet<OwnedRoomId>,
     /// 加入后同步还标着“受邀”、临时订阅的房间，见 [`MatrixSession::until_joined`]。
     joining: BTreeSet<OwnedRoomId>,
-    /// 上一次发给 SDK 的并集。名单没变就不发：SDK 收到订阅变化会取消在飞的同步请求，一次名单没变的
-    /// 重发是无害的浪费，一次名单真变大的重发在 Tuwunel 上能把别的在飞请求顶成 `M_UNKNOWN_POS`（#370）。
-    applied: BTreeSet<OwnedRoomId>,
 }
 
 /// 房间列表里的一项。
@@ -105,8 +98,6 @@ pub struct RoomInfo {
     pub is_encrypted: bool,
     /// 本账号的成员状态。
     pub membership: Membership,
-    /// 建房时带了好友标记（ADR-0051）：邀请是一条好友请求，加入后是好友私聊。
-    pub is_friend: bool,
     /// 最新一条消息；还没有消息或者还没算出来时为 `None`。
     pub latest: Option<LatestMessage>,
     /// 未读消息数，按本账号的已读回执在本机算出。
@@ -116,8 +107,6 @@ pub struct RoomInfo {
 /// 房间的最新一条消息。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LatestMessage {
-    /// 发送者的 Matrix 用户 ID。
-    pub sender_id: OwnedUserId,
     /// 发送者的显示名。
     pub sender_name: String,
     /// 是否由本账号发出。
@@ -157,44 +146,6 @@ impl MatrixSession {
             .map(|room| room.room_id().to_owned())
     }
 
-    /// 现在在 `m.direct` 里标给 `peer` 的全部房间，照本机存的最新一份算，不看房间现在的成员状态。
-    ///
-    /// 认私聊以这份为准，别用房间列表的行认：行的私聊字段跟着每次列表重算重取，`m.direct` 还没同步到、
-    /// 或 Tuwunel 补状态的间隙里，同一房间在相邻两次重算里一会儿算一会儿不算；`m.direct` 只在真的收到
-    /// 事件时才变（#370）。也不按成员状态过滤（[`Self::direct_chat_with`] 那样只看已加入的不行）：补状态
-    /// 的间隙里已加入的房间会被错标成受邀，按状态过滤就把这份稳定的事实也丢了；真离开的房间由“行从
-    /// 列表消失”这条出集合的依据兜住。
-    pub async fn direct_chat_rooms_with(&self, peer: &UserId) -> Result<Vec<OwnedRoomId>> {
-        let raw = self
-            .client
-            .account()
-            .account_data::<DirectEventContent>()
-            .await
-            .map_err(|error| Error::Upstream(error.to_string()))?;
-        let Some(raw) = raw else {
-            return Ok(Vec::new());
-        };
-        let event = raw
-            .deserialize()
-            .map_err(|error| Error::Upstream(error.to_string()))?;
-        Ok(event
-            .0
-            .iter()
-            .find(|(user, _)| user.as_user_id() == Some(peer))
-            .map(|(_, rooms)| rooms.clone())
-            .unwrap_or_default())
-    }
-
-    /// 解出房间链接的实际 ID，不改变成员关系；是否已加入由调用方按自己的导航边界决定。
-    pub async fn resolve_room_id(&self, input: &str) -> Result<OwnedRoomId> {
-        let target = <&matrix_sdk::ruma::RoomOrAliasId>::try_from(input)
-            .map_err(|error| Error::InvalidInput(error.to_string()))?;
-        match <&RoomId>::try_from(target) {
-            Ok(id) => Ok(id.to_owned()),
-            Err(alias) => Ok(self.client.resolve_room_alias(alias).await?.room_id),
-        }
-    }
-
     /// 加入房间，用于接受邀请。私聊邀请加入后记进 `m.direct`，之后列表里仍标为私聊。等同步把房间标成已加入才返回，
     /// 调用方接着就能往里发消息。
     pub async fn join_room(&self, room_id: &RoomId) -> Result<()> {
@@ -207,11 +158,8 @@ impl MatrixSession {
             .client
             .get_room(room_id)
             .filter(|room| room.state() == RoomState::Invited);
-        // 好友邀请也记成私聊：它的邀请请求本身不带 `is_direct`，靠建房时的标记认。
         let inviter = match &invited {
-            Some(room)
-                if invited_as_direct(room).await || crate::friends::marked_friend(room).await =>
-            {
+            Some(room) if invited_as_direct(room).await => {
                 Some(room.invite_details().await?.inviter_id)
             }
             _ => None,
@@ -233,8 +181,7 @@ impl MatrixSession {
 
     /// 等同步把刚加入的房间标成已加入。
     ///
-    /// 绕过 Tuwunel 的问题（v1.9.4 发现，v2.0.0 上 Docker 测试仍复现，<https://github.com/matrix-construct/tuwunel/issues/685>）：
-    /// 它先让新事件对同步可见，再更新房间的当前状态。
+    /// 绕过 Tuwunel 的问题（v1.9.4，TODO 上游 issue 链接）：它先让新事件对同步可见，再更新房间的当前状态。
     /// 这中间的一次 Sliding Sync，时间线里有加入事件，`required_state` 里本人却还是邀请；SDK 只按
     /// `required_state` 定状态，房间就一直是“受邀”，直到房间里来新事件。这时单独订阅这个房间，服务器按
     /// 当前状态重发。上游修好、镜像升级后删掉订阅这一步，只留等待。
@@ -246,14 +193,12 @@ impl MatrixSession {
         let room_id = room.room_id().to_owned();
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.joining.insert(room_id.clone());
-        // 这次发送的目的就是让服务器按当前状态重发这个房间：房间多半还在名单里（跟着卡片），名单没变的
-        // 下发 SDK 只当空操作，不会取消在飞的请求，服务器也就不会重发，所以强制。
-        self.subscribe(&mut subscriptions, true).await;
+        self.subscribe(&subscriptions).await;
         drop(subscriptions);
         let done = joined(room, RESUBSCRIBED_WAIT).await;
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.joining.remove(&room_id);
-        self.subscribe(&mut subscriptions, false).await;
+        self.subscribe(&subscriptions).await;
         drop(subscriptions);
         if done {
             Ok(())
@@ -324,7 +269,7 @@ impl MatrixSession {
         let room = self.joined(room_id)?;
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.opened = Some(room_id.to_owned());
-        self.subscribe(&mut subscriptions, false).await;
+        self.subscribe(&subscriptions).await;
         drop(subscriptions);
         ChatRoom::open(room).await
     }
@@ -335,7 +280,7 @@ impl MatrixSession {
         let room = self.joined(room_id)?;
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.watched.insert(room_id.to_owned());
-        self.subscribe(&mut subscriptions, false).await;
+        self.subscribe(&subscriptions).await;
         drop(subscriptions);
         ChatRoom::open(room).await
     }
@@ -343,108 +288,33 @@ impl MatrixSession {
     pub async fn unwatch_room(&self, room_id: &RoomId) {
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.watched.remove(room_id);
-        self.subscribe(&mut subscriptions, false).await;
+        self.subscribe(&subscriptions).await;
     }
 
     /// 调用方拿着锁等它结束：SDK 按最后一次的名单订阅，两次调用不能交错，否则后算的名单可能先生效。
-    /// 名单没变就不发；`force_redeliver` 时即使没变也发，而且走 `reset_and_add`：SDK 会取消在飞的请求
-    /// 重新发，服务器按当前状态重发房间。发送的目的只是改名单时用差集（`false`），要服务器重发状态时
-    /// 才强制（`true`，比如 [`MatrixSession::until_joined`] 的重新订阅）。
-    async fn subscribe(&self, subscriptions: &mut RoomSubscriptions, force_redeliver: bool) {
-        let rooms: BTreeSet<OwnedRoomId> = subscriptions
+    async fn subscribe(&self, subscriptions: &RoomSubscriptions) {
+        let rooms: Vec<&RoomId> = subscriptions
             .opened
             .iter()
             .chain(&subscriptions.watched)
             .chain(&subscriptions.joining)
-            .cloned()
+            .map(|room| &**room)
             .collect();
-        if rooms == subscriptions.applied && !force_redeliver {
-            return;
-        }
-        let list: Vec<&RoomId> = rooms.iter().map(|room| &**room).collect();
-        if force_redeliver {
-            self.sync
-                .room_list_service()
-                .reset_and_add_room_subscriptions(&list)
-                .await;
-        } else {
-            self.sync
-                .room_list_service()
-                .set_room_subscriptions(&list)
-                .await;
-        }
-        subscriptions.applied = rooms;
-    }
-
-    /// 同步服务停止后再恢复名单；调用方持锁到重新启动，首条请求才能带上恢复后的订阅。
-    pub(crate) async fn resubscribe(&self, subscriptions: &mut RoomSubscriptions) {
-        subscriptions.applied.clear();
-        self.subscribe(subscriptions, false).await;
+        self.sync
+            .room_list_service()
+            .set_room_subscriptions(&rooms)
+            .await;
     }
 
     /// 往已加入的房间发一条文字，不打开它：不动 Sliding Sync 的房间订阅，正在看的房间的时间线不受影响。不经发送队列，也没有本地
-    /// 回显，发出去之后经同步出现；失败当场返回。房间还没同步到本地时等它一会儿：传完文件发链接时，App 重启后同步刚开头。
+    /// 回显，发出去之后经同步出现；失败当场返回。
     pub async fn send_text_to(&self, room_id: &RoomId, body: &str) -> Result<()> {
-        let room = self.joined_within(room_id, ROOM_SYNC_WAIT).await?;
+        let room = self.joined(room_id)?;
         room.send(RoomMessageEventContent::text_plain(body)).await?;
         Ok(())
     }
 
-    /// 房间同步到本地并成为已加入；等过了期限还没有，按原来的错报（没同步到，或者没加入）。
-    async fn joined_within(&self, room_id: &RoomId, wait: Duration) -> Result<Room> {
-        let deadline = tokio::time::Instant::now() + wait;
-        loop {
-            if let Some(room) = self.client.get_room(room_id)
-                && room.state() == RoomState::Joined
-            {
-                return Ok(room);
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return self.joined(room_id);
-            }
-            tokio::time::sleep(Duration::from_millis(200)).await;
-        }
-    }
-
-    /// 这个房间输入框里的草稿，没打过字也没在回复时是 `None`。存在本机状态库里，关掉 App 也还在；不上服务器。
-    ///
-    /// 和 [`open_room`](Self::open_room) 不同，这里不订阅房间：敲字的房间和打开着的房间不是同一个时不打断那边的时间线。
-    pub async fn draft(&self, room_id: &RoomId) -> Result<Option<Draft>> {
-        let room = self.joined(room_id)?;
-        Ok(room.load_composer_draft(None).await?.map(|draft| Draft {
-            body: draft.plain_text,
-            reply_to: match draft.draft_type {
-                ComposerDraftType::Reply { event_id } => Some(event_id),
-                ComposerDraftType::NewMessage | ComposerDraftType::Edit { .. } => None,
-            },
-        }))
-    }
-
-    /// 记下草稿（matrix-sdk 的 composer draft，回复存成 `ComposerDraftType::Reply`），正文空、也没在回复时删掉。
-    /// 存在本机状态库里。
-    pub async fn save_draft(&self, room_id: &RoomId, draft: &Draft) -> Result<()> {
-        let room = self.joined(room_id)?;
-        if draft.body.is_empty() && draft.reply_to.is_none() {
-            room.clear_composer_draft(None).await?;
-        } else {
-            let draft = ComposerDraft {
-                plain_text: draft.body.clone(),
-                // 不发格式化内容，正文就是原文。
-                html_text: None,
-                draft_type: match &draft.reply_to {
-                    Some(event_id) => ComposerDraftType::Reply {
-                        event_id: event_id.clone(),
-                    },
-                    None => ComposerDraftType::NewMessage,
-                },
-                attachments: Vec::new(),
-            };
-            room.save_composer_draft(draft, None).await?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn joined(&self, room_id: &RoomId) -> Result<Room> {
+    fn joined(&self, room_id: &RoomId) -> Result<Room> {
         let room = self.room(room_id)?;
         if room.state() != RoomState::Joined {
             return Err(Error::NotReady("还没有加入这个聊天".to_owned()));
@@ -452,7 +322,7 @@ impl MatrixSession {
         Ok(room)
     }
 
-    pub(crate) fn room(&self, room_id: &RoomId) -> Result<Room> {
+    fn room(&self, room_id: &RoomId) -> Result<Room> {
         self.client.get_room(room_id).ok_or_else(|| {
             Error::NotReady("这个聊天还没有同步到这台设备，稍等一会儿再试".to_owned())
         })
@@ -535,14 +405,12 @@ async fn room_info(room: &Room) -> RoomInfo {
 
 /// 按给定的成员状态拼一行；`room` 的实际状态变到别处时由 [`room_info`] 重拼。
 async fn room_info_in(room: &Room, state: RoomState) -> RoomInfo {
-    // 私聊标记和对方从同一份数据取：好友邀请不一定能从邀请 stripped state 恢复 `is_direct`，但好友标记仍应进请求列表。
+    // 私聊标记和对方从同一份数据取：收到邀请时标记在邀请事件里，加入后是 `m.direct` 里的唯一对方。
     let (is_direct, direct_user_id) = if state == RoomState::Invited {
-        let friend = crate::friends::marked_friend(room).await;
-        let is_direct = friend
-            || room.is_direct().await.unwrap_or_else(|error| {
-                tracing::warn!(room = %room.room_id(), "读不到私聊标记，按群聊显示：{error}");
-                false
-            });
+        let is_direct = room.is_direct().await.unwrap_or_else(|error| {
+            tracing::warn!(room = %room.room_id(), "读不到私聊标记，按群聊显示：{error}");
+            false
+        });
         let peer = if is_direct {
             direct_peer(room).await
         } else {
@@ -551,8 +419,8 @@ async fn room_info_in(room: &Room, state: RoomState) -> RoomInfo {
         (is_direct, peer)
     } else {
         let targets = room.direct_targets();
-        let is_direct = !targets.is_empty() || crate::friends::marked_friend(room).await;
-        let peer = if !targets.is_empty() && targets.len() == 1 {
+        let is_direct = !targets.is_empty();
+        let peer = if is_direct && targets.len() == 1 {
             targets
                 .iter()
                 .next()
@@ -586,7 +454,6 @@ async fn room_info_in(room: &Room, state: RoomState) -> RoomInfo {
         room_id: room.room_id().to_owned(),
         name,
         is_direct,
-        is_friend: crate::friends::marked_friend(room).await,
         direct_user_id,
         is_encrypted: room.encryption_state().is_encrypted(),
         membership: state.into(),
@@ -637,10 +504,8 @@ async fn latest_message(room: &Room) -> Option<LatestMessage> {
         } => (timestamp, sender, true, profile, content),
         LatestEventValue::RemoteInvite { .. } | LatestEventValue::None => return None,
     };
-    let sender_name = profile_name(&profile, &sender);
     Some(LatestMessage {
-        sender_id: sender,
-        sender_name,
+        sender_name: profile_name(&profile, &sender),
         is_own,
         body: match &content {
             TimelineItemContent::MsgLike(message) => body(&message.kind),

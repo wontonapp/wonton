@@ -6,7 +6,6 @@
 //! tusd 的 pre-finish 钩子有 15 秒的硬超时，放不下跨卷复制，所以放文件走 post-finish；它不等钩子就回客户端，
 //! 网关要在最后一个 PATCH 的响应之前等 [`Files::finish_upload`]，204 才等于文件可用（实测见 ADR-0020 的“验证结果”）。
 
-mod room;
 mod sweep;
 
 use std::collections::{HashMap, HashSet};
@@ -15,7 +14,6 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-pub(super) use room::{has_room, out_of_inodes, quota};
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{FileFailure, FileId, FileSource};
 
@@ -23,9 +21,7 @@ use super::record::{Accessor, FileRecord, Lookup, Origin};
 use super::share_fs::from_io;
 use super::share_fs::{Abandoned, Names, ShareError, ShareRef, Snapshot, TRANSFERS, sanitize_name};
 use super::{DELETED_UNSYNCED, Failure, FileEvent, Files, OpenError};
-use crate::l10n;
 use crate::plugin::hostdir::{self, Owner};
-use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
 use crate::plugin::store::{
     StoreError, create_private_dir, read_json, remove_file, write_json, write_json_synced,
@@ -33,8 +29,6 @@ use crate::plugin::store::{
 
 /// 这么久没有进度的上传被清掉。tusd 没有实现 tus 的 expiration，只能由核心来清。
 pub const STALE_SECS: u64 = 24 * 60 * 60;
-/// 传完放好、链接还没发出去的上传留这么久。授权给房间或者发到设备时不再过期（ADR-0020 的“生命周期”）。
-pub const UPLOAD_TTL_SECS: u64 = 24 * 60 * 60;
 /// 放下上传后磁盘上至少还要空着这个比例。
 const KEEP_FREE_PERCENT: u64 = 5;
 /// 客户端走了的编号记这么久：tusd 的 pre-create 钩子晚到时要认得出来，钩子不会晚这么多。
@@ -66,7 +60,7 @@ struct Placing {
 
 impl Pending {
     /// 放在 `name` 上的文件的记录。`name` 是目录里现在的名字，主人和插件都能改，显示给人看的要和别的不可信的名字一样清洗；引用保留原样，
-    /// 否则找不到文件。链接没发出去之前一直带过期时间，授权给房间或者发到设备时清掉。
+    /// 否则找不到文件。
     fn record(&self, name: String, placed: Snapshot) -> FileRecord {
         FileRecord {
             id: self.id.clone(),
@@ -85,7 +79,7 @@ impl Pending {
             owner_granted: Default::default(),
             registered: None,
             created_at: now_secs(),
-            expires_at: Some(now_secs().saturating_add(UPLOAD_TTL_SECS)),
+            expires_at: None,
         }
     }
 }
@@ -246,71 +240,55 @@ impl Uploads {
     }
 
     /// 传到一半 tusd 出错时，磁盘是不是真的放不下剩下的字节。
-    fn out_of_space(&self, id: &FileId, langs: &Languages) -> Option<Failure> {
+    fn out_of_space(&self, id: &FileId) -> Option<Failure> {
         let pending = self.load_pending(id).ok()??;
         let written = fs::symlink_metadata(self.dir.join(id.as_str())).map_or(0, |meta| meta.len());
-        self.cannot_hold(pending.size.saturating_sub(written), langs)
+        self.cannot_hold(pending.size.saturating_sub(written))
     }
 
-    fn cannot_hold(&self, left: u64, langs: &Languages) -> Option<Failure> {
-        let storage_full = |key: &str| {
-            Some(Failure::new(
-                FileFailure::StorageFull,
-                l10n::text(langs, key, &[]),
-            ))
-        };
-        if let Some(quota) = quota(&self.dir, self.owner.uid) {
-            if quota.space_left.is_some_and(|room| room < left) {
-                return storage_full("files-upload-quota-full");
-            }
-            if quota.inodes_left == Some(0) {
-                return storage_full("files-upload-inodes-full");
-            }
-        }
+    fn cannot_hold(&self, left: u64) -> Option<Failure> {
         let stats = rustix::fs::statvfs(&self.dir).ok()?;
-        if out_of_inodes(stats.f_files, stats.f_favail) {
-            return storage_full("files-upload-inodes-full");
-        }
         let free = stats.f_bavail.saturating_mul(stats.f_frsize.max(1));
         (free < left).then(|| {
-            Some(Failure::new(
+            Failure::new(
                 FileFailure::StorageFull,
-                l10n::text(
-                    langs,
-                    "files-upload-leftover",
-                    &[
-                        ("free", wonton_l10n::Arg::from(free)),
-                        ("left", wonton_l10n::Arg::from(left)),
-                    ],
-                ),
-            ))
-        })?
+                format!("磁盘只剩 {free} 字节，这个上传还差 {left} 字节"),
+            )
+        })
     }
+}
+
+/// 这个目录所在的磁盘放下 `size` 字节后，还空着 [`KEEP_FREE_PERCENT`]。
+pub(super) fn has_room(dir: &Path, size: u64) -> Result<bool, Failure> {
+    let stats = rustix::fs::statvfs(dir)
+        .map_err(|e| Failure::internal(format!("查 {} 的磁盘空间失败：{e}", dir.display())))?;
+    let frsize = stats.f_frsize.max(1);
+    let free = stats.f_bavail.saturating_mul(frsize);
+    let keep = stats.f_blocks.saturating_mul(frsize) / 100 * KEEP_FREE_PERCENT;
+    let enough = size.checked_add(keep).is_some_and(|needed| needed <= free);
+    Ok(enough && !out_of_inodes(stats.f_files, stats.f_favail))
+}
+
+/// inode 用完了也放不下。总数是 0 表示这个文件系统没有这个限制（btrfs）。
+fn out_of_inodes(total: u64, free: u64) -> bool {
+    total > 0 && free == 0
 }
 
 impl Files {
     /// 创建上传（tusd 的 pre-create）：查磁盘、发编号。没传完的编号查不到，所以这时不写编号记录。
-    pub async fn create_upload(
-        self: &Arc<Self>,
-        upload: NewUpload<'_>,
-        langs: &Languages,
-    ) -> Result<FileId, Failure> {
+    pub async fn create_upload(self: &Arc<Self>, upload: NewUpload<'_>) -> Result<FileId, Failure> {
         let invalid = |why: &str| Failure::new(FileFailure::InvalidInput, why);
         // 排队：查“客户端走了没有”和写记录不能夹在 [`Self::upload_unclaimed`] 中间。
         let _turn = self.uploads.turn(upload.id).await;
         if self.uploads.take_withdrawn(upload.id) {
-            return Err(invalid(&l10n::text(
-                langs,
-                "files-upload-disconnected",
-                &[],
-            )));
+            return Err(invalid("创建这个上传的请求已经断开了"));
         }
         let size = upload
             .size
-            .ok_or_else(|| invalid(&l10n::text(langs, "files-upload-length-required", &[])))?;
+            .ok_or_else(|| invalid("上传要在创建时声明长度（Upload-Length）"))?;
         let name = upload
             .name
-            .ok_or_else(|| invalid(&l10n::text(langs, "files-upload-filename-required", &[])))?;
+            .ok_or_else(|| invalid("上传要在 Upload-Metadata 里带 filename"))?;
         let pending = Pending {
             id: upload.id.clone(),
             name: sanitize_name(name),
@@ -321,22 +299,16 @@ impl Files {
             placing: None,
             abandoned: false,
         };
-        let langs = langs.clone();
         self.blocking(move |files| {
             for dir in [
                 files.uploads.dir.as_path(),
                 files.shares.root().join(TRANSFERS).as_path(),
             ] {
-                if !has_room(dir, size, files.uploads.owner.uid)? {
+                if !has_room(dir, size)? {
                     return Err(Failure::new(
                         FileFailure::StorageFull,
-                        l10n::text(
-                            &langs,
-                            "files-upload-disk-full",
-                            &[
-                                ("size", wonton_l10n::Arg::from(size)),
-                                ("percent", wonton_l10n::Arg::from(KEEP_FREE_PERCENT as i64)),
-                            ],
+                        format!(
+                            "磁盘放不下这个 {size} 字节的文件（要留 {KEEP_FREE_PERCENT}% 空闲，inode 也不能用完）"
                         ),
                     ));
                 }
@@ -396,14 +368,10 @@ impl Files {
     }
 
     /// tusd 在传的途中回了 500：真是磁盘满了就说清楚，别的原因不猜。
-    pub async fn upload_out_of_space(
-        self: &Arc<Self>,
-        id: &FileId,
-        langs: &Languages,
-    ) -> Option<Failure> {
-        let (id, langs) = (id.clone(), langs.clone());
+    pub async fn upload_out_of_space(self: &Arc<Self>, id: &FileId) -> Option<Failure> {
+        let id = id.clone();
         let files = self.clone();
-        tokio::task::spawn_blocking(move || files.uploads.out_of_space(&id, &langs))
+        tokio::task::spawn_blocking(move || files.uploads.out_of_space(&id))
             .await
             .ok()?
     }
@@ -414,16 +382,12 @@ impl Files {
     }
 
     /// 传完后放进 `transfers`，这时文件才算可用。可以重复调。跑在单独的任务里：调用它的请求断了也要做完。
-    pub async fn finish_upload(
-        self: &Arc<Self>,
-        id: &FileId,
-        langs: &Languages,
-    ) -> Result<FileRecord, Failure> {
+    pub async fn finish_upload(self: &Arc<Self>, id: &FileId) -> Result<FileRecord, Failure> {
         let files = self.clone();
-        let (task, langs) = (id.clone(), langs.clone());
+        let task = id.clone();
         tokio::spawn(async move {
             let _turn = files.uploads.turn(&task).await;
-            files.place(&task, &langs).await
+            files.place(&task).await
         })
         .await
         .map_err(|e| Failure::internal(format!("放上传文件的任务中止：{e}")))?
@@ -459,11 +423,7 @@ impl Files {
         self.uploads.withdraw(&turn.id);
     }
 
-    async fn place(
-        self: &Arc<Self>,
-        id: &FileId,
-        langs: &Languages,
-    ) -> Result<FileRecord, Failure> {
+    async fn place(self: &Arc<Self>, id: &FileId) -> Result<FileRecord, Failure> {
         if let Lookup::Found(record) = self.registry.get(id, now_secs())
             && matches!(record.origin, Origin::Upload { .. })
         {
@@ -471,19 +431,18 @@ impl Files {
             self.clean_up_placed(id).await;
             return Ok(record);
         }
-        let (task, langs) = (id.clone(), langs.clone());
+        let task = id.clone();
         let pending = self
             .blocking(move |files| files.uploads.load_pending(&task))
             .await?
-            .ok_or_else(|| Failure::unknown(&langs))?;
+            .ok_or_else(Failure::unknown)?;
         if pending.abandoned {
             self.abandon_upload(id).await;
-            return Err(Failure::unknown(&langs));
+            return Err(Failure::unknown());
         }
         let device = pending.device.clone();
-        let langs = langs.clone();
         let placed = self
-            .blocking(move |files| files.place_pending(pending, &langs))
+            .blocking(move |files| files.place_pending(pending))
             .await;
         self.audit(&FileEvent {
             event: "file_upload",
@@ -498,8 +457,8 @@ impl Files {
 
     /// 放文件、写记录、清理，这个顺序：数据一直留到记录写好。任何一步失败或者崩溃，文件都还认得出来（`place_upload` 按 inode 认），
     /// 再来一次会收敛到同一个文件和同一条记录。
-    fn place_pending(&self, pending: Pending, langs: &Languages) -> Result<FileRecord, Failure> {
-        let (name, placed) = self.place_marked(&pending, langs)?;
+    fn place_pending(&self, pending: Pending) -> Result<FileRecord, Failure> {
+        let (name, placed) = self.place_marked(&pending)?;
         let record = pending.record(name, placed);
         // 记录的目录项没落盘时不清理：断电后记录没了，数据还在才放得回来。下次清理再来。
         if self.registry.save_synced(record.clone())? {
@@ -510,13 +469,9 @@ impl Files {
 
     /// 放文件，链接之前把名字和样子写进待完成记录。写不了或者没落盘就不放：之后分不清名字上的文件是谁的。`fsync` 的错误只报告一次，所以重试
     /// 时这里会重新写一次。
-    fn place_marked(
-        &self,
-        pending: &Pending,
-        langs: &Languages,
-    ) -> Result<(String, Snapshot), ShareError> {
+    fn place_marked(&self, pending: &Pending) -> Result<(String, Snapshot), ShareError> {
         let mut marked = pending.clone();
-        let placed = self.shares.place_upload(
+        self.shares.place_upload(
             &self.uploads.dir,
             pending.id.as_str(),
             pending.size,
@@ -525,60 +480,24 @@ impl Files {
                 owner: self.uploads.owner,
                 placing_inode: pending.placing.as_ref().map(|p| p.snapshot.inode),
             },
-            langs,
             &mut |name, snapshot| {
                 marked.placing = Some(Placing {
                     name: name.to_owned(),
                     snapshot: *snapshot,
                 });
                 let path = self.uploads.pending_path(&pending.id);
-                let label = l10n::text(langs, "files-upload-record-label", &[]);
                 let synced = write_json_synced(&path, &marked).map_err(|e| match e {
-                    StoreError::Io { source, .. } => from_io(&source, &label),
+                    StoreError::Io { source, .. } => from_io(&source, "待完成的上传记录"),
                     other => ShareError::Io(other.to_string()),
                 })?;
                 if !synced {
-                    return Err(ShareError::Io(l10n::text(
-                        langs,
-                        "files-upload-record-unwritable",
-                        &[],
-                    )));
+                    return Err(ShareError::Io(
+                        "待完成的上传记录没能落盘，先不放".to_owned(),
+                    ));
                 }
                 Ok(())
             },
-        );
-        if placed.is_err() {
-            self.forget_failed_placement(&pending.id);
-        }
-        placed
-    }
-
-    /// 链接、复制失败后临时文件已经删掉了：记下的 inode 会被别的文件复用（跨卷的临时文件是复制出来的，inode 和下一条记录无关），
-    /// 不清掉的话下次会把它当成放好的那个。公开名字上不是这个文件才会走到这里（[`Shares::place_upload`] 只在失败后删临时文件）。
-    fn forget_failed_placement(&self, id: &FileId) {
-        // 调用前的克隆里没有这一趟写下的放置信息，从盘上重新读。
-        let Some(mut current) = self.uploads.load_pending(id).ok().flatten() else {
-            return;
-        };
-        if current.placing.is_none() {
-            return;
-        }
-        let temps = match self.shares.upload_temps() {
-            Ok(temps) => temps,
-            Err(e) => {
-                tracing::warn!(file = %id, error = %e, "读不了临时文件，放置记录留着");
-                return;
-            }
-        };
-        if temps.iter().any(|temp| temp == id.as_str()) {
-            return;
-        }
-        current.placing = None;
-        match write_json_synced(&self.uploads.pending_path(id), &current) {
-            Ok(true) => {}
-            Ok(false) => tracing::warn!(file = %id, "清掉的放置记录没能落盘"),
-            Err(e) => tracing::warn!(file = %id, error = %e, "清掉放置记录失败"),
-        }
+        )
     }
 
     /// 传完放好了，不再管它。调用方排着这个上传的队。
@@ -653,9 +572,7 @@ impl Files {
         };
         let placing = pending.placing.as_ref();
         let placing = placing.map(|p| (p.name.as_str(), &p.snapshot));
-        // 作废是后台清理，没有请求头：里面的错误按英文说。
-        let langs = Languages::from_header(None);
-        match self.shares.settle_abandoned(id.as_str(), placing, &langs)? {
+        match self.shares.settle_abandoned(id.as_str(), placing)? {
             Abandoned::NotPlaced => {}
             Abandoned::Deleted { name, durable } => {
                 tracing::warn!(file = %id, name, "上传作废了，删掉了已经放好但没有记录的文件");
@@ -724,17 +641,12 @@ impl Files {
     pub(crate) async fn place_for_test(
         self: &Arc<Self>,
         id: &FileId,
-        langs: &Languages,
     ) -> Result<FileRecord, Failure> {
-        self.place(id, langs).await
+        self.place(id).await
     }
 }
 
 #[cfg(test)]
 mod abandon_tests;
-#[cfg(test)]
-mod expiry_tests;
-#[cfg(test)]
-mod quota_tests;
 #[cfg(test)]
 mod tests;

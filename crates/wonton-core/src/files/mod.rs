@@ -16,10 +16,10 @@ pub mod resource;
 mod saving;
 pub mod share_fs;
 mod slots;
-mod thumbnails;
 pub mod uploads;
 
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,27 +28,23 @@ use axum::body::Body;
 use hyper::Method;
 use iroh::EndpointId;
 use serde::Serialize;
+use tokio::sync::OwnedSemaphorePermit;
 use wonton_protocol::{FileFailure, FileId, FileInfo};
 
 pub use host::{CoreHost, FileHost};
 
-use crate::l10n;
 use crate::mcp::audit::Audit;
 use crate::plugin::PluginId;
 use crate::plugin::hostdir::{self, DirError, Owner};
-use crate::plugin::image_worker::ImageWorker;
-use crate::plugin::languages::Languages;
+use crate::plugin::image_worker::{ImageError, ImageWorker};
+use crate::plugin::images::MAX_THUMBNAIL_INPUT;
 use crate::plugin::manager::now_secs;
 use crate::plugin::store::StoreError;
 use content::{can_thumbnail, declared_type, served_type};
 use record::{Accessor, FileRecord, Lookup, Origin, Registry, RegistryError};
 use resource::{InternalUrl, RemoteRequest};
 use share_fs::{Deleted, Opened, ShareError, ShareRef, Shares, TRANSFERS};
-use slots::PluginSlots;
-use thumbnails::{
-    MAX_THUMBNAIL_DECODES, MAX_THUMBNAIL_READS, Scale, THUMBNAIL_DECODE_TIMEOUT,
-    thumbnail_input_limit, thumbnail_read_timed_out,
-};
+use slots::{PluginSlot, PluginSlots};
 
 /// `resources/read` 最多读这么多（插件规范）。
 pub const MAX_RESOURCE_BYTES: usize = 32 << 20;
@@ -62,6 +58,14 @@ const _: () = assert!(
         < THUMBNAIL_READ_TIMEOUT.as_secs(),
     "缩略图的期限要比等名额加读资源的长"
 );
+/// 同时最多读这么多张本地的原图，每张最多 [`MAX_THUMBNAIL_INPUT`]。插件的原图另有名额（[`slots`]）：存储卡住时插件的缩略图
+/// 照常，插件慢时本地的也照常。和 [`ImageWorker`] 的名额分开：读可能要等慢插件，不能占着解码的名额，挡住别的图片处理（比如插件商店
+/// 的图标）。
+const MAX_THUMBNAIL_READS: usize = 4;
+/// 读完的原图最多这么多张在内存里等解码或者正在解码。读的名额读完就还：解码慢不是来源的问题。满了不等，读完也白读，但内存有上限。
+const MAX_THUMBNAIL_DECODES: usize = 8;
+/// 等解码加解码最多这么久，比 [`ImageWorker`] 自己等子进程的 10 秒长：解码的毛病由它报。
+const THUMBNAIL_DECODE_TIMEOUT: Duration = Duration::from_secs(30);
 /// 一个工具结果的预览一共等多久（ADR-0020 的“预览”）。
 const PREVIEW_BUDGET: Duration = Duration::from_secs(10);
 
@@ -81,11 +85,8 @@ impl Failure {
         }
     }
 
-    fn unknown(langs: &Languages) -> Self {
-        Self::new(
-            FileFailure::FileUnknown,
-            l10n::text(langs, "files-not-found", &[]),
-        )
+    fn unknown() -> Self {
+        Self::new(FileFailure::FileUnknown, "没有这个文件")
     }
 
     /// 核心自己的问题（读写不了记录、起不了进程）。
@@ -96,27 +97,14 @@ impl Failure {
 
 impl From<ShareError> for Failure {
     fn from(e: ShareError) -> Self {
-        Self::new(share_kind(&e), e.to_string())
+        let kind = match &e {
+            ShareError::Gone => FileFailure::FileGone,
+            ShareError::Refused(_) => FileFailure::PermissionDenied,
+            ShareError::NoSpace(_) => FileFailure::StorageFull,
+            ShareError::Io(_) => FileFailure::Internal,
+        };
+        Self::new(kind, e.to_string())
     }
-}
-
-/// `ShareError` 的类别。
-fn share_kind(e: &ShareError) -> FileFailure {
-    match e {
-        ShareError::Gone => FileFailure::FileGone,
-        ShareError::Refused(_) => FileFailure::PermissionDenied,
-        ShareError::NoSpace(_) => FileFailure::StorageFull,
-        ShareError::Io(_) => FileFailure::Internal,
-    }
-}
-
-/// 和 [`From<ShareError>`] 一样，但拿得到请求的语言时，“文件已被移动或删除”按语言说。
-fn share_failure(e: ShareError, langs: &Languages) -> Failure {
-    let message = match &e {
-        ShareError::Gone => l10n::text(langs, "files-moved-or-deleted", &[]),
-        _ => e.to_string(),
-    };
-    Failure::new(share_kind(&e), message)
 }
 
 impl From<RegistryError> for Failure {
@@ -196,6 +184,14 @@ pub struct TextHead {
     /// 实际读到的字节数。
     pub read: usize,
     pub truncated: bool,
+}
+
+/// [`Files::read_head`] 的中间结果；名额跟着读走，读完才还。
+struct HeadRead {
+    bytes: Vec<u8>,
+    total: Option<u64>,
+    truncated: bool,
+    slot: ThumbnailSlot,
 }
 
 /// 审计日志的一行（`core/audit.jsonl`）。
@@ -304,43 +300,27 @@ impl Files {
     }
 
     /// 查编号并核对访问范围，见模块说明里的表。
-    pub fn authorize(
-        &self,
-        id: &FileId,
-        who: &Accessor,
-        langs: &Languages,
-    ) -> Result<FileRecord, Failure> {
+    pub fn authorize(&self, id: &FileId, who: &Accessor) -> Result<FileRecord, Failure> {
         let bot = matches!(who, Accessor::Bot(_));
         match self.registry.get(id, now_secs()) {
             Lookup::Found(record) if record.access.contains(who) => Ok(record),
-            Lookup::Found(_) if bot => Err(Failure::unknown(langs)),
-            Lookup::Found(_) => Err(Failure::new(
-                FileFailure::NotShared,
-                l10n::text(langs, "files-not-shared", &[]),
-            )),
+            Lookup::Found(_) if bot => Err(Failure::unknown()),
+            Lookup::Found(_) => Err(Failure::new(FileFailure::NotShared, "这个文件没有分享给你")),
             Lookup::Expired(record) if bot && record.access.contains(who) => Err(Failure::new(
                 FileFailure::FileExpired,
-                l10n::text(langs, "files-share-expired", &[]),
+                "这个编号没分享就过期了，再找一次文件",
             )),
-            Lookup::Expired(_) | Lookup::Unknown => Err(Failure::unknown(langs)),
+            Lookup::Expired(_) | Lookup::Unknown => Err(Failure::unknown()),
         }
     }
 
     /// 文件信息。大小看当前的文件：主人改了文档，卡片显示当前的大小。
-    pub async fn info(
-        &self,
-        id: &FileId,
-        who: &Accessor,
-        langs: &Languages,
-    ) -> Result<FileInfo, Failure> {
-        let record = self.authorize(id, who, langs)?;
+    pub async fn info(&self, id: &FileId, who: &Accessor) -> Result<FileInfo, Failure> {
+        let record = self.authorize(id, who)?;
         let size = match &record.origin {
-            Origin::Share { reference } | Origin::Upload { reference, .. } => Some(
-                self.open_share(reference.clone(), langs)
-                    .await?
-                    .snapshot
-                    .size,
-            ),
+            Origin::Share { reference } | Origin::Upload { reference, .. } => {
+                Some(self.open_share(reference.clone()).await?.snapshot.size)
+            }
             Origin::Plugin { plugin, .. } => {
                 self.host.check_plugin(plugin)?;
                 record.declared_size
@@ -362,12 +342,12 @@ impl Files {
         })
     }
 
-    async fn open_share(&self, reference: ShareRef, langs: &Languages) -> Result<Opened, Failure> {
+    async fn open_share(&self, reference: ShareRef) -> Result<Opened, Failure> {
         let shares = self.shares.clone();
         tokio::task::spawn_blocking(move || shares.open(&reference))
             .await
             .map_err(|e| Failure::internal(format!("打开文件的任务中止：{e}")))?
-            .map_err(|e| share_failure(e, langs))
+            .map_err(Failure::from)
     }
 
     /// 取字节。`request` 是要转给插件内网地址的方法和 `Range`。
@@ -375,13 +355,11 @@ impl Files {
         &self,
         record: &FileRecord,
         request: RemoteRequest,
-        langs: &Languages,
     ) -> Result<Content, Failure> {
         match &record.origin {
-            Origin::Share { reference } | Origin::Upload { reference, .. } => self
-                .open_share(reference.clone(), langs)
-                .await
-                .map(Content::File),
+            Origin::Share { reference } | Origin::Upload { reference, .. } => {
+                self.open_share(reference.clone()).await.map(Content::File)
+            }
             Origin::Plugin {
                 plugin,
                 uri,
@@ -390,10 +368,10 @@ impl Files {
                 self.host.check_plugin(plugin)?;
                 match internal_url {
                     Some(url) => {
-                        let url = InternalUrl::parse(url, langs)
+                        let url = InternalUrl::parse(url)
                             .map_err(|e| Failure::new(FileFailure::PermissionDenied, e))?;
                         let upstream = self.host.service_upstream(plugin, &url).await?;
-                        resource::fetch(&self.http, &upstream, &url, &request, langs)
+                        resource::fetch(&self.http, &upstream, &url, &request)
                             .await
                             .map(Content::Remote)
                     }
@@ -402,13 +380,9 @@ impl Files {
                         match record.declared_size {
                             Some(size) if size > MAX_RESOURCE_BYTES as u64 => Err(Failure::new(
                                 FileFailure::ResourceTooLarge,
-                                l10n::text(
-                                    langs,
-                                    "files-declared-size-over-limit",
-                                    &[(
-                                        "limit",
-                                        wonton_l10n::Arg::from((MAX_RESOURCE_BYTES >> 20) as i64),
-                                    )],
+                                format!(
+                                    "插件声明的大小超过 resources/read 的上限（{} MiB）",
+                                    MAX_RESOURCE_BYTES >> 20
                                 ),
                             )),
                             Some(size) if request.method == Method::HEAD => {
@@ -427,49 +401,37 @@ impl Files {
     }
 
     /// 缩略图：长边 800 像素的 JPEG，不带原文件的元数据，在单独的进程里解码。
-    pub async fn thumbnail(
-        &self,
-        record: &FileRecord,
-        langs: &Languages,
-    ) -> Result<Vec<u8>, Failure> {
-        self.scaled(record, Scale::Thumbnail, langs).await
+    pub async fn thumbnail(&self, record: &FileRecord) -> Result<Vec<u8>, Failure> {
+        self.scaled(record, Scale::Thumbnail).await
     }
 
     /// 文本文件的开头（`wonton__view_file` 的文本分支）：最多读 [`MAX_TEXT_PREVIEW_BYTES`] 字节，按内容判断是不是文本——
     /// 能按 UTF-8 解、没有 NUL 字节才算，不只看 MIME；截断边界上剩下的半个多字节字符不算数。PDF 等其他二进制返回
     /// `not_viewable`，这类读不了内容。访问范围和 file_changed 由调用方的 `for_bot` 把过；读取名额和期限沿用缩略图那套。
-    pub async fn text_preview(
-        &self,
-        record: &FileRecord,
-        langs: &Languages,
-    ) -> Result<TextHead, Failure> {
+    pub async fn text_preview(&self, record: &FileRecord) -> Result<TextHead, Failure> {
         let not_text = |why: String| Failure::new(FileFailure::NotViewable, why);
-        let reading = self.thumbnail_slot(&record.origin, langs).await?;
-        let read = tokio::time::timeout(
-            self.thumbnail_read_timeout,
-            self.read_head(record, reading, langs),
-        )
-        .await
-        .map_err(|_| {
-            thumbnail_read_timed_out(&record.origin, self.thumbnail_read_timeout, langs)
-        })??;
+        let reading = self.thumbnail_slot(&record.origin).await?;
+        let read =
+            tokio::time::timeout(self.thumbnail_read_timeout, self.read_head(record, reading))
+                .await
+                .map_err(|_| {
+                    thumbnail_read_timed_out(&record.origin, self.thumbnail_read_timeout)
+                })??;
         // 名额跟着读走，读完了就还；文本不用解码进程。
         drop(read.slot);
         if read.bytes.contains(&0) {
-            return Err(not_text(l10n::text(
-                langs,
-                "files-not-text-nul",
-                &[("name", record.name.as_str().into())],
+            return Err(not_text(format!(
+                "{} 不是文本文件（内容里有 NUL 字节），读不了内容：PDF 等二进制文件这类只能下载或分享。",
+                record.name
             )));
         }
         // 先按整段判断是不是文本：只有截断边界上的半个字符不算数，中间解不开就是二进制。
         if let Err(error) = std::str::from_utf8(&read.bytes) {
             let tail = read.bytes.len() - error.valid_up_to();
             if !(read.truncated && tail < 4) {
-                return Err(not_text(l10n::text(
-                    langs,
-                    "files-not-text-utf8",
-                    &[("name", record.name.as_str().into())],
+                return Err(not_text(format!(
+                    "{} 不是文本文件：内容解不成 UTF-8，读不了内容。PDF 等二进制文件这类只能下载或分享。",
+                    record.name
                 )));
             }
         }
@@ -484,100 +446,240 @@ impl Files {
         })
     }
 
-    /// 把这个房间的 Bot 加进访问范围，返回加了哪些。房间里没有 Bot 时也会清掉过期：App 授权之后马上发链接，这时链接就算发出去了。
-    /// 和到期清理排同一个队：清理已经取了过期名单也不会在授权之后把文件删掉。
+    /// 开头 [`MAX_TEXT_PREVIEW_BYTES`] 字节和截断信息。读 `上限+1` 个字节：读满就是截断，内容截到上限。
+    /// 本地文件只读这么多；插件的流攒够就停，不往下拉。
+    async fn read_head(
+        &self,
+        record: &FileRecord,
+        reading: ThumbnailSlot,
+    ) -> Result<HeadRead, Failure> {
+        if let Origin::Share { reference } | Origin::Upload { reference, .. } = &record.origin {
+            let shares = self.shares.clone();
+            let reference = reference.clone();
+            let bytes = tokio::task::spawn_blocking(move || {
+                let opened = shares.open(&reference)?;
+                let total = opened.snapshot.size;
+                let mut file = opened.file.take(MAX_TEXT_PREVIEW_BYTES as u64 + 1);
+                let mut bytes = Vec::new();
+                file.read_to_end(&mut bytes)
+                    .map_err(|e| Failure::internal(format!("读文件失败：{e}")))?;
+                Ok::<_, Failure>((bytes, total))
+            })
+            .await
+            .map_err(|e| Failure::internal(format!("读文件的任务中止：{e}")))??;
+            let (bytes, total) = bytes;
+            return Ok(HeadRead {
+                truncated: bytes.len() > MAX_TEXT_PREVIEW_BYTES,
+                bytes,
+                total: Some(total),
+                slot: reading,
+            });
+        }
+        let content = self.content(record, RemoteRequest::whole()).await?;
+        match content {
+            Content::Remote(response) => {
+                // 有 Content-Length 或声明大小时如实报总大小；都没有就如实说未知。
+                let total = response
+                    .headers()
+                    .get(hyper::header::CONTENT_LENGTH)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| value.parse().ok())
+                    .or(record.declared_size);
+                let bytes = resource::read_upto(response, MAX_TEXT_PREVIEW_BYTES + 1).await?;
+                Ok(HeadRead {
+                    truncated: bytes.len() > MAX_TEXT_PREVIEW_BYTES,
+                    bytes,
+                    total,
+                    slot: reading,
+                })
+            }
+            Content::Bytes(bytes) => {
+                // 这条路（MCP resources/read）本来就整读进来了：截断标记按全长算，这里只留下头一段。
+                let truncated = bytes.len() > MAX_TEXT_PREVIEW_BYTES;
+                let mut bytes = bytes;
+                bytes.truncate(MAX_TEXT_PREVIEW_BYTES + 1);
+                Ok(HeadRead {
+                    truncated,
+                    bytes,
+                    total: record.declared_size,
+                    slot: reading,
+                })
+            }
+            Content::File(_) | Content::Unread { .. } => {
+                Err(Failure::internal("插件的资源读出来不该是文件句柄或未读"))
+            }
+        }
+    }
+
+    /// 缩小的图片，名额和期限在 [`Self::thumbnail`] 和 [`Self::preview`] 之间共用。
+    async fn scaled(&self, record: &FileRecord, scale: Scale) -> Result<Vec<u8>, Failure> {
+        let not_viewable = |why: String| Failure::new(FileFailure::NotViewable, why);
+        if !can_thumbnail(&record.name, record.mime_type.as_deref()) {
+            return Err(not_viewable("这个类型没有预览或缩略图".to_owned()));
+        }
+        let reading = self.thumbnail_slot(&record.origin).await?;
+        let (data, reading) = tokio::time::timeout(
+            self.thumbnail_read_timeout,
+            self.read_for_thumbnail(record, reading),
+        )
+        .await
+        .map_err(|_| thumbnail_read_timed_out(&record.origin, self.thumbnail_read_timeout))??;
+        drop(reading);
+        let decode_busy = || Failure::new(FileFailure::ServiceUnavailable, "图片解码忙");
+        let _decoding = self
+            .thumbnail_decodes
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| decode_busy())?;
+        let decoded = async {
+            match scale {
+                Scale::Thumbnail => self.images.thumbnail(&data).await,
+                Scale::Preview => self.images.preview(&data).await,
+            }
+        };
+        tokio::time::timeout(self.thumbnail_decode_timeout, decoded)
+            .await
+            .map_err(|_| decode_busy())?
+            .map_err(|e| match e {
+                ImageError::Refused(why) => not_viewable(format!("做不了预览或缩略图：{why}")),
+                ImageError::Unavailable(why) => Failure::internal(why),
+            })
+    }
+
+    /// 读取名额。读卡住时后来的请求不能一直等。本地的等不到不归给来源，这一张可能什么问题都没有；插件的见 [`PluginSlots::acquire`]。
+    async fn thumbnail_slot(&self, origin: &Origin) -> Result<ThumbnailSlot, Failure> {
+        let wait = self.thumbnail_slot_wait;
+        match origin {
+            Origin::Share { .. } | Origin::Upload { .. } => {
+                let pool = self.local_thumbnail_reads.clone();
+                tokio::time::timeout(wait, pool.acquire_owned())
+                    .await
+                    .map(|permit| ThumbnailSlot::Local(permit.expect("信号量不会关闭")))
+                    .map_err(|_| Failure::new(FileFailure::ServiceUnavailable, "图片读取忙"))
+            }
+            Origin::Plugin { plugin, .. } => self
+                .plugin_thumbnail_reads
+                .acquire(plugin, wait)
+                .await
+                .map(ThumbnailSlot::Plugin),
+        }
+    }
+
+    /// 原文件的字节和它占着的名额。
+    async fn read_for_thumbnail(
+        &self,
+        record: &FileRecord,
+        reading: ThumbnailSlot,
+    ) -> Result<(Vec<u8>, ThumbnailSlot), Failure> {
+        if let Origin::Share { reference } | Origin::Upload { reference, .. } = &record.origin {
+            return self
+                .read_local_for_thumbnail(reference.clone(), reading)
+                .await;
+        }
+        let content = self
+            .content(record, RemoteRequest::whole())
+            .await
+            .map_err(|e| match e.kind {
+                FileFailure::ResourceTooLarge => too_big_for_thumbnail(),
+                _ => e,
+            })?;
+        let bytes = match content {
+            Content::Remote(response) => resource::read_limited(response, MAX_THUMBNAIL_INPUT)
+                .await?
+                .ok_or_else(too_big_for_thumbnail)?,
+            Content::Bytes(bytes) if bytes.len() > MAX_THUMBNAIL_INPUT => {
+                return Err(too_big_for_thumbnail());
+            }
+            Content::Bytes(bytes) => bytes,
+            Content::File(_) | Content::Unread { .. } => {
+                return Err(Failure::internal("插件的资源读出来不该是这样"));
+            }
+        };
+        Ok((bytes, reading))
+    }
+
+    /// 阻塞的读放不下来：调用方超时之后它还在跑（存储卡住时可能一直不回来），所以名额跟着它走，真读完才还。打开也在里面，一样会卡。
+    async fn read_local_for_thumbnail(
+        &self,
+        reference: ShareRef,
+        reading: ThumbnailSlot,
+    ) -> Result<(Vec<u8>, ThumbnailSlot), Failure> {
+        let shares = self.shares.clone();
+        #[cfg(test)]
+        let stalled = self.local_reads_stalled.clone();
+        tokio::task::spawn_blocking(move || {
+            #[cfg(test)]
+            let _stalled = stalled.blocking_read();
+            let opened = shares.open(&reference)?;
+            if opened.snapshot.size > MAX_THUMBNAIL_INPUT as u64 {
+                return Err(too_big_for_thumbnail());
+            }
+            // 文件可能在查过大小之后变大。
+            let mut file = opened.file.take(MAX_THUMBNAIL_INPUT as u64 + 1);
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)
+                .map_err(|e| Failure::internal(format!("读文件失败：{e}")))?;
+            if bytes.len() > MAX_THUMBNAIL_INPUT {
+                return Err(too_big_for_thumbnail());
+            }
+            Ok((bytes, reading))
+        })
+        .await
+        .map_err(|e| Failure::internal(format!("读文件的任务中止：{e}")))?
+    }
+
+    /// 把这个房间的 Bot 加进访问范围，返回加了哪些。房间里没有 Bot 时什么都不做：App 发链接时不用先判断。
     pub async fn grant_room(
         self: &Arc<Self>,
         id: &FileId,
         room: &str,
-        langs: &Languages,
     ) -> Result<Vec<String>, Failure> {
-        let (task, room, langs) = (id.clone(), room.to_owned(), langs.clone());
-        let turn = self.uploads.turn(id).await;
-        let bots = self
-            .blocking(move |files| {
-                files.authorize(&task, &Accessor::Owner, &langs)?;
-                // 主人已经在范围里，`grant` 也负责清掉过期时间（ADR-0020 的“生命周期”）。
+        let (id, room) = (id.clone(), room.to_owned());
+        self.blocking(move |files| {
+            files.authorize(&id, &Accessor::Owner)?;
+            let bots = files.host.bots_in_room(&room)?;
+            for bot in &bots {
                 files
                     .registry
-                    .grant(&task, Accessor::Owner, now_secs())?
-                    .ok_or_else(|| Failure::unknown(&langs))?;
-                let bots = files.host.bots_in_room(&room)?;
-                for bot in &bots {
-                    files
-                        .registry
-                        .grant_by_owner(&task, bot, now_secs())?
-                        .ok_or_else(|| Failure::unknown(&langs))?;
-                }
-                Ok(bots)
-            })
-            .await;
-        drop(turn);
-        bots
+                    .grant_by_owner(&id, bot, now_secs())?
+                    .ok_or_else(Failure::unknown)?;
+            }
+            Ok(bots)
+        })
+        .await
     }
 
     /// 单独收回一个 Bot 的访问：来源插件的授权收回时，主人亲手授权过的 Bot 不受影响，要靠这个。这个 Bot 再经工具找到同一个文件时，
     /// 按来源插件的授权算。
-    pub async fn revoke_bot(
-        self: &Arc<Self>,
-        id: &FileId,
-        bot: &str,
-        langs: &Languages,
-    ) -> Result<(), Failure> {
-        let (id, bot, langs) = (id.clone(), bot.to_owned(), langs.clone());
+    pub async fn revoke_bot(self: &Arc<Self>, id: &FileId, bot: &str) -> Result<(), Failure> {
+        let (id, bot) = (id.clone(), bot.to_owned());
         self.blocking(move |files| {
-            files.authorize(&id, &Accessor::Owner, &langs)?;
+            files.authorize(&id, &Accessor::Owner)?;
             files
                 .registry
                 .revoke_bot(&id, &bot)?
-                .ok_or_else(|| Failure::unknown(&langs))?;
+                .ok_or_else(Failure::unknown)?;
             Ok(())
         })
         .await
     }
 
-    /// 把链接发到“Wonton”私聊：主人所有设备都看得到卡片。发之前先清掉过期（和到期清理排同一个队），发不出去时文件多留一阵也好过链接被删掉。
-    pub async fn send_to_devices(
-        self: &Arc<Self>,
-        id: &FileId,
-        langs: &Languages,
-    ) -> Result<(), Failure> {
-        let (task, langs) = (id.clone(), langs.clone());
-        let turn = self.uploads.turn(id).await;
-        let granted = self
-            .blocking(move |files| {
-                files.authorize(&task, &Accessor::Owner, &langs)?;
-                files
-                    .registry
-                    .grant(&task, Accessor::Owner, now_secs())?
-                    .ok_or_else(|| Failure::unknown(&langs))?;
-                Ok(())
-            })
-            .await;
-        drop(turn);
-        granted?;
+    /// 把链接发到“Wonton”私聊：主人所有设备都看得到卡片。
+    pub async fn send_to_devices(&self, id: &FileId) -> Result<(), Failure> {
+        self.authorize(id, &Accessor::Owner)?;
         self.host.notify_owner(&id.link()).await
     }
 
     /// 删掉编号。设备上传的文件核对后连文件一起删；已经换成别的文件时编号照删、文件不动，返回 `file_changed`。其他来源的
     /// 原文件不动。删除和审计在单独的任务里一起做：请求断了也要做完，文件删了就要有审计。
-    pub async fn delete(
-        self: &Arc<Self>,
-        id: &FileId,
-        device: String,
-        langs: &Languages,
-    ) -> Result<(), Failure> {
+    pub async fn delete(self: &Arc<Self>, id: &FileId, device: String) -> Result<(), Failure> {
         let files = self.clone();
         let id = id.clone();
-        let langs = langs.clone();
         tokio::spawn(async move {
             // 和放文件排同一个队：不然放到一半的文件可能删完之后才冒出来。
             let _turn = files.uploads.turn(&id).await;
             let task = id.clone();
-            let langs = langs.clone();
-            let removed = files
-                .blocking(move |files| files.delete_now(&task, &langs))
-                .await;
+            let removed = files.blocking(move |files| files.delete_now(&task)).await;
             let outcome = match &removed {
                 Ok(outcome) => outcome,
                 Err(e) => e.kind.as_str(),
@@ -597,21 +699,16 @@ impl Files {
     }
 
     /// 返回审计要写的结果。目录没能确认落盘时记录也照删：文件这时已经没了，留着记录主人就删不掉这个编号，断电后文件回来的话审计里有据可查。
-    fn delete_now(&self, id: &FileId, langs: &Languages) -> Result<&'static str, Failure> {
-        let record = self.authorize(id, &Accessor::Owner, langs)?;
+    fn delete_now(&self, id: &FileId) -> Result<&'static str, Failure> {
+        let record = self.authorize(id, &Accessor::Owner)?;
         // 删失败了记录留着：文件还在，主人可以再删一次。
         let removed = match &record.origin {
             Origin::Upload { reference, placed } => {
                 // 放好之后清理没做完（崩溃了）的残留先清掉：待完成记录和数据还在的话，下次清理会把删掉的文件再放回来。
                 if !self.forget_now(id, true) {
-                    return Err(Failure::new(
-                        FileFailure::Internal,
-                        l10n::text(langs, "files-residual-undeletable", &[]),
-                    ));
+                    return Err(Failure::internal("清不掉这个上传的残留，文件没有删"));
                 }
-                self.shares
-                    .delete_if_unchanged(reference, placed, langs)
-                    .map_err(|e| share_failure(e, langs))?
+                self.shares.delete_if_unchanged(reference, placed)?
             }
             _ => Deleted::AlreadyGone,
         };
@@ -621,47 +718,23 @@ impl Files {
             Deleted::Removed { durable: true } | Deleted::AlreadyGone => Ok("ok"),
             Deleted::Changed => Err(Failure::new(
                 FileFailure::FileChanged,
-                l10n::text(langs, "files-path-collision", &[]),
+                "这个路径已经是别的文件了：编号删了，文件没动",
             )),
         }
     }
+}
 
-    /// 传完但链接没发出去的上传到期了：和 App 里删同一条核对，记录跟着删。调用方排着这个上传的队，没有请求头，里面的错误按英文说。
-    /// 开始之后才授权出去（链接又发了）的不删；名字上已经换成主人的文件时不再过期，留着记录。返回审计要写的结果。
-    fn delete_expired_now(&self, id: &FileId, now: u64) -> Result<&'static str, Failure> {
-        let record = match self.registry.get(id, now) {
-            Lookup::Expired(record) => record,
-            // 已经被删掉或者刚刚授权出去。
-            _ => return Ok("kept"),
-        };
-        let Origin::Upload { reference, placed } = &record.origin else {
-            return Ok("kept");
-        };
-        let langs = Languages::from_header(None);
-        if !self.forget_now(id, true) {
-            return Err(Failure::internal(l10n::text(
-                &langs,
-                "files-residual-undeletable",
-                &[],
-            )));
-        }
-        match self.shares.delete_if_unchanged(reference, placed, &langs) {
-            Ok(Deleted::AlreadyGone) => {
-                self.registry.remove(id)?;
-                Ok("expired")
-            }
-            Ok(Deleted::Removed { durable }) => {
-                // 文件已经没了，记录留着就删不掉这个编号。
-                self.registry.remove(id)?;
-                Ok(if durable { "expired" } else { DELETED_UNSYNCED })
-            }
-            Ok(Deleted::Changed) => {
-                self.registry.keep(id)?;
-                Ok("file_changed")
-            }
-            Err(e) => Err(share_failure(e, &langs)),
-        }
-    }
+/// 缩到多大。
+#[derive(Clone, Copy)]
+enum Scale {
+    Thumbnail,
+    Preview,
+}
+
+/// 占着的读取名额，读完才放下。
+enum ThumbnailSlot {
+    Local(#[allow(dead_code)] OwnedSemaphorePermit),
+    Plugin(#[allow(dead_code)] PluginSlot),
 }
 
 /// 新的上传编号。网关在转发创建请求之前就定好，tusd 回 500、可能不回 `Location` 时也知道是哪个上传。
@@ -676,6 +749,33 @@ fn new_id() -> FileId {
     FileId::from_bytes(bytes)
 }
 
+fn too_big_for_thumbnail() -> Failure {
+    Failure::new(
+        FileFailure::NotViewable,
+        format!("文件超过 {} MiB，不做缩略图", MAX_THUMBNAIL_INPUT >> 20),
+    )
+}
+
+/// 这个来源的文件多大还做得了缩略图：没有内网地址的插件资源只能经 `resources/read` 读。
+fn thumbnail_input_limit(origin: &Origin) -> u64 {
+    let limit = match origin {
+        Origin::Plugin {
+            internal_url: None, ..
+        } => MAX_THUMBNAIL_INPUT.min(MAX_RESOURCE_BYTES),
+        _ => MAX_THUMBNAIL_INPUT,
+    };
+    limit as u64
+}
+
+/// 插件读不完和 `/content` 一样算插件不可用；本地文件读不完不是插件的事，是核心这边（比如磁盘）出了问题。
+fn thumbnail_read_timed_out(origin: &Origin, after: Duration) -> Failure {
+    let why = format!("原文件 {after:?} 内没有读完");
+    match origin {
+        Origin::Plugin { .. } => Failure::new(FileFailure::PluginUnavailable, why),
+        Origin::Share { .. } | Origin::Upload { .. } => Failure::internal(why),
+    }
+}
+
 /// 审计里的设备：完整的 endpoint ID。
 pub fn device_label(device: &EndpointId) -> String {
     device.to_string()
@@ -685,7 +785,5 @@ pub fn device_label(device: &EndpointId) -> String {
 pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod tests_sources;
 #[cfg(test)]
 mod thumbnail_tests;

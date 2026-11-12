@@ -19,13 +19,7 @@ use crate::mcp::audit::Audit;
 use crate::plugin::PluginId;
 use crate::plugin::hostdir::Owner;
 use crate::plugin::image_worker::ImageWorker;
-use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
-
-/// 测试不挑语言：空的 `Languages` 协商成英文。
-pub(crate) fn any_langs() -> Languages {
-    Languages::from_header(None)
-}
 
 /// 预设回答的核心。
 #[derive(Default)]
@@ -56,28 +50,21 @@ pub struct FakeHost {
     pub revoked_for: Mutex<Vec<(String, String)>>,
     /// 正在做的 `resources/read`。
     pub reads_running: std::sync::atomic::AtomicUsize,
-    /// 卡住的 `resources/read` 到了卡的地方。
-    pub reads_stuck: tokio::sync::Notify,
-    /// 放行卡住的 `resources/read`。
-    pub reads_release: tokio::sync::Notify,
-    /// 读真的结束了（没有被丢掉时也一样）。每次读结束都会发，用的测试里只跑一次读。
-    pub reads_over: tokio::sync::Notify,
 }
 
-/// 读取结束或者被丢掉时减一，并通知等在“读真的结束”上的测试。
-struct RunningRead<'a>(&'a std::sync::atomic::AtomicUsize, &'a tokio::sync::Notify);
+/// 读取结束或者被丢掉时减一。
+struct RunningRead<'a>(&'a std::sync::atomic::AtomicUsize);
 
 impl<'a> RunningRead<'a> {
-    fn start(count: &'a std::sync::atomic::AtomicUsize, over: &'a tokio::sync::Notify) -> Self {
+    fn start(count: &'a std::sync::atomic::AtomicUsize) -> Self {
         count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Self(count, over)
+        Self(count)
     }
 }
 
 impl Drop for RunningRead<'_> {
     fn drop(&mut self) {
         self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-        self.1.notify_one();
     }
 }
 
@@ -130,11 +117,10 @@ impl FileHost for FakeHost {
     ) -> BoxFuture<'a, Result<Vec<u8>, Failure>> {
         async move {
             self.check_mcp(plugin)?;
-            let _running = RunningRead::start(&self.reads_running, &self.reads_over);
+            let _running = RunningRead::start(&self.reads_running);
             let stuck = self.reads_hang_for.lock().unwrap().as_deref() == Some(plugin.as_str());
             if stuck || self.reads_hang.load(std::sync::atomic::Ordering::SeqCst) {
-                self.reads_stuck.notify_one();
-                self.reads_release.notified().await;
+                std::future::pending::<()>().await;
             }
             if self
                 .reads_too_large
@@ -286,7 +272,6 @@ impl Fixture {
                     owner: self.owner,
                     placing_inode: None,
                 },
-                &Languages::from_header(None),
                 &mut |_, _| Ok(()),
             )
             .unwrap();
@@ -352,9 +337,4 @@ impl Fixture {
             .map(|line| serde_json::from_str(line).unwrap())
             .collect()
     }
-}
-
-/// `wonton-share:` 引用，测试里拼路径用。
-pub(crate) fn share(path: &str) -> ShareRef {
-    ShareRef::parse(&format!("wonton-share:{path}")).unwrap()
 }

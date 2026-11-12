@@ -36,8 +36,6 @@ home = { phosphor = "house", fill = true }
 image = { phosphor = "image", fill = true }
 imageBroken = { phosphor = "image-broken" }
 info = { phosphor = "info" }
-leave = { phosphor = "record" }
-list = { phosphor = "list" }
 lock = { phosphor = "lock", fill = true }
 lockKey = { phosphor = "lock-key" }
 more = { phosphor = "dots-three" }
@@ -45,11 +43,9 @@ music = { phosphor = "music-notes", fill = true }
 notify = { phosphor = "bell-ringing" }
 pause = { phosphor = "pause", fill = true }
 person = { phosphor = "user-plus" }
-pin = { phosphor = "push-pin", fill = true }
 play = { phosphor = "play", fill = true }
 qrCode = { phosphor = "qr-code" }
 refresh = { phosphor = "arrows-clockwise" }
-reply = { phosphor = "arrow-elbow-down-left", mirror = true }
 search = { phosphor = "magnifying-glass" }
 send = { phosphor = "arrow-up" }
 server = { phosphor = "hard-drives" }

@@ -9,7 +9,6 @@ use super::super::share_fs::tests::DIR_SYNC_FAILS;
 use super::tests::{new_upload, placed_without_record};
 use super::*;
 use crate::files::test_support::Fixture;
-use crate::files::test_support::any_langs;
 
 /// 作废时临时文件的目录没能落盘：待完成记录留着。清理这时看到完整的数据（比如崩溃在删数据之前），不能把作废的上传再放回去。
 #[tokio::test]
@@ -36,11 +35,7 @@ async fn an_abandoned_upload_is_never_placed_again() {
         "客户端已经接不上了"
     );
     assert_eq!(
-        f.files
-            .finish_upload(&id, &any_langs())
-            .await
-            .unwrap_err()
-            .kind,
+        f.files.finish_upload(&id).await.unwrap_err().kind,
         FileFailure::FileUnknown,
         "tusd 的钩子排在后面也一样"
     );
@@ -119,7 +114,7 @@ async fn placing_again_does_not_trust_a_planted_temporary_file() {
     fs::write(&temp, "planted").unwrap();
     fs::hard_link(&temp, transfers.join("invoice.pdf")).unwrap();
 
-    let record = f.files.finish_upload(&id, &any_langs()).await.unwrap();
+    let record = f.files.finish_upload(&id).await.unwrap();
     assert_eq!(record.name, "a.txt");
     assert_eq!(
         fs::read_to_string(transfers.join("a.txt")).unwrap(),
@@ -136,19 +131,10 @@ async fn a_hook_that_arrives_after_the_client_left_is_refused() {
     f.files.upload_unclaimed(&turn).await;
     drop(turn);
 
-    let refused = f
-        .files
-        .create_upload(upload, &any_langs())
-        .await
-        .unwrap_err();
+    let refused = f.files.create_upload(upload).await.unwrap_err();
     assert_eq!(refused.kind, FileFailure::InvalidInput);
     assert!(f.files.uploads.load_pending(upload.id).unwrap().is_none());
-    assert!(
-        f.files
-            .create_upload(new_upload(5), &any_langs())
-            .await
-            .is_ok()
-    );
+    assert!(f.files.create_upload(new_upload(5)).await.is_ok());
 }
 
 /// 记下的编号不会一直留着。

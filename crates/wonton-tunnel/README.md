@@ -12,10 +12,8 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
     endpoint ID。核心用它在进程内服务网关，并把设备身份交给网关。正常结束要 `shutdown`；没有 shutdown 就
     丢弃时复位流，客户端不会把被截断的数据当成正常结束。
 - **客户端**：`TunnelClient` 让所有请求复用一条连接，断开后下一次使用时自动重连，建连的时限和退避都在它这里（ADR-0032），
-  `retry_now` 跳过等待；开新流要等服务端给额度，等过 1 秒记一条带各类开着的流数的告警，3 秒还没有就关掉这条连接、
-  报 `transport-unavailable`，开流的那一次重试换新连接（同一条连接上开着的流一起断开）；`stats().streams` 是开着的流数；不设在线超时门禁；
-  用 `watch` 报告 `TunnelStatus`，只保留最新状态。App 不可见时调用 `set_suspendable(true)`（保持连接也在内），回前台检查后关掉：
-  双时钟检测执行断档，在首个新流之前开始共享检查，不等壳的前台事件、不重放请求。判据见 ADR-0032。App 回前台也调用 `revalidate`：服务端可能已经
+  `retry_now` 跳过等待；不设在线超时门禁；
+  用 `watch` 报告 `TunnelStatus`，只保留最新状态。App 从挂起中恢复时调用 `revalidate`：服务端可能已经
   放弃了这条连接而手机收不到关闭帧。快直连限时 1.5 秒，无慢证据的中继 3 秒，经主动 probe 证实的慢路径 8 秒；
   没回应就换新连接，不等 30 秒空闲超时。中继 3 秒按 ADR-0004 历史数据取值，未在真实中继复测；判据与取舍见 ADR-0032。
   平时定时调用 `probe`：心跳这些小包还能往返时 QUIC 算连接活着，请求却可能
@@ -49,11 +47,11 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
 
 ## 线协议（ALPN `wonton/tunnel/0`）
 
-设计见 [ADR-0072](../../docs/adr/0072-tunnel-udp.md)，线格式及长度限制以 [`wire`](src/wire.rs) 为准。
+做法参考 dumbpipe：一条 QUIC 连接上每条双向流对应一条 TCP 连接，流里原样转发字节。
 
-1. 客户端开流后先写 1 字节请求类型：`1` 转发、`2` ping、`3` 插件 TCP 端口（`Port`）、`4` UDP 流向（`Udp`）。
-2. 服务端先回 1 字节状态：`0` 成功、`1` 上游不可用、`2` 不支持请求、`3` 插件未安装、`4` 未声明端口、`5` 插件未运行。
-   旧服务端不认识扩展请求时回 `UnsupportedRequest`，不需要更换 ALPN。
+1. 客户端开流后先写 1 字节请求类型：`1` 转发、`2` ping。转发请求紧接着发送 TCP 字节，不等服务端回应。
+2. 服务端先回 1 字节状态：`0` 成功（转发请求随后是上游的原样字节）、`1` 连不上上游（交给嵌入方时是嵌入方
+   已停止接收）、`2` 不支持的请求类型。
 3. 服务端拒绝未配对或已吊销的设备时，用错误码 `403` 关闭整条连接。
 4. 转发中途出错时，两端用错误码 `1` 复位流，对端不会把被截断的数据当成正常结束。
 
@@ -85,35 +83,18 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
 - **入站**：`FederationProtocol`（`TunnelServer::spawn_embedded_with_pairing_and` 挂到核心的 router 上）。
   名单认过的连接，每条双向流原样接到本机 Tuwunel 的联邦端口（8448），不解 TLS。对方从名单里被去掉时，
   它的现有连接随即被关闭。
-- **出站**：`FederationForwarder::bind` 开一个 HTTP CONNECT 代理，本机 Tuwunel 的联邦出站经它走（Tuwunel
-  的 `proxy` 配置）。`CONNECT <服务器名>:8448` 按嵌入方提供的查找函数（服务器名 → 配对时记下的 endpoint ID
-  和地址）选路，对方接上它的 Tuwunel 后回 200，之后的字节（两台 Tuwunel 之间的 TLS）原样转发，不终结 TLS。
-  别的端口（Tuwunel 先拨 443 取 well-known）回 502，Tuwunel 随即改拨 8448；名字不在配对名单里回 403，
-  记一次 `unknown_server`；开头不是能读懂的 CONNECT 回 400，记一次 `invalid_request`；对方连不上回 502。
-- **每台对方服务器一条共享连接**：就是 [`TunnelClient`](src/client.rs)，ALPN 换成 `wonton/federation/0`
-  （`TunnelClient::with_alpn`），复用、退避、判死都归它。断了下次用时自动重连；定时 ping 探活，周期和
-  超时由 `bind` 的参数给。名字从查找函数里消失（对方被删除）时，连接和探活一起停。
+- **出站**：`FederationForwarder::bind` 在 Tuwunel 的网络上监听（Tuwunel 的 `/etc/hosts` 把每个配对过的
+  服务器名指向这个地址）。每条连接先读 TLS ClientHello 取 SNI（rustls 的 Acceptor，只解析、不回握手、
+  不终结 TLS），SNI 就是对方的 Matrix 服务器名；按嵌入方提供的查找函数（服务器名 → 配对时记下的
+  endpoint ID 和地址）选路，把已读的 ClientHello 和后续字节原样转过去。查找函数返回 `None`（名字不在
+  配对名单里）或开头不是带 SNI 的 ClientHello：关闭连接，分别记一次 `unknown_server` /
+  `invalid_client_hello`。
+- **每台对方服务器一条共享连接**（`TunnelClient` 的形状：复用、退避、探活）。断了下次用时按退避重连；
+  定时 ping 探活，周期和超时由 `bind` 的参数给。名字从查找函数里消失（对方被删除）时，连接和探活一起停。
 - **状态**：`watch_status` 给出每台对方服务器的 `PeerStatus`。`Connected` 是最近一次探活或数据往返成功；
   `Offline { since, last_error }` 是连不上（传输问题，不是对方的态度）；`RemovedByPeer` 是握手后被对方用
   403 关闭（对方名单里没有本机），对方的名单恢复后自动回到 `Connected`。Tuwunel 分不清“对方离线”和
   “对方拒绝”，嵌入方按这里的状态给 App 出不同的提示（ADR-0050 的“状态”）。
-
-## 服务器配对（ALPN `wonton/peer/0`）
-
-两台服务器的主人在 App 里配对服务器（ADR-0050）：一方出一张一次性码（`wonton://peer?…`，带 endpoint ID、
-直连和中继地址、Matrix 服务器名、密钥），另一方扫码后经这条 ALPN 连过来交换身份，出码方的主人在
-“Wonton”私聊里点同意，两边才记成已配对。和设备配对（[`pair`]）、联邦挂在同一个 endpoint 上。
-
-- **码**：`PeerPairingCode`，格式和取地址方式照设备配对码；一次性，过期作废。
-- **消息**：一条双向流一个 JSON 消息加一条回应（`PeerMessage` / `PeerReply`）。扫码方发 `scan`
-  （密钥、自己的服务器名、主人的用户 ID 和显示名、能被回连的地址），出码方回“等主人同意”附自己的
-  身份，或按原因拒绝（`PeerRejectReason`）。
-- **结果**：主人点了同意或拒绝后，出码方用扫码请求里的地址连回扫码方发 `decision`。扫码方只接受
-  自己扫过的那个 endpoint ID（[`PeerPairHandler::expecting_decision`] 说了算），别的来源一律回错。
-- **删除通知**：`removed` 消息，尽力而为；对方离线时，它以后在联邦握手被拒时知道。
-- **嵌入方**：实现 [`PeerPairHandler`]（验码、记配对、等主人回答），用
-  [`spawn_embedded_with_pairing_and`](crate::TunnelServer::spawn_embedded_with_pairing_and) 把这条 ALPN
-  和其他协议一起挂上。行为测试在 `tests/tunnel/peer_pair.rs`。
 
 ## 示例与实地测试
 
@@ -134,8 +115,3 @@ cargo run -p wonton-tunnel --example tunnel-client -- probe --server <服务端 
 
 行为测试在 `tests/tunnel/`（转发到 TCP 上游、交给嵌入方、App 用的本地代理各一组），只走本机回环地址，
 不依赖外网。
-
-客户端集成测试启用 `test-hooks` 时，HTTP 正向代理按接受本地连接的顺序加入
-`x-wonton-test-sequence`。独立隧道流和服务端任务可以乱序，订阅测试用它还原请求顺序，
-不把取消前已经发出的旧长轮询误判为退订。这个序号不进入 App 构建，也不适用于 CONNECT 内的加密请求。
-取消请求的乱序回归只挂住空订阅长轮询：房间行先变为已加入，不代表加入流程的临时订阅已经清理完毕。

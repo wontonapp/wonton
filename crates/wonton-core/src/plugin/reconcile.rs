@@ -1,12 +1,9 @@
 //! 核心重启或巡检时核对已装的插件：容器、网络、OIDC 客户端和密钥是否还和记录一致。
 
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use super::docker::NetworkReach;
 use super::health::{self, Checked};
-use super::health_gate::Gate;
-use super::languages::Languages;
 use super::lifecycle::client_spec;
 use super::manager::{Deployed, Health, InstallError, PluginManager};
 use super::manifest::Manifest;
@@ -14,7 +11,6 @@ use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
 use super::secrets::{self, Secrets};
 use super::store::InstalledRecord;
-use crate::l10n;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ContainersState {
@@ -22,325 +18,108 @@ pub(super) enum ContainersState {
     Stopped,
 }
 
-/// 看一眼插件的每个容器得到的结果。
-pub(super) struct Containers {
-    state: ContainersState,
-    /// 能用的服务：它的每个容器（Bot 服务的每份）都在运行、健康检查没失败。一次性服务不在里面。
-    serving: BTreeSet<String>,
-    /// 不健康的容器（或其他问题）的原因，按请求的语言写好，一个容器一条。容器不在不算这里的问题：
-    /// 全都不在时插件算停着，启动时照安装的路径重建（见 start.rs）。
-    failures: Vec<String>,
-    /// 不在的容器的原因，一条一个。插件还在跑时它们也进 `failures`（插件没死，但少了服务）；
-    /// 启动看到它们就先照安装的路径重建，不看别的核对结果（见 start.rs）。
-    missing: Vec<String>,
-}
-
-/// 核对结果的归类：正在跑、停着、缺容器和不健康混在一起时，按“是不是真问题”分成状态、能用的服务和原因。
-fn classify(
-    running: usize,
-    healthy: bool,
-    stopped: Vec<String>,
-    missing: Vec<String>,
-    failures: Vec<String>,
-    served: BTreeSet<String>,
-    langs: &Languages,
-) -> Containers {
-    // 容器不在不算停止以外的问题：常驻容器一个都没在跑、也没有真问题时（全不在的、和停着的混着的
-    // 都算）插件算停着，不是异常——启动按已安装记录照安装的路径重建（issue #126），App 的启动按钮
-    // 照常出现。只有它还缺在运行中间时才如实进原因：插件没死，但少了服务。
-    let mut failures = failures;
-    if running > 0 {
-        failures.extend(missing.iter().cloned());
-    }
-    let state = if running > 0 || (stopped.is_empty() && missing.is_empty()) {
-        // 有在跑的容器，或没有常驻容器可看（只有一次性服务）：照原有的分类。
-        ContainersState::Running(if healthy {
-            Health::Healthy
-        } else {
-            Health::Unknown
-        })
-    } else if failures.is_empty() {
-        ContainersState::Stopped
-    } else {
-        // 没有在跑的容器，却有真问题（不健康、OOM、一次性服务失败）：照旧按异常核对报。
-        ContainersState::Running(Health::Unknown)
-    };
-    if running > 0 && !stopped.is_empty() {
-        failures.push(l10n::text(
-            langs,
-            "plugin-install-resident-partial",
-            &[("containers", l10n::list(langs, &stopped).into())],
-        ));
-    }
-    Containers {
-        state,
-        serving: served,
-        failures,
-        missing,
-    }
-}
-
-impl Containers {
-    /// 现在能用的服务：网关、MCP 和模型按它决定异常时照不照常给路由。
-    pub(super) fn serving(&self) -> &BTreeSet<String> {
-        &self.serving
-    }
-
-    /// 有容器不在：启动时不看别的核对结果，先按安装的路径重建（见 start.rs）。
-    pub(super) fn has_missing(&self) -> bool {
-        !self.missing.is_empty()
-    }
-
-    /// 都就绪时为空；有不健康的就把它们一起列在原因里。
-    pub(super) fn problem(&self, langs: &Languages) -> Option<InstallError> {
-        let (first, rest) = self.failures.split_first()?;
-        if rest.is_empty() {
-            return Some(InstallError::Unhealthy(first.clone()));
-        }
-        let failures: Vec<&str> = self.failures.iter().map(String::as_str).collect();
-        Some(InstallError::Unhealthy(l10n::text(
-            langs,
-            "plugin-install-containers-unhealthy",
-            &[("failures", l10n::list(langs, &failures).into())],
-        )))
-    }
-
-    /// 都就绪时给容器状态；有不健康的就把它们一起列在原因里。
-    pub(super) fn ready(&self, langs: &Languages) -> Result<ContainersState, InstallError> {
-        match self.problem(langs) {
-            Some(problem) => Err(problem),
-            None => Ok(self.state),
-        }
-    }
-}
-
 impl PluginManager {
     /// 核心重启后核对插件：一次性服务已以 0 退出，长期运行的容器在运行、健康检查没有失败；核心在插件
     /// 网络里、OIDC 客户端已登记、插件密钥都在，并重新收存一次插件写下的密钥。`None` 表示常驻服务全部停止。
-    ///
-    /// 有容器没就绪不算核对失败：照样给出能用的服务、上游、代登录凭据和 MCP 地址，原因放进 `problem`，
-    /// 由网关、MCP 和模型按服务如实回答（见 [`Deployed`]）。网络、relay、密钥、OIDC 这些地址和凭据本身
-    /// 的问题仍然整体失败。核对里的漂移重建按 `gate` 等健康。
     pub(super) async fn reconcile(
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
-        gate: Gate,
     ) -> Result<Option<Deployed>, InstallError> {
         let manifest = &package.manifest;
         let slug = manifest.id.slug();
-        let langs = self.owner_languages();
         let network = self.cfg.instance.network(&slug);
         let expected = self.network_reach(manifest);
         let actual = self.engine.network_reach(&network).await?;
         if actual != Some(expected) {
-            return Err(InstallError::Conflict(l10n::text(
-                &langs,
-                "plugin-install-network-mismatch",
-                &[
-                    ("network", network.into()),
-                    ("actual", describe_reach(actual, &langs).into()),
-                    ("expected", describe_reach(Some(expected), &langs).into()),
-                ],
+            return Err(InstallError::Conflict(format!(
+                "插件网络 {network} {}，按清单和核心的运行方式应该{}：重装插件（可以不删数据）后生效",
+                describe_reach(actual),
+                describe_reach(Some(expected))
             )));
         }
         // 先接核心再看容器：靠核心的内部别名才起得来的插件，核心不接回去就一直崩，先看容器的话两边互相等。
         if let Some(core) = &self.cfg.core_container {
             self.attach_core(&network, core, manifest).await?;
         }
-        // 渲染和容器上的摘要对不上（核心升级换了注入的值，或旧容器没有摘要）就照安装的路径重建。全停着的
-        // 插件不在这里动，留给启动流程（见 start.rs）。
-        self.recreate_on_drift(package, record, &langs, false, gate)
-            .await?;
-        let checked = self.check_containers(package, &langs).await?;
-        let health = match checked.state {
-            ContainersState::Stopped => return Ok(None),
+        let health = match self.check_containers(package).await? {
             ContainersState::Running(health) => health,
+            ContainersState::Stopped => return Ok(None),
         };
-        let problem = checked.problem(&langs).map(|problem| problem.to_string());
         self.ensure_relays(manifest, record).await?;
         self.check_bot(manifest).await?;
         let secrets = self.check_secrets(manifest).await?;
-        let generated = secrets::generated_values(manifest, &secrets, &self.owner_languages())
-            .map_err(InstallError::Storage)?;
-        let proxy =
-            ProxyAuth::resolve(manifest, &generated, &langs).map_err(InstallError::Storage)?;
+        let generated =
+            secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
+        let proxy = ProxyAuth::resolve(manifest, &generated).map_err(InstallError::Storage)?;
         if let Some(secret) = &record.oidc_client_secret {
             let ctx = self
-                .install_context(
-                    manifest,
-                    Some(secret),
-                    generated,
-                    &record.effective_permissions(manifest),
-                    &langs,
-                )
+                .install_context(manifest, Some(secret), generated)
                 .await?;
-            self.hydra(&langs)?
+            self.hydra()?
                 .upsert_client(&client_spec(manifest, &ctx, secret))
                 .await?;
         }
         Ok(Some(Deployed {
             upstream: self.webui_upstream(manifest, &network).await?,
-            serving: checked.serving().clone(),
-            problem,
             health,
             models: self.models_upstream(manifest, &network).await?,
             mcp: self.mcp_upstream(manifest, &network, &secrets).await?,
             proxy: proxy.map(Arc::new),
             firewalled: record.firewalled,
-            hosted: self.hosted_upstreams(manifest, &network).await?,
         }))
     }
 
-    /// 跟着重建之后核对：重建刚按 `start_period` 等过健康，这里再漂移重建也按它等。
     pub(super) async fn reconcile_running(
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
     ) -> Result<Deployed, InstallError> {
-        match self.reconcile(package, record, Gate::StartPeriod).await? {
+        match self.reconcile(package, record).await? {
             Some(deployed) => Ok(deployed),
-            None => Err(InstallError::Unhealthy(l10n::text(
-                &self.owner_languages(),
-                "plugin-install-resident-stopped",
-                &[],
-            ))),
+            None => Err(InstallError::Unhealthy("插件的常驻服务已停止".to_owned())),
         }
     }
 
-    /// `webui.health` 的一次探测：2xx/3xx 之外都算不健康，失败原因带状态码或连不上的原因。
-    async fn probe_webui_health(
-        &self,
-        container: &str,
-        path: &str,
-        endpoint: Option<&super::upstreams::Endpoint>,
-    ) -> Result<(), String> {
-        let langs = self.owner_languages();
-        let Some(endpoint) = endpoint else {
-            return Err(l10n::text(
-                &langs,
-                "plugin-install-container-health-probe-failed",
-                &[
-                    ("container", container.into()),
-                    ("path", path.into()),
-                    ("reason", "no known address".into()),
-                ],
-            ));
-        };
-        match super::upstreams::status(&self.http, endpoint, path, super::upstreams::PROBE_TIMEOUT)
-            .await
-        {
-            Ok(200..=399) => Ok(()),
-            outcome => {
-                let reason = match outcome {
-                    Ok(code) => format!("HTTP {code}"),
-                    Err(e) => e.to_string(),
-                };
-                Err(l10n::text(
-                    &langs,
-                    "plugin-install-container-health-probe-failed",
-                    &[
-                        ("container", container.into()),
-                        ("path", path.into()),
-                        ("reason", reason.into()),
-                    ],
-                ))
-            }
-        }
-    }
-
-    /// 看一眼插件的每个容器，不等待。不因为第一个不健康的容器就停下，把每个都看一遍。
+    /// 看一眼插件的每个容器，不等待。不在应有的状态是 [`InstallError::Unhealthy`]。
     pub(super) async fn check_containers(
         &self,
         package: &PluginPackage,
-        langs: &Languages,
-    ) -> Result<Containers, InstallError> {
+    ) -> Result<ContainersState, InstallError> {
         let slug = package.manifest.id.slug();
         let one_shot = package.one_shot_services();
-        let bot_services = super::bot_services::bot_services(&package.manifest);
-        let bots = self.bot_names(&package.manifest.id);
         let mut running = 0;
         let mut healthy = true;
-        let mut stopped = Vec::new();
-        let mut failures = Vec::new();
-        let mut missing = Vec::new();
-        let mut served = BTreeSet::new();
-        // 声明了 `webui.health` 的网页服务由核心代探测（镜像里没有 shell，写不出 healthcheck）。
-        let probed = match &package.manifest.webui {
-            Some(webui) if webui.health.is_some() => {
-                let network = self.cfg.instance.network(&slug);
-                let endpoint = self.webui_upstream(&package.manifest, &network).await?;
-                Some((
-                    webui.service.clone(),
-                    webui.health.clone().unwrap_or_default(),
-                    endpoint,
-                ))
-            }
-            _ => None,
-        };
-        // Bot 服务按 Bot 一组容器，每个都核对；全插件一份的服务照旧一个。
-        let instances = |service: &str| -> Vec<String> {
-            if bot_services.contains(service) && !bots.is_empty() {
-                bots.iter()
-                    .map(|bot| self.cfg.instance.bot_container(&slug, service, bot))
-                    .collect()
-            } else {
-                vec![self.cfg.instance.container(&slug, service)]
-            }
-        };
+        let mut stopped = None;
         for service in package.service_names() {
-            // 这个服务能不能用：它的每一份容器都在运行、健康检查没失败。
-            let mut serving = true;
-            for name in instances(service) {
-                let checked = health::check_now(
-                    &self.engine,
-                    &name,
-                    service,
-                    one_shot.contains(service),
-                    langs,
-                )
-                .await?;
-                match checked {
-                    Checked::Completed => {}
-                    Checked::Healthy | Checked::Running => {
-                        running += 1;
-                        // 探测过的网页服务以代探测为准，其余的只有在跑、不知道健康。
-                        match probed.as_ref().filter(|(web, _, _)| web == service) {
-                            Some((_, path, endpoint)) => {
-                                if let Err(reason) = self
-                                    .probe_webui_health(&name, path, endpoint.as_ref())
-                                    .await
-                                {
-                                    healthy = false;
-                                    serving = false;
-                                    failures.push(reason);
-                                }
-                            }
-                            None if checked == Checked::Running => healthy = false,
-                            None => {}
-                        }
-                    }
-                    Checked::Stopped => {
-                        serving = false;
-                        stopped.push(name);
-                    }
-                    Checked::Missing(reason) => {
-                        serving = false;
-                        missing.push(reason);
-                    }
-                    Checked::Failed(reason) => {
-                        serving = false;
-                        failures.push(reason);
-                    }
+            let name = self.cfg.instance.container(&slug, service);
+            match health::check_now(&self.engine, &name, service, one_shot.contains(service))
+                .await?
+            {
+                Checked::Completed => {}
+                Checked::Healthy => running += 1,
+                Checked::Running => {
+                    running += 1;
+                    healthy = false;
                 }
-            }
-            if serving && !one_shot.contains(service) {
-                served.insert(service.to_owned());
+                Checked::Stopped => stopped = Some(name),
+                Checked::Failed(reason) => return Err(InstallError::Unhealthy(reason)),
             }
         }
-        Ok(classify(
-            running, healthy, stopped, missing, failures, served, langs,
-        ))
+        if let Some(container) = stopped {
+            return if running == 0 {
+                Ok(ContainersState::Stopped)
+            } else {
+                Err(InstallError::Unhealthy(format!(
+                    "部分常驻服务仍在运行，容器 {container} 已停止"
+                )))
+            };
+        }
+        Ok(ContainersState::Running(if healthy {
+            Health::Healthy
+        } else {
+            Health::Unknown
+        }))
     }
 
     /// 核对插件密钥：生成的都还在，插件写下的重新收存一次，变了就更新。返回全量密钥（generate 和
@@ -351,29 +130,19 @@ impl PluginManager {
         }
         let store = self.store.secrets();
         let mut secrets = store.load(&manifest.id)?.unwrap_or_default();
-        secrets::generated_values(manifest, &secrets, &self.owner_languages())
-            .map_err(InstallError::Storage)?;
-        if secrets::collect(
-            &self.engine,
-            &self.cfg.instance,
-            manifest,
-            &self.bot_names(&manifest.id),
-            &mut secrets,
-            &self.owner_languages(),
-        )
-        .await?
-        {
+        secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
+        if secrets::collect(&self.engine, &self.cfg.instance, manifest, &mut secrets).await? {
             store.save(&manifest.id, &secrets)?;
         }
         Ok(secrets)
     }
 }
 
-fn describe_reach(reach: Option<NetworkReach>, langs: &Languages) -> String {
+fn describe_reach(reach: Option<NetworkReach>) -> &'static str {
     match reach {
-        None => l10n::text(langs, "plugin-install-reach-none", &[]),
-        Some(NetworkReach::Egress) => l10n::text(langs, "plugin-install-reach-egress", &[]),
-        Some(NetworkReach::Internal) => l10n::text(langs, "plugin-install-reach-internal", &[]),
-        Some(NetworkReach::Isolated) => l10n::text(langs, "plugin-install-reach-isolated", &[]),
+        None => "不存在",
+        Some(NetworkReach::Egress) => "能出网",
+        Some(NetworkReach::Internal) => "不能出网",
+        Some(NetworkReach::Isolated) => "不能出网、和宿主隔开",
     }
 }

@@ -2,16 +2,12 @@
 //! （[`super::probe`]）、Docker 的网桥和主人的选择，输出是地址或者选不出的原因。
 
 use std::collections::BTreeSet;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 
 use wonton_protocol::{LanChoice, LanFailure};
 
-use super::announce::Announced;
 use super::is_private;
-use super::platform::DesktopVm;
 use super::probe::{HostAddress, HostInterface, HostNetwork};
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 /// Docker 的网桥：按 Docker 的网络列表认（网桥设备的名字、网关地址），不按名字的样子猜。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -38,11 +34,11 @@ impl Kind {
         matches!(self, Self::Tunnel | Self::WireGuard)
     }
 
-    fn describe(self, langs: &Languages) -> String {
+    fn describe(self) -> &'static str {
         match self {
-            Self::Tunnel => l10n::text(langs, "plugin-settings-lan-kind-tunnel", &[]),
-            Self::WireGuard => l10n::text(langs, "plugin-settings-lan-kind-wireguard", &[]),
-            _ => l10n::text(langs, "plugin-settings-lan-kind-interface", &[]),
+            Self::Tunnel => "隧道网卡，如 Tailscale",
+            Self::WireGuard => "WireGuard 网卡",
+            _ => "网卡",
         }
     }
 }
@@ -63,36 +59,15 @@ pub struct Host {
     /// 默认路由所在的网卡在前，其余按名字。
     pub candidates: Vec<Candidate>,
     /// metric 最小的默认路由走的网卡，和它为什么不能自动选（虚拟网卡时）。
-    pub default_route: Option<(String, Option<String>)>,
-    /// 认出来的桌面虚拟机。
-    pub desktop_vm: Option<DesktopVm>,
+    pub default_route: Option<(String, Option<&'static str>)>,
 }
 
 /// 选出的一个地址。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bound {
     pub ip: IpAddr,
-    /// 地址所在的网卡；通配地址和 `WONTON_LAN_ADDRESSES` 指定的、检测不到网卡的地址为空。
+    /// 地址所在的网卡；`WONTON_LAN_ADDRESSES` 指定的地址检测不到网卡时为空。
     pub interface: Option<String>,
-}
-
-/// 这次端口开在哪、告诉手机去哪。
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Plan {
-    /// 端口发布在哪些地址上。
-    pub bind: Vec<Bound>,
-    /// 告诉手机去哪连的地址。
-    pub announce: Vec<IpAddr>,
-}
-
-impl Plan {
-    /// 宣告地址和绑定地址不是一回事：启动器声明了宣告地址。
-    pub fn has_announce(&self) -> bool {
-        self.bind
-            .iter()
-            .map(|bound| bound.ip)
-            .ne(self.announce.iter().copied())
-    }
 }
 
 /// 选不出地址的原因。
@@ -112,7 +87,7 @@ impl Problem {
 }
 
 /// 把检测结果整理成候选网卡和默认路由。
-pub fn classify(network: &HostNetwork, docker: &DockerBridges, langs: &Languages) -> Host {
+pub fn classify(network: &HostNetwork, docker: &DockerBridges) -> Host {
     let kinds: Vec<(&HostInterface, Option<Kind>)> = network
         .interfaces
         .iter()
@@ -145,8 +120,8 @@ pub fn classify(network: &HostNetwork, docker: &DockerBridges, langs: &Languages
     candidates.sort_by(|a, b| (!a.default_route, &a.name).cmp(&(!b.default_route, &b.name)));
     let default_route = default.map(|name| {
         let why = match kinds.iter().find(|(i, _)| i.name == name) {
-            Some((_, None)) => Some(l10n::text(langs, "plugin-settings-lan-bridge-or-veth", &[])),
-            Some((_, Some(kind))) if kind.is_virtual() => Some(kind.describe(langs)),
+            Some((_, None)) => Some("Docker 的网桥或者 veth"),
+            Some((_, Some(kind))) if kind.is_virtual() => Some(kind.describe()),
             _ => None,
         };
         (name, why)
@@ -154,7 +129,6 @@ pub fn classify(network: &HostNetwork, docker: &DockerBridges, langs: &Languages
     Host {
         candidates,
         default_route,
-        desktop_vm: super::platform::desktop_vm(network),
     }
 }
 
@@ -180,35 +154,14 @@ fn kind(interface: &HostInterface, docker: &DockerBridges) -> Option<Kind> {
     })
 }
 
-/// 按主人声明的宣告地址、`WONTON_LAN_ADDRESSES` 或主人的选择算出端口开在哪、告诉手机去哪。
-///
-/// 声明了宣告地址时绑通配地址：宣告地址是电脑（宿主）的地址，不一定在虚拟机的网卡上，绑到它上面容器起不来
-/// （ADR-0019 的“绑定地址和宣告地址分开”）。
+/// 按主人的选择（或 `WONTON_LAN_ADDRESSES`）算出端口开在哪些地址上。
 pub fn resolve(
     host: &Host,
     choice: &LanChoice,
     fixed: Option<&[IpAddr]>,
-    announce: Option<&[Announced]>,
-    langs: &Languages,
-) -> Result<Plan, Problem> {
-    if let Some(announce) = announce {
-        return Ok(announced(announce));
-    }
-    if let Some(vm) = &host.desktop_vm {
-        return Err(Problem::new(
-            LanFailure::DesktopVm,
-            l10n::text(
-                langs,
-                "plugin-settings-lan-desktop-vm",
-                &[
-                    ("product", vm.product.into()),
-                    ("evidence", vm.evidence.clone().into()),
-                ],
-            ),
-        ));
-    }
-    let bind: Vec<Bound> = match fixed {
-        Some(fixed) => fixed
+) -> Result<Vec<Bound>, Problem> {
+    if let Some(fixed) = fixed {
+        return fixed
             .iter()
             .map(|ip| match locate(host, *ip) {
                 Some(interface) => Ok(Bound {
@@ -217,69 +170,36 @@ pub fn resolve(
                 }),
                 None => Err(Problem::new(
                     LanFailure::Missing,
-                    l10n::text(
-                        langs,
-                        "plugin-settings-lan-fixed-missing",
-                        &[("ip", ip.to_string().into())],
-                    ),
+                    format!("WONTON_LAN_ADDRESSES 里的 {ip} 不在宿主上"),
                 )),
             })
-            .collect::<Result<Vec<Bound>, Problem>>()?,
-        None => match choice {
-            LanChoice::Auto => vec![auto(host, langs)?],
-            LanChoice::Manual {
-                interfaces,
-                addresses,
-            } => manual(host, interfaces, addresses, langs)?,
-            LanChoice::Unknown => {
-                return Err(Problem::new(
-                    LanFailure::Other,
-                    l10n::text(langs, "plugin-settings-lan-choice-unknown", &[]),
-                ));
-            }
-        },
-    };
-    let announce = bind.iter().map(|bound| bound.ip).collect();
-    Ok(Plan { bind, announce })
-}
-
-/// 声明了宣告地址：绑通配地址，宣告用它。IPv4 和 IPv6 各一个通配，按宣告地址有没有这种。
-pub fn announced(announce: &[Announced]) -> Plan {
-    let mut bind = Vec::new();
-    if announce.iter().any(|a| a.ip.is_ipv4()) {
-        bind.push(Bound {
-            ip: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-            interface: None,
-        });
+            .collect();
     }
-    if announce.iter().any(|a| a.ip.is_ipv6()) {
-        bind.push(Bound {
-            ip: IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-            interface: None,
-        });
-    }
-    Plan {
-        bind,
-        announce: announce.iter().map(|a| a.ip).collect(),
+    match choice {
+        LanChoice::Auto => auto(host).map(|bound| vec![bound]),
+        LanChoice::Manual {
+            interfaces,
+            addresses,
+        } => manual(host, interfaces, addresses),
+        LanChoice::Unknown => Err(Problem::new(
+            LanFailure::Other,
+            "存下的局域网设置这个版本的核心不认识，要重新选",
+        )),
     }
 }
 
 /// 默认路由所在网卡的第一个私有 IPv4 主地址。
-fn auto(host: &Host, langs: &Languages) -> Result<Bound, Problem> {
+fn auto(host: &Host) -> Result<Bound, Problem> {
     let Some((name, why)) = &host.default_route else {
         return Err(Problem::new(
             LanFailure::NoDefaultRoute,
-            l10n::text(langs, "plugin-settings-lan-no-default-route", &[]),
+            "宿主没有 IPv4 默认路由",
         ));
     };
     if let Some(why) = why {
         return Err(Problem::new(
             LanFailure::VirtualInterface,
-            l10n::text(
-                langs,
-                "plugin-settings-lan-default-virtual",
-                &[("name", name.clone().into()), ("why", why.clone().into())],
-            ),
+            format!("默认路由走的是 {name}（{why}），不自动选"),
         ));
     }
     let candidate = host.candidates.iter().find(|c| &c.name == name);
@@ -296,22 +216,13 @@ fn auto(host: &Host, langs: &Languages) -> Result<Bound, Problem> {
         }),
         None => Err(Problem::new(
             LanFailure::NoPrivateAddress,
-            l10n::text(
-                langs,
-                "plugin-settings-lan-default-no-private",
-                &[("name", name.clone().into())],
-            ),
+            format!("默认路由所在的网卡 {name} 上没有私有 IPv4 地址"),
         )),
     }
 }
 
 /// 主人选的网卡（用上面全部的私有 IPv4 地址）和地址，合在一起，去重。
-fn manual(
-    host: &Host,
-    interfaces: &[String],
-    addresses: &[String],
-    langs: &Languages,
-) -> Result<Vec<Bound>, Problem> {
+fn manual(host: &Host, interfaces: &[String], addresses: &[String]) -> Result<Vec<Bound>, Problem> {
     let mut bound: Vec<Bound> = Vec::new();
     let mut add = |ip: IpAddr, interface: &str| {
         if !bound.iter().any(|b| b.ip == ip) {
@@ -325,11 +236,7 @@ fn manual(
         let Some(candidate) = host.candidates.iter().find(|c| &c.name == name) else {
             return Err(Problem::new(
                 LanFailure::Missing,
-                l10n::text(
-                    langs,
-                    "plugin-settings-lan-interface-gone",
-                    &[("name", name.clone().into())],
-                ),
+                format!("选的网卡 {name} 不在宿主上了，或者上面没有私有地址"),
             ));
         };
         let v4: Vec<IpAddr> = candidate
@@ -341,11 +248,7 @@ fn manual(
         if v4.is_empty() {
             return Err(Problem::new(
                 LanFailure::NoPrivateAddress,
-                l10n::text(
-                    langs,
-                    "plugin-settings-lan-interface-no-private",
-                    &[("name", name.clone().into())],
-                ),
+                format!("选的网卡 {name} 上没有私有 IPv4 地址"),
             ));
         }
         v4.into_iter().for_each(|ip| add(ip, name));
@@ -358,20 +261,13 @@ fn manual(
         let Some((ip, interface)) = found else {
             return Err(Problem::new(
                 LanFailure::Missing,
-                l10n::text(
-                    langs,
-                    "plugin-settings-lan-address-gone",
-                    &[("address", text.clone().into())],
-                ),
+                format!("选的地址 {text} 不在宿主上了"),
             ));
         };
         add(ip, &interface);
     }
     if bound.is_empty() {
-        return Err(Problem::new(
-            LanFailure::Other,
-            l10n::text(langs, "plugin-settings-lan-no-selection", &[]),
-        ));
+        return Err(Problem::new(LanFailure::Other, "一个网卡或地址都没选"));
     }
     Ok(bound)
 }
@@ -389,64 +285,39 @@ fn locate(host: &Host, ip: IpAddr) -> Option<String> {
 pub fn check_choice(
     host: &Host,
     choice: &LanChoice,
-    langs: &Languages,
 ) -> Result<Vec<Bound>, Result<String, Problem>> {
     match choice {
-        LanChoice::Unknown => {
-            return Err(Ok(l10n::text(
-                langs,
-                "plugin-settings-lan-choice-unrecognized",
-                &[],
-            )));
-        }
+        LanChoice::Unknown => return Err(Ok("不认识这种选法".to_owned())),
         LanChoice::Manual {
             interfaces,
             addresses,
         } => {
             if interfaces.is_empty() && addresses.is_empty() {
-                return Err(Ok(l10n::text(
-                    langs,
-                    "plugin-settings-lan-no-selection",
-                    &[],
-                )));
+                return Err(Ok("一个网卡或地址都没选".to_owned()));
             }
             if let Some(name) = interfaces
                 .iter()
                 .find(|n| !host.candidates.iter().any(|c| &c.name == *n))
             {
-                return Err(Ok(l10n::text(
-                    langs,
-                    "plugin-settings-lan-interface-not-selectable",
-                    &[("name", name.clone().into())],
-                )));
+                return Err(Ok(format!("{name} 不是宿主上可以选的网卡")));
             }
             let listed = |text: &String| {
                 text.parse::<IpAddr>()
                     .is_ok_and(|ip| locate(host, ip).is_some())
             };
             if let Some(text) = addresses.iter().find(|t| !listed(t)) {
-                return Err(Ok(l10n::text(
-                    langs,
-                    "plugin-settings-lan-address-not-selectable",
-                    &[("address", text.clone().into())],
-                )));
+                return Err(Ok(format!("{text} 不是宿主上可以选的地址")));
             }
         }
         LanChoice::Auto => {}
     }
-    resolve(host, choice, None, None, langs)
-        .map(|plan| plan.bind)
-        .map_err(Err)
+    resolve(host, choice, None).map_err(Err)
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::probe::DefaultRoute;
     use super::*;
-
-    fn langs() -> Languages {
-        Languages::default()
-    }
 
     fn address(ip: &str) -> HostAddress {
         HostAddress {
@@ -472,9 +343,9 @@ mod tests {
         }
     }
 
-    /// 物理服务器那样的宿主：有线、Wi-Fi 各一条默认路由，有 Tailscale、Docker 网桥和 veth，有 IPv6 全局地址和 ULA。
-    fn server() -> HostNetwork {
-        let mut wifi = nic("wlp2s0", &["192.168.0.11"]);
+    /// npchy 那样的宿主：有线、Wi-Fi 各一条默认路由，有 Tailscale、Docker 网桥和 veth，有 IPv6 全局地址和 ULA。
+    fn npchy() -> HostNetwork {
+        let mut wifi = nic("wlp2s0", &["192.168.0.82"]);
         wifi.devtype = Some("wlan".into());
         wifi.physical = true;
         let mut tailscale = nic("tailscale0", &["100.101.102.103", "fd7a:115c:a1e0::1"]);
@@ -498,10 +369,10 @@ mod tests {
                     "eno1",
                     &[
                         "fe80::1",
-                        "2001:db8::1",
+                        "2408:8207::1",
                         "fd00::10",
-                        "192.168.0.10",
-                        "192.168.0.13",
+                        "192.168.0.193",
+                        "192.168.0.199",
                     ],
                 ),
                 wifi,
@@ -511,9 +382,6 @@ mod tests {
                 veth,
                 lo,
             ],
-            subnets: vec![],
-            kernel: None,
-            dmi: None,
         }
     }
 
@@ -528,28 +396,24 @@ mod tests {
         bound.iter().map(|b| b.ip.to_string()).collect()
     }
 
-    fn texts(addresses: &[IpAddr]) -> Vec<String> {
-        addresses.iter().map(ToString::to_string).collect()
-    }
-
     #[test]
     fn auto_picks_the_primary_private_ipv4_of_the_lowest_metric_default_route() {
-        let host = classify(&server(), &docker(), &langs());
+        let host = classify(&npchy(), &docker());
         let names: Vec<&str> = host.candidates.iter().map(|c| c.name.as_str()).collect();
         // Docker 的网桥按名字和网关地址认出来，veth、环回没有私有地址也不进候选；默认路由的网卡在前。
         assert_eq!(names, ["eno1", "tailscale0", "wlp2s0"]);
         let eno1 = &host.candidates[0];
         assert_eq!(eno1.kind, Kind::Ethernet);
-        // 只列私有地址，IPv4 在前：公网的 2001:db8::/32 和链路本地的 fe80::/10 都不列。
+        // 只列私有地址，IPv4 在前：公网的 2408::/16 和链路本地的 fe80::/10 都不列。
         let listed: Vec<String> = eno1.addresses.iter().map(|a| a.ip.to_string()).collect();
-        assert_eq!(listed, ["192.168.0.10", "192.168.0.13", "fd00::10"]);
+        assert_eq!(listed, ["192.168.0.193", "192.168.0.199", "fd00::10"]);
         assert_eq!(host.candidates[1].kind, Kind::Tunnel);
         assert_eq!(host.candidates[2].kind, Kind::Wifi);
-        let bound = resolve(&host, &LanChoice::Auto, None, None, &langs()).unwrap();
+        let bound = resolve(&host, &LanChoice::Auto, None).unwrap();
         assert_eq!(
-            bound.bind,
+            bound,
             [Bound {
-                ip: "192.168.0.10".parse().unwrap(),
+                ip: "192.168.0.193".parse().unwrap(),
                 interface: Some("eno1".into())
             }]
         );
@@ -558,27 +422,21 @@ mod tests {
     #[test]
     fn auto_refuses_virtual_default_routes_and_says_why() {
         let reason = |network: &HostNetwork| {
-            resolve(
-                &classify(network, &docker(), &langs()),
-                &LanChoice::Auto,
-                None,
-                None,
-                &langs(),
-            )
-            .unwrap_err()
-            .reason
+            resolve(&classify(network, &docker()), &LanChoice::Auto, None)
+                .unwrap_err()
+                .reason
         };
-        let mut network = server();
+        let mut network = npchy();
         network.routes = vec![route("tailscale0", 0), route("eno1", 100)];
         assert_eq!(reason(&network), LanFailure::VirtualInterface);
-        let mut network = server();
+        let mut network = npchy();
         network.routes = vec![route("docker0", 0)];
         assert_eq!(reason(&network), LanFailure::VirtualInterface);
-        let mut network = server();
+        let mut network = npchy();
         network.routes.clear();
         assert_eq!(reason(&network), LanFailure::NoDefaultRoute);
         // 默认路由的网卡上只有公网地址。
-        let mut network = server();
+        let mut network = npchy();
         network.interfaces[0].addresses = vec![address("203.0.113.5")];
         assert_eq!(reason(&network), LanFailure::NoPrivateAddress);
         // 主人自己的网桥不算虚拟网卡：虚拟机主机上默认路由常在 br0 上。
@@ -587,199 +445,98 @@ mod tests {
         let network = HostNetwork {
             routes: vec![route("br0", 0)],
             interfaces: vec![br0],
-            subnets: vec![],
-            kernel: None,
-            dmi: None,
         };
-        let host = classify(&network, &docker(), &langs());
+        let host = classify(&network, &docker());
         assert_eq!(host.candidates[0].kind, Kind::Bridge);
         assert_eq!(
-            ips(&resolve(&host, &LanChoice::Auto, None, None, &langs())
-                .unwrap()
-                .bind),
+            ips(&resolve(&host, &LanChoice::Auto, None).unwrap()),
             ["10.0.0.2"]
         );
     }
 
     #[test]
     fn manual_choices_combine_interfaces_and_addresses() {
-        let host = classify(&server(), &docker(), &langs());
+        let host = classify(&npchy(), &docker());
         let choice = LanChoice::Manual {
             interfaces: vec!["eno1".into(), "tailscale0".into()],
-            addresses: vec!["fd00::10".into(), "192.168.0.10".into()],
+            addresses: vec!["fd00::10".into(), "192.168.0.193".into()],
         };
         // 选网卡只用它的 IPv4 地址（主、从都用），IPv6 要逐个选；重复的只算一次。
         assert_eq!(
-            ips(&resolve(&host, &choice, None, None, &langs()).unwrap().bind),
+            ips(&resolve(&host, &choice, None).unwrap()),
             [
-                "192.168.0.10",
-                "192.168.0.13",
+                "192.168.0.193",
+                "192.168.0.199",
                 "100.101.102.103",
                 "fd00::10"
             ]
         );
         let gone = LanChoice::Manual {
             interfaces: vec![],
-            addresses: vec!["192.168.0.14".into()],
+            addresses: vec!["192.168.0.68".into()],
         };
         assert_eq!(
-            resolve(&host, &gone, None, None, &langs())
-                .unwrap_err()
-                .reason,
+            resolve(&host, &gone, None).unwrap_err().reason,
             LanFailure::Missing
         );
         let only_v6 = classify(
             &HostNetwork {
                 routes: vec![],
                 interfaces: vec![nic("eth1", &["fd00::20"])],
-                subnets: vec![],
-                kernel: None,
-                dmi: None,
             },
             &docker(),
-            &langs(),
         );
         let choice = LanChoice::Manual {
             interfaces: vec!["eth1".into()],
             addresses: vec![],
         };
         assert_eq!(
-            resolve(&only_v6, &choice, None, None, &langs())
-                .unwrap_err()
-                .reason,
+            resolve(&only_v6, &choice, None).unwrap_err().reason,
             LanFailure::NoPrivateAddress
         );
     }
 
     #[test]
     fn fixed_addresses_override_the_choice_and_must_be_on_the_host() {
-        let host = classify(&server(), &docker(), &langs());
-        let fixed: Vec<IpAddr> = vec!["192.168.0.11".parse().unwrap()];
-        let plan = resolve(&host, &LanChoice::Auto, Some(&fixed), None, &langs()).unwrap();
-        assert_eq!(plan.bind[0].interface.as_deref(), Some("wlp2s0"));
-        assert_eq!(plan.announce, fixed);
+        let host = classify(&npchy(), &docker());
+        let fixed: Vec<IpAddr> = vec!["192.168.0.82".parse().unwrap()];
+        let bound = resolve(&host, &LanChoice::Auto, Some(&fixed)).unwrap();
+        assert_eq!(bound[0].interface.as_deref(), Some("wlp2s0"));
         let fixed: Vec<IpAddr> = vec!["10.1.2.3".parse().unwrap()];
-        let problem = resolve(&host, &LanChoice::Auto, Some(&fixed), None, &langs()).unwrap_err();
+        let problem = resolve(&host, &LanChoice::Auto, Some(&fixed)).unwrap_err();
         assert_eq!(problem.reason, LanFailure::Missing);
     }
 
     #[test]
     fn new_choices_are_checked_before_they_are_saved() {
-        let host = classify(&server(), &docker(), &langs());
+        let host = classify(&npchy(), &docker());
         let manual = |interfaces: &[&str], addresses: &[&str]| LanChoice::Manual {
             interfaces: interfaces.iter().map(|s| (*s).to_owned()).collect(),
             addresses: addresses.iter().map(|s| (*s).to_owned()).collect(),
         };
+        assert!(matches!(check_choice(&host, &manual(&[], &[])), Err(Ok(_))));
         assert!(matches!(
-            check_choice(&host, &manual(&[], &[]), &langs()),
+            check_choice(&host, &manual(&["docker0"], &[])),
             Err(Ok(_))
         ));
         assert!(matches!(
-            check_choice(&host, &manual(&["docker0"], &[]), &langs()),
+            check_choice(&host, &manual(&[], &["2408:8207::1"])),
             Err(Ok(_))
         ));
         assert!(matches!(
-            check_choice(&host, &manual(&[], &["2001:db8::1"]), &langs()),
-            Err(Ok(_))
-        ));
-        assert!(matches!(
-            check_choice(&host, &LanChoice::Unknown, &langs()),
+            check_choice(&host, &LanChoice::Unknown),
             Err(Ok(_))
         ));
         assert_eq!(
-            ips(&check_choice(&host, &manual(&["wlp2s0"], &["fd00::10"]), &langs()).unwrap()),
-            ["192.168.0.11", "fd00::10"]
+            ips(&check_choice(&host, &manual(&["wlp2s0"], &["fd00::10"])).unwrap()),
+            ["192.168.0.82", "fd00::10"]
         );
-        let mut network = server();
+        let mut network = npchy();
         network.routes = vec![route("tailscale0", 0)];
-        let host = classify(&network, &docker(), &langs());
-        let problem = check_choice(&host, &LanChoice::Auto, &langs())
+        let host = classify(&network, &docker());
+        let problem = check_choice(&host, &LanChoice::Auto)
             .unwrap_err()
             .unwrap_err();
         assert_eq!(problem.reason, LanFailure::VirtualInterface);
-    }
-
-    fn with_kernel(mut network: HostNetwork, kernel: &str) -> HostNetwork {
-        network.kernel = Some(kernel.into());
-        network
-    }
-
-    #[test]
-    fn desktop_vms_are_recognized_by_the_kernel_and_dmi_only() {
-        for (kernel, product) in [
-            (
-                "Linux version 6.10.14-linuxkit (root@buildkitsandbox) #1 SMP",
-                "Docker Desktop",
-            ),
-            ("6.12.4-orbstack-00286-g339578031cbf", "OrbStack"),
-            ("5.15.90.1-microsoft-standard-WSL2", "WSL2"),
-        ] {
-            let host = classify(&with_kernel(server(), kernel), &docker(), &langs());
-            assert_eq!(host.desktop_vm.as_ref().unwrap().product, product);
-            let problem = resolve(&host, &LanChoice::Auto, None, None, &langs()).unwrap_err();
-            assert_eq!(problem.reason, LanFailure::DesktopVm);
-            assert!(problem.message.contains(kernel), "{}", problem.message);
-        }
-        // DMI 也能认出来，内核串是普通发行版时照样。
-        let mut network = server();
-        network.dmi = Some("Docker Desktop / Docker Inc.".into());
-        assert!(classify(&network, &docker(), &langs()).desktop_vm.is_some());
-        // Proxmox、ESXi、Unraid 里桥接的虚拟机：普通发行版内核和 QEMU 的 DMI，照常自动选。
-        let mut network = server();
-        network.kernel = Some("6.8.0-45-generic #45-Ubuntu SMP".into());
-        network.dmi = Some("Standard PC (i440FX + PIIX, 1996) / QEMU".into());
-        let host = classify(&network, &docker(), &langs());
-        assert!(host.desktop_vm.is_none());
-        assert_eq!(
-            ips(&resolve(&host, &LanChoice::Auto, None, None, &langs())
-                .unwrap()
-                .bind),
-            ["192.168.0.10"]
-        );
-    }
-
-    #[test]
-    fn desktop_vms_with_fixed_addresses_still_report() {
-        let host = classify(
-            &with_kernel(server(), "6.10.14-linuxkit"),
-            &docker(),
-            &langs(),
-        );
-        let fixed: Vec<IpAddr> = vec!["192.168.0.10".parse().unwrap()];
-        assert_eq!(
-            resolve(&host, &LanChoice::Auto, Some(&fixed), None, &langs())
-                .unwrap_err()
-                .reason,
-            LanFailure::DesktopVm
-        );
-    }
-
-    #[test]
-    fn announced_addresses_are_announced_and_bound_on_the_wildcards() {
-        let announce = super::super::announce::parse("192.168.0.5/24, fd00::5").unwrap();
-        let host = classify(
-            &with_kernel(server(), "6.10.14-linuxkit"),
-            &docker(),
-            &langs(),
-        );
-        let plan = resolve(&host, &LanChoice::Auto, None, Some(&announce), &langs()).unwrap();
-        assert_eq!(ips(&plan.bind), ["0.0.0.0", "::"]);
-        assert_eq!(texts(&plan.announce), ["192.168.0.5", "fd00::5"]);
-        // 只有 IPv4 的宣告地址时只绑 IPv4 的通配。
-        let announce = super::super::announce::parse("192.168.0.5").unwrap();
-        let plan = resolve(&host, &LanChoice::Auto, None, Some(&announce), &langs()).unwrap();
-        assert_eq!(ips(&plan.bind), ["0.0.0.0"]);
-        // 宣告地址压过 WONTON_LAN_ADDRESSES。
-        let fixed: Vec<IpAddr> = vec!["192.168.0.10".parse().unwrap()];
-        let plan = resolve(
-            &host,
-            &LanChoice::Auto,
-            Some(&fixed),
-            Some(&announce),
-            &langs(),
-        )
-        .unwrap();
-        assert_eq!(ips(&plan.bind), ["0.0.0.0"]);
-        assert_eq!(texts(&plan.announce), ["192.168.0.5"]);
     }
 }

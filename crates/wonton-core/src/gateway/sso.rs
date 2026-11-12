@@ -2,18 +2,16 @@
 
 use std::sync::Arc;
 
+use axum::Extension;
 use axum::extract::{Query, Request, State};
 use axum::response::{IntoResponse, Redirect, Response};
-use hyper::StatusCode;
+use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 
 use super::session::{APP_COOKIE, APP_TTL, set_cookie};
-use super::sharing::{self, oidc};
-use super::{Gateway, Person, api, pages, same_origin_path, with_cookie};
+use super::{Gateway, TunnelPeer, pages, same_origin_path, with_cookie};
 use crate::config::HostKind;
-use crate::l10n;
 use crate::oidc::{OidcError, granted_scopes, id_token_claims};
-use crate::plugin::languages::Languages;
 
 #[derive(Deserialize)]
 pub struct SsoQuery {
@@ -42,19 +40,11 @@ pub async fn start(
     Query(query): Query<SsoQuery>,
     req: Request,
 ) -> Response {
-    let Some(person) = gateway.core_person(req.extensions().get().copied(), req.headers()) else {
+    let Some(user) = gateway.core_user(req.extensions().get().copied(), req.headers()) else {
         return login_redirect(&gateway, &path_and_query(req.uri()));
     };
-    let langs = api::languages(req.headers());
-    let format = pages::Format::of(req.headers());
     let Ok(target) = url::Url::parse(&query.to) else {
-        return pages::error(
-            StatusCode::BAD_REQUEST,
-            "invalid_input",
-            &l10n::text(&langs, "gateway-sso-invalid-next", &[]),
-            &langs,
-            format,
-        );
+        return pages::error(StatusCode::BAD_REQUEST, "invalid_input", "跳转地址不合法");
     };
     let host = target.host_str().unwrap_or_default().to_owned();
     let is_plugin = matches!(gateway.public.classify(&host), HostKind::Plugin(_));
@@ -64,12 +54,10 @@ pub async fn start(
         return pages::error(
             StatusCode::BAD_REQUEST,
             "invalid_input",
-            &l10n::text(&langs, "gateway-sso-local-only", &[]),
-            &langs,
-            format,
+            "只能跳转到本机的插件地址",
         );
     }
-    let code = gateway.sessions.create_code(&person, &host);
+    let code = gateway.sessions.create_code(&user, &host);
     let mut path = target.path().to_owned();
     if let Some(q) = target.query() {
         path.push('?');
@@ -91,30 +79,20 @@ struct RedeemQuery {
 
 /// `GET <slug>.<base>/_wonton/session?code=..&to=..`：兑换交接码，设置本域名的插件会话。
 pub fn redeem(gateway: &Gateway, host: &str, req: &Request) -> Response {
-    let langs = api::languages(req.headers());
-    let format = pages::Format::of(req.headers());
     let Ok(Query(query)) = Query::<RedeemQuery>::try_from_uri(req.uri()) else {
-        return pages::error(
-            StatusCode::BAD_REQUEST,
-            "invalid_input",
-            &l10n::text(&langs, "gateway-sso-missing-code", &[]),
-            &langs,
-            format,
-        );
+        return pages::error(StatusCode::BAD_REQUEST, "invalid_input", "缺少交接码");
     };
-    let Some(person) = gateway.sessions.redeem_code(&query.code, host) else {
+    let Some(user) = gateway.sessions.redeem_code(&query.code, host) else {
         return pages::error(
             StatusCode::UNAUTHORIZED,
             "unauthenticated",
-            &l10n::text(&langs, "gateway-sso-code-invalid", &[]),
-            &langs,
-            format,
+            "交接码无效或已过期，请重新打开",
         );
     };
     // 只允许跳到本域名内的路径，防止开放重定向。
     let to =
         same_origin_path(&gateway.public.origin(host), &query.to).unwrap_or_else(|| "/".to_owned());
-    let sid = gateway.sessions.create_app(&person, host);
+    let sid = gateway.sessions.create_app(&user, host);
     let cookie = set_cookie(APP_COOKIE, &sid, APP_TTL, gateway.secure_cookies());
     with_cookie(Redirect::to(&to).into_response(), cookie)
 }
@@ -129,7 +107,7 @@ pub struct ConsentChallenge {
     consent_challenge: String,
 }
 
-fn oidc_failure(e: &OidcError, langs: &Languages, format: pages::Format) -> Response {
+fn oidc_failure(e: &OidcError) -> Response {
     let (status, kind) = match e {
         OidcError::Unavailable(_) => (StatusCode::BAD_GATEWAY, "oidc_unavailable"),
         OidcError::Rejected {
@@ -138,174 +116,82 @@ fn oidc_failure(e: &OidcError, langs: &Languages, format: pages::Format) -> Resp
         _ => (StatusCode::BAD_GATEWAY, "oidc_error"),
     };
     tracing::warn!(error = %e, "OIDC 流程失败");
-    pages::error(status, kind, &e.to_string(), langs, format)
-}
-fn accepted_redirect(
-    gateway: &Gateway,
-    req: &Request,
-    client: &str,
-    step: oidc::Step,
-    result: Result<Result<String, OidcError>, wonton_protocol::GatewayRefusal>,
-    langs: &Languages,
-    format: pages::Format,
-) -> Response {
-    match result {
-        Ok(Ok(to)) => match oidc::remember_redirect(gateway, req, client, step, &to) {
-            Ok(()) => Redirect::to(&to).into_response(),
-            Err(error) => sharing::refused(error, langs, format),
-        },
-        Ok(Err(error)) => oidc_failure(&error, langs, format),
-        Err(error) => sharing::refused(error, langs, format),
-    }
+    pages::error(status, kind, &e.to_string())
 }
 
-/// 错误分支给的是已经拼好的拒绝页（`Response` 本身就大），不装箱。
-#[allow(clippy::result_large_err)]
-fn challenge_person(
-    gateway: &Gateway,
-    req: &mut Request,
-    client: &str,
-    person: Person,
-) -> Result<Person, Response> {
-    let langs = api::languages(req.headers());
-    let format = pages::Format::of(req.headers());
-    oidc::authorize_challenge(gateway, req, client)
-        .map(|friend| friend.unwrap_or(person))
-        .map_err(|error| sharing::refused(error, &langs, format))
-}
-
-/// Hydra 的登录端点：用核心会话或隧道设备的身份直接接受登录，用户不会看到第二个登录页。subject 是当前
-/// 这个人（主人和家人各有自己的账号，ADR-0045）。
+/// Hydra 的登录端点：用核心会话或隧道设备的身份直接接受登录，用户不会看到第二个登录页。
 pub async fn oidc_login(
     State(gateway): State<Arc<Gateway>>,
     Query(query): Query<LoginChallenge>,
-    mut req: Request,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    uri: hyper::Uri,
 ) -> Response {
-    let langs = api::languages(req.headers());
-    let format = pages::Format::of(req.headers());
-    let person = match oidc::person(&gateway, &req) {
-        Ok(Some(person)) => person,
-        Ok(None) => return login_redirect(&gateway, &path_and_query(req.uri())),
-        Err(error) => return sharing::refused(error, &langs, format),
+    let Some(user) = gateway.core_user(peer.map(|Extension(peer)| peer), &headers) else {
+        return login_redirect(&gateway, &path_and_query(&uri));
     };
     let Some(hydra) = &gateway.hydra else {
         return pages::error(
             StatusCode::SERVICE_UNAVAILABLE,
             "oidc_unavailable",
-            &l10n::text(&langs, "gateway-oidc-unconfigured", &[]),
-            &langs,
-            format,
+            "核心没有配置身份提供方",
         );
     };
     let request = match hydra.login_request(&query.login_challenge).await {
         Ok(request) => request,
-        Err(e) => return oidc_failure(&e, &langs, format),
+        Err(e) => return oidc_failure(&e),
     };
-    let person = match challenge_person(&gateway, &mut req, &request.client.client_id, person) {
-        Ok(person) => person,
-        Err(response) => return response,
-    };
-    if request.skip && request.subject != person.username {
+    if request.skip && request.subject != user {
         return pages::error(
             StatusCode::CONFLICT,
             "conflict",
-            &l10n::text(&langs, "gateway-sso-user-mismatch", &[]),
-            &langs,
-            format,
+            "身份提供方记住的是另一个用户",
         );
     }
-    tracing::info!(client = %request.client.client_id, person = %person.username, "接受 OIDC 登录");
-    let accepted = oidc::while_active(
-        req.extensions().get::<sharing::AccessGuard>().cloned(),
-        hydra.accept_login(&query.login_challenge, &person.username),
-    )
-    .await;
-    accepted_redirect(
-        &gateway,
-        &req,
-        &request.client.client_id,
-        oidc::Step::Login,
-        accepted,
-        &langs,
-        format,
-    )
+    tracing::info!(client = %request.client.client_id, %user, "接受 OIDC 登录");
+    match hydra.accept_login(&query.login_challenge, &user).await {
+        Ok(to) => Redirect::to(&to).into_response(),
+        Err(e) => oidc_failure(&e),
+    }
 }
 
-/// Hydra 的授权确认端点：插件由主人安装，即视为已授权；只发放清单内的 scope 和对应的声明。声明按当前
-/// 这个人出（ADR-0045）：`sub`、`preferred_username` 是他的用户名，`groups` 是他的角色。
+/// Hydra 的授权确认端点：插件由主人安装，即视为已授权；只发放清单内的 scope 和对应的声明。
 pub async fn oidc_consent(
     State(gateway): State<Arc<Gateway>>,
     Query(query): Query<ConsentChallenge>,
-    mut req: Request,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    uri: hyper::Uri,
 ) -> Response {
-    let langs = api::languages(req.headers());
-    let format = pages::Format::of(req.headers());
-    let person = match oidc::person(&gateway, &req) {
-        Ok(Some(person)) => person,
-        Ok(None) => return login_redirect(&gateway, &path_and_query(req.uri())),
-        Err(error) => return sharing::refused(error, &langs, format),
+    let Some(user) = gateway.core_user(peer.map(|Extension(peer)| peer), &headers) else {
+        return login_redirect(&gateway, &path_and_query(&uri));
     };
     let Some(hydra) = &gateway.hydra else {
         return pages::error(
             StatusCode::SERVICE_UNAVAILABLE,
             "oidc_unavailable",
-            &l10n::text(&langs, "gateway-oidc-unconfigured", &[]),
-            &langs,
-            format,
+            "核心没有配置身份提供方",
         );
     };
     let request = match hydra.consent_request(&query.consent_challenge).await {
         Ok(request) => request,
-        Err(e) => return oidc_failure(&e, &langs, format),
+        Err(e) => return oidc_failure(&e),
     };
-    let person = match challenge_person(&gateway, &mut req, &request.client.client_id, person) {
-        Ok(person) => person,
-        Err(response) => return response,
-    };
-    if request.subject != person.username {
+    if request.subject != user || user != gateway.owner.username() {
         return pages::error(
             StatusCode::FORBIDDEN,
             "permission_denied",
-            &l10n::text(&langs, "gateway-sso-consent-mismatch", &[]),
-            &langs,
-            format,
+            "授权请求与当前登录的用户不一致",
         );
     }
     let granted = granted_scopes(&request.requested_scope);
-    let groups = gateway.plugins.oidc_admin_groups(&request.client.client_id);
-    let identity = match gateway.identity_of(&person) {
-        Ok(identity) => identity,
-        Err(e) => {
-            tracing::warn!(error = %e, "OIDC 授权拿不到身份");
-            return pages::error(
-                StatusCode::FORBIDDEN,
-                "permission_denied",
-                &l10n::text(&langs, "gateway-proxy-sso-member-missing", &[]),
-                &langs,
-                format,
-            );
-        }
-    };
-    let claims = id_token_claims(
-        &identity,
-        person.role,
-        &granted,
-        &groups,
-        gateway.plugins.person_locale(&person.username).as_deref(),
-    );
-    tracing::info!(client = %request.client.client_id, ?granted, ?groups, person = %person.username, "接受 OIDC 授权");
-    let accepted = oidc::while_active(
-        req.extensions().get::<sharing::AccessGuard>().cloned(),
-        hydra.accept_consent(&query.consent_challenge, &granted, claims),
-    )
-    .await;
-    accepted_redirect(
-        &gateway,
-        &req,
-        &request.client.client_id,
-        oidc::Step::Consent,
-        accepted,
-        &langs,
-        format,
-    )
+    let claims = id_token_claims(&gateway.owner.owner(), &granted);
+    tracing::info!(client = %request.client.client_id, ?granted, "接受 OIDC 授权");
+    match hydra
+        .accept_consent(&query.consent_challenge, &granted, claims)
+        .await
+    {
+        Ok(to) => Redirect::to(&to).into_response(),
+        Err(e) => oidc_failure(&e),
+    }
 }

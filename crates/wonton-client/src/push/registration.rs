@@ -6,11 +6,9 @@ use std::time::Duration;
 use serde::Deserialize;
 use serde_json::json;
 use url::Url;
-use wonton_l10n::l10n;
 use wonton_protocol::{ChatFailure, ProxySettings, PushEndpoint};
 
 use crate::chat::proxy_url;
-use crate::l10n::{CATALOG, language};
 
 /// 整个请求最多等这么久，同要登录令牌：隧道卡住时按“传输不可用”失败，回到前台再试。
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -51,16 +49,11 @@ pub(super) async fn register(
         .put(url(core_url))
         .header("content-type", "application/json")
         .body(body.to_string());
-    let bytes = send(request, "push-register-failed").await?;
+    let bytes = send(request, "登记推送").await?;
     serde_json::from_slice(&bytes).map_err(|e| {
         (
             ChatFailure::Upstream,
-            l10n!(
-                CATALOG,
-                language(),
-                "push-register-invalid-response",
-                reason = e.to_string()
-            ),
+            format!("核心给的推送登记结果格式不对：{e}"),
         )
     })
 }
@@ -71,63 +64,43 @@ pub(super) async fn unregister(
     proxy: &ProxySettings,
 ) -> Result<(), (ChatFailure, String)> {
     let client = client(proxy)?;
-    send(client.delete(url(core_url)), "push-unregister-failed")
+    send(client.delete(url(core_url)), "取消推送登记")
         .await
         .map(drop)
 }
 
 fn url(core_url: &Url) -> Url {
-    core_url.join(PATH).expect("the fixed path always joins")
+    core_url.join(PATH).expect("固定的路径总能拼上")
 }
 
 fn client(proxy: &ProxySettings) -> Result<reqwest::Client, (ChatFailure, String)> {
     let proxy = reqwest::Proxy::all(proxy_url(proxy)).map_err(|e| {
         (
             ChatFailure::InvalidInput,
-            l10n!(
-                CATALOG,
-                language(),
-                "push-invalid-proxy",
-                reason = e.to_string()
-            ),
+            format!("本地代理地址不合法：{e}"),
         )
     })?;
     reqwest::Client::builder()
         .proxy(proxy)
         .timeout(TIMEOUT)
         .build()
-        .map_err(|e| {
-            (
-                ChatFailure::Upstream,
-                l10n!(
-                    CATALOG,
-                    language(),
-                    "push-http-client",
-                    reason = e.to_string()
-                ),
-            )
-        })
+        .map_err(|e| (ChatFailure::Upstream, format!("建 HTTP 客户端失败：{e}")))
 }
 
-/// 发请求，成功时返回响应体；失败按原因分类。`failed` 是这次操作的失败整句（`push-register-failed` 等）。
+/// 发请求，成功时返回响应体；失败按原因分类。
 async fn send(
     request: reqwest::RequestBuilder,
-    failed: &'static str,
+    what: &str,
 ) -> Result<Vec<u8>, (ChatFailure, String)> {
     let transport = |e: reqwest::Error| {
         let reason = if e.is_timeout() {
-            l10n!(
-                CATALOG,
-                language(),
-                "push-timeout",
-                seconds = TIMEOUT.as_secs()
-            )
+            format!("{} 秒内没有回应", TIMEOUT.as_secs())
         } else {
             e.to_string()
         };
         (
             ChatFailure::TransportUnavailable,
-            l10n!(CATALOG, language(), failed, reason = reason),
+            format!("{what}失败：{reason}"),
         )
     };
     let response = request.send().await.map_err(transport)?;
@@ -140,23 +113,8 @@ async fn send(
         .ok()
         .map(|body| body.error);
     let message = detail.as_ref().map_or_else(
-        || {
-            l10n!(
-                CATALOG,
-                language(),
-                "push-server-status",
-                status = status.as_u16()
-            )
-        },
-        |detail| {
-            l10n!(
-                CATALOG,
-                language(),
-                "push-server-error",
-                message = detail.message.as_str(),
-                kind = detail.kind.as_str()
-            )
-        },
+        || format!("核心回了 {status}"),
+        |detail| format!("{}（{}）", detail.message, detail.kind),
     );
     let reason = match (status.as_u16(), detail.as_ref().map(|d| d.kind.as_str())) {
         (_, Some("push_unavailable")) => ChatFailure::NotReady,
@@ -166,5 +124,5 @@ async fn send(
         (502, _) => ChatFailure::TransportUnavailable,
         _ => ChatFailure::Upstream,
     };
-    Err((reason, l10n!(CATALOG, language(), failed, reason = message)))
+    Err((reason, format!("{what}失败：{message}")))
 }

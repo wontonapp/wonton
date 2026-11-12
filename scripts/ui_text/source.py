@@ -1,7 +1,6 @@
 """源码的范围和规则一、规则二（ADR-0043 的“防止再写死”）。
 
-规则一：字符串字面量里有汉字、假名、CJK 符号或全角字符，报错（注释不算）。字符字面量不查：单个字符成不了界面文字，
-用到的是标点表这类数据（按全角逗号切分、认中文句末标点）。
+规则一：字符串或字符字面量里有汉字、假名、CJK 符号或全角字符，报错（注释不算）。
 规则二：Swift 和 Kotlin 里，直接传给界面接口（系统控件、设计系统组件、文字类的参数）的字符串字面量像界面文字时，报错；
 TabText.choose(…)、tabText(…) 是迁移前按语言挑文字的旧写法，调用本身就报错。
 """
@@ -13,9 +12,9 @@ from typing import Collection, Dict, List, Optional, Set, Tuple
 
 from .lexer import Token, tokenize
 
-# 客户端核心的 Rust 源码也查规则一：详情写进 crates/wonton-client/locales/*.ftl（ADR-0043），日志写英文。
-# 留着这个开关是为了临时停掉：关掉时 crates/ 的白名单条目照样保留，打开后照常生效。
-CHECK_RUST = True
+# 客户端核心的 Rust 源码暂时不查规则一：核心的 Fluent 目录（ADR-0043）进 main 之前，新写的 Rust 文字没有地方放，
+# 查了只能往白名单里加。Fluent 目录进 main 后改成 True，crates/ 的白名单条目随之重新生效。
+CHECK_RUST = False
 RUST_PREFIXES = ("crates/wonton-client/src/", "crates/wonton-protocol/src/")
 
 # 直接收字符串字面量作为第一个参数（或参数的值）的界面接口。新增接口只改这里；设计系统组件从仓库读（components.py）。
@@ -64,7 +63,7 @@ def source_lang(path: str) -> Optional[str]:
     if path.startswith("apps/ios/") and path.endswith(".swift"):
         return None if any("Tests" in p for p in parts) else "swift"
     if path.startswith("apps/compose/") and path.endswith(".kt"):
-        if "/src/" not in "/" + path or re.search(r"/src/(android(Host|Device)?Test|test)", "/" + path):
+        if "/src/" not in "/" + path or re.search(r"/src/(test|androidTest)", "/" + path):
             return None
         if "/ui/icons/" in "/" + path or "/ui/design/generated/" in "/" + path:
             return None
@@ -104,7 +103,7 @@ def _cjk_problems(tokens: List[Token]) -> Tuple[List[Problem], set]:
     problems: List[Problem] = []
     flagged = set()
     for tok in tokens:
-        if tok.kind != "str" or tok.lit is None:
+        if tok.kind not in ("str", "char") or tok.lit is None:
             continue
         bad = [line for ch, line in tok.lit.chars if is_cjk(ch)]
         if bad:

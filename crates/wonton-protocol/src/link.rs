@@ -1,7 +1,6 @@
 //! App 的链接（`wonton://…`）：桌面快捷方式、快捷指令和 Siri 用它打开 App 里的某一处。格式只在这里定，两端都经核心
 //! 编解码，不自己拼。
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 
 use crate::TabRef;
@@ -19,8 +18,6 @@ pub enum AppLink {
     NewChat,
     /// 打开和默认 Agent 的聊天。带一句话直接发出去的“问 Bot”用 [`Action::AskAgent`](crate::Action::AskAgent)。
     AgentChat,
-    /// 打开设置里的“其他服务器”，滚到“请求”（ADR-0050：核心在“Wonton”私聊里的配对提醒带这个链接）。
-    Peers,
 }
 
 impl AppLink {
@@ -38,44 +35,9 @@ impl AppLink {
                     plugin_id,
                     page: Some(page),
                 } => format!("tab/plugin/{plugin_id}/{page}"),
-                // 路径里有斜杠和查询，网址更是任意的：整段 base64url 编码。
-                TabRef::PluginPath { plugin_id, path } => {
-                    format!(
-                        "tab/plugin-path/{plugin_id}/{}",
-                        URL_SAFE_NO_PAD.encode(path)
-                    )
-                }
-                TabRef::Bot { bot, path: None } => {
-                    format!("tab/bot/{}/{}", bot.plugin_id, bot.bot)
-                }
-                TabRef::Bot {
-                    bot,
-                    path: Some(path),
-                } => format!(
-                    "tab/bot/{}/{}/{}",
-                    bot.plugin_id,
-                    bot.bot,
-                    URL_SAFE_NO_PAD.encode(path)
-                ),
-                TabRef::Url { url } => format!("tab/url/{}", URL_SAFE_NO_PAD.encode(url)),
-                TabRef::UiResource {
-                    plugin_id,
-                    resource_uri,
-                } => format!(
-                    "tab/ui/{plugin_id}/{}",
-                    URL_SAFE_NO_PAD.encode(resource_uri)
-                ),
-                TabRef::SharedApp {
-                    owner_user_id,
-                    plugin_id,
-                } => format!(
-                    "tab/shared/{}/{plugin_id}",
-                    URL_SAFE_NO_PAD.encode(owner_user_id)
-                ),
             },
             Self::NewChat => "new-chat".to_owned(),
             Self::AgentChat => "agent-chat".to_owned(),
-            Self::Peers => "settings/peers".to_owned(),
         };
         format!("{SCHEME}{path}")
     }
@@ -99,69 +61,8 @@ impl AppLink {
                     page: Some((*page).to_owned()),
                 })
             }
-            ["tab", "ui", plugin_id, encoded] if is_id(plugin_id) => {
-                let uri = String::from_utf8(URL_SAFE_NO_PAD.decode(encoded).ok()?).ok()?;
-                tab(TabRef::UiResource {
-                    plugin_id: (*plugin_id).to_owned(),
-                    resource_uri: uri,
-                })
-            }
-            ["tab", "plugin-path", plugin_id, encoded] if is_id(plugin_id) => {
-                let Ok(path) = URL_SAFE_NO_PAD.decode(encoded) else {
-                    return None;
-                };
-                let Ok(path) = String::from_utf8(path) else {
-                    return None;
-                };
-                tab(TabRef::PluginPath {
-                    plugin_id: (*plugin_id).to_owned(),
-                    path,
-                })
-            }
-            ["tab", "bot", plugin_id, bot] if is_id(plugin_id) && is_id(bot) => tab(TabRef::Bot {
-                bot: crate::BotRef {
-                    plugin_id: (*plugin_id).to_owned(),
-                    bot: (*bot).to_owned(),
-                },
-                path: None,
-            }),
-            ["tab", "bot", plugin_id, bot, encoded] if is_id(plugin_id) && is_id(bot) => {
-                let path = String::from_utf8(URL_SAFE_NO_PAD.decode(encoded).ok()?).ok()?;
-                tab(TabRef::Bot {
-                    bot: crate::BotRef {
-                        plugin_id: (*plugin_id).to_owned(),
-                        bot: (*bot).to_owned(),
-                    },
-                    path: Some(path),
-                })
-            }
-            ["tab", "url", encoded] => {
-                let Ok(url) = URL_SAFE_NO_PAD.decode(encoded) else {
-                    return None;
-                };
-                let Ok(url) = String::from_utf8(url) else {
-                    return None;
-                };
-                tab(TabRef::Url { url })
-            }
-            ["tab", "shared", owner, plugin_id] if is_id(plugin_id) => {
-                let bytes = URL_SAFE_NO_PAD.decode(owner).ok()?;
-                let owner_user_id = String::from_utf8(bytes).ok()?;
-                let (local, server) = owner_user_id.strip_prefix('@')?.split_once(':')?;
-                if local.is_empty()
-                    || server.is_empty()
-                    || owner_user_id.chars().any(char::is_control)
-                {
-                    return None;
-                }
-                tab(TabRef::SharedApp {
-                    owner_user_id,
-                    plugin_id: (*plugin_id).to_owned(),
-                })
-            }
             ["new-chat"] => Some(Self::NewChat),
             ["agent-chat"] => Some(Self::AgentChat),
-            ["settings", "peers"] => Some(Self::Peers),
             _ => None,
         }
     }
@@ -210,32 +111,8 @@ mod tests {
                     page: Some("explore".into()),
                 },
             },
-            AppLink::Tab {
-                tab: TabRef::PluginPath {
-                    plugin_id: "app.example.ledger".into(),
-                    path: "/stats?month=11#top".into(),
-                },
-            },
-            AppLink::Tab {
-                tab: TabRef::Url {
-                    url: "https://example.com/weather?city=%E5%8C%97%E4%BA%AC".into(),
-                },
-            },
-            AppLink::Tab {
-                tab: TabRef::UiResource {
-                    plugin_id: "app.example.monitor".into(),
-                    resource_uri: "ui://monitor/index.html?x=1".into(),
-                },
-            },
-            AppLink::Tab {
-                tab: TabRef::SharedApp {
-                    owner_user_id: "@alice/smith:[2001:db8::1]:8448".into(),
-                    plugin_id: "app.snake".into(),
-                },
-            },
             AppLink::NewChat,
             AppLink::AgentChat,
-            AppLink::Peers,
         ];
         for link in links {
             assert_eq!(AppLink::parse(&link.to_url()), Some(link));

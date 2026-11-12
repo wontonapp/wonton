@@ -6,8 +6,6 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{LanClient, LanWebuiOffer};
 
-use crate::l10n;
-use crate::plugin::languages::Languages;
 use crate::plugin::manager::PluginManager;
 use crate::plugin::manifest::{Manifest, ManifestError, PluginId};
 use crate::plugin::proxy_auth;
@@ -20,40 +18,22 @@ const HOST: &str = "{host}";
 pub struct LanClientSpec {
     /// 连接地址，`{host}` 换成端口开着的局域网地址，如 `http://{host}:4533`。
     pub address: String,
-    /// 主人的账号模板；不能用显示名 `{name}` 或网页请求者的 `{role}`。
+    /// 值模板，同 `webui.proxy`，但不能用 `{name}`。
     pub username: String,
     pub password: String,
 }
 
-pub(super) fn validate(
-    manifest: &Manifest,
-    client: &LanClientSpec,
-    langs: &Languages,
-) -> Result<(), ManifestError> {
-    let invalid = |message: String| {
-        ManifestError::Invalid(l10n::text(
-            langs,
-            "plugin-settings-lan-client-prefix",
-            &[("message", message.into())],
-        ))
-    };
+pub(super) fn validate(manifest: &Manifest, client: &LanClientSpec) -> Result<(), ManifestError> {
+    let invalid = |message: String| ManifestError::Invalid(format!("lan.client：{message}"));
     if !client.address.contains(HOST) {
-        return Err(invalid(l10n::text(
-            langs,
-            "plugin-settings-lan-client-address-host",
-            &[("host", HOST.into())],
-        )));
+        return Err(invalid(format!("address 要写 {HOST}")));
     }
     for template in [&client.username, &client.password] {
         // 账号不会是显示名，插件管理器也没有它。
         if template.contains("{name}") {
-            return Err(invalid(l10n::text(
-                langs,
-                "plugin-settings-lan-client-template",
-                &[("name", "{name}".into())],
-            )));
+            return Err(invalid("不能用 {name}".to_owned()));
         }
-        proxy_auth::check_template(manifest, template, langs).map_err(invalid)?;
+        proxy_auth::check_template(manifest, template).map_err(invalid)?;
     }
     Ok(())
 }
@@ -79,7 +59,6 @@ impl PluginManager {
     }
 
     async fn lan_client(&self, id: &PluginId) -> Result<Option<LanClient>, String> {
-        let langs = self.owner_languages();
         let listed = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins.get(id).and_then(|entry| entry.listed.clone())
@@ -95,23 +74,16 @@ impl PluginManager {
             return Ok(None);
         };
         let stored = self.store.secrets().load(id).map_err(|e| e.to_string())?;
-        let stored = stored
-            .ok_or_else(|| l10n::text(&langs, "plugin-settings-lan-client-secret-missing", &[]))?;
-        let generated = secrets::generated_values(manifest, &stored, &langs)?;
+        let stored = stored.ok_or("密钥库里没有这个插件")?;
+        let generated = secrets::generated_values(manifest, &stored)?;
         let owner = self.cfg.profile.owner();
-        let fill = |template| proxy_auth::fill_template(template, &owner, &generated, &langs);
+        let fill = |template| proxy_auth::fill_template(template, &owner, &generated);
         let mut hosts = BTreeSet::new();
         let slug = id.slug();
         for port in &lan.ports {
             let name = self.cfg.instance.container(&slug, &port.service);
             let info = self.engine.inspect_container(&name).await;
-            let info = info.map_err(|e| {
-                l10n::text(
-                    &langs,
-                    "plugin-settings-lan-client-container",
-                    &[("container", name.into()), ("error", e.to_string().into())],
-                )
-            })?;
+            let info = info.map_err(|e| format!("查不到容器 {name}：{e}"))?;
             let bindings = info
                 .and_then(|info| info.host_config)
                 .and_then(|host| host.port_bindings)
@@ -120,15 +92,7 @@ impl PluginManager {
             hosts.extend(bindings.into_iter().filter_map(|b| b.host_ip));
         }
         if hosts.is_empty() {
-            return Err(l10n::text(
-                &langs,
-                "plugin-settings-lan-client-not-published",
-                &[],
-            ));
-        }
-        // 启动器声明了宣告地址时，端口绑在通配地址上，容器记录里的地址不能给用户；连的是宣告地址。
-        if let Some(announce) = &self.lan.announce {
-            hosts = announce.iter().map(|a| a.ip.to_string()).collect();
+            return Err("端口没有开在任何局域网地址上".to_owned());
         }
         Ok(Some(LanClient {
             addresses: hosts

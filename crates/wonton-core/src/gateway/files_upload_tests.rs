@@ -17,7 +17,6 @@ use wonton_protocol::FileId;
 use super::TunnelPeer;
 use super::files_tests::{Home, Reply, home_with, info};
 use crate::config::FILE_HOOKS_HOST;
-use crate::files::test_support::any_langs;
 use crate::plugin::manager::now_secs;
 
 /// 替身：回 tus 的状态码，`Upload-Offset` 是 `offset`，记下最后一次请求的方法和请求头。
@@ -475,12 +474,12 @@ async fn a_record_that_cannot_be_written_converges_on_retry() {
 async fn placing_what_already_has_a_record_clears_the_leftovers() {
     let (home, _, tusd) = home().await;
     let id = home.pending(tusd, 5, b"hello").await;
-    home.f.files.finish_upload(&id, &any_langs()).await.unwrap();
+    home.f.files.finish_upload(&id).await.unwrap();
     let data = home.f.uploads_dir().join(id.as_str());
     let pending = home.f.dir.path().join(format!("files/pending/{id}.json"));
     assert!(!pending.exists());
     std::fs::write(&data, "hello").unwrap();
-    home.f.files.finish_upload(&id, &any_langs()).await.unwrap();
+    home.f.files.finish_upload(&id).await.unwrap();
     assert!(!data.exists());
 }
 
@@ -555,12 +554,6 @@ async fn sweeping_places_finished_uploads_and_clears_abandoned_ones() {
     assert!(orphan.exists(), "不知道是谁的文件，放够久才删");
 
     let later = now_secs() + crate::files::uploads::STALE_SECS + 60;
-    // 把链接发出去，免得传完的这条在同一个 24 小时里到期。
-    home.f
-        .files
-        .send_to_devices(&finished, &any_langs())
-        .await
-        .unwrap();
     home.f.files.sweep(later).await;
     assert!(!uploads.join(partial.as_str()).exists());
     assert!(!orphan.exists());
@@ -663,7 +656,7 @@ async fn a_404_from_tusd_right_after_placing_reports_the_file_as_finished() {
     let id = home.pending(tusd, 5, b"hello").await;
     let (files, task) = (home.f.files.clone(), id.clone());
     *fake.before_reply.lock().unwrap() = Some(Box::pin(async move {
-        files.finish_upload(&task, &any_langs()).await.unwrap();
+        files.finish_upload(&task).await.unwrap();
     }));
     fake.status.store(404, Ordering::SeqCst);
 
@@ -704,7 +697,7 @@ async fn cancelling_waits_for_placing_and_is_not_interleaved_with_it() {
     drop(held);
     assert_eq!(cancel.await.status, StatusCode::NO_CONTENT);
     assert_eq!(home.get(&info(&id)).await.status, StatusCode::NOT_FOUND);
-    let placed = home.f.files.finish_upload(&id, &any_langs()).await;
+    let placed = home.f.files.finish_upload(&id).await;
     assert_eq!(
         placed.unwrap_err().kind,
         wonton_protocol::FileFailure::FileUnknown

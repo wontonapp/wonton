@@ -12,22 +12,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Rgb
-import app.wonton.ui.R
 import app.wonton.ui.icons.Forward
 import app.wonton.ui.icons.WontonIcon
 
@@ -43,7 +41,7 @@ fun WontonGroup(content: @Composable () -> Unit) {
     }
 }
 
-/** 列表行，有 `onClick` 时能点。[badgeCount] 大于 0 时在行尾显示数字角标。 */
+/** 列表行，有 `onClick` 时能点。 */
 @Composable
 fun WontonRow(
     title: String,
@@ -52,25 +50,14 @@ fun WontonRow(
     showsForward: Boolean = false,
     titleTint: Rgb? = null,
     badge: Boolean = false,
-    badgeCount: Int? = null,
     onClick: (() -> Unit)? = null,
 ) {
     val colors = WontonTheme.colors
-    val badgeState = stringResource(R.string.design_update_badge)
-    val countedBadge = badgeCount?.takeIf { it > 0 }
-    val countedBadgeState = countedBadge?.let { stringResource(R.string.design_badge_count, it) }
     Row(
         Modifier.fillMaxWidth()
             .heightIn(min = WontonTheme.size.target)
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
-            .then(if (badge) Modifier.semantics { stateDescription = badgeState } else Modifier)
-            .then(
-                if (countedBadgeState != null) {
-                    Modifier.semantics { stateDescription = countedBadgeState }
-                } else {
-                    Modifier
-                },
-            )
+            .then(if (badge) Modifier.semantics { stateDescription = "有新版本" } else Modifier)
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
@@ -85,18 +72,6 @@ fun WontonRow(
                 )
             }
         }
-        countedBadge?.let {
-            Box(
-                Modifier.background(colors.primary.toColor(), CircleShape)
-                    .padding(horizontal = WontonTheme.spacing.s8, vertical = 2.dp),
-            ) {
-                Text(
-                    it.toString(),
-                    style = WontonTheme.typography.caption,
-                    color = colors.onPrimary.toColor(),
-                )
-            }
-        }
         if (badge) {
             Box(
                 Modifier.size(12.dp)
@@ -107,7 +82,6 @@ fun WontonRow(
         if (showsForward) {
             Icon(
                 WontonIcon.Forward,
-                // 装饰：箭头只表示这一行能点。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconSmall),
                 tint = colors.textSecondary.toColor(),

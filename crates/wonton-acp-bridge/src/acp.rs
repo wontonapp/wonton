@@ -10,34 +10,19 @@ use std::{
 
 use serde_json::{Value, json};
 use tokio::{
-    io::{AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{UnixStream, unix::OwnedReadHalf},
-    sync::{Mutex, broadcast, mpsc, oneshot, watch},
+    sync::{Mutex, broadcast, oneshot, watch},
 };
-
-use wonton_l10n::Lang;
-use wonton_protocol::{ConfirmationOrigin, ORIGIN_ROOM_HEADER, ORIGIN_THREAD_HEADER};
 
 use crate::{
     config::MAX_FRAME_BYTES,
-    error::{Detail, Error, Result},
-    l10n::default_lang,
-    permission::{PendingPermission, PermissionBroker, PermissionResult, parse_pending},
+    error::{Error, Result},
+    permission::{PermissionBroker, PermissionResult, parse_pending},
 };
 
 pub mod auth;
-mod frame;
-mod mode;
-mod permissions;
-use permissions::PermissionWaiter;
-mod rpc_error;
-mod updates;
 use auth::{AuthMethod, AuthRequests, parse_auth_methods};
-use rpc_error::RpcError;
-use updates::PromptUpdates;
-#[cfg(test)]
-#[path = "acp_contract_tests.rs"]
-mod contract_tests;
 #[cfg(test)]
 #[path = "acp_test_support.rs"]
 pub(crate) mod test_support;
@@ -45,8 +30,6 @@ pub(crate) mod test_support;
 #[path = "acp_tests.rs"]
 mod tests;
 const CANCEL_GRACE: Duration = Duration::from_secs(1);
-/// 桥自己用的「连接已关」错误码：JSON-RPC 的 -32000 和 -32098 已被 ACP 和传输占用。
-const CLOSED_CODE: i64 = -32099;
 
 #[derive(Clone, Debug)]
 pub struct Capabilities {
@@ -55,53 +38,13 @@ pub struct Capabilities {
     pub close: bool,
     pub steering: bool,
     pub mcp_http: bool,
-    /// Agent 在 `promptCapabilities` 里声明能收 `image` 内容块（ACP：text 和
-    /// resource_link 所有 Agent 都必须支持，image 要声明）。
-    pub prompt_image: bool,
-}
-
-/// `_session/steering` 的结果。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SteerOutcome {
-    /// 进了正在跑的一轮。
-    Injected,
-    /// 没有在跑的一轮，Agent 自己另起了一轮（不认 `idleBehavior` 的旧适配器）；那一轮没有 `session/prompt`
-    /// 跟着，回复桥收不到。
-    StartedNewTurn,
-    /// 没有在跑的一轮，内容没被收下，要走普通 `session/prompt`。
-    PromptRequired,
-    /// 没插进去（codex-acp、omp 会回），以及不认识的结果：都按没收下算。
-    Failed,
-}
-
-impl SteerOutcome {
-    fn parse(outcome: &Value) -> Self {
-        match outcome.as_str() {
-            Some("injected") => Self::Injected,
-            Some("startedNewTurn") => Self::StartedNewTurn,
-            Some("promptRequired") => Self::PromptRequired,
-            _ => Self::Failed,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
 pub enum AgentNotice {
-    /// `_wonton/task`：编排器的任务事件（ADR-0059）。
-    Task {
-        params: Value,
-    },
-    PermissionCancelled {
-        session_id: String,
-    },
-    PermissionFailed {
-        session_id: String,
-        detail: Detail,
-    },
-    Update {
-        session_id: String,
-        update: Value,
-    },
+    PermissionCancelled { session_id: String },
+    PermissionFailed { session_id: String, message: String },
+    Update { session_id: String, update: Value },
 }
 
 #[derive(Debug)]
@@ -109,25 +52,14 @@ pub struct PromptResult {
     pub stop_reason: String,
     pub text: String,
     pub permissions_cancelled: usize,
-    pub permission_error: Option<Detail>,
+    pub permission_error: Option<String>,
     pub output_limited: bool,
 }
 
-/// `session/new` 的结果：会话 ID，以及话题想要的“改前先问”模式有没有生效。
 #[derive(Debug)]
-pub struct NewSession {
-    pub session_id: String,
-    pub ask_before_edit: bool,
-    pub mode: String,
-}
-
-/// 桥接层接管一次权限请求的机会：Agent 发来 `session/request_permission`，ACP 把它连同
-/// 应答通道交给会话注册的接管方（桥要查文件冲突、可能要等另一轮结束才答复）。
-/// 没有接管方，或接管方已经关闭时，ACP 直接问核心的确认卡片。
-pub struct PermissionAsk {
-    pub session_id: String,
-    pub pending: PendingPermission,
-    pub reply: oneshot::Sender<Result<PermissionResult>>,
+struct RpcError {
+    code: i64,
+    message: String,
 }
 
 struct PendingGuard {
@@ -159,19 +91,18 @@ struct Inner {
     pending: Mutex<HashMap<u64, oneshot::Sender<std::result::Result<Value, RpcError>>>>,
     notices: broadcast::Sender<AgentNotice>,
     permission_broker: PermissionBroker,
-    permission_hooks: Mutex<HashMap<String, mpsc::Sender<PermissionAsk>>>,
     permission_waiters: Mutex<HashMap<String, PermissionWaiter>>,
     tool_calls: Mutex<HashMap<(String, String), Value>>,
     old_message_ids: Mutex<HashMap<String, HashSet<String>>>,
     cancelled_sessions: Mutex<HashSet<String>>,
-    /// 每个会话这一轮说话的语言（权限请求里的卡片文字要用）。
-    langs: Mutex<HashMap<String, Lang>>,
-    /// 每个会话的来源会话（ADR-0016）：建会话时登记，权限请求带到核心。
-    origins: Mutex<HashMap<String, ConfirmationOrigin>>,
     closed: watch::Sender<bool>,
     auth: AuthRequests,
 }
 
+struct PermissionWaiter {
+    session_id: String,
+    cancel: oneshot::Sender<()>,
+}
 #[derive(Clone)]
 pub struct AcpClient {
     inner: Arc<Inner>,
@@ -182,13 +113,7 @@ pub struct AcpClient {
 impl AcpClient {
     pub async fn connect(path: &Path, permission_broker: PermissionBroker) -> Result<Self> {
         let stream = UnixStream::connect(path).await.map_err(|error| {
-            Error::AgentNotReady(Detail::msg_with(
-                "agent-connect-socket",
-                [
-                    ("path", path.display().to_string()),
-                    ("error", error.to_string()),
-                ],
-            ))
+            Error::AgentNotReady(format!("连接 ACP socket {} 失败：{error}", path.display()))
         })?;
         let (reader, writer) = stream.into_split();
         let (notices, _) = broadcast::channel(128);
@@ -198,13 +123,10 @@ impl AcpClient {
             pending: Mutex::new(HashMap::new()),
             notices,
             permission_broker,
-            permission_hooks: Mutex::new(HashMap::new()),
             permission_waiters: Mutex::new(HashMap::new()),
             tool_calls: Mutex::new(HashMap::new()),
             old_message_ids: Mutex::new(HashMap::new()),
             cancelled_sessions: Mutex::new(HashSet::new()),
-            langs: Mutex::new(HashMap::new()),
-            origins: Mutex::new(HashMap::new()),
             closed: watch::channel(false).0,
             auth: AuthRequests::new(),
         });
@@ -217,7 +139,6 @@ impl AcpClient {
                 close: false,
                 steering: false,
                 mcp_http: false,
-                prompt_image: false,
             },
             auth_methods: Vec::new(),
         };
@@ -234,16 +155,12 @@ impl AcpClient {
                 }),
             )
             .await
-            .map_err(|error| Error::AgentNotReady(Detail::data(error.message)))?;
+            .map_err(|error| Error::AgentNotReady(error.message))?;
         Ok(Self {
             capabilities: parse_capabilities(&result),
             auth_methods: parse_auth_methods(result.get("authMethods")),
             ..client
         })
-    }
-
-    pub fn broker(&self) -> PermissionBroker {
-        self.inner.permission_broker.clone()
     }
 
     pub fn capabilities(&self) -> &Capabilities {
@@ -254,118 +171,57 @@ impl AcpClient {
         self.inner.closed.subscribe()
     }
 
-    pub(crate) fn subscribe(&self) -> broadcast::Receiver<AgentNotice> {
+    fn subscribe(&self) -> broadcast::Receiver<AgentNotice> {
         self.inner.notices.subscribe()
     }
 
-    /// 让桥接层接管这个会话的权限请求；同一个会话重复注册时后者生效。
-    pub async fn register_permissions(
-        &self,
-        session_id: &str,
-        sender: mpsc::Sender<PermissionAsk>,
-    ) {
-        self.inner
-            .permission_hooks
-            .lock()
-            .await
-            .insert(session_id.to_owned(), sender);
-    }
-
-    /// 会话关闭或不再归这一层管时调用；之后的权限请求直接走确认卡片。
-    pub async fn unregister_permissions(&self, session_id: &str) {
-        self.inner.permission_hooks.lock().await.remove(session_id);
-    }
-
-    /// 建会话并切模式。`topic` 时先试 `ask_mode`（“改前先问”，ADR-0058），Agent 报不出
-    /// 这个取值就退回 `mode`，由调用方在话题里如实说明。
-    /// `origin` 是这个会话的来源会话（ADR-0016），进 MCP 服务器的请求头，权限请求也带上。
-    pub async fn new_session(
-        &self,
-        cwd: &str,
-        mcp_url: &str,
-        mode: &str,
-        ask_mode: Option<&str>,
-        origin: &ConfirmationOrigin,
-    ) -> Result<NewSession> {
+    pub async fn new_session(&self, cwd: &str, mcp_url: &str, mode: &str) -> Result<String> {
         if !self.capabilities.mcp_http {
-            return Err(Error::AgentNotReady(Detail::msg("acp-no-http-mcp")));
+            return Err(Error::AgentNotReady("Agent 未声明 HTTP MCP 能力".into()));
         }
         let result = self
             .request(
                 "session/new",
                 json!({
                     "cwd": cwd,
-                    "mcpServers": [http_mcp_server(mcp_url, origin)]
+                    "mcpServers": [{"type": "http", "name": "wonton", "url": mcp_url, "headers": []}]
                 }),
             )
             .await
-            .map_err(|error| {
-                if error.code == -32000 {
-                    Error::AuthenticationRequired
-                } else {
-                    Error::AgentNotReady(rpc_detail(&error))
-                }
-            })?;
+            .map_err(|error| if error.code == -32000 { Error::AuthenticationRequired } else { Error::AgentNotReady(error.message) })?;
         let session_id = result["sessionId"]
             .as_str()
-            .ok_or_else(|| Error::AgentNotReady(Detail::msg("acp-no-session-id")))?
+            .ok_or_else(|| Error::AgentNotReady("session/new 没有返回 sessionId".into()))?
             .to_owned();
-        self.inner
-            .origins
-            .lock()
-            .await
-            .insert(session_id.clone(), origin.clone());
-        let asked = ask_mode.and_then(|asked| {
-            mode::topic_request(&result, &session_id, asked).map(|request| (request, asked))
-        });
-        let (request, mode, ask_before_edit) = match asked {
-            Some((request, asked)) => (Some(request), asked, true),
-            None => (mode::request(&result, &session_id, mode), mode, false),
-        };
-        match request {
-            Some((method, params)) => {
-                self.request(method, params)
-                    .await
-                    .map_err(|error| Error::Upstream(rpc_detail(&error)))?;
-            }
-            None => tracing::info!(mode, "Agent 不分工作模式，跳过切换"),
-        }
-        Ok(NewSession {
-            session_id,
-            ask_before_edit,
-            mode: mode.to_owned(),
-        })
+        self.set_mode(&session_id, mode).await?;
+        Ok(session_id)
     }
 
-    pub async fn load_or_resume(
-        &self,
-        session_id: &str,
-        cwd: &str,
-        mcp_url: &str,
-        origin: &ConfirmationOrigin,
-        mode: &str,
-    ) -> Result<()> {
+    async fn set_mode(&self, session_id: &str, mode: &str) -> Result<()> {
+        self.request(
+            "session/set_mode",
+            json!({"sessionId": session_id, "modeId": mode}),
+        )
+        .await
+        .map_err(|error| Error::Upstream(error.message))?;
+        Ok(())
+    }
+
+    pub async fn load_or_resume(&self, session_id: &str, cwd: &str, mcp_url: &str) -> Result<()> {
         let params = json!({
             "sessionId": session_id,
             "cwd": cwd,
-            "mcpServers": [http_mcp_server(mcp_url, origin)]
+            "mcpServers": [{"type": "http", "name": "wonton", "url": mcp_url, "headers": []}]
         });
         if self.capabilities.load_session {
-            self.restore_with("session/load", params).await?;
-        } else if self.capabilities.resume {
-            self.restore_with("session/resume", params).await?;
-        } else {
-            return Err(Error::SessionUnavailable(Detail::msg(
-                "acp-restore-unsupported",
-            )));
+            return self.restore_with("session/load", params).await;
         }
-        mode::set_after_restore(self, session_id, mode).await?;
-        self.inner
-            .origins
-            .lock()
-            .await
-            .insert(session_id.to_owned(), origin.clone());
-        Ok(())
+        if self.capabilities.resume {
+            return self.restore_with("session/resume", params).await;
+        }
+        Err(Error::SessionUnavailable(
+            "Agent 不支持恢复 ACP session".into(),
+        ))
     }
     async fn restore_with(&self, method: &str, params: Value) -> Result<()> {
         let mut notices = self.subscribe();
@@ -373,7 +229,7 @@ impl AcpClient {
             if error.code == -32000 {
                 return Error::AuthenticationRequired;
             }
-            let detail = error.message.clone();
+            let detail = error.message;
             let lower = detail.to_ascii_lowercase();
             let unsupported = lower.contains("method not found")
                 || lower.contains("not supported")
@@ -383,9 +239,9 @@ impl AcpClient {
                 || lower.contains("unknown session")
                 || lower.contains("session does not exist")
             {
-                Error::SessionUnavailable(Detail::data(detail))
+                Error::SessionUnavailable(detail)
             } else {
-                Error::Upstream(rpc_detail(&error))
+                Error::Upstream(detail)
             }
         })?;
         // 回放更新可能在响应之后才到；等它们安静下来再让下一轮 prompt 进入。
@@ -406,19 +262,18 @@ impl AcpClient {
     }
 
     pub async fn close(&self, session_id: &str) -> Result<()> {
-        self.inner.origins.lock().await.remove(session_id);
         if !self.capabilities.close {
             return Ok(());
         }
-        permissions::cancel_session(&self.inner, session_id).await;
+        self.cancel_permissions(session_id).await;
         self.request("session/close", json!({"sessionId": session_id}))
             .await
-            .map_err(|error| Error::Upstream(rpc_detail(&error)))?;
+            .map_err(|error| Error::Upstream(error.message))?;
         Ok(())
     }
 
     pub async fn cancel(&self, session_id: &str) -> Result<()> {
-        permissions::cancel_session(&self.inner, session_id).await;
+        self.cancel_permissions(session_id).await;
         self.inner
             .cancelled_sessions
             .lock()
@@ -428,43 +283,31 @@ impl AcpClient {
             .await
     }
 
-    /// 把内容块插进正在跑的一轮（`_session/steering`，claude-agent-acp、codex-acp、omp、OpenCode 共用的
-    /// 预标准扩展）。总带 `idleBehavior: promptRequired`：一轮已经结束时 Agent 不自己另起一轮，内容留给桥
-    /// 走普通 `session/prompt`。投递的时机由 Agent 定，协议里没有让客户端选的字段。
-    pub async fn steer(&self, session_id: &str, prompt: Vec<Value>) -> Result<SteerOutcome> {
+    pub async fn steer(&self, session_id: &str, text: &str) -> Result<String> {
         if !self.capabilities.steering {
-            return Err(Error::Upstream(Detail::msg("acp-no-steering")));
+            return Err(Error::Upstream("Agent 未声明 _session/steering".into()));
         }
         let result = self
             .request(
                 "_session/steering",
                 json!({
                     "sessionId": session_id,
-                    "prompt": prompt,
-                    "_meta": {"steering": {"idleBehavior": "promptRequired"}}
+                    "prompt": [{"type": "text", "text": text}],
+                    "_meta": {"steering": {"queue": "steering", "idleBehavior": "promptRequired"}}
                 }),
             )
             .await
-            .map_err(|error| Error::Upstream(rpc_detail(&error)))?;
-        Ok(SteerOutcome::parse(&result["outcome"]))
+            .map_err(|error| Error::Upstream(error.message))?;
+        Ok(result["outcome"].as_str().unwrap_or("failed").to_owned())
     }
 
-    /// 发一轮提示词。`prompt` 是 ACP 内容块（text、image、resource_link，见
-    /// `bridge/attachments.rs`），一轮可以多个块。
     pub async fn prompt(
         &self,
         session_id: &str,
-        prompt: Vec<Value>,
+        text: &str,
         max_output: usize,
         timeout: Duration,
-        lang: Lang,
     ) -> Result<PromptResult> {
-        // 这一轮里回来的权限请求用它写卡片文字（“[已隐藏]” 这类）。
-        self.inner
-            .langs
-            .lock()
-            .await
-            .insert(session_id.to_owned(), lang);
         let mut notices = self.subscribe();
         if self
             .inner
@@ -487,10 +330,10 @@ impl AcpClient {
             .get(session_id)
             .cloned()
             .unwrap_or_default();
-        tracing::debug!(session_id, blocks = prompt.len(), "发送 ACP prompt");
+        tracing::debug!(session_id, bytes = text.len(), "发送 ACP prompt");
         let response = self.request(
             "session/prompt",
-            json!({"sessionId": session_id, "prompt": prompt}),
+            json!({"sessionId": session_id, "prompt": [{"type": "text", "text": text}]}),
         );
         tokio::pin!(response);
         let timer = tokio::time::sleep(timeout);
@@ -505,11 +348,8 @@ impl AcpClient {
                             self.clear_cancelled(session_id).await;
                             return Err(match error.code {
                                 -32000 => Error::AuthenticationRequired,
-                                -32098 => Error::TransportUnavailable(rpc_detail(&error)),
-                                CLOSED_CODE => {
-                                    Error::TransportUnavailable(Detail::msg("acp-connection-closed"))
-                                }
-                                _ => Error::Upstream(rpc_detail(&error)),
+                                -32098 => Error::TransportUnavailable(error.message),
+                                _ => Error::Upstream(error.message),
                             });
                         }
                     };
@@ -529,47 +369,51 @@ impl AcpClient {
                 notice = notices.recv() => match notice {
                     Ok(notice) => updates.apply(session_id, notice),
                     Err(broadcast::error::RecvError::Lagged(_)) => {}
-                    Err(broadcast::error::RecvError::Closed) => {
-                        return Err(Error::TransportUnavailable(Detail::msg("acp-connection-closed")))
-                    }
+                    Err(broadcast::error::RecvError::Closed) => return Err(Error::TransportUnavailable("ACP 连接已关闭".into())),
                 },
                 _ = &mut timer => {
-                    self.cancel_and_settle(session_id, &mut response, &mut notices, &mut updates)
-                        .await;
-                    return Err(Error::TransportUnavailable(Detail::msg("acp-turn-timeout")));
+                    let _ = self.cancel(session_id).await;
+                    let response_done = tokio::time::timeout(CANCEL_GRACE, &mut response).await.is_ok();
+                    tokio::time::sleep(CANCEL_GRACE).await;
+                    updates.drain(&mut notices, session_id);
+                    self.remember_message_ids(session_id, &updates.message_ids).await;
+                    if response_done {
+                        self.clear_cancelled(session_id).await;
+                    }
+                    return Err(Error::TransportUnavailable("ACP 单轮超时，已请求取消".into()));
                 }
             }
             if updates.output_limited {
-                self.cancel_and_settle(session_id, &mut response, &mut notices, &mut updates)
+                let _ = self.cancel(session_id).await;
+                let response_done = tokio::time::timeout(CANCEL_GRACE, &mut response)
+                    .await
+                    .is_ok();
+                tokio::time::sleep(CANCEL_GRACE).await;
+                updates.drain(&mut notices, session_id);
+                self.remember_message_ids(session_id, &updates.message_ids)
                     .await;
-                return Err(Error::TransportUnavailable(Detail::msg("acp-output-limit")));
+                if response_done {
+                    self.clear_cancelled(session_id).await;
+                }
+                return Err(Error::TransportUnavailable(
+                    "ACP 回复超过输出限制，已请求取消".into(),
+                ));
             }
         }
     }
-
-    /// 取消这一轮：等响应落定（最多一秒）、把通知收干净、记住消息 ID；响应已带回时清掉取消标记。
-    async fn cancel_and_settle(
-        &self,
-        session_id: &str,
-        response: &mut std::pin::Pin<
-            &mut impl Future<Output = std::result::Result<Value, RpcError>>,
-        >,
-        notices: &mut broadcast::Receiver<AgentNotice>,
-        updates: &mut PromptUpdates,
-    ) {
-        let _ = self.cancel(session_id).await;
-        let response_done = tokio::time::timeout(CANCEL_GRACE, &mut *response)
-            .await
-            .is_ok();
-        tokio::time::sleep(CANCEL_GRACE).await;
-        updates.drain(notices, session_id);
-        self.remember_message_ids(session_id, &updates.message_ids)
-            .await;
-        if response_done {
-            self.clear_cancelled(session_id).await;
+    async fn cancel_permissions(&self, session_id: &str) {
+        let mut waiters = self.inner.permission_waiters.lock().await;
+        let keys = waiters
+            .iter()
+            .filter(|(_, waiter)| waiter.session_id == session_id)
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        for key in keys {
+            if let Some(waiter) = waiters.remove(&key) {
+                let _ = waiter.cancel.send(());
+            }
         }
     }
-
     async fn clear_cancelled(&self, session_id: &str) {
         self.inner
             .cancelled_sessions
@@ -603,13 +447,11 @@ impl AcpClient {
             return Err(RpcError {
                 code: -32098,
                 message: error.to_string(),
-                detail: None,
             });
         }
         receiver.await.map_err(|_| RpcError {
-            code: CLOSED_CODE,
-            message: String::new(),
-            detail: None,
+            code: -32098,
+            message: "ACP 连接已关闭".into(),
         })?
     }
 
@@ -619,14 +461,10 @@ impl AcpClient {
     }
 
     async fn write(&self, message: Value) -> Result<()> {
-        let bytes = serde_json::to_vec(&message).map_err(|error| {
-            Error::InvalidInput(Detail::msg_with(
-                "acp-encode-failed",
-                [("error", error.to_string())],
-            ))
-        })?;
+        let bytes = serde_json::to_vec(&message)
+            .map_err(|error| Error::InvalidInput(format!("ACP 请求编码失败：{error}")))?;
         if bytes.len() > MAX_FRAME_BYTES {
-            return Err(Error::InvalidInput(Detail::msg("acp-frame-too-large")));
+            return Err(Error::InvalidInput("ACP 请求超过单帧限制".into()));
         }
         let mut writer = self.inner.writer.lock().await;
         writer.write_all(&bytes).await?;
@@ -636,16 +474,16 @@ impl AcpClient {
 }
 
 async fn read_loop(inner: Arc<Inner>, reader: OwnedReadHalf) {
-    let mut reader = BufReader::new(reader);
-    let mut frame = Vec::new();
+    let mut lines = BufReader::new(reader).lines();
     loop {
-        match frame::read_frame(&mut reader, &mut frame).await {
-            frame::FrameRead::Frame => {}
-            frame::FrameRead::Oversize | frame::FrameRead::Eof | frame::FrameRead::Transport => {
-                break;
-            }
+        let line = match lines.next_line().await {
+            Ok(Some(line)) => line,
+            Ok(None) | Err(_) => break,
+        };
+        if line.len() > MAX_FRAME_BYTES {
+            break;
         }
-        let Ok(message) = serde_json::from_slice::<Value>(&frame) else {
+        let Ok(message) = serde_json::from_str::<Value>(&line) else {
             break;
         };
         if message.get("method").is_some() {
@@ -663,9 +501,8 @@ async fn read_loop(inner: Arc<Inner>, reader: OwnedReadHalf) {
     let pending = std::mem::take(&mut *inner.pending.lock().await);
     for (_, sender) in pending {
         let _ = sender.send(Err(RpcError {
-            code: CLOSED_CODE,
-            message: String::new(),
-            detail: None,
+            code: -32098,
+            message: "ACP Agent 连接断开".into(),
         }));
     }
 }
@@ -675,7 +512,13 @@ async fn settle_response(inner: &Arc<Inner>, id: u64, message: &Value) {
     let sender = inner.pending.lock().await.remove(&id);
     let Some(sender) = sender else { return };
     let result = if let Some(error) = message.get("error") {
-        Err(RpcError::from_wire(error))
+        Err(RpcError {
+            code: error["code"].as_i64().unwrap_or(-32603),
+            message: error["message"]
+                .as_str()
+                .unwrap_or("ACP 请求失败")
+                .to_owned(),
+        })
     } else {
         Ok(message.get("result").cloned().unwrap_or(Value::Null))
     };
@@ -691,14 +534,8 @@ async fn handle_request(inner: &Arc<Inner>, message: &Value) {
         handle_update(inner, message).await;
         return;
     }
-    if method == "_wonton/task" {
-        let _ = inner.notices.send(AgentNotice::Task {
-            params: message["params"].clone(),
-        });
-        return;
-    }
     if method == "$/cancel_request" {
-        permissions::cancel_request(inner, &message["params"]["requestId"]).await;
+        cancel_permission_request(inner, &message["params"]["requestId"]).await;
         inner.auth.cancel(&message["params"]["requestId"]).await;
         return;
     }
@@ -709,7 +546,7 @@ async fn handle_request(inner: &Arc<Inner>, message: &Value) {
         "session/request_permission" => {
             let inner = inner.clone();
             let request = message.clone();
-            tokio::spawn(async move { permissions::handle_request(inner, id, request).await });
+            tokio::spawn(async move { handle_permission_request(inner, id, request).await });
         }
         "elicitation/create" => {
             tokio::spawn(auth::elicit(inner.clone(), id, message["params"].clone()));
@@ -762,6 +599,84 @@ fn merge_json(target: &mut Value, patch: &Value) {
     }
 }
 
+async fn handle_permission_request(inner: Arc<Inner>, id: Value, message: Value) {
+    let session_id = message["params"]["sessionId"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    let mut params = message["params"].clone();
+    merge_permission_tool_call(&inner, &session_id, &mut params).await;
+    let pending = match parse_pending(&params) {
+        Ok(pending) => pending,
+        Err(error) => {
+            send_result(&inner, &id, json!({"outcome": {"outcome": "cancelled"}})).await;
+            let _ = inner.notices.send(AgentNotice::PermissionFailed {
+                session_id,
+                message: error.to_string(),
+            });
+            return;
+        }
+    };
+    let key = id_key(&id);
+    let (cancel_tx, cancel_rx) = oneshot::channel();
+    inner.permission_waiters.lock().await.insert(
+        key.clone(),
+        PermissionWaiter {
+            session_id: session_id.clone(),
+            cancel: cancel_tx,
+        },
+    );
+    let result = tokio::select! {
+        result = inner.permission_broker.ask(pending) => result,
+        _ = cancel_rx => Ok(PermissionResult::Cancelled),
+    };
+    inner.permission_waiters.lock().await.remove(&key);
+    match result {
+        Ok(PermissionResult::Selected { option_id }) => {
+            send_result(
+                &inner,
+                &id,
+                json!({"outcome": {"outcome": "selected", "optionId": option_id}}),
+            )
+            .await;
+        }
+        Ok(PermissionResult::Cancelled) | Ok(PermissionResult::Expired) => {
+            send_result(&inner, &id, json!({"outcome": {"outcome": "cancelled"}})).await;
+            let _ = inner
+                .notices
+                .send(AgentNotice::PermissionCancelled { session_id });
+        }
+        Err(error) => {
+            send_result(&inner, &id, json!({"outcome": {"outcome": "cancelled"}})).await;
+            let _ = inner.notices.send(AgentNotice::PermissionFailed {
+                session_id,
+                message: error.to_string(),
+            });
+        }
+    }
+}
+
+async fn merge_permission_tool_call(inner: &Arc<Inner>, session_id: &str, params: &mut Value) {
+    let Some(tool_call_id) = params["toolCall"]["toolCallId"].as_str() else {
+        return;
+    };
+    let key = (session_id.to_owned(), tool_call_id.to_owned());
+    let calls = inner.tool_calls.lock().await;
+    let Some(previous) = calls.get(&key) else {
+        return;
+    };
+    let mut merged = previous.clone();
+    merge_json(&mut merged, &params["toolCall"]);
+    params["toolCall"] = merged;
+}
+
+async fn cancel_permission_request(inner: &Arc<Inner>, request_id: &Value) {
+    let key = id_key(request_id);
+    if let Some(waiter) = inner.permission_waiters.lock().await.remove(&key) {
+        let _ = waiter.cancel.send(());
+    }
+}
+
 async fn send_result(inner: &Arc<Inner>, id: &Value, result: Value) {
     let response = json!({"jsonrpc": "2.0", "id": id, "result": result});
     let Ok(bytes) = serde_json::to_vec(&response) else {
@@ -782,44 +697,8 @@ async fn send_error(inner: &Arc<Inner>, id: &Value, code: i64, message: &str) {
     let _ = writer.write_all(b"\n").await;
 }
 
-async fn lang_for(inner: &Arc<Inner>, session_id: &str) -> Lang {
-    inner
-        .langs
-        .lock()
-        .await
-        .get(session_id)
-        .copied()
-        .unwrap_or_else(default_lang)
-}
-
-/// RpcError 进聊天用的话：Agent 没带 message 时用桥自己的类别句。
-fn rpc_detail(error: &RpcError) -> Detail {
-    error
-        .detail
-        .clone()
-        .unwrap_or_else(|| Detail::data(error.message.clone()))
-}
-
-/// 权限请求失败的原因：桥自己写的用类别，其余（上游原文）原样。
-fn permission_detail(error: &Error) -> Detail {
-    match error {
-        Error::InvalidInput(detail) | Error::ConfirmationUnavailable(detail) => detail.clone(),
-        _ => Detail::data(error.to_string()),
-    }
-}
-
 fn id_key(id: &Value) -> String {
     id.to_string()
-}
-
-/// 会话的 MCP 服务器配置：带上来源会话的请求头（ADR-0016），Agent 对这个 MCP 服务器的
-/// 每个请求都带着它们，核心据此认出会话在哪个房间、哪个话题里。
-fn http_mcp_server(mcp_url: &str, origin: &ConfirmationOrigin) -> Value {
-    let mut headers = vec![json!({"name": ORIGIN_ROOM_HEADER, "value": origin.room_id})];
-    if let Some(thread) = &origin.thread_id {
-        headers.push(json!({"name": ORIGIN_THREAD_HEADER, "value": thread}));
-    }
-    json!({"type": "http", "name": "wonton", "url": mcp_url, "headers": headers})
 }
 
 fn parse_capabilities(result: &Value) -> Capabilities {
@@ -834,8 +713,74 @@ fn parse_capabilities(result: &Value) -> Capabilities {
             .unwrap_or(false),
         mcp_http: agent["mcpCapabilities"]["http"].is_object()
             || agent["mcpCapabilities"]["http"].as_bool().unwrap_or(false),
-        prompt_image: agent["promptCapabilities"]["image"]
-            .as_bool()
-            .unwrap_or(false),
+    }
+}
+
+struct PromptUpdates {
+    ignored: HashSet<String>,
+    message_ids: HashSet<String>,
+    output: String,
+    max_output: usize,
+    output_limited: bool,
+    permissions_cancelled: usize,
+    permission_error: Option<String>,
+}
+
+impl PromptUpdates {
+    fn new(ignored: HashSet<String>, max_output: usize) -> Self {
+        Self {
+            ignored,
+            message_ids: HashSet::new(),
+            output: String::new(),
+            max_output,
+            output_limited: false,
+            permissions_cancelled: 0,
+            permission_error: None,
+        }
+    }
+
+    fn apply(&mut self, session_id: &str, notice: AgentNotice) {
+        match notice {
+            AgentNotice::PermissionCancelled { session_id: id } if id == session_id => {
+                self.permissions_cancelled += 1;
+            }
+            AgentNotice::PermissionFailed {
+                session_id: id,
+                message,
+            } if id == session_id => {
+                self.permission_error = Some(message);
+            }
+            AgentNotice::Update {
+                session_id: id,
+                update,
+            } if id == session_id => self.append(&update),
+            _ => {}
+        }
+    }
+
+    fn drain(&mut self, notices: &mut broadcast::Receiver<AgentNotice>, session_id: &str) {
+        while let Ok(notice) = notices.try_recv() {
+            self.apply(session_id, notice);
+        }
+    }
+
+    fn append(&mut self, update: &Value) {
+        if let Some(message_id) = update["messageId"].as_str() {
+            if self.ignored.contains(message_id) {
+                return;
+            }
+            self.message_ids.insert(message_id.to_owned());
+        }
+        if update["sessionUpdate"] != "agent_message_chunk" || update["content"]["type"] != "text" {
+            return;
+        }
+        let Some(text) = update["content"]["text"].as_str() else {
+            return;
+        };
+        if self.output.len().saturating_add(text.len()) > self.max_output {
+            self.output_limited = true;
+            return;
+        }
+        self.output.push_str(text);
     }
 }

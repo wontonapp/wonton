@@ -14,8 +14,6 @@ use super::check::{channel, version_of};
 use super::host::{Host, HostError, Mount, UpdaterSpec};
 use super::state::{self, ImageRef, Layout, Outcome, UpgradeState, WATCHDOG_MARGIN, problem};
 use super::{UPDATER_CONTAINER, backup};
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 /// 多久看一次升级器和该不该查新版本。
 const TICK: Duration = Duration::from_secs(10);
@@ -51,8 +49,8 @@ pub enum UpgradeError {
     Changed(String),
     #[error("{0}")]
     NotReady(String),
-    #[error("{0}")]
-    Busy(String),
+    #[error("已经在升级了")]
+    Busy,
     #[error("{0}")]
     TooLate(String),
     #[error("{0}")]
@@ -66,7 +64,7 @@ impl UpgradeError {
         match self {
             Self::Changed(_) => "changed",
             Self::NotReady(_) => "not_ready",
-            Self::Busy(_) => "busy",
+            Self::Busy => "busy",
             Self::TooLate(_) => "too_late",
             Self::Upstream(_) => "upstream",
             Self::Storage(_) => "storage",
@@ -119,7 +117,7 @@ impl Upgrades {
             frozen: watch::Sender::new(false),
         };
         // 插件管理器恢复之前就要知道：新核心可能正处在升级的观察期里。
-        match state::load(&this.layout().state_path(), &this.owner_languages()) {
+        match state::load(&this.layout().state_path()) {
             Ok(Some(last)) => this.frozen.send_replace(last.freezes_plugins()),
             Ok(None) => false,
             Err(e) => {
@@ -128,11 +126,6 @@ impl Upgrades {
             }
         };
         this
-    }
-
-    /// 后台自己写文字（检查、看住升级器）用主人最近一次请求的语言（ADR-0043）。
-    pub(super) fn owner_languages(&self) -> Languages {
-        crate::plugin::store::read_owner_languages(&self.config.data_dir)
     }
 
     pub(super) fn layout(&self) -> Layout {
@@ -162,30 +155,20 @@ impl Upgrades {
         self.check.lock().expect("升级检查的锁中毒").clone()
     }
 
-    pub(super) async fn running(&self, langs: &Languages) -> Result<Running, UpgradeError> {
+    pub(super) async fn running(&self) -> Result<Running, UpgradeError> {
         if let Some(running) = self.running.get() {
             return Ok(running.clone());
         }
         let Some(name) = self.config.core_container.as_deref() else {
-            return Err(UpgradeError::NotReady(l10n::text(
-                langs,
-                "upgrade-not-in-container",
-                &[],
-            )));
+            return Err(UpgradeError::NotReady("核心不在容器里运行".to_owned()));
         };
-        let container = self.host.container(name).await?.ok_or_else(|| {
-            UpgradeError::Upstream(l10n::text(
-                langs,
-                "upgrade-container-missing",
-                &[("name", name.into())],
-            ))
-        })?;
+        let container = self
+            .host
+            .container(name)
+            .await?
+            .ok_or_else(|| UpgradeError::Upstream(format!("查不到核心自己的容器 {name}")))?;
         let info = self.host.image(&container.image_id).await?.ok_or_else(|| {
-            UpgradeError::Upstream(l10n::text(
-                langs,
-                "upgrade-image-missing",
-                &[("image", container.image_id.as_str().into())],
-            ))
+            UpgradeError::Upstream(format!("查不到正在运行的镜像 {}", container.image_id))
         })?;
         let digest = match container.config_image.split_once('@') {
             Some((_, digest)) => Some(digest.to_owned()),
@@ -206,15 +189,15 @@ impl Upgrades {
 
     /// 这台核心的版本号，就是升级接口报的那个。不在容器里、镜像没有版本号时为空。
     pub async fn running_version(&self) -> Option<String> {
-        self.running(&self.owner_languages()).await.ok()?.version
+        self.running().await.ok()?.version
     }
 
-    fn read_state(&self, langs: &Languages) -> Result<Option<UpgradeState>, UpgradeError> {
-        state::load(&self.layout().state_path(), langs).map_err(UpgradeError::Storage)
+    fn read_state(&self) -> Result<Option<UpgradeState>, UpgradeError> {
+        state::load(&self.layout().state_path()).map_err(UpgradeError::Storage)
     }
 
-    pub async fn status(&self, langs: &Languages) -> Result<CoreUpgradeStatus, UpgradeError> {
-        let current = match self.running(langs).await {
+    pub async fn status(&self) -> Result<CoreUpgradeStatus, UpgradeError> {
+        let current = match self.running().await {
             Ok(running) => CoreVersion {
                 version: running.version,
                 digest: running.digest,
@@ -231,7 +214,7 @@ impl Upgrades {
             current,
             channel: channel.map(|(_, tag)| tag.to_owned()),
             check: self.current_check(),
-            run: self.read_state(langs)?.map(|last| last.run(now, langs)),
+            run: self.read_state()?.map(|last| last.run(now)),
         })
     }
 
@@ -254,96 +237,75 @@ impl Upgrades {
     fn may_check(&self) -> bool {
         let follows = self.config.source.as_deref().and_then(channel).is_some();
         let idle = self
-            .read_state(&self.owner_languages())
+            .read_state()
             .is_ok_and(|last| last.is_none_or(|s| s.is_ended()));
         self.config.is_installed() && follows && idle
     }
 
     /// 发起升级。`digest` 是主人确认的版本。
-    pub async fn start(
-        &self,
-        digest: &str,
-        langs: &Languages,
-    ) -> Result<CoreUpgradeStatus, UpgradeError> {
+    pub async fn start(&self, digest: &str) -> Result<CoreUpgradeStatus, UpgradeError> {
         if !self.config.is_installed() {
-            return Err(UpgradeError::NotReady(l10n::text(
-                langs,
-                "upgrade-not-installed",
-                &[],
-            )));
+            return Err(UpgradeError::NotReady(
+                "这个核心不是正式安装的，不能一键升级".to_owned(),
+            ));
         }
         let _serial = self.starting.lock().await;
         self.supervise().await;
-        let last = self.read_state(langs)?;
+        let last = self.read_state()?;
         if last.as_ref().is_some_and(|s| !s.is_ended()) {
-            return Err(UpgradeError::Busy(l10n::text(langs, "upgrade-busy", &[])));
+            return Err(UpgradeError::Busy);
         }
         let offer = match self.current_check() {
             CoreUpgradeCheck::Ready { offer } if offer.digest == digest => offer,
             CoreUpgradeCheck::Ready { .. } | CoreUpgradeCheck::UpToDate => {
-                return Err(UpgradeError::Changed(l10n::text(
-                    langs,
-                    "upgrade-channel-changed",
-                    &[],
-                )));
+                return Err(UpgradeError::Changed(
+                    "渠道上的版本变了，要重新确认".to_owned(),
+                ));
             }
             CoreUpgradeCheck::Downloading { digest: new, .. }
             | CoreUpgradeCheck::DownloadFailed { digest: new, .. }
                 if new != digest =>
             {
-                return Err(UpgradeError::Changed(l10n::text(
-                    langs,
-                    "upgrade-channel-changed",
-                    &[],
-                )));
+                return Err(UpgradeError::Changed(
+                    "渠道上的版本变了，要重新确认".to_owned(),
+                ));
             }
-            _ => {
-                return Err(UpgradeError::NotReady(l10n::text(
-                    langs,
-                    "upgrade-not-downloaded",
-                    &[],
-                )));
-            }
+            _ => return Err(UpgradeError::NotReady("新版本还没下载好".to_owned())),
         };
-        let running = self.running(langs).await?;
+        let running = self.running().await?;
         let (repository, _) = self
             .config
             .source
             .as_deref()
             .and_then(channel)
-            .ok_or_else(|| UpgradeError::NotReady(l10n::text(langs, "upgrade-pinned", &[])))?;
+            .ok_or_else(|| {
+                UpgradeError::NotReady("这次安装固定在一个版本上，不跟渠道".to_owned())
+            })?;
         let mut fresh = UpgradeState::new(
             crate::secret::random_token(),
             ImageRef {
                 image: running.config_image.clone(),
                 digest: running.digest.clone(),
                 version: running.version.clone(),
-                image_id: Some(running.image_id.clone()),
             },
             ImageRef {
                 image: format!("{repository}@{}", offer.digest),
                 digest: Some(offer.digest.clone()),
                 version: offer.version.clone(),
-                image_id: None,
             },
             offer.migrates.clone(),
             self.host.now(),
         );
         fresh.stale_images = last.map(|s| s.rollback_images).unwrap_or_default();
-        self.launch(fresh, &running, langs).await?;
-        self.status(langs).await
+        self.launch(fresh, &running).await?;
+        self.status().await
     }
 
-    async fn launch(
-        &self,
-        mut fresh: UpgradeState,
-        running: &Running,
-        langs: &Languages,
-    ) -> Result<(), UpgradeError> {
+    async fn launch(&self, mut fresh: UpgradeState, running: &Running) -> Result<(), UpgradeError> {
         let layout = self.layout();
         self.host.remove_container(UPDATER_CONTAINER).await?;
         self.remove_cancel_markers();
-        state::save(&layout.state_path(), &fresh, langs).map_err(UpgradeError::Storage)?;
+        state::save(&layout.state_path(), &fresh).map_err(UpgradeError::Storage)?;
         let spec = UpdaterSpec {
             image_id: running.image_id.clone(),
             cmd: vec![
@@ -360,13 +322,9 @@ impl Upgrades {
         if let Err(e) = self.host.start_updater(&spec).await {
             // 什么都没动：如实写成失败，这条路也有结果。
             fresh.result = Some(Outcome::Failed);
-            let message = l10n::text(
-                langs,
-                "upgrade-launch-updater-failed",
-                &[("error", e.to_string().into())],
-            );
+            let message = format!("启动升级器失败：{e}");
             fresh.problem = Some(problem(Failure::UpdaterFailed, message));
-            state::save(&layout.state_path(), &fresh, langs).map_err(UpgradeError::Storage)?;
+            state::save(&layout.state_path(), &fresh).map_err(UpgradeError::Storage)?;
         }
         Ok(())
     }
@@ -385,30 +343,23 @@ impl Upgrades {
     }
 
     /// 请求取消。结果以状态文件为准：`canceled`，或者已经往下走了。
-    pub async fn cancel(&self, langs: &Languages) -> Result<CoreUpgradeStatus, UpgradeError> {
-        let Some(last) = self.read_state(langs)?.filter(|s| !s.is_ended()) else {
-            return Err(UpgradeError::TooLate(l10n::text(
-                langs,
-                "upgrade-not-upgrading",
-                &[],
-            )));
+    pub async fn cancel(&self) -> Result<CoreUpgradeStatus, UpgradeError> {
+        let Some(last) = self.read_state()?.filter(|s| !s.is_ended()) else {
+            return Err(UpgradeError::TooLate("没有在升级".to_owned()));
         };
         if last.phase != wonton_protocol::CoreUpgradePhase::Pulling {
-            return Err(UpgradeError::TooLate(l10n::text(
-                langs,
-                "upgrade-cancel-too-late",
-                &[],
-            )));
+            return Err(UpgradeError::TooLate(
+                "已经开始动东西了，不能取消".to_owned(),
+            ));
         }
         let path = self.layout().cancel_path(&last.id);
         state::write_atomic(&path, b"", 0o600).map_err(UpgradeError::Storage)?;
-        self.status(langs).await
+        self.status().await
     }
 
     /// 看一眼这次升级：更新冻结的状态；升级器不在了就写结果，每条路最后都要有结果。
     pub async fn supervise(&self) {
-        let langs = self.owner_languages();
-        let last = match self.read_state(&langs) {
+        let last = match self.read_state() {
             Ok(Some(last)) => last,
             Ok(None) => {
                 self.frozen.send_replace(false);
@@ -459,10 +410,9 @@ impl Upgrades {
 
     /// 查完容器后重读：升级器先写结果再改重启策略、再退出，这样盖不掉它写的结果。
     fn updater_gone(&self, id: &str) {
-        let langs = self.owner_languages();
         let path = self.layout().state_path();
         let write = || -> anyhow::Result<()> {
-            let Some(mut last) = state::load(&path, &langs)? else {
+            let Some(mut last) = state::load(&path)? else {
                 return Ok(());
             };
             if last.id != id || last.is_ended() {
@@ -474,13 +424,9 @@ impl Upgrades {
                 backup::mark_keep(dir)?;
             }
             last.result = Some(Outcome::Unknown);
-            let message = l10n::text(
-                &langs,
-                "upgrade-updater-gone",
-                &[("phase", format!("{:?}", last.phase).into())],
-            );
+            let message = format!("升级器不在了，说不清做到了 {:?} 这一步", last.phase);
             last.problem = Some(problem(Failure::UpdaterFailed, message));
-            state::save(&path, &last, &langs)
+            state::save(&path, &last)
         };
         match write() {
             Ok(()) => {

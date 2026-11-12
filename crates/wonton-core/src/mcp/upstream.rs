@@ -32,8 +32,6 @@ use rmcp::transport::streamable_http_client::{
     StreamableHttpClientTransportConfig, StreamableHttpError,
 };
 use rmcp::{ClientLifecycleMode, ClientServiceExt};
-use serde_json::Value;
-use wonton_protocol::TOOL_CALL_USER_META;
 
 use tokio::time::Instant;
 
@@ -238,9 +236,6 @@ impl Upstreams {
             .tls_certs_only(std::iter::empty())
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(CONNECT_TIMEOUT)
-            // 不留空闲连接：插件停了以后，往池子里那条还开着的连接上发的请求分不清发没发出，
-            // 会把“没发出”报成“不确定”。不复用就一定是新建连接，停了就连不上（NotSent）。
-            .pool_max_idle_per_host(0)
             .build()
             .expect("构造 MCP 客户端的 HTTP 客户端");
         Self {
@@ -313,8 +308,6 @@ impl Upstreams {
             Some(path) => reqwest::Client::builder()
                 .unix_socket(path.clone())
                 .no_proxy()
-                // 同 `Upstreams::new()`：会话跨调用缓存，留着空闲连接，插件停了以后的调用会被报成“不确定”。
-                .pool_max_idle_per_host(0)
                 .build()
                 .map_err(|e| format!("连不上插件 {} 的 MCP 套接字：{e}", server.id))?,
             None => self.http.clone(),
@@ -481,21 +474,12 @@ impl Upstreams {
         server: &McpServer,
         tool: &str,
         arguments: Option<JsonObject>,
-        on_behalf_of: Option<String>,
         cancelled: impl Future<Output = ()>,
     ) -> Result<CallToolResult, CallError> {
         let connection = self.connection(server).await.map_err(CallError::NotSent)?;
         let mut params = CallToolRequestParams::new(tool.to_owned());
         if let Some(arguments) = arguments {
             params = params.with_arguments(arguments);
-        }
-        // 替谁办事（ADR-0045）：私人 Bot 是归属人的用户名，多用户的应用按它切数据。
-        if let Some(user) = on_behalf_of {
-            params.meta = Some(rmcp::model::RequestMetaObject(rmcp::model::MetaObject(
-                [(TOOL_CALL_USER_META.to_owned(), Value::from(user))]
-                    .into_iter()
-                    .collect(),
-            )));
         }
         let limits = server.tool_limits;
         let options = PeerRequestOptions::with_timeout(limits.idle)
@@ -612,42 +596,6 @@ impl Upstreams {
         uri: &str,
         limit: usize,
     ) -> Result<Vec<u8>, ReadError> {
-        let result = self.read_contents(server, uri).await?;
-        let Some(contents) = result.contents.into_iter().next() else {
-            return Err(ReadError::Upstream(format!(
-                "插件 {} 的资源 {uri} 是空的",
-                server.id
-            )));
-        };
-        let bytes = match contents {
-            ResourceContents::TextResourceContents { text, .. } => text.into_bytes(),
-            ResourceContents::BlobResourceContents { blob, .. } => {
-                STANDARD.decode(blob).map_err(|e| {
-                    ReadError::Upstream(format!(
-                        "插件 {} 的资源 {uri} 不是合法的 base64：{e}",
-                        server.id
-                    ))
-                })?
-            }
-            other => {
-                return Err(ReadError::Upstream(format!(
-                    "插件 {} 的资源 {uri} 是读不懂的类型：{other:?}",
-                    server.id
-                )));
-            }
-        };
-        if bytes.len() > limit {
-            return Err(ReadError::TooLarge);
-        }
-        Ok(bytes)
-    }
-
-    /// 读插件的资源，连同内容的 `_meta`（MCP Apps 界面要按它设 CSP）。大小上限同上。
-    pub async fn read_contents(
-        &self,
-        server: &McpServer,
-        uri: &str,
-    ) -> Result<rmcp::model::ReadResourceResult, ReadError> {
         let connection = self
             .connection(server)
             .await
@@ -684,7 +632,33 @@ impl Upstreams {
                 )));
             }
         };
-        Ok(result)
+        let Some(contents) = result.contents.into_iter().next() else {
+            return Err(ReadError::Upstream(format!(
+                "插件 {} 的资源 {uri} 是空的",
+                server.id
+            )));
+        };
+        let bytes = match contents {
+            ResourceContents::TextResourceContents { text, .. } => text.into_bytes(),
+            ResourceContents::BlobResourceContents { blob, .. } => {
+                STANDARD.decode(blob).map_err(|e| {
+                    ReadError::Upstream(format!(
+                        "插件 {} 的资源 {uri} 不是合法的 base64：{e}",
+                        server.id
+                    ))
+                })?
+            }
+            other => {
+                return Err(ReadError::Upstream(format!(
+                    "插件 {} 的资源 {uri} 是读不懂的类型：{other:?}",
+                    server.id
+                )));
+            }
+        };
+        if bytes.len() > limit {
+            return Err(ReadError::TooLarge);
+        }
+        Ok(bytes)
     }
 
     /// 只留下还在运行的插件、地址和请求头都没变的客户端：头变了（密钥换了）就丢掉，下次重连。

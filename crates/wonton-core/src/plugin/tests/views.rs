@@ -27,7 +27,7 @@ fn photos(icon: &str) -> PluginPackage {
     .replace("id: app.test", "id: app.photos")
     .replace("{zh: 测试, en: Test}", "{zh: 相册, en: Photos}");
     let files = PackageFiles::from([("icon.svg".to_owned(), icon.as_bytes().to_vec())]);
-    PluginPackage::with_files(&yaml, files, &super::langs()).unwrap()
+    PluginPackage::with_files(&yaml, files).unwrap()
 }
 
 fn english() -> Languages {
@@ -39,9 +39,7 @@ async fn installed_plugins_carry_store_info_and_serve_their_icons() {
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    m.install_package(photos(ICON), &[], super::langs())
-        .await
-        .unwrap();
+    m.install_package(photos(ICON), &[]).await.unwrap();
 
     let list = m.installed(&english());
     let [plugin] = &list.plugins[..] else {
@@ -87,14 +85,7 @@ async fn installed_plugins_carry_store_info_and_serve_their_icons() {
         .await
         .unwrap();
     assert_eq!(detail.release_notes.as_deref(), Some("First release"));
-    assert_eq!(
-        detail.requirements[0].text,
-        crate::l10n::text(
-            &english(),
-            "plugin-install-req-memory-line",
-            &[("memory", "2G".into())]
-        )
-    );
+    assert_eq!(detail.requirements[0].text, "需要 2G 内存");
     assert_eq!(detail.author.unwrap().name, "Example");
 }
 
@@ -106,25 +97,15 @@ async fn content_revision_changes_without_a_version_bump_and_survives_restore() 
     let id = PluginId::parse("app.photos").unwrap();
     let original = photos(ICON);
     let original_digest = original.digest();
-    m.install_package(original, &[], super::langs())
-        .await
-        .unwrap();
+    m.install_package(original, &[]).await.unwrap();
     let before = m.installed_plugin(&id, &english()).unwrap();
     assert_eq!(before.revision, original_digest);
 
     let updated = photos(&ICON.replace("#22aa66", "#aa2266"));
     let updated_digest = updated.digest();
-    m.upgrade_upload(
-        &id,
-        updated,
-        Vec::new(),
-        Vec::new(),
-        false,
-        &Default::default(),
-        &super::langs(),
-    )
-    .await
-    .unwrap();
+    m.upgrade_upload(&id, updated, Vec::new(), false)
+        .await
+        .unwrap();
     let after = m.installed_plugin(&id, &english()).unwrap();
     assert_eq!(after.version, before.version);
     assert_ne!(after.revision, before.revision);
@@ -161,53 +142,6 @@ async fn content_revision_changes_without_a_version_bump_and_survives_restore() 
 }
 
 #[tokio::test]
-async fn open_urls_carry_the_declared_entry_path_and_query() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    tokio::spawn(async move {
-        axum::serve(
-            listener,
-            Router::new()
-                .route("/", get(|| async { "ok" }))
-                .route("/vnc.html", get(|| async { "ok" })),
-        )
-        .await
-        .unwrap();
-    });
-    let (_docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let manager = manager_with(engine, &dir);
-    let yaml = package(
-        "  web:\n    image: nginx:1.27",
-        &format!(
-            "  icon: icon.svg\n  webui: {{service: web, port: {port}, path: '/vnc.html?autoconnect=1&resize=remote'}}\n  permissions: []"
-        ),
-    )
-    .replace("id: app.test", "id: app.entry");
-    let package = PluginPackage::with_files(
-        &yaml,
-        PackageFiles::from([("icon.svg".to_owned(), ICON.as_bytes().to_vec())]),
-        &super::langs(),
-    )
-    .unwrap();
-    manager
-        .install_package(package, &[], super::langs())
-        .await
-        .unwrap();
-
-    // 已安装列表（App 主屏）和 PluginView（安装、启动接口和状态页）给的是同一个地址：
-    // origin 加清单声明的入口路径，query 原样保留。
-    let expected = "http://app-entry.wonton.localhost:8080/vnc.html?autoconnect=1&resize=remote";
-    let installed = manager.installed(&english());
-    assert_eq!(installed.plugins[0].web_url.as_deref(), Some(expected));
-    let views = manager.list();
-    let [view] = views.as_slice() else {
-        panic!("应有一个插件")
-    };
-    assert_eq!(view.url.as_deref(), Some(expected));
-}
-
-#[tokio::test]
 async fn installed_plugins_carry_tabs_and_choose_the_requested_title_language() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -241,13 +175,9 @@ async fn installed_plugins_carry_tabs_and_choose_the_requested_title_language() 
                 TAB_ICON_SELECTED.as_bytes().to_vec(),
             ),
         ]),
-        &super::langs(),
     )
     .unwrap();
-    manager
-        .install_package(tabs_package, &[], super::langs())
-        .await
-        .unwrap();
+    manager.install_package(tabs_package, &[]).await.unwrap();
 
     let root_yaml = package(
         "  web:\n    image: nginx:1.27",
@@ -257,13 +187,9 @@ async fn installed_plugins_carry_tabs_and_choose_the_requested_title_language() 
     let root = PluginPackage::with_files(
         &root_yaml,
         PackageFiles::from([("icon.svg".to_owned(), ICON.as_bytes().to_vec())]),
-        &super::langs(),
     )
     .unwrap();
-    manager
-        .install_package(root, &[], super::langs())
-        .await
-        .unwrap();
+    manager.install_package(root, &[]).await.unwrap();
 
     let english = manager.installed(&Languages::from_header(Some("en-US")));
     let plugin = english
@@ -324,57 +250,24 @@ async fn previews_explain_what_will_be_installed_or_why_not() {
     assert_eq!(preview.trust, PluginTrust::Local);
     assert_eq!(preview.blocked, None);
     let notices: Vec<&str> = preview.notices.iter().map(|n| n.text.as_str()).collect();
-    // 期望值用目录本身格式化出来（en-US 回落到 en）。
-    let unpinned = crate::l10n::text(
-        &english(),
-        "install-images-unpinned",
-        &[(
-            "images",
-            crate::l10n::text(
-                &english(),
-                "install-image",
-                &[("service", "web".into()), ("image", "nginx:1.27".into())],
-            )
-            .into(),
-        )],
-    );
-    assert!(notices.contains(&unpinned.as_str()), "{notices:?}");
     assert!(
-        notices.contains(
-            &crate::l10n::text(
-                &english(),
-                "plugin-install-req-memory-line",
-                &[("memory", "2G".into())]
-            )
-            .as_str()
-        ),
+        notices.contains(&"镜像没有按摘要固定：web（nginx:1.27）"),
         "{notices:?}"
     );
+    assert!(notices.contains(&"需要 2G 内存"), "{notices:?}");
     // 确认页显示的图标在装之前就取得到。
     let sha = sha256_hex(ICON.as_bytes());
     assert!(m.icon_png(&sha, Variant::Large).await.unwrap().is_some());
 
-    m.install_package(photos(ICON), &[], super::langs())
-        .await
-        .unwrap();
+    m.install_package(photos(ICON), &[]).await.unwrap();
     let again = m.preview_install(&photos(ICON), &english()).await.unwrap();
-    // 期望值用目录本身格式化出来；装的就是同一种包，版本一样。
-    let installed = photos(ICON);
-    let expected = crate::l10n::text(
-        &english(),
-        "install-already-installed",
-        &[
-            ("id", installed.manifest.id.to_string().into()),
-            ("version", installed.manifest.version.as_str().into()),
-        ],
-    );
-    assert_eq!(again.blocked.unwrap(), expected);
+    assert!(again.blocked.unwrap().contains("已经装了"));
 
     let host = package(
         "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: ['CMD', 'true']}\n",
         "  permissions: [network.host]",
     );
-    let host = PluginPackage::parse(&host, &super::langs()).unwrap();
+    let host = PluginPackage::parse(&host).unwrap();
     let preview = m.preview_install(&host, &english()).await.unwrap();
     assert_eq!(preview.blocked, None);
     assert_eq!(
@@ -404,20 +297,10 @@ async fn a_too_long_relay_socket_path_is_blocked_in_the_preview() {
         "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: ['CMD', 'true']}\n",
         "  webui: {service: web, port: 8123, sso: none}\n  permissions: [network.host]",
     );
-    let host = PluginPackage::parse(&host, &super::langs()).unwrap();
+    let host = PluginPackage::parse(&host).unwrap();
     let preview = m.preview_install(&host, &english()).await.unwrap();
     let blocked = preview.blocked.unwrap();
-    let socket = apps.join("app-test/relay/webui.sock");
-    let expected = crate::l10n::text(
-        &english(),
-        "plugin-install-relay-path-too-long",
-        &[
-            ("path", socket.display().to_string().into()),
-            ("bytes", socket.as_os_str().len().into()),
-            ("max", 107usize.into()),
-        ],
-    );
-    assert_eq!(blocked, expected);
+    assert!(blocked.contains("路径太长"), "{blocked}");
     // 中继镜像是核心自己的，已按摘要固定，不再提示未固定。
     let notices: Vec<&str> = preview.notices.iter().map(|n| n.text.as_str()).collect();
     assert!(
@@ -435,7 +318,7 @@ async fn privilege_previews_use_adr_notices_in_both_languages() {
         "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: ['CMD', 'true']}\n",
         "  permissions: [network.host]",
     );
-    let host = PluginPackage::parse(&host, &super::langs()).unwrap();
+    let host = PluginPackage::parse(&host).unwrap();
     let zh = m
         .preview_install(&host, &Languages::from_header(Some("zh")))
         .await
@@ -445,16 +328,10 @@ async fn privilege_previews_use_adr_notices_in_both_languages() {
         .iter()
         .find(|line| line.permission == "network.host")
         .and_then(|line| line.notice.as_deref());
-    // 期望值用目录本身格式化出来。
     assert_eq!(
         zh_notice,
         Some(
-            crate::l10n::text(
-                &Languages::from_header(Some("zh")),
-                "permission-notice-network-host",
-                &[]
-            )
-            .as_str()
+            "这个插件能直接访问你家里的网络和本机所有端口，包括只给本机用的服务，也能绕过 Wonton 的登录连到部分其他插件。它开的端口会出现在本机所有网卡上，包括 Wi-Fi、Tailscale 和 IPv6 地址，本机有公网地址时互联网也能连上。本机开着防火墙时，局域网设备连不进来，要你自己放行。"
         )
     );
 
@@ -470,12 +347,7 @@ async fn privilege_previews_use_adr_notices_in_both_languages() {
     assert_eq!(
         en_notice,
         Some(
-            crate::l10n::text(
-                &Languages::from_header(Some("en-US")),
-                "permission-notice-network-host",
-                &[]
-            )
-            .as_str()
+            "This plugin can directly access your home network and all ports on this machine, including services bound only to localhost, and bypass Wonton login to connect to some other plugins. Its ports will appear on all network interfaces, including Wi-Fi, Tailscale, and IPv6 addresses; if this machine has a public address, the internet can reach them too. If the machine firewall is on, LAN devices cannot connect until you allow them yourself."
         )
     );
 
@@ -483,7 +355,7 @@ async fn privilege_previews_use_adr_notices_in_both_languages() {
         "  web:\n    image: nginx\n    volumes: ['/var/run/docker.sock:/var/run/docker.sock']",
         "  permissions: [docker.socket]",
     );
-    let socket = PluginPackage::parse(&socket, &super::langs()).unwrap();
+    let socket = PluginPackage::parse(&socket).unwrap();
     let highest = m
         .preview_install(&socket, &Languages::from_header(Some("en-US")))
         .await
@@ -496,12 +368,7 @@ async fn privilege_previews_use_adr_notices_in_both_languages() {
     assert_eq!(
         highest_notice,
         Some(
-            crate::l10n::text(
-                &Languages::from_header(Some("en-US")),
-                "permission-notice-highest-risk",
-                &[]
-            )
-            .as_str()
+            "This plugin can control the entire host: read and write all files and other plugins' data, change or stop Wonton itself. This is equivalent to giving it root on the host. Only install plugins you trust. After uninstalling, containers it created and things it changed will not be cleaned up."
         )
     );
 }
@@ -517,17 +384,8 @@ async fn invalid_icons_fail_the_preview_and_the_install() {
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "invalid_input");
-    // 期望值用目录本身格式化出来；reason 是图片 worker 的原话（英文），只核对目录里的固定前缀。
-    let prefix = crate::l10n::text(
-        &english(),
-        "plugin-install-install-icon-error",
-        &[("path", "icon.svg".into()), ("reason", "".into())],
-    );
-    assert!(err.to_string().starts_with(prefix.trim_end()), "{err}");
-    let err = m
-        .install_package(photos(wide), &[], super::langs())
-        .await
-        .unwrap_err();
+    assert!(err.to_string().contains("图标 icon.svg"), "{err}");
+    let err = m.install_package(photos(wide), &[]).await.unwrap_err();
     assert_eq!(err.kind(), "invalid_input");
     assert!(m.installed(&english()).plugins.is_empty());
 }

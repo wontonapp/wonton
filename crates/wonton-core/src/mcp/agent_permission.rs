@@ -9,12 +9,9 @@ use wonton_protocol::{
     ConfirmationState,
 };
 
-use super::audience::Subject;
 use super::audit::{AgentPermissionRecord, Decision};
 use super::confirm::Refusal;
 use super::{Bus, Caller, cards};
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 /// 没能请主人确认的原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,18 +24,18 @@ pub enum AgentPermissionError {
 fn check(request: &AgentPermissionRequest) -> Result<(), AgentPermissionError> {
     let invalid = |message: &str| Err(AgentPermissionError::InvalidInput(message.to_owned()));
     if request.tool_call_id.is_empty() || request.title.is_empty() {
-        return invalid("tool_call_id and title must not be empty");
+        return invalid("tool_call_id 和 title 不能为空");
     }
     if request.options.is_empty() {
-        return invalid("options must not be empty");
+        return invalid("options 不能为空");
     }
     let blank = |o: &AgentPermissionOption| o.choice_id.is_empty() || o.name.is_empty();
     if request.options.iter().any(blank) {
-        return invalid("every option needs a non-empty choice_id and name");
+        return invalid("选项的 choice_id 和 name 不能为空");
     }
     let mut ids = HashSet::new();
     if !request.options.iter().all(|o| ids.insert(&o.choice_id)) {
-        return invalid("choice_id is duplicated across options");
+        return invalid("选项的 choice_id 重复了");
     }
     Ok(())
 }
@@ -49,8 +46,6 @@ struct Asked {
     caller: String,
     card: String,
     request: AgentPermissionRequest,
-    /// 收件人的语言：卡片结束时的文字也用它。
-    langs: Languages,
     settled: bool,
 }
 
@@ -77,22 +72,18 @@ impl Asked {
             .find(|o| Some(o.choice_id.as_str()) == choice_id);
         let Some(option) = option else {
             self.audit(Decision::Rejected, None);
-            self.bus.confirmations.bump();
+            self.bus.confirmations.publish(&self.card).await;
             return AgentPermissionOutcome::Cancelled;
         };
         if option.kind.answer() == Answer::Approve {
             self.audit(Decision::Approved, Some(option));
             let state = ConfirmationState::Succeeded {
-                message: l10n::text(
-                    &self.langs,
-                    "chat-agent-chose",
-                    &[("choice", option.name.as_str().into())],
-                ),
+                message: format!("已选择“{}”", option.name),
             };
             self.bus.confirmations.settle(&self.card, state).await;
         } else {
             self.audit(Decision::Rejected, Some(option));
-            self.bus.confirmations.bump();
+            self.bus.confirmations.publish(&self.card).await;
         }
         AgentPermissionOutcome::Selected {
             choice_id: option.choice_id.clone(),
@@ -110,10 +101,9 @@ impl Drop for Asked {
             return;
         };
         let (bus, card) = (self.bus.clone(), std::mem::take(&mut self.card));
-        let langs = self.langs.clone();
         runtime.spawn(async move {
             let state = ConfirmationState::Failed {
-                message: l10n::text(&langs, "chat-agent-abandoned", &[]),
+                message: "Agent 不再等这个回答了，这次确认作废".to_owned(),
             };
             bus.confirmations.settle(&card, state).await;
         });
@@ -128,21 +118,15 @@ impl Bus {
         request: AgentPermissionRequest,
     ) -> Result<AgentPermissionOutcome, AgentPermissionError> {
         check(&request)?;
-        // 适配层知道 Agent 在哪个会话里干活，来源在请求体里；规则同 MCP 调用报的来源。
-        let mut caller = caller.clone();
-        caller.origin = request.origin.clone().and_then(super::audience::checked);
-        let langs = self.card_languages(&caller, Subject::Tool);
-        let draft = cards::agent_permission(&caller.name, &request, &langs);
-        let audience = self.audience(&caller, Subject::Tool).await;
+        let draft = cards::agent_permission(&caller.name, &request);
         let mut asked = Asked {
             bus: self.clone(),
             caller: caller.id.to_string(),
             card: String::new(),
             request,
-            langs,
             settled: true,
         };
-        let (card, answered) = match self.confirmations.open_as(&caller.id, draft, audience) {
+        let (card, answered) = match self.confirmations.open(&caller.id, draft) {
             Ok(opened) => opened,
             Err(refusal) => {
                 asked.audit(Decision::Unconfirmed, None);

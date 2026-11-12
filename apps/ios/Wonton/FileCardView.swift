@@ -70,7 +70,7 @@ private struct ReadyFileCard: View {
             Button { presenter.perform(actions.tap, on: info, after: .preview) } label: { summary(actions) }
                 .buttonStyle(.plain)
             if let elsewhere = actions.openElsewhere {
-                Button(.fileOpenElsewhere) { presenter.perform(elsewhere, on: info, after: .openElsewhere) }
+                Button("用其他 App 打开") { presenter.perform(elsewhere, on: info, after: .openElsewhere) }
                     .wontonText(WontonTheme.typography.supporting)
                     .underline()
                     .buttonStyle(.plain)
@@ -112,9 +112,9 @@ private struct ReadyFileCard: View {
             if let download { ProgressView(value: FileSizes.fraction(download)) }
         case .paused:
             if let because = download?.pausedBecause {
-                problem(String(localized: .filePaused(because)))
+                problem("暂停：\(because)")
             } else {
-                small(String(localized: .filePausedWaiting))
+                small("等连接恢复后接着下载")
             }
         case let .failed(_, message):
             problem(message)
@@ -134,15 +134,15 @@ private struct ReadyFileCard: View {
     private var sourceText: String? {
         switch info.source {
         case .device: nil
-        case let .bot(name, plugin): String(localized: .fileSourceBot(name, plugin))
-        case .unknown: String(localized: .fileSourceUnknown)
+        case let .bot(name, plugin): "来自 \(name)（\(plugin)）"
+        case .unknown: "来源不明"
         }
     }
 }
 
 enum FileSizes {
     static func text(_ bytes: UInt64) -> String {
-        Int64(clamping: bytes).formatted(.byteCount(style: .file))
+        ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file)
     }
 
     /// 还不知道总大小时为空，进度条显示为不确定。

@@ -7,13 +7,10 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use wonton_protocol::{ChatForm, PortProtocol, TunnelSpec};
 
 use super::gpu::GpuSpec;
 use super::lan::LanSpec;
-use super::languages::Languages;
 pub use super::manifest_agent::{AgentLogin, AgentProtocol, AgentSpec};
-pub use super::manifest_static::{LinkSpec, StaticWebSpec};
 use super::manifest_tabs;
 pub use super::manifest_tabs::ManifestTab;
 use super::provides::Provides;
@@ -116,49 +113,10 @@ pub enum PluginKind {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Runtime {
-    #[default]
-    Compose,
-    RemoteMcp,
-    Skills,
-    /// 静态网页，交给提供能力 `static_web` 的插件托管（ADR-0080）。
-    StaticWeb,
-    /// 外部网页，只存一个地址（ADR-0080）。
-    Link,
-}
-
-impl Runtime {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Compose => "compose",
-            Self::RemoteMcp => "remote_mcp",
-            Self::Skills => "skills",
-            Self::StaticWeb => "static_web",
-            Self::Link => "link",
-        }
-    }
-}
-
-impl From<Runtime> for wonton_protocol::PluginRuntime {
-    fn from(runtime: Runtime) -> Self {
-        match runtime {
-            Runtime::Compose => Self::Compose,
-            Runtime::RemoteMcp => Self::RemoteMcp,
-            Runtime::Skills => Self::Skills,
-            Runtime::StaticWeb => Self::StaticWeb,
-            Runtime::Link => Self::Link,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Sso {
     Oidc,
-    /// 网关代登录（插件规范的“网关代登录”）：应用认反向代理传来的用户名或固定密钥，网关在转发给插件网页的
-    /// 请求上代加 `webui.proxy` 声明的请求头和 Cookie。凭据只加在网关认出用户的请求上，也不会回到浏览器
-    /// （网关按值从响应头里剥除）。webui 服务不能跑在宿主网络，安装时按 `super::privileges` 拒绝。
+    /// 网关代登录（插件规范的“网关代登录”）：核心认得，但还没实现，安装预览时如实报“尚未支持”。
     Proxy,
     #[default]
     None,
@@ -192,31 +150,12 @@ pub struct OidcClient {
     /// 应用在令牌端点出示客户端密钥的方式，默认 `client_secret_basic`。
     #[serde(default)]
     pub token_endpoint_auth_method: TokenAuthMethod,
-    /// 这个人是这个应用的管理员时（ADR-0088 的 `plugin_admin`），`groups` 里再加这些组名，应用按组名映射角色。
-    /// 只发给这个客户端，别的插件看不到。
-    #[serde(default)]
-    pub admin_groups: Vec<String>,
-    /// 应用读一个专门的声明认管理员（如 Immich 的 `immich_role`）时，核心按 `plugin_admin` 填它。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub role_claim: Option<RoleClaim>,
-}
-
-/// 清单 `webui.oidc.role_claim`：声明名，和管理员、普通用户各填的值。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RoleClaim {
-    pub name: String,
-    pub admin: String,
-    pub user: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WebUi {
-    /// 容器插件必填；`runtime: static_web` 没有服务，不写（ADR-0080）。
-    #[serde(default)]
     pub service: String,
-    #[serde(default)]
     pub port: u16,
     #[serde(default = "default_web_path")]
     pub path: String,
@@ -228,33 +167,12 @@ pub struct WebUi {
     pub oidc: Option<OidcClient>,
     #[serde(default)]
     pub proxy: Option<ProxyCredentials>,
-    /// 应用按登录的人分开数据（ADR-0088）。没声明的按“全家共用一份”处理：不禁止开放和分享，开放时醒目提示。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub accounts: Option<Accounts>,
     /// 页面要跨源隔离（如要 `SharedArrayBuffer`）。Android WebView 默认不给，声明了才放宽，见 ADR-0033“跨源隔离”。
     #[serde(default)]
     pub cross_origin_isolated: bool,
-    /// 核心代探测的健康路径（`scratch`、`distroless` 镜像里没有 shell，写不出 compose healthcheck）。
-    /// 装了它的服务不用写 healthcheck，核心周期 GET 这个路径，2xx/3xx 算健康。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub health: Option<String>,
-}
-
-/// 清单 `webui.accounts` 的取值。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Accounts {
-    /// 按登录的人分开数据。
-    PerUser,
 }
 
 /// `sso: proxy` 时网关加在转发请求上的请求头和 Cookie：名字 → 值模板。
-///
-/// 身份由网关根据当前经验证的人填入，不接受调用者提供的身份或角色：
-/// `{user}` 是固定、不复用的本机用户名；已有的 `{name}` 是此人的显示名；
-/// `{role}` 是 `owner`、`member` 或 `friend`，对应 [`wonton_protocol::Role`] 的已知值。
-/// `{email}` 和 `{secret:…}` 的约定不变。
-/// 模板变量的解析、校验和渲染由 `super::proxy_auth` 实现。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProxyCredentials {
@@ -264,11 +182,11 @@ pub struct ProxyCredentials {
     pub cookies: BTreeMap<String, String>,
 }
 
-pub(super) fn default_web_path() -> String {
+fn default_web_path() -> String {
     "/".to_owned()
 }
 
-pub(super) fn default_web_display() -> String {
+fn default_web_display() -> String {
     "standard".to_owned()
 }
 
@@ -282,11 +200,6 @@ pub struct BotProfile {
     pub display_name: Option<LocalizedText>,
     #[serde(default)]
     pub avatar: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub avatars: Option<BTreeMap<String, String>>,
-    /// 和这个 Bot 的私聊怎么显示（ADR-0060）；没写是气泡。
-    #[serde(default)]
-    pub chat_layout: ChatForm,
 }
 
 /// 一个插件多个 Bot：`services` 里的服务每个 Bot 一份，其余服务全插件一份。M1 只有默认 Bot。
@@ -296,10 +209,91 @@ pub struct BotServices {
     pub services: Vec<String>,
 }
 
-pub use super::secret_spec::{
-    CollectSecret, GenerateSecret, InputSecret, MAX_SECRET_BYTES, SecretEncoding, SecretSpec,
-    ShowOwner, is_secret_name,
-};
+/// 一项插件密钥：核心生成（`generate`）或插件运行中生成、交给核心保管（`collect`），恰好一种。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "RawSecret", into = "RawSecret")]
+pub enum SecretSpec {
+    Generate(GenerateSecret),
+    Collect(CollectSecret),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GenerateSecret {
+    /// 随机字节数。
+    #[serde(default = "default_secret_bytes")]
+    pub bytes: usize,
+    #[serde(default)]
+    pub encoding: SecretEncoding,
+}
+
+/// 生成的密钥的文本格式，和 `openssl rand -hex`、`openssl rand -base64` 相同。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SecretEncoding {
+    #[default]
+    Hex,
+    Base64,
+}
+
+/// 插件在 `service` 的容器里写下的文件 `path`（容器里的绝对路径）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CollectSecret {
+    pub service: String,
+    pub path: String,
+}
+
+/// 生成的密钥最多这么多随机字节。
+pub const MAX_SECRET_BYTES: usize = 1024;
+
+fn default_secret_bytes() -> usize {
+    32
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSecret {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    generate: Option<GenerateSecret>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    collect: Option<CollectSecret>,
+}
+
+impl TryFrom<RawSecret> for SecretSpec {
+    type Error = String;
+
+    fn try_from(raw: RawSecret) -> Result<Self, Self::Error> {
+        match (raw.generate, raw.collect) {
+            (Some(generate), None) => Ok(Self::Generate(generate)),
+            (None, Some(collect)) => Ok(Self::Collect(collect)),
+            _ => Err("每项密钥必须恰好写 generate 或 collect 之一".to_owned()),
+        }
+    }
+}
+
+impl From<SecretSpec> for RawSecret {
+    fn from(spec: SecretSpec) -> Self {
+        match spec {
+            SecretSpec::Generate(generate) => Self {
+                generate: Some(generate),
+                collect: None,
+            },
+            SecretSpec::Collect(collect) => Self {
+                generate: None,
+                collect: Some(collect),
+            },
+        }
+    }
+}
+
+/// 密钥名：小写字母开头，由小写字母、数字和 `_` 组成；注入为 `WONTON_SECRET_<名字大写>`。
+pub fn is_secret_name(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_lowercase())
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -312,17 +306,10 @@ pub enum Access {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum Permission {
-    StorageShare {
-        name: String,
-        access: Access,
-    },
-    StorageHome {
-        access: Access,
-    },
+    StorageShare { name: String, access: Access },
+    StorageHome { access: Access },
     Models,
     Tools,
-    // 只读，只给状态，不算高权限（规范“插件健康探测”）。
-    PluginsHealth,
     MatrixBot,
     Notify,
     OwnerIdentity,
@@ -330,21 +317,13 @@ pub enum Permission {
     EgressProxy,
     NetworkLan,
     NetworkHost,
-    Capability {
-        name: String,
-    },
+    Capability { name: String },
     HostPid,
     HostIpc,
     SecurityOpt,
     Privileged,
     DevicesGpu,
-    /// 宿主串口设备，路径由主人选（ADR-0036）。
-    DevicesSerial,
-    /// 宿主 USB 设备，路径由主人选（ADR-0036）。
-    DevicesUsb,
-    Device {
-        path: String,
-    },
+    Device { path: String },
     DockerSocket,
 }
 
@@ -362,8 +341,6 @@ impl Permission {
                 | Self::SecurityOpt
                 | Self::Privileged
                 | Self::DevicesGpu
-                | Self::DevicesSerial
-                | Self::DevicesUsb
                 | Self::Device { .. }
                 | Self::DockerSocket
         )
@@ -386,7 +363,6 @@ impl FromStr for Permission {
         let simple = match value {
             "models" => Some(Self::Models),
             "tools" => Some(Self::Tools),
-            "plugins.health" => Some(Self::PluginsHealth),
             "matrix.bot" => Some(Self::MatrixBot),
             "notify" => Some(Self::Notify),
             "owner.identity" => Some(Self::OwnerIdentity),
@@ -399,8 +375,6 @@ impl FromStr for Permission {
             "security.opt" => Some(Self::SecurityOpt),
             "privileged" => Some(Self::Privileged),
             "devices.gpu" => Some(Self::DevicesGpu),
-            "devices.serial" => Some(Self::DevicesSerial),
-            "devices.usb" => Some(Self::DevicesUsb),
             "docker.socket" => Some(Self::DockerSocket),
             _ => None,
         };
@@ -457,7 +431,6 @@ impl fmt::Display for Permission {
             Self::StorageHome { access: a } => write!(f, "storage.home:{}", access(a)),
             Self::Models => f.write_str("models"),
             Self::Tools => f.write_str("tools"),
-            Self::PluginsHealth => f.write_str("plugins.health"),
             Self::MatrixBot => f.write_str("matrix.bot"),
             Self::Notify => f.write_str("notify"),
             Self::OwnerIdentity => f.write_str("owner.identity"),
@@ -471,8 +444,6 @@ impl fmt::Display for Permission {
             Self::SecurityOpt => f.write_str("security.opt"),
             Self::Privileged => f.write_str("privileged"),
             Self::DevicesGpu => f.write_str("devices.gpu"),
-            Self::DevicesSerial => f.write_str("devices.serial"),
-            Self::DevicesUsb => f.write_str("devices.usb"),
             Self::Device { path } => write!(f, "devices.{path}"),
             Self::DockerSocket => f.write_str("docker.socket"),
         }
@@ -502,8 +473,6 @@ pub struct Manifest {
     pub id: PluginId,
     pub version: String,
     pub kind: PluginKind,
-    #[serde(default)]
-    pub runtime: Runtime,
     pub title: LocalizedText,
     pub description: LocalizedText,
     /// 插件包里的 PNG 或 SVG。
@@ -527,19 +496,10 @@ pub struct Manifest {
     pub about: Option<LocalizedText>,
     #[serde(default)]
     pub release_notes: Option<LocalizedText>,
-    /// 装好后要主人自己做的一步（如把公钥加到某台机器），安装和详情页醒目显示。
-    #[serde(default)]
-    pub setup: Option<LocalizedText>,
     #[serde(default)]
     pub webui: Option<WebUi>,
     #[serde(default)]
     pub tabs: Option<Vec<ManifestTab>>,
-    /// `runtime: static_web` 的静态文件目录和出网白名单（ADR-0080）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub static_web: Option<StaticWebSpec>,
-    /// `runtime: link` 的地址（ADR-0080）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub link: Option<LinkSpec>,
     #[serde(default)]
     pub mcp: Option<McpEndpoint>,
     #[serde(default)]
@@ -551,40 +511,20 @@ pub struct Manifest {
     /// 系统插件给其他插件提供的能力，见规范“模型网关”。
     #[serde(default)]
     pub provides: Option<Provides>,
-    /// 依赖的能力：索引里没有提供方就装不上（ADR-0053）。
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub requires: Vec<String>,
-    /// 可选依赖的能力：有提供方就用，没有照装（ADR-0053）。
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub wants: Vec<String>,
     /// 拿到显卡的服务，见规范“显卡”；要和 `devices.gpu` 权限一起声明。
     #[serde(default)]
     pub gpu: Option<GpuSpec>,
     /// 在局域网上开放的端口，见规范“局域网”；要和 `network.lan` 权限一起声明。
     #[serde(default)]
     pub lan: Option<LanSpec>,
-    /// 已配对设备经隧道访问的端口；不发布到宿主网络。
-    #[serde(default)]
-    pub tunnel: Option<TunnelSpec>,
     /// 插件自己的密钥，见规范“插件密钥”。
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub secrets: BTreeMap<String, SecretSpec>,
     pub permissions: Vec<Permission>,
-    /// 可选、默认关的权限（ADR-0057）：装好以后由主人开关，开着才兑现对应的 compose 字段。
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub optional_permissions: BTreeMap<Permission, OptionalPermission>,
     #[serde(default)]
     pub settings: Option<String>,
     #[serde(default)]
     pub requirements: Option<Requirements>,
-}
-
-/// `optional_permissions` 里的一项。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OptionalPermission {
-    /// 关着时少了什么，给主人看（ADR-0057）。
-    pub off_loss: LocalizedText,
 }
 
 impl Manifest {
@@ -593,55 +533,25 @@ impl Manifest {
         self.permissions.contains(&Permission::OwnerIdentity)
     }
 
-    /// 声明过的全部权限：必需的在前，可选的按权限名。校验按它遍历。
-    pub fn all_permissions(&self) -> impl Iterator<Item = &Permission> {
-        self.permissions
-            .iter()
-            .chain(self.optional_permissions.keys())
-    }
-
-    /// 一项权限是不是声明成可选、默认关。
-    pub fn optional_permission(&self, permission: &Permission) -> Option<&OptionalPermission> {
-        self.optional_permissions.get(permission)
-    }
-
-    /// 生效集：必需权限加上现在开着的可选项。
-    pub fn effective_permissions(&self, enabled: &[Permission]) -> Vec<Permission> {
-        self.permissions
-            .iter()
-            .chain(
-                enabled
-                    .iter()
-                    .filter(|permission| self.optional_permissions.contains_key(*permission)),
-            )
-            .cloned()
-            .collect()
-    }
-
     /// 校验 serde 表达不了的规则。服务名是否存在由 [`super::package`] 对照 compose 检查。
-    /// `langs` 只用于给按语言写的校验错误选语言，文字本身在各自模块里。
-    pub fn validate(&self, langs: &Languages) -> Result<(), ManifestError> {
+    pub fn validate(&self) -> Result<(), ManifestError> {
         if !is_semver(&self.version) {
             return Err(ManifestError::InvalidVersion(self.version.clone()));
         }
         require_locales("title", &self.title)?;
         require_locales("description", &self.description)?;
-        super::store_info::validate(self, langs)?;
+        super::store_info::validate(self)?;
         super::manifest_agent::validate(self)?;
         validate_bots(self)?;
-        super::privileges::validate_manifest(self, langs)?;
-        super::privileges::validate_optional(self, langs)?;
-        super::gpu::validate(self, langs)?;
-        super::requirements::validate(self, langs)?;
-        super::lan::validate(self, langs)?;
-        validate_tunnel(self)?;
-        super::provides::validate(self, langs)?;
-        super::capabilities::validate(self, langs)?;
-        super::manifest_static::validate(self)?;
-        super::proxy_auth::validate(self, langs)?;
-        super::proxy_auth::validate_mcp_headers(self, langs)?;
+        super::privileges::validate_manifest(self)?;
+        super::gpu::validate(self)?;
+        super::requirements::validate(self)?;
+        super::lan::validate(self)?;
+        super::provides::validate(self)?;
+        super::proxy_auth::validate(self)?;
+        super::proxy_auth::validate_mcp_headers(self)?;
         if let Some(webui) = &self.webui {
-            validate_webui(webui, self.runtime)?;
+            validate_webui(webui)?;
         }
         if let Some(mcp) = &self.mcp {
             super::manifest_mcp::validate(mcp)?;
@@ -649,52 +559,12 @@ impl Manifest {
         manifest_tabs::validate(self.tabs.as_deref(), self.webui.as_ref())?;
         self.secrets
             .iter()
-            .try_for_each(|(n, s)| super::secret_spec::validate_secret(n, s))
+            .try_for_each(|(n, s)| validate_secret(n, s))
     }
-}
-
-fn validate_tunnel(manifest: &Manifest) -> Result<(), ManifestError> {
-    let Some(tunnel) = &manifest.tunnel else {
-        return Ok(());
-    };
-    let mcp = manifest.mcp.as_ref().map(|m| (&m.service, m.port));
-    let mut seen = BTreeMap::new();
-    for port in &tunnel.ports {
-        if port.port < 1024 {
-            return Err(ManifestError::Invalid(
-                "tunnel.ports requires port >= 1024".to_owned(),
-            ));
-        }
-        // 请求头和同号本机监听都不带 service，一个插件的端口/协议只能指向一个服务。
-        if let Some(service) = seen.insert((port.port, port.protocol), &port.service) {
-            return Err(ManifestError::Invalid(format!(
-                "duplicate tunnel.ports endpoint {}: services {service} and {}",
-                port.key(),
-                port.service
-            )));
-        }
-        // MCP is TCP; a UDP listener with the same number is a separate endpoint, as in lan.ports.
-        if port.protocol == PortProtocol::Tcp && mcp == Some((&port.service, port.port)) {
-            return Err(ManifestError::Invalid(
-                "tunnel.ports cannot expose the MCP endpoint".to_owned(),
-            ));
-        }
-    }
-    Ok(())
 }
 
 /// `bot`、`bots` 和 `agent.protocol: matrix` 都以 Bot 身份收发消息，必须申请 `matrix.bot`。
 fn validate_bots(manifest: &Manifest) -> Result<(), ManifestError> {
-    super::bot_avatars::validate_manifest(manifest)?;
-    if manifest
-        .bot
-        .as_ref()
-        .is_some_and(|bot| bot.chat_layout == ChatForm::Other)
-    {
-        return Err(ManifestError::Invalid(
-            "bot.chat_layout 只能是 bubbles 或 document".to_owned(),
-        ));
-    }
     let wants_bot = [
         ("bot", manifest.bot.is_some()),
         ("bots", manifest.bots.is_some()),
@@ -719,40 +589,34 @@ fn validate_bots(manifest: &Manifest) -> Result<(), ManifestError> {
             "bots.services 至少一项，且不能重复".to_owned(),
         ));
     }
-    // 局域网端口按服务开在宿主上：Bot 服务每个 Bot 一组容器，同一端口会互相冲突。
-    if let Some(lan) = &manifest.lan {
-        for port in &lan.ports {
-            if bots.services.contains(&port.service) {
-                return Err(ManifestError::Invalid(format!(
-                    "network.lan 的服务 {} 是 Bot 服务：每个 Bot 一组容器，端口开不了，换全插件一份的服务",
-                    port.service
-                )));
-            }
-        }
-    }
     Ok(())
 }
 
-fn validate_webui(webui: &WebUi, runtime: Runtime) -> Result<(), ManifestError> {
+fn validate_secret(name: &str, spec: &SecretSpec) -> Result<(), ManifestError> {
+    let invalid =
+        |message: String| Err(ManifestError::Invalid(format!("secrets.{name}：{message}")));
+    if !is_secret_name(name) {
+        return invalid("名字须以小写字母开头，只含小写字母、数字和 _".to_owned());
+    }
+    match spec {
+        SecretSpec::Generate(generate) if !(1..=MAX_SECRET_BYTES).contains(&generate.bytes) => {
+            invalid(format!("generate.bytes 须在 1 到 {MAX_SECRET_BYTES} 之间"))
+        }
+        SecretSpec::Collect(collect)
+            if !collect.path.starts_with('/') || collect.path.split('/').any(|p| p == "..") =>
+        {
+            invalid("collect.path 须是容器里的绝对路径，不能含 ..".to_owned())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_webui(webui: &WebUi) -> Result<(), ManifestError> {
     if let Some(problem) = manifest_tabs::validate_path("webui.path", &webui.path) {
         return Err(ManifestError::Invalid(problem));
     }
-    if let Some(health) = &webui.health
-        && let Some(problem) = manifest_tabs::validate_path("webui.health", health)
-    {
-        return Err(ManifestError::Invalid(problem));
-    }
-    // 静态网页的 webui 只有展示字段，服务端字段由 manifest_static 按“用不上”报。
-    if runtime == Runtime::StaticWeb {
-        return Ok(());
-    }
-    if webui.service.is_empty() {
-        return Err(ManifestError::Invalid("webui.service 必填".to_owned()));
-    }
     if webui.port == 0 {
-        return Err(ManifestError::Invalid(
-            "webui.port 必填，且不能为 0".to_owned(),
-        ));
+        return Err(ManifestError::Invalid("webui.port 不能为 0".to_owned()));
     }
     let invalid = |message: &str| Err(ManifestError::Invalid(message.to_owned()));
     if webui.oidc.is_some() && webui.sso != Sso::Oidc {
@@ -771,7 +635,6 @@ fn validate_webui(webui: &WebUi, runtime: Runtime) -> Result<(), ManifestError> 
             if client.post_logout_paths.iter().any(|p| !p.starts_with('/')) {
                 return invalid("webui.oidc.post_logout_paths 每项以 / 开头");
             }
-            super::manifest_oidc::validate(client)?;
             Ok(())
         }
         (Sso::Oidc, None, _) => invalid("webui.sso 为 oidc 时必须提供 webui.oidc.redirect_paths"),

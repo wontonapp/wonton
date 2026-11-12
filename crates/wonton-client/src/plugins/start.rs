@@ -3,12 +3,10 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use wonton_l10n::l10n;
-use wonton_protocol::{CoreError, InstalledPlugin, PluginProblem};
+use wonton_protocol::{CoreError, InstalledPlugin, PluginProblem, PluginTaskState};
 
 use super::api::INSTALL_TIMEOUT;
 use super::{Listing, PluginsLink, lock};
-use crate::l10n::{CATALOG, language};
 
 impl PluginsLink {
     pub(crate) fn start(self: &Arc<Self>, id: String) -> Result<(), CoreError> {
@@ -22,10 +20,10 @@ impl PluginsLink {
                     .borrow()
                     .tasks
                     .iter()
-                    .any(|task| task.id == id && task.state.in_progress())
+                    .any(|task| task.id == id && task.state == PluginTaskState::Running)
             {
                 return Err(CoreError::NotReady {
-                    reason: l10n!(CATALOG, language(), "plugins-start-busy", id = id),
+                    reason: format!("{id} 正在启动、安装、升级或卸载"),
                 });
             }
             starts.insert(id.clone(), generation);

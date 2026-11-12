@@ -17,8 +17,6 @@ use crate::http::{
     HttpClient, HttpError,
     deadline::{FlushIo, ResponseDeadline},
 };
-use crate::l10n;
-use crate::plugin::languages::Languages;
 use crate::plugin::upstreams::Endpoint;
 
 const RESPONSE_HEADER_DEADLINE: Duration = Duration::from_secs(120);
@@ -94,25 +92,22 @@ pub async fn forward(
     target: Target<'_>,
     req: Request,
     fwd: Forwarded<'_>,
-    langs: &Languages,
 ) -> Response {
-    forward_with_deadline(http, target, req, fwd, RESPONSE_HEADER_DEADLINE, langs).await
+    forward_with_deadline(http, target, req, fwd, RESPONSE_HEADER_DEADLINE).await
 }
 
-/// 同 [`forward`]，期限由调用方指定（测试用短期限），失败回错误响应（形状按请求的 `Accept`）。
+/// 同 [`forward`]，期限由调用方指定（测试用短期限），失败回 HTML 错误页。
 pub(crate) async fn forward_with_deadline(
     http: &HttpClient,
     target: Target<'_>,
     req: Request,
     fwd: Forwarded<'_>,
     limit: Duration,
-    langs: &Languages,
 ) -> Response {
     let name = target.name;
-    let format = pages::Format::of(req.headers());
-    match forward_with_limit(http, target, req, fwd, limit, langs).await {
+    match forward_with_limit(http, target, req, fwd, limit).await {
         Ok(response) => response,
-        Err(error) => error.response(name, langs, format),
+        Err(error) => error.response(name),
     }
 }
 
@@ -127,32 +122,20 @@ pub enum ForwardError {
 }
 
 impl ForwardError {
-    pub(super) fn response(self, name: &str, langs: &Languages, format: pages::Format) -> Response {
+    pub(super) fn response(self, name: &str) -> Response {
         match self {
-            Self::SystemResolution(e) => pages::error(
-                StatusCode::BAD_GATEWAY,
-                "upstream_unreachable",
-                &e,
-                langs,
-                format,
-            ),
+            Self::SystemResolution(e) => {
+                pages::error(StatusCode::BAD_GATEWAY, "upstream_unreachable", &e)
+            }
             Self::Unreachable(e) => pages::error(
                 StatusCode::BAD_GATEWAY,
                 "upstream_unreachable",
-                &l10n::text(
-                    langs,
-                    "gateway-upstream-unreachable",
-                    &[("name", name.into()), ("error", e.as_str().into())],
-                ),
-                langs,
-                format,
+                &format!("{name} 暂时无法访问：{e}"),
             ),
             Self::HeaderTimeout => pages::error(
                 StatusCode::GATEWAY_TIMEOUT,
                 "upstream_timeout",
-                &l10n::text(langs, "gateway-upstream-timeout", &[("name", name.into())]),
-                langs,
-                format,
+                &format!("{name} 迟迟没有回应，可以稍后重试"),
             ),
         }
     }
@@ -173,9 +156,8 @@ pub async fn forward_or(
     target: Target<'_>,
     req: Request,
     fwd: Forwarded<'_>,
-    langs: &Languages,
 ) -> Result<Response, ForwardError> {
-    forward_with_limit(http, target, req, fwd, RESPONSE_HEADER_DEADLINE, langs).await
+    forward_with_limit(http, target, req, fwd, RESPONSE_HEADER_DEADLINE).await
 }
 
 async fn forward_with_limit(
@@ -184,16 +166,10 @@ async fn forward_with_limit(
     mut req: Request,
     fwd: Forwarded<'_>,
     limit: Duration,
-    langs: &Languages,
 ) -> Result<Response, ForwardError> {
-    let guard = req
-        .extensions()
-        .get::<super::sharing::AccessGuard>()
-        .cloned();
     let upgrade = is_upgrade(req.headers());
     let client_upgrade = upgrade.then(|| hyper::upgrade::on(&mut req));
     let limit = response_header_deadline(&req, upgrade, limit);
-    let format = pages::Format::of(req.headers());
     let (mut parts, body) = req.into_parts();
     let path = parts
         .uri
@@ -208,9 +184,7 @@ async fn forward_with_limit(
         return Ok(pages::error(
             StatusCode::BAD_REQUEST,
             "invalid_input",
-            &l10n::text(langs, "gateway-invalid-path", &[]),
-            langs,
-            format,
+            "请求路径不合法",
         ));
     };
     let host = parts.headers.get(header::HOST).cloned();
@@ -235,16 +209,7 @@ async fn forward_with_limit(
     parts.version = Version::HTTP_11;
     let outbound = Request::from_parts(parts, body);
 
-    let sent = if let Some(guard) = &guard {
-        tokio::select! {
-            biased;
-            _ = guard.cancelled() => return Ok(super::sharing::refused(
-                wonton_protocol::GatewayRefusal::ShareRevoked, langs, format)),
-            result = send_upstream(http, target.endpoint, outbound, limit) => result,
-        }
-    } else {
-        send_upstream(http, target.endpoint, outbound, limit).await
-    };
+    let sent = send_upstream(http, target.endpoint, outbound, limit).await;
     let mut response = match sent {
         Ok(response) => response,
         Err(e @ HttpError::ResponseHeadersTimeout(_)) => {
@@ -264,39 +229,22 @@ async fn forward_with_limit(
         && let Some(client_upgrade) = client_upgrade
     {
         let upstream_upgrade = hyper::upgrade::on(&mut response);
-        tokio::spawn(copy_upgraded(client_upgrade, upstream_upgrade, guard));
+        tokio::spawn(async move {
+            match (client_upgrade.await, upstream_upgrade.await) {
+                (Ok(client), Ok(upstream)) => {
+                    let (mut a, mut b) = (TokioIo::new(client), TokioIo::new(upstream));
+                    let _ = tokio::io::copy_bidirectional(&mut a, &mut b).await;
+                }
+                (c, u) => tracing::warn!(client = c.is_ok(), upstream = u.is_ok(), "协议升级失败"),
+            }
+        });
         let (mut parts, _) = response.into_parts();
         strip_hop_by_hop(&mut parts.headers, true);
         return Ok(Response::from_parts(parts, Body::empty()));
     }
     let (mut parts, body) = response.into_parts();
     strip_hop_by_hop(&mut parts.headers, false);
-    let body = match guard {
-        Some(guard) => super::sharing::guard_body(body, guard),
-        None => Body::new(body),
-    };
-    Ok(Response::from_parts(parts, body).into_response())
-}
-
-async fn copy_upgraded(
-    client: hyper::upgrade::OnUpgrade,
-    upstream: hyper::upgrade::OnUpgrade,
-    guard: Option<super::sharing::AccessGuard>,
-) {
-    let copy = async {
-        match (client.await, upstream.await) {
-            (Ok(client), Ok(upstream)) => {
-                let (mut a, mut b) = (TokioIo::new(client), TokioIo::new(upstream));
-                let _ = tokio::io::copy_bidirectional(&mut a, &mut b).await;
-            }
-            (c, u) => tracing::warn!(client = c.is_ok(), upstream = u.is_ok(), "协议升级失败"),
-        }
-    };
-    if let Some(guard) = guard {
-        tokio::select! { _ = copy => {}, _ = guard.cancelled() => {} }
-    } else {
-        copy.await;
-    }
+    Ok(Response::from_parts(parts, Body::new(body)).into_response())
 }
 
 /// 插件声明跨源隔离时覆盖上游的同名头；核心和其他上游不调用这个函数。
@@ -317,10 +265,10 @@ async fn send_upstream(
     request: Request,
     limit: Option<Duration>,
 ) -> Result<hyper::Response<hyper::body::Incoming>, HttpError> {
-    match endpoint {
-        Endpoint::Tcp(_) => http.send_forwarded(request, limit).await,
-        // unix 套接字每条请求一条连接，没有复用的连接可死。
-        Endpoint::Unix(socket) => unix_send(socket, request, limit).await,
+    match (endpoint, limit) {
+        (Endpoint::Tcp(_), Some(limit)) => http.send_with_header_deadline(request, limit).await,
+        (Endpoint::Tcp(_), None) => http.send(request).await,
+        (Endpoint::Unix(socket), _) => unix_send(socket, request, limit).await,
     }
 }
 
@@ -355,7 +303,7 @@ async fn unix_send(
     let (request, deadline) = match limit {
         Some(limit) => {
             let (request, deadline) = ResponseDeadline::unix(request, io.flushed.clone(), limit);
-            (request, Some((deadline, limit)))
+            (request, Some(deadline))
         }
         None => (request, None),
     };
@@ -375,11 +323,7 @@ async fn unix_send(
             .map_err(|e| HttpError::Connect(e.to_string()))
     };
     let mut response = match deadline {
-        Some((deadline, limit)) => {
-            deadline
-                .wait(sending, HttpError::ResponseHeadersTimeout(limit))
-                .await?
-        }
+        Some(deadline) => deadline.wait(sending).await?,
         None => sending.await?,
     };
     response
@@ -393,10 +337,6 @@ async fn unix_send(
 #[cfg(test)]
 #[path = "proxy_deadline_tests.rs"]
 mod deadline_tests;
-
-#[cfg(test)]
-#[path = "proxy_stale_tests.rs"]
-mod stale_tests;
 
 #[cfg(test)]
 mod tests {
@@ -459,7 +399,6 @@ mod tests {
                                     client: None,
                                     scheme: "http",
                                 },
-                                &Languages::from_header(None),
                             )
                             .await,
                         )
@@ -527,7 +466,6 @@ mod tests {
             },
             request,
             forwarded,
-            &Languages::from_header(None),
         )
         .await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -536,66 +474,6 @@ mod tests {
             .unwrap()
             .to_bytes();
         assert_eq!(&body[..], b"ok");
-    }
-
-    /// 网页里的 `<audio>`（iOS 的 WebKit、Android 的 WebView）先发 `Range: bytes=0-1` 再按段取流，
-    /// 拿不到原样的 206 和 `Content-Range` 就放不了：请求头、状态和长度相关的响应头都不能改。
-    #[tokio::test]
-    async fn range_requests_and_partial_content_pass_through() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = Endpoint::Tcp(listener.local_addr().unwrap().to_string());
-        tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            let service =
-                hyper::service::service_fn(|req: Request<hyper::body::Incoming>| async move {
-                    let range = req.headers().get(header::RANGE).cloned();
-                    let response = hyper::Response::builder()
-                        .status(StatusCode::PARTIAL_CONTENT)
-                        .header(header::ACCEPT_RANGES, "bytes")
-                        .header(header::CONTENT_RANGE, "bytes 0-1/641262")
-                        .header(header::CONTENT_TYPE, "audio/mpeg")
-                        .header(
-                            "x-range-seen",
-                            range.unwrap_or(HeaderValue::from_static("-")),
-                        )
-                        .body(Body::from("ID"))
-                        .unwrap();
-                    Ok::<_, std::convert::Infallible>(response)
-                });
-            let _ = hyper::server::conn::http1::Builder::new()
-                .serve_connection(TokioIo::new(stream), service)
-                .await;
-        });
-        let request = Request::builder()
-            .uri("/rest/stream?id=1")
-            .header(header::RANGE, "bytes=0-1")
-            .body(Body::empty())
-            .unwrap();
-        let response = forward(
-            &HttpClient::for_forwarding(),
-            Target {
-                endpoint: &endpoint,
-                name: "x",
-            },
-            request,
-            Forwarded {
-                client: None,
-                scheme: "http",
-            },
-            &Languages::from_header(None),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
-        let headers = response.headers();
-        assert_eq!(headers["x-range-seen"], "bytes=0-1");
-        assert_eq!(headers[header::CONTENT_RANGE], "bytes 0-1/641262");
-        assert_eq!(headers[header::ACCEPT_RANGES], "bytes");
-        assert_eq!(headers[header::CONTENT_LENGTH], "2");
-        let body = http_body_util::BodyExt::collect(response.into_body())
-            .await
-            .unwrap()
-            .to_bytes();
-        assert_eq!(&body[..], b"ID");
     }
 
     #[test]

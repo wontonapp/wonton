@@ -8,19 +8,10 @@ use super::manifest::{Permission, Sso};
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
 
-mod bot_avatars;
 mod bot_lifecycle;
 mod bots;
-mod capability_deps_install;
-mod capability_host_network;
-mod capability_install_requests;
-mod capability_lifecycle;
-mod capability_manifest;
-mod capability_optional_lifecycle;
-mod chat_layout;
 mod check;
 mod configs;
-mod configs_docker;
 mod docker_timeouts;
 mod egress;
 mod egress_manifest;
@@ -29,88 +20,42 @@ mod egress_plugin_docker;
 mod egress_probe;
 mod egress_relay;
 mod egress_switch;
-mod friend_namespace;
 mod github;
 mod gpu;
 mod health;
-mod health_gate;
 mod host_check;
 mod host_facts;
-mod host_name;
 mod host_relay;
-mod host_relay_docker;
-mod install_l10n;
-mod install_progress;
 mod instances;
 mod lan;
-mod lan_announce;
 mod lan_docker;
-mod lan_ports;
-mod lan_restart;
 mod lan_webui;
 mod leftovers;
 mod limits;
 mod manager;
 mod manifest_errors;
-mod matrix_rtc;
-mod model_gateway_contract;
 mod model_providers;
 mod models;
-mod models_route;
-mod network_mode;
-mod network_pool;
 mod oidc;
-mod optional_permissions;
 mod owner;
-mod people_languages;
-mod personal_data_contract;
-mod plugin_settings;
 mod preinstall;
-mod privileges;
-mod render_drift;
 mod resources;
-mod runtime;
 mod secrets;
-mod settings_l10n;
-mod setup;
-mod source_subdir;
 mod sources;
-mod start_recreate;
-mod static_web;
-mod static_web_files;
-mod static_web_install;
 mod stopped;
 mod stopped_docker;
 mod store;
 mod store_refresh;
 mod tabs;
-mod tunnel_ports;
-mod tunnel_resolver;
 mod upgrade;
-mod upgrade_bot;
 mod views;
-mod views_l10n;
 mod watch;
-mod webui_health;
-
-/// 测试里的请求语言：默认（英文）。断言的期望值用 [`crate::l10n::CATALOG`] 生成。
-fn langs() -> crate::plugin::languages::Languages {
-    crate::plugin::languages::Languages::default()
-}
-
-/// 目录里的一条消息（默认语言）。
-fn message(id: &str, args: &[(&str, &str)]) -> String {
-    let lang = crate::l10n::lang(&langs());
-    let args: Vec<(&str, wonton_l10n::Arg<'_>)> =
-        args.iter().map(|(k, v)| (*k, (*v).into())).collect();
-    crate::l10n::CATALOG.format(lang, id, &args)
-}
 
 fn example(name: &str) -> PluginPackage {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../plugins/examples")
         .join(name);
-    PluginPackage::load_dir(&dir, &langs()).unwrap()
+    PluginPackage::load_dir(&dir).unwrap()
 }
 
 fn package(services: &str, extra_manifest: &str) -> String {
@@ -122,39 +67,6 @@ fn package(services: &str, extra_manifest: &str) -> String {
 
 fn env_of(plan: &super::render::ContainerPlan) -> Vec<String> {
     plan.body.env.clone().unwrap_or_default()
-}
-
-/// 只回答安装时用到的端点：发现文档、登记客户端。`sso: oidc` 的插件装上时要连身份提供方。
-pub(super) async fn fake_hydra() -> crate::oidc::Hydra {
-    // 和 Hydra v26.2.0 实测的一样：授权、登出端点给浏览器地址，签发方和后台端点给内部地址。
-    let public = |path: &str| format!("http://auth.wonton.localhost:8080{path}");
-    let internal = |path: &str| format!("http://auth.wonton.internal:8080{path}");
-    let discovery = serde_json::json!({
-        "issuer": internal(""),
-        "authorization_endpoint": public("/oauth2/auth"),
-        "token_endpoint": internal("/oauth2/token"),
-        "userinfo_endpoint": internal("/userinfo"),
-        "jwks_uri": internal("/.well-known/jwks.json"),
-        "revocation_endpoint": internal("/oauth2/revoke"),
-        "end_session_endpoint": public("/oauth2/sessions/logout"),
-    });
-    let app = axum::Router::new()
-        .route(
-            "/.well-known/openid-configuration",
-            axum::routing::get(move || async move { axum::Json(discovery) }),
-        )
-        .route(
-            "/admin/clients/{id}",
-            axum::routing::put(|| async { hyper::StatusCode::OK }),
-        );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let config = crate::config::OidcProviderConfig {
-        admin_url: format!("http://{addr}"),
-        public_url: format!("http://{addr}"),
-    };
-    crate::oidc::Hydra::new(crate::http::HttpClient::new(), &config)
 }
 
 /// 假 Docker 里容器创建时的环境变量：名字 → 值。
@@ -171,8 +83,8 @@ fn env_of_container(
 }
 
 fn render_err(yaml: &str) -> String {
-    let pkg = PluginPackage::parse(yaml, &langs()).expect("包结构合法");
-    match dry_run(&pkg, &langs()) {
+    let pkg = PluginPackage::parse(yaml).expect("包结构合法");
+    match dry_run(&pkg) {
         Ok(_) => panic!("渲染应失败"),
         Err(e) => e.to_string(),
     }
@@ -184,7 +96,7 @@ fn grafana_example_injects_oidc_and_app_url() {
     let webui = pkg.manifest.webui.as_ref().unwrap();
     assert_eq!(pkg.manifest.id.as_str(), "app.grafana");
     assert_eq!(webui.sso, Sso::Oidc);
-    let plan = dry_run(&pkg, &langs()).unwrap();
+    let plan = dry_run(&pkg).unwrap();
     assert_eq!(plan.network, "wonton-app-grafana");
     let grafana = &plan.containers[0];
     assert_eq!(grafana.name, "wonton-app-grafana--grafana");
@@ -228,24 +140,274 @@ fn grafana_example_injects_oidc_and_app_url() {
 fn full_example_is_a_valid_plugin() {
     // 示例引用了包里的图标和设置表单。
     let files = ["icon.png", "settings.schema.json"].map(|f| (f.to_owned(), Vec::new()));
-    let pkg = PluginPackage::with_files(include_str!("examples/full.yaml"), files.into(), &langs())
-        .unwrap();
+    let pkg = PluginPackage::with_files(include_str!("examples/full.yaml"), files.into()).unwrap();
     assert_eq!(pkg.manifest.id.as_str(), "app.immich.photos");
-    dry_run(&pkg, &langs()).unwrap();
+    dry_run(&pkg).unwrap();
 }
 
 #[test]
 fn whoami_example_splits_command_like_compose() {
     let pkg = example("whoami");
-    let plan = dry_run(&pkg, &langs()).unwrap();
+    let plan = dry_run(&pkg).unwrap();
     let cmd = plan.containers[0].body.cmd.clone().unwrap();
     assert_eq!(cmd, ["--port", "8000", "--name", "app.whoami"]);
     let networks = plan.containers[0].body.networking_config.clone().unwrap();
     let endpoint = &networks.endpoints_config.unwrap()["wonton-app-whoami"];
-    assert_eq!(
-        endpoint.aliases.as_deref(),
-        Some(&["web", "web.app-whoami.wonton.internal"].map(String::from)[..])
+    assert_eq!(endpoint.aliases.as_deref(), Some(&["web".to_owned()][..]));
+}
+
+#[test]
+fn security_sensitive_fields_are_rejected_with_reason() {
+    for field in [
+        "ports: ['8080:80']",
+        "container_name: x",
+        "build: .",
+        "env_file: [.env]",
+    ] {
+        let yaml = package(
+            &format!("  web:\n    image: nginx\n    {field}"),
+            "  permissions: []",
+        );
+        let err = PluginPackage::parse(&yaml).unwrap_err();
+        assert!(
+            matches!(err, PackageError::Service { .. }),
+            "{field}: {err}"
+        );
+    }
+    for field in [
+        "privileged: true",
+        "network_mode: host",
+        "cap_add: [NET_ADMIN]",
+        "devices: ['/dev/net/tun:/dev/tun']",
+        "pid: host",
+        "ipc: host",
+        "security_opt: ['label=disable']",
+    ] {
+        let yaml = package(
+            &format!("  web:\n    image: nginx\n    {field}"),
+            "  permissions: []",
+        );
+        let package = PluginPackage::parse(&yaml).unwrap();
+        let err = dry_run(&package).unwrap_err().to_string();
+        assert!(err.contains("权限"), "{field}: {err}");
+    }
+    let top = format!(
+        "networks: {{}}\n{}",
+        package("  web:\n    image: nginx", "  permissions: []")
     );
+    assert!(matches!(
+        PluginPackage::parse(&top),
+        Err(PackageError::TopLevel { .. })
+    ));
+}
+
+#[test]
+fn host_network_drops_net_raw_unless_declared() {
+    let yaml = package(
+        "  web:\n    image: nginx\n    network_mode: host",
+        "  permissions: [network.host]",
+    );
+    let plan = dry_run(&PluginPackage::parse(&yaml).unwrap()).unwrap();
+    let host = plan.containers[0].body.host_config.as_ref().unwrap();
+    assert_eq!(host.network_mode.as_deref(), Some("host"));
+    assert_eq!(host.cap_drop.as_ref().unwrap(), &vec!["NET_RAW".to_owned()]);
+
+    let yaml = package(
+        "  web:\n    image: nginx\n    network_mode: host\n    cap_add: [NET_RAW]",
+        "  permissions: [network.host, cap.NET_RAW]",
+    );
+    let plan = dry_run(&PluginPackage::parse(&yaml).unwrap()).unwrap();
+    let host = plan.containers[0].body.host_config.as_ref().unwrap();
+    assert_eq!(host.cap_add.as_ref().unwrap(), &vec!["NET_RAW".to_owned()]);
+    assert!(host.cap_drop.is_none());
+}
+
+#[test]
+fn agent_and_bot_manifests_reject_very_high_and_highest_permissions() {
+    for permission in ["cap.NET_ADMIN", "privileged"] {
+        let agent = package(
+            "  web:\n    image: nginx",
+            &format!("  permissions: [{permission}]"),
+        )
+        .replace("  kind: app\n", "  kind: agent\n  agent: {protocol: acp}\n");
+        let err = PluginPackage::parse(&agent).unwrap_err().to_string();
+        assert!(err.contains("很高或最高级"), "{permission}: {err}");
+
+        let bot = package(
+            "  web:\n    image: nginx",
+            &format!("  permissions: [matrix.bot, {permission}]"),
+        );
+        let err = PluginPackage::parse(&bot).unwrap_err().to_string();
+        assert!(err.contains("很高或最高级"), "{permission}: {err}");
+
+        let bots = package(
+            "  web:\n    image: nginx",
+            &format!("  bots: {{services: [web]}}\n  permissions: [matrix.bot, {permission}]"),
+        );
+        let err = PluginPackage::parse(&bots).unwrap_err().to_string();
+        assert!(err.contains("很高或最高级"), "{permission}: {err}");
+    }
+}
+
+#[test]
+fn fixed_devices_need_permission_and_reach_host_config() {
+    let missing = package(
+        "  web:\n    image: nginx\n    devices: ['/dev/net/tun:/dev/net/tun']",
+        "  permissions: []",
+    );
+    assert!(render_err(&missing).contains("devices./dev/net/tun"));
+
+    let granted = package(
+        "  web:\n    image: nginx\n    devices: ['/dev/net/tun:/dev/net/tun']",
+        "  permissions: [devices./dev/net/tun]",
+    );
+    let plan = dry_run(&PluginPackage::parse(&granted).unwrap()).unwrap();
+    let devices = plan.containers[0]
+        .body
+        .host_config
+        .as_ref()
+        .unwrap()
+        .devices
+        .as_ref()
+        .unwrap();
+    assert_eq!(devices.len(), 1);
+    assert_eq!(devices[0].path_on_host.as_deref(), Some("/dev/net/tun"));
+    assert_eq!(
+        devices[0].path_in_container.as_deref(),
+        Some("/dev/net/tun")
+    );
+    assert_eq!(devices[0].cgroup_permissions.as_deref(), Some("rwm"));
+
+    let unknown = package(
+        "  web:\n    image: nginx\n    devices: ['/dev/sda:/dev/sda']",
+        "  permissions: [devices./dev/sda]",
+    );
+    let err = PluginPackage::parse(&unknown).unwrap_err().to_string();
+    assert!(err.contains("固定设备权限只支持"), "{err}");
+}
+
+#[test]
+fn docker_socket_requires_exact_writable_mount() {
+    let compose = |volume: &str, permissions: &str| {
+        package(
+            &format!("  web:\n    image: nginx\n    volumes: ['{volume}']"),
+            &format!("  permissions: [{permissions}]"),
+        )
+    };
+    let missing = compose("/var/run/docker.sock:/var/run/docker.sock", "");
+    assert!(render_err(&missing).contains("docker.socket"));
+
+    let granted = compose("/var/run/docker.sock:/var/run/docker.sock", "docker.socket");
+    let plan = dry_run(&PluginPackage::parse(&granted).unwrap()).unwrap();
+    let mount = &plan.containers[0]
+        .body
+        .host_config
+        .as_ref()
+        .unwrap()
+        .mounts
+        .as_ref()
+        .unwrap()[0];
+    assert_eq!(mount.source.as_deref(), Some("/var/run/docker.sock"));
+    assert_eq!(mount.target.as_deref(), Some("/var/run/docker.sock"));
+    assert_eq!(mount.read_only, Some(false));
+
+    for volume in [
+        "/tmp/docker.sock:/var/run/docker.sock",
+        "/var/run/docker.sock:/other/docker.sock",
+        "/var/run/docker.sock:/var/run/docker.sock:ro",
+    ] {
+        let err = render_err(&compose(volume, "docker.socket"));
+        assert!(err.contains("Docker socket"), "{volume}: {err}");
+    }
+}
+
+#[test]
+fn host_network_cannot_share_lan_ports() {
+    let yaml = package(
+        "  web:\n    image: nginx\n    network_mode: host",
+        "  lan: {ports: [{service: web, port: 8080}]}\n  permissions: [network.host, network.lan]",
+    );
+    let err = render_err(&yaml);
+    assert!(err.contains("不能同时声明 lan.ports"), "{err}");
+}
+
+#[test]
+fn host_webui_requires_healthcheck() {
+    let missing = package(
+        "  web:\n    image: nginx\n    network_mode: host",
+        "  webui: {service: web, port: 80, sso: none}\n  permissions: [network.host]",
+    );
+    assert!(render_err(&missing).contains("必须写有效的 healthcheck"));
+
+    let valid = package(
+        "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: ['CMD', 'true']}",
+        "  webui: {service: web, port: 80, sso: none}\n  permissions: [network.host]",
+    );
+    dry_run(&PluginPackage::parse(&valid).unwrap()).unwrap();
+}
+
+#[test]
+fn host_webui_cannot_use_proxy_sso() {
+    let yaml = package(
+        "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: ['CMD', 'true']}",
+        "  webui:\n    service: web\n    port: 80\n    sso: proxy\n    proxy:\n      headers: {Remote-User: '{user}'}\n  permissions: [network.host]",
+    );
+    let err = render_err(&yaml);
+    assert!(err.contains("sso: proxy"), "{err}");
+}
+
+#[test]
+fn unknown_capabilities_are_highest_risk() {
+    use super::privileges::{CapabilityRisk, capability_risk};
+
+    assert_eq!(capability_risk("NET_ADMIN"), CapabilityRisk::VeryHigh);
+    assert_eq!(capability_risk("NET_RAW"), CapabilityRisk::VeryHigh);
+    assert_eq!(capability_risk("SYS_ADMIN"), CapabilityRisk::Highest);
+    assert_eq!(
+        capability_risk("future_kernel_cap"),
+        CapabilityRisk::Highest
+    );
+}
+
+#[test]
+fn app_provides_is_rejected() {
+    let yaml = package(
+        "  web:\n    image: nginx",
+        "  provides:\n    models:\n      service: web\n      port: 8080\n      apis: {openai: /v1}\n      default_model: test\n      credentials:\n        issue: [issue, '{name}']\n        revoke: [revoke, '{name}']\n  permissions: []",
+    );
+    let err = PluginPackage::parse(&yaml).unwrap_err().to_string();
+    assert!(
+        err.contains("只有 kind: system 的插件能声明 provides"),
+        "{err}"
+    );
+}
+
+#[test]
+fn unknown_fields_fail_but_extensions_pass() {
+    let unknown = package(
+        "  web:\n    image: nginx\n    frobnicate: 1",
+        "  permissions: []",
+    );
+    assert!(render_err(&unknown).contains("frobnicate"));
+    let include = format!(
+        "include: [a.yml]\n{}",
+        package("  web:\n    image: nginx", "  permissions: []")
+    );
+    assert!(PluginPackage::parse(&include).is_err());
+    let ext = format!(
+        "x-casaos: {{main: web}}\n{}",
+        package(
+            "  web:\n    image: nginx\n    x-casaos: {envs: []}",
+            "  permissions: []"
+        )
+    );
+    dry_run(&PluginPackage::parse(&ext).unwrap()).unwrap();
+}
+
+#[test]
+fn compose_without_manifest_is_refused() {
+    let err = PluginPackage::parse("services:\n  web:\n    image: nginx\n").unwrap_err();
+    assert!(matches!(err, PackageError::MissingManifest));
 }
 
 #[test]
@@ -269,11 +431,7 @@ fn host_paths_are_confined_to_app_data_and_granted_shares() {
             &format!("  permissions: ['storage.share.photos:{access}']"),
         )
     };
-    let ro = PluginPackage::parse(
-        &share("${WONTON_SHARE_PHOTOS}:/photos:ro", "read"),
-        &langs(),
-    )
-    .unwrap();
+    let ro = PluginPackage::parse(&share("${WONTON_SHARE_PHOTOS}:/photos:ro", "read")).unwrap();
     assert_eq!(
         ro.manifest.permissions,
         [Permission::StorageShare {
@@ -281,13 +439,10 @@ fn host_paths_are_confined_to_app_data_and_granted_shares() {
             access: super::manifest::Access::Read
         }]
     );
-    dry_run(&ro, &langs()).unwrap();
+    dry_run(&ro).unwrap();
     assert!(render_err(&share("${WONTON_SHARE_PHOTOS}:/photos", "read")).contains(":ro"));
-    dry_run(
-        &PluginPackage::parse(&share("${WONTON_SHARE_PHOTOS}:/photos", "write"), &langs()).unwrap(),
-        &langs(),
-    )
-    .unwrap();
+    dry_run(&PluginPackage::parse(&share("${WONTON_SHARE_PHOTOS}:/photos", "write")).unwrap())
+        .unwrap();
     let undeclared = package(
         "  web:\n    image: nginx\n    volumes: ['${WONTON_SHARE_MUSIC}:/music:ro']",
         "  permissions: []",
@@ -304,7 +459,7 @@ fn two_services(web: &str, worker: &str) -> PluginPackage {
         ),
         "  permissions: []",
     );
-    PluginPackage::parse(&yaml, &langs()).unwrap()
+    PluginPackage::parse(&yaml).unwrap()
 }
 
 #[test]
@@ -328,7 +483,7 @@ fn bind_mounts_of_one_plugin_must_not_nest() {
         ),
     ];
     for (web, worker, inner) in nested {
-        let err = dry_run(&two_services(web, worker), &langs()).unwrap_err();
+        let err = dry_run(&two_services(web, worker)).unwrap_err();
         assert!(
             matches!(&err, RenderError::Service { service, .. } if service == inner),
             "{web} / {worker}: {err}"
@@ -339,7 +494,7 @@ fn bind_mounts_of_one_plugin_must_not_nest() {
         "'${WONTON_APP_DATA}/data:/data', '${WONTON_APP_DATA}/data2:/data2'",
         "'${WONTON_APP_DATA}/data/:/data:ro'",
     );
-    let plan = dry_run(&shared, &langs()).unwrap();
+    let plan = dry_run(&shared).unwrap();
     let app_data = std::path::Path::new("/wonton-dry-run/apps/app-test");
     let dirs: Vec<_> = plan.dirs.keys().cloned().collect();
     assert_eq!(dirs, [app_data.join("data"), app_data.join("data2")]);
@@ -354,7 +509,7 @@ fn data_dirs_belong_to_the_user_of_the_service_mounting_them() {
             ),
             "  permissions: []",
         );
-        let plan = dry_run(&PluginPackage::parse(&yaml, &langs()).unwrap(), &langs())?;
+        let plan = dry_run(&PluginPackage::parse(&yaml).unwrap())?;
         Ok::<_, RenderError>(plan.dirs.values().copied().collect::<Vec<_>>())
     };
     // 没写或是 root：以 root 启动、再按 PUID/PGID 降权的镜像，交给 PUID:PGID（演练里是 1000:1000）。
@@ -380,13 +535,13 @@ fn data_dirs_belong_to_the_user_of_the_service_mounting_them() {
         "'${WONTON_APP_DATA}/data:/data'",
         "'${WONTON_APP_DATA}/data:/data:ro'",
     );
-    dry_run(&same, &langs()).unwrap();
+    dry_run(&same).unwrap();
     let yaml = package(
         "  web:\n    image: nginx\n    volumes: ['${WONTON_APP_DATA}/data:/data']\n  \
          worker:\n    image: nginx\n    user: '65532:65532'\n    volumes: ['${WONTON_APP_DATA}/data:/data']",
         "  permissions: []",
     );
-    let err = dry_run(&PluginPackage::parse(&yaml, &langs()).unwrap(), &langs()).unwrap_err();
+    let err = dry_run(&PluginPackage::parse(&yaml).unwrap()).unwrap_err();
     assert!(matches!(err, RenderError::Service { .. }), "{err}");
 }
 
@@ -398,7 +553,7 @@ fn shares_are_mounted_only_at_their_root() {
             &format!("  web:\n    image: nginx\n    volumes: ['{volume}']"),
             "  permissions: ['storage.share.photos:write']",
         );
-        dry_run(&PluginPackage::parse(&yaml, &langs()).unwrap(), &langs())
+        dry_run(&PluginPackage::parse(&yaml).unwrap())
     };
     for volume in [
         "${WONTON_SHARE_PHOTOS}/2024:/photos",
@@ -429,7 +584,7 @@ fn container_and_volume_names_differ_across_plugins() {
             package(&services, "  permissions: []")
         )
         .replace("id: app.test", &format!("id: {id}"));
-        dry_run(&PluginPackage::parse(&yaml, &langs()).unwrap(), &langs()).unwrap()
+        dry_run(&PluginPackage::parse(&yaml).unwrap()).unwrap()
     };
     let foo = plan("app.foo", "bar-web", "bar-data");
     let foo_bar = plan("app.foo.bar", "web", "data");
@@ -459,7 +614,7 @@ fn services_start_in_dependency_order_and_cycles_fail() {
         "  permissions: []",
     );
     let yaml = format!("volumes:\n  pg: {{}}\n{yaml}");
-    let plan = dry_run(&PluginPackage::parse(&yaml, &langs()).unwrap(), &langs()).unwrap();
+    let plan = dry_run(&PluginPackage::parse(&yaml).unwrap()).unwrap();
     let names: Vec<&str> = plan.containers.iter().map(|c| c.service.as_str()).collect();
     assert_eq!(names, ["db", "app"]);
     assert_eq!(
@@ -475,7 +630,7 @@ fn services_start_in_dependency_order_and_cycles_fail() {
         "  a:\n    image: a\n    depends_on: [b]\n  b:\n    image: b\n    depends_on: [a]",
         "  permissions: []",
     );
-    assert!(render_err(&cycle).contains(&message("plugin-install-render-dependency-cycle", &[])));
+    assert!(render_err(&cycle).contains("循环"));
 }
 
 #[test]
@@ -492,7 +647,7 @@ fn reserved_labels_and_yaml_merge_keys() {
             "  permissions: []"
         )
     );
-    let plan = dry_run(&PluginPackage::parse(&merged, &langs()).unwrap(), &langs()).unwrap();
+    let plan = dry_run(&PluginPackage::parse(&merged).unwrap()).unwrap();
     assert_eq!(env_of(&plan.containers[0]), ["A=1", "B=2"]);
 }
 
@@ -510,8 +665,7 @@ fn manifest_rules_are_enforced() {
         ),
     ];
     for (manifest, needle) in cases {
-        let err = PluginPackage::parse(&package("  web:\n    image: nginx", manifest), &langs())
-            .unwrap_err();
+        let err = PluginPackage::parse(&package("  web:\n    image: nginx", manifest)).unwrap_err();
         assert!(err.to_string().contains(needle), "{manifest}: {err}");
     }
     let with_title = |title: &str| {
@@ -520,8 +674,8 @@ fn manifest_rules_are_enforced() {
              kind: app\n  title: {title}\n  description: {{zh: 测, en: T}}\n  permissions: []"
         )
     };
-    assert!(PluginPackage::parse(&with_title("{en: Test}"), &langs()).is_ok());
-    assert!(PluginPackage::parse(&with_title("{}"), &langs()).is_err());
+    assert!(PluginPackage::parse(&with_title("{en: Test}")).is_ok());
+    assert!(PluginPackage::parse(&with_title("{}")).is_err());
 }
 
 /// `mcp.headers`：引用不存在的密钥、禁止的头名、身份占位符都报错；generate 和 collect 的密钥都能引用。
@@ -537,48 +691,27 @@ fn mcp_header_rules_are_enforced() {
             ),
         )
     };
-    let err = |header: &str| {
-        PluginPackage::parse(&mcp(header), &langs())
-            .unwrap_err()
-            .to_string()
-    };
+    let err = |header: &str| PluginPackage::parse(&mcp(header)).unwrap_err().to_string();
     assert!(
         err("Authorization: Bearer {secret:missing}").contains("missing"),
         "{}",
         err("Authorization: Bearer {secret:missing}")
     );
-    let forbidden = |name: &str| {
-        message(
-            "plugin-install-proxy-mcp-prefix",
-            &[(
-                "error",
-                &message(
-                    "plugin-install-proxy-mcp-header-forbidden",
-                    &[("name", name)],
-                ),
-            )],
-        )
-    };
-    assert_eq!(err("Host: '{secret:pat}'"), forbidden("Host"));
-    assert_eq!(
-        err("Mcp-Session-Id: '{secret:pat}'"),
-        forbidden("Mcp-Session-Id")
-    );
-    assert_eq!(
-        err("X-Wonton-User: '{user}'"),
-        message(
-            "plugin-install-proxy-mcp-prefix",
-            &[(
-                "error",
-                &message(
-                    "plugin-install-proxy-mcp-identity-placeholder",
-                    &[("placeholder", "user"), ("template", "{user}")]
-                )
-            )]
-        )
+    assert!(
+        err("Host: '{secret:pat}'").contains("不能给 MCP 上游加请求头"),
+        "{}",
+        err("Host: '{secret:pat}'")
     );
     assert!(
-        PluginPackage::parse(&mcp("Authorization: Bearer {secret:app_token}"), &langs()).is_ok()
+        err("Mcp-Session-Id: '{secret:pat}'").contains("不能给 MCP 上游加请求头"),
+        "{}",
+        err("Mcp-Session-Id: '{secret:pat}'")
     );
-    assert!(PluginPackage::parse(&mcp("X-Api-Key: '{secret:pat}'"), &langs()).is_ok());
+    assert!(
+        err("X-Wonton-User: '{user}'").contains("身份占位符"),
+        "{}",
+        err("X-Wonton-User: '{user}'")
+    );
+    assert!(PluginPackage::parse(&mcp("Authorization: Bearer {secret:app_token}")).is_ok());
+    assert!(PluginPackage::parse(&mcp("X-Api-Key: '{secret:pat}'")).is_ok());
 }

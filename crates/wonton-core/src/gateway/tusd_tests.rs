@@ -4,7 +4,7 @@
 #![cfg(target_os = "linux")]
 
 use std::convert::Infallible;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::process::Command;
@@ -19,36 +19,34 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use wonton_protocol::FileId;
 
-use super::files_tests::{Home, home_at, home_with};
+use super::files_tests::{Home, home_with};
 use super::files_upload_tests::deployed_tusd;
 use super::tests::CORE;
 use super::tunnel_tests::Phone;
 use crate::config::FILE_HOOKS_HOST;
-use crate::files::test_support::Fixture;
-use crate::http::HttpClient;
-use crate::test_docker::Names;
 use crate::tunnel::TunnelEntry;
 
 const CHUNK: usize = 256 << 10;
 
-/// tusd 退出、容器被 `--rm` 收掉以后，`docker logs` 说的话。
-const GONE: [&str; 2] = ["No such container", "can not get logs from container"];
-
-/// 此刻没人监听的端口。号码要交给别人去绑，所以用避开临时端口段的挑法。
 fn free_port() -> u16 {
-    wonton_tunnel::test_support::unused_port()
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
-/// 退出时删掉的 tusd 容器：名字由调用方的 test_docker::Names 登记并回收。
+/// 退出时删掉的 tusd 容器。
 struct Tusd {
     name: String,
     port: u16,
 }
 
 impl Tusd {
-    /// 镜像和参数取自部署文件，端口交给 tusd 自己挑（`-port=0`，内核在 bind 时原子分配）。
-    fn start(uploads: &Path, gateway: u16, name: String) -> Self {
+    /// 镜像和参数取自部署文件，端口换掉。
+    fn start(uploads: &Path, gateway: u16, port: u16) -> Self {
         let service = deployed_tusd(crate::install::COMPOSE);
+        let name = format!("wonton-tusdtest{}-{port}", std::process::id());
         let meta = std::fs::metadata(uploads).unwrap();
         let mut docker = Command::new("docker");
         docker
@@ -76,8 +74,8 @@ impl Tusd {
                     .iter()
                     .flat_map(|(name, value)| ["--env".to_owned(), format!("{name}={value}")]),
             )
-            .arg(wonton_test_images::image(&service.image))
-            .args(["-host=127.0.0.1", "-port=0"]);
+            .arg(&service.image)
+            .args(["-host=127.0.0.1".to_owned(), format!("-port={port}")]);
         for flag in service.command {
             docker.arg(if flag.starts_with("-hooks-http=") {
                 format!("-hooks-http=http://{FILE_HOOKS_HOST}:{gateway}/")
@@ -91,63 +89,40 @@ impl Tusd {
             "起不了 tusd：{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        Self { name, port: 0 }
+        Self { name, port }
     }
 
-    /// 等 tusd 报出它挑上的端口并且确实在服务，`self.port` 填上那个端口；监听没建成（端口被占）返回 false。
-    ///
-    /// tusd 先建监听、再打 “You can now upload files to: http://127.0.0.1:端口/…”（`listener.Addr()`），
-    /// 所以这行出来时端口已经绑好了。拿到端口再发一个 OPTIONS 核对回话的确实是 tusd（`Tus-Version`），
-    /// 不是“端口连得上”就算数。
-    async fn wait_ready(&mut self) -> bool {
+    async fn wait_ready(&self) {
         for _ in 0..300 {
-            let Some(logs) = self.logs() else {
-                return false;
-            };
-            if let Some(port) = listening_port(&logs) {
-                if self.is_tusd(port).await {
-                    self.port = port;
-                    return true;
-                }
-            } else if logs.contains("Unable to create listener") {
-                return false;
-            } else if GONE.iter().any(|gone| logs.contains(gone)) {
-                // 容器已经没了，日志不会再变。
-                return false;
+            let address = SocketAddr::from(([127, 0, 0, 1], self.port));
+            if tokio::net::TcpStream::connect(address).await.is_ok() {
+                return;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        panic!(
-            "等了 30 秒 tusd 还没开始监听：{}",
-            self.logs().unwrap_or_default()
-        );
+        panic!("等了 30 秒 tusd 还没起来：{}", self.logs());
     }
 
-    /// 回这个端口的确实是 tusd：OPTIONS 会带 `Tus-Version`，别的进程不会。
-    async fn is_tusd(&self, port: u16) -> bool {
-        let request = hyper::Request::builder()
-            .method(Method::OPTIONS)
-            .uri(format!("http://127.0.0.1:{port}/_wonton/files/uploads/"))
-            .header("tus-resumable", "1.0.0")
-            .body(Body::empty())
-            .unwrap();
-        HttpClient::new()
-            .send(request)
-            .await
-            .is_ok_and(|response| response.headers().get("tus-version").is_some())
-    }
-
-    /// 容器日志。容器已经被 `--rm` 收掉时取不到（`None`）：起不来、退出以后就是这样。
-    fn logs(&self) -> Option<String> {
+    fn logs(&self) -> String {
         let output = Command::new("docker").args(["logs", &self.name]).output();
-        let output = output.ok()?;
-        output.status.success().then(|| {
-            format!(
-                "{}{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            )
-        })
+        output.map_or_else(
+            |e| e.to_string(),
+            |o| {
+                format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&o.stdout),
+                    String::from_utf8_lossy(&o.stderr)
+                )
+            },
+        )
+    }
+}
+
+impl Drop for Tusd {
+    fn drop(&mut self) {
+        let _ = Command::new("docker")
+            .args(["rm", "-f", &self.name])
+            .output();
     }
 }
 
@@ -155,45 +130,16 @@ struct Setup {
     home: Home,
     phone: Phone,
     tusd: Tusd,
-    /// 守卫活到测试结束，tusd 容器随它回收。
-    _names: Names,
     _entry: TunnelEntry,
 }
 
 async fn setup() -> Setup {
-    let mut names = Names::new();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let gateway_port = listener.local_addr().unwrap().port();
-    let f = Fixture::new();
-    let tusd = start_tusd(&f.uploads_dir(), gateway_port, &mut names).await;
-    let home = home_at(f, Some(format!("127.0.0.1:{}", tusd.port))).await;
-    let (entry, phone) = connect_phone(&home, listener).await;
-    Setup {
-        home,
-        phone,
-        tusd,
-        _names: names,
-        _entry: entry,
-    }
-}
-
-/// 起 tusd 并等它开始监听。
-///
-/// 端口由 tusd 自己挑（`-port=0`）：`free_port` 那种先绑住、拿到号码就放掉的做法，到 tusd 真去绑之间隔着建 home
-/// 和 `docker run` 的几百毫秒，宿主上别的进程（出站连接也从这段临时端口里取）能把它抢走，tusd 打不开监听就退出。
-async fn start_tusd(uploads: &Path, gateway: u16, names: &mut Names) -> Tusd {
-    let name = names.oneshot_container("tusd");
-    let mut tusd = Tusd::start(uploads, gateway, name);
-    assert!(
-        tusd.wait_ready().await,
-        "tusd 没打开监听：{}",
-        tusd.logs().unwrap_or_default()
-    );
-    tusd
-}
-
-/// 在这个 home 上接一部手机：服务网关、开隧道入口、连隧道。
-async fn connect_phone(home: &Home, listener: TcpListener) -> (TunnelEntry, Phone) {
+    let tusd_port = free_port();
+    let home = home_with(Some(format!("127.0.0.1:{tusd_port}"))).await;
+    let tusd = Tusd::start(&home.f.uploads_dir(), gateway_port, tusd_port);
+    tusd.wait_ready().await;
     let app = home.app.clone();
     tokio::spawn(async move {
         axum::serve(
@@ -207,19 +153,12 @@ async fn connect_phone(home: &Home, listener: TcpListener) -> (TunnelEntry, Phon
     home.tunnel.devices.add(key.public(), None).unwrap();
     let entry = TunnelEntry::spawn(&home.tunnel, home.app.clone());
     let phone = Phone::connect(key, &home.tunnel).await;
-    (entry, phone)
-}
-
-/// tusd 就绪那行里报的端口。
-///
-/// ```text
-/// 2026/11/07 00:35:59.167452 You can now upload files to: http://127.0.0.1:46631/_wonton/files/uploads/
-/// ```
-fn listening_port(logs: &str) -> Option<u16> {
-    logs.lines().rev().find_map(|line| {
-        let (_, port) = line.split_once("You can now upload files to: http://127.0.0.1:")?;
-        port.split('/').next()?.parse().ok()
-    })
+    Setup {
+        home,
+        phone,
+        tusd,
+        _entry: entry,
+    }
 }
 
 struct Answer {
@@ -274,16 +213,7 @@ impl Setup {
             .body(Body::empty())
             .unwrap();
         let created = self.send(request).await;
-        assert_eq!(
-            created.status,
-            StatusCode::CREATED,
-            "the core answered {}: {}\nx-wonton-error: {} x-wonton-tunnel-error: {}\n{}",
-            created.status,
-            String::from_utf8_lossy(&created.body),
-            created.header("x-wonton-error"),
-            created.header("x-wonton-tunnel-error"),
-            self.tusd.logs().unwrap_or_default()
-        );
+        assert_eq!(created.status, StatusCode::CREATED, "{}", self.tusd.logs());
         let location = created.header("location");
         let id = location
             .rsplit_once("/_wonton/files/uploads/")
@@ -305,7 +235,7 @@ impl Setup {
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        panic!("问不到进度：{}", self.tusd.logs().unwrap_or_default());
+        panic!("问不到进度：{}", self.tusd.logs());
     }
 }
 
@@ -371,12 +301,7 @@ async fn uploads_through_the_tunnel_stream_resume_and_end_as_a_file() {
         ))
         .unwrap();
     let finished = s.send(rest).await;
-    assert_eq!(
-        finished.status,
-        StatusCode::NO_CONTENT,
-        "{}",
-        s.tusd.logs().unwrap_or_default()
-    );
+    assert_eq!(finished.status, StatusCode::NO_CONTENT, "{}", s.tusd.logs());
     assert_eq!(finished.offset(), size);
 
     // 最后一个 PATCH 回来时文件已经可用，不用再等。
@@ -426,7 +351,7 @@ async fn tusd_passes_the_cores_refusals_through_and_cancels() {
         full.status,
         StatusCode::INSUFFICIENT_STORAGE,
         "{}",
-        s.tusd.logs().unwrap_or_default()
+        s.tusd.logs()
     );
     assert_eq!(full.header("x-wonton-error"), "storage_full");
     let body: serde_json::Value = serde_json::from_slice(&full.body).unwrap();
@@ -447,12 +372,7 @@ async fn tusd_passes_the_cores_refusals_through_and_cancels() {
     let info = s
         .call(Method::GET, &format!("/_wonton/files/{empty}"))
         .await;
-    assert_eq!(
-        info.status,
-        StatusCode::OK,
-        "{}",
-        s.tusd.logs().unwrap_or_default()
-    );
+    assert_eq!(info.status, StatusCode::OK, "{}", s.tusd.logs());
 
     // 取消：数据删掉，编号不再认。
     let id = s.create(10).await;
@@ -467,55 +387,4 @@ async fn tusd_passes_the_cores_refusals_through_and_cancels() {
     let gone = s.call(Method::HEAD, &path).await;
     assert_eq!(gone.status, StatusCode::NOT_FOUND);
     assert_eq!(gone.header("x-wonton-error"), "file_unknown");
-}
-
-/// 端口上没人监听时如实说连不上，不和“上游出问题”混成一个类别。
-#[tokio::test(flavor = "multi_thread")]
-async fn a_tusd_that_is_not_running_shows_as_unavailable() {
-    let port = free_port();
-    let home = home_with(Some(format!("127.0.0.1:{port}"))).await;
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let (_entry, phone) = connect_phone(&home, listener).await;
-    let request = phone
-        .request(Method::POST, CORE, "/_wonton/files/uploads/")
-        .header("x-wonton-files", "1")
-        .header("tus-resumable", "1.0.0")
-        .header("upload-length", "10")
-        .header("upload-metadata", "filename YS5iaW4=")
-        .body(Body::empty())
-        .unwrap();
-    let answer = Answer::read(phone.http().send(request).await.unwrap()).await;
-    assert_eq!(
-        answer.status,
-        StatusCode::SERVICE_UNAVAILABLE,
-        "{}",
-        String::from_utf8_lossy(&answer.body)
-    );
-    assert_eq!(answer.header("x-wonton-error"), "service_unavailable");
-}
-
-/// 端口已经被别人占着时照样能用：`free_port` 拿到的号码交出去之前就可能被抢走。
-///
-/// 先后顺序是钉住的：抢端口的监听者先起，而且收下连接就断（连接立刻被拒）；之后才起 tusd。
-/// 修好以前 tusd 绑不上这个端口就退出，测试却连上了抢端口的东西，创建上传拿到 503（对方收下连接就断）。
-/// 抢端口的自己也绑 0：先挑号再绑，中间会被并行的测试抢走（CI 上见过 `AddrInUse`）。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用它起一次性的 tusd"]
-async fn an_upload_works_when_the_port_is_already_taken() {
-    let thief = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-    let stolen = thief.local_addr().unwrap().port();
-    tokio::spawn(async move {
-        while let Ok((socket, _)) = thief.accept().await {
-            drop(socket);
-        }
-    });
-    let s = setup().await;
-    assert_ne!(s.tusd.port, stolen, "tusd 用的是自己挑的端口");
-    let id = s.create(1).await;
-    assert_eq!(
-        s.call(Method::HEAD, &format!("/_wonton/files/uploads/{id}"))
-            .await
-            .offset(),
-        0
-    );
 }

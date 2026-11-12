@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -18,7 +19,6 @@ import app.wonton.protocol.HomeViewModel
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.toColor
 
 @Composable
@@ -31,7 +31,7 @@ internal fun OnboardingGatewayScreen(url: String, home: HomeViewModel, onClose: 
     BackHandler { if (!controller.goBack()) onClose() }
     val openLink = externalLinkOpener { rejection = it }
     WontonScreen(bar = { WontonPushedBar(stringResource(R.string.onboarding_gateway_title), onClose) }) {
-        Box(Modifier.fillMaxSize().wontonContentPadding()) {
+        Box(Modifier.fillMaxSize().navigationBarsPadding()) {
             home.proxy?.let { proxy ->
                 PluginWebView(
                     url, proxy, reload,

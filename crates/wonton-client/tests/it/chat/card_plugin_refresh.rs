@@ -17,10 +17,6 @@ use super::support::{Home, Phone, Timeline, WAIT};
 
 const PLUGIN: &str = "app.grafana";
 
-/// 钩子报到之后、放行之前，给 settled 的观察窗口：修复前 settled 在这窗口里出现，修复后一直不出现。
-/// 实际的先后由钩子和决定的就地性决定，窗口只是给“出现”留够时间，不靠它排先后。
-const HELD: Duration = Duration::from_secs(2);
-
 fn install_card(id: &str) -> Value {
     let mut card = card(id, in_ten_minutes());
     card["plugin_id"] = json!(PLUGIN);
@@ -33,14 +29,12 @@ fn succeeded(message: &str) -> Value {
 
 fn plugin() -> InstalledPlugin {
     InstalledPlugin {
-        chat: Default::default(),
         id: PLUGIN.to_owned(),
         title: "看板".to_owned(),
         summary: String::new(),
         version: "1.0.0".to_owned(),
         revision: "1.0.0".to_owned(),
         kind: PluginKind::App,
-        runtime: Default::default(),
         icon: None,
         trust: PluginTrust::Official,
         source: None,
@@ -60,9 +54,6 @@ fn plugin() -> InstalledPlugin {
         upgrade: None,
         removable: true,
         notices: Vec::new(),
-        enabled_root_permissions: Vec::new(),
-        install_progress: None,
-        tunnel_ports: Vec::new(),
     }
 }
 
@@ -107,26 +98,6 @@ async fn followed_settled(phone: &Phone, id: &str) {
                 .then_some(())
         })
         .await;
-}
-
-/// settled_confirmations 里出现这张卡片。不带超时：由调用方决定等多久。
-/// 先订阅再查现状，不然订阅前的更新会被当成“已经看过”漏掉。
-async fn settled_seen(phone: &Phone, id: &str) {
-    let subscription = phone.subscribe_chat();
-    if phone
-        .chat()
-        .settled_confirmations
-        .iter()
-        .any(|card| card == id)
-    {
-        return;
-    }
-    while let Some(view) = subscription.next().await {
-        if view.settled_confirmations.iter().any(|card| card == id) {
-            return;
-        }
-    }
-    panic!("聊天订阅提前结束");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -340,78 +311,4 @@ async fn startup_history_results_do_not_fetch() {
     })
     .await;
     assert_eq!(home.installed_requests(), before_restart + 1);
-}
-
-/// #565 的不变量：卡片进了 settled_confirmations 时，“补不补取”已经定了。钩子把决定卡在报到和放行
-/// 之间：settled 在放行前出现，就是修复前的行为——决定在另一个任务里，settled 谁先谁后看运气；
-/// 修复后就地决定，卡着的时候 settled 发不出来。`biased` 加 settled 在前：两件事同时就绪（修复前
-/// 几乎总是这样）时必须判失败，不能随机放过去。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn a_card_only_settles_after_the_refetch_decision_was_made() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let home = Home::start(&[phone.device_id()]).await;
-    // 列表一开始就没有这个插件：连上后的第一次取列表就是基线。
-    home.set_installed_plugins(vec![]);
-    phone.connect(&home);
-    phone.signed_in().await;
-    let (core, room_id) = core_room(&phone, &home).await;
-    let room = core.open_room(&room_id).await.expect("核心打开私聊");
-    let mut timeline = Timeline::open(&phone, room_id.as_str()).await;
-    wait_for(&phone, "连上后的第一次取列表", |view| {
-        view.installed.is_some().then_some(())
-    })
-    .await;
-    let baseline = home.installed_requests();
-
-    // 钩子开着：卡片成功后决定先报到、等放行。
-    phone.test_arm_card_success_hook();
-
-    let card = install_card("install");
-    let posted = send(&room, content(&card)).await;
-    until_card(&mut timeline, "install", "卡片出现", |view| {
-        view.card.state == ConfirmationState::Pending
-    })
-    .await;
-    followed_pending(&phone, "install").await;
-    edit(
-        &room,
-        &posted,
-        &with_state(&card, succeeded("装好了 Grafana")),
-    )
-    .await;
-
-    tokio::select! {
-        biased;
-        // settled 先到，而决定还卡在钩子上没做完：不变量破了。
-        _ = settled_seen(&phone, "install") => {
-            panic!("the card no longer needs an answer, but the refetch decision has not been made");
-        }
-        // 决定到了但卡着。修复前 settled 这时已经（或马上）会出现；修复后放行前它出不来。
-        _ = phone.test_wait_card_success_arrived() => {
-            if tokio::time::timeout(HELD, settled_seen(&phone, "install"))
-                .await
-                .is_ok()
-            {
-                panic!(
-                    "the card no longer needs an answer, but the refetch decision has not been made"
-                );
-            }
-            phone.test_release_card_success();
-        }
-        _ = tokio::time::sleep(WAIT) => {
-            panic!(
-                "neither the hook arrival (decision reached) nor settled (published by the follow) \
-                 came within {WAIT:?}"
-            );
-        }
-    }
-
-    // 放行后 settled 才发出来，放行的那次决定也补取了。
-    followed_settled(&phone, "install").await;
-    wait_for(&phone, "放行后的补取", |_| {
-        (home.installed_requests() == baseline + 1).then_some(())
-    })
-    .await;
 }

@@ -1,15 +1,8 @@
 //! 地址只表示 registry 的 authority，不接受 URL 或隐含的认证信息。
 
-use crate::l10n;
-use crate::plugin::languages::Languages;
-
-pub(crate) fn validate(address: &str, langs: &Languages) -> Result<(), String> {
+pub(crate) fn validate(address: &str) -> Result<(), String> {
     let invalid = || {
-        l10n::text(
-            langs,
-            "plugin-settings-mirror-address-invalid",
-            &[("address", address.into())],
-        )
+        format!("镜像加速地址 {address:?} 不合法：只填主机名和可选端口，不带协议、路径或用户名密码")
     };
     let (host, port) = match address.split_once(':') {
         Some((host, port)) => (host, Some(port)),
@@ -40,9 +33,12 @@ pub(crate) fn validate(address: &str, langs: &Languages) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(test)]
-fn langs() -> crate::plugin::languages::Languages {
-    crate::plugin::languages::Languages::default()
+pub(in crate::plugin) fn choices(value: serde_json::Value) -> Result<Vec<String>, String> {
+    let choices: Vec<String> = serde_json::from_value(value).map_err(|e| e.to_string())?;
+    for address in &choices {
+        validate(address)?;
+    }
+    Ok(choices)
 }
 
 #[cfg(test)]
@@ -57,7 +53,7 @@ mod tests {
             "127.0.0.1:5000",
             "localhost",
         ] {
-            assert!(validate(valid, &langs()).is_ok(), "{valid}");
+            assert!(validate(valid).is_ok(), "{valid}");
         }
         for invalid in [
             "",
@@ -75,7 +71,7 @@ mod tests {
             "-mirror.example",
             "mirror_.example",
         ] {
-            assert!(validate(invalid, &langs()).is_err(), "{invalid}");
+            assert!(validate(invalid).is_err(), "{invalid}");
         }
     }
 }

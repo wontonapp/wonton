@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 
 use super::state::write_atomic;
 
@@ -24,19 +24,16 @@ pub struct EnvFile {
 
 impl EnvFile {
     pub fn read(path: &Path) -> anyhow::Result<Self> {
-        // 文件操作的上下文是原始值（和系统报错一样），不进 Fluent；句子在上面的层写。
-        let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-        Ok(Self {
+        let text = fs::read_to_string(path).with_context(|| format!("读取 {}", path.display()))?;
+        let file = Self {
             lines: text.lines().map(str::to_owned).collect(),
-        })
-    }
-
-    /// [`REQUIRED`] 里第一个缺的键（没写或为空）；都齐时是 `None`。缺了说明文件坏了，不能写回去。
-    pub fn missing_required_key(&self) -> Option<&'static str> {
-        REQUIRED
-            .iter()
-            .find(|key| self.get(key).is_none_or(str::is_empty))
-            .copied()
+        };
+        for key in REQUIRED {
+            if file.get(key).is_none_or(str::is_empty) {
+                bail!("{} 里缺 {key}", path.display());
+            }
+        }
+        Ok(file)
     }
 
     /// 同一个键写了几次时最后一次算数，和 compose 一样。
@@ -62,7 +59,7 @@ impl EnvFile {
 mod tests {
     use super::*;
 
-    const FILE: &str = "# 注释\nWONTON_CORE_SOURCE=r:stable\nWONTON_CORE_IMAGE=r@old\nWONTON_INSTALL_DIR=/opt/wonton\n\
+    const FILE: &str = "# 注释\nWONTON_CORE_SOURCE=r:beta\nWONTON_CORE_IMAGE=r@old\nWONTON_INSTALL_DIR=/opt/wonton\n\
                         WONTON_DATA_DIR=/var/lib/wonton\nWONTON_PORT=8480\nWONTON_TUNNEL_PORT=8482\n\
                         WONTON_BASE_DOMAIN=wonton.localhost\nTZ=\n";
 
@@ -85,7 +82,7 @@ mod tests {
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.contains("WONTON_CORE_IMAGE=r@new\n"));
         assert!(!text.contains("r@old"));
-        assert!(text.contains("# 注释\nWONTON_CORE_SOURCE=r:stable\n"));
+        assert!(text.contains("# 注释\nWONTON_CORE_SOURCE=r:beta\n"));
         assert!(text.contains("TZ=\n"));
         assert_eq!(
             EnvFile::read(&path).unwrap().get("WONTON_CORE_IMAGE"),
@@ -94,16 +91,14 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
-    /// 缺必需的键就不写回：写回去也起不来，还丢了能看出问题的原文件。句子由调用方按语言写。
+    /// 缺必需的键不写回：写回去也起不来，还丢了能看出问题的原文件。
     #[test]
     fn a_file_missing_required_keys_is_refused() {
         let dir = temp();
         let path = dir.join(".env");
         fs::write(&path, "WONTON_CORE_IMAGE=r@old\n").unwrap();
-        assert_eq!(
-            EnvFile::read(&path).unwrap().missing_required_key(),
-            Some("WONTON_INSTALL_DIR")
-        );
+        let error = EnvFile::read(&path).unwrap_err().to_string();
+        assert!(error.contains("WONTON_INSTALL_DIR"), "{error}");
         fs::remove_dir_all(dir).unwrap();
     }
 }

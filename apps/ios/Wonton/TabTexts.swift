@@ -2,56 +2,50 @@ import Foundation
 
 /// 壳负责原生控件的文字；清单标题由核心选择语言。
 enum TabText {
-    static var chat: String { String(localized: .tabChat) }
-    static var apps: String { String(localized: .launcherTitle) }
-    static var settings: String { String(localized: .tabSettings) }
-    static var bottomBar: String { String(localized: .tabBottomBar) }
-    static var bottomPanel: String { String(localized: .tabBottomPanel) }
-    static var showLabels: String { String(localized: .tabShowLabels) }
-    static var addMore: String { String(localized: .tabAddMore) }
-    static var addToBar: String { String(localized: .tabAddToBar) }
-    static var pin: String { String(localized: .launcherPinToBar) }
-    static var unpin: String { String(localized: .tabRemoveFromBar) }
-    static var replace: String { String(localized: .tabReplace) }
-    static var back: String { String(localized: .designBack) }
-    static var close: String { String(localized: .commonClose) }
-    static var retry: String { String(localized: .commonRetry) }
-    static var details: String { String(localized: .tabViewDetails) }
-    static var open: String { String(localized: .tabOpen) }
-    static var pinToBar: String { String(localized: .tabPinToBar) }
-    static var fullscreen: String { String(localized: .tabFullscreen) }
-    static var alwaysFullscreen: String { String(localized: .tabMenuAlwaysFullscreen) }
-    static var reload: String { String(localized: .tabMenuReload) }
-    static var more: String { String(localized: .tabMore) }
-    static var starting: String { String(localized: .tabStarting) }
-    static var loading: String { String(localized: .tabLoading) }
-    static var upgrading: String { String(localized: .tabUpgrading) }
-    static var uninstalling: String { String(localized: .tabUninstalling) }
-    static var pageRemoved: String { String(localized: .tabPageRemoved) }
-    static var pageFailed: String { String(localized: .tabPageFailed) }
-    static var unknown: String { String(localized: .tabStateUnknown) }
-    static var configurationFailed: String { String(localized: .tabSettingsUnreadable) }
-    static var selectChat: String { String(localized: .tabSelectChat) }
-    static var done: String { String(localized: .commonDone) }
-    static var start: String { String(localized: .tabStart) }
-    static var failed: String { String(localized: .tabHasProblem) }
-    static var openPanel: String { String(localized: .panelOpen) }
-    static var addPanelPages: String { String(localized: .panelAddPages) }
-    static var editPanel: String { String(localized: .panelEdit) }
-    static var inPanel: String { String(localized: .panelInPanel) }
-    static var canAddToPanel: String { String(localized: .panelCanAdd) }
-    static var removePanelPage: String { String(localized: .panelRemove) }
-    static var panelURL: String { String(localized: .panelUrl) }
-    static var addPanelURL: String { String(localized: .panelAddUrl) }
-    static var pinToPanel: String { String(localized: .panelPin) }
-    static var panelBadURL: String { String(localized: .panelBadUrl) }
-    static var panelAttention: String { String(localized: .panelAttention) }
+    static func choose(_ chinese: String, _ english: String) -> String {
+        Locale.preferredLanguages.first?.hasPrefix("zh") == true ? chinese : english
+    }
+
+    static var chat: String { choose("聊天", "Chats") }
+    static var apps: String { choose("应用", "Apps") }
+    static var settings: String { choose("设置", "Settings") }
+    static var bottomBar: String { choose("底栏", "Tab bar") }
+    static var showLabels: String { choose("显示文字", "Show labels") }
+    static var addMore: String { choose("添加更多", "Add more") }
+    static var addToBar: String { choose("添加到底栏", "Add to tab bar") }
+    static var pin: String { choose("固定到底栏", "Pin to tab bar") }
+    static var unpin: String { choose("从底栏移除", "Remove from tab bar") }
+    static var replace: String { choose("底栏已满，换掉哪一项？", "Tab bar full. Replace which tab?") }
+    static var back: String { choose("返回", "Back") }
+    static var close: String { choose("关闭", "Close") }
+    static var retry: String { choose("重试", "Retry") }
+    static var details: String { choose("查看详情", "View details") }
+    static var open: String { choose("打开", "Open") }
+    static var pinToBar: String { choose("放到底栏", "Pin to tab bar") }
+    static var fullscreen: String { choose("全屏打开", "Open fullscreen") }
+    static var alwaysFullscreen: String { choose("总是全屏", "Always fullscreen") }
+    static var reload: String { choose("重新加载", "Reload") }
+    static var more: String { choose("更多", "More") }
+    static var starting: String { choose("正在启动…", "Starting…") }
+    static var loading: String { choose("正在加载", "Loading") }
+    static var upgrading: String { choose("正在更新…", "Updating…") }
+    static var uninstalling: String { choose("正在卸载…", "Uninstalling…") }
+    static var pageRemoved: String { choose("新版本不再提供这个页面", "This page is no longer available") }
+    static var pageFailed: String { choose("页面打不开", "Could not open this page") }
+    static var unknown: String { choose("无法确认应用的状态", "The app’s status is unknown") }
+    static var configurationFailed: String {
+        choose("底栏设置读不了，已使用默认底栏", "Could not read tab settings. Using the default tabs.")
+    }
+    static var selectChat: String { choose("选一个聊天放入草稿", "Choose a chat for your draft") }
+    static var done: String { choose("完成", "Done") }
+    static var start: String { choose("启动", "Start") }
+    static var failed: String { choose("出了问题", "has a problem") }
 
     static func stopped(_ title: String) -> String {
-        String(localized: .tabStopped(title))
+        choose("\(title) 已停止", "\(title) is stopped")
     }
 
     static func uninstalled(_ title: String) -> String {
-        String(localized: .tabUninstalled(title))
+        choose("\(title) 已卸载，已从底栏移除", "\(title) was uninstalled and removed from the tab bar")
     }
 }

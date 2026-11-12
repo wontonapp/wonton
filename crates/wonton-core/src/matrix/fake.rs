@@ -9,9 +9,8 @@ use aws_lc_rs::encoding::AsDer;
 use aws_lc_rs::hmac;
 use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Path, State};
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use base64::Engine as _;
@@ -19,7 +18,6 @@ use base64::engine::general_purpose::STANDARD;
 use jsonwebtoken::DecodingKey;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
-use wonton_protocol::AVATARS_FIELD;
 
 use super::issuer::tests::verify;
 use crate::config::MatrixConfig;
@@ -33,7 +31,6 @@ pub struct User {
     pub deactivated: bool,
     pub display_name: Option<String>,
     pub avatar_url: Option<String>,
-    pub avatars: Option<Value>,
     pub direct: Option<Value>,
 }
 
@@ -55,9 +52,6 @@ pub struct Tuwunel {
     pub rooms: BTreeMap<String, Room>,
     /// 上传的文件：（类型，内容）。
     pub media: Vec<(String, Vec<u8>)>,
-    pub media_ids: BTreeMap<String, usize>,
-    pub media_uploaders: Vec<String>,
-    pub media_downloaders: Vec<String>,
     pub registrations: usize,
     /// 为真时建房失败，测试中途失败的处理。
     pub refuse_rooms: bool,
@@ -67,14 +61,8 @@ pub struct Tuwunel {
     pub refuse_next_send: bool,
     /// 为真时读写资料都失败。
     pub refuse_profile: bool,
-    pub refuse_avatar_write: bool,
-    pub refuse_logout: bool,
     /// 写过几次显示名。
     pub display_name_writes: usize,
-    /// 全局账号数据：（用户，事件类型）→ 内容。
-    pub account_data: BTreeMap<(String, String), Value>,
-    /// 房间账号数据：（用户，房间，事件类型）→ 内容。
-    pub room_account_data: BTreeMap<(String, String, String), Value>,
     next: usize,
 }
 
@@ -214,14 +202,11 @@ async fn whoami(State(fake): State<Fake>, headers: HeaderMap) -> Reply {
 
 async fn logout(State(fake): State<Fake>, headers: HeaderMap) -> Reply {
     let mut state = fake.state();
-    reply(auth(&state, &headers).and_then(|(user, device)| {
-        if state.refuse_logout {
-            return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
-        }
+    reply(auth(&state, &headers).map(|(user, device)| {
         state
             .tokens
             .retain(|_, (u, d)| !(*u == user && *d == device));
-        Ok(ok(json!({})))
+        ok(json!({}))
     }))
 }
 
@@ -305,19 +290,11 @@ async fn get_profile(
         if state.refuse_profile {
             return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
         }
-        let account = state
-            .users
-            .get(&user)
-            .ok_or_else(|| error(StatusCode::NOT_FOUND, "M_NOT_FOUND"))?;
-        let value = match field.as_str() {
-            "displayname" => account.display_name.as_ref().map(|name| json!(name)),
-            "avatar_url" => account.avatar_url.as_ref().map(|url| json!(url)),
-            AVATARS_FIELD => account.avatars.clone(),
-            _ => None,
-        };
-        value
-            .map(|value| ok(json!({field: value})))
-            .ok_or_else(|| error(StatusCode::NOT_FOUND, "M_NOT_FOUND"))
+        let name = state.users.get(&user).and_then(|u| u.display_name.clone());
+        match (field.as_str(), name) {
+            ("displayname", Some(name)) => Ok(ok(json!({"displayname": name}))),
+            _ => Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND")),
+        }
     }))
 }
 
@@ -335,55 +312,20 @@ async fn set_profile(
         if state.refuse_profile {
             return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
         }
-        if field == "avatar_url" && state.refuse_avatar_write {
-            return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
-        }
         state.display_name_writes += usize::from(field == "displayname");
         let account = state.users.entry(user).or_default();
         match field.as_str() {
             "displayname" => account.display_name = body["displayname"].as_str().map(str::to_owned),
-            "avatar_url" => {
-                let url = body["avatar_url"]
-                    .as_str()
-                    .ok_or_else(|| error(StatusCode::BAD_REQUEST, "M_BAD_JSON"))?;
-                account.avatar_url = (!url.is_empty()).then(|| url.to_owned());
-            }
-            AVATARS_FIELD => {
-                let value = body
-                    .get(AVATARS_FIELD)
-                    .ok_or_else(|| error(StatusCode::BAD_REQUEST, "M_BAD_JSON"))?;
-                account.avatars = Some(value.clone());
-            }
+            "avatar_url" => account.avatar_url = body["avatar_url"].as_str().map(str::to_owned),
             _ => return Err(error(StatusCode::NOT_FOUND, "M_UNRECOGNIZED")),
         }
         Ok(ok(json!({})))
     }))
 }
 
-async fn delete_profile(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, field)): Path<(String, String)>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).and_then(|(caller, _)| {
-        if caller != user {
-            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
-        }
-        if state.refuse_profile {
-            return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
-        }
-        if field != AVATARS_FIELD {
-            return Err(error(StatusCode::NOT_FOUND, "M_UNRECOGNIZED"));
-        }
-        state.users.get_mut(&user).unwrap().avatars = None;
-        Ok(ok(json!({})))
-    }))
-}
-
 async fn upload(State(fake): State<Fake>, headers: HeaderMap, body: Bytes) -> Reply {
     let mut state = fake.state();
-    reply(auth(&state, &headers).map(|(user, _)| {
+    reply(auth(&state, &headers).map(|_| {
         let content_type = headers
             .get("content-type")
             .and_then(|v| v.to_str().ok())
@@ -391,32 +333,8 @@ async fn upload(State(fake): State<Fake>, headers: HeaderMap, body: Bytes) -> Re
             .to_owned();
         state.media.push((content_type, body.to_vec()));
         let id = state.next("media");
-        state.media_uploaders.push(user);
-        let index = state.media.len() - 1;
-        state
-            .media_ids
-            .insert(format!("mxc://{SERVER}/{id}"), index);
         ok(json!({"content_uri": format!("mxc://{SERVER}/{id}")}))
     }))
-}
-
-async fn download(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((server, id)): Path<(String, String)>,
-) -> Response {
-    let mut state = fake.state();
-    let (user, _) = match auth(&state, &headers) {
-        Ok(auth) => auth,
-        Err(error) => return error.into_response(),
-    };
-    state.media_downloaders.push(user);
-    let url = format!("mxc://{server}/{id}");
-    let Some(index) = state.media_ids.get(&url) else {
-        return error(StatusCode::NOT_FOUND, "M_NOT_FOUND").into_response();
-    };
-    let (content_type, data) = &state.media[*index];
-    ([("content-type", content_type.clone())], data.clone()).into_response()
 }
 
 async fn create_room(
@@ -574,82 +492,6 @@ async fn joined_members(
     }))
 }
 
-async fn get_account_data(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, event)): Path<(String, String)>,
-) -> Reply {
-    let state = fake.state();
-    reply(auth(&state, &headers).and_then(|(caller, _)| {
-        if caller != user {
-            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
-        }
-        match state
-            .account_data
-            .get(&(user.clone(), event.clone()))
-            .cloned()
-        {
-            Some(value) => Ok(ok(value)),
-            None => Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND")),
-        }
-    }))
-}
-
-async fn put_account_data(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, event)): Path<(String, String)>,
-    Json(body): Json<Value>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).map(|(caller, _)| {
-        if caller == user {
-            state.account_data.insert((user, event), body);
-            ok(json!({}))
-        } else {
-            error(StatusCode::FORBIDDEN, "M_FORBIDDEN")
-        }
-    }))
-}
-
-async fn get_room_account_data(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, room, event)): Path<(String, String, String)>,
-) -> Reply {
-    let state = fake.state();
-    reply(auth(&state, &headers).and_then(|(caller, _)| {
-        if caller != user {
-            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
-        }
-        match state
-            .room_account_data
-            .get(&(user.clone(), room.clone(), event.clone()))
-            .cloned()
-        {
-            Some(value) => Ok(ok(value)),
-            None => Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND")),
-        }
-    }))
-}
-
-async fn put_room_account_data(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, room, event)): Path<(String, String, String)>,
-    Json(body): Json<Value>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).map(|(caller, _)| {
-        if caller == user {
-            state.room_account_data.insert((user, room, event), body);
-            ok(json!({}))
-        } else {
-            error(StatusCode::FORBIDDEN, "M_FORBIDDEN")
-        }
-    }))
-}
-
 async fn get_direct(
     State(fake): State<Fake>,
     headers: HeaderMap,
@@ -713,16 +555,9 @@ pub async fn start() -> (Fake, MatrixConfig) {
         .route(&format!("{client}/account/whoami"), get(whoami))
         .route(
             &format!("{client}/profile/{{user}}/{{field}}"),
-            get(get_profile).put(set_profile).delete(delete_profile),
+            get(get_profile).put(set_profile),
         )
-        .route(
-            "/_matrix/media/v3/upload",
-            post(upload).layer(DefaultBodyLimit::disable()),
-        )
-        .route(
-            "/_matrix/client/v1/media/download/{server}/{id}",
-            get(download),
-        )
+        .route("/_matrix/media/v3/upload", post(upload))
         .route(&format!("{client}/createRoom"), post(create_room))
         .route(&format!("{client}/join/{{room}}"), post(join))
         .route(
@@ -744,14 +579,6 @@ pub async fn start() -> (Fake, MatrixConfig) {
         .route(
             &format!("{client}/user/{{user}}/account_data/m.direct"),
             get(get_direct).put(put_direct),
-        )
-        .route(
-            &format!("{client}/user/{{user}}/account_data/{{event}}"),
-            get(get_account_data).put(put_account_data),
-        )
-        .route(
-            &format!("{client}/user/{{user}}/rooms/{{room}}/account_data/{{event}}"),
-            get(get_room_account_data).put(put_room_account_data),
         )
         // 注册 pusher：回显收到的请求体（原文和解析结果），测试据此确认网关转过来的就是它检查过的那一份。
         .route(

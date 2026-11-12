@@ -1,29 +1,6 @@
 use image::{Rgba, RgbaImage};
 
 use super::*;
-use crate::plugin::languages::Languages;
-
-/// 测试断言的是中文消息：按目录给中文（期望值照旧，不用逐条改）。
-fn langs() -> Languages {
-    Languages::from_header(Some("zh-Hans"))
-}
-
-/// 本模块的同名包装给调用点补语言参数。
-fn icon(format: IconFormat, data: &[u8]) -> Result<Icon, String> {
-    super::icon(format, data, &langs())
-}
-
-fn tab_icon(format: IconFormat, data: &[u8]) -> Result<Icon, String> {
-    super::tab_icon(format, data, &langs())
-}
-
-fn screenshot(data: &[u8]) -> Result<Screenshot, String> {
-    super::screenshot(data, &langs())
-}
-
-fn encode_png(image: RgbaImage) -> Result<Vec<u8>, String> {
-    super::encode_png(image, &langs())
-}
 
 fn png(width: u32, height: u32, color: [u8; 4]) -> Vec<u8> {
     encode_png(RgbaImage::from_pixel(width, height, Rgba(color))).unwrap()
@@ -72,7 +49,7 @@ fn svg_icons_render_without_text_or_external_images() {
   <image xlink:href="data:image/png;base64,iVBORw0KGgo=" width="24" height="24"/>
   <text x="2" y="20" font-size="20" fill="#0000ff">W</text>
 </svg>"##;
-    let pixels = icon_pixels(IconFormat::Svg, svg.as_bytes(), &langs()).unwrap();
+    let pixels = icon_pixels(IconFormat::Svg, svg.as_bytes()).unwrap();
     assert_eq!(pixels.dimensions(), (ICON_LARGE, ICON_LARGE));
     // 文字和图片都没画上去，整张是红的。
     assert!(pixels.pixels().all(|p| p.0 == [255, 0, 0, 255]));
@@ -211,7 +188,7 @@ fn style_sheets_only_take_selectors_without_combinators() {
     )
     .unwrap();
     let exported = svg("<style>rect.a, #b {fill:#00f}</style>");
-    let pixels = icon_pixels(IconFormat::Svg, exported.as_bytes(), &langs()).unwrap();
+    let pixels = icon_pixels(IconFormat::Svg, exported.as_bytes()).unwrap();
     assert_eq!(pixels.get_pixel(256, 256).0, [0, 0, 255, 255]);
 }
 
@@ -301,7 +278,7 @@ fn svg_features_that_copy_content_per_reference_are_refused() {
   <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24"><rect width="24" height="24" fill="#fff"/></mask>
 </defs>
 <g clip-path="url(#c)" mask="url(#m)"><rect class="a" width="24" height="24"/></g>"##);
-    let pixels = icon_pixels(IconFormat::Svg, exported.as_bytes(), &langs()).unwrap();
+    let pixels = icon_pixels(IconFormat::Svg, exported.as_bytes()).unwrap();
     assert!(!has_transparent_corner(&pixels));
     let [r, _, b, _] = pixels.get_pixel(0, 256).0;
     assert!(r > 200 && b < 50, "渐变从红色开始：{r} {b}");

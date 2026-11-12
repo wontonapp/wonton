@@ -33,7 +33,6 @@ import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.RegistryMirrorSettings
 import app.wonton.protocol.RegistryMirrorViewModel
 import app.wonton.ui.design.WontonButton
-import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
@@ -94,8 +93,7 @@ private fun MirrorForm(
     plugins: PluginsState,
 ) {
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         mirror.loadProblem?.let {

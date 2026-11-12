@@ -13,7 +13,6 @@ use base64::engine::general_purpose::STANDARD;
 use futures_util::stream;
 use reqwest::{Body, Method};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, FileFailure, FileId, HomeStatus, UploadSource};
 
 use super::FilesLink;
@@ -22,16 +21,12 @@ use super::api::{
 };
 use super::opener::FileOpenError;
 use super::store::{Job, Record, SourceStamp};
-use crate::l10n::{CATALOG, language};
 
 const CHUNK: usize = 256 * 1024;
 /// 这么久读不走一块就算卡住了：本地代理的缓冲满了说明隧道不动了。
 const STALL: Duration = Duration::from_secs(60);
 /// 字节发完后等多久：最后一个 PATCH 的回答要等核心把文件放进 `transfers`，大文件跨文件系统要复制。
 const PLACEMENT: Duration = Duration::from_secs(10 * 60);
-/// 发链接前等 Matrix 登录多久：App 重启后接着发时，恢复会话、第一次同步用不了一分钟。
-/// 停在登录失败上的当场就走，不等。
-const CHAT_SIGN_IN: Duration = Duration::from_secs(60);
 
 pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Problem> {
     let Job::Upload {
@@ -42,7 +37,7 @@ pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Pro
         uploaded,
     } = record.job
     else {
-        unreachable!("record job is not an upload");
+        unreachable!("上传的记录才走这里");
     };
     let api = Api::connect(&link.home)?;
     let id = record.id;
@@ -53,13 +48,13 @@ pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Pro
         None => false,
     };
     let file = if finished {
-        record.file.expect("finished upload has a file id")
+        record.file.expect("传完的上传有编号")
     } else {
         let (source, now) = open(link, &source).await?;
         if stamp.is_some_and(|stamp| stamp != now) {
             return Err(Problem::Failed(
                 FileFailure::LocalSourceUnavailable,
-                l10n!(CATALOG, language(), "files-upload-source-changed"),
+                "原文件改过了，要重新选择".to_owned(),
             ));
         }
         let file = match record.file {
@@ -109,7 +104,7 @@ impl Offset {
         let offset = number("upload-offset").ok_or_else(|| {
             Problem::Failed(
                 FileFailure::Protocol,
-                l10n!(CATALOG, language(), "files-upload-head-no-offset"),
+                "核心问进度的响应没有 Upload-Offset".to_owned(),
             )
         })?;
         Ok(Self {
@@ -137,7 +132,7 @@ async fn open(
                 let opener = opener.ok_or_else(|| {
                     Problem::Failed(
                         FileFailure::LocalSourceUnavailable,
-                        l10n!(CATALOG, language(), "files-upload-no-opener"),
+                        "壳没有设置 FileOpener，打不开这个来源".to_owned(),
                     )
                 })?;
                 let fd = opener.open_source(handle).map_err(opener_error)?;
@@ -149,7 +144,7 @@ async fn open(
         if !meta.is_file() {
             return Err(Problem::Failed(
                 FileFailure::LocalSourceUnavailable,
-                l10n!(CATALOG, language(), "files-upload-source-not-file"),
+                "这个来源不是能定位的普通文件，接不上断点".to_owned(),
             ));
         }
         let modified_ns = meta
@@ -169,12 +164,7 @@ async fn open(
     .map_err(|e| {
         Problem::Failed(
             FileFailure::LocalIo,
-            l10n!(
-                CATALOG,
-                language(),
-                "files-upload-open-task-failed",
-                reason = e.to_string()
-            ),
+            format!("打开原文件的任务异常结束：{e}"),
         )
     })?
 }
@@ -183,31 +173,13 @@ fn source_error(error: &io::Error) -> Problem {
     match error.kind() {
         io::ErrorKind::PermissionDenied => Problem::Failed(
             FileFailure::LocalPermissionDenied,
-            l10n!(
-                CATALOG,
-                language(),
-                "files-upload-source-denied",
-                reason = error.to_string()
-            ),
+            format!("系统不让读原文件：{error}"),
         ),
         io::ErrorKind::NotFound => Problem::Failed(
             FileFailure::LocalSourceUnavailable,
-            l10n!(
-                CATALOG,
-                language(),
-                "files-upload-source-missing",
-                reason = error.to_string()
-            ),
+            format!("原文件没了：{error}"),
         ),
-        _ => Problem::Failed(
-            FileFailure::LocalIo,
-            l10n!(
-                CATALOG,
-                language(),
-                "files-upload-source-read",
-                reason = error.to_string()
-            ),
-        ),
+        _ => Problem::Failed(FileFailure::LocalIo, format!("读不了原文件：{error}")),
     }
 }
 
@@ -245,7 +217,7 @@ async fn create(
         .ok_or_else(|| {
             Problem::Failed(
                 FileFailure::Protocol,
-                l10n!(CATALOG, language(), "files-upload-create-no-location"),
+                "核心创建上传的响应没有合法的 Location".to_owned(),
             )
         })?;
     Ok(file)
@@ -308,7 +280,7 @@ async fn send(
     let total = at.length.ok_or_else(|| {
         Problem::Failed(
             FileFailure::Protocol,
-            l10n!(CATALOG, language(), "files-upload-head-no-length"),
+            "核心问进度的响应没有 Upload-Length".to_owned(),
         )
     })?;
     let mut source = tokio::fs::File::from_std(source);
@@ -336,20 +308,11 @@ async fn send(
         )
         .header(reqwest::header::CONTENT_LENGTH, remaining)
         .body(body);
-    let sent = match tokio::select! {
+    let sent = tokio::select! {
         sent = request.send() => sent,
         () = activity.stalled() => {
-            return Err(Problem::Interrupted(l10n!(
-                CATALOG,
-                language(),
-                "files-upload-stalled"
-            )));
+            return Err(Problem::Interrupted("传不动了，隧道可能卡住了".to_owned()));
         }
-    } {
-        Ok(sent) => sent,
-        // 核心不读请求体就回 503 时连接先关，客户端可能先看到写失败：问一句进度，问出服务的毛病就照实说，
-        // 别把这次说成等连接恢复。
-        Err(error) => return Err(what_while_down(api, file, interrupted(error)).await),
     };
     let failed = activity
         .failed
@@ -360,13 +323,9 @@ async fn send(
         return Err(failed);
     }
     let response = tokio::select! {
-        checked = checked(sent) => checked.map_err(pausable)?,
+        checked = checked(sent.map_err(interrupted)?) => checked.map_err(pausable)?,
         () = activity.stalled() => {
-            return Err(Problem::Interrupted(l10n!(
-                CATALOG,
-                language(),
-                "files-upload-no-response"
-            )));
+            return Err(Problem::Interrupted("核心一直没有回答".to_owned()));
         }
     };
     drop(response);
@@ -405,12 +364,10 @@ fn body(
                         Some((Ok(chunk), (source, remaining, sent)))
                     }
                     Ok(_) => {
-                        let short = io::Error::new(io::ErrorKind::UnexpectedEof, "source shrank");
-                        *activity.failed.lock().unwrap_or_else(|e| e.into_inner()) =
-                            Some(Problem::Failed(
-                                FileFailure::LocalSourceUnavailable,
-                                l10n!(CATALOG, language(), "files-upload-source-shrank"),
-                            ));
+                        let short = io::Error::new(io::ErrorKind::UnexpectedEof, "原文件变短了");
+                        *activity.failed.lock().unwrap_or_else(|e| e.into_inner()) = Some(
+                            Problem::Failed(FileFailure::LocalSourceUnavailable, short.to_string()),
+                        );
                         Some((Err(short), (source, 0, sent)))
                     }
                     Err(e) => {
@@ -424,18 +381,8 @@ fn body(
     ))
 }
 
-/// 这次传不动时顺带问一句进度：问出服务的毛病（或者核心写明的失败）就照实说；答得上来、或者问也问不上，
-/// 还是按原来的算。
-async fn what_while_down(api: &Api, file: &FileId, problem: Problem) -> Problem {
-    match Offset::query(api, file).await {
-        Err(err @ Problem::ServicesDown(_)) | Err(err @ Problem::Failed(..)) => err,
-        _ => problem,
-    }
-}
-
 /// 传完后把这个房间的 Bot 加进访问范围，再把链接发进这个房间。App 被杀在这两步之间时，重启后再做一遍；授权本身可以重复，消息极少数
-/// 情况下会多发一条。隧道断着时等连上再做；Matrix 还没登录好（App 重启后接着发链接时常见）等它一小会儿，别让主人点重发；
-/// 其他的不自动再试，等主人点重发：聊天停在登录失败上、主人退出了房间这些情况，一直试也不会好。
+/// 情况下会多发一条。隧道断着时等连上再做；其他的不自动再试，等主人点重发：聊天没就绪、主人退出了房间这些情况，一直试也不会好。
 async fn deliver(
     link: &Arc<FilesLink>,
     api: &Api,
@@ -444,7 +391,6 @@ async fn deliver(
 ) -> Result<(), Problem> {
     let sent = async {
         api.grant(file, room).await?;
-        link.chat.signed_in_within(CHAT_SIGN_IN).await;
         link.chat
             .send_text_unopened(room, &file.link())
             .await
@@ -459,9 +405,6 @@ async fn deliver(
     })
 }
 
-/// 聊天那边的错算传输的哪一类。`NotReady`（还没登录 Matrix）、`Unauthorized`、`Upstream` 说的是手机这边的
-/// 处境，借用了服务器那边的类别：两端的壳只显示说明，类别没有人用，就先不分（issue #19）。要分开得先加
-/// `FileFailure`，两端的壳跟着改，等真有人要看类别再做。
 fn chat_problem(error: CoreError) -> Problem {
     match error {
         CoreError::TransportUnavailable { reason } => Problem::Interrupted(reason),
@@ -470,13 +413,6 @@ fn chat_problem(error: CoreError) -> Problem {
         CoreError::InvalidInput { reason } => Problem::Failed(FileFailure::InvalidInput, reason),
         CoreError::Storage { reason } => Problem::Failed(FileFailure::LocalIo, reason),
         CoreError::Upstream { reason } => Problem::Failed(FileFailure::UpstreamError, reason),
-        CoreError::ServerTooOld { reason, .. } => {
-            Problem::Failed(FileFailure::UpstreamError, reason)
-        }
-        // 文件上传不传设置，走不到这一类；真到了按输入错误说。
-        CoreError::SettingsInvalid { reason, .. } => {
-            Problem::Failed(FileFailure::InvalidInput, reason)
-        }
     }
 }
 
@@ -491,6 +427,6 @@ pub(super) async fn abort(api: Api, file: FileId) {
         Err(e) => Err(interrupted(e)),
     };
     if let Err(problem) = done {
-        tracing::info!(file = %file, ?problem, "could not delete the partial upload on the home server");
+        tracing::info!(file = %file, ?problem, "取消上传时没删掉核心那边的内容");
     }
 }

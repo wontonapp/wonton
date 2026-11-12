@@ -11,7 +11,6 @@ use tokio::net::TcpListener;
 
 use super::{CoreProxy, GitHub, GitHubError, Repo, client};
 use crate::plugin::github_source::github_error;
-use crate::plugin::languages::Languages;
 
 const LIMIT: Duration = Duration::from_millis(300);
 const COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -70,10 +69,7 @@ fn repo() -> Repo {
 async fn a_pinned_file_recovers_from_a_stalled_header_or_partial_body() {
     for answer in [Answer::Headers, Answer::Body] {
         let (github, calls) = source(answer, true).await;
-        let data = github
-            .file(&repo(), COMMIT, "icon.png", 100, &Languages::default())
-            .await
-            .unwrap();
+        let data = github.file(&repo(), COMMIT, "icon.png", 100).await.unwrap();
         assert_eq!(data, b"complete");
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
@@ -84,7 +80,7 @@ async fn a_source_that_stays_slow_stops_after_two_attempts_with_a_typed_timeout(
     for answer in [Answer::Headers, Answer::Body] {
         let (github, calls) = source(answer, false).await;
         let error = github
-            .file(&repo(), COMMIT, "icon.png", 100, &Languages::default())
+            .file(&repo(), COMMIT, "icon.png", 100)
             .await
             .unwrap_err();
         assert!(matches!(&error, GitHubError::Timeout(_)), "{error}");
@@ -99,9 +95,7 @@ async fn a_mutable_reference_is_not_replayed_after_a_timeout() {
     for reference in ["HEAD", "main", "v1.0.0"] {
         let (github, calls) = source(Answer::Headers, true).await;
         assert!(matches!(
-            github
-                .file(&repo(), reference, "icon.png", 100, &Languages::default())
-                .await,
+            github.file(&repo(), reference, "icon.png", 100).await,
             Err(GitHubError::Timeout(_))
         ));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -117,7 +111,7 @@ async fn rejections_and_invalid_files_are_not_replayed() {
     ] {
         let (github, calls) = source(answer, true).await;
         let error = github
-            .file(&repo(), COMMIT, "icon.png", max, &Languages::default())
+            .file(&repo(), COMMIT, "icon.png", max)
             .await
             .unwrap_err();
         assert!(!matches!(error, GitHubError::Timeout(_)));
@@ -132,70 +126,27 @@ async fn a_refused_connection_is_not_a_response_timeout() {
     drop(listener);
     let github = GitHub::for_test(&base);
     let error = github
-        .file(&repo(), COMMIT, "icon.png", 100, &Languages::default())
+        .file(&repo(), COMMIT, "icon.png", 100)
         .await
         .unwrap_err();
     assert!(matches!(&error, GitHubError::Unavailable(_)), "{error}");
     assert_eq!(github_error(error).kind(), "source_unavailable");
 }
 
-/// 127.0.0.2 上 backlog 为 0 的监听器（后续 SYN 停住）和 127.0.0.1 上同端口的正常监听器。
-///
-/// reqwest 的 resolve_to_addrs 不看地址里的端口，只用 URL 里的，两个地址必须共用一个端口；
-/// 而临时端口只保证在绑定它的地址上空闲。所以先在 127.0.0.1:0 挑出端口，再试 127.0.0.2 上的
-/// 同一端口，撞了就把两个都关掉重挑，最多 20 次。两个监听器一起活着交回：先关再重绑的话，
-/// 空档里端口可能又被并行的测试或别的进程占走。
-#[cfg(target_os = "linux")]
-async fn stalled_and_healthy_listeners() -> (TcpListener, TcpListener) {
-    use std::io::ErrorKind;
-    use std::net::{Ipv4Addr, SocketAddr};
-    use tokio::net::TcpSocket;
-
-    for _ in 0..20 {
-        let healthy = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-        let port = healthy.local_addr().unwrap().port();
-        let stalled_address = SocketAddr::from(([127, 0, 0, 2], port));
-        let socket = TcpSocket::new_v4().unwrap();
-        match socket.bind(stalled_address) {
-            Ok(()) => return (socket.listen(0).unwrap(), healthy),
-            Err(error) if error.kind() == ErrorKind::AddrInUse => continue,
-            Err(error) => panic!("绑定 {stalled_address} 失败: {error}"),
-        }
-    }
-    panic!("20 次都没挑到 127.0.0.1 和 127.0.0.2 上同时空闲的端口");
-}
-
-#[cfg(target_os = "linux")]
-#[tokio::test]
-async fn a_port_taken_on_localhost_is_not_picked() {
-    use std::net::Ipv4Addr;
-    use tokio::net::TcpStream;
-
-    let taken = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-    let (stalled, healthy) = stalled_and_healthy_listeners().await;
-    assert_ne!(
-        healthy.local_addr().unwrap().port(),
-        taken.local_addr().unwrap().port()
-    );
-    // 两个地址落在同一个端口，且监听器活着、能连上。
-    assert_eq!(
-        stalled.local_addr().unwrap().port(),
-        healthy.local_addr().unwrap().port()
-    );
-    TcpStream::connect(healthy.local_addr().unwrap())
-        .await
-        .unwrap();
-}
-
 #[cfg(target_os = "linux")]
 #[tokio::test]
 async fn a_stalled_first_ipv4_does_not_hide_the_next_address() {
-    use tokio::net::TcpStream;
+    use tokio::net::{TcpSocket, TcpStream};
 
-    let (stalled, healthy) = stalled_and_healthy_listeners().await;
+    let socket = TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.2:0".parse().unwrap()).unwrap();
+    let stalled = socket.listen(0).unwrap();
     let address = stalled.local_addr().unwrap();
     // Linux backlog 为零仍容纳一个已连接请求；不 accept，让后续 SYN 等待而不是立即被拒。
     let _queued = TcpStream::connect(address).await.unwrap();
+    let healthy = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, address.port()))
+        .await
+        .unwrap();
     tokio::spawn(async move {
         axum::serve(healthy, Router::new().fallback(|| async { "complete" }))
             .await
@@ -212,7 +163,7 @@ async fn a_stalled_first_ipv4_does_not_hide_the_next_address() {
         .unwrap();
     let data = tokio::time::timeout(
         Duration::from_secs(10),
-        github.file(&repo(), COMMIT, "icon.png", 100, &Languages::default()),
+        github.file(&repo(), COMMIT, "icon.png", 100),
     )
     .await
     .unwrap()

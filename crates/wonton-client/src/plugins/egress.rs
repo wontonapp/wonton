@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, EgressConfirmation, EgressCurrent, EgressFailure, EgressPathState, EgressProbe,
     EgressProxySettings, EgressProxySource, EgressProxyUpdate, EgressRestart, PluginFailure,
@@ -13,7 +12,6 @@ use wonton_protocol::{
 
 use super::api::{INSTALL_TIMEOUT, READ_TIMEOUT};
 use super::{POLL_INTERVAL, PluginsLink};
-use crate::l10n::{CATALOG, language};
 
 const PATH: [&str; 1] = ["egress-proxy"];
 /// 核心的探测结果超过 1 分钟算旧，这时它在后台再测，要等 5 秒以上。
@@ -80,12 +78,12 @@ impl PluginsLink {
             let view = self.view.borrow();
             if view.egress.saving {
                 return Err(CoreError::NotReady {
-                    reason: l10n!(CATALOG, language(), "plugins-egress-save-in-progress"),
+                    reason: "上一次改动还没做完".to_owned(),
                 });
             }
             let Some(current) = view.egress.current.as_ref() else {
                 return Err(CoreError::NotReady {
-                    reason: l10n!(CATALOG, language(), "plugins-egress-not-loaded"),
+                    reason: "还没取到出网代理的设置".to_owned(),
                 });
             };
             planned(&current.settings, address, direct_cidrs, use_plugin)?
@@ -111,7 +109,7 @@ impl PluginsLink {
             .send_modify(|view| confirmation = view.egress.confirmation.take());
         let Some(confirmation) = confirmation else {
             return Err(CoreError::InvalidInput {
-                reason: l10n!(CATALOG, language(), "plugins-egress-no-confirmation"),
+                reason: "没有等待确认的改动".to_owned(),
             });
         };
         self.put_egress(confirmation.update);
@@ -177,17 +175,17 @@ fn planned(
         && (use_plugin || settings.url.as_deref().unwrap_or_default() != address)
     {
         return Err(CoreError::InvalidInput {
-            reason: l10n!(CATALOG, language(), "plugins-egress-env-locked"),
+            reason: "代理由 WONTON_EGRESS_PROXY 指定，不能在这里改".to_owned(),
         });
     }
     if use_plugin && !address.is_empty() {
         return Err(CoreError::InvalidInput {
-            reason: l10n!(CATALOG, language(), "plugins-egress-plugin-and-address"),
+            reason: "使用代理插件时不能同时填写代理地址".to_owned(),
         });
     }
     if use_plugin && settings.provider.is_none() {
         return Err(CoreError::NotReady {
-            reason: l10n!(CATALOG, language(), "plugins-egress-plugin-not-installed"),
+            reason: "还没有安装代理插件".to_owned(),
         });
     }
     let wanted = use_plugin || !address.is_empty();
@@ -216,14 +214,7 @@ fn save_problem(problem: PluginProblem) -> PluginProblem {
     }
     PluginProblem {
         reason: problem.reason,
-        min_version: None,
-        message: l10n!(
-            CATALOG,
-            language(),
-            "plugins-egress-save-uncertain",
-            reason = problem.message
-        ),
-        settings: None,
+        message: format!("不确定改好了没有，连上后再看一下：{}", problem.message),
     }
 }
 

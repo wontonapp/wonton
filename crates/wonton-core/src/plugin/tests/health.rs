@@ -1,11 +1,11 @@
 //! 一次性服务和健康状态：安装和核心重启后核对时，一次性服务“已退出、退出码 0”是正常状态；没有健康检查的
 //! 服务只能说在运行，不能说健康。
 
+use std::fs;
+use std::path::Path;
 use std::time::Duration;
 
 use serde_json::{Value, json};
-
-use crate::l10n::CATALOG;
 use tokio::sync::oneshot;
 use tokio::time::sleep;
 
@@ -16,7 +16,6 @@ use super::super::render::{RenderError, dry_run};
 use super::super::{Health, PluginPackage, PluginStatus, PluginView};
 use super::manager::manager_with;
 use super::package;
-use crate::plugin::languages::Languages;
 
 /// `init` 是一次性服务，`app` 等它以 0 退出后启动。
 fn with_init(app_extra: &str) -> String {
@@ -45,10 +44,7 @@ async fn an_exited_one_shot_service_is_normal_after_install_and_restart() {
     let init = container_name("app-test", "init");
     docker.set_state(&init, exited(0));
     let m = manager_with(engine.clone(), &dir);
-    let view = m
-        .install(&with_init(""), &[], super::langs())
-        .await
-        .unwrap();
+    let view = m.install(&with_init(""), &[]).await.unwrap();
     assert_eq!(
         (view.status, view.health),
         (PluginStatus::Running, Some(Health::Healthy))
@@ -81,10 +77,7 @@ async fn services_without_a_healthcheck_are_running_with_health_unknown() {
     let app = container_name("app-test", "app");
     docker.set_state(&app, json!({"Status": "running", "Running": true}));
     let m = manager_with(engine.clone(), &dir);
-    let view = m
-        .install(&with_init(""), &[], super::langs())
-        .await
-        .unwrap();
+    let view = m.install(&with_init(""), &[]).await.unwrap();
     assert_eq!(
         (view.status, view.health),
         (PluginStatus::Running, Some(Health::Unknown))
@@ -117,21 +110,13 @@ async fn services_without_a_healthcheck_are_running_with_health_unknown() {
 fn one_shot_services_must_not_be_restarted() {
     for restart in ["", "    restart: always\n", "    restart: unless-stopped\n"] {
         let compose = with_init("").replace("    restart: 'no'\n", restart);
-        let err = dry_run(
-            &PluginPackage::parse(&compose, &super::langs()).unwrap(),
-            &super::langs(),
-        )
-        .unwrap_err();
+        let err = dry_run(&PluginPackage::parse(&compose).unwrap()).unwrap_err();
         assert!(
             matches!(&err, RenderError::Service { service, .. } if service == "init"),
             "{restart}: {err}"
         );
     }
-    let plan = dry_run(
-        &PluginPackage::parse(&with_init(""), &super::langs()).unwrap(),
-        &super::langs(),
-    )
-    .unwrap();
+    let plan = dry_run(&PluginPackage::parse(&with_init("")).unwrap()).unwrap();
     let one_shot: Vec<(&str, bool)> = plan
         .containers
         .iter()
@@ -147,11 +132,7 @@ async fn a_one_shot_service_nobody_depends_on_still_has_to_finish() {
          depends_on:\n      app: {condition: service_started}",
         "  permissions: []",
     );
-    let plan = dry_run(
-        &PluginPackage::parse(&compose, &super::langs()).unwrap(),
-        &super::langs(),
-    )
-    .unwrap();
+    let plan = dry_run(&PluginPackage::parse(&compose).unwrap()).unwrap();
     let one_shot: Vec<(&str, bool)> = plan
         .containers
         .iter()
@@ -165,11 +146,11 @@ async fn a_one_shot_service_nobody_depends_on_still_has_to_finish() {
     docker.set_state(&provision, exited(1));
     let m = manager_with(engine, &dir);
     assert!(
-        m.install(&compose, &[], super::langs()).await.is_err(),
+        m.install(&compose, &[]).await.is_err(),
         "收尾失败就是没装好"
     );
     docker.set_state(&provision, exited(0));
-    let view = m.install(&compose, &[], super::langs()).await.unwrap();
+    let view = m.install(&compose, &[]).await.unwrap();
     assert_eq!(view.status, PluginStatus::Running);
 }
 
@@ -196,7 +177,7 @@ async fn install_failure_names_the_failing_probes() {
     docker.set_output(&app, 0, "插件日志：数据库迁移失败", "");
     let m = manager_with(engine, &dir);
     let error = m
-        .install(&with_init(""), &[], super::langs())
+        .install(&with_init(""), &[])
         .await
         .unwrap_err()
         .to_string();
@@ -224,18 +205,10 @@ async fn timeout_also_names_the_failing_probes() {
     );
     docker.set_output(&app, 0, "插件日志：还在初始化", "");
     let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
-    let error = wait_for(
-        &engine,
-        &crate::http::HttpClient::new(),
-        &app,
-        Target::Ready,
-        None,
-        deadline,
-        &Languages::default(),
-    )
-    .await
-    .unwrap_err()
-    .to_string();
+    let error = wait_for(&engine, &app, Target::Ready, deadline)
+        .await
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("探针一直失败"), "{error}");
     assert!(error.contains("插件日志：还在初始化"), "{error}");
 }
@@ -257,7 +230,7 @@ async fn probe_output_is_trimmed_and_truncated() {
     );
     let m = manager_with(engine, &dir);
     let error = m
-        .install(&with_init(""), &[], super::langs())
+        .install(&with_init(""), &[])
         .await
         .unwrap_err()
         .to_string();
@@ -287,7 +260,7 @@ async fn ansi_sequences_are_stripped_entirely() {
     );
     let m = manager_with(engine, &dir);
     let error = m
-        .install(&with_init(""), &[], super::langs())
+        .install(&with_init(""), &[])
         .await
         .unwrap_err()
         .to_string();
@@ -310,7 +283,7 @@ async fn failures_without_probe_log_read_as_before() {
     docker.set_output(&app, 0, "插件日志：只写了一半", "");
     let m = manager_with(engine, &dir);
     let error = m
-        .install(&with_init(""), &[], super::langs())
+        .install(&with_init(""), &[])
         .await
         .unwrap_err()
         .to_string();
@@ -342,24 +315,14 @@ async fn a_failed_one_shot_dependency_fails_the_install_immediately() {
         "  permissions: []",
     );
     let started = std::time::Instant::now();
-    let err = m.install(&compose, &[], super::langs()).await.unwrap_err();
+    let err = m.install(&compose, &[]).await.unwrap_err();
     assert!(
         started.elapsed() < Duration::from_secs(60),
         "一次性依赖失败要立即报错，不能等满超时：{err}"
     );
     let message = err.to_string();
     assert!(message.contains(&bootstrap), "{message}");
-    assert!(
-        message.contains(&CATALOG.format(
-            CATALOG.negotiate(&["en"]),
-            "plugin-settings-health-exited",
-            &[
-                ("container", bootstrap.as_str().into()),
-                ("code", "1".into())
-            ],
-        )),
-        "{message}"
-    );
+    assert!(message.contains("退出码 1"), "{message}");
     assert!(message.contains("初始化失败"), "{message}");
     assert!(
         !message.contains(&app),
@@ -406,11 +369,38 @@ async fn a_one_shot_service_starts_only_after_the_long_running_service_is_health
         hold.release();
         early
     });
-    let view = m.install(&compose, &[], super::langs()).await.unwrap();
+    let view = m.install(&compose, &[]).await.unwrap();
     assert_eq!(view.status, PluginStatus::Running);
     flip.await.unwrap();
     assert!(
         !started_too_early.await.unwrap(),
         "init 在应用健康之前就被启动了"
     );
+}
+
+/// 规范：长期运行的服务都要有健康检查，官方目录的插件缺了不收录。`plugins/examples/` 不进官方目录，
+/// 其中 whoami 的镜像里没有任何可以用来检查的命令。插件草稿用到核心还没实现的字段，这里直接读 YAML。
+#[test]
+fn official_plugins_check_the_health_of_every_long_running_service() {
+    let plugins = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+    let mut checked = Vec::new();
+    for entry in fs::read_dir(&plugins).unwrap() {
+        let dir = entry.unwrap().path();
+        let compose = dir.join("docker-compose.yml");
+        if dir.ends_with("examples") || !compose.is_file() {
+            continue;
+        }
+        let doc: Value = serde_saphyr::from_str(&fs::read_to_string(&compose).unwrap()).unwrap();
+        let services = doc["services"].as_object().expect("compose 里有服务");
+        for (name, service) in services.iter().filter(|(_, s)| s["restart"] != "no") {
+            let check = &service["healthcheck"];
+            assert!(
+                !check["test"].is_null() && check["disable"] != true,
+                "{}：长期运行的服务 {name} 没有健康检查",
+                compose.display()
+            );
+            checked.push(name.clone());
+        }
+    }
+    assert!(!checked.is_empty(), "{} 下没有找到插件", plugins.display());
 }

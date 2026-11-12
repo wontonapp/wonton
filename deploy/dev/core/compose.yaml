@@ -11,14 +11,8 @@ x-no-proxy: &no-proxy
   http_proxy: ""
   https_proxy: ""
 
-# 这套栈归哪个任务、什么时候可以回收：共用的开发机上，回收脚本按这两个标签认主（WONTON_TASK、WONTON_TTL 没设就是空）。
-x-owner-labels: &owner-labels
-  com.wonton.task: ${WONTON_TASK:-}
-  com.wonton.ttl: ${WONTON_TTL:-}
-
 services:
   core:
-    labels: *owner-labels
     build:
       context: ../../..
       dockerfile: deploy/dev/core/Dockerfile
@@ -29,7 +23,7 @@ services:
         WONTON_BUILD_COMMIT: ${WONTON_BUILD_COMMIT:-unknown}
         # cargo 不认空值，没设 WONTON_DEV_BUILD_JOBS 时按 CPU 数（default）。
         CARGO_BUILD_JOBS: ${WONTON_DEV_BUILD_JOBS:-default}
-    image: wonton-core:${WONTON_CORE_IMAGE_TAG:-dev}
+    image: wonton-core:dev
     # 核心要知道自己的容器名，才能把自己接入每个插件网络。
     container_name: ${WONTON_DEV_PROJECT:-wonton-dev-core}
     restart: unless-stopped
@@ -43,14 +37,9 @@ services:
     environment:
       <<: *no-proxy
       WONTON_DATA_DIR: ${WONTON_DEV_DATA:?请用 deploy/dev/core/dev.sh up 启动}
-      # 开发栈把数据目录也当安装目录：联邦名单和整台服务器黑名单像正式安装一样由核心原地重写、热加载。
-      WONTON_INSTALL_DIR: ${WONTON_DEV_DATA}
       WONTON_BASE_DOMAIN: ${WONTON_DEV_DOMAIN:-wonton.localhost}
       WONTON_PUBLIC_PORT: ${WONTON_DEV_PORT:-18480}
       WONTON_TUNNEL_PORT: ${WONTON_DEV_TUNNEL_PORT:-18482}
-      # 联邦出站代理只绑在核心网络的别名上；Tuwunel 通过它按配对名单经 iroh 转发。
-      WONTON_FEDERATION_LISTEN: federation-proxy.wonton.internal:8448
-      WONTON_MATRIX_FEDERATION_ADDR: tuwunel.wonton.internal:8448
       WONTON_CORE_CONTAINER: ${WONTON_DEV_PROJECT:-wonton-dev-core}
       WONTON_INSTANCE: ${WONTON_DEV_INSTANCE:-}
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
@@ -58,18 +47,9 @@ services:
       # 出网代理（ADR-0023）：开发环境没有安装脚本，要用时自己设 WONTON_EGRESS_PROXY。核心自己访问外网也用它。
       WONTON_EGRESS_PROXY: ${WONTON_EGRESS_PROXY:-}
       WONTON_EGRESS_PROXY_DETECTED: ${WONTON_EGRESS_PROXY_DETECTED:-}
-      WONTON_DOH_URL: ${WONTON_DOH_URL:-}
       # 空时核心自动选插件的局域网端口开在哪个地址上（ADR-0019）。
       WONTON_PLUGIN_SLICE: ${WONTON_PLUGIN_SLICE:-}
-      WONTON_PLUGIN_NETWORK_POOL: ${WONTON_PLUGIN_NETWORK_POOL:-10.213.0.0/16}
       WONTON_LAN_ADDRESSES: ${WONTON_DEV_LAN_ADDRESSES:-}
-      # 启动器声明的宣告地址（ADR-0019）：设了就绑 0.0.0.0，手机连这些地址。
-      WONTON_ANNOUNCE_ADDRESSES: ${WONTON_DEV_ANNOUNCE_ADDRESSES:-}
-      # 中继表（ADR-0048）：默认 n0 的公共中继，要用本地测试中继时自己设。
-      WONTON_RELAYS: ${WONTON_DEV_RELAYS:-}
-      WONTON_PUSH_LISTEN: push.wonton.internal:80
-      # 通话插件验 OpenID 令牌时连服务器名的 443（ADR-0096）。
-      WONTON_MATRIX_RTC_LISTEN: 0.0.0.0:443
       # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；
       # 裸的 `hydra`、`tusd` 就可能解析到插件的容器。
       WONTON_OIDC_ADMIN_URL: http://hydra.wonton.internal:4445
@@ -77,7 +57,6 @@ services:
       # 核心持有 Matrix 登录的签发私钥，并用注册共享密钥注册自己的管理账号（ADR-0009）。
       WONTON_MATRIX_URL: http://tuwunel.wonton.internal:8008
       WONTON_TUSD_URL: http://tusd.wonton.internal:8080
-      WONTON_MAILPIT_URL: http://mailpit.wonton.internal:8025
       WONTON_MATRIX_JWT_KEY: ${WONTON_DEV_MATRIX_JWT_KEY:?请用 deploy/dev/core/dev.sh up 启动}
       WONTON_MATRIX_REGISTRATION_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
       # 核心启动后在后台预装镜像里的系统插件（模型网关 magpie），再装一次默认 Agent（Hermes）。不要默认 Agent 时
@@ -109,8 +88,8 @@ services:
           recursive: disabled
     networks:
       core:
-        # 文件钩子、联邦出站代理和推送监听只在这个网络上，与正式安装一致。
-        aliases: [files-hooks.wonton.internal, federation-proxy.wonton.internal, push.wonton.internal]
+        # tusd 经这个别名调文件钩子。
+        aliases: [files-hooks.wonton.internal]
     depends_on:
       hydra:
         condition: service_healthy
@@ -125,7 +104,6 @@ services:
 
   # 设备上传的字节（ADR-0020）。只在核心的私有网络里，经核心网关鉴权后才到它；没传完的数据放在核心数据目录下。
   tusd:
-    labels: *owner-labels
     image: tusproject/tusd:v2.10.1@sha256:7b1c552a8b42f4b36cb01f2a3bd49f82ab078b2eefd191459e716141dd50376c
     restart: unless-stopped
     user: "${WONTON_DEV_PUID:-1000}:${WONTON_DEV_PGID:-1000}"
@@ -161,51 +139,7 @@ services:
       start_period: 30s
       start_interval: 1s
 
-  mailpit:
-    labels: *owner-labels
-    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
-    restart: unless-stopped
-    user: "${WONTON_DEV_PUID:-1000}:${WONTON_DEV_PGID:-1000}"
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    sysctls:
-      - net.ipv4.ip_unprivileged_port_start=0
-      - net.ipv4.ip_forward=0
-    entrypoint: ["/bin/sh", "-ec", ". /wonton-config/runtime.env; exec /mailpit"]
-    environment:
-      <<: *no-proxy
-      MP_DATABASE: /data/mailpit.db
-      MP_SMTP_BIND_ADDR: 0.0.0.0:25
-      MP_UI_BIND_ADDR: 0.0.0.0:8025
-      MP_UI_AUTH_FILE: /wonton-config/auth.htpasswd
-      MP_MAX_MESSAGE_SIZE: "25"
-      MP_MAX_MESSAGES: "0"
-      MP_MAX_AGE: 7d
-      MP_DISABLE_VERSION_CHECK: "true"
-      MP_SMTP_AUTH_ACCEPT_ANY: "true"
-      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
-      # 核心生成的自签证书，配了才宣告 STARTTLS（不强制，明文照收）。
-      MP_SMTP_TLS_CERT: /wonton-config/smtp-tls.crt
-      MP_SMTP_TLS_KEY: /wonton-config/smtp-tls.key
-    volumes:
-      - ${WONTON_DEV_DATA}/core/mailpit/data:/data
-      - ${WONTON_DEV_DATA}/core/mailpit/config:/wonton-config:ro
-    networks:
-      core:
-        aliases: [mailpit.wonton.internal]
-    depends_on:
-      core:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/mailpit", "readyz"]
-      interval: 10s
-      timeout: 5s
-      start_period: 30s
-      start_interval: 1s
-
   hydra-migrate:
-    labels: *owner-labels
     image: oryd/hydra:v26.2.0
     command: migrate sql up -e --yes
     environment:
@@ -217,7 +151,6 @@ services:
     networks: [core]
 
   hydra:
-    labels: *owner-labels
     image: oryd/hydra:v26.2.0
     # --dev 允许 http 签发方：M0 的网关还没有 TLS。
     command: serve all --dev
@@ -225,11 +158,8 @@ services:
     environment:
       <<: *no-proxy
       DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
-      # 签发方用插件网络里的内部名字（ADR-0063）：插件后端经核心的这个别名访问它，有的库把 *.localhost 直接当回环，
-      # auth.<基础域名> 的别名对它们不起作用。签发方本身浏览器不访问，只走授权和登出端点。
-      URLS_SELF_ISSUER: http://auth.wonton.internal:${WONTON_DEV_PORT:-18480}
-      # 浏览器看到的地址：登录、授权确认后 Hydra 把浏览器送回这里，浏览器只认这个地址。
-      URLS_SELF_PUBLIC: http://auth.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}
+      # 浏览器和插件看到的签发方地址，经核心网关的 auth.<base> 转发到这里。
+      URLS_SELF_ISSUER: http://auth.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}
       # 登录和授权确认交给核心：核心按自己的会话直接接受，用户不会看到第二个登录页。
       URLS_LOGIN: http://${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/oidc/login
       URLS_CONSENT: http://${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/oidc/consent
@@ -251,33 +181,27 @@ services:
       start_period: 1m
       start_interval: 1s
 
-  # Matrix 服务器；开发栈保留和正式安装相同的联邦端口、TLS 和 CONNECT 代理接线。
-  # 联邦名单、黑名单和出站代理范围在第二份 TOML，由核心原地重写、SIGUSR1 热加载（ADR-0050、ADR-0051）；
-  # 单文件挂载钉住 inode，核心只做原地截断写。
+  # Matrix 服务器，配置和 deploy/dev/matrix/tuwunel.toml 一致，这里全用环境变量给出：DOCKER_HOST 指向远端
+  # 主机时，本机的配置文件挂不进去。只在核心的私有网络里，App 和 Bot 都经核心网关访问它（ADR-0009）。
   tuwunel:
-    labels: *owner-labels
-    image: ghcr.io/matrix-construct/tuwunel:v2.0.0
+    image: ghcr.io/matrix-construct/tuwunel:v1.9.4
     restart: unless-stopped
+    # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
     stop_grace_period: 5m
     environment:
       <<: *no-proxy
       TUWUNEL_SERVER_NAME: ${WONTON_DEV_DOMAIN:-wonton.localhost}
       TUWUNEL_DATABASE_PATH: /var/lib/tuwunel
-      TUWUNEL_HTTP__LISTEN__ADDRESS: 0.0.0.0
-      TUWUNEL_HTTP__LISTEN__PORT: "[8008, 8448]"
-      TUWUNEL_FEDERATION__ENABLE: "true"
-      TUWUNEL_FEDERATION__KEYS__TRUSTED_SERVERS: "[]"
-      TUWUNEL_NETWORK__HTTP__IP_RANGE_DENYLIST: "[]"
-      TUWUNEL_NETWORK__HTTP__ALLOW_INVALID_TLS_CERTIFICATES: "true"
-      TUWUNEL_TLS__CERTS: /etc/tuwunel/tls.crt
-      TUWUNEL_TLS__KEY: /etc/tuwunel/tls.key
-      TUWUNEL_TLS__DUAL_PROTOCOL: "true"
-      TUWUNEL_REGISTRATION__ENABLE: "false"
-      TUWUNEL_AUTHENTICATION__LOGIN__WITH_PASSWORD: "false"
-      TUWUNEL_REGISTRATION__DISPLAYNAME_SUFFIX: ""
-      TUWUNEL_WELL_KNOWN__CLIENT: http://matrix.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}
-      # MatrixRTC 的授权服务固定在 Matrix 对外地址的这个前缀下，网关转给通话插件（ADR-0096）。
-      TUWUNEL_WELL_KNOWN__LIVEKIT_URL: http://matrix.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/matrix-rtc
+      TUWUNEL_ADDRESS: 0.0.0.0
+      TUWUNEL_PORT: 8008
+      # 家里服务器默认不联邦（ADR-0003）。
+      TUWUNEL_ALLOW_FEDERATION: "false"
+      TUWUNEL_TRUSTED_SERVERS: "[]"
+      # 账号只由核心签发：设备和 Bot 用 JWT 登录，首次登录自动建号。不开放注册，也不接受密码登录。
+      TUWUNEL_ALLOW_REGISTRATION: "false"
+      TUWUNEL_LOGIN_WITH_PASSWORD: "false"
+      TUWUNEL_NEW_USER_DISPLAYNAME_SUFFIX: ""
+      # 核心持有 Ed25519 私钥，Tuwunel 只拿公钥验签；令牌必须带 exp 和对应的签发方、接收方。
       TUWUNEL_JWT__ENABLE: "true"
       TUWUNEL_JWT__FORMAT: EDDSA
       TUWUNEL_JWT__ALGORITHM: EdDSA
@@ -285,13 +209,13 @@ services:
       TUWUNEL_JWT__ISSUER: '["wonton-core"]'
       TUWUNEL_JWT__AUDIENCE: '["tuwunel"]'
       TUWUNEL_JWT__KEY: ${WONTON_DEV_MATRIX_JWT_PUBLIC_KEY:?请用 deploy/dev/core/dev.sh up 启动}
+      # 核心用它注册自己的管理账号（Synapse 兼容的管理接口）。
       TUWUNEL_REGISTRATION_SHARED_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
+      # Tuwunel 默认不往私网地址推送（ip_range_denylist），核心容器也在私网里。推送代理的地址只经这个出站代理到达
+      # 核心网关；代理地址不受那个限制，别的 pusher 仍受它保护（ADR-0003 的“接口：推送”）。
+      TUWUNEL_PROXY: '{by_domain=[{url="http://${WONTON_DEV_PROJECT:-wonton-dev-core}:${WONTON_DEV_PORT:-18480}",include=["push.wonton.internal"]}]}'
     volumes:
       - tuwunel:/var/lib/tuwunel
-      - ${WONTON_DEV_DATA}/secrets/tuwunel/wonton-fed.toml:/etc/tuwunel/wonton-fed.toml:ro
-      - ${WONTON_DEV_SECRETS}/tuwunel-tls.crt:/etc/tuwunel/tls.crt:ro
-      - ${WONTON_DEV_SECRETS}/tuwunel-tls.key:/etc/tuwunel/tls.key:ro
-    command: ["-c", "/etc/tuwunel/wonton-fed.toml"]
     networks:
       core:
         aliases: [tuwunel.wonton.internal]

@@ -35,8 +35,6 @@ pub struct NotifyResponse {
 /// 发给设备的明文（加密前），是 Matrix 推送通知的子集。字段名是和 App 之间的契约（ADR-0003 的“接口：推送”）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DevicePayload {
-    /// 发推送的这台服务器的 endpoint ID（配对码里的那个）：手机配了多台服务器，靠它知道该连哪台去取消息。
-    pub server: String,
     pub room_id: String,
     pub event_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,23 +45,18 @@ pub struct DevicePayload {
     pub room_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prio: Option<String>,
-    /// 新的联系人请求（ADR-0045）：不对应房间里的消息，`room_id`、`event_id` 为空。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub contact_request: Option<wonton_protocol::ContactRequestPush>,
 }
 
 impl Notification {
     /// 要转发给设备的内容；只有计数、没有事件的通知不转发。
-    pub fn payload(&self, server: &str) -> Option<DevicePayload> {
+    pub fn payload(&self) -> Option<DevicePayload> {
         Some(DevicePayload {
-            server: server.to_owned(),
             room_id: self.room_id.clone()?,
             event_id: self.event_id.clone()?,
             sender: self.sender.clone(),
             sender_display_name: self.sender_display_name.clone(),
             room_name: self.room_name.clone(),
             prio: self.prio.clone(),
-            contact_request: None,
         })
     }
 
@@ -87,19 +80,16 @@ mod tests {
     #[test]
     fn device_payload_fields_match_the_documented_contract() {
         let payload = DevicePayload {
-            server: "server-endpoint-id".into(),
             room_id: "!bot:wonton.localhost".into(),
             event_id: "$reply".into(),
             sender: Some("@hermes:wonton.localhost".into()),
             sender_display_name: Some("Hermes".into()),
             room_name: None,
             prio: Some("high".into()),
-            contact_request: None,
         };
         assert_eq!(
             serde_json::to_value(&payload).unwrap(),
             json!({
-                "server": "server-endpoint-id",
                 "room_id": "!bot:wonton.localhost",
                 "event_id": "$reply",
                 "sender": "@hermes:wonton.localhost",
@@ -122,7 +112,7 @@ mod tests {
             }
         }))
         .unwrap();
-        let payload = request.notification.payload("s").unwrap();
+        let payload = request.notification.payload().unwrap();
         assert!(
             !serde_json::to_string(&payload)
                 .unwrap()
@@ -134,6 +124,6 @@ mod tests {
             "notification": {"counts": {"unread": 0}, "devices": [{"app_id": "a", "pushkey": "k"}]}
         }))
         .unwrap();
-        assert!(counts_only.notification.payload("s").is_none());
+        assert!(counts_only.notification.payload().is_none());
     }
 }

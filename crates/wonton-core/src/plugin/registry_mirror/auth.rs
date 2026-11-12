@@ -3,8 +3,6 @@ use serde::Deserialize;
 use wonton_protocol::RegistryProblem;
 
 use super::{network_problem, rejected};
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 pub(super) struct Challenge {
     realm: Url,
@@ -45,11 +43,7 @@ impl Challenge {
         })
     }
 
-    pub(super) async fn token(
-        self,
-        client: &Client,
-        langs: &Languages,
-    ) -> Result<String, RegistryProblem> {
+    pub(super) async fn token(self, client: &Client) -> Result<String, RegistryProblem> {
         let mut url = self.realm;
         {
             let mut query = url.query_pairs_mut();
@@ -61,43 +55,19 @@ impl Challenge {
             }
         }
         // 不在 Client 上设置默认 Authorization，令牌端点及其跳转始终匿名访问。
-        let response = client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| network_problem(&e))?;
+        let response = client.get(url).send().await.map_err(network_problem)?;
         let status = response.status();
         if !status.is_success() {
-            return Err(rejected(
-                langs,
-                status,
-                l10n::text(langs, "plugin-settings-mirror-token-request-rejected", &[]).as_str(),
-            ));
+            return Err(rejected(status, "匿名令牌请求被拒绝"));
         }
-        let bytes = response.bytes().await.map_err(|e| network_problem(&e))?;
-        let token: Token = serde_json::from_slice(&bytes).map_err(|error| {
-            rejected(
-                langs,
-                status,
-                l10n::text(
-                    langs,
-                    "plugin-settings-mirror-token-response-invalid",
-                    &[("error", error.to_string().into())],
-                )
-                .as_str(),
-            )
-        })?;
+        let bytes = response.bytes().await.map_err(network_problem)?;
+        let token: Token = serde_json::from_slice(&bytes)
+            .map_err(|error| rejected(status, &format!("匿名令牌响应无效：{error}")))?;
         token
             .token
             .filter(|token| !token.is_empty())
             .or_else(|| token.access_token.filter(|token| !token.is_empty()))
-            .ok_or_else(|| {
-                rejected(
-                    langs,
-                    status,
-                    l10n::text(langs, "plugin-settings-mirror-token-missing", &[]).as_str(),
-                )
-            })
+            .ok_or_else(|| rejected(status, "匿名令牌响应缺少 token/access_token"))
     }
 }
 

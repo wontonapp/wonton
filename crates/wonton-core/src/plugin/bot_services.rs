@@ -1,6 +1,5 @@
-//! 一个插件多个 Bot（`x-wonton.bots`）：`bots.services` 里的服务每个 Bot 一份，有自己的 Bot 名、数据目录、
-//! Matrix 身份、模型凭据和总线令牌；其余服务全插件一份。安装时只建默认 Bot，其余的经 [`super::manager`]
-//! 的 `add_bot` 建。
+//! 一个插件多个 Bot（`x-wonton.bots`）：`bots.services` 里的服务每个 Bot 一份，有自己的 Bot 名和数据
+//! 目录；其余服务全插件一份。M1 只有默认 Bot，按 Bot 实例化容器在 M2。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -8,29 +7,16 @@ use std::path::Path;
 use super::compose::Service;
 use super::interpolate::Vars;
 use super::manifest::Manifest;
-use super::render::MatrixVars;
 
 /// 安装时核心建的 Bot。
 pub const DEFAULT_BOT: &str = "default";
 
-/// 一个 Bot 渲染容器时要注入的、和其他 Bot 不一样的值。
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct BotVars {
-    /// 这个 Bot 的模型网关凭据（`<插件 id>/<Bot 名>`），Bot 服务里的 `WONTON_MODEL_API_KEY` 用它。
-    pub model_key: Option<String>,
-    /// 这个 Bot 的 Matrix 身份（`WONTON_MATRIX_*`）。
-    pub matrix: Option<MatrixVars>,
-    /// 这个 Bot 的总线地址，令牌在路径里：`http://mcp.wonton.internal:<端口>/mcp/<令牌>`。
-    pub mcp_url: Option<String>,
-}
-
 /// 服务名之外，Bot 服务的另一个网络别名：同一个 Bot 的服务之间用它互访。
-pub fn bot_alias(service: &str, bot: &str) -> String {
-    format!("{service}-{bot}")
+pub fn bot_alias(service: &str) -> String {
+    format!("{service}-{DEFAULT_BOT}")
 }
 
-/// 清单声明的 Bot 服务名（`bots.services`）。
-pub(super) fn bot_services(manifest: &Manifest) -> BTreeSet<&str> {
+fn bot_services(manifest: &Manifest) -> BTreeSet<&str> {
     manifest
         .bots
         .iter()
@@ -39,123 +25,55 @@ pub(super) fn bot_services(manifest: &Manifest) -> BTreeSet<&str> {
         .collect()
 }
 
-/// 每个服务插值用的变量表。声明了 `bots` 时，全插件一份的服务拿不到任何一个 Bot 的 Matrix 身份和总线地址
-/// （每个 Bot 一份），引用了就安装失败；Bot 服务按 Bot 各有一套。
+/// 每个服务插值用的变量表：Bot 服务多了 `WONTON_BOT_NAME` 和 `WONTON_BOT_DATA`
+/// （`${WONTON_APP_DATA}/bots/<Bot 名>`），`WONTON_MODEL_API_KEY` 是这个 Bot 的凭据。声明了 `bots` 时 Bot 的
+/// Matrix 身份（`WONTON_MATRIX_*`）也只给 Bot 服务：全插件一份的服务引用这些变量时安装失败。
 pub struct ServiceVars<'a> {
     plugin: Vars,
-    bots: BTreeMap<String, Vars>,
+    bot: Vars,
     bot_services: BTreeSet<&'a str>,
-    slug: String,
 }
 
 impl<'a> ServiceVars<'a> {
-    /// `bots`：每个 Bot 的 [`BotVars`]，按 Bot 名。没有 `bots` 的插件传空表，全插件一份的服务用插件级的
-    /// 变量（默认 Bot 的 Matrix 身份和总线地址就在里面）。
+    /// `bot_model_key`：默认 Bot 的模型网关凭据，Bot 服务里的 `WONTON_MODEL_API_KEY` 用它。
     pub fn new(
         manifest: &'a Manifest,
         app_data: &Path,
         mut plugin: Vars,
-        bots: &BTreeMap<String, BotVars>,
+        bot_model_key: Option<String>,
     ) -> Self {
-        let mut per_bot = BTreeMap::new();
+        let mut bot = plugin.clone();
+        bot.insert("WONTON_BOT_NAME".to_owned(), DEFAULT_BOT.to_owned());
+        let data = app_data.join("bots").join(DEFAULT_BOT);
+        bot.insert("WONTON_BOT_DATA".to_owned(), data.display().to_string());
+        match bot_model_key {
+            Some(key) => bot.insert("WONTON_MODEL_API_KEY".to_owned(), key),
+            None => bot.remove("WONTON_MODEL_API_KEY"),
+        };
         if manifest.bots.is_some() {
-            plugin
-                .retain(|name, _| !name.starts_with("WONTON_MATRIX_") && name != "WONTON_MCP_URL");
-        }
-        for (bot, runtime) in bots {
-            let mut vars = plugin.clone();
-            vars.insert("WONTON_BOT_NAME".to_owned(), bot.clone());
-            let data = app_data.join("bots").join(bot);
-            vars.insert("WONTON_BOT_DATA".to_owned(), data.display().to_string());
-            match &runtime.model_key {
-                Some(key) => vars.insert("WONTON_MODEL_API_KEY".to_owned(), key.clone()),
-                None => vars.remove("WONTON_MODEL_API_KEY"),
-            };
-            match &runtime.matrix {
-                Some(matrix) => {
-                    vars.insert(
-                        "WONTON_MATRIX_HOMESERVER".to_owned(),
-                        matrix.homeserver.clone(),
-                    );
-                    vars.insert("WONTON_MATRIX_USER_ID".to_owned(), matrix.user_id.clone());
-                    vars.insert(
-                        "WONTON_MATRIX_ACCESS_TOKEN".to_owned(),
-                        matrix.access_token.clone(),
-                    );
-                    vars.insert(
-                        "WONTON_MATRIX_ALLOWED_USERS".to_owned(),
-                        matrix.allowed_users.clone(),
-                    );
-                    vars.insert(
-                        "WONTON_MATRIX_HOME_ROOM".to_owned(),
-                        matrix.home_room.clone(),
-                    );
-                }
-                None => {
-                    for name in [
-                        "WONTON_MATRIX_HOMESERVER",
-                        "WONTON_MATRIX_USER_ID",
-                        "WONTON_MATRIX_ACCESS_TOKEN",
-                        "WONTON_MATRIX_ALLOWED_USERS",
-                        "WONTON_MATRIX_HOME_ROOM",
-                    ] {
-                        vars.remove(name);
-                    }
-                }
-            }
-            match &runtime.mcp_url {
-                Some(url) => vars.insert("WONTON_MCP_URL".to_owned(), url.clone()),
-                None => vars.remove("WONTON_MCP_URL"),
-            };
-            per_bot.insert(bot.clone(), vars);
+            plugin.retain(|name, _| !name.starts_with("WONTON_MATRIX_"));
         }
         Self {
             plugin,
-            bots: per_bot,
+            bot,
             bot_services: bot_services(manifest),
-            slug: manifest.id.slug(),
         }
     }
 
-    /// 全插件一份的服务的变量。
     pub fn get(&self, service: &str) -> &Vars {
         if self.bot_services.contains(service) {
-            self.bots.values().next().unwrap_or(&self.plugin)
+            &self.bot
         } else {
             &self.plugin
         }
     }
 
-    /// 一个 Bot 的服务的变量；`bot` 不存在时为 `None`。
-    pub fn get_bot(&self, bot: &str) -> Option<&Vars> {
-        self.bots.get(bot)
-    }
-
-    pub fn is_bot_service(&self, service: &str) -> bool {
-        self.bot_services.contains(service)
-    }
-
-    /// Bot 服务的服务名。
-    pub fn bot_service_names(&self) -> &BTreeSet<&'a str> {
-        &self.bot_services
-    }
-
-    /// 要建容器的 Bot，按名字排序。
-    pub fn bot_names(&self) -> impl Iterator<Item = &str> + '_ {
-        self.bots.keys().map(String::as_str)
-    }
-
-    /// 服务在插件网络里的别名：服务名；Bot 服务另有 `<服务名>-<Bot 名>`，同一个 Bot 的服务之间用它互访；
-    /// 再加 `<服务名>.<slug>.wonton.internal`（[`super::names::service_host`]），核心连上游的 Host，
-    /// 插件经 `WONTON_SERVICE_DOMAIN` 把它写进上游服务的 Host 白名单。
-    pub fn aliases(&self, service: &str, bot: Option<&str>) -> Vec<String> {
+    /// 服务在插件网络里的别名：服务名；Bot 服务另有 `<服务名>-<Bot 名>`，同一个 Bot 的服务之间用它互访。
+    pub fn aliases(&self, service: &str) -> Vec<String> {
         let mut aliases = vec![service.to_owned()];
-        if let Some(bot) = bot
-            && self.bot_services.contains(service)
-        {
-            aliases.push(bot_alias(service, bot));
+        if self.bot_services.contains(service) {
+            aliases.push(bot_alias(service));
         }
-        aliases.push(super::names::service_host(&self.slug, service));
         aliases
     }
 

@@ -11,7 +11,6 @@ use super::tests::{CORE, Harness, Reply, TOKEN};
 use crate::plugin::egress::address::ProxyAddress;
 use crate::plugin::egress::probe::{Prober, Scripted};
 use crate::plugin::egress::settings::Egress;
-use crate::plugin::languages::Languages;
 
 const PATH: &str = "/_wonton/api/egress-proxy";
 
@@ -105,7 +104,7 @@ async fn bad_input_is_refused_by_kind_and_nothing_is_stored() {
 
 #[tokio::test]
 async fn an_address_set_at_install_cannot_be_changed_here_but_the_direct_list_can() {
-    let env = ProxyAddress::parse("http://env.lan:7899", &Languages::default()).unwrap();
+    let env = ProxyAddress::parse("http://env.lan:7899").unwrap();
     let h = Harness::start_with(None, Egress::new(Some(env), None)).await;
     let reply = put(&h, &update(Some("http://other.lan:1"), &[])).await;
     assert_eq!(reply.status, StatusCode::CONFLICT, "{}", reply.text());
@@ -205,7 +204,7 @@ async fn egress_plugin_reports_provider_and_refuses_duplicate_and_active_uninsta
 
 #[tokio::test]
 async fn egress_plugin_cannot_replace_the_environment_proxy() {
-    let env = ProxyAddress::parse("http://env.lan:7899", &Languages::default()).unwrap();
+    let env = ProxyAddress::parse("http://env.lan:7899").unwrap();
     let h = Harness::start_with(None, Egress::new(Some(env), None)).await;
     assert_eq!(
         install_proxy(&h, "app.proxy").await.status,

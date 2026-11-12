@@ -66,10 +66,7 @@ async fn first_install_adds_an_emphasized_localized_isolation_warning() {
     let app = WebApp::new().await;
     let mut notices = Vec::new();
     for (index, language) in ["zh-Hans", "en-US"].into_iter().enumerate() {
-        app.b
-            .s
-            .manager
-            .note_person_languages("owner", Some(language));
+        app.b.s.manager.note_owner_languages(Some(language));
         app.write("0.1.0", Some(false), "");
         let baseline = app.rejected_card(index * 2 + 1).await;
         app.write("0.1.0", Some(true), "");
@@ -184,9 +181,7 @@ async fn unchanged_or_removed_isolation_updates_quietly_but_owner_can_require_a_
         assert_eq!(app.b.s.cards.posted.lock().unwrap().len(), 1);
         let record = app.record();
         assert_eq!(record.version, version);
-        let manifest =
-            PluginPackage::manifest_of(&record.source, &Languages::from_header(Some("zh-Hans")))
-                .unwrap();
+        let manifest = PluginPackage::manifest_of(&record.source).unwrap();
         assert_eq!(manifest.webui.unwrap().cross_origin_isolated, isolation);
         assert_eq!(app.b.s.audit().last().unwrap()["decision"], "allowed");
     }

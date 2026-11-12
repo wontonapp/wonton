@@ -1,8 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-# 带补丁的第三方 crate 不算我们的成员，见 vendor/README.md。
-exclude = ["vendor/matrix-sdk", "vendor/matrix-sdk-ui"]
 
 [workspace.package]
 version = "0.0.0"
@@ -19,39 +17,21 @@ aws-lc-rs = "1"
 axum = "0.8.9"
 base64 = "0.22.1"
 bollard = "0.21.1"
-# Apache-2.0 OR MIT。0.13 与 fluent-bundle 共用 unic-langid 类型。
-fluent-bundle = "0.16.0"
-fluent-langneg = { version = "0.13.1", features = ["cldr"] }
 getrandom = "0.4.3"
 iroh = "1.4.1"
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["use_pem", "aws_lc_rs"] }
 matrix-sdk = "0.19.1"
 # 客户端核心向核心要登录令牌、核心发 Web Push；各自按需加 TLS 等特性。
 reqwest = { version = "0.13.5", default-features = false }
-# MIT OR Apache-2.0。核心联邦和隧道测试签发证书；使用已有的 aws-lc-rs 后端。
-rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
-# Apache-2.0。MCP 的官方 Rust SDK（ADR-0006、ADR-0016）；各 crate 按需加客户端、服务器和传输的特性。
-rmcp = { version = "3.8.0", default-features = false }
-# ISC AND (Apache-2.0 OR ISC)。核心出站 TLS 和测试中继使用的证书校验与服务端配置。
-rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"] }
-# MIT OR Apache-2.0。比核心的发布版本：客户端判服务器太旧，核心自己读版本。
-semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-sha2 = "0.10"
-# MIT。插件设置按包里的 JSON Schema 校验（ADR-0077）；不取网络和宿主上的引用。
-jsonschema = { version = "0.61.1", default-features = false }
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = "1.54.1"
 tracing = "0.1.44"
-# Apache-2.0 OR MIT。
-tracing-core = "0.1.36"
 tracing-subscriber = "0.3.23"
 uniffi = "0.32.2"
 url = "2.5.8"
-# Apache-2.0 OR MIT。
-unic-langid = "0.9.6"
 
 # 依赖不带调试信息，崩溃栈里还有函数名：25 个测试二进制从 5.3 GB 降到 3.3 GB，target 目录少三分之一（2026-11-05 实测）。
 [profile.dev.package."*"]
@@ -60,8 +40,3 @@ debug = false
 [workspace.lints.clippy]
 # 函数体超过 100 行即失败，阈值见 clippy.toml。
 too_many_lines = "deny"
-
-# SDK 补丁内容、原因和升级时怎么重打见 vendor/README.md。
-[patch.crates-io]
-matrix-sdk = { path = "vendor/matrix-sdk" }
-matrix-sdk-ui = { path = "vendor/matrix-sdk-ui" }

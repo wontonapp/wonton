@@ -7,11 +7,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import app.wonton.protocol.Me
+import app.wonton.protocol.OwnerProfile
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonTextField
@@ -20,7 +19,7 @@ import app.wonton.ui.design.toColor
 
 @Composable
 internal fun OwnerProfileForm(
-    profile: Me,
+    profile: OwnerProfile,
     name: String,
     onName: (String) -> Unit,
     email: String,
@@ -31,7 +30,7 @@ internal fun OwnerProfileForm(
     Column(modifier, verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap)) {
         OwnerProfileFields(name, onName, email, onEmail)
         problem?.let { ProblemNotice(it) }
-        WontonGroup { WontonRow(stringResource(R.string.owner_profile_username), profile.username) }
+        WontonGroup { WontonRow("用户名", profile.username) }
     }
 }
 
@@ -44,19 +43,16 @@ internal fun OwnerProfileFields(
     nameProblem: String? = null,
     emailProblem: String? = null,
 ) {
-    DetailSection(stringResource(R.string.owner_profile_name)) {
+    DetailSection("名字") {
         WontonTextField(
-            name, onName, Modifier.fillMaxWidth(),
-            label = stringResource(R.string.owner_profile_name),
+            name, onName, Modifier.fillMaxWidth(), placeholder = "必填", label = "名字",
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
         )
         nameProblem?.let { ProfileFieldProblem(it) }
     }
-    DetailSection(stringResource(R.string.owner_profile_email)) {
+    DetailSection("邮箱") {
         WontonTextField(
-            email, onEmail, Modifier.fillMaxWidth(),
-            placeholder = stringResource(R.string.owner_profile_email_optional),
-            label = stringResource(R.string.owner_profile_email),
+            email, onEmail, Modifier.fillMaxWidth(), placeholder = "选填", label = "邮箱",
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.None,
                 autoCorrectEnabled = false,

@@ -1,7 +1,11 @@
-//! 按请求的 `Accept-Language` 挑插件文字的语言（ADR-0017 的“接口：App 和核心”）。
-//! 协商规则在 [`wonton_l10n::choose_language`]，和核心目录、服务器文字用的是同一套。
+//! 按请求的 `Accept-Language` 挑插件文字的语言（ADR-0017 的“接口：App 和核心”）：用 fluent-langneg 的 Lookup 策略协商。
+//! 请求的语言先补全成 CLDR 的可能子标签（`zh-TW` 补成 `zh-Hant-TW`），再和可用的语言比较；都没有时用英文，再没有就用任意一种。
 
+use std::cmp::Reverse;
 use std::collections::BTreeMap;
+
+use fluent_langneg::{LanguageIdentifier, NegotiationStrategy, negotiate_languages};
+use icu_locid_transform::LocaleExpander;
 
 use super::manifest::{LocalizedTags, LocalizedText};
 
@@ -9,53 +13,60 @@ use super::manifest::{LocalizedTags, LocalizedText};
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Languages(Vec<String>);
 
-/// `Accept-Language` 里的语言标签，按偏好从高到低，保留原来的大小写：OIDC 的 `locale` 原样给，
-/// 不收窄到核心支持的语言。`*` 和 q=0 的不要。
-pub fn accept_language_tags(header: &str) -> Vec<String> {
-    ranked(header).into_iter().map(|(_, tag)| tag).collect()
-}
-
-/// 按 q 值排的语言标签（q 值相同的保持原来的顺序）。
-fn ranked(header: &str) -> Vec<(u32, String)> {
-    let mut ranked: Vec<(u32, String)> = header
-        .split(',')
-        .filter_map(|item| {
-            let mut parts = item.split(';').map(str::trim);
-            let tag = parts.next().filter(|t| !t.is_empty() && *t != "*")?;
-            let quality = parts
-                .find_map(|p| p.strip_prefix("q="))
-                .map_or(Some(1000), |q| {
-                    q.parse::<f32>().ok().map(|q| (q * 1000.0) as u32)
-                })?;
-            (quality > 0).then(|| (quality, tag.to_owned()))
-        })
-        .collect();
-    ranked.sort_by_key(|(quality, _)| std::cmp::Reverse(*quality));
-    ranked
-}
-
 impl Languages {
     /// 解析 `Accept-Language`（如 `zh-Hans-CN, en;q=0.8`）。q 值相同的保持原来的顺序；q=0 的和 `*` 不要。
     pub fn from_header(header: Option<&str>) -> Self {
-        Self(
-            ranked(header.unwrap_or_default())
-                .into_iter()
-                .map(|(_, tag)| tag.to_ascii_lowercase())
-                .collect(),
-        )
+        let mut ranked: Vec<(u32, String)> = header
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|item| {
+                let mut parts = item.split(';').map(str::trim);
+                let tag = parts.next().filter(|t| !t.is_empty() && *t != "*")?;
+                let quality = parts
+                    .find_map(|p| p.strip_prefix("q="))
+                    .map_or(Some(1000), |q| {
+                        q.parse::<f32>().ok().map(|q| (q * 1000.0) as u32)
+                    })?;
+                (quality > 0).then(|| (quality, tag.to_ascii_lowercase()))
+            })
+            .collect();
+        ranked.sort_by_key(|(quality, _)| std::cmp::Reverse(*quality));
+        Self(ranked.into_iter().map(|(_, tag)| tag).collect())
     }
 
     pub(crate) fn choose<'t, T>(&self, text: &'t BTreeMap<String, T>) -> Option<&'t T> {
         let values: Vec<&'t T> = text.values().collect();
-        let tags: Vec<&str> = text.keys().map(String::as_str).collect();
-        wonton_l10n::choose_language(&self.0, &tags)
-            .map(|index| values[index])
+        let mut available: Vec<Tag> = text
+            .keys()
+            .enumerate()
+            .filter_map(|(index, key)| {
+                Some(Tag {
+                    id: langid(key)?,
+                    index,
+                })
+            })
+            .collect();
+        // 库取列表里第一个匹配的语言。`zh` 也能匹配 `zh-Hant-TW`，所以更具体的要排在前面，否则 `zh` 总是先被选中。
+        available.sort_by_key(|tag| Reverse(specificity(&tag.id)));
+        // 库在补全请求的语言之前就按前缀比较，不补全的话 `zh-TW` 会先匹配到 `zh`，`zh-Hant` 永远轮不到。
+        let expander = LocaleExpander::new();
+        let requested: Vec<LanguageIdentifier> = self
+            .0
+            .iter()
+            .filter_map(|tag| langid(tag))
+            .map(|mut id| {
+                expander.maximize(&mut id);
+                id
+            })
+            .collect();
+        let default = available
+            .iter()
+            .filter(|tag| tag.id.language.as_str() == "en")
+            .min_by_key(|tag| specificity(&tag.id));
+        negotiate_languages(&requested, &available, default, NegotiationStrategy::Lookup)
+            .first()
+            .map(|tag| values[tag.index])
             .or_else(|| values.first().copied())
-    }
-
-    /// 请求想要的语言，按偏好从高到低。
-    pub(crate) fn requested(&self) -> &[String] {
-        &self.0
     }
 
     /// 从按语言组织的清单里挑一项，使用与插件文字相同的回退规则。
@@ -75,6 +86,30 @@ impl Languages {
     pub fn pick_tags(&self, tags: &LocalizedTags) -> Vec<String> {
         self.choose(tags).cloned().unwrap_or_default()
     }
+}
+
+/// 清单里的一个语言：解析后的标签，和它在清单里的位置（挑中后用它取回原来的文字）。
+#[derive(Debug, PartialEq)]
+struct Tag {
+    id: LanguageIdentifier,
+    index: usize,
+}
+
+impl AsRef<LanguageIdentifier> for Tag {
+    fn as_ref(&self) -> &LanguageIdentifier {
+        &self.id
+    }
+}
+
+/// 解析不了的标签不参与协商：请求的话跳过，清单里的只能靠最后的“任意一种”挑到。`_` 当 `-` 看：清单里写过 `zh_TW` 的插件不能因此选不中。
+fn langid(tag: &str) -> Option<LanguageIdentifier> {
+    LanguageIdentifier::try_from_bytes(tag.replace('_', "-").as_bytes()).ok()
+}
+
+fn specificity(id: &LanguageIdentifier) -> usize {
+    usize::from(id.script.is_some())
+        + usize::from(id.region.is_some())
+        + usize::from(!id.variants.is_empty())
 }
 
 #[cfg(test)]
@@ -183,16 +218,5 @@ mod tests {
     #[test]
     fn underscore_keys_still_match() {
         assert_eq!(picked("zh-TW", &["zh_Hant", "en"]), "zh_Hant");
-    }
-
-    #[test]
-    fn tags_keep_their_case_and_weight_order() {
-        assert_eq!(
-            accept_language_tags("zh-Hant-TW, en;q=0.8, *;q=0.5, ja;q=0"),
-            ["zh-Hant-TW", "en"],
-            "原样给，按 q 排序，`*` 和 q=0 不要"
-        );
-        assert_eq!(accept_language_tags("en;q=0.4, ja"), ["ja", "en"]);
-        assert!(accept_language_tags("").is_empty());
     }
 }

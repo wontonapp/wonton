@@ -9,41 +9,27 @@ use hyper::{Method, StatusCode};
 use wonton_protocol::AgentPermissionRequest;
 
 use super::api::error_response;
-use crate::l10n;
 use crate::mcp::{AgentPermissionError, Caller, Endpoint};
 
 /// 请求体的上限：卡片上只放得下这么多，再大是调用方的错。
 const MAX_BODY: usize = 1024 * 1024;
 
 pub async fn request(mcp: &Endpoint, caller: &Caller, req: Request) -> Response {
-    // Agent 的调用没有请求头，文字按主人的语言写。
-    let langs = mcp.bus.owner_languages();
     if req.method() != Method::POST {
-        let message = l10n::text(&langs, "gateway-agent-post-only", &[]);
-        return error_response(StatusCode::METHOD_NOT_ALLOWED, "invalid_input", &message);
+        return error_response(
+            StatusCode::METHOD_NOT_ALLOWED,
+            "invalid_input",
+            "这个接口只收 POST",
+        );
     }
     let invalid = |message: &str| error_response(StatusCode::BAD_REQUEST, "invalid_input", message);
     let body = match to_bytes(req.into_body(), MAX_BODY).await {
         Ok(body) => body,
-        Err(e) => {
-            let message = l10n::text(
-                &langs,
-                "gateway-body-unreadable",
-                &[("error", e.to_string().into())],
-            );
-            return invalid(&message);
-        }
+        Err(e) => return invalid(&format!("读不了请求体：{e}")),
     };
     let request: AgentPermissionRequest = match serde_json::from_slice(&body) {
         Ok(request) => request,
-        Err(e) => {
-            let message = l10n::text(
-                &langs,
-                "gateway-body-invalid",
-                &[("error", e.to_string().into())],
-            );
-            return invalid(&message);
-        }
+        Err(e) => return invalid(&format!("请求体不合法：{e}")),
     };
     match mcp.bus.agent_permission(caller, request).await {
         Ok(outcome) => Json(outcome).into_response(),

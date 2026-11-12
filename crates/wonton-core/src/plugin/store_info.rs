@@ -6,23 +6,17 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::languages::Languages;
 use super::manifest::{LocalizedText, Manifest, ManifestError, require_locales};
 use super::package_files;
-use crate::l10n;
 
 /// 核心支持的最新规范版本。
-pub const SPEC_VERSION: SpecVersion = SpecVersion(0, 13);
+pub const SPEC_VERSION: SpecVersion = SpecVersion(0, 6);
 
 /// 规范版本 `主.次`，如 `0.2`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SpecVersion(u32, u32);
 
 impl SpecVersion {
-    pub const fn new(major: u32, minor: u32) -> Self {
-        Self(major, minor)
-    }
-
     pub fn parse(text: &str) -> Option<Self> {
         let (major, minor) = text.split_once('.')?;
         let number = |part: &str| {
@@ -56,34 +50,24 @@ const MAX_TAG_CHARS: usize = 24;
 const MAX_AUTHOR_CHARS: usize = 64;
 const MAX_ABOUT_CHARS: usize = 4000;
 const MAX_RELEASE_NOTES_CHARS: usize = 2000;
-const MAX_SETUP_CHARS: usize = 400;
 
 /// 解析清单之前先看 `spec`：比核心新的清单可能用了核心不认识的字段，这时先报规范版本，不逐项报未知字段。
-pub fn check_spec(manifest: &Value, langs: &Languages) -> Result<(), ManifestError> {
+pub fn check_spec(manifest: &Value) -> Result<(), ManifestError> {
     match manifest.get("spec") {
-        None => Err(ManifestError::Invalid(l10n::text(
-            langs,
-            "plugin-settings-store-info-spec-missing",
-            &[("version", SPEC_VERSION.to_string().into())],
+        None => Err(ManifestError::Invalid(format!(
+            "清单要写 spec，如 spec: \"{SPEC_VERSION}\""
         ))),
-        Some(Value::String(text)) => spec_version(text, langs).map(|_| ()),
-        Some(_) => Err(ManifestError::Invalid(l10n::text(
-            langs,
-            "plugin-settings-store-info-spec-string",
-            &[("version", SPEC_VERSION.to_string().into())],
+        Some(Value::String(text)) => spec_version(text).map(|_| ()),
+        Some(_) => Err(ManifestError::Invalid(format!(
+            "spec 必须是字符串，如 \"{SPEC_VERSION}\"（YAML 里要加引号，不然读成数字）"
         ))),
     }
 }
 
-fn spec_version(text: &str, langs: &Languages) -> Result<SpecVersion, ManifestError> {
+fn spec_version(text: &str) -> Result<SpecVersion, ManifestError> {
     let version = SpecVersion::parse(text).ok_or_else(|| {
-        ManifestError::Invalid(l10n::text(
-            langs,
-            "plugin-settings-store-info-spec-version",
-            &[
-                ("text", text.into()),
-                ("version", SPEC_VERSION.to_string().into()),
-            ],
+        ManifestError::Invalid(format!(
+            "spec `{text}` 不是规范版本（如 \"{SPEC_VERSION}\"）"
         ))
     })?;
     if version > SPEC_VERSION {
@@ -97,50 +81,41 @@ fn spec_version(text: &str, langs: &Languages) -> Result<SpecVersion, ManifestEr
 
 /// 校验商店信息。字段的格式见插件规范的“商店信息”；图标和截图的内容在安装和 `plugin check` 时由
 /// [`super::images`] 检查。
-pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
-    spec_version(&manifest.spec, langs)?;
+pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
+    spec_version(&manifest.spec)?;
     if let Some(screenshots) = &manifest.screenshots {
-        validate_screenshots(screenshots, langs)?;
+        validate_screenshots(screenshots)?;
     }
     if let Some(author) = &manifest.author {
         let name = author.name.trim();
         if name.is_empty() || author.name.chars().count() > MAX_AUTHOR_CHARS {
-            return Err(invalid(l10n::text(
-                langs,
-                "plugin-settings-store-info-author",
-                &[("max", MAX_AUTHOR_CHARS.to_string().into())],
+            return Err(invalid(format!(
+                "author.name 不能为空，不超过 {MAX_AUTHOR_CHARS} 个字符"
             )));
         }
         if let Some(url) = &author.url {
-            https_url("author.url", url, langs)?;
+            https_url("author.url", url)?;
         }
     }
     if let Some(homepage) = &manifest.homepage {
-        https_url("homepage", homepage, langs)?;
+        https_url("homepage", homepage)?;
     }
     if let Some(license) = &manifest.license {
         spdx::Expression::parse(license).map_err(|e| {
-            invalid(l10n::text(
-                langs,
-                "plugin-settings-store-info-license",
-                &[
-                    ("license", license.as_str().into()),
-                    ("error", e.reason.to_string().into()),
-                ],
+            invalid(format!(
+                "license `{license}` 不是 SPDX 许可证表达式（如 MIT、AGPL-3.0-only）：{}",
+                e.reason
             ))
         })?;
     }
     for tags in manifest.tags.values() {
-        validate_tags(tags, langs)?;
+        validate_tags(tags)?;
     }
     if let Some(about) = &manifest.about {
-        long_text("about", about, MAX_ABOUT_CHARS, langs)?;
+        long_text("about", about, MAX_ABOUT_CHARS)?;
     }
     if let Some(notes) = &manifest.release_notes {
-        long_text("release_notes", notes, MAX_RELEASE_NOTES_CHARS, langs)?;
-    }
-    if let Some(setup) = &manifest.setup {
-        long_text("setup", setup, MAX_SETUP_CHARS, langs)?;
+        long_text("release_notes", notes, MAX_RELEASE_NOTES_CHARS)?;
     }
     Ok(())
 }
@@ -149,12 +124,10 @@ fn invalid(message: String) -> ManifestError {
     ManifestError::Invalid(message)
 }
 
-fn validate_screenshots(screenshots: &[String], langs: &Languages) -> Result<(), ManifestError> {
+fn validate_screenshots(screenshots: &[String]) -> Result<(), ManifestError> {
     if screenshots.is_empty() || screenshots.len() > MAX_SCREENSHOTS {
-        return Err(invalid(l10n::text(
-            langs,
-            "plugin-settings-store-info-screenshots-count",
-            &[("max", MAX_SCREENSHOTS.to_string().into())],
+        return Err(invalid(format!(
+            "screenshots 要有 1 到 {MAX_SCREENSHOTS} 张"
         )));
     }
     let mut seen = BTreeSet::new();
@@ -166,57 +139,32 @@ fn validate_screenshots(screenshots: &[String], langs: &Languages) -> Result<(),
             .iter()
             .any(|ext| lower.ends_with(ext))
         {
-            return Err(invalid(l10n::text(
-                langs,
-                "plugin-settings-store-info-screenshot-format",
-                &[("raw", raw.as_str().into())],
-            )));
+            return Err(invalid(format!("截图 `{raw}` 要是 PNG 或 JPEG")));
         }
         if !seen.insert(path) {
-            return Err(invalid(l10n::text(
-                langs,
-                "plugin-settings-store-info-screenshot-duplicate",
-                &[("raw", raw.as_str().into())],
-            )));
+            return Err(invalid(format!("截图 `{raw}` 重复了")));
         }
     }
     Ok(())
 }
 
-fn validate_tags(tags: &[String], langs: &Languages) -> Result<(), ManifestError> {
+fn validate_tags(tags: &[String]) -> Result<(), ManifestError> {
     if tags.len() > MAX_TAGS {
-        return Err(invalid(l10n::text(
-            langs,
-            "plugin-settings-store-info-tags-count",
-            &[("max", MAX_TAGS.to_string().into())],
-        )));
+        return Err(invalid(format!("tags 最多 {MAX_TAGS} 个")));
     }
     let mut seen = BTreeSet::new();
     for tag in tags {
         let chars = tag.chars().count();
         if tag.trim() != tag || !(1..=MAX_TAG_CHARS).contains(&chars) {
-            return Err(invalid(l10n::text(
-                langs,
-                "plugin-settings-store-info-tag-length",
-                &[
-                    ("tag", tag.as_str().into()),
-                    ("max", MAX_TAG_CHARS.to_string().into()),
-                ],
+            return Err(invalid(format!(
+                "标签 `{tag}` 要有 1 到 {MAX_TAG_CHARS} 个字符，前后不带空白"
             )));
         }
         if tag.chars().any(char::is_control) {
-            return Err(invalid(l10n::text(
-                langs,
-                "plugin-settings-store-info-tag-control",
-                &[("tag", tag.as_str().into())],
-            )));
+            return Err(invalid(format!("标签 `{tag}` 里有控制字符")));
         }
         if !seen.insert(tag.to_lowercase()) {
-            return Err(invalid(l10n::text(
-                langs,
-                "plugin-settings-store-info-tag-duplicate",
-                &[("tag", tag.as_str().into())],
-            )));
+            return Err(invalid(format!("标签 `{tag}` 重复了")));
         }
     }
     Ok(())
@@ -226,33 +174,22 @@ fn long_text(
     field: &'static str,
     text: &LocalizedText,
     max_chars: usize,
-    langs: &Languages,
 ) -> Result<(), ManifestError> {
     require_locales(field, text)?;
     match text
         .iter()
         .find(|(_, value)| value.chars().count() > max_chars)
     {
-        Some((lang, _)) => Err(invalid(l10n::text(
-            langs,
-            "plugin-settings-store-info-field-length",
-            &[
-                ("field", field.into()),
-                ("lang", lang.as_str().into()),
-                ("max", max_chars.to_string().into()),
-            ],
-        ))),
+        Some((lang, _)) => Err(invalid(format!("{field}.{lang} 超过 {max_chars} 个字符"))),
         None => Ok(()),
     }
 }
 
-fn https_url(field: &str, value: &str, langs: &Languages) -> Result<(), ManifestError> {
+fn https_url(field: &str, value: &str) -> Result<(), ManifestError> {
     match url::Url::parse(value) {
         Ok(url) if url.scheme() == "https" && url.host_str().is_some() => Ok(()),
-        _ => Err(invalid(l10n::text(
-            langs,
-            "plugin-settings-store-info-https-url",
-            &[("field", field.into()), ("value", value.into())],
+        _ => Err(invalid(format!(
+            "{field} `{value}` 要是 https:// 开头的网址"
         ))),
     }
 }

@@ -10,7 +10,7 @@ fn compose(services: &str, manifest: &str) -> String {
 }
 
 fn parse_err(manifest: &str) -> String {
-    PluginPackage::parse(&compose(WEB, manifest), &super::langs())
+    PluginPackage::parse(&compose(WEB, manifest))
         .expect_err("清单应不合法")
         .to_string()
 }
@@ -35,16 +35,6 @@ fn unknown_manifest_field_names_its_path() {
          permissions: []\n  webui: {service: web, port: 8080, wat: 1}\n",
     );
     assert!(error.contains("x-wonton.webui.wat"), "{error}");
-}
-
-#[test]
-fn a_webui_health_path_needs_the_leading_slash() {
-    let error = parse_err(
-        "  spec: '0.6'\n  id: app.test\n  version: 1.0.0\n  kind: app\n  \
-         title: {zh: 测试, en: Test}\n  description: {zh: 测试, en: Test}\n  \
-         permissions: []\n  webui: {service: web, port: 8080, health: health}\n",
-    );
-    assert!(error.contains("webui.health must start with /"), "{error}");
 }
 
 #[test]

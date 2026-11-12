@@ -14,9 +14,6 @@ use wonton_protocol::{
     CoreUpgradeTarget, CoreVersion,
 };
 
-use crate::l10n;
-use crate::plugin::languages::Languages;
-
 /// `pulling` 的上限。
 pub const PULL_LIMIT: Duration = Duration::from_secs(60 * 60);
 /// `pulling` 里这么久没有进展算卡住。
@@ -75,9 +72,6 @@ pub struct ImageRef {
     pub image: String,
     pub digest: Option<String>,
     pub version: Option<String>,
-    /// 回滚目标实际是哪个镜像：`from` 是标签时，标签可能已经被移走。旧版本写的状态文件没有这一项。
-    #[serde(default)]
-    pub image_id: Option<String>,
 }
 
 /// 升级的结果。
@@ -236,7 +230,7 @@ impl UpgradeState {
     }
 
     /// 接口上的这次升级。
-    pub fn run(&self, now: u64, langs: &Languages) -> CoreUpgradeRun {
+    pub fn run(&self, now: u64) -> CoreUpgradeRun {
         CoreUpgradeRun {
             id: self.id.clone(),
             from: CoreVersion {
@@ -248,28 +242,22 @@ impl UpgradeState {
                 digest: self.to.digest.clone().unwrap_or_default(),
                 version: self.to.version.clone(),
             },
-            state: self.run_state(now, langs),
+            state: self.run_state(now),
         }
     }
 
-    fn run_state(&self, now: u64, langs: &Languages) -> CoreUpgradeRunState {
+    fn run_state(&self, now: u64) -> CoreUpgradeRunState {
         let problem = || {
-            self.problem.clone().unwrap_or_else(|| {
-                problem(
-                    CoreUpgradeFailure::Other,
-                    l10n::text(langs, "upgrade-state-no-reason", &[]),
-                )
-            })
+            self.problem
+                .clone()
+                .unwrap_or_else(|| problem(CoreUpgradeFailure::Other, "状态文件里没有写原因"))
         };
         // 这几种结果要主人动手。命令由核心写进原因，壳不拼。
         let stuck = || {
             let mut problem = problem();
             if let Some(digest) = &self.from.digest {
-                problem.message.push('\n');
-                problem.message.push_str(&l10n::text(
-                    langs,
-                    "upgrade-restore-pin-hint",
-                    &[("digest", digest.as_str().into())],
+                problem.message.push_str(&format!(
+                    "。要退回旧版本，在主机上再执行一次安装命令，加上 WONTON_CORE_PIN={digest}"
                 ));
             }
             problem
@@ -295,39 +283,28 @@ impl UpgradeState {
 }
 
 /// 没有状态文件时是 `None`。
-pub fn load(path: &Path, langs: &Languages) -> anyhow::Result<Option<UpgradeState>> {
+pub fn load(path: &Path) -> anyhow::Result<Option<UpgradeState>> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        // 和系统给的报错一样是原始值，不进 Fluent。
-        Err(e) => return Err(e).with_context(|| format!("read {}", path.display())),
+        Err(e) => return Err(e).with_context(|| format!("读取 {}", path.display())),
     };
-    let state = serde_json::from_slice(&bytes).with_context(|| {
-        l10n::text(
-            langs,
-            "upgrade-state-unreadable",
-            &[("path", path.display().to_string().into())],
-        )
-    })?;
+    let state = serde_json::from_slice(&bytes)
+        .with_context(|| format!("{} 读不懂，可能是更新的版本写的", path.display()))?;
     Ok(Some(state))
 }
 
-pub fn save(path: &Path, state: &UpgradeState, langs: &Languages) -> anyhow::Result<()> {
-    let bytes = serde_json::to_vec_pretty(state).context(l10n::text(
-        langs,
-        "upgrade-state-serialize",
-        &[],
-    ))?;
+pub fn save(path: &Path, state: &UpgradeState) -> anyhow::Result<()> {
+    let bytes = serde_json::to_vec_pretty(state).context("序列化升级状态")?;
     write_atomic(path, &bytes, 0o600)
 }
 
 /// 写临时文件、fsync、改名，再 fsync 所在目录：断电后要么是旧内容，要么是新内容。
-/// 文件操作本身的上下文是原始值（和系统报错一样），不进 Fluent；句子在上面的层写。
 pub fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result<()> {
     let dir = path
         .parent()
-        .with_context(|| format!("{} has no parent directory", path.display()))?;
-    fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+        .with_context(|| format!("{} 没有上级目录", path.display()))?;
+    fs::create_dir_all(dir).with_context(|| format!("建立 {}", dir.display()))?;
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     let temp = dir.join(format!(".{name}.tmp"));
     let mut file = fs::OpenOptions::new()
@@ -336,31 +313,26 @@ pub fn write_atomic(path: &Path, bytes: &[u8], mode: u32) -> anyhow::Result<()> 
         .truncate(true)
         .mode(mode)
         .open(&temp)
-        .with_context(|| format!("write {}", temp.display()))?;
+        .with_context(|| format!("写入 {}", temp.display()))?;
     file.write_all(bytes)
         .and_then(|()| file.sync_all())
-        .with_context(|| format!("write {}", temp.display()))?;
+        .with_context(|| format!("写入 {}", temp.display()))?;
     drop(file);
-    fs::rename(&temp, path).with_context(|| format!("write {}", path.display()))?;
+    fs::rename(&temp, path).with_context(|| format!("写入 {}", path.display()))?;
     fs::File::open(dir)
         .and_then(|d| d.sync_all())
-        .with_context(|| format!("sync {}", dir.display()))
+        .with_context(|| format!("同步 {}", dir.display()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn langs() -> Languages {
-        Languages::from_header(None)
-    }
-
     fn image(name: &str) -> ImageRef {
         ImageRef {
             image: format!("r@{name}"),
             digest: Some(name.into()),
             version: None,
-            image_id: None,
         }
     }
 
@@ -374,15 +346,13 @@ mod tests {
         let mut state = pulling();
         state.problem = Some(problem(CoreUpgradeFailure::Unhealthy, "起不来"));
         state.result = Some(Outcome::Unresolved);
-        let CoreUpgradeRunState::Unresolved { problem: stuck } = state.run(1000, &langs()).state
-        else {
+        let CoreUpgradeRunState::Unresolved { problem: stuck } = state.run(1000).state else {
             panic!("应该是 unresolved");
         };
         assert!(stuck.message.contains("WONTON_CORE_PIN=a"), "{stuck:?}");
 
         state.result = Some(Outcome::RolledBack);
-        let CoreUpgradeRunState::RolledBack { problem: back } = state.run(1000, &langs()).state
-        else {
+        let CoreUpgradeRunState::RolledBack { problem: back } = state.run(1000).state else {
             panic!("应该是 rolled_back");
         };
         assert!(!back.message.contains("WONTON_CORE_PIN"), "{back:?}");
@@ -422,12 +392,12 @@ mod tests {
         value["phase"] = "new_phase".into();
         value["new_field"] = 1.into();
         let state: UpgradeState = serde_json::from_value(value.clone()).unwrap();
-        assert_eq!(state.run(1000, &langs()).state, CoreUpgradeRunState::Other);
+        assert_eq!(state.run(1000).state, CoreUpgradeRunState::Other);
 
         value["phase"] = "observing".into();
         value["result"] = "new_result".into();
         let state: UpgradeState = serde_json::from_value(value).unwrap();
-        assert_eq!(state.run(1000, &langs()).state, CoreUpgradeRunState::Other);
+        assert_eq!(state.run(1000).state, CoreUpgradeRunState::Other);
         assert!(state.is_ended());
     }
 
@@ -436,9 +406,9 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("wonton-state-{}", crate::secret::random_token()));
         let path = dir.join("upgrade/state.json");
-        assert_eq!(load(&path, &langs()).unwrap(), None);
-        save(&path, &pulling(), &langs()).unwrap();
-        assert_eq!(load(&path, &langs()).unwrap(), Some(pulling()));
+        assert_eq!(load(&path).unwrap(), None);
+        save(&path, &pulling()).unwrap();
+        assert_eq!(load(&path).unwrap(), Some(pulling()));
         fs::remove_dir_all(dir).unwrap();
     }
 }

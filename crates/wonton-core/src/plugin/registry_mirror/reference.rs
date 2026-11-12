@@ -1,6 +1,17 @@
-//! 按摘要钉住的引用改成经加速站的引用；标签不能提供加速站必须遵守的内容约束。
+//! Docker Hub 的摘要引用；标签不能提供加速地址必须遵守的内容约束。
 
-use super::mirrors::Registry;
+pub(crate) fn docker_hub(image: &str) -> bool {
+    let name = image.split('@').next().unwrap_or(image);
+    match name.split_once('/') {
+        Some((host, _)) => {
+            matches!(
+                host,
+                "docker.io" | "index.docker.io" | "registry-1.docker.io"
+            ) || (!host.contains(['.', ':']) && host != "localhost")
+        }
+        None => true,
+    }
+}
 
 pub(crate) fn digest(image: &str) -> Option<&str> {
     let (_, digest) = image.split_once('@')?;
@@ -8,42 +19,25 @@ pub(crate) fn digest(image: &str) -> Option<&str> {
     (hex.len() == 64 && hex.bytes().all(|c| c.is_ascii_hexdigit())).then_some(digest)
 }
 
-/// 这张镜像在加速站上的引用，按名单顺序。只写标签、或者仓库没有名单时为空。
-pub(in crate::plugin) fn accelerated(
-    image: &str,
-    stations: &[String],
-    registry: Registry,
-) -> Vec<String> {
-    if stations.is_empty() {
-        return Vec::new();
+pub(crate) fn mirrored(image: &str, mirror: &str) -> Option<String> {
+    if !docker_hub(image) {
+        return None;
     }
-    let Some(digest) = digest(image) else {
-        return Vec::new();
-    };
-    let name = image.split_once('@').expect("有摘要的引用带 @").0;
-    let name = match registry {
-        Registry::DockerHub => ["docker.io/", "index.docker.io/", "registry-1.docker.io/"]
-            .iter()
-            .find_map(|prefix| name.strip_prefix(prefix))
-            .unwrap_or(name),
-        Registry::Ghcr => name.strip_prefix("ghcr.io/").unwrap_or(name),
-        Registry::Quay => name.strip_prefix("quay.io/").unwrap_or(name),
-    };
-    let repository = name
+    let digest = digest(image)?;
+    let (mut name, _) = image.split_once('@')?;
+    for prefix in ["docker.io/", "index.docker.io/", "registry-1.docker.io/"] {
+        if let Some(repository) = name.strip_prefix(prefix) {
+            name = repository;
+            break;
+        }
+    }
+    let name = name
         .rsplit_once(':')
         .map_or(name, |(repository, _)| repository);
-    let repository = if registry == Registry::DockerHub && !repository.contains('/') {
-        format!("library/{repository}")
-    } else {
-        repository.to_owned()
-    };
-    stations
-        .iter()
-        .map(|station| format!("{station}/{repository}@{digest}"))
-        .collect()
+    let library = if name.contains('/') { "" } else { "library/" };
+    Some(format!("{mirror}/{library}{name}@{digest}"))
 }
 
-/// 只比摘要：同级引用换了写法、或者来自不同的站，内容仍然可能是同一份。
 pub(crate) fn same_image(actual: &str, expected: &str) -> bool {
     actual == expected
         || digest(expected).is_some_and(|digest| self::digest(actual) == Some(digest))
@@ -59,89 +53,41 @@ pub(in crate::plugin) fn pull_reference(image: &str) -> String {
     }
 }
 
-/// 加速引用里的站，用来在错误里说清试了哪个。
-pub(in crate::plugin) fn station(reference: &str) -> &str {
-    reference
-        .split_once('/')
-        .map_or(reference, |(station, _)| station)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::super::mirrors::registry;
     use super::*;
 
     const DIGEST: &str = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     #[test]
-    fn digest_references_keep_the_official_digest_on_every_registry() {
-        for (name, registry, repository) in [
-            ("alpine", Registry::DockerHub, "library/alpine"),
-            (
-                "docker.io/library/alpine",
-                Registry::DockerHub,
-                "library/alpine",
-            ),
-            ("gogost/gost:3", Registry::DockerHub, "gogost/gost"),
-            (
-                "ghcr.io/immich-app/immich-server:v3",
-                Registry::Ghcr,
-                "immich-app/immich-server",
-            ),
-            (
-                "quay.io/prometheus/busybox:latest",
-                Registry::Quay,
-                "prometheus/busybox",
-            ),
+    fn registry_hub_digest_references_keep_the_official_digest() {
+        for (name, repository) in [
+            ("alpine", "library/alpine"),
+            ("library/alpine", "library/alpine"),
+            ("docker.io/alpine:3", "library/alpine"),
+            ("docker.io/library/alpine", "library/alpine"),
+            ("index.docker.io/gogost/gost:3", "gogost/gost"),
+            ("registry-1.docker.io/gogost/gost", "gogost/gost"),
+            ("gogost/gost:3", "gogost/gost"),
         ] {
             let original = format!("{name}@{DIGEST}");
-            let stations = vec!["station.example:5443".to_owned()];
-            assert_eq!(
-                accelerated(&original, &stations, registry),
-                [format!("station.example:5443/{repository}@{DIGEST}")]
-            );
+            let actual = mirrored(&original, "mirror.example:5443").unwrap();
+            assert_eq!(actual, format!("mirror.example:5443/{repository}@{DIGEST}"));
+            assert!(same_image(&actual, &original));
         }
     }
 
     #[test]
-    fn tags_without_a_digest_and_empty_lists_are_not_redirected() {
-        let stations = vec!["station.example".to_owned()];
-        for image in ["alpine:3", "ghcr.io/org/app:1", "quay.io/org/app"] {
-            let registry = registry(image).unwrap();
-            assert!(
-                accelerated(image, &stations, registry).is_empty(),
-                "{image}"
-            );
+    fn registry_tags_and_other_registries_are_not_redirected() {
+        for image in [
+            "alpine:3".to_owned(),
+            "docker.io/alpine:latest".to_owned(),
+            format!("ghcr.io/org/app@{DIGEST}"),
+            format!("quay.io/org/app@{DIGEST}"),
+            format!("localhost:5000/app@{DIGEST}"),
+        ] {
+            assert_eq!(mirrored(&image, "mirror.example"), None);
         }
-        assert!(accelerated(&format!("ghcr.io/org/app@{DIGEST}"), &[], Registry::Ghcr).is_empty());
-    }
-
-    #[test]
-    fn stations_are_kept_in_order() {
-        let stations = vec!["first.example".to_owned(), "second.example".to_owned()];
-        assert_eq!(
-            accelerated(
-                &format!("ghcr.io/org/app@{DIGEST}"),
-                &stations,
-                Registry::Ghcr
-            ),
-            [
-                format!("first.example/org/app@{DIGEST}"),
-                format!("second.example/org/app@{DIGEST}"),
-            ]
-        );
-        assert_eq!(
-            station(&format!("first.example/org/app@{DIGEST}")),
-            "first.example"
-        );
-    }
-
-    #[test]
-    fn same_image_accepts_the_same_digest_only() {
         assert!(!same_image(&format!("alpine@{DIGEST}"), "alpine:3"));
-        assert!(!same_image(
-            &format!("alpine@{}", DIGEST.replace('0', "1")),
-            &format!("alpine@{DIGEST}")
-        ));
     }
 }

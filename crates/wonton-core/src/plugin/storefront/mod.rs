@@ -22,7 +22,6 @@ use wonton_protocol::{StoreFailure, StoreProblem};
 use super::github::{GitHub, GitHubError, Repo};
 use super::manager::now_secs;
 use super::store::{create_private_dir, read_json, write_json};
-use crate::plugin::languages::Languages;
 use added::AddedSources;
 pub use community::{Community, Listing};
 use index::{Files, Index, IndexError};
@@ -147,27 +146,16 @@ impl Storefront {
     }
 
     /// 官方索引，和它的时间、问题。本地目录每次都重读：读一次只要几毫秒，目录会随镜像或测试变化。
-    pub async fn official(
-        &self,
-        refresh: bool,
-        langs: &Languages,
-    ) -> (Index, Option<u64>, Option<StoreProblem>) {
+    pub async fn official(&self, refresh: bool) -> (Index, Option<u64>, Option<StoreProblem>) {
         let mut section = self.official.lock().await;
         if let Some(dir) = &self.config.index_dir {
             let path = dir.join("index.json");
             let read = std::fs::read(&path)
                 .map_err(|e| {
-                    let details = crate::l10n::text(
-                        langs,
-                        "plugin-settings-store-index-read-failed",
-                        &[
-                            ("path", path.display().to_string().into()),
-                            ("error", e.to_string().into()),
-                        ],
-                    );
+                    let details = format!("读不了官方索引 {}：{e}", path.display());
                     (StoreFailure::Upstream, details)
                 })
-                .and_then(|json| Index::parse(&json, langs).map_err(|e| index_failure(&e, langs)));
+                .and_then(|json| Index::parse(&json).map_err(|e| index_failure(&e)));
             return match read {
                 Ok(index) => (index, None, None),
                 Err((reason, details)) => (
@@ -181,7 +169,7 @@ impl Storefront {
             restore(&self.cache, &mut section);
         }
         if section.due(OFFICIAL_TTL, refresh) {
-            match self.fetch_index(langs).await {
+            match self.fetch_index().await {
                 Ok((index, raw)) => {
                     section.succeeded(index, None);
                     save(&self.cache, section.fetched_at_ms, raw);
@@ -196,55 +184,30 @@ impl Storefront {
         )
     }
 
-    async fn fetch_index(
-        &self,
-        langs: &Languages,
-    ) -> Result<(Index, serde_json::Value), (StoreFailure, String)> {
+    async fn fetch_index(&self) -> Result<(Index, serde_json::Value), (StoreFailure, String)> {
         let repo = Repo {
             owner: STORE_REPO.0.to_owned(),
             name: STORE_REPO.1.to_owned(),
         };
         let json = match self
             .github
-            .file(&repo, "main", INDEX_FILE, MAX_INDEX_BYTES, langs)
+            .file(&repo, "main", INDEX_FILE, MAX_INDEX_BYTES)
             .await
         {
             Ok(json) => json,
             Err(raw @ (GitHubError::Unavailable(_) | GitHubError::Timeout(_))) => {
                 tracing::info!(error = %raw, "raw 取不到官方索引，改走 API");
                 self.github
-                    .file_via_api(&repo, "main", INDEX_FILE, MAX_INDEX_BYTES, langs)
+                    .file_via_api(&repo, "main", INDEX_FILE, MAX_INDEX_BYTES)
                     .await
-                    .map_err(|api| {
-                        (
-                            failure(&api),
-                            format!(
-                                "{}；{}",
-                                crate::l10n::text(
-                                    langs,
-                                    "plugin-settings-store-index-fetch-failed",
-                                    &[("error", raw.to_string().into())],
-                                ),
-                                api
-                            ),
-                        )
-                    })?
+                    .map_err(|api| (failure(&api), format!("取不到官方索引：{raw}；{api}")))?
             }
-            Err(e) => {
-                return Err((
-                    failure(&e),
-                    crate::l10n::text(
-                        langs,
-                        "plugin-settings-store-index-fetch-failed",
-                        &[("error", e.to_string().into())],
-                    ),
-                ));
-            }
+            Err(e) => return Err((failure(&e), format!("取不到官方索引：{e}"))),
         };
-        let index = Index::parse(&json, langs).map_err(|e| index_failure(&e, langs))?;
+        let index = Index::parse(&json).map_err(|e| index_failure(&e))?;
         let raw = serde_json::from_slice(&json).map_err(|e| {
             let error = IndexError::Invalid(e.to_string());
-            index_failure(&error, langs)
+            index_failure(&error)
         })?;
         Ok((index, raw))
     }
@@ -254,7 +217,6 @@ impl Storefront {
         &self,
         official: &Index,
         refresh: bool,
-        langs: &Languages,
     ) -> (Listing, Option<u64>, Option<StoreProblem>) {
         if !self.config.community {
             let problem = StoreProblem {
@@ -266,16 +228,9 @@ impl Storefront {
         let mut section = self.community.lock().await;
         if section.due(COMMUNITY_TTL, refresh) {
             let mut read = self.read.lock().await;
-            match community::discover(&self.github, official, &mut read, langs).await {
+            match community::discover(&self.github, official, &mut read).await {
                 Ok((found, problem)) => section.succeeded(found, problem),
-                Err(e) => section.failed(
-                    failure(&e),
-                    crate::l10n::text(
-                        langs,
-                        "plugin-settings-store-community-unavailable",
-                        &[("error", e.to_string().into())],
-                    ),
-                ),
+                Err(e) => section.failed(failure(&e), format!("取不到社区应用：{e}")),
             }
         }
         let mut listing = section.value.clone().unwrap_or_default();
@@ -312,7 +267,6 @@ impl Storefront {
 
 /// 读磁盘上的官方索引。时间照旧，所以 `due` 仍然会去取一次；读不了的当作没有。
 fn restore(path: &Path, section: &mut Section<Index>) {
-    let langs = crate::plugin::languages::Languages::default();
     let cached: CachedIndex = match read_json(path) {
         Ok(Some(cached)) => cached,
         Ok(None) => return,
@@ -323,7 +277,7 @@ fn restore(path: &Path, section: &mut Section<Index>) {
     };
     let index = serde_json::to_vec(&cached.index)
         .map_err(|e| e.to_string())
-        .and_then(|json| Index::parse(&json, &langs).map_err(|e| e.to_string()));
+        .and_then(|json| Index::parse(&json).map_err(|e| e.to_string()));
     match index {
         Ok(index) => {
             section.value = Some(index);
@@ -348,12 +302,12 @@ fn save(path: &Path, fetched_at_ms: Option<u64>, index: serde_json::Value) {
     }
 }
 
-fn index_failure(e: &IndexError, langs: &Languages) -> (StoreFailure, String) {
+fn index_failure(e: &IndexError) -> (StoreFailure, String) {
     let reason = match e {
         IndexError::NewerFormat(_) => StoreFailure::IndexTooNew,
         IndexError::Invalid(_) => StoreFailure::InvalidIndex,
     };
-    (reason, e.message(langs))
+    (reason, e.to_string())
 }
 
 pub(in crate::plugin) fn failure(e: &GitHubError) -> StoreFailure {

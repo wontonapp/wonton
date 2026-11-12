@@ -3,7 +3,6 @@
 use hyper::StatusCode;
 
 use super::tests::Harness;
-use crate::plugin::languages::Languages;
 use crate::plugin::{PluginPackage, PluginStatus};
 
 /// 局域网里的浏览器用服务器的 IP 打开状态页。
@@ -13,7 +12,7 @@ fn package(id: &str, title: &str) -> PluginPackage {
     PluginPackage::parse(&format!(
         "services:\n  app:\n    image: test/app\nx-wonton:\n  spec: '0.4'\n  id: {id}\n  version: 1.0.0\n  kind: app\n  \
          title: {{zh: {title}, en: {title}}}\n  description: {{zh: x, en: x}}\n  permissions: []\n"
-    ), &Languages::from_header(Some("zh-Hans")))
+    ))
     .unwrap()
 }
 

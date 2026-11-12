@@ -10,7 +10,6 @@ use super::tests::{Setup, setup, text};
 use super::{Caller, PolicyChange};
 use crate::plugin::PluginId;
 use crate::plugin::fake_docker::FakeDocker;
-use crate::plugin::languages::Languages;
 
 const DELETE: &str = "app-example-notes__delete";
 const SEARCH: &str = "app-example-notes__search";
@@ -155,7 +154,7 @@ async fn it_ends_only_when_the_last_device_hands_back() {
     s.bus.end_takeover(&notes(), PHONE);
     assert_still_held(&s, &call).await;
 
-    s.bus.end_device_takeovers("tablet");
+    s.bus.end_device_takeovers("device:tablet");
     let card = s.cards.wait_for(1).await;
     s.answer(&card.id, Answer::Reject).unwrap();
     call.await.unwrap();
@@ -172,12 +171,9 @@ async fn a_plugin_that_stops_ends_the_takeover() {
     let call = delete(&s, "a");
     assert_still_held(&s, &call).await;
 
-    let manifest = crate::plugin::PluginPackage::parse(
-        super::tests::NOTES,
-        &Languages::from_header(Some("zh-Hans")),
-    )
-    .unwrap()
-    .manifest;
+    let manifest = crate::plugin::PluginPackage::parse(super::tests::NOTES)
+        .unwrap()
+        .manifest;
     s.manager.register_for_test(
         manifest,
         crate::plugin::PluginStatus::Degraded {
@@ -187,8 +183,6 @@ async fn a_plugin_that_stops_ends_the_takeover() {
     );
     s.manager
         .mcp_for_test(&notes(), "http://127.0.0.1:9/mcp".to_owned());
-    // MCP 服务自己的容器也停了。
-    s.manager.serving_for_test(&notes(), &[]);
 
     tokio::time::timeout(Duration::from_secs(5), async {
         while takeovers_audit(&s).len() < 2 {

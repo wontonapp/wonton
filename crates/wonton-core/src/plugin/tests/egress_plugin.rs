@@ -29,11 +29,8 @@ fn consumer(id: &str) -> String {
 }
 
 async fn install(m: &PluginManager, compose: &str) {
-    let grants = PluginPackage::parse(compose, &super::langs())
-        .unwrap()
-        .manifest
-        .permissions;
-    m.install(compose, &grants, super::langs()).await.unwrap();
+    let grants = PluginPackage::parse(compose).unwrap().manifest.permissions;
+    m.install(compose, &grants).await.unwrap();
 }
 
 fn update(url: Option<&str>, use_plugin: bool, restarts: &[&str]) -> EgressProxyUpdate {
@@ -150,11 +147,7 @@ async fn egress_plugin_selection_switches_only_relay_between_providers_and_survi
     assert_eq!(starts(&docker, proxy), 1);
     assert!(!env_of_container(&docker, out).contains_key("HTTP_PROXY"));
     restarted
-        .uninstall(
-            &PluginId::parse("app.proxy").unwrap(),
-            false,
-            &super::langs(),
-        )
+        .uninstall(&PluginId::parse("app.proxy").unwrap(), false)
         .await
         .unwrap();
 }
@@ -166,41 +159,14 @@ async fn egress_plugin_singleton_reserves_even_during_concurrent_installs() {
     let m = manager_with(engine, &dir);
     let first = proxy_app("app.first");
     let second = proxy_app("app.second");
-    let grants = PluginPackage::parse(&first, &super::langs())
-        .unwrap()
-        .manifest
-        .permissions;
-    let (a, b) = tokio::join!(
-        m.install(&first, &grants, super::langs()),
-        m.install(&second, &grants, super::langs())
-    );
+    let grants = PluginPackage::parse(&first).unwrap().manifest.permissions;
+    let (a, b) = tokio::join!(m.install(&first, &grants), m.install(&second, &grants));
     let error = match (a, b) {
         (Ok(_), Err(e)) | (Err(e), Ok(_)) => e,
         result => panic!("只应装上一个代理插件：{result:?}"),
     };
     assert_eq!(error.kind(), "conflict");
     assert_eq!(m.list().len(), 1);
-}
-
-/// 代理连不上时：消费者的预览被拦，安装报 `egress_proxy_unavailable`。
-async fn assert_consumer_blocked(m: &PluginManager, langs: &Languages) {
-    let app = consumer("app.out");
-    let preview = m
-        .preview_install(&PluginPackage::parse(&app, &super::langs()).unwrap(), langs)
-        .await
-        .unwrap();
-    assert!(preview.blocked.is_some());
-    let grants = PluginPackage::parse(&app, &super::langs())
-        .unwrap()
-        .manifest
-        .permissions;
-    assert_eq!(
-        m.install(&app, &grants, super::langs())
-            .await
-            .unwrap_err()
-            .kind(),
-        "egress_proxy_unavailable"
-    );
 }
 
 #[tokio::test]
@@ -226,15 +192,25 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
         json!({"Status": "running", "Running": true, "Health": {"Status": "unhealthy"}}),
     ] {
         docker.set_state(name, state);
-        m.probe_egress(&Languages::default()).await.unwrap();
+        m.probe_egress().await.unwrap();
         assert_eq!(
             m.egress_problem().unwrap().reason,
             EgressFailure::ProxyUnreachable
         );
-        assert_consumer_blocked(&m, &langs).await;
+        let app = consumer("app.out");
+        let preview = m
+            .preview_install(&PluginPackage::parse(&app).unwrap(), &langs)
+            .await
+            .unwrap();
+        assert!(preview.blocked.is_some());
+        let grants = PluginPackage::parse(&app).unwrap().manifest.permissions;
+        assert_eq!(
+            m.install(&app, &grants).await.unwrap_err().kind(),
+            "egress_proxy_unavailable"
+        );
     }
     m.engine.remove_container(name).await.unwrap();
-    m.probe_egress(&Languages::default()).await.unwrap();
+    m.probe_egress().await.unwrap();
     assert_eq!(
         m.egress_problem().unwrap().reason,
         EgressFailure::ProxyUnreachable
@@ -243,20 +219,13 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
         name,
         json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
     );
-    let upgraded = PluginPackage::parse(
-        &proxy_app("app.proxy").replace("1.0.0", "1.0.1"),
-        &super::langs(),
-    )
-    .unwrap();
+    let upgraded = PluginPackage::parse(&proxy_app("app.proxy").replace("1.0.0", "1.0.1")).unwrap();
     let grants = upgraded.manifest.permissions.clone();
     m.upgrade_upload(
         &PluginId::parse("app.proxy").unwrap(),
         upgraded,
         grants,
-        Vec::new(),
         false,
-        &Default::default(),
-        &super::langs(),
     )
     .await
     .unwrap();
@@ -279,13 +248,9 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
             ..Default::default()
         })
         .unwrap();
-    m.uninstall(
-        &PluginId::parse("app.proxy").unwrap(),
-        false,
-        &super::langs(),
-    )
-    .await
-    .unwrap();
+    m.uninstall(&PluginId::parse("app.proxy").unwrap(), false)
+        .await
+        .unwrap();
     install(&m, &proxy_app("app.proxy")).await;
     assert!(!env_of_container(&docker, name).contains_key("HTTP_PROXY"));
 }
@@ -320,55 +285,19 @@ async fn egress_plugin_upgrade_retargets_relay_without_restarting_consumers() {
     let upgraded = proxy_app("app.proxy")
         .replace("1.0.0", "1.0.1")
         .replace("port: 7890", "port: 7891");
-    let upgraded = PluginPackage::parse(&upgraded, &super::langs()).unwrap();
+    let upgraded = PluginPackage::parse(&upgraded).unwrap();
     let grants = upgraded.manifest.permissions.clone();
     m.upgrade_upload(
         &PluginId::parse("app.proxy").unwrap(),
         upgraded,
         grants,
-        Vec::new(),
         false,
-        &Default::default(),
-        &super::langs(),
     )
     .await
     .unwrap();
     assert_eq!(m.egress_config().unwrap().url.unwrap().port, 7891);
     assert_eq!(starts(&docker, "wonton-app-out--web"), 1);
     assert_eq!(starts(&docker, "wonton-egress"), 2);
-}
-
-#[tokio::test]
-async fn plugin_written_no_proxy_is_merged_and_networked_services_all_get_one() {
-    let (docker, engine) = FakeDocker::start().await;
-    add_default_bridge(&docker);
-    let dir = tempfile::tempdir().unwrap();
-    let m = Arc::new(manager_with(engine, &dir).with_lan(lan()));
-    install(&m, &proxy_app("app.proxy")).await;
-    m.set_egress_proxy(update(None, true, &[]), Languages::default())
-        .await
-        .unwrap();
-    let out = package(
-        "  web:\n    image: nginx\n    environment:\n      NO_PROXY: \"localhost,web\"\n  \
-         hub:\n    image: nginx",
-        "  permissions: [network.egress]",
-    )
-    .replace("id: app.test", "id: app.out");
-    install(&m, &out).await;
-    // 服务名按字典序：hub、web；私有网段在名单末尾。
-    let private = ".local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,\
-                   172.16.0.0/12,192.168.0.0/16";
-    let web = env_of_container(&docker, "wonton-app-out--web");
-    assert_eq!(web["HTTP_PROXY"], super::super::egress::PROXY_URL);
-    assert_eq!(
-        web["NO_PROXY"],
-        format!("localhost,web,.localhost,127.0.0.1,::1,.wonton.internal,hub,{private}")
-    );
-    let hub = env_of_container(&docker, "wonton-app-out--hub");
-    assert_eq!(
-        hub["NO_PROXY"],
-        format!("localhost,.localhost,127.0.0.1,::1,.wonton.internal,hub,web,{private}")
-    );
 }
 
 #[tokio::test]
@@ -421,12 +350,8 @@ async fn egress_plugin_being_uninstalled_cannot_be_selected_even_at_the_same_man
     let uninstall = tokio::spawn({
         let m = m.clone();
         async move {
-            m.uninstall(
-                &PluginId::parse("app.proxy").unwrap(),
-                false,
-                &super::langs(),
-            )
-            .await
+            m.uninstall(&PluginId::parse("app.proxy").unwrap(), false)
+                .await
         }
     });
     hold.reached().await;

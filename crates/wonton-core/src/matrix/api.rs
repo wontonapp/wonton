@@ -3,9 +3,7 @@
 
 use std::time::Duration;
 
-use axum::body::Body;
-use http_body_util::BodyExt;
-use hyper::{Method, Request, StatusCode, header};
+use hyper::{Method, StatusCode};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::time::{Instant, sleep};
@@ -111,74 +109,6 @@ impl Api {
             .ok_or_else(|| MatrixError::Invalid("上传接口没有返回 content_uri".to_owned()))
     }
 
-    /// 成功响应只保留上限加一字节，超限仍交给媒体检查归类为 TooLarge。
-    pub async fn download(
-        &self,
-        token: &str,
-        server: &str,
-        id: &str,
-    ) -> Result<Vec<u8>, MatrixError> {
-        let path = format!(
-            "/_matrix/client/v1/media/download/{}/{}",
-            encode(server),
-            encode(id)
-        );
-        let request = Request::get(format!("{}{path}", self.base))
-            .header(header::AUTHORIZATION, format!("Bearer {token}"))
-            .body(Body::empty())
-            .map_err(|error| MatrixError::Invalid(error.to_string()))?;
-        let exchange = async {
-            let response = self
-                .http
-                .send(request)
-                .await
-                .map_err(|error| error.to_string())?;
-            let status = response.status();
-            let limit = if status.is_success() {
-                wonton_protocol::MAX_AVATAR_BYTES as usize + 1
-            } else {
-                1 << 20
-            };
-            let mut body = response.into_body();
-            let mut bytes = Vec::new();
-            while let Some(frame) = body.frame().await {
-                let frame = frame.map_err(|error| error.to_string())?;
-                if let Some(data) = frame.data_ref() {
-                    let remaining = limit - bytes.len();
-                    bytes.extend_from_slice(&data[..data.len().min(remaining)]);
-                    if bytes.len() == limit {
-                        break;
-                    }
-                }
-            }
-            Ok::<_, String>((status, bytes))
-        };
-        let (status, bytes) = tokio::time::timeout(TIMEOUT, exchange)
-            .await
-            .map_err(|_| MatrixError::Unavailable {
-                context: "下载头像".into(),
-                message: "请求超时".into(),
-            })?
-            .map_err(|message| MatrixError::Unavailable {
-                context: "下载头像".into(),
-                message,
-            })?;
-        if status.is_success() {
-            return Ok(bytes);
-        }
-        let value: Value =
-            serde_json::from_slice(&bytes).map_err(|error| MatrixError::Unavailable {
-                context: "下载头像".into(),
-                message: format!("错误响应不是 JSON：{error}"),
-            })?;
-        Err(MatrixError::Rejected {
-            context: "下载头像".into(),
-            status: status.as_u16(),
-            errcode: value["errcode"].as_str().unwrap_or_default().into(),
-            message: value["error"].as_str().unwrap_or_default().into(),
-        })
-    }
-
     async fn call(
         &self,
         method: Method,
@@ -190,7 +120,7 @@ impl Api {
         let url = format!("{}{path}", self.base);
         let (status, value) = self
             .http
-            .request_json(method, &url, token, &[], body, TIMEOUT)
+            .request_json(method, &url, token, body, TIMEOUT)
             .await
             .map_err(|e| MatrixError::Unavailable {
                 context: context.to_owned(),

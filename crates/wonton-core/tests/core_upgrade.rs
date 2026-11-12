@@ -21,10 +21,8 @@ use wonton_core::upgrade::state::{self, ImageRef, Layout, Outcome, UpgradeState}
 use wonton_core::upgrade::{PROJECT, updater};
 use wonton_protocol::CoreUpgradeFailure;
 
-/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-fn base() -> String {
-    wonton_test_images::image("public.ecr.aws/docker/library/busybox:1.37")
-}
+/// npchy 和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
+const BASE: &str = "public.ecr.aws/docker/library/busybox:1.37";
 const OBSERVE: Duration = Duration::from_secs(8);
 
 const FAKE_CORE: &str = r#"#!/bin/sh
@@ -204,15 +202,14 @@ impl Install {
         fs::write(context.path().join("compose.yaml"), compose).unwrap();
         let healthy = u8::from(healthy);
         let dockerfile = format!(
-            "FROM {}\nCOPY wonton-core /bin/wonton-core\nCOPY compose.yaml /fake/compose.yaml\n\
+            "FROM {BASE}\nCOPY wonton-core /bin/wonton-core\nCOPY compose.yaml /fake/compose.yaml\n\
              ENV FAKE_VERSION={version} FAKE_HEALTHY={healthy} FAKE_CRASH_AFTER={crash_after}\n\
              LABEL org.opencontainers.image.version={version}\n\
-             ENTRYPOINT [\"wonton-core\"]\nCMD [\"serve\"]\n",
-            base()
+             ENTRYPOINT [\"wonton-core\"]\nCMD [\"serve\"]\n"
         );
         fs::write(context.path().join("Dockerfile"), dockerfile).unwrap();
         let image = format!("{}:{version}", self.project);
-        let image_id = must(&[
+        must(&[
             "build",
             "-q",
             "-t",
@@ -224,7 +221,6 @@ impl Install {
             image,
             digest: Some(format!("sha256:{version}")),
             version: Some(version.to_owned()),
-            image_id: Some(image_id),
         }
     }
 
@@ -265,14 +261,7 @@ impl Install {
             "60",
         ]);
         Isolated {
-            inner: DockerHost::with_compose(
-                Engine::connect().unwrap(),
-                self.compose_wrapper(),
-                Box::new({
-                    let data_dir = layout.data_dir.clone();
-                    move || wonton_core::plugin::store::read_owner_languages(&data_dir)
-                }),
-            ),
+            inner: DockerHost::with_compose(Engine::connect().unwrap(), self.compose_wrapper()),
             project: self.project.clone(),
         }
     }
@@ -280,7 +269,6 @@ impl Install {
     /// 从 `from` 升到 `to`，返回写下的最终状态。
     async fn upgrade(&self, host: &Isolated, from: &ImageRef, to: &ImageRef) -> UpgradeState {
         let layout = self.layout();
-        let langs = wonton_core::plugin::languages::Languages::from_header(None);
         let started = UpgradeState::new(
             "test".to_owned(),
             from.clone(),
@@ -288,11 +276,9 @@ impl Install {
             Vec::new(),
             host.now(),
         );
-        state::save(&layout.state_path(), &started, &langs).unwrap();
-        updater::run(host, layout.clone(), langs.clone(), OBSERVE)
-            .await
-            .unwrap();
-        state::load(&layout.state_path(), &langs).unwrap().unwrap()
+        state::save(&layout.state_path(), &started).unwrap();
+        updater::run(host, layout.clone(), OBSERVE).await.unwrap();
+        state::load(&layout.state_path()).unwrap().unwrap()
     }
 
     async fn core_image(&self, host: &Isolated) -> String {

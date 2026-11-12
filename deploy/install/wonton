@@ -19,8 +19,13 @@ usage() {
 }
 
 [ -r "$env_file" ] || die "读不到 $env_file：要用 root 执行（sudo wonton …），或者还没装好"
+tunnel_port=$(sed -n 's/^WONTON_TUNNEL_PORT=//p' "$env_file" | tail -n 1)
 # 插件开发环境的核心换了容器名（compose.yaml），正式安装不设。
 core=$(sed -n 's/^WONTON_CORE_CONTAINER=//p' "$env_file" | tail -n 1)
+
+# 手机在局域网里用来找到这台主机的地址：默认路由出去的那张网卡（同 install.sh）。
+lan_ip=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -n 1)
+[ -n "$lan_ip" ] || lan_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
 
 case "${1:-}" in
   pair)
@@ -33,8 +38,7 @@ case "${1:-}" in
     tty=
     [ -t 1 ] && tty=-t
     # shellcheck disable=SC2086 # $tty 为空时不能变成一个空参数
-    # 直连地址不在这里猜：核心按宣告地址和局域网检测算，桌面虚拟机里也能给出宿主地址。
-    exec docker exec $tty "${core:-wonton-core}" wonton-core pair "$@"
+    exec docker exec $tty "${core:-wonton-core}" wonton-core pair "$@" ${lan_ip:+"$lan_ip:$tunnel_port"}
     ;;
   *) usage ;;
 esac

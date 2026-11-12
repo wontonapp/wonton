@@ -15,13 +15,11 @@ use std::sync::Mutex;
 use palette::OklabHue;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
-use wonton_l10n::l10n;
 use wonton_protocol::{
     AppearanceProblem, AppearanceViewModel, CoreError, FontStyle, Rgb, TextSize, ThemeMode,
 };
 
 use crate::home::write_private;
-use crate::l10n::{CATALOG, language};
 
 use color::{from_oklch, rgb};
 
@@ -102,12 +100,7 @@ impl AppearanceLink {
             Err(reason) => view_model(
                 Choices::default(),
                 Some(AppearanceProblem {
-                    message: l10n!(
-                        CATALOG,
-                        language(),
-                        "appearance-settings-unreadable",
-                        reason = reason
-                    ),
+                    message: format!("外观设置读不了，先用默认值：{reason}"),
                 }),
             ),
         };
@@ -144,7 +137,7 @@ impl AppearanceLink {
 
     /// 写不了时返回 `Storage`，外观不变。
     fn change(&self, apply: impl FnOnce(&mut Choices)) -> Result<(), CoreError> {
-        let _writing = self.writing.lock().expect("the writing lock never panics");
+        let _writing = self.writing.lock().expect("写设置时不会 panic");
         let mut choices = {
             let view = self.view.borrow();
             Choices {
@@ -161,15 +154,9 @@ impl AppearanceLink {
             text_size: choices.text_size,
             font: choices.font,
         };
-        let text = serde_json::to_vec(&settings).expect("settings only have string fields");
+        let text = serde_json::to_vec(&settings).expect("设置只有字符串字段，能序列化");
         write_private(&self.path, &text).map_err(|error| CoreError::Storage {
-            reason: l10n!(
-                CATALOG,
-                language(),
-                "appearance-settings-write-failed",
-                path = self.path.display().to_string(),
-                reason = error.to_string()
-            ),
+            reason: format!("{}：{error}", self.path.display()),
         })?;
         self.view.send_replace(view_model(choices, None));
         Ok(())
@@ -181,34 +168,12 @@ fn read_choices(path: &Path) -> Result<Option<Choices>, String> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => {
-            return Err(l10n!(
-                CATALOG,
-                language(),
-                "appearance-settings-read-failed",
-                path = path.display().to_string(),
-                reason = error.to_string()
-            ));
-        }
+        Err(error) => return Err(format!("{}：{error}", path.display())),
     };
-    let settings: Settings = serde_json::from_slice(&bytes).map_err(|error| {
-        l10n!(
-            CATALOG,
-            language(),
-            "appearance-settings-corrupt",
-            path = path.display().to_string(),
-            reason = error.to_string()
-        )
-    })?;
-    let accent = parse_accent(settings.accent.clone()).ok_or_else(|| {
-        l10n!(
-            CATALOG,
-            language(),
-            "appearance-settings-invalid-accent",
-            path = path.display().to_string(),
-            value = settings.accent
-        )
-    })?;
+    let settings: Settings = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("{} 已损坏：{error}", path.display()))?;
+    let accent = parse_accent(settings.accent.clone())
+        .ok_or_else(|| format!("{} 里的颜色无效：{}", path.display(), settings.accent))?;
     Ok(Some(Choices {
         accent,
         theme_mode: settings.theme_mode,

@@ -5,9 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use bollard::models::{DeviceMapping, HostConfig};
 
 use super::compose::{NetworkMode, Service, VolumeEntry, VolumeType};
-use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError, Permission, PluginKind, Sso};
-use crate::l10n::text;
 
 pub const DOCKER_SOCKET: &str = "/var/run/docker.sock";
 
@@ -45,35 +43,6 @@ pub fn capability_risk(name: &str) -> CapabilityRisk {
     }
 }
 
-/// `security_opt` 的一条写法。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SecurityOpt {
-    /// `no-new-privileges`：`true` 等于核心默认的加固，`false` 退回 Docker 默认。
-    NoNewPrivileges(bool),
-    /// 其他写法，要 `security.opt` 权限并原样交给 Docker。
-    Other,
-}
-
-/// 按 Docker 的解析规则分类：名字大小写敏感，`:` 和 `=` 都是分隔符，值按 ParseBool 收。
-pub fn parse_security_opt(opt: &str, langs: &Languages) -> Result<SecurityOpt, String> {
-    let (name, value) = match opt.split_once([':', '=']) {
-        Some((name, value)) => (name, Some(value)),
-        None => (opt, None),
-    };
-    if name != "no-new-privileges" {
-        return Ok(SecurityOpt::Other);
-    }
-    match value.map(str::to_ascii_lowercase).as_deref() {
-        None | Some("true" | "t" | "1") => Ok(SecurityOpt::NoNewPrivileges(true)),
-        Some("false" | "f" | "0") => Ok(SecurityOpt::NoNewPrivileges(false)),
-        Some(_) => Err(text(
-            langs,
-            "plugin-install-priv-security-opt-invalid",
-            &[("opt", opt.into())],
-        )),
-    }
-}
-
 /// 权限对应的风险级别，供确认页和清单限制共用。
 pub fn risk(permission: &Permission) -> Option<CapabilityRisk> {
     match permission {
@@ -90,62 +59,6 @@ pub fn risk(permission: &Permission) -> Option<CapabilityRisk> {
         | Permission::DockerSocket => Some(CapabilityRisk::Highest),
         _ => None,
     }
-}
-
-/// 可以声明成可选、默认关的权限（ADR-0057）。判据：关着时整段字段能拿掉，插件还能运行。
-pub fn may_be_optional(permission: &Permission) -> bool {
-    matches!(
-        permission,
-        Permission::DockerSocket
-            | Permission::DevicesGpu
-            | Permission::DevicesSerial
-            | Permission::DevicesUsb
-    )
-}
-
-/// 开着时注入给插件的变量名（ADR-0057）。注入给这个插件的所有服务，关着时不定义。
-pub fn permission_var(permission: &Permission) -> Option<&'static str> {
-    match permission {
-        Permission::DockerSocket => Some("WONTON_PERMISSION_DOCKER_SOCKET"),
-        Permission::DevicesGpu => Some("WONTON_PERMISSION_DEVICES_GPU"),
-        Permission::DevicesSerial => Some("WONTON_PERMISSION_DEVICES_SERIAL"),
-        Permission::DevicesUsb => Some("WONTON_PERMISSION_DEVICES_USB"),
-        _ => None,
-    }
-}
-
-/// `optional_permissions` 的键和 `off_loss`：在允许名单里、不和必需的重复、每种语言都写了。
-pub fn validate_optional(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
-    for (permission, optional) in &manifest.optional_permissions {
-        if !may_be_optional(permission) {
-            return Err(ManifestError::Invalid(text(
-                langs,
-                "plugin-install-optional-not-allowed",
-                &[("permission", permission.to_string().into())],
-            )));
-        }
-        if manifest.permissions.contains(permission) {
-            return Err(ManifestError::Invalid(text(
-                langs,
-                "plugin-install-optional-declared-twice",
-                &[("permission", permission.to_string().into())],
-            )));
-        }
-        let complete = ["zh", "en"].iter().all(|lang| {
-            optional
-                .off_loss
-                .get(*lang)
-                .is_some_and(|text| !text.trim().is_empty())
-        });
-        if !complete {
-            return Err(ManifestError::Invalid(text(
-                langs,
-                "plugin-install-optional-off-loss",
-                &[("permission", permission.to_string().into())],
-            )));
-        }
-    }
-    Ok(())
 }
 
 /// 固定设备不扩大宿主路径的允许范围；串口和 USB 由后续的设备选择流程处理。
@@ -169,35 +82,32 @@ impl ServiceError {
 }
 
 /// 清单级别的权限约束。
-pub fn validate_manifest(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
+pub fn validate_manifest(manifest: &Manifest) -> Result<(), ManifestError> {
     let restricted = manifest.kind == PluginKind::Agent
         || manifest.permissions.contains(&Permission::MatrixBot)
         || manifest.bots.is_some();
     if restricted
-        && let Some(permission) = manifest.all_permissions().find(|permission| {
+        && let Some(permission) = manifest.permissions.iter().find(|permission| {
             matches!(
                 risk(permission),
                 Some(CapabilityRisk::VeryHigh | CapabilityRisk::Highest)
             )
         })
     {
-        return Err(ManifestError::Invalid(text(
-            langs,
-            "plugin-install-priv-agent-high-risk",
-            &[("permission", permission.to_string().into())],
+        return Err(ManifestError::Invalid(format!(
+            "Agent 或 Bot 插件不能申请很高或最高级权限 {permission}"
         )));
     }
     if let Some(permission) = manifest
-        .all_permissions()
+        .permissions
+        .iter()
         .find_map(|permission| match permission {
             Permission::Device { path } if !is_fixed_device(path) => Some(path),
             _ => None,
         })
     {
-        return Err(ManifestError::Invalid(text(
-            langs,
-            "plugin-install-priv-fixed-device",
-            &[("permission", permission.into())],
+        return Err(ManifestError::Invalid(format!(
+            "固定设备权限只支持 /dev/net/tun 和 /dev/fuse，不能申请 {permission}"
         )));
     }
     Ok(())
@@ -219,13 +129,12 @@ struct UsedPrivileges {
 pub fn validate_services(
     manifest: &Manifest,
     services: &BTreeMap<String, Service>,
-    langs: &Languages,
 ) -> Result<(), ServiceError> {
     let mut used = UsedPrivileges::default();
     for (name, service) in services {
-        validate_service(manifest, name, service, &mut used, langs)?;
+        validate_service(manifest, name, service, &mut used)?;
     }
-    validate_used_permissions(manifest, &used, langs)
+    validate_used_permissions(manifest, &used)
 }
 
 fn validate_service(
@@ -233,14 +142,12 @@ fn validate_service(
     name: &str,
     service: &Service,
     used: &mut UsedPrivileges,
-    langs: &Languages,
 ) -> Result<(), ServiceError> {
-    validate_host_network(manifest, name, service, used, langs)?;
-    validate_capabilities(manifest, name, service, used, langs)?;
-    validate_cap_drop(name, service, langs)?;
-    validate_devices(manifest, name, service, used, langs)?;
-    validate_namespaces(manifest, name, service, used, langs)?;
-    validate_socket(manifest, name, service, used, langs)
+    validate_host_network(manifest, name, service, used)?;
+    validate_capabilities(manifest, name, service, used)?;
+    validate_devices(manifest, name, service, used)?;
+    validate_namespaces(manifest, name, service, used)?;
+    validate_socket(manifest, name, service, used)
 }
 
 fn validate_host_network(
@@ -248,7 +155,6 @@ fn validate_host_network(
     name: &str,
     service: &Service,
     used: &mut UsedPrivileges,
-    langs: &Languages,
 ) -> Result<(), ServiceError> {
     if service.network_mode != Some(NetworkMode::Host) {
         return Ok(());
@@ -259,16 +165,7 @@ fn validate_host_network(
         Permission::NetworkHost,
         name,
         "network_mode: host",
-        langs,
     )?;
-    if manifest.permissions.contains(&Permission::Notify) {
-        // 发信按来源网段认插件（ADR-0047）；宿主网络的信从网桥地址来，认不出来源会被丢，
-        // 所以装时就拒（ADR-0056），失败即停。
-        return Err(ServiceError::new(
-            name,
-            text(langs, "plugin-install-priv-host-network-mail", &[]),
-        ));
-    }
     if manifest
         .lan
         .as_ref()
@@ -276,7 +173,7 @@ fn validate_host_network(
     {
         return Err(ServiceError::new(
             name,
-            text(langs, "plugin-install-priv-host-network-ports", &[]),
+            "宿主网络服务不能同时声明 lan.ports；端口由应用直接监听宿主网络",
         ));
     }
     if manifest
@@ -291,19 +188,17 @@ fn validate_host_network(
         if webui.sso == Sso::Proxy {
             return Err(ServiceError::new(
                 name,
-                text(langs, "plugin-install-priv-host-network-sso", &[]),
+                "宿主网络里的 webui 不能使用 sso: proxy，请改用 oidc 或 none",
             ));
         }
-        // `webui.health` 时核心自己探，不用 compose 里的 healthcheck。
-        if webui.health.is_none()
-            && service
-                .healthcheck
-                .as_ref()
-                .is_none_or(|check| check.disable || check.test.is_none())
+        if service
+            .healthcheck
+            .as_ref()
+            .is_none_or(|check| check.disable || check.test.is_none())
         {
             return Err(ServiceError::new(
                 name,
-                text(langs, "plugin-install-priv-host-network-healthcheck", &[]),
+                "宿主网络里的 webui 服务必须写有效的 healthcheck",
             ));
         }
     }
@@ -315,19 +210,10 @@ fn validate_capabilities(
     name: &str,
     service: &Service,
     used: &mut UsedPrivileges,
-    langs: &Languages,
 ) -> Result<(), ServiceError> {
     for cap in &service.cap_add {
-        let capability = normalize_capability(cap).ok_or_else(|| {
-            ServiceError::new(
-                name,
-                text(
-                    langs,
-                    "plugin-install-priv-cap-invalid",
-                    &[("cap", cap.into())],
-                ),
-            )
-        })?;
+        let capability = normalize_capability(cap)
+            .ok_or_else(|| ServiceError::new(name, format!("cap_add 里的能力 `{cap}` 不合法")))?;
         require(
             manifest,
             Permission::Capability {
@@ -335,26 +221,8 @@ fn validate_capabilities(
             },
             name,
             &format!("cap_add: {cap}"),
-            langs,
         )?;
         used.caps.insert(capability);
-    }
-    Ok(())
-}
-
-/// `cap_drop` 只减不加，不对应任何权限；值和 `cap_add` 一样规范化，`ALL` 也收。
-fn validate_cap_drop(name: &str, service: &Service, langs: &Languages) -> Result<(), ServiceError> {
-    for cap in &service.cap_drop {
-        if normalize_capability(cap).is_none() {
-            return Err(ServiceError::new(
-                name,
-                text(
-                    langs,
-                    "plugin-install-priv-cap-drop-invalid",
-                    &[("cap", cap.into())],
-                ),
-            ));
-        }
     }
     Ok(())
 }
@@ -364,30 +232,21 @@ fn validate_devices(
     name: &str,
     service: &Service,
     used: &mut UsedPrivileges,
-    langs: &Languages,
 ) -> Result<(), ServiceError> {
     for device in &service.devices {
         let (source, target, permissions) = device
-            .paths(langs)
+            .paths()
             .map_err(|message| ServiceError::new(name, message))?;
         if !is_fixed_device(&source) {
             return Err(ServiceError::new(
                 name,
-                text(
-                    langs,
-                    "plugin-install-priv-device-not-allowed",
-                    &[("source", source.into())],
-                ),
+                format!("设备 `{source}` 不是允许的固定设备"),
             ));
         }
         if !target.starts_with('/') {
             return Err(ServiceError::new(
                 name,
-                text(
-                    langs,
-                    "plugin-install-priv-device-absolute",
-                    &[("target", target.into())],
-                ),
+                format!("设备目标 `{target}` 必须是绝对路径"),
             ));
         }
         if permissions.is_empty()
@@ -397,14 +256,7 @@ fn validate_devices(
         {
             return Err(ServiceError::new(
                 name,
-                text(
-                    langs,
-                    "plugin-install-priv-device-mode",
-                    &[
-                        ("source", source.into()),
-                        ("permissions", permissions.into()),
-                    ],
-                ),
+                format!("设备 `{source}` 的权限 `{permissions}` 不合法"),
             ));
         }
         require(
@@ -414,7 +266,6 @@ fn validate_devices(
             },
             name,
             &format!("devices: {source}"),
-            langs,
         )?;
         used.devices.insert(source);
     }
@@ -426,54 +277,27 @@ fn validate_namespaces(
     name: &str,
     service: &Service,
     used: &mut UsedPrivileges,
-    langs: &Languages,
 ) -> Result<(), ServiceError> {
     if let Some(pid) = &service.pid {
         if pid != "host" {
-            return Err(ServiceError::new(
-                name,
-                text(langs, "plugin-install-priv-pid-host-only", &[]),
-            ));
+            return Err(ServiceError::new(name, "pid 只支持 host"));
         }
-        require(manifest, Permission::HostPid, name, "pid: host", langs)?;
+        require(manifest, Permission::HostPid, name, "pid: host")?;
         used.pid = true;
     }
     if let Some(ipc) = &service.ipc {
         if ipc != "host" {
-            return Err(ServiceError::new(
-                name,
-                text(langs, "plugin-install-priv-ipc-host-only", &[]),
-            ));
+            return Err(ServiceError::new(name, "ipc 只支持 host"));
         }
-        require(manifest, Permission::HostIpc, name, "ipc: host", langs)?;
+        require(manifest, Permission::HostIpc, name, "ipc: host")?;
         used.ipc = true;
     }
-    // no-new-privileges 的写法等于默认加固或退回 Docker 默认，都不是权限；其余写法照 ADR-0036 要 security.opt。
-    let mut gated = false;
-    for opt in &service.security_opt {
-        match parse_security_opt(opt, langs).map_err(|message| ServiceError::new(name, message))? {
-            SecurityOpt::NoNewPrivileges(_) => {}
-            SecurityOpt::Other => gated = true,
-        }
-    }
-    if gated {
-        require(
-            manifest,
-            Permission::SecurityOpt,
-            name,
-            "security_opt",
-            langs,
-        )?;
+    if !service.security_opt.is_empty() {
+        require(manifest, Permission::SecurityOpt, name, "security_opt")?;
         used.security = true;
     }
     if service.privileged == Some(true) {
-        require(
-            manifest,
-            Permission::Privileged,
-            name,
-            "privileged: true",
-            langs,
-        )?;
+        require(manifest, Permission::Privileged, name, "privileged: true")?;
         used.privileged = true;
     }
     Ok(())
@@ -484,7 +308,6 @@ fn validate_socket(
     name: &str,
     service: &Service,
     used: &mut UsedPrivileges,
-    langs: &Languages,
 ) -> Result<(), ServiceError> {
     for entry in &service.volumes {
         let Some((source, target, read_only)) = volume_mount(entry) else {
@@ -494,16 +317,10 @@ fn validate_socket(
             if source != DOCKER_SOCKET || target != DOCKER_SOCKET || read_only {
                 return Err(ServiceError::new(
                     name,
-                    text(langs, "plugin-install-priv-socket-mount", &[]),
+                    "Docker socket 只能以 /var/run/docker.sock:/var/run/docker.sock 可写挂载",
                 ));
             }
-            require(
-                manifest,
-                Permission::DockerSocket,
-                name,
-                "docker.sock 挂载",
-                langs,
-            )?;
+            require(manifest, Permission::DockerSocket, name, "docker.sock 挂载")?;
             used.socket = true;
         }
     }
@@ -513,58 +330,45 @@ fn validate_socket(
 fn validate_used_permissions(
     manifest: &Manifest,
     used: &UsedPrivileges,
-    langs: &Languages,
 ) -> Result<(), ServiceError> {
     check_declared(
         manifest,
         Permission::NetworkHost,
         used.host,
         "network_mode: host",
-        langs,
     )?;
-    check_declared(manifest, Permission::HostPid, used.pid, "pid: host", langs)?;
-    check_declared(manifest, Permission::HostIpc, used.ipc, "ipc: host", langs)?;
+    check_declared(manifest, Permission::HostPid, used.pid, "pid: host")?;
+    check_declared(manifest, Permission::HostIpc, used.ipc, "ipc: host")?;
     check_declared(
         manifest,
         Permission::SecurityOpt,
         used.security,
         "security_opt",
-        langs,
     )?;
     check_declared(
         manifest,
         Permission::Privileged,
         used.privileged,
         "privileged: true",
-        langs,
     )?;
     check_declared(
         manifest,
         Permission::DockerSocket,
         used.socket,
         "docker.sock 挂载",
-        langs,
     )?;
     for permission in &manifest.permissions {
         match permission {
             Permission::Capability { name } if !used.caps.contains(name) => {
                 return Err(ServiceError::new(
                     "*",
-                    text(
-                        langs,
-                        "plugin-install-priv-missing-cap-add",
-                        &[("permission", permission.to_string().into())],
-                    ),
+                    format!("权限 {permission} 没有对应的 cap_add 字段"),
                 ));
             }
             Permission::Device { path } if !used.devices.contains(path) => {
                 return Err(ServiceError::new(
                     "*",
-                    text(
-                        langs,
-                        "plugin-install-priv-missing-devices",
-                        &[("permission", permission.to_string().into())],
-                    ),
+                    format!("权限 {permission} 没有对应的 devices 字段"),
                 ));
             }
             _ => {}
@@ -578,23 +382,13 @@ fn require(
     permission: Permission,
     service: &str,
     field: &str,
-    langs: &Languages,
 ) -> Result<(), ServiceError> {
-    if manifest.permissions.contains(&permission)
-        || manifest.optional_permissions.contains_key(&permission)
-    {
+    if manifest.permissions.contains(&permission) {
         Ok(())
     } else {
         Err(ServiceError::new(
             service,
-            text(
-                langs,
-                "plugin-install-priv-field-requires",
-                &[
-                    ("field", field.into()),
-                    ("permission", permission.to_string().into()),
-                ],
-            ),
+            format!("{field} 需要清单权限 {permission}"),
         ))
     }
 }
@@ -604,22 +398,11 @@ fn check_declared(
     permission: Permission,
     used: bool,
     field: &str,
-    langs: &Languages,
 ) -> Result<(), ServiceError> {
-    if (manifest.permissions.contains(&permission)
-        || manifest.optional_permissions.contains_key(&permission))
-        && !used
-    {
+    if manifest.permissions.contains(&permission) && !used {
         Err(ServiceError::new(
             "*",
-            text(
-                langs,
-                "plugin-install-priv-missing-field",
-                &[
-                    ("permission", permission.to_string().into()),
-                    ("field", field.into()),
-                ],
-            ),
+            format!("清单权限 {permission} 没有对应的 {field} 字段"),
         ))
     } else {
         Ok(())
@@ -651,37 +434,15 @@ fn volume_mount(entry: &VolumeEntry) -> Option<(String, String, bool)> {
 }
 
 /// 把已校验的 Compose 高权限字段写入 Docker HostConfig。
-pub fn apply(service: &Service, host: &mut HostConfig, langs: &Languages) -> Result<(), String> {
+pub fn apply(service: &Service, host: &mut HostConfig) -> Result<(), String> {
     if !service.cap_add.is_empty() {
         host.cap_add = Some(
             service
                 .cap_add
                 .iter()
                 .map(|cap| {
-                    normalize_capability(cap).ok_or_else(|| {
-                        text(
-                            langs,
-                            "plugin-install-priv-cap-invalid",
-                            &[("cap", cap.into())],
-                        )
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        );
-    }
-    if !service.cap_drop.is_empty() {
-        host.cap_drop = Some(
-            service
-                .cap_drop
-                .iter()
-                .map(|cap| {
-                    normalize_capability(cap).ok_or_else(|| {
-                        text(
-                            langs,
-                            "plugin-install-priv-cap-drop-invalid",
-                            &[("cap", cap.into())],
-                        )
-                    })
+                    normalize_capability(cap)
+                        .ok_or_else(|| format!("cap_add 里的能力 `{cap}` 不合法"))
                 })
                 .collect::<Result<Vec<_>, _>>()?,
         );
@@ -692,28 +453,7 @@ pub fn apply(service: &Service, host: &mut HostConfig, langs: &Languages) -> Res
             .iter()
             .any(|cap| normalize_capability(cap).as_deref() == Some("NET_RAW"))
     {
-        // 宿主网络里的容器带着 Docker 默认的 NET_RAW 能抓别人的包，默认去掉；插件已写 ALL 或 NET_RAW 就不重复。
-        let drops = host.cap_drop.get_or_insert_with(Vec::new);
-        if !drops.iter().any(|cap| cap == "NET_RAW" || cap == "ALL") {
-            drops.push("NET_RAW".to_owned());
-        }
-    }
-    let mut others = Vec::new();
-    let mut no_new_privileges = None;
-    for opt in &service.security_opt {
-        match parse_security_opt(opt, langs)? {
-            SecurityOpt::NoNewPrivileges(value) => no_new_privileges = Some(value),
-            SecurityOpt::Other => others.push(opt.clone()),
-        }
-    }
-    if !others.is_empty() {
-        host.security_opt = Some(others);
-    }
-    // 插件容器默认 no-new-privileges:true；写了 no-new-privileges:false 才退回 Docker 默认。
-    if no_new_privileges != Some(false) {
-        host.security_opt
-            .get_or_insert_with(Vec::new)
-            .push("no-new-privileges:true".to_owned());
+        host.cap_drop = Some(vec!["NET_RAW".to_owned()]);
     }
     if service.pid.as_deref() == Some("host") {
         host.pid_mode = Some("host".to_owned());
@@ -721,11 +461,14 @@ pub fn apply(service: &Service, host: &mut HostConfig, langs: &Languages) -> Res
     if service.ipc.as_deref() == Some("host") {
         host.ipc_mode = Some("host".to_owned());
     }
+    if !service.security_opt.is_empty() {
+        host.security_opt = Some(service.security_opt.clone());
+    }
     if service.privileged == Some(true) {
         host.privileged = Some(true);
     }
     for device in &service.devices {
-        let (source, target, permissions) = device.paths(langs)?;
+        let (source, target, permissions) = device.paths()?;
         host.devices
             .get_or_insert_with(Vec::new)
             .push(DeviceMapping {

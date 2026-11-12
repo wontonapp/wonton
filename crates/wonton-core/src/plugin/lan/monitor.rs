@@ -12,11 +12,8 @@ use std::time::Duration;
 use tokio::time::Instant;
 use wonton_protocol::{LanChoice, LanFailure};
 
-use super::select::{self, Bound, Host, Plan, Problem};
+use super::select::{self, Bound, Host, Problem};
 use super::{LanGrant, LanSpec, published};
-use crate::l10n;
-use crate::plugin::health_gate::Gate;
-use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::Undo;
 use crate::plugin::manager::{Deployed, Entry, InstallError, PluginManager, PluginStatus};
 use crate::plugin::manifest::PluginId;
@@ -30,33 +27,21 @@ pub const INTERVAL: Duration = Duration::from_secs(5 * 60);
 
 /// 一次检测的结果。
 pub struct Detected {
-    /// 检测宿主的网卡失败时的原因。用 `WONTON_LAN_ADDRESSES` 或宣告地址时照样用那些地址。
+    /// 检测宿主的网卡失败时的原因。用 `WONTON_LAN_ADDRESSES` 时照样用那些地址。
     pub failure: Option<String>,
     pub host: Host,
-    /// 端口开在哪、告诉手机去哪，或者选不出的原因。
-    pub result: Result<Plan, Problem>,
+    /// 端口开在哪些地址上，或者选不出的原因。
+    pub result: Result<Vec<Bound>, Problem>,
 }
 
 impl Detected {
-    fn summary(&self, langs: &Languages) -> String {
+    fn summary(&self) -> String {
         let result = match &self.result {
-            Ok(plan) if plan.has_announce() => format!(
-                "{} → {}",
-                super::grant::bound_text(&plan.bind, langs),
-                super::grant::describe(plan, langs)
-            ),
-            Ok(plan) => super::grant::describe(plan, langs),
+            Ok(bound) => super::grant::describe(bound),
             Err(problem) => problem.message.clone(),
         };
         match &self.failure {
-            Some(failure) => {
-                let failed = l10n::text(
-                    langs,
-                    "plugin-settings-lan-detect-failed",
-                    &[("failure", failure.as_str().into())],
-                );
-                format!("{result}（{failed}）")
-            }
+            Some(failure) => format!("{result}（检测宿主的网卡失败：{failure}）"),
             None => result,
         }
     }
@@ -68,10 +53,7 @@ fn lan_services(spec: &LanSpec) -> BTreeSet<&str> {
 
 impl PluginManager {
     /// 当场检测一次，按主人的选择算出地址。Docker 连不上、读不了主人的选择时报错。
-    pub(in crate::plugin) async fn detect_lan(
-        &self,
-        langs: &Languages,
-    ) -> Result<Detected, InstallError> {
+    pub(in crate::plugin) async fn detect_lan(&self) -> Result<Detected, InstallError> {
         let instance = &self.cfg.instance;
         let network = self
             .lan
@@ -80,29 +62,20 @@ impl PluginManager {
             .await?;
         let choice = self.store.lan_choice()?.unwrap_or(LanChoice::Auto);
         let fixed = self.lan.fixed.as_deref();
-        let announce = self.lan.announce.as_deref();
         let network = match network {
             Ok(network) => network,
             Err(failure) => {
-                let result = match (announce, fixed) {
-                    (Some(announce), _) => Ok(select::announced(announce)),
-                    (None, Some(fixed)) => Ok(Plan {
-                        bind: fixed
-                            .iter()
-                            .map(|&ip| Bound {
-                                ip,
-                                interface: None,
-                            })
-                            .collect(),
-                        announce: fixed.to_vec(),
-                    }),
-                    (None, None) => Err(Problem::new(
+                let result = match fixed {
+                    Some(fixed) => Ok(fixed
+                        .iter()
+                        .map(|&ip| Bound {
+                            ip,
+                            interface: None,
+                        })
+                        .collect()),
+                    None => Err(Problem::new(
                         LanFailure::DetectionFailed,
-                        l10n::text(
-                            langs,
-                            "plugin-settings-lan-detect-failed",
-                            &[("failure", failure.as_str().into())],
-                        ),
+                        format!("检测宿主的网卡失败：{failure}"),
                     )),
                 };
                 return Ok(Detected {
@@ -112,8 +85,8 @@ impl PluginManager {
                 });
             }
         };
-        let host = select::classify(&network, &self.engine.bridges().await?, langs);
-        let result = select::resolve(&host, &choice, fixed, announce, langs);
+        let host = select::classify(&network, &self.engine.bridges().await?);
+        let result = select::resolve(&host, &choice, fixed);
         Ok(Detected {
             failure: None,
             host,
@@ -122,34 +95,31 @@ impl PluginManager {
     }
 
     /// 检测一次，按结果更新开了局域网端口的插件，结论变了才写日志。
-    pub(in crate::plugin) async fn lan_pass(
-        &self,
-        langs: &Languages,
-    ) -> Result<Detected, InstallError> {
+    pub(in crate::plugin) async fn lan_pass(&self) -> Result<Detected, InstallError> {
         let _pass = self.lan.pass.lock().await;
-        let detected = self.detect_lan(langs).await?;
-        if self.lan.changed(detected.summary(langs)) {
+        let detected = self.detect_lan().await?;
+        if self.lan.changed(detected.summary()) {
             match &detected.result {
-                Ok(_) => tracing::info!(addresses = %detected.summary(langs), "局域网地址"),
-                Err(_) => tracing::warn!(problem = %detected.summary(langs), "选不出局域网地址"),
+                Ok(_) => tracing::info!(addresses = %detected.summary(), "局域网地址"),
+                Err(_) => tracing::warn!(problem = %detected.summary(), "选不出局域网地址"),
             }
         }
         self.follow_egress(&detected).await;
         self.finish_closing().await;
-        let plan = match &detected.result {
-            Ok(plan) => Ok(plan.clone()),
-            Err(problem) => Err(problem.message.clone()),
-        };
-        if let Ok(plan) = &plan {
-            let announce: BTreeSet<IpAddr> = plan.announce.iter().copied().collect();
+        let addresses = detected
+            .result
+            .as_ref()
+            .map(|bound| bound.iter().map(|b| b.ip).collect::<BTreeSet<IpAddr>>())
+            .map_err(|p| p.message.clone());
+        if let Ok(addresses) = &addresses {
             self.lan.addresses.send_if_modified(|current| {
-                let changed = *current != announce;
-                current.clone_from(&announce);
+                let changed = current != addresses;
+                current.clone_from(addresses);
                 changed
             });
         }
         for (id, spec) in self.lan_plugins() {
-            self.follow_lan(&id, &spec, &plan, langs).await;
+            self.follow_lan(&id, &spec, &addresses).await;
         }
         Ok(detected)
     }
@@ -179,8 +149,7 @@ impl PluginManager {
                 self.lan_published(&id, &spec).await,
                 Ok(Some(addresses)) if addresses.is_empty()
             );
-            let langs = self.owner_languages();
-            if !closed && let Err(e) = self.change_lan_webui(&id, false, &langs).await {
+            if !closed && let Err(e) = self.change_lan_webui(&id, false).await {
                 tracing::warn!(plugin = %id, error = %e, "接着关网页的局域网端口失败");
             }
         }
@@ -213,45 +182,25 @@ impl PluginManager {
         &self,
         id: &PluginId,
         spec: &LanSpec,
-        plan: &Result<Plan, String>,
-        langs: &Languages,
+        addresses: &Result<BTreeSet<IpAddr>, String>,
     ) {
         let running = self.status_of(id) == Some(PluginStatus::Running);
         if !running && !self.lan.is_degraded(id) {
             return;
         }
         // 端口全关了（关开关失败后还异常着）：不看地址，只核对。
-        let plan = match plan {
+        let addresses = match addresses {
             _ if spec.ports.is_empty() => None,
-            Ok(plan) => Some(plan),
+            Ok(addresses) => Some(addresses),
             Err(reason) => {
-                return self.lan_failed(
-                    id,
-                    l10n::text(
-                        langs,
-                        "plugin-settings-lan-select-failed",
-                        &[("reason", reason.as_str().into())],
-                    ),
-                );
+                return self.lan_failed(id, format!("选不出局域网地址：{reason}"));
             }
         };
-        let moved = match plan {
+        let moved = match addresses {
             None => None,
-            Some(plan) => match self.lan_published(id, spec).await {
-                Ok(current) => {
-                    let wanted: BTreeSet<IpAddr> = plan.bind.iter().map(|bound| bound.ip).collect();
-                    (current.as_ref() != Some(&wanted)).then_some(plan)
-                }
-                Err(e) => {
-                    return self.lan_failed(
-                        id,
-                        l10n::text(
-                            langs,
-                            "plugin-settings-lan-lookup-failed",
-                            &[("error", e.to_string().into())],
-                        ),
-                    );
-                }
+            Some(addresses) => match self.lan_published(id, spec).await {
+                Ok(current) => (current.as_ref() != Some(addresses)).then_some(addresses),
+                Err(e) => return self.lan_failed(id, format!("查不到局域网端口发布在哪里：{e}")),
             },
         };
         if moved.is_none() && running {
@@ -260,7 +209,7 @@ impl PluginManager {
         if !self.begin_rebuild(id) {
             return;
         }
-        let result = self.relocate(id, moved, langs).await;
+        let result = self.relocate(id, moved).await;
         self.lan.end(id);
         match result {
             Ok(deployed) => {
@@ -268,22 +217,10 @@ impl PluginManager {
                 self.lan.clear_degraded(id);
                 self.lan_restored(id, deployed);
             }
-            Err(e) if moved.is_some() => self.lan_failed(
-                id,
-                l10n::text(
-                    langs,
-                    "plugin-settings-lan-rebuild-failed",
-                    &[("error", e.to_string().into())],
-                ),
-            ),
-            Err(e) => self.lan_failed(
-                id,
-                l10n::text(
-                    langs,
-                    "plugin-settings-lan-check-failed",
-                    &[("error", e.to_string().into())],
-                ),
-            ),
+            Err(e) if moved.is_some() => {
+                self.lan_failed(id, format!("按新的局域网地址重建失败：{e}"));
+            }
+            Err(e) => self.lan_failed(id, format!("核对插件失败：{e}")),
         }
     }
 
@@ -323,79 +260,46 @@ impl PluginManager {
         idle && self.lan.begin(id)
     }
 
-    /// `plan` 为空时地址没变，只核对插件（异常的插件恢复过来）。
+    /// `addresses` 为空时地址没变，只核对插件（异常的插件恢复过来）。
     async fn relocate(
         &self,
         id: &PluginId,
-        plan: Option<&Plan>,
-        langs: &Languages,
+        addresses: Option<&BTreeSet<IpAddr>>,
     ) -> Result<Deployed, InstallError> {
         let record = self
             .store
             .load(id)?
-            .ok_or_else(|| InstallError::not_installed(langs, id))?;
-        let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
+            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+        let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
         package.origin = record.origin.clone();
-        if let Some(plan) = plan {
-            self.rebuild_lan(&package, &record, plan).await?;
+        if let Some(addresses) = addresses {
+            let addresses: Vec<IpAddr> = addresses.iter().copied().collect();
+            self.rebuild_lan(&package, &record, &addresses).await?;
         }
         self.reconcile_running(&package, &record).await
     }
 
-    /// 照安装时一样渲染，重建局域网端口、插值用到地址、以及共用它们网络命名空间的服务。
+    /// 照安装时一样渲染，只重建 `lan.ports` 和实际插值用到地址的服务，保留安装时的依赖顺序。
     pub(super) async fn rebuild_lan(
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
-        plan: &Plan,
+        addresses: &[IpAddr],
     ) -> Result<(), InstallError> {
-        // 要迁就先预留+按新网段渲染：渲染失败放掉预留，旧网络和旧容器一个不动，插件照原样跑。
-        let (pending, reservation) = match self.prepare_migration(&package.manifest).await? {
-            Some((pending, reservation)) => (Some(pending), Some(reservation)),
-            None => (None, None),
-        };
-        let bind: Vec<IpAddr> = plan.bind.iter().map(|bound| bound.ip).collect();
-        let grant = self.lan_grant_on(package, record.lan_webui, bind, plan.announce.clone());
-        let mut ctx = self
-            .rebuild_context(package, record, Some(grant), pending.as_ref())
-            .await?;
-        let langs = self.owner_languages();
-        // Bot 的 Matrix 变量和总线地址也要填：Bot 服务的容器引用了它们，令牌从旧容器读回。
-        self.fill_bot_vars(package, &mut ctx, &langs).await?;
-        let mut render_plan = render(package, &ctx, &langs)?;
-        match (&pending, reservation) {
-            (Some(pending), Some(reservation)) => {
-                self.apply_migration(
-                    &package.manifest,
-                    pending,
-                    reservation,
-                    ctx.egress.is_some(),
-                    &langs,
-                )
-                .await?;
-            }
-            (None, None) => {
-                let mut services: BTreeSet<String> = package
-                    .manifest
-                    .lan
-                    .iter()
-                    .flat_map(|lan| &lan.ports)
-                    .map(|port| port.service.clone())
-                    .collect();
-                services.extend(
-                    render_plan
-                        .containers
-                        .iter()
-                        .filter(|c| c.variables.contains(super::ADDRESSES_VAR))
-                        .map(|c| c.service.clone()),
-                );
-                render_plan.retain_services(&services);
-            }
-            _ => unreachable!("迁移标记和预留成对出现"),
-        }
-        // 局域网重建是主人正在等着的一次性操作，和安装、启动同一条规则。
-        self.replace_containers(&ctx, render_plan, Gate::StartPeriod)
-            .await
+        let grant = self.lan_grant_on(package, record.lan_webui, addresses.to_vec());
+        let ctx = self.rebuild_context(package, record, Some(grant)).await?;
+        let mut plan = render(package, &ctx)?;
+        let services: BTreeSet<&str> = package
+            .manifest
+            .lan
+            .iter()
+            .flat_map(|lan| &lan.ports)
+            .map(|port| port.service.as_str())
+            .collect();
+        plan.containers.retain(|c| {
+            services.contains(c.service.as_str()) || c.variables.contains(super::ADDRESSES_VAR)
+        });
+        self.replace_containers(&ctx, plan).await
     }
 
     /// 重建已装插件的容器时的上下文：和安装时一样，凭据用存下的。Bot 的 Matrix 变量另外填（见 [`crate::plugin::egress`]）。
@@ -404,74 +308,42 @@ impl PluginManager {
         package: &PluginPackage,
         record: &InstalledRecord,
         lan: Option<LanGrant>,
-        migration: Option<&super::super::network_migration::PendingMigration>,
     ) -> Result<InstallContext, InstallError> {
         let manifest = &package.manifest;
         let secrets = self.check_secrets(manifest).await?;
-        let langs = self.owner_languages();
         let generated =
-            secrets::generated_values(manifest, &secrets, &langs).map_err(InstallError::Storage)?;
+            secrets::generated_values(manifest, &secrets).map_err(InstallError::Storage)?;
         let secret = record.oidc_client_secret.as_deref();
-        let mut ctx = self
-            .install_context(
-                manifest,
-                secret,
-                generated,
-                &record.effective_permissions(manifest),
-                &langs,
-            )
-            .await?;
+        let mut ctx = self.install_context(manifest, secret, generated).await?;
         ctx.limits = record.limits;
-        ctx.settings = record.settings.clone();
-        ctx.gpu = self
-            .gpu_grant(manifest, &record.effective_permissions(manifest), &langs)
-            .await?;
+        ctx.gpu = self.gpu_grant(manifest).await?;
         ctx.models = self.stored_model_vars(package)?;
         if let Some(network) = lan.as_ref().and_then(|grant| grant.network.as_ref())
             && self.engine.network_reach(network).await?.is_none()
         {
             let labels = self.cfg.instance.labels(&manifest.id);
-            match migration.and_then(|m| m.lan) {
-                Some(subnet) => {
-                    self.engine
-                        .create_lan_network_at(network, &labels, subnet)
-                        .await?
-                }
-                None => self.engine.create_lan_network(network, &labels).await?,
-            }
+            self.engine.create_lan_network(network, &labels).await?;
         }
         ctx.lan = lan;
         let network = self.cfg.instance.network(&ctx.slug);
-        match migration.and_then(|m| m.main) {
-            // 主网络要迁：变量按预留的新网段算（渲染成功才动旧网络）。
-            Some(_) => {
-                ctx.extra_hosts = migration.unwrap().extra_hosts.clone();
-                ctx.core_address = migration.unwrap().core_address.clone();
-            }
-            None => {
-                ctx.extra_hosts = self.hosts_via_gateway(manifest, &network).await?;
-                ctx.core_address = self.core_address_var(manifest, &network).await?;
-            }
-        }
+        ctx.extra_hosts = self.hosts_via_gateway(manifest, &network).await?;
+        ctx.core_address = self.core_address_var(manifest, &network).await?;
         Ok(ctx)
     }
 
-    /// 先把镜像拉好，再换掉计划里的容器：拉不到时旧容器还在跑。等健康的时限按 `gate` 取。
+    /// 先把镜像拉好，再换掉计划里的容器：拉不到时旧容器还在跑。
     pub(in crate::plugin) async fn replace_containers(
         &self,
         ctx: &InstallContext,
         mut plan: Deployment,
-        gate: Gate,
     ) -> Result<(), InstallError> {
-        let langs = self.owner_languages();
-        self.prepare_images(&mut plan, None, &langs).await?;
-        // 计划按依赖拓扑排序，正序删除让共享网络命名空间的容器先于目标删；逆序会把目标先删，等价于按容器 ID 绑定的依赖先拆引用者。
-        for container in plan.containers.iter() {
+        self.prepare_images(&mut plan).await?;
+        for container in &plan.containers {
             self.engine.remove_container(&container.name).await?;
         }
         self.rewrite_image_healthchecks(ctx, &mut plan).await?;
-        let deadline = gate.deadline(&plan, self.cfg.install_timeout, Instant::now());
-        self.start_containers(None, &plan, None, &mut Undo::default(), deadline, &langs)
+        let deadline = Instant::now() + self.cfg.install_timeout;
+        self.start_containers(&plan, &mut Undo::default(), deadline)
             .await?;
         Ok(())
     }
@@ -519,7 +391,7 @@ impl PluginManager {
                 let Some(manager) = this.upgrade() else {
                     return;
                 };
-                if let Err(e) = manager.lan_pass(&manager.owner_languages()).await {
+                if let Err(e) = manager.lan_pass().await {
                     tracing::warn!(error = %e, "检测局域网地址失败");
                 }
             }

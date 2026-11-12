@@ -8,8 +8,6 @@ use wonton_protocol::FileFailure;
 use super::share_fs::saving::{Outgoing, Placed, SaveTarget, Staged};
 use super::uploads::has_room;
 use super::{Failure, Files};
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 impl Files {
     pub async fn share_names(self: &Arc<Self>) -> Result<Vec<String>, Failure> {
@@ -22,27 +20,22 @@ impl Files {
         app_data: PathBuf,
         paths: Vec<String>,
         target: &SaveTarget,
-        langs: &Languages,
     ) -> Result<Staged, Failure> {
-        let (share, langs) = (target.share.clone(), langs.clone());
+        let share = target.share.clone();
         self.blocking(move |files| {
-            files.shares.check_share(&share, &langs)?;
+            files.shares.check_share(&share)?;
             let outgoing = Outgoing::open(&app_data, &paths)?;
             let total = outgoing.total();
             let share_dir = files.shares.root().join(&share);
             for dir in [&files.saving_dir, &share_dir] {
-                if !has_room(dir, total, files.owner.uid)? {
+                if !has_room(dir, total)? {
                     return Err(Failure::new(
                         FileFailure::StorageFull,
-                        l10n::text(
-                            &langs,
-                            "files-stage-no-space",
-                            &[("total", wonton_l10n::Arg::from(total))],
-                        ),
+                        format!("放不下这 {total} 字节，磁盘要留 5% 空闲"),
                     ));
                 }
             }
-            Ok(outgoing.stage(&files.saving_dir, &langs)?)
+            Ok(outgoing.stage(&files.saving_dir)?)
         })
         .await
     }
@@ -52,10 +45,8 @@ impl Files {
         self: &Arc<Self>,
         staged: Staged,
         target: SaveTarget,
-        langs: &Languages,
     ) -> Result<Placed, Failure> {
-        let (langs, owner) = (langs.clone(), self.owner);
-        self.blocking(move |files| Ok(files.shares.place_staged(&staged, &target, owner, &langs)))
+        self.blocking(move |files| Ok(files.shares.place_staged(&staged, &target, files.owner)))
             .await
     }
 }

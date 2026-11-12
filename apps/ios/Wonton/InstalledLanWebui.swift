@@ -8,9 +8,9 @@ private struct LanClientAccount: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-            ForEach(client.addresses, id: \.self) { row(String(localized: .lanClientAddress), $0) }
-            row(String(localized: .lanClientUsername), client.username)
-            row(String(localized: .lanClientPassword), client.password)
+            ForEach(client.addresses, id: \.self) { row("地址", $0) }
+            row("账号", client.username)
+            row("密码", client.password)
         }
     }
 

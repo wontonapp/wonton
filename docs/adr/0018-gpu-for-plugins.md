@@ -4,7 +4,7 @@
 
 ## 背景
 
-主人想在有显卡的机器上装好 Wonton 后，用插件生图、生视频、跑 ComfyUI 工作流和各种能在本地跑的开源模型。
+主人想在 npchy、1k 这类有显卡的机器上装好 Wonton 后，用插件生图、生视频、跑 ComfyUI 工作流和各种能在本地跑的开源模型。
 这些插件各在自己的仓库里（ADR-0017），核心先得能把显卡交给插件的容器（#80 的前提）。此前清单能解析 `devices.gpu` 权限和
 `requirements.gpu`，但 compose 的 `devices` 被整个拒绝，建容器时也不给任何设备。
 
@@ -28,7 +28,7 @@ Docker 把显卡交给容器有两条路：`--device` 把内核的设备节点�
 - **失败即停。** `required` 的插件在没有可用显卡的主机上装不上，错误类别 `gpu_unavailable`，原因分四种：没有找到显卡
   （PCI 上没有显示设备）；有显卡但没有可用的驱动（没绑定驱动，或者是 nouveau）；有 NVIDIA 驱动但 Docker 没有 `nvidia`
   运行时；核心在容器里却没挂载宿主的 `/dev`。`optional` 的照常装、不给设备，预览里写明。判断看 sysfs 的驱动和设备节点，
-  不看 `nvidia-smi`、`rocminfo` 装没装：开发机装着 `nvidia-smi`，却没有 NVIDIA 驱动。
+  不看 `nvidia-smi`、`rocminfo` 装没装：npchy 装着 `nvidia-smi`，却没有 NVIDIA 驱动。
 - **核心只读、不递归地看宿主的 `/dev`。** sysfs 是内核的，核心在容器里看到的和宿主一样，够判断有没有显卡、加载了什么
   驱动；设备节点属于哪个组只有 `/dev` 知道。正式安装和开发环境的 compose 都把宿主的 `/dev` 挂到核心容器的 `/host/dev`
   （`WONTON_HOST_DEV`），`read_only` 加 `bind.recursive: disabled`：`/dev` 下的子挂载不带进来（`/dev/shm` 里是宿主其他进程的
@@ -61,7 +61,7 @@ Docker 把显卡交给容器有两条路：`--device` 把内核的设备节点�
 
 ## 代价与风险
 
-- NVIDIA 这条路实测到 `--gpus all` 的容器里跑 `nvidia-smi`（Docker 28.2.2、一块 NVIDIA 显卡）；Intel 显卡会拿到 `/dev/dri`，没有实测。
+- NVIDIA 这条路实测到 `--gpus all` 的容器里跑 `nvidia-smi`（Docker 28.2.2、RTX 5090）；Intel 显卡会拿到 `/dev/dri`，没有实测。
 - `/dev/dri` 整个目录连显示节点（`card*`）也给了，插件能改显示设置；ROCm 的文档也是整个目录。
 - 装好后核心不再盯着显卡：显卡拔了、驱动换了，容器自己报错。
 - 显卡不能按块分配：多块显卡全部交给每个声明的服务。
@@ -69,15 +69,16 @@ Docker 把显卡交给容器有两条路：`--device` 把内核的设备节点�
 
 ## 验证结果（2026-10-30）
 
-开发机：Arch Linux，内核 7.2.3，AMD 的 APU 带集成显卡（amdgpu，有 KFD），
+npchy：Arch Linux，内核 7.2.3，AMD Ryzen AI MAX+ 395 带 Radeon 8060S（Strix Halo，PCI `0000:05:00.0`，amdgpu，有 KFD），
 Docker Engine 29.7.2，只有 `runc` 运行时；装着 `nvidia-smi`，没有 NVIDIA 驱动。宿主上 `/dev/kfd` 属于 `render`（987，0666），
 `/dev/dri/card1` 属于 `video`（983，0660），`/dev/dri/renderD128` 属于 `render`（0666）。
 
 - 核心直接跑在宿主上（没有 `WONTON_CORE_CONTAINER`，读 `/dev`），经管理接口装 `plugins/examples/gpu-check`（容器以
   `1000:1000` 运行）：预览的 `gpu` 一节是“AMD 显卡：/dev/kfd、/dev/dri，容器加入组 983、987”；安装 1.8 秒，健康。容器的
   `HostConfig`：`Devices` 是 `/dev/kfd`、`/dev/dri`（`rwm`），`GroupAdd` 是 983、987，没有 `DeviceRequests`、`Privileged`、
-  `CapAdd`、`SecurityOpt`。容器里 `id` 带着组 983、987，ROCm 7.2.4 的 `rocminfo` 报出 GPU agent `gfx1151`（40 个计算单元）。
-- 核心在容器里（`deploy/dev/core` 的开发环境，Compose v5.5.0，核心镜像按本分支构建）：compose 认
+  `CapAdd`、`SecurityOpt`。容器里 `id` 带着组 983、987，ROCm 7.2.4 的 `rocminfo` 报出 GPU agent `gfx1151`（Radeon 8060S
+  Graphics，40 个计算单元）。
+- 核心在容器里（`deploy/dev/core` 的开发环境，Compose v5.5.0，`DOCKER_HOST=ssh://npchy`，核心镜像按本分支构建）：compose 认
   `bind.recursive: disabled`，核心容器的挂载是 `ReadOnly` 加 `BindOptions.NonRecursive`，`/host/dev` 是只读的 devtmpfs，
   `/host/dev/shm`、`pts`、`mqueue`、`hugepages` 都是空目录，`/host/dev/kfd` 照常能读到属主。`dev.sh install
   plugins/examples/gpu-check/docker-compose.yml` 的预览打出“提示：显卡交给服务 check：AMD 显卡：/dev/kfd、/dev/dri，容器加入组

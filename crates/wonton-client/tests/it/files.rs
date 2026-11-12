@@ -5,7 +5,6 @@ use std::fs::File;
 use std::os::fd::IntoRawFd;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::files_support::{Served, World, id, read_opened, source_bytes};
 use wonton_client::{
@@ -13,30 +12,20 @@ use wonton_client::{
     TransferDirection, TransferState, UploadSource,
 };
 
-pub(super) const MIB: usize = 1024 * 1024;
+const MIB: usize = 1024 * 1024;
 
-pub(super) fn path_source(path: &std::path::Path) -> UploadSource {
+fn path_source(path: &std::path::Path) -> UploadSource {
     UploadSource::Path {
         path: path.to_str().unwrap().to_owned(),
     }
 }
 
-pub(super) fn upload(source: UploadSource, name: &str) -> Action {
+fn upload(source: UploadSource, name: &str) -> Action {
     Action::UploadFile {
         source,
         name: name.to_owned(),
         mime_type: Some("video/mp4".to_owned()),
         room: None,
-    }
-}
-
-/// 发进房间的上传：传完由核心授权并把链接发进这个房间。
-pub(super) fn upload_with_room(source: UploadSource, name: &str) -> Action {
-    Action::UploadFile {
-        source,
-        name: name.to_owned(),
-        mime_type: Some("video/mp4".to_owned()),
-        room: Some("!bot:home".to_owned()),
     }
 }
 
@@ -154,38 +143,6 @@ async fn an_upload_continues_after_the_app_restarts() {
 
     let core = world.core.lock();
     assert_eq!(core.patches, [0, MIB as u64], "第二次从断点开始");
-    assert_eq!(core.uploads[transfer.file.unwrap().as_str()].bytes, bytes);
-}
-
-/// 切到另一台服务器时传到一半（ADR-0042）：离开时停在原处，切回来接着传，不在别的服务器上继续。
-#[tokio::test]
-async fn an_upload_left_by_switching_servers_continues_when_switching_back() {
-    let world = World::start().await;
-    let bytes = source_bytes(4 * MIB);
-    let source = world.write("a.mp4", &bytes);
-    world.core.lock().hold_patch_after = Some(MIB);
-    world
-        .phone()
-        .dispatch(upload(path_source(&source), "a.mp4"))
-        .unwrap();
-    world.wait_core(|core| core.uploaded_bytes() >= MIB).await;
-
-    world.phone().dispatch(Action::AddServer).unwrap();
-    world
-        .wait_until(|| world.phone().transfers().active.is_empty())
-        .await;
-    world.phone().dispatch(Action::CancelAddServer).unwrap();
-    // 切回来就接着传：作用域是新的，家里的连接的样子（已连上）直接看得见，不用等一轮重试。
-    let transfer = tokio::time::timeout(Duration::from_secs(10), async {
-        world
-            .wait_transfer(|t| t.state == TransferState::Done)
-            .await
-    })
-    .await
-    .expect("切回来 10 秒内就该接着传");
-
-    let core = world.core.lock();
-    assert_eq!(core.patches, [0, MIB as u64], "切回来从断点开始");
     assert_eq!(core.uploads[transfer.file.unwrap().as_str()].bytes, bytes);
 }
 
@@ -768,16 +725,12 @@ async fn without_a_home_nothing_pretends_to_work() {
 #[tokio::test]
 async fn an_unreadable_list_does_not_stop_the_app() {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(dir.path().join("servers/1")).unwrap();
-    std::fs::write(dir.path().join("servers/1/transfers.json"), b"not json").unwrap();
+    std::fs::write(dir.path().join("transfers.json"), b"not json").unwrap();
     let phone = wonton_client::ClientCore::with_network(
         dir.path().to_str().unwrap(),
         wonton_client::Network::DirectOnly,
     )
     .unwrap();
     assert_eq!(phone.transfers().all().count(), 0);
-    assert_eq!(
-        read_opened(&dir.path().join("servers/1/transfers.bad")),
-        b"not json"
-    );
+    assert_eq!(read_opened(&dir.path().join("transfers.bad")), b"not json");
 }

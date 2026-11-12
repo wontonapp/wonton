@@ -5,14 +5,17 @@ use std::collections::BTreeMap;
 use axum::body::Bytes;
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use ipnet::Ipv4Net;
 use serde_json::{Value, json};
 
 use super::{Resources, gone, json_reply, labeled, labels_of};
 
+/// 还有要拒绝的次数时，拒绝建网络：指定网段的和让 Docker 分配网段的分开计数。
 fn reject_create(docker: &mut Resources, body: &Value) -> Option<Response> {
-    body["IPAM"]["Config"][0]["Subnet"].as_str()?;
-    let slot = &mut docker.pinned_network_rejection;
+    let slot = if body["IPAM"]["Config"][0]["Subnet"].is_string() {
+        &mut docker.pinned_network_rejection
+    } else {
+        &mut docker.auto_network_rejection
+    };
     let (times, message) = slot.as_mut()?;
     if *times == 0 {
         return None;
@@ -21,35 +24,6 @@ fn reject_create(docker: &mut Resources, body: &Value) -> Option<Response> {
     Some(json_reply(
         StatusCode::FORBIDDEN,
         json!({"message": message.clone()}),
-    ))
-}
-
-fn reject_overlap(docker: &mut Resources, body: &Value) -> Option<Response> {
-    let subnet = body["IPAM"]["Config"][0]["Subnet"]
-        .as_str()?
-        .parse::<Ipv4Net>()
-        .ok()?;
-    let taken = docker.network_bodies.values().any(|network| {
-        ipam_configs(network)
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|config| {
-                config["Subnet"]
-                    .as_str()
-                    .and_then(|text| text.parse::<Ipv4Net>().ok())
-                    .is_some_and(|used| {
-                        used.contains(&subnet.network()) || subnet.contains(&used.network())
-                    })
-            })
-    });
-    if !taken {
-        return None;
-    }
-    docker.network_collisions += 1;
-    Some(json_reply(
-        StatusCode::FORBIDDEN,
-        json!({"message": "Pool overlaps with other one on this address space"}),
     ))
 }
 
@@ -63,7 +37,7 @@ pub(super) fn networks(
 ) -> Option<Response> {
     let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
     if let (&Method::POST, ["create"]) = (method, parts)
-        && let Some(reply) = reject_create(docker, &body).or_else(|| reject_overlap(docker, &body))
+        && let Some(reply) = reject_create(docker, &body)
     {
         return Some(reply);
     }
@@ -119,7 +93,7 @@ pub(super) fn networks(
                 json!({
                     "Name": name, "Driver": "bridge", "Internal": created["Internal"],
                     "Options": created["Options"], "Labels": docker.networks[*name],
-                    "IPAM": {"Config": ipam_configs(created)}, "Containers": containers,
+                    "IPAM": {"Config": [ipam_config(created)]}, "Containers": containers,
                 }),
             )
         }
@@ -146,7 +120,7 @@ pub(super) fn networks(
                     let created = &docker.network_bodies[n];
                     json!({"Name": n, "Id": n, "Driver": "bridge", "Labels": labels,
                            "Options": created["Options"],
-                           "IPAM": {"Config": ipam_configs(created)}})
+                           "IPAM": {"Config": [ipam_config(created)]}})
                 })
                 .collect();
             json_reply(StatusCode::OK, json!(list))
@@ -157,60 +131,15 @@ pub(super) fn networks(
 }
 
 /// 网络的 IPAM：建的时候指定了就用它，没指定时是假 Docker 分配的网段。
-fn ipam_configs(created: &Value) -> Value {
-    created["IPAM"]["Config"].as_array().map_or_else(
-        || json!([{"Subnet": "172.30.0.0/24", "Gateway": "172.30.0.1"}]),
-        |configs| json!(configs),
-    )
+fn ipam_config(created: &Value) -> Value {
+    let default = json!({"Subnet": "172.30.0.0/24", "Gateway": "172.30.0.1"});
+    let config = created["IPAM"]["Config"].get(0).cloned().unwrap_or(default);
+    json!({"Subnet": config["Subnet"], "Gateway": config["Gateway"], "IPRange": config["IPRange"]})
 }
 
 /// 和 Docker 一样：网络的查询接口不列停着的容器，它们的端点也没有地址。
 pub(super) fn running(states: &BTreeMap<String, Value>, container: &str) -> bool {
     states.get(container).is_none_or(|s| s["Running"] != false)
-}
-
-/// 容器列表里的 `State`，和 Docker 一样由 inspect 的状态推出来。
-pub(super) fn state_name(states: &BTreeMap<String, Value>, container: &str) -> &'static str {
-    match states.get(container) {
-        Some(state) if state["Running"] == false => "exited",
-        Some(state) if state["Paused"] == true => "paused",
-        Some(state) if state["Restarting"] == true => "restarting",
-        _ => "running",
-    }
-}
-
-/// 运行中的容器在列表里的 `Ports`：来自创建时的 `HostConfig.PortBindings`，停着的容器没有。
-pub(super) fn published(
-    created: &BTreeMap<String, Value>,
-    states: &BTreeMap<String, Value>,
-    container: &str,
-) -> Vec<Value> {
-    if !running(states, container) {
-        return Vec::new();
-    }
-    let Some(body) = created.get(container) else {
-        return Vec::new();
-    };
-    body["HostConfig"]["PortBindings"]
-        .as_object()
-        .into_iter()
-        .flatten()
-        .flat_map(|(key, bindings)| {
-            let mut parts = key.split('/');
-            let port: u16 = parts.next().and_then(|p| p.parse().ok()).unwrap_or(0);
-            let protocol = parts.next().unwrap_or("tcp").to_owned();
-            bindings
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|binding| {
-                    let ip = binding["HostIp"].as_str()?;
-                    let public: u16 = binding["HostPort"].as_str()?.parse().ok()?;
-                    Some(json!({"IP": ip, "PrivatePort": port, "PublicPort": public, "Type": protocol}))
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
 }
 
 /// 容器 inspect 里的端点：没指定地址的报成 127.0.0.1，测试在本机起假的插件网页。

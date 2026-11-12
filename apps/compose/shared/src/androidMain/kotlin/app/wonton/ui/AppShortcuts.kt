@@ -56,22 +56,13 @@ internal fun AppShortcutsEffect(tabs: TabsState) {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: ShortcutPublishFailure) {
-            tabs.plugins.reject(Problem(titleRes = R.string.shortcuts_not_updated, detail = failure.message))
+            tabs.plugins.reject(Problem("桌面快捷方式没有更新", failure.message))
         } catch (failure: IllegalArgumentException) {
-            tabs.plugins.reject(
-                Problem(titleRes = R.string.shortcuts_not_updated, nextStepRes = R.string.shortcuts_rejected,
-                    detail = failure.toString()),
-            )
+            tabs.plugins.reject(Problem("桌面快捷方式没有更新", "系统没有接受快捷方式。", failure.toString()))
         } catch (failure: IllegalStateException) {
-            tabs.plugins.reject(
-                Problem(titleRes = R.string.shortcuts_not_updated, nextStepRes = R.string.shortcuts_unlock,
-                    detail = failure.toString()),
-            )
+            tabs.plugins.reject(Problem("桌面快捷方式没有更新", "请解锁设备后重新打开云吞。", failure.toString()))
         } catch (failure: SecurityException) {
-            tabs.plugins.reject(
-                Problem(titleRes = R.string.shortcuts_not_updated, nextStepRes = R.string.shortcuts_not_allowed,
-                    detail = failure.toString()),
-            )
+            tabs.plugins.reject(Problem("桌面快捷方式没有更新", "系统不允许更新快捷方式。", failure.toString()))
         }
     }
 }
@@ -88,8 +79,8 @@ private class AppShortcuts(private val context: Context) {
         ).associateBy { it.id }.values
         val maximum = ShortcutManagerCompat.getMaxShortcutCountPerActivity(context)
         val fixed = listOf(
-            shortcut("new-chat", context.getString(R.string.shortcut_new_chat), AppLink.NewChat, compose, 0),
-            shortcut("agent-chat", context.getString(R.string.shortcut_agent_chat), AppLink.AgentChat, agent, 1),
+            shortcut("new-chat", "新会话", AppLink.NewChat, compose, 0),
+            shortcut("agent-chat", "问 Bot", AppLink.AgentChat, agent, 1),
         )
         if (installed != null) disableUninstalled(existing, installed)
         val dynamic = fixed.take(maximum).toMutableList()
@@ -111,20 +102,20 @@ private class AppShortcuts(private val context: Context) {
         }
         updateDynamic(dynamic)
         if (maximum < FIXED_SHORTCUT_COUNT) {
-            problems += context.getString(R.string.shortcuts_too_few, maximum)
+            problems += "系统只允许 $maximum 个快捷方式，不能同时显示“新会话”和“问 Bot”。"
         }
         if (installed != null && pages.size > maximum - fixed.size) {
-            problems += context.getString(R.string.shortcuts_too_many, maximum)
+            problems += "系统最多允许 $maximum 个快捷方式，已优先保留“新会话”“问 Bot”，插件页按底栏顺序显示。"
         }
         if (problems.isNotEmpty()) throw ShortcutPublishFailure(problems.joinToString("\n"))
     }
 
     private fun updateDynamic(shortcuts: List<ShortcutInfoCompat>) {
         if (ShortcutManagerCompat.isRateLimitingActive(context)) {
-            throw ShortcutPublishFailure(context.getString(R.string.shortcuts_rate_limited))
+            throw ShortcutPublishFailure("系统暂时限制了快捷方式更新，请稍后重新打开云吞。")
         }
         if (!ShortcutManagerCompat.setDynamicShortcuts(context, shortcuts)) {
-            throw ShortcutPublishFailure(context.getString(R.string.shortcuts_update_refused))
+            throw ShortcutPublishFailure("系统没有接受快捷方式更新，请稍后重新打开云吞。")
         }
     }
 
@@ -132,10 +123,7 @@ private class AppShortcuts(private val context: Context) {
         val removed = existing.filter { shortcut ->
             shortcut.pluginTab()?.let { it.pluginId !in ids } == true
         }.map { it.id }
-        if (removed.isNotEmpty()) {
-            val reason = context.getString(R.string.shortcuts_app_uninstalled)
-            ShortcutManagerCompat.disableShortcuts(context, removed, reason)
-        }
+        if (removed.isNotEmpty()) ShortcutManagerCompat.disableShortcuts(context, removed, "这个应用已卸载")
         val restored = existing.filter { shortcut ->
             !shortcut.isEnabled && shortcut.pluginTab()?.let { it.pluginId in ids } == true
         }
@@ -145,12 +133,12 @@ private class AppShortcuts(private val context: Context) {
     private suspend fun pluginIcon(plugins: PluginsState, page: ShortcutPage, missing: IconCompat): IconCompat {
         val source = page.icon ?: return missing
         val image = plugins.imageOrNull(source)
-            ?: throw ShortcutPublishFailure(context.getString(R.string.shortcut_icon_missing, page.title))
+            ?: throw ShortcutPublishFailure("“${page.title}”的图标没有取到，请检查连接后重新打开云吞。")
         // ImageDecoder 可能返回硬件位图；系统快捷方式跨进程传图需要可序列化的软件位图。
         val original = image.asAndroidBitmap()
         val bitmap = if (original.config == Bitmap.Config.HARDWARE) {
             original.copy(Bitmap.Config.ARGB_8888, false)
-                ?: throw ShortcutPublishFailure(context.getString(R.string.shortcut_icon_convert_failed, page.title))
+                ?: throw ShortcutPublishFailure("“${page.title}”的图标无法转换，请重新打开云吞。")
         } else original
         return IconCompat.createWithBitmap(bitmap)
     }

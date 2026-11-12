@@ -6,7 +6,6 @@ use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
 use super::manifest::PluginId;
 use super::store::{InstalledRecord, StoreError};
-use crate::l10n;
 
 /// `service_logs` 每个服务最多留多少行、多少字节：给 Bot 看个最近的原因，不是完整的日志。
 const LOG_LINES: usize = 40;
@@ -49,23 +48,16 @@ impl PluginManager {
         let mut record: InstalledRecord = self
             .store
             .load(id)?
-            .ok_or_else(|| InstallError::not_installed(langs, id))?;
+            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
         if record.written_by.is_none() {
-            return Err(InstallError::Invalid(l10n::text(
-                langs,
-                "plugin-install-not-agent-written",
-                &[("id", id.to_string().into())],
+            return Err(InstallError::Invalid(format!(
+                "{id} 不是 Agent 写的插件，没有“每次都问”的开关"
             )));
         }
         record.ask_every_update = enabled;
         self.store.save(&record)?;
-        self.installed_detail(id, langs).ok_or_else(|| {
-            InstallError::Storage(l10n::text(
-                langs,
-                "plugin-install-record-detail-failed",
-                &[("id", id.to_string().into())],
-            ))
-        })
+        self.installed_detail(id, langs)
+            .ok_or_else(|| InstallError::Storage(format!("插件 {id} 的详情页构造不出来")))
     }
 
     /// 每个服务最近的日志：只有写这个插件的 Bot 会要（`wonton__plugin_status`），按服务名分组，

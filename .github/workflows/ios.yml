@@ -1,74 +1,60 @@
 name: ios
 
-# 托管 macOS（仓库公开后 macOS 分钟免费）：SwiftLint，和一次模拟器构建：在固定型号和系统版本的模拟器上
-# 跑 WontonTests（单测和截图测试，不跑 UI 测试，不签名）。
-# 重录参考图不在这个工作流里：另开 snapshots-record.yml，只在打 record-snapshots 标签时跑，见 workflows/README.md。
-#
-# 改动范围分两半（模拟器构建要十几分钟，2026-11-12 实测 PR 上中位 13 分钟，PR 只等十分钟内出结果的快检查）：
-# - PR 上：改到 Swift 这边或导出给 Swift 的接口（apps/ios、设计生成、wonton-protocol、wonton-client）时由 gate.yml 调用，
-#   算合并门槛（路径写在 gate.yml 的 changes 里）。
-#   iOS 在 PR 上红的几乎都落在这几处（Swift 这边改了，或接口改了 Swift 没跟上；2026-11-12 前一天约十次），
-#   挪到合后会让 main 一天红好几次。
-# - 合进 main 之后：wonton-client 依赖的其余 crate、依赖版本、工具链（不改导出接口，很少弄坏 Swift）按 push 的路径触发，
-#   不挡合并；连续合并时只跑最新那次（新的取消旧的，结果只对旧提交有意义），红了按那次提交标题里的 (#N) 找到弄红的 PR。
-# 两半合起来是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
-# 加了依赖要同步改。只改测试的（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉。
+# 自托管 runner（ADR-0012 的“CI”），都在 macOS 上：SwiftLint，和一次模拟器构建（只编译 Apple 芯片模拟器一个
+# target，不签名、不跑模拟器）。
 on:
-  workflow_call:
-  push:
-    branches: [main]
-    # 不是必需检查，路径直接写在触发器上；排除项放最后，GitHub 按顺序判断。
+  pull_request:
     paths:
-      - "crates/wonton-l10n/**"
+      - "apps/ios/**"
+      - "design/**"
+      - "scripts/generate-design.py"
+      - "crates/wonton-client/**"
       - "crates/wonton-matrix/**"
+      - "crates/wonton-protocol/**"
       - "crates/wonton-tunnel/**"
       - "Cargo.toml"
-      - "vendor/**"
       - "Cargo.lock"
       - "rust-toolchain.toml"
-      - "!**/*.md"
-      - "!crates/**/tests/**"
-      - "!crates/**/benches/**"
-      - "!crates/**/tests.rs"
-      - "!crates/**/*_tests.rs"
-  schedule:
-    # 每天全量兜底：两个各自绿的 PR 合在一起才出的错由这次发现。
-    - cron: "30 4 * * *"
-  workflow_dispatch:
+      - ".github/workflows/ios.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/ios/**"
+      - "design/**"
+      - "scripts/generate-design.py"
+      - "crates/wonton-client/**"
+      - "crates/wonton-matrix/**"
+      - "crates/wonton-protocol/**"
+      - "crates/wonton-tunnel/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/ios.yml"
 
-# 同一分支又推了新提交，旧的整个取消：新提交的结果出来前旧的那次已经没用，别占名额。定时全量跑完为止，
-# 手动触发跟着分支走。被 gate 调用时组名按调用方的 ref 算；组名带 ios- 前缀，免得和 gate- 判成互相等待。
 concurrency:
-  group: "${{ github.event_name == 'schedule' && 'ios-nightly' || format('ios-{0}', github.ref) }}"
-  cancel-in-progress: ${{ github.event_name != 'schedule' }}
-
-env:
-  # 同 rust.yml：不留增量编译的缓存，调试信息只留行号。
-  CARGO_INCREMENTAL: "0"
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
-
-permissions:
-  contents: read
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   swiftlint:
     name: SwiftLint（函数体 ≤ 100 行）
-    runs-on: macos-26
+    # 不放 Linux：只有带 docker 标签的机器能接容器作业，它们被 Rust 作业占满时，这个几秒钟的作业要排半小时。
+    runs-on: [self-hosted, macOS, ARM64, xcode]
     timeout-minutes: 10
     env:
       SWIFTLINT_VERSION: "0.65.1"
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: 安装 SwiftLint（版本和 sha256 固定）
+      - uses: actions/checkout@v5
+      - name: 安装 SwiftLint（按版本放进 runner 的工具缓存，下次直接用）
         run: |
-          curl -sSfL -o "$RUNNER_TEMP/swiftlint.zip" \
-            "https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/portable_swiftlint.zip"
-          echo "c1e429b0599cf1b516f369a2d9ec04eaf0e436f3c12b637df8851fa52ff694d0  $RUNNER_TEMP/swiftlint.zip" | shasum -a 256 -c -
-          mkdir -p "$RUNNER_TEMP/swiftlint"
-          unzip -q -o "$RUNNER_TEMP/swiftlint.zip" -d "$RUNNER_TEMP/swiftlint"
-          echo "$RUNNER_TEMP/swiftlint" >> "$GITHUB_PATH"
+          dir="$RUNNER_TOOL_CACHE/swiftlint/$SWIFTLINT_VERSION"
+          if [[ ! -x "$dir/swiftlint" ]]; then
+            curl -sSfL -o "$RUNNER_TEMP/swiftlint.zip" \
+              "https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/portable_swiftlint.zip"
+            mkdir -p "$dir"
+            unzip -q -o "$RUNNER_TEMP/swiftlint.zip" -d "$dir"
+          fi
+          echo "$dir" >> "$GITHUB_PATH"
       - name: SwiftLint
         working-directory: apps/ios
         run: |
@@ -77,104 +63,45 @@ jobs:
 
   build:
     name: 模拟器构建
-    runs-on: xcode-27
-    timeout-minutes: 45
+    runs-on: [self-hosted, macOS, ARM64, xcode]
+    timeout-minutes: 30
     env:
       XCODEGEN_VERSION: "2.46.0"
-      # 参考图绑定这台模拟器和这个系统版本：改了就整体重录（打 record-snapshots 标签）。系统版本取 Xcode 27.1 支持的，
-      # 设备取装机列表里的普通 iPhone。模拟器名字带空格，走变量拼进 -destination。
-      SIMULATOR_NAME: iPhone 17
-      SIMULATOR_OS: "27.0"
-      # 截图测试并行会同时开好几个窗口、失败时也不好定位，单台模拟器顺序跑；日期按 UTC、en_US 排版，参考图才可复现。
-      TZ: UTC
+      # 同 rust.yml：不留增量编译的缓存，调试信息只留行号。
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: 用 Xcode 27.1（和开发机 mini 上的一致）
-        run: sudo xcode-select -s /Applications/Xcode_27.1.app
-      # 模拟器冷启动要三分多钟（11-12 实测：test-without-building 开始后 3 分 25 秒才认到模拟器，测试本身 2 秒），
-      # 放在后台先启动，和下面编 Rust 核心、构建测试重叠；跑测试前再等它启动完。
-      - name: 后台启动模拟器
-        run: |
-          udid=$(xcrun simctl list devices available -j | python3 -c '
-          import json, os, sys
-          runtime = "com.apple.CoreSimulator.SimRuntime.iOS-" + os.environ["SIMULATOR_OS"].replace(".", "-")
-          names = [d["udid"] for d in json.load(sys.stdin)["devices"].get(runtime, []) if d["name"] == os.environ["SIMULATOR_NAME"]]
-          print(names[0] if names else "")')
-          if [ -z "$udid" ]; then
-            echo "::error::找不到模拟器 $SIMULATOR_NAME（iOS $SIMULATOR_OS），runner 镜像变了要改 SIMULATOR_NAME/SIMULATOR_OS 并重录参考图"
-            exit 1
-          fi
-          echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
-          nohup xcrun simctl bootstatus "$udid" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
+      - uses: actions/checkout@v5
+      - name: 构建缓存目录（runner 主机上的共享目录，见 rust.yml）
+        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/ios" >> "$GITHUB_ENV"
       - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
         run: |
           rustup toolchain install
           rustup target add aarch64-apple-ios-sim
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          # macOS 的产物和 Linux 作业不通用，单独一个 key。
-          # 只读：同一份 key 由 cache.yml 的 iOS 作业在 push 时编好写回。这里也写的话，
-          # 一次 main 合并会编两遍、两条运行抢着写同一个 key。
-          shared-key: rust-ios
-          save-if: false
-      - name: 安装 XcodeGen（版本和 sha256 固定）
+      - name: 安装 XcodeGen（按版本放进 runner 的工具缓存，下次直接用）
         run: |
-          curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
-            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
-          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
-          mkdir -p "$RUNNER_TEMP/xcodegen"
-          unzip -q -o "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
-          echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
+          dir="$RUNNER_TOOL_CACHE/xcodegen/$XCODEGEN_VERSION"
+          if [[ ! -x "$dir/xcodegen/bin/xcodegen" ]]; then
+            curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
+              "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+            mkdir -p "$dir"
+            unzip -q -o "$RUNNER_TEMP/xcodegen.zip" -d "$dir"
+          fi
+          echo "$dir/xcodegen/bin" >> "$GITHUB_PATH"
       - name: 编译 Rust 核心并生成 Swift 绑定
         env:
           WONTON_IOS_TARGETS: aarch64-apple-ios-sim
         run: apps/ios/scripts/build-core.sh debug
       - name: 生成 Xcode 工程
         run: xcodegen generate --spec apps/ios/project.yml
-      # 只编 WontonTests：UI 测试（WontonUITests）在夜跑里跑，这里不编。
-      - name: 构建测试
+      - name: 构建 App
         run: |
           xcodebuild -version
-          xcodebuild build-for-testing \
+          xcodebuild build \
             -project apps/ios/Wonton.xcodeproj \
             -scheme Wonton \
             -configuration Debug \
-            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
-            -only-testing:WontonTests \
+            -destination "generic/platform=iOS Simulator" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
-      - name: 等模拟器启动完
-        run: |
-          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
-          cat "$RUNNER_TEMP/simulator-boot.log"
-      # 录制模式由 scheme 的环境变量切（`Wonton` 是 never）：只比较、缺图也报错，不在 CI 里悄悄补图；
-      # 重录在 snapshots-record.yml。每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。
-      - name: 单元测试和截图测试
-        run: |
-          xcodebuild test-without-building \
-            -project apps/ios/Wonton.xcodeproj \
-            -scheme Wonton \
-            -configuration Debug \
-            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
-            -only-testing:WontonTests \
-            -parallel-testing-enabled NO \
-            -testLanguage en \
-            -testRegion US \
-            -test-timeouts-enabled YES \
-            -default-test-execution-time-allowance 10 \
-            -maximum-test-execution-time-allowance 60 \
-            -resultBundlePath "$RUNNER_TEMP/Tests.xcresult" \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            CODE_SIGNING_ALLOWED=NO
-      # 对比失败的新图和差异图作为附注在 .xcresult 里。
-      - name: 失败时存测试结果包
-        if: ${{ failure() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: ios-test-failure
-          path: ${{ runner.temp }}/Tests.xcresult
-          retention-days: 7
-          if-no-files-found: ignore

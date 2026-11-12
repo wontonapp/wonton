@@ -11,12 +11,11 @@ use super::super::package_files::PackageFiles;
 use super::super::storefront::index::IndexEntry;
 use super::super::{PluginId, PluginManager, PluginPackage, UpgradeTo};
 use super::github::{FakeGitHub, zh};
-
 use super::manager::manager_with;
 
-pub(super) const REPO: &str = "acme/hello";
+const REPO: &str = "acme/hello";
 
-pub(super) fn hello(version: &str, manifest: &str) -> String {
+fn hello(version: &str, manifest: &str) -> String {
     format!(
         "services:\n  web:\n    image: ghcr.io/acme/web:{version}\n    volumes: ['data:/data']\nvolumes:\n  data: {{}}\n\
          x-wonton:\n  spec: \"0.2\"\n  id: app.hello\n  version: {version}\n  kind: app\n  title: {{zh: 你好, en: Hello}}\n  \
@@ -24,19 +23,15 @@ pub(super) fn hello(version: &str, manifest: &str) -> String {
     )
 }
 
-pub(super) fn package(compose: &str) -> PluginPackage {
-    PluginPackage::parse(compose, &super::langs()).unwrap()
+fn package(compose: &str) -> PluginPackage {
+    PluginPackage::parse(compose).unwrap()
 }
 
-fn secret(value: &str) -> wonton_protocol::SecretString {
-    wonton_protocol::SecretString::new(value)
-}
-
-pub(super) fn id() -> PluginId {
+fn id() -> PluginId {
     PluginId::parse("app.hello").unwrap()
 }
 
-pub(super) async fn manager() -> (
+async fn manager() -> (
     FakeGitHub,
     FakeDocker,
     Arc<PluginManager>,
@@ -53,25 +48,17 @@ fn texts(preview: &InstallPreview) -> Vec<&str> {
     preview.notices.iter().map(|n| n.text.as_str()).collect()
 }
 
-pub(super) fn install_request(preview: &InstallPreview) -> InstallRequest {
+fn install_request(preview: &InstallPreview) -> InstallRequest {
     InstallRequest {
-        scope: None,
         devices: Vec::new(),
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
-        plan: preview.plan.clone(),
         grant: preview
             .permissions
             .iter()
-            .filter(|p| !p.optional)
             .map(|p| p.permission.clone())
             .collect(),
-        enabled_permissions: Vec::new(),
-        secrets: Default::default(),
-        settings: Default::default(),
         lan_webui: false,
-        install_together: Vec::new(),
-        connect_plugins: Vec::new(),
     }
 }
 
@@ -83,12 +70,8 @@ fn upgrade_request(preview: &InstallPreview) -> UpgradeRequest {
         grant: preview
             .permissions
             .iter()
-            .filter(|p| !p.optional)
             .map(|p| p.permission.clone())
             .collect(),
-        enabled_permissions: Vec::new(),
-        secrets: Default::default(),
-        settings: Default::default(),
         lan_webui: false,
     }
 }
@@ -158,9 +141,7 @@ async fn leftover_data_under_the_same_id_is_called_out_before_installing() {
         .unwrap();
     assert!(!texts(&first).iter().any(|t| t.contains("留着")));
     m.install_source(&install_request(&first)).await.unwrap();
-    m.uninstall_detached(id(), false, Vec::new(), true, super::langs())
-        .await
-        .unwrap();
+    m.uninstall_detached(id(), false).await.unwrap();
 
     let again = m
         .preview_upload(package(&hello("1.0.0", "  author: {name: 别人}\n")), &zh())
@@ -197,7 +178,7 @@ async fn the_owner_can_go_back_to_an_older_version_after_a_warning() {
         texts(&preview)
     );
 
-    m.upgrade_source(&id(), &upgrade_request(&preview), &super::langs())
+    m.upgrade_source(&id(), &upgrade_request(&preview))
         .await
         .unwrap();
     assert_eq!(m.installed_plugin(&id(), &zh()).unwrap().version, "1.0.0");
@@ -256,7 +237,7 @@ async fn switching_an_upload_to_a_repository_starts_following_that_repository() 
         .expect("来源变了要提示");
     assert!(switched.emphasis);
     assert!(switched.text.contains("你上传的文件"), "{}", switched.text);
-    m.upgrade_source(&id(), &upgrade_request(&preview), &super::langs())
+    m.upgrade_source(&id(), &upgrade_request(&preview))
         .await
         .unwrap();
     let installed = m.installed_plugin(&id(), &zh()).unwrap();
@@ -289,7 +270,7 @@ async fn the_same_content_can_only_be_switched_to_from_another_source() {
         .await
         .unwrap();
     assert!(texts(&preview).iter().any(|t| t.contains("来源从")));
-    m.upgrade_source(&id(), &upgrade_request(&preview), &super::langs())
+    m.upgrade_source(&id(), &upgrade_request(&preview))
         .await
         .unwrap();
     let installed = m.installed_plugin(&id(), &zh()).unwrap();
@@ -338,7 +319,7 @@ async fn an_added_repository_is_listed_once_under_added_sources() {
     let again = m.add_store_source("acme/hello", &zh()).await.unwrap_err();
     assert_eq!(again.kind(), "conflict", "{again}");
 
-    m.remove_store_source("github:acme/hello", &zh()).unwrap();
+    m.remove_store_source("github:acme/hello").unwrap();
     assert!(m.store_listing(&zh(), false).await.added.is_empty());
 }
 
@@ -429,7 +410,7 @@ async fn a_plugin_from_a_third_party_index_is_unreviewed_and_only_follows_that_i
         .await
         .unwrap();
     assert_eq!(upgrade.source.as_deref(), Some(source.as_str()));
-    m.upgrade_source(&id(), &upgrade_request(&upgrade), &super::langs())
+    m.upgrade_source(&id(), &upgrade_request(&upgrade))
         .await
         .unwrap();
     let installed = m.installed_plugin(&id(), &zh()).unwrap();
@@ -441,17 +422,15 @@ async fn a_plugin_from_a_third_party_index_is_unreviewed_and_only_follows_that_i
 
     // 索引删了：插件照常，不再提示，并且说明原因。
     third_party_index(&github, "friend/plugins", REPO, "4.0.0");
-    m.remove_store_source(&added.address, &zh()).unwrap();
+    m.remove_store_source(&added.address).unwrap();
     m.check_upgrades_now().await;
     let installed = m.installed_plugin(&id(), &zh()).unwrap();
     assert!(installed.upgrade.is_none());
     assert!(
-        installed.notices.iter().any(|n| {
-            n.text.contains(&super::message(
-                "plugin-settings-upgrade-index-removed",
-                &[("provider", "github.com/friend/plugins")],
-            ))
-        }),
+        installed
+            .notices
+            .iter()
+            .any(|n| n.text.contains("已经从商店删掉")),
         "{:?}",
         installed.notices
     );
@@ -472,7 +451,7 @@ async fn a_changed_file_in_a_third_party_index_is_refused() {
     );
     let mut files = PackageFiles::new();
     files.insert("config.yaml".to_owned(), config.as_bytes().to_vec());
-    let good = PluginPackage::with_files(&compose, files, &super::langs()).unwrap();
+    let good = PluginPackage::with_files(&compose, files).unwrap();
     let entry = IndexEntry::of(&good, "github:acme/hello", &commit).unwrap();
     // 索引旁边的 blob 被换了，也不会回退到别的内容：对不上 sha256 就不装。
     let blob = format!("blobs/{}", entry.files["config.yaml"]);
@@ -485,137 +464,4 @@ async fn a_changed_file_in_a_third_party_index_is_refused() {
     let source = &added.section.plugins[0].source;
     let err = m.preview_source(source, &zh()).await.unwrap_err();
     assert_eq!(err.kind(), "invalid_input", "{err}");
-}
-
-/// 带一项主人填写的密钥的清单，服务引用它的变量。
-fn hello_with_input(version: &str, required: bool) -> String {
-    let secrets = format!(
-        "  secrets:\n    token:\n      input:\n        title: {{zh: 令牌, en: Token}}\n        url: https://example.com/keys\n        required: {required}\n"
-    );
-    format!(
-        "services:\n  web:\n    image: ghcr.io/acme/web:{version}\n    environment:\n      TOKEN: ${{WONTON_SECRET_TOKEN}}\n\
-         x-wonton:\n  spec: \"0.8\"\n  id: app.hello\n  version: {version}\n  kind: app\n  title: {{zh: 你好, en: Hello}}\n  \
-         description: {{zh: 打个招呼, en: Say hi}}\n  permissions: []\n{secrets}"
-    )
-}
-
-async fn preview_of(
-    m: &Arc<PluginManager>,
-    compose: &str,
-) -> (wonton_protocol::InstallPreview, tempfile::TempDir) {
-    let dir = tempfile::tempdir().unwrap();
-    let preview = m
-        .preview_upload(
-            PluginPackage::parse(compose, &super::langs()).unwrap(),
-            &zh(),
-        )
-        .await
-        .unwrap();
-    (preview, dir)
-}
-
-#[tokio::test]
-async fn installing_without_a_required_input_names_it() {
-    let (_github, _docker, m, _dir) = manager().await;
-    let (preview, _stage) = preview_of(&m, &hello_with_input("1.0.0", true)).await;
-    assert_eq!(preview.secret_inputs.len(), 1);
-    assert!(preview.secret_inputs[0].required);
-    let err = m
-        .install_source(&install_request(&preview))
-        .await
-        .unwrap_err();
-    assert_eq!(err.kind(), "invalid_input", "{err}");
-    assert!(err.to_string().contains("token"), "{err}");
-    assert!(
-        m.installed_plugin(&id(), &zh()).is_none(),
-        "缺必填项时没装上"
-    );
-}
-
-#[tokio::test]
-async fn an_unknown_key_is_rejected() {
-    let (_github, _docker, m, _dir) = manager().await;
-    let (preview, _stage) = preview_of(&m, &hello_with_input("1.0.0", true)).await;
-    let mut request = install_request(&preview);
-    request.secrets = [
-        ("token".to_owned(), secret("x")),
-        ("nope".to_owned(), secret("y")),
-    ]
-    .into();
-    let err = m.install_source(&request).await.unwrap_err();
-    assert_eq!(err.kind(), "invalid_input", "{err}");
-    assert!(err.to_string().contains("nope"), "{err}");
-}
-
-#[tokio::test]
-async fn the_value_reaches_the_container_but_not_the_detail() {
-    let (_github, docker, m, _dir) = manager().await;
-    let (preview, _stage) = preview_of(&m, &hello_with_input("1.0.0", true)).await;
-    let mut request = install_request(&preview);
-    request.secrets = [("token".to_owned(), secret("s3cret"))].into();
-    m.install_source(&request).await.unwrap();
-    let detail = m.judged_detail(&id(), &zh()).await.unwrap();
-    let line = detail
-        .secret_inputs
-        .iter()
-        .find(|l| l.name == "token")
-        .unwrap();
-    assert!(line.filled);
-    assert!(line.changed_at_ms.is_some());
-    assert!(!serde_json::to_string(&detail).unwrap().contains("s3cret"));
-    let web = super::super::names::container_name("app-hello", "web");
-    assert!(
-        docker.env(&web).iter().any(|e| e == "TOKEN=s3cret"),
-        "{:?}",
-        docker.env(&web)
-    );
-}
-
-#[tokio::test]
-async fn a_reinstall_reuses_the_filled_value() {
-    let (_github, _docker, m, _dir) = manager().await;
-    let compose = hello_with_input("1.0.0", true);
-    let (preview, _stage) = preview_of(&m, &compose).await;
-    let mut request = install_request(&preview);
-    request.secrets = [("token".to_owned(), secret("kept"))].into();
-    m.install_source(&request).await.unwrap();
-    m.uninstall(&id(), false, &zh()).await.unwrap();
-    let (again, _stage) = preview_of(&m, &compose).await;
-    m.install_source(&install_request(&again)).await.unwrap();
-    let detail = m.judged_detail(&id(), &zh()).await.unwrap();
-    assert!(detail.secret_inputs[0].filled, "填过的沿用");
-}
-
-#[tokio::test]
-async fn an_upgrade_only_asks_for_new_and_unfilled_inputs() {
-    let (github, _docker, m, _dir) = manager().await;
-    let v1 = hello_with_input("1.0.0", true).replace(
-        "  secrets:",
-        "  secrets:\n    other:\n      input:\n        title: {en: Other}\n        required: false\n",
-    );
-    github.publish(REPO, "v1.0.0", &[("docker-compose.yml", &v1)]);
-    let (preview, _stage) = preview_of(&m, &v1).await;
-    let mut first = install_request(&preview);
-    first.secrets = [("token".to_owned(), secret("kept"))].into();
-    m.install_source(&first).await.unwrap();
-    let v2 = v1.replace("app.hello\n  version: 1.0.0", "app.hello\n  version: 1.1.0");
-    let _ = github;
-    let asked = m
-        .preview_upgrade(
-            &id(),
-            super::super::UpgradeTo::Upload(Box::new(package(&v2))),
-            &zh(),
-        )
-        .await
-        .unwrap();
-    let names: Vec<_> = asked
-        .secret_inputs
-        .iter()
-        .map(|l| l.name.as_str())
-        .collect();
-    assert!(
-        !names.contains(&"token"),
-        "还没填的 token 已经填过：{names:?}"
-    );
-    assert!(names.len() <= 1, "{names:?}");
 }

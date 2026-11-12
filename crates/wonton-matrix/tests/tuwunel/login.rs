@@ -5,7 +5,7 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use wonton_matrix::{Error, MatrixSession, Result, SessionEvent, SyncStatus};
 
-use crate::support::{Claims, Issuer, TestServer, diagnose_live_session, eventually, now, unique};
+use crate::support::{Claims, Issuer, TestServer, eventually, now, unique};
 
 /// 登录被拒绝，且错误码是 `errcode`。
 #[track_caller]
@@ -177,25 +177,12 @@ async fn deactivated_bot_cannot_log_in_again() {
     let owner = server.login(&unique("owner"), "主人的手机").await;
     let mut events = std::pin::pin!(bot.session_events());
 
-    // 停用前取令牌：建房间时 SDK 可能已经刷新过，那时会话里的就不是被停用的那一对了。
-    let (access_token, refresh_token) = bot.tokens().expect("session should report its tokens");
     admin.deactivate(bot.user_id()).await;
-    let deactivated_at = std::time::Instant::now();
 
-    let error = match bot.create_direct_chat(owner.user_id(), false).await {
-        Err(error) => error,
-        // 停用后的会话不应该还能建房间。真发生了，先用旧令牌裸打一次 whoami、一次 refresh，
-        // 把服务器当时的回答连同相对停用返回的毫秒数写进 panic，再失败。
-        Ok(_) => {
-            diagnose_live_session(
-                &server.url,
-                &access_token,
-                refresh_token.as_deref(),
-                deactivated_at,
-            )
-            .await
-        }
-    };
+    let error = bot
+        .create_direct_chat(owner.user_id(), false)
+        .await
+        .expect_err("停用后的会话应失效");
     assert_signed_out(&error, events.as_mut()).await;
     let token = server.issuer.login_token(&localpart);
     assert_rejected(server.try_login(&token).await, "M_USER_DEACTIVATED");

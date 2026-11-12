@@ -1,4 +1,4 @@
-//! 镜像加速：核心经加速地址按摘要拉要加速的仓库的镜像（ADR-0040、ADR-0074）。
+//! 镜像加速：核心经加速地址按摘要拉 Docker Hub 的镜像（ADR-0040）。
 //!
 //! 核心的管理接口 `/_wonton/api/registry-mirror` 收发这里的类型，客户端核心原样交给壳。
 //!
@@ -26,13 +26,10 @@ pub struct RegistryMirrorViewModel {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct RegistryMirrorSettings {
-    /// 在用的 Docker Hub 加速地址（主机名，可以带端口）；没打开时为空。
+    /// 在用的加速地址（主机名，可以带端口）；没打开时为空。
     pub mirror: Option<String>,
-    /// 官方索引给的 Docker Hub 预置地址，按索引里的顺序；索引读不到时为空，这时只能自己填。
-    /// ghcr、quay 的名单不进这个选择。
+    /// 官方索引给的预置地址，按索引里的顺序；索引读不到时为空，这时只能自己填。
     pub choices: Vec<String>,
-    /// `choices` 读不懂（或整个索引读不到）时核心写的整句，壳显示在表单上；读到了就没有。
-    pub choices_problem: Option<String>,
     /// 最近一次直连 Docker Hub 的结果；还没测过，或者 Docker 守护进程自己配了代理（这时核心测的路径不是它拉镜像的路径）
     /// 时为空。
     pub docker_hub: Option<RegistryProbe>,
@@ -131,7 +128,6 @@ mod tests {
         let settings = RegistryMirrorSettings {
             mirror: Some("mirror.example.com".into()),
             choices: vec!["mirror.example.com".into(), "hub.example.net:5000".into()],
-            choices_problem: Some("索引里的 registry_mirrors 读不懂".into()),
             docker_hub: Some(probe(Some(RegistryProblem {
                 reason: RegistryFailure::Unreachable,
                 message: "5 秒没响应".into(),

@@ -8,7 +8,7 @@ struct InstallPermissions: View {
     var body: some View {
         if !notices.isEmpty { NoticeLines(lines: notices) }
         if !permissions.isEmpty {
-            DetailSection(title: String(localized: .installPermissions)) {
+            DetailSection(title: "权限") {
                 ForEach(permissions, id: \.permission) { PermissionRow(line: $0) }
             }
         }

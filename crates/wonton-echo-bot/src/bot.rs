@@ -1,4 +1,4 @@
-//! `echo-bot run`：用核心交给插件的令牌恢复会话，把名单里的人（WONTON_MATRIX_ALLOWED_USERS）的文字消息原样回过去。
+//! `echo-bot run`：用核心交给插件的令牌恢复会话，把主人的文字消息原样回过去。
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -16,7 +16,7 @@ use matrix_sdk::ruma::{OwnedDeviceId, OwnedUserId};
 use matrix_sdk::store::RoomLoadSettings;
 use matrix_sdk::{Client, LoopCtrl, RoomState, SessionMeta, SessionTokens};
 
-use crate::{PREFIX, command};
+use crate::PREFIX;
 
 /// 最近一次同步成功的时间记在这里，健康检查看它。
 const ALIVE: &str = "/tmp/echo-bot.alive";
@@ -31,15 +31,9 @@ fn env(name: &str) -> anyhow::Result<String> {
 pub async fn run() -> anyhow::Result<()> {
     let homeserver = env("WONTON_MATRIX_HOMESERVER")?;
     let token = env("WONTON_MATRIX_ACCESS_TOKEN")?;
-    // Bot 只听名单里的人（ADR-0045）：私人 Bot 是归属人，共享 Bot 是一家人。
-    let allowed_users: Vec<OwnedUserId> = env("WONTON_MATRIX_ALLOWED_USERS")?
-        .split(',')
-        .filter(|id| !id.is_empty())
-        .map(|id| {
-            id.parse::<OwnedUserId>()
-                .context("WONTON_MATRIX_ALLOWED_USERS 里有不合法的用户 ID")
-        })
-        .collect::<Result<_, _>>()?;
+    let owner: OwnedUserId = env("WONTON_MATRIX_OWNER")?
+        .parse()
+        .context("WONTON_MATRIX_OWNER 不是合法的用户 ID")?;
     let expected: OwnedUserId = env("WONTON_MATRIX_USER_ID")?
         .parse()
         .context("WONTON_MATRIX_USER_ID 不是合法的用户 ID")?;
@@ -75,16 +69,15 @@ pub async fn run() -> anyhow::Result<()> {
         .context("首次同步")?;
     touch_alive();
     tracing::info!(user = %client.user_id().map(ToString::to_string).unwrap_or_default(), "已连上 Matrix");
-    let allowed_for_echo = allowed_users.clone();
+    let echo_owner = owner.clone();
     client.add_event_handler(move |event: OriginalSyncRoomMessageEvent, room: Room| {
-        let allowed_users = allowed_for_echo.clone();
-        async move { echo(event, room, &allowed_users).await }
+        let owner = echo_owner.clone();
+        async move { echo(event, room, &owner).await }
     });
-    let allowed_for_invites = allowed_users;
     client.add_event_handler(
         move |event: StrippedRoomMemberEvent, room: Room, client: Client| {
-            let allowed_users = allowed_for_invites.clone();
-            async move { accept_invite(event, room, client, &allowed_users).await }
+            let owner = owner.clone();
+            async move { accept_invite(event, room, client, &owner).await }
         },
     );
     let settings = SyncSettings::default().token(first.next_batch);
@@ -97,38 +90,29 @@ pub async fn run() -> anyhow::Result<()> {
         .context("同步中断")
 }
 
-/// 名单里的人的文字消息回过去（`/delay` 延迟，其余原样立刻回）；别人的、自己的、不是文字的都不理。
-async fn echo(event: OriginalSyncRoomMessageEvent, room: Room, allowed_users: &[OwnedUserId]) {
-    if room.state() != RoomState::Joined || !allowed_users.contains(&event.sender) {
+/// 主人的文字消息原样回过去；别人的、自己的、不是文字的都不理。
+async fn echo(event: OriginalSyncRoomMessageEvent, room: Room, owner: &OwnedUserId) {
+    if room.state() != RoomState::Joined || event.sender != *owner {
         return;
     }
     let MessageType::Text(text) = event.content.msgtype else {
         return;
     };
-    command::deliver(command::parse(&text.body), move |text| {
-        let room = room.clone();
-        async move { send(&room, &text).await }
-    })
-    .await;
-}
-
-/// 把回声发进房间；发不出去只记日志，一条没回不该拖垮同步。
-async fn send(room: &Room, text: &str) {
-    let reply = RoomMessageEventContent::text_plain(format!("{PREFIX}{text}"));
+    let reply = RoomMessageEventContent::text_plain(format!("{PREFIX}{}", text.body));
     if let Err(e) = room.send(reply).await {
         tracing::warn!(room = %room.room_id(), error = %e, "回声没发出去");
     }
 }
 
-/// 名单里的人邀请 Bot 进别的房间时接受；别人的邀请不理。
+/// 主人邀请 Bot 进别的房间时接受；别人的邀请不理。
 async fn accept_invite(
     event: StrippedRoomMemberEvent,
     room: Room,
     client: Client,
-    allowed_users: &[OwnedUserId],
+    owner: &OwnedUserId,
 ) {
     let invited_me = client.user_id().is_some_and(|me| event.state_key == me);
-    if !invited_me || !allowed_users.contains(&event.sender) || room.state() != RoomState::Invited {
+    if !invited_me || event.sender != *owner || room.state() != RoomState::Invited {
         return;
     }
     if let Err(e) = room.join().await {

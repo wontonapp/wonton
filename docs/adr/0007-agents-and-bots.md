@@ -1,6 +1,6 @@
 # ADR-0007 Agent 与 Bot：Agent 即插件
 
-- 状态：已接受（2026-10-28）。Agent 的总体边界和 Bot 关系见本文；ACP 桥的实现形态见 [ADR-0035](0035-acp-bridge.md)。经桥登录的条款限制见 [ADR-0034](0034-onboarding-and-help.md)；家人的 Bot、Bot 听谁的和 Bot 之间的规则由 [ADR-0045](0045-family-members.md) 细化；家人账号的角色和按角色给 AI 设的上限见 [ADR-0088](0088-family-accounts.md)，不等 M2。Agent 自带的网页做插件网页见 [ADR-0084](0084-agent-own-web.md)
+- 状态：已接受（2026-10-28）。Agent 的总体边界和 Bot 关系见本文；ACP 桥的实现形态见 [ADR-0035](0035-acp-bridge.md)。经桥登录的条款限制见 [ADR-0034](0034-onboarding-and-help.md)；家人的 Bot、Bot 听谁的和 Bot 之间的规则由 [ADR-0045](0045-family-members.md) 细化
 
 ## 背景
 
@@ -22,13 +22,13 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
     [ADR-0035](0035-acp-bridge.md)。
 - **默认 Agent**：Hermes，走 Bot Mode，一个 profile 对应一个 Bot；只收发消息，不做执行轨迹和工具
   过程展示。
-- **家人**：每个家人有自己的私人 Bot（独立记忆，互不可见）；主人可以建共享 Bot，拉进家庭群（[ADR-0088](0088-family-accounts.md)，不等 M2）。
+- **家人**：每个家人有自己的私人 Bot（独立记忆，互不可见）；主人可以建共享 Bot，拉进家庭群（M2）。
 - **Bot 之间通信**：同机走 Matrix 私聊或群聊；跨机做成独立插件（Matrix 联邦走 iroh，或 A2A 协议）。
 - **权限**：
   - 私人 Bot 只接受主人的指令。
   - 其他 Bot 要经主人同意才能加为联系人；跨机还要先配对两台服务器。
   - 来自其他 Bot 的消息一律视为不可信输入，涉及敏感工具必须由主人确认。
-  - 设频率和转发跳数上限，防止 Bot 之间无限对聊。跳数只数不同 Bot 之间的来回，一个 Bot 自己连着说不算，到顶时问主人要不要继续（ADR-0045）。
+  - 设频率和转发跳数上限，防止 Bot 之间无限对聊。
 
 ## 理由
 
@@ -37,7 +37,7 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
 
 ## 范围
 
-默认 Agent 是 Hermes。ACP 桥和 M1 同时开工，M1 验收不等它（ADR-0034）；家人账号和家人 Bot 见 ADR-0088，不等 M2；Bot 互发消息在 M2，接口预留；跨机通信在 M3。
+默认 Agent 是 Hermes。ACP 桥和 M1 同时开工，M1 验收不等它（ADR-0034）；家人 Bot、Bot 互发消息在 M2，接口预留；跨机通信在 M3。
 
 ## 代价与风险
 
@@ -107,7 +107,7 @@ ACP 桥的 C1 设计、容器边界、Matrix/ACP/MCP 转换和 C3 登录路径�
   确认的地方。它补的插话、登录、额度三项，ACP 这边已经有，或者对我们用处不大。
 
 环境：本机 macOS + OrbStack（arm64，Docker 29.8）。每个 Agent 一个容器（`node:24-bookworm-slim` 加一个说 ACP
-的程序），HOME 和工作区放在持久卷里，每个场景一个新容器。模型经开发机的 magpie（网关默认模型）。
+的程序），HOME 和工作区放在持久卷里，每个场景一个新容器。模型经开发机的 magpie（`auto/glm-5.3-flash`）。
 版本：
 
 - `claude-agent-acp` 0.98.0（内含 Claude Agent SDK 0.3.310）；
@@ -165,7 +165,7 @@ ACP 桥的 C1 设计、容器边界、Matrix/ACP/MCP 转换和 C3 登录路径�
   “No, and tell Codex what to do differently”，这一轮以 `cancelled` 结束，等主人的新指示。桥不能把它当成失败。
 - 取消：等确认时发 `session/cancel`，并对挂起的请求回答 `cancelled`。四家都以 `cancelled` 结束，什么都没执行。
 - 模式要由桥显式设：Codex 默认 `agent`（自动审核），Qwen 默认 `auto`（模型分类器自动批准），都不是最严格的。
-  桥在 `session/new` 之后切到上表的最严格模式（切法见 ADR-0035），聊天里不提供切到 bypass、yolo、full-access 的入口。
+  桥在 `session/new` 之后 `session/set_mode` 到上表的最严格模式，聊天里不提供切到 bypass、yolo、full-access 的入口。
 - Claude 适配器启动 Claude Code 时总带 `--allow-dangerously-skip-permissions`。这个参数不跳过权限，只是允许之后
   切到 `bypassPermissions`。镜像里放 managed settings（`/etc/claude-code/managed-settings.json` 写
   `permissions.disableBypassPermissionsMode: "disable"`）后，切换被拒（实测）。全程没有用
@@ -227,8 +227,9 @@ claude-agent-acp 和 codex-acp 实现了同一个约定（两家都写在各自�
 - 结果：`injected` 表示并入进行中的这一轮，原来那个 `session/prompt` 照常以这一轮的结束返回；`promptRequired`
   表示 agent 空闲，由桥用 `session/prompt` 发。
 - 桥只在自己有一轮进行中时发。codex-acp 2.3.0 不认 `idleBehavior`（codex-acp#440），空闲时会返回 `startedNewTurn`、
-  自己开一轮，而这一轮没有对应的 `session/prompt` 响应。桥怎么处理见 ADR-0035。
-- 不支持的运行时（Kimi、Qwen、Qoder）由桥攒着，这一轮结束后合成一轮发（ADR-0035）。Qwen 有私有的插话方法
+  自己开一轮，而这一轮没有对应的 `session/prompt` 响应。桥要处理这个竞态：把后续输出当作新一轮。M2 实现时
+  写测试覆盖。
+- 不支持的运行时（Kimi、Qwen、Qoder）退回排队，聊天里另给“打断重来”。Qwen 有私有的插话方法
   （`craft/drainMidTurnQueue`、`craft/midTurnSendNow`，不带 `_` 前缀，不符合 ACP 的扩展约定），不接。
 - ACP v2 草案把 `session/prompt` 改成“插入即返回”，但仍没规定排队和插话；claude-agent-acp 的插话只在 v1 上。
   v2 定稿后再看是否迁移。

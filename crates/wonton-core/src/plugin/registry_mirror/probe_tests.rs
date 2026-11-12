@@ -108,14 +108,7 @@ async fn bearer_flow(token_field: &'static str) {
         }),
     ))
     .await;
-    let result = probe_url(
-        &format!("{}/manifest", server.url),
-        &digest(),
-        WAIT,
-        false,
-        &Default::default(),
-    )
-    .await;
+    let result = probe_url(&format!("{}/manifest", server.url), &digest(), WAIT, false).await;
     assert!(result.problem.is_none(), "{result:?}");
     assert!(result.latency_ms.is_some());
     assert!(result.probed_at_ms > 0);
@@ -139,14 +132,7 @@ async fn registry_probe_preserves_rejected_http_statuses() {
         let server =
             Server::start(Router::new().route("/manifest", get(move || async move { status })))
                 .await;
-        let result = probe_url(
-            &format!("{}/manifest", server.url),
-            &digest(),
-            WAIT,
-            false,
-            &Default::default(),
-        )
-        .await;
+        let result = probe_url(&format!("{}/manifest", server.url), &digest(), WAIT, false).await;
         let problem = assert_failure(result, RegistryFailure::Rejected);
         assert!(problem.message.contains(&status.as_u16().to_string()));
     }
@@ -174,14 +160,7 @@ async fn registry_probe_retries_authentication_only_once() {
         }),
     ))
     .await;
-    let result = probe_url(
-        &format!("{}/manifest", server.url),
-        &digest(),
-        WAIT,
-        false,
-        &Default::default(),
-    )
-    .await;
+    let result = probe_url(&format!("{}/manifest", server.url), &digest(), WAIT, false).await;
     let problem = assert_failure(result, RegistryFailure::Rejected);
     assert!(problem.message.contains("401"));
     assert_eq!(requests.load(Ordering::SeqCst), 2);
@@ -200,14 +179,7 @@ async fn registry_probe_reports_token_endpoint_rejection() {
         }),
     ))
     .await;
-    let result = probe_url(
-        &format!("{}/manifest", server.url),
-        &digest(),
-        WAIT,
-        false,
-        &Default::default(),
-    )
-    .await;
+    let result = probe_url(&format!("{}/manifest", server.url), &digest(), WAIT, false).await;
     let problem = assert_failure(result, RegistryFailure::Rejected);
     assert!(problem.message.contains("403"));
 }
@@ -216,14 +188,7 @@ async fn registry_probe_reports_token_endpoint_rejection() {
 async fn registry_probe_checks_raw_response_digest() {
     let server =
         Server::start(Router::new().route("/manifest", get(|| async { "wrong content" }))).await;
-    let result = probe_url(
-        &format!("{}/manifest", server.url),
-        &digest(),
-        WAIT,
-        false,
-        &Default::default(),
-    )
-    .await;
+    let result = probe_url(&format!("{}/manifest", server.url), &digest(), WAIT, false).await;
     assert_failure(result, RegistryFailure::DigestMismatch);
 }
 
@@ -243,14 +208,7 @@ async fn registry_probe_does_not_decompress_manifest() {
         }),
     ))
     .await;
-    let result = probe_url(
-        &format!("{}/manifest", server.url),
-        &expected,
-        WAIT,
-        false,
-        &Default::default(),
-    )
-    .await;
+    let result = probe_url(&format!("{}/manifest", server.url), &expected, WAIT, false).await;
     assert!(result.problem.is_none(), "{result:?}");
 }
 
@@ -281,7 +239,6 @@ async fn registry_probe_total_timeout_includes_token_body() {
         &digest(),
         Duration::from_millis(100),
         false,
-        &Default::default(),
     )
     .await;
     assert_failure(result, RegistryFailure::Unreachable);
@@ -304,7 +261,6 @@ async fn registry_probe_total_timeout_includes_manifest_body() {
         &digest(),
         Duration::from_millis(100),
         false,
-        &Default::default(),
     )
     .await;
     assert_failure(result, RegistryFailure::Unreachable);
@@ -354,14 +310,7 @@ async fn registry_probe_redirect_strips_authorization() {
         }),
     ))
     .await;
-    let result = probe_url(
-        &format!("{}/manifest", server.url),
-        &digest(),
-        WAIT,
-        false,
-        &Default::default(),
-    )
-    .await;
+    let result = probe_url(&format!("{}/manifest", server.url), &digest(), WAIT, false).await;
     assert!(result.problem.is_none(), "{result:?}");
     assert_eq!(received.load(Ordering::SeqCst), 1);
 }
@@ -408,14 +357,7 @@ async fn registry_probe_authenticates_only_the_challenging_redirect_target() {
         }),
     ))
     .await;
-    let result = probe_url(
-        &format!("{}/manifest", origin.url),
-        &digest(),
-        WAIT,
-        false,
-        &Default::default(),
-    )
-    .await;
+    let result = probe_url(&format!("{}/manifest", origin.url), &digest(), WAIT, false).await;
     assert!(result.problem.is_none(), "{result:?}");
     assert_eq!(requests.load(Ordering::SeqCst), 1);
 }

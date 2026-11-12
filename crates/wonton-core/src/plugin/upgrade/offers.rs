@@ -10,7 +10,7 @@ use tokio::time::Instant;
 use wonton_protocol::{CardLine, InstalledPlugins, StoreProblem, UpgradeOffer};
 
 use super::super::github::{GitHubError, Tag};
-use super::super::github_source::{SourceRef, Trust, latest, version_of};
+use super::super::github_source::{SourceRef, Trust, latest};
 use super::super::index_location::IndexLocation;
 use super::super::install_error::InstallError;
 use super::super::languages::Languages;
@@ -72,7 +72,7 @@ pub struct Upgrades {
 }
 
 impl Upgrades {
-    pub(in crate::plugin) fn forget(&self, id: &PluginId) {
+    pub(super) fn forget(&self, id: &PluginId) {
         self.checked.write().expect("升级检查锁中毒").remove(id);
         let mut failed = self.bundled_failed.write().expect("升级检查锁中毒");
         failed.remove(id);
@@ -212,15 +212,12 @@ impl PluginManager {
         let mut results = HashMap::new();
         let mut problem = None;
         if !records.is_empty() {
-            let (index, index_problem) = self
-                .refreshed_official_index(refresh, &self.owner_languages())
-                .await;
+            let (index, index_problem) = self.refreshed_official_index(refresh).await;
             self.adopt_official(&index, &mut records);
             let uses_index = records.iter().any(|r| self.expects_official(r));
             for record in &records {
                 let id = record.id.clone();
-                let langs = self.owner_languages();
-                match self.check_one(&index, record, &langs).await {
+                match self.check_one(&index, record).await {
                     Ok(checked) => {
                         results.insert(id, checked);
                     }
@@ -230,11 +227,7 @@ impl PluginManager {
                         results.extend(previous.get(&id).cloned().map(|c| (id.clone(), c)));
                         problem.get_or_insert(StoreProblem {
                             reason: failure(&e),
-                            details: crate::l10n::text(
-                                &langs,
-                                "plugin-settings-upgrade-check-failed",
-                                &[("id", id.as_str().into()), ("error", e.to_string().into())],
-                            ),
+                            details: format!("{id} 的新版本没查到：{e}"),
                         });
                     }
                 }
@@ -269,7 +262,6 @@ impl PluginManager {
         &self,
         index: &Index,
         record: &InstalledRecord,
-        langs: &Languages,
     ) -> Result<Checked, GitHubError> {
         let origin = record.origin.as_ref();
         if let Some(listed) = self.official_entry(index, record) {
@@ -278,41 +270,32 @@ impl PluginManager {
             let version = &listed.entry.version;
             return Ok(Checked {
                 offer: newer(version, &record.version).then(|| offer_of(&listed.manifest, record)),
-                rewritten: (same_version && moved).then(|| {
-                    crate::l10n::text(
-                        langs,
-                        "plugin-settings-upgrade-official-commit-moved",
-                        &[("version", version.as_str().into())],
-                    )
-                }),
+                rewritten: (same_version && moved)
+                    .then(|| format!("官方索引里版本 {version} 换了提交：不算新版本，装着的没变")),
             });
         }
         let Some(origin) = origin.filter(|o| o.trust == Trust::Community) else {
             return Ok(Checked::default());
         };
         if let Some(source) = &origin.index {
-            return self.check_in_index(source, record, langs).await;
+            return self.check_in_index(source, record).await;
         }
-        let Ok(source) = SourceRef::parse(&origin.repo, langs) else {
+        let Ok(source) = SourceRef::parse(&origin.repo) else {
             return Ok(Checked::default());
         };
-        let tags = self.github.tags(&source.repo, langs).await?;
+        let tags = self.github.tags(&source.repo).await?;
         let rewritten = tags
             .iter()
             .find(|t| Some(&t.name) == origin.tag.as_ref() && t.commit != origin.commit)
             .map(|t| {
-                crate::l10n::text(
-                    langs,
-                    "plugin-settings-upgrade-tag-moved",
-                    &[("tag", t.name.as_str().into())],
+                format!(
+                    "这个版本的 tag {} 被作者改到了别的提交：不算新版本，装着的没变",
+                    t.name
                 )
             });
-        let offer = match latest(tags, source.tag_prefix()) {
-            Some(tag)
-                if version_of(&tag.name, source.tag_prefix())
-                    .is_some_and(|version| newer(version, &record.version)) =>
-            {
-                self.community_offer(&source, &tag, record, langs).await?
+        let offer = match latest(tags) {
+            Some(tag) if newer(tag.name.trim_start_matches('v'), &record.version) => {
+                self.community_offer(&source, &tag, record).await?
             }
             _ => None,
         };
@@ -324,26 +307,21 @@ impl PluginManager {
         &self,
         source: &str,
         record: &InstalledRecord,
-        langs: &Languages,
     ) -> Result<Checked, GitHubError> {
-        let Ok((location, id)) = IndexLocation::of_item_source(source, langs) else {
+        let Ok((location, id)) = IndexLocation::of_item_source(source) else {
             return Ok(Checked::default());
         };
         let added = &self.storefront.added;
         if !added.has_index(&location) {
             return Ok(Checked {
                 offer: None,
-                rewritten: Some(crate::l10n::text(
-                    langs,
-                    "plugin-settings-upgrade-index-removed",
-                    &[("provider", location.provider().into())],
+                rewritten: Some(format!(
+                    "索引 {} 已经从商店删掉，不再提示新版本",
+                    location.provider()
                 )),
             });
         }
-        let listed = match added
-            .listed_in(&location, id, &self.owner_languages())
-            .await
-        {
+        let listed = match added.listed_in(&location, id).await {
             Ok(listed) => listed,
             Err(InstallError::SourceUnavailable(why)) => return Err(GitHubError::Unavailable(why)),
             Err(e) => {
@@ -364,19 +342,14 @@ impl PluginManager {
         source: &SourceRef,
         tag: &Tag,
         record: &InstalledRecord,
-        langs: &Languages,
     ) -> Result<Option<Offer>, GitHubError> {
         let skip = |why: String| {
             tracing::info!(plugin = %record.id, tag = %tag.name, reason = %why, "新版本不提示");
             Ok(None)
         };
-        let path = source.subdir.as_ref().map_or_else(
-            || COMPOSE_FILE.to_owned(),
-            |subdir| format!("{subdir}/{COMPOSE_FILE}"),
-        );
         let compose = self
             .github
-            .file(&source.repo, &tag.commit, &path, MAX_FILE_BYTES, langs)
+            .file(&source.repo, &tag.commit, COMPOSE_FILE, MAX_FILE_BYTES)
             .await;
         let compose = match compose {
             Err(e @ (GitHubError::NotFound(_) | GitHubError::TooBig(_))) => {
@@ -385,29 +358,17 @@ impl PluginManager {
             other => other?,
         };
         let Ok(compose) = String::from_utf8(compose) else {
-            return skip(crate::l10n::text(
-                langs,
-                "plugin-settings-upgrade-compose-not-utf8",
-                &[("file", COMPOSE_FILE.into())],
-            ));
+            return skip(format!("{COMPOSE_FILE} 不是 UTF-8 文本"));
         };
-        let manifest = match PluginPackage::manifest_of(&compose, langs) {
+        let manifest = match PluginPackage::manifest_of(&compose) {
             Ok(manifest) => manifest,
-            Err(e) => return skip(format!("{e}")),
+            Err(e) => return skip(format!("清单读不懂：{e}")),
         };
         if manifest.id != record.id {
-            return skip(crate::l10n::text(
-                langs,
-                "plugin-settings-upgrade-manifest-id-changed",
-                &[("id", manifest.id.to_string().into())],
-            ));
+            return skip(format!("清单的 id 变成了 {}", manifest.id));
         }
-        if version_of(&tag.name, source.tag_prefix()) != Some(manifest.version.as_str()) {
-            return skip(crate::l10n::text(
-                langs,
-                "plugin-settings-upgrade-manifest-version",
-                &[("version", manifest.version.as_str().into())],
-            ));
+        if tag.name.strip_prefix('v') != Some(manifest.version.as_str()) {
+            return skip(format!("清单的版本是 {}", manifest.version));
         }
         Ok(Some(offer_of(&manifest, record)))
     }

@@ -16,7 +16,6 @@ use super::test_support::{Notes, serve_notes};
 use super::upstream::{ReadError, Upstreams};
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
-use crate::plugin::languages::Languages;
 use crate::plugin::{McpServer, PluginId, PluginPackage, PluginStatus};
 
 pub(super) use crate::mcp::test_setup::*;
@@ -160,9 +159,7 @@ async fn stuck_plugins_do_not_hold_up_everyone_elses_tools() {
         let stuck = NOTES
             .replace("name: notes", &format!("name: {name}"))
             .replace("app.example.notes", &format!("app.example.{name}"));
-        let manifest = PluginPackage::parse(&stuck, &Languages::from_header(Some("zh-Hans")))
-            .unwrap()
-            .manifest;
+        let manifest = PluginPackage::parse(&stuck).unwrap().manifest;
         let id = manifest.id.clone();
         s.manager
             .register_for_test(manifest, PluginStatus::Running, None);
@@ -208,9 +205,7 @@ async fn a_confirmed_call_that_times_out_leaves_the_card_uncertain() {
         .replace("name: notes", "name: hanging")
         .replace("app.example.notes", "app.example.hanging")
         .replace("streamable-http}", "streamable-http, tool_idle_seconds: 1}");
-    let manifest = PluginPackage::parse(&manifest, &Languages::from_header(Some("zh-Hans")))
-        .unwrap()
-        .manifest;
+    let manifest = PluginPackage::parse(&manifest).unwrap().manifest;
     let id = manifest.id.clone();
     s.manager
         .register_for_test(manifest, PluginStatus::Running, None);
@@ -229,14 +224,27 @@ async fn a_confirmed_call_that_times_out_leaves_the_card_uncertain() {
     assert!(text(&result).contains("是否已执行不确定"), "{result:?}");
     let meta = result.meta.as_ref().unwrap();
     assert_eq!(meta.0["app.wonton/failure"], "tool_timed_out");
+    let states = s.cards.states(&card.id);
     assert!(
-        matches!(
-            s.bus.confirmations().card(&card.id).map(|card| card.state),
-            Some(ConfirmationState::Uncertain { .. })
-        ),
-        "执行完的卡片标结果不确定"
+        matches!(states.last(), Some(ConfirmationState::Uncertain { .. })),
+        "{states:?}"
     );
     assert_eq!(s.audit().last().unwrap()["decision"], "approved");
+}
+
+/// 卡片重发到了别的房间：之后的更新发给重发的那张。
+#[tokio::test]
+async fn a_card_that_moved_is_updated_where_it_now_is() {
+    let s = setup(Engine::unreachable_for_test(), Duration::from_secs(60)).await;
+    *s.cards.moves_to.lock().unwrap() = Some("$moved".to_owned());
+    let call = s.spawn("app-example-notes__delete", json!({"name": "a"}));
+    let card = s.cards.wait_for(1).await;
+    s.answer(&card.id, Answer::Approve).unwrap();
+    call.await.unwrap();
+    let handles = s.cards.update_handles.lock().unwrap();
+    assert!(handles.len() >= 2, "{handles:?}");
+    assert_eq!(handles[0], "$card1");
+    assert_eq!(handles[1], "$moved");
 }
 
 /// Agent 取消了只读的调用（或者断开了）：取消传给插件，不留一个没人要结果的调用在那里跑。
@@ -266,8 +274,7 @@ async fn an_agent_cancelling_a_read_only_call_cancels_it_in_the_plugin() {
 fn a_plugin_can_declare_longer_tool_limits_within_reason() {
     let parse = |extra: &str| {
         let text = NOTES.replace("streamable-http}", &format!("streamable-http{extra}}}"));
-        PluginPackage::parse(&text, &Languages::from_header(Some("zh-Hans")))
-            .map(|package| package.manifest.mcp.unwrap())
+        PluginPackage::parse(&text).map(|package| package.manifest.mcp.unwrap())
     };
     let mcp = parse(", tool_idle_seconds: 3600, tool_total_seconds: 7200").unwrap();
     assert_eq!(mcp.tool_idle_seconds, Some(3600));
@@ -287,8 +294,7 @@ fn a_plugin_can_declare_longer_tool_limits_within_reason() {
 fn a_plugin_can_limit_its_tools_to_a_valid_allowlist() {
     let parse = |extra: &str| {
         let text = NOTES.replace("streamable-http}", &format!("streamable-http{extra}}}"));
-        PluginPackage::parse(&text, &Languages::from_header(Some("zh-Hans")))
-            .map(|package| package.manifest.mcp.unwrap())
+        PluginPackage::parse(&text).map(|package| package.manifest.mcp.unwrap())
     };
     let mcp = parse(", tools: [search, find, a.b_c-d]").unwrap();
     assert_eq!(
@@ -299,9 +305,9 @@ fn a_plugin_can_limit_its_tools_to_a_valid_allowlist() {
     assert_eq!(parse("").unwrap().tools, None);
     for (extra, why) in [
         (", tools: []", "mcp.tools"),
-        (", tools: [search, search]", "duplicated"),
-        (", tools: [\"search files\"]", "not a valid tool name"),
-        (", tools: [搜索]", "not a valid tool name"),
+        (", tools: [search, search]", "重复"),
+        (", tools: [\"search files\"]", "不是合法的工具名"),
+        (", tools: [搜索]", "不是合法的工具名"),
     ] {
         let error = parse(extra).unwrap_err().to_string();
         assert!(error.contains(why), "{extra}: {error}");
@@ -345,8 +351,6 @@ async fn an_answer_has_to_match_a_button_on_the_card() {
         ],
         scope: None,
         plugin_id: None,
-        secret_inputs: Vec::new(),
-        settings: None,
     };
     let (bus, caller) = (s.bus.clone(), s.caller.id.clone());
     let asked = tokio::spawn(async move { bus.confirmations().ask(&caller, draft).await.is_ok() });
@@ -399,12 +403,11 @@ async fn writes_run_only_after_the_owner_approves() {
     let result = call.await.unwrap();
     assert_eq!(text(&result), "删掉了 b.txt");
     assert_eq!(*s.notes.deleted.lock().unwrap(), ["b"]);
-    assert_eq!(
-        s.bus.confirmations().card(&card.id).map(|card| card.state),
-        Some(ConfirmationState::Succeeded {
-            message: crate::l10n::text(&s.bus.owner_languages(), "chat-tool-ran", &[]),
-        }),
-        "执行完的卡片是结果"
+    let states = s.cards.states(&card.id);
+    assert_eq!(states.first(), Some(&ConfirmationState::Running));
+    assert!(
+        matches!(states.last(), Some(ConfirmationState::Succeeded { .. })),
+        "{states:?}"
     );
     assert_eq!(
         s.answer(&card.id, Answer::Reject),
@@ -427,10 +430,7 @@ async fn rejected_and_expired_requests_never_run() {
         failed(&result) && text(&result).contains("拒绝"),
         "{result:?}"
     );
-    assert_eq!(
-        s.bus.confirmations().card(&card.id).map(|card| card.state),
-        Some(ConfirmationState::Rejected)
-    );
+    assert_eq!(s.cards.states(&card.id), [ConfirmationState::Rejected]);
 
     let result = s
         .call("app-example-notes__delete", json!({"name": "d"}))
@@ -440,13 +440,7 @@ async fn rejected_and_expired_requests_never_run() {
         "{result:?}"
     );
     let expired = s.cards.wait_for(2).await;
-    assert_eq!(
-        s.bus
-            .confirmations()
-            .card(&expired.id)
-            .map(|card| card.state),
-        Some(ConfirmationState::Expired)
-    );
+    assert_eq!(s.cards.states(&expired.id), [ConfirmationState::Expired]);
     assert_eq!(
         s.answer(&expired.id, Answer::Approve),
         Err(AnswerError::Expired)
@@ -464,7 +458,7 @@ async fn without_a_card_nothing_runs() {
         .call("app-example-notes__delete", json!({"name": "e"}))
         .await;
     assert!(
-        failed(&result) && text(&result).contains("没能请你确认"),
+        failed(&result) && text(&result).contains("没能请主人确认"),
         "{result:?}"
     );
     s.cards.broken.store(false, Ordering::SeqCst);
@@ -477,7 +471,7 @@ async fn without_a_card_nothing_runs() {
         .call("app-example-notes__delete", json!({"name": "f"}))
         .await;
     assert!(
-        failed(&result) && text(&result).contains("等你确认"),
+        failed(&result) && text(&result).contains("等主人确认"),
         "{result:?}"
     );
     for card in s.cards.posted.lock().unwrap().iter() {
@@ -498,14 +492,10 @@ async fn the_bot_installs_from_the_official_index_after_the_owner_confirms() {
         .await;
     let found: Value = serde_json::from_str(&text(&found)).unwrap();
     assert_eq!(found["plugins"][0]["id"], "app.example.journal");
-    // 主人没存过语言，回退英文；期望值用目录本身格式化出来。
-    let langs = s.bus.plugins.owner_languages();
-    let share = crate::l10n::text(
-        &langs,
-        "permission-storage-share",
-        &[("access", "read".into()), ("name", "documents".into())],
+    assert_eq!(
+        found["plugins"][0]["permissions"],
+        json!(["读共享文件夹 documents"])
     );
-    assert_eq!(found["plugins"][0]["permissions"], json!([share]));
 
     let call = s.spawn(
         "wonton__install_plugin",
@@ -518,7 +508,7 @@ async fn the_bot_installs_from_the_official_index_after_the_owner_confirms() {
         card.title
     );
     let lines: Vec<&str> = card.lines.iter().map(|l| l.text.as_str()).collect();
-    assert!(lines.contains(&format!("· {share}").as_str()), "{lines:?}");
+    assert!(lines.contains(&"· 读共享文件夹 documents"), "{lines:?}");
     assert!(
         s.manager
             .list()
@@ -536,12 +526,10 @@ async fn the_bot_installs_from_the_official_index_after_the_owner_confirms() {
         journal.map(|p| p.status.clone()),
         Some(PluginStatus::Running)
     );
+    let states = s.cards.states(&card.id);
     assert!(
-        matches!(
-            s.bus.confirmations().card(&card.id).map(|card| card.state),
-            Some(ConfirmationState::Succeeded { .. })
-        ),
-        "装完的卡片是结果"
+        matches!(states.last(), Some(ConfirmationState::Succeeded { .. })),
+        "{states:?}"
     );
 
     // 已经装了、官方索引里没有、要核心不开放的权限的：直接拒绝，不发卡片。
@@ -607,22 +595,15 @@ async fn an_unreadable_index_is_reported_not_shown_as_empty() {
 async fn uninstalling_needs_the_owner_and_never_removes_the_caller_itself() {
     let (_docker, engine) = FakeDocker::start().await;
     let s = setup(engine, Duration::from_secs(60)).await;
-    let package = PluginPackage::parse(
-        &official_package(
-            "app.example.journal",
-            "日记",
-            "storage.share.documents:read",
-        ),
-        &Languages::from_header(Some("zh-Hans")),
-    )
+    let package = PluginPackage::parse(&official_package(
+        "app.example.journal",
+        "日记",
+        "storage.share.documents:read",
+    ))
     .unwrap();
     let permissions = package.manifest.permissions.clone();
     s.manager
-        .install_package(
-            package,
-            &permissions,
-            Languages::from_header(Some("zh-Hans")),
-        )
+        .install_package(package, &permissions)
         .await
         .unwrap();
 
@@ -646,12 +627,9 @@ async fn uninstalling_needs_the_owner_and_never_removes_the_caller_itself() {
             .all(|p| p.id.as_str() != "app.example.journal")
     );
 
-    let manifest = PluginPackage::parse(
-        &NOTES.replace("app.example.notes", "com.example.agent"),
-        &Languages::from_header(Some("zh-Hans")),
-    )
-    .unwrap()
-    .manifest;
+    let manifest = PluginPackage::parse(&NOTES.replace("app.example.notes", "com.example.agent"))
+        .unwrap()
+        .manifest;
     s.manager
         .register_for_test(manifest, PluginStatus::Running, None);
     let result = s

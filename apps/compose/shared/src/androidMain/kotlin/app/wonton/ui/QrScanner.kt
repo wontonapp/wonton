@@ -44,7 +44,6 @@ fun QrScanner(onCode: (String) -> Unit, onUnavailable: (String) -> Unit, modifie
         PreviewView(context).apply { implementationMode = PreviewView.ImplementationMode.COMPATIBLE }
     }
     DisposableEffect(previewView, lifecycleOwner) {
-        // 相机回调不在组合里，原因的文字在回调处用上下文取。
         val camera = QrCamera(previewView, { currentOnCode(it) }, { currentOnUnavailable(it) })
         camera.start(lifecycleOwner)
         onDispose { camera.stop() }
@@ -53,6 +52,7 @@ fun QrScanner(onCode: (String) -> Unit, onUnavailable: (String) -> Unit, modifie
 }
 
 private const val TAG = "QrScanner"
+private const val CAMERA_FAILED = "相机打不开，请粘贴配对码"
 
 /** 一次取景，跟着界面的生命周期开关相机。回调都在主线程上。 */
 private class QrCamera(
@@ -60,7 +60,6 @@ private class QrCamera(
     private val onCode: (String) -> Unit,
     private val onUnavailable: (String) -> Unit,
 ) {
-    private fun reason(res: Int): String = previewView.context.getString(res)
     private val main = ContextCompat.getMainExecutor(previewView.context)
     private val frames = Executors.newSingleThreadExecutor()
     private val preview = Preview.Builder().build()
@@ -93,13 +92,13 @@ private class QrCamera(
     private fun bind(provider: ProcessCameraProvider, owner: LifecycleOwner) {
         this.provider = provider
         val problem = try {
-            if (provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) null else R.string.qr_scanner_no_back_camera
+            if (provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) null else "这台设备没有后置相机"
         } catch (failure: CameraInfoUnavailableException) {
-            Log.w(TAG, "Failed to read camera info", failure)
-            R.string.qr_scanner_camera_failed
+            Log.w(TAG, "读不到相机的信息", failure)
+            CAMERA_FAILED
         }
         if (problem != null) {
-            onUnavailable(reason(problem))
+            onUnavailable(problem)
             return
         }
         preview.surfaceProvider = previewView.surfaceProvider
@@ -116,16 +115,15 @@ private class QrCamera(
 
     /** 异常的原文只有开发者看得懂，留在日志里。 */
     private fun onCameraFailed(failure: Exception) {
-        Log.w(TAG, "Failed to open camera", failure)
-        onUnavailable(reason(R.string.qr_scanner_camera_failed))
+        Log.w(TAG, "相机打不开", failure)
+        onUnavailable(CAMERA_FAILED)
     }
 
     private fun describe(error: CameraState.StateError): String = when (error.code) {
-        CameraState.ERROR_CAMERA_IN_USE, CameraState.ERROR_MAX_CAMERAS_IN_USE ->
-            reason(R.string.qr_scanner_camera_in_use)
-        CameraState.ERROR_CAMERA_DISABLED -> reason(R.string.qr_scanner_camera_disabled)
-        CameraState.ERROR_DO_NOT_DISTURB_MODE_ENABLED -> reason(R.string.qr_scanner_do_not_disturb)
-        else -> previewView.context.getString(R.string.qr_scanner_camera_error_code, error.code)
+        CameraState.ERROR_CAMERA_IN_USE, CameraState.ERROR_MAX_CAMERAS_IN_USE -> "相机正被别的 App 占用"
+        CameraState.ERROR_CAMERA_DISABLED -> "相机被系统策略停用了"
+        CameraState.ERROR_DO_NOT_DISTURB_MODE_ENABLED -> "勿扰模式下打不开相机"
+        else -> "相机出错了（CameraX 错误码 ${error.code}）"
     }
 }
 

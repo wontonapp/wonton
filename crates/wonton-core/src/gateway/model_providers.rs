@@ -10,10 +10,8 @@ use hyper::{HeaderMap, StatusCode};
 use serde::de::DeserializeOwned;
 use wonton_protocol::{CustomModelProvider, ModelProviderKey};
 
-use super::api::{install_error, languages, owner_denied};
+use super::api::{install_error, languages, plugin_denied};
 use super::{Gateway, TunnelPeer};
-use crate::l10n;
-use crate::plugin::languages::Languages;
 use crate::plugin::manager::InstallError;
 use crate::plugin::model_providers::ProviderAction;
 
@@ -22,7 +20,7 @@ pub async fn list(
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     match gateway.plugins.model_providers(&languages(&headers)).await {
@@ -59,18 +57,17 @@ async fn preset(
     body: &[u8],
     action: ProviderAction,
 ) -> Response {
-    if let Some(denied) = owner_denied(gateway, peer, headers) {
+    if let Some(denied) = plugin_denied(gateway, peer, headers) {
         return denied;
     }
-    let langs = languages(headers);
-    let request: ModelProviderKey = match parse(body, &langs) {
+    let request: ModelProviderKey = match parse(body) {
         Ok(request) => request,
         Err(error) => return install_error(&error),
     };
     result(
         gateway
             .plugins
-            .model_provider_key(id, request.key.expose(), action, &langs)
+            .model_provider_key(id, request.key.expose(), action)
             .await,
     )
 }
@@ -100,31 +97,25 @@ async fn custom(
     body: &[u8],
     action: ProviderAction,
 ) -> Response {
-    if let Some(denied) = owner_denied(gateway, peer, headers) {
+    if let Some(denied) = plugin_denied(gateway, peer, headers) {
         return denied;
     }
-    let langs = languages(headers);
-    let request: CustomModelProvider = match parse(body, &langs) {
+    let request: CustomModelProvider = match parse(body) {
         Ok(request) => request,
         Err(error) => return install_error(&error),
     };
     result(
         gateway
             .plugins
-            .custom_model_provider(&request, action, &langs)
+            .custom_model_provider(&request, action)
             .await,
     )
 }
 
-fn parse<T: DeserializeOwned>(body: &[u8], langs: &Languages) -> Result<T, InstallError> {
+fn parse<T: DeserializeOwned>(body: &[u8]) -> Result<T, InstallError> {
     // serde 的类型错误可能包含输入值，不能把含 key 的请求片段带回客户端。
-    serde_json::from_slice(body).map_err(|_| {
-        InstallError::Invalid(l10n::text(
-            langs,
-            "plugin-settings-model-request-format",
-            &[],
-        ))
-    })
+    serde_json::from_slice(body)
+        .map_err(|_| InstallError::Invalid("模型服务商请求格式不正确".into()))
 }
 
 fn result(result: Result<(), InstallError>) -> Response {

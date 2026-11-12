@@ -17,8 +17,6 @@ use wonton_protocol::FileFailure;
 
 use super::Failure;
 use crate::http::HttpClient;
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 /// 等响应头最多这么久。
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -39,22 +37,16 @@ pub struct InternalUrl {
 }
 
 impl InternalUrl {
-    pub fn parse(text: &str, langs: &Languages) -> Result<Self, String> {
-        let url = Url::parse(text).map_err(|e| {
-            l10n::text(
-                langs,
-                "files-resource-invalid-url",
-                &[("error", e.to_string().into())],
-            )
-        })?;
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let url = Url::parse(text).map_err(|e| format!("内网地址不合法：{e}"))?;
         if url.scheme() != "http" {
-            return Err(l10n::text(langs, "files-resource-http-only", &[]));
+            return Err("内网地址只能用 http".to_owned());
         }
         if !url.username().is_empty() || url.password().is_some() {
-            return Err(l10n::text(langs, "files-resource-no-credentials", &[]));
+            return Err("内网地址不能带用户名或密码".to_owned());
         }
         let Some(Host::Domain(service)) = url.host() else {
-            return Err(l10n::text(langs, "files-resource-host", &[]));
+            return Err("内网地址的主机名要是插件的服务名，不用 IP 字面量".to_owned());
         };
         let mut path = url.path().to_owned();
         if let Some(query) = url.query() {
@@ -93,7 +85,6 @@ pub async fn fetch(
     upstream: &str,
     url: &InternalUrl,
     request: &RemoteRequest,
-    langs: &Languages,
 ) -> Result<Response<Body>, Failure> {
     let mut builder = Request::builder()
         .method(request.method.clone())
@@ -105,20 +96,13 @@ pub async fn fetch(
     if let Some(if_range) = &request.if_range {
         builder = builder.header(header::IF_RANGE, if_range);
     }
-    let outbound = builder.body(Body::empty()).map_err(|e| {
-        Failure::new(
-            FileFailure::UpstreamError,
-            l10n::text(
-                langs,
-                "files-resource-invalid-url",
-                &[("error", e.to_string().into())],
-            ),
-        )
-    })?;
+    let outbound = builder
+        .body(Body::empty())
+        .map_err(|e| Failure::new(FileFailure::UpstreamError, format!("内网地址不合法：{e}")))?;
     let unreachable = |why: String| {
         Failure::new(
             FileFailure::PluginUnavailable,
-            l10n::text(langs, "files-resource-unreachable", &[("why", why.into())]),
+            format!("连不上插件的服务：{why}"),
         )
     };
     let response = tokio::time::timeout(RESPONSE_TIMEOUT, http.send(outbound))
@@ -127,29 +111,18 @@ pub async fn fetch(
         .map_err(|e| unreachable(e.to_string()))?;
     let status = response.status();
     if status.is_success() || status == hyper::StatusCode::RANGE_NOT_SATISFIABLE {
-        return Ok(response.map(|body| idle_limited(body, BODY_IDLE_TIMEOUT, langs)));
+        return Ok(response.map(|body| idle_limited(body, BODY_IDLE_TIMEOUT)));
     }
     if status.is_redirection() {
         return Err(Failure::new(
             FileFailure::UpstreamError,
-            l10n::text(
-                langs,
-                "files-resource-redirect",
-                &[("status", status.as_u16().into())],
-            ),
+            format!("插件的内网地址返回了跳转（{status}），核心不跟随"),
         ));
     }
     let words = error_words(response.into_body(), ERROR_BODY_TIMEOUT).await;
     Err(Failure::new(
         FileFailure::UpstreamError,
-        l10n::text(
-            langs,
-            "files-upstream-status",
-            &[
-                ("status", status.as_u16().into()),
-                ("detail", words.trim().into()),
-            ],
-        ),
+        format!("插件返回 {status}：{}", words.trim()),
     ))
 }
 
@@ -174,40 +147,34 @@ async fn error_words(mut body: Incoming, within: Duration) -> String {
 }
 
 /// 响应体的两块字节之间最多隔 `idle`，超过就算读失败：客户端按 `Content-Length` 看得出没传完。
-fn idle_limited(body: Incoming, idle: Duration, langs: &Languages) -> Body {
-    let timed_out = l10n::text(
-        langs,
-        "files-idle-limited",
-        &[("idle", format!("{idle:?}").into())],
-    );
-    Body::from_stream(stream::try_unfold(
-        (body, timed_out, idle),
-        move |(mut body, timed_out, idle)| async move {
-            loop {
-                let frame = tokio::time::timeout(idle, body.frame())
-                    .await
-                    .map_err(|_| {
-                        std::io::Error::new(std::io::ErrorKind::TimedOut, timed_out.clone())
-                    })?;
-                match frame {
-                    None => return Ok::<_, std::io::Error>(None),
-                    Some(Err(e)) => return Err(std::io::Error::other(e)),
-                    Some(Ok(frame)) => {
-                        if let Ok(data) = frame.into_data() {
-                            return Ok(Some((data, (body, timed_out, idle))));
-                        }
+fn idle_limited(body: Incoming, idle: Duration) -> Body {
+    Body::from_stream(stream::try_unfold(body, move |mut body| async move {
+        loop {
+            let frame = tokio::time::timeout(idle, body.frame())
+                .await
+                .map_err(|_| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!("插件的响应 {idle:?} 没有新的字节"),
+                    )
+                })?;
+            match frame {
+                None => return Ok::<_, std::io::Error>(None),
+                Some(Err(e)) => return Err(std::io::Error::other(e)),
+                Some(Ok(frame)) => {
+                    if let Ok(data) = frame.into_data() {
+                        return Ok(Some((data, body)));
                     }
                 }
             }
-        },
-    ))
+        }
+    }))
 }
 
 /// 读整个响应体，超过 `limit` 时为空。
 pub async fn read_limited(
     response: Response<Body>,
     limit: usize,
-    langs: &Languages,
 ) -> Result<Option<Vec<u8>>, Failure> {
     use http_body_util::LengthLimitError;
     match Limited::new(response.into_body(), limit).collect().await {
@@ -216,11 +183,7 @@ pub async fn read_limited(
         // 空闲超时或者连接断了：和 `/content` 一样算插件不可用。
         Err(e) => Err(Failure::new(
             FileFailure::PluginUnavailable,
-            l10n::text(
-                langs,
-                "files-upstream-read-failed",
-                &[("error", e.to_string().into())],
-            ),
+            format!("读插件的响应失败：{e}"),
         )),
     }
 }
@@ -228,11 +191,7 @@ pub async fn read_limited(
 /// 读响应的开头，攒够 `limit` 字节就停下（连接就此丢弃，不把整个文件读进内存）。
 /// 逐帧攒：超限的内容一帧都不再多收，`read_limited` 那种“超限返回空”的语义对预览是假话。
 /// 中途断了和 `/content` 一样算插件不可用。
-pub async fn read_upto(
-    response: Response<Body>,
-    limit: usize,
-    langs: &Languages,
-) -> Result<Vec<u8>, Failure> {
+pub async fn read_upto(response: Response<Body>, limit: usize) -> Result<Vec<u8>, Failure> {
     use http_body_util::BodyExt;
     let mut body = response.into_body();
     let mut out = Vec::new();
@@ -243,11 +202,7 @@ pub async fn read_upto(
         let frame = frame.map_err(|e| {
             Failure::new(
                 FileFailure::PluginUnavailable,
-                l10n::text(
-                    langs,
-                    "files-upstream-read-failed",
-                    &[("error", e.to_string().into())],
-                ),
+                format!("读插件的响应失败：{e}"),
             )
         })?;
         let Some(data) = frame.data_ref() else {
@@ -286,11 +241,7 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         let response = crate::http::HttpClient::new().send(request).await.unwrap();
-        let mut body = idle_limited(
-            response.into_body(),
-            Duration::from_millis(100),
-            &Languages::from_header(None),
-        );
+        let mut body = idle_limited(response.into_body(), Duration::from_millis(100));
         let first = body.frame().await.unwrap().unwrap().into_data().unwrap();
         assert_eq!(first.as_ref(), b"abc");
         assert!(body.frame().await.unwrap().is_err());
@@ -352,20 +303,18 @@ mod tests {
     #[tokio::test]
     async fn a_body_that_stalls_while_read_whole_means_the_plugin_is_unavailable() {
         let response = stalls_after("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nabc").await;
-        let langs = Languages::from_header(None);
-        let response = response.map(|body| idle_limited(body, Duration::from_millis(100), &langs));
-        let failure = read_limited(response, 1024, &langs).await.unwrap_err();
+        let response = response.map(|body| idle_limited(body, Duration::from_millis(100)));
+        let failure = read_limited(response, 1024).await.unwrap_err();
         assert_eq!(failure.kind, FileFailure::PluginUnavailable);
     }
 
     #[test]
     fn service_names_over_http_are_accepted() {
-        let langs = Languages::from_header(None);
-        let url = InternalUrl::parse("http://server:2283/internal/a?b=1", &langs).unwrap();
+        let url = InternalUrl::parse("http://server:2283/internal/a?b=1").unwrap();
         assert_eq!(url.service, "server");
         assert_eq!(url.port, 2283);
         assert_eq!(url.path, "/internal/a?b=1");
-        assert_eq!(InternalUrl::parse("http://web/x", &langs).unwrap().port, 80);
+        assert_eq!(InternalUrl::parse("http://web/x").unwrap().port, 80);
     }
 
     #[test]
@@ -383,8 +332,7 @@ mod tests {
             "http://user:secret@server/a",
             "not a url",
         ] {
-            let langs = Languages::from_header(None);
-            assert!(InternalUrl::parse(url, &langs).is_err(), "{url}");
+            assert!(InternalUrl::parse(url).is_err(), "{url}");
         }
     }
 }

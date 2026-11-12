@@ -75,33 +75,10 @@ pub enum VerificationCancel {
     AcceptedElsewhere,
     /// 同一时间又来了一个确认请求。Matrix SDK 遇到这种情况会把两个都取消，防止主人确认错对象：重新发起一次。
     ConcurrentRequest,
-    /// 双方确认了，但没从另一台设备取全密钥（它手里没有，或者交出前掉了线），以前的消息还是解不开：再确认一次，
-    /// 或者用恢复密钥。
+    /// 双方确认了，但另一台设备手里没有能转交的密钥，以前的消息还是解不开：改用恢复密钥。
     KeysMissing,
     /// 传输或服务器出错，详情在 `ChatViewModel::problem`。
     Failed,
-    #[serde(other)]
-    Other,
-}
-
-/// 加设备时把聊天密钥从另一台设备交过来（ADR-0087）。确认本身和进展在 [`VerificationFlow`] 里，这里只说本设备在
-/// 交接里是哪一方、走到哪一类情况；壳按它决定画交接页还是“添加设备”页上的结果。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum KeyHandoff {
-    /// 刚配对加进来的设备，正在看账号里有没有能交出密钥的设备。壳照常显示，只是不提恢复密钥。
-    Checking,
-    /// 刚配对加进来的设备在等另一台设备交出密钥：核心已经发出确认请求，壳整屏画交接页。`unanswered` 为真时请求发出
-    /// 60 秒还没有设备接上：请主人在另一台设备上打开“添加设备”，主人也可以先进聊天列表。
-    Receiving { unanswered: bool },
-    /// 本设备开着“添加设备”页，自动接上了新设备的确认请求：表情和结果在 [`VerificationFlow`] 里，
-    /// 完成后“添加设备”页画“已加好”。
-    Giving,
-    /// 本设备开着“添加设备”页时新设备来要密钥，但本设备自己也没有完整的密钥（没验证或备份不完整），没有自动接上：
-    /// 新设备拿不到旧消息的密钥。
-    CannotGive,
-    /// 更新的核心给出的情况：壳不画交接。
     #[serde(other)]
     Other,
 }
@@ -165,8 +142,6 @@ mod tests {
             Action::CancelDeviceVerification {
                 flow_id: "flow".into(),
             },
-            Action::CloseDeviceInvite,
-            Action::SkipKeyHandoff,
         ] {
             let json = serde_json::to_string(&action).unwrap();
             assert_eq!(serde_json::from_str::<Action>(&json).unwrap(), action);
@@ -178,28 +153,6 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<VerificationCancel>(r#""unknown_method""#).unwrap(),
             VerificationCancel::Other
-        );
-    }
-
-    /// 契约：交接的情况能经 JSON 往返；不认识的落到 `Other`，没有这个字段的旧快照读成没在交接。
-    #[test]
-    fn key_handoffs_round_trip_and_unknown_ones_fall_back() {
-        for handoff in [
-            KeyHandoff::Checking,
-            KeyHandoff::Receiving { unanswered: true },
-            KeyHandoff::Giving,
-            KeyHandoff::CannotGive,
-        ] {
-            let json = serde_json::to_string(&handoff).unwrap();
-            assert_eq!(serde_json::from_str::<KeyHandoff>(&json).unwrap(), handoff);
-        }
-        assert_eq!(
-            serde_json::from_str::<KeyHandoff>(r#"{"type":"scan_again"}"#).unwrap(),
-            KeyHandoff::Other
-        );
-        assert_eq!(
-            serde_json::from_str::<crate::RecoveryNextStep>(r#""wait_for_other_device""#).unwrap(),
-            crate::RecoveryNextStep::WaitForOtherDevice
         );
     }
 }

@@ -1,3 +1,4 @@
+import CoreImage.CIFilterBuiltins
 import SwiftUI
 import WontonClient
 
@@ -5,58 +6,34 @@ import WontonClient
 /// `HomeViewModel.invite`。
 struct InviteView: View {
     @Bindable var model: HomeModel
-    let chat: ChatModel
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-                // 配对码正出示给新设备时，新设备发来的确认请求就在这一屏接着显示，不另弹（ADR-0046）。
-                if let flow = chat.viewModel.encryption.verificationFlow, !flow.startedHere {
-                    if giving, case .done = flow.stage {
-                        Text(.inviteDeviceAdded)
-                            .wontonText(WontonTheme.typography.itemTitle)
+                switch model.viewModel.invite {
+                case nil, .requesting:
+                    HStack(spacing: WontonTheme.spacing.s12) {
+                        ProgressView()
+                        Text("正在向家里的服务器要配对码…")
+                            .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
-                    } else {
-                        DeviceVerificationFlowView(flow: flow, model: chat)
                     }
-                }
-                if chat.viewModel.encryption.keyHandoff == .cannotGive {
-                    WontonNotice(icon: .warning, title: String(localized: .inviteCannotGive))
-                }
-                // 码已经被新设备用掉、这一页在替它交出密钥（ADR-0087）：不再摆码。
-                if !giving {
-                    code
+                case let .ready(code, expiresAtMs):
+                    InviteCode(code: code, expiresAt: Date(timeIntervalSince1970: Double(expiresAtMs) / 1000)) {
+                        model.send(.inviteDevice)
+                    }
+                case let .failed(_, message):
+                    WontonNotice(icon: .warning, title: "没要到配对码", lines: [message]) {
+                        Button("再试一次") { model.send(.inviteDevice) }
+                            .buttonStyle(WontonButtonStyle(kind: .secondary))
+                    }
                 }
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .inviteTitle))
+        .wontonPushedScreen("添加设备")
         .task { model.send(.inviteDevice) }
-        .onDisappear { model.send(.closeDeviceInvite) }
-    }
-
-    private var giving: Bool { chat.viewModel.encryption.keyHandoff == .giving }
-
-    @ViewBuilder private var code: some View {
-        switch model.viewModel.invite {
-        case nil, .requesting:
-            HStack(spacing: WontonTheme.spacing.s12) {
-                ProgressView()
-                Text(.inviteRequesting)
-                    .wontonText(WontonTheme.typography.body)
-                    .foregroundStyle(Color(colors.textPrimary))
-            }
-        case let .ready(code, expiresAtMs):
-            InviteCode(code: code, expiresAt: Date(timeIntervalSince1970: Double(expiresAtMs) / 1000)) {
-                model.send(.inviteDevice)
-            }
-        case let .failed(_, message):
-            WontonNotice(icon: .warning, title: String(localized: .inviteFailedTitle), lines: [message]) {
-                Button(String(localized: .inviteTryAgain)) { model.send(.inviteDevice) }
-                    .buttonStyle(WontonButtonStyle(kind: .secondary))
-            }
-        }
     }
 }
 
@@ -79,28 +56,25 @@ private struct InviteCode: View {
                             .scaledToFit()
                             .frame(maxWidth: 260)
                             .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
-                            .accessibilityLabel(String(localized: .inviteQrLabel))
                     }
-                    Text(.inviteExpiresIn(
-                        Duration.seconds(TimeInterval(remaining)).formatted(.time(pattern: .minuteSecond))
-                    ))
+                    Text("还有 \(remaining / 60):\(String(format: "%02d", remaining % 60)) 过期")
                         .wontonText(WontonTheme.typography.supporting)
                         .monospacedDigit()
                         .foregroundStyle(Color(colors.textSecondary))
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                WontonNotice(icon: .warning, title: String(localized: .inviteExpired)) {
-                    Button(String(localized: .inviteRenew), action: renew)
+                WontonNotice(icon: .warning, title: "这个码过期了。") {
+                    Button("换一个码", action: renew)
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             }
         }
-        Text(.inviteInstructions)
+        Text("在新设备上打开云吞 App 扫这个码，它就成为你的设备。码只能用一次。")
             .wontonText(WontonTheme.typography.supporting)
             .foregroundStyle(Color(colors.textSecondary))
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            Text(.invitePasteFallback)
+            Text("不能扫码时粘贴这段文字")
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
             Text(code)
@@ -113,5 +87,21 @@ private struct InviteCode: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: WontonTheme.radii.control).fill(Color(colors.surfaceSubtle)))
         }
+    }
+}
+
+/// 用 Core Image 画二维码：每个模块放大成整数个像素，缩放时不会糊。
+private enum QRImage {
+    static func make(_ text: String) -> UIImage? {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(text.utf8)
+        filter.correctionLevel = "M"
+        // 深色页面上二维码四周也要有白边，否则扫不出来。
+        guard let code = filter.outputImage else { return nil }
+        let quiet = code.extent.insetBy(dx: -2, dy: -2)
+        let framed = code.composited(over: CIImage(color: .white)).cropped(to: quiet)
+        let output = framed.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        guard let image = CIContext().createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: image)
     }
 }

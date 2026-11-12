@@ -75,19 +75,14 @@ async fn lists_the_package_and_warns_about_what_the_store_would_flag() {
     assert_eq!(files, ["docker-compose.yml", "icon.svg"]);
     assert_eq!(
         report.digest,
-        PluginPackage::load_dir(dir.path(), &super::langs())
-            .unwrap()
-            .digest()
+        PluginPackage::load_dir(dir.path()).unwrap().digest()
     );
     assert!(report.problems.is_empty(), "{report:?}");
     let [unpinned, unhealthy] = &report.warnings[..] else {
         panic!("{report:?}")
     };
-    assert!(
-        unpinned.contains("nginx:1.27 isn't pinned by digest"),
-        "{unpinned}"
-    );
-    assert!(unhealthy.contains("has no healthcheck"), "{unhealthy}");
+    assert!(unpinned.contains("nginx:1.27 没有按摘要固定"), "{unpinned}");
+    assert!(unhealthy.contains("没有健康检查"), "{unhealthy}");
 }
 
 #[tokio::test]
@@ -96,12 +91,12 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
         .await
         .unwrap();
     for expected in [
-        "isn't pinned by digest",
-        "has no healthcheck",
-        "the official index requires tags",
-        "the official index requires license",
-        "the official index requires author",
-        "the official index requires notices",
+        "没有按摘要固定",
+        "没有健康检查",
+        "官方索引要求写 tags",
+        "官方索引要求写 license",
+        "官方索引要求写 author",
+        "官方索引要求写 notices",
     ] {
         assert!(
             report.problems.iter().any(|p| p.contains(expected)),
@@ -118,43 +113,6 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
         .unwrap();
     assert!(
         report.problems.is_empty() && report.warnings.is_empty(),
-        "{report:?}"
-    );
-}
-
-// `webui.health` 是核心代探测：网页服务可以不写 healthcheck，别的服务仍然要写。
-#[tokio::test]
-async fn webui_health_stands_in_for_the_healthcheck_of_the_web_service_only() {
-    let pinned = format!("  web:\n    image: nginx:1.27@sha256:{}", "a".repeat(64));
-    let complete = "  tags: {zh: [工具], en: [Tools]}\n  license: MIT\n  author: {name: Example}\n  notices: [NOTICE]";
-    let webui = "  webui: {service: web, port: 8080, health: /health}";
-    let report = run(
-        repo(&compose(&pinned, &format!("{webui}\n{complete}"))).path(),
-        true,
-    )
-    .await
-    .unwrap();
-    assert!(
-        !report.problems.iter().any(|p| p.contains("healthcheck")),
-        "{report:?}"
-    );
-
-    let sidecar = format!(
-        "{pinned}\n  sidecar:\n    image: nginx:1.27@sha256:{}",
-        "b".repeat(64)
-    );
-    let report = run(
-        repo(&compose(&sidecar, &format!("{webui}\n{complete}"))).path(),
-        true,
-    )
-    .await
-    .unwrap();
-    // 另外还有一条 `webui.health` 要 spec 0.13 的问题（这个包里写的是 0.5）。
-    assert!(
-        report
-            .problems
-            .iter()
-            .any(|p| p.contains("service sidecar has no healthcheck")),
         "{report:?}"
     );
 }
@@ -201,26 +159,15 @@ async fn icons_and_screenshots_are_processed_like_the_store_does() {
     let [icon, gif] = &report.problems[..] else {
         panic!("{report:?}")
     };
-    // check 的外层说明仍是核心写死的中文，内层原因走目录（默认英文）。
-    let viewbox = crate::l10n::text(
-        &super::langs(),
-        "plugin-install-img-svg-viewbox",
-        &[("width", "48".into()), ("height", "24".into())],
-    );
     assert!(
-        icon.starts_with("icon icon.svg: ") && icon.contains(&viewbox),
+        icon.starts_with("图标 icon.svg：") && icon.contains("正方形"),
         "{icon}"
     );
-    let gif_format = crate::l10n::text(
-        &super::langs(),
-        "plugin-install-img-is-format",
-        &[("format", "Gif".into())],
-    );
     assert!(
-        gif.starts_with("screenshot shots/gif.png: ") && gif.contains(&gif_format),
+        gif.starts_with("截图 shots/gif.png：") && gif.contains("PNG 或 JPEG"),
         "{gif}"
     );
-    for expected in ["shots/tall.png is 600×900", "landscape and portrait"] {
+    for expected in ["shots/tall.png 是 600×900", "横屏和竖屏"] {
         assert!(
             report.warnings.iter().any(|w| w.contains(expected)),
             "{expected}：{report:?}"
@@ -231,10 +178,7 @@ async fn icons_and_screenshots_are_processed_like_the_store_does() {
     write(dir.path(), "icon.svg", round.as_bytes());
     let report = run(dir.path(), false).await.unwrap();
     assert!(
-        report
-            .warnings
-            .iter()
-            .any(|w| w.contains("transparent corners")),
+        report.warnings.iter().any(|w| w.contains("角是透明的")),
         "{report:?}"
     );
 }
@@ -249,14 +193,10 @@ async fn plugin_check_processes_tab_png_and_svg_and_rejects_opaque_png() {
 
     let report = run(dir.path(), false).await.unwrap();
     assert!(
-        report.problems.iter().any(|problem| {
-            problem.contains("tabs[1].icon")
-                && problem.contains(&crate::l10n::text(
-                    &super::langs(),
-                    "plugin-install-img-tab-icon-alpha",
-                    &[],
-                ))
-        }),
+        report
+            .problems
+            .iter()
+            .any(|problem| problem.contains("tabs[1].icon") && problem.contains("全不透明")),
         "{report:?}"
     );
     assert!(
@@ -288,17 +228,7 @@ async fn plugin_check_warns_about_long_tab_titles() {
 async fn a_package_that_does_not_parse_is_reported_like_at_install() {
     let dir = tempfile::tempdir().unwrap();
     let err = run(dir.path(), false).await.unwrap_err();
-    let missing = crate::l10n::text(
-        &super::langs(),
-        "plugin-install-pkg-compose-file",
-        &[(
-            "error",
-            crate::plugin::package_files::FileError::Missing
-                .to_string()
-                .into(),
-        )],
-    );
-    assert!(err.contains(&missing), "{err}");
+    assert!(err.contains("docker-compose.yml：不存在"), "{err}");
     write(
         dir.path(),
         "docker-compose.yml",
@@ -311,7 +241,7 @@ async fn a_package_that_does_not_parse_is_reported_like_at_install() {
 #[test]
 fn packing_keeps_only_the_package_and_installs_the_same_digest() {
     let dir = repo(&compose(UNPINNED, ""));
-    let package = PluginPackage::load_dir(dir.path(), &super::langs()).unwrap();
+    let package = PluginPackage::load_dir(dir.path()).unwrap();
     let archive = package.archive();
     let mut packed = tar::Archive::new(archive.as_slice());
     let paths: Vec<String> = packed
@@ -320,7 +250,7 @@ fn packing_keeps_only_the_package_and_installs_the_same_digest() {
         .map(|entry| entry.unwrap().path().unwrap().display().to_string())
         .collect();
     assert_eq!(paths, ["docker-compose.yml", "icon.svg"]);
-    let uploaded = PluginPackage::from_archive(&archive, &super::langs()).unwrap();
+    let uploaded = PluginPackage::from_archive(&archive).unwrap();
     assert_eq!(uploaded.digest(), package.digest());
 }
 
@@ -361,28 +291,4 @@ async fn apps_that_trust_more_than_the_core_are_flagged_by_how_they_can_be_reach
 
     let good = report("network.egress", "", "${WONTON_CORE_ADDRESS}/32", true).await;
     assert!(!flagged(&good.warnings) && !flagged(&good.problems));
-}
-
-/// 插值出错时，检查结果里带字段路径（和安装时报的是同一条错误）。
-#[tokio::test]
-async fn interpolation_errors_name_the_field() {
-    let dir = repo(&compose(
-        "  web:\n    image: nginx\n    entrypoint: [sh, -c, \"echo $@\"]",
-        "",
-    ));
-    let report = run(dir.path(), false).await.unwrap();
-    assert!(
-        report.problems.iter().any(|p| p.contains("entrypoint[2]")),
-        "{report:?}"
-    );
-}
-
-/// 显示方式的取值写错时和安装时报同一条错误。
-#[tokio::test]
-async fn an_unknown_chat_layout_is_reported() {
-    let compose = compose("  bot:\n    image: echo", "  bot: {chat_layout: hologram}")
-        .replace("permissions: []", "permissions: [matrix.bot]");
-    let dir = repo(&compose);
-    let err = run(dir.path(), false).await.unwrap_err();
-    assert!(err.contains("bot.chat_layout"), "{err}");
 }

@@ -3,9 +3,6 @@
 use percent_encoding::percent_decode_str;
 use url::Url;
 
-use crate::l10n;
-use crate::plugin::languages::Languages;
-
 /// socks5 没有 URL 的默认端口。
 const SOCKS_PORT: u16 = 1080;
 
@@ -28,50 +25,32 @@ pub struct ProxyAddress {
 }
 
 impl ProxyAddress {
-    pub fn parse(text: &str, langs: &Languages) -> Result<Self, String> {
-        let url = Url::parse(text.trim()).map_err(|e| {
-            l10n::text(
-                langs,
-                "plugin-settings-egress-address-invalid",
-                &[("error", e.to_string().into())],
-            )
-        })?;
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let url = Url::parse(text.trim()).map_err(|e| format!("代理地址不合法：{e}"))?;
         let scheme = match url.scheme() {
             "http" => Scheme::Http,
             "https" => Scheme::Https,
             "socks5" => Scheme::Socks5,
             other => {
-                return Err(l10n::text(
-                    langs,
-                    "plugin-settings-egress-address-scheme",
-                    &[("scheme", other.into())],
+                return Err(format!(
+                    "不支持代理协议 {other}：只能用 http、https 或 socks5"
                 ));
             }
         };
         let host = url
             .host_str()
             .filter(|host| !host.is_empty())
-            .ok_or_else(|| l10n::text(langs, "plugin-settings-egress-address-no-host", &[]))?
+            .ok_or("代理地址里没有主机名")?
             .to_owned();
         let path = url.path();
         if !(path.is_empty() || path == "/") || url.query().is_some() || url.fragment().is_some() {
-            return Err(l10n::text(
-                langs,
-                "plugin-settings-egress-address-no-path",
-                &[],
-            ));
+            return Err("代理地址只写协议、主机和端口，不带路径和参数".to_owned());
         }
         let decode = |part: &str| -> Result<String, String> {
             percent_decode_str(part)
                 .decode_utf8()
                 .map(|text| text.into_owned())
-                .map_err(|e| {
-                    l10n::text(
-                        langs,
-                        "plugin-settings-egress-address-utf8",
-                        &[("error", e.to_string().into())],
-                    )
-                })
+                .map_err(|e| format!("代理地址里的用户名或密码不是合法的 UTF-8：{e}"))
         };
         let username = Some(url.username())
             .filter(|name| !name.is_empty())
@@ -122,25 +101,20 @@ impl std::fmt::Debug for ProxyAddress {
 }
 
 #[cfg(test)]
-fn langs() -> crate::plugin::languages::Languages {
-    crate::plugin::languages::Languages::default()
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn it_reads_the_three_schemes_and_decodes_credentials() {
-        let http = ProxyAddress::parse("http://host.docker.internal:7899", &langs()).unwrap();
+        let http = ProxyAddress::parse("http://host.docker.internal:7899").unwrap();
         assert_eq!(http.scheme, Scheme::Http);
         assert_eq!(http.authority(), "host.docker.internal:7899");
         assert_eq!(http.username, None);
 
-        let https = ProxyAddress::parse("https://proxy.example.com", &langs()).unwrap();
+        let https = ProxyAddress::parse("https://proxy.example.com").unwrap();
         assert_eq!((https.scheme, https.port), (Scheme::Https, 443));
 
-        let socks = ProxyAddress::parse("socks5://u%40x:p%3Aw@[fd00::1]", &langs()).unwrap();
+        let socks = ProxyAddress::parse("socks5://u%40x:p%3Aw@[fd00::1]").unwrap();
         assert_eq!((socks.scheme, socks.port), (Scheme::Socks5, 1080));
         assert_eq!(socks.authority(), "[fd00::1]:1080");
         assert_eq!(socks.username.as_deref(), Some("u@x"));
@@ -158,13 +132,13 @@ mod tests {
             "http://proxy:7899/?x=1",
             "http://proxy:7899/#x",
         ] {
-            assert!(ProxyAddress::parse(text, &langs()).is_err(), "{text}");
+            assert!(ProxyAddress::parse(text).is_err(), "{text}");
         }
     }
 
     #[test]
     fn the_password_is_not_shown() {
-        let address = ProxyAddress::parse("http://me:secret@proxy:7899", &langs()).unwrap();
+        let address = ProxyAddress::parse("http://me:secret@proxy:7899").unwrap();
         assert_eq!(address.masked(), "http://me:***@proxy:7899");
         assert!(!format!("{address:?}").contains("secret"));
         assert_eq!(address.text(), "http://me:secret@proxy:7899");

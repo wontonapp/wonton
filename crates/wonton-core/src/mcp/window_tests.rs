@@ -1,14 +1,12 @@
 //! 卡片上的放行时段（ADR-0024）。
 
 use std::sync::Arc;
-
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::{Value, json};
 use wonton_protocol::{Answer, ConfirmationCard, ConfirmationState, WindowEnd};
-
-use crate::plugin::languages::Languages;
 
 use super::confirm::{AnswerError, Confirmations, DEFAULT_WINDOW};
 use super::test_support::Cards;
@@ -54,7 +52,8 @@ fn posted(s: &Setup) -> usize {
 }
 
 fn last_update(s: &Setup, id: &str) -> ConfirmationCard {
-    s.bus.confirmations().card(id).expect("卡片还在确认表里")
+    let updates = s.cards.updates.lock().unwrap();
+    updates.iter().rev().find(|c| c.id == id).unwrap().clone()
 }
 
 fn windows_audit(s: &Setup) -> Vec<Value> {
@@ -142,16 +141,10 @@ async fn opening_releases_what_this_bot_is_waiting_on_but_not_other_bots() {
         .unwrap();
     assert_eq!(line["basis"], "window");
     assert_eq!(line["card"], opened.card.id.as_str());
-    assert!(
-        matches!(
-            s.bus
-                .confirmations()
-                .card(&waiting_card.id)
-                .map(|c| c.state),
-            Some(ConfirmationState::Succeeded { .. })
-        ),
-        "放行的卡片跟着执行完了"
-    );
+    assert!(matches!(
+        s.cards.states(&waiting_card.id).last(),
+        Some(ConfirmationState::Succeeded { .. })
+    ));
 
     assert!(!other.is_finished(), "别的 Bot 的卡片还在等");
     s.answer(&other_card.id, Answer::Reject).unwrap();
@@ -218,19 +211,8 @@ async fn core_tools_offer_no_window_and_refuse_the_answer() {
 /// 没有总线的场合：一张能开时段的卡片，点了“都允许”。
 async fn open_on(confirmations: &Arc<Confirmations>, cards: &Arc<Cards>) -> String {
     let caller = PluginId::parse("com.example.agent").unwrap();
-    let draft = cards::tool_call(
-        "Bot",
-        "笔记",
-        "delete",
-        &json!({}),
-        false,
-        &Languages::default(),
-    )
-    .with_window(
-        "app.example.notes",
-        confirmations.window_length(),
-        &Languages::default(),
-    );
+    let draft = cards::tool_call("Bot", "笔记", "delete", &json!({}), false)
+        .with_window("app.example.notes", confirmations.window_length());
     let asking = confirmations.clone();
     let ask = tokio::spawn(async move { asking.ask(&caller, draft).await });
     let id = cards.wait_for(1).await.id;
@@ -247,7 +229,7 @@ async fn open_on(confirmations: &Arc<Confirmations>, cards: &Arc<Cards>) -> Stri
 }
 
 #[tokio::test]
-async fn after_a_restart_the_window_is_gone_and_its_card_lands_in_the_table() {
+async fn after_a_restart_the_window_is_gone_and_its_card_says_so_once_matrix_is_back() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("confirmation-windows.json");
     let cards = Arc::new(Cards::default());
@@ -262,30 +244,29 @@ async fn after_a_restart_the_window_is_gone_and_its_card_lands_in_the_table() {
             .is_some()
     );
 
+    cards.broken.store(true, Ordering::SeqCst);
     let restarted =
         Confirmations::new(cards.clone(), ttl).with_windows(DEFAULT_WINDOW, file.clone());
     assert_eq!(
         restarted.allow_in_window(&caller, "app.example.notes"),
-        None,
-        "重启后时段没了"
+        None
     );
     assert!(restarted.has_leftover_windows());
-    let ended = restarted.recover_windows(&Languages::default()).await;
+    assert!(restarted.recover_windows().await.is_empty());
+    assert!(restarted.has_leftover_windows(), "没改成功的留着");
+
+    cards.broken.store(false, Ordering::SeqCst);
+    let ended = restarted.recover_windows().await;
     assert_eq!(ended[0].reason, WindowEnd::CoreRestarted);
     assert_eq!(ended[0].allowed, None);
     assert!(!restarted.has_leftover_windows());
-    let recovered = restarted.card(&id).expect("恢复的卡片写回了确认表");
-    // 停之前这次调用已经执行完（open_on 里 finish 成 Succeeded）；还在执行的恢复时才写成“结果不确定”。
+    let updates = cards.updates.lock().unwrap();
+    let last = updates.iter().rev().find(|card| card.id == id).unwrap();
     assert_eq!(
-        recovered.state,
-        ConfirmationState::Succeeded {
-            message: "ok".to_owned()
-        }
-    );
-    assert_eq!(
-        recovered.window.as_ref().unwrap().ended,
+        last.window.as_ref().unwrap().ended,
         Some(WindowEnd::CoreRestarted)
     );
+    drop(updates);
     let saved: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
     assert_eq!(saved, json!({}));
 }
@@ -330,80 +311,8 @@ async fn a_window_does_not_answer_an_agents_own_permission_card() {
     let opened = open_window(&s).await;
     assert_eq!(text(&opened.first.await.unwrap()), "删掉了 first.txt");
     assert!(!asked.is_finished());
-    let (waiting, _, _) = s.bus.confirmations().list(None);
+    let waiting = s.bus.confirmations().pending();
     assert_eq!(waiting.len(), 1);
     assert_eq!(waiting[0].id, agent_card.id);
     asked.abort();
-}
-
-/// 列表的版本：开卡、过期各加一，挂着的长轮询被唤醒（ADR-0016）。
-#[tokio::test]
-async fn opening_and_expiring_a_card_bump_the_revision() {
-    let cards = Arc::new(Cards::default());
-    let confirmations = Arc::new(Confirmations::new(
-        cards.clone(),
-        Duration::from_millis(150),
-    ));
-    let mut watcher = confirmations.subscribe();
-    let caller = PluginId::parse("com.example.agent").unwrap();
-    let draft = cards::tool_call(
-        "Hermes",
-        "笔记",
-        "delete",
-        &json!({"name": "a"}),
-        false,
-        &Languages::default(),
-    );
-    let asking = confirmations.clone();
-    let ask = tokio::spawn(async move { asking.ask(&caller, draft).await });
-    let card = cards.wait_for(1).await;
-    // 开卡加版本。
-    tokio::time::timeout(Duration::from_secs(5), watcher.changed())
-        .await
-        .unwrap()
-        .unwrap();
-    let after_open = *watcher.borrow_and_update();
-    assert!(after_open > 0);
-    // 没人回答，过期又加一，卡片变成已过期。
-    tokio::time::timeout(Duration::from_secs(5), watcher.changed())
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(*watcher.borrow_and_update() > after_open);
-    assert_eq!(
-        confirmations.card(&card.id).map(|c| c.state),
-        Some(ConfirmationState::Expired)
-    );
-    assert!(ask.await.unwrap().is_err());
-}
-
-/// 结束的卡片过了保留期就取不到（单张接口 404 的根子在这里），列表里也消失。
-#[tokio::test]
-async fn a_finished_card_becomes_unavailable_after_the_keep_window() {
-    let cards = Arc::new(Cards::default());
-    let confirmations = Arc::new(
-        Confirmations::new(cards.clone(), Duration::from_secs(5))
-            .with_keep_finished(Duration::from_millis(50)),
-    );
-    let caller = PluginId::parse("com.example.agent").unwrap();
-    let draft = cards::tool_call(
-        "Hermes",
-        "笔记",
-        "delete",
-        &json!({"name": "a"}),
-        false,
-        &Languages::default(),
-    );
-    let asking = confirmations.clone();
-    let ask = tokio::spawn(async move { asking.ask(&caller, draft).await });
-    let card = cards.wait_for(1).await;
-    confirmations
-        .answer(&card.id, Answer::Reject, None)
-        .unwrap();
-    assert!(ask.await.unwrap().is_err());
-    assert!(confirmations.card(&card.id).is_some(), "结束的先还在");
-    tokio::time::sleep(Duration::from_millis(80)).await;
-    assert!(confirmations.card(&card.id).is_none(), "保留期过了取不到");
-    let (pending, finished, _) = confirmations.list(None);
-    assert!(pending.is_empty() && finished.is_empty());
 }

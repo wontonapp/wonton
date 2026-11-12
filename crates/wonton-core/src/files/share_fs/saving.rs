@@ -22,9 +22,7 @@ use super::{
     sync_dir,
 };
 use crate::files::Failure;
-use crate::l10n;
 use crate::plugin::hostdir::Owner;
-use crate::plugin::languages::Languages;
 use crate::secret::random_token;
 
 /// 应用数据目录下给 Bot 放待存文件的目录，插件自己把它挂进容器。
@@ -125,42 +123,8 @@ impl Outgoing {
             .sum()
     }
 
-    /// 最多读 `limit` 字节；调用方多读上限外的一个字节来识别超限。读期间改过的文件拒绝使用。
-    pub fn read_bounded(&self, limit: u64) -> Result<Vec<(String, Vec<u8>)>, Failure> {
-        self.sources
-            .iter()
-            .map(|source| {
-                let capacity = usize::try_from(source.opened.snapshot.size.min(limit))
-                    .map_err(|_| invalid("文件大小超过地址范围"))?;
-                let mut data = Vec::with_capacity(capacity);
-                (&source.opened.file)
-                    .take(limit)
-                    .read_to_end(&mut data)
-                    .map_err(|e| Failure::from(from_io(&e, &source.name)))?;
-                let (after, _) = Snapshot::of(&source.opened.file)
-                    .map_err(|e| Failure::from(from_io(&e, &source.name)))?;
-                if after != source.opened.snapshot || data.len() as u64 != after.size.min(limit) {
-                    return Err(invalid(format!("读取时文件变了：{}", source.name)));
-                }
-                Ok((source.name.clone(), data))
-            })
-            .collect()
-    }
-
-    /// 只有资料等目标写入成功后才能调用；新写的内容保留，删不了不撤销已经成功的写入。
-    pub fn remove_originals(self) {
-        for source in &self.sources {
-            remove_original(
-                self.outbox.as_fd(),
-                &source.path,
-                &source.name,
-                source.opened.snapshot,
-            );
-        }
-    }
-
     /// 复制进 `root` 下新建的私有目录。
-    pub fn stage(self, root: &Path, langs: &Languages) -> Result<Staged, ShareError> {
+    pub fn stage(self, root: &Path) -> Result<Staged, ShareError> {
         let dir = root.join(random_token());
         DirBuilder::new()
             .mode(0o700)
@@ -174,7 +138,7 @@ impl Outgoing {
         let fd = open_absolute(&staged.dir, "暂存目录")?;
         for (index, source) in self.sources.into_iter().enumerate() {
             let stored = index.to_string();
-            let sha256 = copy_hashed(&source.opened, fd.as_fd(), &stored, langs)?;
+            let sha256 = copy_hashed(&source.opened, fd.as_fd(), &stored)?;
             staged.files.push(StagedFile {
                 name: source.name,
                 size: source.opened.snapshot.size,
@@ -243,12 +207,7 @@ fn walk(from: BorrowedFd<'_>, dirs: &[String]) -> Result<OwnedFd, ShareError> {
     Ok(current)
 }
 
-fn copy_hashed(
-    source: &Opened,
-    dir: BorrowedFd<'_>,
-    stored: &str,
-    langs: &Languages,
-) -> Result<String, ShareError> {
+fn copy_hashed(source: &Opened, dir: BorrowedFd<'_>, stored: &str) -> Result<String, ShareError> {
     let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
     let fd =
         openat(dir, stored, flags, Mode::from_raw_mode(0o664)).map_err(|e| classify(e, stored))?;
@@ -269,38 +228,15 @@ fn copy_hashed(
             copied += read as u64;
         }
         if copied != size {
-            return Err(io::Error::other(ShortRead { copied, size }));
+            return Err(io::Error::other(format!(
+                "只读到 {copied} 字节，应该有 {size} 字节"
+            )));
         }
         target.sync_all()?;
         Ok(format!("{:x}", hasher.finalize()))
     })();
-    hash.map_err(|e| match e.downcast::<ShortRead>() {
-        Ok(ShortRead { copied, size }) => ShareError::Io(l10n::text(
-            langs,
-            "files-short-read",
-            &[
-                ("copied", wonton_l10n::Arg::from(copied)),
-                ("size", wonton_l10n::Arg::from(size)),
-            ],
-        )),
-        Err(e) => from_io(&e, "复制进暂存目录"),
-    })
+    hash.map_err(|e| from_io(&e, "复制进暂存目录"))
 }
-
-/// 复制时读到的字节比声明的少。单独的类型：落盘分类时从 `io::Error` 里取出来，按语言写话。
-#[derive(Debug)]
-struct ShortRead {
-    copied: u64,
-    size: u64,
-}
-
-impl std::fmt::Display for ShortRead {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "short read: {} of {} bytes", self.copied, self.size)
-    }
-}
-
-impl std::error::Error for ShortRead {}
 
 /// 暂存里的文件。
 #[derive(Debug)]
@@ -333,26 +269,23 @@ impl Drop for Staged {
 impl Staged {
     /// 原文件还是暂存时的样子才删，放好之后 Bot 又写的新内容留给它。删不了不算存失败。
     fn remove_original(&self, file: &StagedFile) {
-        remove_original(self.outbox.as_fd(), &file.source, &file.name, file.snapshot);
-    }
-}
-
-fn remove_original(outbox: BorrowedFd<'_>, path: &[String], name: &str, snapshot: Snapshot) {
-    let removed = (|| -> Result<(), ShareError> {
-        let (leaf, dirs) = path
-            .split_last()
-            .ok_or_else(|| ShareError::Refused("路径是空的".to_owned()))?;
-        let dir = walk(outbox, dirs)?;
-        if open_regular(dir.as_fd(), leaf)?.snapshot == snapshot {
-            unlinkat(dir.as_fd(), leaf.as_str(), AtFlags::empty())
-                .map_err(|e| classify(e, leaf))?;
+        let removed = (|| -> Result<(), ShareError> {
+            let (leaf, dirs) = file
+                .source
+                .split_last()
+                .ok_or_else(|| ShareError::Refused("路径是空的".to_owned()))?;
+            let dir = walk(self.outbox.as_fd(), dirs)?;
+            if open_regular(dir.as_fd(), leaf)?.snapshot == file.snapshot {
+                unlinkat(dir.as_fd(), leaf.as_str(), AtFlags::empty())
+                    .map_err(|e| classify(e, leaf))?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = removed
+            && !matches!(error, ShareError::Gone)
+        {
+            tracing::warn!(file = %file.name, %error, "删除 outbox 里的原文件失败");
         }
-        Ok(())
-    })();
-    if let Err(error) = removed
-        && !matches!(error, ShareError::Gone)
-    {
-        tracing::warn!(file = %name, %error, "删除 outbox 里的原文件失败");
     }
 }
 
@@ -398,24 +331,16 @@ impl Shares {
     }
 
     /// 共享文件夹还在吗。Bot 建不了新的共享文件夹。
-    pub fn check_share(&self, share: &str, langs: &Languages) -> Result<(), Failure> {
+    pub fn check_share(&self, share: &str) -> Result<(), Failure> {
         self.open_dir(share, &[]).map(drop).map_err(|e| match e {
-            ShareError::Gone => invalid(l10n::text(
-                langs,
-                "files-check-share",
-                &[("share", share.into())],
+            ShareError::Gone => invalid(format!(
+                "没有共享文件夹 {share}，用 wonton__list_shares 看有哪些"
             )),
             other => other.into(),
         })
     }
 
-    pub fn place_staged(
-        &self,
-        staged: &Staged,
-        target: &SaveTarget,
-        owner: Owner,
-        langs: &Languages,
-    ) -> Placed {
+    pub fn place_staged(&self, staged: &Staged, target: &SaveTarget, owner: Owner) -> Placed {
         let mut placed = Placed {
             saved: Vec::with_capacity(staged.files.len()),
             failed: None,
@@ -431,7 +356,7 @@ impl Shares {
         };
         let folder = target.folder();
         for file in &staged.files {
-            match place_one(staging.as_fd(), file, dir.as_fd(), owner, langs) {
+            match place_one(staging.as_fd(), file, dir.as_fd(), owner) {
                 Ok(name) => {
                     placed.saved.push(format!("{folder}/{name}"));
                     staged.remove_original(file);
@@ -479,7 +404,6 @@ fn place_one(
     file: &StagedFile,
     dir: BorrowedFd<'_>,
     owner: Owner,
-    langs: &Languages,
 ) -> Result<String, ShareError> {
     let source = open_regular(staging, &file.stored)?;
     let id = random_token();
@@ -488,15 +412,9 @@ fn place_one(
         owner,
         placing_inode: None,
     };
-    let (name, _) = through_temp(
-        &source,
-        &id,
-        dir,
-        names,
-        langs,
-        &mut |_, _| Ok(()),
-        |temp| link_to_temp(staging, &file.stored, dir, temp, &source.file, langs),
-    )?;
+    let (name, _) = through_temp(&source, &id, dir, names, &mut |_, _| Ok(()), |temp| {
+        link_to_temp(staging, &file.stored, dir, temp, &source.file)
+    })?;
     let temp = format!("{UPLOAD_TEMP_PREFIX}{id}");
     if let Err(error) = remove_entry(dir, &temp) {
         tracing::warn!(name = temp, %error, "删除放文件的临时名字失败");

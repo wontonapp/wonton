@@ -8,7 +8,7 @@
 //! - `/usr/bin/nvidia-smi` 装了不代表有驱动，只看内核驱动绑定到了哪张卡。
 //! - 型号只有 NVIDIA 驱动在 `/proc` 里写明；AMD 有的代有 `product_name`，其余只有设备 ID，要 `pci.ids` 才翻得出名字，
 //!   核心不带它。显存 AMD、Intel 独显在 sysfs 里有，NVIDIA 没有，见 [`NvidiaMemory`]。
-//! - AMD 集成显卡的 `mem_info_vram_total` 是划给它的那部分内存，不是上限（实测有的 APU 报 64 GiB，有的只报
+//! - AMD 集成显卡的 `mem_info_vram_total` 是划给它的那部分内存，不是上限（npchy 的 0x1586 报 64 GiB，有的 APU 只报
 //!   512 MB）；独显有 `mem_info_vram_vendor`，集显没有。
 
 use std::collections::HashMap;
@@ -21,11 +21,8 @@ use serde::Serialize;
 
 use super::docker::{Engine, HostInfo};
 use super::gpu::{HostPaths, read_trimmed};
-use super::languages::Languages;
 use super::names::Instance;
 use super::requirements;
-use crate::l10n::text;
-use crate::plugin::lan::detect::with_replaced_note;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -88,34 +85,15 @@ pub struct Gpu {
 
 impl Gpu {
     /// 给人看的名字：有型号写型号，没有就是厂商和设备 ID。
-    pub fn name(&self, langs: &Languages) -> String {
+    pub fn name(&self) -> String {
         if let Known::Known(model) = &self.model {
             return model.clone();
         }
         match &self.vendor {
-            GpuVendor::Nvidia => text(
-                langs,
-                "plugin-install-facts-gpu-nvidia",
-                &[("device", self.device.as_str().into())],
-            ),
-            GpuVendor::Amd => text(
-                langs,
-                "plugin-install-facts-gpu-amd",
-                &[("device", self.device.as_str().into())],
-            ),
-            GpuVendor::Intel => text(
-                langs,
-                "plugin-install-facts-gpu-intel",
-                &[("device", self.device.as_str().into())],
-            ),
-            GpuVendor::Other(vendor) => text(
-                langs,
-                "plugin-install-facts-gpu-other",
-                &[
-                    ("vendor", vendor.as_str().into()),
-                    ("device", self.device.as_str().into()),
-                ],
-            ),
+            GpuVendor::Nvidia => format!("NVIDIA {}", self.device),
+            GpuVendor::Amd => format!("AMD {}", self.device),
+            GpuVendor::Intel => format!("Intel {}", self.device),
+            GpuVendor::Other(vendor) => format!("显示设备 {vendor}:{}", self.device),
         }
     }
 }
@@ -133,11 +111,11 @@ pub enum ContainerAccess {
 }
 
 /// `docker` 是向 Docker 查询的结果，查不到时写明原因。
-pub fn read(paths: &HostPaths, docker: Result<HostInfo, String>, langs: &Languages) -> HostFacts {
+pub fn read(paths: &HostPaths, docker: Result<HostInfo, String>) -> HostFacts {
     let (os, arch, runtimes) = match docker {
         Ok(info) => (
-            reported(info.os_type, langs),
-            reported(info.arch, langs),
+            reported(info.os_type),
+            reported(info.arch),
             Known::Known(info.runtimes),
         ),
         Err(reason) => (
@@ -149,33 +127,23 @@ pub fn read(paths: &HostPaths, docker: Result<HostInfo, String>, langs: &Languag
     let meminfo = fs::read_to_string(paths.proc.join("meminfo"));
     let memory = |field: &str| match &meminfo {
         Ok(text) => meminfo_bytes(text, field).map_or_else(
-            || {
-                Known::Unknown(crate::l10n::text(
-                    langs,
-                    "plugin-install-facts-meminfo-missing",
-                    &[("field", field.into())],
-                ))
-            },
+            || Known::Unknown(format!("/proc/meminfo 里没有 {field}")),
             Known::Known,
         ),
-        Err(e) => Known::Unknown(crate::l10n::text(
-            langs,
-            "plugin-install-facts-meminfo-unreadable",
-            &[("error", e.to_string().into())],
-        )),
+        Err(e) => Known::Unknown(format!("读不了 /proc/meminfo：{e}")),
     };
     HostFacts {
         os,
         arch,
         memory_total: memory("MemTotal"),
         memory_available: memory("MemAvailable"),
-        gpus: read_gpus(paths, &runtimes, langs),
+        gpus: read_gpus(paths, &runtimes),
     }
 }
 
-fn reported(value: String, langs: &Languages) -> Known<String> {
+fn reported(value: String) -> Known<String> {
     if value.is_empty() {
-        Known::Unknown(text(langs, "plugin-install-facts-docker-not-reported", &[]))
+        Known::Unknown("Docker 没有报告".to_owned())
     } else {
         Known::Known(value)
     }
@@ -189,24 +157,11 @@ fn meminfo_bytes(text: &str, field: &str) -> Option<u64> {
     kib.checked_mul(1024)
 }
 
-fn read_gpus(
-    paths: &HostPaths,
-    runtimes: &Known<Vec<String>>,
-    langs: &Languages,
-) -> Known<Vec<Gpu>> {
+fn read_gpus(paths: &HostPaths, runtimes: &Known<Vec<String>>) -> Known<Vec<Gpu>> {
     let pci = paths.sys.join("bus/pci/devices");
     let addresses = match fs::read_dir(&pci) {
         Ok(read) => read,
-        Err(e) => {
-            return Known::Unknown(text(
-                langs,
-                "plugin-install-facts-pci-unreadable",
-                &[
-                    ("path", pci.display().to_string().into()),
-                    ("error", e.to_string().into()),
-                ],
-            ));
-        }
+        Err(e) => return Known::Unknown(format!("读不了 {}：{e}", pci.display())),
     };
     let mut addresses: Vec<String> = addresses
         .filter_map(Result::ok)
@@ -217,17 +172,12 @@ fn read_gpus(
         addresses
             .iter()
             .filter(|address| read_trimmed(&pci.join(address).join("class")).starts_with("0x03"))
-            .map(|address| read_gpu(paths, address, runtimes, langs))
+            .map(|address| read_gpu(paths, address, runtimes))
             .collect(),
     )
 }
 
-fn read_gpu(
-    paths: &HostPaths,
-    address: &str,
-    runtimes: &Known<Vec<String>>,
-    langs: &Languages,
-) -> Gpu {
+fn read_gpu(paths: &HostPaths, address: &str, runtimes: &Known<Vec<String>>) -> Gpu {
     let device = paths.sys.join("bus/pci/devices").join(address);
     let vendor = match read_trimmed(&device.join("vendor")).as_str() {
         "0x10de" => GpuVendor::Nvidia,
@@ -239,13 +189,13 @@ fn read_gpu(
         .ok()
         .and_then(|link| link.file_name().map(|n| n.to_string_lossy().into_owned()));
     let in_containers = match vendor {
-        GpuVendor::Nvidia => nvidia_access(driver.as_deref(), runtimes, langs),
-        _ => render_access(paths, &device, driver.as_deref(), langs),
+        GpuVendor::Nvidia => nvidia_access(driver.as_deref(), runtimes),
+        _ => render_access(paths, &device, driver.as_deref()),
     };
     Gpu {
         address: address.to_owned(),
-        model: model(paths, address, &vendor, &device, langs),
-        vram: vram(&vendor, &device, langs),
+        model: model(paths, address, &vendor, &device),
+        vram: vram(&vendor, &device),
         shared_memory: vendor == GpuVendor::Amd && !device.join("mem_info_vram_vendor").exists(),
         device: read_trimmed(&device.join("device")),
         vendor,
@@ -254,52 +204,32 @@ fn read_gpu(
     }
 }
 
-fn nvidia_access(
-    driver: Option<&str>,
-    runtimes: &Known<Vec<String>>,
-    langs: &Languages,
-) -> ContainerAccess {
+fn nvidia_access(driver: Option<&str>, runtimes: &Known<Vec<String>>) -> ContainerAccess {
     match driver {
         Some("nvidia") => {}
         Some("nouveau") => {
-            let reason = text(langs, "plugin-install-facts-driver-nouveau", &[]);
-            return ContainerAccess::Unusable(reason);
+            let reason = "用的是 nouveau 驱动，不能用于计算，要 NVIDIA 官方驱动";
+            return ContainerAccess::Unusable(reason.to_owned());
         }
-        Some(other) => {
-            let reason = text(
-                langs,
-                "plugin-install-facts-driver-bound",
-                &[("driver", other.into())],
-            );
-            return ContainerAccess::Unusable(reason);
-        }
-        None => {
-            return ContainerAccess::Unusable(text(langs, "plugin-install-facts-driver-none", &[]));
-        }
+        Some(other) => return ContainerAccess::Unusable(format!("绑定的是 {other} 驱动")),
+        None => return ContainerAccess::Unusable("没有加载驱动".to_owned()),
     }
     match runtimes {
         Known::Known(list) if list.iter().any(|r| r == "nvidia") => ContainerAccess::Usable {
             devices: Vec::new(),
         },
-        Known::Known(_) => {
-            ContainerAccess::Unusable(text(langs, "plugin-install-facts-runtime-missing", &[]))
+        Known::Known(_) => ContainerAccess::Unusable(
+            "Docker 没有登记 nvidia 运行时：要安装 NVIDIA Container Toolkit".to_owned(),
+        ),
+        Known::Unknown(reason) => {
+            ContainerAccess::Unknown(format!("不知道 Docker 有没有 nvidia 运行时：{reason}"))
         }
-        Known::Unknown(reason) => ContainerAccess::Unknown(text(
-            langs,
-            "plugin-install-facts-runtime-unknown",
-            &[("reason", reason.as_str().into())],
-        )),
     }
 }
 
-fn render_access(
-    paths: &HostPaths,
-    device: &Path,
-    driver: Option<&str>,
-    langs: &Languages,
-) -> ContainerAccess {
+fn render_access(paths: &HostPaths, device: &Path, driver: Option<&str>) -> ContainerAccess {
     let Some(driver) = driver else {
-        return ContainerAccess::Unusable(text(langs, "plugin-install-facts-driver-none", &[]));
+        return ContainerAccess::Unusable("没有加载驱动".to_owned());
     };
     let render = fs::read_dir(device.join("drm")).ok().and_then(|read| {
         read.filter_map(Result::ok)
@@ -307,21 +237,15 @@ fn render_access(
             .find(|name| name.starts_with("renderD"))
     });
     let Some(render) = render else {
-        return ContainerAccess::Unusable(text(
-            langs,
-            "plugin-install-facts-driver-no-render",
-            &[("driver", driver.into())],
-        ));
+        return ContainerAccess::Unusable(format!("{driver} 驱动没有渲染节点，不能用于计算"));
     };
     let Some(dev) = &paths.dev else {
-        return ContainerAccess::Unknown(text(langs, "plugin-install-facts-no-host-dev", &[]));
+        return ContainerAccess::Unknown(
+            "核心在容器里，但没有挂载宿主的 /dev（WONTON_HOST_DEV），看不到设备节点".to_owned(),
+        );
     };
     if !dev.join("dri").join(&render).exists() {
-        return ContainerAccess::Unusable(text(
-            langs,
-            "plugin-install-facts-dri-missing",
-            &[("render", render.as_str().into())],
-        ));
+        return ContainerAccess::Unusable(format!("宿主的 /dev/dri 里没有 {render}"));
     }
     let mut devices = vec![format!("/dev/dri/{render}")];
     if driver == "amdgpu" && dev.join("kfd").exists() {
@@ -330,13 +254,7 @@ fn render_access(
     ContainerAccess::Usable { devices }
 }
 
-fn model(
-    paths: &HostPaths,
-    address: &str,
-    vendor: &GpuVendor,
-    device: &Path,
-    langs: &Languages,
-) -> Known<String> {
+fn model(paths: &HostPaths, address: &str, vendor: &GpuVendor, device: &Path) -> Known<String> {
     let found = match vendor {
         GpuVendor::Nvidia => {
             let information = paths
@@ -354,23 +272,23 @@ fn model(
     };
     match found.filter(|model| !model.is_empty()) {
         Some(model) => Known::Known(model),
-        None => Known::Unknown(text(langs, "plugin-install-facts-model-unknown", &[])),
+        None => Known::Unknown("驱动没有给出型号，只知道设备 ID".to_owned()),
     }
 }
 
-fn vram(vendor: &GpuVendor, device: &Path, langs: &Languages) -> Known<u64> {
+fn vram(vendor: &GpuVendor, device: &Path) -> Known<u64> {
     let found = match vendor {
         GpuVendor::Amd => read_trimmed(&device.join("mem_info_vram_total"))
             .parse()
             .ok(),
         GpuVendor::Intel => local_memory(device),
         GpuVendor::Nvidia => {
-            return Known::Unknown(text(langs, "plugin-install-facts-vram-not-in-sysfs", &[]));
+            return Known::Unknown("NVIDIA 的显存不在 sysfs 里".to_owned());
         }
         GpuVendor::Other(_) => None,
     };
     found.map_or_else(
-        || Known::Unknown(text(langs, "plugin-install-facts-vram-unknown", &[])),
+        || Known::Unknown("驱动没有给出显存大小".to_owned()),
         Known::Known,
     )
 }
@@ -404,7 +322,6 @@ impl NvidiaMemory {
         engine: &Engine,
         core: Option<&str>,
         instance: &Instance,
-        langs: &Languages,
     ) {
         let Known::Known(gpus) = &mut facts.gpus else {
             return;
@@ -418,13 +335,13 @@ impl NvidiaMemory {
             return;
         }
         let Some(core) = core else {
-            let reason = text(langs, "plugin-install-facts-core-not-in-container", &[]);
+            let reason = "核心不在容器里，没有镜像可以用来问 NVIDIA 驱动";
             for gpu in &mut nvidia {
-                gpu.vram = Known::Unknown(reason.clone());
+                gpu.vram = Known::Unknown(reason.to_owned());
             }
             return;
         };
-        match self.answer(engine, core, instance, langs).await {
+        match self.answer(engine, core, instance).await {
             Ok(cards) => {
                 for gpu in &mut nvidia {
                     if let Some((_, memory)) = cards.iter().find(|(a, _)| *a == gpu.address) {
@@ -435,37 +352,22 @@ impl NvidiaMemory {
             Err(reason) => {
                 for gpu in &mut nvidia {
                     gpu.vram = Known::Unknown(reason.clone());
-                    gpu.in_containers = ContainerAccess::Unknown(text(
-                        langs,
-                        "plugin-install-facts-container-trial-failed",
-                        &[("reason", reason.as_str().into())],
-                    ));
+                    gpu.in_containers =
+                        ContainerAccess::Unknown(format!("在容器里试用失败：{reason}"));
                 }
             }
         }
     }
 
-    async fn answer(
-        &self,
-        engine: &Engine,
-        core: &str,
-        instance: &Instance,
-        langs: &Languages,
-    ) -> NvidiaAnswer {
+    async fn answer(&self, engine: &Engine, core: &str, instance: &Instance) -> NvidiaAnswer {
         let mut asked = self.0.lock().await;
         if let Some((answer, at)) = &*asked
             && (answer.is_ok() || at.elapsed() < ASK_AGAIN)
         {
             return answer.clone();
         }
-        let answer = run_nvidia_smi(
-            engine,
-            core,
-            &instance.gpu_probe(),
-            instance.core_labels(),
-            langs,
-        )
-        .await;
+        let answer =
+            run_nvidia_smi(engine, core, &instance.gpu_probe(), instance.core_labels()).await;
         *asked = Some((answer.clone(), Instant::now()));
         answer
     }
@@ -476,27 +378,14 @@ async fn run_nvidia_smi(
     core: &str,
     name: &str,
     labels: HashMap<String, String>,
-    langs: &Languages,
 ) -> Result<Vec<(String, u64)>, String> {
-    let Some(info) = engine
+    let core_info = engine
         .inspect_container(core)
         .await
-        .map_err(|e| e.to_string())?
-    else {
-        return Err(text(
-            langs,
-            "plugin-install-facts-container-image-unknown",
-            &[("core", core.into())],
-        ));
+        .map_err(|e| e.to_string())?;
+    let Some(image) = core_info.and_then(|c| c.image) else {
+        return Err(format!("查不到核心容器 {core} 的镜像"));
     };
-    let Some(image) = info.image else {
-        return Err(text(
-            langs,
-            "plugin-install-facts-container-image-unknown",
-            &[("core", core.into())],
-        ));
-    };
-    let reference = info.config.and_then(|c| c.image);
     let body = ContainerCreateBody {
         image: Some(image),
         entrypoint: Some(vec!["nvidia-smi".to_owned()]),
@@ -519,33 +408,19 @@ async fn run_nvidia_smi(
         }),
         ..Default::default()
     };
-    let once = engine
-        .run_once(name, body, reference)
+    let output = engine
+        .run_once(name, body)
         .await
-        .map_err(|e| e.to_string())?;
-    let once = match once {
-        Ok(once) => once,
-        // 镜像被换过的说明已经附在原因里。
-        Err(failure) => return Err(failure),
-    };
-    if once.output.code != 0 {
-        let reason = String::from_utf8_lossy(&once.output.stderr);
-        return Err(with_replaced_note(
-            langs,
-            once.replaced,
-            text(
-                langs,
-                "plugin-install-facts-nvidia-smi-exit",
-                &[
-                    ("code", once.output.code.into()),
-                    ("reason", reason.trim().into()),
-                ],
-            ),
+        .map_err(|e| e.to_string())??;
+    if output.code != 0 {
+        let reason = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "nvidia-smi 以 {} 退出：{}",
+            output.code,
+            reason.trim()
         ));
     }
-    Ok(parse_nvidia_smi(&String::from_utf8_lossy(
-        &once.output.stdout,
-    )))
+    Ok(parse_nvidia_smi(&String::from_utf8_lossy(&output.stdout)))
 }
 
 /// `00000000:C7:00.0, 32607`：地址换成 sysfs 的写法（四位域、小写），显存是 MiB。读不懂的行不算。

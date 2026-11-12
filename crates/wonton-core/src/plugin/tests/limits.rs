@@ -6,7 +6,6 @@ use serde_json::{Value, json};
 use super::super::PluginManager;
 use super::super::fake_docker::FakeDocker;
 use super::super::gpu::fake_host::FakeHost;
-use super::super::languages::Languages;
 use super::super::manifest::{Permission, PluginId};
 use super::super::names::container_name;
 use super::super::store::{InstalledRecord, Store};
@@ -92,10 +91,7 @@ async fn defaults_limit_each_service_without_a_compose_override() {
     host.memory_total_kib(10 * 1024 * 1024);
     let (docker, manager, _dir) = manager_on(&host).await;
 
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
 
     let host = host_config(&docker);
     assert_eq!(host["CpuShares"], json!(512));
@@ -115,10 +111,7 @@ async fn compose_values_override_the_defaults() {
     let (docker, manager, _dir) = manager_on(&host).await;
     let service = "    mem_limit: 256m\n    mem_reservation: 128m\n    cpus: \"1.5\"\n    cpu_shares: 1024\n    pids_limit: 64\n";
 
-    manager
-        .install(&plugin(service, ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin(service, ""), &[]).await.unwrap();
 
     let host = host_config(&docker);
     assert_eq!(host["Memory"], json!(256 * 1024 * 1024));
@@ -136,11 +129,7 @@ async fn requirements_memory_can_raise_the_default_but_not_exceed_total() {
     let (docker, manager, _dir) = manager_on(&host).await;
 
     manager
-        .install(
-            &plugin("", "  requirements: {memory: 9G}\n"),
-            &[],
-            super::langs(),
-        )
+        .install(&plugin("", "  requirements: {memory: 9G}\n"), &[])
         .await
         .unwrap();
 
@@ -152,10 +141,7 @@ async fn unknown_host_memory_does_not_set_a_memory_limit() {
     let host = FakeHost::empty();
     let (docker, manager, _dir) = manager_on(&host).await;
 
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
 
     let host = host_config(&docker);
     assert_eq!(host["Memory"], Value::Null);
@@ -172,10 +158,7 @@ async fn configured_slice_is_the_container_parent() {
         .with_host(host.paths())
         .with_plugin_slice(Some("wonton_plugins.slice".to_owned()));
 
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
 
     assert_eq!(
         host_config(&docker)["CgroupParent"],
@@ -196,7 +179,7 @@ async fn invalid_resource_values_name_the_service_and_field() {
         let (_docker, manager, _dir) = manager_on(&host).await;
         let compose = plugin(&format!("    {field}: {value}\n"), "");
         let error = manager
-            .install(&compose, &[], super::langs())
+            .install(&compose, &[])
             .await
             .unwrap_err()
             .to_string();
@@ -211,10 +194,7 @@ async fn owner_limits_update_existing_container_without_recreating_it() {
     host.memory_total_kib(10 * 1024 * 1024);
     let (docker, manager, _dir) = manager_on(&host).await;
     let manager = Arc::new(manager);
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
     let id = super::super::PluginId::parse("app.test").unwrap();
     manager
         .set_limits(
@@ -245,10 +225,7 @@ async fn restoring_cpu_limit_uses_all_host_cpus() {
     host.memory_total_kib(10 * 1024 * 1024);
     let (docker, manager, _dir) = manager_on(&host).await;
     let manager = Arc::new(manager);
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
     let id = super::super::PluginId::parse("app.test").unwrap();
     // 没设过 CPU 上限：不发 `NanoCpus`，不给容器平白加一个配额。
     manager
@@ -278,10 +255,7 @@ async fn invalid_owner_limit_is_rejected_before_record_change() {
     host.memory_total_kib(10 * 1024 * 1024);
     let (_docker, manager, dir) = manager_on(&host).await;
     let manager = Arc::new(manager);
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
     let error = manager
         .set_limits(
             super::super::PluginId::parse("app.test").unwrap(),
@@ -306,7 +280,7 @@ async fn restoring_memory_goes_back_to_the_compose_value() {
     let manager = Arc::new(manager);
     let id = PluginId::parse("app.test").unwrap();
     manager
-        .install(&plugin("    mem_limit: 256m\n", ""), &[], super::langs())
+        .install(&plugin("    mem_limit: 256m\n", ""), &[])
         .await
         .unwrap();
     manager
@@ -332,10 +306,7 @@ async fn limits_survive_a_core_restart_and_a_rebuild() {
     let (docker, manager, dir) = manager_on(&host).await;
     let engine = manager.engine.clone();
     let id = PluginId::parse("app.test").unwrap();
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
     Arc::new(manager)
         .set_limits(id.clone(), limits(6 * GIB as u64, 150), Default::default())
         .await
@@ -372,10 +343,7 @@ async fn limits_are_refused_while_the_plugin_is_busy() {
     let (_docker, manager, _dir) = manager_on(&host).await;
     let manager = Arc::new(manager);
     let id = PluginId::parse("app.test").unwrap();
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
     manager
         .plugins
         .write()
@@ -397,10 +365,7 @@ async fn restore_default_without_host_memory_is_reported_and_keeps_the_record() 
     let (docker, manager, dir) = manager_on(&host).await;
     let manager = Arc::new(manager);
     let id = PluginId::parse("app.test").unwrap();
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
     let set = memory_only(6 * GIB as u64);
     manager
         .set_limits(id.clone(), set, Default::default())
@@ -441,7 +406,6 @@ async fn a_bot_plugin_can_change_its_limits() {
             source,
             files: Default::default(),
             granted_permissions: vec![Permission::MatrixBot],
-            enabled_permissions: Vec::new(),
             limits: Default::default(),
             lan_webui: false,
             relays: Vec::new(),
@@ -452,11 +416,6 @@ async fn a_bot_plugin_can_change_its_limits() {
             origin: None,
             written_by: None,
             ask_every_update: false,
-            family: false,
-            settings: Default::default(),
-            settings_changed_ms: None,
-            static_files: Default::default(),
-            hosted: Vec::new(),
         })
         .unwrap();
     let web = container_name("app-test", "web");
@@ -482,35 +441,14 @@ async fn a_failing_container_update_names_the_service_and_keeps_the_record() {
         "  web:\n    image: example/web\n  worker:\n    image: example/worker\n",
         "  permissions: []",
     );
-    manager
-        .install(&compose, &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&compose, &[]).await.unwrap();
     docker.fail_updates(Some("boom"));
 
     let error = manager
         .set_limits(id.clone(), memory_only(6 * GIB as u64), Default::default())
         .await
         .unwrap_err();
-    // 内层是 from_bollard 的 rejected（context 由调用点拼），外层补「Service web：」。
-    let rejected = super::message(
-        "plugin-install-docker-rejected",
-        &[
-            (
-                "context",
-                &super::message(
-                    "plugin-settings-limits-update-container",
-                    &[("name", "wonton-app-test--web")],
-                ),
-            ),
-            ("error", "boom"),
-        ],
-    );
-    let expected = super::message(
-        "plugin-install-service-error",
-        &[("service", "web"), ("error", &rejected)],
-    );
-    assert!(error.to_string().contains(&expected), "{error}");
+    assert!(error.to_string().contains("服务 web："), "{error}");
     // 记录先写：重试是幂等的，第二次没有 fail_updates 就能全部更新。
     assert_eq!(record_of(&dir, &id).limits, memory_only(6 * GIB as u64));
     docker.fail_updates(None);
@@ -527,25 +465,15 @@ async fn an_oom_event_adds_a_notice_and_another_instances_container_is_ignored()
     let (docker, manager, _dir) = manager_on(&host).await;
     let manager = Arc::new(manager);
     let id = PluginId::parse("app.test").unwrap();
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
     manager.spawn_oom_watch();
 
     let notices = wait_for_notice(&docker, &manager, &id, &container_name("app-test", "web")).await;
-    let en = Languages::from_header(Some("en"));
-    let limit = crate::l10n::text(
-        &en,
-        "plugin-install-oom-limit-service",
-        &[("size", "8 GB".into())],
+    assert_eq!(
+        notices,
+        ["服务 web 内存不够，被系统结束过（上限 8 GB）"],
+        "{notices:?}"
     );
-    let expected = crate::l10n::text(
-        &en,
-        "plugin-install-oom-notice",
-        &[("service", "web".into()), ("limit", limit.into())],
-    );
-    assert_eq!(notices, [expected.as_str()], "{notices:?}");
 
     // 别的实例的容器：inspect 得到，但标签的实例名对不上，忽略。
     docker.add_container("wonton-other--web", "app.other");
@@ -570,33 +498,14 @@ async fn an_oom_in_the_shared_slice_says_the_total_may_be_what_ran_out() {
             .with_plugin_slice(Some("wonton_plugins.slice".to_owned())),
     );
     let id = PluginId::parse("app.test").unwrap();
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
     manager.spawn_oom_watch();
 
     let notices = wait_for_notice(&docker, &manager, &id, &container_name("app-test", "web")).await;
 
     assert_eq!(
         notices,
-        [crate::l10n::text(
-            &Languages::from_header(Some("en")),
-            "plugin-install-oom-notice",
-            &[
-                ("service", "web".into()),
-                (
-                    "limit",
-                    crate::l10n::text(
-                        &Languages::from_header(Some("en")),
-                        "plugin-install-oom-limit-both",
-                        &[("size", "8 GB".into())]
-                    )
-                    .into()
-                ),
-            ],
-        )
-        .as_str()],
+        ["服务 web 内存不够，被系统结束过（服务上限 8 GB，也可能是所有插件加起来到了总上限）"],
         "{notices:?}"
     );
 }
@@ -608,10 +517,7 @@ async fn oom_notices_expire_after_24h() {
     let (docker, manager, _dir) = manager_on(&host).await;
     let manager = Arc::new(manager);
     let id = PluginId::parse("app.test").unwrap();
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
     manager.spawn_oom_watch();
     let notices = wait_for_notice(&docker, &manager, &id, &container_name("app-test", "web")).await;
     assert!(!notices.is_empty());
@@ -628,10 +534,7 @@ async fn raising_the_limit_clears_the_oom_notice() {
     let (docker, manager, _dir) = manager_on(&host).await;
     let manager = Arc::new(manager);
     let id = PluginId::parse("app.test").unwrap();
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
     manager.spawn_oom_watch();
     assert!(
         !wait_for_notice(&docker, &manager, &id, &container_name("app-test", "web"))
@@ -653,10 +556,7 @@ async fn an_oomkilled_container_is_degraded_with_the_memory_reason() {
     host.memory_total_kib(10 * 1024 * 1024);
     let (docker, manager, dir) = manager_on(&host).await;
     let engine = manager.engine.clone();
-    manager
-        .install(&plugin("", ""), &[], super::langs())
-        .await
-        .unwrap();
+    manager.install(&plugin("", ""), &[]).await.unwrap();
 
     let web = container_name("app-test", "web");
     docker.set_state(
@@ -669,24 +569,7 @@ async fn an_oomkilled_container_is_degraded_with_the_memory_reason() {
     let PluginStatus::Degraded { reason } = view.status else {
         panic!("{:?}", view.status);
     };
-    let en = Languages::from_header(Some("en"));
-    let expected = crate::l10n::text(
-        &en,
-        "plugin-install-oom-reason",
-        &[
-            ("service", "web".into()),
-            (
-                "limit",
-                crate::l10n::text(
-                    &en,
-                    "plugin-install-oom-limit-service",
-                    &[("size", "8 GB".into())],
-                )
-                .into(),
-            ),
-        ],
-    );
-    assert!(reason.contains(&expected), "{reason}");
+    assert!(reason.contains("内存不够"), "{reason}");
     assert!(reason.contains("8 GB"), "{reason}");
 
     // 核心重启后的核对（restore → check_now）同样如此。
@@ -696,5 +579,5 @@ async fn an_oomkilled_container_is_degraded_with_the_memory_reason() {
     let PluginStatus::Degraded { reason } = view.status else {
         panic!("{:?}", view.status);
     };
-    assert!(reason.contains(&expected), "{reason}");
+    assert!(reason.contains("内存不够"), "{reason}");
 }

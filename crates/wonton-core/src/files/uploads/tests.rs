@@ -5,7 +5,6 @@ use std::time::Duration;
 use super::*;
 use crate::files::new_upload_id as new_id;
 use crate::files::test_support::Fixture;
-use crate::files::test_support::any_langs;
 
 pub(super) fn new_upload(size: u64) -> NewUpload<'static> {
     NewUpload {
@@ -51,11 +50,7 @@ async fn a_turn_someone_is_waiting_for_stays_in_the_table() {
 #[tokio::test]
 async fn an_unreadable_entry_does_not_hold_up_finished_uploads() {
     let f = Fixture::new();
-    let id = f
-        .files
-        .create_upload(new_upload(5), &any_langs())
-        .await
-        .unwrap();
+    let id = f.files.create_upload(new_upload(5)).await.unwrap();
     fs::write(f.uploads_dir().join(id.as_str()), "hello").unwrap();
     let pending = f.dir.path().join("files/pending");
     fs::create_dir(pending.join("broken.json")).unwrap();
@@ -68,11 +63,7 @@ async fn an_unreadable_entry_does_not_hold_up_finished_uploads() {
 #[tokio::test]
 async fn a_corrupt_pending_record_is_set_aside_and_its_data_kept() {
     let f = Fixture::new();
-    let id = f
-        .files
-        .create_upload(new_upload(5), &any_langs())
-        .await
-        .unwrap();
+    let id = f.files.create_upload(new_upload(5)).await.unwrap();
     let data = f.uploads_dir().join(id.as_str());
     fs::write(&data, "he").unwrap();
     let pending = f.dir.path().join(format!("files/pending/{id}.json"));
@@ -95,11 +86,7 @@ async fn a_corrupt_pending_record_is_set_aside_and_its_data_kept() {
 #[tokio::test]
 async fn an_upload_without_progress_is_cleared_with_its_temporary_copy() {
     let f = Fixture::new();
-    let id = f
-        .files
-        .create_upload(new_upload(5), &any_langs())
-        .await
-        .unwrap();
+    let id = f.files.create_upload(new_upload(5)).await.unwrap();
     let data = f.uploads_dir().join(id.as_str());
     fs::write(&data, "he").unwrap();
     let temp = f
@@ -125,13 +112,13 @@ pub(super) async fn placed_without_record(
 ) -> (FileId, PathBuf, PathBuf) {
     let id = f
         .files
-        .create_upload(new_upload(content.len() as u64), &any_langs())
+        .create_upload(new_upload(content.len() as u64))
         .await
         .unwrap();
     let data = f.uploads_dir().join(id.as_str());
     fs::write(&data, content).unwrap();
     let pending = f.files.uploads.load_pending(&id).unwrap().unwrap();
-    f.files.place_marked(&pending, &any_langs()).unwrap();
+    f.files.place_marked(&pending).unwrap();
     let transfers = f.shares_dir.join(TRANSFERS);
     assert!(transfers.join("a.txt").exists());
     (
@@ -264,10 +251,7 @@ async fn a_file_the_owner_renamed_and_edited_survives_abandoning() {
         assert!(f.audit_lines().is_empty(), "{how}：没删东西");
         // 记录是对的：App 能删掉它。
         assert!(
-            f.files
-                .delete(&id, "phone".to_owned(), &any_langs())
-                .await
-                .is_ok(),
+            f.files.delete(&id, "phone".to_owned()).await.is_ok(),
             "{how}"
         );
         assert!(!kept.exists());
@@ -313,11 +297,7 @@ async fn a_file_only_renamed_or_only_edited_is_the_owners_too() {
 #[tokio::test]
 async fn the_name_and_look_are_written_before_the_link() {
     let f = Fixture::new();
-    let id = f
-        .files
-        .create_upload(new_upload(5), &any_langs())
-        .await
-        .unwrap();
+    let id = f.files.create_upload(new_upload(5)).await.unwrap();
     fs::write(f.uploads_dir().join(id.as_str()), "hello").unwrap();
     let transfers = f.shares_dir.join(TRANSFERS);
     fs::create_dir_all(&transfers).unwrap();
@@ -336,7 +316,6 @@ async fn the_name_and_look_are_written_before_the_link() {
                 owner: f.files.uploads.owner,
                 placing_inode: None,
             },
-            &any_langs(),
             &mut |name, snapshot| {
                 assert!(!transfers.join(name).exists(), "链接之前");
                 seen.push((name.to_owned(), *snapshot));
@@ -348,14 +327,10 @@ async fn the_name_and_look_are_written_before_the_link() {
     assert_eq!(name, "a (1).txt");
 
     // 经 `place_marked` 走的话，记在待完成记录里。
-    let id = f
-        .files
-        .create_upload(new_upload(5), &any_langs())
-        .await
-        .unwrap();
+    let id = f.files.create_upload(new_upload(5)).await.unwrap();
     fs::write(f.uploads_dir().join(id.as_str()), "hello").unwrap();
     let pending = f.files.uploads.load_pending(&id).unwrap().unwrap();
-    let (name, placed) = f.files.place_marked(&pending, &any_langs()).unwrap();
+    let (name, placed) = f.files.place_marked(&pending).unwrap();
     let pending = f.files.uploads.load_pending(&id).unwrap().unwrap();
     assert_eq!(
         pending.placing,
@@ -370,11 +345,7 @@ async fn the_name_and_look_are_written_before_the_link() {
 #[tokio::test]
 async fn a_crash_before_the_link_leaves_nothing_to_settle() {
     let f = Fixture::new();
-    let id = f
-        .files
-        .create_upload(new_upload(5), &any_langs())
-        .await
-        .unwrap();
+    let id = f.files.create_upload(new_upload(5)).await.unwrap();
     let data = f.uploads_dir().join(id.as_str());
     fs::write(&data, "hello").unwrap();
     let mut pending = f.files.uploads.load_pending(&id).unwrap().unwrap();
@@ -420,17 +391,13 @@ async fn abandoning_keeps_a_file_that_has_a_record() {
 #[tokio::test]
 async fn a_placement_finishing_while_asked_reads_as_finished() {
     let f = Fixture::new();
-    let id = f
-        .files
-        .create_upload(new_upload(5), &any_langs())
-        .await
-        .unwrap();
+    let id = f.files.create_upload(new_upload(5)).await.unwrap();
     fs::write(f.uploads_dir().join(id.as_str()), "hello").unwrap();
     let state = f
         .files
         .state_now(&id, || {
             let pending = f.files.uploads.load_pending(&id).unwrap().unwrap();
-            f.files.place_pending(pending, &any_langs()).unwrap();
+            f.files.place_pending(pending).unwrap();
         })
         .unwrap();
     assert_eq!(state, UploadState::Finished { size: 5 });
@@ -440,11 +407,7 @@ async fn a_placement_finishing_while_asked_reads_as_finished() {
 #[tokio::test]
 async fn nothing_is_cleaned_up_until_the_record_is_durable() {
     let f = Fixture::new();
-    let id = f
-        .files
-        .create_upload(new_upload(5), &any_langs())
-        .await
-        .unwrap();
+    let id = f.files.create_upload(new_upload(5)).await.unwrap();
     let data = f.uploads_dir().join(id.as_str());
     fs::write(&data, "hello").unwrap();
     let pending = f.dir.path().join(format!("files/pending/{id}.json"));
@@ -454,7 +417,7 @@ async fn nothing_is_cleaned_up_until_the_record_is_durable() {
         .lock()
         .unwrap()
         .insert(f.dir.path().join("files/records"), 2);
-    assert!(f.files.finish_upload(&id, &any_langs()).await.is_ok());
+    assert!(f.files.finish_upload(&id).await.is_ok());
     assert!(data.exists());
     assert!(pending.exists());
     f.files.sweep(now_secs()).await;
@@ -469,7 +432,7 @@ async fn nothing_is_cleaned_up_until_the_record_is_durable() {
 async fn placed_but_not_cleaned_up(f: &Fixture, content: &str) -> (FileId, PathBuf, PathBuf) {
     let id = f
         .files
-        .create_upload(new_upload(content.len() as u64), &any_langs())
+        .create_upload(new_upload(content.len() as u64))
         .await
         .unwrap();
     let data = f.uploads_dir().join(id.as_str());
@@ -487,7 +450,6 @@ async fn placed_but_not_cleaned_up(f: &Fixture, content: &str) -> (FileId, PathB
                     owner: files.uploads.owner,
                     placing_inode: None,
                 },
-                &any_langs(),
                 &mut |_, _| Ok(()),
             )?;
             files.registry.save(FileRecord {
@@ -529,10 +491,7 @@ async fn a_deleted_upload_does_not_come_back_with_the_next_sweep() {
     let visible = f.shares_dir.join(TRANSFERS).join("a.txt");
     assert!(visible.exists());
 
-    f.files
-        .delete(&id, "phone".to_owned(), &any_langs())
-        .await
-        .unwrap();
+    f.files.delete(&id, "phone".to_owned()).await.unwrap();
     assert!(!visible.exists());
     assert!(!data.exists());
     assert!(!temp.exists());
@@ -579,11 +538,7 @@ async fn a_sweep_removes_temporary_files_nobody_is_waiting_for() {
     let orphan = transfers.join(format!("{UPLOAD_TEMP_PREFIX}{}", new_id()));
     fs::write(&orphan, "left behind").unwrap();
     // 还有待完成记录的：可能正要放。
-    let id = f
-        .files
-        .create_upload(new_upload(5), &any_langs())
-        .await
-        .unwrap();
+    let id = f.files.create_upload(new_upload(5)).await.unwrap();
     let in_use = transfers.join(format!("{UPLOAD_TEMP_PREFIX}{id}"));
     fs::write(&in_use, "copying").unwrap();
     // 主人自己的文件，名字只是看着像。
@@ -612,16 +567,12 @@ fn fail_dir_sync(dir: PathBuf, times: usize) {
 #[tokio::test]
 async fn nothing_is_linked_until_the_name_and_look_are_durable() {
     let f = Fixture::new();
-    let id = f
-        .files
-        .create_upload(new_upload(5), &any_langs())
-        .await
-        .unwrap();
+    let id = f.files.create_upload(new_upload(5)).await.unwrap();
     fs::write(f.uploads_dir().join(id.as_str()), "hello").unwrap();
     fail_dir_sync(f.dir.path().join("files/pending"), 1);
-    assert!(f.files.finish_upload(&id, &any_langs()).await.is_err());
+    assert!(f.files.finish_upload(&id).await.is_err());
     assert!(!f.shares_dir.join(TRANSFERS).join("a.txt").exists());
-    assert!(f.files.finish_upload(&id, &any_langs()).await.is_ok());
+    assert!(f.files.finish_upload(&id).await.is_ok());
     assert!(f.shares_dir.join(TRANSFERS).join("a.txt").exists());
 }
 
@@ -652,11 +603,7 @@ async fn a_kept_file_keeps_its_pending_record_until_the_record_is_durable() {
 #[tokio::test]
 async fn a_stuck_clean_up_holds_up_no_other_upload() {
     let f = Fixture::new();
-    let stale = f
-        .files
-        .create_upload(new_upload(5), &any_langs())
-        .await
-        .unwrap();
+    let stale = f.files.create_upload(new_upload(5)).await.unwrap();
     let hold = f.files.uploads.abandon_stalled.write().await;
     let files = f.files.clone();
     let sweeping = tokio::spawn(async move { files.sweep(now_secs() + 2 * STALE_SECS).await });
@@ -711,7 +658,7 @@ async fn a_name_found_in_the_directory_is_cleaned_for_display() {
     let (id, _data, _temp) = placed_without_record(&f, "hello").await;
     let transfers = f.shares_dir.join(TRANSFERS);
     fs::rename(transfers.join("a.txt"), transfers.join(TRICKY)).unwrap();
-    let record = f.files.finish_upload(&id, &any_langs()).await.unwrap();
+    let record = f.files.finish_upload(&id).await.unwrap();
     assert_eq!(record.name, "reportfdp.exe");
     let Origin::Upload { reference, .. } = &record.origin else {
         panic!("{record:?}");
@@ -736,60 +683,4 @@ fn a_file_system_out_of_inodes_has_no_room() {
     assert!(out_of_inodes(100, 0));
     assert!(!out_of_inodes(100, 1));
     assert!(!out_of_inodes(0, 0), "btrfs 不报 inode 数");
-}
-
-/// 这个上传的数据“在另一个卷上”：链接临时文件回 `XDEV`，走复制。按编号收窄，别的测试照常走硬链接。
-struct CrossVolume(String);
-
-impl CrossVolume {
-    fn on(id: &FileId) -> Self {
-        *crate::files::share_fs::tests::CROSS_VOLUME.lock().unwrap() = Some(id.to_string());
-        Self(id.to_string())
-    }
-}
-
-impl Drop for CrossVolume {
-    fn drop(&mut self) {
-        let mut current = crate::files::share_fs::tests::CROSS_VOLUME.lock().unwrap();
-        if current.as_deref() == Some(self.0.as_str()) {
-            *current = None;
-        }
-    }
-}
-
-/// 链接在名字写进待完成记录之后才失败：临时文件删掉，记下的 inode 不能留（跨卷时会被别的文件复用）。
-#[tokio::test]
-async fn a_failed_placement_forgets_the_temporary_inode() {
-    let f = Fixture::new();
-    let id = f
-        .files
-        .create_upload(new_upload(5), &any_langs())
-        .await
-        .unwrap();
-    let _volume = CrossVolume::on(&id);
-    fs::write(f.uploads_dir().join(id.as_str()), "hello").unwrap();
-    *crate::files::share_fs::tests::LINK_FAILS.lock().unwrap() = Some(id.to_string());
-    assert!(
-        f.files.place_for_test(&id, &any_langs()).await.is_err(),
-        "链接失败"
-    );
-    let pending = f.files.uploads.load_pending(&id).unwrap().unwrap();
-    assert!(
-        pending.placing.is_none(),
-        "临时文件已经删了，不能留着它的 inode"
-    );
-
-    let record = f.files.finish_upload(&id, &any_langs()).await.unwrap();
-    assert_eq!(record.name, "a.txt");
-    assert_eq!(
-        fs::read_to_string(f.shares_dir.join(TRANSFERS).join("a.txt")).unwrap(),
-        "hello"
-    );
-    assert!(f.files.uploads.load_pending(&id).unwrap().is_none());
-    assert!(
-        !f.shares_dir
-            .join(TRANSFERS)
-            .join(format!("{UPLOAD_TEMP_PREFIX}{id}"))
-            .exists()
-    );
 }

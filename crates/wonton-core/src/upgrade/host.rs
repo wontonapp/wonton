@@ -83,8 +83,6 @@ pub struct ServiceContainer {
     pub service: String,
     /// `Config.Image`：compose 写的引用。
     pub image: String,
-    /// 容器实际跑着的镜像 ID（inspect 的 `Image`）：引用会被移走，它不会。
-    pub image_id: String,
     /// `running`、`exited`、`restarting` 等。
     pub status: String,
     /// 没有健康检查时是 `None`。

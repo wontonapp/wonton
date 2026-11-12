@@ -8,14 +8,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
-use wonton_l10n::l10n;
 use wonton_protocol::{
-    CoreError, FileId, FileProblem, FileSource, Transfer, TransferAction, TransferDirection,
-    TransferState, TransfersViewModel, UploadSource,
+    CoreError, FileId, FileProblem, Transfer, TransferAction, TransferDirection, TransferState,
+    TransfersViewModel, UploadSource,
 };
 
 use crate::home::write_private;
-use crate::l10n::{CATALOG, language};
 
 /// 上传完的留多少条：壳不显示，也就没人清。下载完的不自动清：那是主人手机上的文件，主人自己选清不清。
 const KEEP_UPLOADED: usize = 50;
@@ -27,9 +25,6 @@ pub(super) struct Record {
     pub(super) server: String,
     pub(super) name: String,
     pub(super) file: Option<FileId>,
-    /// 文件的来源，问到名字时记下：连不上家里的时候，手机上这份的卡片还要写明来源。
-    #[serde(default)]
-    pub(super) source: Option<FileSource>,
     pub(super) transferred_bytes: u64,
     pub(super) total_bytes: Option<u64>,
     pub(super) state: TransferState,
@@ -67,16 +62,6 @@ pub(super) struct SourceStamp {
     pub(super) modified_ns: u64,
 }
 
-impl Record {
-    /// 下载的内容对应的 ETag：接着下、核对新旧都用它。
-    pub(super) fn etag(&self) -> Option<String> {
-        match &self.job {
-            Job::Download { etag, .. } => etag.clone(),
-            Job::Upload { .. } => None,
-        }
-    }
-}
-
 pub(super) struct Store {
     path: PathBuf,
     downloads_dir: PathBuf,
@@ -88,18 +73,14 @@ pub(super) struct Store {
 
 impl Store {
     /// 读不懂的列表不拦着 App 启动：挪到一边、记下错误，从空列表开始。App 被杀时还在传的算暂停。
-    pub(super) fn open(
-        path: PathBuf,
-        downloads_dir: PathBuf,
-        view: Option<watch::Sender<TransfersViewModel>>,
-    ) -> Self {
+    pub(super) fn open(path: PathBuf, downloads_dir: PathBuf) -> Self {
         let mut records = read(&path);
         for record in &mut records {
             if record.state == TransferState::Running {
                 record.state = TransferState::Paused;
             }
         }
-        let view = crate::scope::reuse(view, view_of(&records, &downloads_dir, None));
+        let view = watch::Sender::new(view_of(&records, &downloads_dir, None));
         Self {
             path,
             downloads_dir,
@@ -123,8 +104,8 @@ impl Store {
         self.view.borrow().clone()
     }
 
-    pub(super) fn sender(&self) -> watch::Sender<TransfersViewModel> {
-        self.view.clone()
+    pub(super) fn subscribe(&self) -> watch::Receiver<TransfersViewModel> {
+        self.view.subscribe()
     }
 
     /// 写盘失败时不加：不然主人以为 App 重启后还能接着传。
@@ -144,18 +125,6 @@ impl Store {
         self.lock().iter().find(|record| record.id == id).cloned()
     }
 
-    /// 手机上有完整文件的下载记录，最新的那条：接着下、核对新旧、离线给卡片都用它。
-    pub(super) fn finished_download(&self, file: &FileId) -> Option<Record> {
-        self.lock()
-            .iter()
-            .find(|record| {
-                record.state == TransferState::Done
-                    && matches!(record.job, Job::Download { .. })
-                    && record.file.as_ref() == Some(file)
-            })
-            .cloned()
-    }
-
     pub(super) fn paused(&self) -> Vec<String> {
         let records = self.lock();
         let paused = records.iter().filter(|r| r.state == TransferState::Paused);
@@ -172,7 +141,7 @@ impl Store {
         change(record);
         let updated = record.clone();
         if let Err(error) = self.write(&records) {
-            tracing::error!(error, "could not write the transfer list");
+            tracing::error!(error, "写传输列表失败");
         }
         self.publish(&records);
         Some(updated)
@@ -192,7 +161,7 @@ impl Store {
         let index = records.iter().position(|record| record.id == id)?;
         let removed = records.remove(index);
         if let Err(error) = self.write(&records) {
-            tracing::error!(error, "could not write the transfer list");
+            tracing::error!(error, "写传输列表失败");
         }
         self.publish(&records);
         Some(removed)
@@ -203,16 +172,8 @@ impl Store {
     }
 
     fn write(&self, records: &[Record]) -> Result<(), String> {
-        let bytes = serde_json::to_vec(records).expect("transfer records always serialize");
-        write_private(&self.path, &bytes).map_err(|e| {
-            l10n!(
-                CATALOG,
-                language(),
-                "files-store-write-failed",
-                path = self.path.display().to_string(),
-                reason = e.to_string()
-            )
-        })
+        let bytes = serde_json::to_vec(records).expect("传输记录总能序列化");
+        write_private(&self.path, &bytes).map_err(|e| format!("{}：{e}", self.path.display()))
     }
 
     fn publish(&self, records: &[Record]) {
@@ -227,14 +188,14 @@ fn read(path: &PathBuf) -> Vec<Record> {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
         Err(e) => {
-            tracing::error!(error = %e, "could not read the transfer list; starting from an empty list");
+            tracing::error!(error = %e, "读不了传输列表，从空列表开始");
             return Vec::new();
         }
     };
     serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-        tracing::error!(error = %e, "the transfer list is unreadable; moving it to .bad and starting from an empty list");
+        tracing::error!(error = %e, "传输列表读不懂，挪到 .bad，从空列表开始");
         if let Err(e) = fs::rename(path, path.with_extension("bad")) {
-            tracing::error!(error = %e, "could not move the unreadable transfer list aside");
+            tracing::error!(error = %e, "挪开读不懂的传输列表失败");
         }
         Vec::new()
     })

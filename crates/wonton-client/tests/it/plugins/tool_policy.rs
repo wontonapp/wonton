@@ -75,9 +75,10 @@ async fn a_setting_that_cannot_be_saved_says_why() {
         .app
         .set_tool_always(ID.to_owned(), "com.example.agent".to_owned(), true)
         .await;
-    let Err(CoreError::Upstream { .. }) = failed else {
+    let Err(CoreError::Upstream { reason }) = failed else {
         panic!("应该是核心出错：{failed:?}");
     };
+    assert!(reason.contains("放宽的设置读不出来"));
 }
 
 #[tokio::test]

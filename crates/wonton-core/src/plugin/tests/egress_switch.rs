@@ -4,8 +4,6 @@ use std::sync::Arc;
 
 use serde_json::json;
 
-use crate::l10n::CATALOG;
-
 use super::super::egress::settings::StoredEgress;
 use super::super::fake_docker::FakeDocker;
 use super::super::languages::Languages;
@@ -19,10 +17,7 @@ use crate::matrix::Matrix;
 use crate::matrix::fake::{Fake, start};
 
 fn granted(compose: &str) -> Vec<Permission> {
-    PluginPackage::parse(compose, &super::langs())
-        .unwrap()
-        .manifest
-        .permissions
+    PluginPackage::parse(compose).unwrap().manifest.permissions
 }
 
 fn app(id: &str, permissions: &str) -> String {
@@ -40,7 +35,6 @@ fn id(text: &str) -> PluginId {
 fn set_proxy(m: &PluginManager, url: Option<&str>) {
     let settings = StoredEgress {
         url: url.map(str::to_owned),
-        doh_url: None,
         direct_cidrs: Vec::new(),
         use_plugin: false,
     };
@@ -64,12 +58,8 @@ async fn turning_the_proxy_on_and_off_rebuilds_only_the_plugins_that_go_out() {
     let m = manager_with(engine, &dir);
     let out = app("app.out", "network.egress");
     let closed = app("app.closed", "");
-    m.install(&out, &granted(&out), super::langs())
-        .await
-        .unwrap();
-    m.install(&closed, &granted(&closed), super::langs())
-        .await
-        .unwrap();
+    m.install(&out, &granted(&out)).await.unwrap();
+    m.install(&closed, &granted(&closed)).await.unwrap();
     let (out_web, closed_web) = (
         container_name("app-out", "web"),
         container_name("app-closed", "web"),
@@ -121,9 +111,7 @@ async fn a_plugin_installed_with_the_proxy_on_is_not_rebuilt() {
     let m = manager_with(engine, &dir);
     set_proxy(&m, Some("http://proxy:1"));
     let out = app("app.out", "network.egress");
-    m.install(&out, &granted(&out), super::langs())
-        .await
-        .unwrap();
+    m.install(&out, &granted(&out)).await.unwrap();
     m.apply_egress().await.unwrap();
     assert_eq!(starts(&docker, &container_name("app-out", "web")), 1);
 }
@@ -134,9 +122,7 @@ async fn an_image_that_cannot_be_pulled_leaves_the_old_container_running_and_mar
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
     let out = app("app.out", "network.egress");
-    m.install(&out, &granted(&out), super::langs())
-        .await
-        .unwrap();
+    m.install(&out, &granted(&out)).await.unwrap();
     let web = container_name("app-out", "web");
     set_proxy(&m, Some("http://proxy:1"));
     docker.fail_pulls_except("gost", "toomanyrequests");
@@ -162,9 +148,7 @@ async fn when_the_relay_cannot_start_no_plugin_is_touched() {
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
     let out = app("app.out", "network.egress");
-    m.install(&out, &granted(&out), super::langs())
-        .await
-        .unwrap();
+    m.install(&out, &granted(&out)).await.unwrap();
     set_proxy(&m, Some("http://proxy:1"));
     docker.fail_pulls(Some("toomanyrequests"));
     let err = m.apply_egress().await.unwrap_err();
@@ -205,9 +189,7 @@ impl Bed {
             .unwrap();
         let m = manager_in_container(engine, &dir).with_matrix(Some(Arc::new(matrix)));
         let compose = bot(services);
-        m.install(&compose, &granted(&compose), super::langs())
-            .await
-            .unwrap();
+        m.install(&compose, &granted(&compose)).await.unwrap();
         Self {
             docker,
             tuwunel,
@@ -262,19 +244,8 @@ async fn a_token_in_the_command_cannot_be_read_back_so_the_bot_is_left_as_it_is(
     assert!(!env_of_container(&bed.docker, &web).contains_key("HTTP_PROXY"));
     assert_eq!(bed.devices(), devices);
     let reason = bed.reason();
-    let lang = CATALOG.negotiate(&["en"]);
-    assert!(
-        reason.contains(&CATALOG.format(
-            lang,
-            "plugin-settings-egress-token-unreadable",
-            &[("service", "bot".into())],
-        )),
-        "{reason}"
-    );
-    assert!(
-        reason.contains(&CATALOG.format(lang, "plugin-settings-egress-token-reinstall", &[],)),
-        "{reason}"
-    );
+    assert!(reason.contains("读不回来"), "{reason}");
+    assert!(reason.contains("重装"), "{reason}");
 }
 
 #[tokio::test]
@@ -289,15 +260,5 @@ async fn a_missing_old_container_is_reported_rather_than_signing_a_new_device() 
     assert_eq!(starts(&bed.docker, &web), 1);
     assert_eq!(bed.devices(), devices);
     let reason = bed.reason();
-    assert!(
-        reason.contains(&CATALOG.format(
-            CATALOG.negotiate(&["en"]),
-            "plugin-settings-egress-token-not-in-env",
-            &[
-                ("container", "wonton-app-echo--bot".into()),
-                ("variable", "AUTH".into()),
-            ],
-        )),
-        "{reason}"
-    );
+    assert!(reason.contains("没有令牌"), "{reason}");
 }

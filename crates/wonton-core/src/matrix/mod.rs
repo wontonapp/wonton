@@ -6,12 +6,10 @@
 mod admin;
 mod api;
 mod bot;
-mod bot_profile;
-mod contact_api;
-pub mod federation_config;
-pub mod issuer;
+pub(crate) mod issuer;
 mod notices;
 mod session;
+
 use std::path::Path;
 use std::time::Duration;
 
@@ -21,7 +19,6 @@ use serde_json::json;
 pub use admin::{ADMIN_LOCALPART, SERVER_USER_LOCALPART};
 pub use api::{JWT_LOGIN_TYPE, Login, MatrixError};
 pub use bot::{Avatar, BotAccount, BotSpec, ProvisionedBot};
-pub use federation_config::{FederationBlocks, FederationConfig};
 pub use issuer::LOGIN_TOKEN_TTL_SECS;
 pub use notices::{Edited, NoticeRoom, Posted};
 pub use session::Session;
@@ -98,25 +95,6 @@ impl Matrix {
     /// 以已登录的用户身份调客户端接口。
     pub fn session(&self, login: &Login) -> Session<'_> {
         Session::new(&self.api, &login.user_id, &login.access_token)
-    }
-
-    /// 访问令牌是谁的（`GET /_matrix/client/v3/account/whoami`）：网关认出插件网络里是哪个 Bot 在发请求时用
-    /// （ADR-0045），调用方按令牌哈希缓存。
-    pub async fn whoami(&self, token: &str) -> Result<String, MatrixError> {
-        let value = self
-            .api
-            .json(
-                Method::GET,
-                "/_matrix/client/v3/account/whoami",
-                Some(token),
-                None,
-                "辨认访问令牌",
-            )
-            .await?;
-        value["user_id"]
-            .as_str()
-            .map(str::to_owned)
-            .ok_or_else(|| MatrixError::Invalid("whoami 没有返回 user_id".to_owned()))
     }
 
     /// 以核心的管理账号调客户端接口。
@@ -201,9 +179,5 @@ impl Matrix {
 
 #[cfg(test)]
 pub(crate) mod fake;
-#[cfg(test)]
-mod profile_tests;
-#[cfg(test)]
-mod profile_tuwunel_tests;
 #[cfg(test)]
 mod tests;

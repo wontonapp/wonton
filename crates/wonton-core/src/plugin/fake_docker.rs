@@ -2,7 +2,7 @@
 //! （连同标签），供测试断言对 Docker 的副作用。容器一经创建默认报告为运行中且健康，
 //! 测试可以按容器名改成别的状态（已退出、没有健康检查等）。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use axum::body::Bytes;
@@ -10,26 +10,22 @@ use axum::extract::{Request, State};
 use axum::http::{Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
-use futures_util::StreamExt;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::{Notify, Semaphore, broadcast};
 
-use self::containers::containers;
 use self::events::events_response;
 use self::exec::start_exec;
-use self::networks::networks;
-use self::volumes::volumes;
+use self::networks::{endpoint_settings, networks, running};
+use self::update::update_container;
 use super::docker::Engine;
 use super::names::LABEL_PLUGIN;
 
-mod containers;
 mod events;
 mod exec;
 mod networks;
 mod update;
-mod volumes;
 
 #[derive(Clone)]
 pub struct FakeDocker {
@@ -101,15 +97,14 @@ struct Resources {
     containers: BTreeMap<String, Labels>,
     /// 容器名 → 创建它的请求。
     created: BTreeMap<String, Value>,
-    /// 容器名 → 被创建过的次数：重建会计数，断言“容器（别的 Bot 的）没被动过”用。
-    creation_count: BTreeMap<String, u32>,
     /// 网络名 → 标签。
     networks: BTreeMap<String, Labels>,
     /// 网络名 → 创建时的请求（`Internal`、`Options` 等）。
     network_bodies: BTreeMap<String, Value>,
     /// 接下来这么多次指定网段的建网络，Docker 回这个错误。
     pinned_network_rejection: Option<(u32, String)>,
-    network_collisions: u32,
+    /// 接下来这么多次让 Docker 分配网段的建网络，Docker 回这个错误。
+    auto_network_rejection: Option<(u32, String)>,
     /// 卷名 → 标签。
     volumes: BTreeMap<String, Labels>,
     /// 收到的写操作，按顺序，如 `POST /containers/x/start`。
@@ -122,7 +117,6 @@ struct Resources {
     states: BTreeMap<String, Value>,
     start_states: BTreeMap<String, Value>,
     start_error: Option<String>,
-    create_error: Option<(String, String)>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
     /// 网络名 → 容器名 → 它在网络里的端点（Docker 的 `EndpointSettings` 写法）。
@@ -136,14 +130,8 @@ struct Resources {
     pull_error: Option<String>,
     /// 名字里有这段的镜像不受 `pull_error` 影响，还在本地。
     pull_spared: Option<String>,
-    /// 查不到的镜像：查它和用它创建容器都回 404。模拟 containerd 镜像存储下镜像记录被清掉（#666）。
-    missing_images: BTreeSet<String>,
     /// Docker 登记的运行时；没设时只有 runc。
     runtimes: Option<Vec<String>>,
-    /// Docker `/info` 报告的名字（宿主主机名）；没设时不报。
-    name: Option<String>,
-    /// 设了时 `GET /info` 回这个错误；`None` 恢复正常。
-    info_error: Option<String>,
     https_proxy: Option<String>,
     /// 镜像 → 它自带的 `Healthcheck`（Docker 的 JSON 写法），没设的没有。
     image_healthchecks: BTreeMap<String, Value>,
@@ -155,23 +143,14 @@ struct Resources {
 }
 
 impl FakeDocker {
-    /// 连到这个假 Docker 的新 [`Engine`]：进程内的锁是全新的，测试用它当第二个独立核心。
-    /// 假状态是共享的，多个 Engine 看到同一份资源。
-    pub async fn engine(&self) -> Engine {
-        let app = Router::new().fallback(handle).with_state(self.clone());
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let engine = Engine::http_for_test(&format!("http://{addr}"));
-        let detector = super::lan::Detector::Fixed(Arc::new(Mutex::new(Ok(Default::default()))));
-        engine.with_network_pool(Default::default(), detector)
-    }
-
     /// 启动假 Docker，返回它和连到它的 [`Engine`]。
     pub async fn start() -> (Self, Engine) {
         let fake = Self::default();
-        let engine = fake.engine().await;
-        (fake, engine)
+        let app = Router::new().fallback(handle).with_state(fake.clone());
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (fake, Engine::http_for_test(&format!("http://{addr}")))
     }
 
     /// 放进一个运行中的容器，比如核心重启前就装好的插件的容器。
@@ -187,10 +166,6 @@ impl FakeDocker {
 
     pub fn networks(&self) -> Vec<String> {
         self.lock().networks.keys().cloned().collect()
-    }
-
-    pub fn network_collisions(&self) -> u32 {
-        self.lock().network_collisions
     }
 
     pub fn volumes(&self) -> Vec<String> {
@@ -209,13 +184,6 @@ impl FakeDocker {
         let mut docker = self.lock();
         docker.networks.insert(name.to_owned(), Labels::new());
         docker.network_bodies.insert(name.to_owned(), json!({}));
-    }
-    /// 模拟主人手动删掉一个网络（或上一代核心清掉过）。
-    pub fn remove_network(&self, name: &str) {
-        let mut docker = self.lock();
-        docker.endpoints.remove(name);
-        docker.network_bodies.remove(name);
-        docker.networks.remove(name);
     }
 
     /// 放进一个已有的卷，比如别的插件的。
@@ -308,15 +276,6 @@ impl FakeDocker {
         self.lock().created.get(container).cloned()
     }
 
-    /// 容器被创建过的次数（重建会计数）。
-    pub fn creations(&self, container: &str) -> u32 {
-        self.lock()
-            .creation_count
-            .get(container)
-            .copied()
-            .unwrap_or(0)
-    }
-
     /// 让容器里出现（`Some`）或去掉（`None`）一个路径，比如插件运行中写下的文件。
     pub fn set_file(&self, container: &str, path: &str, file: Option<FakeFile>) {
         let key = (container.to_owned(), path.to_owned());
@@ -333,28 +292,12 @@ impl FakeDocker {
         self.lock().states.insert(container.to_owned(), state);
     }
 
-    /// 容器从 Docker 里不见了（被外部删掉）。
-    pub fn remove(&self, container: &str) {
-        let mut docker = self.lock();
-        docker.containers.remove(container);
-        docker.states.remove(container);
-        docker.created.remove(container);
-        for endpoints in docker.endpoints.values_mut() {
-            endpoints.remove(container);
-        }
-    }
-
     pub fn set_start_state(&self, container: &str, state: Value) {
         self.lock().start_states.insert(container.to_owned(), state);
     }
 
     pub fn fail_starts(&self, message: Option<&str>) {
         self.lock().start_error = message.map(str::to_owned);
-    }
-
-    /// 下一次创建指定容器时返回错误；消费后自动恢复正常。
-    pub fn fail_next_create(&self, container: &str, message: &str) {
-        self.lock().create_error = Some((container.to_owned(), message.to_owned()));
     }
 
     /// 容器里执行的命令由 `handler` 回应。
@@ -368,6 +311,11 @@ impl FakeDocker {
     /// 接下来 `times` 次指定网段的建网络，Docker 回 `message`（403）。
     pub fn reject_pinned_networks(&self, times: u32, message: &str) {
         self.lock().pinned_network_rejection = Some((times, message.to_owned()));
+    }
+
+    /// 接下来 `times` 次不指定网段的建网络，Docker 回 `message`（403）。
+    pub fn reject_auto_networks(&self, times: u32, message: &str) {
+        self.lock().auto_network_rejection = Some((times, message.to_owned()));
     }
 
     /// 容器里执行的命令可分别回应标准输出和标准错误。
@@ -409,22 +357,6 @@ impl FakeDocker {
             .insert(name.to_owned(), json!({"Image": image}));
     }
 
-    /// 放进一个核心容器：跑着的镜像 ID 和创建时的镜像引用（`Config.Image`）可以不一样，
-    /// 模拟核心镜像的标签已被移走（#666）。
-    pub fn add_core_container(&self, name: &str, image_id: &str, reference: &str) {
-        let mut docker = self.lock();
-        docker.containers.insert(name.to_owned(), Labels::new());
-        docker.created.insert(
-            name.to_owned(),
-            json!({"Image": image_id, "Config": {"Image": reference}}),
-        );
-    }
-
-    /// 忘掉一个镜像：查它和用它创建容器都回 404，像 containerd 存储下镜像记录被清掉后那样（#666）。
-    pub fn forget_image(&self, image: &str) {
-        self.lock().missing_images.insert(image.to_owned());
-    }
-
     /// 这个名字的容器（之后创建的）跑完时的退出码和输出。
     pub fn set_output(&self, container: &str, code: i64, stdout: &str, stderr: &str) {
         let output = (code, stdout.to_owned(), stderr.to_owned());
@@ -441,16 +373,6 @@ impl FakeDocker {
 
     pub fn set_runtimes(&self, runtimes: &[&str]) {
         self.lock().runtimes = Some(runtimes.iter().map(|r| (*r).to_owned()).collect());
-    }
-
-    /// 让 `GET /info` 报告这个名字（宿主主机名）。
-    pub fn set_name(&self, name: &str) {
-        self.lock().name = Some(name.to_owned());
-    }
-
-    /// 让 `GET /info` 回 `message`，直到传入 `None`。
-    pub fn fail_info(&self, message: Option<&str>) {
-        self.lock().info_error = message.map(str::to_owned);
     }
 
     pub fn set_https_proxy(&self, address: &str) {
@@ -532,8 +454,7 @@ fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Respons
     let reply = match parts.as_slice() {
         ["containers", rest @ ..] => containers(&mut docker, method, rest, query, body),
         ["networks", rest @ ..] => networks(&mut docker, method, rest, query, body),
-        ["volumes", rest @ ..] => volumes(&mut docker, method, rest, query, body),
-        _ => others(&mut docker, method, &parts, query),
+        _ => others(&mut docker, method, &parts, query, body),
     };
     reply.unwrap_or_else(|| {
         json_reply(
@@ -543,13 +464,175 @@ fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Respons
     })
 }
 
-/// 版本、镜像、exec 查询。
+fn containers(
+    docker: &mut Resources,
+    method: &Method,
+    parts: &[&str],
+    query: &str,
+    raw: &Bytes,
+) -> Option<Response> {
+    let exists = |name: &str| docker.containers.contains_key(name);
+    let reply = match (method, parts) {
+        (&Method::POST, ["create"])
+            if query_param(query, "name").is_some_and(|name| exists(&name)) =>
+        {
+            let name = query_param(query, "name").unwrap_or_default();
+            let message = format!("Conflict. The container name \"/{name}\" is already in use");
+            json_reply(StatusCode::CONFLICT, json!({"message": message}))
+        }
+        (&Method::POST, ["create"]) => {
+            let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
+            let name = query_param(query, "name").unwrap_or_default();
+            docker.containers.insert(name.clone(), labels_of(&body));
+            let networks = body["NetworkingConfig"]["EndpointsConfig"].as_object();
+            for (network, endpoint) in networks.into_iter().flatten() {
+                docker
+                    .endpoints
+                    .entry(network.clone())
+                    .or_default()
+                    .insert(name.clone(), endpoint.clone());
+            }
+            // 和 Docker 一样：`NetworkMode` 写网络名时，容器接在这个网络上。
+            if let Some(mode) = body["HostConfig"]["NetworkMode"].as_str()
+                && docker.networks.contains_key(mode)
+                && !docker
+                    .endpoints
+                    .get(mode)
+                    .is_some_and(|e| e.contains_key(&name))
+            {
+                docker
+                    .endpoints
+                    .entry(mode.to_owned())
+                    .or_default()
+                    .insert(name.clone(), json!({}));
+            }
+            docker.created.insert(name.clone(), body);
+            json_reply(StatusCode::CREATED, json!({"Id": name, "Warnings": []}))
+        }
+        (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),
+        (&Method::POST, [name, "start"]) if exists(name) => start_container(docker, name),
+        (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
+        (&Method::DELETE, [name]) => {
+            for endpoints in docker.endpoints.values_mut() {
+                endpoints.remove(*name);
+            }
+            gone(docker.containers.remove(*name).is_some())
+        }
+        (&Method::GET, [name, "json"]) if exists(name) => inspect_container(docker, name),
+        (&Method::POST, [name, "wait"]) if exists(name) => {
+            let code = docker.outputs.get(*name).map_or(0, |o| o.0);
+            json_reply(StatusCode::OK, json!({"StatusCode": code}))
+        }
+        (&Method::GET, [name, "logs"]) if exists(name) => {
+            let (_, stdout, stderr) = docker.outputs.get(*name).cloned().unwrap_or_default();
+            let mut frames = Vec::new();
+            // 和 Docker 一样多路复用：1 是标准输出，2 是标准错误。
+            for (stream, text) in [(1u8, stdout), (2, stderr)] {
+                if !text.is_empty() {
+                    frames.extend_from_slice(&[stream, 0, 0, 0]);
+                    frames.extend_from_slice(&u32::try_from(text.len()).unwrap().to_be_bytes());
+                    frames.extend_from_slice(text.as_bytes());
+                }
+            }
+            (StatusCode::OK, frames).into_response()
+        }
+        (&Method::POST, [name, "exec"]) if exists(name) => {
+            let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
+            let cmd = serde_json::from_value(body["Cmd"].clone()).unwrap_or_default();
+            let id = format!("exec{}", docker.execs.len() + 1);
+            let exec = FakeExec {
+                container: (*name).to_owned(),
+                cmd,
+                stdin: Vec::new(),
+                exit_code: None,
+            };
+            docker.execs.insert(id.clone(), exec);
+            json_reply(StatusCode::CREATED, json!({"Id": id}))
+        }
+        (&Method::PUT, [name, "archive"]) if exists(name) => {
+            docker.archives.insert((*name).to_owned(), raw.to_vec());
+            StatusCode::OK.into_response()
+        }
+        (&Method::GET, [name, "archive"]) if exists(name) => {
+            let path = query_param(query, "path").unwrap_or_default();
+            match docker.files.get(&((*name).to_owned(), path.clone())) {
+                Some(file) => (StatusCode::OK, archive_of(&path, file)).into_response(),
+                None => json_reply(
+                    StatusCode::NOT_FOUND,
+                    json!({"message": format!("Could not find the file {path} in container {name}")}),
+                ),
+            }
+        }
+        (&Method::GET, ["json"]) => list_containers(docker, query),
+        _ => return None,
+    };
+    Some(reply)
+}
+
+fn start_container(docker: &mut Resources, name: &str) -> Response {
+    if let Some(message) = &docker.start_error {
+        return json_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({"message": message}),
+        );
+    }
+    if let Some(state) = docker.start_states.get(name).cloned() {
+        docker.states.insert(name.to_owned(), state);
+    }
+    gone(true)
+}
+
+fn inspect_container(docker: &Resources, name: &str) -> Response {
+    let healthy = json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}});
+    let state = docker.states.get(name).cloned().unwrap_or(healthy);
+    let created = docker.created.get(name).cloned().unwrap_or_default();
+    let networks: serde_json::Map<String, Value> = docker
+        .endpoints
+        .iter()
+        .filter_map(|(network, endpoints)| {
+            let mut settings = endpoint_settings(endpoints.get(name)?);
+            if !running(&docker.states, name) {
+                settings["IPAddress"] = json!("");
+            }
+            Some((network.clone(), settings))
+        })
+        .collect();
+    json_reply(
+        StatusCode::OK,
+        json!({"Name": format!("/{name}"), "State": state, "Image": created["Image"],
+               "Config": {"Image": created["Image"], "Labels": created["Labels"], "Env": created["Env"]},
+               "HostConfig": created["HostConfig"],
+               "NetworkSettings": {"Networks": networks}}),
+    )
+}
+
+fn list_containers(docker: &Resources, query: &str) -> Response {
+    let network = query_param(query, "filters")
+        .and_then(|filters| serde_json::from_str::<Value>(&filters).ok())
+        .and_then(|filters| filters["network"][0].as_str().map(str::to_owned));
+    let on_network = |container: &str| match &network {
+        Some(network) => docker
+            .endpoints
+            .get(network)
+            .is_some_and(|endpoints| endpoints.contains_key(container)),
+        None => true,
+    };
+    let list: Vec<Value> = labeled(&docker.containers, query)
+        .filter(|(n, _)| on_network(n))
+        .map(|(n, labels)| json!({"Names": [format!("/{n}")], "Labels": labels}))
+        .collect();
+    json_reply(StatusCode::OK, json!(list))
+}
+
+/// 版本、镜像、卷。
 fn others(
     docker: &mut Resources,
     method: &Method,
     parts: &[&str],
     query: &str,
+    raw: &Bytes,
 ) -> Option<Response> {
+    let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
     let reply = match (method, parts) {
         (&Method::GET, ["version"]) => json_reply(
             StatusCode::OK,
@@ -564,10 +647,6 @@ fn others(
         {
             json_reply(StatusCode::NOT_FOUND, json!({"message": "No such image"}))
         }
-        (&Method::GET, ["info"]) if docker.info_error.is_some() => json_reply(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            json!({"message": docker.info_error}),
-        ),
         (&Method::GET, ["info"]) => {
             let runtimes = docker
                 .runtimes
@@ -579,13 +658,8 @@ fn others(
                 .collect();
             json_reply(
                 StatusCode::OK,
-                json!({"Name": docker.name, "Runtimes": map, "Architecture": "x86_64", "OSType": "linux", "NCPU": 32, "HttpsProxy": docker.https_proxy}),
+                json!({"Runtimes": map, "Architecture": "x86_64", "OSType": "linux", "NCPU": 32, "HttpsProxy": docker.https_proxy}),
             )
-        }
-        (&Method::GET, ["images", image @ .., "json"])
-            if docker.missing_images.contains(&image.join("/")) =>
-        {
-            json_reply(StatusCode::NOT_FOUND, json!({"message": "No such image"}))
         }
         (&Method::GET, ["images", image @ .., "json"]) => {
             let check = docker.image_healthchecks.get(&image.join("/"));
@@ -595,39 +669,29 @@ fn others(
             StatusCode::INTERNAL_SERVER_ERROR,
             json!({"message": docker.pull_error}),
         ),
-        // 拉成功：像 Docker 一样一行一个 JSON，带进度，最后一条表示下完。每行隔一会儿，测试才看得到中间状态。
-        (&Method::POST, ["images", "create"]) => {
-            // 拉完的这个镜像就在本地了：之后查它、用它建容器都正常；没拉的还在不在看它原来在不在。
-            // 核心拉的引用补了 `:latest`，`forget_image` 记的可能是不带标签的名字。
-            if let Some(image) = query_param(query, "fromImage") {
-                docker
-                    .missing_images
-                    .retain(|missing| *missing != image && format!("{missing}:latest") != image);
-            }
-            let lines = futures_util::stream::iter([
-                "{\"status\":\"Downloading\",\"progressDetail\":{\"current\":40,\"total\":100},\"id\":\"a\"}",
-                "{\"status\":\"Downloading\",\"progressDetail\":{\"current\":40,\"total\":100},\"id\":\"b\"}",
-                "{\"status\":\"Pull complete\",\"id\":\"a\"}",
-                "{\"status\":\"Downloading\",\"progressDetail\":{\"current\":100,\"total\":100},\"id\":\"b\"}",
-                "{\"status\":\"Already exists\",\"id\":\"c\"}",
-                "{\"status\":\"Pull complete\",\"id\":\"b\"}",
-            ])
-            .then(|line| async move {
-                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-                Ok::<_, std::io::Error>(Bytes::from(format!("{line}\n")))
-            });
-            axum::response::Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", "application/json")
-                .body(axum::body::Body::from_stream(lines))
-                .unwrap()
-        }
         (&Method::GET, ["exec", id, "json"]) if docker.execs.contains_key(*id) => {
             let code = docker.execs[*id].exit_code;
             json_reply(
                 StatusCode::OK,
                 json!({"ExitCode": code, "Running": code.is_none()}),
             )
+        }
+        (&Method::POST, ["volumes", "create"]) => {
+            let name = body["Name"].as_str().unwrap_or_default().to_owned();
+            let labels = labels_of(&body);
+            let reply = volume(&name, &labels);
+            docker.volumes.insert(name, labels);
+            json_reply(StatusCode::CREATED, reply)
+        }
+        (&Method::GET, ["volumes", name]) if docker.volumes.contains_key(*name) => {
+            json_reply(StatusCode::OK, volume(name, &docker.volumes[*name]))
+        }
+        (&Method::DELETE, ["volumes", name]) => gone(docker.volumes.remove(*name).is_some()),
+        (&Method::GET, ["volumes"]) => {
+            let list: Vec<Value> = labeled(&docker.volumes, query)
+                .map(|(n, labels)| volume(n, labels))
+                .collect();
+            json_reply(StatusCode::OK, json!({"Volumes": list, "Warnings": []}))
         }
         _ => return None,
     };
@@ -683,6 +747,13 @@ fn owned_by(plugin: &str) -> Labels {
 
 fn labels_of(body: &Value) -> Labels {
     serde_json::from_value(body["Labels"].clone()).unwrap_or_default()
+}
+
+fn volume(name: &str, labels: &Labels) -> Value {
+    json!({
+        "Name": name, "Driver": "local", "Mountpoint": format!("/var/lib/docker/volumes/{name}"),
+        "Labels": labels, "Options": {}, "Scope": "local"
+    })
 }
 
 /// 按查询里的 `filters={"label":["键=值", "键"]}` 筛出资源：每一条都要满足，和 Docker 一样。

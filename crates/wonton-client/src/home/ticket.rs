@@ -6,7 +6,7 @@
 //! {
 //!   "server": {
 //!     "endpoint_id": "<64 位十六进制>",
-//!     "relays": [{"url": "https://…", "token": "…", "tier": 0}],
+//!     "relay_urls": ["https://…"],
 //!     "direct_addrs": ["192.168.0.2:18482"]
 //!   },
 //!   "base_domain": "wonton.localhost",
@@ -19,30 +19,22 @@
 //! 跟 `web_url` 一样。
 //!
 //! `server` 和核心的 `GET /_wonton/api/tunnel` 返回的字段相同，`base_domain` 也来自那里：本地代理只转发
-//! 这个域名和它的子域名，插件网页入口也必须在它下面。`relays` 是核心的中继表（ADR-0048），App 用它建
-//! 自己一侧的 endpoint。直连地址要写手机能到达的地址，例如局域网 IP 加核心发布的隧道端口；n0 的地址发现
-//! 在国内靠不住（ADR-0004），所以不靠它找服务端。
+//! 这个域名和它的子域名，插件网页入口也必须在它下面。直连地址要写手机能到达的地址，例如局域网
+//! IP 加核心发布的隧道端口；n0 的地址发现在国内靠不住（ADR-0004），所以不靠它找服务端。
 
 use std::net::SocketAddr;
 
-use iroh::{EndpointAddr, EndpointId};
+use iroh::{EndpointAddr, EndpointId, RelayUrl};
 use serde::{Deserialize, Serialize};
 use url::Url;
-use wonton_l10n::l10n;
-use wonton_tunnel::relays::{Relay, canonical_relay};
 
-use crate::l10n::{CATALOG, language};
-
-/// 连接信息里最多存这么多直连地址，包含本次连接验证过的路径。
+/// 连接信息里最多留这么多直连地址，新的在前。留旧的：核心只知道自己的地址，手机连它用的可能是别的（端口转发、隧道）。
 const MAX_DIRECT_ADDRS: usize = 8;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Ticket {
     server: Server,
     base_domain: String,
-    /// 配对时填的设备名，Matrix 设备显示名和 pusher 的设备名都用它。`ConnectHome` 给的连接信息里没有。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    device_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     core_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -53,46 +45,19 @@ pub(crate) struct Ticket {
 struct Server {
     endpoint_id: EndpointId,
     #[serde(default)]
-    relays: Vec<Relay>,
+    relay_urls: Vec<RelayUrl>,
     #[serde(default)]
     direct_addrs: Vec<SocketAddr>,
 }
 
 impl Ticket {
-    /// 连接信息里有没有中继表：endpoint 重建的证据只在有中继时凑得齐（ADR-0032 §4）。
-    pub(crate) fn has_relays(&self) -> bool {
-        !self.server.relays.is_empty()
-    }
-
     /// 解析连接信息。至少要有一个中继地址或直连地址：只给 endpoint ID 时要靠地址发现，国内靠不住。
     pub(crate) fn parse(text: &str) -> Result<Self, String> {
-        let mut ticket: Self = serde_json::from_str(text).map_err(|e| {
-            l10n!(
-                CATALOG,
-                language(),
-                "home-ticket-invalid-json",
-                error = e.to_string()
-            )
-        })?;
-        if ticket.server.relays.is_empty() && ticket.server.direct_addrs.is_empty() {
-            return Err(l10n!(CATALOG, language(), "home-ticket-no-addresses"));
+        let ticket: Self =
+            serde_json::from_str(text).map_err(|e| format!("连接信息不是合法的 JSON：{e}"))?;
+        if ticket.server.relay_urls.is_empty() && ticket.server.direct_addrs.is_empty() {
+            return Err("连接信息里没有服务端的中继地址或直连地址".to_owned());
         }
-        for relay in &ticket.server.relays {
-            relay.validate().map_err(|reason| {
-                l10n!(
-                    CATALOG,
-                    language(),
-                    "home-ticket-relays-invalid",
-                    reason = reason
-                )
-            })?;
-        }
-        ticket.server.relays = ticket
-            .server
-            .relays
-            .into_iter()
-            .map(canonical_relay)
-            .collect();
         let domain = ticket
             .base_domain
             .trim_end_matches('.')
@@ -104,60 +69,27 @@ impl Ticket {
                     .all(|b| b.is_ascii_alphanumeric() || b == b'-')
         };
         if !domain.split('.').all(valid_label) {
-            return Err(l10n!(
-                CATALOG,
-                language(),
-                "home-ticket-invalid-domain",
-                domain = ticket.base_domain.as_str()
-            ));
+            return Err(format!("基础域名不合法：{}", ticket.base_domain));
         }
         if let Some(text) = &ticket.web_url {
-            let url = Url::parse(text).map_err(|e| {
-                l10n!(
-                    CATALOG,
-                    language(),
-                    "home-ticket-invalid-web-url",
-                    error = e.to_string()
-                )
-            })?;
+            let url = Url::parse(text).map_err(|e| format!("插件网页地址不合法：{e}"))?;
             let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
             let in_domain = host == domain || host.ends_with(&format!(".{domain}"));
             if !matches!(url.scheme(), "http" | "https") || !in_domain {
-                return Err(l10n!(
-                    CATALOG,
-                    language(),
-                    "home-ticket-web-url-under-domain",
-                    domain = domain.as_str(),
-                    url = text.as_str()
+                return Err(format!(
+                    "插件网页地址要是 {domain} 下的 http(s) 地址：{text}"
                 ));
             }
         }
         if let Some(text) = &ticket.core_url {
-            let url = Url::parse(text).map_err(|e| {
-                l10n!(
-                    CATALOG,
-                    language(),
-                    "home-ticket-invalid-core-url",
-                    error = e.to_string()
-                )
-            })?;
+            let url = Url::parse(text).map_err(|e| format!("核心地址不合法：{e}"))?;
             let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
             if !matches!(url.scheme(), "http" | "https") || host != domain {
-                return Err(l10n!(
-                    CATALOG,
-                    language(),
-                    "home-ticket-core-url-under-domain",
-                    domain = domain.as_str(),
-                    url = text.as_str()
-                ));
+                return Err(format!("核心地址要是 {domain} 的 http(s) 地址：{text}"));
             }
         }
         Ok(Self {
             base_domain: domain,
-            device_name: ticket
-                .device_name
-                .map(|name| name.trim().to_owned())
-                .filter(|name| !name.is_empty()),
             ..ticket
         })
     }
@@ -172,7 +104,7 @@ impl Ticket {
             return url;
         }
         let mut url = Url::parse(&format!("http://{}/", self.base_domain))
-            .expect("validated base domain always forms a URL");
+            .expect("校验过的基础域名总能组成地址");
         if let Some(web) = self
             .web_url
             .as_deref()
@@ -190,8 +122,8 @@ impl Ticket {
 
     pub(crate) fn server_addr(&self) -> EndpointAddr {
         let mut addr = EndpointAddr::new(self.server.endpoint_id);
-        for relay in &self.server.relays {
-            addr = addr.with_relay_url(relay.url.clone());
+        for relay in &self.server.relay_urls {
+            addr = addr.with_relay_url(relay.clone());
         }
         for ip in &self.server.direct_addrs {
             addr = addr.with_ip_addr(*ip);
@@ -199,46 +131,25 @@ impl Ticket {
         addr
     }
 
-    /// 连接信息里的中继表，App 建 endpoint 用。
-    pub(crate) fn relays(&self) -> &[Relay] {
-        &self.server.relays
-    }
-
-    /// 记上核心报告的地址；和已有的一样时返回 `None`。中继表或直连地址报告为空时留着旧候选，仍把
-    /// 本次实证直连路径排第一：中继可能只是暂时没连上，地址也可能只是这一次没测出来。令牌变了以后，
-    /// 跑着的 endpoint 不会跟着换（iroh#4642），要等下一次重建 endpoint。
-    ///
-    /// 本次真实连通的直连路径优先于核心的候选；核心不知道手机侧的地址转换。报告非空时其它旧地址不合并，
-    /// 避免失效地址积累并挤掉新候选（ADR-0032）。
+    /// 记上核心报告的地址；和已有的一样时返回 `None`。中继地址报告为空时留着旧的：中继可能只是暂时没连上。
     pub(crate) fn with_reported(
         &self,
-        relays: Vec<Relay>,
+        relay_urls: Vec<RelayUrl>,
         direct_addrs: &[SocketAddr],
-        connected: Option<SocketAddr>,
     ) -> Option<Self> {
         let mut updated = self.clone();
-        if !relays.is_empty() {
-            updated.server.relays = relays.into_iter().map(canonical_relay).collect();
+        if !relay_urls.is_empty() {
+            updated.server.relay_urls = relay_urls;
         }
-        if connected.is_some() || !direct_addrs.is_empty() {
-            let candidates = if direct_addrs.is_empty() {
-                self.direct_addrs()
-            } else {
-                direct_addrs
-            };
-            let mut addresses = Vec::with_capacity(MAX_DIRECT_ADDRS);
-            for addr in connected.into_iter().chain(candidates.iter().copied()) {
-                if !addresses.contains(&addr) {
-                    addresses.push(addr);
-                }
-                if addresses.len() == MAX_DIRECT_ADDRS {
-                    break;
-                }
-            }
-            updated.server.direct_addrs = addresses;
-        }
-        let changed = updated.server.relays != self.server.relays
-            || updated.server.direct_addrs != self.server.direct_addrs;
+        let old = &self.server.direct_addrs;
+        let older = old.iter().filter(|addr| !direct_addrs.contains(addr));
+        let merged = direct_addrs.iter().chain(older).copied();
+        updated.server.direct_addrs = merged.take(MAX_DIRECT_ADDRS).collect();
+        let same_addrs = updated.server.direct_addrs.len() == old.len()
+            && old
+                .iter()
+                .all(|addr| updated.server.direct_addrs.contains(addr));
+        let changed = updated.server.relay_urls != self.server.relay_urls || !same_addrs;
         changed.then_some(updated)
     }
 
@@ -255,57 +166,43 @@ impl Ticket {
     pub(crate) fn base_domain(&self) -> &str {
         &self.base_domain
     }
-
-    /// 配对时填的设备名；去掉首尾空白后为空也算没有。
-    pub(crate) fn device_name(&self) -> Option<&str> {
-        self.device_name.as_deref()
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use iroh::SecretKey;
-    use wonton_tunnel::relays::RelayToken;
 
     use super::*;
 
     #[test]
-    fn reported_relays_replace_the_saved_table_and_an_empty_report_keeps_the_old_one() {
+    fn reported_addresses_go_first_and_the_old_ones_stay_until_the_list_is_full() {
         let id = SecretKey::generate().public();
         let text = format!(
-            r#"{{"server": {{"endpoint_id": "{id}", "relays": [{{"url": "https://a.example./", "tier": 0}}], "direct_addrs": ["192.0.2.2:18482"]}},
-                "base_domain": "wonton.localhost"}}"#
+            r#"{{"server": {{"endpoint_id": "{id}", "direct_addrs": ["192.168.1.2:18482"]}},
+                "base_domain": "wonton.localhost", "web_url": "http://wonton.localhost:1/"}}"#
         );
         let ticket = Ticket::parse(&text).unwrap();
-        assert_eq!(ticket.relays().len(), 1);
-        assert_eq!(
+        let addr = |n: u8| SocketAddr::from(([10, 0, 0, n], 18482));
+
+        assert!(
             ticket
-                .server_addr()
-                .relay_urls()
-                .cloned()
-                .collect::<Vec<_>>(),
-            ["https://a.example/".parse().unwrap()]
+                .with_reported(Vec::new(), &ticket.server.direct_addrs)
+                .is_none()
         );
-        assert!(ticket.with_reported(Vec::new(), &[], None).is_none());
-        let updated = ticket
-            .with_reported(
-                vec![Relay {
-                    url: "https://b.example./".parse().unwrap(),
-                    token: Some(RelayToken::new("tok")),
-                    tier: 0,
-                }],
-                &[],
-                None,
-            )
-            .unwrap();
-        assert_eq!(updated.relays()[0].url.as_str(), "https://b.example/");
-        assert_eq!(updated.relays()[0].token.as_ref().unwrap().expose(), "tok");
-        // 地址里藏令牌的表项不被接受：令牌单独放。
-        let smuggled = format!(
-            r#"{{"server": {{"endpoint_id": "{id}", "relays": [{{"url": "https://tok@a.example/", "tier": 0}}]}},
-                "base_domain": "wonton.localhost"}}"#
+
+        let moved = ticket.with_reported(Vec::new(), &[addr(1)]).unwrap();
+        assert_eq!(
+            moved.direct_addrs(),
+            [addr(1), "192.168.1.2:18482".parse().unwrap()]
         );
-        assert!(Ticket::parse(&smuggled).is_err());
+        let saved = serde_json::to_string(&moved).unwrap();
+        let again = Ticket::parse(&saved).unwrap();
+        assert_eq!(again.direct_addrs(), moved.direct_addrs());
+        assert_eq!(again.web_url(), moved.web_url());
+
+        let many: Vec<SocketAddr> = (1..=9).map(addr).collect();
+        let full = moved.with_reported(Vec::new(), &many).unwrap();
+        assert_eq!(full.direct_addrs(), &many[..8]);
     }
 
     #[test]

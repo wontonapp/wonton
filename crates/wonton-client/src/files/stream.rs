@@ -9,22 +9,19 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Empty, Full, StreamBody};
+use http_body_util::{BodyExt, Empty, StreamBody};
 use hyper::body::{Bytes, Frame, Incoming};
 use hyper::header::{HeaderValue, IF_RANGE, RANGE};
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use reqwest::header::HeaderMap;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
-use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, FileId};
 use wonton_tunnel::ERROR_HEADER;
 
-use super::api::{Api, Problem, classify, header};
+use super::api::Api;
 use crate::home::HomeLink;
-use crate::l10n::{CATALOG, language};
 
 type Body = BoxBody<Bytes, std::io::Error>;
 
@@ -38,9 +35,8 @@ const FORWARDED: [&str; 6] = [
     "x-wonton-error",
 ];
 
-/// 这次播放连家里时碰上过什么。播放器放不了时用：等问起来家里可能已经恢复了，再问一遍会把吊销说成隧道、
-/// 把没了的文件说成放不了。
-type Interruptions = Arc<Mutex<HashMap<FileId, Problem>>>;
+/// 这次播放连家里时断过哪些文件，说明是什么。播放器放不了时用：等问起来隧道可能又好了，不能说成格式不支持。
+type Interruptions = Arc<Mutex<HashMap<FileId, String>>>;
 
 pub(super) struct StreamServer {
     token: String,
@@ -57,7 +53,7 @@ struct Running {
 impl StreamServer {
     pub(super) fn new() -> Self {
         let mut bytes = [0u8; 16];
-        getrandom::fill(&mut bytes).expect("OS random source is unavailable");
+        getrandom::fill(&mut bytes).expect("操作系统随机数源不可用");
         Self {
             token: bytes.iter().map(|byte| format!("{byte:02x}")).collect(),
             running: tokio::sync::Mutex::new(None),
@@ -72,7 +68,7 @@ impl StreamServer {
         Ok(format!("http://{addr}/{}/files/{id}/content", self.token))
     }
 
-    pub(super) fn take_interruption(&self, id: &FileId) -> Option<Problem> {
+    pub(super) fn take_interruption(&self, id: &FileId) -> Option<String> {
         lock(&self.interruptions).remove(id)
     }
 
@@ -86,20 +82,10 @@ impl StreamServer {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .await
             .map_err(|e| CoreError::Storage {
-                reason: l10n!(
-                    CATALOG,
-                    language(),
-                    "files-stream-local-address",
-                    reason = e.to_string()
-                ),
+                reason: format!("开不了播放用的本地地址：{e}"),
             })?;
         let addr = listener.local_addr().map_err(|e| CoreError::Storage {
-            reason: l10n!(
-                CATALOG,
-                language(),
-                "files-stream-local-address",
-                reason = e.to_string()
-            ),
+            reason: format!("开不了播放用的本地地址：{e}"),
         })?;
         let shared = Shared {
             home: home.clone(),
@@ -132,8 +118,8 @@ struct Shared {
 }
 
 impl Shared {
-    fn interrupted(&self, file: &FileId, problem: Problem) {
-        lock(&self.interruptions).insert(file.clone(), problem);
+    fn interrupted(&self, file: &FileId, detail: String) {
+        lock(&self.interruptions).insert(file.clone(), detail);
     }
 }
 
@@ -153,12 +139,12 @@ async fn accept(listener: TcpListener, shared: Arc<Shared>) {
         let stream = match listener.accept().await {
             Ok((stream, _)) => stream,
             Err(e) if transient(&e) => {
-                tracing::info!(error = %e, "could not accept this connection on the playback address");
+                tracing::info!(error = %e, "播放用的本地地址这次没接上");
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 continue;
             }
             Err(e) => {
-                tracing::info!(error = %e, "playback address is no longer usable, reopening on the next request");
+                tracing::info!(error = %e, "播放用的本地地址失效了，下次要地址时重开");
                 return;
             }
         };
@@ -171,7 +157,7 @@ async fn accept(listener: TcpListener, shared: Arc<Shared>) {
             let connection = hyper::server::conn::http1::Builder::new()
                 .serve_connection(TokioIo::new(stream), service);
             if let Err(e) = connection.await {
-                tracing::debug!(error = %e, "player connection ended");
+                tracing::debug!(error = %e, "播放器的连接结束");
             }
         });
     }
@@ -181,19 +167,6 @@ fn status(code: StatusCode) -> Response<Body> {
     let mut response = Response::new(Empty::new().map_err(|never| match never {}).boxed());
     *response.status_mut() = code;
     response
-}
-
-/// 隧道这头的错误算什么、要不要记下来给壳问：吊销不算——核心会说明白，留给 `probe` 去问；
-/// 其他隧道毛病当场记成“连不上”，本来就不是核心的话。
-fn tunnel_problem(code: &str) -> Option<Problem> {
-    (code != "unauthorized").then(|| {
-        Problem::Interrupted(l10n!(
-            CATALOG,
-            language(),
-            "files-stream-tunnel-unavailable",
-            code = format!("{code:?}")
-        ))
-    })
 }
 
 /// 比较时不提前返回：同机的其他 App 不能靠响应时间一个字符一个字符地猜令牌。
@@ -225,10 +198,7 @@ async fn respond(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Bo
         return status(StatusCode::METHOD_NOT_ALLOWED);
     }
     let Ok(api) = Api::connect(&shared.home) else {
-        shared.interrupted(
-            &file,
-            Problem::Interrupted(l10n!(CATALOG, language(), "files-stream-not-connected")),
-        );
+        shared.interrupted(&file, "隧道没连上".to_owned());
         return status(StatusCode::SERVICE_UNAVAILABLE);
     };
     let mut forwarded = api.stream(method.clone(), &Api::content_path(&file));
@@ -240,45 +210,23 @@ async fn respond(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Bo
     let upstream = match forwarded.send().await {
         Ok(upstream) => upstream,
         Err(e) => {
-            tracing::info!(file = %file, error = %e, "cannot reach the home server during playback");
-            shared.interrupted(&file, Problem::Interrupted(e.to_string()));
+            tracing::info!(file = %file, error = %e, "播放时连不上家里的服务器");
+            shared.interrupted(&file, e.to_string());
             return status(StatusCode::BAD_GATEWAY);
         }
     };
     let code = upstream.status();
     let headers = upstream.headers().clone();
-    // 这一趟在家里碰上过什么：记下来，壳问起来按这次的说。等它问的时候家里可能已经恢复了，
-    // 再问一遍会把没了的文件、报错的插件说成“放不了这个格式”。
-    match header(&headers, ERROR_HEADER) {
-        Some(found) => {
-            if let Some(problem) = tunnel_problem(found) {
-                shared.interrupted(&file, problem);
-            }
-        }
-        None if !code.is_success() => {
-            // 核心自己回的错误：响应体是小错误说明，读出来当场记下、原样给播放器。
-            let body = upstream.bytes().await.unwrap_or_default();
-            shared.interrupted(&file, classify(code, &headers, &body));
-            let response = if method == Method::HEAD {
-                status(code)
-            } else {
-                let mut response = Response::new(BodyExt::boxed(
-                    Full::new(body).map_err(|never| match never {}),
-                ));
-                *response.status_mut() = code;
-                response
-            };
-            return forwarded_headers(response, &headers);
-        }
-        None => {}
+    if let Some(code) = headers.get(ERROR_HEADER) {
+        shared.interrupted(&file, format!("隧道不可用（{code:?}）"));
     }
-    let response = if method == Method::HEAD {
+    let mut response = if method == Method::HEAD {
         status(code)
     } else {
         let (shared, file) = (shared.clone(), file.clone());
         let frames = upstream.bytes_stream().map(move |chunk| {
             chunk.map(Frame::data).map_err(|e| {
-                shared.interrupted(&file, Problem::Interrupted(e.to_string()));
+                shared.interrupted(&file, e.to_string());
                 std::io::Error::other(e)
             })
         });
@@ -286,11 +234,6 @@ async fn respond(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Bo
         *response.status_mut() = code;
         response
     };
-    forwarded_headers(response, &headers)
-}
-
-/// 转给播放器的响应头，加上文件内容不可信要的两条。
-fn forwarded_headers(mut response: Response<Body>, headers: &HeaderMap) -> Response<Body> {
     let extra = response.headers_mut();
     for name in FORWARDED {
         if let Some(value) = headers.get(name) {
@@ -306,23 +249,4 @@ fn forwarded_headers(mut response: Response<Body>, headers: &HeaderMap) -> Respo
         HeaderValue::from_static("sandbox"),
     );
     response
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_revoked_device_is_left_to_the_probe() {
-        assert_eq!(tunnel_problem("unauthorized"), None);
-        assert_eq!(
-            tunnel_problem("service_unavailable"),
-            Some(Problem::Interrupted(l10n!(
-                CATALOG,
-                language(),
-                "files-stream-tunnel-unavailable",
-                code = "\"service_unavailable\""
-            )))
-        );
-    }
 }

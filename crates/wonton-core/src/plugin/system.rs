@@ -38,10 +38,7 @@ impl PluginManager {
     /// 记录在，但里面的插件包这份核心读不懂。记录文件本身读不了（磁盘、权限）不算：那不是换个包能修好的。
     fn record_unreadable(&self, id: &PluginId) -> bool {
         match self.store.load(id) {
-            Ok(Some(record)) => {
-                PluginPackage::with_files(&record.source, record.files, &self.owner_languages())
-                    .is_err()
-            }
+            Ok(Some(record)) => PluginPackage::with_files(&record.source, record.files).is_err(),
             Ok(None) | Err(_) => false,
         }
     }
@@ -49,7 +46,7 @@ impl PluginManager {
     async fn reinstall_bundled(&self, package: PluginPackage, backoff: Backoff) {
         let id = package.manifest.id.clone();
         tracing::warn!(plugin = %id, "系统插件的记录读不懂，保留数据用随核心带来的包重装");
-        if let Err(e) = self.uninstall(&id, false, &self.owner_languages()).await {
+        if let Err(e) = self.uninstall(&id, false).await {
             tracing::error!(plugin = %id, error = %e, "卸掉读不懂的系统插件失败，没有重装");
             return;
         }

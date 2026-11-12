@@ -4,158 +4,118 @@
 //! 状态放在 watch 通道里，壳经订阅拿到 [`HomeViewModel`]。网络操作都在核心自己的 tokio 运行时里执行，
 //! `dispatch` 不阻塞。
 
-mod background;
-mod bind;
-mod check;
 mod connection;
 mod invite;
-mod link;
 mod pairing;
-mod quality;
-mod rebuild;
 mod refresh;
 mod storage;
 mod ticket;
 
 use std::net::Ipv4Addr;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use iroh::TransportAddr;
+use iroh::endpoint::{Builder, QuicTransportConfig, presets};
 use iroh::{Endpoint, SecretKey, Watcher};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, watch};
 use tokio::task::JoinHandle;
 use url::Url;
-use wonton_l10n::l10n;
 use wonton_protocol::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure,
-    HomePath, HomeStatus, HomeViewModel, ProxySettings, PushMethod,
+    HomePath, HomeStatus, HomeViewModel, ProxySettings,
 };
-use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, is_public_relay, spawn_tier_fallback};
 use wonton_tunnel::{
     LocalProxy, PathInfo, PathKind, ProxyAccess, ProxyCredential, TunnelClient, TunnelError,
     TunnelStatus,
 };
 
-use crate::l10n::{CATALOG, language};
-use crate::scope::reuse;
-use check::keep_checking;
-use connection::{LONG_OUTAGE, Tracker};
-use link::Link;
-use quality::Quality;
+use connection::Tracker;
 pub(crate) use storage::{Storage, write_private};
 use ticket::Ticket;
 
 /// iroh 的网络配置。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Network {
-    /// 中继表从连接信息来（ADR-0048），地址发现照常；连接信息里一个中继都没有时用内置 n0。
+    /// 用 n0 的公共中继和地址发现（开发和内测期，见 ADR-0004 的调整）。
     Internet,
     /// 只按连接信息里的直连地址连，不连中继、不做地址发现：本机和局域网测试用。
     DirectOnly,
-    /// 只给本机行为测试：按 ticket 连自签测试中继，不做外网地址发现。
-    #[cfg(feature = "test-hooks")]
-    TestRelay,
 }
 
+/// 多久确认一次隧道真的通。iroh 每 5 秒发一次心跳，无线电反正醒着，这个检查不多耗电。
+const CHECK_INTERVAL: Duration = Duration::from_secs(5);
+/// 等回应的时限。n0 中继的往返在负载下出现过 2.8 秒（ADR-0004），大文件传输时还要排队；判错的代价是断开正在传的
+/// 流，所以取得宽，不通的时候最晚 `CHECK_INTERVAL + CHECK_DEADLINE` 发现。
+const CHECK_DEADLINE: Duration = Duration::from_secs(8);
+/// 连续失败的检查之间至少隔这么久。重试的节奏由隧道客户端的退避决定，这里只防止出错时空转。
+const CHECK_FLOOR: Duration = Duration::from_millis(200);
 /// 网络变了之后，现有连接限时确认：给 iroh 留出迁移路径的时间，不一上来就断流（ADR-0032）。
 const NETWORK_CHANGE_DEADLINE: Duration = Duration::from_secs(4);
 /// 系统的网络回调一次变化会连着来好几个，等这么久合成一次。
 const NETWORK_CHANGE_SETTLE: Duration = Duration::from_millis(300);
-/// 网页媒体停下后继续保活这么久，盖住换曲的一瞬和暂停后马上回来。
-const MEDIA_RELEASE_GRACE: Duration = Duration::from_secs(60);
 /// 网络变化后，隔这么久还没连上就换一次握手。初始包同时发给所有候选地址，服务端按先到的那份认路径；那个地址要是有去
 /// 无回，之后的重传都白费，只有新握手才可能换路径（Android 模拟器上实测：`10.0.2.2` 的回包源地址是 127.0.0.1，到不了
 /// iroh，这次握手挂满 12 秒，下一次 9 毫秒连上）。只换这两次，之后留给最后一次走完建连时限：中继冷启动的握手本来就慢。
 const NETWORK_CHANGE_REDIALS: [Duration; 2] = [Duration::from_secs(2), Duration::from_secs(3)];
-/// 发包数、丢包数、上次确认连上的时间和路径延迟每个包都在变：这些最多每秒进一次主 ViewModel，
-/// 状态、路径类型和提示照常立刻推。没有这个间隔，隧道上每走一个包，主 ViewModel 都会整份重推
-/// 一遍（iOS 模拟器实测约每秒 300 次）。
-const STATS_INTERVAL: Duration = Duration::from_secs(1);
 
 pub(crate) struct HomeLink {
     runtime: Handle,
-    hub: Arc<wonton_tunnel::sharing::ProxyHub>,
     storage: Storage,
     device_key: SecretKey,
     network: Network,
     view: watch::Sender<HomeViewModel>,
+    /// 当前用的连接信息（原文）。
     ticket: std::sync::Mutex<Option<String>>,
+    /// 当前连接信息里核心自己的地址，聊天从这里取 Matrix 登录令牌。
     core_url: std::sync::Mutex<Option<Url>>,
+    /// 当前的连接。换服务器时整个替换；锁保证同一时刻只有一次建连或检查。
     link: Mutex<Option<Link>>,
-    lifecycle_client: std::sync::Mutex<Option<TunnelClient>>,
     tracker: std::sync::Mutex<Tracker>,
-    quality: std::sync::Mutex<Quality>,
+    /// 提示要重新算了。
     recount: watch::Sender<()>,
-    /// 上次把每包变化的计数写进主 ViewModel 的时间。
-    stats_at: std::sync::Mutex<Option<Instant>>,
-    /// 合成的后台状态：App 在后台且没有网页媒体在放。为真时不探测、不自动重连。
+    /// App 在后台：不探测、不自动重连。
     background: watch::Sender<bool>,
-    /// App 自己报的可见性。
-    app_backgrounded: AtomicBool,
-    /// 插件网页的音频在放：退到后台也保持探测和自动重连。
-    page_media: AtomicBool,
-    /// 收新消息的方式是保持连接（ADR-0003）：壳的前台服务让进程和隧道在后台活着，核心不停探测和自动重连。
-    keep_connection: AtomicBool,
-    /// 媒体停下后延迟释放保活的任务，重新播放时取消。
-    media_release: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    /// 每次媒体状态变化加一。释放任务醒来后只认自己那次，被后来的播放抢先时不覆盖。
-    media_generation: AtomicU64,
     /// 定时检查开着。只有测试会关：要证明重连是某个动作促成的，不是碰巧赶上下一次检查。
     periodic_checks: watch::Sender<bool>,
     /// 每来一次网络变化加一，合并连着来的回调。
     network_changes: AtomicU64,
-    /// 服务端现在的地址还没取到：最早一次失败起为真，取到就清掉，断开期间保持。
-    addresses_stale: AtomicBool,
-    /// 当前取地址的任务。重连时取消旧的，同一时刻只跑一个。
-    address_refresh: std::sync::Mutex<Option<JoinHandle<()>>>,
-    /// 第几次配对。旧一次的看门线程和迟到的结果只认自己那次，不盖掉后来的配对。
-    pair_attempt: AtomicU64,
-    /// 正在进行的配对从什么时候开始、到了哪一步；进度心跳从这里反映进 ViewModel。
-    pairing_progress: std::sync::Mutex<Option<pairing::PairingProgress>>,
-    /// 上次整个重建 endpoint 的时间。触发点照它限流，网络真断时不跟着失败的检查连环重建。
-    endpoint_rebuilt_at: std::sync::Mutex<Option<Instant>>,
-    /// 正在跑的配对任务。取消时中止它：被放弃的配对不该在后台继续连到自己的时限。
-    pairing_task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    #[cfg(feature = "test-hooks")]
-    pub(crate) test_hooks: bind::TestHooks,
+}
+
+/// 到一台服务器的连接：endpoint、隧道客户端和本地代理同生共死。
+struct Link {
+    endpoint: Endpoint,
+    client: TunnelClient,
+    proxy: LocalProxy,
+    watcher: JoinHandle<()>,
+    checker: JoinHandle<()>,
 }
 
 impl HomeLink {
     /// 读取设备密钥；上次连过服务器时自动重连。
     pub(crate) fn new(
         runtime: Handle,
-        hub: Arc<wonton_tunnel::sharing::ProxyHub>,
         storage: Storage,
         network: Network,
-        view: Option<watch::Sender<HomeViewModel>>,
-        push_method: watch::Receiver<PushMethod>,
     ) -> Result<Arc<Self>, CoreError> {
         let device_key = storage.device_key()?;
-        tracing::info!(device_id = %device_key.public(), "device identity of this phone");
+        tracing::info!(device_id = %device_key.public(), "本机设备身份");
         let saved = storage.ticket()?;
-        let view = reuse(
-            view,
-            HomeViewModel {
-                device_id: device_key.public().to_string(),
-                server_id: None,
-                status: HomeStatus::NotConfigured,
-                path: None,
-                notice: None,
-                details: ConnectionDetails::default(),
-                proxy: None,
-                web_url: None,
-                pairing: None,
-                invite: None,
-                keep_connection: false,
-                just_recovered: false,
-            },
-        );
+        let view = watch::Sender::new(HomeViewModel {
+            device_id: device_key.public().to_string(),
+            server_id: None,
+            status: HomeStatus::NotConfigured,
+            path: None,
+            notice: None,
+            details: ConnectionDetails::default(),
+            proxy: None,
+            web_url: None,
+            pairing: None,
+            invite: None,
+        });
         let home = Arc::new(Self {
             runtime,
-            hub,
             storage,
             device_key,
             network,
@@ -163,37 +123,16 @@ impl HomeLink {
             ticket: std::sync::Mutex::new(None),
             core_url: std::sync::Mutex::new(None),
             link: Mutex::new(None),
-            lifecycle_client: std::sync::Mutex::new(None),
             tracker: std::sync::Mutex::default(),
-            quality: std::sync::Mutex::default(),
             recount: watch::Sender::new(()),
-            stats_at: std::sync::Mutex::new(None),
             background: watch::Sender::new(false),
-            app_backgrounded: AtomicBool::new(false),
-            page_media: AtomicBool::new(false),
-            keep_connection: AtomicBool::new(false),
-            media_release: std::sync::Mutex::new(None),
-            media_generation: AtomicU64::new(0),
             periodic_checks: watch::Sender::new(true),
             network_changes: AtomicU64::new(0),
-            addresses_stale: AtomicBool::new(false),
-            address_refresh: std::sync::Mutex::default(),
-            pair_attempt: AtomicU64::new(0),
-            pairing_progress: std::sync::Mutex::new(None),
-            endpoint_rebuilt_at: std::sync::Mutex::new(None),
-            pairing_task: std::sync::Mutex::new(None),
-            #[cfg(feature = "test-hooks")]
-            test_hooks: bind::TestHooks::default(),
         });
-        home.runtime.spawn(background::follow_keep_connection(
-            Arc::downgrade(&home),
-            home.subscribe(),
-            push_method,
-        ));
         if let Some(text) = saved {
             // 只有校验过的连接信息才会被保存，读出来不合法说明存储坏了。
             let ticket = Ticket::parse(&text).map_err(|reason| CoreError::Storage {
-                reason: l10n!(CATALOG, language(), "home-ticket-corrupt", reason = reason),
+                reason: format!("保存的连接信息已损坏：{reason}"),
             })?;
             home.start(text, ticket);
         }
@@ -202,11 +141,6 @@ impl HomeLink {
 
     pub(crate) fn view(&self) -> HomeViewModel {
         self.view.borrow().clone()
-    }
-
-    /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
-    pub(crate) fn sender(&self) -> watch::Sender<HomeViewModel> {
-        self.view.clone()
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<HomeViewModel> {
@@ -223,6 +157,23 @@ impl HomeLink {
         self.storage.save_ticket(text)?;
         self.start(text.to_owned(), ticket);
         Ok(())
+    }
+
+    /// `AppForegrounded`：在后台检查连接，必要时重连。
+    pub(crate) fn foregrounded(self: &Arc<Self>) {
+        self.background.send_replace(false);
+        self.lock_tracker().foregrounded(Instant::now());
+        self.recount();
+        self.runtime.spawn(self.clone().resume());
+    }
+
+    pub(crate) fn stop_periodic_checks(&self) {
+        self.periodic_checks.send_replace(false);
+    }
+
+    /// `AppBackgrounded`：停止探测和自动重连。连接不主动断，后台音乐和正在传的文件还在用它。
+    pub(crate) fn backgrounded(&self) {
+        self.background.send_replace(true);
     }
 
     /// `NetworkChanged`：让 iroh 重新检查路径，取消旧网络上的建连，确认现有连接还通。在后台时只做第一件，回到前台再确认。
@@ -259,7 +210,7 @@ impl HomeLink {
             };
             let (checked, ()) = tokio::join!(client.probe(NETWORK_CHANGE_DEADLINE), redials);
             if let Err(err) = checked {
-                tracing::info!("tunnel check after a network change failed: {err}");
+                tracing::info!("网络变化后检查隧道失败：{err}");
                 // 探测只断开不重拨，马上换新连接，不等下一次定时检查。
                 if has_network && !*home.background.borrow() {
                     home.check(&client).await;
@@ -269,11 +220,11 @@ impl HomeLink {
         });
     }
 
-    /// `RetryConnection`：清零退避，马上确认连接；没回应时限时结束进度，自动重连继续。
+    /// `RetryConnection`：清零退避，马上试一次。提示里的句子不变，只是“重试”在转。
     pub(crate) fn retry(self: &Arc<Self>) -> Result<(), CoreError> {
         if self.lock_ticket().is_none() {
             return Err(CoreError::NotReady {
-                reason: l10n!(CATALOG, language(), "home-no-connection-info"),
+                reason: "还没有家里服务器的连接信息".to_owned(),
             });
         }
         self.lock_tracker().retry_started(Instant::now());
@@ -283,12 +234,8 @@ impl HomeLink {
             if let Some((endpoint, client)) = home.current_link().await {
                 endpoint.network_change().await;
                 client.retry_now();
-                match tokio::time::timeout(LONG_OUTAGE, client.revalidate()).await {
-                    Ok(Ok(_)) => {}
-                    Ok(Err(err)) => tracing::info!("retry failed: {err}"),
-                    Err(_) => tracing::info!(
-                        "retry confirmation timed out; automatic reconnect continues"
-                    ),
+                if let Err(err) = client.ping().await {
+                    tracing::info!("重试失败：{err}");
                 }
             }
             home.lock_tracker().retry_finished();
@@ -306,16 +253,10 @@ impl HomeLink {
         }
     }
 
-    /// 聊天正在补上断开期间的消息。追赶指示流同值也算一次变化，没变就不重算。
+    /// 聊天正在补上断开期间的消息。
     pub(crate) fn set_catching_up(&self, catching_up: bool) {
-        if self.lock_tracker().set_catching_up(catching_up) {
-            self.recount();
-        }
-    }
-
-    /// 当前的隧道客户端；还没有连接信息时为空。
-    pub(crate) async fn tunnel(&self) -> Option<TunnelClient> {
-        self.current_link().await.map(|(_, client)| client)
+        self.lock_tracker().set_catching_up(catching_up);
+        self.recount();
     }
 
     async fn current_link(&self) -> Option<(Endpoint, TunnelClient)> {
@@ -323,24 +264,6 @@ impl HomeLink {
         current
             .as_ref()
             .map(|link| (link.endpoint.clone(), link.client.clone()))
-    }
-
-    /// 挂起检测的布防跟着 App 的可见性走（`AppBackgrounded`），不看合成的后台状态：保持连接（ADR-0003）靠
-    /// 前台服务减少进程被冻结的可能，但不豁免，冻结醒来也不会有 `AppForegrounded`，计时是唯一的检测手段。
-    /// 回前台先保留检测，resume 检查完成后才关，避免网页抢先开流。
-    fn arm_suspend_gate(&self) {
-        let client = self.lock_lifecycle_client();
-        if let Some(client) = client.as_ref() {
-            // dispatch 也会从原生壳的非运行时线程调用。
-            let _runtime = self.runtime.enter();
-            client.set_suspendable(true);
-        }
-    }
-
-    fn lock_lifecycle_client(&self) -> std::sync::MutexGuard<'_, Option<TunnelClient>> {
-        self.lifecycle_client
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn recount(&self) {
@@ -353,20 +276,8 @@ impl HomeLink {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn lock_quality(&self) -> std::sync::MutexGuard<'_, Quality> {
-        self.quality
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
     fn lock_ticket(&self) -> std::sync::MutexGuard<'_, Option<String>> {
         self.ticket
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    fn lock_stats_at(&self) -> std::sync::MutexGuard<'_, Option<Instant>> {
-        self.stats_at
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -377,41 +288,6 @@ impl HomeLink {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
-    }
-
-    /// 已知连不上家里的服务器时给出原文（进“详情”），否则为空。核心自己经隧道的请求（好友、资料、成员这些）
-    /// 在发出前先过这道闸：已知不通就立刻失败成“连不上家里的服务器”，不等各自的 30 秒超时。
-    ///
-    /// 只拦传输不通：断开着，或传输断开后自动重试回到的“连接中”（状态在两者之间来回跳，只看“断开”会时拦时不拦）。
-    /// 被拒绝、上游没就绪这些不拦：服务器连得上，请求本身就是恢复的路（主人放行设备后，下一次请求经代理重新建连）。
-    /// 第一次建连、回前台和网络恢复后的新一轮建连也不拦。WebView 的流量不经这道闸（ADR-0032）。
-    pub(crate) fn tunnel_outage(&self) -> Option<String> {
-        let view = self.view();
-        let unreachable = match &view.status {
-            HomeStatus::Disconnected { reason, .. } => *reason == HomeFailure::TransportUnavailable,
-            HomeStatus::Connecting => {
-                self.lock_tracker().known_failure() == Some(HomeFailure::TransportUnavailable)
-            }
-            HomeStatus::Connected | HomeStatus::NotConfigured => false,
-        };
-        unreachable.then(|| view.details.last_failure.unwrap_or_default())
-    }
-
-    /// 测试里直接给出连接状态，不必真的建连。
-    #[cfg(test)]
-    pub(crate) fn set_status_for_test(&self, status: HomeStatus) {
-        self.view.send_modify(|view| view.status = status);
-    }
-
-    /// 配对时填的设备名；`ConnectHome` 给的连接信息里没有，存储坏了也为空。
-    pub(crate) fn device_name(&self) -> Option<String> {
-        let ticket = Ticket::parse(self.lock_ticket().as_deref()?).ok()?;
-        ticket.device_name().map(str::to_owned)
-    }
-
-    /// 连接信息是不是扫码配对来的：只有配对生成的连接信息里有设备名，测试用的 `ConnectHome` 没有。
-    pub(crate) fn paired_with_code(&self) -> bool {
-        self.device_name().is_some()
     }
 
     fn start(self: &Arc<Self>, text: String, ticket: Ticket) {
@@ -428,7 +304,6 @@ impl HomeLink {
             view.path = None;
             view.proxy = None;
             view.notice = None;
-            view.just_recovered = false;
         });
         self.runtime.spawn(self.clone().establish(ticket));
     }
@@ -436,7 +311,6 @@ impl HomeLink {
     async fn establish(self: Arc<Self>, ticket: Ticket) {
         let mut current = self.link.lock().await;
         if let Some(old) = current.take() {
-            *self.lock_lifecycle_client() = None;
             old.close().await;
         }
         match self.open(&ticket).await {
@@ -459,17 +333,11 @@ impl HomeLink {
     }
 
     async fn open(self: &Arc<Self>, ticket: &Ticket) -> Result<Link, String> {
-        let endpoint = self.bind_endpoint(ticket.relays(), 1, language()).await?;
-        // 只建最优先的一档（ADR-0048）；掉档回退由这个任务盯着家中继状态做。DirectOnly 不连中继，
-        // 连接信息里一个中继都没有时没有表，也不回退。
-        if self.network == Network::Internet && !ticket.relays().is_empty() {
-            spawn_tier_fallback(
-                endpoint.clone(),
-                RelayTable::from_relays(ticket.relays().to_vec()),
-                FALLBACK_AFTER,
-                None,
-            );
-        }
+        let endpoint = self
+            .endpoint_builder()
+            .bind()
+            .await
+            .map_err(|e| format!("绑定网络失败：{e}"))?;
         let client = TunnelClient::new(endpoint.clone(), ticket.server_addr());
         let credential = ProxyCredential::generate();
         let domain = ticket.base_domain().to_owned();
@@ -479,38 +347,19 @@ impl HomeLink {
         };
         let proxy = LocalProxy::bind(client.clone(), (Ipv4Addr::LOCALHOST, 0).into(), access)
             .await
-            .map_err(|e| {
-                l10n!(
-                    CATALOG,
-                    language(),
-                    "home-proxy-start-failed",
-                    error = e.to_string()
-                )
-            })?;
-        let registration = self
-            .hub
-            .register(proxy.local_addr(), credential, domain.clone())
-            .map_err(|_| "proxy route registration failed".to_owned())?;
-        let credential = registration.credential();
-        {
-            let mut current = self.lock_lifecycle_client();
-            client.set_suspendable(self.app_backgrounded.load(Ordering::SeqCst));
-            *current = Some(client.clone());
-        }
+            .map_err(|e| format!("本地代理启动失败：{e}"))?;
         let settings = ProxySettings {
             host: Ipv4Addr::LOCALHOST.to_string(),
-            port: registration.local_addr().port(),
+            port: proxy.local_addr().port(),
             username: credential.username().to_owned(),
             password: credential.password().to_owned(),
             domain,
         };
-        self.view
-            .send_modify(|view| view.proxy = Some(settings.clone()));
-        let watcher = self.runtime.spawn(refresh::follow_connection(
+        self.view.send_modify(|view| view.proxy = Some(settings));
+        let watcher = self.runtime.spawn(follow_connection(
             Arc::downgrade(self),
             endpoint.clone(),
             client.clone(),
-            settings,
         ));
         let checker = self.runtime.spawn(keep_checking(
             Arc::downgrade(self),
@@ -521,10 +370,28 @@ impl HomeLink {
             endpoint,
             client,
             proxy,
-            registration,
             watcher,
             checker,
         })
+    }
+
+    /// 本设备身份的 endpoint。
+    ///
+    /// 关掉 GSO：网卡不支持时（实测 Android 模拟器的 virtio 网卡；内核对没有校验和卸载的网卡和 IPsec 都这样）
+    /// 多包的发送报 EIO。noq-udp 随后关掉这个 socket 的 GSO，但 iroh 1.4.1 的发送端把分段上限存在建连那一刻，
+    /// 这条连接之后的多包发送每次都 EIO，错误还被吞掉：单包的心跳和确认照常往返，连接看着活着，请求却卡到连接
+    /// 被换掉（#154）。手机上的流量用不上 GSO 省下的那点 CPU。
+    fn endpoint_builder(&self) -> Builder {
+        let builder = match self.network {
+            Network::Internet => Endpoint::builder(presets::N0),
+            Network::DirectOnly => Endpoint::builder(presets::Minimal),
+        };
+        let transport = QuicTransportConfig::builder()
+            .enable_segmentation_offload(false)
+            .build();
+        builder
+            .secret_key(self.device_key.clone())
+            .transport_config(transport)
     }
 
     async fn resume(self: Arc<Self>) {
@@ -532,83 +399,48 @@ impl HomeLink {
         let Some((endpoint, client)) = self.current_link().await else {
             return;
         };
-        tracing::info!(elapsed = ?started.elapsed(), "STEP link");
         // 挂起期间网络可能变了（换 Wi-Fi、切蜂窝），让 iroh 重新检查网卡和路径。
         endpoint.network_change().await;
-        tracing::info!(elapsed = ?started.elapsed(), "STEP network_change");
         client.retry_now();
-        tracing::info!(elapsed = ?started.elapsed(), "STEP retry_now");
         // 挂起久了，服务端已经放弃这条连接，手机却收不到关闭帧：限时确认，没有回应就立刻换新连接，
         // 不等 30 秒的空闲超时（见 ADR-0004 的真机实测）。
         if let Err(err) = client.revalidate().await {
-            tracing::info!("tunnel check failed: {err}");
-        }
-        tracing::info!(elapsed = ?started.elapsed(), "STEP revalidate");
-        // 这一趟可能撞上刚结束、已经失败的另一次检查（回来的确认、挂起检测自己那次），那样它立刻返回、连接还是
-        // 死的：连接不是好的就再拨一次，别让它拖到空闲超时。
-        if client.status() != TunnelStatus::Connected
-            && let Err(err) = client.ping().await
-        {
-            tracing::info!("tunnel redial failed: {err}");
-        }
-        tracing::info!(elapsed = ?started.elapsed(), "STEP redial");
-        {
-            let current = self.lock_lifecycle_client();
-            if let Some(client) = current.as_ref() {
-                // 检查期间可能再次进后台或更换 Link，不能用本次 resume 开始时的状态覆盖它。
-                client.set_suspendable(self.app_backgrounded.load(Ordering::SeqCst));
-            }
+            tracing::info!("隧道检查失败：{err}");
         }
         self.recount();
         tracing::info!(
             elapsed = ?started.elapsed(),
             status = %client.status(),
-            "checked the tunnel after coming back to the foreground"
+            "回到前台，隧道检查完成"
         );
-        // 后台时停下过取地址：地址还是过时就接着取。
-        if self.addresses_stale.load(Ordering::Relaxed) && self.connected().await {
-            self.spawn_address_refresh();
-        }
     }
 
     /// 和服务端做一次往返（必要时重连）。状态由 `follow_connection` 跟着隧道客户端更新。
     async fn check(&self, client: &TunnelClient) {
         if let Err(err) = client.ping().await {
-            tracing::info!("tunnel check failed: {err}");
+            tracing::info!("隧道检查失败：{err}");
         }
         self.recount();
     }
 
-    /// 把隧道的情况算成 ViewModel，有变化才推送。视图已归别的连接时返回 [`Published::Superseded`]，
-    /// 调用方该退出了；否则返回多久之后要重新算一次。
+    /// 把隧道的情况算成 ViewModel，有变化才推送。返回多久之后要重新算一次。
     fn publish(
         &self,
         tunnel: &TunnelStatus,
         endpoint: &Endpoint,
         client: &TunnelClient,
-        proxy: &ProxySettings,
-    ) -> Published {
+    ) -> Option<Duration> {
         let now = Instant::now();
         let status = status_view(tunnel);
-        let connected = status == HomeStatus::Connected;
-        let path = client.path();
-        let quality = {
-            let mut quality = self.lock_quality();
-            match path.as_ref() {
-                Some(path) if connected => quality.observe(now, path),
-                _ => quality.reset(),
-            }
-        };
-        let path = path.map(path_view);
+        let path = client.path().map(path_view);
         let relay = relay_check(endpoint);
         let stats = client.stats();
         let mut tracker = self.lock_tracker();
-        if let Some(recovery) = tracker.observe(&status, relay, stats.failed_dials, now) {
+        if let Some(recovery) = tracker.observe(&status, relay, now) {
             let outage_ms = recovery.outage.as_millis();
-            tracing::info!(outage_ms, trigger = recovery.trigger, "connection restored");
+            tracing::info!(outage_ms, trigger = recovery.trigger, "连接恢复");
         }
         let notice = tracker.notice(&status, now);
-        let just_recovered = tracker.just_recovered(&notice, now);
         let details = ConnectionDetails {
             network: tracker.network(),
             relay: tracker.relay(),
@@ -618,97 +450,128 @@ impl HomeLink {
                 .handshake
                 .map(|took| u32::try_from(took.as_millis()).unwrap_or(u32::MAX)),
             disconnects: stats.disconnects,
-            failed_dials: stats.failed_dials,
             sent_packets: stats.sent_packets,
             lost_packets: stats.lost_packets,
-            quality: quality.quality,
-            loss_per_mille: quality.loss_per_mille,
-            rtt_ms: quality.rtt_ms,
             last_failure: stats.last_failure.as_ref().map(ToString::to_string),
-            addresses_stale: self.addresses_stale.load(Ordering::Relaxed),
-            udp_flows: client.udp_flows(),
-            udp_buffer_evicted_datagrams: client.udp_buffer_evicted(),
         };
-        let tick = tracker.next_tick(connected, now);
+        let tick = tracker.next_tick();
         drop(tracker);
-        let stats_due = connected && self.stats_due(now);
-        let mut withheld = false;
-        // 视图里的本地代理不是这条连接的，说明连接信息已被换过（换了服务器或重连），视图归新的
-        // 连接管：这里再写会把 start 刚写下的 Connecting 盖回 Connected，而新连接的 proxy 还没进
-        // 视图，App 会以为已经连上，这期间发的请求全部按“连不上”失败（#826）。判据放在
-        // send_if_modified 的闭包里，和 start 的视图写同锁，中间插不进别的写。
-        let superseded = std::cell::Cell::new(false);
-        let changed = self.view.send_if_modified(|view| {
-            if view.proxy.as_ref() != Some(proxy) {
-                superseded.set(true);
-                return false;
-            }
-            let mut details = details;
-            let mut path = path;
-            if connected && !stats_due {
-                withheld |= details.sent_packets != view.details.sent_packets
-                    || details.lost_packets != view.details.lost_packets
-                    || details.last_connected_at_ms != view.details.last_connected_at_ms
-                    || details.udp_flows != view.details.udp_flows
-                    || details.udp_buffer_evicted_datagrams
-                        != view.details.udp_buffer_evicted_datagrams
-                    || details.loss_per_mille != view.details.loss_per_mille
-                    || details.rtt_ms != view.details.rtt_ms;
-                details.sent_packets = view.details.sent_packets;
-                details.lost_packets = view.details.lost_packets;
-                details.last_connected_at_ms = view.details.last_connected_at_ms;
-                details.udp_flows = view.details.udp_flows.clone();
-                details.udp_buffer_evicted_datagrams = view.details.udp_buffer_evicted_datagrams;
-                details.loss_per_mille = view.details.loss_per_mille;
-                details.rtt_ms = view.details.rtt_ms;
-                if let (Some(new), Some(old)) = (&mut path, &view.path) {
-                    withheld |= new.rtt_ms != old.rtt_ms;
-                    new.rtt_ms = old.rtt_ms;
-                }
-            }
+        self.view.send_if_modified(|view| {
             let changed = view.status != status
                 || view.path != path
                 || view.notice != notice
-                || view.just_recovered != just_recovered
                 || view.details != details;
             view.status = status;
             view.path = path;
             view.notice = notice;
-            view.just_recovered = just_recovered;
             view.details = details;
             changed
         });
-        if superseded.get() {
-            return Published::Superseded;
-        }
-        if changed && stats_due {
-            *self.lock_stats_at() = Some(now);
-        }
-        // 有被压住的样本就到点再算一次，连接页每秒最多拿到一次新数字。
-        let stats_tick = withheld.then(|| match *self.lock_stats_at() {
-            Some(at) => STATS_INTERVAL.saturating_sub(now.duration_since(at)),
-            None => STATS_INTERVAL,
-        });
-        Published::Tick(match (tick, stats_tick) {
-            (Some(tick), Some(stats)) => Some(tick.min(stats)),
-            (tick, stats) => tick.or(stats),
-        })
+        tick
     }
+}
 
-    /// 距上次把每包变化的计数写进主 ViewModel 过了多久；还没推过就是到期。
-    fn stats_due(&self, now: Instant) -> bool {
-        match *self.lock_stats_at() {
-            Some(at) => now.duration_since(at) >= STATS_INTERVAL,
-            None => true,
+impl Link {
+    async fn close(self) {
+        self.watcher.abort();
+        self.checker.abort();
+        self.proxy.shutdown().await;
+        self.client.close();
+        self.endpoint.close().await;
+    }
+}
+
+/// 把隧道客户端的状态变化写进 ViewModel，断开期间定时重新算（断开的时长和中继的情况不发事件）。只持有弱引用，核心释放后
+/// 自动结束。
+async fn follow_connection(home: Weak<HomeLink>, endpoint: Endpoint, client: TunnelClient) {
+    let Some(mut recount) = home.upgrade().map(|home| home.recount.subscribe()) else {
+        return;
+    };
+    let mut status = client.watch_status();
+    let mut was_connected = false;
+    loop {
+        let current = status.borrow_and_update().clone();
+        let Some(link) = home.upgrade() else {
+            return;
+        };
+        let tick = link.publish(&current, &endpoint, &client);
+        let connected = current == TunnelStatus::Connected;
+        if connected && !was_connected {
+            link.runtime.spawn(link.clone().refresh_addresses());
+        }
+        was_connected = connected;
+        drop(link);
+        tokio::select! {
+            changed = status.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+            }
+            changed = recount.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+            }
+            () = tokio::time::sleep(tick.unwrap_or_default()), if tick.is_some() => {}
         }
     }
 }
 
-/// 一次 [`HomeLink::publish`] 的结果：视图已归别的连接（这个 watcher 该退出了），或者照常发布
-/// 完，返回多久之后要重新算一次。
-enum Published {
-    Superseded,
-    Tick(Option<Duration>),
+/// 一直确认隧道真的通：不通就断开换新连接，连不上就接着重试，不等 App 回到前台，也不等下一个请求。连接状态和路径
+/// 因此如实（#154）。在后台时停下。服务端不认这台设备、或者两端协议不匹配时重试也没用，等主人处理。只持有弱引用，核心
+/// 释放后自动结束。
+async fn keep_checking(home: Weak<HomeLink>, endpoint: Endpoint, client: TunnelClient) {
+    let Some((mut background, mut periodic_checks)) = home.upgrade().map(|home| {
+        (
+            home.background.subscribe(),
+            home.periodic_checks.subscribe(),
+        )
+    }) else {
+        return;
+    };
+    let mut status = client.watch_status();
+    let mut wait = CHECK_INTERVAL;
+    loop {
+        tokio::time::sleep(wait).await;
+        if background.wait_for(|background| !background).await.is_err() {
+            return;
+        }
+        if periodic_checks.wait_for(|on| *on).await.is_err() {
+            return;
+        }
+        if status
+            .wait_for(|status| !needs_the_owner(status))
+            .await
+            .is_err()
+        {
+            return;
+        }
+        if home.strong_count() == 0 {
+            return;
+        }
+        let result = client.probe(CHECK_DEADLINE).await;
+        let Some(link) = home.upgrade() else {
+            return;
+        };
+        link.recount();
+        drop(link);
+        wait = match result {
+            Ok(_) => CHECK_INTERVAL,
+            Err(err) => {
+                tracing::info!("隧道检查失败：{err}");
+                // 可能是网络变了，让 iroh 重新检查网卡和路径。
+                endpoint.network_change().await;
+                CHECK_FLOOR
+            }
+        };
+    }
+}
+
+fn needs_the_owner(status: &TunnelStatus) -> bool {
+    matches!(
+        status,
+        TunnelStatus::Disconnected(TunnelError::Unauthorized | TunnelError::Protocol { .. })
+    )
 }
 
 /// 手机连不连得上中继：连得上说明手机能上网，这时家里没有回应，多半是家里的问题。没配中继时无从判断。
@@ -738,7 +601,7 @@ fn status_view(status: &TunnelStatus) -> HomeStatus {
         },
         TunnelStatus::Closed => HomeStatus::Disconnected {
             reason: HomeFailure::TransportUnavailable,
-            message: l10n!(CATALOG, language(), "home-tunnel-closed"),
+            message: "隧道客户端已关闭".to_owned(),
         },
     }
 }
@@ -753,17 +616,9 @@ fn failure(err: &TunnelError) -> HomeFailure {
 }
 
 fn path_view(path: PathInfo) -> HomePath {
-    let public_relay = match &path.remote {
-        TransportAddr::Relay(url) => is_public_relay(url),
-        _ => false,
-    };
     HomePath {
         relay: path.kind == PathKind::Relay,
-        public_relay,
         lan: path.is_lan(),
         rtt_ms: u32::try_from(path.rtt.as_millis()).unwrap_or(u32::MAX),
     }
 }
-
-#[cfg(test)]
-mod tests;

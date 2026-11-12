@@ -92,33 +92,3 @@ async fn revalidating_keeps_a_live_connection() {
         .get();
     assert_eq!(opened, 1);
 }
-
-#[tokio::test]
-async fn a_recent_revalidation_does_not_hide_device_revocation() {
-    let upstream = Upstream::spawn().await;
-    let device = SecretKey::generate();
-    let allowlist = Allowlist::new([device.public()]);
-    let home = Home::start(SecretKey::generate(), allowlist.clone(), upstream.addr).await;
-    let phone = Phone::start(device.clone(), home.addr(), Timeouts::Default).await;
-    assert_eq!(phone.get("/before").await.status, 200);
-    phone.client.revalidate().await.unwrap();
-
-    allowlist.revoke(&device.public());
-    phone
-        .wait_for(|s| *s == TunnelStatus::Disconnected(TunnelError::Unauthorized))
-        .await;
-    assert_eq!(
-        phone.client.revalidate().await.unwrap_err(),
-        TunnelError::Unauthorized
-    );
-    assert_eq!(phone.get("/rejected").await.status, 403);
-    assert_eq!(
-        home.server()
-            .endpoint()
-            .metrics()
-            .socket
-            .num_conns_opened
-            .get(),
-        1
-    );
-}

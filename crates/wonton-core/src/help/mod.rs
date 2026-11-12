@@ -14,9 +14,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use wonton_protocol::StoreFailure;
 
-use wonton_l10n::Arg;
-
-use crate::l10n;
 use crate::plugin::PluginManager;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
@@ -88,23 +85,22 @@ impl Help {
         self: &Arc<Self>,
         topic: Option<&str>,
         lang: Option<&str>,
-    ) -> Result<Value, HelpError> {
-        let languages = lang.map_or_else(
-            || self.plugins.owner_languages(),
-            |lang| Languages::from_header(Some(lang)),
-        );
+    ) -> Result<Value, String> {
         let this = self.clone();
         let refresh = tokio::spawn(async move { this.refresh().await });
         // 超时只是不再等，取新版接着在后台做完。
         let _ = tokio::time::timeout(WAIT, refresh).await;
         let version = (self.version)().await;
         let current = self.loaded(version.as_deref()).ok_or_else(|| {
-            HelpError::DocsUnavailable(l10n::text(
-                &languages,
-                "chat-help-docs-unavailable",
-                &[("dir", self.baseline.display().to_string().into())],
-            ))
+            format!(
+                "docs_unavailable: 这台核心没有帮助文档（{} 里没有，也没有取到过）",
+                self.baseline.display()
+            )
         })?;
+        let languages = lang.map_or_else(
+            || self.plugins.owner_languages(),
+            |lang| Languages::from_header(Some(lang)),
+        );
         let mut result = json!({
             "core_version": version.as_deref().unwrap_or("unknown"),
             "docs_commit": current.source.commit,
@@ -113,14 +109,7 @@ impl Help {
         let problem = self.problem.lock().expect("帮助文档的锁中毒").clone();
         if let Some(problem) = problem {
             let days = days_ago(current.source.updated_at_ms);
-            // 整段用主人的语言：取新版是后台发起的，`problem` 是当时按主人的语言写好的，
-            // 后缀也用主人的语言，别和 Agent 在 `lang` 里要的文档语言混着。
-            let owner = self.plugins.owner_languages();
-            result["refresh_problem"] = json!(l10n::text(
-                &owner,
-                "chat-help-docs-age",
-                &[("problem", problem.into()), ("days", Arg::from(days))],
-            ));
+            result["refresh_problem"] = json!(format!("{problem}。这是 {days} 天前的文档"));
         }
         match topic {
             None => result["topics"] = directory(&current.pages, &languages),
@@ -130,22 +119,14 @@ impl Help {
     }
 
     /// 看官方索引有没有更新的文档，有就取。原因记进 `problem`，这里不报错：手头的文档照常能答。
-    /// 原因用主人的语言写：取新版是后台自己发起的，没有请求头。
     async fn refresh(&self) {
-        let langs = self.plugins.owner_languages();
         let mut attempt = self.attempt.lock().await;
         let version = (self.version)().await;
         self.loaded(version.as_deref());
         let (index, problem) = self.plugins.official_index().await;
         let reason = problem
             .filter(|p| !matches!(p.reason, StoreFailure::Incomplete | StoreFailure::Disabled))
-            .map(|p| {
-                l10n::text(
-                    &langs,
-                    "chat-help-refresh-failed",
-                    &[("details", p.details.into())],
-                )
-            })
+            .map(|p| format!("取不到新的帮助文档：{}", p.details))
             .or(index.docs_problem.clone());
         let Some(spec) = index.docs else {
             self.set_problem(reason);
@@ -161,16 +142,10 @@ impl Help {
             return;
         }
         if older_than(version.as_deref(), &spec.min_core) {
-            self.set_problem(Some(l10n::text(
-                &langs,
-                "chat-help-refresh-needs-core",
-                &[
-                    ("required", spec.min_core.clone().into()),
-                    (
-                        "core",
-                        version.as_deref().unwrap_or("unknown").to_owned().into(),
-                    ),
-                ],
+            let core = version.as_deref().unwrap_or("unknown");
+            self.set_problem(Some(format!(
+                "有新的帮助文档，但要核心 ≥ {}，这台是 {core}：升级核心后才能用",
+                spec.min_core
             )));
             return;
         }
@@ -185,7 +160,6 @@ impl Help {
             &self.plugins.official_files(),
             &self.cache,
             current.as_deref().map(|c| c.dir.as_path()),
-            &self.plugins.owner_languages(),
         )
         .await
         {
@@ -197,11 +171,7 @@ impl Help {
             Err(error) => {
                 tracing::warn!(commit = %spec.commit, %error, "取不到新的帮助文档，旧的照常用");
                 attempt.failed = Some((spec.commit.clone(), Instant::now()));
-                self.set_problem(Some(l10n::text(
-                    &langs,
-                    "chat-help-refresh-failed",
-                    &[("details", error.to_string().into())],
-                )));
+                self.set_problem(Some(format!("取不到新的帮助文档：{error}")));
             }
         }
     }
@@ -272,7 +242,11 @@ fn days_ago(at_ms: u64) -> u64 {
 
 /// 版本都读得懂、而且 `version` 更旧。开发构建没有版本号，不比较。
 fn older_than(version: Option<&str>, required: &str) -> bool {
-    version.is_some_and(|version| wonton_protocol::is_older(version, required))
+    let parse = |v: &str| semver::Version::parse(v.trim_start_matches('v')).ok();
+    match (version.and_then(parse), parse(required)) {
+        (Some(version), Some(required)) => version < required,
+        _ => false,
+    }
 }
 
 fn chosen<'p>(pages: &'p Pages, topic: &str, languages: &Languages) -> Option<&'p Page> {
@@ -306,42 +280,19 @@ fn add_requirements(value: &mut Value, page: &Page) {
     }
 }
 
-/// 帮助工具的两种报错：文档一份都没有，或者主题写错了。
-#[derive(Debug, thiserror::Error)]
-pub enum HelpError {
-    #[error("docs_unavailable: {0}")]
-    DocsUnavailable(String),
-    #[error("invalid_input: {0}")]
-    TopicMissing(String),
-}
-
-impl HelpError {
-    /// 工具结果 `_meta` 的 `app.wonton/failure`。
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Self::DocsUnavailable(_) => "docs_unavailable",
-            Self::TopicMissing(_) => "invalid_input",
-        }
-    }
-}
-
 fn page_result(
     result: &mut Value,
     pages: &Pages,
     topic: &str,
     languages: &Languages,
     version: &Option<String>,
-) -> Result<(), HelpError> {
+) -> Result<(), String> {
     let Some(page) = chosen(pages, topic, languages) else {
         let topics: Vec<&str> = pages.keys().map(String::as_str).collect();
-        return Err(HelpError::TopicMissing(l10n::text(
-            languages,
-            "chat-help-topic-missing",
-            &[
-                ("topic", topic.into()),
-                ("topics", l10n::list(languages, &topics).into()),
-            ],
-        )));
+        return Err(format!(
+            "invalid_input: 没有主题 {topic}。可选的主题：{}",
+            topics.join("、")
+        ));
     };
     result["topic"] = json!(topic);
     result["lang"] = json!(page.lang);
@@ -351,16 +302,9 @@ fn page_result(
     if let Some(required) = &page.requires_core
         && older_than(version.as_deref(), required)
     {
-        result["note"] = json!(l10n::text(
-            languages,
-            "chat-help-page-needs-core",
-            &[
-                ("required", required.as_str().into()),
-                (
-                    "core",
-                    version.as_deref().unwrap_or("unknown").to_owned().into()
-                ),
-            ],
+        let core = version.as_deref().unwrap_or("unknown");
+        result["note"] = json!(format!(
+            "这一页讲的功能要核心 ≥ {required}，这台是 {core}：要先升级核心"
         ));
     }
     result["body"] = json!(page.body);

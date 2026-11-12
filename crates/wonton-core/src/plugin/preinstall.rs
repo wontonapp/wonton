@@ -12,7 +12,6 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginStatus, PluginView, now_secs};
 use super::manifest::{PluginId, PluginKind};
 use super::package::PluginPackage;
@@ -92,7 +91,7 @@ pub(super) fn packages_in(dir: &Path) -> Result<Vec<PluginPackage>, InstallError
         .filter(|path| path.is_dir())
         .collect();
     dirs.sort();
-    let load = |path: &PathBuf| match PluginPackage::load_dir(path, &Languages::default()) {
+    let load = |path: &PathBuf| match PluginPackage::load_dir(path) {
         Ok(package) => Some(package),
         Err(e) => {
             tracing::error!(path = %path.display(), error = %e, "插件包无法解析，没有安装");
@@ -108,21 +107,16 @@ fn retryable(e: &InstallError) -> bool {
         InstallError::Invalid(_)
         | InstallError::PermissionNotGranted(_)
         | InstallError::Unsupported(_)
-        | InstallError::UnsupportedRuntime(_)
         | InstallError::Conflict(_)
-        | InstallError::SettingsInvalid(..)
-        | InstallError::SettingsSchemaInvalid(..)
-        | InstallError::InUse { .. }
         | InstallError::NotInstalled(_)
-        | InstallError::RecordUnusable(_)
         | InstallError::NotFound(_)
         | InstallError::Changed(_)
+        // 要主人在 App 里填资料。
+        | InstallError::OwnerProfileIncomplete
         // 本机没有可用的显卡：装驱动、插显卡都要主人动手，下次启动再试。
         | InstallError::GpuUnavailable(_)
         // 同名的网络或卷不是本插件的：也要主人动手。
-        | InstallError::NameTaken(_)
-        // 端口被占着，要主人先停掉占着它的那个。
-        | InstallError::PortTaken(_) => false,
+        | InstallError::NameTaken(_) => false,
         InstallError::DockerUnavailable(_)
         | InstallError::Docker(_)
         | InstallError::ImagePull(_)
@@ -139,7 +133,7 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::Unhealthy(_)
         | InstallError::Storage(_)
         | InstallError::SourceUnavailable(_)
-        | InstallError::CoreUpgrading(_) => true,
+        | InstallError::CoreUpgrading => true,
     }
 }
 
@@ -213,14 +207,7 @@ impl PluginManager {
         loop {
             attempts += 1;
             let e = match self
-                .install_checked(
-                    package.clone(),
-                    &manifest.permissions,
-                    &[],
-                    false,
-                    Default::default(),
-                    &self.owner_languages(),
-                )
+                .install_checked(package.clone(), &manifest.permissions, false)
                 .await
             {
                 Ok(_) => {
@@ -235,28 +222,11 @@ impl PluginManager {
             }
             if !retryable(&e) {
                 tracing::error!(plugin = %id, error = %e, "预装失败，重试也没用");
-                self.mark_failed(
-                    &manifest,
-                    format!(
-                        "{}：{e}",
-                        crate::l10n::text(
-                            &self.owner_languages(),
-                            "plugin-install-preinstall-failed",
-                            &[],
-                        )
-                    ),
-                );
+                self.mark_failed(&manifest, format!("预装失败：{e}"));
                 return Outcome::Stopped;
             }
             tracing::warn!(plugin = %id, attempts, retry_in = ?wait, error = %e, "预装失败，稍后重试");
-            let reason = format!(
-                "{}：{e}",
-                crate::l10n::text(
-                    &self.owner_languages(),
-                    "plugin-install-preinstall-retrying",
-                    &[("attempts", attempts.to_string().into())],
-                )
-            );
+            let reason = format!("预装失败（已试 {attempts} 次，稍后自动重试）：{e}");
             // 先订阅再标异常：标完之后主人马上卸掉它，也能收到通知。
             let changes = self.changes();
             self.mark_failed(&manifest, reason.clone());

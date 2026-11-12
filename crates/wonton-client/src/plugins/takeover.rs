@@ -94,8 +94,6 @@ impl PluginsLink {
         if let Some(id) = going {
             self.end_takeover(&id);
         }
-        // App 看不见了：自动映射一律停，屏幕上那页留着，回前台恢复；手动开关不受影响。
-        self.ports.set_foreground(false);
     }
 
     /// 换了服务器：上一台等租约自己过期，什么都不再发。
@@ -173,7 +171,7 @@ impl Run {
             && let Err(problem) = self.hand_back(&link).await
         {
             // 主人已经走了，没有地方可说；核心的租约会自己过期。
-            tracing::info!("the handback didn't go through: {}", problem.message);
+            tracing::info!("交还没有送到：{}", problem.message);
         }
     }
 

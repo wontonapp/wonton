@@ -8,21 +8,19 @@ use std::net::IpAddr;
 
 use ipnet::IpNet;
 
-use crate::net::special::{CGNAT, LINK_LOCAL, LOOPBACK, PRIVATE, THIS_NETWORK, ULA, UNSPECIFIED};
-
-/// 拒绝的地址段，放行的地址按 CIDR 减出去。段取自 [`crate::net::special`]。
+/// 拒绝的地址段，放行的地址按 CIDR 减出去。
 const PRIVATE_RANGES: [&str; 11] = [
-    THIS_NETWORK[0],
-    PRIVATE[0],
-    CGNAT[0],
-    LOOPBACK[0],
-    LINK_LOCAL[0],
-    PRIVATE[1],
-    PRIVATE[2],
-    UNSPECIFIED[1],
-    LOOPBACK[1],
-    ULA[0],
-    LINK_LOCAL[1],
+    "0.0.0.0/8",
+    "10.0.0.0/8",
+    "100.64.0.0/10",
+    "127.0.0.0/8",
+    "169.254.0.0/16",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "::/128",
+    "::1/128",
+    "fc00::/7",
+    "fe80::/10",
 ];
 
 /// 拒绝的域名。`*.x` 不加引号是 YAML 的别名语法，但这份名单是纯文本，一行一个。

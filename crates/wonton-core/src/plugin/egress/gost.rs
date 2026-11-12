@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use bollard::models::{
     ContainerCreateBody, HostConfig, NetworkCreateRequest, RestartPolicy, RestartPolicyNameEnum,
 };
-use ipnet::Ipv4Net;
 use rustix::process::{getegid, geteuid};
 use serde::Serialize;
 
@@ -21,12 +20,6 @@ use crate::plugin::hostdir::Owner;
 /// gost 3.3.3，MIT，独立容器。
 pub const IMAGE: &str =
     "gogost/gost:3@sha256:f266f957c6e4f8d433ed23202a5745fa4969d08f3f0ef034fb9357345e16ad67";
-
-/// CI 把测试镜像复制到自己的仓库后经 `WONTON_TEST_IMAGES` 指过去（wonton-test-images）；
-/// 没设时就是 [`IMAGE`]，本地行为不变。
-pub fn image() -> String {
-    wonton_test_images::image(IMAGE)
-}
 
 /// 插件网络里的别名。没声明出网的插件网络里没有它，也就连不到出口容器。
 pub const ALIAS: &str = "egress.wonton.internal";
@@ -143,9 +136,7 @@ fn bypass(name: &'static str, file: &str) -> Bypass {
 }
 
 /// gost 的配置。用 YAML 库生成，不拼字符串：密码可以是任何字符。
-use super::super::languages::Languages;
-
-pub fn config_yaml(proxy: &ProxyAddress, langs: &Languages) -> Result<String, String> {
+pub fn config_yaml(proxy: &ProxyAddress) -> Result<String, String> {
     let auth = proxy.username.is_some() || proxy.password.is_some();
     let auth = auth.then(|| Auth {
         username: proxy.username.clone().unwrap_or_default(),
@@ -198,13 +189,7 @@ pub fn config_yaml(proxy: &ProxyAddress, langs: &Languages) -> Result<String, St
         }],
         bypasses: [bypass("deny", DENY_FILE), bypass("direct", DIRECT_FILE)],
     };
-    serde_saphyr::to_string(&config).map_err(|e| {
-        crate::l10n::text(
-            langs,
-            "plugin-settings-egress-gost-config",
-            &[("error", e.to_string().into())],
-        )
-    })
+    serde_saphyr::to_string(&config).map_err(|e| format!("生成 gost 的配置失败：{e}"))
 }
 
 /// 运行 gost 的用户：核心是 root 时是 nobody；不是 root（开发时）时只能是核心自己，文件才是它的。
@@ -236,17 +221,8 @@ impl RelayFiles {
         &self.dir
     }
 
-    fn prepare(&self, langs: &Languages) -> Result<(), String> {
-        let context = |e: std::io::Error| {
-            crate::l10n::text(
-                langs,
-                "plugin-settings-egress-prepare-dir",
-                &[
-                    ("dir", self.dir.display().to_string().into()),
-                    ("error", e.to_string().into()),
-                ],
-            )
-        };
+    fn prepare(&self) -> Result<(), String> {
+        let context = |e: std::io::Error| format!("准备 {} 失败：{e}", self.dir.display());
         fs::create_dir_all(&self.dir).map_err(context)?;
         fs::set_permissions(
             &self.dir,
@@ -264,21 +240,12 @@ impl RelayFiles {
     }
 
     /// 内容变了才写：写临时文件再改名，gost 读到的总是完整的。
-    fn write(&self, name: &str, data: &str, langs: &Languages) -> Result<(), String> {
+    fn write(&self, name: &str, data: &str) -> Result<(), String> {
         let path = self.dir.join(name);
         if fs::read(&path).is_ok_and(|current| current == data.as_bytes()) {
             return Ok(());
         }
-        let context = |e: std::io::Error| {
-            crate::l10n::text(
-                langs,
-                "plugin-settings-egress-write-file",
-                &[
-                    ("path", path.display().to_string().into()),
-                    ("error", e.to_string().into()),
-                ],
-            )
-        };
+        let context = |e: std::io::Error| format!("写 {} 失败：{e}", path.display());
         let temp = self.dir.join(format!(".{name}.tmp"));
         match fs::remove_file(&temp) {
             Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(context(e)),
@@ -301,29 +268,24 @@ impl RelayFiles {
         fs::read(self.dir.join(CONFIG_FILE)).is_ok_and(|current| current == yaml.as_bytes())
     }
 
-    pub fn write_config(&self, yaml: &str, langs: &Languages) -> Result<(), String> {
-        self.prepare(langs)?;
-        self.write(CONFIG_FILE, yaml, langs)
+    pub fn write_config(&self, yaml: &str) -> Result<(), String> {
+        self.prepare()?;
+        self.write(CONFIG_FILE, yaml)
     }
 
     /// 写名单。容器不用重建。
-    pub fn write_lists(&self, lists: &Lists, langs: &Languages) -> Result<(), String> {
-        self.prepare(langs)?;
-        self.write(DENY_FILE, &lists.deny_file(), langs)?;
-        self.write(DIRECT_FILE, &lists.direct_file(), langs)
+    pub fn write_lists(&self, lists: &Lists) -> Result<(), String> {
+        self.prepare()?;
+        self.write(DENY_FILE, &lists.deny_file())?;
+        self.write(DIRECT_FILE, &lists.direct_file())
     }
 
     /// 取消代理时删掉配置：里面有密码。
-    pub fn remove(&self, langs: &Languages) -> Result<(), String> {
+    pub fn remove(&self) -> Result<(), String> {
         match fs::remove_dir_all(&self.dir) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(crate::l10n::text(
-                langs,
-                "plugin-settings-egress-remove-dir",
-                &[
-                    ("dir", self.dir.display().to_string().into()),
-                    ("error", e.to_string().into()),
-                ],
-            )),
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                Err(format!("删除 {} 失败：{e}", self.dir.display()))
+            }
             _ => Ok(()),
         }
     }
@@ -379,28 +341,13 @@ impl Engine {
         name: &str,
         labels: &HashMap<String, String>,
     ) -> Result<(), EngineError> {
-        self.create_reserved(Self::relay_request(name, labels))
-            .await
-    }
-
-    /// 同 [`Self::create_relay_network`]，但在迁移预留的网段上建。
-    pub async fn create_relay_network_at(
-        &self,
-        name: &str,
-        labels: &HashMap<String, String>,
-        subnet: Ipv4Net,
-    ) -> Result<(), EngineError> {
-        self.create_network_at_reserved(Self::relay_request(name, labels), subnet)
-            .await
-    }
-
-    fn relay_request(name: &str, labels: &HashMap<String, String>) -> NetworkCreateRequest {
-        NetworkCreateRequest {
+        self.create_raw(NetworkCreateRequest {
             name: name.to_owned(),
             driver: Some("bridge".to_owned()),
             labels: Some(labels.clone()),
             ..Default::default()
-        }
+        })
+        .await
     }
 
     /// 重建出口容器，约 0.6 秒（实测）。
@@ -417,11 +364,7 @@ mod tests {
     use serde_json::Value;
 
     fn parsed(text: &str) -> Value {
-        let yaml = config_yaml(
-            &ProxyAddress::parse(text, &Default::default()).unwrap(),
-            &Languages::default(),
-        )
-        .unwrap();
+        let yaml = config_yaml(&ProxyAddress::parse(text).unwrap()).unwrap();
         serde_saphyr::from_str(&yaml).unwrap()
     }
 
@@ -466,9 +409,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let files = RelayFiles::new(dir.path().join("relay"), runner());
         assert!(!files.has_config("a: 1\n"));
-        files.write_config("a: 1\n", &Languages::default()).unwrap();
+        files.write_config("a: 1\n").unwrap();
         assert!(files.has_config("a: 1\n"));
-        files.write_config("a: 2\n", &Languages::default()).unwrap();
+        files.write_config("a: 2\n").unwrap();
         let path = files.dir().join(CONFIG_FILE);
         assert_eq!(fs::read_to_string(&path).unwrap(), "a: 2\n");
         let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
@@ -478,15 +421,15 @@ mod tests {
             deny: vec!["10.0.0.0/8".to_owned(), "*.x".to_owned()],
             ..Lists::default()
         };
-        files.write_lists(&lists, &Languages::default()).unwrap();
+        files.write_lists(&lists).unwrap();
         let deny = fs::read_to_string(files.dir().join(DENY_FILE)).unwrap();
         assert_eq!(deny, "10.0.0.0/8\n*.x\n");
         assert_eq!(
             fs::read_to_string(files.dir().join(DIRECT_FILE)).unwrap(),
             ""
         );
-        files.remove(&Languages::default()).unwrap();
+        files.remove().unwrap();
         assert!(!files.dir().exists());
-        files.remove(&Languages::default()).unwrap();
+        files.remove().unwrap();
     }
 }

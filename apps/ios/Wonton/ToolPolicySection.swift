@@ -22,8 +22,8 @@ struct ToolPolicySection: View {
                 if let reason = policy.problem {
                     ProblemNotice(
                         problem: Problem(
-                            title: String(localized: .toolPolicyUnreadableTitle),
-                            nextStep: String(localized: .toolPolicyUnreadableNext),
+                            title: "放宽的设置读不出来",
+                            nextStep: "现在每次调用都会问你，这里也改不了。",
                             detail: reason
                         )
                     )
@@ -34,7 +34,7 @@ struct ToolPolicySection: View {
         } else if let problem {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 ProblemNotice(problem: problem)
-                Button(String(localized: .commonRetry)) { Task { await load() } }
+                Button("重试") { Task { await load() } }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
                     .fixedSize()
             }
@@ -48,16 +48,16 @@ struct ToolPolicySection: View {
             change { try await model.core.stopToolWindow(id: id, card: card) }
         }
         BotSwitches(
-            title: String(localized: .toolPolicyAlwaysTitle),
-            risk: String(localized: .toolPolicyAlwaysRisk),
+            title: "始终允许",
+            risk: "这个 Bot 用这个插件的工具不再问，包括会改数据的",
             bots: policy.always,
             enabled: enabled
         ) { caller, isOn in
             change { try await model.core.setToolAlways(id: id, caller: caller, enabled: isOn) }
         }
         BotSwitches(
-            title: String(localized: .toolPolicyAllowAllTitle),
-            risk: String(localized: .toolPolicyAllowAllRisk),
+            title: "一律允许",
+            risk: "这个 Bot 用所有插件的工具都不再问，以后装的也算。提示注入能让它不经确认改数据、删东西、往外发内容",
             bots: policy.allowAll,
             enabled: enabled
         ) { caller, isOn in
@@ -109,14 +109,14 @@ private struct OpenWindows: View {
 
     var body: some View {
         if !windows.isEmpty {
-            DetailSection(title: String(localized: .toolPolicyWindowsTitle)) {
+            DetailSection(title: "放行中") {
                 ForEach(windows, id: \.card) { window in
                     HStack(spacing: WontonTheme.spacing.s12) {
-                        Text(.toolPolicyWindowUntil(window.name, until(window)))
+                        Text("\(window.name) 放行到 \(until(window))")
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Button(String(localized: .toolPolicyStop)) { stop(window.card) }
+                        Button("停止") { stop(window.card) }
                             .buttonStyle(WontonButtonStyle(kind: .secondary))
                             .fixedSize()
                             .disabled(!enabled)
@@ -170,15 +170,13 @@ private struct ToolList: View {
     var body: some View {
         if tools.isEmpty {
             if let error {
-                DetailSection(title: String(localized: .toolPolicyToolsTitle)) {
-                    WontonNotice(icon: .warning, title: error)
-                }
+                DetailSection(title: "工具") { WontonNotice(icon: .warning, title: error) }
             }
         } else {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 Button { expanded.toggle() } label: {
                     HStack {
-                        Text(.toolPolicyToolsTitle)
+                        Text("工具")
                             .wontonText(WontonTheme.typography.sectionTitle)
                             .foregroundStyle(Color(colors.textPrimary))
                         Spacer(minLength: 0)
@@ -192,7 +190,7 @@ private struct ToolList: View {
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(.isHeader)
                 if expanded {
-                    Text(.toolPolicyReadOnlyHint)
+                    Text("打开的工具算只读，所有 Bot 调它都不再问")
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.warning))
                     ForEach(tools, id: \.name) { ToolRow(tool: $0, enabled: enabled, change: change) }
@@ -224,7 +222,7 @@ private struct ToolRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if tool.access == .pluginReadOnly {
-                Text(.toolPolicyReadOnlyTag)
+                Text("只读")
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             } else {

@@ -3,7 +3,6 @@ package app.wonton.ui
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.OpenDocument
 import androidx.compose.foundation.layout.Arrangement
@@ -26,12 +25,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import app.wonton.protocol.AddedSource
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.SourceKind
-import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonGroup
@@ -52,6 +49,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private const val BYTES_PER_MIB = 1024 * 1024
+
 /** “添加来源”：填地址（家里的服务器判断是插件还是索引）、从文件安装、删除添加过的来源（ADR-0031）。 */
 @Composable
 fun AddSourceScreen(plugins: PluginsState, navigation: PluginNavigation) {
@@ -65,31 +64,17 @@ fun AddSourceScreen(plugins: PluginsState, navigation: PluginNavigation) {
     }
     val close = { navigation.addingSource = false }
     val focus = LocalFocusManager.current
-    WontonScreen(
-        bar = {
-            WontonPushedBar(
-                stringResource(R.string.plugin_sources_title),
-                close,
-                WontonIcon.Close,
-                stringResource(R.string.common_close),
-            )
-        },
-    ) {
+    WontonScreen(bar = { WontonPushedBar("添加来源", close, WontonIcon.Close, "关闭") }) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
-            WontonNotice(
-                WontonIcon.Warning,
-                stringResource(R.string.plugin_sources_unreviewed_warning),
-                isError = false,
-            )
+            WontonNotice(WontonIcon.Warning, "这里添加的应用和文件都没有经过审核，只装你信任的。", isError = false)
             problem?.let { ProblemNotice(it) }
             Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 SourceAddressField(address) { address = it }
                 WontonButton(
-                    stringResource(R.string.plugin_sources_add),
+                    "添加",
                     {
                         adding = true
                         problem = null
@@ -108,15 +93,10 @@ fun AddSourceScreen(plugins: PluginsState, navigation: PluginNavigation) {
                     enabled = !adding && address.isNotBlank(),
                 )
             }
-            WontonButton(
-                stringResource(R.string.plugin_sources_install_from_file),
-                pickFile,
-                Modifier.fillMaxWidth(),
-                WontonButtonKind.SECONDARY,
-            )
+            WontonButton("从文件安装", pickFile, Modifier.fillMaxWidth(), WontonButtonKind.SECONDARY)
             val added = plugins.viewModel.store?.added.orEmpty()
             if (added.isNotEmpty()) {
-                DetailSection(stringResource(R.string.plugin_sources_mine)) {
+                DetailSection("我添加的") {
                     WontonGroup {
                         added.forEachIndexed { index, source ->
                             if (index > 0) WontonSeparator()
@@ -164,7 +144,7 @@ private fun AddedSourceRow(source: AddedSource, onRemove: () -> Unit) {
                 )
             }
         }
-        WontonIconButton(WontonIcon.Trash, stringResource(R.string.common_delete), onRemove)
+        WontonIconButton(WontonIcon.Trash, "删除", onRemove)
     }
 }
 
@@ -178,26 +158,16 @@ fun ChangeVersionScreen(plugins: PluginsState, navigation: PluginNavigation, id:
         navigation.confirmation = PluginConfirmation.UpgradeUpload(id, archive)
     }
     val close = { navigation.changingVersion = null }
-    WontonScreen(
-        bar = {
-            WontonPushedBar(
-                stringResource(R.string.install_change_version),
-                close,
-                WontonIcon.Close,
-                stringResource(R.string.common_close),
-            )
-        },
-    ) {
+    WontonScreen(bar = { WontonPushedBar("换版本", close, WontonIcon.Close, "关闭") }) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             problem?.let { ProblemNotice(it) }
             Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 SourceAddressField(address) { address = it }
                 WontonButton(
-                    stringResource(R.string.plugin_sources_continue),
+                    "继续",
                     {
                         navigation.changingVersion = null
                         navigation.confirmation = PluginConfirmation.UpgradeFrom(id, address)
@@ -206,12 +176,7 @@ fun ChangeVersionScreen(plugins: PluginsState, navigation: PluginNavigation, id:
                     enabled = address.isNotBlank(),
                 )
             }
-            WontonButton(
-                stringResource(R.string.plugin_sources_install_from_file),
-                pickFile,
-                Modifier.fillMaxWidth(),
-                WontonButtonKind.SECONDARY,
-            )
+            WontonButton("从文件安装", pickFile, Modifier.fillMaxWidth(), WontonButtonKind.SECONDARY)
         }
     }
 }
@@ -254,14 +219,10 @@ private suspend fun readPluginArchive(context: Context, uri: Uri, limit: Long): 
                 if (it.moveToFirst()) it.getLong(0) else null
             }
             if (size != null && size > limit) {
-                val most = Formatter.formatShortFileSize(context, limit)
-                val message = context.getString(R.string.plugin_sources_file_too_large, most)
-                return@withContext Result.failure(IOException(message))
+                return@withContext Result.failure(IOException("文件太大了，最多 ${limit / BYTES_PER_MIB} MiB"))
             }
             val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: return@withContext Result.failure(
-                    IOException(context.getString(R.string.plugin_sources_file_unreadable)),
-                )
+                ?: return@withContext Result.failure(IOException("打不开这个文件"))
             Result.success(bytes)
         } catch (failure: IOException) {
             Result.failure(failure)

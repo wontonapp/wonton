@@ -2,7 +2,6 @@
 //! 按预览给的摘要升级：主人确认的就是装上的，来源在这之间变了就要重新预览、重新确认。
 
 mod adopt;
-mod dependencies;
 mod offers;
 mod run;
 
@@ -18,9 +17,8 @@ use super::manager::{InstallError, PluginManager, detached};
 use super::manifest::{Permission, PluginId};
 use super::package::PluginPackage;
 use super::source_address::chosen_source;
-use super::store::{EnabledPermission, InstalledRecord};
+use super::store::InstalledRecord;
 use super::storefront::index::{Index, Listed as IndexListed};
-use crate::l10n;
 
 /// 升到哪里。
 pub enum UpgradeTo {
@@ -33,21 +31,13 @@ pub enum UpgradeTo {
 }
 
 /// 这个包在哪里来的，给主人看。
-fn origin_label(origin: Option<&Origin>, langs: &Languages) -> String {
+fn origin_label(origin: Option<&Origin>) -> String {
     // 同一个仓库可以直接装，也可以经索引装，只写提供方的话换来源的提示前后一样。
     origin.map_or_else(
-        || crate::l10n::text(langs, "plugin-settings-upgrade-origin-upload", &[]),
+        || "你上传的文件".to_owned(),
         |o| {
-            o.via_index().map_or_else(
-                || o.provider(),
-                |via| {
-                    crate::l10n::text(
-                        langs,
-                        "plugin-settings-upgrade-origin-index",
-                        &[("via", via.into())],
-                    )
-                },
-            )
+            o.via_index()
+                .map_or_else(|| o.provider(), |via| format!("{via} 的索引"))
         },
     )
 }
@@ -59,11 +49,7 @@ fn same_source(record: &InstalledRecord, package: &PluginPackage) -> bool {
 }
 
 /// 主人主动换版本时要醒目提示的：比装着的旧、来源变了。
-fn chosen_warnings(
-    record: &InstalledRecord,
-    package: &PluginPackage,
-    langs: &Languages,
-) -> Vec<CardLine> {
+fn chosen_warnings(record: &InstalledRecord, package: &PluginPackage) -> Vec<CardLine> {
     let warning = |text: String| CardLine {
         text,
         emphasis: true,
@@ -71,20 +57,16 @@ fn chosen_warnings(
     let mut warnings = Vec::new();
     let version = &package.manifest.version;
     if older(version, &record.version) {
-        warnings.push(warning(crate::l10n::text(
-            langs,
-            "plugin-settings-upgrade-older",
-            &[("version", record.version.as_str().into())],
+        warnings.push(warning(format!(
+            "比装着的 {} 旧。应用的数据可能已经按新版本迁移过，旧版本可能读不了，先备份",
+            record.version
         )));
     }
     if !same_source(record, package) {
-        warnings.push(warning(crate::l10n::text(
-            langs,
-            "plugin-settings-upgrade-source-changed",
-            &[
-                ("old", origin_label(record.origin.as_ref(), langs).into()),
-                ("new", origin_label(package.origin.as_ref(), langs).into()),
-            ],
+        warnings.push(warning(format!(
+            "来源从 {} 换成 {}，换了之后云吞不再按原来的来源提示升级",
+            origin_label(record.origin.as_ref()),
+            origin_label(package.origin.as_ref())
         )));
     }
     warnings
@@ -113,20 +95,15 @@ fn newer(new: &str, installed: &str) -> bool {
 }
 
 /// 记录里的插件包。
-pub(in crate::plugin) fn installed_package(
-    record: &InstalledRecord,
-    langs: &Languages,
-) -> Result<PluginPackage, InstallError> {
-    Ok(record.package(langs)?)
+fn installed_package(record: &InstalledRecord) -> Result<PluginPackage, InstallError> {
+    let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
+    package.origin = record.origin.clone();
+    Ok(package)
 }
 
 /// 官方索引这次没取到：上次的索引里没有新版本，不等于真的没有。
-fn index_unavailable(problem: StoreProblem, langs: &Languages) -> InstallError {
-    let details = crate::l10n::text(
-        langs,
-        "plugin-settings-upgrade-index-unavailable",
-        &[("details", problem.details.into())],
-    );
+fn index_unavailable(problem: StoreProblem) -> InstallError {
+    let details = format!("官方索引没取到，查不了新版本：{}", problem.details);
     match problem.reason {
         StoreFailure::Unreachable | StoreFailure::Timeout | StoreFailure::RateLimited => {
             InstallError::SourceUnavailable(details)
@@ -146,7 +123,6 @@ fn closing_ports(
     old: &PluginPackage,
     record: &InstalledRecord,
     new: &PluginPackage,
-    langs: &Languages,
 ) -> Option<CardLine> {
     let switched_ports = switched(new).filter(|_| switched(old).is_none())?.ports;
     let open = open_ports(old, record.lan_webui);
@@ -156,10 +132,9 @@ fn closing_ports(
         .map(|p| p.key())
         .collect();
     (!closing.is_empty()).then(|| CardLine {
-        text: crate::l10n::text(
-            langs,
-            "plugin-settings-upgrade-lan-ports-closing",
-            &[("ports", crate::l10n::list(langs, &closing).into())],
+        text: format!(
+            "局域网端口 {} 升级后会关掉，要继续开着就打开下面的开关",
+            closing.join("、")
         ),
         emphasis: true,
     })
@@ -175,9 +150,7 @@ impl PluginManager {
         match &record.origin {
             // 经第三方索引装的只看那个索引，官方也收录了同一个仓库也一样（ADR-0031）。
             Some(origin) if origin.index.is_some() => None,
-            Some(origin) => {
-                index.find(&SourceRef::parse(&origin.repo, &Languages::default()).ok()?)
-            }
+            Some(origin) => index.find(&SourceRef::parse(&origin.repo).ok()?),
             None => {
                 let bundled = self.bundled.read().expect("插件表锁中毒");
                 let id = &record.id;
@@ -190,21 +163,13 @@ impl PluginManager {
     }
 
     /// 能升级的插件的记录。系统插件随核心升级，接口升不了。
-    fn upgradable_record(
-        &self,
-        id: &PluginId,
-        langs: &Languages,
-    ) -> Result<InstalledRecord, InstallError> {
+    fn upgradable_record(&self, id: &PluginId) -> Result<InstalledRecord, InstallError> {
         if self.is_system(id) {
-            return Err(InstallError::Unsupported(crate::l10n::text(
-                langs,
-                "plugin-settings-upgrade-system-app",
-                &[],
-            )));
+            return Err(InstallError::Unsupported("系统插件随核心升级".to_owned()));
         }
         self.store
             .load(id)?
-            .ok_or_else(|| InstallError::not_installed(langs, id))
+            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
     }
 
     /// 能升到的版本的插件包。没有新版本时是 `not_found`。
@@ -213,24 +178,13 @@ impl PluginManager {
         record: &InstalledRecord,
     ) -> Result<PluginPackage, InstallError> {
         let id = &record.id;
-        let langs = self.owner_languages();
-        let none = || {
-            InstallError::NotFound(crate::l10n::text(
-                &langs,
-                "plugin-settings-upgrade-none",
-                &[("id", id.as_str().into())],
-            ))
-        };
+        let none = || InstallError::NotFound(format!("插件 {id} 没有新版本"));
         if pinned(record) {
             return Err(none());
         }
         // 主人在等结果：不等缓存过期。这次没取到时上次的索引说不清有没有新版本，如实报没取到。
-        let (index, problem) = self.refreshed_official_index(true, &langs).await;
-        let none_or_unknown = || {
-            problem
-                .clone()
-                .map_or_else(none, |problem| index_unavailable(problem, &langs))
-        };
+        let (index, problem) = self.refreshed_official_index(true).await;
+        let none_or_unknown = || problem.clone().map_or_else(none, index_unavailable);
         if let Some(listed) = self.official_entry(&index, record) {
             if !newer(&listed.manifest.version, &record.version) {
                 return Err(none_or_unknown());
@@ -241,10 +195,8 @@ impl PluginManager {
             if self.expects_official(record) {
                 return Err(none_or_unknown());
             }
-            return Err(InstallError::NotFound(crate::l10n::text(
-                &langs,
-                "plugin-settings-upgrade-no-origin",
-                &[("id", id.as_str().into())],
+            return Err(InstallError::NotFound(format!(
+                "插件 {id} 没有来源，查不到新版本"
             )));
         };
         if let Some(source) = &origin.index {
@@ -259,11 +211,11 @@ impl PluginManager {
             return Err(none_or_unknown());
         }
         let source = SourceRef {
+            repo: SourceRef::parse(&origin.repo)?.repo,
             wanted: Wanted::Latest,
-            ..SourceRef::parse(&origin.repo, &langs)?
         };
-        let latest = github_source::resolve(&self.github, &source, &langs).await?;
-        let package = github_source::fetch(&self.github, &latest, &langs).await?;
+        let latest = github_source::resolve(&self.github, &source).await?;
+        let package = github_source::fetch(&self.github, &latest).await?;
         if !newer(&package.manifest.version, &record.version) {
             return Err(none());
         }
@@ -274,17 +226,12 @@ impl PluginManager {
     fn check_same_plugin(
         package: &PluginPackage,
         record: &InstalledRecord,
-        langs: &Languages,
     ) -> Result<(), InstallError> {
         let manifest = &package.manifest;
         if manifest.id != record.id {
-            return Err(InstallError::Invalid(crate::l10n::text(
-                langs,
-                "plugin-settings-upgrade-id-changed",
-                &[
-                    ("package", manifest.id.to_string().into()),
-                    ("record", record.id.to_string().into()),
-                ],
+            return Err(InstallError::Invalid(format!(
+                "插件包是 {}，要升级的是 {}：升级不能改 id",
+                manifest.id, record.id
             )));
         }
         Ok(())
@@ -297,120 +244,49 @@ impl PluginManager {
         to: UpgradeTo,
         langs: &Languages,
     ) -> Result<InstallPreview, InstallError> {
-        let _changing = self.dependencies.changing.lock().await;
-        let record = self.upgradable_record(id, langs)?;
+        let record = self.upgradable_record(id)?;
         let chosen = !matches!(to, UpgradeTo::Offered);
         let upload = matches!(to, UpgradeTo::Upload(_));
         let package = match to {
             UpgradeTo::Offered => self.latest_package(&record).await?,
-            UpgradeTo::Source(source) => self.fetch_source(&chosen_source(&source, langs)?).await?,
+            UpgradeTo::Source(source) => self.fetch_source(&chosen_source(&source)?).await?,
             UpgradeTo::Upload(package) => *package,
         };
         if chosen {
-            Self::check_same_plugin(&package, &record, langs)?;
-            let installed = installed_package(&record, &self.owner_languages())?;
+            Self::check_same_plugin(&package, &record)?;
+            let installed = installed_package(&record)?;
             // 内容一样但来源不同的要放行：装它的索引删了之后，主人靠这个改跟仓库走，不用等上游出新版本。
             if installed.digest() == package.digest() && same_source(&record, &package) {
-                return Err(InstallError::Invalid(crate::l10n::text(
-                    langs,
-                    "plugin-settings-upgrade-same-version",
-                    &[("version", record.version.as_str().into())],
+                return Err(InstallError::Invalid(format!(
+                    "和装着的 {} 一样，不用换",
+                    record.version
                 )));
             }
         }
-        let blocked = self.host_block(&package.manifest, langs).await?;
+        let blocked = self.host_block(&package.manifest).await?;
         let mut preview = self
-            .preview_with(
-                &package,
-                langs,
-                blocked,
-                record.written_by.clone(),
-                &record.enabled_permissions,
-                Some(&record),
-            )
+            .preview_with(&package, langs, blocked, record.written_by.clone())
             .await?;
-        if let Some(reason) = self.upgrade_capability_block(&package, langs)? {
-            preview.blocked = Some(reason);
-            preview.blocked_category = Some(wonton_protocol::BlockedCategory::CapabilityDropped);
-        }
         preview.upgrade_from = Some(record.version.clone());
-        preview.secret_inputs = self.missing_secret_inputs(id, &package.manifest, langs);
         if upload {
             preview.source = Some(self.staged.stage(package.clone()));
         }
-        let warnings = chosen_warnings(&record, &package, langs);
+        let warnings = chosen_warnings(&record, &package);
         preview.notices.splice(0..0, warnings);
-        preview.permissions = super::views_permissions::permission_lines(
-            &package.manifest,
-            &record.enabled_permissions,
-            langs,
-        );
         for line in &mut preview.permissions {
             let granted = &record.granted_permissions;
             line.added = !granted.iter().any(|p| p.to_string() == line.permission);
         }
-        let old = installed_package(&record, langs)?;
+        let old = installed_package(&record)?;
         preview
             .notices
-            .extend(closing_ports(&old, &record, &package, langs));
-        // 以前可选、现在关着又改成必需：这个版本要主人重新确认一次。
-        for permission in &package.manifest.permissions {
-            let was_optional = old.manifest.optional_permissions.contains_key(permission);
-            let was_enabled = record
-                .enabled_permissions
-                .iter()
-                .any(|item| &item.permission == permission);
-            if was_optional && !was_enabled {
-                preview.notices.push(CardLine {
-                    text: l10n::text(
-                        langs,
-                        "upgrade-optional-became-required",
-                        &[("permission", permission.to_string().into())],
-                    ),
-                    emphasis: true,
-                });
-            }
-        }
-        // 以前可选、这个版本去掉了：关掉它的开关不再出现。
-        for permission in old.manifest.optional_permissions.keys() {
-            if !package
-                .manifest
-                .optional_permissions
-                .contains_key(permission)
-            {
-                preview.notices.push(CardLine {
-                    text: l10n::text(
-                        langs,
-                        "upgrade-optional-removed",
-                        &[("permission", permission.to_string().into())],
-                    ),
-                    emphasis: false,
-                });
-            }
-        }
+            .extend(closing_ports(&old, &record, &package));
         preview.lan_webui = switched(&package).map(|s| {
             let kept = record.lan_webui && switched(&old).is_some();
-            s.offer(kept, langs)
+            s.offer(kept)
         });
         preview.always_allowed = self.always_allowed(id, langs);
         Ok(preview)
-    }
-
-    /// 升级预览里要填的密钥：只列还没填的，已经填过的沿用。
-    fn missing_secret_inputs(
-        &self,
-        id: &PluginId,
-        manifest: &super::manifest::Manifest,
-        langs: &Languages,
-    ) -> Vec<wonton_protocol::SecretInput> {
-        let filled = self
-            .store
-            .secrets()
-            .load(id)
-            .ok()
-            .flatten()
-            .unwrap_or_default();
-        super::secret_input::lines(manifest, &|name| filled.contains_key(name), true, langs)
     }
 
     /// 按预览给的摘要升级。升级本身在独立的任务里执行，请求断开了也照样做完。
@@ -418,110 +294,55 @@ impl PluginManager {
         self: &Arc<Self>,
         id: &PluginId,
         request: &UpgradeRequest,
-        langs: &Languages,
     ) -> Result<(), InstallError> {
-        let granted = super::store::parse_permissions(&request.grant)
+        let granted = request
+            .grant
+            .iter()
+            .map(|p| p.parse::<Permission>())
+            .collect::<Result<Vec<_>, _>>()
             .map_err(|e| InstallError::Invalid(e.to_string()))?;
-        let requested = super::store::parse_enabled(
-            &request.enabled_permissions,
-            super::store::OpenedBy::Owner,
-            super::manager::now_secs(),
-        )
-        .map_err(|e| InstallError::Invalid(e.to_string()))?;
-        let record = self.upgradable_record(id, langs)?;
+        let record = self.upgradable_record(id)?;
         let package = match &request.source {
             Some(source) => {
                 let package = self.fetch_source(source).await?;
-                Self::check_same_plugin(&package, &record, langs)?;
+                Self::check_same_plugin(&package, &record)?;
                 package
             }
             None => self.latest_package(&record).await?,
         };
         let digest = package.digest();
         if digest != request.digest {
-            return Err(InstallError::Changed(crate::l10n::text(
-                langs,
-                "plugin-settings-upgrade-changed",
-                &[("id", id.as_str().into()), ("digest", digest.into())],
+            return Err(InstallError::Changed(format!(
+                "{id} 的新版本在预览之后变了（插件包摘要现在是 {digest}），要重新预览、重新确认"
             )));
         }
-        self.check_capability_removal(id, Some(&package.manifest), langs)?;
-        let filled = self.store.secrets().load(id).ok().flatten();
-        self.store_input_values(&package.manifest, &request.secrets, filled.as_ref(), langs)?;
-        let settings = upgrade_values(&package, &record, &request.settings, langs)?;
-        self.upgrade_detached(package, granted, requested, request.lan_webui, settings)
+        self.upgrade_detached(package, granted, request.lan_webui)
             .await?;
         self.staged.remove(&digest);
         Ok(())
     }
 
     /// 升到上传的插件包（开发时用）。开关开着的继续开着，`lan_webui` 时打开。
-    #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
     pub async fn upgrade_upload(
         self: &Arc<Self>,
         id: &PluginId,
         package: PluginPackage,
         granted: Vec<Permission>,
-        enabled: Vec<EnabledPermission>,
         lan_webui: bool,
-        given: &wonton_protocol::SettingValues,
-        langs: &Languages,
     ) -> Result<(), InstallError> {
-        let record = self.upgradable_record(id, langs)?;
-        Self::check_same_plugin(&package, &record, langs)?;
-        let settings = upgrade_values(&package, &record, given, langs)?;
-        self.upgrade_detached(
-            package,
-            granted,
-            enabled,
-            lan_webui || record.lan_webui,
-            settings,
-        )
-        .await
+        let record = self.upgradable_record(id)?;
+        Self::check_same_plugin(&package, &record)?;
+        self.upgrade_detached(package, granted, lan_webui || record.lan_webui)
+            .await
     }
 
     async fn upgrade_detached(
         self: &Arc<Self>,
         package: PluginPackage,
         granted: Vec<Permission>,
-        requested: Vec<EnabledPermission>,
         lan_webui: bool,
-        settings: super::settings::Values,
     ) -> Result<(), InstallError> {
         let this = Arc::clone(self);
-        detached(async move {
-            this.upgrade_checked(package, &granted, &requested, lan_webui, settings)
-                .await
-        })
-        .await
-    }
-}
-
-/// 升级要用的设置值：旧值叠在请求上，再按新 Schema 校验。新版本删掉了设置时值一起丢掉。
-fn upgrade_values(
-    package: &PluginPackage,
-    record: &InstalledRecord,
-    given: &wonton_protocol::SettingValues,
-    langs: &Languages,
-) -> Result<super::settings::Values, InstallError> {
-    let update: std::collections::HashMap<_, _> = given
-        .iter()
-        .map(|(name, value)| (name.clone(), Some(value.clone())))
-        .collect();
-    match super::settings::load(package, langs)? {
-        Some(schema) => super::settings::value::merged(&schema, &record.settings, &update, langs)
-            .map_err(|fields| super::settings::value_error(fields, langs)),
-        None if given.is_empty() => Ok(super::settings::Values::new()),
-        None => {
-            let fields = given
-                .keys()
-                .map(|name| wonton_protocol::SettingsFieldError {
-                    name: name.clone(),
-                    kind: wonton_protocol::SettingsFieldProblemKind::UnknownField,
-                    message: crate::l10n::text(langs, "plugin-settings-value-unknown-field", &[]),
-                })
-                .collect();
-            Err(super::settings::value_error(fields, langs))
-        }
+        detached(async move { this.upgrade_checked(package, &granted, lan_webui).await }).await
     }
 }

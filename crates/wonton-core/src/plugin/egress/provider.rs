@@ -4,7 +4,6 @@ use bollard::models::HealthStatusEnum;
 use wonton_protocol::{EgressFailure, EgressProblem, EgressProxyProvider};
 
 use super::address::ProxyAddress;
-use crate::l10n;
 use crate::plugin::entry::Entry;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::{InstallError, PluginManager, PluginStatus};
@@ -25,35 +24,20 @@ pub(in crate::plugin) struct Provider {
 }
 
 impl PluginManager {
-    pub(in crate::plugin) fn egress_provider(
-        &self,
-        langs: &Languages,
-    ) -> Result<Provider, InstallError> {
+    pub(in crate::plugin) fn egress_provider(&self) -> Result<Provider, InstallError> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         let (id, entry) = plugins
             .iter()
             .find(|(_, e)| e.provides_egress_proxy)
-            .ok_or_else(|| {
-                InstallError::NotInstalled(l10n::text(
-                    langs,
-                    "plugin-settings-egress-provider-missing",
-                    &[],
-                ))
-            })?;
+            .ok_or_else(|| InstallError::NotInstalled("没有装能做出网代理的插件".to_owned()))?;
         let spec = entry
             .listed
             .as_ref()
             .and_then(|l| l.manifest.provides.as_ref())
             .and_then(|p| p.egress_proxy.as_ref())
-            .ok_or_else(|| {
-                InstallError::Storage(l10n::text(
-                    langs,
-                    "plugin-settings-egress-provider-manifest",
-                    &[("id", id.to_string().into())],
-                ))
-            })?;
+            .ok_or_else(|| InstallError::Storage(format!("代理插件 {id} 的声明读不出来")))?;
         let container = self.cfg.instance.container(&id.slug(), &spec.service);
-        let address = ProxyAddress::parse(&format!("http://{container}:{}", spec.port), langs)
+        let address = ProxyAddress::parse(&format!("http://{container}:{}", spec.port))
             .map_err(InstallError::Storage)?;
         Ok(Provider {
             id: id.clone(),
@@ -78,17 +62,14 @@ impl PluginManager {
         &self,
         manifest: &Manifest,
         plugins: &std::collections::BTreeMap<PluginId, Entry>,
-        langs: &Languages,
     ) -> Result<(), InstallError> {
         if provides_proxy(manifest)
             && let Some((id, _)) = plugins
                 .iter()
                 .find(|(id, entry)| **id != manifest.id && entry.provides_egress_proxy)
         {
-            return Err(InstallError::Conflict(l10n::text(
-                langs,
-                "plugin-settings-egress-provider-conflict",
-                &[("id", id.to_string().into())],
+            return Err(InstallError::Conflict(format!(
+                "已经装了代理插件 {id}：同一时间只能有一个"
             )));
         }
         Ok(())
@@ -96,9 +77,8 @@ impl PluginManager {
 
     pub(super) async fn proxy_provider_problem(
         &self,
-        langs: &Languages,
     ) -> Result<Option<EgressProblem>, InstallError> {
-        let provider = self.egress_provider(langs)?;
+        let provider = self.egress_provider()?;
         let state = self
             .engine
             .inspect_container(&provider.address.host)
@@ -117,23 +97,15 @@ impl PluginManager {
         }
         Ok(Some(EgressProblem {
             reason: EgressFailure::ProxyUnreachable,
-            message: l10n::text(
-                langs,
-                "plugin-settings-egress-provider-not-running",
-                &[(
-                    "detail",
-                    format!(
-                        "{}（{:?}；{:?}；{:?}）",
-                        provider.id,
-                        provider.status,
-                        state.as_ref().and_then(|s| s.status),
-                        state
-                            .as_ref()
-                            .and_then(|s| s.health.as_ref())
-                            .and_then(|h| h.status),
-                    )
-                    .into(),
-                )],
+            message: format!(
+                "代理插件没在运行：{}（插件状态：{:?}；容器状态：{:?}；健康检查：{:?}）",
+                provider.id,
+                provider.status,
+                state.as_ref().and_then(|s| s.status),
+                state
+                    .as_ref()
+                    .and_then(|s| s.health.as_ref())
+                    .and_then(|h| h.status)
             ),
         }))
     }

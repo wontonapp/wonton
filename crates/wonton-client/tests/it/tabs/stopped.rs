@@ -19,8 +19,7 @@ fn running() -> InstalledPlugin {
 }
 
 async fn stopped_rig() -> (Rig, TabRef) {
-    // 定时探测在繁忙时会误杀健康连接、触发整轮重连和额外取列表，这里测的不是隧道恢复。
-    let rig = Rig::new().await.without_periodic_checks();
+    let rig = Rig::new().await;
     rig.core.set_lists(vec![vec![plugin(PluginState::Stopped)]]);
     rig.connected().await;
     rig.wait_for(|view| view.installed.is_some() && !view.refreshing)
@@ -255,9 +254,7 @@ async fn stopped_state_overrides_stale_load_failure_and_running_reloads() {
         let (rig, page_tab, running_plugin) = connected_page_rig(ID, "home").await;
         rig.app
             .dispatch(Action::TabLoadFailed {
-                page: PlacedTab::Bar {
-                    tab: page_tab.clone(),
-                },
+                tab: page_tab.clone(),
                 status: Some(502),
             })
             .unwrap();
@@ -276,9 +273,7 @@ async fn stopped_state_overrides_stale_load_failure_and_running_reloads() {
         // 晚到的 WebView 失败不能把已停止盖掉。
         rig.app
             .dispatch(Action::TabLoadFailed {
-                page: PlacedTab::Bar {
-                    tab: page_tab.clone(),
-                },
+                tab: page_tab.clone(),
                 status: None,
             })
             .unwrap();
@@ -309,9 +304,7 @@ async fn stopped_state_overrides_stale_load_failure_and_running_reloads() {
         assert!(!item(&ready, &page_tab).page.as_ref().unwrap().dimmed);
         rig.app
             .dispatch(Action::ReloadTab {
-                page: PlacedTab::Bar {
-                    tab: page_tab.clone(),
-                },
+                tab: page_tab.clone(),
             })
             .unwrap();
         assert_eq!(

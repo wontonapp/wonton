@@ -8,9 +8,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{Instant, timeout_at};
 
 use super::{Failure, FileFailure};
-use crate::l10n;
 use crate::plugin::PluginId;
-use crate::plugin::languages::Languages;
 
 /// 一个插件同时最多读这么多个。
 pub(super) const EACH_PLUGIN: usize = 2;
@@ -77,12 +75,7 @@ impl PluginSlots {
     }
 
     /// 先等自己的再等总的：读得慢的插件排队时不占总数。等不到只说明忙，不归给谁；只有正在读的已经读了很久，才是这个插件的问题。
-    pub async fn acquire(
-        &self,
-        plugin: &PluginId,
-        wait: Duration,
-        langs: &Languages,
-    ) -> Result<PluginSlot, Failure> {
+    pub async fn acquire(&self, plugin: &PluginId, wait: Duration) -> Result<PluginSlot, Failure> {
         let reads = {
             let mut plugins = self.plugins.lock().expect("读取名额表锁中毒");
             plugins
@@ -98,16 +91,11 @@ impl PluginSlots {
         let deadline = Instant::now() + wait;
         let own = timeout_at(deadline, reads.room.clone().acquire_owned())
             .await
-            .map_err(|_| self.no_room(plugin, &reads, langs))?
+            .map_err(|_| self.no_room(plugin, &reads))?
             .expect("信号量不会关闭");
         let shared = timeout_at(deadline, self.all.clone().acquire_owned())
             .await
-            .map_err(|_| {
-                Failure::new(
-                    FileFailure::ServiceUnavailable,
-                    l10n::text(langs, "files-plugin-slots-exhausted", &[]),
-                )
-            })?
+            .map_err(|_| Failure::new(FileFailure::ServiceUnavailable, "插件资源的读取都占满了"))?
             .expect("信号量不会关闭");
         let started = Instant::now();
         reads
@@ -123,30 +111,19 @@ impl PluginSlots {
         })
     }
 
-    fn no_room(&self, plugin: &PluginId, reads: &PluginReads, langs: &Languages) -> Failure {
+    fn no_room(&self, plugin: &PluginId, reads: &PluginReads) -> Failure {
         let started = reads.started.lock().expect("读取名额表锁中毒");
         match started.iter().min() {
             Some(oldest) if oldest.elapsed() >= self.slow_read => Failure::new(
                 FileFailure::PluginUnavailable,
-                l10n::text(
-                    langs,
-                    "files-plugin-read-overrun",
-                    &[
-                        ("plugin", plugin.as_str().into()),
-                        (
-                            "seconds",
-                            wonton_l10n::Arg::from(self.slow_read.as_secs() as i64),
-                        ),
-                    ],
+                format!(
+                    "插件 {plugin} 有读取超过 {} 秒没有结束",
+                    self.slow_read.as_secs()
                 ),
             ),
             _ => Failure::new(
                 FileFailure::ServiceUnavailable,
-                l10n::text(
-                    langs,
-                    "files-slots-full",
-                    &[("plugin", plugin.as_str().into())],
-                ),
+                format!("插件 {plugin} 的读取排满了，稍后再试"),
             ),
         }
     }
@@ -158,10 +135,6 @@ mod tests {
 
     const WAIT: Duration = Duration::from_millis(30);
 
-    fn langs() -> Languages {
-        Languages::from_header(None)
-    }
-
     fn plugin(n: usize) -> PluginId {
         PluginId::parse(&format!("app.example.p{n}")).unwrap()
     }
@@ -172,17 +145,13 @@ mod tests {
         let slots = PluginSlots::new();
         let mut held = Vec::new();
         for _ in 0..EACH_PLUGIN {
-            held.push(slots.acquire(&plugin(0), WAIT, &langs()).await.unwrap());
+            held.push(slots.acquire(&plugin(0), WAIT).await.unwrap());
         }
-        let busy = slots
-            .acquire(&plugin(0), WAIT, &langs())
-            .await
-            .err()
-            .unwrap();
+        let busy = slots.acquire(&plugin(0), WAIT).await.err().unwrap();
         assert_eq!(busy.kind, FileFailure::ServiceUnavailable);
-        assert!(slots.acquire(&plugin(1), WAIT, &langs()).await.is_ok());
+        assert!(slots.acquire(&plugin(1), WAIT).await.is_ok());
         held.pop();
-        assert!(slots.acquire(&plugin(0), WAIT, &langs()).await.is_ok());
+        assert!(slots.acquire(&plugin(0), WAIT).await.is_ok());
     }
 
     /// 读了很久还没结束，才是这个插件的问题。读完了就不算。
@@ -191,13 +160,9 @@ mod tests {
         let slots = PluginSlots::with_slow_read(WAIT);
         let mut held = Vec::new();
         for _ in 0..EACH_PLUGIN {
-            held.push(slots.acquire(&plugin(0), WAIT, &langs()).await.unwrap());
+            held.push(slots.acquire(&plugin(0), WAIT).await.unwrap());
         }
-        let slow = slots
-            .acquire(&plugin(0), WAIT, &langs())
-            .await
-            .err()
-            .unwrap();
+        let slow = slots.acquire(&plugin(0), WAIT).await.err().unwrap();
         assert_eq!(slow.kind, FileFailure::PluginUnavailable);
         assert!(slow.to_string().contains("app.example.p0"), "{slow}");
         held.clear();
@@ -209,13 +174,9 @@ mod tests {
         let slots = PluginSlots::new();
         let mut held = Vec::new();
         for n in 0..ALL_PLUGINS {
-            held.push(slots.acquire(&plugin(n), WAIT, &langs()).await.unwrap());
+            held.push(slots.acquire(&plugin(n), WAIT).await.unwrap());
         }
-        let busy = slots
-            .acquire(&plugin(99), WAIT, &langs())
-            .await
-            .err()
-            .unwrap();
+        let busy = slots.acquire(&plugin(99), WAIT).await.err().unwrap();
         assert_eq!(busy.kind, FileFailure::ServiceUnavailable);
     }
 
@@ -225,22 +186,18 @@ mod tests {
         let slots = Arc::new(PluginSlots::blaming_any_read());
         let mut held = Vec::new();
         for n in 0..ALL_PLUGINS {
-            held.push(slots.acquire(&plugin(n), WAIT, &langs()).await.unwrap());
+            held.push(slots.acquire(&plugin(n), WAIT).await.unwrap());
         }
         let long = Duration::from_secs(5);
         let mut waiting = Vec::new();
         for _ in 0..EACH_PLUGIN {
             let slots = slots.clone();
             waiting.push(tokio::spawn(async move {
-                let _ = slots.acquire(&plugin(99), long, &langs()).await;
+                let _ = slots.acquire(&plugin(99), long).await;
             }));
         }
         tokio::time::sleep(WAIT).await;
-        let busy = slots
-            .acquire(&plugin(99), WAIT, &langs())
-            .await
-            .err()
-            .unwrap();
+        let busy = slots.acquire(&plugin(99), WAIT).await.err().unwrap();
         assert_eq!(busy.kind, FileFailure::ServiceUnavailable);
         for task in waiting {
             task.abort();

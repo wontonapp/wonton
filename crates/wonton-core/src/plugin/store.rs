@@ -2,7 +2,6 @@
 //!
 //! 记录里有整个插件包（compose 原文和它引用的文件）和 OIDC 客户端密钥，文件权限设为 0600。
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::os::fd::BorrowedFd;
@@ -12,38 +11,18 @@ use std::path::{Path, PathBuf};
 use rustix::io::Errno;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-
 use wonton_protocol::{LanChoice, PluginLimits, PluginWriter};
 
 use super::bots::BotStore;
 use super::egress::settings::StoredEgress;
 use super::github_source::Origin;
-use super::languages::Languages;
-use super::manifest::{Manifest, Permission, PluginId};
+use super::manifest::{Permission, PluginId};
 use super::models::ModelKeyStore;
 use super::package_files::PackageFiles;
-use super::pins::PinStore;
 use super::preinstall::PreinstallMarks;
 use super::save_grants::SaveGrantStore;
 use super::secrets::SecretStore;
 use super::tool_policy::ToolPolicy;
-
-/// 一项可选权限现在开着，以及是谁、什么时候打开的（ADR-0057）。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EnabledPermission {
-    pub permission: Permission,
-    /// Unix 秒。
-    pub since: u64,
-    pub opened_by: OpenedBy,
-}
-
-/// 打开一项可选权限的人。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "by", rename_all = "snake_case")]
-pub enum OpenedBy {
-    Owner,
-    Bot { plugin_id: String, title: String },
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstalledRecord {
@@ -59,9 +38,6 @@ pub struct InstalledRecord {
     )]
     pub files: PackageFiles,
     pub granted_permissions: Vec<Permission>,
-    /// 主人或 Bot 打开了的可选项（ADR-0057）；关着的可选项不在这里。
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub enabled_permissions: Vec<EnabledPermission>,
     #[serde(default, skip_serializing_if = "limits_empty")]
     pub limits: PluginLimits,
     /// 开关 `lan_webui`（见 [`super::lan::webui`]），默认关。
@@ -88,85 +64,10 @@ pub struct InstalledRecord {
     /// 主人打开的“每次都问”：这个 Agent 每次更新都发卡片。只在 written_by 有值时有意义。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ask_every_update: bool,
-    /// 主人开放给家人了（ADR-0045）：家人的设备能打开它的网页，家人的插件列表里有它。默认关。
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub family: bool,
-    /// 主人设置的普通值（ADR-0077）：属性名 → JSON。明文可读，不是凭据。
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub settings: std::collections::BTreeMap<String, serde_json::Value>,
-    /// 设置最后保存的时间，Unix 毫秒；没改过时为空。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settings_changed_ms: Option<u64>,
-    /// 静态网页的文件摘要（相对 `static_web.root` 的路径 → sha256），算插件包摘要用；文件本身只在托管目录里（ADR-0080）。
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub static_files: super::package::static_files::StaticHashes,
-    /// 副作用账本里的托管目录：这个插件在哪些托管能力下有自己的子目录（ADR-0080 第 2 节）。卸载照它撤。
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub hosted: Vec<String>,
-}
-
-impl InstalledRecord {
-    /// 记录里的插件包：引用的文件之外，静态网页只有文件摘要（文件在托管目录里）。
-    pub fn package(
-        &self,
-        langs: &super::languages::Languages,
-    ) -> Result<super::package::PluginPackage, super::package::PackageError> {
-        let mut package =
-            super::package::PluginPackage::with_files(&self.source, self.files.clone(), langs)?
-                .with_static_hashes(self.static_files.clone());
-        package.origin = self.origin.clone();
-        Ok(package)
-    }
-
-    /// 记录里开着的可选权限。
-    pub fn enabled(&self) -> Vec<Permission> {
-        self.enabled_permissions
-            .iter()
-            .map(|item| item.permission.clone())
-            .collect()
-    }
-
-    /// 这份记录对 `manifest` 的生效集：必需权限加上开着的可选项。
-    pub fn effective_permissions(&self, manifest: &Manifest) -> Vec<Permission> {
-        manifest.effective_permissions(&self.enabled())
-    }
 }
 
 fn limits_empty(limits: &PluginLimits) -> bool {
     *limits == PluginLimits::default()
-}
-
-/// 解析请求里的权限写法。
-pub fn parse_permissions(
-    values: &[String],
-) -> Result<Vec<Permission>, super::manifest::ManifestError> {
-    values
-        .iter()
-        .map(|value| value.parse::<Permission>())
-        .collect()
-}
-
-/// 打开的可选项里的权限名。
-pub fn permission_set(items: &[EnabledPermission]) -> Vec<Permission> {
-    items.iter().map(|item| item.permission.clone()).collect()
-}
-
-/// 解析请求里打开了的可选项，带上打开的时间和人。
-pub fn parse_enabled(
-    values: &[String],
-    opened_by: OpenedBy,
-    since: u64,
-) -> Result<Vec<EnabledPermission>, super::manifest::ManifestError> {
-    values
-        .iter()
-        .map(|value| {
-            Ok(EnabledPermission {
-                permission: value.parse::<Permission>()?,
-                since,
-                opened_by: opened_by.clone(),
-            })
-        })
-        .collect()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -192,7 +93,6 @@ pub struct Store {
     dir: PathBuf,
     secrets: SecretStore,
     bots: BotStore,
-    pins: PinStore,
     model_keys: ModelKeyStore,
     preinstalled: PreinstallMarks,
     save_grants: SaveGrantStore,
@@ -209,7 +109,6 @@ impl Store {
         Ok(Self {
             secrets: SecretStore::new(dir.join("secrets")),
             bots: BotStore::new(dir.join("bots")),
-            pins: PinStore::new(dir.join("pins")),
             model_keys: ModelKeyStore::new(dir.join("model-keys")),
             preinstalled: PreinstallMarks::new(dir.join("preinstalled")),
             save_grants: SaveGrantStore::new(dir.join("save-grants")),
@@ -231,11 +130,6 @@ impl Store {
     /// 插件的 Bot 记录，在记录目录下的 `bots/` 里，保留的规则同密钥。
     pub fn bots(&self) -> &BotStore {
         &self.bots
-    }
-
-    /// Bot 钉在面板上的页面，在记录目录下的 `pins/` 里。
-    pub fn pins(&self) -> &PinStore {
-        &self.pins
     }
 
     /// 插件的模型网关凭据，在记录目录下的 `model-keys/` 里，卸载时删除。
@@ -267,15 +161,9 @@ impl Store {
         self.dir.join("store").join("docs")
     }
 
-    /// 每个人的语言：用户名到最近一次设备请求的 `Accept-Language` 原文（ADR-0043）。
-    pub fn people_languages(&self) -> PathBuf {
-        self.dir.join("store").join(PEOPLE_LANGUAGES)
-    }
-
-    pub(in crate::plugin) fn capabilities_path(&self) -> Result<PathBuf, StoreError> {
-        let dir = self.dir.join("capabilities");
-        create_private_dir(&dir)?;
-        Ok(dir.join("connections.json"))
+    /// 主人的语言：最近一次设备请求的 `Accept-Language` 原文。
+    pub fn owner_languages(&self) -> PathBuf {
+        self.dir.join("store").join("owner-languages.json")
     }
 
     /// 读出全部记录，按 ID 排序。单个记录读不出、已损坏或与文件名不符只体现在它自己的结果里；
@@ -299,7 +187,7 @@ impl Store {
                 tracing::warn!(path = %path.display(), "插件记录目录里有无法识别的文件，已跳过");
                 continue;
             };
-            let record = read_record(&path, &id, &self.owner_langs());
+            let record = read_record(&path, &id);
             files.push(RecordFile { id, record });
         }
         files.sort_by(|a, b| a.id.cmp(&b.id));
@@ -312,7 +200,7 @@ impl Store {
         if !path.exists() {
             return Ok(None);
         }
-        read_record(&path, id, &self.owner_langs()).map(Some)
+        read_record(&path, id).map(Some)
     }
 
     pub fn save(&self, record: &InstalledRecord) -> Result<(), StoreError> {
@@ -475,46 +363,6 @@ pub(crate) fn remove_file(path: &Path) -> Result<(), StoreError> {
     }
 }
 
-/// 记录每天用到的文件名。
-const PEOPLE_LANGUAGES: &str = "people-languages.json";
-
-/// 后台自己写给人看的文字（核心升级的检查和更新器，ADR-0043）按主人的语言写：那些路径上没有
-/// PluginManager，按数据目录直接读。读不到时按英文，App 下一次管理请求会把它写上。
-pub fn read_owner_languages(data_dir: &Path) -> Languages {
-    let header = crate::owner::recorded_name(&data_dir.join("core"))
-        .and_then(|owner| read_person_languages(data_dir, &owner));
-    Languages::from_header(header.as_deref())
-}
-
-/// 某人最近一次请求的 `Accept-Language` 原文；没有记录时为空。
-pub fn read_person_languages(data_dir: &Path, username: &str) -> Option<String> {
-    read_person_languages_at(&people_languages_file(data_dir), username)
-}
-
-fn read_person_languages_at(file: &Path, username: &str) -> Option<String> {
-    read_people_languages(file).get(username).cloned()
-}
-
-/// 整份“用户名 → 语言”表；文件不在时为空表，读不了或坏了时也为空表，但打一条日志，不静默。
-pub fn read_people_languages(file: &Path) -> BTreeMap<String, String> {
-    match read_json(file) {
-        Ok(people) => people.unwrap_or_default(),
-        Err(error) => {
-            tracing::warn!(%error, path = %file.display(), "每个人的语言读不出来，按没有记录处理");
-            BTreeMap::new()
-        }
-    }
-}
-
-/// 记每个人语言的目录：`<数据目录>/core/plugins/store/`。
-pub fn people_languages_dir(data_dir: &Path) -> PathBuf {
-    data_dir.join("core").join("plugins").join("store")
-}
-
-fn people_languages_file(data_dir: &Path) -> PathBuf {
-    people_languages_dir(data_dir).join(PEOPLE_LANGUAGES)
-}
-
 /// 名字 → 字节内容的映射在 JSON 里以 base64 保存（插件包的文件、插件密钥）。
 pub(super) mod base64_map {
     use std::collections::BTreeMap;
@@ -546,23 +394,7 @@ pub(super) mod base64_map {
     }
 }
 
-impl Store {
-    /// 主人的语言，读失败时按默认语言（存储层没有请求头；ADR-0043 的后台路径）。
-    fn owner_langs(&self) -> Languages {
-        let header = self
-            .dir
-            .parent()
-            .and_then(crate::owner::recorded_name)
-            .and_then(|owner| read_person_languages_at(&self.people_languages(), &owner));
-        Languages::from_header(header.as_deref())
-    }
-}
-
-fn read_record(
-    path: &Path,
-    id: &PluginId,
-    langs: &Languages,
-) -> Result<InstalledRecord, StoreError> {
+fn read_record(path: &Path, id: &PluginId) -> Result<InstalledRecord, StoreError> {
     let corrupt = |message: String| StoreError::Corrupt {
         path: path.to_owned(),
         message,
@@ -574,13 +406,9 @@ fn read_record(
     let record: InstalledRecord =
         serde_json::from_str(&text).map_err(|e| corrupt(e.to_string()))?;
     if &record.id != id {
-        return Err(corrupt(crate::l10n::text(
-            langs,
-            "plugin-settings-store-record-id-mismatch",
-            &[
-                ("record", record.id.to_string().into()),
-                ("file", id.to_string().into()),
-            ],
+        return Err(corrupt(format!(
+            "记录里的 ID 是 {}，与文件名不符",
+            record.id
         )));
     }
     Ok(record)
@@ -601,18 +429,12 @@ mod tests {
             source: "services: {}".into(),
             files: [("config.yaml".to_owned(), b"a: \x01\xff".to_vec())].into(),
             granted_permissions: vec!["storage.share.photos:read".parse().unwrap()],
-            enabled_permissions: Vec::new(),
             limits: Default::default(),
             oidc_client_secret: Some("s3cret".into()),
             installed_at: 1,
             origin: None,
             written_by: None,
             ask_every_update: false,
-            family: false,
-            settings: Default::default(),
-            settings_changed_ms: None,
-            static_files: Default::default(),
-            hosted: Vec::new(),
         }
     }
 

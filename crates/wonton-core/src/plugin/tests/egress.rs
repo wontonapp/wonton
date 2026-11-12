@@ -1,7 +1,8 @@
 //! 出网：没有声明 `network.egress` 的插件网络是 Docker 的内部网络；核心在容器里时连宿主也隔开。
 
-use axum::Router;
 use axum::routing::get;
+use axum::{Json, Router};
+use hyper::StatusCode;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
@@ -14,6 +15,9 @@ use super::super::store::{InstalledRecord, Store};
 use super::super::{PluginId, PluginStatus};
 use super::manager::{manager_in_container, manager_with, manager_with_oidc};
 use super::package;
+use crate::config::OidcProviderConfig;
+use crate::http::HttpClient;
+use crate::oidc::Hydra;
 
 fn app(permissions: &str) -> String {
     package(
@@ -41,7 +45,7 @@ async fn plugins_get_no_way_out_unless_they_declare_network_egress() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     manager_in_container(engine, &dir)
-        .install(&app(""), &[], super::langs())
+        .install(&app(""), &[])
         .await
         .unwrap();
     assert_eq!(created(&docker), (true, json!(ISOLATED), json!(ISOLATED)));
@@ -52,7 +56,7 @@ async fn plugins_get_no_way_out_unless_they_declare_network_egress() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     manager_with(engine, &dir)
-        .install(&app(""), &[], super::langs())
+        .install(&app(""), &[])
         .await
         .unwrap();
     assert_eq!(created(&docker), (true, Value::Null, Value::Null));
@@ -62,7 +66,7 @@ async fn plugins_get_no_way_out_unless_they_declare_network_egress() {
     let dir = tempfile::tempdir().unwrap();
     let granted = vec!["network.egress".parse().unwrap()];
     manager_in_container(engine, &dir)
-        .install(&app("network.egress"), &granted, super::langs())
+        .install(&app("network.egress"), &granted)
         .await
         .unwrap();
     assert_eq!(created(&docker), (false, Value::Null, Value::Null));
@@ -89,17 +93,11 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
             files: Default::default(),
             limits: Default::default(),
             granted_permissions: Vec::new(),
-            enabled_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
             origin: None,
             written_by: None,
             ask_every_update: false,
-            family: false,
-            settings: Default::default(),
-            settings_changed_ms: None,
-            static_files: Default::default(),
-            hosted: Vec::new(),
         })
         .unwrap();
     docker.add_container(&container_name("app-test", "web"), "app.test");
@@ -139,8 +137,34 @@ pub(super) async fn serve(app: Router) -> std::net::SocketAddr {
     addr
 }
 
+/// 只回答安装时用到的端点：发现文档、登记客户端。
+async fn fake_hydra() -> Hydra {
+    let endpoint = |path: &str| format!("http://auth.wonton.localhost:8080{path}");
+    let discovery = json!({
+        "issuer": endpoint(""),
+        "authorization_endpoint": endpoint("/oauth2/auth"),
+        "token_endpoint": endpoint("/oauth2/token"),
+        "userinfo_endpoint": endpoint("/userinfo"),
+    });
+    let app = Router::new()
+        .route(
+            "/.well-known/openid-configuration",
+            get(move || async move { Json(discovery) }),
+        )
+        .route(
+            "/admin/clients/{id}",
+            axum::routing::put(|| async { StatusCode::OK }),
+        );
+    let addr = serve(app).await;
+    let config = OidcProviderConfig {
+        admin_url: format!("http://{addr}"),
+        public_url: format!("http://{addr}"),
+    };
+    Hydra::new(HttpClient::new(), &config)
+}
+
 #[tokio::test]
-async fn on_the_host_oidc_plugins_reach_the_provider_through_their_own_network_gateway() {
+async fn on_the_host_oidc_plugins_reach_the_core_through_their_own_network_gateway() {
     // 假 Docker 把插件容器的地址报成 127.0.0.1，安装最后一步检查的网页就是这个本机服务。
     let web = serve(Router::new().route("/", get(|| async { "ok" }))).await;
     let compose = package(
@@ -153,25 +177,23 @@ async fn on_the_host_oidc_plugins_reach_the_provider_through_their_own_network_g
     );
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let m = manager_with_oidc(engine, &dir, super::fake_hydra().await);
-    m.install(&compose, &[], super::langs()).await.unwrap();
+    let m = manager_with_oidc(engine, &dir, fake_hydra().await);
+    m.install(&compose, &[]).await.unwrap();
     // 内部网络没有默认路由，host-gateway 走不通；经插件网络的网关（宿主上网桥的地址）访问核心。
-    let gateway = m.engine.network_gateway("wonton-app-test").await.unwrap();
     let created = docker.created(&container_name("app-test", "web")).unwrap();
     assert_eq!(
         created["HostConfig"]["ExtraHosts"],
-        json!([
-            format!("auth.wonton.internal:{gateway}"),
-            format!("app-test.wonton.localhost:{gateway}"),
-        ])
+        json!(["auth.wonton.localhost:172.30.0.1"])
     );
     assert_eq!(created["HostConfig"]["NetworkMode"], "wonton-app-test");
 }
 
 fn with_proxy(package: &PluginPackage) -> (InstallContext, Deployment) {
-    let mut ctx = dry_run_context(package);
-    ctx.egress = Some(EgressVars);
-    let plan = render(package, &ctx, &super::langs()).unwrap();
+    let mut ctx = dry_run_context(package, None);
+    ctx.egress = Some(EgressVars {
+        auth_host: "auth.wonton.localhost".to_owned(),
+    });
+    let plan = render(package, &ctx).unwrap();
     (ctx, plan)
 }
 
@@ -189,15 +211,17 @@ fn with_a_proxy_every_networked_service_of_an_egress_plugin_gets_the_variables()
          healthcheck:\n      test: wget -q http://127.0.0.1/",
         "  permissions: [network.egress]",
     );
-    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
+    let package = PluginPackage::parse(&compose).unwrap();
     let (_, plan) = with_proxy(&package);
 
     let web = super::env_of(service(&plan, "web"));
     assert!(web.contains(&format!("HTTP_PROXY={PROXY_URL}")), "{web:?}");
     assert!(web.contains(&format!("SEARX_PROXY={PROXY_URL}")), "{web:?}");
     let no_proxy = web.iter().find(|l| l.starts_with("NO_PROXY=")).unwrap();
-    assert!(no_proxy.contains(",db,sealed,web,"), "{no_proxy}");
-    assert!(no_proxy.contains(",.localhost"), "{no_proxy}");
+    assert!(
+        no_proxy.contains(",auth.wonton.localhost,db,sealed,web,"),
+        "{no_proxy}"
+    );
     let db = super::env_of(service(&plan, "db"));
     assert!(
         db.contains(&"HTTP_PROXY=".to_owned()),
@@ -225,82 +249,14 @@ fn with_a_proxy_every_networked_service_of_an_egress_plugin_gets_the_variables()
 }
 
 #[test]
-fn compose_written_no_proxy_is_merged_into_every_networked_service() {
-    let compose = package(
-        "  web:\n    image: nginx\n    environment:\n      NO_PROXY: \"localhost,web\"\n  \
-         hub:\n    image: nginx\n    environment:\n      no_proxy: internal.example\n  \
-         db:\n    image: postgres",
-        "  permissions: [network.egress]",
-    );
-    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
-    let (_, plan) = with_proxy(&package);
-
-    // 服务名按字典序：db、hub、web；私有网段在名单末尾。
-    let private = ".local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,\
-                   172.16.0.0/12,192.168.0.0/16";
-    let web = super::env_of(service(&plan, "web"));
-    assert_eq!(
-        web.iter().find(|l| l.starts_with("NO_PROXY=")).unwrap(),
-        &format!(
-            "NO_PROXY=localhost,web,.localhost,127.0.0.1,::1,.wonton.internal,db,hub,\
-             {private}"
-        )
-    );
-    let hub = super::env_of(service(&plan, "hub"));
-    assert_eq!(
-        hub.iter().find(|l| l.starts_with("no_proxy=")).unwrap(),
-        &format!(
-            "no_proxy=internal.example,localhost,.localhost,127.0.0.1,::1,\
-             .wonton.internal,db,hub,web,{private}"
-        )
-    );
-    // 没写的照常拿到完整名单。
-    let db = super::env_of(service(&plan, "db"));
-    assert_eq!(
-        db.iter().find(|l| l.starts_with("NO_PROXY=")).unwrap(),
-        &format!(
-            "NO_PROXY=localhost,.localhost,127.0.0.1,::1,.wonton.internal,db,hub,web,\
-             {private}"
-        )
-    );
-}
-
-#[test]
-fn network_mode_shared_service_gets_the_same_egress_route_and_local_healthcheck() {
-    let source = package(
-        "  web:\n    image: nginx\n  sidecar:\n    image: busybox\n    network_mode: service:web\n    \
-         healthcheck:\n      test: wget -q http://127.0.0.1/",
-        "  permissions: [network.egress]",
-    );
-    let (_, plan) = with_proxy(&PluginPackage::parse(&source, &super::langs()).unwrap());
-    let sidecar = service(&plan, "sidecar");
-    assert!(super::env_of(sidecar).contains(&format!("HTTP_PROXY={PROXY_URL}")));
-    assert!(sidecar.body.networking_config.is_none());
-    assert_eq!(
-        sidecar
-            .body
-            .healthcheck
-            .as_ref()
-            .unwrap()
-            .test
-            .as_ref()
-            .unwrap(),
-        &[
-            "CMD-SHELL",
-            "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; wget -q http://127.0.0.1/"
-        ]
-    );
-}
-
-#[test]
 fn without_a_proxy_only_the_empty_url_variable_is_injected() {
     let compose = package(
         "  web:\n    image: nginx\n    environment:\n      SEARX_PROXY: ${WONTON_PROXY_URL}\n    \
          healthcheck:\n      test: wget -q http://127.0.0.1/",
         "  permissions: [network.egress]",
     );
-    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
-    let plan = render(&package, &dry_run_context(&package), &super::langs()).unwrap();
+    let package = PluginPackage::parse(&compose).unwrap();
+    let plan = render(&package, &dry_run_context(&package, None)).unwrap();
     let web = service(&plan, "web");
     assert_eq!(super::env_of(web), ["SEARX_PROXY="]);
     let test = web.body.healthcheck.clone().unwrap().test.unwrap();
@@ -313,8 +269,8 @@ fn a_plugin_without_egress_cannot_reference_the_proxy_url() {
         "  web:\n    image: nginx\n    environment:\n      P: ${WONTON_PROXY_URL}",
         "  permissions: []",
     );
-    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
-    let error = render(&package, &dry_run_context(&package), &super::langs()).unwrap_err();
+    let package = PluginPackage::parse(&compose).unwrap();
+    let error = render(&package, &dry_run_context(&package, None)).unwrap_err();
     assert!(error.to_string().contains("WONTON_PROXY_URL"), "{error}");
 }
 
@@ -324,7 +280,7 @@ async fn image_healthchecks_are_rewritten_only_when_a_proxy_is_configured() {
         "  web:\n    image: nginx\n  sealed:\n    image: nginx\n    network_mode: none",
         "  permissions: [network.egress]",
     );
-    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
+    let package = PluginPackage::parse(&compose).unwrap();
     let (docker, engine) = FakeDocker::start().await;
     docker.set_image_healthcheck(
         "nginx",
@@ -343,11 +299,14 @@ async fn image_healthchecks_are_rewritten_only_when_a_proxy_is_configured() {
     assert_eq!(check.interval, Some(5_000_000_000));
     assert_eq!(service(&plan, "sealed").body.healthcheck, None);
 
-    let ctx = dry_run_context(&package);
-    let mut plan = render(&package, &ctx, &super::langs()).unwrap();
+    let ctx = dry_run_context(&package, None);
+    let mut plan = render(&package, &ctx).unwrap();
     m.rewrite_image_healthchecks(&ctx, &mut plan).await.unwrap();
     assert_eq!(service(&plan, "web").body.healthcheck, None);
 }
+
+/// 按假 Docker 分配的网段 172.30.0.0/24 留给核心的地址。
+const CORE_ADDRESS: &str = "172.30.0.254";
 
 #[tokio::test]
 async fn proxy_plugins_get_the_core_address_and_others_do_not() {
@@ -364,33 +323,29 @@ async fn proxy_plugins_get_the_core_address_and_others_do_not() {
     let dir = tempfile::tempdir().unwrap();
     // 核心直接跑在宿主上（开发时）：是网关地址。
     let m = manager_with(engine.clone(), &dir);
-    m.install(&compose, &[], super::langs()).await.unwrap();
-    let gateway = m.engine.network_gateway("wonton-app-test").await.unwrap();
+    m.install(&compose, &[]).await.unwrap();
     let env = docker.env(&container_name("app-test", "web"));
-    assert!(env.contains(&format!("TRUSTED={gateway}/32")), "{env:?}");
+    assert!(env.contains(&"TRUSTED=172.30.0.1/32".to_owned()), "{env:?}");
 
     // 核心在容器里：是留给它的地址。网络按新建法建好后才算得出。
-    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
+    let package = PluginPackage::parse(&compose).unwrap();
     let m = manager_in_container(engine, &dir);
     let network = "wonton-app-test";
     let var = m
         .core_address_var(&package.manifest, network)
         .await
         .unwrap();
-    assert_eq!(
-        var,
-        Some(m.engine.core_address(network).await.unwrap().to_string())
-    );
+    assert_eq!(var.as_deref(), Some(CORE_ADDRESS));
 
     // 不是代登录的插件不注入，引用了就报错。
-    let other = PluginPackage::parse(&app(""), &super::langs()).unwrap();
+    let other = PluginPackage::parse(&app("")).unwrap();
     assert_eq!(
         m.core_address_var(&other.manifest, network).await.unwrap(),
         None
     );
     let compose = package_with_env_ref();
-    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
-    let error = render(&package, &dry_run_context(&package), &super::langs()).unwrap_err();
+    let package = PluginPackage::parse(&compose).unwrap();
+    let error = render(&package, &dry_run_context(&package, None)).unwrap_err();
     assert!(error.to_string().contains("WONTON_CORE_ADDRESS"), "{error}");
 }
 
@@ -406,17 +361,16 @@ async fn the_core_attaches_at_its_reserved_address_and_reconnects_when_it_is_wro
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_in_container(engine.clone(), &dir);
-    m.install(
-        &app("network.egress"),
-        &["network.egress".parse().unwrap()],
-        super::langs(),
-    )
-    .await
-    .unwrap();
+    m.install(&app("network.egress"), &["network.egress".parse().unwrap()])
+        .await
+        .unwrap();
     let network = "wonton-app-test";
+    let body = docker.network(network).unwrap();
+    let config = &body["IPAM"]["Config"][0];
+    assert_eq!(config["Subnet"], "172.30.0.0/24");
+    assert_eq!(config["IPRange"], "172.30.0.0/25");
     let endpoint = docker.endpoint(network, "wonton-core").unwrap();
-    let address = m.engine.core_address(network).await.unwrap().to_string();
-    assert_eq!(endpoint["IPAMConfig"]["IPv4Address"], address);
+    assert_eq!(endpoint["IPAMConfig"]["IPv4Address"], CORE_ADDRESS);
     assert_eq!(endpoint["GwPriority"], -1);
 
     // 核心容器还接着，但地址不对（比如手工接过）：断开重接。
@@ -429,5 +383,5 @@ async fn the_core_attaches_at_its_reserved_address_and_reconnects_when_it_is_wro
     let m = manager_in_container(engine, &dir);
     m.restore().await.unwrap();
     let endpoint = docker.endpoint(network, "wonton-core").unwrap();
-    assert_eq!(endpoint["IPAMConfig"]["IPv4Address"], address);
+    assert_eq!(endpoint["IPAMConfig"]["IPv4Address"], CORE_ADDRESS);
 }

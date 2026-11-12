@@ -42,7 +42,7 @@ async fn an_oversized_result_reports_the_limit_and_the_bytes_read() {
         let plugin = plugin(content_type).await;
         let server = &plugin.server;
         let error = upstreams
-            .call(server, "big", NO_ARGUMENTS, None, std::future::pending())
+            .call(server, "big", NO_ARGUMENTS, std::future::pending())
             .await
             .expect_err("超过上限要报出来");
         let CallError::Uncertain { kind, message } = error else {
@@ -65,13 +65,7 @@ async fn a_result_that_declares_too_much_is_reported_before_reading() {
     let upstreams = Upstreams::with_limits(1 << 20, Duration::from_secs(5));
     let server = server_at(declared_plugin().await);
     let error = upstreams
-        .call(
-            &server,
-            "declared",
-            NO_ARGUMENTS,
-            None,
-            std::future::pending(),
-        )
+        .call(&server, "declared", NO_ARGUMENTS, std::future::pending())
         .await
         .expect_err("超过上限要报出来");
     let CallError::Uncertain { kind, message } = error else {
@@ -83,7 +77,7 @@ async fn a_result_that_declares_too_much_is_reported_before_reading() {
     assert!(!message.contains("读了"), "{message}");
 }
 
-/// 核心和 Bot 共用一个客户端：超限只算在超限的那个请求头上，另一个照常拿到结果。
+/// 核心和 Bot 共用连接：超限只算在超限的那个请求头上，另一个照常拿到结果，连接也不用重建。
 #[tokio::test(flavor = "multi_thread")]
 async fn an_oversized_response_is_charged_to_its_own_request_only() {
     for content_type in ["application/json", "text/event-stream"] {
@@ -92,7 +86,7 @@ async fn an_oversized_response_is_charged_to_its_own_request_only() {
         let server = &plugin.server;
         for round in 0..10 {
             let (slow, big) = tokio::join!(
-                upstreams.call(server, "slow", NO_ARGUMENTS, None, std::future::pending()),
+                upstreams.call(server, "slow", NO_ARGUMENTS, std::future::pending()),
                 upstreams.read_resource(server, "x://big", 1 << 20),
             );
             assert!(slow.is_ok(), "{content_type} 第 {round} 轮：{slow:?}");
@@ -102,7 +96,7 @@ async fn an_oversized_response_is_charged_to_its_own_request_only() {
             );
 
             let (big, slow) = tokio::join!(
-                upstreams.call(server, "big", NO_ARGUMENTS, None, std::future::pending()),
+                upstreams.call(server, "big", NO_ARGUMENTS, std::future::pending()),
                 upstreams.read_resource(server, "x://slow", 64),
             );
             assert!(big.is_err(), "{content_type} 第 {round} 轮");
@@ -122,7 +116,7 @@ async fn an_error_from_the_plugin_leaves_the_shared_connection_alone() {
     let plugin = plugin("application/json").await;
     let server = &plugin.server;
     let (slow, refused) = tokio::join!(
-        upstreams.call(server, "slow", NO_ARGUMENTS, None, std::future::pending()),
+        upstreams.call(server, "slow", NO_ARGUMENTS, std::future::pending()),
         upstreams.read_resource(server, "x://refused", 64),
     );
     assert!(slow.is_ok(), "{slow:?}");
@@ -139,7 +133,7 @@ async fn a_read_that_times_out_leaves_the_shared_connection_alone() {
     let plugin = plugin("application/json").await;
     let server = &plugin.server;
     let (slow, timed_out) = tokio::join!(
-        upstreams.call(server, "slow", NO_ARGUMENTS, None, std::future::pending()),
+        upstreams.call(server, "slow", NO_ARGUMENTS, std::future::pending()),
         upstreams.read_resource(server, "x://slow", 64),
     );
     assert!(slow.is_ok(), "{slow:?}");
@@ -187,7 +181,7 @@ async fn an_http_error_for_one_request_is_the_plugins_error_and_keeps_the_connec
         "x://garbled",
     ] {
         let (slow, failed) = tokio::join!(
-            upstreams.call(server, "slow", NO_ARGUMENTS, None, std::future::pending()),
+            upstreams.call(server, "slow", NO_ARGUMENTS, std::future::pending()),
             upstreams.read_resource(server, uri, 64),
         );
         assert!(slow.is_ok(), "{uri}: {slow:?}");
@@ -288,13 +282,7 @@ async fn a_long_call_keeps_the_session_while_lists_time_out() {
     let server = &plugin.server;
     let upstreams = connected(&plugin).await;
     plugin.stuck_lists.store(4, Ordering::SeqCst);
-    let call = upstreams.call(
-        server,
-        "progress",
-        NO_ARGUMENTS,
-        None,
-        std::future::pending(),
-    );
+    let call = upstreams.call(server, "progress", NO_ARGUMENTS, std::future::pending());
     let lists = async {
         tokio::task::yield_now().await;
         for _ in 0..4 {
@@ -334,7 +322,7 @@ async fn a_call_that_cannot_even_connect_is_not_sent_rather_than_uncertain() {
     upstreams.tools(&plugin.server).await.unwrap();
     let server = plugin.stop().await;
     let called =
-        within(upstreams.call(&server, "tool", NO_ARGUMENTS, None, std::future::pending())).await;
+        within(upstreams.call(&server, "tool", NO_ARGUMENTS, std::future::pending())).await;
     assert!(matches!(called, Err(CallError::NotSent(_))), "{called:?}");
 }
 
@@ -366,7 +354,7 @@ async fn replacing_a_session_ends_what_was_running_on_it() {
     // 这个调用比第三次列工具晚开始，解释不了它的超时。
     let (listed, called) = tokio::join!(upstreams.tools(server), async {
         tokio::time::sleep(Duration::from_millis(10)).await;
-        within(upstreams.call(server, "silent", NO_ARGUMENTS, None, std::future::pending())).await
+        within(upstreams.call(server, "silent", NO_ARGUMENTS, std::future::pending())).await
     });
     assert!(listed.is_err());
     let Err(CallError::Uncertain { kind, message }) = called else {
@@ -393,13 +381,7 @@ async fn a_silent_tool_times_out_as_uncertain_and_the_plugin_is_told() {
         let server = limited(&plugin, idle, total);
         let started = Instant::now();
         let called = upstreams
-            .call(
-                &server,
-                "silent",
-                NO_ARGUMENTS,
-                None,
-                std::future::pending(),
-            )
+            .call(&server, "silent", NO_ARGUMENTS, std::future::pending())
             .await;
         let waited = started.elapsed();
         assert!(waited >= idle && waited < total / 2, "{waited:?}");
@@ -424,25 +406,13 @@ async fn progress_keeps_a_call_alive_up_to_the_total_limit() {
     let plugin = plugin("application/json").await;
     // 进度每 50 毫秒一次，结果在 400 毫秒之后：比空闲期限长得多。
     let server = limited(&plugin, Duration::from_millis(200), Duration::from_secs(30));
-    let called = within(upstreams.call(
-        &server,
-        "progress",
-        NO_ARGUMENTS,
-        None,
-        std::future::pending(),
-    ))
-    .await;
+    let called =
+        within(upstreams.call(&server, "progress", NO_ARGUMENTS, std::future::pending())).await;
     assert!(called.is_ok(), "{called:?}");
 
     let server = limited(&plugin, Duration::from_secs(1), Duration::from_millis(300));
-    let called = within(upstreams.call(
-        &server,
-        "chatty",
-        NO_ARGUMENTS,
-        None,
-        std::future::pending(),
-    ))
-    .await;
+    let called =
+        within(upstreams.call(&server, "chatty", NO_ARGUMENTS, std::future::pending())).await;
     assert!(
         matches!(
             called,
@@ -464,7 +434,6 @@ async fn a_cancelled_call_tells_the_plugin() {
             &plugin.server,
             "silent",
             NO_ARGUMENTS,
-            None,
             tokio::time::sleep(Duration::from_millis(50)),
         )
         .await;
