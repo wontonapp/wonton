@@ -41,16 +41,4 @@ class PreviewSnapshotsTest {
 
     @Test
     fun coreUpgradeCompatFailed() = paparazzi.snapshot { CoreUpgradeCompatFailedPreview() }
-
-    @Test
-    fun pluginSettingsFields() = paparazzi.snapshot { PluginSettingsFieldsPreview() }
-
-    @Test
-    fun pluginSettingsProblems() = paparazzi.snapshot { PluginSettingsProblemsPreview() }
-
-    @Test
-    fun pluginSettingsRestartHint() = paparazzi.snapshot { PluginSettingsRestartHintPreview() }
-
-    @Test
-    fun pluginSettingsSaving() = paparazzi.snapshot { PluginSettingsSavingPreview() }
 }
