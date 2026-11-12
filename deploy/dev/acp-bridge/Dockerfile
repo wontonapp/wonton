@@ -37,15 +37,16 @@ FROM build-base AS deps
 WORKDIR /src
 COPY --from=planner /src/recipe.json recipe.json
 COPY vendor vendor
-RUN cargo chef cook --release --recipe-path recipe.json --target "$(cat /rust-target)"
+# cook 必须和下面的 build 用同一个 -p：cook 整个工作区时依赖按全工作区统一 feature，build -p 的 feature 集合不同，最后一层要重编 128 个外部 crate（4 核实测 297 s；加 -p 后只编 5 个工作区 crate，92–105 s）。
+RUN cargo chef cook --release -p wonton-acp-bridge --recipe-path recipe.json --target "$(cat /rust-target)"
 
 FROM deps AS build
 WORKDIR /src
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates crates
 COPY vendor vendor
-COPY . .
-RUN cargo build --release --locked --target "$(cat /rust-target)" -p wonton-acp-bridge \
+# 发布镜像不带符号表，镜像小约 30 MB。
+RUN CARGO_PROFILE_RELEASE_STRIP=symbols cargo build --release --locked --target "$(cat /rust-target)" -p wonton-acp-bridge \
     && cp "target/$(cat /rust-target)/release/wonton-acp-bridge" /usr/local/bin/wonton-acp-bridge
 
 FROM ${DEBIAN_IMAGE} AS bridge
