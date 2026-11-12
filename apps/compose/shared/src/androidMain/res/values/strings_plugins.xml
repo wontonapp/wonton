@@ -24,6 +24,7 @@
     <string name="port_mapping_reason_other">Port mapping ran into a problem.</string>
     <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
     <string name="port_mapping_no_notification_permission">Without the notification permission, you won\'t see the mapping notification. Mapping still works.</string>
+    <string name="port_mapping_warning_public_relay_bandwidth">Connected only through the public relay — not enough bandwidth for streaming.</string>
     <!-- Radio option for typing a mirror address that isn't in the list. -->
     <string name="registry_mirror_custom">Custom</string>
     <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->

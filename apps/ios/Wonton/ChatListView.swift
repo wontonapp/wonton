@@ -435,6 +435,7 @@ private extension MessageSummary {
         case .image: String(localized: .Message0.messageSummaryImage)
         case .undecryptable: String(localized: .Message0.messageSummaryUndecryptable)
         case .redacted: String(localized: .Message0.messageSummaryRedacted)
+        case let .sideChat(title, _): title
         case let .other(kind): String(localized: .Chat0.chatSummaryOther(kind))
         }
     }

@@ -24,6 +24,7 @@
     <string name="port_mapping_reason_other">マッピングで問題が発生しました。</string>
     <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
     <string name="port_mapping_no_notification_permission">通知権限がないため、マッピング中でも通知バーに表示されません。マッピングはそのまま使えます。</string>
+    <string name="port_mapping_warning_public_relay_bandwidth">公共リレー経由でしか接続できておらず、映像を送る帯域が足りません。</string>
     <!-- Radio option for typing a mirror address that isn't in the list. -->
     <string name="registry_mirror_custom">カスタム</string>
     <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->

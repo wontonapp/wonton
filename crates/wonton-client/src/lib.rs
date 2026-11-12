@@ -63,10 +63,10 @@ pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
 pub use sharing::discover_share_source;
 pub use subscription::{
-    AppearanceSubscription, BotContactsSubscription, ChatSubscription, FriendsSubscription,
-    HomeSubscription, OnboardingSubscription, PeersSubscription, PluginsSubscription,
-    ServersSubscription, SessionListSubscription, SettingsSubscription, TabsSubscription,
-    TransfersSubscription,
+    AppearanceSubscription, BotContactsSubscription, ChatSubscription, ComposerSubscription,
+    FriendsSubscription, HomeSubscription, OnboardingSubscription, PeersSubscription,
+    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
+    TabsSubscription, TransfersSubscription,
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
@@ -142,5 +142,5 @@ pub use wonton_protocol::{
     ContactRequestPush, ContactState, PendingContactRequest, RemoteContact,
 };
 pub use wonton_protocol::{
-    MappedPort, PluginPortMapping, PortMappingState, PortProtocol, UdpFlowStats,
+    MappedPort, PluginPortMapping, PortMappingState, PortMappingWarning, PortProtocol, UdpFlowStats,
 };

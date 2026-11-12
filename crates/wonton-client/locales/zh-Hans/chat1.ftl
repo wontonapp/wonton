@@ -43,7 +43,6 @@ chat-ask-invalid-bot-id = 默认 Agent 的 ID 格式不对。
 # 已有私聊的房间 ID 解析不了时显示。
 chat-ask-invalid-room-id = 私聊的房间 ID 不合法。
 
-# 壳把不认识的操作分给聊天时显示。
 chat-invalid-action = 不是聊天操作
 
 # 壳给了这个核心不认识的回答时显示。

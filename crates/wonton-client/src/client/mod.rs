@@ -13,7 +13,7 @@ use wonton_protocol::{
     FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
     OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail, PluginImage,
     PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
-    SettingsViewModel, StoreItem, TabRef, TabsViewModel, TransfersViewModel,
+    SettingsViewModel, StoreItem, TabRef, TabsViewModel, TimelineTarget, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -34,6 +34,7 @@ use switch::Replay;
 
 mod bot_contacts;
 mod browser;
+mod composer;
 mod dispatch;
 mod limits;
 mod media;
@@ -259,12 +260,14 @@ impl ClientCore {
         self.scope().chat.resolve_user_id(&input)
     }
 
-    /// 订阅一个已加入房间的时间线：第一批是全部条目，之后是按顺序应用的增量。同一时间只打开一个房间，
-    /// 打开另一个房间后前一个的订阅不再更新。还没登录、房间还没同步到本机时返回 `NotReady`。
+    /// 订阅一条时间线（主时间线或旁聊，ADR-0093 §5）：第一批是全部条目，之后是按顺序应用的增量。
+    /// 同一时间只打开一个房间，打开另一个房间后前一个的订阅不再更新。还没登录、房间还没同步到本机时
+    /// 返回 `NotReady`；旁聊时间线还没实现，`thread_root` 不为空时返回 `NotReady`。
     pub async fn subscribe_timeline(
         &self,
-        room_id: String,
+        target: TimelineTarget,
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
+        let room_id = self.chat_timeline_target(&target)?;
         let scope = self.scope();
         let chat = scope.chat.clone();
         let room_view = scope.tabs.subscribe_room_view();
@@ -273,11 +276,40 @@ impl ClientCore {
             .await
     }
 
-    /// 房间输入框里的草稿（正文和正在回复的消息），没打过字也没在回复时是 `None`。换房间、重启核心都还在，主人回来接着写。
-    pub async fn draft(&self, room_id: String) -> Result<Option<ComposerDraft>, CoreError> {
+    /// 一条时间线（主时间线或旁聊）输入框里的草稿（正文和正在回复的消息），没打过字也没在回复时是
+    /// `None`。换房间、重启核心都还在，主人回来接着写。旁聊时间线还没实现，`thread_root` 不为空时
+    /// 返回 `NotReady`（ADR-0093 §5）。
+    pub async fn draft(&self, target: TimelineTarget) -> Result<Option<ComposerDraft>, CoreError> {
+        let room_id = self.chat_timeline_target(&target)?;
         let scope = self.scope();
         let chat = scope.chat.clone();
         scope.run(async move { chat.draft(&room_id).await }).await
+    }
+
+    /// 开旁聊（ADR-0093 §4）：发根消息（带 `app.wonton.side_chat` 的 `m.notice`），等服务器回事件 ID，
+    /// 把第一句话放进这个话题的发送队列，返回根的事件 ID。根没发出去时返回错误，不留下空旁聊。
+    /// 旁聊还没实现（接口先合并），现在返回 `NotReady`。
+    pub async fn start_side_chat(
+        &self,
+        room_id: String,
+        body: String,
+    ) -> Result<String, CoreError> {
+        let _ = (room_id, body);
+        Err(self.chat_side_chat_not_ready())
+    }
+
+    /// 拆 [`TimelineTarget`]：主时间线回房间 ID；带话题根的旁聊时间线还没实现，报“还不能用”。
+    fn chat_timeline_target(&self, target: &TimelineTarget) -> Result<String, CoreError> {
+        if target.thread_root.is_some() {
+            return Err(self.chat_side_chat_not_ready());
+        }
+        Ok(target.room_id.clone())
+    }
+
+    fn chat_side_chat_not_ready(&self) -> CoreError {
+        CoreError::NotReady {
+            reason: l10n!(CATALOG, language(), "side-chat-not-ready"),
+        }
     }
 
     /// 取图片等媒体的原文件（时间线里给出的句柄）。核心负责下载、解密和缓存。

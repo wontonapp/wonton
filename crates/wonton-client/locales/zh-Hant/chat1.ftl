@@ -43,7 +43,6 @@ chat-ask-invalid-bot-id = 預設 Agent 的 ID 格式不對。
 # 已有私訊的聊天室 ID 剖析失敗時顯示。
 chat-ask-invalid-room-id = 私訊的聊天室 ID 無效。
 
-# 殼把不認得的操作交給聊天時顯示。
 chat-invalid-action = 不是聊天操作
 
 # 殼送出這個核心不認得的回答時顯示。

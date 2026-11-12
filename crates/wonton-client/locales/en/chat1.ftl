@@ -47,7 +47,6 @@ chat-ask-invalid-bot-id = The default agent's ID isn't formatted correctly.
 # Shown when a saved direct chat's room ID doesn't parse.
 chat-ask-invalid-room-id = The direct chat's room ID isn't valid.
 
-# Shown when the shell routes a chat action this core doesn't know.
 chat-invalid-action = Not a chat action.
 
 # Shown when the shell sends an answer this core doesn't know.
