@@ -94,6 +94,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           platforms: linux/amd64
           file: deploy/dev/core/Dockerfile
+          target: ${{ matrix.target }}
           version: ${{ inputs.tag || 'main' }}
           extra-build-args: |-
             WONTON_BUILD_COMMIT=${{ github.sha }}
