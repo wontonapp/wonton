@@ -36,7 +36,16 @@ struct ChatRoomView: View {
         RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
                       blocked: entryBlocked, pullAnchor: roomPull) {
             roomContent
+                .overlay(alignment: .topLeading) { scrollDebug }
         }
+    }
+
+    /// 走查用：看不见的一行，连着 `BottomPin` 的贴底状态，UI 测试按标识读它。
+    private var scrollDebug: some View {
+        Text(verbatim: pin.snapshot)
+            .accessibilityIdentifier("roomScroll")
+            .allowsHitTesting(false)
+            .opacity(0.02)
     }
 
     /// 撤回别人的消息时标题写明是谁的。

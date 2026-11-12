@@ -91,6 +91,12 @@ final class BottomPin {
         }
     }
 
+    /// 走查用：贴底状态和滚动的实际位置。界面上看不见，放进无障碍树给 UI 测试读。
+    var snapshot: String {
+        let view = scrollView
+        return "pin=\(isPinned) y=\(view?.contentOffset.y ?? -1) bottom=\(view?.bottomOffset ?? -1)"
+    }
+
     /// List 排完新行会自己再挪一次 contentOffset，保住原先看到的那一行；键盘弹着、新行比可见区高时新消息就停在可见区下面，
     /// 内容高度也不再变，等不到下一次 stick（iOS 26.5 模拟器实测，在 stick 之后固定等两轮再拉也赶不上它）。所以贴底时
     /// 不是主人手势带来的位移一律拉回底部；放到下一轮，不在 KVO 回调里改正在观察的属性。

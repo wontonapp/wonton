@@ -114,7 +114,7 @@ final class ChatPanelUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
         shot("29-after-send")
         let sent = frames(list: app.collectionViews.firstMatch, field: field)
-        attach("after-send \(sent)")
+        attach("after-send \(sent) \(scrollState())")
 
         field.typeText(String(repeating: "draft ", count: 40))
         Thread.sleep(forTimeInterval: 2)
@@ -123,7 +123,7 @@ final class ChatPanelUITests: XCTestCase {
         let list = app.collectionViews.firstMatch
         XCTAssertTrue(list.exists, "房间里没有消息列表")
         let now = frames(list: list, field: field)
-        attach("after-draft \(now)")
+        attach("after-draft \(now) \(scrollState())")
         XCTAssertTrue(now.stuckToBottom, "发完以后列表没贴底：\(now)")
         XCTAssertLessThanOrEqual(list.frame.maxY, field.frame.minY + 1, "列表的底边被输入框盖住：\(now)")
     }
@@ -254,6 +254,11 @@ final class ChatPanelUITests: XCTestCase {
         // 列表的第一个子元素是整片内容（含屏幕外的部分）。
         Layout(contentBottom: list.children(matching: .other).firstMatch.frame.maxY,
                listBottom: list.frame.maxY, fieldTop: field.frame.minY, back: bottomButton(timeout: 0) != nil)
+    }
+
+    /// App 里 `BottomPin` 的自述：贴底没贴底、真实位置和底部差多少。
+    private func scrollState() -> String {
+        app.staticTexts["roomScroll"].label
     }
 
     private func attach(_ text: String) {
