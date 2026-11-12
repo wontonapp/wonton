@@ -320,7 +320,17 @@ async fn losing_the_network_while_the_request_is_out_waits_at_once() {
         })
         .unwrap();
 
-    // 请求还挂着，连接断了：不等请求报错就说在等连接。
+    // 请求还挂着，连接断了：不等请求报错就说在等连接。请求是派发后在后台发的，先等它到了服务端再断：
+    // 没发出去就断开时，连不上的闸门让它立刻失败，结果是确定的，不是这里要测的情形。
+    let deadline = Instant::now() + WAIT;
+    while rig
+        .core
+        .seen(&Method::POST, "/_wonton/api/plugins")
+        .is_empty()
+    {
+        assert!(Instant::now() < deadline, "安装请求一直没到服务端");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     rig.drop_home().await;
     let view = rig
         .wait_for(|view| {
