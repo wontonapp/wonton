@@ -7,10 +7,11 @@ on:
   push:
     branches: [main]
 
-# :main 只要最新的，新提交推上来就取消还在跑的旧构建。
+# 在跑的构建跑完再起下一次：合并比构建快时，取消在跑的会让 :main 一直推不出来。排着的只留最新一次（GitHub
+# 并发组的行为），所以 :main 最多落后一次构建。
 concurrency:
   group: main-image-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
