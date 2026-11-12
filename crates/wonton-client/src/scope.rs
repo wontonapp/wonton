@@ -348,6 +348,7 @@ impl Scope {
             device_key,
             home.subscribe(),
             plugins.subscribe(),
+            links.chat.subscribe(),
         );
         let bot_contacts = BotContactsLink::new(
             handle.clone(),

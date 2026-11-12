@@ -141,7 +141,15 @@ pub(super) fn build_page(
     let TabRef::Bot { bot, path } = &stored.tab else {
         unreachable!("Bot tab required")
     };
-    let url = ready_page(state, bot).and_then(|page| resolved_url(page, path.as_deref()));
+    let ready = ready_page(state, bot);
+    let url = ready.and_then(|page| resolved_url(page, path.as_deref()));
+    let browser = ready.is_some_and(|page| {
+        url.is_some()
+            && crate::browser::opens_in_browser_bot(
+                page.cross_origin_isolated,
+                crate::browser::ENGINE,
+            )
+    });
     let view = state.bots.iter().find(|view| view.bot == *bot);
     let state_value = if !state.connected {
         TabState::Loading
@@ -176,7 +184,7 @@ pub(super) fn build_page(
         layout: metadata.layout,
         state: state_value,
         reload: state.reloads.get(placed).copied().unwrap_or_default(),
-        opens_in_browser: false,
+        opens_in_browser: browser,
     }
 }
 

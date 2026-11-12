@@ -67,7 +67,7 @@ internal fun PluginTabStatus(
             Text(failure.titleText, style = WontonTheme.typography.itemTitle,
                 color = WontonTheme.colors.textPrimary.toColor())
             failure.detail?.let { ProblemDetail(it, stringResource(R.string.common_details)) }
-            TabStatusActions(state, tab, tabs, crossOriginBlocked, onDetails, place)
+            TabStatusActions(state, tab, tabs, onDetails, place)
         }
     }
 }

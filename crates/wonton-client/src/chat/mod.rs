@@ -90,7 +90,7 @@ use crate::scope::reuse;
 use confirmation::Answers;
 use draft::DraftWrite;
 use layout::Layouts;
-use storage::ChatStorage;
+
 pub(crate) use storage::{ChatStorage, StoredSession};
 pub(crate) use target::TimelineKey;
 use util::{invalid, lock};

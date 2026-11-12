@@ -46,6 +46,7 @@ fn empty_chat() -> ChatViewModel {
             can_reset: false,
             recovery_next_step: wonton_protocol::RecoveryNextStep::None,
             verification_flow: None,
+            key_handoff: None,
         },
         push: wonton_protocol::PushStatus::NoEndpoint,
         chat_layout_default: Default::default(),
