@@ -28,19 +28,40 @@ use crate::room::Room;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     MainText(String),
-    ThreadText { root: String, text: String },
+    ThreadText {
+        root: String,
+        text: String,
+    },
     Notice(String),
-    ThreadMention { root: String, text: String },
-    ThreadNotice { root: String, text: String },
+    ThreadMention {
+        root: String,
+        text: String,
+    },
+    ThreadNotice {
+        root: String,
+        text: String,
+    },
     Typing(bool),
     Redact(String),
     State(String),
+    /// 一条 Agent 进度状态消息（ADR-0082），内容原样。
+    RunStatus {
+        event_id: String,
+        thread: Option<String>,
+        content: Value,
+    },
+    /// 对状态消息的编辑（`m.replace`），内容原样。
+    ReplaceRunStatus {
+        event_id: String,
+        content: Value,
+    },
 }
 
 #[derive(Default)]
 struct Recorded {
     effects: Vec<Effect>,
     roots: u64,
+    statuses: u64,
     updates: Option<mpsc::UnboundedSender<Vec<Message>>>,
 }
 
@@ -62,6 +83,7 @@ impl FakeRoom {
         let recorded = Arc::new(Mutex::new(Recorded {
             effects: Vec::new(),
             roots: 0,
+            statuses: 0,
             updates: Some(updates),
         }));
         Self {
@@ -95,7 +117,11 @@ impl FakeRoom {
                 Effect::ThreadText { text, .. }
                 | Effect::ThreadMention { text, .. }
                 | Effect::ThreadNotice { text, .. } => Some(text),
-                Effect::Typing(_) | Effect::Redact(_) | Effect::State(_) => None,
+                Effect::Typing(_)
+                | Effect::Redact(_)
+                | Effect::State(_)
+                | Effect::RunStatus { .. }
+                | Effect::ReplaceRunStatus { .. } => None,
             })
             .collect()
     }
@@ -115,6 +141,35 @@ impl FakeRoom {
     pub fn roots(&self) -> Vec<String> {
         let count = self.recorded.lock().unwrap().roots;
         (1..=count).map(|index| format!("$root{index}")).collect()
+    }
+
+    /// 发出的状态消息（事件 ID、话题根、完整内容），按发送顺序。
+    pub fn run_statuses(&self) -> Vec<(String, Option<String>, Value)> {
+        self.effects()
+            .into_iter()
+            .filter_map(|effect| match effect {
+                Effect::RunStatus {
+                    event_id,
+                    thread,
+                    content,
+                } => Some((event_id, thread, content)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 对某条状态消息的全部编辑内容（`m.replace`），按顺序。
+    pub fn run_edits(&self, event_id: &str) -> Vec<Value> {
+        self.effects()
+            .into_iter()
+            .filter_map(|effect| match effect {
+                Effect::ReplaceRunStatus {
+                    event_id: target,
+                    content,
+                } if target == event_id => Some(content),
+                _ => None,
+            })
+            .collect()
     }
 
     pub fn thread_texts(&self, root: &str) -> Vec<String> {
@@ -197,6 +252,33 @@ impl Room for FakeRoom {
     async fn send_notice(&self, body: &str) -> Result<()> {
         let mut state = self.recorded.lock().unwrap();
         text(&mut state, "notice", body);
+        Ok(())
+    }
+
+    async fn send_run_status(&self, content: Value) -> Result<String> {
+        let mut state = self.recorded.lock().unwrap();
+        state.statuses += 1;
+        let event_id = format!("$status{}", state.statuses);
+        let thread = content["m.relates_to"]["event_id"]
+            .as_str()
+            .map(str::to_owned);
+        state.effects.push(Effect::RunStatus {
+            event_id: event_id.clone(),
+            thread,
+            content,
+        });
+        Ok(event_id)
+    }
+
+    async fn replace_run_status(&self, content: Value) -> Result<()> {
+        let mut state = self.recorded.lock().unwrap();
+        let event_id = content["m.relates_to"]["event_id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        state
+            .effects
+            .push(Effect::ReplaceRunStatus { event_id, content });
         Ok(())
     }
 
@@ -372,6 +454,7 @@ pub fn owner_message_at(
         body: MessageBody::Text(text.into()),
         custom: Default::default(),
         mentions: Vec::new(),
+        agent_run: None,
         thread_root: thread_root.map(|root| root.parse().unwrap()),
         edited: false,
         read_by: Vec::new(),

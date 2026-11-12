@@ -28,6 +28,7 @@ pub(super) struct Tracker {
     catching_up: bool,
     retry_started: Option<Instant>,
     retry_running: bool,
+    /// 这一轮开始建连的时刻，“连接中”最多从这里算 30 秒。
     connecting_since: Option<Instant>,
     trigger: Option<&'static str>,
     /// 客户端报来的失败次数上一次看到的值：只认增加，回落说明连上了，旧失败不属于这一轮。
@@ -95,11 +96,12 @@ impl Tracker {
                     self.down_notice = false;
                 }
                 self.outage_since.get_or_insert(now);
+                // 断开收掉恢复提示：新一轮断开不开“已恢复”的窗口。
                 self.recovered_until = None;
+                // 断开不重开诊断窗口，只有建连失败（上面的计数）才重开。建连成功、服务器却不回应时，探活超时断开、
+                // 马上重拨，每轮不到 30 秒，建连失败次数一直是 0：在这里清零的话“连接中”会一直转，永远给不出原因。
                 if matches!(status, HomeStatus::Connecting) {
                     self.connecting_since.get_or_insert(now);
-                } else {
-                    self.connecting_since = None;
                 }
                 None
             }
@@ -629,6 +631,47 @@ mod tests {
             );
             tracker.observe(&HomeStatus::Connected, relay, 0, boundary);
             assert_eq!(tracker.notice(&HomeStatus::Connected, boundary), None);
+        }
+    }
+
+    #[test]
+    fn a_server_that_connects_but_never_answers_is_named_after_the_diagnostic_window() {
+        // 建连每次都成功（失败次数一直是 0），探活 8 秒没有回应就断开、马上重拨：一轮约 9 秒。
+        let start = Instant::now();
+        for (relay, named) in [
+            (
+                ConnectionCheck::Ok,
+                ConnectionNotice::ServerOffline { retrying: false },
+            ),
+            (
+                ConnectionCheck::Failing,
+                ConnectionNotice::Unreachable { retrying: false },
+            ),
+        ] {
+            let mut tracker = Tracker::default();
+            let mut at = |status: &HomeStatus, millis: u64| {
+                let now = start + Duration::from_millis(millis);
+                tracker.observe(status, relay, 0, now);
+                tracker.notice(status, now)
+            };
+            at(&HomeStatus::Connecting, 0);
+            let mut seen = Vec::new();
+            for round in 0..8 {
+                let dialed = round * 9_000;
+                seen.push((dialed + 3_000, at(&HomeStatus::Connecting, dialed + 3_000)));
+                seen.push((dialed + 8_000, at(&DOWN, dialed + 8_000)));
+            }
+            for (millis, notice) in seen {
+                let expected = if millis < 30_000 {
+                    ConnectionNotice::Connecting
+                } else {
+                    named
+                };
+                assert_eq!(notice, Some(expected), "{millis} ms");
+            }
+
+            // 服务器终于回应了：恢复如常。
+            assert_eq!(at(&HomeStatus::Connected, 80_000), None);
         }
     }
 

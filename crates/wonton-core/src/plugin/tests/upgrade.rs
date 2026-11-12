@@ -410,6 +410,7 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
         Vec::new(),
         Vec::new(),
         false,
+        &Default::default(),
         &super::langs(),
     )
     .await
@@ -429,6 +430,7 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
             Vec::new(),
             Vec::new(),
             false,
+            &Default::default(),
             &super::langs(),
         )
         .await
@@ -468,6 +470,7 @@ pub(super) async fn upgrade_expect_rollback(
             permissions(&broken),
             Vec::new(),
             false,
+            &Default::default(),
             &super::langs(),
         )
         .await
@@ -627,7 +630,15 @@ async fn nothing_is_upgraded_while_the_core_itself_is_upgrading() {
     let v2 =
         PluginPackage::parse(&hello("1.1.0", "", "  permissions: []\n"), &super::langs()).unwrap();
     let err = m
-        .upgrade_upload(&id(), v2, Vec::new(), Vec::new(), false, &super::langs())
+        .upgrade_upload(
+            &id(),
+            v2,
+            Vec::new(),
+            Vec::new(),
+            false,
+            &Default::default(),
+            &super::langs(),
+        )
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "core_upgrading", "{err}");

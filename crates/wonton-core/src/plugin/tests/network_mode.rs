@@ -391,7 +391,7 @@ async fn network_mode_upgrade_recreates_the_target_and_every_sidecar() {
     .unwrap();
     let before = docker.writes().len();
     manager
-        .upgrade_checked(next, &[], &[], false)
+        .upgrade_checked(next, &[], &[], false, Default::default())
         .await
         .unwrap();
     let writes = docker.writes()[before..].to_vec();
