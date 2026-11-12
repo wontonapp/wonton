@@ -40,6 +40,9 @@ pub(super) struct Tracker {
     down_notice: bool,
     /// 这次恢复的提示显示到什么时候。断开、换服务器都把它清掉。
     recovered_until: Option<Instant>,
+    /// 上次连上之后最近一次断开的原因。断开后自动重试会回到“连接中”，这期间连接仍是已知不通的，
+    /// 核心自己经隧道的请求照旧立刻失败，不能因为状态在断开和连接中之间来回跳就时拦时不拦。
+    known_failure: Option<HomeFailure>,
 }
 
 /// 一次断开恢复了。
@@ -73,10 +76,12 @@ impl Tracker {
                 self.connecting_since = None;
                 self.down_notice = false;
                 self.recovered_until = None;
+                self.known_failure = None;
                 None
             }
             HomeStatus::Connected => {
                 self.connecting_since = None;
+                self.known_failure = None;
                 self.retry_started = None;
                 self.retry_running = false;
                 let trigger = self.trigger.take().unwrap_or("timer");
@@ -98,6 +103,9 @@ impl Tracker {
                 self.outage_since.get_or_insert(now);
                 // 断开收掉恢复提示：新一轮断开不开“已恢复”的窗口。
                 self.recovered_until = None;
+                if let HomeStatus::Disconnected { reason, .. } = status {
+                    self.known_failure = Some(*reason);
+                }
                 // 断开不重开诊断窗口，只有建连失败（上面的计数）才重开。建连成功、服务器却不回应时，探活超时断开、
                 // 马上重拨，每轮不到 30 秒，建连失败次数一直是 0：在这里清零的话“连接中”会一直转，永远给不出原因。
                 if matches!(status, HomeStatus::Connecting) {
@@ -145,6 +153,7 @@ impl Tracker {
         }
         if returned {
             self.round_failed = false;
+            self.known_failure = None;
         }
         self.network = Some(network);
         self.trigger = Some("network change");
@@ -166,7 +175,13 @@ impl Tracker {
             self.outage_since = Some(now);
             self.connecting_since = None;
             self.round_failed = false;
+            self.known_failure = None;
         }
+    }
+
+    /// 上次连上之后最近一次断开的原因；连上、换服务器、回前台或网络恢复后清空（新一轮先给建连机会）。
+    pub(super) fn known_failure(&self) -> Option<HomeFailure> {
+        self.known_failure
     }
 
     pub(super) fn retry_started(&mut self, now: Instant) {
@@ -690,6 +705,26 @@ mod tests {
             after(&mut tracker, start, 3, 0),
             Some(ConnectionNotice::Connecting)
         );
+    }
+
+    /// 断开后自动重试回到“连接中”，连接仍算已知不通；连上、回前台后不再算。
+    #[test]
+    fn a_failure_is_remembered_while_retrying_until_connected() {
+        let start = Instant::now();
+        let mut tracker = Tracker::default();
+        tracker.observe(&HomeStatus::Connecting, ConnectionCheck::Ok, 0, start);
+        assert_eq!(tracker.known_failure(), None, "第一次建连还没失败过");
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
+        tracker.observe(&HomeStatus::Connecting, ConnectionCheck::Ok, 1, start);
+        assert_eq!(
+            tracker.known_failure(),
+            Some(HomeFailure::TransportUnavailable)
+        );
+        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, start);
+        assert_eq!(tracker.known_failure(), None);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
+        tracker.foregrounded(start);
+        assert_eq!(tracker.known_failure(), None, "回前台先给新一轮建连机会");
     }
 
     #[test]

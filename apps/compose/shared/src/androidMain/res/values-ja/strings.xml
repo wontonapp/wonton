@@ -1817,6 +1817,12 @@
     <string name="panel_public_unsupported">この端末の WebView は公開ウェブページとプラグインのページの保存領域を分けられないため、ここでは開けません</string>
     <string name="panel_remove">削除</string>
     <string name="panel_url">URL を入力</string>
+    <string name="message_image_permission_denied">Android がアクセスを拒否しました。設定でこのアプリの権限を確認して、もう一度お試しください。</string>
+    <string name="composer_file_unreadable">このファイルを読み込めませんでした。もう一度コピーするか、別のファイルを選んでください。</string>
+    <string name="message_link_browser">ブラウザで開く</string>
+    <string name="message_link_open_failed">このリンクを開けませんでした</string>
+    <string name="message_link_share_failed">このリンクを共有できませんでした</string>
+    <string name="message_link_no_handler">この種類のリンクを開けるアプリをインストールして、もう一度お試しください。</string>
     <string name="contacts_title">連絡先</string>
     <string name="contacts_add">連絡先を追加</string>
     <string name="contacts_add_kind_bot">ボット</string>

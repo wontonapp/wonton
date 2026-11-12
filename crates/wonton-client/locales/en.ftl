@@ -172,7 +172,14 @@ chat-contacts-invalid-user-id = That user ID isn't valid: { $reason }
 
 # Shown when sending a message through Siri, Shortcuts or the chat screen with empty text.
 chat-empty-message = Type a message first.
-composer-not-ready = This version of the client core doesn't support the attachment tray yet.
+composer-tray-full = The attachment tray holds at most { $max } attachments.
+composer-has-failed = An attachment didn't upload. Retry or remove it first.
+composer-attachment-not-found = This attachment wasn't found. It may have been removed or already sent.
+composer-outgoing-not-found = This pending message wasn't found. It may have already been handed over for sending.
+composer-store-failed = Couldn't save the attachment tray on this device ({ $path }): { $reason }
+composer-attachment-failed = The attachment "{ $name }" didn't upload.
+composer-transfer-gone = The upload record for this file is missing. Please retry.
+composer-upload-record-unreadable = Couldn't read the photo's upload record: { $reason }
 # Shown when the bot ID handed in from Siri or Shortcuts doesn't parse.
 chat-ask-invalid-bot-id = The default agent's ID isn't formatted correctly.
 # Shown when a saved direct chat's room ID doesn't parse.
@@ -199,6 +206,7 @@ chat-not-signed-in = You're not signed in to Matrix yet.
 chat-send-no-response = The Matrix server stopped responding
 # $error is the room ID parser's original error.
 chat-invalid-room-id = The room ID isn't valid: { $error }
+chat-link-room-not-joined = You haven't joined this room. Accept its invitation in Chats first.
 # Shown when sending into a room that only carries notifications.
 chat-read-only-room = This room only carries notifications, so you can't send messages here.
 # $room is the unchanged room ID.

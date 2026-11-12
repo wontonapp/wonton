@@ -488,6 +488,10 @@ impl PluginsLink {
     }
 
     pub(crate) fn api(&self) -> Result<CoreApi, PluginProblem> {
+        // 已知隧道不通就立刻失败，不等超时。
+        if self.home.tunnel_outage().is_some() {
+            return Err(api::not_connected());
+        }
         let proxy = self.home.view().proxy.ok_or_else(api::not_connected)?;
         let base = self.home.core_url().ok_or_else(api::not_connected)?;
         let client = {

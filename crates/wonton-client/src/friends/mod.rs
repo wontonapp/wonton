@@ -146,6 +146,10 @@ impl FriendsLink {
     }
 
     async fn assemble(&self) -> Result<FriendsViewModel, Failure> {
+        // 已知隧道不通就立刻失败，不等 Matrix 扫描（它经代理且默认无限重试）和 30 秒超时。
+        if let Some(reason) = self.home.tunnel_outage() {
+            return Err(Failure::transport(reason));
+        }
         let session = self
             .chat
             .current()
@@ -532,6 +536,10 @@ impl FriendsLink {
     }
 
     fn api(&self) -> Result<api::Api, Failure> {
+        // 已知隧道不通就立刻失败，不等 30 秒超时。
+        if let Some(reason) = self.home.tunnel_outage() {
+            return Err(Failure::transport(reason));
+        }
         let proxy = self
             .home
             .view()

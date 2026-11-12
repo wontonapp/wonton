@@ -14,7 +14,7 @@ final class PasteUITests: XCTestCase {
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
-        continueAfterFailure = true
+        continueAfterFailure = false
     }
 
     func testPasteImageSends() throws {
@@ -39,7 +39,7 @@ final class PasteUITests: XCTestCase {
         paste?.tap()
 
         // 预览面板：发出去之前看得到，也能取消。
-        let send = waitAnyButton(["Send", "发送"], timeout: 15)
+        let send = waitAnyButton(["Send", "发送"], timeout: 10)
         XCTAssertNotNil(send, "粘贴后没有出预览面板")
         XCTAssertNotNil(waitAnyButton(["Cancel", "取消"], timeout: 3), "预览面板没有取消")
         shot("10-preview")
@@ -47,7 +47,7 @@ final class PasteUITests: XCTestCase {
         // 本地回显在时间线末尾，App 发送后自动滚到最新消息。图片气泡的读屏类型不确定，
         // 用复合证据：大图元素，或自己这条消息的「已读」回执。
         send?.tap()
-        waitSendingDone(deadline: Date().addingTimeInterval(120))
+        waitSendingDone(deadline: Date().addingTimeInterval(90))
         XCTAssertTrue(hasLargeImage() || hasReadReceipt(), "时间线里没有出现图片消息")
         shot("11-sent")
     }
@@ -58,7 +58,7 @@ final class PasteUITests: XCTestCase {
         openRoom()
         // 发送方先跑：这里等它的图片消息同步过来。第二台设备有没有消息的密钥看核心的恢复设置：
         // 没配恢复时事件照样同步，只是显示“无法解密”的占位——两种都算消息到了，截图看实际显示。
-        let deadline = Date().addingTimeInterval(180)
+        let deadline = Date().addingTimeInterval(90)
         while Date() < deadline && !hasLargeImage() && !hasUndecryptable() {
             _ = app.wait(for: .runningForeground, timeout: 1)
         }
@@ -74,11 +74,11 @@ final class PasteUITests: XCTestCase {
         app = XCUIApplication()
         try UITestBackend.passPairingCode(to: app)
         app.launch()
-        let start = waitAnyButton(["Apps", "应用"], timeout: 25)
-            ?? waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 60)
+        let start = waitAnyButton(["Apps", "应用"], timeout: 10)
+            ?? waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 10)
         XCTAssertNotNil(start, "既没到标签栏也没到引导页")
         passOnboarding()
-        XCTAssertTrue(waitForTabs(timeout: 240), "没回到主界面")
+        XCTAssertTrue(waitForTabs(timeout: 90), "没回到主界面")
     }
 
     /// 进聊天页开 Bot 的私聊：先看聊天列表；列表还没有这个房间就从应用页点图标进（点图标直接开聊）。
@@ -210,8 +210,8 @@ final class PasteUITests: XCTestCase {
     }
 
     @discardableResult
-    private func waitFor(_ queries: [XCUIElementQuery], _ label: String, timeout: TimeInterval = 20) -> XCUIElement? {
-        let deadline = Date().addingTimeInterval(timeout)
+    private func waitFor(_ queries: [XCUIElementQuery], _ label: String, timeout: TimeInterval = 10) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(min(timeout, 10))
         while Date() < deadline {
             for query in queries {
                 let element = query[label].firstMatch
@@ -313,7 +313,7 @@ final class PasteUITests: XCTestCase {
         return false
     }
 
-    private func passOnboarding(seconds: TimeInterval = 420) {
+    private func passOnboarding(seconds: TimeInterval = 90) {
         // 底栏在引导门外一直存在，不能只看标签栏；要"引导按钮消失且标签栏稳定"才算走完。
         // 没见过引导页的多确认几轮，躲开引导出现前的加载期。
         let deadline = Date().addingTimeInterval(seconds)

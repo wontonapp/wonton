@@ -1817,6 +1817,12 @@
     <string name="panel_public_unsupported">這台裝置的 WebView 分不開公開網頁和插件頁面的儲存，開不了公開網頁</string>
     <string name="panel_remove">移除</string>
     <string name="panel_url">填寫網址</string>
+    <string name="message_image_permission_denied">Android 拒絕存取。請在設定中檢查此應用程式的權限，再試一次。</string>
+    <string name="composer_file_unreadable">無法讀取這個檔案。請重新複製，或選擇其他檔案。</string>
+    <string name="message_link_browser">在瀏覽器中開啟</string>
+    <string name="message_link_open_failed">無法開啟這個連結</string>
+    <string name="message_link_share_failed">無法分享這個連結</string>
+    <string name="message_link_no_handler">請安裝能開啟此類連結的應用程式，再試一次。</string>
     <string name="contacts_title">聯絡人</string>
     <string name="contacts_add">加聯絡人</string>
     <string name="contacts_add_kind_bot">Bot</string>

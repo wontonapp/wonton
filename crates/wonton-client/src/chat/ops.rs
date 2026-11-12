@@ -13,6 +13,33 @@ use tokio::sync::watch;
 use wonton_protocol::ChatViewModel;
 
 impl ChatLink {
+    pub(super) fn mark_room_read(
+        self: &std::sync::Arc<Self>,
+        room_id: &str,
+    ) -> Result<(), wonton_protocol::CoreError> {
+        let (_, room_id) = self.target(room_id)?;
+        let subscription = super::lock(&self.open_timeline)
+            .as_ref()
+            .filter(|(id, _)| id == &room_id)
+            .and_then(|(_, subscription)| subscription.upgrade());
+        if subscription
+            .as_ref()
+            .is_none_or(|timeline| !timeline.is_at_bottom())
+        {
+            return Ok(());
+        }
+        let chat = self.clone();
+        self.spawn_op("chat-op-mark-read-failed", async move {
+            // 主人可能在任务排队时翻走，取到房间后再核对同一个订阅。
+            let room = chat.room(&room_id).await?;
+            if subscription.is_some_and(|timeline| timeline.is_at_bottom()) {
+                room.mark_as_read().await?;
+            }
+            Ok(())
+        });
+        Ok(())
+    }
+
     /// 在后台执行一个操作，成功时先回调，失败时把原因放进 `problem`。
     pub(super) fn spawn_op_with_success(
         &self,

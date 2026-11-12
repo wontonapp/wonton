@@ -30,6 +30,7 @@ mod bot_contacts;
 mod browser;
 mod chat;
 mod client;
+mod composer;
 mod files;
 mod friends;
 mod home;
