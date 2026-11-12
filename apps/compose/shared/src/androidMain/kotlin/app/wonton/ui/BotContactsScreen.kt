@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.BotContact
+import app.wonton.protocol.BotContactFailure
 import app.wonton.protocol.BotContactsState
 import app.wonton.protocol.BotContactsViewModel
 import app.wonton.protocol.BotRef
@@ -95,6 +96,7 @@ internal fun BotContactsPage(core: ClientCore, bot: BotRef, onBack: () -> Unit) 
 
 /**
  * 联系人页的内容：列表、整页的失败、转圈或空页。ViewModel 还看着别的 Bot 时（刚切过来）当成正在取。
+ * 只有取列表失败才占整页；动作失败是列表上方的一条提示，下一个动作时核心清掉。
  * 删掉已生效的联系人要确认，经 [onRemove] 交给页面弹框；其余操作直接发给核心。
  */
 @Composable
@@ -108,20 +110,28 @@ fun BotContactsContent(
     val current = view.bot == bot
     val contacts = if (current) view.contacts else emptyList()
     val failed = (view.state as? BotContactsState.Failed)?.takeIf { current }
-    val retry = { onAction(Action.RefreshBotContacts(bot)) }
+    val notices = BotContactNotices(failed, view.actionFailure?.takeIf { current }) {
+        onAction(Action.RefreshBotContacts(bot))
+    }
     when {
-        contacts.isNotEmpty() -> BotContactList(contacts, failed, retry, onAction, bot, onRemove)
-        failed != null -> ProblemView(failed.problem(), retry)
+        contacts.isNotEmpty() -> BotContactList(contacts, notices, onAction, bot, onRemove)
+        failed != null -> ProblemView(failed.problem(), notices.onRetry)
         !current || view.state == BotContactsState.Loading -> LoadingView()
-        else -> BotContactsEmpty(onAdd)
+        else -> BotContactsEmpty(notices.actionFailure, onAdd)
     }
 }
+
+/** 列表上方的提示：取列表失败（带重试）、上一个动作失败。 */
+private class BotContactNotices(
+    val failed: BotContactsState.Failed?,
+    val actionFailure: BotContactFailure?,
+    val onRetry: () -> Unit,
+)
 
 @Composable
 private fun BotContactList(
     contacts: List<BotContact>,
-    failed: BotContactsState.Failed?,
-    onRetry: () -> Unit,
+    notices: BotContactNotices,
     onAction: (Action) -> Unit,
     bot: BotRef,
     onRemove: (BotContact) -> Unit,
@@ -134,7 +144,8 @@ private fun BotContactList(
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
-        failed?.let { ProblemRow(it.problem(), onRetry) }
+        notices.actionFailure?.let { ProblemRow(it.problem()) }
+        notices.failed?.let { ProblemRow(it.problem(), notices.onRetry) }
         ContactSection(R.string.contacts_requests_title, incoming) { contact ->
             IncomingContactRow(
                 contact,
@@ -171,15 +182,16 @@ private fun ContactSection(title: Int, rows: List<BotContact>, row: @Composable 
     }
 }
 
-/** 还没有联系人：一句话和添加。 */
+/** 还没有联系人：一句话和添加；刚才加人没成时，原因在上面。 */
 @Composable
-private fun BotContactsEmpty(onAdd: () -> Unit) {
+private fun BotContactsEmpty(actionFailure: BotContactFailure?, onAdd: () -> Unit) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s16, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        actionFailure?.let { ProblemRow(it.problem()) }
         Text(
             stringResource(R.string.contacts_empty),
             style = WontonTheme.typography.body.copy(textAlign = TextAlign.Center),

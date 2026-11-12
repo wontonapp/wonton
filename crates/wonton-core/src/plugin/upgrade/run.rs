@@ -30,7 +30,7 @@ use wonton_protocol::BotKeeper;
 use super::super::render::{Deployment, InstallContext, dry_run, render};
 use super::super::secrets::{self, Secrets};
 use super::super::store::{EnabledPermission, InstalledRecord};
-use super::super::upstreams::{core_aliases, uses_sso};
+use super::super::upstreams::uses_sso;
 use super::{installed_package, newer};
 use crate::l10n;
 use crate::secret::random_token;
@@ -145,16 +145,16 @@ impl PluginManager {
         let lan = self.lan_grant(&package, lan_webui, &langs).await?;
         let before = self.begin_upgrade(id)?;
         tracing::info!(plugin = %id, version = %manifest.version, "开始升级插件");
-        let outcome = self
-            .upgrade_begun(
-                &package,
-                granted,
-                &enabled,
-                (gpu, lan),
-                settings.clone(),
-                &langs,
-            )
-            .await;
+        // 放堆上跑：从建容器到对账的一整串都在这条链里，调试构建的帧很大，嵌套两层就够顶满测试线程的 2 MiB 栈。
+        let outcome = Box::pin(self.upgrade_begun(
+            &package,
+            granted,
+            &enabled,
+            (gpu, lan),
+            settings.clone(),
+            &langs,
+        ))
+        .await;
         self.lan.end(id);
         let result = self.finish_upgrade(&package, lan_webui, before, outcome);
         if result.is_ok()
@@ -381,6 +381,7 @@ impl PluginManager {
         self.stage(&manifest.id, InstallStage::Starting);
         let health = self
             .start_containers(
+                Some(manifest),
                 &plan,
                 Some(&manifest.id),
                 &mut progress.undo,
@@ -619,8 +620,7 @@ impl PluginManager {
         let Some(core) = &self.cfg.core_container else {
             return Ok(());
         };
-        let public = &self.cfg.public;
-        if core_aliases(public, from) != core_aliases(public, to) {
+        if self.core_aliases_of(from) != self.core_aliases_of(to) {
             self.engine.disconnect_network(network, core).await?;
         }
         self.attach_core(network, core, to).await
@@ -702,7 +702,8 @@ impl PluginManager {
         pin_images(&mut plan, &old.images);
         self.replace_containers(&ctx, plan, Gate::StartPeriod)
             .await?;
-        self.reconcile_running(&old.package, &old.record).await
+        // 对账要取宿主信息、起检查容器，链很深：同样放堆上。
+        Box::pin(self.reconcile_running(&old.package, &old.record)).await
     }
 
     /// 新版本不要了的：记录已经写好，失败只记日志，主人卸载时一并清掉。

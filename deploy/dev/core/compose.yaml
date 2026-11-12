@@ -68,6 +68,8 @@ services:
       # 中继表（ADR-0048）：默认 n0 的公共中继，要用本地测试中继时自己设。
       WONTON_RELAYS: ${WONTON_DEV_RELAYS:-}
       WONTON_PUSH_LISTEN: push.wonton.internal:80
+      # 通话插件验 OpenID 令牌时连服务器名的 443（ADR-0096）。
+      WONTON_MATRIX_RTC_LISTEN: 0.0.0.0:443
       # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；
       # 裸的 `hydra`、`tusd` 就可能解析到插件的容器。
       WONTON_OIDC_ADMIN_URL: http://hydra.wonton.internal:4445
@@ -183,6 +185,9 @@ services:
       MP_DISABLE_VERSION_CHECK: "true"
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
       MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+      # 核心生成的自签证书，配了才宣告 STARTTLS（不强制，明文照收）。
+      MP_SMTP_TLS_CERT: /wonton-config/smtp-tls.crt
+      MP_SMTP_TLS_KEY: /wonton-config/smtp-tls.key
     volumes:
       - ${WONTON_DEV_DATA}/core/mailpit/data:/data
       - ${WONTON_DEV_DATA}/core/mailpit/config:/wonton-config:ro
@@ -271,8 +276,8 @@ services:
       TUWUNEL_AUTHENTICATION__LOGIN__WITH_PASSWORD: "false"
       TUWUNEL_REGISTRATION__DISPLAYNAME_SUFFIX: ""
       TUWUNEL_WELL_KNOWN__CLIENT: http://matrix.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}
-      # MatrixRTC 的入口（lk-jwt-service），通话插件接上后换成它的地址；这里放示例地址。
-      TUWUNEL_WELL_KNOWN__LIVEKIT_URL: http://192.0.2.10:7880
+      # MatrixRTC 的授权服务固定在 Matrix 对外地址的这个前缀下，网关转给通话插件（ADR-0096）。
+      TUWUNEL_WELL_KNOWN__LIVEKIT_URL: http://matrix.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/matrix-rtc
       TUWUNEL_JWT__ENABLE: "true"
       TUWUNEL_JWT__FORMAT: EDDSA
       TUWUNEL_JWT__ALGORITHM: EdDSA

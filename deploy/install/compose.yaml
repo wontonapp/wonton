@@ -63,6 +63,8 @@ services:
       WONTON_FEDERATION_LISTEN: federation-proxy.wonton.internal:8448
       # 推送直连核心在 core 网络上的 80 端口，不经联邦 CONNECT 代理，也不发布到宿主。
       WONTON_PUSH_LISTEN: push.wonton.internal:80
+      # 通话插件（matrix_rtc 的提供方）验 OpenID 令牌时连服务器名的 443，核心在它的网络里以这个名字答（ADR-0096）。
+      WONTON_MATRIX_RTC_LISTEN: 0.0.0.0:443
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
       WONTON_DEFAULT_PLUGINS: /usr/share/wonton/default-plugins
       # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；
@@ -176,9 +178,12 @@ services:
       MP_MAX_MESSAGES: "0"
       MP_MAX_AGE: 7d
       MP_DISABLE_VERSION_CHECK: "true"
-      # 宣告 AUTH 并接受任何凭据，给服务器不宣告 AUTH 就发不出信的应用；不配证书，认证照走明文。认插件只按来源网段。
+      # 宣告 AUTH 并接受任何凭据，给服务器不宣告 AUTH 就发不出信的应用；认插件只按来源网段。
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
       MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+      # 核心生成的自签证书，配了才宣告 STARTTLS（不强制，明文照收）。
+      MP_SMTP_TLS_CERT: /wonton-config/smtp-tls.crt
+      MP_SMTP_TLS_KEY: /wonton-config/smtp-tls.key
     volumes:
       - ${WONTON_DATA_DIR}/core/mailpit/data:/data
       - ${WONTON_DATA_DIR}/core/mailpit/config:/wonton-config:ro
@@ -252,6 +257,8 @@ services:
       <<: *no-proxy
       # 配置和 JWT 公钥都在文件里：轮换签发密钥时核心改写它、发 SIGUSR1 热加载（ADR-0009）。
       TUWUNEL_CONFIG: /etc/tuwunel/tuwunel.toml
+      # MatrixRTC 的授权服务固定在 Matrix 对外地址的这个前缀下，网关转给通话插件（ADR-0096）：装卸插件不改这里。
+      TUWUNEL_WELL_KNOWN__LIVEKIT_URL: http://matrix.${WONTON_BASE_DOMAIN}:${WONTON_PORT}/_wonton/matrix-rtc
     volumes:
       - tuwunel:/var/lib/tuwunel
       # 只挂 Tuwunel 自己的文件：`secrets/` 根上还有核心的 `matrix-jwt.pem`、`hydra-secret`/`hydra.env`，

@@ -41,19 +41,33 @@ struct BotContactsView: View {
         }
     }
 
-    /// 空页：正在取（或核心还看着别的 Bot）就转圈；取到了是一句话加添加；取失败整页说明原因。
+    /// 空页：正在取（或核心还看着别的 Bot）就转圈；取到了是一句话加添加，刚才加人没成时原因在上面；
+    /// 取列表失败整页说明原因。
     @ViewBuilder private var emptyState: some View {
         if let failure = model.failure {
             ProblemView(problem: contactsProblem(failure.error, message: failure.message)) { model.retry() }
         } else if model.isLoading {
             LoadingView()
         } else {
-            ScrollView { BotContactsEmpty { showsAdd = true } }
+            ScrollView {
+                VStack(spacing: WontonTheme.spacing.s16) {
+                    if let failure = model.actionFailure {
+                        ProblemRow(problem: contactsProblem(failure.error, message: failure.message))
+                    }
+                    BotContactsEmpty { showsAdd = true }
+                }
+                .padding(.horizontal, WontonTheme.spacing.pageInset)
+            }
         }
     }
 
     private var list: some View {
         List {
+            // 动作失败不占整页：列表照旧，原因是上面一条提示，下一个动作时核心清掉。
+            if let failure = model.actionFailure {
+                ProblemRow(problem: contactsProblem(failure.error, message: failure.message))
+                    .listRowSeparator(.hidden)
+            }
             if let failure = model.failure {
                 ProblemRow(problem: contactsProblem(failure.error, message: failure.message)) { model.retry() }
                     .listRowSeparator(.hidden)
@@ -192,9 +206,15 @@ final class BotContactsModel {
         return false
     }
 
+    /// 取列表失败。
     var failure: (error: ContactError, message: String)? {
         guard isCurrent, case let .failed(error, message) = viewModel.state else { return nil }
         return (error, message)
+    }
+
+    /// 上一个动作（发起、同意、拒绝、删除）失败；列表照旧。
+    var actionFailure: BotContactFailure? {
+        isCurrent ? viewModel.actionFailure : nil
     }
 
     /// 进页面时选定这个 Bot 取一次，之后跟着核心的推送走；页面消失时订阅结束。
