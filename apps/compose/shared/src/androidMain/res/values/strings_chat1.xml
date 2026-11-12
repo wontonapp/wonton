@@ -23,6 +23,8 @@
     <string name="chat_install_stage_preparing">Preparing</string>
     <!-- Button on an install row when the source is unknown or the result is uncertain; opens the app's page. No arguments; short label. -->
     <string name="chat_install_open_page">Open app page</string>
+    <!-- Error under the reveal button when the system identity verification can't run; the user's own cancel shows nothing. -->
+    <string name="chat_backup_auth_unavailable">Identity verification isn\'t available right now. Try again later.</string>
     <!-- Explanation when the backup status can't be confirmed because the server isn't reachable. -->
     <string name="chat_backup_detail_unknown">Connect to your home server to confirm.</string>
     <!-- Primary button under the recovery key field: fetch past messages with the entered key. -->

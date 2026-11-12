@@ -15,6 +15,8 @@
     <string name="chat_install_stage_preparing">正在准备</string>
     <!-- Button on an install row when the source is unknown or the result is uncertain; opens the app's page. No arguments; short label. -->
     <string name="chat_install_open_page">去应用页</string>
+    <!-- Error under the reveal button when the system identity verification can't run; the user's own cancel shows nothing. -->
+    <string name="chat_backup_auth_unavailable">系统验证暂时用不了，稍后再试。</string>
     <!-- Explanation when the backup status can't be confirmed because the server isn't reachable. -->
     <string name="chat_backup_detail_unknown">连上家里的服务器后才能确认。</string>
     <!-- Primary button under the recovery key field: fetch past messages with the entered key. -->
