@@ -58,7 +58,15 @@ async fn upgrading_the_last_required_provider_without_its_capability_is_blocked_
     assert_eq!(docker.writes(), before);
     let package = PluginPackage::parse(&provider("1.1.0", false), &zh()).unwrap();
     let error = m
-        .upgrade_upload(&id(), package, vec![], vec![], false, &zh())
+        .upgrade_upload(
+            &id(),
+            package,
+            vec![],
+            vec![],
+            false,
+            &Default::default(),
+            &zh(),
+        )
         .await
         .unwrap_err();
     match error {

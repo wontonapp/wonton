@@ -297,15 +297,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         pgid: 1000,
         extra_hosts: Vec::new(),
         gpu: None,
-        // 192.0.2.1 是文档用的地址（RFC 5737）。
-        lan: manifest.lan.as_ref().map(|lan| LanGrant {
-            addresses: vec![[192, 0, 2, 1].into()],
-            announce: vec![[192, 0, 2, 1].into()],
-            network: (!manifest.permissions.contains(&Permission::NetworkEgress))
-                .then(|| Instance::default().lan_network(&slug)),
-            ports: lan.ports.clone(),
-            webui: false,
-        }),
+        lan: dry_run_lan(manifest, &slug),
         egress: None,
         core_address: webui
             .filter(|w| w.sso == Sso::Proxy)
@@ -323,6 +315,18 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
                 .collect::<Vec<_>>(),
         ),
     }
+}
+
+fn dry_run_lan(manifest: &Manifest, slug: &str) -> Option<LanGrant> {
+    // 192.0.2.1 是文档用的地址（RFC 5737）。
+    manifest.lan.as_ref().map(|lan| LanGrant {
+        addresses: vec![[192, 0, 2, 1].into()],
+        announce: vec![[192, 0, 2, 1].into()],
+        network: (!manifest.permissions.contains(&Permission::NetworkEgress))
+            .then(|| Instance::default().lan_network(slug)),
+        ports: lan.ports.clone(),
+        webui: false,
+    })
 }
 
 fn dry_run_capabilities(manifest: &Manifest) -> BTreeMap<String, String> {

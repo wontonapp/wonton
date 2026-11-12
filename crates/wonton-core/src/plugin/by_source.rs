@@ -181,11 +181,12 @@ impl PluginManager {
         self: &Arc<Self>,
         request: &InstallRequest,
     ) -> Result<PluginView, InstallError> {
+        let langs = self.owner_languages();
         let package = self.fetch_source(&request.source).await?;
         let digest = package.digest();
         if digest != request.digest {
             return Err(InstallError::Changed(crate::l10n::text(
-                langs,
+                &langs,
                 "plugin-capability-plan-changed",
                 &[],
             )));
@@ -195,7 +196,7 @@ impl PluginManager {
                 package,
                 super::dependencies::DependencyInstall {
                     request: request.clone(),
-                    langs: self.owner_languages(),
+                    langs,
                 },
             )
             .await?;

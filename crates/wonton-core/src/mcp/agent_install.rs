@@ -9,11 +9,11 @@ use std::sync::Arc;
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject};
 use serde_json::{Value, json};
 
-use super::agent_cards::{install_ran, upgrade_ran};
+use super::agent_cards::{installed_outcome, upgrade_ran};
 use super::audience::Subject;
 use super::audit::{Decision, Record};
 use super::cards;
-use super::{Bus, Caller, ToolFailure, with_failure};
+use super::{Bus, Caller, Outcome, ToolFailure, with_failure};
 use crate::bot_activity::Guard;
 use crate::files::share_fs::saving;
 use crate::l10n;
@@ -22,7 +22,7 @@ use crate::plugin::languages::Languages;
 use crate::plugin::manifest::{Manifest, Permission};
 use crate::plugin::privileges::{self, CapabilityRisk};
 use crate::plugin::store::{EnabledPermission, InstalledRecord};
-use crate::plugin::{PluginPackage, package_files};
+use crate::plugin::{InstallError, PluginId, PluginPackage, PluginView, package_files};
 use wonton_protocol::{CardLine, PluginWriter, SecretValues};
 
 fn result(value: &Value) -> CallToolResult {
@@ -139,7 +139,7 @@ async fn official(
                     settings: wonton_protocol::SettingValues| async move {
         let mut request = proposed.with_secrets(secrets);
         request.settings = settings;
-        match bus
+        let installed = bus
             .plugins
             .install_with_dependencies(
                 package,
@@ -148,18 +148,8 @@ async fn official(
                     langs: langs.clone(),
                 },
             )
-            .await
-        {
-            Ok(view) => installed_outcome(&view, None, &langs),
-            Err(e) => Outcome::failed(
-                e.kind(),
-                crate::l10n::text(
-                    &langs,
-                    "chat-install-failed",
-                    &[("kind", e.kind().into()), ("error", e.to_string().into())],
-                ),
-            ),
-        }
+            .await;
+        install_result_outcome(&bus, &id_for_run, installed, None, &langs)
     };
     bus.confirmed_twice(
         caller,
@@ -289,6 +279,45 @@ async fn from_dir(
     }
 }
 
+/// 依赖安装结果换 Agent 能读的输出：成功记下归属（给了 `writer` 时），失败按类别写原因。
+fn install_result_outcome(
+    bus: &Bus,
+    id: &PluginId,
+    installed: Result<PluginView, InstallError>,
+    writer: Option<PluginWriter>,
+    langs: &Languages,
+) -> Outcome {
+    match installed {
+        Ok(view) => {
+            // 归属没记下来时更新就装不上，如实告诉 Agent。
+            let note = match writer.map(|writer| bus.plugins.set_writer(id, Some(writer))) {
+                None | Some(Ok(())) => None,
+                Some(Err(e)) => {
+                    tracing::error!(plugin = %id, error = %e, "记插件的归属失败");
+                    Some(l10n::text(
+                        langs,
+                        "chat-install-note-writer",
+                        &[("error", e.to_string().into())],
+                    ))
+                }
+            };
+            installed_outcome(&view, note, langs)
+        }
+        Err(e) => Outcome::failed(
+            e.kind(),
+            l10n::text(
+                langs,
+                "chat-install-failed-id",
+                &[
+                    ("id", id.as_str().into()),
+                    ("kind", e.kind().into()),
+                    ("error", e.to_string().into()),
+                ],
+            ),
+        ),
+    }
+}
+
 /// 没装过：安装。卡片写明未审核、全部权限、镜像和以前留下的数据；最高级再多点一张。
 async fn first_install(
     bus: &Arc<Bus>,
@@ -361,7 +390,7 @@ async fn first_install(
                     settings: wonton_protocol::SettingValues| async move {
         let mut request = proposed.with_secrets(secrets);
         request.settings = settings;
-        match bus
+        let installed = bus
             .plugins
             .install_with_dependencies(
                 package,
@@ -370,36 +399,8 @@ async fn first_install(
                     langs: langs.clone(),
                 },
             )
-            .await
-        {
-            Ok(view) => {
-                // 归属没记下来时更新就装不上，如实告诉 Agent。
-                let note = match bus.plugins.set_writer(&id_for_run, Some(writer)) {
-                    Ok(()) => None,
-                    Err(e) => {
-                        tracing::error!(plugin = %id_for_run, error = %e, "记插件的归属失败");
-                        Some(l10n::text(
-                            &langs,
-                            "chat-install-note-writer",
-                            &[("error", e.to_string().into())],
-                        ))
-                    }
-                };
-                installed_outcome(&view, note, &langs)
-            }
-            Err(e) => Outcome::failed(
-                e.kind(),
-                l10n::text(
-                    &langs,
-                    "chat-install-failed-id",
-                    &[
-                        ("id", id_for_run.as_str().into()),
-                        ("kind", e.kind().into()),
-                        ("error", e.to_string().into()),
-                    ],
-                ),
-            ),
-        }
+            .await;
+        install_result_outcome(&bus, &id_for_run, installed, Some(writer), &langs)
     };
     bus.confirmed_twice(
         caller,

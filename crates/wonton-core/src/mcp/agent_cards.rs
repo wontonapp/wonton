@@ -13,15 +13,6 @@ use crate::plugin::manifest::Permission;
 use crate::plugin::store::EnabledPermission;
 use crate::plugin::{PluginId, PluginPackage, PluginView};
 
-/// 安装/升级卡片带上主人已填的设置值时，换成核心能存和注入的值；没填的用默认值。
-pub(super) fn card_settings(
-    package: &PluginPackage,
-    given: &wonton_protocol::SettingValues,
-    langs: &Languages,
-) -> Result<crate::plugin::settings::Values, crate::plugin::InstallError> {
-    crate::plugin::settings::install_values(package, given, langs)
-}
-
 /// 更新执行完的结果：卡片上的话按主人的语言写，给 Agent 的还是结构化的 JSON。
 /// `writer` 是接手时记下的归属（#817）；没记下来时下次更新还会再问一次主人，两边都要如实说。
 #[allow(clippy::too_many_arguments)] // 卡片执行要用的几个值，再包一层也是逐个填。
@@ -109,74 +100,6 @@ pub(super) async fn upgrade_ran(
                 &langs,
                 "chat-update-failed",
                 &[("kind", e.kind().into()), ("error", e.to_string().into())],
-            ),
-        ),
-    }
-}
-
-/// 安装执行完的结果：把主人填的值换成核心值并装上，卡片上的话按主人的语言写，给 Agent 的还是结构化的 JSON。
-/// `writer` 是发卡片的 Bot（`None` 是主人自己在 App 里装的旧路径）；有它就把归属记下来。
-#[allow(clippy::too_many_arguments)] // 卡片执行要用的几个值，再包一层也是逐个填。
-pub(super) async fn install_ran(
-    bus: Arc<Bus>,
-    id: PluginId,
-    package: PluginPackage,
-    granted: Vec<Permission>,
-    lan_webui: bool,
-    secrets: SecretValues,
-    settings: wonton_protocol::SettingValues,
-    writer: Option<PluginWriter>,
-    langs: Languages,
-) -> Outcome {
-    if let Err(e) = bus
-        .plugins
-        .store_input_values(&package.manifest, &secrets, None, &langs)
-    {
-        return Outcome::failed(
-            e.kind(),
-            l10n::text(
-                &langs,
-                "chat-install-failed",
-                &[("kind", e.kind().into()), ("error", e.to_string().into())],
-            ),
-        );
-    }
-    let values = match card_settings(&package, &settings, &langs) {
-        Ok(values) => values,
-        Err(e) => {
-            return Outcome::failed(e.kind(), e.to_string());
-        }
-    };
-    match bus
-        .plugins
-        .install_detached(package, granted, lan_webui, values, langs.clone())
-        .await
-    {
-        Ok(view) => {
-            // 归属没记下来时更新就装不上，如实告诉 Agent。
-            let note = match writer.map(|writer| bus.plugins.set_writer(&id, Some(writer))) {
-                None | Some(Ok(())) => None,
-                Some(Err(e)) => {
-                    tracing::error!(plugin = %id, error = %e, "记插件的归属失败");
-                    Some(l10n::text(
-                        &langs,
-                        "chat-install-note-writer",
-                        &[("error", e.to_string().into())],
-                    ))
-                }
-            };
-            installed_outcome(&view, note, &langs)
-        }
-        Err(e) => Outcome::failed(
-            e.kind(),
-            l10n::text(
-                &langs,
-                "chat-install-failed-id",
-                &[
-                    ("id", id.as_str().into()),
-                    ("kind", e.kind().into()),
-                    ("error", e.to_string().into()),
-                ],
             ),
         ),
     }

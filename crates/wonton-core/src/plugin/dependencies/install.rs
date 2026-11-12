@@ -69,7 +69,8 @@ impl PluginManager {
             });
             let installed = async {
                 self.store_input_values(&manifest, &inputs, None, langs)?;
-                self.install_checked_retained(decision, settings, langs).await
+                self.install_checked_retained(decision, settings, langs)
+                    .await
             }
             .await;
             match installed {

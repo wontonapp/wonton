@@ -144,13 +144,7 @@ impl PluginManager {
         let mut undo = Undo::default();
         // 同 installation.rs 的 install_checked：deploy 子树的状态机搬上堆，install 链默认栈才够深。
         match Box::pin(self.deploy_inner(
-            package,
-            granted,
-            enabled,
-            grants,
-            settings,
-            &mut undo,
-            langs,
+            package, granted, enabled, grants, settings, &mut undo, langs,
         ))
         .await
         {

@@ -14,6 +14,7 @@ impl PluginManager {
         granted: &[Permission],
         requested: &[EnabledPermission],
         lan_webui: bool,
+        settings: super::super::settings::Values,
     ) -> Result<(), InstallError> {
         let _changing = self.dependencies.changing.lock().await;
         let langs = self.owner_languages();
@@ -23,7 +24,7 @@ impl PluginManager {
         let snapshot = self.snapshot_dependency_connections(&manifest.id)?;
         let digest = package.digest();
         let result = self
-            .upgrade_declared(package, granted, requested, lan_webui)
+            .upgrade_declared(package, granted, requested, lan_webui, settings)
             .await;
         // 容器和安装记录已换好后，出口对账仍可能失败；不能撤掉已生效版本的连接授权。
         let retained = match &result {

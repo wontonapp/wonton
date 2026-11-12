@@ -27,8 +27,11 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<Vec<PreparedInstall>, InstallError> {
         let preview = self.dependency_preview(&package.manifest, langs).await?;
+        // 计划绑定的是依赖图的连接集合：只有触及依赖图的请求（消费方声明了能力，或随批安装提供方）
+        // 才要求原样带回计划；没有能力声明的旧调用方（如商店直装）只校验包摘要。
+        let enforce_plan = super::declarations(&package.manifest).next().is_some();
         let mut consumer = self
-            .prepare_install_decision(package, &request, langs)
+            .prepare_install_decision(package, &request, enforce_plan, langs)
             .await?;
         let mut ids = BTreeSet::from([consumer.decision.package.manifest.id.clone()]);
         let candidates = if request.install_together.is_empty() {
@@ -79,7 +82,10 @@ impl PluginManager {
             if !package.manifest.requires.is_empty() {
                 return Err(selection_error(langs));
             }
-            providers.push(self.prepare_install_decision(package, inner, langs).await?);
+            providers.push(
+                self.prepare_install_decision(package, inner, enforce_plan, langs)
+                    .await?,
+            );
         }
         for capability in consumer
             .decision
@@ -148,11 +154,14 @@ impl PluginManager {
         &self,
         package: PluginPackage,
         request: &InstallRequest,
+        enforce_plan: bool,
         langs: &Languages,
     ) -> Result<PreparedInstall, InstallError> {
         let manifest = &package.manifest;
         crate::plugin::install_entry::check_runtime(manifest, langs)?;
-        if package.digest() != request.digest || self.dependency_plan(&package)? != request.plan {
+        if package.digest() != request.digest
+            || (enforce_plan && self.dependency_plan(&package)? != request.plan)
+        {
             return Err(InstallError::Changed(l10n::text(
                 langs,
                 "plugin-capability-plan-changed",
@@ -218,24 +227,7 @@ impl PluginManager {
         }
         let targets = self.confirmed_install_targets(manifest)?;
         let changed_before = store.changed(&manifest.id)?;
-        // 与 by_source 的商店安装同一套校验：包设置经 schema 初值化，未知字段如实报错。
-        let settings = match super::settings::load(&package, langs)? {
-            Some(schema) => super::settings::value::initial(&schema, &request.settings, langs)
-                .map_err(|fields| super::settings::value_error(fields, langs))?,
-            None if request.settings.is_empty() => Default::default(),
-            None => {
-                let fields = request
-                    .settings
-                    .keys()
-                    .map(|name| wonton_protocol::SettingsFieldError {
-                        name: name.clone(),
-                        kind: wonton_protocol::SettingsFieldProblemKind::UnknownField,
-                        message: crate::l10n::text(langs, "plugin-settings-value-unknown-field", &[]),
-                    })
-                    .collect();
-                return Err(super::settings::value_error(fields, langs));
-            }
-        };
+        let settings = layer_settings(&package, &request.settings, langs)?;
         Ok(PreparedInstall {
             decision: InstallDecision {
                 package,
@@ -275,4 +267,28 @@ fn selection_error(langs: &Languages) -> InstallError {
         "plugin-capability-install-selection",
         &[],
     ))
+}
+
+/// 这一层包设置经 schema 初值化，未知字段如实报错；与 by_source 的商店安装同一套校验。
+fn layer_settings(
+    package: &PluginPackage,
+    given: &wonton_protocol::SettingValues,
+    langs: &Languages,
+) -> Result<std::collections::BTreeMap<String, serde_json::Value>, InstallError> {
+    match crate::plugin::settings::load(package, langs)? {
+        Some(schema) => crate::plugin::settings::value::initial(&schema, given, langs)
+            .map_err(|fields| crate::plugin::settings::value_error(fields, langs)),
+        None if given.is_empty() => Ok(Default::default()),
+        None => Err(crate::plugin::settings::value_error(
+            given
+                .keys()
+                .map(|name| wonton_protocol::SettingsFieldError {
+                    name: name.clone(),
+                    kind: wonton_protocol::SettingsFieldProblemKind::UnknownField,
+                    message: crate::l10n::text(langs, "plugin-settings-value-unknown-field", &[]),
+                })
+                .collect(),
+            langs,
+        )),
+    }
 }
