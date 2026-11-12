@@ -62,12 +62,27 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
+# 本检出（这个 deploy/dev/core）在跑的 compose 项目：compose 自己会打 working_dir 标签，拿它反查。
+detect_project() {
+  docker ps -a --filter "label=com.docker.compose.project.working_dir=$here" \
+    --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | sort -u
+}
 curl_image="curlimages/curl:8.23.0"
 : "${SMOKE_API_MAX_TIME:=600}"
 : "${SMOKE_WEB_MAX_TIME:=120}"
 : "${SMOKE_CONNECT_TIMEOUT:=10}"
 
-export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-dev-core}"
+# 没带项目名时按“这个检出在跑的实例”认：正好一个就照它，否则落默认名（up 可以这么起新实例；pair/down 见下面各自的校验）。
+if [[ -z ${WONTON_DEV_PROJECT:-} ]]; then
+  cands="$(detect_project || true)"
+  if [[ -n $cands && $(wc -l <<<"$cands") -eq 1 ]]; then
+    export WONTON_DEV_PROJECT="$cands"
+    echo "dev.sh：没带 WONTON_DEV_PROJECT，用这个检出在跑的实例 $cands" >&2
+  else
+    export WONTON_DEV_PROJECT=wonton-dev-core
+    export WONTON_DEV_PROJECT_AUTO=1
+  fi
+fi
 # 密钥按项目名放在检出目录外：换个检出（worktree）起同一个项目名的栈，用的还是同一份，Hydra 才读得出库里的
 # 签名密钥，插件的 OIDC 客户端不用重发。检出目录里旧的 .secrets/ 不再读，也不迁移。
 export WONTON_DEV_SECRETS="${WONTON_DEV_SECRETS:-${XDG_STATE_HOME:-$HOME/.local/state}/wonton-dev/$WONTON_DEV_PROJECT/secrets}"
@@ -679,6 +694,21 @@ case "${1:-}" in
   commit) build_commit ;;
   build) build_image "${@:2}" ;;
   down)
+    # 项目名没对上（没带环境变量、检出里又是别的实例）就拆默认项目其实拆的是别人的栈：先认本检出在跑的项目。
+    # 项目名是自动认的、又认成了默认名：默认名全机共用，可能正是别的检出的栈（kh-walk 事故）。不许拆，除非显式指定。
+    if [[ ${WONTON_DEV_PROJECT_AUTO:-} == 1 && $core == wonton-dev-core ]]; then
+      cands="$(detect_project || true)"
+      foreign="$(docker ps -a --filter "label=com.docker.compose.project=wonton-dev-core" \
+        --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | sort -u | grep -v '^$' | grep -vx "$here" || true)"
+      why="这个检出没有在跑的实例"
+      if [[ -n $cands ]]; then why="这个检出在跑的是：$(tr '\n' ' ' <<<"$cands")"
+      elif [[ -n $foreign ]]; then why="默认项目 wonton-dev-core 正被别的检出用（$(tr '\n' ' ' <<<"$foreign")）"; fi
+      die "down 没拆：$why。要拆默认项目就显式 WONTON_DEV_PROJECT=wonton-dev-core down，或在起它的检出里 down"
+    fi
+    if ! docker ps -a --filter "name=^/${core}\$" | grep -q .; then
+      other="$(detect_project || true)"
+      [[ -n $other ]] && die "项目 $core 没有容器；这个检出在跑的是：$(tr '\n' ' ' <<<"$other")（带 WONTON_DEV_PROJECT=<项目> 再跑）"
+    fi
     compose down
     # 核心退出时不停插件容器，compose down 也管不到它们，这里按实例标签清；默认项目分不出来，只提示。
     if [[ -n "$WONTON_DEV_INSTANCE" ]]; then
@@ -749,6 +779,11 @@ case "${1:-}" in
     echo
     ;;
   pair)
+    if ! docker ps -q --filter "name=^/${core}\$" --filter status=running | grep -q .; then
+      cands="$(detect_project || true)"
+      [[ -n $cands ]] && die "项目 $core 的核心容器没在跑；这个检出在跑的是：$(tr '\n' ' ' <<<"$cands")。带 WONTON_DEV_PROJECT=<项目> 再跑，或先 up"
+      die "项目 $core 的核心容器没在跑（WONTON_DEV_PROJECT 是 ${WONTON_DEV_PROJECT}；没设就是默认项目，先 up 或带项目名）"
+    fi
     # 主人发的配对码，已经有设备时也能用。局域网状态页（http://<本机 IP>:端口/）在还没有设备时另有首次配对码。
     # 直连地址要写 App 能到达的地址：同机的 iOS 模拟器用 127.0.0.1，Android 模拟器用 10.0.2.2，局域网里的手机
     # 用本机的局域网 IP（并设 WONTON_DEV_TUNNEL_BIND=0.0.0.0）。
