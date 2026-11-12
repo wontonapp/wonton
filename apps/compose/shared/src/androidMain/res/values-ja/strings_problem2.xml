@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="problem_invalid_input_title">この操作は実行できません</string>
+    <!-- Next step: look at the app again and approve it again. -->
+    <string name="problem_plugin_changed_next_step">内容をもう一度確認してください。</string>
+    <!-- Next step: the app is installed or installing, updating or uninstalling; wait for that to finish. -->
+    <string name="problem_plugin_conflict_next_step">インストール済みか、インストール・アップデート・アンインストールの途中です。終わるまでお待ちください。</string>
+    <!-- Next step: try after the update finishes. -->
+    <string name="problem_plugin_core_upgrading_next_step">アップデートが終わってからもう一度お試しください。</string>
+    <!-- Next step: contact the app's author. -->
+    <string name="problem_plugin_invalid_next_step">アプリの作者に連絡してください。</string>
+    <!-- Problem title: the app's package is broken. -->
+    <string name="problem_plugin_invalid_title">このアプリのパッケージに問題があります</string>
+    <!-- Next step: stop the container or program using this port, then try again. -->
+    <string name="problem_plugin_lan_port_taken_next_step">このポートを使っているコンテナかプログラムを止めてから、もう一度お試しください。</string>
+    <!-- Next step: refresh the store and try again. -->
+    <string name="problem_plugin_not_found_next_step">ストアを更新してからもう一度お試しください。</string>
+    <!-- Next step: update the app or the home server. -->
+    <string name="problem_plugin_protocol_next_step">Wontonか自宅サーバーをアップデートしてください。</string>
+    <!-- Next step: the home server can't reach the app's source, try later. -->
+    <string name="problem_plugin_source_unavailable_next_step">自宅サーバーからアプリの提供元に接続できません。しばらくしてからもう一度お試しください。</string>
+    <!-- Problem title: the home server is too old for this app. -->
+    <string name="problem_plugin_unsupported_title">自宅サーバーはこのアプリに対応していません</string>
+    <!-- Problem title: the app list may be incomplete for an unknown reason. -->
+    <string name="problem_store_other_title">アプリの一覧が不完全な可能性があります</string>
+    <!-- Problem title: the source is answering too many requests. -->
+    <string name="problem_store_rate_limited_title">リクエストが多すぎます</string>
+    <!-- Next step under the can't-reach-the-server problem. -->
+    <string name="problem_transport_unavailable_next_step">ネットワークを確認して、接続後にもう一度お試しください。</string>
+    <!-- Next step: update the home server first. Used when the server is too old. -->
+    <string name="problem_upgrade_server_next_step">まず自宅サーバーをアップデートしてください。</string>
+    <!-- Problem title used for plugin, chat and connection failures: the home server itself reported an error. -->
+    <string name="problem_upstream_title">自宅サーバーでエラーが発生しました</string>
+</resources>

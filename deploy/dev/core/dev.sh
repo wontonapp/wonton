@@ -122,6 +122,8 @@ if [[ -z "${WONTON_DEV_DATA:-}" ]]; then
   esac
 fi
 export WONTON_DEV_DATA
+# 宿主网络中继的套接字目录：`sun_path` 只有 108 字节，检出目录再深也不能用它，放在短的运行目录里，按实例分开。
+export WONTON_DEV_RELAY="${WONTON_DEV_RELAY:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/wonton-dev/$WONTON_DEV_INSTANCE}"
 core="$WONTON_DEV_PROJECT"
 base_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 # 核心给插件容器、网络和卷打的标签（crates/wonton-core/src/plugin/names.rs）。实例标签只有设了实例名的核心才打，
@@ -665,6 +667,7 @@ case "${1:-}" in
     # 端口冲突在构建之前查出来：compose 要到绑定时才报，那时已经构建完了。
     "$here/port-preflight.sh" "$core" "$WONTON_DEV_PORT" "$WONTON_DEV_TUNNEL_PORT" || exit 1
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
+    mkdir -p "$WONTON_DEV_RELAY" || die "建不了中继套接字目录 $WONTON_DEV_RELAY，换一个短的（WONTON_DEV_RELAY）"
     export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
     mkdir -p "$here/.data" && printf '%s' "$WONTON_DEV_PORT" > "$here/.data/dev-port"
     if [[ -n "${WONTON_DEV_BUILD_PROXY:-}" ]]; then
@@ -680,6 +683,8 @@ case "${1:-}" in
   build) build_image "${@:2}" ;;
   down)
     compose down
+    # 中继套接字跟着栈走，栈拆了就没用了。
+    rm -rf -- "$WONTON_DEV_RELAY"
     # 核心退出时不停插件容器，compose down 也管不到它们，这里按实例标签清；默认项目分不出来，只提示。
     if [[ -n "$WONTON_DEV_INSTANCE" ]]; then
       remove_instance_resources
@@ -689,6 +694,7 @@ case "${1:-}" in
     ;;
   reset)
     compose down --volumes
+    rm -rf -- "$WONTON_DEV_RELAY"
     if [[ -n "$WONTON_DEV_INSTANCE" ]]; then
       remove_instance_resources
       remove_instance_volumes

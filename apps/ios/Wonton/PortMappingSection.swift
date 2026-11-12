@@ -6,11 +6,11 @@ struct PortMappingSection: View {
     let installed: InstalledPlugin
 
     var body: some View {
-        DetailSection(title: String(localized: .portMappingTitle)) {
+        DetailSection(title: String(localized: .Plugins.portMappingTitle)) {
             WontonGroup {
                 ForEach(Array(installed.tunnelPorts.enumerated()), id: \.offset) { index, port in
                     if index > 0 { WontonSeparator() }
-                    WontonRow(title: String(localized: .portMappingPortLine(
+                    WontonRow(title: String(localized: .Plugins.portMappingPortLine(
                         Int(port.port), protocolName(port.protocol))))
                 }
             }
@@ -22,7 +22,7 @@ struct PortMappingSection: View {
         switch `protocol` {
         case .tcp: "TCP"
         case .udp: "UDP"
-        case .other: String(localized: .portMappingProtocolOther)
+        case .other: String(localized: .Plugins.portMappingProtocolOther)
         }
     }
 }

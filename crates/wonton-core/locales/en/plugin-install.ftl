@@ -205,6 +205,7 @@ plugin-install-cfg-target-absolute = The configs target `{ $raw }` must be an ab
 plugin-install-cfg-target-root = The configs target can't be /
 plugin-install-cfg-id-invalid = The configs { $field } `{ $value }` must be a non-negative integer
 plugin-install-cfg-mode-invalid = The configs mode `{ $value }` isn't valid: it must be an octal permission from 0 to 0777
+plugin-install-cfg-parent-is-file = The configs target's parent `{ $parent }` is a file in container { $service }: the file can't be written there
 
 # ── Mounts (mounts.rs) ───────────────────────────────────────────────────────
 
@@ -443,8 +444,9 @@ plugin-install-coreaddr-no-core-address = The network doesn't have an address re
 plugin-install-upstream-container-missing = Container { $container } doesn't exist, or has no address in network { $network }
 plugin-install-upstream-mcp-headers = Can't resolve the MCP headers of app { $id }: { $error }
 plugin-install-relay-prepare-dir-failed = Can't prepare the relay directory: { $error }
-plugin-install-relay-path-too-long = The app data directory path is too long for a unix socket; move your home server's data directory somewhere shorter ({ $path }: { $bytes } bytes, limit { $max } bytes)
+plugin-install-relay-path-too-long = The relay socket directory path is too long for a unix socket; set WONTON_RELAY_DIR to a shorter directory ({ $path }: { $bytes } bytes, limit { $max } bytes)
 plugin-install-relay-listens-unknown = Can't read the listening table, so the firewall isn't judged
+plugin-install-egress-host-no-address = The egress container has no address on the plugin network { $network }, so the host-network services cannot go through the proxy
 
 # ── Images (images.rs, images/preflight.rs, image_worker.rs) ─────────────────
 
@@ -525,6 +527,7 @@ plugin-install-runtime-unsupported = this core cannot install or upgrade runtime
 plugin-install-matrix-rtc-needs-matrix = The home server isn't connected to a Matrix server, so an app that provides matrix_rtc (call authorization) can't be installed
 plugin-install-matrix-rtc-conflict = App { $id } already provides matrix_rtc (call authorization): there can only be one at a time
 plugin-install-matrix-rtc-ca-failed = Couldn't write the certificate bundle the call authorization app trusts: { $error }
+plugin-install-capability-dropped = The home server drops { $capability } by default for host-network services. If the image needs it (ICMP pings and the like), declare the { $permission } permission and write { $field } for service { $service }.
 
 # 静态网页和托管形态（ADR-0080）
 plugin-install-static-dir = Static files in `{ $root }`: { $problem }

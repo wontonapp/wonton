@@ -9,18 +9,25 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import androidx.annotation.StringRes
 import androidx.core.app.ServiceCompat
 import app.wonton.android.MainActivity
 import app.wonton.android.R
 import app.wonton.android.WontonApplication
 import app.wonton.android.push.PushNotifications
 import app.wonton.client.ClientCore
+import app.wonton.protocol.ConnectionNotice
+import app.wonton.protocol.HomeStatus
+import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PushContent
 import app.wonton.ui.chatUpdates
+import app.wonton.ui.homeUpdates
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -52,13 +59,14 @@ class KeepaliveService : Service() {
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            buildNotification(),
+            buildNotification(titleFor(core.home())),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
         if (scope == null) {
             val updates = CoroutineScope(SupervisorJob() + Dispatchers.Default)
             scope = updates
             updates.launch { showNewMessages(core) }
+            updates.launch { followConnection(core) }
         }
         return START_NOT_STICKY
     }
@@ -79,7 +87,15 @@ class KeepaliveService : Service() {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun buildNotification(): Notification {
+    /** 常驻通知的标题跟着核心给的连接状态和提示走：没连上时不说“正在保持连接”。 */
+    private suspend fun followConnection(core: ClientCore) {
+        val manager = getSystemService(NotificationManager::class.java)
+        core.homeUpdates().map(::titleFor).distinctUntilChanged().collect { title ->
+            manager.notify(NOTIFICATION_ID, buildNotification(title))
+        }
+    }
+
+    private fun buildNotification(@StringRes title: Int): Notification {
         val open = PendingIntent.getActivity(
             this,
             0,
@@ -90,7 +106,7 @@ class KeepaliveService : Service() {
         )
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.launch_glyph)
-            .setContentTitle(getString(R.string.keepalive_notification_title))
+            .setContentTitle(getString(title))
             .setContentIntent(open)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setOngoing(true)
@@ -121,6 +137,17 @@ class KeepaliveService : Service() {
     }
 
     companion object {
+        /** 连着就是在保持连接；核心说连不上（提示过了宽限期）才写连不上，其余（刚断开的几秒、在连）写正在连接。 */
+        @StringRes
+        fun titleFor(home: HomeViewModel): Int = when {
+            home.status is HomeStatus.Connected -> R.string.keepalive_notification_title
+            home.notice is ConnectionNotice.Unreachable ||
+                home.notice is ConnectionNotice.ServerOffline ||
+                home.notice is ConnectionNotice.DeviceRejected ||
+                home.notice is ConnectionNotice.VersionMismatch -> R.string.keepalive_notification_unreachable
+            else -> R.string.keepalive_notification_connecting
+        }
+
         const val CHANNEL_ID = "keepalive"
         const val NOTIFICATION_ID = 2
     }

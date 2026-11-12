@@ -204,6 +204,7 @@ plugin-install-cfg-target-absolute = configs 的目标 `{ $raw }` 必须是绝�
 plugin-install-cfg-target-root = configs 的目标不能是 /
 plugin-install-cfg-id-invalid = configs 的 { $field } `{ $value }` 必须是非负整数
 plugin-install-cfg-mode-invalid = configs 的 mode `{ $value }` 不合法：须为 0 到 0777 的八进制权限
+plugin-install-cfg-parent-is-file = configs 目标的上级 `{ $parent }` 在容器 { $service } 里是文件，写不进去
 
 # ── 挂载（mounts.rs）───────────────────────────────────────────────────────
 
@@ -442,8 +443,9 @@ plugin-install-coreaddr-no-core-address = 网络还没有给服务器留出地�
 plugin-install-upstream-container-missing = 容器 { $container } 不存在，或者在网络 { $network } 中没有地址
 plugin-install-upstream-mcp-headers = 应用 { $id } 的 MCP 请求头解析不了：{ $error }
 plugin-install-relay-prepare-dir-failed = 准备中继目录失败：{ $error }
-plugin-install-relay-path-too-long = 应用数据目录的路径太长，unix 套接字放不下，把服务器的数据目录换到短一点的路径（{ $path }：{ $bytes } 字节，上限 { $max } 字节）
+plugin-install-relay-path-too-long = 中继套接字的目录路径太长，unix 套接字放不下，把 WONTON_RELAY_DIR 换到短一点的目录（{ $path }：{ $bytes } 字节，上限 { $max } 字节）
 plugin-install-relay-listens-unknown = 读不到监听表，不判断防火墙
+plugin-install-egress-host-no-address = 出口容器在插件网络 { $network } 里没有地址，宿主网络的服务过不了代理
 
 # ── 图片（images.rs、images/preflight.rs、image_worker.rs）──────────────────
 
@@ -524,6 +526,7 @@ plugin-install-runtime-unsupported = 这个核心不支持安装或升级 runtim
 plugin-install-matrix-rtc-needs-matrix = 核心没有接入 Matrix 服务器，装不了提供 matrix_rtc（通话授权）的插件
 plugin-install-matrix-rtc-conflict = 已经装了提供 matrix_rtc（通话授权）的插件 { $id }：同一时间只能有一个
 plugin-install-matrix-rtc-ca-failed = 写不了通话授权插件要信任的证书包：{ $error }
+plugin-install-capability-dropped = 宿主网络的服务默认被核心去掉了 { $capability }。镜像要用（ICMP ping 之类）就申请 { $permission } 权限，并给服务 { $service } 写 { $field }。
 
 # 静态网页和托管形态（ADR-0080）
 plugin-install-static-dir = `{ $root }` 里的静态文件：{ $problem }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 全画面ページのカプセルで全画面を終了するボタン。 -->
+    <string name="takeover_hand_back">操作を返す</string>
+    <string name="takeover_start">操作する</string>
+    <string name="takeover_got_it">了解</string>
+    <string name="takeover_not_started">操作を開始できませんでした：%1$s</string>
+    <string name="takeover_lost">操作を返しました。接続が切れました</string>
+    <string name="takeover_lost_reason">操作を返しました：%1$s</string>
+</resources>

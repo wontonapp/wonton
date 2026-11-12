@@ -193,6 +193,21 @@ fn smtp_names_outside_interpolated_values_do_not_raise_the_floor() {
 }
 
 #[test]
+fn the_gateway_cidr_and_app_host_variables_require_spec_0_14() {
+    for (name, reference) in [
+        ("WONTON_GATEWAY_CIDR", "TRUST: ${WONTON_GATEWAY_CIDR}"),
+        ("WONTON_APP_HOST", "HOSTS: $WONTON_APP_HOST"),
+    ] {
+        let mut doc = document("0.13", json!({}), plain());
+        doc["services"]["web"]["environment"] = json!({"VALUE": reference});
+        let found = problems(&doc);
+        assert_eq!(found.len(), 1, "{name}: {found:?}");
+        doc["x-wonton"]["spec"] = json!("0.14");
+        assert!(problems(&doc).is_empty(), "{name}");
+    }
+}
+
+#[test]
 fn all_new_variables_are_checked_even_after_an_unrelated_reference() {
     let service = json!({"image": "nginx", "environment": {"SMTP":
         "${OTHER} ${WONTON_SMTP_HOST}:${WONTON_SMTP_PORT} ${WONTON_MAIL_FROM} ${WONTON_SMTP_HOST}"
@@ -302,4 +317,35 @@ fn dedicated_provider_fields_keep_their_original_spec_floors() {
         );
         assert!(problems(&document("0.7", manifest, plain())).is_empty());
     }
+}
+
+#[test]
+fn base64url_secret_encoding_needs_spec_0_14() {
+    let manifest =
+        json!({"secrets": {"key": {"generate": {"bytes": 32, "encoding": "base64url"}}}});
+    let found = problems(&document("0.13", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].contains("x-wonton.secrets.key.generate.encoding: base64url"),
+        "{found:?}"
+    );
+    assert!(problems(&document("0.14", manifest, plain())).is_empty());
+}
+
+#[test]
+fn the_install_deadline_needs_spec_0_14() {
+    let manifest = json!({"install_timeout_secs": 900});
+    let found = problems(&document("0.13", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].contains("x-wonton.install_timeout_secs"),
+        "{found:?}"
+    );
+    assert!(problems(&document("0.14", manifest, plain())).is_empty());
+}
+
+#[test]
+fn other_secret_encodings_stay_at_the_old_spec() {
+    let manifest = json!({"secrets": {"key": {"generate": {"encoding": "base64"}}}});
+    assert!(problems(&document("0.13", manifest, plain())).is_empty());
 }

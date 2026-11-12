@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Small tag next to a permission that's newly requested in this update. -->
+    <!-- Section title for the folders the app may save files into. No arguments. -->
+    <string name="plugin_save_folders">Folders it can save to</string>
+    <!-- Detail-page switch for the remembered camera/microphone decision of its web page. -->
+    <string name="plugin_media_title">Camera and microphone for its web page</string>
+    <!-- Section title and row for opening an app\'s settings page. No arguments. -->
+    <string name="plugin_settings_section">Settings</string>
+    <!-- Note under a required setting that has no value and no default. No arguments. -->
+    <string name="plugin_settings_required">Required</string>
+    <!-- Switch label: ask before every update of an agent-written app. No arguments. -->
+    <string name="plugin_ask_every_update">Ask every time</string>
+    <!-- Section title for the app's metadata. No arguments. -->
+    <string name="plugin_info">Info</string>
+    <!-- Meta row: who wrote the app. -->
+    <string name="plugin_author">Author</string>
+    <!-- Root permission mark on a plugin tile in the launcher. -->
+    <string name="plugin_root_permission_badge">This plugin can control the whole host</string>
+    <string name="plugin_permission_open_title">Turn on “%1$s”?</string>
+    <string name="plugin_permission_continue">Continue</string>
+    <string name="plugin_permission_close_title">Turn off “%1$s”?</string>
+    <string name="plugin_permission_close">Turn off</string>
+    <!-- Button that proceeds with the typed source address when changing versions. -->
+    <string name="plugin_sources_continue">Continue</string>
+    <!-- Warning at the top of the Add Source page. -->
+    <string name="plugin_sources_unreviewed_warning">Apps and files added here aren\'t reviewed. Install only what you trust.</string>
+    <!-- Succeeded task line when the core couldn't compare the app's tools. -->
+    <string name="plugin_task_added_tools_unknown">Can\'t tell which tools were added this time</string>
+    <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
+    <string name="plugin_task_uncertain">The result is uncertain: %1$s</string>
+    <!-- Button on an uncertain task that opens the installed list. -->
+    <string name="plugin_task_check_installed">Check installed</string>
+    <!-- Failed uninstall task line. Argument: the reason from the core. -->
+    <string name="plugin_task_uninstall_failed">Uninstall failed: %1$s</string>
+    <!-- Small tag: the app isn't reviewed. -->
+    <string name="plugin_trust_unreviewed">Unreviewed</string>
+    <!-- Action-sheet item that uninstalls the app. -->
+    <string name="plugin_uninstall_action">Uninstall</string>
+</resources>

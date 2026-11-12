@@ -3,6 +3,7 @@
 use std::fs;
 use std::io::Read;
 use std::os::unix::fs::MetadataExt;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -98,20 +99,21 @@ pub(super) fn manager_with_oidc(
     )
 }
 
-/// 应用数据目录在 `apps_dir` 的管理器，其余同 [`manager_with`]：模拟数据目录在很深的路径下。
-pub(super) fn manager_with_apps_dir(
+/// 中继套接字目录在 `relay_dir` 的管理器，其余同 [`manager_with`]。
+pub(super) fn manager_with_relay_dir(
     engine: Engine,
     dir: &tempfile::TempDir,
-    apps_dir: &std::path::Path,
+    relay_dir: &std::path::Path,
 ) -> PluginManager {
-    manager_for(
+    manager_for_opts(
         engine,
         dir,
-        apps_dir,
+        &dir.path().join("apps"),
         None,
         None,
         Instance::default(),
         ImageWorker::in_process(),
+        Some(relay_dir.to_owned()),
     )
 }
 
@@ -124,6 +126,30 @@ fn manager_for(
     instance: Instance,
     images: ImageWorker,
 ) -> PluginManager {
+    manager_for_opts(
+        engine,
+        dir,
+        apps_dir,
+        core_container,
+        oidc,
+        instance,
+        images,
+        None,
+    )
+}
+
+/// [`manager_for`]，可以另指中继套接字目录。
+#[allow(clippy::too_many_arguments)]
+fn manager_for_opts(
+    engine: Engine,
+    dir: &tempfile::TempDir,
+    apps_dir: &std::path::Path,
+    core_container: Option<String>,
+    oidc: Option<Hydra>,
+    instance: Instance,
+    images: ImageWorker,
+    relay_dir: Option<PathBuf>,
+) -> PluginManager {
     let owner = fs::metadata(dir.path()).unwrap();
     let cfg = LifecycleConfig {
         public: PublicUrls {
@@ -134,6 +160,8 @@ fn manager_for(
         data_dir: dir.path().to_owned(),
         apps_dir: apps_dir.to_owned(),
         shares_dir: dir.path().join("shares"),
+        // 默认不是 `/run`：测试要能同时跑，套接字得落在各自的临时目录里。
+        relay_dir: relay_dir.unwrap_or_else(|| dir.path().join("relay")),
         core_container,
         tz: "UTC".into(),
         puid: owner.uid(),
@@ -244,15 +272,19 @@ async fn configs_are_written_after_create_and_before_start() {
             < position(format!("POST /containers/{web}/start")),
         "配置要在启动前写进容器：{writes:?}"
     );
+    // 目标上级目录在容器里不存在时先建出来（root、0755），文件照声明写。
     assert_eq!(
         archived(&docker.archive(&web).unwrap()),
-        [(
-            "etc/app.yaml".to_owned(),
-            101,
-            102,
-            0o444,
-            b"level: info\n".to_vec()
-        )]
+        [
+            ("etc".to_owned(), 0, 0, 0o755, Vec::new()),
+            (
+                "etc/app.yaml".to_owned(),
+                101,
+                102,
+                0o644,
+                b"level: info\n".to_vec()
+            ),
+        ]
     );
 
     // 插件包的文件随记录保存，核心重启后用它们恢复。
@@ -362,6 +394,7 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             enabled_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
+            entry_label: None,
             origin: None,
             written_by: None,
             ask_every_update: false,
@@ -755,6 +788,7 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
             enabled_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
+            entry_label: None,
             origin: None,
             written_by: None,
             ask_every_update: false,

@@ -1,8 +1,11 @@
-"""字符串目录的完整性（规则三）：iOS 的 .xcstrings 和 Android 的 strings.xml。
+"""字符串目录的完整性（规则三）：iOS 的 .xcstrings、Android 的 strings.xml、Fluent 的 .ftl。
 
 四种语言（en、zh-Hans、zh-Hant、ja）的键要一样；每个键每种语言都有译文；占位符的种类和个数要一样。
 占位符比较时忽略位置（%2$@ 和 %@ 算同一种），每种占位符取各个形式里的最大个数
 （复数的 one 和 other 都带 %lld，中文只有 other，两边都是一个 %lld）。
+
+文字按功能分文件（ADR-0043）：键的前缀决定它在哪个文件，同一个键不能出现在两个文件里。
+分组表见 `groups.py`，文件路径见 `paths.py`。
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
+from . import groups, paths  # noqa: E402
 from .source import Problem, is_cjk
 
 XC_LANGS = ("en", "zh-Hans", "zh-Hant", "ja")
@@ -91,6 +95,72 @@ def check_xcstrings(text: str) -> List[Problem]:
         line = _line_of(text, json.dumps(key, ensure_ascii=False))
         problems += _xc_entry_problems(key, entry, line)
     return problems
+
+
+def xcstring_keys(text: str) -> List[Tuple[str, int]]:
+    """目录里的（键，行号）。"""
+    data = json.loads(text)
+    return [
+        (key, _line_of(text, json.dumps(key, ensure_ascii=False)))
+        for key in (data.get("strings") or {})
+    ]
+
+
+FTL_KEY_RE = re.compile(r"^([A-Za-z0-9-]+)\s*=", re.MULTILINE)
+
+
+def ftl_keys(text: str) -> List[Tuple[str, int]]:
+    """Fluent 文件里的（键，行号）。"""
+    return [(match.group(1), text.count("\n", 0, match.start()) + 1) for match in FTL_KEY_RE.finditer(text)]
+
+
+def android_keys(text: str) -> List[Tuple[str, int]]:
+    return [(name, _line_of(text, f'name="{name}"')) for name in _parse_android(text)]
+
+
+def layout_problems(found: List[Tuple[str, List[Tuple[str, int]]]], platform: str) -> Dict[str, List[Problem]]:
+    """键有没有放进它该在的文件、有没有在别的文件里也有一份（ADR-0043）。
+
+    重复按语言比：Android 再分模块（两个模块的键互不覆盖），iOS 一个目录里就是四种语言。
+    """
+    result: Dict[str, List[Problem]] = {}
+    seen: Dict[Tuple[str, str, str], str] = {}
+    for path, keys in found:
+        kind = paths.file_kind(path)
+        stem = kind[2]
+        scope = (path.rsplit("/", 2)[0] if platform == "android" else "", kind[1])
+        for key, line in keys:
+            target = groups.resolve(key, platform)[1]
+            if target != stem:
+                hint = groups.matching_prefixes(target)
+                where = f"（{groups.GROUP_OF[hint[0]]} 组）" if hint else ""
+                problems = result.setdefault(path, [])
+                problems.append((line, f"「{key}」按前缀该放进 {groups.file_name(target, platform)}{where}"))
+            if (scope, key) in seen:
+                result.setdefault(path, []).append((line, f"「{key}」和 {seen[(scope, key)]} 里重复"))
+            else:
+                seen[(scope, key)] = path
+    return result
+
+
+def ftl_missing(stem: str, texts: Dict[str, Optional[str]]) -> Dict[str, List[Problem]]:
+    """每种语言的这份文件的键要和 en 一样。缺文件报给 en 的文件，多余的键报在自己文件上。"""
+    en_path = paths.ftl_path("en", stem)
+    en_keys = [key for key, _ in ftl_keys(texts["en"] or "")]
+    result: Dict[str, List[Problem]] = {}
+    for lang, text in texts.items():
+        path = paths.ftl_path(lang, stem)
+        if text is None:
+            result.setdefault(en_path, []).append((1, f"缺少 {path}（{lang} 的译文）"))
+            continue
+        names = ftl_keys(text)
+        for key in en_keys:
+            if key not in dict(names):
+                result.setdefault(path, []).append((1, f"缺少「{key}」的 {lang} 译文"))
+        for key, line in names:
+            if key not in en_keys:
+                result.setdefault(path, []).append((line, f"「{key}」在 en 里没有，{lang} 不能单独有"))
+    return result
 
 
 # ---- Android strings.xml ----
@@ -174,6 +244,8 @@ def check_android_values(lang_texts: Dict[str, str]) -> Dict[str, List[Problem]]
 
 def android_problems(en_text: str, others: Dict[str, Optional[str]]) -> Dict[str, List[Problem]]:
     """others：{语言: 文件内容或 None（文件缺失）}。缺失的文件在结果里报给 en 的文件。"""
+    if not en_text.strip():
+        return {"en": [(1, "英文的 values 里没有这份文件")]}
     lang_texts = {"en": en_text}
     missing: List[str] = []
     for lang, text in others.items():

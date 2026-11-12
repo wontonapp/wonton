@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use bollard::models::{ContainerCreateBody, Mount, MountType};
 
@@ -94,6 +95,8 @@ pub struct InstallContext {
     pub app_data: PathBuf,
     /// 托管形态的总目录（宿主路径，ADR-0080）：提供方挂 `<它>/<能力名>`。
     pub hosted_root: PathBuf,
+    /// 宿主网络中继的套接字目录。
+    pub relay_dir: PathBuf,
     /// 核心管理的配置文件目录（宿主路径），`read_only` 服务的 `configs` 从这里挂进容器。
     pub config_store: PathBuf,
     /// 已授权的共享文件夹：名称 → 宿主路径。
@@ -124,6 +127,10 @@ pub struct InstallContext {
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
+    /// 这个插件最多等多久：核心的安装期限和清单声明的期限取大的（见
+    /// [`PluginManager::install_limit`](super::manager::PluginManager::install_limit)）。安装、启动、重建都按它
+    /// 算健康门的时限。
+    pub install_limit: Duration,
     /// 额外写进每个容器 `/etc/hosts` 的条目（核心不在容器里运行时，用来让插件访问网关）。
     pub extra_hosts: Vec<String>,
     /// 申请了 `devices.gpu` 且本机有可用的显卡时：交给 `gpu.services` 里的服务的设备（见 [`super::gpu`]）。
@@ -237,6 +244,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
     InstallContext {
         app_data: root.join("apps").join(&slug),
         hosted_root: root.join("hosted"),
+        relay_dir: PathBuf::from(crate::config::DEFAULT_RELAY_DIR),
         config_store: root.join("core").join("configs"),
         shares,
         app_url: webui.map(|_| url.clone()),
@@ -298,6 +306,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         tz: "UTC".into(),
         puid: 1000,
         pgid: 1000,
+        install_limit: crate::config::DEFAULT_INSTALL_TIMEOUT,
         extra_hosts: Vec::new(),
         gpu: None,
         lan: dry_run_lan(manifest, &slug),
@@ -494,11 +503,18 @@ fn render_service_containers(
         if let Some(grant) = &ctx.lan {
             lan::publish(name, service, grant, &mut plan.body, langs)?;
         }
-        if let Some(egress) = ctx.egress.as_ref()
-            && matches!(&service.network_mode, None | Some(NetworkMode::Service(_)))
-        {
-            egress.inject(&mut plan.body, service_keys.iter().map(String::as_str));
-            egress::healthcheck::apply(&mut plan.body);
+        // 宿主网络里解析不了别名 `egress.wonton.internal`：只用出口容器在这个网络里的地址，地址还没定下来
+        // 时先不写（能出网，只是不经代理），别写出一个连不上的代理。
+        if let Some(egress) = ctx.egress.as_ref() {
+            let url = match &service.network_mode {
+                None | Some(NetworkMode::Service(_)) => Some(egress::PROXY_URL),
+                Some(NetworkMode::Host) => egress.host_proxy.as_deref(),
+                Some(NetworkMode::None) => None,
+            };
+            if let Some(url) = url {
+                egress.inject(&mut plan.body, service_keys.iter().map(String::as_str), url);
+                egress::healthcheck::apply(&mut plan.body);
+            }
         }
         plan.files = files;
         plan.store_dir = store_dir;
@@ -558,8 +574,8 @@ fn render_plan(
         )?;
     }
     check_not_nested(&binds, langs)?;
-    let mut dirs = dir_owners(&binds, &services, ctx, langs)?;
-    let relays = prepare_relays(manifest, ctx, langs, &services, &mut containers, &mut dirs)?;
+    let dirs = dir_owners(&binds, &services, ctx, langs)?;
+    let relays = prepare_relays(manifest, ctx, langs, &services, &mut containers)?;
     for container in &mut containers {
         super::render_drift::stamp(container);
     }
@@ -616,7 +632,7 @@ fn validated_services<'a>(
     Ok((services, vars, used))
 }
 
-/// 中继容器和目录：宿主网络的服务各要一个。核心一侧的套接字路径放不下时在这报出来——
+/// 中继容器：宿主网络的服务各要一个。核心一侧的套接字路径放不下时在这报出来——
 /// 这之后才是拉镜像、起容器，装之前就失败。
 fn prepare_relays(
     manifest: &Manifest,
@@ -624,13 +640,14 @@ fn prepare_relays(
     langs: &Languages,
     services: &BTreeMap<String, Service>,
     containers: &mut Vec<ContainerPlan>,
-    dirs: &mut BTreeMap<PathBuf, Owner>,
 ) -> Result<Vec<HostRelay>, RenderError> {
     let relays = super::host_relay::needed(manifest, services);
-    if let Some(problem) = super::host_relay::path_too_long(&ctx.app_data, &relays, langs) {
+    if let Some(problem) =
+        super::host_relay::path_too_long(&ctx.relay_dir, &ctx.instance, &ctx.slug, &relays, langs)
+    {
         return Err(RenderError::HostPath(problem));
     }
-    add_relays(manifest, ctx, &relays, containers, dirs);
+    add_relays(manifest, ctx, &relays, containers);
     Ok(relays)
 }
 
@@ -639,18 +656,17 @@ fn add_relays(
     ctx: &InstallContext,
     relays: &[HostRelay],
     containers: &mut Vec<ContainerPlan>,
-    dirs: &mut BTreeMap<PathBuf, Owner>,
 ) {
     let owner = Owner {
         uid: ctx.puid,
         gid: ctx.pgid,
     };
+    // 中继目录不在应用数据目录下，`dirs` 里放不进去（见 [`hostdir::prepare`]），安装时单独准备。
     for relay in relays {
-        dirs.insert(super::host_relay::dir(&ctx.app_data), owner);
         containers.push(super::host_relay::plan(
             &ctx.instance,
             manifest,
-            &ctx.app_data,
+            &ctx.relay_dir,
             owner,
             relay,
         ));

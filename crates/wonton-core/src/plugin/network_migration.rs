@@ -5,7 +5,7 @@ use std::net::Ipv4Addr;
 
 use ipnet::Ipv4Net;
 
-use super::core_address::{Reservation, last_usable};
+use super::core_address::{Reservation, egress_address, last_usable};
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
 use super::manifest::Manifest;
@@ -19,6 +19,8 @@ pub(in crate::plugin) struct PendingMigration {
     pub(in crate::plugin) lan: Option<Ipv4Net>,
     pub(in crate::plugin) egress: Option<Ipv4Net>,
     pub(in crate::plugin) core_address: Option<String>,
+    /// 宿主网络的服务用的出口地址（[`super::core_address::egress_address`]），主网络要迁时是新网段上的。
+    pub(in crate::plugin) egress_host_proxy: Option<String>,
     pub(in crate::plugin) extra_hosts: Vec<String>,
 }
 
@@ -80,6 +82,11 @@ impl PluginManager {
             }
             None => (None, Vec::new()),
         };
+        let egress_host_proxy = main.and_then(|subnet| {
+            let gateway = Ipv4Addr::from(subnet.network().to_bits() + 1).to_string();
+            egress_address(subnet, Some(&gateway))
+                .map(|address| format!("http://{address}:{}", super::egress::PROXY_PORT))
+        });
         Ok(Some((
             PendingMigration {
                 main,
@@ -87,6 +94,7 @@ impl PluginManager {
                 egress,
                 core_address,
                 extra_hosts,
+                egress_host_proxy,
             },
             reservation,
         )))

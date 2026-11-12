@@ -11,7 +11,7 @@ struct ForwardRoomSheet: View {
 
     var body: some View {
         if rooms.isEmpty {
-            Text(.messageForwardEmpty)
+            Text(.Message0.messageForwardEmpty)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
                 .frame(maxWidth: .infinity)

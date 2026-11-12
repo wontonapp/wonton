@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="panel_add">Add</string>
+    <string name="panel_add_pages">Add pages</string>
+    <string name="panel_can_add">Can be added to the panel</string>
+    <string name="panel_close">Close panel</string>
+    <string name="panel_edit">Edit panel</string>
+    <string name="panel_in_panel">In the panel</string>
+    <string name="panel_open">Open panel</string>
+    <string name="panel_public_unsupported">This device\'s WebView cannot keep public web pages apart from plugin pages, so they cannot be opened here</string>
+    <string name="panel_remove">Remove</string>
+    <string name="panel_url">Enter a URL</string>
+</resources>

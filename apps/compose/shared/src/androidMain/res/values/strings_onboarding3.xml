@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Problem title in setup when no agent can be chosen. -->
+    <string name="onboarding_agent_empty">No agents to choose from. Try refreshing.</string>
+    <!-- Notice when tapping "Get API key" found no browser to open the link. -->
+    <string name="onboarding_model_no_browser">No browser can open this link. Install or enable a browser and try again.</string>
+    <!-- Button that opens the model gateway's settings page. -->
+    <string name="onboarding_model_open_settings">Open model settings</string>
+    <!-- Button that checks the typed API key against the model provider. -->
+    <string name="onboarding_model_test">Test</string>
+    <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
+    <string name="onboarding_model_use_login">Use %1$s</string>
+    <!-- Problem title in setup: the provider rejected the API key. -->
+    <string name="onboarding_problem_model_key_rejected">The provider rejected this API key. Fix it and test again.</string>
+    <!-- Problem title in setup: the provider's address can't be reached. -->
+    <string name="onboarding_problem_model_provider_unreachable">Can\'t reach the provider. Check its address or your network and try again.</string>
+    <!-- Problem title in setup: the home server hit an error answering the request. -->
+    <string name="onboarding_problem_model_upstream">Your home server couldn\'t finish the request. Try again later.</string>
+    <!-- Problem title while installing: the app changed after it was confirmed. -->
+    <string name="onboarding_problem_plugin_changed">The app changed after you confirmed it. Review and confirm it again.</string>
+    <!-- Problem title while installing: the home server is updating itself right now. -->
+    <string name="onboarding_problem_plugin_core_upgrading">Your home server is updating. Try again when it finishes.</string>
+    <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
+    <string name="onboarding_review_uncertain">Install result unknown. Check the app\'s page.</string>
+    <!-- Secondary button on the setup error screen: leave setup without finishing. -->
+    <string name="onboarding_skip_anyway">Skip for now</string>
+    <!-- Card title after setup finished. -->
+    <string name="onboarding_step_finished">Finished</string>
+    <!-- Card title fallback in setup when the step is unknown. -->
+    <string name="onboarding_step_other">Setup</string>
+    <!-- Card title at the top of the review step in setup: check everything before finishing. -->
+    <string name="onboarding_step_review">Review</string>
+</resources>

@@ -22,8 +22,8 @@ struct ToolPolicySection: View {
                 if let reason = policy.problem {
                     ProblemNotice(
                         problem: Problem(
-                            title: String(localized: .toolPolicyUnreadableTitle),
-                            nextStep: String(localized: .toolPolicyUnreadableNext),
+                            title: String(localized: .ToolPolicy.toolPolicyUnreadableTitle),
+                            nextStep: String(localized: .ToolPolicy.toolPolicyUnreadableNext),
                             detail: reason
                         )
                     )
@@ -34,7 +34,7 @@ struct ToolPolicySection: View {
         } else if let problem {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 ProblemNotice(problem: problem)
-                Button(String(localized: .commonRetry)) { Task { await load() } }
+                Button(String(localized: .Common.commonRetry)) { Task { await load() } }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
                     .fixedSize()
             }
@@ -48,16 +48,16 @@ struct ToolPolicySection: View {
             change { try await model.core.stopToolWindow(id: id, card: card) }
         }
         BotSwitches(
-            title: String(localized: .toolPolicyAlwaysTitle),
-            risk: String(localized: .toolPolicyAlwaysRisk),
+            title: String(localized: .ToolPolicy.toolPolicyAlwaysTitle),
+            risk: String(localized: .ToolPolicy.toolPolicyAlwaysRisk),
             bots: policy.always,
             enabled: enabled
         ) { caller, isOn in
             change { try await model.core.setToolAlways(id: id, caller: caller, enabled: isOn) }
         }
         BotSwitches(
-            title: String(localized: .toolPolicyAllowAllTitle),
-            risk: String(localized: .toolPolicyAllowAllRisk),
+            title: String(localized: .ToolPolicy.toolPolicyAllowAllTitle),
+            risk: String(localized: .ToolPolicy.toolPolicyAllowAllRisk),
             bots: policy.allowAll,
             enabled: enabled
         ) { caller, isOn in
@@ -109,14 +109,14 @@ private struct OpenWindows: View {
 
     var body: some View {
         if !windows.isEmpty {
-            DetailSection(title: String(localized: .toolPolicyWindowsTitle)) {
+            DetailSection(title: String(localized: .ToolPolicy.toolPolicyWindowsTitle)) {
                 ForEach(windows, id: \.card) { window in
                     HStack(spacing: WontonTheme.spacing.s12) {
-                        Text(.toolPolicyWindowUntil(window.name, until(window)))
+                        Text(.ToolPolicy.toolPolicyWindowUntil(window.name, until(window)))
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Button(String(localized: .toolPolicyStop)) { stop(window.card) }
+                        Button(String(localized: .ToolPolicy.toolPolicyStop)) { stop(window.card) }
                             .buttonStyle(WontonButtonStyle(kind: .secondary))
                             .fixedSize()
                             .disabled(!enabled)
@@ -170,7 +170,7 @@ private struct ToolList: View {
     var body: some View {
         if tools.isEmpty {
             if let error {
-                DetailSection(title: String(localized: .toolPolicyToolsTitle)) {
+                DetailSection(title: String(localized: .ToolPolicy.toolPolicyToolsTitle)) {
                     WontonNotice(icon: .warning, title: error)
                 }
             }
@@ -178,7 +178,7 @@ private struct ToolList: View {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 Button { expanded.toggle() } label: {
                     HStack {
-                        Text(.toolPolicyToolsTitle)
+                        Text(.ToolPolicy.toolPolicyToolsTitle)
                             .wontonText(WontonTheme.typography.sectionTitle)
                             .foregroundStyle(Color(colors.textPrimary))
                         Spacer(minLength: 0)
@@ -192,7 +192,7 @@ private struct ToolList: View {
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(.isHeader)
                 if expanded {
-                    Text(.toolPolicyReadOnlyHint)
+                    Text(.ToolPolicy.toolPolicyReadOnlyHint)
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.warning))
                     ForEach(tools, id: \.name) { ToolRow(tool: $0, enabled: enabled, change: change) }
@@ -224,7 +224,7 @@ private struct ToolRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if tool.access == .pluginReadOnly {
-                Text(.toolPolicyReadOnlyTag)
+                Text(.ToolPolicy.toolPolicyReadOnlyTag)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             } else {

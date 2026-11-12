@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
+    <string name="onboarding_agent_connection_logins">%1$s或 key</string>
+    <!-- Button that collapses the list of less common model providers. -->
+    <string name="onboarding_model_less">收起服务商</string>
+    <!-- Problem title in setup: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_model_protocol">App 和家里服务器的版本不兼容，请更新后重试。</string>
+    <!-- Problem title in setup: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_model_unauthorized">家里的服务器没有授权这台设备，请检查访问权限后重试。</string>
+    <!-- Problem title while installing: the app wasn't found. -->
+    <string name="onboarding_problem_plugin_not_found">没有找到这个应用，刷新列表后再试。</string>
+    <!-- Problem title while installing: the home server doesn't recognize this device. -->
+    <string name="onboarding_problem_plugin_unauthorized">家里的服务器不认这台设备，请重新扫码配对。</string>
+    <!-- Problem title in setup: the recommendation list needs a newer home server. -->
+    <string name="onboarding_problem_store_index_too_new">推荐清单需要更新的服务器，可以升级或跳过。</string>
+    <!-- Problem title in setup: the recommendation source hit an error. -->
+    <string name="onboarding_problem_store_upstream">推荐清单的来源出错了，可以重试或跳过。</string>
+    <!-- Dialog title when a new agent replaces an installed one. Argument: the old agent's name. -->
+    <string name="onboarding_replaced_agent_title">要卸掉“%1$s”吗？</string>
+    <!-- Checkmark icon for a finished install task. -->
+    <string name="onboarding_review_done">完成</string>
+    <!-- Kind label above a review row: the profile that will be saved. -->
+    <string name="onboarding_review_section_profile">资料</string>
+    <!-- Kind label above a review row: the default agent. -->
+    <string name="onboarding_review_section_agent">Agent</string>
+    <!-- Kind label above a review row: the model. -->
+    <string name="onboarding_review_section_model">模型</string>
+    <!-- Label while an install task waits for others to finish. -->
+    <string name="onboarding_review_waiting">排队</string>
+    <!-- Card title at the top of the agent step in setup: pick the agent to use. -->
+    <string name="onboarding_step_agent">选 Agent</string>
+    <!-- Card title at the top of the model step in setup: connect a model provider. -->
+    <string name="onboarding_step_model">接模型</string>
+</resources>

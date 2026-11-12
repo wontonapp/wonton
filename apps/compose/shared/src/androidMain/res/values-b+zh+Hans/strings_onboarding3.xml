@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Problem title in setup when no agent can be chosen. -->
+    <string name="onboarding_agent_empty">没有可选的 Agent，可以刷新重试。</string>
+    <!-- Notice when tapping "Get API key" found no browser to open the link. -->
+    <string name="onboarding_model_no_browser">没有浏览器能打开这个链接，请安装或启用浏览器后重试。</string>
+    <!-- Button that opens the model gateway's settings page. -->
+    <string name="onboarding_model_open_settings">打开模型设置</string>
+    <!-- Button that checks the typed API key against the model provider. -->
+    <string name="onboarding_model_test">测试</string>
+    <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
+    <string name="onboarding_model_use_login">用%1$s</string>
+    <!-- Problem title in setup: the provider rejected the API key. -->
+    <string name="onboarding_problem_model_key_rejected">服务商拒绝了这个 key，请修改后重新测试。</string>
+    <!-- Problem title in setup: the provider's address can't be reached. -->
+    <string name="onboarding_problem_model_provider_unreachable">连不上服务商，请检查地址或网络后重试。</string>
+    <!-- Problem title in setup: the home server hit an error answering the request. -->
+    <string name="onboarding_problem_model_upstream">家里的服务器没能完成请求，请稍后重试。</string>
+    <!-- Problem title while installing: the app changed after it was confirmed. -->
+    <string name="onboarding_problem_plugin_changed">应用在确认之后变了，请重新查看、确认。</string>
+    <!-- Problem title while installing: the home server is updating itself right now. -->
+    <string name="onboarding_problem_plugin_core_upgrading">家里的服务器正在升级，结束后再试。</string>
+    <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
+    <string name="onboarding_review_uncertain">不确定装好没有，请到应用页查看。</string>
+    <!-- Secondary button on the setup error screen: leave setup without finishing. -->
+    <string name="onboarding_skip_anyway">先跳过</string>
+    <!-- Card title after setup finished. -->
+    <string name="onboarding_step_finished">完成</string>
+    <!-- Card title fallback in setup when the step is unknown. -->
+    <string name="onboarding_step_other">引导</string>
+    <!-- Card title at the top of the review step in setup: check everything before finishing. -->
+    <string name="onboarding_step_review">确认</string>
+</resources>

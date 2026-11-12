@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Body of the confirmation prompt on the already-verified device. Argument: the other device's name, or its ID when it has none. -->
+    <string name="verification_incoming_message">Verify “%1$s” with this device?</string>
+    <!-- Status while the two devices negotiate. -->
+    <string name="verification_starting">Preparing verification…</string>
+    <!-- Status after both confirmed, while the keys travel over. -->
+    <string name="verification_fetching_keys">Fetching keys…</string>
+    <!-- Shown on the new device when verification finished. -->
+    <string name="verification_done_here">Verified. Older messages are readable now.</string>
+    <!-- Choice on the backup screen: let another device confirm this one. -->
+    <string name="verification_verify_with_other_device">Verify with another device</string>
+    <!-- Result: the user cancelled on this device. -->
+    <string name="verification_cancelled_by_me">You cancelled the verification.</string>
+    <!-- Result: the user cancelled on the other device. -->
+    <string name="verification_cancelled_by_other">The other device cancelled the verification.</string>
+    <!-- Result: the two devices showed different emoji, so the verification was cancelled. -->
+    <string name="verification_cancelled_mismatch">The devices showed different emoji. The verification was cancelled.</string>
+    <!-- Result: the other device didn't respond within 10 minutes. -->
+    <string name="verification_cancelled_timeout">The other device didn\'t respond in time. The verification was cancelled.</string>
+    <!-- Result: a second verification request arrived at the same time and both were cancelled. -->
+    <string name="verification_cancelled_concurrent_request">Another verification request arrived at the same time. Both were cancelled.</string>
+    <!-- Result: not all keys came through from the other device (it may not have them, or a request got lost), so older messages stay locked. Verify again or enter the recovery key. -->
+    <string name="verification_cancelled_keys_missing">Not all keys came through from the other device, so older messages stay locked.</string>
+    <!-- Result: the verification failed for another reason; the details are in the problem dialog. -->
+    <string name="verification_cancelled_failed">The verification didn\'t finish because of a problem.</string>
+    <!-- Result: the verification didn't finish, for an unknown reason. -->
+    <string name="verification_cancelled_other">The verification didn\'t finish.</string>
+    <!-- Localized names of the 64 SAS verification emoji, by index in the Matrix spec table
+         (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0). -->
+    <string-array name="verification_emoji">
+        <item>Dog</item>
+        <item>Cat</item>
+        <item>Lion</item>
+        <item>Horse</item>
+        <item>Unicorn</item>
+        <item>Pig</item>
+        <item>Elephant</item>
+        <item>Rabbit</item>
+        <item>Panda</item>
+        <item>Rooster</item>
+        <item>Penguin</item>
+        <item>Turtle</item>
+        <item>Fish</item>
+        <item>Octopus</item>
+        <item>Butterfly</item>
+        <item>Flower</item>
+        <item>Tree</item>
+        <item>Cactus</item>
+        <item>Mushroom</item>
+        <item>Globe</item>
+        <item>Moon</item>
+        <item>Cloud</item>
+        <item>Fire</item>
+        <item>Banana</item>
+        <item>Apple</item>
+        <item>Strawberry</item>
+        <item>Corn</item>
+        <item>Pizza</item>
+        <item>Cake</item>
+        <item>Heart</item>
+        <item>Smiley</item>
+        <item>Robot</item>
+        <item>Hat</item>
+        <item>Glasses</item>
+        <item>Spanner</item>
+        <item>Santa</item>
+        <item>Thumbs Up</item>
+        <item>Umbrella</item>
+        <item>Hourglass</item>
+        <item>Clock</item>
+        <item>Gift</item>
+        <item>Light Bulb</item>
+        <item>Book</item>
+        <item>Pencil</item>
+        <item>Paperclip</item>
+        <item>Scissors</item>
+        <item>Lock</item>
+        <item>Key</item>
+        <item>Hammer</item>
+        <item>Telephone</item>
+        <item>Flag</item>
+        <item>Train</item>
+        <item>Bicycle</item>
+        <item>Aeroplane</item>
+        <item>Rocket</item>
+        <item>Trophy</item>
+        <item>Ball</item>
+        <item>Guitar</item>
+        <item>Trumpet</item>
+        <item>Bell</item>
+        <item>Anchor</item>
+        <item>Headphones</item>
+        <item>Folder</item>
+        <item>Pin</item>
+    </string-array>
+</resources>

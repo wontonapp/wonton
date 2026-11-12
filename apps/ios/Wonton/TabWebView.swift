@@ -164,7 +164,7 @@ final class TabWebSession: NSObject {
         // 公网网页直接连，不经家里的隧道代理（ADR-0052）。
         if bridged, let proxy = input.proxy, configuredProxy != proxy || view !== webView {
             guard let port = NWEndpoint.Port(rawValue: proxy.port) else {
-                throw CoreError.InvalidInput(reason: String(localized: .tabProxyPortInvalid))
+                throw CoreError.InvalidInput(reason: String(localized: .Tab0.tabProxyPortInvalid))
             }
             let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(proxy.host), port: port)
             var configuration = ProxyConfiguration(httpCONNECTProxy: endpoint)

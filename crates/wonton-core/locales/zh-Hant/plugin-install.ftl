@@ -204,6 +204,7 @@ plugin-install-cfg-target-absolute = configs 的目標 `{ $raw }` 必須是絕�
 plugin-install-cfg-target-root = configs 的目標不能是 /
 plugin-install-cfg-id-invalid = configs 的 { $field } `{ $value }` 必須是非負整數
 plugin-install-cfg-mode-invalid = configs 的 mode `{ $value }` 不合法：必須是 0 到 0777 的八進位權限
+plugin-install-cfg-parent-is-file = configs 目標的上級 `{ $parent }` 在容器 { $service } 裡是檔案，寫不進去
 
 # ── 掛載（mounts.rs）───────────────────────────────────────────────────────
 
@@ -442,8 +443,9 @@ plugin-install-coreaddr-no-core-address = 網路還沒有為家用伺服器保�
 plugin-install-upstream-container-missing = 容器 { $container } 不存在，或者在網路 { $network } 裡沒有位址
 plugin-install-upstream-mcp-headers = 無法解析應用程式 { $id } 的 MCP 請求標頭：{ $error }
 plugin-install-relay-prepare-dir-failed = 無法準備中繼目錄：{ $error }
-plugin-install-relay-path-too-long = 應用程式資料目錄的路徑太長，unix socket 放不下，把家用伺服器的資料目錄換到短一點的路徑（{ $path }：{ $bytes } 位元組，上限 { $max } 位元組）
+plugin-install-relay-path-too-long = 中繼 socket 的目錄路徑太長，unix socket 放不下，把 WONTON_RELAY_DIR 換到短一點的目錄（{ $path }：{ $bytes } 位元組，上限 { $max } 位元組）
 plugin-install-relay-listens-unknown = 讀不到監聽表，略過防火牆判斷
+plugin-install-egress-host-no-address = 出口容器在插件網路 { $network } 裡沒有位址，宿主網路的服務過不了代理
 
 # ── 圖片（images.rs、images/preflight.rs、image_worker.rs）──────────────────
 
@@ -524,6 +526,7 @@ plugin-install-runtime-unsupported = 這個核心不支援安裝或升級 runtim
 plugin-install-matrix-rtc-needs-matrix = 核心沒有接入 Matrix 伺服器，裝不了提供 matrix_rtc（通話授權）的應用程式
 plugin-install-matrix-rtc-conflict = 已經安裝了提供 matrix_rtc（通話授權）的應用程式 { $id }：同一時間只能有一個
 plugin-install-matrix-rtc-ca-failed = 寫不了通話授權應用程式要信任的憑證包：{ $error }
+plugin-install-capability-dropped = 宿主網路的服務預設被核心去掉了 { $capability }。映像要用（ICMP ping 之類）就申請 { $permission } 權限，並給服務 { $service } 寫 { $field }。
 
 # 静态网页和托管形态（ADR-0080）
 plugin-install-static-dir = `{ $root }` 裡的靜態檔案：{ $problem }

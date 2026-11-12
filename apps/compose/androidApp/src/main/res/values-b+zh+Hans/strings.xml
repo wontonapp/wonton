@@ -1,28 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">云吞</string>
-    <!-- “保持连接”前台服务的常驻通知渠道名（ADR-0003），显示在系统的通知设置里。 -->
-    <string name="keepalive_channel_name">保持连接</string>
-    <!-- “保持连接”前台服务的常驻通知标题。 -->
-    <string name="keepalive_notification_title">正在保持与家里的服务器的连接</string>
-    <!-- 端口映射前台服务的常驻通知渠道名（ADR-0072），显示在系统的通知设置里。 -->
-    <string name="mapping_channel_name">端口映射</string>
-    <!-- 端口映射的常驻通知标题：只有一个应用开着映射。参数是应用名。 -->
-    <string name="mapping_notification_title">正在映射 %1$s 的端口</string>
-    <!-- 端口映射的常驻通知标题：不止一个应用开着映射。参数是应用个数。 -->
-    <string name="mapping_notification_title_multiple">正在映射 %1$d 个应用的端口</string>
-    <string name="push_in_room">%1$s：%2$s</string>
-    <string name="push_unknown_sender">有人</string>
-    <string name="push_invite">邀请你加入</string>
-    <string name="push_unavailable">新消息（暂时取不到内容）</string>
-    <string name="push_hidden">新消息</string>
     <string name="startup_core_failed">云吞启动失败：%1$s</string>
     <string name="startup_code_rejected">开发时传入的配对码被拒绝：%1$s</string>
-    <string name="push_no_permission">没有通知权限：云吞被杀或锁屏时弹不出新消息</string>
-    <string name="push_no_distributor">没有装 UnifiedPush 分发器（比如 ntfy）：云吞被杀或锁屏时收不到新消息</string>
-    <string name="push_no_public_key">分发器没有给出 Web Push 公钥，推送内容没法加密</string>
-    <string name="push_registration_rejected">分发器拒绝了注册：%1$s</string>
-    <string name="push_unregistered">分发器注销了云吞</string>
-    <string name="push_contact_request">想加你的 Bot 为联系人</string>
-    <string name="push_contact_request_keeper">%1$s 的 Bot 想加你的 Bot 为联系人</string>
 </resources>

@@ -52,7 +52,7 @@ struct AttachmentTile: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(Text(.composerAttachmentRemove(attachment.name)))
+                    .accessibilityLabel(Text(.Composer.composerAttachmentRemove(attachment.name)))
                 }
             }
             .accessibilityElement(children: .contain)
@@ -119,7 +119,7 @@ struct AttachmentTile: View {
             }
             .allowsHitTesting(false)
             .accessibilityElement()
-            .accessibilityLabel(Text(.composerAttachmentPaused))
+            .accessibilityLabel(Text(.Composer.composerAttachmentPaused))
         case .ready:
             EmptyView()
         case .failed:
@@ -133,7 +133,7 @@ struct AttachmentTile: View {
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text(.composerAttachmentFailed))
+            .accessibilityLabel(Text(.Composer.composerAttachmentFailed))
         }
     }
 }
@@ -173,12 +173,12 @@ private struct AttachmentFailureSheet: View {
             HStack(spacing: WontonTheme.spacing.s8) {
                 if let remove {
                     Button(action: remove) {
-                        Text(.commonDelete).frame(maxWidth: .infinity)
+                        Text(.Common.commonDelete).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
                 Button(action: retry) {
-                    Text(.composerAttachmentRetry).frame(maxWidth: .infinity)
+                    Text(.Composer.composerAttachmentRetry).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
             }
@@ -192,13 +192,13 @@ extension AttachmentFailure {
     /// 类别由核心给，说法在壳里。
     var text: LocalizedStringResource {
         switch self {
-        case .tooLarge: .composerAttachmentTooLarge
-        case .sourceUnavailable: .composerAttachmentSourceUnavailable
-        case .storageFull: .composerAttachmentStorageFull
-        case .rejected: .composerAttachmentRejected
-        case .upstream: .composerAttachmentUpstream
-        case .localStorage: .composerAttachmentLocalStorage
-        case .other: .composerAttachmentFailed
+        case .tooLarge: .Composer.composerAttachmentTooLarge
+        case .sourceUnavailable: .Composer.composerAttachmentSourceUnavailable
+        case .storageFull: .Composer.composerAttachmentStorageFull
+        case .rejected: .Composer.composerAttachmentRejected
+        case .upstream: .Composer.composerAttachmentUpstream
+        case .localStorage: .Composer.composerAttachmentLocalStorage
+        case .other: .Composer.composerAttachmentFailed
         }
     }
 }

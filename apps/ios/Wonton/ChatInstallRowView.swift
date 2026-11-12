@@ -56,7 +56,7 @@ struct ChatInstallRowView: View {
         case let .failed(reason, message):
             failure(reason, message: message)
         case let .uncertain(message):
-            Text(.pluginTaskUncertain(message))
+            Text(.Plugin2.pluginTaskUncertain(message))
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.warning))
             actions
@@ -66,9 +66,9 @@ struct ChatInstallRowView: View {
     private func failure(_ reason: PluginFailure, message: String) -> some View {
         let problem = reason.problem(detail: message)
         let sentence = switch row.operation {
-        case .install: String(localized: .pluginTaskInstallFailed(problem.title))
-        case .upgrade: String(localized: .pluginTaskUpgradeFailed(problem.title))
-        case .uninstall: String(localized: .pluginTaskUninstallFailed(problem.title))
+        case .install: String(localized: .Plugin3.pluginTaskInstallFailed(problem.title))
+        case .upgrade: String(localized: .Plugin0.pluginTaskUpgradeFailed(problem.title))
+        case .uninstall: String(localized: .Plugin0.pluginTaskUninstallFailed(problem.title))
         }
         return VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
             Text(sentence)
@@ -88,7 +88,7 @@ struct ChatInstallRowView: View {
     private var canRetry: Bool { row.operation == .upgrade || row.source != nil }
 
     private var actions: some View {
-        Button(canRetry ? String(localized: .commonRetry) : String(localized: .chatInstallOpenPage)) {
+        Button(canRetry ? String(localized: .Common.commonRetry) : String(localized: .Chat1.chatInstallOpenPage)) {
             if canRetry { retry() } else { openPage() }
         }
         .buttonStyle(WontonSmallButtonStyle())
@@ -97,10 +97,10 @@ struct ChatInstallRowView: View {
     /// 阶段由核心给，不认识的阶段落到这个操作通用的进行时。
     static func stageText(_ stage: InstallStage, operation: PluginOperation) -> String {
         switch stage {
-        case .pullingImages: String(localized: .chatInstallStagePullingImages)
-        case .preparing: String(localized: .chatInstallStagePreparing)
-        case .starting: String(localized: .chatInstallStageStarting)
-        case .waitingForBot: String(localized: .chatInstallStageWaitingForBot)
+        case .pullingImages: String(localized: .Chat1.chatInstallStagePullingImages)
+        case .preparing: String(localized: .Chat0.chatInstallStagePreparing)
+        case .starting: String(localized: .Chat0.chatInstallStageStarting)
+        case .waitingForBot: String(localized: .Chat0.chatInstallStageWaitingForBot)
         default: operation.runningText
         }
     }

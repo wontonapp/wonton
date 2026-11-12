@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Banner when several approval cards are waiting. Argument: the number of cards. -->
+    <plurals name="onboarding_pending_card_many">
+        <item quantity="one">%1$d card needs your approval</item>
+        <item quantity="other">%1$d cards need your approval</item>
+    </plurals>
+    <!-- Problem title in setup: the model gateway on the home server isn't ready. -->
+    <string name="onboarding_problem_model_gateway_not_ready">The model gateway isn\'t ready. Try again or skip this step.</string>
+    <!-- Problem title while installing: the home server's internet proxy can't be reached. -->
+    <string name="onboarding_problem_plugin_egress_proxy_unavailable">The server\'s proxy can\'t be reached. Check it and try again.</string>
+    <!-- Problem title while installing: no local network address is available for the app. -->
+    <string name="onboarding_problem_plugin_lan_unavailable">No local network address is available. Check the server\'s network settings.</string>
+    <!-- Problem title while installing: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_plugin_protocol">Wonton and your home server versions don\'t match. Update Wonton or the server.</string>
+    <!-- Problem title in setup: the recommendation source is turned off. -->
+    <string name="onboarding_problem_store_disabled">The recommendation source is off. You can skip.</string>
+    <!-- Kind label above a review row: the apps that will be installed. -->
+    <string name="onboarding_review_section_apps">Apps</string>
+    <!-- Button that uninstalls the agent that a new one replaces. -->
+    <string name="onboarding_uninstall">Uninstall</string>
+</resources>

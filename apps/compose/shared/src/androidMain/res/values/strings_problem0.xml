@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Problem reason when a link to an app page opens before the installed app list loaded. -->
+    <string name="problem_apps_not_ready">The app list isn\'t ready yet. Try again shortly.</string>
+    <!-- Problem reason when an agent chat link opens but no default agent is set. -->
+    <string name="problem_no_default_agent">There\'s no default agent yet. Pick and install one in setup.</string>
+    <!-- Problem title: the app is busy with another task. -->
+    <string name="problem_plugin_conflict_title">This app is busy</string>
+    <!-- Problem title: the device the app should run on isn't available. -->
+    <string name="problem_plugin_device_unavailable_title">The device you chose isn\'t available</string>
+    <!-- Problem title: the home server can't read this app's install record. -->
+    <string name="problem_plugin_record_unusable_title">This app\'s install record is unusable</string>
+    <!-- Problem title: the app's information can't be fetched from its source right now. -->
+    <string name="problem_plugin_source_unavailable_title">Can\'t fetch the app\'s details right now</string>
+    <!-- Shown after a few seconds under a spinner: the network is slow, loading still goes on. -->
+    <string name="problem_slow_loading">Still loading — this can take a while on a slow network</string>
+    <!-- Next step under the storage problem. Also used when settings couldn't be saved. -->
+    <string name="problem_storage_next_step">Check your storage and try again.</string>
+    <!-- Problem title: this device failed to read or write its own data. -->
+    <string name="problem_storage_title">This device couldn\'t read or write its data</string>
+    <!-- Problem title: the store's index can't be read. -->
+    <string name="problem_store_invalid_index_title">The app list can\'t be read</string>
+    <!-- Problem title: the app's source itself reported a problem. -->
+    <string name="problem_store_upstream_title">The app\'s source ran into a problem</string>
+</resources>

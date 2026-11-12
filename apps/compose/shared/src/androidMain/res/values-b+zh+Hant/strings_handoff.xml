@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="handoff_title">在另一部裝置上繼續</string>
+    <string name="handoff_waiting">保持另一部裝置上的「新增裝置」頁面開著。</string>
+    <string name="handoff_unanswered_title">另一部裝置沒有回應</string>
+    <string name="handoff_unanswered_message">在另一部裝置上打開雲吞，回到「新增裝置」。</string>
+    <string name="handoff_try_again">再試一次</string>
+    <string name="handoff_later">稍後</string>
+    <string name="handoff_no_other_device">手邊沒有別的裝置</string>
+</resources>

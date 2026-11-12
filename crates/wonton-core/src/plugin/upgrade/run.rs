@@ -384,18 +384,17 @@ impl PluginManager {
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline =
-            super::super::health_gate::deadline(&plan, self.cfg.install_timeout, Instant::now());
+            super::super::health_gate::deadline(&plan, ctx.install_limit, Instant::now());
         self.stage(&manifest.id, InstallStage::Starting);
-        let health = self
-            .start_containers(
-                Some(manifest),
-                &plan,
-                Some(&manifest.id),
-                &mut progress.undo,
-                deadline,
-                &langs,
-            )
-            .await?;
+        let health = Box::pin(self.start_containers(
+            Some(manifest),
+            &plan,
+            Some(&manifest.id),
+            &mut progress.undo,
+            deadline,
+            &langs,
+        ))
+        .await?;
         let (upstream, models, mcp) = self
             .deploy_upstreams(manifest, &network, &mut secrets, deadline, &langs)
             .await?;
@@ -419,6 +418,7 @@ impl PluginManager {
             proxied: ctx.egress.is_some(),
             oidc_client_secret: oidc_secret,
             installed_at: old.record.installed_at,
+            entry_label: old.record.entry_label.clone(),
             origin: package.origin.clone(),
             // 归属跟着插件走：Agent 更新自己写的插件后还是它写的；App 里经文件或来源升级的清掉（各路径自己做）。
             written_by: old.record.written_by.clone(),

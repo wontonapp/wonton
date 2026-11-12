@@ -7,6 +7,7 @@
 #                       tag 会按拉下来的镜像解析成仓库 digest 记进 .env，渠道照旧由这个 tag 决定
 #   WONTON_INSTALL_DIR  compose 文件、.env 和密钥（默认 /opt/wonton）
 #   WONTON_DATA_DIR     核心和插件的数据（默认 /var/lib/wonton）
+#   WONTON_RELAY_DIR    宿主网络中继的 unix 套接字（默认 /run/wonton/relay）：`sun_path` 只有 108 字节，要在短路径上
 #   WONTON_PORT         局域网网页和网关的 TCP 端口（默认 8480）
 #   WONTON_TUNNEL_PORT  隧道的 UDP 端口（默认 8482）
 #   WONTON_BASE_DOMAIN  基础域名：App 经隧道访问核心和插件网页用的主机名，装好后不能改（默认 wonton.localhost）
@@ -143,6 +144,8 @@ image=${WONTON_CORE_IMAGE:-$(saved WONTON_CORE_SOURCE)}
 image=${image:-ghcr.io/wontonapp/wonton-core:stable}
 data_dir=${WONTON_DATA_DIR:-$(saved WONTON_DATA_DIR)}
 data_dir=${data_dir:-/var/lib/wonton}
+relay_dir=${WONTON_RELAY_DIR:-$(saved WONTON_RELAY_DIR)}
+relay_dir=${relay_dir:-/run/wonton/relay}
 port=${WONTON_PORT:-$(saved WONTON_PORT)}
 port=${port:-8480}
 tunnel_port=${WONTON_TUNNEL_PORT:-$(saved WONTON_TUNNEL_PORT)}
@@ -175,8 +178,12 @@ case "$data_dir" in
   /*) ;;
   *) die "WONTON_DATA_DIR 要是绝对路径：$data_dir" ;;
 esac
+case "$relay_dir" in
+  /*) ;;
+  *) die "WONTON_RELAY_DIR 要是绝对路径：$relay_dir" ;;
+esac
 
-mkdir -p "$install_dir" "$data_dir"
+mkdir -p "$install_dir" "$data_dir" "$relay_dir"
 chmod 700 "$install_dir"
 
 if [ -n "$pin" ]; then
@@ -560,6 +567,7 @@ WONTON_CORE_SOURCE=$image
 WONTON_CORE_IMAGE=$pinned
 WONTON_INSTALL_DIR=$install_dir
 WONTON_DATA_DIR=$data_dir
+WONTON_RELAY_DIR=$relay_dir
 WONTON_PORT=$port
 WONTON_TUNNEL_PORT=$tunnel_port
 WONTON_BASE_DOMAIN=$domain
