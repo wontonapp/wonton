@@ -39,3 +39,9 @@ pub fn security_tier(manifest: &Manifest) -> SecurityTier {
         .max()
         .unwrap_or(SecurityTier::Standard)
 }
+
+/// 商店里要不要把安全档位醒目标红：High 及以上；比这个 App 新的档位（`Other`，按最高档画）也算。
+/// 规则只在这里，壳不比较档位。
+pub fn prominent(tier: SecurityTier) -> bool {
+    !matches!(tier, SecurityTier::Minimal | SecurityTier::Standard)
+}

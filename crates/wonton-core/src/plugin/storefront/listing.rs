@@ -249,6 +249,7 @@ impl PluginManager {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins.get(&m.id).map(|e| e.version.clone())
         };
+        let tier = crate::plugin::security_tier::security_tier(m);
         StoreItem {
             source: shown.source.clone(),
             provider: Some(shown.provider.clone()),
@@ -264,7 +265,8 @@ impl PluginManager {
             author: author(m),
             stars: shown.stars,
             installed_version,
-            security_tier: Some(crate::plugin::security_tier::security_tier(m)),
+            security_tier: Some(tier),
+            high_permissions: crate::plugin::security_tier::prominent(tier),
             blocked: blocked(m, facts, langs),
         }
     }

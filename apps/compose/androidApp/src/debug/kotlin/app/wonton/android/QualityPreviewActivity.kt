@@ -122,6 +122,7 @@ private fun previewHome(relay: Boolean) = HomeViewModel(
     pairing = null,
     invite = null,
     keepConnection = false,
+    justRecovered = false,
 )
 
 // 和 StepCardFrameTest 的假外观同一套颜色。

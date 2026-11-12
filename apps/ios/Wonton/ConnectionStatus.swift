@@ -74,7 +74,8 @@ extension WontonBarStatus {
             quality: home.details.quality,
             pathRelay: home.path?.relay
         )
-        let connected = recovered && home.notice == nil ? String(localized: .connectionConnected) : nil
+        // “刚恢复”由核心给：只在连接正常、没有别的提示时为真，壳直接把短状态换成“已连接”。
+        let connected = recovered ? String(localized: .connectionConnected) : nil
         self.init(
             title: home.notice.flatMap { $0.isShort ? $0.sentence : nil }
                 ?? connected ?? hint?.sentence,

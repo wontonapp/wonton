@@ -84,8 +84,8 @@ internal fun PairingPage(
             )
         },
     ) {
-        // 配上才会连上服务器；取消也回到没有配对，但 serverId 还是空，不当作配上了。
-        PairingScreen(core, pairing, onPaired = { if (core.home().serverId != null) onBack?.invoke() }, onBack = onBack)
+        // 配上了由核心说：进展停在 Paired 才算配上，取消不会到那一步。
+        PairingScreen(core, pairing, onPaired = { onBack?.invoke() }, onBack = onBack)
     }
 }
 

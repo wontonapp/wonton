@@ -98,6 +98,7 @@ mod tests {
                 expires_at_ms: 1_767_225_600_000,
             }),
             keep_connection: true,
+            just_recovered: true,
         };
         assert_eq!(round_trip(&home), home);
         for action in [

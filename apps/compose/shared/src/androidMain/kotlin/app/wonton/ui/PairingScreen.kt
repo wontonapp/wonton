@@ -75,7 +75,8 @@ fun PairingScreen(
     var lastCode by rememberSaveable { mutableStateOf<String?>(null) }
     var previous by remember { mutableStateOf(pairing) }
     LaunchedEffect(pairing) {
-        if (previous is PairingStatus.InProgress && pairing == null) onPaired()
+        // 配上了由核心说：进展从“正在配对”翻到 Paired；取消回到没有进展，不算配上。
+        if (previous is PairingStatus.InProgress && pairing is PairingStatus.Paired) onPaired()
         previous = pairing
     }
     val inProgress = pairing is PairingStatus.InProgress

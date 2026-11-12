@@ -12232,6 +12232,66 @@
         }
       }
     },
+    "problem.plugin.recordUnusable.nextStep": {
+      "comment": "Problem next step: reinstall the app.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uninstall this app and install it again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卸载这个应用（数据可以保留）后重新安装。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解除安裝這個應用程式（資料可以保留）後重新安裝。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリをアンインストール（データは残せます）して、もう一度インストールしてください。"
+          }
+        }
+      }
+    },
+    "problem.plugin.recordUnusable.title": {
+      "comment": "Problem title: the app's install record can't be read.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app's install record is unusable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用的安装记录不可用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "應用程式的安裝記錄不可用"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリのインストール記録が壊れています"
+          }
+        }
+      }
+    },
     "problem.plugin.serverTooOld.title": {
       "comment": "Problem title: the home server is older than this app needs.",
       "extractionState": "manual",

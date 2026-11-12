@@ -6,7 +6,7 @@ use wonton_protocol::{PluginRuntime, SecurityTier};
 
 use super::super::manifest::{Manifest, Runtime};
 use super::super::package::{PackageError, PluginPackage};
-use super::super::security_tier::security_tier;
+use super::super::security_tier::{prominent, security_tier};
 use super::super::spec_floor;
 
 fn base(runtime: &str) -> Value {
@@ -234,6 +234,9 @@ fn security_tier_is_computed_from_the_manifest() {
         doc["x-wonton"]["permissions"] = permissions;
         doc["x-wonton"]["optional_permissions"] = optional;
         assert_eq!(security_tier(&manifest(&doc)), tier, "{doc}");
+        // 商店里要不要标红跟档位走：High 及以上（含比这个 App 新的档位）才标。
+        assert_eq!(prominent(tier), tier >= SecurityTier::High, "{tier:?}");
+        assert!(prominent(SecurityTier::Other), "未知的档位按最高档画");
     }
 }
 
