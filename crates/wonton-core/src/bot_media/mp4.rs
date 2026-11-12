@@ -1,12 +1,57 @@
 use std::io::Cursor;
 
-use mp4parse::{CodecType, SampleEntry, Track, TrackType, VideoCodecSpecific};
+use mp4parse::{CodecType, MediaContext, SampleEntry, Track, TrackType, VideoCodecSpecific};
 
 use super::{Metrics, Problem, dimensions, duration};
 
 mod fragments;
 
+/// 扫出来的顶层 box：一个 `moov` 和它的原始字节，`mdat` 里可以放样本的区间，还有 `moof` 片段。
+struct Scan<'a> {
+    movie: &'a [u8],
+    movie_box: &'a [u8],
+    media_ranges: Vec<std::ops::Range<usize>>,
+    fragments: Vec<(usize, &'a [u8])>,
+}
+
+/// 按谁的要求检查。头像要正方、不超过 10 分钟、只认 H.264（ADR-0044）；`view_file` 只报时长和分辨率，这些都不算数。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Limits {
+    Avatar,
+    View,
+}
+
+/// 视频的时长和分辨率，给 `view_file` 用。
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct VideoInfo {
+    pub width: u32,
+    pub height: u32,
+    pub duration_ms: u64,
+}
+
 pub(super) fn inspect(data: &[u8]) -> Result<Metrics, Problem> {
+    let scan = scan(data)?;
+    let duration_ms = movie_duration(scan.movie)?;
+    check_video_formats(scan.movie)?;
+    let context = parse_movie(scan.movie_box)?;
+    let (width, height) = video_sizes(&context, &scan, Limits::Avatar)?;
+    Ok((width, height, Some(duration(duration_ms)?)))
+}
+
+/// 用户视频的探针：头像那套限制放宽，错误照旧按 [`Problem`] 报，由调用方映射。
+pub(crate) fn probe(data: &[u8]) -> Result<VideoInfo, Problem> {
+    let scan = scan(data)?;
+    let duration_ms = movie_duration(scan.movie)?;
+    let context = parse_movie(scan.movie_box)?;
+    let (width, height) = video_sizes(&context, &scan, Limits::View)?;
+    Ok(VideoInfo {
+        width,
+        height,
+        duration_ms,
+    })
+}
+
+fn scan(data: &[u8]) -> Result<Scan<'_>, Problem> {
     let mut remaining = data;
     let mut movie = None;
     let mut media_ranges = Vec::new();
@@ -25,15 +70,29 @@ pub(super) fn inspect(data: &[u8]) -> Result<Metrics, Problem> {
         }
     }
     let (movie, movie_box) = movie.ok_or(Problem::Unreadable)?;
-    let duration_ms = movie_duration(movie)?;
-    check_video_formats(movie)?;
-    // mp4parse only needs moov for metrics and rejects a legal EOF-sized mdat.
-    // Parse the borrowed movie box; top-level extents are already checked above.
-    let context =
-        mp4parse::read_mp4(&mut Cursor::new(movie_box)).map_err(|_| Problem::Unreadable)?;
     if media_ranges.iter().all(std::ops::Range::is_empty) {
         return Err(Problem::Unreadable);
     }
+    Ok(Scan {
+        movie,
+        movie_box,
+        media_ranges,
+        fragments,
+    })
+}
+
+// mp4parse only needs moov for metrics and rejects a legal EOF-sized mdat.
+// Parse the borrowed movie box; top-level extents are already checked above.
+fn parse_movie(movie_box: &[u8]) -> Result<MediaContext, Problem> {
+    mp4parse::read_mp4(&mut Cursor::new(movie_box)).map_err(|_| Problem::Unreadable)
+}
+
+/// 所有视频轨的样本尺寸（有两条不一样的就算读不懂），顺带把每条轨的样本字节核对进 `mdat`。
+fn video_sizes(
+    context: &MediaContext,
+    scan: &Scan<'_>,
+    limits: Limits,
+) -> Result<(u32, u32), Problem> {
     let mut video = None;
     for track in context
         .tracks
@@ -48,40 +107,45 @@ pub(super) fn inspect(data: &[u8]) -> Result<Metrics, Problem> {
             let SampleEntry::Video(entry) = entry else {
                 return Err(Problem::Unreadable);
             };
-            if entry.codec_type != CodecType::H264 {
-                return Err(Problem::Format);
-            }
-            let VideoCodecSpecific::AVCConfig(config) = &entry.codec_specific else {
-                return Err(Problem::Format);
-            };
-            if config.len() < 7 || config[0] != 1 {
-                return Err(Problem::Unreadable);
+            if limits == Limits::Avatar {
+                if entry.codec_type != CodecType::H264 {
+                    return Err(Problem::Format);
+                }
+                let VideoCodecSpecific::AVCConfig(config) = &entry.codec_specific else {
+                    return Err(Problem::Format);
+                };
+                if config.len() < 7 || config[0] != 1 {
+                    return Err(Problem::Unreadable);
+                }
             }
             let size = (u32::from(entry.width), u32::from(entry.height));
-            dimensions(size.0, size.1)?;
+            match limits {
+                Limits::Avatar => dimensions(size.0, size.1)?,
+                Limits::View if size.0 == 0 || size.1 == 0 => return Err(Problem::Unreadable),
+                Limits::View => {}
+            }
             if video.is_some_and(|previous| previous != size) {
                 return Err(Problem::Unreadable);
             }
             video = Some(size);
         }
-        if fragments.is_empty() || track.stts.as_ref().is_some_and(|t| !t.samples.is_empty()) {
-            validate_samples(track, &media_ranges)?;
+        if scan.fragments.is_empty() || track.stts.as_ref().is_some_and(|t| !t.samples.is_empty()) {
+            validate_samples(track, &scan.media_ranges)?;
         } else {
             fragments::validate(
-                &fragments,
-                movie,
+                &scan.fragments,
+                scan.movie,
                 track.track_id.ok_or(Problem::Unreadable)?,
-                &media_ranges,
+                &scan.media_ranges,
             )?;
         }
     }
-    let (width, height) = video.ok_or(Problem::Unreadable)?;
-    Ok((width, height, Some(duration_ms)))
+    video.ok_or(Problem::Unreadable)
 }
 
 // mp4parse supports avc1/avc3 and validates track boxes, but intentionally discards
 // mvhd.duration. Read only that metric here rather than guessing from mdhd or tkhd.
-fn movie_duration(mut movie: &[u8]) -> Result<u32, Problem> {
+fn movie_duration(mut movie: &[u8]) -> Result<u64, Problem> {
     let mut result = None;
     while !movie.is_empty() {
         let (kind, body, _) = next_box(&mut movie)?;
@@ -109,7 +173,7 @@ fn movie_duration(mut movie: &[u8]) -> Result<u32, Problem> {
             .and_then(|n| n.checked_add(scale - 1))
             .ok_or(Problem::Unreadable)?
             / scale;
-        result = Some(duration(ms)?);
+        result = Some(ms);
     }
     result.ok_or(Problem::Unreadable)
 }

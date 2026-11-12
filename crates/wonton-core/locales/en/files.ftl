@@ -16,6 +16,12 @@ files-upstream-not-own = { $service } isn't a service of the app { $plugin }
 
 # Previews and thumbnails.
 files-too-big-for-thumbnail = The file is over { $limit } MiB, so no thumbnail is made
+files-pdf-unreadable = Can't parse this PDF (it may be encrypted or damaged), so its content can't be read
+files-pdf-no-text = This PDF has no text layer (a scan or images only); it has { $pages } pages, and the charts and pictures inside it can't be read
+files-too-big-for-parsing = The file is over { $limit } MiB, so its contents can't be extracted
+files-video-unsupported = This video's container can't be read (only MP4, M4V and MOV are); download or share it instead
+files-video-unreadable = This video doesn't parse (its container or structure isn't recognized), so its metadata can't be read
+files-audio-unreadable = Audio can't be read here; download or share it instead
 files-thumbnail-timeout = The original file didn't finish reading within { $after }
 files-idle-limited = The app's response had no new bytes for { $idle }
 files-declared-size-over-limit = The size the app declared exceeds the resources/read limit ({ $limit } MiB)
@@ -24,6 +30,7 @@ files-not-text-utf8 = { $name } isn't a text file (its content isn't valid UTF-8
 files-no-preview = This type has no preview or thumbnail
 files-preview-failed = Can't make a preview or thumbnail: { $why }
 files-decode-busy = Image decoding is busy
+files-view-busy = This file is already being read as fast as it can be; try again in a moment
 files-read-busy = Image reading is busy
 
 # Saving, uploading and deleting.

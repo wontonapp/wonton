@@ -127,7 +127,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%#@count@ 条未读"
+            "value": "%#@count@"
           },
           "substitutions": {
             "count": {
@@ -149,7 +149,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "%#@count@ 則未讀"
+            "value": "%#@count@"
           },
           "substitutions": {
             "count": {
@@ -171,7 +171,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%#@count@件の未読"
+            "value": "%#@count@"
           },
           "substitutions": {
             "count": {

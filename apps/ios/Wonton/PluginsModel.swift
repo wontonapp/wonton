@@ -42,8 +42,6 @@ final class PluginsModel {
 
     /// 在主界面的 `.task` 里调用，App 在前台时一直订阅。
     func observe() async {
-        // 名字和说明按主人的语言挑。iOS 改了 App 的语言会重启 App，启动时告诉核心一次就够。
-        refresh(.setLanguages(languages: AppLanguage.preferred))
         for await viewModel in core.subscribePlugins().updates() {
             self.viewModel = viewModel
         }
