@@ -3,6 +3,8 @@ use std::{path::PathBuf, time::Duration};
 use anyhow::{Context, Result, bail};
 use wonton_matrix::{OwnedRoomId, OwnedUserId};
 
+use crate::health::Files;
+
 /// 桥与 Agent 之间 stdin/stdout 单行帧的上限：32 MiB。
 ///
 /// 文字轮用不了这么大。实测 qwen-code 会把全部技能全文（availableSkillDetails，
@@ -58,6 +60,8 @@ pub struct Config {
     pub mode: String,
     /// 话题会话想切的“改前先问”模式（ADR-0058）；Agent 报不出这个取值时退回 `mode`。
     pub topic_mode: Option<String>,
+    /// 心跳和健康标记文件的位置，生产在 `/tmp`。
+    pub health: Files,
     pub limits: Limits,
 }
 
@@ -109,6 +113,7 @@ impl Config {
                 .filter(|mode| !mode.trim().is_empty())
                 .map(|mode| checked_mode("WONTON_ACP_TOPIC_MODE", mode))
                 .transpose()?,
+            health: Files::from_env(),
             limits: Limits {
                 max_input_bytes: env_usize("WONTON_ACP_MAX_INPUT_BYTES", 16 * 1024)?,
                 max_output_bytes: env_usize("WONTON_ACP_MAX_OUTPUT_BYTES", 64 * 1024)?,

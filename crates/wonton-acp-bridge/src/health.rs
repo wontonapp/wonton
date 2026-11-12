@@ -2,52 +2,76 @@
 //! `alive` 由桥的主进程定时写，进程死了文件就不新了；`crypto-degraded` 是“长期解不开”的标记，
 //! 主进程发提示时写。`docker restart` 后文件还在——store 丢了这个事实本身就在，新进程到点会
 //! 再判一次；重装插件重建容器时才一起清掉。
+//!
+//! 目录由 `WONTON_ACP_BRIDGE_HEALTH_DIR` 指定，默认 `/tmp`：写的心跳和查的命令是两个进程，靠同一个
+//! 环境变量找同一处；同机跑多个测试时各用各的临时目录。
 
-use std::time::{Duration, SystemTime};
+use std::{
+    path::{Path, PathBuf},
+    time::{Duration, SystemTime},
+};
 
 use anyhow::{Context, Result, bail};
 
-/// 桥主进程的心跳文件。
-const ALIVE: &str = "/tmp/wonton-acp-bridge.alive";
-/// 判定“长期解不开”后写的标记，内容是给主人看的原因。
-const DEGRADED: &str = "/tmp/wonton-acp-bridge.crypto-degraded";
+/// 生产用的目录。
+const DEFAULT_DIR: &str = "/tmp";
+/// 桥主进程的心跳文件名，在目录里。
+const ALIVE_FILE: &str = "wonton-acp-bridge.alive";
+/// 判定“长期解不开”后写的标记文件名，内容是给主人看的原因。
+const DEGRADED_FILE: &str = "wonton-acp-bridge.crypto-degraded";
 
 /// 心跳多久没更新算进程出事。桥每 10 秒摸一次。
 const STALE: Duration = Duration::from_secs(90);
 
-pub(crate) fn touch_alive() {
-    if let Err(error) = std::fs::write(ALIVE, b"") {
-        tracing::warn!(error = %error, "写不了 {ALIVE}");
-    }
+/// 心跳和标记文件在哪个目录的哪两个文件。
+#[derive(Clone, Debug)]
+pub(crate) struct Files {
+    alive: PathBuf,
+    degraded: PathBuf,
 }
 
-/// 判定“长期解不开”时记下原因（本房间的提示原文），健康检查把它带出去。
-pub(crate) fn mark_degraded(reason: &str) {
-    if let Err(error) = std::fs::write(DEGRADED, reason) {
-        tracing::warn!(error = %error, "写不了 {DEGRADED}");
+impl Files {
+    pub(crate) fn in_dir(dir: &Path) -> Self {
+        Self {
+            alive: dir.join(ALIVE_FILE),
+            degraded: dir.join(DEGRADED_FILE),
+        }
     }
-}
 
-/// 健康检查：先报“长期解不开”，再看进程心跳。
-pub fn run() -> Result<()> {
-    if let Ok(reason) = std::fs::read_to_string(DEGRADED) {
-        bail!("{}", reason.trim());
+    pub(crate) fn from_env() -> Self {
+        match std::env::var("WONTON_ACP_BRIDGE_HEALTH_DIR") {
+            Ok(dir) => Self::in_dir(Path::new(&dir)),
+            Err(_) => Self::in_dir(Path::new(DEFAULT_DIR)),
+        }
     }
-    let modified = std::fs::metadata(ALIVE)
-        .and_then(|metadata| metadata.modified())
-        .context("桥还没起来过")?;
-    let age = SystemTime::now()
-        .duration_since(modified)
-        .unwrap_or_default();
-    if age > STALE {
-        bail!("桥 {} 秒没有心跳", age.as_secs());
-    }
-    Ok(())
-}
 
-/// 测试收尾：行为测试会真写这两个文件，跑完清掉，别在跑测试的机器上留残渣。
-#[cfg(test)]
-pub(crate) fn clear_state_for_test() {
-    let _ = std::fs::remove_file(ALIVE);
-    let _ = std::fs::remove_file(DEGRADED);
+    pub(crate) fn touch_alive(&self) {
+        if let Err(error) = std::fs::write(&self.alive, b"") {
+            tracing::warn!(error = %error, path = %self.alive.display(), "写不了心跳文件");
+        }
+    }
+
+    /// 判定“长期解不开”时记下原因（本房间的提示原文），健康检查把它带出去。
+    pub(crate) fn mark_degraded(&self, reason: &str) {
+        if let Err(error) = std::fs::write(&self.degraded, reason) {
+            tracing::warn!(error = %error, path = %self.degraded.display(), "写不了长期解不开标记");
+        }
+    }
+
+    /// 健康检查：先报“长期解不开”，再看进程心跳。
+    pub(crate) fn run(&self) -> Result<()> {
+        if let Ok(reason) = std::fs::read_to_string(&self.degraded) {
+            bail!("{}", reason.trim());
+        }
+        let modified = std::fs::metadata(&self.alive)
+            .and_then(|metadata| metadata.modified())
+            .with_context(|| format!("桥还没起来过（没有 {}）", self.alive.display()))?;
+        let age = SystemTime::now()
+            .duration_since(modified)
+            .unwrap_or_default();
+        if age > STALE {
+            bail!("桥 {} 秒没有心跳", age.as_secs());
+        }
+        Ok(())
+    }
 }

@@ -11,7 +11,7 @@ mod to_device;
 
 use std::{fmt::Debug, path::PathBuf, time::Duration};
 
-use crate::{MatrixSession, Result, SessionConfig, StoreConfig};
+use crate::{MatrixSession, Result, RoomInfo, SessionConfig, StoreConfig};
 use futures_util::{Stream, StreamExt};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt, TestcontainersError,
@@ -423,6 +423,22 @@ pub async fn eventually<T: Debug, R>(
         Ok(None) => panic!("{what}：流已结束，最后一项：{last:#?}"),
         Err(_) => panic!("{what}：{WAIT:?} 内没有等到，最后一项：{last:#?}"),
     }
+}
+
+/// 等房间列表里 `room_id` 这一行满足条件，返回这一行；列表只跟着同步到的事件变，不是定时重试。
+pub async fn wait_for_room(
+    session: &MatrixSession,
+    what: &str,
+    room_id: &matrix_sdk::ruma::OwnedRoomId,
+    mut check: impl FnMut(&RoomInfo) -> bool,
+) -> RoomInfo {
+    eventually(what, session.rooms().await.expect("房间列表"), |rooms| {
+        rooms
+            .iter()
+            .find(|row| &row.room_id == room_id && check(row))
+            .cloned()
+    })
+    .await
 }
 
 /// 造一条测试用的图片消息内容（未加密来源）。上游测试（如桥的行为测试）要往消息流里

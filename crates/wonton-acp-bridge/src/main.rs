@@ -33,7 +33,7 @@ async fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("health") {
         // 健康检查的原因要进探针的 stdout：Docker 收探针输出，核心把它原样放进插件的原因里。
-        return match health::run() {
+        return match health::Files::from_env().run() {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 println!("{error:#}");

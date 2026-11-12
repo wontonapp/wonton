@@ -44,7 +44,6 @@ use crate::{
     commands::{CommandSink, Commands},
     config::Config,
     error::{Detail, Error, Result as BridgeResult, format_error},
-    health,
     l10n::text,
     locale::{Locales, Origin},
     login::{LoginChat, LoginEvent, LoginFlow, LoginSink},
@@ -327,13 +326,14 @@ pub async fn run() -> Result<()> {
         .context("创建桥数据目录")?;
     // 工作区里上次的附件按保留期和总量清一轮；失败只记日志。
     attachments::sweep(&config.workspace).await;
-    health::touch_alive();
+    let health = config.health.clone();
+    health.touch_alive();
     // 心跳让容器的健康检查知道主进程活着；进程退出文件自然就不新了。
-    tokio::spawn(async {
+    tokio::spawn(async move {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(10));
         loop {
             tick.tick().await;
-            health::touch_alive();
+            health.touch_alive();
         }
     });
     let matrix = MatrixSession::login_with_access_token(
@@ -661,7 +661,7 @@ async fn report_undecryptable<R: Room>(bridge: &Bridge, state: &mut RoomState, r
     }
     let lang = bridge.lang(&state.owner).await;
     let notice = text(lang, "crypto-undecryptable", &[]);
-    health::mark_degraded(&notice);
+    bridge.config.health.mark_degraded(&notice);
     if let Err(error) = room.send_text(&notice).await {
         tracing::warn!(error = %error, "发“解不开”提示失败");
     }

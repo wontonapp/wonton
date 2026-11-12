@@ -3,10 +3,10 @@
 use futures_util::{Stream, StreamExt, future, stream};
 use wonton_matrix::{
     BackPaginationStatus, ChatRoom, EntryKind, Error, MatrixSession, Membership, Message,
-    MessageBody, OwnedRoomId, RoomInfo, TimelineEntry, Vector, VectorDiff,
+    MessageBody, OwnedRoomId, TimelineEntry, Vector, VectorDiff,
 };
 
-use crate::support::{TestServer, eventually, unique};
+use crate::support::{TestServer, eventually, unique, wait_for_room};
 
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
@@ -295,6 +295,41 @@ async fn direct_invites_accepted_back_to_back_both_stay_direct() {
     }
 }
 
+/// 邀请还没同步到本地就加入：本地没有这个房间，`join_room` 也要等同步把它标成已加入才返回，
+/// 紧接着 `open_room` 就能打开，不用再重试加入。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn joining_before_the_invite_syncs_returns_after_joined() {
+    let server = TestServer::start().await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    let bob = std::sync::Arc::new(server.login(&unique("bob"), "Bob 的手机").await);
+    alice.start_sync().await.expect("Alice 开始同步");
+    let room_id = alice
+        .create_direct_chat(bob.user_id(), false)
+        .await
+        .expect("建私聊");
+    // Bob 还没起同步：本地没有这个房间（报“还没有同步到”而不是“还没有加入”）。
+    assert!(matches!(
+        bob.open_room(&room_id).await,
+        Err(Error::NotReady(_))
+    ));
+
+    // 同步等加入请求出去了才起：加入返回的那一刻，本地只可能还没有这个房间。
+    let syncing = {
+        let bob = std::sync::Arc::clone(&bob);
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            bob.start_sync().await
+        })
+    };
+    bob.join_room(&room_id).await.expect("加入私聊");
+    let room = bob.open_room(&room_id).await.expect("加入返回后立即打开");
+    syncing.await.expect("同步任务").expect("Bob 开始同步");
+    room.send_text("进来了")
+        .await
+        .expect("加入返回后立即发消息");
+}
+
 /// `alice` 建私聊邀请 `bob`，`bob` 看到邀请后加入。
 /// 加密时等收信设备的密钥上服务器；否则发送方首次查询会漏掉设备，首条消息的房间密钥不会共享给它。
 pub async fn direct_chat(
@@ -328,22 +363,6 @@ pub async fn direct_chat(
             .await;
     }
     room_id
-}
-
-/// 等房间列表里 `room_id` 这一行满足条件。
-pub async fn wait_for_room(
-    session: &MatrixSession,
-    what: &str,
-    room_id: &OwnedRoomId,
-    mut check: impl FnMut(&RoomInfo) -> bool,
-) -> RoomInfo {
-    eventually(what, session.rooms().await.expect("房间列表"), |rooms| {
-        rooms
-            .iter()
-            .find(|row| &row.room_id == room_id && check(row))
-            .cloned()
-    })
-    .await
 }
 
 pub fn is_text(message: &Message, expected: &str) -> bool {

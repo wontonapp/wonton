@@ -5,8 +5,8 @@ use std::time::Duration;
 use wonton_matrix::{ChatRoom, MatrixSession};
 
 use crate::{
-    chat::{direct_chat, is_text, wait_for_room},
-    support::{TestServer, eventually, unique},
+    chat::{direct_chat, is_text},
+    support::{TestServer, eventually, unique, wait_for_room},
 };
 
 /// Bot 已经在加密房间里发过消息（出站会话建好、分给了主人当时的设备），主人这时才登录一台新设备；

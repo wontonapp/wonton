@@ -3,8 +3,8 @@
 use wonton_matrix::EntryKind;
 
 use crate::{
-    chat::{direct_chat, entry_snapshots, wait_for_room},
-    support::{TestServer, eventually, unique},
+    chat::{direct_chat, entry_snapshots},
+    support::{TestServer, eventually, unique, wait_for_room},
 };
 
 #[tokio::test]
