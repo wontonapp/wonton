@@ -65,6 +65,49 @@ pub fn strip(headers: &mut HeaderMap, auth: &ProxyAuth) {
     });
 }
 
+/// 代登录（`sso: proxy`）：拿这个人的身份写进请求头。拿不到身份或值写不进去时，回错误（形状按请求协商）。
+pub(super) fn attach_credentials(
+    gateway: &super::Gateway,
+    route: &crate::plugin::manager::Route,
+    person: &super::Person,
+    headers: &mut hyper::HeaderMap,
+    langs: &crate::plugin::languages::Languages,
+    format: super::pages::Format,
+) -> Result<(), Box<axum::response::Response>> {
+    let Some(auth) = &route.proxy else {
+        return Ok(());
+    };
+    let identity = match gateway.identity_of(person) {
+        Ok(identity) => identity,
+        Err(e) => {
+            tracing::warn!(plugin = %route.id, error = %e, "代登录拿不到身份");
+            return Err(Box::new(super::pages::error(
+                hyper::StatusCode::FORBIDDEN,
+                "permission_denied",
+                &crate::l10n::text(langs, "gateway-proxy-sso-member-missing", &[]),
+                langs,
+                format,
+            )));
+        }
+    };
+    attach(headers, auth, &identity, person.role).map_err(|e| {
+        Box::new(super::pages::error(
+            hyper::StatusCode::INTERNAL_SERVER_ERROR,
+            "proxy_credentials",
+            &crate::l10n::text(
+                langs,
+                "gateway-proxy-sso-failed",
+                &[
+                    ("id", route.id.as_str().into()),
+                    ("error", e.to_string().into()),
+                ],
+            ),
+            langs,
+            format,
+        ))
+    })
+}
+
 /// 转发后：去掉响应里会把代加的凭据交给浏览器的头。
 pub fn scrub(headers: &mut HeaderMap, auth: &ProxyAuth) {
     let secrets = auth.secrets();

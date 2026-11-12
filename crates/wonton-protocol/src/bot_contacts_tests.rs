@@ -266,6 +266,7 @@ fn contact_requests_ride_the_confirmation_list_and_push() {
         category: crate::NotificationCategory::Confirmation,
         confirmation: None,
         contact_request: Some(push),
+        thread_root: None,
     };
     let value = serde_json::to_value(&notification).unwrap();
     assert_eq!(
@@ -274,6 +275,7 @@ fn contact_requests_ride_the_confirmation_list_and_push() {
     );
     let message = crate::PushNotification {
         contact_request: None,
+        thread_root: None,
         ..notification
     };
     assert!(

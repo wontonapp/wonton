@@ -138,7 +138,14 @@ impl Bed {
     async fn install_gateway(&self) {
         let port = fake_gateway(self.keys.clone()).await;
         self.manager
-            .install_checked(provider(port), &[], &[], false, &super::langs())
+            .install_checked(
+                provider(port),
+                &[],
+                &[],
+                false,
+                Default::default(),
+                &super::langs(),
+            )
             .await
             .unwrap();
     }
@@ -420,7 +427,14 @@ async fn a_rebuild_keeps_the_recorded_vars_even_when_the_gateway_is_gone() {
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(engine, &dir));
     manager
-        .install_checked(provider(port), &[], &[], false, &super::langs())
+        .install_checked(
+            provider(port),
+            &[],
+            &[],
+            false,
+            Default::default(),
+            &super::langs(),
+        )
         .await
         .unwrap();
     manager
@@ -500,7 +514,14 @@ async fn only_one_gateway_can_be_installed() {
     let port = fake_gateway(Keys::default()).await;
     let err = bed
         .manager
-        .install_checked(provider(port), &[], &[], false, &super::langs())
+        .install_checked(
+            provider(port),
+            &[],
+            &[],
+            false,
+            Default::default(),
+            &super::langs(),
+        )
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");

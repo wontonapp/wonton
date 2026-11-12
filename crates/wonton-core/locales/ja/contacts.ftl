@@ -1,0 +1,9 @@
+contacts-error-invalid-user-id = @名前:サーバー の形の完全な Matrix ID を入力してください（この Bot 自身は不可）
+contacts-error-not-paired = そのサーバーはあなたのサーバーとペアリングされていません。先にペアリングしてください
+contacts-error-already-contact = すでに連絡先か、リクエストを送信済みです
+contacts-error-bot-not-found = この Bot はもうありません
+contacts-error-contact-not-found = このリクエストまたは連絡先はもうありません。別の場所で処理された可能性があります
+contacts-error-not-keeper = この Bot の連絡先を管理できるのは Bot の管理者だけです
+contacts-error-peer-unreachable = 相手のサーバーに接続できません。何も送信していません。しばらくしてから再試行してください
+contacts-error-unauthenticated = 先にこのデバイスをサーバーとペアリングし、アプリから開いてください
+contacts-error-upstream = サーバーで保存または送信できませんでした。しばらくしてから再試行してください

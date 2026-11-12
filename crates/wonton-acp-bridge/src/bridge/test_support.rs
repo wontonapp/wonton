@@ -2,7 +2,7 @@
 //! 等测试回答，ACP 侧用 `acp::test_support::FakeAgent` 的 Manual 场景驱动。
 
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     future::Future,
     sync::{
         Arc, Mutex,
@@ -28,19 +28,42 @@ use crate::room::Room;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     MainText(String),
-    ThreadText { root: String, text: String },
+    ThreadText {
+        root: String,
+        text: String,
+    },
     Notice(String),
-    ThreadMention { root: String, text: String },
-    ThreadNotice { root: String, text: String },
+    ThreadMention {
+        root: String,
+        text: String,
+    },
+    ThreadNotice {
+        root: String,
+        text: String,
+    },
     Typing(bool),
+    /// 对这条消息发的已读回执。
+    Receipt(String),
     Redact(String),
     State(String),
+    /// 一条 Agent 进度状态消息（ADR-0082），内容原样。
+    RunStatus {
+        event_id: String,
+        thread: Option<String>,
+        content: Value,
+    },
+    /// 对状态消息的编辑（`m.replace`），内容原样。
+    ReplaceRunStatus {
+        event_id: String,
+        content: Value,
+    },
 }
 
 #[derive(Default)]
 struct Recorded {
     effects: Vec<Effect>,
     roots: u64,
+    statuses: u64,
     updates: Option<mpsc::UnboundedSender<Vec<Message>>>,
 }
 
@@ -52,6 +75,8 @@ pub struct FakeRoom {
     snapshot: Vec<Message>,
     recorded: Arc<Mutex<Recorded>>,
     updates: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<Vec<Message>>>>,
+    /// 可下载的媒体：句柄 → 字节。没登记的句柄按下载失败处理。
+    media: Arc<Mutex<HashMap<String, Vec<u8>>>>,
 }
 
 impl FakeRoom {
@@ -62,6 +87,7 @@ impl FakeRoom {
         let recorded = Arc::new(Mutex::new(Recorded {
             effects: Vec::new(),
             roots: 0,
+            statuses: 0,
             updates: Some(updates),
         }));
         Self {
@@ -69,7 +95,13 @@ impl FakeRoom {
             snapshot,
             recorded,
             updates: Arc::new(tokio::sync::Mutex::new(receiver)),
+            media: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// 登记一个可下载的媒体句柄。
+    pub fn serve_media(&self, token: &str, bytes: Vec<u8>) {
+        self.media.lock().unwrap().insert(token.to_owned(), bytes);
     }
 
     pub fn push(&self, messages: Vec<Message>) {
@@ -95,7 +127,12 @@ impl FakeRoom {
                 Effect::ThreadText { text, .. }
                 | Effect::ThreadMention { text, .. }
                 | Effect::ThreadNotice { text, .. } => Some(text),
-                Effect::Typing(_) | Effect::Redact(_) | Effect::State(_) => None,
+                Effect::Typing(_)
+                | Effect::Receipt(_)
+                | Effect::Redact(_)
+                | Effect::State(_)
+                | Effect::RunStatus { .. }
+                | Effect::ReplaceRunStatus { .. } => None,
             })
             .collect()
     }
@@ -111,10 +148,50 @@ impl FakeRoom {
             .collect()
     }
 
+    /// 发过已读回执的消息（按发送顺序）。
+    pub fn receipts(&self) -> Vec<String> {
+        self.effects()
+            .into_iter()
+            .filter_map(|effect| match effect {
+                Effect::Receipt(event_id) => Some(event_id),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// 开过的话题根（按出现顺序）。
     pub fn roots(&self) -> Vec<String> {
         let count = self.recorded.lock().unwrap().roots;
         (1..=count).map(|index| format!("$root{index}")).collect()
+    }
+
+    /// 发出的状态消息（事件 ID、话题根、完整内容），按发送顺序。
+    pub fn run_statuses(&self) -> Vec<(String, Option<String>, Value)> {
+        self.effects()
+            .into_iter()
+            .filter_map(|effect| match effect {
+                Effect::RunStatus {
+                    event_id,
+                    thread,
+                    content,
+                } => Some((event_id, thread, content)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 对某条状态消息的全部编辑内容（`m.replace`），按顺序。
+    pub fn run_edits(&self, event_id: &str) -> Vec<Value> {
+        self.effects()
+            .into_iter()
+            .filter_map(|effect| match effect {
+                Effect::ReplaceRunStatus {
+                    event_id: target,
+                    content,
+                } if target == event_id => Some(content),
+                _ => None,
+            })
+            .collect()
     }
 
     pub fn thread_texts(&self, root: &str) -> Vec<String> {
@@ -200,14 +277,59 @@ impl Room for FakeRoom {
         Ok(())
     }
 
+    async fn send_run_status(&self, content: Value) -> Result<String> {
+        let mut state = self.recorded.lock().unwrap();
+        state.statuses += 1;
+        let event_id = format!("$status{}", state.statuses);
+        let thread = content["m.relates_to"]["event_id"]
+            .as_str()
+            .map(str::to_owned);
+        state.effects.push(Effect::RunStatus {
+            event_id: event_id.clone(),
+            thread,
+            content,
+        });
+        Ok(event_id)
+    }
+
+    async fn replace_run_status(&self, content: Value) -> Result<()> {
+        let mut state = self.recorded.lock().unwrap();
+        let event_id = content["m.relates_to"]["event_id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        state
+            .effects
+            .push(Effect::ReplaceRunStatus { event_id, content });
+        Ok(())
+    }
+
     async fn typing(&self, typing: bool) -> Result<()> {
         self.record(Effect::Typing(typing));
+        Ok(())
+    }
+
+    async fn read_receipt(&self, event_id: &str) -> Result<()> {
+        self.record(Effect::Receipt(event_id.to_owned()));
         Ok(())
     }
 
     async fn redact(&self, event_id: &str, _reason: &str) -> Result<()> {
         self.record(Effect::Redact(event_id.to_owned()));
         Ok(())
+    }
+
+    async fn download_media(&self, token: &str) -> Result<Vec<u8>> {
+        self.media
+            .lock()
+            .unwrap()
+            .get(token)
+            .cloned()
+            .ok_or_else(|| {
+                crate::error::Error::Matrix(crate::error::Detail::data(format!(
+                    "M_NOT_FOUND: {token}"
+                )))
+            })
     }
 
     async fn set_state(&self, event_type: &str, _state_key: &str, _content: Value) -> Result<()> {
@@ -372,12 +494,20 @@ pub fn owner_message_at(
         body: MessageBody::Text(text.into()),
         custom: Default::default(),
         mentions: Vec::new(),
+        agent_run: None,
         thread_root: thread_root.map(|root| root.parse().unwrap()),
         edited: false,
         read_by: Vec::new(),
         reply: None,
         can_redact: false,
     }
+}
+
+/// 主人发的一条带内容的消息（图片、文件等），其余字段同 [`owner_message`]。
+pub fn owner_message_with(event_id: &str, body: MessageBody) -> Message {
+    let mut message = owner_message(event_id, "", None);
+    message.body = body;
+    message
 }
 
 /// 等到异步断言成立，最久 5 秒。

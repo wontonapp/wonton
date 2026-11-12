@@ -35,9 +35,7 @@ private const val CACHED_IMAGES = 128
  * 这里不做任何业务判断。
  */
 class PluginsState(val core: ClientCore) {
-    var viewModel by mutableStateOf(core.plugins().also {
-        configureCrossOriginIsolatedAllowlist(it.installed?.plugins.orEmpty())
-    })
+    var viewModel by mutableStateOf(core.plugins())
         private set
 
     /** 核心拒绝主人的操作的原因，由界面弹窗展示。 */
@@ -52,12 +50,7 @@ class PluginsState(val core: ClientCore) {
 
     /** 在主界面里一直收集，切到别的页面时也接着更新。 */
     suspend fun observe() {
-        core.pluginsUpdates().collect { next ->
-            if (next.installed?.plugins != viewModel.installed?.plugins) {
-                configureCrossOriginIsolatedAllowlist(next.installed?.plugins.orEmpty())
-            }
-            viewModel = next
-        }
+        core.pluginsUpdates().collect { next -> viewModel = next }
     }
 
     fun send(action: Action) {
@@ -171,6 +164,9 @@ val StoreListing.allPlugins: List<StoreItem>
 
 /** 要卸载的插件，确认对话框用。 */
 data class UninstallTarget(val id: String, val title: String)
+
+/** 要打开设置页的插件，设置页用：标题栏显示插件的标题。 */
+data class PluginSettingsTarget(val id: String, val title: String)
 
 /** 核心取好的预览：确认页不再重新取。 */
 val StoreConfirmation.preview: InstallPreview

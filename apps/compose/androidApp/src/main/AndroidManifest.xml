@@ -43,6 +43,12 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="wonton" />
             </intent-filter>
+            <!-- 分享一句话给默认 Agent（iOS 快捷指令“问 Bot”同）：发给 Action.AskAgent。 -->
+            <intent-filter android:label="@string/shortcut_agent_chat">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
         <!-- 下载好的文件交给系统打开（ADR-0020）。 -->
         <provider
@@ -97,6 +103,11 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Maps ports of plugins on the user's self-hosted home server onto this device's loopback interface while the user has the mapping switched on, so other apps on the phone can connect to them." />
         </service>
+        <!-- 插件页在 Custom Tabs 里打开时浏览器绑定它，App 不被冻结（ADR-0033）。浏览器在别的进程，所以要导出；
+             绑定它只让 App 的进程多留一会儿，不给任何能力。 -->
+        <service
+            android:name=".browser.BrowserKeepAliveService"
+            android:exported="true" />
     </application>
 
 </manifest>

@@ -38,10 +38,16 @@ private val LARGE_FROM = 96.dp
  */
 @Composable
 fun PluginIconImage(icon: PluginIcon?, size: Dp, plugins: PluginsState) {
+    PluginIconImage(icon, size) { plugins.imageOrNull(it) }
+}
+
+/** 测试和预览用：不给核心也能画（加载不到就画占位）。 */
+@Composable
+fun PluginIconImage(icon: PluginIcon?, size: Dp, imageOrNull: suspend (PluginImage) -> ImageBitmap?) {
     val shape = pluginIconShape(size)
     val source = if (size > LARGE_FROM) icon?.large else icon?.small
     val state by produceState<IconState>(IconState.Loading, source) {
-        value = source?.let { plugins.imageOrNull(it) }?.let { IconState.Loaded(it) } ?: IconState.Missing
+        value = source?.let { imageOrNull(it) }?.let { IconState.Loaded(it) } ?: IconState.Missing
     }
     val colors = WontonTheme.colors
     when (val current = state) {

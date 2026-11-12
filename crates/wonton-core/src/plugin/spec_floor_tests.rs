@@ -114,12 +114,17 @@ fn an_input_secret_needs_0_8() {
 }
 
 #[test]
-fn friend_declaration_requires_0_9_even_when_false() {
-    for friends in [false, true] {
-        let manifest = json!({"webui": {"service": "web", "port": 80, "friends": friends}});
-        let found = problems(&document("0.8", manifest.clone(), plain()));
+fn role_fields_require_0_13() {
+    for webui in [
+        json!({"service": "web", "port": 80, "accounts": "per_user"}),
+        json!({"service": "web", "port": 80, "oidc": {"redirect_paths": ["/cb"], "admin_groups": ["admin"]}}),
+        json!({"service": "web", "port": 80, "oidc": {"redirect_paths": ["/cb"],
+            "role_claim": {"name": "immich_role", "admin": "admin", "user": "user"}}}),
+    ] {
+        let manifest = json!({ "webui": webui });
+        let found = problems(&document("0.12", manifest.clone(), plain()));
         assert_eq!(found.len(), 1, "{found:?}");
-        assert!(problems(&document("0.9", manifest, plain())).is_empty());
+        assert!(problems(&document("0.13", manifest, plain())).is_empty());
     }
 }
 

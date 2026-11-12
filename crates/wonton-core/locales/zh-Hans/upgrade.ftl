@@ -29,6 +29,13 @@ upgrade-download-no-space = 磁盘不够：下载大约要 { $needed } 字节，
 upgrade-download-failed = 下载不了：{ $error }
 upgrade-image-missing-after-pull = 下载完了，本机还是没有 { $reference }
 
+# 兼容检查（ADR-0085）查不成不拦升级：详情如实说没查成，升级照常可以发起。
+upgrade-compat-records-unreadable = 读不了已装应用的记录：{ $error }
+upgrade-compat-materialize-failed = 无法为兼容检查写出已装应用的包：{ $error }
+upgrade-compat-run-failed = 在新镜像 { $image } 里跑不了兼容检查：{ $error }
+upgrade-compat-command-failed = 新镜像 { $image } 里的兼容检查以退出码 { $code } 结束：{ $error }
+upgrade-compat-output-unreadable = 读不懂兼容检查的输出：{ $error }
+
 # 更新器容器把自己做的事写进状态文件，用主人的语言。
 upgrade-updater-crashed = 更新器反复崩溃
 upgrade-phase-unreadable = 读不出状态文件里的阶段

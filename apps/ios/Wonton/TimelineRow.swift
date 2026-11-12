@@ -30,6 +30,10 @@ struct TimelineRow: View {
             )
         case let .notice(text):
             note(Text(text))
+        case let .agentRun(_, _, _, _, _, _, _, body, _, _):
+            // 一轮 Agent 任务的进度行（ADR-0082）：完整的样子在 App 壳那个 PR 里做，先按普通的
+            // Bot 提示消息显示 `body`——和其他不认识这个格式的客户端一样。
+            note(Text(body))
         case let .profileChange(_, name, previousName, _):
             if let previousName {
                 note(Text(.timelineRenamed(previousName, name)))
@@ -46,6 +50,13 @@ struct TimelineRow: View {
                     .foregroundStyle(Color(colors.accentInk))
                 edge
             }
+        case let .sideChat(card):
+            // 旁聊根消息（ADR-0093）：完整的样子在实现 PR 里做，先按普通提示显示标题。
+            // 核心还没产生这种条目；标题是事件里的数据，不是界面文案，过 ui-text 检查。
+            note(Text(card.title))
+        case let .sideChatResult(_, title, _):
+            // 旁聊结果行（ADR-0093）：同上，先按普通提示显示标题。
+            note(Text(title))
         case .timelineStart:
             note(Text(.timelineStart))
         }
@@ -243,7 +254,7 @@ private struct MessageBubble: View {
                             id: view.card.id,
                             answer: $0.answer,
                             choiceId: $0.choiceId,
-                            secrets: [:],
+                            secrets: $1,
                             settings: [:]
                         )
                     )
