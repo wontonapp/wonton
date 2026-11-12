@@ -331,6 +331,10 @@ impl PluginManager {
             oidc_client_secret: None,
             installed_at: old.map_or_else(now_secs, |old| old.installed_at),
             origin: package.origin.clone(),
+            entry_label: match old {
+                Some(old) => old.entry_label.clone(),
+                None => self.install_entry_label(&manifest.id)?,
+            },
             written_by: old.and_then(|old| old.written_by.clone()),
             ask_every_update: old.is_some_and(|old| old.ask_every_update),
             family: old.is_some_and(|old| old.family),

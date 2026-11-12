@@ -122,6 +122,7 @@ impl Fixture {
                 proxied: false,
                 oidc_client_secret: None,
                 installed_at: 1,
+                entry_label: None,
                 origin: None,
                 written_by: None,
                 ask_every_update: false,
