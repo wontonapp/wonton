@@ -38,13 +38,18 @@ pub async fn pending(
         Ok(person) => person,
         Err(response) => return *response,
     };
+    // 联系人请求发给 Bot 的归属人（ADR-0045），家人也有自己的。
+    let contact_requests = gateway
+        .contacts()
+        .map(|contacts| contacts.pending_for(&person.username))
+        .unwrap_or_default();
     if !person.is_owner() {
         // 卡片都发给主人：家人这里没有自己的卡片。
         return Json(ConfirmationList {
             confirmations: Vec::new(),
             finished: Vec::new(),
             revision: 0,
-            contact_requests: Vec::new(),
+            contact_requests,
         })
         .into_response();
     }
@@ -56,7 +61,7 @@ pub async fn pending(
         confirmations,
         finished: Vec::new(),
         revision: 0,
-        contact_requests: Vec::new(),
+        contact_requests,
     })
     .into_response()
 }
@@ -96,6 +101,7 @@ pub async fn answer(
         answer.answer,
         answer.choice_id.as_deref(),
         answer.secrets,
+        answer.settings,
         &by,
     ) {
         Ok(state) => Json(ConfirmationReply { state }).into_response(),

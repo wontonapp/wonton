@@ -1105,6 +1105,13 @@
     <string name="plugin_save_folders">Folders it can save to</string>
     <!-- Button that revokes one save permission. No arguments; short label. -->
     <string name="plugin_save_revoke">Revoke</string>
+    <!-- Section title and row for opening an app\'s settings page. No arguments. -->
+    <string name="plugin_settings_section">Settings</string>
+    <string name="plugin_settings_open">Open settings</string>
+    <!-- Note under a setting the app can\'t render because the home server is newer. No arguments. -->
+    <string name="plugin_settings_update_app">Update the app to change this</string>
+    <!-- Note under a required setting that has no value and no default. No arguments. -->
+    <string name="plugin_settings_required">Required</string>
     <!-- Section title for the app's updates. No arguments. -->
     <string name="plugin_updates_section">Updates</string>
     <!-- Switch label: ask before every update of an agent-written app. No arguments. -->
@@ -1200,7 +1207,7 @@
     <!-- Destructive button that uninstalls and deletes the app's data. -->
     <string name="plugin_uninstall_delete_data">Uninstall and delete data</string>
     <!-- Message of the uninstall confirmation. -->
-    <string name="plugin_uninstall_delete_data_warning">Deleting data also removes its keys and bot accounts. This can\'t be undone.</string>
+    <string name="plugin_uninstall_delete_data_warning">Deleting data also removes its keys and bot accounts, and old encrypted messages with its bots become unreadable. This can\'t be undone.</string>
     <!-- Button that uninstalls but keeps the app's data. -->
     <string name="plugin_uninstall_keep_data">Uninstall and keep data</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->

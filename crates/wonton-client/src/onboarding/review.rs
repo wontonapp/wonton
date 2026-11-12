@@ -304,7 +304,7 @@ pub(super) fn follow_tasks(entries: &mut [ReviewEntry], tasks: &[PluginTask]) ->
                     },
                 },
             },
-            PluginTaskState::Uncertain { message } => OnboardingItemState::Uncertain {
+            PluginTaskState::Uncertain { message, .. } => OnboardingItemState::Uncertain {
                 message: message.clone(),
             },
         };

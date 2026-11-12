@@ -19,6 +19,9 @@ use tokio::{
 
 use super::*;
 
+#[path = "acp_test_support/driver.rs"]
+mod driver;
+
 #[derive(Clone)]
 pub(crate) enum Scenario {
     Normal,
@@ -258,6 +261,20 @@ impl FakeAgent {
             }),
         )
         .await;
+    }
+
+    /// 发一段原始字节，不补换行（超长帧测试用：超长行后面再跟正常帧）。
+    pub(crate) async fn send_raw(&self, bytes: &[u8]) {
+        let writer = self
+            .link
+            .writer
+            .lock()
+            .await
+            .clone()
+            .expect("还没有 ACP 连接");
+        let mut writer = writer.lock().await;
+        writer.write_all(bytes).await.unwrap();
+        writer.flush().await.unwrap();
     }
 
     /// Agent 发一次改文件的权限请求，返回请求 id。

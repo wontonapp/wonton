@@ -56,6 +56,8 @@ struct MainView: View {
                         tabs.send(.closeTabOverlay)
                         onboardingGateway = nil
                     })
+                } else {
+                    StaleCoverDismiss()
                 }
             }
         )
@@ -169,6 +171,8 @@ struct MainView: View {
                 }
                 pluginPage(item.tab, page: page, overlay: true)
             }
+        } else {
+            StaleCoverDismiss()
         }
     }
 
@@ -247,6 +251,19 @@ struct MainView: View {
     }
 
 }
+/// 盖着的页面在核心那边已经没了（关掉、插件卸载、换了服务器），盖层却还在（在后台时 SwiftUI 没收掉）：
+/// 不留一块没有出口的空白，自己收起，回到下面的主界面。
+private struct StaleCoverDismiss: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Color.clear
+            .onAppear { dismiss() }
+            .onChange(of: scenePhase) { _, phase in if phase == .active { dismiss() } }
+    }
+}
+
 private struct TabPageIdentity: Hashable {
     let accountId: String?
     let tab: TabRef
