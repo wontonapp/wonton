@@ -190,7 +190,7 @@ impl Api {
         let url = format!("{}{path}", self.base);
         let (status, value) = self
             .http
-            .request_json(method, &url, token, body, TIMEOUT)
+            .request_json(method, &url, token, &[], body, TIMEOUT)
             .await
             .map_err(|e| MatrixError::Unavailable {
                 context: context.to_owned(),

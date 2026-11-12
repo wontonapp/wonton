@@ -117,6 +117,17 @@ pub const WEB_STORAGE: Capability = Capability {
     }),
 };
 
+/// 个人数据（ADR-0098）：手机的位置和健康数据，按人分开存。路径和类型在 `wonton-protocol::personal_data`。
+/// 使用方是核心自己的 MCP 工具，凭据仍按使用方签发（ADR-0053 的能力表）。
+pub const PERSONAL_DATA: Capability = Capability {
+    name: "personal_data",
+    interface: "位置和健康数据的存取（POST /location、POST /health、GET /query、DELETE /data、GET /export、\
+                 POST /cleanup），每个请求带 X-Wonton-User",
+    credentials: Credentials::Required,
+    high_privilege: false,
+    hosted: None,
+};
+
 /// MatrixRTC 的 LiveKit 授权服务（ADR-0096）：使用方是任何 MatrixRTC 客户端，经网关 Matrix 对外地址下的
 /// [`MATRIX_RTC_PREFIX`] 到达提供方，所以和出网代理一样不能写在 requires/wants 里，同一时间只有一个提供方。
 pub const MATRIX_RTC: Capability = Capability {
@@ -147,6 +158,7 @@ pub const ALL: &[Capability] = &[
     STATIC_WEB,
     WEB_STORAGE,
     MATRIX_RTC,
+    PERSONAL_DATA,
 ];
 
 pub fn lookup(name: &str) -> Option<&'static Capability> {
@@ -573,6 +585,16 @@ mod tests {
             serde_json::json!({"torrent_client": {"service": "q", "port": 8080}}),
         );
         validate(&manifest, &Languages::default()).unwrap();
+    }
+
+    #[test]
+    fn personal_data_providers_must_declare_credentials() {
+        let manifest = manifest_with_provides(
+            serde_json::json!({"personal_data": {"service": "store", "port": 8090}}),
+        );
+        let e = validate(&manifest, &Languages::default()).unwrap_err();
+        assert!(e.to_string().contains("personal_data"));
+        assert!(e.to_string().contains("credentials"));
     }
 
     #[test]
