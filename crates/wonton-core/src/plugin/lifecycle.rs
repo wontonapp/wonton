@@ -287,7 +287,9 @@ impl PluginManager {
             proxy: proxy.map(Arc::new),
             mcp,
             firewalled,
-            hosted: self.hosted_upstreams(manifest, &plan.network).await?,
+            hosted: self
+                .hosted_upstreams(&package.manifest, &plan.network)
+                .await?,
         })
     }
 
