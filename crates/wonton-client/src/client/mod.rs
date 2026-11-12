@@ -505,12 +505,14 @@ impl ClientCore {
     }
 
     /// 这个房间的传输条列什么。不走网络，传输列表一变就可以重新取。
+    /// 附件区自己的上传不在里面，它们画在附件区里。
     pub fn room_transfers(&self, room_id: String) -> RoomTransfers {
         let scope = self.scope();
-        scope
+        let listed = scope
             .files
             .view()
-            .for_room(&room_id, &scope.chat.view().rooms)
+            .for_room(&room_id, &scope.chat.view().rooms);
+        scope.composer.hide_own_uploads(listed)
     }
 
     /// 订阅传输列表，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。

@@ -7,7 +7,7 @@ use serde::Serialize;
 use super::super::entry::Entry;
 use super::super::entry::Health;
 use super::super::entry::PluginStatus;
-use super::super::manifest::{LocalizedText, PluginId};
+use super::super::manifest::{LocalizedText, PluginId, Sso};
 use super::super::proxy_auth::ProxyAuth;
 use super::super::upstreams::Endpoint;
 use super::PluginManager;
@@ -37,10 +37,12 @@ pub struct Route {
     pub cross_origin_isolated: bool,
     /// `sso: proxy` 时网关代加的凭据。
     pub proxy: Option<Arc<ProxyAuth>>,
+    /// 请求路径是否精确匹配本次路由清单登记的 OIDC 登录回调。
+    pub oidc_callback: bool,
 }
 
 impl PluginManager {
-    pub fn route(&self, slug: &str) -> Option<Route> {
+    pub fn route(&self, slug: &str, path: &str) -> Option<Route> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         plugins
             .iter()
@@ -60,6 +62,13 @@ impl PluginManager {
                     .and_then(|listed| listed.manifest.webui.as_ref())
                     .is_some_and(|webui| webui.cross_origin_isolated),
                 proxy: entry.proxy.clone(),
+                oidc_callback: entry
+                    .listed
+                    .as_ref()
+                    .and_then(|listed| listed.manifest.webui.as_ref())
+                    .filter(|webui| webui.sso == Sso::Oidc)
+                    .and_then(|webui| webui.oidc.as_ref())
+                    .is_some_and(|client| client.redirect_paths.iter().any(|p| p == path)),
             })
     }
 

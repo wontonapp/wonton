@@ -14,11 +14,16 @@ use hyper_util::rt::TokioIo;
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio_websockets::{ClientBuilder, Limits, WebSocketStream};
+use tokio_websockets::{ClientBuilder, Limits, Message, WebSocketStream};
 
 use crate::http::HttpClient;
 
 const TIMEOUT: Duration = Duration::from_secs(30);
+// Mailpit 服务端每 54 秒 ping 一次客户端、60 秒收不到 pong 就直接关 TCP（不带 close frame）。
+// 60 秒完全静默（连服务端 ping 都没有）说明连接已经死了：先主动 ping 一次逼对端证明连接还在，
+// 再等不到任何帧（含 pong）就当作断开。
+const READ_IDLE: Duration = Duration::from_secs(60);
+const PONG_GRACE: Duration = Duration::from_secs(10);
 const PAGE_SIZE: usize = 100;
 // A 25 MiB source can expand sixfold through JSON escaping, plus response metadata.
 const MAX_JSON_BYTES: usize = 160 * 1024 * 1024;
@@ -50,6 +55,27 @@ pub enum Error {
     Closed(u16),
     #[error("Mailpit websocket ended without a close frame")]
     UnexpectedEnd,
+}
+
+impl Error {
+    /// 连接层面的失败（解析、连接、超时、对端断开）：等一等再重试就有意义，按传输不可用对待。
+    /// 配置错误（密码不对、响应不合法）不在此列，重试不会好转，要按错误处理。
+    pub(super) fn is_transport(&self) -> bool {
+        match self {
+            Error::Http(error) => matches!(
+                error,
+                crate::http::HttpError::Connect(_)
+                    | crate::http::HttpError::Timeout(_)
+                    | crate::http::HttpError::ResponseHeadersTimeout(_)
+            ),
+            Error::Timeout
+            | Error::Websocket(_)
+            | Error::Upgrade(_)
+            | Error::Closed(_)
+            | Error::UnexpectedEnd => true,
+            Error::NotFound | Error::Status(_) | Error::Invalid(_) | Error::Body(_) => false,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -252,11 +278,10 @@ pub struct Events {
 impl Events {
     pub async fn next(&mut self) -> Result<Option<String>> {
         while !self.closed {
-            let Some(message) = self.stream.next().await else {
+            let Some(message) = self.read().await? else {
                 self.closed = true;
                 return Err(Error::UnexpectedEnd);
             };
-            let message = message?;
             if message.is_ping() || message.is_close() {
                 // The library queues automatic pong/close replies; flush before returning.
                 tokio::time::timeout(TIMEOUT, self.stream.flush())
@@ -289,6 +314,28 @@ impl Events {
             }
         }
         Ok(None)
+    }
+
+    /// 读下一帧；空闲超过 [`READ_IDLE`] 先 ping 一次逼对端证明连接还在，[`PONG_GRACE`]
+    /// 内等不到任何帧就按超时断开处理，交给上层立即重连。
+    async fn read(&mut self) -> Result<Option<Message>> {
+        let next = match tokio::time::timeout(READ_IDLE, self.stream.next()).await {
+            Ok(next) => next,
+            Err(_) => {
+                let probe = async {
+                    self.stream.send(Message::ping(Vec::new())).await?;
+                    self.stream.flush().await
+                };
+                tokio::time::timeout(TIMEOUT, probe)
+                    .await
+                    .map_err(|_| Error::Timeout)?
+                    .map_err(Error::from)?;
+                tokio::time::timeout(PONG_GRACE, self.stream.next())
+                    .await
+                    .map_err(|_| Error::Timeout)?
+            }
+        };
+        next.transpose().map_err(Error::from)
     }
 }
 
