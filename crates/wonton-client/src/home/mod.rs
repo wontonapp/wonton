@@ -379,16 +379,22 @@ impl HomeLink {
             .clone()
     }
 
-    /// 已知隧道不通时的原因：断开着，或断开后自动重试正在建连。已连上、还没配过对、第一次建连
-    /// 或回前台后的新一轮建连时不拦。核心自己经隧道的请求（好友、资料、成员这些）在发出前先过这道闸：
-    /// 已知不通就立刻失败成“连不上家里的服务器”，不等各自的 30 秒超时。WebView 的流量照旧等下一次
-    /// 建连结果（ADR-0032）。状态读主 ViewModel：它由连接状态推出来，也是壳看到的同一份状态。
-    pub(crate) fn tunnel_outage(&self) -> Option<HomeFailure> {
-        match self.view().status {
-            HomeStatus::Disconnected { reason, .. } => Some(reason),
-            HomeStatus::Connecting => self.lock_tracker().known_failure(),
-            HomeStatus::Connected | HomeStatus::NotConfigured => None,
-        }
+    /// 已知连不上家里的服务器时给出原文（进“详情”），否则为空。核心自己经隧道的请求（好友、资料、成员这些）
+    /// 在发出前先过这道闸：已知不通就立刻失败成“连不上家里的服务器”，不等各自的 30 秒超时。
+    ///
+    /// 只拦传输不通：断开着，或传输断开后自动重试回到的“连接中”（状态在两者之间来回跳，只看“断开”会时拦时不拦）。
+    /// 被拒绝、上游没就绪这些不拦：服务器连得上，请求本身就是恢复的路（主人放行设备后，下一次请求经代理重新建连）。
+    /// 第一次建连、回前台和网络恢复后的新一轮建连也不拦。WebView 的流量不经这道闸（ADR-0032）。
+    pub(crate) fn tunnel_outage(&self) -> Option<String> {
+        let view = self.view();
+        let unreachable = match &view.status {
+            HomeStatus::Disconnected { reason, .. } => *reason == HomeFailure::TransportUnavailable,
+            HomeStatus::Connecting => {
+                self.lock_tracker().known_failure() == Some(HomeFailure::TransportUnavailable)
+            }
+            HomeStatus::Connected | HomeStatus::NotConfigured => false,
+        };
+        unreachable.then(|| view.details.last_failure.unwrap_or_default())
     }
 
     /// 测试里直接给出连接状态，不必真的建连。

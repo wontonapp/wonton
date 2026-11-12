@@ -93,22 +93,27 @@ async fn page_media_keeps_the_tunnel_checked_in_the_background() {
     assert!(!*home.background.borrow());
 }
 
-/// 核心自己经隧道请求的闸门：已知断开给原因，连接中、已连上和还没配对不拦。
+/// 核心自己经隧道请求的闸门：只拦已知的传输不通；连接中、已连上、还没配对、被拒绝都不拦。
 #[tokio::test(start_paused = true)]
-async fn a_known_disconnected_connection_gates_core_requests() {
+async fn a_known_unreachable_connection_gates_core_requests() {
     let (_dir, home, _method_rx) = paused_home().await;
     assert_eq!(home.tunnel_outage(), None, "还没配对不拦");
     for status in [HomeStatus::Connecting, HomeStatus::Connected] {
         home.view.send_modify(|view| view.status = status.clone());
         assert_eq!(home.tunnel_outage(), None, "{status:?} 不拦");
     }
-    for reason in [HomeFailure::TransportUnavailable, HomeFailure::Unauthorized] {
-        home.view.send_modify(|view| {
-            view.status = HomeStatus::Disconnected {
-                reason,
-                message: "测试".into(),
-            }
-        });
-        assert_eq!(home.tunnel_outage(), Some(reason), "{reason:?} 要拦");
-    }
+    let down = |reason| HomeStatus::Disconnected {
+        reason,
+        message: "测试".into(),
+    };
+    home.view
+        .send_modify(|view| view.status = down(HomeFailure::Unauthorized));
+    assert_eq!(
+        home.tunnel_outage(),
+        None,
+        "被拒绝不拦：请求是放行后恢复的路"
+    );
+    home.view
+        .send_modify(|view| view.status = down(HomeFailure::TransportUnavailable));
+    assert!(home.tunnel_outage().is_some(), "传输不通要拦");
 }

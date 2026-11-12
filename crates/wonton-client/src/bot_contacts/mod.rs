@@ -154,7 +154,7 @@ impl BotContactsLink {
     fn api(&self) -> Result<api::Api, Failure> {
         // 已知隧道不通就立刻失败，不等超时。
         if let Some(reason) = self.home.tunnel_outage() {
-            return Err(Failure::transport(format!("{reason:?}")));
+            return Err(Failure::transport(reason));
         }
         let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
         let base = self.home.core_url().ok_or_else(not_connected)?;
