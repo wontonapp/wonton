@@ -203,3 +203,60 @@ fn only_new_capabilities_count_as_added() {
     .unwrap();
     assert!(super::super::manifest_widget::added(Some(&old.manifest), &plain.manifest).is_empty());
 }
+
+/// Element Call 在 matrix-rust-sdk 0.19.1（`bindings/matrix-sdk-ffi/src/widget.rs` 的
+/// `get_element_call_required_permissions`）要的全部能力都要能声明，一条都不能被白名单误拒。
+/// 状态事件的 state_key 由 SDK 在运行时拼上自己的用户和装置 ID，这里用同样的形状。
+#[test]
+fn element_call_required_permissions_all_parse() {
+    let widget = widget(&[
+        // 读和发的消息类事件。
+        "org.matrix.msc2762.receive.event:org.matrix.rageshake_request",
+        "org.matrix.msc2762.receive.event:io.element.call.encryption_keys",
+        "org.matrix.msc2762.receive.event:io.element.call.reaction",
+        "org.matrix.msc2762.receive.event:m.reaction",
+        "org.matrix.msc2762.receive.event:m.room.redaction",
+        "org.matrix.msc2762.receive.event:m.rtc.decline",
+        "org.matrix.msc2762.send.event:org.matrix.rageshake_request",
+        "org.matrix.msc2762.send.event:io.element.call.encryption_keys",
+        "org.matrix.msc2762.send.event:io.element.call.reaction",
+        "org.matrix.msc2762.send.event:m.reaction",
+        "org.matrix.msc2762.send.event:m.room.redaction",
+        "org.matrix.msc2762.send.event:m.rtc.decline",
+        // 只读的状态事件。
+        "org.matrix.msc2762.receive.state_event:org.matrix.msc3401.call.member",
+        "org.matrix.msc2762.receive.state_event:m.room.name",
+        "org.matrix.msc2762.receive.state_event:m.room.member",
+        "org.matrix.msc2762.receive.state_event:m.room.encryption",
+        "org.matrix.msc2762.receive.state_event:m.room.create",
+        // 只发的消息类事件。
+        "org.matrix.msc2762.send.event:m.rtc.notification",
+        "org.matrix.msc2762.send.event:m.call.notify",
+        // 自己各个 state_key 形状的 call member（MSC3779、MSC4143）。
+        "org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member#@user:example.org",
+        "org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member#@user:example.org_ABCDEF",
+        "org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member#@user:example.org_ABCDEF_m.call",
+        "org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member#_@user:example.org_ABCDEF",
+        "org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member#_@user:example.org_ABCDEF_m.call",
+        // 给设备的事件。
+        "org.matrix.msc3819.receive.to_device:io.element.call.encryption_keys",
+        "org.matrix.msc3819.send.to_device:io.element.call.encryption_keys",
+        // 标志位。
+        "io.element.requires_client",
+        "org.matrix.msc4039.download_file",
+        "org.matrix.msc4157.send.delayed_event",
+        "org.matrix.msc4157.update_delayed_event",
+        "org.matrix.msc4515.rtc_transports",
+    ]);
+    let package = parse(&widget).unwrap();
+    assert_eq!(
+        package
+            .manifest
+            .matrix_widget
+            .as_ref()
+            .unwrap()
+            .capabilities
+            .len(),
+        31
+    );
+}
