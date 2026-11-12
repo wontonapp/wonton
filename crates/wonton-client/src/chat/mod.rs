@@ -9,6 +9,7 @@
 //! （`matrix_login`）存进槽位的登录状态和存储恢复；登录状态没了只能重新登录那个账号。
 
 mod accessors;
+mod agent_run;
 mod ask;
 mod avatar_files;
 mod background;
@@ -350,6 +351,11 @@ impl ChatLink {
                 to_room_id,
             } => self.forward_message(&room_id, &item_id, &to_room_id),
             Action::RedactMessage { room_id, item_id } => self.redact_message(&room_id, &item_id),
+            Action::AnswerAgentChoice {
+                room_id,
+                item_id,
+                key,
+            } => self.answer_agent_choice(&room_id, &item_id, &key),
             Action::RetrySend { room_id, item_id } => {
                 let room = self.opened(&room_id)?;
                 let sent = self.sent.clone();

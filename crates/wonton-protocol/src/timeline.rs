@@ -13,7 +13,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ConfirmationView, FileId, QuotedMessage, ReplyQuote};
+use crate::{
+    AgentRunChoice, AgentRunEnd, AgentRunState, ConfirmationView, FileId, QuotedMessage, ReplyQuote,
+};
 
 /// 一批时间线变化，以及向前翻页的状态和列表该停在哪。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -160,6 +162,33 @@ pub struct TimelineItem {
 pub enum TimelineContent {
     Message {
         message: TimelineMessage,
+    },
+    /// Agent 一轮任务的进度（MSC4564，ADR-0082）：Bot 发的一条状态消息，核心按最新编辑解读。
+    /// 只有核心认得的 Bot 账号发的才是 AgentRun，别人发的同样内容是 [`TimelineContent::Message`]。
+    /// 字段是发送者的自述，客户端从不自动作答；聊天列表预览跳过这种条目。
+    AgentRun {
+        /// 这一轮针对的请求消息的事件 ID（`run`）。
+        run: Option<String>,
+        state: AgentRunState,
+        /// 当前步骤的一句话（`step`），Bot 给的原话，原样显示。
+        step: Option<String>,
+        /// 到现在完成的步数（`steps`）。
+        steps: Option<u32>,
+        /// 进度，`0.0..=1.0`（`progress`）。
+        progress: Option<f32>,
+        /// 结束时的一句话总结（`result`），Bot 给的原话，原样显示。
+        result: Option<String>,
+        /// 怎么结束的（`app.wonton.end`），只有状态是 [`AgentRunState::Failed`] 时有。
+        end: Option<AgentRunEnd>,
+        /// 状态消息的 `body`：写给不认识这个格式的客户端的纯文字，状态是
+        /// [`AgentRunState::Other`] 时壳原样显示它。
+        body: String,
+        /// 状态是 [`AgentRunState::Waiting`] 且这个 Bot 在这个房间有等回答的核心卡片（ADR-0016）时，
+        /// 是那张卡片：点条目打开它。
+        card_id: Option<String>,
+        /// Bot 自己发的待回答选项（`choices`），只在等待回答时有；点了一个经
+        /// [`Action::AnswerAgentChoice`](crate::Action::AnswerAgentChoice) 以主人的身份发反应。
+        choices: Vec<AgentRunChoice>,
     },
     /// 一行说明，比如成员加入、离开，房间改名。文字由核心给出。
     Notice {
@@ -478,6 +507,24 @@ mod tests {
                     ),
                     SendState::Sent,
                 ),
+            ),
+            item(
+                "4c",
+                TimelineContent::AgentRun {
+                    run: Some("$request".into()),
+                    state: AgentRunState::Waiting,
+                    step: Some("执行命令".into()),
+                    steps: Some(3),
+                    progress: Some(0.5),
+                    result: None,
+                    end: None,
+                    body: "等你确认".into(),
+                    card_id: Some("card-1".into()),
+                    choices: vec![AgentRunChoice {
+                        key: "allow".into(),
+                        label: "继续".into(),
+                    }],
+                },
             ),
             item("5", TimelineContent::ReadMarker),
             item(

@@ -97,6 +97,10 @@ fun TimelineItemView(
             onReply,
         )
         is TimelineContent.Notice -> CenteredNote(content.text)
+        is TimelineContent.AgentRun ->
+            // 一轮 Agent 任务的进度行（ADR-0082）：完整的样子在 App 壳那个 PR 里做，先按普通的
+            // Bot 提示消息显示 `body`——和其他不认识这个格式的客户端一样。
+            CenteredNote(content.body)
         is TimelineContent.ProfileChange -> CenteredNote(
             content.previousName
                 ?.let { stringResource(R.string.timeline_profile_rename, it, content.name) }
