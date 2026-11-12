@@ -15,7 +15,8 @@ impl PluginManager {
     /// 这台主机实际有什么。Docker 不可达时相关的项是查不出来，不报错。
     pub(super) async fn host_facts(&self, langs: &Languages) -> HostFacts {
         let docker = self.engine.host_info().await.map_err(|e| e.to_string());
-        self.facts_from(docker, langs).await
+        // 往下一路是 Docker 的 hyper 请求链，调试构建的帧很大：放堆上跑，别让它挤占调用方的栈。
+        Box::pin(self.facts_from(docker, langs)).await
     }
 
     pub(super) async fn facts_from(
