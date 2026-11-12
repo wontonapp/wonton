@@ -36,6 +36,10 @@ pub struct Limits {
     pub idle_tick: Duration,
     /// 话题空闲多久判结束（ADR-0058：30 分钟）。
     pub topic_idle: Duration,
+    /// 解不开的加密消息等密钥晚到多久（超过就报，见 `undecryptable`）。
+    pub undecryptable_after: Duration,
+    /// 报过之后隔多久才允许再报（同一个房间别刷屏）。
+    pub undecryptable_every: Duration,
 }
 
 #[derive(Clone, Debug)]
@@ -113,6 +117,14 @@ impl Config {
                 idle_timeout: Duration::from_secs(env_u64("WONTON_ACP_IDLE_SECONDS", 10 * 60)?),
                 idle_tick: Duration::from_secs(env_u64("WONTON_ACP_IDLE_TICK_SECONDS", 30)?),
                 topic_idle: Duration::from_secs(env_u64("WONTON_ACP_TOPIC_IDLE_SECONDS", 30 * 60)?),
+                undecryptable_after: Duration::from_secs(env_u64(
+                    "WONTON_ACP_UNDECRYPTABLE_SECONDS",
+                    60,
+                )?),
+                undecryptable_every: Duration::from_secs(env_u64(
+                    "WONTON_ACP_UNDECRYPTABLE_EVERY_SECONDS",
+                    10 * 60,
+                )?),
             },
         })
     }

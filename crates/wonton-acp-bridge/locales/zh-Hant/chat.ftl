@@ -22,6 +22,7 @@ permissions-cancelled = 權限請求已取消，Agent 沒有執行該操作。
 output-limited = 上游錯誤：Agent 回覆超過輸出上限，已取消這一輪。
 no-text = Agent 這一輪沒有產出文字（stopReason={ $stop_reason }）。
 transport-disconnected = 傳輸無法使用：ACP Agent 連線中斷，正在重新連線。
+crypto-undecryptable = 我讀不了你傳的加密訊息，可能是我的加密資料遺失了；在 Wonton 裡重新安裝這個外掛（保留資料）可以恢復，之前的訊息救不回來。
 
 # 只進日誌（日誌不翻譯，這幾則和類別前綴連在一起讀）。
 agent-connect-socket = 連線 ACP socket { $path } 失敗：{ $error }

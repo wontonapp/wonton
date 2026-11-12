@@ -23,6 +23,7 @@ permissions-cancelled = The permission request was cancelled; the agent didn't r
 output-limited = Upstream error: the agent's reply passed the output limit; the turn was cancelled.
 no-text = The agent produced no text this turn (stopReason={ $stop_reason }).
 transport-disconnected = Transport unavailable: the ACP agent connection dropped; it reconnects shortly.
+crypto-undecryptable = I can't read your encrypted messages — my encryption data may be lost. Reinstall this plugin in Wonton (keeping its data) to recover; messages sent before that can't be recovered.
 
 catch-up-dropped =
     I was offline; the {$count} below were not processed:
