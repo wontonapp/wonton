@@ -26,6 +26,8 @@ pub struct CertificateConfig {
     pub directory_url: String,
     pub ca_file: Option<PathBuf>,
     pub dns_resolvers: Vec<String>,
+    /// 关掉 lego 的权威服务器传播检查：测试里的假 DNS 没有 NS 记录。
+    pub dns_propagation_disable_ans: bool,
     pub email: Option<String>,
     /// Set only after the operator explicitly accepts this CA's terms.
     pub accept_terms: bool,
@@ -169,6 +171,9 @@ impl CertificateManager {
                 self.config.dns_resolvers.join(","),
             ]);
         }
+        if self.config.dns_propagation_disable_ans {
+            command.push("--dns.propagation.disable-ans".to_owned());
+        }
         self.run_lego(command).await?;
         self.publish_certificate()
     }
@@ -225,7 +230,7 @@ impl CertificateManager {
         Ok(())
     }
 
-    fn account_uri(&self) -> Result<String> {
+    pub(crate) fn account_uri(&self) -> Result<String> {
         let directory = Url::parse(&self.config.directory_url)?;
         let host = directory[url::Position::BeforeHost..url::Position::AfterPort]
             .replace([':', '/', '\\'], "_");
@@ -252,6 +257,20 @@ impl CertificateManager {
     }
 }
 
+/// acme-dns 的地址是家里或测试里的内部服务，允许 http；ACME 目录仍要 https（见 [`validate_url`]）。
+pub(crate) fn validate_http_url(value: &str) -> Result<()> {
+    let url = Url::parse(value).context("invalid acme-dns URL")?;
+    ensure!(
+        matches!(url.scheme(), "http" | "https")
+            && url.host_str().is_some()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.fragment().is_none(),
+        "acme-dns URL must be an explicit HTTP(S) URL without credentials or fragment"
+    );
+    Ok(())
+}
+
 fn validate_url(value: &str) -> Result<()> {
     let url = Url::parse(value).context("invalid certificate service URL")?;
     ensure!(
@@ -265,7 +284,7 @@ fn validate_url(value: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_domain(domain: &str) -> Result<()> {
+pub(crate) fn validate_domain(domain: &str) -> Result<()> {
     if domain.is_empty() || domain.len() > 253 || !domain.contains('.') {
         bail!("certificate domain must be an ASCII DNS name");
     }

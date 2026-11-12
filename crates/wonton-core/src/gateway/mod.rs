@@ -37,6 +37,8 @@ mod capabilities;
 mod capability_settings;
 mod chain_mentions;
 mod clients_entry;
+mod clients_api;
+mod clients_domain;
 mod confirmations;
 mod core_routes;
 mod core_upgrade;
@@ -216,6 +218,8 @@ pub struct Gateway {
     health_limits: health::RateLimits,
     pub(crate) link_previews: Arc<crate::link_preview::LinkPreviews>,
     pub(crate) app_calls: Arc<mcp_apps::AppCalls>,
+    /// 自己的域名和证书（ADR-0089）；核心没跑在装好的容器里时是空。
+    pub clients: Option<Arc<crate::clients::domain::Domain>>,
     sessions: session::SessionStore,
     /// 调用链（ADR-0061 第 10 节）：账本、出箱、设置和 `agent_acp` 的取消方，见 [`agent_chains::AgentChains`]。
     pub(crate) agent_chains: Option<Arc<agent_chains::AgentChains>>,
@@ -291,10 +295,17 @@ impl Gateway {
             health_limits: health::RateLimits::new(),
             link_previews,
             app_calls: Arc::default(),
+            clients: None,
             sessions: session::SessionStore::default(),
             agent_chains: None,
             agent_acp: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_clients(mut self, clients: Option<Arc<crate::clients::domain::Domain>>) -> Self {
+        self.clients = clients;
+        self
     }
 
     #[must_use]

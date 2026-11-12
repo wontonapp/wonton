@@ -9178,6 +9178,7 @@ dependencies = [
  "wonton-protocol",
  "wonton-test-images",
  "wonton-tunnel",
+ "x509-parser",
  "zip",
  "zune-core",
  "zune-jpeg",

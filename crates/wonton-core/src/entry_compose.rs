@@ -209,6 +209,7 @@ mod tests {
             acme_directory: None,
             acme_ca: None,
             acme_resolvers: Vec::new(),
+            acme_propagation_disable_ans: false,
             acme_email: None,
             acme_accept_terms: false,
             acme_network: "bridge".to_owned(),

@@ -285,6 +285,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         )
         .route("/_wonton/api/tunnel", get(devices::tunnel))
         .merge(peer_routes())
+        .merge(super::clients_api::routes(gateway.clone()))
         .merge(friend_routes())
         .merge(sharing_routes())
         .route(
