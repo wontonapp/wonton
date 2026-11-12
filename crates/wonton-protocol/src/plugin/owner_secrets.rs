@@ -72,7 +72,7 @@ pub enum OwnerSecretFailure {
     TransportUnavailable,
     Unauthenticated,
     CrossSite,
-    OwnerOnly,
+    PermissionRequired,
     NotInstalled,
     NotFound,
     NotReady,

@@ -35,7 +35,7 @@ pub(super) fn core_error(
         .ok()
         .map(|body| body.error);
     let reason = match detail.as_ref().map(|detail| detail.kind.as_str()) {
-        Some("unauthenticated" | "cross_site" | "owner_only" | "install_not_allowed") => {
+        Some("unauthenticated" | "cross_site" | "permission_required" | "install_not_allowed") => {
             PluginFailure::Unauthorized
         }
         // 授权列表和插件清单对不上，和设备身份无关：重新看预览、确认，重新配对解决不了。

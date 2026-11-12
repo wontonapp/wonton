@@ -57,7 +57,7 @@ fn offer() -> PluginOffer {
         plugin_id: "game".into(),
         installed: true,
         has_webui: true,
-        friends_supported: true,
+        per_user_accounts: true,
     }
 }
 
@@ -238,7 +238,7 @@ fn complete_replacement_changes_plugin_recipient_expiry_and_risk_gate() {
     };
     let mut photos = offer();
     photos.plugin_id = "photos".into();
-    photos.friends_supported = false;
+    photos.per_user_accounts = false;
     let before = rig.shares.snapshot();
     assert!(matches!(
         rig.shares.update(&grant.id, &replacement, &photos),

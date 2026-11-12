@@ -54,9 +54,9 @@ fn fake_output() -> OneShotOutput {
     OneShotOutput {
         exit_code: 0,
         stdout: concat!(
-            r#"{"spec_supported":"0.12","capabilities":["models"],"plugins":["#,
+            r#"{"spec_supported":"0.13","capabilities":["models"],"plugins":["#,
             r#"{"id":"app.ok.photo","verdict":"ok"},"#,
-            r#"{"id":"app.new.spec","verdict":"breaking","reasons":[{"category":"spec_unsupported","raw":"0.13"}]},"#,
+            r#"{"id":"app.new.spec","verdict":"breaking","reasons":[{"category":"spec_unsupported","raw":"0.14"}]},"#,
             r#"{"id":"app.new.field","verdict":"breaking","reasons":[{"category":"unknown_feature","raw":"x-wonton.qps"}]}"#,
             "]}"
         )
@@ -69,9 +69,9 @@ fn fake_output() -> OneShotOutput {
 fn the_real_subcommand_and_the_fake_output_parse_to_the_same_verdicts() {
     let dir = tempfile::tempdir().unwrap();
     let dirs = vec![
-        package(dir.path(), "app.ok.photo", "0.12", "[]", ""),
-        package(dir.path(), "app.new.spec", "0.13", "[]", ""),
-        package(dir.path(), "app.new.field", "0.12", "[]", "  qps: 5\n"),
+        package(dir.path(), "app.ok.photo", "0.13", "[]", ""),
+        package(dir.path(), "app.new.spec", "0.14", "[]", ""),
+        package(dir.path(), "app.new.field", "0.13", "[]", "  qps: 5\n"),
     ];
     let sent = sent(&["app.ok.photo", "app.new.spec", "app.new.field"]);
 
@@ -87,7 +87,7 @@ fn the_real_subcommand_and_the_fake_output_parse_to_the_same_verdicts() {
     };
     let reported: Vec<&str> = plugins.iter().map(|plugin| plugin.id.as_str()).collect();
     assert_eq!(reported, ["app.new.spec", "app.new.field"]);
-    assert_eq!(plugins[0].reasons[0].raw, "0.13");
+    assert_eq!(plugins[0].reasons[0].raw, "0.14");
     assert_eq!(plugins[1].reasons[0].raw, "x-wonton.qps");
 }
 
@@ -96,14 +96,14 @@ fn the_real_subcommand_and_the_fake_output_parse_to_the_same_verdicts() {
 fn the_subcommand_emits_the_four_fixed_categories() {
     let dir = tempfile::tempdir().unwrap();
     let dirs = vec![
-        package(dir.path(), "app.ok.photo", "0.12", "[]", ""),
-        package(dir.path(), "app.new.spec", "0.13", "[]", ""),
-        package(dir.path(), "app.new.field", "0.12", "[]", "  qps: 5\n"),
-        package(dir.path(), "app.new.perm", "0.12", "[files.home]", ""),
+        package(dir.path(), "app.ok.photo", "0.13", "[]", ""),
+        package(dir.path(), "app.new.spec", "0.14", "[]", ""),
+        package(dir.path(), "app.new.field", "0.13", "[]", "  qps: 5\n"),
+        package(dir.path(), "app.new.perm", "0.13", "[files.home]", ""),
         package(
             dir.path(),
             "app.new.cap",
-            "0.12",
+            "0.13",
             "[]",
             "  requires: [wonton_cloud]\n",
         ),
@@ -112,7 +112,7 @@ fn the_subcommand_emits_the_four_fixed_categories() {
     let output = run_subcommand(&dirs);
     assert_eq!(output.exit_code, 0, "{}", output.stderr);
     let parsed: Output = serde_json::from_str(&output.stdout).unwrap();
-    assert_eq!(parsed.spec_supported, "0.12");
+    assert_eq!(parsed.spec_supported, "0.13");
     assert!(parsed.capabilities.iter().any(|name| name == "models"));
     let allowed = [
         compat::SPEC_UNSUPPORTED,
@@ -151,7 +151,7 @@ fn the_subcommand_emits_the_four_fixed_categories() {
 #[test]
 fn exit_codes_keep_their_meaning() {
     let dir = tempfile::tempdir().unwrap();
-    let dirs = vec![package(dir.path(), "app.new.spec", "0.13", "[]", "")];
+    let dirs = vec![package(dir.path(), "app.new.spec", "0.14", "[]", "")];
     // 有失效的插件也是 0。
     let output = run_subcommand(&dirs);
     assert_eq!(output.exit_code, 0, "{}", output.stderr);

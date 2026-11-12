@@ -198,7 +198,7 @@ async fn a_family_member_reads_an_empty_core_list_and_cannot_write_it() {
     // 家人的好友在客户端本机，核心名单是主人的，不给他们看。
     assert!(body["friends"].as_array().unwrap().is_empty(), "{body}");
 
-    // 写接口只给主人：接受、删、分组、建组、删组都对家人回 owner_only。
+    // 写接口只给主人：接受、删、分组、建组、删组都对家人回 permission_required。
     let writes = [
         (Method::PUT, "/_wonton/api/friends/@eve:e.test".to_owned()),
         (
@@ -222,7 +222,7 @@ async fn a_family_member_reads_an_empty_core_list_and_cannot_write_it() {
         let (status, reply) = call(&home, Some(member), method.clone(), &path, body).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}: {reply}");
         assert_eq!(
-            reply["error"]["kind"], "owner_only",
+            reply["error"]["kind"], "permission_required",
             "{method} {path}: {reply}"
         );
     }

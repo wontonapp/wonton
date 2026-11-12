@@ -169,7 +169,7 @@ pub(super) async fn fake_hydra_scopes(
                 move |axum::extract::Query(challenge): axum::extract::Query<
                     HashMap<String, String>,
                 >| {
-                    // challenge 兼作客户端 ID：按客户端区分声明的测试用（oidc.owner_groups）。
+                    // challenge 兼作客户端 ID：按客户端区分声明的测试用（oidc.admin_groups）。
                     let client_id = challenge
                         .get("consent_challenge")
                         .cloned()

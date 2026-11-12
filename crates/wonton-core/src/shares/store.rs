@@ -176,7 +176,7 @@ impl Shares {
             })
             .count();
         Ok(PluginShares {
-            friends_supported: offer.friends_supported,
+            per_user_accounts: offer.per_user_accounts,
             friend_count: u32::try_from(count).map_err(|_| {
                 SharesError::Invalid("friend count exceeds protocol capacity".into())
             })?,
@@ -238,7 +238,7 @@ fn bind(
     now_ms: u64,
 ) -> Result<StoredGrant, SharesError> {
     validate_offer(offer, &update.plugin_id)?;
-    if !offer.friends_supported && !update.acknowledge_risk {
+    if !offer.per_user_accounts && !update.acknowledge_risk {
         return Err(SharesError::RiskAcknowledgementRequired);
     }
     if update.expires_at_ms.is_some_and(|at| at <= now_ms) {

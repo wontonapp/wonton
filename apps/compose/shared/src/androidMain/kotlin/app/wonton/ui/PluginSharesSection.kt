@@ -86,7 +86,7 @@ internal fun PluginSharesSection(
             }, kind = WontonButtonKind.SECONDARY, enabled = revoking == null)
         }
     }
-    if (editing) ShareGrantEditor(pluginId, shares.friendsSupported, grant, plugins,
+    if (editing) ShareGrantEditor(pluginId, shares.perUserAccounts, grant, plugins,
         onUpdated = onUpdated, onDismiss = { editing = false })
 }
 

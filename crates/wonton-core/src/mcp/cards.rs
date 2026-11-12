@@ -743,6 +743,8 @@ mod tests {
             settings: None,
             requester: None,
             origin: None,
+            audience: wonton_protocol::CardAudience::Keeper,
+            answered_by: None,
             id: "abc".into(),
             state: ConfirmationState::Pending,
             title: "Hermes 想安装 Grafana".into(),

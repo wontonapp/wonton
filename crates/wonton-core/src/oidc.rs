@@ -333,7 +333,7 @@ pub fn granted_scopes(requested: &[String]) -> Vec<String> {
 }
 
 /// ID 令牌里的用户声明，按授予的 scope 取舍。`groups` 是角色：主人 `["owner"]` 加客户端声明的组
-/// （清单 `oidc.owner_groups`），家人 `["member"]`，好友 `["friend"]`；未知角色不授予任何组。
+/// （清单 `oidc.admin_groups`），家人 `["member"]`，好友 `["friend"]`；未知角色不授予任何组。
 /// Hydra 把 `session.id_token` 的声明同时用作 ID 令牌和 userinfo 的内容。
 pub fn id_token_claims(
     owner: &Owner,
@@ -509,7 +509,7 @@ mod tests {
     }
 
     #[test]
-    fn friends_get_their_own_identity_without_owner_groups() {
+    fn friends_get_their_own_identity_without_admin_groups() {
         let granted = ["openid", "profile", "groups"].map(String::from);
         for (username, name) in [("friend_bob", "Bob"), ("friend_eve", "Eve")] {
             let identity = Owner {

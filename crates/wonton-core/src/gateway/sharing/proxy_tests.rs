@@ -22,7 +22,7 @@ services:
   web:
     image: example/game
 x-wonton:
-  spec: '0.9'
+  spec: '0.13'
   id: app.game
   version: 0.1.0
   kind: app
@@ -31,7 +31,7 @@ x-wonton:
   webui:
     service: web
     port: 80
-    friends: true
+    accounts: per_user
     sso: proxy
     proxy:
       headers:

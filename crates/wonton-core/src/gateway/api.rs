@@ -170,7 +170,7 @@ pub(crate) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response>
 }
 
 /// 只给主人的接口（ADR-0045“谁能做什么”）：主人令牌，或者主人名下的设备（经隧道，且不是别的网页发起的）。
-/// 家人的设备回 403 `owner_only`。
+/// 家人的设备回 403 `permission_required`。
 pub(crate) fn owner_denied(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
@@ -181,7 +181,7 @@ pub(crate) fn owner_denied(
         Some(person) if person.is_owner() => from_another_page(headers, &gateway.core_origin()),
         Some(_) => Some(error_response(
             StatusCode::FORBIDDEN,
-            "owner_only",
+            "permission_required",
             "这个接口只有主人能用",
         )),
         None => denied(gateway, headers),

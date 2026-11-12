@@ -290,7 +290,7 @@ private fun BotProfileProblem.profileProblem(): Problem = Problem(
         is BotProfileFailure.InvalidName -> stringResource(reason.problem.textRes())
         is BotProfileFailure.MediaRejected -> stringResource(reason.problem.textRes())
         BotProfileFailure.Upstream -> stringResource(R.string.bot_problem_upstream)
-        BotProfileFailure.OwnerOnly -> stringResource(R.string.bot_problem_owner_only)
+        BotProfileFailure.PermissionRequired -> stringResource(R.string.bot_problem_owner_only)
         else -> stringResource(R.string.bot_problem_other)
     },
     detail = detail,

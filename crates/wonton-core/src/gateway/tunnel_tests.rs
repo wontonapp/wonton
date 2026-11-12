@@ -568,7 +568,7 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
         }
     }
 
-    // 设备列表认主人的设备（ADR-0045）；家人的设备会拿到 403 owner_only（family_tests）。
+    // 设备列表认主人的设备（ADR-0045）；家人的设备会拿到 403 permission_required（family_tests）。
     // 局域网设置在这里读不了：Home 的引擎连不上 Docker，LAN 探测如实报 503，鉴权在 family_tests 的表里。
     let (status, _, _) = phone
         .send(Method::GET, CORE, "/_wonton/api/devices", &[])

@@ -14,7 +14,7 @@ pub struct PluginOffer {
     pub plugin_id: String,
     pub installed: bool,
     pub has_webui: bool,
-    pub friends_supported: bool,
+    pub per_user_accounts: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -130,6 +130,10 @@ pub struct MemberInvite {
     pub username: Option<String>,
     /// 第一台设备配上时建私人 Bot。
     pub private_bot: bool,
+    /// 角色（ADR-0088，[`crate::RoleDef::id`]）。只有主人能选；为空时用邀请用的默认角色。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub role_id: Option<String>,
 }
 
 /// 主人改一个家人的设置。

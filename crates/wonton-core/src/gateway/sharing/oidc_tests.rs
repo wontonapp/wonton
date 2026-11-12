@@ -313,7 +313,8 @@ impl Fixture {
             redirect_paths: vec!["/callback".into()],
             post_logout_paths: Vec::new(),
             token_endpoint_auth_method: Default::default(),
-            owner_groups: vec!["admin".into()],
+            admin_groups: vec!["admin".into()],
+            role_claim: None,
         });
         harness.manager.register_for_test(
             manifest,
@@ -336,7 +337,7 @@ impl Fixture {
             plugin_id: "app.whoami".into(),
             installed: true,
             has_webui: true,
-            friends_supported: false,
+            per_user_accounts: false,
         };
         let grant = shares
             .create(
@@ -453,7 +454,7 @@ async fn every_challenge_and_auth_request_rechecks_current_share_and_installatio
         plugin_id: "app.uninstalled".into(),
         installed: true,
         has_webui: true,
-        friends_supported: true,
+        per_user_accounts: true,
     };
     fixture
         .sharing
@@ -501,7 +502,7 @@ async fn expired_share_cannot_start_or_accept_an_oidc_challenge() {
                 plugin_id: "app.whoami".into(),
                 installed: true,
                 has_webui: true,
-                friends_supported: true,
+                per_user_accounts: true,
             },
         )
         .unwrap();
@@ -516,7 +517,7 @@ async fn expired_share_cannot_start_or_accept_an_oidc_challenge() {
 }
 
 #[test]
-fn friend_claims_never_include_owner_groups_or_the_owner_email() {
+fn friend_claims_never_include_admin_groups_or_the_owner_email() {
     let friend = crate::owner::Owner {
         username: "bob-plugin".into(),
         display_name: "Bob".into(),

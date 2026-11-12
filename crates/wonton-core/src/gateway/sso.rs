@@ -272,7 +272,7 @@ pub async fn oidc_consent(
         );
     }
     let granted = granted_scopes(&request.requested_scope);
-    let groups = gateway.plugins.oidc_owner_groups(&request.client.client_id);
+    let groups = gateway.plugins.oidc_admin_groups(&request.client.client_id);
     let identity = match gateway.identity_of(&person) {
         Ok(identity) => identity,
         Err(e) => {
