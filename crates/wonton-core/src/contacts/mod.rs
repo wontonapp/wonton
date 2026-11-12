@@ -243,6 +243,17 @@ impl Contacts {
             })
         })
     }
+
+    /// `user` 是这个 Bot 已成立的远端联系人。和 [`Contacts::has_active_remote`] 一样，认不出服务器名的也算远端。
+    pub fn is_active_remote(&self, bot: &BotRef, user: &str) -> bool {
+        self.lock().rows(bot).is_some_and(|rows| {
+            rows.iter().any(|(known, row)| {
+                known == user
+                    && row.state == ContactState::Active
+                    && server_of(known) != Some(self.own_server.as_str())
+            })
+        })
+    }
 }
 
 pub(crate) fn now_ms() -> u64 {

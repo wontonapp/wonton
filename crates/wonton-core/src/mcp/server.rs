@@ -30,6 +30,9 @@ pub struct Caller {
     /// 这条调用属于哪条调用链（ADR-0061 第 10 节）：`wonton-session` 头里的会话在这个 Bot 的轮次里时是那条链。
     /// 会话不是这个 Bot 的就当没带，审计里记一行。
     pub chain: Option<String>,
+    /// 这个 Bot 所有进行中的桥轮次的说话人（ADR-0083 第 5 节只往低处算）。远端联系人的门按它判（ADR-0050）；
+    /// 空的是没有登记在案的轮次，来源不明。
+    pub senders: Vec<String>,
 }
 
 /// 令牌认出的 Bot。
@@ -55,6 +58,7 @@ impl Caller {
             bot: None,
             origin: None,
             chain: None,
+            senders: Vec::new(),
         }
     }
 
@@ -111,6 +115,23 @@ fn chain_for_session(
     None
 }
 
+/// 这个调用方所有进行中的桥轮次的说话人（ADR-0083 第 5 节）：取的是链账本里登记的轮次，不是 Agent 自报的会话。
+/// 没有轮次登记（报不出轮次的 Agent、定时任务）时是空的，门按来源不明处理。
+pub(super) fn turn_senders(bus: &Bus, caller: &Caller) -> Vec<String> {
+    let (Some(bot), Some(chains)) = (&caller.bot, bus.agent_chains()) else {
+        return Vec::new();
+    };
+    chains
+        .ledger()
+        .live_bridge_turns(&wonton_protocol::BotRef {
+            plugin_id: caller.id.to_string(),
+            bot: bot.bot.clone(),
+        })
+        .into_iter()
+        .map(|turn| turn.sender)
+        .collect()
+}
+
 impl Handler {
     pub fn new(bus: Arc<Bus>) -> Self {
         Self { bus }
@@ -145,7 +166,8 @@ impl ServerHandler for Handler {
         _request: Option<PaginatedRequestParams>,
         ctx: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        let caller = caller(&ctx)?;
+        let mut caller = caller(&ctx)?;
+        caller.senders = turn_senders(&self.bus, &caller);
         Ok(ListToolsResult::with_all_items(
             self.bus.tools(&caller).await,
         ))
@@ -164,6 +186,7 @@ impl ServerHandler for Handler {
             .and_then(|meta| meta.0.0.get(ORIGIN_META_KEY));
         caller.origin = super::audience::reported_origin(meta, headers);
         caller.chain = chain_for_session(&self.bus, &caller, headers);
+        caller.senders = turn_senders(&self.bus, &caller);
         let cancelled = ctx.ct.clone().cancelled_owned();
         Ok(self.bus.call(&caller, request, cancelled).await.into())
     }

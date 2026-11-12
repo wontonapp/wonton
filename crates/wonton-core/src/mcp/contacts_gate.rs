@@ -1,9 +1,10 @@
-//! 有远端联系人的 Bot 只聊天（ADR-0050“远端联系人默认只聊天”）：只要这个 Bot 有 Active 的远端联系人，
+//! 远端联系人那一轮只聊天（ADR-0050“远端联系人只聊天”）：这一轮是别的服务器上的联系人说的话时，
 //! 列工具和调用都不给插件的工具，核心工具只给 [`ALLOWED`] 里的几个。
 //!
-//! 按 Bot 整体挡，不按轮次：总线的 [`Caller`] 只知道是哪个 Bot，不知道这一轮是谁的话（#353）。远端联系人删掉、
-//! 或不再是 Active 时下一次列工具、调用就恢复。不另发工具列表变化的通知：名单一变核心就重建这个 Bot
-//! （`Effects::allowed_users_changed`），Agent 重启后重新列工具。
+//! 按轮次判，说话人取这个 Bot 进行中的桥轮次（ADR-0083 第 5 节只往低处算，见 [`Caller::senders`]）：任一进行中的
+//! 轮次是远端联系人就挡，同时还有归属人那一轮也一起挡。拿不到说话人（没有轮次登记，报不出轮次的 Agent 也算）
+//! 按远端处理。远端联系人删掉、或不再是 Active 时下一次列工具、调用就恢复。不另发工具列表变化的通知：名单一变核心
+//! 就重建这个 Bot（`Effects::allowed_users_changed`），Agent 重启后重新列工具。
 
 use std::sync::Arc;
 
@@ -33,15 +34,23 @@ impl Bus {
         }
     }
 
-    /// 这个调用方是有 Active 远端联系人的 Bot。不是 Bot 的插件（不进聊天）没有联系人。
+    /// 这一轮是别的服务器上的联系人说的话；来源不明也按它处理。不是 Bot 的插件（不进聊天）没有联系人。
     pub(super) fn remote_contact_blocked(&self, caller: &Caller) -> bool {
         let (Some(bot), Some(contacts)) = (&caller.bot, self.contacts.get()) else {
             return false;
         };
-        contacts.has_active_remote(&BotRef {
+        let bot = BotRef {
             plugin_id: caller.id.to_string(),
             bot: bot.bot.clone(),
-        })
+        };
+        if !contacts.has_active_remote(&bot) {
+            return false;
+        }
+        caller.senders.is_empty()
+            || caller
+                .senders
+                .iter()
+                .any(|user| contacts.is_active_remote(&bot, user))
     }
 
     /// 调用前的门：挡住时返回拒绝的原因。`owner` 是工具名里的插件段，`tool` 是去掉前缀的工具名。
@@ -56,8 +65,8 @@ impl Bus {
             ToolFailure::new(
                 KIND,
                 format!(
-                    "这个 Bot 有别的服务器上的联系人，按规则只聊天：不能用插件的工具和会改东西、读家里数据的核心工具\
-                     （{}）。重试也一样，要用的话请归属人先删掉远端联系人。",
+                    "这一轮是别的服务器上的联系人说的，或者认不出这一轮是谁说的，按规则只聊天：不能用插件的工具和\
+                     会改东西、读家里数据的核心工具（{}）。重试也一样；归属人自己那一轮不挡。",
                     naming::join(owner, tool)
                 ),
             )
