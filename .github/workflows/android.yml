@@ -1,13 +1,9 @@
 name: android
 
-# PR 只在改到 App 或 Rust 绑定时才跑；草稿 PR 上一个作业都不起（含改动范围），汇总作业起来报一个通过，
-# 转 ready 或每天的定时全量才跑。
-# 路径不写在触发器上：必需检查在每个 PR 上都要有结果，工作流没触发的话检查一直“等待中”，PR 合不了。
-# 改成由 changes 作业判断改动范围，没改到时自己报 skipped（跳过的检查算通过）。
-# 必需检查只有末尾的汇总作业，其余作业在作业级直接跳过，不用为了报检查先起 runner。
+# detekt、单元测试、Debug 构建和界面参考图比对。PR 上由 gate.yml 按改动范围调用（合并门槛，范围写在那边的
+# changes 里），不自己挂 pull_request；每天定时、手动触发时自己跑全量。
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_call:
   schedule:
     # 每天全量兜底：main 上不重跑，两个各自绿的 PR 合在一起才出的错由这次发现。
     - cron: "0 4 * * *"
@@ -25,47 +21,8 @@ permissions:
   contents: read
 
 jobs:
-  changes:
-    name: 改动范围（android）
-    # PR 用 REST 列改动文件，不用检出代码；定时和手动运行全量，草稿 PR 跳过。
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      # 按 REST 接口列 PR 改动的文件，不用检出代码。
-      pull-requests: read
-    outputs:
-      changed: ${{ steps.filter.outputs.changed }}
-    steps:
-      # MIT
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: filter
-        with:
-          # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
-          predicate-quantifier: some-with-excludes
-          filters: |
-            changed:
-              - "apps/compose/**"
-              - "apps/ios/Wonton/Assets.xcassets/**"
-              - "apps/ios/Wonton/Design/Generated/**"
-              - "design/**"
-              - "scripts/generate-design.py"
-              - "crates/wonton-client/**"
-              - "crates/wonton-matrix/**"
-              - "crates/wonton-protocol/**"
-              - "crates/wonton-tunnel/**"
-              - "Cargo.toml"
-              - "vendor/**"
-              - "Cargo.lock"
-              - "rust-toolchain.toml"
-              - ".github/workflows/android.yml"
-              - "!**/*.md"
-
   build:
     name: detekt、单元测试与 Debug 构建
-    needs: changes
-    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || github.event_name != 'pull_request') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -113,24 +70,3 @@ jobs:
       - name: 编译设备测试（androidTest）
         working-directory: apps/compose
         run: ./gradlew :androidApp:assembleDebugAndroidTest
-
-  # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
-  # 草稿 PR 上其余作业全被跳过时它也照样起来并报通过，不用为此先起别的 runner。
-  summary:
-    name: android 汇总
-    needs: [changes, build]
-    if: always()
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    env:
-      RESULTS: ${{ join(needs.*.result, ' ') }}
-    steps:
-      - name: 各作业的结果
-        run: |
-          echo "$RESULTS"
-          for result in $RESULTS; do
-            case "$result" in
-              success|skipped) ;;
-              *) exit 1 ;;
-            esac
-          done
