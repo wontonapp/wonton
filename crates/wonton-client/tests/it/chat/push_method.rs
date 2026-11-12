@@ -253,7 +253,13 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
             view.background_notifications
                 .iter()
                 .find(|notice| notice.room_id == room_id.as_str())
-                .map(|notice| (notice.sender.clone(), notice.content.clone()))
+                .map(|notice| {
+                    (
+                        notice.sender.clone(),
+                        notice.content.clone(),
+                        notice.server_id.clone(),
+                    )
+                })
         })
         .await;
     assert_eq!(notice.0.as_deref(), Some("Hermes"));
@@ -265,6 +271,14 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
             }
         }
     );
+    // 契约是本机槽位号（`ServerRow::id`）：壳点开通知按它切服务器。填成 endpoint ID 会查不到槽位，
+    // 被当成“已移除的服务器”误报（点通知先弹“服务器已移除”的盲测 11-12）。
+    assert_eq!(notice.2.as_deref(), Some("1"));
+    phone
+        .dispatch(Action::SwitchServer {
+            id: notice.2.expect("server_id 已断言"),
+        })
+        .expect("点通知要能按通知里的槽位号切到那台服务器");
 
     // 自己发的不通知：同步还开着，消息能到本机，但不该进后台通知。
     own_message_is_not_notified(&phone, &bot_room, room_id.as_str()).await;
