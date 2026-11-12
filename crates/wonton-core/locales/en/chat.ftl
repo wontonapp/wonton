@@ -198,3 +198,14 @@ chat-choice-hop-limit-continue = Continue
 chat-choice-hop-limit-stay = Keep stopped
 chat-hop-limit-resumed = Continued
 chat-hop-limit-kept-by-other = The other side chose to keep it stopped
+
+# Chain limit card (ADR-0061 §10): the whole chain hit its limit. "One more" grants another
+# default share of rounds and spend; "Stop for now" stops the chain.
+chat-chain-limit-title = This chain hit its limit
+chat-chain-limit-title-rounds = This chain ran out of rounds
+chat-chain-limit-title-cost = This chain used up its spend limit
+chat-chain-limit-bots = On this chain: { $bots }
+chat-chain-limit-what = One more adds another default share of rounds and spend. Stop for now ends the whole chain; to carry on, say something new.
+chat-chain-limit-grant = One more
+chat-chain-limit-stop = Stop for now
+chat-chain-stopped-card = The chain was stopped; this card is void

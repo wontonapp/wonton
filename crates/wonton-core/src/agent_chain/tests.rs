@@ -570,3 +570,69 @@ fn a_bridge_sessions_next_sentence_opens_a_new_chain() {
     let next = start(&h, &a, "s-1", "@alex", "$e2").expect("下一句话开新链");
     assert_ne!(next.chain, first.chain);
 }
+
+/// 人联邦线 #353：进行中的桥轮次列出链、会话和说话人；报了 end、链被停、别人的轮次都不列。
+#[test]
+fn live_bridge_turns_list_only_running_rounds_of_that_bot() {
+    use super::LiveBridgeTurn;
+
+    let h = harness();
+    let a = bot("app.a", "owner");
+    let b = bot("app.b", "owner");
+    let grant = start(&h, &a, "s-1", "@alex", "$e1").expect("开链");
+    assert_eq!(
+        h.chains.live_bridge_turns(&a),
+        vec![LiveBridgeTurn {
+            chain: grant.chain.clone(),
+            session: "s-1".into(),
+            sender: "@alex".into(),
+        }]
+    );
+    assert!(
+        h.chains.live_bridge_turns(&b).is_empty(),
+        "别的 Bot 没有轮次"
+    );
+
+    // 同一会话的下一轮还是活的，说话人也跟着换。
+    h.chains.end_session("s-1");
+    assert!(h.chains.live_bridge_turns(&a).is_empty(), "报了 end 不再列");
+    start(&h, &a, "s-1", "@bob", "$e2").expect("下一句");
+    let turns = h.chains.live_bridge_turns(&a);
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].sender, "@bob");
+
+    // 停链后不再列（会话也不活了）。
+    h.chains.stop(&turns[0].chain).expect("停链");
+    assert!(h.chains.live_bridge_turns(&a).is_empty());
+}
+
+/// 设置：没设过是默认值；改过的读回来还是改的，坏文件报错。
+#[test]
+fn agent_settings_default_and_round_trip() {
+    use wonton_protocol::DEFAULT_CONSUMER_AGENT_CONCURRENCY;
+
+    use super::settings::AgentSettings;
+
+    let dir = tempfile::tempdir().expect("临时目录");
+    let path = dir.path().join("agent-settings.json");
+    let settings = AgentSettings::open(&path).expect("打开设置");
+    assert_eq!(settings.limits(), ChainLimits::default());
+    assert_eq!(
+        settings.concurrency("app.a"),
+        DEFAULT_CONSUMER_AGENT_CONCURRENCY
+    );
+
+    let limits = ChainLimits {
+        max_depth: 5,
+        max_rounds: 9,
+        max_tokens: 11,
+    };
+    settings.set_limits(limits).expect("写上限");
+    settings.set_concurrency("app.a", 7).expect("写并发");
+    let reopened = AgentSettings::open(&path).expect("重开");
+    assert_eq!(reopened.limits(), limits);
+    assert_eq!(reopened.concurrency("app.a"), 7);
+
+    std::fs::write(&path, "不是 JSON").unwrap();
+    assert!(AgentSettings::open(&path).is_err());
+}

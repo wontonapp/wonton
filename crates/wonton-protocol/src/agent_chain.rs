@@ -12,7 +12,7 @@ use crate::{BotRef, ConfirmationOrigin};
 /// 桥每轮开始和结束报告的接口路径（`POST`，和 [`AGENT_PERMISSION_PATH`](crate::AGENT_PERMISSION_PATH) 同一道门）。
 pub const AGENT_CHAINS_PATH: &str = "/agent/chains";
 
-/// 前端取批准的消息和要取消的轮次的接口路径（`GET`，长轮询，和 [`AGENT_PERMISSION_PATH`](crate::AGENT_PERMISSION_PATH)
+/// 前端取批准的消息和要取消的轮次的接口路径（`GET`，长轮询，最多 [`AGENT_OUTBOX_WAIT_SECS`] 秒，和 [`AGENT_PERMISSION_PATH`](crate::AGENT_PERMISSION_PATH)
 /// 同一道门），回报见 [`crate::OutboxReceipt`]。
 pub const AGENT_OUTBOX_PATH: &str = "/agent/outbox";
 
@@ -46,6 +46,42 @@ pub const SESSION_HEADER: &str = "wonton-session";
 
 /// 每个使用方同时开着的 `agent_acp` 连接数默认上限（ADR-0061 第 10 节）；满了返回 [`ChainError::Busy`]。
 pub const DEFAULT_CONSUMER_AGENT_CONCURRENCY: u32 = 4;
+
+/// 桥证明“这一轮是哪个 Bot 在报”的请求头（ADR-0083 第 5 节）：值是这个 Bot 的 Matrix 访问令牌。总线令牌 Agent
+/// 自己也拿得到，只认来源地址和它不够。
+pub const BOT_TOKEN_HEADER: &str = "X-Wonton-Bot-Token";
+
+/// [`AGENT_OUTBOX_PATH`] 长轮询最多挂多少秒。
+pub const AGENT_OUTBOX_WAIT_SECS: u64 = 25;
+
+/// [`AGENT_CHAINS_API_PATH`] 带 `after` 长轮询时最多挂多少秒。
+pub const AGENT_CHAINS_WAIT_SECS: u64 = 25;
+
+/// App 的链列表（长轮询，带 `after=<revision>`），和确认列表一样的做法。
+pub const AGENT_CHAINS_API_PATH: &str = "/_wonton/api/agent/chains";
+
+/// 停一条链：`POST`，路径参数是链 ID。
+pub fn agent_chain_stop_path(chain: &str) -> String {
+    format!("/_wonton/api/agent/chains/{chain}/stop")
+}
+
+/// 改设置“Agent”一页的上限（[`ChainLimits`]，`PUT`），只有主人能改。
+pub const AGENT_LIMITS_PATH: &str = "/_wonton/api/agent/limits";
+
+/// 设置“Agent”一页的当前值（[`AgentSettingsViewModel`]）。
+pub const AGENT_SETTINGS_PATH: &str = "/_wonton/api/agent/settings";
+
+/// 改一个使用方同时能开的 `agent_acp` 连接数（`PUT`，请求体[`AgentConcurrency`]），只有主人能改。
+pub fn agent_consumer_concurrency_path(plugin_id: &str) -> String {
+    format!("/_wonton/api/agent/consumers/{plugin_id}/concurrency")
+}
+
+/// [`agent_consumer_concurrency_path`] 的请求体。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AgentConcurrency {
+    pub concurrency: u32,
+}
 
 /// [`AGENT_CHAINS_PATH`] 的请求体。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -220,6 +256,9 @@ pub struct AgentChainRow {
 pub struct AgentChainsViewModel {
     /// 还没结束的在前，同状态的按最近活动排；结束的留给链的详情，不进列表。
     pub chains: Vec<AgentChainRow>,
+    /// 列表的版本，任何一条链变了就变大；下次带 `after=<revision>` 长轮询。核心重启后从头数。
+    #[serde(default)]
+    pub revision: u64,
 }
 
 /// App 发的链动作：停链、改上限、改并发（ADR-0061 第 10 节）。客户端核心给一个单独的分派入口收它，

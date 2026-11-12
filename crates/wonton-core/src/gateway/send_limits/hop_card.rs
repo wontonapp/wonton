@@ -88,6 +88,7 @@ async fn ask_all(
                 room_id: stopped.room_id.clone(),
                 thread_id: None,
             }),
+            category: None,
         };
         async move {
             let answer = bus

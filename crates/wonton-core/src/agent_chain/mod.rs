@@ -6,6 +6,7 @@
 
 mod budget;
 mod layers;
+pub mod settings;
 mod stop;
 mod store;
 #[cfg(test)]
@@ -15,6 +16,8 @@ mod wake;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+
+use tokio::sync::watch;
 
 use wonton_protocol::{
     AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel, BotRef, ChainError,
@@ -37,8 +40,18 @@ pub struct ChainSessionInfo {
     pub bot: BotRef,
     pub layer: u32,
     pub source: ChainSessionSource,
+    /// 桥的一轮说话的人；别的来源没有。
+    pub sender: Option<String>,
     /// 还活着：没报结束、没被停链取消。重启后一律为假。
     pub live: bool,
+}
+
+/// 这个 Bot 当前进行中的桥轮次（Go 联邦线 #353 用）：一条链上还活着的一轮和说话人。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LiveBridgeTurn {
+    pub chain: String,
+    pub session: String,
+    pub sender: String,
 }
 
 /// 停链的交出项：要取消的活会话按来源分，加上带这条链、还没答的卡片（要撤回）。
@@ -97,6 +110,8 @@ struct SessionEntry {
     bot: BotRef,
     layer: u32,
     source: ChainSessionSource,
+    /// 桥的一轮说话的人；别的来源没有。
+    sender: Option<String>,
     live: bool,
 }
 
@@ -130,6 +145,8 @@ pub struct Chains {
     state: Mutex<LedgerState>,
     path: PathBuf,
     on_limit: Mutex<Option<LimitHandler>>,
+    /// 列表的版本：任何一次提交都加一，App 的链列表长轮询挂在它上面。
+    revision: watch::Sender<u64>,
 }
 
 impl Chains {
@@ -166,6 +183,7 @@ impl Chains {
             }),
             path,
             on_limit: Mutex::new(None),
+            revision: watch::channel(0).0,
         })
     }
 
@@ -176,6 +194,54 @@ impl Chains {
             .on_limit
             .lock()
             .expect("agent chain ledger lock poisoned") = Some(handler);
+    }
+
+    /// 列表的当前版本（[`Self::view`] 的 `revision`）。
+    pub fn revision(&self) -> u64 {
+        *self.revision.borrow()
+    }
+
+    /// 版本变化的订阅：App 的列表长轮询挂在它上面。
+    pub fn subscribe(&self) -> watch::Receiver<u64> {
+        self.revision.subscribe()
+    }
+
+    /// 改全局上限（设置“Agent”一页）：只影响之后新开的链，旧链用“再给一份”。
+    pub fn set_default_limits(&self, limits: ChainLimits) {
+        let mut state = self.state.lock().expect("agent chain ledger lock poisoned");
+        state.default_limits = limits;
+        self.bump_revision();
+    }
+
+    /// 这个 Bot 当前进行中的桥轮次（还没 End、链没停）：联邦线按它算这个 Bot 此刻在跟谁说话。
+    /// 说话人是登记时报的，链代表的人可能更早。
+    pub fn live_bridge_turns(&self, bot: &BotRef) -> Vec<LiveBridgeTurn> {
+        let mut turns = self.read(|state| {
+            state
+                .sessions
+                .iter()
+                .filter(|(_, entry)| {
+                    entry.source == ChainSessionSource::Bridge
+                        && entry.live
+                        && &entry.bot == bot
+                        && state.chains.get(&entry.chain).is_some_and(|chain| {
+                            !matches!(
+                                chain.status,
+                                AgentChainStatus::Stopped | AgentChainStatus::Ended
+                            )
+                        })
+                })
+                .filter_map(|(session, entry)| {
+                    Some(LiveBridgeTurn {
+                        chain: entry.chain.clone(),
+                        session: session.clone(),
+                        sender: entry.sender.clone()?,
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+        turns.sort_by(|a, b| a.chain.cmp(&b.chain).then(a.session.cmp(&b.session)));
+        turns
     }
 
     /// 桥的一轮开始（`POST /agent/chains` 的 start 报告）：按触发消息的唤醒标签沿用原链，
@@ -204,7 +270,7 @@ impl Chains {
                 thread_id: thread,
             };
             match wake::lookup(state, &event_id) {
-                Some(chain_id) => continue_bridge_round(state, &chain_id, &bot, &session),
+                Some(chain_id) => continue_bridge_round(state, &chain_id, &bot, &session, &sender),
                 None => open_chain(
                     state,
                     sender,
@@ -299,6 +365,7 @@ impl Chains {
                     bot: bot.clone(),
                     layer,
                     source,
+                    sender: None,
                     live: true,
                 },
             );
@@ -476,6 +543,7 @@ impl Chains {
                 bot: entry.bot.clone(),
                 layer: entry.layer,
                 source: entry.source,
+                sender: entry.sender.clone(),
                 live: entry.live,
             })
         })
@@ -494,6 +562,7 @@ impl Chains {
                     bot: entry.bot.clone(),
                     layer: entry.layer,
                     source: entry.source,
+                    sender: entry.sender.clone(),
                     live: entry.live,
                 })
                 .collect()
@@ -516,7 +585,8 @@ impl Chains {
     /// App 的链列表：没结束的按最近活动排；停了和做完的不进列表，留给详情（[`Chains::row`]）。
     /// `can_stop` 恒为真——哪些人看得见、能停（链代表和各 Bot 的归属人）由第 3 块按归属过滤。
     pub fn view(&self) -> AgentChainsViewModel {
-        self.read(|state| {
+        let revision = *self.revision.borrow();
+        let mut view = self.read(|state| {
             let mut rows: Vec<(u64, AgentChainRow)> = state
                 .chains
                 .values()
@@ -534,8 +604,12 @@ impl Chains {
             rows.sort_by_key(|(tick, _)| std::cmp::Reverse(*tick));
             AgentChainsViewModel {
                 chains: rows.into_iter().map(|(_, row)| row).collect(),
+                revision,
             }
-        })
+        });
+        // 读者拿到的版本不能比列表旧：读守着一把锁，期间的提交已经生效。
+        view.revision = view.revision.max(*self.revision.borrow());
+        view
     }
 
     /// 单条链（任意状态，App 的链详情用）。
@@ -559,6 +633,7 @@ impl Chains {
                 let chains: Vec<&store::StoredChain> = next.chains.values().collect();
                 store::write(&self.path, &chains)?;
                 *state = next;
+                self.bump_revision();
             }
             (result, events)
         };
@@ -573,6 +648,10 @@ impl Chains {
             }
         }
         result
+    }
+
+    fn bump_revision(&self) {
+        self.revision.send_modify(|revision| *revision += 1);
     }
 
     fn read<T>(&self, f: impl FnOnce(&LedgerState) -> T) -> T {
@@ -603,6 +682,7 @@ fn continue_bridge_round(
     chain_id: &str,
     bot: &BotRef,
     session: &str,
+    sender: &str,
 ) -> Result<ChainTurnGrant, ChainLedgerError> {
     let (layer, new_bot) = {
         let chain = state
@@ -644,6 +724,7 @@ fn continue_bridge_round(
         bot,
         layer,
         ChainSessionSource::Bridge,
+        Some(sender),
     )?;
     stop::bump_activity(state, chain_id);
     Ok(ChainTurnGrant {
@@ -672,6 +753,7 @@ fn open_chain(
         }
     }
     let chain_id = new_chain_id();
+    let sender = (source == ChainSessionSource::Bridge).then(|| user.clone());
     let mut chain = store::StoredChain {
         chain: chain_id.clone(),
         user,
@@ -694,7 +776,15 @@ fn open_chain(
     }
     state.chains.insert(chain_id.clone(), chain);
     state.dirty = true;
-    bind_session(state, &chain_id, session, &bot, 1, source)?;
+    bind_session(
+        state,
+        &chain_id,
+        session,
+        &bot,
+        1,
+        source,
+        sender.as_deref(),
+    )?;
     stop::bump_activity(state, &chain_id);
     Ok(ChainTurnGrant {
         chain: chain_id,
@@ -711,12 +801,14 @@ fn bind_session(
     bot: &BotRef,
     layer: u32,
     source: ChainSessionSource,
+    sender: Option<&str>,
 ) -> Result<(), ChainLedgerError> {
     let entry = SessionEntry {
         chain: chain_id.to_owned(),
         bot: bot.clone(),
         layer,
         source,
+        sender: sender.map(str::to_owned),
         live: true,
     };
     match state.sessions.get(session) {

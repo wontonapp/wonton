@@ -164,3 +164,13 @@ chat-choice-hop-limit-continue = 繼續
 chat-choice-hop-limit-stay = 先停著
 chat-hop-limit-resumed = 已繼續
 chat-hop-limit-kept-by-other = 另一方選了先停著，房間還停著
+
+# 鏈上限卡片（ADR-0061 第 10 節）：「再給一份」把輪數和花費各加一份預設值，「先停著」停下整條鏈。
+chat-chain-limit-title = 這條鏈用到上限了
+chat-chain-limit-title-rounds = 這條鏈的輪數用完了
+chat-chain-limit-title-cost = 這條鏈的花費用完了
+chat-chain-limit-bots = 鏈上的 Bot：{ $bots }
+chat-chain-limit-what = 「再給一份」把輪數和花費各加一份預設上限。「先停著」停下整條鏈，要接著做人重新說一句。
+chat-chain-limit-grant = 再給一份
+chat-chain-limit-stop = 先停著
+chat-chain-stopped-card = 鏈被停了，這張卡片作廢

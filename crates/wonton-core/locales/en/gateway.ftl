@@ -147,3 +147,5 @@ gateway-confirmation-gone = There is no such confirmation, or it ended more than
 gateway-web-storage-undeclared = This app doesn't store data
 gateway-web-storage-cross-site = Only this app's own pages can change its data
 gateway-web-storage-not-ready = The app that keeps this app's data isn't running; try again later
+
+gateway-chains-disabled = The home server doesn't have the call chain ledger enabled

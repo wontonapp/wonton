@@ -39,6 +39,7 @@ pub(super) fn stop(
             bot: entry.bot.clone(),
             layer: entry.layer,
             source: entry.source,
+            sender: entry.sender.clone(),
             live: false,
         };
         match entry.source {

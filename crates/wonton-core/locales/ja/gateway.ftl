@@ -147,3 +147,5 @@ gateway-confirmation-gone = その確認はありません。終了して1日以
 gateway-web-storage-undeclared = このアプリはデータを保存しません
 gateway-web-storage-cross-site = このアプリのデータを変更できるのは、このアプリ自身のページだけです
 gateway-web-storage-not-ready = このアプリのデータを保存しているアプリが実行されていません。しばらくしてからもう一度お試しください
+
+gateway-chains-disabled = 自宅サーバーで呼び出しの連鎖の台帳が有効になっていません
