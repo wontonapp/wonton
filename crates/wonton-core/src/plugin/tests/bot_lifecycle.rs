@@ -20,6 +20,8 @@ use crate::matrix::fake::{Fake, start};
 use crate::plugin::render::dry_run;
 use wonton_protocol::{BotKeeper, NewSharedBot};
 
+mod updates;
+
 /// 一个回声 Bot：唯一的服务拿到 Bot 的全部 Matrix 变量。
 fn echo() -> String {
     package(

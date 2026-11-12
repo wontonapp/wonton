@@ -111,7 +111,8 @@ impl PluginManager {
         let addresses: Vec<_> = plan.bind.iter().map(|bound| bound.ip).collect();
         let grant = (!addresses.is_empty())
             .then(|| self.lan_grant_on(package, record.lan_webui, addresses, plan.announce));
-        let ctx = self.rebuild_context(package, record, grant, None).await?;
+        let mut ctx = self.rebuild_context(package, record, grant, None).await?;
+        self.fill_bot_vars(package, &mut ctx, langs).await?;
         let mut rendered = render(package, &ctx, langs)?;
         let users: std::collections::BTreeSet<String> = rendered
             .containers
