@@ -111,16 +111,21 @@ final class ChatPanelUITests: XCTestCase {
         field.tap()
         field.typeText(String(repeating: "long reply text ", count: 30))
         tapAnyButton(["Send", "发送"], timeout: 5, required: true)
+        Thread.sleep(forTimeInterval: 2)
+        shot("29-after-send")
+        let sent = frames(list: app.collectionViews.firstMatch, field: field)
+        attach("after-send \(sent)")
+
         field.typeText(String(repeating: "draft ", count: 40))
-        _ = app.wait(for: .runningForeground, timeout: 3)
+        Thread.sleep(forTimeInterval: 2)
         shot("30-composer-grown")
 
         let list = app.collectionViews.firstMatch
         XCTAssertTrue(list.exists, "房间里没有消息列表")
-        // 列表的第一个子元素是整片内容（含屏幕外的部分）。
-        let content = list.children(matching: .other).firstMatch.frame
-        XCTAssertLessThanOrEqual(content.maxY, list.frame.maxY + 2, "发完以后列表没贴底，最后一条在可见区下面")
-        XCTAssertLessThanOrEqual(list.frame.maxY, field.frame.minY + 1, "列表的底边被输入框盖住")
+        let now = frames(list: list, field: field)
+        attach("after-draft \(now)")
+        XCTAssertTrue(now.stuckToBottom, "发完以后列表没贴底：\(now)")
+        XCTAssertLessThanOrEqual(list.frame.maxY, field.frame.minY + 1, "列表的底边被输入框盖住：\(now)")
     }
 
     // MARK: - 摆台
@@ -196,9 +201,58 @@ final class ChatPanelUITests: XCTestCase {
     /// 进 Bot 的房间，返回输入框。新配对的设备走完引导直接落在主 Bot 的房间里，这时不用再从列表点进去。
     private func enterBotRoom() -> XCUIElement? {
         skipKeyHandoff()
-        if let field = composer(timeout: 3) { return field }
+        if let field = composer(timeout: 3) {
+            goToBottom()
+            return field
+        }
         botRoom(timeout: 30)?.tap()
-        return composer(timeout: 10)
+        guard let field = composer(timeout: 10) else { return nil }
+        goToBottom()
+        return field
+    }
+
+    /// 房间落在已读位置（开发栈账号常攒着未读），不是最新一条；要“到底”的测试先按“回到底部”，等按钮消失。
+    private func goToBottom() {
+        guard let button = bottomButton(timeout: 2) else { return }
+        button.tap()
+        _ = waitGone(button, timeout: 10)
+    }
+
+    /// 停在别处时才有的“回到底部”，数字悬在图标上方，标签会带新消息条数。
+    private func bottomButton(timeout: TimeInterval) -> XCUIElement? {
+        let labels = ["Back to bottom", "回到底部", "回到底部", "一番下へ戻る"]
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            for label in labels {
+                let button = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+                if button.exists { return button }
+            }
+            _ = app.wait(for: .runningForeground, timeout: 0.3)
+        }
+        return nil
+    }
+
+    /// 量一次列表：内容的底边是不是还在列表可见区里。
+    private struct Layout: CustomStringConvertible {
+        let contentBottom: CGFloat
+        let listBottom: CGFloat
+        let fieldTop: CGFloat
+
+        var stuckToBottom: Bool { contentBottom <= listBottom + 2 }
+        var description: String { "content=\(contentBottom) list=\(listBottom) field=\(fieldTop)" }
+    }
+
+    private func frames(list: XCUIElement, field: XCUIElement) -> Layout {
+        // 列表的第一个子元素是整片内容（含屏幕外的部分）。
+        Layout(contentBottom: list.children(matching: .other).firstMatch.frame.maxY,
+               listBottom: list.frame.maxY, fieldTop: field.frame.minY)
+    }
+
+    private func attach(_ text: String) {
+        let attachment = XCTAttachment(string: text)
+        attachment.name = text
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     /// 新配上的设备先整屏盖着加设备的密钥交接页“在另一台设备上继续”，落进房间后才出来也有。
