@@ -72,7 +72,9 @@ final class MatrixLoginStub: @unchecked Sendable {
         let json = "application/json"
         switch (request.method, request.path) {
         case ("GET", "/_matrix/client/versions"):
-            return ("200 OK", json, #"{"versions":["v1.11","v1.15"]}"#)
+            // 核心只收支持 Simplified Sliding Sync（MSC4186）的服务器。
+            let versions = #"{"versions":["v1.11","v1.15"],"unstable_features":{"org.matrix.simplified_msc3575":true}}"#
+            return ("200 OK", json, versions)
         case ("GET", "/_matrix/client/v3/login"):
             // 只有旧式 SSO：核心只给浏览器登录。
             return ("200 OK", json, #"{"flows":[{"type":"m.login.sso"}]}"#)
