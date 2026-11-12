@@ -104,7 +104,7 @@ enum SnapshotFixtures {
                     RichSpan(text: text, bold: false, italic: false, code: false, strike: false, link: nil)
                 ])
             ], files: []),
-            edited: false, readBy: readBy, reply: nil, actions: [.copy(text: text)]
+            edited: false, readBy: readBy, reply: nil, actions: [.copy(text: text)], sideChat: nil
         )))
     }
 
@@ -146,7 +146,7 @@ enum SnapshotFixtures {
                         senderName: "Ada", isOwn: false,
                         body: .text(text: "See you at the lab tomorrow."), timestampMs: timestampMs
                     ),
-                    unreadCount: 2, layout: layout
+                    unreadCount: 2, layout: layout, sideChats: false
                 ),
                 RoomRow(
                     roomId: "!team:home.example", name: "Analytical Engine", isDirect: false,
@@ -154,12 +154,12 @@ enum SnapshotFixtures {
                     preview: RoomPreview(
                         senderName: "Owner", isOwn: true, body: .files, timestampMs: timestampMs
                     ),
-                    unreadCount: 0, layout: layout
+                    unreadCount: 0, layout: layout, sideChats: false
                 ),
                 RoomRow(
                     roomId: "!invite:home.example", name: "Charles Babbage", isDirect: true,
                     directUserId: "@charles:home.example", isEncrypted: true, isReadOnly: false,
-                    membership: .invited, preview: nil, unreadCount: 0, layout: layout
+                    membership: .invited, preview: nil, unreadCount: 0, layout: layout, sideChats: false
                 )
             ],
             problem: nil, push: .registered, pendingConfirmations: [], settledConfirmations: [],

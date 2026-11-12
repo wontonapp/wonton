@@ -7,7 +7,9 @@ use wonton_client::{
     TimelineMessage,
 };
 use wonton_matrix::{MessageBody, Quoted, ReplyTo};
-use wonton_protocol::{MessageAction, QuotedContent, QuotedMessage, ReplyQuote};
+use wonton_protocol::{
+    MessageAction, QuotedContent, QuotedMessage, ReplyQuote, TimelineAction, TimelineTarget,
+};
 
 use super::message_actions::{invite_to_group_room, join, text_message};
 use super::support::{Home, Phone, Timeline};
@@ -100,10 +102,15 @@ async fn replies_quote_the_original_on_both_sides() {
     ));
 
     phone
-        .dispatch(Action::SendText {
-            room_id: room.clone(),
-            body: "回一句".to_owned(),
-            reply_to: Some(quote.event_id.clone()),
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: TimelineTarget {
+                    room_id: room.clone(),
+                    thread_root: None,
+                },
+                body: "回一句".to_owned(),
+                reply_to: Some(quote.event_id.clone()),
+            },
         })
         .unwrap();
     let mine = timeline
@@ -132,10 +139,15 @@ async fn replies_quote_the_original_on_both_sides() {
     assert_eq!(seen.1.body, MessageBody::Text("原话".to_owned()));
 
     phone
-        .dispatch(Action::SendImage {
-            room_id: room.clone(),
-            image: upload(),
-            reply_to: Some(image_quote.event_id.clone()),
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendImage {
+                target: TimelineTarget {
+                    room_id: room.clone(),
+                    thread_root: None,
+                },
+                image: upload(),
+                reply_to: Some(image_quote.event_id.clone()),
+            },
         })
         .unwrap();
     let mine = timeline

@@ -193,6 +193,7 @@ impl Outbox {
                 entry_blocked,
                 key_notice,
                 confirmations: Vec::new(),
+                side_chat: None,
             })
             .map_err(|_| ())
     }
@@ -305,6 +306,7 @@ mod tests {
                     edited: false,
                     read_by: Vec::new(),
                     reply: None,
+                    side_chat: None,
                     actions,
                 },
             },
