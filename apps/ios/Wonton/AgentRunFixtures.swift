@@ -17,7 +17,7 @@ enum AgentRunFixtures {
             ("cancelled", cancelled),
             ("uncertain", uncertain),
             ("offline", offline),
-            ("other", other),
+            ("other", other)
         ]
     }
 
@@ -40,7 +40,7 @@ enum AgentRunFixtures {
             progress: progress,
             result: result,
             end: end,
-            body: body,
+            bodyText: body,
             cardId: cardId,
             choices: choices,
             senderName: senderName,
@@ -66,7 +66,7 @@ enum AgentRunFixtures {
             state: .waiting,
             choices: [
                 choice("yes", "Yes, go ahead"),
-                choice("no", "No, stop"),
+                choice("no", "No, stop")
             ],
             senderName: "Hermes"
         )

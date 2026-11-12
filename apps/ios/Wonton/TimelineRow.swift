@@ -42,7 +42,7 @@ struct TimelineRow: View {
                 progress: progress,
                 result: result,
                 end: end,
-                body: body,
+                bodyText: body,
                 cardId: cardId,
                 choices: choices,
                 senderName: senderName,

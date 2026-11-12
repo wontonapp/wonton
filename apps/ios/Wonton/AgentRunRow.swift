@@ -18,8 +18,8 @@ struct AgentRunRow: View {
     let result: String?
     /// 打断了、结果不确定这两种结束的区分。
     let end: AgentRunEnd?
-    /// 不认识的状态按普通 Bot 提示消息显示的正文。
-    let body: String
+    /// 不认识的状态按普通 Bot 提示消息显示的正文。视图自身有 `body`，这里换个名字。
+    let bodyText: String
     /// waiting 且这个 Bot 在这个房间有等回答的核心卡片：整行可点，打开那张卡片。
     let cardId: String?
     /// Bot 自己的提问。
@@ -153,7 +153,7 @@ struct AgentRunRow: View {
         case .uncertain:
             return String(localized: .AgentRun.agentRunUncertain)
         case .other:
-            return body
+            return bodyText
         }
     }
 
