@@ -317,6 +317,10 @@
     <string name="core_upgrade_check_up_to_date">已經是最新版</string>
     <!-- Button on the update page while the channel check is running. -->
     <string name="core_upgrade_checking">正在檢查…</string>
+    <!-- Heading of the compatibility warning on the update offer: these installed apps won\'t work after the update. -->
+    <string name="core_upgrade_compat_breaking_title">更新後這些應用會用不了</string>
+    <!-- Light notice on the update offer: it couldn\'t check which installed apps would be affected. Tapping checks again. -->
+    <string name="core_upgrade_compat_not_checked">沒查到哪些應用會受影響</string>
     <!-- Stage line after the update finished. Argument: the version now running. -->
     <string name="core_upgrade_completed_to">已更新到 %1$s</string>
     <!-- Primary button in the confirm step: start the update. -->
@@ -664,6 +668,9 @@
     <string name="friends_add_placeholder">@bob:example.org</string>
     <!-- Submit button under the Matrix ID field. -->
     <string name="friends_add_submit">傳送邀請</string>
+    <string name="friends_scan_code">掃描對方的碼</string>
+    <string name="friends_paste_placeholder">貼上對方的碼</string>
+    <string name="friends_my_code">我的QR碼</string>
     <!-- Section heading above the pending requests, received and sent. -->
     <string name="friends_requests_title">邀請</string>
     <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
@@ -1074,6 +1081,12 @@
     <string name="plugin_task_review">重新查看</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">結果不確定：%1$s</string>
+    <!-- Status of a running task while the connection to the home server is down. -->
+    <string name="plugin_task_waiting_for_connection">正在等待連線</string>
+    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
+    <string name="plugin_task_check_installed_next_step">到已安裝列表看看裝上沒有。</string>
+    <!-- Button on an uncertain task that opens the installed list. -->
+    <string name="plugin_task_check_installed">檢查已安裝</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">已解除安裝</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->
@@ -1430,13 +1443,12 @@
     <string name="tab_starting">正在啟動…</string>
     <string name="tab_uninstalling">正在解除安裝…</string>
     <string name="tab_upgrading">正在更新…</string>
-    <string name="tab_open_anyway">仍然開啟</string>
+    <string name="tab_opens_in_browser">%1$s 會在瀏覽器裡開啟</string>
+    <string name="tab_open_in_browser">開啟</string>
+    <string name="tab_no_browser_next_step">安裝或啟用一個瀏覽器（例如 Chrome）後再試一次。</string>
     <string name="tab_unpin_from_bar">從底部導覽列移除</string>
     <string name="tab_start">啟動</string>
     <string name="tab_view_details">查看詳細資訊</string>
-    <string name="tab_cross_origin_title">這個應用程式暫時無法在 Android 版雲吞裡開啟</string>
-    <string name="tab_cross_origin_detail">目前的 Android System WebView：%1$s；需要 156 或更新版本。</string>
-    <string name="tab_webview_version_unknown">取不到版本號</string>
     <string name="tab_load_not_ready">應用程式還沒準備好</string>
     <string name="tab_load_upstream">應用程式的網頁打不開</string>
     <string name="tab_uninstalled_notice">%1$s 已解除安裝，已從底部導覽列移除</string>
@@ -1732,4 +1744,40 @@
     <string name="panel_public_unsupported">這台裝置的 WebView 分不開公開網頁和插件頁面的儲存，開不了公開網頁</string>
     <string name="panel_remove">移除</string>
     <string name="panel_url">填寫網址</string>
+    <string name="contacts_title">聯絡人</string>
+    <string name="contacts_add">加聯絡人</string>
+    <string name="contacts_add_kind_bot">Bot</string>
+    <string name="contacts_add_kind_person">一個人</string>
+    <string name="contacts_add_placeholder">@someone:example.org</string>
+    <string name="contacts_add_submit">傳送請求</string>
+    <string name="contacts_requests_title">請求</string>
+    <string name="contacts_active_title">已新增</string>
+    <string name="contacts_sent_title">已送出</string>
+    <string name="contacts_incoming_warning">對方 Bot 的話，你的 Bot 會當作給它的話處理；敏感工具每次都要你確認。</string>
+    <string name="contacts_approve">同意</string>
+    <string name="contacts_reject">拒絕</string>
+    <string name="contacts_withdraw">撤回</string>
+    <string name="contacts_clear">刪除</string>
+    <string name="contacts_remove">刪除聯絡人</string>
+    <string name="contacts_remove_title">刪除「%1$s」？</string>
+    <string name="contacts_remove_message">你的 Bot 不再處理對方的話，已有的聊天會保留。</string>
+    <string name="contacts_status_waiting_bot">等對方同意</string>
+    <string name="contacts_status_waiting_person">等對方接受</string>
+    <string name="contacts_status_declined">對方拒絕了</string>
+    <string name="contacts_status_not_found">沒有這個人</string>
+    <string name="contacts_status_unknown">狀態未知</string>
+    <string name="contacts_keeper">%1$s 的 Bot</string>
+    <string name="contacts_remote_unpaired">和那台伺服器的配對已移除，訊息傳不過去</string>
+    <string name="contacts_empty">還沒有聯絡人</string>
+    <string name="contacts_error_invalid_user_id">不是有效的 Matrix ID</string>
+    <string name="contacts_error_not_paired">對方的伺服器沒和你的配對</string>
+    <string name="contacts_error_not_paired_next">先在「其他伺服器」裡配對。</string>
+    <string name="contacts_error_already_contact">已經是聯絡人，或請求已經送出</string>
+    <string name="contacts_error_bot_not_found">這個 Bot 已經不在了</string>
+    <string name="contacts_error_contact_not_found">這一則已經處理過了</string>
+    <string name="contacts_error_not_keeper">只有這個 Bot 的歸屬人能管理它的聯絡人</string>
+    <string name="contacts_error_peer_unreachable">連不上對方的伺服器，這次沒有送出</string>
+    <string name="contacts_error_unauthenticated">這台裝置不能做這件事</string>
+    <string name="contacts_error_upstream">家用伺服器沒能記下這件事</string>
+    <string name="friends_request_bot_contact">Bot 聯絡人請求</string>
 </resources>

@@ -3,7 +3,6 @@
 
 name-main = Main conversation
 
-topic-input-unsupported = Input not supported: the ACP bridge only takes plain text.
 topic-interrupt-pending = Busy: an interrupt is already waiting.
 topic-no-active-session = No active ACP session
 topic-steer-rejected = The agent did not accept the steer request.

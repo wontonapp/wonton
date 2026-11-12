@@ -620,4 +620,12 @@ tabs-fullscreen-none = 目前沒有全螢幕頁面。
 tabs-fullscreen-not-current = 退出的頁面不是目前全螢幕頁面。
 panel-pins-refresh-failed = 面板裡 Bot 釘的頁面取不到:{ $error }
 
+## 要跨來源隔離的插件網頁在系統瀏覽器裡開啟（ADR-0033）。後三條顯示在瀏覽器裡。
+browser-front-failed = 無法開啟給瀏覽器用的本機位址：{ $error }
+browser-page-not-isolated = 這個頁面不在瀏覽器裡開啟。
+browser-not-paired = 雲吞還沒和家裡的伺服器配對。
+browser-unknown-address = 這個位址已經失效。回到雲吞，重新開啟這個應用程式。
+browser-not-connected = 雲吞目前沒有連上家裡的伺服器。回到雲吞，等連上後再重新整理這個頁面。
+browser-bad-request = 請從雲吞裡開啟這個頁面。
+
 contacts-invalid-action = 不是 Bot 聯絡人操作。
