@@ -13,6 +13,7 @@ use wonton_protocol::CoreError;
 use super::ScopeRuntime;
 use crate::chat::ChatLink;
 use crate::home::{HomeLink, Network, Storage};
+use crate::lock_screen::LockScreenLink;
 use crate::plugins::PluginsLink;
 use crate::push::PushLink;
 use crate::push_method::PushMethodLink;
@@ -32,6 +33,7 @@ impl Visit {
         let storage = Storage::open(root, dir)?;
         // 和正式作用域一致：方式是整机设置，放设备级的 root（见 Scope::open）。
         let push_method = PushMethodLink::new(root);
+        let lock_screen = LockScreenLink::new(root)?;
         let home = HomeLink::new(
             handle.clone(),
             crate::sharing::hub::bind(handle.clone())?,
@@ -61,13 +63,21 @@ impl Visit {
                 view: None,
                 confirmations: None,
                 method: push_method.subscribe(),
+                lock_screen: lock_screen.subscribe(),
                 session_out: watch::channel(None).0,
                 room_panel_out: watch::channel(None).0,
                 external: false,
             },
         )?;
         chat.backgrounded();
-        let push = PushLink::new(handle, home, chat.clone(), dir, push_method.subscribe());
+        let push = PushLink::new(
+            handle,
+            home,
+            chat.clone(),
+            dir,
+            push_method.subscribe(),
+            lock_screen.subscribe(),
+        );
         Ok(Arc::new(Self {
             slot: slot.to_owned(),
             chat,

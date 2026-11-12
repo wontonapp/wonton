@@ -390,6 +390,47 @@ impl MatrixSession {
         Ok(())
     }
 
+    /// 回复一条消息而不打开房间；保留引用，不切换同步订阅，不动草稿。只有服务器接受发送后才返回成功，
+    /// 不把发送队列入队当成送达（通知唤醒的临时运行时可能马上释放）。
+    pub async fn send_reply_to(
+        &self,
+        room_id: &RoomId,
+        body: &str,
+        event_id: &matrix_sdk::ruma::EventId,
+        thread_root: Option<&matrix_sdk::ruma::EventId>,
+    ) -> Result<()> {
+        use matrix_sdk::room::reply::{EnforceThread, Reply};
+        use matrix_sdk::ruma::events::room::message::{
+            AddMentions, Relation, ReplyWithinThread, RoomMessageEventContentWithoutRelation,
+        };
+        let room = self.joined_within(room_id, ROOM_SYNC_WAIT).await?;
+        crate::reply::load_event(&room, event_id).await?;
+        let enforce_thread = match thread_root {
+            Some(_) => EnforceThread::Threaded(ReplyWithinThread::Yes),
+            None => EnforceThread::Unthreaded,
+        };
+        let content = room
+            .make_reply_event(
+                RoomMessageEventContentWithoutRelation::text_plain(body),
+                Reply {
+                    event_id: event_id.to_owned(),
+                    enforce_thread,
+                    add_mentions: AddMentions::Yes,
+                },
+            )
+            .await
+            .map_err(|error| Error::Upstream(format!("组回复失败：{error}")))?;
+        if let Some(root) = thread_root
+            && !matches!(&content.relates_to, Some(Relation::Thread(thread)) if thread.event_id.as_str() == root.as_str())
+        {
+            return Err(Error::InvalidInput(
+                "Reply target belongs to a different thread".into(),
+            ));
+        }
+        room.send(content).await?;
+        Ok(())
+    }
+
     /// 房间同步到本地并成为已加入；等过了期限还没有，按原来的错报（没同步到，或者没加入）。
     async fn joined_within(&self, room_id: &RoomId, wait: Duration) -> Result<Room> {
         let deadline = tokio::time::Instant::now() + wait;

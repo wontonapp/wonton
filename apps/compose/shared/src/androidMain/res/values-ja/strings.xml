@@ -1903,4 +1903,10 @@
     <string name="composer_attachment_local_storage">このスマートフォンの空き容量が足りません。</string>
     <string name="timeline_sending_progress">送信中 %1$s</string>
     <string name="timeline_cancel_send">送信を取り消す</string>
+    <!-- Lock screen content switch in the notification settings, per category (ADR-0101 §5). -->
+    <string name="notification_lock_screen">ロック画面に表示</string>
+    <!-- Notification fallback page for cards without a chat room; no arguments. -->
+    <string name="confirmations_title">確認待ち</string>
+    <!-- Empty confirmation list after requests have been answered or expired. -->
+    <string name="confirmations_empty">確認が必要なものはありません</string>
 </resources>

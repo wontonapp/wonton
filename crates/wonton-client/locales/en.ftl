@@ -516,6 +516,9 @@ sessions-invalid-action = Not a session action.
 # $path is the settings file's path, $reason is the original I/O error.
 push-method-write-failed = Can't write the push method settings file { $path }: { $reason }
 
+# Lock screen content per category (crates/wonton-client/src/lock_screen.rs).
+lock-screen-write-failed = Can't write the lock screen settings file { $path }: { $reason }
+
 # Push registration (crates/wonton-client/src/push/{mod,registration,notification}.rs):
 # details of refused endpoints, failed registrations and notifications that
 # couldn't show the message. The notification bodies and placeholders

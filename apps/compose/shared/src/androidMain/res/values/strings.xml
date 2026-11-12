@@ -2191,4 +2191,10 @@
     <string name="timeline_sending_progress">Sending %1$s</string>
     <!-- Menu item on a message that is still uploading: drop it and stop the upload. -->
     <string name="timeline_cancel_send">Cancel Sending</string>
+    <!-- Lock screen content switch in the notification settings, per category (ADR-0101 §5). -->
+    <string name="notification_lock_screen">Show on lock screen</string>
+    <!-- Notification fallback page for cards without a chat room; no arguments. -->
+    <string name="confirmations_title">Waiting for you</string>
+    <!-- Empty confirmation list after requests have been answered or expired. -->
+    <string name="confirmations_empty">Nothing needs your confirmation</string>
 </resources>

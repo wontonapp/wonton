@@ -14,6 +14,7 @@ import app.wonton.android.portmapping.PortMappingService
 import app.wonton.android.portmapping.enabledPluginTitles
 import app.wonton.android.push.PushNotifications
 import app.wonton.android.push.PushRegistration
+import app.wonton.android.push.followSystemNotifications
 import app.wonton.client.ClientCore
 import app.wonton.client.initLogging
 import app.wonton.protocol.Action
@@ -64,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         notificationPermission = NotificationPermission(this)
         PushRegistration(this, core, notificationPermission).start()
         keepConnectionService(core)
+        lifecycleScope.followSystemNotifications(this, core)
         portMappingService(core)
         refreshMappingNotificationOnGrant(core)
         if (!takeMatrixCallback(intent)) requests.take(intent)
@@ -106,6 +108,7 @@ class MainActivity : AppCompatActivity() {
                 }
         }
     }
+
 
     /** 端口映射的前台服务只看 `port_mappings` 有没有开着映射的插件（ADR-0072）：有就带着插件名启动，
      *  全关了就停。两个前台服务互不启停，见 PortMappingService 的注释。 */

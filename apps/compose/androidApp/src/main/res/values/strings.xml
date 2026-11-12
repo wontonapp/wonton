@@ -43,4 +43,26 @@
     <string name="push_contact_request">Wants to be your bot\'s contact</string>
     <!-- Same, when the asking bot belongs to someone. Argument: that person's name. -->
     <string name="push_contact_request_keeper">%1$s\'s bot wants to be your bot\'s contact</string>
+    <!-- Lock screen placeholder for a hidden confirmation card notification. -->
+    <string name="push_hidden_confirmation">Waiting for your confirmation</string>
+    <!-- Lock screen placeholder for a hidden plugin notice. -->
+    <string name="push_hidden_notice">New notice</string>
+    <!-- Notification action button: reply to the message right in the notification. -->
+    <string name="push_reply">Reply</string>
+    <!-- Replaces the notification text while a notification action is being sent. -->
+    <string name="push_sending">Sending…</string>
+    <!-- Notification text when an action couldn't be sent. Argument: the reason. -->
+    <string name="push_action_failed">Couldn\'t confirm sending: %1$s</string>
+    <!-- Notification action failed without a usable core error. Tap opens the original target. -->
+    <string name="push_action_unavailable">Open Wonton to check the result and try again</string>
+    <!-- Sending exceeded the action deadline; delivery may already have reached the server. -->
+    <string name="push_action_timeout">No result yet. Open Wonton to check before trying again</string>
+    <!-- Android stopped the action; never automatically send it again. -->
+    <string name="push_action_interrupted">Sending was interrupted. Open Wonton to check the result</string>
+    <!-- Name of the ongoing notification about tasks waiting for the owner's confirmation (ADR-0101). -->
+    <string name="push_tasks_channel">Waiting for you</string>
+    <!-- Title of the ongoing notification when one card waits for the owner. Argument: the card title. -->
+    <string name="push_task_waiting_title">%1$s is waiting for you</string>
+    <!-- Same with several waiting cards. Arguments: count, the earliest card's title. -->
+    <string name="push_task_waiting_title_many">%1$d tasks are waiting for you, first %2$s</string>
 </resources>

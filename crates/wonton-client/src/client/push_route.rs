@@ -6,11 +6,18 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use wonton_l10n::l10n;
-use wonton_protocol::{ChatFailure, CoreError, PushEndpoint, PushNotification, PushStatus};
+use wonton_protocol::{Answer, ChatFailure, CoreError, PushEndpoint, PushNotification, PushStatus};
 
 use super::ClientCore;
 use super::switch::lock;
 use crate::l10n::{CATALOG, language};
+
+/// 推送来自一台已经从手机上移除的服务器：动作没有可去的地方。
+fn removed() -> CoreError {
+    CoreError::NotReady {
+        reason: l10n!(CATALOG, language(), "servers-push-from-removed"),
+    }
+}
 use crate::push::{Payload, record};
 use crate::scope::{Entered, Scope, Visits};
 use crate::servers::ServerList;
@@ -76,6 +83,83 @@ impl ClientCore {
             ..notification
         }))
     }
+
+    /// 通知上的“允许/拒绝”（ADR-0101 §1）：和卡片按钮走同一条回答路径，等结果——成败要写回通知，日志里
+    /// 看不出主人点过。`server_id` 是通知里的那台：来自别的服务器时，在它的临时作用域里答完再回来。进程是推送
+    /// 唤醒的、App 没开时也能调；连不上就报 `NotReady`/`TransportUnavailable`，不排队假装答上了。
+    pub async fn answer_push_confirmation(
+        &self,
+        server_id: Option<String>,
+        card_id: String,
+        answer: Answer,
+        choice_id: Option<String>,
+    ) -> Result<(), CoreError> {
+        match self.route_push_server(server_id.as_deref())? {
+            Route::Current(scope) => {
+                let chat = scope.chat.clone();
+                scope
+                    .run(async move { chat.answer_from_push(card_id, answer, choice_id).await })
+                    .await
+            }
+            Route::Visit(entered) => {
+                let visit = entered.visit.clone();
+                let chat = visit.chat.clone();
+                let result = visit
+                    .runtime
+                    .run(async move { chat.answer_from_push(card_id, answer, choice_id).await })
+                    .await;
+                drop(entered);
+                result
+            }
+            Route::Removed => Err(removed()),
+        }
+    }
+
+    /// 通知里的回复等服务器接受发送；旁聊根和被回复事件必须匹配。不切换当前房间、不动草稿或附件区。
+    pub async fn reply_to_push(
+        &self,
+        server_id: Option<String>,
+        room_id: String,
+        thread_root: Option<String>,
+        reply_to: Option<String>,
+        text: String,
+    ) -> Result<(), CoreError> {
+        match self.route_push_server(server_id.as_deref())? {
+            Route::Current(scope) => {
+                let chat = scope.chat.clone();
+                scope
+                    .run(async move {
+                        chat.send_push_reply(
+                            &room_id,
+                            &text,
+                            reply_to.as_deref(),
+                            thread_root.as_deref(),
+                        )
+                        .await
+                    })
+                    .await
+            }
+            Route::Visit(entered) => {
+                let visit = entered.visit.clone();
+                let chat = visit.chat.clone();
+                let result = visit
+                    .runtime
+                    .run(async move {
+                        chat.send_push_reply(
+                            &room_id,
+                            &text,
+                            reply_to.as_deref(),
+                            thread_root.as_deref(),
+                        )
+                        .await
+                    })
+                    .await;
+                drop(entered);
+                result
+            }
+            Route::Removed => Err(removed()),
+        }
+    }
 }
 
 impl ClientCore {
@@ -90,6 +174,28 @@ impl ClientCore {
             return Ok(Route::Current(current));
         }
         Ok(Route::Visit(self.visits.enter(&slot)?))
+    }
+
+    /// 通知保存的是本机槽位，不是服务器 endpoint；缺失或已移除的槽位绝不能落到当前服务器。
+    fn route_push_server(&self, server_id: Option<&str>) -> Result<Route, CoreError> {
+        let _switching = lock(&self.switching);
+        let Some(slot) = server_id else {
+            return Ok(Route::Removed);
+        };
+        if !self
+            .servers
+            .view()
+            .servers
+            .iter()
+            .any(|server| server.id == slot)
+        {
+            return Ok(Route::Removed);
+        }
+        let current = self.scope();
+        if current.slot == slot {
+            return Ok(Route::Current(current));
+        }
+        Ok(Route::Visit(self.visits.enter(slot)?))
     }
 
     /// 推送地址变了：配过的其他几台在后台逐台临时连上去重新登记。连不上的，下次切过去时当前作用域会补上。
@@ -221,4 +327,23 @@ async fn in_scope(scope: &Scope, payload: &Payload) -> Result<Option<PushNotific
     let push = scope.push.clone();
     let payload = payload.clone();
     scope.run(async move { push.resolve(&payload).await }).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_or_removed_notification_target_never_uses_selected_scope() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = ClientCore::new(dir.path().to_string_lossy().into_owned()).unwrap();
+        assert!(matches!(
+            core.route_push_server(None).unwrap(),
+            Route::Removed
+        ));
+        assert!(matches!(
+            core.route_push_server(Some("deleted")).unwrap(),
+            Route::Removed
+        ));
+    }
 }

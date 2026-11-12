@@ -36,6 +36,7 @@ mod friends;
 mod home;
 mod l10n;
 mod link;
+mod lock_screen;
 mod logging;
 mod matrix_login;
 mod onboarding;
@@ -67,7 +68,7 @@ pub use subscription::{
     AppearanceSubscription, BotContactsSubscription, ChatSubscription, ComposerSubscription,
     ConfirmationsSubscription, FriendsSubscription, HomeSubscription, OnboardingSubscription,
     PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
-    SettingsSubscription, TabsSubscription, TransfersSubscription,
+    SettingsSubscription, TabsSubscription, TransfersSubscription, UnreadSubscription,
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,

@@ -36,6 +36,17 @@ pub(crate) fn sort_rooms(rows: &mut [RoomRow]) {
     });
 }
 
+/// 所有房间未读消息的总数，邀请按 1 计（ADR-0101 §3）。启动器角标只写这个数，不自己按通知条数加。
+pub(crate) fn unread_total(view: &wonton_protocol::ChatViewModel) -> u32 {
+    view.rooms.iter().fold(0_u32, |total, room| {
+        let count = match room.membership {
+            RoomMembership::Invited => 1,
+            _ => u32::try_from(room.unread_count).unwrap_or(u32::MAX),
+        };
+        total.saturating_add(count)
+    })
+}
+
 /// 时间线里有解不开的消息时给主人的下一步。本设备已经能拿到密钥（恢复完成、正在恢复）或者账号里没有别的路时为空。
 ///
 /// 账号设过备份就输恢复密钥：备份带得回旧消息，别的设备确认不一定有。账号没有备份时，只有另一台已验证的设备能把

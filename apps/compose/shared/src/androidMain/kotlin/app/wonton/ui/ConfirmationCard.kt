@@ -26,6 +26,7 @@ import app.wonton.protocol.ConfirmationCard
 import app.wonton.protocol.ConfirmationState
 import app.wonton.protocol.ConfirmationView
 import app.wonton.protocol.InstalledPlugin
+import app.wonton.protocol.SettingValue
 import app.wonton.protocol.WindowView
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -46,6 +47,8 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     val card = view.card
     val colors = WontonTheme.colors
     var secrets by remember(card.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var settings by remember(card.id) { mutableStateOf<Map<String, SettingValue?>>(emptyMap()) }
+    var drafts by remember(card.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var shown by remember(card.id) { mutableStateOf(false) }
     CardSecureScreen(card, secrets, shown)
     val tabs = LocalTabs.current
@@ -67,6 +70,18 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                 onShownChange = { shown = it },
             ) { name, value -> secrets = secrets + (name to value) }
         }
+        card.settings?.fields?.forEach { field ->
+            SettingsField(
+                field, effectiveValue(field, settings), textDraft(field, settings, drafts), field.problem,
+                disabled = card.state != ConfirmationState.Pending || isUnsupported(field, settings),
+                missing = isMissingRequired(field, settings),
+                onEdit = { name, value -> settings = settings + (name to value) },
+                onDraft = { edited, text ->
+                    drafts = drafts + (edited.name to text)
+                    settings = settings + (edited.name to draftValue(edited, text))
+                },
+            )
+        }
         CardState(card.state)
         view.window?.let { window -> CardWindow(window) { onAction(Action.StopConfirmationWindow(card.id)) } }
         view.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
@@ -87,7 +102,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                     ChoiceButton(
                         choice,
                         view,
-                        secretsReady = !missingRequiredSecret(card.secretInputs, secrets),
+                        secretsReady = cardInputsReady(card, secrets, settings),
                     ) {
                         onAction(
                             Action.AnswerConfirmation(
@@ -95,7 +110,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                                 choice.answer,
                                 choice.choiceId,
                                 secretValues(card.secretInputs, secrets),
-                                emptyMap(),
+                                cardSettingsValues(settings),
                             ),
                         )
                     }
@@ -104,6 +119,17 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
         }
     }
 }
+
+private fun cardInputsReady(
+    card: ConfirmationCard,
+    secrets: Map<String, String>,
+    settings: Map<String, SettingValue?>,
+): Boolean = !missingRequiredSecret(card.secretInputs, secrets) && card.settings?.fields.orEmpty().none {
+    isUnsupported(it, settings) || isMissingRequired(it, settings)
+}
+
+private fun cardSettingsValues(settings: Map<String, SettingValue?>): Map<String, SettingValue> =
+    settings.mapNotNull { (name, value) -> value?.let { name to it } }.toMap()
 
 /** 卡片上已装插件的按钮：“打开”到第一项 tab；“放到底栏”走现有固定流程，已固定时不显示。 */
 @Composable

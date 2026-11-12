@@ -29,4 +29,26 @@
     <string name="push_unregistered">分发器注销了云吞</string>
     <string name="push_contact_request">想加你的 Bot 为联系人</string>
     <string name="push_contact_request_keeper">%1$s 的 Bot 想加你的 Bot 为联系人</string>
+    <!-- Lock screen placeholder for a hidden confirmation card notification. -->
+    <string name="push_hidden_confirmation">有任务等你确认</string>
+    <!-- Lock screen placeholder for a hidden plugin notice. -->
+    <string name="push_hidden_notice">有新提醒</string>
+    <!-- Notification action button: reply to the message right in the notification. -->
+    <string name="push_reply">回复</string>
+    <!-- Replaces the notification text while a notification action is being sent. -->
+    <string name="push_sending">正在发送…</string>
+    <!-- Notification text when an action couldn't be sent. Argument: the reason. -->
+    <string name="push_action_failed">发送结果未确认：%1$s</string>
+    <!-- Notification action failed without a usable core error. Tap opens the original target. -->
+    <string name="push_action_unavailable">打开云吞查看结果，再试一次</string>
+    <!-- Sending exceeded the action deadline; delivery may already have reached the server. -->
+    <string name="push_action_timeout">还没收到结果，打开云吞确认后再试</string>
+    <!-- Android stopped the action; never automatically send it again. -->
+    <string name="push_action_interrupted">发送中断了，打开云吞查看结果</string>
+    <!-- Name of the ongoing notification about tasks waiting for the owner's confirmation (ADR-0101). -->
+    <string name="push_tasks_channel">等你确认</string>
+    <!-- Title of the ongoing notification when one card waits for the owner. Argument: the card title. -->
+    <string name="push_task_waiting_title">%1$s 在等你确认</string>
+    <!-- Same with several waiting cards. Arguments: count, the earliest card's title. -->
+    <string name="push_task_waiting_title_many">%1$d 个任务在等你确认，第一个是 %2$s</string>
 </resources>

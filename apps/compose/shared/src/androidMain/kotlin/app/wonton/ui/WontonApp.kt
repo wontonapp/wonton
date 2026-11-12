@@ -77,8 +77,11 @@ internal fun ServerApp(
     LaunchedEffect(chatView.settledConfirmations) { onCardsSettled(chatView.settledConfirmations) }
     LaunchedEffect(requestedRoom) {
         requestedRoom?.let { request ->
-            val contacts = request.contacts
-            if (contacts != null) navigation.openContacts(contacts) else navigation.openRoom(request.roomId)
+            when {
+                request.contacts != null -> navigation.openContacts(request.contacts)
+                request.roomId.isBlank() && request.cardId != null -> navigation.openConfirmations(request.cardId)
+                else -> navigation.openRoom(request.roomId)
+            }
             onRoomRequestHandled()
         }
     }
@@ -96,6 +99,9 @@ internal fun ServerApp(
                 AddServerPairing(plugins, home)
             } else OnboardingHost(plugins, home, chatView, navigation::finishOnboarding) {
                 AppContent(navigation, home, settings, appearance, chatView)
+                navigation.confirmationCard?.let { card ->
+                    ConfirmationsScreen(core, card) { navigation.confirmationCard = null }
+                }
                 tabs.pinRequest?.let { TabPinSheet(tabs.viewModel, it) { tabs.pinRequest = null } }
             }
             TabMediaPermissions(tabs)

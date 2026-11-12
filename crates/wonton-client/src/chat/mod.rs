@@ -77,7 +77,7 @@ pub(crate) use confirmation::fetch_card;
 pub(crate) use links::{LinkTargets, matrix_target};
 pub(crate) use login::proxy_url;
 pub use timeline::{TimelineSource, TimelineSubscription};
-pub(crate) use view::{failure, summary};
+pub(crate) use view::{failure, summary, unread_total};
 
 use crate::home::HomeLink;
 use crate::l10n::{CATALOG, language};
@@ -143,6 +143,8 @@ pub(crate) struct ChatLink {
     avatar_files: avatar_files::AvatarFiles,
     /// 收新消息的方式（ADR-0003）：保持连接时后台同步到的新消息要弹通知。
     method: watch::Receiver<PushMethod>,
+    /// 锁屏上隐藏内容的类别（ADR-0101 §5）：后台通知照它设系统的可见性。
+    lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
     /// 排队的草稿写入，见 [`draft::write_drafts`]。
     draft_writes: mpsc::UnboundedSender<DraftWrite>,
     /// 链接预览的按网址缓存和点掉的记录（ADR-0065），发送框和时间线共用。
@@ -201,6 +203,8 @@ pub(crate) struct ChatChannels {
     pub(crate) confirmations: Option<watch::Sender<ConfirmationsViewModel>>,
     /// 推送方式。
     pub(crate) method: watch::Receiver<PushMethod>,
+    /// 锁屏上隐藏内容的类别（ADR-0101 §5），通知照它设系统的可见性。
+    pub(crate) lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
     /// 登录着的会话。
     pub(crate) session_out: watch::Sender<Option<Arc<MatrixSession>>>,
     /// 打开的房间的面板（房间账号数据）。
@@ -240,6 +244,7 @@ impl ChatLink {
             view,
             confirmations,
             method,
+            lock_screen,
             session_out,
             room_panel_out,
             external,
@@ -308,6 +313,7 @@ impl ChatLink {
             plugins,
             avatar_files: avatar_files::AvatarFiles::new(data_dir),
             method,
+            lock_screen,
             draft_writes,
             previews: previews::Previews::new(),
             background: AtomicBool::new(false),

@@ -18,6 +18,7 @@ mod key_upload_order;
 mod layout;
 mod link_preview;
 mod message_actions;
+mod notification_actions;
 mod onboarding;
 mod pending;
 mod push;

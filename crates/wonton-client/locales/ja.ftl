@@ -480,6 +480,9 @@ sessions-invalid-action = セッション操作ではありません
 # $path は設定ファイルのパス、$reason は元の入出力エラーです。
 push-method-write-failed = 通知方式の設定ファイル{ $path }に書き込めません：{ $reason }
 
+# ロック画面に表示する内容（カテゴリー別、crates/wonton-client/src/lock_screen.rs）。
+lock-screen-write-failed = ロック画面の設定ファイル{ $path }に書き込めません：{ $reason }
+
 # プッシュ通知（crates/wonton-client/src/push/{mod,registration,notification}.rs）：拒否されたエンドポイント、失敗した登録、メッセージを取得できなかった場合の詳細情報。
 # 通知の本文とプレースホルダー（不明な送信者、招待、[ファイル]など）はまだここにはありません。
 # $reason は元のエラーの詳細です。

@@ -23,6 +23,7 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
     var peersOpenRequests by mutableStateOf(false)
     var settingsOverlay by mutableStateOf(false)
     var tabMenu by mutableStateOf<TabRef?>(null)
+    var confirmationCard by mutableStateOf<String?>(null)
     val plugins = PluginNavigation(
         open = { entry ->
             when (entry) {
@@ -42,6 +43,12 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
         chat.openWhenJoined(tabs.core, roomId)
     }
 
+    fun openConfirmations(cardId: String) {
+        resetNavigation()
+        tabs.send(Action.SelectTab(TabRef.Chat))
+        confirmationCard = cardId
+    }
+
     /** 联系人请求的通知点进来：这个 Bot 的详情页上打开联系人页。 */
     fun openContacts(bot: BotRef) {
         resetNavigation()
@@ -59,6 +66,7 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
     /** 重置到主界面的导航状态：链接、分享进来时都从干净的一屏开始。 */
     private fun resetNavigation() {
         settingsOverlay = false
+        confirmationCard = null
         chat.reset()
         tabs.pinRequest = null
         tabMenu = null

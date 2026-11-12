@@ -277,7 +277,9 @@ pub use secret::SecretString;
 pub use server_version::{is_older, minimum_server_version};
 pub use servers::{ServerKind, ServerName, ServerRow, ServersViewModel};
 pub use session::{SessionListViewModel, SessionRow};
-pub use settings::{SettingsEntry, SettingsSection, SettingsViewModel};
+pub use settings::{
+    NotificationCategorySetting, SettingsEntry, SettingsSection, SettingsViewModel,
+};
 pub use share_transport::{
     MatrixOpenIdToken, SHARE_ALPN, ShareReply, ShareRequest, SharedPlugins, WONTON_WELL_KNOWN_PATH,
     WontonDiscovery,

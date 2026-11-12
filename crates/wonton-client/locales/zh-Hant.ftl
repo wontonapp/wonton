@@ -480,6 +480,9 @@ sessions-invalid-action = 不是工作階段操作
 # $path 是設定檔的路徑，$reason 是原始的讀寫錯誤。
 push-method-write-failed = 無法寫入推播方式設定檔 { $path }：{ $reason }
 
+# 鎖屏上按類別顯示的內容（crates/wonton-client/src/lock_screen.rs）。
+lock-screen-write-failed = 無法寫入鎖屏內容設定檔 { $path }：{ $reason }
+
 # 推播（crates/wonton-client/src/push/{mod,registration,notification}.rs）：被拒絕的位址、失敗的註冊和取不回訊息的詳細資訊。
 # 通知的內文和佔位（未知的傳送者、邀請你加入、[檔案]……）還不在這裡。
 # $reason 是原始錯誤詳細資訊。

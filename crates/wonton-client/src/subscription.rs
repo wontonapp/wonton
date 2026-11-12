@@ -129,6 +129,33 @@ impl ChatSubscription {
     }
 }
 
+/// 未读总数来自聊天房间列表（邀请按 1 计），第一次立即返回；总数归零也会返回 0。
+#[derive(uniffi::Object)]
+pub struct UnreadSubscription {
+    updates: Updates<ChatViewModel>,
+}
+
+impl UnreadSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<ChatViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl UnreadSubscription {
+    /// 等下一份房间列表的绝对总数；取消或核心释放后返回 None。
+    pub async fn next(&self) -> Option<u32> {
+        self.updates.next(crate::chat::unread_total).await
+    }
+
+    /// 取消订阅，同时结束正在等待的 next。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
 /// “等你确认”列表的订阅（ADR-0016），用法同 [`SessionListSubscription`]。
 #[derive(uniffi::Object)]
 pub struct ConfirmationsSubscription {
@@ -450,5 +477,54 @@ impl ComposerSubscription {
     /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
     pub fn cancel(&self) {
         self.updates.cancel();
+    }
+}
+
+#[cfg(test)]
+mod unread_tests {
+    use super::*;
+    use wonton_protocol::{ChatLayout, RoomMembership, RoomRow};
+
+    fn room(unread_count: u64, membership: RoomMembership) -> RoomRow {
+        RoomRow {
+            room_id: "!room:example.org".into(),
+            name: String::new(),
+            is_direct: false,
+            direct_user_id: None,
+            is_encrypted: true,
+            is_read_only: false,
+            membership,
+            preview: None,
+            side_chats: false,
+            unread_count,
+            layout: ChatLayout::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn unread_subscription_uses_rooms_saturates_and_delivers_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = crate::ClientCore::new(dir.path().to_string_lossy().into_owned()).unwrap();
+        let sender = watch::Sender::new(core.chat());
+        let subscription = UnreadSubscription::new(sender.subscribe());
+        assert_eq!(subscription.next().await, Some(0));
+        sender.send_modify(|view| {
+            view.rooms = vec![
+                room(4, RoomMembership::Joined),
+                room(u64::MAX, RoomMembership::Invited),
+            ]
+        });
+        assert_eq!(subscription.next().await, Some(5));
+        sender.send_modify(|view| {
+            view.rooms = vec![
+                room(u64::MAX, RoomMembership::Joined),
+                room(u64::MAX, RoomMembership::Joined),
+            ]
+        });
+        assert_eq!(subscription.next().await, Some(u32::MAX));
+        sender.send_modify(|view| view.rooms.clear());
+        assert_eq!(subscription.next().await, Some(0));
+        subscription.cancel();
+        assert_eq!(subscription.next().await, None);
     }
 }

@@ -1903,4 +1903,10 @@
     <string name="composer_attachment_local_storage">手机上存不下了。</string>
     <string name="timeline_sending_progress">发送中 %1$s</string>
     <string name="timeline_cancel_send">取消发送</string>
+    <!-- Lock screen content switch in the notification settings, per category (ADR-0101 §5). -->
+    <string name="notification_lock_screen">锁屏上显示内容</string>
+    <!-- Notification fallback page for cards without a chat room; no arguments. -->
+    <string name="confirmations_title">等你确认</string>
+    <!-- Empty confirmation list after requests have been answered or expired. -->
+    <string name="confirmations_empty">没有需要确认的事</string>
 </resources>

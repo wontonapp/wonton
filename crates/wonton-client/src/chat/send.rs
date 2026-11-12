@@ -7,6 +7,7 @@ use wonton_matrix::OwnedEventId;
 use wonton_protocol::{ChatAccount, CoreError, ImageUpload};
 
 use super::draft::DraftWrite;
+use super::view::core_error;
 use super::{ChatLink, invalid, onboarding};
 use crate::l10n::{CATALOG, language};
 
@@ -73,6 +74,96 @@ impl ChatLink {
             move || onboarding::record_sent(&sent, sent_room),
         );
         Ok(())
+    }
+
+    /// 通知里打的回复（ADR-0101 §1）：和输入框发文字同一条路，但等结果——推送唤醒的进程随时会被系统收走，
+    /// 发送不能丢在一边。通知里只能打字：不带附件，也不出链接预览。失败同时记进 `problem`，打开 App 看得到。
+    pub(crate) async fn send_push_reply(
+        self: &Arc<Self>,
+        room_id: &str,
+        body: &str,
+        reply_to: Option<&str>,
+        thread_root: Option<&str>,
+    ) -> Result<(), CoreError> {
+        let body = body.trim().to_owned();
+        if body.is_empty() {
+            return Err(invalid(&l10n!(CATALOG, language(), "chat-empty-message")));
+        }
+        let reply_to = reply_target(reply_to)?;
+        let thread_root = reply_target(thread_root)?;
+        let sending = async {
+            let mut view = self.subscribe();
+            while self.current().is_err() {
+                if let super::ChatAccount::Failed { message, .. } =
+                    &view.borrow_and_update().account
+                {
+                    return Err(CoreError::NotReady {
+                        reason: message.clone(),
+                    });
+                }
+                view.changed().await.map_err(|_| CoreError::NotReady {
+                    reason: l10n!(CATALOG, language(), "chat-not-signed-in"),
+                })?;
+            }
+            let (session, room_id) = self.send_target(room_id)?;
+            let sent = match &reply_to {
+                Some(event_id) => {
+                    session
+                        .send_reply_to(&room_id, &body, event_id, thread_root.as_deref())
+                        .await
+                }
+                None => match &thread_root {
+                    Some(root) => {
+                        session
+                            .send_reply_to(&room_id, &body, root, Some(root))
+                            .await
+                    }
+                    None => session.send_text_to(&room_id, &body).await,
+                },
+            };
+            sent.map_err(|error| self.convert_op_failure("chat-op-send-text-failed", &error))?;
+            Ok(room_id)
+        };
+        let result = tokio::time::timeout(std::time::Duration::from_secs(30), sending)
+            .await
+            .unwrap_or_else(|_| {
+                Err(CoreError::TransportUnavailable {
+                    reason: l10n!(CATALOG, language(), "chat-send-no-response"),
+                })
+            });
+        if let Err(error) = &result {
+            self.view.send_modify(|view| {
+                view.problem = Some(wonton_protocol::ChatProblem {
+                    reason: match error {
+                        CoreError::NotReady { .. } => wonton_protocol::ChatFailure::NotReady,
+                        CoreError::InvalidInput { .. } => {
+                            wonton_protocol::ChatFailure::InvalidInput
+                        }
+                        CoreError::Unauthorized { .. } => {
+                            wonton_protocol::ChatFailure::Unauthorized
+                        }
+                        CoreError::TransportUnavailable { .. } => {
+                            wonton_protocol::ChatFailure::TransportUnavailable
+                        }
+                        _ => wonton_protocol::ChatFailure::Upstream,
+                    },
+                    message: error.to_string(),
+                })
+            });
+        }
+        let room_id = result?;
+        onboarding::record_sent(&self.sent, room_id.to_string());
+        Ok(())
+    }
+
+    /// 操作失败：记进 `problem`（打开 App 看得到），同时把类别交回去给通知。
+    fn convert_op_failure(
+        &self,
+        failure_id: &'static str,
+        error: &wonton_matrix::Error,
+    ) -> CoreError {
+        self.report_op_failure(failure_id, error);
+        core_error(error)
     }
 
     pub(super) fn send_image(
