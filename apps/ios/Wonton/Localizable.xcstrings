@@ -12022,6 +12022,66 @@
         }
       }
     },
+    "problem.forbidden.nextStep": {
+      "comment": "Next step under the refused problem: the sign-in is fine; the server refused this one action.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You're still signed in. You may not have permission for this, they may have blocked you, or their server can't reach yours yet."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登录没有问题。可能是没有权限、对方屏蔽了你，或者对方的服务器还不能和家里的服务器互通。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登入沒有問題。可能是沒有權限、對方封鎖了你，或者對方的伺服器還不能和家用伺服器互通。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログインは有効です。権限がないか、相手にブロックされているか、相手のサーバがまだ自宅サーバとつながっていない可能性があります。"
+          }
+        }
+      }
+    },
+    "problem.forbidden.title": {
+      "comment": "Problem title: the server refused an action although this device is still signed in.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The request was refused"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求被拒绝了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請求被拒絕了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リクエストが拒否されました"
+          }
+        }
+      }
+    },
     "problem.generic.title": {
       "comment": "Problem title for an unexpected error that has no category.",
       "extractionState": "manual",

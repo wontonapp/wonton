@@ -203,7 +203,8 @@ private val PushStatus.notificationStatus: String
             when (reason) {
                 ChatFailure.TRANSPORT_UNAVAILABLE -> R.string.push_status_failed_transport
                 ChatFailure.UNAUTHORIZED -> R.string.push_status_failed_unauthorized
-                ChatFailure.UPSTREAM -> R.string.push_status_failed_upstream
+                ChatFailure.FORBIDDEN -> R.string.push_status_failed_forbidden
+                ChatFailure.UPSTREAM, ChatFailure.OTHER -> R.string.push_status_failed_upstream
                 ChatFailure.NOT_READY -> R.string.push_status_failed_not_ready
                 ChatFailure.INVALID_INPUT -> R.string.push_status_failed_invalid_input
             },
