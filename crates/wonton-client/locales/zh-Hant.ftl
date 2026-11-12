@@ -108,6 +108,7 @@ onboarding-review-no-failure = 這一項沒有失敗
 
 # 登入相關。$reason 是 Matrix SDK 的原始錯誤詳細資訊。
 chat-sign-in-restore-failed = 無法恢復 Matrix 工作階段：{ $reason }
+chat-sign-in-external-missing = 這支手機上已經沒有這個 Matrix 帳號的登入狀態，請重新登入。
 chat-sign-in-no-connection-info = 還沒有家用伺服器的連線資訊
 chat-sign-in-login-failed = 無法登入 Matrix：{ $reason }
 chat-sign-in-no-saved-session = 登入後取不到登入狀態
@@ -445,6 +446,13 @@ servers-name-required = 名稱不能為空
 servers-storage-failed = 無法讀寫 { $path }：{ $reason }
 # 殼把不認得的操作交給伺服器清單時顯示。
 servers-invalid-action = 不是伺服器清單操作
+matrix-login-not-current = 這次登入已經結束，或者已經換成了新的一次。
+matrix-login-wrong-step = 這次登入不在這一步。
+matrix-login-method-not-offered = 這台伺服器不提供這種登入方式。
+matrix-login-device-name-required = 請填這台裝置的名稱。
+matrix-login-invalid-user-id = 請填完整的 Matrix ID，例如 @name:matrix.org。
+matrix-login-password-required = 請填密碼。
+matrix-login-redirect-not-allowed = App 收不到發往這個位址的登入回呼。
 
 # 工作階段清單（crates/wonton-client/src/session_store.rs）。
 sessions-title-required = 工作階段標題不能為空
@@ -532,6 +540,14 @@ plugins-core-upgrade-not-cancellable = 現在無法取消
 # $reason 是連線問題的原始詳細資訊。
 plugins-core-upgrade-start-uncertain = 不確定發起了沒有，連上後再看一下：{ $reason }
 
+# 相容性檢查（ADR-0085）的詳情：每個原因一行，{ $raw } 是清單裡的原值。用戶端核心按
+# App 的語言寫，升級頁列在新版本讀不了的應用程式下面。
+plugins-core-upgrade-compat-spec = 它按規範 { $raw } 寫成，新版本不支援：升級後會被標為異常。
+plugins-core-upgrade-compat-feature = 它的清單用了新版本不認得的 { $raw }：升級後會被標為異常。
+plugins-core-upgrade-compat-capability = 它依賴能力 { $raw }，新版本不提供：升級後會被標為異常。
+plugins-core-upgrade-compat-other = 新版本讀不了這個應用程式：升級後會被標為異常。
+plugins-core-upgrade-compat-other-raw = 新版本讀不了這個應用程式的 { $raw }：升級後會被標為異常。
+
 # 個人資料這一步：名字或電子郵件為什麼無法儲存。$max 是名字最多幾個字。
 onboarding-profile-name-empty = 名字不能空白
 onboarding-profile-name-too-long = 名字太長：最多 { $max } 個字
@@ -603,3 +619,5 @@ tabs-fullscreen-only-plugins = 只有外掛頁面可以全螢幕。
 tabs-fullscreen-none = 目前沒有全螢幕頁面。
 tabs-fullscreen-not-current = 退出的頁面不是目前全螢幕頁面。
 panel-pins-refresh-failed = 面板裡 Bot 釘的頁面取不到:{ $error }
+
+contacts-invalid-action = 不是 Bot 聯絡人操作。

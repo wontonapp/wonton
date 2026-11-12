@@ -1,6 +1,12 @@
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+};
+
 use super::*;
 use crate::acp::test_support::*;
 use crate::l10n::zh;
+use tokio::io::{AsyncRead, ReadBuf};
 
 #[tokio::test]
 async fn fake_agent_round_trip_sets_http_mcp_and_mode() {
@@ -9,7 +15,13 @@ async fn fake_agent_round_trip_sets_http_mcp_and_mode() {
         .await
         .unwrap();
     let session = bounded(
-        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
+        client.new_session(
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            "plan",
+            None,
+            &origin(None),
+        ),
         "session/new",
     )
     .await
@@ -51,7 +63,13 @@ async fn agent_without_modes_gets_a_session_without_set_mode() {
         .await
         .unwrap();
     let session = bounded(
-        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
+        client.new_session(
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            "plan",
+            None,
+            &origin(None),
+        ),
         "session/new",
     )
     .await
@@ -110,7 +128,12 @@ async fn restored_replay_updates_do_not_leak_into_the_next_prompt() {
         .await
         .unwrap();
     bounded(
-        client.load_or_resume("session-1", "/workspace", "http://mcp.wonton.internal/mcp"),
+        client.load_or_resume(
+            "session-1",
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            &origin(None),
+        ),
         "session/load",
     )
     .await
@@ -135,7 +158,12 @@ async fn missing_restore_support_is_treated_as_a_lost_session() {
             .await
             .unwrap();
         let result = bounded(
-            client.load_or_resume("session-1", "/workspace", "http://mcp.wonton.internal/mcp"),
+            client.load_or_resume(
+                "session-1",
+                "/workspace",
+                "http://mcp.wonton.internal/mcp",
+                &origin(None),
+            ),
             "session/load",
         )
         .await;
@@ -223,4 +251,237 @@ async fn prompt_errors_show_the_reason_from_data() {
     }
     drop(client);
     agent.finish().await;
+}
+
+#[tokio::test]
+async fn session_setup_reports_the_origin_session_in_mcp_headers() {
+    let agent = FakeAgent::start(Scenario::Normal).await;
+    let client = bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+        .await
+        .unwrap();
+    bounded(
+        client.new_session(
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            "plan",
+            None,
+            &origin(None),
+        ),
+        "session/new",
+    )
+    .await
+    .unwrap();
+    bounded(
+        client.new_session(
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            "plan",
+            None,
+            &origin(Some("$thread-1")),
+        ),
+        "session/new",
+    )
+    .await
+    .unwrap();
+    bounded(
+        client.load_or_resume(
+            "session-1",
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            &origin(Some("$thread-2")),
+        ),
+        "session/load",
+    )
+    .await
+    .unwrap();
+    let requests = agent.requests().await;
+    let headers_of = |method: &str, index: usize| -> Value {
+        requests
+            .iter()
+            .filter(|request| request["method"] == method)
+            .nth(index)
+            .unwrap()["params"]["mcpServers"][0]["headers"]
+            .clone()
+    };
+    // 主对话只报房间，话题会话带话题根（ADR-0016）。
+    assert_eq!(
+        headers_of("session/new", 0),
+        json!([{"name": ORIGIN_ROOM_HEADER, "value": "!room:wonton.internal"}])
+    );
+    assert_eq!(
+        headers_of("session/new", 1),
+        json!([
+            {"name": ORIGIN_ROOM_HEADER, "value": "!room:wonton.internal"},
+            {"name": ORIGIN_THREAD_HEADER, "value": "$thread-1"}
+        ])
+    );
+    assert_eq!(
+        headers_of("session/load", 0),
+        json!([
+            {"name": ORIGIN_ROOM_HEADER, "value": "!room:wonton.internal"},
+            {"name": ORIGIN_THREAD_HEADER, "value": "$thread-2"}
+        ])
+    );
+    drop(client);
+    agent.finish().await;
+}
+
+#[tokio::test]
+async fn oversized_agent_line_disconnects_and_fails_the_pending_prompt() {
+    let agent = FakeAgent::start(Scenario::Manual).await;
+    let client = bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+        .await
+        .unwrap();
+    bounded(
+        client.new_session(
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            "plan",
+            None,
+            &origin(None),
+        ),
+        "session/new",
+    )
+    .await
+    .unwrap();
+    let prompted = tokio::spawn({
+        let client = client.clone();
+        async move {
+            bounded(
+                client.prompt("session-1", "hi", 1024, Duration::from_secs(2), zh()),
+                "prompt",
+            )
+            .await
+        }
+    });
+    bounded(
+        async {
+            while agent.pending_count() == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        },
+        "等挂起的轮次",
+    )
+    .await;
+    // 600 KiB 不带换行的一行，后面跟换行和一条正常帧：桥读到上限就断开，
+    // 后面的帧不再读。断开后写端只多占内核缓冲，写得进去。
+    agent.send_raw(&vec![b'x'; 600 * 1024]).await;
+    agent.send_raw(b"\n").await;
+    agent
+        .tool_update(
+            "session-1",
+            "tool_call",
+            "call-1",
+            "edit",
+            "/workspace/x.rs",
+        )
+        .await;
+    let mut closed = client.closed();
+    assert!(bounded(closed.changed(), "closed").await.is_ok());
+    assert!(*closed.borrow());
+    match bounded(prompted, "prompt").await.unwrap() {
+        Err(Error::TransportUnavailable(detail)) => {
+            assert_eq!(detail, Detail::msg("acp-connection-closed"));
+        }
+        other => panic!("挂起的轮次应该报断开，实际是 {other:?}"),
+    }
+    drop(client);
+    agent.finish().await;
+}
+
+/// 底层流替身：每次最多交 [`READ_CHUNK`] 字节，记下累计交出的字节数。累计超过
+/// `MAX_FRAME_BYTES + 2 * READ_CHUNK` 直接报错：实现退化成整行缓冲时会撞上。
+const READ_CHUNK: usize = 8 * 1024;
+
+struct ChunkedReader {
+    data: Vec<u8>,
+    pos: usize,
+    read: usize,
+}
+
+impl ChunkedReader {
+    fn new(data: Vec<u8>) -> Self {
+        Self {
+            data,
+            pos: 0,
+            read: 0,
+        }
+    }
+}
+
+impl AsyncRead for ChunkedReader {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let this = self.get_mut();
+        if this.pos >= this.data.len() {
+            return Poll::Ready(Ok(()));
+        }
+        let end = (this.pos + READ_CHUNK).min(this.data.len());
+        if end > MAX_FRAME_BYTES + 2 * READ_CHUNK {
+            return Poll::Ready(Err(std::io::Error::other(
+                "读进内存的字节超过了上限加两个读块",
+            )));
+        }
+        buf.put_slice(&this.data[this.pos..end]);
+        this.read = this.read.max(end);
+        this.pos = end;
+        Poll::Ready(Ok(()))
+    }
+}
+
+#[tokio::test]
+async fn oversized_line_stops_at_the_limit_without_reading_the_next_frame() {
+    // 600 KiB 不带换行，之后才是换行和一条正常帧：读到上限就得停，后面的字节不进内存。
+    let mut data = vec![b'x'; 600 * 1024];
+    data.extend_from_slice(b"\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n");
+    let mut reader = BufReader::new(ChunkedReader::new(data));
+    let mut frame = Vec::new();
+    assert_eq!(
+        frame::read_frame(&mut reader, &mut frame).await,
+        frame::FrameRead::Oversize
+    );
+    let traffic = reader.get_ref().read;
+    assert!(
+        traffic <= MAX_FRAME_BYTES + 1 + READ_CHUNK,
+        "从底层读了 {traffic} 字节，超过上限加一个读块"
+    );
+    assert!(frame.len() <= MAX_FRAME_BYTES + 1);
+}
+
+#[tokio::test]
+async fn frame_limit_takes_lines_up_to_the_limit_and_rejects_over_by_one() {
+    // 正好上限：照常一帧。
+    let mut data = vec![b'x'; MAX_FRAME_BYTES];
+    data.push(b'\n');
+    let mut reader = BufReader::new(ChunkedReader::new(data));
+    let mut frame = Vec::new();
+    assert_eq!(
+        frame::read_frame(&mut reader, &mut frame).await,
+        frame::FrameRead::Frame
+    );
+    assert_eq!(frame.len(), MAX_FRAME_BYTES);
+
+    // 上限加一：超长。
+    let mut data = vec![b'x'; MAX_FRAME_BYTES + 1];
+    data.push(b'\n');
+    let mut reader = BufReader::new(ChunkedReader::new(data));
+    let mut frame = Vec::new();
+    assert_eq!(
+        frame::read_frame(&mut reader, &mut frame).await,
+        frame::FrameRead::Oversize
+    );
+
+    // 内容正好上限、以 \r\n 结尾：去回车后还是一帧。
+    let mut data = vec![b'x'; MAX_FRAME_BYTES];
+    data.extend_from_slice(b"\r\n");
+    let mut reader = BufReader::new(ChunkedReader::new(data));
+    let mut frame = Vec::new();
+    assert_eq!(
+        frame::read_frame(&mut reader, &mut frame).await,
+        frame::FrameRead::Frame
+    );
+    assert_eq!(frame.len(), MAX_FRAME_BYTES);
 }

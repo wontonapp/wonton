@@ -108,6 +108,7 @@ onboarding-review-no-failure = その項目は失敗していません
 
 # サインイン関連。$reason は Matrix SDK の元のエラーの詳細です。
 chat-sign-in-restore-failed = Matrixセッションを復元できません：{ $reason }
+chat-sign-in-external-missing = このスマートフォンにはこの Matrix アカウントのログイン状態がありません。もう一度ログインしてください。
 chat-sign-in-no-connection-info = 自宅サーバーの接続情報がまだありません
 chat-sign-in-login-failed = Matrixにログインできません：{ $reason }
 chat-sign-in-no-saved-session = ログイン後にログイン状態を取得できません
@@ -445,6 +446,13 @@ servers-name-required = 名前を入力してください
 servers-storage-failed = { $path }を読み書きできません：{ $reason }
 # シェルからコアの知らないサーバー一覧の操作が渡されたときに表示します。
 servers-invalid-action = サーバー一覧の操作ではありません
+matrix-login-not-current = このログインは終了したか、新しいログインに置き換えられました。
+matrix-login-wrong-step = このログインはその段階にありません。
+matrix-login-method-not-offered = このサーバーはそのログイン方法に対応していません。
+matrix-login-device-name-required = このデバイスの名前を入力してください。
+matrix-login-invalid-user-id = @name:matrix.org のような完全な Matrix ID を入力してください。
+matrix-login-password-required = パスワードを入力してください。
+matrix-login-redirect-not-allowed = アプリはそのアドレスへのログインコールバックを受け取れません。
 
 # セッションリスト（crates/wonton-client/src/session_store.rs）。
 sessions-title-required = セッションのタイトルを入力してください
@@ -532,6 +540,15 @@ plugins-core-upgrade-not-cancellable = 今はキャンセルできません
 # $reason は接続問題の元の詳細です。
 plugins-core-upgrade-start-uncertain = アップデートを開始できたかはっきりしません。接続後にもう一度確認してください：{ $reason }
 
+# アップデート前の互換性チェック（ADR-0085）の詳細：理由ごとに 1 行、{ $raw } はマニフェ
+# ストの原文の値。クライアントコアがアプリの言語で書き、アップデートページでは新しいバー
+# ジョンが読めないアプリの下に並べます。
+plugins-core-upgrade-compat-spec = このアプリは仕様{ $raw }で書かれており、新しいバージョンは対応していません。アップデート後は異常として表示されます。
+plugins-core-upgrade-compat-feature = このアプリのマニフェストには、新しいバージョンが認識しない{ $raw }があります。アップデート後は異常として表示されます。
+plugins-core-upgrade-compat-capability = このアプリは能力{ $raw }に依存していますが、新しいバージョンでは提供されません。アップデート後は異常として表示されます。
+plugins-core-upgrade-compat-other = 新しいバージョンはこのアプリを読めません。アップデート後は異常として表示されます。
+plugins-core-upgrade-compat-other-raw = 新しいバージョンはこのアプリの{ $raw }を読めません。アップデート後は異常として表示されます。
+
 # プロフィールのステップ：名前やメールアドレスを保存できない理由です。$max は名前の最大文字数です。
 onboarding-profile-name-empty = 名前を入力してください
 onboarding-profile-name-too-long = 名前は{ $max }文字以内にしてください
@@ -603,3 +620,5 @@ tabs-fullscreen-only-plugins = 全画面にできるのはアプリのページ�
 tabs-fullscreen-none = 全画面のページはありません。
 tabs-fullscreen-not-current = そのページは全画面のページではありません。
 panel-pins-refresh-failed = Bot がピン留めしたページを読み込めません:{ $error }
+
+contacts-invalid-action = Bot の連絡先の操作ではありません。

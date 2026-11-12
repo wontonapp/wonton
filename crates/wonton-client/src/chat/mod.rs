@@ -4,8 +4,12 @@
 //! 跟着家里的连接走：本地代理就绪（或者换了）就登录。上次登录的是同一台服务器就用存下来的登录状态恢复，不经服务器；
 //! 否则经隧道向核心要一次性的登录令牌，用它登录 `matrix.<基础域名>`。所有 Matrix 请求都走本地代理，Tuwunel 只被当成
 //! 标准的 Matrix 服务器（ADR-0015）。
+//!
+//! 外部 Matrix 账号的槽位（ADR-0051）不跟着家里的连接走：直连那个账号的 homeserver，用登录时
+//! （`matrix_login`）存进槽位的登录状态和存储恢复；登录状态没了只能重新登录那个账号。
 
 mod accessors;
+mod agent_run;
 mod ask;
 mod avatar_files;
 mod background;
@@ -74,7 +78,7 @@ use crate::scope::reuse;
 use confirmation::{Answers, Cards};
 use draft::DraftWrite;
 use layout::Layouts;
-use storage::ChatStorage;
+pub(crate) use storage::{ChatStorage, StoredSession};
 use view::core_error;
 
 /// 向前翻页一次最多加载的事件数。
@@ -128,6 +132,7 @@ pub(crate) struct ChatLink {
     background: AtomicBool,
     verification: Mutex<Option<verification::Control>>,
     relogin: connect::Relogin,
+    external: bool,
 }
 
 /// 卡片变成成功时就地调用（插件 ID），在卡片的情况发出去之前：ViewModel 里卡片“已经不用回答”时，补不补取已经定了。
@@ -177,6 +182,8 @@ pub(crate) struct ChatChannels {
     pub(crate) session_out: watch::Sender<Option<Arc<MatrixSession>>>,
     /// 打开的房间的面板（房间账号数据）。
     pub(crate) room_panel_out: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
+    /// 外部 Matrix 账号的槽位（ADR-0051）：不跟着家里的连接走，直连 homeserver，用登录时存下的状态恢复。
+    pub(crate) external: bool,
 }
 
 impl ChatLink {
@@ -193,6 +200,7 @@ impl ChatLink {
             method,
             session_out,
             room_panel_out,
+            external,
         } = channels;
         let storage = ChatStorage::open(data_dir)?;
         let mut encryption = EncryptionStatus {
@@ -262,9 +270,14 @@ impl ChatLink {
             background: AtomicBool::new(false),
             verification: Mutex::new(None),
             relogin: connect::Relogin::default(),
+            external,
         });
         runtime.spawn(draft::write_drafts(Arc::downgrade(&chat), draft_receiver));
-        runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
+        if external {
+            runtime.spawn(chat.clone().connect(connect::Target::External));
+        } else {
+            runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
+        }
         Ok(chat)
     }
 
@@ -283,8 +296,13 @@ impl ChatLink {
             | ChatAccount::SigningIn => {}
             // 正在等着重连的不再等，马上登录。
             ChatAccount::Reconnecting { .. } | ChatAccount::Failed { .. } => {
-                if let Some(proxy) = self.home.view().proxy {
-                    self.runtime.spawn(self.clone().connect(proxy));
+                let target = match self.home.view().proxy {
+                    _ if self.external => Some(connect::Target::External),
+                    Some(proxy) => Some(connect::Target::Home(proxy)),
+                    None => None,
+                };
+                if let Some(target) = target {
+                    self.runtime.spawn(self.clone().connect(target));
                 }
             }
             ChatAccount::SignedIn { .. } => {
@@ -333,6 +351,11 @@ impl ChatLink {
                 to_room_id,
             } => self.forward_message(&room_id, &item_id, &to_room_id),
             Action::RedactMessage { room_id, item_id } => self.redact_message(&room_id, &item_id),
+            Action::AnswerAgentChoice {
+                room_id,
+                item_id,
+                key,
+            } => self.answer_agent_choice(&room_id, &item_id, &key),
             Action::RetrySend { room_id, item_id } => {
                 let room = self.opened(&room_id)?;
                 let sent = self.sent.clone();
