@@ -695,8 +695,38 @@ fn revalidation_window(relay: bool, proven_slow: bool) -> Duration {
 
 #[cfg(test)]
 mod tests {
-    use super::revalidation_window;
+    use super::{DialTiming, revalidation_window};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
+
+    /// 冷启动的名额按次用完：用完以后就是正常的时限。
+    #[test]
+    fn the_cold_allowance_runs_out_after_its_count() {
+        let timing = DialTiming {
+            allowance: Arc::new(AtomicU32::new(2)),
+            cold: Duration::from_secs(30),
+            warm: Duration::from_secs(12),
+        };
+        assert_eq!(timing.next(), Duration::from_secs(30));
+        assert_eq!(timing.next(), Duration::from_secs(30));
+        assert_eq!(timing.next(), Duration::from_secs(12));
+    }
+
+    /// 连上过一次就把剩下的名额作废：断线重拨时握手已经是热的，不该再用冷启动的耐心。
+    #[test]
+    fn a_connected_line_spends_the_remaining_allowance() {
+        let allowance = Arc::new(AtomicU32::new(2));
+        let timing = DialTiming {
+            allowance: allowance.clone(),
+            cold: Duration::from_secs(30),
+            warm: Duration::from_secs(12),
+        };
+        assert_eq!(timing.next(), Duration::from_secs(30));
+        timing.connected();
+        assert_eq!(allowance.load(Ordering::SeqCst), 0, "名额清零");
+        assert_eq!(timing.next(), Duration::from_secs(12));
+    }
 
     #[test]
     fn revalidation_balances_dead_relay_recovery_and_proven_slow_paths() {

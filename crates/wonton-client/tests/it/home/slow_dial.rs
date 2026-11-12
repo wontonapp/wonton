@@ -87,18 +87,3 @@ async fn a_bind_that_misses_the_deadline_is_retried_without_hanging() {
 
     assert_eq!(connect(&phone, &home, &slow).await, 1);
 }
-
-#[tokio::test]
-async fn a_connected_line_spends_the_remaining_allowance() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let mut home = Home::start(&[phone.device_id()]).await;
-    let slow = SlowUdp::start(home.socket(), LAG).await;
-    // 冷时限够一次握手、正常时限不够：连上以后名额作废，重拨才会被正常的时限掐掉。
-    phone.test_set_cold_allowance(Duration::from_secs(4), Duration::from_millis(50));
-    assert_eq!(connect(&phone, &home, &slow).await, 0);
-
-    // 服务端重启：连接断了，客户端会拿正常的时限重拨，握手（回环上的转发仍慢）赶不上。
-    home.restart().await;
-    phone.wait_for(|view| view.details.failed_dials >= 1).await;
-}
