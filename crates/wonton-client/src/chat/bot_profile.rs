@@ -245,7 +245,7 @@ fn matrix_problem(error: Error) -> BotProfileProblem {
     let (reason, detail) = match error {
         Error::Transport(detail) => (BotProfileFailure::TransportUnavailable, detail),
         Error::NotReady(detail) => (BotProfileFailure::NotReady, detail),
-        Error::Unauthorized { errcode, message } => {
+        Error::Unauthorized { errcode, message } | Error::Forbidden { errcode, message } => {
             (BotProfileFailure::Upstream, format!("{errcode}: {message}"))
         }
         Error::Upstream(detail) | Error::InvalidInput(detail) => {
@@ -276,8 +276,8 @@ fn profile_problem(error: CoreApiError) -> BotProfileProblem {
         } => {
             let reason = match (status, kind.as_deref()) {
                 (404, _) => BotProfileFailure::NotReady,
-                // 只有主人的接口对家人的设备回 403 `owner_only`（ADR-0045）：不是网络问题，按权限缺失如实显示。
-                (403, Some("owner_only")) => BotProfileFailure::OwnerOnly,
+                // 只有主人的接口对家人的设备回 403 `permission_required`（ADR-0045）：不是网络问题，按权限缺失如实显示。
+                (403, Some("permission_required")) => BotProfileFailure::PermissionRequired,
                 (403 | 502, None) => BotProfileFailure::TransportUnavailable,
                 (400, Some("invalid_input")) => BotProfileFailure::InvalidName {
                     problem: problem

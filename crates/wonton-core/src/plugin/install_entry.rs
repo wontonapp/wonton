@@ -10,7 +10,10 @@ use super::store::EnabledPermission;
 use crate::l10n;
 
 pub(super) fn check_runtime(manifest: &Manifest, langs: &Languages) -> Result<(), InstallError> {
-    if manifest.runtime != Runtime::Compose {
+    if !matches!(
+        manifest.runtime,
+        Runtime::Compose | Runtime::StaticWeb | Runtime::Link
+    ) {
         return Err(InstallError::UnsupportedRuntime(l10n::text(
             langs,
             "plugin-install-runtime-unsupported",
@@ -50,7 +53,7 @@ impl PluginManager {
         lan_webui: bool,
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
-        self.install_user_enabled(package, granted, &[], lan_webui, langs)
+        self.install_user_enabled(package, granted, &[], lan_webui, Default::default(), langs)
             .await
     }
 
@@ -61,6 +64,7 @@ impl PluginManager {
         granted: &[Permission],
         enabled: &[EnabledPermission],
         lan_webui: bool,
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
         check_runtime(&package.manifest, &langs)?;
@@ -71,7 +75,7 @@ impl PluginManager {
                 &[],
             )));
         }
-        self.install_checked(package, granted, enabled, lan_webui, &langs)
+        self.install_checked(package, granted, enabled, lan_webui, settings, &langs)
             .await
     }
 
@@ -81,10 +85,15 @@ impl PluginManager {
         package: PluginPackage,
         granted: Vec<Permission>,
         lan_webui: bool,
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
         let this = Arc::clone(self);
-        detached(async move { this.install_user(package, &granted, lan_webui, langs).await }).await
+        detached(async move {
+            this.install_user_enabled(package, &granted, &[], lan_webui, settings, langs)
+                .await
+        })
+        .await
     }
 
     /// 同 [`Self::install_detached`]，另外带上主人打开了的可选权限（ADR-0057）。
@@ -94,11 +103,12 @@ impl PluginManager {
         granted: Vec<Permission>,
         enabled: Vec<EnabledPermission>,
         lan_webui: bool,
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
         let this = Arc::clone(self);
         detached(async move {
-            this.install_user_enabled(package, &granted, &enabled, lan_webui, langs)
+            this.install_user_enabled(package, &granted, &enabled, lan_webui, settings, langs)
                 .await
         })
         .await

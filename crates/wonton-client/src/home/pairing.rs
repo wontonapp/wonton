@@ -12,6 +12,7 @@ use wonton_tunnel::TunnelError;
 use wonton_tunnel::pair::{self, InvalidCode, PairResponse, PairingCode, RejectReason};
 
 use super::HomeLink;
+use super::bind::BindError;
 use crate::l10n::{CATALOG, language};
 
 impl HomeLink {
@@ -197,12 +198,13 @@ impl HomeLink {
         let started = Instant::now();
         let mut endpoint = None;
         // 绑定的时限只包绑定：中继慢、网卡枚举慢不该吃掉交换的预算。
-        let bound =
-            tokio::time::timeout(limit, self.bind_endpoint(&code.relays, usize::MAX, lang)).await;
+        let bound = self
+            .bind_endpoint(&code.relays, usize::MAX, lang, limit)
+            .await;
         let outcome = match bound {
             // 交换自己按同样的时限计时，并且请求已经发出去、回应没到时再确认一次：服务端对同一台设备的
             // 重发幂等地回 `Paired`，慢中继上第一次配对照样能成，不留下一半的配对。
-            Ok(Ok(bound)) => {
+            Ok(bound) => {
                 let home = self.clone();
                 pair::pair_with_timeout(
                     endpoint.insert(bound),
@@ -213,8 +215,8 @@ impl HomeLink {
                 )
                 .await
             }
-            Ok(Err(reason)) => Err(TunnelError::TransportUnavailable { reason }),
-            Err(_) => Err(TunnelError::TransportUnavailable {
+            Err(BindError::Failed(reason)) => Err(TunnelError::TransportUnavailable { reason }),
+            Err(BindError::TimedOut) => Err(TunnelError::TransportUnavailable {
                 reason: l10n!(
                     CATALOG,
                     lang,
@@ -237,7 +239,8 @@ impl HomeLink {
                     endpoint.close().await;
                 }
                 match self.connect(&ticket(&code, &device_name)) {
-                    Ok(()) => None,
+                    // 停在“配上了”给壳当配对结束的类别：取消不会到这一步，壳看到它就离开配对页。
+                    Ok(()) => Some(PairingStatus::Paired),
                     Err(e) => Some(failed(PairingFailure::Upstream, e.to_string())),
                 }
             }

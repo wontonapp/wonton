@@ -37,7 +37,7 @@ struct ChatBackupView: View {
                     Button {
                         isConfirmingReset = true
                     } label: {
-                        Text(.chatBackupReset)
+                        Text(.ChatBackup1.chatBackupReset)
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textSecondary))
                             .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target)
@@ -50,14 +50,14 @@ struct ChatBackupView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .scrollDismissesKeyboard(.interactively)
-        .wontonPushedScreen(String(localized: .chatBackupTitle))
+        .wontonPushedScreen(String(localized: .ChatBackup1.chatBackupTitle))
         .wontonDialog(
-            String(localized: .chatBackupResetTitle),
-            message: String(localized: .chatBackupResetMessage),
+            String(localized: .ChatBackup1.chatBackupResetTitle),
+            message: String(localized: .ChatBackup0.chatBackupResetMessage),
             isPresented: $isConfirmingReset,
             actions: [
-                WontonDialogAction(title: String(localized: .commonCancel), kind: .secondary) {},
-                WontonDialogAction(title: String(localized: .chatBackupResetConfirm), kind: .danger) {
+                WontonDialogAction(title: String(localized: .Common.commonCancel), kind: .secondary) {},
+                WontonDialogAction(title: String(localized: .ChatBackup1.chatBackupResetConfirm), kind: .danger) {
                     model.send(.resetRecovery)
                 }
             ]
@@ -76,11 +76,11 @@ struct ChatBackupView: View {
             } else {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     Button { model.send(.startDeviceVerification) } label: {
-                        Text(.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
+                        Text(.Verification1.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle(kind: .primary))
                     Button { showKeyEntry = true } label: {
-                        Text(.verificationUseRecoveryKey).frame(maxWidth: .infinity)
+                        Text(.Verification1.verificationUseRecoveryKey).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
@@ -89,7 +89,7 @@ struct ChatBackupView: View {
             // 设备确认是这一步：流程在上面那一屏；还没开始时给入口按钮（账号没有备份，输恢复密钥没用）。
             if encryption.verificationFlow == nil {
                 Button { model.send(.startDeviceVerification) } label: {
-                    Text(.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
+                    Text(.Verification1.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
             } else if showKeyEntry {
@@ -97,6 +97,12 @@ struct ChatBackupView: View {
             }
         case .progress:
             ProgressView().frame(maxWidth: .infinity)
+        case .waitForOtherDevice:
+            // 新设备在等另一台设备交出密钥（ADR-0087）：这里不给恢复密钥，回到交接页。
+            Button { model.keyHandoffDeferred = false } label: {
+                Text(.Handoff.handoffTitle).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(WontonButtonStyle(kind: .primary))
         case .none, .other:
             EmptyView()
         }
@@ -104,7 +110,7 @@ struct ChatBackupView: View {
 
     private var recoveryKeyEntry: some View {
         VStack(spacing: WontonTheme.spacing.s12) {
-            SecureField(String(localized: .chatBackupRecoveryKey), text: $key)
+            SecureField(String(localized: .ChatBackup0.chatBackupRecoveryKey), text: $key)
                 .textFieldStyle(.plain)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -113,7 +119,7 @@ struct ChatBackupView: View {
                 model.send(.recoverEncryption(recoveryKey: key))
                 key = ""
             } label: {
-                Text(.chatBackupRecover).frame(maxWidth: .infinity)
+                Text(.ChatBackup1.chatBackupRecover).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle(kind: .primary))
             .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -126,21 +132,21 @@ struct ChatBackupView: View {
 extension RecoveryStatus {
     var backupTitle: String {
         switch self {
-        case .enabled: return String(localized: .chatBackupStatusEnabled)
-        case .disabled: return String(localized: .chatBackupStatusDisabled)
-        case .incomplete: return String(localized: .chatBackupStatusIncomplete)
-        case .inProgress: return String(localized: .chatBackupStatusInProgress)
-        case .unknown: return String(localized: .chatBackupStatusUnknown)
+        case .enabled: return String(localized: .ChatBackup0.chatBackupStatusEnabled)
+        case .disabled: return String(localized: .ChatBackup1.chatBackupStatusDisabled)
+        case .incomplete: return String(localized: .ChatBackup0.chatBackupStatusIncomplete)
+        case .inProgress: return String(localized: .ChatBackup1.chatBackupStatusInProgress)
+        case .unknown: return String(localized: .ChatBackup1.chatBackupStatusUnknown)
         }
     }
 
     var backupValue: String {
         switch self {
-        case .enabled: return String(localized: .chatBackupValueEnabled)
-        case .disabled: return String(localized: .chatBackupValueDisabled)
-        case .incomplete: return String(localized: .chatBackupValueIncomplete)
-        case .inProgress: return String(localized: .chatBackupValueInProgress)
-        case .unknown: return String(localized: .chatBackupValueUnknown)
+        case .enabled: return String(localized: .ChatBackup1.chatBackupValueEnabled)
+        case .disabled: return String(localized: .ChatBackup1.chatBackupValueDisabled)
+        case .incomplete: return String(localized: .ChatBackup1.chatBackupValueIncomplete)
+        case .inProgress: return String(localized: .ChatBackup0.chatBackupValueInProgress)
+        case .unknown: return String(localized: .ChatBackup0.chatBackupValueUnknown)
         }
     }
 }
@@ -148,15 +154,15 @@ extension RecoveryStatus {
 extension EncryptionStatus {
     var backupDetail: String? {
         switch recovery {
-        case .enabled: return String(localized: .chatBackupDetailEnabled)
+        case .enabled: return String(localized: .ChatBackup0.chatBackupDetailEnabled)
         case .disabled:
             // 未验证的设备开启不了，核心会拒绝。
             return verification == .unverified
-                ? String(localized: .chatBackupDetailUnverified)
-                : String(localized: .chatBackupDetailVerified)
-        case .incomplete: return String(localized: .chatBackupDetailIncomplete)
+                ? String(localized: .ChatBackup0.chatBackupDetailUnverified)
+                : String(localized: .ChatBackup0.chatBackupDetailVerified)
+        case .incomplete: return String(localized: .ChatBackup0.chatBackupDetailIncomplete)
         case .inProgress: return nil
-        case .unknown: return String(localized: .chatBackupDetailUnknown)
+        case .unknown: return String(localized: .ChatBackup1.chatBackupDetailUnknown)
         }
     }
 }
@@ -165,8 +171,8 @@ extension KeyNotice {
     /// 按钮上的字；`other` 是更新的核心给的新类别，只显示说明。
     var action: String? {
         switch self {
-        case .enterRecoveryKey: return String(localized: .verificationUseRecoveryKey)
-        case .verifyWithOtherDevice: return String(localized: .verificationVerifyWithOtherDevice)
+        case .enterRecoveryKey: return String(localized: .Verification1.verificationUseRecoveryKey)
+        case .verifyWithOtherDevice: return String(localized: .Verification1.verificationVerifyWithOtherDevice)
         case .other: return nil
         }
     }
@@ -175,8 +181,9 @@ extension KeyNotice {
 extension BackupReminder {
     var text: String? {
         switch self {
-        case .saveRecoveryKey: return String(localized: .chatBackupReminderSaveKey)
-        case .enterRecoveryKey: return String(localized: .chatBackupReminderEnterKey)
+        case .saveRecoveryKey: return String(localized: .ChatBackup0.chatBackupReminderSaveKey)
+        case .enterRecoveryKey: return String(localized: .ChatBackup1.chatBackupReminderEnterKey)
+        case .continueOnOtherDevice: return String(localized: .Handoff.handoffTitle)
         case .other: return nil
         }
     }
@@ -189,7 +196,7 @@ private struct RecoveryKeySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            Text(.chatBackupSaveKeyTitle)
+            Text(.ChatBackup0.chatBackupSaveKeyTitle)
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
             // 不能长按选中：系统的拷贝不带下面的保护，复制只走“复制”按钮。
@@ -199,7 +206,7 @@ private struct RecoveryKeySection: View {
                 .padding(WontonTheme.spacing.s12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: WontonTheme.radii.control).fill(Color(colors.surfaceSubtle)))
-            Text(.chatBackupSaveKeyNote)
+            Text(.ChatBackup0.chatBackupSaveKeyNote)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
             HStack(spacing: WontonTheme.spacing.s8) {
@@ -210,11 +217,11 @@ private struct RecoveryKeySection: View {
                         options: [.localOnly: true, .expirationDate: Date.now.addingTimeInterval(120)]
                     )
                 } label: {
-                    Text(.chatBackupCopy).frame(maxWidth: .infinity)
+                    Text(.ChatBackup1.chatBackupCopy).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
                 Button(action: confirm) {
-                    Text(.chatBackupSaved).frame(maxWidth: .infinity)
+                    Text(.ChatBackup1.chatBackupSaved).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
             }

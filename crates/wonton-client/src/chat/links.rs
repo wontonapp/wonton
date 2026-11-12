@@ -6,10 +6,12 @@
 use std::net::IpAddr;
 use std::ops::Range;
 
-use linkify::LinkKind;
+use linkify::{LinkFinder, LinkKind};
 use percent_encoding::percent_decode_str;
 use url::Url;
 use wonton_protocol::{MatrixTarget, PluginsViewModel, RichLink, RichLinkKind};
+
+use super::rich::CJK_PUNCTUATION;
 
 /// 认链接要用到的这台服务器的事实：只有已装插件的网页地址。别的都从地址本身看。
 #[derive(Default)]
@@ -162,11 +164,13 @@ const FILE_EXTENSIONS: [&str; 25] = [
 ];
 
 /// matrix.to 的用户、房间和事件永久链接。别的 matrix.to 地址（没有片段、指向客户端选择页的）是外部网页。
-fn matrix_target(url: &Url) -> Option<MatrixTarget> {
+pub(crate) fn matrix_target(url: &Url) -> Option<MatrixTarget> {
     if !matches!(url.scheme(), "http" | "https") || url.host_str()? != "matrix.to" {
         return None;
     }
-    let fragment = percent_decode_str(url.fragment()?).decode_utf8().ok()?;
+    // matrix.to 把 via 等查询参数放在片段里；它们不是 Matrix 标识的一部分。
+    let fragment = url.fragment()?.split('?').next()?;
+    let fragment = percent_decode_str(fragment).decode_utf8().ok()?;
     let path = fragment.strip_prefix('/')?;
     let (id, event) = match path.split_once('/') {
         Some((id, rest)) => (id, Some(rest)),
@@ -224,6 +228,64 @@ pub(crate) fn phones(text: &str) -> Vec<Range<usize>> {
     phones.sort_by_key(|phone| phone.start);
     phones.dedup_by(|later, earlier| later.start < earlier.end);
     phones
+}
+
+/// 文字里第一个外部 http(s) 链接，链接预览用它（ADR-0065）：`raw` 是原文里找到的那段（发事件时写进
+/// `matched_url`），`url` 是补全协议后的地址（取预览用它）。插件页和 matrix.to 不是外部链接。
+pub(crate) struct ExternalLink {
+    pub(crate) raw: String,
+    pub(crate) url: String,
+}
+
+/// 扫描顺序和 `rich` 排版一样：号码先切出来，`linkify` 认网址和邮箱，中文标点隔开的段各自判断。
+pub(crate) fn first_external_link(text: &str, links: &LinkTargets) -> Option<ExternalLink> {
+    let mut at = 0;
+    for phone in phones(text) {
+        if let Some(link) = external_in(&text[at..phone.start], links) {
+            return Some(link);
+        }
+        at = phone.end;
+    }
+    external_in(&text[at..], links)
+}
+
+fn external_in(text: &str, links: &LinkTargets) -> Option<ExternalLink> {
+    let mut finder = LinkFinder::new();
+    finder.kinds(&[LinkKind::Url, LinkKind::Email]);
+    finder.url_must_have_scheme(false);
+    for part in finder.spans(text) {
+        if part.kind().is_none() {
+            continue;
+        }
+        let mut rest = part.as_str();
+        while !rest.is_empty() {
+            let cut = rest.find(CJK_PUNCTUATION).unwrap_or(rest.len());
+            let (piece, tail) = rest.split_at(cut);
+            if let Some(link) = piece_link(piece, links) {
+                return Some(link);
+            }
+            let punctuation = tail.chars().take(1).count();
+            rest = &tail[punctuation..];
+        }
+    }
+    None
+}
+
+/// 一段切开的文字：是外部链接就返回。
+fn piece_link(piece: &str, links: &LinkTargets) -> Option<ExternalLink> {
+    if piece.is_empty() {
+        return None;
+    }
+    let kind = if piece.contains('@') && !piece.contains("://") {
+        LinkKind::Email
+    } else {
+        LinkKind::Url
+    };
+    let link = links.link(piece, &kind)?;
+    (link.kind == RichLinkKind::External).then(|| ExternalLink {
+        raw: piece.to_owned(),
+        url: link.url,
+    })
 }
 
 const TEL: &str = "tel:";
@@ -379,6 +441,30 @@ mod tests {
             kind(&targets, "https://matrix.to/#/not-a-link", LinkKind::Url),
             RichLinkKind::External
         );
+    }
+    #[test]
+    fn matrix_routing_parameters_do_not_change_the_target() {
+        let targets = LinkTargets::default();
+        for (url, event_id) in [
+            (
+                "https://matrix.to/#/%23room:example.com?via=example.com",
+                None,
+            ),
+            (
+                "https://matrix.to/#/%23room:example.com/%24event?via=example.com",
+                Some("$event".to_owned()),
+            ),
+        ] {
+            assert_eq!(
+                kind(&targets, url, LinkKind::Url),
+                RichLinkKind::Matrix {
+                    target: MatrixTarget::Room {
+                        room_id: "#room:example.com".into(),
+                        event_id
+                    },
+                }
+            );
+        }
     }
 
     /// 显式写的 Markdown 目标要带协议：相对路径（`main.rs`、`docs/a.md`）不是网址。

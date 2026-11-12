@@ -48,7 +48,7 @@ permission-notice-devices = 這個應用程式可以存取你交給它的主機�
 # 應用程式詳情裡的提示。
 plugin-firewall-notice = 本機防火牆可能擋住了外來連線，區域網路裝置可能連不進來
 plugin-egress-proxy-select = 在代理伺服器設定裡選它
-plugin-cross-origin-isolation = 這個應用程式放寬了跨來源隔離：在 Android 上，它的頁面可能和別的網頁共用行程。
+plugin-cross-origin-isolation = 這個應用程式需要跨來源隔離：在 Android 上，它的頁面會在瀏覽器裡開啟。
 
 # 安裝和更新預覽裡的提示與裝不了的原因。
 install-retained-data = 這台伺服器上留著 { $id } 以前的資料和金鑰，這個應用程式裝上後能讀到它們；不想這樣就先徹底刪除
@@ -57,6 +57,7 @@ install-images-from = 映像檔來自 { $images }
 install-images-unpinned = 映像檔沒有按摘要固定：{ $images }
 install-webui-sso = 在雲吞裡開啟它的網頁時自動登入
 install-host-network-egress = 主機網路裡的服務連外走主機自己的路由，不經 Wonton 的代理伺服器
+install-host-network-proxied = 主機網路裡的服務也經你的出網代理連外
 install-system-preinstalled = 系統應用程式只能隨家用伺服器預先安裝
 install-already-installed = 已經安裝了 { $id }（版本 { $version }）
 install-unreviewed-provider = 雲吞沒有審核過這個應用程式，程式碼和映像檔由 { $provider } 提供

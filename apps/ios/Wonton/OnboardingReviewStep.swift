@@ -30,6 +30,9 @@ private struct OnboardingReviewRow: View {
                     PluginIconView(icon: icon, size: WontonTheme.size.taskIcon, model: plugins)
                 }
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                    Text(item.kind.section)
+                        .wontonText(WontonTheme.typography.supporting)
+                        .foregroundStyle(Color(colors.textSecondary))
                     Text(item.titles.formatted(.list(type: .and)))
                         .wontonText(WontonTheme.typography.itemTitle)
                         .foregroundStyle(Color(colors.textPrimary))
@@ -45,17 +48,17 @@ private struct OnboardingReviewRow: View {
             InstallPermissions(permissions: item.permissions, notices: item.notices)
             switch item.state {
             case let .blocked(message):
-                Text(verbatim: message ?? String(localized: .onboardingReviewBlocked))
+                Text(verbatim: message ?? String(localized: .Onboarding4.onboardingReviewBlocked))
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.danger))
             case let .uncertain(message):
-                WontonNotice(icon: .warning, title: String(localized: .onboardingReviewUncertain),
-                             isError: false, lines: [String(localized: .onboardingReviewUncertainNext)]) {
+                WontonNotice(icon: .warning, title: String(localized: .Onboarding5.onboardingReviewUncertain),
+                             isError: false, lines: [String(localized: .Onboarding5.onboardingReviewUncertainNext)]) {
                     ProblemDetail(text: message)
                 }
             case let .failed(problem):
                 ProblemNotice(problem: problem.onboardingProblem)
-                Button(String(localized: .commonRetry), action: retry).buttonStyle(WontonSmallButtonStyle())
+                Button(String(localized: .Common.commonRetry), action: retry).buttonStyle(WontonSmallButtonStyle())
             default:
                 EmptyView()
             }
@@ -67,20 +70,20 @@ private struct OnboardingReviewRow: View {
     @ViewBuilder private var progress: some View {
         switch item.state {
         case .preparing:
-            ProgressView().accessibilityLabel(String(localized: .onboardingReviewPreparing))
+            ProgressView().accessibilityLabel(String(localized: .Onboarding3.onboardingReviewPreparing))
         case .waiting:
-            Text(.onboardingReviewWaiting)
+            Text(.Onboarding4.onboardingReviewWaiting)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
         case .running:
             HStack(spacing: WontonTheme.spacing.s8) {
                 ProgressView()
-                Text(.onboardingRunning).wontonText(WontonTheme.typography.supporting)
+                Text(.Onboarding2.onboardingRunning).wontonText(WontonTheme.typography.supporting)
             }
             .foregroundStyle(Color(colors.textSecondary))
         case .done:
             WontonIcon.check.view().foregroundStyle(Color(colors.success))
-                .accessibilityLabel(String(localized: .onboardingReviewDone))
+                .accessibilityLabel(String(localized: .Onboarding0.onboardingReviewDone))
         case .ready, .blocked, .uncertain, .failed:
             EmptyView()
         }
@@ -92,13 +95,26 @@ private extension OnboardingReviewDetail {
     var line: String {
         switch self {
         case let .email(email): email
-        case .setAsDefault: String(localized: .onboardingReviewSetDefault)
-        case .keepCurrent: String(localized: .onboardingReviewKeepCurrent)
+        case .setAsDefault: String(localized: .Onboarding5.onboardingReviewSetDefault)
+        case .keepCurrent: String(localized: .Onboarding2.onboardingReviewKeepCurrent)
         case let .model(model): model
         case let .unreachable(model):
-            model.map { String(localized: .onboardingReviewUnreachableModel($0)) }
-                ?? String(localized: .onboardingReviewUnreachable)
-        case .signInAfterSetup: String(localized: .onboardingReviewSignInAfterSetup)
+            model.map { String(localized: .Onboarding2.onboardingReviewUnreachableModel($0)) }
+                ?? String(localized: .Onboarding3.onboardingReviewUnreachable)
+        case .signInAfterSetup: String(localized: .Onboarding1.onboardingReviewSignInAfterSetup)
+        case .unchanged: String(localized: .Onboarding4.onboardingReviewUnchanged)
+        }
+    }
+}
+
+/// 每一行的类别，写在标题上面。
+private extension OnboardingReviewKind {
+    var section: String {
+        switch self {
+        case .profile: String(localized: .Onboarding0.onboardingReviewSectionProfile)
+        case .agent: String(localized: .Onboarding5.onboardingReviewSectionAgent)
+        case .model: String(localized: .Onboarding3.onboardingReviewSectionModel)
+        case .app: String(localized: .Onboarding0.onboardingReviewSectionApps)
         }
     }
 }

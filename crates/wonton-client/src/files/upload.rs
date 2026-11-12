@@ -467,11 +467,16 @@ fn chat_problem(error: CoreError) -> Problem {
         CoreError::TransportUnavailable { reason } => Problem::Interrupted(reason),
         CoreError::NotReady { reason } => Problem::Failed(FileFailure::ServiceUnavailable, reason),
         CoreError::Unauthorized { reason } => Problem::Failed(FileFailure::Unauthenticated, reason),
+        CoreError::Forbidden { reason } => Problem::Failed(FileFailure::PermissionDenied, reason),
         CoreError::InvalidInput { reason } => Problem::Failed(FileFailure::InvalidInput, reason),
         CoreError::Storage { reason } => Problem::Failed(FileFailure::LocalIo, reason),
         CoreError::Upstream { reason } => Problem::Failed(FileFailure::UpstreamError, reason),
         CoreError::ServerTooOld { reason, .. } => {
             Problem::Failed(FileFailure::UpstreamError, reason)
+        }
+        // 文件上传不传设置，走不到这一类；真到了按输入错误说。
+        CoreError::SettingsInvalid { reason, .. } => {
+            Problem::Failed(FileFailure::InvalidInput, reason)
         }
     }
 }

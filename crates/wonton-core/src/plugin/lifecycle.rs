@@ -17,6 +17,7 @@ use super::docker::{LabeledResources, NetworkReach};
 use super::gpu::GpuGrant;
 use super::health::{self, Readiness, Target};
 use super::hostdir::{self, Owner};
+use super::install_notes::note_dropped_capabilities;
 use super::lan::LanGrant;
 use super::languages::Languages;
 use super::leftovers::name_taken;
@@ -30,7 +31,7 @@ use super::render::{Deployment, InstallContext, render};
 use super::secrets::{self, Secrets};
 use super::store::{EnabledPermission, InstalledRecord};
 use super::upstreams::Endpoint;
-use super::upstreams::{McpTarget, core_aliases, uses_sso};
+use super::upstreams::{McpTarget, uses_sso};
 use super::vars::{OidcVars, OwnerVars};
 use crate::config::PublicUrls;
 use crate::l10n;
@@ -47,6 +48,8 @@ pub struct LifecycleConfig {
     pub data_dir: PathBuf,
     pub apps_dir: PathBuf,
     pub shares_dir: PathBuf,
+    /// 宿主网络中继的 unix 套接字目录（[`super::config::DEFAULT_RELAY_DIR`]）。
+    pub relay_dir: PathBuf,
     pub core_container: Option<String>,
     pub tz: String,
     pub puid: u32,
@@ -64,6 +67,18 @@ pub struct LifecycleConfig {
     pub instance: Instance,
 }
 
+/// 部署计划里有没有用宿主网络的服务：它们的代理变量要写出口容器的地址，不是别名。
+fn host_networked(plan: &Deployment) -> bool {
+    plan.containers.iter().any(|container| {
+        container
+            .body
+            .host_config
+            .as_ref()
+            .and_then(|config| config.network_mode.as_deref())
+            == Some("host")
+    })
+}
+
 /// 本次安装已经创建的资源，失败时据此回滚。
 #[derive(Default)]
 pub(super) struct Undo {
@@ -77,7 +92,8 @@ pub(super) struct Undo {
     app_dir_created: Option<PathBuf>,
     /// 本次安装之前插件的密钥（`None` 表示原来没有），回滚时恢复成这样。
     secrets_before: Option<(PluginId, Option<Secrets>)>,
-    /// 本次安装代 Bot 登录的设备，回滚时吊销（账号和主房间保留给下次安装）。
+    /// 本次安装代 Bot 登录的设备，回滚时吊销（账号、主房间和数据保留给下次安装，见
+    /// [`Undo::keep_bot_data`]）。
     pub(super) bot: Option<(PluginId, String, ProvisionedBot)>,
     /// 本次安装把主房间交给了主人（主人原来不在里面），回滚时收回。
     pub(super) handed_over: bool,
@@ -129,24 +145,27 @@ impl PluginManager {
     }
 
     /// 部署插件并写下安装记录，返回核心访问插件网页的地址。任一步失败（包括写记录）都回滚本次创建的
-    /// 资源：没有记录的容器、网络和 OIDC 客户端，核心重启后就没人管了。`gpu` 是交给 `gpu.services` 的显卡，`lan`
-    /// 是局域网端口开在哪里。
-    pub(super) async fn deploy(
+    /// 资源：没有记录的容器、网络和 OIDC 客户端，核心重启后就没人管了。`gpu` 是交给 `gpu.services` 的显卡，`lan` 是局域网端口开在哪里。
+    #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
+    pub(in crate::plugin) async fn deploy_retained(
         &self,
         package: &PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
-        gpu: Option<GpuGrant>,
-        lan: Option<LanGrant>,
+        grants: (Option<GpuGrant>, Option<LanGrant>),
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
-    ) -> Result<Deployed, InstallError> {
+    ) -> Result<(Deployed, Undo), InstallError> {
         let mut undo = Undo::default();
-        match self
-            .deploy_inner(package, granted, enabled, (gpu, lan), &mut undo, langs)
-            .await
+        // 同 installation.rs 的 install_checked：deploy 子树的状态机搬上堆，install 链默认栈才够深。
+        match Box::pin(self.deploy_inner(
+            package, granted, enabled, grants, settings, &mut undo, langs,
+        ))
+        .await
         {
-            Ok(deployed) => Ok(deployed),
+            Ok(deployed) => Ok((deployed, undo)),
             Err(error) => {
+                undo.keep_bot_data();
                 let failures = self.rollback(undo, langs).await;
                 if failures.is_empty() {
                     Err(error)
@@ -184,45 +203,33 @@ impl PluginManager {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
     async fn deploy_inner(
         &self,
         package: &PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
         (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
         undo: &mut Undo,
         langs: &Languages,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
-        self.stage(&manifest.id, InstallStage::Preparing);
-        self.clear_leftovers(&manifest.id).await?;
-        let secret = uses_sso(manifest).then(random_token);
-        let mut secrets = self.prepare_secrets(manifest, undo)?;
-        let generated =
-            secrets::generated_values(manifest, &secrets, langs).map_err(InstallError::Storage)?;
-        let proxy =
-            ProxyAuth::resolve(manifest, &generated, langs).map_err(InstallError::Storage)?;
-        let effective = manifest.effective_permissions(&super::store::permission_set(enabled));
-        let mut ctx = self
-            .install_context(manifest, secret.as_deref(), generated, &effective, langs)
+        let (mut ctx, secret, mut secrets, proxy) = self
+            .prepare_install(package, enabled, (gpu, lan), settings, undo, langs)
             .await?;
-        ctx.gpu = gpu;
-        ctx.lan = lan;
-        self.check_network_names(&ctx).await?;
-        let default_bot = self.provision_default_bot(package, undo).await?;
-        if let Some(models) = self.provision_models(package, langs).await? {
-            ctx.models = Some(models);
-            undo.models = Some(manifest.id.clone());
-        }
-        if let Some(bot) = &default_bot {
-            self.fill_default_bot_vars(manifest, bot, &mut ctx);
-        }
         let mut plan = render(package, &ctx, langs)?;
         self.prepare_images(&mut plan, Some(&manifest.id), langs)
             .await?;
         self.stage(&manifest.id, InstallStage::Preparing);
         self.prepare_dirs(&ctx, &plan.dirs, undo, langs)?;
-        self.create_networks(manifest, &plan, &ctx, undo).await?;
+        // 中继套接字目录不在应用数据目录下，不属于任何一个插件：装之前单独建、交给 PUID。
+        if !plan.relays.is_empty() {
+            self.prepare_relay_dir(langs)?;
+        }
+        // create_networks 里经 attach_relay→sync_relay 到 bollard 的 inspect 反序列化是整条
+        // install 链的栈顶；box 上堆后默认 2 MiB 测试线程栈才装得下（egress_plugin_docker 的栈溢出）。
+        Box::pin(self.create_networks(manifest, &plan, &ctx, undo)).await?;
         // 容器启动前登记：安装过程中 Bot 就要经核心连 Matrix，健康检查才过得了。
         self.register_source(manifest, &plan.network).await?;
         undo.source = Some(manifest.id.clone());
@@ -230,9 +237,7 @@ impl PluginManager {
             self.attach_core(&plan.network, core, manifest).await?;
             undo.core_attached = true;
         }
-        // 网络建好才知道的：核心在网络里的地址和网关。
-        ctx.core_address = self.core_address_var(manifest, &plan.network).await?;
-        ctx.extra_hosts = self.hosts_via_gateway(manifest, &plan.network).await?;
+        self.fill_network_vars(manifest, &plan, &mut ctx).await?;
         let pulled = plan;
         let mut plan = render(package, &ctx, langs)?;
         super::registry_mirror::use_pulled_images(&mut plan, pulled);
@@ -244,37 +249,25 @@ impl PluginManager {
             undo.oidc_client = Some(manifest.id.to_string());
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-        let deadline =
-            super::health_gate::deadline(&plan, self.cfg.install_timeout, Instant::now());
+        let deadline = super::health_gate::deadline(&plan, ctx.install_limit, Instant::now());
         self.stage(&manifest.id, InstallStage::Starting);
-        let health = self
-            .start_containers(&plan, Some(&manifest.id), undo, deadline, langs)
-            .await?;
+        let health = Box::pin(self.start_containers(
+            Some(manifest),
+            &plan,
+            Some(&manifest.id),
+            undo,
+            deadline,
+            langs,
+        ))
+        .await?;
         let (upstream, models, mcp) = self
             .started_upstreams(manifest, &plan, &mut secrets, undo, deadline, langs)
             .await?;
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &plan.network)
             .await;
-        self.store.save(&InstalledRecord {
-            id: manifest.id.clone(),
-            version: manifest.version.clone(),
-            source: package.source.clone(),
-            files: package.files().clone(),
-            granted_permissions: granted.to_vec(),
-            enabled_permissions: enabled.to_vec(),
-            limits: Default::default(),
-            lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
-            relays: plan.relays.clone(),
-            firewalled,
-            proxied: ctx.egress.is_some(),
-            oidc_client_secret: secret,
-            installed_at: super::manager::now_secs(),
-            origin: package.origin.clone(),
-            written_by: None,
-            ask_every_update: false,
-            family: false,
-        })?;
+        self.save_installed(package, granted, enabled, &ctx, &plan, secret, firewalled)
+            .await?;
         Ok(Deployed {
             upstream,
             serving: package
@@ -288,7 +281,50 @@ impl PluginManager {
             proxy: proxy.map(Arc::new),
             mcp,
             firewalled,
+            hosted: self
+                .hosted_upstreams(&package.manifest, &plan.network)
+                .await?,
         })
+    }
+
+    /// 安装成功后的记录：权限、局域网开关、代理和密钥都在这一步落盘。
+    #[allow(clippy::too_many_arguments)]
+    async fn save_installed(
+        &self,
+        package: &PluginPackage,
+        granted: &[Permission],
+        enabled: &[EnabledPermission],
+        ctx: &InstallContext,
+        plan: &Deployment,
+        oidc_secret: Option<String>,
+        firewalled: bool,
+    ) -> Result<(), InstallError> {
+        let manifest = &package.manifest;
+        self.store.save(&InstalledRecord {
+            id: manifest.id.clone(),
+            version: manifest.version.clone(),
+            source: package.source.clone(),
+            files: package.files().clone(),
+            granted_permissions: granted.to_vec(),
+            enabled_permissions: enabled.to_vec(),
+            limits: Default::default(),
+            lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
+            relays: plan.relays.clone(),
+            firewalled,
+            proxied: ctx.egress.is_some(),
+            oidc_client_secret: oidc_secret,
+            installed_at: super::manager::now_secs(),
+            entry_label: self.install_entry_label(&manifest.id)?,
+            origin: package.origin.clone(),
+            written_by: None,
+            ask_every_update: false,
+            family: false,
+            settings: ctx.settings.clone().into_iter().collect(),
+            settings_changed_ms: None,
+            static_files: Default::default(),
+            hosted: Vec::new(),
+        })?;
+        Ok(())
     }
 
     /// 容器起来之后的收尾：收存密钥和入口（见 [`PluginManager::deploy_upstreams`]），把 Bot 的房间交给核心。
@@ -428,8 +464,16 @@ impl PluginManager {
                 ))
             })?;
         }
+        let capabilities = {
+            let mut vars = self.dependency_vars(manifest)?;
+            vars.extend(self.matrix_rtc_vars(manifest, &self.cfg.apps_dir.join(&slug), langs)?);
+            vars
+        };
+        self.prepare_hosted_roots(manifest, langs)?;
         Ok(InstallContext {
             app_data: self.cfg.apps_dir.join(&slug),
+            hosted_root: self.hosted_dirs().root().to_path_buf(),
+            relay_dir: self.cfg.relay_dir.clone(),
             config_store: self.cfg.data_dir.join("core").join("configs"),
             slug,
             instance: self.cfg.instance.clone(),
@@ -443,6 +487,7 @@ impl PluginManager {
             matrix: None,
             bots: Default::default(),
             models: None,
+            capabilities,
             mcp_url: manifest.permissions.contains(&Permission::Tools).then(|| {
                 let port = self.cfg.gateway_port;
                 format!("http://{}:{port}/mcp", crate::config::PLUGIN_MCP_HOST)
@@ -469,6 +514,8 @@ impl PluginManager {
             host_name: self.host_name().await,
             cgroup_parent: self.cfg.plugin_slice.clone(),
             granted: granted.to_vec(),
+            settings: Default::default(),
+            install_limit: self.install_limit(manifest),
         })
     }
 
@@ -484,14 +531,14 @@ impl PluginManager {
         }
     }
 
-    /// 核心直接跑在宿主上时，插件经自己网络的网关（宿主上网桥的地址）访问核心的别名（[`core_aliases`]）：
+    /// 核心直接跑在宿主上时，插件经自己网络的网关（宿主上网桥的地址）访问核心的别名（[`PluginManager::core_aliases_of`]）：
     /// 内部网络没有默认路由，`host-gateway`（另一个网桥的地址）走不通。返回要写进 `/etc/hosts` 的条目。
     pub(super) async fn hosts_via_gateway(
         &self,
         manifest: &Manifest,
         network: &str,
     ) -> Result<Vec<String>, InstallError> {
-        let aliases = core_aliases(&self.cfg.public, manifest);
+        let aliases = self.core_aliases_of(manifest);
         if self.cfg.core_container.is_some() || aliases.is_empty() {
             return Ok(Vec::new());
         }
@@ -550,8 +597,85 @@ impl PluginManager {
         hostdir::prepare(&ctx.app_data, self.owner(), dirs).map_err(|e| storage(&e))
     }
 
+    /// 安装的前半段：清残留、备密钥、定权限和上下文，再定默认 Bot 和模型网关凭据。
+    async fn prepare_install(
+        &self,
+        package: &PluginPackage,
+        enabled: &[EnabledPermission],
+        (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
+        undo: &mut Undo,
+        langs: &Languages,
+    ) -> Result<(InstallContext, Option<String>, Secrets, Option<ProxyAuth>), InstallError> {
+        let manifest = &package.manifest;
+        self.stage(&manifest.id, InstallStage::Preparing);
+        self.clear_leftovers(&manifest.id).await?;
+        let secret = uses_sso(manifest).then(random_token);
+        let secrets = self.prepare_secrets(manifest, undo)?;
+        let generated =
+            secrets::generated_values(manifest, &secrets, langs).map_err(InstallError::Storage)?;
+        let proxy =
+            ProxyAuth::resolve(manifest, &generated, langs).map_err(InstallError::Storage)?;
+        let effective = manifest.effective_permissions(&super::store::permission_set(enabled));
+        let mut ctx = self
+            .install_context(manifest, secret.as_deref(), generated, &effective, langs)
+            .await?;
+        ctx.gpu = gpu;
+        ctx.lan = lan;
+        ctx.settings = settings;
+        self.check_network_names(&ctx).await?;
+        let default_bot = self.provision_default_bot(package, undo).await?;
+        if let Some(models) = self.provision_models(package, langs).await? {
+            ctx.models = Some(models);
+            undo.models = Some(manifest.id.clone());
+        }
+        if let Some(bot) = &default_bot {
+            self.fill_default_bot_vars(manifest, bot, &mut ctx);
+        }
+        Ok((ctx, secret, secrets, proxy))
+    }
+
+    /// 网络建好才知道的变量：核心在网络里的地址、网关，以及宿主网络的服务要用的出口容器地址（ADR-0023）。
+    async fn fill_network_vars(
+        &self,
+        manifest: &Manifest,
+        plan: &Deployment,
+        ctx: &mut InstallContext,
+    ) -> Result<(), InstallError> {
+        ctx.core_address = self.core_address_var(manifest, &plan.network).await?;
+        ctx.extra_hosts = self.hosts_via_gateway(manifest, &plan.network).await?;
+        // 宿主网络的服务经出口容器出网，地址同样是网络和出口容器接上之后才知道的。
+        if let Some(egress) = ctx.egress.as_mut()
+            && host_networked(plan)
+        {
+            egress.host_proxy = self.egress_host_proxy(&plan.network).await?;
+        }
+        Ok(())
+    }
+
+    /// 中继套接字目录：`/run` 下由 root 创建（安装脚本会先建好），核心是 root 时在这里补建并交给 PUID。
+    pub(super) fn prepare_relay_dir(&self, langs: &Languages) -> Result<(), InstallError> {
+        if let Some(parent) = self.cfg.relay_dir.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                InstallError::Storage(l10n::text(
+                    langs,
+                    "plugin-install-relay-prepare-dir-failed",
+                    &[("error", e.to_string().into())],
+                ))
+            })?;
+        }
+        hostdir::ensure_owned_dir(&self.cfg.relay_dir, self.owner()).map_err(|e| {
+            InstallError::Storage(l10n::text(
+                langs,
+                "plugin-install-relay-prepare-dir-failed",
+                &[("error", e.to_string().into())],
+            ))
+        })
+    }
+
     pub(super) async fn start_containers(
         &self,
+        manifest: Option<&Manifest>,
         plan: &Deployment,
         id: Option<&PluginId>,
         undo: &mut Undo,
@@ -559,41 +683,26 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<Health, InstallError> {
         for container in &plan.containers {
-            let pack_failed = |e: &dyn std::fmt::Display| {
-                InstallError::Invalid(l10n::text(
-                    langs,
-                    "plugin-install-configs-pack-failed",
-                    &[
-                        ("service", container.name.as_str().into()),
-                        ("error", e.to_string().into()),
-                    ],
-                ))
-            };
-            health::wait_for_all(&self.engine, &container.depends_on, deadline, langs).await?;
-            // 只读根的服务先经一次性容器把配置文件写进核心数据目录：单文件绑定挂载的源在创建容器
-            // 时就必须存在，归档接口写不进只读根（见 configs_store 的模块注释）。
-            if let Some(dir) = &container.store_dir {
-                let archive =
-                    configs_store::archive(&container.files).map_err(|e| pack_failed(&e))?;
-                configs_store::seed(
-                    &self.engine,
-                    &container.name,
-                    &container.image,
-                    dir,
-                    archive,
-                    &plan.labels,
-                )
-                .await?;
+            // 容器起不来时，失败可能来自核心默认去掉的能力（宿主网络的 NET_RAW），错误里点名。
+            Box::pin(health::wait_for_all(
+                &self.engine,
+                &self.http,
+                &container.depends_on,
+                deadline,
+                langs,
+            ))
+            .await
+            .map_err(|e| note_dropped_capabilities(e, container, langs))?;
+            // 只读根的服务在创建容器之前就要把文件写进核心数据目录（单文件绑定挂载的源必须存在）。
+            if container.store_dir.is_some() {
+                Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
             }
             self.engine
                 .create_container(&container.name, container.body.clone())
                 .await?;
             undo.containers.push(container.name.clone());
-            if !container.files.is_empty() && container.store_dir.is_none() {
-                let archive = configs::archive(&container.files).map_err(|e| pack_failed(&e))?;
-                self.engine
-                    .upload_archive(&container.name, "/", archive)
-                    .await?;
+            if container.store_dir.is_none() {
+                Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
             }
             self.engine.start_container(&container.name).await?;
         }
@@ -603,22 +712,73 @@ impl PluginManager {
         // 没人依赖的一次性服务通常是装好之后的收尾（比如建账号），跑完才算装好。被依赖的这时已经退出，马上返回。
         for container in plan.containers.iter().filter(|c| c.one_shot) {
             let finished = Target::Depend(DependCondition::ServiceCompletedSuccessfully);
-            health::wait_for(&self.engine, &container.name, finished, deadline, langs).await?;
-        }
-        // 其余容器都必须健康或稳定运行。
-        let mut healthy = Vec::new();
-        for container in plan.containers.iter().filter(|c| !c.one_shot) {
-            let readiness = health::wait_for(
+            Box::pin(health::wait_for(
                 &self.engine,
+                &self.http,
                 &container.name,
-                Target::Ready,
+                finished,
+                None,
                 deadline,
                 langs,
-            )
-            .await?;
+            ))
+            .await
+            .map_err(|e| note_dropped_capabilities(e, container, langs))?;
+        }
+        self.wait_ready_containers(manifest, plan, deadline, langs)
+            .await
+    }
+
+    /// 其余容器都必须健康或稳定运行；`webui.health` 由核心探，和容器自己的健康检查同一条路。
+    async fn wait_ready_containers(
+        &self,
+        manifest: Option<&Manifest>,
+        plan: &Deployment,
+        deadline: Instant,
+        langs: &Languages,
+    ) -> Result<Health, InstallError> {
+        let mut healthy = Vec::new();
+        for container in plan.containers.iter().filter(|c| !c.one_shot) {
+            let webui_health = match manifest {
+                Some(manifest) => self.webui_health(manifest, &container.service).await?,
+                None => None,
+            };
+            let readiness = Box::pin(health::wait_for(
+                &self.engine,
+                &self.http,
+                &container.name,
+                Target::Ready,
+                webui_health.as_ref(),
+                deadline,
+                langs,
+            ))
+            .await
+            .map_err(|e| note_dropped_capabilities(e, container, langs))?;
             healthy.push(readiness == Readiness::Healthy);
         }
         Ok(Health::of(healthy))
+    }
+
+    /// 一个服务的 `webui.health` 探测（只有网页服务有）；没声明或是别的服务时为空。调用时容器已经起来，
+    /// 地址才取得到。
+    pub(super) async fn webui_health(
+        &self,
+        manifest: &Manifest,
+        service: &str,
+    ) -> Result<Option<health::WebuiHealth>, InstallError> {
+        let Some(webui) = manifest.webui.as_ref().filter(|w| w.service == service) else {
+            return Ok(None);
+        };
+        let Some(path) = &webui.health else {
+            return Ok(None);
+        };
+        let network = self.cfg.instance.network(&manifest.id.slug());
+        Ok(self
+            .webui_upstream(manifest, &network)
+            .await?
+            .map(|endpoint| health::WebuiHealth {
+                endpoint,
+                path: path.clone(),
+            }))
     }
 
     /// 这套核心给插件建的容器、网络和卷：按标签找，别的核心（实例名不同）建的不算。
@@ -695,6 +855,7 @@ impl PluginManager {
             self.store.secrets().remove(id)?;
             report.data_removed = true;
         }
+        self.remove_hosted(id, purge, langs)?;
         self.store.save_grants().clear(id)?;
         self.store.remove(id)?;
         let left = self.own_resources(id).await?;

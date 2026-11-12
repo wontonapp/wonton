@@ -56,12 +56,13 @@ chat-card-highest-line = 代码会以本机 root 身份运行
 chat-card-highest-confirm = 我知道这个应用能控制整台主机
 
 # 卸载卡片：应用的数据怎么处理。
-chat-card-uninstall-purge = 并删除它的数据，不可恢复
+chat-card-uninstall-purge = 并删除它的数据，和 Bot 的旧加密消息将无法再查看，不可恢复
 chat-card-uninstall-keep = 保留它的数据，以后重装还在
 
 # 工具调用卡片的行。$args 是原始 JSON 参数，太长时截断。
 chat-card-tool-data = 这个工具会改动数据
 chat-card-tool-root = 这个操作以本机 root 身份执行
+chat-card-tool-deletes = 应用标明这个工具会删除或覆盖数据
 chat-card-args = 参数：{ $args }
 
 # Bot 存文件的卡片。$name 和 $size 描述一个文件；$total 是加在一起的大小。
@@ -158,3 +159,10 @@ panel-pin-matrix = 连不上 Matrix：{ $error }
 panel-pin-not-there = 这个页面没有钉在面板上
 
 # MCP Apps 界面里的调用在卡片上把调用方写成主人。
+
+# 跳数到顶（ADR-0045）：几个 Bot 在一个房间里来回说得太多，网关停下了。
+chat-card-hop-limit-title = { $bots } 来回说了 { $hops } 次，已停下
+chat-choice-hop-limit-continue = 继续
+chat-choice-hop-limit-stay = 先停着
+chat-hop-limit-resumed = 已继续
+chat-hop-limit-kept-by-other = 另一方选了先停着，房间还停着

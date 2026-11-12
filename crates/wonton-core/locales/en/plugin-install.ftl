@@ -69,6 +69,7 @@ plugin-install-containers-unhealthy = Some containers aren't healthy: { $failure
 plugin-install-container-unhealthy = Container { $container } failed its health check (last probe, exit code { $code }): { $output }
 plugin-install-container-unhealthy-nocode = Container { $container } failed its health check (last probe, exit code unknown): { $output }
 plugin-install-container-unhealthy-noprobe = Container { $container } failed its health check (Docker kept no probe result)
+plugin-install-container-health-probe-failed = Container { $container } failed its health probe (GET { $path }): { $reason }
 plugin-install-container-not-running = Container { $container } isn't running ({ $status })
 plugin-install-one-shot-failed = The one-shot service's container { $container } didn't exit 0 ({ $status }, exit code { $code })
 plugin-install-reach-none = doesn't exist
@@ -204,6 +205,7 @@ plugin-install-cfg-target-absolute = The configs target `{ $raw }` must be an ab
 plugin-install-cfg-target-root = The configs target can't be /
 plugin-install-cfg-id-invalid = The configs { $field } `{ $value }` must be a non-negative integer
 plugin-install-cfg-mode-invalid = The configs mode `{ $value }` isn't valid: it must be an octal permission from 0 to 0777
+plugin-install-cfg-parent-is-file = The configs target's parent `{ $parent }` is a file in container { $service }: the file can't be written there
 
 # ── Mounts (mounts.rs) ───────────────────────────────────────────────────────
 
@@ -228,6 +230,7 @@ plugin-install-priv-fixed-device = Fixed device permissions only support /dev/ne
 plugin-install-priv-host-network-ports = A host network service can't also declare lan.ports; the app listens on host network ports directly
 plugin-install-priv-host-network-sso = webui on the host network can't use sso: proxy; use oidc or none
 plugin-install-priv-host-network-healthcheck = A webui service on the host network must have a valid healthcheck
+plugin-install-priv-host-network-mail = An app on the host network can't send mail: senders are recognized by network segment, and host network mail has no identifiable source. Use the app network, or drop mail sending
 plugin-install-priv-cap-invalid = Capability `{ $cap }` in cap_add isn't valid
 plugin-install-priv-cap-drop-invalid = Capability `{ $cap }` in cap_drop isn't valid
 plugin-install-priv-security-opt-invalid = Security option `{ $opt }` isn't valid (no-new-privileges takes only true or false)
@@ -441,8 +444,9 @@ plugin-install-coreaddr-no-core-address = The network doesn't have an address re
 plugin-install-upstream-container-missing = Container { $container } doesn't exist, or has no address in network { $network }
 plugin-install-upstream-mcp-headers = Can't resolve the MCP headers of app { $id }: { $error }
 plugin-install-relay-prepare-dir-failed = Can't prepare the relay directory: { $error }
-plugin-install-relay-path-too-long = The app data directory path is too long for a unix socket; move your home server's data directory somewhere shorter ({ $path }: { $bytes } bytes, limit { $max } bytes)
+plugin-install-relay-path-too-long = The relay socket directory path is too long for a unix socket; set WONTON_RELAY_DIR to a shorter directory ({ $path }: { $bytes } bytes, limit { $max } bytes)
 plugin-install-relay-listens-unknown = Can't read the listening table, so the firewall isn't judged
+plugin-install-egress-host-no-address = The egress container has no address on the plugin network { $network }, so the host-network services cannot go through the proxy
 
 # ── Images (images.rs, images/preflight.rs, image_worker.rs) ─────────────────
 
@@ -507,7 +511,7 @@ plugin-install-preinstall-failed = Preinstall failed
 
 plugin-capability-unknown = This core does not know capability { $capability }; upgrade the core before installing
 plugin-capability-third-party-format = Capability { $capability } is invalid: third-party capabilities look like x-<vendor>.<name> with lowercase letters, digits, and hyphens
-plugin-capability-egress-no-consumer = egress_proxy has no consumer declaration and cannot appear in requires or wants
+plugin-capability-no-consumer = { $capability } has no consumer declaration and cannot appear in requires or wants
 plugin-capability-duplicate = capability { $capability } is listed twice in { $field }
 plugin-capability-in-both-lists = capability { $capability } cannot be in both requires and wants
 plugin-capability-provider-requires = a plugin that provides capabilities cannot require other capabilities
@@ -520,3 +524,28 @@ plugin-capability-service-not-forwardable = { $field } must not point at a netwo
 plugin-install-capability-deps-unsupported = this core does not support dependencies between plugins yet; upgrade the core before installing
 plugin-install-runtime-services = runtime { $runtime } must not declare services
 plugin-install-runtime-unsupported = this core cannot install or upgrade runtime { $runtime }; upgrade the core first
+plugin-install-matrix-rtc-needs-matrix = The home server isn't connected to a Matrix server, so an app that provides matrix_rtc (call authorization) can't be installed
+plugin-install-matrix-rtc-conflict = App { $id } already provides matrix_rtc (call authorization): there can only be one at a time
+plugin-install-matrix-rtc-ca-failed = Couldn't write the certificate bundle the call authorization app trusts: { $error }
+plugin-install-capability-dropped = The home server drops { $capability } by default for host-network services. If the image needs it (ICMP pings and the like), declare the { $permission } permission and write { $field } for service { $service }.
+
+# 静态网页和托管形态（ADR-0080）
+plugin-install-static-dir = Static files in `{ $root }`: { $problem }
+plugin-install-static-too-many = more than { $max } files and folders
+plugin-install-static-too-big = { $mib } MiB in total, over the { $max } MiB limit
+plugin-install-static-file-too-big = `{ $path }` is over the { $max } MiB limit for one file
+plugin-install-static-hidden = `{ $path }`: names starting with . are not allowed
+plugin-install-static-reserved = the folder _wonton/ is reserved for app data
+plugin-install-static-no-index = there is no index.html
+plugin-install-static-no-fallback = the fallback file `{ $path }` is not in the folder
+plugin-install-static-symlink = `{ $path }` is a symlink; static files must not be symlinks
+plugin-install-static-not-file = `{ $path }` is not a regular file
+plugin-install-static-missing = the folder is missing
+plugin-install-static-read-failed = cannot read `{ $path }`: { $error }
+plugin-hosted-provider-not-running = { $provider }, which serves this app, is not running
+plugin-hosted-provider-missing = No installed app provides { $capability }, which this app needs
+plugin-hosted-provider-taken = { $other } already provides { $capability }; only one app can provide it
+plugin-hosted-provider-in-use = These apps are served by it and would stop working: { $plugins }. Uninstall them first
+plugin-hosted-dir-missing = The files of this app for { $capability } are missing; reinstall it
+plugin-hosted-storage-failed = Could not write the hosted files: { $error }
+plugin-hosted-data-missing = This app's saved data for { $capability } is missing; reinstalling starts it empty

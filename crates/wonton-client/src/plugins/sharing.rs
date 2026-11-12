@@ -1,13 +1,19 @@
 use super::{PluginsLink, READ_TIMEOUT, api::to_core_error};
-use wonton_protocol::{CoreError, FriendsViewModel, PluginDetail, ShareGrant, ShareGrantUpdate};
+use wonton_protocol::{
+    CoreError, FriendsList, FriendsState, FriendsViewModel, PluginDetail, ShareGrant,
+    ShareGrantUpdate,
+};
 
 impl PluginsLink {
+    /// 只取核心存着的好友和分组：分享对象只能是核心认得的人，请求和屏蔽不用从 Matrix 拼。
     pub(crate) async fn share_recipients(&self) -> Result<FriendsViewModel, CoreError> {
-        self.api()
+        let list: FriendsList = self
+            .api()
             .map_err(to_core_error)?
             .get(&["friends"], &[], READ_TIMEOUT)
             .await
-            .map_err(to_core_error)
+            .map_err(to_core_error)?;
+        Ok(recipients(list))
     }
 
     pub(crate) async fn save_plugin_share(
@@ -78,5 +84,20 @@ impl PluginsLink {
                 })
             });
         }
+    }
+}
+
+/// 好友页的请求、屏蔽和自己的链接不在核心名单里，这里留空；壳只读 `friends` 和 `groups`。
+pub(crate) fn recipients(list: FriendsList) -> FriendsViewModel {
+    FriendsViewModel {
+        state: FriendsState::Ready,
+        friends: list.friends,
+        groups: list.groups,
+        incoming: Vec::new(),
+        outgoing: Vec::new(),
+        blocked: Vec::new(),
+        can_block_federation: list.can_block_federation,
+        public_access_off: false,
+        my_link: None,
     }
 }

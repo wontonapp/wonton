@@ -180,7 +180,9 @@ fn install_contexts_print_no_tokens_or_secrets() {
     let ctx = InstallContext {
         slug: "app-test".into(),
         instance: Default::default(),
+        hosted_root: std::path::PathBuf::from("/hosted"),
         app_data: "/apps/app-test".into(),
+        relay_dir: "/run/wonton/relay".into(),
         config_store: "/data/core/configs".into(),
         shares: Default::default(),
         app_url: None,
@@ -209,12 +211,14 @@ fn install_contexts_print_no_tokens_or_secrets() {
             bot_keys: Default::default(),
             default_model: "group/default".into(),
         }),
+        capabilities: Default::default(),
         mcp_url: None,
         notify_url: None,
         secrets: [("web_key".to_owned(), "generated-secret-value".to_owned())].into(),
         tz: "UTC".into(),
         puid: 1000,
         pgid: 1000,
+        install_limit: crate::config::DEFAULT_INSTALL_TIMEOUT,
         extra_hosts: Vec::new(),
         gpu: None,
         lan: None,
@@ -224,6 +228,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
         host_name: "server-01".into(),
         limits: Default::default(),
         cgroup_parent: None,
+        settings: Default::default(),
         granted: Vec::new(),
     };
     let printed = format!("{ctx:?}");

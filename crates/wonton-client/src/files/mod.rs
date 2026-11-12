@@ -5,6 +5,7 @@
 
 mod api;
 mod download;
+mod held;
 mod opener;
 mod playback;
 mod store;
@@ -200,11 +201,22 @@ impl FilesLink {
         mime_type: Option<String>,
         room: Option<String>,
     ) -> Result<(), CoreError> {
+        let room = room.filter(|room| !room.is_empty());
+        let record = self.upload_record(source, name, mime_type, room)?;
+        self.start(record)
+    }
+
+    fn upload_record(
+        &self,
+        source: UploadSource,
+        name: String,
+        mime_type: Option<String>,
+        room: Option<String>,
+    ) -> Result<Record, CoreError> {
         if name.trim().is_empty() {
             return Err(invalid(&l10n!(CATALOG, language(), "files-name-required")));
         }
-        let room = room.filter(|room| !room.is_empty());
-        self.start(Record {
+        Ok(Record {
             id: local_id(),
             server: self.current_server()?,
             name,
@@ -681,9 +693,9 @@ fn core_error(problem: Problem) -> CoreError {
     let (kind, reason) = problem.into_parts();
     match kind {
         FileFailure::TransportUnavailable => CoreError::TransportUnavailable { reason },
-        FileFailure::Unauthenticated | FileFailure::NotShared | FileFailure::PermissionDenied => {
-            CoreError::Unauthorized { reason }
-        }
+        FileFailure::Unauthenticated => CoreError::Unauthorized { reason },
+        // 登录有效，只是这个文件不让看：不能说成要重新配对。
+        FileFailure::NotShared | FileFailure::PermissionDenied => CoreError::Forbidden { reason },
         FileFailure::FileUnknown
         | FileFailure::FileExpired
         | FileFailure::FileGone

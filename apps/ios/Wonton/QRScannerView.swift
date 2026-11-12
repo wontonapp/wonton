@@ -45,11 +45,11 @@ struct QRScannerView: UIViewControllerRepresentable {
     fileprivate static func describe(_ error: Error) -> String {
         switch error as? DataScannerViewController.ScanningUnavailable {
         case .cameraRestricted:
-            return String(localized: .qrScannerCameraRestricted)
+            return String(localized: .Peers.qrScannerCameraRestricted)
         case .unsupported:
-            return String(localized: .qrScannerUnsupported)
+            return String(localized: .Peers.qrScannerUnsupported)
         default:
-            return String(localized: .qrScannerStopped(error.localizedDescription))
+            return String(localized: .Peers.qrScannerStopped(error.localizedDescription))
         }
     }
 

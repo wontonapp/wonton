@@ -26,6 +26,9 @@ pub use hosts::{
 /// 插件安装等待容器就绪的默认期限。
 pub const DEFAULT_INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// 宿主网络中继的 unix 套接字默认放这里：`sun_path` 只有 108 字节，套接字不能跟着数据目录的长度走。
+pub const DEFAULT_RELAY_DIR: &str = "/run/wonton/relay";
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     #[error("缺少环境变量 {0}")]
@@ -71,6 +74,9 @@ pub struct Config {
     /// 数据根目录。核心在容器里运行时，必须以相同路径挂载进核心容器，
     /// 因为插件的绑定挂载由宿主上的 Docker 解析。
     pub data_dir: PathBuf,
+    /// 宿主网络中继的 unix 套接字放哪：默认 `/run/wonton/relay`，路径短、不随数据目录变长（`WONTON_RELAY_DIR`）。
+    /// 核心在容器里运行时必须以相同路径挂载进核心容器。
+    pub relay_dir: PathBuf,
     pub listen: SocketAddr,
     pub public: PublicUrls,
     /// 核心自己的容器名。设置后核心会加入每个插件网络，用服务的稳定域名（`服务名.<slug>.wonton.internal`）
@@ -133,6 +139,9 @@ pub struct Config {
     pub relays: RelayTable,
     /// 推送代理的专用监听（`WONTON_PUSH_LISTEN`），不设就不开；主机名在启动时解析。
     pub push_listen: Option<String>,
+    /// `matrix_rtc` 提供方网络里服务器名别名的 TLS 监听（`WONTON_MATRIX_RTC_LISTEN`，ADR-0096），不设就不开。
+    /// 授权服务按 Matrix 的服务器发现连 443，正式安装写 `0.0.0.0:443`：核心在容器里，只经插件网络到达。
+    pub matrix_rtc_listen: Option<String>,
     /// 联邦出站代理监听的 `主机:端口`（`WONTON_FEDERATION_LISTEN`，ADR-0050），主机名在启动时解析。
     /// 正式安装写的是核心在内部网络上的别名：只绑在那个网络的地址上，插件网络里连不到。
     pub federation_listen: String,
@@ -198,6 +207,11 @@ impl Config {
         if !data_dir.is_absolute() {
             return Err(invalid("WONTON_DATA_DIR", "必须是绝对路径"));
         }
+        let relay_dir =
+            PathBuf::from(get("WONTON_RELAY_DIR").unwrap_or_else(|| DEFAULT_RELAY_DIR.into()));
+        if !relay_dir.is_absolute() {
+            return Err(invalid("WONTON_RELAY_DIR", "必须是绝对路径"));
+        }
         let base_domain =
             base_domain(get("WONTON_BASE_DOMAIN").unwrap_or_else(|| "wonton.localhost".into()))?;
         let port = parse(&get, "WONTON_PUBLIC_PORT", 8080u16)?;
@@ -233,6 +247,7 @@ impl Config {
         } = lan_addresses(&get)?;
         Ok(Self {
             data_dir,
+            relay_dir,
             listen,
             public: PublicUrls {
                 scheme: "http".into(),
@@ -275,6 +290,7 @@ impl Config {
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
             relays: parse_relays(&get)?,
             push_listen: get("WONTON_PUSH_LISTEN").filter(|value| !value.is_empty()),
+            matrix_rtc_listen: get("WONTON_MATRIX_RTC_LISTEN").filter(|value| !value.is_empty()),
             federation_listen: get("WONTON_FEDERATION_LISTEN")
                 .unwrap_or_else(|| "0.0.0.0:8448".into()),
             matrix_federation_addr: get("WONTON_MATRIX_FEDERATION_ADDR")

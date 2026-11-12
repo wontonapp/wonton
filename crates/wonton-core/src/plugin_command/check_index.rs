@@ -1,4 +1,5 @@
-//! `plugin check-index`：官方索引里的每一项这个版本的核心都读得懂、渲染得出来。CI 用它当门禁，改了注入的
+//! `plugin check-index`：官方索引里的每一项这个版本的核心都读得懂、渲染得出来，compat 也不报
+//! breaking（ADR-0085 的防漂移：compat 和安装用同一套解析，结果必须一致）。CI 用它当门禁，改了注入的
 //! 变量或清单写法、索引跟不上时当场失败。
 //!
 //! 渲染走的是安装前的 [`dry_run`]，和 `plugin check` 同一条路。索引里只有文件的 sha256、没有内容，所以被引用的
@@ -9,10 +10,11 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use wonton_core::plugin::capabilities;
+use wonton_core::plugin::compat::{self, Verdict};
 use wonton_core::plugin::github_source::SourceRef;
 use wonton_core::plugin::languages::Languages;
 use wonton_core::plugin::package::PluginPackage;
-use wonton_core::plugin::package_files::COMPOSE_FILE;
+use wonton_core::plugin::package_files::{COMPOSE_FILE, PackageFiles};
 use wonton_core::plugin::render::dry_run;
 use wonton_core::plugin::storefront::index::{Index, IndexEntry};
 
@@ -51,6 +53,10 @@ fn problems(index: &Index) -> Vec<String> {
     problems.extend(colliding_subdirs(index));
     for listed in &index.plugins {
         if let Err(reason) = dry_render(&listed.entry) {
+            problems.push(format!("{}：{reason}", listed.entry.source));
+            continue;
+        }
+        if let Some(reason) = compat_problem(&listed.entry) {
             problems.push(format!("{}：{reason}", listed.entry.source));
         }
     }
@@ -128,17 +134,40 @@ fn uncovered(index: &Index) -> Vec<String> {
 /// 按索引条目渲染一遍，和安装前一样，只是被引用的文件只有占位内容。
 fn dry_render(entry: &IndexEntry) -> Result<(), String> {
     let langs = Languages::default();
-    let files = entry
+    let package = PluginPackage::with_files(&entry.compose, placeholder_files(entry), &langs)
+        .map_err(|e| e.to_string())?;
+    dry_run(&package, &langs)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// 被引用文件的占位内容：渲染和 compat 都只看得到文件在不在。
+fn placeholder_files(entry: &IndexEntry) -> PackageFiles {
+    entry
         .files
         .keys()
         .filter(|path| path.as_str() != COMPOSE_FILE)
         .map(|path| (path.clone(), PLACEHOLDER.to_vec()))
+        .collect()
+}
+
+/// ADR-0085 防漂移：compat 和安装路径用同一套解析，官方索引跑 compat 不得有一条 breaking。
+/// 这里和 CI 的安装路径渲染同输入，谁改了清单类型 compat 没跟上（或反过来），索引当场红。
+fn compat_problem(entry: &IndexEntry) -> Option<String> {
+    let langs = Languages::default();
+    let files = placeholder_files(entry);
+    let verdict = compat::judge(&entry.compose, &langs, "", |langs| {
+        PluginPackage::with_files(&entry.compose, files.clone(), langs)
+    });
+    if verdict.verdict == Verdict::Ok {
+        return None;
+    }
+    let reasons: Vec<String> = verdict
+        .reasons
+        .iter()
+        .map(|reason| format!("{}（{}）", reason.category, reason.raw))
         .collect();
-    let package =
-        PluginPackage::with_files(&entry.compose, files, &langs).map_err(|e| e.to_string())?;
-    dry_run(&package, &langs)
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    Some(format!("compat 裁决 breaking：{}", reasons.join("；")))
 }
 
 #[cfg(test)]

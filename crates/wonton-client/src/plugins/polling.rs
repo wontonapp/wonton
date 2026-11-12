@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use wonton_protocol::{HomeStatus, PluginProblem, PluginState, PluginTaskState, TabRef};
+use wonton_protocol::{HomeStatus, PluginProblem, PluginState, TabRef};
 
 use super::{Listing, POLL_INTERVAL, PluginsLink, lock};
 
@@ -41,12 +41,7 @@ impl PluginsLink {
                 )
             })
         });
-        if settling
-            || view
-                .tasks
-                .iter()
-                .any(|task| task.state == PluginTaskState::Running)
-        {
+        if settling || view.tasks.iter().any(|task| task.state.in_progress()) {
             Some(POLL_INTERVAL)
         } else {
             lock(&self.active_page)
@@ -90,19 +85,27 @@ impl PluginsLink {
             .borrow()
             .tasks
             .iter()
-            .any(|task| task.state == PluginTaskState::Running)
+            .any(|task| task.state.in_progress())
     }
 
     async fn poll_once(&self) -> Result<(), PluginProblem> {
         let generation = self.generation.load(Ordering::SeqCst);
         let server = self.home.view().server_id;
+        // 序号从 1 开始，和 fetch_installed_from 一致。
+        let seq = self.fetch_seq.fetch_add(1, Ordering::SeqCst) + 1;
         let result = self.list_installed().await;
         if !self.is_current_home(generation, &server) {
             return Ok(());
         }
+        // 和 fetch_installed_from 一样丢掉晚到的旧响应；轮询写完也要把派生字段（横幅数、侧栏）跟着重算。
         let outcome = result.map(|installed| {
-            self.view
-                .send_modify(|view| view.installed = Some(installed));
+            if seq > self.applied_seq.load(Ordering::SeqCst) {
+                self.applied_seq.store(seq, Ordering::SeqCst);
+                self.view.send_modify(|view| {
+                    view.installed = Some(installed);
+                    Self::derive(view);
+                });
+            }
         });
         self.record(Listing::Installed, outcome.clone());
         outcome

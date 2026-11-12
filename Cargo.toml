@@ -26,6 +26,8 @@ getrandom = "0.4.3"
 iroh = "1.4.1"
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["use_pem", "aws_lc_rs"] }
 matrix-sdk = "0.19.1"
+# MIT OR Apache-2.0。
+percent-encoding = "2.3.2"
 # 客户端核心向核心要登录令牌、核心发 Web Push；各自按需加 TLS 等特性。
 reqwest = { version = "0.13.5", default-features = false }
 # MIT OR Apache-2.0。核心联邦和隧道测试签发证书；使用已有的 aws-lc-rs 后端。
@@ -39,10 +41,14 @@ semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.10"
+# MIT。插件设置按包里的 JSON Schema 校验（ADR-0077）；不取网络和宿主上的引用。
+jsonschema = { version = "0.61.1", default-features = false }
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = "1.54.1"
 tracing = "0.1.44"
+# Apache-2.0 OR MIT。
+tracing-core = "0.1.36"
 tracing-subscriber = "0.3.23"
 uniffi = "0.32.2"
 url = "2.5.8"

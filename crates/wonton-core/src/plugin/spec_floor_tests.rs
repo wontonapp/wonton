@@ -114,12 +114,17 @@ fn an_input_secret_needs_0_8() {
 }
 
 #[test]
-fn friend_declaration_requires_0_9_even_when_false() {
-    for friends in [false, true] {
-        let manifest = json!({"webui": {"service": "web", "port": 80, "friends": friends}});
-        let found = problems(&document("0.8", manifest.clone(), plain()));
+fn role_fields_require_0_13() {
+    for webui in [
+        json!({"service": "web", "port": 80, "accounts": "per_user"}),
+        json!({"service": "web", "port": 80, "oidc": {"redirect_paths": ["/cb"], "admin_groups": ["admin"]}}),
+        json!({"service": "web", "port": 80, "oidc": {"redirect_paths": ["/cb"],
+            "role_claim": {"name": "immich_role", "admin": "admin", "user": "user"}}}),
+    ] {
+        let manifest = json!({ "webui": webui });
+        let found = problems(&document("0.12", manifest.clone(), plain()));
         assert_eq!(found.len(), 1, "{found:?}");
-        assert!(problems(&document("0.9", manifest, plain())).is_empty());
+        assert!(problems(&document("0.13", manifest, plain())).is_empty());
     }
 }
 
@@ -188,6 +193,21 @@ fn smtp_names_outside_interpolated_values_do_not_raise_the_floor() {
 }
 
 #[test]
+fn the_gateway_cidr_and_app_host_variables_require_spec_0_14() {
+    for (name, reference) in [
+        ("WONTON_GATEWAY_CIDR", "TRUST: ${WONTON_GATEWAY_CIDR}"),
+        ("WONTON_APP_HOST", "HOSTS: $WONTON_APP_HOST"),
+    ] {
+        let mut doc = document("0.13", json!({}), plain());
+        doc["services"]["web"]["environment"] = json!({"VALUE": reference});
+        let found = problems(&doc);
+        assert_eq!(found.len(), 1, "{name}: {found:?}");
+        doc["x-wonton"]["spec"] = json!("0.14");
+        assert!(problems(&doc).is_empty(), "{name}");
+    }
+}
+
+#[test]
 fn all_new_variables_are_checked_even_after_an_unrelated_reference() {
     let service = json!({"image": "nginx", "environment": {"SMTP":
         "${OTHER} ${WONTON_SMTP_HOST}:${WONTON_SMTP_PORT} ${WONTON_MAIL_FROM} ${WONTON_SMTP_HOST}"
@@ -243,4 +263,89 @@ fn proxy_role_templates_require_0_9_in_headers_and_cookies_only() {
         "username": "{user}", "secret": "{secret:role}", "literal": "role"
     }}}});
     assert!(problems(&document("0.8", manifest, plain())).is_empty());
+}
+
+#[test]
+fn capability_dependencies_need_spec_0_11_including_models() {
+    for field in ["requires", "wants"] {
+        for capability in ["models", "torrent_client", "x-acme.ledger"] {
+            let manifest = json!({field: [capability]});
+            assert_eq!(
+                problems(&document("0.10", manifest.clone(), plain())).len(),
+                1,
+                "{field}: {capability}"
+            );
+            assert!(problems(&document("0.11", manifest, plain())).is_empty());
+        }
+        let manifest = json!({field: []});
+        assert_eq!(
+            problems(&document("0.10", manifest.clone(), plain())).len(),
+            1
+        );
+        assert!(problems(&document("0.11", manifest, plain())).is_empty());
+    }
+}
+
+#[test]
+fn every_generic_provider_needs_spec_0_11_without_raising_legacy_provider_floors() {
+    let mut manifest = json!({"provides": {
+        "models": {"service": "web", "port": 80},
+        "egress_proxy": {"service": "web", "port": 80}
+    }});
+    assert!(problems(&document("0.10", manifest.clone(), plain())).is_empty());
+    for (index, capability) in ["torrent_client", "x-acme.ledger"].into_iter().enumerate() {
+        manifest["provides"][capability] = json!({"service": "web", "port": 80});
+        assert_eq!(
+            problems(&document("0.10", manifest.clone(), plain())).len(),
+            index + 1
+        );
+        assert!(problems(&document("0.11", manifest.clone(), plain())).is_empty());
+    }
+}
+
+#[test]
+fn dedicated_provider_fields_keep_their_original_spec_floors() {
+    let models = json!({"provides": {"models": {"service": "web", "port": 80}}});
+    assert!(problems(&document("0.6", models.clone(), plain())).is_empty());
+    let mut with_commands = models;
+    with_commands["provides"]["models"]["providers"] = json!({"list": ["list"]});
+    let egress = json!({"provides": {"egress_proxy": {"service": "web", "port": 80}}});
+    for manifest in [with_commands, egress] {
+        assert_eq!(
+            problems(&document("0.6", manifest.clone(), plain())).len(),
+            1
+        );
+        assert!(problems(&document("0.7", manifest, plain())).is_empty());
+    }
+}
+
+#[test]
+fn base64url_secret_encoding_needs_spec_0_14() {
+    let manifest =
+        json!({"secrets": {"key": {"generate": {"bytes": 32, "encoding": "base64url"}}}});
+    let found = problems(&document("0.13", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].contains("x-wonton.secrets.key.generate.encoding: base64url"),
+        "{found:?}"
+    );
+    assert!(problems(&document("0.14", manifest, plain())).is_empty());
+}
+
+#[test]
+fn the_install_deadline_needs_spec_0_14() {
+    let manifest = json!({"install_timeout_secs": 900});
+    let found = problems(&document("0.13", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].contains("x-wonton.install_timeout_secs"),
+        "{found:?}"
+    );
+    assert!(problems(&document("0.14", manifest, plain())).is_empty());
+}
+
+#[test]
+fn other_secret_encodings_stay_at_the_old_spec() {
+    let manifest = json!({"secrets": {"key": {"generate": {"encoding": "base64"}}}});
+    assert!(problems(&document("0.13", manifest, plain())).is_empty());
 }

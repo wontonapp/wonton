@@ -46,7 +46,7 @@ iroh = { workspace = true }
 # MIT OR Apache-2.0。认出消息文字里没有写成 Markdown 链接的网址。
 linkify = "0.11.0"
 # MIT OR Apache-2.0。matrix.to 链接的片段里有百分号转义的房间和用户 ID。
-percent-encoding = "2.3.2"
+percent-encoding = { workspace = true }
 # MIT OR Apache-2.0。重点色推导用的 OKLCH 和 WCAG 对比度（ADR-0026）。
 palette = { version = "0.7.7", default-features = false, features = ["std"] }
 # MIT。把 Bot 发的 Markdown 排成气泡里的块和片段。
@@ -55,6 +55,9 @@ pulldown-cmark = { version = "0.13.6", default-features = false }
 reqwest = { workspace = true, features = ["stream"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# 都是 MIT OR Apache-2.0。以设备密钥为键推出浏览器入口的标签和端口（`src/browser`）。
+hmac = "0.12"
+sha2 = { workspace = true }
 # MIT OR Apache-2.0。
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "sync", "rt-multi-thread", "time"] }
@@ -75,9 +78,12 @@ psl = "2.1.248"
 [target.'cfg(target_os = "ios")'.dependencies]
 libc = "=0.2.189"
 
-# MIT OR Apache-2.0。把 Application 交给 iroh 读系统 DNS，见 `src/android.rs`。
+# 见 `src/android.rs`：把 Application 交给 iroh 读系统 DNS，初始化证书校验器。
 [target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
+# MIT OR Apache-2.0。和 rustls-platform-verifier 用同一个大版本，它的初始化接口收的是这个版本的类型。
+jni = "0.22.4"
+# MIT OR Apache-2.0。reqwest 的 rustls 特性已经带进来；这里直接依赖，好在 App 启动时初始化它的 Android 部分。
+rustls-platform-verifier = "0.7.1"
 
 [dev-dependencies]
 # MIT。测试挑本机空闲端口（`wonton_tunnel::test_support`）要 `test-hooks`。
@@ -88,7 +94,8 @@ tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring
 # MIT。插件和文件接口的行为测试用它在本机假扮核心（文件还假扮 tusd）。
 axum = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["rt", "time", "net", "io-util"] }
+# 快照写入器的去抖测试要暂停的时钟（test-util）。
+tokio = { workspace = true, features = ["rt", "time", "net", "io-util", "test-util"] }
 # 聊天的集成测试：一次性的 Tuwunel 和模拟核心的 JWT 签发。
 wonton-matrix = { path = "../wonton-matrix", features = ["testkit"] }
 # MIT OR Apache-2.0。tabs 测试的 node 镜像在 CI 指到镜像仓库副本。

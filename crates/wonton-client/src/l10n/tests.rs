@@ -14,6 +14,17 @@ fn client_catalogs_are_consistent() {
     wonton_l10n::check_catalog(RESOURCES).unwrap();
 }
 
+#[test]
+fn duplicate_key_across_group_files_fails_the_catalog_check() {
+    // 各组文件拼成一份语言资源：同一个键出现在两组里，要在检查时报错，不能靠后一个悄悄盖掉。
+    let error = wonton_l10n::check_catalog(&[("en", "files-save = Save\nfiles-save = Save it\n")])
+        .expect_err("同一个键写了两遍");
+    assert!(
+        error.iter().any(|line| line.contains("files-save")),
+        "{error:?}"
+    );
+}
+
 #[tokio::test]
 async fn set_languages_localizes_invite_details_and_core_error_prefixes() {
     let dir = tempfile::tempdir().unwrap();
@@ -130,6 +141,10 @@ fn assert_error_prefixes(lang: wonton_l10n::Lang) {
         (
             CoreError::Unauthorized { reason: raw.into() },
             "core-error-unauthorized",
+        ),
+        (
+            CoreError::Forbidden { reason: raw.into() },
+            "core-error-forbidden",
         ),
         (
             CoreError::Upstream { reason: raw.into() },

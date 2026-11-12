@@ -5,7 +5,9 @@ mod migration;
 pub(crate) mod support;
 
 mod quality;
+mod rebuild;
 mod retry;
+mod stuck_bind;
 pub(crate) use support::{Home, Phone};
 use support::{WEB_URL, get, wait_until_ticket_has};
 
@@ -520,6 +522,39 @@ async fn an_outage_comes_and_goes_in_plain_words() {
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;
     assert_eq!(view.notice, None);
+}
+
+/// 断开又连上：核心给出“刚恢复”（宽限内的抖动不算），4 秒的窗口由核心收掉，壳不计时。
+#[tokio::test]
+async fn a_recovered_connection_announces_itself_for_four_seconds() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let mut home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    let connected = phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+    // 一直连着谈不上恢复。
+    assert!(!connected.just_recovered, "{connected:?}");
+
+    let port = home.stop().await;
+    let down = phone.wait_for(first_unreachable).await;
+    assert!(!down.just_recovered, "{down:?}");
+
+    home.start_again(port).await;
+    phone.dispatch(Action::RetryConnection).unwrap();
+    let recovered = phone
+        .wait_for(|view| view.status == HomeStatus::Connected && view.just_recovered)
+        .await;
+    assert_eq!(recovered.notice, None, "{recovered:?}");
+
+    let settled = tokio::time::timeout(
+        Duration::from_secs(8),
+        phone.wait_for(|view| !view.just_recovered),
+    )
+    .await
+    .expect("恢复的提示到点要由核心收掉");
+    assert_eq!(settled.status, HomeStatus::Connected, "{settled:?}");
 }
 
 /// 提示里“连不上”的那一档，配没配中继都算数。

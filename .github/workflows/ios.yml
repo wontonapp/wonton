@@ -1,33 +1,46 @@
 name: ios
 
 # 托管 macOS（仓库公开后 macOS 分钟免费）：SwiftLint，和一次模拟器构建：在固定型号和系统版本的模拟器上
-# 跑 WontonTests（单测和截图测试，不跑 UI 测试，不签名）。PR 和合并队列只在改到 iOS 相关文件时跑；草稿 PR 上
-# 一个作业都不起（含改动范围），汇总作业起来报一个通过；转 ready 或每天的定时全量才跑。main 上不重跑
-# （PR 已在最新 main 上跑过），定时兜底。
+# 跑 WontonTests（单测和截图测试，不跑 UI 测试，不签名）。
 # 重录参考图不在这个工作流里：另开 snapshots-record.yml，只在打 record-snapshots 标签时跑，见 workflows/README.md。
-# 触发的 crate 是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
-# 加了依赖要同步改这份列表。只改测试的 PR（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉。
-# 路径不写在触发器上：合并队列的必需检查每次入队都要有结果，工作流没触发的话检查一直“等待中”，队列合不了。
-# 改成由 changes 作业判断改动范围，没改到时自己报 skipped（跳过的检查算通过）。
-# 必需检查只有末尾的汇总作业，其余作业在作业级直接跳过，不用为了报检查先起 runner。
+#
+# 改动范围分两半（模拟器构建要十几分钟，2026-11-12 实测 PR 上中位 13 分钟，PR 只等十分钟内出结果的快检查）：
+# - PR 上：改到 Swift 这边或导出给 Swift 的接口（apps/ios、设计生成、wonton-protocol、wonton-client）时由 gate.yml 调用，
+#   算合并门槛（路径写在 gate.yml 的 changes 里）。
+#   iOS 在 PR 上红的几乎都落在这几处（Swift 这边改了，或接口改了 Swift 没跟上；2026-11-12 前一天约十次），
+#   挪到合后会让 main 一天红好几次。
+# - 合进 main 之后：wonton-client 依赖的其余 crate、依赖版本、工具链（不改导出接口，很少弄坏 Swift）按 push 的路径触发，
+#   不挡合并；连续合并时只跑最新那次（新的取消旧的，结果只对旧提交有意义），红了按那次提交标题里的 (#N) 找到弄红的 PR。
+# 两半合起来是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
+# 加了依赖要同步改。只改测试的（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉。
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_call:
+  push:
+    branches: [main]
+    # 不是必需检查，路径直接写在触发器上；排除项放最后，GitHub 按顺序判断。
+    paths:
+      - "crates/wonton-l10n/**"
+      - "crates/wonton-matrix/**"
+      - "crates/wonton-tunnel/**"
+      - "Cargo.toml"
+      - "vendor/**"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "!**/*.md"
+      - "!crates/**/tests/**"
+      - "!crates/**/benches/**"
+      - "!crates/**/tests.rs"
+      - "!crates/**/*_tests.rs"
   schedule:
-    # 每天全量兜底（PR 已在最新 main 上跑过，main 上不重跑）。
+    # 每天全量兜底：两个各自绿的 PR 合在一起才出的错由这次发现。
     - cron: "30 4 * * *"
   workflow_dispatch:
-  # 合并队列：末尾的汇总作业是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
-  # 队列用 base_sha..head_sha 判断范围，包含排在前面的 PR，沿用 PR 的路径规则。
-  merge_group:
-    types: [checks_requested]
-    branches: [main]
 
-# 同一个 PR 又推了新提交，旧的整个取消，排上的模拟器构建也不许再起（build 的条件用 !cancelled()）。
-# 队列里的 ref 一律是 gh-merge-queue/main，按它分组会把几次入队挤进同一组，改用这次入队的合并提交。
+# 同一分支又推了新提交，旧的整个取消：新提交的结果出来前旧的那次已经没用，别占名额。定时全量跑完为止，
+# 手动触发跟着分支走。被 gate 调用时组名按调用方的 ref 算；组名带 ios- 前缀，免得和 gate- 判成互相等待。
 concurrency:
-  group: ios-${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: "${{ github.event_name == 'schedule' && 'ios-nightly' || format('ios-{0}', github.ref) }}"
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 env:
   # 同 rust.yml：不留增量编译的缓存，调试信息只留行号。
@@ -38,57 +51,8 @@ permissions:
   contents: read
 
 jobs:
-  changes:
-    name: 改动范围（ios）
-    # PR 用 REST 列改动文件，队列比较整个合并组；定时和手动运行全量，草稿 PR 跳过。
-    if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      # 按 REST 接口列 PR 改动的文件，不用检出代码。
-      pull-requests: read
-    outputs:
-      changed: ${{ steps.filter.outputs.changed }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        if: github.event_name == 'merge_group'
-        with:
-          ref: ${{ github.event.merge_group.head_sha }}
-          persist-credentials: false
-      # MIT
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: filter
-        with:
-          base: ${{ github.event.merge_group.base_sha }}
-          ref: ${{ github.event.merge_group.head_sha }}
-          # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
-          predicate-quantifier: some-with-excludes
-          filters: |
-            changed:
-              - "apps/ios/**"
-              - "design/**"
-              - "scripts/generate-design.py"
-              - "crates/wonton-client/**"
-              - "crates/wonton-l10n/**"
-              - "crates/wonton-matrix/**"
-              - "crates/wonton-protocol/**"
-              - "crates/wonton-tunnel/**"
-              - "Cargo.toml"
-              - "vendor/**"
-              - "Cargo.lock"
-              - "rust-toolchain.toml"
-              - ".github/workflows/ios.yml"
-              - "!**/*.md"
-              - "!crates/**/tests/**"
-              - "!crates/**/benches/**"
-              - "!crates/**/tests.rs"
-              - "!crates/**/*_tests.rs"
-
   swiftlint:
     name: SwiftLint（函数体 ≤ 100 行）
-    needs: changes
-    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || (github.event_name != 'pull_request' && github.event_name != 'merge_group')) }}
     runs-on: macos-26
     timeout-minutes: 10
     env:
@@ -113,8 +77,6 @@ jobs:
 
   build:
     name: 模拟器构建
-    needs: changes
-    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || (github.event_name != 'pull_request' && github.event_name != 'merge_group')) }}
     runs-on: xcode-27
     timeout-minutes: 45
     env:
@@ -131,15 +93,32 @@ jobs:
           persist-credentials: false
       - name: 用 Xcode 27.1（和开发机 mini 上的一致）
         run: sudo xcode-select -s /Applications/Xcode_27.1.app
+      # 模拟器冷启动要三分多钟（11-12 实测：test-without-building 开始后 3 分 25 秒才认到模拟器，测试本身 2 秒），
+      # 放在后台先启动，和下面编 Rust 核心、构建测试重叠；跑测试前再等它启动完。
+      - name: 后台启动模拟器
+        run: |
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, os, sys
+          runtime = "com.apple.CoreSimulator.SimRuntime.iOS-" + os.environ["SIMULATOR_OS"].replace(".", "-")
+          names = [d["udid"] for d in json.load(sys.stdin)["devices"].get(runtime, []) if d["name"] == os.environ["SIMULATOR_NAME"]]
+          print(names[0] if names else "")')
+          if [ -z "$udid" ]; then
+            echo "::error::找不到模拟器 $SIMULATOR_NAME（iOS $SIMULATOR_OS），runner 镜像变了要改 SIMULATOR_NAME/SIMULATOR_OS 并重录参考图"
+            exit 1
+          fi
+          echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+          nohup xcrun simctl bootstatus "$udid" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
       - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
         run: |
           rustup toolchain install
           rustup target add aarch64-apple-ios-sim
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          # macOS 的产物和 Linux 作业不通用，单独一个 key。main 上的条目由 cache.yml 用同一个 key 编。
+          # macOS 的产物和 Linux 作业不通用，单独一个 key。
+          # 只读：同一份 key 由 cache.yml 的 iOS 作业在 push 时编好写回。这里也写的话，
+          # 一次 main 合并会编两遍、两条运行抢着写同一个 key。
           shared-key: rust-ios
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+          save-if: false
       - name: 安装 XcodeGen（版本和 sha256 固定）
         run: |
           curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
@@ -167,6 +146,10 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
+      - name: 等模拟器启动完
+        run: |
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+          cat "$RUNNER_TEMP/simulator-boot.log"
       # 录制模式由 scheme 的环境变量切（`Wonton` 是 never）：只比较、缺图也报错，不在 CI 里悄悄补图；
       # 重录在 snapshots-record.yml。每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。
       - name: 单元测试和截图测试
@@ -195,24 +178,3 @@ jobs:
           path: ${{ runner.temp }}/Tests.xcresult
           retention-days: 7
           if-no-files-found: ignore
-
-  # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
-  # 草稿 PR 上其余作业全被跳过时它也照样起来并报通过，不用为此先起别的 runner。
-  summary:
-    name: ios 汇总
-    needs: [changes, swiftlint, build]
-    if: always()
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    env:
-      RESULTS: ${{ join(needs.*.result, ' ') }}
-    steps:
-      - name: 各作业的结果
-        run: |
-          echo "$RESULTS"
-          for result in $RESULTS; do
-            case "$result" in
-              success|skipped) ;;
-              *) exit 1 ;;
-            esac
-          done

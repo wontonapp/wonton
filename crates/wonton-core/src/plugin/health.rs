@@ -9,13 +9,15 @@ use super::compose::DependCondition;
 use super::docker::{Engine, EngineError};
 use super::languages::Languages;
 use super::oom::{OomLimit, oom_reason};
-use crate::http::HttpClient;
+use crate::http::{HttpClient, HttpError};
 use crate::l10n;
 
 const POLL: Duration = Duration::from_millis(500);
 /// 没有健康检查的容器至少要稳定运行这么久才算就绪，避免把“启动即崩溃”当成成功。
 const STABLE_FOR: Duration = Duration::from_secs(3);
-const LOG_LINES: usize = 40;
+/// 失败时带上容器最后这么多行日志：只留几十行时，慢启动的应用真正的原因（第一行 FATAL）已经被截掉了。
+/// 字节上限在 [`Engine::logs_tail`]。
+const LOG_LINES: usize = 200;
 /// 失败时带上最近几次探针的结果：Docker 至多存 5 条，3 次足够看出趋势。
 const PROBES_KEPT: usize = 3;
 /// 每条探针输出截到 1 KiB，防止刷屏。
@@ -36,6 +38,13 @@ pub enum HealthError {
     NoHealthcheck(String),
     #[error("{0}")]
     WebUi(String),
+}
+
+/// 清单 `webui.health`：服务自己答健康的方式。镜像里没有 shell 时写不出 compose healthcheck，
+/// 由核心按这个路径探测（和装完时的网页探测同一个地址和时限）。
+pub struct WebuiHealth {
+    pub endpoint: super::upstreams::Endpoint,
+    pub path: String,
 }
 
 /// 等待目标状态。
@@ -65,23 +74,34 @@ enum Observation {
     },
 }
 
-pub async fn wait_for(
+pub(super) async fn wait_for(
     engine: &Engine,
+    http: &HttpClient,
     container: &str,
     target: Target,
+    webui_health: Option<&WebuiHealth>,
     deadline: Instant,
     langs: &Languages,
 ) -> Result<Readiness, HealthError> {
     let mut running_since: Option<Instant> = None;
     loop {
-        let (state, probes) =
-            match observe(engine, container, target, &mut running_since, langs).await {
-                Ok(Observation::Done(readiness)) => return Ok(readiness),
-                Ok(Observation::Waiting { state, probes }) => (state, probes),
-                Err(failure) => return Err(failure_error(engine, container, failure, langs).await),
-            };
+        let (state, probes) = match observe(
+            engine,
+            http,
+            container,
+            target,
+            webui_health,
+            &mut running_since,
+            langs,
+        )
+        .await
+        {
+            Ok(Observation::Done(readiness)) => return Ok(readiness),
+            Ok(Observation::Waiting { state, probes }) => (state, probes),
+            Err(failure) => return Err(failure_error(engine, container, failure, langs).await),
+        };
         if Instant::now() >= deadline {
-            let logs = engine.logs_tail(container, LOG_LINES).await;
+            let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
             return Err(HealthError::Timeout(with_log_tail(
                 crate::l10n::text(
                     langs,
@@ -101,6 +121,7 @@ pub async fn wait_for(
 /// 不再等其余依赖到超时。超时报第一个还没满足的。
 pub(super) async fn wait_for_all(
     engine: &Engine,
+    http: &HttpClient,
     deps: &[(String, DependCondition)],
     deadline: Instant,
     langs: &Languages,
@@ -120,7 +141,17 @@ pub(super) async fn wait_for_all(
             let dep = &mut pending[index];
             let mut running_since = None;
             let target = Target::Depend(dep.condition);
-            match observe(engine, dep.name, target, &mut running_since, langs).await {
+            match observe(
+                engine,
+                http,
+                dep.name,
+                target,
+                None,
+                &mut running_since,
+                langs,
+            )
+            .await
+            {
                 Ok(Observation::Done(_)) => {
                     pending.remove(index);
                 }
@@ -137,7 +168,7 @@ pub(super) async fn wait_for_all(
         }
         if Instant::now() >= deadline {
             let dep = pending.swap_remove(0);
-            let logs = engine.logs_tail(dep.name, LOG_LINES).await;
+            let logs = traced(dep.name, engine.logs_tail(dep.name, LOG_LINES).await);
             return Err(HealthError::Timeout(with_log_tail(
                 crate::l10n::text(
                     langs,
@@ -174,7 +205,7 @@ async fn failure_error(
 ) -> HealthError {
     match failure {
         Failure::Unhealthy(probes) => {
-            let logs = engine.logs_tail(container, LOG_LINES).await;
+            let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
             HealthError::Unhealthy(with_log_tail(
                 crate::l10n::text(
                     langs,
@@ -187,7 +218,7 @@ async fn failure_error(
             ))
         }
         Failure::Exited(code) => {
-            let logs = engine.logs_tail(container, LOG_LINES).await;
+            let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
             HealthError::Exited(with_log_tail(
                 crate::l10n::text(
                     langs,
@@ -201,6 +232,14 @@ async fn failure_error(
         }
         Failure::Other(e) => e,
     }
+}
+
+/// 日志同时进核心日志：安装失败后容器会被回滚删掉，只看得到错误的人不至于连日志都没了。
+fn traced(container: &str, logs: String) -> String {
+    if !logs.is_empty() {
+        tracing::warn!(%container, logs = %logs, "容器失败时的日志");
+    }
+    logs
 }
 
 /// 错误正文加上日志尾巴一段：没有探针就不留空行，和以前的排版一致。
@@ -343,8 +382,10 @@ fn strip_csi(raw: &str) -> String {
 
 async fn observe(
     engine: &Engine,
+    http: &HttpClient,
     container: &str,
     target: Target,
+    webui_health: Option<&WebuiHealth>,
     running_since: &mut Option<Instant>,
     langs: &Languages,
 ) -> Result<Observation, Failure> {
@@ -375,6 +416,20 @@ async fn observe(
         "{status:?}{}",
         health.map(|h| format!(" / {h:?}")).unwrap_or_default()
     );
+    // 只有在跑的网页容器才值得探测：别的状态由下面的判定先行处理。
+    let webui = match webui_health {
+        Some(webui) if target == Target::Ready && status == ContainerStateStatusEnum::RUNNING => {
+            let outcome = super::upstreams::status(
+                http,
+                &webui.endpoint,
+                &webui.path,
+                super::upstreams::PROBE_TIMEOUT,
+            )
+            .await;
+            Some((format!("GET {}", webui.path), outcome))
+        }
+        _ => None,
+    };
 
     verdict(
         Snapshot {
@@ -384,6 +439,7 @@ async fn observe(
             exit_code,
             label,
             probes,
+            webui,
         },
         container,
         target,
@@ -399,6 +455,8 @@ struct Snapshot {
     exit_code: i64,
     label: String,
     probes: Vec<Probe>,
+    /// 清单 `webui.health` 的请求（`GET <路径>`）和结果，没有探测时为空。
+    webui: Option<(String, Result<u16, HttpError>)>,
 }
 
 /// 读到的状态够不够 `target`：不够就继续等，够不了就给出失败原因。
@@ -416,6 +474,7 @@ fn verdict(
         exit_code,
         label,
         probes,
+        webui,
     } = snapshot;
     if target == Target::Depend(DependCondition::ServiceCompletedSuccessfully) {
         return match status {
@@ -441,6 +500,21 @@ fn verdict(
         return Err(Failure::Unhealthy(probes));
     }
     let running = status == ContainerStateStatusEnum::RUNNING;
+    // 声明了 `webui.health`：以代探测为准，不管容器自己有没有健康检查。
+    if let (Target::Ready, Some((request, outcome))) = (target, webui) {
+        return match outcome {
+            // 2xx/3xx 是健康；其余状态码等于应用自己说没起好，算上游出错。
+            Ok(200..=399) => Ok(Observation::Done(Readiness::Healthy)),
+            Ok(code) => Ok(Observation::Waiting {
+                state: format!("{label} / {request} → HTTP {code}"),
+                probes,
+            }),
+            Err(e) => Ok(Observation::Waiting {
+                state: format!("{label} / {request} → {e}"),
+                probes,
+            }),
+        };
+    }
     match target {
         Target::Depend(DependCondition::ServiceHealthy) if !has_check => Err(Failure::Other(
             HealthError::NoHealthcheck(crate::l10n::text(

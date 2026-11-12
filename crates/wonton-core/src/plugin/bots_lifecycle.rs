@@ -152,6 +152,7 @@ impl PluginManager {
         }
         plugin_bots.bots.remove(bot);
         self.store.bots().save(plugin, &plugin_bots)?;
+        self.tool_policy().forget_bot(plugin.as_str(), bot);
         let manifest = installed_package(&record, &self.owner_languages())?.manifest;
         self.drop_bot_secrets(plugin, &manifest, bot)?;
         if !keep_data {
@@ -243,9 +244,7 @@ impl PluginManager {
         })
     }
 
-    /// 名单变了（家人加入、联系人批了）：重建这个 Bot 的服务，沿用设备和令牌。家人记录和联系人
-    /// 在别的任务里做，它们合进来就会调用这个入口。
-    #[allow(dead_code)]
+    /// 名单变了（家人加入、联系人批了）：重建这个 Bot 的服务，沿用设备和令牌。
     pub(in crate::plugin) async fn rebuild_bot(
         &self,
         plugin: &PluginId,
@@ -466,15 +465,16 @@ impl PluginManager {
             // 镜像自带的 healthcheck 也算进时限：和 replace_bot_containers 一样先并入计划。
             self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
             let deadline =
-                health_gate::deadline(&plan, self.cfg.install_timeout, tokio::time::Instant::now());
+                health_gate::deadline(&plan, ctx.install_limit, tokio::time::Instant::now());
             self.stage(&package.manifest.id, InstallStage::Starting);
-            self.start_containers(
+            Box::pin(self.start_containers(
+                Some(&package.manifest),
                 &plan,
                 Some(&package.manifest.id),
                 &mut undo,
                 deadline,
                 &langs,
-            )
+            ))
             .await
         }
         .await;
@@ -517,11 +517,17 @@ impl PluginManager {
             self.engine.remove_container(name).await?;
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-        let deadline =
-            health_gate::deadline(&plan, self.cfg.install_timeout, tokio::time::Instant::now());
+        let deadline = health_gate::deadline(&plan, ctx.install_limit, tokio::time::Instant::now());
         self.stage(id, InstallStage::Starting);
-        self.start_containers(&plan, Some(id), &mut Undo::default(), deadline, &langs)
-            .await?;
+        Box::pin(self.start_containers(
+            Some(&package.manifest),
+            &plan,
+            Some(id),
+            &mut Undo::default(),
+            deadline,
+            &langs,
+        ))
+        .await?;
         Ok(())
     }
 

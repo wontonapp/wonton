@@ -122,6 +122,43 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
     );
 }
 
+// `webui.health` 是核心代探测：网页服务可以不写 healthcheck，别的服务仍然要写。
+#[tokio::test]
+async fn webui_health_stands_in_for_the_healthcheck_of_the_web_service_only() {
+    let pinned = format!("  web:\n    image: nginx:1.27@sha256:{}", "a".repeat(64));
+    let complete = "  tags: {zh: [工具], en: [Tools]}\n  license: MIT\n  author: {name: Example}\n  notices: [NOTICE]";
+    let webui = "  webui: {service: web, port: 8080, health: /health}";
+    let report = run(
+        repo(&compose(&pinned, &format!("{webui}\n{complete}"))).path(),
+        true,
+    )
+    .await
+    .unwrap();
+    assert!(
+        !report.problems.iter().any(|p| p.contains("healthcheck")),
+        "{report:?}"
+    );
+
+    let sidecar = format!(
+        "{pinned}\n  sidecar:\n    image: nginx:1.27@sha256:{}",
+        "b".repeat(64)
+    );
+    let report = run(
+        repo(&compose(&sidecar, &format!("{webui}\n{complete}"))).path(),
+        true,
+    )
+    .await
+    .unwrap();
+    // 另外还有一条 `webui.health` 要 spec 0.13 的问题（这个包里写的是 0.5）。
+    assert!(
+        report
+            .problems
+            .iter()
+            .any(|p| p.contains("service sidecar has no healthcheck")),
+        "{report:?}"
+    );
+}
+
 #[tokio::test]
 async fn the_official_index_refuses_hardcoded_proxy_addresses() {
     let services = |environment: &str| {
@@ -348,4 +385,78 @@ async fn an_unknown_chat_layout_is_reported() {
     let dir = repo(&compose);
     let err = run(dir.path(), false).await.unwrap_err();
     assert!(err.contains("bot.chat_layout"), "{err}");
+}
+
+#[tokio::test]
+async fn environment_values_that_yaml_reads_as_booleans_are_called_out() {
+    let bare_warnings = |report: &Report| -> Vec<String> {
+        report
+            .warnings
+            .iter()
+            .filter(|w| w.contains("is a bare"))
+            .cloned()
+            .collect()
+    };
+    // 映射写法里裸写的 on/off 会被 YAML 1.1 的工具当成布尔；加了引号和 true/false 的不管。
+    let mapped = compose(
+        "  web:\n    image: nginx:1.27\n    environment:\n      MOTD_ON: on  # 行尾注释\n\
+         \x20     QUIET: off\n      LOUD: 'yes'\n      DEBUG: true\n",
+        "",
+    );
+    let report = run(repo(&mapped).path(), false).await.unwrap();
+    let called = bare_warnings(&report);
+    assert_eq!(called.len(), 2, "{:?}", report.warnings);
+    assert!(called[0].contains("environment.MOTD_ON"), "{}", called[0]);
+    assert!(called[0].contains("`on`"), "{}", called[0]);
+    assert!(called[1].contains("environment.QUIET"), "{}", called[1]);
+
+    // 列表写法整条是字符串，不会被当成布尔，不提醒。
+    let list = compose(
+        "  web:\n    image: nginx:1.27\n    environment:\n      - SANDBOX=off\n",
+        "",
+    );
+    let report = run(repo(&list).path(), false).await.unwrap();
+    assert!(bare_warnings(&report).is_empty(), "{:?}", report.warnings);
+}
+
+#[tokio::test]
+async fn depends_on_pointing_at_a_missing_service_is_called_out() {
+    let services = "  web:\n    image: nginx:1.27\n    depends_on:\n      db:\n        condition: service_healthy\n\
+                    \x20     gone: {condition: service_started}\n  db:\n    image: postgres:17\n";
+    let report = run(repo(&compose(services, "")).path(), false)
+        .await
+        .unwrap();
+    let called: Vec<&str> = report
+        .warnings
+        .iter()
+        .filter(|w| w.contains("depends_on"))
+        .map(String::as_str)
+        .collect();
+    let [missing] = called[..] else {
+        panic!("{:?}", report.warnings)
+    };
+    assert!(missing.contains("services.web.depends_on"), "{missing}");
+    assert!(missing.contains("`gone`"), "{missing}");
+
+    // 短语法里指不存在的服务同样提醒；指到了的不提醒。
+    let short = "  web:\n    image: nginx:1.27\n    depends_on: [db, cache]\n  db:\n    image: postgres:17\n";
+    let report = run(repo(&compose(short, "")).path(), false).await.unwrap();
+    let called: Vec<&str> = report
+        .warnings
+        .iter()
+        .filter(|w| w.contains("depends_on"))
+        .map(String::as_str)
+        .collect();
+    let [missing] = called[..] else {
+        panic!("{:?}", report.warnings)
+    };
+    assert!(missing.contains("`cache`"), "{missing}");
+
+    let ok = "  web:\n    image: nginx:1.27\n    depends_on: [db]\n  db:\n    image: postgres:17\n";
+    let report = run(repo(&compose(ok, "")).path(), false).await.unwrap();
+    assert!(
+        !report.warnings.iter().any(|w| w.contains("depends_on")),
+        "{:?}",
+        report.warnings
+    );
 }

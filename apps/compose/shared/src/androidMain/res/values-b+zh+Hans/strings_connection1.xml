@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
+    <string name="connection_unpaired">未配对</string>
+    <string name="connection_connected">已连接</string>
+    <string name="connection_connecting">连接中…</string>
+    <string name="connection_retrying">正在连接家里的服务器…</string>
+    <string name="connection_device_rejected">家里的服务器已不认这台手机</string>
+    <string name="connection_version_mismatch">App 或家里的服务器需要更新</string>
+    <string name="connection_details_title">详情</string>
+    <string name="connection_path">路径</string>
+    <string name="connection_disconnects">断开次数</string>
+    <string name="connection_last_connected">最后连上</string>
+    <string name="connection_addresses_stale">服务器的地址可能已经过时，会自动再取</string>
+</resources>

@@ -44,15 +44,18 @@ D 禁改都没选）。要求：用现成的开源组件收信，不自己写 SM
 
 - 核心组件 `mailpit`（MIT，Go，镜像约 15 MB，`axllent/mailpit` 固定版本），和 tusd 一样只在核心的私有网络里，
   另外接入申请了 `notify` 的插件网络，在那里的别名是 `smtp.wonton.internal`，SMTP 端口 25。
-- **不要求认证、不加 TLS。** Go 写的应用（Gitea、Vikunja、Memos）在明文连接上不肯做 PLAIN 认证，要认证就得给每个应用配
-  证书信任，Memos 还关不掉证书校验。插件网络本来就隔离，核心认插件一直按来源网段（ADR-0047，`notify`、`mcp` 都是），
+- **不要求认证、不强制加密。** Go 写的应用（Gitea、Vikunja、Memos）在明文连接上不肯做 PLAIN 认证，认证要单说。
+  插件网络本来就隔离，核心认插件一直按来源网段（ADR-0047，`notify`、`mcp` 都是），
   这里照旧：Mailpit 把来源 IP 写进最上面一行 `Received` 头，核心按网段认出是哪个插件。插件伪造的 `Received` 只能
   写在它下面，核心只看最上面一行。`From` 头不作为来源依据。
+- **配自签证书，宣告但不强制 STARTTLS。** 要求加密发信的应用（如 Nodemailer 在 `secure=false` 下仍升级的）不升级
+  就发不出信；Mailpit 配 `MP_SMTP_TLS_CERT`/`MP_SMTP_TLS_KEY` 后宣告 STARTTLS，明文连接照收，不升级的应用不受影响。
+  证书由核心生成（`smtp.wonton.internal` 一个 SAN，0600，成对保留），只在插件网络里服务；应用要是校验证书，得让它信
+  这张自签证书或关掉校验（`WONTON_SMTP_CA` 这类分发还没做）。关掉 STARTTLS 是改配置，不用改代码。
 - **宣告 AUTH，但接受任何凭据**（`MP_SMTP_AUTH_ACCEPT_ANY`、`MP_SMTP_AUTH_ALLOW_INSECURE`）：给“服务器不宣告 AUTH 就
   发不出信”的应用用，填什么都收。但 **Go 应用反过来要留空**：`net/smtp` 的 `PlainAuth` 在没 TLS 且主机不是 localhost 时
   直接报 `unencrypted connection`（Go 1.27.3 `net/smtp/auth.go` 实测，`smtp.wonton.internal` 报错，`localhost`、
-  `127.0.0.1` 才放行），填了反而发不出去。仍然不配证书：一配 Mailpit 就宣告 STARTTLS，Go 客户端校验自签证书会失败，
-  换个地方卡住。认插件只看网段，不看认证用的用户名。
+  `127.0.0.1` 才放行），填了反而发不出去；应用自己 `StartTLS` 升级过的连接不受这条限制。认插件只看网段，不看认证用的用户名。
 - **收件人在 RCPT 阶段就挡**：`MP_SMTP_ALLOWED_RECIPIENTS` 由核心按当前的人生成，只放
   `^(alice|bob|…)@wonton\.internal$`。外部地址、`plugins.wonton.internal`、好友、不存在或已移除的人都回 550，应用当场
   报发送失败（失败即停，不悄悄丢；这几种在 SMTP 阶段是同一句 550，应用分不出是哪种）。家人加入、移除时核心改写这一项并重启 Mailpit（几秒；信存在卷上的 SQLite 里，
@@ -81,7 +84,9 @@ D 禁改都没选）。要求：用现成的开源组件收信，不自己写 SM
 
 ### 插件怎么用
 
-发信算在 `notify` 权限里，不新增权限；安装页那一行写“给家里的人发通知和信”。申请了 `notify` 的插件额外拿到：
+发信算在 `notify` 权限里，不新增权限；安装页那一行写“给家里的人发通知和信”。宿主网络（`network_mode: host`）的插件不能声明
+`notify`，安装时拒绝：宿主网络发来的信从网桥地址进 Mailpit，来源不是插件网段，核心认不出会丢掉（ADR-0047），违反失败即停。
+申请了 `notify` 的插件额外拿到：
 
 | 变量 | 值 |
 |---|---|
@@ -89,9 +94,10 @@ D 禁改都没选）。要求：用现成的开源组件收信，不自己写 SM
 | `WONTON_SMTP_PORT` | `25` |
 | `WONTON_MAIL_FROM` | `<插件 ID>@plugins.wonton.internal` |
 
-规范写明：不配用户名和密码、不开 TLS / STARTTLS；非要填凭据的应用随便填，服务器都接受，Go 应用留空。各应用的写法（调研里核实过）：Paperless 的 `PAPERLESS_EMAIL_HOST`
+规范写明：不配用户名和密码；服务器不强制加密，不开也发得出去。要求加密的应用开 STARTTLS（端口还是 25），证书是核心自签的，
+校验证书的应用要让它信这张证书或关掉校验。非要填凭据的应用随便填，服务器都接受，Go 应用留空。各应用的写法（调研里核实过）：Paperless 的 `PAPERLESS_EMAIL_HOST`
 不能是 `localhost`，用别名正好；Gitea `PROTOCOL=smtp`、不填 `USER`；Vikunja 不填用户名；Memos 不填用户名；
-Nextcloud `SMTP_SECURE` 留空（Mailpit 不提供 STARTTLS，不会被自动升级）；Audiobookshelf 端口改 25、关 secure。
+Nextcloud `SMTP_SECURE` 留空就不升级；Audiobookshelf 端口改 25、关 secure。
 
 ### 已装的插件
 

@@ -125,6 +125,8 @@ kotlin {
                 implementation(libs.media3.exoplayer)
                 implementation(libs.media3.transformer)
                 implementation(libs.media3.effect)
+                // Apache-2.0。桌面小组件（ADR-0100）。
+                implementation(libs.androidx.glance.appwidget)
                 implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
             }
         }

@@ -13,7 +13,7 @@ use super::lists::{self, Reach};
 use super::provider::provides_proxy;
 use super::settings::EgressConfig;
 use crate::plugin::compose::PullPolicy;
-use crate::plugin::core_address::{Endpoint, layout_of};
+use crate::plugin::core_address::{Endpoint, egress_address, layout_of};
 use crate::plugin::lan::Detected;
 use crate::plugin::lan::announce::Announced;
 use crate::plugin::leftovers::name_taken;
@@ -58,7 +58,7 @@ impl PluginManager {
         {
             return Ok(None);
         }
-        Ok(Some(EgressVars))
+        Ok(Some(EgressVars { host_proxy: None }))
     }
 
     fn relay_files(&self) -> RelayFiles {
@@ -89,7 +89,8 @@ impl PluginManager {
         };
         self.ensure_host_cidrs().await?;
         let _pass = self.egress.pass.lock().await;
-        self.sync_relay(proxy, &config, Some(network)).await
+        // 同 lifecycle.rs deploy_inner 的减帧：sync_relay 往下到 bollard 的反序列化很深。
+        Box::pin(self.sync_relay(proxy, &config, Some(network))).await
     }
 
     /// 卸载或回滚时，删网络之前断开：Docker 不让删还有端点的网络。
@@ -232,14 +233,22 @@ impl PluginManager {
 
     /// 接入一个插件网络。网关优先级 `-1`：默认路由留在它自己的网络上（理由同插件规范里核心的 `gw_priority`，#90）。
     /// 插件的网络不在时跳过：那个插件的核对会报告原因。
+    ///
+    /// 地址钉在 [`egress_address`]：宿主网络的插件用这个地址当代理（见 [`Self::egress_host_proxy`]），换代理地址时
+    /// 出口容器会重建，地址不跟着变，插件就不用重建。
     async fn connect_relay(&self, name: &str, network: &str) -> Result<(), InstallError> {
-        if self.engine.inspect_network(network).await?.is_none()
-            || self.engine.endpoint(name, network).await?.is_some()
-        {
+        let Some(found) = self.engine.inspect_network(network).await? else {
+            return Ok(());
+        };
+        if self.engine.endpoint(name, network).await?.is_some() {
             return Ok(());
         }
+        let address = layout_of(&found).and_then(|layout| {
+            egress_address(layout.subnet, layout.gateway.as_deref())
+                .map(|address| address.to_string())
+        });
         let endpoint = Endpoint {
-            address: None,
+            address,
             aliases: vec![ALIAS.to_owned()],
             gw_priority: Some(-1),
         };
@@ -247,6 +256,42 @@ impl PluginManager {
             .connect_network_at(network, name, endpoint)
             .await?;
         Ok(())
+    }
+
+    /// 宿主网络的服务访问出口容器用的地址：宿主网络里解析不了别名 [`ALIAS`]，只能用出口容器在这个插件网络里的
+    /// 地址。插件没有宿主网络的服务时为空。
+    pub(in crate::plugin) async fn egress_host_proxy(
+        &self,
+        network: &str,
+    ) -> Result<Option<String>, InstallError> {
+        let name = self.cfg.instance.egress();
+        let mut address = self.address_of(&name, network).await?;
+        if address.is_none() {
+            // 重建时网络可能刚换过，出口容器还没接回来：接上再问。
+            self.attach_relay(network).await?;
+            address = self.address_of(&name, network).await?;
+        }
+        let Some(address) = address else {
+            let langs = self.owner_languages();
+            return Err(InstallError::Docker(crate::l10n::text(
+                &langs,
+                "plugin-install-egress-host-no-address",
+                &[("network", network.into())],
+            )));
+        };
+        Ok(Some(format!("http://{address}:{}", super::PROXY_PORT)))
+    }
+
+    async fn address_of(
+        &self,
+        container: &str,
+        network: &str,
+    ) -> Result<Option<String>, InstallError> {
+        Ok(self
+            .engine
+            .endpoint_address(container, network)
+            .await?
+            .filter(|address| !address.is_empty()))
     }
 
     /// 按 gost 现在接着的网络和宿主的网段写名单。网段和接入的网络重叠的不放行，写进日志。

@@ -12,7 +12,11 @@ mod bot_avatars;
 mod bot_lifecycle;
 mod bots;
 mod capability_deps_install;
+mod capability_host_network;
+mod capability_install_requests;
+mod capability_lifecycle;
 mod capability_manifest;
+mod capability_optional_lifecycle;
 mod chat_layout;
 mod check;
 mod configs;
@@ -48,6 +52,7 @@ mod leftovers;
 mod limits;
 mod manager;
 mod manifest_errors;
+mod matrix_rtc;
 mod model_gateway_contract;
 mod model_providers;
 mod models;
@@ -58,6 +63,8 @@ mod oidc;
 mod optional_permissions;
 mod owner;
 mod people_languages;
+mod personal_data_contract;
+mod plugin_settings;
 mod preinstall;
 mod privileges;
 mod render_drift;
@@ -70,6 +77,9 @@ mod source_subdir;
 mod sources;
 mod start_recreate;
 mod static_web;
+mod static_web_files;
+mod static_web_install;
+mod static_web_storage;
 mod stopped;
 mod stopped_docker;
 mod store;
@@ -82,6 +92,7 @@ mod upgrade_bot;
 mod views;
 mod views_l10n;
 mod watch;
+mod webui_health;
 
 /// 测试里的请求语言：默认（英文）。断言的期望值用 [`crate::l10n::CATALOG`] 生成。
 fn langs() -> crate::plugin::languages::Languages {
@@ -166,6 +177,36 @@ fn render_err(yaml: &str) -> String {
         Ok(_) => panic!("渲染应失败"),
         Err(e) => e.to_string(),
     }
+}
+
+/// 应用按 Host 认请求时要写白名单，compose 插值取不出 `WONTON_APP_URL` 里的主机名。
+#[test]
+fn the_public_host_is_injected_next_to_the_url() {
+    let yaml = package(
+        "  web:\n    image: nginx\n    environment:\n      HOSTS: ${WONTON_APP_HOST}",
+        "  webui: {service: web, port: 80, sso: none}\n  permissions: []",
+    );
+    let pkg = PluginPackage::parse(&yaml, &langs()).unwrap();
+    let plan = dry_run(&pkg, &langs()).unwrap();
+    assert!(
+        env_of(&plan.containers[0]).contains(&"HOSTS=app-test.wonton.invalid".to_owned()),
+        "{:?}",
+        env_of(&plan.containers[0])
+    );
+}
+
+/// 只收 CIDR 的应用（如 navidrome 的白名单）直接用，不用拼 `${WONTON_CORE_ADDRESS}/32`。
+#[test]
+fn the_gateway_cidr_is_injected_for_proxy_login() {
+    let yaml = package(
+        "  web:\n    image: nginx\n    environment:\n      TRUST: '${WONTON_GATEWAY_CIDR}'",
+        "  webui: {service: web, port: 80, sso: proxy, proxy: {headers: {Remote-User: '{user}'}}}\n  \
+         permissions: []",
+    );
+    let pkg = PluginPackage::parse(&yaml, &langs()).unwrap();
+    let plan = dry_run(&pkg, &langs()).unwrap();
+    let expected = format!("TRUST={}/32", super::core_address::PLACEHOLDER);
+    assert!(env_of(&plan.containers[0]).contains(&expected));
 }
 
 #[test]

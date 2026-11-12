@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Row subtitle when the other owner declined my pairing request. -->
+    <string name="peers_status_declined">They declined your request</string>
+    <!-- Row subtitle for a status this version doesn't know. -->
+    <string name="peers_status_unknown">Status unknown</string>
+    <!-- Row subtitle while our own public access switch is off. -->
+    <string name="peers_status_public_access_off">Public access is off</string>
+    <!-- Reject button on a request row. -->
+    <string name="peers_request_reject">Reject</string>
+    <!-- Collapsed section heading at the bottom for requests I declined. -->
+    <string name="peers_rejected_title">Rejected</string>
+    <!-- Failure title when this device isn't the owner's. -->
+    <string name="peers_error_unauthenticated">Only the server\'s owner can manage other servers</string>
+    <!-- Failure title when the home server can't be reached. -->
+    <string name="peers_error_transport">Can\'t reach your home server</string>
+    <!-- Button under the QR code: hands the code text to the system share sheet. -->
+    <string name="peers_code_share">Share</string>
+    <!-- Confirmation dialog title for resetting the pairing code. -->
+    <string name="peers_reset_title">Reset the pairing code?</string>
+</resources>

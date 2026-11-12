@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="contacts_add">加聯絡人</string>
+    <string name="contacts_add_kind_bot">Bot</string>
+    <string name="contacts_incoming_warning">對方 Bot 的話，你的 Bot 會當作給它的話處理；敏感工具每次都要你確認。</string>
+    <string name="contacts_approve">同意</string>
+    <string name="contacts_withdraw">撤回</string>
+    <string name="contacts_clear">刪除</string>
+    <string name="contacts_remove">刪除聯絡人</string>
+    <string name="contacts_remove_title">刪除「%1$s」？</string>
+    <string name="contacts_remove_message">你的 Bot 不再處理對方的話，已有的聊天會保留。</string>
+    <string name="contacts_status_waiting_bot">等對方同意</string>
+    <string name="contacts_status_declined">對方拒絕了</string>
+    <string name="contacts_keeper">%1$s 的 Bot</string>
+    <string name="contacts_remote_from">來自 %1$s</string>
+    <string name="contacts_approve_remote_message">同意後，這個 Bot 只能聊天，不再使用其他工具，對你也一樣。</string>
+    <string name="contacts_empty">還沒有聯絡人</string>
+    <string name="contacts_error_invalid_user_id">不是有效的 Matrix ID</string>
+    <string name="contacts_error_not_paired_next">先在「其他伺服器」裡配對。</string>
+    <string name="contacts_error_contact_not_found">這一則已經處理過了</string>
+    <string name="contacts_error_not_keeper">只有這個 Bot 的歸屬人能管理它的聯絡人</string>
+    <string name="contacts_error_upstream">家用伺服器沒能記下這件事</string>
+</resources>

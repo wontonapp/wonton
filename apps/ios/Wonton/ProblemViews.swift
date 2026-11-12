@@ -19,12 +19,12 @@ extension PluginProblem {
         switch reason {
         case .transportUnavailable:
             return Problem(
-                title: String(localized: .problemPluginSaveUncertainTitle),
-                nextStep: String(localized: .problemPluginSaveUncertainNextStep),
+                title: String(localized: .Problem1.problemPluginSaveUncertainTitle),
+                nextStep: String(localized: .Problem2.problemPluginSaveUncertainNextStep),
                 detail: message
             )
         case .invalid:
-            return Problem(title: String(localized: .problemPluginSaveInvalidTitle), nextStep: message)
+            return Problem(title: String(localized: .Problem0.problemPluginSaveInvalidTitle), nextStep: message)
         default:
             return problem
         }
@@ -35,33 +35,86 @@ extension PluginFailure {
     func problem(detail: String?) -> Problem {
         switch self {
         case .transportUnavailable:
-            categorizedProblem(.problemTransportUnavailableTitle, .problemTransportUnavailableNextStep, detail)
-        case .unauthorized: categorizedProblem(.problemUnauthorizedTitle, .problemUnauthorizedNextStep, detail)
-        case .upstream: categorizedProblem(.problemUpstreamTitle, .problemUpstreamNextStep, detail)
+            categorizedProblem(
+                .Problem2.problemTransportUnavailableTitle,
+                .Problem3.problemTransportUnavailableNextStep,
+                detail)
+        case .unauthorized:
+            categorizedProblem(
+                .Problem3.problemUnauthorizedTitle,
+                .Problem2.problemUnauthorizedNextStep,
+                detail)
+        case .upstream: categorizedProblem(.Problem2.problemUpstreamTitle, .Problem2.problemUpstreamNextStep, detail)
         case .sourceUnavailable:
-            categorizedProblem(.problemPluginSourceUnavailableTitle, .problemPluginSourceUnavailableNextStep, detail)
-        case .notFound: categorizedProblem(.problemPluginNotFoundTitle, .problemPluginNotFoundNextStep, detail)
-        case .changed: categorizedProblem(.problemPluginChangedTitle, .problemPluginChangedNextStep, detail)
-        case .unsupported: categorizedProblem(.problemPluginUnsupportedTitle, .problemUpgradeServerNextStep, detail)
-        case .conflict: categorizedProblem(.problemPluginConflictTitle, .problemPluginConflictNextStep, detail)
-        case .invalid: categorizedProblem(.problemPluginInvalidTitle, .problemPluginInvalidNextStep, detail)
+            categorizedProblem(
+                .Problem1.problemPluginSourceUnavailableTitle,
+                .Problem0.problemPluginSourceUnavailableNextStep,
+                detail)
+        case .notFound:
+            categorizedProblem(
+                .Problem2.problemPluginNotFoundTitle,
+                .Problem0.problemPluginNotFoundNextStep,
+                detail)
+        case .changed:
+            categorizedProblem(
+                .Problem3.problemPluginChangedTitle,
+                .Problem1.problemPluginChangedNextStep,
+                detail)
+        case .unsupported:
+            categorizedProblem(
+                .Problem2.problemPluginUnsupportedTitle,
+                .Problem0.problemUpgradeServerNextStep,
+                detail)
+        case .conflict:
+            categorizedProblem(
+                .Problem1.problemPluginConflictTitle,
+                .Problem3.problemPluginConflictNextStep,
+                detail)
+        case .invalid:
+            categorizedProblem(
+                .Problem2.problemPluginInvalidTitle,
+                .Problem3.problemPluginInvalidNextStep,
+                detail)
         case .deviceUnavailable:
-            categorizedProblem(.problemPluginDeviceUnavailableTitle, .problemPluginDeviceUnavailableNextStep, detail)
+            categorizedProblem(
+                .Problem1.problemPluginDeviceUnavailableTitle,
+                .Problem3.problemPluginDeviceUnavailableNextStep,
+                detail)
         case .lanUnavailable:
-            categorizedProblem(.problemPluginLanUnavailableTitle, .problemPluginLanUnavailableNextStep, detail)
+            categorizedProblem(
+                .Problem0.problemPluginLanUnavailableTitle,
+                .Problem1.problemPluginLanUnavailableNextStep,
+                detail)
         case .lanPortTaken:
-            categorizedProblem(.problemPluginLanPortTakenTitle, .problemPluginLanPortTakenNextStep, detail)
+            categorizedProblem(
+                .Problem2.problemPluginLanPortTakenTitle,
+                .Problem2.problemPluginLanPortTakenNextStep,
+                detail)
         case .coreUpgrading:
-            categorizedProblem(.problemPluginCoreUpgradingTitle, .problemPluginCoreUpgradingNextStep, detail)
+            categorizedProblem(
+                .Problem3.problemPluginCoreUpgradingTitle,
+                .Problem2.problemPluginCoreUpgradingNextStep,
+                detail)
         case .egressProxyUnavailable:
             categorizedProblem(
-                .problemPluginEgressProxyUnavailableTitle, .problemPluginEgressProxyUnavailableNextStep, detail
+                .Problem3.problemPluginEgressProxyUnavailableTitle,
+                .Problem1.problemPluginEgressProxyUnavailableNextStep,
+                detail
             )
-        case .protocol: categorizedProblem(.problemPluginProtocolTitle, .problemPluginProtocolNextStep, detail)
+        case .protocol:
+            categorizedProblem(
+                .Problem0.problemPluginProtocolTitle,
+                .Problem0.problemPluginProtocolNextStep,
+                detail)
+        case .recordUnusable:
+            categorizedProblem(
+                .Problem0.problemPluginRecordUnusableTitle,
+                .Problem0.problemPluginRecordUnusableNextStep,
+                detail)
         case .serverTooOld:
-            categorizedProblem(.problemPluginServerTooOldTitle, .problemUpgradeServerNextStep, detail)
+            categorizedProblem(.Problem3.problemPluginServerTooOldTitle, .Problem0.problemUpgradeServerNextStep, detail)
         // 比这个壳新的类别：先按服务器出错说。
-        default: categorizedProblem(.problemUpstreamTitle, .problemUpstreamNextStep, detail)
+        default: categorizedProblem(.Problem2.problemUpstreamTitle, .Problem2.problemUpstreamNextStep, detail)
         }
     }
 }
@@ -78,8 +131,8 @@ private func categorizedProblem(
 extension AppearanceProblem {
     var problem: Problem {
         Problem(
-            title: String(localized: .problemAppearanceTitle),
-            nextStep: String(localized: .problemStorageNextStep),
+            title: String(localized: .Problem1.problemAppearanceTitle),
+            nextStep: String(localized: .Problem1.problemStorageNextStep),
             detail: message
         )
     }
@@ -90,26 +143,38 @@ extension ChatFailure {
         switch self {
         case .transportUnavailable:
             return Problem(
-                title: String(localized: .problemTransportUnavailableTitle),
-                nextStep: String(localized: .problemTransportUnavailableNextStep),
+                title: String(localized: .Problem2.problemTransportUnavailableTitle),
+                nextStep: String(localized: .Problem3.problemTransportUnavailableNextStep),
                 detail: detail
             )
         case .unauthorized:
             return Problem(
-                title: String(localized: .problemUnauthorizedTitle),
-                nextStep: String(localized: .problemUnauthorizedNextStep),
+                title: String(localized: .Problem3.problemUnauthorizedTitle),
+                nextStep: String(localized: .Problem2.problemUnauthorizedNextStep),
+                detail: detail
+            )
+        case .forbidden:
+            return Problem(
+                title: String(localized: .Problem3.problemForbiddenTitle),
+                nextStep: String(localized: .Problem3.problemForbiddenNextStep),
                 detail: detail
             )
         case .upstream:
             return Problem(
-                title: String(localized: .problemUpstreamTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
+                title: String(localized: .Problem2.problemUpstreamTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
                 detail: detail
             )
         case .notReady:
-            return Problem(title: String(localized: .problemNotReadyTitle), nextStep: detail)
+            return Problem(title: String(localized: .Problem0.problemNotReadyTitle), nextStep: detail)
         case .invalidInput:
-            return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: detail)
+            return Problem(title: String(localized: .Problem2.problemInvalidInputTitle), nextStep: detail)
+        case .other:
+            return Problem(
+                title: String(localized: .Problem1.problemGenericTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
+                detail: detail
+            )
         }
     }
 }
@@ -124,14 +189,14 @@ extension BotProfileFailure {
         switch self {
         case .transportUnavailable:
             return Problem(
-                title: String(localized: .problemTransportTitle),
-                nextStep: String(localized: .problemTransportNext),
+                title: String(localized: .Problem1.problemTransportTitle),
+                nextStep: String(localized: .Problem0.problemTransportNext),
                 detail: detail
             )
         case .notReady:
             return Problem(
-                title: String(localized: .botProfileProblemNotReadyTitle),
-                nextStep: String(localized: .botProfileProblemNotReadyNext),
+                title: String(localized: .BotProfile0.botProfileProblemNotReadyTitle),
+                nextStep: String(localized: .BotProfile0.botProfileProblemNotReadyNext),
                 detail: detail
             )
         case let .invalidName(reason):
@@ -140,21 +205,21 @@ extension BotProfileFailure {
             return Problem(title: reason.problem)
         case .upstream:
             return Problem(
-                title: String(localized: .problemUpstreamTitle),
-                nextStep: String(localized: .problemUpstreamNext),
+                title: String(localized: .Problem2.problemUpstreamTitle),
+                nextStep: String(localized: .Problem1.problemUpstreamNext),
                 detail: detail
             )
         // 家人设备调只有主人的接口（ADR-0045）：不是出错，也不是还没准备好。
-        case .ownerOnly:
+        case .permissionRequired:
             return Problem(
-                title: String(localized: .botProfileProblemOwnerOnlyTitle),
-                nextStep: String(localized: .botProfileProblemOwnerOnlyNext),
+                title: String(localized: .BotProfile0.botProfileProblemOwnerOnlyTitle),
+                nextStep: String(localized: .BotProfile0.botProfileProblemOwnerOnlyNext),
                 detail: detail
             )
         case .other:
             return Problem(
-                title: String(localized: .botProfileProblemOtherTitle),
-                nextStep: String(localized: .problemUpstreamNext),
+                title: String(localized: .BotProfile1.botProfileProblemOtherTitle),
+                nextStep: String(localized: .Problem1.problemUpstreamNext),
                 detail: detail
             )
         }
@@ -164,11 +229,11 @@ extension BotProfileFailure {
 extension BotNameProblem {
     var problem: String {
         switch self {
-        case .empty: String(localized: .botProfileProblemNameEmpty)
-        case .tooLong: String(localized: .botProfileProblemNameTooLong)
-        case .controlCharacters: String(localized: .botProfileProblemNameControlCharacters)
-        case .reserved: String(localized: .botProfileProblemNameReserved)
-        case .other: String(localized: .botProfileProblemNameOther)
+        case .empty: String(localized: .BotProfile0.botProfileProblemNameEmpty)
+        case .tooLong: String(localized: .BotProfile1.botProfileProblemNameTooLong)
+        case .controlCharacters: String(localized: .BotProfile1.botProfileProblemNameControlCharacters)
+        case .reserved: String(localized: .BotProfile1.botProfileProblemNameReserved)
+        case .other: String(localized: .BotProfile0.botProfileProblemNameOther)
         }
     }
 }
@@ -176,13 +241,13 @@ extension BotNameProblem {
 extension AvatarMediaProblem {
     var problem: String {
         switch self {
-        case .format: String(localized: .botProfileProblemMediaFormat)
-        case .tooLarge: String(localized: .botProfileProblemMediaTooLarge)
-        case .tooBig: String(localized: .botProfileProblemMediaTooBig)
-        case .notSquare: String(localized: .botProfileProblemMediaNotSquare)
-        case .tooLong: String(localized: .botProfileProblemMediaTooLong)
-        case .unreadable: String(localized: .botProfileProblemMediaUnreadable)
-        case .other: String(localized: .botProfileProblemMediaOther)
+        case .format: String(localized: .BotProfile0.botProfileProblemMediaFormat)
+        case .tooLarge: String(localized: .BotProfile1.botProfileProblemMediaTooLarge)
+        case .tooBig: String(localized: .BotProfile1.botProfileProblemMediaTooBig)
+        case .notSquare: String(localized: .BotProfile0.botProfileProblemMediaNotSquare)
+        case .tooLong: String(localized: .BotProfile1.botProfileProblemMediaTooLong)
+        case .unreadable: String(localized: .BotProfile0.botProfileProblemMediaUnreadable)
+        case .other: String(localized: .BotProfile1.botProfileProblemMediaOther)
         }
     }
 }
@@ -191,39 +256,39 @@ extension StoreProblem {
     var problem: Problem {
         switch reason {
         case .unreachable:
-            return Problem(title: String(localized: .problemStoreUnreachableTitle), detail: details)
+            return Problem(title: String(localized: .Problem3.problemStoreUnreachableTitle), detail: details)
         case .timeout:
-            return Problem(title: String(localized: .problemStoreTimeoutTitle), detail: details)
+            return Problem(title: String(localized: .Problem0.problemStoreTimeoutTitle), detail: details)
         case .rateLimited:
             return Problem(
-                title: String(localized: .problemStoreRateLimitedTitle),
-                nextStep: String(localized: .problemStoreRateLimitedNextStep),
+                title: String(localized: .Problem1.problemStoreRateLimitedTitle),
+                nextStep: String(localized: .Problem1.problemStoreRateLimitedNextStep),
                 detail: details
             )
         case .invalidIndex:
             return Problem(
-                title: String(localized: .problemStoreInvalidIndexTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
+                title: String(localized: .Problem0.problemStoreInvalidIndexTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
                 detail: details
             )
         case .indexTooNew:
             return Problem(
-                title: String(localized: .problemStoreIndexTooNewTitle),
-                nextStep: String(localized: .problemUpgradeServerNextStep),
+                title: String(localized: .Problem3.problemStoreIndexTooNewTitle),
+                nextStep: String(localized: .Problem0.problemUpgradeServerNextStep),
                 detail: details
             )
         case .upstream:
             return Problem(
-                title: String(localized: .problemStoreUpstreamTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
+                title: String(localized: .Problem3.problemStoreUpstreamTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
                 detail: details
             )
         case .incomplete:
-            return Problem(title: String(localized: .problemStoreIncompleteTitle), detail: details)
+            return Problem(title: String(localized: .Problem1.problemStoreIncompleteTitle), detail: details)
         case .disabled:
-            return Problem(title: String(localized: .problemStoreDisabledTitle), detail: details)
+            return Problem(title: String(localized: .Problem0.problemStoreDisabledTitle), detail: details)
         case .other:
-            return Problem(title: String(localized: .problemStoreOtherTitle), detail: details)
+            return Problem(title: String(localized: .Problem0.problemStoreOtherTitle), detail: details)
         }
     }
 
@@ -236,51 +301,60 @@ extension Error {
         let detail = String(describing: self)
         guard let error = self as? CoreError else {
             return Problem(
-                title: String(localized: .problemGenericTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
+                title: String(localized: .Problem1.problemGenericTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
                 detail: detail
             )
         }
         switch error {
         case .TransportUnavailable:
             return Problem(
-                title: String(localized: .problemTransportUnavailableTitle),
-                nextStep: String(localized: .problemTransportUnavailableNextStep),
+                title: String(localized: .Problem2.problemTransportUnavailableTitle),
+                nextStep: String(localized: .Problem3.problemTransportUnavailableNextStep),
                 detail: detail
             )
         case .Unauthorized:
             return Problem(
-                title: String(localized: .problemUnauthorizedTitle),
-                nextStep: String(localized: .problemUnauthorizedNextStep),
+                title: String(localized: .Problem3.problemUnauthorizedTitle),
+                nextStep: String(localized: .Problem2.problemUnauthorizedNextStep),
+                detail: detail
+            )
+        case .Forbidden:
+            return Problem(
+                title: String(localized: .Problem3.problemForbiddenTitle),
+                nextStep: String(localized: .Problem3.problemForbiddenNextStep),
                 detail: detail
             )
         case .Upstream:
             return Problem(
-                title: String(localized: .problemUpstreamTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
+                title: String(localized: .Problem2.problemUpstreamTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
                 detail: detail
             )
         case let .NotReady(reason):
-            return Problem(title: String(localized: .problemNotReadyTitle), nextStep: reason)
+            return Problem(title: String(localized: .Problem0.problemNotReadyTitle), nextStep: reason)
         case .Storage:
             return Problem(
-                title: String(localized: .problemStorageTitle),
-                nextStep: String(localized: .problemStorageNextStep),
+                title: String(localized: .Problem3.problemStorageTitle),
+                nextStep: String(localized: .Problem1.problemStorageNextStep),
                 detail: detail
             )
         case let .InvalidInput(reason):
-            return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: reason)
+            return Problem(title: String(localized: .Problem2.problemInvalidInputTitle), nextStep: reason)
+        case let .SettingsInvalid(reason, _):
+            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
+            return Problem(title: String(localized: .Problem2.problemInvalidInputTitle), nextStep: reason)
         case .ServerTooOld:
             return Problem(
-                title: String(localized: .problemPluginServerTooOldTitle),
-                nextStep: String(localized: .problemUpgradeServerNextStep),
+                title: String(localized: .Problem3.problemPluginServerTooOldTitle),
+                nextStep: String(localized: .Problem0.problemUpgradeServerNextStep),
                 detail: detail
             )
         // 比这个壳新的类别：先按服务器出错说。
         default:
             return Problem(
-                title: String(localized: .problemUpstreamTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
+                title: String(localized: .Problem2.problemUpstreamTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
                 detail: detail
             )
         }
@@ -300,7 +374,7 @@ struct ProblemDetail: View {
                 isExpanded.toggle()
             } label: {
                 HStack(spacing: WontonTheme.spacing.s4) {
-                    Text(.commonDetails)
+                    Text(.Common.commonDetails)
                     WontonIcon.forward.view(size: WontonTheme.size.iconTiny)
                         .rotationEffect(isExpanded ? .degrees(90) : .zero)
                 }
@@ -336,7 +410,7 @@ struct ProblemView: View {
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
-            Button(String(localized: .commonRetry), action: retry)
+            Button(String(localized: .Common.commonRetry), action: retry)
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
                 .padding(.vertical, WontonTheme.spacing.s8)
             if let detail = problem.detail { ProblemDetail(text: detail) }
@@ -365,7 +439,7 @@ struct ProblemNotice: View {
                             .foregroundStyle(Color(colors.textSecondary))
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(String(localized: .commonClose))
+                    .accessibilityLabel(String(localized: .Common.commonClose))
                 }
             }
         }
@@ -412,7 +486,7 @@ struct ProblemRow: View {
             }
             Spacer(minLength: 0)
             if let retry {
-                Button(String(localized: .commonRetry), action: retry).buttonStyle(WontonSmallButtonStyle())
+                Button(String(localized: .Common.commonRetry), action: retry).buttonStyle(WontonSmallButtonStyle())
             }
         }
     }
@@ -424,7 +498,7 @@ private struct SlowHint: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        Text(.problemSlowLoading)
+        Text(.Problem2.problemSlowLoading)
             .wontonText(WontonTheme.typography.supporting)
             .foregroundStyle(Color(colors.textSecondary))
             .multilineTextAlignment(.center)
@@ -465,7 +539,7 @@ struct ListSkeleton: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .clipped()
         .opacity(isDim ? WontonTheme.ratio.secondaryContent : 1)
-        .accessibilityLabel(Text(.problemLoading))
+        .accessibilityLabel(Text(.Problem1.problemLoading))
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 0.9).repeatForever()) { isDim = true }

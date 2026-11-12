@@ -48,7 +48,7 @@ permission-notice-devices = このアプリは渡したホストのデバイス�
 # アプリ詳細の通知。
 plugin-firewall-notice = このマシンのファイアウォールが外部からの接続を遮断している可能性があり、ローカルネットワークのデバイスから接続できないかもしれません
 plugin-egress-proxy-select = プロキシの設定でこのアプリを選んでください
-plugin-cross-origin-isolation = このアプリはオリジン間の分離を緩めています。Androidでは、そのページがほかのウェブページとプロセスを共有する可能性があります。
+plugin-cross-origin-isolation = このアプリはクロスオリジン分離が必要です。Androidでは、そのページはブラウザで開きます。
 
 # インストールと更新のプレビューに表示する通知と、インストールできない理由。
 install-retained-data = このサーバーには前に{ $id }が使っていたデータとキーが残っており、インストールしたアプリはそれらを読めます。望まない場合は先に完全に削除してください
@@ -57,6 +57,7 @@ install-images-from = イメージの取得元：{ $images }
 install-images-unpinned = イメージがダイジェストで固定されていません：{ $images }
 install-webui-sso = Wontonでウェブページを開くと自動的にログインします
 install-host-network-egress = ホストネットワークのサービスは、Wontonのプロキシを経由せず、ホスト自身の経路でインターネットに接続します
+install-host-network-proxied = ホストネットワークのサービスもインターネットプロキシ経由で接続します
 install-system-preinstalled = システムアプリは自宅サーバーにプレインストールされているものに限ります
 install-already-installed = { $id }はすでにインストールされています（バージョン{ $version }）
 install-unreviewed-provider = Wontonはこのアプリを審査していません。コードとイメージは{ $provider }が提供しています

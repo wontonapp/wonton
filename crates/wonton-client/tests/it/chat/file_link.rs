@@ -56,8 +56,9 @@ impl Room {
         }
     }
 
-    /// App 被杀再打开：设备身份还在，配对还有效。
+    /// App 被杀再打开：设备身份还在，配对还有效。旧核心先完全停下再开新的，和真的重启（换进程）一样。
     async fn restart(&mut self) {
+        self.phone.test_shut_down().await;
         let fresh = Phone::open(self.dir.path());
         drop(std::mem::replace(&mut self.phone, fresh));
         self.phone.connect(&self.home);

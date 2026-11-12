@@ -1,4 +1,7 @@
+use serde_json::Value;
+
 use super::*;
+use crate::plugin::install_notes::MAX_INSTALL_TIMEOUT_SECS;
 
 #[test]
 fn plugin_ids_cannot_occupy_bot_web_host_labels() {
@@ -19,59 +22,50 @@ fn plugin_ids_cannot_occupy_bot_web_host_labels() {
 }
 
 #[test]
-fn webui_friends_defaults_to_false() {
+fn webui_accounts_is_left_out_when_not_declared() {
     let webui: WebUi = serde_json::from_value(serde_json::json!({
         "service": "web",
         "port": 8080
     }))
     .unwrap();
-    assert!(!webui.friends);
+    assert_eq!(webui.accounts, None);
     let encoded = serde_json::to_value(&webui).unwrap();
-    assert_eq!(encoded["friends"], false);
+    assert!(encoded.get("accounts").is_none());
     assert_eq!(serde_json::from_value::<WebUi>(encoded).unwrap(), webui);
 }
 
 #[test]
-fn webui_friends_round_trips_in_manifest() {
-    for friends in [false, true] {
-        let manifest: Manifest = serde_json::from_value(serde_json::json!({
-            "spec": "0.9",
-            "id": "com.example.web",
-            "version": "1.0.0",
-            "kind": "app",
-            "title": {"en": "Example"},
-            "description": {"en": "Example"},
-            "permissions": [],
-            "webui": {"service": "web", "port": 8080, "friends": friends}
-        }))
-        .unwrap();
-        manifest.validate(&Languages::default()).unwrap();
-        assert_eq!(manifest.webui.as_ref().unwrap().friends, friends);
-        let encoded = serde_json::to_value(&manifest).unwrap();
-        assert_eq!(encoded["webui"]["friends"], friends);
-        let decoded: Manifest = serde_json::from_value(encoded.clone()).unwrap();
-        assert_eq!(decoded.webui, manifest.webui);
-        assert_eq!(serde_json::to_value(decoded).unwrap(), encoded);
-    }
+fn webui_accounts_round_trips_in_manifest() {
+    let manifest: Manifest = serde_json::from_value(serde_json::json!({
+        "spec": "0.13",
+        "id": "com.example.web",
+        "version": "1.0.0",
+        "kind": "app",
+        "title": {"en": "Example"},
+        "description": {"en": "Example"},
+        "permissions": [],
+        "webui": {"service": "web", "port": 8080, "accounts": "per_user"}
+    }))
+    .unwrap();
+    manifest.validate(&Languages::default()).unwrap();
+    assert_eq!(
+        manifest.webui.as_ref().unwrap().accounts,
+        Some(Accounts::PerUser)
+    );
+    let encoded = serde_json::to_value(&manifest).unwrap();
+    assert_eq!(encoded["webui"]["accounts"], "per_user");
+    let decoded: Manifest = serde_json::from_value(encoded).unwrap();
+    assert_eq!(decoded.webui, manifest.webui);
 }
 
 #[test]
-fn webui_friends_rejects_non_boolean_values() {
-    for invalid in [
-        serde_json::json!(null),
-        serde_json::json!("true"),
-        serde_json::json!("false"),
-        serde_json::json!(0),
-        serde_json::json!(1),
-        serde_json::json!([]),
-        serde_json::json!({}),
+fn webui_rejects_unknown_account_models_and_the_removed_friends_flag() {
+    for webui in [
+        serde_json::json!({"service": "web", "port": 8080, "accounts": "shared"}),
+        serde_json::json!({"service": "web", "port": 8080, "accounts": true}),
+        serde_json::json!({"service": "web", "port": 8080, "friends": true}),
     ] {
-        assert!(
-            serde_json::from_value::<WebUi>(serde_json::json!({
-                "service": "web", "port": 8080, "friends": invalid
-            }))
-            .is_err()
-        );
+        assert!(serde_json::from_value::<WebUi>(webui).is_err());
     }
 }
 
@@ -270,5 +264,39 @@ fn semver_is_checked() {
     }
     for bad in ["1.2", "v1.2.3", "01.2.3", "1.2.x", "1.2.3-é"] {
         assert!(!is_semver(bad), "{bad}");
+    }
+}
+
+#[test]
+fn the_install_deadline_is_optional_and_bounded() {
+    let manifest = |seconds: Value| -> Manifest {
+        let mut value = serde_json::json!({
+            "spec": "0.14",
+            "id": "com.example.slow",
+            "version": "1.0.0",
+            "kind": "app",
+            "title": {"en": "Example"},
+            "description": {"en": "Example"},
+            "permissions": []
+        });
+        if !seconds.is_null() {
+            value["install_timeout_secs"] = seconds;
+        }
+        serde_json::from_value(value).unwrap()
+    };
+    assert_eq!(manifest(Value::Null).install_timeout_secs, None);
+    for good in [60, 900, MAX_INSTALL_TIMEOUT_SECS] {
+        manifest(serde_json::json!(good))
+            .validate(&Languages::default())
+            .unwrap();
+    }
+    for bad in [59, MAX_INSTALL_TIMEOUT_SECS + 1] {
+        let error = manifest(serde_json::json!(bad))
+            .validate(&Languages::default())
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("install_timeout_secs"),
+            "{error}"
+        );
     }
 }

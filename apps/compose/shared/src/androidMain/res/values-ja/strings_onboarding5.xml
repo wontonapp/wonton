@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Trailing label on a recommended app row that is already installed. -->
+    <string name="onboarding_app_installed">インストール済み</string>
+    <!-- Bar title of the in-app browser that opens the model gateway's settings. -->
+    <string name="onboarding_gateway_title">モデル設定</string>
+    <!-- Row title: type a model provider by hand instead of picking a recommended one. -->
+    <string name="onboarding_model_custom">カスタム</string>
+    <!-- Label of the password field for the provider's API key. -->
+    <string name="onboarding_model_form_api_key">APIキー</string>
+    <!-- Button that expands the list of less common model providers. -->
+    <string name="onboarding_model_more">その他のプロバイダー</string>
+    <!-- Primary button that advances to the next setup step. -->
+    <string name="onboarding_next">次へ</string>
+    <!-- Problem title while installing: the app is already installed or another task is busy. -->
+    <string name="onboarding_problem_plugin_conflict">このアプリはインストール済みか使用中です。現在の処理が終わったら更新してください。</string>
+    <!-- Problem title while installing: the request was rejected as invalid. -->
+    <string name="onboarding_problem_plugin_invalid">この操作は受け付けられませんでした。詳細を確認して修正し、再試行してください。</string>
+    <!-- Problem title while installing: the app's source is temporarily unreachable. -->
+    <string name="onboarding_problem_plugin_source_unavailable">アプリの情報を取得できません。提供元が復旧してから再試行してください。</string>
+    <!-- Problem title while installing: the home server hit an error. -->
+    <string name="onboarding_problem_plugin_upstream">自宅サーバーでエラーが発生しました。しばらくしてから再試行してください。</string>
+    <!-- Row description in the review step. Argument: the model's name. -->
+    <string name="onboarding_review_unreachable_model">%1$s · テスト時に接続できませんでした</string>
+    <!-- Card title at the top of the apps step in setup: pick the apps to install. -->
+    <string name="onboarding_step_apps">アプリの選択</string>
+    <!-- Card title at the top of the profile step in setup. -->
+    <string name="onboarding_step_profile">プロフィール</string>
+</resources>

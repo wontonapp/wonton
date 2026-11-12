@@ -37,6 +37,10 @@ struct SettingsTab: View {
     @ViewBuilder private func destination(_ route: SettingsRoute) -> some View {
         switch route {
         case .server: ConnectionView(model: home, plugins: plugins)
+        case .matrixLogin:
+            MatrixLoginView(model: home) {
+                if model.path.last == .matrixLogin { model.path.removeLast() }
+            }
         case .connectionDetails: ConnectionDetailsView(model: home)
         case .invite: InviteView(model: home, chat: chat)
         case .pairing:
@@ -45,14 +49,16 @@ struct SettingsTab: View {
                 onBack: { if !model.path.isEmpty { model.path.removeLast() } },
                 onPaired: { if !model.path.isEmpty { model.path.removeLast() } }
             )
-                .wontonPushedScreen(String(localized: .pairingTitleAgain))
+                .wontonPushedScreen(String(localized: .Pairing.pairingTitleAgain))
         case .peers:
             PeersView(core: chat.core, focusRequests: model.peersFocusRequests)
         case .friends: FriendsView(core: chat.core)
         case .egress: EgressSettingsView(model: plugins)
         case .registryMirror: RegistryMirrorSettingsView(model: plugins)
         case .coreUpgrade: CoreUpgradeView(model: plugins)
-        case .appearance: AppearanceView(model: appearance).wontonPushedScreen(String(localized: .appearanceTitle))
+        case .appearance:
+            AppearanceView(model: appearance)
+                .wontonPushedScreen(String(localized: .Appearance0.appearanceTitle))
         case .chatBackup: ChatBackupView(model: chat)
         case .bottomBar: TabSettingsView(plugins: plugins).wontonPushedScreen(TabText.bottomBar)
         case .notifications: NotificationSettingsView()
@@ -66,6 +72,7 @@ struct SettingsView: View {
     let editProfile: () -> Void
     let chooseAgent: () -> Void
     @Environment(OnboardingModel.self) private var onboarding
+    @Environment(\.appVersionOverride) private var appVersionOverride
 
     var body: some View {
         ScrollView {
@@ -91,29 +98,29 @@ struct SettingsView: View {
         switch entry {
         case .profile:
             Button(action: editProfile) {
-                WontonRow(title: String(localized: .onboardingStepProfile), showsForward: true)
+                WontonRow(title: String(localized: .Onboarding4.onboardingStepProfile), showsForward: true)
             }
         case let .server(name, status, upgrade):
             NavigationLink(value: SettingsRoute.server) {
                 WontonRow(
-                    title: name?.localizedDisplayName ?? String(localized: .serversDefaultFirst),
+                    title: name?.localizedDisplayName ?? String(localized: .Servers.serversDefaultFirst),
                     value: status.connectionText, badge: upgrade, showsForward: true
                 )
             }
         case .appearance:
             NavigationLink(value: SettingsRoute.appearance) {
-                WontonRow(title: String(localized: .appearanceTitle), showsForward: true)
+                WontonRow(title: String(localized: .Appearance0.appearanceTitle), showsForward: true)
             }
         case .language:
             LanguageSettingsRow()
         case let .peers(count):
             NavigationLink(value: SettingsRoute.peers) {
-                WontonRow(title: String(localized: .peersTitle), value: String(count), showsForward: true)
+                WontonRow(title: String(localized: .Peers3.peersTitle), value: String(count), showsForward: true)
             }
         case let .friends(count, requests):
             NavigationLink(value: SettingsRoute.friends) {
                 WontonRow(
-                    title: String(localized: .friendsTitle),
+                    title: String(localized: .Friends2.friendsTitle),
                     value: String(count),
                     badgeText: requests > 0 ? String(requests) : nil,
                     showsForward: true
@@ -123,25 +130,30 @@ struct SettingsView: View {
             NavigationLink(value: SettingsRoute.bottomBar) { WontonRow(title: TabText.bottomBar, showsForward: true) }
         case .notifications:
             NavigationLink(value: SettingsRoute.notifications) {
-                WontonRow(title: String(localized: .notificationTitle), showsForward: true)
+                WontonRow(title: String(localized: .Settings.notificationTitle), showsForward: true)
             }
         case .defaultAgent:
             Button(action: chooseAgent) {
-                WontonRow(title: String(localized: .launcherDefaultAgent), showsForward: true)
+                WontonRow(title: String(localized: .Launcher.launcherDefaultAgent), showsForward: true)
             }
         case let .chatBackup(recovery):
             NavigationLink(value: SettingsRoute.chatBackup) {
                 WontonRow(
-                    title: String(localized: .chatBackupTitle), value: recovery.backupValue, showsForward: true
+                    title: String(localized: .ChatBackup1.chatBackupTitle), value: recovery.backupValue,
+                        showsForward: true
                 )
             }
         case .restartOnboarding:
             Button { onboarding.send(.restartOnboarding) } label: {
-                WontonRow(title: String(localized: .settingsRestartOnboarding))
+                WontonRow(title: String(localized: .Settings.settingsRestartOnboarding))
             }
         case .about:
             NavigationLink(value: SettingsRoute.about) {
-                WontonRow(title: String(localized: .settingsAbout), value: AppVersion.full, showsForward: true)
+                WontonRow(
+                    title: String(localized: .Settings.settingsAbout),
+                    value: appVersionOverride ?? AppVersion.full,
+                    showsForward: true
+                )
             }
         case .matrixAccount, .matrixDevices, .addWontonServer, .other:
             EmptyView()
@@ -152,21 +164,40 @@ struct SettingsView: View {
 private enum AppVersion {
     static var short: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? String(localized: .commonUnknown)
+            ?? String(localized: .Common.commonUnknown)
     }
     static var full: String {
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
-            ?? String(localized: .commonUnknown)
+            ?? String(localized: .Common.commonUnknown)
         return "\(short) (\(build))"
     }
 }
 
+/// 截图测试钉版本号用：设置页直接读 Bundle 的版本，CI 的 Debug 构建没有 tag 时会变，参考图跟着漂。
+/// 测试夹具设一个固定值；生产不设，照常读真实版本。
+private struct AppVersionOverrideKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    var appVersionOverride: String? {
+        get { self[AppVersionOverrideKey.self] }
+        set { self[AppVersionOverrideKey.self] = newValue }
+    }
+}
+
 private struct AboutView: View {
+    @Environment(\.appVersionOverride) private var appVersionOverride
     var body: some View {
         ScrollView {
-            WontonGroup { WontonRow(title: String(localized: .pluginInfoVersion), value: AppVersion.full) }
-                .padding(WontonTheme.spacing.pageInset)
+            WontonGroup {
+                WontonRow(
+                    title: String(localized: .Plugin2.pluginInfoVersion),
+                    value: appVersionOverride ?? AppVersion.full
+                )
+            }
+            .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .settingsAbout))
+        .wontonPushedScreen(String(localized: .Settings.settingsAbout))
     }
 }

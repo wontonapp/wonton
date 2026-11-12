@@ -1,8 +1,9 @@
 use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
-    AppearanceViewModel, ChatViewModel, FriendsViewModel, HomeViewModel, OnboardingViewModel,
-    PeersViewModel, PluginsViewModel, ServersViewModel, SessionListViewModel, SettingsViewModel,
-    TabsViewModel, TransfersViewModel,
+    AppearanceViewModel, BotContactsViewModel, ChatViewModel, ComposerViewModel,
+    ConfirmationsViewModel, FriendsViewModel, HomeViewModel, OnboardingViewModel, PeersViewModel,
+    PluginsViewModel, ServersViewModel, SessionListViewModel, SettingsViewModel, TabsViewModel,
+    TransfersViewModel, WidgetSnapshot,
 };
 
 use crate::session_store::SessionStore;
@@ -120,6 +121,33 @@ impl ChatSubscription {
     /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
     pub async fn next(&self) -> Option<ChatViewModel> {
         self.updates.next(ChatViewModel::clone).await
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
+/// “等你确认”列表的订阅（ADR-0016），用法同 [`SessionListSubscription`]。
+#[derive(uniffi::Object)]
+pub struct ConfirmationsSubscription {
+    updates: Updates<ConfirmationsViewModel>,
+}
+
+impl ConfirmationsSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<ConfirmationsViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl ConfirmationsSubscription {
+    /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
+    pub async fn next(&self) -> Option<ConfirmationsViewModel> {
+        self.updates.next(ConfirmationsViewModel::clone).await
     }
 
     /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
@@ -317,6 +345,33 @@ impl ServersSubscription {
     }
 }
 
+/// Bot 联系人页（ADR-0045、ADR-0050）的订阅，用法同 [`SessionListSubscription`]。
+#[derive(uniffi::Object)]
+pub struct BotContactsSubscription {
+    updates: Updates<BotContactsViewModel>,
+}
+
+impl BotContactsSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<BotContactsViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl BotContactsSubscription {
+    /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
+    pub async fn next(&self) -> Option<BotContactsViewModel> {
+        self.updates.next(BotContactsViewModel::clone).await
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
 /// “其他服务器”页面（ADR-0050）的订阅，用法同 [`SessionListSubscription`]。
 #[derive(uniffi::Object)]
 pub struct PeersSubscription {
@@ -363,6 +418,65 @@ impl FriendsSubscription {
     /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
     pub async fn next(&self) -> Option<FriendsViewModel> {
         self.updates.next(FriendsViewModel::clone).await
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
+/// 一个房间输入框的订阅（ADR-0094），用法同 [`SessionListSubscription`]。
+#[derive(uniffi::Object)]
+pub struct ComposerSubscription {
+    updates: Updates<ComposerViewModel>,
+}
+
+impl ComposerSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<ComposerViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl ComposerSubscription {
+    /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
+    pub async fn next(&self) -> Option<ComposerViewModel> {
+        self.updates.next(ComposerViewModel::clone).await
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
+/// 系统入口快照的订阅（ADR-0100）：每写下一份快照来一次，壳据此让系统刷新小组件、更新快捷方式和搜索索引。
+/// 用法同 [`SessionListSubscription`]，只是这个核心启动后还没写过时，第一次 `next()` 等到写下第一份。
+#[derive(uniffi::Object)]
+pub struct WidgetSnapshotSubscription {
+    updates: Updates<Option<WidgetSnapshot>>,
+}
+
+impl WidgetSnapshotSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<Option<WidgetSnapshot>>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl WidgetSnapshotSubscription {
+    /// 等待下一份写下的快照。订阅取消或核心释放后返回 `None`。
+    pub async fn next(&self) -> Option<WidgetSnapshot> {
+        loop {
+            if let Some(snapshot) = self.updates.next(Option::clone).await? {
+                return Some(snapshot);
+            }
+        }
     }
 
     /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。

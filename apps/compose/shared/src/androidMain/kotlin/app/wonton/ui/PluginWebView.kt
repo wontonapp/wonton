@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.content.res.Configuration
@@ -10,14 +11,17 @@ import android.view.View
 import android.view.MotionEvent
 import android.view.ViewGroup
 import android.view.ContextThemeWrapper
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.HttpAuthHandler
+import android.webkit.PermissionRequest
 import android.webkit.WebResourceError
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -48,6 +52,14 @@ private const val TAG = "WontonWeb"
 /** 和 `wonton-tunnel` 的 `ERROR_HEADER` 一致。 */
 private const val TUNNEL_ERROR_HEADER = "x-wonton-tunnel-error"
 
+// 代理给壳的用户可读错误类别，取值见核心 `TunnelError::category`。
+private const val CATEGORY_ERROR_HEADER = "x-wonton-error"
+
+// 只有这些取值是本地代理回的；网关的响应也带 x-wonton-error，取值不同。
+private val PROXY_ERROR_CATEGORIES = setOf(
+    "tunnel-unavailable", "upstream-unavailable", "unauthorized", "protocol",
+)
+
 /** 只有服务端错误才算加载失败;4xx 是插件自己的内容。 */
 private const val HTTP_SERVER_ERROR = 500
 
@@ -71,11 +83,20 @@ private val pinchZoomScript = """
 class PluginWebViewController {
     internal var view: WebView? = null
     internal var touchObserver: ((MotionEvent) -> Unit)? = null
+    /** 网页要摄像头/麦克风时的处置（[TabMediaPermissionFlow]）；没接的页面一律拒绝。 */
+    internal var permissionHandler: ((PermissionRequest) -> Unit)? = null
+    internal var fileChooserLauncher: ActivityResultLauncher<Intent>? = null
+    internal var pendingFileChooser: ValueCallback<Array<Uri>>? = null
     var canGoBack by mutableStateOf(false)
         private set
     var customView: View? by mutableStateOf(null)
         private set
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+
+    internal fun onPermissionRequest(request: PermissionRequest) {
+        val handler = permissionHandler
+        if (handler == null) request.deny() else handler(request)
+    }
 
     /** 退出网页视频全屏；胶囊和系统返回都走原生回调，不接管 Activity 的窗口。 */
     fun closeCustomView(): Boolean {
@@ -103,6 +124,9 @@ class PluginWebViewController {
         view = null
         canGoBack = false
         closeCustomView()
+        pendingFileChooser?.onReceiveValue(null)
+        pendingFileChooser = null
+        fileChooserLauncher = null
     }
 
     fun goBack(): Boolean {
@@ -206,6 +230,7 @@ fun PluginWebView(
     val openLink by rememberUpdatedState(onOpenLink)
     val gone by rememberUpdatedState(onRendererGone)
     val loadStarted by rememberUpdatedState(onLoadStarted)
+    rememberFileChooserLauncher(controller)
     val canvas = WontonTheme.colors.canvas.toColor().toArgb()
     var generation by remember { mutableIntStateOf(0) }
     val snapshot = remember(controller) { WebViewSnapshot() }
@@ -479,6 +504,9 @@ private class ProxyAuthClient(
 
     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
         if (request.isForMainFrame) {
+            // 错误页上看不出是哪一层拒的（明文策略、代理、隧道），原因只在这里；地址照 onPageFinished 只记到路径。
+            val page = request.url.buildUpon().clearQuery().fragment(null).build()
+            Log.w(TAG, "page failed to load, page=$page code=${error.errorCode} reason=${error.description}")
             failedUrl = request.url.toString()
             failed(view)
         }
@@ -488,11 +516,22 @@ private class ProxyAuthClient(
      * 规则与 iOS 的 `tunnelFailed || statusCode >= 500` 一致（TabWebNavigation.swift）。 */
     override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
         if (!request.isForMainFrame) return
-        val headers = response.responseHeaders.orEmpty().keys
-        val fromProxy = headers.any { it.equals(TUNNEL_ERROR_HEADER, ignoreCase = true) }
+        val headers = response.responseHeaders.orEmpty()
+        // 类别由代理给（x-wonton-error）。服务端的网关也用这个头名，只认代理自己的取值：
+        // tunnel-unavailable 是没拿到响应，upstream-unavailable 拿到了响应（服务器在，上游没就绪），
+        // 照实交状态码给核心判断。
+        val category = headers.entries
+            .firstOrNull { it.key.equals(CATEGORY_ERROR_HEADER, ignoreCase = true) }?.value?.lowercase()
+        val proxyCategory = category in PROXY_ERROR_CATEGORIES
+        val fromProxy = proxyCategory || headers.keys.any { it.equals(TUNNEL_ERROR_HEADER, ignoreCase = true) }
         if (!fromProxy && response.statusCode < HTTP_SERVER_ERROR) return
         failedUrl = request.url.toString()
-        failed(view, if (fromProxy) null else response.statusCode)
+        val status = when (category) {
+            "upstream-unavailable" -> response.statusCode
+            "tunnel-unavailable", "unauthorized", "protocol" -> null
+            else -> if (fromProxy) null else response.statusCode
+        }
+        failed(view, status)
     }
 
     private fun failed(view: WebView, status: Int? = null) {

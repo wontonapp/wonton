@@ -6,11 +6,18 @@ struct OnboardingView: View {
     let plugins: PluginsModel
     let nav: StepNav
     let openGateway: (URL) -> Void
+    /// 重看引导的关闭；首次引导没有。
+    var close: (() -> Void)?
     @State private var modelForm = OnboardingModelForm()
     @State private var isKeyboardVisible = false
     @Environment(\.wontonColors) private var colors
 
     private var view: OnboardingViewModel { model.viewModel }
+
+    /// 关掉重看的引导：核心丢弃这次的选择，壳回到设置。X 和左边缘右滑走同一条路。
+    private var handleClose: () -> Void {
+        { model.close(); close?() }
+    }
 
     private var frameNav: StepNav {
         var result = nav
@@ -27,6 +34,7 @@ struct OnboardingView: View {
             isWorking: view.loading || view.model.testing || view.review.commit == .running,
             back: { model.send(.backOnboardingStep) },
             skip: { model.send(.skipOnboardingStep) }, next: advance,
+            close: close.map { _ in handleClose },
             content: {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -50,6 +58,19 @@ struct OnboardingView: View {
         .onChange(of: view.step, initial: true) { _, step in
             modelForm = OnboardingModelForm(choice: step == .model ? view.model.choice : nil)
         }
+        // 左边缘右滑：和系统返回同一路——能后退就后退，第一步（或关掉的引导）等同关闭。
+        .background(
+            FullscreenExitGesture(
+                enabled: frameNav.canClose, webView: nil,
+                exit: {
+                    if frameNav.canBack {
+                        model.send(.backOnboardingStep)
+                    } else {
+                        handleClose()
+                    }
+                }
+            )
+        )
     }
 
     @ViewBuilder private func content(_ proxy: ScrollViewProxy) -> some View {
@@ -86,11 +107,11 @@ struct OnboardingView: View {
     }
 
     private var primaryTitle: String {
-        guard view.step == .review else { return String(localized: .onboardingNext) }
+        guard view.step == .review else { return String(localized: .Onboarding2.onboardingNext) }
         switch view.review.commit {
-        case .notStarted: return String(localized: .onboardingDone)
-        case .running: return String(localized: .onboardingRunning)
-        case .done: return String(localized: .onboardingEnterChat)
+        case .notStarted: return String(localized: .Onboarding3.onboardingDone)
+        case .running: return String(localized: .Onboarding2.onboardingRunning)
+        case .done: return String(localized: .Onboarding2.onboardingEnterChat)
         }
     }
 
@@ -107,13 +128,13 @@ struct OnboardingView: View {
 private extension OnboardingStep {
     var title: String {
         switch self {
-        case .profile: String(localized: .onboardingStepProfile)
-        case .agent: String(localized: .onboardingStepAgent)
-        case .model: String(localized: .onboardingStepModel)
-        case .apps: String(localized: .onboardingStepApps)
-        case .review: String(localized: .onboardingStepReview)
-        case .finished: String(localized: .onboardingStepFinished)
-        case .other: String(localized: .onboardingStepOther)
+        case .profile: String(localized: .Onboarding4.onboardingStepProfile)
+        case .agent: String(localized: .Onboarding1.onboardingStepAgent)
+        case .model: String(localized: .Onboarding1.onboardingStepModel)
+        case .apps: String(localized: .Onboarding0.onboardingStepApps)
+        case .review: String(localized: .Onboarding3.onboardingStepReview)
+        case .finished: String(localized: .Onboarding0.onboardingStepFinished)
+        case .other: String(localized: .Onboarding4.onboardingStepOther)
         }
     }
 }

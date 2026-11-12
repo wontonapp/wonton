@@ -108,9 +108,16 @@ fun ChatFailure.problem(detail: String): Problem = when (this) {
         R.string.problem_unauthorized_next_step,
         detail,
     )
+    ChatFailure.FORBIDDEN -> problem(
+        R.string.problem_forbidden_title,
+        R.string.problem_forbidden_next_step,
+        detail,
+    )
     ChatFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
     ChatFailure.NOT_READY -> Problem(titleRes = R.string.problem_not_ready_title, nextStep = detail)
     ChatFailure.INVALID_INPUT -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = detail)
+    // 比这个壳新的类别：先按服务器出错说。
+    ChatFailure.OTHER -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
 }
 
 val ChatProblem.problem: Problem
@@ -268,6 +275,11 @@ val CoreException.problem: Problem
                 R.string.problem_unauthorized_next_step,
                 detail,
             )
+            is CoreException.Forbidden -> problem(
+                R.string.problem_forbidden_title,
+                R.string.problem_forbidden_next_step,
+                detail,
+            )
             is CoreException.Upstream -> problem(
                 R.string.problem_upstream_title,
                 R.string.problem_upstream_next_step,
@@ -280,6 +292,11 @@ val CoreException.problem: Problem
                 detail = detail,
             )
             is CoreException.InvalidInput -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = reason)
+            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
+            is CoreException.SettingsInvalid -> Problem(
+                titleRes = R.string.problem_invalid_input_title,
+                nextStep = reason,
+            )
             is CoreException.ServerTooOld -> Problem(
                 titleRes = R.string.problem_plugin_server_too_old_title,
                 nextStepRes = R.string.problem_upgrade_server_next_step,

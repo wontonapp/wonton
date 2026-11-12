@@ -3,6 +3,9 @@ import WebKit
 
 /// 看手指在网页上往哪拖，不看页面滚没滚：整页滚动、页面里的容器滚动、不能滚的单页和 canvas 都一样。
 /// 往下拖（往回看）叫出胶囊，往上拖（往下读）藏起来。只旁听，不拦触摸。
+///
+/// 手势挂在窗口上、只收落在这个网页里的触摸，不挂在 WKWebView 上：挂在网页里的手势归 WebKit 的触摸延迟手势管，
+/// 页面自己处理了触摸（touchstart 里 preventDefault）就被判失败，胶囊叫不出来，全屏页就没有出口。
 struct FullscreenCapsuleReveal: UIViewRepresentable {
     let enabled: Bool
     let webView: WKWebView?
@@ -16,7 +19,7 @@ struct FullscreenCapsuleReveal: UIViewRepresentable {
         anchor.pan.isEnabled = enabled
     }
 
-    static func dismantleUIView(_ anchor: CapsuleRevealAnchor, coordinator: ()) { anchor.attach(to: nil) }
+    static func dismantleUIView(_ anchor: CapsuleRevealAnchor, coordinator: ()) { anchor.detach() }
 }
 
 final class CapsuleRevealAnchor: UIView, UIGestureRecognizerDelegate {
@@ -41,11 +44,23 @@ final class CapsuleRevealAnchor: UIView, UIGestureRecognizerDelegate {
 
     required init?(coder: NSCoder) { nil }
 
-    func attach(to webView: WKWebView?) {
-        guard webView !== host else { return }
-        host?.removeGestureRecognizer(pan)
-        host = webView
-        webView?.addGestureRecognizer(pan)
+    func attach(to webView: WKWebView?) { host = webView }
+
+    func detach() {
+        pan.view?.removeGestureRecognizer(pan)
+        host = nil
+        reveal = nil
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        pan.view?.removeGestureRecognizer(pan)
+        window?.addGestureRecognizer(pan)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard let host, let view = touch.view else { return false }
+        return view.isDescendant(of: host)
     }
 
     func gestureRecognizer(
@@ -58,7 +73,7 @@ final class CapsuleRevealAnchor: UIView, UIGestureRecognizerDelegate {
         case .began:
             lastY = 0; run = 0; sent = nil
         case .changed:
-            let offset = recognizer.translation(in: recognizer.view).y
+            let offset = recognizer.translation(in: window).y
             let step = offset - lastY
             lastY = offset
             if step == 0 { return }

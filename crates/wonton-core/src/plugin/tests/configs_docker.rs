@@ -92,6 +92,7 @@ async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
         vec![],
         Vec::new(),
         false,
+        &Default::default(),
         &super::langs(),
     )
     .await
@@ -103,4 +104,99 @@ async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
     m.uninstall(&id, false, &super::langs()).await.unwrap();
     assert!(!staged.exists());
     assert!(m.list().is_empty());
+}
+
+/// 没写 `mode` 的配置是 0644：一次性的复制服务复制出去以后，应用和主人都还能改。
+#[tokio::test]
+#[ignore = "需要 Docker，真实容器验证默认权限"]
+async fn configs_are_writable_by_their_owner_so_copies_can_be_edited() {
+    let engine = Engine::connect().unwrap();
+    engine.check_server().await.unwrap();
+    crate::test_docker::ensure_image(&engine, &image()).await;
+    let names = Names::new();
+    let dir = tempfile::tempdir().unwrap();
+    let mut manager = manager_in_instance(engine.clone(), &dir, names.name());
+    manager.cfg.install_timeout = Duration::from_secs(60);
+    let m = Arc::new(manager);
+    let compose = format!(
+        "configs:\n  seed:\n    content: \"v1\"\n{}",
+        package(
+            &format!(
+                "  web:\n    image: {}\n    command: ['sleep', 'infinity']\n    \
+                 configs: [{{source: seed, target: /seed/app.conf}}]",
+                image()
+            ),
+            "  permissions: []",
+        )
+    );
+    m.install(&compose, &[], super::langs()).await.unwrap();
+    let web = names.container("app-test", "web");
+    let stat = engine
+        .exec_output(
+            &web,
+            &["stat", "-c", "%a", "/seed/app.conf"]
+                .iter()
+                .map(|a| a.to_string())
+                .collect::<Vec<_>>(),
+            None,
+            Duration::from_secs(10),
+        )
+        .await
+        .unwrap();
+    assert_eq!(stat.stdout, "644", "{}", stat.stderr);
+    m.uninstall(
+        &PluginId::parse("app.test").unwrap(),
+        false,
+        &super::langs(),
+    )
+    .await
+    .unwrap();
+}
+
+/// 目标父目录在镜像里不存在时核心建出来：busybox 里没有 `/seed`，配置照样写得进去。
+#[tokio::test]
+#[ignore = "需要 Docker，真实容器验证自动建父目录"]
+async fn a_missing_parent_directory_is_created_before_the_file_is_written() {
+    let engine = Engine::connect().unwrap();
+    engine.check_server().await.unwrap();
+    crate::test_docker::ensure_image(&engine, &image()).await;
+    let names = Names::new();
+    let dir = tempfile::tempdir().unwrap();
+    let mut manager = manager_in_instance(engine.clone(), &dir, names.name());
+    manager.cfg.install_timeout = Duration::from_secs(60);
+    let m = Arc::new(manager);
+    let compose = format!(
+        "configs:\n  seed:\n    content: \"v1\"\n{}",
+        package(
+            &format!(
+                "  web:\n    image: {}\n    command: ['sleep', 'infinity']\n    \
+                 configs: [{{source: seed, target: /seed/deep/app.conf}}]",
+                image()
+            ),
+            "  permissions: []",
+        )
+    );
+    m.install(&compose, &[], super::langs()).await.unwrap();
+    let web = names.container("app-test", "web");
+    let read = engine
+        .exec_output(
+            &web,
+            &["stat", "-c", "%a %U", "/seed/deep/app.conf"]
+                .iter()
+                .map(|a| a.to_string())
+                .collect::<Vec<_>>(),
+            None,
+            Duration::from_secs(10),
+        )
+        .await
+        .unwrap();
+    assert_eq!(read.exit_code, 0, "{}", read.stderr);
+    assert_eq!(read.stdout, "644 root");
+    m.uninstall(
+        &PluginId::parse("app.test").unwrap(),
+        false,
+        &super::langs(),
+    )
+    .await
+    .unwrap();
 }

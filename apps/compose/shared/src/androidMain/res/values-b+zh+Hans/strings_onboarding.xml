@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_connection">连接</string>
+    <string name="home_awaiting">等你确认</string>
+    <plurals name="home_cards">
+        <item quantity="other">%1$d 张</item>
+    </plurals>
+    <string name="home_none">没有</string>
+    <string name="home_storage">存储</string>
+    <string name="home_storage_value">%1$s 可用，共 %2$s</string>
+</resources>

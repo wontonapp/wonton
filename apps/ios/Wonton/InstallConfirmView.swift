@@ -10,6 +10,7 @@ struct InstallConfirmView: View {
     @State private var rejection: Problem?
     @State private var lanWebui = false
     @State private var enabled: Set<String> = []
+    @State private var secrets: [String: String] = [:]
     @State private var isFillingProfile = false
     @State private var submittedId: String?
     @State private var hostAcknowledgement = false
@@ -36,14 +37,16 @@ struct InstallConfirmView: View {
                 .padding(WontonTheme.spacing.pageInset)
             }
         }
-        .wontonModalScreen(confirmation.actionTitle)
+        .wontonModalScreen(confirmation.actionTitle, showsStatus: true)
+        // 这一屏有密钥输入，切后台的快照里整页盖住。
+        .secretSnapshotMask()
         .wontonDialog(problem: rejection, isPresented: isShowingRejection)
         .wontonDialog(
-            String(localized: .pluginPermissionUnderstandTitle),
-            message: String(localized: .pluginPermissionHostRoot),
+            String(localized: .Plugin3.pluginPermissionUnderstandTitle),
+            message: String(localized: .Plugin0.pluginPermissionHostRoot),
             isPresented: $hostAcknowledgement,
             actions: [
-                WontonDialogAction(title: String(localized: .commonCancel)),
+                WontonDialogAction(title: String(localized: .Common.commonCancel)),
                 WontonDialogAction(title: confirmation.actionTitle, kind: .danger) {
                     if let preview { confirm(preview) }
                 }
@@ -67,7 +70,7 @@ struct InstallConfirmView: View {
                 Task { await load() }
             }
         case let .success(preview):
-            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled) {
+            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled, secrets: $secrets) {
                 isFillingProfile = true
             }
         }
@@ -80,10 +83,11 @@ struct InstallConfirmView: View {
         return nil
     }
 
-    /// 装不了（`blocked`）、缺资料或者有核心不支持的权限时不能确认。
+    /// 装不了（`blocked`）、缺资料、有核心不支持的权限或缺必填密钥时不能确认。
     private var canConfirm: Bool {
         guard let preview else { return false }
         return preview.blocked == nil && preview.missingProfile == nil && preview.permissions.allSatisfy(\.supported)
+            && !missingRequiredSecret(preview.secretInputs, secrets)
     }
 
     private var isShowingRejection: Binding<Bool> {
@@ -142,11 +146,12 @@ struct InstallConfirmView: View {
             line.enabled = enabled.contains(line.permission)
             return line
         }
+        let secrets = secretValues(preview.secretInputs, self.secrets)
         let action: Action
         if isUpgrade {
-            action = .upgradePlugin(preview: preview, secrets: [:], settings: [:])
+            action = .upgradePlugin(preview: preview, secrets: secrets, settings: [:])
         } else {
-            action = .installPlugin(preview: preview, secrets: [:], settings: [:])
+            action = .installPlugin(preview: preview, secrets: secrets, settings: [:])
         }
         do {
             try model.core.dispatch(action: action)
@@ -166,6 +171,7 @@ private struct PreviewContent: View {
     let preview: InstallPreview
     @Binding var lanWebui: Bool
     @Binding var enabled: Set<String>
+    @Binding var secrets: [String: String]
     let fillProfile: () -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -178,13 +184,13 @@ private struct PreviewContent: View {
                 }
                 if let missing = preview.missingProfile {
                     WontonNotice(icon: .info, title: missing, isError: false) {
-                        Button(String(localized: .installFillProfile), action: fillProfile)
+                        Button(String(localized: .Install.installFillProfile), action: fillProfile)
                             .buttonStyle(WontonButtonStyle())
                     }
                 }
                 if !preview.notices.isEmpty { NoticeLines(lines: preview.notices) }
                 if !preview.permissions.isEmpty {
-                    DetailSection(title: String(localized: .installPermissions)) {
+                    DetailSection(title: String(localized: .Install.installPermissions)) {
                         ForEach(preview.permissions, id: \.permission) { line in
                             if line.optional {
                                 PermissionRow(line: line, selection: Binding(
@@ -203,12 +209,19 @@ private struct PreviewContent: View {
                         }
                     }
                 }
+                if !preview.secretInputs.isEmpty {
+                    DetailSection(title: String(localized: .Plugins.secretSectionTitle)) {
+                        SecretInputsSection(inputs: preview.secretInputs, values: secrets) { name, value in
+                            secrets[name] = value
+                        }
+                    }
+                }
                 AlwaysAllowedSection(model: model, preview: preview)
                 if let offer = preview.lanWebui {
                     LanWebuiToggle(offer: offer, isOn: $lanWebui)
                 }
                 if let notes = preview.releaseNotes {
-                    DetailSection(title: String(localized: .installReleaseNotes)) {
+                    DetailSection(title: String(localized: .Install.installReleaseNotes)) {
                         Text(notes)
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
@@ -265,8 +278,8 @@ private struct AlwaysAllowedSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
             BotSwitches(
-                title: String(localized: .toolPolicyAlwaysTitle),
-                risk: String(localized: .installAlwaysAllowedRisk),
+                title: String(localized: .ToolPolicy.toolPolicyAlwaysTitle),
+                risk: String(localized: .Install.installAlwaysAllowedRisk),
                 bots: bots,
                 enabled: true,
                 change: change

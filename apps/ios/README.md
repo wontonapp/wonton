@@ -15,6 +15,8 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
   `PluginDetailView`、`InstallConfirmView` 是商店、详情和安装确认页（ADR-0017）。`SettingsModel` 订阅核心的设置首页，`SettingsView` 按核心的分组渲染，外观、通知和关于在二级页（ADR-0028）；`NotificationSettingsView` 只提供系统通知设置入口并说明这个版本收不到推送，不放无效的类别开关。`EgressSettingsView` 是“家里的服务器”里的出网代理设置，也放着插件网页局域网端口的开关（ADR-0023）。`CoreUpgradeView` 是“家里的服务器”里的升级服务器（ADR-0025）。
   “家里的服务器”顶部始终显示服务器列表和“添加服务器”，当前这台带勾，点另一台切换。长按可改名或移除；移除前确认只删手机上的聊天记录和文件，不影响服务器。添加时配对页左上角可取消，首次配对不显示取消（ADR-0042）。
   默认名由壳按核心给的固定编号和 App 语言显示，自定义名字原样显示；改名预填显示名，只在主人保存时写回（ADR-0043）。
+  配对页和服务器列表的“添加服务器”下面是“用 Matrix 账号登录”（`MatrixLoginView`，ADR-0051），没有服务器的人从配对页进：按核心发现的方式给浏览器登录或密码表单，浏览器登录用
+  `ASWebAuthenticationSession`，回调地址取核心的 `oidcRedirectUri`。`project.yml` 也注册了它的 scheme，回调从面板以外的路径回来时同样交给核心核对。
 - `WontonClient/`：Rust 核心的 Swift 包。`build/WontonClientFFI.xcframework` 和
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
   等几行胶水代码。Rust 静态库依赖的系统框架由包声明，App 和测试目标不各自补链接选项。
@@ -64,6 +66,12 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 ```bash
 apps/ios/scripts/build-core.sh
 ```
+
+版本号在跑 `build-core.sh` 时由仓库根的 `scripts/app-version.sh` 写进不提交的 `Version.xcconfig`（XcodeGen
+生成工程时校验这个文件存在，所以要先生成；规则和 Android 共用，见 `apps/compose/README.md` 的「构建」）：
+**发版跑 `build-core.sh` 时显式传 `WONTON_VERSION=0.2.4`**（与 Android 同一要求，不传时取检出里最近的
+`vX.Y.Z` tag）；构建时给 `xcodebuild` 显式传 `MARKETING_VERSION=0.2.4 CURRENT_PROJECT_VERSION=2004` 也能
+覆盖。
 
 ```bash
 xcodegen generate --spec apps/ios/project.yml
@@ -124,6 +132,14 @@ xcodebuild test -project apps/ios/Wonton.xcodeproj -scheme Wonton \
   -destination 'platform=iOS Simulator,name=<模拟器名称>' \
   -only-testing:WontonTests/PairingLinkTests \
   -only-testing:WontonUITests/PairingLinkUITests CODE_SIGNING_ALLOWED=NO
+```
+
+要后端的界面用例（好友、粘贴、安装行、图片查看、Bot 资料）用 `apps/ios/scripts/ui-test.sh` 跑：配对码只经环境变量
+`PAIRING_CODE` 传进去，没给就 XCTSkip，给了但不像配对码就直接失败。
+
+```bash
+PAIRING_CODE="$(deploy/dev/core/dev.sh pair <地址> | tail -n 1)" apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
+  -only-testing:WontonUITests/BotProfileUITests
 ```
 
 界面截图回归在 `WontonTests/SnapshotTests`：真实界面配固定假数据（同目录的 `SnapshotFixtures`，Debug 专用），逐像素比较

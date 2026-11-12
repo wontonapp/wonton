@@ -17,10 +17,10 @@ extension PermissionLine {
 
     var riskLabel: String? {
         switch risk {
-        case .high: String(localized: .pluginPermissionRiskHigh)
-        case .veryHigh: String(localized: .pluginPermissionRiskVeryHigh)
-        case .highest: String(localized: .pluginPermissionRiskHighest)
-        case .other: String(localized: .pluginPermissionRiskUnknown)
+        case .high: String(localized: .Plugin0.pluginPermissionRiskHigh)
+        case .veryHigh: String(localized: .Plugin2.pluginPermissionRiskVeryHigh)
+        case .highest: String(localized: .Plugin1.pluginPermissionRiskHighest)
+        case .other: String(localized: .Plugin2.pluginPermissionRiskUnknown)
         case nil: nil
         }
     }
@@ -65,12 +65,12 @@ private struct PermissionConfirmation: ViewModifier {
                 }
             )
             .wontonDialog(
-                String(localized: .pluginPermissionUnderstandTitle),
+                String(localized: .Plugin3.pluginPermissionUnderstandTitle),
                 message: active?.line.text,
                 isPresented: $hostPresented,
                 actions: [
-                    WontonDialogAction(title: String(localized: .commonCancel), perform: clear),
-                    WontonDialogAction(title: String(localized: .pluginPermissionOpen), kind: .danger) {
+                    WontonDialogAction(title: String(localized: .Common.commonCancel), perform: clear),
+                    WontonDialogAction(title: String(localized: .Plugin2.pluginPermissionOpen), kind: .danger) {
                         if let active { confirmed(active) }
                         clear()
                     }
@@ -82,17 +82,17 @@ private struct PermissionConfirmation: ViewModifier {
     private var title: String {
         guard let active else { return "" }
         return active.enabled
-            ? String(localized: .pluginPermissionOpenTitle(active.line.text))
-            : String(localized: .pluginPermissionCloseTitle(active.line.text))
+            ? String(localized: .Plugin2.pluginPermissionOpenTitle(active.line.text))
+            : String(localized: .Plugin3.pluginPermissionCloseTitle(active.line.text))
     }
 
     private var firstActions: [WontonDialogAction] {
         let needsHost = active.map { $0.enabled && $0.line.requiresHostConfirmation } ?? false
-        let accept = needsHost ? String(localized: .pluginPermissionContinue)
-            : (active?.enabled == true ? String(localized: .pluginPermissionOpen)
-                : String(localized: .pluginPermissionClose))
+        let accept = needsHost ? String(localized: .Plugin0.pluginPermissionContinue)
+            : (active?.enabled == true ? String(localized: .Plugin2.pluginPermissionOpen)
+                : String(localized: .Plugin0.pluginPermissionClose))
         return [
-            WontonDialogAction(title: String(localized: .commonCancel), perform: clear),
+            WontonDialogAction(title: String(localized: .Common.commonCancel), perform: clear),
             WontonDialogAction(title: accept, kind: .primary) {
                 guard let active else { return }
                 if needsHost {

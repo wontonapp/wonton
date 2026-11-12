@@ -38,6 +38,20 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 默认只编译 `arm64-v8a`（真机和 Apple 芯片上的模拟器）。要别的 ABI 或 release 构建，用
 `-Pwonton.abis="arm64-v8a x86_64"`、`-Pwonton.rustProfile=release`。
 
+### 版本号
+
+版本号由仓库根的 `scripts/app-version.sh` 一处计算（iOS 用同一条规则，见 `apps/ios/README.md` 的「构建」）：
+优先环境变量 `WONTON_VERSION`（`X.Y.Z`，可带 `v` 前缀），其次最近的 `vX.Y.Z` tag。**发版必须显式传版本**：
+发版构建是在没有 git 元数据的副本上做的，取不到 tag，不传 Release 构建直接报错。
+
+```bash
+WONTON_VERSION=0.2.4 ./gradlew :androidApp:assembleRelease
+```
+
+Gradle 也认 `-PwontonVersion=0.2.4`（透传给同一脚本；远程构建通道只透传它）。在自己带 tag 的检出上不传时
+取最近的发版 tag；都拿不到时 Debug 构建用 `0.0.0 (0)`。构建号由版本号算出（`major*1000000 + minor*1000 +
+patch`），覆盖安装要求它不降。
+
 ## 连家里的服务器（开发）
 
 起本地核心后（`deploy/dev/core/dev.sh up`），还没配对时“应用”页就是配对页：扫局域网状态页上或 `dev.sh pair` 打出的
@@ -126,9 +140,14 @@ Android 按 WebView 能力检测配置默认 Profile 的精确来源允许列表
 未固定的设置页沿用原生覆盖层，不自动修改底栏（核心 `SelectTab` 只接受已固定的原生页）。
 
 `shared/.../ui/AppShortcuts.kt` 用 AndroidX Core（Apache-2.0）发布“新会话”“问 Bot”和固定的插件页；固定入口图标
-复用设计系统，插件图标经核心下载后转 `IconCompat`。总数不超过系统上限：两个固定入口优先，插件按底栏顺序显示。
+复用设计系统，插件图标经核心下载后转 `IconCompat`。总数不超过系统上限：两个固定入口优先，插件按底栏顺序显示，
+剩下的名额放核心系统入口快照里最近的会话（ADR-0100），没登录时由进程里的协程马上撤掉。
 图标获取和系统更新失败会提示原因。卸载后同时停用动态项和已固定到桌面的项，显示“这个应用已卸载”；只移出底栏不禁用
 桌面项，重装后重新启用。实际菜单容量由桌面决定，`adb shell dumpsys shortcut` 可查看动态、固定和停用状态。
+
+桌面小组件在 `shared/.../ui/widget/`（Glance，Apache-2.0）：每次画都从数据目录读核心写的 `widget/snapshot.json`，不调核心；
+`WontonApplication` 在核心起来时订阅“写下了一份”并 `updateAll`。界面接 `WidgetState`（快照、颜色、此刻、点了去哪），
+截图测试用写死的假快照（`androidHostTest/.../widget/WidgetSnapshotsTest.kt`）。
 
 ## 聊天（开发）
 
@@ -147,8 +166,8 @@ Debug 构建默认编译 debug 的 Rust 核心，加上 matrix-sdk 后 `.so` 将
 ./gradlew detekt
 ```
 
-规则在 `config/detekt.yml`：函数超过 100 行即失败。detekt 没有文件行数规则，文件 ≤ 800 行由仓库的
-`scripts/check-file-size.sh` 检查。CI 见 `.github/workflows/android.yml`。
+规则在 `config/detekt.yml`：函数超过 100 行即失败。detekt 没有文件行数规则，文件行数由仓库的
+`scripts/check-file-size.sh` 检查（不算空行和注释，超过 800 行警告、超过 2000 行失败）。CI 见 `.github/workflows/android.yml`。
 
 包名 `app.wonton.*` 是临时的，上架前确定正式的。
 

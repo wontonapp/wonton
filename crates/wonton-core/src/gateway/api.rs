@@ -12,7 +12,7 @@
 //! | POST | `/_wonton/api/plugins/{id}/start` | 启动已停止的插件；已运行时不重复启动，就绪并核对完成后返回（200 `InstalledPlugin`）。容器不在时按安装记录照安装的路径重建再启动（网络不在也重建），做不到按原因报类别：镜像拉不到 `image_pull_failed`，安装记录读不出 `record_unusable` |
 //! | PUT | `/_wonton/api/plugins/{id}/permissions/{permission}` | 开关一项可选权限（`PermissionUpdate`），重建完返回详情（200 `PluginDetail`） |
 //! | PUT | `/_wonton/api/plugins/{id}/scope` | 主人提交 `PluginScope`；不支持范围设置时返回 501 `unsupported`，不保存 |
-//! | PUT | `/_wonton/api/bots/{id}/{bot}/plugin-access/{target}` | 主人提交 `BotPluginAccessUpdate`；不支持 Bot 开关时返回 501 `unsupported`，不保存 |
+//! | GET、PUT | `/_wonton/api/bots/{id}/{bot}/plugin-access/{target}` | 插件 `{id}` 的 Bot `{bot}` 能不能用 `{target}` 的工具（`BotPluginAccess`）；主人 `PUT` 一个 `BotPluginAccessUpdate` 单独开关，总线按它过滤这个 Bot 的工具（见 [`super::bot_plugin_access`]）。Bot 不在 404 `not_found`，`{target}` 没装 `not_installed`，工具策略读不出 503 `policy_unavailable` |
 //! | DELETE | `/_wonton/api/plugins/{id}?purge=true` | 卸载；`purge` 时删除数据 |
 //! | POST | `/_wonton/api/plugins/{id}/upgrade/preview` | 请求体为空或 `{}` 时取能升到的版本，带 `source` 或者插件包时换到主人选的，可以比装着的旧；返回要主人确认的内容（`InstallPreview`） |
 //! | POST | `/_wonton/api/plugins/{id}/upgrade` | 按预览升级（`UpgradeRequest`），或者上传插件包加 `?grant=权限,权限`；换完容器才返回（`UpgradeResult`） |
@@ -33,10 +33,12 @@ use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE,
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
-use wonton_protocol::{AddedTools, InstallRequest, InstallSource, UpgradeRequest, UpgradeResult};
+use wonton_protocol::{
+    AddedTools, InstallRequest, InstallSource, UninstallRequest, UpgradeRequest, UpgradeResult,
+};
 
 pub(super) use super::api_body::{MAX_UPLOAD_BYTES, invalid_body, json_body, package};
-use super::api_switch::{enabled, granted, secrets, upload_parts};
+use super::api_switch::{enabled, granted, secrets, settings, upload_parts};
 use super::{Gateway, Person, TunnelPeer, isolation, pages};
 
 pub use super::api_switch::set_plugin_permission;
@@ -65,6 +67,14 @@ pub(crate) fn error_response(status: StatusCode, kind: &'static str, message: &s
 }
 
 pub(crate) fn install_error(error: &InstallError) -> Response {
+    if let InstallError::InUse { message, plugins } = error {
+        let body = json!({"error": {"kind": "in_use", "message": message, "plugins": plugins}});
+        let mut response = (StatusCode::CONFLICT, Json(body)).into_response();
+        response
+            .headers_mut()
+            .insert(pages::ERROR_HEADER, HeaderValue::from_static("in_use"));
+        return response;
+    }
     if let InstallError::EgressProxyUnavailable { reason, message } = error {
         let body = json!({"error": {
             "kind": error.kind(),
@@ -79,12 +89,16 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
     }
     let status = match error {
         InstallError::EgressProxyUnavailable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
-        InstallError::Invalid(_) | InstallError::UnsupportedRuntime(_) => StatusCode::BAD_REQUEST,
+        InstallError::Invalid(_)
+        | InstallError::UnsupportedRuntime(_)
+        | InstallError::SettingsInvalid(..)
+        | InstallError::SettingsSchemaInvalid(..) => StatusCode::BAD_REQUEST,
         InstallError::PermissionNotGranted(_) => StatusCode::FORBIDDEN,
         InstallError::Unsupported(_)
         | InstallError::GpuUnavailable(_)
         | InstallError::LanUnavailable(_) => StatusCode::UNPROCESSABLE_ENTITY,
         InstallError::Conflict(_)
+        | InstallError::InUse { .. }
         | InstallError::NameTaken(_)
         | InstallError::Changed(_)
         | InstallError::PortTaken(_)
@@ -103,7 +117,41 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         }
         InstallError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
-    error_response(status, error.kind(), &error.to_string())
+    match error {
+        InstallError::SettingsInvalid(message, fields) => settings_error(
+            status,
+            "settings_invalid",
+            message,
+            json!({"fields": fields}),
+        ),
+        InstallError::SettingsSchemaInvalid(message, problems) => settings_error(
+            status,
+            "settings_schema_invalid",
+            message,
+            json!({"problems": problems}),
+        ),
+        _ => error_response(status, error.kind(), &error.to_string()),
+    }
+}
+
+/// 设置的两类校验失败：附加字段直接放在 `error` 对象上。
+fn settings_error(
+    status: StatusCode,
+    kind: &'static str,
+    message: &str,
+    extra: serde_json::Value,
+) -> Response {
+    let mut error = json!({"kind": kind, "message": message});
+    if let serde_json::Value::Object(extra) = extra
+        && let serde_json::Value::Object(error) = &mut error
+    {
+        error.extend(extra);
+    }
+    let mut response = (status, Json(json!({"error": error}))).into_response();
+    response
+        .headers_mut()
+        .insert(pages::ERROR_HEADER, HeaderValue::from_static(kind));
+    response
 }
 
 /// 带没带主人令牌。
@@ -133,7 +181,7 @@ pub(crate) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response>
 }
 
 /// 只给主人的接口（ADR-0045“谁能做什么”）：主人令牌，或者主人名下的设备（经隧道，且不是别的网页发起的）。
-/// 家人的设备回 403 `owner_only`。
+/// 家人的设备回 403 `permission_required`。
 pub(crate) fn owner_denied(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
@@ -144,7 +192,7 @@ pub(crate) fn owner_denied(
         Some(person) if person.is_owner() => from_another_page(headers, &gateway.core_origin()),
         Some(_) => Some(error_response(
             StatusCode::FORBIDDEN,
-            "owner_only",
+            "permission_required",
             "这个接口只有主人能用",
         )),
         None => denied(gateway, headers),
@@ -409,13 +457,22 @@ async fn install_upload(
     let granted = granted(query)?;
     let enabled = enabled(query)?;
     let secrets = secrets(headers)?;
+    let given = settings(headers)?;
     let package = package(langs, headers, body)?;
     gateway
         .plugins
         .store_input_values(&package.manifest, &secrets, None, langs)?;
+    let settings = crate::plugin::settings::install_values(&package, &given, langs)?;
     gateway
         .plugins
-        .install_detached_enabled(package, granted, enabled, query.lan_webui, langs.clone())
+        .install_detached_enabled(
+            package,
+            granted,
+            enabled,
+            query.lan_webui,
+            settings,
+            langs.clone(),
+        )
         .await
 }
 
@@ -482,8 +539,10 @@ pub async fn upgrade(
     let upgraded = match json_body::<UpgradeRequest>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
         Some(Ok(request)) => gateway.plugins.upgrade_source(&id, &request, &langs).await,
-        None => match upload_parts(&languages(&headers), &headers, &body, &query) {
-            Ok((grant, enabled, secrets, package)) => {
+        None => match upload_parts(&languages(&headers), &headers, &body, &query)
+            .and_then(|parts| Ok((parts, settings(&headers)?)))
+        {
+            Ok(((grant, enabled, secrets, package), given)) => {
                 let plugins = &gateway.plugins;
                 let filled = plugins.store().secrets().load(&id).ok().flatten();
                 if let Err(e) =
@@ -492,7 +551,15 @@ pub async fn upgrade(
                     return install_error(&e);
                 }
                 plugins
-                    .upgrade_upload(&id, package, grant, enabled, query.lan_webui, &langs)
+                    .upgrade_upload(
+                        &id,
+                        package,
+                        grant,
+                        enabled,
+                        query.lan_webui,
+                        &given,
+                        &langs,
+                    )
                     .await
             }
             Err(e) => return install_error(&e),
@@ -534,6 +601,7 @@ pub async fn uninstall(
     headers: HeaderMap,
     Path(id): Path<String>,
     Query(query): Query<UninstallQuery>,
+    body: Bytes,
 ) -> Response {
     if let Some(denied) = install_denied(&gateway, peer, &headers) {
         return denied;
@@ -544,9 +612,25 @@ pub async fn uninstall(
     };
     let langs = languages(&headers);
     gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
+    let request = if body.is_empty() {
+        UninstallRequest::default()
+    } else {
+        match json_body::<UninstallRequest>(&headers, &body) {
+            Some(Ok(request)) => request,
+            Some(Err(error)) => return install_error(&error),
+            None => return install_error(&invalid_body(&headers, "expected application/json")),
+        }
+    };
+    let approve_connections = owner_denied(&gateway, peer, &headers).is_none();
     match gateway
         .plugins
-        .uninstall_detached(id, query.purge, langs)
+        .uninstall_detached(
+            id,
+            query.purge,
+            request.providers,
+            approve_connections,
+            langs,
+        )
         .await
     {
         Ok(report) => Json(report).into_response(),
@@ -580,7 +664,7 @@ pub async fn image(
         )
             .into_response(),
         Ok(None) => not_found(),
-        Err(ImageError::Refused(reason)) => error_response(
+        Err(ImageError::Refused(reason) | ImageError::TimedOut(reason)) => error_response(
             StatusCode::UNPROCESSABLE_ENTITY,
             "invalid_input",
             &text1(&langs, "gateway-icon-failed", reason.as_str()),

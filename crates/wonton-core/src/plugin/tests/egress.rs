@@ -92,10 +92,15 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
             enabled_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
+            entry_label: None,
             origin: None,
             written_by: None,
             ask_every_update: false,
             family: false,
+            settings: Default::default(),
+            settings_changed_ms: None,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         })
         .unwrap();
     docker.add_container(&container_name("app-test", "web"), "app.test");
@@ -166,13 +171,63 @@ async fn on_the_host_oidc_plugins_reach_the_provider_through_their_own_network_g
 
 fn with_proxy(package: &PluginPackage) -> (InstallContext, Deployment) {
     let mut ctx = dry_run_context(package);
-    ctx.egress = Some(EgressVars);
+    ctx.egress = Some(EgressVars { host_proxy: None });
     let plan = render(package, &ctx, &super::langs()).unwrap();
     (ctx, plan)
 }
 
 fn service<'a>(plan: &'a Deployment, name: &str) -> &'a super::super::render::ContainerPlan {
     plan.containers.iter().find(|c| c.service == name).unwrap()
+}
+
+/// 宿主网络里解析不了 `egress.wonton.internal`：那里写出口容器在插件网络里的地址，别的服务照旧写别名。
+#[test]
+fn host_networked_services_get_the_egress_address_instead_of_the_alias() {
+    let host = "http://10.213.0.125:3128";
+    let compose = package(
+        "  web:\n    image: nginx\n  \
+         esp:\n    image: esphome/esphome\n    network_mode: host\n    environment:\n      \
+         CUSTOM: ${WONTON_PROXY_URL}\n  \
+         sealed:\n    image: busybox\n    network_mode: none",
+        "  permissions: [network.egress, network.host]",
+    );
+    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
+    let mut ctx = dry_run_context(&package);
+    ctx.egress = Some(EgressVars {
+        host_proxy: Some(host.to_owned()),
+    });
+    let plan = render(&package, &ctx, &super::langs()).unwrap();
+
+    for name in ["HTTP_PROXY", "http_proxy"] {
+        let esp = super::env_of(service(&plan, "esp"));
+        assert!(esp.contains(&format!("{name}={host}")), "{esp:?}");
+        let web = super::env_of(service(&plan, "web"));
+        assert!(web.contains(&format!("{name}={PROXY_URL}")), "{web:?}");
+    }
+    // 有自己代理设置的程序用的变量也跟着换成能用的地址（`CUSTOM` 引用了它，所以有值）。
+    let esp = super::env_of(service(&plan, "esp"));
+    assert!(esp.contains(&format!("CUSTOM={host}")), "{esp:?}");
+    let sealed = super::env_of(service(&plan, "sealed"));
+    assert!(
+        !sealed.iter().any(|line| line.contains("HTTP_PROXY")),
+        "{sealed:?}"
+    );
+}
+
+/// 地址还没定下来（第一次渲染）时宿主网络的服务不写代理变量，别写出一个连不上的代理。
+#[test]
+fn host_networked_services_without_a_known_address_get_no_proxy() {
+    let compose = package(
+        "  esp:\n    image: esphome/esphome\n    network_mode: host",
+        "  permissions: [network.egress, network.host]",
+    );
+    let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
+    let (_, plan) = with_proxy(&package);
+    let esp = super::env_of(service(&plan, "esp"));
+    assert!(
+        !esp.iter().any(|line| line.contains("HTTP_PROXY")),
+        "{esp:?}"
+    );
 }
 
 #[test]

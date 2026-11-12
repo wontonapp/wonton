@@ -21,6 +21,7 @@ App 里能直接打开的地方是 `AppLink`，写成 `wonton://` 链接。编�
 | `wonton://new-chat` | 发起私聊 |
 | `wonton://agent-chat` | 和默认 Agent 的聊天 |
 | `wonton://settings/peers` | 设置里的“其他服务器”，滚到“请求”（ADR-0050 的配对提醒用） |
+| `wonton://room/<房间 ID>` | 一个会话（[ADR-0100](0100-system-entry.md) 的小组件和系统搜索用）；房间 ID 按百分号编码，不是 `!` 开头的不认 |
 
 认不出的链接（新版 App 写进系统、旧版读到的，或者被改过的）照常打开 App，不报错。插件和页面的 ID 只认清单里的
 短名写法，`..` 这类写法不认。配对码 `wonton://pair?…` 是另一种东西，不走这里。
@@ -39,7 +40,7 @@ App 里能直接打开的地方是 `AppLink`，写成 `wonton://` 链接。编�
 - iOS：App Intents。“问 Bot”带一个文字参数；“打开页面”的候选来自底栏上的项和可以添加的页面；“新会话”。
   `AppShortcutsProvider` 给 Siri 和 Spotlight 的短语。Intent 在 App 里运行（核心在 App 进程里）。
 - Android：静态快捷方式“新会话”“问 Bot”（打开和默认 Agent 的聊天），动态快捷方式是固定在底栏上的插件页，用插件
-  自己的图标。都经 `wonton://` 链接进 App。
+  自己的图标，剩下的名额放最近的会话（[ADR-0100](0100-system-entry.md)）。都经 `wonton://` 链接进 App。
 
 ## 代价
 

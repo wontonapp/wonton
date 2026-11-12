@@ -50,7 +50,7 @@ optional_permissions:
 - 同一项只能出现在一边，写成映射自然不重复。**`off_loss` 四种语言齐全**，和 `title`、`description` 一样；没写是清单错误，
   `plugin check --official` 也拦。
 - 对应的 compose 字段照旧写在清单里，说的是“开着时谁拿到什么”（`docker.socket` 的卷、`gpu.services` 的服务名、
-  `devices.serial`/`devices.usb` 的选设备块）；核心按开关决定渲染不渲染，**作者不用再写一遍映射**。可选和必需可以落在同一个
+  `devices.serial` 的选设备块、`devices.usb` 的服务列表）；核心按开关决定渲染不渲染，**作者不用再写一遍映射**。可选和必需可以落在同一个
   服务上，拿掉按字段逐项做。
 - `devices.gpu` 可选时不能再写 `requirements.gpu.need: required`（主人能关掉就不可能是必需）。
 
@@ -74,6 +74,7 @@ optional_permissions:
   插件正在安装、卸载、重建 → `conflict`。
 - 只重建**渲染结果真的变了**的服务：拿到或失去字段的，和引用了 `WONTON_PERMISSION_*`、环境变量跟着变的。其余服务不动，
   数据含在内照旧。只变变量而字段没变的也要重建：不重建它就一直拿着旧值，页面上的“容器明细已关闭”之类会撒谎。
+  Bot 服务重建时沿用原 Matrix 身份，访问令牌从旧容器读回，开关可选权限不更换身份。
 - 失败时状态和容器都保持原样（关闭失败也如实显示仍开着，不假装关掉）。
 - 打开最高级两步确认，第二步是“我知道这个插件能控制整台主机”；高级的 `devices.*` 一次展开提示即可。第二步由 App 画，接口不带标志。
 - **Bot：打开要卡片，关闭是收权限。** 工具 `set_plugin_permission`：

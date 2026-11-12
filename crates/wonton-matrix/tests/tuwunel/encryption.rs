@@ -6,8 +6,8 @@ use wonton_matrix::{
 };
 
 use crate::{
-    chat::{direct_chat, is_text, wait_for_room},
-    support::{TempStore, TestServer, eventually, random_bytes, unique},
+    chat::{direct_chat, is_text},
+    support::{TempStore, TestServer, eventually, random_bytes, unique, wait_for_room},
 };
 
 #[tokio::test]

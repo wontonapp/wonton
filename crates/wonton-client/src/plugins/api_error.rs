@@ -35,7 +35,7 @@ pub(super) fn core_error(
         .ok()
         .map(|body| body.error);
     let reason = match detail.as_ref().map(|detail| detail.kind.as_str()) {
-        Some("unauthenticated" | "cross_site" | "owner_only" | "install_not_allowed") => {
+        Some("unauthenticated" | "cross_site" | "permission_required" | "install_not_allowed") => {
             PluginFailure::Unauthorized
         }
         // 授权列表和插件清单对不上，和设备身份无关：重新看预览、确认，重新配对解决不了。
@@ -106,6 +106,7 @@ mod tests {
     use wonton_protocol::{SettingsFieldProblemKind, SettingsSchemaProblemKind};
 
     use super::*;
+    use wonton_protocol::CoreError;
 
     #[test]
     fn settings_validation_keeps_the_field_and_schema_categories() {
@@ -138,5 +139,25 @@ mod tests {
             SettingsSchemaProblemKind::Sensitive
         );
         assert!(details.fields.is_empty());
+    }
+
+    #[test]
+    fn settings_invalid_reaches_the_shells_with_the_field_detail() {
+        let body = json!({"error": {
+            "kind": "settings_invalid",
+            "message": "1 settings don't pass validation",
+            "fields": [{"name": "months", "kind": "above_maximum", "message": "Must be at most 12"}],
+        }});
+        let problem = core_error(400, &serde_json::to_vec(&body).unwrap(), None, None);
+        let CoreError::SettingsInvalid { reason, fields } =
+            crate::plugins::api::to_core_error(problem)
+        else {
+            panic!("settings_invalid must carry its field detail to the shells")
+        };
+        assert_eq!(reason, "1 settings don't pass validation");
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].name, "months");
+        assert_eq!(fields[0].kind, SettingsFieldProblemKind::AboveMaximum);
+        assert_eq!(fields[0].message, "Must be at most 12");
     }
 }

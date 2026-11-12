@@ -226,8 +226,10 @@ async fn timeout_also_names_the_failing_probes() {
     let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
     let error = wait_for(
         &engine,
+        &crate::http::HttpClient::new(),
         &app,
         Target::Ready,
+        None,
         deadline,
         &Languages::default(),
     )
@@ -411,4 +413,30 @@ async fn a_one_shot_service_starts_only_after_the_long_running_service_is_health
         !started_too_early.await.unwrap(),
         "init 在应用健康之前就被启动了"
     );
+}
+
+/// 一次性的初始化失败时，错误里带它的整段日志（几百行），不是最后几十行：真正的原因常在开头。
+#[tokio::test]
+async fn a_failed_install_carries_the_whole_log_not_just_the_last_lines() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let init = container_name("app-test", "init");
+    docker.set_output(
+        &init,
+        1,
+        "",
+        &(1..=150)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+    docker.set_state(&init, exited(1));
+    let m = manager_with(engine, &dir);
+    let error = m
+        .install(&with_init(""), &[], super::langs())
+        .await
+        .unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("line 1\n"), "{message}");
+    assert!(message.contains("line 150"), "{message}");
 }

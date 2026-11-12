@@ -49,7 +49,7 @@ permission-notice-devices = This app can access host devices you give it.
 # Notices in the app detail view.
 plugin-firewall-notice = A firewall on this machine may be blocking incoming connections, so devices on your local network may not be able to connect.
 plugin-egress-proxy-select = Select it in Internet proxy settings
-plugin-cross-origin-isolation = This app relaxes cross-origin isolation: on Android, its pages may share a process with other web pages.
+plugin-cross-origin-isolation = This app needs cross-origin isolation: on Android, its pages open in your browser.
 
 # Notices and blocked reasons in the install and update previews.
 install-retained-data = Data and keys from { $id } are still on this server; the app you install will be able to read them. Delete them completely first if you don't want that.
@@ -58,6 +58,7 @@ install-images-from = Images come from { $images }
 install-images-unpinned = Images aren't pinned by digest: { $images }
 install-webui-sso = Opening its web page in Wonton signs you in automatically.
 install-host-network-egress = Services in the host network reach the internet through the host's own routing, not Wonton's Internet proxy.
+install-host-network-proxied = Services in the host network go through your Internet proxy too.
 install-system-preinstalled = System apps can only come preinstalled with your home server.
 install-already-installed = { $id } is already installed (version { $version })
 install-unreviewed-provider = Wonton hasn't reviewed this app; the code and images are provided by { $provider }.

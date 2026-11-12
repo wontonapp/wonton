@@ -22,6 +22,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.wonton.protocol.Action
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PortMappingState
+import app.wonton.protocol.PortMappingWarning
 import app.wonton.protocol.PortProtocol
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonNotice
@@ -93,6 +94,11 @@ internal fun PortMappingSection(plugins: PluginsState, installed: InstalledPlugi
                 WontonNotice(WontonIcon.Warning, stringResource(reason))
             }
         }
+        mapping?.warning?.let { hint ->
+            portMappingWarningRes(hint)?.let { key ->
+                WontonNotice(WontonIcon.Warning, stringResource(key))
+            }
+        }
         portMappingNotificationRes(mapping?.enabled == true, notificationGranted)?.let { key ->
             WontonNotice(WontonIcon.Warning, stringResource(key))
         }
@@ -112,6 +118,12 @@ private fun portProtocolLabel(protocol: PortProtocol): String = when (protocol) 
 fun portMappingNotificationRes(enabled: Boolean, notificationGranted: Boolean): Int? = when {
     !enabled || notificationGranted -> null
     else -> R.string.port_mapping_no_notification_permission
+}
+
+/** 映射能用但有一条提醒时的文案键；没有提醒返回 null。 */
+fun portMappingWarningRes(warning: PortMappingWarning?): Int? = when (warning) {
+    null, PortMappingWarning.OTHER -> null
+    PortMappingWarning.PUBLIC_RELAY_BANDWIDTH -> R.string.port_mapping_warning_public_relay_bandwidth
 }
 
 /** 映射状态的原因文案键；开着和关着不用解释，返回 null。没映射成功时每个类别一句完整的话。 */

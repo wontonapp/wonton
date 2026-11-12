@@ -20,6 +20,7 @@ struct PairingView: View {
     /// 最近一次出示的码。扫到同一个码不再自动出示，失败后由“再试一次”重来。
     @State private var lastCode: String?
     @FocusState private var isEditingCode: Bool
+    @State private var showsMatrixLogin = false
     @Environment(\.wontonColors) private var colors
 
     /// 相机状态和设备名都可以传入：截图测试要把它们固定住，模拟器的权限和设备名每次不一样。
@@ -49,6 +50,11 @@ struct PairingView: View {
                     )
                 } else {
                     pairingForm
+                    // 没有自己服务器的人从这里用别家的 Matrix 账号登录（ADR-0051）。
+                    WontonGroup {
+                        Button { showsMatrixLogin = true } label: { MatrixLoginEntryLabel() }
+                            .buttonStyle(.plain)
+                    }
                 }
             }
             .padding(WontonTheme.spacing.pageInset)
@@ -58,12 +64,12 @@ struct PairingView: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             if model.servers.adding {
                 HStack {
-                    Button(.commonCancel) {
+                    Button(.Common.commonCancel) {
                         if hasFailedPairing { leaveFailure() } else { model.send(.cancelAddServer) }
                     }
                         .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
                     Spacer()
-                    Text(.serversAddTitle)
+                    Text(.Servers.serversAddTitle)
                         .wontonText(WontonTheme.typography.itemTitle)
                         .accessibilityAddTraits(.isHeader)
                     Spacer()
@@ -72,6 +78,11 @@ struct PairingView: View {
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
                 .frame(minHeight: WontonTheme.size.topBar)
                 .background(.ultraThinMaterial)
+            }
+        }
+        .fullScreenCover(isPresented: $showsMatrixLogin) {
+            NavigationStack {
+                MatrixLoginView(model: model) { showsMatrixLogin = false }
             }
         }
         .task { await askForCamera() }
@@ -84,8 +95,9 @@ struct PairingView: View {
             if phase == .active { camera = .current }
         }
         .onChange(of: model.viewModel.pairing) { old, new in
-            // 配上才会连上服务器；取消也回到没有配对，但 serverId 还是空，不当作配上了。
-            if !model.servers.adding, inProgress(old), new == nil, model.viewModel.serverId != nil {
+            // 配上了由核心说：进展从“正在配对”翻到 Paired；取消回到没有进展，不算配上。添加服务器
+            // 的流程有自己的收尾，不在这里走。
+            if !model.servers.adding, inProgress(old), new == .paired {
                 onPaired()
             }
         }
@@ -95,18 +107,22 @@ struct PairingView: View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 scanner
-                Text(.pairingInstructions)
+                Text(.Pairing.pairingInstructions)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                Text(.pairingPasteLabel)
+                Text(.Pairing.pairingPasteLabel)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
                     .accessibilityHidden(true)
-                TextField(String(localized: .pairingPastePlaceholder), text: $model.pairingCode, axis: .vertical)
+                TextField(
+                    String(localized: .Pairing.pairingPastePlaceholder),
+                    text: $model.pairingCode,
+                    axis: .vertical
+                )
                     .accessibilityIdentifier("pairing-code")
-                    .accessibilityLabel(String(localized: .pairingPasteLabel))
+                    .accessibilityLabel(String(localized: .Pairing.pairingPasteLabel))
                     .textFieldStyle(.plain)
                     .font(model.pairingCode.isEmpty ? nil : .caption.monospaced())
                     .focused($isEditingCode)
@@ -122,7 +138,7 @@ struct PairingView: View {
                 Button {
                     pair(model.pairingCode)
                 } label: {
-                    Text(.pairingSubmit).frame(maxWidth: .infinity)
+                    Text(.Pairing.pairingSubmit).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle())
                 .accessibilityIdentifier("pairing-submit")
@@ -144,11 +160,11 @@ struct PairingView: View {
                 .accessibilityIdentifier("pairing-progress")
             }
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                Text(.pairingDeviceName)
+                Text(.Pairing.pairingDeviceName)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
                     .accessibilityHidden(true)
-                TextField(String(localized: .pairingDeviceName), text: $deviceName)
+                TextField(String(localized: .Pairing.pairingDeviceName), text: $deviceName)
                     .accessibilityIdentifier("pairing-device-name")
                     .textFieldStyle(.plain)
                     .wontonField()
@@ -161,7 +177,7 @@ struct PairingView: View {
         case .authorized:
             if let scannerProblem {
                 WontonNotice(icon: .cameraOff, title: scannerProblem) {
-                    Button(.pairingReopenCamera) { self.scannerProblem = nil }
+                    Button(.Pairing.pairingReopenCamera) { self.scannerProblem = nil }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             } else {
@@ -172,18 +188,18 @@ struct PairingView: View {
         case .notDetermined:
             HStack(spacing: WontonTheme.spacing.s12) {
                 ProgressView()
-                Text(.cameraWaiting).wontonText(WontonTheme.typography.body)
+                Text(.Peers.cameraWaiting).wontonText(WontonTheme.typography.body)
             }
             .foregroundStyle(Color(colors.textPrimary))
         case .denied:
-            WontonNotice(icon: .cameraOff, title: String(localized: .pairingCameraDenied)) {
-                Button(.cameraSettings) {
+            WontonNotice(icon: .cameraOff, title: String(localized: .Pairing.pairingCameraDenied)) {
+                Button(.Peers.cameraSettings) {
                     if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
         case .unsupported:
-            WontonNotice(icon: .cameraOff, title: String(localized: .qrScannerUnsupportedPaste), isError: false)
+            WontonNotice(icon: .cameraOff, title: String(localized: .Peers.qrScannerUnsupportedPaste), isError: false)
         }
     }
 
@@ -274,21 +290,24 @@ private struct PairingProgress: View {
 
     var body: some View {
         switch status {
+        // 配上了就该离开配对页（onPaired）；这个视图只为失败而挂载，Paired 不画。
+        case .paired:
+            EmptyView()
         case let .inProgress(elapsed, stage):
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 HStack(spacing: WontonTheme.spacing.s12) {
                     ProgressView()
-                    Text(.pairingInProgress).wontonText(WontonTheme.typography.body)
+                    Text(.Pairing.pairingInProgress).wontonText(WontonTheme.typography.body)
                 }
                 .foregroundStyle(Color(colors.textPrimary))
                 if elapsed >= Self.slowAfterMs {
                     HStack(spacing: WontonTheme.spacing.s12) {
-                        Text(stage == .connecting ? .pairingStillConnecting : .pairingStillConfirming)
+                        Text(stage == .connecting ? .Pairing.pairingStillConnecting : .Pairing.pairingStillConfirming)
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textSecondary))
                         if let cancel {
                             Button(action: cancel) {
-                                Text(.commonCancel)
+                                Text(.Common.commonCancel)
                             }
                             .buttonStyle(.plain)
                             .frame(minHeight: WontonTheme.size.target)
@@ -304,12 +323,12 @@ private struct PairingProgress: View {
             ) {
                 if let retry, Self.canRetrySameCode(reason) {
                     Button(action: retry) {
-                        Text(.pairingRetrySameCode).frame(maxWidth: .infinity)
+                        Text(.Pairing.pairingRetrySameCode).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle())
                 }
                 Button(action: back) {
-                    Text(.pairingBack).frame(maxWidth: .infinity)
+                    Text(.Pairing.pairingBack).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
                 if let detail = Self.detail(reason, message) {
@@ -321,22 +340,22 @@ private struct PairingProgress: View {
 
     private static func title(_ reason: PairingFailure) -> String {
         switch reason {
-        case .rejected: String(localized: .pairingFailureRejected)
-        case .expired: String(localized: .pairingFailureExpired)
-        case .closed: String(localized: .pairingFailureClosed)
-        case .transportUnavailable: String(localized: .pairingFailureTransport)
-        case .upstream: String(localized: .pairingFailureUpstream)
-        case .protocol: String(localized: .pairingFailureProtocol)
+        case .rejected: String(localized: .Pairing.pairingFailureRejected)
+        case .expired: String(localized: .Pairing.pairingFailureExpired)
+        case .closed: String(localized: .Pairing.pairingFailureClosed)
+        case .transportUnavailable: String(localized: .Pairing.pairingFailureTransport)
+        case .upstream: String(localized: .Pairing.pairingFailureUpstream)
+        case .protocol: String(localized: .Pairing.pairingFailureProtocol)
         }
     }
 
     /// 码过期、不认识、已停用这几类不再重复服务器的说明；本机失败补一句下一步。
     private static func hint(_ reason: PairingFailure) -> String? {
         switch reason {
-        case .rejected, .expired: String(localized: .pairingNextStepNewCode)
-        case .closed: String(localized: .pairingNextStepClosed)
-        case .transportUnavailable: String(localized: .pairingHintTransport)
-        case .protocol: String(localized: .pairingHintProtocol)
+        case .rejected, .expired: String(localized: .Pairing.pairingNextStepNewCode)
+        case .closed: String(localized: .Pairing.pairingNextStepClosed)
+        case .transportUnavailable: String(localized: .Pairing.pairingHintTransport)
+        case .protocol: String(localized: .Pairing.pairingHintProtocol)
         case .upstream: nil
         }
     }

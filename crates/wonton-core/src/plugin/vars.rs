@@ -87,6 +87,13 @@ impl std::fmt::Debug for ModelVars {
     }
 }
 
+/// `WONTON_APP_URL` 里的主机名（带端口，默认端口不带）：给按 Host 白名单的应用用，compose 插值取不出它。
+fn app_host(url: &str) -> String {
+    url.split_once("://")
+        .map_or(url, |(_, host)| host)
+        .to_owned()
+}
+
 pub fn share_var(name: &str) -> String {
     format!(
         "WONTON_SHARE_{}",
@@ -113,9 +120,13 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     }
     if let Some(url) = &ctx.app_url {
         set("WONTON_APP_URL", url.clone());
+        set("WONTON_APP_HOST", app_host(url));
     }
     for (name, value) in &ctx.secrets {
         set(&secret_var(name), value.clone());
+    }
+    for (name, value) in super::settings::value::vars(&ctx.settings) {
+        set(&name, value);
     }
     if let Some(oidc) = &ctx.oidc {
         set("WONTON_OIDC_ISSUER", oidc.issuer.clone());
@@ -141,6 +152,9 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
             set("WONTON_MODEL_API_KEY", key.clone());
         }
         set("WONTON_MODEL_DEFAULT", models.default_model.clone());
+    }
+    for (name, value) in &ctx.capabilities {
+        set(name, value.clone());
     }
     if let Some(url) = &ctx.mcp_url {
         set("WONTON_MCP_URL", url.clone());
@@ -170,9 +184,13 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     }
     if let Some(address) = &ctx.core_address {
         set(core_address::VAR, address.clone());
+        set(core_address::CIDR_VAR, format!("{address}/32"));
     }
     if manifest.permissions.contains(&Permission::NetworkEgress) {
-        let url = ctx.egress.as_ref().map_or("", |_| egress::PROXY_URL);
+        // 有宿主网络的服务时写出口容器的地址（宿主网络里解析不了别名），其余写别名。
+        let url = ctx.egress.as_ref().map_or("", |egress| {
+            egress.host_proxy.as_deref().unwrap_or(egress::PROXY_URL)
+        });
         set(egress::URL_VAR, url.to_owned());
     }
     if let Some(matrix) = &ctx.matrix {

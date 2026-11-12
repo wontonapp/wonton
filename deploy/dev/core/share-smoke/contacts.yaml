@@ -1,0 +1,14 @@
+# 联系人冒烟（smoke-contacts.sh）叠加在 compose.yaml 上：两台 Tuwunel 信任测试 CA，经前门互相联邦（Bot 之间的私聊、
+# 核心之间的 app.wonton.contact 事件都走 Matrix 联邦）。分享冒烟用不到 Tuwunel 之间的联邦，不叠加。
+# 证书单独挂一份：状态目录是 0700，Tuwunel 不以那个用户运行，进不去。
+services:
+  tuwunel-owner:
+    environment:
+      SSL_CERT_FILE: /share-smoke-ca.pem
+    volumes:
+      - ${SHARE_SMOKE_STATE}/ca.pem:/share-smoke-ca.pem:ro
+  tuwunel-friend:
+    environment:
+      SSL_CERT_FILE: /share-smoke-ca.pem
+    volumes:
+      - ${SHARE_SMOKE_STATE}/ca.pem:/share-smoke-ca.pem:ro

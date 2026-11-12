@@ -2,6 +2,7 @@
 //! （网页、模型网关、MCP 服务）。普通网络里连 [`names::service_host`] 的稳定域名（上游看到的 Host 就是它），
 //! 宿主网络里的服务经 [`super::host_relay`] 的 unix 套接字访问。
 
+use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
@@ -175,6 +176,19 @@ pub(super) fn core_aliases(public: &PublicUrls, manifest: &Manifest) -> Vec<Stri
     if granted(Permission::Notify) {
         aliases.push(PLUGIN_NOTIFY_HOST.to_owned());
     }
+    for capability in manifest.requires.iter().chain(&manifest.wants) {
+        if capability == super::capabilities::MODELS.name
+            || super::capabilities::has_no_consumer(capability)
+            || (super::capabilities::lookup(capability).is_none()
+                && !super::capabilities::is_third_party(capability))
+        {
+            continue;
+        }
+        let alias = super::capabilities::alias(capability);
+        if !aliases.contains(&alias) {
+            aliases.push(alias);
+        }
+    }
     aliases
 }
 
@@ -203,7 +217,7 @@ impl PluginManager {
         let slug = manifest.id.slug();
         let name = self.cfg.instance.container(&slug, &webui.service);
         if let Some(endpoint) = self
-            .host_relay_endpoint(manifest, Purpose::Webui, &webui.service)
+            .host_relay_endpoint(manifest, Purpose::Webui, &webui.service, webui.port)
             .await?
         {
             return Ok(Some(endpoint));
@@ -218,16 +232,45 @@ impl PluginManager {
         .map(|address| address.map(Endpoint::Tcp))
     }
 
+    /// 托管能力的提供方（ADR-0080）：网关把托管插件的请求转到这些地址。容器不在时少了那一项，
+    /// 网关如实回“提供方没有在运行”。
+    pub(super) async fn hosted_upstreams(
+        &self,
+        manifest: &Manifest,
+        network: &str,
+    ) -> Result<BTreeMap<String, Endpoint>, InstallError> {
+        let mut found = BTreeMap::new();
+        let Some(provides) = &manifest.provides else {
+            return Ok(found);
+        };
+        let slug = manifest.id.slug();
+        for (capability, spec) in &provides.capabilities {
+            if super::capabilities::lookup(capability).is_none_or(|c| c.hosted.is_none()) {
+                continue;
+            }
+            let name = self.cfg.instance.container(&slug, &spec.service);
+            let host = names::service_host(&slug, &spec.service);
+            if let Some(address) = self
+                .service_address(&name, &host, spec.port, network)
+                .await?
+            {
+                found.insert(capability.clone(), Endpoint::Tcp(address));
+            }
+        }
+        Ok(found)
+    }
+
     /// 网页探测的状态码（ADR-0033 的 `wonton__plugin_status`）：请求一次网页入口，和装完时的探测
     /// （[`super::health::wait_webui`]）用同一个地址（核心在插件网络里看到的 `主机:端口` 加网页路径）
-    /// 和每请求 5 秒的时限。没有网页、还没部署到那一步的为空。
+    /// 和每请求 5 秒的时限；声明了 `webui.health` 时探健康路径。没有网页、还没部署到那一步的为空。
     pub async fn webui_status(&self, id: &PluginId) -> Option<Result<u16, HttpError>> {
         let (endpoint, path) = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             let entry = plugins.get(id)?;
+            let webui = entry.listed.as_ref()?.manifest.webui.as_ref()?;
             (
                 entry.upstream.clone()?,
-                entry.listed.as_ref()?.manifest.webui.as_ref()?.path.clone(),
+                webui.health.clone().unwrap_or_else(|| webui.path.clone()),
             )
         };
         Some(status(&self.http, &endpoint, &path, PROBE_TIMEOUT).await)
@@ -292,7 +335,7 @@ impl PluginManager {
             })?;
         let path = mcp.path.as_deref().unwrap_or(DEFAULT_MCP_PATH);
         if let Some(endpoint) = self
-            .host_relay_endpoint(manifest, Purpose::Mcp, &mcp.service)
+            .host_relay_endpoint(manifest, Purpose::Mcp, &mcp.service, mcp.port)
             .await?
         {
             return Ok(Some(McpTarget {
@@ -322,11 +365,12 @@ impl PluginManager {
     }
 
     /// 服务是宿主网络、又该有中继时套接字地址；普通网络为空。
-    async fn host_relay_endpoint(
+    pub(in crate::plugin) async fn host_relay_endpoint(
         &self,
         manifest: &Manifest,
         purpose: Purpose,
         service: &str,
+        port: u16,
     ) -> Result<Option<Endpoint>, InstallError> {
         let name = self.cfg.instance.container(&manifest.id.slug(), service);
         let host = self
@@ -342,11 +386,13 @@ impl PluginManager {
         let relay = HostRelay {
             purpose,
             service: service.to_owned(),
-            port: 0,
+            port,
         };
-        let app_data = self.cfg.apps_dir.join(manifest.id.slug());
         Ok(Some(Endpoint::unix(super::host_relay::socket_path(
-            &app_data, &relay,
+            &self.cfg.relay_dir,
+            &self.cfg.instance,
+            &manifest.id.slug(),
+            &relay,
         ))))
     }
 
@@ -438,7 +484,7 @@ impl PluginManager {
     }
 
     /// 容器不在或者在这个网络里没有地址时为空。
-    async fn service_address(
+    pub(in crate::plugin) async fn service_address(
         &self,
         container: &str,
         host: &str,
@@ -660,6 +706,31 @@ x-wonton:
         assert!(
             !core_aliases(&public(), &manifest)
                 .contains(&"app-example-t.wonton.example".to_owned())
+        );
+    }
+
+    #[test]
+    fn dependency_aliases_only_include_known_or_valid_third_party_capabilities() {
+        let mut manifest = PluginPackage::parse(MANIFEST, &Languages::from_header(None))
+            .unwrap()
+            .manifest;
+        manifest.permissions.clear();
+        manifest.requires = vec!["torrent_client".into(), "x-acme.ledger".into()];
+        manifest.wants = vec![
+            "jellyfin".into(),
+            "torrent_client".into(),
+            "models".into(),
+            "egress_proxy".into(),
+            "unknown".into(),
+            "x-acme.invalid_name".into(),
+        ];
+        assert_eq!(
+            core_aliases(&public(), &manifest),
+            vec![
+                "torrent_client.wonton.internal",
+                "x-acme.ledger.wonton.internal",
+                "jellyfin.wonton.internal",
+            ],
         );
     }
 }

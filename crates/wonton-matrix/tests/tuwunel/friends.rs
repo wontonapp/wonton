@@ -3,8 +3,7 @@
 use futures_util::{Stream, StreamExt};
 use wonton_matrix::{Blocked, Error, MatrixSession, Membership, OwnedRoomId, OwnedServerName};
 
-use crate::chat::wait_for_room;
-use crate::support::{TestServer, eventually, unique};
+use crate::support::{TestServer, eventually, unique, wait_for_room};
 
 fn server_name(name: &str) -> OwnedServerName {
     name.parse().unwrap()
@@ -94,6 +93,48 @@ async fn a_plain_direct_invite_is_not_a_friend_request() {
         .unwrap()
         .expect("认得出邀请");
     assert!(!invite.friend, "普通私聊邀请不是好友请求");
+}
+
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_bots_contact_invite_is_recognized_and_is_not_a_friend_request() {
+    // 和核心替 Bot 发的邀请同样的建法：create 内容带联系人标记，私聊、加密。
+    let server = TestServer::start().await;
+    let bot = server.login(&unique("hermes"), "Wonton contacts").await;
+    let bob = server.login(&unique("bob"), "Bob 的手机").await;
+    bot.start_sync().await.expect("Bot 开始同步");
+    bob.start_sync().await.expect("Bob 开始同步");
+    let mut request = matrix_sdk::ruma::api::client::room::create_room::v3::Request::new();
+    request.creation_content = Some(
+        serde_json::from_value(
+            serde_json::json!({ wonton_protocol::BOT_CONTACT_CREATE_KEY: true }),
+        )
+        .expect("固定的 JSON 一定能读出 Raw"),
+    );
+    request.invite = vec![bob.user_id().to_owned()];
+    request.is_direct = true;
+    request.preset =
+        Some(matrix_sdk::ruma::api::client::room::create_room::v3::RoomPreset::TrustedPrivateChat);
+    let room_id = bot
+        .client()
+        .create_room(request)
+        .await
+        .expect("建带联系人标记的私聊")
+        .room_id()
+        .to_owned();
+
+    let row = wait_for_room(&bob, "Bob 收到邀请", &room_id, |row| {
+        row.membership == Membership::Invited
+    })
+    .await;
+    assert!(row.is_direct && !row.is_friend);
+    let invite = bob
+        .friend_invite(&room_id)
+        .await
+        .unwrap()
+        .expect("认得出邀请");
+    assert!(invite.bot_contact, "认得出是 Bot 的联系人邀请");
+    assert!(!invite.friend);
 }
 
 #[tokio::test]
@@ -326,7 +367,7 @@ async fn a_blocked_user_invite_is_rejected_without_leaving_a_room() {
         .invite_friend(bob.user_id())
         .await
         .expect_err("屏蔽后邀请应失败");
-    assert!(matches!(error, Error::Unauthorized { .. }), "{error}");
+    assert!(matches!(error, Error::Forbidden { .. }), "{error}");
     assert!(
         bob.blocked_list()
             .await
@@ -346,4 +387,32 @@ async fn an_unknown_user_is_invalid_input() {
         alice.invite_friend(&stranger).await,
         Err(Error::InvalidInput(_))
     ));
+}
+
+/// 正式安装里联邦只对配对过的服务器开（ADR-0050）：邀请名单外服务器上的人，Tuwunel 回 403 `M_FORBIDDEN`。
+/// 这是“不让做”，登录照样有效，不能和身份失效混在一起。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn inviting_someone_on_an_unpaired_server_is_forbidden_not_signed_out() {
+    let server = TestServer::container(&[
+        ("TUWUNEL_ALLOW_FEDERATION", "true"),
+        (
+            "TUWUNEL_ALLOWED_REMOTE_SERVER_NAMES_EXPERIMENTAL",
+            r#"["^paired\\.invalid$"]"#,
+        ),
+    ])
+    .await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    alice.start_sync().await.expect("Alice 开始同步");
+    let lily: wonton_matrix::OwnedUserId = "@lily:example.org".parse().unwrap();
+
+    let error = alice
+        .invite_friend(&lily)
+        .await
+        .expect_err("名单外的服务器应被拒");
+    assert!(
+        matches!(&error, Error::Forbidden { errcode, .. } if errcode == "M_FORBIDDEN"),
+        "{error:?}"
+    );
+    alice.blocked_list().await.expect("登录还有效");
 }

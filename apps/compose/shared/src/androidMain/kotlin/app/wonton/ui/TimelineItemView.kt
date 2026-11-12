@@ -97,6 +97,10 @@ fun TimelineItemView(
             onReply,
         )
         is TimelineContent.Notice -> CenteredNote(content.text)
+        is TimelineContent.AgentRun ->
+            // 一轮 Agent 任务的进度行（ADR-0082）：完整的样子在 App 壳那个 PR 里做，先按普通的
+            // Bot 提示消息显示 `body`——和其他不认识这个格式的客户端一样。
+            CenteredNote(content.body)
         is TimelineContent.ProfileChange -> CenteredNote(
             content.previousName
                 ?.let { stringResource(R.string.timeline_profile_rename, it, content.name) }
@@ -117,6 +121,13 @@ fun TimelineItemView(
             NoteEdge()
         }
         TimelineContent.TimelineStart -> CenteredNote(stringResource(R.string.timeline_start))
+        is TimelineContent.SideChat ->
+            // 旁聊根消息（ADR-0093）：完整的样子在实现 PR 里做，先按普通提示显示标题。
+            // 核心还没产生这种条目；标题是事件里的数据，不是界面文案。
+            CenteredNote(content.card.title)
+        is TimelineContent.SideChatResult ->
+            // 旁聊结果行（ADR-0093）：同上，先按普通提示显示标题。
+            CenteredNote(content.title)
     }
 }
 
@@ -364,7 +375,11 @@ private fun MessageBody(
 ) {
     when (body) {
         is MessageContent.Text -> TextMessageBody(body.blocks, body.files, core, trailingReserve)
-        is MessageContent.Image -> MessageImage(body.image, core, sendState, onLongPress)
+        is MessageContent.Image -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            MessageImage(body.image, core, sendState, onLongPress)
+            // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
+            body.image.caption?.let { caption -> TextMessageBody(caption.blocks, emptyList(), core) }
+        }
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onCardAction)
         MessageContent.Undecryptable -> Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             // 装饰：右边就是说明文字。

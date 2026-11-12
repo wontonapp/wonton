@@ -11,8 +11,14 @@ x-no-proxy: &no-proxy
   http_proxy: ""
   https_proxy: ""
 
+# 这套栈归哪个任务、什么时候可以回收：共用的开发机上，回收脚本按这两个标签认主（WONTON_TASK、WONTON_TTL 没设就是空）。
+x-owner-labels: &owner-labels
+  com.wonton.task: ${WONTON_TASK:-}
+  com.wonton.ttl: ${WONTON_TTL:-}
+
 services:
   core:
+    labels: *owner-labels
     build:
       context: ../../..
       dockerfile: deploy/dev/core/Dockerfile
@@ -37,6 +43,7 @@ services:
     environment:
       <<: *no-proxy
       WONTON_DATA_DIR: ${WONTON_DEV_DATA:?请用 deploy/dev/core/dev.sh up 启动}
+      WONTON_RELAY_DIR: ${WONTON_DEV_RELAY:?请用 deploy/dev/core/dev.sh up 启动}
       # 开发栈把数据目录也当安装目录：联邦名单和整台服务器黑名单像正式安装一样由核心原地重写、热加载。
       WONTON_INSTALL_DIR: ${WONTON_DEV_DATA}
       WONTON_BASE_DOMAIN: ${WONTON_DEV_DOMAIN:-wonton.localhost}
@@ -62,6 +69,8 @@ services:
       # 中继表（ADR-0048）：默认 n0 的公共中继，要用本地测试中继时自己设。
       WONTON_RELAYS: ${WONTON_DEV_RELAYS:-}
       WONTON_PUSH_LISTEN: push.wonton.internal:80
+      # 通话插件验 OpenID 令牌时连服务器名的 443（ADR-0096）。
+      WONTON_MATRIX_RTC_LISTEN: 0.0.0.0:443
       # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；
       # 裸的 `hydra`、`tusd` 就可能解析到插件的容器。
       WONTON_OIDC_ADMIN_URL: http://hydra.wonton.internal:4445
@@ -91,6 +100,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # 数据目录在容器内外路径相同：插件的绑定挂载由宿主上的 Docker 解析。
       - ${WONTON_DEV_DATA}:${WONTON_DEV_DATA}
+      # 宿主网络中继的 unix 套接字（ADR-0036）：放在短的运行目录里，检出目录再深也放得下。
+      - ${WONTON_DEV_RELAY:?请用 deploy/dev/core/dev.sh up 启动}:${WONTON_DEV_RELAY:?请用 deploy/dev/core/dev.sh up 启动}
       # 只读看宿主的设备节点（有没有显卡、属于哪个组）；设备 cgroup 没放行，核心开不了它们。不递归：/dev 下的子挂载
       # （/dev/shm 里是宿主其他进程的共享内存，还有 /dev/pts、/dev/mqueue）不带进来，核心只要 devtmpfs 里的节点。
       - type: bind
@@ -117,6 +128,7 @@ services:
 
   # 设备上传的字节（ADR-0020）。只在核心的私有网络里，经核心网关鉴权后才到它；没传完的数据放在核心数据目录下。
   tusd:
+    labels: *owner-labels
     image: tusproject/tusd:v2.10.1@sha256:7b1c552a8b42f4b36cb01f2a3bd49f82ab078b2eefd191459e716141dd50376c
     restart: unless-stopped
     user: "${WONTON_DEV_PUID:-1000}:${WONTON_DEV_PGID:-1000}"
@@ -153,6 +165,7 @@ services:
       start_interval: 1s
 
   mailpit:
+    labels: *owner-labels
     image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
     restart: unless-stopped
     user: "${WONTON_DEV_PUID:-1000}:${WONTON_DEV_PGID:-1000}"
@@ -175,6 +188,9 @@ services:
       MP_DISABLE_VERSION_CHECK: "true"
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
       MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+      # 核心生成的自签证书，配了才宣告 STARTTLS（不强制，明文照收）。
+      MP_SMTP_TLS_CERT: /wonton-config/smtp-tls.crt
+      MP_SMTP_TLS_KEY: /wonton-config/smtp-tls.key
     volumes:
       - ${WONTON_DEV_DATA}/core/mailpit/data:/data
       - ${WONTON_DEV_DATA}/core/mailpit/config:/wonton-config:ro
@@ -192,6 +208,7 @@ services:
       start_interval: 1s
 
   hydra-migrate:
+    labels: *owner-labels
     image: oryd/hydra:v26.2.0
     command: migrate sql up -e --yes
     environment:
@@ -203,6 +220,7 @@ services:
     networks: [core]
 
   hydra:
+    labels: *owner-labels
     image: oryd/hydra:v26.2.0
     # --dev 允许 http 签发方：M0 的网关还没有 TLS。
     command: serve all --dev
@@ -240,25 +258,29 @@ services:
   # 联邦名单、黑名单和出站代理范围在第二份 TOML，由核心原地重写、SIGUSR1 热加载（ADR-0050、ADR-0051）；
   # 单文件挂载钉住 inode，核心只做原地截断写。
   tuwunel:
-    image: ghcr.io/matrix-construct/tuwunel:v1.9.4
+    labels: *owner-labels
+    image: ghcr.io/matrix-construct/tuwunel:v2.0.0
     restart: unless-stopped
     stop_grace_period: 5m
     environment:
       <<: *no-proxy
       TUWUNEL_SERVER_NAME: ${WONTON_DEV_DOMAIN:-wonton.localhost}
       TUWUNEL_DATABASE_PATH: /var/lib/tuwunel
-      TUWUNEL_ADDRESS: 0.0.0.0
-      TUWUNEL_PORT: "[8008, 8448]"
-      TUWUNEL_ALLOW_FEDERATION: "true"
-      TUWUNEL_TRUSTED_SERVERS: "[]"
-      TUWUNEL_IP_RANGE_DENYLIST: "[]"
-      TUWUNEL_ALLOW_INVALID_TLS_CERTIFICATES: "true"
+      TUWUNEL_HTTP__LISTEN__ADDRESS: 0.0.0.0
+      TUWUNEL_HTTP__LISTEN__PORT: "[8008, 8448]"
+      TUWUNEL_FEDERATION__ENABLE: "true"
+      TUWUNEL_FEDERATION__KEYS__TRUSTED_SERVERS: "[]"
+      TUWUNEL_NETWORK__HTTP__IP_RANGE_DENYLIST: "[]"
+      TUWUNEL_NETWORK__HTTP__ALLOW_INVALID_TLS_CERTIFICATES: "true"
       TUWUNEL_TLS__CERTS: /etc/tuwunel/tls.crt
       TUWUNEL_TLS__KEY: /etc/tuwunel/tls.key
       TUWUNEL_TLS__DUAL_PROTOCOL: "true"
-      TUWUNEL_ALLOW_REGISTRATION: "false"
-      TUWUNEL_LOGIN_WITH_PASSWORD: "false"
-      TUWUNEL_NEW_USER_DISPLAYNAME_SUFFIX: ""
+      TUWUNEL_REGISTRATION__ENABLE: "false"
+      TUWUNEL_AUTHENTICATION__LOGIN__WITH_PASSWORD: "false"
+      TUWUNEL_REGISTRATION__DISPLAYNAME_SUFFIX: ""
+      TUWUNEL_WELL_KNOWN__CLIENT: http://matrix.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}
+      # MatrixRTC 的授权服务固定在 Matrix 对外地址的这个前缀下，网关转给通话插件（ADR-0096）。
+      TUWUNEL_WELL_KNOWN__LIVEKIT_URL: http://matrix.${WONTON_DEV_DOMAIN:-wonton.localhost}:${WONTON_DEV_PORT:-18480}/_wonton/matrix-rtc
       TUWUNEL_JWT__ENABLE: "true"
       TUWUNEL_JWT__FORMAT: EDDSA
       TUWUNEL_JWT__ALGORITHM: EdDSA

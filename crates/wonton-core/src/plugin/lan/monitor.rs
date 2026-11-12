@@ -422,6 +422,7 @@ impl PluginManager {
             )
             .await?;
         ctx.limits = record.limits;
+        ctx.settings = record.settings.clone();
         ctx.gpu = self
             .gpu_grant(manifest, &record.effective_permissions(manifest), &langs)
             .await?;
@@ -446,10 +447,16 @@ impl PluginManager {
             Some(_) => {
                 ctx.extra_hosts = migration.unwrap().extra_hosts.clone();
                 ctx.core_address = migration.unwrap().core_address.clone();
+                if let Some(egress) = ctx.egress.as_mut() {
+                    egress.host_proxy = migration.unwrap().egress_host_proxy.clone();
+                }
             }
             None => {
                 ctx.extra_hosts = self.hosts_via_gateway(manifest, &network).await?;
                 ctx.core_address = self.core_address_var(manifest, &network).await?;
+                if let Some(egress) = ctx.egress.as_mut() {
+                    egress.host_proxy = self.egress_host_proxy(&network).await?;
+                }
             }
         }
         Ok(ctx)
@@ -469,8 +476,8 @@ impl PluginManager {
             self.engine.remove_container(&container.name).await?;
         }
         self.rewrite_image_healthchecks(ctx, &mut plan).await?;
-        let deadline = gate.deadline(&plan, self.cfg.install_timeout, Instant::now());
-        self.start_containers(&plan, None, &mut Undo::default(), deadline, &langs)
+        let deadline = gate.deadline(&plan, ctx.install_limit, Instant::now());
+        Box::pin(self.start_containers(None, &plan, None, &mut Undo::default(), deadline, &langs))
             .await?;
         Ok(())
     }

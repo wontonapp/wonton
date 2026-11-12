@@ -8,10 +8,10 @@ struct FriendsEmpty: View {
 
     var body: some View {
         VStack(spacing: WontonTheme.spacing.s12) {
-            Text(.friendsEmpty)
+            Text(.Friends1.friendsEmpty)
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
-            Button(.friendsAdd, action: add)
+            Button(.Friends1.friendsAdd, action: add)
                 .buttonStyle(WontonButtonStyle())
         }
         .frame(maxWidth: .infinity)
@@ -32,22 +32,22 @@ struct FriendRequestRowView: View {
                 name
                 Spacer(minLength: 0)
             }
-            if request.kind == .friend {
+            if let badge = friendRequestBadge(request.kind) {
                 Label {
-                    Text(.friendsFriendBadge)
+                    Text(badge)
                 } icon: {
                     WontonIcon.person.view(size: WontonTheme.size.iconSmall)
                 }
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.primary))
             }
-            Text(.friendsReceived(relativeFriendTime(request.invitedAtMs)))
+            Text(.Friends3.friendsReceived(relativeFriendTime(request.invitedAtMs)))
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
             HStack(spacing: WontonTheme.spacing.s8) {
-                Button(.friendsAccept, action: accept)
+                Button(.Friends2.friendsAccept, action: accept)
                     .buttonStyle(WontonSmallButtonStyle())
-                Button(.friendsDecline, action: decline)
+                Button(.Friends0.friendsDecline, action: decline)
                     .buttonStyle(WontonSmallButtonStyle(kind: .danger))
             }
             .padding(.top, WontonTheme.spacing.s4)
@@ -61,6 +61,15 @@ struct FriendRequestRowView: View {
             .wontonText(WontonTheme.typography.body)
             .foregroundStyle(Color(colors.textPrimary))
             .layoutPriority(1)
+    }
+}
+
+/// 邀请上的标签：好友请求、别人家的 Bot 请你做联系人（ADR-0050，接受就是同意）；普通私聊邀请和不认识的种类不加。
+func friendRequestBadge(_ kind: FriendRequestKind) -> LocalizedStringResource? {
+    switch kind {
+    case .friend: .Friends0.friendsFriendBadge
+    case .botContact: .Friends0.friendsBotContactBadge
+    case .directChat, .other: nil
     }
 }
 
@@ -78,14 +87,14 @@ struct OutgoingFriendRequestRowView: View {
                     .foregroundStyle(Color(colors.textPrimary))
                     .layoutPriority(1)
                 Spacer(minLength: 0)
-                Button(.friendsCancel, action: cancel)
+                Button(.Friends0.friendsCancel, action: cancel)
                     .buttonStyle(WontonSmallButtonStyle())
             }
-            Text(.friendsOutgoingWaiting)
+            Text(.Friends0.friendsOutgoingWaiting)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
             if request.kind == .friend {
-                Text(.friendsSent(relativeFriendTime(request.invitedAtMs)))
+                Text(.Friends0.friendsSent(relativeFriendTime(request.invitedAtMs)))
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
@@ -112,33 +121,33 @@ struct FriendRowView: View {
                     .foregroundStyle(Color(colors.textPrimary))
                     .layoutPriority(1)
                 Spacer(minLength: 0)
-                Button(.friendsGroups, action: chooseGroups)
+                Button(.Friends2.friendsGroups, action: chooseGroups)
                     .buttonStyle(WontonSmallButtonStyle())
                 Button(action: block) {
                     WontonIcon.blocked.view(size: WontonTheme.size.iconSmall)
                         .foregroundStyle(Color(colors.textSecondary))
                 }
                 .buttonStyle(WontonSmallButtonStyle())
-                .accessibilityLabel(String(localized: .friendsBlock))
+                .accessibilityLabel(String(localized: .Friends3.friendsBlock))
                 Button(role: .destructive, action: remove) {
                     WontonIcon.trash.view(size: WontonTheme.size.iconSmall)
                         .foregroundStyle(Color(colors.danger))
                 }
                 .buttonStyle(WontonSmallButtonStyle(kind: .danger))
-                .accessibilityLabel(String(localized: .friendsRemove))
+                .accessibilityLabel(String(localized: .Friends2.friendsRemove))
             }
             if groupNames.isEmpty {
-                Text(.friendsGroupsEmpty)
+                Text(.Friends1.friendsGroupsEmpty)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             } else {
-                Text(groupNames.joined(separator: String(localized: .friendsGroupsJoin)))
+                Text(groupNames.joined(separator: String(localized: .Friends0.friendsGroupsJoin)))
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
             Text(row.sharedPlugins.isEmpty
-                 ? String(localized: .friendsSharedNone)
-                 : String(localized: .friendsShared(row.sharedPlugins.count)))
+                 ? String(localized: .Friends1.friendsSharedNone)
+                 : String(localized: .Friends1.friendsShared(row.sharedPlugins.count)))
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
         }
@@ -160,7 +169,7 @@ struct FriendGroupRowView: View {
                 .foregroundStyle(Color(colors.textPrimary))
                 .layoutPriority(1)
             Spacer(minLength: 0)
-            Button(.friendsGroupsRename, action: rename)
+            Button(.Friends2.friendsGroupsRename, action: rename)
                 .buttonStyle(WontonSmallButtonStyle())
         }
         .padding(.vertical, WontonTheme.spacing.s12)
@@ -183,7 +192,7 @@ struct BlockedFriendRowView: View {
                 .foregroundStyle(Color(colors.textPrimary))
                 .layoutPriority(1)
             Spacer(minLength: 0)
-            Button(.friendsUndo, action: unblock)
+            Button(.Friends3.friendsUndo, action: unblock)
                 .buttonStyle(WontonSmallButtonStyle())
         }
         .padding(.vertical, WontonTheme.spacing.s12)
@@ -202,7 +211,7 @@ func friendBlockName(_ target: FriendBlockTarget) -> String {
     switch target {
     case let .user(userId): userId
     case let .server(serverName): serverName
-    case .other: String(localized: .friendsBlockUnknown)
+    case .other: String(localized: .Friends2.friendsBlockUnknown)
     }
 }
 

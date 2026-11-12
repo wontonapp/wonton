@@ -116,6 +116,8 @@ pub struct RoomInfo {
 /// 房间的最新一条消息。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LatestMessage {
+    /// 发送者的 Matrix 用户 ID。
+    pub sender_id: OwnedUserId,
     /// 发送者的显示名。
     pub sender_name: String,
     /// 是否由本账号发出。
@@ -183,8 +185,18 @@ impl MatrixSession {
             .unwrap_or_default())
     }
 
-    /// 加入房间，用于接受邀请。私聊邀请加入后记进 `m.direct`，之后列表里仍标为私聊。等同步把房间标成已加入才返回，
-    /// 调用方接着就能往里发消息。
+    /// 解出房间链接的实际 ID，不改变成员关系；是否已加入由调用方按自己的导航边界决定。
+    pub async fn resolve_room_id(&self, input: &str) -> Result<OwnedRoomId> {
+        let target = <&matrix_sdk::ruma::RoomOrAliasId>::try_from(input)
+            .map_err(|error| Error::InvalidInput(error.to_string()))?;
+        match <&RoomId>::try_from(target) {
+            Ok(id) => Ok(id.to_owned()),
+            Err(alias) => Ok(self.client.resolve_room_alias(alias).await?.room_id),
+        }
+    }
+
+    /// 加入房间，用于接受邀请。私聊邀请加入后记进 `m.direct`，之后列表里仍标为私聊。等同步把房间标成
+    /// 已加入才返回，调用方接着就能往里发消息；邀请还没同步到本地就调用也一样等（房间可能还没进本地库）。
     pub async fn join_room(&self, room_id: &RoomId) -> Result<()> {
         // 私聊标记和邀请人要在加入前从邀请里读。不用 SDK 的 `join_room_by_id`：它加入后用 `set_is_direct`
         // 记私聊，拿本机存的 `m.direct` 改完整份写回，而本机这份要等写入同步回来才更新。一次同步之内先后接受
@@ -215,13 +227,17 @@ impl MatrixSession {
         }
         match invited {
             Some(room) => self.until_joined(&room).await,
-            None => Ok(()),
+            // 邀请还没同步到本地：房间可能还没进本地库，按 [`Self::joined_within`] 等它同步到并成为已加入。
+            None => self
+                .joined_within(room_id, ROOM_SYNC_WAIT)
+                .await
+                .map(|_| ()),
         }
     }
 
     /// 等同步把刚加入的房间标成已加入。
     ///
-    /// 绕过 Tuwunel 的问题（v1.9.4，<https://github.com/matrix-construct/tuwunel/issues/685>）：
+    /// 绕过 Tuwunel 的问题（v1.9.4 发现，v2.0.0 上 Docker 测试仍复现，<https://github.com/matrix-construct/tuwunel/issues/685>）：
     /// 它先让新事件对同步可见，再更新房间的当前状态。
     /// 这中间的一次 Sliding Sync，时间线里有加入事件，`required_state` 里本人却还是邀请；SDK 只按
     /// `required_state` 定状态，房间就一直是“受邀”，直到房间里来新事件。这时单独订阅这个房间，服务器按
@@ -625,8 +641,10 @@ async fn latest_message(room: &Room) -> Option<LatestMessage> {
         } => (timestamp, sender, true, profile, content),
         LatestEventValue::RemoteInvite { .. } | LatestEventValue::None => return None,
     };
+    let sender_name = profile_name(&profile, &sender);
     Some(LatestMessage {
-        sender_name: profile_name(&profile, &sender),
+        sender_id: sender,
+        sender_name,
         is_own,
         body: match &content {
             TimelineItemContent::MsgLike(message) => body(&message.kind),

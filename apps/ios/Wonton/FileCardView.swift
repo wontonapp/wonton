@@ -70,7 +70,7 @@ private struct ReadyFileCard: View {
             Button { presenter.perform(actions.tap, on: info, after: .preview) } label: { summary(actions) }
                 .buttonStyle(.plain)
             if let elsewhere = actions.openElsewhere {
-                Button(.fileOpenElsewhere) { presenter.perform(elsewhere, on: info, after: .openElsewhere) }
+                Button(.File.fileOpenElsewhere) { presenter.perform(elsewhere, on: info, after: .openElsewhere) }
                     .wontonText(WontonTheme.typography.supporting)
                     .underline()
                     .buttonStyle(.plain)
@@ -112,9 +112,9 @@ private struct ReadyFileCard: View {
             if let download { ProgressView(value: FileSizes.fraction(download)) }
         case .paused:
             if let because = download?.pausedBecause {
-                problem(String(localized: .filePaused(because)))
+                problem(String(localized: .File.filePaused(because)))
             } else {
-                small(String(localized: .filePausedWaiting))
+                small(String(localized: .File.filePausedWaiting))
             }
         case let .failed(_, message):
             problem(message)
@@ -134,8 +134,8 @@ private struct ReadyFileCard: View {
     private var sourceText: String? {
         switch info.source {
         case .device: nil
-        case let .bot(name, plugin): String(localized: .fileSourceBot(name, plugin))
-        case .unknown: String(localized: .fileSourceUnknown)
+        case let .bot(name, plugin): String(localized: .File.fileSourceBot(name, plugin))
+        case .unknown: String(localized: .File.fileSourceUnknown)
         }
     }
 }

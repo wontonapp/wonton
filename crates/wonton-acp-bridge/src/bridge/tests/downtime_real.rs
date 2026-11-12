@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use wonton_matrix::testkit::TestServer;
+use wonton_matrix::testkit::{TestServer, wait_for_room};
 
 use super::*;
 
@@ -43,6 +43,7 @@ async fn a_message_sent_while_down_is_processed_after_a_real_restart() {
         mcp_url: cards.url(),
         mode: "plan".into(),
         topic_mode: None,
+        health: crate::health::Files::in_dir(dir.path()),
         limits: Limits {
             max_input_bytes: 4096,
             max_output_bytes: 4096,
@@ -51,6 +52,8 @@ async fn a_message_sent_while_down_is_processed_after_a_real_restart() {
             idle_timeout: Duration::from_secs(600),
             idle_tick: Duration::from_millis(100),
             topic_idle: Duration::from_secs(1800),
+            undecryptable_after: Duration::from_secs(60),
+            undecryptable_every: Duration::from_secs(600),
         },
     };
 
@@ -93,13 +96,12 @@ async fn a_message_sent_while_down_is_processed_after_a_real_restart() {
 }
 
 async fn open_room(session: &MatrixSession, room_id: &wonton_matrix::RoomId) -> ChatRoom {
-    for _ in 0..100 {
-        if let Ok(room) = session.watch_room(room_id).await {
-            return room;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    panic!("房间没有同步进来");
+    let room_id = room_id.to_owned();
+    wait_for_room(session, "房间同步进来", &room_id, |row| {
+        row.membership == wonton_matrix::Membership::Joined
+    })
+    .await;
+    session.watch_room(&room_id).await.expect("开房间")
 }
 
 /// 和进程重启一样：按配置重新登录（同一个 SQLite 状态库）、起同步、开房间、连 Agent、跑主循环。

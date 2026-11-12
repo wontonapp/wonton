@@ -7,7 +7,7 @@ use std::path::Path;
 
 use bollard::models::ContainerCreateBody;
 
-use super::core_address::VAR;
+use super::core_address::{CIDR_VAR, VAR};
 use super::egress::hardcoded_proxy;
 use super::image_worker::ImageWorker;
 use super::images::IconFormat;
@@ -90,10 +90,11 @@ pub async fn check_package(
             ));
     }
     match dry_run(package, &Languages::default()) {
-        Ok(plan) => check_services(&plan, official, &mut report),
+        Ok(plan) => check_services(&plan, m, official, &mut report),
         Err(e) => report.problems.push(e.to_string()),
     }
     check_spec_floor(package, &mut report);
+    check_compose_hygiene(package, &mut report);
     check_trusts_core(package, official, &mut report);
     check_icon(package, official, images, &mut report).await;
     check_tab_icons(package, images, &mut report).await;
@@ -139,9 +140,10 @@ pub async fn check_package(
     Ok(report)
 }
 
-/// 镜像要按摘要固定，长期运行的服务要有健康检查：官方索引要求，其他插件只提醒。只看 compose 里写的健康检查，
-/// 镜像自带的看不到（检查不连 Docker）。
-fn check_services(plan: &Deployment, official: bool, report: &mut Report) {
+/// 镜像要按摘要固定，长期运行的服务要有健康检查：官方索引要求，其他插件只提醒。只看 compose 里写的健康检查
+/// 和清单的 `webui.health`，镜像自带的看不到（检查不连 Docker）。
+fn check_services(plan: &Deployment, manifest: &Manifest, official: bool, report: &mut Report) {
+    let webui = manifest.webui.as_ref();
     let list = if official {
         &mut report.problems
     } else {
@@ -162,9 +164,11 @@ fn check_services(plan: &Deployment, official: bool, report: &mut Report) {
                 container.service, container.image
             ));
         }
-        if !container.one_shot && !has_healthcheck(&container.body) {
+        // `webui.health` 是核心代探测的替代：只有网页服务能这么写，别的服务仍要自带的健康检查。
+        let probed = webui.is_some_and(|w| w.health.is_some() && w.service == container.service);
+        if !container.one_shot && !probed && !has_healthcheck(&container.body) {
             list.push(format!(
-                "service {} has no healthcheck; its status will show as unknown after install",
+                "service {} has no healthcheck; add one, or use webui.health for the web service (its status will show as unknown after install)",
                 container.service
             ));
         }
@@ -199,7 +203,7 @@ fn check_trusts_core(package: &PluginPackage, official: bool, report: &mut Repor
     }
     let m = &package.manifest;
     let advice = format!(
-        "the web app authenticates users from request headers but doesn't trust only the home server: set the trusted proxy address to ${{{VAR}}}, not 0.0.0.0/0 or ::/0"
+        "the web app authenticates users from request headers but doesn't trust only the home server: set the trusted proxy address to ${{{CIDR_VAR}}} (or ${{{VAR}}}/32), not 0.0.0.0/0 or ::/0"
     );
     if official && m.permissions.contains(&Permission::NetworkEgress) {
         report.problems.push(format!(
@@ -214,6 +218,148 @@ fn check_trusts_core(package: &PluginPackage, official: bool, report: &mut Repor
             "{advice}. If that's impossible, note it for the index review (ADR-0023)"
         ));
     }
+}
+
+/// 裸写会被 YAML 1.1 的工具（docker compose 等）当成布尔的环境变量值。
+const BARE_BOOLEANS: [&str; 4] = ["on", "off", "yes", "no"];
+
+/// 两处看原文才查得出来的清单问题：会被解析成布尔的环境变量值，和指不到服务的 `depends_on`。
+fn check_compose_hygiene(package: &PluginPackage, report: &mut Report) {
+    for (service, key, value) in bare_boolean_env(&package.source) {
+        report.warnings.push(format!(
+            "services.{service}.environment.{key} is a bare `{value}`: YAML 1.1 tools read it as a boolean and hand the container \"true\"/\"false\"; quote it when the app expects `{value}`"
+        ));
+    }
+    let services: BTreeSet<&str> = package.service_names().collect();
+    for (service, dependency) in missing_dependencies(&package.source) {
+        if !services.contains(dependency.as_str()) {
+            report.warnings.push(format!(
+                "services.{service}.depends_on points at `{dependency}`, which isn't a service in this compose file: the install waits for a container that never exists"
+            ));
+        }
+    }
+}
+
+/// 文本里 `services.<服务>.environment` 的每一项值恰好是 `on`、`off`、`yes`、`no`（没加引号）的地方：
+/// （服务，键，值）。解析出来的值分不出原来写的是 `on` 还是 `true`，只能看原文。只看映射写法：列表写法
+/// （`- KEY=值`）整条是字符串，不会被当成布尔。
+fn bare_boolean_env(source: &str) -> Vec<(String, String, String)> {
+    let mut found = Vec::new();
+    let mut service = String::new();
+    let mut in_environment = false;
+    let mut item_indent = 0;
+    for raw in source.lines() {
+        let line = raw.trim_end();
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent = line.len() - trimmed.len();
+        // 服务名：`services:` 下的一级键。
+        if indent == 2 && trimmed.ends_with(':') {
+            service = trimmed
+                .trim_end_matches(':')
+                .trim_matches(['\'', '"'])
+                .to_owned();
+            in_environment = false;
+            continue;
+        }
+        if service.is_empty() {
+            continue;
+        }
+        if indent <= 4 {
+            in_environment = trimmed.starts_with("environment:");
+            item_indent = 0;
+            continue;
+        }
+        if !in_environment {
+            continue;
+        }
+        if item_indent == 0 {
+            item_indent = indent;
+        }
+        if indent != item_indent {
+            continue;
+        }
+        if trimmed.starts_with("- ") {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        let (key, value) = (key.trim().to_owned(), value.trim());
+        let value = value.split(" #").next().unwrap_or(value).trim();
+        if BARE_BOOLEANS.contains(&value) {
+            found.push((service.clone(), key, value.to_owned()));
+        }
+    }
+    found
+}
+
+/// `depends_on` 指向的服务名（列表和长语法两种写法）。
+fn missing_dependencies(source: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    let mut service = String::new();
+    let mut in_dependencies = false;
+    let mut item_indent = 0;
+    for raw in source.lines() {
+        let line = raw.trim_end();
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let indent = line.len() - trimmed.len();
+        if indent == 2 && trimmed.ends_with(':') {
+            service = trimmed
+                .trim_end_matches(':')
+                .trim_matches(['\'', '"'])
+                .to_owned();
+            in_dependencies = false;
+            continue;
+        }
+        if service.is_empty() {
+            continue;
+        }
+        if indent <= 4 {
+            in_dependencies = trimmed.starts_with("depends_on:");
+            item_indent = 0;
+            // 流式列表 `depends_on: [db, cache]` 写在一行里。
+            if let Some((_, rest)) = trimmed.split_once('[')
+                && let Some((names, _)) = rest.split_once(']')
+                && in_dependencies
+            {
+                for name in names.split(',') {
+                    let name = name.trim().trim_matches(['\'', '"']);
+                    if !name.is_empty() {
+                        found.push((service.clone(), name.to_owned()));
+                    }
+                }
+            }
+            continue;
+        }
+        if !in_dependencies {
+            continue;
+        }
+        if item_indent == 0 {
+            item_indent = indent;
+        }
+        if indent != item_indent {
+            continue;
+        }
+        // 列表写法是名字全文；长语法 `名字: {condition: …}` 只取冒号前的名字。
+        let name = trimmed
+            .strip_prefix("- ")
+            .map_or_else(
+                || trimmed.split_once(':').map_or(trimmed, |(name, _)| name),
+                |name| name,
+            )
+            .trim_matches(['\'', '"'])
+            .to_owned();
+        if !name.is_empty() {
+            found.push((service.clone(), name));
+        }
+    }
+    found
 }
 
 fn has_healthcheck(body: &ContainerCreateBody) -> bool {

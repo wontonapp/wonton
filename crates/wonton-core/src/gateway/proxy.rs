@@ -342,7 +342,7 @@ async fn unix_send(
         let too_long = e.kind() == std::io::ErrorKind::InvalidInput || e.raw_os_error() == Some(36);
         HttpError::Connect(if too_long {
             format!(
-                "unix 套接字的路径太长放不下（{}：{} 字节，上限 {} 字节）：把核心的数据目录换到短一点的路径",
+                "unix 套接字的路径太长放不下（{}：{} 字节，上限 {} 字节）：把 WONTON_RELAY_DIR 换到短一点的目录",
                 socket.display(),
                 socket.as_os_str().len(),
                 crate::plugin::host_relay::MAX_SOCKET_PATH
@@ -536,6 +536,66 @@ mod tests {
             .unwrap()
             .to_bytes();
         assert_eq!(&body[..], b"ok");
+    }
+
+    /// 网页里的 `<audio>`（iOS 的 WebKit、Android 的 WebView）先发 `Range: bytes=0-1` 再按段取流，
+    /// 拿不到原样的 206 和 `Content-Range` 就放不了：请求头、状态和长度相关的响应头都不能改。
+    #[tokio::test]
+    async fn range_requests_and_partial_content_pass_through() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = Endpoint::Tcp(listener.local_addr().unwrap().to_string());
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let service =
+                hyper::service::service_fn(|req: Request<hyper::body::Incoming>| async move {
+                    let range = req.headers().get(header::RANGE).cloned();
+                    let response = hyper::Response::builder()
+                        .status(StatusCode::PARTIAL_CONTENT)
+                        .header(header::ACCEPT_RANGES, "bytes")
+                        .header(header::CONTENT_RANGE, "bytes 0-1/641262")
+                        .header(header::CONTENT_TYPE, "audio/mpeg")
+                        .header(
+                            "x-range-seen",
+                            range.unwrap_or(HeaderValue::from_static("-")),
+                        )
+                        .body(Body::from("ID"))
+                        .unwrap();
+                    Ok::<_, std::convert::Infallible>(response)
+                });
+            let _ = hyper::server::conn::http1::Builder::new()
+                .serve_connection(TokioIo::new(stream), service)
+                .await;
+        });
+        let request = Request::builder()
+            .uri("/rest/stream?id=1")
+            .header(header::RANGE, "bytes=0-1")
+            .body(Body::empty())
+            .unwrap();
+        let response = forward(
+            &HttpClient::for_forwarding(),
+            Target {
+                endpoint: &endpoint,
+                name: "x",
+            },
+            request,
+            Forwarded {
+                client: None,
+                scheme: "http",
+            },
+            &Languages::from_header(None),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        let headers = response.headers();
+        assert_eq!(headers["x-range-seen"], "bytes=0-1");
+        assert_eq!(headers[header::CONTENT_RANGE], "bytes 0-1/641262");
+        assert_eq!(headers[header::ACCEPT_RANGES], "bytes");
+        assert_eq!(headers[header::CONTENT_LENGTH], "2");
+        let body = http_body_util::BodyExt::collect(response.into_body())
+            .await
+            .unwrap()
+            .to_bytes();
+        assert_eq!(&body[..], b"ID");
     }
 
     #[test]

@@ -9,6 +9,7 @@ use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotation
 use serde_json::{Value, json};
 use wonton_protocol::SecretValues;
 
+use super::audience::Subject;
 use super::audit::{Decision, Record};
 use super::{
     Bus, Caller, Outcome, ToolFailure, agent_install, authoring_tools, cards, file_tools, naming,
@@ -23,11 +24,11 @@ use crate::plugin::{InstallError, PluginId, PluginPackage};
 use wonton_protocol::ConfirmationState;
 
 const LIST: &str = "list_plugins";
-const SEARCH: &str = "search_catalog";
+pub(super) const SEARCH: &str = "search_catalog";
 const INSTALL: &str = "install_plugin";
 const UNINSTALL: &str = "uninstall_plugin";
 const SET_PERMISSION: &str = "set_plugin_permission";
-const HELP: &str = "help";
+pub(super) const HELP: &str = "help";
 
 fn schema(value: Value) -> Arc<JsonObject> {
     match value {
@@ -384,7 +385,7 @@ async fn set_permission(
         Ok(found) => found,
         Err(failure) => return bus.deny(caller, name, &value, &failure),
     };
-    let langs = bus.plugins.owner_languages();
+    let langs = bus.card_languages(caller, Subject::PluginAdmin);
     let highest = line.risk == Some(wonton_protocol::PermissionRisk::Highest);
     let bot = crate::plugin::store::OpenedBy::Bot {
         plugin_id: caller.id.to_string(),
@@ -392,7 +393,7 @@ async fn set_permission(
     };
     let run = {
         let (id, title, langs) = (id.clone(), title.clone(), langs.clone());
-        move |bus: Arc<Bus>, _secrets: SecretValues| async move {
+        move |bus: Arc<Bus>, _secrets: SecretValues, _settings: wonton_protocol::SettingValues| async move {
             match bus
                 .plugins
                 .set_plugin_permission(
@@ -433,7 +434,7 @@ async fn set_permission(
         .clearance(caller.id.as_str(), naming::CORE, SET_PERMISSION)
         .is_some();
     if cleared {
-        let outcome = run(Arc::clone(bus), SecretValues::new()).await;
+        let outcome = run(Arc::clone(bus), SecretValues::new(), Default::default()).await;
         let failed = matches!(outcome.state, ConfirmationState::Failed { .. });
         bus.audit.record(&Record {
             caller: caller.id.as_str(),
@@ -487,12 +488,20 @@ async fn uninstall(
         .get("delete_data")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let langs = bus.plugins.owner_languages();
+    let langs = bus.card_languages(caller, Subject::PluginAdmin);
     let draft = cards::uninstall(&caller.name, &title, purge, &langs);
-    let run = move |bus: Arc<Bus>, _secrets: SecretValues| async move {
+    let run = move |bus: Arc<Bus>,
+                    _secrets: SecretValues,
+                    _settings: wonton_protocol::SettingValues| async move {
         match bus
             .plugins
-            .uninstall_detached(id.clone(), purge, bus.plugins.owner_languages())
+            .uninstall_detached(
+                id.clone(),
+                purge,
+                Vec::new(),
+                true,
+                bus.plugins.owner_languages(),
+            )
             .await
         {
             Ok(report) => {

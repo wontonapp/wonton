@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Row subtitle when the other owner declined my pairing request. -->
+    <string name="peers_status_declined">相手に拒否されました</string>
+    <!-- Row subtitle for a status this version doesn't know. -->
+    <string name="peers_status_unknown">状態不明</string>
+    <!-- Row subtitle while our own public access switch is off. -->
+    <string name="peers_status_public_access_off">外部からのアクセスはオフです</string>
+    <!-- Reject button on a request row. -->
+    <string name="peers_request_reject">拒否</string>
+    <!-- Collapsed section heading at the bottom for requests I declined. -->
+    <string name="peers_rejected_title">拒否済み</string>
+    <!-- Failure title when this device isn't the owner's. -->
+    <string name="peers_error_unauthenticated">サーバーのオーナーだけが他のサーバーを管理できます</string>
+    <!-- Failure title when the home server can't be reached. -->
+    <string name="peers_error_transport">自宅サーバーに接続できません</string>
+    <!-- Button under the QR code: hands the code text to the system share sheet. -->
+    <string name="peers_code_share">共有</string>
+    <!-- Confirmation dialog title for resetting the pairing code. -->
+    <string name="peers_reset_title">ペアリングコードをリセットしますか？</string>
+</resources>

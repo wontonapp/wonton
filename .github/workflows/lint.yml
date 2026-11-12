@@ -1,24 +1,11 @@
 name: lint
 
-# 轻检查，草稿 PR 也跑。冲突标记和密钥可能写在任何文件里（.md 也算），不按路径过滤，所以不能并进
-# 带 paths-ignore 的工作流。结构门禁只查源码文件，只改文档的提交和草稿 PR 上跳过。
-# 三件事在一个作业里依次做完：各起一台 runner 只为了报检查，占并发名额，却都不是重活。
+# 轻检查，由 gate.yml 调用：PR 上（草稿也跑）和 push 到 main 都跑。冲突标记和密钥可能写在任何文件里（.md 也算），
+# 不按路径过滤。结构门禁只查源码文件，只改文档的提交和草稿 PR 上跳过。
+# 几件事在一个作业里依次做完：各起一台 runner 只为了报检查，占并发名额，却都不是重活。
+# 并发由 gate 管：PR 又推了新提交时整轮取消。
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches: [main]
-  # 合并队列：入队后的合并提交上也要报告，否则队列直接判失败。merge_group 不认 paths，
-  # 路径过滤只留在 pull_request 下自己生效。
-  merge_group:
-    types: [checks_requested]
-    branches: [main]
-
-# 同一个 PR 又推了新提交，旧的运行就取消，别占着 runner；main 上的每次合并都跑完。
-# 队列里的 ref 一律是 gh-merge-queue/main，按它分组会把几次入队挤进同一组，改用这次入队的合并提交。
-concurrency:
-  group: lint-${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  workflow_call:
 
 permissions:
   contents: read
@@ -37,6 +24,9 @@ jobs:
           persist-credentials: false
       - name: 残留的合并冲突标记
         run: bash scripts/check-conflict-markers.sh
+      # ADR 多半是只改文档的 PR，不能挂在结构门禁后面（那些步骤只改文档时跳过）。
+      - name: ADR 的文件名和标题编号一致、不重号
+        run: python3 scripts/adr-index.py --check
       - name: 装 gitleaks（版本和 sha256 固定）
         run: |
           curl -fsSL --retry 3 -o gitleaks.tar.gz \
@@ -48,6 +38,20 @@ jobs:
         run: ./gitleaks git --log-opts="HEAD^1..HEAD" --config .gitleaks.toml --redact --no-banner
       - name: 行为测试：扫得出也挡得住
         run: PATH="$PWD:$PATH" bash scripts/test-gitleaks.sh
+      # 改了协议的 PR，main 在分支切出之后又改过协议就挡下：两边各自按旧协议写，合起来才坏，各自的 CI 看不出来。
+      # 只在这个 PR 的 CI 跑时判断一次，之后 main 再改协议不会回头把它变红（规则集不要求 PR 先追上 main）。
+      # 没改协议的 PR 先按合并提交的差异跳过，不去补历史；放在 lint 这个不按路径过滤的作业里，每个 PR 都有结果。
+      - name: 改了协议的 PR 基于最新 main
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- crates/wonton-protocol; then
+            echo "没改 crates/wonton-protocol，不用查。"
+            exit 0
+          fi
+          bash scripts/check-protocol-base.sh "$BASE_REF" "$HEAD_SHA"
       - name: 结构门禁跑不跑：只改了文档、或草稿 PR 上就跳过
         id: changes
         run: |
@@ -85,6 +89,12 @@ jobs:
       - name: dev.sh 的 logs 和 diag（假 docker，不用真的 Docker）
         if: steps.changes.outputs.source == 'true'
         run: python3 deploy/dev/core/dev_test.py
+      - name: dev.sh up 构建前的端口检查（假 docker、假 ss）
+        if: steps.changes.outputs.source == 'true'
+        run: python3 deploy/dev/core/port-preflight_test.py
+      - name: smoke.sh 分段运行（步骤名、SMOKE_UNTIL、SMOKE_ONLY）
+        if: steps.changes.outputs.source == 'true'
+        run: python3 deploy/dev/core/smoke-lib_test.py
       - name: 开发栈端口只绑 127.0.0.1
         if: steps.changes.outputs.source == 'true'
         run: python3 scripts/check-dev-compose-ports.py
@@ -94,27 +104,18 @@ jobs:
       - name: 生成绑定的 crate 的文档注释能进 Swift 和 Kotlin 的块注释
         if: steps.changes.outputs.source == 'true'
         run: bash scripts/check-uniffi-comments.sh
+      - name: 两个壳的对齐检查自己的用例
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s scripts/shell_parity -t scripts
+      # 只有一个壳用到的 ViewModel 项报警告注解，不挡合并（主人 2026-11-12 定）。脚本只在读不懂 Rust 源码时
+      # 退出非零，那也只标黄，不让这个作业失败。
+      - name: 两个壳的对齐（只报警告）
+        if: steps.changes.outputs.source == 'true'
+        continue-on-error: true
+        run: python3 scripts/check-shell-parity.py
+      - name: 协议基线检查自己的用例
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s scripts/protocol_base -t scripts
       - name: 安装脚本的行为测试（假 docker，不用真的 Docker）
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -q -s scripts/install -t scripts
-
-  # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
-  # 草稿 PR 上只跑冲突标记和密钥扫描，汇总跟着来。
-  summary:
-    name: lint 汇总
-    needs: [lint]
-    if: always()
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    env:
-      RESULTS: ${{ join(needs.*.result, ' ') }}
-    steps:
-      - name: 各作业的结果
-        run: |
-          echo "$RESULTS"
-          for result in $RESULTS; do
-            case "$result" in
-              success|skipped) ;;
-              *) exit 1 ;;
-            esac
-          done

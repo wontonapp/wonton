@@ -51,7 +51,8 @@ fn strip_ignored(value: &mut Value, users: &[&str], servers: &[&str]) {
     }
 }
 
-/// 收到的一条私聊邀请。`friend` 是带了 [`FRIEND_CREATE_KEY`] 的好友请求。
+/// 收到的一条私聊邀请。`friend` 是带了 [`FRIEND_CREATE_KEY`] 的好友请求，`bot_contact` 是别人家的 Bot 带着
+/// [`BOT_CONTACT_CREATE_KEY`](wonton_protocol::BOT_CONTACT_CREATE_KEY) 请他做联系人（ADR-0050）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FriendInvite {
     pub room_id: OwnedRoomId,
@@ -60,6 +61,7 @@ pub struct FriendInvite {
     pub inviter_name: Option<String>,
     pub invited_at_ms: u64,
     pub friend: bool,
+    pub bot_contact: bool,
 }
 
 /// 一条已经加入的私聊。`friend` 是建房时带了标记的好友私聊。
@@ -171,13 +173,14 @@ impl super::MatrixSession {
                 None
             }
         };
-        let invited_at_ms = created_at_ms(&room).await;
+        let invited_at_ms = created_at_ms(self, &room).await;
         Ok(Some(FriendInvite {
             room_id: room.room_id().to_owned(),
             inviter_name,
             inviter: details.inviter_id,
             invited_at_ms,
             friend: is_friend(&room).await,
+            bot_contact: created_with(&room, wonton_protocol::BOT_CONTACT_CREATE_KEY).await,
         }))
     }
 
@@ -214,7 +217,7 @@ impl super::MatrixSession {
         let pending_invitee_name = first
             .as_ref()
             .and_then(|member| member.display_name().map(str::to_owned));
-        let invited_at_ms = created_at_ms(&room).await;
+        let invited_at_ms = created_at_ms(self, &room).await;
         let created_by_me = room
             .get_state_event(StateEventType::RoomCreate, "")
             .await
@@ -326,15 +329,22 @@ impl super::MatrixSession {
     }
 }
 
-/// 房间建的时刻，Unix 毫秒；邀请里的其他事件常常没有时间戳，拿建房时间当邀请时间。读不到时为零。
-async fn created_at_ms(room: &Room) -> u64 {
-    room.get_state_event(StateEventType::RoomCreate, "")
+/// 房间建的时刻，Unix 毫秒；邀请里的其他事件常常没有时间戳，拿建房时间当邀请时间。
+/// Tuwunel 2.0 剥掉了邀请状态里的时间戳（stripped create 只剩 content/sender/state_key/type），
+/// 读不到时用本会话第一次看到这个房间的时刻代替，两版都只用于给请求排序。
+async fn created_at_ms(session: &super::MatrixSession, room: &Room) -> u64 {
+    let ts = room
+        .get_state_event(StateEventType::RoomCreate, "")
         .await
         .ok()
         .flatten()
         .and_then(|raw| serde_json::to_value(raw).ok())
         .and_then(|value| value["origin_server_ts"].as_u64())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if ts > 0 {
+        return ts;
+    }
+    session.invited_seen_ms(room.room_id()).await
 }
 
 /// 房间建的时候带没带好友标记。
@@ -342,12 +352,17 @@ async fn created_at_ms(room: &Room) -> u64 {
 /// 只认 `m.room.create` 里那个不可改的标记：同名的状态事件谁都能后加，一条普通私聊补上它就会突然变成好友，
 /// 删掉的好友也会因此复活。代价是外部客户端建的房间认不出来，第一个外部用户之前不需要兼容。
 async fn is_friend(room: &Room) -> bool {
+    created_with(room, FRIEND_CREATE_KEY).await
+}
+
+/// 建房时 `m.room.create` 内容里的这个标记是不是 `true`。
+async fn created_with(room: &Room, key: &str) -> bool {
     room.get_state_event(StateEventType::RoomCreate, "")
         .await
         .ok()
         .flatten()
         .and_then(|raw| serde_json::to_value(raw).ok())
-        .is_some_and(|value| value["content"][FRIEND_CREATE_KEY].as_bool() == Some(true))
+        .is_some_and(|value| value["content"][key].as_bool() == Some(true))
 }
 
 async fn is_direct(room: &Room) -> bool {

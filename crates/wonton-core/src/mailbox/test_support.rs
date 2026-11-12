@@ -53,6 +53,7 @@ pub(super) async fn home() -> Home {
         data_dir: dir.path().to_owned(),
         apps_dir: dir.path().join("apps"),
         shares_dir: dir.path().join("shares"),
+        relay_dir: dir.path().join("relay"),
         core_container: None,
         tz: "UTC".into(),
         puid: 1000,
@@ -132,10 +133,20 @@ pub(super) struct StateData {
     pub(super) fail_list: bool,
 }
 
+#[derive(Clone, Debug)]
+pub(super) enum Signal {
+    /// 一封新信的事件。
+    New(String),
+    /// 发 close frame 后干净关闭。
+    Close,
+    /// 不发 close frame 直接断开 TCP：Mailpit 收不到 pong 超时或重启时的样子。
+    Drop,
+}
+
 pub(super) struct Mailpit {
     pub(super) authority: String,
     pub(super) state: Arc<Mutex<StateData>>,
-    pub(super) events: tokio::sync::broadcast::Sender<Option<String>>,
+    pub(super) events: tokio::sync::broadcast::Sender<Signal>,
     task: tokio::task::JoinHandle<()>,
 }
 
@@ -147,6 +158,12 @@ impl Drop for Mailpit {
 
 impl Mailpit {
     pub(super) async fn start() -> Self {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        Self::serve_on(listener).await
+    }
+
+    /// 在现成的监听器上起服务：让「先拒绝连接、就绪后才服务」的启动竞态测试能复用同一个端口。
+    pub(super) async fn serve_on(listener: tokio::net::TcpListener) -> Self {
         let state = Arc::new(Mutex::new(StateData::default()));
         let (events, _) = tokio::sync::broadcast::channel(8);
         let event_sender = events.clone();
@@ -162,7 +179,6 @@ impl Mailpit {
                 }),
             )
             .with_state(state.clone());
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let authority = listener.local_addr().unwrap().to_string();
         let task = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();

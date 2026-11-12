@@ -2,15 +2,21 @@
 //! 插件声明的工具。调用方由网关按来源地址认出（[`Caller`]）；没标只读、主人也没放宽（ADR-0024）的工具先请主人确认
 //! （[`confirm`]）；每次调用写一行审计（[`audit`]）。
 
+mod agent_cards;
 mod agent_install;
 mod agent_permission;
 mod apps;
+mod audience;
 pub mod audit;
 mod authoring_tools;
+mod bot_access;
 mod bounded_http;
 mod cards;
 mod confirm;
+mod confirmed;
+mod contacts_gate;
 mod core_tools;
+mod dependencies;
 mod file_results;
 mod file_tools;
 mod naming;
@@ -18,6 +24,7 @@ mod notifier;
 mod panel_tools;
 mod people_tools;
 mod profile_tools;
+mod risky;
 mod save_tools;
 mod server;
 mod takeover;
@@ -45,12 +52,12 @@ use crate::plugin::languages::Languages;
 use crate::plugin::tool_policy::Clearance;
 use crate::plugin::{McpServer, PluginId, PluginManager};
 pub use agent_permission::AgentPermissionError;
+use audience::Subject;
 use audit::{Audit, Basis, Decision, Grounds, Record};
 pub use cards::Draft;
-pub use cards::content as card_content;
 pub use cards::text as card_text;
-pub use confirm::{AnswerError, Confirmations, Notifier, Refusal};
-pub use notifier::NoMatrix;
+pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Refusal};
+pub use notifier::DevicePush;
 pub use server::Caller;
 use takeover::Takeovers;
 pub use tool_policy::PolicyChange;
@@ -103,6 +110,8 @@ pub struct Bus {
     people: OnceLock<People>,
     /// Matrix 和主人：Bot 钉进主面板的同意卡片要发进 Bot 的房间里（[`Bus::attach_matrix`]）。
     matrix: OnceLock<Cards>,
+    /// Bot 的联系人：有远端联系人的 Bot 只聊天（[`Bus::attach_contacts`]，ADR-0050）。
+    contacts: OnceLock<Arc<crate::contacts::Contacts>>,
     /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
     pin_cards: Mutex<HashSet<PluginId>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
@@ -137,6 +146,7 @@ impl Bus {
             help: OnceLock::new(),
             people: OnceLock::new(),
             matrix: OnceLock::new(),
+            contacts: OnceLock::new(),
             pin_cards: Mutex::new(HashSet::new()),
             peers: Mutex::new(Vec::new()),
         });
@@ -256,6 +266,15 @@ impl Bus {
         self.plugins.owner_languages()
     }
 
+    /// 卡片文字用谁的语言：发给家人的按他最近一次请求的 `Accept-Language`（ADR-0043）；他还没打开过 App、
+    /// 没有记录时按主人的语言（协商空列表会落到英文，不是主人的语言）。主人的卡片按主人的。
+    pub fn languages_for(&self, recipient: Option<&str>) -> Languages {
+        match recipient.and_then(|person| self.plugins.person_languages(person)) {
+            Some(header) => Languages::from_header(Some(&header)),
+            None => self.owner_languages(),
+        }
+    }
+
     pub fn endpoint(self: &Arc<Self>) -> Endpoint {
         Endpoint {
             bus: self.clone(),
@@ -306,10 +325,14 @@ impl Bus {
         self.peers.lock().expect("会话表锁中毒").push(peer);
     }
 
-    /// 调用方能看到的工具：核心自己的，加上所有在运行的插件的。并发地问，一个插件卡住挡不住别的（每个插件有期限，见
-    /// [`Upstreams::tools`]）。列不出工具的插件记一条警告后跳过，它的工具这时本来也调不通。
+    /// 调用方能看到的工具：核心自己的，加上所有在运行、对它放行（[`Bus::bot_access`]）的插件的。并发地问，一个插件卡住
+    /// 挡不住别的（每个插件有期限，见 [`Upstreams::tools`]）。列不出工具的插件记一条警告后跳过，它的工具这时本来也调不通。
     async fn tools(&self, caller: &Caller) -> Vec<Tool> {
-        let servers = self.plugins.mcp_servers();
+        if self.remote_contact_blocked(caller) {
+            return contacts_gate::tools();
+        }
+        let mut servers = self.plugins.mcp_servers();
+        servers.retain(|server| self.bot_access(caller, &server.id).is_ok());
         let listed = servers.iter().map(|server| self.upstreams.tools(server));
         let listed = futures_util::future::join_all(listed).await;
         let mut tools = core_tools::definitions();
@@ -344,6 +367,9 @@ impl Bus {
                 &ToolFailure::new("invalid_input", format!("没有工具 {name}")),
             );
         };
+        if let Some(failure) = self.remote_contact_gate(caller, owner, tool) {
+            return self.deny(caller, &name, &args, &failure);
+        }
         if owner == naming::CORE {
             return core_tools::call(self, caller, tool, arguments, activity).await;
         }
@@ -360,6 +386,9 @@ impl Bus {
                 &ToolFailure::new("not_found", format!("没有在运行的插件提供 {name}")),
             );
         };
+        if let Err(failure) = self.bot_access(caller, &server.id) {
+            return self.deny(caller, &name, &args, &failure);
+        }
         self.call_plugin(
             caller,
             &server,
@@ -371,6 +400,7 @@ impl Bus {
     }
 
     /// 插件工具的声明：清单这会儿取不到、或插件没有这个工具时，给 Agent 的失败。
+    /// 错误装箱：serde_json 开 `preserve_order` 时 `CallToolResult` 撑过 clippy `result_large_err` 的 128 字节阈值。
     async fn definition_of(
         &self,
         caller: &Caller,
@@ -378,26 +408,26 @@ impl Bus {
         args: &Value,
         server: &McpServer,
         tool: &str,
-    ) -> Result<rmcp::model::Tool, CallToolResult> {
+    ) -> Result<rmcp::model::Tool, Box<CallToolResult>> {
         let listed = match self.upstreams.tools(server).await {
             Ok(tools) => tools,
             // 插件的工具清单这会儿取不到：多半是插件没就绪或连接断了，Agent 该晚点再试。
             Err(e) => {
-                return Err(self.deny(
+                return Err(Box::new(self.deny(
                     caller,
                     name,
                     args,
                     &ToolFailure::new("source_unavailable", e),
-                ));
+                )));
             }
         };
         listed.into_iter().find(|t| t.name == tool).ok_or_else(|| {
-            self.deny(
+            Box::new(self.deny(
                 caller,
                 name,
                 args,
                 &ToolFailure::new("not_found", format!("插件 {} 没有工具 {tool}", server.id)),
-            )
+            ))
         })
     }
 
@@ -412,7 +442,7 @@ impl Bus {
         let args = Value::Object(arguments.clone());
         let definition = match self.definition_of(caller, name, &args, server, tool).await {
             Ok(definition) => definition,
-            Err(result) => return result,
+            Err(result) => return *result,
         };
         let read_only = definition
             .annotations
@@ -420,9 +450,10 @@ impl Bus {
             .and_then(|a| a.read_only_hint)
             == Some(true);
         let highest = self.plugins.requires_root_confirmation(&server.id);
+        let every_time = highest || risky::deletes(&definition);
         let policy = self.plugins.tool_policy();
         let clearance = || policy.clearance(caller.id.as_str(), server.id.as_str(), tool);
-        let not_sensitive = if highest {
+        let not_sensitive = if every_time {
             None
         } else if read_only {
             Some(Basis::PluginReadOnly)
@@ -441,10 +472,10 @@ impl Bus {
                 .await
             {
                 Ok(held_ms) => held_ms,
-                Err(result) => return result,
+                Err(result) => return *result,
             };
-            // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。最高级的工具全部不放宽。
-            let cleared = if highest {
+            // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。每次都问的工具全部不放宽。
+            let cleared = if every_time {
                 None
             } else {
                 clearance().map(Basis::from).or_else(|| {
@@ -475,19 +506,12 @@ impl Bus {
                 _ => outcome.result,
             };
         }
-        let plugin = cards::text(&server.title);
-        let langs = self.plugins.owner_languages();
-        let mut draft = cards::tool_call(&caller.name, &plugin, tool, &args, highest, &langs);
-        if !highest {
-            draft = draft.with_window(
-                server.id.as_str(),
-                self.confirmations.window_length(),
-                &langs,
-            );
-        }
+        let draft = self.tool_card(caller, server, &definition, &args, highest);
         // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
         let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());
-        let run = move |bus: Arc<Bus>, _secrets: SecretValues| async move {
+        let run = move |bus: Arc<Bus>,
+                        _secrets: SecretValues,
+                        _settings: wonton_protocol::SettingValues| async move {
             forward(
                 &bus,
                 &agent,
@@ -498,151 +522,15 @@ impl Bus {
             )
             .await
         };
-        self.confirmed_after_hold(caller, name, args, (draft, activity), run, held_ms)
-            .await
-    }
-
-    /// 请主人确认，确认了再执行 `run`。整个过程在后台任务里跑：Agent 等不及断开了，确认照样有效到过期，主人确认后
-    /// 照样执行，结果在卡片上（ADR-0016）。
-    async fn confirmed<F, Fut>(
-        self: &Arc<Self>,
-        caller: &Caller,
-        name: &str,
-        args: Value,
-        (draft, activity): (Draft, Guard),
-        run: F,
-    ) -> CallToolResult
-    where
-        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
-        Fut: Future<Output = Outcome> + Send,
-    {
-        self.confirmed_after_hold(caller, name, args, (draft, activity), run, None)
-            .await
-    }
-
-    /// `held_ms`：发卡片之前先停住了多久（“我来操作”），写进审计。
-    async fn confirmed_after_hold<F, Fut>(
-        self: &Arc<Self>,
-        caller: &Caller,
-        name: &str,
-        args: Value,
-        (draft, activity): (Draft, Guard),
-        run: F,
-        held_ms: Option<u64>,
-    ) -> CallToolResult
-    where
-        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
-        Fut: Future<Output = Outcome> + Send,
-    {
-        drop(activity);
-        let bus = self.clone();
-        let caller = caller.clone();
-        let name = name.to_owned();
-        let task = tokio::spawn(async move {
-            let decision = bus.confirmations.ask(&caller.id, draft).await;
-            match decision {
-                Ok(ticket) => {
-                    let activity = bus.plugins.activity.start_tool(&caller.id);
-                    let outcome = run(bus.clone(), ticket.secrets.clone()).await;
-                    drop(activity);
-                    // `window` 有值：不是这次调用自己的卡片，是主人先前批准的放行时段。
-                    let confirmation = if ticket.window.is_some() {
-                        "window"
-                    } else {
-                        "card"
-                    };
-                    bus.record(
-                        &caller,
-                        &name,
-                        &args,
-                        Decision::Approved,
-                        Some(Grounds {
-                            basis: ticket.window.clone().map_or(Basis::Card, Basis::Window),
-                            held_ms,
-                        }),
-                        &outcome,
-                    );
-                    bus.confirmations.finish(ticket, outcome.state).await;
-                    with_confirmation(outcome.result, confirmation)
-                }
-                Err(refusal) => bus.refused(&caller, &name, &args, &refusal, held_ms),
-            }
-        });
-        task.await
-            .unwrap_or_else(|e| with_failure(&format!("确认流程意外中止：{e}"), "internal_error"))
-    }
-
-    /// 最高级的安装和更新（ADR-0036）：第一张批准后，再请主人点一张“我知道这个插件能控制整台主机”
-    /// 的卡片，两张都同意才执行。`second` 是第二张的内容；没有最高级权限时是一次普通确认。
-    /// 两张卡片都没有放宽选项：安装和更新不进放行时段（ADR-0024 对它们不适用）。
-    async fn confirmed_twice<F, Fut>(
-        self: &Arc<Self>,
-        caller: &Caller,
-        name: &str,
-        args: Value,
-        (draft, second, held_ms, activity): (Draft, Option<Draft>, Option<u64>, Guard),
-        run: F,
-    ) -> CallToolResult
-    where
-        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
-        Fut: Future<Output = Outcome> + Send,
-    {
-        let Some(second) = second else {
-            return self
-                .confirmed_after_hold(caller, name, args, (draft, activity), run, held_ms)
-                .await;
-        };
-        drop(activity);
-        let bus = self.clone();
-        let caller = caller.clone();
-        let name = name.to_owned();
-        let task = tokio::spawn(async move {
-            let ticket = match bus.confirmations.ask(&caller.id, draft).await {
-                Ok(ticket) => ticket,
-                Err(refusal) => return bus.refused(&caller, &name, &args, &refusal, None),
-            };
-            // 第一张批准了还没执行：第二张拒绝或过期时什么都不装，两张卡片都说清楚。
-            let second_ticket = match bus.confirmations.ask(&caller.id, second).await {
-                Ok(second) => second,
-                Err(refusal) => {
-                    let message = refusal.message();
-                    bus.confirmations
-                        .finish(
-                            ticket,
-                            ConfirmationState::Failed {
-                                message: message.clone(),
-                            },
-                        )
-                        .await;
-                    return bus.refused(&caller, &name, &args, &refusal, None);
-                }
-            };
-            let activity = bus.plugins.activity.start_tool(&caller.id);
-            let outcome = run(bus.clone(), ticket.secrets.clone()).await;
-            drop(activity);
-            let confirmation = if ticket.window.is_some() {
-                "window"
-            } else {
-                "card"
-            };
-            bus.record(
-                &caller,
-                &name,
-                &args,
-                Decision::Approved,
-                Some(Grounds {
-                    basis: Basis::Card,
-                    held_ms,
-                }),
-                &outcome,
-            );
-            let state = outcome.state.clone();
-            bus.confirmations.finish(ticket, state.clone()).await;
-            bus.confirmations.finish(second_ticket, state).await;
-            with_confirmation(outcome.result, confirmation)
-        });
-        task.await
-            .unwrap_or_else(|e| with_failure(&format!("确认流程意外中止：{e}"), "internal_error"))
+        self.confirmed_after_hold(
+            caller,
+            name,
+            args,
+            (draft, activity),
+            run,
+            (held_ms, Subject::Tool),
+        )
+        .await
     }
 
     /// 主人没同意：拒绝了、过期了，或者卡片发不出去。
@@ -738,6 +626,12 @@ mod agent_permission_tests;
 #[cfg(test)]
 mod authoring_tests;
 #[cfg(test)]
+mod bot_access_tests;
+#[cfg(test)]
+mod capability_install_tests;
+#[cfg(test)]
+mod contacts_gate_tests;
+#[cfg(test)]
 mod file_block_tests;
 #[cfg(test)]
 mod file_tests;
@@ -753,6 +647,8 @@ mod panel_tests;
 mod people_tests;
 #[cfg(test)]
 mod profile_tests;
+#[cfg(test)]
+mod risky_tests;
 #[cfg(test)]
 mod save_tests;
 #[cfg(test)]

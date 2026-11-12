@@ -10,7 +10,7 @@ use crate::plugin::docker::Engine;
 
 /// Tuwunel：本地按标签拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
 pub(super) fn image() -> String {
-    wonton_test_images::image("ghcr.io/matrix-construct/tuwunel:v1.9.4")
+    wonton_test_images::image("ghcr.io/matrix-construct/tuwunel:v2.0.0")
 }
 const WAIT: Duration = Duration::from_secs(15);
 
@@ -462,6 +462,7 @@ pub(super) async fn create_room(server: &ClusterServer, account: &Account) -> St
             Method::POST,
             &format!("{}/_matrix/client/v3/createRoom", server.address),
             Some(&account.token),
+            &[],
             RequestBody::Json(&serde_json::json!({"preset": "private_chat"})),
             WAIT,
         )
@@ -483,6 +484,7 @@ pub(super) async fn invite(
             Method::POST,
             &format!("{}/_matrix/client/v3/rooms/{room}/invite", server.address),
             Some(&account.token),
+            &[],
             RequestBody::Json(&serde_json::json!({"user_id": user_id})),
             WAIT,
         )
@@ -506,6 +508,7 @@ pub(super) async fn join(server: &ClusterServer, token: &str, room: &str) -> Res
             Method::GET,
             &format!("{}/_matrix/client/v3/sync", server.address),
             Some(token),
+            &[],
             RequestBody::Empty,
             WAIT,
         )
@@ -523,6 +526,7 @@ pub(super) async fn join(server: &ClusterServer, token: &str, room: &str) -> Res
             Method::POST,
             &format!("{}/_matrix/client/v3/rooms/{room}/join", server.address),
             Some(token),
+            &[],
             RequestBody::Json(&serde_json::json!({})),
             WAIT,
         )

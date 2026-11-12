@@ -1,25 +1,41 @@
 package app.wonton.ui
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
 import app.wonton.protocol.FriendBlockScope
 import app.wonton.protocol.FriendFailure
 import app.wonton.protocol.FriendGroup
@@ -37,13 +53,23 @@ import app.wonton.ui.design.WontonSheet
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.WontonIcon
 import app.wonton.ui.icons.Check
+import app.wonton.ui.icons.Expand
+import app.wonton.ui.icons.QrCode
+import app.wonton.ui.icons.WontonIcon
 
 private const val MILLIS_PER_SECOND = 1_000L
 
+private val QR_SIZE = 260.dp
+
 @Composable
-internal fun AddFriendSheet(onSubmit: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun AddFriendSheet(
+    myLink: String?,
+    onScan: () -> Unit,
+    onShowMyCode: () -> Unit,
+    onSubmit: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var userId by rememberSaveable { mutableStateOf("") }
     WontonSheet(onDismiss, stringResource(R.string.friends_add_title)) { close ->
         val submit: () -> Unit = {
@@ -52,9 +78,7 @@ internal fun AddFriendSheet(onSubmit: (String) -> Unit, onDismiss: () -> Unit) {
         }
         Column(
             Modifier.fillMaxWidth().padding(WontonTheme.spacing.pageInset),
-            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
-                WontonTheme.spacing.s12,
-            ),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         ) {
             WontonTextField(
                 userId,
@@ -75,6 +99,72 @@ internal fun AddFriendSheet(onSubmit: (String) -> Unit, onDismiss: () -> Unit) {
                 enabled = userId.isNotBlank(),
             )
         }
+        WontonGroup {
+            SheetRow(WontonIcon.Expand, stringResource(R.string.friends_scan_code)) { close(onScan) }
+            myLink?.let {
+                WontonSeparator()
+                SheetRow(WontonIcon.QrCode, stringResource(R.string.friends_my_code)) { close(onShowMyCode) }
+            }
+        }
+    }
+}
+
+/** 出示我的码：把核心给的 matrix.to 用户链接画成二维码，对面扫了或粘贴就是发好友请求。 */
+@Composable
+internal fun MyFriendCodeDialog(link: String, onDismiss: () -> Unit) {
+    WontonDialog(
+        stringResource(R.string.friends_my_code),
+        onDismiss = onDismiss,
+        detail = {
+            Column(
+                Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                val qr = remember(link) { qrBitmap(link) }
+                Image(
+                    bitmap = qr,
+                    contentDescription = stringResource(R.string.friends_my_code),
+                    modifier = Modifier.size(QR_SIZE).clip(RoundedCornerShape(WontonTheme.radii.control)),
+                    filterQuality = FilterQuality.None,
+                )
+                SelectionContainer {
+                    Text(
+                        link,
+                        Modifier.fillMaxWidth()
+                            .background(
+                                WontonTheme.colors.surfaceSubtle.toColor(),
+                                RoundedCornerShape(WontonTheme.radii.control),
+                            )
+                            .padding(WontonTheme.spacing.s12),
+                        style = WontonTheme.typography.caption.copy(fontFamily = FontFamily.Monospace),
+                        color = WontonTheme.colors.textPrimary.toColor(),
+                    )
+                }
+            }
+        },
+    )
+}
+
+/** 操作项：和 WontonActionSheet 的行一个样子，供自带表单的面板接着用。 */
+@Composable
+private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .heightIn(min = WontonTheme.size.target)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = WontonTheme.spacing.pageInset),
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            // 装饰：操作项有文字。
+            contentDescription = null,
+            modifier = Modifier.size(WontonTheme.size.icon),
+            tint = WontonTheme.colors.textPrimary.toColor(),
+        )
+        Text(label, style = WontonTheme.typography.body, color = WontonTheme.colors.textPrimary.toColor())
     }
 }
 
@@ -118,9 +208,7 @@ internal fun ChooseGroupsSheet(
     WontonSheet(onDismiss, stringResource(R.string.friends_choose_groups_title, row.name())) { close ->
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
-                WontonTheme.spacing.s12,
-            ),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         ) {
             WontonGroup {
                 groups.forEachIndexed { index, group ->
@@ -203,6 +291,11 @@ internal fun FriendsState.Failed.problem(): Problem = when (problem.reason) {
     FriendFailure.UNAUTHORIZED -> Problem(
         titleRes = R.string.friends_error_unauthorized,
         nextStepRes = R.string.friends_error_unauthorized_next,
+        detail = problem.detail(),
+    )
+    FriendFailure.FORBIDDEN -> Problem(
+        titleRes = R.string.friends_error_forbidden,
+        nextStepRes = R.string.friends_error_forbidden_next,
         detail = problem.detail(),
     )
     FriendFailure.INVALID_USER_ID -> Problem(

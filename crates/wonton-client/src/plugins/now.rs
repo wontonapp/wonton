@@ -308,7 +308,7 @@ impl PluginsLink {
         let (title, icon) = self.display_of(&id);
         self.view.send_modify(|view| {
             view.tasks
-                .retain(|task| !(task.id == id && task.state != PluginTaskState::Running));
+                .retain(|task| !(task.id == id && !task.state.in_progress()));
             view.tasks.push(PluginTask {
                 title,
                 icon,
@@ -321,9 +321,11 @@ impl PluginsLink {
                     reason: problem.reason,
                     message: problem.message,
                 },
+                waiting_for_connection: false,
                 added_tools: None,
                 id,
             });
+            Self::derive(view);
         });
     }
 
@@ -350,7 +352,7 @@ impl PluginsLink {
             || view
                 .tasks
                 .iter()
-                .any(|task| task.id == key && task.state == PluginTaskState::Running)
+                .any(|task| task.id == key && task.state.in_progress())
             || self
                 .queued_confirmations()
                 .lock()

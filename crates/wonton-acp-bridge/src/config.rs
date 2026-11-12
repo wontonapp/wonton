@@ -3,7 +3,29 @@ use std::{path::PathBuf, time::Duration};
 use anyhow::{Context, Result, bail};
 use wonton_matrix::{OwnedRoomId, OwnedUserId};
 
-pub const MAX_FRAME_BYTES: usize = 512 * 1024;
+use crate::health::Files;
+
+/// 桥与 Agent 之间 stdin/stdout 单行帧的上限：32 MiB。
+///
+/// 文字轮用不了这么大。实测 qwen-code 会把全部技能全文（availableSkillDetails，
+/// 约 650 KiB）塞进一条 available_commands_update，上限必须容下这类富负载，否则
+/// 整条连接被误判为协议错误而断开；放宽到 32 MiB 是为了装下附件轮里 20 MiB 图片
+/// 的 base64（约 27 MiB，见 `bridge/attachments.rs` 的 `MAX_ATTACHMENT_BYTES`）。
+pub const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
+
+/// 桥会发的工作模式全集（负责人的定）：写死已知安全的值，挡住 Claude Code 的
+/// `bypassPermissions`、Codex 的 `full-access` 这类不问就做的档位；`auto` 在 Codex
+/// 的沙箱里写文件不问，按主人的决定保留。Agent 在 `availableModes` 里报出别的取值
+/// 也不跟。
+pub const ALLOWED_MODES: &[&str] = &["default", "plan", "acceptEdits", "read-only", "auto"];
+
+fn checked_mode(name: &str, value: String) -> Result<String> {
+    if ALLOWED_MODES.contains(&value.as_str()) {
+        Ok(value)
+    } else {
+        bail!("{name} 配的 {value:?} 不在桥的模式白名单 {ALLOWED_MODES:?} 里")
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Limits {
@@ -16,6 +38,10 @@ pub struct Limits {
     pub idle_tick: Duration,
     /// 话题空闲多久判结束（ADR-0058：30 分钟）。
     pub topic_idle: Duration,
+    /// 解不开的加密消息等密钥晚到多久（超过就报，见 `undecryptable`）。
+    pub undecryptable_after: Duration,
+    /// 报过之后隔多久才允许再报（同一个房间别刷屏）。
+    pub undecryptable_every: Duration,
 }
 
 #[derive(Clone, Debug)]
@@ -34,6 +60,8 @@ pub struct Config {
     pub mode: String,
     /// 话题会话想切的“改前先问”模式（ADR-0058）；Agent 报不出这个取值时退回 `mode`。
     pub topic_mode: Option<String>,
+    /// 心跳和健康标记文件的位置，生产在 `/tmp`。
+    pub health: Files,
     pub limits: Limits,
 }
 
@@ -76,10 +104,16 @@ impl Config {
             workspace: std::env::var("WONTON_AGENT_WORKSPACE")
                 .unwrap_or_else(|_| "/workspace".into()),
             mcp_url,
-            mode: std::env::var("WONTON_ACP_MODE").unwrap_or_else(|_| "plan".into()),
+            mode: checked_mode(
+                "WONTON_ACP_MODE",
+                std::env::var("WONTON_ACP_MODE").unwrap_or_else(|_| "plan".into()),
+            )?,
             topic_mode: std::env::var("WONTON_ACP_TOPIC_MODE")
                 .ok()
-                .filter(|mode| !mode.trim().is_empty()),
+                .filter(|mode| !mode.trim().is_empty())
+                .map(|mode| checked_mode("WONTON_ACP_TOPIC_MODE", mode))
+                .transpose()?,
+            health: Files::from_env(),
             limits: Limits {
                 max_input_bytes: env_usize("WONTON_ACP_MAX_INPUT_BYTES", 16 * 1024)?,
                 max_output_bytes: env_usize("WONTON_ACP_MAX_OUTPUT_BYTES", 64 * 1024)?,
@@ -88,6 +122,14 @@ impl Config {
                 idle_timeout: Duration::from_secs(env_u64("WONTON_ACP_IDLE_SECONDS", 10 * 60)?),
                 idle_tick: Duration::from_secs(env_u64("WONTON_ACP_IDLE_TICK_SECONDS", 30)?),
                 topic_idle: Duration::from_secs(env_u64("WONTON_ACP_TOPIC_IDLE_SECONDS", 30 * 60)?),
+                undecryptable_after: Duration::from_secs(env_u64(
+                    "WONTON_ACP_UNDECRYPTABLE_SECONDS",
+                    60,
+                )?),
+                undecryptable_every: Duration::from_secs(env_u64(
+                    "WONTON_ACP_UNDECRYPTABLE_EVERY_SECONDS",
+                    10 * 60,
+                )?),
             },
         })
     }
@@ -119,4 +161,32 @@ fn env_usize(name: &str, default: usize) -> Result<usize> {
     value
         .parse()
         .with_context(|| format!("{name} 不是合法的正整数"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allowed_modes_pass_the_whitelist() {
+        for mode in ALLOWED_MODES {
+            assert_eq!(
+                checked_mode("WONTON_ACP_MODE", (*mode).into()).unwrap(),
+                *mode
+            );
+        }
+    }
+
+    #[test]
+    fn unsafe_modes_fail_startup_with_the_reason() {
+        for mode in ["bypassPermissions", "full-access", "yolo"] {
+            let error = checked_mode("WONTON_ACP_MODE", mode.into())
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains(mode) && error.contains("白名单"),
+                "启动错误要说清原因：{error}"
+            );
+        }
+    }
 }

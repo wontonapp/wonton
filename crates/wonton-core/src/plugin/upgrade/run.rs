@@ -1,7 +1,6 @@
 //! 执行升级：保留数据、插件密钥、Bot 账号和设备、模型凭据、OIDC 客户端，只换容器。
 //!
-//! 先把能失败的都做在旧容器还在跑的时候（渲染、拉镜像、建目录和卷），这些失败了旧版本不受影响。换容器之后失败就退回：用
-//! 旧记录和旧容器当时的镜像重建旧版本。Bot 的令牌从旧容器读回（见 [`crate::plugin::egress`]），只留在内存里和容器的环境
+//! 先把能失败的都做在旧容器还在跑的时候（渲染、拉镜像、建目录和卷），这些失败了旧版本不受影响。换容器之后失败就退回：用旧记录和旧容器当时的镜像重建旧版本。Bot 的令牌从旧容器读回（见 [`crate::plugin::egress`]），只留在内存里和容器的环境
 //! 变量里，这里绝不签新设备：换设备要重新建加密身份。安装记录最后才写，核心中途退出时记录还是旧版本的。
 
 use std::collections::HashMap;
@@ -31,7 +30,7 @@ use wonton_protocol::BotKeeper;
 use super::super::render::{Deployment, InstallContext, dry_run, render};
 use super::super::secrets::{self, Secrets};
 use super::super::store::{EnabledPermission, InstalledRecord};
-use super::super::upstreams::{core_aliases, uses_sso};
+use super::super::upstreams::uses_sso;
 use super::{installed_package, newer};
 use crate::l10n;
 use crate::secret::random_token;
@@ -100,17 +99,20 @@ fn pin_images(plan: &mut Deployment, images: &HashMap<String, String>) {
 
 impl PluginManager {
     /// 检查并升级。`granted` 必须含新版本的全部必需权限：这就是主人的确认；`requested` 是主人勾选的可选项。
-    pub(in crate::plugin) async fn upgrade_checked(
+    pub(super) async fn upgrade_declared(
         &self,
         package: PluginPackage,
         granted: &[Permission],
         requested: &[EnabledPermission],
         lan_webui: bool,
+        settings: super::super::settings::Values,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
         super::super::install_entry::check_runtime(&package.manifest, &langs)?;
         self.check_not_upgrading(&langs)?;
-        dry_run(&package, &langs)?;
+        if !super::super::install_hosted::is_containerless(&package.manifest) {
+            dry_run(&package, &langs)?;
+        }
         self.check_icon(&package, &langs).await?;
         let manifest = &package.manifest;
         let id = &manifest.id;
@@ -132,7 +134,11 @@ impl PluginManager {
             })
             .collect();
         check_permissions(manifest, granted, &enabled, &langs)?;
-        super::super::capabilities::unsupported_dependencies(manifest, &langs)?;
+        super::super::capabilities::unsupported_model_dependency(manifest, &langs)?;
+        if super::super::install_hosted::is_containerless(manifest) {
+            return self.upgrade_containerless(package, granted, &langs).await;
+        }
+        self.check_hosted_provider(manifest, &langs)?;
         self.check_requirements(manifest, &langs).await?;
         self.check_egress(manifest, &langs).await?;
         let gpu = self
@@ -146,9 +152,16 @@ impl PluginManager {
         let lan = self.lan_grant(&package, lan_webui, &langs).await?;
         let before = self.begin_upgrade(id)?;
         tracing::info!(plugin = %id, version = %manifest.version, "开始升级插件");
-        let outcome = self
-            .upgrade_begun(&package, granted, &enabled, (gpu, lan), &langs)
-            .await;
+        // 放堆上跑：从建容器到对账的一整串都在这条链里，调试构建的帧很大，嵌套两层就够顶满测试线程的 2 MiB 栈。
+        let outcome = Box::pin(self.upgrade_begun(
+            &package,
+            granted,
+            &enabled,
+            (gpu, lan),
+            settings.clone(),
+            &langs,
+        ))
+        .await;
         self.lan.end(id);
         let result = self.finish_upgrade(&package, lan_webui, before, outcome);
         if result.is_ok()
@@ -249,6 +262,7 @@ impl PluginManager {
         granted: &[Permission],
         enabled: &[EnabledPermission],
         grants: (Option<GpuGrant>, Option<LanGrant>),
+        settings: super::super::settings::Values,
         langs: &Languages,
     ) -> Outcome {
         let old = match self.read_old(&package.manifest.id).await {
@@ -257,7 +271,15 @@ impl PluginManager {
         };
         let mut progress = Progress::default();
         let error = match self
-            .replace_version(&old, package, granted, enabled, grants, &mut progress)
+            .replace_version(
+                &old,
+                package,
+                granted,
+                enabled,
+                grants,
+                settings,
+                &mut progress,
+            )
             .await
         {
             Ok(deployed) => {
@@ -327,6 +349,7 @@ impl PluginManager {
         })
     }
 
+    #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
     async fn replace_version(
         &self,
         old: &Old,
@@ -334,11 +357,12 @@ impl PluginManager {
         granted: &[Permission],
         enabled: &[EnabledPermission],
         grants: (Option<GpuGrant>, Option<LanGrant>),
+        settings: super::super::settings::Values,
         progress: &mut Progress,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
         let prepared = self
-            .prepare_new(old, package, enabled, grants, progress)
+            .prepare_new(old, package, enabled, grants, settings, progress)
             .await?;
         let langs = self.owner_languages();
         let Prepared {
@@ -360,17 +384,17 @@ impl PluginManager {
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline =
-            super::super::health_gate::deadline(&plan, self.cfg.install_timeout, Instant::now());
+            super::super::health_gate::deadline(&plan, ctx.install_limit, Instant::now());
         self.stage(&manifest.id, InstallStage::Starting);
-        let health = self
-            .start_containers(
-                &plan,
-                Some(&manifest.id),
-                &mut progress.undo,
-                deadline,
-                &langs,
-            )
-            .await?;
+        let health = Box::pin(self.start_containers(
+            Some(manifest),
+            &plan,
+            Some(&manifest.id),
+            &mut progress.undo,
+            deadline,
+            &langs,
+        ))
+        .await?;
         let (upstream, models, mcp) = self
             .deploy_upstreams(manifest, &network, &mut secrets, deadline, &langs)
             .await?;
@@ -394,11 +418,16 @@ impl PluginManager {
             proxied: ctx.egress.is_some(),
             oidc_client_secret: oidc_secret,
             installed_at: old.record.installed_at,
+            entry_label: old.record.entry_label.clone(),
             origin: package.origin.clone(),
             // 归属跟着插件走：Agent 更新自己写的插件后还是它写的；App 里经文件或来源升级的清掉（各路径自己做）。
             written_by: old.record.written_by.clone(),
             ask_every_update: old.record.ask_every_update,
             family: old.record.family,
+            settings: ctx.settings.clone().into_iter().collect(),
+            settings_changed_ms: old.record.settings_changed_ms,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         })?;
         Ok(Deployed {
             upstream,
@@ -413,6 +442,7 @@ impl PluginManager {
             proxy: proxy.map(Arc::new),
             mcp,
             firewalled,
+            hosted: self.hosted_upstreams(manifest, &network).await?,
         })
     }
 
@@ -423,6 +453,7 @@ impl PluginManager {
         package: &PluginPackage,
         enabled: &[EnabledPermission],
         (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
+        settings: super::super::settings::Values,
         progress: &mut Progress,
     ) -> Result<Prepared, InstallError> {
         let manifest = &package.manifest;
@@ -431,6 +462,8 @@ impl PluginManager {
             .then(|| old.record.oidc_client_secret.clone())
             .map(|kept| kept.unwrap_or_else(random_token));
         let langs = self.owner_languages();
+        self.prepare_dependencies(manifest, &langs).await?;
+        self.revoke_removed_provider_keys(manifest, &langs).await?;
         let secrets = self.prepare_secrets(manifest, &mut progress.undo)?;
         let generated =
             secrets::generated_values(manifest, &secrets, &langs).map_err(InstallError::Storage)?;
@@ -448,6 +481,7 @@ impl PluginManager {
         ctx.limits = old.record.limits;
         ctx.gpu = gpu;
         ctx.lan = lan;
+        ctx.settings = settings;
         // 新版本才接入 Matrix 的插件：先代 Bot 登录新设备，模型凭据签发后再把变量填进上下文。
         let mut new_bot = None;
         if is_bot(manifest) && !is_bot(&old.package.manifest) {
@@ -596,8 +630,7 @@ impl PluginManager {
         let Some(core) = &self.cfg.core_container else {
             return Ok(());
         };
-        let public = &self.cfg.public;
-        if core_aliases(public, from) != core_aliases(public, to) {
+        if self.core_aliases_of(from) != self.core_aliases_of(to) {
             self.engine.disconnect_network(network, core).await?;
         }
         self.attach_core(network, core, to).await
@@ -679,7 +712,8 @@ impl PluginManager {
         pin_images(&mut plan, &old.images);
         self.replace_containers(&ctx, plan, Gate::StartPeriod)
             .await?;
-        self.reconcile_running(&old.package, &old.record).await
+        // 对账要取宿主信息、起检查容器，链很深：同样放堆上。
+        Box::pin(self.reconcile_running(&old.package, &old.record)).await
     }
 
     /// 新版本不要了的：记录已经写好，失败只记日志，主人卸载时一并清掉。
@@ -756,6 +790,7 @@ impl PluginManager {
                 &granted,
                 &installed.enabled_permissions,
                 installed.lan_webui,
+                installed.settings.clone(),
             )
             .await
         {

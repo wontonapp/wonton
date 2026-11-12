@@ -46,12 +46,28 @@ impl ChatLink {
             "chat-op-send-text-failed",
             async move {
                 let room = chat.room(&room_id).await?;
+                // 预览的图片传不上去时不挡消息：正文照发，原因报出来（取不到的类别发送框里已经显示过）。
+                let extra = match chat.preview_extra(&room, &room_id, &body).await {
+                    Ok(extra) => extra,
+                    Err(error) => {
+                        chat.report_op_failure("chat-op-send-preview-failed", &error);
+                        None
+                    }
+                };
                 match &reply_to {
-                    Some(event_id) => room.send_reply(&body, event_id).await?,
-                    None => room.send_text(&body).await?,
+                    Some(event_id) => match extra {
+                        Some(extra) => room.send_reply_with_extra(&body, event_id, extra).await?,
+                        None => room.send_reply(&body, event_id).await?,
+                    },
+                    None => match extra {
+                        Some(extra) => room.send_text_with_extra(&body, extra).await?,
+                        None => room.send_text(&body).await?,
+                    },
                 }
                 // 发出去了，草稿（连同回复对象）留着没用了；发送途中又打的字不算。
-                chat.enqueue_draft(DraftWrite::Forget(room_id, body));
+                chat.enqueue_draft(DraftWrite::Forget(room_id.clone(), body));
+                // 点掉的预览记录跟着作废：下次打同样的链接重新出预览。
+                chat.previews.forget(&room_id);
                 Ok(())
             },
             move || onboarding::record_sent(&sent, sent_room),
@@ -137,5 +153,30 @@ pub(super) async fn signed_in_within(
         {
             return false;
         }
+    }
+}
+
+/// 附件区（ADR-0094）用到的聊天这一侧。
+impl ChatLink {
+    /// 点发送时的检查，和发文字一样：房间能发、回复对象的格式对。
+    pub(crate) fn check_send(
+        &self,
+        room_id: &str,
+        reply_to: Option<&str>,
+    ) -> Result<(), CoreError> {
+        reply_target(reply_to)?;
+        self.send_target(room_id).map(drop)
+    }
+
+    /// 点了发送：字已经交给附件区，草稿（连同回复对象）留着没用了；发送途中又打的字不算。
+    pub(crate) fn forget_sent_draft(&self, room_id: &str, body: &str) {
+        if let Ok((_, room_id)) = self.target(room_id) {
+            self.enqueue_draft(DraftWrite::Forget(room_id, body.trim().to_owned()));
+        }
+    }
+
+    /// 这一组交给了发送队列：引导提示记下这个房间发过消息。
+    pub(crate) fn record_sent_room(&self, room_id: &str) {
+        onboarding::record_sent(&self.sent, room_id.to_owned());
     }
 }

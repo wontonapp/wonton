@@ -10,7 +10,7 @@ use crate::MediaHandle;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct QuotedMessage {
-    /// 原消息的事件 ID，回复时原样交回核心（[`Action::SendText`](crate::Action::SendText) 的 `reply_to`）。
+    /// 原消息的事件 ID，回复时原样交回核心（[`TimelineAction::SendText`](crate::TimelineAction::SendText) 的 `reply_to`）。
     pub event_id: String,
     pub sender_id: String,
     /// 发送者的显示名，没有设置时是用户 ID。
@@ -56,13 +56,15 @@ pub enum ReplyQuote {
     },
 }
 
-/// 一个房间输入框的草稿，`ClientCore::draft` 返回它；用 [`Action::SetDraft`](crate::Action::SetDraft) 记下。
+/// 一个房间输入框的草稿，`ClientCore::draft` 返回它；用 [`TimelineAction::SetDraft`](crate::TimelineAction::SetDraft) 记下。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ComposerDraft {
     pub body: String,
     /// 正在回复的消息；壳在输入框上方画出来，发送时把它的事件 ID 作为 `reply_to` 交回。
     pub reply: Option<ReplyQuote>,
+    /// 输入框里第一个外部链接的预览（ADR-0065）；没有链接、刚被去掉（[`crate::TimelineAction::DismissLinkPreview`]）或还没取到时是 `None`。
+    pub preview: Option<crate::LinkPreviewState>,
 }
 
 #[cfg(test)]
@@ -91,6 +93,7 @@ mod tests {
             let draft = ComposerDraft {
                 body: "ok".into(),
                 reply: Some(quote),
+                preview: None,
             };
             let json = serde_json::to_string(&draft).unwrap();
             assert_eq!(serde_json::from_str::<ComposerDraft>(&json).unwrap(), draft);

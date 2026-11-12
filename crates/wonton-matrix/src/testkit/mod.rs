@@ -11,7 +11,7 @@ mod to_device;
 
 use std::{fmt::Debug, path::PathBuf, time::Duration};
 
-use crate::{MatrixSession, Result, SessionConfig, StoreConfig};
+use crate::{MatrixSession, Result, RoomInfo, SessionConfig, StoreConfig};
 use futures_util::{Stream, StreamExt};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt, TestcontainersError,
@@ -261,6 +261,30 @@ impl TestServer {
             .expect("冻住 Tuwunel 容器");
     }
 
+    /// 注册一个用密码登录的账号（用现成 Matrix 账号登录的测试用），返回完整用户 ID 和密码。容器要开着密码登录
+    /// （`TUWUNEL_LOGIN_WITH_PASSWORD=true`），只有测试自己起的容器能注册。
+    pub async fn register_password_user(&self, localpart: &str) -> (String, String) {
+        let secret = self
+            .registration_secret
+            .as_deref()
+            .expect("现成的服务器没有注册密钥");
+        let password = random_hex(16);
+        let response = admin::register_user(
+            &matrix_sdk::reqwest::Client::new(),
+            &self.url,
+            secret,
+            localpart,
+            &password,
+            false,
+        )
+        .await;
+        let user_id = response["user_id"]
+            .as_str()
+            .expect("注册接口应返回用户 ID")
+            .to_owned();
+        (user_id, password)
+    }
+
     /// 核心的管理账号，只有测试自己起的容器才有。
     pub async fn admin(&self) -> Admin {
         let secret = self
@@ -354,6 +378,21 @@ impl TempStore {
             passphrase: Some(self.passphrase.clone()),
         }
     }
+
+    /// 删掉整个存储目录，模拟数据卷被删、容器重建没挂卷；之后的会话从空存储重新开始。
+    pub fn wipe(&self) {
+        std::fs::remove_dir_all(&self.path).expect("删除存储目录");
+    }
+
+    /// 把存储目录里的文件写成垃圾，模拟 SQLite 损坏；之后的会话打不开存储。
+    pub fn corrupt(&self) {
+        for entry in std::fs::read_dir(&self.path).expect("读存储目录") {
+            let entry = entry.expect("读存储目录项");
+            if entry.path().is_file() {
+                std::fs::write(entry.path(), b"not a sqlite database").expect("写坏存储文件");
+            }
+        }
+    }
 }
 
 impl Drop for TempStore {
@@ -384,4 +423,66 @@ pub async fn eventually<T: Debug, R>(
         Ok(None) => panic!("{what}：流已结束，最后一项：{last:#?}"),
         Err(_) => panic!("{what}：{WAIT:?} 内没有等到，最后一项：{last:#?}"),
     }
+}
+
+/// 等房间列表里 `room_id` 这一行满足条件，返回这一行；列表只跟着同步到的事件变，不是定时重试。
+pub async fn wait_for_room(
+    session: &MatrixSession,
+    what: &str,
+    room_id: &matrix_sdk::ruma::OwnedRoomId,
+    mut check: impl FnMut(&RoomInfo) -> bool,
+) -> RoomInfo {
+    eventually(what, session.rooms().await.expect("房间列表"), |rooms| {
+        rooms
+            .iter()
+            .find(|row| &row.room_id == room_id && check(row))
+            .cloned()
+    })
+    .await
+}
+
+/// 造一条测试用的图片消息内容（未加密来源）。上游测试（如桥的行为测试）要往消息流里
+/// 放图片时用它；生产代码走不了这条路（`source` 字段不公开）。
+impl crate::ImageContent {
+    pub fn for_test(
+        filename: &str,
+        mime_type: Option<&str>,
+        size: Option<u64>,
+        caption: Option<&str>,
+        mxc: &str,
+    ) -> Self {
+        Self {
+            filename: filename.to_owned(),
+            mime_type: mime_type.map(str::to_owned),
+            size,
+            width: None,
+            height: None,
+            caption: caption.map(str::to_owned),
+            source: plain_source(mxc),
+            thumbnail: None,
+        }
+    }
+}
+
+/// 造一条测试用的文件消息内容（未加密来源）；用途同 [`crate::ImageContent::for_test`]。
+impl crate::FileContent {
+    pub fn for_test(
+        filename: &str,
+        mime_type: Option<&str>,
+        size: Option<u64>,
+        caption: Option<&str>,
+        mxc: &str,
+    ) -> Self {
+        Self {
+            filename: filename.to_owned(),
+            mime_type: mime_type.map(str::to_owned),
+            size,
+            caption: caption.map(str::to_owned),
+            source: plain_source(mxc),
+        }
+    }
+}
+
+fn plain_source(mxc: &str) -> matrix_sdk::ruma::events::room::MediaSource {
+    matrix_sdk::ruma::events::room::MediaSource::Plain(mxc.to_owned().into())
 }

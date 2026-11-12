@@ -3,6 +3,7 @@ import WontonClient
 
 extension MainView {
     func receiveAppURL(_ url: URL) {
+        if home.completeMatrixLogin(from: url) { return }
         if home.prefillPairing(from: url) {
             showsSettings = false
             showsTabSettings = false
@@ -77,8 +78,8 @@ extension MainView {
         }),
               let choice = plugin.tabChoices.first else {
             onboarding.rejection = Problem(
-                title: String(localized: .onboardingGatewayMissingTitle),
-                nextStep: String(localized: .onboardingGatewayMissingNextStep)
+                title: String(localized: .Onboarding1.onboardingGatewayMissingTitle),
+                nextStep: String(localized: .Onboarding3.onboardingGatewayMissingNextStep)
             )
             return
         }

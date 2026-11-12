@@ -91,9 +91,36 @@ pub struct InstalledRecord {
     /// 主人开放给家人了（ADR-0045）：家人的设备能打开它的网页，家人的插件列表里有它。默认关。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub family: bool,
+    /// 入口上的标签（`<标签>.<后缀>`），装的时候定下，升级和重启不变。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_label: Option<String>,
+    /// 主人设置的普通值（ADR-0077）：属性名 → JSON。明文可读，不是凭据。
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub settings: std::collections::BTreeMap<String, serde_json::Value>,
+    /// 设置最后保存的时间，Unix 毫秒；没改过时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_changed_ms: Option<u64>,
+    /// 静态网页的文件摘要（相对 `static_web.root` 的路径 → sha256），算插件包摘要用；文件本身只在托管目录里（ADR-0080）。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub static_files: super::package::static_files::StaticHashes,
+    /// 副作用账本里的托管目录：这个插件在哪些托管能力下有自己的子目录（ADR-0080 第 2 节）。卸载照它撤。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hosted: Vec<String>,
 }
 
 impl InstalledRecord {
+    /// 记录里的插件包：引用的文件之外，静态网页只有文件摘要（文件在托管目录里）。
+    pub fn package(
+        &self,
+        langs: &super::languages::Languages,
+    ) -> Result<super::package::PluginPackage, super::package::PackageError> {
+        let mut package =
+            super::package::PluginPackage::with_files(&self.source, self.files.clone(), langs)?
+                .with_static_hashes(self.static_files.clone());
+        package.origin = self.origin.clone();
+        Ok(package)
+    }
+
     /// 记录里开着的可选权限。
     pub fn enabled(&self) -> Vec<Permission> {
         self.enabled_permissions
@@ -246,6 +273,12 @@ impl Store {
     /// 每个人的语言：用户名到最近一次设备请求的 `Accept-Language` 原文（ADR-0043）。
     pub fn people_languages(&self) -> PathBuf {
         self.dir.join("store").join(PEOPLE_LANGUAGES)
+    }
+
+    pub(in crate::plugin) fn capabilities_path(&self) -> Result<PathBuf, StoreError> {
+        let dir = self.dir.join("capabilities");
+        create_private_dir(&dir)?;
+        Ok(dir.join("connections.json"))
     }
 
     /// 读出全部记录，按 ID 排序。单个记录读不出、已损坏或与文件名不符只体现在它自己的结果里；
@@ -575,10 +608,15 @@ mod tests {
             limits: Default::default(),
             oidc_client_secret: Some("s3cret".into()),
             installed_at: 1,
+            entry_label: None,
             origin: None,
             written_by: None,
             ask_every_update: false,
             family: false,
+            settings: Default::default(),
+            settings_changed_ms: None,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         }
     }
 

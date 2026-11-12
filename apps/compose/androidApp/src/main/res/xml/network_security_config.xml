@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 生产只信系统 CA；user CA 不进信任链（targetSdk 默认）。
+     这个文件和 rustls-platform-verifier 的 AAR 里的同名，同名时 App 的盖掉库的，所以这里要接着放行明文：
+     Let's Encrypt 等只用 HTTP 发吊销列表（CRL），Android 校验证书时取不到就当作已吊销
+     （rustls/rustls-platform-verifier#221）。插件网页也是 http://（经本地代理进加密的隧道，基础域名由服务器定、
+     列不出来），不放行 WebView 就报 ERR_CLEARTEXT_NOT_PERMITTED。放行所有明文也是 manifest 里 usesCleartextTraffic="true" 本来的意思：
+     有了这个文件，那个属性就不再起作用。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

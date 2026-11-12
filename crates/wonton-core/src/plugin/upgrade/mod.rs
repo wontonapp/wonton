@@ -2,6 +2,7 @@
 //! 按预览给的摘要升级：主人确认的就是装上的，来源在这之间变了就要重新预览、重新确认。
 
 mod adopt;
+mod dependencies;
 mod offers;
 mod run;
 
@@ -116,9 +117,7 @@ pub(in crate::plugin) fn installed_package(
     record: &InstalledRecord,
     langs: &Languages,
 ) -> Result<PluginPackage, InstallError> {
-    let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
-    package.origin = record.origin.clone();
-    Ok(package)
+    Ok(record.package(langs)?)
 }
 
 /// 官方索引这次没取到：上次的索引里没有新版本，不等于真的没有。
@@ -298,6 +297,7 @@ impl PluginManager {
         to: UpgradeTo,
         langs: &Languages,
     ) -> Result<InstallPreview, InstallError> {
+        let _changing = self.dependencies.changing.lock().await;
         let record = self.upgradable_record(id, langs)?;
         let chosen = !matches!(to, UpgradeTo::Offered);
         let upload = matches!(to, UpgradeTo::Upload(_));
@@ -326,8 +326,13 @@ impl PluginManager {
                 blocked,
                 record.written_by.clone(),
                 &record.enabled_permissions,
+                Some(&record),
             )
             .await?;
+        if let Some(reason) = self.upgrade_capability_block(&package, langs)? {
+            preview.blocked = Some(reason);
+            preview.blocked_category = Some(wonton_protocol::BlockedCategory::CapabilityDropped);
+        }
         preview.upgrade_from = Some(record.version.clone());
         preview.secret_inputs = self.missing_secret_inputs(id, &package.manifest, langs);
         if upload {
@@ -440,15 +445,18 @@ impl PluginManager {
                 &[("id", id.as_str().into()), ("digest", digest.into())],
             )));
         }
+        self.check_capability_removal(id, Some(&package.manifest), langs)?;
         let filled = self.store.secrets().load(id).ok().flatten();
         self.store_input_values(&package.manifest, &request.secrets, filled.as_ref(), langs)?;
-        self.upgrade_detached(package, granted, requested, request.lan_webui)
+        let settings = upgrade_values(&package, &record, &request.settings, langs)?;
+        self.upgrade_detached(package, granted, requested, request.lan_webui, settings)
             .await?;
         self.staged.remove(&digest);
         Ok(())
     }
 
     /// 升到上传的插件包（开发时用）。开关开着的继续开着，`lan_webui` 时打开。
+    #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
     pub async fn upgrade_upload(
         self: &Arc<Self>,
         id: &PluginId,
@@ -456,12 +464,20 @@ impl PluginManager {
         granted: Vec<Permission>,
         enabled: Vec<EnabledPermission>,
         lan_webui: bool,
+        given: &wonton_protocol::SettingValues,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let record = self.upgradable_record(id, langs)?;
         Self::check_same_plugin(&package, &record, langs)?;
-        self.upgrade_detached(package, granted, enabled, lan_webui || record.lan_webui)
-            .await
+        let settings = upgrade_values(&package, &record, given, langs)?;
+        self.upgrade_detached(
+            package,
+            granted,
+            enabled,
+            lan_webui || record.lan_webui,
+            settings,
+        )
+        .await
     }
 
     async fn upgrade_detached(
@@ -470,12 +486,42 @@ impl PluginManager {
         granted: Vec<Permission>,
         requested: Vec<EnabledPermission>,
         lan_webui: bool,
+        settings: super::settings::Values,
     ) -> Result<(), InstallError> {
         let this = Arc::clone(self);
         detached(async move {
-            this.upgrade_checked(package, &granted, &requested, lan_webui)
+            this.upgrade_checked(package, &granted, &requested, lan_webui, settings)
                 .await
         })
         .await
+    }
+}
+
+/// 升级要用的设置值：旧值叠在请求上，再按新 Schema 校验。新版本删掉了设置时值一起丢掉。
+fn upgrade_values(
+    package: &PluginPackage,
+    record: &InstalledRecord,
+    given: &wonton_protocol::SettingValues,
+    langs: &Languages,
+) -> Result<super::settings::Values, InstallError> {
+    let update: std::collections::HashMap<_, _> = given
+        .iter()
+        .map(|(name, value)| (name.clone(), Some(value.clone())))
+        .collect();
+    match super::settings::load(package, langs)? {
+        Some(schema) => super::settings::value::merged(&schema, &record.settings, &update, langs)
+            .map_err(|fields| super::settings::value_error(fields, langs)),
+        None if given.is_empty() => Ok(super::settings::Values::new()),
+        None => {
+            let fields = given
+                .keys()
+                .map(|name| wonton_protocol::SettingsFieldError {
+                    name: name.clone(),
+                    kind: wonton_protocol::SettingsFieldProblemKind::UnknownField,
+                    message: crate::l10n::text(langs, "plugin-settings-value-unknown-field", &[]),
+                })
+                .collect();
+            Err(super::settings::value_error(fields, langs))
+        }
     }
 }

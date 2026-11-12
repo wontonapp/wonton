@@ -1,7 +1,9 @@
 package app.wonton.ui
 
 import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
@@ -59,14 +62,6 @@ val NotificationCategory.notificationTitleRes: Int
         NotificationCategory.PLUGIN_NOTICE -> R.string.notification_channel_plugin
     }
 
-internal val PushStatus.notificationValue: String
-    @Composable get() = when (this) {
-        PushStatus.Registered -> stringResource(R.string.notification_value_on)
-        PushStatus.Registering -> stringResource(R.string.notification_value_registering)
-        PushStatus.NoEndpoint -> stringResource(R.string.notification_value_not_set)
-        is PushStatus.Unavailable, is PushStatus.Failed -> stringResource(R.string.notification_value_unavailable)
-    }
-
 /** 设置页“通知”条目里存的收新消息的方式（ADR-0003）。通知条目一直在，取不到说明协议对不上。 */
 val SettingsViewModel.pushMethod: PushMethod
     get() = sections
@@ -102,6 +97,7 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
     }
     val manager = context.getSystemService(NotificationManager::class.java)
     var rejection by remember { mutableStateOf<Problem?>(null) }
+    val openSystem = openSystemNotifications(context, enabled)
     val keepalive = entry.method == PushMethod.KEEPALIVE
     WontonScreen(bar = { WontonPushedBar(stringResource(R.string.notification_title), onBack) }) {
         Column(
@@ -117,12 +113,13 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
                 WontonSeparator()
                 WontonRow(
                     stringResource(R.string.notification_system),
-                    stringResource(if (enabled) R.string.notification_value_on else R.string.notification_value_off),
+                    stringResource(
+                        if (enabled) R.string.notification_value_on
+                        else R.string.notification_value_system_blocked,
+                    ),
                     showsForward = true,
-                ) {
-                    context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
-                }
+                    onClick = openSystem,
+                )
                 // 推送只在 UnifiedPush 下用：保持连接时新消息由前台服务收，这一行没有意义。
                 if (!keepalive) {
                     WontonSeparator()
@@ -149,16 +146,23 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
                         manager.getNotificationChannel(category.notificationChannelId)
                     }
                     val status = when {
-                        !enabled || channel?.importance == NotificationManager.IMPORTANCE_NONE ->
+                        // 系统没允许时渠道的状态没有意义，先去解决权限。
+                        !enabled -> stringResource(R.string.notification_value_system_blocked)
+                        channel?.importance == NotificationManager.IMPORTANCE_NONE ->
                             stringResource(R.string.notification_value_off)
                         channel == null -> stringResource(R.string.notification_channel_not_created)
                         else -> stringResource(R.string.notification_value_on)
                     }
-                    WontonRow(stringResource(category.notificationTitleRes), status, showsForward = true) {
-                        context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
-                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                            .putExtra(Settings.EXTRA_CHANNEL_ID, category.notificationChannelId))
-                    }
+                    WontonRow(
+                        stringResource(category.notificationTitleRes), status, showsForward = true,
+                        onClick = if (!enabled) openSystem else {
+                            {
+                                context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                    .putExtra(Settings.EXTRA_CHANNEL_ID, category.notificationChannelId))
+                            }
+                        },
+                    )
                 }
             }
         }
@@ -199,9 +203,31 @@ private val PushStatus.notificationStatus: String
             when (reason) {
                 ChatFailure.TRANSPORT_UNAVAILABLE -> R.string.push_status_failed_transport
                 ChatFailure.UNAUTHORIZED -> R.string.push_status_failed_unauthorized
-                ChatFailure.UPSTREAM -> R.string.push_status_failed_upstream
+                ChatFailure.FORBIDDEN -> R.string.push_status_failed_forbidden
+                ChatFailure.UPSTREAM, ChatFailure.OTHER -> R.string.push_status_failed_upstream
                 ChatFailure.NOT_READY -> R.string.push_status_failed_not_ready
                 ChatFailure.INVALID_INPUT -> R.string.push_status_failed_invalid_input
             },
         )
     }
+
+/**
+ * 系统通知的入口：通知开着时去系统设置管理；没允许时第一次按 Android 规范弹授权框，弹过了
+ * （系统对再次请求不再弹框，只会静默拒绝）就带去系统设置开。
+ */
+@Composable
+internal fun openSystemNotifications(context: Context, enabled: Boolean): () -> Unit {
+    var asked by rememberSaveable { mutableStateOf(false) }
+    val permission = LocalNotificationPermission.current
+    val canAsk = permission != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    return {
+        if (enabled || asked || !canAsk) {
+            context.startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+            )
+        } else {
+            permission?.request { granted -> if (!granted) asked = true }
+        }
+    }
+}

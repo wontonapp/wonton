@@ -41,6 +41,8 @@ encoding_rs = "0.8.42"
 rustls = { workspace = true }
 tokio-rustls = { version = "0.26.6", default-features = false }
 rustls-platform-verifier = "0.7.1"
+# Apache-2.0 OR ISC OR MIT。matrix_rtc 提供方的证书包要带上系统根证书（ADR-0096）；已在依赖树里（rustls-platform-verifier 用它）。
+rustls-native-certs = "0.8.5"
 # MIT OR Apache-2.0。插件的图标和截图（ADR-0017，只收 PNG 和 JPEG）、文件的缩略图（ADR-0020，另收 GIF 和 WebP）解码、
 # 缩放后重新编码。
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
@@ -51,6 +53,9 @@ image-webp = "0.2.4"
 # MIT OR Apache-2.0 OR Zlib。image 的 JPEG 包装会复制全部输入且关闭严格校验，头像直接借用其底层解析器。
 zune-core = "0.5.3"
 zune-jpeg = "0.5.15"
+# MIT。`view_file` 抽 PDF 的文字层（ADR-0104）：纯 Rust，传递依赖 lopdf 等也都是 MIT 或 Apache-2.0。以会 panic 出名，
+# 只在图片助手的子进程里调用。
+pdf-extract = "0.12.1"
 # MPL-2.0。Mozilla 的 MP4 轨道解析器支持 avc1 和 avc3。
 mp4parse = "0.17.0"
 # 算插件网络里留给核心的地址和出口容器的名单。
@@ -61,7 +66,7 @@ jsonwebtoken = { workspace = true }
 # Apache-2.0 OR MIT。核心给 App 的文字（ADR-0043）：Fluent 目录和语言协商。
 wonton-l10n = { path = "../wonton-l10n" }
 # MIT OR Apache-2.0。解码共享文件夹引用的路径，编码下载的文件名。
-percent-encoding = "2.3.2"
+percent-encoding = { workspace = true }
 # MIT OR Apache-2.0。从 SSL_CERT_FILE 读自签/测试 CA 给 iroh 中继校验用。
 rustls-pki-types = "1"
 # MIT OR Apache-2.0。推送代理按 Web Push 发推送：推送地址来自设备，可能是 https（rustls，根证书用系统的）。
@@ -81,6 +86,9 @@ rustix = { version = "1.1.6", default-features = false, features = ["fs", "proce
 libc = "0.2.189"
 # 存文件的审计里记内容的哈希（MIT OR Apache-2.0）。
 sha2 = { workspace = true }
+jsonschema = { workspace = true }
+# MIT OR Apache-2.0。设置项 `pattern` 的校验（ADR-0077）。
+regex = "1.13.1"
 # MIT OR Apache-2.0。rmcp 已经在用：MCP 响应要边读边限制大小，SSE 由总线自己解析（mcp::bounded_http）。
 sse-stream = "0.2.6"
 # 校验 TZ 是 IANA 时区名（Unlicense OR MIT）：核心镜像里不一定有 /usr/share/zoneinfo。
@@ -132,8 +140,6 @@ wonton-client = { path = "../wonton-client" }
 wonton-tunnel = { path = "../wonton-tunnel", features = ["test-hooks"] }
 # 测试中继：iroh 的 run_relay_server 和跳过 TLS 校验（只用于本机测试）。
 iroh = { workspace = true, features = ["test-utils"] }
-# Apache-2.0 OR MIT。名单测试按 Tuwunel 的语义（RegexSet）编译生成的正则。
-regex = "1.13.1"
 tempfile = { workspace = true }
 # MIT OR Apache-2.0。按 TOML 语义验证 Tuwunel 的联邦配置。
 toml = "1.1"

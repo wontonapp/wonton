@@ -1,12 +1,12 @@
 //! 静态网页和外部网页两种形态的清单契约（ADR-0080）：字段怎么写、哪些字段不能写、安全档位怎么算，
-//! 以及托管能力的 `provides.<能力>.mount`。托管本身没有实现，装的时候如实报“不支持”。
+//! 以及托管能力的 `provides.<能力>.mount`。装、升、卸见 `static_web_install`。
 
 use serde_json::{Value, json};
 use wonton_protocol::{PluginRuntime, SecurityTier};
 
 use super::super::manifest::{Manifest, Runtime};
 use super::super::package::{PackageError, PluginPackage};
-use super::super::security_tier::security_tier;
+use super::super::security_tier::{prominent, security_tier};
 use super::super::spec_floor;
 
 fn base(runtime: &str) -> Value {
@@ -234,6 +234,9 @@ fn security_tier_is_computed_from_the_manifest() {
         doc["x-wonton"]["permissions"] = permissions;
         doc["x-wonton"]["optional_permissions"] = optional;
         assert_eq!(security_tier(&manifest(&doc)), tier, "{doc}");
+        // 商店里要不要标红跟档位走：High 及以上（含比这个 App 新的档位）才标。
+        assert_eq!(prominent(tier), tier >= SecurityTier::High, "{tier:?}");
+        assert!(prominent(SecurityTier::Other), "未知的档位按最高档画");
     }
 }
 
@@ -313,20 +316,4 @@ fn new_fields_and_runtimes_need_spec_0_12() {
     old_link["x-wonton"]["spec"] = json!("0.11");
     assert_eq!(spec_floor::problems(&old_link).len(), 2);
     assert!(spec_floor::problems(&static_web(json!({}))).is_empty());
-}
-
-#[tokio::test]
-async fn hosted_forms_are_refused_at_install_until_hosting_exists() {
-    let (_docker, engine) = super::super::fake_docker::FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let manager = super::manager::manager_with(engine, &dir);
-    for doc in [base("static_web"), link("https://example.com")] {
-        let package = parse(&doc).unwrap();
-        let error = manager
-            .install_package(package, &[], super::langs())
-            .await
-            .unwrap_err();
-        assert_eq!(error.kind(), "unsupported");
-    }
-    assert!(manager.list().is_empty());
 }

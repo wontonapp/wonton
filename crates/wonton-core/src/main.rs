@@ -327,8 +327,11 @@ async fn serve() -> anyhow::Result<()> {
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
     gateway::family::spawn_member_event_logger(members.clone());
     let notices = notice_room(&cfg, matrix.as_ref(), owner_languages(&manager));
+    // 隧道先起：确认卡片的开卡推送要用推送登记表和 endpoint ID（ADR-0016）。
+    let tunnel = bind_tunnel(&cfg, &manager, members.clone()).await?;
+    let push = Arc::new(open_push(&cfg, &tunnel, &manager)?);
     // Bot 调用的确认卡片（ADR-0016）。
-    let (bus, _confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
+    let bus = mcp_bus(&cfg, manager.clone(), audit.clone(), push.clone());
     let server_name = cfg
         .matrix
         .as_ref()
@@ -343,7 +346,6 @@ async fn serve() -> anyhow::Result<()> {
     let files = open_files(&cfg, host, http.clone(), audit.clone(), images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
-    let tunnel = bind_tunnel(&cfg, &manager, members.clone()).await?;
     // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
     let (peers, federation, _forwarder) =
         open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
@@ -351,45 +353,40 @@ async fn serve() -> anyhow::Result<()> {
     let sharing = sharing_registries.service(peers.clone(), forwarder.clone())?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
-    if let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) {
-        wonton_core::entry_runtime::spawn(
-            dir,
-            &cfg.data_dir,
-            engine.clone(),
-            container.clone(),
-            notices.clone(),
-        )?;
+    spawn_entry_runtime(&cfg, &engine, &notices)?;
+    let contacts = serve::open_contacts(
+        &cfg,
+        (&manager, &members, &owner),
+        Some(push.clone()),
+        matrix.as_ref(),
+        peers.as_ref(),
+    )?;
+    if let Some(contacts) = &contacts {
+        bus.attach_contacts(contacts.clone());
     }
-    let push = open_push(&cfg, &tunnel, &manager)?;
     let upgrades_after_serve = upgrades.clone();
-    let gateway = Arc::new(
-        Gateway::new(
-            cfg.public.clone(),
-            owner,
-            owner_token,
-            members,
-            manager.clone(),
-            hydra,
-            http,
-            tunnel.clone(),
-        )
-        .with_system_http(system_http.clone())
-        .with_matrix(matrix)
-        .with_send_limiter(Arc::new(gateway::SendLimiter::new(cfg.send_limits.clone())))
-        .with_people_limiter(Arc::new(gateway::people_limits::PeopleLimiter::new(
-            cfg.people_limits,
-        )))
-        .with_push(Some(Arc::new(push)))
-        .with_mcp(Some(bus.endpoint()))
-        .with_notices(notices.clone())
-        .with_files(Some(files))
-        .with_audit(Some(audit))
-        .with_tusd(cfg.tusd.clone())
-        .with_upgrades(Some(upgrades))
-        .with_peers(peers.clone())
-        .with_friends(Some(friends))
-        .with_federation_blocks(federation_blocks)
-        .with_sharing(Some(sharing)),
+    let gateway = open_gateway(
+        &cfg,
+        owner,
+        owner_token,
+        members,
+        manager.clone(),
+        hydra,
+        http,
+        tunnel.clone(),
+        system_http.clone(),
+        matrix,
+        push,
+        bus,
+        notices,
+        files,
+        audit,
+        upgrades,
+        peers.clone(),
+        friends,
+        federation_blocks,
+        sharing,
+        contacts,
     );
     let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
     serve::run_gateway(
@@ -403,12 +400,70 @@ async fn serve() -> anyhow::Result<()> {
     .await
 }
 
+/// 把网关装起来：确认卡片、文件、配对这些部件都接上（ADR-0004）。
+#[allow(clippy::too_many_arguments)]
+fn open_gateway(
+    cfg: &Config,
+    owner: Arc<OwnerStore>,
+    owner_token: String,
+    members: Arc<Members>,
+    manager: Arc<PluginManager>,
+    hydra: Option<(Hydra, String)>,
+    http: HttpClient,
+    tunnel: Tunnel,
+    system_http: HttpClient,
+    matrix: Option<Arc<Matrix>>,
+    push: Arc<Push>,
+    bus: Arc<mcp::Bus>,
+    notices: Option<Arc<NoticeRoom>>,
+    files: Arc<Files>,
+    audit: Arc<Audit>,
+    upgrades: Arc<Upgrades>,
+    peers: Option<Arc<peers::Peers>>,
+    friends: Arc<Friends>,
+    federation_blocks: Option<Arc<FederationBlocks>>,
+    sharing: Arc<wonton_core::gateway::sharing::Sharing>,
+    contacts: Option<Arc<wonton_core::contacts::Contacts>>,
+) -> Arc<Gateway> {
+    Arc::new(
+        Gateway::new(
+            cfg.public.clone(),
+            owner,
+            owner_token,
+            members,
+            manager,
+            hydra,
+            http,
+            tunnel,
+        )
+        .with_system_http(system_http)
+        .with_matrix(matrix)
+        .with_send_limiter(Arc::new(gateway::SendLimiter::new(cfg.send_limits.clone())))
+        .with_people_limiter(Arc::new(gateway::people_limits::PeopleLimiter::new(
+            cfg.people_limits,
+        )))
+        .with_push(Some(push))
+        .with_mcp(Some(bus.endpoint()))
+        .with_notices(notices)
+        .with_files(Some(files))
+        .with_audit(Some(audit))
+        .with_tusd(cfg.tusd.clone())
+        .with_upgrades(Some(upgrades))
+        .with_peers(peers)
+        .with_friends(Some(friends))
+        .with_contacts(contacts)
+        .with_federation_blocks(federation_blocks)
+        .with_sharing(Some(sharing)),
+    )
+}
+
 fn lifecycle_config(cfg: &Config, owner: Arc<OwnerStore>) -> LifecycleConfig {
     LifecycleConfig {
         public: cfg.public.clone(),
         data_dir: cfg.data_dir.clone(),
         apps_dir: cfg.apps_dir(),
         shares_dir: cfg.shares_dir(),
+        relay_dir: cfg.relay_dir.clone(),
         core_container: cfg.core_container.clone(),
         tz: cfg.tz.clone(),
         puid: cfg.puid,
@@ -523,7 +578,7 @@ fn owner_languages(manager: &Arc<PluginManager>) -> Arc<dyn Fn() -> Languages + 
     Arc::new(move || manager.owner_languages())
 }
 
-/// 和主人的通知房间（ADR-0016）：插件通知、确认卡片都发进这里。没接 Matrix 时插件通知如实报不可用。
+/// 和主人的通知房间（ADR-0016）：插件通知发进这里，确认卡片不进（ADR-0016 第 6 条）。没接 Matrix 时插件通知如实报不可用。
 fn notice_room(
     cfg: &Config,
     matrix: Option<&Arc<Matrix>>,
@@ -584,26 +639,40 @@ fn attach_identity(
     bus.attach_matrix(matrix.cloned(), cfg.username.clone());
 }
 
-/// MCP 总线（ADR-0016）：确认卡片发进和主人的通知房间。没接 Matrix 时敏感的调用如实报“没法请主人确认”。
-/// 返回卡片集合本身，供服务器配对（ADR-0050）复用同一套确认流程。
+/// MCP 总线（ADR-0016）：开卡时给收件人的设备发推送，之后状态变化只改确认表，设备从
+/// “等你确认”列表的长轮询里知道。卡片不进任何 Matrix 房间。
 fn mcp_bus(
     cfg: &Config,
     manager: Arc<PluginManager>,
-    notices: Option<Arc<NoticeRoom>>,
     audit: Arc<Audit>,
-) -> (Arc<mcp::Bus>, Arc<mcp::Confirmations>) {
-    let notifier: Arc<dyn mcp::Notifier> = match notices {
-        Some(notices) => notices,
-        None => Arc::new(mcp::NoMatrix),
-    };
+    push: Arc<Push>,
+) -> Arc<mcp::Bus> {
+    let notifier: Arc<dyn mcp::Notifier> = Arc::new(mcp::DevicePush::new(push));
     let confirmations = Arc::new(
         mcp::Confirmations::new(notifier, cfg.confirmation_ttl).with_windows(
             cfg.confirmation_window,
             cfg.core_state_dir().join("confirmation-windows.json"),
         ),
     );
-    let bus = mcp::Bus::new(manager, confirmations.clone(), audit);
-    (bus, confirmations)
+    mcp::Bus::new(manager, confirmations, audit)
+}
+
+/// 用安装脚本装的核心（有安装目录和自己的容器名）才管入口。
+fn spawn_entry_runtime(
+    cfg: &Config,
+    engine: &Engine,
+    notices: &Option<Arc<NoticeRoom>>,
+) -> anyhow::Result<()> {
+    if let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) {
+        wonton_core::entry_runtime::spawn(
+            dir,
+            &cfg.data_dir,
+            engine.clone(),
+            container.clone(),
+            notices.clone(),
+        )?;
+    }
+    Ok(())
 }
 
 fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::Result<Push> {
@@ -668,6 +737,10 @@ async fn start_plugin_manager(
         tracing::warn!("图片助手没起来，图片处理要等它重起：{e}");
     }
     let images = Arc::new(images);
+    let matrix_rtc_ca = matrix
+        .as_ref()
+        .map(|_| wonton_core::plugin::matrix_rtc_ca::CoreCa::load_or_create(&cfg.core_state_dir()))
+        .transpose()?;
     let manager = Arc::new(
         open_plugin_manager(
             cfg,
@@ -680,7 +753,8 @@ async fn start_plugin_manager(
             &upgrades,
             images.clone(),
         )
-        .with_mailpit(mailpit),
+        .with_mailpit(mailpit)
+        .with_matrix_rtc_ca(matrix_rtc_ca),
     );
     manager.attach_sharing(sharing.friends.clone(), sharing.shares.clone());
     manager.spawn_registry_mirror_probe();

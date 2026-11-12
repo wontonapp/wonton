@@ -80,7 +80,14 @@ impl Installs {
                 }
             });
         }
-        self.view.send_modify(|view| view.installing_bots = rows);
+        // 插件表变得频繁，行没变时别惊动壳：时间线订阅跟着发批次，空转时一秒几千批会把主线程占死。
+        self.view.send_if_modified(|view| {
+            if view.installing_bots == rows {
+                return false;
+            }
+            view.installing_bots = rows;
+            true
+        });
     }
 }
 
@@ -231,7 +238,7 @@ fn task_rows<'a>(
                         message: message.clone(),
                     },
                     _ => match &task.state {
-                        PluginTaskState::Uncertain { message } => BotInstallState::Uncertain {
+                        PluginTaskState::Uncertain { message, .. } => BotInstallState::Uncertain {
                             message: message.clone(),
                         },
                         _ => unreachable!(),
@@ -321,6 +328,7 @@ mod tests {
             icon: None,
             operation: PluginOperation::Install,
             state,
+            waiting_for_connection: false,
             added_tools: None,
         }
     }
@@ -375,6 +383,7 @@ mod tests {
             is_read_only: false,
             membership: RoomMembership::Joined,
             preview: None,
+            side_chats: false,
             unread_count: 0,
         }
     }
@@ -499,6 +508,7 @@ mod tests {
                 "app.hermes",
                 PluginTaskState::Uncertain {
                     message: "不知道".into(),
+                    next_step: wonton_protocol::PluginTaskNextStep::CheckInstalled,
                 },
             )],
             &[preview("app.hermes", true)],

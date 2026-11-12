@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, DeviceNetwork,
-    FileId, FontStyle, FriendBlockScope, FriendBlockTarget, ImageUpload, InstallPreview,
-    MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, ModelProviderInput, OnboardingTip,
-    PushEndpoint, PushMethod, Rgb, SecretString, ShareGrantUpdate, TabDisplayChoice, TabRef,
-    TextSize, ThemeMode, UploadSource,
+    FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview, MatrixOidcCallback,
+    MatrixOidcLogin, MatrixPasswordLogin, ModelProviderInput, OnboardingTip, PushEndpoint,
+    PushMethod, Rgb, SecretString, ShareGrantUpdate, TabDisplayChoice, TabRef, TextSize, ThemeMode,
+    UploadSource,
 };
 
 /// 原生壳发给客户端核心的用户操作。
@@ -15,6 +15,9 @@ use crate::{
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
+    Timeline {
+        action: crate::TimelineAction,
+    },
     /// 新建一个会话并选中它。标题去掉首尾空白后不能为空。
     CreateSession {
         title: String,
@@ -46,10 +49,11 @@ pub enum Action {
     /// 取消正在进行的配对，回到扫码或粘贴；没有正在进行的配对时返回 `InvalidInput`。本机放弃这一次尝试，
     /// 服务器可能已经按交出的码登记了这台设备：同一个码再配对，服务端幂等地回成功，不会卡在“码已用过”。
     CancelPairing,
-    /// “添加设备”：经隧道向家里的服务器要一个一次性配对码，显示给新设备扫（ADR-0009 的“接口：扫码配对”）。还没配对
-    /// 时返回 `NotReady`；进展和码在 [`HomeViewModel::invite`](crate::HomeViewModel::invite) 里。再发一次换一个新码，
-    /// 旧码到期前仍然能用。
+    /// “添加设备”：经隧道要一个一次性配对码给新设备扫（ADR-0009），页面开着时自动接上新设备的确认请求（ADR-0087）。
+    /// 没配对时返回 `NotReady`；进展和码在 `HomeViewModel::invite`。再发一次换新码，旧码到期前仍能用。
     InviteDevice,
+    // 离开“添加设备”页。这个和 SkipKeyHandoff 的说明在 ADR-0087：Action 的 uniffi 元数据已到 32 KB 上限，不加文档注释。
+    CloseDeviceInvite,
     /// 添加一台服务器：在一个新位置上走配对，当前那台的连接先断开、数据留着。配对成功后新的那台成为当前这台；
     /// 配对前可以 [`Action::CancelAddServer`] 回去（ADR-0042）。
     AddServer,
@@ -119,73 +123,11 @@ pub enum Action {
     AskAgent {
         text: String,
     },
-    /// 发送文字。正文去掉首尾空白后不能为空。消息先以本地回显出现在时间线里。
-    ///
-    /// `reply_to` 是被回复消息的事件 ID（[`MessageAction::Reply`](crate::MessageAction::Reply) 里的），发出的是对它的
-    /// 回复；那条消息不在这个房间里时返回 `InvalidInput`。
-    SendText {
-        room_id: String,
-        body: String,
-        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-        reply_to: Option<String>,
-    },
-    /// 发送图片。上传和发送的进展、`reply_to` 同 [`Action::SendText`]。
-    SendImage {
-        room_id: String,
-        image: ImageUpload,
-        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-        reply_to: Option<String>,
-    },
-    /// 把一条消息转发到另一个房间（ADR-0073）：照原样再发一条，不带“转发自”，加密附件不重新上传。`item_id` 同
-    /// [`Action::RetrySend`]，只能转发菜单里有 [`MessageAction::Forward`](crate::MessageAction::Forward) 的消息。
-    /// 进展在目标房间的时间线里（本地回显、发送状态），壳随后打开目标房间。
-    ForwardMessage {
+    /// 以反应回答 Bot 的提问。
+    AnswerAgentChoice {
         room_id: String,
         item_id: String,
-        to_room_id: String,
-    },
-    /// 撤回一条已经发出去的消息（Matrix 的 redaction），所有人那里都变成 [`MessageContent::Redacted`](crate::MessageContent::Redacted)。
-    /// 只能撤回菜单里有 [`MessageAction::Redact`](crate::MessageAction::Redact) 的消息；还没发出去的用
-    /// [`Action::CancelSend`]。失败进 `ChatViewModel::problem`。
-    RedactMessage {
-        room_id: String,
-        item_id: String,
-    },
-    /// 马上重发一条发送失败的消息（[`SendState::Failed`](crate::SendState::Failed)），不等核心自动重发。`item_id` 是
-    /// 它的 [`TimelineItem::id`](crate::TimelineItem::id)，要先订阅这个房间的时间线。
-    RetrySend {
-        room_id: String,
-        item_id: String,
-    },
-    /// 取消发送：删掉一条还没发出去的消息（排队中或发送失败的），同一房间排在它后面的接着发。`item_id` 同
-    /// [`Action::RetrySend`]。已经发出去的取消不了。
-    CancelSend {
-        room_id: String,
-        item_id: String,
-    },
-    /// 加载更早的消息。要先订阅这个房间的时间线，结果体现在时间线的增量和翻页状态里。
-    PaginateBackwards {
-        room_id: String,
-    },
-    /// 壳报告列表停在哪儿：滚动停下、进出底部时发，不用每一帧发。要先订阅这个房间的时间线。核心据此重算
-    /// [`TimelineUpdate::viewport`](crate::TimelineUpdate::viewport)，下面的新消息数随之变。
-    SetTimelineScroll {
-        room_id: String,
-        scroll: crate::TimelineScroll,
-    },
-    /// 把房间标为读到最新一条，发出已读回执，房间的未读数随之清零。只在列表真的贴着最新一条时发（新消息到了、
-    /// 滚回底部），翻在别处时不发。
-    MarkRoomRead {
-        room_id: String,
-    },
-    /// 记下这个房间输入框里的草稿，主人换个房间、关掉 App 再回来还在；正文为空、也没在回复时表示清掉。只存本机，
-    /// 不上服务器。发送成功后核心自己清掉。`reply_to` 是正在回复的消息的事件 ID，读回时在
-    /// [`ComposerDraft::reply`](crate::ComposerDraft::reply)。
-    SetDraft {
-        room_id: String,
-        body: String,
-        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-        reply_to: Option<String>,
+        key: String,
     },
     /// 重置恢复：删掉账号的密钥备份和秘密存储，换新的交叉签名身份，本设备成为新身份下已验证的设备，再开启备份，
     /// 新的恢复密钥放进 `EncryptionStatus::recovery_key`。旧的恢复密钥作废，备份里的旧消息取不回了，其他设备要
@@ -216,6 +158,8 @@ pub enum Action {
     CancelDeviceVerification {
         flow_id: String,
     },
+    // 交接页上的“手边没有别的设备”（见 CloseDeviceInvite 上的说明）。
+    SkipKeyHandoff,
     /// 清掉 `ChatViewModel::problem`。
     DismissChatProblem,
     /// 主人点了确认卡片上的按钮：`id` 是 [`ConfirmationCard::id`](crate::ConfirmationCard::id)，`answer` 原样用

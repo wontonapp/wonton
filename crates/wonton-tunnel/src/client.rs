@@ -30,7 +30,7 @@ use iroh::{
     Endpoint, EndpointAddr, EndpointId,
     endpoint::{Connection, ConnectionError, PathEventStream, RecvStream, SendStream},
 };
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 use tracing::{debug, info};
 
 use crate::{
@@ -141,6 +141,9 @@ struct Inner {
     suspension: Mutex<suspend::Suspension>,
     /// 当前连接的数据报分发器，第一次开 UDP 流向时建；连接换了就换。
     datagrams: Mutex<Option<Arc<crate::udp::mux::DatagramMux>>>,
+    /// 请求在隧道流上迟迟等不到服务端回执时催一下定时检查：立即确认一次，不等下一个检查周期
+    /// 存一个许可，催多次合成一次。
+    check_nudge: Notify,
 }
 
 /// 隧道上的一条流，已写入请求类型。
@@ -218,6 +221,7 @@ impl TunnelClient {
                 clock,
                 suspension: Mutex::default(),
                 datagrams: Mutex::default(),
+                check_nudge: Notify::new(),
             }),
         }
     }
@@ -247,6 +251,18 @@ impl TunnelClient {
     /// 订阅状态变化。watch 只保留最新状态，订阅方处理慢也不会积压事件。
     pub fn watch_status(&self) -> watch::Receiver<TunnelStatus> {
         self.inner.status.subscribe()
+    }
+
+    /// 催一下定时检查：请求在隧道流上迟迟等不到服务端回执时，立即确认一次连接，不等下一个
+    /// 检查周期。确认的时限和判死证据与定时检查相同，不会因为催得早而误判慢中继。
+    /// 没人在等时存一个许可，下一次等待马上返回。
+    pub fn nudge_check(&self) {
+        self.inner.check_nudge.notify_one();
+    }
+
+    /// 等下一次 [`Self::nudge_check`]。定时检查的循环和睡眠一起等它。
+    pub async fn wait_for_check_nudge(&self) {
+        self.inner.check_nudge.notified().await;
     }
 
     /// 确认隧道可用：必要时建连，再和服务端做一次往返，确认本设备已获授权。
@@ -439,6 +455,16 @@ impl Inner {
             };
             if !stale {
                 return attempt.clone();
+            }
+            // 连接已经被对端关掉、`watch_close` 还没轮到写状态时，先如实写断开再重拨。不写的话状态从“已连接”
+            // 直接跳到新一次建连的“连接中”，旧连接的关闭事件到时已不是当前连接、不再写：断开次数少记一次，
+            // 核心也不知道这条连接是断了（实测请求恰好在关闭后立刻到达时，连不上的闸门放过了它，白等一次建连）。
+            // 本机关掉的连接由关的地方写。
+            if let Some(Ok(conn)) = attempt.outcome()
+                && let Some(reason) = conn.close_reason()
+                && !matches!(reason, ConnectionError::LocallyClosed)
+            {
+                self.set_status(TunnelStatus::Disconnected(from_connection_error(&reason)));
             }
         }
         let attempt = Attempt::spawn(true, false, self, self.clone().dial());

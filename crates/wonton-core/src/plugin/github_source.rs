@@ -352,6 +352,29 @@ pub async fn fetch(
         files.insert(path, data);
     }
     let mut package = PluginPackage::with_files(&compose, files, langs)?;
+    if let Some(root) = package.static_root() {
+        let mut found = super::package::static_files::StaticFiles::new();
+        let dir = format!("{prefix}{root}");
+        for rel in github
+            .tree(repo, &origin.commit, &dir, langs)
+            .await
+            .map_err(github_error)?
+        {
+            let path = format!("{dir}/{rel}");
+            let data = github
+                .file(
+                    repo,
+                    &origin.commit,
+                    &path,
+                    super::package::static_files::MAX_FILE_BYTES,
+                    langs,
+                )
+                .await
+                .map_err(github_error)?;
+            found.insert(rel, data);
+        }
+        package = package.with_static(found, langs)?;
+    }
     if let Some(tag) = &origin.tag {
         let version = &package.manifest.version;
         if version_of(tag, source.tag_prefix()) != Some(version.as_str()) {

@@ -25,11 +25,11 @@ use tokio::sync::watch::Sender as WatchSender;
 use url::Url;
 use wonton_protocol::{
     Action, CoreError, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure,
-    FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsState, FriendsViewModel,
-    ProxySettings,
+    FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList, FriendsState,
+    FriendsViewModel, MatrixTarget, ProxySettings,
 };
 
-use crate::chat::ChatLink;
+use crate::chat::{ChatLink, matrix_target};
 use crate::home::HomeLink;
 use crate::l10n::text;
 use crate::scope::reuse;
@@ -74,6 +74,8 @@ impl FriendsLink {
             outgoing: Vec::new(),
             blocked: Vec::new(),
             can_block_federation: false,
+            public_access_off: false,
+            my_link: None,
         };
         Ok(Arc::new(Self {
             handle,
@@ -145,6 +147,10 @@ impl FriendsLink {
     }
 
     async fn assemble(&self) -> Result<FriendsViewModel, Failure> {
+        // 已知隧道不通就立刻失败，不等 Matrix 扫描（它经代理且默认无限重试）和 30 秒超时。
+        if let Some(reason) = self.home.tunnel_outage() {
+            return Err(Failure::transport(reason));
+        }
         let session = self
             .chat
             .current()
@@ -220,11 +226,13 @@ impl FriendsLink {
             outgoing: sync.outgoing,
             blocked,
             can_block_federation,
+            public_access_off: false,
+            my_link: Some(format!("https://matrix.to/#/{}", session.user_id())),
         })
     }
 
     /// 名单在服务器上时：取列表，并把同意过但没记上的补记（删掉的墓碑不补）。
-    async fn server_view(&self, joined: &[(String, String, u64)]) -> Result<api::View, Failure> {
+    async fn server_view(&self, joined: &[(String, String, u64)]) -> Result<FriendsList, Failure> {
         let first = self.api()?.list().await?;
         self.server_scope.store(first.owner_scope, Ordering::SeqCst);
         tracing::debug!(
@@ -253,8 +261,7 @@ impl FriendsLink {
     }
 
     fn add(self: &Arc<Self>, user_id: String) {
-        let user_id = user_id.trim().to_owned();
-        if !user_id.starts_with('@') || !user_id.contains(':') {
+        let Some(user_id) = friend_user_id(&user_id) else {
             self.view.send_modify(|view| {
                 view.state = FriendsState::Failed {
                     problem: FriendProblem {
@@ -266,7 +273,7 @@ impl FriendsLink {
                 }
             });
             return;
-        }
+        };
         let link = self.clone();
         self.spawn(async move {
             link.view
@@ -531,6 +538,10 @@ impl FriendsLink {
     }
 
     fn api(&self) -> Result<api::Api, Failure> {
+        // 已知隧道不通就立刻失败，不等 30 秒超时。
+        if let Some(reason) = self.home.tunnel_outage() {
+            return Err(Failure::transport(reason));
+        }
         let proxy = self
             .home
             .view()
@@ -601,6 +612,19 @@ fn name_of(joined: &[(String, String, u64)], user_id: &str) -> Option<String> {
         .map(|(_, name, _)| name.clone())
 }
 
+/// 加好友的输入：完整用户 ID，或 matrix.to 的用户链接（含百分号转义，同 [`matrix_target`] 的解析）。
+/// 归一成用户 ID；房间链接、普通网址和别的都不是用户，不收。完整校验仍由后面的用户 ID 解析做。
+fn friend_user_id(input: &str) -> Option<String> {
+    let input = input.trim();
+    if let Ok(url) = Url::parse(input) {
+        return match matrix_target(&url) {
+            Some(MatrixTarget::User { user_id }) => Some(user_id),
+            _ => None,
+        };
+    }
+    (input.starts_with('@') && input.contains(':')).then(|| input.to_owned())
+}
+
 /// 一次同步里数出来的东西：请求、已加入的好友私聊、屏蔽名单。
 struct Sync {
     incoming: Vec<FriendRequest>,
@@ -648,6 +672,8 @@ async fn collect(session: &Arc<wonton_matrix::MatrixSession>) -> Result<Sync, Fa
                     display_name: invite.inviter_name,
                     kind: if invite.friend {
                         FriendRequestKind::Friend
+                    } else if invite.bot_contact {
+                        FriendRequestKind::BotContact
                     } else {
                         FriendRequestKind::DirectChat
                     },

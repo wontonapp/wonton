@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use wonton_client::Action;
-use wonton_protocol::{ComposerDraft, MessageAction, ReplyQuote};
+use wonton_protocol::{ComposerDraft, MessageAction, ReplyQuote, TimelineAction, TimelineTarget};
 
 use super::accept_the_bots_invite;
 use super::message_actions::{join_group_room, text_message};
@@ -12,7 +12,14 @@ use super::text;
 
 /// 读一次草稿。房间还没同步到本机时核心回错，按空处理，交给调用方的循环等。
 async fn composer(phone: &Phone, room_id: &str) -> Option<ComposerDraft> {
-    phone.draft(room_id.to_owned()).await.ok().flatten()
+    phone
+        .draft(TimelineTarget {
+            room_id: room_id.to_owned(),
+            thread_root: None,
+        })
+        .await
+        .ok()
+        .flatten()
 }
 
 async fn draft(phone: &Phone, room_id: &str) -> Option<String> {
@@ -40,6 +47,7 @@ async fn until_draft(phone: &Phone, room_id: &str, want: Option<&str>) {
     let want = want.map(|body| ComposerDraft {
         body: body.to_owned(),
         reply: None,
+        preview: None,
     });
     until_composer(phone, room_id, want.as_ref()).await;
 }
@@ -62,10 +70,15 @@ async fn drafts_stay_per_room_and_survive_a_restart() {
         .to_string();
 
     // 两个房间各有一份，换房间不互相盖。
-    let set = |room: &str, body: &str| Action::SetDraft {
-        room_id: room.to_owned(),
-        body: body.to_owned(),
-        reply_to: None,
+    let set = |room: &str, body: &str| Action::Timeline {
+        action: TimelineAction::SetDraft {
+            target: TimelineTarget {
+                room_id: room.to_owned(),
+                thread_root: None,
+            },
+            body: body.to_owned(),
+            reply_to: None,
+        },
     };
     phone.dispatch(set(&first, "写给第一个房间")).unwrap();
     until_draft(&phone, &first, Some("写给第一个房间")).await;
@@ -95,10 +108,15 @@ async fn drafts_stay_per_room_and_survive_a_restart() {
     // 发出去以后清掉；别的房间不受影响。
     let mut timeline = Timeline::open(&phone, &first).await;
     phone
-        .dispatch(Action::SendText {
-            room_id: first.clone(),
-            body: "第一间第 19 个字".to_owned(),
-            reply_to: None,
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: TimelineTarget {
+                    room_id: first.clone(),
+                    thread_root: None,
+                },
+                body: "第一间第 19 个字".to_owned(),
+                reply_to: None,
+            },
         })
         .unwrap();
     timeline
@@ -115,10 +133,15 @@ async fn drafts_stay_per_room_and_survive_a_restart() {
 
     // 发送途中又打了字：草稿换成新的，发出去以后不能把它清掉。
     phone
-        .dispatch(Action::SendText {
-            room_id: first.clone(),
-            body: "再发一句".to_owned(),
-            reply_to: None,
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: TimelineTarget {
+                    room_id: first.clone(),
+                    thread_root: None,
+                },
+                body: "再发一句".to_owned(),
+                reply_to: None,
+            },
         })
         .unwrap();
     phone.dispatch(set(&first, "发送途中又打的")).unwrap();
@@ -162,16 +185,22 @@ async fn a_reply_stays_in_the_draft_until_it_is_sent() {
             _ => None,
         })
         .expect("能回复");
-    let set = |room: &str, body: &str, reply_to: Option<&str>| Action::SetDraft {
-        room_id: room.to_owned(),
-        body: body.to_owned(),
-        reply_to: reply_to.map(str::to_owned),
+    let set = |room: &str, body: &str, reply_to: Option<&str>| Action::Timeline {
+        action: TimelineAction::SetDraft {
+            target: TimelineTarget {
+                room_id: room.to_owned(),
+                thread_root: None,
+            },
+            body: body.to_owned(),
+            reply_to: reply_to.map(str::to_owned),
+        },
     };
     let replying = |body: &str| ComposerDraft {
         body: body.to_owned(),
         reply: Some(ReplyQuote::Ready {
             message: quote.clone(),
         }),
+        preview: None,
     };
 
     phone
@@ -194,10 +223,15 @@ async fn a_reply_stays_in_the_draft_until_it_is_sent() {
 
     let mut timeline = Timeline::open(&phone, &first).await;
     phone
-        .dispatch(Action::SendText {
-            room_id: first.clone(),
-            body: "草稿正文".to_owned(),
-            reply_to: Some(quote.event_id.clone()),
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: TimelineTarget {
+                    room_id: first.clone(),
+                    thread_root: None,
+                },
+                body: "草稿正文".to_owned(),
+                reply_to: Some(quote.event_id.clone()),
+            },
         })
         .unwrap();
     timeline

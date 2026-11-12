@@ -32,6 +32,31 @@ pub(super) fn open_friends(
     Ok((friends, blocks))
 }
 
+/// Bot 的联系人（ADR-0045、ADR-0050）：要 Matrix 和服务器配对，没接 Matrix 的核心没有。
+pub(super) fn open_contacts(
+    cfg: &Config,
+    (manager, members, owner): (&Arc<PluginManager>, &Arc<Members>, &Arc<OwnerStore>),
+    push: Option<Arc<Push>>,
+    matrix: Option<&Arc<Matrix>>,
+    peers: Option<&Arc<peers::Peers>>,
+) -> anyhow::Result<Option<Arc<wonton_core::contacts::Contacts>>> {
+    let (Some(matrix), Some(peers)) = (matrix, peers) else {
+        return Ok(None);
+    };
+    let wiring = wonton_core::contacts::wiring::Wiring {
+        plugins: manager.clone(),
+        members: members.clone(),
+        owner: owner.clone(),
+        push,
+        matrix: matrix.clone(),
+        peers: peers.clone(),
+    };
+    Ok(Some(wonton_core::contacts::wiring::start(
+        &cfg.core_state_dir(),
+        wiring,
+    )?))
+}
+
 pub(super) async fn run_gateway(
     cfg: &Config,
     listener: wonton_core::entry_runtime::MainListener,
@@ -41,6 +66,12 @@ pub(super) async fn run_gateway(
     (manager, upgrades_after_serve): (Arc<PluginManager>, Arc<Upgrades>),
 ) -> anyhow::Result<()> {
     let push_listener = push_listener::bind(cfg.push_listen.as_deref()).await?;
+    let matrix_rtc = push_listener::bind_matrix_rtc(
+        cfg.matrix_rtc_listen.as_deref(),
+        gateway.matrix.as_ref().map(|matrix| matrix.server_name()),
+        manager.matrix_rtc_ca().as_deref(),
+    )
+    .await?;
     let app = gateway::router(gateway.clone());
     let public_entry = wonton_core::entry_runtime::bind().await?;
     let share_protocol = sharing_start::protocol(gateway.clone())?;
@@ -61,7 +92,13 @@ pub(super) async fn run_gateway(
         listener,
         app,
         push_listener.map(|listener| (listener, gateway::push_router(gateway.clone()))),
-        public_entry.map(|listener| (listener, wonton_core::entry_runtime::router(gateway))),
+        public_entry.map(|listener| {
+            (
+                listener,
+                wonton_core::entry_runtime::router(gateway.clone()),
+            )
+        }),
+        matrix_rtc.map(|listener| (listener, gateway::matrix_rtc_alias::router(gateway))),
     ));
     // 网关开始接了才核对插件：核对时渲染变了会重建容器，里面的一次性服务要经核心的地址访问核心。
     start_restored_plugins(cfg, &manager, upgrades_after_serve).await?;

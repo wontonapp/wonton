@@ -117,6 +117,38 @@ pub const WEB_STORAGE: Capability = Capability {
     }),
 };
 
+/// 个人数据（ADR-0098）：手机的位置和健康数据，按人分开存。路径和类型在 `wonton-protocol::personal_data`。
+/// 使用方是核心自己的 MCP 工具，凭据仍按使用方签发（ADR-0053 的能力表）。
+pub const PERSONAL_DATA: Capability = Capability {
+    name: "personal_data",
+    interface: "位置和健康数据的存取（POST /location、POST /health、GET /query、DELETE /data、GET /export、\
+                 POST /cleanup），每个请求带 X-Wonton-User",
+    credentials: Credentials::Required,
+    high_privilege: false,
+    hosted: None,
+};
+
+/// MatrixRTC 的 LiveKit 授权服务（ADR-0096）：使用方是任何 MatrixRTC 客户端，经网关 Matrix 对外地址下的
+/// [`MATRIX_RTC_PREFIX`] 到达提供方，所以和出网代理一样不能写在 requires/wants 里，同一时间只有一个提供方。
+pub const MATRIX_RTC: Capability = Capability {
+    name: "matrix_rtc",
+    interface: "MSC4195 的 LiveKit 授权服务（/sfu/get、/get_token），用 Matrix OpenID 令牌换 LiveKit 令牌",
+    credentials: Credentials::None,
+    high_privilege: false,
+    hosted: None,
+};
+
+/// Tuwunel 公布的 `livekit_url` 在 Matrix 对外地址下的路径，网关去掉它转给 [`MATRIX_RTC`] 的提供方。
+pub const MATRIX_RTC_PREFIX: &str = "/_wonton/matrix-rtc";
+
+/// 注入给 [`MATRIX_RTC`] 提供方的 Matrix 服务器名（填 lk-jwt-service 的 `LIVEKIT_FULL_ACCESS_HOMESERVERS`）。
+pub const MATRIX_SERVER_NAME_VAR: &str = "WONTON_MATRIX_SERVER_NAME";
+
+/// 没有使用方声明的能力：核心或网关自己用，不能写在 requires/wants 里。
+pub fn has_no_consumer(name: &str) -> bool {
+    name == EGRESS_PROXY.name || name == MATRIX_RTC.name
+}
+
 /// 全部核心定义的能力。加一项要改核心、发版：第三方插件作者不能自己发明不带 `x-` 的能力。
 pub const ALL: &[Capability] = &[
     MODELS,
@@ -125,6 +157,8 @@ pub const ALL: &[Capability] = &[
     JELLYFIN,
     STATIC_WEB,
     WEB_STORAGE,
+    MATRIX_RTC,
+    PERSONAL_DATA,
 ];
 
 pub fn lookup(name: &str) -> Option<&'static Capability> {
@@ -214,11 +248,11 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
     for (field, names) in [("requires", &manifest.requires), ("wants", &manifest.wants)] {
         for name in names {
             check_name(name, langs)?;
-            if name == EGRESS_PROXY.name {
+            if has_no_consumer(name) {
                 return Err(ManifestError::Invalid(text(
                     langs,
-                    "plugin-capability-egress-no-consumer",
-                    &[],
+                    "plugin-capability-no-consumer",
+                    &[("capability", name.as_str().into())],
                 )));
             }
         }
@@ -340,19 +374,22 @@ fn first_duplicate(names: &[String]) -> Option<&str> {
     })
 }
 
-/// 第 2 步接上行为之前的拦截：清单声明了按能力依赖（`requires`/`wants`），或者提供了能力表里的
-/// 新能力（`models`、`egress_proxy` 的专用字段照旧能用），照常装上但依赖一样都不兑现——不一起装、
-/// 不转发、没有 `<能力>.wonton.internal`，是伪装成功，所以按 `unsupported` 拒绝。
-/// **第 2 步接上行为时删掉这个函数和它的调用。**
-pub fn unsupported_dependencies(
+/// 模型网关使用方迁移单独切换；通用能力已由连接记录兑现。
+pub fn unsupported_model_dependency(
     manifest: &Manifest,
     langs: &Languages,
 ) -> Result<(), super::install_error::InstallError> {
-    let new_provides = manifest
-        .provides
-        .as_ref()
-        .is_some_and(|provides| !provides.capabilities.is_empty());
-    if manifest.requires.is_empty() && manifest.wants.is_empty() && !new_provides {
+    // 托管能力（ADR-0080）只由静态网页兑现：容器插件要它没人给。
+    let hosted_for_container = |name: &String| {
+        manifest.runtime != super::manifest::Runtime::StaticWeb
+            && lookup(name).is_some_and(|capability| capability.hosted.is_some())
+    };
+    if !manifest
+        .requires
+        .iter()
+        .chain(&manifest.wants)
+        .any(|name| name == MODELS.name || hosted_for_container(name))
+    {
         return Ok(());
     }
     Err(super::install_error::InstallError::Unsupported(
@@ -381,8 +418,8 @@ mod tests {
     fn aliases_route_through_the_same_gateway_path() {
         assert_eq!(alias(MODELS.name), crate::config::PLUGIN_MODELS_HOST);
         for capability in ALL {
-            if capability.name == EGRESS_PROXY.name {
-                continue; // egress_proxy 没有使用方声明，出网插件拿的是 WONTON_PROXY_URL。
+            if has_no_consumer(capability.name) {
+                continue; // 没有使用方声明：出网插件拿的是 WONTON_PROXY_URL，matrix_rtc 经 Matrix 对外地址。
             }
             assert!(
                 alias(capability.name).ends_with(".wonton.internal"),
@@ -476,20 +513,15 @@ mod tests {
         drop(e);
     }
 
+    /// 出网代理和 matrix_rtc 的使用方不是插件，写进 requires/wants 当场报错。
     #[test]
-    fn egress_proxy_has_no_consumer_declaration() {
-        let e = validate(
-            &manifest(&["egress_proxy"], &[], false),
-            &Languages::default(),
-        )
-        .unwrap_err();
-        assert!(e.to_string().contains("egress_proxy"));
-        let e = validate(
-            &manifest(&[], &["egress_proxy"], false),
-            &Languages::default(),
-        )
-        .unwrap_err();
-        assert!(e.to_string().contains("egress_proxy"));
+    fn capabilities_without_consumers_cannot_be_declared() {
+        for name in ["egress_proxy", "matrix_rtc"] {
+            let e = validate(&manifest(&[name], &[], false), &Languages::default()).unwrap_err();
+            assert!(e.to_string().contains(name));
+            let e = validate(&manifest(&[], &[name], false), &Languages::default()).unwrap_err();
+            assert!(e.to_string().contains(name));
+        }
     }
 
     #[test]
@@ -558,6 +590,16 @@ mod tests {
             serde_json::json!({"torrent_client": {"service": "q", "port": 8080}}),
         );
         validate(&manifest, &Languages::default()).unwrap();
+    }
+
+    #[test]
+    fn personal_data_providers_must_declare_credentials() {
+        let manifest = manifest_with_provides(
+            serde_json::json!({"personal_data": {"service": "store", "port": 8090}}),
+        );
+        let e = validate(&manifest, &Languages::default()).unwrap_err();
+        assert!(e.to_string().contains("personal_data"));
+        assert!(e.to_string().contains("credentials"));
     }
 
     #[test]

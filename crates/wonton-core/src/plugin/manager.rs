@@ -17,24 +17,23 @@ use super::gallery::Gallery;
 use super::github::GitHub;
 use super::gpu::HostPaths;
 use super::health_gate::Gate;
-use super::host_check;
 use super::host_facts::NvidiaMemory;
 use super::image_worker::ImageWorker;
 use super::lan::Lan;
-use super::lan::webui::switched;
 use super::languages::Languages;
 use super::lifecycle::LifecycleConfig;
 use super::listed::Listed;
-use super::manifest::{LocalizedText, Manifest, Permission, PluginId};
+#[cfg(test)]
+use super::manifest::Permission;
+use super::manifest::{LocalizedText, Manifest, PluginId};
 use super::mcp_server::{McpServer, ToolLimits};
 #[cfg(test)]
 use super::models::ModelsRoute;
 use super::models::ProviderState;
 use super::package::PluginPackage;
-use super::render::dry_run;
 use super::sources::{Source, Sources};
 use super::staged::StagedUploads;
-use super::store::{EnabledPermission, InstalledRecord, Store};
+use super::store::{InstalledRecord, Store};
 use super::storefront::{StoreConfig, Storefront};
 use super::upgrade::Upgrades;
 use super::upstreams::Endpoint;
@@ -43,10 +42,9 @@ use crate::l10n;
 use crate::matrix::Matrix;
 
 pub(super) mod busy;
-mod uninstall;
 mod views;
 
-pub use views::{PluginView, Route};
+pub use views::{HostedRoute, PluginView, Route, StorageRoute};
 
 pub(super) use busy::{busy, detached};
 
@@ -83,6 +81,10 @@ pub struct PluginManager {
     pub(super) http: HttpClient,
     pub(super) oidc: Option<Hydra>,
     pub(super) matrix: Option<Arc<Matrix>>,
+    /// Tuwunel 的服务器名，接上 Matrix 时一起定下；`matrix_rtc` 提供方要它（见 [`super::matrix_rtc`]）。
+    pub(super) matrix_server_name: Option<String>,
+    /// 给 `matrix_rtc` 别名签证书、给提供方写证书包的 CA；接了 Matrix 才有。
+    pub(super) matrix_rtc_ca: Option<std::sync::Arc<super::matrix_rtc_ca::CoreCa>>,
     pub(super) mailpit: Option<Arc<crate::mailbox::Component>>,
     pub(super) profiles: super::bot_profile::ProfileState,
     pub(super) cfg: LifecycleConfig,
@@ -100,6 +102,7 @@ pub struct PluginManager {
     /// 交给 App 的图标。
     pub(super) gallery: Gallery,
     pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
+    pub(super) dependencies: super::dependencies::Dependencies,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
     pub(crate) activity: Arc<crate::bot_activity::BotActivity>,
@@ -123,6 +126,9 @@ pub struct PluginManager {
     pub(super) sharing:
         std::sync::OnceLock<(Arc<crate::friends::Friends>, Arc<crate::shares::Shares>)>,
     pub(super) person_members: std::sync::OnceLock<Arc<crate::members::Members>>,
+    /// Bot 已成立的联系人（ADR-0045），注入 `WONTON_MATRIX_ALLOWED_USERS` 时加在归属人后面。见
+    /// [`super::contacts`]。
+    pub(super) contact_source: std::sync::OnceLock<super::contacts::ContactSource>,
 }
 
 pub(super) use super::grant::{check_permissions, supported};
@@ -164,12 +170,15 @@ impl PluginManager {
         let github = GitHub::new(&core_proxy);
         let storefront =
             Storefront::new(github.clone(), StoreConfig::default(), store.index_cache());
+        let dependencies = super::dependencies::Dependencies::open(store.capabilities_path());
         Self {
             engine,
             store,
             http,
             oidc,
             matrix: None,
+            matrix_server_name: None,
+            matrix_rtc_ca: None,
             mailpit: None,
             profiles: Default::default(),
             host: HostPaths::new(host_dev),
@@ -182,6 +191,7 @@ impl PluginManager {
             bot_allocation: tokio::sync::Mutex::new(()),
             gallery: Gallery::new(images),
             plugins: RwLock::new(BTreeMap::new()),
+            dependencies,
             changes: tokio::sync::watch::Sender::new(0),
             activity: Arc::default(),
             bundled: RwLock::new(BTreeSet::new()),
@@ -196,6 +206,7 @@ impl PluginManager {
             people_writes: std::sync::Mutex::new(()),
             sharing: std::sync::OnceLock::new(),
             person_members: std::sync::OnceLock::new(),
+            contact_source: std::sync::OnceLock::new(),
         }
     }
 
@@ -351,9 +362,9 @@ impl PluginManager {
             .is_some_and(|entry| entry.system)
     }
 
-    /// OIDC 客户端（ID 是插件的 `id`）在 `owner` 之外要发的组名（清单 `oidc.owner_groups`）。
+    /// OIDC 客户端（ID 是插件的 `id`）在 `owner` 之外要发的组名（清单 `oidc.admin_groups`）。
     /// 客户端没登记、没声明或已卸载时为空，只有 `owner`。
-    pub fn oidc_owner_groups(&self, client_id: &str) -> Vec<String> {
+    pub fn oidc_admin_groups(&self, client_id: &str) -> Vec<String> {
         let Ok(id) = PluginId::parse(client_id) else {
             return Vec::new();
         };
@@ -364,7 +375,7 @@ impl PluginManager {
             .and_then(|entry| entry.listed.as_ref())
             .and_then(|listed| listed.manifest.webui.as_ref())
             .and_then(|webui| webui.oidc.as_ref())
-            .map(|client| client.owner_groups.clone())
+            .map(|client| client.admin_groups.clone())
             .unwrap_or_default()
     }
 
@@ -493,21 +504,42 @@ impl PluginManager {
     pub async fn restore(&self) -> Result<(), InstallError> {
         let langs = self.owner_languages();
         let files = self.store.load_all()?;
-        // 先登记代理提供方：恢复其他插件时就可能需要解析它的地址。
-        for file in &files {
-            if let Ok(record) = &file.record
-                && let Ok(package) =
-                    PluginPackage::with_files(&record.source, record.files.clone(), &langs)
-                && super::egress::provider::provides_proxy(&package.manifest)
-            {
-                let listed = Listed::of_record(&package, record);
-                self.plugins.write().expect("插件表锁中毒").insert(
-                    file.id.clone(),
-                    Entry::new(listed, PluginStatus::Installing, None),
-                );
-            }
-        }
+        let mut ordered = Vec::with_capacity(files.len());
         for file in files {
+            let priority = match &file.record {
+                Ok(record) => {
+                    match PluginPackage::with_files(&record.source, record.files.clone(), &langs) {
+                        Ok(package) => {
+                            let provides = package.manifest.provides.as_ref();
+                            let priority =
+                                if super::egress::provider::provides_proxy(&package.manifest) {
+                                    0
+                                } else if provides.is_some_and(|provides| {
+                                    provides.models.is_some() || !provides.capabilities.is_empty()
+                                }) {
+                                    1
+                                } else {
+                                    2
+                                };
+                            self.plugins.write().expect("插件表锁中毒").insert(
+                                file.id.clone(),
+                                Entry::new(
+                                    Listed::of_record(&package, record),
+                                    PluginStatus::Installing,
+                                    None,
+                                ),
+                            );
+                            priority
+                        }
+                        Err(_) => 2,
+                    }
+                }
+                Err(_) => 2,
+            };
+            ordered.push((priority, file));
+        }
+        ordered.sort_by_key(|(priority, _)| *priority);
+        for (_, file) in ordered {
             let entry = match &file.record {
                 Ok(record) => self.restore_one(record, &langs).await,
                 Err(e) => Entry::broken(&file.id, String::new(), unreadable_record(&e, &langs)),
@@ -520,7 +552,16 @@ impl PluginManager {
             self.plugins
                 .write()
                 .expect("插件表锁中毒")
-                .insert(file.id, entry);
+                .insert(file.id.clone(), entry);
+            if let Ok(record) = &file.record
+                && let Ok(package) =
+                    PluginPackage::with_files(&record.source, record.files.clone(), &langs)
+                && let Err(error) = self
+                    .capabilities_installed(&package.manifest, &[], true)
+                    .await
+            {
+                tracing::error!(plugin = %file.id, %error, "恢复能力连接失败");
+            }
         }
         self.follow_core_proxy();
         self.changed();
@@ -528,9 +569,11 @@ impl PluginManager {
     }
 
     async fn restore_one(&self, record: &InstalledRecord, langs: &Languages) -> Entry {
-        match PluginPackage::with_files(&record.source, record.files.clone(), langs) {
-            Ok(mut package) => {
-                package.origin = record.origin.clone();
+        match record.package(langs) {
+            Ok(package) if super::install_hosted::is_containerless(&package.manifest) => {
+                self.restore_containerless(&package, record, langs)
+            }
+            Ok(package) => {
                 // 不管核对结果如何都先登记来源：插件暂时不健康，也要能经核心重新连上 Matrix 恢复过来。
                 let manifest = &package.manifest;
                 let network = self.cfg.instance.network(&manifest.id.slug());
@@ -563,154 +606,6 @@ impl PluginManager {
                 unreadable_record(&e, langs),
             ),
         }
-    }
-
-    /// 检查并部署，API 安装和预装（见 [`super::preinstall`]）共用。
-    pub(super) async fn install_checked(
-        &self,
-        package: PluginPackage,
-        granted: &[Permission],
-        enabled: &[EnabledPermission],
-        lan_webui: bool,
-        langs: &Languages,
-    ) -> Result<PluginView, InstallError> {
-        super::install_entry::check_runtime(&package.manifest, langs)?;
-        self.check_not_upgrading(langs)?;
-        dry_run(&package, langs)?;
-        self.check_icon(&package, langs).await?;
-        let manifest = package.manifest.clone();
-        check_permissions(&manifest, granted, enabled, langs)?;
-        super::capabilities::unsupported_dependencies(&manifest, langs)?;
-        self.check_requirements(&manifest, langs).await?;
-        self.check_egress(&manifest, langs).await?;
-        let gpu = self.gpu_grant(&manifest, granted, langs).await?;
-        // 插件没有这个开关时不记：以后的版本有了开关也是默认关。
-        let lan_webui = lan_webui && switched(&package).is_some();
-        let lan = self.lan_grant(&package, lan_webui, langs).await?;
-        let listed = Listed::new(&package, now_secs(), lan_webui, false, Default::default());
-        self.reserve(&listed, langs)?;
-        tracing::info!(plugin = %manifest.id, gpu = ?gpu, lan = ?lan, "开始安装插件");
-        match self
-            .deploy(&package, granted, enabled, gpu, lan, langs)
-            .await
-        {
-            Ok(deployed) => {
-                tracing::info!(plugin = %manifest.id, health = ?deployed.health, "插件安装完成");
-                let listed = Listed::new(
-                    &package,
-                    now_secs(),
-                    lan_webui,
-                    deployed.firewalled,
-                    Default::default(),
-                );
-                let view = {
-                    let mut plugins = self.plugins.write().expect("插件表锁中毒");
-                    let entry = Entry::running(listed, deployed);
-                    let view = self.view(&manifest.id, &entry);
-                    plugins.insert(manifest.id.clone(), entry);
-                    view
-                };
-                self.changed();
-                self.probe_fresh_consumer(&manifest).await;
-                // 装的是模型网关：给没接上的使用方签发凭据、按新变量重建（见 super::models）。
-                if manifest
-                    .provides
-                    .as_ref()
-                    .is_some_and(|p| p.models.is_some())
-                {
-                    for (plugin, error) in self.reconcile_models().await {
-                        tracing::error!(%plugin, %error, "模型网关装好了，接上使用方失败");
-                    }
-                }
-                Ok(view)
-            }
-            Err(e) => {
-                tracing::warn!(plugin = %manifest.id, error = %e, "插件安装失败，已回滚");
-                self.plugins
-                    .write()
-                    .expect("插件表锁中毒")
-                    .remove(&manifest.id);
-                self.changed();
-                Err(e)
-            }
-        }
-    }
-
-    /// 占位，防止同一插件并发安装，也防止两个插件映射到同一个子域名。
-    fn reserve(&self, listed: &Arc<Listed>, langs: &Languages) -> Result<(), InstallError> {
-        let manifest = &listed.manifest;
-        let mut plugins = self.plugins.write().expect("插件表锁中毒");
-        if let Some(existing) = plugins.get(&manifest.id) {
-            return Err(
-                busy(&manifest.id, &existing.status, langs).unwrap_or_else(|| {
-                    InstallError::Conflict(l10n::text(
-                        langs,
-                        "plugin-install-conflict-already-installed",
-                        &[("id", manifest.id.to_string().into())],
-                    ))
-                }),
-            );
-        }
-        self.check_proxy_provider(manifest, &plugins, langs)?;
-        let slug = manifest.id.slug();
-        if let Some(other) = plugins.keys().find(|id| id.slug() == slug) {
-            return Err(InstallError::Conflict(l10n::text(
-                langs,
-                "plugin-install-conflict-slug",
-                &[
-                    ("id", manifest.id.to_string().into()),
-                    ("other", other.to_string().into()),
-                ],
-            )));
-        }
-        plugins.insert(
-            manifest.id.clone(),
-            Entry::new(listed.clone(), PluginStatus::Installing, None),
-        );
-        drop(plugins);
-        self.changed();
-        Ok(())
-    }
-
-    pub(super) async fn check_requirements(
-        &self,
-        manifest: &Manifest,
-        langs: &Languages,
-    ) -> Result<(), InstallError> {
-        {
-            let plugins = self.plugins.read().expect("插件表锁中毒");
-            self.check_proxy_provider(manifest, &plugins, langs)?;
-        }
-        let provides_models = manifest
-            .provides
-            .as_ref()
-            .is_some_and(|p| p.models.is_some());
-        let existing = match self.models_provider() {
-            ProviderState::Absent => None,
-            ProviderState::NotReady(id) => Some(id),
-            ProviderState::Ready(route) => Some(route.id),
-        };
-        if provides_models && let Some(id) = existing.filter(|id| *id != manifest.id) {
-            return Err(InstallError::Conflict(l10n::text(
-                langs,
-                "plugin-install-conflict-models-gateway",
-                &[("id", id.to_string().into())],
-            )));
-        }
-        let info = self.engine.host_info().await?;
-        let facts = self.facts_from(Ok(info), langs).await;
-        host_check::refusal(manifest, &facts, langs).map_or(Ok(()), Err)
-    }
-
-    /// 同 [`Self::uninstall`]，但在独立的任务里执行（见 [`detached`]）：网关和 MCP 总线都经这里卸载。
-    pub async fn uninstall_detached(
-        self: &Arc<Self>,
-        id: PluginId,
-        purge: bool,
-        langs: Languages,
-    ) -> Result<UninstallReport, InstallError> {
-        let this = Arc::clone(self);
-        detached(async move { this.uninstall(&id, purge, &langs).await }).await
     }
 }
 

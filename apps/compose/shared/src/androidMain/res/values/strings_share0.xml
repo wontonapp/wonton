@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Explicit acknowledgement of the warning about sharing an app without declared friend support. No arguments. -->
+    <string name="share_acknowledge">I understand and accept this risk</string>
+    <!-- Button that creates an app share for a friend or group. No arguments. -->
+    <string name="share_add">Add share</string>
+    <!-- Expiration choice that opens a date and time picker. No arguments. -->
+    <string name="share_custom">Choose date and time</string>
+    <!-- Label of the share expiration picker. No arguments. -->
+    <string name="share_expires">Expires</string>
+    <!-- Identity verification detail when secure discovery of the identity server failed. No arguments. -->
+    <string name="share_identity_discovery">The identity server could not be discovered securely.</string>
+    <!-- Identity verification detail for an invalid OpenID identity token. No arguments. -->
+    <string name="share_identity_invalid">The identity token is invalid.</string>
+    <!-- Identity verification detail for an unrecognized failure category. No arguments. -->
+    <string name="share_identity_other">Identity verification failed.</string>
+    <!-- Expiration choice that keeps access until the owner revokes it. No arguments. -->
+    <string name="share_indefinite">Until revoked</string>
+    <!-- Apps page section title for apps shared by other people. No arguments. -->
+    <string name="share_received">Shared with me</string>
+    <!-- Button or accessibility label that refreshes apps shared by friends. No arguments. -->
+    <string name="share_refresh">Refresh shares</string>
+    <!-- Button that saves a new or edited app share. No arguments. -->
+    <string name="share_save">Save share</string>
+    <!-- Recipient label when the saved friend or group is no longer available. No arguments. -->
+    <string name="share_unknown">Unknown recipient</string>
+</resources>

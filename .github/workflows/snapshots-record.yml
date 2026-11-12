@@ -256,8 +256,8 @@ jobs:
             || echo "标签已经不在了。"
 
   # 这个仓库要求外部贡献者的运行先批准（approval_policy: all_external_contributors），github-actions[bot]
-  # 也算外部：GITHUB_TOKEN 推的提交照常触发 pull_request，但五个工作流都停在 action_required、不起作业，
-  # 新分支头上没有必需检查，规则集一直挡着 PR。这里用同一个令牌批准这几次运行，检查就落在分支头上。
+  # 也算外部：GITHUB_TOKEN 推的提交照常触发 pull_request，但 gate 停在 action_required、不起作业，
+  # 新分支头上没有必需检查，规则集一直挡着 PR。这里用同一个令牌批准这次运行，检查就落在分支头上。
   # 不选 workflow_dispatch 重新触发：实测手动运行的检查不进 PR 的检查汇总，规则集不认。
   # 不改批准策略：那会对所有外部 PR 放开。
   checks:
@@ -281,8 +281,8 @@ jobs:
             echo "分支头 $head 不是重录推的提交，不处理。" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          # 推送后运行是异步建的：等五个必需检查所在的工作流都出现，最多两分钟。
-          want="android ios lint rust rust-docker"
+          # 推送后运行是异步建的：等必需检查所在的 gate 出现，最多两分钟。
+          want="gate"
           for _ in $(seq 1 12); do
             runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$head&event=pull_request&per_page=100" \
               --jq '.workflow_runs[] | select(.conclusion == "action_required") | "\(.id) \(.name)"')

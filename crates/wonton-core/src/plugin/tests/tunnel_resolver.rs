@@ -122,10 +122,15 @@ impl Fixture {
                 proxied: false,
                 oidc_client_secret: None,
                 installed_at: 1,
+                entry_label: None,
                 origin: None,
                 written_by: None,
                 ask_every_update: false,
                 family: false,
+                settings: Default::default(),
+                settings_changed_ms: None,
+                static_files: Default::default(),
+                hosted: Vec::new(),
             })
             .unwrap();
         self.manager

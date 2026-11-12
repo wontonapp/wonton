@@ -60,6 +60,7 @@ async fn home() -> Home {
         data_dir: dir.path().to_owned(),
         apps_dir: dir.path().join("apps"),
         shares_dir: dir.path().join("shares"),
+        relay_dir: dir.path().join("relay"),
         core_container: None,
         tz: "UTC".into(),
         puid: 1000,
@@ -209,7 +210,7 @@ async fn the_value_never_reaches_the_logs() {
 }
 
 #[tokio::test]
-async fn the_secret_api_is_owner_only() {
+async fn the_secret_api_is_permission_required() {
     let home = home().await;
     let reply = home
         .put("token", serde_json::json!({"value": "new"}), None)

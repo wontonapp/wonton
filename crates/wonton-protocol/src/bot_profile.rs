@@ -38,7 +38,7 @@ pub fn bot_profile_path(plugin_id: &str) -> String {
     format!("/_wonton/api/bots/{plugin_id}/profile")
 }
 
-/// `PUT`：请求体 [`BotPluginAccessUpdate`]。只有主人能用。
+/// `GET` 取、`PUT` 改（请求体 [`BotPluginAccessUpdate`]），都返回 [`BotPluginAccess`]。只有主人能用。
 pub fn bot_plugin_access_path(plugin_id: &str, bot: &str, target_plugin_id: &str) -> String {
     format!("/_wonton/api/bots/{plugin_id}/{bot}/plugin-access/{target_plugin_id}")
 }
@@ -358,7 +358,7 @@ pub enum BotProfileFailure {
     /// 家里的服务器或 Matrix 出错。
     Upstream,
     /// 只有主人的接口，家人的设备改不了（ADR-0045）。
-    OwnerOnly,
+    PermissionRequired,
     #[serde(other)]
     Other,
 }

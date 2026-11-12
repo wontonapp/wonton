@@ -10,9 +10,6 @@ final class HomeModel {
     private(set) var servers: ServersViewModel
     /// 核心拒绝上一个操作的原因，由界面弹窗展示。
     var rejection: Problem?
-    private(set) var connectionRecovered = false
-    private var recoveryFeedback: Task<Void, Never>?
-    private var connectionInterrupted = false
     /// 深链接和手动输入共用草稿；只有配对页确认后才交给核心。
     var pairingCode = ""
 
@@ -36,24 +33,6 @@ final class HomeModel {
     /// 在视图的 `.task` 里调用；视图消失时 Task 被取消，订阅随之结束。
     func observe() async {
         for await viewModel in core.subscribeHome().updates() {
-            if viewModel.serverId != self.viewModel.serverId {
-                connectionInterrupted = false
-                recoveryFeedback?.cancel()
-                connectionRecovered = false
-            } else if viewModel.status != .connected {
-                recoveryFeedback?.cancel()
-                connectionRecovered = false
-                connectionInterrupted = connectionInterrupted || viewModel.notice != nil
-            } else if connectionInterrupted {
-                connectionInterrupted = false
-                connectionRecovered = true
-                recoveryFeedback = Task {
-                    do {
-                        try await Task.sleep(for: .seconds(4))
-                        connectionRecovered = false
-                    } catch {}
-                }
-            }
             if viewModel.serverId != nil { pairingCode = "" }
             self.viewModel = viewModel
         }
@@ -81,6 +60,30 @@ final class HomeModel {
         if case .inProgress = current.pairing { return false }
         pairingCode = url.absoluteString
         if case .failed? = current.pairing { send(.dismissPairingFailure) }
+        return true
+    }
+
+    /// Matrix 登录的操作（ADR-0051）：核心当场拒绝的原因返回给登录页就地显示，之后的进展在 `servers.matrixLogin` 里。
+    func matrixLogin(_ action: Action) -> Problem? {
+        do {
+            try core.dispatch(action: action)
+            return nil
+        } catch {
+            return error.problem
+        }
+    }
+
+    /// 系统把 Matrix 登录的回调地址交给了 App（网页登录面板以外的路径，比如在 Safari 里打开了回调）：有进行中的登录就
+    /// 交给核心核对，是不是这次登录的由核心判断。地址按核心给的 `oidcRedirectUri` 认，壳不另写一份。
+    func completeMatrixLogin(from url: URL) -> Bool {
+        guard let login = core.servers().matrixLogin,
+              let redirect = URLComponents(string: login.oidcRedirectUri),
+              let received = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              received.scheme?.lowercased() == redirect.scheme?.lowercased(),
+              // 从 App 外面打开的 `scheme:/path` 到这里成了 `scheme:///path`（空主机），是同一个地址。
+              (received.host ?? "") == (redirect.host ?? ""), received.path == redirect.path
+        else { return false }
+        send(.completeMatrixOidc(callback: MatrixOidcCallback(loginId: login.loginId, callbackUrl: url.absoluteString)))
         return true
     }
 

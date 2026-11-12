@@ -1,6 +1,6 @@
 # ADR-0020 文件服务：Bot 和 App 按编号共用
 
-- 状态：已接受（2026-11-02）；访问范围按人、设备上传放进私人空间由 [ADR-0045](0045-family-members.md) 修订
+- 状态：已接受（2026-11-02）；访问范围按人、设备上传放进私人空间由 [ADR-0045](0045-family-members.md) 修订；从输入框发进房间的文件改成和文字一起发，由 [ADR-0094](0094-chat-attachments.md) 修订；Bot 读 PDF 的文本、视频给元数据由 [ADR-0104](0104-view-file-media.md) 修订
 
 ## 背景
 
@@ -82,7 +82,7 @@ Raft（raft.build）的做法值得参考：文件存在平台上，Agent 只拿
 - 待完成记录是原子写的，读不懂说明出了别的问题：核心不猜，把它改名成 `<编号>.json.corrupt`，报一次错，数据不再自动清理，留给主人看。这次上传查不到了，客户端收到 `file_unknown` 后重传。
 
 “发到另一台设备”就是上传后调 `send-to-devices`：核心用自己的账号在和主人的“Wonton”私聊里发一条带链接的消息（ADR-0016 的房间），主人所有设备都看
-得到卡片，不用另外指定设备。发进聊天，就是把链接写进普通消息的正文。
+得到卡片，不用另外指定设备。发进聊天，就是把链接写进普通消息的正文：从输入框发的文件先进附件区，一次发送里的文件授权完以后，主人的字和全部链接合成一条消息（ADR-0094）。
 
 ### 链接
 
@@ -116,12 +116,12 @@ App 的显示：
 
 | 工具 | 敏感 | 参数 | 说明 |
 | --- | --- | --- | --- |
-| `wonton__view_file` | 否 | `file_id` | 图片返回缩小的预览；文本文件（按内容判断：能按 UTF-8 解、没有 NUL 字节，不只看 MIME）返回开头最多 64 KiB 的内容，截断时写明文件总大小。PDF 等其他二进制返回 `not_viewable`，这类读不了内容。 |
+| `wonton__view_file` | 否 | `file_id` | 图片返回缩小的预览；文本文件（按内容判断：能按 UTF-8 解、没有 NUL 字节，不只看 MIME）返回开头最多 64 KiB 的内容，截断时写明文件总大小。PDF 返回按页抽出的文字和页数（[ADR-0104](0104-view-file-media.md)）；其他二进制返回 `not_viewable`，这类读不了内容。 |
 | `wonton__share_file` | 否 | `file_id` | 把主人加进访问范围，返回文件链接，Agent 原样放进回复。 |
 
 分享不算敏感：范围只有主人自己，文件不离开主人的设备。M2 分享给家人时，加 `to` 参数，算对外发送（ADR-0011），先请主人确认。
 
-放到后面做：Bot 读 PDF 等二进制文件的字节（“帮我总结这个 PDF”；文本文件的开头已经能经 `wonton__view_file` 读，见上面的工具表）、Bot 把自己数据目录里的文件登记成编号。后者要先定只认哪个子目录，Agent 的数据目录里有密钥。这些
+放到后面做：Bot 读 PDF 等二进制文件的字节（“帮我总结这个 PDF”；文本文件的开头已经能经 `wonton__view_file` 读，PDF 的文字由 [ADR-0104](0104-view-file-media.md) 加，见上面的工具表）、Bot 把自己数据目录里的文件登记成编号。后者要先定只认哪个子目录，Agent 的数据目录里有密钥。这些
 没做之前，App 发给 Bot 的小图和小文件仍走 Matrix 消息（`m.image` 等，ADR-0005），Bot 自己产出的文件走它自己的办法。
 
 ### 鉴权
@@ -236,7 +236,7 @@ Bot 的工具返回 `isError: true`，文字开头是类别；HTTP 接口用 `{"
 
 **`Action` 和 ViewModel**
 
-- `Action`：`UploadFile { source, name, mime_type, room }`、`DownloadFile { id }`、`CancelTransfer { id }`、`DismissTransfer { id, delete_local_file }`、`ResendFileLink { id }`、`DeleteFile { id }`、`SendFileToDevices { id }`、`GrantFileToRoom { id, room }`、`DismissFileProblem`。`room` 不为空时，传完由客户端核心授权并把链接发进这个房间：这一步放在壳里的话，App 中途重启就忘了。这一步没成时传输标成 `LinkNotSent`（已传完，链接没发出），不自动再试，`ResendFileLink` 只重发链接，不重传文件：标成失败的话，主人会把几个 G 的文件再传一遍。隧道断着时除外，这时状态是暂停，连上后接着做。Matrix 还没登录好、房间还没同步到本地时等它们一小会儿再发（App 重启后接着发链接时常见）；发送设了期限，Matrix 停着时传输也不会一直挂在发送上。
+- `Action`：`UploadFile { source, name, mime_type, room }`、`DownloadFile { id }`、`CancelTransfer { id }`、`DismissTransfer { id, delete_local_file }`、`ResendFileLink { id }`、`DeleteFile { id }`、`SendFileToDevices { id }`、`GrantFileToRoom { id, room }`、`DismissFileProblem`。`room` 不为空时，传完由客户端核心授权并把链接发进这个房间（输入框不再走这条路，见 ADR-0094）：这一步放在壳里的话，App 中途重启就忘了。这一步没成时传输标成 `LinkNotSent`（已传完，链接没发出），不自动再试，`ResendFileLink` 只重发链接，不重传文件：标成失败的话，主人会把几个 G 的文件再传一遍。隧道断着时除外，这时状态是暂停，连上后接着做。Matrix 还没登录好、房间还没同步到本地时等它们一小会儿再发（App 重启后接着发链接时常见）；发送设了期限，Matrix 停着时传输也不会一直挂在发送上。
 - 下载的文件由客户端核心放进 App 自己的目录，壳不给路径；记录里只存相对路径，出 ViewModel 时才拼上数据目录，iOS 更新后容器路径变了也找得到。要存到别处，壳调用系统的分享或保存。
 - `CancelTransfer` 取消进行中的传输，上传时连服务器上传了一半的内容一起删。字节已经传完、只差发链接时，按钮是“不发了”（`StopSending`），也发 `CancelTransfer`：只清这条传输，手机不删文件，文件留在服务器上由核心在 24 小时后清掉。`DismissTransfer` 清掉列表里不再进行的条目，不碰服务器上的文件。两个分开，壳不会以为清掉一条做完的上传会删掉服务器上的文件。清下载完的条目时壳先问主人：只清记录（文件留着，卡片还能打开），还是 `delete_local_file` 连手机上的文件一起删。下载完的不自动清：那是主人手机上的文件。
 - `source` 是 `UploadSource`：`Path` 是核心自己能打开的本机路径，`Opaque`（Android 的内容 URI、iOS 的书签）核心不解析，经壳实现的 `FileOpener`（`set_file_opener`）换成文件描述符：Rust 打不开内容 URI，App 重启后接着传时要再打开一次。不靠字符串前缀区分：书签编码后可能以 `/` 开头。iOS 上 App 容器的路径更新后会变，接着传要用书签。没选把文件先复制进 App 的目录：大视频要多占一倍空间，手机放不下时传不了。

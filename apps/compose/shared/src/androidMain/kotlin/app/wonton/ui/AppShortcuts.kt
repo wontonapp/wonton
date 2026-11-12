@@ -7,6 +7,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -22,13 +23,17 @@ import app.wonton.client.parseAppLink
 import app.wonton.protocol.AppLink
 import app.wonton.protocol.PluginImage
 import app.wonton.protocol.TabRef
+import app.wonton.protocol.WidgetAccount
 import app.wonton.ui.icons.Agent
 import app.wonton.ui.icons.AppsFill
+import app.wonton.ui.icons.Chat
 import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.WontonIcon
+import app.wonton.ui.widget.widgetSnapshotUpdates
 import kotlinx.coroutines.CancellationException
 
 private const val PLUGIN_SHORTCUT_PREFIX = "plugin:"
+private const val ROOM_SHORTCUT_PREFIX = "room:"
 private const val FIXED_SHORTCUT_COUNT = 2
 
 @Composable
@@ -38,6 +43,14 @@ internal fun AppShortcutsEffect(tabs: TabsState) {
     val compose = rememberShortcutIcon(WontonIcon.Compose)
     val agent = rememberShortcutIcon(WontonIcon.Agent)
     val missing = rememberShortcutIcon(WontonIcon.AppsFill)
+    val chat = rememberShortcutIcon(WontonIcon.Chat)
+    // 桌面搜索里的会话来自核心的系统入口快照（ADR-0100），和小组件同一份；还没写过快照时为空，沿用系统里上次的。
+    val snapshot by remember(tabs.core) { tabs.core.widgetSnapshotUpdates() }.collectAsState(initial = null)
+    // 只取快捷方式用得到的名字和 ID：未读数、预览变了不重发。
+    val rooms = snapshot?.let { current ->
+        if (current.account != WidgetAccount.SIGNED_IN) return@let emptyList()
+        current.rooms.map { ShortcutRoom(it.roomId, it.name) }
+    }
     val installed = tabs.plugins.viewModel.installed?.plugins
     val installedIds = installed?.mapTo(mutableSetOf()) { it.id }
     val pages = tabs.viewModel.items.mapNotNull { item ->
@@ -50,9 +63,9 @@ internal fun AppShortcutsEffect(tabs: TabsState) {
         resume++
         onPauseOrDispose {}
     }
-    LaunchedEffect(publisher, pages, installedIds, compose, agent, missing, resume) {
+    LaunchedEffect(publisher, pages, installedIds, rooms, compose, agent, missing, chat, resume) {
         try {
-            publisher.publish(tabs.plugins, pages, installedIds, compose, agent, missing)
+            publisher.publish(tabs.plugins, pages, installedIds, rooms, ShortcutIcons(compose, agent, missing, chat))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: ShortcutPublishFailure) {
@@ -80,16 +93,16 @@ private class AppShortcuts(private val context: Context) {
     private val activity = ComponentName(context.packageName, "${context.packageName}.MainActivity")
 
     suspend fun publish(
-        plugins: PluginsState, pages: List<ShortcutPage>, installed: Set<String>?,
-        compose: IconCompat, agent: IconCompat, missing: IconCompat,
+        plugins: PluginsState, pages: List<ShortcutPage>, installed: Set<String>?, rooms: List<ShortcutRoom>?,
+        icons: ShortcutIcons,
     ) {
         val existing = ShortcutManagerCompat.getShortcuts(
             context, ShortcutManagerCompat.FLAG_MATCH_DYNAMIC or ShortcutManagerCompat.FLAG_MATCH_PINNED,
         ).associateBy { it.id }.values
         val maximum = ShortcutManagerCompat.getMaxShortcutCountPerActivity(context)
         val fixed = listOf(
-            shortcut("new-chat", context.getString(R.string.shortcut_new_chat), AppLink.NewChat, compose, 0),
-            shortcut("agent-chat", context.getString(R.string.shortcut_agent_chat), AppLink.AgentChat, agent, 1),
+            shortcut("new-chat", context.getString(R.string.shortcut_new_chat), AppLink.NewChat, icons.compose, 0),
+            shortcut("agent-chat", context.getString(R.string.shortcut_agent_chat), AppLink.AgentChat, icons.agent, 1),
         )
         if (installed != null) disableUninstalled(existing, installed)
         val dynamic = fixed.take(maximum).toMutableList()
@@ -102,13 +115,14 @@ private class AppShortcuts(private val context: Context) {
             for (page in pages.take((maximum - fixed.size).coerceAtLeast(0))) {
                 if (page.tab.pluginId !in installed) continue
                 try {
-                    val icon = pluginIcon(plugins, page, missing)
+                    val icon = pluginIcon(plugins, page, icons.missing)
                     dynamic += shortcut(shortcutId(page.tab), page.title, AppLink.Tab(page.tab), icon, dynamic.size)
                 } catch (failure: ShortcutPublishFailure) {
                     problems += failure.message.orEmpty()
                 }
             }
         }
+        dynamic += roomShortcuts(existing, rooms, icons.chat, first = dynamic.size, slots = maximum - dynamic.size)
         updateDynamic(dynamic)
         if (maximum < FIXED_SHORTCUT_COUNT) {
             problems += context.getString(R.string.shortcuts_too_few, maximum)
@@ -117,6 +131,25 @@ private class AppShortcuts(private val context: Context) {
             problems += context.getString(R.string.shortcuts_too_many, maximum)
         }
         if (problems.isNotEmpty()) throw ShortcutPublishFailure(problems.joinToString("\n"))
+    }
+
+    /**
+     * 固定的和底栏插件页之后剩下的位置给最近的会话，桌面长按和桌面搜索里都看得到（ADR-0100）。只放名字，不放消息。
+     * 位置不够时少放几个，不算问题：会话本来就只放最近的。
+     * [rooms] 为 null 表示还不知道（核心还没写过快照），沿用系统里上次发的。
+     */
+    private fun roomShortcuts(
+        existing: Collection<ShortcutInfoCompat>, rooms: List<ShortcutRoom>?, icon: IconCompat, first: Int, slots: Int,
+    ): List<ShortcutInfoCompat> {
+        val count = slots.coerceAtLeast(0)
+        return if (rooms == null) {
+            existing.filter { it.isDynamic && it.id.startsWith(ROOM_SHORTCUT_PREFIX) }.sortedBy { it.rank }.take(count)
+        } else {
+            // 系统不收空的标题。
+            rooms.filter { it.name.isNotBlank() }.take(count).mapIndexed { index, room ->
+                shortcut(ROOM_SHORTCUT_PREFIX + room.roomId, room.name, AppLink.Room(room.roomId), icon, first + index)
+            }
+        }
     }
 
     private fun updateDynamic(shortcuts: List<ShortcutInfoCompat>) {
@@ -175,5 +208,24 @@ private fun ShortcutInfoCompat.pluginTab(): TabRef.Plugin? {
 }
 
 private data class ShortcutPage(val tab: TabRef.Plugin, val title: String, val icon: PluginImage?)
+
+private data class ShortcutRoom(val roomId: String, val name: String)
+
+private class ShortcutIcons(
+    val compose: IconCompat,
+    val agent: IconCompat,
+    val missing: IconCompat,
+    val chat: IconCompat,
+)
+
+/**
+ * 没登录了（退出、被吊销、换服务器）：桌面长按菜单和桌面搜索里的会话马上撤掉，不等 App 打开。用户自己固定到桌面的
+ * 快捷方式系统不让 App 删，点了进 App 由 App 说明。
+ */
+fun removeRoomShortcuts(context: Context) {
+    val ids = ShortcutManagerCompat.getDynamicShortcuts(context).map { it.id }
+        .filter { it.startsWith(ROOM_SHORTCUT_PREFIX) }
+    if (ids.isNotEmpty()) ShortcutManagerCompat.removeDynamicShortcuts(context, ids)
+}
 
 private class ShortcutPublishFailure(message: String) : Exception(message)

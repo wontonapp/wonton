@@ -45,7 +45,12 @@ async fn plugin(gateway: &Gateway, slug: &str, mut req: Request) -> Response {
     let langs = api::languages(req.headers());
     let format = super::super::pages::Format::of(req.headers());
     let host = gateway.public.plugin_host(slug);
-    let Some(route) = gateway.plugins.route(slug) else {
+    // 托管插件（静态网页）第一步不开放给好友（ADR-0080 第 3 节），分享建不出来，这里再拦一道。
+    let Some(route) = gateway
+        .plugins
+        .route(slug, "/")
+        .filter(|route| route.hosted.is_none())
+    else {
         return refused(GatewayRefusal::ShareRequired, &langs, format);
     };
     // No handoff codes or owner cookies are recognized on the share transport.

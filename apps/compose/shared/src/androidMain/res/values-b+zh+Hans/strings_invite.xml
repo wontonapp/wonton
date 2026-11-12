@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Notice title when the pairing code ran out of time. -->
+    <string name="invite_expired">这个码过期了。</string>
+    <!-- Under the QR code: how long the code is still valid. Argument: the remaining time as m:ss. -->
+    <string name="invite_expires_in">还有 %1$s 过期</string>
+    <!-- Notice title when the pairing code couldn't be fetched; the core's reason is shown below. -->
+    <string name="invite_failed_title">没要到配对码</string>
+    <!-- Explanation under the QR code: what the new device's owner should do. The code works only once. -->
+    <string name="invite_instructions">在新设备上打开云吞 App 扫这个码，它就成为你的设备。码只能用一次。</string>
+    <!-- Label above the pairing code as text, for when the QR code can't be scanned. -->
+    <string name="invite_paste_fallback">不能扫码时粘贴这段文字</string>
+    <!-- Accessibility label of the QR code image with the pairing code. -->
+    <string name="invite_qr_label">配对二维码</string>
+    <!-- Button under the expired notice: get a new code. -->
+    <string name="invite_renew">换一个码</string>
+    <!-- Shown next to a spinner while the pairing code is being requested. -->
+    <string name="invite_requesting">正在向家里的服务器要配对码…</string>
+    <!-- Button under the failed notice: request a pairing code again. -->
+    <string name="invite_try_again">再试一次</string>
+    <string name="invite_device_added">已加好</string>
+    <string name="invite_cannot_give">这台设备也没有完整的密钥，新设备看不到以前的消息。</string>
+</resources>

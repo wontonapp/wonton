@@ -68,6 +68,7 @@ plugin-install-containers-unhealthy = 部分容器不健康：{ $failures }
 plugin-install-container-unhealthy = 容器 { $container } 健康檢查失敗（最後一次探針，退出碼 { $code }）：{ $output }
 plugin-install-container-unhealthy-nocode = 容器 { $container } 健康檢查失敗（最後一次探針，退出碼未知）：{ $output }
 plugin-install-container-unhealthy-noprobe = 容器 { $container } 健康檢查失敗（Docker 沒有留下探針結果）
+plugin-install-container-health-probe-failed = 容器 { $container } 的健康探測失敗（GET { $path }）：{ $reason }
 plugin-install-container-not-running = 容器 { $container } 沒有在執行（{ $status }）
 plugin-install-one-shot-failed = 一次性服務的容器 { $container } 沒有以 0 結束（{ $status }，退出碼 { $code }）
 plugin-install-reach-none = 不存在
@@ -203,6 +204,7 @@ plugin-install-cfg-target-absolute = configs 的目標 `{ $raw }` 必須是絕�
 plugin-install-cfg-target-root = configs 的目標不能是 /
 plugin-install-cfg-id-invalid = configs 的 { $field } `{ $value }` 必須是非負整數
 plugin-install-cfg-mode-invalid = configs 的 mode `{ $value }` 不合法：必須是 0 到 0777 的八進位權限
+plugin-install-cfg-parent-is-file = configs 目標的上級 `{ $parent }` 在容器 { $service } 裡是檔案，寫不進去
 
 # ── 掛載（mounts.rs）───────────────────────────────────────────────────────
 
@@ -227,6 +229,7 @@ plugin-install-priv-fixed-device = 固定裝置權限只支援 /dev/net/tun 和 
 plugin-install-priv-host-network-ports = 主機網路服務不能同時宣告 lan.ports；應用程式直接監聽主機網路上的連接埠
 plugin-install-priv-host-network-sso = 主機網路裡的 webui 不能使用 sso: proxy，請改用 oidc 或 none
 plugin-install-priv-host-network-healthcheck = 主機網路裡的 webui 服務必須寫有效的 healthcheck
+plugin-install-priv-host-network-mail = 用主機網路的應用程式不能寄信：寄信按來源網段識別，主機網路寄來的信認不出來源會被丟棄。請改用應用程式網路，或去掉寄信
 plugin-install-priv-cap-invalid = cap_add 裡的能力 `{ $cap }` 不合法
 plugin-install-priv-cap-drop-invalid = cap_drop 裡的能力 `{ $cap }` 不合法
 plugin-install-priv-security-opt-invalid = security_opt 裡的 `{ $opt }` 不合法（no-new-privileges 的值只接受 true 或 false）
@@ -440,8 +443,9 @@ plugin-install-coreaddr-no-core-address = 網路還沒有為家用伺服器保�
 plugin-install-upstream-container-missing = 容器 { $container } 不存在，或者在網路 { $network } 裡沒有位址
 plugin-install-upstream-mcp-headers = 無法解析應用程式 { $id } 的 MCP 請求標頭：{ $error }
 plugin-install-relay-prepare-dir-failed = 無法準備中繼目錄：{ $error }
-plugin-install-relay-path-too-long = 應用程式資料目錄的路徑太長，unix socket 放不下，把家用伺服器的資料目錄換到短一點的路徑（{ $path }：{ $bytes } 位元組，上限 { $max } 位元組）
+plugin-install-relay-path-too-long = 中繼 socket 的目錄路徑太長，unix socket 放不下，把 WONTON_RELAY_DIR 換到短一點的目錄（{ $path }：{ $bytes } 位元組，上限 { $max } 位元組）
 plugin-install-relay-listens-unknown = 讀不到監聽表，略過防火牆判斷
+plugin-install-egress-host-no-address = 出口容器在插件網路 { $network } 裡沒有位址，宿主網路的服務過不了代理
 
 # ── 圖片（images.rs、images/preflight.rs、image_worker.rs）──────────────────
 
@@ -506,7 +510,7 @@ plugin-install-preinstall-failed = 預先安裝失敗
 
 plugin-capability-unknown = 這份核心不認識能力 { $capability }，升級核心後再裝
 plugin-capability-third-party-format = 能力 { $capability } 不合法：第三方能力要寫成 x-<作者>.<名字>，作者和名字用小寫字母、數字、連字符號
-plugin-capability-egress-no-consumer = egress_proxy 沒有使用方聲明，不能寫在 requires 或 wants 裡
+plugin-capability-no-consumer = { $capability } 沒有使用方聲明，不能寫在 requires 或 wants 裡
 plugin-capability-duplicate = { $field } 裡的能力 { $capability } 寫了兩次
 plugin-capability-in-both-lists = 能力 { $capability } 不能同時在 requires 和 wants 裡
 plugin-capability-provider-requires = 提供能力的插件不能 requires 別的能力
@@ -519,3 +523,28 @@ plugin-capability-service-not-forwardable = { $field } 不能指向 network_mode
 plugin-install-capability-deps-unsupported = 這個核心還不支援外掛之間的依賴，升級核心後再裝
 plugin-install-runtime-services = runtime 為 { $runtime } 時不能宣告 services
 plugin-install-runtime-unsupported = 這個核心不支援安裝或升級 runtime 為 { $runtime } 的外掛，請先升級核心
+plugin-install-matrix-rtc-needs-matrix = 核心沒有接入 Matrix 伺服器，裝不了提供 matrix_rtc（通話授權）的應用程式
+plugin-install-matrix-rtc-conflict = 已經安裝了提供 matrix_rtc（通話授權）的應用程式 { $id }：同一時間只能有一個
+plugin-install-matrix-rtc-ca-failed = 寫不了通話授權應用程式要信任的憑證包：{ $error }
+plugin-install-capability-dropped = 宿主網路的服務預設被核心去掉了 { $capability }。映像要用（ICMP ping 之類）就申請 { $permission } 權限，並給服務 { $service } 寫 { $field }。
+
+# 静态网页和托管形态（ADR-0080）
+plugin-install-static-dir = `{ $root }` 裡的靜態檔案：{ $problem }
+plugin-install-static-too-many = 檔案和資料夾超過 { $max } 個
+plugin-install-static-too-big = 一共 { $mib } MiB，超過 { $max } MiB
+plugin-install-static-file-too-big = `{ $path }` 超過單一檔案 { $max } MiB 的上限
+plugin-install-static-hidden = `{ $path }`：不能有以 . 開頭的名稱
+plugin-install-static-reserved = _wonton/ 目錄保留給應用程式資料，不能使用
+plugin-install-static-no-index = 沒有 index.html
+plugin-install-static-no-fallback = fallback 指定的 `{ $path }` 不在目錄裡
+plugin-install-static-symlink = `{ $path }` 是符號連結，靜態檔案不能是符號連結
+plugin-install-static-not-file = `{ $path }` 不是一般檔案
+plugin-install-static-missing = 目錄不存在
+plugin-install-static-read-failed = 無法讀取 `{ $path }`：{ $error }
+plugin-hosted-provider-not-running = 託管這個應用程式的 { $provider } 沒有在執行
+plugin-hosted-provider-missing = 沒有安裝提供 { $capability } 的應用程式，這個應用程式無法使用
+plugin-hosted-provider-taken = { $other } 已經提供 { $capability }，只能有一個應用程式提供它
+plugin-hosted-provider-in-use = 這些應用程式由它託管，解除安裝後會打不開：{ $plugins }。請先解除安裝它們
+plugin-hosted-dir-missing = 這個應用程式在 { $capability } 下的檔案不見了，請重新安裝
+plugin-hosted-storage-failed = 託管檔案無法寫入：{ $error }
+plugin-hosted-data-missing = 這個應用程式在 { $capability } 下儲存的資料不見了，重新安裝會從空的開始

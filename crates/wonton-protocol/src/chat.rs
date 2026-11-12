@@ -109,6 +109,10 @@ pub struct PendingConfirmation {
 pub struct ChatContact {
     pub user_id: String,
     pub name: String,
+    /// 选这个人开新旁聊时在哪个房间开（ADR-0093 §4）：和这个人已有的、有支持声明的私聊。
+    /// 为空时壳走 `StartDirectChat` 先建私聊。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side_chat_room_id: Option<String>,
 }
 
 /// 本设备的 Matrix 账号。
@@ -166,14 +170,19 @@ pub enum ChatSync {
 pub enum ChatFailure {
     /// 连不上 Matrix 服务器：隧道没连上、网络断开或请求超时。
     TransportUnavailable,
-    /// 服务器拒绝了身份或权限：登录凭据无效或过期、设备已被吊销、无权操作。
+    /// 登录失效：登录凭据无效或过期、设备已被吊销、账号已停用。要重新登录或配对。
     Unauthorized,
+    /// 登录有效，但服务器不让做这件事：没有权限、对方屏蔽了自己、对方的服务器不和这台互通。不是要重新登录。
+    Forbidden,
     /// 前置条件不满足：服务器缺少必需的能力，或者要操作的房间还没同步到本机。
     NotReady,
     /// 服务器或 Matrix SDK 出错。
     Upstream,
     /// 输入非法。
     InvalidInput,
+    /// 比这个壳新的类别。
+    #[serde(other)]
+    Other,
 }
 
 /// 后台操作失败的说明。
@@ -212,6 +221,11 @@ pub struct EncryptionStatus {
     pub recovery_next_step: RecoveryNextStep,
     /// 正在进行或刚结束的设备确认（ADR-0046），本设备发起的和收到的都在这里。
     pub verification_flow: Option<VerificationFlow>,
+    /// 加设备时的密钥交接（ADR-0087）：本设备是刚加进来、在等密钥的新设备，或者是开着“添加设备”页、替新设备交出
+    /// 密钥的旧设备。没在交接时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub key_handoff: Option<crate::KeyHandoff>,
 }
 
 /// 备份页的下一步给主人看什么（ADR-0076）。核心按恢复状态算好，壳只按类别画，不自己判断。
@@ -228,6 +242,8 @@ pub enum RecoveryNextStep {
     ShowFlow,
     /// 恢复正在进行，壳画进度。
     Progress,
+    /// 刚加进来的设备在等另一台设备交出密钥（ADR-0087）：壳画交接页，不提恢复密钥。
+    WaitForOtherDevice,
     /// 没有要主人做的：备份完好，或者状态还没同步到。
     #[default]
     None,
@@ -243,6 +259,8 @@ pub enum RecoveryNextStep {
 pub enum BackupReminder {
     SaveRecoveryKey,
     EnterRecoveryKey,
+    /// 密钥交接还没完成，主人先进了聊天列表（ADR-0087）：提醒只说“在另一台设备上继续”，点了回到交接页。
+    ContinueOnOtherDevice,
     #[serde(other)]
     Other,
 }
@@ -298,6 +316,9 @@ pub struct RoomRow {
     pub membership: RoomMembership,
     /// 最新一条消息的预览；还没有消息或还没同步到时为空。
     pub preview: Option<RoomPreview>,
+    /// 房间里有旁聊支持声明（ADR-0093 §1）：可以开新旁聊，旁聊有结果行。声明还没同步到时是 false。
+    #[serde(default)]
+    pub side_chats: bool,
     /// 未读消息数。
     pub unread_count: u64,
     /// 打开这个房间时怎么显示（ADR-0060）。
@@ -345,6 +366,11 @@ pub enum MessageSummary {
     /// 本机还没有房间密钥，解不开。
     Undecryptable,
     Redacted,
+    /// 旁聊（ADR-0093）：根消息和结果行在聊天列表里的预览。
+    SideChat {
+        title: String,
+        state: crate::SideChatState,
+    },
     /// 其他类型的事件，`kind` 是事件类型原文，如 `m.sticker`。
     Other {
         kind: String,
@@ -439,6 +465,7 @@ mod tests {
                 can_reset: true,
                 recovery_next_step: RecoveryNextStep::ChooseDeviceOrKey,
                 verification_flow: None,
+                key_handoff: None,
             },
             installing_bots: vec![BotInstallRow {
                 plugin_id: "app.hermes".into(),
@@ -468,6 +495,7 @@ mod tests {
                     body: MessageSummary::Image,
                     timestamp_ms: 1_793_000_000_000,
                 }),
+                side_chats: false,
                 unread_count: 2,
             }],
             problem: Some(ChatProblem {
@@ -497,6 +525,7 @@ mod tests {
                 category: NotificationCategory::Message,
                 confirmation: None,
                 contact_request: None,
+                thread_root: None,
             }],
             bots: Vec::new(),
         }
@@ -528,10 +557,15 @@ mod tests {
             Action::StartDirectChat {
                 user_id: "@hermes:home.example".into(),
             },
-            Action::SendImage {
-                room_id: "!a:home.example".into(),
-                image: image.clone(),
-                reply_to: None,
+            Action::Timeline {
+                action: crate::TimelineAction::SendImage {
+                    target: crate::TimelineTarget {
+                        room_id: "!a:home.example".into(),
+                        thread_root: None,
+                    },
+                    image: image.clone(),
+                    reply_to: None,
+                },
             },
             Action::RecoverEncryption {
                 recovery_key: SecretString::new(KEY),

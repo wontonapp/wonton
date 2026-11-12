@@ -42,8 +42,6 @@ final class PluginsModel {
 
     /// 在主界面的 `.task` 里调用，App 在前台时一直订阅。
     func observe() async {
-        // 名字和说明按主人的语言挑。iOS 改了 App 的语言会重启 App，启动时告诉核心一次就够。
-        refresh(.setLanguages(languages: AppLanguage.preferred))
         for await viewModel in core.subscribePlugins().updates() {
             self.viewModel = viewModel
         }
@@ -112,6 +110,14 @@ extension InstalledPlugin {
 enum PluginRoute: Hashable {
     case store(source: String)
     case installed(id: String)
+
+    /// 核心认得的同一页。
+    var coreRoute: PluginDetailRoute {
+        switch self {
+        case let .store(source): .store(source: source)
+        case let .installed(id): .installed(id: id)
+        }
+    }
 }
 
 /// 安装或升级的确认页。
@@ -161,11 +167,15 @@ enum PluginConfirmation: Identifiable, Equatable {
     /// 主人选的版本可能比装着的旧，不叫升级。
     var actionTitle: String {
         switch self {
-        case .install, .upload: return String(localized: .installActionInstall)
-        case .upgrade: return String(localized: .installActionUpgrade)
-        case .upgradeFrom, .upgradeUpload: return String(localized: .installChangeVersion)
+        case .install, .upload: return String(localized: .Install.installActionInstall)
+        case .upgrade: return String(localized: .Install.installActionUpgrade)
+        case .upgradeFrom, .upgradeUpload: return String(localized: .Install.installChangeVersion)
         case let .store(confirmation):
-            return String(localized: confirmation.isUpgrade ? .installActionUpgrade : .installActionInstall)
+            return String(
+                localized: confirmation.isUpgrade
+                    ? .Install.installActionUpgrade
+                    : .Install.installActionInstall
+            )
         }
     }
 }

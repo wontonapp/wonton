@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="friends_paste_placeholder">相手のコードをペースト</string>
+    <!-- Approve button on a received request. -->
+    <string name="friends_request_approve">承認</string>
+    <!-- Cancel button on a request I sent. -->
+    <string name="friends_request_cancel">取り消す</string>
+    <!-- Empty page: the one sentence above the add button. -->
+    <string name="friends_empty">まだ友だちがいません</string>
+    <!-- Row that opens the new-group dialog. -->
+    <string name="friends_group_new">グループを作成</string>
+    <!-- Confirmation dialog title for deleting a group. Argument: the group name. -->
+    <string name="friends_group_delete_title">「%1$s」を削除しますか？</string>
+    <!-- Sheet action on a friend row that opens the group chooser. -->
+    <string name="friends_groups">グループ</string>
+    <!-- Sheet action on a friend row: remove the friend. -->
+    <string name="friends_remove_friend">友だちを削除</string>
+    <!-- Confirmation dialog body: what removing a friend does. -->
+    <string name="friends_remove_message">共有したプラグインは使えなくなります。チャットは残ります。</string>
+    <!-- Section heading above blocked people and servers. -->
+    <string name="friends_blocked_title">ブロック中</string>
+    <!-- Row that opens the block-a-server dialog; only shown to the server's owner. -->
+    <string name="friends_block_server">サーバーをブロック</string>
+    <!-- Row subtitle for a blocked person. -->
+    <string name="friends_block_invitations">招待をブロック中</string>
+    <!-- Next step under the refused failure. -->
+    <string name="friends_error_forbidden_next">相手にブロックされているか、相手のサーバーがまだ自宅のサーバーとつながっていない可能性があります。</string>
+    <!-- Section heading on the peers page above the friend requests. -->
+    <string name="friends_peers_title">友だちリクエスト</string>
+</resources>

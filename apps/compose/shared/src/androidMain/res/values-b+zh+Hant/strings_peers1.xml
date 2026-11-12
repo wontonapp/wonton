@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Row subtitle when the other owner declined my pairing request. -->
+    <string name="peers_status_declined">對方拒絕了</string>
+    <!-- Row subtitle for a status this version doesn't know. -->
+    <string name="peers_status_unknown">狀態未知</string>
+    <!-- Row subtitle while our own public access switch is off. -->
+    <string name="peers_status_public_access_off">公網訪問已關</string>
+    <!-- Reject button on a request row. -->
+    <string name="peers_request_reject">拒絕</string>
+    <!-- Collapsed section heading at the bottom for requests I declined. -->
+    <string name="peers_rejected_title">已拒絕</string>
+    <!-- Failure title when this device isn't the owner's. -->
+    <string name="peers_error_unauthenticated">只有伺服器主人能管理其他伺服器</string>
+    <!-- Failure title when the home server can't be reached. -->
+    <string name="peers_error_transport">連不上家用伺服器</string>
+    <!-- Button under the QR code: hands the code text to the system share sheet. -->
+    <string name="peers_code_share">分享</string>
+    <!-- Confirmation dialog title for resetting the pairing code. -->
+    <string name="peers_reset_title">重設配對碼？</string>
+</resources>

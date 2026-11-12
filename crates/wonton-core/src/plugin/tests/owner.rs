@@ -256,7 +256,7 @@ async fn without_a_real_email_a_proxy_template_installs_with_the_internal_addres
         .unwrap();
     assert_eq!(preview.missing_profile, None);
     m.install(&compose, &[], super::langs()).await.unwrap();
-    let auth = m.route("app-test").unwrap().proxy.unwrap();
+    let auth = m.route("app-test", "/").unwrap().proxy.unwrap();
     assert_eq!(
         auth.headers(&m.cfg.profile.owner(), Role::Owner).unwrap()[0].1,
         "owner@wonton.internal"
@@ -277,7 +277,7 @@ async fn proxy_and_lan_templates_share_stable_person_specific_internal_addresses
         ),
     );
     m.install(&compose, &[], super::langs()).await.unwrap();
-    let auth = m.route("app-test").unwrap().proxy.unwrap();
+    let auth = m.route("app-test", "/").unwrap().proxy.unwrap();
     let mut owner = Owner {
         username: "owner".into(),
         display_name: "云吞".into(),
@@ -349,9 +349,9 @@ fn oidc_rejects_the_removed_email_requirement() {
     ));
 }
 
-/// 清单校验 `oidc.owner_groups`：名字合法、不重复、最多 8 个。
+/// 清单校验 `oidc.admin_groups`：名字合法、不重复、最多 8 个。
 #[test]
-fn oidc_owner_groups_are_checked_in_the_manifest() {
+fn oidc_admin_groups_are_checked_in_the_manifest() {
     let webui = |oidc: &str| {
         package(
             "  web:\n    image: nginx",
@@ -367,15 +367,15 @@ fn oidc_owner_groups_are_checked_in_the_manifest() {
         .join(", ");
     for (oidc, needle) in [
         (
-            "{redirect_paths: [/cb], owner_groups: [admin, admin]}",
+            "{redirect_paths: [/cb], admin_groups: [admin, admin]}",
             "duplicated",
         ),
         (
-            "{redirect_paths: [/cb], owner_groups: [家 组]}",
+            "{redirect_paths: [/cb], admin_groups: [家 组]}",
             "is invalid",
         ),
         (
-            &format!("{{redirect_paths: [/cb], owner_groups: [{nine}]}}"),
+            &format!("{{redirect_paths: [/cb], admin_groups: [{nine}]}}"),
             "at most 8",
         ),
     ] {
@@ -383,12 +383,12 @@ fn oidc_owner_groups_are_checked_in_the_manifest() {
         assert!(error.to_string().contains(needle), "{oidc}: {error}");
     }
     let ok = PluginPackage::parse(
-        &webui("{redirect_paths: [/cb], owner_groups: [admin, app.admin]}"),
+        &webui("{redirect_paths: [/cb], admin_groups: [admin, app.admin]}"),
         &super::langs(),
     )
     .unwrap();
     assert_eq!(
-        ok.manifest.webui.unwrap().oidc.unwrap().owner_groups,
+        ok.manifest.webui.unwrap().oidc.unwrap().admin_groups,
         ["admin", "app.admin"]
     );
 }

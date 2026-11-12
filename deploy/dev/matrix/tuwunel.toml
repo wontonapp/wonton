@@ -2,6 +2,8 @@
 #
 # 核心的 JWT 公钥不写在这里，经环境变量 TUWUNEL_JWT__KEY 注入（PEM）。
 # 选项说明见 Tuwunel 仓库的 tuwunel-example.toml。
+#
+# 用扁平键名：2.x 一直兼容（2.0 起也能写成 `[global.http]` 这类分组表）。
 
 [global]
 server_name = "wonton.localhost"
@@ -28,3 +30,10 @@ algorithm = "EdDSA"
 require_exp = true
 issuer = ["wonton-core"]
 audience = ["tuwunel"]
+
+# clients 的 homeserver 地址由 compose（`TUWUNEL_WELL_KNOWN__CLIENT`）给：测试容器用的是随机端口，
+# 写在这份共享配置里会把测试客户端指到错的地址。
+[global.well_known]
+# MatrixRTC 的授权服务：固定是 Matrix 对外地址下的 /_wonton/matrix-rtc，网关转给通话插件（ADR-0096）。
+# 开发栈的核心地址由 compose 覆盖；这里是默认域名和端口下的值。
+livekit_url = "http://matrix.wonton.localhost:18480/_wonton/matrix-rtc"

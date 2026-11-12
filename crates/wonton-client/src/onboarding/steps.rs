@@ -347,6 +347,10 @@ impl OnboardingLink {
                     "onboarding-steps-committing"
                 )));
             }
+            state.revisit = state
+                .onboarding
+                .as_ref()
+                .is_some_and(|onboarding| onboarding.step == OnboardingStep::Finished);
             state.draft = Default::default();
             state.review.clear();
             state.review_generation += 1;
@@ -354,7 +358,25 @@ impl OnboardingLink {
             state.testing = false;
             state.step = view::first_visible(&state.unavailable).or(Some(OnboardingStep::Profile));
         }
-        self.refresh();
+        self.refresh_after_local_reset();
         Ok(())
+    }
+
+    /// 关掉重看的引导：这次记下的选择全部丢弃，什么都不发；`step` 清空让壳回到设置。
+    pub(crate) fn close(&self) {
+        {
+            let mut state = lock(&self.state);
+            if state.commit == OnboardingCommit::Running {
+                return;
+            }
+            state.draft = Default::default();
+            state.review.clear();
+            state.review_generation += 1;
+            state.commit = OnboardingCommit::NotStarted;
+            state.testing = false;
+            state.model_problem = None;
+            state.step = None;
+        }
+        self.publish();
     }
 }

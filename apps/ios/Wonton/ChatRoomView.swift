@@ -7,6 +7,7 @@ struct ChatRoomView: View {
     let roomId: String
     let title: String
     @State private var timeline: TimelineModel
+    @State private var composer: ComposerModel
     @State private var presenter: RoomPresenter
     @State private var pin = BottomPin()
     @State private var isKeyboardVisible = false
@@ -29,6 +30,7 @@ struct ChatRoomView: View {
         self.roomId = roomId
         self.title = title
         _timeline = State(initialValue: TimelineModel(core: model.core, roomId: roomId))
+        _composer = State(initialValue: ComposerModel(chat: model, roomId: roomId))
         _presenter = State(initialValue: RoomPresenter(files: model.files))
     }
 
@@ -36,6 +38,7 @@ struct ChatRoomView: View {
         RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
                       blocked: entryBlocked, pullAnchor: roomPull) {
             roomContent
+                .overlay(alignment: .topLeading) { ScrollDebug(text: pin.snapshot) }
         }
     }
 
@@ -51,7 +54,7 @@ struct ChatRoomView: View {
                 messages
             }
             if let notice = timeline.notice {
-                keyNotice(notice)
+                KeyNoticeBanner(notice: notice)
             }
             TransfersStrip(roomId: roomId)
             if !isReadOnly {
@@ -62,11 +65,12 @@ struct ChatRoomView: View {
                         model.appendDraft($0, to: roomId)
                     }
                 }
-                ComposerView(model: model, roomId: roomId, pin: pin)
+                ComposerView(model: model, composer: composer, pin: pin)
             }
         }
         .modifier(RoomPresentations(presenter: presenter))
-        .wontonSheet(isPresented: $pickingForwardRoom, title: String(localized: .messageForwardTitle)) { close in
+        .wontonSheet(isPresented: $pickingForwardRoom,
+            title: String(localized: .Message0.messageForwardTitle)) { close in
             ForwardRoomSheet(model: model, plugins: plugins, rooms: forwardRooms) { room in
                 close {
                     guard let item = forwarding else { return }
@@ -76,13 +80,13 @@ struct ChatRoomView: View {
             }
         }
         .wontonDialog(
-            String(localized: .messageRedactTitle),
-            message: String(localized: .messageRedactMessage),
+            redactTitle,
+            message: String(localized: .Message2.messageRedactMessage),
             isPresented: $showingRedact,
             actions: [
-                WontonDialogAction(title: String(localized: .commonCancel)),
-                WontonDialogAction(title: String(localized: .messageRedact), kind: .danger) {
-                    if let item = redactItem { model.send(.redactMessage(roomId: roomId, itemId: item)) }
+                WontonDialogAction(title: String(localized: .Common.commonCancel)),
+                WontonDialogAction(title: String(localized: .Message1.messageRedact), kind: .danger) {
+                    if let item = redactItem { sendTimeline(.redactMessage(target: mainTimeline, itemId: item)) }
                 }
             ],
             afterDismiss: { redactItem = nil }
@@ -103,28 +107,14 @@ struct ChatRoomView: View {
             model.send(.setRoomEntryBlocked(roomId: roomId, blocked: blocked))
         }
         .task(id: roomId) { await model.loadDraft(roomId) }
+        .task(id: roomId) { await composer.observe() }
         .task(id: timeline.attempt) {
-            if await timeline.observe() {
+            if await timeline.observe(pin: pin) {
                 model.path = []
                 model.visiting = nil
                 tabs.select(.chat)
             }
         }
-    }
-
-    /// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
-    private func keyNotice(_ notice: KeyNotice) -> some View {
-        WontonNotice(icon: .lockKey, title: String(localized: .messageUndecryptableNotice), isError: false) {
-            // 更新的核心给出的类别没有按钮，说明照常显示。
-            if let action = notice.action {
-                NavigationLink(value: ChatRoute.chatBackup) {
-                    Text(action).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(WontonButtonStyle(kind: .primary))
-            }
-        }
-        .padding(.horizontal, WontonTheme.spacing.pageInset)
-        .padding(.vertical, WontonTheme.spacing.s8)
     }
 
     private var messages: some View {
@@ -143,7 +133,7 @@ struct ChatRoomView: View {
                                 guard (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
                                 if timeline.isLoaded, timeline.backPagination == .idle {
                                     pageAnchor = oldestEvent
-                                    model.send(.paginateBackwards(roomId: roomId))
+                                    sendTimeline(.paginateBackwards(target: mainTimeline))
                                 }
                             }
                             .onDisappear { pageAnchor = nil }
@@ -163,8 +153,8 @@ struct ChatRoomView: View {
                     TimelineRow(
                         item: item, core: model.core, showsSender: !isDirect,
                         joinsPrevious: joinsPrevious, joinsNext: joinsNext,
-                        retry: { model.send(.retrySend(roomId: roomId, itemId: item.id)) },
-                        cancel: { model.send(.cancelSend(roomId: roomId, itemId: item.id)) },
+                        retry: { sendTimeline(.retrySend(target: mainTimeline, itemId: item.id)) },
+                        cancel: { sendTimeline(.cancelSend(target: mainTimeline, itemId: item.id)) },
                         cardAction: { model.send($0) },
                         reply: { model.startReply(.ready(message: $0), in: roomId) },
                         forward: {
@@ -178,9 +168,15 @@ struct ChatRoomView: View {
                     )
                     .id(item.id)
                     .timelineListRow(joinsPrevious: joinsPrevious, joinsNext: joinsNext)
-                    .modifier(ReplySwipe(quote: replyQuote(of: item)) { quote in
+                    .modifier(ReplySwipe(quote: item.replyQuote()) { quote in
                         model.startReply(.ready(message: quote), in: roomId)
                     })
+                }
+                // 点了发送、还没交出去的消息（ADR-0094）跟在最后一条后面；交出去后由时间线里的本地回显代替。
+                ForEach(composer.outgoing, id: \.id) { message in
+                    OutgoingRow(message: message, composer: composer)
+                        .id(message.id)
+                        .timelineListRow()
                 }
             }
             .listStyle(.plain)
@@ -200,18 +196,15 @@ struct ChatRoomView: View {
                 guard let pageAnchor, !pin.isPinned else { return }
                 DispatchQueue.main.async { scroller.scrollTo(pageAnchor, anchor: .top) }
             }
+            // 待发消息出现、交出去换成本地回显时，贴底的跟着到底；等这一轮排版完再滚。
+            .onChange(of: composer.outgoing.map(\.id)) { DispatchQueue.main.async { pin.stick() } }
             .onChange(of: timeline.items.last?.id) { _, last in
                 guard last != nil else { return }
-                // 只有停在底部才标已读；翻上去读历史时不标，回到底部再标（贴底那一下的 onChange 在下面）。
-                // 落点摆好之前不标：标早了已读行跳到最新一条，进房的落点就丢了。
-                if pin.isPinned, placed { model.send(.markRoomRead(roomId: roomId)) }
-                // 自己发的消息（包括别的设备发的）到了：不管翻到哪都回到底部看结果。
-                if case let .message(message) = timeline.items.last?.content, message.isOwn { pin.pin() }
+                if pin.isPinned, placed { reportPosition(true) }
             }
             .onChange(of: pin.isPinned) { _, pinned in
-                // 跨过底部报告方向（ADR-0071）：核心按它算“回到底部”按钮和新消息数；贴底时标已读。
-                model.send(.setTimelineScroll(roomId: roomId, scroll: pinned ? .bottom : .away))
-                if pinned { model.send(.markRoomRead(roomId: roomId)) }
+                // 报告发生在实际滚动之后，不把按钮意图或尚未摆好的首屏当成已读。
+                if placed { reportPosition(pinned) }
             }
             // 摆进房间的落点（ADR-0071）：落点不是最新一条就停在它上面（落点行在视野顶部），解开贴底；
             // 没有落点或落点就是最新一条，维持贴底。unpin 触发上面的方向报告，核心的落点由此知道没被当成到底。
@@ -235,40 +228,50 @@ struct ChatRoomView: View {
         }
     }
 
-    /// 分隔线这类虚拟条目的 id 不稳定，定位用消息。
-    private var oldestEvent: String? {
-        timeline.items.first { item in
-            switch item.content {
-            case .dateDivider, .readMarker, .timelineStart: false
-            default: true
-            }
-        }?.id
-    }
-
     /// 摆进房间的落点（ADR-0071）：落点不是最新一条就停在它上面，落点行在视野顶部；没有落点或落点就是最新
     /// 一条，维持贴底。摆好（或决定贴底）后放开标已读的闸门。
     private func placeAnchor(_ scroller: ScrollViewProxy) {
         guard timeline.isLoaded, !placed else { return }
-        if let anchor = timeline.anchor, timeline.items.last?.id != anchor {
+        if let anchor = timeline.anchor, timeline.items.last?.id != anchor,
+           timeline.items.contains(where: { $0.id == anchor }) {
             pin.unpin()
-            DispatchQueue.main.async { scroller.scrollTo(anchor, anchor: .top) }
+            DispatchQueue.main.async {
+                scroller.scrollTo(anchor, anchor: .top)
+                placed = true
+                reportPosition(false)
+            }
+        } else {
+            pin.pin()
+            placed = true
+            reportPosition(true)
         }
-        placed = true
     }
 
-    private var isDirect: Bool {
+    private func reportPosition(_ pinned: Bool) {
+        sendTimeline(.setTimelineScroll(target: mainTimeline, scroll: pinned ? .bottom : .away))
+        if pinned { sendTimeline(.markRead(target: mainTimeline)) }
+    }
+}
+
+@MainActor
+private extension ChatRoomView {
+    var mainTimeline: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: nil) }
+
+    func sendTimeline(_ action: TimelineAction) { model.send(.timeline(action: action)) }
+
+    var isDirect: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isDirect ?? false
     }
 
     /// 私聊对方是已装应用的 Bot 时非空。
-    private var bot: BotView? {
+    var bot: BotView? {
         guard let directId = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId else {
             return nil
         }
         return model.viewModel.bots.first { $0.userId == directId }
     }
 
-    private var barAvatar: AnyView? {
+    var barAvatar: AnyView? {
         guard let bot else { return nil }
         let plugin = plugins.viewModel.installed?.plugins.first { $0.botUserId == bot.userId }
         return AnyView(BotAvatarView(
@@ -277,44 +280,12 @@ struct ChatRoomView: View {
     }
 
     /// 可以转发到的房间：已加入、能写。
-    private var forwardRooms: [RoomRow] {
+    var forwardRooms: [RoomRow] {
         model.viewModel.rooms.filter { $0.membership == .joined && !$0.isReadOnly }
     }
 
-    private func replyQuote(of item: TimelineItem) -> QuotedMessage? {
-        guard case let .message(message) = item.content else { return nil }
-        for action in message.actions {
-            if case let .reply(quote) = action { return quote }
-        }
-        return nil
-    }
-
-    private var isReadOnly: Bool {
+    var isReadOnly: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
-    }
-}
-
-/// 有 `Reply` 的消息可以右滑回复（ADR-0073）：滑过阈值系统给一次触感，松手进入回复状态。
-private struct ReplySwipe: ViewModifier {
-    let quote: QuotedMessage?
-    let reply: (QuotedMessage) -> Void
-    @Environment(\.wontonColors) private var colors
-
-    @ViewBuilder func body(content: Content) -> some View {
-        if let quote {
-            content.swipeActions(edge: .leading, allowsFullSwipe: true) {
-                Button {
-                    reply(quote)
-                } label: {
-                    Label { Text(.messageReply) } icon: { WontonIcon.reply.image }
-                        .foregroundStyle(Color(colors.accentInkOnFill))
-                }
-                .tint(Color(colors.accentFill))
-                .accessibilityIdentifier("swipeReply")
-            }
-        } else {
-            content
-        }
     }
 }
 
@@ -323,6 +294,34 @@ private extension TimelineItem {
     func joins(_ other: TimelineItem) -> Bool {
         guard case let .message(mine) = content, case let .message(theirs) = other.content else { return false }
         return mine.senderId == theirs.senderId
+    }
+
+    /// 这条消息带的回复引用：核心把引用作为消息动作下发。
+    func replyQuote() -> QuotedMessage? {
+        guard case let .message(message) = content else { return nil }
+        for action in message.actions {
+            if case let .reply(quote) = action { return quote }
+        }
+        return nil
+    }
+}
+
+/// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
+private struct KeyNoticeBanner: View {
+    let notice: KeyNotice
+
+    var body: some View {
+        WontonNotice(icon: .lockKey, title: String(localized: .Message2.messageUndecryptableNotice), isError: false) {
+            // 更新的核心给出的类别没有按钮，说明照常显示。
+            if let action = notice.action {
+                NavigationLink(value: ChatRoute.chatBackup) {
+                    Text(action).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
+        }
+        .padding(.horizontal, WontonTheme.spacing.pageInset)
+        .padding(.vertical, WontonTheme.spacing.s8)
     }
 }
 
@@ -386,5 +385,27 @@ private struct PageRequest: Equatable {
         isLoaded = timeline.isLoaded
         count = timeline.items.count
         state = timeline.backPagination
+    }
+}
+
+// 这两项只读状态、不碰布局，放在类型体外，免得 `ChatRoomView` 的身体越过 SwiftLint 的 250 行。
+private extension ChatRoomView {
+    /// 撤回别人的消息时标题写明是谁的。
+    var redactTitle: String {
+        let target = timeline.items.first { $0.id == redactItem }
+        guard case let .message(message)? = target?.content, !message.isOwn else {
+            return String(localized: .Message1.messageRedactTitle)
+        }
+        return String(localized: .Message2.messageRedactOthersTitle(message.senderName))
+    }
+
+    /// 分隔线这类虚拟条目的 id 不稳定，定位用消息。
+    var oldestEvent: String? {
+        timeline.items.first { item in
+            switch item.content {
+            case .dateDivider, .readMarker, .timelineStart: false
+            default: true
+            }
+        }?.id
     }
 }

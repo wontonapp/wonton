@@ -156,7 +156,9 @@ impl From<Runtime> for wonton_protocol::PluginRuntime {
 #[serde(rename_all = "lowercase")]
 pub enum Sso {
     Oidc,
-    /// 网关代登录（插件规范的“网关代登录”）：核心认得，但还没实现，安装预览时如实报“尚未支持”。
+    /// 网关代登录（插件规范的“网关代登录”）：应用认反向代理传来的用户名或固定密钥，网关在转发给插件网页的
+    /// 请求上代加 `webui.proxy` 声明的请求头和 Cookie。凭据只加在网关认出用户的请求上，也不会回到浏览器
+    /// （网关按值从响应头里剥除）。webui 服务不能跑在宿主网络，安装时按 `super::privileges` 拒绝。
     Proxy,
     #[default]
     None,
@@ -190,16 +192,31 @@ pub struct OidcClient {
     /// 应用在令牌端点出示客户端密钥的方式，默认 `client_secret_basic`。
     #[serde(default)]
     pub token_endpoint_auth_method: TokenAuthMethod,
-    /// 给这个客户端的 `groups` 里，`owner` 之外再加这些组名，应用按组名映射角色。
+    /// 这个人是这个应用的管理员时（ADR-0088 的 `plugin_admin`），`groups` 里再加这些组名，应用按组名映射角色。
     /// 只发给这个客户端，别的插件看不到。
     #[serde(default)]
-    pub owner_groups: Vec<String>,
+    pub admin_groups: Vec<String>,
+    /// 应用读一个专门的声明认管理员（如 Immich 的 `immich_role`）时，核心按 `plugin_admin` 填它。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role_claim: Option<RoleClaim>,
+}
+
+/// 清单 `webui.oidc.role_claim`：声明名，和管理员、普通用户各填的值。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoleClaim {
+    pub name: String,
+    pub admin: String,
+    pub user: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WebUi {
+    /// 容器插件必填；`runtime: static_web` 没有服务，不写（ADR-0080）。
+    #[serde(default)]
     pub service: String,
+    #[serde(default)]
     pub port: u16,
     #[serde(default = "default_web_path")]
     pub path: String,
@@ -211,12 +228,24 @@ pub struct WebUi {
     pub oidc: Option<OidcClient>,
     #[serde(default)]
     pub proxy: Option<ProxyCredentials>,
-    /// 声明插件识别好友身份的能力；省略或为 false 只是未声明，不禁止分享，也不授予访问权限。
-    #[serde(default)]
-    pub friends: bool,
+    /// 应用按登录的人分开数据（ADR-0088）。没声明的按“全家共用一份”处理：不禁止开放和分享，开放时醒目提示。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accounts: Option<Accounts>,
     /// 页面要跨源隔离（如要 `SharedArrayBuffer`）。Android WebView 默认不给，声明了才放宽，见 ADR-0033“跨源隔离”。
     #[serde(default)]
     pub cross_origin_isolated: bool,
+    /// 核心代探测的健康路径（`scratch`、`distroless` 镜像里没有 shell，写不出 compose healthcheck）。
+    /// 装了它的服务不用写 healthcheck，核心周期 GET 这个路径，2xx/3xx 算健康。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health: Option<String>,
+}
+
+/// 清单 `webui.accounts` 的取值。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Accounts {
+    /// 按登录的人分开数据。
+    PerUser,
 }
 
 /// `sso: proxy` 时网关加在转发请求上的请求头和 Cookie：名字 → 值模板。
@@ -235,11 +264,11 @@ pub struct ProxyCredentials {
     pub cookies: BTreeMap<String, String>,
 }
 
-fn default_web_path() -> String {
+pub(super) fn default_web_path() -> String {
     "/".to_owned()
 }
 
-fn default_web_display() -> String {
+pub(super) fn default_web_display() -> String {
     "standard".to_owned()
 }
 
@@ -548,6 +577,10 @@ pub struct Manifest {
     pub settings: Option<String>,
     #[serde(default)]
     pub requirements: Option<Requirements>,
+    /// 安装最多等多久（秒）：安装时要下载大文件（模型等）的插件写长一点，核心按它放宽安装期限。不写用核心的
+    /// 安装期限（默认 300 秒），最多 `install_notes::MAX_INSTALL_TIMEOUT_SECS` 秒。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_timeout_secs: Option<u64>,
 }
 
 /// `optional_permissions` 里的一项。
@@ -604,6 +637,7 @@ impl Manifest {
         super::privileges::validate_optional(self, langs)?;
         super::gpu::validate(self, langs)?;
         super::requirements::validate(self, langs)?;
+        super::install_notes::validate_install_timeout(self)?;
         super::lan::validate(self, langs)?;
         validate_tunnel(self)?;
         super::provides::validate(self, langs)?;
@@ -612,7 +646,7 @@ impl Manifest {
         super::proxy_auth::validate(self, langs)?;
         super::proxy_auth::validate_mcp_headers(self, langs)?;
         if let Some(webui) = &self.webui {
-            validate_webui(webui)?;
+            validate_webui(webui, self.runtime)?;
         }
         if let Some(mcp) = &self.mcp {
             super::manifest_mcp::validate(mcp)?;
@@ -704,12 +738,26 @@ fn validate_bots(manifest: &Manifest) -> Result<(), ManifestError> {
     Ok(())
 }
 
-fn validate_webui(webui: &WebUi) -> Result<(), ManifestError> {
+fn validate_webui(webui: &WebUi, runtime: Runtime) -> Result<(), ManifestError> {
     if let Some(problem) = manifest_tabs::validate_path("webui.path", &webui.path) {
         return Err(ManifestError::Invalid(problem));
     }
+    if let Some(health) = &webui.health
+        && let Some(problem) = manifest_tabs::validate_path("webui.health", health)
+    {
+        return Err(ManifestError::Invalid(problem));
+    }
+    // 静态网页的 webui 只有展示字段，服务端字段由 manifest_static 按“用不上”报。
+    if runtime == Runtime::StaticWeb {
+        return Ok(());
+    }
+    if webui.service.is_empty() {
+        return Err(ManifestError::Invalid("webui.service 必填".to_owned()));
+    }
     if webui.port == 0 {
-        return Err(ManifestError::Invalid("webui.port 不能为 0".to_owned()));
+        return Err(ManifestError::Invalid(
+            "webui.port 必填，且不能为 0".to_owned(),
+        ));
     }
     let invalid = |message: &str| Err(ManifestError::Invalid(message.to_owned()));
     if webui.oidc.is_some() && webui.sso != Sso::Oidc {

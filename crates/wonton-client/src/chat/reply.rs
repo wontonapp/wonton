@@ -7,8 +7,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use wonton_matrix::{
-    ChatRoom, EntryKind, OwnedEventId, Quoted, RepliedMessage, ReplyTo, TimelineEntry, UserId,
-    Vector,
+    ChatRoom, EntryKind, OwnedEventId, Quoted, RepliedMessage, ReplyTo, TimelineEntry, Vector,
 };
 use wonton_protocol::{MessageContent, QuotedContent, QuotedMessage, ReplyQuote};
 
@@ -19,33 +18,24 @@ use super::{lock, rich};
 /// 引用的文字最多留多少个字符（按字符算，不按字节），壳再按版面截断。
 const QUOTE_CHARS: usize = 200;
 
-pub(super) fn reply_quote(reply: ReplyTo, core: &UserId, links: &LinkTargets) -> ReplyQuote {
+pub(super) fn reply_quote(reply: ReplyTo, links: &LinkTargets) -> ReplyQuote {
     let event_id = reply.event_id.to_string();
     match reply.quoted {
         Quoted::NotFetched | Quoted::Fetching => ReplyQuote::Loading { event_id },
         Quoted::Ready(message) => ReplyQuote::Ready {
-            message: quoted_message(event_id, *message, core, links),
+            message: quoted_message(event_id, *message, links),
         },
         Quoted::Failed => ReplyQuote::Unavailable { event_id },
     }
 }
 
-/// `core`：核心账号。引用里看不到原消息的自定义字段，认不出确认卡片，而核心账号在聊天房间里发的文字只有卡片，
-/// 所以它的文字都按卡片给 `Other`，不把卡片给别的客户端看的那段说明当成原话。
+/// 引用里的正文按普通消息算。核心早先发在私聊里的卡片也是：`body` 是写给所有客户端看的说明，照实引用。
 pub(super) fn quoted_message(
     event_id: String,
     message: RepliedMessage,
-    core: &UserId,
     links: &LinkTargets,
 ) -> QuotedMessage {
-    let content = match message.body {
-        wonton_matrix::MessageBody::Text(_) | wonton_matrix::MessageBody::Notice(_)
-            if message.sender == core =>
-        {
-            QuotedContent::Other
-        }
-        body => quoted_content(&message_content(body, false, links)),
-    };
+    let content = quoted_content(&message_content(message.body, false, links));
     QuotedMessage {
         event_id,
         sender_id: message.sender.to_string(),
@@ -158,9 +148,9 @@ mod tests {
         assert!(long.starts_with(&cut));
     }
 
-    /// 行为：图片引用给缩略图，没有缩略图时给原图；核心账号的文字（确认卡片）按 `Other` 给。
+    /// 行为：图片引用给缩略图，没有缩略图时给原图；核心早先发在私聊里的卡片按正文引用（ADR-0016 后卡片不再是消息）。
     #[test]
-    fn images_quote_their_thumbnail_and_cards_are_other() {
+    fn images_quote_their_thumbnail_and_old_cards_quote_their_body() {
         let image = |thumbnail: Option<&str>| MessageContent::Image {
             image: ImageContent {
                 media: MediaHandle {
@@ -174,6 +164,7 @@ mod tests {
                 size: None,
                 width: None,
                 height: None,
+                caption: None,
             },
         };
         let thumbnail_of = |content| match content {
@@ -191,11 +182,16 @@ mod tests {
 
         let core: wonton_matrix::OwnedUserId = "@wonton:home.example".parse().unwrap();
         let card = RepliedMessage {
-            sender: core.clone(),
+            sender: core,
             sender_name: "Wonton".to_owned(),
             body: wonton_matrix::MessageBody::Text("要允许吗？".to_owned()),
         };
-        let quoted = quoted_message("$card".to_owned(), card, &core, &LinkTargets::default());
-        assert_eq!(quoted.content, QuotedContent::Other);
+        let quoted = quoted_message("$card".to_owned(), card, &LinkTargets::default());
+        assert_eq!(
+            quoted.content,
+            QuotedContent::Text {
+                text: "要允许吗？".to_owned()
+            }
+        );
     }
 }

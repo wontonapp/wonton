@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_webview_too_old">Android System WebViewを更新してもう一度お試しください</string>
+    <string name="tab_starting">起動しています…</string>
+    <string name="tab_no_browser_next_step">Chromeなどのブラウザをインストールまたは有効にしてから、もう一度お試しください。</string>
+    <string name="tab_media_prompt_both">%1$sにカメラとマイクの使用を許可しますか？</string>
+    <string name="tab_media_allow">許可</string>
+    <string name="tab_media_system_denied">システム設定で Wonton にカメラまたはマイクの権限がありません。このページは拒否されました。システム設定で許可できます。</string>
+    <string name="tab_settings_unreadable">ナビゲーションバーの設定を読み込めません</string>
+    <string name="tab_open_settings">ナビゲーションバーの設定</string>
+    <string name="tab_edit_bar">ナビゲーションバーを編集</string>
+    <string name="tab_choose_replace">置き換える項目を選択</string>
+    <string name="tab_add_more">さらに追加</string>
+    <string name="tab_move_up">上へ移動</string>
+    <string name="tab_no_browser">ブラウザを開けません</string>
+    <string name="tab_settings">設定</string>
+    <string name="tab_exit_fullscreen">全画面を終了</string>
+    <!-- 全画面カプセルのメニュー項目:アプリの詳細ページを開く。 -->
+    <string name="tab_menu_details">アプリ詳細</string>
+</resources>

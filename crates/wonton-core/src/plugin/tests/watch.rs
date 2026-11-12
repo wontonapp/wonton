@@ -54,7 +54,7 @@ async fn a_container_restarting_at_startup_recovers_when_it_becomes_healthy() {
     m.restore().await.unwrap();
     assert!(degraded(&m), "{:?}", seen(&m));
     // 路由留着（容器还在），只是网页服务还不能用，网关回 503。
-    let route = m.route("app-test").unwrap();
+    let route = m.route("app-test", "/").unwrap();
     assert!(route.upstream.is_some());
     assert!(!route.web_serving);
 
@@ -65,7 +65,7 @@ async fn a_container_restarting_at_startup_recovers_when_it_becomes_healthy() {
     m.watch_containers().await;
     assert_eq!(seen(&m), (PluginStatus::Running, Some(Health::Healthy)));
     assert!(
-        m.route("app-test").unwrap().upstream.is_some(),
+        m.route("app-test", "/").unwrap().upstream.is_some(),
         "容器好了，网页也要能打开"
     );
 }
@@ -213,7 +213,7 @@ async fn an_unhealthy_auxiliary_container_leaves_the_web_page_served() {
         "{reason}"
     );
     assert!(!reason.contains("早先通过的一次"), "只要最后一条：{reason}");
-    let route = m.route("app-test").unwrap();
+    let route = m.route("app-test", "/").unwrap();
     assert!(route.web_serving, "{reason}");
     assert!(route.upstream.is_some());
 }
@@ -232,7 +232,7 @@ async fn an_unhealthy_web_container_stops_serving() {
     m.watch_containers().await;
 
     assert!(degraded(&m), "{:?}", seen(&m));
-    let route = m.route("app-test").unwrap();
+    let route = m.route("app-test", "/").unwrap();
     assert!(!route.web_serving);
     assert!(route.upstream.is_some());
 }

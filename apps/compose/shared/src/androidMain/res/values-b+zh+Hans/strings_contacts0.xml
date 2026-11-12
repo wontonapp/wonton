@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="contacts_title">联系人</string>
+    <string name="contacts_add_kind_person">一个人</string>
+    <string name="contacts_add_placeholder">@someone:example.org</string>
+    <string name="contacts_add_submit">发送请求</string>
+    <string name="contacts_requests_title">请求</string>
+    <string name="contacts_active_title">已添加</string>
+    <string name="contacts_sent_title">已发出</string>
+    <string name="contacts_reject">拒绝</string>
+    <string name="contacts_status_waiting_person">等对方接受</string>
+    <string name="contacts_status_not_found">没有这个人</string>
+    <string name="contacts_status_unknown">状态未知</string>
+    <string name="contacts_remote_unpaired">和那台服务器的配对已移除，消息过不去</string>
+    <string name="contacts_approve_remote_title">同意来自其他服务器的“%1$s”？</string>
+    <string name="contacts_error_not_paired">对方的服务器没和你的配对</string>
+    <string name="contacts_error_already_contact">已经是联系人，或者请求已经发出</string>
+    <string name="contacts_error_bot_not_found">这个 Bot 已经不在了</string>
+    <string name="contacts_error_peer_unreachable">连不上对方的服务器，这次没发出去</string>
+    <string name="contacts_error_unauthenticated">这台设备不能做这件事</string>
+</resources>

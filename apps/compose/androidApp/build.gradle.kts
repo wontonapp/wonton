@@ -73,6 +73,87 @@ extensions.configure<ApplicationAndroidComponentsExtension> {
     }
 }
 
+/**
+ * rustls-platform-verifier 的 Kotlin 组件版本必须等于 Cargo.lock 里 rustls-platform-verifier-android 的版本，
+ * 不一致时 Rust 那边找不到要调的类或方法。做法照它 README 的 Android 一节。
+ */
+abstract class RustlsPlatformVerifierVersion : ValueSource<String, RustlsPlatformVerifierVersion.Params> {
+    interface Params : ValueSourceParameters {
+        val lockFile: RegularFileProperty
+    }
+
+    override fun obtain(): String {
+        val lines = parameters.lockFile.get().asFile.readLines()
+        val nameIdx = lines.indexOfFirst { it.trim() == "name = \"$CRATE\"" }
+        return lines.drop(nameIdx + 1)
+            .takeIf { nameIdx >= 0 }
+            ?.firstOrNull { it.trimStart().startsWith("version = ") }
+            ?.substringAfter('"')
+            ?.substringBefore('"')
+            ?.takeIf { it.isNotEmpty() }
+            ?: throw GradleException("$CRATE not found in ${parameters.lockFile.get().asFile}")
+    }
+
+    private companion object {
+        const val CRATE = "rustls-platform-verifier-android"
+    }
+}
+
+val rustlsPlatformVerifierVersion = providers.of(RustlsPlatformVerifierVersion::class.java) {
+    parameters.lockFile.set(rootProject.layout.projectDirectory.file("../../Cargo.lock"))
+}
+
+configurations.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.rustls" && requested.name == "rustls-platform-verifier") {
+            useVersion(rustlsPlatformVerifierVersion.get())
+            because("must match rustls-platform-verifier-android in Cargo.lock")
+        }
+    }
+}
+
+// versionName/versionCode 由仓库根的 scripts/app-version.sh 一处计算（iOS 共用同一规则）：
+// 环境变量 WONTON_VERSION（发版脚本显式传，-PwontonVersion 透传给它）→ 最近的 vX.Y.Z tag；
+// 都拿不到时 Debug 用 0.0.0/0（CI 浅克隆没有 tag），Release 直接失败，不悄悄落到 0.0.0。
+// providers.exec 惰性求值，值留到该变体真正合并 manifest 的任务里才取：编 Debug 不会因为 Release
+// 变体拿不到版本号而在配置期失败；spec 里只捕获可序列化的值，配置缓存才存得下。
+// 构建可能搬到没有本仓库目录结构的机器上跑（android-remote 的远程副本），路径必须按本次构建的
+// rootDir 现场解析，不能写死任何机器路径。
+val versionScript = rootDir.parentFile.parentFile.resolve("scripts/app-version.sh")
+require(versionScript.isFile) { "找不到版本号脚本 ${versionScript.path}（rootDir=${rootDir.path}）" }
+
+extensions.configure<ApplicationAndroidComponentsExtension> {
+    onVariants { variant ->
+        val buildType = variant.buildType
+        val wontonVersionProperty = providers.gradleProperty("wontonVersion").orNull
+        val appVersion = providers.exec {
+            // 失败不抛：providers.exec 在非零退出时既不回显 stderr、也不交出已捕获的 stdout，Gradle 只报
+            // exit code，“发版要传 WONTON_VERSION…”的人话就看不见了。stderr 合进 stdout、忽略退出码，
+            // 让下面的解析在拿不到 VERSION/BUILD 两行时把脚本原话带进异常。
+            isIgnoreExitValue = true
+            commandLine("bash", "-c", "\"\$1\" \"\$2\" 2>&1", "app-version", versionScript.absolutePath, buildType)
+            if (wontonVersionProperty != null) {
+                environment("WONTON_VERSION", wontonVersionProperty)
+            }
+        }.standardOutput.asText.map { output ->
+            val values = output.lines().filter { it.contains('=') }.associate {
+                val (key, value) = it.split("=", limit = 2)
+                key.trim() to value.trim()
+            }
+            val version = values["VERSION"]
+            val build = values["BUILD"]?.toIntOrNull()
+            if (version == null || build == null) {
+                throw GradleException("scripts/app-version.sh 没输出 VERSION=X.Y.Z 和 BUILD=<数字> 两行：\n$output")
+            }
+            version to build
+        }
+        variant.outputs.forEach { output ->
+            output.versionName.set(appVersion.map { it.first })
+            output.versionCode.set(appVersion.map { it.second })
+        }
+    }
+}
+
 android {
     namespace = "app.wonton.android"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -81,8 +162,6 @@ android {
         applicationId = "app.wonton.android"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // 只打包编译了 Rust 核心的 ABI：其他 ABI 的设备直接装不上，而不是装上后因缺 .so 崩溃。
@@ -104,6 +183,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     // Apache-2.0（连带的 Tink 也是）。接 UnifiedPush 分发器：在本机生成 Web Push 密钥对，按 RFC 8291 解开推送。
     implementation(libs.unifiedpush.connector)
+    implementation(libs.rustls.platform.verifier)
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

@@ -5,11 +5,14 @@ pub(crate) mod api;
 mod cache;
 pub(crate) mod cards;
 mod core_upgrade;
+mod detail;
 mod egress;
 mod me;
+mod media;
 mod now;
 mod polling;
 mod registry_mirror;
+mod settings;
 mod sharing;
 mod start;
 mod support;
@@ -29,7 +32,7 @@ use tokio::sync::{Notify, watch};
 use wonton_protocol::{
     AddSourceRequest, AddedSource, AskEveryUpdate, CoreError, CoreUpgradeViewModel,
     EgressViewModel, HomeStatus, InstallPreview, InstallSource, InstalledPlugins, LanWebuiUpdate,
-    PermissionUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginTaskState,
+    PermissionUpdate, PluginDetail, PluginDetailRoute, PluginFailure, PluginImage, PluginProblem,
     PluginsViewModel, ProxySettings, StorageUsage, StoreConfirmation, StoreItem, StoreListing,
     TabRef,
 };
@@ -73,6 +76,10 @@ pub(crate) struct PluginsLink {
     problem_of: Mutex<Option<Listing>>,
     /// 已安装列表存在本机的位置。
     installed_cache: PathBuf,
+    /// 每次发起取已安装列表加一；只应用比已应用的更大的序号。卸载请求还没返回时轮询也在取列表，
+    /// 旧响应晚到会把卸载掉的插件写回首页（盲测 #12），按发起顺序丢弃。
+    fetch_seq: AtomicU64,
+    applied_seq: AtomicU64,
     /// 每换一台服务器加一：之前发出的请求和任务，结果不再算数。
     generation: AtomicU64,
     /// 每次取或改出网代理的设置加一：只有最后发起的那次能写 `view.egress`。
@@ -92,6 +99,8 @@ pub(crate) struct PluginsLink {
     confirmations: Mutex<VecDeque<StoreConfirmation>>,
     /// 插件端口在本机的同号映射（ADR-0072），结果写进 `view.port_mappings`。
     ports: Arc<PortMapper>,
+    /// 网页用摄像头/麦克风的记忆，结果写进 `view.media_grants`。
+    media: media::MediaGrants,
 }
 
 impl PluginsLink {
@@ -123,6 +132,7 @@ impl PluginsLink {
             },
         );
         let ports = PortMapper::new(&runtime, home.clone(), data_dir, view.clone());
+        let media = media::MediaGrants::new(data_dir, view.clone());
         let link = Arc::new(Self {
             runtime: runtime.clone(),
             home,
@@ -139,6 +149,8 @@ impl PluginsLink {
             poll_changed: Notify::new(),
             problem_of: Mutex::new(None),
             installed_cache,
+            fetch_seq: AtomicU64::new(0),
+            applied_seq: AtomicU64::new(0),
             generation: AtomicU64::new(0),
             egress_epoch: AtomicU64::new(0),
             upgrade: Mutex::new(core_upgrade::UpgradeLocal::default()),
@@ -151,6 +163,7 @@ impl PluginsLink {
             previews: Mutex::new(HashMap::new()),
             confirmations: Mutex::new(VecDeque::new()),
             ports,
+            media,
         });
         link.restore_core_upgrade();
         link.refresh_derived();
@@ -163,17 +176,20 @@ impl PluginsLink {
     }
 
     /// 派生字段跟着输入重算：可更新的应用和侧边栏都由已安装列表、商店、任务忙闲和核心升级页算出来。
-    /// 改了这些输入的地方要调一次；值没变时不打扰订阅者。
     pub(crate) fn refresh_derived(&self) {
-        self.view.send_if_modified(|view| {
-            let updatable = now::updatable(view);
-            let mut changed = view.updatable != updatable;
-            view.updatable = updatable;
-            let sidebar = now::sidebar(view);
-            changed |= view.sidebar != sidebar;
-            view.sidebar = sidebar;
-            changed
-        });
+        self.view.send_if_modified(Self::derive);
+    }
+
+    /// 改了派生字段的输入就在同一个发布里调它：订阅者不会看到“列表已经变了、可更新数和侧栏还是旧的”
+    /// 中间状态（测试按事件断言时会正好撞上）。值没变时返回 false。
+    pub(crate) fn derive(view: &mut PluginsViewModel) -> bool {
+        let updatable = now::updatable(view);
+        let mut changed = view.updatable != updatable;
+        view.updatable = updatable;
+        let sidebar = now::sidebar(view);
+        changed |= view.sidebar != sidebar;
+        view.sidebar = sidebar;
+        changed
     }
 
     /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
@@ -383,11 +399,12 @@ impl PluginsLink {
             view.core_upgrade = CoreUpgradeViewModel::default();
             view.storage = None;
             view.storage_problem = None;
-            view.tasks
-                .retain(|task| task.state == PluginTaskState::Running);
+            view.tasks.retain(|task| task.state.in_progress());
             for task in &mut view.tasks {
                 task.state = tasks::server_changed();
+                task.waiting_for_connection = false;
             }
+            Self::derive(view);
         });
         self.forget_core_upgrade();
         self.forget_takeover();
@@ -441,12 +458,18 @@ impl PluginsLink {
         generation: u64,
         server: &Option<String>,
     ) -> Result<(), PluginProblem> {
+        // 序号从 1 开始：0 会和 applied_seq 的初值撞车，第一个响应会被当成旧的丢掉。
+        let seq = self.fetch_seq.fetch_add(1, Ordering::SeqCst) + 1;
         let result: Result<InstalledPlugins, PluginProblem> =
             api.get(&["plugins"], &[], READ_TIMEOUT).await;
         if !self.is_current_home(generation, server) {
             return Ok(());
         }
         let installed = result?;
+        // 晚到的旧响应直接丢掉：内容是发起时家里服务器的状态，不能盖住已应用的新状态。
+        if seq <= self.applied_seq.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         if self.view.borrow().installed.as_ref() != Some(&installed)
             && let Some(server) = server
         {
@@ -455,9 +478,11 @@ impl PluginsLink {
         if !self.is_current_home(generation, server) {
             return Ok(());
         }
-        self.view
-            .send_modify(|view| view.installed = Some(installed));
-        self.refresh_derived();
+        self.applied_seq.store(seq, Ordering::SeqCst);
+        self.view.send_modify(|view| {
+            view.installed = Some(installed);
+            Self::derive(view);
+        });
         if self.needs_polling().is_some() {
             self.start_polling();
         }
@@ -477,12 +502,18 @@ impl PluginsLink {
             return Ok(());
         }
         let store = result?;
-        self.view.send_modify(|view| view.store = Some(store));
-        self.refresh_derived();
+        self.view.send_modify(|view| {
+            view.store = Some(store);
+            Self::derive(view);
+        });
         Ok(())
     }
 
     pub(crate) fn api(&self) -> Result<CoreApi, PluginProblem> {
+        // 已知隧道不通就立刻失败，不等超时。
+        if self.home.tunnel_outage().is_some() {
+            return Err(api::not_connected());
+        }
         let proxy = self.home.view().proxy.ok_or_else(api::not_connected)?;
         let base = self.home.core_url().ok_or_else(api::not_connected)?;
         let client = {
@@ -513,17 +544,15 @@ impl PluginsLink {
     }
 
     pub(crate) async fn store_plugin(&self, source: &str) -> Result<PluginDetail, CoreError> {
-        let api = self.api().map_err(to_core_error)?;
-        api.get(&["store", "plugin"], &[("source", source)], SOURCE_TIMEOUT)
-            .await
-            .map_err(to_core_error)
+        let route = PluginDetailRoute::Store {
+            source: source.to_owned(),
+        };
+        self.fetch_detail(&route).await.map_err(to_core_error)
     }
 
     pub(crate) async fn installed_plugin(&self, id: &str) -> Result<PluginDetail, CoreError> {
-        let api = self.api().map_err(to_core_error)?;
-        api.get(&["plugins", id], &[], READ_TIMEOUT)
-            .await
-            .map_err(to_core_error)
+        let route = PluginDetailRoute::Installed { id: id.to_owned() };
+        self.fetch_detail(&route).await.map_err(to_core_error)
     }
 
     pub(crate) async fn preview_install(

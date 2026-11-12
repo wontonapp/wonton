@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="contacts_add">連絡先を追加</string>
+    <string name="contacts_add_kind_bot">ボット</string>
+    <string name="contacts_incoming_warning">相手のボットの発言は、あなたのボットへの発言として扱われます。重要なツールは毎回あなたの確認が必要になります。</string>
+    <string name="contacts_approve">承認</string>
+    <string name="contacts_withdraw">取り消す</string>
+    <string name="contacts_clear">削除</string>
+    <string name="contacts_remove">連絡先を削除</string>
+    <string name="contacts_remove_title">「%1$s」を削除しますか？</string>
+    <string name="contacts_remove_message">ボットは相手の発言を処理しなくなります。既存のチャットは残ります。</string>
+    <string name="contacts_status_waiting_bot">相手の承認待ち</string>
+    <string name="contacts_status_declined">相手が拒否しました</string>
+    <string name="contacts_keeper">%1$s のボット</string>
+    <string name="contacts_remote_from">%1$s から</string>
+    <string name="contacts_approve_remote_message">承認すると、このボットはチャットだけができ、ほかのツールは使えなくなります。あなたとのチャットでも同じです。</string>
+    <string name="contacts_empty">連絡先はまだありません</string>
+    <string name="contacts_error_invalid_user_id">有効な Matrix ID ではありません</string>
+    <string name="contacts_error_not_paired_next">先に「他のサーバー」で接続してください。</string>
+    <string name="contacts_error_contact_not_found">すでに処理済みです</string>
+    <string name="contacts_error_not_keeper">このボットの連絡先は持ち主だけが管理できます</string>
+    <string name="contacts_error_upstream">自宅サーバーが保存できませんでした</string>
+</resources>

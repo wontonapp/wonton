@@ -29,6 +29,11 @@ pub enum InstallError {
     UnsupportedRuntime(String),
     #[error("{0}")]
     Conflict(String),
+    #[error("{message}")]
+    InUse {
+        message: String,
+        plugins: Vec<wonton_protocol::CapabilityProviderRef>,
+    },
     /// 插件要用的网络或卷的名字被别的插件或主人占了（见 [`super::leftovers`]）。对外也是 `conflict`；预装时和
     /// [`Self::Conflict`] 不同，不是“别人已经在装它”，要标成异常让主人看到。
     #[error("{0}")]
@@ -89,6 +94,12 @@ pub enum InstallError {
     /// 核心正在升级：回滚只退备份里的东西，这时动插件，回滚后记录和容器就对不上了（ADR-0025）。
     #[error("{0}")]
     CoreUpgrading(String),
+    /// 设置值过不了 Schema（ADR-0077）；原值不动、不重建。
+    #[error("{0}")]
+    SettingsInvalid(String, Vec<wonton_protocol::SettingsFieldError>),
+    /// 插件包的设置 Schema 自己不合格（ADR-0077）。
+    #[error("{0}")]
+    SettingsSchemaInvalid(String, Vec<wonton_protocol::SettingsSchemaProblem>),
 }
 
 impl InstallError {
@@ -99,6 +110,7 @@ impl InstallError {
             Self::PermissionNotGranted(_) => "permission_denied",
             Self::Unsupported(_) | Self::UnsupportedRuntime(_) => "unsupported",
             Self::Conflict(_) | Self::NameTaken(_) => "conflict",
+            Self::InUse { .. } => "in_use",
             Self::NotInstalled(_) => "not_installed",
             Self::RecordUnusable(_) => "record_unusable",
             Self::DockerUnavailable(_) => "docker_unavailable",
@@ -119,6 +131,8 @@ impl InstallError {
             Self::NotFound(_) => "not_found",
             Self::Changed(_) => "changed",
             Self::CoreUpgrading(_) => "core_upgrading",
+            Self::SettingsInvalid(..) => "settings_invalid",
+            Self::SettingsSchemaInvalid(..) => "settings_schema_invalid",
         }
     }
 }
@@ -148,6 +162,10 @@ impl InstallError {
             Self::Unsupported(m) => Self::Unsupported(add(m)),
             Self::UnsupportedRuntime(m) => Self::UnsupportedRuntime(add(m)),
             Self::Conflict(m) => Self::Conflict(add(m)),
+            Self::InUse { message, plugins } => Self::InUse {
+                message: add(message),
+                plugins,
+            },
             Self::NameTaken(m) => Self::NameTaken(add(m)),
             Self::NotInstalled(m) => Self::NotInstalled(m),
             Self::RecordUnusable(m) => Self::RecordUnusable(m),
@@ -156,6 +174,10 @@ impl InstallError {
             Self::PortTaken(m) => Self::PortTaken(add(m)),
             Self::ImagePull(m) => Self::ImagePull(add(m)),
             Self::OidcUnavailable(m) => Self::OidcUnavailable(add(m)),
+            Self::SettingsInvalid(m, fields) => Self::SettingsInvalid(add(m), fields),
+            Self::SettingsSchemaInvalid(m, problems) => {
+                Self::SettingsSchemaInvalid(add(m), problems)
+            }
             Self::MatrixUnavailable(m) => Self::MatrixUnavailable(add(m)),
             Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
             Self::UpstreamUnavailable(m) => Self::UpstreamUnavailable(add(m)),

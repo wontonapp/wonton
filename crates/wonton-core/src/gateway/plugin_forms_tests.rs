@@ -172,12 +172,17 @@ async fn only_the_owner_sees_the_installed_scope() {
     }
 }
 
-pub(super) fn owner_only_routes() -> Vec<(Method, &'static str, &'static str)> {
+pub(super) fn permission_required_routes() -> Vec<(Method, &'static str, &'static str)> {
     vec![
         (
             Method::PUT,
             "/_wonton/api/plugins/app.whoami/scope",
             "{\"type\":\"all\"}",
+        ),
+        (
+            Method::GET,
+            "/_wonton/api/bots/app.agent/default/plugin-access/app.whoami",
+            "",
         ),
         (
             Method::PUT,
@@ -188,7 +193,7 @@ pub(super) fn owner_only_routes() -> Vec<(Method, &'static str, &'static str)> {
 }
 
 #[tokio::test]
-async fn scope_routes_parse_requests_but_never_report_success_or_change_state() {
+async fn the_scope_route_parses_requests_but_never_reports_success_or_changes_state() {
     let h = Harness::start(None).await;
     let id = PluginId::parse("app.whoami").unwrap();
     let before = h
@@ -203,14 +208,6 @@ async fn scope_routes_parse_requests_but_never_report_success_or_change_state() 
         (
             wonton_protocol::plugin_scope_path("app.whoami"),
             "{\"type\":\"bots\",\"bots\":[{\"plugin_id\":\"app.agent\",\"bot\":\"default\"}]}",
-        ),
-        (
-            wonton_protocol::bot_plugin_access_path("app.agent", "default", "app.whoami"),
-            "{\"enabled\":false}",
-        ),
-        (
-            wonton_protocol::bot_plugin_access_path("app.agent", "default", "app.whoami"),
-            "{\"enabled\":true}",
         ),
     ] {
         let reply = send_as(

@@ -29,6 +29,7 @@ fn confirmation_routes() -> Router<Arc<Gateway>> {
             delete(confirmations::stop_window),
         )
         .route("/_wonton/api/confirmations", get(confirmations::pending))
+        .route("/_wonton/api/confirmations/{id}", get(confirmations::card))
         .route(
             "/_wonton/api/plugins/{id}/tool-policy",
             get(tool_policy::view),
@@ -81,6 +82,22 @@ fn model_provider_routes() -> Router<Arc<Gateway>> {
 fn plugin_routes() -> Router<Arc<Gateway>> {
     Router::new()
         .route(
+            "/_wonton/api/capabilities",
+            get(super::capability_settings::list),
+        )
+        .route(
+            "/_wonton/api/capabilities/{capability}",
+            put(super::capability_settings::set_default),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/capabilities",
+            put(super::capability_settings::set_consumer),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/uninstall/preview",
+            get(super::capability_settings::uninstall_preview),
+        )
+        .route(
             "/_wonton/api/plugins",
             get(api::list)
                 .post(api::install)
@@ -97,6 +114,14 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
         .route(
             &wonton_protocol::plugin_scope_path("{id}"),
             put(super::plugin_scope::scope),
+        )
+        .route(
+            &wonton_protocol::plugin_settings_path("{id}"),
+            get(super::plugin_settings::get).put(super::plugin_settings::set),
+        )
+        .route(
+            &wonton_protocol::plugin_settings_preview_path("{id}"),
+            post(super::plugin_settings::preview),
         )
         .route(
             "/_wonton/api/plugins/{id}/secrets",
@@ -218,9 +243,10 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         )
         .route(
             &wonton_protocol::bot_plugin_access_path("{id}", "{bot}", "{target}"),
-            put(super::plugin_scope::bot_access),
+            get(super::bot_plugin_access::bot_access).put(super::bot_plugin_access::bot_access),
         )
         .route(wonton_protocol::SHARED_BOTS_PATH, post(bots::create_shared))
+        .merge(super::bot_contacts::routes())
         .route(
             "/_wonton/api/lan",
             get(settings_api::lan).put(settings_api::set_lan),

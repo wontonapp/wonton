@@ -261,6 +261,14 @@ fn validate_host_network(
         "network_mode: host",
         langs,
     )?;
+    if manifest.permissions.contains(&Permission::Notify) {
+        // 发信按来源网段认插件（ADR-0047）；宿主网络的信从网桥地址来，认不出来源会被丢，
+        // 所以装时就拒（ADR-0056），失败即停。
+        return Err(ServiceError::new(
+            name,
+            text(langs, "plugin-install-priv-host-network-mail", &[]),
+        ));
+    }
     if manifest
         .lan
         .as_ref()
@@ -286,10 +294,12 @@ fn validate_host_network(
                 text(langs, "plugin-install-priv-host-network-sso", &[]),
             ));
         }
-        if service
-            .healthcheck
-            .as_ref()
-            .is_none_or(|check| check.disable || check.test.is_none())
+        // `webui.health` 时核心自己探，不用 compose 里的 healthcheck。
+        if webui.health.is_none()
+            && service
+                .healthcheck
+                .as_ref()
+                .is_none_or(|check| check.disable || check.test.is_none())
         {
             return Err(ServiceError::new(
                 name,

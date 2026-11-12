@@ -29,13 +29,15 @@ pub struct GenerateSecret {
     pub view: Option<ShowOwner>,
 }
 
-/// 生成的密钥的文本格式，和 `openssl rand -hex`、`openssl rand -base64` 相同。
+/// 生成的密钥的文本格式。`hex`、`base64` 和 `openssl rand -hex`、`openssl rand -base64` 相同；
+/// `base64url` 是无填充的 base64url（RFC 4648 §5），给只收 URL 安全字符的启动参数用。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SecretEncoding {
     #[default]
     Hex,
     Base64,
+    Base64Url,
 }
 
 /// 插件在 `service` 的容器里写下的文件 `path`（容器里的绝对路径）。

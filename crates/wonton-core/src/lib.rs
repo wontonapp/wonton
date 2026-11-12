@@ -12,14 +12,18 @@ pub mod test_docker;
 #[cfg(test)]
 mod test_docker_check;
 
+pub mod agent_chain;
 mod bot_activity;
 pub mod bot_media;
 
+pub mod clients;
 pub mod config;
+pub mod contacts;
 pub mod device;
 pub mod entry_certificate;
 pub mod entry_compose;
 pub mod entry_dns;
+pub mod entry_haproxy;
 pub mod entry_runtime;
 pub mod entry_settings;
 pub mod files;

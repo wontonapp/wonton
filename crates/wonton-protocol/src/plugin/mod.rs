@@ -6,6 +6,7 @@
 //! 核心可能比 App 新：核心多给的字段被忽略；枚举遇到不认识的取值时落到 `Other` 或 `Unknown`，不让整份列表解析失败。
 
 mod capability_deps;
+mod detail;
 mod forms;
 pub mod hint;
 mod install;
@@ -29,6 +30,7 @@ pub use capability_deps::{
     ConsumerCapabilitySetting, InUseError, InstallTogether, MissingCapability, UninstallPreview,
     UninstallRequest,
 };
+pub use detail::{PluginDetail, PluginDetailOutcome, PluginDetailRoute};
 pub use forms::{PluginKind, PluginRuntime, PluginScope, SecurityTier, plugin_scope_path};
 pub use owner_secrets::{OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets};
 pub use owner_secrets::{
@@ -49,7 +51,7 @@ pub use settings::{
     plugin_settings_preview_path,
 };
 pub use takeover::{PluginTakeover, TakeoverState};
-pub use task::{PluginOperation, PluginTask, PluginTaskState, UpgradeResult};
+pub use task::{PluginOperation, PluginTask, PluginTaskNextStep, PluginTaskState, UpgradeResult};
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
 };
@@ -149,7 +151,7 @@ pub struct InstalledPlugin {
     /// 清单 `webui` 的打开方式，没声明 `tabs` 的插件固定后用它。
     #[serde(default)]
     pub web_display: TabDisplay,
-    /// 清单 `webui` 声明了页面要跨源隔离：Android 壳只对这些插件的网页放宽 WebView 的隔离限制。
+    /// 清单 `webui` 声明了页面要跨源隔离。WebView 给不了时，客户端核心让页面在系统浏览器里打开（`TabPage.opens_in_browser`）。
     #[serde(default)]
     pub cross_origin_isolated: bool,
     /// 清单声明了 `mcp`：Bot 能调它的工具，网页标题栏上才有“我来操作”。
@@ -394,6 +396,10 @@ pub struct StoreItem {
     pub security_tier: Option<SecurityTier>,
     /// 装不了的原因（宿主架构不符、需要核心不支持的权限、规范版本比核心新）；能装时为空。
     pub blocked: Option<String>,
+    /// 安全档位到了要醒目提示的程度（ADR-0080 的 High 及以上，比这个 App 新的档位也算）：商店里
+    /// 标红。档位比较只在核心这一处，壳不重复。旧核心不给时按没有算。
+    #[serde(default)]
+    pub high_permissions: bool,
 }
 
 /// 主人给插件定的资源上限，对它的每个服务生效（ADR-0037）。也是 `PUT /_wonton/api/plugins/{id}/limits` 的请求体。
@@ -435,106 +441,21 @@ pub struct RequirementLine {
     pub problem: Option<String>,
 }
 
-/// 插件的详情页：`GET /_wonton/api/store/plugin?source=…`（来源最新的版本）或
-/// `GET /_wonton/api/plugins/{id}`（装着的版本）。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct PluginDetail {
-    /// 安装来源（不带版本）；上传的和预装的插件为空。
-    pub source: Option<String>,
-    pub id: String,
-    pub title: String,
-    pub summary: String,
-    /// 详细介绍：纯文本，空行分段；作者没写时为空。
-    pub about: Option<String>,
-    pub icon: Option<PluginIcon>,
-    /// 截图，按作者给的顺序；取不到的图片显示占位。
-    pub screenshots: Vec<PluginImage>,
-    pub tags: Vec<String>,
-    pub kind: PluginKind,
-    #[serde(default)]
-    pub runtime: PluginRuntime,
-    /// 核心按清单算出的安全档位（ADR-0080）；清单读不出来或旧核心不给时为空。
-    #[serde(default)]
-    pub security_tier: Option<SecurityTier>,
-    /// `runtime` 是 [`PluginRuntime::Link`] 时的网页地址，壳原样交给系统的 App 内浏览器；其他形态为空。
-    #[serde(default)]
-    pub link_url: Option<String>,
-    /// 只有主人能看到的安装范围；家人或未安装时为空。
-    #[serde(default)]
-    pub scope: Option<PluginScope>,
-    /// 详情说的版本。
-    pub version: String,
-    pub trust: PluginTrust,
-    /// 核心能核实的提供方，如 `github.com/owner/repo`；上传的和预装的插件为空。清单里的 `author` 是作者自己写的，要分开显示。
-    pub provider: Option<String>,
-    /// 经第三方索引装的插件是索引的主机，如 `example.com`：装哪个提交由它决定。
-    pub via_index: Option<String>,
-    pub author: Option<PluginAuthor>,
-    /// 应用的主页。
-    pub homepage: Option<String>,
-    /// 插件仓库的网页，如 `https://github.com/owner/repo`。
-    pub repository: Option<String>,
-    /// 插件里那个应用的许可证（SPDX 表达式）。
-    pub license: Option<String>,
-    /// GitHub 星数；不是来自 GitHub 的插件为空。
-    pub stars: Option<u32>,
-    /// 这个版本的更新说明。
-    pub release_notes: Option<String>,
-    /// 安装时要授予的权限。
-    pub permissions: Vec<PermissionLine>,
-    /// 对宿主的要求和这台主机满不满足。
-    pub requirements: Vec<RequirementLine>,
-    /// 主人要填的密钥和填没填（ADR-0064），按清单里的顺序；装着的版本才列，`input` 项才在里面。没有值。
-    #[serde(default)]
-    pub secret_inputs: Vec<SecretInputState>,
-    /// 装好后有网页（小程序）。
-    pub has_web: bool,
-    /// 这个版本的清单带设置（ADR-0077）：详情页显示设置入口，读 `GET …/settings`。
-    #[serde(default)]
-    pub has_settings: bool,
-    /// 装着时是它的状态；没装时为空。
-    pub installed: Option<InstalledPlugin>,
-    /// 装不了的原因；能装时为空。
-    pub blocked: Option<String>,
-    /// 要主人知道的情况，如本机防火墙可能挡住了局域网设备；按顺序显示，`emphasis` 的醒目显示。
-    #[serde(default)]
-    pub notices: Vec<CardLine>,
-    /// 装着的插件缺了某个平台能力、在用它自己的设置时的轻提示（如没接模型网关），类别见
-    /// [`hint::PluginHintCategory`]；不是错误，状态照常，一页可以有多条。没有可提示的情况（没装、
-    /// 能力都接上了）时是空列表。
-    #[serde(default)]
-    pub hints: Vec<hint::PluginHint>,
-    /// 缺的 `requires` 能力（ADR-0053）：`providers` 列索引里能提供它的插件；没有的装不上。
-    #[serde(default)]
-    pub missing_requires: Vec<MissingCapability>,
-    /// 缺的 `wants` 能力（ADR-0053）：照装，少点能力。
-    #[serde(default)]
-    pub missing_wants: Vec<MissingCapability>,
-    /// 使用方给每种能力单独指定的提供方（ADR-0053）；`selected` 为空表示跟全局默认走。
-    #[serde(default)]
-    pub capability_providers: Vec<ConsumerCapabilitySetting>,
-    /// 这个版本有要主人打开开关才开的局域网端口时是开关的情况；`enabled` 是当前值，没装时是 `false`。
-    pub lan_webui: Option<LanWebuiOffer>,
-    /// 这个插件的 Bot 已获授权存文件的路径，如 `music/周杰伦`（ADR-0027）。
-    #[serde(default)]
-    pub save_grants: Vec<String>,
-    /// 主人给它定的资源上限；没装时为空。
-    #[serde(default)]
-    pub limits: Option<PluginLimits>,
-    /// 开关“每次都问”：Agent 写的插件是当前值，打开后这个 Agent 每次更新都发卡片；别的插件为空。
-    #[serde(default)]
-    pub ask_every_update: Option<bool>,
-    /// 主人可管理的分享；没权限、没装或不支持分享接口时为空，不伪装成零人。
-    #[serde(default)]
-    pub shares: Option<crate::PluginShares>,
-}
-
 /// `PUT /_wonton/api/plugins/{id}/ask-every-update` 的请求体，响应是更新后的 [`PluginDetail`]。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AskEveryUpdate {
     pub enabled: bool,
+}
+
+/// 插件网页用摄像头和麦克风的记下的决定，按插件 ID 存在设备本机：
+/// 插件详情页一行开关，没问过（没有记录）不显示。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginMediaGrant {
+    pub plugin_id: String,
+    /// `true` 是允许过；`false` 是拒绝过（只在询问弹窗里产生）。
+    pub allowed: bool,
 }
 
 /// 开关 `lan_webui`：网页的局域网端口默认不开，主人看过风险后可以打开（ADR-0023 的“网页的局域网端口”）。

@@ -8,7 +8,7 @@ final class ChatPanelUITests: XCTestCase {
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
-        continueAfterFailure = true
+        continueAfterFailure = false
     }
 
     func testPullPanelLevelsAndCapsule() throws {
@@ -42,24 +42,53 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertFalse(app.buttons["panelAdd"].waitForExistence(timeout: 2), "加了网址后还是空面板")
         shot("05-page")
 
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 20), "面板网页没加载出来")
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10), "面板网页没加载出来")
         pullPageDown()
         XCTAssertTrue(capsule.waitForExistence(timeout: 5), "页面滚到顶后接着拉没到第 2 级")
         shot("06-page-full")
     }
 
+    /// 整页的面板和全屏页共用胶囊：胶囊藏起来后切到后台再回来，出口要重新露出来，不能困在页面里（盲测 P0）。
+    /// 用最大的辅助字号和深色跑：盲测里这两样下退出也被挤掉或看不见过。
+    func testCapsuleReturnsAfterBackground() throws {
+        continueAfterFailure = false
+        XCUIDevice.shared.appearance = .dark
+        defer { XCUIDevice.shared.appearance = .light }
+        try launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        pull(.down)
+        XCTAssertTrue(app.buttons["panelAdd"].waitForExistence(timeout: 10), "空面板加号没出来")
+        app.buttons["panelAdd"].tap()
+        let field = app.textFields["https://"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "编辑面板没有网址输入框")
+        field.tap()
+        field.typeText("https://example.com")
+        tapAnyButton(["Add URL", "添加网址", "新增網址", "URL を追加"], timeout: 5, required: true)
+        tapAnyButton(["Done", "完成", "完了"], timeout: 5, required: true)
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "面板网页没加载出来")
+        pullPageDown()
+        XCTAssertTrue(capsule.waitForExistence(timeout: 5), "没到第 2 级")
+        XCTAssertTrue(waitGone(capsule, timeout: 8), "胶囊没自己藏起来")
+        shot("21-hidden")
+
+        pullPageDown()
+        XCTAssertTrue(capsule.waitForExistence(timeout: 3), "在网页上往下拖叫不出胶囊")
+        XCTAssertTrue(waitGone(capsule, timeout: 8), "胶囊没自己藏起来")
+
+        XCUIDevice.shared.press(.home)
+        _ = app.wait(for: .runningBackgroundSuspended, timeout: 5)
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "没切回来")
+        XCTAssertTrue(capsule.waitForExistence(timeout: 3), "切回来后整页上没有出口")
+        XCTAssertTrue(capsule.isHittable && app.frame.contains(capsule.frame), "出口被挤出屏幕或点不到")
+        shot("22-after-background")
+        capsule.tap()
+        XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
+        shot("23-closed")
+    }
+
     func testRoomPullFromBottom() throws {
         try launch()
-        var room = firstRoom(timeout: 10)
-        if room == nil {
-            tapAnyButton(["Apps", "应用"], timeout: 5)
-            for name in ["Hermes", "回声", "Echo"] {
-                if app.buttons[name].firstMatch.exists { room = app.buttons[name].firstMatch; break }
-            }
-        }
-        XCTAssertNotNil(room, "列表里没有房间（先装回声 Bot）")
-        room?.tap()
-        XCTAssertTrue(composer(timeout: 30)?.exists == true, "没进房间")
+        XCTAssertNotNil(enterBotRoom(), "没进 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
 
         let panel = app.otherElements["chatPanel"]
         pullUpInRoom()
@@ -72,23 +101,72 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
     }
 
+    /// 长消息的最后一段不被输入框盖住：大字号下发一条长消息，再把输入框打到多行、键盘弹着，列表仍贴底，
+    /// 内容的底边在列表里、列表的底边在输入框上面。不按正文找那一行：开发栈里本机常解不开自己刚发的消息。
+    func testLastMessageClearsComposer() throws {
+        try launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        guard let field = enterBotRoom() else {
+            return XCTFail("没进 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
+        }
+        field.tap()
+        field.typeText(String(repeating: "long reply text ", count: 30))
+        tapAnyButton(["Send", "发送"], timeout: 5, required: true)
+        Thread.sleep(forTimeInterval: 2)
+        shot("29-after-send")
+        let sent = frames(list: app.collectionViews.firstMatch, field: field)
+        attach("after-send \(sent) \(scrollState())")
+
+        field.typeText(String(repeating: "draft ", count: 40))
+        Thread.sleep(forTimeInterval: 2)
+        shot("30-composer-grown")
+
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.exists, "房间里没有消息列表")
+        let now = frames(list: list, field: field)
+        let state = scrollState()
+        attach("after-draft \(now) \(state)")
+        // 贴底看 App 自己的位置：List 的内容高度比真实内容矮一段，按内容外框比较在长行上必败（见 PR 说明）。
+        XCTAssertTrue(state.contains("pin=true") && isAtBottom(state), "发完以后列表没贴底：\(now) \(state)")
+        XCTAssertLessThanOrEqual(list.frame.maxY, field.frame.minY + 1, "列表的底边被输入框盖住：\(now)")
+    }
+
     // MARK: - 摆台
 
-    private func launch() throws {
+    private func launch(arguments: [String] = []) throws {
         app = XCUIApplication()
-        if let code = ProcessInfo.processInfo.environment["PAIRING_CODE"], !code.isEmpty {
+        app.launchArguments += arguments
+        if let code = try UITestBackend.codes().first {
             app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = code
         }
         app.launch()
-        XCTAssertNotNil(
-            waitAnyButton(["Apps", "应用", "Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 60),
-            "既没到标签栏也没到引导页"
-        )
+        if app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] != nil {
+            XCTAssertTrue(waitPaired(timeout: 90), "配对没完成（配对码过期、用过或连不上开发栈）")
+        }
+        // 落点三选一：引导页、标签栏、已配对直进的聊天列表（这时底栏可能整个收起）。
+        // 不等“新建聊天”：mini 实测聊天列表加载中它不一定出现，侧边栏按钮和列表本体更稳。
+        let arrived = waitAnyButton(
+            ["Apps", "应用", "Sidebar", "侧边栏", "側邊欄", "サイドバー",
+             "Skip", "跳过", "Next", "下一步", "Done", "完成"],
+            timeout: 60
+        ) != nil || app.scrollViews.firstMatch.waitForExistence(timeout: 2)
+        XCTAssertTrue(arrived, "既没到标签栏、聊天列表，也没到引导页")
         passOnboarding()
-        let chat = waitAnyButton(["Chats", "聊天"], timeout: 30)
-        XCTAssertNotNil(chat, "没到标签栏")
-        chat?.tap()
+        // 配上以后只有聊天一个标签时底栏收起，没有「聊天」按钮；没配对时底栏在，要点进聊天页。
+        tapAnyButton(["Chats", "聊天"], timeout: 2)
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20), "没到聊天页")
+    }
+
+    /// 配对页的输入框不在、又已经出了页面（聊天列表或引导）才算配上；出现拒绝提示就不用再等。
+    private func waitPaired(timeout: TimeInterval) -> Bool {
+        let anyElement = app.descendants(matching: .any)
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if anyElement["pairing-refusal"].exists { return false }
+            let rendered = app.scrollViews.firstMatch.exists || app.buttons["Skip"].exists || app.buttons["跳过"].exists
+            if rendered && !anyElement["pairing-code"].exists { return true }
+            _ = app.wait(for: .runningForeground, timeout: 0.5)
+        }
+        return false
     }
 
     private enum Direction { case up, down }
@@ -113,7 +191,7 @@ final class ChatPanelUITests: XCTestCase {
 
     /// 从列表里往上下拖。用慢速拖动，不让惯性把列表甩走。
     private func pull(_ direction: Direction) {
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 15), "找不到聊天列表")
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 10), "找不到聊天列表")
         let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.28))
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.92))
         switch direction {
@@ -122,14 +200,102 @@ final class ChatPanelUITests: XCTestCase {
         }
     }
 
-    /// 列表里第一行聊天：整行宽、在底栏上面（底栏的按钮窄）。
-    private func firstRoom(timeout: TimeInterval = 20) -> XCUIElement? {
+    /// 进 Bot 的房间，返回输入框。新配对的设备走完引导直接落在主 Bot 的房间里，这时不用再从列表点进去。
+    private func enterBotRoom() -> XCUIElement? {
+        skipKeyHandoff()
+        if let field = composer(timeout: 3) {
+            goToBottom()
+            return field
+        }
+        botRoom(timeout: 30)?.tap()
+        guard let field = composer(timeout: 10) else { return nil }
+        goToBottom()
+        return field
+    }
+
+    /// 房间落在已读位置（开发栈账号常攒着未读），不是最新一条。落点是首批时间线到了才摆的，比输入框出现晚，
+    /// 摆的时候还会把列表拉回已读位置，所以要等按钮出现（最多 10 秒），按下去、等它消失，再确认没有回来。
+    private func goToBottom() {
+        var tapped = false
+        for _ in 0..<3 {
+            guard let button = bottomButton(timeout: tapped ? 2 : 10) else { break }
+            tapped = true
+            button.tap()
+            _ = waitGone(button, timeout: 5)
+        }
+    }
+
+    /// 停在别处时才有的“回到底部”，数字悬在图标上方，标签会带新消息条数。
+    private func bottomButton(timeout: TimeInterval) -> XCUIElement? {
+        let labels = ["Back to bottom", "回到底部", "回到底部", "一番下へ戻る"]
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            for label in labels {
+                let button = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+                if button.exists { return button }
+            }
+            if Date() >= deadline { return nil }
+            _ = app.wait(for: .runningForeground, timeout: 0.3)
+        }
+    }
+
+    /// 量一次列表：内容的底边是不是还在列表可见区里。
+    private struct Layout: CustomStringConvertible {
+        let contentBottom: CGFloat
+        let listBottom: CGFloat
+        let fieldTop: CGFloat
+
+        /// 停在别处时才有“回到底部”按钮：它出现说明 App 自己也知道没到底。
+        let back: Bool
+
+        var description: String { "content=\(contentBottom) list=\(listBottom) field=\(fieldTop) back=\(back)" }
+    }
+
+    private func frames(list: XCUIElement, field: XCUIElement) -> Layout {
+        // 列表的第一个子元素是整片内容（含屏幕外的部分）。
+        Layout(contentBottom: list.children(matching: .other).firstMatch.frame.maxY,
+               listBottom: list.frame.maxY, fieldTop: field.frame.minY, back: bottomButton(timeout: 0) != nil)
+    }
+
+    /// App 里 `BottomPin` 的自述：贴底没贴底、真实位置和底部差多少。
+    private func scrollState() -> String {
+        app.staticTexts["roomScroll"].label
+    }
+
+    /// `snapshot` 里的 y 是不是到位（`bottom` 是 App 算出来的底部）。
+    private func isAtBottom(_ state: String) -> Bool {
+        let values = Dictionary(uniqueKeysWithValues: state.split(separator: " ").compactMap { part -> (String, Double)? in
+            let pair = part.split(separator: "=", maxSplits: 1)
+            guard pair.count == 2, let value = Double(pair[1]) else { return nil }
+            return (String(pair[0]), value)
+        })
+        guard let y = values["y"], let bottom = values["bottom"] else { return false }
+        return y >= bottom - 2
+    }
+
+    private func attach(_ text: String) {
+        let attachment = XCTAttachment(string: text)
+        attachment.name = text
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    /// 新配上的设备先整屏盖着加设备的密钥交接页“在另一台设备上继续”，落进房间后才出来也有。
+    /// 这里不测交接：选“手边没有别的设备”，再从它打开的聊天备份页退回列表。
+    private func skipKeyHandoff() {
+        let labels = ["I don't have my other device", "手边没有别的设备"]
+        guard let button = waitAnyButton(labels, timeout: 10) else { return }
+        button.tap()
+        tapAnyButton(["Back", "返回"], timeout: 5)
+    }
+
+    /// 列表里 Bot 的房间行。按名字找：列表顶上还可能有整行宽的提示（如恢复聊天备份），按位置挑会点错。
+    private func botRoom(timeout: TimeInterval) -> XCUIElement? {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if let row = app.buttons.allElementsBoundByIndex.first(where: {
-                $0.isHittable && $0.frame.width > 250 && $0.frame.height > 50 && $0.frame.minY > 80
-            }) {
-                return row
+            for name in ["Hermes", "回声", "Echo"] {
+                let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+                if row.exists, row.isHittable { return row }
             }
             _ = app.wait(for: .runningForeground, timeout: 0.5)
         }
@@ -138,7 +304,7 @@ final class ChatPanelUITests: XCTestCase {
 
     /// 输入框：聊天列表本身也是滚动视图，等它出现才算进了房间。
     private func composer(timeout: TimeInterval) -> XCUIElement? {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(min(timeout, 10))
         while Date() < deadline {
             for label in ["Message", "消息", "訊息", "メッセージ"] {
                 for view in app.textViews.allElementsBoundByIndex where view.label == label && view.exists {
@@ -163,21 +329,28 @@ final class ChatPanelUITests: XCTestCase {
         )).firstMatch
     }
 
+    /// 先点收尾的，再点下一步，最后才跳过：最后一步的“跳过”是灰的，“进入聊天”才走得出去。
+    private static let onboardingButtons = [
+        "Go to Chat", "进入聊天", "進入聊天", "チャットへ", "Done", "完成",
+        "Next", "下一步", "Skip", "跳过"
+    ]
+
+    /// 主人在这台核心上走过引导时不再弹，所以引导按钮没出现也算走完。
     private func passOnboarding() {
         for _ in 0..<12 {
-            if app.buttons["Chats"].exists || app.buttons["聊天"].exists { return }
-            guard let button = waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 3) else { return }
+            guard let button = waitAnyButton(Self.onboardingButtons, timeout: 3) else { return }
             button.tap()
         }
     }
 
     @discardableResult
     private func waitAnyButton(_ labels: [String], timeout: TimeInterval, required: Bool = false) -> XCUIElement? {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(min(timeout, 10))
         while Date() < deadline {
             for label in labels {
                 let element = app.buttons[label].firstMatch
-                if element.exists, element.isHittable { return element }
+                // 引导最后一页的「跳过」还在、只是禁用：不看 isEnabled 会一直点它，走不到「完成」。
+                if element.exists, element.isEnabled, element.isHittable { return element }
             }
             _ = app.wait(for: .runningForeground, timeout: 0.5)
         }

@@ -30,6 +30,7 @@ final class ChatModel {
     var drafts: [String: String] = [:]
     /// 每个房间里正在回复的消息；和草稿一起存，换房间、杀 App 再回来还在。
     var replies: [String: ReplyQuote] = [:]
+    private(set) var replyFocusRevision = 0
     /// 聊天页打开的页面。
     var path: [ChatRoute] = []
     var visiting: VisitingRoom?
@@ -40,6 +41,8 @@ final class ChatModel {
     @ObservationIgnored private var awaitedFrom = AppTab.chat
     /// 发起私聊在后台失败了，原因显示在聊天页，主界面要切过去。
     var openingFailed = false
+    /// 主人在交接页点了“稍后”（ADR-0087）：先收起交接页，聊天列表顶上的提醒再打开。只在这次运行里记着。
+    var keyHandoffDeferred = false
 
     let core: ClientCore
     @ObservationIgnored private(set) lazy var files = FilesModel(chat: self)
@@ -96,7 +99,7 @@ final class ChatModel {
         // `try?` 会把错误和“没有草稿”都折成 nil，这里要分开。
         let stored: ComposerDraft?
         do {
-            stored = try await core.draft(roomId: roomId)
+            stored = try await core.draft(target: TimelineTarget(roomId: roomId, threadRoot: nil))
         } catch {
             return
         }
@@ -107,15 +110,17 @@ final class ChatModel {
 
     /// 每次写草稿都带上正在回复的那条，不带核心会把存着的回复对象清掉。
     func saveDraft(_ roomId: String) {
-        send(.setDraft(
-            roomId: roomId, body: drafts[roomId, default: ""], replyTo: replies[roomId]?.eventId
-        ))
+        send(.timeline(action: TimelineAction.setDraft(
+            target: TimelineTarget(roomId: roomId, threadRoot: nil),
+            body: drafts[roomId, default: ""], replyTo: replies[roomId]?.eventId
+        )))
     }
 
     /// 回复按钮或右滑进入回复状态（ADR-0073）。
     func startReply(_ quote: ReplyQuote, in roomId: String) {
         replies[roomId] = quote
         saveDraft(roomId)
+        replyFocusRevision += 1
     }
 
     func cancelReply(in roomId: String) {
@@ -125,7 +130,10 @@ final class ChatModel {
 
     /// 转发到另一个房间，随后打开它。
     func forward(_ itemId: String, from roomId: String, to target: String) {
-        send(.forwardMessage(roomId: roomId, itemId: itemId, toRoomId: target))
+        send(.timeline(action: TimelineAction.forwardMessage(
+            target: TimelineTarget(roomId: roomId, threadRoot: nil),
+            itemId: itemId, toRoomId: target
+        )))
         openRoom(target)
     }
 

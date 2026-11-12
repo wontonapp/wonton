@@ -59,12 +59,13 @@ chat-card-highest-line = コードはこのホストのroot権限で実行され
 chat-card-highest-confirm = このアプリがホスト全体を制御することを承知しました
 
 # アンインストールのカード：アプリのデータの扱い。
-chat-card-uninstall-purge = データも削除します。元に戻せません
+chat-card-uninstall-purge = データも削除します。ボットとの過去の暗号化メッセージも読めなくなり、元に戻せません
 chat-card-uninstall-keep = データは残します。次にインストールしたときにも使えます
 
 # ツール呼び出しカードの行。$args は生の JSON パラメーターで、長いときは切り詰めます。
 chat-card-tool-data = このツールはデータを変更します
 chat-card-tool-root = この操作はこのホストのroot権限で実行されます
+chat-card-tool-deletes = アプリはこのツールがデータを削除または上書きすると示しています
 chat-card-args = 引数：{ $args }
 
 # Bot のファイル保存カード。$name と $size は1つのファイル、$total は合計サイズ。
@@ -161,3 +162,10 @@ panel-pin-not-there = そのページはパネルにピン留めされていま�
 
 # MCP Apps 界面里的调用在卡片上把调用方写成主人。
 mcp-app-owner = あなた
+
+# 跳数到顶（ADR-0045）：几个 Bot 在一个房间里来回说得太多，网关停下了。
+chat-card-hop-limit-title = { $bots }が{ $hops }回やり取りしたため、停止しました
+chat-choice-hop-limit-continue = 続ける
+chat-choice-hop-limit-stay = 止めておく
+chat-hop-limit-resumed = 再開しました
+chat-hop-limit-kept-by-other = 相手が止めておくを選んだため、停止したままです

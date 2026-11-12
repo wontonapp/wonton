@@ -11,12 +11,6 @@ final class InstallingRowUITests: XCTestCase {
     private var plugin: String {
         (ProcessInfo.processInfo.environment["PLUGIN"] ?? "Claude Code").replacingOccurrences(of: "%20", with: " ")
     }
-    /// 逗号分隔的一串配对码：排队的机器上等锁很慢，最早的码可能已经过期，逐个试。
-    private var pairCodes: [String] {
-        let raw = ProcessInfo.processInfo.environment["PAIR_CODES"] ?? ProcessInfo.processInfo.environment["PAIR_CODE"] ?? ""
-        let codes = raw.split(separator: ",").map(String.init)
-        return codes.isEmpty ? [UITestBackend.code].compactMap { $0 } : codes
-    }
 
     override func setUpWithError() throws {
         continueAfterFailure = true
@@ -69,29 +63,30 @@ final class InstallingRowUITests: XCTestCase {
         element.tap()
     }
 
-    private func tabButton(_ labels: [String]) -> XCUIElement? {
-        let height = app.windows.firstMatch.frame.height
-        for label in labels {
-            for element in app.buttons.matching(identifier: label).allElementsBoundByIndex
-            where element.frame.minY > height * 0.7 {
-                return element
-            }
-        }
-        return nil
-    }
-
-    @discardableResult
-    private func waitForTabs(timeout: TimeInterval) -> Bool {
+    /// 回到主界面的标志：根页面有「Sidebar」按钮。单标签时底栏是隐藏的（show_bar 只在标签多于一个时真），
+    /// 等不到 Chats/Apps 标签按钮。
+    private func waitForRoot(timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if tabButton(["Apps", "Chats", "应用", "聊天"]) != nil { return true }
+            if app.buttons["Sidebar"].firstMatch.exists { return true }
             _ = app.wait(for: .runningForeground, timeout: 1)
         }
         return false
     }
 
+    /// 从侧栏去一个目的地：打开侧栏，点那一行。
+    private func sidebarGo(_ label: String) {
+        tapWhenHittable(app.buttons["Sidebar"].firstMatch)
+        let row = app.buttons[label].firstMatch
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline && !row.exists {
+            _ = app.wait(for: .runningForeground, timeout: 1)
+        }
+        tapWhenHittable(row)
+    }
+
     /// 还在配对页时粘贴配对码，配不上就换下一个码。已经配上就什么都不做。
-    private func pairIfNeeded() {
+    private func pairIfNeeded(_ pairCodes: [String]) {
         let field = app.textFields.firstMatch
         guard field.waitForExistence(timeout: 20) else { return }
         for (index, code) in pairCodes.enumerated() {
@@ -108,7 +103,7 @@ final class InstallingRowUITests: XCTestCase {
             shot("00-paired-\(index)")
             if let pair = waitAnyButton(["Pair", "配对"], timeout: 8), pair.isEnabled { pair.tap() }
             for _ in 0..<20 {
-                if waitAnyButton(["Apps", "应用", "Skip", "跳过"], timeout: 1) != nil { return }
+                if waitAnyButton(["Sidebar", "Apps", "应用", "Skip", "跳过"], timeout: 1) != nil { return }
             }
             // 换下一个码：清空输入框。
             field.tap()
@@ -121,7 +116,7 @@ final class InstallingRowUITests: XCTestCase {
 
     private func passOnboarding() {
         for _ in 0..<12 {
-            if waitForTabs(timeout: 1) { return }
+            if waitForRoot(timeout: 1) { return }
             if let skip = waitAnyButton(["Skip", "跳过"], timeout: 2), skip.isEnabled {
                 skip.tap()
                 continue
@@ -155,20 +150,15 @@ final class InstallingRowUITests: XCTestCase {
     }
 
     func testInstallRow() throws {
+        // 排队的机器上等锁很慢，最早的码可能已经过期：逐个试。
+        let pairCodes = try UITestBackend.codes()
         try XCTSkipIf(pairCodes.isEmpty, "需要开发栈：没有 PAIRING_CODE")
-        pairIfNeeded()
-        XCTAssertTrue(
-            waitAnyButton(["Apps", "应用"], timeout: 40) != nil
-                || waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 90) != nil,
-            "既没到标签栏也没到引导页"
-        )
+        pairIfNeeded(pairCodes)
+        XCTAssertTrue(waitForRoot(timeout: 120), "配对后没回到主界面")
         passOnboarding()
-        XCTAssertTrue(waitForTabs(timeout: 300), "没回到主界面")
+        XCTAssertTrue(waitForRoot(timeout: 300), "没回到主界面")
 
-        tabButton(["Apps", "应用"])?.tap()
-        let store = waitAnyButton(["Open the Store", "Store", "打开应用商店", "应用商店"], timeout: 25)
-        XCTAssertNotNil(store, "应用页没有商店入口")
-        store?.tap()
+        sidebarGo("Store")
         shot("01-store")
         guard let get = getButton(for: plugin) else {
             XCTFail("商店里没有 \(plugin)")
@@ -184,13 +174,10 @@ final class InstallingRowUITests: XCTestCase {
         // 装到一半就能在聊天列表里看到这一行了：关掉完成页回聊天列表。
         let close = app.buttons["Close"]
         if close.exists { close.tap() }
-        // 关掉确认页还在商店里：按返回退出商店，再切到聊天列表。
+        // 关掉确认页还在商店里：按返回退出商店，再从侧栏切到聊天列表。
         if let back = waitAnyButton(["Back", "返回"], timeout: 8) { back.tap() }
-        _ = waitAnyButton(["Apps", "应用"], timeout: 10)
-        let chats = tabButton(["Chats", "聊天"])
-        chats?.tap()
-        // 商店里的任务行有一样的阶段和失败文字：断言真的切到了聊天标签，别拿它充数。
-        XCTAssertEqual(chats?.isSelected, true, "没切到聊天标签（多半还在商店或别的页）")
+        sidebarGo("Chats")
+        // 聊天列表里能看到装到一半的行（商店里的任务行有一样的阶段文字，这里以页面为准）。
         shot("02b-chat-list")
 
         // 阶段和进度。

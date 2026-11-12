@@ -27,7 +27,7 @@ fn password_login() -> MatrixPasswordLogin {
 fn oidc_login() -> MatrixOidcLogin {
     MatrixOidcLogin {
         login_id: "login-1".into(),
-        redirect_uri: "wonton://matrix-login".into(),
+        redirect_uri: "io.github.wontonapp:/matrix-login".into(),
         device_name: "phone".into(),
     }
 }
@@ -36,7 +36,7 @@ fn callback() -> MatrixOidcCallback {
     MatrixOidcCallback {
         login_id: "login-1".into(),
         callback_url: SecretString::new(
-            "wonton://matrix-login?code=private-code-1&state=private-state-1",
+            "io.github.wontonapp:/matrix-login?code=private-code-1&state=private-state-1",
         ),
     }
 }
@@ -51,6 +51,7 @@ fn login_records_round_trip_through_json() {
         login_id: "login-1".into(),
         homeserver: "matrix.org".into(),
         methods: vec![MatrixLoginMethod::Password, MatrixLoginMethod::Oidc],
+        oidc_redirect_uri: "io.github.wontonapp:/matrix-login".into(),
         state: MatrixLoginState::Ready,
     };
     assert_eq!(round_trip(&login), login);
@@ -119,6 +120,7 @@ fn login_failures_round_trip_and_unknown_failure_is_other() {
         MatrixLoginFailure::InvalidCallback,
         MatrixLoginFailure::Expired,
         MatrixLoginFailure::Storage,
+        MatrixLoginFailure::Upstream,
         MatrixLoginFailure::Other,
     ] {
         assert_eq!(round_trip(&failure), failure);
@@ -164,6 +166,7 @@ fn password_and_oidc_secrets_are_redacted_in_debug_not_serialization() {
         login_id: "login-1".into(),
         homeserver: "matrix.org".into(),
         methods: vec![MatrixLoginMethod::Oidc],
+        oidc_redirect_uri: "io.github.wontonapp:/matrix-login".into(),
         state,
     };
     let password_action = Action::SubmitMatrixPassword {

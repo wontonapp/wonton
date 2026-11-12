@@ -437,6 +437,28 @@ impl CoreApi {
             .map_err(|error| CoreApiError::Protocol(format!("Invalid core response: {error}")))
     }
 
+    /// `GET`，响应是原始字节；错误带类别和消息。链接预览的图片用（ADR-0065）。
+    pub(crate) async fn get_bytes_detailed(
+        &self,
+        segments: &[&str],
+        timeout: Duration,
+    ) -> Result<Vec<u8>, CoreApiError> {
+        let (status, bytes) = self
+            .exchange(
+                Method::GET,
+                self.url(segments, &[]),
+                None,
+                "application/json",
+                timeout,
+            )
+            .await
+            .map_err(CoreApiError::Transport)?;
+        if status < 400 {
+            return Ok(bytes);
+        }
+        Err(http_error(status, &bytes))
+    }
+
     /// `GET` 但错误带类别和消息：取模型服务商列表要分得清网关没就绪和别的失败，响应本身还是 JSON。
     pub(crate) async fn get_detailed<T: DeserializeOwned>(
         &self,
@@ -692,15 +714,18 @@ fn upgrade_error(status: u16, body: &[u8]) -> CoreUpgradeProblem {
 }
 
 /// 直接返回结果的调用（详情、预览、图片）按 [`CoreError`] 的分类失败，核心写的说明原样带上。
-pub(super) fn to_core_error(problem: PluginProblem) -> CoreError {
+pub(crate) fn to_core_error(problem: PluginProblem) -> CoreError {
     let reason = problem.message;
     match problem.reason {
         PluginFailure::TransportUnavailable => CoreError::TransportUnavailable { reason },
         PluginFailure::Unauthorized => CoreError::Unauthorized { reason },
+        PluginFailure::SettingsInvalid => CoreError::SettingsInvalid {
+            reason,
+            fields: problem.settings.map(|settings| settings.fields).unwrap_or_default(),
+        },
         PluginFailure::NotFound
         | PluginFailure::Invalid
         | PluginFailure::Changed
-        | PluginFailure::SettingsInvalid
         | PluginFailure::SettingsSchemaInvalid => CoreError::InvalidInput { reason },
         PluginFailure::Unsupported
         | PluginFailure::Conflict

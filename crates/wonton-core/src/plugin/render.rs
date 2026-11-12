@@ -4,8 +4,9 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use bollard::models::ContainerCreateBody;
+use bollard::models::{ContainerCreateBody, Mount, MountType};
 
 use super::bot_services::{BotVars, ServiceVars};
 use super::compose::{DependCondition, NetworkMode, PullPolicy, Service, StringOrList};
@@ -92,6 +93,10 @@ pub struct InstallContext {
     pub instance: Instance,
     /// 插件私有数据目录（宿主路径）。
     pub app_data: PathBuf,
+    /// 托管形态的总目录（宿主路径，ADR-0080）：提供方挂 `<它>/<能力名>`。
+    pub hosted_root: PathBuf,
+    /// 宿主网络中继的套接字目录。
+    pub relay_dir: PathBuf,
     /// 核心管理的配置文件目录（宿主路径），`read_only` 服务的 `configs` 从这里挂进容器。
     pub config_store: PathBuf,
     /// 已授权的共享文件夹：名称 → 宿主路径。
@@ -109,15 +114,23 @@ pub struct InstallContext {
     pub bots: BTreeMap<String, BotVars>,
     /// 声明了 `models` 时：模型网关的地址、凭据和默认模型。
     pub models: Option<ModelVars>,
+    /// 通用能力的地址和凭据，仅用于清单插值；Debug 不打印值。
+    pub capabilities: BTreeMap<String, String>,
     /// 声明了 `tools` 时：MCP 总线的地址。
     pub mcp_url: Option<String>,
     /// 声明了 `notify` 时：发通知的地址（ADR-0047）。
     pub notify_url: Option<String>,
     /// 核心生成的插件密钥（`secrets` 里的 `generate` 项）：名字 → 值。
     pub secrets: BTreeMap<String, String>,
+    /// 主人设置的普通值（ADR-0077）：属性名 → JSON 值。
+    pub settings: BTreeMap<String, serde_json::Value>,
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
+    /// 这个插件最多等多久：核心的安装期限和清单声明的期限取大的（见
+    /// [`PluginManager::install_limit`](super::manager::PluginManager::install_limit)）。安装、启动、重建都按它
+    /// 算健康门的时限。
+    pub install_limit: Duration,
     /// 额外写进每个容器 `/etc/hosts` 的条目（核心不在容器里运行时，用来让插件访问网关）。
     pub extra_hosts: Vec<String>,
     /// 申请了 `devices.gpu` 且本机有可用的显卡时：交给 `gpu.services` 里的服务的设备（见 [`super::gpu`]）。
@@ -230,6 +243,8 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         .collect();
     InstallContext {
         app_data: root.join("apps").join(&slug),
+        hosted_root: root.join("hosted"),
+        relay_dir: PathBuf::from(crate::config::DEFAULT_RELAY_DIR),
         config_store: root.join("core").join("configs"),
         shares,
         app_url: webui.map(|_| url.clone()),
@@ -276,6 +291,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
                     .unwrap_or_default(),
                 default_model: "dry-run".into(),
             }),
+        capabilities: dry_run_capabilities(manifest, &root.join("apps").join(&slug)),
         mcp_url: manifest
             .permissions
             .contains(&Permission::Tools)
@@ -285,21 +301,15 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
             .contains(&Permission::Notify)
             .then(|| "http://notify.wonton.internal/notices".into()),
         secrets,
+        settings: super::settings::defaults(package),
         instance: Instance::default(),
         tz: "UTC".into(),
         puid: 1000,
         pgid: 1000,
+        install_limit: crate::config::DEFAULT_INSTALL_TIMEOUT,
         extra_hosts: Vec::new(),
         gpu: None,
-        // 192.0.2.1 是文档用的地址（RFC 5737）。
-        lan: manifest.lan.as_ref().map(|lan| LanGrant {
-            addresses: vec![[192, 0, 2, 1].into()],
-            announce: vec![[192, 0, 2, 1].into()],
-            network: (!manifest.permissions.contains(&Permission::NetworkEgress))
-                .then(|| Instance::default().lan_network(&slug)),
-            ports: lan.ports.clone(),
-            webui: false,
-        }),
+        lan: dry_run_lan(manifest, &slug),
         egress: None,
         core_address: webui
             .filter(|w| w.sso == Sso::Proxy)
@@ -317,6 +327,54 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
                 .collect::<Vec<_>>(),
         ),
     }
+}
+
+fn dry_run_lan(manifest: &Manifest, slug: &str) -> Option<LanGrant> {
+    // 192.0.2.1 是文档用的地址（RFC 5737）。
+    manifest.lan.as_ref().map(|lan| LanGrant {
+        addresses: vec![[192, 0, 2, 1].into()],
+        announce: vec![[192, 0, 2, 1].into()],
+        network: (!manifest.permissions.contains(&Permission::NetworkEgress))
+            .then(|| Instance::default().lan_network(slug)),
+        ports: lan.ports.clone(),
+        webui: false,
+    })
+}
+
+fn dry_run_capabilities(manifest: &Manifest, app_data: &Path) -> BTreeMap<String, String> {
+    let provider = super::matrix_rtc::provides_matrix_rtc(manifest)
+        .then(|| {
+            [
+                (
+                    super::capabilities::MATRIX_SERVER_NAME_VAR.to_owned(),
+                    "wonton.invalid".to_owned(),
+                ),
+                (
+                    super::matrix_rtc_ca::CA_DIR_VAR.to_owned(),
+                    app_data
+                        .join(super::matrix_rtc_ca::CA_DIR)
+                        .display()
+                        .to_string(),
+                ),
+            ]
+        })
+        .into_iter()
+        .flatten();
+    super::dependencies::declarations(manifest)
+        .flat_map(|capability| {
+            [
+                (
+                    super::capabilities::var_url(capability),
+                    format!("http://{}.wonton.internal", capability),
+                ),
+                (
+                    super::capabilities::var_key(capability),
+                    "dry-run".to_owned(),
+                ),
+            ]
+        })
+        .chain(provider)
+        .collect()
 }
 
 pub fn render(
@@ -417,6 +475,7 @@ fn render_service_containers(
             langs,
         }
         .build(&service.volumes, binds)?;
+        mounts.extend(hosted_mounts(manifest, ctx, name));
         let (files, store_dir) = configs::resolve_service(
             package,
             service,
@@ -444,11 +503,18 @@ fn render_service_containers(
         if let Some(grant) = &ctx.lan {
             lan::publish(name, service, grant, &mut plan.body, langs)?;
         }
-        if let Some(egress) = ctx.egress.as_ref()
-            && matches!(&service.network_mode, None | Some(NetworkMode::Service(_)))
-        {
-            egress.inject(&mut plan.body, service_keys.iter().map(String::as_str));
-            egress::healthcheck::apply(&mut plan.body);
+        // 宿主网络里解析不了别名 `egress.wonton.internal`：只用出口容器在这个网络里的地址，地址还没定下来
+        // 时先不写（能出网，只是不经代理），别写出一个连不上的代理。
+        if let Some(egress) = ctx.egress.as_ref() {
+            let url = match &service.network_mode {
+                None | Some(NetworkMode::Service(_)) => Some(egress::PROXY_URL),
+                Some(NetworkMode::Host) => egress.host_proxy.as_deref(),
+                Some(NetworkMode::None) => None,
+            };
+            if let Some(url) = url {
+                egress.inject(&mut plan.body, service_keys.iter().map(String::as_str), url);
+                egress::healthcheck::apply(&mut plan.body);
+            }
         }
         plan.files = files;
         plan.store_dir = store_dir;
@@ -508,8 +574,8 @@ fn render_plan(
         )?;
     }
     check_not_nested(&binds, langs)?;
-    let mut dirs = dir_owners(&binds, &services, ctx, langs)?;
-    let relays = prepare_relays(manifest, ctx, langs, &services, &mut containers, &mut dirs)?;
+    let dirs = dir_owners(&binds, &services, ctx, langs)?;
+    let relays = prepare_relays(manifest, ctx, langs, &services, &mut containers)?;
     for container in &mut containers {
         super::render_drift::stamp(container);
     }
@@ -566,7 +632,7 @@ fn validated_services<'a>(
     Ok((services, vars, used))
 }
 
-/// 中继容器和目录：宿主网络的服务各要一个。核心一侧的套接字路径放不下时在这报出来——
+/// 中继容器：宿主网络的服务各要一个。核心一侧的套接字路径放不下时在这报出来——
 /// 这之后才是拉镜像、起容器，装之前就失败。
 fn prepare_relays(
     manifest: &Manifest,
@@ -574,13 +640,14 @@ fn prepare_relays(
     langs: &Languages,
     services: &BTreeMap<String, Service>,
     containers: &mut Vec<ContainerPlan>,
-    dirs: &mut BTreeMap<PathBuf, Owner>,
 ) -> Result<Vec<HostRelay>, RenderError> {
     let relays = super::host_relay::needed(manifest, services);
-    if let Some(problem) = super::host_relay::path_too_long(&ctx.app_data, &relays, langs) {
+    if let Some(problem) =
+        super::host_relay::path_too_long(&ctx.relay_dir, &ctx.instance, &ctx.slug, &relays, langs)
+    {
         return Err(RenderError::HostPath(problem));
     }
-    add_relays(manifest, ctx, &relays, containers, dirs);
+    add_relays(manifest, ctx, &relays, containers);
     Ok(relays)
 }
 
@@ -589,22 +656,45 @@ fn add_relays(
     ctx: &InstallContext,
     relays: &[HostRelay],
     containers: &mut Vec<ContainerPlan>,
-    dirs: &mut BTreeMap<PathBuf, Owner>,
 ) {
     let owner = Owner {
         uid: ctx.puid,
         gid: ctx.pgid,
     };
+    // 中继目录不在应用数据目录下，`dirs` 里放不进去（见 [`hostdir::prepare`]），安装时单独准备。
     for relay in relays {
-        dirs.insert(super::host_relay::dir(&ctx.app_data), owner);
         containers.push(super::host_relay::plan(
             &ctx.instance,
             manifest,
-            &ctx.app_data,
+            &ctx.relay_dir,
             owner,
             relay,
         ));
     }
+}
+
+/// 托管能力的提供方（ADR-0080）：核心把这项能力的总目录挂到它在 `provides.<能力>.mount` 声明的位置，
+/// 只读还是读写按能力表。以后装、卸托管插件只改目录里的内容，不重建这个容器。
+fn hosted_mounts(manifest: &Manifest, ctx: &InstallContext, service: &str) -> Vec<Mount> {
+    let Some(provides) = &manifest.provides else {
+        return Vec::new();
+    };
+    provides
+        .capabilities
+        .iter()
+        .filter(|(_, spec)| spec.service == service)
+        .filter_map(|(name, spec)| {
+            let hosted = super::capabilities::lookup(name)?.hosted?;
+            let read_only = hosted.mount? == super::capabilities::HostedMount::ReadOnly;
+            Some(Mount {
+                target: Some(spec.mount.clone()?),
+                source: Some(ctx.hosted_root.join(name).display().to_string()),
+                typ: Some(MountType::BIND),
+                read_only: Some(read_only),
+                ..Default::default()
+            })
+        })
+        .collect()
 }
 
 /// `network_mode: none` 的服务没有网络，网页入口和 MCP 入口不能指向它。

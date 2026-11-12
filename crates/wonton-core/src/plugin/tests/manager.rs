@@ -3,6 +3,7 @@
 use std::fs;
 use std::io::Read;
 use std::os::unix::fs::MetadataExt;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -98,20 +99,21 @@ pub(super) fn manager_with_oidc(
     )
 }
 
-/// 应用数据目录在 `apps_dir` 的管理器，其余同 [`manager_with`]：模拟数据目录在很深的路径下。
-pub(super) fn manager_with_apps_dir(
+/// 中继套接字目录在 `relay_dir` 的管理器，其余同 [`manager_with`]。
+pub(super) fn manager_with_relay_dir(
     engine: Engine,
     dir: &tempfile::TempDir,
-    apps_dir: &std::path::Path,
+    relay_dir: &std::path::Path,
 ) -> PluginManager {
-    manager_for(
+    manager_for_opts(
         engine,
         dir,
-        apps_dir,
+        &dir.path().join("apps"),
         None,
         None,
         Instance::default(),
         ImageWorker::in_process(),
+        Some(relay_dir.to_owned()),
     )
 }
 
@@ -124,6 +126,30 @@ fn manager_for(
     instance: Instance,
     images: ImageWorker,
 ) -> PluginManager {
+    manager_for_opts(
+        engine,
+        dir,
+        apps_dir,
+        core_container,
+        oidc,
+        instance,
+        images,
+        None,
+    )
+}
+
+/// [`manager_for`]，可以另指中继套接字目录。
+#[allow(clippy::too_many_arguments)]
+fn manager_for_opts(
+    engine: Engine,
+    dir: &tempfile::TempDir,
+    apps_dir: &std::path::Path,
+    core_container: Option<String>,
+    oidc: Option<Hydra>,
+    instance: Instance,
+    images: ImageWorker,
+    relay_dir: Option<PathBuf>,
+) -> PluginManager {
     let owner = fs::metadata(dir.path()).unwrap();
     let cfg = LifecycleConfig {
         public: PublicUrls {
@@ -134,6 +160,8 @@ fn manager_for(
         data_dir: dir.path().to_owned(),
         apps_dir: apps_dir.to_owned(),
         shares_dir: dir.path().join("shares"),
+        // 默认不是 `/run`：测试要能同时跑，套接字得落在各自的临时目录里。
+        relay_dir: relay_dir.unwrap_or_else(|| dir.path().join("relay")),
         core_container,
         tz: "UTC".into(),
         puid: owner.uid(),
@@ -244,15 +272,19 @@ async fn configs_are_written_after_create_and_before_start() {
             < position(format!("POST /containers/{web}/start")),
         "配置要在启动前写进容器：{writes:?}"
     );
+    // 目标上级目录在容器里不存在时先建出来（root、0755），文件照声明写。
     assert_eq!(
         archived(&docker.archive(&web).unwrap()),
-        [(
-            "etc/app.yaml".to_owned(),
-            101,
-            102,
-            0o444,
-            b"level: info\n".to_vec()
-        )]
+        [
+            ("etc".to_owned(), 0, 0, 0o755, Vec::new()),
+            (
+                "etc/app.yaml".to_owned(),
+                101,
+                102,
+                0o644,
+                b"level: info\n".to_vec()
+            ),
+        ]
     );
 
     // 插件包的文件随记录保存，核心重启后用它们恢复。
@@ -362,10 +394,15 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             enabled_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
+            entry_label: None,
             origin: None,
             written_by: None,
             ask_every_update: false,
             family: false,
+            settings: Default::default(),
+            settings_changed_ms: None,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         })
         .unwrap();
     docker.add_container(&container_name("app-good", "web"), "app.good");
@@ -506,7 +543,7 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
         display_name: "主人".into(),
         email: Some("owner@wonton.localhost".into()),
     };
-    let auth = m.route("app-test").unwrap().proxy.unwrap();
+    let auth = m.route("app-test", "/").unwrap().proxy.unwrap();
     let header = auth.headers(&owner, wonton_protocol::Role::Owner).unwrap();
     assert_eq!(
         (header[0].0.as_str(), header[0].1.as_str()),
@@ -519,7 +556,7 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
     // 核心重启后从密钥库读回同一个值。
     let restarted = manager_with(engine, &dir);
     restarted.restore().await.unwrap();
-    let auth = restarted.route("app-test").unwrap().proxy.unwrap();
+    let auth = restarted.route("app-test", "/").unwrap().proxy.unwrap();
     assert_eq!(
         auth.cookies(&owner, wonton_protocol::Role::Owner).unwrap()[0].1,
         key
@@ -638,7 +675,10 @@ async fn an_uninstall_finishes_after_its_request_goes_away() {
     ));
     let request = tokio::spawn({
         let (m, id) = (m.clone(), id.clone());
-        async move { m.uninstall_detached(id, true, super::langs()).await }
+        async move {
+            m.uninstall_detached(id, true, Vec::new(), true, super::langs())
+                .await
+        }
     });
     hold.reached().await;
     // 请求断开时 hyper 丢弃处理它的 future。
@@ -647,7 +687,7 @@ async fn an_uninstall_finishes_after_its_request_goes_away() {
 
     // 卸载还在进行：再来一次如实回答，不另起一次。
     let err = m
-        .uninstall_detached(id.clone(), true, super::langs())
+        .uninstall_detached(id.clone(), true, Vec::new(), true, super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "conflict");
@@ -748,10 +788,15 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
             enabled_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
+            entry_label: None,
             origin: None,
             written_by: None,
             ask_every_update: false,
             family: false,
+            settings: Default::default(),
+            settings_changed_ms: None,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         })
         .unwrap();
     docker.add_container(&container_name("app-test", "web"), "app.test");
@@ -769,7 +814,7 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
     let m = manager_in_container(engine, &dir);
     m.restore().await.unwrap();
     assert_eq!(
-        m.route("app-test").unwrap().upstream,
+        m.route("app-test", "/").unwrap().upstream,
         Some(Endpoint::Tcp(
             "web.app-test.wonton.internal:8123".to_owned()
         ))

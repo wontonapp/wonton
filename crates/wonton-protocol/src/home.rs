@@ -21,12 +21,15 @@ pub struct HomeViewModel {
     pub proxy: Option<ProxySettings>,
     /// 插件网页的入口地址（M0 由连接信息给出）。
     pub web_url: Option<String>,
-    /// 扫码配对的进展；没在配对时为空，配对成功后也回到空。
+    /// 扫码配对的进展；没在配对时为空，配上后停在 [`PairingStatus::Paired`] 直到下一次配对或重置连接信息。
     pub pairing: Option<PairingStatus>,
     /// “添加设备”的进展和给新设备扫的码（[`Action::InviteDevice`](crate::Action::InviteDevice)）；没在添加设备时为空。
     pub invite: Option<DeviceInvite>,
     /// 已配对、收新消息的方式是 [`PushMethod::Keepalive`](crate::PushMethod::Keepalive)：Android 的壳按它启停“保持连接”的前台服务。
     pub keep_connection: bool,
+    /// 断过又连上了：短暂为真，期间壳把短状态换成“已连接”；什么时候清由核心掌握，壳不计时。
+    #[serde(default)]
+    pub just_recovered: bool,
 }
 
 /// 给新设备扫的配对码。
@@ -71,6 +74,9 @@ pub enum PairingStatus {
         elapsed_ms: u64,
         stage: PairingStage,
     },
+    /// 配上了：服务器登记了这台设备，连接信息存下了，连接正在建立。壳看到它就离开配对页；
+    /// 取消不会到这一步。下一次开始配对、或者连接信息被重置时清掉。
+    Paired,
     Failed {
         reason: PairingFailure,
         /// 原始说明，壳只在“详情”里显示。被服务器拒绝的几类（`Rejected`、`Expired`、`Closed`）是服务器按它主人的语言
@@ -245,6 +251,8 @@ pub struct ConnectionDetails {
 pub struct HomePath {
     /// 经中继转发；否则是局域网或打洞成功的直连。
     pub relay: bool,
+    /// 中继是 n0 公共中继（带宽不够传画面）；直连或自建中继为假。
+    pub public_relay: bool,
     /// 直连的对端是局域网地址。
     pub lan: bool,
     /// 往返时间估计，毫秒。
