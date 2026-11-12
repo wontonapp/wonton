@@ -42,6 +42,10 @@ struct MainView: View {
         .overlay { if chat.isOpeningChat { ProgressView() } }
         .modifier(ChatDialogs(model: chat))
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
+        .modifier(KeyHandoffCover(model: chat) {
+            tabs.select(.chat)
+            chat.path = [.chatBackup]
+        })
         .fullScreenCover(isPresented: overlayPresented, onDismiss: presentPendingSettings) { overlay }
         .fullScreenCover(
             item: $onboardingGateway, onDismiss: {
@@ -111,7 +115,7 @@ struct MainView: View {
         .onChange(of: onboarding.viewModel.step) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .onChange(of: home.servers) { old, new in updatePairingPresentation(from: old, to: new) }
         .environment(plugins)
-        .environment(\.wontonBarStatus, WontonBarStatus(home: home.viewModel, recovered: home.connectionRecovered) {
+        .environment(\.wontonBarStatus, WontonBarStatus(home: home.viewModel, recovered: home.viewModel.justRecovered) {
             ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showServerRoute)
         })
     }

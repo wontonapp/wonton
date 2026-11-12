@@ -45,7 +45,8 @@ pub(crate) fn key_notice(
     encryption: &EncryptionStatus,
     has_undecryptable: bool,
 ) -> Option<KeyNotice> {
-    if !has_undecryptable {
+    // 交接期间新设备在等另一台设备交出密钥，不提恢复密钥（ADR-0087）。
+    if !has_undecryptable || super::handoff::receiving(encryption).is_some() {
         return None;
     }
     match encryption.recovery {
@@ -117,6 +118,10 @@ pub(crate) fn summary(body: MessageBody, is_own: bool, links: &LinkTargets) -> M
             }
         }
         MessageBody::Image(_) => MessageSummary::Image,
+        // App 不渲染文件消息；按不认识的消息类型一样显示，交给 Agent 是桥的事。
+        MessageBody::File(_) => MessageSummary::Other {
+            kind: "m.file".to_owned(),
+        },
         MessageBody::Undecryptable => MessageSummary::Undecryptable,
         MessageBody::Redacted => MessageSummary::Redacted,
         MessageBody::Other { kind } => MessageSummary::Other { kind },
@@ -252,6 +257,9 @@ pub(super) fn message_content(
         },
         MessageBody::Undecryptable => MessageContent::Undecryptable,
         MessageBody::Redacted => MessageContent::Redacted,
+        MessageBody::File(_) => MessageContent::Unsupported {
+            kind: "m.file".to_owned(),
+        },
         MessageBody::Other { kind } => MessageContent::Unsupported { kind },
     }
 }
@@ -362,6 +370,7 @@ mod tests {
             can_reset: false,
             recovery_next_step: wonton_protocol::RecoveryNextStep::None,
             verification_flow: None,
+            key_handoff: None,
         }
     }
 

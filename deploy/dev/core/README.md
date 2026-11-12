@@ -10,6 +10,7 @@ Mailpit 与正式部署使用同一个固定摘要的官方镜像，等核心健
 ```bash
 deploy/dev/core/dev.sh up                    # 构建核心镜像，启动核心、Hydra 和 Tuwunel，等到健康
 deploy/dev/core/dev.sh install plugins/examples/grafana   # 预览权限，确认后安装
+deploy/dev/core/dev.sh upgrade plugins/examples/grafana   # 预览后升级已装的插件：换容器不吊销 Bot 的设备，数据和密钥都留着
 deploy/dev/core/dev.sh token                 # 主人令牌（M0 代替配对，用来登录网关）
 deploy/dev/core/dev.sh list
 deploy/dev/core/dev.sh logs hydra            # 跟日志：核心栈的服务（core、hydra 等）或插件的服务名
@@ -95,6 +96,10 @@ deploy/dev/core/dev.sh devices                 # 已登记的设备；revoke <en
 `reset` 删掉核心数据目录，隧道身份（endpoint ID）跟着换；App 用新码添加服务器，旧服务器的数据保留；
 `reset --keep-tunnel-identity` 保留 `core/tunnel-key` 和 `core/devices.json`，endpoint ID 不变，已配对的设备不用重新配对
 （家人设备记的用户名随核心数据删了，要重新登记）。
+
+加设备时交接聊天密钥（ADR-0087）没有第二台 App 时，用真实的客户端核心扮演旧设备：
+`cargo run -p wonton-client --example key-handoff-old-device -- <数据目录> <配对码> <写码的文件>` 登录、开好备份后打开
+“添加设备”，把给新设备的码写进文件；对表情时打印表情并替主人点“相同”，之后留两分钟回答新设备要密钥。
 
 在本机用隧道客户端示例扮演手机：`cargo run -p wonton-tunnel --example tunnel-client -- pair '<配对码>'` 用配对码
 登记它（`-- id` 输出它的 ID）。`--auth` 和 App 一样起带会话凭据的 HTTP 正向代理，启动时打印凭据：

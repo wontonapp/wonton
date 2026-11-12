@@ -5,15 +5,15 @@ use std::time::Instant;
 use wonton_l10n::Arg;
 
 use super::{
-    Job, JobKind, PromptFinished, Room, RoomState, TurnContext, format_error, now, permissions,
-    routing, sessions,
+    Job, JobKind, PromptFinished, Room, RoomState, TurnContext, attachments, busy, format_error,
+    now, permissions, routing, sessions,
 };
 use crate::acp::PromptResult;
 use crate::commands;
 use crate::config::Limits;
 use crate::error::{Detail, Error, Result};
 use crate::l10n::text;
-use crate::matrix::IncomingText;
+use crate::matrix::{Incoming, IncomingContent};
 use crate::topics::{SessionKey, Topics, TurnStart};
 
 /// 发到这条消息所在的地方：主对话，或它所属的话题。
@@ -33,20 +33,46 @@ pub(super) async fn receive_job<R: Room>(
     context: &TurnContext<R>,
     state: &mut RoomState,
     topics: &mut Topics,
-    incoming: IncomingText,
+    incoming: Incoming,
 ) -> Result<()> {
     let key = routing::session_key(incoming.thread_root.as_deref());
-    if incoming.text.is_empty() {
-        return send_to(context, &key, &text(context.lang, "input-unsupported", &[])).await;
+    if let IncomingContent::Unsupported { kind } = &incoming.content {
+        return send_to(
+            context,
+            &key,
+            &text(
+                context.lang,
+                "input-unsupported",
+                &[("kind", Arg::from(kind.clone()))],
+            ),
+        )
+        .await;
     }
-    if commands::is_help_request(&incoming.text) {
+    let user_text = match &incoming.content {
+        IncomingContent::Media(media) => media.caption.clone().unwrap_or_default(),
+        IncomingContent::Text(text) => text.clone(),
+        IncomingContent::Unsupported { .. } => String::new(),
+    };
+    if matches!(&incoming.content, IncomingContent::Text(text) if text.is_empty()) {
+        return send_to(
+            context,
+            &key,
+            &text(
+                context.lang,
+                "input-unsupported",
+                &[("kind", Arg::from("other"))],
+            ),
+        )
+        .await;
+    }
+    if matches!(&incoming.content, IncomingContent::Text(text) if commands::is_help_request(text)) {
         return send_to(context, &key, &commands::help(context.lang)).await;
     }
     if state.sessions.existing(&key).is_none()
         && let Some(root) = &incoming.thread_root
     {
         let (root_text, preceding) =
-            routing::opening_context(state, root, &incoming.event_id, &incoming.text);
+            routing::opening_context(state, root, &incoming.event_id, &user_text);
         let session = state.sessions.state(&key);
         session.root_text = root_text;
         session.preceding = preceding;
@@ -55,25 +81,31 @@ pub(super) async fn receive_job<R: Room>(
         .sessions
         .existing(&key)
         .is_some_and(|state| state.active);
-    if context
-        .login
-        .receive(
-            &context.room,
-            context.group,
-            incoming.thread_root.as_deref(),
-            &incoming,
-            busy,
-            context.lang,
-        )
-        .await?
+    // 登录流程只认文字：发码、回授权码都是打字，不收附件。
+    if matches!(incoming.content, IncomingContent::Text(_))
+        && context
+            .login
+            .receive(
+                &context.room,
+                context.group,
+                incoming.thread_root.as_deref(),
+                &user_text,
+                &incoming.event_id,
+                busy,
+                context.lang,
+            )
+            .await?
     {
         return Ok(());
     }
-    let job = match parse_job(
-        &incoming.event_id,
-        &incoming.text,
-        &context.bridge.config.limits,
-    ) {
+    let job = match incoming.content {
+        IncomingContent::Text(text) => {
+            parse_job(&incoming.event_id, &text, &context.bridge.config.limits)
+        }
+        IncomingContent::Media(media) => media_job(context, media, &incoming.event_id).await,
+        IncomingContent::Unsupported { .. } => return Ok(()),
+    };
+    let job = match job {
         Ok(job) => job,
         Err(error) => return send_to(context, &key, &format_error(&error, context.lang)).await,
     };
@@ -81,103 +113,78 @@ pub(super) async fn receive_job<R: Room>(
         return end(context, state, topics, &key).await;
     }
     match job.kind {
-        JobKind::Interrupt if busy => conclude_interrupt(context, state, &key, job).await,
-        JobKind::Steer if busy && context.bridge.acp.capabilities().steering => {
-            steer(context, state, &key, job).await
-        }
-        _ if busy => queue(context, state, &key, job).await,
-        _ => start_or_report(context, state, topics, key, job).await,
+        JobKind::Interrupt if busy => busy::interrupt(context, state, &key, job).await,
+        _ if busy => busy::receive(context, state, &key, job).await,
+        _ => start_or_report(context, state, topics, key, vec![job]).await,
     }
 }
 
-/// `/wonton interrupt`：取消当前一轮，等它的应答回来再发新的。
-async fn conclude_interrupt<R: Room>(
+/// 媒体消息的任务：现在就下载落工作区，失败按类别报错；之后排队（含话题准入）只带
+/// 已落盘的路径，不会在中途丢。说明文字也是用户输入，受同一个输入上限。
+async fn media_job<R: Room>(
     context: &TurnContext<R>,
-    state: &mut RoomState,
-    key: &SessionKey,
-    job: Job,
-) -> Result<()> {
-    let session = state.sessions.state(key);
-    if session.pending_interrupt.is_some() {
-        return send_to(context, key, &text(context.lang, "interrupt-pending", &[])).await;
+    media: crate::matrix::MediaAttachment,
+    event_id: &str,
+) -> Result<Job> {
+    if media
+        .caption
+        .as_ref()
+        .is_some_and(|caption| caption.len() > context.bridge.config.limits.max_input_bytes)
+    {
+        return Err(too_long(&context.bridge.config.limits));
     }
-    session.pending_interrupt = Some(job);
-    let Some(session_id) = session.session_id.clone() else {
-        session.pending_interrupt = None;
-        return send_to(
-            context,
-            key,
-            &format_error(
-                &Error::AgentNotReady(Detail::msg("no-active-session")),
-                context.lang,
-            ),
-        )
-        .await;
-    };
-    if let Err(error) = context.bridge.acp.cancel(&session_id).await {
-        state.sessions.state(key).pending_interrupt = None;
-        return send_to(context, key, &format_error(&error, context.lang)).await;
-    }
-    Ok(())
+    let prepared = attachments::prepare(
+        &*context.room,
+        &media,
+        event_id,
+        &context.bridge.config.workspace,
+    )
+    .await?;
+    Ok(Job {
+        kind: JobKind::Normal,
+        text: media.caption.unwrap_or_default(),
+        event_id: event_id.to_owned(),
+        media: Some(prepared),
+    })
 }
 
-/// `/wonton steer`：Agent 支持时直接插进进行中的一轮，不支持返回 promptRequired 时排队。
-async fn steer<R: Room>(
+fn too_long(limits: &Limits) -> Error {
+    Error::InvalidInput(Detail::msg_with(
+        "input-too-long",
+        [("max", limits.max_input_bytes.to_string())],
+    ))
+}
+
+/// 一轮（或一次插话）的内容块：一个文字块在前，附件在后；没有文字就只有附件块。文字是说明（开局说明或
+/// 动态）加上各条消息的文字，按到达顺序空一行接起来：攒着的几条合成一轮时，Agent 看到的就是主人
+/// 连着说的几句话。
+pub(super) async fn prompt_blocks<R: Room>(
     context: &TurnContext<R>,
-    state: &mut RoomState,
-    key: &SessionKey,
-    job: Job,
-) -> Result<()> {
-    let Some(session_id) = state
-        .sessions
-        .existing(key)
-        .and_then(|session| session.session_id.clone())
-    else {
-        return send_to(
-            context,
-            key,
-            &format_error(
-                &Error::AgentNotReady(Detail::msg("no-active-session")),
-                context.lang,
-            ),
-        )
-        .await;
-    };
-    let outcome = match context.bridge.acp.steer(&session_id, &job.text).await {
-        Ok(outcome) => outcome,
-        Err(error) => return send_to(context, key, &format_error(&error, context.lang)).await,
-    };
-    match outcome.as_str() {
-        "injected" => Ok(()),
-        "promptRequired" => {
-            queue(
-                context,
-                state,
-                key,
-                Job {
-                    kind: JobKind::Normal,
-                    ..job
-                },
+    prefix: Option<String>,
+    jobs: &[Job],
+) -> Result<Vec<serde_json::Value>> {
+    let text = prefix
+        .into_iter()
+        .chain(jobs.iter().map(|job| job.text.trim().to_owned()))
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let text = text.trim_end().to_owned();
+    let mut blocks = Vec::new();
+    if !text.is_empty() {
+        blocks.push(attachments::text_block(&text));
+    }
+    for media in jobs.iter().filter_map(|job| job.media.as_ref()) {
+        blocks.extend(
+            attachments::blocks(
+                media,
+                context.bridge.acp.capabilities().prompt_image,
+                &context.bridge.config.workspace,
             )
-            .await
-        }
-        _ => send_to(context, key, &text(context.lang, "steer-rejected", &[])).await,
+            .await?,
+        );
     }
-}
-
-async fn queue<R: Room>(
-    context: &TurnContext<R>,
-    state: &mut RoomState,
-    key: &SessionKey,
-    job: Job,
-) -> Result<()> {
-    let session = state.sessions.state(key);
-    if session.queue.len() >= context.bridge.config.limits.max_queue {
-        let error = Error::Busy(Detail::msg("queue-full"));
-        return send_to(context, key, &format_error(&error, context.lang)).await;
-    }
-    session.queue.push_back(job);
-    Ok(())
+    Ok(blocks)
 }
 
 fn parse_job(event_id: &str, input: &str, limits: &Limits) -> Result<Job> {
@@ -196,16 +203,14 @@ fn parse_job(event_id: &str, input: &str, limits: &Limits) -> Result<Job> {
             kind: JobKind::End,
             text: String::new(),
             event_id: event_id.to_owned(),
+            media: None,
         });
     }
-    let (kind, body) = if let Some(body) = trimmed.strip_prefix("/wonton interrupt ") {
-        (JobKind::Interrupt, body)
-    } else if let Some(body) = trimmed.strip_prefix("/wonton queue ") {
-        (JobKind::Queue, body)
-    } else if let Some(body) = trimmed.strip_prefix("/wonton steer ") {
-        (JobKind::Steer, body)
-    } else {
-        (JobKind::Normal, trimmed)
+    let (kind, body) = match trimmed.strip_prefix("/wonton interrupt") {
+        Some(body) if body.is_empty() || body.starts_with(char::is_whitespace) => {
+            (JobKind::Interrupt, body)
+        }
+        _ => (JobKind::Normal, trimmed),
     };
     if body.trim().is_empty() {
         return Err(Error::InvalidInput(Detail::msg("control-without-text")));
@@ -214,6 +219,7 @@ fn parse_job(event_id: &str, input: &str, limits: &Limits) -> Result<Job> {
         kind,
         text: body.trim().to_owned(),
         event_id: event_id.to_owned(),
+        media: None,
     })
 }
 
@@ -222,27 +228,36 @@ async fn start_or_report<R: Room>(
     state: &mut RoomState,
     topics: &mut Topics,
     key: SessionKey,
-    job: Job,
+    batch: Vec<Job>,
 ) -> Result<()> {
-    if let Err(error) = start_job(context, state, topics, key.clone(), job).await {
+    if let Err(error) = start_job(context, state, topics, key.clone(), batch).await {
         send_to(context, &key, &format_error(&error, context.lang)).await?;
     }
     Ok(())
 }
 
-/// 开始一轮：开局说明或动态拼在用户这句话前面，登记工作板后发给 Agent。
+/// 开始一轮：开局说明或动态拼在用户的话前面，登记工作板后发给 Agent。`batch` 是这一轮要交给 Agent 的
+/// 消息，按到达顺序：平时一条，上一轮跑着时攒下的是几条合成一轮（`busy.rs`）。
 async fn start_job<R: Room>(
     context: &TurnContext<R>,
     state: &mut RoomState,
     topics: &mut Topics,
     key: SessionKey,
-    job: Job,
+    batch: Vec<Job>,
 ) -> Result<()> {
+    let Some(last) = batch.last() else {
+        return Ok(());
+    };
+    let display = batch
+        .iter()
+        .map(Job::display)
+        .collect::<Vec<_>>()
+        .join("\n");
     let session = state.sessions.state(&key);
     let first = session.first_turn;
     if first && key.is_topic() && session.root_text.is_none() {
         // 话题根不在历史里（桥重启过、或者根本就是这条消息自己开的头）：拿这句话当起点。
-        session.root_text = Some(job.text.clone());
+        session.root_text = Some(display.clone());
     }
     // 只有话题第一轮带开局说明；之后每轮只带别人的动态。任务话题不注入别人的动态
     // （编排器自己分工），第一轮的开局说明照带。
@@ -254,8 +269,17 @@ async fn start_job<R: Room>(
     } else {
         topics.digest_for(&key, context.lang)
     };
+    // 话题准入排队只发生在话题的第一句（这时还没有在跑的一轮，`batch` 只有一条）；攒下的几条
+    // 是一轮结束后才发，话题已经入场，不会在这里排队，所以排队位只存一条的附件就够。
     if topics
-        .turn_started(&key, &job.text, &job.event_id, now(), context.lang)
+        .turn_started(
+            &key,
+            &display,
+            &last.event_id,
+            last.media.as_ref(),
+            now(),
+            context.lang,
+        )
         .await?
         == TurnStart::Queued
     {
@@ -286,17 +310,17 @@ async fn start_job<R: Room>(
     if first && created == Some(false) {
         send_to(context, &key, &text(context.lang, "topic-no-ask-mode", &[])).await?;
     }
-    let prompt = match prefix {
-        Some(prefix) => format!("{prefix}\n\n{}", job.text),
-        None => job.text,
-    };
+    // 一轮的内容块：说明（含开局说明/动态）在前，附件在后；没有文字就只有附件块。
+    let blocks = prompt_blocks(context, prefix, &batch).await?;
     state.sessions.state(&key).active = true;
     state.last_activity = Instant::now();
     // 一轮一条的状态消息（ADR-0082）：发出提示词时先挂上“在想”，之后随 ACP 事件编辑。
     state
         .run_status
-        .start(context.room.as_ref(), &key, &job.event_id, context.lang)
+        .start(context.room.as_ref(), &key, &last.event_id, context.lang)
         .await;
+    // 这一轮就要发给 Agent：这批消息算收到了。回执只往前走，发给最后一条就覆盖了前面几条。
+    busy::receipt(context, &last.event_id).await;
     let acp = context.bridge.acp.clone();
     let room = context.room.clone();
     let limits = context.bridge.config.limits.clone();
@@ -308,7 +332,7 @@ async fn start_job<R: Room>(
         let result = acp
             .prompt(
                 &session_id,
-                &prompt,
+                blocks,
                 limits.max_output_bytes,
                 limits.turn_timeout,
                 lang,
@@ -350,7 +374,7 @@ async fn announce_queue<R: Room>(
     .await
 }
 
-/// 一轮结束：记结论、发 notice、放行等权限的请求、跑队列里的下一句。
+/// 一轮结束：记结论、发 notice、放行等权限的请求，把这一轮跑着时攒下的消息合成下一轮。
 pub(super) async fn finished<R: Room>(
     context: &TurnContext<R>,
     state: &mut RoomState,
@@ -380,18 +404,13 @@ pub(super) async fn finished<R: Room>(
         .run_status
         .finish(context.room.as_ref(), &key, &finished.result)
         .await;
+    let held = busy::take_held(state, &key);
     if topics.is_finished(&key) {
         let _ = sessions::close_session(&context.bridge, state, &key).await;
         return promote(context, state, topics).await;
     }
-    let next = state
-        .sessions
-        .state(&key)
-        .pending_interrupt
-        .take()
-        .or_else(|| state.sessions.state(&key).queue.pop_front());
-    if let Some(job) = next {
-        start_or_report(context, state, topics, key, job).await?;
+    if !held.is_empty() {
+        start_or_report(context, state, topics, key, held).await?;
     }
     Ok(())
 }
@@ -437,6 +456,10 @@ pub(super) async fn idle<R: Room>(
     state: &mut RoomState,
     topics: &mut Topics,
 ) -> Result<()> {
+    if state.last_sweep.elapsed() >= attachments::SWEEP_INTERVAL {
+        state.last_sweep = Instant::now();
+        attachments::sweep(&context.bridge.config.workspace).await;
+    }
     let main = SessionKey::Main;
     let idle_timeout = context.bridge.config.limits.idle_timeout;
     let close_main = state.last_activity.elapsed() >= idle_timeout
@@ -491,8 +514,8 @@ async fn end<R: Room>(
         .await;
     }
     let session = state.sessions.state(key);
-    session.queue.clear();
-    session.pending_interrupt = None;
+    session.buffer.clear();
+    session.cancelling = false;
     let active = session.active;
     if !active {
         let _ = sessions::close_session(&context.bridge, state, key).await;
@@ -514,17 +537,18 @@ pub(super) async fn promote<R: Room>(
     state: &mut RoomState,
     topics: &mut Topics,
 ) -> Result<()> {
-    while let Some((key, prompt, event_id)) = topics.poll_admission(now()).await? {
+    while let Some((key, prompt, event_id, media)) = topics.poll_admission(now()).await? {
         start_or_report(
             context,
             state,
             topics,
             key,
-            Job {
+            vec![Job {
                 kind: JobKind::Normal,
                 text: prompt,
                 event_id,
-            },
+                media,
+            }],
         )
         .await?;
     }

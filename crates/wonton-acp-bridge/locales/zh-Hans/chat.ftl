@@ -1,14 +1,21 @@
 ## 桥自己发进房间的状态话（ADR-0043）。一条完整的话一条消息；数据作参数，不翻。
 
 login-reconnect = Agent 登录完成，正在重新连接。
-input-unsupported = 输入不支持：只接受普通文字。
+input-unsupported =
+    输入不支持：{ $kind ->
+        [audio] 语音消息
+        [video] 视频消息
+        *[other] 这类内容
+    }暂时不支持，只支持文字、图片和文件。
 input-too-long = 输入非法：输入超过 { $max } 字节限制
 input-empty = 输入非法：输入不能为空
+attachment-too-large = 附件超过 { $max } 的上限
+workspace-missing = 工作区目录不存在，插件可能没有挂上工作区
+workspace-not-absolute = 工作区路径不是绝对路径：{ $path }
 control-without-text = 输入非法：控制命令缺少文字
-interrupt-pending = 忙：已有一个打断请求在等待处理。
-queue-full = 忙：ACP 队列已满，请稍后再试。
+queue-full = 忙：等 Agent 做完这一轮的消息太多了，请稍后再试。
 no-active-session = Agent 未就绪：没有活动 ACP session
-steer-rejected = Agent 没有接受插话请求。
+steer-new-turn = Agent 把这条消息当作新的一轮自己开始了，这一轮的回复不会出现在这里。
 session-lost-new = ACP 会话已丢失，已新建会话；之前的上下文不再可用。
 permission-failed = Agent 权限请求失败：{ $message }
 permissions-cancelled = 权限请求已取消，Agent 没有执行该操作。

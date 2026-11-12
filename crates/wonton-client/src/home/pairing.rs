@@ -237,7 +237,8 @@ impl HomeLink {
                     endpoint.close().await;
                 }
                 match self.connect(&ticket(&code, &device_name)) {
-                    Ok(()) => None,
+                    // 停在“配上了”给壳当配对结束的类别：取消不会到这一步，壳看到它就离开配对页。
+                    Ok(()) => Some(PairingStatus::Paired),
                     Err(e) => Some(failed(PairingFailure::Upstream, e.to_string())),
                 }
             }

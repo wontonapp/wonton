@@ -116,7 +116,9 @@ impl Bus {
             let read_only = tool.annotations.as_ref().and_then(|a| a.read_only_hint);
             let access = if read_only == Some(true) {
                 ToolAccess::PluginReadOnly
-            } else if policy.is_read_only(plugin.as_str(), &tool.name) {
+            } else if !super::risky::deletes(&tool)
+                && policy.is_read_only(plugin.as_str(), &tool.name)
+            {
                 ToolAccess::OwnerReadOnly
             } else {
                 ToolAccess::Sensitive

@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use iroh::TransportAddr;
 use iroh::{Endpoint, SecretKey, Watcher};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, watch};
@@ -32,7 +33,7 @@ use wonton_protocol::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure,
     HomePath, HomeStatus, HomeViewModel, ProxySettings, PushMethod,
 };
-use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, spawn_tier_fallback};
+use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, is_public_relay, spawn_tier_fallback};
 use wonton_tunnel::{
     LocalProxy, PathInfo, PathKind, ProxyAccess, ProxyCredential, TunnelClient, TunnelError,
     TunnelStatus,
@@ -149,6 +150,7 @@ impl HomeLink {
                 pairing: None,
                 invite: None,
                 keep_connection: false,
+                just_recovered: false,
             },
         );
         let home = Arc::new(Self {
@@ -383,6 +385,11 @@ impl HomeLink {
         ticket.device_name().map(str::to_owned)
     }
 
+    /// 连接信息是不是扫码配对来的：只有配对生成的连接信息里有设备名，测试用的 `ConnectHome` 没有。
+    pub(crate) fn paired_with_code(&self) -> bool {
+        self.device_name().is_some()
+    }
+
     fn start(self: &Arc<Self>, text: String, ticket: Ticket) {
         *self.lock_ticket() = Some(text);
         *self
@@ -397,6 +404,7 @@ impl HomeLink {
             view.path = None;
             view.proxy = None;
             view.notice = None;
+            view.just_recovered = false;
         });
         self.runtime.spawn(self.clone().establish(ticket));
     }
@@ -576,6 +584,7 @@ impl HomeLink {
             tracing::info!(outage_ms, trigger = recovery.trigger, "connection restored");
         }
         let notice = tracker.notice(&status, now);
+        let just_recovered = tracker.just_recovered(&notice, now);
         let details = ConnectionDetails {
             network: tracker.network(),
             relay: tracker.relay(),
@@ -596,7 +605,7 @@ impl HomeLink {
             udp_flows: client.udp_flows(),
             udp_buffer_evicted_datagrams: client.udp_buffer_evicted(),
         };
-        let tick = tracker.next_tick(connected);
+        let tick = tracker.next_tick(connected, now);
         drop(tracker);
         let stats_due = connected && self.stats_due(now);
         let mut withheld = false;
@@ -636,10 +645,12 @@ impl HomeLink {
             let changed = view.status != status
                 || view.path != path
                 || view.notice != notice
+                || view.just_recovered != just_recovered
                 || view.details != details;
             view.status = status;
             view.path = path;
             view.notice = notice;
+            view.just_recovered = just_recovered;
             view.details = details;
             changed
         });
@@ -718,8 +729,13 @@ fn failure(err: &TunnelError) -> HomeFailure {
 }
 
 fn path_view(path: PathInfo) -> HomePath {
+    let public_relay = match &path.remote {
+        TransportAddr::Relay(url) => is_public_relay(url),
+        _ => false,
+    };
     HomePath {
         relay: path.kind == PathKind::Relay,
+        public_relay,
         lan: path.is_lan(),
         rtt_ms: u32::try_from(path.rtt.as_millis()).unwrap_or(u32::MAX),
     }

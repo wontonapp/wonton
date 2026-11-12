@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppLink
+import app.wonton.protocol.BotRef
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.OnboardingStep
@@ -22,20 +23,30 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
     var peersOpenRequests by mutableStateOf(false)
     var settingsOverlay by mutableStateOf(false)
     var tabMenu by mutableStateOf<TabRef?>(null)
-    val plugins = PluginNavigation { entry ->
-        when (entry) {
-            is PluginEntry.Chat -> tabs.plugins.reject(
-                chat.openDirectChat(tabs.core, entry.botUserId, tabs.viewModel.selected),
-            )
-            is PluginEntry.Web -> tabs.send(Action.SelectTab(entry.tab))
-        }
-    }
+    val plugins = PluginNavigation(
+        open = { entry ->
+            when (entry) {
+                is PluginEntry.Chat -> tabs.plugins.reject(
+                    chat.openDirectChat(tabs.core, entry.botUserId, tabs.viewModel.selected),
+                )
+                is PluginEntry.Web -> tabs.send(Action.SelectTab(entry.tab))
+            }
+        },
+        checkInstalled = { checkInstalled() },
+    )
 
     fun openRoom(roomId: String) {
         settingsOverlay = false
         tabMenu = null
         tabs.send(Action.SelectTab(TabRef.Chat))
         chat.openWhenJoined(tabs.core, roomId)
+    }
+
+    /** 联系人请求的通知点进来：这个 Bot 的详情页上打开联系人页。 */
+    fun openContacts(bot: BotRef) {
+        resetNavigation()
+        detail(bot.pluginId)
+        plugins.contacts = bot
     }
 
     fun finishOnboarding(peer: String?) {
@@ -58,6 +69,7 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
         plugins.uninstalling = null
         plugins.addingSource = false
         plugins.changingVersion = null
+        plugins.contacts = null
     }
 
     fun openLink(link: AppLink, onboarding: OnboardingViewModel) {
@@ -146,14 +158,14 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
         chat.showingBackup = false
         chat.startingChat = startingChat
     }
+}
 
-    fun hidesBar(): Boolean = settingsOverlay || when (tabs.viewModel.selected) {
-        TabRef.Chat -> chat.openRoom != null || chat.showingBackup || chat.startingChat
-        TabRef.Apps -> appsPage != HomePage.LAUNCHER || plugins.detail != null || plugins.confirmation != null
-        TabRef.Settings -> settingsPage != SettingsSubpage.MAIN
-        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
-        is TabRef.UiResource -> false
-    }
+internal fun AppNavigation.hidesBar(): Boolean = settingsOverlay || when (tabs.viewModel.selected) {
+    TabRef.Chat -> chat.openRoom != null || chat.showingBackup || chat.startingChat
+    TabRef.Apps -> appsPage != HomePage.LAUNCHER || plugins.detail != null || plugins.confirmation != null
+    TabRef.Settings -> settingsPage != SettingsSubpage.MAIN
+    is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
+    is TabRef.UiResource -> false
 }
 
 /** 每次系统 Intent 有自己的消费状态；重组或 Activity 重建不能重放已处理的导航。 */

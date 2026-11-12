@@ -43,6 +43,7 @@ mod port_mapping;
 mod push;
 mod registry_mirror;
 mod reply;
+mod roles;
 mod secret;
 mod server_version;
 mod servers;
@@ -98,9 +99,9 @@ pub use chat_layout::{
     ChatLayoutTarget, ChatTextScale, CodeOverflow, PluginChat,
 };
 pub use confirmation::{
-    Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
-    ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView, ConfirmationWindow,
-    WindowEnd, WindowView, answer_path, window_path,
+    Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,
+    ConfirmationCard, ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView,
+    ConfirmationWindow, WindowEnd, WindowView, answer_path, window_path,
 };
 pub use confirmation_origin::{
     CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ConfirmationOrigin, ConfirmationRequester,
@@ -137,8 +138,8 @@ pub use file::{
 };
 pub use friends::{
     FRIEND_EVENT, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendEvent, FriendFailure,
-    FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsState,
-    FriendsViewModel,
+    FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList,
+    FriendsState, FriendsViewModel, RemovedFriend,
 };
 pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
@@ -214,7 +215,9 @@ pub use plugin::{
 };
 pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
-pub use port_mapping::{MappedPort, PluginPortMapping, PortMappingState, UdpFlowStats};
+pub use port_mapping::{
+    MappedPort, PluginPortMapping, PortMappingState, PortMappingWarning, UdpFlowStats,
+};
 pub use push::{
     NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushMethod,
     PushNotification, PushStatus,
@@ -225,6 +228,14 @@ pub use registry_mirror::{
     RegistryProblem,
 };
 pub use reply::{ComposerDraft, QuotedContent, QuotedMessage, ReplyQuote};
+pub use roles::{
+    AdminScope, AiLevel, AppScope, BOT_AI_LEVEL_ENV, CAPABILITIES_HEADER, Capability,
+    DEFAULT_INVITE_ROLE_PATH, Gate, JOIN_REQUESTS_PATH, JoinOutcome, JoinRequest, JoinRequestList,
+    OIDC_USER_GROUP, PERMISSION_REQUIRED, PermissionItem, PermissionRequired, Permissions,
+    PluginAudience, ROLES_PATH, RoleAssignment, RoleDef, RoleDraft, RoleList, RoleTemplate,
+    TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
+    join_request_reject_path, member_role_path, plugin_audience_path, role_path,
+};
 pub use secret::SecretString;
 pub use server_version::{is_older, minimum_server_version};
 pub use servers::{ServerKind, ServerName, ServerRow, ServersViewModel};
@@ -251,5 +262,5 @@ pub use timeline::{
     TimelineViewport,
 };
 pub use verification::{
-    VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
+    KeyHandoff, VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
 };
