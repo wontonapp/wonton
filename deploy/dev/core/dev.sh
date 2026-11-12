@@ -73,7 +73,7 @@ curl_image="curlimages/curl:8.23.0"
 : "${SMOKE_CONNECT_TIMEOUT:=10}"
 
 # 没带项目名时按“这个检出在跑的实例”认：正好一个就照它，否则落默认名（up 可以这么起新实例；pair/down 见下面各自的校验）。
-if [[ -z ${WONTON_DEV_PROJECT:-} ]]; then
+if [[ -z ${WONTON_DEV_PROJECT+x} ]]; then  # 未设置才探测；显式设成空串也算显式
   cands="$(detect_project || true)"
   if [[ -n $cands && $(wc -l <<<"$cands") -eq 1 ]]; then
     export WONTON_DEV_PROJECT="$cands"
@@ -701,6 +701,7 @@ case "${1:-}" in
       foreign="$(docker ps -a --filter "label=com.docker.compose.project=wonton-dev-core" \
         --format '{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | sort -u | grep -v '^$' | grep -vx "$here" || true)"
       why="这个检出没有在跑的实例"
+      [[ -n ${DOCKER_HOST:-} ]] && why="$why（DOCKER_HOST 指向远端时 working_dir 是那台机器的路径，认不出，请显式带 WONTON_DEV_PROJECT）"
       if [[ -n $cands ]]; then why="这个检出在跑的是：$(tr '\n' ' ' <<<"$cands")"
       elif [[ -n $foreign ]]; then why="默认项目 wonton-dev-core 正被别的检出用（$(tr '\n' ' ' <<<"$foreign")）"; fi
       die "down 没拆：$why。要拆默认项目就显式 WONTON_DEV_PROJECT=wonton-dev-core down，或在起它的检出里 down"
