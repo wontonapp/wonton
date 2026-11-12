@@ -49,12 +49,17 @@ const TYPED: [&str; 6] = [
 ];
 
 /// 不带事件类型的能力。
-const BARE: [&str; 5] = [
+const BARE: [&str; 10] = [
     "io.element.requires_client",
+    "m.always_on_screen",
     "org.matrix.msc4039.download_file",
     "org.matrix.msc4157.send.delayed_event",
     "org.matrix.msc4157.update_delayed_event",
+    "org.matrix.msc4407.receive.sticky_event",
+    "org.matrix.msc4407.send.sticky_event",
     "org.matrix.msc4515.rtc_transports",
+    "org.matrix.msc4533.rtc_livekit_delegate_delayed_leave",
+    "org.matrix.msc4533.rtc_livekit_get_token",
 ];
 
 /// 读到聊天内容，或者改历史、成员、权限的事件类型：确认页上醒目显示。

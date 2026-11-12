@@ -204,9 +204,10 @@ fn only_new_capabilities_count_as_added() {
     assert!(super::super::manifest_widget::added(Some(&old.manifest), &plain.manifest).is_empty());
 }
 
-/// Element Call 在 matrix-rust-sdk 0.19.1（`bindings/matrix-sdk-ffi/src/widget.rs` 的
-/// `get_element_call_required_permissions`）要的全部能力都要能声明，一条都不能被白名单误拒。
-/// 状态事件的 state_key 由 SDK 在运行时拼上自己的用户和装置 ID，这里用同样的形状。
+/// Element Call 实际会请求的全部能力都要能声明，一条都不能被白名单误拒：事件类的来自 matrix-rust-sdk
+/// 0.19.1 的 `get_element_call_required_permissions`，标志位另外加上它经 matrix-widget-api 要的
+/// MSC4407 粘性事件、`m.always_on_screen` 和 MSC4533 的两个（0.19.1 的清单比 Element Call 旧）。
+/// 状态事件的 state_key 由客户端在运行时拼上自己的用户和装置 ID，这里用同样的形状。
 #[test]
 fn element_call_required_permissions_all_parse() {
     let widget = widget(&[
@@ -243,10 +244,15 @@ fn element_call_required_permissions_all_parse() {
         "org.matrix.msc3819.send.to_device:io.element.call.encryption_keys",
         // 标志位。
         "io.element.requires_client",
+        "m.always_on_screen",
         "org.matrix.msc4039.download_file",
         "org.matrix.msc4157.send.delayed_event",
         "org.matrix.msc4157.update_delayed_event",
+        "org.matrix.msc4407.receive.sticky_event",
+        "org.matrix.msc4407.send.sticky_event",
         "org.matrix.msc4515.rtc_transports",
+        "org.matrix.msc4533.rtc_livekit_delegate_delayed_leave",
+        "org.matrix.msc4533.rtc_livekit_get_token",
     ]);
     let package = parse(&widget).unwrap();
     assert_eq!(
@@ -257,6 +263,6 @@ fn element_call_required_permissions_all_parse() {
             .unwrap()
             .capabilities
             .len(),
-        31
+        36
     );
 }
