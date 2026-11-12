@@ -64,6 +64,7 @@ pub mod manifest;
 mod manifest_agent;
 mod manifest_gpu_images;
 mod manifest_mcp;
+mod manifest_permission;
 mod manifest_oidc;
 mod manifest_static;
 mod manifest_tabs;
