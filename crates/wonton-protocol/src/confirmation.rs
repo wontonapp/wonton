@@ -59,6 +59,10 @@ pub struct ConfirmationCard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub requester: Option<crate::ConfirmationRequester>,
+    /// 卡片是关于什么的（ADR-0061）：核心按它写文字和按钮，壳按它做类别特有的跳转。旧核心没写时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub category: Option<ConfirmationCategory>,
     /// 卡片显示在哪个会话，核心核对过主人和发起的 Bot 都在这个房间。为空时只在“等你确认”列表里。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
@@ -82,6 +86,38 @@ pub enum CardAudience {
     Keeper,
     /// 发给所有管理员（主人和有“管理成员”的人），谁先答算谁的（ADR-0088）。
     Admins,
+    #[serde(other)]
+    Other,
+}
+
+/// 卡片类别（ADR-0061）：链的上限、交接和发消息的确认。文字和按钮仍由核心写好，类别带的是壳做跳转、
+/// 分组要用的字段；比壳新的核心给的未知类别落到 [`ConfirmationCategory::Other`]，壳只渲染文字和按钮。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ConfirmationCategory {
+    /// 这条链用到上限了（ADR-0061 第 10 节），发给链代表的人和链上各 Bot 的归属人：按钮“再给一份”各加一份
+    /// 默认上限，全部同意才放开；“先停着”停下整条链。
+    ChainLimitReached {
+        chain: String,
+        kind: crate::ChainLimitKind,
+    },
+    /// 把活交给不归链代表的人的 Bot、或这个插件第一次连到这个 Bot，等目标 Bot 的归属人同意
+    /// （ADR-0061 第 9 节）：标题是“发起处 → 目标 Bot”。
+    HandOffConsent {
+        /// 要接活的 Bot。
+        target_bot: crate::BotRef,
+        /// 交活的发起 Bot。
+        from: crate::BotRef,
+    },
+    /// 这个 Bot 要给收件人发这条消息，等归属人同意（ADR-0061 第 9 节）；主人可以对某个收件人放宽（ADR-0024）。
+    SendMessage {
+        /// 收件人的用户名。
+        recipient: String,
+        /// 要发的全文。
+        body: String,
+    },
+    /// 比壳新的核心给的未知类别。
     #[serde(other)]
     Other,
 }
@@ -365,10 +401,46 @@ mod tests {
         .unwrap();
         assert_eq!(card.title, "Alex 的服务器想和你的服务器连接");
         assert_eq!(card.requester, None, "核心自己发起的卡片没有发起者");
+        assert_eq!(card.category, None, "旧核心的卡片没有类别");
         assert_eq!(card.origin, None, "没有会话的卡片只在列表里");
         let list: ConfirmationList =
             serde_json::from_value(json!({"confirmations": [json!(card)]})).unwrap();
         assert_eq!((list.finished.len(), list.revision), (0, 0));
+    }
+
+    /// 契约：类别带着壳要用的字段；不认识的类别落到 `Other`，卡片照样解析。
+    #[test]
+    fn categories_carry_their_fields_and_fall_back_to_other() {
+        let limit = ConfirmationCategory::ChainLimitReached {
+            chain: "c-1".into(),
+            kind: crate::ChainLimitKind::Rounds,
+        };
+        assert_eq!(
+            json!(limit),
+            json!({"type": "chain_limit_reached", "chain": "c-1", "kind": "rounds"})
+        );
+        assert_eq!(
+            serde_json::from_value::<ConfirmationCategory>(json!(limit)).unwrap(),
+            limit
+        );
+        let consent = ConfirmationCategory::HandOffConsent {
+            target_bot: crate::BotRef {
+                plugin_id: "app.codex".into(),
+                bot: "owner".into(),
+            },
+            from: crate::BotRef {
+                plugin_id: "app.orchestrator".into(),
+                bot: "owner".into(),
+            },
+        };
+        assert_eq!(
+            serde_json::from_value::<ConfirmationCategory>(json!(consent)).unwrap(),
+            consent
+        );
+        assert_eq!(
+            serde_json::from_value::<ConfirmationCategory>(json!({"type": "sms"})).unwrap(),
+            ConfirmationCategory::Other
+        );
     }
 
     #[test]

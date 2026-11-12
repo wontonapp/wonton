@@ -552,6 +552,22 @@ impl PluginManager {
         self.store.bots().localparts_in_room(room)
     }
 
+    /// Matrix 用户 ID 是哪个插件的哪个 Bot，卡片发给谁：私人 Bot 是归属人，共享 Bot 是主人。认不出时是 `None`。
+    pub fn bot_by_user(&self, user_id: &str) -> Option<(PluginId, String, String)> {
+        let all = self
+            .store
+            .bots()
+            .all()
+            .inspect_err(|error| tracing::warn!(error = %error, "读 Bot 记录失败"))
+            .ok()?;
+        all.into_iter().find_map(|(id, bots)| {
+            bots.bots
+                .into_iter()
+                .find(|(_, entry)| entry.account.user_id == user_id)
+                .map(|(bot, entry)| (id, bot, self.keeper_user(&entry.keeper)))
+        })
+    }
+
     /// 总线令牌认出的这个插件的 Bot：令牌对不上就是没有。
     pub fn bot_by_token(&self, id: &PluginId, token: &str) -> Option<(String, BotKeeper)> {
         let bots = self.store.bots().load(id).ok()?;
@@ -559,6 +575,17 @@ impl PluginManager {
             .into_iter()
             .find(|(_, entry)| crate::secret::constant_time_eq(&entry.bus_token, token))
             .map(|(bot, entry)| (bot, entry.keeper))
+    }
+
+    /// 一个 Bot 的 Matrix 账号和主房间；没有这个 Bot 的记录、或记录读不出来时为空。
+    pub fn bot_account(&self, id: &PluginId, bot: &str) -> Option<BotAccount> {
+        let bots = self
+            .store
+            .bots()
+            .load(id)
+            .inspect_err(|error| tracing::warn!(plugin = %id, %error, "读 Bot 记录失败"))
+            .ok()?;
+        bots.bots.get(bot).map(|entry| entry.account.clone())
     }
 
     /// 一个 Bot 的 Matrix 用户名（localpart）；没有这个 Bot 的记录时为空。

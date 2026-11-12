@@ -10,6 +10,7 @@ err-invalid = 輸入無效：{ $message }
 err-confirmation = 無法使用確認卡片：{ $message }
 err-busy = 忙碌：{ $message }
 err-matrix = Matrix 錯誤：{ $message }
+err-hop-limit = 剛才幾個 Bot 在這裡來回說得太多，閘道停下了我的 { $count } 則訊息，現在已經補發。
 
 # 橋自己寫的詳細資訊，嵌在上面這些前綴後面。
 acp-no-http-mcp = Agent 沒有宣告 HTTP MCP 能力
