@@ -7,7 +7,7 @@ description: 写一个 Wonton 插件，装到主人的服务器上，让主人�
 
 插件是一个目录：`docker-compose.yml`，加上它引用的文件。你没有 Docker，也不能构建镜像，所以只有一种写法：**公开镜像加 `configs`**，代码放在插件包里。页面写普通网页，不要编译。
 
-完整规范：<https://github.com/geraldpeng6/wonton-docs/blob/main/plugin-spec.md>。
+完整规范：<https://github.com/wontonapp/wonton-docs/blob/main/plugin-spec.md>。
 
 ## 步骤
 
@@ -23,7 +23,7 @@ description: 写一个 Wonton 插件，装到主人的服务器上，让主人�
 
 ## 检查的两档
 
-`wonton__check_plugin` 的问题必须清零，提醒可以留着：私用（自己装、Agent 写的，从目录安装）到这一步就够了。要上官方商店，还得通过 `--official` 那一档，比私用多要求：必须提供图标；镜像按摘要固定；长期运行的服务在 compose 里写健康检查；`tags`、`license`、`author`、`notices` 必填；`description`、`tags`、`about`、`release_notes`、`setup` 写了就要 `zh` 和 `en` 都有；代理地址交给核心注入，不写死；用请求头认用户的应用只信核心的代理地址（出网插件做不到就不收）。上架流程见[插件的开发指南](https://github.com/geraldpeng6/wonton-docs/blob/main/develop.md)。
+`wonton__check_plugin` 的问题必须清零，提醒可以留着：私用（自己装、Agent 写的，从目录安装）到这一步就够了。要上官方商店，还得通过 `--official` 那一档，比私用多要求：必须提供图标；镜像按摘要固定；长期运行的服务在 compose 里写健康检查；`tags`、`license`、`author`、`notices` 必填；`description`、`tags`、`about`、`release_notes`、`setup` 写了就要 `zh` 和 `en` 都有；代理地址交给核心注入，不写死；用请求头认用户的应用只信核心的代理地址（出网插件做不到就不收）。上架流程见[插件的开发指南](https://github.com/wontonapp/wonton-docs/blob/main/develop.md)。
 
 ## 不能写的
 

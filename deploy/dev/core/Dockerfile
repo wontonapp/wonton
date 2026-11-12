@@ -103,7 +103,7 @@ FROM ${COMPOSE_IMAGE} AS compose
 # 时间用归档里文件的修改时间，也就是这个提交的时间，重复构建结果不变。
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS docs
 ARG WONTON_DOCS_COMMIT=0f55d6e5a6b988e5b7970f41e8aa98865e931219
-ADD https://codeload.github.com/geraldpeng6/wonton-docs/tar.gz/${WONTON_DOCS_COMMIT} /docs.tar.gz
+ADD https://codeload.github.com/wontonapp/wonton-docs/tar.gz/${WONTON_DOCS_COMMIT} /docs.tar.gz
 RUN mkdir -p /docs/user /unpacked \
     && tar xzf /docs.tar.gz --strip-components=1 -C /unpacked \
     && if [ -d /unpacked/user ]; then cp -R /unpacked/user/. /docs/user/; fi \

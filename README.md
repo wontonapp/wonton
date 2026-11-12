@@ -17,7 +17,7 @@ Agent 通过工具调用它们；有网页界面的插件，在 App 里像小程
 
 - [docs/GOAL.md](docs/GOAL.md)：总目标与各里程碑的验收标准
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：系统架构、主要链路与选型
-- [插件规范](https://github.com/geraldpeng6/wonton-docs/blob/main/plugin-spec.md)：`x-wonton` 清单（公开仓库）
+- [插件规范](https://github.com/wontonapp/wonton-docs/blob/main/plugin-spec.md)：`x-wonton` 清单（公开仓库）
 - [docs/adr/](docs/adr/README.md)：架构决策记录
 - [AGENTS.md](AGENTS.md)：贡献规则，人和 AI 编程代理都适用
 

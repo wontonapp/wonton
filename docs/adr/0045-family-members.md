@@ -108,7 +108,7 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
   的小写十六进制前 8 位。登记撞名回 409 `conflict`，不改名、不回退默认 Bot，不能拆 URL 推算身份。
   查同标签占用者和预留须在现有分配锁下原子完成，并先于创建 Matrix 身份、凭据、数据目录或容器；
   409 冲突不得留下这些部分副作用。相同 Bot 重复登记不算冲突；崩溃恢复和重试留给运行时实现，不承诺跨系统回滚。
-  精确截断算法见[插件规范的每 Bot 网页约定](https://github.com/geraldpeng6/wonton-docs/blob/main/plugin-spec.md#每个-bot-的网页)。
+  精确截断算法见[插件规范的每 Bot 网页约定](https://github.com/wontonapp/wonton-docs/blob/main/plugin-spec.md#每个-bot-的网页)。
   仅 origin 分开，入口仍原样追加 `webui.path`；插件级入口使用默认 Bot，也经过同一权限检查。
 - **登录边界**：Bot 名由已有 `WONTON_BOT_NAME` 传入容器；Bot 服务的 `WONTON_APP_URL` 指向自己的 origin，
   全插件一份的服务沿用插件／默认 Bot origin。OIDC 回调和登出回跳按对应 origin 登记，会话 Cookie 精确绑定主机，

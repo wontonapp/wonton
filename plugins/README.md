@@ -2,7 +2,7 @@
 
 本目录只保留示例插件和预装插件锁文件。每个官方插件各在自己的仓库，仓库根目录是插件包：至少包含带
 `x-wonton` 扩展字段的 `docker-compose.yml`，以及清单引用的文件。规范见
-[公开的插件规范](https://github.com/geraldpeng6/wonton-docs/blob/main/plugin-spec.md)。
+[公开的插件规范](https://github.com/wontonapp/wonton-docs/blob/main/plugin-spec.md)。
 
 | 目录 | 说明 |
 | --- | --- |

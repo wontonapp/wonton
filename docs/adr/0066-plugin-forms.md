@@ -100,7 +100,7 @@
 1. 主人在 App 里点“连接 Notion”。连接器生成 PKCE 和 `state`，把授权地址交给 App。
 2. App 用系统的认证会话打开授权页：iOS 的 `ASWebAuthenticationSession`，Android 的 Custom Tabs。主人在服务商那里登录、同意。
 3. 服务商跳到 `redirect_uri`：公开文档仓库 wonton-docs 的项目 Pages 上的一个静态页面
-   `https://geraldpeng6.github.io/wonton-docs/oauth/callback/`。页面用脚本跳到 `wonton://oauth/callback?code=…&state=…`，
+   `https://wontonapp.github.io/wonton-docs/oauth/callback/`。页面用脚本跳到 `wonton://oauth/callback?code=…&state=…`，
    App 接住（iOS 的认证会话按 `callbackURLScheme` 收，Android 按 intent filter 收）。页面上同时有一个“打开 Wonton”的链接，
    脚本没跑时主人点一下也能回去。
    - 不用 universal link、App Links：那两个文件要放在域名根目录的 `/.well-known/` 下，项目 Pages 的根目录不归这个仓库。
@@ -118,7 +118,7 @@
 
 | 服务器 | CIMD | 动态注册 | 怎么接 |
 |---|---|---|---|
-| Notion（`mcp.notion.com`） | 支持 | 支持 | CIMD：`client_id` 是 `https://geraldpeng6.github.io/wonton-docs/oauth/client.json`，写着回调页面的地址 |
+| Notion（`mcp.notion.com`） | 支持 | 支持 | CIMD：`client_id` 是 `https://wontonapp.github.io/wonton-docs/oauth/client.json`，写着回调页面的地址 |
 | Linear（`mcp.linear.app`） | 支持 | 支持 | 同上 |
 | GitHub（`api.githubcopilot.com/mcp`，授权服务器 `github.com/login/oauth`） | 不支持 | 不支持 | 只能预先注册。支持设备码流程，不需要回调，但要我们注册一个 GitHub OAuth App。第一版先用个人访问令牌（`input` 密钥） |
 
