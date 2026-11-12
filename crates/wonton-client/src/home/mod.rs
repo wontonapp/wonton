@@ -379,6 +379,17 @@ impl HomeLink {
             .clone()
     }
 
+    /// 已知隧道不通时的原因；连接没断、正在建连或还没配过对时不拦。核心自己经隧道的请求
+    /// （好友、成员这些）在发出前先过这道闸：已知不通就立刻失败成“连不上家里的服务器”，
+    /// 不等各自的 30 秒超时（tunnel-502）。WebView 的流量照旧等下一次建连结果（ADR-0032）。
+    /// 读主 ViewModel：它由连接状态推出来，也是壳看到的同一份状态。
+    pub(crate) fn tunnel_outage(&self) -> Option<HomeFailure> {
+        match self.view().status {
+            HomeStatus::Disconnected { reason, .. } => Some(reason),
+            _ => None,
+        }
+    }
+
     /// 配对时填的设备名；`ConnectHome` 给的连接信息里没有，存储坏了也为空。
     pub(crate) fn device_name(&self) -> Option<String> {
         let ticket = Ticket::parse(self.lock_ticket().as_deref()?).ok()?;

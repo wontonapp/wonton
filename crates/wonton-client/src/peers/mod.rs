@@ -282,6 +282,10 @@ impl PeersLink {
     }
 
     fn api(&self) -> Result<api::Api, api::Failure> {
+        // 已知隧道不通就立刻失败，不等超时（tunnel-502）。
+        if let Some(reason) = self.home.tunnel_outage() {
+            return Err(api::Failure::transport(format!("{reason:?}")));
+        }
         let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
         let base = self.home.core_url().ok_or_else(not_connected)?;
         let client = {

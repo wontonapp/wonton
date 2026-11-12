@@ -92,3 +92,23 @@ async fn page_media_keeps_the_tunnel_checked_in_the_background() {
     home.backgrounded();
     assert!(!*home.background.borrow());
 }
+
+/// 核心自己经隧道请求的闸门（tunnel-502）：已知断开给原因，连接中、已连上和还没配对不拦。
+#[tokio::test(start_paused = true)]
+async fn a_known_disconnected_connection_gates_core_requests() {
+    let (_dir, home, _method_rx) = paused_home().await;
+    assert_eq!(home.tunnel_outage(), None, "还没配对不拦");
+    for status in [HomeStatus::Connecting, HomeStatus::Connected] {
+        home.view.send_modify(|view| view.status = status.clone());
+        assert_eq!(home.tunnel_outage(), None, "{status:?} 不拦");
+    }
+    for reason in [HomeFailure::TransportUnavailable, HomeFailure::Unauthorized] {
+        home.view.send_modify(|view| {
+            view.status = HomeStatus::Disconnected {
+                reason,
+                message: "测试".into(),
+            }
+        });
+        assert_eq!(home.tunnel_outage(), Some(reason), "{reason:?} 要拦");
+    }
+}
