@@ -51,7 +51,7 @@ pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
                 "agent.skills.mount requires kind: agent".to_owned(),
             ));
         }
-        validate_mount("agent.skills.mount", &skills.mount)?;
+        validate_mount(&skills.mount)?;
     }
     let mut seen = std::collections::BTreeSet::new();
     for login in &agent.login {
@@ -77,8 +77,7 @@ pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     Ok(())
 }
 
-/// 容器里的挂载点：绝对路径，不是 `/`，不带 `..`，不在 `/proc`、`/sys`、`/dev` 下。
-pub(super) fn validate_mount(field: &str, mount: &str) -> Result<(), ManifestError> {
+fn validate_mount(mount: &str) -> Result<(), ManifestError> {
     let first = mount
         .split('/')
         .find(|part| !part.is_empty() && *part != ".");
@@ -89,7 +88,7 @@ pub(super) fn validate_mount(field: &str, mount: &str) -> Result<(), ManifestErr
         || matches!(first, Some("proc" | "sys" | "dev"))
     {
         return Err(ManifestError::Invalid(format!(
-            "{field} `{mount}` must be an absolute container path other than /, \
+            "agent.skills.mount `{mount}` must be an absolute container path other than /, \
              without .. and outside /proc, /sys and /dev"
         )));
     }

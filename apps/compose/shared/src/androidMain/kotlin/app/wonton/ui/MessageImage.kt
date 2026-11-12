@@ -2,7 +2,7 @@ package app.wonton.ui
 
 import android.graphics.ImageDecoder
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,12 +40,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-fun MessageImage(
-    image: ImageContent,
-    core: ClientCore,
-    sendState: SendState,
-    onLongPress: (() -> Unit)? = null,
-) {
+fun MessageImage(image: ImageContent, core: ClientCore, sendState: SendState) {
     val shown = image.thumbnail ?: image.media
     val preview by loadedImage(core, shown)
     var showingViewer by remember { mutableStateOf(false) }
@@ -59,11 +54,10 @@ fun MessageImage(
         Modifier.widthIn(max = WontonTheme.size.messageImage)
             .aspectRatio(image.ratio())
             .clip(RoundedCornerShape(WontonTheme.radii.control))
-            // 点开看图；长按给消息菜单（图片盖满气泡，菜单的手势要从这里来）。
-            .combinedClickable(onClick = { showingViewer = true }, onLongClick = { onLongPress?.invoke() }),
+            .clickable { showingViewer = true },
         contentAlignment = Alignment.Center,
     ) {
-        LoadedImage(preview, ContentScale.Crop, stringResource(R.string.message_quote_image))
+        LoadedImage(preview, ContentScale.Crop)
         if (sendState is SendState.Sending) {
             val bar = Modifier.align(Alignment.BottomStart).fillMaxWidth()
             val progress = sendState.progress
@@ -83,13 +77,12 @@ private fun ImageContent.ratio(): Float {
 }
 
 @Composable
-private fun LoadedImage(state: Result<ImageBitmap>?, scale: ContentScale, label: String) {
+private fun LoadedImage(state: Result<ImageBitmap>?, scale: ContentScale) {
     val unavailable = stringResource(R.string.message_image_unavailable)
     when {
         state == null -> CircularProgressIndicator()
-        // 整张图就是消息内容，点开还有查看器，读屏要有名字。
         state.isSuccess ->
-            Image(state.getOrThrow(), contentDescription = label, Modifier.fillMaxSize(), contentScale = scale)
+            Image(state.getOrThrow(), contentDescription = null, Modifier.fillMaxSize(), contentScale = scale)
         else -> Text(
             (state.exceptionOrNull() as? CoreException)?.problem?.titleText
                 ?: state.exceptionOrNull()?.message ?: unavailable,

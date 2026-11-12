@@ -147,7 +147,7 @@ async fn chat_layouts_follow_the_plugin_the_owners_choice_and_the_global_default
     global_default(&phone, &writer, &writer_room, &chatty_room, &second).await;
     unknown_value(&phone, &other, &chatty, &chatty_room).await;
     keeps_other_items(&phone, &other, &chatty, &chatty_room).await;
-    write_failure(&home, &phone, &second, &chatty, &chatty_room).await;
+    write_failure(&home, &phone).await;
 }
 
 /// 插件声明的形态和设备上的默认。
@@ -323,40 +323,7 @@ async fn keeps_other_items(
 }
 
 /// 写不了时说明原因，显示不变。
-///
-/// 手机上可能还有更早的同步内容在路上。手机上自己写的响应是当场应用的，走在前头很正常；这时如果直接断言，
-/// 落后的那份旧内容随后落下来，会把显示盖回旧值。先让另一台设备改一处别的值、等它从同步到手机上：这条只能
-/// 经同步来，等到了就说明手机已经处理到写之后的状态，后面才不会被旧内容抢先。
-async fn write_failure(
-    home: &Home,
-    phone: &Phone,
-    other: &Phone,
-    chatty: &MatrixSession,
-    chatty_room: &str,
-) {
-    let chatty_id = chatty.user_id().to_string();
-    set(
-        other,
-        ChatLayoutTarget::Bot { user_id: chatty_id },
-        ChatLayoutChoice {
-            code: Some(CodeOverflow::Scroll),
-            ..ChatLayoutChoice::default()
-        },
-    );
-    wait_layout(
-        phone,
-        chatty_room,
-        "标记值从同步到了手机",
-        |layout| layout.code == CodeOverflow::Scroll,
-    )
-    .await;
-    // 写之前不能已经挂着别的原因，否则等一下会把旧原因当成这次的。
-    phone
-        .wait_chat("写之前没有别的原因", |view| {
-            view.problem.is_none().then_some(())
-        })
-        .await;
-
+async fn write_failure(home: &Home, phone: &Phone) {
     // Tuwunel 像挂了一样：隧道还在、会话还在，请求断在转发里。
     home.set_matrix_down(true);
     set(
@@ -371,21 +338,9 @@ async fn write_failure(
         .wait_chat("写失败的原因", |view| view.problem.clone())
         .await;
     assert_eq!(problem.reason, ChatFailure::TransportUnavailable);
-    let after = phone.chat();
-    let default = &after.chat_layout_default;
+    let default = phone.chat().chat_layout_default;
     assert_eq!(default.form, None);
     assert_eq!(default.code, Some(CodeOverflow::Wrap));
-    let chatty_layout = after
-        .rooms
-        .iter()
-        .find(|room| room.room_id == chatty_room)
-        .map(|room| room.layout.clone())
-        .expect("Chatty 的房间还在");
-    assert_eq!(
-        chatty_layout.code,
-        CodeOverflow::Scroll,
-        "标记值也没被盖回去"
-    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

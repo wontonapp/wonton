@@ -97,10 +97,9 @@ private fun TransferRow(transfer: Transfer, destination: Destination? = null) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
-        val upload = transfer.direction == TransferDirection.UPLOAD
         Icon(
-            if (upload) WontonIcon.Upload else WontonIcon.Download,
-            contentDescription = stringResource(if (upload) R.string.transfer_upload else R.string.transfer_download),
+            if (transfer.direction == TransferDirection.UPLOAD) WontonIcon.Upload else WontonIcon.Download,
+            contentDescription = null,
             modifier = Modifier.size(WontonTheme.size.iconSmall),
             tint = colors.textSecondary.toColor(),
         )
@@ -192,7 +191,7 @@ private fun TransferButton(transfer: Transfer, action: TransferAction) {
         TransferAction.SHARE -> WontonIconButton(
             WontonIcon.Share,
             stringResource(R.string.transfer_share),
-            { path?.let { shareWithSystem(context, it)?.let(files.onReject) } },
+            { path?.let { shareWithSystem(context, it) } },
         )
     }
     if (confirming) DismissDownloadedDialog(transfer, onClose = { confirming = false })

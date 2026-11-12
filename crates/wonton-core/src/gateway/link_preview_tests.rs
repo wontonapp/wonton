@@ -21,8 +21,6 @@ use crate::link_preview::test_support::{Handles, og_page, png, world_with};
 use crate::link_preview::{Limits, LinkPreviews};
 use crate::members::MemberRecord;
 use crate::owner::OwnerStore;
-use crate::plugin::egress::address::ProxyAddress;
-use crate::plugin::languages::Languages;
 
 impl Gateway {
     #[must_use]
@@ -223,28 +221,4 @@ async fn the_image_is_served_until_the_preview_expires() {
     let reply = send_as(&app, Some(phone), Method::GET, CORE, &image, &[], "").await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
     assert!(reply.headers.contains_key(ERROR_HEADER));
-}
-
-#[tokio::test]
-async fn a_dns_failure_is_reported_as_its_own_category() {
-    let (h, app, world) = setup(Limits::default()).await;
-    let phone = SecretKey::generate().public();
-    h.tunnel.devices.add(phone, None).unwrap();
-    // 代理地址上没人，经代理的 DoH 连不上。
-    world.proxy.set(Some(
-        &ProxyAddress::parse("http://127.0.0.1:1", &Languages::default()).unwrap(),
-    ));
-
-    let reply = send_as(
-        &app,
-        Some(phone),
-        Method::GET,
-        CORE,
-        &preview_path("http://site.test/"),
-        &[],
-        "",
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::BAD_GATEWAY, "{}", reply.text());
-    assert_eq!(kind(&reply), LinkPreviewFailure::DnsFailed);
 }

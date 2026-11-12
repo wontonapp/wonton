@@ -64,7 +64,7 @@ def source_lang(path: str) -> Optional[str]:
     if path.startswith("apps/ios/") and path.endswith(".swift"):
         return None if any("Tests" in p for p in parts) else "swift"
     if path.startswith("apps/compose/") and path.endswith(".kt"):
-        if "/src/" not in "/" + path or re.search(r"/src/(android(Host|Device)?Test|test)", "/" + path):
+        if "/src/" not in "/" + path or re.search(r"/src/(test|androidTest)", "/" + path):
             return None
         if "/ui/icons/" in "/" + path or "/ui/design/generated/" in "/" + path:
             return None

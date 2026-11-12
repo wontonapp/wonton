@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use bollard::models::{ContainerCreateBody, Mount, MountType};
+use bollard::models::ContainerCreateBody;
 
 use super::bot_services::{BotVars, ServiceVars};
 use super::compose::{DependCondition, NetworkMode, PullPolicy, Service, StringOrList};
@@ -44,9 +44,11 @@ pub enum RenderError {
     HostPath(String),
     #[error("{0}")]
     NoOwnerIdentity(String),
+    #[error("{0}")]
+    NoOwnerEmail(String),
 }
 
-/// 引用了主人的身份变量却没申请身份权限时，说明缺少的声明。
+/// 引用了主人的身份变量却没注入时，分清是插件没申请还是主人没配（ADR-0022）。
 fn explain_owner_vars(error: RenderError, ctx: &InstallContext, langs: &Languages) -> RenderError {
     let variable = match &error {
         RenderError::Package(
@@ -56,6 +58,11 @@ fn explain_owner_vars(error: RenderError, ctx: &InstallContext, langs: &Language
         _ => None,
     };
     match (variable, &ctx.owner) {
+        (Some("WONTON_OWNER_EMAIL"), Some(_)) => RenderError::NoOwnerEmail(crate::l10n::text(
+            langs,
+            "plugin-settings-email-missing",
+            &[],
+        )),
         (Some(name @ ("WONTON_OWNER_NAME" | "WONTON_OWNER_EMAIL")), None) => {
             RenderError::NoOwnerIdentity(crate::l10n::text(
                 langs,
@@ -92,8 +99,6 @@ pub struct InstallContext {
     pub instance: Instance,
     /// 插件私有数据目录（宿主路径）。
     pub app_data: PathBuf,
-    /// 托管形态的总目录（宿主路径，ADR-0080）：提供方挂 `<它>/<能力名>`。
-    pub hosted_root: PathBuf,
     /// 核心管理的配置文件目录（宿主路径），`read_only` 服务的 `configs` 从这里挂进容器。
     pub config_store: PathBuf,
     /// 已授权的共享文件夹：名称 → 宿主路径。
@@ -111,16 +116,12 @@ pub struct InstallContext {
     pub bots: BTreeMap<String, BotVars>,
     /// 声明了 `models` 时：模型网关的地址、凭据和默认模型。
     pub models: Option<ModelVars>,
-    /// 通用能力的地址和凭据，仅用于清单插值；Debug 不打印值。
-    pub capabilities: BTreeMap<String, String>,
     /// 声明了 `tools` 时：MCP 总线的地址。
     pub mcp_url: Option<String>,
     /// 声明了 `notify` 时：发通知的地址（ADR-0047）。
     pub notify_url: Option<String>,
     /// 核心生成的插件密钥（`secrets` 里的 `generate` 项）：名字 → 值。
     pub secrets: BTreeMap<String, String>,
-    /// 主人设置的普通值（ADR-0077）：属性名 → JSON 值。
-    pub settings: BTreeMap<String, serde_json::Value>,
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
@@ -217,11 +218,20 @@ pub struct Deployment {
 
 /// 用占位环境渲染一遍，在不接触 Docker 的情况下检查插件包能否安装。
 pub fn dry_run(package: &PluginPackage, langs: &Languages) -> Result<Deployment, RenderError> {
-    render(package, &dry_run_context(package), langs)
+    dry_run_with_email(package, Some("owner@wonton.invalid"), langs)
+}
+
+/// 同 [`dry_run`]，主人的邮箱用 `email`：主人没配邮箱时，看插件在这台主机上装不装得上。
+pub(super) fn dry_run_with_email(
+    package: &PluginPackage,
+    email: Option<&str>,
+    langs: &Languages,
+) -> Result<Deployment, RenderError> {
+    render(package, &dry_run_context(package, email), langs)
 }
 
 /// [`dry_run`] 用的占位环境。
-pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
+pub(super) fn dry_run_context(package: &PluginPackage, email: Option<&str>) -> InstallContext {
     let manifest = &package.manifest;
     let slug = manifest.id.slug();
     let root = PathBuf::from("/wonton-dry-run");
@@ -236,7 +246,6 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         .collect();
     InstallContext {
         app_data: root.join("apps").join(&slug),
-        hosted_root: root.join("hosted"),
         config_store: root.join("core").join("configs"),
         shares,
         app_url: webui.map(|_| url.clone()),
@@ -250,7 +259,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         }),
         owner: manifest.gets_owner_identity().then(|| OwnerVars {
             name: "owner".into(),
-            email: crate::owner::internal_email("owner"),
+            email: email.map(str::to_owned),
         }),
         matrix: manifest
             .permissions
@@ -283,7 +292,6 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
                     .unwrap_or_default(),
                 default_model: "dry-run".into(),
             }),
-        capabilities: dry_run_capabilities(manifest, &root.join("apps").join(&slug)),
         mcp_url: manifest
             .permissions
             .contains(&Permission::Tools)
@@ -293,14 +301,21 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
             .contains(&Permission::Notify)
             .then(|| "http://notify.wonton.internal/notices".into()),
         secrets,
-        settings: super::settings::defaults(package),
         instance: Instance::default(),
         tz: "UTC".into(),
         puid: 1000,
         pgid: 1000,
         extra_hosts: Vec::new(),
         gpu: None,
-        lan: dry_run_lan(manifest, &slug),
+        // 192.0.2.1 是文档用的地址（RFC 5737）。
+        lan: manifest.lan.as_ref().map(|lan| LanGrant {
+            addresses: vec![[192, 0, 2, 1].into()],
+            announce: vec![[192, 0, 2, 1].into()],
+            network: (!manifest.permissions.contains(&Permission::NetworkEgress))
+                .then(|| Instance::default().lan_network(&slug)),
+            ports: lan.ports.clone(),
+            webui: false,
+        }),
         egress: None,
         core_address: webui
             .filter(|w| w.sso == Sso::Proxy)
@@ -318,54 +333,6 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
                 .collect::<Vec<_>>(),
         ),
     }
-}
-
-fn dry_run_lan(manifest: &Manifest, slug: &str) -> Option<LanGrant> {
-    // 192.0.2.1 是文档用的地址（RFC 5737）。
-    manifest.lan.as_ref().map(|lan| LanGrant {
-        addresses: vec![[192, 0, 2, 1].into()],
-        announce: vec![[192, 0, 2, 1].into()],
-        network: (!manifest.permissions.contains(&Permission::NetworkEgress))
-            .then(|| Instance::default().lan_network(slug)),
-        ports: lan.ports.clone(),
-        webui: false,
-    })
-}
-
-fn dry_run_capabilities(manifest: &Manifest, app_data: &Path) -> BTreeMap<String, String> {
-    let provider = super::matrix_rtc::provides_matrix_rtc(manifest)
-        .then(|| {
-            [
-                (
-                    super::capabilities::MATRIX_SERVER_NAME_VAR.to_owned(),
-                    "wonton.invalid".to_owned(),
-                ),
-                (
-                    super::matrix_rtc_ca::CA_DIR_VAR.to_owned(),
-                    app_data
-                        .join(super::matrix_rtc_ca::CA_DIR)
-                        .display()
-                        .to_string(),
-                ),
-            ]
-        })
-        .into_iter()
-        .flatten();
-    super::dependencies::declarations(manifest)
-        .flat_map(|capability| {
-            [
-                (
-                    super::capabilities::var_url(capability),
-                    format!("http://{}.wonton.internal", capability),
-                ),
-                (
-                    super::capabilities::var_key(capability),
-                    "dry-run".to_owned(),
-                ),
-            ]
-        })
-        .chain(provider)
-        .collect()
 }
 
 pub fn render(
@@ -466,7 +433,6 @@ fn render_service_containers(
             langs,
         }
         .build(&service.volumes, binds)?;
-        mounts.extend(hosted_mounts(manifest, ctx, name));
         let (files, store_dir) = configs::resolve_service(
             package,
             service,
@@ -655,30 +621,6 @@ fn add_relays(
             relay,
         ));
     }
-}
-
-/// 托管能力的提供方（ADR-0080）：核心把这项能力的总目录挂到它在 `provides.<能力>.mount` 声明的位置，
-/// 只读还是读写按能力表。以后装、卸托管插件只改目录里的内容，不重建这个容器。
-fn hosted_mounts(manifest: &Manifest, ctx: &InstallContext, service: &str) -> Vec<Mount> {
-    let Some(provides) = &manifest.provides else {
-        return Vec::new();
-    };
-    provides
-        .capabilities
-        .iter()
-        .filter(|(_, spec)| spec.service == service)
-        .filter_map(|(name, spec)| {
-            let hosted = super::capabilities::lookup(name)?.hosted?;
-            let read_only = hosted.mount? == super::capabilities::HostedMount::ReadOnly;
-            Some(Mount {
-                target: Some(spec.mount.clone()?),
-                source: Some(ctx.hosted_root.join(name).display().to_string()),
-                typ: Some(MountType::BIND),
-                read_only: Some(read_only),
-                ..Default::default()
-            })
-        })
-        .collect()
 }
 
 /// `network_mode: none` 的服务没有网络，网页入口和 MCP 入口不能指向它。

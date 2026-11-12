@@ -194,9 +194,7 @@ pub struct TileServerInfo {
 
 impl From<discover_homeserver::TileServerInfo> for TileServerInfo {
     fn from(value: discover_homeserver::TileServerInfo) -> Self {
-        Self {
-            map_style_url: value.map_style_url,
-        }
+        Self { map_style_url: value.map_style_url }
     }
 }
 
@@ -249,14 +247,6 @@ pub(crate) struct ClientLocks {
     /// Lock making sure we're only doing one key claim request at a time.
     #[cfg(feature = "e2e-encryption")]
     pub(crate) key_claim_lock: Mutex<()>,
-
-    /// Wonton patch: held for writing while our own cross-signing identity is
-    /// being replaced, and for reading around every `/keys/query`. A query
-    /// answered before the new public keys reach the server would otherwise
-    /// see the old identity and drop the freshly generated private keys
-    /// (matrix-org/matrix-rust-sdk#4728).
-    #[cfg(feature = "e2e-encryption")]
-    pub(crate) cross_signing_reset_lock: Arc<RwLock<()>>,
 
     /// Handler to ensure that only one members request is running at a time,
     /// given a room.
@@ -543,12 +533,9 @@ impl ClientInner {
             )
         });
 
-        let init_thread_subscription_catchup =
-            client.thread_subscription_catchup.get_or_init(|| {
-                ThreadSubscriptionCatchup::new(Client {
-                    inner: client.clone(),
-                })
-            });
+        let init_thread_subscription_catchup = client
+            .thread_subscription_catchup
+            .get_or_init(|| ThreadSubscriptionCatchup::new(Client { inner: client.clone() }));
 
         let _ = join!(init_event_cache, init_thread_subscription_catchup);
 
@@ -576,9 +563,7 @@ impl Client {
     /// Returns a subscriber that publishes an event every time the ignore user
     /// list changes.
     pub fn subscribe_to_ignore_user_list_changes(&self) -> Subscriber<Vec<String>> {
-        self.inner
-            .base_client
-            .subscribe_to_ignore_user_list_changes()
+        self.inner.base_client.subscribe_to_ignore_user_list_changes()
     }
 
     /// Create a new [`ClientBuilder`].
@@ -678,11 +663,7 @@ impl Client {
         use ruma::api::federation::discovery::get_server_version;
 
         let res = self
-            .send_inner(
-                get_server_version::v1::Request::new(),
-                request_config,
-                Default::default(),
-            )
+            .send_inner(get_server_version::v1::Request::new(), request_config, Default::default())
             .await?;
 
         // Extract server info, using defaults if fields are missing.
@@ -690,10 +671,7 @@ impl Client {
         let server_name_str = server.name.unwrap_or_else(|| "unknown".to_owned());
         let version = server.version.unwrap_or_else(|| "unknown".to_owned());
 
-        Ok(ServerVendorInfo {
-            server_name: server_name_str,
-            version,
-        })
+        Ok(ServerVendorInfo { server_name: server_name_str, version })
     }
 
     /// Get a copy of the default request config.
@@ -789,10 +767,7 @@ impl Client {
     pub fn subscribe_to_own_profile(
         &self,
     ) -> Result<impl Stream<Item = ruma::profile::UserProfile> + use<>> {
-        let own_user_id = self
-            .user_id()
-            .ok_or(Error::AuthenticationRequired)?
-            .to_owned();
+        let own_user_id = self.user_id().ok_or(Error::AuthenticationRequired)?.to_owned();
         let mut updates = self.subscribe_to_global_profile_updates();
         let client = self.clone();
 
@@ -875,10 +850,7 @@ impl Client {
             return Ok(());
         }
 
-        let user_id = self
-            .user_id()
-            .ok_or(Error::AuthenticationRequired)?
-            .to_owned();
+        let user_id = self.user_id().ok_or(Error::AuthenticationRequired)?.to_owned();
         let mut request = set_presence_status::v3::Request::new(user_id, presence);
         request.status_msg = status_msg;
 
@@ -1267,10 +1239,7 @@ impl Client {
     ) -> Result<impl Stream<Item = BeaconInfoUpdate> + use<>> {
         let observer = self.observe_events::<OriginalSyncBeaconInfoEvent, Room>();
         let mut stream = observer.subscribe();
-        let own_user_id = self
-            .user_id()
-            .ok_or(Error::AuthenticationRequired)?
-            .to_owned();
+        let own_user_id = self.user_id().ok_or(Error::AuthenticationRequired)?.to_owned();
         Ok(async_stream::stream! {
             let _observer = observer;
 
@@ -1413,13 +1382,9 @@ impl Client {
         H: Fn(Notification, Room, Client) -> Fut + SendOutsideWasm + SyncOutsideWasm + 'static,
         Fut: Future<Output = ()> + SendOutsideWasm + 'static,
     {
-        self.inner
-            .notification_handlers
-            .write()
-            .await
-            .push(Box::new(move |notification, room, client| {
-                Box::pin((handler)(notification, room, client))
-            }));
+        self.inner.notification_handlers.write().await.push(Box::new(
+            move |notification, room, client| Box::pin((handler)(notification, room, client)),
+        ));
 
         self
     }
@@ -1429,13 +1394,7 @@ impl Client {
     /// The returned receiver will receive a new message for each sync response
     /// that contains updates for that room.
     pub fn subscribe_to_room_updates(&self, room_id: &RoomId) -> broadcast::Receiver<RoomUpdate> {
-        match self
-            .inner
-            .room_update_channels
-            .lock()
-            .unwrap()
-            .entry(room_id.to_owned())
-        {
+        match self.inner.room_update_channels.lock().unwrap().entry(room_id.to_owned()) {
             btree_map::Entry::Vacant(entry) => {
                 let (tx, rx) = broadcast::channel(8);
                 entry.insert(tx);
@@ -1461,11 +1420,7 @@ impl Client {
     ///
     /// This will return the list of joined, invited, and left rooms.
     pub fn rooms(&self) -> Vec<Room> {
-        self.base_client()
-            .rooms()
-            .into_iter()
-            .map(|room| Room::new(self.clone(), room))
-            .collect()
+        self.base_client().rooms().into_iter().map(|room| Room::new(self.clone(), room)).collect()
     }
 
     /// Get all the rooms the client knows about, filtered by room state.
@@ -1520,10 +1475,7 @@ impl Client {
         self.base_client()
             .rooms_filtered(RoomStateFilter::JOINED)
             .iter()
-            .map(|room| {
-                room.num_unread_notifications()
-                    .max(room.is_marked_unread().into())
-            })
+            .map(|room| room.num_unread_notifications().max(room.is_marked_unread().into()))
             .sum()
     }
 
@@ -1533,9 +1485,7 @@ impl Client {
     ///
     /// `room_id` - The unique id of the room that should be fetched.
     pub fn get_room(&self, room_id: &RoomId) -> Option<Room> {
-        self.base_client()
-            .get_room(room_id)
-            .map(|room| Room::new(self.clone(), room))
+        self.base_client().get_room(room_id).map(|room| Room::new(self.clone(), room))
     }
 
     /// Gets the preview of a room, whether the current user has joined it or
@@ -1639,8 +1589,7 @@ impl Client {
     /// Panics if a session was already restored or logged in.
     #[instrument(skip_all)]
     pub async fn restore_session(&self, session: impl Into<AuthSession>) -> Result<()> {
-        self.restore_session_with(session, RoomLoadSettings::default())
-            .await
+        self.restore_session_with(session, RoomLoadSettings::default()).await
     }
 
     /// Restore a session previously logged-in using one of the available
@@ -1662,11 +1611,7 @@ impl Client {
         let session = session.into();
         match session {
             AuthSession::Matrix(session) => {
-                Box::pin(
-                    self.matrix_auth()
-                        .restore_session(session, room_load_settings),
-                )
-                .await
+                Box::pin(self.matrix_auth().restore_session(session, room_load_settings)).await
             }
             AuthSession::OAuth(session) => {
                 Box::pin(self.oauth().restore_session(*session, room_load_settings)).await
@@ -1775,10 +1720,7 @@ impl Client {
             let request = FilterUploadRequest::new(user_id.to_owned(), definition);
             let response = self.send(request).await?;
 
-            self.inner
-                .base_client
-                .receive_filter_upload(filter_name, &response)
-                .await?;
+            self.inner.base_client.receive_filter_upload(filter_name, &response).await?;
 
             Ok(response.filter_id)
         }
@@ -1852,9 +1794,8 @@ impl Client {
         // race.
         #[cfg(feature = "e2e-encryption")]
         if self.inner.enable_share_history_on_invite
-            && let Some(inviter) = pre_join_room_info
-                .as_ref()
-                .and_then(|info| info.inviter.as_ref())
+            && let Some(inviter) =
+                pre_join_room_info.as_ref().and_then(|info| info.inviter.as_ref())
         {
             crate::room::shared_room_history::maybe_accept_key_bundle(&room, inviter.user_id())
                 .await?;
@@ -1882,8 +1823,7 @@ impl Client {
 
         let request = join_room_by_id::v3::Request::new(room_id.to_owned());
         let response = self.send(request).await?;
-        self.finish_join_room(&response.room_id, pre_join_info)
-            .await
+        self.finish_join_room(&response.room_id, pre_join_info).await
     }
 
     /// Join a room by `RoomOrAliasId`.
@@ -1911,8 +1851,7 @@ impl Client {
             via: server_names.to_owned(),
         });
         let response = self.send(request).await?;
-        self.finish_join_room(&response.room_id, pre_join_info)
-            .await
+        self.finish_join_room(&response.room_id, pre_join_info).await
     }
 
     /// Search the homeserver's directory of public rooms.
@@ -1994,18 +1933,14 @@ impl Client {
         let is_direct_room = request.is_direct;
         let response = self.send(request).await?;
 
-        let base_room = self
-            .base_client()
-            .get_or_create_room(&response.room_id, RoomState::Joined);
+        let base_room = self.base_client().get_or_create_room(&response.room_id, RoomState::Joined);
 
         let joined_room = Room::new(self.clone(), base_room);
 
         if is_direct_room
             && !invite.is_empty()
-            && let Err(error) = self
-                .account()
-                .mark_as_dm(joined_room.room_id(), invite.as_slice())
-                .await
+            && let Err(error) =
+                self.account().mark_as_dm(joined_room.room_id(), invite.as_slice()).await
         {
             // FIXME: Retry in the background
             error!("Failed to mark room as DM: {error}");
@@ -2069,9 +2004,8 @@ impl Client {
                 DmRoomDefinition::TwoMembers => {
                     let service_members_count =
                         r.service_members().map(|s| s.len()).unwrap_or_default() as u64;
-                    let active_non_service_members = r
-                        .active_members_count()
-                        .saturating_sub(service_members_count);
+                    let active_non_service_members =
+                        r.active_members_count().saturating_sub(service_members_count);
                     targets_match && active_non_service_members <= 2
                 }
             }
@@ -2188,9 +2122,7 @@ impl Client {
     {
         let homeserver = self.homeserver().to_string();
         let access_token = self.access_token();
-        let skip_auth = config
-            .map(|c| c.skip_auth)
-            .unwrap_or(self.request_config().skip_auth);
+        let skip_auth = config.map(|c| c.skip_auth).unwrap_or(self.request_config().skip_auth);
 
         let path_builder_input =
             Request::PathBuilder::get_path_builder_input(self, skip_auth).await?;
@@ -2234,8 +2166,7 @@ impl Client {
     ) -> HttpResult<get_supported_versions::Response> {
         // Since this was called by the user, try to refresh the access token if
         // necessary.
-        self.fetch_server_versions_inner(false, request_config)
-            .await
+        self.fetch_server_versions_inner(false, request_config).await
     }
 
     /// Fetches server versions from network; no caching.
@@ -2259,9 +2190,7 @@ impl Client {
         let homeserver = self.homeserver().to_string();
 
         // If we have a fresh access token, try with it first.
-        if !request_config
-            .as_ref()
-            .is_some_and(|config| config.skip_auth && !config.force_auth)
+        if !request_config.as_ref().is_some_and(|config| config.skip_auth && !config.force_auth)
             && self.auth_ctx().has_valid_access_token()
             && let Some(access_token) = self.access_token()
         {
@@ -2333,10 +2262,7 @@ impl Client {
             // If the server name wasn't available, extract it from the user id and build a URL:
             // Reuse the same scheme as the homeserver url does, assuming if it's `http` there it
             // will be the same for the public server url, lacking a better candidate.
-            .or_else(|| {
-                self.user_id()
-                    .map(|id| format!("{}://{}", scheme, id.server_name()))
-            });
+            .or_else(|| self.user_id().map(|id| format!("{}://{}", scheme, id.server_name())));
 
         // If the server name is available, first try using it
         let response = if let Some(server_url) = server_url {
@@ -2353,8 +2279,7 @@ impl Client {
             warn!(
                 "Fetching the well-known from the server name didn't work, using the homeserver url instead"
             );
-            self.fetch_client_well_known_with_url(homeserver.to_string())
-                .await
+            self.fetch_client_well_known_with_url(homeserver.to_string()).await
         } else {
             response
         }
@@ -2508,9 +2433,7 @@ impl Client {
             }
         };
 
-        let supported_versions = response
-            .as_ref()
-            .map(|response| response.supported_versions());
+        let supported_versions = response.as_ref().map(|response| response.supported_versions());
 
         // Only cache the result if the request was authenticated.
         if self.auth_ctx().has_valid_access_token() {
@@ -2601,12 +2524,11 @@ impl Client {
             debug!("spawning task to refresh supported versions cache");
 
             let client = self.clone();
-            self.task_monitor()
-                .spawn_finite_task("refresh supported versions cache", async move {
-                    if let Err(error) = client.refresh_supported_versions_cache(failsafe).await {
-                        warn!("failed to refresh supported versions cache: {error}");
-                    }
-                });
+            self.task_monitor().spawn_finite_task("refresh supported versions cache", async move {
+                if let Err(error) = client.refresh_supported_versions_cache(failsafe).await {
+                    warn!("failed to refresh supported versions cache: {error}");
+                }
+            });
         }
 
         Ok(Some(value.into_data()))
@@ -2667,10 +2589,7 @@ impl Client {
         self.inner.caches.supported_versions.reset();
 
         // Empty the store cache.
-        Ok(self
-            .state_store()
-            .remove_kv_data(StateStoreDataKey::SupportedVersions)
-            .await?)
+        Ok(self.state_store().remove_kv_data(StateStoreDataKey::SupportedVersions).await?)
     }
 
     /// Get the well-known file of the homeserver from the cache.
@@ -2703,10 +2622,9 @@ impl Client {
             debug!("spawning task to refresh well-known cache");
 
             let client = self.clone();
-            self.task_monitor()
-                .spawn_finite_task("refresh well-known cache", async move {
-                    client.refresh_well_known_cache().await;
-                });
+            self.task_monitor().spawn_finite_task("refresh well-known cache", async move {
+                client.refresh_well_known_cache().await;
+            });
         }
 
         Ok(CachedValue::Cached(value.into_data()))
@@ -2834,9 +2752,7 @@ impl Client {
     pub async fn well_known_rtc_transports(&self) -> HttpResult<Vec<RtcTransport>> {
         let well_known = self.well_known().await;
 
-        Ok(well_known
-            .map(|well_known| well_known.rtc_foci)
-            .unwrap_or_default())
+        Ok(well_known.map(|well_known| well_known.rtc_foci).unwrap_or_default())
     }
 
     /// Get the RTC transports advertised by the homeserver by fetching them
@@ -2871,12 +2787,11 @@ impl Client {
             debug!("spawning task to refresh RTC transports cache");
 
             let client = self.clone();
-            self.task_monitor()
-                .spawn_finite_task("refresh RTC transports cache", async move {
-                    if let Err(error) = client.refresh_rtc_transports_cache().await {
-                        warn!("failed to refresh RTC transports cache: {error}");
-                    }
-                });
+            self.task_monitor().spawn_finite_task("refresh RTC transports cache", async move {
+                if let Err(error) = client.refresh_rtc_transports_cache().await {
+                    warn!("failed to refresh RTC transports cache: {error}");
+                }
+            });
         }
 
         CachedValue::Cached(value.into_data())
@@ -2989,10 +2904,7 @@ impl Client {
         // any transports, fall back to the well-known foci.
         // `well_known` returns `None` when well-known discovery is
         // disabled, which correctly collapses into "nothing was discovered".
-        Ok(self
-            .well_known()
-            .await
-            .map(|well_known| well_known.rtc_foci))
+        Ok(self.well_known().await.map(|well_known| well_known.rtc_foci))
     }
 
     /// Get information about the homeserver's advertised map tile server, if
@@ -3003,10 +2915,7 @@ impl Client {
     /// when well-known discovery was disabled with
     /// [`ClientBuilder::disable_well_known_lookup`].
     pub async fn tile_server(&self) -> Option<TileServerInfo> {
-        self.well_known()
-            .await
-            .and_then(|well_known| well_known.tile_server)
-            .map(Into::into)
+        self.well_known().await.and_then(|well_known| well_known.tile_server).map(Into::into)
     }
 
     /// Empty the well-known cache.
@@ -3018,10 +2927,7 @@ impl Client {
         self.inner.caches.well_known.reset();
 
         // Empty the store cache.
-        Ok(self
-            .state_store()
-            .remove_kv_data(StateStoreDataKey::WellKnown)
-            .await?)
+        Ok(self.state_store().remove_kv_data(StateStoreDataKey::WellKnown).await?)
     }
 
     /// Check whether MSC 4028 is enabled on the homeserver.
@@ -3039,10 +2945,7 @@ impl Client {
     /// # anyhow::Ok(()) };
     /// ```
     pub async fn can_homeserver_push_encrypted_event_to_device(&self) -> HttpResult<bool> {
-        Ok(self
-            .unstable_features()
-            .await?
-            .contains(&FeatureFlag::from("org.matrix.msc4028")))
+        Ok(self.unstable_features().await?.contains(&FeatureFlag::from("org.matrix.msc4028")))
     }
 
     /// Get information of all our own devices.
@@ -3081,8 +2984,7 @@ impl Client {
     pub async fn get_retention_configuration(
         &self,
     ) -> HttpResult<get_retention_configuration::unstable::Response> {
-        self.send(get_retention_configuration::unstable::Request::default())
-            .await
+        self.send(get_retention_configuration::unstable::Request::default()).await
     }
 
     /// Delete the given devices from the server.
@@ -3312,10 +3214,7 @@ impl Client {
             request_config.timeout = Some(base_timeout + timeout);
         }
 
-        let response = self
-            .send(request)
-            .with_request_config(request_config)
-            .await?;
+        let response = self.send(request).with_request_config(request_config).await?;
         let next_batch = response.next_batch.clone();
         let response = self.process_sync(response).await?;
 
@@ -3388,8 +3287,7 @@ impl Client {
     /// [argument docs]: #method.sync_once
     /// [`sync_with_callback`]: #method.sync_with_callback
     pub async fn sync(&self, sync_settings: crate::config::SyncSettings) -> Result<(), Error> {
-        self.sync_with_callback(sync_settings, |_| async { LoopCtrl::Continue })
-            .await
+        self.sync_with_callback(sync_settings, |_| async { LoopCtrl::Continue }).await
     }
 
     /// Repeatedly call sync to synchronize the client state with the server.
@@ -3672,11 +3570,7 @@ impl Client {
 
     /// Get the notification settings of the current owner of the client.
     pub async fn notification_settings(&self) -> NotificationSettings {
-        let ruleset = self
-            .account()
-            .push_rules()
-            .await
-            .unwrap_or_else(|_| Ruleset::new());
+        let ruleset = self.account().push_rules().await.unwrap_or_else(|_| Ruleset::new());
         NotificationSettings::new(self.clone(), ruleset)
     }
 
@@ -3747,12 +3641,6 @@ impl Client {
             .await
     }
 
-    /// A weak reference to this client, to observe its lifetime from the
-    /// outside without keeping it alive.
-    pub fn downgrade(&self) -> WeakClient {
-        WeakClient::from_client(self)
-    }
-
     /// Waits until an at least partially synced room is received, and returns
     /// it.
     ///
@@ -3784,11 +3672,7 @@ impl Client {
         let request =
             assign!(knock_room::v3::Request::new(room_id_or_alias), { reason, via: server_names });
         let response = self.send(request).await?;
-        let base_room = self
-            .inner
-            .base_client
-            .room_knocked(&response.room_id)
-            .await?;
+        let base_room = self.inner.base_client.room_knocked(&response.room_id).await?;
         Ok(Room::new(self.clone(), base_room))
     }
 
@@ -3820,16 +3704,14 @@ impl Client {
                 .upload_size
         } else {
             #[allow(deprecated)]
-            self.send(media::get_media_config::v3::Request::default())
-                .await?
-                .upload_size
+            self.send(media::get_media_config::v3::Request::default()).await?.upload_size
         };
 
         match max_upload_size_lock.set(upload_size) {
             Ok(_) => Ok(upload_size),
-            Err(error) => Err(Error::Media(MediaError::FetchMaxUploadSizeFailed(
-                error.to_string(),
-            ))),
+            Err(error) => {
+                Err(Error::Media(MediaError::FetchMaxUploadSizeFailed(error.to_string())))
+            }
         }
     }
 
@@ -3858,13 +3740,9 @@ impl Client {
     pub async fn enabled_thread_subscriptions(&self) -> Result<bool> {
         // Check if the client is configured to support thread subscriptions first.
         match self.base_client().threading_support {
-            ThreadingSupport::Enabled {
-                with_subscriptions: false,
-            }
+            ThreadingSupport::Enabled { with_subscriptions: false }
             | ThreadingSupport::Disabled => return Ok(false),
-            ThreadingSupport::Enabled {
-                with_subscriptions: true,
-            } => {}
+            ThreadingSupport::Enabled { with_subscriptions: true } => {}
         }
 
         // Now, let's check that the server supports it.
@@ -4010,14 +3888,7 @@ impl Client {
             None
         };
 
-        let media_store_size = self
-            .media_store()
-            .lock()
-            .await?
-            .get_size()
-            .await
-            .ok()
-            .flatten();
+        let media_store_size = self.media_store().lock().await?.get_size().await.ok().flatten();
 
         Ok(StoreSizes {
             crypto_store: crypto_store_size,
@@ -4051,10 +3922,7 @@ impl Client {
         &self,
         room_id: &RoomId,
     ) -> Result<Option<RoomPendingKeyBundleDetails>> {
-        Ok(self
-            .base_client()
-            .get_pending_key_bundle_details_for_room(room_id)
-            .await?)
+        Ok(self.base_client().get_pending_key_bundle_details_for_room(room_id).await?)
     }
 
     /// Returns the [`DmRoomDefinition`] this client uses to check if a room is
@@ -4106,20 +3974,15 @@ impl Client {
 
 /// A weak reference to the inner client, useful when trying to get a handle
 /// on the owning client.
-///
-/// Obtained via [`Client::downgrade`]; the `client` module stays private, so
-/// this re-export at the crate root is the only reachable path.
 #[derive(Clone, Debug)]
-pub struct WeakClient {
+pub(crate) struct WeakClient {
     client: Weak<ClientInner>,
 }
 
 impl WeakClient {
     /// Construct a [`WeakClient`] from a `Arc<ClientInner>`.
     pub(crate) fn from_inner(client: &Arc<ClientInner>) -> Self {
-        Self {
-            client: Arc::downgrade(client),
-        }
+        Self { client: Arc::downgrade(client) }
     }
 
     /// Construct a [`WeakClient`] from a [`Client`].
@@ -4207,10 +4070,8 @@ pub(crate) mod tests {
     async fn test_sync_presence_is_shared_by_client_clones_and_notification_child() {
         let client = MockClientBuilder::new(None).build().await;
         let clone = client.clone();
-        let notification_client = client
-            .notification_client(CrossProcessLockConfig::SingleProcess)
-            .await
-            .unwrap();
+        let notification_client =
+            client.notification_client(CrossProcessLockConfig::SingleProcess).await.unwrap();
 
         assert_eq!(client.sync_presence(), PresenceState::Online);
         assert_eq!(clone.sync_presence(), PresenceState::Online);
@@ -4223,10 +4084,7 @@ pub(crate) mod tests {
 
         assert_eq!(client.sync_presence(), PresenceState::Unavailable);
         assert_eq!(clone.sync_presence(), PresenceState::Unavailable);
-        assert_eq!(
-            notification_client.sync_presence(),
-            PresenceState::Unavailable
-        );
+        assert_eq!(notification_client.sync_presence(), PresenceState::Unavailable);
 
         notification_client
             .set_presence(PresenceState::Offline, None, false)
@@ -4252,10 +4110,7 @@ pub(crate) mod tests {
                 .mount_as_scoped()
                 .await;
 
-            client
-                .sync_once(SyncSettings::new())
-                .await
-                .expect("sync should succeed");
+            client.sync_once(SyncSettings::new()).await.expect("sync should succeed");
         }
 
         client
@@ -4272,10 +4127,7 @@ pub(crate) mod tests {
                 .mount_as_scoped()
                 .await;
 
-            client
-                .sync_once(SyncSettings::new())
-                .await
-                .expect("sync should succeed");
+            client.sync_once(SyncSettings::new()).await.expect("sync should succeed");
         }
 
         {
@@ -4328,9 +4180,7 @@ pub(crate) mod tests {
         let client = MockClientBuilder::new(None).unlogged().build().await;
 
         assert_matches!(
-            client
-                .set_presence(PresenceState::Unavailable, None, true)
-                .await,
+            client.set_presence(PresenceState::Unavailable, None, true).await,
             Err(Error::AuthenticationRequired)
         );
     }
@@ -4398,13 +4248,7 @@ pub(crate) mod tests {
             .await;
 
         // The `/versions` is on the homeserver (e.g. `matrix-client.matrix.org`).
-        homeserver
-            .mock_versions()
-            .ok()
-            .mock_once()
-            .named("versions")
-            .mount()
-            .await;
+        homeserver.mock_versions().ok().mock_once().named("versions").mount().await;
 
         let client = Client::builder()
             .insecure_server_name_no_tls(alice.server_name())
@@ -4425,13 +4269,7 @@ pub(crate) mod tests {
         let domain = homeserver_url.strip_prefix("http://").unwrap();
         let alice = UserId::parse("@alice:".to_owned() + domain).unwrap();
 
-        homeserver
-            .mock_well_known()
-            .ok()
-            .mock_once()
-            .named("well-known")
-            .mount()
-            .await;
+        homeserver.mock_well_known().ok().mock_once().named("well-known").mount().await;
 
         let client = Client::builder()
             .insecure_server_name_no_tls(alice.server_name())
@@ -4439,10 +4277,7 @@ pub(crate) mod tests {
             .await
             .unwrap();
 
-        assert_eq!(
-            client.server().unwrap(),
-            Url::parse(&homeserver_url).unwrap()
-        );
+        assert_eq!(client.server().unwrap(), Url::parse(&homeserver_url).unwrap());
         assert_eq!(client.homeserver(), Url::parse(&homeserver_url).unwrap());
 
         let new_server = Url::parse("http://example.org").unwrap();
@@ -4464,13 +4299,7 @@ pub(crate) mod tests {
         let domain = server_url.strip_prefix("http://").unwrap();
         let alice = UserId::parse("@alice:".to_owned() + domain).unwrap();
 
-        server
-            .mock_well_known()
-            .error404()
-            .mock_once()
-            .named("well-known")
-            .mount()
-            .await;
+        server.mock_well_known().error404().mock_once().named("well-known").mount().await;
 
         assert!(
             Client::builder()
@@ -4494,8 +4323,7 @@ pub(crate) mod tests {
                 builder.add_joined_room(
                     JoinedRoomBuilder::default()
                         .add_state_event(
-                            f.member(user_id!("@example:localhost"))
-                                .display_name("example"),
+                            f.member(user_id!("@example:localhost")).display_name("example"),
                         )
                         .add_state_event(f.default_power_levels()),
                 );
@@ -4539,12 +4367,7 @@ pub(crate) mod tests {
 
         server.mock_login().error500().expect(2..).mount().await;
 
-        client
-            .matrix_auth()
-            .login_username("example", "wordpass")
-            .send()
-            .await
-            .unwrap_err();
+        client.matrix_auth().login_username("example", "wordpass").send().await.unwrap_err();
     }
 
     #[async_test]
@@ -4558,12 +4381,7 @@ pub(crate) mod tests {
 
         server.mock_login().error500().expect(3..).mount().await;
 
-        client
-            .matrix_auth()
-            .login_username("example", "wordpass")
-            .send()
-            .await
-            .unwrap_err();
+        client.matrix_auth().login_username("example", "wordpass").send().await.unwrap_err();
     }
 
     #[async_test]
@@ -4598,10 +4416,7 @@ pub(crate) mod tests {
         let result = &response.results[0];
         assert_eq!(result.user_id.to_string(), "@test:example.me");
         assert_eq!(result.display_name.clone().unwrap(), "Test");
-        assert_eq!(
-            result.avatar_url.clone().unwrap().to_string(),
-            "mxc://example.me/someid"
-        );
+        assert_eq!(result.avatar_url.clone().unwrap().to_string(), "mxc://example.me/someid");
         assert!(!response.limited);
     }
 
@@ -4628,18 +4443,9 @@ pub(crate) mod tests {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().no_server_versions().build().await;
 
-        server
-            .mock_versions()
-            .with_push_encrypted_events()
-            .ok()
-            .mock_once()
-            .mount()
-            .await;
+        server.mock_versions().with_push_encrypted_events().ok().mock_once().mount().await;
 
-        let msc4028_enabled = client
-            .can_homeserver_push_encrypted_event_to_device()
-            .await
-            .unwrap();
+        let msc4028_enabled = client.can_homeserver_push_encrypted_event_to_device().await.unwrap();
         assert!(msc4028_enabled);
     }
 
@@ -4648,10 +4454,7 @@ pub(crate) mod tests {
         // Tracking recently visited rooms requires authentication
         let client = MockClientBuilder::new(None).unlogged().build().await;
         assert_matches!(
-            client
-                .account()
-                .track_recently_visited_room(owned_room_id!("!alpha:localhost"))
-                .await,
+            client.account().track_recently_visited_room(owned_room_id!("!alpha:localhost")).await,
             Err(Error::AuthenticationRequired)
         );
 
@@ -4662,39 +4465,21 @@ pub(crate) mod tests {
         assert_eq!(account.get_recently_visited_rooms().await.unwrap().len(), 0);
 
         // Tracking a valid room id should add it to the list
-        account
-            .track_recently_visited_room(owned_room_id!("!alpha:localhost"))
-            .await
-            .unwrap();
+        account.track_recently_visited_room(owned_room_id!("!alpha:localhost")).await.unwrap();
         assert_eq!(account.get_recently_visited_rooms().await.unwrap().len(), 1);
-        assert_eq!(
-            account.get_recently_visited_rooms().await.unwrap(),
-            ["!alpha:localhost"]
-        );
+        assert_eq!(account.get_recently_visited_rooms().await.unwrap(), ["!alpha:localhost"]);
 
         // And the existing list shouldn't be changed
         assert_eq!(account.get_recently_visited_rooms().await.unwrap().len(), 1);
-        assert_eq!(
-            account.get_recently_visited_rooms().await.unwrap(),
-            ["!alpha:localhost"]
-        );
+        assert_eq!(account.get_recently_visited_rooms().await.unwrap(), ["!alpha:localhost"]);
 
         // Tracking the same room again shouldn't change the list
-        account
-            .track_recently_visited_room(owned_room_id!("!alpha:localhost"))
-            .await
-            .unwrap();
+        account.track_recently_visited_room(owned_room_id!("!alpha:localhost")).await.unwrap();
         assert_eq!(account.get_recently_visited_rooms().await.unwrap().len(), 1);
-        assert_eq!(
-            account.get_recently_visited_rooms().await.unwrap(),
-            ["!alpha:localhost"]
-        );
+        assert_eq!(account.get_recently_visited_rooms().await.unwrap(), ["!alpha:localhost"]);
 
         // Tracking a second room should add it to the front of the list
-        account
-            .track_recently_visited_room(owned_room_id!("!beta:localhost"))
-            .await
-            .unwrap();
+        account.track_recently_visited_room(owned_room_id!("!beta:localhost")).await.unwrap();
         assert_eq!(account.get_recently_visited_rooms().await.unwrap().len(), 2);
         assert_eq!(
             account.get_recently_visited_rooms().await.unwrap(),
@@ -4702,10 +4487,7 @@ pub(crate) mod tests {
         );
 
         // Tracking the first room yet again should move it to the front of the list
-        account
-            .track_recently_visited_room(owned_room_id!("!alpha:localhost"))
-            .await
-            .unwrap();
+        account.track_recently_visited_room(owned_room_id!("!alpha:localhost")).await.unwrap();
         assert_eq!(account.get_recently_visited_rooms().await.unwrap().len(), 2);
         assert_eq!(
             account.get_recently_visited_rooms().await.unwrap(),
@@ -4720,10 +4502,7 @@ pub(crate) mod tests {
                 .unwrap();
         }
 
-        assert_eq!(
-            account.get_recently_visited_rooms().await.unwrap().len(),
-            20
-        );
+        assert_eq!(account.get_recently_visited_rooms().await.unwrap().len(), 20);
 
         // And the initial rooms should've been pushed out
         let rooms = account.get_recently_visited_rooms().await.unwrap();
@@ -4751,21 +4530,12 @@ pub(crate) mod tests {
             let response = SyncResponseBuilder::default()
                 .add_joined_room(JoinedRoomBuilder::new(room_id))
                 .build_sync_response();
-            client
-                .inner
-                .base_client
-                .receive_sync_response(response)
-                .await
-                .unwrap();
+            client.inner.base_client.receive_sync_response(response).await.unwrap();
 
             client.event_cache().subscribe().unwrap();
 
-            let (_room_event_cache, _drop_handles) = client
-                .get_room(room_id)
-                .unwrap()
-                .event_cache()
-                .await
-                .unwrap();
+            let (_room_event_cache, _drop_handles) =
+                client.get_room(room_id).unwrap().event_cache().await.unwrap();
         }
 
         drop(client);
@@ -4810,24 +4580,12 @@ pub(crate) mod tests {
             .build()
             .await;
 
-        assert!(
-            client
-                .server_versions()
-                .await
-                .unwrap()
-                .contains(&MatrixVersion::V1_0)
-        );
+        assert!(client.server_versions().await.unwrap().contains(&MatrixVersion::V1_0));
 
         // The result was cached.
         assert_matches!(client.supported_versions_cached().await, Ok(Some(_)));
         // This subsequent call hits the in-memory cache.
-        assert!(
-            client
-                .server_versions()
-                .await
-                .unwrap()
-                .contains(&MatrixVersion::V1_0)
-        );
+        assert!(client.server_versions().await.unwrap().contains(&MatrixVersion::V1_0));
 
         drop(client);
 
@@ -4854,50 +4612,24 @@ pub(crate) mod tests {
 
         let supported = client.supported_versions().await.unwrap();
         assert!(supported.versions.contains(&MatrixVersion::V1_0));
-        assert!(
-            supported
-                .features
-                .contains(&FeatureFlag::from("org.matrix.e2e_cross_signing"))
-        );
+        assert!(supported.features.contains(&FeatureFlag::from("org.matrix.e2e_cross_signing")));
 
         // Then this call hits the in-memory cache.
         let supported = client.supported_versions().await.unwrap();
         assert!(supported.versions.contains(&MatrixVersion::V1_0));
-        assert!(
-            supported
-                .features
-                .contains(&FeatureFlag::from("org.matrix.e2e_cross_signing"))
-        );
+        assert!(supported.features.contains(&FeatureFlag::from("org.matrix.e2e_cross_signing")));
 
         drop(versions_mock);
 
         // Now, reset the cache, and observe the endpoint being called again once.
         client.reset_supported_versions().await.unwrap();
 
-        server
-            .mock_versions()
-            .ok()
-            .expect(2)
-            .named("second versions mock")
-            .mount()
-            .await;
+        server.mock_versions().ok().expect(2).named("second versions mock").mount().await;
 
         // Hits network again.
-        assert!(
-            client
-                .server_versions()
-                .await
-                .unwrap()
-                .contains(&MatrixVersion::V1_0)
-        );
+        assert!(client.server_versions().await.unwrap().contains(&MatrixVersion::V1_0));
         // Hits in-memory cache again.
-        assert!(
-            client
-                .server_versions()
-                .await
-                .unwrap()
-                .contains(&MatrixVersion::V1_0)
-        );
+        assert!(client.server_versions().await.unwrap().contains(&MatrixVersion::V1_0));
         assert_matches!(client.inner.caches.supported_versions.value(), CachedValue::Cached(value) if !value.has_expired());
 
         // Force an expiry of the data.
@@ -4920,9 +4652,7 @@ pub(crate) mod tests {
         let server_url = server.uri();
         let domain = server_url.strip_prefix("http://").unwrap();
         let server_name = <&ServerName>::try_from(domain).unwrap();
-        let rtc_foci = vec![RtcTransport::livekit(
-            "https://livekit.example.com".to_owned(),
-        )];
+        let rtc_foci = vec![RtcTransport::livekit("https://livekit.example.com".to_owned())];
 
         let well_known_mock = server
             .mock_well_known()
@@ -4973,13 +4703,7 @@ pub(crate) mod tests {
         // Now, reset the cache, and observe the endpoints being called again once.
         client.reset_well_known().await.unwrap();
 
-        server
-            .mock_well_known()
-            .ok()
-            .named("second well known mock")
-            .expect(2)
-            .mount()
-            .await;
+        server.mock_well_known().ok().named("second well known mock").expect(2).mount().await;
 
         // Hits network again.
         assert_eq!(client.well_known_rtc_transports().await.unwrap(), rtc_foci);
@@ -5010,14 +4734,10 @@ pub(crate) mod tests {
         };
 
         let server = MatrixMockServer::new().await;
-        let transports = vec![RtcTransport::livekit(
-            "https://livekit.example.com".to_owned(),
-        )];
+        let transports = vec![RtcTransport::livekit("https://livekit.example.com".to_owned())];
 
         let transports_mock = Mock::given(method("GET"))
-            .and(path_regex(
-                r"^/_matrix/client/unstable/org.matrix.msc4143/rtc/transports",
-            ))
+            .and(path_regex(r"^/_matrix/client/unstable/org.matrix.msc4143/rtc/transports"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "rtc_transports": [
                     { "type": "livekit", "livekit_service_url": "https://livekit.example.com" }
@@ -5031,15 +4751,9 @@ pub(crate) mod tests {
         let client = server.client_builder().build().await;
 
         // First call hits the network.
-        assert_eq!(
-            client.rtc_transports().await.unwrap(),
-            Some(transports.clone())
-        );
+        assert_eq!(client.rtc_transports().await.unwrap(), Some(transports.clone()));
         // Subsequent call hits the in-memory cache.
-        assert_eq!(
-            client.rtc_transports().await.unwrap(),
-            Some(transports.clone())
-        );
+        assert_eq!(client.rtc_transports().await.unwrap(), Some(transports.clone()));
         assert_matches!(client.inner.caches.rtc_transports.value(), CachedValue::Cached(value) if !value.has_expired());
 
         drop(transports_mock);
@@ -5048,9 +4762,7 @@ pub(crate) mod tests {
         client.reset_rtc_transports();
 
         Mock::given(method("GET"))
-            .and(path_regex(
-                r"^/_matrix/client/unstable/org.matrix.msc4143/rtc/transports",
-            ))
+            .and(path_regex(r"^/_matrix/client/unstable/org.matrix.msc4143/rtc/transports"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "rtc_transports": [
                     { "type": "livekit", "livekit_service_url": "https://livekit.example.com" }
@@ -5062,15 +4774,9 @@ pub(crate) mod tests {
             .await;
 
         // Hits network again.
-        assert_eq!(
-            client.rtc_transports().await.unwrap(),
-            Some(transports.clone())
-        );
+        assert_eq!(client.rtc_transports().await.unwrap(), Some(transports.clone()));
         // Hits in-memory cache again.
-        assert_eq!(
-            client.rtc_transports().await.unwrap(),
-            Some(transports.clone())
-        );
+        assert_eq!(client.rtc_transports().await.unwrap(), Some(transports.clone()));
 
         // Force an expiry of the data.
         let mut ttl_value = TtlValue::new(Some(transports.clone()));
@@ -5099,9 +4805,7 @@ pub(crate) mod tests {
         // We expect it to be hit only once, despite several calls, thanks to the
         // negative caching.
         Mock::given(method("GET"))
-            .and(path_regex(
-                r"^/_matrix/client/unstable/org.matrix.msc4143/rtc/transports",
-            ))
+            .and(path_regex(r"^/_matrix/client/unstable/org.matrix.msc4143/rtc/transports"))
             .respond_with(ResponseTemplate::new(404).set_body_json(json!({
                 "errcode": "M_UNRECOGNIZED",
                 "error": "Unrecognized request",
@@ -5147,9 +4851,7 @@ pub(crate) mod tests {
         };
 
         Mock::given(method("GET"))
-            .and(path_regex(
-                r"^/_matrix/client/unstable/org.matrix.msc4143/rtc/transports",
-            ))
+            .and(path_regex(r"^/_matrix/client/unstable/org.matrix.msc4143/rtc/transports"))
             .respond_with(response)
             .named("transports mock")
             .expect(1)
@@ -5160,9 +4862,7 @@ pub(crate) mod tests {
     #[async_test]
     async fn test_discover_rtc_transports_prefers_the_endpoint() {
         let server = MatrixMockServer::new().await;
-        let transports = vec![RtcTransport::livekit(
-            "https://livekit.example.com".to_owned(),
-        )];
+        let transports = vec![RtcTransport::livekit("https://livekit.example.com".to_owned())];
 
         let _transports_mock = mock_rtc_transports_endpoint(&server, true).await;
 
@@ -5178,19 +4878,14 @@ pub(crate) mod tests {
 
         let client = server.client_builder().build().await;
 
-        assert_eq!(
-            client.discover_rtc_transports().await.unwrap(),
-            Some(transports)
-        );
+        assert_eq!(client.discover_rtc_transports().await.unwrap(), Some(transports));
     }
 
     #[async_test]
     async fn test_discover_rtc_transports_falls_back_to_well_known() {
         let server = MatrixMockServer::new().await;
         // The `m.rtc_foci` advertised by `WellKnownEndpoint::ok`.
-        let rtc_foci = vec![RtcTransport::livekit(
-            "https://livekit.example.com".to_owned(),
-        )];
+        let rtc_foci = vec![RtcTransport::livekit("https://livekit.example.com".to_owned())];
 
         let _transports_mock = mock_rtc_transports_endpoint(&server, false).await;
 
@@ -5206,21 +4901,12 @@ pub(crate) mod tests {
 
         // The homeserver doesn't implement the discovery endpoint, so the well-known
         // foci are used instead.
-        assert_eq!(
-            client.discover_rtc_transports().await.unwrap(),
-            Some(rtc_foci)
-        );
+        assert_eq!(client.discover_rtc_transports().await.unwrap(), Some(rtc_foci));
     }
 
     /// Mounts a well-known mock that must never be hit.
     async fn mock_well_known_never_called(server: &MatrixMockServer) -> wiremock::MockGuard {
-        server
-            .mock_well_known()
-            .ok()
-            .named("well-known mock")
-            .expect(0)
-            .mount_as_scoped()
-            .await
+        server.mock_well_known().ok().named("well-known mock").expect(0).mount_as_scoped().await
     }
 
     #[async_test]
@@ -5365,10 +5051,7 @@ pub(crate) mod tests {
             })
             .await;
 
-        let room = client
-            .await_room_remote_echo(room_id)
-            .now_or_never()
-            .unwrap();
+        let room = client.await_room_remote_echo(room_id).now_or_never().unwrap();
         assert_eq!(room.room_id(), room_id);
     }
 
@@ -5397,12 +5080,8 @@ pub(crate) mod tests {
             }
         });
 
-        let room = timeout(
-            Duration::from_secs(10),
-            client.await_room_remote_echo(room_id),
-        )
-        .await
-        .unwrap();
+        let room =
+            timeout(Duration::from_secs(10), client.await_room_remote_echo(room_id)).await.unwrap();
         assert_eq!(room.room_id(), room_id);
     }
 
@@ -5413,12 +5092,7 @@ pub(crate) mod tests {
         let room_id = room_id!("!room:example.org");
         // Room is not present so the client won't be able to find it. The call will
         // timeout.
-        timeout(
-            Duration::from_secs(1),
-            client.await_room_remote_echo(room_id),
-        )
-        .await
-        .unwrap_err();
+        timeout(Duration::from_secs(1), client.await_room_remote_echo(room_id)).await.unwrap_err();
     }
 
     #[async_test]
@@ -5438,12 +5112,9 @@ pub(crate) mod tests {
             .unwrap();
 
         // Room is locally present, but not synced, the call will timeout
-        timeout(
-            Duration::from_secs(1),
-            client.await_room_remote_echo(room.room_id()),
-        )
-        .await
-        .unwrap_err();
+        timeout(Duration::from_secs(1), client.await_room_remote_echo(room.room_id()))
+            .await
+            .unwrap_err();
     }
 
     #[async_test]
@@ -5451,16 +5122,9 @@ pub(crate) mod tests {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
 
-        server
-            .mock_room_directory_resolve_alias()
-            .not_found()
-            .expect(1)
-            .mount()
-            .await;
+        server.mock_room_directory_resolve_alias().not_found().expect(1).mount().await;
 
-        let ret = client
-            .is_room_alias_available(room_alias_id!("#some_alias:matrix.org"))
-            .await;
+        let ret = client.is_room_alias_available(room_alias_id!("#some_alias:matrix.org")).await;
         assert_matches!(ret, Ok(true));
     }
 
@@ -5476,9 +5140,7 @@ pub(crate) mod tests {
             .mount()
             .await;
 
-        let ret = client
-            .is_room_alias_available(room_alias_id!("#some_alias:matrix.org"))
-            .await;
+        let ret = client.is_room_alias_available(room_alias_id!("#some_alias:matrix.org")).await;
         assert_matches!(ret, Ok(false));
     }
 
@@ -5487,16 +5149,9 @@ pub(crate) mod tests {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
 
-        server
-            .mock_room_directory_resolve_alias()
-            .error500()
-            .expect(1)
-            .mount()
-            .await;
+        server.mock_room_directory_resolve_alias().error500().expect(1).mount().await;
 
-        let ret = client
-            .is_room_alias_available(room_alias_id!("#some_alias:matrix.org"))
-            .await;
+        let ret = client.is_room_alias_available(room_alias_id!("#some_alias:matrix.org")).await;
         assert_matches!(ret, Err(_));
     }
 
@@ -5505,12 +5160,7 @@ pub(crate) mod tests {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
 
-        server
-            .mock_room_directory_create_room_alias()
-            .ok()
-            .expect(1)
-            .mount()
-            .await;
+        server.mock_room_directory_create_room_alias().ok().expect(1).mount().await;
 
         let ret = client
             .create_room_alias(
@@ -5549,14 +5199,10 @@ pub(crate) mod tests {
 
         server.mock_room_join(target_room_id).ok().mount().await;
 
-        let ret = client
-            .join_room_by_id_or_alias(target_alias.into(), &[])
-            .await;
+        let ret = client.join_room_by_id_or_alias(target_alias.into(), &[]).await;
         assert!(ret.is_ok());
 
-        let ret = client
-            .join_room_by_id_or_alias(target_room_id.into(), &[])
-            .await;
+        let ret = client.join_room_by_id_or_alias(target_room_id.into(), &[]).await;
         assert!(ret.is_ok());
     }
 
@@ -5568,18 +5214,10 @@ pub(crate) mod tests {
         let room_id = room_id!("!a-room:matrix.org");
 
         // Make sure the summary endpoint is called once
-        server
-            .mock_room_summary()
-            .ok(room_id)
-            .mock_once()
-            .mount()
-            .await;
+        server.mock_room_summary().ok(room_id).mock_once().mount().await;
 
         // We create a locally cached invited room
-        let invited_room = client
-            .inner
-            .base_client
-            .get_or_create_room(room_id, RoomState::Invited);
+        let invited_room = client.inner.base_client.get_or_create_room(room_id, RoomState::Invited);
 
         // And we get a preview, the server endpoint was reached
         let preview = client
@@ -5598,18 +5236,10 @@ pub(crate) mod tests {
         let room_id = room_id!("!a-room:matrix.org");
 
         // Make sure the summary endpoint is called once
-        server
-            .mock_room_summary()
-            .ok(room_id)
-            .mock_once()
-            .mount()
-            .await;
+        server.mock_room_summary().ok(room_id).mock_once().mount().await;
 
         // We create a locally cached left room
-        let left_room = client
-            .inner
-            .base_client
-            .get_or_create_room(room_id, RoomState::Left);
+        let left_room = client.inner.base_client.get_or_create_room(room_id, RoomState::Left);
 
         // And we get a preview, the server endpoint was reached
         let preview = client
@@ -5628,18 +5258,10 @@ pub(crate) mod tests {
         let room_id = room_id!("!a-room:matrix.org");
 
         // Make sure the summary endpoint is called once
-        server
-            .mock_room_summary()
-            .ok(room_id)
-            .mock_once()
-            .mount()
-            .await;
+        server.mock_room_summary().ok(room_id).mock_once().mount().await;
 
         // We create a locally cached knocked room
-        let knocked_room = client
-            .inner
-            .base_client
-            .get_or_create_room(room_id, RoomState::Knocked);
+        let knocked_room = client.inner.base_client.get_or_create_room(room_id, RoomState::Knocked);
 
         // And we get a preview, the server endpoint was reached
         let preview = client
@@ -5661,10 +5283,7 @@ pub(crate) mod tests {
         server.mock_room_summary().ok(room_id).never().mount().await;
 
         // We create a locally cached joined room
-        let joined_room = client
-            .inner
-            .base_client
-            .get_or_create_room(room_id, RoomState::Joined);
+        let joined_room = client.inner.base_client.get_or_create_room(room_id, RoomState::Joined);
 
         // And we get a preview, no server endpoint was reached
         let preview = client
@@ -5693,11 +5312,8 @@ pub(crate) mod tests {
             })
             .await;
 
-        let (initial_value, stream) = client
-            .account()
-            .observe_media_preview_config()
-            .await
-            .unwrap();
+        let (initial_value, stream) =
+            client.account().observe_media_preview_config().await.unwrap();
 
         let initial_value: MediaPreviewConfigEventContent = initial_value.unwrap();
         assert_eq!(initial_value.invite_avatars, Some(InviteAvatars::Off));
@@ -5747,11 +5363,8 @@ pub(crate) mod tests {
             })
             .await;
 
-        let (initial_value, stream) = client
-            .account()
-            .observe_media_preview_config()
-            .await
-            .unwrap();
+        let (initial_value, stream) =
+            client.account().observe_media_preview_config().await.unwrap();
 
         let initial_value: MediaPreviewConfigEventContent = initial_value.unwrap();
         assert_eq!(initial_value.invite_avatars, Some(InviteAvatars::Off));
@@ -5788,11 +5401,7 @@ pub(crate) mod tests {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
 
-        let (initial_value, _) = client
-            .account()
-            .observe_media_preview_config()
-            .await
-            .unwrap();
+        let (initial_value, _) = client.account().observe_media_preview_config().await.unwrap();
 
         assert!(initial_value.is_none());
     }
@@ -5804,33 +5413,12 @@ pub(crate) mod tests {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
 
-        assert!(
-            !client
-                .inner
-                .server_max_upload_size
-                .lock()
-                .await
-                .initialized()
-        );
+        assert!(!client.inner.server_max_upload_size.lock().await.initialized());
 
-        server
-            .mock_authenticated_media_config()
-            .ok(uint!(2))
-            .mock_once()
-            .mount()
-            .await;
+        server.mock_authenticated_media_config().ok(uint!(2)).mock_once().mount().await;
         client.load_or_fetch_max_upload_size().await.unwrap();
 
-        assert_eq!(
-            *client
-                .inner
-                .server_max_upload_size
-                .lock()
-                .await
-                .get()
-                .unwrap(),
-            uint!(2)
-        );
+        assert_eq!(*client.inner.server_max_upload_size.lock().await.get().unwrap(), uint!(2));
     }
 
     #[async_test]
@@ -5850,33 +5438,12 @@ pub(crate) mod tests {
             .mount()
             .await;
 
-        assert!(
-            !client
-                .inner
-                .server_max_upload_size
-                .lock()
-                .await
-                .initialized()
-        );
+        assert!(!client.inner.server_max_upload_size.lock().await.initialized());
 
-        server
-            .mock_authenticated_media_config()
-            .ok(uint!(2))
-            .mock_once()
-            .mount()
-            .await;
+        server.mock_authenticated_media_config().ok(uint!(2)).mock_once().mount().await;
         client.load_or_fetch_max_upload_size().await.unwrap();
 
-        assert_eq!(
-            *client
-                .inner
-                .server_max_upload_size
-                .lock()
-                .await
-                .get()
-                .unwrap(),
-            uint!(2)
-        );
+        assert_eq!(*client.inner.server_max_upload_size.lock().await.get().unwrap(), uint!(2));
     }
 
     #[async_test]
@@ -5895,33 +5462,12 @@ pub(crate) mod tests {
             .mount()
             .await;
 
-        assert!(
-            !client
-                .inner
-                .server_max_upload_size
-                .lock()
-                .await
-                .initialized()
-        );
+        assert!(!client.inner.server_max_upload_size.lock().await.initialized());
 
-        server
-            .mock_media_config()
-            .ok(uint!(2))
-            .mock_once()
-            .mount()
-            .await;
+        server.mock_media_config().ok(uint!(2)).mock_once().mount().await;
         client.load_or_fetch_max_upload_size().await.unwrap();
 
-        assert_eq!(
-            *client
-                .inner
-                .server_max_upload_size
-                .lock()
-                .await
-                .get()
-                .unwrap(),
-            uint!(2)
-        );
+        assert_eq!(*client.inner.server_max_upload_size.lock().await.get().unwrap(), uint!(2));
     }
 
     #[async_test]
@@ -5929,23 +5475,9 @@ pub(crate) mod tests {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
 
-        server
-            .mock_authenticated_media_config()
-            .ok(uint!(1))
-            .mock_once()
-            .mount()
-            .await;
+        server.mock_authenticated_media_config().ok(uint!(1)).mock_once().mount().await;
         client.load_or_fetch_max_upload_size().await.unwrap();
-        assert_eq!(
-            *client
-                .inner
-                .server_max_upload_size
-                .lock()
-                .await
-                .get()
-                .unwrap(),
-            uint!(1)
-        );
+        assert_eq!(*client.inner.server_max_upload_size.lock().await.get().unwrap(), uint!(1));
 
         let data = vec![1, 2];
         let upload_request =
@@ -5959,12 +5491,7 @@ pub(crate) mod tests {
         let media_request = SendMediaUploadRequest::new(request);
 
         let error = media_request.await.err();
-        assert_let!(
-            Some(Error::Media(MediaError::MediaTooLargeToUpload {
-                max,
-                current
-            })) = error
-        );
+        assert_let!(Some(Error::Media(MediaError::MediaTooLargeToUpload { max, current })) = error);
         assert_eq!(max, uint!(1));
         assert_eq!(current, UInt::new_wrapping(data.len() as u64));
     }
@@ -6017,9 +5544,7 @@ pub(crate) mod tests {
 
         // Call each version of the endpoint once to check the timeouts.
         let mut stream = Box::pin(
-            client
-                .sync_stream(SyncSettings::new().ignore_timeout_on_first_sync(true))
-                .await,
+            client.sync_stream(SyncSettings::new().ignore_timeout_on_first_sync(true)).await,
         );
 
         timeout(Duration::from_secs(1), async {
@@ -6044,25 +5569,14 @@ pub(crate) mod tests {
         let response = SyncResponseBuilder::default()
             .add_joined_room(JoinedRoomBuilder::default().add_state_event(f.member(user_id)))
             .add_global_account_data(
-                f.direct()
-                    .add_user(user_id.to_owned().into(), *DEFAULT_TEST_ROOM_ID),
+                f.direct().add_user(user_id.to_owned().into(), *DEFAULT_TEST_ROOM_ID),
             )
             .build_sync_response();
-        client
-            .base_client()
-            .receive_sync_response(response)
-            .await
-            .unwrap();
+        client.base_client().receive_sync_response(response).await.unwrap();
 
         // Then get_dm_room finds this room
         let found_room = client.get_dm_room(user_id).expect("DM not found!");
-        assert!(
-            found_room
-                .get_member_no_sync(user_id)
-                .await
-                .unwrap()
-                .is_some()
-        );
+        assert!(found_room.get_member_no_sync(user_id).await.unwrap().is_some());
     }
 
     #[async_test]
@@ -6080,25 +5594,14 @@ pub(crate) mod tests {
                     .add_state_event(f.member(user_id).invited(user_id).display_name("example")),
             )
             .add_global_account_data(
-                f.direct()
-                    .add_user(user_id.to_owned().into(), *DEFAULT_TEST_ROOM_ID),
+                f.direct().add_user(user_id.to_owned().into(), *DEFAULT_TEST_ROOM_ID),
             )
             .build_sync_response();
-        client
-            .base_client()
-            .receive_sync_response(response)
-            .await
-            .unwrap();
+        client.base_client().receive_sync_response(response).await.unwrap();
 
         // Then get_dm_room finds this room
         let found_room = client.get_dm_room(user_id).expect("DM not found!");
-        assert!(
-            found_room
-                .get_member_no_sync(user_id)
-                .await
-                .unwrap()
-                .is_some()
-        );
+        assert!(found_room.get_member_no_sync(user_id).await.unwrap().is_some());
     }
 
     #[async_test]
@@ -6120,25 +5623,14 @@ pub(crate) mod tests {
                 JoinedRoomBuilder::default().add_state_event(f.member(user_id).leave()),
             )
             .add_global_account_data(
-                f.direct()
-                    .add_user(user_id.to_owned().into(), *DEFAULT_TEST_ROOM_ID),
+                f.direct().add_user(user_id.to_owned().into(), *DEFAULT_TEST_ROOM_ID),
             )
             .build_sync_response();
-        client
-            .base_client()
-            .receive_sync_response(response)
-            .await
-            .unwrap();
+        client.base_client().receive_sync_response(response).await.unwrap();
 
         // Then get_dm_room finds this room
         let found_room = client.get_dm_room(user_id).expect("DM not found!");
-        assert!(
-            found_room
-                .get_member_no_sync(user_id)
-                .await
-                .unwrap()
-                .is_some()
-        );
+        assert!(found_room.get_member_no_sync(user_id).await.unwrap().is_some());
     }
 
     #[async_test]
@@ -6148,10 +5640,7 @@ pub(crate) mod tests {
 
         server.mock_get_device().ok().expect(1).mount().await;
 
-        assert_matches!(
-            client.device_exists(owned_device_id!("ABCDEF")).await,
-            Ok(true)
-        );
+        assert_matches!(client.device_exists(owned_device_id!("ABCDEF")).await, Ok(true));
     }
 
     #[async_test]
@@ -6159,10 +5648,7 @@ pub(crate) mod tests {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
 
-        assert_matches!(
-            client.device_exists(owned_device_id!("ABCDEF")).await,
-            Ok(false)
-        );
+        assert_matches!(client.device_exists(owned_device_id!("ABCDEF")).await, Ok(false));
     }
 
     #[async_test]
@@ -6172,10 +5658,7 @@ pub(crate) mod tests {
 
         server.mock_get_device().error500().expect(1).mount().await;
 
-        assert_matches!(
-            client.device_exists(owned_device_id!("ABCDEF")).await,
-            Err(_)
-        );
+        assert_matches!(client.device_exists(owned_device_id!("ABCDEF")).await, Err(_));
     }
 
     #[async_test]
@@ -6225,12 +5708,8 @@ pub(crate) mod tests {
         macro_rules! assert_key_count {
             ($client: ident, $count:literal) => {{
                 let machine = $client.olm_machine().await;
-                let uploaded_key_counts = machine
-                    .as_ref()
-                    .unwrap()
-                    .uploaded_key_count()
-                    .await
-                    .unwrap();
+                let uploaded_key_counts =
+                    machine.as_ref().unwrap().uploaded_key_count().await.unwrap();
                 assert_eq!(uploaded_key_counts, $count)
             }};
         }
@@ -6283,12 +5762,7 @@ pub(crate) mod tests {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
 
-        server
-            .mock_upload_keys()
-            .ok_with_signed_curve_key_count(50)
-            .mock_once()
-            .mount()
-            .await;
+        server.mock_upload_keys().ok_with_signed_curve_key_count(50).mock_once().mount().await;
 
         // In the beginning there were no uploaded keys.
         assert_key_count!(client, 0);
@@ -6319,9 +5793,7 @@ pub(crate) mod tests {
         let client = server.client_builder().build().await;
 
         Mock::given(method("GET"))
-            .and(path(
-                "/_matrix/client/unstable/org.matrix.msc1763/retention/configuration",
-            ))
+            .and(path("/_matrix/client/unstable/org.matrix.msc1763/retention/configuration"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "policies": {},
                 "limits": {},

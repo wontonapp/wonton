@@ -163,10 +163,7 @@ async fn client_recovers_after_server_restart() {
     assert_eq!(phone.client.status(), TunnelStatus::Connected);
 }
 
-/// 两端 endpoint、本地代理、上游和隧道服务端都跑在这条测试的 runtime 上，时限是 15 秒墙钟。高负载下整机把测试进程
-/// 挤到几乎分不到 CPU（nice 0 的负载压着 nice 19 的测试）时，单线程 runtime 一停就是一秒多，实测起跑阶段累计停十几秒，
-/// 请求拖过时限。多线程有多个 worker 一起排队，分到的 CPU 更多，也只要还有一个被调度就能推进。探针证据见 PR。
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::test]
 async fn client_recovers_after_server_crash() {
     let upstream = Upstream::spawn().await;
     let device = SecretKey::generate();

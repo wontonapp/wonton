@@ -7,47 +7,24 @@ use std::sync::{Arc, RwLock};
 use url::{Host, Url};
 
 use super::address::ProxyAddress;
-use super::settings::default_doh;
 
-/// 核心自己出网用的代理，和配了代理时解析域名用的 DoH 服务器。两者一起更新：代理变了，链接预览的解析方式就跟着变。
-#[derive(Clone)]
-pub struct CoreProxy {
-    url: Arc<RwLock<Option<Url>>>,
-    doh: Arc<RwLock<Url>>,
-}
-
-impl Default for CoreProxy {
-    fn default() -> Self {
-        Self {
-            url: Arc::default(),
-            doh: Arc::new(RwLock::new(default_doh())),
-        }
-    }
-}
+#[derive(Clone, Default)]
+pub struct CoreProxy(Arc<RwLock<Option<Url>>>);
 
 impl CoreProxy {
     pub fn set(&self, address: Option<&ProxyAddress>) {
         let url = address.and_then(|address| Url::parse(address.text()).ok());
-        *self.url.write().expect("核心代理锁中毒") = url;
+        *self.0.write().expect("核心代理锁中毒") = url;
     }
 
     /// 当前的代理地址（带用户名和密码）。链接预览自己连代理（ADR-0065），不经 reqwest。
     pub fn current(&self) -> Option<Url> {
-        self.url.read().expect("核心代理锁中毒").clone()
-    }
-
-    /// 配了代理时链接预览解析域名的 DoH 服务器（ADR-0065）。
-    pub fn set_doh(&self, server: Url) {
-        *self.doh.write().expect("核心代理锁中毒") = server;
-    }
-
-    pub fn doh(&self) -> Url {
-        self.doh.read().expect("核心代理锁中毒").clone()
+        self.0.read().expect("核心代理锁中毒").clone()
     }
 
     /// 给 HTTP 客户端的设置。设了它，reqwest 就不再读环境变量。
     pub fn for_client(&self) -> reqwest::Proxy {
-        let current = Arc::clone(&self.url);
+        let current = Arc::clone(&self.0);
         reqwest::Proxy::custom(move |target| {
             if is_local(target) {
                 return None;

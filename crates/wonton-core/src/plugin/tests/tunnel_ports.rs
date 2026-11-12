@@ -172,10 +172,8 @@ fn shared_lan_ports_keep_known_docker_protocols_and_tcp_default() {
         (", protocol: tcp", "tcp"),
         (", protocol: udp", "udp"),
     ] {
-        let source = format!(
-            "{}  lan: {{ports: [{{service: app, port: 1024{declaration}}}]}}\n",
-            source("", "").replace("permissions: []", "permissions: [network.lan]")
-        );
+        let source = source("", "").replace("permissions: []", "permissions: [network.lan]")
+            + &format!("  lan: {{ports: [{{service: app, port: 1024{declaration}}}]}}\n");
         let package = PluginPackage::parse(&source, &langs()).unwrap();
         let plan = dry_run(&package, &langs()).unwrap();
         let body = &plan

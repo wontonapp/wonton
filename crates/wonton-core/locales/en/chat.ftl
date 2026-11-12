@@ -68,13 +68,12 @@ chat-card-highest-line = Its code runs as root on this machine
 chat-card-highest-confirm = I understand this app can control the whole machine
 
 # Uninstall card: what happens to the app's data.
-chat-card-uninstall-purge = Its data will be deleted too, and old encrypted messages with its bots become unreadable; this can't be undone
+chat-card-uninstall-purge = Its data will be deleted too; this can't be undone
 chat-card-uninstall-keep = Keep its data; it's still there if you reinstall later
 
 # Tool-call card lines. $args is the raw JSON arguments, truncated when too long.
 chat-card-tool-data = This tool changes data
 chat-card-tool-root = This runs as root on this machine
-chat-card-tool-deletes = The app marks this tool as deleting or overwriting data
 chat-card-args = Arguments: { $args }
 
 # Bot file-save card. $name and $size describe one file; $total is the combined size.
@@ -173,28 +172,3 @@ chat-help-docs-age = { $problem } This copy is { $days ->
 } old
 chat-help-topic-missing = No topic “{ $topic }”. Available topics: { $topics }
 chat-help-page-needs-core = This page covers features that need the home server to be { $required } or later; this one is { $core }. Update the server first
-
-chat-mail-convert-failed = The HTML body of this email could not be converted to text. The original is attached as message.html.
-chat-mail-unknown-source = An app email came from an unknown source or an app without mail permission. It wasn't delivered to anyone.
-chat-mail-recipients-failed = Couldn't update who can receive app mail: { $error }. Wonton will try again when household membership changes or the server restarts.
-chat-notify-rate-limited = { $plugin } is sending notifications and mail too often. They are paused for about { $seconds } seconds.
-# A bot pinning pages onto the panel (ADR-0052).
-panel-pin-card-title = { $bot } wants to put a page on your panel
-panel-pin-card-line = Once you allow it, this bot can add pages to the main panel without asking; you can take that back in Settings.
-panel-pin-allowed = Allowed
-panel-pin-bot-only = Only bots can pin pages; plugin { $plugin } has no bot identity
-panel-pin-bot-missing = No record of bot { $bot }
-panel-pin-full = The panel is full ({ $max } pages at most); remove a page first
-panel-pin-already-asking = A confirmation card for the main panel is already waiting for the owner
-panel-pin-matrix = Can't reach Matrix: { $error }
-panel-pin-not-there = That page isn't pinned on the panel
-
-# MCP Apps 界面里的调用在卡片上把调用方写成主人。
-mcp-app-owner = You
-
-# 跳数到顶（ADR-0045）：几个 Bot 在一个房间里来回说得太多，网关停下了。
-chat-card-hop-limit-title = { $bots } went back and forth { $hops } times and were stopped
-chat-choice-hop-limit-continue = Continue
-chat-choice-hop-limit-stay = Keep stopped
-chat-hop-limit-resumed = Continued
-chat-hop-limit-kept-by-other = The other side chose to keep it stopped

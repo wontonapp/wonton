@@ -33,7 +33,7 @@ fn checking_a_candidate_reserves_nothing_and_reuses_removed_identity_names() {
         .accept_candidate(ALICE, None, 10, |_| false, || Ok(candidate.clone()))
         .unwrap();
     assert_eq!(accepted.username, candidate);
-    store.remove(ALICE, 1000).unwrap();
+    store.remove(ALICE).unwrap();
     drop(store);
     let reopened = open(&temp);
     assert_eq!(reopened.candidate_username(ALICE).unwrap(), candidate);
@@ -69,7 +69,7 @@ fn identity_survives_rename_restart_removal_and_reacceptance_without_restoring_g
     assert_eq!(renamed.username, original.username);
     assert_eq!(renamed.display_name.as_deref(), Some("Real Matrix name"));
     assert_eq!(renamed.last_opened_share_at_ms, Some(50));
-    let removed = store.remove(ALICE, 1000).unwrap();
+    let removed = store.remove(ALICE).unwrap();
     assert_eq!(removed.status, FriendStatus::Removed);
     assert!(removed.groups.is_empty());
     assert!(removed.group_generations.is_empty());
@@ -105,7 +105,7 @@ fn retained_names_cannot_cross_matrix_identities_even_after_reopen() {
     let temp = tempfile::tempdir().unwrap();
     let store = open(&temp);
     accept(&store, ALICE, "friend-occupied");
-    store.remove(ALICE, 1000).unwrap();
+    store.remove(ALICE).unwrap();
     drop(store);
     let store = open(&temp);
     let before = store.snapshot();
@@ -139,7 +139,7 @@ fn caller_collision_check_is_required_for_new_and_existing_identities() {
         assert_eq!(store.snapshot(), before);
     }
     let alice = accept(&store, ALICE, "friend-alice");
-    store.remove(ALICE, 1000).unwrap();
+    store.remove(ALICE).unwrap();
     let before = store.snapshot();
     assert!(matches!(
         store.accept(ALICE, None, 20, |name| name == alice.username),
@@ -164,21 +164,6 @@ fn generated_names_are_valid_distinct_and_do_not_depend_on_display_names() {
         crate::owner::check_not_reserved(&friend.username).unwrap();
         assert_eq!(store.find_username(&friend.username), Some(friend));
     }
-}
-
-#[test]
-fn removal_records_when_it_happened_and_reacceptance_clears_it() {
-    let temp = tempfile::tempdir().unwrap();
-    let store = open(&temp);
-    accept(&store, ALICE, "friend-alice");
-    assert_eq!(store.get(ALICE).unwrap().removed_at_ms, None);
-
-    let removed = store.remove(ALICE, 4321).unwrap();
-    assert_eq!(removed.removed_at_ms, Some(4321));
-    assert_eq!(store.list_including_removed()[0].removed_at_ms, Some(4321));
-
-    let again = accept(&store, ALICE, "friend-alice");
-    assert_eq!(again.removed_at_ms, None);
 }
 
 #[test]
@@ -229,7 +214,7 @@ async fn deletion_and_group_changes_publish_complete_effective_membership_withou
     assert!(ungrouped.get(ALICE).unwrap().groups.is_empty());
     assert!(ungrouped.groups.is_empty());
     assert!(ungrouped.revision > grouped.revision);
-    store.remove(ALICE, 1000).unwrap();
+    store.remove(ALICE).unwrap();
     changes.changed().await.unwrap();
     let deleted = Arc::clone(&changes.borrow_and_update());
     assert!(deleted.get(ALICE).is_none());
@@ -246,7 +231,7 @@ fn subscribing_before_first_check_observes_an_intervening_deletion() {
     accept(&store, ALICE, "friend-alice");
     let mut changes = store.subscribe();
     assert!(changes.borrow_and_update().get(ALICE).is_some());
-    store.remove(ALICE, 1000).unwrap();
+    store.remove(ALICE).unwrap();
     assert!(changes.has_changed().unwrap());
     assert!(changes.borrow_and_update().get(ALICE).is_none());
 }
@@ -309,7 +294,7 @@ fn invalid_group_changes_and_inactive_friend_updates_leave_everything_unchanged(
     );
     assert_eq!(store.snapshot(), before);
     assert!(!changes.has_changed().unwrap());
-    store.remove(ALICE, 1000).unwrap();
+    store.remove(ALICE).unwrap();
     let removed = store.snapshot();
     assert!(store.set_groups(ALICE, &[group.id]).is_err());
     assert!(store.update_display_name(ALICE, Some("New")).is_err());
@@ -369,7 +354,7 @@ fn failed_persistence_changes_neither_memory_nor_subscriber_state() {
     let saved_core = temp.path().join("saved-core");
     fs::rename(&core, &saved_core).unwrap();
     fs::write(&core, b"blocks the parent directory").unwrap();
-    assert!(store.remove(ALICE, 1000).is_err());
+    assert!(store.remove(ALICE).is_err());
     assert!(store.remove_group(&group.id).is_err());
     assert!(store.set_groups(ALICE, &[]).is_err());
     assert!(store.update_display_name(ALICE, Some("Changed")).is_err());
@@ -457,7 +442,7 @@ fn failed_atomic_rename_leaves_no_staged_registry_and_publishes_nothing() {
     let path = temp.path().join("core/friends.json");
     fs::rename(&path, temp.path().join("saved.json")).unwrap();
     fs::create_dir(&path).unwrap();
-    assert!(store.remove(ALICE, 1000).is_err());
+    assert!(store.remove(ALICE).is_err());
     assert_eq!(store.snapshot(), before);
     assert!(!changes.has_changed().unwrap());
     let entries: Vec<_> = fs::read_dir(temp.path().join("core"))
@@ -518,7 +503,7 @@ fn access_time_is_monotonic_durable_and_noops_do_not_invalidate_readers() {
     store.record_opened(ALICE, 100).unwrap();
     let mut changes = store.subscribe();
     changes.borrow_and_update();
-    assert_eq!(store.get(ALICE).unwrap().last_opened_share_at_ms, Some(100));
+    let before = store.snapshot();
     assert_eq!(
         store
             .record_opened(ALICE, 50)
@@ -527,52 +512,15 @@ fn access_time_is_monotonic_durable_and_noops_do_not_invalidate_readers() {
         Some(100)
     );
     store.record_opened(ALICE, 100).unwrap();
-    store.record_opened(ALICE, 101).unwrap();
     store.update_display_name(ALICE, None).unwrap();
     store.set_groups(ALICE, &[]).unwrap();
-    assert_eq!(store.get(ALICE).unwrap().last_opened_share_at_ms, Some(101));
+    assert_eq!(store.snapshot(), before);
     assert!(!changes.has_changed().unwrap());
-    // 到点落盘也不叫醒守着授权快照的连接：打开时间不进 access_generation。
-    store.record_opened(ALICE, 100 + 5 * 60 * 1000).unwrap();
-    assert!(!changes.has_changed().unwrap());
+    store.record_opened(ALICE, 101).unwrap();
+    assert!(changes.has_changed().unwrap());
     assert_eq!(
         open(&temp).get(ALICE).unwrap().last_opened_share_at_ms,
-        Some(100 + 5 * 60 * 1000)
-    );
-}
-
-#[test]
-fn a_hundred_opens_within_five_minutes_write_once_and_never_wake_the_watch() {
-    let temp = tempfile::tempdir().unwrap();
-    let store = open(&temp);
-    accept(&store, ALICE, "friend-alice");
-    let path = temp.path().join("core/friends.json");
-    store.record_opened(ALICE, 0).unwrap();
-    let mut changes = store.subscribe();
-    changes.borrow_and_update();
-    let before = fs::read(&path).unwrap();
-    let revision = store.snapshot().revision;
-    for step in 0..100 {
-        store.record_opened(ALICE, 1_000 + step * 1_000).unwrap();
-    }
-    assert!(!changes.has_changed().unwrap());
-    assert_eq!(store.snapshot().revision, revision);
-    assert_eq!(fs::read(&path).unwrap(), before);
-    // 内存里是最新的：界面和这次的返回值都看得到，只是还没落盘。
-    assert_eq!(
-        store.get(ALICE).unwrap().last_opened_share_at_ms,
-        Some(100_000)
-    );
-    // 间隔从上次真正写盘的时刻（0）算，窗口内看到的更晚时间不会把写盘一直往后推。
-    store.record_opened(ALICE, 5 * 60 * 1000 - 1).unwrap();
-    assert!(!changes.has_changed().unwrap());
-    assert_eq!(fs::read(&path).unwrap(), before);
-    store.record_opened(ALICE, 5 * 60 * 1000).unwrap();
-    assert!(!changes.has_changed().unwrap());
-    assert_ne!(fs::read(&path).unwrap(), before);
-    assert_eq!(
-        open(&temp).get(ALICE).unwrap().last_opened_share_at_ms,
-        Some(5 * 60 * 1000)
+        Some(101)
     );
 }
 
@@ -592,7 +540,7 @@ async fn coalesced_remove_and_reaccept_invalidates_old_grants_and_connection_gen
         .get(ALICE)
         .unwrap()
         .access_generation;
-    store.remove(ALICE, 1000).unwrap();
+    store.remove(ALICE).unwrap();
     let restored = store.accept(ALICE, None, 30, |_| false).unwrap();
     changes.changed().await.unwrap();
     let latest = Arc::clone(&changes.borrow_and_update());
@@ -609,7 +557,7 @@ async fn coalesced_remove_and_reaccept_invalidates_old_grants_and_connection_gen
         reopened.get(ALICE).unwrap().access_generation,
         restored.access_generation
     );
-    reopened.remove(ALICE, 1000).unwrap();
+    reopened.remove(ALICE).unwrap();
     let restored_again = reopened.accept(ALICE, None, 40, |_| false).unwrap();
     assert!(restored_again.access_generation > restored.access_generation);
 }
@@ -674,7 +622,7 @@ async fn membership_epochs_survive_reopen_and_change_only_after_membership_is_re
             .group_generations
             .contains_key(&first.id)
     );
-    store.remove(ALICE, 1000).unwrap();
+    store.remove(ALICE).unwrap();
     assert!(
         store.list_including_removed()[0]
             .group_generations

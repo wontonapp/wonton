@@ -170,65 +170,6 @@ fn a_stuck_slot_does_not_stop_deletes() {
     assert!(transfers.join("b.txt").exists());
 }
 
-/// mergerfs 的 epmfs 把槽放在别的分支上，跨目录改名回 `EXDEV`：在原目录里核对后删，槽里不留东西。
-#[test]
-fn a_cross_branch_rename_deletes_in_place() {
-    let f = fixture();
-    let transfers = f.root.join(TRANSFERS);
-    prepare(&transfers);
-    fs::write(transfers.join("a.txt"), "photo").unwrap();
-    let target = reference("transfers/a.txt");
-    let snapshot = f.shares.open(&target).unwrap().snapshot;
-    super::EXDEV.set(true);
-    let deleted = f
-        .shares
-        .delete_if_unchanged(&target, &snapshot, &any_langs());
-    super::EXDEV.set(false);
-    assert!(matches!(deleted, Ok(Deleted::Removed { durable: true })));
-    assert!(!transfers.join("a.txt").exists());
-    assert_eq!(trash_contents(&transfers), Vec::<String>::new());
-}
-
-/// 同一条路上文件已经没了：算删完了，不报错。
-#[test]
-fn a_cross_branch_delete_of_a_missing_file_is_done() {
-    let f = fixture();
-    let transfers = f.root.join(TRANSFERS);
-    prepare(&transfers);
-    fs::write(transfers.join("a.txt"), "photo").unwrap();
-    let target = reference("transfers/a.txt");
-    let snapshot = f.shares.open(&target).unwrap().snapshot;
-    fs::remove_file(transfers.join("a.txt")).unwrap();
-    super::EXDEV.set(true);
-    let deleted = f
-        .shares
-        .delete_if_unchanged(&target, &snapshot, &any_langs());
-    super::EXDEV.set(false);
-    assert!(matches!(deleted, Ok(Deleted::AlreadyGone)));
-}
-
-/// 同一条路上名字上已经换成了主人的文件：不删。
-#[test]
-fn a_cross_branch_delete_leaves_a_file_that_changed() {
-    let f = fixture();
-    let transfers = f.root.join(TRANSFERS);
-    prepare(&transfers);
-    fs::write(transfers.join("a.txt"), "photo").unwrap();
-    let target = reference("transfers/a.txt");
-    let snapshot = f.shares.open(&target).unwrap().snapshot;
-    fs::write(transfers.join("a.txt"), "the owner's").unwrap();
-    super::EXDEV.set(true);
-    let deleted = f
-        .shares
-        .delete_if_unchanged(&target, &snapshot, &any_langs());
-    super::EXDEV.set(false);
-    assert!(matches!(deleted, Ok(Deleted::Changed)));
-    assert_eq!(
-        fs::read_to_string(transfers.join("a.txt")).unwrap(),
-        "the owner's"
-    );
-}
-
 /// 老内核和 NFS、CIFS 没有 `RENAME_NOREPLACE`：退回先查再改，不覆盖，也不能把目录永远藏起来。
 #[test]
 fn without_noreplace_a_rename_still_keeps_what_is_there() {

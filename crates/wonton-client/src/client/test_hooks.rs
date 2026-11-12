@@ -35,33 +35,6 @@ impl ClientCore {
         self.scope().card_success_hook.release();
     }
 
-    /// 每次发布引导视图前先回调（发布用的那把锁持着，回调里看到的是即将发出去的那份视图和已记下发过消息的房间）。
-    #[doc(hidden)]
-    pub fn test_set_onboarding_publish_hook(
-        &self,
-        hook: Option<crate::onboarding::TestPublishHook>,
-    ) {
-        *self
-            .scope()
-            .onboarding
-            .test_publish_hook
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = hook;
-    }
-
-    /// 像 App 被杀那样停下：关掉当前作用域，等它运行时里的任务都结束再返回。
-    ///
-    /// 释放核心只在后台关运行时、不等（壳可能在主线程上释放），旧作用域的任务这时还可能活着。同一进程里紧接着在同一个
-    /// 数据目录上开新核心，matrix-sdk 存储锁就换持有者名（见 `wonton_matrix` 的 `store_holder`），新 Client 头一次
-    /// 拿到锁时换掉 Olm 机器，重启后马上发的加密消息会卡到发送期限。真的重启是新进程，不会这样；测试模拟重启前先调这个。
-    #[doc(hidden)]
-    pub async fn test_shut_down(&self) {
-        let scope = self.scope();
-        tokio::task::spawn_blocking(move || scope.close(true))
-            .await
-            .expect("closing the scope panicked");
-    }
-
     /// 推进连接质量判定的时钟并采样真实 QUIC 计数；窗口和滞回门槛保持生产值。
     #[doc(hidden)]
     pub async fn test_sample_connection_quality(
@@ -85,15 +58,15 @@ impl ClientCore {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = hook;
     }
 
-    /// 替掉配对的每一段时限（绑定、一次交换、一次确认）和看门线程的时限，免得测试等满生产的三段 30 秒。
+    /// 替掉配对交换的时限（`exchange`）和看门线程的时限（`watchdog`），免得测试等满生产的 30 多秒。
     #[doc(hidden)]
-    pub fn test_set_pair_deadlines(&self, stage: Duration, watchdog: Duration) {
+    pub fn test_set_pair_deadlines(&self, exchange: Duration, watchdog: Duration) {
         *self
             .scope()
             .home
             .test_hooks
             .pair_deadlines
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((stage, watchdog));
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((exchange, watchdog));
     }
 }

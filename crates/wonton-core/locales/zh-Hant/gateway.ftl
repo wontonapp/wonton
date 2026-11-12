@@ -107,7 +107,6 @@ gateway-body-invalid = 請求內容不合法：{ $error }
 gateway-bot-not-found = 沒有這個 Bot：{ $caller }
 gateway-bot-not-in-plugin = 應用程式 { $id } 沒有這個 Bot：{ $caller }
 gateway-tool-not-found = 應用程式 { $id } 沒有工具 { $tool }
-gateway-tool-deletes = 工具 { $tool } 會刪除或覆寫資料，每次都要確認，不能標成唯讀
 gateway-plugin-not-running = 這個應用程式沒有在執行，或者沒有宣告工具
 
 # App 回答確認請求。
@@ -131,16 +130,3 @@ gateway-owner-secrets-not-text = 金鑰 { $name } 存的值不是文字
 gateway-owner-secrets-audit-unavailable = 家用伺服器沒有接審計日誌，不能查看金鑰的值
 gateway-plugin-scope-unsupported = 這個核心不支援修改外掛給哪些 Bot 用，請先升級核心。
 gateway-bot-plugin-access-unsupported = 這個核心不支援為個別 Bot 開關外掛，請先升級核心。
-
-# MCP Apps 宿主页（#35）。
-mcp-app-loading = 正在載入…
-mcp-app-failed = 介面沒能載入：{ $error }
-mcp-app-page-failed = 介面沒能載入。
-mcp-app-retry = 重試
-
-# 好友經分享連線開啟網頁（ADR-0051）。
-gateway-share-identity = 這台伺服器認不出你是誰
-gateway-share-required = 主人沒有把這個應用程式分享給你
-gateway-share-revoked = 主人停止分享這個應用了
-gateway-share-expired = 分享已到期
-gateway-confirmation-gone = 沒有這張確認，或它已結束超過一天

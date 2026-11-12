@@ -200,16 +200,6 @@ fn pick_name(
             Err(e) => return Err(e),
         }
         before_link(&name, &snapshot)?;
-        #[cfg(test)]
-        if super::tests::LINK_FAILS
-            .lock()
-            .expect("链接替身锁中毒")
-            .as_deref()
-            == Some(from.strip_prefix(UPLOAD_TEMP_PREFIX).unwrap_or(from))
-        {
-            super::tests::LINK_FAILS.lock().unwrap().take();
-            return Err(ShareError::Io(format!("{name} 刚被换掉了")));
-        }
         match linkat(dir, from, dir, name.as_str(), AtFlags::empty()) {
             Ok(()) => return Ok(name),
             Err(Errno::EXIST) if same(&name) => return Ok(name),
@@ -256,15 +246,6 @@ pub(super) fn link_to_temp(
     source: &File,
     langs: &Languages,
 ) -> Result<Option<File>, ShareError> {
-    #[cfg(test)]
-    if super::tests::CROSS_VOLUME
-        .lock()
-        .expect("跨卷替身锁中毒")
-        .as_deref()
-        == Some(id)
-    {
-        return Ok(None);
-    }
     match linkat(data_dir, id, dir, temp, AtFlags::empty()) {
         Ok(()) => {}
         Err(Errno::XDEV) => return Ok(None),

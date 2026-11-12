@@ -18,31 +18,23 @@ base64 = { workspace = true }
 bollard = { workspace = true }
 futures-util = "0.3.34"
 getrandom = { workspace = true }
-# MIT。内部信件只提取文本和链接，不在聊天里渲染 HTML（ADR-0056）。
-html2text = "0.17.4"
-# MIT OR Apache-2.0。签证书前查询权威 DNS 的 CAA，不自写 DNS 协议。
-hickory-resolver = { version = "0.26.3", default-features = false, features = ["tokio", "system-config"] }
 # MIT OR Apache-2.0。状态页和终端上的配对二维码。
 qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 # MIT OR Apache-2.0。给 Tuwunel 生成联邦用的自签证书（ADR-0050）；后端用核心已有的 aws-lc-rs，不引入 ring。
-rcgen = { workspace = true }
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 http-body-util = "0.1.5"
 hyper = { version = "1.12.0", features = ["client", "http1", "server"] }
 # client-proxy：链接预览经主人的代理连对方站点（HTTP CONNECT、SOCKS5，ADR-0065）。
 hyper-util = { version = "0.1.21", features = ["client-legacy", "client-proxy", "http1", "tokio"] }
 # MIT OR Apache-2.0。链接预览只用它的分词器读网页的 `<head>`（ADR-0065）。
 html5ever = "0.39.0"
-# MIT OR Apache-2.0。链接预览经代理用 DoH 解析域名时编解码 DNS 报文（ADR-0065）。
-hickory-proto = { version = "0.26.3", default-features = false }
 # (Apache-2.0 OR MIT) AND BSD-3-Clause。链接预览解码 GBK、Shift_JIS 这些非 UTF-8 网页。
 encoding_rs = "0.8.42"
 # Apache-2.0 OR ISC OR MIT、MIT OR Apache-2.0、MIT OR Apache-2.0。链接预览自己握 TLS：连的是检查过的 IP，SNI 仍是原域名
 # （ADR-0065）；根证书用系统的，和 reqwest 一样。都已在依赖树里。
-rustls = { workspace = true }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"] }
 tokio-rustls = { version = "0.26.6", default-features = false }
 rustls-platform-verifier = "0.7.1"
-# Apache-2.0 OR ISC OR MIT。matrix_rtc 提供方的证书包要带上系统根证书（ADR-0096）；已在依赖树里（rustls-platform-verifier 用它）。
-rustls-native-certs = "0.8.5"
 # MIT OR Apache-2.0。插件的图标和截图（ADR-0017，只收 PNG 和 JPEG）、文件的缩略图（ADR-0020，另收 GIF 和 WebP）解码、
 # 缩放后重新编码。
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
@@ -64,10 +56,8 @@ jsonwebtoken = { workspace = true }
 wonton-l10n = { path = "../wonton-l10n" }
 # MIT OR Apache-2.0。解码共享文件夹引用的路径，编码下载的文件名。
 percent-encoding = "2.3.2"
-# MIT OR Apache-2.0。从 SSL_CERT_FILE 读自签/测试 CA 给 iroh 中继校验用。
-rustls-pki-types = "1"
 # MIT OR Apache-2.0。推送代理按 Web Push 发推送：推送地址来自设备，可能是 https（rustls，根证书用系统的）。
-reqwest = { workspace = true, features = ["rustls", "socks", "json", "query"] }
+reqwest = { workspace = true, features = ["rustls", "socks"] }
 # MIT。Matrix 用户 ID 的规范解析，复用 matrix-sdk 已用的版本。
 ruma-common = "0.20.2"
 semver = { workspace = true }
@@ -79,13 +69,8 @@ rmcp = { workspace = true, features = ["server", "client", "transport-streamable
 # Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT。处理图片的子进程给自己设资源上限（setrlimit）；逐级 openat 打开共享文件夹
 # 里的文件。都不用写 unsafe。
 rustix = { version = "1.1.6", default-features = false, features = ["fs", "process", "std"] }
-# MIT OR Apache-2.0。`quotactl_fd` 查用户配额（libc 还没有这个函数，只有 syscall 号和 `dqblk`）。
-libc = "0.2.189"
 # 存文件的审计里记内容的哈希（MIT OR Apache-2.0）。
 sha2 = { workspace = true }
-jsonschema = { workspace = true }
-# MIT OR Apache-2.0。设置项 `pattern` 的校验（ADR-0077）。
-regex = "1.13.1"
 # MIT OR Apache-2.0。rmcp 已经在用：MCP 响应要边读边限制大小，SSE 由总线自己解析（mcp::bounded_http）。
 sse-stream = "0.2.6"
 # 校验 TZ 是 IANA 时区名（Unlicense OR MIT）：核心镜像里不一定有 /usr/share/zoneinfo。
@@ -105,8 +90,6 @@ spdx = "0.13.6"
 tar = { version = "0.4.46", default-features = false }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "fs", "time", "signal", "sync", "io-util", "process"] }
-# MIT。Mailpit 事件走受核心网络约束的 HTTP upgrade；复用 aws-lc-rs 和 getrandom，不启用 TLS。
-tokio-websockets = { version = "0.13.3", default-features = false, features = ["client", "getrandom", "aws_lc_rs"] }
 tower = { version = "0.5.3", features = ["util"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
@@ -117,12 +100,8 @@ url = { workspace = true }
 web-push-native = { version = "0.5.0", default-features = false }
 wonton-protocol = { path = "../wonton-protocol" }
 wonton-tunnel = { path = "../wonton-tunnel" }
-# MIT OR Apache-2.0。gost、socat 的镜像引用经它读 `WONTON_TEST_IMAGES`（CI 指到镜像仓库副本），没设时原样返回。
-wonton-test-images = { path = "../wonton-test-images" }
 zip = { version = "9.3.0", default-features = false, features = ["deflate-flate2"] }
 flate2 = "1.1.10"
-# Apache-2.0 OR MIT。读 WONTON_SHARE_CA_FILE 里额外的根证书，交给 iroh 的中继 TLS。
-rustls-pemfile = "2.2.0"
 
 # MIT。检测局域网地址（ADR-0019）：经 netlink 列出宿主的地址。
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -131,17 +110,13 @@ netlink-packet-route = "0.33.0"
 netlink-sys = { version = "0.9.0", default-features = false }
 
 [dev-dependencies]
-# 分享冒烟示例要用客户端的发现逻辑。
-wonton-client = { path = "../wonton-client" }
 # MIT OR Apache-2.0。测试挑本机空闲端口（`test_support`）要 `test-hooks`，生产构建不带它。
 wonton-tunnel = { path = "../wonton-tunnel", features = ["test-hooks"] }
 # 测试中继：iroh 的 run_relay_server 和跳过 TLS 校验（只用于本机测试）。
 iroh = { workspace = true, features = ["test-utils"] }
+# Apache-2.0 OR MIT。名单测试按 Tuwunel 的语义（RegexSet）编译生成的正则。
+regex = "1.13.1"
 tempfile = { workspace = true }
-# MIT OR Apache-2.0。按 TOML 语义验证 Tuwunel 的联邦配置。
-toml = "1.1"
-# MIT。测试里和 Tuwunel 的 WebSocket 客户端对话（核心生产代码用不到）。
-tokio-websockets = { version = "0.13.3", default-features = false, features = ["server"] }
 
 [lints]
 workspace = true

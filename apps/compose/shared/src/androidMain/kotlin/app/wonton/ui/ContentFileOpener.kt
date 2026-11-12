@@ -6,11 +6,9 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
-import app.wonton.client.ClientCore
 import app.wonton.client.FileOpenException
 import app.wonton.client.FileOpener
-import app.wonton.protocol.CoreException
-import app.wonton.protocol.TimelineTarget
+import app.wonton.protocol.Action
 import app.wonton.protocol.UploadSource
 import java.io.File
 import java.io.FileNotFoundException
@@ -33,35 +31,23 @@ class ContentFileOpener(context: Context) : FileOpener {
     private fun reason(failure: Exception) = failure.message ?: failure.toString()
 }
 
-/**
- * 选好、粘贴的文件放进附件区（ADR-0094），马上开始传。按内容 URI 记下，App 重启后接着传时再打开一次。
- * 放不进去时返回要给人看的问题；成功时返回 null。
- */
-fun ClientCore.attachFile(context: Context, uri: Uri, roomId: String): Problem? {
+/** 选好的文件交给核心：传完由核心授权给这个房间，再把链接发进去。 */
+fun uploadAction(context: Context, uri: Uri, roomId: String): Action {
     val resolver = context.contentResolver
     try {
         resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
     } catch (_: SecurityException) {
-        // 有的提供方不给长期权限。这次照样传得了；App 重启后接着传时读不了，核心如实报读不了原文件。
+        // 有的提供方不给长期权限。这次照样传得了；App 重启后接着传时读不了，核心如实报 local_permission_denied。
     }
-    val name = try {
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0) else null
-        }
-    } catch (failure: SecurityException) {
-        return Problem(titleRes = R.string.composer_file_unreadable, detail = failure.message)
+    val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) cursor.getString(0) else null
     }
-    return try {
-        addFileAttachment(
-            TimelineTarget(roomId, null),
-            UploadSource.Opaque(uri.toString()),
-            name ?: uri.lastPathSegment ?: context.getString(R.string.file_unnamed),
-            resolver.getType(uri),
-        )
-        null
-    } catch (rejection: CoreException) {
-        rejection.problem
-    }
+    return Action.UploadFile(
+        source = UploadSource.Opaque(uri.toString()),
+        name = name ?: uri.lastPathSegment ?: context.getString(R.string.file_unnamed),
+        mimeType = resolver.getType(uri),
+        room = roomId,
+    )
 }
 
 /**
@@ -70,12 +56,7 @@ fun ClientCore.attachFile(context: Context, uri: Uri, roomId: String): Problem? 
  * 没有 App 能打开时返回原因，供界面提示；成功时返回 null。
  */
 fun openWithSystem(context: Context, path: String, mimeType: String?): Problem? {
-    val uri = try {
-        FileProvider.getUriForFile(context, "${context.packageName}.files", File(path))
-    } catch (_: IllegalArgumentException) {
-        // 文件不在配好的根里（file_paths.xml 没盖住）。失败即停：如实提示，不崩、不装成功。
-        return Problem(context.getString(R.string.file_handoff_failed))
-    }
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", File(path))
     // `Intent` 按字面匹配类型：带参数的匹配不上，`application/octet-stream` 没有 App 认，都退回按扩展名。
     val type = mimeType?.let(Intent::normalizeMimeType)?.takeUnless { it == "application/octet-stream" }
     val intent = Intent(Intent.ACTION_VIEW)
@@ -89,17 +70,12 @@ fun openWithSystem(context: Context, path: String, mimeType: String?): Problem? 
     }
 }
 
-/** 下载好的文件交给系统的分享：存到别处、发给别的 App。失败时返回提示，成功返回 null。 */
-fun shareWithSystem(context: Context, path: String, mimeType: String? = null): Problem? {
-    val uri = try {
-        FileProvider.getUriForFile(context, "${context.packageName}.files", File(path))
-    } catch (_: IllegalArgumentException) {
-        return Problem(context.getString(R.string.file_handoff_failed))
-    }
+/** 下载好的文件交给系统的分享：存到别处、发给别的 App。 */
+fun shareWithSystem(context: Context, path: String, mimeType: String? = null) {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", File(path))
     val send = Intent(Intent.ACTION_SEND)
         .setType(mimeType ?: context.contentResolver.getType(uri) ?: "*/*")
         .putExtra(Intent.EXTRA_STREAM, uri)
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     context.startActivity(Intent.createChooser(send, null))
-    return null
 }

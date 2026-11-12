@@ -61,9 +61,6 @@ pub(super) struct Home {
     pub(super) gateway: Arc<Gateway>,
     pub(super) manager: Arc<PluginManager>,
     pub(super) cards: Arc<Cards>,
-    /// 确认表：状态变化只改它，测试从这里读卡片。
-    pub(super) confirmations: Arc<Confirmations>,
-    pub(super) members: Arc<crate::members::Members>,
     pub(super) notes: Notes,
     _dir: tempfile::TempDir,
 }
@@ -123,7 +120,7 @@ pub(super) async fn start(permissions: Option<Vec<Permission>>) -> Home {
     let audit = dir.path().join("audit.jsonl");
     let bus = Bus::new(
         manager.clone(),
-        confirmations.clone(),
+        confirmations,
         Arc::new(crate::mcp::audit::Audit::new(audit)),
     );
     let (tunnel, members) = loopback_tunnel(dir.path()).await;
@@ -131,7 +128,7 @@ pub(super) async fn start(permissions: Option<Vec<Permission>>) -> Home {
         public,
         profile,
         TOKEN.into(),
-        members.clone(),
+        members,
         manager.clone(),
         None,
         http,
@@ -149,8 +146,6 @@ pub(super) async fn start(permissions: Option<Vec<Permission>>) -> Home {
         gateway,
         manager,
         cards,
-        confirmations,
-        members,
         notes,
         _dir: dir,
     }
@@ -508,19 +503,19 @@ async fn hanging_up_withdraws_the_card() {
     let card = home.cards.wait_for(1).await;
 
     drop(stream);
-    let withdrawn = |home: &Home, id: &str| {
+    let withdrawn = |states: &[wonton_protocol::ConfirmationState]| {
         matches!(
-            home.confirmations.card(id).map(|card| card.state),
+            states.last(),
             Some(wonton_protocol::ConfirmationState::Failed { .. })
         )
     };
     for _ in 0..500 {
-        if withdrawn(&home, &card.id) {
+        if withdrawn(&home.cards.states(&card.id)) {
             break;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    assert!(withdrawn(&home, &card.id));
+    assert!(withdrawn(&home.cards.states(&card.id)));
 }
 
 /// Agent 权限确认的入口和 MCP 总线同一道门（ADR-0035）。

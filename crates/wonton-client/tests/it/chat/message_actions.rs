@@ -8,7 +8,6 @@ use wonton_client::{
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, MatrixSession, MessageBody, OwnedRoomId, OwnedUserId};
 use wonton_protocol::MessageAction;
-use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::support::{Home, OWNER, Phone, Timeline};
 use super::{PNG, accept_the_bots_invite, bot_receives};
@@ -128,15 +127,10 @@ async fn the_menu_follows_power_and_a_redaction_reaches_both_sides() {
     let mut timeline = Timeline::open(&phone, &room).await;
 
     rejected_echo_only_copies(&phone, &mut timeline, &room).await;
-    let send = |body: &str| Action::Timeline {
-        action: TimelineAction::SendText {
-            target: TimelineTarget {
-                room_id: room.clone(),
-                thread_root: None,
-            },
-            body: body.to_owned(),
-            reply_to: None,
-        },
+    let send = |body: &str| Action::SendText {
+        room_id: room.clone(),
+        body: body.to_owned(),
+        reply_to: None,
     };
     phone.dispatch(send("主人说的话")).unwrap();
     let (own_item, own) = timeline
@@ -152,14 +146,9 @@ async fn the_menu_follows_power_and_a_redaction_reaches_both_sides() {
     assert_eq!(kinds(&own.actions), ["copy", "reply", "forward", "redact"]);
     assert_eq!(kinds(&bots.actions), ["copy", "reply", "forward"]);
 
-    let redact = |item_id: &str| Action::Timeline {
-        action: TimelineAction::RedactMessage {
-            target: TimelineTarget {
-                room_id: room.clone(),
-                thread_root: None,
-            },
-            item_id: item_id.to_owned(),
-        },
+    let redact = |item_id: &str| Action::RedactMessage {
+        room_id: room.clone(),
+        item_id: item_id.to_owned(),
     };
     let refused = phone.dispatch(redact(&bots_item));
     assert!(
@@ -212,15 +201,10 @@ async fn rejected_echo_only_copies(phone: &Phone, timeline: &mut Timeline, room:
     // 事件远超 65535 字节，Tuwunel 拒收（413 M_TOO_LARGE）。
     let too_long = "字".repeat(30_000);
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SendText {
-                target: TimelineTarget {
-                    room_id: room.to_owned(),
-                    thread_root: None,
-                },
-                body: too_long.clone(),
-                reply_to: None,
-            },
+        .dispatch(Action::SendText {
+            room_id: room.to_owned(),
+            body: too_long.clone(),
+            reply_to: None,
         })
         .unwrap();
     let (item_id, rejected) = timeline
@@ -232,14 +216,9 @@ async fn rejected_echo_only_copies(phone: &Phone, timeline: &mut Timeline, room:
     assert_eq!(rejected.event_id, None);
     assert_eq!(kinds(&rejected.actions), ["copy"]);
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::CancelSend {
-                target: TimelineTarget {
-                    room_id: room.to_owned(),
-                    thread_root: None,
-                },
-                item_id,
-            },
+        .dispatch(Action::CancelSend {
+            room_id: room.to_owned(),
+            item_id,
         })
         .unwrap();
 }
@@ -280,15 +259,10 @@ async fn forwarded_messages_arrive_as_they_were() {
         .await;
     assert!(text.actions.contains(&MessageAction::Forward));
 
-    let forward = |item_id: &str, to: &str| Action::Timeline {
-        action: TimelineAction::ForwardMessage {
-            target: TimelineTarget {
-                room_id: direct.to_string(),
-                thread_root: None,
-            },
-            item_id: item_id.to_owned(),
-            to_room_id: to.to_owned(),
-        },
+    let forward = |item_id: &str, to: &str| Action::ForwardMessage {
+        room_id: direct.to_string(),
+        item_id: item_id.to_owned(),
+        to_room_id: to.to_owned(),
     };
     let nowhere = phone.dispatch(forward(&text_item, "!nowhere:wonton.localhost"));
     assert!(
@@ -333,15 +307,10 @@ async fn forwarded_messages_arrive_as_they_were() {
 /// 回复的消息不在这个房间里：发不出去，按输入非法进 `problem`。
 async fn reply_to_another_room_is_invalid(phone: &Phone, room: &str, elsewhere: String) {
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SendText {
-                target: TimelineTarget {
-                    room_id: room.to_owned(),
-                    thread_root: None,
-                },
-                body: "引用别的房间".to_owned(),
-                reply_to: Some(elsewhere),
-            },
+        .dispatch(Action::SendText {
+            room_id: room.to_owned(),
+            body: "引用别的房间".to_owned(),
+            reply_to: Some(elsewhere),
         })
         .unwrap();
     phone

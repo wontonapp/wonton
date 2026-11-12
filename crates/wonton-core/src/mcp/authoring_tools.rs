@@ -20,8 +20,8 @@ pub(super) const GUIDE: &str = "plugin_guide";
 pub(super) const CHECK: &str = "check_plugin";
 pub(super) const STATUS: &str = "plugin_status";
 
-/// 说明和例子随核心走：这台核心支持的规范版本对应这一份，机器没外网也能用。这份是源，
-/// wonton-docs 的 `skills/wonton-plugin/` 与它保持一致，只保留指向那边文档的链接差异。
+/// 说明和例子随核心走：这台核心支持的规范版本对应这一份，机器没外网也能用（wonton-docs 的
+/// `skills/wonton-plugin/`，随规范一起改）。
 const GUIDE_TEXT: &str = include_str!("../../plugin-guide/SKILL.md");
 const EXAMPLES: &[(&str, &[(&str, &str)])] = &[
     (

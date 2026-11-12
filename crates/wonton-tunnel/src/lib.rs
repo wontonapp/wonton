@@ -11,8 +11,6 @@
 //! - 客户端：[`TunnelClient`] 复用一条连接、断开后按需重连，并报告 [`TunnelStatus`]；
 //!   [`LocalProxy`] 在回环地址上监听，把本机 HTTP 客户端的连接经隧道转发过去。App 用带会话凭据
 //!   （[`ProxyCredential`]）的 HTTP 正向代理，同机的其他 App 借用不了本设备的配对身份。
-//! - 系统浏览器：[`browser_front::BrowserFront`] 在回环上给 Android 的 Custom Tabs 一个按秘密标签认人的入口，
-//!   要跨源隔离的插件网页在浏览器里打开（ADR-0033）。
 //! - 线协议见 `wire` 模块：一条 QUIC 连接上每条双向流对应一条 TCP 连接，做法参考 dumbpipe。
 //! - 插件端口：[`TunnelClient::open_port`] 开 TCP 端口流，[`TunnelClient::open_udp`] 开 UDP 流向，载荷走
 //!   同一连接上的 QUIC 数据报（ADR-0072）。
@@ -20,9 +18,7 @@
 //! - 服务器配对：两台服务器的主人互相配对服务器（ADR-0050），码和 ALPN 见 [`peer_pair`] 模块。
 
 mod allowlist;
-pub mod bind_address;
 mod blocking;
-pub mod browser_front;
 mod client;
 mod credential;
 mod embed;
@@ -37,7 +33,9 @@ mod ports;
 mod proxy;
 pub mod relays;
 mod server;
-pub mod sharing;
+#[cfg(feature = "test-hooks")]
+#[doc(hidden)]
+pub mod test_server;
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub mod test_support;
@@ -52,9 +50,8 @@ pub use client::{
 pub use credential::{ProxyAccess, ProxyCredential};
 pub use embed::{PeerStream, TunnelListener};
 pub use error::TunnelError;
-pub use ports::{PortResolveError, PortResolver, UnsupportedPortResolver};
-pub use proxy::{CATEGORY_HEADER, ERROR_HEADER, LocalProxy};
+pub use ports::{PortResolveError, PortResolver};
+pub use proxy::{ERROR_HEADER, LocalProxy};
 pub use server::{TunnelProtocol, TunnelServer};
-pub use udp::server::FlowTimeouts;
 pub use udp::{PortError, PortStream, UdpFlow, UdpReceiver, UdpSender};
 pub use wire::ALPN;

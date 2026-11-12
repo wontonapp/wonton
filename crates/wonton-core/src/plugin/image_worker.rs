@@ -2,37 +2,24 @@
 //! 原文件，把结果写到标准输出。图片是不可信的输入，预检挡不住所有费时费内存的写法（比如很细的虚线），所以解码和渲染放进单独的
 //! 进程：它先给自己设内存和 CPU 时间的上限，到时没做完由核心杀掉。超时、内存不够、崩溃都算这张图处理不了。
 //!
-//! 这些子进程不直接从核心起，而是从一个常驻的助手进程（`wonton-core image-host`）起，见 [`host`]：核心
-//! 起子进程时，fork 到 exec 之间子进程手里有隧道 UDP 套接字的副本，正好撞上 iroh 在原端口重绑就
-//! `AddrInUse`，之后不会自己恢复。助手在核心绑隧道之前就起好，图片任务的 fork 全在它里面。
-//!
 //! 子进程只限资源，不是沙箱：它和核心是同一个用户，文件和网络的权限也一样。
 
 use std::io::{Read, Write};
 use std::os::unix::process::ExitStatusExt;
-use std::process::{ExitCode, ExitStatus};
+use std::path::{Path, PathBuf};
+use std::process::{ExitCode, ExitStatus, Stdio};
 use std::time::Duration;
 
 use rustix::process::{Resource, Rlimit, Signal, getrlimit, setrlimit};
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::process::Command;
+use tokio::sync::Semaphore;
 
-use super::images::{self, Icon, IconFormat};
+use super::images::{self, Icon, IconFormat, Screenshot};
 use super::languages::Languages;
-
-mod client;
-mod host;
-mod protocol;
-pub use client::ImageWorker;
-pub use host::host;
 
 /// 子命令（`wonton-core image …`），核心内部用。
 pub const COMMAND: &str = "image";
-/// 常驻图片助手的子命令（`wonton-core image-host <程序>`），核心内部用。
-pub const HOST_COMMAND: &str = protocol::HOST_COMMAND;
-/// 核心等助手起来最多这么久。
-const READY_TIMEOUT: Duration = Duration::from_secs(2);
-/// 核心里比子进程的时限多等这么久：助手到点会杀掉子进程并回答，超过这个数是助手本身出了毛病。
-const HELPER_GRACE: Duration = Duration::from_secs(2);
 /// 子进程的地址空间上限。上限内最大的插件图片（4096×4096 的 16 位 PNG 截图）处理时要两三百 MB；再大的照片做不了缩略图。
 const MEMORY_LIMIT: u64 = 512 << 20;
 /// 子进程的 CPU 时间上限。核心按墙钟时间先杀掉它；核心自己没了时由这个兜底。
@@ -223,6 +210,215 @@ fn limit_resources() -> std::io::Result<()> {
         )?;
     }
     Ok(())
+}
+
+/// 核心这边：起子进程处理图片，限时，限并发。
+pub struct ImageWorker {
+    program: Program,
+    timeout: Duration,
+    running: Semaphore,
+    /// 语言文件和主人的用户名，按它读主人的语言（见契约）：给子进程和父进程这边的消息用。
+    languages: Option<(PathBuf, String)>,
+}
+
+enum Program {
+    Path(PathBuf),
+    /// 单元测试里没有 `wonton-core` 可执行文件：在线程池里处理，不限资源。
+    #[cfg(test)]
+    InProcess,
+}
+
+impl ImageWorker {
+    /// 用正在运行的 `wonton-core` 自己处理。
+    pub fn current() -> std::io::Result<Self> {
+        Ok(Self::new(std::env::current_exe()?))
+    }
+
+    /// 同 [`Self::current`]，文字按这个语言文件里主人的语言写。
+    pub fn current_in(languages: PathBuf, owner: String) -> std::io::Result<Self> {
+        let mut worker = Self::current()?;
+        worker.set_languages(languages, owner);
+        Ok(worker)
+    }
+
+    /// 用给定的 `wonton-core` 可执行文件处理。
+    pub fn new(program: impl Into<PathBuf>) -> Self {
+        Self::with_program(Program::Path(program.into()))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn in_process() -> Self {
+        Self::with_program(Program::InProcess)
+    }
+
+    fn with_program(program: Program) -> Self {
+        Self {
+            program,
+            timeout: TIMEOUT,
+            running: Semaphore::new(MAX_RUNNING),
+            languages: None,
+        }
+    }
+
+    /// 语言文件和主人的用户名，按它读主人的语言，给子进程和这边的消息选语言。
+    pub fn set_languages(&mut self, languages: PathBuf, owner: String) {
+        self.languages = Some((languages, owner));
+    }
+
+    pub(super) fn owner_languages(&self) -> Languages {
+        match &self.languages {
+            Some((languages, owner)) => Languages::from_header(
+                super::store::read_people_languages(languages)
+                    .get(owner)
+                    .map(String::as_str),
+            ),
+            None => Languages::default(),
+        }
+    }
+
+    /// 等一个子进程最多多久（默认 10 秒）。
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub async fn icon(&self, format: IconFormat, data: &[u8]) -> Result<Icon, ImageError> {
+        let output = self.run(Job::Icon(format), data).await?;
+        let langs = self.owner_languages();
+        parse_icon(&output, &langs)
+    }
+
+    pub async fn tab_icon(&self, format: IconFormat, data: &[u8]) -> Result<Icon, ImageError> {
+        let output = self.run(Job::TabIcon(format), data).await?;
+        let langs = self.owner_languages();
+        parse_icon(&output, &langs)
+    }
+
+    pub async fn screenshot(&self, data: &[u8]) -> Result<Screenshot, ImageError> {
+        let output = self.run(Job::Screenshot, data).await?;
+        let langs = self.owner_languages();
+        let mut fields = Fields(&output);
+        let shot = Screenshot {
+            jpeg: fields.bytes(&langs)?.to_vec(),
+            width: fields.number(&langs)?,
+            height: fields.number(&langs)?,
+        };
+        Ok(shot)
+    }
+
+    pub async fn thumbnail(&self, data: &[u8]) -> Result<Vec<u8>, ImageError> {
+        let output = self.run(Job::Thumbnail, data).await?;
+        let langs = self.owner_languages();
+        Ok(Fields(&output).bytes(&langs)?.to_vec())
+    }
+
+    pub async fn preview(&self, data: &[u8]) -> Result<Vec<u8>, ImageError> {
+        let output = self.run(Job::Preview, data).await?;
+        let langs = self.owner_languages();
+        Ok(Fields(&output).bytes(&langs)?.to_vec())
+    }
+
+    async fn run(&self, job: Job, input: &[u8]) -> Result<Vec<u8>, ImageError> {
+        let _permit = self.running.acquire().await.expect("信号量不会关闭");
+        self.execute(job, input).await
+    }
+
+    async fn execute(&self, job: Job, input: &[u8]) -> Result<Vec<u8>, ImageError> {
+        match &self.program {
+            Program::Path(program) => self.spawn(program, job, input).await,
+            #[cfg(test)]
+            Program::InProcess => {
+                let input = input.to_vec();
+                let langs = self.owner_languages();
+                tokio::task::spawn_blocking(move || job.run(&input, &langs))
+                    .await
+                    .expect("处理图片的线程没有崩溃")
+                    .map_err(ImageError::Refused)
+            }
+        }
+    }
+
+    async fn spawn(&self, program: &Path, job: Job, input: &[u8]) -> Result<Vec<u8>, ImageError> {
+        let langs = self.owner_languages();
+        let mut child = Command::new(program)
+            .args([COMMAND, job.arg()])
+            .env_clear()
+            .env("WONTON_LANG", owner_language_tag(&langs))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| {
+                ImageError::Unavailable(crate::l10n::text(
+                    &langs,
+                    "plugin-install-img-worker-unavailable",
+                    &[(
+                        "error",
+                        crate::l10n::text(
+                            &langs,
+                            "plugin-install-img-worker-spawn-failed",
+                            &[
+                                ("program", program.display().to_string().into()),
+                                ("error", e.to_string().into()),
+                            ],
+                        )
+                        .into(),
+                    )],
+                ))
+            })?;
+        let (Some(mut stdin), Some(stdout), Some(stderr)) =
+            (child.stdin.take(), child.stdout.take(), child.stderr.take())
+        else {
+            unreachable!("标准输入输出都设成了管道");
+        };
+        let (mut output, mut message) = (Vec::new(), Vec::new());
+        let finished = tokio::time::timeout(self.timeout, async {
+            let write = async {
+                // 子进程提前退出了（比如文件太大，读到上限就不读了）就写不进去，结果看退出状态。
+                let _ = stdin.write_all(input).await;
+                drop(stdin);
+            };
+            let (_, out, err) = tokio::join!(
+                write,
+                read_capped(stdout, MAX_OUTPUT, &mut output),
+                read_capped(stderr, MAX_STDERR, &mut message),
+            );
+            out.and(err)?;
+            child.wait().await
+        })
+        .await;
+        let status = match finished {
+            Ok(Ok(status)) => status,
+            Ok(Err(e)) => {
+                return Err(ImageError::Unavailable(crate::l10n::text(
+                    &langs,
+                    "plugin-install-img-worker-unavailable",
+                    &[(
+                        "error",
+                        crate::l10n::text(
+                            &langs,
+                            "plugin-install-img-worker-communicate",
+                            &[("error", e.to_string().into())],
+                        )
+                        .into(),
+                    )],
+                )));
+            }
+            Err(_) => {
+                // kill 会等进程退出并回收，返回时子进程已经不在了。
+                if let Err(e) = child.kill().await {
+                    tracing::warn!("结束处理图片的子进程失败：{e}");
+                }
+                return Err(ImageError::Refused(crate::l10n::text(
+                    &langs,
+                    "plugin-install-img-worker-timeout",
+                    &[("seconds", self.timeout.as_secs_f32().into())],
+                )));
+            }
+        };
+        outcome(status, output, &String::from_utf8_lossy(&message), &langs)
+    }
 }
 
 fn parse_icon(output: &[u8], langs: &Languages) -> Result<Icon, ImageError> {

@@ -6,7 +6,6 @@ struct ChatListView: View {
     let plugins: PluginsModel
     @Environment(\.wontonColors) private var colors
     @Environment(TabsModel.self) private var tabs
-    @Environment(\.chatPull) private var pull
     @State private var confirmation: PluginConfirmation?
 
     var body: some View {
@@ -41,7 +40,6 @@ struct ChatListView: View {
                         }
                     }
                 }
-                .background { if let pull { ChatPullDetector(pull: pull) } }
             }
             .overlay {
                 if isEmpty { NoChats() }
@@ -53,7 +51,6 @@ struct ChatListView: View {
             }
             .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
-            .environment(\.goToInstalledApps, { tabs.select(.apps) })
             .navigationDestination(for: ChatRoute.self) { route in
                 switch route {
                 case let .room(roomId):
@@ -104,18 +101,8 @@ struct ChatListView: View {
                 status.map(ChatStatusView.init)
                 if let reminder {
                     WontonGroup {
-                        if model.viewModel.encryption.backupReminder == .continueOnOtherDevice {
-                            // 交接还没完成，主人先进了列表：点了回到交接页（ADR-0087）。
-                            Button { model.keyHandoffDeferred = false } label: {
-                                WontonRow(title: reminder, showsForward: true)
-                            }
+                        NavigationLink(value: ChatRoute.chatBackup) { WontonRow(title: reminder, showsForward: true) }
                             .buttonStyle(.plain)
-                        } else {
-                            NavigationLink(value: ChatRoute.chatBackup) {
-                                WontonRow(title: reminder, showsForward: true)
-                            }
-                            .buttonStyle(.plain)
-                        }
                     }
                 }
             }
@@ -314,11 +301,10 @@ private struct RoomRowView: View {
 }
 
 /// Bot 的私聊行用 Bot 头像（状态头像优先，ADR-0044），其他装了应用的用应用图标，其余人用名字的第一个字。
-struct RoomAvatar: View {
+private struct RoomAvatar: View {
     let row: RoomRow
     let model: ChatModel
     let plugins: PluginsModel
-    var size = WontonTheme.size.avatar
     @Environment(\.wontonColors) private var colors
 
     private var plugin: InstalledPlugin? {
@@ -327,6 +313,7 @@ struct RoomAvatar: View {
     }
 
     var body: some View {
+        let size = WontonTheme.size.avatar
         if let bot = row.directUserId.flatMap({ id in model.viewModel.bots.first { $0.userId == id } }) {
             BotAvatarView(bot: bot, pluginIcon: plugin?.icon, core: plugins.core, model: plugins, size: size)
         } else if let plugin {
@@ -435,7 +422,6 @@ private extension MessageSummary {
         case .image: String(localized: .messageSummaryImage)
         case .undecryptable: String(localized: .messageSummaryUndecryptable)
         case .redacted: String(localized: .messageSummaryRedacted)
-        case let .sideChat(title, _): title
         case let .other(kind): String(localized: .chatSummaryOther(kind))
         }
     }

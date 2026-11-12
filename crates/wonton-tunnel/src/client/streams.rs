@@ -5,7 +5,7 @@ use std::{
     pin::pin,
     sync::{
         Arc,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -42,29 +42,16 @@ impl TunnelStreamStats {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct StreamCounters {
+pub(super) struct StreamCounters {
     forward: AtomicUsize,
     ping: AtomicUsize,
     port: AtomicUsize,
     udp: AtomicUsize,
     open: AtomicUsize,
     peak: AtomicUsize,
-    /// 这个客户端从各条流上收到并交给调用方的字节总数。重传的重复数据不算：交给调用方的只有新数据，
-    /// 判活看它。
-    received: AtomicU64,
 }
 
 impl StreamCounters {
-    /// 记一批刚交给调用方的新数据。
-    pub(crate) fn note_received(&self, bytes: usize) {
-        self.received.fetch_add(bytes as u64, Ordering::Relaxed);
-    }
-
-    /// 到目前为止交给调用方的新数据字节数。
-    pub(crate) fn received(&self) -> u64 {
-        self.received.load(Ordering::Relaxed)
-    }
-
     pub(super) fn snapshot(&self) -> TunnelStreamStats {
         TunnelStreamStats {
             forward: self.forward.load(Ordering::Relaxed),
@@ -100,12 +87,6 @@ impl StreamCounters {
 pub(crate) struct StreamLease {
     counters: Arc<StreamCounters>,
     request: Request,
-}
-
-impl StreamLease {
-    pub(super) fn counters(&self) -> &Arc<StreamCounters> {
-        &self.counters
-    }
 }
 
 impl Drop for StreamLease {

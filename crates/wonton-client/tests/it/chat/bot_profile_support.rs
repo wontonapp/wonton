@@ -7,7 +7,7 @@ use tokio::sync::watch;
 use wonton_matrix::MatrixSession;
 use wonton_protocol::{BotActivityFacts, BotActivityReport};
 
-pub(crate) struct BotApi {
+pub(super) struct BotApi {
     report: watch::Sender<BotActivityReport>,
     pub requests: Mutex<Vec<Value>>,
     pub next_reply: Mutex<Option<(u16, Value)>>,

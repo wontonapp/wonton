@@ -1,6 +1,5 @@
 //! 设备一侧：用配对码连上服务端，出示密钥，取回服务端的回应。
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use iroh::Endpoint;
@@ -9,7 +8,7 @@ use iroh::endpoint::{ConnectError, ConnectingError, ConnectionError, RecvStream,
 use super::{MAX_MESSAGE_LEN, PAIR_ALPN, PairRequest, PairResponse, PairingCode};
 use crate::error::{TunnelError, from_connect_error, from_read_error, from_write_error};
 
-/// 一段交换的时限：建连（包括打洞或经中继）到读完回应。和隧道的请求一样，超时按传输不可用处理。
+/// 建连（包括打洞或经中继）到读完回应的总时间。和隧道的请求一样，超时按传输不可用处理。
 pub const PAIR_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// TLS 的 `no_application_protocol` 告警：服务端不接受 [`PAIR_ALPN`]，两端版本不配。
@@ -21,59 +20,20 @@ pub async fn pair(
     code: &PairingCode,
     device_name: &str,
 ) -> Result<PairResponse, TunnelError> {
-    pair_with_timeout(endpoint, code, device_name, PAIR_TIMEOUT, || {}).await
-}
-
-/// 同 [`pair`]，`timeout` 是每一段交换的时限。
-///
-/// `on_request_sent` 在配对请求整段交出（服务端可能已经开始按它登记）后调用一次，两段交换合计只调一次。
-///
-/// 请求整个写完还是没等到回应时（服务端可能已经登记了这台设备，只是回应在慢中继上没赶上），用同样长的
-/// 另一段再确认一次：服务端对还在登记表里的同一台设备、同一个码重发时幂等地回 `Paired`。设备已被吊销、
-/// 或者码本来就被别的设备用掉，确认拿到的是 `used`，照样按拒绝报。连建连都没走完的超时不确认：
-/// 连不上的服务端再问一次也一样。
-pub async fn pair_with_timeout(
-    endpoint: &Endpoint,
-    code: &PairingCode,
-    device_name: &str,
-    timeout: Duration,
-    on_request_sent: impl Fn() + Send + Sync,
-) -> Result<PairResponse, TunnelError> {
-    let written = AtomicBool::new(false);
-    let first = tokio::time::timeout(
-        timeout,
-        exchange(endpoint, code, device_name, &written, &on_request_sent),
-    )
-    .await;
-    match first {
-        Ok(result) => return result,
-        Err(_) if !written.load(Ordering::Relaxed) => return Err(did_not_finish(timeout)),
-        Err(_) => {}
-    }
-    match tokio::time::timeout(
-        timeout,
-        exchange(endpoint, code, device_name, &written, &on_request_sent),
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(_) => Err(did_not_finish(timeout)),
-    }
-}
-
-fn did_not_finish(timeout: Duration) -> TunnelError {
-    TunnelError::transport(format!(
-        "pairing did not finish within {}s",
-        timeout.as_secs()
-    ))
+    tokio::time::timeout(PAIR_TIMEOUT, exchange(endpoint, code, device_name))
+        .await
+        .map_err(|_| {
+            TunnelError::transport(format!(
+                "pairing did not finish within {}s",
+                PAIR_TIMEOUT.as_secs()
+            ))
+        })?
 }
 
 async fn exchange(
     endpoint: &Endpoint,
     code: &PairingCode,
     device_name: &str,
-    written: &AtomicBool,
-    on_request_sent: &(impl Fn() + Sync),
 ) -> Result<PairResponse, TunnelError> {
     let conn = endpoint
         .connect(code.server_addr(), PAIR_ALPN)
@@ -89,10 +49,6 @@ async fn exchange(
         .await
         .map_err(|e| from_write_error(&e))?;
     send.finish().map_err(TunnelError::transport)?;
-    // 请求已经全部交出：之后超时，服务端可能已经按它登记了设备。
-    if !written.swap(true, Ordering::Relaxed) {
-        on_request_sent();
-    }
     let reply = read_reply(&mut recv).await?;
     conn.close(VarInt::from_u32(0), b"done");
     serde_json::from_slice(&reply).map_err(|e| {

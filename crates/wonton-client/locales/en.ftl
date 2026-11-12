@@ -51,20 +51,6 @@ peers-invalid-proxy = The local proxy isn't available: { $reason }
 peers-server-status = Your home server returned HTTP { $status }
 # $reason is the JSON parser's original error.
 peers-invalid-response = Can't read your home server's response: { $reason }
-friends-transport = Can't reach your home server: { $reason }
-friends-server-status = Your home server returned HTTP { $status }
-friends-invalid-response = Can't read your home server's response: { $reason }
-friends-not-signed-in = You're not signed in to this account yet.
-friends-not-connected = You're not connected to your home server yet.
-friends-invalid-action = Not a friends action.
-friends-local-open = Can't open the local friend list: { $reason }
-friends-invalid-proxy = The local proxy address isn't available: { $reason }
-friends-http-client = Can't create the local HTTP client: { $reason }
-friends-invalid-url = The friend service address is invalid: { $reason }
-friends-request-body = Can't encode the friend request: { $reason }
-friends-timeout = The friend service did not respond in time.
-friends-group-name-required = A group name is required.
-friends-group-not-found = Group { $id } was not found.
 # $reason is the tunnel's original refusal text.
 peers-rejected = Your home server rejected this device: { $reason }
 
@@ -116,7 +102,6 @@ onboarding-review-no-failure = That item hasn't failed.
 
 # Sign-in details. $reason is the Matrix SDK's original error.
 chat-sign-in-restore-failed = Can't restore your Matrix session: { $reason }
-chat-sign-in-external-missing = This Matrix account's sign-in on this phone is gone. Sign in to it again.
 chat-sign-in-no-connection-info = There's no connection information for your home server yet.
 chat-sign-in-login-failed = Can't sign in to Matrix: { $reason }
 chat-sign-in-no-saved-session = No session to save after signing in.
@@ -172,14 +157,6 @@ chat-contacts-invalid-user-id = That user ID isn't valid: { $reason }
 
 # Shown when sending a message through Siri, Shortcuts or the chat screen with empty text.
 chat-empty-message = Type a message first.
-composer-tray-full = The attachment tray holds at most { $max } attachments.
-composer-has-failed = An attachment didn't upload. Retry or remove it first.
-composer-attachment-not-found = This attachment wasn't found. It may have been removed or already sent.
-composer-outgoing-not-found = This pending message wasn't found. It may have already been handed over for sending.
-composer-store-failed = Couldn't save the attachment tray on this device ({ $path }): { $reason }
-composer-attachment-failed = The attachment "{ $name }" didn't upload.
-composer-transfer-gone = The upload record for this file is missing. Please retry.
-composer-upload-record-unreadable = Couldn't read the photo's upload record: { $reason }
 # Shown when the bot ID handed in from Siri or Shortcuts doesn't parse.
 chat-ask-invalid-bot-id = The default agent's ID isn't formatted correctly.
 # Shown when a saved direct chat's room ID doesn't parse.
@@ -191,7 +168,6 @@ chat-layout-change-failed = Couldn't change the chat layout: { $reason }
 chat-session-device-revoked = This device was revoked on Matrix. Pair it with your home server again.
 
 # Shown when the shell routes a chat action this core doesn't know.
-side-chat-not-ready = This version of the client core doesn't support side chats yet.
 chat-invalid-action = Not a chat action.
 # Shown when starting a direct chat with a user ID that isn't @name:server.
 chat-invalid-user-id = That user ID isn't valid. It should look like @name:server.
@@ -203,10 +179,8 @@ chat-unknown-answer = This version of Wonton doesn't know that answer.
 chat-action-not-connected = You're not connected to your home server yet.
 # Shown when a chat action arrives before Matrix sign-in.
 chat-not-signed-in = You're not signed in to Matrix yet.
-chat-send-no-response = The Matrix server stopped responding
 # $error is the room ID parser's original error.
 chat-invalid-room-id = The room ID isn't valid: { $error }
-chat-link-room-not-joined = You haven't joined this room. Accept its invitation in Chats first.
 # Shown when sending into a room that only carries notifications.
 chat-read-only-room = This room only carries notifications, so you can't send messages here.
 # $room is the unchanged room ID.
@@ -233,7 +207,6 @@ chat-op-mark-read-failed = Can't mark the room as read: { $error }
 chat-op-direct-chat-failed = Can't start the direct chat: { $error }
 chat-op-send-text-failed = Can't send the message: { $error }
 chat-op-send-image-failed = Can't send the image: { $error }
-chat-op-send-preview-failed = Couldn't attach the link preview: { $error }
 chat-op-forward-failed = Can't forward the message: { $error }
 chat-op-redact-failed = Can't remove the message: { $error }
 ## File transfers and playback. Details show on transfer list entries, file cards and playback failure messages.
@@ -294,13 +267,13 @@ files-download-incomplete = The connection dropped before the file was complete
 files-download-stalled = No data is arriving; the tunnel may be stuck
 
 # Shown when playback fails because the connection is down.
-files-playback-transport = Can't reach your home server.
+files-playback-transport = Can't reach your home server. You can download the file and open it in another app.
 # Shown when playback fails because this device can't decode the format.
 files-playback-unsupported = This phone can't play this format. You can download the file and open it in another app.
 # $detail is the unchanged reason from the home server or the connection.
 files-playback-unavailable = Your home server can't provide this file: { $detail }
 # $detail is the unchanged reason from the home server or the connection.
-files-playback-error = Something went wrong on your home server: { $detail }.
+files-playback-error = Something went wrong on your home server: { $detail }. You can download the file and open it in another app.
 # Shown when the playback probe times out.
 files-playback-no-response = Your home server stopped responding
 
@@ -349,10 +322,7 @@ home-port-mapping-save-failed = Couldn't save the port mapping switch: { $error 
 tabs-view-always-pinned = Chat and Apps are already pinned to the Navigation bar.
 tabs-view-plugin-list-not-ready = The app list hasn't loaded yet, so app pages can't be changed right now.
 tabs-view-unknown-plugin = Can't find this app.
-# $error is the local store's original error.
-tabs-storage-problem = Couldn't save the tab bar settings; the next launch may restore the old state: { $error }
 tabs-view-plugin-no-page = This app has no web page to open.
-tabs-page-not-placed = This page isn't in the panel.
 
 # Navigation bar settings file (tabs.json) errors. Shown as the reason of a CoreError::Storage / CoreError::InvalidInput,
 # which the problem banner wraps as "Can't read or write local storage: …".
@@ -366,7 +336,7 @@ tabs-config-too-many-items = { $count ->
 }
 tabs-config-duplicate-page = The Navigation bar has duplicate pages.
 tabs-config-plugin-page-incomplete = An app page is missing its title and icon.
-tabs-config-missing-fixed = The Navigation bar is missing Chat.
+tabs-config-missing-fixed = The Navigation bar is missing Chat or Apps.
 # $path is the settings file's path, $reason is the original I/O error.
 tabs-config-write-failed = Can't write the Navigation bar settings file { $path }: { $reason }
 
@@ -458,6 +428,7 @@ files-name-required = The file name can't be empty.
 files-download-already-running = This file is already downloading.
 files-transfer-not-found = Can't find this transfer.
 # Shown when resending the link of a transfer that isn't in the link-not-sent state.
+files-resend-not-waiting = This transfer has no link waiting to be sent.
 files-transfer-server-changed = Your home server has changed, so this transfer belongs to the previous one.
 files-dismiss-transfer-running = This transfer is still running. Cancel it first.
 # Shown when dismissing an upload and asking to delete its local file: the
@@ -493,13 +464,6 @@ servers-name-required = The name can't be empty.
 servers-storage-failed = Can't read or write { $path }: { $reason }
 # Shown when the shell routes a server list action this core doesn't know.
 servers-invalid-action = Not a server list action.
-matrix-login-not-current = This sign-in has ended or was replaced by a newer one.
-matrix-login-wrong-step = This sign-in isn't at that step.
-matrix-login-method-not-offered = This server doesn't offer that sign-in method.
-matrix-login-device-name-required = Enter a name for this device.
-matrix-login-invalid-user-id = Enter the full Matrix ID, like @name:matrix.org.
-matrix-login-password-required = Enter the password.
-matrix-login-redirect-not-allowed = This app can't receive sign-in callbacks at that address.
 
 # The session list (crates/wonton-client/src/session_store.rs).
 sessions-title-required = The session title can't be empty.
@@ -569,9 +533,6 @@ plugins-start-busy = { $id } is already starting, installing, updating, or unins
 # The bridge of app pages (crates/wonton-client/src/tabs/bridge/).
 tabs-bridge-page-not-open = This app page isn't open or pinned.
 tabs-bridge-invalid-environment = The page insets and safe area must be finite, non-negative numbers.
-tabs-bridge-public-page = Public web pages get no Wonton bridge.
-plugin-media-not-asked = This app page has no saved camera or microphone decision.
-plugin-media-save-failed = Can't write the camera and microphone decisions file { $path }: { $reason }
 
 # Chat transport problems (crates/wonton-client/src/chat/view.rs): the reason
 # of a CoreError::TransportUnavailable and the message of a failed chat action.
@@ -604,15 +565,6 @@ plugins-core-upgrade-already-running = An update is already in progress.
 plugins-core-upgrade-not-cancellable = The update can't be cancelled right now.
 # $reason is the connection problem's original detail.
 plugins-core-upgrade-start-uncertain = It isn't certain that the update was started. Check again once you're connected: { $reason }
-
-# Details of the compatibility check before the update (ADR-0085): one line per reason,
-# with the manifest's own value in { $raw }. Written by the client core in the App's
-# language; the update page lists them under each app the new version can't read.
-plugins-core-upgrade-compat-spec = Its manifest is written against spec { $raw }, which the new version doesn't support: it will be marked as broken after the update.
-plugins-core-upgrade-compat-feature = Its manifest uses { $raw }, which the new version doesn't recognize: it will be marked as broken after the update.
-plugins-core-upgrade-compat-capability = It depends on the capability { $raw }, which the new version doesn't provide: it will be marked as broken after the update.
-plugins-core-upgrade-compat-other = The new version can't read this app, so it will be marked as broken after the update.
-plugins-core-upgrade-compat-other-raw = The new version can't read part of this app ({ $raw }), so it will be marked as broken after the update.
 
 # Profile step: why the name or email can't be saved. $max is the longest name allowed.
 onboarding-profile-name-empty = Enter a name.
@@ -655,53 +607,4 @@ chat-window-ended =
 # Pairing details. Addresses/relay URLs contain no pairing secret; error is the unchanged upstream reason.
 home-pairing-timeout = Pairing did not finish within { $seconds } seconds.
 home-pairing-aborted = Pairing stopped before it finished. Try again.
-home-pairing-not-pairing = No pairing is in progress.
 home-pairing-failed-detail = Direct addresses: { $addresses }. Relays: [{ $relays }]. Elapsed: { $milliseconds } ms; time limit: { $seconds } seconds. Reason: { $error }
-plugin-now-start-failed = Could not start the update: { $error }
-
-# Panel (ADR-0052) errors. Shown as the reason of a CoreError, or as a TabsProblem message.
-panel-full = The panel is full; remove a page first.
-panel-pins-not-connected = Not connected to the home server yet.
-panel-pins-api-failed = { $status }: { $body }
-
-panel-page-already-there = This page is already in the panel.
-panel-page-not-there = This page isn't in the panel.
-panel-page-unsupported = Only app pages, pages inside an app, and https websites can go into the panel.
-panel-index-out-of-range = That position is outside the panel.
-panel-not-signed-in = Sign in first to change the panel; the change wasn't saved.
-panel-room-not-open = Open this chat first to change its panel.
-panel-room-unknown = Can't find this chat.
-panel-pin-invalid-url = Can't read that address.
-panel-pin-not-https = Only https:// websites can be pinned.
-panel-pin-path-outside = That page is outside the app's own site.
-panel-attention-panel-only = Only pages in the panel can show the attention dot.
-panel-config-too-many = The panel holds at most { $count } pages.
-panel-config-duplicate = The same page appears twice in the panel.
-panel-sync-failed-read = Couldn't read the panel settings from the server.
-panel-sync-unreadable = The panel settings from the server can't be read here; keeping the ones on this device.
-tabs-page-cannot-reload = This page can't be reloaded.
-
-tabs-bar-not-pinned = This page isn't pinned to the Navigation bar.
-tabs-bar-already-pinned = This page is already pinned to the Navigation bar.
-tabs-bar-replace-required = The Navigation bar is full; pick a page to replace.
-tabs-bar-replacing-missing = The page to replace isn't in the Navigation bar.
-tabs-bar-fixed = Chat and Apps can't be replaced.
-tabs-bar-not-full = The Navigation bar isn't full, so there's nothing to replace.
-tabs-bar-remove-fixed = Chat and Apps can't be removed.
-tabs-bar-page-missing = This page isn't in the Navigation bar.
-tabs-bar-index-out-of-range = That position is past the end of the Navigation bar.
-tabs-open-only-plugins = Only app pages have an opening mode.
-tabs-fullscreen-only-plugins = Only app pages can go full screen.
-tabs-fullscreen-none = Nothing is full screen right now.
-tabs-fullscreen-not-current = That page isn't the full-screen one.
-panel-pins-refresh-failed = Couldn't load the pages bots pinned: { $error }
-
-## Plugin pages that need cross-origin isolation open in the system browser (ADR-0033). The last three show in the browser.
-browser-front-failed = Can't open a local address for the browser: { $error }
-browser-page-not-isolated = This page doesn't open in the browser.
-browser-not-paired = Wonton isn't paired with a home server yet.
-browser-unknown-address = This address has expired. Go back to Wonton and open the app again.
-browser-not-connected = Wonton isn't connected to your home server right now. Go back to Wonton, wait until it connects, then reload this page.
-browser-bad-request = Open this page from Wonton.
-
-contacts-invalid-action = Not a bot-contacts action.

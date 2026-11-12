@@ -3,7 +3,7 @@
 use iroh::endpoint::{Builder, QuicTransportConfig, presets};
 use iroh::{Endpoint, RelayMode};
 use wonton_l10n::{Lang, l10n};
-use wonton_tunnel::relays::{Relay, RelayTable, relay_map};
+use wonton_tunnel::relays::{Relay, relay_map};
 
 use super::{HomeLink, Network};
 use crate::l10n::CATALOG;
@@ -58,9 +58,7 @@ impl HomeLink {
         let builder = match (self.network, relays.is_empty()) {
             (Network::Internet, false) => Endpoint::builder(presets::N0)
                 .relay_mode(RelayMode::Custom(relay_map(relays, tiers))),
-            (Network::Internet, true) => Endpoint::builder(presets::N0).relay_mode(
-                RelayMode::Custom(relay_map(RelayTable::builtin_n0().relays(), tiers)),
-            ),
+            (Network::Internet, true) => Endpoint::builder(presets::N0),
             #[cfg(feature = "test-hooks")]
             (Network::TestRelay, _) => Endpoint::builder(presets::Minimal)
                 .clear_ip_transports()
@@ -85,6 +83,6 @@ impl HomeLink {
 pub(crate) struct TestHooks {
     /// 在阻塞线程里、iroh 绑定之前调用：一直不返回就是卡住的网卡枚举。
     pub(crate) bind: std::sync::Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>>,
-    /// 配对的每一段时限（绑定、一次交换、一次确认）和看门线程的时限，替掉生产的那两份。
+    /// 配对交换的时限和看门线程的时限，替掉生产的那两份。
     pub(crate) pair_deadlines: std::sync::Mutex<Option<(std::time::Duration, std::time::Duration)>>,
 }

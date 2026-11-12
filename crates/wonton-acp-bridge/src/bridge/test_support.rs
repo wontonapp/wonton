@@ -2,12 +2,9 @@
 //! 等测试回答，ACP 侧用 `acp::test_support::FakeAgent` 的 Manual 场景驱动。
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     future::Future,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -28,82 +25,42 @@ use crate::room::Room;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     MainText(String),
-    ThreadText {
-        root: String,
-        text: String,
-    },
+    ThreadText { root: String, text: String },
     Notice(String),
-    ThreadMention {
-        root: String,
-        text: String,
-    },
-    ThreadNotice {
-        root: String,
-        text: String,
-    },
+    ThreadMention { root: String, text: String },
+    ThreadNotice { root: String, text: String },
     Typing(bool),
-    /// 重发了被拒收的消息。
-    ResendRefused,
-    /// 对这条消息发的已读回执。
-    Receipt(String),
     Redact(String),
     State(String),
-    /// 一条 Agent 进度状态消息（ADR-0082），内容原样。
-    RunStatus {
-        event_id: String,
-        thread: Option<String>,
-        content: Value,
-    },
-    /// 对状态消息的编辑（`m.replace`），内容原样。
-    ReplaceRunStatus {
-        event_id: String,
-        content: Value,
-    },
 }
 
 #[derive(Default)]
 struct Recorded {
     effects: Vec<Effect>,
     roots: u64,
-    statuses: u64,
     updates: Option<mpsc::UnboundedSender<Vec<Message>>>,
 }
 
 /// 内存房间：`updates` 流由测试 push，发送只记录。
 pub struct FakeRoom {
     id: String,
-    /// 首屏快照：和真时间线一样，updates 流的第一项是订阅时刻已有的消息（重启后停机
-    /// 期间发来的都在里面）。
-    snapshot: Vec<Message>,
     recorded: Arc<Mutex<Recorded>>,
     updates: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<Vec<Message>>>>,
-    /// 可下载的媒体：句柄 → 字节。没登记的句柄按下载失败处理。
-    media: Arc<Mutex<HashMap<String, Vec<u8>>>>,
 }
 
 impl FakeRoom {
-    /// 首屏快照：和真时间线一样，updates 流的第一项是订阅时刻已有的消息（重启后停机
-    /// 期间发来的都在里面）；全新房间传空列表。
-    pub fn with_snapshot(id: &str, snapshot: Vec<Message>) -> Self {
+    pub fn new(id: &str) -> Self {
         let (updates, receiver) = mpsc::unbounded_channel();
         let recorded = Arc::new(Mutex::new(Recorded {
             effects: Vec::new(),
             roots: 0,
-            statuses: 0,
             updates: Some(updates),
         }));
         Self {
             id: id.to_owned(),
-            snapshot,
             recorded,
             updates: Arc::new(tokio::sync::Mutex::new(receiver)),
-            media: Arc::new(Mutex::new(HashMap::new())),
         }
-    }
-
-    /// 登记一个可下载的媒体句柄。
-    pub fn serve_media(&self, token: &str, bytes: Vec<u8>) {
-        self.media.lock().unwrap().insert(token.to_owned(), bytes);
     }
 
     pub fn push(&self, messages: Vec<Message>) {
@@ -129,13 +86,7 @@ impl FakeRoom {
                 Effect::ThreadText { text, .. }
                 | Effect::ThreadMention { text, .. }
                 | Effect::ThreadNotice { text, .. } => Some(text),
-                Effect::Typing(_)
-                | Effect::ResendRefused
-                | Effect::Receipt(_)
-                | Effect::Redact(_)
-                | Effect::State(_)
-                | Effect::RunStatus { .. }
-                | Effect::ReplaceRunStatus { .. } => None,
+                Effect::Typing(_) | Effect::Redact(_) | Effect::State(_) => None,
             })
             .collect()
     }
@@ -151,50 +102,10 @@ impl FakeRoom {
             .collect()
     }
 
-    /// 发过已读回执的消息（按发送顺序）。
-    pub fn receipts(&self) -> Vec<String> {
-        self.effects()
-            .into_iter()
-            .filter_map(|effect| match effect {
-                Effect::Receipt(event_id) => Some(event_id),
-                _ => None,
-            })
-            .collect()
-    }
-
     /// 开过的话题根（按出现顺序）。
     pub fn roots(&self) -> Vec<String> {
         let count = self.recorded.lock().unwrap().roots;
         (1..=count).map(|index| format!("$root{index}")).collect()
-    }
-
-    /// 发出的状态消息（事件 ID、话题根、完整内容），按发送顺序。
-    pub fn run_statuses(&self) -> Vec<(String, Option<String>, Value)> {
-        self.effects()
-            .into_iter()
-            .filter_map(|effect| match effect {
-                Effect::RunStatus {
-                    event_id,
-                    thread,
-                    content,
-                } => Some((event_id, thread, content)),
-                _ => None,
-            })
-            .collect()
-    }
-
-    /// 对某条状态消息的全部编辑内容（`m.replace`），按顺序。
-    pub fn run_edits(&self, event_id: &str) -> Vec<Value> {
-        self.effects()
-            .into_iter()
-            .filter_map(|effect| match effect {
-                Effect::ReplaceRunStatus {
-                    event_id: target,
-                    content,
-                } if target == event_id => Some(content),
-                _ => None,
-            })
-            .collect()
     }
 
     pub fn thread_texts(&self, root: &str) -> Vec<String> {
@@ -280,45 +191,8 @@ impl Room for FakeRoom {
         Ok(())
     }
 
-    async fn send_run_status(&self, content: Value) -> Result<String> {
-        let mut state = self.recorded.lock().unwrap();
-        state.statuses += 1;
-        let event_id = format!("$status{}", state.statuses);
-        let thread = content["m.relates_to"]["event_id"]
-            .as_str()
-            .map(str::to_owned);
-        state.effects.push(Effect::RunStatus {
-            event_id: event_id.clone(),
-            thread,
-            content,
-        });
-        Ok(event_id)
-    }
-
-    async fn replace_run_status(&self, content: Value) -> Result<()> {
-        let mut state = self.recorded.lock().unwrap();
-        let event_id = content["m.relates_to"]["event_id"]
-            .as_str()
-            .unwrap_or_default()
-            .to_owned();
-        state
-            .effects
-            .push(Effect::ReplaceRunStatus { event_id, content });
-        Ok(())
-    }
-
     async fn typing(&self, typing: bool) -> Result<()> {
         self.record(Effect::Typing(typing));
-        Ok(())
-    }
-
-    async fn resend_refused(&self) -> Result<usize> {
-        self.record(Effect::ResendRefused);
-        Ok(1)
-    }
-
-    async fn read_receipt(&self, event_id: &str) -> Result<()> {
-        self.record(Effect::Receipt(event_id.to_owned()));
         Ok(())
     }
 
@@ -327,30 +201,16 @@ impl Room for FakeRoom {
         Ok(())
     }
 
-    async fn download_media(&self, token: &str) -> Result<Vec<u8>> {
-        self.media
-            .lock()
-            .unwrap()
-            .get(token)
-            .cloned()
-            .ok_or_else(|| {
-                crate::error::Error::Matrix(crate::error::Detail::data(format!(
-                    "M_NOT_FOUND: {token}"
-                )))
-            })
-    }
-
     async fn set_state(&self, event_type: &str, _state_key: &str, _content: Value) -> Result<()> {
         self.record(Effect::State(event_type.to_owned()));
         Ok(())
     }
 
     async fn updates(&self) -> impl Stream<Item = Vec<Message>> + Unpin + Send {
-        let snapshot = self.snapshot.clone();
         let updates = self.updates.clone();
-        // 和真实时间线一样，第一项是当前的消息（重启后的快照，全新房间是空列表）。
+        // 和真实时间线一样，第一项是当前的消息（这里是空列表）。
         Box::pin(
-            stream::once(async { snapshot })
+            stream::once(async { Vec::new() })
                 .chain(stream::unfold(updates, |updates| async move {
                     let mut receiver = updates.lock().await;
                     let messages = receiver.recv().await;
@@ -472,62 +332,23 @@ async fn serve_cards(
 }
 
 /// 主人发的一条消息；`thread_root` 是它所属话题的根。
-///
-/// 时间戳逐条递增（进程级计数，起点随意）：和真实时间线一样从旧到新；要钉住先后
-/// （停机积压）的测试用 [`owner_message_at`] 自己给。
 pub fn owner_message(event_id: &str, text: &str, thread_root: Option<&str>) -> Message {
-    static NEXT: AtomicU64 = AtomicU64::new(1000);
-    owner_message_at(
-        event_id,
-        text,
-        thread_root,
-        NEXT.fetch_add(1, Ordering::Relaxed),
-    )
-}
-
-/// 同 [`owner_message`]，时间戳自定：停机积压的测试要拿它跟已读位置比先后。
-pub fn owner_message_at(
-    event_id: &str,
-    text: &str,
-    thread_root: Option<&str>,
-    timestamp_ms: u64,
-) -> Message {
     Message {
         event_id: Some(event_id.parse().unwrap()),
         sender: "@owner:example.org".parse::<OwnedUserId>().unwrap(),
         sender_name: String::new(),
         is_own: false,
-        timestamp_ms,
+        timestamp_ms: 1,
         status: SendStatus::Sent,
         body: MessageBody::Text(text.into()),
         custom: Default::default(),
         mentions: Vec::new(),
-        agent_run: None,
         thread_root: thread_root.map(|root| root.parse().unwrap()),
         edited: false,
         read_by: Vec::new(),
         reply: None,
-        group: None,
         can_redact: false,
     }
-}
-
-/// Bot 自己发的一条消息，`status` 是它现在的发送状态。
-pub fn own_message(text: &str, status: SendStatus) -> Message {
-    Message {
-        event_id: None,
-        sender: "@bot:example.org".parse::<OwnedUserId>().unwrap(),
-        is_own: true,
-        status,
-        ..owner_message("$unused", text, None)
-    }
-}
-
-/// 主人发的一条带内容的消息（图片、文件等），其余字段同 [`owner_message`]。
-pub fn owner_message_with(event_id: &str, body: MessageBody) -> Message {
-    let mut message = owner_message(event_id, "", None);
-    message.body = body;
-    message
 }
 
 /// 等到异步断言成立，最久 5 秒。

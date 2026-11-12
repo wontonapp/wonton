@@ -142,7 +142,7 @@ async fn forward_to_upstream(mut send: SendStream, mut recv: RecvStream, upstrea
     }
     let (mut tcp_read, mut tcp_write) = tcp.split();
     let result = tokio::try_join!(
-        forward::tunnel_to_tcp(&mut recv, &mut tcp_write, None),
+        forward::tunnel_to_tcp(&mut recv, &mut tcp_write),
         forward::tcp_to_tunnel(&mut tcp_read, &mut send),
     );
     if let Err(err) = result {

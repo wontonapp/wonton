@@ -9,11 +9,10 @@ use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotation
 use serde_json::{Value, json};
 use wonton_protocol::SecretValues;
 
-use super::audience::Subject;
 use super::audit::{Decision, Record};
 use super::{
     Bus, Caller, Outcome, ToolFailure, agent_install, authoring_tools, cards, file_tools, naming,
-    panel_tools, people_tools, profile_tools, save_tools,
+    people_tools, profile_tools, save_tools,
 };
 use crate::bot_activity::Guard;
 use crate::l10n;
@@ -24,11 +23,11 @@ use crate::plugin::{InstallError, PluginId, PluginPackage};
 use wonton_protocol::ConfirmationState;
 
 const LIST: &str = "list_plugins";
-pub(super) const SEARCH: &str = "search_catalog";
+const SEARCH: &str = "search_catalog";
 const INSTALL: &str = "install_plugin";
 const UNINSTALL: &str = "uninstall_plugin";
 const SET_PERMISSION: &str = "set_plugin_permission";
-pub(super) const HELP: &str = "help";
+const HELP: &str = "help";
 
 fn schema(value: Value) -> Arc<JsonObject> {
     match value {
@@ -117,11 +116,10 @@ pub fn definitions() -> Vec<Tool> {
     tools.extend(authoring_tools::definitions());
     tools.extend(profile_tools::definitions());
     tools.extend(people_tools::definitions());
-    tools.extend(panel_tools::definitions());
     tools
 }
 
-pub(super) fn success(value: &Value) -> CallToolResult {
+fn success(value: &Value) -> CallToolResult {
     CallToolResult::success(vec![ContentBlock::text(value.to_string())])
 }
 
@@ -153,9 +151,6 @@ pub async fn call(
             return profile_tools::call(bus, caller, tool, args).await;
         }
         people_tools::USER_LOCALE => people_tools::call(bus, caller, &args),
-        panel_tools::PIN | panel_tools::UNPIN | panel_tools::LIST => {
-            return panel_tools::call(bus, caller, tool, args, activity).await;
-        }
         _ => Err(ToolFailure::new(
             "invalid_input",
             format!("没有工具 {name}"),
@@ -323,6 +318,12 @@ pub(super) async fn installable(bus: &Bus, id: &str) -> Result<PluginPackage, To
     dry_run(&package, &langs)
         .map_err(InstallError::from)
         .map_err(|e| ToolFailure::new(e.kind(), format!("没有装上 {id}（{}）：{e}", e.kind())))?;
+    if bus.plugins.missing_profile(&package, &langs).is_some() {
+        return Err(ToolFailure::new(
+            "owner_profile_incomplete",
+            format!("没有装上 {id}：它要用主人的邮箱，主人在 App 的设置里填好邮箱后我再装"),
+        ));
+    }
     Ok(package)
 }
 
@@ -385,7 +386,7 @@ async fn set_permission(
         Ok(found) => found,
         Err(failure) => return bus.deny(caller, name, &value, &failure),
     };
-    let langs = bus.card_languages(caller, Subject::PluginAdmin);
+    let langs = bus.plugins.owner_languages();
     let highest = line.risk == Some(wonton_protocol::PermissionRisk::Highest);
     let bot = crate::plugin::store::OpenedBy::Bot {
         plugin_id: caller.id.to_string(),
@@ -393,7 +394,7 @@ async fn set_permission(
     };
     let run = {
         let (id, title, langs) = (id.clone(), title.clone(), langs.clone());
-        move |bus: Arc<Bus>, _secrets: SecretValues, _settings: wonton_protocol::SettingValues| async move {
+        move |bus: Arc<Bus>, _secrets: SecretValues| async move {
             match bus
                 .plugins
                 .set_plugin_permission(
@@ -434,7 +435,7 @@ async fn set_permission(
         .clearance(caller.id.as_str(), naming::CORE, SET_PERMISSION)
         .is_some();
     if cleared {
-        let outcome = run(Arc::clone(bus), SecretValues::new(), Default::default()).await;
+        let outcome = run(Arc::clone(bus), SecretValues::new()).await;
         let failed = matches!(outcome.state, ConfirmationState::Failed { .. });
         bus.audit.record(&Record {
             caller: caller.id.as_str(),
@@ -488,20 +489,12 @@ async fn uninstall(
         .get("delete_data")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let langs = bus.card_languages(caller, Subject::PluginAdmin);
+    let langs = bus.plugins.owner_languages();
     let draft = cards::uninstall(&caller.name, &title, purge, &langs);
-    let run = move |bus: Arc<Bus>,
-                    _secrets: SecretValues,
-                    _settings: wonton_protocol::SettingValues| async move {
+    let run = move |bus: Arc<Bus>, _secrets: SecretValues| async move {
         match bus
             .plugins
-            .uninstall_detached(
-                id.clone(),
-                purge,
-                Vec::new(),
-                true,
-                bus.plugins.owner_languages(),
-            )
+            .uninstall_detached(id.clone(), purge, bus.plugins.owner_languages())
             .await
         {
             Ok(report) => {

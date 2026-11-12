@@ -9,7 +9,6 @@ use super::super::docker::Engine;
 use super::super::fake_docker::{FakeDocker, FakeFile};
 use super::super::install_error::InstallError;
 use super::super::names::container_name;
-use super::super::package_files::PackageFiles;
 use super::super::store::Store;
 use super::super::{PluginId, PluginManager, PluginStatus};
 use super::manager::manager_in_container;
@@ -412,7 +411,7 @@ async fn network_mode_bot_group_upgrade_preserves_its_identity_and_removes_the_w
         &super::langs(),
     )
     .unwrap();
-    m.upgrade_checked(package, &granted(), &[], false, Default::default())
+    m.upgrade_checked(package, &granted(), &[], false)
         .await
         .unwrap();
     assert_eq!(env_map(&target), before);
@@ -738,113 +737,4 @@ async fn a_home_bot_permission_is_not_supported_yet() {
         matches!(refused, InstallError::Unsupported(ref e) if e.contains("storage.home:read")),
         "{refused}"
     );
-}
-
-/// 安装失败回滚、账号留给下次时，这次建的 Bot 数据也留下：init 在服务器上建的加密身份，私钥只在这里，删了
-/// 下次就解不开（Tuwunel 删不掉也换不掉那个身份）。重试沿用同一个账号和同一份数据。
-#[tokio::test]
-async fn a_failed_install_keeps_the_bot_data_for_the_same_account_next_time() {
-    let bed = Bed::start().await;
-    let m = bed.manager();
-    let bot = bot_container("default");
-    let failed = json!({"Status": "exited", "Running": false, "ExitCode": 1});
-    bed.docker.set_state(&bot, failed);
-    m.install(&agent(), &granted_with_tools(), super::langs())
-        .await
-        .unwrap_err();
-    let first = env_of_container(&bed.docker, &bot);
-    let data = bot_data_dir(&bed, "default");
-    assert!(data.is_dir(), "回滚留下这次建的 Bot 数据目录");
-    // 插件的 init 写下的加密私钥。
-    std::fs::write(data.join("crypto.key"), "private").unwrap();
-
-    bed.docker
-        .set_state(&bot, json!({"Status": "running", "Running": true}));
-    m.install(&agent(), &granted_with_tools(), super::langs())
-        .await
-        .unwrap();
-    let second = env_of_container(&bed.docker, &bot);
-    assert_eq!(second["USER"], first["USER"]);
-    assert_eq!(
-        std::fs::read_to_string(data.join("crypto.key")).unwrap(),
-        "private"
-    );
-}
-
-const LEVEL_SCHEMA: &str = r#"{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "level": {
-      "type": "string",
-      "default": "quiet",
-      "x-wonton-title": { "zh": "音量", "en": "Level" }
-    }
-  }
-}"#;
-
-fn echo_with_setting() -> String {
-    echo()
-        .replace("spec: '0.5'", "spec: '0.12'")
-        .replace(
-            "ROOM: ${WONTON_MATRIX_HOME_ROOM}",
-            "ROOM: ${WONTON_MATRIX_HOME_ROOM}\n      LEVEL: ${WONTON_SETTING_LEVEL}",
-        )
-        .replace(
-            "  permissions: [matrix.bot]",
-            "  settings: settings.schema.json\n  permissions: [matrix.bot]",
-        )
-}
-
-#[tokio::test]
-async fn writing_settings_recreates_the_bot_with_its_identity_kept() {
-    let bed = Bed::start().await;
-    let m = Arc::new(bed.manager());
-    let files: PackageFiles = [(
-        "settings.schema.json".to_owned(),
-        LEVEL_SCHEMA.as_bytes().to_vec(),
-    )]
-    .into();
-    let pkg = super::super::PluginPackage::with_files(&echo_with_setting(), files, &super::langs())
-        .unwrap();
-    m.install_user_enabled(
-        pkg,
-        &granted(),
-        &[],
-        false,
-        std::collections::BTreeMap::from([("level".to_owned(), json!("quiet"))]),
-        super::langs(),
-    )
-    .await
-    .unwrap();
-    let before = bed.env();
-    assert_eq!(before["LEVEL"], "quiet");
-
-    let digest = m
-        .plugin_settings(&id(), &super::langs())
-        .await
-        .unwrap()
-        .schema_digest;
-    let update = wonton_protocol::PluginSettingsUpdate {
-        schema_digest: digest,
-        values: std::collections::HashMap::from([(
-            "level".to_owned(),
-            Some(wonton_protocol::SettingValue::Text {
-                value: "loud".to_owned(),
-            }),
-        )]),
-    };
-    let view = m
-        .set_plugin_settings(&id(), &update, &super::langs())
-        .await
-        .unwrap();
-    assert_eq!(view.form.fields[0].value, update.values["level"]);
-
-    let after = bed.env();
-    assert_eq!(after["LEVEL"], "loud");
-    for key in ["HS", "USER", "TOKEN", "ALLOWED", "ROOM"] {
-        assert_eq!(after[key], before[key], "{key}");
-    }
-    assert!(bed.token_valid(&after["TOKEN"]));
 }

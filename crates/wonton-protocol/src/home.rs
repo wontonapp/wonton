@@ -21,15 +21,12 @@ pub struct HomeViewModel {
     pub proxy: Option<ProxySettings>,
     /// 插件网页的入口地址（M0 由连接信息给出）。
     pub web_url: Option<String>,
-    /// 扫码配对的进展；没在配对时为空，配上后停在 [`PairingStatus::Paired`] 直到下一次配对或重置连接信息。
+    /// 扫码配对的进展；没在配对时为空，配对成功后也回到空。
     pub pairing: Option<PairingStatus>,
     /// “添加设备”的进展和给新设备扫的码（[`Action::InviteDevice`](crate::Action::InviteDevice)）；没在添加设备时为空。
     pub invite: Option<DeviceInvite>,
     /// 已配对、收新消息的方式是 [`PushMethod::Keepalive`](crate::PushMethod::Keepalive)：Android 的壳按它启停“保持连接”的前台服务。
     pub keep_connection: bool,
-    /// 断过又连上了：短暂为真，期间壳把短状态换成“已连接”；什么时候清由核心掌握，壳不计时。
-    #[serde(default)]
-    pub just_recovered: bool,
 }
 
 /// 给新设备扫的配对码。
@@ -51,32 +48,13 @@ pub enum DeviceInvite {
     },
 }
 
-/// 配对进行到哪一步：类别由核心给，壳据此写“还在连接”一行的话。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PairingStage {
-    /// 正在建立到服务器的连接（连中继、握手、交出配对码），服务器还没有收到码。
-    Connecting,
-    /// 配对码已经交出，正在等服务器登记并回应。
-    Confirming,
-}
-
 /// 扫码配对的进展。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PairingStatus {
-    /// 正在连服务器、出示配对码。`elapsed_ms` 是这一次已经进行的时间，核心按秒推进；壳按它决定何时补
-    /// “还在连接”一行和取消按钮，不在壳里自己计时。取消走 [`crate::Action::CancelPairing`]，
-    /// 进行中的每一步都能取消：本机只是放弃这一次尝试，服务端按设备幂等登记，同一个码再配对仍能配上。
-    InProgress {
-        elapsed_ms: u64,
-        stage: PairingStage,
-    },
-    /// 配上了：服务器登记了这台设备，连接信息存下了，连接正在建立。壳看到它就离开配对页；
-    /// 取消不会到这一步。下一次开始配对、或者连接信息被重置时清掉。
-    Paired,
+    /// 正在连服务器、出示配对码。
+    InProgress,
     Failed {
         reason: PairingFailure,
         /// 原始说明，壳只在“详情”里显示。被服务器拒绝的几类（`Rejected`、`Expired`、`Closed`）是服务器按它主人的语言
@@ -251,8 +229,6 @@ pub struct ConnectionDetails {
 pub struct HomePath {
     /// 经中继转发；否则是局域网或打洞成功的直连。
     pub relay: bool,
-    /// 中继是 n0 公共中继（带宽不够传画面）；直连或自建中继为假。
-    pub public_relay: bool,
     /// 直连的对端是局域网地址。
     pub lan: bool,
     /// 往返时间估计，毫秒。

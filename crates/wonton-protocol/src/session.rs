@@ -57,7 +57,6 @@ mod tests {
             },
             path: Some(HomePath {
                 relay: false,
-                public_relay: false,
                 lan: true,
                 rtt_ms: 3,
             }),
@@ -99,7 +98,6 @@ mod tests {
                 expires_at_ms: 1_767_225_600_000,
             }),
             keep_connection: true,
-            just_recovered: true,
         };
         assert_eq!(round_trip(&home), home);
         for action in [
@@ -110,7 +108,6 @@ mod tests {
                 code: SecretString::new("wonton://pair?v=0"),
                 device_name: "phone".into(),
             },
-            Action::CancelPairing,
             Action::InviteDevice,
             Action::AppForegrounded,
             Action::AppBackgrounded,

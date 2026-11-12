@@ -95,7 +95,6 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                                 choice.answer,
                                 choice.choiceId,
                                 secretValues(card.secretInputs, secrets),
-                                emptyMap(),
                             ),
                         )
                     }

@@ -14,9 +14,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.webkit.WebViewCompat
 import app.wonton.protocol.Action
-import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.TabLoadFailure
 import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
@@ -30,16 +31,11 @@ import app.wonton.ui.design.toColor
 @Composable
 internal fun PluginTabStatus(
     page: TabPage, tab: TabRef, tabs: TabsState, problem: Problem?, supported: Boolean,
-    crossOriginBlocked: Boolean, onDetails: (String) -> Unit, place: PlacedTab? = null,
+    crossOriginBlocked: Boolean, onDetails: (String) -> Unit,
 ) {
     val state = page.state
-    // 核心让它在系统浏览器里打开（ADR-0033 的“跨源隔离”）：App 里只留一行说明。
-    val inBrowser = crossOriginBlocked && problem == null &&
+    val isolationWarning = crossOriginBlocked && supported && problem == null &&
         (state is TabState.Ready || state is TabState.Upgrading)
-    if (inBrowser) {
-        BrowserPageStatus(page, tabs.core, autoOpen = place !is PlacedTab.Panel)
-        return
-    }
     val failure = when {
         !supported -> Problem(stringResource(R.string.tab_webview_too_old))
         problem != null -> problem
@@ -50,6 +46,7 @@ internal fun PluginTabStatus(
         state is TabState.LoadFailed -> Problem(
             loadFailureTitle(state.failure), detail = state.status?.let { "HTTP $it" },
         )
+        isolationWarning -> crossOriginIsolationProblem()
         else -> null
     }
     if (failure == null) {
@@ -69,19 +66,18 @@ internal fun PluginTabStatus(
             Text(failure.titleText, style = WontonTheme.typography.itemTitle,
                 color = WontonTheme.colors.textPrimary.toColor())
             failure.detail?.let { ProblemDetail(it, stringResource(R.string.common_details)) }
-            TabStatusActions(state, tab, tabs, onDetails, place)
+            TabStatusActions(state, tab, tabs, isolationWarning, onDetails)
         }
     }
 }
 
 @Composable
 private fun TabStatusActions(
-    state: TabState, tab: TabRef, tabs: TabsState, onDetails: (String) -> Unit, place: PlacedTab?,
+    state: TabState, tab: TabRef, tabs: TabsState, crossOriginBlocked: Boolean,
+    onDetails: (String) -> Unit,
 ) {
-    if (state is TabState.PageRemoved && place is PlacedTab.Panel) {
-        WontonButton(stringResource(R.string.panel_remove), {
-            tabs.send(Action.RemovePanelPage(place.scope, tab))
-        })
+    if (crossOriginBlocked && tab is TabRef.Plugin) {
+        WontonButton(stringResource(R.string.tab_open_anyway), { allowCrossOriginIsolationAnyway(tab.pluginId) })
     } else if (state is TabState.PageRemoved) {
         val pinned = tabs.viewModel.items.any { it.tab == tab }
         val label = if (pinned) stringResource(R.string.tab_unpin_from_bar) else stringResource(R.string.common_close)
@@ -91,13 +87,22 @@ private fun TabStatusActions(
     } else if (state is TabState.Stopped && tab is TabRef.Plugin) {
         WontonButton(stringResource(R.string.tab_start), { tabs.send(Action.StartPlugin(tab.pluginId)) })
     } else {
-        WontonButton(stringResource(R.string.common_retry), {
-            tabs.send(Action.ReloadTab(place ?: PlacedTab.Bar(tab)))
-        })
+        WontonButton(stringResource(R.string.common_retry), { tabs.send(Action.ReloadTab(tab)) })
         if (state is TabState.Failed && tab is TabRef.Plugin) {
             WontonButton(stringResource(R.string.tab_view_details), { onDetails(tab.pluginId) })
         }
     }
+}
+
+@Composable
+private fun crossOriginIsolationProblem(): Problem {
+    val context = LocalContext.current
+    val currentVersion = remember(context) { WebViewCompat.getCurrentWebViewPackage(context)?.versionName }
+    val version = currentVersion ?: stringResource(R.string.tab_webview_version_unknown)
+    return Problem(
+        stringResource(R.string.tab_cross_origin_title),
+        detail = stringResource(R.string.tab_cross_origin_detail, version),
+    )
 }
 
 @Composable

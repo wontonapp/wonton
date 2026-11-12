@@ -1,14 +1,16 @@
-//! 确认卡片的内容（ADR-0016）：标题、说明行、按钮。文字都由核心写好，App 原样渲染。
+//! 确认卡片的内容（ADR-0016）：标题、说明行、按钮，以及给其他 Matrix 客户端看的纯文本。文字都由核心写好，
+//! App 原样渲染。
 
 mod permission;
 
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use wonton_l10n::Arg;
 use wonton_protocol::{
-    AgentPermissionRequest, Answer, CardChoice, CardLine, PermissionRisk, SecretInput,
+    AgentPermissionRequest, Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard,
+    ConfirmationState, ConfirmationWindow, PermissionRisk, SecretInput, WindowEnd,
 };
 
 pub(crate) use permission::set_permission;
@@ -22,7 +24,6 @@ use crate::plugin::privileges::{self, CapabilityRisk};
 use crate::plugin::store::InstalledRecord;
 use crate::plugin::views::{cross_origin_isolation_notice, permission_line};
 use crate::plugin::{PluginPackage, render};
-use wonton_protocol::SettingsForm;
 
 /// 还没编号、没定到期时间的卡片内容。
 pub struct Draft {
@@ -35,8 +36,6 @@ pub struct Draft {
     pub plugin_id: Option<String>,
     /// 卡片要主人填的密钥（ADR-0064）；不填密钥的卡片是空的。
     pub secret_inputs: Vec<SecretInput>,
-    /// 卡片要主人填的设置（ADR-0077）；没有设置的应用为空。
-    pub settings: Option<SettingsForm>,
 }
 
 impl Draft {
@@ -88,7 +87,7 @@ pub(crate) fn line(text: impl Into<String>) -> CardLine {
     }
 }
 
-pub(crate) fn emphasized(text: impl Into<String>) -> CardLine {
+fn emphasized(text: impl Into<String>) -> CardLine {
     CardLine {
         text: text.into(),
         emphasis: true,
@@ -112,7 +111,8 @@ fn choices(approve: &str, reject: &str) -> Vec<CardChoice> {
 
 pub use crate::plugin::views::permission_text as permission;
 
-/// 权限行：说明加风险醒目，有提示的权限（局域网端口、宿主网络、最高级）在下面带一行醒目的提示（ADR-0036 的三级提示，文字由 [`permission_line`] 给）。
+/// 权限行：说明加风险醒目，有提示的权限（局域网端口、宿主网络、最高级）在下面带一行醒目的提示
+/// （ADR-0036 的三级提示，文字由 [`permission_line`] 给）。
 fn permission_lines(manifest: &Manifest, langs: &Languages) -> Vec<CardLine> {
     let mut lines = Vec::new();
     for permission in &manifest.permissions {
@@ -150,7 +150,8 @@ fn image_lines(package: &PluginPackage, langs: &Languages) -> Vec<CardLine> {
     }
 }
 
-/// Agent 的更新比装着的宽出来的项（ADR-0033）：权限、局域网端口、GPU 服务和跨源隔离放宽；换镜像不算。共享文件夹的挂载来自 storage.share 权限，权限行已覆盖。
+/// Agent 的更新比装着的宽出来的项（ADR-0033）：权限、局域网端口、GPU 服务和跨源隔离放宽；换镜像不算。
+/// 共享文件夹的挂载来自 storage.share 权限，权限行已覆盖。
 pub fn added_lines(
     record: &InstalledRecord,
     package: &PluginPackage,
@@ -249,7 +250,6 @@ pub fn install(
         scope: None,
         plugin_id: Some(manifest.id.to_string()),
         secret_inputs,
-        settings: None,
     }
 }
 
@@ -265,7 +265,8 @@ fn install_title(requester: &str, manifest: &Manifest, langs: &Languages) -> Str
     )
 }
 
-/// Agent 写的插件第一次装（ADR-0033）：未审核、全部权限和镜像，和“以后不再问”的说明。有很高或最高级权限时这些权限每次更新都问，“不再问”不成立，就不写。
+/// Agent 写的插件第一次装（ADR-0033）：未审核、全部权限和镜像，和“以后不再问”的说明。
+/// 有很高或最高级权限时这些权限每次更新都问，“不再问”不成立，就不写。
 pub fn agent_install(
     requester: &str,
     package: &PluginPackage,
@@ -317,11 +318,11 @@ pub fn agent_install(
         scope: None,
         plugin_id: Some(manifest.id.to_string()),
         secret_inputs,
-        settings: None,
     }
 }
 
-/// Agent 写的插件的更新：`header` 说这次为什么发卡片（新增了项、申请了很高或最高级、主人要求每次都问），`added` 是要给主人看的行（ADR-0033）。
+/// Agent 写的插件的更新：`header` 说这次为什么发卡片（新增了项、申请了很高或最高级、主人要求每次都问），
+/// `added` 是要给主人看的行（ADR-0033）。
 pub fn agent_update(
     requester: &str,
     package: &PluginPackage,
@@ -371,7 +372,6 @@ pub fn agent_update(
         scope: None,
         plugin_id: Some(manifest.id.to_string()),
         secret_inputs,
-        settings: None,
     }
 }
 
@@ -402,7 +402,8 @@ pub fn risky_lines(package: &PluginPackage, langs: &Languages) -> Vec<CardLine> 
         .collect()
 }
 
-/// 最高级的安装和更新要多点一步（ADR-0036）：第一张批准后再点这张，两张都同意才执行。提示文字用 [`permission_line`] 给的，写明代码会以本机 root 身份运行。
+/// 最高级的安装和更新要多点一步（ADR-0036）：第一张批准后再点这张，两张都同意才执行。
+/// 提示文字用 [`permission_line`] 给的，写明代码会以本机 root 身份运行。
 pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
     let manifest = &package.manifest;
     let notice = manifest
@@ -432,7 +433,6 @@ pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
         scope: None,
         plugin_id: Some(manifest.id.to_string()),
         secret_inputs: Vec::new(),
-        settings: None,
     }
 }
 
@@ -457,7 +457,6 @@ pub fn uninstall(requester: &str, title: &str, delete_data: bool, langs: &Langua
         scope: None,
         plugin_id: None,
         secret_inputs: Vec::new(),
-        settings: None,
     }
 }
 
@@ -493,7 +492,6 @@ pub fn tool_call(
         scope: None,
         plugin_id: None,
         secret_inputs: Vec::new(),
-        settings: None,
     }
 }
 
@@ -515,19 +513,7 @@ fn arguments_line(arguments: &Value, langs: &Languages) -> CardLine {
     ))
 }
 
-/// Agent 自己的工具要动手（ADR-0035）：按钮是 Agent 给的选项，没有拒绝类选项时加一个“取消”。Bot 想往主人的主面板钉页（ADR-0052）。
-pub fn pin_main(title: String, note: String, allow: &str, deny: &str) -> Draft {
-    Draft {
-        title,
-        lines: vec![line(note)],
-        choices: choices(allow, deny),
-        scope: None,
-        plugin_id: None,
-        secret_inputs: Vec::new(),
-        settings: None,
-    }
-}
-
+/// Agent 自己的工具要动手（ADR-0035）：按钮是 Agent 给的选项。没有拒绝类的选项时加一个不带 `choice_id` 的“取消”。
 pub fn agent_permission(
     requester: &str,
     request: &AgentPermissionRequest,
@@ -570,7 +556,6 @@ pub fn agent_permission(
         scope: None,
         plugin_id: None,
         secret_inputs: Vec::new(),
-        settings: None,
     }
 }
 
@@ -660,6 +645,138 @@ pub fn save_file(
         scope: None,
         plugin_id: None,
         secret_inputs: Vec::new(),
-        settings: None,
+    }
+}
+
+/// 给其他 Matrix 客户端看的纯文本。
+pub fn body(card: &ConfirmationCard, langs: &Languages) -> String {
+    let mut out = card.title.clone();
+    for line in &card.lines {
+        out.push('\n');
+        out.push_str(&line.text);
+    }
+    out.push('\n');
+    let message = |id: &str| l10n::text(langs, id, &[]);
+    out.push_str(&match &card.state {
+        ConfirmationState::Pending => message("chat-card-state-pending"),
+        ConfirmationState::Running => message("chat-card-state-running"),
+        ConfirmationState::Succeeded { message } => l10n::text(
+            langs,
+            "chat-card-state-succeeded",
+            &[("message", message.as_str().into())],
+        ),
+        ConfirmationState::Failed { message } => l10n::text(
+            langs,
+            "chat-card-state-failed",
+            &[("message", message.as_str().into())],
+        ),
+        ConfirmationState::Uncertain { message } => l10n::text(
+            langs,
+            "chat-card-state-uncertain",
+            &[("message", message.as_str().into())],
+        ),
+        ConfirmationState::Rejected => message("chat-card-state-rejected"),
+        ConfirmationState::Expired => message("chat-card-state-expired"),
+    });
+    if let Some(window) = &card.window {
+        out.push('\n');
+        out.push_str(&window_text(window, langs));
+    }
+    out
+}
+
+fn window_text(window: &ConfirmationWindow, langs: &Languages) -> String {
+    if let Some(reason) = window.ended {
+        let count = window.allowed.unwrap_or(0);
+        let reason = match reason {
+            WindowEnd::Expired => "expired",
+            WindowEnd::Stopped => "stopped",
+            WindowEnd::CoreRestarted => "restarted",
+            WindowEnd::Unknown => "unknown",
+        };
+        return l10n::text(
+            langs,
+            "chat-window-ended",
+            &[("reason", reason.into()), ("count", Arg::from(count))],
+        );
+    }
+    l10n::text(langs, "chat-window-active", &[])
+}
+
+/// 卡片的 Matrix 消息内容。用 `m.text` 的原因见 ADR-0016。
+pub fn content(card: &ConfirmationCard, langs: &Languages) -> Value {
+    json!({
+        "msgtype": "m.text",
+        "body": body(card, langs),
+        CARD_FIELD: card,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use wonton_protocol::ConfirmationState;
+
+    use super::*;
+    use crate::l10n::CATALOG;
+
+    /// 契约：`wonton-client` 的 `a_waiting_card_wakes_a_killed_app_and_its_edits_stay_quiet` 证明这种消息推得到手机。
+    #[test]
+    fn a_card_is_a_message_the_default_push_rules_notify() {
+        let langs = Languages::default();
+        let card = ConfirmationCard {
+            secret_inputs: Vec::new(),
+            id: "abc".into(),
+            state: ConfirmationState::Pending,
+            title: "Hermes 想安装 Grafana".into(),
+            lines: Vec::new(),
+            choices: choices(
+                &l10n::text(&langs, "chat-choice-install", &[]),
+                &l10n::text(&langs, "chat-choice-deny-install", &[]),
+            ),
+            expires_at_ms: 1,
+            plugin_id: None,
+            window: None,
+        };
+        assert_eq!(content(&card, &langs)["msgtype"], "m.text");
+    }
+
+    /// 卡片正文按语言协商：ja 请求给日文，fr-FR 回退英文，两种真的不同。期望值由目录格式化。
+    #[test]
+    fn the_card_body_follows_the_requested_language() {
+        let card = ConfirmationCard {
+            secret_inputs: Vec::new(),
+            id: "abc".into(),
+            state: ConfirmationState::Pending,
+            title: "Hermes 想安装 Grafana".into(),
+            lines: vec![line("一条说明")],
+            choices: Vec::new(),
+            expires_at_ms: 1,
+            plugin_id: None,
+            window: Some(ConfirmationWindow {
+                expires_at_ms: 1,
+                allowed: Some(2),
+                ended: Some(WindowEnd::Expired),
+            }),
+        };
+        for (header, tag) in [("ja", "ja"), ("fr-FR", "en"), ("zh-TW", "zh-Hant")] {
+            let langs = Languages::from_header(Some(header));
+            let expected = CATALOG.negotiate(&[tag]);
+            let body = body(&card, &langs);
+            assert!(
+                body.contains(&CATALOG.format(expected, "chat-card-state-pending", &[])),
+                "{header}: {body}"
+            );
+            assert!(
+                body.contains(&CATALOG.format(
+                    expected,
+                    "chat-window-ended",
+                    &[("reason", "expired".into()), ("count", Arg::from(2u64))]
+                )),
+                "{header}: {body}"
+            );
+        }
+        let ja = body(&card, &Languages::from_header(Some("ja")));
+        let en = body(&card, &Languages::from_header(Some("fr-FR")));
+        assert_ne!(ja, en);
     }
 }

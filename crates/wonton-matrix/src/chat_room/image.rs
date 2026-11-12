@@ -8,7 +8,7 @@ use matrix_sdk_ui::timeline::{AttachmentConfig, AttachmentSource};
 use mime::Mime;
 
 use super::{ChatRoom, ImageThumbnail, ImageUpload, UPLOAD_LIMIT_WAIT, ensure_recipient_devices};
-use crate::{Error, PreviewImageSource, Result};
+use crate::{Error, Result};
 
 impl ChatRoom {
     /// 发送图片：和文字一样经发送队列，原图和缩略图先存进本机的媒体缓存，马上以本地回显出现在时间线里（取图的句柄
@@ -39,7 +39,25 @@ impl ChatRoom {
         if mime_type.type_() != mime::IMAGE {
             return Err(Error::InvalidInput(format!("不是图片类型：{mime_type}")));
         }
-        check_upload_size(&self.room.client(), image.data.len() as u64).await?;
+        let size = image.data.len() as u64;
+        // SDK 只在内存里记着上限，每次启动后第一次发图才向服务器要；隧道断开时这个请求要等建连失败才返回。要不到时
+        // 不拦，和文字一样进队列、马上有本地回显：连上后由服务器判断，太大的被拒收，停在队首等主人取消。
+        let client = self.room.client();
+        match tokio::time::timeout(UPLOAD_LIMIT_WAIT, client.load_or_fetch_max_upload_size()).await
+        {
+            Ok(Ok(limit)) if size > u64::from(limit) => {
+                return Err(Error::InvalidInput(format!(
+                    "图片有 {}，超过服务器的上传上限 {}",
+                    megabytes(size),
+                    megabytes(u64::from(limit))
+                )));
+            }
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => tracing::info!("要不到服务器的上传上限，图片照样进队列：{error}"),
+            Err(_) => {
+                tracing::info!("{UPLOAD_LIMIT_WAIT:?} 内没要到服务器的上传上限，图片照样进队列")
+            }
+        }
         let info = BaseImageInfo {
             width: image.width.map(UInt::from),
             height: image.height.map(UInt::from),
@@ -68,68 +86,9 @@ impl ChatRoom {
     }
 }
 
-/// 比服务器上传上限（`m.upload.size`）大的图片按输入非法当场拒绝，错误里写出图片大小和上限。
-///
-/// SDK 只在内存里记着上限，每次启动后第一次发图才向服务器要；隧道断开时这个请求要等建连失败才返回。要不到时
-/// 不拦：连上后由服务器判断。
-pub(crate) async fn check_upload_size(client: &matrix_sdk::Client, size: u64) -> Result<()> {
-    match tokio::time::timeout(UPLOAD_LIMIT_WAIT, client.load_or_fetch_max_upload_size()).await {
-        Ok(Ok(limit)) if size > u64::from(limit) => Err(Error::InvalidInput(format!(
-            "图片有 {}，超过服务器的上传上限 {}",
-            megabytes(size),
-            megabytes(u64::from(limit))
-        ))),
-        Ok(Ok(_)) => Ok(()),
-        Ok(Err(error)) => {
-            tracing::info!("要不到服务器的上传上限，照样上传：{error}");
-            Ok(())
-        }
-        Err(_) => {
-            tracing::info!("{UPLOAD_LIMIT_WAIT:?} 内没要到服务器的上传上限，照样上传");
-            Ok(())
-        }
-    }
-}
-
 /// 1 MB 按 1024 × 1024 字节算，保留一位小数。
 fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-}
-
-impl ChatRoom {
-    /// 链接预览的图片上传到媒体库（ADR-0065）：加密房间先在本机加密（和附件同一套写法），未加密直接传。
-    /// 返回事件里要写的来源和给壳的句柄要用的信息。
-    pub async fn upload_preview_image(
-        &self,
-        mime_type: &str,
-        data: Vec<u8>,
-    ) -> Result<PreviewImageSource> {
-        let content_type: Mime = mime_type
-            .parse()
-            .map_err(|_| Error::InvalidInput(format!("无法识别的 MIME 类型：{mime_type}")))?;
-        if content_type.type_() != mime::IMAGE {
-            return Err(Error::InvalidInput(format!("不是图片类型：{content_type}")));
-        }
-        let client = self.room.client();
-        if self.room.latest_encryption_state().await?.is_encrypted() {
-            let mut cursor = std::io::Cursor::new(data);
-            let file = client
-                .upload_encrypted_file(&mut cursor)
-                .await
-                .map_err(|error| Error::Upstream(format!("上传预览图片失败：{error}")))?;
-            let file = serde_json::to_value(&file)
-                .map_err(|error| Error::Upstream(format!("加密文件信息编不出来：{error}")))?;
-            return Ok(PreviewImageSource::Encrypted { file });
-        }
-        let mxc = client
-            .media()
-            .upload(&content_type, data, None)
-            .await?
-            .content_uri;
-        Ok(PreviewImageSource::Plain {
-            mxc: mxc.to_string(),
-        })
-    }
 }
 
 fn thumbnail(thumbnail: ImageThumbnail) -> Result<Thumbnail> {

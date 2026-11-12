@@ -384,25 +384,6 @@ fn host_webui_cannot_use_proxy_sso() {
 }
 
 #[test]
-fn host_network_cannot_declare_mail_sending() {
-    let yaml = package(
-        "  web:\n    image: nginx\n    network_mode: host",
-        "  permissions: [network.host, notify]",
-    );
-    let err = render_err(&yaml);
-    assert!(
-        err.contains(&message("plugin-install-priv-host-network-mail", &[])),
-        "{err}"
-    );
-}
-
-#[test]
-fn mail_sending_is_fine_without_host_network() {
-    let yaml = package("  web:\n    image: nginx", "  permissions: [notify]");
-    dry_run(&PluginPackage::parse(&yaml, &langs()).unwrap(), &langs()).unwrap();
-}
-
-#[test]
 fn unknown_capabilities_are_highest_risk() {
     use crate::plugin::privileges::{CapabilityRisk, capability_risk};
 

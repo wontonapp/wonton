@@ -222,12 +222,9 @@ impl super::HomeLink {
         elapsed: Duration,
     ) -> wonton_protocol::HomeViewModel {
         self.lock_quality().set_time(elapsed);
-        let Some(proxy) = self.view().proxy else {
-            return self.view();
-        };
         if let Some((endpoint, client)) = self.current_link().await {
             *self.lock_stats_at() = None;
-            self.publish(&client.status(), &endpoint, &client, &proxy);
+            self.publish(&client.status(), &endpoint, &client);
         }
         self.view()
     }

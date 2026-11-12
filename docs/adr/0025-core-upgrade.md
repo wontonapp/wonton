@@ -97,7 +97,6 @@ ADR-0012 定了“核心拉起一次性的升级器容器，失败回滚”，�
 升级器是旧版本，它要操作的是新版本，所以这几样是跨版本的接口：
 
 - `wonton-core init <安装目录> <基础域名>` 的参数，`wonton-core compose-images` 的输出。新版本要多的配置放进 `init` 自己能读到的地方。
-- 目标镜像的 `wonton-core plugin compat` 子命令（ADR-0085）：升级前裁决已装插件包在这个版本下是否兼容，JSON 写标准输出；目标太老没有它时按 ADR-0085 如实显示查不了。
 - compose 项目名 `wonton`、服务名 `core`、卷名；上面两个组件标签和 `wonton.core.migrations` 的名字和含义。
 - 长期服务都设重启策略，一次性服务不设。
 - `.env` 新增的变量在 compose 文件里要有默认值：一键升级不写 `.env` 里别的行。需要新必填项的版本只能走 `install.sh`。
@@ -221,7 +220,7 @@ curl -fsSL <安装脚本地址> | sudo WONTON_CORE_PIN=<旧 digest> sh
 
 ### 默认渠道
 
-新装的主机默认走 stable（已定 11），已经装好的按 `.env` 里的 `WONTON_CORE_SOURCE` 不变。每个 `vX.Y.Z` 都更新 stable（`release.yml`，ADR-0070）。
+新装的主机默认走 stable（已定 11），已经装好的按 `.env` 里的 `WONTON_CORE_SOURCE` 不变。只有不带连字符的 tag 才更新 stable（`release.yml`），所以改安装脚本默认值的同时要有一个正式版本，否则新装拉不到镜像。`install.sh` 和安装说明跟实现一起改。
 
 ## 理由与没选的做法
 
@@ -239,7 +238,7 @@ curl -fsSL <安装脚本地址> | sudo WONTON_CORE_PIN=<旧 digest> sh
 
 ### 验证结果
 
-2026-11-03 在开发机上实测：
+2026-11-03 在 npchy 上实测：
 
 - Docker 29.7.2（containerd 存储）、Compose v5.6.1：
   - `docker-compose` 单个文件在 `debian:trixie-slim` 里、`--network none` 下能运行；

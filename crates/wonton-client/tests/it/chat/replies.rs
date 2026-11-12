@@ -7,9 +7,7 @@ use wonton_client::{
     TimelineMessage,
 };
 use wonton_matrix::{MessageBody, Quoted, ReplyTo};
-use wonton_protocol::{
-    MessageAction, QuotedContent, QuotedMessage, ReplyQuote, TimelineAction, TimelineTarget,
-};
+use wonton_protocol::{MessageAction, QuotedContent, QuotedMessage, ReplyQuote};
 
 use super::message_actions::{invite_to_group_room, join, text_message};
 use super::support::{Home, Phone, Timeline};
@@ -101,39 +99,11 @@ async fn replies_quote_the_original_on_both_sides() {
         QuotedContent::Image { thumbnail: Some(_) }
     ));
 
-    text_reply_quotes_the_original(
-        &phone,
-        &mut timeline,
-        &bot_room,
-        &room,
-        &quote,
-        bot.user_id(),
-    )
-    .await;
-    image_reply_quotes_the_original(&phone, &mut timeline, &bot_room, &image_quote).await;
-
-    element_reply_drops_its_fallback(&bot_room, &mut timeline, &room, &quote).await;
-}
-
-/// 回一句文字：自己的回复带着引用发出去，Bot 看到的引用也对。
-async fn text_reply_quotes_the_original(
-    phone: &Phone,
-    timeline: &mut Timeline,
-    bot_room: &wonton_matrix::ChatRoom,
-    room: &str,
-    quote: &QuotedMessage,
-    bot_user: &wonton_matrix::UserId,
-) {
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SendText {
-                target: TimelineTarget {
-                    room_id: room.to_string(),
-                    thread_root: None,
-                },
-                body: "回一句".to_owned(),
-                reply_to: Some(quote.event_id.clone()),
-            },
+        .dispatch(Action::SendText {
+            room_id: room.clone(),
+            body: "回一句".to_owned(),
+            reply_to: Some(quote.event_id.clone()),
         })
         .unwrap();
     let mine = timeline
@@ -143,8 +113,8 @@ async fn text_reply_quotes_the_original(
                 .and_then(|(_, m)| ready_quote(&m))
         })
         .await;
-    assert_eq!(mine, quote.clone());
-    let seen = bot_receives(bot_room, "Bot 看到的回复带着引用", |m| {
+    assert_eq!(mine, quote);
+    let seen = bot_receives(&bot_room, "Bot 看到的回复带着引用", |m| {
         match (&m.body, &m.reply) {
             (
                 MessageBody::Text(text),
@@ -158,27 +128,14 @@ async fn text_reply_quotes_the_original(
     })
     .await;
     assert_eq!(seen.0, quote.event_id);
-    assert_eq!(seen.1.sender, *bot_user);
+    assert_eq!(seen.1.sender, *bot.user_id());
     assert_eq!(seen.1.body, MessageBody::Text("原话".to_owned()));
-}
 
-/// 回一张图片：自己的图片回复带着引用，Bot 看到的引用的是图片。
-async fn image_reply_quotes_the_original(
-    phone: &Phone,
-    timeline: &mut Timeline,
-    bot_room: &wonton_matrix::ChatRoom,
-    image_quote: &QuotedMessage,
-) {
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SendImage {
-                target: TimelineTarget {
-                    room_id: bot_room.room_id().to_string(),
-                    thread_root: None,
-                },
-                image: upload(),
-                reply_to: Some(image_quote.event_id.clone()),
-            },
+        .dispatch(Action::SendImage {
+            room_id: room.clone(),
+            image: upload(),
+            reply_to: Some(image_quote.event_id.clone()),
         })
         .unwrap();
     let mine = timeline
@@ -186,9 +143,9 @@ async fn image_reply_quotes_the_original(
             image_message(item, true).and_then(|m| ready_quote(&m))
         })
         .await;
-    assert_eq!(mine, image_quote.clone());
+    assert_eq!(mine, image_quote);
     bot_receives(
-        bot_room,
+        &bot_room,
         "Bot 看到的图片回复引用的是图片",
         |m| match (&m.body, &m.reply) {
             (
@@ -202,6 +159,8 @@ async fn image_reply_quotes_the_original(
         },
     )
     .await;
+
+    element_reply_drops_its_fallback(&bot_room, &mut timeline, &room, &quote).await;
 }
 
 /// Element 发来的旧式回复（正文和 HTML 都带着引用的回退，真实的 Element Web 格式）：正文只剩回复的话，引用照常。

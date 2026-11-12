@@ -47,7 +47,7 @@ Olares 基于 Kubernetes / Helm，对 Pi 和普通 Linux 太重。
 
 三项结论：插件管理器直接用 bollard 渲染 compose 子集；HTTP 网关内置在核心里（axum + hyper）；
 MCP 总线用官方 Rust SDK rmcp 在核心里做最小聚合（M1 实现）。验证环境：本机 macOS + OrbStack（arm64，
-Docker 29.8）和一台 Linux 开发机（x86_64，Docker 29.7，`DOCKER_HOST` 指向它）。端到端可复跑：
+Docker 29.8）和 npchy（Linux x86_64，Docker 29.7，`DOCKER_HOST=ssh://npchy`）。端到端可复跑：
 `deploy/dev/core/smoke.sh`，两台都通过（安装 Grafana 示例插件约 6 秒，含健康检查；卸载 1–10 秒）。
 
 **插件管理器**（`crates/wonton-core/src/plugin/`）

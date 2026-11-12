@@ -172,7 +172,7 @@ async fn only_the_owner_sees_the_installed_scope() {
     }
 }
 
-pub(super) fn permission_required_routes() -> Vec<(Method, &'static str, &'static str)> {
+pub(super) fn owner_only_routes() -> Vec<(Method, &'static str, &'static str)> {
     vec![
         (
             Method::PUT,

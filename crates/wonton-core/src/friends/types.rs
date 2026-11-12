@@ -51,9 +51,6 @@ pub struct FriendRecord {
     /// First acceptance order and timestamp; reacceptance preserves both.
     pub accepted_order: u64,
     pub accepted_at_ms: u64,
-    /// 删除的时刻；重新接受后清空。好友页靠它区分“删掉前就在的房间”和删除后的新邀请。
-    #[serde(default)]
-    pub removed_at_ms: Option<u64>,
     pub last_opened_share_at_ms: Option<u64>,
 }
 

@@ -7,17 +7,14 @@ use wonton_protocol::{ConnectionCheck, ConnectionNotice, DeviceNetwork, HomeFail
 /// 断开不到这么久不提示：挡掉抖动和冷启动时的闪烁。
 const GRACE: Duration = Duration::from_secs(2);
 /// 断开这么久才说“好像离线了”。和 iroh 连接级的空闲时限对齐：30 秒还连不上，多半不是路径在切换。
-pub(super) const LONG_OUTAGE: Duration = Duration::from_secs(30);
+const LONG_OUTAGE: Duration = Duration::from_secs(30);
 /// 中继掉线这么久才算连不上。iroh 1.4.1 实测：家里的服务器不通时，模拟器上每隔几十秒掉线几秒就回来，不等一等，
 /// “好像离线了”和“连不上”会来回跳。
 const RELAY_GRACE: Duration = Duration::from_secs(10);
-/// 手动重试至少显示一秒，最长只显示一个诊断窗口；没结果也要重新给出下一步。
+/// 主人点了“重试”，按钮至少转这么久，让他知道点到了。
 const RETRY_SPIN: Duration = Duration::from_secs(1);
 /// 没连上时多久重新算一次：断开的时长和中继的情况在变，它们不发事件。
 const TICK: Duration = Duration::from_secs(1);
-/// 连上后“已恢复”的提示显示这么久，期间 [`HomeViewModel::just_recovered`](wonton_protocol::HomeViewModel::just_recovered)
-/// 为真；由 [`Tracker::next_tick`] 保证到点就有一次重算把它翻回去。
-const RECOVERY_FEEDBACK: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Default)]
 pub(super) struct Tracker {
@@ -28,21 +25,11 @@ pub(super) struct Tracker {
     catching_up: bool,
     retry_started: Option<Instant>,
     retry_running: bool,
-    /// 这一轮开始建连的时刻，“连接中”最多从这里算 30 秒。
-    connecting_since: Option<Instant>,
     trigger: Option<&'static str>,
     /// 客户端报来的失败次数上一次看到的值：只认增加，回落说明连上了，旧失败不属于这一轮。
     seen_failures: u32,
     /// 这一轮建连已经失败过：如实说连不上，不等 30 秒。
     round_failed: bool,
-    /// 这次断开期间提示过一句（宽限过后、没网或被拒）：恢复的提示只跟着主人看得见的断开走，
-    /// 一闪而过的抖动和两秒内就连上的冷启动不提示。
-    down_notice: bool,
-    /// 这次恢复的提示显示到什么时候。断开、换服务器都把它清掉。
-    recovered_until: Option<Instant>,
-    /// 上次连上之后最近一次断开的原因。断开后自动重试会回到“连接中”，这期间连接仍是已知不通的，
-    /// 核心自己经隧道的请求照旧立刻失败，不能因为状态在断开和连接中之间来回跳就时拦时不拦。
-    known_failure: Option<HomeFailure>,
 }
 
 /// 一次断开恢复了。
@@ -63,7 +50,6 @@ impl Tracker {
     ) -> Option<Recovery> {
         if failed_dials > self.seen_failures {
             self.round_failed = true;
-            self.connecting_since = None;
         } else if failed_dials < self.seen_failures {
             // 连上清零了：新一轮还没失败过。
             self.round_failed = false;
@@ -73,44 +59,17 @@ impl Tracker {
         match status {
             HomeStatus::NotConfigured => {
                 self.outage_since = None;
-                self.connecting_since = None;
-                self.down_notice = false;
-                self.recovered_until = None;
-                self.known_failure = None;
                 None
             }
             HomeStatus::Connected => {
-                self.connecting_since = None;
-                self.known_failure = None;
-                self.retry_started = None;
-                self.retry_running = false;
                 let trigger = self.trigger.take().unwrap_or("timer");
-                let recovery = self.outage_since.take().map(|since| Recovery {
+                self.outage_since.take().map(|since| Recovery {
                     outage: now - since,
                     trigger,
-                });
-                // 只有主人看得见的断开（期间提示过一句）才开“已恢复”的窗口；连着时的心跳重算不动它。
-                if recovery.is_some() && std::mem::take(&mut self.down_notice) {
-                    self.recovered_until = Some(now + RECOVERY_FEEDBACK);
-                }
-                recovery
+                })
             }
             HomeStatus::Connecting | HomeStatus::Disconnected { .. } => {
-                if self.outage_since.is_none() {
-                    // 新一轮断开：上一轮提示没提示过不算数。
-                    self.down_notice = false;
-                }
                 self.outage_since.get_or_insert(now);
-                // 断开收掉恢复提示：新一轮断开不开“已恢复”的窗口。
-                self.recovered_until = None;
-                if let HomeStatus::Disconnected { reason, .. } = status {
-                    self.known_failure = Some(*reason);
-                }
-                // 断开不重开诊断窗口，只有建连失败（上面的计数）才重开。建连成功、服务器却不回应时，探活超时断开、
-                // 马上重拨，每轮不到 30 秒，建连失败次数一直是 0：在这里清零的话“连接中”会一直转，永远给不出原因。
-                if matches!(status, HomeStatus::Connecting) {
-                    self.connecting_since.get_or_insert(now);
-                }
                 None
             }
         }
@@ -149,11 +108,9 @@ impl Tracker {
         let returned = self.network == Some(DeviceNetwork::None) && network != DeviceNetwork::None;
         if returned && self.outage_since.is_some() {
             self.outage_since = Some(now);
-            self.connecting_since = None;
         }
         if returned {
             self.round_failed = false;
-            self.known_failure = None;
         }
         self.network = Some(network);
         self.trigger = Some("network change");
@@ -173,15 +130,7 @@ impl Tracker {
         self.trigger = Some("foreground");
         if self.outage_since.is_some() {
             self.outage_since = Some(now);
-            self.connecting_since = None;
-            self.round_failed = false;
-            self.known_failure = None;
         }
-    }
-
-    /// 上次连上之后最近一次断开的原因；连上、换服务器、回前台或网络恢复后清空（新一轮先给建连机会）。
-    pub(super) fn known_failure(&self) -> Option<HomeFailure> {
-        self.known_failure
     }
 
     pub(super) fn retry_started(&mut self, now: Instant) {
@@ -195,16 +144,14 @@ impl Tracker {
     }
 
     fn retrying(&self, now: Instant) -> bool {
-        self.retry_started.is_some_and(|started| {
-            let elapsed = now - started;
-            elapsed < LONG_OUTAGE && (self.retry_running || elapsed < RETRY_SPIN)
-        })
+        self.retry_running
+            || self
+                .retry_started
+                .is_some_and(|started| now - started < RETRY_SPIN)
     }
 
-    pub(super) fn notice(&mut self, status: &HomeStatus, now: Instant) -> Option<ConnectionNotice> {
-        // 这次断开期间给主人看过的提示：恢复的提示只跟着它走（ADR-0032）。连着时的“更新中”不算。
-        let down = !matches!(status, HomeStatus::Connected | HomeStatus::NotConfigured);
-        let notice = match status {
+    pub(super) fn notice(&self, status: &HomeStatus, now: Instant) -> Option<ConnectionNotice> {
+        match status {
             HomeStatus::NotConfigured => None,
             HomeStatus::Connected => self.catching_up.then_some(ConnectionNotice::Updating),
             HomeStatus::Disconnected {
@@ -222,11 +169,6 @@ impl Tracker {
                 } else if down_for < GRACE {
                     // 换网时建连立即失败很常见，冷启动的网络也没就绪：2 秒内一律不闪“连不上”。
                     None
-                } else if self
-                    .connecting_since
-                    .is_some_and(|since| now - since < LONG_OUTAGE)
-                {
-                    Some(ConnectionNotice::Connecting)
                 } else if self.round_failed || down_for >= LONG_OUTAGE {
                     // 这一轮建连已经失败过，如实说连不上，自动重试还在进行；30 秒只兜没有任何证据的情况。
                     self.offline_notice(now)
@@ -234,20 +176,19 @@ impl Tracker {
                     Some(ConnectionNotice::Connecting)
                 }
             }
-        };
-        if down && notice.is_some() {
-            self.down_notice = true;
         }
-        notice
     }
 
-    /// 手机连得上中继，多半是家里的问题；连不上中继，分不清哪一边的问题。
+    /// 连不上这一档：手机连得上中继，多半是家里的问题；连不上中继，分不清哪一边的问题。
     fn offline_notice(&self, now: Instant) -> Option<ConnectionNotice> {
-        let retrying = self.retrying(now);
         if self.relay == ConnectionCheck::Ok {
-            Some(ConnectionNotice::ServerOffline { retrying })
+            Some(ConnectionNotice::ServerOffline {
+                retrying: self.retrying(now),
+            })
         } else {
-            Some(ConnectionNotice::Unreachable { retrying })
+            Some(ConnectionNotice::Unreachable {
+                retrying: self.retrying(now),
+            })
         }
     }
 
@@ -267,20 +208,13 @@ impl Tracker {
         }
     }
 
-    /// 断过又连上了，且没有别的提示盖着：壳把短状态换成“已连接”，就这 4 秒。
-    pub(super) fn just_recovered(&self, notice: &Option<ConnectionNotice>, now: Instant) -> bool {
-        self.recovered_until.is_some_and(|until| now < until) && notice.is_none()
-    }
-
-    /// 多久之后要重新算一次。连着的时候也要：连接质量的窗口要每秒采样；恢复提示要到点翻回去，
-    /// 剩下的时间比一秒短就提前。
-    pub(super) fn next_tick(&self, connected: bool, now: Instant) -> Option<Duration> {
-        let tick = (connected || self.outage_since.is_some() || self.relay_lost_since.is_some())
-            .then_some(TICK);
-        match (tick, self.recovered_until) {
-            (Some(tick), Some(until)) => Some(tick.min(until.saturating_duration_since(now))),
-            (tick, _) => tick,
-        }
+    /// 多久之后要重新算一次。连着的时候也要：连接质量的窗口要每秒采样。
+    pub(super) fn next_tick(&self, connected: bool) -> Option<Duration> {
+        (connected
+            || self.outage_since.is_some()
+            || self.retry_running
+            || self.relay_lost_since.is_some())
+        .then_some(TICK)
     }
 }
 
@@ -288,10 +222,7 @@ impl Tracker {
 mod tests {
     use super::*;
 
-    const DOWN: HomeStatus = HomeStatus::Disconnected {
-        reason: HomeFailure::TransportUnavailable,
-        message: String::new(),
-    };
+    const DOWN: HomeStatus = HomeStatus::Connecting;
 
     fn rejected() -> HomeStatus {
         HomeStatus::Disconnected {
@@ -327,7 +258,7 @@ mod tests {
             Some(ConnectionNotice::Connecting)
         );
         assert_eq!(
-            after(&mut tracker, start, 30, 0),
+            after(&mut tracker, start, 31, 0),
             Some(ConnectionNotice::ServerOffline { retrying: false })
         );
     }
@@ -338,7 +269,7 @@ mod tests {
         let mut tracker = Tracker::default();
         tracker.observe(&DOWN, ConnectionCheck::Failing, 0, start);
         assert_eq!(
-            after(&mut tracker, start, 30, 0),
+            after(&mut tracker, start, 31, 0),
             Some(ConnectionNotice::Unreachable { retrying: false })
         );
     }
@@ -485,85 +416,6 @@ mod tests {
         assert_eq!(tracker.notice(&HomeStatus::Connected, start), None);
     }
 
-    /// 断开又连上：主人看得见的断开（期间提示过一句）恢复后开 4 秒的窗口，连着时的心跳重算不延长
-    /// 也不提前关掉它；到点翻回去，再断开马上收掉。
-    #[test]
-    fn the_recovery_feedback_lasts_four_seconds_and_stops_at_the_next_outage() {
-        let start = Instant::now();
-        let mut tracker = Tracker::default();
-        let at = |seconds| start + Duration::from_secs(seconds);
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
-        // 断开期间提示过一句（publish 每秒重算一次）：这一次恢复才算“看得见”。
-        assert_eq!(
-            tracker.notice(&DOWN, at(3)),
-            Some(ConnectionNotice::Connecting)
-        );
-
-        // 连上：窗口开着，期间每秒一次的连着重算不动它。
-        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, at(10));
-        assert!(tracker.just_recovered(&None, at(10)));
-        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, at(11));
-        assert!(tracker.just_recovered(&None, at(11)));
-        // 窗口里有“更新中”就不显示恢复：壳只按核心给的画。
-        assert!(!tracker.just_recovered(&Some(ConnectionNotice::Updating), at(11)));
-        // 到点要有一次重算把提示翻回去：剩下的窗口不到一秒时，tick 提前到窗口结束。
-        assert_eq!(
-            tracker.next_tick(true, at(11)),
-            Some(Duration::from_secs(1))
-        );
-        assert_eq!(
-            tracker.next_tick(true, at(13) + Duration::from_millis(500)),
-            Some(Duration::from_millis(500))
-        );
-
-        // 到点翻回去；再断开（这次也提示过一句）马上收掉，连上又开一个新窗口。
-        assert!(!tracker.just_recovered(&None, at(14)));
-        assert!(!tracker.just_recovered(&None, at(15)));
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, at(16));
-        assert_eq!(
-            tracker.next_tick(true, at(16)),
-            Some(Duration::from_secs(1))
-        );
-        assert_eq!(
-            tracker.notice(&DOWN, at(19)),
-            Some(ConnectionNotice::Connecting)
-        );
-        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, at(20));
-        assert!(tracker.just_recovered(&None, at(20)));
-    }
-
-    /// 一直连着（没有断开过）就谈不上恢复：每秒的心跳重算不开窗口。宽限内（两秒）就回来的抖动
-    /// 没提示过一句，恢复也不提示。
-    #[test]
-    fn a_connection_that_never_dropped_visibly_shows_no_recovery() {
-        let start = Instant::now();
-        let mut tracker = Tracker::default();
-        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, start);
-        assert!(!tracker.just_recovered(&None, start));
-        tracker.observe(
-            &HomeStatus::Connected,
-            ConnectionCheck::Ok,
-            0,
-            start + Duration::from_secs(1),
-        );
-        assert!(!tracker.just_recovered(&None, start + Duration::from_secs(1)));
-
-        // 一秒的抖动：期间提示是空（宽限挡住），连上后不开窗口。
-        let mut tracker = Tracker::default();
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
-        assert_eq!(
-            tracker.notice(&DOWN, start + Duration::from_millis(500)),
-            None
-        );
-        tracker.observe(
-            &HomeStatus::Connected,
-            ConnectionCheck::Ok,
-            0,
-            start + Duration::from_secs(1),
-        );
-        assert!(!tracker.just_recovered(&None, start + Duration::from_secs(1)));
-    }
-
     #[test]
     fn a_rejected_device_is_told_at_once() {
         let start = Instant::now();
@@ -576,118 +428,29 @@ mod tests {
     }
 
     #[test]
-    fn retry_progress_ends_after_failure_or_at_the_diagnostic_deadline() {
+    fn retrying_keeps_the_sentence_and_spins_at_least_a_second() {
         let start = Instant::now();
         let mut tracker = Tracker::default();
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 1, start);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
         let clicked = start + Duration::from_secs(40);
         tracker.retry_started(clicked);
-        let progress = Some(ConnectionNotice::ServerOffline { retrying: true });
-        let failure = Some(ConnectionNotice::ServerOffline { retrying: false });
-        assert_eq!(tracker.notice(&DOWN, clicked), progress);
+        assert_eq!(
+            tracker.notice(&DOWN, clicked),
+            Some(ConnectionNotice::ServerOffline { retrying: true })
+        );
+
+        // 马上就失败了，也还转着。
         tracker.retry_finished();
+        let soon = clicked + Duration::from_millis(100);
         assert_eq!(
-            tracker.notice(&DOWN, clicked + RETRY_SPIN - Duration::from_nanos(1)),
-            progress
+            tracker.notice(&DOWN, soon),
+            Some(ConnectionNotice::ServerOffline { retrying: true })
         );
-        assert_eq!(tracker.notice(&DOWN, clicked + RETRY_SPIN), failure);
-
-        tracker.retry_started(clicked);
+        let later = clicked + Duration::from_secs(2);
         assert_eq!(
-            tracker.notice(&DOWN, clicked + LONG_OUTAGE - Duration::from_nanos(1)),
-            progress
+            tracker.notice(&DOWN, later),
+            Some(ConnectionNotice::ServerOffline { retrying: false })
         );
-        assert_eq!(tracker.notice(&DOWN, clicked + LONG_OUTAGE), failure);
-        tracker.retry_started(clicked + LONG_OUTAGE);
-        assert_eq!(tracker.notice(&DOWN, clicked + LONG_OUTAGE), progress);
-    }
-
-    #[test]
-    fn a_new_dial_clears_the_previous_offline_conclusion_until_it_finishes_or_times_out() {
-        let start = Instant::now();
-        for relay in [ConnectionCheck::Ok, ConnectionCheck::Failing] {
-            let mut tracker = Tracker::default();
-            tracker.observe(&DOWN, relay, 1, start);
-            let retry = start + Duration::from_secs(40);
-            let failure = tracker.notice(&DOWN, retry);
-            assert!(matches!(
-                failure,
-                Some(
-                    ConnectionNotice::ServerOffline { retrying: false }
-                        | ConnectionNotice::Unreachable { retrying: false }
-                )
-            ));
-
-            tracker.observe(&HomeStatus::Connecting, relay, 1, retry);
-            assert_eq!(
-                tracker.notice(&HomeStatus::Connecting, retry),
-                Some(ConnectionNotice::Connecting)
-            );
-            let boundary = retry + LONG_OUTAGE;
-            tracker.observe(
-                &HomeStatus::Connecting,
-                relay,
-                1,
-                boundary - Duration::from_nanos(1),
-            );
-            assert_eq!(
-                tracker.notice(&HomeStatus::Connecting, boundary - Duration::from_nanos(1)),
-                Some(ConnectionNotice::Connecting)
-            );
-            tracker.observe(&HomeStatus::Connecting, relay, 1, boundary);
-            assert_eq!(tracker.notice(&HomeStatus::Connecting, boundary), failure);
-
-            tracker.observe(&DOWN, relay, 2, boundary);
-            assert_eq!(tracker.notice(&DOWN, boundary), failure);
-            tracker.observe(&HomeStatus::Connecting, relay, 2, boundary);
-            assert_eq!(
-                tracker.notice(&HomeStatus::Connecting, boundary),
-                Some(ConnectionNotice::Connecting)
-            );
-            tracker.observe(&HomeStatus::Connected, relay, 0, boundary);
-            assert_eq!(tracker.notice(&HomeStatus::Connected, boundary), None);
-        }
-    }
-
-    #[test]
-    fn a_server_that_connects_but_never_answers_is_named_after_the_diagnostic_window() {
-        // 建连每次都成功（失败次数一直是 0），探活 8 秒没有回应就断开、马上重拨：一轮约 9 秒。
-        let start = Instant::now();
-        for (relay, named) in [
-            (
-                ConnectionCheck::Ok,
-                ConnectionNotice::ServerOffline { retrying: false },
-            ),
-            (
-                ConnectionCheck::Failing,
-                ConnectionNotice::Unreachable { retrying: false },
-            ),
-        ] {
-            let mut tracker = Tracker::default();
-            let mut at = |status: &HomeStatus, millis: u64| {
-                let now = start + Duration::from_millis(millis);
-                tracker.observe(status, relay, 0, now);
-                tracker.notice(status, now)
-            };
-            at(&HomeStatus::Connecting, 0);
-            let mut seen = Vec::new();
-            for round in 0..8 {
-                let dialed = round * 9_000;
-                seen.push((dialed + 3_000, at(&HomeStatus::Connecting, dialed + 3_000)));
-                seen.push((dialed + 8_000, at(&DOWN, dialed + 8_000)));
-            }
-            for (millis, notice) in seen {
-                let expected = if millis < 30_000 {
-                    ConnectionNotice::Connecting
-                } else {
-                    named
-                };
-                assert_eq!(notice, Some(expected), "{millis} ms");
-            }
-
-            // 服务器终于回应了：恢复如常。
-            assert_eq!(at(&HomeStatus::Connected, 80_000), None);
-        }
     }
 
     #[test]
@@ -707,26 +470,6 @@ mod tests {
         );
     }
 
-    /// 断开后自动重试回到“连接中”，连接仍算已知不通；连上、回前台后不再算。
-    #[test]
-    fn a_failure_is_remembered_while_retrying_until_connected() {
-        let start = Instant::now();
-        let mut tracker = Tracker::default();
-        tracker.observe(&HomeStatus::Connecting, ConnectionCheck::Ok, 0, start);
-        assert_eq!(tracker.known_failure(), None, "第一次建连还没失败过");
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
-        tracker.observe(&HomeStatus::Connecting, ConnectionCheck::Ok, 1, start);
-        assert_eq!(
-            tracker.known_failure(),
-            Some(HomeFailure::TransportUnavailable)
-        );
-        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, start);
-        assert_eq!(tracker.known_failure(), None);
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
-        tracker.foregrounded(start);
-        assert_eq!(tracker.known_failure(), None, "回前台先给新一轮建连机会");
-    }
-
     #[test]
     fn coming_back_restarts_the_clock_and_recovery_reports_the_outage() {
         let start = Instant::now();
@@ -735,11 +478,6 @@ mod tests {
         let back = start + Duration::from_secs(600);
         tracker.foregrounded(back);
         assert_eq!(tracker.notice(&DOWN, back), None);
-        // 回前台后的新失败如实显示，不能沿用旧的重试进度。
-        assert_eq!(
-            after(&mut tracker, back, 4, 1),
-            Some(ConnectionNotice::ServerOffline { retrying: false })
-        );
         let recovered = back + Duration::from_secs(5);
         assert_eq!(
             tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, recovered),

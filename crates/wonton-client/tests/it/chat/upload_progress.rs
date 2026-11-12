@@ -7,7 +7,6 @@ use wonton_client::{
 
 use super::accept_the_bots_invite;
 use super::support::{Home, Phone, Timeline};
-use wonton_protocol::{TimelineAction, TimelineTarget};
 
 /// Tuwunel 的上限最低 10 MB，8 MB 能进队列又够上传走几步。内容对 Matrix 不透明。
 const BIG: usize = 8 * 1024 * 1024;
@@ -27,15 +26,10 @@ async fn upload_progress_advances_to_sent_and_a_cancelled_image_disappears() {
 
     // 一开始就以本地回显出现，没有事件 ID，还带着上传进度。
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SendImage {
-                target: TimelineTarget {
-                    room_id: room.clone(),
-                    thread_root: None,
-                },
-                image: upload("big.png"),
-                reply_to: None,
-            },
+        .dispatch(Action::SendImage {
+            room_id: room.clone(),
+            image: upload("big.png"),
+            reply_to: None,
         })
         .unwrap();
     let mut sending = false;
@@ -64,15 +58,10 @@ async fn upload_progress_advances_to_sent_and_a_cancelled_image_disappears() {
     // 上传中的图可以取消：从时间线里消失。
     home.pause_uploads();
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SendImage {
-                target: TimelineTarget {
-                    room_id: room.clone(),
-                    thread_root: None,
-                },
-                image: upload("cancelled.png"),
-                reply_to: None,
-            },
+        .dispatch(Action::SendImage {
+            room_id: room.clone(),
+            image: upload("cancelled.png"),
+            reply_to: None,
         })
         .unwrap();
     let echo = timeline
@@ -85,14 +74,9 @@ async fn upload_progress_advances_to_sent_and_a_cancelled_image_disappears() {
         })
         .await;
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::CancelSend {
-                target: TimelineTarget {
-                    room_id: room.clone(),
-                    thread_root: None,
-                },
-                item_id: echo,
-            },
+        .dispatch(Action::CancelSend {
+            room_id: room.clone(),
+            item_id: echo,
         })
         .unwrap();
     timeline

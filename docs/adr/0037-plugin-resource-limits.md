@@ -100,7 +100,7 @@ TasksMax=50%
 
 ### 不管的
 
-- **磁盘写满：** cgroup 管不了磁盘用量。Docker 的 `--storage-opt size` 只支持部分文件系统。一台测试主机上的那次事故要另外处理，不在这篇里。
+- **磁盘写满：** cgroup 管不了磁盘用量。Docker 的 `--storage-opt size` 只支持部分文件系统。1k 那次事故要另外处理，不在这篇里。
 - **显存：** Docker 和 cgroup 没有这项限制。
 
 ## 实测

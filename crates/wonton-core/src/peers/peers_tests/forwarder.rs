@@ -6,7 +6,7 @@ use super::*;
 #[tokio::test]
 async fn a_paired_server_is_checking_until_the_first_probe_result() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
     let code = a.peers.issue_code();
     b.scan_code(&code, &a).await.unwrap();
     a.request_now("b.example.internal");
@@ -34,7 +34,7 @@ async fn a_paired_server_is_checking_until_the_first_probe_result() {
 #[tokio::test]
 async fn the_last_connected_time_is_kept_after_the_peer_stops() {
     let mut a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
     pair(&a, &b).await;
 
     let (states, rx) = watch::channel(PeerStates::new());
@@ -77,7 +77,7 @@ async fn the_last_connected_time_is_kept_after_the_peer_stops() {
 #[tokio::test]
 async fn the_first_probe_after_approval_connects() {
     let mut a = TestCore::start("Alex", "a.example.internal").await;
-    let mut b = TestCore::start("Alice", "b.example.internal").await;
+    let mut b = TestCore::start("Jiale", "b.example.internal").await;
     a.enable_federation().await;
     b.enable_federation().await;
     let history = a.record_states();

@@ -28,21 +28,14 @@ final class ChatModel {
     /// 插件网页交给主人的草稿；只在聊天输入框出现，不自动发送。
     var pendingDraft: String?
     var drafts: [String: String] = [:]
-    /// 每个房间里正在回复的消息；和草稿一起存，换房间、杀 App 再回来还在。
-    var replies: [String: ReplyQuote] = [:]
-    private(set) var replyFocusRevision = 0
     /// 聊天页打开的页面。
     var path: [ChatRoute] = []
     var visiting: VisitingRoom?
     /// 刚发起了和这个用户的私聊，房间出现后打开。
     private var awaitedPeer: String?
-    /// 链接要打开的房间；还需要加入或等同步。
-    private var awaitedRoom: String?
     @ObservationIgnored private var awaitedFrom = AppTab.chat
     /// 发起私聊在后台失败了，原因显示在聊天页，主界面要切过去。
     var openingFailed = false
-    /// 主人在交接页点了“稍后”（ADR-0087）：先收起交接页，聊天列表顶上的提醒再打开。只在这次运行里记着。
-    var keyHandoffDeferred = false
 
     let core: ClientCore
     @ObservationIgnored private(set) lazy var files = FilesModel(chat: self)
@@ -51,14 +44,6 @@ final class ChatModel {
         self.core = core
         viewModel = core.chat()
     }
-
-    #if DEBUG
-        /// 截图测试拿固定 ViewModel 画界面，不订阅核心推送。
-        init(core: ClientCore, viewModel: ChatViewModel) {
-            self.core = core
-            self.viewModel = viewModel
-        }
-    #endif
 
     /// 在主界面的 `.task` 里调用；视图消失时 Task 被取消，订阅随之结束。
     func observe() async {
@@ -96,55 +81,13 @@ final class ChatModel {
 
     /// 草稿在核心里，按房间存，退出房间、重启 App 都还在。进房间时读回来，打完字写回去。
     func loadDraft(_ roomId: String) async {
-        // `try?` 会把错误和“没有草稿”都折成 nil，这里要分开。
-        let stored: ComposerDraft?
-        do {
-            stored = try await core.draft(target: TimelineTarget(roomId: roomId, threadRoot: nil))
-        } catch {
-            return
-        }
-        // 读回来之前已经打了字、已经点了回复就不盖掉。
-        if drafts[roomId, default: ""].isEmpty { drafts[roomId] = stored?.body ?? "" }
-        if replies[roomId] == nil { replies[roomId] = stored?.reply }
+        guard let stored = try? await core.draft(roomId: roomId) else { return }
+        // 读回来之前已经打了字就不盖掉。
+        if drafts[roomId, default: ""].isEmpty { drafts[roomId] = stored.body }
     }
 
-    /// 每次写草稿都带上正在回复的那条，不带核心会把存着的回复对象清掉。
     func saveDraft(_ roomId: String) {
-        send(.timeline(action: TimelineAction.setDraft(
-            target: TimelineTarget(roomId: roomId, threadRoot: nil),
-            body: drafts[roomId, default: ""], replyTo: replies[roomId]?.eventId
-        )))
-    }
-
-    /// 回复按钮或右滑进入回复状态（ADR-0073）。
-    func startReply(_ quote: ReplyQuote, in roomId: String) {
-        replies[roomId] = quote
-        saveDraft(roomId)
-        replyFocusRevision += 1
-    }
-
-    func cancelReply(in roomId: String) {
-        replies[roomId] = nil
-        saveDraft(roomId)
-    }
-
-    /// 转发到另一个房间，随后打开它。
-    func forward(_ itemId: String, from roomId: String, to target: String) {
-        send(.timeline(action: TimelineAction.forwardMessage(
-            target: TimelineTarget(roomId: roomId, threadRoot: nil),
-            itemId: itemId, toRoomId: target
-        )))
-        openRoom(target)
-    }
-
-    /// 换了房间还在同一页：从应用页打开的就留在应用页，否则留在聊天页。
-    func openRoom(_ roomId: String) {
-        if let visiting {
-            guard visiting.roomId != roomId else { return }
-            self.visiting = VisitingRoom(tab: visiting.tab, roomId: roomId)
-        } else if path.last != .room(roomId) {
-            path = [.room(roomId)]
-        }
+        send(.setDraft(roomId: roomId, body: drafts[roomId, default: ""]))
     }
 
     /// `tab` 这一页正在显示的房间。
@@ -168,7 +111,6 @@ final class ChatModel {
 
     func resetNavigation() {
         awaitedPeer = nil
-        awaitedRoom = nil
         openingFailed = false
         visiting = nil
         path = []
@@ -221,23 +163,6 @@ final class ChatModel {
         }
     }
 
-    /// 按房间 ID 打开（matrix.to 的房间和事件永久链接都落到房间）：已经在的就直接开；还没加入就先加入、等它出现。
-    func openRoom(id: String) {
-        awaitedPeer = nil
-        awaitedRoom = nil
-        visiting = nil
-        if viewModel.rooms.contains(where: { $0.roomId == id && $0.membership == .joined }) {
-            path = [.room(id)]
-            return
-        }
-        do {
-            try core.dispatch(action: .joinRoom(roomId: id))
-            awaitedRoom = id
-        } catch {
-            rejection = error.problem
-        }
-    }
-
     /// AskAgent 已在核心里发起或加入房间；这里只等订阅里的房间出现，避免重复建房。
     func openAskedAgentChat(with peer: String) {
         path = []
@@ -257,16 +182,6 @@ final class ChatModel {
     }
 
     private func openAwaitedChat() {
-        if let room = awaitedRoom {
-            if viewModel.rooms.contains(where: { $0.roomId == room && $0.membership == .joined }) {
-                awaitedRoom = nil
-                path = [.room(room)]
-            } else if viewModel.problem != nil {
-                awaitedRoom = nil
-                openingFailed = true
-            }
-            return
-        }
         guard let peer = awaitedPeer else { return }
         if let room = viewModel.rooms.first(where: { $0.directUserId == peer && $0.membership == .joined }) {
             awaitedPeer = nil

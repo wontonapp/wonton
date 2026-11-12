@@ -25,14 +25,14 @@ enum QualityPreviews {
     static func fakeHome(relay: Bool) -> HomeViewModel {
         HomeViewModel(
             deviceId: "0", serverId: nil, status: .connected,
-            path: HomePath(relay: relay, publicRelay: false, lan: false, rttMs: 1_240), notice: nil,
+            path: HomePath(relay: relay, lan: false, rttMs: 1_240), notice: nil,
             details: ConnectionDetails(
                 network: .wifi, relay: .ok, server: .ok, lastConnectedAtMs: 1_794_000_000_000,
-                handshakeMs: 120, disconnects: 0, failedDials: 0, sentPackets: 900, lostPackets: 66,
+                handshakeMs: 120, disconnects: 0, sentPackets: 900, lostPackets: 66,
                 quality: .poor, lossPerMille: 73, rttMs: 1_240,
                 lastFailure: nil, addressesStale: false, udpFlows: [], udpBufferEvictedDatagrams: nil
             ),
-            proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false, justRecovered: false
+            proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false
         )
     }
 }
@@ -47,7 +47,7 @@ private struct QualityHintPreview: View {
         Group {
             if chat {
                 Color(colors.canvas).ignoresSafeArea()
-                    .wontonPushedScreen(String(localized: .previewBotName), showsStatus: true) { EmptyView() }
+                    .wontonPushedScreen("家庭助手", showsStatus: true) { EmptyView() }
             } else {
                 Color(colors.canvas).ignoresSafeArea()
                     .wontonRootScreen("Wonton", hasActions: false) { EmptyView() }
@@ -77,11 +77,11 @@ private struct QualityDetailsPreview: View {
     QualityHintPreview(home: QualityPreviews.fakeHome(relay: false), chat: false)
 }
 
-#Preview("Poor relay") {
+#Preview("Poor·中继") {
     QualityHintPreview(home: QualityPreviews.fakeHome(relay: true), chat: true)
 }
 
-#Preview("Details") {
+#Preview("详情") {
     QualityDetailsPreview()
 }
 #endif

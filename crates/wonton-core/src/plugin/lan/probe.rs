@@ -376,7 +376,7 @@ mod tests {
         assert!(parse_targets("192.168.0.10:http").is_err());
     }
 
-    /// 一台 Linux 宿主（2026-11-02）的 `/proc/net/route`：有线和 Wi-Fi 各一条默认路由，另有 Docker 网桥和 Tailscale 的网段。
+    /// npchy（2026-11-02）的 `/proc/net/route`：有线和 Wi-Fi 各一条默认路由，另有 Docker 网桥和 Tailscale 的网段。
     const ROUTE: &str = "\
 Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT
 eno1\t00000000\t0100A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0
@@ -434,7 +434,7 @@ eno1\t0000A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0
             (
                 2,
                 HostAddress {
-                    ip: "192.168.0.10".parse().unwrap(),
+                    ip: "192.168.0.193".parse().unwrap(),
                     secondary: false,
                     prefix: 24,
                 },

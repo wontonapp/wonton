@@ -16,7 +16,7 @@
 | 对外接口 | REST + SSE，`user_input` 表单、审批都有 resolve 接口 | REST + SSE，要邮箱验证码登录的用户会话 | 从 GitHub、飞书“听”任务（Source），可以加 Source |
 | 上游发布物 | 桌面安装包、Linux deb/AppImage、npm 启动器；没有容器镜像 | 没有镜像（compose 全部本地构建） | 只有源码；一次提交，研究原型 |
 
-AO 的实测见调研报告（`research/orchestrator-probe.md`，2026-11-07）。
+AO 的实测见调研报告（npchy `research/orchestrator-probe.md`，2026-11-07）。
 
 ## 决策
 
@@ -57,9 +57,7 @@ AO 的实测见调研报告（`research/orchestrator-probe.md`，2026-11-07）�
 ### 6. 工人用什么 Agent
 
 - 第一步：工人跑在编排器的容器里，用编排器支持的 Agent CLI（Codex、Claude Code、Qwen 等），登录走 Agent 底座的官方登录或模型网关（ADR-0055）。
-- 以后：用户已装的 Agent 插件当工人，经核心的 `agent_acp` 入口（ADR-0061 第 9、10 节）：编排器插件既提供 `agent_acp`（它的 Bot 能被用户直接找、被别的 Agent 调），
-  也 `requires: [agent_acp]`（派活给已装的 Agent），
-  连接代表在编排器里下目标的人，层数、绕圈、轮数和花费按调用链管，卡片标题写“编排器任务 → 哪个 Bot → 想做什么”。
+- 以后：用户已装的 Agent 插件当工人，走 ADR-0061 的 `agent_acp`，等那篇定下来再接。
 
 ### 7. 安全
 

@@ -32,7 +32,7 @@ struct BotProfileSection: View {
     }
 
     private var bot: BotView? {
-        chat.viewModel.bots.first { $0.bot.pluginId == pluginId && $0.bot.bot == "default" }
+        chat.viewModel.bots.first { $0.pluginId == pluginId }
     }
 
     private var plugin: InstalledPlugin? {

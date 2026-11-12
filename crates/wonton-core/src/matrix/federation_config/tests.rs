@@ -8,10 +8,7 @@ use super::{allowlist_toml, files::regex_escape};
 use crate::http::{HttpClient, RequestBody};
 use crate::plugin::docker::Engine;
 
-/// Tuwunel：本地按标签拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-pub(super) fn image() -> String {
-    wonton_test_images::image("ghcr.io/matrix-construct/tuwunel:v2.0.0")
-}
+pub(super) const IMAGE: &str = "ghcr.io/matrix-construct/tuwunel:v1.9.4";
 const WAIT: Duration = Duration::from_secs(15);
 
 /// 真实 Tuwunel（v1.9.4）：两份配置里的名单生效，原地重写第二份后发 SIGUSR1，
@@ -32,7 +29,7 @@ fn the_real_server_hot_reloads_the_allowlist_from_the_second_file() {
         let registration_secret = crate::secret::random_token();
 
         let dir = tempfile::tempdir().unwrap();
-        // 本机名单来自第二份配置文件（secrets/tuwunel/wonton-fed.toml 的角色），另两台把本机放进各自名单。
+        // 本机名单来自第二份配置文件（fed/config.toml 的角色），另两台把本机放进各自名单。
         std::fs::write(
             dir.path().join("self.toml"),
             cluster_config(&self_name, &[], &registration_secret),
@@ -307,16 +304,16 @@ impl Cluster {
         let fed_path = match fed {
             Some(fed) => {
                 let path = dir.path().join(fed);
-                let mount = format!("{}:/etc/tuwunel/wonton-fed.toml:ro", path.display());
+                let mount = format!("{}:/etc/tuwunel/fed.toml:ro", path.display());
                 docker_args.push("--volume".to_owned());
                 docker_args.push(mount);
                 command_args.push("-c".to_owned());
-                command_args.push("/etc/tuwunel/wonton-fed.toml".to_owned());
+                command_args.push("/etc/tuwunel/fed.toml".to_owned());
                 Some(path)
             }
             None => None,
         };
-        docker_args.push(image());
+        docker_args.push(IMAGE.to_owned());
         docker_args.extend(command_args);
         let output = Command::new("docker")
             .args(&docker_args)
@@ -462,7 +459,6 @@ pub(super) async fn create_room(server: &ClusterServer, account: &Account) -> St
             Method::POST,
             &format!("{}/_matrix/client/v3/createRoom", server.address),
             Some(&account.token),
-            &[],
             RequestBody::Json(&serde_json::json!({"preset": "private_chat"})),
             WAIT,
         )
@@ -484,7 +480,6 @@ pub(super) async fn invite(
             Method::POST,
             &format!("{}/_matrix/client/v3/rooms/{room}/invite", server.address),
             Some(&account.token),
-            &[],
             RequestBody::Json(&serde_json::json!({"user_id": user_id})),
             WAIT,
         )
@@ -508,7 +503,6 @@ pub(super) async fn join(server: &ClusterServer, token: &str, room: &str) -> Res
             Method::GET,
             &format!("{}/_matrix/client/v3/sync", server.address),
             Some(token),
-            &[],
             RequestBody::Empty,
             WAIT,
         )
@@ -526,7 +520,6 @@ pub(super) async fn join(server: &ClusterServer, token: &str, room: &str) -> Res
             Method::POST,
             &format!("{}/_matrix/client/v3/rooms/{room}/join", server.address),
             Some(token),
-            &[],
             RequestBody::Json(&serde_json::json!({})),
             WAIT,
         )

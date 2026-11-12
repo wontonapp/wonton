@@ -9,8 +9,6 @@ use matrix_sdk::encryption::{
     recovery::{RecoveryError, RecoveryState},
     secret_storage::SecretStorageError,
 };
-#[cfg(feature = "testkit")]
-use matrix_sdk::ruma::DeviceId;
 use matrix_sdk::ruma::api::client::uiaa::AuthData;
 
 use crate::{Error, MatrixSession, Result};
@@ -155,18 +153,10 @@ impl MatrixSession {
     /// 用恢复密钥恢复：取回交叉签名的秘密和密钥备份，本设备随之被验证。
     pub async fn recover(&self, recovery_key: &str) -> Result<()> {
         let recovery = self.client.encryption().recovery();
-        if let Err(error) = recovery.recover(recovery_key.trim()).await {
-            // SDK 导入完秘密还要再读一次账号数据算恢复状态，这一步的网络错误是顶层的 `Sdk`（开秘密存储、导入秘密的错误
-            // 包在 `SecretStorage` 里）。导入秘密触发的 keys/query 往往已先把状态算成 Enabled，这时秘密已经齐了，
-            // 只是刷新那一下断在半路（matrix-sdk 0.19.1，隧道正好断开时实测）。报失败的话界面把状态退回恢复前，
-            // 还留着一条“连不上”的错误。
-            let only_refresh_failed = matches!(error, RecoveryError::Sdk(_))
-                && matches!(recovery.state(), RecoveryState::Enabled);
-            if !only_refresh_failed {
-                return Err(recovery_error(&error));
-            }
-            tracing::info!("恢复已完成，之后刷新恢复状态失败：{error}");
-        }
+        recovery
+            .recover(recovery_key.trim())
+            .await
+            .map_err(|error| recovery_error(&error))?;
         // 密钥对、秘密存储却缺东西时 SDK 也算成功，这台设备其实什么也没取回。
         if matches!(recovery.state(), RecoveryState::Incomplete) {
             return Err(Error::NotReady(
@@ -213,36 +203,6 @@ impl MatrixSession {
             .wait_for_backups_to_upload()
             .await
             .map_err(|error| recovery_error(&error))
-    }
-
-    /// 给同账号的另一台设备做本地手工签名：用本机的 self-signing 私钥签那台设备并上传签名，不通知对端、
-    /// 不转秘密。对端拿到签名链就算“已验证”，手里照样没有交叉签名私钥（[`Self::enable_recovery`]
-    /// 的第二道检查挡的正是这种设备）。规范里没有这种方法（ADR-0076 调研的“直接批准”），只有测试用它制造。
-    #[cfg(feature = "testkit")]
-    pub async fn sign_device(&self, device_id: &DeviceId) -> Result<()> {
-        let device = self
-            .client
-            .encryption()
-            .get_device(self.user_id(), device_id)
-            .await
-            .map_err(|error| Error::Upstream(error.to_string()))?
-            .ok_or_else(|| Error::NotReady(format!("本机看不到设备 {device_id}")))?;
-        device
-            .verify()
-            .await
-            .map_err(|error| Error::Upstream(error.to_string()))
-    }
-
-    /// 本机是否已经看到同账号的另一台设备：设备密钥要经对方的 keys/query 慢一拍才到，签名前先等它。
-    #[cfg(feature = "testkit")]
-    pub async fn sees_device(&self, device_id: &DeviceId) -> bool {
-        self.client
-            .encryption()
-            .get_device(self.user_id(), device_id)
-            .await
-            .ok()
-            .flatten()
-            .is_some()
     }
 }
 

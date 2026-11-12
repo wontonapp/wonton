@@ -126,10 +126,7 @@ fn update_gallery_event_after_upload(
         match itemtype {
             GalleryItemType::Audio(event) => match sent.get(&event.source.unique_key()) {
                 Some(sent) => event.source = sent.file.clone(),
-                None => error!(
-                    "key for item {:?} does not exist on gallery event",
-                    event.source
-                ),
+                None => error!("key for item {:?} does not exist on gallery event", event.source),
             },
             GalleryItemType::File(event) => match sent.get(&event.source.unique_key()) {
                 Some(sent) => {
@@ -138,10 +135,7 @@ fn update_gallery_event_after_upload(
                         info.thumbnail_source = sent.thumbnail.clone();
                     }
                 }
-                None => error!(
-                    "key for item {:?} does not exist on gallery event",
-                    event.source
-                ),
+                None => error!("key for item {:?} does not exist on gallery event", event.source),
             },
             GalleryItemType::Image(event) => match sent.get(&event.source.unique_key()) {
                 Some(sent) => {
@@ -150,10 +144,7 @@ fn update_gallery_event_after_upload(
                         info.thumbnail_source = sent.thumbnail.clone();
                     }
                 }
-                None => error!(
-                    "key for item {:?} does not exist on gallery event",
-                    event.source
-                ),
+                None => error!("key for item {:?} does not exist on gallery event", event.source),
             },
             GalleryItemType::Video(event) => match sent.get(&event.source.unique_key()) {
                 Some(sent) => {
@@ -162,10 +153,7 @@ fn update_gallery_event_after_upload(
                         info.thumbnail_source = sent.thumbnail.clone();
                     }
                 }
-                None => error!(
-                    "key for item {:?} does not exist on gallery event",
-                    event.source
-                ),
+                None => error!("key for item {:?} does not exist on gallery event", event.source),
             },
 
             _ => {
@@ -226,21 +214,16 @@ impl RoomSendQueue {
         let filename = filename.into();
         let extra_content = config.extra_content.take();
         let upload_file_txn = TransactionId::new();
-        let send_event_txn = config
-            .txn_id
-            .map_or_else(ChildTransactionId::new, Into::into);
+        let send_event_txn = config.txn_id.map_or_else(ChildTransactionId::new, Into::into);
 
         Span::current().record("event_txn", tracing::field::display(&*send_event_txn));
         debug!(filename, %content_type, %upload_file_txn, "sending an attachment");
 
         let file_media_request = Media::make_local_file_media_request(&upload_file_txn);
 
-        let MediaCacheResult {
-            upload_thumbnail_txn,
-            event_thumbnail_info,
-            queue_thumbnail_info,
-        } = RoomSendQueue::cache_media(&room, data, config.thumbnail.take(), &file_media_request)
-            .await?;
+        let MediaCacheResult { upload_thumbnail_txn, event_thumbnail_info, queue_thumbnail_info } =
+            RoomSendQueue::cache_media(&room, data, config.thumbnail.take(), &file_media_request)
+                .await?;
 
         // Create the content for the media event.
         let event_content = room
@@ -283,10 +266,7 @@ impl RoomSendQueue {
         let send_handle = SendHandle {
             room: self.clone(),
             transaction_id: send_event_txn.clone().into(),
-            media_handles: vec![MediaHandles {
-                upload_thumbnail_txn,
-                upload_file_txn,
-            }],
+            media_handles: vec![MediaHandles { upload_thumbnail_txn, upload_file_txn }],
             created_at,
         };
 
@@ -343,10 +323,8 @@ impl RoomSendQueue {
             return Err(RoomSendQueueError::EmptyGallery);
         }
 
-        let send_event_txn = gallery
-            .txn_id
-            .clone()
-            .map_or_else(ChildTransactionId::new, Into::into);
+        let send_event_txn =
+            gallery.txn_id.clone().map_or_else(ChildTransactionId::new, Into::into);
 
         Span::current().record("event_txn", tracing::field::display(&*send_event_txn));
 
@@ -355,12 +333,7 @@ impl RoomSendQueue {
         let mut media_handles = Vec::with_capacity(gallery.len());
 
         for item_info in gallery.items {
-            let GalleryItemInfo {
-                filename,
-                content_type,
-                data,
-                ..
-            } = item_info;
+            let GalleryItemInfo { filename, content_type, data, .. } = item_info;
 
             let upload_file_txn = TransactionId::new();
 
@@ -391,17 +364,12 @@ impl RoomSendQueue {
                 thumbnail: queue_thumbnail_info,
             });
 
-            media_handles.push(MediaHandles {
-                upload_file_txn,
-                upload_thumbnail_txn,
-            });
+            media_handles.push(MediaHandles { upload_file_txn, upload_thumbnail_txn });
         }
 
         // Create the content for the gallery event.
-        let (body, formatted) = gallery
-            .caption
-            .map(|caption| (caption.body, caption.formatted))
-            .unwrap_or_default();
+        let (body, formatted) =
+            gallery.caption.map(|caption| (caption.body, caption.formatted)).unwrap_or_default();
         let event_content = room
             .make_media_event(
                 MessageType::Gallery(GalleryMessageEventContent::new(body, formatted, item_types)),
@@ -455,11 +423,8 @@ impl RoomSendQueue {
         file_media_request: &MediaRequestParameters,
     ) -> Result<MediaCacheResult, RoomSendQueueError> {
         let client = room.client();
-        let media_store = client
-            .media_store()
-            .lock()
-            .await
-            .map_err(RoomSendQueueStorageError::LockError)?;
+        let media_store =
+            client.media_store().lock().await.map_err(RoomSendQueueStorageError::LockError)?;
 
         // Cache the file itself in the cache store.
         media_store
@@ -536,17 +501,13 @@ pub(super) fn merge_extra_content(
     }
 
     let (raw, event_type) = content.into_raw();
-    let mut object: serde_json::Map<String, serde_json::Value> = raw
-        .deserialize_as()
-        .map_err(RoomSendQueueStorageError::JsonSerialization)?;
+    let mut object: serde_json::Map<String, serde_json::Value> =
+        raw.deserialize_as().map_err(RoomSendQueueStorageError::JsonSerialization)?;
 
     for (key, value) in extra_content {
         match object.entry(key) {
             serde_json::map::Entry::Occupied(entry) => {
-                warn!(
-                    key = entry.key(),
-                    "extra content field shadowed by the event's own field"
-                );
+                warn!(key = entry.key(), "extra content field shadowed by the event's own field");
             }
             serde_json::map::Entry::Vacant(entry) => {
                 entry.insert(value);
@@ -579,9 +540,7 @@ impl QueueStorage {
         // Both uploads are ready: enqueue the event with its final data.
         let sent_media = parent_key
             .into_media()
-            .ok_or(RoomSendQueueError::StorageError(
-                RoomSendQueueStorageError::InvalidParentKey,
-            ))?;
+            .ok_or(RoomSendQueueError::StorageError(RoomSendQueueStorageError::InvalidParentKey))?;
 
         update_media_cache_keys_after_upload(client, &file_upload_txn, thumbnail_info, &sent_media)
             .await?;
@@ -633,9 +592,7 @@ impl QueueStorage {
         // All uploads are ready: enqueue the event with its final data.
         let sent_gallery = parent_key
             .into_media()
-            .ok_or(RoomSendQueueError::StorageError(
-                RoomSendQueueStorageError::InvalidParentKey,
-            ))?;
+            .ok_or(RoomSendQueueError::StorageError(RoomSendQueueStorageError::InvalidParentKey))?;
 
         let mut sent_media_vec = sent_gallery.accumulated;
         sent_media_vec.push(AccumulatedSentMediaInfo {
@@ -646,10 +603,7 @@ impl QueueStorage {
         let mut sent_infos = HashMap::new();
 
         for (item_info, sent_media) in zip(item_infos, sent_media_vec) {
-            let FinishGalleryItemInfo {
-                file_upload: file_upload_txn,
-                thumbnail_info,
-            } = item_info;
+            let FinishGalleryItemInfo { file_upload: file_upload_txn, thumbnail_info } = item_info;
 
             // Store the sent media under the original cache key for later insertion into
             // the local echo.
@@ -711,9 +665,7 @@ impl QueueStorage {
         // file or thumbnail upload request into a ready one.
         let sent_media = parent_key
             .into_media()
-            .ok_or(RoomSendQueueError::StorageError(
-                RoomSendQueueStorageError::InvalidParentKey,
-            ))?;
+            .ok_or(RoomSendQueueError::StorageError(RoomSendQueueStorageError::InvalidParentKey))?;
 
         // If the previous upload was a thumbnail, it shouldn't have
         // a thumbnail itself.
@@ -800,9 +752,7 @@ impl QueueStorage {
         let mut removed_dependent_event = false;
 
         if let Some(thumbnail_txn) = &handles.upload_thumbnail_txn
-            && store
-                .remove_send_queue_request(&self.room_id, thumbnail_txn)
-                .await?
+            && store.remove_send_queue_request(&self.room_id, thumbnail_txn).await?
         {
             // The thumbnail upload existed as a request: either it was pending (something
             // else was being sent), or it was actively being sent.
@@ -828,9 +778,8 @@ impl QueueStorage {
                 warn!("unable to find the dependent file upload request");
             }
 
-            removed_dependent_event = store
-                .remove_dependent_queued_request(&self.room_id, &event_as_dependent)
-                .await?;
+            removed_dependent_event =
+                store.remove_dependent_queued_request(&self.room_id, &event_as_dependent).await?;
 
             if !removed_dependent_event {
                 warn!("unable to find the dependent media event upload request");
@@ -844,10 +793,7 @@ impl QueueStorage {
         // So the next target is the upload request itself, in both cases.
 
         if !removed_dependent_upload {
-            if store
-                .remove_send_queue_request(&self.room_id, &handles.upload_file_txn)
-                .await?
-            {
+            if store.remove_send_queue_request(&self.room_id, &handles.upload_file_txn).await? {
                 // The upload existed as a request: either it was pending (something else was
                 // being sent), or it was actively being sent.
                 trace!("could remove file upload request, removing 1 dependent request");
@@ -896,9 +842,7 @@ impl QueueStorage {
                 .remove_media_content_for_uri(&Media::make_local_uri(&handles.upload_file_txn))
                 .await?;
             if let Some(txn) = &handles.upload_thumbnail_txn {
-                media_store
-                    .remove_media_content_for_uri(&Media::make_local_uri(txn))
-                    .await?;
+                media_store.remove_media_content_for_uri(&Media::make_local_uri(txn)).await?;
             }
         }
 
@@ -933,9 +877,8 @@ impl QueueStorage {
             // back into the database, and return early.
             let dependent_requests = store.load_dependent_queued_requests(&self.room_id).await?;
 
-            if let Some(found) = dependent_requests
-                .into_iter()
-                .find(|req| *req.own_transaction_id == *txn)
+            if let Some(found) =
+                dependent_requests.into_iter().find(|req| *req.own_transaction_id == *txn)
             {
                 trace!("found the caption to edit in a dependent request");
 
@@ -980,10 +923,7 @@ impl QueueStorage {
 
         trace!("found the caption to edit as a request");
 
-        let QueuedRequestKind::Event {
-            content: serialized_content,
-        } = found.kind
-        else {
+        let QueuedRequestKind::Event { content: serialized_content } = found.kind else {
             return Err(InvalidMediaCaptionEdit);
         };
 
@@ -1010,9 +950,7 @@ impl QueueStorage {
                     txn,
                     ChildTransactionId::new(),
                     MilliSecondsSinceUnixEpoch::now(),
-                    DependentQueuedRequestKind::EditEvent {
-                        new_content: new_serialized,
-                    },
+                    DependentQueuedRequestKind::EditEvent { new_content: new_serialized },
                 )
                 .await?;
 
@@ -1025,9 +963,7 @@ impl QueueStorage {
             .update_send_queue_request(
                 &self.room_id,
                 txn,
-                QueuedRequestKind::Event {
-                    content: new_serialized,
-                },
+                QueuedRequestKind::Event { content: new_serialized },
             )
             .await?;
 
@@ -1048,11 +984,8 @@ async fn update_media_cache_keys_after_upload(
     let from_req = Media::make_local_file_media_request(file_upload_txn);
 
     trace!(from = ?from_req.source, to = ?sent_media.file, "renaming media file key in cache store");
-    let media_store = client
-        .media_store()
-        .lock()
-        .await
-        .map_err(RoomSendQueueStorageError::LockError)?;
+    let media_store =
+        client.media_store().lock().await.map_err(RoomSendQueueStorageError::LockError)?;
 
     // The media file can now be removed during cleanups.
     media_store
@@ -1063,10 +996,7 @@ async fn update_media_cache_keys_after_upload(
     media_store
         .replace_media_key(
             &from_req,
-            &MediaRequestParameters {
-                source: sent_media.file.clone(),
-                format: MediaFormat::File,
-            },
+            &MediaRequestParameters { source: sent_media.file.clone(), format: MediaFormat::File },
         )
         .await
         .map_err(RoomSendQueueStorageError::MediaStoreError)?;

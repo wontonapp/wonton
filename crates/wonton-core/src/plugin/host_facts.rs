@@ -8,7 +8,7 @@
 //! - `/usr/bin/nvidia-smi` 装了不代表有驱动，只看内核驱动绑定到了哪张卡。
 //! - 型号只有 NVIDIA 驱动在 `/proc` 里写明；AMD 有的代有 `product_name`，其余只有设备 ID，要 `pci.ids` 才翻得出名字，
 //!   核心不带它。显存 AMD、Intel 独显在 sysfs 里有，NVIDIA 没有，见 [`NvidiaMemory`]。
-//! - AMD 集成显卡的 `mem_info_vram_total` 是划给它的那部分内存，不是上限（实测有的 APU 报 64 GiB，有的只报
+//! - AMD 集成显卡的 `mem_info_vram_total` 是划给它的那部分内存，不是上限（npchy 的 0x1586 报 64 GiB，有的 APU 只报
 //!   512 MB）；独显有 `mem_info_vram_vendor`，集显没有。
 
 use std::collections::HashMap;

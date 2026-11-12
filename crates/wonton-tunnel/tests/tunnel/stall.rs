@@ -6,14 +6,14 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use iroh::{EndpointAddr, SecretKey};
 use tokio::{net::UdpSocket, task::JoinSet};
 use wonton_tunnel::{Allowlist, PathKind, ProxyAccess, TunnelError, TunnelStatus};
 
-use crate::support::{Home, Phone, Timeouts, Upstream, endpoint_on, http_get, wait_until_quiet};
+use crate::support::{Home, Phone, Timeouts, Upstream, endpoint_on};
 
 /// 判定连接卡住的时限：包全丢了的测试用，到时限才算结果，机器再忙也不会提前。
 const DEADLINE: Duration = Duration::from_secs(1);
@@ -35,10 +35,6 @@ pub(crate) struct Flaky {
     delay_ms: Arc<AtomicUsize>,
     /// 还要丢掉多少个上行（手机→服务端）方向的包，把丢包钉在指定的请求上。
     drop_up_next: Arc<AtomicUsize>,
-    /// 只丢手机发出的包（上行），对端发来的照常到。
-    drop_up_only: Arc<AtomicBool>,
-    /// 还排在延迟转发里、没发出去的包数。
-    pending: Arc<AtomicUsize>,
     /// 转发线程的停止标记，Drop 时置位。
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
@@ -59,22 +55,17 @@ impl Flaky {
         let shared = limit.clone();
         let delay_ms = Arc::new(AtomicUsize::new(0));
         let delay = delay_ms.clone();
-        let pending = Arc::new(AtomicUsize::new(0));
-        let queued = pending.clone();
         let drop_up_next = Arc::new(AtomicUsize::new(0));
         let dropping_up = drop_up_next.clone();
-        let drop_up_only = Arc::new(AtomicBool::new(false));
-        let drop_up_only_flag = drop_up_only.clone();
         let (addr_tx, addr_rx) = std::sync::mpsc::channel();
-        let thread =
-            std::thread::Builder::new()
-                .name("flaky-forwarder".into())
-                .spawn(move || {
-                    let runtime = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("flaky 转发线程建 runtime 失败");
-                    runtime.block_on(async move {
+        let thread = std::thread::Builder::new()
+            .name("flaky-forwarder".into())
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("flaky 转发线程建 runtime 失败");
+                runtime.block_on(async move {
                     let front = Arc::new(UdpSocket::bind((Ipv6Addr::LOCALHOST, 0)).await.unwrap());
                     let back = Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap());
                     addr_tx.send(front.local_addr().unwrap()).expect("flaky addr");
@@ -95,14 +86,9 @@ impl Flaky {
                                 if dropping_up.swap(0, Ordering::SeqCst) > 0 {
                                     continue;
                                 }
-                                if drop_up_only_flag.load(Ordering::SeqCst) {
-                                    continue;
-                                }
                                 if len <= shared.load(Ordering::SeqCst) {
-                                    forward_packet(
-                                        &mut delayed, &back, target, &up[..len], &delay, &queued,
-                                    )
-                                    .await;
+                                    forward_packet(&mut delayed, &back, target, &up[..len], &delay)
+                                        .await;
                                 }
                             }
                             received = back.recv_from(&mut down) => {
@@ -111,26 +97,22 @@ impl Flaky {
                                 }
                                 let (len, _) = received.unwrap();
                                 if let Some(phone) = phone && len <= shared.load(Ordering::SeqCst) {
-                                    forward_packet(
-                                        &mut delayed, &front, phone, &down[..len], &delay, &queued,
-                                    )
-                                    .await;
+                                    forward_packet(&mut delayed, &front, phone, &down[..len], &delay)
+                                        .await;
                                 }
                             }
                             Some(result) = delayed.join_next() => { result.unwrap(); }
                         }
                     }
                 });
-                })
-                .expect("flaky 转发线程启动失败");
+            })
+            .expect("flaky 转发线程启动失败");
         let addr = addr_rx.recv().expect("flaky 转发线程没回地址");
         Self {
             addr,
             limit,
             delay_ms,
             drop_up_next,
-            drop_up_only,
-            pending,
             stop,
             thread: Some(thread),
         }
@@ -138,16 +120,6 @@ impl Flaky {
 
     pub(crate) fn drop_above(&self, bytes: usize) {
         self.limit.store(bytes, Ordering::SeqCst);
-    }
-
-    /// 只丢手机发出的包。
-    pub(crate) fn drop_up(&self, drop: bool) {
-        self.drop_up_only.store(drop, Ordering::SeqCst);
-    }
-
-    /// 还排在延迟转发里、没发出去的包数。
-    pub(crate) fn pending(&self) -> usize {
-        self.pending.load(Ordering::SeqCst)
     }
 
     fn delay_each_way(&self, millis: usize) {
@@ -180,7 +152,6 @@ async fn forward_packet(
     target: SocketAddr,
     bytes: &[u8],
     delay: &AtomicUsize,
-    pending: &Arc<AtomicUsize>,
 ) {
     let millis = delay.load(Ordering::SeqCst);
     if millis == 0 {
@@ -189,22 +160,16 @@ async fn forward_packet(
     }
     let socket = socket.clone();
     let bytes = bytes.to_vec();
-    let pending = pending.clone();
-    pending.fetch_add(1, Ordering::SeqCst);
     delayed.spawn(async move {
         tokio::time::sleep(Duration::from_millis(millis as u64)).await;
         socket.send_to(&bytes, target).await.ok();
-        pending.fetch_sub(1, Ordering::SeqCst);
     });
 }
 
 /// 手机只绑 IPv6，服务端只绑 IPv4，两边只能经 [`Flaky`] 互通：服务端会经 QUIC 把自己绑定的地址告诉手机，同一族的话手机
 /// 打洞直接连过去，绕开丢包，请求照样通（CI 上偶发，机器忙时路径选择才偏向它）。
 async fn rig() -> (Upstream, Home, Flaky, Phone) {
-    rig_with(Upstream::spawn().await).await
-}
-
-async fn rig_with(upstream: Upstream) -> (Upstream, Home, Flaky, Phone) {
+    let upstream = Upstream::spawn().await;
     let device = SecretKey::generate();
     let allowlist = Allowlist::new([device.public()]);
     let home = Home::start(SecretKey::generate(), allowlist, upstream.addr).await;
@@ -244,18 +209,17 @@ async fn a_stalled_connection_stops_claiming_to_be_connected() {
     assert_eq!(phone.client.path().unwrap().kind, PathKind::Direct);
 
     flaky.drop_above(DROP_ALL);
-    wait_until_quiet(&flaky, &phone).await;
     let err = phone.client.probe(DEADLINE).await.unwrap_err();
 
     assert!(
         matches!(err, TunnelError::TransportUnavailable { .. }),
         "{err:?}"
     );
-    // 判死之后当刻就在拨新连接：状态是“已断开”或者已经进到“连接中”。
-    assert!(matches!(
-        phone.client.status(),
-        TunnelStatus::Connecting | TunnelStatus::Disconnected(_)
-    ));
+    assert!(
+        matches!(phone.client.status(), TunnelStatus::Disconnected(_)),
+        "{:?}",
+        phone.client.status()
+    );
     assert_eq!(phone.client.path(), None);
 
     // 网络恢复：下一次检查换上新连接，状态和路径回来。
@@ -343,7 +307,6 @@ async fn a_proven_slow_path_is_still_replaced_when_it_dies() {
     }
     flaky.delay_each_way(0);
     flaky.drop_above(DROP_ALL);
-    wait_until_quiet(&flaky, &phone).await;
     let mut status = phone.client.watch_status();
     let client = phone.client.clone();
     let revalidating = tokio::spawn(async move { client.revalidate().await });
@@ -408,84 +371,5 @@ async fn requests_on_a_proven_slow_path_complete_after_a_lost_first_packet() {
             .num_conns_opened
             .get(),
         1
-    );
-}
-
-/// 对端一个包都不回：确认照样在时限内判死、拨新连接。看收包数的判活不能把“断了就快速发现”拖成 QUIC 的
-/// 30 秒空闲超时。
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn revalidating_a_peer_that_sends_nothing_still_replaces_the_connection() {
-    let (_upstream, home, flaky, phone) = rig().await;
-    assert_eq!(phone.get("/before").await.status, 200);
-    flaky.drop_above(DROP_ALL);
-    wait_until_quiet(&flaky, &phone).await;
-    let mut status = phone.client.watch_status();
-    let client = phone.client.clone();
-    let mut revalidating = tokio::spawn(async move { client.revalidate().await });
-
-    // 不等 QUIC 的 30 秒空闲超时：看到主动重拨就算判死了，这时把包放回来。
-    tokio::time::timeout(
-        Duration::from_secs(20),
-        status.wait_for(|s| *s == TunnelStatus::Connecting),
-    )
-    .await
-    .unwrap()
-    .unwrap();
-    flaky.drop_above(PASS);
-    assert!(
-        tokio::time::timeout(PATIENT, &mut revalidating)
-            .await
-            .expect("revalidate 没在时限内结束")
-            .unwrap()
-            .is_ok()
-    );
-    assert_eq!(
-        home.server()
-            .endpoint()
-            .metrics()
-            .socket
-            .num_conns_opened
-            .get(),
-        2
-    );
-    assert_eq!(phone.get("/after").await.body, "/after");
-}
-
-/// 半通的路：手机发出的包全丢、对端发来的照常到。对端收不到确认，会把已经收到过的数据一遍遍重传，包里、帧里、
-/// 确认里都有“动静”，可我们的新请求一样过不去。判活必须认得出这种连接，按原时限判死。
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_half_open_path_that_only_delivers_retransmits_is_still_replaced() {
-    let upstream = Upstream::spawn_slow().await;
-    let (_upstream, home, flaky, phone) = rig_with(upstream).await;
-    // 先在连接上挂一个下载：对端一直有发给我们的数据，其中既有新的，也有重传。
-    let downloading = tokio::spawn({
-        let proxy = phone.proxy.local_addr();
-        async move { http_get(proxy, "/slow").await }
-    });
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
-    flaky.drop_up(true);
-    let started = Instant::now();
-    assert!(
-        phone.client.probe(DEADLINE).await.is_err(),
-        "半通的连接没判死"
-    );
-    assert!(started.elapsed() < DEADLINE * 3, "{:?}", started.elapsed());
-    // 上行断着，新连接拨不起来：再确认一次照样是错，不会拖成 QUIC 的空闲超时。
-    assert!(phone.client.revalidate().await.is_err());
-
-    // 下载在上行断掉那一刻被切断，不影响判死。
-    let _ = downloading.await.unwrap();
-    flaky.drop_up(false);
-    assert_eq!(phone.get("/after").await.status, 200);
-    assert_eq!(
-        home.server()
-            .endpoint()
-            .metrics()
-            .socket
-            .num_conns_opened
-            .get(),
-        2,
-        "判死之后要换新连接"
     );
 }

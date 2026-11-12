@@ -78,16 +78,7 @@ private enum Launch {
         #endif
         let core: ClientCore
         do {
-            #if DEBUG
-            // UI 测试的假数据入口（见 crates/wonton-client/src/client/ui_fake.rs）：不进主界面以外的路径。
-            if ProcessInfo.processInfo.environment["WONTON_UI_FAKE"] != nil {
-                core = try ClientCore.newUiFake(dataDir: dataDirectory().path(percentEncoded: false))
-            } else {
-                core = try ClientCore(dataDir: dataDirectory().path(percentEncoded: false))
-            }
-            #else
             core = try ClientCore(dataDir: dataDirectory().path(percentEncoded: false))
-            #endif
         } catch {
             return .failed(String(localized: .appCoreLaunchFailed(String(describing: error))))
         }
@@ -115,11 +106,6 @@ private enum Launch {
         let base = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
         )
-        #if DEBUG
-        if let suffix = ProcessInfo.processInfo.environment["WONTON_DEV_DATA_SUFFIX"] {
-            return base.appending(path: "wonton-\(suffix)", directoryHint: .isDirectory)
-        }
-        #endif
         return base.appending(path: "wonton", directoryHint: .isDirectory)
     }
 }

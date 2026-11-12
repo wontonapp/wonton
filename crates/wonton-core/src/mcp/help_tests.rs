@@ -81,7 +81,7 @@ impl Rig {
             "format": 1,
             "plugins": [],
             "docs": {
-                "source": "github:wontonapp/wonton-docs",
+                "source": "github:geraldpeng6/wonton-docs",
                 "commit": commit,
                 "min_core": min_core,
                 "files": files,

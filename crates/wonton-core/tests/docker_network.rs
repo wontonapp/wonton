@@ -17,6 +17,7 @@ use ipnet::Ipv4Net;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
+use wonton_core::plugin::compose::PullPolicy;
 use wonton_core::plugin::core_address::{Endpoint, last_usable};
 use wonton_core::plugin::docker::{Engine, NetworkReach};
 use wonton_core::plugin::lan::detect::Detector;
@@ -26,10 +27,8 @@ use wonton_core::plugin::network_pool::NetworkPool;
 #[path = "../src/test_docker.rs"]
 mod test_docker;
 
-/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-fn image() -> String {
-    wonton_test_images::image("public.ecr.aws/docker/library/busybox:1.37")
-}
+/// npchy 和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
+const IMAGE: &str = "public.ecr.aws/docker/library/busybox:1.37";
 const PORT: &str = "7000/tcp";
 
 struct Names {
@@ -295,7 +294,10 @@ async fn leaving_an_egress_plugin_network_keeps_connections_through_published_po
         .unwrap()
         .with_network_pool(pool, Detector::Here);
     engine.check_server().await.unwrap();
-    test_docker::ensure_image(&engine, &image()).await;
+    engine
+        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .await
+        .unwrap();
     let labels = HashMap::new();
     engine
         .create_network(&names.core_network, &labels, NetworkReach::Egress)
@@ -310,7 +312,7 @@ async fn leaving_an_egress_plugin_network_keeps_connections_through_published_po
         host_port: Some(String::new()),
     };
     let body = ContainerCreateBody {
-        image: Some(image()),
+        image: Some(IMAGE.to_owned()),
         // 回显第一个连上来的连接。
         cmd: Some(
             ["nc", "-l", "-p", "7000", "-e", "cat"]
@@ -363,7 +365,7 @@ async fn inspect(name: &str) -> NetworkInspect {
 /// 一直运行的小容器，接在 `network` 上。
 async fn sleeper(engine: &Engine, name: &str, network: &str) {
     let body = ContainerCreateBody {
-        image: Some(image()),
+        image: Some(IMAGE.to_owned()),
         cmd: Some(vec!["sleep".to_owned(), "3600".to_owned()]),
         host_config: Some(HostConfig {
             network_mode: Some(network.to_owned()),
@@ -416,7 +418,10 @@ async fn plugin_networks_created_at_the_same_time_all_keep_the_core_address_free
         .unwrap()
         .with_network_pool(pool, Detector::Here);
     engine.check_server().await.unwrap();
-    test_docker::ensure_image(&engine, &image()).await;
+    engine
+        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .await
+        .unwrap();
     let labels = HashMap::new();
     let networks: Vec<String> = (0..20)
         .map(|i| names.oneshot_network(&format!("concurrent-{i}")))
@@ -460,7 +465,10 @@ async fn containers_get_the_lower_half_and_the_core_keeps_its_address_across_rec
     let engine = Engine::connect()
         .unwrap()
         .with_network_pool(pool, Detector::Here);
-    test_docker::ensure_image(&engine, &image()).await;
+    engine
+        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .await
+        .unwrap();
     for reach in [
         NetworkReach::Egress,
         NetworkReach::Internal,
@@ -530,7 +538,10 @@ async fn a_network_already_on_the_next_subnet_is_skipped() {
     let engine = Engine::connect()
         .unwrap()
         .with_network_pool(pool, Detector::Here);
-    test_docker::ensure_image(&engine, &image()).await;
+    engine
+        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .await
+        .unwrap();
     let taken = names.oneshot_network("occupied-taken");
     let plugin = names.oneshot_network("occupied-plugin");
     let core = names.oneshot_container("occupied-core");
@@ -644,7 +655,10 @@ async fn a_core_with_forwarding_off_still_reaches_plugin_networks() {
     let engine = Engine::connect()
         .unwrap()
         .with_network_pool(pool, Detector::Here);
-    test_docker::ensure_image(&engine, &image()).await;
+    engine
+        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .await
+        .unwrap();
     let plugin = names.oneshot_network("forward");
     let own = names.oneshot_network("forward-core");
     let core = names.oneshot_container("forward-core");
@@ -659,7 +673,7 @@ async fn a_core_with_forwarding_off_still_reaches_plugin_networks() {
         .unwrap();
     sleeper(&engine, &app, &plugin).await;
     let body = ContainerCreateBody {
-        image: Some(image()),
+        image: Some(IMAGE.to_owned()),
         cmd: Some(vec!["sleep".to_owned(), "3600".to_owned()]),
         host_config: Some(HostConfig {
             network_mode: Some(own.clone()),

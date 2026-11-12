@@ -13,7 +13,7 @@ use wonton_protocol::{
     VerificationFlow, VerificationStage,
 };
 
-use super::{ChatLink, handoff, invalid, lock, view};
+use super::{ChatLink, invalid, lock, view};
 
 // 秘密 gossip 需要多个同步往返；30 秒覆盖正常交换，又不让缺密钥的设备一直显示恢复中。
 const KEYS_TIMEOUT: Duration = Duration::from_secs(30);
@@ -44,8 +44,6 @@ pub(super) enum Operation {
 pub(super) enum Command {
     Start(String),
     Operate(String, Operation),
-    /// 主人选了“手边没有别的设备”（ADR-0087）：取消进行中的确认，连同交接一起从快照里拿掉。
-    Skip,
 }
 
 struct Flow {
@@ -61,25 +59,9 @@ struct Flow {
     /// 期限过后又要过几次，决定下一次的间隔（见 [`LATE_ASK`]）。
     late_asked: u32,
     finished: bool,
-    /// 交接中的新设备发出请求后，到这时还没人接就告诉主人（[`handoff::ANSWER_WAIT`]）。
-    answer_by: Option<Instant>,
 }
 
 impl ChatLink {
-    /// 重置恢复前取消进行中的确认（ADR-0076）：取消发不出去（没在跑、任务没了）就什么都不做，重置照常。
-    /// 流程还在它自己的任务里收尾，对端随后收到“对方取消”。
-    pub(super) fn cancel_active_verification(&self) {
-        let flow = self.view.borrow().encryption.verification_flow.clone();
-        if let Some(flow) = flow
-            && active(&flow.stage)
-            && let Some(control) = lock(&self.verification).as_mut()
-        {
-            let _ = control
-                .commands
-                .send(Command::Operate(flow.flow_id, Operation::Cancel));
-        }
-    }
-
     /// 设备确认的几个 `Action`。
     pub(super) fn verification_action(&self, action: Action) -> Result<(), CoreError> {
         let (flow_id, operation) = match action {
@@ -97,23 +79,15 @@ impl ChatLink {
     pub(super) fn verification_tasks(
         self: &Arc<Self>,
         session: &Arc<MatrixSession>,
-    ) -> [tokio::task::JoinHandle<()>; 3] {
-        let handoff = handoff::prepare(self);
+    ) -> [tokio::task::JoinHandle<()>; 2] {
         [
             self.observe_verification(session.clone()),
             self.runtime
                 .spawn(watch_availability(Arc::downgrade(self), session.clone())),
-            self.runtime.spawn(handoff::begin(
-                Arc::downgrade(self),
-                session.clone(),
-                handoff,
-            )),
         ]
     }
 
-    /// 交接期间（ADR-0087）本设备没验证就能发起，不看 `can_verify_with_other_device`；请求还没人接时“再试一次”
-    /// 换一个新请求，旧的先取消。
-    pub(super) fn start_verification(&self) -> Result<(), CoreError> {
+    fn start_verification(&self) -> Result<(), CoreError> {
         self.current()?;
         let mut control = lock(&self.verification);
         let control = control.as_mut().ok_or_else(unavailable)?;
@@ -122,21 +96,14 @@ impl ChatLink {
         if !matches!(snapshot.account, ChatAccount::SignedIn { .. }) {
             return Err(unavailable());
         }
-        let busy = encryption
-            .verification_flow
-            .as_ref()
-            .is_some_and(|flow| active(&flow.stage));
-        let allowed = if handoff::receiving(encryption) == Some(true) {
-            let unanswered = encryption.verification_flow.as_ref().is_some_and(|flow| {
-                flow.started_here && flow.stage == VerificationStage::Requested
-            });
-            encryption.verification != DeviceVerification::Verified && (!busy || unanswered)
-        } else {
-            encryption.verification == DeviceVerification::Unverified
-                && encryption.can_verify_with_other_device
-                && !busy
-        };
-        if !allowed || control.starting {
+        if encryption.verification != DeviceVerification::Unverified
+            || !encryption.can_verify_with_other_device
+            || encryption
+                .verification_flow
+                .as_ref()
+                .is_some_and(|flow| active(&flow.stage))
+            || control.starting
+        {
             return Err(unavailable());
         }
         let attempt = attempt_id()?;
@@ -228,7 +195,6 @@ async fn run(
             .as_ref()
             .and_then(|flow| flow.next_ask)
             .filter(|_| !keys_ready);
-        let answer_by = flow.as_ref().and_then(|flow| flow.answer_by);
         tokio::select! {
             command = commands.recv() => {
                 let Some(command) = command else { return };
@@ -239,12 +205,7 @@ async fn run(
                 let Some(request) = request else { return };
                 let Some(link) = current_link(&chat, &session) else { return };
                 match request {
-                    Ok(request) => {
-                        receive(&link, &mut flow, request);
-                        if let Some(flow_id) = handoff::should_accept(&link, &session) {
-                            accept(&link, &session, &mut flow, flow_id).await;
-                        }
-                    }
+                    Ok(request) => receive(&link, &mut flow, request),
                     // 这是别的请求对象上的处理错误，与当前流程无关，不能把它取消掉。
                     Err(error) => report(&link, &error),
                 }
@@ -269,13 +230,6 @@ async fn run(
                 finish_keys(&link, &session, &mut flow, !keys_ready);
             }
             () = sleep_until(ask) => ask_again(&session, &mut flow).await,
-            () = sleep_until(answer_by) => {
-                if let Some(flow) = flow.as_mut() {
-                    flow.answer_by = None;
-                }
-                let Some(link) = current_link(&chat, &session) else { return };
-                handoff::no_answer(&link);
-            }
         }
     }
 }
@@ -323,12 +277,7 @@ async fn apply_command(
 ) {
     match command {
         Command::Start(attempt) => {
-            if let Some(old) = flow.take()
-                && old.verification.flow().is_ok_and(|old| active(&old.stage))
-                && let Err(error) = old.verification.cancel().await
-            {
-                tracing::info!(%error, "could not cancel the unanswered request before asking again");
-            }
+            *flow = None;
             let result = session.request_self_verification().await;
             if !current_session(link, session) {
                 return;
@@ -338,21 +287,24 @@ async fn apply_command(
             let mut control = lock(&link.verification);
             match result {
                 Ok(request) => install(link, flow, request),
-                Err(error) => failed_attempt(link, attempt, &error),
+                Err(error) => {
+                    set_snapshot(
+                        link,
+                        VerificationFlow {
+                            flow_id: attempt,
+                            started_here: true,
+                            other_device_id: String::new(),
+                            other_device_name: None,
+                            stage: VerificationStage::Cancelled {
+                                reason: VerificationCancel::Failed,
+                            },
+                        },
+                    );
+                    report(link, &error);
+                }
             }
             if let Some(control) = control.as_mut() {
                 control.starting = false;
-            }
-        }
-        Command::Skip => {
-            if let Some(old) = flow.take()
-                && !old.finished
-                && let Err(error) = old.verification.cancel().await
-            {
-                tracing::info!(%error, "could not cancel the verification when skipping the key handoff");
-            }
-            if current_session(link, session) {
-                handoff::forget(link);
             }
         }
         Command::Operate(flow_id, operation) => {
@@ -367,7 +319,6 @@ async fn apply_command(
                             reason: VerificationCancel::ByMe,
                         };
                     }
-                    super::recovery::refresh(&mut view.encryption);
                 });
                 if let Some(flow) = flow.as_mut() {
                     flow.finished = true;
@@ -420,9 +371,6 @@ fn install(link: &ChatLink, flow: &mut Option<Flow>, verification: SelfVerificat
     let changes = Box::pin(verification.changes());
     match verification.flow() {
         Ok(snapshot) => {
-            let waiting = snapshot.started_here
-                && snapshot.stage == VerificationStage::Requested
-                && handoff::receiving(&link.view.borrow().encryption) == Some(true);
             *flow = Some(Flow {
                 verification,
                 changes,
@@ -432,7 +380,6 @@ fn install(link: &ChatLink, flow: &mut Option<Flow>, verification: SelfVerificat
                 late: false,
                 late_asked: 0,
                 finished: false,
-                answer_by: waiting.then(|| Instant::now() + handoff::ANSWER_WAIT),
             });
             update(link, flow, snapshot);
         }
@@ -489,7 +436,7 @@ fn finish_keys(link: &ChatLink, session: &MatrixSession, flow: &mut Option<Flow>
         if complete {
             view.encryption.can_verify_with_other_device = false;
         }
-        super::recovery::refresh(&mut view.encryption);
+        super::recovery::update_reminder(&mut view.encryption);
         if let Some(snapshot) = view.encryption.verification_flow.as_mut() {
             snapshot.stage = if complete {
                 VerificationStage::Done
@@ -576,7 +523,7 @@ async fn ask_again(session: &MatrixSession, flow: &mut Option<Flow>) {
     }
 }
 
-pub(super) fn keys_ready(session: &MatrixSession) -> bool {
+fn keys_ready(session: &MatrixSession) -> bool {
     let state = session.encryption_state();
     state.verification == wonton_matrix::Verification::Verified
         && state.recovery == wonton_matrix::Recovery::Enabled
@@ -589,7 +536,6 @@ fn fail(link: &ChatLink, flow: &mut Option<Flow>, error: &Error) {
                 reason: VerificationCancel::Failed,
             };
         }
-        super::recovery::refresh(&mut view.encryption);
     });
     if let Some(flow) = flow.as_mut() {
         flow.finished = true;
@@ -598,37 +544,6 @@ fn fail(link: &ChatLink, flow: &mut Option<Flow>, error: &Error) {
         flow.next_ask = None;
     }
     report(link, error);
-}
-
-/// 发不出确认请求：留一个以失败结束的快照，壳照常给“重新开始”，原因进 `problem`。
-pub(super) fn failed_attempt(link: &ChatLink, attempt: String, error: &Error) {
-    set_snapshot(
-        link,
-        VerificationFlow {
-            flow_id: attempt,
-            started_here: true,
-            other_device_id: String::new(),
-            other_device_name: None,
-            stage: VerificationStage::Cancelled {
-                reason: VerificationCancel::Failed,
-            },
-        },
-    );
-    report(link, error);
-}
-
-/// 自动接受（ADR-0087）：和主人点“接受”走同一条路，确认仍由主人在两边点“相同”。
-async fn accept(
-    link: &ChatLink,
-    session: &Arc<MatrixSession>,
-    flow: &mut Option<Flow>,
-    flow_id: String,
-) {
-    if let Some(control) = lock(&link.verification).as_mut() {
-        control.operating = true;
-    }
-    let command = Command::Operate(flow_id, Operation::Accept);
-    apply_command(link, session, flow, command).await;
 }
 
 fn report(link: &ChatLink, error: &Error) {
@@ -647,15 +562,11 @@ fn set_snapshot(link: &ChatLink, snapshot: VerificationFlow) {
             return false;
         }
         view.encryption.verification_flow = Some(snapshot);
-        super::recovery::refresh(&mut view.encryption);
         true
     });
 }
 
-pub(super) fn current_link(
-    chat: &Weak<ChatLink>,
-    session: &Arc<MatrixSession>,
-) -> Option<Arc<ChatLink>> {
+fn current_link(chat: &Weak<ChatLink>, session: &Arc<MatrixSession>) -> Option<Arc<ChatLink>> {
     let link = chat.upgrade()?;
     current_session(&link, session).then_some(link)
 }
@@ -681,7 +592,7 @@ fn unavailable() -> CoreError {
     }
 }
 
-pub(super) fn attempt_id() -> Result<String, CoreError> {
+fn attempt_id() -> Result<String, CoreError> {
     let mut id = [0u8; 16];
     getrandom::fill(&mut id).map_err(|error| CoreError::Upstream {
         reason: error.to_string(),
@@ -717,14 +628,11 @@ async fn watch_availability(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
                     view.encryption.can_verify_with_other_device = available
                         && session.encryption_state().verification
                             == wonton_matrix::Verification::Unverified;
-                    super::recovery::refresh(&mut view.encryption);
                 });
             }
             Err(error) => {
-                link.view.send_modify(|view| {
-                    view.encryption.can_verify_with_other_device = false;
-                    super::recovery::refresh(&mut view.encryption);
-                });
+                link.view
+                    .send_modify(|view| view.encryption.can_verify_with_other_device = false);
                 report(&link, &error);
             }
         }

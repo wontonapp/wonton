@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import UIKit
 import WontonClient
 
 /// App 和系统 Intent 共用同一套模型；冷启动时也不依赖 MainView 已经出现。
@@ -18,8 +17,6 @@ final class AppNavigation {
     private(set) var opensSettings = false
     /// 链接要求直接打开“其他服务器”页并滚到“请求”；由 MainView 取走。
     private var opensPeers = false
-    /// 正在用 SFSafariViewController 打开的外部网页。
-    var safari: SafariTarget?
     private var pending: Task<Void, Never>?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel) {
@@ -44,38 +41,6 @@ final class AppNavigation {
     func receive(_ url: URL) {
         guard let link = parseAppLink(url: url.absoluteString) else { return }
         request { try await $0.open(link) }
-    }
-
-    /// 聊天里的一条链接：类别由核心判断，壳只按类别开（ADR-0065）。外部和认不出的地址用 Safari 在 App 内打开，
-    /// 插件进插件页，matrix.to 在 App 里跳用户或房间，邮件和电话交给系统。
-    func openLink(_ link: RichLink) {
-        switch link.kind {
-        case .external, .other:
-            guard let url = URL(string: link.url) else { return }
-            safari = SafariTarget(url: url)
-        case let .plugin(pluginId):
-            request { try await $0.open(.tab(tab: .plugin(pluginId: pluginId, page: nil))) }
-        case let .matrix(target):
-            switch target {
-            case let .user(userId):
-                request { navigation in
-                    guard try await navigation.navigationReady() else { return }
-                    try navigation.select(.chat)
-                    navigation.chat.resetNavigation()
-                    navigation.chat.openDirectChat(with: userId)
-                }
-            case let .room(roomId, _):
-                request { navigation in
-                    guard try await navigation.navigationReady() else { return }
-                    try navigation.select(.chat)
-                    let roomId = try await navigation.chat.core.resolveChatRoom(input: roomId)
-                    navigation.chat.openRoom(id: roomId)
-                }
-            }
-        case .email, .phone:
-            guard let url = URL(string: link.url) else { return }
-            UIApplication.shared.open(url)
-        }
     }
 
     /// 链接和 Intent 都会把 App 打开，所以交给 App 执行、出错用 App 的对话框说。冷启动时连上家里的服务器可能要十几秒以上，

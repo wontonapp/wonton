@@ -13,10 +13,7 @@ final class BotProfileUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = true
-        try UITestBackend.require()
         app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        try UITestBackend.passPairingCode(to: app)
         app.launch()
     }
 
@@ -40,6 +37,7 @@ final class BotProfileUITests: XCTestCase {
         }
         return nil
     }
+
 
     /// 引导页：跳过优先，跳过不了就按下一步/完成，直到标签栏出现。
     /// 等一组候选按钮里任意一个出现（同一个按钮的不同语言写法）。

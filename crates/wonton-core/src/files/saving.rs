@@ -31,7 +31,7 @@ impl Files {
             let total = outgoing.total();
             let share_dir = files.shares.root().join(&share);
             for dir in [&files.saving_dir, &share_dir] {
-                if !has_room(dir, total, files.owner.uid)? {
+                if !has_room(dir, total)? {
                     return Err(Failure::new(
                         FileFailure::StorageFull,
                         l10n::text(

@@ -1,0 +1,31 @@
+# Docker 测试会拉的镜像，一行一个。没有 Docker Hub 的 CI 机器（194、titan）由 npchy 按这份清单每小时推一次，
+# 推完逐个核对；缺了的记进看板。scripts/check-docker-test-images.sh 检查 crates/ 和测试用 Dockerfile 里的镜像引用
+# 都在这里：要拉的照写，只是测试数据、不会去拉的前面加 `!`。
+
+# 测试直接起的容器
+public.ecr.aws/docker/library/busybox:1.37
+public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec
+ghcr.io/matrix-construct/tuwunel:v1.9.4
+alpine/socat:1.8.0.3@sha256:beb4a68d9e4fe6b0f21ea774a0fde6c31f580dde6368939ed70100c5385b015e
+gogost/gost:3@sha256:f266f957c6e4f8d433ed23202a5745fa4969d08f3f0ef034fb9357345e16ad67
+node:22@sha256:18a6d90fd60542269850c80ca03b29b1d9b14d6b221ac7ee8e35b0d33ef904bd
+public.ecr.aws/docker/library/registry:2
+
+# 测试 docker build 的 Dockerfile 的基础镜像（deploy/dev/core、deploy/dev/acp-bridge）
+public.ecr.aws/docker/library/rust:1.99.1-slim-trixie
+public.ecr.aws/docker/library/debian:trixie-slim
+public.ecr.aws/docker/library/docker:29.9.2-cli
+
+# 只是测试数据（解析镜像引用、示例清单），不拉
+!docker.io/alpine:3
+!docker.io/alpine:latest
+!docker.io/gogost/gost:3
+!docker.io/library/redis:latest
+!ghcr.io/immich-app/immich-server:v2
+!ghcr.io/example/comfyui-proxy:1
+!ghcr.io/example/comfyui:1
+!ghcr.io/example/immich-mcp:1
+!ghcr.io/example/samba-web:1
+!ghcr.io/example/samba:4
+!ghcr.io/org/app:1
+!ghcr.io/x/core:beta

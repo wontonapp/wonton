@@ -76,7 +76,7 @@ impl Tusd {
                     .iter()
                     .flat_map(|(name, value)| ["--env".to_owned(), format!("{name}={value}")]),
             )
-            .arg(wonton_test_images::image(&service.image))
+            .arg(&service.image)
             .args(["-host=127.0.0.1", "-port=0"]);
         for flag in service.command {
             docker.arg(if flag.starts_with("-hooks-http=") {

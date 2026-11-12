@@ -1,6 +1,5 @@
 //! 房间列表接进 ViewModel：排序、把主人的 Bot 排前面、按合成好的显示方式填每一行。
 
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use futures_util::StreamExt;
@@ -50,12 +49,6 @@ impl ChatLink {
                     continue;
                 }
                 let settings = layouts.borrow_and_update().clone();
-                let bot_users: HashSet<String> = view
-                    .borrow()
-                    .bots
-                    .iter()
-                    .map(|bot| bot.user_id.clone())
-                    .collect();
                 let mut rows: Vec<_> = latest
                     .iter()
                     .cloned()
@@ -68,7 +61,7 @@ impl ChatLink {
                             ),
                             None => compose(&settings, None),
                         };
-                        room_row(room, &core, layout, &bot_users)
+                        room_row(room, &core, layout)
                     })
                     .collect();
                 sort_rooms(&mut rows);

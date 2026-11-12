@@ -90,7 +90,7 @@ pub async fn check_package(
             ));
     }
     match dry_run(package, &Languages::default()) {
-        Ok(plan) => check_services(&plan, m, official, &mut report),
+        Ok(plan) => check_services(&plan, official, &mut report),
         Err(e) => report.problems.push(e.to_string()),
     }
     check_spec_floor(package, &mut report);
@@ -139,10 +139,9 @@ pub async fn check_package(
     Ok(report)
 }
 
-/// 镜像要按摘要固定，长期运行的服务要有健康检查：官方索引要求，其他插件只提醒。只看 compose 里写的健康检查
-/// 和清单的 `webui.health`，镜像自带的看不到（检查不连 Docker）。
-fn check_services(plan: &Deployment, manifest: &Manifest, official: bool, report: &mut Report) {
-    let webui = manifest.webui.as_ref();
+/// 镜像要按摘要固定，长期运行的服务要有健康检查：官方索引要求，其他插件只提醒。只看 compose 里写的健康检查，
+/// 镜像自带的看不到（检查不连 Docker）。
+fn check_services(plan: &Deployment, official: bool, report: &mut Report) {
     let list = if official {
         &mut report.problems
     } else {
@@ -163,11 +162,9 @@ fn check_services(plan: &Deployment, manifest: &Manifest, official: bool, report
                 container.service, container.image
             ));
         }
-        // `webui.health` 是核心代探测的替代：只有网页服务能这么写，别的服务仍要自带的健康检查。
-        let probed = webui.is_some_and(|w| w.health.is_some() && w.service == container.service);
-        if !container.one_shot && !probed && !has_healthcheck(&container.body) {
+        if !container.one_shot && !has_healthcheck(&container.body) {
             list.push(format!(
-                "service {} has no healthcheck; add one, or use webui.health for the web service (its status will show as unknown after install)",
+                "service {} has no healthcheck; its status will show as unknown after install",
                 container.service
             ));
         }

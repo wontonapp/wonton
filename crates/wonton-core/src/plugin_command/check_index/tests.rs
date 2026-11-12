@@ -13,10 +13,7 @@ fn compose(id: &str, extra: &[&str]) -> String {
 
 /// 索引里的一项：`files` 只有 compose，渲染用不到别的文件。
 fn entry(source: &str, id: &str, extra: &[&str]) -> serde_json::Value {
-    entry_with_compose(source, compose(id, extra))
-}
-
-fn entry_with_compose(source: &str, compose: String) -> serde_json::Value {
+    let compose = compose(id, extra);
     serde_json::json!({
         "source": format!("github:acme/{source}"),
         "version": "1.0.0",
@@ -24,11 +21,6 @@ fn entry_with_compose(source: &str, compose: String) -> serde_json::Value {
         "files": { COMPOSE_FILE: sha256_hex(compose.as_bytes()) },
         "compose": compose,
     })
-}
-
-fn capability_entry(id: &str, declarations: &str) -> serde_json::Value {
-    let compose = compose(id, &[]).replace("spec: '0.4'", "spec: '0.11'");
-    entry_with_compose(id, format!("{compose}{declarations}\n"))
 }
 
 /// 跑一遍 `run`：返回退出码对不对，和它打印出来的问题。
@@ -80,65 +72,4 @@ fn unreadable_entries_fail_too() {
     assert!(!passed);
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert!(problems[0].contains("github:acme/bad"), "{problems:?}");
-}
-
-/// 同一仓库里两个子目录的最后一段相同：tag 前缀会撞，`check-index` 挡下（PR #235 核对意见 ②）。
-#[test]
-fn two_subdirectories_with_the_same_last_segment_fail_the_index() {
-    let (passed, problems) = checked(vec![
-        entry("x/agents/codex", "codex", &[]),
-        entry("x/apps/codex", "kimi", &[]),
-        entry("x/apps/kimi", "other", &[]),
-    ]);
-    assert!(!passed);
-    let [problem] = problems.as_slice() else {
-        panic!("{problems:?}");
-    };
-    assert!(
-        problem.contains("github:acme/x/agents/codex")
-            && problem.contains("github:acme/x/apps/codex"),
-        "{problem}"
-    );
-    assert!(!problem.contains("github:acme/x/apps/kimi"), "{problem}");
-}
-
-#[test]
-fn required_capabilities_without_providers_fail_the_index() {
-    for name in ["models", "torrent_client", "x-acme.ledger"] {
-        let (passed, problems) = checked(vec![capability_entry(
-            "consumer",
-            &format!("  requires: [{name}]"),
-        )]);
-        assert!(!passed, "{name}");
-        assert_eq!(problems.len(), 1, "{name}: {problems:?}");
-    }
-}
-
-#[test]
-fn optional_capabilities_without_providers_pass_the_index() {
-    let (passed, problems) = checked(vec![capability_entry(
-        "consumer",
-        "  wants: [models, torrent_client, x-acme.ledger]",
-    )]);
-    assert!(passed, "{problems:?}");
-}
-
-#[test]
-fn every_required_capability_needs_a_provider_but_one_plugin_can_provide_several() {
-    let consumer = capability_entry("consumer", "  requires: [torrent_client, x-acme.ledger]");
-    let torrent = "  provides:\n    torrent_client: {service: web, port: 8080}";
-    let (passed, problems) = checked(vec![
-        consumer.clone(),
-        capability_entry("provider", torrent),
-    ]);
-    assert!(!passed);
-    assert_eq!(problems.len(), 1, "{problems:?}");
-    let (passed, problems) = checked(vec![
-        consumer,
-        capability_entry(
-            "provider",
-            &format!("{torrent}\n    x-acme.ledger: {{service: web, port: 8080}}"),
-        ),
-    ]);
-    assert!(passed, "{problems:?}");
 }

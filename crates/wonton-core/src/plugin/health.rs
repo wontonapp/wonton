@@ -9,7 +9,7 @@ use super::compose::DependCondition;
 use super::docker::{Engine, EngineError};
 use super::languages::Languages;
 use super::oom::{OomLimit, oom_reason};
-use crate::http::{HttpClient, HttpError};
+use crate::http::HttpClient;
 use crate::l10n;
 
 const POLL: Duration = Duration::from_millis(500);
@@ -36,13 +36,6 @@ pub enum HealthError {
     NoHealthcheck(String),
     #[error("{0}")]
     WebUi(String),
-}
-
-/// 清单 `webui.health`：服务自己答健康的方式。镜像里没有 shell 时写不出 compose healthcheck，
-/// 由核心按这个路径探测（和装完时的网页探测同一个地址和时限）。
-pub struct WebuiHealth {
-    pub endpoint: super::upstreams::Endpoint,
-    pub path: String,
 }
 
 /// 等待目标状态。
@@ -72,32 +65,21 @@ enum Observation {
     },
 }
 
-pub(super) async fn wait_for(
+pub async fn wait_for(
     engine: &Engine,
-    http: &HttpClient,
     container: &str,
     target: Target,
-    webui_health: Option<&WebuiHealth>,
     deadline: Instant,
     langs: &Languages,
 ) -> Result<Readiness, HealthError> {
     let mut running_since: Option<Instant> = None;
     loop {
-        let (state, probes) = match observe(
-            engine,
-            http,
-            container,
-            target,
-            webui_health,
-            &mut running_since,
-            langs,
-        )
-        .await
-        {
-            Ok(Observation::Done(readiness)) => return Ok(readiness),
-            Ok(Observation::Waiting { state, probes }) => (state, probes),
-            Err(failure) => return Err(failure_error(engine, container, failure, langs).await),
-        };
+        let (state, probes) =
+            match observe(engine, container, target, &mut running_since, langs).await {
+                Ok(Observation::Done(readiness)) => return Ok(readiness),
+                Ok(Observation::Waiting { state, probes }) => (state, probes),
+                Err(failure) => return Err(failure_error(engine, container, failure, langs).await),
+            };
         if Instant::now() >= deadline {
             let logs = engine.logs_tail(container, LOG_LINES).await;
             return Err(HealthError::Timeout(with_log_tail(
@@ -119,7 +101,6 @@ pub(super) async fn wait_for(
 /// 不再等其余依赖到超时。超时报第一个还没满足的。
 pub(super) async fn wait_for_all(
     engine: &Engine,
-    http: &HttpClient,
     deps: &[(String, DependCondition)],
     deadline: Instant,
     langs: &Languages,
@@ -139,17 +120,7 @@ pub(super) async fn wait_for_all(
             let dep = &mut pending[index];
             let mut running_since = None;
             let target = Target::Depend(dep.condition);
-            match observe(
-                engine,
-                http,
-                dep.name,
-                target,
-                None,
-                &mut running_since,
-                langs,
-            )
-            .await
-            {
+            match observe(engine, dep.name, target, &mut running_since, langs).await {
                 Ok(Observation::Done(_)) => {
                     pending.remove(index);
                 }
@@ -372,10 +343,8 @@ fn strip_csi(raw: &str) -> String {
 
 async fn observe(
     engine: &Engine,
-    http: &HttpClient,
     container: &str,
     target: Target,
-    webui_health: Option<&WebuiHealth>,
     running_since: &mut Option<Instant>,
     langs: &Languages,
 ) -> Result<Observation, Failure> {
@@ -406,20 +375,6 @@ async fn observe(
         "{status:?}{}",
         health.map(|h| format!(" / {h:?}")).unwrap_or_default()
     );
-    // 只有在跑的网页容器才值得探测：别的状态由下面的判定先行处理。
-    let webui = match webui_health {
-        Some(webui) if target == Target::Ready && status == ContainerStateStatusEnum::RUNNING => {
-            let outcome = super::upstreams::status(
-                http,
-                &webui.endpoint,
-                &webui.path,
-                super::upstreams::PROBE_TIMEOUT,
-            )
-            .await;
-            Some((format!("GET {}", webui.path), outcome))
-        }
-        _ => None,
-    };
 
     verdict(
         Snapshot {
@@ -429,7 +384,6 @@ async fn observe(
             exit_code,
             label,
             probes,
-            webui,
         },
         container,
         target,
@@ -445,8 +399,6 @@ struct Snapshot {
     exit_code: i64,
     label: String,
     probes: Vec<Probe>,
-    /// 清单 `webui.health` 的请求（`GET <路径>`）和结果，没有探测时为空。
-    webui: Option<(String, Result<u16, HttpError>)>,
 }
 
 /// 读到的状态够不够 `target`：不够就继续等，够不了就给出失败原因。
@@ -464,7 +416,6 @@ fn verdict(
         exit_code,
         label,
         probes,
-        webui,
     } = snapshot;
     if target == Target::Depend(DependCondition::ServiceCompletedSuccessfully) {
         return match status {
@@ -490,21 +441,6 @@ fn verdict(
         return Err(Failure::Unhealthy(probes));
     }
     let running = status == ContainerStateStatusEnum::RUNNING;
-    // 声明了 `webui.health`：以代探测为准，不管容器自己有没有健康检查。
-    if let (Target::Ready, Some((request, outcome))) = (target, webui) {
-        return match outcome {
-            // 2xx/3xx 是健康；其余状态码等于应用自己说没起好，算上游出错。
-            Ok(200..=399) => Ok(Observation::Done(Readiness::Healthy)),
-            Ok(code) => Ok(Observation::Waiting {
-                state: format!("{label} / {request} → HTTP {code}"),
-                probes,
-            }),
-            Err(e) => Ok(Observation::Waiting {
-                state: format!("{label} / {request} → {e}"),
-                probes,
-            }),
-        };
-    }
     match target {
         Target::Depend(DependCondition::ServiceHealthy) if !has_check => Err(Failure::Other(
             HealthError::NoHealthcheck(crate::l10n::text(
@@ -558,8 +494,6 @@ pub enum Checked {
     Running,
     /// 常驻容器已退出或已创建但未启动。
     Stopped,
-    /// 容器不在：Docker 数据丢了、被手动删了，或者还没建出来。原因如实给出。
-    Missing(String),
     /// 不在应有的状态，原因如实给出。
     Failed(String),
 }
@@ -573,7 +507,7 @@ pub async fn check_now(
     langs: &Languages,
 ) -> Result<Checked, EngineError> {
     let Some(info) = engine.inspect_container(container).await? else {
-        return Ok(Checked::Missing(l10n::text(
+        return Ok(Checked::Failed(l10n::text(
             langs,
             "plugin-install-container-missing",
             &[("name", container.into())],

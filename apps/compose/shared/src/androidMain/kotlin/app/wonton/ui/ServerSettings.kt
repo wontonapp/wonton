@@ -29,7 +29,7 @@ internal fun ServerSettingsPage(
         SettingsSubpage.INVITE -> WontonScreen(bar = {
             WontonPushedBar(stringResource(R.string.connection_add_device), back)
         }) {
-            InviteScreen(core, home.invite, chat.encryption.verificationFlow, chat.encryption.keyHandoff)
+            InviteScreen(core, home.invite, chat.encryption.verificationFlow)
         }
         SettingsSubpage.PAIRING -> PairingPage(stringResource(R.string.pairing_title_again), core, home.pairing, back)
         else -> error("Not a server settings page: $page")

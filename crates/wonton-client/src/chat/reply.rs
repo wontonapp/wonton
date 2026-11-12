@@ -174,7 +174,6 @@ mod tests {
                 size: None,
                 width: None,
                 height: None,
-                caption: None,
             },
         };
         let thumbnail_of = |content| match content {

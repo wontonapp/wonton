@@ -12,11 +12,8 @@ struct PluginDetailView: View {
     @State private var uninstalling: UninstallTarget?
     @State private var pluginId: String?
     @State private var changingVersionOf: String?
-    @State private var showsSettings = false
-    @State private var showsContacts = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.wontonColors) private var colors
-    @Environment(\.goToInstalledApps) private var goToInstalledApps
 
     var body: some View {
         content
@@ -39,17 +36,12 @@ struct PluginDetailView: View {
         task?.state == .running
     }
 
-    /// 详情只在打开时取一次，任务做完要重取，按钮才对。要不要关这一页由核心判断：插件已经卸掉了，核心让关。
+    /// 详情只在打开时取一次，任务做完要重取，按钮才对。主屏上打开的插件卸载以后，这一页没有东西可看了。
     private func taskEnded() {
-        Task {
-            do {
-                switch try await model.core.pluginDetailAfterTask(route: route.coreRoute) {
-                case .close: dismiss()
-                case let .detail(detail): loaded = .success(detail)
-                }
-            } catch {
-                loaded = .failure(error)
-            }
+        if case .installed = route, task?.operation == .uninstall, task?.state == .succeeded {
+            dismiss()
+        } else {
+            Task { await load() }
         }
     }
 
@@ -67,42 +59,16 @@ struct PluginDetailView: View {
                     if detail.installed != nil {
                         BotProfileSection(chat: chat, plugins: model, pluginId: detail.id)
                     }
-                    if detail.installed != nil, bot(of: detail.id) != nil {
-                        WontonGroup {
-                            Button {
-                                showsContacts = true
-                            } label: {
-                                WontonRow(title: String(localized: .contactsTitle), showsForward: true)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("botContactsEntry")
-                        }
-                    }
                     DetailHeader(model: model, detail: detail, action: action(for: detail))
                     if let task, task.state != .succeeded || task.hasAddedToolsNews {
-                        TaskRow(
-                            model: model,
-                            task: task,
-                            review: {
-                                confirmation = model.reconfirmation(for: task)
-                            },
-                            checkInstalled: goToInstalledApps,
-                        )
+                        TaskRow(model: model, task: task) {
+                            confirmation = model.reconfirmation(for: task)
+                        }
                     }
                     if let installed = detail.installed, !installed.notices.isEmpty {
                         NoticeLines(lines: installed.notices)
                     }
                     if let installed = detail.installed { PluginTabPins(plugin: installed) }
-                    if detail.installed != nil, detail.hasSettings {
-                        WontonGroup {
-                            Button {
-                                showsSettings = true
-                            } label: {
-                                WontonRow(title: String(localized: .pluginSettingsTitle), showsForward: true)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
                     if !detail.screenshots.isEmpty {
                         Screenshots(model: model, images: detail.screenshots)
                     }
@@ -111,22 +77,11 @@ struct PluginDetailView: View {
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                     }
-                    if detail.installed != nil {
-                        SecretSection(detail: detail, model: model) { loaded = .success($0) }
-                    }
                     if let installed = detail.installed, let offer = detail.lanWebui {
                         InstalledLanWebui(model: model, id: installed.id, offer: offer) { loaded = .success($0) }
                     }
-                    if let installed = detail.installed, !installed.tunnelPorts.isEmpty {
-                        PortMappingSection(installed: installed)
-                    }
                     if let installed = detail.installed, !detail.saveGrants.isEmpty {
                         SaveGrants(model: model, id: installed.id, folders: detail.saveGrants) { loaded = .success($0) }
-                    }
-                    if let shares = detail.shares {
-                        PluginSharesSection(model: model, pluginId: detail.id, shares: shares) {
-                            loaded = .success($0)
-                        }
                     }
                     if let installed = detail.installed {
                         ToolPolicySection(model: model, id: installed.id, version: detail.version)
@@ -153,31 +108,19 @@ struct PluginDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(WontonTheme.spacing.pageInset)
             }
-            .navigationDestination(isPresented: $showsSettings) {
-                PluginSettingsScreen(model: model, pluginId: pluginId ?? "")
-            }
-            .navigationDestination(isPresented: $showsContacts) {
-                if let bot = bot(of: detail.id) { BotContactsView(core: model.core, bot: bot) }
-            }
         }
-    }
-
-    /// 有 Bot 的应用的那个 Bot（和资料一节同一个）：它的联系人页从这里进（ADR-0045）。
-    private func bot(of pluginId: String) -> BotRef? {
-        chat.viewModel.bots.first { $0.bot.pluginId == pluginId && $0.bot.bot == "default" }?.bot
     }
 
     private func load() async {
         loaded = nil
-        // 主屏打开的插件先知道 ID：取详情的请求还没回来、任务就做完时，也要看得到“进行中 → 结束”这一步。
-        if case let .installed(id) = route { pluginId = id }
         do {
-            switch try await model.core.pluginDetail(route: route.coreRoute) {
-            case .close:
-                dismiss()
-            case let .detail(detail):
-                pluginId = detail.id
-                loaded = .success(detail)
+            switch route {
+            case let .store(source):
+                loaded = .success(try await model.core.storePlugin(source: source))
+                pluginId = try loaded?.get().id
+            case let .installed(id):
+                pluginId = id
+                loaded = .success(try await model.core.installedPlugin(id: id))
             }
         } catch {
             loaded = .failure(error)
@@ -378,7 +321,6 @@ private struct Screenshot: View {
         }
         .frame(height: WontonTheme.size.screenshot)
         .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.card))
-        .accessibilityLabel(String(localized: .pluginScreenshot))
         .task(id: source.path) { image = try? await model.image(source) }
     }
 }

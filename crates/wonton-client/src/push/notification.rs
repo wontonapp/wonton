@@ -12,9 +12,8 @@ use wonton_matrix::{
     EventId, MatrixSession, MessageBody, Notification, OwnedEventId, OwnedRoomId, RoomId, UserId,
 };
 use wonton_protocol::{
-    ChatAccount, ChatFailure, ContactRequestPush, CoreError, DeviceConfirmationPush, HomeStatus,
-    MessageSummary, NOTICE_FIELD, NotificationCategory, PluginNotice, PushConfirmation,
-    PushContent, PushNotification,
+    ChatAccount, ChatFailure, CoreError, HomeStatus, MAIL_FIELD, NOTICE_FIELD,
+    NotificationCategory, PluginMail, PluginNotice, PushContent, PushNotification,
 };
 
 use super::PushLink;
@@ -38,9 +37,6 @@ pub(crate) struct Payload {
     sender: Option<String>,
     sender_display_name: Option<String>,
     room_name: Option<String>,
-    /// 新的联系人请求（ADR-0045）：不对应房间里的消息，`room_id`、`event_id` 为空。
-    #[serde(default)]
-    contact_request: Option<ContactRequestPush>,
 }
 
 impl Payload {
@@ -53,27 +49,6 @@ impl Payload {
                 "push-payload-invalid",
                 reason = e.to_string()
             ))
-        })
-    }
-
-    /// 联系人请求的通知：推送里带齐了要显示的原值，不用取消息。类别同确认卡片（“等你确认”），正文的位置放
-    /// `Invite`：壳看到 `contact_request` 按它写文字。
-    fn contact_request(&self) -> Option<PushNotification> {
-        let request = self.contact_request.clone()?;
-        Some(PushNotification {
-            server_id: None,
-            room_id: String::new(),
-            event_id: String::new(),
-            sender: request
-                .display_name
-                .clone()
-                .or_else(|| Some(request.user_id.clone())),
-            room_name: None,
-            content: PushContent::Invite,
-            category: NotificationCategory::Confirmation,
-            confirmation: None,
-            contact_request: Some(request),
-            thread_root: None,
         })
     }
 
@@ -92,54 +67,6 @@ impl Payload {
             content: PushContent::Unavailable { reason, message },
             category: NotificationCategory::Message,
             confirmation: None,
-            contact_request: None,
-            thread_root: None,
-        }
-    }
-}
-
-/// 确认卡片的直推（ADR-0016）：发给家人的卡片不在任何 Matrix 房间里，卡片内容就在推送里，取不到房间里的
-/// 消息。明文里是 `confirmation` 段和服务器的 endpoint ID，和核心发的格式对着（核心有行为测试）。
-#[derive(Clone, Deserialize)]
-pub(crate) struct DirectConfirmation {
-    /// 发推送的服务器的 endpoint ID。
-    pub(crate) server: String,
-    confirmation: DeviceConfirmationPush,
-}
-
-impl DirectConfirmation {
-    /// 不是确认卡片直推的格式（房间消息的推送没有 `confirmation` 段）时返回 `None`，调用方按消息推送解析。
-    pub(crate) fn parse(payload: &[u8]) -> Option<Self> {
-        serde_json::from_slice(payload).ok()
-    }
-
-    /// 卡片不是房间里的消息：`room_id` 是来源会话（没有时为空），`event_id` 是卡片 ID（`PushConfirmation`
-    /// 的约定），标题两处都给（壳拿它当通知标题，消息推送的正文也是它）。
-    pub(crate) fn notification(&self) -> PushNotification {
-        let card = &self.confirmation;
-        PushNotification {
-            // 槽位由 `ClientCore` 填：推送这一层不知道自己属于哪个槽位。
-            server_id: None,
-            room_id: card
-                .origin
-                .as_ref()
-                .map_or(String::new(), |origin| origin.room_id.clone()),
-            event_id: card.id.clone(),
-            sender: Some(card.title.clone()),
-            room_name: None,
-            content: PushContent::Message {
-                summary: MessageSummary::Text {
-                    text: card.title.clone(),
-                },
-            },
-            category: NotificationCategory::Confirmation,
-            confirmation: Some(PushConfirmation {
-                id: card.id.clone(),
-                expires_at_ms: card.expires_at_ms,
-                origin: card.origin.clone(),
-            }),
-            contact_request: None,
-            thread_root: None,
         }
     }
 }
@@ -150,9 +77,6 @@ impl PushLink {
         &self,
         payload: &Payload,
     ) -> Result<Option<PushNotification>, CoreError> {
-        if let Some(notification) = payload.contact_request() {
-            return Ok(Some(notification));
-        }
         let started = Instant::now();
         let room_id = payload.room_id.parse::<OwnedRoomId>().map_err(|e| {
             invalid(&l10n!(
@@ -282,6 +206,7 @@ pub(crate) fn push_notification(
         PushedCard::Expired => return None,
     };
     let notice = plugin_notice(own_user, &message.sender, &message.custom);
+    let mail = plugin_mail(own_user, &message.sender, &message.custom);
     let content = match message.body {
         MessageBody::Undecryptable => PushContent::Unavailable {
             reason: ChatFailure::NotReady,
@@ -301,14 +226,12 @@ pub(crate) fn push_notification(
         content,
         category: if confirmation.is_some() {
             NotificationCategory::Confirmation
-        } else if notice.is_some() {
+        } else if notice.is_some() || mail.is_some() {
             NotificationCategory::PluginNotice
         } else {
             NotificationCategory::Message
         },
         confirmation,
-        contact_request: None,
-        thread_root: None,
     })
 }
 
@@ -331,49 +254,24 @@ fn plugin_notice(
     serde_json::from_value(custom.get(NOTICE_FIELD)?.clone()).ok()
 }
 
+/// 邮件和插件通知共用可信核心账号与通知类别（ADR-0056）；不认识的结构仍显示纯文本正文。
+fn plugin_mail(
+    own_user: &UserId,
+    sender: &UserId,
+    custom: &Map<String, Value>,
+) -> Option<PluginMail> {
+    if sender != core_account(own_user) {
+        return None;
+    }
+    PluginMail::deserialize(custom.get(MAIL_FIELD)?).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
     use wonton_matrix::OwnedUserId;
 
     use super::*;
-
-    /// 契约：核心直推的确认卡片（ADR-0016）解析成确认通知；不是房间消息，没有房间的 event 可取。
-    #[test]
-    fn a_confirmation_push_parses_into_a_confirmation_notification() {
-        let direct = DirectConfirmation::parse(
-            r#"{"server":"srv","confirmation":{"id":"c1","title":"claw 想安装 Grafana","expires_at_ms":42,"origin":{"room_id":"!room:test"}}}"#.as_bytes(),
-        )
-        .expect("核心发的确认推送要能解析");
-        assert_eq!(direct.server, "srv");
-        let shown = direct.notification();
-        assert_eq!(shown.category, NotificationCategory::Confirmation);
-        assert_eq!(shown.room_id, "!room:test");
-        assert_eq!(shown.event_id, "c1");
-        let card = shown.confirmation.expect("确认通知带卡片");
-        assert_eq!(card.id, "c1");
-        assert_eq!(card.expires_at_ms, 42);
-        assert_eq!(
-            card.origin.as_ref().map(|o| o.room_id.as_str()),
-            Some("!room:test")
-        );
-        // 没有来源会话的卡片（核心自己发起的）点开去“等你确认”列表：room_id 为空。
-        let direct = DirectConfirmation::parse(
-            r#"{"server":"srv","confirmation":{"id":"c2","title":"服务器配对","expires_at_ms":7}}"#
-                .as_bytes(),
-        )
-        .unwrap();
-        let shown = direct.notification();
-        assert_eq!(shown.room_id, "");
-        assert!(shown.confirmation.unwrap().origin.is_none());
-        // 房间消息的推送没有 `confirmation` 段：不走这条，按消息推送解析。
-        assert!(
-            DirectConfirmation::parse(
-                br#"{"server":"srv","room_id":"!room:test","event_id":"$e"}"#
-            )
-            .is_none()
-        );
-    }
 
     fn custom(field: Value) -> Map<String, Value> {
         [(NOTICE_FIELD.to_owned(), field)].into_iter().collect()
@@ -413,28 +311,6 @@ mod tests {
         assert_eq!(unavailable.sender, None);
     }
 
-    /// 核心自己发的联系人请求推送不对应消息：不去取正文，直接是一张“等你确认”。
-    #[test]
-    fn a_contact_request_push_is_a_confirmation_without_a_message() {
-        let payload = Payload::parse(
-            br#"{"server":"s","room_id":"","event_id":"","contact_request":{
-                "bot":{"plugin_id":"ai.nous.hermes","bot":"bob"},
-                "user_id":"@hermes-alice:a.example","display_name":"Hermes",
-                "keeper_display_name":"Alice"}}"#,
-        )
-        .unwrap();
-        let shown = payload.contact_request().unwrap();
-        assert_eq!(shown.category, NotificationCategory::Confirmation);
-        assert_eq!(shown.sender.as_deref(), Some("Hermes"));
-        let request = shown.contact_request.unwrap();
-        assert_eq!(request.bot.bot, "bob");
-        assert_eq!(request.keeper_display_name.as_deref(), Some("Alice"));
-
-        let message =
-            Payload::parse(br#"{"server":"s","room_id":"!room:test","event_id":"$e"}"#).unwrap();
-        assert!(message.contact_request().is_none());
-    }
-
     #[test]
     fn only_the_core_accounts_structured_messages_are_plugin_notices() {
         let owner: OwnedUserId = "@owner:test".parse().unwrap();
@@ -450,5 +326,104 @@ mod tests {
         assert!(plugin_notice(&owner, &core, &custom(json!({"level": "warning"}))).is_none());
         // 没有这个字段的是普通消息。
         assert!(plugin_notice(&owner, &core, &Map::new()).is_none());
+    }
+
+    fn mail_field() -> Value {
+        json!({
+            "plugin_id": "app.example.documents",
+            "plugin_name": "Documents",
+            "from": "documents@plugins.wonton.internal",
+            "subject": "Export ready",
+            "body": "Your export is ready.",
+            "attachments": [{"name": "export.pdf", "size": 1024, "uploaded": true}],
+        })
+    }
+
+    fn mail_notification(sender: &str, custom: Map<String, Value>) -> Option<PushNotification> {
+        let owner: OwnedUserId = "@owner:test".parse().unwrap();
+        let room: OwnedRoomId = "!room:test".parse().unwrap();
+        let event: OwnedEventId = "$mail".parse().unwrap();
+        push_notification(
+            None,
+            &owner,
+            &room,
+            &event,
+            Notification {
+                sender: sender.parse().unwrap(),
+                sender_name: "Sender".into(),
+                room_name: Some("Wonton".into()),
+                body: MessageBody::Text("Documents: Export ready".into()),
+                custom,
+            },
+        )
+    }
+
+    #[test]
+    fn only_trusted_well_formed_mail_uses_the_plugin_notice_category() {
+        for (sender, category) in [
+            ("@wonton-core:test", NotificationCategory::PluginNotice),
+            ("@stranger:test", NotificationCategory::Message),
+            ("@wonton-core:other.example", NotificationCategory::Message),
+        ] {
+            let custom = [(MAIL_FIELD.to_owned(), mail_field())]
+                .into_iter()
+                .collect();
+            let shown = mail_notification(sender, custom).unwrap();
+            assert_eq!(shown.category, category);
+            assert!(matches!(shown.content, PushContent::Message { .. }));
+            assert!(shown.confirmation.is_none());
+        }
+    }
+
+    #[test]
+    fn malformed_mail_remains_an_ordinary_message() {
+        let mut missing_from = mail_field();
+        missing_from.as_object_mut().unwrap().remove("from");
+        let mut invalid_size = mail_field();
+        invalid_size["attachments"][0]["size"] = json!(-1);
+        let mut invalid_uploaded = mail_field();
+        invalid_uploaded["attachments"][0]["uploaded"] = json!("yes");
+        for field in [
+            Value::Null,
+            json!({}),
+            missing_from,
+            invalid_size,
+            invalid_uploaded,
+        ] {
+            let custom = [(MAIL_FIELD.to_owned(), field)].into_iter().collect();
+            let shown = mail_notification("@wonton-core:test", custom).unwrap();
+            assert_eq!(shown.category, NotificationCategory::Message);
+            assert!(matches!(shown.content, PushContent::Message { .. }));
+        }
+    }
+
+    #[test]
+    fn confirmation_priority_and_expiry_apply_to_mail() {
+        for expires_at_ms in [u64::MAX, 0] {
+            let custom = [
+                (MAIL_FIELD.to_owned(), mail_field()),
+                (
+                    wonton_protocol::CARD_FIELD.to_owned(),
+                    json!({
+                        "id": "confirm-export",
+                        "state": {"type": "pending"},
+                        "title": "Export documents",
+                        "lines": [],
+                        "choices": [],
+                        "expires_at_ms": expires_at_ms,
+                    }),
+                ),
+            ]
+            .into_iter()
+            .collect();
+            let shown = mail_notification("@wonton-core:test", custom);
+            if expires_at_ms == 0 {
+                assert!(shown.is_none());
+            } else {
+                let shown = shown.unwrap();
+                assert_eq!(shown.category, NotificationCategory::Confirmation);
+                assert_eq!(shown.confirmation.unwrap().id, "confirm-export");
+            }
+        }
     }
 }

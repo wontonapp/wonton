@@ -248,7 +248,7 @@ mod tests {
             "10.1.2.3",
             "172.16.0.1",
             "172.31.255.254",
-            "192.168.0.10",
+            "192.168.0.193",
             "100.64.0.1",
             "100.127.255.254",
             "fd00::10",
@@ -264,7 +264,7 @@ mod tests {
             "127.0.0.1",
             "169.254.1.1",
             "fe80::1",
-            "2001:db8::1",
+            "2408:8207::1",
             "::1",
         ] {
             assert!(!is_private(ip.parse().unwrap()), "{ip}");
@@ -273,10 +273,10 @@ mod tests {
 
     #[test]
     fn overriding_addresses_must_all_be_private() {
-        let parsed = parse_addresses(" 192.168.0.10, fd00::10,192.168.0.10 ").unwrap();
+        let parsed = parse_addresses(" 192.168.0.193, fd00::10,192.168.0.193 ").unwrap();
         let text: Vec<String> = parsed.iter().map(IpAddr::to_string).collect();
-        assert_eq!(text, ["192.168.0.10", "fd00::10"]);
-        assert!(parse_addresses("192.168.0.10,203.0.113.5").is_err());
+        assert_eq!(text, ["192.168.0.193", "fd00::10"]);
+        assert!(parse_addresses("192.168.0.193,203.0.113.5").is_err());
         assert!(parse_addresses("eno1").is_err());
         assert!(parse_addresses(" , ").is_err());
     }

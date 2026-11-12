@@ -70,7 +70,7 @@ async fn the_first_code_on_the_lan_page_makes_a_phone_the_owner_once() {
     let endpoint = loopback_endpoint(key.clone()).await;
     let code = reachable(code, &home);
     assert_eq!(
-        reject_reason(pair(&endpoint, &code, "Alice 的 iPhone").await.unwrap()),
+        reject_reason(pair(&endpoint, &code, "Jiale 的 iPhone").await.unwrap()),
         None
     );
     assert!(home.tunnel.devices.contains(&key.public()));
@@ -89,38 +89,6 @@ async fn the_first_code_on_the_lan_page_makes_a_phone_the_owner_once() {
         reject_reason(pair(&other, &code, "别人的手机").await.unwrap()),
         Some(RejectReason::Used)
     );
-}
-
-/// 回应可能在慢中继上丢了：同一台手机拿同一个首次配对码重发，幂等地再回一次“配上”，登记表不变。
-#[tokio::test]
-async fn the_first_code_pairs_the_same_phone_again_when_it_repeats() {
-    let home = Home::start(None).await;
-    let (_, page) = lan_page(&home, LAN_HOST).await;
-    let code = reachable(code_on(&page).expect("状态页上有配对码"), &home);
-    let key = SecretKey::generate();
-    let endpoint = loopback_endpoint(key.clone()).await;
-    assert_eq!(
-        reject_reason(pair(&endpoint, &code, "Alice 的 iPhone").await.unwrap()),
-        None
-    );
-    assert_eq!(
-        reject_reason(pair(&endpoint, &code, "Alice 的 iPhone").await.unwrap()),
-        None
-    );
-    assert_eq!(home.tunnel.devices.list().len(), 1);
-    // 别的手机拿同一个码还是不行。
-    let other = loopback_endpoint(SecretKey::generate()).await;
-    assert_eq!(
-        reject_reason(pair(&other, &code, "别人的手机").await.unwrap()),
-        Some(RejectReason::Used)
-    );
-    // 吊销以后同一台手机重发也配不回来。
-    home.tunnel.devices.remove(&key.public()).unwrap();
-    assert_eq!(
-        reject_reason(pair(&endpoint, &code, "Alice 的 iPhone").await.unwrap()),
-        Some(RejectReason::Used)
-    );
-    assert!(!home.tunnel.devices.contains(&key.public()));
 }
 
 #[tokio::test]
@@ -215,13 +183,15 @@ async fn the_install_terminal_shows_the_lan_pages_first_code_until_a_device_pair
 /// 请求里没给直连地址时，码里是核心自己算的地址：启动器声明了宣告地址就是宣告地址加隧道端口。
 #[tokio::test]
 async fn codes_without_addresses_use_the_announced_address() {
-    let home = Home::start_lan(&["192.168.0.15"]).await;
+    let home = Home::start_lan(&["192.168.0.7"]).await;
     let first = "/_wonton/api/pairing-codes/first";
     let (status, body) = ask_with(&home, first, Some(TOKEN), "{}").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let code = PairingCode::parse(body["code"].as_str().unwrap()).unwrap();
-    let addr = format!("192.168.0.15:{}", home.tunnel.port);
-    assert_eq!(code.direct_addrs, vec![addr.parse().unwrap()]);
+    assert_eq!(
+        code.direct_addrs,
+        vec![format!("192.168.0.7:{}", home.tunnel.port).parse().unwrap()]
+    );
 
     // 配上第一台后，主人发的码同样用宣告地址。
     let phone = loopback_endpoint(SecretKey::generate()).await;
@@ -232,8 +202,10 @@ async fn codes_without_addresses_use_the_announced_address() {
     let (status, body) = ask_with(&home, "/_wonton/api/pairing-codes", Some(TOKEN), "{}").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let code = PairingCode::parse(body["code"].as_str().unwrap()).unwrap();
-    let addr = format!("192.168.0.15:{}", home.tunnel.port);
-    assert_eq!(code.direct_addrs, vec![addr.parse().unwrap()]);
+    assert_eq!(
+        code.direct_addrs,
+        vec![format!("192.168.0.7:{}", home.tunnel.port).parse().unwrap()]
+    );
 }
 
 /// 没设宣告地址时，没给直连地址的码里是检测到的地址。

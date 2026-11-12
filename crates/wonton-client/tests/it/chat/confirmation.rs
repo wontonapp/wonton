@@ -62,7 +62,7 @@ async fn the_owner_answers_cards_and_sees_how_they_end() {
         home.confirmation_answers(),
         [(
             "install".to_owned(),
-            json!({"answer": "approve", "secrets": {}, "settings": {}})
+            json!({"answer": "approve", "secrets": {}})
         )]
     );
 
@@ -99,7 +99,7 @@ async fn the_owner_answers_cards_and_sees_how_they_end() {
         home.confirmation_answers().last().unwrap(),
         &(
             "uninstall".to_owned(),
-            json!({"answer": "reject", "secrets": {}, "settings": {}})
+            json!({"answer": "reject", "secrets": {}})
         )
     );
 
@@ -150,7 +150,6 @@ async fn answers_that_do_not_land_and_cards_that_run_out_show_what_happened() {
             answer: Answer::Unknown,
             choice_id: None,
             secrets: Default::default(),
-            settings: Default::default(),
         }),
         Err(CoreError::InvalidInput { .. })
     ));
@@ -299,7 +298,6 @@ async fn the_secrets_filled_on_a_card_are_answered() {
             answer: Answer::Approve,
             choice_id: None,
             secrets: [("token".to_owned(), SecretString::new("s3cret"))].into(),
-            settings: Default::default(),
         })
         .unwrap();
     until_card(&mut timeline, "install", "回答上行", |view| {
@@ -310,7 +308,7 @@ async fn the_secrets_filled_on_a_card_are_answered() {
         home.confirmation_answers(),
         [(
             "install".to_owned(),
-            json!({"answer": "approve", "secrets": {"token": "s3cret"}, "settings": {}})
+            json!({"answer": "approve", "secrets": {"token": "s3cret"}})
         )]
     );
 }
@@ -420,7 +418,6 @@ async fn buttons_with_the_same_answer_are_told_apart() {
             answer: Answer::Approve,
             choice_id: Some("always".to_owned()),
             secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     until_card(&mut timeline, "agent", "正在发", |view| {
@@ -437,7 +434,7 @@ async fn buttons_with_the_same_answer_are_told_apart() {
         home.confirmation_answers(),
         [(
             "agent".to_owned(),
-            json!({"answer": "approve", "choice_id": "always", "secrets": {}, "settings": {}})
+            json!({"answer": "approve", "choice_id": "always", "secrets": {}})
         )]
     );
 }
@@ -688,7 +685,6 @@ pub(crate) fn answer(phone: &Phone, id: &str, answer: Answer) {
             answer,
             choice_id: None,
             secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
 }

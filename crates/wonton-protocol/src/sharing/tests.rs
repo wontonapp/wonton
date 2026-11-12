@@ -50,7 +50,7 @@ fn grants_preserve_person_group_and_optional_expiry() {
                 expires_at_ms,
             };
             let shares = PluginShares {
-                per_user_accounts: false,
+                friends_supported: false,
                 friend_count: 2,
                 grants: vec![grant],
             };

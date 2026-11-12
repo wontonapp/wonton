@@ -107,7 +107,6 @@ gateway-body-invalid = リクエストボディが不正です：{ $error }
 gateway-bot-not-found = そのボットはありません：{ $caller }
 gateway-bot-not-in-plugin = アプリ{ $id }にそのボットはありません：{ $caller }
 gateway-tool-not-found = アプリ{ $id }にツール{ $tool }はありません
-gateway-tool-deletes = ツール{ $tool }はデータを削除または上書きするため、毎回確認が必要で、読み取り専用にはできません
 gateway-plugin-not-running = このアプリは起動していないか、ツールを宣言していません
 
 # Appが確認カードに答えるとき。
@@ -131,16 +130,3 @@ gateway-owner-secrets-not-text = キー{ $name }に保存されている値は�
 gateway-owner-secrets-audit-unavailable = 自宅サーバーに監査ログが接続されていないため、キーの値を表示できません
 gateway-plugin-scope-unsupported = このコアではプラグインを使える Bot を変更できません。先にコアを更新してください。
 gateway-bot-plugin-access-unsupported = このコアでは Bot ごとにプラグインの利用を切り替えられません。先にコアを更新してください。
-
-# MCP Apps 宿主页（#35）。
-mcp-app-loading = 読み込み中…
-mcp-app-failed = インターフェースを読み込めません：{ $error }
-mcp-app-page-failed = インターフェースを読み込めませんでした。
-mcp-app-retry = 再試行
-
-# 共有リンク経由で友人がページを開く（ADR-0051）。
-gateway-share-identity = このサーバーはあなたの身元を確認できません
-gateway-share-required = 所有者はこのアプリをあなたに共有していません
-gateway-share-revoked = 所有者がこのアプリの共有を止めました
-gateway-share-expired = 共有の期限が切れました
-gateway-confirmation-gone = その確認はありません。終了して1日以上経過しています

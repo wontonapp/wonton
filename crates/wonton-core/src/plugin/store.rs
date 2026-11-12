@@ -22,7 +22,6 @@ use super::languages::Languages;
 use super::manifest::{Manifest, Permission, PluginId};
 use super::models::ModelKeyStore;
 use super::package_files::PackageFiles;
-use super::pins::PinStore;
 use super::preinstall::PreinstallMarks;
 use super::save_grants::SaveGrantStore;
 use super::secrets::SecretStore;
@@ -91,33 +90,9 @@ pub struct InstalledRecord {
     /// 主人开放给家人了（ADR-0045）：家人的设备能打开它的网页，家人的插件列表里有它。默认关。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub family: bool,
-    /// 主人设置的普通值（ADR-0077）：属性名 → JSON。明文可读，不是凭据。
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub settings: std::collections::BTreeMap<String, serde_json::Value>,
-    /// 设置最后保存的时间，Unix 毫秒；没改过时为空。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settings_changed_ms: Option<u64>,
-    /// 静态网页的文件摘要（相对 `static_web.root` 的路径 → sha256），算插件包摘要用；文件本身只在托管目录里（ADR-0080）。
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub static_files: super::package::static_files::StaticHashes,
-    /// 副作用账本里的托管目录：这个插件在哪些托管能力下有自己的子目录（ADR-0080 第 2 节）。卸载照它撤。
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub hosted: Vec<String>,
 }
 
 impl InstalledRecord {
-    /// 记录里的插件包：引用的文件之外，静态网页只有文件摘要（文件在托管目录里）。
-    pub fn package(
-        &self,
-        langs: &super::languages::Languages,
-    ) -> Result<super::package::PluginPackage, super::package::PackageError> {
-        let mut package =
-            super::package::PluginPackage::with_files(&self.source, self.files.clone(), langs)?
-                .with_static_hashes(self.static_files.clone());
-        package.origin = self.origin.clone();
-        Ok(package)
-    }
-
     /// 记录里开着的可选权限。
     pub fn enabled(&self) -> Vec<Permission> {
         self.enabled_permissions
@@ -192,7 +167,6 @@ pub struct Store {
     dir: PathBuf,
     secrets: SecretStore,
     bots: BotStore,
-    pins: PinStore,
     model_keys: ModelKeyStore,
     preinstalled: PreinstallMarks,
     save_grants: SaveGrantStore,
@@ -209,7 +183,6 @@ impl Store {
         Ok(Self {
             secrets: SecretStore::new(dir.join("secrets")),
             bots: BotStore::new(dir.join("bots")),
-            pins: PinStore::new(dir.join("pins")),
             model_keys: ModelKeyStore::new(dir.join("model-keys")),
             preinstalled: PreinstallMarks::new(dir.join("preinstalled")),
             save_grants: SaveGrantStore::new(dir.join("save-grants")),
@@ -231,11 +204,6 @@ impl Store {
     /// 插件的 Bot 记录，在记录目录下的 `bots/` 里，保留的规则同密钥。
     pub fn bots(&self) -> &BotStore {
         &self.bots
-    }
-
-    /// Bot 钉在面板上的页面，在记录目录下的 `pins/` 里。
-    pub fn pins(&self) -> &PinStore {
-        &self.pins
     }
 
     /// 插件的模型网关凭据，在记录目录下的 `model-keys/` 里，卸载时删除。
@@ -270,12 +238,6 @@ impl Store {
     /// 每个人的语言：用户名到最近一次设备请求的 `Accept-Language` 原文（ADR-0043）。
     pub fn people_languages(&self) -> PathBuf {
         self.dir.join("store").join(PEOPLE_LANGUAGES)
-    }
-
-    pub(in crate::plugin) fn capabilities_path(&self) -> Result<PathBuf, StoreError> {
-        let dir = self.dir.join("capabilities");
-        create_private_dir(&dir)?;
-        Ok(dir.join("connections.json"))
     }
 
     /// 读出全部记录，按 ID 排序。单个记录读不出、已损坏或与文件名不符只体现在它自己的结果里；
@@ -609,10 +571,6 @@ mod tests {
             written_by: None,
             ask_every_update: false,
             family: false,
-            settings: Default::default(),
-            settings_changed_ms: None,
-            static_files: Default::default(),
-            hosted: Vec::new(),
         }
     }
 

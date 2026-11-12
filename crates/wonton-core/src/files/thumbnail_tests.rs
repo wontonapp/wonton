@@ -260,8 +260,7 @@ async fn a_plugin_that_is_only_busy_is_not_called_unavailable() {
 fn stuck_decoder(f: &mut Fixture, dir: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;
     let script = dir.join("decode.sh");
-    // 假的助手：报个协议版本就再也不回答，任务一直挂着。
-    std::fs::write(&script, "#!/bin/sh\nprintf '0 1\\n'\nexec sleep 60\n").unwrap();
+    std::fs::write(&script, "#!/bin/sh\nexec sleep 60\n").unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     Arc::get_mut(&mut f.files).unwrap().images = Arc::new(super::ImageWorker::new(script));
 }

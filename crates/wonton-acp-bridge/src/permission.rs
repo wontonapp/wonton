@@ -8,7 +8,7 @@ use url::Url;
 use wonton_l10n::{Arg, Lang};
 use wonton_protocol::{
     AGENT_PERMISSION_PATH, AgentPermissionKind, AgentPermissionOption, AgentPermissionOutcome,
-    AgentPermissionRequest, ConfirmationOrigin,
+    AgentPermissionRequest,
 };
 
 use crate::{
@@ -149,11 +149,7 @@ impl PermissionBroker {
     }
 }
 
-pub fn parse_pending(
-    params: &Value,
-    lang: Lang,
-    origin: Option<ConfirmationOrigin>,
-) -> Result<PendingPermission> {
+pub fn parse_pending(params: &Value, lang: Lang) -> Result<PendingPermission> {
     let tool_call = &params["toolCall"];
     let tool_call_id = required_string(tool_call, "toolCallId")?;
     let title = required_string(tool_call, "title")?;
@@ -228,9 +224,6 @@ pub fn parse_pending(
             description,
             arguments,
             options,
-            // 会话的来源会话（ADR-0016），核心当不可信输入核对；没报时卡片落到 Bot 的主房间。
-            origin,
-            session: None,
         },
         option_ids,
         locations,
@@ -307,8 +300,6 @@ mod tests {
                     kind: AgentPermissionKind::AllowOnce,
                     name: "允许一次".into(),
                 }],
-                origin: None,
-                session: None,
             },
             option_ids: HashMap::from([(String::from("acp-0"), String::from("allow_once"))]),
             locations: Vec::new(),
@@ -398,7 +389,6 @@ mod tests {
                 ]
             }),
             zh(),
-            None,
         )
         .unwrap();
         assert_eq!(pending.request.options[0].choice_id, "acp-0");
@@ -409,36 +399,6 @@ mod tests {
             pending.request.arguments.as_ref().unwrap()["api_token"],
             "[已隐藏]"
         );
-        // 没登记来源会话时不报，卡片落到 Bot 的主房间。
-        let body = serde_json::to_value(&pending.request).unwrap();
-        assert_eq!(body["tool_call_id"], "call-1");
-        assert!(body.get("origin").is_none());
-    }
-
-    #[test]
-    fn permission_request_carries_the_session_origin() {
-        let pending = parse_pending(
-            &json!({
-                "toolCall": {"toolCallId": "call-1", "title": "改文件", "kind": "edit"},
-                "options": [{"optionId": "allow_once", "kind": "allow_once", "name": "允许"}]
-            }),
-            zh(),
-            Some(ConfirmationOrigin {
-                room_id: "!room:example.org".into(),
-                thread_id: Some("$root:example.org".into()),
-            }),
-        )
-        .unwrap();
-        assert_eq!(
-            pending.request.origin,
-            Some(ConfirmationOrigin {
-                room_id: "!room:example.org".into(),
-                thread_id: Some("$root:example.org".into()),
-            })
-        );
-        let body = serde_json::to_value(&pending.request).unwrap();
-        assert_eq!(body["origin"]["room_id"], "!room:example.org");
-        assert_eq!(body["origin"]["thread_id"], "$root:example.org");
     }
 
     #[tokio::test]

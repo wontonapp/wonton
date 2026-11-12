@@ -7,7 +7,6 @@ use wonton_client::{
 
 use super::accept_the_bots_invite;
 use super::support::{Home, Phone, Timeline, WAIT};
-use wonton_protocol::{TimelineAction, TimelineTarget};
 
 const HISTORY: [&str; 3] = [
     "before pairing one",
@@ -591,7 +590,7 @@ async fn another_trusted_device_taking_over_marks_the_request_accepted_elsewhere
     cancelled(&first, &id, VerificationCancel::ByOther).await;
 }
 
-pub(super) async fn available(phone: &Phone) {
+async fn available(phone: &Phone) {
     phone
         .wait_chat("可以请另一台设备确认", |view| {
             view.encryption.can_verify_with_other_device.then_some(())
@@ -624,7 +623,7 @@ async fn incoming(first: &Phone, second: &Phone) -> String {
     received.flow_id
 }
 
-pub(super) async fn compare(first: &Phone, second: &Phone) -> String {
+async fn compare(first: &Phone, second: &Phone) -> String {
     let id = incoming(first, second).await;
     first
         .dispatch(Action::AcceptDeviceVerification {
@@ -708,7 +707,7 @@ async fn confirm_and_observe(
     stages.expect("原有 60 秒等待内设备确认必须结束")
 }
 
-pub(super) async fn cancelled(phone: &Phone, id: &str, reason: VerificationCancel) {
+async fn cancelled(phone: &Phone, id: &str, reason: VerificationCancel) {
     phone
         .wait_chat("指定设备确认流程以预期原因取消", |view| {
             view.encryption
@@ -770,13 +769,8 @@ async fn open_history(phone: &Phone, room_id: &str) -> Timeline {
         .await;
     let timeline = Timeline::open(phone, room_id).await;
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::PaginateBackwards {
-                target: TimelineTarget {
-                    room_id: room_id.to_owned(),
-                    thread_root: None,
-                },
-            },
+        .dispatch(Action::PaginateBackwards {
+            room_id: room_id.to_owned(),
         })
         .unwrap();
     timeline
