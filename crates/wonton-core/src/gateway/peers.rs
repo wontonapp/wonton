@@ -36,7 +36,7 @@ fn languages(headers: &HeaderMap) -> Languages {
 
 /// 配对接口的鉴权：只认经隧道的主人设备。设备身份随隧道上的每个请求自动带上，插件网页发的请求
 /// 不算（ADR-0017）：插件网页探测不到主人的服务器名单。和哪台服务器配对是主人的事（ADR-0045
-/// “谁能做什么”），家人的设备回 403 `owner_only`。
+/// “谁能做什么”），家人的设备回 403 `permission_required`。
 fn denied(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
@@ -48,7 +48,7 @@ fn denied(
     if !person.is_owner() {
         return Some(api::error_response(
             StatusCode::FORBIDDEN,
-            "owner_only",
+            "permission_required",
             "服务器配对只有主人能管",
         ));
     }
