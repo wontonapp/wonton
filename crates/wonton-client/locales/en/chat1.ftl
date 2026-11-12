@@ -4,6 +4,8 @@
 # Sign-in details. $reason is the Matrix SDK's original error.
 chat-sign-in-restore-failed = Can't restore your Matrix session: { $reason }
 
+chat-sign-in-external-missing = This Matrix account's sign-in on this phone is gone. Sign in to it again.
+
 chat-sign-in-login-failed = Can't sign in to Matrix: { $reason }
 
 # $reason is the HTTP client's original error.

@@ -11,6 +11,8 @@
 //!   和判断插件的“要求”时用的是同一份。给了插件包时还有它的要求逐条的判断和装不了的原因。
 //! - `plugin slice-unit`：根据宿主 `/proc/meminfo` 输出插件 systemd slice unit。读不到总内存时退出码 1，并把原因写到标准错误。
 //! - `plugin check-index <index.json>`：官方索引里的每一项这个版本的核心都读得懂、渲染得出来，CI 用它防止改了清单写法或注入变量后商店变空。
+//! - `plugin compat <插件包目录>…`：这份核心读不读得懂每份插件包，逐包裁决 JSON 写标准输出（ADR-0085）；
+//!   升级前当前核心在目标镜像的一次性容器里跑它，只报会新失效的插件。
 //!
 //! 通过时退出码 0；插件包不合格时 1；用法不对时 2。
 
@@ -29,6 +31,7 @@ use wonton_core::plugin::storefront::index::IndexEntry;
 use wonton_core::plugin::{host_check, host_facts};
 
 mod check_index;
+mod compat;
 mod locked;
 
 const USAGE: &str = "用法：wonton-core plugin check <插件包目录> [--official]\n      \
@@ -37,7 +40,8 @@ const USAGE: &str = "用法：wonton-core plugin check <插件包目录> [--offi
                      wonton-core plugin fetch-locked <锁文件> <目标目录>\n      \
                      wonton-core plugin host [插件包目录]\n      \
                      wonton-core plugin slice-unit\n      \
-                     wonton-core plugin check-index <index.json>";
+                     wonton-core plugin check-index <index.json>\n      \
+                     wonton-core plugin compat <插件包目录>…";
 
 pub async fn run(args: &[String]) -> ExitCode {
     match args {
@@ -55,6 +59,7 @@ pub async fn run(args: &[String]) -> ExitCode {
         [command, path] if command == "check-index" && !path.starts_with('-') => {
             check_index::run(Path::new(path))
         }
+        [command, rest @ ..] if command == "compat" => compat::run(rest),
         _ => usage(),
     }
 }

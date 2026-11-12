@@ -174,7 +174,10 @@ impl VerificationRequest {
             .inner
             .generate_qr_code()
             .await?
-            .map(|qr| QrVerification { inner: Box::new(qr), client: self.client.clone() }))
+            .map(|qr| QrVerification {
+                inner: Box::new(qr),
+                client: self.client.clone(),
+            }))
     }
 
     /// Start a QR code verification by providing a scanned QR code for this
@@ -187,20 +190,30 @@ impl VerificationRequest {
     /// for the remainder of the verification flow.
     #[cfg(feature = "qrcode")]
     pub async fn scan_qr_code(&self, data: QrVerificationData) -> Result<Option<QrVerification>> {
-        let Some(qr) = self.inner.scan_qr_code(data).await? else { return Ok(None) };
+        let Some(qr) = self.inner.scan_qr_code(data).await? else {
+            return Ok(None);
+        };
         if let Some(request) = qr.reciprocate() {
             self.client.send_verification_request(request).await?;
         }
 
-        Ok(Some(QrVerification { inner: Box::new(qr), client: self.client.clone() }))
+        Ok(Some(QrVerification {
+            inner: Box::new(qr),
+            client: self.client.clone(),
+        }))
     }
 
     /// Transition from this verification request into a SAS verification flow.
     pub async fn start_sas(&self) -> Result<Option<SasVerification>> {
-        let Some((sas, request)) = self.inner.start_sas().await? else { return Ok(None) };
+        let Some((sas, request)) = self.inner.start_sas().await? else {
+            return Ok(None);
+        };
         self.client.send_verification_request(request).await?;
 
-        Ok(Some(SasVerification { inner: Box::new(sas), client: self.client.clone() }))
+        Ok(Some(SasVerification {
+            inner: Box::new(sas),
+            client: self.client.clone(),
+        }))
     }
 
     /// Cancel the verification request
@@ -220,12 +233,22 @@ impl VerificationRequest {
 
         match state {
             Created { our_methods } => VerificationRequestState::Created { our_methods },
-            Requested { their_methods, other_device_data } => {
-                VerificationRequestState::Requested { their_methods, other_device_data }
-            }
-            Ready { their_methods, our_methods, other_device_data } => {
-                VerificationRequestState::Ready { their_methods, our_methods, other_device_data }
-            }
+            Requested {
+                their_methods,
+                other_device_data,
+            } => VerificationRequestState::Requested {
+                their_methods,
+                other_device_data,
+            },
+            Ready {
+                their_methods,
+                our_methods,
+                other_device_data,
+            } => VerificationRequestState::Ready {
+                their_methods,
+                our_methods,
+                other_device_data,
+            },
             Transitioned { verification, .. } => VerificationRequestState::Transitioned {
                 verification: match verification {
                     matrix_sdk_base::crypto::Verification::SasV1(sas) => {
@@ -250,7 +273,9 @@ impl VerificationRequest {
     pub fn changes(&self) -> impl Stream<Item = VerificationRequestState> + use<> {
         let client = self.client.to_owned();
 
-        self.inner.changes().map(move |s| Self::convert_state(client.to_owned(), s))
+        self.inner
+            .changes()
+            .map(move |s| Self::convert_state(client.to_owned(), s))
     }
 
     /// Get the current state the verification request is in.

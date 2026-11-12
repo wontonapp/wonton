@@ -122,6 +122,66 @@
         }
       }
     },
+    "plugin.settings.emptyPrompt": {
+      "comment": "Placeholder of a text setting whose empty value clears it back to the default.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave empty to reset to the default"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "留空恢复默认值"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "留空恢復預設值"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空欄で既定値に戻ります"
+          }
+        }
+      }
+    },
+    "plugin.settings.required": {
+      "comment": "Shown next to a required setting that has neither a value nor a default.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Required"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必填"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必填"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必須"
+          }
+        }
+      }
+    },
     "plugin.task.installFailed": {
       "comment": "Failed install task line. Argument: the reason from the core.",
       "extractionState": "manual",

@@ -66,6 +66,20 @@ plugins-registry-not-loaded = The Download Mirror settings haven't loaded yet.
 # $reason is the connection problem's original detail.
 plugins-registry-save-uncertain = It isn't certain that the change was saved. Read the settings again once you're connected: { $reason }
 
+matrix-login-not-current = This sign-in has ended or was replaced by a newer one.
+
+matrix-login-wrong-step = This sign-in isn't at that step.
+
+matrix-login-method-not-offered = This server doesn't offer that sign-in method.
+
+matrix-login-device-name-required = Enter a name for this device.
+
+matrix-login-invalid-user-id = Enter the full Matrix ID, like @name:matrix.org.
+
+matrix-login-password-required = Enter the password.
+
+matrix-login-redirect-not-allowed = This app can't receive sign-in callbacks at that address.
+
 # Starting an app on the home server (crates/wonton-client/src/plugins/start.rs).
 # $id is the unchanged app ID.
 plugins-start-busy = { $id } is already starting, installing, updating, or uninstalling.
@@ -97,3 +111,18 @@ plugins-core-upgrade-not-cancellable = The update can't be cancelled right now.
 
 # $reason is the connection problem's original detail.
 plugins-core-upgrade-start-uncertain = It isn't certain that the update was started. Check again once you're connected: { $reason }
+
+# Details of the compatibility check before the update (ADR-0085): one line per reason,
+# with the manifest's own value in { $raw }. Written by the client core in the App's
+# language; the update page lists them under each app the new version can't read.
+plugins-core-upgrade-compat-spec = Its manifest is written against spec { $raw }, which the new version doesn't support: it will be marked as broken after the update.
+
+plugins-core-upgrade-compat-feature = Its manifest uses { $raw }, which the new version doesn't recognize: it will be marked as broken after the update.
+
+plugins-core-upgrade-compat-capability = It depends on the capability { $raw }, which the new version doesn't provide: it will be marked as broken after the update.
+
+plugins-core-upgrade-compat-other = The new version can't read this app, so it will be marked as broken after the update.
+
+plugins-core-upgrade-compat-other-raw = The new version can't read part of this app ({ $raw }), so it will be marked as broken after the update.
+
+contacts-invalid-action = Not a bot-contacts action.

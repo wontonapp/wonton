@@ -61,6 +61,20 @@ plugins-registry-not-loaded = ダウンロードミラーの設定がまだ取�
 # $reason は接続問題の元の詳細です。
 plugins-registry-save-uncertain = 変更が保存できたかはっきりしません。接続後に設定をもう一度読み込んでください：{ $reason }
 
+matrix-login-not-current = このログインは終了したか、新しいログインに置き換えられました。
+
+matrix-login-wrong-step = このログインはその段階にありません。
+
+matrix-login-method-not-offered = このサーバーはそのログイン方法に対応していません。
+
+matrix-login-device-name-required = このデバイスの名前を入力してください。
+
+matrix-login-invalid-user-id = @name:matrix.org のような完全な Matrix ID を入力してください。
+
+matrix-login-password-required = パスワードを入力してください。
+
+matrix-login-redirect-not-allowed = アプリはそのアドレスへのログインコールバックを受け取れません。
+
 # 自宅サーバー上のアプリの起動（crates/wonton-client/src/plugins/start.rs）。
 # $id はそのままのアプリIDです。
 plugins-start-busy = { $id }はすでに起動、インストール、更新、またはアンインストールの実行中です
@@ -88,3 +102,18 @@ plugins-core-upgrade-not-cancellable = 今はキャンセルできません
 
 # $reason は接続問題の元の詳細です。
 plugins-core-upgrade-start-uncertain = アップデートを開始できたかはっきりしません。接続後にもう一度確認してください：{ $reason }
+
+# アップデート前の互換性チェック（ADR-0085）の詳細：理由ごとに 1 行、{ $raw } はマニフェ
+# ストの原文の値。クライアントコアがアプリの言語で書き、アップデートページでは新しいバー
+# ジョンが読めないアプリの下に並べます。
+plugins-core-upgrade-compat-spec = このアプリは仕様{ $raw }で書かれており、新しいバージョンは対応していません。アップデート後は異常として表示されます。
+
+plugins-core-upgrade-compat-feature = このアプリのマニフェストには、新しいバージョンが認識しない{ $raw }があります。アップデート後は異常として表示されます。
+
+plugins-core-upgrade-compat-capability = このアプリは能力{ $raw }に依存していますが、新しいバージョンでは提供されません。アップデート後は異常として表示されます。
+
+plugins-core-upgrade-compat-other = 新しいバージョンはこのアプリを読めません。アップデート後は異常として表示されます。
+
+plugins-core-upgrade-compat-other-raw = 新しいバージョンはこのアプリの{ $raw }を読めません。アップデート後は異常として表示されます。
+
+contacts-invalid-action = Bot の連絡先の操作ではありません。

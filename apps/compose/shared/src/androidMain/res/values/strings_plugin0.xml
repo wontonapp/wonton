@@ -3,6 +3,10 @@
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <!-- Section title for the folders the app may save files into. No arguments. -->
     <string name="plugin_save_folders">Folders it can save to</string>
+    <!-- Section title and row for opening an app\'s settings page. No arguments. -->
+    <string name="plugin_settings_section">Settings</string>
+    <!-- Note under a required setting that has no value and no default. No arguments. -->
+    <string name="plugin_settings_required">Required</string>
     <!-- Switch label: ask before every update of an agent-written app. No arguments. -->
     <string name="plugin_ask_every_update">Ask every time</string>
     <!-- Section title for the app's metadata. No arguments. -->

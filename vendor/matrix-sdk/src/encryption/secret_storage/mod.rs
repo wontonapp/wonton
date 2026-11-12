@@ -187,7 +187,10 @@ impl SecretStorageError {
     /// Create a `SecretStorageError::ImportError` from a secret name and any
     /// error that can be converted directly into an `ImportError`
     fn into_import_error(secret_name: SecretName, error: impl Into<ImportError>) -> Self {
-        SecretStorageError::ImportError { name: secret_name, error: error.into() }
+        SecretStorageError::ImportError {
+            name: secret_name,
+            error: error.into(),
+        }
     }
 
     /// Create a `SecretStorageError` from a `SecretImportError`
@@ -199,12 +202,14 @@ impl SecretStorageError {
     /// secret.
     fn from_secret_import_error(error: SecretImportError) -> Self {
         match error {
-            SecretImportError::Key { name, error } => {
-                SecretStorageError::ImportError { name, error: ImportError::Key(error) }
-            }
-            SecretImportError::MismatchedPublicKeys { name } => {
-                SecretStorageError::ImportError { name, error: ImportError::MismatchedPublicKeys }
-            }
+            SecretImportError::Key { name, error } => SecretStorageError::ImportError {
+                name,
+                error: ImportError::Key(error),
+            },
+            SecretImportError::MismatchedPublicKeys { name } => SecretStorageError::ImportError {
+                name,
+                error: ImportError::MismatchedPublicKeys,
+            },
             SecretImportError::Store(error) => SecretStorageError::Storage(error),
         }
     }
@@ -268,8 +273,11 @@ impl SecretStorage {
 
             let event_type =
                 GlobalAccountDataEventType::SecretStorageKey(default_key_id.key_id.to_owned());
-            let secret_key =
-                self.client.account().fetch_account_data(event_type.to_owned()).await?;
+            let secret_key = self
+                .client
+                .account()
+                .fetch_account_data(event_type.to_owned())
+                .await?;
 
             if let Some(secret_key_content) = secret_key {
                 let event_type = event_type.to_string();
@@ -281,9 +289,14 @@ impl SecretStorage {
                 let key =
                     SecretStorageKey::from_account_data(secret_storage_key, secret_key_content)?;
 
-                Ok(SecretStore { client: self.client.to_owned(), key })
+                Ok(SecretStore {
+                    client: self.client.to_owned(),
+                    key,
+                })
             } else {
-                Err(SecretStorageError::MissingKeyInfo { key_id: Some(default_key_id.key_id) })
+                Err(SecretStorageError::MissingKeyInfo {
+                    key_id: Some(default_key_id.key_id),
+                })
             }
         } else {
             Err(SecretStorageError::MissingKeyInfo { key_id: None })
@@ -336,7 +349,10 @@ impl SecretStorage {
     /// # anyhow::Ok(()) };
     /// ```
     pub fn create_secret_store(&self) -> CreateStore<'_> {
-        CreateStore { secret_storage: self, passphrase: None }
+        CreateStore {
+            secret_storage: self,
+            passphrase: None,
+        }
     }
 
     /// Run a network request to find if secret storage is set up for this user.

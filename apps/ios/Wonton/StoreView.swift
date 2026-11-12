@@ -414,7 +414,7 @@ struct TaskRow: View {
                         .buttonStyle(WontonSmallButtonStyle())
                 }
             }
-        case let .uncertain(message):
+        case let .uncertain(message, _):
             HStack(alignment: .top, spacing: WontonTheme.spacing.s4) {
                 WontonIcon.help.view(size: WontonTheme.size.iconTiny).padding(.top, 3)
                 Text(.Plugin2.pluginTaskUncertain(message))

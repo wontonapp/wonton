@@ -4,12 +4,13 @@ import WontonClient
 /// 确认卡片：文字是家里的服务器写好的，按钮有没有、能不能点都由核心决定。
 struct ConfirmationCardView: View {
     let view: ConfirmationView
-    let answer: (CardChoice) -> Void
+    let answer: (CardChoice, [String: String]) -> Void
     let stopWindow: () -> Void
     @Environment(TabsModel.self) private var tabs
     @Environment(PluginsModel.self) private var plugins
     @State private var showsPages = false
     @State private var pinRequest: TabRef?
+    @State private var secrets: [String: String] = [:]
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -20,6 +21,14 @@ struct ConfirmationCardView: View {
                     .wontonText(WontonTheme.typography.supporting)
                     .fontWeight(line.emphasis ? .semibold : .regular)
                     .foregroundStyle(line.emphasis ? Color(colors.danger) : Color(colors.textPrimary))
+            }
+            if !view.card.secretInputs.isEmpty {
+                SecretInputsSection(
+                    inputs: view.card.secretInputs, values: secrets,
+                    enabled: view.card.state == .pending
+                ) { name, value in
+                    secrets[name] = value
+                }
             }
             state
             if let window = view.window {
@@ -139,7 +148,7 @@ struct ConfirmationCardView: View {
     private var buttons: some View {
         ForEach(view.card.choices, id: \.self) { choice in
             Button {
-                answer(choice)
+                answer(choice, secretValues(view.card.secretInputs, secrets))
             } label: {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     if view.sending == choice.answer, view.sendingChoiceId == choice.choiceId { ProgressView() }
@@ -147,7 +156,8 @@ struct ConfirmationCardView: View {
                 }
             }
             .buttonStyle(WontonButtonStyle(kind: choice.answer == .approve ? .primary : .secondary))
-            .disabled(view.sending != nil)
+            .disabled(view.sending != nil || (choice.answer == .approve
+                && missingRequiredSecret(view.card.secretInputs, secrets)))
         }
     }
 }

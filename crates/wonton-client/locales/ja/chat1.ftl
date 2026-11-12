@@ -3,6 +3,8 @@
 # サインイン関連。$reason は Matrix SDK の元のエラーの詳細です。
 chat-sign-in-restore-failed = Matrixセッションを復元できません：{ $reason }
 
+chat-sign-in-external-missing = このスマートフォンにはこの Matrix アカウントのログイン状態がありません。もう一度ログインしてください。
+
 chat-sign-in-login-failed = Matrixにログインできません：{ $reason }
 
 # $reason はHTTPクライアントの元のエラーです。

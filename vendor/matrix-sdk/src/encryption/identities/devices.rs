@@ -55,7 +55,13 @@ impl DeviceUpdates {
                 devices
                     .into_iter()
                     .map(|(device_id, device)| {
-                        (device_id, Device { inner: device, client: client.to_owned() })
+                        (
+                            device_id,
+                            Device {
+                                inner: device,
+                                client: client.to_owned(),
+                            },
+                        )
                     })
                     .collect(),
             )
@@ -143,7 +149,10 @@ impl Device {
         let (verification, request) = self.inner.request_verification();
         self.client.send_verification_request(request).await?;
 
-        Ok(VerificationRequest { inner: verification, client: self.client.clone() })
+        Ok(VerificationRequest {
+            inner: verification,
+            client: self.client.clone(),
+        })
     }
 
     /// Request an interactive verification with this `Device`.
@@ -192,12 +201,18 @@ impl Device {
         &self,
         methods: Vec<VerificationMethod>,
     ) -> Result<VerificationRequest> {
-        assert!(!methods.is_empty(), "The list of verification methods can't be non-empty");
+        assert!(
+            !methods.is_empty(),
+            "The list of verification methods can't be non-empty"
+        );
 
         let (verification, request) = self.inner.request_verification_with_methods(methods);
         self.client.send_verification_request(request).await?;
 
-        Ok(VerificationRequest { inner: verification, client: self.client.clone() })
+        Ok(VerificationRequest {
+            inner: verification,
+            client: self.client.clone(),
+        })
     }
 
     /// Start an interactive verification with this [`Device`]
@@ -236,7 +251,10 @@ impl Device {
         let (sas, request) = self.inner.start_verification().await?;
         self.client.send_to_device(&request).await?;
 
-        Ok(SasVerification { inner: Box::new(sas), client: self.client.clone() })
+        Ok(SasVerification {
+            inner: Box::new(sas),
+            client: self.client.clone(),
+        })
     }
 
     /// Manually verify this device.
@@ -565,7 +583,10 @@ pub struct UserDevices {
 impl UserDevices {
     /// Get the specific device with the given device ID.
     pub fn get(&self, device_id: &DeviceId) -> Option<Device> {
-        self.inner.get(device_id).map(|d| Device { inner: d, client: self.client.clone() })
+        self.inner.get(device_id).map(|d| Device {
+            inner: d,
+            client: self.client.clone(),
+        })
     }
 
     /// Iterator over all the device ids of the user devices.
@@ -577,6 +598,9 @@ impl UserDevices {
     pub fn devices(&self) -> impl Iterator<Item = Device> + '_ {
         let client = self.client.clone();
 
-        self.inner.devices().map(move |d| Device { inner: d, client: client.clone() })
+        self.inner.devices().map(move |d| Device {
+            inner: d,
+            client: client.clone(),
+        })
     }
 }

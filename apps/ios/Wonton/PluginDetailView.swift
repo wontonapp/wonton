@@ -12,6 +12,7 @@ struct PluginDetailView: View {
     @State private var uninstalling: UninstallTarget?
     @State private var pluginId: String?
     @State private var changingVersionOf: String?
+    @State private var showsSettings = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.wontonColors) private var colors
 
@@ -69,6 +70,16 @@ struct PluginDetailView: View {
                         NoticeLines(lines: installed.notices)
                     }
                     if let installed = detail.installed { PluginTabPins(plugin: installed) }
+                    if detail.installed != nil, detail.hasSettings {
+                        WontonGroup {
+                            Button {
+                                showsSettings = true
+                            } label: {
+                                WontonRow(title: String(localized: .Plugin1.pluginSettingsTitle), showsForward: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                     if !detail.screenshots.isEmpty {
                         Screenshots(model: model, images: detail.screenshots)
                     }
@@ -77,8 +88,14 @@ struct PluginDetailView: View {
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                     }
+                    if detail.installed != nil {
+                        SecretSection(detail: detail, model: model) { loaded = .success($0) }
+                    }
                     if let installed = detail.installed, let offer = detail.lanWebui {
                         InstalledLanWebui(model: model, id: installed.id, offer: offer) { loaded = .success($0) }
+                    }
+                    if let installed = detail.installed, !installed.tunnelPorts.isEmpty {
+                        PortMappingSection(installed: installed)
                     }
                     if let installed = detail.installed, !detail.saveGrants.isEmpty {
                         SaveGrants(model: model, id: installed.id, folders: detail.saveGrants) { loaded = .success($0) }
@@ -112,6 +129,9 @@ struct PluginDetailView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(WontonTheme.spacing.pageInset)
+            }
+            .navigationDestination(isPresented: $showsSettings) {
+                PluginSettingsScreen(model: model, pluginId: pluginId ?? "")
             }
         }
     }

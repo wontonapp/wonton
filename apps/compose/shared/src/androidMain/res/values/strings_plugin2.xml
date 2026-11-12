@@ -33,7 +33,7 @@
     <!-- Destructive button that uninstalls and deletes the app's data. -->
     <string name="plugin_uninstall_delete_data">Uninstall and delete data</string>
     <!-- Message of the uninstall confirmation. -->
-    <string name="plugin_uninstall_delete_data_warning">Deleting data also removes its keys and bot accounts. This can\'t be undone.</string>
+    <string name="plugin_uninstall_delete_data_warning">Deleting data also removes its keys and bot accounts, and old encrypted messages with its bots become unreadable. This can\'t be undone.</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
     <string name="plugin_uninstall_title">Uninstall %1$s?</string>
     <!-- Content description of a screenshot on the app detail page. -->

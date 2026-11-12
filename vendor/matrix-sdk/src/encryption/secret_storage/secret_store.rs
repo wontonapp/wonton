@@ -253,8 +253,11 @@ impl SecretStore {
         let event_type = GlobalAccountDataEventType::from(secret_name.to_owned());
 
         // Get the existing account data event or create a new empty one.
-        let mut secret_content = if let Some(secret_content) =
-            self.client.account().fetch_account_data(event_type.to_owned()).await?
+        let mut secret_content = if let Some(secret_content) = self
+            .client
+            .account()
+            .fetch_account_data(event_type.to_owned())
+            .await?
         {
             secret_content
                 .deserialize_as_unchecked::<SecretEventContent>()
@@ -268,14 +271,18 @@ impl SecretStore {
         let encrypted_secret = self.key.encrypt(secret, &secret_name);
 
         // Insert the encrypted secret into the account data event.
-        secret_content
-            .encrypted
-            .insert(self.key.key_id().to_owned(), Raw::new(&encrypted_secret)?.cast());
+        secret_content.encrypted.insert(
+            self.key.key_id().to_owned(),
+            Raw::new(&encrypted_secret)?.cast(),
+        );
         let secret_content = Raw::from_json(to_raw_value(&secret_content)?);
 
         // Upload the modified account data event, now that the new secret has been
         // inserted.
-        self.client.account().set_account_data_raw(event_type, secret_content).await?;
+        self.client
+            .account()
+            .set_account_data_raw(event_type, secret_content)
+            .await?;
 
         Ok(())
     }
@@ -289,23 +296,30 @@ impl SecretStore {
         let mut export = CrossSigningKeyExport::default();
 
         export.master_key = self.get_secret(SecretName::CrossSigningMasterKey).await?;
-        export.self_signing_key = self.get_secret(SecretName::CrossSigningSelfSigningKey).await?;
-        export.user_signing_key = self.get_secret(SecretName::CrossSigningUserSigningKey).await?;
+        export.self_signing_key = self
+            .get_secret(SecretName::CrossSigningSelfSigningKey)
+            .await?;
+        export.user_signing_key = self
+            .get_secret(SecretName::CrossSigningUserSigningKey)
+            .await?;
 
         Ok(export)
     }
 
     async fn put_cross_signing_keys(&self, export: CrossSigningKeyExport) -> Result<()> {
         if let Some(master_key) = &export.master_key {
-            self.put_secret(SecretName::CrossSigningMasterKey, master_key).await?;
+            self.put_secret(SecretName::CrossSigningMasterKey, master_key)
+                .await?;
         }
 
         if let Some(user_signing_key) = &export.user_signing_key {
-            self.put_secret(SecretName::CrossSigningUserSigningKey, user_signing_key).await?;
+            self.put_secret(SecretName::CrossSigningUserSigningKey, user_signing_key)
+                .await?;
         }
 
         if let Some(self_signing_key) = &export.self_signing_key {
-            self.put_secret(SecretName::CrossSigningSelfSigningKey, self_signing_key).await?;
+            self.put_secret(SecretName::CrossSigningSelfSigningKey, self_signing_key)
+                .await?;
         }
 
         Ok(())
@@ -422,7 +436,9 @@ impl SecretStore {
         // keys if they match to the public parts, otherwise we would risk
         // importing some stale cross-signing keys leftover in the secret store.
         let (request_id, request) = olm_machine.query_keys_for_users([olm_machine.user_id()]);
-        self.client.keys_query(&request_id, request.device_keys).await?;
+        self.client
+            .keys_query(&request_id, request.device_keys)
+            .await?;
 
         // Let's now try to import our private cross-signing keys.
         let status = olm_machine
@@ -447,7 +463,9 @@ impl SecretStore {
                 // `own_device.verify()` are attached to the `Device` we have in storage.
                 let (request_id, request) =
                     olm_machine.query_keys_for_users([olm_machine.user_id()]);
-                self.client.keys_query(&request_id, request.device_keys).await?;
+                self.client
+                    .keys_query(&request_id, request.device_keys)
+                    .await?;
 
                 info!("Successfully signed our own device, the device is now verified");
             } else {
@@ -498,6 +516,8 @@ impl SecretStore {
 
 impl fmt::Debug for SecretStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SecretStore").field("key", &self.key).finish_non_exhaustive()
+        f.debug_struct("SecretStore")
+            .field("key", &self.key)
+            .finish_non_exhaustive()
     }
 }

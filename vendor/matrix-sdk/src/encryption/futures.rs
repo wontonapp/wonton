@@ -82,7 +82,12 @@ where
     boxed_into_future!(extra_bounds: 'a);
 
     fn into_future(self) -> Self::IntoFuture {
-        let Self { client, reader, send_progress, request_config } = self;
+        let Self {
+            client,
+            reader,
+            send_progress,
+            request_config,
+        } = self;
         Box::pin(async move {
             let mut encryptor = matrix_sdk_base::crypto::AttachmentEncryptor::new(reader);
 

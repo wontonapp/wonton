@@ -60,6 +60,7 @@ PREFIXES: Dict[str, str] = {
     "takeover": "takeover",
     "port": "plugins",
     "mapping": "plugins",
+    "portmapping": "plugins",
     # peers
     "peers": "peers",
     "friends": "friends",
@@ -125,7 +126,7 @@ GROUP_OF: Dict[str, str] = {
     for group, prefixes in {
         "chat": "chat chatbackup chatstatus timeline message room bot botprofile transfer composer panel confirmation confirmationcard",
         "onboarding": "onboarding pairing install home homestatus launcher",
-        "plugins": "plugin pluginsources store registry registrymirror tool toolpolicy tab tabs files file viewer photo preview secret sidebar sessions scope takeover port mapping",
+        "plugins": "plugin pluginsources store registry registrymirror tool toolpolicy tab tabs files file viewer photo preview secret sidebar sessions scope takeover port mapping portmapping",
         "peers": "peers friends invite servers connection verification lanclient lanwebui qr qrscanner camera ownerprofile keepalive share",
         "settings": "settings appearance egress notification push shortcuts shortcut",
         "common": "common problem core coreupgrade design app language startup page pin unpin",

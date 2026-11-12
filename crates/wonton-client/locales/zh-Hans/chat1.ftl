@@ -3,6 +3,8 @@
 # 登录相关。$reason 是 Matrix SDK 的原始错误。
 chat-sign-in-restore-failed = 恢复 Matrix 会话失败：{ $reason }
 
+chat-sign-in-external-missing = 这台手机上已经没有这个 Matrix 账号的登录状态，请重新登录。
+
 chat-sign-in-login-failed = 登录 Matrix 失败：{ $reason }
 
 # $reason 是 HTTP 客户端的原始错误。

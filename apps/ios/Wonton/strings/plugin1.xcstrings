@@ -92,6 +92,96 @@
         }
       }
     },
+    "plugin.settings.invalidDecimal": {
+      "comment": "Shown when the text for a decimal setting is not a number.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a number"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入数字"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請輸入數字"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数値を入力してください"
+          }
+        }
+      }
+    },
+    "plugin.settings.invalidInteger": {
+      "comment": "Shown when the text for an integer setting is not an integer.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a whole number"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入整数"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請輸入整數"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整数を入力してください"
+          }
+        }
+      }
+    },
+    "plugin.settings.title": {
+      "comment": "Title of a plugin's settings page and the row on the plugin detail page that opens it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定"
+          }
+        }
+      }
+    },
     "plugin.task.installDone": {
       "comment": "Status of a finished install task.",
       "extractionState": "manual",
@@ -249,25 +339,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Deleting data also removes its keys and bot accounts. This can't be undone."
+            "value": "Deleting data also removes its keys and bot accounts, and old encrypted messages with its bots become unreadable. This can't be undone."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除数据会一并删掉它的密钥和 Bot 账号，不能恢复。"
+            "value": "删除数据会一并删掉它的密钥和 Bot 账号，和 Bot 的旧加密消息将无法再查看，不能恢复。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "刪除資料會一併刪掉它的金鑰和 Bot 帳號，無法復原。"
+            "value": "刪除資料會一併刪掉它的金鑰和 Bot 帳號，與 Bot 的舊加密訊息將無法再查看，無法復原。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "データを削除すると、鍵とボットのアカウントも一緒に削除され、元に戻せません。"
+            "value": "データを削除すると、鍵とボットのアカウントも一緒に削除され、ボットとの過去の暗号化メッセージも読めなくなります。元に戻せません。"
           }
         }
       }

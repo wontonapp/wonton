@@ -182,6 +182,36 @@
         }
       }
     },
+    "plugin.settings.updatesApp": {
+      "comment": "Shown for a setting whose control or value type is newer than this App understands; submitting the whole form is blocked.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update the App to edit this setting"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要更新 App 才能改"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要更新 App 才能改"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この設定を変更するには App をアップデートしてください"
+          }
+        }
+      }
+    },
     "plugin.task.addedTools": {
       "comment": "Succeeded task line listing the tools the app gained. Argument: the tool names, formatted as a list.",
       "extractionState": "manual",

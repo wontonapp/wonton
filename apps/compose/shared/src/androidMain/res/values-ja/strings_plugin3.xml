@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="plugin_settings_update_app">変更するには App のアップデートが必要です</string>
     <string name="plugin_source">提供元</string>
     <string name="plugin_permission_added">追加</string>
     <!-- Small tag next to a permission the core doesn't support. -->

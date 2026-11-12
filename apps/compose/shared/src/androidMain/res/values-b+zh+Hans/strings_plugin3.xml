@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="plugin_settings_update_app">要更新 App 才能改</string>
     <string name="plugin_source">来源</string>
     <string name="plugin_permission_added">新增</string>
     <!-- Small tag next to a permission the core doesn't support. -->

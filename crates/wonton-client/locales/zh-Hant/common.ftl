@@ -61,6 +61,20 @@ plugins-registry-not-loaded = 還沒取到下載鏡像站的設定。
 # $reason 是連線問題的原始詳細資訊。
 plugins-registry-save-uncertain = 不確定改好了沒有，連上後重新讀取設定：{ $reason }
 
+matrix-login-not-current = 這次登入已經結束，或者已經換成了新的一次。
+
+matrix-login-wrong-step = 這次登入不在這一步。
+
+matrix-login-method-not-offered = 這台伺服器不提供這種登入方式。
+
+matrix-login-device-name-required = 請填這台裝置的名稱。
+
+matrix-login-invalid-user-id = 請填完整的 Matrix ID，例如 @name:matrix.org。
+
+matrix-login-password-required = 請填密碼。
+
+matrix-login-redirect-not-allowed = App 收不到發往這個位址的登入回呼。
+
 # 啟動家裡的應用程式（crates/wonton-client/src/plugins/start.rs）。
 # $id 是原樣的應用程式編號。
 plugins-start-busy = { $id } 正在啟動、安裝、更新或解除安裝
@@ -88,3 +102,17 @@ plugins-core-upgrade-not-cancellable = 現在無法取消
 
 # $reason 是連線問題的原始詳細資訊。
 plugins-core-upgrade-start-uncertain = 不確定發起了沒有，連上後再看一下：{ $reason }
+
+# 相容性檢查（ADR-0085）的詳情：每個原因一行，{ $raw } 是清單裡的原值。用戶端核心按
+# App 的語言寫，升級頁列在新版本讀不了的應用程式下面。
+plugins-core-upgrade-compat-spec = 它按規範 { $raw } 寫成，新版本不支援：升級後會被標為異常。
+
+plugins-core-upgrade-compat-feature = 它的清單用了新版本不認得的 { $raw }：升級後會被標為異常。
+
+plugins-core-upgrade-compat-capability = 它依賴能力 { $raw }，新版本不提供：升級後會被標為異常。
+
+plugins-core-upgrade-compat-other = 新版本讀不了這個應用程式：升級後會被標為異常。
+
+plugins-core-upgrade-compat-other-raw = 新版本讀不了這個應用程式的 { $raw }：升級後會被標為異常。
+
+contacts-invalid-action = 不是 Bot 聯絡人操作。

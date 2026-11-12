@@ -2,6 +2,7 @@
 <resources>
     <!-- Button that revokes one save permission. No arguments; short label. -->
     <string name="plugin_save_revoke">Revoke</string>
+    <string name="plugin_settings_open">Open settings</string>
     <!-- Section title for the app's updates. No arguments. -->
     <string name="plugin_updates_section">Updates</string>
     <!-- Line under the app's name and summary naming the agent that wrote it. Argument: the agent's title. -->

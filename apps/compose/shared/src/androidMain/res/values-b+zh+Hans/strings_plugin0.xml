@@ -2,6 +2,8 @@
 <resources>
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <string name="plugin_save_folders">能存文件的文件夹</string>
+    <string name="plugin_settings_section">设置</string>
+    <string name="plugin_settings_required">必填</string>
     <string name="plugin_ask_every_update">每次都问</string>
     <string name="plugin_info">信息</string>
     <string name="plugin_author">作者</string>

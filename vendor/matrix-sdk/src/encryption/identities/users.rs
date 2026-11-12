@@ -102,7 +102,10 @@ pub struct UserIdentity {
 
 impl UserIdentity {
     pub(crate) fn new(client: Client, identity: CryptoUserIdentity) -> Self {
-        Self { inner: identity, client }
+        Self {
+            inner: identity,
+            client,
+        }
     }
 
     #[cfg(feature = "e2e-encryption")]
@@ -245,7 +248,10 @@ impl UserIdentity {
         &self,
         methods: Vec<VerificationMethod>,
     ) -> Result<VerificationRequest, RequestVerificationError> {
-        assert!(!methods.is_empty(), "The list of verification methods can't be non-empty");
+        assert!(
+            !methods.is_empty(),
+            "The list of verification methods can't be non-empty"
+        );
         self.request_verification_impl(Some(methods)).await
     }
 
@@ -261,12 +267,18 @@ impl UserIdentity {
                         .await
                         .map_err(crate::Error::from)?
                 } else {
-                    identity.request_verification().await.map_err(crate::Error::from)?
+                    identity
+                        .request_verification()
+                        .await
+                        .map_err(crate::Error::from)?
                 };
 
                 self.client.send_verification_request(request).await?;
 
-                Ok(VerificationRequest { inner: verification, client: self.client.clone() })
+                Ok(VerificationRequest {
+                    inner: verification,
+                    client: self.client.clone(),
+                })
             }
             CryptoUserIdentity::Other(i) => {
                 let content = i.verification_request_content(methods.clone());
@@ -291,7 +303,10 @@ impl UserIdentity {
                 let verification =
                     i.request_verification(room.room_id(), &result.response.event_id, methods);
 
-                Ok(VerificationRequest { inner: verification, client: self.client.clone() })
+                Ok(VerificationRequest {
+                    inner: verification,
+                    client: self.client.clone(),
+                })
             }
         }
     }

@@ -47,7 +47,10 @@ impl<'a> IntoFuture for CreateStore<'a> {
     type IntoFuture = Pin<Box<dyn Future<Output = Self::Output> + Send + 'a>>;
 
     fn into_future(self) -> Self::IntoFuture {
-        let Self { secret_storage, passphrase } = self;
+        let Self {
+            secret_storage,
+            passphrase,
+        } = self;
 
         Box::pin(async move {
             // Prevent multiple simultaneous calls to this method.
@@ -65,15 +68,26 @@ impl<'a> IntoFuture for CreateStore<'a> {
 
             let content = new_key.event_content().to_owned();
 
-            secret_storage.client.account().set_account_data(content).await?;
+            secret_storage
+                .client
+                .account()
+                .set_account_data(content)
+                .await?;
 
-            let store = SecretStore { client: secret_storage.client.to_owned(), key: new_key };
+            let store = SecretStore {
+                client: secret_storage.client.to_owned(),
+                key: new_key,
+            };
             store.export_secrets().await?;
 
             let default_key_content =
                 SecretStorageDefaultKeyEventContent::new(store.key.key_id().to_owned());
 
-            store.client.account().set_account_data(default_key_content).await?;
+            store
+                .client
+                .account()
+                .set_account_data(default_key_content)
+                .await?;
 
             Ok(store)
         })

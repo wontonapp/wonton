@@ -166,8 +166,9 @@ impl HomeserverCapabilities {
             self.client.task_monitor().spawn_finite_task(
                 "refresh homeserver capabilities cache",
                 async move {
-                    if let Err(error) =
-                        homeserver_capabilities.get_and_cache_remote_capabilities().await
+                    if let Err(error) = homeserver_capabilities
+                        .get_and_cache_remote_capabilities()
+                        .await
                     {
                         warn!("failed to refresh homeserver capabilities cache: {error}");
                     }
@@ -344,10 +345,18 @@ mod tests {
 
         // Refresh the capabilities
         let capabilities = client.homeserver_capabilities();
-        capabilities.refresh().await.expect("refreshing capabilities failed");
+        capabilities
+            .refresh()
+            .await
+            .expect("refreshing capabilities failed");
 
         // Check the values we get are updated
-        assert!(capabilities.can_change_password().await.expect("checking capabilities failed"));
+        assert!(
+            capabilities
+                .can_change_password()
+                .await
+                .expect("checking capabilities failed")
+        );
 
         let mut expected_capabilities = Capabilities::default();
         expected_capabilities.change_password.enabled = false;
@@ -360,13 +369,26 @@ mod tests {
 
         // Check the values we get are not updated without a refresh, they're loaded
         // from the cache
-        assert!(capabilities.can_change_password().await.expect("checking capabilities failed"));
+        assert!(
+            capabilities
+                .can_change_password()
+                .await
+                .expect("checking capabilities failed")
+        );
 
         // Do another refresh to make sure we get the updated values
-        capabilities.refresh().await.expect("refreshing capabilities failed");
+        capabilities
+            .refresh()
+            .await
+            .expect("refreshing capabilities failed");
 
         // Check the values we get are updated
-        assert!(!capabilities.can_change_password().await.expect("checking capabilities failed"));
+        assert!(
+            !capabilities
+                .can_change_password()
+                .await
+                .expect("checking capabilities failed")
+        );
     }
 
     #[async_test]
@@ -391,7 +413,12 @@ mod tests {
         let capabilities = client.homeserver_capabilities();
 
         // Check the values we get are updated
-        assert!(capabilities.can_change_displayname().await.expect("checking capabilities failed"));
+        assert!(
+            capabilities
+                .can_change_displayname()
+                .await
+                .expect("checking capabilities failed")
+        );
 
         // Now revert the previous mock so we can check we're getting the cached value
         // instead of this one
@@ -408,17 +435,33 @@ mod tests {
 
         // Check the values we get are not updated without a refresh, they're loaded
         // from the cache
-        assert!(capabilities.can_change_displayname().await.expect("checking capabilities failed"));
+        assert!(
+            capabilities
+                .can_change_displayname()
+                .await
+                .expect("checking capabilities failed")
+        );
 
         // Force an expiry of the data.
-        let capabilities_data =
-            capabilities.homeserver_capabilities_cached().await.unwrap().unwrap();
+        let capabilities_data = capabilities
+            .homeserver_capabilities_cached()
+            .await
+            .unwrap()
+            .unwrap();
         let mut ttl_value = TtlValue::new(capabilities_data);
         ttl_value.expire();
-        client.inner.caches.homeserver_capabilities.set_value(ttl_value);
+        client
+            .inner
+            .caches
+            .homeserver_capabilities
+            .set_value(ttl_value);
 
         // Call a method to trigger a cache refresh background task.
-        capabilities.homeserver_capabilities_cached().await.unwrap().unwrap();
+        capabilities
+            .homeserver_capabilities_cached()
+            .await
+            .unwrap()
+            .unwrap();
 
         // We wait for the task to finish, the endpoint should have been called again.
         sleep(Duration::from_secs(1)).await;
@@ -447,8 +490,11 @@ mod tests {
         // Client with Matrix 1.12 that did not support extended profile fields yet.
         // Because there is no `m.profile_fields` capability, we rely on the legacy
         // profile capabilities.
-        let client =
-            server.client_builder().server_versions(vec![MatrixVersion::V1_12]).build().await;
+        let client = server
+            .client_builder()
+            .server_versions(vec![MatrixVersion::V1_12])
+            .build()
+            .await;
         let capabilities_api = client.homeserver_capabilities();
         assert!(
             capabilities_api
@@ -457,7 +503,10 @@ mod tests {
                 .expect("checking displayname capability failed")
         );
         assert!(
-            !capabilities_api.can_change_avatar().await.expect("checking avatar capability failed")
+            !capabilities_api
+                .can_change_avatar()
+                .await
+                .expect("checking avatar capability failed")
         );
         assert!(
             !capabilities_api
@@ -469,8 +518,11 @@ mod tests {
 
         // Client with Matrix 1.16 that added support for extended profile fields, the
         // deprecated profile capabilities are ignored.
-        let client =
-            server.client_builder().server_versions(vec![MatrixVersion::V1_16]).build().await;
+        let client = server
+            .client_builder()
+            .server_versions(vec![MatrixVersion::V1_16])
+            .build()
+            .await;
         let capabilities_api = client.homeserver_capabilities();
         assert!(
             capabilities_api
@@ -479,7 +531,10 @@ mod tests {
                 .expect("checking displayname capability failed")
         );
         assert!(
-            capabilities_api.can_change_avatar().await.expect("checking avatar capability failed")
+            capabilities_api
+                .can_change_avatar()
+                .await
+                .expect("checking avatar capability failed")
         );
         assert!(
             capabilities_api
@@ -512,8 +567,11 @@ mod tests {
         // Client with Matrix 1.12 that did not support extended profile fields yet.
         // However, because there is an `m.profile_fields` capability, we still rely on
         // it.
-        let client =
-            server.client_builder().server_versions(vec![MatrixVersion::V1_12]).build().await;
+        let client = server
+            .client_builder()
+            .server_versions(vec![MatrixVersion::V1_12])
+            .build()
+            .await;
         let capabilities_api = client.homeserver_capabilities();
         assert!(
             capabilities_api
@@ -522,7 +580,10 @@ mod tests {
                 .expect("checking displayname capability failed")
         );
         assert!(
-            capabilities_api.can_change_avatar().await.expect("checking avatar capability failed")
+            capabilities_api
+                .can_change_avatar()
+                .await
+                .expect("checking avatar capability failed")
         );
         assert!(
             capabilities_api
@@ -534,8 +595,11 @@ mod tests {
 
         // Client with Matrix 1.16 that added support for extended profile fields, only
         // the `m.profile_fields` capability is used too.
-        let client =
-            server.client_builder().server_versions(vec![MatrixVersion::V1_16]).build().await;
+        let client = server
+            .client_builder()
+            .server_versions(vec![MatrixVersion::V1_16])
+            .build()
+            .await;
         let capabilities_api = client.homeserver_capabilities();
         assert!(
             capabilities_api
@@ -544,7 +608,10 @@ mod tests {
                 .expect("checking displayname capability failed")
         );
         assert!(
-            capabilities_api.can_change_avatar().await.expect("checking avatar capability failed")
+            capabilities_api
+                .can_change_avatar()
+                .await
+                .expect("checking avatar capability failed")
         );
         assert!(
             capabilities_api
@@ -577,8 +644,11 @@ mod tests {
         // Client with Matrix 1.12 that did not support extended profile fields yet.
         // However, because there is an `m.profile_fields` capability, we still rely on
         // it.
-        let client =
-            server.client_builder().server_versions(vec![MatrixVersion::V1_12]).build().await;
+        let client = server
+            .client_builder()
+            .server_versions(vec![MatrixVersion::V1_12])
+            .build()
+            .await;
         let capabilities_api = client.homeserver_capabilities();
         assert!(
             !capabilities_api
@@ -587,7 +657,10 @@ mod tests {
                 .expect("checking displayname capability failed")
         );
         assert!(
-            !capabilities_api.can_change_avatar().await.expect("checking avatar capability failed")
+            !capabilities_api
+                .can_change_avatar()
+                .await
+                .expect("checking avatar capability failed")
         );
         assert!(
             !capabilities_api
@@ -599,8 +672,11 @@ mod tests {
 
         // Client with Matrix 1.16 that added support for extended profile fields, only
         // the `m.profile_fields` capability is used too.
-        let client =
-            server.client_builder().server_versions(vec![MatrixVersion::V1_16]).build().await;
+        let client = server
+            .client_builder()
+            .server_versions(vec![MatrixVersion::V1_16])
+            .build()
+            .await;
         let capabilities_api = client.homeserver_capabilities();
         assert!(
             !capabilities_api
@@ -609,7 +685,10 @@ mod tests {
                 .expect("checking displayname capability failed")
         );
         assert!(
-            !capabilities_api.can_change_avatar().await.expect("checking avatar capability failed")
+            !capabilities_api
+                .can_change_avatar()
+                .await
+                .expect("checking avatar capability failed")
         );
         assert!(
             !capabilities_api
@@ -644,8 +723,11 @@ mod tests {
         // Client with Matrix 1.12 that did not support extended profile fields yet.
         // However, because there is an `m.profile_fields` capability, we still rely on
         // it.
-        let client =
-            server.client_builder().server_versions(vec![MatrixVersion::V1_12]).build().await;
+        let client = server
+            .client_builder()
+            .server_versions(vec![MatrixVersion::V1_12])
+            .build()
+            .await;
         let capabilities_api = client.homeserver_capabilities();
         assert!(
             !capabilities_api
@@ -654,7 +736,10 @@ mod tests {
                 .expect("checking displayname capability failed")
         );
         assert!(
-            capabilities_api.can_change_avatar().await.expect("checking avatar capability failed")
+            capabilities_api
+                .can_change_avatar()
+                .await
+                .expect("checking avatar capability failed")
         );
         assert!(
             capabilities_api
@@ -666,8 +751,11 @@ mod tests {
 
         // Client with Matrix 1.16 that added support for extended profile fields, only
         // the `m.profile_fields` capability is used too.
-        let client =
-            server.client_builder().server_versions(vec![MatrixVersion::V1_16]).build().await;
+        let client = server
+            .client_builder()
+            .server_versions(vec![MatrixVersion::V1_16])
+            .build()
+            .await;
         let capabilities_api = client.homeserver_capabilities();
         assert!(
             !capabilities_api
@@ -676,7 +764,10 @@ mod tests {
                 .expect("checking displayname capability failed")
         );
         assert!(
-            capabilities_api.can_change_avatar().await.expect("checking avatar capability failed")
+            capabilities_api
+                .can_change_avatar()
+                .await
+                .expect("checking avatar capability failed")
         );
         assert!(
             capabilities_api

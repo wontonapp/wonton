@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Note under a setting the app can\'t render because the home server is newer. No arguments. -->
+    <string name="plugin_settings_update_app">Update the app to change this</string>
     <!-- Meta row: where the app came from. -->
     <string name="plugin_source">Source</string>
     <string name="plugin_permission_added">New</string>

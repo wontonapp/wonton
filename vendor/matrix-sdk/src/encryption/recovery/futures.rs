@@ -84,11 +84,23 @@ impl<'a> IntoFuture for Enable<'a> {
     boxed_into_future!(extra_bounds: 'a);
 
     fn into_future(self) -> Self::IntoFuture {
-        let Self { recovery, progress, wait_for_backups_upload, passphrase, tracing_span } = self;
+        let Self {
+            recovery,
+            progress,
+            wait_for_backups_upload,
+            passphrase,
+            tracing_span,
+        } = self;
 
         let future = async move {
             if !recovery.client.encryption().backups().are_enabled().await {
-                if recovery.client.encryption().backups().fetch_exists_on_server().await? {
+                if recovery
+                    .client
+                    .encryption()
+                    .backups()
+                    .fetch_exists_on_server()
+                    .await?
+                {
                     return Err(RecoveryError::BackupExistsOnServer);
                 } else {
                     progress.set(EnableProgress::CreatingBackup);
@@ -102,7 +114,9 @@ impl<'a> IntoFuture for Enable<'a> {
             let secret_storage = recovery.client.encryption().secret_storage();
 
             let create_store = if let Some(passphrase) = passphrase {
-                secret_storage.create_secret_store().with_passphrase(passphrase)
+                secret_storage
+                    .create_secret_store()
+                    .with_passphrase(passphrase)
             } else {
                 secret_storage.create_secret_store()
             };
@@ -140,7 +154,11 @@ impl<'a> IntoFuture for Enable<'a> {
                 #[cfg(not(target_family = "wasm"))]
                 progress_task.abort();
             } else {
-                recovery.client.encryption().backups().maybe_trigger_backup();
+                recovery
+                    .client
+                    .encryption()
+                    .backups()
+                    .maybe_trigger_backup();
             }
 
             let key = store.secret_storage_key();
@@ -165,7 +183,11 @@ pub struct Reset<'a> {
 
 impl<'a> Reset<'a> {
     pub(super) fn new(recovery: &'a Recovery) -> Self {
-        Self { recovery, passphrase: None, tracing_span: Span::current() }
+        Self {
+            recovery,
+            passphrase: None,
+            tracing_span: Span::current(),
+        }
     }
 
     /// In addition to the recovery key the [`Recovery::reset_key()`] method
@@ -183,13 +205,19 @@ impl<'a> IntoFuture for Reset<'a> {
     boxed_into_future!(extra_bounds: 'a);
 
     fn into_future(self) -> Self::IntoFuture {
-        let Self { recovery, passphrase, tracing_span } = self;
+        let Self {
+            recovery,
+            passphrase,
+            tracing_span,
+        } = self;
 
         let future = async move {
             let secret_storage = recovery.client.encryption().secret_storage();
 
             let create_store = if let Some(passphrase) = passphrase {
-                secret_storage.create_secret_store().with_passphrase(passphrase)
+                secret_storage
+                    .create_secret_store()
+                    .with_passphrase(passphrase)
             } else {
                 secret_storage.create_secret_store()
             };
@@ -215,7 +243,12 @@ pub struct RecoverAndReset<'a> {
 
 impl<'a> RecoverAndReset<'a> {
     pub(super) fn new(recovery: &'a Recovery, old_recovery_key: &'a str) -> Self {
-        Self { recovery, old_recovery_key, passphrase: None, tracing_span: Span::current() }
+        Self {
+            recovery,
+            old_recovery_key,
+            passphrase: None,
+            tracing_span: Span::current(),
+        }
     }
 
     /// In addition to the new recovery key the
@@ -233,7 +266,12 @@ impl<'a> IntoFuture for RecoverAndReset<'a> {
     boxed_into_future!(extra_bounds: 'a);
 
     fn into_future(self) -> Self::IntoFuture {
-        let Self { recovery, old_recovery_key, passphrase, tracing_span } = self;
+        let Self {
+            recovery,
+            old_recovery_key,
+            passphrase,
+            tracing_span,
+        } = self;
 
         let future = async move {
             recovery.recover(old_recovery_key).await?;
