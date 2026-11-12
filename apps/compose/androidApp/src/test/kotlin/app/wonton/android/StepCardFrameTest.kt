@@ -38,7 +38,10 @@ class StepCardFrameTest {
         compose.setContent {
             WontonTheme(testAppearance()) {
                 StepCardFrame(
-                    nav = StepNav(position = 2u, total = 3u, canBack = true, canSkip = false, canNext = true),
+                    nav = StepNav(
+                        position = 2u, total = 3u,
+                        canBack = true, canSkip = false, canNext = true, canClose = false,
+                    ),
                     title = "标题",
                     primaryText = "继续",
                     primaryBusy = false,

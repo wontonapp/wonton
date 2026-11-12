@@ -198,7 +198,7 @@ pub enum ModelProviderInput {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct OnboardingViewModel {
-    /// 还没从家里的服务器取到时为空，这时不知道引导走完了没有。
+    /// 正在显示的一步：还没从家里的服务器取到、或者刚关掉重看的引导时为空。
     pub step: Option<OnboardingStep>,
     /// 第几步和哪些按钮能点；走完了或者还没取到时为空。
     pub nav: Option<StepNav>,
@@ -244,6 +244,9 @@ pub struct StepNav {
     pub can_back: bool,
     pub can_skip: bool,
     pub can_next: bool,
+    /// 从设置重看引导时每一步都能不提交就离开：壳画关闭（iOS 左上 X、Android 顶栏），
+    /// 第一步的返回手势也当关闭。首次引导为假，照旧走完才算。
+    pub can_close: bool,
 }
 
 /// 你的资料这一步。名字必填，邮箱选填。
@@ -413,6 +416,8 @@ pub enum OnboardingReviewDetail {
     Unreachable { model: Option<String> },
     /// 选了 Agent 的账号登录，装好后在聊天里登录。
     SignInAfterSetup,
+    /// 这一类这次不动：完成时不发请求，服务器上的现值保持原样。
+    Unchanged,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

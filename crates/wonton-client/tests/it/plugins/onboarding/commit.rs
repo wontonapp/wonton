@@ -3,13 +3,14 @@
 use axum::http::Method;
 use wonton_client::{
     Action, InstallPreview, ModelProviderFailure, OnboardingCommit, OnboardingItemProblem,
-    OnboardingItemState, OnboardingStep, OnboardingViewModel, PluginFailure,
+    OnboardingItemState, OnboardingReviewDetail, OnboardingReviewKind, OnboardingStep,
+    OnboardingViewModel, PluginFailure,
 };
 
 use super::super::rig::{Canned, Rig, core_error, preview};
 use super::{
-    INSTALL, KEY, ONBOARDING, PREVIEW, PROFILE, act, at, edit, flow_rig, invalid, onboarding,
-    test_key, walk_to_review, with_photos,
+    INSTALL, KEY, ONBOARDING, PREVIEW, PROFILE, act, at, edit, flow_rig, installed_onboarding,
+    invalid, onboarding, providers, test_key, walk_to_review, with_photos,
 };
 
 fn body(rig: &Rig, method: &Method, path: &str) -> Vec<serde_json::Value> {
@@ -89,7 +90,24 @@ async fn skipping_every_step_only_marks_onboarding_finished() {
         act(&rig, Action::SkipOnboardingStep);
     }
     let review = at(&rig, OnboardingStep::Review).await;
-    assert!(review.review.items.is_empty());
+    let kinds: Vec<_> = review.review.items.iter().map(|item| item.kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            OnboardingReviewKind::Profile,
+            OnboardingReviewKind::Agent,
+            OnboardingReviewKind::Model,
+            OnboardingReviewKind::App
+        ],
+        "四类各一行，跳过的标不变"
+    );
+    assert!(
+        review
+            .review
+            .items
+            .iter()
+            .all(|item| item.detail == Some(OnboardingReviewDetail::Unchanged))
+    );
     assert!(review.nav.unwrap().can_next);
     act(&rig, Action::ContinueOnboarding);
     rig.wait_onboarding(|view| view.review.commit == OnboardingCommit::Done)
@@ -100,6 +118,106 @@ async fn skipping_every_step_only_marks_onboarding_finished() {
     assert!(finished[0]["primary_agent"].is_null());
     assert!(rig.core.seen(&Method::PUT, PROFILE).is_empty());
     assert!(rig.core.seen(&Method::POST, INSTALL).is_empty());
+}
+
+/// 已经走完引导的服务器，重看从第一步开始：装着两个 Agent（默认 agent.two）、资料和服务商都取到了。
+async fn revisit_rig() -> Rig {
+    let rig = Rig::new().await;
+    rig.core.set_onboarding(installed_onboarding());
+    rig.core.set_owner(Some("云吞"), Some("me@example.com"));
+    rig.core.set_providers(providers(true));
+    rig.connected().await;
+    at(&rig, OnboardingStep::Finished).await;
+    act(&rig, Action::RestartOnboarding);
+    at(&rig, OnboardingStep::Profile).await;
+    rig
+}
+
+#[tokio::test]
+async fn finishing_an_untouched_revisit_changes_nothing() {
+    let rig = revisit_rig().await;
+    for _ in 0..4 {
+        act(&rig, Action::ContinueOnboarding);
+    }
+    act(&rig, Action::ContinueOnboarding);
+    settled(&rig).await;
+    assert!(rig.core.seen(&Method::PUT, PROFILE).is_empty(), "资料没动");
+    assert!(rig.core.seen(&Method::PUT, KEY).is_empty(), "模型没动");
+    assert!(rig.core.seen(&Method::POST, INSTALL).is_empty(), "应用没动");
+    let finished = body(&rig, &Method::PUT, ONBOARDING);
+    assert_eq!(finished.len(), 1);
+    assert_eq!(finished[0]["step"], "finished");
+    assert!(finished[0]["primary_agent"].is_null(), "默认 Agent 没动");
+    act(&rig, Action::ContinueOnboarding);
+    at(&rig, OnboardingStep::Finished).await;
+}
+
+#[tokio::test]
+async fn finishing_a_revisit_saves_only_the_changed_agent() {
+    let rig = revisit_rig().await;
+    act(&rig, Action::ContinueOnboarding);
+    act(
+        &rig,
+        Action::ChooseOnboardingAgent {
+            id: "agent.one".to_owned(),
+        },
+    );
+    for _ in 0..3 {
+        act(&rig, Action::ContinueOnboarding);
+    }
+    let review = at(&rig, OnboardingStep::Review).await;
+    let agent = review
+        .review
+        .items
+        .iter()
+        .find(|item| item.kind == OnboardingReviewKind::Agent)
+        .expect("有 Agent 一行");
+    assert_eq!(agent.detail, Some(OnboardingReviewDetail::SetAsDefault));
+    assert_eq!(agent.titles, ["Agent One"]);
+    act(&rig, Action::ContinueOnboarding);
+    settled(&rig).await;
+    assert!(rig.core.seen(&Method::PUT, PROFILE).is_empty());
+    assert!(rig.core.seen(&Method::PUT, KEY).is_empty());
+    assert!(rig.core.seen(&Method::POST, INSTALL).is_empty());
+    let finished = body(&rig, &Method::PUT, ONBOARDING);
+    assert_eq!(finished[0]["primary_agent"], "agent.one");
+    act(&rig, Action::ContinueOnboarding);
+    // 设置里的“默认 Agent”跟着显示新的当前值。
+    let done = at(&rig, OnboardingStep::Finished).await;
+    assert!(
+        done.agents
+            .iter()
+            .find(|agent| agent.id == "agent.one")
+            .unwrap()
+            .selected
+    );
+}
+
+#[tokio::test]
+async fn skipping_the_agent_step_in_a_revisit_keeps_the_current_default() {
+    let rig = revisit_rig().await;
+    act(&rig, Action::SkipOnboardingStep);
+    at(&rig, OnboardingStep::Agent).await;
+    assert!(
+        !rig.app.onboarding().agents[0].selected,
+        "跳过后流程里没有选中项"
+    );
+    for _ in 0..4 {
+        act(&rig, Action::ContinueOnboarding);
+    }
+    settled(&rig).await;
+    let finished = body(&rig, &Method::PUT, ONBOARDING);
+    assert!(finished[0]["primary_agent"].is_null(), "不清掉现在的默认");
+    act(&rig, Action::ContinueOnboarding);
+    let done = at(&rig, OnboardingStep::Finished).await;
+    assert!(
+        done.agents
+            .iter()
+            .find(|agent| agent.id == "agent.two")
+            .unwrap()
+            .selected,
+        "设置里的“默认 Agent”还是当前那个"
+    );
 }
 
 #[tokio::test]
