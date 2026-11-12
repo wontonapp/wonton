@@ -13,6 +13,17 @@ struct ChatListView: View {
         NavigationStack(path: $model.path) {
             ScrollView {
                 LazyVStack(spacing: 0) {
+                    if !model.viewModel.pendingConfirmations.isEmpty {
+                        NavigationLink(value: ChatRoute.confirmations) {
+                            WontonRow(
+                                title: String(localized: .confirmationsTitle),
+                                badgeText: "\(model.viewModel.pendingConfirmations.count)",
+                                showsForward: true
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        separator
+                    }
                     notices
                     if model.pendingDraft != nil {
                         Text(TabText.selectChat)
@@ -64,6 +75,8 @@ struct ChatListView: View {
                     ChatBackupView(model: model)
                 case .startChat:
                     StartChatView(model: model)
+                case .confirmations:
+                    ConfirmationsPage(chat: model, plugins: plugins)
                 }
             }
         }

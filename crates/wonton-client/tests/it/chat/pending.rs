@@ -374,6 +374,9 @@ async fn a_card_that_runs_out_is_settled_without_a_core_update() {
     })
     .await;
     assert_eq!(view.card.choices, vec![] as Vec<wonton_client::CardChoice>);
+    // 超时自动拒：没有回答者，和人点出来的区分开。
+    assert_eq!(view.card.answered_by, None);
+    assert_eq!(view.card.answered_by_device, None);
     // vm 和聊天视图是两个发送端（见 answering_shows_progress_then_the_result），等聊天视图跟上来再断言。
     phone
         .wait_chat("过期卡片列进不用回答的", |view| {
@@ -570,6 +573,59 @@ async fn the_owner_can_stop_a_window_and_sees_it_end() {
     })
     .await;
     assert_eq!(home.window_stops(), ["windowed"]);
+}
+
+/// 另一台设备（共用同一份列表）回答了卡片：本机的列表和会话横幅同一批更新，卡片带着是谁、在哪台设备处理的。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn another_device_answering_updates_list_and_banner_together() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    home.fail_login_tokens(usize::MAX);
+    phone.connect(&home);
+
+    home.set_confirmations(
+        vec![bot_room_card("install", "!hermes:wonton.localhost")],
+        vec![],
+    );
+    wait_confirmations(&phone, "卡片在等回答", |view| {
+        (view.pending.len() == 1).then_some(())
+    })
+    .await;
+    phone
+        .wait_chat("横幅里也有", |view| {
+            (view.pending_confirmations.len() == 1).then_some(())
+        })
+        .await;
+
+    // 另一台设备点了“不装”：核心的列表把卡片挪进结束，并记下回答者和那台设备的名字。
+    let mut answered = bot_room_card("install", "!hermes:wonton.localhost");
+    answered["state"] = json!({"type": "rejected"});
+    answered["choices"] = json!([]);
+    answered["answered_by"] = json!("@mom:wonton.localhost");
+    answered["answered_by_device"] = json!("Mom 的手机");
+    home.set_confirmations(vec![], vec![answered]);
+
+    let view = wait_confirmations(&phone, "列表里带着回答者", |view| {
+        view.finished
+            .iter()
+            .find(|view| view.card.id == "install")
+            .filter(|view| view.card.state == ConfirmationState::Rejected)
+            .cloned()
+    })
+    .await;
+    assert_eq!(
+        view.card.answered_by.as_deref(),
+        Some("@mom:wonton.localhost")
+    );
+    assert_eq!(view.card.answered_by_device.as_deref(), Some("Mom 的手机"));
+    // 横幅（pending_confirmations）同一批里也空了：两边同源，不各自算。
+    phone
+        .wait_chat("横幅里也空了", |view| {
+            view.pending_confirmations.is_empty().then_some(())
+        })
+        .await;
 }
 
 /// 通知房间（Wonton 私聊）是只读的：消息发不进去，别的私聊不受影响。

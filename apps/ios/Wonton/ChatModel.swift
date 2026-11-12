@@ -18,6 +18,7 @@ enum ChatRoute: Hashable {
     case room(String)
     case chatBackup
     case startChat
+    case confirmations
 }
 
 @MainActor
@@ -135,6 +136,14 @@ final class ChatModel {
             itemId: itemId, toRoomId: target
         )))
         openRoom(target)
+    }
+
+    /// 去“等你确认”列表：关掉压着的页面，只留列表这一层。
+    func openConfirmations() {
+        visiting = nil
+        awaitedRoom = nil
+        awaitedPeer = nil
+        path = [.confirmations]
     }
 
     /// 换了房间还在同一页：从应用页打开的就留在应用页，否则留在聊天页。

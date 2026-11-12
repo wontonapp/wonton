@@ -3069,25 +3069,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Expired, not carried out"
+            "value": "Timed out without a response, denied automatically"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已过期，没有执行"
+            "value": "超时未确认，已自动拒绝"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "已過期，沒有執行"
+            "value": "逾時未確認，已自動拒絕"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "期限切れのため実行されていません"
+            "value": "時間切れのため、自動的に拒否されました"
           }
         }
       }
@@ -32664,6 +32664,126 @@
           "stringUnit": {
             "state": "translated",
             "value": "送信を取り消す"
+          }
+        }
+      }
+    },
+    "confirmations.rejectedByDevice": {
+      "comment": "Collapsed row / card result: who denied it, and on which device. Arguments: device name, user ID or name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denied by %2$@ on %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 %1$@ 上被 %2$@ 拒绝"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 %1$@ 上被 %2$@ 拒絕"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ で %2$@ に拒否されました"
+          }
+        }
+      }
+    },
+    "confirmations.rejectedBy": {
+      "comment": "Collapsed row / card result: who denied it, when the device is unknown. Argument: user ID or name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denied by %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被 %1$@ 拒绝"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被 %1$@ 拒絕"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ に拒否されました"
+          }
+        }
+      }
+    },
+    "confirmations.approvedByDevice": {
+      "comment": "Card result: who allowed it, and on which device. Arguments: device name, user ID or name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allowed by %2$@ on %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 %1$@ 上被 %2$@ 允许"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 %1$@ 上被 %2$@ 允許"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ で %2$@ に許可されました"
+          }
+        }
+      }
+    },
+    "confirmations.approvedBy": {
+      "comment": "Card result: who allowed it, when the device is unknown. Argument: user ID or name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allowed by %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被 %1$@ 允许"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "被 %1$@ 允許"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ に許可されました"
           }
         }
       }

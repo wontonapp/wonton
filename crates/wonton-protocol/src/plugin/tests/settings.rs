@@ -86,6 +86,7 @@ fn confirmation_cards_and_answers_carry_settings() {
         origin: None,
         audience: crate::CardAudience::Keeper,
         answered_by: None,
+        answered_by_device: None,
         category: None,
     };
     let back: ConfirmationCard = round_trip(&card);

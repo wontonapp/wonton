@@ -78,13 +78,20 @@ struct ConfirmationCardView: View {
                 Text(.confirmationCardRunning).wontonText(WontonTheme.typography.supporting)
             }
         case let .succeeded(message):
-            note(message, icon: .checkCircleFill, color: colors.success)
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                note(message, icon: .checkCircleFill, color: colors.success)
+                if let answered = CardRowLine.approved(of: view) {
+                    Text(answered)
+                        .wontonText(WontonTheme.typography.supporting)
+                        .foregroundStyle(Color(colors.textSecondary))
+                }
+            }
         case let .failed(message):
             note(String(localized: .confirmationCardFailedResult(message)), icon: .error, color: colors.danger)
         case let .uncertain(message):
             note(String(localized: .confirmationCardUncertainResult(message)), icon: .help, color: colors.warning)
         case .rejected:
-            Text(.confirmationCardRejected)
+            Text(CardRowLine.rejected(of: view) ?? String(localized: .confirmationCardRejected))
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
         case .expired:

@@ -712,6 +712,7 @@ mod tests {
                     origin: None,
                     audience: crate::CardAudience::Keeper,
                     answered_by: None,
+                    answered_by_device: None,
                     category: None,
                     id: "abc".into(),
                     state: ConfirmationState::Pending,

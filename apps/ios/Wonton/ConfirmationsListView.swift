@@ -86,7 +86,7 @@ struct ConfirmationsListView: View {
                         view: card,
                         bots: bots,
                         plugins: plugins,
-                        answer: { answer(card, $0) },
+                        answer: { answer(card, $0, $1) },
                         stopWindow: { stopWindow(card) }
                     )
                 }

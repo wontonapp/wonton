@@ -98,8 +98,13 @@ fun ChatRoute(
     val onAction: (Action) -> Unit = { action -> core.send(action)?.let { rejection = it } }
 
     val room = navigation.openRoom
-    // 提示条和通知能在备份页面上打开房间。
-    LaunchedEffect(room) { if (room != null) navigation.showingBackup = false }
+    // 提示条和通知能在备份页和确认列表上打开房间。
+    LaunchedEffect(room) {
+        if (room != null) {
+            navigation.showingBackup = false
+            navigation.showingConfirmations = false
+        }
+    }
     when {
         navigation.showingBackup -> {
             BackHandler { navigation.showingBackup = false }
@@ -119,6 +124,18 @@ fun ChatRoute(
                     rejection = navigation.openDirectChat(core, userId)
                 },
                 onClose = { navigation.startingChat = false },
+            )
+        }
+        navigation.showingConfirmations -> {
+            BackHandler { navigation.showingConfirmations = false }
+            val confirmations by remember(core) { core.confirmationsUpdates() }
+                .collectAsState(initial = core.confirmations())
+            ConfirmationsScreen(
+                view = confirmations,
+                bots = viewModel.bots,
+                plugins = plugins,
+                onAction = onAction,
+                onClose = { navigation.showingConfirmations = false },
             )
         }
         room != null -> {
@@ -164,6 +181,7 @@ fun ChatRoute(
                     } else navigation.showingBackup = true
                 },
                 onStartChat = { navigation.startingChat = true },
+                onOpenConfirmations = navigation::openConfirmations,
             )
         }
     }
@@ -181,6 +199,7 @@ private fun ChatListScreen(
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
     onStartChat: () -> Unit,
+    onOpenConfirmations: () -> Unit,
 ) {
     val installing = viewModel.installingBots
     val panel = LocalChatPanel.current
@@ -199,6 +218,19 @@ private fun ChatListScreen(
                     bottom = WontonTheme.size.floatingActionButton + WontonTheme.spacing.pageInset * 2,
                 ),
             ) {
+                if (viewModel.pendingConfirmations.isNotEmpty()) {
+                    item(key = "confirmations") {
+                        WontonRow(
+                            stringResource(R.string.confirmations_title),
+                            badgeCount = viewModel.pendingConfirmations.size,
+                            showsForward = true,
+                            onClick = onOpenConfirmations,
+                        )
+                        Box(Modifier.padding(start = WontonTheme.size.avatar + WontonTheme.spacing.s12)) {
+                            WontonSeparator()
+                        }
+                    }
+                }
                 item(key = "notices") { Notices(viewModel, onOpenBackup) }
                 itemsIndexed(installing, key = { _, row -> "install:${row.pluginId}" }) { index, row ->
                     if (index > 0) {

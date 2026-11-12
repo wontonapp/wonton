@@ -23,12 +23,14 @@ class ChatNavigation(
     returnTab: MutableState<TabRef?>,
     showingBackup: MutableState<Boolean>,
     startingChat: MutableState<Boolean>,
+    showingConfirmations: MutableState<Boolean>,
     private val selectTab: (TabRef) -> Unit,
 ) {
     var openRoom by openRoom
     private var returnTab by returnTab
     var showingBackup by showingBackup
     var startingChat by startingChat
+    var showingConfirmations by showingConfirmations
 
     /** 主人在交接页点了“稍后”（ADR-0087）：只在这台 App 里先收起，聊天列表顶上的提醒再打开。 */
     var keyHandoffDeferred by mutableStateOf(false)
@@ -49,6 +51,16 @@ class ChatNavigation(
         returnTab = null
     }
 
+    /** 去“等你确认”列表：关掉压着的页面，只留列表。 */
+    fun openConfirmations() {
+        openRoom = null
+        returnTab = null
+        showingBackup = false
+        startingChat = false
+        showingConfirmations = true
+        selectTab(TabRef.Chat)
+    }
+
     /** 外部导航清掉旧的返回页和异步等待，不能在新页面打开后被旧房间覆盖。 */
     fun reset() {
         awaitedPeer = null
@@ -57,6 +69,7 @@ class ChatNavigation(
         returnTab = null
         showingBackup = false
         startingChat = false
+        showingConfirmations = false
     }
 
     /** 打开 [roomId]。这时还没有同步到它的话，等它出现。 */
@@ -112,6 +125,7 @@ class ChatNavigation(
 
     private fun show(roomId: String, from: TabRef) {
         returnTab = from.takeIf { it != TabRef.Chat }
+        showingConfirmations = false
         openRoom = roomId
         selectTab(TabRef.Chat)
     }
@@ -141,5 +155,8 @@ fun rememberChatNavigation(selectTab: (TabRef) -> Unit): ChatNavigation {
     val returnTab = remember { mutableStateOf<TabRef?>(null) }
     val showingBackup = rememberSaveable { mutableStateOf(false) }
     val startingChat = rememberSaveable { mutableStateOf(false) }
-    return remember { ChatNavigation(openRoom, returnTab, showingBackup, startingChat, selectTab) }
+    val showingConfirmations = rememberSaveable { mutableStateOf(false) }
+    return remember {
+        ChatNavigation(openRoom, returnTab, showingBackup, startingChat, showingConfirmations, selectTab)
+    }
 }
