@@ -507,7 +507,7 @@ plugin-install-preinstall-failed = 預先安裝失敗
 
 plugin-capability-unknown = 這份核心不認識能力 { $capability }，升級核心後再裝
 plugin-capability-third-party-format = 能力 { $capability } 不合法：第三方能力要寫成 x-<作者>.<名字>，作者和名字用小寫字母、數字、連字符號
-plugin-capability-egress-no-consumer = egress_proxy 沒有使用方聲明，不能寫在 requires 或 wants 裡
+plugin-capability-no-consumer = { $capability } 沒有使用方聲明，不能寫在 requires 或 wants 裡
 plugin-capability-duplicate = { $field } 裡的能力 { $capability } 寫了兩次
 plugin-capability-in-both-lists = 能力 { $capability } 不能同時在 requires 和 wants 裡
 plugin-capability-provider-requires = 提供能力的插件不能 requires 別的能力
@@ -520,3 +520,5 @@ plugin-capability-service-not-forwardable = { $field } 不能指向 network_mode
 plugin-install-capability-deps-unsupported = 這個核心還不支援外掛之間的依賴，升級核心後再裝
 plugin-install-runtime-services = runtime 為 { $runtime } 時不能宣告 services
 plugin-install-runtime-unsupported = 這個核心不支援安裝或升級 runtime 為 { $runtime } 的外掛，請先升級核心
+plugin-install-matrix-rtc-needs-matrix = 核心沒有接入 Matrix 伺服器，裝不了提供 matrix_rtc（通話授權）的應用程式
+plugin-install-matrix-rtc-conflict = 已經安裝了提供 matrix_rtc（通話授權）的應用程式 { $id }：同一時間只能有一個
