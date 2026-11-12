@@ -72,7 +72,8 @@ internal fun UpdateAllSheet(
 ) {
     val colors = WontonTheme.colors
     val spacing = WontonTheme.spacing
-    WontonSheet(onDismiss, pluralStringResource(R.plurals.store_update_all_title, updating.size, updating.size)) { close ->
+    val title = pluralStringResource(R.plurals.store_update_all_title, updating.size, updating.size)
+    WontonSheet(onDismiss, title) { close ->
         Column(
             Modifier.fillMaxWidth().padding(horizontal = spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(spacing.s16),
