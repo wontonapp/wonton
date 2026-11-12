@@ -178,7 +178,8 @@ async fn a_rejection_by_the_other_side_shows_without_waiting_out_the_slow_poll()
     );
 }
 
-/// 自己拒绝：拒绝接口回的列表当场落进 ViewModel，不等下一次取列表。
+/// 自己拒绝：拒绝接口回的列表当场落进 ViewModel，不等下一次取列表。取列表一直回“还在等你”，所以列表变空只能是
+/// 拒绝自己的回应。
 #[tokio::test]
 async fn rejecting_shows_at_once_from_the_rejections_own_answer() {
     let rig = Rig::new().await;
@@ -186,7 +187,7 @@ async fn rejecting_shows_at_once_from_the_rejections_own_answer() {
     let path = bot_contacts_path(&alice());
     let reject = bot_contact_reject_path(&alice(), BOT);
     rig.core
-        .answer(Method::GET, &path, list(&[contact(BOT, "bot", "incoming")]));
+        .answer_always(Method::GET, &path, list(&[contact(BOT, "bot", "incoming")]));
     rig.app
         .dispatch(Action::RefreshBotContacts { bot: alice() })
         .unwrap();
@@ -199,7 +200,7 @@ async fn rejecting_shows_at_once_from_the_rejections_own_answer() {
         })
         .unwrap();
     wait_contacts(&rig, |view| ready(view) && view.contacts.is_empty()).await;
-    assert_eq!(rig.core.seen(&Method::GET, &path).len(), 1);
+    assert_eq!(rig.core.seen(&Method::POST, &reject).len(), 1);
 }
 
 #[tokio::test]
