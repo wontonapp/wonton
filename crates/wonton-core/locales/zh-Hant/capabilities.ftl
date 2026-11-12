@@ -1,0 +1,17 @@
+# 能力存取、依賴錯誤與安裝確認。
+gateway-capability-permission = 應用程式 { $id } 沒有宣告能力 { $capability }，或尚未獲准使用它的提供方
+plugin-capability-missing = 能力 { $capability } 缺少提供方，請先安裝一個再繼續
+plugin-capability-stopped = 應用程式 { $provider } 還不能提供能力 { $capability }
+plugin-capability-credential-failed = 應用程式 { $provider } 為能力 { $capability } 準備或撤銷存取憑證失敗，結束代碼 { $code }：{ $detail }
+plugin-capability-in-use = 這些應用程式還需要這個提供方：{ $plugins }。請先安裝其他提供方，或解除安裝這些應用程式。
+plugin-capability-provider-install = 一起安裝 { $provider }（{ $id }）
+plugin-capability-provider-permission = { $provider } 需要這項權限：{ $permission }
+plugin-capability-provider-optional-off = { $provider } 的選用權限會保持關閉
+plugin-capability-connect = { $consumer } 將能經 { $provider } 使用能力 { $capability }
+plugin-capability-provider-failed = 安裝提供方 { $provider } 失敗：{ $error }
+plugin-capability-install-selection = 所選提供方和缺少的必要能力不相符，請重新開啟安裝預覽，從清單中選擇提供方。
+plugin-capability-request-format = 無法讀取這些能力設定，請傳送有效的 JSON 請求。
+plugin-capability-model-migration = 將模型閘道宣告為選用能力需要更新版本的核心；模型閘道遷移前，請繼續使用 models 權限。
+plugin-capability-plan-changed = 安裝計畫在預覽後發生變更，請重新預覽並確認連線。
+plugin-capability-choices-unsupported = 這份核心無法套用所選裝置或限定的 Bot 範圍，未變更這些選擇，也未開始安裝。
+plugin-capability-uninstall-selection = 所選提供方仍在使用中，或不在本次可解除安裝的清單中，請重新開啟解除安裝預覽。

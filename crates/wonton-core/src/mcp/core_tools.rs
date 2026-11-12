@@ -495,7 +495,13 @@ async fn uninstall(
                     _settings: wonton_protocol::SettingValues| async move {
         match bus
             .plugins
-            .uninstall_detached(id.clone(), purge, bus.plugins.owner_languages())
+            .uninstall_detached(
+                id.clone(),
+                purge,
+                Vec::new(),
+                true,
+                bus.plugins.owner_languages(),
+            )
             .await
         {
             Ok(report) => {

@@ -158,7 +158,7 @@ async fn leftover_data_under_the_same_id_is_called_out_before_installing() {
         .unwrap();
     assert!(!texts(&first).iter().any(|t| t.contains("留着")));
     m.install_source(&install_request(&first)).await.unwrap();
-    m.uninstall_detached(id(), false, super::langs())
+    m.uninstall_detached(id(), false, Vec::new(), true, super::langs())
         .await
         .unwrap();
 

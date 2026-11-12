@@ -33,7 +33,9 @@ use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE,
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
-use wonton_protocol::{AddedTools, InstallRequest, InstallSource, UpgradeRequest, UpgradeResult};
+use wonton_protocol::{
+    AddedTools, InstallRequest, InstallSource, UninstallRequest, UpgradeRequest, UpgradeResult,
+};
 
 pub(super) use super::api_body::{MAX_UPLOAD_BYTES, invalid_body, json_body, package};
 use super::api_switch::{enabled, granted, secrets, settings, upload_parts};
@@ -65,6 +67,14 @@ pub(crate) fn error_response(status: StatusCode, kind: &'static str, message: &s
 }
 
 pub(crate) fn install_error(error: &InstallError) -> Response {
+    if let InstallError::InUse { message, plugins } = error {
+        let body = json!({"error": {"kind": "in_use", "message": message, "plugins": plugins}});
+        let mut response = (StatusCode::CONFLICT, Json(body)).into_response();
+        response
+            .headers_mut()
+            .insert(pages::ERROR_HEADER, HeaderValue::from_static("in_use"));
+        return response;
+    }
     if let InstallError::EgressProxyUnavailable { reason, message } = error {
         let body = json!({"error": {
             "kind": error.kind(),
@@ -88,6 +98,7 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         | InstallError::GpuUnavailable(_)
         | InstallError::LanUnavailable(_) => StatusCode::UNPROCESSABLE_ENTITY,
         InstallError::Conflict(_)
+        | InstallError::InUse { .. }
         | InstallError::NameTaken(_)
         | InstallError::Changed(_)
         | InstallError::PortTaken(_)
@@ -590,6 +601,7 @@ pub async fn uninstall(
     headers: HeaderMap,
     Path(id): Path<String>,
     Query(query): Query<UninstallQuery>,
+    body: Bytes,
 ) -> Response {
     if let Some(denied) = install_denied(&gateway, peer, &headers) {
         return denied;
@@ -600,9 +612,25 @@ pub async fn uninstall(
     };
     let langs = languages(&headers);
     gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
+    let request = if body.is_empty() {
+        UninstallRequest::default()
+    } else {
+        match json_body::<UninstallRequest>(&headers, &body) {
+            Some(Ok(request)) => request,
+            Some(Err(error)) => return install_error(&error),
+            None => return install_error(&invalid_body(&headers, "expected application/json")),
+        }
+    };
+    let approve_connections = owner_denied(&gateway, peer, &headers).is_none();
     match gateway
         .plugins
-        .uninstall_detached(id, query.purge, langs)
+        .uninstall_detached(
+            id,
+            query.purge,
+            request.providers,
+            approve_connections,
+            langs,
+        )
         .await
     {
         Ok(report) => Json(report).into_response(),
