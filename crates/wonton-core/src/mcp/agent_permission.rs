@@ -11,7 +11,7 @@ use wonton_protocol::{
 
 use super::audience::Subject;
 use super::audit::{AgentPermissionRecord, Decision};
-use super::confirm::Refusal;
+use super::confirm::{CANCELLED, Refusal};
 use super::{Bus, Caller, cards};
 use crate::l10n;
 use crate::plugin::languages::Languages;
@@ -48,6 +48,8 @@ struct Asked {
     bus: Arc<Bus>,
     caller: String,
     card: String,
+    /// 卡片认到的链（请求里带了 `session` 且会话在链上的时候）。
+    chain: Option<String>,
     request: AgentPermissionRequest,
     /// 收件人的语言：卡片结束时的文字也用它。
     langs: Languages,
@@ -70,6 +72,11 @@ impl Asked {
     /// 主人按了 `choice_id` 的按钮。
     async fn answered(&mut self, choice_id: Option<&str>) -> AgentPermissionOutcome {
         self.settled = true;
+        self.resolve_chain();
+        if choice_id == Some(CANCELLED) {
+            self.audit(Decision::Withdrawn, None);
+            return AgentPermissionOutcome::Cancelled;
+        }
         let option = self
             .request
             .options
@@ -98,6 +105,15 @@ impl Asked {
             choice_id: option.choice_id.clone(),
         }
     }
+
+    /// 卡片结束了（批、拒、取消、过期）：从链上摘掉，停链不再撤回它。
+    fn resolve_chain(&self) {
+        if self.chain.is_some()
+            && let Some(chains) = self.bus.agent_chains()
+        {
+            let _ = chains.ledger().resolve_card(&self.card);
+        }
+    }
 }
 
 impl Drop for Asked {
@@ -105,6 +121,7 @@ impl Drop for Asked {
         if self.settled {
             return;
         }
+        self.resolve_chain();
         self.audit(Decision::Withdrawn, None);
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
@@ -138,6 +155,7 @@ impl Bus {
             bus: self.clone(),
             caller: caller.id.to_string(),
             card: String::new(),
+            chain: None,
             request,
             langs,
             settled: true,
@@ -151,12 +169,29 @@ impl Bus {
         };
         asked.card.clone_from(&card.id);
         asked.settled = false;
+        // 请求报了会话、会话在链上：卡片认到这条链，停链时撤回，状态查询里报 waiting_permission。
+        asked.chain = card_chain(self, &asked.request).filter(|chain| {
+            let bound = self
+                .agent_chains()
+                .is_some_and(|chains| chains.ledger().bind_card(chain, &card.id).is_ok());
+            if !bound {
+                tracing::warn!(card = %card.id, %chain, "权限卡片没能认到链上");
+            }
+            bound
+        });
         match self.confirmations.deliver(&card, answered).await {
             Ok(chosen) => Ok(asked.answered(chosen.choice_id.as_deref()).await),
             Err(Refusal::Expired) => {
                 asked.settled = true;
+                asked.resolve_chain();
                 asked.audit(Decision::Expired, None);
                 Ok(AgentPermissionOutcome::Expired)
+            }
+            // 链被停：卡片已经被核心撤回了，回 cancelled 让 Agent 收手。
+            Err(Refusal::Cancelled) => {
+                asked.settled = true;
+                asked.audit(Decision::Withdrawn, None);
+                Ok(AgentPermissionOutcome::Cancelled)
             }
             Err(refusal) => {
                 asked.settled = true;
@@ -165,6 +200,16 @@ impl Bus {
             }
         }
     }
+}
+
+/// 卡片该认到哪条链：请求里带了会话、会话登记在链上时是那条链。
+fn card_chain(bus: &Bus, request: &AgentPermissionRequest) -> Option<String> {
+    let session = request.session.as_deref()?;
+    let chains = bus.agent_chains()?;
+    chains
+        .ledger()
+        .session_chain(session)
+        .map(|info| info.chain)
 }
 
 fn refused(refusal: &Refusal) -> AgentPermissionError {

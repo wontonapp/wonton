@@ -144,3 +144,5 @@ gateway-share-required = 所有者はこのアプリをあなたに共有して�
 gateway-share-revoked = 所有者がこのアプリの共有を止めました
 gateway-share-expired = 共有の期限が切れました
 gateway-confirmation-gone = その確認はありません。終了して1日以上経過しています
+
+gateway-chains-disabled = 自宅サーバーで呼び出しの連鎖の台帳が有効になっていません

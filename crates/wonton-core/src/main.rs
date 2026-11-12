@@ -24,11 +24,15 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use tracing_subscriber::EnvFilter;
+use wonton_core::agent_chain::Chains;
+use wonton_core::agent_chain::settings::AgentSettings;
 use wonton_core::config::Config;
 mod serve;
 use wonton_core::device::Devices;
 use wonton_core::files::{CoreHost, Files, FilesConfig};
 use wonton_core::friends::Friends;
+use wonton_core::gateway::agent_chains::AgentChains;
+use wonton_core::gateway::agent_outbox::Outbox;
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
 use wonton_core::matrix::{FederationBlocks, FederationConfig, Matrix, NoticeRoom};
@@ -364,6 +368,9 @@ async fn serve() -> anyhow::Result<()> {
     if let Some(contacts) = &contacts {
         bus.attach_contacts(contacts.clone());
     }
+    // 调用链（ADR-0061 第 10 节）：账本、出箱和设置接上总线和网关。上限卡片从这里发。
+    let agent_chains = open_agent_chains(&cfg, &bus)?;
+    bus.attach_agent_chains(agent_chains.clone());
     let upgrades_after_serve = upgrades.clone();
     let gateway = open_gateway(
         &cfg,
@@ -387,6 +394,7 @@ async fn serve() -> anyhow::Result<()> {
         federation_blocks,
         sharing,
         contacts,
+        agent_chains,
     );
     let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
     serve::run_gateway(
@@ -424,6 +432,7 @@ fn open_gateway(
     federation_blocks: Option<Arc<FederationBlocks>>,
     sharing: Arc<wonton_core::gateway::sharing::Sharing>,
     contacts: Option<Arc<wonton_core::contacts::Contacts>>,
+    agent_chains: Arc<AgentChains>,
 ) -> Arc<Gateway> {
     Arc::new(
         Gateway::new(
@@ -452,6 +461,7 @@ fn open_gateway(
         .with_peers(peers)
         .with_friends(Some(friends))
         .with_contacts(contacts)
+        .with_agent_chains(Some(agent_chains))
         .with_federation_blocks(federation_blocks)
         .with_sharing(Some(sharing)),
     )
@@ -654,6 +664,23 @@ fn mcp_bus(
         ),
     );
     mcp::Bus::new(manager, confirmations, audit)
+}
+
+/// 调用链的服务（ADR-0061 第 10 节）：读回设置和账本，把“用到上限”接到上限卡片上。
+/// 账本读不出来就启动失败，不拿空账本顶替。
+fn open_agent_chains(cfg: &Config, bus: &Arc<mcp::Bus>) -> anyhow::Result<Arc<AgentChains>> {
+    let settings_path = cfg.core_state_dir().join("agent-settings.json");
+    let settings = Arc::new(AgentSettings::open(&settings_path)?);
+    let ledger = Arc::new(Chains::open(
+        cfg.core_state_dir().join("agent-chains.json"),
+        settings.limits(),
+    )?);
+    ledger.on_limit_event(gateway::agent_chains::limit_handler(bus));
+    Ok(Arc::new(AgentChains::new(
+        ledger,
+        Arc::new(Outbox::default()),
+        settings,
+    )))
 }
 
 /// 用安装脚本装的核心（有安装目录和自己的容器名）才管入口。

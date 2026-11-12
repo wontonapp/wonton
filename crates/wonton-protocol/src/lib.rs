@@ -65,12 +65,15 @@ mod verification;
 
 pub use action::Action;
 pub use agent_chain::{
-    AGENT_CHAINS_PATH, AGENT_OUTBOX_PATH, AgentChainAction, AgentChainBot, AgentChainRow,
-    AgentChainStatus, AgentChainsViewModel, AgentSettingsViewModel, ChainError, ChainLimitKind,
-    ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
-    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_CHAIN_HEADER,
-    WONTON_MAX_DEPTH_HEADER, WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER,
-    WONTON_ON_BEHALF_OF_HEADER, WONTON_PLUGIN_HEADER, WONTON_USER_HEADER,
+    AGENT_CHAINS_API_PATH, AGENT_CHAINS_PATH, AGENT_CHAINS_WAIT_SECS, AGENT_LIMITS_PATH,
+    AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH, AgentChainAction,
+    AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel, AgentConcurrency,
+    AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainError, ChainLimitKind, ChainLimits,
+    ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport, DEFAULT_CONSUMER_AGENT_CONCURRENCY,
+    SESSION_HEADER, WONTON_BOT_HEADER, WONTON_CHAIN_HEADER, WONTON_MAX_DEPTH_HEADER,
+    WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER, WONTON_ON_BEHALF_OF_HEADER,
+    WONTON_PLUGIN_HEADER, WONTON_USER_HEADER, agent_chain_stop_path,
+    agent_consumer_concurrency_path,
 };
 pub use agent_handoff::{
     HAND_OFF_STATUS_TOOL, HAND_OFF_TOOL, HandOffRequest, HandOffResult, HandOffSession,

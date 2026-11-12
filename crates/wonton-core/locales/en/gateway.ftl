@@ -144,3 +144,5 @@ gateway-share-required = The owner hasn't shared this app with you
 gateway-share-revoked = The owner stopped sharing this app
 gateway-share-expired = This share has expired
 gateway-confirmation-gone = There is no such confirmation, or it ended more than a day ago
+
+gateway-chains-disabled = The home server doesn't have the call chain ledger enabled

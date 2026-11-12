@@ -11,6 +11,7 @@ pub mod audit;
 mod authoring_tools;
 mod bounded_http;
 mod cards;
+pub(crate) mod chain_card;
 mod confirm;
 mod confirmed;
 mod contacts_gate;
@@ -111,6 +112,8 @@ pub struct Bus {
     matrix: OnceLock<Cards>,
     /// Bot 的联系人：有远端联系人的 Bot 只聊天（[`Bus::attach_contacts`]，ADR-0050）。
     contacts: OnceLock<Arc<crate::contacts::Contacts>>,
+    /// 调用链（ADR-0061 第 10 节）：权限卡片按会话认到链上、停链时撤回，上限卡片也从这里发。
+    agent_chains: OnceLock<Arc<crate::gateway::agent_chains::AgentChains>>,
     /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
     pin_cards: Mutex<HashSet<PluginId>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
@@ -146,6 +149,7 @@ impl Bus {
             people: OnceLock::new(),
             matrix: OnceLock::new(),
             contacts: OnceLock::new(),
+            agent_chains: OnceLock::new(),
             pin_cards: Mutex::new(HashSet::new()),
             peers: Mutex::new(Vec::new()),
         });
@@ -235,6 +239,32 @@ impl Bus {
 
     pub fn confirmations(&self) -> &Confirmations {
         &self.confirmations
+    }
+
+    /// 接上调用链的服务（ADR-0061 第 10 节）。只接一次。
+    pub fn attach_agent_chains(&self, chains: Arc<crate::gateway::agent_chains::AgentChains>) {
+        if self.agent_chains.set(chains).is_err() {
+            tracing::warn!("调用链的服务接了两次，用先接上的");
+        }
+    }
+
+    pub(crate) fn agent_chains(&self) -> Option<&Arc<crate::gateway::agent_chains::AgentChains>> {
+        self.agent_chains.get()
+    }
+
+    /// 停整条链（ADR-0061 第 10 节）：账本置 `Stopped`、桥的轮次进他的出箱、`agent_acp` 的会话交给网关取消，
+    /// 链上还等着的卡片撤回（等待方拿到 `cancelled`）。
+    pub async fn stop_chain(
+        self: &Arc<Self>,
+        chain: &str,
+    ) -> Result<crate::agent_chain::ChainStopOutcome, crate::agent_chain::ChainLedgerError> {
+        use crate::agent_chain::ChainLedgerError;
+        let Some(chains) = self.agent_chains.get() else {
+            return Err(ChainLedgerError::Invalid("调用链的服务没接上".into()));
+        };
+        let outcome = chains.stop(chain)?;
+        chain_card::withdraw_cards(self, &outcome);
+        Ok(outcome)
     }
 
     /// 接手申请在冷却中：返回还要等多久。过期的记录顺手清掉。

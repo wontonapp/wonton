@@ -27,6 +27,9 @@ pub struct Caller {
     /// 这次调用报的来源会话（`_meta` 的 [`ORIGIN_META_KEY`] 或请求头），没核对过；卡片上用的是核对后的，见
     /// [`super::audience`]。
     pub origin: Option<ConfirmationOrigin>,
+    /// 这条调用属于哪条调用链（ADR-0061 第 10 节）：`wonton-session` 头里的会话在这个 Bot 的轮次里时是那条链。
+    /// 会话不是这个 Bot 的就当没带，审计里记一行。
+    pub chain: Option<String>,
 }
 
 /// 令牌认出的 Bot。
@@ -51,6 +54,7 @@ impl Caller {
             name,
             bot: None,
             origin: None,
+            chain: None,
         }
     }
 
@@ -65,6 +69,46 @@ impl Caller {
         caller.bot = Some(BotIdentity { bot, keeper });
         caller
     }
+}
+
+/// 审计里的“会话认到了别人的轮次”：头里的会话不在这个 Bot 的链上时记一行。
+#[derive(serde::Serialize)]
+struct ForeignSession<'a> {
+    caller: &'a str,
+    event: &'static str,
+    session: &'a str,
+    /// 会话实际登记在哪个 Bot 的哪个会话上。
+    bot: &'a str,
+    chain: &'a str,
+}
+
+/// `wonton-session` 头 → 链 ID（ADR-0061 第 10 节）：会话没登记、或者登记在别的 Bot 的轮次里时当没带。
+fn chain_for_session(
+    bus: &Bus,
+    caller: &Caller,
+    headers: Option<&hyper::HeaderMap>,
+) -> Option<String> {
+    let session = headers?
+        .get(wonton_protocol::SESSION_HEADER)?
+        .to_str()
+        .ok()?;
+    let chains = bus.agent_chains()?;
+    let info = chains.ledger().session_chain(session)?;
+    let own = caller.bot.as_ref().map(|bot| wonton_protocol::BotRef {
+        plugin_id: caller.id.to_string(),
+        bot: bot.bot.clone(),
+    });
+    if own.as_ref() == Some(&info.bot) {
+        return Some(info.chain);
+    }
+    bus.audit.record(&ForeignSession {
+        caller: caller.id.as_str(),
+        event: "foreign_session",
+        session,
+        bot: &info.bot.bot,
+        chain: &info.chain,
+    });
+    None
 }
 
 impl Handler {
@@ -119,6 +163,7 @@ impl ServerHandler for Handler {
             .as_ref()
             .and_then(|meta| meta.0.0.get(ORIGIN_META_KEY));
         caller.origin = super::audience::reported_origin(meta, headers);
+        caller.chain = chain_for_session(&self.bus, &caller, headers);
         let cancelled = ctx.ct.clone().cancelled_owned();
         Ok(self.bus.call(&caller, request, cancelled).await.into())
     }
