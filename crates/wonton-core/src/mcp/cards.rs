@@ -87,7 +87,7 @@ pub(crate) fn line(text: impl Into<String>) -> CardLine {
     }
 }
 
-fn emphasized(text: impl Into<String>) -> CardLine {
+pub(crate) fn emphasized(text: impl Into<String>) -> CardLine {
     CardLine {
         text: text.into(),
         emphasis: true,

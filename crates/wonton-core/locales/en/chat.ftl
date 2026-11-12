@@ -74,6 +74,7 @@ chat-card-uninstall-keep = Keep its data; it's still there if you reinstall late
 # Tool-call card lines. $args is the raw JSON arguments, truncated when too long.
 chat-card-tool-data = This tool changes data
 chat-card-tool-root = This runs as root on this machine
+chat-card-tool-deletes = The app marks this tool as deleting or overwriting data
 chat-card-args = Arguments: { $args }
 
 # Bot file-save card. $name and $size describe one file; $total is the combined size.

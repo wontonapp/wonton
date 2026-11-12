@@ -18,6 +18,7 @@ mod notifier;
 mod panel_tools;
 mod people_tools;
 mod profile_tools;
+mod risky;
 mod save_tools;
 mod server;
 mod takeover;
@@ -420,9 +421,10 @@ impl Bus {
             .and_then(|a| a.read_only_hint)
             == Some(true);
         let highest = self.plugins.requires_root_confirmation(&server.id);
+        let every_time = highest || risky::deletes(&definition);
         let policy = self.plugins.tool_policy();
         let clearance = || policy.clearance(caller.id.as_str(), server.id.as_str(), tool);
-        let not_sensitive = if highest {
+        let not_sensitive = if every_time {
             None
         } else if read_only {
             Some(Basis::PluginReadOnly)
@@ -443,8 +445,8 @@ impl Bus {
                 Ok(held_ms) => held_ms,
                 Err(result) => return result,
             };
-            // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。最高级的工具全部不放宽。
-            let cleared = if highest {
+            // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。每次都问的工具全部不放宽。
+            let cleared = if every_time {
                 None
             } else {
                 clearance().map(Basis::from).or_else(|| {
@@ -475,16 +477,7 @@ impl Bus {
                 _ => outcome.result,
             };
         }
-        let plugin = cards::text(&server.title);
-        let langs = self.plugins.owner_languages();
-        let mut draft = cards::tool_call(&caller.name, &plugin, tool, &args, highest, &langs);
-        if !highest {
-            draft = draft.with_window(
-                server.id.as_str(),
-                self.confirmations.window_length(),
-                &langs,
-            );
-        }
+        let draft = self.tool_card(caller, server, &definition, &args, highest);
         // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
         let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());
         let run = move |bus: Arc<Bus>, _secrets: SecretValues| async move {
@@ -753,6 +746,8 @@ mod panel_tests;
 mod people_tests;
 #[cfg(test)]
 mod profile_tests;
+#[cfg(test)]
+mod risky_tests;
 #[cfg(test)]
 mod save_tests;
 #[cfg(test)]
