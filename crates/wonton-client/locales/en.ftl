@@ -193,6 +193,7 @@ chat-unknown-answer = This version of Wonton doesn't know that answer.
 chat-action-not-connected = You're not connected to your home server yet.
 # Shown when a chat action arrives before Matrix sign-in.
 chat-not-signed-in = You're not signed in to Matrix yet.
+chat-send-no-response = The Matrix server stopped responding
 # $error is the room ID parser's original error.
 chat-invalid-room-id = The room ID isn't valid: { $error }
 # Shown when sending into a room that only carries notifications.
@@ -336,6 +337,8 @@ home-port-mapping-save-failed = Couldn't save the port mapping switch: { $error 
 tabs-view-always-pinned = Chat and Apps are already pinned to the Navigation bar.
 tabs-view-plugin-list-not-ready = The app list hasn't loaded yet, so app pages can't be changed right now.
 tabs-view-unknown-plugin = Can't find this app.
+# $error is the local store's original error.
+tabs-storage-problem = Couldn't save the tab bar settings; the next launch may restore the old state: { $error }
 tabs-view-plugin-no-page = This app has no web page to open.
 tabs-page-not-placed = This page isn't in the panel.
 
@@ -443,7 +446,6 @@ files-name-required = The file name can't be empty.
 files-download-already-running = This file is already downloading.
 files-transfer-not-found = Can't find this transfer.
 # Shown when resending the link of a transfer that isn't in the link-not-sent state.
-files-resend-not-waiting = This transfer has no link waiting to be sent.
 files-transfer-server-changed = Your home server has changed, so this transfer belongs to the previous one.
 files-dismiss-transfer-running = This transfer is still running. Cancel it first.
 # Shown when dismissing an upload and asking to delete its local file: the

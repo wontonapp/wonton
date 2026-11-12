@@ -13,7 +13,7 @@ use wonton_protocol::{
     FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
     OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail, PluginImage,
     PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
-    SettingsViewModel, StoreItem, TabsViewModel, TransfersViewModel,
+    SettingsViewModel, StoreItem, TabRef, TabsViewModel, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -36,6 +36,7 @@ mod dispatch;
 mod limits;
 mod media;
 mod push_route;
+mod sharing;
 mod switch;
 #[cfg(feature = "test-hooks")]
 mod test_hooks;
@@ -147,8 +148,15 @@ impl ClientCore {
     }
 
     /// 连接变化时派发真实的核心状态；不把不确定状态当成已连接。
-    pub fn tab_connection_script(&self) -> String {
-        bridge::connection_script(&self.scope().home.view().status)
+    pub fn tab_connection_script(&self, tab: TabRef) -> String {
+        let scope = self.scope();
+        let home = scope.home.sender();
+        let plugins = scope.plugins.sender();
+        bridge::connection_script(sharing::tab_connected(
+            &tab,
+            &home.borrow().status,
+            &plugins.borrow(),
+        ))
     }
 
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。

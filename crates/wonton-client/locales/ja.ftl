@@ -179,6 +179,7 @@ chat-unknown-answer = このバージョンのWontonでは、この回答を認�
 chat-action-not-connected = 自宅サーバーにまだ接続していません
 # Matrixにサインインする前にチャット操作が届いたときに表示します。
 chat-not-signed-in = Matrixにまだログインしていません
+chat-send-no-response = Matrixサーバーが応答しなくなりました
 # $error はルームID解析の元のエラーです。
 chat-invalid-room-id = ルームIDが正しくありません：{ $error }
 # 通知専用のルームに送ろうとしたときに表示します。
@@ -317,6 +318,8 @@ home-port-mapping-save-failed = ポートマッピングの設定を保存でき
 tabs-view-always-pinned = チャットとアプリはすでにナビゲーションバーに固定されています。
 tabs-view-plugin-list-not-ready = アプリの一覧をまだ読み込んでいないため、今はアプリのページを操作できません。
 tabs-view-unknown-plugin = このアプリが見つかりません。
+# $error はローカル保存の元のエラー。
+tabs-storage-problem = タブバーの設定を保存できません。次回の起動では古い状態に戻ることがあります: { $error }
 tabs-view-plugin-no-page = このアプリには開けるウェブページがありません。
 tabs-page-not-placed = このページはパネルにありません。
 
@@ -409,7 +412,6 @@ files-name-required = ファイル名を入力してください
 files-download-already-running = このファイルはすでにダウンロード中です
 files-transfer-not-found = この転送が見つかりません
 # リンク再送の待機状態にない転送に対してリンクの再送を要求した場合に表示します。
-files-resend-not-waiting = この転送には再送を待っているリンクがありません
 files-transfer-server-changed = 自宅サーバーが変わったため、この転送は前のサーバーのものです
 files-dismiss-transfer-running = この転送は実行中です。先にキャンセルしてください
 # アップロードを削除してローカルファイルも削除しようとした場合に表示します。元のファイルはシステムから提供されたもので、Wontonでは削除できません。

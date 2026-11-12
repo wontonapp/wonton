@@ -160,6 +160,24 @@ private val publicProfile by lazy(LazyThreadSafetyMode.NONE) {
     ProfileStore.getInstance().getOrCreateProfile(PUBLIC_PROFILE)
 }
 
+private data class WebLayer(val profile: String?, val multiProfile: Boolean)
+
+/** 本页该用的 Profile；来源不在本机代理里、或需要 Profile 而系统不支持时返回 null。 */
+@Composable
+private fun rememberWebLayer(proxy: ProxySettings?, profileName: String?): WebLayer? {
+    val route = LocalPluginProxy.current
+    val account = LocalPluginAccount.current
+    val profile = profileName ?: account?.let { pluginProfileName(it) }
+    val multiProfile = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
+    val onRoute = proxy != null && route?.contains(proxy) == true
+    val unsupported = profileName != null && !multiProfile
+    return if (!onRoute || unsupported) {
+        null
+    } else {
+        WebLayer(profile, multiProfile)
+    }
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun PluginWebView(
@@ -180,6 +198,7 @@ fun PluginWebView(
     visible: Boolean = true,
     textZoom: Int = 100,
     publicPage: Boolean = false,
+    profileName: String? = null,
 ) {
     val loaded by rememberUpdatedState(onLoaded)
     val failed by rememberUpdatedState(onFailed)
@@ -200,7 +219,8 @@ fun PluginWebView(
         overrideProxy(proxy) { if (active) proxyReady = proxy }
         onDispose { active = false }
     }
-    key(controller, generation) {
+    val layer = rememberWebLayer(proxy, profileName) ?: return
+    key(controller, generation, layer.profile) {
         AndroidView(
             modifier = modifier.fillMaxSize(),
             factory = { context ->
@@ -217,7 +237,9 @@ fun PluginWebView(
                     settings.mediaPlaybackRequiresUserGesture = false
                     settings.builtInZoomControls = true
                     settings.displayZoomControls = false
-                    if (publicPage) WebViewCompat.setProfile(this, publicProfile.getName())
+                    if (layer.multiProfile && layer.profile != null) {
+                        WebViewCompat.setProfile(this, layer.profile)
+                    } else if (publicPage) WebViewCompat.setProfile(this, publicProfile.getName())
                     configureAppearance(this, canvas, darkTheme)
                     controller.view = this
                     webChromeClient = PluginChromeClient(this, controller)

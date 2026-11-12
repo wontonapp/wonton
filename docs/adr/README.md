@@ -7,6 +7,17 @@
 - 验证结论写进对应 ADR 的“验证结果”一节，太长的单独成文，也列在表里。
 - 实施计划（PR 拆分顺序、要同步的文档、要写的测试）放 issue，不写进 ADR。
 
+## 新能力检查单
+
+每个新能力（新的插件间能力、新的运行形态、新的外部接口）的 ADR 写清三件：
+
+- 契约（优先开放标准）；
+- 至少一个提供方；
+- 至少一个真实消费方。
+
+外加一条能证明“换提供方时消费方不用改”的契约测试；样板见
+[`model_gateway_contract`](../../crates/wonton-core/src/plugin/tests/model_gateway_contract/)。
+
 | 编号 | 主题 |
 | --- | --- |
 | [0001](0001-product-positioning.md) | 产品定位、市场与命名 |
@@ -87,3 +98,5 @@
 | [0077](0077-plugin-settings.md) | 插件设置：Schema 定义，核心校验，只重建用到的服务 |
 | [0079](0079-agent-plugins-monorepo.md) | ACP Agent 插件：一个仓库、一个底座，每家一个子目录 |
 | [0080](0080-static-web-plugins.md) | 静态网页插件：文件交给静态托管插件，核心只存文件、转发和记账；外部网页只存一个地址 |
+| [0081](0081-local-agent-host.md) | 用户自己电脑上的 Agent：电脑只当远端 ACP 运行时，桥和令牌留在服务器 |
+| [0082](0082-agent-run-status.md) | Agent 进度用一条状态消息：按 MSC4564，每轮一条，编辑推进到“等你确认”“完成”“失败” |

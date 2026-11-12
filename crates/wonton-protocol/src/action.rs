@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Answer, AvatarUpload, BotActivity, ChatLayoutChoice, ChatLayoutTarget, DeviceNetwork, FileId,
-    FontStyle, FriendBlockScope, FriendBlockTarget, ImageUpload, InstallPreview,
+    Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, DeviceNetwork,
+    FileId, FontStyle, FriendBlockScope, FriendBlockTarget, ImageUpload, InstallPreview,
     MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, ModelProviderInput, OnboardingTip,
     PushEndpoint, PushMethod, Rgb, SecretString, ShareGrantUpdate, TabDisplayChoice, TabRef,
     TextSize, ThemeMode, UploadSource,
@@ -488,7 +488,8 @@ pub enum Action {
         delete_local_file: bool,
     },
     /// 只重发链接：再授权一次，再把链接发进上传时的房间，不重传文件。只对
-    /// [`TransferState::LinkNotSent`](crate::TransferState::LinkNotSent) 的传输有效，其他返回 `InvalidInput`。
+    /// [`TransferState::LinkNotSent`](crate::TransferState::LinkNotSent) 的传输有动作；不欠链接的传输什么都不做
+    /// （连点两下第二下不算错，壳不用弹窗），记录不在了返回 `InvalidInput`。
     ResendFileLink {
         id: String,
     },
@@ -690,6 +691,39 @@ pub enum Action {
     /// 两边的名单各自撤掉，已有的跨机房间留着，消息停发。`server_name` 是 [`PeerRow::server_name`](crate::PeerRow::server_name)。
     RemovePeer {
         server_name: String,
+    },
+
+    // Bot 的联系人（ADR-0045、ADR-0050），归属人在 Bot 资料页管；共享 Bot 是主人。结果和失败原因都在
+    // BotContactsViewModel 里。`user_id` 是 [`BotContact::user_id`](crate::BotContact::user_id)。
+    /// 打开某个 Bot 的联系人或下拉刷新（`GET`
+    /// [`bot_contacts_path`](crate::bot_contacts_path)），之后的结果都是这个 Bot 的。
+    RefreshBotContacts {
+        bot: BotRef,
+    },
+    /// 请另一个 Bot（本机的，或配对过的服务器上的）做这个 Bot 的联系人，等它的归属人同意。
+    RequestBotContact {
+        bot: BotRef,
+        user_id: String,
+    },
+    /// 请配对过的服务器上的一个人做这个 Bot 的联系人：Bot 给他发带标记的私聊邀请，他接受才算数，之前一直是“等对方接受”。
+    RequestPersonContact {
+        bot: BotRef,
+        user_id: String,
+    },
+    /// 同意对方发来的请求（[`ContactState::Incoming`](crate::ContactState::Incoming)）。
+    ApproveBotContact {
+        bot: BotRef,
+        user_id: String,
+    },
+    /// 拒绝对方发来的请求。
+    RejectBotContact {
+        bot: BotRef,
+        user_id: String,
+    },
+    /// 删掉联系人、取消自己发出的请求，或清掉“对方拒绝了”“没有这个人”的行；同时通知对方。
+    RemoveBotContact {
+        bot: BotRef,
+        user_id: String,
     },
 
     /// 取当前账号的好友、请求和屏蔽名单；外部 Matrix 账号同样可用。

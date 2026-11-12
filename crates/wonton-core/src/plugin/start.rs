@@ -1,4 +1,5 @@
-//! 只启动现存的常驻容器，不重建配置、不重跑已完成的一次性服务。
+//! 启动现存的常驻容器，不重建配置、不重跑已完成的一次性服务。例外：容器不在（被删了、Docker 数据
+//! 丢了）就按已安装记录照安装的路径重建再启动（issue #126）；网络不在也照安装的规格重建。
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -6,6 +7,7 @@ use std::sync::Arc;
 use tokio::time::Instant;
 
 use super::compose::DependCondition;
+use super::docker::NetworkReach;
 use super::health::{self, Target};
 use super::health_gate::Gate;
 use super::languages::Languages;
@@ -13,7 +15,7 @@ use super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, PluginView, busy, detached,
     now_secs,
 };
-use super::manifest::PluginId;
+use super::manifest::{Manifest, PluginId};
 use super::names::LABEL_PLUGIN;
 use super::package::PluginPackage;
 use super::reconcile::ContainersState;
@@ -116,7 +118,7 @@ impl PluginManager {
             return Err(InstallError::Conflict(reason.clone()));
         }
         if entry.listed.is_none() {
-            return Err(InstallError::Conflict(l10n::text(
+            return Err(InstallError::RecordUnusable(l10n::text(
                 langs,
                 "plugin-install-record-unusable",
                 &[],
@@ -141,12 +143,20 @@ impl PluginManager {
     ) -> Result<Started, InstallError> {
         let record = self
             .store
-            .load(id)?
+            .load(id)
+            .map_err(|error| {
+                InstallError::RecordUnusable(super::manager::unreadable_record(&error, langs))
+            })?
             .ok_or_else(|| InstallError::not_installed(langs, id))?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
         let checked = self.check_containers(&package, langs).await?;
-        let state = checked.ready(langs)?;
+        // 有容器不在：先照安装的路径重建再启动（见本文件头），不看别的核对结果——重建会把它们一起修好。
+        let state = if checked.has_missing() {
+            ContainersState::Stopped
+        } else {
+            checked.ready(langs)?
+        };
         if let ContainersState::Running(health) = &state
             && *before == PluginStatus::Running
         {
@@ -160,6 +170,8 @@ impl PluginManager {
         let deadline = self.wait_deadline(&package).await?;
         if let ContainersState::Stopped = state {
             self.set(id, PluginStatus::Installing, None);
+            // 网络被删了（开发栈 down、Docker 数据丢了）就先按安装的规格重建，核对才能把核心接回去。
+            self.ensure_network(&package.manifest).await?;
             // 复用恢复核对，先把核心接回网络；依赖核心内部别名的服务才能启动。
             self.reconcile(&package, &record, Gate::StartPeriod).await?;
             // 渲染变了就重建，免得主人启动的还是旧配置的容器。
@@ -180,6 +192,24 @@ impl PluginManager {
             serving: BTreeSet::new(),
             deployed: Some(deployed),
         })
+    }
+
+    /// 插件的网络不在（开发栈 down、Docker 数据丢了）就按安装的规格重建：核对只核对已存在的网络，
+    /// 少了它启动和核对都过不去。网络在但规格对不上时不动，由核对如实报冲突。出网插件的网络重建后
+    /// 要把出口容器接回去（安装时是这一步建的端点），不然插件起来了也出不了网。
+    async fn ensure_network(&self, manifest: &Manifest) -> Result<(), InstallError> {
+        let network = self.cfg.instance.network(&manifest.id.slug());
+        let reach = self.network_reach(manifest);
+        if self.engine.network_reach(&network).await?.is_none() {
+            self.engine
+                .create_network(&network, &self.cfg.instance.labels(&manifest.id), reach)
+                .await?;
+            tracing::info!(plugin = %manifest.id, %network, "插件的网络不在，按安装的规格重建");
+            if reach == NetworkReach::Egress {
+                self.attach_relay(&network).await?;
+            }
+        }
+        Ok(())
     }
 
     /// 启动不重渲染计划：生效的 healthcheck（安装时把镜像自带的并了进去）在容器配置里，等待时限据此算。

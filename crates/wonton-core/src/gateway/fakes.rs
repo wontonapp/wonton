@@ -226,16 +226,22 @@ pub(super) async fn loopback_tunnel_with(
     lan: std::collections::BTreeSet<std::net::IpAddr>,
 ) -> (Tunnel, Arc<Members>) {
     let members = Arc::new(Members::open(dir.join("members.json")).unwrap());
-    (
-        Tunnel::new(
-            Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
-            members.clone(),
-            Arc::new(|| Languages::from_header(None)),
-            loopback_endpoint(SecretKey::generate()).await,
-            0,
-            RelayTable::builtin_n0(),
-            tokio::sync::watch::channel(lan).1,
-        ),
+    let tunnel = loopback_tunnel_with_members(dir, members.clone(), lan).await;
+    (tunnel, members)
+}
+
+pub(super) async fn loopback_tunnel_with_members(
+    dir: &Path,
+    members: Arc<Members>,
+    lan: std::collections::BTreeSet<std::net::IpAddr>,
+) -> Tunnel {
+    Tunnel::new(
+        Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
         members,
+        Arc::new(|| Languages::from_header(None)),
+        loopback_endpoint(SecretKey::generate()).await,
+        0,
+        RelayTable::builtin_n0(),
+        tokio::sync::watch::channel(lan).1,
     )
 }

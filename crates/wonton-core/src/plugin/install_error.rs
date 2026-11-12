@@ -35,6 +35,10 @@ pub enum InstallError {
     NameTaken(String),
     #[error("{0}")]
     NotInstalled(String),
+    /// 插件的安装记录读不出来或不可用（核心升级后不认的字段、文件损坏、磁盘出错）：启动、恢复都做不了，
+    /// 要卸载（可以保留数据）后重新安装。
+    #[error("{0}")]
+    RecordUnusable(String),
     #[error("{0}")]
     DockerUnavailable(String),
     #[error("{0}")]
@@ -96,6 +100,7 @@ impl InstallError {
             Self::Unsupported(_) | Self::UnsupportedRuntime(_) => "unsupported",
             Self::Conflict(_) | Self::NameTaken(_) => "conflict",
             Self::NotInstalled(_) => "not_installed",
+            Self::RecordUnusable(_) => "record_unusable",
             Self::DockerUnavailable(_) => "docker_unavailable",
             Self::Docker(_) => "docker_rejected",
             Self::PortTaken(_) => "port_taken",
@@ -145,6 +150,7 @@ impl InstallError {
             Self::Conflict(m) => Self::Conflict(add(m)),
             Self::NameTaken(m) => Self::NameTaken(add(m)),
             Self::NotInstalled(m) => Self::NotInstalled(m),
+            Self::RecordUnusable(m) => Self::RecordUnusable(m),
             Self::DockerUnavailable(m) => Self::DockerUnavailable(add(m)),
             Self::Docker(m) => Self::Docker(add(m)),
             Self::PortTaken(m) => Self::PortTaken(add(m)),

@@ -7,6 +7,9 @@
 #   dev.sh reset [--keep-tunnel-identity]
 #                                      停止并删除 Hydra、Tuwunel 的数据、核心数据目录和插件卷；
 #                                      给了开关时保留隧道私钥和设备登记（endpoint ID 不变，已配对的设备不用重配）
+#   dev.sh clean-data                  把数据目录（WONTON_DEV_DATA，默认 .data）整个删掉：先确认栈已 down，再在一次性
+#                                      容器里删（里面的文件常属 root，普通用户删不掉）。路径必须在 deploy/dev 下，
+#                                      指到别处（远端 Docker 的 /tmp/wonton-dev、家目录）时拒绝；Docker 卷和密钥不动，reset 才管
 #   dev.sh status | logs [<服务>]      查看状态 / 跟随日志：核心栈的服务（core、hydra 等）或插件的服务名
 #   dev.sh diag                        只读诊断：插件登录用的主机名解析、出口代理设置和可达性、注入的代理变量
 #   dev.sh token                       输出主人令牌
@@ -20,8 +23,14 @@
 #   dev.sh build <docker build 的参数>  构建镜像，带上 WONTON_DEV_BUILD_PROXY、WONTON_DEV_BUILD_JOBS 要的参数
 #   dev.sh pair [直连地址]             发一个配对码：终端里出二维码，最后一行是码的文字；直连地址默认 127.0.0.1:隧道端口
 #   dev.sh commit                      构建镜像用的提交号（工作区的 Cargo 源码有没提交的改动时带 -dirty）
+#   dev.sh share-smoke                 编好探针和隔离冒烟用的核心镜像，跑 ADR-0051 的双云吞分享冒烟（自己占名额）
 #
 # 浏览器打开 http://wonton.localhost:18480 ，用 `dev.sh token` 的输出登录。
+# 用 IP 当 Host 打核心 API 会一律 404 not_found：网关按 Host 分类，IP 只回 GET / 的局域网状态页（局域网防 DNS
+# 重绑定，crates/wonton-core/src/gateway/lan.rs）。在核心容器外取证要带域名 Host；本机 *.localhost 本就解析到
+# 127.0.0.1，直接用域名的 URL 也行：
+#   curl -sS -H "Host: wonton.localhost:18480" http://127.0.0.1:18480/_wonton/api/me
+# 实例名不是默认的（WONTON_DEV_PROJECT 不是 wonton-dev-core）时，域名是 <实例>.wonton.localhost，端口看 WONTON_DEV_PORT。
 # 环境变量：WONTON_DEV_PORT（默认 18480）、WONTON_DEV_DOMAIN（默认 wonton.localhost）、
 # WONTON_DEV_TUNNEL_PORT（隧道 UDP 端口，默认 18482）、WONTON_DEV_TUNNEL_BIND（默认只给本机 127.0.0.1）、
 # WONTON_DEV_DATA（数据目录，默认本目录下的 .data；DOCKER_HOST 指向远端时默认 /tmp/wonton-dev）、
@@ -157,28 +166,20 @@ ensure_matrix_secrets() {
   export WONTON_DEV_MATRIX_JWT_KEY WONTON_DEV_MATRIX_JWT_PUBLIC_KEY WONTON_DEV_MATRIX_SECRET
 }
 
-# Tuwunel 先于核心启动，名单文件必须已经在：缺失时先写一份放行全部兜底；核心起来后按配对名单原地重写，
-# 所以不在每次 compose 调用时覆盖它。代理文件核心不改，每次写。
+# Tuwunel 先于核心启动，名单文件必须已经在：缺失时先写一份空的（没有名单、没有黑名单，Tuwunel 用默认值）；
+# 核心起来后按配对名单和黑名单原地重写整份（含出站代理），所以不在每次 compose 调用时覆盖它。
+# 路径和正式安装相同（安装目录下的 secrets/tuwunel/wonton-fed.toml），开发栈的安装目录就是数据目录。
 ensure_dev_federation() {
-  local path="$WONTON_DEV_DATA/fed/config.toml"
-  local proxy="$WONTON_DEV_DATA/fed/proxy.toml"
+  local path="$WONTON_DEV_DATA/secrets/tuwunel/wonton-fed.toml"
   mkdir -p "${path%/*}"
   if [[ ! -s "$path" ]]; then
-    cat >"$path" <<'EOF'
-# 开发栈联邦名单；正式安装由核心按配对记录重写，不使用这份放行全部的配置。
-allowed_remote_server_names_experimental = ['^.*$']
+    cat >"$path" <<'EOF2'
+# 开发栈联邦配置的初值；核心起来后按配对记录原地重写（ADR-0050）。
+[global]
 forbidden_remote_server_names = []
-EOF
+EOF2
   fi
-  cat >"$proxy" <<'EOF'
-# 开发栈联邦出站代理；单独成文件，避免名单文件被核心原地重写时丢掉代理规则。
-[global.proxy]
-[[global.proxy.by_domain]]
-url = "http://federation-proxy.wonton.internal:8448"
-include = []
-exclude = ["push.wonton.internal"]
-EOF
-  chmod 644 "$path" "$proxy"
+  chmod 644 "$path"
 }
 
 compose() {
@@ -448,6 +449,26 @@ wipe_data() {
   docker run --rm --user 0 --entrypoint sh -v "$WONTON_DEV_DATA:/wipe" "$curl_image" -c "${before}rm -rf /wipe/core /wipe/apps /wipe/shares /wipe/open${after}"
 }
 
+# down 之后删掉本实例的数据目录：里面的文件常属 root（Docker 建的目录、容器写的），宿主用户删不掉，所以用一次性容器删
+# （smoke-cleanup 的删法）。只在路径落在 deploy/dev 里时动手：数据目录指到检出外（远端 Docker 的 /tmp/wonton-dev、
+# 手滑指到家目录）时拒绝，绝不 rm 到别处。
+clean_data() {
+  if [[ -n "$(docker ps -q --filter "label=com.docker.compose.project=$core")" ]] ||
+    [[ -n "$WONTON_DEV_INSTANCE" && -n "$(docker ps -q --filter "label=$label_instance=$WONTON_DEV_INSTANCE")" ]]; then
+    die "这套栈还有在跑的容器：先 $0 down 再 clean-data"
+  fi
+  local data deploy
+  data="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$WONTON_DEV_DATA")"
+  deploy="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$here/..")"
+  [[ "$data" == "$deploy/"* && "$data" != "$deploy" ]] ||
+    die "数据目录 $WONTON_DEV_DATA 不在 $deploy 下，clean-data 不删（远端 Docker 的数据目录在那台主机上清）"
+  [[ -e "$data" ]] || { echo "数据目录 $data 不存在，无需清理"; return 0; }
+  docker run --rm --user 0 --entrypoint rm -v "$(dirname "$data"):/host-data" "$curl_image" \
+    -rf "/host-data/$(basename "$data")"
+  [[ ! -e "$data" ]] || die "数据目录 $data 没删掉：里面可能还有容器挂着的文件"
+  echo "已删掉数据目录 $data"
+}
+
 # 密钥属于这个项目，reset 连它一起删。手滑把家目录、检出目录设成 WONTON_DEV_SECRETS 时拒绝删除。
 reset_secrets() {
   local dir="${secrets%/}"
@@ -645,6 +666,8 @@ fi
 [[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
 case "${1:-}" in
   up)
+    # 分流机的入口只放行固定的几个子命令；工作区里有标记时把 up 让给分享冒烟。
+    if [[ -f "$repo/.share-smoke" ]]; then exec bash "$0" share-smoke; fi
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
     export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
     mkdir -p "$here/.data" && printf '%s' "$WONTON_DEV_PORT" > "$here/.data/dev-port"
@@ -689,6 +712,7 @@ case "${1:-}" in
       echo "隧道身份已换，已配对的 App 要用新码添加服务器；旧服务器的数据保留。"
     fi
     ;;
+  clean-data) clean_data ;;
   status)
     compose ps
     if docker inspect -f '{{.State.Running}}' "$core" >/dev/null 2>&1; then
@@ -748,5 +772,21 @@ case "${1:-}" in
     esac
     docker exec "$core" wonton-core pair "$addr"
     ;;
-  *) die "用法：$0 up|down|reset [--keep-tunnel-identity]|status|logs [<服务>]|diag|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]" ;;
+  share-smoke)
+    export PATH="$HOME/.cargo/bin:$PATH"
+    bin="${WONTON_SHARE_SMOKE_BIN:-$HOME/wonton-dev/share-smoke-bin}"
+    [[ -n "${WONTON_SHARE_SMOKE_BIN:-}" || -x "$bin/fr_share_smoke" ]] ||
+      bin="$(dirname "$repo")/share-smoke-bin"
+    if [[ ! -x "$bin/fr_share_smoke" || ! -x "$bin/share-smoke-relay" ]]; then
+      mkdir -p "$bin"
+      ( cd "$repo" && cargo build -p wonton-core --example fr_share_smoke -p wonton-tunnel --example share-smoke-relay &&
+        cp target/debug/examples/fr_share_smoke target/debug/examples/share-smoke-relay "$bin/" ) || exit 1
+    fi
+    image="${WONTON_SHARE_SMOKE_CORE_IMAGE:-wonton-core:share-smoke}"
+    if [[ -z "$(docker image ls -q "$image")" ]]; then
+      build_image --target dev -t "$image" -f "$here/Dockerfile" "$repo" >&2 || exit 1
+    fi
+    exec env WONTON_SHARE_SMOKE_CORE_IMAGE="$image" WONTON_SHARE_SMOKE_BIN_DIR="$bin" bash "$here/smoke-sharing.sh"
+    ;;
+  *) die "用法：$0 up|down|reset [--keep-tunnel-identity]|clean-data|status|logs [<服务>]|diag|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]|share-smoke" ;;
 esac

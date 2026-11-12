@@ -92,6 +92,7 @@ pub async fn invite(
             &problem.to_string(),
         );
     }
+    let _allocating = gateway.plugins.lock_person_names().await;
     let username = match pick_username(&gateway, matrix, &invite, display_name).await {
         Ok(username) => username,
         Err(response) => return *response,
@@ -128,7 +129,10 @@ async fn pick_username(
     display_name: &str,
 ) -> Result<String, Box<Response>> {
     let taken_static = |name: &str| {
-        name == gateway.owner.username() || name == ADMIN_LOCALPART || gateway.members.taken(name)
+        name == gateway.owner.username()
+            || name == ADMIN_LOCALPART
+            || gateway.members.taken(name)
+            || gateway.plugins.friend_username_taken(name)
     };
     let bots = gateway.plugins.bot_localparts().map_err(|e| {
         tracing::error!(error = %e, "读 Bot 用户名失败");

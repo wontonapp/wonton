@@ -179,6 +179,7 @@ chat-unknown-answer = 這個版本的雲吞不認得這個回答
 chat-action-not-connected = 還沒連上家用伺服器
 # 還沒登入 Matrix 就有聊天操作時顯示。
 chat-not-signed-in = 還沒登入 Matrix
+chat-send-no-response = Matrix 伺服器沒有回應
 # $error 是房間 ID 剖析器的原始錯誤。
 chat-invalid-room-id = 聊天室 ID 無效：{ $error }
 # 在只放通知的房間裡送東西時顯示。
@@ -317,6 +318,8 @@ home-port-mapping-save-failed = 連接埠映射的開關存不下來：{ $error 
 tabs-view-always-pinned = 聊天和應用程式已經固定到底部導覽列。
 tabs-view-plugin-list-not-ready = 還沒載入應用程式清單，暫時無法操作應用程式頁面。
 tabs-view-unknown-plugin = 找不到這個應用程式。
+# $error 是本地儲存的原始錯誤。
+tabs-storage-problem = 底欄設定存不下，下次啟動可能恢復舊狀態：{ $error }
 tabs-view-plugin-no-page = 這個應用程式沒有可開啟的網頁。
 tabs-page-not-placed = 這個頁面不在面板裡。
 
@@ -409,7 +412,6 @@ files-name-required = 檔案名稱不能為空
 files-download-already-running = 這個檔案已經在下載了
 files-transfer-not-found = 找不到這筆傳輸
 # 這筆傳輸不在「等著傳送連結」的狀態時要重新傳送連結。
-files-resend-not-waiting = 這筆傳輸沒有等著重新傳送的連結
 files-transfer-server-changed = 換了家用伺服器，這筆傳輸屬於之前那一台
 files-dismiss-transfer-running = 這筆傳輸還在進行，要先取消
 # 移除上傳並要求刪除本機檔案時：原檔案是系統給的，App 刪不了它。

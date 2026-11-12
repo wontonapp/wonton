@@ -12,6 +12,7 @@ mod action;
 mod agent_permission;
 mod appearance;
 mod bot_commands;
+mod bot_contacts;
 mod bot_profile;
 mod bot_web;
 mod bot_web_registration;
@@ -65,6 +66,13 @@ pub use bot_commands::{
     BOT_COMMANDS_EVENT, BotCommand, BotCommands, MAX_BOT_COMMANDS, MAX_BOT_COMMANDS_BYTES,
     MAX_COMMAND_DESCRIPTION_CHARS, MAX_COMMAND_HINT_CHARS, MAX_COMMAND_NAME_CHARS,
 };
+pub use bot_contacts::{
+    BOT_CONTACT_CREATE_KEY, BotContact, BotContacts, BotContactsState, BotContactsViewModel,
+    CONTACT_ERROR_HEADER, CONTACT_EVENT, CONTACT_ROOM_TYPE, ContactError, ContactErrorBody,
+    ContactEvent, ContactKind, ContactOutcome, ContactProblem, ContactRequest, ContactRequestPush,
+    ContactState, PendingContactRequest, RemoteContact, bot_contact_approve_path, bot_contact_path,
+    bot_contact_reject_path, bot_contacts_path,
+};
 pub use bot_profile::{
     AVATARS_FIELD, AccessSource, AvatarChange, AvatarImage, AvatarKind, AvatarMedia,
     AvatarMediaProblem, AvatarUpload, BOT_ACTIVITY_PATH, BOT_ACTIVITY_WAIT_SECS, BotActivity,
@@ -110,11 +118,10 @@ pub use egress::{
 };
 pub use error::{CoreError, set_core_error_formatter};
 pub use family::{
-    BotContact, BotContacts, BotKeeper, BotRef, ContactRequest, ContactState, FAMILY_ROOM_EVENT,
-    FamilyAccess, GATEWAY_REFUSAL_HEADER, GatewayRefusal, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS,
-    MEMBERS_PATH, Me, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval,
-    MemberSettings, MemberStatus, NewSharedBot, Role, SHARED_BOTS_PATH, TOOL_CALL_USER_META,
-    bot_contact_path, bot_contacts_path, member_pairing_code_path, member_path,
+    BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
+    ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, Me, Member, MemberInvite, MemberList,
+    MemberPairingCode, MemberRemoval, MemberSettings, MemberStatus, NewSharedBot, Role,
+    SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path, member_path,
     member_removal_path, plugin_family_path,
 };
 pub use file::{
@@ -192,12 +199,12 @@ pub use plugin::{
     PluginProblem, PluginRuntime, PluginScope, PluginSettingField, PluginSettingKind,
     PluginSettingOption, PluginSettingsUpdate, PluginSettingsView, PluginState, PluginTakeover,
     PluginTask, PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel, RequirementLine,
-    RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues, SettingValue,
-    SettingValues, SettingsFieldError, SettingsFieldProblem, SettingsFieldProblemKind,
-    SettingsForm, SettingsInvalidError, SettingsProblem, SettingsSchemaError,
-    SettingsSchemaProblem, SettingsSchemaProblemKind, SourceKind, StorageUsage, StoreFailure,
-    StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState, ToolAccess,
-    ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
+    RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues, SecurityTier,
+    SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
+    SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsProblem,
+    SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, SourceKind,
+    StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
+    ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
     UpgradeRequest, UpgradeResult, plugin_scope_path, plugin_settings_path,
     plugin_settings_preview_path, secret_input_path,
 };

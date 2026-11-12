@@ -5,6 +5,7 @@
 //! 否则经隧道向核心要一次性的登录令牌，用它登录 `matrix.<基础域名>`。所有 Matrix 请求都走本地代理，Tuwunel 只被当成
 //! 标准的 Matrix 服务器（ADR-0015）。
 
+mod accessors;
 mod ask;
 mod avatar_files;
 mod background;
@@ -29,7 +30,7 @@ mod onboarding;
 mod ops;
 mod pending;
 mod read_mark;
-mod recovery;
+pub(crate) mod recovery;
 mod reply;
 mod rich;
 mod room_rows;
@@ -44,6 +45,7 @@ mod view;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::time::Duration;
 
 use futures_util::StreamExt;
 #[cfg(feature = "test-hooks")]
@@ -54,9 +56,9 @@ use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
 use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, RoomId, SyncStatus};
 use wonton_protocol::{
-    Action, Answer, ChatAccount, ChatFailure, ChatSync, ChatViewModel, ConfirmationAnswer,
-    CoreError, DeviceVerification, EncryptionStatus, MediaHandle, PushMethod, PushStatus,
-    RecoveryNextStep, RecoveryStatus, RoomPanel, TimelineScroll,
+    Action, ChatAccount, ChatFailure, ChatSync, ChatViewModel, CoreError, DeviceVerification,
+    EncryptionStatus, MediaHandle, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus,
+    RoomPanel, TimelineScroll,
 };
 
 pub use bots::bot_current_avatar;
@@ -78,18 +80,18 @@ use view::core_error;
 /// 向前翻页一次最多加载的事件数。
 const PAGE: u16 = 30;
 
+/// 发消息等多久：核心回 502 时 matrix-sdk 自己要十几分钟才放弃，期限盖住它；被放弃的那条还会留在 SDK 的发送
+/// 队列里按自己的退避重试，重发的消息排在后面，30 秒撑不住慢机器，给满一分钟。
+const SEND_TIMEOUT: Duration = Duration::from_secs(60);
+
 pub(crate) struct ChatLink {
     runtime: Handle,
     home: Arc<HomeLink>,
     storage: ChatStorage,
     view: watch::Sender<ChatViewModel>,
-    /// 当前的会话和它的后台任务；换代理或重新登录时整个替换。锁保证同一时刻只有一次登录。
     active: tokio::sync::Mutex<Option<Active>>,
-    /// 当前会话，给不阻塞的 `dispatch` 用。
     session: Mutex<Option<Arc<MatrixSession>>>,
-    /// 登录状态流出的口：tabs 的面板配置同步跟着它走（ADR-0052）。
     session_out: watch::Sender<Option<Arc<MatrixSession>>>,
-    /// 打开的房间的面板内容流出口：账号数据在这里读，tabs 合成给壳的视图。
     room_panel_out: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
     /// 订阅着时间线的房间。同一时间只打开一个房间。
     open_room: Mutex<Option<(OwnedRoomId, Arc<ChatRoom>)>>,
@@ -203,7 +205,7 @@ impl ChatLink {
             recovery_next_step: RecoveryNextStep::None,
             verification_flow: None,
         };
-        recovery::update_reminder(&mut encryption);
+        recovery::refresh(&mut encryption);
         let view = reuse(
             view,
             ChatViewModel {
@@ -264,40 +266,6 @@ impl ChatLink {
         runtime.spawn(draft::write_drafts(Arc::downgrade(&chat), draft_receiver));
         runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
         Ok(chat)
-    }
-
-    pub(crate) fn view(&self) -> ChatViewModel {
-        self.view.borrow().clone()
-    }
-
-    /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
-    pub(crate) fn sender(&self) -> watch::Sender<ChatViewModel> {
-        self.view.clone()
-    }
-
-    pub(crate) fn subscribe(&self) -> watch::Receiver<ChatViewModel> {
-        self.view.subscribe()
-    }
-
-    pub(crate) fn subscribe_sent(&self) -> watch::Receiver<Vec<String>> {
-        self.sent.subscribe()
-    }
-
-    pub(crate) fn set_primary_bot(&self, bot: Option<String>) {
-        let changed = {
-            let mut current = lock(&self.primary_bot);
-            if *current == bot {
-                false
-            } else {
-                *current = bot.clone();
-                true
-            }
-        };
-        if changed {
-            let rows = self.room_order.display(bot.as_deref());
-            self.view.send_modify(|view| view.rooms = rows);
-            self.installs.refresh();
-        }
     }
 
     /// App 回到前台或家里的连接恢复：登录失败（不是被吊销）或正在等着重连的话马上重新登录；已经登录的接着用同一个
@@ -430,7 +398,7 @@ impl ChatLink {
         self.storage.forget_recovery_key()?;
         self.view.send_modify(|view| {
             view.encryption.recovery_key = None;
-            recovery::update_reminder(&mut view.encryption);
+            recovery::refresh(&mut view.encryption);
         });
         Ok(())
     }
@@ -537,12 +505,21 @@ impl ChatLink {
         body: &str,
     ) -> Result<(), CoreError> {
         let (session, room_id) = self.target(room_id)?;
-        session
-            .send_text_to(&room_id, body)
+        // Tuwunel 停着时核心回 502，matrix-sdk 自己要十几分钟才放弃，发链接的传输一直显示在传：给发送设个期限。
+        tokio::time::timeout(SEND_TIMEOUT, session.send_text_to(&room_id, body))
             .await
+            .map_err(|_| CoreError::TransportUnavailable {
+                reason: l10n!(CATALOG, language(), "chat-send-no-response"),
+            })?
             .map_err(|e| core_error(&e))?;
         onboarding::record_sent(&self.sent, room_id.to_string());
         Ok(())
+    }
+
+    /// App 重启后马上要发消息时用（传完文件发链接）：等登录出结果。登录好了返回真；停在要用户处理的失败上、
+    /// 或者一直没动静过了期限，返回假。
+    pub(crate) async fn signed_in_within(&self, wait: Duration) -> bool {
+        send::signed_in_within(self.subscribe(), wait).await
     }
 
     fn start_direct_chat(self: &Arc<Self>, user_id: &str) -> Result<(), CoreError> {
@@ -556,65 +533,6 @@ impl ChatLink {
         // 和 Bot 的主房间一样端到端加密：推送只带房间和事件 ID，正文在手机上解密（ADR-0003 的“设计：加密推送”）。
         self.spawn_op("chat-op-direct-chat-failed", async move {
             session.create_direct_chat(&user, true).await.map(drop)
-        });
-        Ok(())
-    }
-
-    /// 主人点了确认卡片上的按钮：经隧道发给核心，进展放进 `answers`。同一张卡片在发或者答完了就不再发：核心那边
-    /// 也只收一次，这里是不让连点变成“回答过了”的报错。
-    fn answer_confirmation(
-        &self,
-        id: String,
-        answer: Answer,
-        choice_id: Option<String>,
-        secrets: wonton_protocol::SecretValues,
-        settings: wonton_protocol::SettingValues,
-    ) -> Result<(), CoreError> {
-        if answer == Answer::Unknown {
-            return Err(invalid(&l10n!(CATALOG, language(), "chat-unknown-answer")));
-        }
-        let not_connected = || CoreError::NotReady {
-            reason: l10n!(CATALOG, language(), "chat-action-not-connected"),
-        };
-        let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
-        let core_url = self.home.core_url().ok_or_else(not_connected)?;
-        if !self
-            .answers
-            .send_if_modified(|answers| answers.start(&id, answer, choice_id.clone()))
-        {
-            return Ok(());
-        }
-        let answers = self.answers.clone();
-        self.runtime.spawn(async move {
-            let body = ConfirmationAnswer {
-                answer,
-                choice_id,
-                secrets,
-                settings,
-            };
-            let outcome = confirmation::send_answer(&core_url, &proxy, &id, body).await;
-            answers.send_modify(|answers| answers.finish(id, outcome));
-        });
-        Ok(())
-    }
-
-    /// 主人点了卡片上放行时段的“停止”：经隧道发给核心，进展放进 `answers`。
-    fn stop_confirmation_window(&self, id: String) -> Result<(), CoreError> {
-        let not_connected = || CoreError::NotReady {
-            reason: l10n!(CATALOG, language(), "chat-action-not-connected"),
-        };
-        let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
-        let core_url = self.home.core_url().ok_or_else(not_connected)?;
-        if !self
-            .answers
-            .send_if_modified(|answers| answers.start_stop(&id))
-        {
-            return Ok(());
-        }
-        let answers = self.answers.clone();
-        self.runtime.spawn(async move {
-            let outcome = confirmation::send_stop(&core_url, &proxy, &id).await;
-            answers.send_modify(|answers| answers.finish_stop(id, outcome));
         });
         Ok(())
     }
@@ -701,8 +619,7 @@ impl ChatLink {
         self.sent.send_replace(Vec::new());
         self.home.set_catching_up(false);
         self.view.send_modify(|view| {
-            view.encryption.can_verify_with_other_device = false;
-            view.encryption.verification_flow = None;
+            recovery::forgot_session(&mut view.encryption);
             view.pending_confirmations.clear();
             view.settled_confirmations.clear();
         });

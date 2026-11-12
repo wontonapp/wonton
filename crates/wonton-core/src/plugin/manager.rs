@@ -43,6 +43,7 @@ use crate::l10n;
 use crate::matrix::Matrix;
 
 pub(super) mod busy;
+mod uninstall;
 mod views;
 
 pub use views::{PluginView, Route};
@@ -119,6 +120,9 @@ pub struct PluginManager {
     pub(super) staged: StagedUploads,
     /// 写“每个人的语言”表时串行化：读改整份文件，两个人同时来不能互相盖掉。
     pub(super) people_writes: std::sync::Mutex<()>,
+    pub(super) sharing:
+        std::sync::OnceLock<(Arc<crate::friends::Friends>, Arc<crate::shares::Shares>)>,
+    pub(super) person_members: std::sync::OnceLock<Arc<crate::members::Members>>,
 }
 
 pub(super) use super::grant::{check_permissions, supported};
@@ -190,6 +194,8 @@ impl PluginManager {
             upgrades: Upgrades::default(),
             staged: StagedUploads::default(),
             people_writes: std::sync::Mutex::new(()),
+            sharing: std::sync::OnceLock::new(),
+            person_members: std::sync::OnceLock::new(),
         }
     }
 
@@ -706,74 +712,10 @@ impl PluginManager {
         let this = Arc::clone(self);
         detached(async move { this.uninstall(&id, purge, &langs).await }).await
     }
-
-    /// 卸载插件。`purge` 时一并删除命名卷和应用数据目录。
-    pub async fn uninstall(
-        &self,
-        id: &PluginId,
-        purge: bool,
-        langs: &Languages,
-    ) -> Result<UninstallReport, InstallError> {
-        self.check_not_upgrading(langs)?;
-        let _changing = self.egress.changing.lock().await;
-        if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
-            && self.egress_provider(langs)?.id == *id
-        {
-            return Err(InstallError::Conflict(l10n::text(
-                langs,
-                "plugin-install-conflict-egress-proxy-in-use",
-                &[],
-            )));
-        }
-        {
-            let mut plugins = self.plugins.write().expect("插件表锁中毒");
-            let entry = plugins
-                .get_mut(id)
-                .ok_or_else(|| InstallError::not_installed(langs, id))?;
-            if let Some(e) = busy(id, &entry.status, langs) {
-                return Err(e);
-            }
-            if self.lan.is_rebuilding(id) {
-                return Err(InstallError::Conflict(l10n::text(
-                    langs,
-                    "plugin-install-conflict-lan-rebuilding",
-                    &[("id", id.to_string().into())],
-                )));
-            }
-            entry.status = PluginStatus::Uninstalling;
-            entry.checked_at = now_secs();
-        }
-        drop(_changing);
-        self.changed();
-        tracing::info!(plugin = %id, purge, "开始卸载插件");
-        match self.teardown(id, purge, langs).await {
-            Ok(report) => {
-                self.clear_oom(id);
-                self.lan.clear_degraded(id);
-                self.plugins.write().expect("插件表锁中毒").remove(id);
-                self.tool_policy().forget_plugin(id.as_str());
-                if let Err(e) = self.store.pins().forget_plugin(id, purge) {
-                    tracing::warn!(plugin = %id, error = %e, "清掉 Bot 钉在面板上的页面失败");
-                }
-                self.changed();
-                tracing::info!(plugin = %id, "插件已卸载");
-                Ok(report)
-            }
-            Err(e) => {
-                let reason = l10n::text(
-                    langs,
-                    "plugin-install-uninstall-unfinished",
-                    &[("error", e.to_string().into())],
-                );
-                self.set(id, PluginStatus::Degraded { reason }, Some(None));
-                Err(e)
-            }
-        }
-    }
 }
 
 /// 记录读不懂时给主人看的原因：比如核心升级后不再认记录里的字段。
-fn unreadable_record(error: &dyn std::fmt::Display, langs: &Languages) -> String {
+pub(super) fn unreadable_record(error: &dyn std::fmt::Display, langs: &Languages) -> String {
     l10n::text(
         langs,
         "plugin-install-record-unreadable",

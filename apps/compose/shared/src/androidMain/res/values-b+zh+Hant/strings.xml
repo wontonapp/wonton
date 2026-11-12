@@ -1171,6 +1171,10 @@
     <string name="problem_plugin_protocol_next_step">請更新雲吞或家用伺服器。</string>
     <!-- Problem title: the app and the home server versions don't match. -->
     <string name="problem_plugin_protocol_title">雲吞和家用伺服器的版本不相符</string>
+    <!-- Problem title: the home server can't read this app's install record. -->
+    <string name="problem_plugin_record_unusable_title">應用程式的安裝記錄不可用</string>
+    <!-- Next step: uninstall the app (its data can be kept) and install it again. -->
+    <string name="problem_plugin_record_unusable_next_step">解除安裝這個應用程式（資料可以保留）後重新安裝。</string>
     <!-- Problem title when the proxy settings were rejected as invalid; the core's own reason is shown as the next step. -->
     <string name="problem_plugin_save_invalid_title">填寫的內容不正確</string>
     <!-- Next step: look at the proxy settings again once the server is reachable. -->
@@ -1309,6 +1313,74 @@
     <string name="shortcut_agent_chat">詢問 Bot</string>
     <string name="shortcuts_too_few">系統只允許 %1$d 個捷徑，無法同時顯示「新增聊天」和「詢問 Bot」。</string>
     <string name="shortcuts_too_many">系統最多允許 %1$d 個捷徑，已優先保留「新增聊天」「詢問 Bot」，應用程式頁面依底部導覽列順序顯示。</string>
+    <!-- Explicit acknowledgement of the warning about sharing an app without declared friend support. No arguments. -->
+    <string name="share_acknowledge">我瞭解並接受此風險</string>
+    <!-- Button that creates an app share for a friend or group. No arguments. -->
+    <string name="share_add">新增分享</string>
+    <!-- Button that dismisses the share editor without saving changes. No arguments. -->
+    <string name="share_cancel">取消</string>
+    <!-- Plugin detail badge showing how many friends can access this app. Argument: count, an integer; use native plural rules. -->
+    <plurals name="share_count">
+        <item quantity="other">已分享給 %1$d 位好友</item>
+    </plurals>
+    <!-- Expiration choice that opens a date and time picker. No arguments. -->
+    <string name="share_custom">選擇日期與時間</string>
+    <!-- Title of the editor for an existing app share. No arguments. -->
+    <string name="share_edit">編輯分享</string>
+    <!-- Empty state when no friends or groups can be selected for sharing. No arguments. -->
+    <string name="share_empty">沒有可選的好友或群組</string>
+    <!-- Label of the share expiration picker. No arguments. -->
+    <string name="share_expires">到期時間</string>
+    <!-- Section title for individual friends in the share recipient picker. No arguments. -->
+    <string name="share_friends">好友</string>
+    <!-- Section title for friend groups in the share recipient picker. No arguments. -->
+    <string name="share_groups">群組</string>
+    <!-- Expiration choice that grants access for one hour from now. No arguments. -->
+    <string name="share_hour">1 小時</string>
+    <!-- Identity verification detail when secure discovery of the identity server failed. No arguments. -->
+    <string name="share_identity_discovery">無法安全探索身分伺服器。</string>
+    <!-- Identity verification detail for an invalid OpenID identity token. No arguments. -->
+    <string name="share_identity_invalid">身分權杖無效。</string>
+    <!-- Identity verification detail when the verified user ID belongs to a different server. No arguments. -->
+    <string name="share_identity_mismatch">驗證的使用者 ID 與身分伺服器不符。</string>
+    <!-- Identity verification detail for an unrecognized failure category. No arguments. -->
+    <string name="share_identity_other">身分驗證失敗。</string>
+    <!-- Identity verification detail when the identity server could not confirm the user. No arguments. -->
+    <string name="share_identity_userinfo">身分伺服器無法確認你的身分。</string>
+    <!-- Expiration choice that keeps access until the owner revokes it. No arguments. -->
+    <string name="share_indefinite">直到收回為止</string>
+    <!-- Shared app problem when the access grant has expired. No arguments. -->
+    <string name="share_problem_expired">分享已到期</string>
+    <!-- Shared app problem when the sharing friend's server cannot verify the current user. No arguments. -->
+    <string name="share_problem_identity">這位好友的伺服器無法辨識你的身分</string>
+    <!-- Shared app problem for an unavailable source not covered by a more specific category. No arguments. -->
+    <string name="share_problem_other">無法取得分享的應用程式</string>
+    <!-- Shared app problem when the app is not running; recipients cannot start it. No arguments. -->
+    <string name="share_problem_plugin">這個應用程式未在執行</string>
+    <!-- Shared app problem when the current user has no grant for the app. No arguments. -->
+    <string name="share_problem_required">這位好友沒有將這個應用程式分享給你</string>
+    <!-- Shared app problem when the owner has revoked access. No arguments. -->
+    <string name="share_problem_revoked">這位好友已停止分享這個應用程式</string>
+    <!-- Shared app problem when the sharing friend's server cannot be reached. No arguments. -->
+    <string name="share_problem_unreachable">無法連上這位好友的伺服器</string>
+    <!-- Apps page section title for apps shared by other people. No arguments. -->
+    <string name="share_received">別人分享給我的</string>
+    <!-- Label of the friend or group picker for an app share. No arguments. -->
+    <string name="share_recipient">好友或群組</string>
+    <!-- Button or accessibility label that refreshes apps shared by friends. No arguments. -->
+    <string name="share_refresh">重新整理分享</string>
+    <!-- Destructive action that immediately removes access granted by an app share. No arguments. -->
+    <string name="share_revoke">收回分享</string>
+    <!-- Prominent warning before sharing an app without declared friend support. Explain account creation and possible access to the owner's data. No arguments. -->
+    <string name="share_risk">好友會以自己的使用者名稱登入這個應用程式，應用程式可能為他建立帳號，讓他看到你的資料。</string>
+    <!-- Button that saves a new or edited app share. No arguments. -->
+    <string name="share_save">儲存分享</string>
+    <!-- Plugin detail section and share management page title. No arguments. -->
+    <string name="share_title">分享給好友</string>
+    <!-- Expiration choice that grants access until the end of today. No arguments. -->
+    <string name="share_today">今天</string>
+    <!-- Recipient label when the saved friend or group is no longer available. No arguments. -->
+    <string name="share_unknown">未知對象</string>
     <!-- Toolbar button that opens the Add Source page. -->
     <string name="store_add_source">新增來源</string>
     <!-- Button on a store row to install an app you don't have. -->

@@ -10,7 +10,9 @@ mod me;
 mod now;
 mod polling;
 mod registry_mirror;
+mod sharing;
 mod start;
+mod support;
 mod takeover;
 mod tasks;
 mod tool_policy;
@@ -36,6 +38,8 @@ use crate::home::HomeLink;
 use crate::port_map::PortMapper;
 use crate::scope::reuse;
 use api::{CoreApi, INSTALL_TIMEOUT, READ_TIMEOUT, SOURCE_TIMEOUT, proxied_client, to_core_error};
+pub(crate) use support::lock;
+use support::*;
 
 /// 有插件在安装、升级、卸载时，隔这么久重新取一次已安装列表。
 const POLL_INTERVAL: Duration = Duration::from_secs(3);
@@ -51,6 +55,7 @@ enum Listing {
 pub(crate) struct PluginsLink {
     runtime: Handle,
     home: Arc<HomeLink>,
+    external: bool,
     view: watch::Sender<PluginsViewModel>,
     languages: Mutex<Vec<String>>,
     /// 本地代理的凭据每次启动都换；同一个代理上复用连接。
@@ -95,6 +100,7 @@ impl PluginsLink {
         home: Arc<HomeLink>,
         data_dir: &Path,
         view: Option<watch::Sender<PluginsViewModel>>,
+        external: bool,
     ) -> Arc<Self> {
         let installed_cache = data_dir.join("installed-plugins.json");
         let installed = home
@@ -105,6 +111,14 @@ impl PluginsLink {
             view,
             PluginsViewModel {
                 installed,
+                actions: if external {
+                    Vec::new()
+                } else {
+                    vec![
+                        wonton_protocol::AppsAction::Store,
+                        wonton_protocol::AppsAction::AddSource,
+                    ]
+                },
                 ..PluginsViewModel::default()
             },
         );
@@ -112,6 +126,7 @@ impl PluginsLink {
         let link = Arc::new(Self {
             runtime: runtime.clone(),
             home,
+            external,
             view,
             languages: Mutex::new(Vec::new()),
             client: Mutex::new(None),
@@ -219,6 +234,9 @@ impl PluginsLink {
     }
 
     pub(crate) fn foregrounded(self: &Arc<Self>) {
+        if self.external {
+            return;
+        }
         self.foreground.store(true, Ordering::SeqCst);
         self.ports.set_foreground(true);
         self.poll_changed.notify_one();
@@ -238,7 +256,7 @@ impl PluginsLink {
 
     /// `RefreshPlugins`：在后台重新取已安装的插件。隧道断着时请求会触发重连，所以只在主人要看的时候发，隧道状态变化时不发。
     pub(crate) fn refresh_installed(self: &Arc<Self>) {
-        if self.connecting() {
+        if self.external || self.connecting() {
             return;
         }
         let link = self.clone();
@@ -256,7 +274,7 @@ impl PluginsLink {
     /// `RefreshStore`：在后台取商店，`force` 时家里的服务器不等缓存过期。
     pub(crate) fn refresh_store(self: &Arc<Self>, force: bool) {
         self.store_wanted.store(true, Ordering::Relaxed);
-        if self.connecting() {
+        if self.external || self.connecting() {
             return;
         }
         let link = self.clone();
@@ -622,7 +640,6 @@ impl PluginsLink {
         result
     }
 
-    /// 开关一项可选权限（ADR-0057）。核心要重建容器，做完才回应；返回开关之后的详情。
     pub(crate) async fn set_plugin_permission(
         self: &Arc<Self>,
         id: &str,
@@ -643,7 +660,6 @@ impl PluginsLink {
         result
     }
 
-    /// 开关“每次都问”（ADR-0033）：打开后这个 Agent 每次更新都发卡片；返回开关之后的详情。
     pub(crate) async fn set_ask_every_update(
         &self,
         id: &str,
@@ -672,7 +688,6 @@ impl PluginsLink {
         self.installed_plugin(id).await
     }
 
-    /// 图片的地址内容不变（ADR-0017），取到一次就存在本机。缓存写不进去不影响这次的结果，下次再取。
     pub(crate) async fn load_image(&self, image: &PluginImage) -> Result<Vec<u8>, CoreError> {
         let cached = self.images_dir.join(cache_name(&image.path));
         if let Ok(bytes) = tokio::fs::read(&cached).await {
@@ -716,73 +731,4 @@ impl PluginsLink {
             .cloned()
             .collect()
     }
-}
-
-/// 跟着家里的连接：连上（App 启动、重新配对、断线恢复）时取列表，壳在页面出现时发的刷新可能比隧道早；换了服务器时忘掉上一台
-/// 的东西。
-async fn follow_home(link: Weak<PluginsLink>) {
-    let Some(mut home) = link.upgrade().map(|link| link.home.subscribe()) else {
-        return;
-    };
-    let mut connected = false;
-    let mut server = home.borrow().server_id.clone();
-    loop {
-        let (now_connected, disconnected, next_server) = {
-            let view = home.borrow_and_update();
-            (
-                view.status == HomeStatus::Connected,
-                matches!(view.status, HomeStatus::Disconnected { .. }),
-                view.server_id.clone(),
-            )
-        };
-        let Some(link) = link.upgrade() else { return };
-        if server.is_some() && next_server != server {
-            link.forget_server();
-        }
-        server = next_server;
-        if disconnected {
-            link.forget_storage();
-        }
-        if now_connected && !connected {
-            link.refresh_installed();
-            link.fetch_core_upgrade();
-            if link.store_wanted.load(Ordering::Relaxed) {
-                link.refresh_store(false);
-            }
-        }
-        connected = now_connected;
-        drop(link);
-        if home.changed().await.is_err() {
-            return;
-        }
-    }
-}
-
-/// `/_wonton/api/images/<sha256>/<文件名>` 换成一个文件名。
-fn cache_name(path: &str) -> String {
-    path.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '.' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
-async fn save_atomically(dir: &Path, target: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    // 同一张图可能同时在加载（主屏和详情页都要），各写各的临时文件。
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    tokio::fs::create_dir_all(dir).await?;
-    let partial =
-        target.with_extension(format!("{}.partial", NEXT.fetch_add(1, Ordering::Relaxed)));
-    tokio::fs::write(&partial, bytes).await?;
-    tokio::fs::rename(&partial, target).await
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

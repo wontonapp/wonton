@@ -29,6 +29,7 @@ mod reply;
 mod rooms;
 mod send_queue;
 mod session;
+mod sharing;
 mod store_holder;
 mod sync;
 #[cfg(feature = "testkit")]
@@ -57,6 +58,7 @@ pub use read_position::entry_id;
 pub use reply::{Draft, Quoted, RepliedMessage, ReplyTo};
 pub use rooms::{LatestMessage, Membership, RoomInfo};
 pub use session::{MatrixSession, SavedSession, SessionConfig, SessionEvent, StoreConfig};
+pub use sharing::{FriendSource, OpenIdToken};
 pub use sync::{SyncStatus, last_sync_diagnostic};
 pub use timeline::{EntryKind, TimelineEntry};
 pub use verification::SelfVerification;

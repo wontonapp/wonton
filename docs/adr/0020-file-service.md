@@ -236,7 +236,7 @@ Bot 的工具返回 `isError: true`，文字开头是类别；HTTP 接口用 `{"
 
 **`Action` 和 ViewModel**
 
-- `Action`：`UploadFile { source, name, mime_type, room }`、`DownloadFile { id }`、`CancelTransfer { id }`、`DismissTransfer { id, delete_local_file }`、`ResendFileLink { id }`、`DeleteFile { id }`、`SendFileToDevices { id }`、`GrantFileToRoom { id, room }`、`DismissFileProblem`。`room` 不为空时，传完由客户端核心授权并把链接发进这个房间：这一步放在壳里的话，App 中途重启就忘了。这一步没成时传输标成 `LinkNotSent`（已传完，链接没发出），不自动再试，`ResendFileLink` 只重发链接，不重传文件：标成失败的话，主人会把几个 G 的文件再传一遍。隧道断着时除外，这时状态是暂停，连上后接着做。
+- `Action`：`UploadFile { source, name, mime_type, room }`、`DownloadFile { id }`、`CancelTransfer { id }`、`DismissTransfer { id, delete_local_file }`、`ResendFileLink { id }`、`DeleteFile { id }`、`SendFileToDevices { id }`、`GrantFileToRoom { id, room }`、`DismissFileProblem`。`room` 不为空时，传完由客户端核心授权并把链接发进这个房间：这一步放在壳里的话，App 中途重启就忘了。这一步没成时传输标成 `LinkNotSent`（已传完，链接没发出），不自动再试，`ResendFileLink` 只重发链接，不重传文件：标成失败的话，主人会把几个 G 的文件再传一遍。隧道断着时除外，这时状态是暂停，连上后接着做。Matrix 还没登录好、房间还没同步到本地时等它们一小会儿再发（App 重启后接着发链接时常见）；发送设了期限，Matrix 停着时传输也不会一直挂在发送上。
 - 下载的文件由客户端核心放进 App 自己的目录，壳不给路径；记录里只存相对路径，出 ViewModel 时才拼上数据目录，iOS 更新后容器路径变了也找得到。要存到别处，壳调用系统的分享或保存。
 - `CancelTransfer` 取消进行中的传输，上传时连服务器上传了一半的内容一起删。字节已经传完、只差发链接时，按钮是“不发了”（`StopSending`），也发 `CancelTransfer`：只清这条传输，手机不删文件，文件留在服务器上由核心在 24 小时后清掉。`DismissTransfer` 清掉列表里不再进行的条目，不碰服务器上的文件。两个分开，壳不会以为清掉一条做完的上传会删掉服务器上的文件。清下载完的条目时壳先问主人：只清记录（文件留着，卡片还能打开），还是 `delete_local_file` 连手机上的文件一起删。下载完的不自动清：那是主人手机上的文件。
 - `source` 是 `UploadSource`：`Path` 是核心自己能打开的本机路径，`Opaque`（Android 的内容 URI、iOS 的书签）核心不解析，经壳实现的 `FileOpener`（`set_file_opener`）换成文件描述符：Rust 打不开内容 URI，App 重启后接着传时要再打开一次。不靠字符串前缀区分：书签编码后可能以 `/` 开头。iOS 上 App 容器的路径更新后会变，接着传要用书签。没选把文件先复制进 App 的目录：大视频要多占一倍空间，手机放不下时传不了。

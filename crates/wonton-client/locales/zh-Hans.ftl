@@ -179,6 +179,7 @@ chat-unknown-answer = 这个版本的 App 不认识这个回答
 chat-action-not-connected = 还没连上家里的服务器
 # 还没登录 Matrix 就有聊天操作时显示。
 chat-not-signed-in = 还没有登录 Matrix
+chat-send-no-response = Matrix 服务器没有回应
 # $error 是房间 ID 解析器的原始错误。
 chat-invalid-room-id = 房间 ID 不合法：{ $error }
 # 往只放通知的房间里发东西时显示。
@@ -316,6 +317,8 @@ home-port-mapping-save-failed = 端口映射的开关存不下：{ $error }
 tabs-view-always-pinned = 聊天和应用已经固定到底栏。
 tabs-view-plugin-list-not-ready = 插件列表还没读到，暂时不能操作插件页面。
 tabs-view-unknown-plugin = 没有这个插件。
+# $error 是本地存储的原始错误。
+tabs-storage-problem = 底栏设置存不下，下次启动可能恢复旧状态：{ $error }
 tabs-view-plugin-no-page = 插件没有可打开的网页。
 tabs-page-not-placed = 这个页面不在面板里。
 
@@ -408,7 +411,6 @@ files-name-required = 文件名不能为空
 files-download-already-running = 这个文件已经在下载了
 files-transfer-not-found = 没有这条传输
 # 这条传输不在“等着发链接”的状态时要重发链接。
-files-resend-not-waiting = 这条传输没有等着重发的链接
 files-transfer-server-changed = 换了家里的服务器，这个传输属于之前那一台
 files-dismiss-transfer-running = 这条传输还在进行，要先取消
 # 移除上传并要求删除本机文件时：原文件是系统给的，App 删不了它。
