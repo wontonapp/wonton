@@ -94,6 +94,15 @@ jobs:
       - name: 生成绑定的 crate 的文档注释能进 Swift 和 Kotlin 的块注释
         if: steps.changes.outputs.source == 'true'
         run: bash scripts/check-uniffi-comments.sh
+      - name: 两个壳的对齐检查自己的用例
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s scripts/shell_parity -t scripts
+      # 只有一个壳用到的 ViewModel 项报警告注解，不挡合并（主人 2026-11-12 定）。脚本只在读不懂 Rust 源码时
+      # 退出非零，那也只标黄，不让这个作业失败。
+      - name: 两个壳的对齐（只报警告）
+        if: steps.changes.outputs.source == 'true'
+        continue-on-error: true
+        run: python3 scripts/check-shell-parity.py
       - name: 安装脚本的行为测试（假 docker，不用真的 Docker）
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -q -s scripts/install -t scripts

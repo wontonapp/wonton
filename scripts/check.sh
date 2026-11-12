@@ -35,6 +35,7 @@ bash scripts/check-file-size.sh
 python3 -m unittest discover -q -s scripts/ui_text -t scripts
 python3 -m unittest discover -q -s scripts/install -t scripts
 python3 -m unittest discover -q -s scripts/dev_ports -t scripts
+python3 -m unittest discover -q -s scripts/shell_parity -t scripts
 python3 deploy/dev/core/instance-label_test.py
 python3 deploy/dev/core/dev_test.py
 python3 deploy/dev/core/port-preflight_test.py
