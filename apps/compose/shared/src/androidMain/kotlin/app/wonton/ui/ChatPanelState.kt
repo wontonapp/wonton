@@ -37,8 +37,9 @@ internal enum class PanelEdge { TOP, BOTTOM }
 internal val PANEL_PULL_THRESHOLD = 80.dp
 internal val PANEL_PUSH_THRESHOLD = 50.dp
 
-/** 第 1 级露出的聊天页占屏高的比例。 */
-internal const val PANEL_PEEK_FRACTION = 0.18f
+/** 第 1 级主聊天页保留 18%；房间保留约 45%，即面板占约 55%。 */
+internal const val PANEL_MAIN_PEEK_FRACTION = 0.18f
+internal const val PANEL_ROOM_PEEK_FRACTION = 0.45f
 
 /** 松手时预测位置的系数：预测位移 = 位移 + 速度 × 这个秒数。 */
 private const val PROJECT_SECONDS = 0.15f
@@ -95,7 +96,7 @@ internal class ChatPanelState(
     val shiftPx: Float get() = shift
 
     /** 第 1 级露出的那条的高度。 */
-    val strip: Float get() = height * PANEL_PEEK_FRACTION
+    val strip: Float get() = height * peekFraction()
 
     fun geometry(density: Float) {
         this.density = density
@@ -111,9 +112,11 @@ internal class ChatPanelState(
     /** 各级聊天页的位移。 */
     fun base(level: PanelLevel): Float = when (level) {
         PanelLevel.CLOSED -> 0f
-        PanelLevel.PEEK -> height * (1 - PANEL_PEEK_FRACTION) - if (edge == PanelEdge.TOP) safeTop else 0f
+        PanelLevel.PEEK -> height * (1 - peekFraction()) - if (edge == PanelEdge.TOP) safeTop else 0f
         PanelLevel.FULL -> height
     }
+    private fun peekFraction(): Float =
+        if (scope is PanelScope.Room) PANEL_ROOM_PEEK_FRACTION else PANEL_MAIN_PEEK_FRACTION
 
     fun clampedShift(): Float = shift.coerceIn(0f, height)
 

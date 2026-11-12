@@ -42,7 +42,7 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertFalse(app.buttons["panelAdd"].waitForExistence(timeout: 2), "加了网址后还是空面板")
         shot("05-page")
 
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 20), "面板网页没加载出来")
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10), "面板网页没加载出来")
         pullPageDown()
         XCTAssertTrue(capsule.waitForExistence(timeout: 5), "页面滚到顶后接着拉没到第 2 级")
         shot("06-page-full")
@@ -91,7 +91,7 @@ final class ChatPanelUITests: XCTestCase {
         let room = botRoom(timeout: 30)
         XCTAssertNotNil(room, "列表里没有 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
         room?.tap()
-        XCTAssertTrue(composer(timeout: 30)?.exists == true, "没进房间")
+        XCTAssertTrue(composer(timeout: 10)?.exists == true, "没进房间")
 
         let panel = app.otherElements["chatPanel"]
         pullUpInRoom()
@@ -165,7 +165,7 @@ final class ChatPanelUITests: XCTestCase {
 
     /// 从列表里往上下拖。用慢速拖动，不让惯性把列表甩走。
     private func pull(_ direction: Direction) {
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 15), "找不到聊天列表")
+        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 10), "找不到聊天列表")
         let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.28))
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.92))
         switch direction {
@@ -189,7 +189,7 @@ final class ChatPanelUITests: XCTestCase {
 
     /// 输入框：聊天列表本身也是滚动视图，等它出现才算进了房间。
     private func composer(timeout: TimeInterval) -> XCUIElement? {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(min(timeout, 10))
         while Date() < deadline {
             for label in ["Message", "消息", "訊息", "メッセージ"] {
                 for view in app.textViews.allElementsBoundByIndex where view.label == label && view.exists {
@@ -230,7 +230,7 @@ final class ChatPanelUITests: XCTestCase {
 
     @discardableResult
     private func waitAnyButton(_ labels: [String], timeout: TimeInterval, required: Bool = false) -> XCUIElement? {
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(min(timeout, 10))
         while Date() < deadline {
             for label in labels {
                 let element = app.buttons[label].firstMatch

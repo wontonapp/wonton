@@ -158,7 +158,7 @@ struct TabPageView: View {
             .background {
                 if let panel {
                     PanelPagePull(
-                        enabled: panel.pagePull && isVisible, webView: session.webView,
+                        enabled: panel.pagePull && isVisible, webView: session.webView, edge: panel.pageEdge,
                         changed: panel.pageChanged, ended: panel.pageEnded
                     )
                 }

@@ -120,9 +120,6 @@ private struct WontonTextModifier: ViewModifier {
 }
 
 extension WontonIcon {
-    /// 给系统菜单用：菜单项自己定大小和颜色。
-    var image: Image { Image(rawValue) }
-
     /// 模板渲染，颜色跟 `foregroundStyle`，默认 24。读屏的名字由外层的控件给。
     func view(size: CGFloat = WontonTheme.size.icon) -> some View {
         Image(rawValue)

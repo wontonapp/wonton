@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,6 +93,7 @@ fun ChatRoute(
     val initial = remember(core) { core.chat() }
     val viewModel by updates.collectAsState(initial = initial)
     var rejection by remember { mutableStateOf<Problem?>(null) }
+    val scope = rememberCoroutineScope()
     // 只在被拒绝时更新提示：成功的操作（比如自动发出的已读回执）不清掉还没看的拒绝原因。
     val onAction: (Action) -> Unit = { action -> core.send(action)?.let { rejection = it } }
 
@@ -127,8 +129,8 @@ fun ChatRoute(
             }
             val row = viewModel.rooms.firstOrNull { it.roomId == room }
             val context = LocalContext.current
-            val opener = remember(core, navigation, context) {
-                AndroidLinkOpener(context, core, navigation) { rejection = it }
+            val opener = remember(core, navigation, context, scope) {
+                AndroidLinkOpener(context, core, navigation, scope) { rejection = it }
             }
             CompositionLocalProvider(LocalLinkOpener provides opener) {
                 RoomRoute(

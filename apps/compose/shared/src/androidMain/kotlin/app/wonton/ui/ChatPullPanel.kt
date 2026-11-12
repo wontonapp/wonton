@@ -132,9 +132,10 @@ internal fun ChatPanelHost(
         }
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = shift * panel.sign }) {
             content()
-            if (panel.level != PanelLevel.CLOSED) ChatPanelStrip(panel)
+            if (panel.level == PanelLevel.PEEK) ChatPanelStrip(panel)
         }
         ChatPanelEdge(panel, panel.visible)
+        ChatPanelTopPull(panel)
         if (!panel.visible && panel.pages.any { it.attention }) {
             Box(
                 Modifier.align(if (panel.edge == PanelEdge.TOP) Alignment.TopCenter else Alignment.BottomCenter)

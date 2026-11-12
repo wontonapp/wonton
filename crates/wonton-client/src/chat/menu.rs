@@ -66,6 +66,7 @@ struct Entry {
     id: String,
     event_id: Option<String>,
     actions: Vec<MessageAction>,
+    own: Option<bool>,
 }
 
 impl Entry {
@@ -80,14 +81,31 @@ impl Entry {
             id: item.id.clone(),
             event_id,
             actions,
+            own: match &item.content {
+                TimelineContent::Message { message } => Some(message.is_own),
+                _ => None,
+            },
         }
     }
 }
 
 impl Menus {
-    fn apply(&mut self, diffs: &[TimelineDiff]) {
+    fn apply(&mut self, diffs: &[TimelineDiff]) -> bool {
+        let mut own_arrived = false;
         let items = &mut self.items;
         for diff in diffs {
+            own_arrived |= match diff {
+                TimelineDiff::Append { items } => items.iter().any(is_own_message),
+                TimelineDiff::PushBack { item } => is_own_message(item),
+                TimelineDiff::Insert { index, item } => {
+                    is_own_message(item)
+                        && items
+                            .iter()
+                            .rposition(|entry| entry.own.is_some())
+                            .is_none_or(|last| *index as usize > last)
+                }
+                _ => false,
+            };
             match diff {
                 TimelineDiff::Append { items: more } => items.extend(more.iter().map(Entry::of)),
                 TimelineDiff::Clear => items.clear(),
@@ -119,6 +137,7 @@ impl Menus {
                 TimelineDiff::Reset { items: all } => *items = all.iter().map(Entry::of).collect(),
             }
         }
+        own_arrived
     }
 
     /// 菜单里有 `wanted` 这一项的那条消息的事件 ID。
@@ -133,6 +152,10 @@ impl Menus {
         }
         entry.event_id.as_deref()?.parse().ok()
     }
+}
+
+fn is_own_message(item: &TimelineItem) -> bool {
+    matches!(&item.content, TimelineContent::Message { message } if message.is_own)
 }
 
 /// 时间线订阅发增量的出口：发给壳之前先应用到菜单上，再带上房间面板的当前视图（ADR-0052）和加密入口。
@@ -175,7 +198,7 @@ impl Outbox {
         viewport: TimelineViewport,
         anchor: Option<String>,
     ) -> Result<(), ()> {
-        lock(&self.menus).apply(&diffs);
+        let scroll_to_bottom = lock(&self.menus).apply(&diffs);
         let room_view = self.room_view.borrow().clone();
         let (panel, panel_selected, entry_blocked) = match room_view {
             Some(view) => (view.panel.clone(), view.selected.clone(), view.blocked),
@@ -187,6 +210,7 @@ impl Outbox {
                 diffs,
                 back_pagination,
                 viewport,
+                scroll_to_bottom,
                 anchor,
                 panel,
                 panel_selected,
@@ -337,5 +361,90 @@ mod tests {
                 .event_with("b", |action| matches!(action, MessageAction::Forward))
                 .is_some()
         );
+    }
+
+    #[test]
+    fn only_new_own_messages_interrupt_reading_history() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (_, room_view) = watch::channel(None);
+        let (_, chat) = watch::channel(ChatViewModel {
+            account: wonton_protocol::ChatAccount::SignedOut,
+            sync: wonton_protocol::ChatSync::Idle,
+            encryption: wonton_protocol::EncryptionStatus {
+                verification: wonton_protocol::DeviceVerification::Unknown,
+                recovery: wonton_protocol::RecoveryStatus::Unknown,
+                recovery_key: None,
+                backup_reminder: None,
+                can_verify_with_other_device: false,
+                can_reset: false,
+                recovery_next_step: wonton_protocol::RecoveryNextStep::None,
+                verification_flow: None,
+                key_handoff: None,
+            },
+            rooms: Vec::new(),
+            installing_bots: Vec::new(),
+            problem: None,
+            push: wonton_protocol::PushStatus::NoEndpoint,
+            pending_confirmations: Vec::new(),
+            settled_confirmations: Vec::new(),
+            background_notifications: Vec::new(),
+            bots: Vec::new(),
+            chat_layout_default: Default::default(),
+        });
+        let outbox = Outbox::new(tx, Arc::default(), room_view, chat);
+        let item = |id: &str, own: bool| TimelineItem {
+            id: id.to_owned(),
+            content: TimelineContent::Message {
+                message: wonton_protocol::TimelineMessage {
+                    event_id: None,
+                    sender_id: "@owner:example.com".into(),
+                    sender_name: "Owner".into(),
+                    is_own: own,
+                    timestamp_ms: 0,
+                    send_state: wonton_protocol::SendState::Sent,
+                    body: text(),
+                    edited: false,
+                    read_by: Vec::new(),
+                    reply: None,
+                    side_chat: None,
+                    actions: Vec::new(),
+                    group: None,
+                },
+            },
+        };
+        let away = TimelineViewport::Away { new_messages: 3 };
+        let send = |diff| {
+            outbox
+                .send(&Vector::new(), vec![diff], BackPagination::Idle, away, None)
+                .unwrap()
+        };
+        send(TimelineDiff::Reset {
+            items: vec![item("history", true)],
+        });
+        assert!(!rx.try_recv().unwrap().scroll_to_bottom);
+        send(TimelineDiff::PushBack {
+            item: item("bot", false),
+        });
+        let update = rx.try_recv().unwrap();
+        assert!(!update.scroll_to_bottom);
+        assert_eq!(update.viewport, away);
+        send(TimelineDiff::PushBack {
+            item: item("own", true),
+        });
+        assert!(rx.try_recv().unwrap().scroll_to_bottom);
+        send(TimelineDiff::Set {
+            index: 2,
+            item: item("own", true),
+        });
+        assert!(!rx.try_recv().unwrap().scroll_to_bottom);
+        send(TimelineDiff::Set {
+            index: 1,
+            item: item("bot", false),
+        });
+        assert!(!rx.try_recv().unwrap().scroll_to_bottom);
+        send(TimelineDiff::PushFront {
+            item: item("older", true),
+        });
+        assert!(!rx.try_recv().unwrap().scroll_to_bottom);
     }
 }

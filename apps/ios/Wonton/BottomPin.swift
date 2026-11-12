@@ -15,6 +15,32 @@ final class BottomPin {
     private weak var scrollView: UIScrollView?
     private(set) var isPinned = true
     private var observations: [NSKeyValueObservation] = []
+    private var heldOffset: CGFloat?
+    private var updateGeneration = 0
+
+    /// List 会为末尾追加和变高的行调整 contentOffset；翻走时保留更新前的位置，不借内容高度反推主人的手势。
+    func prepareForUpdate() {
+        guard !isPinned, let scrollView, !scrollView.isDragging, !scrollView.isDecelerating else { return }
+        if heldOffset == nil { heldOffset = scrollView.contentOffset.y }
+        updateGeneration += 1
+        let generation = updateGeneration
+        DispatchQueue.main.async { [weak self] in
+            guard let self, generation == self.updateGeneration else { return }
+            self.restoreOffset()
+            DispatchQueue.main.async { [weak self] in
+                guard let self, generation == self.updateGeneration else { return }
+                self.restoreOffset()
+                self.heldOffset = nil
+            }
+        }
+    }
+
+    private func restoreOffset() {
+        guard let heldOffset, let scrollView, !isPinned,
+              !scrollView.isDragging, !scrollView.isDecelerating else { return }
+        scrollView.layoutIfNeeded()
+        scrollView.contentOffset.y = min(scrollView.bottomOffset, max(-scrollView.adjustedContentInset.top, heldOffset))
+    }
 
     func attach(_ scrollView: UIScrollView) {
         guard scrollView !== self.scrollView else { return }
@@ -27,6 +53,7 @@ final class BottomPin {
             scrollView.observe(\.contentOffset) { [weak self] scrollView, _ in
                 MainActor.assumeIsolated {
                     guard scrollView.isDragging || scrollView.isDecelerating else { return }
+                    self?.heldOffset = nil
                     self?.isPinned = scrollView.bottomOffset - scrollView.contentOffset.y <= Self.slack
                 }
             }
@@ -41,6 +68,7 @@ final class BottomPin {
     /// 主人发了东西：不管翻到哪，回到底部看结果。
     func pin() {
         isPinned = true
+        heldOffset = nil
         stick()
     }
 
@@ -50,8 +78,12 @@ final class BottomPin {
     }
 
     func stick() {
-        guard isPinned, let scrollView, !scrollView.isDragging else { return }
-        scrollView.contentOffset.y = scrollView.bottomOffset
+        guard let scrollView, !scrollView.isDragging, !scrollView.isDecelerating else { return }
+        if isPinned {
+            scrollView.contentOffset.y = scrollView.bottomOffset
+        } else {
+            restoreOffset()
+        }
     }
 }
 

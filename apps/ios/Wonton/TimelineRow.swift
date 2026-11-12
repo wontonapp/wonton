@@ -141,27 +141,27 @@ private struct MessageBubble: View {
             Button {
                 UIPasteboard.general.string = text
             } label: {
-                Label { Text(.messageCopy) } icon: { WontonIcon.copy.image }
+                Label { Text(.messageCopy) } icon: { WontonIcon.copy.view(size: WontonTheme.size.iconSmall) }
             }
         case let .reply(quoted):
             Button {
                 reply(quoted)
             } label: {
-                Label { Text(.messageReply) } icon: { WontonIcon.reply.image }
+                Label { Text(.messageReply) } icon: { WontonIcon.reply.view(size: WontonTheme.size.iconSmall) }
             }
             .accessibilityIdentifier("messageReply")
         case .forward:
             Button {
                 forward()
             } label: {
-                Label { Text(.messageForward) } icon: { WontonIcon.forward.image }
+                Label { Text(.messageForward) } icon: { WontonIcon.forward.view(size: WontonTheme.size.iconSmall) }
             }
             .accessibilityIdentifier("messageForward")
         case .redact:
             Button(role: .destructive) {
                 redact()
             } label: {
-                Label { Text(.messageRedact) } icon: { WontonIcon.trash.image }
+                Label { Text(.messageRedact) } icon: { WontonIcon.trash.view(size: WontonTheme.size.iconSmall) }
             }
             .accessibilityIdentifier("messageRedact")
         // 核心和 App 分开升级时，不认识的菜单项不显示。
