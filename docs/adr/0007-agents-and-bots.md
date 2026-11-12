@@ -1,6 +1,6 @@
 # ADR-0007 Agent 与 Bot：Agent 即插件
 
-- 状态：已接受（2026-10-28）。Agent 的总体边界和 Bot 关系见本文；ACP 桥的实现形态见 [ADR-0035](0035-acp-bridge.md)。经桥登录的条款限制见 [ADR-0034](0034-onboarding-and-help.md)；家人的 Bot、Bot 听谁的和 Bot 之间的规则由 [ADR-0045](0045-family-members.md) 细化；家人账号的角色和按角色给 AI 设的上限见 [ADR-0088](0088-family-accounts.md)，不等 M2
+- 状态：已接受（2026-10-28）。Agent 的总体边界和 Bot 关系见本文；ACP 桥的实现形态见 [ADR-0035](0035-acp-bridge.md)。经桥登录的条款限制见 [ADR-0034](0034-onboarding-and-help.md)；家人的 Bot、Bot 听谁的和 Bot 之间的规则由 [ADR-0045](0045-family-members.md) 细化；家人账号的角色和按角色给 AI 设的上限见 [ADR-0088](0088-family-accounts.md)，不等 M2。Agent 自带的网页做插件网页见 [ADR-0084](0084-agent-own-web.md)
 
 ## 背景
 
