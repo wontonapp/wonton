@@ -383,7 +383,16 @@ fn apply(
     batch: Vec<VectorDiff<TimelineEntry>>,
 ) -> Batch {
     if batch.iter().any(|diff| matches!(diff, VectorDiff::Clear)) {
-        return clear_batch(room, entries, batch, read, &links_of(plugins), sender, view, bots);
+        return clear_batch(
+            room,
+            entries,
+            batch,
+            read,
+            &links_of(plugins),
+            sender,
+            view,
+            bots,
+        );
     }
     let links = LinkTargets::of(&plugins.view());
     let mut out = Vec::new();
@@ -687,7 +696,12 @@ mod tests {
         .into_iter()
         .collect();
 
-        let before = relinked(&entries, &read, &LinkTargets::default(), &BotsView::default());
+        let before = relinked(
+            &entries,
+            &read,
+            &LinkTargets::default(),
+            &BotsView::default(),
+        );
         assert_eq!(kind(&before[0]), RichLinkKind::External);
 
         let links = super::super::links::test_targets(&[(

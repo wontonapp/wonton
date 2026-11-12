@@ -10,9 +10,8 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use wonton_protocol::{
     BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError, FriendsViewModel,
-    HomeViewModel,
-    OnboardingViewModel, PeersViewModel, PluginsViewModel, RoomPanel, ServersViewModel,
-    SettingsViewModel, TabsViewModel, TransfersViewModel,
+    HomeViewModel, OnboardingViewModel, PeersViewModel, PluginsViewModel, RoomPanel,
+    ServersViewModel, SettingsViewModel, TabsViewModel, TransfersViewModel,
 };
 
 use crate::bot_contacts::BotContactsLink;

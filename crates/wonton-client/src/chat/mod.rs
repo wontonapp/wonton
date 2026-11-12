@@ -386,18 +386,9 @@ impl ChatLink {
             | Action::ConfirmVerification { .. }
             | Action::DenyVerification { .. }
             | Action::CancelDeviceVerification { .. }) => self.verification_action(action),
-            Action::AnswerConfirmation {
-                id,
-                answer,
-                choice_id,
-                secrets,
-                settings,
-            } => self.answer_confirmation(id, answer, choice_id, secrets, settings),
-            Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
-            Action::RetryConfirmations => {
-                self.retry_confirmations.notify_one();
-                Ok(())
-            }
+            action @ (Action::AnswerConfirmation { .. }
+            | Action::StopConfirmationWindow { .. }
+            | Action::RetryConfirmations) => self.confirmation_action(action),
             Action::SetChatLayout { target, choice } => self.set_chat_layout(target, choice),
             _ => Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action"))),
         }

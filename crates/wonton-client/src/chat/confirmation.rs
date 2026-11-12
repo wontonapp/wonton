@@ -13,16 +13,15 @@ use reqwest::header::CONTENT_TYPE;
 use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Answer, CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ChatFailure, ChatProblem,
+    Action, Answer, CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ChatFailure, ChatProblem,
     ConfirmationAnswer, ConfirmationCard, ConfirmationList, ConfirmationReply, ConfirmationState,
-    ConfirmationView, ConfirmationWindow, ProxySettings, WindowEnd, WindowView, answer_path,
-    confirmation_path, window_path,
+    ConfirmationView, ConfirmationWindow, CoreError, ProxySettings, WindowEnd, WindowView,
+    answer_path, confirmation_path, window_path,
 };
 
 use super::login::{ErrorBody, proxy_url};
 use super::{ChatLink, invalid};
 use crate::l10n::{CATALOG, language};
-use wonton_protocol::CoreError;
 
 /// 回答的整个请求最多等这么久。核心收到回答马上返回，不等执行。
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(30);
@@ -496,6 +495,25 @@ fn ended_note(end: WindowEnd, allowed: Option<u32>) -> String {
 }
 
 impl ChatLink {
+    /// 确认卡片的操作：回答、停掉放行时段、重试取列表。`dispatch` 里确认的动作才路由到这里。
+    pub(super) fn confirmation_action(&self, action: Action) -> Result<(), CoreError> {
+        match action {
+            Action::AnswerConfirmation {
+                id,
+                answer,
+                choice_id,
+                secrets,
+                settings,
+            } => self.answer_confirmation(id, answer, choice_id, secrets, settings),
+            Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
+            Action::RetryConfirmations => {
+                self.retry_confirmations.notify_one();
+                Ok(())
+            }
+            _ => unreachable!("dispatch only routes confirmation actions here"),
+        }
+    }
+
     /// 主人点了确认卡片上的按钮：经隧道发给核心，进展放进 `answers`。同一张卡片在发或者答完了就不再发：核心那边
     /// 也只收一次，这里是不让连点变成“回答过了”的报错。
     pub(super) fn answer_confirmation(
