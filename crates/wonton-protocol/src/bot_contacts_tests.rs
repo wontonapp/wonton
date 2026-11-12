@@ -68,6 +68,10 @@ fn contact_types_round_trip_through_json() {
             bot: Some(bot()),
             state: BotContactsState::Ready,
             contacts: vec![remote_contact(), local],
+            action_failure: Some(BotContactFailure {
+                error: ContactError::InvalidUserId,
+                message: "不是完整的 Matrix 用户 ID".into(),
+            }),
         },
         BotContactsViewModel {
             bot: Some(bot()),
@@ -76,6 +80,7 @@ fn contact_types_round_trip_through_json() {
                 message: "这台服务器还没连接".into(),
             },
             contacts: Vec::new(),
+            action_failure: None,
         },
     ] {
         let json = serde_json::to_string(&model).unwrap();

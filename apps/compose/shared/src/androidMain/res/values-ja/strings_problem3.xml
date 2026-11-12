@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Problem title: the server refused an action although this device is still signed in. -->
+    <string name="problem_forbidden_title">リクエストが拒否されました</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->
     <string name="problem_loading">読み込み中</string>
     <!-- Problem title when the core says the action can't run yet; the core's own reason is shown as the next step. -->

@@ -20,6 +20,12 @@
     <string name="onboarding_replaced_agent_title">Uninstall “%1$s”?</string>
     <!-- Checkmark icon for a finished install task. -->
     <string name="onboarding_review_done">Done</string>
+    <!-- Kind label above a review row: the profile that will be saved. -->
+    <string name="onboarding_review_section_profile">Profile</string>
+    <!-- Kind label above a review row: the default agent. -->
+    <string name="onboarding_review_section_agent">Agent</string>
+    <!-- Kind label above a review row: the model. -->
+    <string name="onboarding_review_section_model">Model</string>
     <!-- Label while an install task waits for others to finish. -->
     <string name="onboarding_review_waiting">Queued</string>
     <!-- Card title at the top of the agent step in setup: pick the agent to use. -->

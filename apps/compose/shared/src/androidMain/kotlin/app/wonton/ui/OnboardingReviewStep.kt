@@ -57,6 +57,8 @@ private fun ReviewItemHeading(item: OnboardingReviewItem, plugins: PluginsState)
             PluginIconImage(item.icon, WontonTheme.size.taskIcon, plugins)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+            Text(item.kind.section(), style = WontonTheme.typography.supporting,
+                color = WontonTheme.colors.textSecondary.toColor())
             Text(
                 ListFormatter.getInstance(LocalConfiguration.current.locales[0]).format(item.titles),
                 style = WontonTheme.typography.itemTitle,
@@ -71,6 +73,15 @@ private fun ReviewItemHeading(item: OnboardingReviewItem, plugins: PluginsState)
             }
         }
     }
+}
+
+/** 每一行的类别，写在标题上面。 */
+@Composable
+private fun OnboardingReviewKind.section(): String = when (this) {
+    OnboardingReviewKind.PROFILE -> stringResource(R.string.onboarding_review_section_profile)
+    OnboardingReviewKind.AGENT -> stringResource(R.string.onboarding_review_section_agent)
+    OnboardingReviewKind.MODEL -> stringResource(R.string.onboarding_review_section_model)
+    OnboardingReviewKind.APP -> stringResource(R.string.onboarding_review_section_apps)
 }
 
 @Composable
@@ -120,6 +131,7 @@ private fun OnboardingReviewDetail.line(): String = when (this) {
         ?.let { stringResource(R.string.onboarding_review_unreachable_model, it) }
         ?: stringResource(R.string.onboarding_review_unreachable)
     is OnboardingReviewDetail.SignInAfterSetup -> stringResource(R.string.onboarding_review_sign_in_after_setup)
+    is OnboardingReviewDetail.Unchanged -> stringResource(R.string.onboarding_review_unchanged)
 }
 
 @Composable

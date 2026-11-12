@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Description of an agent row in setup when it has no account login. -->
-    <string name="onboarding_agent_connection_key">key</string>
+    <!-- Description of an agent row in setup when it has no account login: it needs a model provider key in the next step. -->
+    <string name="onboarding_agent_connection_key">在下一步填模型服务商的 key</string>
     <!-- Dialog title for choosing the default agent. -->
     <string name="onboarding_default_agent_title">默认 Agent</string>
     <!-- Loading spinner shown while setup data loads. -->
@@ -11,7 +11,7 @@
     <!-- Button that opens the provider's website to get an API key. -->
     <string name="onboarding_model_get_key">拿 key</string>
     <!-- Row title: keep the models already configured in the model gateway. -->
-    <string name="onboarding_model_use_current">用现在的</string>
+    <string name="onboarding_model_use_current">用现在的模型</string>
     <!-- Banner when one approval card is waiting. Argument: the card's title. -->
     <string name="onboarding_pending_card_one">%1$s，等你确认</string>
     <!-- Problem title while installing: the device the app needs is unavailable. -->

@@ -36,6 +36,8 @@
     <string name="push_status_unavailable">收不到推送，請檢查系統通知和分發器</string>
     <string name="push_status_failed_transport">註冊失敗，連上家用伺服器後重試</string>
     <string name="push_status_failed_unauthorized">註冊失敗，請重新配對</string>
+    <!-- Push status line when registering failed because the home server refused it although this device is signed in. -->
+    <string name="push_status_failed_forbidden">註冊失敗，家用伺服器拒絕了</string>
     <string name="push_status_failed_upstream">註冊失敗，家用伺服器出錯了</string>
     <string name="push_status_failed_not_ready">註冊失敗，請等聊天連線就緒</string>
     <string name="push_status_failed_invalid_input">註冊失敗，推送位址無效</string>

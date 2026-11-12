@@ -129,25 +129,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use Current"
+            "value": "Use your current model"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用现在的"
+            "value": "用现在的模型"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用目前的"
+            "value": "用現在的模型"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "現在のモデルを使用"
+            "value": "今のモデルを使う"
           }
         }
       }
@@ -388,6 +388,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "アンインストール"
+          }
+        }
+      }
+    },
+    "onboarding.review.unchanged": {
+      "comment": "Second line of a review row the user did not change: finishing will not touch it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unchanged"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不变"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不變"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更なし"
           }
         }
       }

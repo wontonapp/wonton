@@ -2,6 +2,8 @@
 <resources>
     <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
     <string name="problem_appearance_title">外观设置没有存上</string>
+    <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
+    <string name="problem_forbidden_next_step">登录没有问题。可能是没有权限、对方屏蔽了你，或者对方的服务器还不能和家里的服务器互通。</string>
     <!-- Next step: check the proxy on the home server, or change the address in the internet proxy settings. -->
     <string name="problem_plugin_egress_proxy_unavailable_next_step">检查家里服务器上的代理，或者在出网代理设置里改地址后再试。</string>
     <!-- Problem title: the app can't reach the internet through the internet proxy. -->

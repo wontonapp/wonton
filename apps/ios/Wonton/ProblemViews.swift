@@ -42,8 +42,8 @@ extension PluginFailure {
         case .unauthorized:
             categorizedProblem(
                 .Problem3.problemUnauthorizedTitle,
-                 .Problem2.problemUnauthorizedNextStep,
-                 detail)
+                .Problem2.problemUnauthorizedNextStep,
+                detail)
         case .upstream: categorizedProblem(.Problem2.problemUpstreamTitle, .Problem2.problemUpstreamNextStep, detail)
         case .sourceUnavailable:
             categorizedProblem(
@@ -53,28 +53,28 @@ extension PluginFailure {
         case .notFound:
             categorizedProblem(
                 .Problem2.problemPluginNotFoundTitle,
-                 .Problem0.problemPluginNotFoundNextStep,
-                 detail)
+                .Problem0.problemPluginNotFoundNextStep,
+                detail)
         case .changed:
             categorizedProblem(
                 .Problem3.problemPluginChangedTitle,
-                 .Problem1.problemPluginChangedNextStep,
-                 detail)
+                .Problem1.problemPluginChangedNextStep,
+                detail)
         case .unsupported:
             categorizedProblem(
                 .Problem2.problemPluginUnsupportedTitle,
-                 .Problem0.problemUpgradeServerNextStep,
-                 detail)
+                .Problem0.problemUpgradeServerNextStep,
+                detail)
         case .conflict:
             categorizedProblem(
                 .Problem1.problemPluginConflictTitle,
-                 .Problem3.problemPluginConflictNextStep,
-                 detail)
+                .Problem3.problemPluginConflictNextStep,
+                detail)
         case .invalid:
             categorizedProblem(
                 .Problem2.problemPluginInvalidTitle,
-                 .Problem3.problemPluginInvalidNextStep,
-                 detail)
+                .Problem3.problemPluginInvalidNextStep,
+                detail)
         case .deviceUnavailable:
             categorizedProblem(
                 .Problem1.problemPluginDeviceUnavailableTitle,
@@ -153,6 +153,12 @@ extension ChatFailure {
                 nextStep: String(localized: .Problem2.problemUnauthorizedNextStep),
                 detail: detail
             )
+        case .forbidden:
+            return Problem(
+                title: String(localized: .Problem3.problemForbiddenTitle),
+                nextStep: String(localized: .Problem3.problemForbiddenNextStep),
+                detail: detail
+            )
         case .upstream:
             return Problem(
                 title: String(localized: .Problem2.problemUpstreamTitle),
@@ -163,6 +169,12 @@ extension ChatFailure {
             return Problem(title: String(localized: .Problem0.problemNotReadyTitle), nextStep: detail)
         case .invalidInput:
             return Problem(title: String(localized: .Problem2.problemInvalidInputTitle), nextStep: detail)
+        case .other:
+            return Problem(
+                title: String(localized: .Problem1.problemGenericTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
+                detail: detail
+            )
         }
     }
 }

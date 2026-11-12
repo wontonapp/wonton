@@ -36,6 +36,8 @@
     <string name="push_status_unavailable">プッシュを受信できません。システムの通知とディストリビューターを確認してください</string>
     <string name="push_status_failed_transport">登録に失敗しました。自宅サーバーに接続できたらもう一度お試しください</string>
     <string name="push_status_failed_unauthorized">登録に失敗しました。ペアリングをやり直してください</string>
+    <!-- Push status line when registering failed because the home server refused it although this device is signed in. -->
+    <string name="push_status_failed_forbidden">登録に失敗しました。自宅サーバーに拒否されました</string>
     <string name="push_status_failed_upstream">登録に失敗しました。自宅サーバーでエラーが発生しました</string>
     <string name="push_status_failed_not_ready">登録に失敗しました。チャットの接続が整うまでお待ちください</string>
     <string name="push_status_failed_invalid_input">登録に失敗しました。プッシュアドレスが正しくありません</string>

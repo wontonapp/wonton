@@ -2,6 +2,8 @@
 <resources>
     <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
     <string name="problem_appearance_title">外観設定を保存できませんでした</string>
+    <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
+    <string name="problem_forbidden_next_step">ログインは有効です。権限がないか、相手にブロックされているか、相手のサーバーがまだ自宅サーバーとつながっていない可能性があります。</string>
     <!-- Next step: check the proxy on the home server, or change the address in the internet proxy settings. -->
     <string name="problem_plugin_egress_proxy_unavailable_next_step">自宅サーバー上のプロキシを確認するか、プロキシ設定でアドレスを変えてから、もう一度お試しください。</string>
     <!-- Problem title: the app can't reach the internet through the internet proxy. -->

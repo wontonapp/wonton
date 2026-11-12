@@ -70,6 +70,8 @@
     <string name="push_status_failed_transport">Registration failed. Try again once the home server is reachable</string>
     <!-- Push status line when registering failed because this device isn't recognized. -->
     <string name="push_status_failed_unauthorized">Registration failed. Pair again</string>
+    <!-- Push status line when registering failed because the home server refused it although this device is signed in. -->
+    <string name="push_status_failed_forbidden">Registration failed. Your home server refused it</string>
     <!-- Push status line when registering failed because the home server hit an error. -->
     <string name="push_status_failed_upstream">Registration failed. Your home server hit an error</string>
     <!-- Push status line when registering failed because the chat connection isn't ready. -->

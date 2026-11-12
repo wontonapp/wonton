@@ -20,6 +20,12 @@
     <string name="onboarding_replaced_agent_title">要解除安裝「%1$s」嗎？</string>
     <!-- Checkmark icon for a finished install task. -->
     <string name="onboarding_review_done">完成</string>
+    <!-- Kind label above a review row: the profile that will be saved. -->
+    <string name="onboarding_review_section_profile">資料</string>
+    <!-- Kind label above a review row: the default agent. -->
+    <string name="onboarding_review_section_agent">Agent</string>
+    <!-- Kind label above a review row: the model. -->
+    <string name="onboarding_review_section_model">模型</string>
     <!-- Label while an install task waits for others to finish. -->
     <string name="onboarding_review_waiting">排隊中</string>
     <!-- Card title at the top of the agent step in setup: pick the agent to use. -->

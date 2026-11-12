@@ -28,6 +28,8 @@
     <string name="onboarding_review_blocked">無法安裝</string>
     <!-- Row description in the review step: the already-configured models are kept. -->
     <string name="onboarding_review_keep_current">使用目前的</string>
+    <!-- Row description in the review step: finishing will not touch this. -->
+    <string name="onboarding_review_unchanged">不變</string>
     <!-- Row description in the review step: the model couldn't be reached during the test. -->
     <string name="onboarding_review_unreachable">測試時沒連上</string>
     <!-- Busy label while a setup step or an install task is running. -->

@@ -29,6 +29,7 @@ internal fun OnboardingProfileStep(
 ) {
     var name by remember { mutableStateOf(view.profile.displayName) }
     var email by remember { mutableStateOf(view.profile.email) }
+    val onboarding = LocalOnboarding.current
     StepCardFrame(
         nav = nav,
         title = view.title(),
@@ -37,6 +38,7 @@ internal fun OnboardingProfileStep(
         onBack = { send(Action.BackOnboardingStep) },
         onSkip = { send(Action.SkipOnboardingStep) },
         onPrimary = { send(Action.ContinueOnboarding) },
+        onClose = onboarding.close,
         modifier = modifier,
     ) {
         Box(Modifier.weight(1f).fillMaxWidth()) {

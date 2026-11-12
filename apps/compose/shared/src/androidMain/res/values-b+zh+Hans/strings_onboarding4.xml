@@ -14,6 +14,8 @@
     <string name="onboarding_problem_plugin_protocol">App 和家里的服务器版本对不上，请更新 App 或服务器。</string>
     <!-- Problem title in setup: the recommendation source is turned off. -->
     <string name="onboarding_problem_store_disabled">推荐清单的来源已关闭，可以跳过。</string>
+    <!-- Kind label above a review row: the apps that will be installed. -->
+    <string name="onboarding_review_section_apps">应用</string>
     <!-- Button that uninstalls the agent that a new one replaces. -->
     <string name="onboarding_uninstall">卸载</string>
 </resources>

@@ -48,12 +48,14 @@ struct OnboardingModelStepView: View {
     @ViewBuilder private func providerList(_ list: ModelProviders) -> some View {
         if !list.configured.isEmpty {
             StepOptionRow(title: String(localized: .Onboarding4.onboardingModelUseCurrent),
-                          description: list.configured.map(\.title).formatted(.list(type: .and)),
                           isSelected: step.choice == .current) {
                 form.expand(nil)
                 send(.useCurrentModel)
             }
             .disabled(step.testing)
+            // 网关给的模型名带着内部地址，收进默认收起的“详情”。
+            ProblemDetail(text: list.configured.map(\.title).formatted(.list(type: .and)))
+                .padding(.leading, WontonTheme.spacing.s16)
         }
         if let providers = list.providers, !providers.isEmpty {
             ForEach(providers.filter(\.recommended), id: \.id) { providerRow($0) }
