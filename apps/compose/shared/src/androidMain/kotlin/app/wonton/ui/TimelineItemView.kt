@@ -45,8 +45,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
-import app.wonton.protocol.AgentRunEnd as SerAgentRunEnd
-import app.wonton.protocol.AgentRunState
 import app.wonton.protocol.MessageAction
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.RichBlockKind
@@ -102,11 +100,7 @@ fun TimelineItemView(
             onReply,
         )
         is TimelineContent.Notice -> CenteredNote(content.text)
-        is TimelineContent.AgentRun -> AgentRunRowView(
-            agentRunRow(content),
-            onOpenCard = onOpenAgentCard,
-            onAnswerChoice = onAnswerAgentChoice,
-        )
+        is TimelineContent.AgentRun -> AgentRunRowView(content, onOpenAgentCard, onAnswerAgentChoice)
         is TimelineContent.ProfileChange -> CenteredNote(
             content.previousName
                 ?.let { stringResource(R.string.timeline_profile_rename, it, content.name) }
@@ -141,33 +135,6 @@ fun TimelineItemView(
 private fun RowScope.NoteEdge() {
     Box(Modifier.weight(1f).height(WontonTheme.size.hairline).background(WontonTheme.colors.separator.toColor()))
 }
-
-/// 核心的条目映射成状态行的数据（ADR-0082）：状态值不认识时落到 `Other`，`body` 原样显示。
-private fun agentRunRow(run: TimelineContent.AgentRun): AgentRunRowModel = AgentRunRowModel(
-    state = when (run.state) {
-        AgentRunState.Working -> AgentRunRowState.Working
-        AgentRunState.Waiting -> AgentRunRowState.Waiting
-        AgentRunState.Done -> AgentRunRowState.Done
-        AgentRunState.Failed -> AgentRunRowState.Failed
-        AgentRunState.Uncertain -> AgentRunRowState.Uncertain
-        is AgentRunState.Other -> AgentRunRowState.Other
-    },
-    step = run.step,
-    steps = run.steps?.toInt(),
-    progress = run.progress,
-    result = run.result,
-    end = when (run.end) {
-        SerAgentRunEnd.Cancelled -> AgentRunEnd.Cancelled
-        SerAgentRunEnd.Uncertain -> AgentRunEnd.Uncertain
-        // 以后新加的结束原因不单独画，显示 result 和失败的红色。
-        is SerAgentRunEnd.Other -> null
-        null -> null
-    },
-    body = run.body,
-    cardId = run.cardId,
-    choices = run.choices.map { AgentRunChoice(it.key, it.label) },
-    senderName = run.senderName,
-)
 
 @Composable
 private fun CenteredNote(text: String) {

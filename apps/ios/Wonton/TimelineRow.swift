@@ -34,20 +34,18 @@ struct TimelineRow: View {
             )
         case let .notice(text):
             note(Text(text))
-        case let .agentRun(run, state, step, steps, progress, result, end, body, cardId, choices, senderName):
+        case let .agentRun(_, state, step, steps, progress, result, end, body, cardId, choices, senderName):
             AgentRunRow(
-                run: AgentRunRowModel(
-                    state: Self.agentRunState(state),
-                    step: step,
-                    steps: steps.map { Int($0) },
-                    progress: progress.map { Double($0) },
-                    result: result,
-                    end: Self.agentRunEnd(end),
-                    body: body,
-                    cardId: cardId,
-                    choices: choices.map { AgentRunRowChoice(key: $0.key, label: $0.label) },
-                    senderName: senderName
-                ),
+                state: state,
+                step: step,
+                steps: steps,
+                progress: progress,
+                result: result,
+                end: end,
+                body: body,
+                cardId: cardId,
+                choices: choices,
+                senderName: senderName,
                 openCard: openCard,
                 answerChoice: answerChoice
             )
@@ -76,27 +74,6 @@ struct TimelineRow: View {
             note(Text(title))
         case .timelineStart:
             note(Text(.Chat.timelineStart))
-        }
-    }
-
-    private static func agentRunState(_ state: AgentRunState) -> AgentRunRowState {
-        switch state {
-        case .working: .working
-        case .waiting: .waiting
-        case .done: .done
-        case .failed: .failed
-        case .uncertain: .uncertain
-        case .other: .other
-        }
-    }
-
-    private static func agentRunEnd(_ end: AgentRunEnd?) -> AgentRunRowEnd? {
-        switch end {
-        case .cancelled: .cancelled
-        case .uncertain: .uncertain
-        // 以后新加的结束原因不单独画，显示 result 和失败的红色。
-        case .other: nil
-        case nil: nil
         }
     }
 

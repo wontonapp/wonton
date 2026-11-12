@@ -21,7 +21,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import app.wonton.protocol.AgentRunEnd
+import app.wonton.protocol.AgentRunState
 import app.wonton.protocol.ThemeColors
+import app.wonton.protocol.TimelineContent
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Agent
@@ -33,49 +36,15 @@ import app.wonton.ui.icons.Notify
 import app.wonton.ui.icons.PauseFill
 import app.wonton.ui.icons.WontonIcon
 
-/** Agent 一轮的状态（ADR-0082 的 `state`）：`Uncertain` 由核心合成，Bot 离线时不转圈只说不确定；不认识的值落到 `Other`。 */
-enum class AgentRunRowState { Working, Waiting, Done, Failed, Uncertain, Other }
-
-/** 这一轮怎么结束的（`app.wonton.end`）。`Other` 的原文只在 `result` 里，壳不单独画。 */
-enum class AgentRunEnd { Cancelled, Uncertain }
-
-/** Agent 自己的提问（MSC4564 的 `choices`）：以主人的身份发反应作答，不经核心确认。 */
-data class AgentRunChoice(val key: String, val label: String)
-
 /**
- * 时间线里 Agent 一轮运行状态那一行的数据（ADR-0082）。接线时由调用处从核心的
- * `TimelineContent.AgentRun` 映射。`step`、`result`、`body`、choice 的 `label` 是 Bot 自己写的
- * 文字，原样显示，不翻译、不拼句。
- */
-data class AgentRunRowModel(
-    val state: AgentRunRowState,
-    /** 当前步骤的一句自述。 */
-    val step: String? = null,
-    /** 到现在几步。 */
-    val steps: Int? = null,
-    /** 0～1，有计划时才有。 */
-    val progress: Float? = null,
-    /** 结束时的一句总结。 */
-    val result: String? = null,
-    /** 打断了、结果不确定这两种结束的区分。 */
-    val end: AgentRunEnd? = null,
-    /** `Other` 状态按普通 Bot 提示消息显示的正文。 */
-    val body: String? = null,
-    /** waiting 且这个 Bot 在这个房间有等回答的核心卡片：整行可点，打开那张卡片。 */
-    val cardId: String? = null,
-    /** Bot 自己的提问。 */
-    val choices: List<AgentRunChoice> = emptyList(),
-    /** 发这条状态的 Bot 的名字，choices 区标明是谁在问。 */
-    val senderName: String = "",
-)
-
-/**
- * 时间线里 Agent 一轮运行状态的那一行（ADR-0082）：真的在干活才转圈，要人管的醒目，
- * 打断了和结果不确定不用失败的红。减弱动态效果时不转圈。
+ * 时间线里 Agent 一轮运行状态的那一行（ADR-0082）。数据直接用核心的 `TimelineContent.AgentRun`：
+ * 真的在干活才转圈，要人管的醒目，打断了和结果不确定不用失败的红；减弱动态效果时不转圈。
+ * `step`、`result`、`body`、choice 的 `label` 是 Bot 自己写的文字，原样显示，不翻译、不拼句；
+ * 不认识的 `state` 落到通用样子，按 `body` 显示。
  */
 @Composable
 fun AgentRunRowView(
-    run: AgentRunRowModel,
+    run: TimelineContent.AgentRun,
     onOpenCard: (String) -> Unit,
     onAnswerChoice: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -87,14 +56,14 @@ fun AgentRunRowView(
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
     ) {
         StatusLine(run, onOpenCard)
-        if (run.state == AgentRunRowState.Working && run.progress != null) {
+        if (run.state == AgentRunState.Working && run.progress != null) {
             LinearProgressIndicator(
                 progress = { run.progress },
                 Modifier.fillMaxWidth(),
                 color = WontonTheme.colors.accentInk.toColor(),
             )
         }
-        if (run.choices.isNotEmpty()) {
+        if (run.state !is AgentRunState.Other && run.choices.isNotEmpty()) {
             Asking(run, onAnswerChoice)
         }
     }
@@ -102,9 +71,9 @@ fun AgentRunRowView(
 
 /** waiting 且有等回答的核心卡片时整行可点（ADR-0043：能跳转的地方方便跳转）。 */
 @Composable
-private fun StatusLine(run: AgentRunRowModel, onOpenCard: (String) -> Unit) {
+private fun StatusLine(run: TimelineContent.AgentRun, onOpenCard: (String) -> Unit) {
     val colors = WontonTheme.colors
-    val cardId = run.cardId?.takeIf { run.state == AgentRunRowState.Waiting }
+    val cardId = run.cardId?.takeIf { run.state == AgentRunState.Waiting }
     Row(
         Modifier.fillMaxWidth()
             .then(
@@ -124,7 +93,7 @@ private fun StatusLine(run: AgentRunRowModel, onOpenCard: (String) -> Unit) {
             Text(
                 text,
                 Modifier.weight(1f),
-                style = if (run.state == AgentRunRowState.Done) {
+                style = if (run.state == AgentRunState.Done) {
                     WontonTheme.typography.caption
                 } else {
                     WontonTheme.typography.supporting
@@ -139,12 +108,15 @@ private fun StatusLine(run: AgentRunRowModel, onOpenCard: (String) -> Unit) {
     }
 }
 
-/** 真的在干活才转圈；减弱动态效果时不转圈，换成静态的 Agent 图标。 */
+/**
+ * 真的在干活才转圈；减弱动态效果时不转圈，换成静态的 Agent 图标。
+ * 不认识的状态不画标记。
+ */
 @Composable
-private fun Mark(run: AgentRunRowModel, colors: ThemeColors) {
+private fun Mark(run: TimelineContent.AgentRun, colors: ThemeColors) {
     val tint = statusInk(run, colors).toColor()
     when (run.state) {
-        AgentRunRowState.Working ->
+        AgentRunState.Working ->
             if (AvatarEnvironment.reduceMotion) {
                 Icon(WontonIcon.Agent, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
             } else {
@@ -153,59 +125,64 @@ private fun Mark(run: AgentRunRowModel, colors: ThemeColors) {
                     color = colors.accentInk.toColor(),
                 )
             }
-        AgentRunRowState.Waiting ->
+        AgentRunState.Waiting ->
             Icon(WontonIcon.Notify, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
-        AgentRunRowState.Done ->
+        AgentRunState.Done ->
             Icon(WontonIcon.CheckCircleFill, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
-        AgentRunRowState.Failed -> when (run.end) {
-            AgentRunEnd.Cancelled ->
-                Icon(WontonIcon.PauseFill, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
-            AgentRunEnd.Uncertain ->
-                Icon(WontonIcon.Help, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
-            null ->
-                Icon(WontonIcon.Error, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
-        }
-        AgentRunRowState.Uncertain ->
+        AgentRunState.Failed -> failedMark(run, colors)
+        AgentRunState.Uncertain ->
             Icon(WontonIcon.Help, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
-        AgentRunRowState.Other -> Unit
+        is AgentRunState.Other -> Unit
     }
+}
+
+/** 失败按结束原因分开：打断和不确定不用失败的红，以后新加的结束原因按普通失败画。 */
+@Composable
+private fun failedMark(run: TimelineContent.AgentRun, colors: ThemeColors) {
+    val (icon, tint) = when (run.end) {
+        AgentRunEnd.Cancelled -> WontonIcon.PauseFill to colors.textSecondary.toColor()
+        AgentRunEnd.Uncertain -> WontonIcon.Help to colors.warning.toColor()
+        is AgentRunEnd.Other, null -> WontonIcon.Error to colors.danger.toColor()
+    }
+    Icon(icon, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
 }
 
 /** 状态行的文字。打断了、结果不确定用壳自己的文字，其余显示 Bot 的自述。 */
 @Composable
-private fun statusText(run: AgentRunRowModel): String = when (run.state) {
-    AgentRunRowState.Working -> run.step ?: ""
-    AgentRunRowState.Waiting -> stringResource(R.string.agent_run_waiting)
-    AgentRunRowState.Done ->
+private fun statusText(run: TimelineContent.AgentRun): String = when (run.state) {
+    AgentRunState.Working -> run.step ?: ""
+    AgentRunState.Waiting -> stringResource(R.string.agent_run_waiting)
+    AgentRunState.Done ->
         if (run.steps != null) {
-            pluralStringResource(R.plurals.agent_run_done_steps, run.steps, run.steps)
+            pluralStringResource(R.plurals.agent_run_done_steps, run.steps.toInt(), run.steps.toInt())
         } else {
             stringResource(R.string.agent_run_done)
         }
-    AgentRunRowState.Failed -> when (run.end) {
-        AgentRunEnd.Cancelled -> stringResource(R.string.agent_run_cancelled)
-        AgentRunEnd.Uncertain -> stringResource(R.string.agent_run_uncertain)
-        null -> run.result ?: ""
+    AgentRunState.Failed -> when {
+        run.end is AgentRunEnd.Cancelled -> stringResource(R.string.agent_run_cancelled)
+        run.end is AgentRunEnd.Uncertain -> stringResource(R.string.agent_run_uncertain)
+        else -> run.result ?: ""
     }
-    AgentRunRowState.Uncertain -> stringResource(R.string.agent_run_uncertain)
-    AgentRunRowState.Other -> run.body ?: ""
+    AgentRunState.Uncertain -> stringResource(R.string.agent_run_uncertain)
+    is AgentRunState.Other -> run.body
 }
 
-private fun statusInk(run: AgentRunRowModel, colors: ThemeColors) = when (run.state) {
-    AgentRunRowState.Working, AgentRunRowState.Other -> colors.textSecondary
-    AgentRunRowState.Waiting -> colors.accentInk
-    AgentRunRowState.Done -> colors.success
-    AgentRunRowState.Failed -> when (run.end) {
-        AgentRunEnd.Cancelled -> colors.textSecondary
-        AgentRunEnd.Uncertain -> colors.warning
-        null -> colors.danger
+private fun statusInk(run: TimelineContent.AgentRun, colors: ThemeColors) = when (run.state) {
+    AgentRunState.Working -> colors.textSecondary
+    AgentRunState.Waiting -> colors.accentInk
+    AgentRunState.Done -> colors.success
+    AgentRunState.Failed -> when {
+        run.end is AgentRunEnd.Cancelled -> colors.textSecondary
+        run.end is AgentRunEnd.Uncertain -> colors.warning
+        else -> colors.danger
     }
-    AgentRunRowState.Uncertain -> colors.warning
+    AgentRunState.Uncertain -> colors.warning
+    is AgentRunState.Other -> colors.textSecondary
 }
 
 /** choices 区：来源行标明是这个 Bot 在问，按钮是描边胶囊——和核心确认卡片的实心按钮分开。 */
 @Composable
-private fun Asking(run: AgentRunRowModel, onAnswerChoice: (String) -> Unit) {
+private fun Asking(run: TimelineContent.AgentRun, onAnswerChoice: (String) -> Unit) {
     val colors = WontonTheme.colors
     val ink = colors.accentInk.toColor()
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
