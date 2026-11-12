@@ -458,6 +458,7 @@ async fn a_bot_plugin_can_change_its_limits() {
             settings_changed_ms: None,
             static_files: Default::default(),
             hosted: Vec::new(),
+            gpu_vendor: None,
         })
         .unwrap();
     let web = container_name("app-test", "web");
