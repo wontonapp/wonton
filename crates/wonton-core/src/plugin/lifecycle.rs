@@ -77,7 +77,8 @@ pub(super) struct Undo {
     app_dir_created: Option<PathBuf>,
     /// 本次安装之前插件的密钥（`None` 表示原来没有），回滚时恢复成这样。
     secrets_before: Option<(PluginId, Option<Secrets>)>,
-    /// 本次安装代 Bot 登录的设备，回滚时吊销（账号和主房间保留给下次安装）。
+    /// 本次安装代 Bot 登录的设备，回滚时吊销（账号、主房间和数据保留给下次安装，见
+    /// [`Undo::keep_bot_data`]）。
     pub(super) bot: Option<(PluginId, String, ProvisionedBot)>,
     /// 本次安装把主房间交给了主人（主人原来不在里面），回滚时收回。
     pub(super) handed_over: bool,
@@ -156,6 +157,7 @@ impl PluginManager {
         {
             Ok(deployed) => Ok(deployed),
             Err(error) => {
+                undo.keep_bot_data();
                 let failures = self.rollback(undo, langs).await;
                 if failures.is_empty() {
                     Err(error)
