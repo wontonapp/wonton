@@ -342,7 +342,7 @@ async fn unix_send(
         let too_long = e.kind() == std::io::ErrorKind::InvalidInput || e.raw_os_error() == Some(36);
         HttpError::Connect(if too_long {
             format!(
-                "unix 套接字的路径太长放不下（{}：{} 字节，上限 {} 字节）：把核心的数据目录换到短一点的路径",
+                "unix 套接字的路径太长放不下（{}：{} 字节，上限 {} 字节）：把 WONTON_RELAY_DIR 换到短一点的目录",
                 socket.display(),
                 socket.as_os_str().len(),
                 crate::plugin::host_relay::MAX_SOCKET_PATH

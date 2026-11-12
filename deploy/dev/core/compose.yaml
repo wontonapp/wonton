@@ -43,6 +43,7 @@ services:
     environment:
       <<: *no-proxy
       WONTON_DATA_DIR: ${WONTON_DEV_DATA:?请用 deploy/dev/core/dev.sh up 启动}
+      WONTON_RELAY_DIR: ${WONTON_DEV_RELAY:?请用 deploy/dev/core/dev.sh up 启动}
       # 开发栈把数据目录也当安装目录：联邦名单和整台服务器黑名单像正式安装一样由核心原地重写、热加载。
       WONTON_INSTALL_DIR: ${WONTON_DEV_DATA}
       WONTON_BASE_DOMAIN: ${WONTON_DEV_DOMAIN:-wonton.localhost}
@@ -99,6 +100,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # 数据目录在容器内外路径相同：插件的绑定挂载由宿主上的 Docker 解析。
       - ${WONTON_DEV_DATA}:${WONTON_DEV_DATA}
+      # 宿主网络中继的 unix 套接字（ADR-0036）：放在短的运行目录里，检出目录再深也放得下。
+      - ${WONTON_DEV_RELAY:?请用 deploy/dev/core/dev.sh up 启动}:${WONTON_DEV_RELAY:?请用 deploy/dev/core/dev.sh up 启动}
       # 只读看宿主的设备节点（有没有显卡、属于哪个组）；设备 cgroup 没放行，核心开不了它们。不递归：/dev 下的子挂载
       # （/dev/shm 里是宿主其他进程的共享内存，还有 /dev/pts、/dev/mqueue）不带进来，核心只要 devtmpfs 里的节点。
       - type: bind

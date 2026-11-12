@@ -31,6 +31,7 @@ services:
     environment:
       <<: *no-proxy
       WONTON_DATA_DIR: ${WONTON_DATA_DIR:?}
+      WONTON_RELAY_DIR: ${WONTON_RELAY_DIR:-/run/wonton/relay}
       # 一键升级看的渠道和安装目录（ADR-0025）。
       WONTON_CORE_SOURCE: ${WONTON_CORE_SOURCE:-}
       WONTON_INSTALL_DIR: ${WONTON_INSTALL_DIR:?}
@@ -92,6 +93,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # 容器内外路径相同：插件的绑定挂载由宿主上的 Docker 解析。
       - ${WONTON_DATA_DIR}:${WONTON_DATA_DIR}
+      # 宿主网络中继的 unix 套接字（ADR-0036）：`sun_path` 只有 108 字节，放在固定的短目录里，不跟数据目录的长度走。
+      - ${WONTON_RELAY_DIR:-/run/wonton/relay}:${WONTON_RELAY_DIR:-/run/wonton/relay}
       - ${WONTON_INSTALL_DIR}/secrets:${WONTON_INSTALL_DIR}/secrets:ro
       # 联邦名单（ADR-0050）：核心原地重写（不能换 inode，单文件绑定挂载钉住 inode），Tuwunel 只读挂载里面的
       # config.toml。

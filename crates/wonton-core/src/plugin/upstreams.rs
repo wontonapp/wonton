@@ -388,9 +388,11 @@ impl PluginManager {
             service: service.to_owned(),
             port,
         };
-        let app_data = self.cfg.apps_dir.join(manifest.id.slug());
         Ok(Some(Endpoint::unix(super::host_relay::socket_path(
-            &app_data, &relay,
+            &self.cfg.relay_dir,
+            &self.cfg.instance,
+            &manifest.id.slug(),
+            &relay,
         ))))
     }
 
