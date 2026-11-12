@@ -796,6 +796,7 @@ async fn writing_settings_recreates_the_bot_with_its_identity_kept() {
         &granted(),
         &[],
         false,
+        &[],
         std::collections::BTreeMap::from([("level".to_owned(), json!("quiet"))]),
         super::langs(),
     )
