@@ -112,6 +112,7 @@ fn home(server: &str) -> HomeViewModel {
         pairing: None,
         invite: None,
         keep_connection: false,
+        just_recovered: false,
     }
 }
 

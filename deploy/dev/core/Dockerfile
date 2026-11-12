@@ -11,6 +11,9 @@ ARG RUST_IMAGE=public.ecr.aws/docker/library/rust:1.99.1-slim-trixie
 ARG DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:trixie-slim
 ARG COMPOSE_IMAGE=public.ecr.aws/docker/library/docker:29.9.2-cli
 FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS build-base
+# 构建机经回环代理出网时，容器里的 127.0.0.1 是容器自己：代理写成 `--build-arg HTTP_PROXY=…` 传进来（dev.sh 按
+# WONTON_DEV_BUILD_PROXY 传）。不传时照旧用构建机上配的代理。
+ARG HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
 # 固定为镜像自带的工具链，不按 rust-toolchain.toml 再去下载组件。
 ENV RUSTUP_TOOLCHAIN=1.99.1 CARGO_TERM_COLOR=never
 ARG TARGETARCH BUILDARCH
