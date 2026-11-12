@@ -664,7 +664,7 @@ pub async fn image(
         )
             .into_response(),
         Ok(None) => not_found(),
-        Err(ImageError::Refused(reason)) => error_response(
+        Err(ImageError::Refused(reason) | ImageError::TimedOut(reason)) => error_response(
             StatusCode::UNPROCESSABLE_ENTITY,
             "invalid_input",
             &text1(&langs, "gateway-icon-failed", reason.as_str()),

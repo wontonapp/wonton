@@ -86,6 +86,7 @@ mod owner_secrets;
 pub mod package;
 pub mod package_archive;
 pub mod package_files;
+pub mod pdf;
 // 第 3 步的 MCP 工具接上之前没有非测试调用点。
 mod permissions_switch;
 #[cfg_attr(not(test), allow(dead_code))]

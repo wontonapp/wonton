@@ -4,7 +4,7 @@
 //!
 //! - 核心 → 助手：`<任务号> <时限毫秒> <任务> <语言> <输入长度>`，后面跟着这么长的输入。
 //! - 助手 → 核心：`<任务号> <结果码> <输出长度> <原因长度>`，后面跟着输出和原因。结果码和
-//!   [`super::child`] 的退出码一样（0 成功、1 图片不合规格、2 助手这边的问题）。
+//!   [`super::child`] 的退出码一样（0 成功、1 文件不合规格、2 助手这边的问题），另有 3：到时限没做完。
 //! - 助手起来先说一行 `0 <协议版本>`。
 //!
 //! 表头用文本，测试里的假助手脚本不用解析二进制也能说话。
@@ -16,7 +16,7 @@ use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt,
 };
 
-use super::{BROKEN, MAX_OUTPUT, MAX_STDERR, REFUSED};
+use super::{BROKEN, MAX_OUTPUT, MAX_STDERR, REFUSED, TIMED_OUT};
 
 /// 助手子命令，核心内部用。
 pub(super) const HOST_COMMAND: &str = "image-host";
@@ -71,6 +71,15 @@ impl Reply {
         Self {
             id,
             code: REFUSED,
+            output: Vec::new(),
+            message: message.into_bytes(),
+        }
+    }
+
+    pub(super) fn timed_out(id: u32, message: String) -> Self {
+        Self {
+            id,
+            code: TIMED_OUT,
             output: Vec::new(),
             message: message.into_bytes(),
         }
