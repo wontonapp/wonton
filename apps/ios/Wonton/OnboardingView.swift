@@ -6,11 +6,18 @@ struct OnboardingView: View {
     let plugins: PluginsModel
     let nav: StepNav
     let openGateway: (URL) -> Void
+    /// 重看引导的关闭；首次引导没有。
+    var close: (() -> Void)?
     @State private var modelForm = OnboardingModelForm()
     @State private var isKeyboardVisible = false
     @Environment(\.wontonColors) private var colors
 
     private var view: OnboardingViewModel { model.viewModel }
+
+    /// 关掉重看的引导：核心丢弃这次的选择，壳回到设置。X 和左边缘右滑走同一条路。
+    private var handleClose: () -> Void {
+        { model.close(); close?() }
+    }
 
     private var frameNav: StepNav {
         var result = nav
@@ -27,6 +34,7 @@ struct OnboardingView: View {
             isWorking: view.loading || view.model.testing || view.review.commit == .running,
             back: { model.send(.backOnboardingStep) },
             skip: { model.send(.skipOnboardingStep) }, next: advance,
+            close: close.map { _ in handleClose },
             content: {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -50,6 +58,19 @@ struct OnboardingView: View {
         .onChange(of: view.step, initial: true) { _, step in
             modelForm = OnboardingModelForm(choice: step == .model ? view.model.choice : nil)
         }
+        // 左边缘右滑：和系统返回同一路——能后退就后退，第一步（或关掉的引导）等同关闭。
+        .background(
+            FullscreenExitGesture(
+                enabled: frameNav.canClose, webView: nil,
+                exit: {
+                    if frameNav.canBack {
+                        model.send(.backOnboardingStep)
+                    } else {
+                        handleClose()
+                    }
+                }
+            )
+        )
     }
 
     @ViewBuilder private func content(_ proxy: ScrollViewProxy) -> some View {

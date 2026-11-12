@@ -984,8 +984,8 @@
     <string name="message_quote_unavailable">Original message unavailable</string>
     <!-- Stand-in in a quote for a message this device can't decrypt. Android only. -->
     <string name="message_quote_undecryptable">Encrypted message</string>
-    <!-- Description of an agent row in setup when it has no account login. -->
-    <string name="onboarding_agent_connection_key">API key</string>
+    <!-- Description of an agent row in setup when it has no account login: it needs a model provider key in the next step. -->
+    <string name="onboarding_agent_connection_key">Set up a model provider key in the next step</string>
     <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
     <string name="onboarding_agent_connection_logins">%1$s or an API key</string>
     <!-- Problem title in setup when no agent can be chosen. -->
@@ -1027,7 +1027,7 @@
     <!-- Warning under a model provider row: testing couldn't reach the provider, but it's saved anyway when setup finishes. -->
     <string name="onboarding_model_unreachable">Can\'t reach the provider. It will still be saved when you finish.</string>
     <!-- Row title: keep the models already configured in the model gateway. -->
-    <string name="onboarding_model_use_current">Use current</string>
+    <string name="onboarding_model_use_current">Use your current model</string>
     <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
     <string name="onboarding_model_use_login">Use %1$s</string>
     <!-- Primary button that advances to the next setup step. -->
@@ -1113,10 +1113,20 @@
     <string name="onboarding_review_keep_current">Keep current</string>
     <!-- Label next to a spinner while an install task is being prepared. -->
     <string name="onboarding_review_preparing">Preparing</string>
+    <!-- Kind label above a review row: the profile that will be saved. -->
+    <string name="onboarding_review_section_profile">Profile</string>
+    <!-- Kind label above a review row: the default agent. -->
+    <string name="onboarding_review_section_agent">Agent</string>
+    <!-- Kind label above a review row: the model. -->
+    <string name="onboarding_review_section_model">Model</string>
+    <!-- Kind label above a review row: the apps that will be installed. -->
+    <string name="onboarding_review_section_apps">Apps</string>
     <!-- Row description in the review step: the item is set as the default agent. -->
     <string name="onboarding_review_set_default">Set as default</string>
     <!-- Row description in the review step: the agent signs in from chat after setup. -->
     <string name="onboarding_review_sign_in_after_setup">Sign in from chat after setup</string>
+    <!-- Row description in the review step: finishing will not touch this. -->
+    <string name="onboarding_review_unchanged">Unchanged</string>
     <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
     <string name="onboarding_review_uncertain">Install result unknown. Check the app\'s page.</string>
     <!-- Row description in the review step: the model couldn't be reached during the test. -->
