@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{
     AttachmentKind, AttachmentState, ComposerAttachment, ComposerViewModel, FileId,
-    OutgoingMessage, SendState, UploadSource,
+    OutgoingMessage, SendState, TimelineTarget, UploadSource,
 };
 
 use super::uplink::Uploaded;
@@ -154,7 +154,10 @@ impl State {
     pub(crate) fn view(&self, room_id: &str) -> ComposerViewModel {
         let room = self.rooms.get(room_id);
         ComposerViewModel {
-            room_id: room_id.to_owned(),
+            target: TimelineTarget {
+                room_id: room_id.to_owned(),
+                thread_root: None,
+            },
             attachments: room
                 .map(|room| room.tray.iter().map(Item::view).collect())
                 .unwrap_or_default(),
