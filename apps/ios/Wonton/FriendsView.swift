@@ -395,6 +395,9 @@ private extension FriendsView {
         case .unauthorized:
             return Problem(title: String(localized: .problemUnauthorizedTitle),
                            nextStep: String(localized: .problemUnauthorizedNextStep), detail: detail)
+        case .forbidden:
+            return Problem(title: String(localized: .friendsErrorForbidden),
+                           nextStep: String(localized: .friendsErrorForbiddenNextStep), detail: detail)
         case .transportUnavailable:
             return Problem(title: String(localized: .problemTransportUnavailableTitle),
                            nextStep: String(localized: .problemTransportUnavailableNextStep), detail: detail)

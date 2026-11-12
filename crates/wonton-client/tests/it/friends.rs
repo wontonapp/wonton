@@ -304,6 +304,51 @@ async fn a_bad_user_id_fails_with_its_own_class() {
     .await;
 }
 
+/// 服务器不让发的邀请（对方屏蔽了自己，或对方的服务器不在联邦名单里）Tuwunel 回 403：
+/// 这台设备的登录好好的，不能报成登录失效。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_refused_invite_is_not_reported_as_an_expired_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let (home, phone) = signed_in_phone(dir.path()).await;
+    let bob = home.matrix.login(&unique("bob"), "Bob 的手机").await;
+    let mut blocked = wonton_matrix::Blocked::default();
+    blocked
+        .users
+        .insert(wonton_matrix::OwnedUserId::try_from(OWNER).unwrap());
+    bob.set_blocked_list(&blocked).await.expect("Bob 屏蔽主人");
+
+    // 只取一次列表、等它回来再加好友：还在路上的刷新会把失败顶回 Ready。
+    let updates = phone.subscribe_friends();
+    let next_state = || async {
+        tokio::time::timeout(WAIT, updates.next())
+            .await
+            .expect("等好友页更新超时")
+            .expect("订阅还在")
+            .state
+    };
+    refresh(&phone);
+    while next_state().await != FriendsState::Ready {}
+    phone
+        .dispatch(Action::AddFriend {
+            user_id: bob.user_id().to_string(),
+        })
+        .unwrap();
+    let problem = loop {
+        match next_state().await {
+            FriendsState::Failed { problem } => break problem,
+            FriendsState::Loading => {}
+            other => panic!("邀请应被拒，实际：{other:?}"),
+        }
+    };
+    assert_eq!(problem.reason, FriendFailure::Forbidden, "{problem:?}");
+    assert_eq!(problem.http_status, Some(403));
+    // MSC4155 的拒绝码；对方服务器不在联邦名单里时是 `M_FORBIDDEN`，见 wonton-matrix 的测试。
+    assert_eq!(problem.matrix_errcode.as_deref(), Some("M_INVITE_BLOCKED"));
+    // 聊天的登录不受影响。
+    phone.signed_in().await;
+}
+
 // 不用连上 Matrix：输入在发邀请之前就按类别挡下，不连家也该如实报。
 #[tokio::test]
 async fn scanning_something_that_is_not_a_user_link_fails_as_invalid_input() {

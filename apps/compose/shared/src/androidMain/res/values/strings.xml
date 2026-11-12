@@ -826,6 +826,10 @@
     <string name="friends_error_unauthorized">Your session expired</string>
     <!-- Next step under the unauthorized failure. -->
     <string name="friends_error_unauthorized_next">Sign in again, then open Friends.</string>
+    <!-- Failure title when the server refused a friend action although the sign-in is valid. -->
+    <string name="friends_error_forbidden">The request was refused</string>
+    <!-- Next step under the refused failure. -->
+    <string name="friends_error_forbidden_next">They may have blocked you, or their server can\'t reach your home server yet.</string>
     <!-- Failure title when the typed ID isn't a full Matrix ID. -->
     <string name="friends_error_invalid_user_id">Not a Matrix ID</string>
     <!-- Next step under the invalid-ID failure. -->

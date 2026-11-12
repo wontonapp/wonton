@@ -293,6 +293,11 @@ internal fun FriendsState.Failed.problem(): Problem = when (problem.reason) {
         nextStepRes = R.string.friends_error_unauthorized_next,
         detail = problem.detail(),
     )
+    FriendFailure.FORBIDDEN -> Problem(
+        titleRes = R.string.friends_error_forbidden,
+        nextStepRes = R.string.friends_error_forbidden_next,
+        detail = problem.detail(),
+    )
     FriendFailure.INVALID_USER_ID -> Problem(
         titleRes = R.string.friends_error_invalid_user_id,
         nextStepRes = R.string.friends_error_invalid_user_id_next,

@@ -161,7 +161,9 @@ impl MatrixSession {
             .map_err(|error| Error::InvalidInput(error.to_string()))?
             .initial_device_display_name(&config.device_name)
             .request_refresh_token()
-            .await?;
+            .await
+            // Tuwunel 拒绝 JWT（过期、签发方不对、伪造）回 403 `M_FORBIDDEN`：登录被拒说的是身份。
+            .map_err(|error| Error::from(error).into_unauthorized())?;
         Self::with_client(client, response.user_id, response.device_id, config).await
     }
 

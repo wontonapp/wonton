@@ -245,7 +245,7 @@ fn matrix_problem(error: Error) -> BotProfileProblem {
     let (reason, detail) = match error {
         Error::Transport(detail) => (BotProfileFailure::TransportUnavailable, detail),
         Error::NotReady(detail) => (BotProfileFailure::NotReady, detail),
-        Error::Unauthorized { errcode, message } => {
+        Error::Unauthorized { errcode, message } | Error::Forbidden { errcode, message } => {
             (BotProfileFailure::Upstream, format!("{errcode}: {message}"))
         }
         Error::Upstream(detail) | Error::InvalidInput(detail) => {

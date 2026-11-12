@@ -748,6 +748,10 @@
     <string name="friends_error_unauthorized">ログインが切れています</string>
     <!-- Next step under the unauthorized failure. -->
     <string name="friends_error_unauthorized_next">もう一度ログインしてから友だちを開いてください。</string>
+    <!-- Failure title when the server refused a friend action although the sign-in is valid. -->
+    <string name="friends_error_forbidden">リクエストが拒否されました</string>
+    <!-- Next step under the refused failure. -->
+    <string name="friends_error_forbidden_next">相手にブロックされているか、相手のサーバーがまだ自宅のサーバーとつながっていない可能性があります。</string>
     <!-- Failure title when the typed ID isn't a full Matrix ID. -->
     <string name="friends_error_invalid_user_id">Matrix ID ではありません</string>
     <!-- Next step under the invalid-ID failure. -->

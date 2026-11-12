@@ -158,7 +158,7 @@ fn command(value: &Value) -> BotCommand {
 }
 
 fn is_forbidden(error: &MatrixError) -> bool {
-    matches!(error, MatrixError::Unauthorized { errcode, .. } if errcode == "M_FORBIDDEN")
+    matches!(error, MatrixError::Forbidden { .. })
 }
 
 #[cfg(test)]

@@ -343,7 +343,8 @@ pub(crate) fn not_connected() -> String {
 pub(crate) fn failure(error: &Error) -> ChatFailure {
     match error {
         Error::Transport(_) => ChatFailure::TransportUnavailable,
-        Error::Unauthorized { .. } => ChatFailure::Unauthorized,
+        // ChatFailure 的 Unauthorized 包括“无权操作”。
+        Error::Unauthorized { .. } | Error::Forbidden { .. } => ChatFailure::Unauthorized,
         Error::NotReady(_) => ChatFailure::NotReady,
         Error::Upstream(_) => ChatFailure::Upstream,
         Error::InvalidInput(_) => ChatFailure::InvalidInput,
