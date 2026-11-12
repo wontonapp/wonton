@@ -42,13 +42,16 @@ pub(crate) enum Scenario {
     Manual,
     /// Manual 的变体：`availableModes` 里多一个 `bypassPermissions`，测桥不跟 Agent 报出的危险档位。
     DangerousModes,
+    /// 同 [`Scenario::Manual`]，另在 `promptCapabilities` 里声明能收 `image` 块。
+    ManualImages,
 }
 
-/// Manual 场景里挂起的一轮：应答的 id、会话，和写回用的连接。
+/// Manual 场景里挂起的一轮：应答的 id、会话、完整内容块，和写回用的连接。
 pub(crate) struct PendingPrompt {
     id: Value,
     session: String,
     text: String,
+    blocks: Value,
     writer: Arc<Mutex<OwnedWriteHalf>>,
 }
 
@@ -156,7 +159,7 @@ impl FakeAgent {
             .collect()
     }
 
-    /// Manual 场景挂起的各轮：会话 ID 和发给 Agent 的原文。
+    /// Manual 场景挂起的各轮：会话 ID 和发给 Agent 的原文（第一个文字块）。
     pub(crate) async fn prompts(&self) -> Vec<(String, String)> {
         self.link
             .pending
@@ -164,6 +167,17 @@ impl FakeAgent {
             .await
             .iter()
             .map(|pending| (pending.session.clone(), pending.text.clone()))
+            .collect()
+    }
+
+    /// Manual 场景挂起的各轮：会话 ID 和完整内容块数组（附件轮有多个块）。
+    pub(crate) async fn prompt_blocks(&self) -> Vec<(String, Value)> {
+        self.link
+            .pending
+            .lock()
+            .await
+            .iter()
+            .map(|pending| (pending.session.clone(), pending.blocks.clone()))
             .collect()
     }
 
@@ -331,7 +345,12 @@ fn initialize_result(scenario: &Scenario) -> Value {
             } else {
                 json!({"close": {}})
             },
-            "mcpCapabilities": {"http": {}}
+            "mcpCapabilities": {"http": {}},
+            "promptCapabilities": if matches!(scenario, Scenario::ManualImages) {
+                json!({"image": true})
+            } else {
+                json!({})
+            }
         },
         "_meta": {"steering": {"supported": true}}
     });
@@ -501,7 +520,10 @@ impl Connection {
             }
             "session/prompt" => {
                 self.prompts += 1;
-                if matches!(self.scenario, Scenario::Manual | Scenario::DangerousModes) {
+                if matches!(
+                    self.scenario,
+                    Scenario::Manual | Scenario::DangerousModes | Scenario::ManualImages
+                ) {
                     self.link.pending.lock().await.push(PendingPrompt {
                         id: message["id"].clone(),
                         session: message["params"]["sessionId"]
@@ -512,6 +534,7 @@ impl Connection {
                             .as_str()
                             .unwrap_or_default()
                             .to_owned(),
+                        blocks: message["params"]["prompt"].clone(),
                         writer: writer.clone(),
                     });
                 } else {
