@@ -203,7 +203,7 @@ requires_core: 0.9.0
   ```json
   {
     "docs": {
-      "source": "github:geraldpeng6/wonton-docs",
+      "source": "github:wontonapp/wonton-docs",
       "commit": "<40 位提交号>",
       "min_core": "0.9.0",
       "files": { "user/zh/devices.md": "<sha256 的十六进制>" }

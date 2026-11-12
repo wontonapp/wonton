@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.util.Log
+import app.wonton.android.IncomingRequests
 import app.wonton.android.MainActivity
 import app.wonton.android.R
 import app.wonton.protocol.NotificationCategory
@@ -65,8 +66,8 @@ object PushNotifications {
             tag.hashCode(),
             Intent(context, MainActivity::class.java)
                 .setData(Uri.parse("wonton://notification$tag"))
-                .putExtra(MainActivity.EXTRA_SERVER, notification.serverId)
-                .putExtra(MainActivity.EXTRA_ROOM, notification.roomId)
+                .putExtra(IncomingRequests.EXTRA_SERVER, notification.serverId)
+                .putExtra(IncomingRequests.EXTRA_ROOM, notification.roomId)
                 .addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP,
@@ -81,7 +82,7 @@ object PushNotifications {
             .build()
         val shown = Notification.Builder(context, channel)
             .setExtras(android.os.Bundle().apply {
-                putString(MainActivity.EXTRA_SERVER, notification.serverId)
+                putString(IncomingRequests.EXTRA_SERVER, notification.serverId)
                 putString("wonton_card", card?.id)
             })
             .setSmallIcon(android.R.drawable.stat_notify_chat)
@@ -111,7 +112,7 @@ object PushNotifications {
         val manager = context.getSystemService(NotificationManager::class.java)
         val settled = cards.toSet()
         manager.activeNotifications.filter { notification ->
-            notification.notification.extras.getString(MainActivity.EXTRA_SERVER) == serverId &&
+            notification.notification.extras.getString(IncomingRequests.EXTRA_SERVER) == serverId &&
                 notification.notification.extras.getString("wonton_card") in settled
         }.forEach { manager.cancel(it.tag, NOTIFICATION_ID) }
     }

@@ -59,7 +59,7 @@ chat-card-highest-line = コードはこのホストのroot権限で実行され
 chat-card-highest-confirm = このアプリがホスト全体を制御することを承知しました
 
 # アンインストールのカード：アプリのデータの扱い。
-chat-card-uninstall-purge = データも削除します。元に戻せません
+chat-card-uninstall-purge = データも削除します。ボットとの過去の暗号化メッセージも読めなくなり、元に戻せません
 chat-card-uninstall-keep = データは残します。次にインストールしたときにも使えます
 
 # ツール呼び出しカードの行。$args は生の JSON パラメーターで、長いときは切り詰めます。

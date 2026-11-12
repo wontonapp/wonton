@@ -14,11 +14,13 @@
 // matrix-sdk 的 future 嵌套很深，默认的 128 层不够算出 `room.timeline()` 的类型布局。
 #![recursion_limit = "256"]
 
+mod agent_run;
 mod chat_room;
 mod encryption;
 mod error;
 mod friends;
 mod layout;
+mod login;
 mod media;
 mod message;
 mod panels;
@@ -27,6 +29,7 @@ mod push;
 mod read_position;
 mod reply;
 mod rooms;
+mod saved;
 mod send_queue;
 mod session;
 mod sharing;
@@ -37,6 +40,7 @@ pub mod testkit;
 mod timeline;
 mod verification;
 
+pub use agent_run::AgentRunStatus;
 pub use chat_room::{
     BackPaginationStatus, ChatRoom, ImageThumbnail, ImageUpload, MISSED_GRACE, MissedEvent,
 };
@@ -44,9 +48,10 @@ pub use encryption::{EncryptionState, Recovery, Verification};
 pub use error::{Error, Result};
 pub use friends::{Blocked, FRIEND_CREATE_KEY, FriendChat, FriendInvite};
 pub use layout::{CHAT_LAYOUT_EVENT, ChatLayoutContent};
+pub use login::{LoginError, OidcClient, OidcStart, PendingLogin};
 pub use matrix_sdk::ruma::{
     DeviceId, EventId, OwnedDeviceId, OwnedEventId, OwnedRoomId, OwnedServerName, OwnedUserId,
-    RoomId, ServerName, UserId,
+    RoomId, ServerName, UserId, events::relation::RelationType,
 };
 pub use matrix_sdk_ui::eyeball_im::{Vector, VectorDiff};
 pub use media::media_token;

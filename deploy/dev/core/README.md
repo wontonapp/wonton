@@ -32,8 +32,9 @@ Cookie 罐路径，curl 加 `-b` 复用。
 
 - 端口 `WONTON_DEV_PORT`（默认 18480），基础域名 `WONTON_DEV_DOMAIN`（默认项目用 `wonton.localhost`，其他项目默认用 `<项目名>.wonton.localhost`）。
   端口也是浏览器看到的地址的一部分，改端口后要重新安装 SSO 插件；需要并行栈时可显式覆盖基础域名。
-- 一台 Docker 上跑几套：每套设自己的 `WONTON_DEV_PROJECT`、端口和 `WONTON_DEV_DATA`。实例名 `WONTON_DEV_INSTANCE` 默认取
-  项目名（去掉开头的 `wonton-` 和非字母数字，最多 16 个字符；去了标点时在截短后的名字后面接项目名哈希的前 5 位
+- 一台 Docker 上跑几套：每套设自己的 `WONTON_DEV_PROJECT`、端口和 `WONTON_DEV_DATA`。`up` 在构建之前查网关和隧道端口
+  （`port-preflight.sh`）：别的项目的容器发布了、或本机已有 socket 时直接失败，说明谁占着，并给出往后第一个空的端口。
+  实例名 `WONTON_DEV_INSTANCE` 默认取项目名（去掉开头的 `wonton-` 和非字母数字，最多 16 个字符；去了标点时在截短后的名字后面接项目名哈希的前 5 位
   十六进制，只差标点的两个项目名不会得到同一个实例名），插件的资源名和标签都带上它，各管各的。
   默认项目 `wonton-dev-core` 没有实例名。已有数据的环境换了实例名，插件要重装；想留着旧的资源名，把它设成空。
   数据目录同时当作安装目录（`WONTON_INSTALL_DIR`）：联邦名单和整台服务器黑名单由核心原地重写并热加载。
@@ -144,6 +145,10 @@ docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=
 确认：核心在和主人的“Wonton”私聊里发确认卡片，已配对设备经隧道回答（`POST /_wonton/confirmations/{id}`，请求体
 `{"answer": "approve"}`），10 分钟没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`）。每次调用记一行审计，在数据目录的 `core/audit.jsonl`。
 没有 App 的主机上用真实的客户端核心回答：`cargo run -p wonton-client --example confirm-card -- <数据目录> <配对码> approve`。
+开发栈还没有配对设备时，用主人令牌经网关批，别干等（插件套件的 `scripts/dev.sh approve` 就是这么做的）：
+`dev.sh api GET /_wonton/api/confirmations` 列出等回答的卡片（`id`、`title`），
+`dev.sh api POST /_wonton/confirmations/<id> -d '{"answer":"approve"}'` 批准。`answer` 取 `approve`、`approve_wider`、
+`allow_window`、`reject`，必须和卡片上的按钮一致；按钮带 `choice_id` 的要原样带上，密钥类卡片随回答带 `secrets`。
 
 ## 推送
 
@@ -158,6 +163,10 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 验证官方索引读得懂、引导如实推荐、帮助文档跟着索引更新（更新、失败保旧、min_core 挡旧核心），以及模型网关
 三种错误的原因各不相同。GitHub 连不上时 export `https_proxy`；「错的 key」和「断网」两个用例要经出口容器到真实
 上游，设 `WONTON_SMOKE_EGRESS_PROXY=http://host.docker.internal:<宿主代理端口>`，不设时这两个用例跳过。
+
+两台云吞之间的有两条，共用一套隔离夹具（`share-smoke/`：两台核心经 iroh 配对、各自的 Tuwunel、自己的 DNS 和 Pebble）：
+分享插件（ADR-0051）是 `dev.sh share-smoke`；跨机 Bot 联系人（ADR-0050）是 `deploy/dev/core/smoke-contacts.sh`，
+依赖和步骤写在脚本开头。
 
 内部邮箱有单独的一条（ADR-0056），**在目标主机的本机 Docker 上运行**，由调用方申请并释放栈名额：
 

@@ -114,9 +114,17 @@ async fn content_revision_changes_without_a_version_bump_and_survives_restore() 
 
     let updated = photos(&ICON.replace("#22aa66", "#aa2266"));
     let updated_digest = updated.digest();
-    m.upgrade_upload(&id, updated, Vec::new(), Vec::new(), false, &super::langs())
-        .await
-        .unwrap();
+    m.upgrade_upload(
+        &id,
+        updated,
+        Vec::new(),
+        Vec::new(),
+        false,
+        &Default::default(),
+        &super::langs(),
+    )
+    .await
+    .unwrap();
     let after = m.installed_plugin(&id, &english()).unwrap();
     assert_eq!(after.version, before.version);
     assert_ne!(after.revision, before.revision);

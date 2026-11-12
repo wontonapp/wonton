@@ -48,7 +48,9 @@
 # WONTON_DEV_LAN_ADDRESSES（插件的局域网端口只开在这些地址上，即核心的 WONTON_LAN_ADDRESSES；默认核心自动选）、
 # WONTON_DEV_ANNOUNCE_ADDRESSES（告诉手机去连的地址，即核心的 WONTON_ANNOUNCE_ADDRESSES，可以带前缀；设了就绑 0.0.0.0）、
 # WONTON_DEV_CORE_SUBNET（核心网络用这个子网，如 10.214.1.0/24；不设由 Docker 从默认地址池分。默认池只有约 30 个网络，
-# 几套开发栈共用一台 Docker 时会用光；设了就要在这套栈的整个生命里一直设着，换了值 compose 会要求重建网络）。
+# 几套开发栈共用一台 Docker 时会用光；设了就要在这套栈的整个生命里一直设着，换了值 compose 会要求重建网络）、
+# WONTON_TASK、WONTON_TTL（打在这套栈容器上的 com.wonton.task、com.wonton.ttl 标签：归哪个任务、到期时刻 ISO 8601；
+# 共用开发机的回收脚本按它们认主，没设时不打值）。
 # 所有 HTTP 请求都在一个与核心共享网络的 curl 容器里发出，所以 DOCKER_HOST 指向远端主机时同样可用。
 set -euo pipefail
 
@@ -668,6 +670,8 @@ case "${1:-}" in
   up)
     # 分流机的入口只放行固定的几个子命令；工作区里有标记时把 up 让给分享冒烟。
     if [[ -f "$repo/.share-smoke" ]]; then exec bash "$0" share-smoke; fi
+    # 端口冲突在构建之前查出来：compose 要到绑定时才报，那时已经构建完了。
+    "$here/port-preflight.sh" "$core" "$WONTON_DEV_PORT" "$WONTON_DEV_TUNNEL_PORT" || exit 1
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
     export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
     mkdir -p "$here/.data" && printf '%s' "$WONTON_DEV_PORT" > "$here/.data/dev-port"
@@ -741,14 +745,8 @@ case "${1:-}" in
     ;;
   list) plugins_table || die "取不到插件列表"; echo ;;
   open) open_plugin "${2:?用法：$0 open <插件 ID>}" ;;
-  tunnel)
-    api GET /_wonton/api/tunnel
-    echo
-    ;;
-  devices)
-    api GET /_wonton/api/devices
-    echo
-    ;;
+  tunnel) api GET /_wonton/api/tunnel; echo ;;
+  devices) api GET /_wonton/api/devices; echo ;;
   revoke)
     api DELETE "/_wonton/api/devices/${2:?用法：$0 revoke <endpoint ID>}"
     echo

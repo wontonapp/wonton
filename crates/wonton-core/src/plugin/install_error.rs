@@ -89,6 +89,12 @@ pub enum InstallError {
     /// 核心正在升级：回滚只退备份里的东西，这时动插件，回滚后记录和容器就对不上了（ADR-0025）。
     #[error("{0}")]
     CoreUpgrading(String),
+    /// 设置值过不了 Schema（ADR-0077）；原值不动、不重建。
+    #[error("{0}")]
+    SettingsInvalid(String, Vec<wonton_protocol::SettingsFieldError>),
+    /// 插件包的设置 Schema 自己不合格（ADR-0077）。
+    #[error("{0}")]
+    SettingsSchemaInvalid(String, Vec<wonton_protocol::SettingsSchemaProblem>),
 }
 
 impl InstallError {
@@ -119,6 +125,8 @@ impl InstallError {
             Self::NotFound(_) => "not_found",
             Self::Changed(_) => "changed",
             Self::CoreUpgrading(_) => "core_upgrading",
+            Self::SettingsInvalid(..) => "settings_invalid",
+            Self::SettingsSchemaInvalid(..) => "settings_schema_invalid",
         }
     }
 }
@@ -156,6 +164,10 @@ impl InstallError {
             Self::PortTaken(m) => Self::PortTaken(add(m)),
             Self::ImagePull(m) => Self::ImagePull(add(m)),
             Self::OidcUnavailable(m) => Self::OidcUnavailable(add(m)),
+            Self::SettingsInvalid(m, fields) => Self::SettingsInvalid(add(m), fields),
+            Self::SettingsSchemaInvalid(m, problems) => {
+                Self::SettingsSchemaInvalid(add(m), problems)
+            }
             Self::MatrixUnavailable(m) => Self::MatrixUnavailable(add(m)),
             Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
             Self::UpstreamUnavailable(m) => Self::UpstreamUnavailable(add(m)),
