@@ -104,3 +104,4 @@
 | [0088](0088-family-accounts.md) | 家人账号：独立账号、可配置的角色、私人和共享 Bot |
 | [0089](0089-https-own-domain.md) | HTTPS 先用主人自己的域名：lego DNS-01，设置里预设 deSEC，插件只认一个规范对外地址 |
 | [0090](0090-public-access.md) | 公网访问：自己的域名或 Cloudflare Tunnel 当入口，默认关，一键全关，回调按路径放行，访客链接 |
+| [0088](0088-side-chats.md) | 旁聊：主对话里的 Matrix 话题，收成卡片，结束时主对话里一行结果 |
