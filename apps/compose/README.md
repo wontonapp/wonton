@@ -41,15 +41,16 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 ### 版本号
 
 版本号由仓库根的 `scripts/app-version.sh` 一处计算（iOS 用同一条规则，见 `apps/ios/README.md` 的「构建」）：
-优先环境变量 `WONTON_VERSION`（`X.Y.Z`，可带 `v` 前缀），其次最近的 `vX.Y.Z` tag。发版构建这样传：
+优先环境变量 `WONTON_VERSION`（`X.Y.Z`，可带 `v` 前缀），其次最近的 `vX.Y.Z` tag。**发版必须显式传版本**：
+发版构建是在没有 git 元数据的副本上做的，取不到 tag，不传 Release 构建直接报错。
 
 ```bash
 WONTON_VERSION=0.2.4 ./gradlew :androidApp:assembleRelease
 ```
 
-Gradle 也认 `-PwontonVersion=0.2.4`（透传给同一脚本）。不传时取最近的发版 tag；都拿不到时 Debug 构建
-用 `0.0.0 (0)`，Release 构建直接报错。构建号由版本号算出（`major*1000000 + minor*1000 + patch`），
-覆盖安装要求它不降。
+Gradle 也认 `-PwontonVersion=0.2.4`（透传给同一脚本；远程构建通道只透传它）。在自己带 tag 的检出上不传时
+取最近的发版 tag；都拿不到时 Debug 构建用 `0.0.0 (0)`。构建号由版本号算出（`major*1000000 + minor*1000 +
+patch`），覆盖安装要求它不降。
 
 ## 连家里的服务器（开发）
 
