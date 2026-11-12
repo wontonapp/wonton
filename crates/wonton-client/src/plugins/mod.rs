@@ -176,17 +176,20 @@ impl PluginsLink {
     }
 
     /// 派生字段跟着输入重算：可更新的应用和侧边栏都由已安装列表、商店、任务忙闲和核心升级页算出来。
-    /// 改了这些输入的地方要调一次；值没变时不打扰订阅者。
     pub(crate) fn refresh_derived(&self) {
-        self.view.send_if_modified(|view| {
-            let updatable = now::updatable(view);
-            let mut changed = view.updatable != updatable;
-            view.updatable = updatable;
-            let sidebar = now::sidebar(view);
-            changed |= view.sidebar != sidebar;
-            view.sidebar = sidebar;
-            changed
-        });
+        self.view.send_if_modified(Self::derive);
+    }
+
+    /// 改了派生字段的输入就在同一个发布里调它：订阅者不会看到“列表已经变了、可更新数和侧栏还是旧的”
+    /// 中间状态（测试按事件断言时会正好撞上）。值没变时返回 false。
+    pub(crate) fn derive(view: &mut PluginsViewModel) -> bool {
+        let updatable = now::updatable(view);
+        let mut changed = view.updatable != updatable;
+        view.updatable = updatable;
+        let sidebar = now::sidebar(view);
+        changed |= view.sidebar != sidebar;
+        view.sidebar = sidebar;
+        changed
     }
 
     /// 换服务器时新作用域接着用这个发送端，壳的订阅不断（ADR-0042）。
@@ -401,6 +404,7 @@ impl PluginsLink {
                 task.state = tasks::server_changed();
                 task.waiting_for_connection = false;
             }
+            Self::derive(view);
         });
         self.forget_core_upgrade();
         self.forget_takeover();
@@ -475,9 +479,10 @@ impl PluginsLink {
             return Ok(());
         }
         self.applied_seq.store(seq, Ordering::SeqCst);
-        self.view
-            .send_modify(|view| view.installed = Some(installed));
-        self.refresh_derived();
+        self.view.send_modify(|view| {
+            view.installed = Some(installed);
+            Self::derive(view);
+        });
         if self.needs_polling().is_some() {
             self.start_polling();
         }
@@ -497,8 +502,10 @@ impl PluginsLink {
             return Ok(());
         }
         let store = result?;
-        self.view.send_modify(|view| view.store = Some(store));
-        self.refresh_derived();
+        self.view.send_modify(|view| {
+            view.store = Some(store);
+            Self::derive(view);
+        });
         Ok(())
     }
 
