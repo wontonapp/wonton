@@ -19,11 +19,11 @@ import app.wonton.protocol.TimelineAction
 import app.wonton.protocol.TimelineTarget
 
 /**
- * 输入框里的草稿和正在回复的消息。草稿在核心里按房间存，这里只是它的一份本地副本：退出房间、重启 App 再回来还在。
+ * 输入框里的草稿和正在回复的消息。草稿在核心里按时间线（房间的主对话或一个旁聊）存，这里只是它的一份本地副本：退出房间、重启 App 再回来还在。
  * 每次改动都把正文和回复对象一起交给核心——不带回复对象会把存着的回复清掉。
  */
 class RoomDraft(
-    private val roomId: String,
+    private val target: TimelineTarget,
     private val body: MutableState<String>,
     private val quoted: MutableState<ReplyQuote?>,
     private val focus: MutableIntState,
@@ -74,7 +74,7 @@ class RoomDraft(
 
     private fun save() = onAction(
         Action.Timeline(
-            TimelineAction.SetDraft(TimelineTarget(roomId, null), body.value, quoted.value?.eventId),
+            TimelineAction.SetDraft(target, body.value, quoted.value?.eventId),
         ),
     )
 }
@@ -85,13 +85,13 @@ class RoomDraft(
  * 房间还没同步到本机时读会失败，写一个空串会把存的草稿清掉。
  */
 @Composable
-fun rememberRoomDraft(core: ClientCore, roomId: String, onAction: (Action) -> Unit): RoomDraft {
-    val body = rememberSaveable(roomId) { mutableStateOf("") }
-    val quoted = remember(roomId) { mutableStateOf<ReplyQuote?>(null) }
-    val focus = remember(roomId) { mutableIntStateOf(0) }
-    val touched = remember(roomId) { mutableStateOf(false) }
-    LaunchedEffect(core, roomId) {
-        runCatching { core.draft(TimelineTarget(roomId, null)) }.onSuccess { stored ->
+fun rememberRoomDraft(core: ClientCore, target: TimelineTarget, onAction: (Action) -> Unit): RoomDraft {
+    val body = rememberSaveable(target) { mutableStateOf("") }
+    val quoted = remember(target) { mutableStateOf<ReplyQuote?>(null) }
+    val focus = remember(target) { mutableIntStateOf(0) }
+    val touched = remember(target) { mutableStateOf(false) }
+    LaunchedEffect(core, target) {
+        runCatching { core.draft(target) }.onSuccess { stored ->
             // 读回排队时排在它前面的写入都已落盘，但它排不进主人之后的新写入：动过草稿就以本机为准。
             if (!touched.value) {
                 if (body.value.isEmpty()) body.value = stored?.body.orEmpty()
@@ -101,7 +101,7 @@ fun rememberRoomDraft(core: ClientCore, roomId: String, onAction: (Action) -> Un
             Log.w(TAG, "could not load the draft for this room", failure)
         }
     }
-    return remember(roomId, core, onAction) { RoomDraft(roomId, body, quoted, focus, touched, onAction) }
+    return remember(target, core, onAction) { RoomDraft(target, body, quoted, focus, touched, onAction) }
 }
 
 private const val TAG = "RoomDraft"

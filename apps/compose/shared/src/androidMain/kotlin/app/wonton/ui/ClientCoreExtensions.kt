@@ -36,8 +36,8 @@ fun ClientCore.chatUpdates(): Flow<ChatViewModel> = flow {
 /**
  * 批次的语义见核心的 `TimelineSubscription`。打不开时流以 [CoreException] 结束；取消和释放同 [chatUpdates]。
  */
-fun ClientCore.timelineUpdates(roomId: String): Flow<TimelineUpdate> = flow {
-    subscribeTimeline(TimelineTarget(roomId, null)).use { subscription ->
+fun ClientCore.timelineUpdates(target: TimelineTarget): Flow<TimelineUpdate> = flow {
+    subscribeTimeline(target).use { subscription ->
         while (true) {
             emit(subscription.next() ?: break)
         }
