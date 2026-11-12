@@ -1,4 +1,5 @@
-//! Bot 的联系人（ADR-0045），包括配对过的服务器上的 Bot 和人（ADR-0050）。
+//! Bot 的联系人（ADR-0045），包括别的服务器上的 Bot 和人（ADR-0050；有名字模式下加“人”不要对方配对，
+//! 见 [`Ports::open_federation`]）。
 //!
 //! - 记录在 `core/contacts.json`（[`store`]），请求不过期，重启后还在。每个 Bot 一张表，对方的用户 ID 一行。
 //! - 同机的 Bot 之间直接改两张表。跨机的 Bot 经 [`PeerLink`] 和对方核心交换 [`ContactEvent`]；对方连不上时
@@ -41,6 +42,9 @@ pub struct Ports {
     pub link: Arc<dyn PeerLink>,
     pub invites: Arc<dyn PersonInvites>,
     pub effects: Arc<dyn Effects>,
+    /// 有名字模式（ADR-0051）：Tuwunel 对整个 Matrix 开放联邦，加“人”不要求对方配对；
+    /// 私用名保留 ADR-0050 的配对要求。
+    pub open_federation: bool,
 }
 
 pub struct Contacts {
@@ -254,5 +258,7 @@ pub(crate) fn now_ms() -> u64 {
 
 #[cfg(test)]
 pub(crate) mod tests;
+#[cfg(test)]
+mod tests_open_federation;
 #[cfg(test)]
 mod tests_remote;
