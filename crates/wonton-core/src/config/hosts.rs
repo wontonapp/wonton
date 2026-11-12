@@ -165,7 +165,7 @@ impl PublicUrls {
         }
 
         if let Some(capability) = host.strip_suffix(".wonton.internal")
-            && capability != crate::plugin::capabilities::EGRESS_PROXY.name
+            && !crate::plugin::capabilities::has_no_consumer(capability)
             && (crate::plugin::capabilities::lookup(capability).is_some()
                 || crate::plugin::capabilities::is_third_party(capability))
         {
@@ -200,7 +200,7 @@ mod tests {
         for capability in crate::plugin::capabilities::ALL {
             let expected = match capability.name {
                 "models" => HostKind::PluginModels,
-                "egress_proxy" => HostKind::Unknown,
+                "egress_proxy" | "matrix_rtc" => HostKind::Unknown,
                 name => HostKind::PluginCapability(name.to_owned()),
             };
             assert_eq!(

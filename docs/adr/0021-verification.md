@@ -82,6 +82,17 @@ Pebble 不是 Let's Encrypt，CAA 没有测。
 
 **读代码或文档的**：PowerDNS 的 `UpdatePolicyQuery` 没有记录内容；frp 两端心跳的默认值、`Ping` 被拒时不刷新 `lastPing`、`frpc reload` 不改全局参数、共用端口时第一个字节的要求；Vaultwarden、Immich、Jellyfin 的路径；Navidrome 的限流；各比较表（默认分支，2026-11-03）。Let's Encrypt 的限额和有效期、PSL 的规则、dns-persist-01 的状态、SSLMate 和 Web Risk 的额度（公开资料，2026-11-03）。
 
+## 验证结果（2026-11-12）：Immich 官方 App 在家备份
+
+一台 Linux 主机上：核心栈和 Android 模拟器（Android 15，API 35）在同一台机器，官方 App（v3.3.6）直连插件的局域网地址（下表用示例 192.0.2.10:2283），没经过公网。核心 main（提交 99971437213bfe85a0472fcba3711b7577c8a5cc，`wonton-core:main@sha256:cc1a072a…`）、Immich 插件 0.3.6（main@918ed04f 的本地检出）、Immich 服务端 v3.3.6。App 的 APK 用 GitHub Releases 里和服务端同版本的官方包（发布页没附哈希文件，按 GitHub 资产记录的 sha256 校验）。“在局域网开放”经核心管理接口打开（开发栈没装云吞 App，和详情页里的开关是同一个开关）。
+
+| 测试 | 结果 |
+| --- | --- |
+| 开关打开后 Immich 的 2283 端口 | 发布在选出的局域网地址上（`docker ps` 显示 `192.0.2.10:2283->2283/tcp`），`/api/server/ping` 回 pong |
+| App 填局域网地址，用详情页给的邮箱和密码登录 | 登录成功，进入时间线 |
+| 往相册推一张照片，在 App 里开备份 | 数秒内传完，待备份归 0；服务端时间线收到，共享文件夹里的原件和测试图 sha256 一致 |
+| App 切到后台（HOME），再推一张 | 不回到前台，媒体扫描后约 30 秒（27–32 秒）服务端自己收到 |
+
 ## 待验证
 
 都在实现时验证，结果写进这一节。
@@ -128,7 +139,7 @@ Pebble 不是 Let's Encrypt，CAA 没有测。
 
 **第三方 App 和插件**
 
-- Immich 官方 App 在家和在外各备份一张照片。
+- Immich 官方 App 在外备份一张照片。
 - Immich 的 Wi-Fi 自动切换是否可靠。
 - Immich 插件的 `credentials`：不经网页建好主人的账号、设密码、改密码时带 `invalidateSessions` 结束所有登录，用的是哪个接口。Jellyfin 和 Navidrome 能不能结束登录，做不到的声明 `ends_sessions: false`。
 - `:8483` 端口和长名字在各 App 的地址输入框里能不能填：Immich、Bitwarden、Jellyfin、DAVx5。

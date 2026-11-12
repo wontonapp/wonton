@@ -133,6 +133,9 @@ pub struct Config {
     pub relays: RelayTable,
     /// 推送代理的专用监听（`WONTON_PUSH_LISTEN`），不设就不开；主机名在启动时解析。
     pub push_listen: Option<String>,
+    /// `matrix_rtc` 提供方网络里服务器名别名的 TLS 监听（`WONTON_MATRIX_RTC_LISTEN`，ADR-0096），不设就不开。
+    /// 授权服务按 Matrix 的服务器发现连 443，正式安装写 `0.0.0.0:443`：核心在容器里，只经插件网络到达。
+    pub matrix_rtc_listen: Option<String>,
     /// 联邦出站代理监听的 `主机:端口`（`WONTON_FEDERATION_LISTEN`，ADR-0050），主机名在启动时解析。
     /// 正式安装写的是核心在内部网络上的别名：只绑在那个网络的地址上，插件网络里连不到。
     pub federation_listen: String,
@@ -275,6 +278,7 @@ impl Config {
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
             relays: parse_relays(&get)?,
             push_listen: get("WONTON_PUSH_LISTEN").filter(|value| !value.is_empty()),
+            matrix_rtc_listen: get("WONTON_MATRIX_RTC_LISTEN").filter(|value| !value.is_empty()),
             federation_listen: get("WONTON_FEDERATION_LISTEN")
                 .unwrap_or_else(|| "0.0.0.0:8448".into()),
             matrix_federation_addr: get("WONTON_MATRIX_FEDERATION_ADDR")
