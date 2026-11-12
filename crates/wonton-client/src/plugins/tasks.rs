@@ -76,8 +76,9 @@ impl PluginsLink {
         };
         let link = self.clone();
         let id = preview.id;
+        let generation = self.generation.load(Ordering::SeqCst);
         self.runtime.spawn(async move {
-            let Some(api) = link.task_api(&id) else {
+            let Some(api) = link.task_api(&id, generation) else {
                 return;
             };
             let sent = api.post_unit(&["plugins"], &request, INSTALL_TIMEOUT);
@@ -139,12 +140,12 @@ impl PluginsLink {
         let link = self.clone();
         let id = preview.id;
         let version = preview.version;
+        let generation = self.generation.load(Ordering::SeqCst);
         self.runtime.spawn(async move {
-            let Some(api) = link.task_api(&id) else {
+            let Some(api) = link.task_api(&id, generation) else {
                 return;
             };
             let path = ["plugins", id.as_str(), "upgrade"];
-            let generation = link.generation.load(Ordering::SeqCst);
             let sent = async {
                 let bytes = api.post_raw(&path, &request, INSTALL_TIMEOUT).await?;
                 if link.is_current(generation) {
@@ -179,8 +180,9 @@ impl PluginsLink {
         };
         self.begin_task(&id, &title, icon, PluginOperation::Uninstall)?;
         let link = self.clone();
+        let generation = self.generation.load(Ordering::SeqCst);
         self.runtime.spawn(async move {
-            let Some(api) = link.task_api(&id) else {
+            let Some(api) = link.task_api(&id, generation) else {
                 return;
             };
             let query: &[(&str, &str)] = if delete_data {
@@ -274,18 +276,22 @@ impl PluginsLink {
         outcome
     }
 
-    /// 连接信息都没有时，请求肯定没发出去：结果是确定的，不用等。
-    fn task_api(&self, id: &str) -> Option<CoreApi> {
+    /// 连接信息都没有时，请求发不出去：结果是确定的，不用等。
+    /// 换过服务器就不同了：请求本来会发到上一台，结果不知道，`forget_server` 也已经把在做的任务标成
+    /// 不确定，这里再盖一次而不是写“连不上”，否则配对时先到的失败会把结果说成确定的。
+    fn task_api(&self, id: &str, generation: u64) -> Option<CoreApi> {
         match self.api() {
             Ok(api) => Some(api),
             Err(problem) => {
-                self.set_task_state(
-                    id,
+                let state = if self.is_current(generation) {
                     PluginTaskState::Failed {
                         reason: problem.reason,
                         message: problem.message,
-                    },
-                );
+                    }
+                } else {
+                    server_changed()
+                };
+                self.set_task_state(id, state);
                 None
             }
         }

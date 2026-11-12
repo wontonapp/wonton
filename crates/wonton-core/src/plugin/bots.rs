@@ -243,7 +243,7 @@ fn bot_localpart(id: &PluginId, bot: &str) -> String {
 }
 
 impl PluginManager {
-    pub(super) fn matrix(&self) -> Result<&Matrix, InstallError> {
+    pub(crate) fn matrix(&self) -> Result<&Matrix, InstallError> {
         let langs = self.owner_languages();
         self.matrix.as_deref().ok_or_else(|| {
             InstallError::MatrixUnavailable(crate::l10n::text(
