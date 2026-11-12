@@ -98,7 +98,19 @@ impl PluginPackage {
                 ),
             ));
         }
-        if let Some(provider) = egress
+        self.check_egress_service(egress, langs)?;
+        self.check_capability_services(langs)?;
+        super::gpu_images::check(self, langs)?;
+        Ok(())
+    }
+
+    /// 出网插件的服务不能设 `network_mode`：出口容器没法和它共享网络。
+    fn check_egress_service(
+        &self,
+        provider: Option<&crate::plugin::provides::EgressProxyProvider>,
+        langs: &Languages,
+    ) -> Result<(), PackageError> {
+        if let Some(provider) = provider
             && self.services[&provider.service]
                 .as_object()
                 .is_some_and(|service| service.contains_key("network_mode"))
@@ -108,10 +120,6 @@ impl PluginPackage {
                 &provider.service,
                 text(langs, "plugin-install-pkg-egress-network-mode", &[]),
             ));
-        }
-        self.check_capability_services(langs)?;
-        if let Some(gpu) = &self.manifest.gpu {
-            super::gpu_images::check(&gpu.images, &self.services, langs)?;
         }
         Ok(())
     }
