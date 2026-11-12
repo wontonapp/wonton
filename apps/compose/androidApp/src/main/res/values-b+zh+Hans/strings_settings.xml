@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="push_in_room">%1$s：%2$s</string>
+    <string name="push_unknown_sender">有人</string>
+    <string name="push_invite">邀请你加入</string>
+    <string name="push_unavailable">新消息（暂时取不到内容）</string>
+    <string name="push_hidden">新消息</string>
+    <string name="push_no_permission">没有通知权限：云吞被杀或锁屏时弹不出新消息</string>
+    <string name="push_no_distributor">没有装 UnifiedPush 分发器（比如 ntfy）：云吞被杀或锁屏时收不到新消息</string>
+    <string name="push_no_public_key">分发器没有给出 Web Push 公钥，推送内容没法加密</string>
+    <string name="push_registration_rejected">分发器拒绝了注册：%1$s</string>
+    <string name="push_unregistered">分发器注销了云吞</string>
+    <string name="push_contact_request">想加你的 Bot 为联系人</string>
+    <string name="push_contact_request_keeper">%1$s 的 Bot 想加你的 Bot 为联系人</string>
+    <!-- Lock screen placeholder for a hidden confirmation card notification. -->
+    <string name="push_hidden_confirmation">有任务等你确认</string>
+    <!-- Lock screen placeholder for a hidden plugin notice. -->
+    <string name="push_hidden_notice">有新提醒</string>
+    <!-- Notification action button: reply to the message right in the notification. -->
+    <string name="push_reply">回复</string>
+    <!-- Replaces the notification text while a notification action is being sent. -->
+    <string name="push_sending">正在发送…</string>
+    <!-- Notification text when an action couldn't be sent. Argument: the reason. -->
+    <string name="push_action_failed">发送结果未确认：%1$s</string>
+    <!-- Notification action failed without a usable core error. Tap opens the original target. -->
+    <string name="push_action_unavailable">打开云吞查看结果，再试一次</string>
+    <!-- Sending exceeded the action deadline; delivery may already have reached the server. -->
+    <string name="push_action_timeout">还没收到结果，打开云吞确认后再试</string>
+    <!-- Android stopped the action; never automatically send it again. -->
+    <string name="push_action_interrupted">发送中断了，打开云吞查看结果</string>
+    <!-- Name of the ongoing notification about tasks waiting for the owner's confirmation (ADR-0101). -->
+    <string name="push_tasks_channel">等你确认</string>
+    <!-- Title of the ongoing notification when one card waits for the owner. Argument: the card title. -->
+    <string name="push_task_waiting_title">%1$s 在等你确认</string>
+    <!-- Same with several waiting cards. Arguments: count, the earliest card's title. -->
+    <string name="push_task_waiting_title_many">%1$d 个任务在等你确认，第一个是 %2$s</string>
+</resources>

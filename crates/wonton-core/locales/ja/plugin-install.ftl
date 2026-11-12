@@ -443,8 +443,9 @@ plugin-install-coreaddr-no-core-address = ネットワークにはまだ、自�
 plugin-install-upstream-container-missing = コンテナ{ $container }が存在しないか、ネットワーク{ $network }内にアドレスがありません
 plugin-install-upstream-mcp-headers = アプリ{ $id }のMCPヘッダーを解決できません：{ $error }
 plugin-install-relay-prepare-dir-failed = 中継ディレクトリを準備できません：{ $error }
-plugin-install-relay-path-too-long = アプリデータディレクトリのパスが長すぎてunixソケットが収まりません。自宅サーバーのデータディレクトリを、もっと短いパスへ移動してください（{ $path }：{ $bytes }バイト、上限{ $max }バイト）
+plugin-install-relay-path-too-long = 中継ソケットのディレクトリのパスが長すぎてunixソケットが収まりません。WONTON_RELAY_DIR をもっと短いディレクトリにしてください（{ $path }：{ $bytes }バイト、上限{ $max }バイト）
 plugin-install-relay-listens-unknown = 待ち受け一覧を読めないため、ファイアウォールの判定は行いません
+plugin-install-egress-host-no-address = 出口コンテナにプラグインネットワーク { $network } のアドレスがないため、ホストネットワークのサービスはプロキシ経由で出られません
 
 # ── 画像（images.rs、images/preflight.rs、image_worker.rs）──────────────────
 
@@ -546,3 +547,4 @@ plugin-hosted-provider-taken = { $other } がすでに { $capability } を提供
 plugin-hosted-provider-in-use = 次のアプリはこのアプリがホストしており、アンインストールすると開けなくなります：{ $plugins }。先にそれらをアンインストールしてください
 plugin-hosted-dir-missing = このアプリの { $capability } のファイルが見つかりません。再インストールしてください
 plugin-hosted-storage-failed = ホストするファイルを書き込めません：{ $error }
+plugin-hosted-data-missing = このアプリの { $capability } に保存したデータが見つかりません。再インストールすると空の状態から始まります

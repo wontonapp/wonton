@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Row title in the home screen status panel that opens the connection page. -->
+    <string name="home_connection">Connection</string>
+    <!-- Row title in the home screen status panel: approval requests waiting for the owner. -->
+    <string name="home_awaiting">Waiting for you</string>
+    <!-- Value next to the waiting row, pluralized. Argument: the number of approval requests. -->
+    <plurals name="home_cards">
+        <item quantity="one">%1$d approval request</item>
+        <item quantity="other">%1$d approval requests</item>
+    </plurals>
+    <!-- Value when nothing is waiting. -->
+    <string name="home_none">None</string>
+    <!-- Row title in the home screen status panel for free and total storage. -->
+    <string name="home_storage">Storage</string>
+    <!-- Storage value: free space, then total space. Arguments: free, total. -->
+    <string name="home_storage_value">%1$s free of %2$s</string>
+</resources>

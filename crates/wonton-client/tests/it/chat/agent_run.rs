@@ -77,6 +77,10 @@ fn pending_card(id: &str, room: &str, plugin: &str, bot: &str, user_id: &str) ->
 struct Setup {
     phone: Phone,
     _home: Home,
+    /// 手机核心的数据目录：进 `Setup` 才活到测试结束。留在 setup 局部的话一返回就被删，测试主体
+    /// 跑在已删除的树上、靠已打开的文件描述子撑着；之后任何新的落盘（SDK 重开状态库、重存恢复
+    /// 密钥、隧道端点重建）都 ENOENT，负载下表现为 join 操作报错、房间停在受邀，等待超时。
+    _dir: tempfile::TempDir,
     hermes: MatrixSession,
     room: wonton_matrix::OwnedRoomId,
     timeline: Timeline,
@@ -118,6 +122,7 @@ async fn setup() -> Setup {
     Setup {
         phone,
         _home: home,
+        _dir: dir,
         hermes,
         room,
         timeline,

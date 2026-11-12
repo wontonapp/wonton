@@ -42,7 +42,7 @@ impl LockScreenLink {
             reason: l10n!(
                 CATALOG,
                 language(),
-                "lock-screen-write-failed",
+                "notification-lock-screen-storage-failed",
                 path = path.display().to_string(),
                 reason = error
             ),
@@ -91,7 +91,7 @@ impl LockScreenLink {
             reason: l10n!(
                 CATALOG,
                 language(),
-                "lock-screen-write-failed",
+                "notification-lock-screen-storage-failed",
                 path = self.path.display().to_string(),
                 reason = error.to_string()
             ),

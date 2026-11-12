@@ -4,9 +4,9 @@
 use std::sync::Arc;
 
 use wonton_protocol::{
-    CardLine, InstallPreview, InstalledPlugin, InstalledPlugins, PluginAuthor, PluginChat,
-    PluginDetail, PluginHealth, PluginKind as Kind, PluginLimits, PluginState, PluginTab,
-    PluginTrust, PluginWriter, RequirementLine, RequirementStatus,
+    CardLine, EgressProblem, InstallPreview, InstalledPlugin, InstalledPlugins, PluginAuthor,
+    PluginChat, PluginDetail, PluginHealth, PluginKind as Kind, PluginLimits, PluginState,
+    PluginTab, PluginTrust, PluginWriter, RequirementLine, RequirementStatus,
 };
 
 use super::egress::probe::blocks;
@@ -20,7 +20,7 @@ use super::manager::{Entry, Health, InstallError, PluginManager, PluginStatus, s
 use super::manifest::{Manifest, Permission, PluginId, PluginKind, Sso};
 use super::manifest_tabs;
 use super::package::PluginPackage;
-use super::render::dry_run;
+use super::render::{Deployment, dry_run};
 use super::{
     gallery::IconSource,
     github_source::{Origin, Trust},
@@ -32,6 +32,45 @@ use super::{
 use crate::l10n;
 
 impl PluginManager {
+    /// 挡安装的最后两条：代理不通，或者套接字路径放不下（数据目录、中继目录被指到了很长的路径）。
+    fn blocking_problem(
+        &self,
+        m: &Manifest,
+        plan: &Deployment,
+        langs: &Languages,
+        egress: Option<&EgressProblem>,
+    ) -> Option<String> {
+        egress
+            .filter(|p| blocks(p))
+            .map(|p| p.message.clone())
+            .or_else(|| {
+                super::host_relay::path_too_long(
+                    &self.cfg.relay_dir,
+                    &self.cfg.instance,
+                    &m.id.slug(),
+                    &plan.relays,
+                    langs,
+                )
+            })
+    }
+
+    /// 宿主网络的服务怎么出网：配了代理又声明了 `network.egress` 时经代理，否则走宿主自己的路由（ADR-0036）。
+    fn host_egress_notice(&self, m: &Manifest, langs: &Languages) -> Option<CardLine> {
+        if !m.permissions.contains(&Permission::NetworkHost) {
+            return None;
+        }
+        let proxied = m.permissions.contains(&Permission::NetworkEgress)
+            && self
+                .egress_config()
+                .is_ok_and(|config| config.url.is_some());
+        let key = if proxied {
+            "install-host-network-proxied"
+        } else {
+            "install-host-network-egress"
+        };
+        Some(line(l10n::text(langs, key, &[])))
+    }
+
     /// 已安装的插件：系统插件在前，其余按安装的先后。
     pub fn installed(&self, langs: &Languages) -> InstalledPlugins {
         let plugins = self.plugins.read().expect("插件表锁中毒");
@@ -199,7 +238,7 @@ impl PluginManager {
     ) -> Result<Option<CardLine>, InstallError> {
         let volumes = !self.own_resources(id).await?.volumes.is_empty();
         let secrets = self.store.secrets().load(id)?.is_some();
-        let dir = self.cfg.apps_dir.join(id.slug()).exists();
+        let dir = self.cfg.apps_dir.join(id.slug()).exists() || self.storage_retained(id);
         Ok((volumes || secrets || dir).then(|| CardLine {
             text: l10n::text(
                 langs,
@@ -247,37 +286,18 @@ impl PluginManager {
         let lan = self.lan_preview(package, langs).await?;
         let egress = self.egress_problem_for(m, langs).await?;
         let dependencies = self.dependency_preview(m, langs).await?;
-        let egress_block = egress.as_ref().filter(|p| blocks(p));
-        let blocked = blocked
+        let mut blocked = blocked
             .or(dependencies.blocked)
             .or(gpu.blocked)
-            .or(lan.blocked)
-            .or_else(|| egress_block.map(|p| p.message.clone()))
-            .or_else(|| {
-                super::host_relay::path_too_long(
-                    &self.cfg.apps_dir.join(m.id.slug()),
-                    &plan.relays,
-                    langs,
-                )
-            });
+            .or(lan.blocked);
+        if blocked.is_none() {
+            blocked = self.blocking_problem(m, &plan, langs, egress.as_ref());
+        }
         let mut notices = source_notices(package, &plan, langs);
         // 作者写的“装好后要做的一步”排在最前面、醒目显示：主人得先看到它再决定装不装。
-        if let Some(setup) = setup_notice(m, langs) {
-            notices.insert(0, setup);
-        }
-        if m.webui.as_ref().is_some_and(|w| w.sso != Sso::None) {
-            notices.push(line(l10n::text(langs, "install-webui-sso", &[])));
-        }
-        // 写了权限的，已经在权限列表里了。
-        if super::views_permissions::reveals_owner_identity(m)
-            && !m.permissions.contains(&Permission::OwnerIdentity)
-        {
-            notices.push(line(permission_text(&Permission::OwnerIdentity, langs)));
-        }
+        notices.splice(0..0, opening_notices(m, langs));
         notices.extend(requirement_notices(m, &self.host_facts(langs).await, langs));
-        if m.permissions.contains(&Permission::NetworkHost) {
-            notices.push(line(l10n::text(langs, "install-host-network-egress", &[])));
-        }
+        notices.extend(self.host_egress_notice(m, langs));
         notices.extend(gpu.notice);
         notices.extend(lan.notices);
         // 不挡安装的问题：探测只试了一个网站。
@@ -665,6 +685,24 @@ fn setup_notice(m: &super::manifest::Manifest, langs: &Languages) -> Option<Card
         text: langs.pick_owned(setup),
         emphasis: true,
     })
+}
+
+/// 装好之后第一眼的说明：作者写的“装好后要做的一步”，以及用自己登录的网页、会露出身份的插件。
+fn opening_notices(m: &Manifest, langs: &Languages) -> Vec<CardLine> {
+    let mut notices = Vec::new();
+    if let Some(setup) = setup_notice(m, langs) {
+        notices.push(setup);
+    }
+    if m.webui.as_ref().is_some_and(|w| w.sso != Sso::None) {
+        notices.push(line(l10n::text(langs, "install-webui-sso", &[])));
+    }
+    // 写了权限的，已经在权限列表里了。
+    if super::views_permissions::reveals_owner_identity(m)
+        && !m.permissions.contains(&Permission::OwnerIdentity)
+    {
+        notices.push(line(permission_text(&Permission::OwnerIdentity, langs)));
+    }
+    notices
 }
 
 pub(super) fn line(text: String) -> CardLine {

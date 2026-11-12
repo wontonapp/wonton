@@ -504,6 +504,9 @@ private class ProxyAuthClient(
 
     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
         if (request.isForMainFrame) {
+            // 错误页上看不出是哪一层拒的（明文策略、代理、隧道），原因只在这里；地址照 onPageFinished 只记到路径。
+            val page = request.url.buildUpon().clearQuery().fragment(null).build()
+            Log.w(TAG, "page failed to load, page=$page code=${error.errorCode} reason=${error.description}")
             failedUrl = request.url.toString()
             failed(view)
         }

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_uninstalling">正在解除安裝…</string>
+    <string name="tab_upgrading">正在更新…</string>
+    <string name="tab_opens_in_browser">%1$s 會在瀏覽器裡開啟</string>
+    <string name="tab_open_in_browser">開啟</string>
+    <string name="tab_unpin_from_bar">從底部導覽列移除</string>
+    <string name="tab_load_not_ready">應用程式還沒準備好</string>
+    <string name="tab_media_prompt_microphone">允許 %1$s 使用麥克風嗎？</string>
+    <string name="tab_media_system_settings">去設定</string>
+    <string name="tab_fullscreen">全螢幕</string>
+    <string name="tab_add_to_bar">新增至底部導覽列</string>
+    <string name="tab_chat">聊天</string>
+    <string name="tab_apps">應用程式</string>
+    <string name="tab_app_page">應用程式頁面</string>
+    <!-- 全屏膠囊選單項:重新載入頁面。 -->
+    <string name="tab_menu_reload">重新載入</string>
+    <!-- Small button on an approval request card: open the app that was just installed. -->
+    <string name="tab_open">開啟</string>
+    <!-- 全屏頁面膠囊左鍵的無障礙標籤,點它打開選單。 -->
+    <string name="tab_page_menu">頁面選單</string>
+</resources>

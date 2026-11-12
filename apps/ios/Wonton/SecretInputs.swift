@@ -51,7 +51,7 @@ struct SecretInputField: View {
                     .wontonText(WontonTheme.typography.body)
                     .foregroundStyle(Color(colors.textPrimary))
                 if !input.required {
-                    Tag(text: String(localized: .secretOptional), tint: colors.textSecondary)
+                    Tag(text: String(localized: .Plugins.secretOptional), tint: colors.textSecondary)
                 }
             }
             if let description = input.description {
@@ -88,10 +88,10 @@ struct SecretInputField: View {
                         .contentShape(Rectangle())
                 }
                 .disabled(!enabled)
-                .accessibilityLabel(Text(shown ? .secretHide : .secretShow))
+                .accessibilityLabel(Text(shown ? .Plugins.secretHide : .Plugins.secretShow))
             }
             if let link = input.url.flatMap(URL.init(string:)) {
-                Button(String(localized: .secretGetOne)) { openURL(link) }
+                Button(String(localized: .Plugins.secretGetOne)) { openURL(link) }
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.accentInk))
             }
@@ -110,4 +110,25 @@ func secretValues(_ inputs: [SecretInput], _ values: [String: String]) -> [Strin
 /// 还有必填项没填：确认按钮不可点。
 func missingRequiredSecret(_ inputs: [SecretInput], _ values: [String: String]) -> Bool {
     inputs.contains { input in input.required && (values[input.name] ?? "").isEmpty }
+}
+
+/// App 不在前台时盖住这一屏，切换器里的快照看不到填过的值。
+private struct SecretSnapshotMask: ViewModifier {
+    var isEnabled: Bool
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.wontonColors) private var colors
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if isEnabled, scenePhase != .active {
+                Color(colors.canvas).ignoresSafeArea()
+            }
+        }
+    }
+}
+
+extension View {
+    func secretSnapshotMask(_ isEnabled: Bool = true) -> some View {
+        modifier(SecretSnapshotMask(isEnabled: isEnabled))
+    }
 }

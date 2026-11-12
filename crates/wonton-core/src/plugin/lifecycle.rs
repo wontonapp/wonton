@@ -48,6 +48,8 @@ pub struct LifecycleConfig {
     pub data_dir: PathBuf,
     pub apps_dir: PathBuf,
     pub shares_dir: PathBuf,
+    /// 宿主网络中继的 unix 套接字目录（[`super::config::DEFAULT_RELAY_DIR`]）。
+    pub relay_dir: PathBuf,
     pub core_container: Option<String>,
     pub tz: String,
     pub puid: u32,
@@ -63,6 +65,18 @@ pub struct LifecycleConfig {
     pub plugin_slice: Option<String>,
     /// 核心的实例名（`WONTON_INSTANCE`），决定插件的资源名和标签。
     pub instance: Instance,
+}
+
+/// 部署计划里有没有用宿主网络的服务：它们的代理变量要写出口容器的地址，不是别名。
+fn host_networked(plan: &Deployment) -> bool {
+    plan.containers.iter().any(|container| {
+        container
+            .body
+            .host_config
+            .as_ref()
+            .and_then(|config| config.network_mode.as_deref())
+            == Some("host")
+    })
 }
 
 /// 本次安装已经创建的资源，失败时据此回滚。
@@ -201,35 +215,18 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
-        self.stage(&manifest.id, InstallStage::Preparing);
-        self.clear_leftovers(&manifest.id).await?;
-        let secret = uses_sso(manifest).then(random_token);
-        let mut secrets = self.prepare_secrets(manifest, undo)?;
-        let generated =
-            secrets::generated_values(manifest, &secrets, langs).map_err(InstallError::Storage)?;
-        let proxy =
-            ProxyAuth::resolve(manifest, &generated, langs).map_err(InstallError::Storage)?;
-        let effective = manifest.effective_permissions(&super::store::permission_set(enabled));
-        let mut ctx = self
-            .install_context(manifest, secret.as_deref(), generated, &effective, langs)
+        let (mut ctx, secret, mut secrets, proxy) = self
+            .prepare_install(package, enabled, (gpu, lan), settings, undo, langs)
             .await?;
-        ctx.gpu = gpu;
-        ctx.lan = lan;
-        ctx.settings = settings;
-        self.check_network_names(&ctx).await?;
-        let default_bot = self.provision_default_bot(package, undo).await?;
-        if let Some(models) = self.provision_models(package, langs).await? {
-            ctx.models = Some(models);
-            undo.models = Some(manifest.id.clone());
-        }
-        if let Some(bot) = &default_bot {
-            self.fill_default_bot_vars(manifest, bot, &mut ctx);
-        }
         let mut plan = render(package, &ctx, langs)?;
         self.prepare_images(&mut plan, Some(&manifest.id), langs)
             .await?;
         self.stage(&manifest.id, InstallStage::Preparing);
         self.prepare_dirs(&ctx, &plan.dirs, undo, langs)?;
+        // 中继套接字目录不在应用数据目录下，不属于任何一个插件：装之前单独建、交给 PUID。
+        if !plan.relays.is_empty() {
+            self.prepare_relay_dir(langs)?;
+        }
         // create_networks 里经 attach_relay→sync_relay 到 bollard 的 inspect 反序列化是整条
         // install 链的栈顶；box 上堆后默认 2 MiB 测试线程栈才装得下（egress_plugin_docker 的栈溢出）。
         Box::pin(self.create_networks(manifest, &plan, &ctx, undo)).await?;
@@ -240,9 +237,7 @@ impl PluginManager {
             self.attach_core(&plan.network, core, manifest).await?;
             undo.core_attached = true;
         }
-        // 网络建好才知道的：核心在网络里的地址和网关。
-        ctx.core_address = self.core_address_var(manifest, &plan.network).await?;
-        ctx.extra_hosts = self.hosts_via_gateway(manifest, &plan.network).await?;
+        self.fill_network_vars(manifest, &plan, &mut ctx).await?;
         let pulled = plan;
         let mut plan = render(package, &ctx, langs)?;
         super::registry_mirror::use_pulled_images(&mut plan, pulled);
@@ -319,6 +314,7 @@ impl PluginManager {
             proxied: ctx.egress.is_some(),
             oidc_client_secret: oidc_secret,
             installed_at: super::manager::now_secs(),
+            entry_label: self.install_entry_label(&manifest.id)?,
             origin: package.origin.clone(),
             written_by: None,
             ask_every_update: false,
@@ -477,6 +473,7 @@ impl PluginManager {
         Ok(InstallContext {
             app_data: self.cfg.apps_dir.join(&slug),
             hosted_root: self.hosted_dirs().root().to_path_buf(),
+            relay_dir: self.cfg.relay_dir.clone(),
             config_store: self.cfg.data_dir.join("core").join("configs"),
             slug,
             instance: self.cfg.instance.clone(),
@@ -598,6 +595,82 @@ impl PluginManager {
             undo.app_dir_created = Some(ctx.app_data.clone());
         }
         hostdir::prepare(&ctx.app_data, self.owner(), dirs).map_err(|e| storage(&e))
+    }
+
+    /// 安装的前半段：清残留、备密钥、定权限和上下文，再定默认 Bot 和模型网关凭据。
+    async fn prepare_install(
+        &self,
+        package: &PluginPackage,
+        enabled: &[EnabledPermission],
+        (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
+        undo: &mut Undo,
+        langs: &Languages,
+    ) -> Result<(InstallContext, Option<String>, Secrets, Option<ProxyAuth>), InstallError> {
+        let manifest = &package.manifest;
+        self.stage(&manifest.id, InstallStage::Preparing);
+        self.clear_leftovers(&manifest.id).await?;
+        let secret = uses_sso(manifest).then(random_token);
+        let secrets = self.prepare_secrets(manifest, undo)?;
+        let generated =
+            secrets::generated_values(manifest, &secrets, langs).map_err(InstallError::Storage)?;
+        let proxy =
+            ProxyAuth::resolve(manifest, &generated, langs).map_err(InstallError::Storage)?;
+        let effective = manifest.effective_permissions(&super::store::permission_set(enabled));
+        let mut ctx = self
+            .install_context(manifest, secret.as_deref(), generated, &effective, langs)
+            .await?;
+        ctx.gpu = gpu;
+        ctx.lan = lan;
+        ctx.settings = settings;
+        self.check_network_names(&ctx).await?;
+        let default_bot = self.provision_default_bot(package, undo).await?;
+        if let Some(models) = self.provision_models(package, langs).await? {
+            ctx.models = Some(models);
+            undo.models = Some(manifest.id.clone());
+        }
+        if let Some(bot) = &default_bot {
+            self.fill_default_bot_vars(manifest, bot, &mut ctx);
+        }
+        Ok((ctx, secret, secrets, proxy))
+    }
+
+    /// 网络建好才知道的变量：核心在网络里的地址、网关，以及宿主网络的服务要用的出口容器地址（ADR-0023）。
+    async fn fill_network_vars(
+        &self,
+        manifest: &Manifest,
+        plan: &Deployment,
+        ctx: &mut InstallContext,
+    ) -> Result<(), InstallError> {
+        ctx.core_address = self.core_address_var(manifest, &plan.network).await?;
+        ctx.extra_hosts = self.hosts_via_gateway(manifest, &plan.network).await?;
+        // 宿主网络的服务经出口容器出网，地址同样是网络和出口容器接上之后才知道的。
+        if let Some(egress) = ctx.egress.as_mut()
+            && host_networked(plan)
+        {
+            egress.host_proxy = self.egress_host_proxy(&plan.network).await?;
+        }
+        Ok(())
+    }
+
+    /// 中继套接字目录：`/run` 下由 root 创建（安装脚本会先建好），核心是 root 时在这里补建并交给 PUID。
+    pub(super) fn prepare_relay_dir(&self, langs: &Languages) -> Result<(), InstallError> {
+        if let Some(parent) = self.cfg.relay_dir.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                InstallError::Storage(l10n::text(
+                    langs,
+                    "plugin-install-relay-prepare-dir-failed",
+                    &[("error", e.to_string().into())],
+                ))
+            })?;
+        }
+        hostdir::ensure_owned_dir(&self.cfg.relay_dir, self.owner()).map_err(|e| {
+            InstallError::Storage(l10n::text(
+                langs,
+                "plugin-install-relay-prepare-dir-failed",
+                &[("error", e.to_string().into())],
+            ))
+        })
     }
 
     pub(super) async fn start_containers(
@@ -782,7 +855,7 @@ impl PluginManager {
             self.store.secrets().remove(id)?;
             report.data_removed = true;
         }
-        self.remove_hosted(id, langs)?;
+        self.remove_hosted(id, purge, langs)?;
         self.store.save_grants().clear(id)?;
         self.store.remove(id)?;
         let left = self.own_resources(id).await?;

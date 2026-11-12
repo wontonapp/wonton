@@ -1,54 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Wonton</string>
-    <!-- 「接続を維持」フォアグラウンドサービスの常設通知チャンネル名（ADR-0003）。システムの通知設定に表示される。 -->
-    <string name="keepalive_channel_name">接続を維持</string>
-    <!-- 「接続を維持」フォアグラウンドサービスの常設通知のタイトル。 -->
-    <string name="keepalive_notification_title">ホームサーバーとの接続を維持しています</string>
-    <!-- 「接続を維持」の常駐通知のタイトル：ホームサーバーにまだつながっていない、または再接続中。 -->
-    <string name="keepalive_notification_connecting">ホームサーバーに接続しています…</string>
-    <!-- 「接続を維持」の常駐通知のタイトル：ホームサーバーにつながらない。 -->
-    <string name="keepalive_notification_unreachable">ホームサーバーに接続できません</string>
-    <!-- 「ポートマッピング」フォアグラウンドサービスの常設通知チャンネル名（ADR-0072）。システムの通知設定に表示される。 -->
-    <string name="mapping_channel_name">ポートマッピング</string>
-    <!-- ポートマッピングの常設通知のタイトル：マッピングが有効なアプリが 1 つ。引数はアプリ名。 -->
-    <string name="mapping_notification_title">%1$sのポートをマッピング中</string>
-    <!-- ポートマッピングの常設通知のタイトル：マッピングが有効なアプリが複数。引数はアプリの数。 -->
-    <string name="mapping_notification_title_multiple">%1$d 個のアプリのポートをマッピング中</string>
-    <string name="push_in_room">%1$s：%2$s</string>
-    <string name="push_unknown_sender">だれか</string>
-    <string name="push_invite">あなたを招待しました</string>
-    <string name="push_unavailable">新着メッセージ（今は内容を読み込めません）</string>
-    <string name="push_hidden">新着メッセージ</string>
     <string name="startup_core_failed">Wontonを起動できませんでした：%1$s</string>
     <string name="startup_code_rejected">開発用に渡されたペアリングコードが拒否されました：%1$s</string>
-    <string name="push_no_permission">通知の権限がありません。Wontonが終了していたり画面がロックされていると、新着メッセージを表示できません</string>
-    <string name="push_no_distributor">UnifiedPushのディストリビューター（ntfyなど）がインストールされていません。Wontonが終了していたり画面がロックされていると、新着メッセージが届きません</string>
-    <string name="push_no_public_key">ディストリビューターがWeb Pushの公開鍵を返さないため、プッシュを暗号化できません</string>
-    <string name="push_registration_rejected">ディストリビューターが登録を拒否しました：%1$s</string>
-    <string name="push_unregistered">ディストリビューターがWontonの登録を解除しました</string>
-    <string name="push_contact_request">あなたのボットの連絡先になりたがっています</string>
-    <string name="push_contact_request_keeper">%1$s のボットが、あなたのボットの連絡先になりたがっています</string>
-    <!-- Lock screen placeholder for a hidden confirmation card notification. -->
-    <string name="push_hidden_confirmation">確認待ちのタスクがあります</string>
-    <!-- Lock screen placeholder for a hidden plugin notice. -->
-    <string name="push_hidden_notice">新しいお知らせ</string>
-    <!-- Notification action button: reply to the message right in the notification. -->
-    <string name="push_reply">返信</string>
-    <!-- Replaces the notification text while a notification action is being sent. -->
-    <string name="push_sending">送信中…</string>
-    <!-- Notification text when an action couldn't be sent. Argument: the reason. -->
-    <string name="push_action_failed">送信結果を確認できません：%1$s</string>
-    <!-- Notification action failed without a usable core error. Tap opens the original target. -->
-    <string name="push_action_unavailable">Wonton を開いて結果を確認し、もう一度試してください</string>
-    <!-- Sending exceeded the action deadline; delivery may already have reached the server. -->
-    <string name="push_action_timeout">結果が届いていません。Wonton で確認してから再試行してください</string>
-    <!-- Android stopped the action; never automatically send it again. -->
-    <string name="push_action_interrupted">送信が中断されました。Wonton を開いて結果を確認してください</string>
-    <!-- Name of the ongoing notification about tasks waiting for the owner's confirmation (ADR-0101). -->
-    <string name="push_tasks_channel">確認待ち</string>
-    <!-- Title of the ongoing notification when one card waits for the owner. Argument: the card title. -->
-    <string name="push_task_waiting_title">%1$s が確認を待っています</string>
-    <!-- Same with several waiting cards. Arguments: count, the earliest card's title. -->
-    <string name="push_task_waiting_title_many">%1$d 件のタスクが確認を待っています（1 件目：%2$s）</string>
 </resources>

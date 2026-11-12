@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the friends page and the settings row that opens it. -->
+    <string name="friends_title">Friends</string>
+    <!-- Row in the add-friend sheet that opens the scan page. -->
+    <string name="friends_scan_code">Scan their code</string>
+    <!-- Reject button on a received request. -->
+    <string name="friends_request_reject">Reject</string>
+    <!-- Row subtitle: how many plugins this friend can open. -->
+    <plurals name="friends_shared_plugins">
+        <item quantity="one">%1$d plugin shared</item>
+        <item quantity="other">%1$d plugins shared</item>
+    </plurals>
+    <string name="friends_block_user">Block invitations</string>
+    <!-- Confirmation dialog title for removing a friend. Argument: the friend. -->
+    <string name="friends_remove_title">Remove “%1$s”?</string>
+    <!-- Failure title when the server asks to wait but didn't say how long. -->
+    <string name="friends_error_rate_limited_later">Too many requests. Try again later.</string>
+    <!-- Label on an incoming chat invite from a bot that asks you to be its contact. -->
+    <string name="friends_request_bot_contact">Bot contact request</string>
+</resources>

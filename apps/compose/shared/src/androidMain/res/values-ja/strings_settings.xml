@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_profile">プロフィール</string>
+    <string name="settings_appearance">外観</string>
+    <string name="settings_nav_bar">ナビゲーションバー</string>
+    <string name="settings_default_agent">デフォルトのエージェント</string>
+    <string name="settings_about">Wontonについて</string>
+    <string name="settings_version">バージョン</string>
+    <string name="settings_toolbar">設定</string>
+    <string name="settings_toolbar_update">設定、新しいバージョンあり</string>
+    <string name="settings_show_setup_again">セットアップをもう一度見る</string>
+    <string name="settings_language">言語</string>
+    <string name="settings_language_system">システムのデフォルト</string>
+    <string name="shortcut_icon_missing">「%1$s」のアイコンを取得できませんでした。接続を確認して、Wontonをもう一度開いてください。</string>
+    <string name="shortcut_icon_convert_failed">「%1$s」のアイコンを変換できません。Wontonをもう一度開いてください。</string>
+    <string name="shortcut_new_chat">新しいチャット</string>
+    <string name="shortcut_agent_chat">ボットに質問</string>
+    <!-- 通知設定ページのスイッチ：オン = フォアグラウンドサービスがホームサーバーとのトンネルを維持し、新着メッセージはアプリがローカル通知で表示する。オフ = UnifiedPush で通知（ADR-0003）。 -->
+    <string name="notification_title">通知</string>
+    <string name="notification_system">システム通知</string>
+    <string name="notification_push">プッシュ通知</string>
+    <string name="notification_channel_message">チャットメッセージ</string>
+    <string name="notification_channel_confirmation">確認待ち</string>
+    <string name="notification_value_system_blocked">システム設定で許可されていません</string>
+    <string name="notification_channel_plugin">アプリからの通知</string>
+    <string name="notification_value_on">オン</string>
+    <string name="notification_value_off">オフ</string>
+    <string name="notification_value_registering">登録中</string>
+    <string name="notification_value_not_set">未設定</string>
+    <string name="notification_value_unavailable">受信できません</string>
+    <string name="notification_channel_created">作成済み</string>
+    <string name="notification_channel_not_created">未作成</string>
+    <string name="push_status_no_endpoint">未登録</string>
+    <string name="push_status_registering">登録中</string>
+    <string name="push_status_registered">登録済み</string>
+    <string name="push_status_unavailable">プッシュを受信できません。システムの通知とディストリビューターを確認してください</string>
+    <string name="push_status_failed_transport">登録に失敗しました。自宅サーバーに接続できたらもう一度お試しください</string>
+    <string name="push_status_failed_unauthorized">登録に失敗しました。ペアリングをやり直してください</string>
+    <!-- Push status line when registering failed because the home server refused it although this device is signed in. -->
+    <string name="push_status_failed_forbidden">登録に失敗しました。自宅サーバーに拒否されました</string>
+    <string name="push_status_failed_upstream">登録に失敗しました。自宅サーバーでエラーが発生しました</string>
+    <string name="push_status_failed_not_ready">登録に失敗しました。チャットの接続が整うまでお待ちください</string>
+    <string name="push_status_failed_invalid_input">登録に失敗しました。プッシュアドレスが正しくありません</string>
+    <!-- Lock screen content switch in the notification settings, per category (ADR-0101 §5). -->
+    <string name="notification_lock_screen">ロック画面に表示</string>
+</resources>

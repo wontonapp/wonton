@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="verification_incoming_message">このデバイスで「%1$s」を確認しますか？</string>
+    <string name="verification_starting">確認を準備しています…</string>
+    <string name="verification_fetching_keys">鍵を取得しています…</string>
+    <string name="verification_done_here">確認できました。以前のメッセージも読めます。</string>
+    <string name="verification_verify_with_other_device">別のデバイスで確認</string>
+    <string name="verification_cancelled_by_me">確認を取り消しました。</string>
+    <string name="verification_cancelled_by_other">もう一方のデバイスが確認を取り消しました。</string>
+    <string name="verification_cancelled_mismatch">両方のデバイスで絵文字が一致しなかったため、確認を取り消しました。</string>
+    <string name="verification_cancelled_timeout">もう一方のデバイスが時間内に応答しなかったため、確認を取り消しました。</string>
+    <string name="verification_cancelled_concurrent_request">同時に別の確認リクエストが届いたため、両方取り消しました。</string>
+    <string name="verification_cancelled_keys_missing">もう一方のデバイスから鍵をすべて受け取れなかったため、以前のメッセージは開けません。</string>
+    <string name="verification_cancelled_failed">問題が発生したため、確認が完了しませんでした。</string>
+    <string name="verification_cancelled_other">確認が完了しませんでした。</string>
+    <!-- Localized names of the 64 SAS verification emoji, by index in the Matrix spec table
+         (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0). -->
+    <string-array name="verification_emoji">
+        <item>犬</item>
+        <item>猫</item>
+        <item>ライオン</item>
+        <item>馬</item>
+        <item>ユニコーン</item>
+        <item>ブタ</item>
+        <item>ゾウ</item>
+        <item>うさぎ</item>
+        <item>パンダ</item>
+        <item>ニワトリ</item>
+        <item>ペンギン</item>
+        <item>亀</item>
+        <item>魚</item>
+        <item>たこ</item>
+        <item>ちょうちょ</item>
+        <item>花</item>
+        <item>木</item>
+        <item>サボテン</item>
+        <item>きのこ</item>
+        <item>地球</item>
+        <item>月</item>
+        <item>雲</item>
+        <item>炎</item>
+        <item>バナナ</item>
+        <item>リンゴ</item>
+        <item>いちご</item>
+        <item>とうもろこし</item>
+        <item>ピザ</item>
+        <item>ケーキ</item>
+        <item>ハート</item>
+        <item>スマイル</item>
+        <item>ロボット</item>
+        <item>帽子</item>
+        <item>めがね</item>
+        <item>スパナ</item>
+        <item>サンタ</item>
+        <item>いいね</item>
+        <item>傘</item>
+        <item>砂時計</item>
+        <item>時計</item>
+        <item>ギフト</item>
+        <item>電球</item>
+        <item>本</item>
+        <item>鉛筆</item>
+        <item>クリップ</item>
+        <item>はさみ</item>
+        <item>錠前</item>
+        <item>鍵</item>
+        <item>金槌</item>
+        <item>電話機</item>
+        <item>旗</item>
+        <item>電車</item>
+        <item>自転車</item>
+        <item>飛行機</item>
+        <item>ロケット</item>
+        <item>トロフィー</item>
+        <item>ボール</item>
+        <item>ギター</item>
+        <item>トランペット</item>
+        <item>ベル</item>
+        <item>いかり</item>
+        <item>ヘッドホン</item>
+        <item>フォルダー</item>
+        <item>ピン</item>
+    </string-array>
+</resources>

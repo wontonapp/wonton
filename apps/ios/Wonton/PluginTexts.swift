@@ -4,9 +4,9 @@ import WontonClient
 extension PluginTrust {
     var label: String {
         switch self {
-        case .official: return String(localized: .pluginTrustOfficial)
-        case .community, .local, .unknown: return String(localized: .pluginTrustUnreviewed)
-        case .system: return String(localized: .pluginTrustSystem)
+        case .official: return String(localized: .Plugin0.pluginTrustOfficial)
+        case .community, .local, .unknown: return String(localized: .Plugin3.pluginTrustUnreviewed)
+        case .system: return String(localized: .Plugin0.pluginTrustSystem)
         }
     }
 
@@ -22,17 +22,17 @@ extension PluginTrust {
 extension PluginOperation {
     var runningText: String {
         switch self {
-        case .install: return String(localized: .pluginTaskInstallRunning)
-        case .upgrade: return String(localized: .pluginTaskUpgradeRunning)
-        case .uninstall: return String(localized: .pluginTaskUninstallRunning)
+        case .install: return String(localized: .Plugin2.pluginTaskInstallRunning)
+        case .upgrade: return String(localized: .Plugin2.pluginTaskUpgradeRunning)
+        case .uninstall: return String(localized: .Plugin2.pluginTaskUninstallRunning)
         }
     }
 
     var doneText: String {
         switch self {
-        case .install: return String(localized: .pluginTaskInstallDone)
-        case .upgrade: return String(localized: .pluginTaskUpgradeDone)
-        case .uninstall: return String(localized: .pluginTaskUninstallDone)
+        case .install: return String(localized: .Plugin1.pluginTaskInstallDone)
+        case .upgrade: return String(localized: .Plugin0.pluginTaskUpgradeDone)
+        case .uninstall: return String(localized: .Plugin3.pluginTaskUninstallDone)
         }
     }
 }
@@ -107,9 +107,11 @@ struct PermissionRow: View {
     private var labels: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
             if let risk = line.riskLabel { Tag(text: risk, tint: colors.warning) }
-            if line.optional { Tag(text: String(localized: .pluginPermissionOptional), tint: colors.textSecondary) }
-            if line.added { Tag(text: String(localized: .pluginPermissionAdded), tint: colors.primary) }
-            if !line.supported { Tag(text: String(localized: .pluginPermissionUnsupported), tint: colors.danger) }
+            if line.optional { Tag(text: String(localized: .Plugin3.pluginPermissionOptional),
+                tint: colors.textSecondary) }
+            if line.added { Tag(text: String(localized: .Plugin3.pluginPermissionAdded), tint: colors.primary) }
+            if !line.supported { Tag(text: String(localized: .Plugin0.pluginPermissionUnsupported),
+                tint: colors.danger) }
         }
     }
 

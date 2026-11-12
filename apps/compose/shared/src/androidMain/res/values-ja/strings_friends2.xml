@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the friends page and the settings row that opens it. -->
+    <string name="friends_title">友だち</string>
+    <string name="friends_scan_code">相手のコードをスキャン</string>
+    <!-- Reject button on a received request. -->
+    <string name="friends_request_reject">拒否</string>
+    <!-- Row subtitle: how many plugins this friend can open. -->
+    <plurals name="friends_shared_plugins">
+        <item quantity="other">%1$d 個のプラグインを共有中</item>
+    </plurals>
+    <string name="friends_block_user">招待をブロック</string>
+    <!-- Confirmation dialog title for removing a friend. Argument: the friend. -->
+    <string name="friends_remove_title">「%1$s」を削除しますか？</string>
+    <!-- Failure title when the server asks to wait but didn't say how long. -->
+    <string name="friends_error_rate_limited_later">リクエストが多すぎます。後でもう一度お試しください。</string>
+    <string name="friends_request_bot_contact">ボットの連絡先リクエスト</string>
+</resources>

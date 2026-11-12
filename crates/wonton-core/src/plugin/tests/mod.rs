@@ -79,6 +79,7 @@ mod start_recreate;
 mod static_web;
 mod static_web_files;
 mod static_web_install;
+mod static_web_storage;
 mod stopped;
 mod stopped_docker;
 mod store;
@@ -176,6 +177,36 @@ fn render_err(yaml: &str) -> String {
         Ok(_) => panic!("渲染应失败"),
         Err(e) => e.to_string(),
     }
+}
+
+/// 应用按 Host 认请求时要写白名单，compose 插值取不出 `WONTON_APP_URL` 里的主机名。
+#[test]
+fn the_public_host_is_injected_next_to_the_url() {
+    let yaml = package(
+        "  web:\n    image: nginx\n    environment:\n      HOSTS: ${WONTON_APP_HOST}",
+        "  webui: {service: web, port: 80, sso: none}\n  permissions: []",
+    );
+    let pkg = PluginPackage::parse(&yaml, &langs()).unwrap();
+    let plan = dry_run(&pkg, &langs()).unwrap();
+    assert!(
+        env_of(&plan.containers[0]).contains(&"HOSTS=app-test.wonton.invalid".to_owned()),
+        "{:?}",
+        env_of(&plan.containers[0])
+    );
+}
+
+/// 只收 CIDR 的应用（如 navidrome 的白名单）直接用，不用拼 `${WONTON_CORE_ADDRESS}/32`。
+#[test]
+fn the_gateway_cidr_is_injected_for_proxy_login() {
+    let yaml = package(
+        "  web:\n    image: nginx\n    environment:\n      TRUST: '${WONTON_GATEWAY_CIDR}'",
+        "  webui: {service: web, port: 80, sso: proxy, proxy: {headers: {Remote-User: '{user}'}}}\n  \
+         permissions: []",
+    );
+    let pkg = PluginPackage::parse(&yaml, &langs()).unwrap();
+    let plan = dry_run(&pkg, &langs()).unwrap();
+    let expected = format!("TRUST={}/32", super::core_address::PLACEHOLDER);
+    assert!(env_of(&plan.containers[0]).contains(&expected));
 }
 
 #[test]

@@ -28,6 +28,9 @@ use bollard::models::ContainerCreateBody;
 /// 给有自己代理设置、不读 `HTTP_PROXY` 的程序用的插值变量。声明了 `network.egress` 时注入，没配代理时是空串。
 pub const URL_VAR: &str = "WONTON_PROXY_URL";
 
+/// 出口容器监听代理的端口。
+pub const PROXY_PORT: u16 = 3128;
+
 /// 插件经出口容器的这个地址出去。它不含宿主的地址，换代理不用改插件。
 pub const PROXY_URL: &str = "http://egress.wonton.internal:3128";
 
@@ -52,7 +55,11 @@ const NO_PROXY_PRIVATE: &str = ".local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,
 
 /// 主人配了代理时，注入给出网插件的内容。没配代理时没有它，插件和没有这个功能时一样直连。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EgressVars;
+pub struct EgressVars {
+    /// 宿主网络的服务用的出口地址，如 `http://10.213.0.125:3128`。宿主网络里解析不了 [`PROXY_URL`] 的别名，
+    /// 只能写出口容器在插件网络里的地址（固定，不随容器重建变）；插件没有宿主网络的服务时为空。
+    pub host_proxy: Option<String>,
+}
 
 impl EgressVars {
     fn no_proxy<'a>(&self, services: impl Iterator<Item = &'a str>) -> String {
@@ -69,6 +76,7 @@ impl EgressVars {
         &self,
         body: &mut ContainerCreateBody,
         services: impl Iterator<Item = &'a str>,
+        url: &str,
     ) {
         let env = body.env.get_or_insert_with(Vec::new);
         let written: BTreeSet<String> = env
@@ -79,7 +87,7 @@ impl EgressVars {
         let no_proxy = self.no_proxy(services);
         let pairs = PROXY_VARS
             .iter()
-            .map(|name| (*name, PROXY_URL))
+            .map(|name| (*name, url))
             .chain(NO_PROXY_VARS.iter().map(|name| (*name, no_proxy.as_str())))
             .chain([NODE_SWITCH]);
         for (name, value) in pairs {
@@ -134,7 +142,7 @@ mod tests {
     use super::*;
 
     fn vars() -> EgressVars {
-        EgressVars
+        EgressVars { host_proxy: None }
     }
 
     fn injected(env: &[&str]) -> Vec<String> {
@@ -142,7 +150,7 @@ mod tests {
             env: Some(env.iter().map(|s| (*s).to_owned()).collect()),
             ..Default::default()
         };
-        vars().inject(&mut body, ["web", "db"].into_iter());
+        vars().inject(&mut body, ["web", "db"].into_iter(), super::PROXY_URL);
         body.env.unwrap()
     }
 

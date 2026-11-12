@@ -130,6 +130,8 @@ class InstallTest(unittest.TestCase):
             "TZ": "UTC",
             "WONTON_INSTALL_DIR": str(self.install_dir),
             "WONTON_DATA_DIR": str(self.temp / "data"),
+            # 测试不以 root 跑：中继目录的默认值 `/run/wonton/relay` 建不出来。
+            "WONTON_RELAY_DIR": str(self.temp / "relay"),
             "FAKE_DOCKER_STATE": str(self.state),
             **extra,
         }

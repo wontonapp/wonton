@@ -5,8 +5,8 @@ struct SharedAppsSection: View {
     let model: PluginsModel
 
     var body: some View {
-        DetailSection(title: String(localized: .shareReceived)) {
-            Button(.shareRefresh) { model.send(.refreshSharedApps(ownerUserId: nil)) }
+        DetailSection(title: String(localized: .Share1.shareReceived)) {
+            Button(.Share1.shareRefresh) { model.send(.refreshSharedApps(ownerUserId: nil)) }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
             if model.viewModel.sharedApps == nil { ProgressView() }
             ForEach(model.viewModel.sharedApps?.sources ?? [], id: \.ownerUserId) { source in
@@ -16,7 +16,7 @@ struct SharedAppsSection: View {
                     if let name = source.ownerDisplayName, !name.isEmpty {
                         Text(source.ownerUserId).wontonText(WontonTheme.typography.caption)
                     }
-                    Button(.shareRefresh) { model.send(.refreshSharedApps(ownerUserId: source.ownerUserId)) }
+                    Button(.Share1.shareRefresh) { model.send(.refreshSharedApps(ownerUserId: source.ownerUserId)) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                     sourceState(source)
                     ForEach(source.apps, id: \.plugin.pluginId) { row in
@@ -38,7 +38,7 @@ struct SharedAppsSection: View {
         case let .failed(problem):
             ProblemRow(problem: problem.problem) { model.send(.refreshSharedApps(ownerUserId: source.ownerUserId)) }
         case .other:
-            ProblemRow(problem: Problem(title: String(localized: .shareProblemOther))) {
+            ProblemRow(problem: Problem(title: String(localized: .Share0.shareProblemOther))) {
                 model.send(.refreshSharedApps(ownerUserId: source.ownerUserId))
             }
         }
@@ -49,13 +49,13 @@ extension ShareProblem {
     var problem: Problem {
         let title: LocalizedStringResource
         switch reason {
-        case .unreachable: title = .shareProblemUnreachable
-        case .identity: title = .shareProblemIdentity
-        case .required: title = .shareProblemRequired
-        case .revoked: title = .shareProblemRevoked
-        case .expired: title = .shareProblemExpired
-        case .pluginNotRunning: title = .shareProblemPlugin
-        case .other: title = .shareProblemOther
+        case .unreachable: title = .Share2.shareProblemUnreachable
+        case .identity: title = .Share0.shareProblemIdentity
+        case .required: title = .Share0.shareProblemRequired
+        case .revoked: title = .Share0.shareProblemRevoked
+        case .expired: title = .Share0.shareProblemExpired
+        case .pluginNotRunning: title = .Share1.shareProblemPlugin
+        case .other: title = .Share0.shareProblemOther
         }
         var details: [String] = []
         if let identity { details.append(identity.shareDetail) }
@@ -67,11 +67,11 @@ extension ShareProblem {
 private extension ShareIdentityFailure {
     var shareDetail: String {
         switch self {
-        case .invalidToken: String(localized: .shareIdentityInvalid)
-        case .discoveryFailed: String(localized: .shareIdentityDiscovery)
-        case .userInfoFailed: String(localized: .shareIdentityUserinfo)
-        case .serverNameMismatch: String(localized: .shareIdentityMismatch)
-        case .other: String(localized: .shareIdentityOther)
+        case .invalidToken: String(localized: .Share1.shareIdentityInvalid)
+        case .discoveryFailed: String(localized: .Share1.shareIdentityDiscovery)
+        case .userInfoFailed: String(localized: .Share0.shareIdentityUserinfo)
+        case .serverNameMismatch: String(localized: .Share0.shareIdentityMismatch)
+        case .other: String(localized: .Share1.shareIdentityOther)
         }
     }
 }
@@ -85,10 +85,10 @@ extension PluginsViewModel {
     func sharedProblem(for tab: TabRef) -> Problem? {
         guard case let .sharedApp(_, pluginId) = tab else { return nil }
         guard let source = sharedSource(for: tab) else {
-            return Problem(title: String(localized: .shareProblemUnreachable))
+            return Problem(title: String(localized: .Share2.shareProblemUnreachable))
         }
         if case let .failed(problem) = source.state { return problem.problem }
-        if case .other = source.state { return Problem(title: String(localized: .shareProblemOther)) }
+        if case .other = source.state { return Problem(title: String(localized: .Share0.shareProblemOther)) }
         return source.apps.first { $0.plugin.pluginId == pluginId }?.problem?.problem
     }
 }

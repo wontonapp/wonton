@@ -1,54 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">雲吞</string>
-    <!-- 「保持連線」前台服務的常駐通知渠道名（ADR-0003），顯示在系統的通知設定裡。 -->
-    <string name="keepalive_channel_name">保持連線</string>
-    <!-- 「保持連線」前台服務的常駐通知標題。 -->
-    <string name="keepalive_notification_title">與家用伺服器保持連線</string>
-    <!-- 「保持連線」常駐通知的標題：正在連線到家用伺服器（還沒連上或斷開後在重連）。 -->
-    <string name="keepalive_notification_connecting">正在連線到家用伺服器…</string>
-    <!-- 「保持連線」常駐通知的標題：連不上家用伺服器。 -->
-    <string name="keepalive_notification_unreachable">連不上家用伺服器</string>
-    <!-- 「連接埠映射」前台服務的常駐通知渠道名（ADR-0072），顯示在系統的通知設定裡。 -->
-    <string name="mapping_channel_name">連接埠映射</string>
-    <!-- 連接埠映射的常駐通知標題：只有一個應用程式開著映射。參數是應用程式名稱。 -->
-    <string name="mapping_notification_title">正在映射 %1$s 的連接埠</string>
-    <!-- 連接埠映射的常駐通知標題：不止一個應用程式開著映射。參數是應用程式個數。 -->
-    <string name="mapping_notification_title_multiple">正在映射 %1$d 個應用程式的連接埠</string>
-    <string name="push_in_room">%1$s：%2$s</string>
-    <string name="push_unknown_sender">有人</string>
-    <string name="push_invite">邀請你加入</string>
-    <string name="push_unavailable">新訊息（暫時無法載入內容）</string>
-    <string name="push_hidden">新訊息</string>
     <string name="startup_core_failed">雲吞啟動失敗：%1$s</string>
     <string name="startup_code_rejected">開發時傳入的配對碼被拒絕：%1$s</string>
-    <string name="push_no_permission">沒有通知權限：雲吞被關閉或螢幕鎖定時彈不出新訊息</string>
-    <string name="push_no_distributor">沒有安裝 UnifiedPush 分發器（例如 ntfy）：雲吞被關閉或螢幕鎖定時收不到新訊息</string>
-    <string name="push_no_public_key">分發器沒有提供 Web Push 公鑰，推送內容無法加密</string>
-    <string name="push_registration_rejected">分發器拒絕了註冊：%1$s</string>
-    <string name="push_unregistered">分發器註銷了雲吞</string>
-    <string name="push_contact_request">想加你的 Bot 為聯絡人</string>
-    <string name="push_contact_request_keeper">%1$s 的 Bot 想加你的 Bot 為聯絡人</string>
-    <!-- Lock screen placeholder for a hidden confirmation card notification. -->
-    <string name="push_hidden_confirmation">有任務等你確認</string>
-    <!-- Lock screen placeholder for a hidden plugin notice. -->
-    <string name="push_hidden_notice">有新提醒</string>
-    <!-- Notification action button: reply to the message right in the notification. -->
-    <string name="push_reply">回覆</string>
-    <!-- Replaces the notification text while a notification action is being sent. -->
-    <string name="push_sending">正在傳送…</string>
-    <!-- Notification text when an action couldn't be sent. Argument: the reason. -->
-    <string name="push_action_failed">傳送結果未確認：%1$s</string>
-    <!-- Notification action failed without a usable core error. Tap opens the original target. -->
-    <string name="push_action_unavailable">打開雲吞查看結果，再試一次</string>
-    <!-- Sending exceeded the action deadline; delivery may already have reached the server. -->
-    <string name="push_action_timeout">還沒收到結果，打開雲吞確認後再試</string>
-    <!-- Android stopped the action; never automatically send it again. -->
-    <string name="push_action_interrupted">傳送中斷了，打開雲吞查看結果</string>
-    <!-- Name of the ongoing notification about tasks waiting for the owner's confirmation (ADR-0101). -->
-    <string name="push_tasks_channel">等你確認</string>
-    <!-- Title of the ongoing notification when one card waits for the owner. Argument: the card title. -->
-    <string name="push_task_waiting_title">%1$s 在等你確認</string>
-    <!-- Same with several waiting cards. Arguments: count, the earliest card's title. -->
-    <string name="push_task_waiting_title_many">%1$d 個任務在等你確認，第一個是 %2$s</string>
 </resources>

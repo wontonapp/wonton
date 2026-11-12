@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
+    <string name="connection_unpaired">未ペアリング</string>
+    <string name="connection_connected">接続済み</string>
+    <string name="connection_connecting">接続しています…</string>
+    <string name="connection_retrying">自宅サーバーに接続しています…</string>
+    <string name="connection_device_rejected">このスマートフォンは自宅サーバーに認識されていません</string>
+    <string name="connection_version_mismatch">Wontonまたは自宅サーバーのアップデートが必要です</string>
+    <string name="connection_details_title">詳細</string>
+    <string name="connection_path">経路</string>
+    <string name="connection_disconnects">切断回数</string>
+    <string name="connection_last_connected">最後に接続した日時</string>
+    <string name="connection_addresses_stale">サーバーのアドレスが古い可能性があります。自動で取り直します</string>
+</resources>

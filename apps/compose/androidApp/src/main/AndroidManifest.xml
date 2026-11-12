@@ -23,6 +23,9 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <!-- 插件网页（通话等）要麦克风；和相机一样没有也不挡安装，网页拿到拒绝。 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- WebView 开麦克风还要这条（安装时自动给，不弹框）；缺了它，系统权限给了网页也只拿到
+         NotReadableError（Chromium 日志：Requires MODIFY_AUDIO_SETTINGS and RECORD_AUDIO）。 -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <!-- M0 的网关和插件网页只有 http（HTTPS 方案在 M1 定），WebView 要放开明文。 -->

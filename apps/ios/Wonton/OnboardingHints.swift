@@ -12,7 +12,7 @@ struct OnboardingTipView: View {
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
                 .frame(maxWidth: .infinity, alignment: .leading)
-            WontonIconButton(icon: .close, label: String(localized: .commonClose), action: dismiss)
+            WontonIconButton(icon: .close, label: String(localized: .Common.commonClose), action: dismiss)
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
     }
@@ -46,13 +46,13 @@ struct ReplacedAgentOffer: ViewModifier {
         let agent = offered
         content
             .wontonDialog(
-                String(localized: .onboardingReplacedAgentTitle(offered?.title ?? "")),
+                String(localized: .Onboarding3.onboardingReplacedAgentTitle(offered?.title ?? "")),
                 isPresented: Binding(get: { offered != nil }, set: { if !$0 { offered = nil } }),
                 actions: [
-                    WontonDialogAction(title: String(localized: .onboardingUninstall)) {
+                    WontonDialogAction(title: String(localized: .Onboarding4.onboardingUninstall)) {
                         answer(agent, uninstall: true)
                     },
-                    WontonDialogAction(title: String(localized: .onboardingKeep)) {
+                    WontonDialogAction(title: String(localized: .Onboarding5.onboardingKeep)) {
                         answer(agent, uninstall: false)
                     }
                 ],

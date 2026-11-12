@@ -412,4 +412,4 @@ fn note_ended(
 
 #[cfg(test)]
 #[path = "pending_tests.rs"]
-mod tests;
+mod pending_tests;

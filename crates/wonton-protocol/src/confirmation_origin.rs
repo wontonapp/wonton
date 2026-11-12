@@ -21,7 +21,7 @@ pub const ORIGIN_ROOM_HEADER: &str = "wonton-origin-room";
 pub const ORIGIN_THREAD_HEADER: &str = "wonton-origin-thread";
 
 /// `GET <核心地址>/_wonton/api/confirmations?after=<revision>`：[`ConfirmationList`](crate::ConfirmationList)。
-/// 带 `after` 时没有比它新的就挂住，最多 [`CONFIRMATIONS_WAIT_SECS`] 秒后返回当前的；不带时立即返回。
+/// 带 `after` 时，列表里的卡片或联系人请求没有比它新的就挂住，最多 [`CONFIRMATIONS_WAIT_SECS`] 秒后返回当前的；不带时立即返回。
 pub const CONFIRMATIONS_PATH: &str = "/_wonton/api/confirmations";
 
 /// [`CONFIRMATIONS_PATH`] 的长轮询最多挂住多久。客户端的超时要比它长。

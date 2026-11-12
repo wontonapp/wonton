@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 「ポートマッピング」フォアグラウンドサービスの常設通知チャンネル名（ADR-0072）。システムの通知設定に表示される。 -->
+    <string name="mapping_channel_name">ポートマッピング</string>
+    <!-- ポートマッピングの常設通知のタイトル：マッピングが有効なアプリが 1 つ。引数はアプリ名。 -->
+    <string name="mapping_notification_title">%1$sのポートをマッピング中</string>
+    <!-- ポートマッピングの常設通知のタイトル：マッピングが有効なアプリが複数。引数はアプリの数。 -->
+    <string name="mapping_notification_title_multiple">%1$d 個のアプリのポートをマッピング中</string>
+</resources>

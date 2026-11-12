@@ -297,17 +297,17 @@ enum AvatarTranscodeError: Error {
     var problem: Problem {
         switch self {
         case .unreadable:
-            Problem(title: String(localized: .botProfileProblemMediaUnreadable))
+            Problem(title: String(localized: .BotProfile0.botProfileProblemMediaUnreadable))
         case .tooLarge:
-            Problem(title: String(localized: .botProfileProblemMediaTooLarge))
+            Problem(title: String(localized: .BotProfile1.botProfileProblemMediaTooLarge))
         case .tooBig:
-            Problem(title: String(localized: .botProfileProblemMediaTooBig))
+            Problem(title: String(localized: .BotProfile1.botProfileProblemMediaTooBig))
         case .notSquare:
-            Problem(title: String(localized: .botProfileProblemMediaNotSquare))
+            Problem(title: String(localized: .BotProfile0.botProfileProblemMediaNotSquare))
         case let .needsVideo(maxDurationMs):
             Problem(
-                title: String(localized: .botProfileProblemMediaTooLarge),
-                nextStep: String(localized: .botProfilePickUseVideo(
+                title: String(localized: .BotProfile1.botProfileProblemMediaTooLarge),
+                nextStep: String(localized: .BotProfile1.botProfilePickUseVideo(
                     Duration.seconds(Int(maxDurationMs / 1000))
                         .formatted(.units(allowed: [.seconds], width: .wide))
                 ))

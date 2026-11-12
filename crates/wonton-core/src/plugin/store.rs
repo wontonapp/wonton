@@ -91,6 +91,9 @@ pub struct InstalledRecord {
     /// 主人开放给家人了（ADR-0045）：家人的设备能打开它的网页，家人的插件列表里有它。默认关。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub family: bool,
+    /// 入口上的标签（`<标签>.<后缀>`），装的时候定下，升级和重启不变。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_label: Option<String>,
     /// 主人设置的普通值（ADR-0077）：属性名 → JSON。明文可读，不是凭据。
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub settings: std::collections::BTreeMap<String, serde_json::Value>,
@@ -605,6 +608,7 @@ mod tests {
             limits: Default::default(),
             oidc_client_secret: Some("s3cret".into()),
             installed_at: 1,
+            entry_label: None,
             origin: None,
             written_by: None,
             ask_every_update: false,

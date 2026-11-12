@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="problem_apps_not_ready">アプリのリストの準備ができていません。しばらくしてからもう一度お試しください。</string>
+    <string name="problem_no_default_agent">デフォルトのエージェントがありません。セットアップで選択してインストールしてください。</string>
+    <!-- Problem title: the app is busy with another task. -->
+    <string name="problem_plugin_conflict_title">このアプリは処理中です</string>
+    <!-- Problem title: the device the app should run on isn't available. -->
+    <string name="problem_plugin_device_unavailable_title">選択したデバイスを利用できません</string>
+    <!-- Problem title: the home server can't read this app's install record. -->
+    <string name="problem_plugin_record_unusable_title">アプリのインストール記録が壊れています</string>
+    <!-- Problem title: the app's information can't be fetched from its source right now. -->
+    <string name="problem_plugin_source_unavailable_title">アプリの情報を今は取得できません</string>
+    <!-- Shown after a few seconds under a spinner: the network is slow, loading still goes on. -->
+    <string name="problem_slow_loading">読み込み中です。ネットワークが遅いと時間がかかります</string>
+    <!-- Next step under the storage problem. Also used when settings couldn't be saved. -->
+    <string name="problem_storage_next_step">ストレージを確認して、もう一度お試しください。</string>
+    <!-- Problem title: this device failed to read or write its own data. -->
+    <string name="problem_storage_title">このデバイスでデータの読み書きに失敗しました</string>
+    <!-- Problem title: the store's index can't be read. -->
+    <string name="problem_store_invalid_index_title">アプリの一覧を読み込めません</string>
+    <!-- Problem title: the app's source itself reported a problem. -->
+    <string name="problem_store_upstream_title">アプリの提供元で問題が発生しました</string>
+</resources>

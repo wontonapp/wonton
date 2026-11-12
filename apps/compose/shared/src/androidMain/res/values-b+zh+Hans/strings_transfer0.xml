@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Icon button on a downloaded transfer: opens the dialog asking what to clean up. -->
+    <string name="transfer_clean_up">清理</string>
+    <!-- Destructive action in the cleanup dialog: remove the record and also delete the downloaded file on this phone. -->
+    <string name="transfer_cleanup_delete_file">连手机上的文件一起删</string>
+    <!-- Action in the cleanup dialog: remove the transfer record, keep the downloaded file. -->
+    <string name="transfer_cleanup_record_only">只清记录</string>
+    <!-- Icon button on a transfer: remove it from the strip without deleting anything. -->
+    <string name="transfer_clear">清除</string>
+    <!-- Line under an upload: it finished, but the link never reached the room. Argument: the home server's reason, shown as is. -->
+    <string name="transfer_link_not_sent">已传完，链接没发出：%1$s</string>
+    <!-- Icon button on a downloaded transfer: open the file. -->
+    <string name="transfer_open">打开</string>
+    <!-- Line under a paused transfer without a reason. Argument: the transferred size, already formatted as a byte count. -->
+    <string name="transfer_paused_waiting">等连接恢复后接着传，已传 %1$s</string>
+    <!-- Text button on a finished upload whose link wasn't sent: send the link again. -->
+    <string name="transfer_resend_link">重发链接</string>
+    <!-- Line under a transfer that lives in another room: that room isn't in the home server's room list. -->
+    <string name="transfer_room_missing">目标房间不在这台服务器的列表里</string>
+    <!-- Icon button on a downloaded transfer: share the file. -->
+    <string name="transfer_share">分享</string>
+    <string name="transfer_upload">上传</string>
+    <string name="transfer_download">下载</string>
+</resources>

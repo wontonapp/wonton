@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Icon button that dismisses a tip or a dialog without doing anything. -->
+    <!-- Accessibility label for a Bot's avatar: the Bot's name, then what it is doing right now. -->
+    <string name="bot_avatar_label">%1$s, %2$s</string>
+    <!-- Button under the large avatar on the Bot profile: pick a new profile picture. -->
+    <string name="bot_avatar_choose">Choose photo</string>
+    <!-- Sheet action on a status avatar cell: pick a new picture or video. -->
+    <string name="bot_avatar_choose_media">Choose photo or video</string>
+    <!-- Text inside an empty status avatar cell; tapping it picks a picture or video. -->
+    <string name="bot_avatar_add">Add</string>
+    <!-- Sheet action that removes the Bot's static avatar or one status avatar. -->
+    <string name="bot_avatar_remove">Remove</string>
+    <!-- Section on an installed Agent app's page: the Bot's name, avatar and status avatars. -->
+    <string name="bot_profile_title">Profile</string>
+    <!-- Label of the field for editing the Bot's name. -->
+    <string name="bot_name_title">Name</string>
+    <!-- The Bot name was empty. -->
+    <string name="bot_name_empty">The name can\'t be empty</string>
+    <!-- The Bot name was longer than the limit; the number isn\'t shown. -->
+    <string name="bot_name_too_long">This name is too long</string>
+    <!-- The Bot name contains line breaks or control characters. -->
+    <string name="bot_name_control">This name has characters that can\'t be used</string>
+    <!-- The Bot name collides with Wonton\'s or the owner\'s name, so Bots can\'t use it. -->
+    <string name="bot_name_reserved">Bots can\'t be named Wonton or after you</string>
+    <!-- The Bot name failed validation for another reason. -->
+    <string name="bot_name_other">This name won\'t work</string>
+    <!-- Saving the Bot profile failed because the home server couldn\'t be reached. -->
+    <string name="bot_problem_transport">Can\'t reach your home server</string>
+    <!-- Saving failed because the app isn\'t installed, has no Bot, or its Matrix login isn\'t ready. -->
+    <string name="bot_problem_not_ready">The app isn\'t ready yet</string>
+    <!-- Saving failed because the home server or Matrix reported an error. -->
+    <string name="bot_problem_upstream">Something went wrong on your home server</string>
+    <string name="bot_problem_owner_only">Only the home owner can change a Bot\'s profile</string>
+    <!-- Saving the Bot profile failed for another reason. -->
+    <string name="bot_problem_other">Couldn\'t save the profile</string>
+    <!-- The picked avatar file is in a format the home server doesn\'t accept. -->
+    <string name="bot_media_format">This file isn\'t a supported format</string>
+    <!-- The picked avatar file exceeds the size limit; the number isn\'t shown. -->
+    <string name="bot_media_too_large">This file is too large</string>
+    <!-- The picked avatar image is larger in pixels than the home server accepts. -->
+    <string name="bot_media_too_big">This image is too large</string>
+    <!-- The picked avatar image isn\'t square. -->
+    <string name="bot_media_not_square">This image isn\'t square</string>
+    <!-- The picked avatar animation or video exceeds the duration limit; the number isn\'t shown. -->
+    <string name="bot_media_too_long">This animation or video is too long</string>
+    <!-- The home server couldn\'t read the picked avatar file. -->
+    <string name="bot_media_unreadable">This file can\'t be read</string>
+    <!-- The picked file failed for another reason. -->
+    <string name="bot_media_other">This file can\'t be used as an avatar</string>
+    <!-- An animated GIF or WebP was too large to send as-is; the Bot profile accepts videos instead. -->
+    <string name="bot_media_use_video">This animated image is too large. Use a short video instead.</string>
+    <!-- The four states of a Bot, shown as status avatar grid labels and read out for the avatar. -->
+    <string name="bot_state_idle">Idle</string>
+    <!-- Status: the Bot has model requests, tool calls, or is typing. -->
+    <string name="bot_state_working">Working</string>
+    <!-- Status: a confirmation card from the Bot is waiting for the owner. -->
+    <string name="bot_state_waiting">Waiting for you</string>
+    <!-- Status: the app isn\'t running, or is installing, updating or starting. -->
+    <string name="bot_state_offline">Offline</string>
+    <!-- Marker between read and new messages in the timeline. No arguments. -->
+    <string name="timeline_new_messages_below">New messages below</string>
+    <!-- Accessibility label of the scroll-to-bottom button. -->
+    <string name="room_scroll_to_bottom">Back to bottom</string>
+    <!-- Accessibility label of the scroll-to-bottom button with new messages. Argument: the new message count. -->
+    <string name="room_scroll_to_bottom_count">Back to bottom, %1$d new messages</string>
+    <!-- Marker at the start of the timeline. No arguments. -->
+    <string name="timeline_start">Start of the chat</string>
+    <!-- Footer label of an edited message. No arguments. -->
+    <string name="timeline_edited">Edited</string>
+    <!-- Footer label while a message is sending. No arguments. -->
+    <string name="timeline_sending">Sending</string>
+    <!-- Footer label of a message the others have read. No arguments. -->
+    <string name="timeline_read">Read</string>
+    <!-- Footer label of a message that failed but retries by itself. No arguments. -->
+    <string name="timeline_send_failed_retrying">Not sent, retrying</string>
+    <!-- Footer label of a message that failed for good. Argument: the core's reason. -->
+    <string name="timeline_send_failed">Not sent: %1$s</string>
+    <!-- Action that sends a failed message again. No arguments; short label. -->
+    <string name="timeline_resend">Send again</string>
+    <!-- Body placeholder of a message this device can't decrypt. No arguments. -->
+    <string name="timeline_undecryptable">Can\'t decrypt: this device doesn\'t have the key for this message</string>
+    <string name="timeline_undecryptable_notice">Earlier encrypted messages can\'t be read on this device.</string>
+    <!-- Body placeholder of a redacted message. No arguments. -->
+    <string name="timeline_redacted">Message deleted</string>
+    <!-- Body placeholder of a message type that can't be shown. Argument: the event type, like m.sticker. -->
+    <string name="timeline_unsupported">This message type isn\'t supported yet (%1$s)</string>
+    <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
+    <string name="timeline_profile_rename">%1$s is now named %2$s</string>
+    <!-- Timeline note: someone changed their avatar. Argument: their name. -->
+    <string name="timeline_profile_avatar">%1$s changed their avatar</string>
+    <!-- Status line on an approval request card: the request expired, so nothing was carried out. -->
+    <string name="confirmation_card_expired">Expired, not carried out</string>
+    <!-- Status line on an approval request card: the action ran but failed. Argument: the home server's result message, shown as is. -->
+    <string name="confirmation_card_failed_result">Didn\'t go through: %1$s</string>
+    <!-- Status line on an approval request card: it was denied, so nothing was carried out. -->
+    <string name="confirmation_card_rejected">Denied, not carried out</string>
+    <!-- Status line on an approval request card while the action is being carried out, next to a spinner. -->
+    <string name="confirmation_card_running">Running…</string>
+    <!-- Button on an approval request card: stop the approval window during which further actions run without asking. -->
+    <string name="confirmation_card_stop_window">Stop</string>
+    <!-- Status line on an approval request card: the action ran, but whether it worked is unknown. Argument: the home server's result message, shown as is. -->
+    <string name="confirmation_card_uncertain_result">It\'s unclear whether it worked: %1$s</string>
+    <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
+    <string name="confirmation_card_window_until">Approved until %1$s</string>
+    <!-- Content description of a state picture in the bot profile. Argument: the state name. -->
+    <string name="bot_avatar_pick_state">Change the %1$s picture</string>
+    <!-- Footer of a message still uploading its attachments. Argument: percent done, already formatted. -->
+    <string name="timeline_sending_progress">Sending %1$s</string>
+    <!-- Menu item on a message that is still uploading: drop it and stop the upload. -->
+    <string name="timeline_cancel_send">Cancel Sending</string>
+</resources>
