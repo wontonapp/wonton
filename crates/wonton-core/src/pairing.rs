@@ -176,7 +176,9 @@ impl PairHandler for Pairing {
         if let Some(used_by) = entry.used_by {
             // 同一台设备重发、而且它还在登记表里：第一次已经配上，回应可能只是没赶上（慢中继），幂等地再回一次。
             // 其他设备拿用过的码来、或者用过以后这台设备又被吊销了，都是 `used`。
-            if used_by == device && self.devices.contains(&device) {
+            let registered = self.devices.contains(&device);
+            tracing::debug!(%device, %used_by, registered, "pairing code already used");
+            if used_by == device && registered {
                 return PairResponse::Paired;
             }
             return rejected(

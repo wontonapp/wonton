@@ -1,15 +1,20 @@
 //! 设备一侧：用配对码连上服务端，出示密钥，取回服务端的回应。
 
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use iroh::Endpoint;
 use iroh::endpoint::{ConnectError, ConnectingError, ConnectionError, RecvStream, VarInt};
+use tracing::debug;
 
 use super::{MAX_MESSAGE_LEN, PAIR_ALPN, PairRequest, PairResponse, PairingCode};
 use crate::error::{TunnelError, from_connect_error, from_read_error, from_write_error};
 
-/// 一段交换的时限：建连（包括打洞或经中继）到读完回应。和隧道的请求一样，超时按传输不可用处理。
+/// 每一小段的时限：建连（包括打洞或经中继）、开一条流、把请求写完、等服务端回应，各算各的。
+///
+/// 以前整段交换只有一个时限：慢链路上握手和开流就吃掉大半，请求交出去了、回应还在路上就到点，服务端已经登记、
+/// 设备这边报失败，留成一个半配对。分开以后一段慢不会占掉另一段的预算。
 pub const PAIR_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// TLS 的 `no_application_protocol` 告警：服务端不接受 [`PAIR_ALPN`]，两端版本不配。
@@ -28,10 +33,12 @@ pub async fn pair(
 ///
 /// `on_request_sent` 在配对请求整段交出（服务端可能已经开始按它登记）后调用一次，两段交换合计只调一次。
 ///
-/// 请求整个写完还是没等到回应时（服务端可能已经登记了这台设备，只是回应在慢中继上没赶上），用同样长的
-/// 另一段再确认一次：服务端对还在登记表里的同一台设备、同一个码重发时幂等地回 `Paired`。设备已被吊销、
-/// 或者码本来就被别的设备用掉，确认拿到的是 `used`，照样按拒绝报。连建连都没走完的超时不确认：
-/// 连不上的服务端再问一次也一样。
+/// 开流之后的任何一段超时、或者连接先被对端关掉，都再确认一次：服务端对还在登记表里的同一台设备、同一个码
+/// 重发时幂等地回 `Paired`。确认也超时才报失败，拿同一个码手动重试还能配上。
+///
+/// 建连那一段超时**不**确认，直接报连不上：没有 0-RTT，握手在客户端没完成之前请求一个字节都发不出去，服务端
+/// 不可能已经登记；再问一次只会让死服务端的失败从 30 秒拖到 60 秒。开流以后请求就可能已经在路上，那时超时或
+/// 连接先关都分不清，一律再问一次。以前只在请求写完之后才确认，开流那一段超时就漏掉了。
 pub async fn pair_with_timeout(
     endpoint: &Endpoint,
     code: &PairingCode,
@@ -40,24 +47,74 @@ pub async fn pair_with_timeout(
     on_request_sent: impl Fn() + Send + Sync,
 ) -> Result<PairResponse, TunnelError> {
     let written = AtomicBool::new(false);
-    let first = tokio::time::timeout(
+    match exchange(
+        endpoint,
+        code,
+        device_name,
         timeout,
-        exchange(endpoint, code, device_name, &written, &on_request_sent),
-    )
-    .await;
-    match first {
-        Ok(result) => return result,
-        Err(_) if !written.load(Ordering::Relaxed) => return Err(did_not_finish(timeout)),
-        Err(_) => {}
-    }
-    match tokio::time::timeout(
-        timeout,
-        exchange(endpoint, code, device_name, &written, &on_request_sent),
+        &written,
+        &on_request_sent,
     )
     .await
     {
-        Ok(result) => result,
-        Err(_) => Err(did_not_finish(timeout)),
+        Ok(result) => return Ok(result),
+        Err(Stop::Failed(error)) => return Err(error),
+        // 握手都没完成：请求一个字节都没出去，服务端不可能登记，不再确认。
+        Err(Stop::TimedOut("connect")) => {
+            debug!("pairing could not connect in time");
+            return Err(did_not_finish(timeout));
+        }
+        Err(Stop::TimedOut(stage)) => {
+            debug!(stage, "pairing timed out, confirming with the same code");
+        }
+        Err(Stop::Unclear(error)) => {
+            debug!(%error, "pairing lost the connection before the reply, confirming again");
+        }
+    }
+    match exchange(
+        endpoint,
+        code,
+        device_name,
+        timeout,
+        &written,
+        &on_request_sent,
+    )
+    .await
+    {
+        Ok(result) => Ok(result),
+        Err(Stop::Failed(error)) => Err(error),
+        Err(Stop::TimedOut(stage)) => {
+            debug!(stage, "the pairing confirmation timed out");
+            Err(did_not_finish(timeout))
+        }
+        Err(Stop::Unclear(error)) => Err(error),
+    }
+}
+
+/// 一次交换停在哪：可能已经到过服务端（还能再确认一次），或者确定的错误（再问也是一样）。
+enum Stop {
+    /// 某一段超时。
+    TimedOut(&'static str),
+    /// 连接在回应到之前被对端关掉：服务端已经登记、回应还在路上时也会这样（它回完就关，`LINGER` 到点也关），
+    /// 分不清，按可能已经配上处理。
+    Unclear(TunnelError),
+    /// 再问也是一样的错误。
+    Failed(TunnelError),
+}
+
+/// 一小段夹上自己的时限。超时记下是哪一段，方便对照日志。
+async fn within<T>(
+    timeout: Duration,
+    stage: &'static str,
+    work: impl Future<Output = Result<T, TunnelError>>,
+) -> Result<T, Stop> {
+    match tokio::time::timeout(timeout, work).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(Stop::Failed(error)),
+        Err(_) => {
+            debug!(stage, "pairing stage timed out");
+            Err(Stop::TimedOut(stage))
+        }
     }
 }
 
@@ -72,32 +129,50 @@ async fn exchange(
     endpoint: &Endpoint,
     code: &PairingCode,
     device_name: &str,
+    timeout: Duration,
     written: &AtomicBool,
     on_request_sent: &(impl Fn() + Sync),
-) -> Result<PairResponse, TunnelError> {
-    let conn = endpoint
-        .connect(code.server_addr(), PAIR_ALPN)
-        .await
-        .map_err(|e| connect_error(&e))?;
-    let (mut send, mut recv) = conn.open_bi().await.map_err(TunnelError::transport)?;
+) -> Result<PairResponse, Stop> {
+    let conn = within(timeout, "connect", async {
+        endpoint
+            .connect(code.server_addr(), PAIR_ALPN)
+            .await
+            .map_err(|e| connect_error(&e))
+    })
+    .await?;
+    let (mut send, mut recv) = within(timeout, "stream", async {
+        conn.open_bi().await.map_err(TunnelError::transport)
+    })
+    .await?;
     let request = PairRequest::Pair {
         secret: code.secret.clone(),
         device_name: device_name.to_owned(),
     };
     let body = serde_json::to_vec(&request).expect("the request always serializes to JSON");
-    send.write_all(&body)
-        .await
-        .map_err(|e| from_write_error(&e))?;
-    send.finish().map_err(TunnelError::transport)?;
-    // 请求已经全部交出：之后超时，服务端可能已经按它登记了设备。
+    within(timeout, "request", async {
+        send.write_all(&body)
+            .await
+            .map_err(|e| from_write_error(&e))?;
+        send.finish().map_err(TunnelError::transport)
+    })
+    .await?;
+    // 请求已经全部交出：之后的超时里服务端可能已经按它登记了设备。
     if !written.swap(true, Ordering::Relaxed) {
         on_request_sent();
     }
-    let reply = read_reply(&mut recv).await?;
+    // 读回应时连接被关掉：服务端可能已经登记、回应还在路上，先算“不确定”再确认一次。
+    let reply = within(timeout, "reply", read_reply(&mut recv))
+        .await
+        .map_err(|stop| match stop {
+            Stop::Failed(error) => Stop::Unclear(error),
+            other => other,
+        })?;
     conn.close(VarInt::from_u32(0), b"done");
-    serde_json::from_slice(&reply).map_err(|e| {
-        TunnelError::protocol(format!("malformed pairing response from the server: {e}"))
-    })
+    serde_json::from_slice(&reply)
+        .map_err(|e| {
+            TunnelError::protocol(format!("malformed pairing response from the server: {e}"))
+        })
+        .map_err(Stop::Failed)
 }
 
 /// 读服务端的回应，直到回应结束（FIN）。
