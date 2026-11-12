@@ -99,18 +99,22 @@
 ### 5. 协议（`wonton-protocol`）
 
 `Action` 是 UniFFI 枚举，`uniffi_core` 0.32.2 给每个类型的元数据一个 32 KiB 的缓冲区，变体名、字段、类型和**文档注释**都算在内，
-超了编译失败。2026-11-12 在 wontonapp/main `96763a2` 上实测还剩约 100 字节；之前有一次已经为此把动作改成 `ClientCore` 的直调方法
-（`2d48363`）。本篇不往 `Action` 里加旁聊的变体，而是把按时间线的操作整组挪进嵌套枚举，嵌套枚举有自己的 32 KiB：
+超了编译失败。#287（链接预览，加 `DismissLinkPreview { room_id }`）合并后 `Action` 已经顶到上限，那个变体的文档只能写一行；
+之前也有一次为此把动作改成 `ClientCore` 的直调方法（`2d48363`）。所以本篇不在 `Action` 上净增任何东西，而是在同一个 PR 里
+先把按时间线的操作整组挪进嵌套枚举，嵌套枚举有自己的 32 KiB：
 
 - 新 `TimelineTarget { room_id: String, thread_root: Option<String> }`，`thread_root` 为空是主时间线。
-- 新 `TimelineAction`，由 `Action` 里这 10 个变体原样搬过去、`room_id` 换成 `target: TimelineTarget`：`SendText`、`SendImage`、
+- 新 `TimelineAction`，由 `Action` 里这 11 个变体原样搬过去、`room_id` 换成 `target: TimelineTarget`：`SendText`、`SendImage`、
   `ForwardMessage`（目标仍是 `to_room_id` 的主时间线）、`RedactMessage`、`RetrySend`、`CancelSend`、`PaginateBackwards`、
-  `SetTimelineScroll`、`MarkRoomRead`（改名 `MarkRead`）、`SetDraft`。
-- `Action` 删掉这 10 个，加一个 `Timeline { action: TimelineAction }`（结构体变体：`Action` 用 serde 的内部标签 `type`，
-  newtype 变体里再套一个带 `type` 的枚举会撞键）。
+  `SetTimelineScroll`、`MarkRoomRead`（改名 `MarkRead`）、`SetDraft`、`DismissLinkPreview`（旁聊的输入框也有链接预览）。
+  搬过去的变体的文档可以写全，#287 只能留一行的那条补回来。
+- `Action` 删掉这 11 个，加一个 `Timeline { action: TimelineAction }`，不带文档注释，说明写在 `TimelineAction` 上（结构体变体：
+  `Action` 用 serde 的内部标签 `type`，newtype 变体里再套一个带 `type` 的枚举会撞键）。
+- 实测（2026-11-12，#287 的分支 `feat/link-preview-client` `d805ccb`，`cargo check -p wonton-protocol --features uniffi`）：
+  原样只放得下一个单字母的空变体；照上面搬完后 `Action` 空出约 2.9 KB，`TimelineAction` 编译通过。
 - `ClientCore::subscribe_timeline` 和 `draft` 的参数从 `room_id` 换成 `TimelineTarget`；新增 `ClientCore::start_side_chat(room_id, body)`，
-  返回根的事件 ID（第 4 节“开旁聊”）。它要等服务器回 ID，是请求–应答，和 `subscribe_timeline` 一样做成方法。
-- 以后 `Action` 再要加一组相关操作，同样加一个带嵌套枚举的变体，不逐个加。
+  返回根的事件 ID（第 4 节“开旁聊”）。它要等服务器回 ID，是请求–应答，和 `subscribe_timeline` 一样做成方法，不占 `Action`。
+- 以后 `Action` 再要加一组相关操作，同样先搬成一个带嵌套枚举的变体，不逐个加；`Action` 空出来的地方留给这类搬家，不拿来加单个变体。
 
 ViewModel：
 
@@ -161,14 +165,15 @@ Hermes 的结果放在哪：
 - **聊天列表里每个旁聊一行**：主人选了卡片。
 - **结果行编辑成同一条**：编辑不改位置，新结果留在上面，主人看不到；改成发新的一条、核心只显示最新的。
 - **结果行挂 `m.reference`**：ruma 的 `m.room.message` 不认这个关系，SDK 会当成未知关系；`m.in_reply_to` 是标准做法，别的客户端也认。
-- **在 `SendText`、`SendImage` 上加 `thread_root`**：在 `96763a2` 上放得下，但草稿、翻页、位置、已读、重发也都要分话题，逐个加字段很快又碰上限；
-  而且旁聊的条目 ID 要和主时间线分开，按 `TimelineTarget` 一次说清。
+- **在 `SendText`、`SendImage` 上加 `thread_root`、或加一个只装旁聊操作的变体**：#287 之后 `Action` 一个字节都加不了；
+  草稿、翻页、位置、已读、重发、链接预览也都要分话题，按 `TimelineTarget` 一次说清，旁聊的条目 ID 也和主时间线分开。
 - **旁聊的操作全做成 `ClientCore` 直调方法**：能绕开上限，但壳就有两套发操作的路；只有要回值的 `start_side_chat` 做成方法。
 - **App 内的旁聊列表**：卡片已在主对话里；旧旁聊多到找不着时再定。
 
 ## 代价与待验证项
 
-- `Action` 搬家是破坏性接口改动：两个壳所有发消息、翻页、草稿的调用点都要改（机械）；和同时在改这些变体的 PR 会冲突。
+- `Action` 搬家是破坏性接口改动：两个壳所有发消息、翻页、草稿、链接预览的调用点都要改（机械）；和同时在改这些变体的 PR 会冲突。
+  接口 PR 基于含 #287 的 `main`。
 - 每轮一条结果行，主对话里的行数随旁聊轮数增长；同一旁聊只显示最新一条，`ResultMissing` 的 2 分钟按实测调。
 - 待验证：
   - Tuwunel v1.9.4 存不存话题已读回执（MSC3771），`/sync` 里给不给话题的未读；不给就由核心在本机按回执算。
