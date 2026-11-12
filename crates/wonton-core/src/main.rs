@@ -360,6 +360,9 @@ async fn serve() -> anyhow::Result<()> {
         matrix.as_ref(),
         peers.as_ref(),
     )?;
+    if let Some(contacts) = &contacts {
+        bus.attach_contacts(contacts.clone());
+    }
     let upgrades_after_serve = upgrades.clone();
     let gateway = Arc::new(
         Gateway::new(

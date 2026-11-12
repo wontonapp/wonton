@@ -227,6 +227,17 @@ impl Contacts {
             })
             .unwrap_or_default()
     }
+
+    /// 这个 Bot 有没有已成立的远端联系人（人或 Bot 都算：kind 是对方核心自报的）。总线据此不给它插件工具
+    /// （ADR-0050“远端联系人默认只聊天”）。认不出服务器名的用户 ID 也按远端算：证明不了是本机的人。
+    pub fn has_active_remote(&self, bot: &BotRef) -> bool {
+        self.lock().rows(bot).is_some_and(|rows| {
+            rows.iter().any(|(user, row)| {
+                row.state == ContactState::Active
+                    && server_of(user) != Some(self.own_server.as_str())
+            })
+        })
+    }
 }
 
 pub(crate) fn now_ms() -> u64 {
@@ -234,6 +245,6 @@ pub(crate) fn now_ms() -> u64 {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 #[cfg(test)]
 mod tests_remote;

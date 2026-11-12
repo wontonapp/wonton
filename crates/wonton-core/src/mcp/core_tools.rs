@@ -24,11 +24,11 @@ use crate::plugin::{InstallError, PluginId, PluginPackage};
 use wonton_protocol::ConfirmationState;
 
 const LIST: &str = "list_plugins";
-const SEARCH: &str = "search_catalog";
+pub(super) const SEARCH: &str = "search_catalog";
 const INSTALL: &str = "install_plugin";
 const UNINSTALL: &str = "uninstall_plugin";
 const SET_PERMISSION: &str = "set_plugin_permission";
-const HELP: &str = "help";
+pub(super) const HELP: &str = "help";
 
 fn schema(value: Value) -> Arc<JsonObject> {
     match value {
