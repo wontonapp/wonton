@@ -53,9 +53,13 @@ final class BottomPin {
             // 只看主人的手势：跟随时自己滚动、以及内容变高时离底部变远，都不算翻走。
             scrollView.observe(\.contentOffset) { [weak self] scrollView, _ in
                 MainActor.assumeIsolated {
-                    guard scrollView.isDragging || scrollView.isDecelerating else { return }
-                    self?.heldOffset = nil
-                    self?.isPinned = scrollView.bottomOffset - scrollView.contentOffset.y <= Self.slack
+                    guard let self else { return }
+                    if scrollView.isDragging || scrollView.isDecelerating {
+                        self.heldOffset = nil
+                        self.isPinned = scrollView.bottomOffset - scrollView.contentOffset.y <= Self.slack
+                    } else if self.isPinned {
+                        self.holdAtBottom()
+                    }
                 }
             }
         ]
@@ -82,26 +86,24 @@ final class BottomPin {
         guard let scrollView, !scrollView.isDragging, !scrollView.isDecelerating else { return }
         if isPinned {
             scrollView.contentOffset.y = scrollView.bottomOffset
-            settleAtBottom()
         } else {
             restoreOffset()
         }
     }
 
-    /// List 排完新行会自己再挪一次 contentOffset，保住原先看到的那一行；键盘弹着、行比可见区高时新消息就停在可见区下面，
-    /// 内容高度也不再变，等不到下一次 stick（iOS 26.5 模拟器实测）。贴底时在后面两轮里再拉回底部，同 `prepareForUpdate`。
-    private func settleAtBottom() {
-        guard !settling else { return }
+    /// List 排完新行会自己再挪一次 contentOffset，保住原先看到的那一行；键盘弹着、新行比可见区高时新消息就停在可见区下面，
+    /// 内容高度也不再变，等不到下一次 stick（iOS 26.5 模拟器实测，在 stick 之后固定等两轮再拉也赶不上它）。所以贴底时
+    /// 不是主人手势带来的位移一律拉回底部；放到下一轮，不在 KVO 回调里改正在观察的属性。
+    private func holdAtBottom() {
+        guard !settling, let scrollView,
+              scrollView.bottomOffset - scrollView.contentOffset.y > Self.slack else { return }
         settling = true
         DispatchQueue.main.async { [weak self] in
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.settling = false
-                guard self.isPinned, let scrollView = self.scrollView,
-                      !scrollView.isDragging, !scrollView.isDecelerating else { return }
-                scrollView.layoutIfNeeded()
-                scrollView.contentOffset.y = scrollView.bottomOffset
-            }
+            guard let self else { return }
+            self.settling = false
+            guard self.isPinned, let scrollView = self.scrollView,
+                  !scrollView.isDragging, !scrollView.isDecelerating else { return }
+            scrollView.contentOffset.y = scrollView.bottomOffset
         }
     }
 }
