@@ -38,10 +38,12 @@
 
 ## 代码结构
 
-- CI 硬门禁：源码文件 ≤ 800 行，函数 ≤ 100 行，超过即失败。文件行数由
-  `scripts/check-file-size.sh` 检查；函数长度由各语言 linter 检查：Rust 用 clippy
+- 源码文件按代码行数，不算空行和只有注释的行：超过 800 行警告，超过 2000 行 CI 失败，由
+  `scripts/check-file-size.sh` 检查。函数 ≤ 100 行，超过即失败，由各语言 linter 检查：Rust 用 clippy
   `too_many_lines`，Kotlin 用 detekt `LongMethod`，Swift 用 SwiftLint `function_body_length`。
-- 确需例外时写进 `.size-allowlist`，格式 `路径 | 原因 | 到期日 YYYY-MM-DD`；到期后 CI 重新失败。
+- 不许为了缩短行数写难懂的代码：删注释、把多行挤成一行、把穷举的 match/when 改成 `_`、缩短有意义的名字都不行。
+  超过 800 行的警告是“该按职责拆”的信号，拆要按职责，不是挪几行凑数。
+- 确需超过 2000 行时写进 `.size-allowlist`，格式 `路径 | 原因 | 到期日 YYYY-MM-DD`；到期后 CI 重新失败。
 - 按职责拆模块。新功能放进职责清晰的小模块，不往已经很大的文件末尾追加。
 - 客户端遵循“厚 Rust 核心 + 薄原生壳”：状态、业务逻辑、网络、存储、ViewModel 都在 Rust；
   Swift/Kotlin 只渲染 ViewModel、把用户操作发回核心，以及调用平台能力（推送、相册、文件选择、

@@ -147,8 +147,8 @@ Debug 构建默认编译 debug 的 Rust 核心，加上 matrix-sdk 后 `.so` 将
 ./gradlew detekt
 ```
 
-规则在 `config/detekt.yml`：函数超过 100 行即失败。detekt 没有文件行数规则，文件 ≤ 800 行由仓库的
-`scripts/check-file-size.sh` 检查。CI 见 `.github/workflows/android.yml`。
+规则在 `config/detekt.yml`：函数超过 100 行即失败。detekt 没有文件行数规则，文件行数由仓库的
+`scripts/check-file-size.sh` 检查（不算空行和注释，超过 800 行警告、超过 2000 行失败）。CI 见 `.github/workflows/android.yml`。
 
 包名 `app.wonton.*` 是临时的，上架前确定正式的。
 
