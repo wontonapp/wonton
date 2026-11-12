@@ -120,8 +120,12 @@ final class ChatPanelUITests: XCTestCase {
         }
         app.launch()
         XCTAssertNotNil(
-            waitAnyButton(["Apps", "应用", "Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 60),
-            "既没到标签栏也没到引导页"
+            // 模拟器上已经配好、走过引导时直接进聊天列表，右下角的“新建聊天”也算到位。
+            waitAnyButton(
+                ["Apps", "应用", "Skip", "跳过", "Next", "下一步", "Done", "完成", "New Chat", "新建聊天", "新增聊天"],
+                timeout: 60
+            ),
+            "既没到标签栏、聊天列表，也没到引导页"
         )
         passOnboarding()
         // 配上后只有聊天一项时底栏收起，没有“聊天”按钮：已经在聊天页了。
