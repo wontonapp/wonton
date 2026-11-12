@@ -67,19 +67,27 @@ pub fn render(
     // 客户端网关不能在入口接口上接受连接，防止已攻破入口读取首次配对码。
     compose["services"]["core"]["environment"]["WONTON_EXCLUDE_LISTEN"] =
         json!("entry-gateway.wonton.internal");
-    for network in ["clients", "edge"] {
-        compose["networks"][network] = json!({"internal":true,"driver_opts":{
-            "com.docker.network.bridge.gateway_mode_ipv4":"isolated",
-            "com.docker.network.bridge.gateway_mode_ipv6":"isolated"
-        }});
-    }
+    compose["networks"]["clients"] = json!({"internal":true,"driver_opts":{
+        "com.docker.network.bridge.gateway_mode_ipv4":"isolated",
+        "com.docker.network.bridge.gateway_mode_ipv6":"isolated"
+    }});
+    // 连接器用固定地址：入口认对端在连接层，那里只认 IP（见 `entry_haproxy`）。
+    compose["networks"]["edge"] = json!({"internal":true,
+    "ipam":{"config":[{"subnet":crate::entry_haproxy::EDGE_SUBNET}]},
+    "driver_opts":{
+        "com.docker.network.bridge.gateway_mode_ipv4":"isolated",
+        "com.docker.network.bridge.gateway_mode_ipv6":"isolated"
+    }});
     compose["networks"]["relay"] = json!({});
     let entry = json!({
         "image":HAPROXY_IMAGE,"user":user,"read_only":true,"cap_drop":["ALL"],
         "security_opt":["no-new-privileges:true"],"restart":"unless-stopped",
         "command":["haproxy","-W","-db","-f","/config/haproxy.cfg"],
         "volumes":["${WONTON_INSTALL_DIR}/entry/haproxy.cfg:/config/haproxy.cfg:ro","${WONTON_INSTALL_DIR}/entry/certs:/certs:ro"],
-        "networks":{"edge":{"aliases":["entry-edge.wonton.internal"]},"clients":{"aliases":["entry.wonton.internal"]}},
+        "networks":{
+            "edge":{"aliases":["entry-edge.wonton.internal"],"ipv4_address":crate::entry_haproxy::ENTRY_EDGE_ADDRESS},
+            "clients":{"aliases":["entry.wonton.internal"]}
+        },
         "environment":{"HTTP_PROXY":"","HTTPS_PROXY":"","http_proxy":"","https_proxy":""},
         "logging":{"driver":"json-file","options":{"max-size":"10m","max-file":"3"}}
     });
@@ -91,7 +99,10 @@ pub fn render(
             "command":["-c","/config/frpc.json"],
             "volumes":["${WONTON_INSTALL_DIR}/entry/frpc.json:/config/frpc.json:ro","${WONTON_INSTALL_DIR}/entry/relay-ca.pem:/config/relay-ca.pem:ro"],
             "environment":{"HTTP_PROXY":"","HTTPS_PROXY":"","http_proxy":"","https_proxy":""},
-            "networks":{"edge":{"aliases":["connector.wonton.internal"]},"relay":null},
+            "networks":{
+                "edge":{"aliases":["connector.wonton.internal"],"ipv4_address":crate::entry_haproxy::CONNECTOR_ADDRESS},
+                "relay":null
+            },
             "logging":{"driver":"json-file","options":{"max-size":"10m","max-file":"3"}}
         });
     } else {
@@ -101,7 +112,10 @@ pub fn render(
             "command":["haproxy","-W","-db","-f","/config/connector.cfg"],
             "volumes":["${WONTON_INSTALL_DIR}/entry/connector.cfg:/config/connector.cfg:ro"],
             "ports":["${WONTON_ENTRY_BIND:-127.0.0.1}:${WONTON_ENTRY_PORT:-8443}:8443"],
-            "networks":{"edge":{"aliases":["connector.wonton.internal"]},"relay":null}
+            "networks":{
+                "edge":{"aliases":["connector.wonton.internal"],"ipv4_address":crate::entry_haproxy::CONNECTOR_ADDRESS},
+                "relay":null
+            }
         });
     }
     Ok(serde_json::to_string_pretty(&compose)?)
@@ -110,13 +124,21 @@ pub fn render(
 pub fn write(install_dir: &Path, settings: &EntrySettings) -> anyhow::Result<()> {
     let directory = install_dir.join("entry");
     std::fs::create_dir_all(&directory)?;
-    let bind =
-        "bind entry-edge.wonton.internal:8443 accept-proxy ssl crt /certs/site.pem strict-sni";
-    let domain = &settings.domain;
-    let config = format!(
-        "global\n  log stdout format raw local0\n  maxconn 1024\n\ndefaults\n  mode http\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\n  option http-restrict-req-hdr-names delete\n\nresolvers docker\n  nameserver docker 127.0.0.11:53\n  resolve_retries 1\n  timeout resolve 1s\n  timeout retry 1s\n  hold valid 10s\n\nfrontend public\n  {bind}\n  acl correct_sni ssl_fc_sni -i {domain}\n  http-request deny deny_status 421 unless correct_sni\n  http-request deny deny_status 421 unless {{ hdr(host),lower -i {domain} {domain}:443 }}\n  http-request del-header Forwarded\n  http-request del-header X-Forwarded-For\n  http-request del-header X-Forwarded-Host\n  http-request del-header X-Forwarded-Proto\n  http-request del-header X-Real-IP\n  http-request del-header X-Wonton-Entry\n  http-request set-header X-Real-IP %[src]\n  http-request set-header X-Wonton-Entry public\n  default_backend gateway\n\nfrontend paired\n  bind entry.wonton.internal:8449 ssl crt /certs/site.pem strict-sni\n  acl correct_sni ssl_fc_sni -i {domain}\n  http-request deny deny_status 421 unless correct_sni\n  http-request deny deny_status 421 unless {{ hdr(host),lower -i {domain} {domain}:443 {domain}:8448 }}\n  http-request set-header Host {domain}\n  default_backend gateway\n\nbackend gateway\n  server core entry-gateway.wonton.internal:8484 resolvers docker init-addr libc,none\n"
-    );
-    crate::install::write_private(&directory.join("haproxy.cfg"), &config)?;
+    let rendered = crate::entry_haproxy::render(&crate::entry_haproxy::Model::federation_only(
+        &settings.domain,
+        &settings.domain,
+    ))
+    .map_err(anyhow::Error::msg)?;
+    crate::install::write_private(&directory.join("haproxy.cfg"), &rendered.config)?;
+    std::fs::create_dir_all(directory.join("certs"))?;
+    crate::install::write_private(
+        &directory.join("certs/public.crt-list"),
+        &rendered.public_crt_list,
+    )?;
+    crate::install::write_private(
+        &directory.join("certs/lan.crt-list"),
+        &rendered.lan_crt_list,
+    )?;
     if let Some(home) = &settings.registration {
         let trusted_ca = settings
             .relay_ca
@@ -147,6 +169,8 @@ pub fn write(install_dir: &Path, settings: &EntrySettings) -> anyhow::Result<()>
 pub fn prepare_permissions(dir: &Path) -> anyhow::Result<()> {
     for name in [
         "haproxy.cfg",
+        "certs/public.crt-list",
+        "certs/lan.crt-list",
         "connector.cfg",
         "frpc.json",
         "relay-ca.pem",
@@ -260,6 +284,53 @@ mod tests {
                 "第二份配置要落在挂进来的目录里"
             );
         }
+    }
+
+    /// 连接器要固定地址：入口核对端在连接层，那里只认 IP。入口也固定，局域网前端单独网段。
+    #[test]
+    fn edge_network_pins_the_connector_address() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
+        std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
+        let compose: Value = serde_json::from_str(
+            &render(crate::install::COMPOSE, Some(&settings()), dir.path()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            compose["networks"]["edge"]["ipam"]["config"][0]["subnet"],
+            "10.90.0.0/24"
+        );
+        assert_eq!(
+            compose["services"]["connector"]["networks"]["edge"]["ipv4_address"],
+            "10.90.0.2"
+        );
+        assert_eq!(
+            compose["services"]["entry"]["networks"]["edge"]["ipv4_address"],
+            "10.90.0.3"
+        );
+    }
+
+    /// 入口配置由 `entry_haproxy` 生成：联邦名字进公网列表，配对前端照旧，crt-list 和配置一起落盘。
+    #[test]
+    fn write_publishes_the_haproxy_config_and_both_crt_lists() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
+        std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
+        write(dir.path(), &settings()).unwrap();
+        let config = std::fs::read_to_string(dir.path().join("entry/haproxy.cfg")).unwrap();
+        assert!(config.contains(
+            "bind entry-edge.wonton.internal:8443 ssl crt-list /certs/public.crt-list strict-sni"
+        ));
+        assert!(config.contains("frontend paired"));
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("entry/certs/public.crt-list")).unwrap(),
+            "/certs/site.pem home.example probe.home.example\n"
+        );
+        assert!(
+            std::fs::read_to_string(dir.path().join("entry/certs/lan.crt-list"))
+                .unwrap()
+                .is_empty()
+        );
     }
 
     /// 裸 IP（不带端口）也要渲染进核心的 `dns`，不能被静默丢掉（#226）。

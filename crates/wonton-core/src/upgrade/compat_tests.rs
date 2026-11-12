@@ -38,6 +38,7 @@ fn record(id: &str, source: &str) -> InstalledRecord {
         enabled_permissions: Vec::new(),
         oidc_client_secret: None,
         installed_at: 1,
+        entry_label: None,
         origin: None,
         written_by: None,
         ask_every_update: false,
