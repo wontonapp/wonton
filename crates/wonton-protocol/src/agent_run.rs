@@ -220,6 +220,7 @@ mod tests {
                 body: "正在执行命令（第 2 步）".into(),
                 card_id: None,
                 choices: Vec::new(),
+                sender_name: "Hermes".into(),
             },
         };
         let value = serde_json::to_value(&item).unwrap();
@@ -230,5 +231,6 @@ mod tests {
         assert_eq!(value["content"]["progress"], 0.25);
         assert_eq!(value["content"]["card_id"], serde_json::Value::Null);
         assert_eq!(value["content"]["choices"], serde_json::json!([]));
+        assert_eq!(value["content"]["sender_name"], "Hermes");
     }
 }
