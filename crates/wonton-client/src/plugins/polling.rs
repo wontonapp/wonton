@@ -101,9 +101,10 @@ impl PluginsLink {
         let outcome = result.map(|installed| {
             if seq > self.applied_seq.load(Ordering::SeqCst) {
                 self.applied_seq.store(seq, Ordering::SeqCst);
-                self.view
-                    .send_modify(|view| view.installed = Some(installed));
-                self.refresh_derived();
+                self.view.send_modify(|view| {
+                    view.installed = Some(installed);
+                    Self::derive(view);
+                });
             }
         });
         self.record(Listing::Installed, outcome.clone());
