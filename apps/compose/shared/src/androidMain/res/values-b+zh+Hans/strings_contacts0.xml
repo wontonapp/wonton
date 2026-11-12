@@ -12,6 +12,7 @@
     <string name="contacts_status_not_found">没有这个人</string>
     <string name="contacts_status_unknown">状态未知</string>
     <string name="contacts_remote_unpaired">和那台服务器的配对已移除，消息过不去</string>
+    <string name="contacts_approve_remote_title">同意来自其他服务器的“%1$s”？</string>
     <string name="contacts_error_not_paired">对方的服务器没和你的配对</string>
     <string name="contacts_error_already_contact">已经是联系人，或者请求已经发出</string>
     <string name="contacts_error_bot_not_found">这个 Bot 已经不在了</string>
