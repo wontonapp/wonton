@@ -55,7 +55,13 @@ extension TabWebSession: WKNavigationDelegate {
             decisionHandler(.allow)
             return
         }
-        let tunnelFailed = http.value(forHTTPHeaderField: "x-wonton-tunnel-error") != nil
+        // 类别由代理给（x-wonton-error，tunnel-502）。网关的响应也用这个头名，只认代理自己的取值：
+        // tunnel-unavailable 是没拿到响应，upstream-unavailable 拿到了响应（服务器在，上游没就绪），
+        // 照实交状态码给核心判断。
+        let category = http.value(forHTTPHeaderField: "x-wonton-error").map { $0.lowercased() }
+        let proxyCategory = category.map { ["tunnel-unavailable", "upstream-unavailable", "unauthorized", "protocol"].contains($0) } == true
+        let tunnelFailed = proxyCategory
+            || http.value(forHTTPHeaderField: "x-wonton-tunnel-error") != nil
         let sharedRefusal: Bool
         if case .sharedApp = tab {
             sharedRefusal = ["share_identity", "share_required", "share_revoked", "share_expired"]
@@ -67,7 +73,13 @@ extension TabWebSession: WKNavigationDelegate {
         }
         decisionHandler(.cancel)
         recoveryURL = response.response.url
-        loadFailed(status: tunnelFailed ? nil : UInt16(clamping: http.statusCode))
+        let status: UInt16?
+        switch category {
+        case "upstream-unavailable": status = UInt16(clamping: http.statusCode)
+        case "tunnel-unavailable", "unauthorized", "protocol": status = nil
+        default: status = tunnelFailed ? nil : UInt16(clamping: http.statusCode)
+        }
+        loadFailed(status: status)
     }
 
     func webView(
