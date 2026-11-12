@@ -30,6 +30,9 @@ class ChatNavigation(
     var showingBackup by showingBackup
     var startingChat by startingChat
 
+    /** 主人在交接页点了“稍后”（ADR-0087）：只在这台 App 里先收起，聊天列表顶上的提醒再打开。 */
+    var keyHandoffDeferred by mutableStateOf(false)
+
     /** 刚发起了和这个用户的私聊，房间出现后打开。 */
     private var awaitedPeer by mutableStateOf<String?>(null)
     private var awaitedFrom: TabRef = TabRef.Chat

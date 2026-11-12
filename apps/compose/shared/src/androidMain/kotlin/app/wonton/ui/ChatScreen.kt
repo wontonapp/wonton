@@ -46,6 +46,7 @@ import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.BotView
+import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
@@ -98,7 +99,12 @@ fun ChatRoute(
     when {
         navigation.showingBackup -> {
             BackHandler { navigation.showingBackup = false }
-            ChatBackupScreen(viewModel.encryption, onAction, onClose = { navigation.showingBackup = false })
+            ChatBackupScreen(
+                viewModel.encryption,
+                onAction,
+                onContinueHandoff = { navigation.keyHandoffDeferred = false },
+                onClose = { navigation.showingBackup = false },
+            )
         }
         navigation.startingChat -> {
             BackHandler { navigation.startingChat = false }
@@ -147,7 +153,12 @@ fun ChatRoute(
                 pluginNavigation = pluginNavigation,
                 onAction = onAction,
                 onOpenRoom = { navigation.openRoom = it },
-                onOpenBackup = { navigation.showingBackup = true },
+                onOpenBackup = {
+                    // 收起了的交接页从提醒再打开，不进备份页（ADR-0087）。
+                    if (viewModel.encryption.backupReminder == BackupReminder.CONTINUE_ON_OTHER_DEVICE) {
+                        navigation.keyHandoffDeferred = false
+                    } else navigation.showingBackup = true
+                },
                 onStartChat = { navigation.startingChat = true },
             )
         }

@@ -2051,4 +2051,13 @@
     <string name="contacts_error_upstream">Your home server couldn\'t save this</string>
     <!-- Label on an incoming chat invite from a bot that asks you to be its contact. -->
     <string name="friends_request_bot_contact">Bot contact request</string>
+    <string name="handoff_title">Continue on your other device</string>
+    <string name="handoff_waiting">Keep “Add device” open on your other device.</string>
+    <string name="handoff_unanswered_title">Your other device hasn\'t answered</string>
+    <string name="handoff_unanswered_message">Open Wonton on your other device and go back to “Add device”.</string>
+    <string name="handoff_try_again">Try again</string>
+    <string name="handoff_later">Later</string>
+    <string name="handoff_no_other_device">I don\'t have my other device</string>
+    <string name="invite_device_added">Device added</string>
+    <string name="invite_cannot_give">This device doesn\'t have all the chat keys either, so the new device can\'t read earlier messages.</string>
 </resources>

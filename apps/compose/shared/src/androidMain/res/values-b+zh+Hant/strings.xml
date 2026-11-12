@@ -1780,4 +1780,13 @@
     <string name="contacts_error_unauthenticated">這台裝置不能做這件事</string>
     <string name="contacts_error_upstream">家用伺服器沒能記下這件事</string>
     <string name="friends_request_bot_contact">Bot 聯絡人請求</string>
+    <string name="handoff_title">在另一部裝置上繼續</string>
+    <string name="handoff_waiting">保持另一部裝置上的「新增裝置」頁面開著。</string>
+    <string name="handoff_unanswered_title">另一部裝置沒有回應</string>
+    <string name="handoff_unanswered_message">在另一部裝置上打開雲吞，回到「新增裝置」。</string>
+    <string name="handoff_try_again">再試一次</string>
+    <string name="handoff_later">稍後</string>
+    <string name="handoff_no_other_device">手邊沒有別的裝置</string>
+    <string name="invite_device_added">已加好</string>
+    <string name="invite_cannot_give">這部裝置也沒有完整的金鑰，新裝置看不到以前的訊息。</string>
 </resources>

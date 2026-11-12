@@ -43,6 +43,7 @@ pub(super) async fn watch(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
                 // SAS 的设备不能靠自动新建备份伪装取回了旧密钥；没有的秘密必须报 KeysMissing。
                 && encryption.verification_flow.is_none();
         });
+        super::handoff::finish_if_ready(&link, state);
         if !enable {
             continue;
         }
@@ -80,18 +81,25 @@ fn settle_late_keys(encryption: &mut EncryptionStatus) {
     }
 }
 
-/// 忘掉当前会话时复位确认相关的两个字段，再重算显示字段（碰 `EncryptionStatus` 就要刷新的不变式）。
+/// 忘掉当前会话时复位确认和交接相关的字段，再重算显示字段（碰 `EncryptionStatus` 就要刷新的不变式）。
 pub(super) fn forgot_session(encryption: &mut EncryptionStatus) {
     encryption.can_verify_with_other_device = false;
     encryption.verification_flow = None;
+    // 交接跟着会话走：下次登录时标记还在就重新摆上（`handoff::prepare`）。
+    encryption.key_handoff = None;
     refresh(encryption);
 }
 
 /// 由底层输入推出来的显示字段，每次改了恢复状态、设备验证、确认流程或待保存密钥就在这里重算，壳不自己判断
 /// （ADR-0076）。所有碰 `EncryptionStatus` 的改动之后都要调它，漏一处字段就带着过期值进壳。
 pub(crate) fn refresh(encryption: &mut EncryptionStatus) {
+    super::handoff::settle(encryption);
+    let handoff = super::handoff::receiving(encryption);
     encryption.backup_reminder = if encryption.recovery_key.is_some() {
         Some(BackupReminder::SaveRecoveryKey)
+    } else if let Some(waiting) = handoff {
+        // 交接期间不提恢复密钥（ADR-0087）；还在看有没有别的设备时什么都不提。
+        waiting.then_some(BackupReminder::ContinueOnOtherDevice)
     } else if encryption.recovery == RecoveryStatus::Incomplete {
         Some(BackupReminder::EnterRecoveryKey)
     } else {
@@ -106,6 +114,8 @@ pub(crate) fn refresh(encryption: &mut EncryptionStatus) {
         };
     encryption.recovery_next_step = match encryption.recovery {
         RecoveryStatus::InProgress => RecoveryNextStep::Progress,
+        _ if handoff == Some(true) => RecoveryNextStep::WaitForOtherDevice,
+        _ if handoff == Some(false) => RecoveryNextStep::None,
         // 流程进行中这一屏就是流程，主人要密钥入口是壳本地的显示开关。
         RecoveryStatus::Incomplete if encryption.verification_flow.is_some() => {
             RecoveryNextStep::ShowFlow
@@ -275,6 +285,7 @@ mod tests {
             can_reset: false,
             recovery_next_step: RecoveryNextStep::None,
             verification_flow: flow,
+            key_handoff: None,
         };
         refresh(&mut encryption);
         encryption

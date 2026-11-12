@@ -45,7 +45,8 @@ pub(crate) fn key_notice(
     encryption: &EncryptionStatus,
     has_undecryptable: bool,
 ) -> Option<KeyNotice> {
-    if !has_undecryptable {
+    // 交接期间新设备在等另一台设备交出密钥，不提恢复密钥（ADR-0087）。
+    if !has_undecryptable || super::handoff::receiving(encryption).is_some() {
         return None;
     }
     match encryption.recovery {
@@ -369,6 +370,7 @@ mod tests {
             can_reset: false,
             recovery_next_step: wonton_protocol::RecoveryNextStep::None,
             verification_flow: None,
+            key_handoff: None,
         }
     }
 

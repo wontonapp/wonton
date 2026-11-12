@@ -179,6 +179,8 @@ struct Core {
     sync_recording_released: watch::Sender<bool>,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
+    /// “添加设备”发的配对码（`POST /_wonton/api/pairing-codes`），隧道起来后填上。
+    issued_pairing_code: Mutex<Option<String>>,
     /// 已装插件的应答：没有就是没有这个接口（404）。
     installed: Mutex<Option<Value>>,
     /// 取已装列表的请求次数。
@@ -244,6 +246,7 @@ impl Home {
             sync_recording_held: watch::Sender::new(None),
             sync_recording_released: watch::Sender::new(false),
             onboarding: Mutex::default(),
+            issued_pairing_code: Mutex::default(),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
             bot_api: Arc::default(),
@@ -266,7 +269,7 @@ impl Home {
             PairProtocol::new(pairing.clone()),
         );
         let relay = relay(listener, addr);
-        Self {
+        let home = Self {
             matrix,
             push,
             bot_api: core.bot_api.clone(),
@@ -278,7 +281,9 @@ impl Home {
             relay,
             core_addr: addr,
             _core: task,
-        }
+        };
+        *home.core.issued_pairing_code.lock().unwrap() = Some(home.pairing_code());
+        home
     }
 
     /// Tuwunel 挂了或恢复了，隧道不受影响。

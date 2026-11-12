@@ -81,6 +81,10 @@ impl ChatLink {
         }
         self.save(&session, token.homeserver_url, server_id)
             .map_err(storage_failure)?;
+        // 扫码配对来的新设备接着等另一台设备交出密钥（ADR-0087）；之后恢复会话时靠这个标记接着交接。
+        if self.home.paired_with_code() {
+            self.storage.begin_key_handoff().map_err(storage_failure)?;
+        }
         Ok(session)
     }
 

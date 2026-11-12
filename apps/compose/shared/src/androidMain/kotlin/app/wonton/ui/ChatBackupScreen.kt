@@ -55,9 +55,17 @@ import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
-/** 聊天记录备份。协议里叫恢复（密钥备份加秘密存储），这里按它对主人的用处说：换设备后还能看到以前的消息。 */
+/**
+ * 聊天记录备份。协议里叫恢复（密钥备份加秘密存储），这里按它对主人的用处说：换设备后还能看到以前的消息。
+ * [onContinueHandoff] 重新打开收起了的交接页（ADR-0087）。
+ */
 @Composable
-fun ChatBackupScreen(encryption: EncryptionStatus, onAction: (Action) -> Unit, onClose: () -> Unit) {
+fun ChatBackupScreen(
+    encryption: EncryptionStatus,
+    onAction: (Action) -> Unit,
+    onContinueHandoff: () -> Unit,
+    onClose: () -> Unit,
+) {
     val colors = WontonTheme.colors
     var key by rememberSaveable { mutableStateOf("") }
     var showKeyEntry by rememberSaveable { mutableStateOf(false) }
@@ -85,7 +93,7 @@ fun ChatBackupScreen(encryption: EncryptionStatus, onAction: (Action) -> Unit, o
             encryption.verificationFlow?.let { flow ->
                 VerificationFlowContent(flow, onAction, onUseRecoveryKey = { showKeyEntry = true })
             }
-            NextStep(encryption, key, { key = it }, showKeyEntry, { showKeyEntry = true }, onAction)
+            NextStep(encryption, key, { key = it }, showKeyEntry, { showKeyEntry = true }, onAction, onContinueHandoff)
             if (encryption.canReset) ResetBackup(onAction)
         }
     }
@@ -133,6 +141,7 @@ private fun NextStep(
     showKeyEntry: Boolean,
     onUseRecoveryKey: () -> Unit,
     onAction: (Action) -> Unit,
+    onContinueHandoff: () -> Unit,
 ) {
     // 类别由核心按恢复状态算好（ADR-0076），这里只按类别画。
     when (encryption.recoveryNextStep) {
@@ -154,6 +163,11 @@ private fun NextStep(
             RecoveryKeyEntry(key, onKey, onAction)
         }
         RecoveryNextStep.PROGRESS -> CircularProgressIndicator()
+        RecoveryNextStep.WAIT_FOR_OTHER_DEVICE -> WontonButton(
+            stringResource(R.string.handoff_title),
+            onContinueHandoff,
+            Modifier.fillMaxWidth(),
+        )
         RecoveryNextStep.NONE, RecoveryNextStep.OTHER -> Unit
     }
 }
@@ -251,6 +265,7 @@ val BackupReminder.text: String?
     @Composable get() = when (this) {
         BackupReminder.SAVE_RECOVERY_KEY -> stringResource(R.string.chat_backup_reminder_save_key)
         BackupReminder.ENTER_RECOVERY_KEY -> stringResource(R.string.chat_backup_reminder_enter_key)
+        BackupReminder.CONTINUE_ON_OTHER_DEVICE -> stringResource(R.string.handoff_title)
         BackupReminder.OTHER -> null
     }
 

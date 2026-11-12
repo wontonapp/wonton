@@ -42,6 +42,10 @@ struct MainView: View {
         .overlay { if chat.isOpeningChat { ProgressView() } }
         .modifier(ChatDialogs(model: chat))
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
+        .modifier(KeyHandoffCover(model: chat) {
+            tabs.select(.chat)
+            chat.path = [.chatBackup]
+        })
         .fullScreenCover(isPresented: overlayPresented, onDismiss: presentPendingSettings) { overlay }
         .fullScreenCover(
             item: $onboardingGateway, onDismiss: {

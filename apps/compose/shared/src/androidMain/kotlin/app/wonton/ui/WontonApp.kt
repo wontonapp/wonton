@@ -99,6 +99,7 @@ internal fun ServerApp(
                 tabs.pinRequest?.let { TabPinSheet(tabs.viewModel, it) { tabs.pinRequest = null } }
             }
             DeviceVerificationDialogs(chatView, navigation, tabs.core)
+            KeyHandoffHost(chatView, navigation, tabs.core)
             plugins.rejection?.let { ProblemDialog(it) { plugins.rejection = null } }
         }
     }
@@ -257,6 +258,7 @@ private fun NativeTab(
             onClose = { nav.settingsOverlay = false }.takeIf { nav.settingsOverlay },
             peersOpenRequests = nav.peersOpenRequests,
             onPeersOpenRequestsHandled = { nav.peersOpenRequests = false },
+            onContinueHandoff = { nav.chat.keyHandoffDeferred = false },
         ) { nav.settingsPage = it }
         is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
         is TabRef.UiResource -> Unit

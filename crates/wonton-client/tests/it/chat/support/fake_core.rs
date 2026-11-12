@@ -1,6 +1,6 @@
-//! 模拟的核心服务端：`POST /_wonton/matrix/login-token` 签发主人的登录令牌，`PUT`、`DELETE
-//! `/_wonton/push/registration` 记下推送登记（响应同核心的推送登记接口），`matrix.<基础域名>` 上的请求原样转给
-//! Tuwunel。本地代理每个请求一条连接，读完请求头就能分流。
+//! 模拟的核心服务端：`POST /_wonton/matrix/login-token` 签发主人的登录令牌，`POST /_wonton/api/pairing-codes`
+//! 发“添加设备”的码，`PUT`、`DELETE` `/_wonton/push/registration` 记下推送登记（响应同核心的推送登记接口），
+//! `matrix.<基础域名>` 上的请求原样转给 Tuwunel。本地代理每个请求一条连接，读完请求头就能分流。
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -81,6 +81,9 @@ fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
     } else if head.starts_with("put /_wonton/push/registration ") {
         push("PUT", serde_json::from_slice(body).unwrap_or(Value::Null));
         json!({"pushkey": core.pushkey, "gateway_url": PushGateway::URL})
+    } else if head.starts_with("post /_wonton/api/pairing-codes ") {
+        let code = core.issued_pairing_code.lock().unwrap().clone()?;
+        json!({"code": code, "expires_in": 600})
     } else if head.starts_with("get /_wonton/api/onboarding ") {
         let value = core.onboarding.lock().unwrap().clone()?;
         return Some((200, value.to_string()));
