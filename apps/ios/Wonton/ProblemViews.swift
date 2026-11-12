@@ -321,8 +321,8 @@ extension Error {
             )
         case .Forbidden:
             return Problem(
-                title: String(localized: .problemForbiddenTitle),
-                nextStep: String(localized: .problemForbiddenNextStep),
+                title: String(localized: .Problem3.problemForbiddenTitle),
+                nextStep: String(localized: .Problem3.problemForbiddenNextStep),
                 detail: detail
             )
         case .Upstream:
