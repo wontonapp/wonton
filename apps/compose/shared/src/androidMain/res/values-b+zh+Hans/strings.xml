@@ -1015,6 +1015,8 @@
     <string name="plugin_settings_open">打开设置</string>
     <string name="plugin_settings_update_app">要更新 App 才能改</string>
     <string name="plugin_settings_required">必填</string>
+    <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
+    <string name="plugin_settings_restart_hint">应用会重新启动一下</string>
     <string name="plugin_updates_section">更新</string>
     <string name="plugin_ask_every_update">每次都问</string>
     <string name="plugin_written_by_agent">你的 Agent · %1$s</string>
@@ -1671,7 +1673,7 @@
     <string name="secret_edit">修改</string>
     <string name="secret_clear">清空</string>
     <string name="secret_filled">已填写</string>
-    <string name="secret_unfilled">未填写</string>
+    <string name="secret_unfilled">未就绪：要先填令牌</string>
     <string name="pin_to_bar">固定到底栏</string>
     <!-- 长按侧边栏里的一行，把应用的页面从底栏拿掉。 -->
     <string name="unpin_from_bar">从底栏拿掉</string>

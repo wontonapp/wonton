@@ -1015,6 +1015,8 @@
     <string name="plugin_settings_open">設定を開く</string>
     <string name="plugin_settings_update_app">変更するには App のアップデートが必要です</string>
     <string name="plugin_settings_required">必須</string>
+    <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
+    <string name="plugin_settings_restart_hint">アプリを一度再起動します</string>
     <string name="plugin_updates_section">アップデート</string>
     <string name="plugin_ask_every_update">毎回確認</string>
     <string name="plugin_written_by_agent">あなたのエージェント・%1$s</string>
@@ -1671,7 +1673,7 @@
     <string name="secret_edit">変更</string>
     <string name="secret_clear">クリア</string>
     <string name="secret_filled">入力済み</string>
-    <string name="secret_unfilled">未入力</string>
+    <string name="secret_unfilled">未準備：トークンを先に入力してください</string>
     <string name="pin_to_bar">ナビゲーションバーに追加</string>
     <!-- サイドバーの行を長押しして、アプリのページをナビゲーションバーから外す。 -->
     <string name="unpin_from_bar">ナビゲーションバーから外す</string>
