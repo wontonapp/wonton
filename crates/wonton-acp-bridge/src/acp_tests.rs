@@ -133,6 +133,7 @@ async fn restored_replay_updates_do_not_leak_into_the_next_prompt() {
             "/workspace",
             "http://mcp.wonton.internal/mcp",
             &origin(None),
+            "plan",
         ),
         "session/load",
     )
@@ -163,6 +164,7 @@ async fn missing_restore_support_is_treated_as_a_lost_session() {
                 "/workspace",
                 "http://mcp.wonton.internal/mcp",
                 &origin(None),
+                "plan",
             ),
             "session/load",
         )
@@ -289,6 +291,7 @@ async fn session_setup_reports_the_origin_session_in_mcp_headers() {
             "/workspace",
             "http://mcp.wonton.internal/mcp",
             &origin(Some("$thread-2")),
+            "plan",
         ),
         "session/load",
     )
@@ -519,4 +522,64 @@ async fn frame_limit_takes_lines_up_to_the_limit_and_rejects_over_by_one() {
         frame::FrameRead::Frame
     );
     assert_eq!(frame.len(), MAX_FRAME_BYTES);
+}
+
+#[tokio::test]
+async fn restored_sessions_get_the_mode_new_set_again() {
+    let agent = FakeAgent::start(Scenario::Normal).await;
+    let client = bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+        .await
+        .unwrap();
+    bounded(
+        client.load_or_resume(
+            "session-1",
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            &origin(None),
+            "acceptEdits",
+        ),
+        "session/load",
+    )
+    .await
+    .unwrap();
+    let requests = agent.requests().await;
+    let set_modes: Vec<_> = requests
+        .iter()
+        .filter(|request| request["method"] == "session/set_mode")
+        .collect();
+    assert_eq!(set_modes.len(), 1, "{requests:?}");
+    assert_eq!(set_modes[0]["params"]["sessionId"], "session-1");
+    assert_eq!(set_modes[0]["params"]["modeId"], "acceptEdits");
+    drop(client);
+    agent.finish().await;
+}
+
+#[tokio::test]
+async fn agents_without_modes_tolerate_the_restore_set_mode() {
+    let agent = FakeAgent::start(Scenario::NoModes).await;
+    let client = bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+        .await
+        .unwrap();
+    bounded(
+        client.load_or_resume(
+            "session-1",
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            &origin(None),
+            "plan",
+        ),
+        "session/load",
+    )
+    .await
+    .unwrap();
+    // set_mode 发了但 Agent 回 Method not found：照 new 的路子跳过，恢复照常成功。
+    let requests = agent.requests().await;
+    assert!(
+        requests
+            .iter()
+            .any(|request| request["method"] == "session/set_mode"),
+        "{requests:?}"
+    );
+    drop(client);
+    agent.finish().await;
 }

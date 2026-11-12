@@ -13,6 +13,10 @@ use crate::topics::SessionKey;
 pub struct SessionRecord {
     pub session_id: String,
     pub cwd: String,
+    /// 建会话时切到的模式；恢复后补切一次用（适配器不都记得上次的模式）。
+    /// 旧文件里没有这个字段，空值恢复时退回配置的默认模式。
+    #[serde(default)]
+    pub mode: String,
 }
 
 /// 房间和会话键（主对话 `main`，话题是根消息事件 ID）到 ACP 会话的映射，重启后恢复。
