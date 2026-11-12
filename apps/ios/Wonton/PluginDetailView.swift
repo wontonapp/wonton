@@ -15,6 +15,7 @@ struct PluginDetailView: View {
     @State private var showsSettings = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.wontonColors) private var colors
+    @Environment(\.goToInstalledApps) private var goToInstalledApps
 
     var body: some View {
         content
@@ -62,9 +63,14 @@ struct PluginDetailView: View {
                     }
                     DetailHeader(model: model, detail: detail, action: action(for: detail))
                     if let task, task.state != .succeeded || task.hasAddedToolsNews {
-                        TaskRow(model: model, task: task) {
-                            confirmation = model.reconfirmation(for: task)
-                        }
+                        TaskRow(
+                            model: model,
+                            task: task,
+                            review: {
+                                confirmation = model.reconfirmation(for: task)
+                            },
+                            checkInstalled: goToInstalledApps,
+                        )
                     }
                     if let installed = detail.installed, !installed.notices.isEmpty {
                         NoticeLines(lines: installed.notices)

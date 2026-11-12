@@ -53,6 +53,7 @@ struct ChatListView: View {
             }
             .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
+            .environment(\.goToInstalledApps, { tabs.select(.apps) })
             .navigationDestination(for: ChatRoute.self) { route in
                 switch route {
                 case let .room(roomId):

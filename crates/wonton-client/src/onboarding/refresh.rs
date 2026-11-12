@@ -3,9 +3,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 
 use tokio::sync::watch::Receiver;
-use wonton_protocol::{
-    HomeStatus, InstalledPlugins, PluginOperation, PluginTaskState, PluginsViewModel,
-};
+use wonton_protocol::{HomeStatus, InstalledPlugins, PluginOperation, PluginsViewModel};
 
 use super::{OnboardingLink, api, lock, review};
 
@@ -27,7 +25,7 @@ impl PluginChanges {
             present
         });
         for task in &view.tasks {
-            let running = task.state == PluginTaskState::Running;
+            let running = task.state.in_progress();
             let next = (task.operation, running);
             if let Some(previous) = self.tasks.get_mut(&task.id) {
                 changed |= !running && *previous != next;

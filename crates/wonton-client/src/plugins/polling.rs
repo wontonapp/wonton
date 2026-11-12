@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use wonton_protocol::{HomeStatus, PluginProblem, PluginState, PluginTaskState, TabRef};
+use wonton_protocol::{HomeStatus, PluginProblem, PluginState, TabRef};
 
 use super::{Listing, POLL_INTERVAL, PluginsLink, lock};
 
@@ -41,12 +41,7 @@ impl PluginsLink {
                 )
             })
         });
-        if settling
-            || view
-                .tasks
-                .iter()
-                .any(|task| task.state == PluginTaskState::Running)
-        {
+        if settling || view.tasks.iter().any(|task| task.state.in_progress()) {
             Some(POLL_INTERVAL)
         } else {
             lock(&self.active_page)
@@ -90,7 +85,7 @@ impl PluginsLink {
             .borrow()
             .tasks
             .iter()
-            .any(|task| task.state == PluginTaskState::Running)
+            .any(|task| task.state.in_progress())
     }
 
     async fn poll_once(&self) -> Result<(), PluginProblem> {

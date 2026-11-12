@@ -27,6 +27,7 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginTask
+import app.wonton.protocol.PluginTaskNextStep
 import app.wonton.protocol.PluginTaskState
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
@@ -48,6 +49,7 @@ fun InstallConfirmScreen(
     confirmation: PluginConfirmation,
     onAccepted: (() -> Unit)? = null,
     onClose: () -> Unit,
+    onCheckInstalled: () -> Unit,
 ) {
     val isUpgrade = confirmation.isUpgrade
     var attempt by remember { mutableIntStateOf(0) }
@@ -80,7 +82,7 @@ fun InstallConfirmScreen(
         return
     }
     submittedId?.let { id ->
-        InstallCompletion(plugins, id, previousTask, onClose) {
+        InstallCompletion(plugins, id, previousTask, onClose, onCheckInstalled) {
             submittedId = null
             attempt++
         }
@@ -158,12 +160,21 @@ private fun InstallCompletion(
     id: String,
     previousTask: PluginTask?,
     onClose: () -> Unit,
+    onCheckInstalled: () -> Unit,
     onReview: () -> Unit,
 ) {
     val task = plugins.viewModel.tasks.firstOrNull { it.id == id }?.takeUnless { it == previousTask }
     val installed = plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id }
     val succeeded = task?.state is PluginTaskState.Succeeded
-    WontonScreen(bar = { WontonPushedBar(stringResource(R.string.install_completion_title), onClose) }) {
+    WontonScreen(
+        bar = {
+            WontonPushedBar(
+                stringResource(R.string.install_completion_title),
+                onClose,
+                showsStatus = true,
+            )
+        },
+    ) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
@@ -172,14 +183,34 @@ private fun InstallCompletion(
             when (val state = task?.state) {
                 null, is PluginTaskState.Running -> {
                     CircularProgressIndicator()
-                    Text(stringResource(R.string.install_completion_installing), style = WontonTheme.typography.body,
-                        color = WontonTheme.colors.textPrimary.toColor())
+                    Text(
+                        stringResource(
+                            if (task?.waitingForConnection == true) {
+                                R.string.plugin_task_waiting_for_connection
+                            } else {
+                                R.string.install_completion_installing
+                            },
+                        ),
+                        style = WontonTheme.typography.body,
+                        color = WontonTheme.colors.textPrimary.toColor(),
+                    )
                 }
                 is PluginTaskState.Succeeded -> Text(stringResource(R.string.install_completion_done),
                     style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
                 is PluginTaskState.Failed -> InstallFailure(state.reason, state.message, onReview)
-                is PluginTaskState.Uncertain -> ProblemNotice(Problem(
-                    stringResource(R.string.install_completion_uncertain), null, state.message))
+                is PluginTaskState.Uncertain -> {
+                    ProblemNotice(
+                        Problem(
+                            stringResource(R.string.install_completion_uncertain),
+                            state.nextStep.takeIf { it == PluginTaskNextStep.CHECK_INSTALLED }
+                                ?.let { stringResource(R.string.plugin_task_check_installed_next_step) },
+                            state.message,
+                        ),
+                    )
+                    if (state.nextStep == PluginTaskNextStep.CHECK_INSTALLED) {
+                        WontonButton(stringResource(R.string.plugin_task_check_installed), onCheckInstalled)
+                    }
+                }
             }
             plugins.viewModel.problem?.let { ProblemNotice(it.problem) }
             if (succeeded && installed != null) PluginTabPinButton(installed)

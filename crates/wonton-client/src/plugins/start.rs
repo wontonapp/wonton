@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use wonton_l10n::l10n;
-use wonton_protocol::{CoreError, InstalledPlugin, PluginProblem, PluginTaskState};
+use wonton_protocol::{CoreError, InstalledPlugin, PluginProblem};
 
 use super::api::INSTALL_TIMEOUT;
 use super::{Listing, PluginsLink, lock};
@@ -22,7 +22,7 @@ impl PluginsLink {
                     .borrow()
                     .tasks
                     .iter()
-                    .any(|task| task.id == id && task.state == PluginTaskState::Running)
+                    .any(|task| task.id == id && task.state.in_progress())
             {
                 return Err(CoreError::NotReady {
                     reason: l10n!(CATALOG, language(), "plugins-start-busy", id = id),
