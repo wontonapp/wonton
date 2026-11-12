@@ -524,19 +524,7 @@ impl Connection {
                     self.scenario,
                     Scenario::Manual | Scenario::DangerousModes | Scenario::ManualImages
                 ) {
-                    self.link.pending.lock().await.push(PendingPrompt {
-                        id: message["id"].clone(),
-                        session: message["params"]["sessionId"]
-                            .as_str()
-                            .unwrap_or_default()
-                            .to_owned(),
-                        text: message["params"]["prompt"][0]["text"]
-                            .as_str()
-                            .unwrap_or_default()
-                            .to_owned(),
-                        blocks: message["params"]["prompt"].clone(),
-                        writer: writer.clone(),
-                    });
+                    self.hold_prompt(message, writer).await;
                 } else {
                     handle_prompt(
                         writer,
@@ -560,6 +548,23 @@ impl Connection {
             _ => {}
         }
         true
+    }
+
+    /// Manual 系场景：把一轮挂在链路上，等测试用 [`FakeAgent::respond_prompt`] 回。
+    async fn hold_prompt(&self, message: &Value, writer: &Arc<Mutex<OwnedWriteHalf>>) {
+        self.link.pending.lock().await.push(PendingPrompt {
+            id: message["id"].clone(),
+            session: message["params"]["sessionId"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+            text: message["params"]["prompt"][0]["text"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+            blocks: message["params"]["prompt"].clone(),
+            writer: writer.clone(),
+        });
     }
 }
 
