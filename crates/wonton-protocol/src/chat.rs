@@ -212,6 +212,11 @@ pub struct EncryptionStatus {
     pub recovery_next_step: RecoveryNextStep,
     /// 正在进行或刚结束的设备确认（ADR-0046），本设备发起的和收到的都在这里。
     pub verification_flow: Option<VerificationFlow>,
+    /// 加设备时的密钥交接（ADR-0087）：本设备是刚加进来、在等密钥的新设备，或者是开着“添加设备”页、替新设备交出
+    /// 密钥的旧设备。没在交接时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub key_handoff: Option<crate::KeyHandoff>,
 }
 
 /// 备份页的下一步给主人看什么（ADR-0076）。核心按恢复状态算好，壳只按类别画，不自己判断。
@@ -228,6 +233,8 @@ pub enum RecoveryNextStep {
     ShowFlow,
     /// 恢复正在进行，壳画进度。
     Progress,
+    /// 刚加进来的设备在等另一台设备交出密钥（ADR-0087）：壳画交接页，不提恢复密钥。
+    WaitForOtherDevice,
     /// 没有要主人做的：备份完好，或者状态还没同步到。
     #[default]
     None,
@@ -243,6 +250,8 @@ pub enum RecoveryNextStep {
 pub enum BackupReminder {
     SaveRecoveryKey,
     EnterRecoveryKey,
+    /// 密钥交接还没完成，主人先进了聊天列表（ADR-0087）：提醒只说“在另一台设备上继续”，点了回到交接页。
+    ContinueOnOtherDevice,
     #[serde(other)]
     Other,
 }
@@ -439,6 +448,7 @@ mod tests {
                 can_reset: true,
                 recovery_next_step: RecoveryNextStep::ChooseDeviceOrKey,
                 verification_flow: None,
+                key_handoff: None,
             },
             installing_bots: vec![BotInstallRow {
                 plugin_id: "app.hermes".into(),

@@ -41,6 +41,8 @@ final class ChatModel {
     @ObservationIgnored private var awaitedFrom = AppTab.chat
     /// 发起私聊在后台失败了，原因显示在聊天页，主界面要切过去。
     var openingFailed = false
+    /// 主人在交接页点了“稍后”（ADR-0087）：先收起交接页，聊天列表顶上的提醒再打开。只在这次运行里记着。
+    var keyHandoffDeferred = false
 
     let core: ClientCore
     @ObservationIgnored private(set) lazy var files = FilesModel(chat: self)

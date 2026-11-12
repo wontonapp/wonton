@@ -137,8 +137,8 @@ pub use file::{
 };
 pub use friends::{
     FRIEND_EVENT, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendEvent, FriendFailure,
-    FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsState,
-    FriendsViewModel,
+    FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList,
+    FriendsState, FriendsViewModel, RemovedFriend,
 };
 pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
@@ -251,5 +251,5 @@ pub use timeline::{
     TimelineViewport,
 };
 pub use verification::{
-    VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
+    KeyHandoff, VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
 };

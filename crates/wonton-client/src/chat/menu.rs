@@ -376,6 +376,7 @@ mod tests {
                 can_reset: false,
                 recovery_next_step: wonton_protocol::RecoveryNextStep::None,
                 verification_flow: None,
+                key_handoff: None,
             },
             rooms: Vec::new(),
             installing_bots: Vec::new(),

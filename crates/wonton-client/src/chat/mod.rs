@@ -25,6 +25,7 @@ mod display_name;
 mod draft;
 mod follow_home;
 mod forward;
+mod handoff;
 mod installs;
 mod layout;
 mod links;
@@ -132,6 +133,8 @@ pub(crate) struct ChatLink {
     /// App 在后台：保持连接下同步到的该通知的消息收集进 `background_notifications`。
     background: AtomicBool,
     verification: Mutex<Option<verification::Control>>,
+    /// “添加设备”页开着、还能自动接受一个新设备的确认请求（ADR-0087）。
+    handoff_armed: AtomicBool,
     relogin: connect::Relogin,
     external: bool,
 }
@@ -213,6 +216,7 @@ impl ChatLink {
             can_reset: false,
             recovery_next_step: RecoveryNextStep::None,
             verification_flow: None,
+            key_handoff: None,
         };
         recovery::refresh(&mut encryption);
         let view = reuse(
@@ -270,6 +274,7 @@ impl ChatLink {
             draft_writes,
             background: AtomicBool::new(false),
             verification: Mutex::new(None),
+            handoff_armed: AtomicBool::new(false),
             relogin: connect::Relogin::default(),
             external,
         });
