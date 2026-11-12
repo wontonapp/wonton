@@ -111,6 +111,8 @@ final class ChatPanelUITests: XCTestCase {
         field.tap()
         field.typeText(String(repeating: "long reply text ", count: 30) + mark)
         tapAnyButton(["Send", "发送"], timeout: 5, required: true)
+        _ = app.wait(for: .runningForeground, timeout: 1)
+        shot("30-sent")
         // 消息正文是 UITextView（LinkedMessageText），文字在 value 里。
         let last = app.descendants(matching: .any).matching(
             NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", mark, mark)
