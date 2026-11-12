@@ -26,6 +26,8 @@ pub struct FriendsViewModel {
     pub blocked: Vec<FriendBlock>,
     /// 当前账号能否管理整台 Wonton 的联邦黑名单；不等于个人的邀请屏蔽。
     pub can_block_federation: bool,
+    /// 自己的 matrix.to 用户链接，给壳画“我的二维码”；没登录到 Matrix 时没有。
+    pub my_link: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,6 +153,28 @@ pub enum FriendFailure {
     Upstream,
     #[serde(other)]
     Other,
+}
+
+/// `GET /_wonton/api/friends` 的响应：核心存着的那部分好友数据。请求和屏蔽在客户端从 Matrix 同步里拼，
+/// 不在这里，所以它不是 [`FriendsViewModel`]，也没有页面状态。核心和客户端共用这一个类型，两边不各写一份。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FriendsList {
+    pub friends: Vec<FriendRow>,
+    pub groups: Vec<FriendGroup>,
+    /// 整台服务器黑名单（Tuwunel 的 `forbidden_remote_server_names`）。
+    pub blocked_servers: Vec<String>,
+    /// 删过的人：他们的私聊还带着好友标记，但不算好友，除非重新同意或收到新邀请。
+    pub removed: Vec<RemovedFriend>,
+    /// 这台设备的人能不能改整台服务器的黑名单：只有主人，且服务器能热加载配置。
+    pub can_block_federation: bool,
+    /// 名单是不是主人的：家人没有核心名单，好友只存在客户端本机。
+    pub owner_scope: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemovedFriend {
+    pub user_id: String,
+    pub removed_at_ms: u64,
 }
 
 #[cfg(test)]

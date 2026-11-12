@@ -39,12 +39,12 @@ const V0_9: SpecVersion = SpecVersion::new(0, 9);
 const V0_10: SpecVersion = SpecVersion::new(0, 10);
 const V0_11: SpecVersion = SpecVersion::new(0, 11);
 const V0_12: SpecVersion = SpecVersion::new(0, 12);
+const V0_13: SpecVersion = SpecVersion::new(0, 13);
 
 /// 0.6 以后才有的写法。新加清单字段时在这里加一行，规范的“各版本新增的字段”同步加。
 const TABLE: &[(SpecVersion, Added)] = &[
     (V0_7, Added::Field(&["webui", "cross_origin_isolated"])),
     (V0_7, Added::Field(&["webui", "oidc", "post_logout_paths"])),
-    (V0_7, Added::Field(&["webui", "oidc", "owner_groups"])),
     (V0_7, Added::Field(&["mcp", "headers"])),
     (V0_7, Added::Field(&["mcp", "tools"])),
     (V0_7, Added::Field(&["bot", "avatars"])),
@@ -64,7 +64,6 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_8, Added::Field(&["optional_permissions"])),
     (V0_8, Added::Field(&["secrets", "*", "show_owner"])),
     (V0_8, Added::Field(&["secrets", "*", "input"])),
-    (V0_9, Added::Field(&["webui", "friends"])),
     (V0_9, Added::ProxyRole),
     (V0_10, Added::Field(&["runtime"])),
     (V0_10, Added::Field(&["agent", "skills", "mount"])),
@@ -78,6 +77,9 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_12, Added::Field(&["static_web"])),
     (V0_12, Added::Field(&["link"])),
     (V0_12, Added::Field(&["provides", "*", "mount"])),
+    (V0_13, Added::Field(&["webui", "accounts"])),
+    (V0_13, Added::Field(&["webui", "oidc", "admin_groups"])),
+    (V0_13, Added::Field(&["webui", "oidc", "role_claim"])),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。

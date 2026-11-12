@@ -1,14 +1,21 @@
 ## 橋自己送進房間的狀態話（ADR-0043）。一句完整的話一則訊息；資料作參數，不翻。台灣用詞。
 
 login-reconnect = Agent 登入完成，正在重新連線。
-input-unsupported = 不支援的輸入：只接受純文字。
+input-unsupported =
+    不支援的輸入：{ $kind ->
+        [audio] 語音訊息
+        [video] 視訊訊息
+        *[other] 這類內容
+    }暫時不支援，只支援文字、圖片和檔案。
 input-too-long = 輸入無效：輸入超過 { $max } 位元組上限
 input-empty = 輸入無效：輸入不能是空的
+attachment-too-large = 附件超過 { $max } 的上限
+workspace-missing = 工作區目錄不存在，外掛可能沒有掛上工作區
+workspace-not-absolute = 工作區路徑不是絕對路徑：{ $path }
 control-without-text = 輸入無效：控制命令缺少文字
-interrupt-pending = 忙碌：已有一個打斷要求正在等待處理。
-queue-full = 忙碌：ACP 佇列已滿，請稍後再試。
+queue-full = 忙碌：等 Agent 做完這一輪的訊息太多了，請稍後再試。
 no-active-session = Agent 尚未就緒：沒有進行中的 ACP 工作階段
-steer-rejected = Agent 沒有接受插話要求。
+steer-new-turn = Agent 把這則訊息當作新的一輪自己開始了，這一輪的回覆不會出現在這裡。
 session-lost-new = ACP 工作階段已遺失，已建立新的工作階段；先前的內容已無法使用。
 permission-failed = Agent 權限請求失敗：{ $message }
 permissions-cancelled = 權限請求已取消，Agent 沒有執行該操作。

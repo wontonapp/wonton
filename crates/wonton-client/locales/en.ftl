@@ -116,6 +116,7 @@ onboarding-review-no-failure = That item hasn't failed.
 
 # Sign-in details. $reason is the Matrix SDK's original error.
 chat-sign-in-restore-failed = Can't restore your Matrix session: { $reason }
+chat-sign-in-external-missing = This Matrix account's sign-in on this phone is gone. Sign in to it again.
 chat-sign-in-no-connection-info = There's no connection information for your home server yet.
 chat-sign-in-login-failed = Can't sign in to Matrix: { $reason }
 chat-sign-in-no-saved-session = No session to save after signing in.
@@ -171,6 +172,7 @@ chat-contacts-invalid-user-id = That user ID isn't valid: { $reason }
 
 # Shown when sending a message through Siri, Shortcuts or the chat screen with empty text.
 chat-empty-message = Type a message first.
+composer-not-ready = This version of the client core doesn't support the attachment tray yet.
 # Shown when the bot ID handed in from Siri or Shortcuts doesn't parse.
 chat-ask-invalid-bot-id = The default agent's ID isn't formatted correctly.
 # Shown when a saved direct chat's room ID doesn't parse.
@@ -182,6 +184,7 @@ chat-layout-change-failed = Couldn't change the chat layout: { $reason }
 chat-session-device-revoked = This device was revoked on Matrix. Pair it with your home server again.
 
 # Shown when the shell routes a chat action this core doesn't know.
+side-chat-not-ready = This version of the client core doesn't support side chats yet.
 chat-invalid-action = Not a chat action.
 # Shown when starting a direct chat with a user ID that isn't @name:server.
 chat-invalid-user-id = That user ID isn't valid. It should look like @name:server.
@@ -481,6 +484,13 @@ servers-name-required = The name can't be empty.
 servers-storage-failed = Can't read or write { $path }: { $reason }
 # Shown when the shell routes a server list action this core doesn't know.
 servers-invalid-action = Not a server list action.
+matrix-login-not-current = This sign-in has ended or was replaced by a newer one.
+matrix-login-wrong-step = This sign-in isn't at that step.
+matrix-login-method-not-offered = This server doesn't offer that sign-in method.
+matrix-login-device-name-required = Enter a name for this device.
+matrix-login-invalid-user-id = Enter the full Matrix ID, like @name:matrix.org.
+matrix-login-password-required = Enter the password.
+matrix-login-redirect-not-allowed = This app can't receive sign-in callbacks at that address.
 
 # The session list (crates/wonton-client/src/session_store.rs).
 sessions-title-required = The session title can't be empty.
@@ -584,6 +594,15 @@ plugins-core-upgrade-not-cancellable = The update can't be cancelled right now.
 # $reason is the connection problem's original detail.
 plugins-core-upgrade-start-uncertain = It isn't certain that the update was started. Check again once you're connected: { $reason }
 
+# Details of the compatibility check before the update (ADR-0085): one line per reason,
+# with the manifest's own value in { $raw }. Written by the client core in the App's
+# language; the update page lists them under each app the new version can't read.
+plugins-core-upgrade-compat-spec = Its manifest is written against spec { $raw }, which the new version doesn't support: it will be marked as broken after the update.
+plugins-core-upgrade-compat-feature = Its manifest uses { $raw }, which the new version doesn't recognize: it will be marked as broken after the update.
+plugins-core-upgrade-compat-capability = It depends on the capability { $raw }, which the new version doesn't provide: it will be marked as broken after the update.
+plugins-core-upgrade-compat-other = The new version can't read this app, so it will be marked as broken after the update.
+plugins-core-upgrade-compat-other-raw = The new version can't read part of this app ({ $raw }), so it will be marked as broken after the update.
+
 # Profile step: why the name or email can't be saved. $max is the longest name allowed.
 onboarding-profile-name-empty = Enter a name.
 onboarding-profile-name-too-long = The name can be at most { $max } characters.
@@ -665,3 +684,13 @@ tabs-fullscreen-only-plugins = Only app pages can go full screen.
 tabs-fullscreen-none = Nothing is full screen right now.
 tabs-fullscreen-not-current = That page isn't the full-screen one.
 panel-pins-refresh-failed = Couldn't load the pages bots pinned: { $error }
+
+## Plugin pages that need cross-origin isolation open in the system browser (ADR-0033). The last three show in the browser.
+browser-front-failed = Can't open a local address for the browser: { $error }
+browser-page-not-isolated = This page doesn't open in the browser.
+browser-not-paired = Wonton isn't paired with a home server yet.
+browser-unknown-address = This address has expired. Go back to Wonton and open the app again.
+browser-not-connected = Wonton isn't connected to your home server right now. Go back to Wonton, wait until it connects, then reload this page.
+browser-bad-request = Open this page from Wonton.
+
+contacts-invalid-action = Not a bot-contacts action.

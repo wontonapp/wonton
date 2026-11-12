@@ -156,7 +156,9 @@ impl From<Runtime> for wonton_protocol::PluginRuntime {
 #[serde(rename_all = "lowercase")]
 pub enum Sso {
     Oidc,
-    /// 网关代登录（插件规范的“网关代登录”）：核心认得，但还没实现，安装预览时如实报“尚未支持”。
+    /// 网关代登录（插件规范的“网关代登录”）：应用认反向代理传来的用户名或固定密钥，网关在转发给插件网页的
+    /// 请求上代加 `webui.proxy` 声明的请求头和 Cookie。凭据只加在网关认出用户的请求上，也不会回到浏览器
+    /// （网关按值从响应头里剥除）。webui 服务不能跑在宿主网络，安装时按 `super::privileges` 拒绝。
     Proxy,
     #[default]
     None,
@@ -190,10 +192,22 @@ pub struct OidcClient {
     /// 应用在令牌端点出示客户端密钥的方式，默认 `client_secret_basic`。
     #[serde(default)]
     pub token_endpoint_auth_method: TokenAuthMethod,
-    /// 给这个客户端的 `groups` 里，`owner` 之外再加这些组名，应用按组名映射角色。
+    /// 这个人是这个应用的管理员时（ADR-0088 的 `plugin_admin`），`groups` 里再加这些组名，应用按组名映射角色。
     /// 只发给这个客户端，别的插件看不到。
     #[serde(default)]
-    pub owner_groups: Vec<String>,
+    pub admin_groups: Vec<String>,
+    /// 应用读一个专门的声明认管理员（如 Immich 的 `immich_role`）时，核心按 `plugin_admin` 填它。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role_claim: Option<RoleClaim>,
+}
+
+/// 清单 `webui.oidc.role_claim`：声明名，和管理员、普通用户各填的值。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RoleClaim {
+    pub name: String,
+    pub admin: String,
+    pub user: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -211,12 +225,20 @@ pub struct WebUi {
     pub oidc: Option<OidcClient>,
     #[serde(default)]
     pub proxy: Option<ProxyCredentials>,
-    /// 声明插件识别好友身份的能力；省略或为 false 只是未声明，不禁止分享，也不授予访问权限。
-    #[serde(default)]
-    pub friends: bool,
+    /// 应用按登录的人分开数据（ADR-0088）。没声明的按“全家共用一份”处理：不禁止开放和分享，开放时醒目提示。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accounts: Option<Accounts>,
     /// 页面要跨源隔离（如要 `SharedArrayBuffer`）。Android WebView 默认不给，声明了才放宽，见 ADR-0033“跨源隔离”。
     #[serde(default)]
     pub cross_origin_isolated: bool,
+}
+
+/// 清单 `webui.accounts` 的取值。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Accounts {
+    /// 按登录的人分开数据。
+    PerUser,
 }
 
 /// `sso: proxy` 时网关加在转发请求上的请求头和 Cookie：名字 → 值模板。

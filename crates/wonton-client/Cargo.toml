@@ -55,6 +55,9 @@ pulldown-cmark = { version = "0.13.6", default-features = false }
 reqwest = { workspace = true, features = ["stream"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# 都是 MIT OR Apache-2.0。以设备密钥为键推出浏览器入口的标签和端口（`src/browser`）。
+hmac = "0.12"
+sha2 = { workspace = true }
 # MIT OR Apache-2.0。
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "sync", "rt-multi-thread", "time"] }

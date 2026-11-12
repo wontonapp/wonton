@@ -58,6 +58,8 @@ extension PluginFailure {
                 .problemPluginEgressProxyUnavailableTitle, .problemPluginEgressProxyUnavailableNextStep, detail
             )
         case .protocol: categorizedProblem(.problemPluginProtocolTitle, .problemPluginProtocolNextStep, detail)
+        case .recordUnusable:
+            categorizedProblem(.problemPluginRecordUnusableTitle, .problemPluginRecordUnusableNextStep, detail)
         case .serverTooOld:
             categorizedProblem(.problemPluginServerTooOldTitle, .problemUpgradeServerNextStep, detail)
         // 比这个壳新的类别：先按服务器出错说。
@@ -145,7 +147,7 @@ extension BotProfileFailure {
                 detail: detail
             )
         // 家人设备调只有主人的接口（ADR-0045）：不是出错，也不是还没准备好。
-        case .ownerOnly:
+        case .permissionRequired:
             return Problem(
                 title: String(localized: .botProfileProblemOwnerOnlyTitle),
                 nextStep: String(localized: .botProfileProblemOwnerOnlyNext),
@@ -269,6 +271,9 @@ extension Error {
                 detail: detail
             )
         case let .InvalidInput(reason):
+            return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: reason)
+        case let .SettingsInvalid(reason, _):
+            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
             return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: reason)
         case .ServerTooOld:
             return Problem(

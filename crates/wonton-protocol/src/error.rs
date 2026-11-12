@@ -50,6 +50,13 @@ pub enum CoreError {
         /// 这个接口要的服务器版本；不知道时为空。
         min_version: Option<String>,
     },
+    /// 插件设置没过校验（ADR-0077）：逐字段的明细给壳标到控件旁，`reason` 是核心写的一句话。
+    #[error("{reason}")]
+    SettingsInvalid {
+        reason: String,
+        /// 没通过的字段，键是属性名。
+        fields: Vec<crate::SettingsFieldError>,
+    },
 }
 
 #[cfg(test)]
@@ -74,5 +81,20 @@ mod tests {
             min_version: None,
         };
         assert!(serde_json::from_value::<CoreError>(serde_json::to_value(&error).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn settings_invalid_round_trips_with_its_fields() {
+        let error = CoreError::SettingsInvalid {
+            reason: "1 settings don't pass validation".to_owned(),
+            fields: vec![crate::SettingsFieldError {
+                name: "months".to_owned(),
+                kind: crate::SettingsFieldProblemKind::AboveMaximum,
+                message: "Must be at most 12".to_owned(),
+            }],
+        };
+        let json = serde_json::to_value(&error).unwrap();
+        assert_eq!(json["type"], "settings_invalid");
+        assert_eq!(serde_json::from_value::<CoreError>(json).unwrap(), error);
     }
 }

@@ -497,6 +497,7 @@ pub fn item(id: &str, title: &str, tags: &[&str]) -> StoreItem {
         stars: None,
         installed_version: None,
         security_tier: None,
+        high_permissions: false,
         blocked: None,
     }
 }
@@ -639,6 +640,11 @@ impl Rig {
             self._home.server.endpoint().id(),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 9)),
         )
+    }
+
+    /// 关掉服务端，模拟断网：客户端那边会看到连接断开。
+    pub async fn drop_home(&self) {
+        self._home.server.endpoint().close().await;
     }
 
     pub async fn connected(&self) {

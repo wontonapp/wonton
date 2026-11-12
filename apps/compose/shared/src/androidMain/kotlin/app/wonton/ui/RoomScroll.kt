@@ -35,6 +35,8 @@ import app.wonton.protocol.BackPagination
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineScroll
 import app.wonton.protocol.TimelineViewport
+import app.wonton.protocol.TimelineAction
+import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -76,7 +78,7 @@ internal fun ScrollEffects(
             .collect { atBottom ->
                 if (placed) {
                     val scroll = if (atBottom) TimelineScroll.BOTTOM else TimelineScroll.AWAY
-                    onAction(Action.SetTimelineScroll(roomId, scroll))
+                    onAction(Action.Timeline(TimelineAction.SetTimelineScroll(TimelineTarget(roomId, null), scroll)))
                 }
             }
     }
@@ -87,7 +89,7 @@ internal fun ScrollEffects(
             Triple(placed, listState.isAtBottom(), timeline.items.lastOrNull()?.id)
         }.collect { (placed, atBottom, newest) ->
             if (placed && atBottom && newest != null) {
-                if (timeline.loaded) onAction(Action.MarkRoomRead(roomId))
+                if (timeline.loaded) onAction(Action.Timeline(TimelineAction.MarkRead(TimelineTarget(roomId, null))))
             }
         }
     }
@@ -120,7 +122,7 @@ private suspend fun placeAnchor(
         listState.scrollToItem(index, listState.layoutInfo.viewportSize.height - height)
     }
     if (anchor != newest) {
-        onAction(Action.SetTimelineScroll(roomId, TimelineScroll.AWAY))
+        onAction(Action.Timeline(TimelineAction.SetTimelineScroll(TimelineTarget(roomId, null), TimelineScroll.AWAY)))
     }
 }
 
@@ -165,7 +167,11 @@ internal fun ScrollToBottomButton(
         }
         FloatingActionButton(
             onClick = {
-                onAction(Action.SetTimelineScroll(roomId, TimelineScroll.BOTTOM))
+                onAction(
+                    Action.Timeline(
+                        TimelineAction.SetTimelineScroll(TimelineTarget(roomId, null), TimelineScroll.BOTTOM),
+                    ),
+                )
                 scope.launch { listState.animateScrollToItem(0) }
             },
             modifier = Modifier

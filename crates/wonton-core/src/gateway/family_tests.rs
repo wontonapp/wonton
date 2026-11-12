@@ -202,7 +202,10 @@ async fn an_invited_member_pairs_her_device_and_sees_herself() {
     // 家人的请求碰不到主人的接口。
     let (status, headers, _) = phone.get(CORE, MEMBERS).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(header(&headers, "x-wonton-error"), Some("owner_only"));
+    assert_eq!(
+        header(&headers, "x-wonton-error"),
+        Some("permission_required")
+    );
 }
 
 /// 命令行带主人令牌读写主人自己的资料，`dev.sh up` 替主人填资料就这么调。
@@ -340,9 +343,9 @@ async fn usernames_come_from_display_names_and_collisions_are_conflicts() {
     }
 }
 
-/// 只给主人的路由，挨个过一遍：家人的设备回 403 `owner_only`，没有身份回 401。
+/// 只给主人的路由，挨个过一遍：家人的设备回 403 `permission_required`，没有身份回 401。
 #[tokio::test]
-async fn owner_only_routes_reject_member_devices_with_owner_only() {
+async fn permission_required_routes_reject_member_devices_with_permission_required() {
     let h = Harness::start(None).await;
     let member = SecretKey::generate().public();
     seed_member(&h, "mia", false);
@@ -351,7 +354,7 @@ async fn owner_only_routes_reject_member_devices_with_owner_only() {
         .add_if(member, None, Some("mia".to_owned()), |_| true)
         .unwrap();
 
-    for (kind, routes) in owner_only_route_tables() {
+    for (kind, routes) in permission_required_route_tables() {
         for (method, path, body) in routes {
             let reply = send_as(&h.app, Some(member), method.clone(), CORE, path, &[], body).await;
             assert_eq!(
@@ -378,7 +381,7 @@ async fn owner_only_routes_reject_member_devices_with_owner_only() {
         }
     }
 
-    // 登记设备只认主人令牌（ADR-0009）：家人的设备也是 401 unauthenticated，不是 owner_only。
+    // 登记设备只认主人令牌（ADR-0009）：家人的设备也是 401 unauthenticated，不是 permission_required。
     let reply = send_as(
         &h.app,
         Some(member),
@@ -452,7 +455,12 @@ async fn install_authorization_does_not_allow_changing_plugin_permissions() {
         )
         .await;
         assert_eq!(reply.status, StatusCode::FORBIDDEN, "{method} {path}");
-        assert_eq!(reply.error_kind(), Some("owner_only"), "{}", reply.text());
+        assert_eq!(
+            reply.error_kind(),
+            Some("permission_required"),
+            "{}",
+            reply.text()
+        );
     }
 }
 
@@ -460,8 +468,8 @@ async fn install_authorization_does_not_allow_changing_plugin_permissions() {
 type RouteTable = (&'static str, Vec<(Method, &'static str, &'static str)>);
 
 /// 分层的路由表：`kind` 是没授权的家人会拿到的错误码。
-fn owner_only_route_tables() -> Vec<RouteTable> {
-    let mut owner_only: Vec<(Method, &str, &str)> = vec![
+fn permission_required_route_tables() -> Vec<RouteTable> {
+    let mut permission_required: Vec<(Method, &str, &str)> = vec![
         (Method::GET, "/_wonton/api/egress-proxy", ""),
         (Method::PUT, "/_wonton/api/egress-proxy", "{}"),
         (Method::GET, "/_wonton/api/registry-mirror", ""),
@@ -544,12 +552,15 @@ fn owner_only_route_tables() -> Vec<RouteTable> {
         (Method::DELETE, "/_wonton/api/peers/rejected/r1", ""),
         (Method::DELETE, "/_wonton/api/peers/other.example", ""),
     ];
-    owner_only.extend(super::plugin_forms_tests::owner_only_routes());
-    vec![("owner_only", owner_only), install_not_allowed_routes()]
+    permission_required.extend(super::plugin_forms_tests::permission_required_routes());
+    vec![
+        ("permission_required", permission_required),
+        install_not_allowed_routes(),
+    ]
 }
 
 fn install_not_allowed_routes() -> RouteTable {
-    // 商店、预览、启动和卸载是另一层：没授权的家人是 install_not_allowed，不是 owner_only。
+    // 商店、预览、启动和卸载是另一层：没授权的家人是 install_not_allowed，不是 permission_required。
     let install_routes: Vec<(Method, &str, &str)> = vec![
         (
             Method::POST,

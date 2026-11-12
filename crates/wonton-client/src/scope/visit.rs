@@ -53,6 +53,7 @@ impl Visit {
         let chat = ChatLink::new(
             handle.clone(),
             home.clone(),
+            slot,
             dir,
             card_success,
             plugins,
@@ -61,6 +62,7 @@ impl Visit {
                 method: push_method.subscribe(),
                 session_out: watch::channel(None).0,
                 room_panel_out: watch::channel(None).0,
+                external: false,
             },
         )?;
         chat.backgrounded();

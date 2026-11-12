@@ -279,6 +279,7 @@ mod tests {
                 can_reset: false,
                 recovery_next_step: RecoveryNextStep::None,
                 verification_flow: None,
+                key_handoff: None,
             },
             installing_bots: Vec::new(),
             rooms: vec![RoomRow {
@@ -291,6 +292,7 @@ mod tests {
                 is_read_only: false,
                 membership: wonton_protocol::RoomMembership::Joined,
                 preview: None,
+                side_chats: false,
                 unread_count: 0,
             }],
             problem: None,
