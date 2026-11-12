@@ -470,8 +470,15 @@ impl PluginManager {
             self.engine.remove_container(&container.name).await?;
         }
         self.rewrite_image_healthchecks(ctx, &mut plan).await?;
-        let deadline = gate.deadline(&plan, self.cfg.install_timeout, Instant::now());
-        self.start_containers(None, &plan, None, &mut Undo::default(), deadline, &langs)
+        let deadline = gate.deadline(&plan, ctx.install_limit, Instant::now());
+        Box::pin(self.start_containers(
+            None,
+            &plan,
+            None,
+            &mut Undo::default(),
+            deadline,
+            &langs,
+        ))
             .await?;
         Ok(())
     }
