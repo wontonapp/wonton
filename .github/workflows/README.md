@@ -16,6 +16,9 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 
 - `rust-docker.yml`：依赖 Docker 的集成测试。`push` 到 `main` 时按路径触发，每次合并单独跑一遍、不互相取消，
   红了能按那次提交标题里的 `(#N)` 找到弄红的 PR；合并前想先跑，在 Actions 页对分支手动触发。
+- `ios.yml` 的模拟器构建（WontonTests）在只改了 wonton-client 依赖的其余 crate、依赖版本或工具链时：这些不改导出给
+  Swift 的接口，很少弄坏 iOS。改到 Swift 这边或接口（`apps/ios`、设计生成、`wonton-protocol`、`wonton-client`）的
+  PR 上照常跑、算必需检查：iOS 在 PR 上红的多半是这几处，挪到合后会让 main 一天红好几次。范围和理由写在 `ios.yml` 开头。
 - `main-image.yml`：核心镜像构建。
 - `nightly-ui.yml`：两端的界面测试（XCUITest、设备上的 androidTest），只定时和手动。
 

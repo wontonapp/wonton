@@ -1,25 +1,47 @@
 name: ios
 
 # 托管 macOS（仓库公开后 macOS 分钟免费）：SwiftLint，和一次模拟器构建：在固定型号和系统版本的模拟器上
-# 跑 WontonTests（单测和截图测试，不跑 UI 测试，不签名）。PR 只在改到 iOS 相关文件时跑；草稿 PR 上
-# 一个作业都不起（含改动范围），汇总作业起来报一个通过；转 ready 或每天的定时全量才跑。
+# 跑 WontonTests（单测和截图测试，不跑 UI 测试，不签名）。草稿 PR 上一个作业都不起（含改动范围），汇总作业起来报
+# 一个通过；转 ready 或每天的定时全量才跑。
 # 重录参考图不在这个工作流里：另开 snapshots-record.yml，只在打 record-snapshots 标签时跑，见 workflows/README.md。
-# 触发的 crate 是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
-# 加了依赖要同步改这份列表。只改测试的 PR（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉。
-# 路径不写在触发器上：必需检查在每个 PR 上都要有结果，工作流没触发的话检查一直“等待中”，PR 合不了。
-# 改成由 changes 作业判断改动范围，没改到时自己报 skipped（跳过的检查算通过）。
-# 必需检查只有末尾的汇总作业，其余作业在作业级直接跳过，不用为了报检查先起 runner。
+#
+# 改动范围分两半（模拟器构建要十几分钟，2026-11-12 实测 PR 上中位 13 分钟，PR 只等十分钟内出结果的快检查）：
+# - PR 上：改到 Swift 这边或导出给 Swift 的接口（apps/ios、设计生成、wonton-protocol、wonton-client）才跑，汇总是必需检查。
+#   iOS 在 PR 上红的多半是这几处改了接口、Swift 没跟上（2026-11-12 前一天约十次），挪到合后会让 main 一天红好几次。
+# - 合进 main 之后：wonton-client 依赖的其余 crate、依赖版本、工具链（不改导出接口，很少弄坏 Swift）按 push 的路径触发，
+#   不挡合并；每次合并单独跑、不互相取消，红了按那次提交标题里的 (#N) 找到弄红的 PR。
+# 两半合起来是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
+# 加了依赖要同步改。只改测试的（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉。
+# PR 上路径不写在触发器上：必需检查在每个 PR 上都要有结果，工作流没触发的话检查一直“等待中”，PR 合不了；
+# 由 changes 作业判断，没改到时自己报 skipped（跳过的检查算通过）。
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+    # 不是必需检查，路径直接写在触发器上；排除项放最后，GitHub 按顺序判断。
+    paths:
+      - "crates/wonton-l10n/**"
+      - "crates/wonton-matrix/**"
+      - "crates/wonton-tunnel/**"
+      - "Cargo.toml"
+      - "vendor/**"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "!**/*.md"
+      - "!crates/**/tests/**"
+      - "!crates/**/benches/**"
+      - "!crates/**/tests.rs"
+      - "!crates/**/*_tests.rs"
   schedule:
-    # 每天全量兜底：main 上不重跑，两个各自绿的 PR 合在一起才出的错由这次发现。
+    # 每天全量兜底：两个各自绿的 PR 合在一起才出的错由这次发现。
     - cron: "30 4 * * *"
   workflow_dispatch:
 
 # 同一个 PR 又推了新提交，旧的整个取消，排上的模拟器构建也不许再起（build 的条件用 !cancelled()）。
+# main 上每次合并单独一组、不互相取消（见开头）。
 concurrency:
-  group: ios-${{ github.ref }}
+  group: ios-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -56,14 +78,7 @@ jobs:
               - "design/**"
               - "scripts/generate-design.py"
               - "crates/wonton-client/**"
-              - "crates/wonton-l10n/**"
-              - "crates/wonton-matrix/**"
               - "crates/wonton-protocol/**"
-              - "crates/wonton-tunnel/**"
-              - "Cargo.toml"
-              - "vendor/**"
-              - "Cargo.lock"
-              - "rust-toolchain.toml"
               - ".github/workflows/ios.yml"
               - "!**/*.md"
               - "!crates/**/tests/**"
