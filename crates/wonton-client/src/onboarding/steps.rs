@@ -356,12 +356,9 @@ impl OnboardingLink {
             state.review_generation += 1;
             state.commit = OnboardingCommit::NotStarted;
             state.testing = false;
-            // 把在途的旧刷新作废：它们的响应若晚于这趟刷新落地，revision 对不上会先落，
-            // 这趟带着资料和服务商详情的响应反而被当旧的丢掉（#315 的守卫按落地顺序判新旧）。
-            state.revision += 1;
             state.step = view::first_visible(&state.unavailable).or(Some(OnboardingStep::Profile));
         }
-        self.refresh();
+        self.refresh_after_local_reset();
         Ok(())
     }
 

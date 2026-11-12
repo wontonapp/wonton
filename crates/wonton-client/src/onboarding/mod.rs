@@ -206,6 +206,18 @@ impl OnboardingLink {
 
     /// 重新取家里服务器上的状态。记下的选择和正在显示的一步不变：从网关网页回来、出错后重试都走这里。
     fn refresh(self: &Arc<Self>) {
+        self.refresh_impl(false);
+    }
+
+    /// 本地重置（重看引导）后的那一趟：它的响应必须落地。重置不写服务器，这趟又是重置之后
+    /// 唯一在途的取状态，比它早派发、带着旧的 in_flow 判断的并发刷新（如插件视图触发的）可能
+    /// 晚落地——没有 force 时 revision 守卫会把这趟带着资料和服务商详情的响应当旧的丢掉，
+    /// 重看的每一步就没有现值可显示（本地重置只清了草稿，现值都在响应里）。
+    pub(crate) fn refresh_after_local_reset(self: &Arc<Self>) {
+        self.refresh_impl(true);
+    }
+
+    fn refresh_impl(self: &Arc<Self>, force: bool) {
         let (generation, operation, revision) = {
             let mut state = lock(&self.state);
             state.loading = true;
@@ -230,7 +242,9 @@ impl OnboardingLink {
             }
             let (api, onboarding) = match result {
                 Ok(fetched) => fetched,
-                Err(problem) => return link.finish_error(generation, operation, revision, problem),
+                Err(problem) => {
+                    return link.finish_error(generation, operation, revision, force, problem);
+                }
             };
             let in_flow = {
                 let state = lock(&link.state);
@@ -246,7 +260,7 @@ impl OnboardingLink {
             if !link.operation_is_current(generation, operation) {
                 return;
             }
-            link.received(onboarding, details, revision);
+            link.received(onboarding, details, revision, force);
         });
     }
 
@@ -258,12 +272,14 @@ impl OnboardingLink {
             Result<ModelProviders, ModelProviderProblem>,
         )>,
         revision: u64,
+        force: bool,
     ) {
         {
             let mut state = lock(&self.state);
             // 服务端的 Onboarding 不带版本号，按请求发出时的 revision 判新旧：这趟请求发出后已有
             // 更新的响应落过地（静默刷新、点完成的保存），这份旧的丢弃，视图保持已落地的状态。
-            if state.revision == revision {
+            // force 是本地重置（重看引导）后的那趟：重置不写服务器，这趟的响应必然是最新的。
+            if force || state.revision == revision {
                 if state.step.is_none() {
                     // 中间的步骤不存在家里服务器上：没走完的从第一个能显示的步开始，每一步显示现在的设置。
                     state.revisit = onboarding.step == OnboardingStep::Finished;
@@ -299,14 +315,22 @@ impl OnboardingLink {
         self.publish();
     }
 
-    fn finish_error(&self, generation: u64, operation: u64, revision: u64, problem: PluginProblem) {
+    fn finish_error(
+        &self,
+        generation: u64,
+        operation: u64,
+        revision: u64,
+        force: bool,
+        problem: PluginProblem,
+    ) {
         if !self.operation_is_current(generation, operation) {
             return;
         }
         let mut state = lock(&self.state);
         state.loading = false;
         // 请求发出后已有更新的响应落过地：这份旧错误丢弃，视图保持已落地的状态。
-        if state.revision == revision {
+        // force 同 received：本地重置后的那趟的错误也要落。
+        if force || state.revision == revision {
             if problem.reason == PluginFailure::ServerTooOld {
                 state.too_old = Some(too_old(&problem));
                 state.problem = None;
