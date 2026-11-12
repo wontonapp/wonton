@@ -31,7 +31,9 @@
     <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
     <string name="store_via_index">%1$s経由</string>
     <!-- アップデートのあるアプリをまとめて更新する前のボトムシートのタイトル。 -->
-    <string name="store_update_all_title">%1$d個のアプリをアップデート</string>
+    <plurals name="store_update_all_title">
+        <item quantity="other">%1$d個のアプリをアップデート</item>
+    </plurals>
     <!-- そのシートですべてのアップデートを始めるボタン。 -->
     <string name="store_update_all">すべてアップデート</string>
     <!-- そのシートを開くツールバーのダウンロードアイコンの読み上げ。 -->

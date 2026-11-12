@@ -30,8 +30,11 @@
     <string name="store_update">Update</string>
     <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
     <string name="store_via_index">via %1$s</string>
-    <!-- Sheet title before updating every app that has an update at once. -->
-    <string name="store_update_all_title">Update %1$d apps</string>
+    <!-- Sheet title before updating every app that has an update at once. Argument: the count. -->
+    <plurals name="store_update_all_title">
+        <item quantity="one">Update %1$d app</item>
+        <item quantity="other">Update %1$d apps</item>
+    </plurals>
     <!-- Button in that sheet that starts all the updates. -->
     <string name="store_update_all">Update all</string>
     <!-- Content description of the toolbar download icon that opens that sheet. -->
