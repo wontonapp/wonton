@@ -62,7 +62,7 @@ impl EnvFile {
 mod tests {
     use super::*;
 
-    const FILE: &str = "# 注释\nWONTON_CORE_SOURCE=r:stable\nWONTON_CORE_IMAGE=r@old\nWONTON_INSTALL_DIR=/opt/wonton\n\
+    const FILE: &str = "# 注释\nWONTON_CORE_SOURCE=r:beta\nWONTON_CORE_IMAGE=r@old\nWONTON_INSTALL_DIR=/opt/wonton\n\
                         WONTON_DATA_DIR=/var/lib/wonton\nWONTON_PORT=8480\nWONTON_TUNNEL_PORT=8482\n\
                         WONTON_BASE_DOMAIN=wonton.localhost\nTZ=\n";
 
@@ -85,7 +85,7 @@ mod tests {
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.contains("WONTON_CORE_IMAGE=r@new\n"));
         assert!(!text.contains("r@old"));
-        assert!(text.contains("# 注释\nWONTON_CORE_SOURCE=r:stable\n"));
+        assert!(text.contains("# 注释\nWONTON_CORE_SOURCE=r:beta\n"));
         assert!(text.contains("TZ=\n"));
         assert_eq!(
             EnvFile::read(&path).unwrap().get("WONTON_CORE_IMAGE"),

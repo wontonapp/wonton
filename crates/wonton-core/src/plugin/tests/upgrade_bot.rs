@@ -24,7 +24,6 @@ async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
     let m = Arc::new(manager_in_container(engine, &dir).with_matrix(Some(Arc::new(matrix))));
     let settings = StoredEgress {
         url: Some("http://proxy:1".to_owned()),
-        doh_url: None,
         direct_cidrs: Vec::new(),
         use_plugin: false,
     };
@@ -52,7 +51,6 @@ async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
         permissions(&v2),
         Vec::new(),
         false,
-        &Default::default(),
         &super::langs(),
     )
     .await
@@ -80,7 +78,6 @@ async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
             permissions(&v3),
             Vec::new(),
             false,
-            &Default::default(),
             &super::langs(),
         )
         .await

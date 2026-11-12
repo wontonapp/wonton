@@ -47,13 +47,13 @@ private struct RichBlockView: View {
     @ViewBuilder private var content: some View {
         switch block.kind {
         case .paragraph:
-            inlineContent
+            Text(inline)
         case .heading:
-            inlineContent.wontonText(WontonTheme.typography.itemTitle)
+            Text(inline).wontonText(WontonTheme.typography.itemTitle)
         case let .listItem(marker):
             HStack(alignment: .firstTextBaseline, spacing: WontonTheme.spacing.s8) {
                 Text(marker)
-                inlineContent
+                Text(inline)
             }
         case .code:
             CodeBlock(text: block.spans.first?.text ?? "", ink: ink)
@@ -61,14 +61,6 @@ private struct RichBlockView: View {
             RichTable(rows: rows)
         case .rule:
             Rectangle().fill(Color(colors.separator)).frame(height: WontonTheme.size.hairline)
-        }
-    }
-
-    @ViewBuilder private var inlineContent: some View {
-        if block.spans.contains(where: { $0.link != nil }) {
-            LinkedMessageText(block: block, ink: ink, reserve: reserve)
-        } else {
-            Text(inline)
         }
     }
 
@@ -142,37 +134,16 @@ private struct RichTable: View {
     }
 }
 
-/// 不折行，放不下才横向滚动；右上角的复制按钮不随滚动移动。
 private struct CodeBlock: View {
     let text: String
     let ink: Color
-    @State private var copied = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            Scrollable { code }
-                // 左边距在滚动区外，文字滚起来左边也留白；按钮占右侧 48pt，图标居中正好是 12pt 边距。
-                .padding(.leading, WontonTheme.spacing.s12)
-                // 短代码块只有一行时按按钮的高度撑开，文字在块里垂直居中。
-                .frame(minHeight: WontonTheme.size.target)
-            WontonIconButton(
-                icon: copied ? .check : .copy,
-                label: copied ? String(localized: .messageCodeCopied) : String(localized: .messageCodeCopy),
-                tint: ink
-            ) {
-                UIPasteboard.general.string = text
-                copied = true
-            }
-            .task(id: copied) {
-                guard copied else { return }
-                try? await Task.sleep(for: .seconds(2))
-                copied = false
-            }
-        }
-        .background(
-            ink.opacity(WontonTheme.ratio.codeFill),
-            in: RoundedRectangle(cornerRadius: WontonTheme.radii.control)
-        )
+        Scrollable { code }
+            .background(
+                ink.opacity(WontonTheme.ratio.codeFill),
+                in: RoundedRectangle(cornerRadius: WontonTheme.radii.control)
+            )
     }
 
     private var code: some View {
@@ -180,6 +151,7 @@ private struct CodeBlock: View {
             .wontonText(WontonTheme.typography.supporting)
             .monospaced()
             .fixedSize()
+            .padding(.horizontal, WontonTheme.spacing.s12)
             .padding(.vertical, WontonTheme.spacing.s8)
     }
 }

@@ -13,7 +13,7 @@ use iroh::{EndpointAddr, SecretKey};
 use tokio::task::JoinHandle;
 use wonton_tunnel::{ALPN, TunnelError};
 
-use crate::support::{Phone, Timeouts, WAIT, loopback_endpoint};
+use crate::support::{Phone, Timeouts, loopback_endpoint};
 
 /// 一个来一条连接就拒绝一条的服务端，比如正在关闭的核心。数一数手机来了多少次。
 pub(crate) struct Refusing {
@@ -76,10 +76,11 @@ async fn requests_do_not_dial_faster_than_the_backoff() {
     tokio::time::sleep(Duration::from_secs(3)).await;
     asking.abort();
 
-    // 负载只会让建连变少、不会变多，“不比退避更快”只有上限是性质本身；下限只证明确实在拨。
-    let dials = server.dials();
-    assert!(dials <= 4, "3 秒内建连 {dials} 次，快过了退避");
-    assert!(dials >= 1, "3 秒内一次建连都没有");
+    assert!(
+        (2..=4).contains(&server.dials()),
+        "3 秒内建连 {} 次",
+        server.dials()
+    );
 }
 
 #[tokio::test]
@@ -92,30 +93,15 @@ async fn retrying_skips_the_wait() {
     )
     .await;
     let asking = keep_asking(&phone);
-
-    // 先等第 4 次建连：之后失败的退避名义 8 秒，窗口离自然重试足够远。
-    let deadline = tokio::time::Instant::now() + WAIT;
-    while server.dials() < 4 {
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "退避期内只建连 {} 次",
-            server.dials()
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    tokio::time::sleep(Duration::from_secs(4)).await;
     let before = server.dials();
 
+    // 下一次要等 4 秒左右。
     phone.client.retry_now();
-    // 第 4 次失败后的退避最少 8 × 0.8 秒，这 3 秒内的新建连只能来自 retry_now 清零退避。
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
-    while server.dials() <= before {
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "清零退避后没有马上再试"
-        );
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
     asking.abort();
+
+    assert!(server.dials() > before, "清零退避后没有马上再试");
 }
 
 #[tokio::test]

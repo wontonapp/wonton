@@ -16,8 +16,8 @@ use wonton_matrix::{EntryKind, Message, OwnedUserId, TimelineEntry, UserId, Vect
 use wonton_protocol::{
     Answer, CARD_FIELD, CORE_LOCALPART, ChatFailure, ChatProblem, ConfirmationAnswer,
     ConfirmationCard, ConfirmationReply, ConfirmationState, ConfirmationView, ConfirmationWindow,
-    CoreError, PendingConfirmation, ProxySettings, PushConfirmation, WindowEnd, WindowView,
-    answer_path, window_path,
+    PendingConfirmation, ProxySettings, PushConfirmation, WindowEnd, WindowView, answer_path,
+    window_path,
 };
 
 use super::login::{ErrorBody, proxy_url};
@@ -133,7 +133,6 @@ pub(crate) fn pushed_card(
                 PushedCard::Waiting(PushConfirmation {
                     id: card.id,
                     expires_at_ms: card.expires_at_ms,
-                    origin: None,
                 })
             }
         }
@@ -188,10 +187,6 @@ pub(crate) struct CardsView {
 }
 
 impl CardsView {
-    pub(super) fn core_account(&self) -> &UserId {
-        &self.core_account
-    }
-
     fn card(&self, message: &Message) -> Option<ConfirmationCard> {
         parse_card(&self.core_account, &message.sender, &message.custom)
     }
@@ -297,10 +292,8 @@ impl CardsView {
                     card.expires_at_ms,
                     PendingConfirmation {
                         id: card.id,
-                        room_id: Some(room_id.to_owned()),
+                        room_id: room_id.to_owned(),
                         title: card.title,
-                        requester: card.requester,
-                        expires_at_ms: card.expires_at_ms,
                     },
                 ));
             } else if view.problem.is_some() {
@@ -569,69 +562,4 @@ fn ended_note(end: WindowEnd, allowed: Option<u32>) -> String {
         reason = reason,
         count = allowed.unwrap_or(0)
     )
-}
-
-impl super::ChatLink {
-    /// 主人点了确认卡片上的按钮：经隧道发给核心，进展放进 `answers`。同一张卡片在发或者答完了就不再发：核心那边
-    /// 也只收一次，这里是不让连点变成“回答过了”的报错。
-    pub(super) fn answer_confirmation(
-        &self,
-        id: String,
-        answer: Answer,
-        choice_id: Option<String>,
-        secrets: wonton_protocol::SecretValues,
-        settings: wonton_protocol::SettingValues,
-    ) -> Result<(), CoreError> {
-        if answer == Answer::Unknown {
-            return Err(super::invalid(&l10n!(
-                CATALOG,
-                language(),
-                "chat-unknown-answer"
-            )));
-        }
-        let not_connected = || CoreError::NotReady {
-            reason: l10n!(CATALOG, language(), "chat-action-not-connected"),
-        };
-        let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
-        let core_url = self.home.core_url().ok_or_else(not_connected)?;
-        if !self
-            .answers
-            .send_if_modified(|answers| answers.start(&id, answer, choice_id.clone()))
-        {
-            return Ok(());
-        }
-        let answers = self.answers.clone();
-        self.runtime.spawn(async move {
-            let body = ConfirmationAnswer {
-                answer,
-                choice_id,
-                secrets,
-                settings,
-            };
-            let outcome = send_answer(&core_url, &proxy, &id, body).await;
-            answers.send_modify(|answers| answers.finish(id, outcome));
-        });
-        Ok(())
-    }
-
-    /// 主人点了卡片上放行时段的“停止”：经隧道发给核心，进展放进 `answers`。
-    pub(super) fn stop_confirmation_window(&self, id: String) -> Result<(), CoreError> {
-        let not_connected = || CoreError::NotReady {
-            reason: l10n!(CATALOG, language(), "chat-action-not-connected"),
-        };
-        let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
-        let core_url = self.home.core_url().ok_or_else(not_connected)?;
-        if !self
-            .answers
-            .send_if_modified(|answers| answers.start_stop(&id))
-        {
-            return Ok(());
-        }
-        let answers = self.answers.clone();
-        self.runtime.spawn(async move {
-            let outcome = send_stop(&core_url, &proxy, &id).await;
-            answers.send_modify(|answers| answers.finish_stop(id, outcome));
-        });
-        Ok(())
-    }
 }

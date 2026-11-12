@@ -72,11 +72,6 @@ impl BotStore {
         Ok(read_json::<PluginBots>(&self.path(id))?.unwrap_or_default())
     }
 
-    /// 一个 Bot 的记录。
-    pub fn entry(&self, id: &PluginId, bot: &str) -> Result<Option<BotEntry>, StoreError> {
-        Ok(self.load(id)?.bots.get(bot).cloned())
-    }
-
     pub fn save(&self, id: &PluginId, bots: &PluginBots) -> Result<(), StoreError> {
         create_private_dir(&self.dir)?;
         write_json(&self.path(id), bots)
@@ -285,16 +280,12 @@ impl PluginManager {
         let mut plugin_bots = store.load(id)?;
         // 同一个 Bot 重试安装时沿用账号；其他 Bot 的令牌不变。
         let existing = plugin_bots.bots.get(bot).cloned();
-        let mut taken: BTreeSet<String> = store
+        let taken: BTreeSet<String> = store
             .all()?
             .into_values()
             .flat_map(|bots| bots.bots.into_values())
             .filter_map(|entry| localpart(&entry.account.user_id).map(str::to_owned))
             .collect();
-        self.reserve_friend_names(&mut taken);
-        if let Some(members) = self.person_members.get() {
-            taken.extend(members.list().into_iter().map(|member| member.username));
-        }
         let langs = self.owner_languages();
         let spec = BotSpec {
             localpart: &bot_localpart(id, bot),
@@ -354,13 +345,13 @@ impl PluginManager {
     }
 
     /// 注入给一个 Bot 的服务的 `WONTON_MATRIX_*`：经核心在插件网络里的别名访问 Matrix 客户端接口，
-    /// `WONTON_MATRIX_ALLOWED_USERS` 是它听的人：归属人和已成立的联系人。
+    /// `WONTON_MATRIX_ALLOWED_USERS` 是它听的人（现在只有归属人一个人）。
     pub(super) fn matrix_vars(&self, bot: &ProvisionedBot) -> MatrixVars {
         MatrixVars {
             homeserver: format!("http://{PLUGIN_MATRIX_HOST}:{}", self.cfg.gateway_port),
             user_id: bot.account.user_id.clone(),
             access_token: bot.access_token.clone(),
-            allowed_users: self.allowed_users(bot.owner.clone(), &bot.account.user_id),
+            allowed_users: bot.owner.clone(),
             home_room: bot.account.home_room.clone(),
         }
     }
@@ -418,7 +409,7 @@ impl PluginManager {
             homeserver: format!("http://{PLUGIN_MATRIX_HOST}:{}", self.cfg.gateway_port),
             user_id: entry.account.user_id.clone(),
             access_token: super::egress::PLACEHOLDER.to_owned(),
-            allowed_users: self.allowed_users(matrix.user_id(&owner), &entry.account.user_id),
+            allowed_users: matrix.user_id(&owner),
             home_room: entry.account.home_room.clone(),
         })
     }
@@ -552,22 +543,6 @@ impl PluginManager {
         self.store.bots().localparts_in_room(room)
     }
 
-    /// Matrix 用户 ID 是哪个插件的哪个 Bot，卡片发给谁：私人 Bot 是归属人，共享 Bot 是主人。认不出时是 `None`。
-    pub fn bot_by_user(&self, user_id: &str) -> Option<(PluginId, String, String)> {
-        let all = self
-            .store
-            .bots()
-            .all()
-            .inspect_err(|error| tracing::warn!(error = %error, "读 Bot 记录失败"))
-            .ok()?;
-        all.into_iter().find_map(|(id, bots)| {
-            bots.bots
-                .into_iter()
-                .find(|(_, entry)| entry.account.user_id == user_id)
-                .map(|(bot, entry)| (id, bot, self.keeper_user(&entry.keeper)))
-        })
-    }
-
     /// 总线令牌认出的这个插件的 Bot：令牌对不上就是没有。
     pub fn bot_by_token(&self, id: &PluginId, token: &str) -> Option<(String, BotKeeper)> {
         let bots = self.store.bots().load(id).ok()?;
@@ -575,17 +550,6 @@ impl PluginManager {
             .into_iter()
             .find(|(_, entry)| crate::secret::constant_time_eq(&entry.bus_token, token))
             .map(|(bot, entry)| (bot, entry.keeper))
-    }
-
-    /// 一个 Bot 的 Matrix 账号和主房间；没有这个 Bot 的记录、或记录读不出来时为空。
-    pub fn bot_account(&self, id: &PluginId, bot: &str) -> Option<BotAccount> {
-        let bots = self
-            .store
-            .bots()
-            .load(id)
-            .inspect_err(|error| tracing::warn!(plugin = %id, %error, "读 Bot 记录失败"))
-            .ok()?;
-        bots.bots.get(bot).map(|entry| entry.account.clone())
     }
 
     /// 一个 Bot 的 Matrix 用户名（localpart）；没有这个 Bot 的记录时为空。

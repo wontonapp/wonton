@@ -13,7 +13,6 @@ use wonton_protocol::{
 use super::FilesLink;
 use super::api::{Api, Problem, checked, interrupted};
 use super::download::relative_path;
-use super::lock;
 use crate::l10n::{CATALOG, language};
 
 /// 问核心的期限：播放器已经放不了了，不能让主人再等很久。
@@ -91,20 +90,18 @@ impl FilesLink {
                 TransferState::Running | TransferState::Paused
             )
         });
-        // 记录清掉了文件也可能还在：主人选了只清记录。服务器上的文件改过了就不算在手上：打开是旧的，给重新下载。
+        // 记录清掉了文件也可能还在：主人选了只清记录。
         let path = self.downloads_dir.join(relative_path(&info.id, &info.name));
-        let on_phone = !busy && path.is_file() && !lock(&self.stale).contains(&info.id);
         let fetch = if busy {
             FileCardAction::Wait
-        } else if on_phone {
+        } else if path.is_file() {
             FileCardAction::Open {
                 path: path.to_string_lossy().into_owned(),
             }
         } else {
             FileCardAction::Download
         };
-        if playable(info) && !on_phone {
-            // 能播还没下：边下边播。手机上已经有这份的就直接打开：走中继也不用等，没网也能用。
+        if playable(info) {
             FileCardActions {
                 tap: FileCardAction::Play,
                 open_elsewhere: Some(fetch),
@@ -121,10 +118,7 @@ impl FilesLink {
 
     pub(crate) async fn playback_problem(&self, id: FileId) -> FileProblem {
         let (reason, detail) = match self.stream.take_interruption(&id) {
-            // 播放的这一趟在家里碰上过什么：按当时说。等问的时候家里可能已经恢复了，再问一遍会把
-            // 没了的文件、报错的插件说成“放不了这个格式”。
-            Some(problem) => problem.into_parts(),
-            // 没断过：放不了就是格式。再问一次核心，给得出内容就是这台手机放不了。
+            Some(detail) => (FileFailure::TransportUnavailable, detail),
             None => self.probe(&id).await,
         };
         FileProblem {
@@ -160,22 +154,18 @@ impl FilesLink {
 
 fn explain(reason: FileFailure, detail: &str) -> String {
     match reason {
-        // 断在哪一步对主人没用，连接状态由标题栏说。连不上家也下载不到：不提示下载。
+        // 断在哪一步对主人没用，连接状态由标题栏说。
         FileFailure::TransportUnavailable => {
             l10n!(CATALOG, language(), "files-playback-transport")
         }
-        // 放不了是这台手机的事，下载不受限：可以下载后用其他 App 打开。
         FileFailure::UnsupportedFormat => {
             l10n!(CATALOG, language(), "files-playback-unsupported")
         }
-        // 这些原因下载一样拿不到文件：不说下载。
+        // 文件拿不到，下载也一样，不提示。
         FileFailure::Unauthenticated
         | FileFailure::NotShared
-        | FileFailure::PermissionDenied
         | FileFailure::FileUnknown
-        | FileFailure::FileExpired
-        | FileFailure::FileGone
-        | FileFailure::PluginUnavailable => l10n!(
+        | FileFailure::FileGone => l10n!(
             CATALOG,
             language(),
             "files-playback-unavailable",

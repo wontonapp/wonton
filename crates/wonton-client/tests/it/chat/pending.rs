@@ -2,7 +2,6 @@
 
 use serde_json::json;
 use wonton_client::{Action, Answer, PendingConfirmation};
-use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::confirmation::{
     card, content, core_error, core_room, edit, in_ten_minutes, joined_direct_chat, now_ms, send,
@@ -21,7 +20,6 @@ fn answer(phone: &Phone, id: &str) {
             answer: Answer::Reject,
             choice_id: None,
             secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
 }
@@ -63,10 +61,7 @@ async fn cards_are_known_from_another_room_until_they_are_answered() {
     send(&room, content(&later)).await;
     wait_pending(&phone, "第一张卡片", &["later"]).await;
     let view = phone.chat();
-    assert_eq!(
-        view.pending_confirmations[0].room_id.as_deref(),
-        Some(notices.as_str())
-    );
+    assert_eq!(view.pending_confirmations[0].room_id, notices.as_str());
     assert_eq!(
         view.pending_confirmations[0].title,
         later["title"].as_str().unwrap()
@@ -195,15 +190,9 @@ async fn the_notice_room_is_read_only_and_other_chats_are_not() {
     );
 
     let send = |room_id: &str| {
-        phone.dispatch(Action::Timeline {
-            action: TimelineAction::SendText {
-                target: TimelineTarget {
-                    room_id: room_id.to_owned(),
-                    thread_root: None,
-                },
-                body: "你好".to_owned(),
-                reply_to: None,
-            },
+        phone.dispatch(Action::SendText {
+            room_id: room_id.to_owned(),
+            body: "你好".to_owned(),
         })
     };
     assert!(send(notices.as_str()).is_err());

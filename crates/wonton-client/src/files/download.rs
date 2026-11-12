@@ -174,7 +174,6 @@ async fn place(
     let path = relative_path(file, &info.name);
     link.store.update(id, |record| {
         record.name = info.name;
-        record.source = Some(info.source);
         if let Job::Download { path: placed, .. } = &mut record.job {
             *placed = Some(path.clone());
         }

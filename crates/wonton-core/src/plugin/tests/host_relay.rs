@@ -191,7 +191,11 @@ async fn an_unknown_listener_does_not_claim_a_firewall() {
 
 /// 当前空着的回环端口：直连探测打的是宿主上的这个端口，测试结果不受本机其他服务影响。
 pub(super) fn free_port() -> u16 {
-    wonton_tunnel::test_support::unused_port()
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 /// 在 `path` 上回 200，直到进程结束。

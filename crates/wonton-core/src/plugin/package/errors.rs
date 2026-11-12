@@ -65,17 +65,6 @@ pub enum PackageError {
     Archive(String),
     #[error("{0}")]
     TooBig(String),
-    /// 静态网页的文件目录不合规则（ADR-0080 第 3 节）。
-    #[error("{0}")]
-    StaticDir(String),
-}
-
-pub(super) fn static_error(
-    langs: &Languages,
-    root: &str,
-    problem: &super::static_files::Problem,
-) -> PackageError {
-    PackageError::StaticDir(problem.message(root, langs))
 }
 
 pub(super) fn yaml_error(langs: &Languages, error: String) -> PackageError {

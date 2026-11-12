@@ -62,36 +62,6 @@
         }
       }
     },
-    "NSPhotoLibraryAddUsageDescription": {
-      "comment": "System permission prompt for adding to the photo library, shown the first time a chat photo is saved.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wonton saves photos from your chats to your photo library."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "云吞把聊天里的照片存储到你的相册。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "雲吞會把聊天中的照片儲存到你的相簿。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wontonはチャットの写真を写真ライブラリに保存します。"
-          }
-        }
-      }
-    },
     "NSLocalNetworkUsageDescription": {
       "comment": "System permission prompt for local network access, shown the first time the app connects to the home server directly over the LAN.",
       "extractionState": "manual",

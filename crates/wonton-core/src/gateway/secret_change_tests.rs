@@ -209,7 +209,7 @@ async fn the_value_never_reaches_the_logs() {
 }
 
 #[tokio::test]
-async fn the_secret_api_is_permission_required() {
+async fn the_secret_api_is_owner_only() {
     let home = home().await;
     let reply = home
         .put("token", serde_json::json!({"value": "new"}), None)

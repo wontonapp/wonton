@@ -5,25 +5,6 @@ use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::PluginManager;
 
-impl Undo {
-    /// 安装失败、Bot 账号留给下次安装时，这次建的数据目录、命名卷和密钥也留下，下次接着用（和不删数据卸载一样）。
-    ///
-    /// 插件的 init 可能已经在服务器上给 Bot 建了加密身份（交叉签名、密钥备份），私钥只在插件数据里。删掉数据、留着
-    /// 账号，下次安装解不开服务器上的旧身份（`bad MAC`），也换不掉：Tuwunel v1.9.4 没有删交叉签名的接口，换掉已有的
-    /// 要 UIA，而 Bot 没有密码。密钥要跟着留：生成的密钥（如数据库口令）和留下的数据是一套。回滚没有停用账号的路径，
-    /// 所以有 Bot 就留。
-    pub(in crate::plugin) fn keep_bot_data(&mut self) {
-        if self.bot.is_none() {
-            return;
-        }
-        if let Some(dir) = self.app_dir_created.take() {
-            tracing::info!(dir = %dir.display(), "安装失败，Bot 账号留给下次安装，数据目录也留下");
-        }
-        self.volumes.clear();
-        self.secrets_before = None;
-    }
-}
-
 impl PluginManager {
     pub(in crate::plugin) async fn rollback(&self, undo: Undo, langs: &Languages) -> Vec<String> {
         let mut failures = Vec::new();
@@ -168,11 +149,6 @@ impl PluginManager {
                     "plugin-install-rb-egress-leave-network",
                     &[("network", network.as_str().into())],
                 ),
-                result.map_err(|e| e.to_string()),
-            );
-            let result = self.detach_mailpit(network).await;
-            note(
-                format!("Mailpit 离开网络 {network}"),
                 result.map_err(|e| e.to_string()),
             );
             note(

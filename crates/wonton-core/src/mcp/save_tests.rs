@@ -90,10 +90,7 @@ async fn a_folder_asks_once_and_then_stays_allowed_with_its_subfolders() {
     assert!(!b.outbox.join("a.mp3").exists(), "存好后原文件删掉");
     assert!(b.staged_nothing());
     assert!(matches!(
-        b.s.bus
-            .confirmations()
-            .card(&card.id)
-            .map(|card| card.state),
+        b.s.cards.states(&card.id).last(),
         Some(ConfirmationState::Succeeded { .. })
     ));
     assert_eq!(b.s.bus.plugins.save_grants(&b.id), ["music/周杰伦"]);

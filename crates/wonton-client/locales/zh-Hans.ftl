@@ -45,20 +45,6 @@ peers-invalid-proxy = 本地代理不可用：{ $reason }
 peers-server-status = 家里的服务器回了 HTTP { $status }
 # $reason 是 JSON 解析器的原始错误。
 peers-invalid-response = 家里的服务器给的回应读不懂：{ $reason }
-friends-transport = 连不上家里的服务器：{ $reason }
-friends-server-status = 家里的服务器回了 HTTP { $status }
-friends-invalid-response = 家里的服务器给的回应读不懂：{ $reason }
-friends-not-signed-in = 还没登录这个账号。
-friends-not-connected = 还没连上家里的服务器。
-friends-invalid-action = 不是好友操作。
-friends-local-open = 本机好友清单打不开：{ $reason }
-friends-invalid-proxy = 本地代理地址不可用：{ $reason }
-friends-http-client = 本地 HTTP 客户端建不起来：{ $reason }
-friends-invalid-url = 好友服务地址不合法：{ $reason }
-friends-request-body = 好友请求编码失败：{ $reason }
-friends-timeout = 好友服务没有及时回应。
-friends-group-name-required = 请填写分组名。
-friends-group-not-found = 没有这个分组：{ $id }
 # $reason 是隧道拒绝的原话。
 peers-rejected = 家里的服务器拒绝了这台设备：{ $reason }
 
@@ -108,7 +94,6 @@ onboarding-review-no-failure = 这一项没有失败
 
 # 登录相关。$reason 是 Matrix SDK 的原始错误。
 chat-sign-in-restore-failed = 恢复 Matrix 会话失败：{ $reason }
-chat-sign-in-external-missing = 这台手机上已经没有这个 Matrix 账号的登录状态，请重新登录。
 chat-sign-in-no-connection-info = 还没有家里服务器的连接信息
 chat-sign-in-login-failed = 登录 Matrix 失败：{ $reason }
 chat-sign-in-no-saved-session = 登录后取不到登录状态
@@ -158,27 +143,18 @@ chat-contacts-invalid-user-id = 用户 ID 不合法：{ $reason }
 
 # 通过 Siri、快捷指令或聊天页发消息、内容为空时显示。
 chat-empty-message = 消息不能为空。
-composer-tray-full = 附件区最多放 { $max } 个附件。
-composer-has-failed = 附件区里有没传上去的附件，先重试或删掉它。
-composer-attachment-not-found = 找不到这个附件，可能已经删掉或发出去了。
-composer-outgoing-not-found = 找不到这条待发消息，可能已经交出去了。
-composer-store-failed = 附件区存不到手机上（{ $path }）：{ $reason }
-composer-attachment-failed = 附件“{ $name }”没传上去。
-composer-transfer-gone = 这个文件的上传记录不见了，请重试。
-composer-upload-record-unreadable = 照片的上传记录读不懂：{ $reason }
 # Siri 或快捷指令传进来的 Bot ID 解析不了时显示。
 chat-ask-invalid-bot-id = 默认 Agent 的 ID 格式不对。
 # 已有私聊的房间 ID 解析不了时显示。
 chat-ask-invalid-room-id = 私聊的房间 ID 不合法。
-chat-layout-invalid-bot-id = ID 的格式不对，应该像 @名字:服务器。
-chat-layout-change-failed = 改显示方式没成功：{ $reason }
 
 # Matrix 吊销本设备、账号标记为失败时显示。
 chat-session-device-revoked = 这台设备在 Matrix 上已被吊销，需要主人重新配对。
 
 # 壳把不认识的操作分给聊天时显示。
-side-chat-not-ready = 这个版本的客户端核心还不支持旁聊。
 chat-invalid-action = 不是聊天操作
+# 设置聊天布局而核心还没实现时显示。
+chat-layouts-unsupported = 这个版本的客户端核心不支持聊天布局
 # 发起私聊时给的 ID 不像 @名字:服务器 时显示。
 chat-invalid-user-id = ID 的格式不对，应该像 @名字:服务器
 # $file_type 是选中文件原始的 MIME 类型。
@@ -189,20 +165,12 @@ chat-unknown-answer = 这个版本的 App 不认识这个回答
 chat-action-not-connected = 还没连上家里的服务器
 # 还没登录 Matrix 就有聊天操作时显示。
 chat-not-signed-in = 还没有登录 Matrix
-chat-send-no-response = Matrix 服务器没有回应
 # $error 是房间 ID 解析器的原始错误。
 chat-invalid-room-id = 房间 ID 不合法：{ $error }
-chat-link-room-not-joined = 还没加入这个房间，请先在聊天列表里接受邀请。
 # 往只放通知的房间里发东西时显示。
 chat-read-only-room = 这个房间只放通知，不能发消息
 # $room 是原始的房间 ID。
 chat-room-not-subscribed = 要先订阅房间 { $room } 的时间线
-# $error 是事件 ID 解析器的原始错误。
-chat-invalid-event-id = 消息的事件 ID 不合法：{ $error }
-# 要转发或撤回的消息菜单里没有这一项（已撤回、还没发出去、没有权限等）时显示。
-chat-message-action-unavailable = 这条消息不能这样操作
-# 转发的目标房间不存在或还没加入时显示。
-chat-forward-target-not-joined = 还没有加入要转发到的房间
 # 还没选默认 Agent 就问它时显示。
 chat-no-default-agent = 还没有默认 Agent：先在设置里选一个
 
@@ -218,9 +186,6 @@ chat-op-mark-read-failed = 标为已读失败：{ $error }
 chat-op-direct-chat-failed = 发起私聊失败：{ $error }
 chat-op-send-text-failed = 发送消息失败：{ $error }
 chat-op-send-image-failed = 发送图片失败：{ $error }
-chat-op-send-preview-failed = 链接预览没带上：{ $error }
-chat-op-forward-failed = 转发消息失败：{ $error }
-chat-op-redact-failed = 撤回消息失败：{ $error }
 ## 文件传输和播放的详情。显示在传输列表条目、文件卡片和播放失败说明上。
 
 # 传输或播放还没等开始就发现没连上时显示。
@@ -279,13 +244,13 @@ files-download-incomplete = 连接断了，没收全
 files-download-stalled = 收不到数据，隧道可能卡住了
 
 # 连接断开导致播放失败时显示。
-files-playback-transport = 连不上家里的服务器。
+files-playback-transport = 连不上家里的服务器。可以下载后用其他 App 打开。
 # 这台设备放不了这个格式时显示。
 files-playback-unsupported = 这台手机放不了这个格式。可以下载后用其他 App 打开。
 # $detail 是家里的服务器或连接的原始原因。
 files-playback-unavailable = 家里的服务器给不了这个文件：{ $detail }
 # $detail 是家里的服务器或连接的原始原因。
-files-playback-error = 家里的服务器报错：{ $detail }。
+files-playback-error = 家里的服务器报错：{ $detail }。可以下载后用其他 App 打开。
 # 播放探测超时时显示。
 files-playback-no-response = 核心一直没有回答
 
@@ -321,7 +286,7 @@ home-no-connection-info = 还没有家里服务器的连接信息
 home-proxy-start-failed = 本地代理启动失败：{ $error }
 home-tunnel-closed = 隧道客户端已关闭
 home-lan-unsupported = 这个版本的客户端核心不支持局域网设置
-home-port-mapping-save-failed = 端口映射的开关存不下：{ $error }
+home-port-mapping-unsupported = 这个版本的客户端核心不支持端口映射
 # 底栏（tabs/view.rs、tabs/config.rs）和外观（appearance/mod.rs）的界面「详情」。
 
 # 底栏 ViewModel 的错误，作为 CoreError 的 reason 或底栏的问题提示显示。
@@ -329,10 +294,7 @@ home-port-mapping-save-failed = 端口映射的开关存不下：{ $error }
 tabs-view-always-pinned = 聊天和应用已经固定到底栏。
 tabs-view-plugin-list-not-ready = 插件列表还没读到，暂时不能操作插件页面。
 tabs-view-unknown-plugin = 没有这个插件。
-# $error 是本地存储的原始错误。
-tabs-storage-problem = 底栏设置存不下，下次启动可能恢复旧状态：{ $error }
 tabs-view-plugin-no-page = 插件没有可打开的网页。
-tabs-page-not-placed = 这个页面不在面板里。
 
 # 底栏设置文件（tabs.json）的错误，作为 CoreError 的 reason 显示。
 # $path 是设置文件的路径，$reason 是原始的解析或读写错误。
@@ -342,7 +304,7 @@ tabs-config-corrupt = 底栏设置文件 { $path } 已损坏：{ $reason }
 tabs-config-too-many-items = 底栏最多只能有 { $count } 项。
 tabs-config-duplicate-page = 底栏里有重复页面。
 tabs-config-plugin-page-incomplete = 插件页面缺少标题和图标。
-tabs-config-missing-fixed = 底栏缺少聊天。
+tabs-config-missing-fixed = 底栏缺少聊天或应用。
 # $path 是设置文件的路径，$reason 是原始的写入错误。
 tabs-config-write-failed = 写不了底栏设置文件 { $path }：{ $reason }
 
@@ -423,6 +385,7 @@ files-name-required = 文件名不能为空
 files-download-already-running = 这个文件已经在下载了
 files-transfer-not-found = 没有这条传输
 # 这条传输不在“等着发链接”的状态时要重发链接。
+files-resend-not-waiting = 这条传输没有等着重发的链接
 files-transfer-server-changed = 换了家里的服务器，这个传输属于之前那一台
 files-dismiss-transfer-running = 这条传输还在进行，要先取消
 # 移除上传并要求删除本机文件时：原文件是系统给的，App 删不了它。
@@ -456,13 +419,6 @@ servers-name-required = 名字不能为空
 servers-storage-failed = 读写不了 { $path }：{ $reason }
 # 壳把不认识的操作分给服务器列表时显示。
 servers-invalid-action = 不是服务器列表操作
-matrix-login-not-current = 这次登录已经结束，或者已经换成了新的一次。
-matrix-login-wrong-step = 这次登录不在这一步。
-matrix-login-method-not-offered = 这台服务器不提供这种登录方式。
-matrix-login-device-name-required = 请填这台设备的名字。
-matrix-login-invalid-user-id = 请填完整的 Matrix ID，比如 @name:matrix.org。
-matrix-login-password-required = 请填密码。
-matrix-login-redirect-not-allowed = App 收不到发往这个地址的登录回调。
 
 # 会话列表（crates/wonton-client/src/session_store.rs）。
 sessions-title-required = 会话标题不能为空
@@ -521,9 +477,6 @@ plugins-start-busy = { $id } 正在启动、安装、更新或卸载
 # 应用页面的桥（crates/wonton-client/src/tabs/bridge/）。
 tabs-bridge-page-not-open = 这个插件页面没有打开或固定
 tabs-bridge-invalid-environment = 页面栏高和安全区必须是有限的非负数
-tabs-bridge-public-page = 公网网页没有 Wonton 的桥。
-plugin-media-not-asked = 这个插件页面没有保存摄像头和麦克风的决定
-plugin-media-save-failed = 写不了摄像头和麦克风的记录文件 { $path }：{ $reason }
 
 # 聊天的连接问题（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailable 的原因和失败操作的消息。
 chat-not-connected = 连上家里的服务器后再试
@@ -551,14 +504,6 @@ plugins-core-upgrade-already-running = 已经在更新了
 plugins-core-upgrade-not-cancellable = 现在不能取消
 # $reason 是连接问题的原始详情。
 plugins-core-upgrade-start-uncertain = 不确定发起了没有，连上后再看一下：{ $reason }
-
-# 兼容检查（ADR-0085）的详情：每个原因一行，{ $raw } 是清单里的原值。客户端核心按
-# App 的语言写，升级页列在新版本读不了的应用下面。
-plugins-core-upgrade-compat-spec = 它按规范 { $raw } 写成，新版本不支持：升级后会被标为异常。
-plugins-core-upgrade-compat-feature = 它的清单用了新版本不认识的 { $raw }：升级后会被标为异常。
-plugins-core-upgrade-compat-capability = 它依赖能力 { $raw }，新版本不提供：升级后会被标为异常。
-plugins-core-upgrade-compat-other = 新版本读不了这个应用：升级后会被标为异常。
-plugins-core-upgrade-compat-other-raw = 新版本读不了这个应用的 { $raw }：升级后会被标为异常。
 
 # 资料这一步：名字或邮箱为什么存不了。$max 是名字最多几个字。
 onboarding-profile-name-empty = 名字不能为空
@@ -590,54 +535,4 @@ chat-window-ended =
 
 # 配对详情。地址和中继 URL 不含配对密钥；error 保留上游原文。
 home-pairing-timeout = 配对未能在 { $seconds } 秒内完成。
-home-pairing-aborted = 配对没有完成就中断了，再试一次。
-home-pairing-not-pairing = 没有正在进行的配对。
 home-pairing-failed-detail = 直连地址：{ $addresses }。中继：[{ $relays }]。已用时 { $milliseconds } 毫秒，限时 { $seconds } 秒。原因：{ $error }
-plugin-now-start-failed = 一键操作开始不了：{ $error }
-
-# 面板（ADR-0052）的报错。作为 CoreError 的原因，或 TabsProblem 的说明显示。
-panel-full = 面板满了，先拿掉一页再放。
-panel-pins-not-connected = 还没有连上家里的服务器。
-panel-pins-api-failed = { $status }：{ $body }
-
-panel-page-already-there = 这个页面已经在面板里。
-panel-page-not-there = 这个页面不在面板里。
-panel-page-unsupported = 面板里只能放插件页、插件里的某一页和 https:// 的网页。
-panel-index-out-of-range = 那个位置在面板外面。
-panel-not-signed-in = 还没登录，面板改动存不进账号；本机先记着，登录后再同步。
-panel-room-not-open = 先打开这个聊天，才能改它的面板。
-panel-room-unknown = 找不到这个聊天。
-panel-pin-invalid-url = 这个网址读不出来。
-panel-pin-not-https = 只能钉 https:// 的网页。
-panel-pin-path-outside = 这一页不在插件自己的网站里。
-panel-attention-panel-only = 只有面板里的页面能挂红点。
-panel-config-too-many = 面板最多放 { $count } 页。
-panel-config-duplicate = 同一个页面在面板里出现了两次。
-panel-sync-failed-read = 从服务器读面板设置没成功。
-panel-sync-unreadable = 服务器上的面板设置这台设备读不懂，先用本机的。
-tabs-page-cannot-reload = 这个页面不能重新加载。
-
-tabs-bar-not-pinned = 这个页面没有固定到底栏。
-tabs-bar-already-pinned = 这个页面已经固定到底栏。
-tabs-bar-replace-required = 底栏已满，必须指定要替换的页面。
-tabs-bar-replacing-missing = 要替换的页面不在底栏。
-tabs-bar-fixed = 聊天和应用不能被替换。
-tabs-bar-not-full = 底栏未满时不能指定替换页面。
-tabs-bar-remove-fixed = 聊天和应用不能拿掉。
-tabs-bar-page-missing = 这个页面不在底栏。
-tabs-bar-index-out-of-range = 底栏下标越界。
-tabs-open-only-plugins = 只有插件页面可以设置打开方式。
-tabs-fullscreen-only-plugins = 只有插件页面可以全屏。
-tabs-fullscreen-none = 当前没有全屏页面。
-tabs-fullscreen-not-current = 退出的页面不是当前全屏页面。
-panel-pins-refresh-failed = 面板里 Bot 钉的页面取不到:{ $error }
-
-## 要跨源隔离的插件网页在系统浏览器里打开（ADR-0033）。后三条显示在浏览器里。
-browser-front-failed = 给浏览器用的本机地址开不了：{ $error }
-browser-page-not-isolated = 这个页面不在浏览器里打开。
-browser-not-paired = 云吞还没和家里的服务器配对。
-browser-unknown-address = 这个地址已经失效。回到云吞，重新打开这个应用。
-browser-not-connected = 云吞现在没连上家里的服务器。回到云吞，等连上后再刷新这个页面。
-browser-bad-request = 请从云吞里打开这个页面。
-
-contacts-invalid-action = 不是 Bot 联系人操作。

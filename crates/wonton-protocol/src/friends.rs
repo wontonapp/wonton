@@ -1,15 +1,15 @@
 //! Matrix 好友（ADR-0051）：请求就是私聊邀请，不另建配对或身份协议。
 //!
-//! `app.wonton.friend` 是 `m.room.create` 内容里的布尔标记（建完不能改）；发邀请时
+//! `app.wonton.friend` 是状态键为空、内容为 [`FriendEvent`] 的房间状态事件；发邀请时
 //! `is_direct` 为真。普通私聊邀请也进请求列表，由 [`FriendRequestKind`] 区分。
 //! 接受邀请才成为好友；删好友同时收回直接授权及组授权对这个人的访问，私聊不退出。
 
 use serde::{Deserialize, Serialize};
 
-/// 好友请求的标记键，放在 `m.room.create` 内容里，取值 `true`。
+/// 好友请求的 Matrix 房间状态事件类型。
 pub const FRIEND_EVENT: &str = "app.wonton.friend";
 
-/// 标记好友请求，不携带凭据、授权或身份；身份取 Matrix 事件的发送者。只用于文档和类型说明。
+/// 标记好友请求，不携带凭据、授权或身份；身份取 Matrix 事件的发送者。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FriendEvent {}
 
@@ -26,8 +26,6 @@ pub struct FriendsViewModel {
     pub blocked: Vec<FriendBlock>,
     /// 当前账号能否管理整台 Wonton 的联邦黑名单；不等于个人的邀请屏蔽。
     pub can_block_federation: bool,
-    /// 自己的 matrix.to 用户链接，给壳画“我的二维码”；没登录到 Matrix 时没有。
-    pub my_link: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,12 +83,9 @@ pub struct FriendRequest {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum FriendRequestKind {
-    /// 创建内容带 [`FRIEND_EVENT`] 的私聊邀请。
+    /// 带 [`FRIEND_EVENT`] 的私聊邀请。
     Friend,
     DirectChat,
-    /// 创建内容带 [`BOT_CONTACT_CREATE_KEY`](crate::BOT_CONTACT_CREATE_KEY) 的私聊邀请：别人家的 Bot（邀请人）请这个人做
-    /// 它的联系人（ADR-0050）。接受就是同意，之后那个 Bot 会理他的话；不因此成为好友。
-    BotContact,
     #[serde(other)]
     Other,
 }
@@ -146,38 +141,13 @@ pub struct FriendProblem {
 #[serde(rename_all = "snake_case")]
 pub enum FriendFailure {
     TransportUnavailable,
-    /// 登录失效：设备被吊销、令牌过期。要重新登录或配对。
     Unauthorized,
-    /// 登录有效，但这件事不让做：对方屏蔽了自己、对方的服务器不和这台互通、只有主人能改。
-    Forbidden,
     InvalidUserId,
     RequestNotFound,
     RateLimited,
     Upstream,
     #[serde(other)]
     Other,
-}
-
-/// `GET /_wonton/api/friends` 的响应：核心存着的那部分好友数据。请求和屏蔽在客户端从 Matrix 同步里拼，
-/// 不在这里，所以它不是 [`FriendsViewModel`]，也没有页面状态。核心和客户端共用这一个类型，两边不各写一份。
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FriendsList {
-    pub friends: Vec<FriendRow>,
-    pub groups: Vec<FriendGroup>,
-    /// 整台服务器黑名单（Tuwunel 的 `forbidden_remote_server_names`）。
-    pub blocked_servers: Vec<String>,
-    /// 删过的人：他们的私聊还带着好友标记，但不算好友，除非重新同意或收到新邀请。
-    pub removed: Vec<RemovedFriend>,
-    /// 这台设备的人能不能改整台服务器的黑名单：只有主人，且服务器能热加载配置。
-    pub can_block_federation: bool,
-    /// 名单是不是主人的：家人没有核心名单，好友只存在客户端本机。
-    pub owner_scope: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RemovedFriend {
-    pub user_id: String,
-    pub removed_at_ms: u64,
 }
 
 #[cfg(test)]

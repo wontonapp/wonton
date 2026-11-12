@@ -28,21 +28,11 @@ pub const MAX_PACKAGE_BYTES: u64 = wonton_protocol::MAX_PLUGIN_ARCHIVE_BYTES;
 /// 插件包摘要（插件规范的“插件包摘要”）：每个文件一行 `<sha256>  <路径>`，按路径的字节序排列，即 `sha256sum`
 /// 的输出；这段文字的 sha256 写成 `sha256:<十六进制>`。只取决于文件的内容，和文件从哪里取、怎么打包无关。
 pub fn digest(compose: &[u8], files: &PackageFiles) -> String {
-    digest_with(compose, files, std::iter::empty())
-}
-
-/// 同 [`digest`]，另外加上只知道 sha256 的文件（静态网页装好后只留摘要，见 [`super::package::static_files`]）。
-pub fn digest_with(
-    compose: &[u8],
-    files: &PackageFiles,
-    known: impl Iterator<Item = (String, String)>,
-) -> String {
-    let mut hashes: BTreeMap<String, String> = files
+    let mut hashes: BTreeMap<&str, String> = files
         .iter()
-        .map(|(path, data)| (path.clone(), sha256_hex(data)))
-        .chain(known)
+        .map(|(path, data)| (path.as_str(), sha256_hex(data)))
         .collect();
-    hashes.insert(COMPOSE_FILE.to_owned(), sha256_hex(compose));
+    hashes.insert(COMPOSE_FILE, sha256_hex(compose));
     let listing: String = hashes
         .iter()
         .map(|(path, hash)| format!("{hash}  {path}\n"))

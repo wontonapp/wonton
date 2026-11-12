@@ -88,7 +88,7 @@ impl Help {
         self: &Arc<Self>,
         topic: Option<&str>,
         lang: Option<&str>,
-    ) -> Result<Value, HelpError> {
+    ) -> Result<Value, String> {
         let languages = lang.map_or_else(
             || self.plugins.owner_languages(),
             |lang| Languages::from_header(Some(lang)),
@@ -99,11 +99,14 @@ impl Help {
         let _ = tokio::time::timeout(WAIT, refresh).await;
         let version = (self.version)().await;
         let current = self.loaded(version.as_deref()).ok_or_else(|| {
-            HelpError::DocsUnavailable(l10n::text(
-                &languages,
-                "chat-help-docs-unavailable",
-                &[("dir", self.baseline.display().to_string().into())],
-            ))
+            format!(
+                "docs_unavailable: {}",
+                l10n::text(
+                    &languages,
+                    "chat-help-docs-unavailable",
+                    &[("dir", self.baseline.display().to_string().into())],
+                )
+            )
         })?;
         let mut result = json!({
             "core_version": version.as_deref().unwrap_or("unknown"),
@@ -306,42 +309,26 @@ fn add_requirements(value: &mut Value, page: &Page) {
     }
 }
 
-/// 帮助工具的两种报错：文档一份都没有，或者主题写错了。
-#[derive(Debug, thiserror::Error)]
-pub enum HelpError {
-    #[error("docs_unavailable: {0}")]
-    DocsUnavailable(String),
-    #[error("invalid_input: {0}")]
-    TopicMissing(String),
-}
-
-impl HelpError {
-    /// 工具结果 `_meta` 的 `app.wonton/failure`。
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Self::DocsUnavailable(_) => "docs_unavailable",
-            Self::TopicMissing(_) => "invalid_input",
-        }
-    }
-}
-
 fn page_result(
     result: &mut Value,
     pages: &Pages,
     topic: &str,
     languages: &Languages,
     version: &Option<String>,
-) -> Result<(), HelpError> {
+) -> Result<(), String> {
     let Some(page) = chosen(pages, topic, languages) else {
         let topics: Vec<&str> = pages.keys().map(String::as_str).collect();
-        return Err(HelpError::TopicMissing(l10n::text(
-            languages,
-            "chat-help-topic-missing",
-            &[
-                ("topic", topic.into()),
-                ("topics", l10n::list(languages, &topics).into()),
-            ],
-        )));
+        return Err(format!(
+            "invalid_input: {}",
+            l10n::text(
+                languages,
+                "chat-help-topic-missing",
+                &[
+                    ("topic", topic.into()),
+                    ("topics", l10n::list(languages, &topics).into()),
+                ],
+            )
+        ));
     };
     result["topic"] = json!(topic);
     result["lang"] = json!(page.lang);

@@ -4,10 +4,7 @@ set -eu
 case "${AGENT:-}" in
   codex)
     mkdir -p "$HOME/.codex"
-    {
-      printf 'model = "%s"\n' "${CODEX_MODEL:?未设 CODEX_MODEL：要用的模型名}"
-      cat /agents/codex-config.toml
-    } > "$HOME/.codex/config.toml"
+    cp /agents/codex-config.toml "$HOME/.codex/config.toml"
     ;;
   qwen)
     mkdir -p "$HOME/.qwen"

@@ -23,6 +23,4 @@
     <string name="push_no_public_key">分發器沒有提供 Web Push 公鑰，推送內容無法加密</string>
     <string name="push_registration_rejected">分發器拒絕了註冊：%1$s</string>
     <string name="push_unregistered">分發器註銷了雲吞</string>
-    <string name="push_contact_request">想加你的 Bot 為聯絡人</string>
-    <string name="push_contact_request_keeper">%1$s 的 Bot 想加你的 Bot 為聯絡人</string>
 </resources>

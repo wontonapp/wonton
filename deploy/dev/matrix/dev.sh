@@ -83,7 +83,7 @@ login() {
   local token
   token="$(mint_jwt "$1")"
   # 本机配了代理环境变量时，curl 会把 127.0.0.1 也送进代理。
-  curl -sS --noproxy '*' --fail-with-body --max-time 30 -X POST "$base_url/_matrix/client/v3/login" \
+  curl -sS --noproxy '*' --fail-with-body -X POST "$base_url/_matrix/client/v3/login" \
     -H 'content-type: application/json' \
     -d "{\"type\":\"org.matrix.login.jwt\",\"token\":\"$token\",\"initial_device_display_name\":\"wonton-dev\"}"
   echo

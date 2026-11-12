@@ -1,13 +1,11 @@
 import SwiftUI
 import UIKit
-import Observation
 
 /// 时间线贴着底部：内容高度或可见高度一变，就按真实高度滚到最底下；主人往上翻走了就不再跟。
 ///
 /// 直接操作 List 底下的 `UIScrollView`，不用 `ScrollViewProxy.scrollTo`：scrollTo 调用时就把 id 换算成下标，
 /// 真正滚动前条目变少（回复到达时常有）就越界，整个 App 崩掉（iOS 26.5 模拟器实测）。
 @MainActor
-@Observable
 final class BottomPin {
     /// 停在离底部这么近也算贴着，不用主人滑到分毫不差。
     private static let slack: CGFloat = 20
@@ -15,33 +13,6 @@ final class BottomPin {
     private weak var scrollView: UIScrollView?
     private(set) var isPinned = true
     private var observations: [NSKeyValueObservation] = []
-    private var heldOffset: CGFloat?
-    private var updateGeneration = 0
-    private var settling = false
-
-    /// List 会为末尾追加和变高的行调整 contentOffset；翻走时保留更新前的位置，不借内容高度反推主人的手势。
-    func prepareForUpdate() {
-        guard !isPinned, let scrollView, !scrollView.isDragging, !scrollView.isDecelerating else { return }
-        if heldOffset == nil { heldOffset = scrollView.contentOffset.y }
-        updateGeneration += 1
-        let generation = updateGeneration
-        DispatchQueue.main.async { [weak self] in
-            guard let self, generation == self.updateGeneration else { return }
-            self.restoreOffset()
-            DispatchQueue.main.async { [weak self] in
-                guard let self, generation == self.updateGeneration else { return }
-                self.restoreOffset()
-                self.heldOffset = nil
-            }
-        }
-    }
-
-    private func restoreOffset() {
-        guard let heldOffset, let scrollView, !isPinned,
-              !scrollView.isDragging, !scrollView.isDecelerating else { return }
-        scrollView.layoutIfNeeded()
-        scrollView.contentOffset.y = min(scrollView.bottomOffset, max(-scrollView.adjustedContentInset.top, heldOffset))
-    }
 
     func attach(_ scrollView: UIScrollView) {
         guard scrollView !== self.scrollView else { return }
@@ -53,75 +24,29 @@ final class BottomPin {
             // 只看主人的手势：跟随时自己滚动、以及内容变高时离底部变远，都不算翻走。
             scrollView.observe(\.contentOffset) { [weak self] scrollView, _ in
                 MainActor.assumeIsolated {
-                    guard let self else { return }
-                    if scrollView.isDragging || scrollView.isDecelerating {
-                        self.heldOffset = nil
-                        self.isPinned = scrollView.bottomOffset - scrollView.contentOffset.y <= Self.slack
-                    } else if self.isPinned {
-                        self.holdAtBottom()
-                    }
+                    guard scrollView.isDragging || scrollView.isDecelerating else { return }
+                    self?.isPinned = scrollView.bottomOffset - scrollView.contentOffset.y <= Self.slack
                 }
             }
         ]
         stick()
-        // 内容可能在注册观察之前就整套排好了（有缓存历史的房间一进就满）：注册后再没有 contentSize
-        // 变化，上面那次 stick 量到的是注册前的高度。补一次异步 stick，等这一帧排完再贴底；落点摆放
-        // 的异步滚动排在它后面，会按落点覆盖。
-        DispatchQueue.main.async { self.stick() }
     }
 
     /// 主人发了东西：不管翻到哪，回到底部看结果。
     func pin() {
         isPinned = true
-        heldOffset = nil
         stick()
     }
 
-    /// 摆进房间的落点（ADR-0071）：停在别处，不跟着贴底。之后主人滚回底部会经 KVO 再 pin 回来。
-    func unpin() {
-        isPinned = false
-    }
-
     func stick() {
-        guard let scrollView, !scrollView.isDragging, !scrollView.isDecelerating else { return }
-        if isPinned {
-            scrollView.contentOffset.y = scrollView.bottomOffset
-        } else {
-            restoreOffset()
-        }
-    }
-
-    /// 走查用：贴底状态和滚动的实际位置。界面上看不见，放进无障碍树给 UI 测试读。
-    var snapshot: String {
-        let view = scrollView
-        return "pin=\(isPinned) y=\(view?.contentOffset.y ?? -1) bottom=\(view?.bottomOffset ?? -1)"
-    }
-
-    /// List 排完新行会自己再挪一次 contentOffset，保住原先看到的那一行；键盘弹着、新行比可见区高时新消息就停在可见区下面，
-    /// 内容高度也不再变，等不到下一次 stick（iOS 26.5 模拟器实测，在 stick 之后固定等两轮再拉也赶不上它）。所以贴底时
-    /// 不是主人手势带来的位移一律拉回底部；放到下一轮，不在 KVO 回调里改正在观察的属性。
-    private func holdAtBottom() {
-        guard !settling, let scrollView,
-              scrollView.bottomOffset - scrollView.contentOffset.y > Self.slack else { return }
-        settling = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.settling = false
-            guard self.isPinned, let scrollView = self.scrollView,
-                  !scrollView.isDragging, !scrollView.isDecelerating else { return }
-            scrollView.contentOffset.y = scrollView.bottomOffset
-        }
+        guard isPinned, let scrollView, !scrollView.isDragging else { return }
+        scrollView.contentOffset.y = scrollView.bottomOffset
     }
 }
 
 private extension UIScrollView {
-    /// 贴底的位置。List 报的 `contentSize` 会少算比可见区还高的行的后半截（iOS 26.5 模拟器实测：按它算的底
-    /// 到不了最后一条，还差一千多点），所以可见的最下面那一格比 `contentSize` 还靠下时按格子算。
     var bottomOffset: CGFloat {
-        let end = (self as? UICollectionView).map { view in
-            max(contentSize.height, view.visibleCells.map(\.frame.maxY).max() ?? 0)
-        } ?? contentSize.height
-        return max(-adjustedContentInset.top, end + adjustedContentInset.bottom - bounds.height)
+        max(-adjustedContentInset.top, contentSize.height + adjustedContentInset.bottom - bounds.height)
     }
 }
 
@@ -159,17 +84,5 @@ struct EnclosingScrollView: UIViewRepresentable {
                 ancestor = view.superview
             }
         }
-    }
-}
-
-/// 走查用：看不见的一行，写着 `BottomPin` 的贴底状态，UI 测试按标识读它。
-struct ScrollDebug: View {
-    let text: String
-
-    var body: some View {
-        Text(verbatim: text)
-            .accessibilityIdentifier("roomScroll")
-            .allowsHitTesting(false)
-            .opacity(0.02)
     }
 }

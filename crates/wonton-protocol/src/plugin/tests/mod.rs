@@ -105,7 +105,6 @@ fn store() -> StoreListing {
         }),
         stars: None,
         installed_version: Some("2.0.0".into()),
-        security_tier: Some(SecurityTier::Standard),
         high_permissions: false,
         blocked: None,
     };
@@ -138,7 +137,6 @@ fn store() -> StoreListing {
                 source: "github:someone/wonton-samba".into(),
                 trust: PluginTrust::Community,
                 stars: Some(42),
-                security_tier: Some(SecurityTier::Highest),
                 high_permissions: true,
                 blocked: Some("宿主是 arm64，这个插件只支持 amd64".into()),
                 ..item
@@ -161,14 +159,12 @@ fn preview() -> InstallPreview {
         source: Some("github:someone/wonton-samba@v1.0.0".into()),
         commit: Some("0123456789abcdef0123456789abcdef01234567".into()),
         digest: format!("sha256:{}", "cd".repeat(32)),
-        plan: "consumer-plan".into(),
         id: "app.samba".into(),
         title: "Samba".into(),
         summary: "局域网文件共享".into(),
         version: "1.0.0".into(),
         kind: PluginKind::App,
         runtime: PluginRuntime::Compose,
-        security_tier: Some(SecurityTier::High),
         scope_choices: vec![],
         has_bot: false,
         icon: None,
@@ -199,7 +195,6 @@ fn preview() -> InstallPreview {
             url: Some("https://api-dashboard.search.brave.com/app/keys".into()),
             required: true,
         }],
-        settings: None,
         notices: vec![CardLine {
             text: "云吞没有审核过这个应用，代码和镜像由 someone 提供".into(),
             emphasis: true,
@@ -266,8 +261,6 @@ fn detail() -> PluginDetail {
         tags: vec![],
         kind: PluginKind::App,
         runtime: PluginRuntime::Compose,
-        security_tier: Some(SecurityTier::Standard),
-        link_url: None,
         scope: None,
         version: "2.1.0".into(),
         trust: PluginTrust::Official,
@@ -295,7 +288,6 @@ fn detail() -> PluginDetail {
             changed_at_ms: Some(1_793_000_000_000),
         }],
         has_web: true,
-        has_settings: false,
         installed: Some(installed()),
         blocked: None,
         notices: Vec::new(),
@@ -328,6 +320,195 @@ fn detail() -> PluginDetail {
     }
 }
 
+#[test]
+fn interface_types_round_trip_through_json() {
+    let installed = InstalledPlugins {
+        plugins: vec![installed()],
+        upgrade_check: Some(StoreProblem {
+            reason: StoreFailure::RateLimited,
+            details: "GitHub 限速了".into(),
+        }),
+    };
+    assert_eq!(round_trip(&installed), installed);
+    assert_eq!(round_trip(&store()), store());
+    assert_eq!(round_trip(&detail()), detail());
+    assert_eq!(round_trip(&preview()), preview());
+
+    let source = InstallSource {
+        source: "github:someone/wonton-samba".into(),
+    };
+    assert_eq!(round_trip(&source), source);
+    let request = InstallRequest {
+        source: "github:someone/wonton-samba@v1.0.0".into(),
+        digest: preview().digest,
+        scope: None,
+        grant: vec!["network.host".into()],
+        enabled_permissions: vec!["docker.socket".into()],
+        secrets: SecretValues::from([("brave_key".into(), crate::SecretString::new("s3cret"))]),
+        devices: vec!["usb-1".into()],
+        lan_webui: true,
+        install_together: vec![InstallTogether {
+            id: "app.model.gateway".into(),
+            source: "github:example/wonton-model-gateway".into(),
+        }],
+        connect_plugins: Vec::new(),
+    };
+    assert_eq!(round_trip(&request), request);
+    let upgrade = UpgradeRequest {
+        devices: vec!["serial-1".into()],
+        source: Some("upload:sha256:abc".into()),
+        digest: preview().digest,
+        grant: vec![],
+        enabled_permissions: vec![],
+        secrets: SecretValues::new(),
+        lan_webui: false,
+    };
+    assert_eq!(round_trip(&upgrade), upgrade);
+
+    let view_model = PluginsViewModel {
+        installed: Some(installed),
+        store: Some(store()),
+        refreshing: true,
+        problem: Some(PluginProblem {
+            reason: PluginFailure::TransportUnavailable,
+            min_version: None,
+            message: "连不上家里的服务器".into(),
+        }),
+        tasks: vec![PluginTask {
+            id: "app.samba".into(),
+            title: "Samba".into(),
+            icon: None,
+            operation: PluginOperation::Install,
+            state: PluginTaskState::Failed {
+                reason: PluginFailure::Changed,
+                message: "插件包在预览之后变了".into(),
+            },
+            added_tools: Some(AddedTools::NotCompared {
+                reason: "插件没有运行，列不出工具".into(),
+            }),
+        }],
+        egress: EgressViewModel::default(),
+        registry_mirror: crate::RegistryMirrorViewModel::default(),
+        core_upgrade: crate::CoreUpgradeViewModel::default(),
+        storage: Some(StorageUsage {
+            total_bytes: 500,
+            free_bytes: 200,
+        }),
+        storage_problem: None,
+        takeover: Some(PluginTakeover {
+            id: "app.memos".into(),
+            state: TakeoverState::Lost {
+                problem: PluginProblem {
+                    reason: PluginFailure::TransportUnavailable,
+                    min_version: None,
+                    message: "连不上家里的服务器".into(),
+                },
+            },
+        }),
+        actions: Vec::new(),
+        shared_apps: None,
+        port_mappings: Vec::new(),
+    };
+    assert_eq!(round_trip(&view_model), view_model);
+}
+
+/// 契约：核心和客户端核心之间的 JSON 写法。改了就要两边一起改，旧的 App 也会读不懂。
+#[test]
+fn wire_format_is_stable() {
+    assert_eq!(
+        serde_json::to_value(installed()).unwrap()["revision"],
+        json!("opaque:revision/版本-2")
+    );
+    assert_eq!(
+        serde_json::to_value(PluginLimits {
+            memory: Some(1024),
+            cpu_percent: Some(150),
+        })
+        .unwrap(),
+        json!({"memory": 1024, "cpu_percent": 150})
+    );
+    assert_eq!(
+        serde_json::from_value::<PluginLimits>(json!({})).unwrap(),
+        PluginLimits::default()
+    );
+    assert_eq!(
+        serde_json::to_value(PluginState::Running {
+            health: PluginHealth::Healthy
+        })
+        .unwrap(),
+        json!({"state": "running", "health": "healthy"})
+    );
+    assert_eq!(
+        serde_json::to_value(PluginState::Stopped).unwrap(),
+        json!({"state": "stopped"})
+    );
+    assert_eq!(round_trip(&PluginState::Stopped), PluginState::Stopped);
+    assert_eq!(
+        serde_json::to_value(PluginState::Degraded { reason: "x".into() }).unwrap(),
+        json!({"state": "degraded", "reason": "x"})
+    );
+    assert_eq!(
+        serde_json::to_value(RequirementStatus::Degraded).unwrap(),
+        json!("degraded")
+    );
+    assert_eq!(
+        serde_json::from_value::<RequirementStatus>(json!("later")).unwrap(),
+        RequirementStatus::Unknown
+    );
+    assert_eq!(
+        serde_json::to_value(PluginFailure::CoreUpgrading).unwrap(),
+        json!("core_upgrading")
+    );
+    assert_eq!(
+        serde_json::to_value(PluginTrust::Community).unwrap(),
+        json!("community")
+    );
+    assert_eq!(
+        serde_json::to_value(StoreFailure::RateLimited).unwrap(),
+        json!("rate_limited")
+    );
+    let request: InstallRequest = serde_json::from_value(json!({
+        "source": "github:o/r@v1.0.0",
+        "digest": "sha256:00",
+        "grant": ["models"],
+        "secrets": {"brave_key": "s3cret"},
+    }))
+    .unwrap();
+    assert_eq!(request.grant, ["models"]);
+    assert_eq!(request.secrets["brave_key"].expose(), "s3cret");
+    assert!(request.devices.is_empty(), "旧 App 不带设备选择，按空算");
+    assert!(!request.lan_webui, "旧 App 不带这个字段，按关算");
+    assert!(
+        request.install_together.is_empty(),
+        "旧 App 不带一起装的插件，按空算"
+    );
+
+    let older: InstallRequest = serde_json::from_value(json!({
+        "source": "github:o/r@v1.0.0",
+        "digest": "sha256:00",
+        "grant": ["models"],
+    }))
+    .unwrap();
+    assert!(older.secrets.is_empty(), "旧 App 不带密钥表，按没填算");
+    assert_eq!(
+        serde_json::to_value(PluginTaskState::Failed {
+            reason: PluginFailure::SourceUnavailable,
+            message: "x".into(),
+        })
+        .unwrap(),
+        json!({"type": "failed", "reason": "source_unavailable", "message": "x"})
+    );
+    assert_eq!(
+        serde_json::to_value(PluginFailure::EgressProxyUnavailable).unwrap(),
+        json!("egress_proxy_unavailable")
+    );
+    assert_eq!(
+        serde_json::to_value(PluginFailure::DeviceUnavailable).unwrap(),
+        json!("device_unavailable")
+    );
+}
+
+/// 权限风险字段兼容旧 App，并把未知级别落到 `Other`。
 #[test]
 fn permission_risk_keeps_unknown_values_safe() {
     let old_line: PermissionLine = serde_json::from_value(json!({
@@ -386,10 +567,9 @@ fn an_uncertain_task_keeps_its_wire_format() {
     assert_eq!(
         serde_json::to_value(PluginTaskState::Uncertain {
             message: "x".to_owned(),
-            next_step: PluginTaskNextStep::CheckInstalled,
         })
         .unwrap(),
-        json!({"type": "uncertain", "message": "x", "next_step": "check_installed"})
+        json!({"type": "uncertain", "message": "x"})
     );
 }
 
@@ -579,8 +759,4 @@ where
 }
 
 mod capability;
-mod install_decisions;
 mod legacy_fields;
-mod problem;
-mod settings;
-mod store;

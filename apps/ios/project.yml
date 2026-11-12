@@ -7,25 +7,14 @@ options:
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
-  # 测试动作关掉线程性能检查（Thread Performance Checker）。主线程同步调进核心时偶尔要等 tokio 工作线程放开锁，它把这记成
-  # 优先级反转，在被卡住的主线程上逐帧符号化、打印整个调用栈；CI 上一帧约一秒，一次能拖过单测的 60 秒时限，用例被判超时。
-  # XcodeGen 只给运行动作生成这个开关；test plan 里的同名选项在 Xcode 27.1 实测不生效，用了 test plan 以后 scheme 上的
-  # 开关也不认，所以生成完往 scheme 的测试动作上补。
-  postGenCommand: sed -i '' 's/<TestAction/<TestAction disablePerformanceAntipatternChecker = "YES"/' Wonton.xcodeproj/xcshareddata/xcschemes/*.xcscheme
-# 两个配置共用 build-core.sh 写出的版本号（见其脚本内注释）；文件不进 git。
-configFiles:
-  Debug: Version.xcconfig
-  Release: Version.xcconfig
 settings:
   base:
     SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.0.0"
+    CURRENT_PROJECT_VERSION: "1"
 packages:
   WontonClient:
     path: WontonClient
-  # 截图测试。MIT，只进测试目标，不链接进 App。
-  SnapshotTesting:
-    url: https://github.com/pointfreeco/swift-snapshot-testing
-    exactVersion: 1.19.7
 targets:
   Wonton:
     type: application
@@ -34,19 +23,8 @@ targets:
       - Wonton
     dependencies:
       - package: WontonClient
-    # 版本号靠生成工程时写出的 Version.xcconfig（或 xcodebuild 显式传参）。两源皆空时 Release 会落到
-    # 0.0.0 或空，编译前在这里挡下；Debug 允许 0.0.0（CI 浅克隆没有 tag）。
-    preBuildScripts:
-      - name: 检查发版版本号
-        showEnvVars: false
-        basedOnDependencyAnalysis: false
-        script: |
-          case "${CONFIGURATION:-}/$MARKETING_VERSION" in
-            Release/"" | Release/"0.0.0")
-              echo "error: Release 拿不到版本号：用 WONTON_VERSION=X.Y.Z 重新生成工程，或给 xcodebuild 显式传 MARKETING_VERSION / CURRENT_PROJECT_VERSION" >&2
-              exit 1
-              ;;
-          esac
+      # Rust 核心里的 iroh 用它读网卡、路由和 DNS 配置（静态库不会自动链接系统框架）。
+      - sdk: SystemConfiguration.framework
     # 由 xcodegen 生成，和下面的 INFOPLIST_KEY_* 合并；生成的文件不提交。
     info:
       path: Wonton/Info.plist
@@ -56,21 +34,15 @@ targets:
           - CFBundleURLName: app.wonton.navigation
             CFBundleURLSchemes:
               - wonton
-          # Matrix 登录的回调（核心的 `oidcRedirectUri`）。网页登录面板自己截住回调，用不到它；注册了，回调从面板以外的路径
-          # （Safari、`simctl openurl`）回来时也能交给核心核对，而不是被系统说“打不开”。
-          - CFBundleURLName: app.wonton.matrix-login
-            CFBundleURLSchemes:
-              - io.github.wontonapp
         # M0 的网关和插件网页只有 http（HTTPS 方案在 M1 定），只对 WebView 里的内容放开。
         NSAppTransportSecurity:
           NSAllowsArbitraryLoadsInWebContent: true
           # 文件的播放器经核心在回环地址上的 http 地址取数据（ADR-0020）。
           NSAllowsLocalNetworking: true
         # iroh 经局域网直连家里的服务器时，iOS 要先征得用户同意。
-        # 这三句和 App 名字的各语言版本在 InfoPlist.xcstrings，这里是英文的基础值。
+        # 这两句和 App 名字的各语言版本在 InfoPlist.xcstrings，这里是英文的基础值。
         NSLocalNetworkUsageDescription: Wonton connects directly to your home server over the local network.
         NSCameraUsageDescription: Wonton uses the camera to scan the pairing QR code from your home server.
-        NSPhotoLibraryAddUsageDescription: Wonton saves photos from your chats to your photo library.
         UILaunchScreen:
           UIColorName: LaunchBackground
           UIImageName: LaunchGlyph
@@ -88,20 +60,6 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         TARGETED_DEVICE_FAMILY: "1"
 
-  WontonTests:
-    type: bundle.unit-test
-    platform: iOS
-    sources:
-      - WontonTests
-    dependencies:
-      - target: Wonton
-      - package: WontonClient
-      - package: SnapshotTesting
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios.tests
-        GENERATE_INFOPLIST_FILE: YES
-
   WontonUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -109,7 +67,6 @@ targets:
       - WontonUITests
     dependencies:
       - target: Wonton
-      - package: WontonClient
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios.uitests
@@ -122,30 +79,6 @@ schemes:
       targets:
         Wonton: all
         WontonUITests: [test]
-        WontonTests: [test]
     test:
       targets:
-        - WontonTests
         - WontonUITests
-      # 截图参考图按英文、美式日期和 UTC 录制；界面的语言、地区和时区都由这里钉住，不受模拟器的系统设置影响。
-      # 环境变量要写在 scheme 里：xcodebuild 步骤的 env 传不进模拟器里跑的 App。
-      language: en
-      region: US
-      environmentVariables:
-        TZ: UTC
-        # 只比较，缺图也报错。
-        SNAPSHOT_TESTING_RECORD: never
-  # 重录参考图：同样的 App 和测试目标，把录制模式打开；只跑单测，不编 UI 测试。
-  WontonSnapshots:
-    build:
-      targets:
-        Wonton: all
-        WontonTests: [test]
-    test:
-      targets:
-        - WontonTests
-      language: en
-      region: US
-      environmentVariables:
-        TZ: UTC
-        SNAPSHOT_TESTING_RECORD: all

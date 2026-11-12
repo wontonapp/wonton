@@ -8,12 +8,12 @@
 #   run.sh oar <claude|codex> <场景>      OAR 直接驱动：steer approval account（oar/oar-run.mjs）
 #   run.sh oar-acp <claude|codex> <场景>  OAR 包成 ACP 适配器（oar/oar-acp.mjs），跑探针的场景
 #   run.sh clean                          删掉实验的容器、卷和镜像
-# 模型走开发机的 magpie 网关（MODEL_URL，任意 key）；模型名用 MODEL 传入（开发机 magpie 里的模型）。
+# 模型走开发机的 magpie 网关（MODEL_URL，任意 key）；默认模型 auto/glm-5.3-flash。
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 prefix=wonton-acp-exp
-MODEL="${MODEL:?未设 MODEL：填开发机 magpie 网关里的模型名}"
+MODEL="${MODEL:-auto/glm-5.3-flash}"
 MODEL_URL="${MODEL_URL:-http://host.docker.internal:3425}"
 MODEL_KEY="${MODEL_KEY:-wonton-acp-exp}"
 OUT="${OUT:-$here/out}"
@@ -41,7 +41,7 @@ agent_env() {
         "ANTHROPIC_DEFAULT_OPUS_MODEL=$MODEL" "CLAUDE_CODE_SUBAGENT_MODEL=$MODEL" \
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1" "DISABLE_AUTOUPDATER=1"
       ;;
-    codex) printf '%s\n' "MAGPIE_API_KEY=$MODEL_KEY" "NO_BROWSER=1" "CODEX_MODEL=$MODEL" ;;
+    codex) printf '%s\n' "MAGPIE_API_KEY=$MODEL_KEY" "NO_BROWSER=1" ;;
     kimi)
       printf '%s\n' "KIMI_MODEL_NAME=$MODEL" "KIMI_MODEL_API_KEY=$MODEL_KEY" "KIMI_MODEL_PROVIDER_TYPE=openai" \
         "KIMI_MODEL_BASE_URL=$MODEL_URL/v1" "KIMI_MODEL_CAPABILITIES=thinking" "KIMI_DISABLE_TELEMETRY=1"

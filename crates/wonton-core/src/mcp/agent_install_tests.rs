@@ -40,7 +40,7 @@ impl Bench {
         self.write(dir, "index.html", "<h1>你好</h1>");
     }
 
-    pub(super) fn write(&self, dir: &str, path: &str, content: &str) {
+    fn write(&self, dir: &str, path: &str, content: &str) {
         let path = self.outbox.join(dir).join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, content).unwrap();
@@ -52,7 +52,7 @@ impl Bench {
     }
 
     /// 在后台以另一个身份调用，好在等确认时回答。
-    pub(super) fn spawn_as(
+    fn spawn_as(
         &self,
         caller: &crate::mcp::Caller,
         tool: &str,
@@ -200,13 +200,11 @@ async fn a_highest_permission_install_needs_both_cards() {
     let result = call.await.unwrap();
     assert!(failed(&result), "{result:?}");
     assert!(!b.installed("app.agent.root"));
-    assert!(matches!(
-        b.s.bus
-            .confirmations()
-            .card(&first.id)
-            .map(|card| card.state),
-        Some(ConfirmationState::Failed { .. })
-    ));
+    let states = b.s.cards.states(&first.id);
+    assert!(
+        matches!(states.last(), Some(ConfirmationState::Failed { .. })),
+        "{states:?}"
+    );
 
     // 两张都同意才装上。
     let call = b.s.spawn(INSTALL, json!({"dir": "root"}));
@@ -261,13 +259,11 @@ async fn a_new_submission_supersedes_the_old_one() {
     let result = first.await.unwrap();
     assert!(failed(&result), "{result:?}");
     assert!(text(&result).contains("取代"), "{result:?}");
-    assert!(matches!(
-        b.s.bus
-            .confirmations()
-            .card(&old_card.id)
-            .map(|card| card.state),
-        Some(ConfirmationState::Failed { .. })
-    ));
+    let states = b.s.cards.states(&old_card.id);
+    assert!(
+        matches!(states.last(), Some(ConfirmationState::Failed { .. })),
+        "{states:?}"
+    );
 
     // 只有新的能批。
     b.s.answer(&old_card.id, Answer::Approve).unwrap_err();
@@ -455,6 +451,55 @@ async fn ask_every_update_brings_the_card_back() {
     b.s.answer(&card.id, Answer::Approve).unwrap();
     let result = call.await.unwrap();
     assert!(!failed(&result), "{result:?}");
+}
+
+/// 主人经文件或来源升级后，归属清掉：原来的 Bot 再更新报 invalid_input。
+#[tokio::test]
+async fn an_owner_upgrade_takes_the_plugin_back_from_the_agent() {
+    let b = bench().await;
+    let (services, x_wonton) = plain("app.agent.hello", "0.1.0", "");
+    b.write_package("hello", services, &x_wonton);
+    b.installed_with_answer("hello", 1, Answer::Approve).await;
+    let id = PluginId::parse("app.agent.hello").unwrap();
+    assert!(b.writer("app.agent.hello").is_some());
+
+    // App 的升级路径升级成功后清归属（和网关 handler 一样调 set_writer）。
+    let (services, x_wonton) = plain("app.agent.hello", "0.2.0", "");
+    let compose = format!("name: app\n{services}\nx-wonton:\n{x_wonton}");
+    let mut files = std::collections::BTreeMap::new();
+    files.insert(
+        "index.html".to_owned(),
+        "<h1>主人升的</h1>".as_bytes().to_vec(),
+    );
+    let package = crate::plugin::PluginPackage::with_files(
+        &compose,
+        files,
+        &Languages::from_header(Some("zh-Hans")),
+    )
+    .unwrap();
+    let granted = package.manifest.permissions.clone();
+    b.s.manager
+        .upgrade_upload(
+            &id,
+            package,
+            granted,
+            Vec::new(),
+            false,
+            &Languages::from_header(Some("zh")),
+        )
+        .await
+        .unwrap();
+    b.s.manager.set_writer(&id, None).unwrap();
+
+    let (services, x_wonton) = plain("app.agent.hello", "0.3.0", "");
+    b.write_package("hello", services, &x_wonton);
+    let before = b.s.cards.posted.lock().unwrap().len();
+    let result = b.s.call(INSTALL, json!({"dir": "hello"})).await;
+    assert!(
+        failed(&result) && text(&result).contains("invalid_input"),
+        "{result:?}"
+    );
+    assert_eq!(b.s.cards.posted.lock().unwrap().len(), before, "零卡片");
 }
 
 /// 安装和更新的卡片（含最高级的第二张）只有“装/不装”两个选择，没有放宽；主人开了放行时段、

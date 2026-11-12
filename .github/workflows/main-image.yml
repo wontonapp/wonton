@@ -1,17 +1,17 @@
 name: main-image
 
 # 每次合进 main 都构建核心镜像，推 ghcr.io/<owner>/wonton-core 的 :main 和 :sha-<完整提交号>：
-# 插件仓库的 CI（公开仓库、GitHub 自带 runner）拉它跑端到端冒烟。这不是发版：不碰 stable 渠道，不打 git
-# tag，不写发布说明。构建方式与 release.yml 共用 .github/actions/push-image。
+# 插件仓库的 CI（公开仓库、GitHub 自带 runner）拉它跑端到端冒烟，不占我们的自托管栈。
+# 这不是发版：不碰 stable/beta 渠道，不打 git tag，不写发布说明。构建方式与 release.yml 共用
+# .github/actions/push-image。
 on:
   push:
     branches: [main]
 
-# 在跑的构建跑完再起下一次：合并比构建快时，取消在跑的会让 :main 一直推不出来。排着的只留最新一次（GitHub
-# 并发组的行为），所以 :main 最多落后一次构建。
+# :main 只要最新的，新提交推上来就取消还在跑的旧构建。
 concurrency:
   group: main-image-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -20,36 +20,19 @@ permissions:
 jobs:
   core-image:
     name: 核心镜像
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, docker]
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: 镜像标签与基础镜像
+      - uses: actions/checkout@v5
+      - name: 镜像标签
         id: meta
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-core"
           echo "tags=$image:main,$image:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          mirror="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/test-images"
-          {
-            echo "rust=$mirror/rust:1.99.1-slim-trixie"
-            echo "debian=$mirror/debian:trixie-slim"
-            echo "compose=$mirror/docker:29.9.2-cli"
-            # 层缓存放镜像仓库，不占 10 GB 的 actions 缓存（之前 buildkit 的 gha 缓存一份就吃掉 9 GB）。
-            echo "cache=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:core-image"
-          } >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/push-image
         with:
           tags: ${{ steps.meta.outputs.tags }}
           platforms: linux/amd64
           file: deploy/dev/core/Dockerfile
           version: main
-          extra-build-args: |-
-            WONTON_BUILD_COMMIT=${{ github.sha }}
-            RUST_IMAGE=${{ steps.meta.outputs.rust }}
-            DEBIAN_IMAGE=${{ steps.meta.outputs.debian }}
-            COMPOSE_IMAGE=${{ steps.meta.outputs.compose }}
-          cache-ref: ${{ steps.meta.outputs.cache }}
-          # 只有 main 写缓存，发版和 PR 只读。
-          cache-write: "true"
+          extra-build-args: WONTON_BUILD_COMMIT=${{ github.sha }}

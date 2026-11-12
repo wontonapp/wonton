@@ -17,16 +17,26 @@ impl Admin {
     /// 核心用共享密钥注册自己的管理账号（`POST /_synapse/admin/v1/register`），不需要开放注册。
     pub async fn register(base_url: &str, shared_secret: &str) -> Self {
         let http = Client::new();
-        let password = random_hex(16);
-        let response = register_user(
-            &http,
-            base_url,
-            shared_secret,
-            "wonton-core",
-            &password,
-            true,
-        )
-        .await;
+        let path = "/_synapse/admin/v1/register";
+        let nonce = request(&http, base_url, None, Method::GET, path, None).await["nonce"]
+            .as_str()
+            .expect("注册接口应返回 nonce")
+            .to_owned();
+        let (username, password) = ("wonton-core", random_hex(16));
+        let message = [nonce.as_str(), username, &password, "admin"].join("\0");
+        let key = hmac::Key::new(
+            hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY,
+            shared_secret.as_bytes(),
+        );
+        let mac = hex(hmac::sign(&key, message.as_bytes()).as_ref());
+        let body = json!({
+            "nonce": nonce,
+            "username": username,
+            "password": password,
+            "admin": true,
+            "mac": mac,
+        });
+        let response = request(&http, base_url, None, Method::POST, path, Some(body)).await;
         let access_token = response["access_token"]
             .as_str()
             .expect("应返回访问令牌")
@@ -87,37 +97,6 @@ impl Admin {
         )
         .await
     }
-}
-
-/// 用共享密钥注册一个带密码的账号（Synapse 兼容的管理接口），返回注册接口的回应。
-pub(super) async fn register_user(
-    http: &Client,
-    base_url: &str,
-    shared_secret: &str,
-    username: &str,
-    password: &str,
-    admin: bool,
-) -> Value {
-    let path = "/_synapse/admin/v1/register";
-    let nonce = request(http, base_url, None, Method::GET, path, None).await["nonce"]
-        .as_str()
-        .expect("注册接口应返回 nonce")
-        .to_owned();
-    let role = if admin { "admin" } else { "notadmin" };
-    let message = [nonce.as_str(), username, password, role].join("\0");
-    let key = hmac::Key::new(
-        hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY,
-        shared_secret.as_bytes(),
-    );
-    let mac = hex(hmac::sign(&key, message.as_bytes()).as_ref());
-    let body = json!({
-        "nonce": nonce,
-        "username": username,
-        "password": password,
-        "admin": admin,
-        "mac": mac,
-    });
-    request(http, base_url, None, Method::POST, path, Some(body)).await
 }
 
 async fn request(

@@ -56,7 +56,6 @@ fn relationship_and_invitation_contracts_round_trip() {
             blocked_at_ms: 1_793_000_000_002,
         }],
         can_block_federation: true,
-        my_link: Some("https://matrix.to/#/@alice:example.org".into()),
     };
     round_trip(&view);
     round_trip(&FriendsState::Loading);

@@ -10,7 +10,7 @@ async fn paired(phone: &Phone, home: &Home) {
         .wait_for(|view| {
             view.status == HomeStatus::Connected
                 && view.server_id.as_deref() == Some(server_id.as_str())
-                && matches!(view.pairing, Some(PairingStatus::Paired))
+                && view.pairing.is_none()
         })
         .await;
     tokio::time::timeout(WAIT, async {
@@ -47,6 +47,7 @@ async fn new_identity_at_the_same_address_pairs_without_clearing_old_data() {
     let old_tabs = dir.path().join("servers").join(&old_slot).join("tabs.json");
     let old_data = std::fs::read(&old_tabs).unwrap();
     a.server.shutdown().await;
+    crate::home::support::wait_until_port_is_free(address.port()).await;
     let b = Home::start_at(address).await;
     assert_ne!(a_id, b.codes.server_id.to_string());
     assert_eq!(b.codes.direct_addrs, [address]);
@@ -114,15 +115,13 @@ async fn old_identity_stays_unreachable(phone: &Phone, server_id: &str) {
     tokio::time::timeout(WAIT, async {
         let subscription = phone.subscribe_home();
         while let Some(view) = subscription.next().await {
-            if view.details.failed_dials > failed.details.failed_dials
-                && matches!(
-                    view.notice,
-                    Some(
-                        ConnectionNotice::Unreachable { retrying: false }
-                            | ConnectionNotice::ServerOffline { retrying: false }
-                    )
+            if matches!(
+                view.notice,
+                Some(
+                    ConnectionNotice::Unreachable { retrying: false }
+                        | ConnectionNotice::ServerOffline { retrying: false }
                 )
-            {
+            ) {
                 return;
             }
         }

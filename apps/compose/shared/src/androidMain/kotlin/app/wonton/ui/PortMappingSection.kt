@@ -18,11 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.wonton.protocol.Action
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PortMappingState
-import app.wonton.protocol.PortMappingWarning
 import app.wonton.protocol.PortProtocol
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonNotice
@@ -37,21 +35,11 @@ import app.wonton.ui.icons.WontonIcon
 /**
  * “映射到本机”一组（ADR-0072）：一张分组卡片里放开关和同号的端口，没映射成功的原因提示在卡片下面。
  * 核心没给映射状态时（太旧或没实现），端口按清单声明的列出来。
- *
- * 打开开关时顺带申请通知权限；拒绝了映射照样开，卡片下面如实提示通知栏看不到。
  */
 @Composable
 internal fun PortMappingSection(plugins: PluginsState, installed: InstalledPlugin) {
     val mapping = plugins.viewModel.portMappings.firstOrNull { it.pluginId == installed.id }
     var problem by remember(installed.id) { mutableStateOf<Problem?>(null) }
-    val permission = LocalNotificationPermission.current
-    var notificationGranted by remember(installed.id) {
-        mutableStateOf(permission?.granted ?: true)
-    }
-    LifecycleResumeEffect(permission) {
-        notificationGranted = permission?.granted ?: true
-        onPauseOrDispose {}
-    }
     val title = stringResource(R.string.port_mapping_toggle)
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         WontonGroup {
@@ -71,7 +59,6 @@ internal fun PortMappingSection(plugins: PluginsState, installed: InstalledPlugi
                 WontonSwitch(
                     checked = mapping?.enabled ?: false,
                     onCheckedChange = { enabled ->
-                        if (enabled) permission?.request { notificationGranted = it }
                         problem = plugins.core.send(Action.SetPortMapping(pluginId = installed.id, enabled = enabled))
                     },
                     modifier = Modifier.widthIn(min = WontonTheme.size.target)
@@ -94,14 +81,6 @@ internal fun PortMappingSection(plugins: PluginsState, installed: InstalledPlugi
                 WontonNotice(WontonIcon.Warning, stringResource(reason))
             }
         }
-        mapping?.warning?.let { hint ->
-            portMappingWarningRes(hint)?.let { key ->
-                WontonNotice(WontonIcon.Warning, stringResource(key))
-            }
-        }
-        portMappingNotificationRes(mapping?.enabled == true, notificationGranted)?.let { key ->
-            WontonNotice(WontonIcon.Warning, stringResource(key))
-        }
         problem?.let { ProblemNotice(it) }
     }
 }
@@ -112,18 +91,6 @@ private fun portProtocolLabel(protocol: PortProtocol): String = when (protocol) 
     PortProtocol.TCP -> "TCP"
     PortProtocol.UDP -> "UDP"
     PortProtocol.OTHER -> stringResource(R.string.port_mapping_protocol_other)
-}
-
-/** 映射开着但没有通知权限时的提示：开着也看不到前台服务的通知。其余情形不用提示，返回 null。 */
-fun portMappingNotificationRes(enabled: Boolean, notificationGranted: Boolean): Int? = when {
-    !enabled || notificationGranted -> null
-    else -> R.string.port_mapping_no_notification_permission
-}
-
-/** 映射能用但有一条提醒时的文案键；没有提醒返回 null。 */
-fun portMappingWarningRes(warning: PortMappingWarning?): Int? = when (warning) {
-    null, PortMappingWarning.OTHER -> null
-    PortMappingWarning.PUBLIC_RELAY_BANDWIDTH -> R.string.port_mapping_warning_public_relay_bandwidth
 }
 
 /** 映射状态的原因文案键；开着和关着不用解释，返回 null。没映射成功时每个类别一句完整的话。 */

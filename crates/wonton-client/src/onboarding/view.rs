@@ -24,30 +24,11 @@ pub(super) fn first_visible(unavailable: &HashSet<OnboardingStep>) -> Option<Onb
     STEPS.into_iter().find(|step| !unavailable.contains(step))
 }
 
-/// 主人已经给默认 Agent 的私聊发过消息。发布时据此先把 `prompts_used` 落盘再渲染：收起提问的视图
-/// 出去时记录一定已经在盘上（`OnboardingLink::publish`），App 杀在中间也不会再给一次提问。
-pub(super) fn prompt_done(
-    onboarding: Option<&Onboarding>,
-    chat: &ChatViewModel,
-    sent_rooms: &HashSet<String>,
-) -> bool {
-    let Some(bot) = onboarding.and_then(|onboarding| {
-        onboarding
-            .primary_agent
-            .as_deref()
-            .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id))
-            .and_then(|agent| agent.bot_user_id.as_deref())
-    }) else {
-        return false;
-    };
-    chat.rooms.iter().any(|room| {
-        sent_rooms.contains(&room.room_id) && room.direct_user_id.as_deref() == Some(bot)
-    })
-}
-
 pub(super) fn render(
     state: &LocalState,
     records: &storage::Records,
+    chat: &ChatViewModel,
+    sent_rooms: &HashSet<String>,
 ) -> (OnboardingViewModel, Option<String>) {
     let Some(onboarding) = state.onboarding.as_ref() else {
         return (
@@ -60,17 +41,7 @@ pub(super) fn render(
             None,
         );
     };
-    // 引导流程里显示这次记下的选择；流程外（设置里的“默认 Agent”）显示服务器上的现值，
-    // 不让上次没走完的草稿冒充当前设置。
-    let in_flow = matches!(
-        state.step,
-        Some(step) if !matches!(step, OnboardingStep::Finished | OnboardingStep::Other)
-    );
-    let selected = if in_flow {
-        state.draft.agent(onboarding)
-    } else {
-        onboarding.primary_agent.clone()
-    };
+    let selected = state.draft.agent(onboarding);
     let agents = agent_rows(onboarding, selected.as_deref());
     let selected_agent = selected
         .as_deref()
@@ -80,12 +51,13 @@ pub(super) fn render(
         .as_deref()
         .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id))
         .and_then(|agent| agent.bot_user_id.clone());
-    // 收起只看盘上的 `prompts_used`：发过消息的落盘在 `OnboardingLink::publish` 里、渲染用同一份快照，
-    // 收起的视图出去时记录一定已经在盘上。房间行不参与收起（行列表抖动不收起），壳只在 Bot 私聊里显示。
     let chat_prompts = if onboarding.step == OnboardingStep::Finished
         && primary_bot.is_some()
         && !records.prompts_used
-    {
+        && chat.rooms.iter().any(|room| {
+            !sent_rooms.contains(&room.room_id)
+                && room.direct_user_id.as_deref() == primary_bot.as_deref()
+        }) {
         onboarding.prompts.clone()
     } else {
         Vec::new()
@@ -103,14 +75,14 @@ pub(super) fn render(
     let needs = need_rows(state, onboarding);
     // 服务器太旧的步跳过：正在显示的那步刚变不可用时换到下一个，一步都不剩时整段不显示。
     // 整段都打不开（服务器比引导接口还旧）时一步都不显示，只留升级提示。
-    // `step` 为空就是“不在引导里”（关掉重看、还没取到），不再兜底回第一步，壳好回到设置。
     let step = state
         .too_old
         .is_none()
-        .then(|| match state.step {
-            Some(step) if !state.unavailable.contains(&step) => Some(step),
-            Some(_) => first_visible(&state.unavailable),
-            None => None,
+        .then(|| {
+            state
+                .step
+                .filter(|step| !state.unavailable.contains(step))
+                .or_else(|| first_visible(&state.unavailable))
         })
         .flatten();
     let view = OnboardingViewModel {
@@ -205,7 +177,6 @@ fn navigation(
         can_back: ready && not_started && position > 1,
         can_skip: ready && not_started && step != OnboardingStep::Review,
         can_next: ready && can_next,
-        can_close: ready && not_started && state.revisit,
     })
 }
 
@@ -247,8 +218,8 @@ fn replaced_agent(onboarding: &Onboarding) -> Option<ReplacedAgent> {
 mod tests {
     use super::*;
     use wonton_protocol::{
-        ChatAccount, ChatSync, DeviceVerification, EncryptionStatus, PushStatus, RecoveryNextStep,
-        RecoveryStatus, RoomRow,
+        ChatAccount, ChatSync, DeviceVerification, EncryptionStatus, PushStatus, RecoveryStatus,
+        RoomRow,
     };
 
     fn onboarding() -> Onboarding {
@@ -287,10 +258,7 @@ mod tests {
                 recovery_key: None,
                 backup_reminder: None,
                 can_verify_with_other_device: false,
-                can_reset: false,
-                recovery_next_step: RecoveryNextStep::None,
                 verification_flow: None,
-                key_handoff: None,
             },
             installing_bots: Vec::new(),
             rooms: vec![RoomRow {
@@ -303,7 +271,6 @@ mod tests {
                 is_read_only: false,
                 membership: wonton_protocol::RoomMembership::Joined,
                 preview: None,
-                side_chats: false,
                 unread_count: 0,
             }],
             problem: None,
@@ -315,67 +282,49 @@ mod tests {
         }
     }
 
-    fn render_with(records: &storage::Records) -> OnboardingViewModel {
+    fn render_with(
+        records: &storage::Records,
+        chat: &ChatViewModel,
+        sent_rooms: &HashSet<String>,
+    ) -> OnboardingViewModel {
         let state = LocalState {
             onboarding: Some(onboarding()),
             ..LocalState::default()
         };
-        render(&state, records).0
+        render(&state, records, chat, sent_rooms).0
     }
 
     #[test]
-    fn prompts_show_until_prompts_used_is_recorded() {
-        // 收起只看盘上的记录（落盘在 publish 里、渲染用同一份快照），房间行不参与。
+    fn prompts_show_until_a_message_is_sent_to_the_bot() {
         let records = storage::Records::default();
-        let view = render_with(&records);
+        let chat = chat("!room:home", Some("@hermes:home"));
+        let view = render_with(&records, &chat, &HashSet::new());
         assert_eq!(view.chat_prompts, ["问我能做什么"]);
 
-        let used = storage::Records {
-            prompts_used: true,
-            ..storage::Records::default()
-        };
-        let view = render_with(&used);
+        let sent: HashSet<String> = ["!room:home".to_owned()].into();
+        let view = render_with(&records, &chat, &sent);
         assert!(view.chat_prompts.is_empty());
     }
 
     #[test]
-    fn a_message_to_the_bot_is_what_gets_prompts_used_recorded() {
-        // 收起提问只由 publish 落盘的 `prompts_used` 决定；房间记进发过消息本身不收起，
-        // 行列表抖动（行短暂缺失）也不收起，发过消息的发布到了才落盘、才收。
-        let bot_chat = chat("!room:home", Some("@hermes:home"));
-        assert!(!prompt_done(
-            Some(&onboarding()),
-            &bot_chat,
-            &HashSet::new()
-        ));
-        let sent: HashSet<String> = ["!room:home".to_owned()].into();
-        assert!(prompt_done(Some(&onboarding()), &bot_chat, &sent));
-
-        // 别的房间发过消息不算。
-        let other: HashSet<String> = ["!other:home".to_owned()].into();
-        assert!(!prompt_done(Some(&onboarding()), &bot_chat, &other));
-        // 私聊标记缺失的行不算。
-        let plain = chat("!room:home", None);
-        assert!(!prompt_done(Some(&onboarding()), &plain, &sent));
-    }
-
-    #[test]
     fn prompts_come_back_after_a_server_switch() {
-        // 换服务器后 storage.sync_server 清掉提问记录；发过消息的记录没了，候选提问恢复。
+        // 换服务器后 storage.sync_server 清掉提问记录；房间是旧的、发过消息的记录没了，候选提问恢复。
         let records = storage::Records {
             prompts_used: true,
             prompt_rooms: vec!["!room:home".to_owned()],
             prompt_server_id: Some("old".to_owned()),
             ..storage::Records::default()
         };
-        let view = render_with(&records);
+        let chat = chat("!room:home", Some("@hermes:home"));
+        let sent: HashSet<String> = ["!room:home".to_owned()].into();
+        let view = render_with(&records, &chat, &sent);
         assert!(view.chat_prompts.is_empty());
 
         let reset = storage::Records {
             prompt_server_id: Some("new".to_owned()),
             ..storage::Records::default()
         };
-        let view = render_with(&reset);
+        let view = render_with(&reset, &chat, &HashSet::new());
         assert_eq!(view.chat_prompts, ["问我能做什么"]);
     }
 }

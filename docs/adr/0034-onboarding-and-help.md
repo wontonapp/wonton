@@ -41,7 +41,7 @@
 
 一页列表，每行是纯文字的名字和接模型的方式，如“Codex：ChatGPT 账号或 key”。默认选中第一项。
 
-- **名单来自官方索引的 `onboarding.agents`**（见“推荐清单”），加上已经装着的 Agent，不用发 App。只列在真实主机上冒烟通过的 Agent 插件。第一批 Hermes、OpenClaw；ACP 桥做好后 Codex、Claude Code、omp；再后面 Kimi Code、Qwen Code、OpenCode（ADR-0079，不收录 Google 的命令行 Agent）。这里只列官方的，社区的 Agent 在商店里。
+- **名单来自官方索引的 `onboarding.agents`**（见“推荐清单”），加上已经装着的 Agent，不用发 App。只列在真实主机上冒烟通过的 Agent 插件。第一批 Hermes、OpenClaw；ACP 桥做好后 Codex、Claude Code、omp；再后面 Kimi Code、Qwen Code、Gemini CLI、OpenCode。这里只列官方的，社区的 Agent 在商店里。
 - **名字用文字，图标不用官方标志。** 标志由各家的商标规则约束，Claude Code 的条款只允许用纯文字说“运行 Claude Code”。新的 Agent 插件统一用首字母图标。
 - **“默认 Agent”只决定聊天列表里排第一的是谁。** 核心记下 `primary_agent`，不按它路由，也不特殊处理（ADR-0015）。设置里能改。
 - **Hermes 照旧预装（ADR-0007）。** 选了别的，最后一页列出它的权限，点完成后在后台装上；新 Agent 能聊之后问一次要不要卸掉 Hermes，能省约 4 GB。卸载走原有流程。
@@ -203,7 +203,7 @@ requires_core: 0.9.0
   ```json
   {
     "docs": {
-      "source": "github:wontonapp/wonton-docs",
+      "source": "github:geraldpeng6/wonton-docs",
       "commit": "<40 位提交号>",
       "min_core": "0.9.0",
       "files": { "user/zh/devices.md": "<sha256 的十六进制>" }
@@ -333,7 +333,7 @@ requires_core: 0.9.0
 
 条件和没测的：
 - 模型经开发机上的 magpie 接入（`magpie provider add upstream url=… key=placeholder`），没有在 App 里填真实厂商的 key，所以“填真实的 key”这条只验证了错的 key。
-- `magpie provider test` 对可用上游（magpie 0.1.1327）输出 `✓ chat 345 ms · <模型名>`，退出码 0，输出不含 key，走 `providers.sh` 的成功路径。这个上游不校验 key，错的 key 同样通过，所以它不能代表真实厂商对 key 的校验；厂商拒绝错 key 的输出见 `providers.sh` 的注释。
+- `magpie provider test` 对可用上游（magpie 0.1.1327）输出 `✓ chat 345 ms · auto/glm-5.3-flashx`，退出码 0，输出不含 key，走 `providers.sh` 的成功路径。这个上游不校验 key，错的 key 同样通过，所以它不能代表真实厂商对 key 的校验；厂商拒绝错 key 的输出见 `providers.sh` 的注释。
 
 ## 参考
 

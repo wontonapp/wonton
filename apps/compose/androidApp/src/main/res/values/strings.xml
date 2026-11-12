@@ -35,8 +35,4 @@
     <string name="push_registration_rejected">The distributor rejected the registration: %1$s</string>
     <!-- Push status detail: the distributor unregistered the app. -->
     <string name="push_unregistered">The distributor unregistered Wonton</string>
-    <!-- Notification text: a bot asks to be your bot's contact. -->
-    <string name="push_contact_request">Wants to be your bot\'s contact</string>
-    <!-- Same, when the asking bot belongs to someone. Argument: that person's name. -->
-    <string name="push_contact_request_keeper">%1$s\'s bot wants to be your bot\'s contact</string>
 </resources>

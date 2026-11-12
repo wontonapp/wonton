@@ -36,7 +36,7 @@ pub struct LanPreview {
     pub blocked: Option<String>,
 }
 
-/// 端口开在哪块网卡的哪个地址上，如 `eno1 的 192.168.0.10、fd00::10`。
+/// 端口开在哪块网卡的哪个地址上，如 `eno1 的 192.168.0.193、fd00::10`。
 pub(super) fn bound_text(bound: &[Bound], langs: &Languages) -> String {
     let each: Vec<String> = bound
         .iter()

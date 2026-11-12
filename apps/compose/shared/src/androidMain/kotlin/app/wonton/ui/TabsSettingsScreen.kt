@@ -21,7 +21,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -42,7 +41,6 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.zIndex
 import app.wonton.protocol.Action
-import app.wonton.protocol.PanelScope
 import app.wonton.protocol.TabCandidate
 import app.wonton.protocol.TabItem
 import app.wonton.protocol.TabRef
@@ -70,12 +68,6 @@ private const val DRAG_HANDLE_INSET = 1f / 6f
 @Composable
 fun TabsSettingsScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
     var adding by remember { mutableStateOf(false) }
-    var editingPanel by remember { mutableStateOf(false) }
-    val editor = if (editingPanel) rememberChatPanelState(PanelEdge.TOP, PanelScope.Main) else null
-    if (editor != null) {
-        SideEffect { editor.feed(viewModel.panel, viewModel.panelSelected) }
-        ChatPanelEditor(editor, LocalTabs.current) { editingPanel = false }
-    }
     if (adding) {
         TabCandidatesScreen(viewModel) { adding = false }
         return
@@ -90,11 +82,6 @@ fun TabsSettingsScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             item(key = "labels") { WontonGroup { TabLabelsRow(viewModel.labels) } }
-            item(key = "panel") {
-                WontonGroup {
-                    WontonRow(stringResource(R.string.panel_edit), showsForward = true) { editingPanel = true }
-                }
-            }
             item(key = "current") { CurrentTabsGroup(viewModel.items, list) }
             if (viewModel.candidates.isNotEmpty()) {
                 item(key = "add") {
@@ -275,13 +262,11 @@ private fun TabCandidateRow(candidate: TabCandidate) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
-        // 装饰：图标旁边就是行标题。
         if (plugin != null) PluginIconImage(plugin.icon, WontonTheme.size.icon, tabs.plugins)
         else Icon(WontonIcon.Settings, null, Modifier.size(WontonTheme.size.icon),
             tint = WontonTheme.colors.textPrimary.toColor())
         Text(title, Modifier.weight(1f), style = WontonTheme.typography.body,
             color = WontonTheme.colors.textPrimary.toColor())
-        // 装饰：整行可点，加号只表示点了会固定。
         Icon(WontonIcon.Add, null, Modifier.size(WontonTheme.size.icon),
             tint = WontonTheme.colors.textPrimary.toColor())
     }

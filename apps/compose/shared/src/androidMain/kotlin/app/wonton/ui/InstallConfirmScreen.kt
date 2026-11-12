@@ -25,9 +25,7 @@ import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
-import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginTask
-import app.wonton.protocol.PluginTaskNextStep
 import app.wonton.protocol.PluginTaskState
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
@@ -49,7 +47,6 @@ fun InstallConfirmScreen(
     confirmation: PluginConfirmation,
     onAccepted: (() -> Unit)? = null,
     onClose: () -> Unit,
-    onCheckInstalled: () -> Unit,
 ) {
     val isUpgrade = confirmation.isUpgrade
     var attempt by remember { mutableIntStateOf(0) }
@@ -82,7 +79,7 @@ fun InstallConfirmScreen(
         return
     }
     submittedId?.let { id ->
-        InstallCompletion(plugins, id, previousTask, onClose, onCheckInstalled) {
+        InstallCompletion(plugins, id, previousTask, onClose) {
             submittedId = null
             attempt++
         }
@@ -121,11 +118,8 @@ fun InstallConfirmScreen(
                     title,
                     secretsReady = !missingRequiredSecret(chosen.secretInputs, secrets),
                 ) {
-                    val action = if (isUpgrade) {
-                        Action.UpgradePlugin(chosen, sent, emptyMap())
-                    } else {
-                        Action.InstallPlugin(chosen, sent, emptyMap())
-                    }
+                    val action =
+                        if (isUpgrade) Action.UpgradePlugin(chosen, sent) else Action.InstallPlugin(chosen, sent)
                     previousTask = plugins.viewModel.tasks.firstOrNull { it.id == chosen.id }
                     rejection = plugins.core.send(action)
                     if (rejection == null) {
@@ -143,14 +137,12 @@ fun InstallConfirmScreen(
 }
 
 private suspend fun loadInstallPreview(plugins: PluginsState, confirmation: PluginConfirmation): InstallPreview =
-    // 核心取好预览请主人拿主意的一键操作（ADR-0017）：不再重新取。
-    confirmation.preloaded ?: when (confirmation) {
+    when (confirmation) {
         is PluginConfirmation.Install -> plugins.core.previewInstall(confirmation.source)
         is PluginConfirmation.Upgrade -> plugins.core.previewUpgrade(confirmation.id)
         is PluginConfirmation.Upload -> plugins.core.previewUpload(confirmation.archive)
         is PluginConfirmation.UpgradeFrom -> plugins.core.previewUpgradeFrom(confirmation.id, confirmation.source)
         is PluginConfirmation.UpgradeUpload -> plugins.core.previewUpgradeUpload(confirmation.id, confirmation.archive)
-        is PluginConfirmation.Store -> error("core preview already returned above")
     }
 
 /** 留在安装页等核心任务完成，成功后才提供固定入口。 */
@@ -160,21 +152,12 @@ private fun InstallCompletion(
     id: String,
     previousTask: PluginTask?,
     onClose: () -> Unit,
-    onCheckInstalled: () -> Unit,
     onReview: () -> Unit,
 ) {
     val task = plugins.viewModel.tasks.firstOrNull { it.id == id }?.takeUnless { it == previousTask }
     val installed = plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id }
     val succeeded = task?.state is PluginTaskState.Succeeded
-    WontonScreen(
-        bar = {
-            WontonPushedBar(
-                stringResource(R.string.install_completion_title),
-                onClose,
-                showsStatus = true,
-            )
-        },
-    ) {
+    WontonScreen(bar = { WontonPushedBar(stringResource(R.string.install_completion_title), onClose) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
@@ -183,34 +166,17 @@ private fun InstallCompletion(
             when (val state = task?.state) {
                 null, is PluginTaskState.Running -> {
                     CircularProgressIndicator()
-                    Text(
-                        stringResource(
-                            if (task?.waitingForConnection == true) {
-                                R.string.plugin_task_waiting_for_connection
-                            } else {
-                                R.string.install_completion_installing
-                            },
-                        ),
-                        style = WontonTheme.typography.body,
-                        color = WontonTheme.colors.textPrimary.toColor(),
-                    )
+                    Text(stringResource(R.string.install_completion_installing), style = WontonTheme.typography.body,
+                        color = WontonTheme.colors.textPrimary.toColor())
                 }
                 is PluginTaskState.Succeeded -> Text(stringResource(R.string.install_completion_done),
                     style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
-                is PluginTaskState.Failed -> InstallFailure(state.reason, state.message, onReview)
-                is PluginTaskState.Uncertain -> {
-                    ProblemNotice(
-                        Problem(
-                            stringResource(R.string.install_completion_uncertain),
-                            state.nextStep.takeIf { it == PluginTaskNextStep.CHECK_INSTALLED }
-                                ?.let { stringResource(R.string.plugin_task_check_installed_next_step) },
-                            state.message,
-                        ),
-                    )
-                    if (state.nextStep == PluginTaskNextStep.CHECK_INSTALLED) {
-                        WontonButton(stringResource(R.string.plugin_task_check_installed), onCheckInstalled)
-                    }
+                is PluginTaskState.Failed -> {
+                    ProblemNotice(Problem(stringResource(R.string.install_completion_failed), null, state.message))
+                    WontonButton(stringResource(R.string.plugin_task_review), onReview)
                 }
+                is PluginTaskState.Uncertain -> ProblemNotice(Problem(
+                    stringResource(R.string.install_completion_uncertain), null, state.message))
             }
             plugins.viewModel.problem?.let { ProblemNotice(it.problem) }
             if (succeeded && installed != null) PluginTabPinButton(installed)
@@ -218,18 +184,6 @@ private fun InstallCompletion(
             WontonButton(stringResource(R.string.install_done), onClose)
         }
     }
-}
-
-/** 安装失败：标题和下一步按类别出，标题沿用商店任务行的“安装失败：原因”格式。 */
-@Composable
-fun InstallFailure(reason: PluginFailure, message: String, onReview: () -> Unit) {
-    val problem = reason.problem(message)
-    ProblemNotice(Problem(
-        title = stringResource(R.string.plugin_task_install_failed, problem.titleText),
-        nextStep = problem.nextStepText,
-        detail = problem.detail,
-    ))
-    WontonButton(stringResource(R.string.plugin_task_review), onReview)
 }
 
 @Composable

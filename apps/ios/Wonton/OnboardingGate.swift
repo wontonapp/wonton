@@ -7,8 +7,6 @@ struct OnboardingGate<Content: View>: View {
     let isPaired: Bool
     let finished: (String?) -> Void
     let openGateway: (URL) -> Void
-    /// 重看引导的关闭：不提交回设置；首次引导不用。
-    var close: (() -> Void)?
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -36,8 +34,7 @@ struct OnboardingGate<Content: View>: View {
         switch model.viewModel.step {
         case .profile, .agent, .model, .apps, .review:
             // 活跃步骤必须有 nav；缺失是核心契约错误，不能在壳里猜步骤或按钮状态。
-            OnboardingView(model: model, plugins: plugins, nav: model.viewModel.nav!,
-                           openGateway: openGateway, close: close)
+            OnboardingView(model: model, plugins: plugins, nav: model.viewModel.nav!, openGateway: openGateway)
         case nil where model.viewModel.loading:
             LoadingView().frame(maxWidth: .infinity, maxHeight: .infinity)
         case nil where model.viewModel.problem != nil:

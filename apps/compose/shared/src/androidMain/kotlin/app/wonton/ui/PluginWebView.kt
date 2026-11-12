@@ -1,7 +1,6 @@
 package app.wonton.ui
 
 import android.annotation.SuppressLint
-import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.content.res.Configuration
@@ -11,17 +10,14 @@ import android.view.View
 import android.view.MotionEvent
 import android.view.ViewGroup
 import android.view.ContextThemeWrapper
-import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.HttpAuthHandler
-import android.webkit.PermissionRequest
 import android.webkit.WebResourceError
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -35,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.webkit.ProfileStore
 import androidx.webkit.ProxyConfig
 import androidx.webkit.ProxyController
 import androidx.webkit.WebSettingsCompat
@@ -51,14 +46,6 @@ private const val TAG = "WontonWeb"
 
 /** 和 `wonton-tunnel` 的 `ERROR_HEADER` 一致。 */
 private const val TUNNEL_ERROR_HEADER = "x-wonton-tunnel-error"
-
-// 代理给壳的用户可读错误类别，取值见核心 `TunnelError::category`。
-private const val CATEGORY_ERROR_HEADER = "x-wonton-error"
-
-// 只有这些取值是本地代理回的；网关的响应也带 x-wonton-error，取值不同。
-private val PROXY_ERROR_CATEGORIES = setOf(
-    "tunnel-unavailable", "upstream-unavailable", "unauthorized", "protocol",
-)
 
 /** 只有服务端错误才算加载失败;4xx 是插件自己的内容。 */
 private const val HTTP_SERVER_ERROR = 500
@@ -83,20 +70,11 @@ private val pinchZoomScript = """
 class PluginWebViewController {
     internal var view: WebView? = null
     internal var touchObserver: ((MotionEvent) -> Unit)? = null
-    /** 网页要摄像头/麦克风时的处置（[TabMediaPermissionFlow]）；没接的页面一律拒绝。 */
-    internal var permissionHandler: ((PermissionRequest) -> Unit)? = null
-    internal var fileChooserLauncher: ActivityResultLauncher<Intent>? = null
-    internal var pendingFileChooser: ValueCallback<Array<Uri>>? = null
     var canGoBack by mutableStateOf(false)
         private set
     var customView: View? by mutableStateOf(null)
         private set
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
-
-    internal fun onPermissionRequest(request: PermissionRequest) {
-        val handler = permissionHandler
-        if (handler == null) request.deny() else handler(request)
-    }
 
     /** 退出网页视频全屏；胶囊和系统返回都走原生回调，不接管 Activity 的窗口。 */
     fun closeCustomView(): Boolean {
@@ -124,9 +102,6 @@ class PluginWebViewController {
         view = null
         canGoBack = false
         closeCustomView()
-        pendingFileChooser?.onReceiveValue(null)
-        pendingFileChooser = null
-        fileChooserLauncher = null
     }
 
     fun goBack(): Boolean {
@@ -174,39 +149,11 @@ private class WebViewSnapshot {
  * reload/url 改变才导航；其他重组只更新回调。桥来源来自 WebView，不读取消息正文。
  * document-start 更新仅影响未来文档；当前页 context 由父层通过 controller 注入。
  */
-/** 公网网页单独一个网站数据存储，不和插件页共用 Cookie 和存储（ADR-0052）。 */
-private const val PUBLIC_PROFILE = "wonton-public"
-
-/** 设备支持多 Profile 才打公网网页，不支持时不退回共用插件页的存储。 */
-internal fun publicProfilesSupported(): Boolean = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
-
-private val publicProfile by lazy(LazyThreadSafetyMode.NONE) {
-    ProfileStore.getInstance().getOrCreateProfile(PUBLIC_PROFILE)
-}
-
-private data class WebLayer(val profile: String?, val multiProfile: Boolean)
-
-/** 本页该用的 Profile；来源不在本机代理里、或需要 Profile 而系统不支持时返回 null。 */
-@Composable
-private fun rememberWebLayer(proxy: ProxySettings?, profileName: String?): WebLayer? {
-    val route = LocalPluginProxy.current
-    val account = LocalPluginAccount.current
-    val profile = profileName ?: account?.let { pluginProfileName(it) }
-    val multiProfile = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
-    val onRoute = proxy != null && route?.contains(proxy) == true
-    val unsupported = profileName != null && !multiProfile
-    return if (!onRoute || unsupported) {
-        null
-    } else {
-        WebLayer(profile, multiProfile)
-    }
-}
-
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun PluginWebView(
     url: String,
-    proxy: ProxySettings?,
+    proxy: ProxySettings,
     reload: ULong,
     onLoaded: () -> Unit,
     onFailed: (Int?) -> Unit,
@@ -221,8 +168,6 @@ fun PluginWebView(
     onLoadStarted: () -> Unit = {},
     visible: Boolean = true,
     textZoom: Int = 100,
-    publicPage: Boolean = false,
-    profileName: String? = null,
 ) {
     val loaded by rememberUpdatedState(onLoaded)
     val failed by rememberUpdatedState(onFailed)
@@ -230,22 +175,16 @@ fun PluginWebView(
     val openLink by rememberUpdatedState(onOpenLink)
     val gone by rememberUpdatedState(onRendererGone)
     val loadStarted by rememberUpdatedState(onLoadStarted)
-    rememberFileChooserLauncher(controller)
     val canvas = WontonTheme.colors.canvas.toColor().toArgb()
     var generation by remember { mutableIntStateOf(0) }
     val snapshot = remember(controller) { WebViewSnapshot() }
     var proxyReady by remember { mutableStateOf<ProxySettings?>(null) }
     DisposableEffect(proxy) {
-        if (proxy == null) {
-            proxyReady = null
-            return@DisposableEffect onDispose { }
-        }
         var active = true
         overrideProxy(proxy) { if (active) proxyReady = proxy }
         onDispose { active = false }
     }
-    val layer = rememberWebLayer(proxy, profileName) ?: return
-    key(controller, generation, layer.profile) {
+    key(controller, generation) {
         AndroidView(
             modifier = modifier.fillMaxSize(),
             factory = { context ->
@@ -262,9 +201,6 @@ fun PluginWebView(
                     settings.mediaPlaybackRequiresUserGesture = false
                     settings.builtInZoomControls = true
                     settings.displayZoomControls = false
-                    if (layer.multiProfile && layer.profile != null) {
-                        WebViewCompat.setProfile(this, layer.profile)
-                    } else if (publicPage) WebViewCompat.setProfile(this, publicProfile.getName())
                     configureAppearance(this, canvas, darkTheme)
                     controller.view = this
                     webChromeClient = PluginChromeClient(this, controller)
@@ -280,10 +216,8 @@ fun PluginWebView(
                 if (!view.rendererGone) view.destroy()
             },
             update = { view ->
-                if (!publicPage) {
-                    view.updateBridge(allowedOrigins, documentStartScript) { origin, main, message ->
-                        bridge(origin, main, message)
-                    }
+                view.updateBridge(allowedOrigins, documentStartScript) { origin, main, message ->
+                    bridge(origin, main, message)
                 }
                 configureBackground(view, canvas)
                 view.updateTheme(darkTheme, canvas)
@@ -291,7 +225,7 @@ fun PluginWebView(
                 if (view.settings.textZoom != textZoom) view.settings.textZoom = textZoom
                 val client = view.webViewClient as ProxyAuthClient
                 client.proxy = proxy
-                if (proxy == null || proxyReady == proxy) client.navigate(view, url, reload)
+                if (proxyReady == proxy) client.navigate(view, url, reload)
             },
         )
     }
@@ -421,7 +355,7 @@ private fun overrideProxy(proxy: ProxySettings, onReady: () -> Unit) {
 
 /** 只把本地代理的凭据交给本地代理自己：别的主机（例如插件网页）要认证时不给。 */
 private class ProxyAuthClient(
-    var proxy: ProxySettings?,
+    var proxy: ProxySettings,
     private var reload: ULong,
     private var url: String,
     private val controller: PluginWebViewController,
@@ -463,11 +397,10 @@ private class ProxyAuthClient(
         val uri = request.url
         val isHttp = uri.scheme == "http" || uri.scheme == "https"
         // OIDC 登录会经过核心的这段路径；系统浏览器没有隧道和设备身份，走不完。
-        val coreLogin = uri.host.equals(proxy?.domain, ignoreCase = true) &&
+        val coreLogin = uri.host.equals(proxy.domain, ignoreCase = true) &&
             uri.path.orEmpty().startsWith("/_wonton/oidc/")
-        val authHost = proxy?.let { "auth.${it.domain}" }
         val staysInside = isHttp && (pluginOrigin(uri.toString()) == pluginOrigin(url) ||
-            uri.host.equals(authHost, ignoreCase = true) || coreLogin)
+            uri.host.equals("auth.${proxy.domain}", ignoreCase = true) || coreLogin)
         if (isHttp && !staysInside) onOpenLink(uri.toString())
         return !staysInside
     }
@@ -513,22 +446,11 @@ private class ProxyAuthClient(
      * 规则与 iOS 的 `tunnelFailed || statusCode >= 500` 一致（TabWebNavigation.swift）。 */
     override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
         if (!request.isForMainFrame) return
-        val headers = response.responseHeaders.orEmpty()
-        // 类别由代理给（x-wonton-error）。服务端的网关也用这个头名，只认代理自己的取值：
-        // tunnel-unavailable 是没拿到响应，upstream-unavailable 拿到了响应（服务器在，上游没就绪），
-        // 照实交状态码给核心判断。
-        val category = headers.entries
-            .firstOrNull { it.key.equals(CATEGORY_ERROR_HEADER, ignoreCase = true) }?.value?.lowercase()
-        val proxyCategory = category in PROXY_ERROR_CATEGORIES
-        val fromProxy = proxyCategory || headers.keys.any { it.equals(TUNNEL_ERROR_HEADER, ignoreCase = true) }
+        val headers = response.responseHeaders.orEmpty().keys
+        val fromProxy = headers.any { it.equals(TUNNEL_ERROR_HEADER, ignoreCase = true) }
         if (!fromProxy && response.statusCode < HTTP_SERVER_ERROR) return
         failedUrl = request.url.toString()
-        val status = when (category) {
-            "upstream-unavailable" -> response.statusCode
-            "tunnel-unavailable", "unauthorized", "protocol" -> null
-            else -> if (fromProxy) null else response.statusCode
-        }
-        failed(view, status)
+        failed(view, if (fromProxy) null else response.statusCode)
     }
 
     private fun failed(view: WebView, status: Int? = null) {
@@ -539,9 +461,8 @@ private class ProxyAuthClient(
     }
 
     override fun onReceivedHttpAuthRequest(view: WebView, handler: HttpAuthHandler, host: String, realm: String) {
-        val current = proxy
-        if (current != null && (host == current.host || host == "${current.host}:${current.port}")) {
-            handler.proceed(current.username, current.password)
+        if (host == proxy.host || host == "${proxy.host}:${proxy.port}") {
+            handler.proceed(proxy.username, proxy.password)
         } else {
             super.onReceivedHttpAuthRequest(view, handler, host, realm)
         }

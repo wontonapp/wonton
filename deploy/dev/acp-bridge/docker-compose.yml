@@ -48,24 +48,9 @@ services:
       WONTON_ACP_TURN_SECONDS: ${WONTON_ACP_TURN_SECONDS:-600}
       WONTON_ACP_IDLE_SECONDS: ${WONTON_ACP_IDLE_SECONDS:-600}
       WONTON_ACP_TOPIC_IDLE_SECONDS: ${WONTON_ACP_TOPIC_IDLE_SECONDS:-1800}
-      WONTON_ACP_MAX_INPUT_BYTES: ${WONTON_ACP_MAX_INPUT_BYTES:-16384}
-      WONTON_ACP_MAX_OUTPUT_BYTES: ${WONTON_ACP_MAX_OUTPUT_BYTES:-65536}
-      WONTON_ACP_MAX_QUEUE: ${WONTON_ACP_MAX_QUEUE:-8}
-      WONTON_ACP_UNDECRYPTABLE_SECONDS: ${WONTON_ACP_UNDECRYPTABLE_SECONDS:-60}
-      WONTON_ACP_UNDECRYPTABLE_EVERY_SECONDS: ${WONTON_ACP_UNDECRYPTABLE_EVERY_SECONDS:-600}
     volumes:
       - ${WONTON_BOT_DATA:?需要 Bot 数据目录}/bridge:/data/bridge
-      # 附件目录：桥把收到的图片和文件落进 Agent 工作区，再以 resource_link 交给它。
-      - ${WONTON_BOT_DATA}/workspace:/workspace
       - acp-socket:/run/wonton
-    healthcheck:
-      # 桥活着（心跳新）且没有“长期解不开”：解不开时 health 非零退出、原因进探针输出，
-      # 核心把插件标成异常并带上原因。
-      test: ["CMD", "wonton-acp-bridge", "health"]
-      interval: 10s
-      timeout: 5s
-      start_period: 2m
-      start_interval: 1s
 
 volumes:
   acp-socket:

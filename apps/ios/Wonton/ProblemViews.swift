@@ -57,9 +57,11 @@ extension PluginFailure {
             categorizedProblem(
                 .problemPluginEgressProxyUnavailableTitle, .problemPluginEgressProxyUnavailableNextStep, detail
             )
+        case .ownerProfileIncomplete:
+            categorizedProblem(
+                .problemPluginOwnerProfileIncompleteTitle, .problemPluginOwnerProfileIncompleteNextStep, detail
+            )
         case .protocol: categorizedProblem(.problemPluginProtocolTitle, .problemPluginProtocolNextStep, detail)
-        case .recordUnusable:
-            categorizedProblem(.problemPluginRecordUnusableTitle, .problemPluginRecordUnusableNextStep, detail)
         case .serverTooOld:
             categorizedProblem(.problemPluginServerTooOldTitle, .problemUpgradeServerNextStep, detail)
         // 比这个壳新的类别：先按服务器出错说。
@@ -102,12 +104,6 @@ extension ChatFailure {
                 nextStep: String(localized: .problemUnauthorizedNextStep),
                 detail: detail
             )
-        case .forbidden:
-            return Problem(
-                title: String(localized: .problemForbiddenTitle),
-                nextStep: String(localized: .problemForbiddenNextStep),
-                detail: detail
-            )
         case .upstream:
             return Problem(
                 title: String(localized: .problemUpstreamTitle),
@@ -118,12 +114,6 @@ extension ChatFailure {
             return Problem(title: String(localized: .problemNotReadyTitle), nextStep: detail)
         case .invalidInput:
             return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: detail)
-        case .other:
-            return Problem(
-                title: String(localized: .problemGenericTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
-                detail: detail
-            )
         }
     }
 }
@@ -159,7 +149,7 @@ extension BotProfileFailure {
                 detail: detail
             )
         // 家人设备调只有主人的接口（ADR-0045）：不是出错，也不是还没准备好。
-        case .permissionRequired:
+        case .ownerOnly:
             return Problem(
                 title: String(localized: .botProfileProblemOwnerOnlyTitle),
                 nextStep: String(localized: .botProfileProblemOwnerOnlyNext),
@@ -283,9 +273,6 @@ extension Error {
                 detail: detail
             )
         case let .InvalidInput(reason):
-            return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: reason)
-        case let .SettingsInvalid(reason, _):
-            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
             return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: reason)
         case .ServerTooOld:
             return Problem(

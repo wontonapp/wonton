@@ -9,7 +9,7 @@ use wonton_protocol::{Answer, ConfirmationState, FileFailure};
 use super::audit::{Basis, Decision, Record};
 use super::core_tools::tool;
 use super::file_tools::decision;
-use super::{Bus, Caller, Outcome, ToolFailure, cards, naming, with_failure};
+use super::{Bus, Caller, Outcome, cards, error, naming};
 use crate::bot_activity::Guard;
 use crate::files::Failure;
 use crate::files::share_fs::saving::{SaveTarget, Staged};
@@ -33,7 +33,7 @@ pub(super) fn definitions() -> Vec<Tool> {
             SAVE,
             "把文件存进主人的共享文件夹。先把文件放进你的 outbox 目录，再调用。只能新增：同名时自动加序号，不覆盖。存好后 outbox 里的原文件会被删掉。\
              第一次存进一个文件夹要主人确认：调用前先用一句话告诉主人，确认卡片会发到 Wonton App 里的“Wonton”私聊。调用会一直等到主人回答或者确认过期\
-             （10 分钟）。主人允许后，这个文件夹以后不用再问。存没存上以返回的结果为准，照实转告；返回每个文件最后的路径。",
+             （10 分钟）。主人允许后，这个文件夹以后不用再问。返回每个文件最后的路径。",
             json!({"type": "object", "properties": {
                 "files": {
                     "type": "array",
@@ -50,14 +50,12 @@ pub(super) fn definitions() -> Vec<Tool> {
     ]
 }
 
-pub(super) async fn list(bus: &Bus) -> Result<Value, ToolFailure> {
-    let files = bus
-        .files()
-        .map_err(|failure| ToolFailure::new(failure.kind.as_str(), failure.to_string()))?;
+pub(super) async fn list(bus: &Bus) -> Result<Value, String> {
+    let files = bus.files().map_err(|failure| failure.to_string())?;
     let shares = files
         .share_names()
         .await
-        .map_err(|failure| ToolFailure::new(failure.kind.as_str(), failure.to_string()))?;
+        .map_err(|failure| failure.to_string())?;
     Ok(json!({ "shares": shares }))
 }
 
@@ -71,7 +69,7 @@ pub(super) async fn save(
     let (bus, caller) = (bus.clone(), caller.clone());
     tokio::spawn(async move { run(&bus, &caller, args, activity).await })
         .await
-        .unwrap_or_else(|e| with_failure(&format!("存文件的流程意外中止：{e}"), "internal_error"))
+        .unwrap_or_else(|e| error(&format!("存文件的流程意外中止：{e}")))
 }
 
 async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject, activity: Guard) -> CallToolResult {
@@ -89,7 +87,7 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject, activity: Guard)
                 outcome: Some(failure.kind.as_str()),
                 files: &[],
             });
-            return with_failure(&failure.to_string(), failure.kind.as_str());
+            return error(&failure.to_string());
         }
     };
     let folder = target.folder();
@@ -205,12 +203,7 @@ async fn place(
     };
     let placed = match placed {
         Ok(placed) => placed,
-        Err(failure) => {
-            return (
-                Outcome::failed(failure.kind.as_str(), failure.to_string()),
-                summary,
-            );
-        }
+        Err(failure) => return (Outcome::failed(failure.to_string()), summary),
     };
     summary["saved"] = json!(placed.saved);
     if let Some(failed) = placed.failed {
@@ -227,7 +220,7 @@ async fn place(
                 ],
             )
         };
-        return (Outcome::failed(failure.kind.as_str(), message), summary);
+        return (Outcome::failed(message), summary);
     }
     let mut result = json!({"saved": placed.saved});
     if let Some(note) = &note {

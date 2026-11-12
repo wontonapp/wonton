@@ -1,7 +1,6 @@
 package app.wonton.ui
 
 import app.wonton.protocol.PortMappingState
-import app.wonton.protocol.PortMappingWarning
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -13,25 +12,6 @@ class PortMappingReasonTest {
         assertNull(portMappingReasonRes(null))
         assertNull(portMappingReasonRes(PortMappingState.ON))
         assertNull(portMappingReasonRes(PortMappingState.OFF))
-    }
-
-    @Test
-    fun permissionNoticeShowsOnlyWhileMappingAndDenied() {
-        val key = R.string.port_mapping_no_notification_permission
-        assertEquals(key, portMappingNotificationRes(enabled = true, notificationGranted = false))
-        assertNull(portMappingNotificationRes(enabled = false, notificationGranted = false))
-        assertNull(portMappingNotificationRes(enabled = true, notificationGranted = true))
-        assertNull(portMappingNotificationRes(enabled = false, notificationGranted = true))
-    }
-
-    @Test
-    fun onlyThePublicRelayWarningHasAKey() {
-        assertEquals(
-            R.string.port_mapping_warning_public_relay_bandwidth,
-            portMappingWarningRes(PortMappingWarning.PUBLIC_RELAY_BANDWIDTH),
-        )
-        assertNull(portMappingWarningRes(null))
-        assertNull(portMappingWarningRes(PortMappingWarning.OTHER))
     }
 
     @Test

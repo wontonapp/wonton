@@ -1,25 +1,55 @@
 //! 底栏行为测试：只经由 ClientCore 和 Action 驱动，插件管理接口由本机假核心提供。
 
 mod bar_settings;
-mod default_bar;
-mod load;
-mod media_permission;
 mod polling;
 mod revision;
 mod state;
 mod stopped;
-mod support;
 
 use std::time::{Duration, Instant};
 
 use wonton_client::{
-    Action, CoreError, HomeStatus, InstalledPlugin, PlacedTab, PluginHealth, PluginImage,
-    PluginState, TabDisplay, TabDisplayChoice, TabIcon, TabLayout, TabLoadFailure, TabRef,
-    TabState, TabsViewModel,
+    Action, CoreError, HomeStatus, InstalledPlugin, PluginHealth, PluginImage, PluginState,
+    PluginTab, TabDisplay, TabDisplayChoice, TabIcon, TabLayout, TabLoadFailure, TabRef, TabState,
+    TabsViewModel,
 };
 
 use crate::plugins::rig::{FakeHome, Rig, installed};
-use support::{assert_invalid, item, page, tab, web_plugin};
+
+fn page(id: &str, display: TabDisplay) -> PluginTab {
+    PluginTab {
+        id: id.to_owned(),
+        title: format!("页面 {id}"),
+        icon: PluginImage {
+            path: format!("/_wonton/api/images/{id}.png"),
+        },
+        icon_selected: None,
+        path: format!("/{id}"),
+        layout: TabLayout::Inset,
+        display,
+    }
+}
+
+fn web_plugin(id: &str, status: PluginState, tabs: Vec<PluginTab>) -> InstalledPlugin {
+    let mut plugin = installed(id, status);
+    plugin.web_url = Some(format!("http://{id}.wonton.localhost/"));
+    plugin.tabs = tabs;
+    plugin
+}
+
+fn tab(plugin_id: &str, page: Option<&str>) -> TabRef {
+    TabRef::Plugin {
+        plugin_id: plugin_id.to_owned(),
+        page: page.map(str::to_owned),
+    }
+}
+
+fn item<'a>(view: &'a TabsViewModel, tab: &TabRef) -> &'a wonton_client::TabItem {
+    view.items
+        .iter()
+        .find(|item| item.tab == *tab)
+        .unwrap_or_else(|| panic!("底栏里没有 {tab:?}: {view:?}"))
+}
 
 async fn wait_tabs(rig: &Rig, mut ready: impl FnMut(&TabsViewModel) -> bool) -> TabsViewModel {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
@@ -87,6 +117,13 @@ async fn tabs_subscription_reports_current_changes_and_cancel() {
     assert!(subscription.next().await.is_none());
 }
 
+fn assert_invalid(result: Result<(), CoreError>) {
+    assert!(
+        matches!(result, Err(CoreError::InvalidInput { .. })),
+        "{result:?}"
+    );
+}
+
 #[tokio::test]
 async fn defaults_selection_overlay_and_builtin_invariants() {
     let rig = Rig::new().await;
@@ -123,7 +160,7 @@ async fn defaults_selection_overlay_and_builtin_invariants() {
         })
         .unwrap();
     let overlay = rig.app.tabs();
-    assert_eq!(overlay.selected, TabRef::Chat);
+    assert_eq!(overlay.selected, TabRef::Apps);
     assert_eq!(
         overlay.overlay.as_ref().map(|item| &item.tab),
         Some(&plugin_tab)
@@ -135,10 +172,11 @@ async fn defaults_selection_overlay_and_builtin_invariants() {
 
     assert_invalid(rig.app.dispatch(Action::UnpinTab { tab: TabRef::Chat }));
     assert_invalid(rig.app.dispatch(Action::UnpinTab { tab: TabRef::Apps }));
-    // 配好之后设置不再默认在栏上：拿不掉（不在栏上），可以从候选固定。
-    assert_invalid(rig.app.dispatch(Action::UnpinTab {
-        tab: TabRef::Settings,
-    }));
+    rig.app
+        .dispatch(Action::UnpinTab {
+            tab: TabRef::Settings,
+        })
+        .unwrap();
     assert_invalid(rig.app.dispatch(Action::SelectTab {
         tab: TabRef::Settings,
     }));
@@ -186,7 +224,7 @@ async fn default_display_follows_manifest_and_unknown_values_use_standard() {
     )]]);
     rig.connected().await;
     wait_tabs(&rig, |view| {
-        rig.app.plugins().installed.is_some() && view.items.len() == 1
+        rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     let page_tab = tab(plugin_id, Some(page_id));
@@ -252,7 +290,6 @@ async fn pin_limit_replacement_move_and_selection_rules() {
         page("one", TabDisplay::Standard),
         page("two", TabDisplay::Standard),
         page("three", TabDisplay::Standard),
-        page("four", TabDisplay::Standard),
     ];
     rig.core.set_lists(vec![vec![web_plugin(
         plugin_id,
@@ -270,9 +307,7 @@ async fn pin_limit_replacement_move_and_selection_rules() {
     let one = tab(plugin_id, Some("one"));
     let two = tab(plugin_id, Some("two"));
     let three = tab(plugin_id, Some("three"));
-    let four = tab(plugin_id, Some("four"));
-    // 默认栏上只有聊天：四个页面全固定才满。
-    for page in [&one, &two, &three, &four] {
+    for page in [&one, &two] {
         rig.app
             .dispatch(Action::PinTab {
                 tab: page.clone(),
@@ -282,35 +317,35 @@ async fn pin_limit_replacement_move_and_selection_rules() {
     }
     assert!(rig.app.tabs().full);
     assert_invalid(rig.app.dispatch(Action::PinTab {
-        tab: TabRef::Settings,
+        tab: three.clone(),
         replacing: None,
     }));
     assert_invalid(rig.app.dispatch(Action::PinTab {
-        tab: TabRef::Settings,
+        tab: three.clone(),
         replacing: Some(TabRef::Chat),
     }));
     rig.app
         .dispatch(Action::PinTab {
-            tab: TabRef::Settings,
-            replacing: Some(one.clone()),
+            tab: three.clone(),
+            replacing: Some(TabRef::Settings),
         })
         .unwrap();
     let full = rig.app.tabs();
     assert!(full.full);
-    assert!(!full.items.iter().any(|item| item.tab == one));
-    assert!(full.items.iter().any(|item| item.tab == TabRef::Settings));
+    assert!(!full.items.iter().any(|item| item.tab == TabRef::Settings));
+    assert!(full.items.iter().any(|item| item.tab == three));
 
     rig.app
-        .dispatch(Action::SelectTab { tab: two.clone() })
+        .dispatch(Action::SelectTab { tab: one.clone() })
         .unwrap();
-    assert_eq!(rig.app.tabs().selected, two);
+    assert_eq!(rig.app.tabs().selected, one);
     assert!(rig.app.tabs().overlay.is_none());
     assert_invalid(rig.app.dispatch(Action::MoveTab {
-        tab: two.clone(),
+        tab: one.clone(),
         index: 5,
     }));
     assert_invalid(rig.app.dispatch(Action::PinTab {
-        tab: two.clone(),
+        tab: one.clone(),
         replacing: None,
     }));
 }
@@ -327,7 +362,7 @@ async fn connected_page_rig(plugin_id: &str, page_id: &str) -> (Rig, TabRef, Ins
     rig.core.set_lists(vec![vec![plugin.clone()]]);
     rig.connected().await;
     wait_tabs(&rig, |view| {
-        rig.app.plugins().installed.is_some() && view.items.len() == 1
+        rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     let page_tab = tab(plugin_id, Some(page_id));
@@ -405,6 +440,140 @@ async fn plugin_states_and_page_removal_map_to_tabs() {
 }
 
 #[tokio::test]
+async fn tab_load_failures_have_specific_causes_and_reload() {
+    let (rig, page_tab, plugin) = connected_page_rig("app.failures", "failure").await;
+    let plugin_id = "app.failures";
+    let page_id = "failure";
+    rig.app
+        .dispatch(Action::TabLoadFailed {
+            tab: page_tab.clone(),
+            status: None,
+        })
+        .unwrap();
+    let transport = rig.app.tabs();
+    assert_eq!(
+        item(&transport, &page_tab).page.as_ref().unwrap().state,
+        TabState::LoadFailed {
+            failure: TabLoadFailure::Transport,
+            status: None,
+        }
+    );
+    rig.app
+        .dispatch(Action::TabLoadFailed {
+            tab: page_tab.clone(),
+            status: Some(502),
+        })
+        .unwrap();
+    let upstream = rig.app.tabs();
+    assert_eq!(
+        item(&upstream, &page_tab).page.as_ref().unwrap().state,
+        TabState::LoadFailed {
+            failure: TabLoadFailure::Upstream,
+            status: Some(502),
+        }
+    );
+
+    rig.core.set_lists(vec![vec![web_plugin(
+        plugin_id,
+        PluginState::Installing,
+        vec![page(page_id, TabDisplay::Standard)],
+    )]]);
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    wait_plugin_status(&rig, plugin_id, PluginState::Installing).await;
+    rig.app
+        .dispatch(Action::TabLoadFailed {
+            tab: page_tab.clone(),
+            status: Some(503),
+        })
+        .unwrap();
+    assert_eq!(
+        item(&rig.app.tabs(), &page_tab)
+            .page
+            .as_ref()
+            .unwrap()
+            .state,
+        TabState::LoadFailed {
+            failure: TabLoadFailure::PluginNotReady,
+            status: Some(503),
+        }
+    );
+
+    rig.core.set_lists(vec![vec![plugin]]);
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    wait_tabs(&rig, |view| {
+        item(view, &page_tab).page.as_ref().unwrap().state == TabState::Ready
+    })
+    .await;
+    let before = item(&rig.app.tabs(), &page_tab)
+        .page
+        .as_ref()
+        .unwrap()
+        .reload;
+    rig.app
+        .dispatch(Action::ReloadTab {
+            tab: page_tab.clone(),
+        })
+        .unwrap();
+    let restarted_view = rig.app.tabs();
+    let reloaded = item(&restarted_view, &page_tab).page.as_ref().unwrap();
+    assert_eq!(reloaded.state, TabState::Ready);
+    assert_eq!(reloaded.reload, before + 1);
+}
+
+#[tokio::test]
+async fn tab_load_succeeded_clears_failure_without_counting_a_reload() {
+    let (rig, page_tab, _) = connected_page_rig("app.recovery", "recovery").await;
+    rig.app
+        .dispatch(Action::TabLoadFailed {
+            tab: page_tab.clone(),
+            status: Some(502),
+        })
+        .unwrap();
+    assert_eq!(
+        item(&rig.app.tabs(), &page_tab)
+            .page
+            .as_ref()
+            .unwrap()
+            .state,
+        TabState::LoadFailed {
+            failure: TabLoadFailure::Upstream,
+            status: Some(502),
+        }
+    );
+
+    // 按返回回到成功的历史页：壳报告加载成功，失败状态清掉，reload 计数不动。
+    let before = item(&rig.app.tabs(), &page_tab)
+        .page
+        .as_ref()
+        .unwrap()
+        .reload;
+    rig.app
+        .dispatch(Action::TabLoadSucceeded {
+            tab: page_tab.clone(),
+        })
+        .unwrap();
+    let recovered_view = rig.app.tabs();
+    let recovered = item(&recovered_view, &page_tab).page.as_ref().unwrap();
+    assert_eq!(recovered.state, TabState::Ready);
+    assert_eq!(recovered.reload, before);
+
+    // 没有失败记录时再发：不报错，状态不变。
+    rig.app
+        .dispatch(Action::TabLoadSucceeded {
+            tab: page_tab.clone(),
+        })
+        .unwrap();
+    assert_eq!(
+        item(&rig.app.tabs(), &page_tab)
+            .page
+            .as_ref()
+            .unwrap()
+            .state,
+        TabState::Ready
+    );
+}
+
+#[tokio::test]
 async fn corrupted_config_recovers_and_restart_does_not_restore_runtime_selection() {
     let mut rig = Rig::new().await;
     let plugin_id = "app.persist";
@@ -419,7 +588,7 @@ async fn corrupted_config_recovers_and_restart_does_not_restore_runtime_selectio
     rig.core.set_lists(vec![vec![plugin]]);
     rig.connected().await;
     wait_tabs(&rig, |view| {
-        rig.app.plugins().installed.is_some() && view.items.len() == 1
+        rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     let page_tab = tab(plugin_id, Some(page_id));
@@ -467,12 +636,12 @@ async fn corrupted_config_recovers_and_restart_does_not_restore_runtime_selectio
             .iter()
             .map(|item| item.tab.clone())
             .collect::<Vec<_>>(),
-        vec![TabRef::Chat]
+        vec![TabRef::Chat, TabRef::Apps, TabRef::Settings]
     );
     rig.app
         .dispatch(Action::MoveTab {
             tab: TabRef::Chat,
-            index: 0,
+            index: 1,
         })
         .unwrap();
     assert!(rig.app.tabs().problem.is_none());
@@ -495,7 +664,7 @@ async fn cold_start_loading_keeps_cached_plugin_until_a_real_list_arrives() {
     rig.core.set_lists(vec![vec![plugin]]);
     rig.connected().await;
     wait_tabs(&rig, |view| {
-        rig.app.plugins().installed.is_some() && view.items.len() == 1
+        rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     let page_tab = tab(plugin_id, Some(page_id));
@@ -541,7 +710,7 @@ async fn fullscreen_exit_has_manual_and_automatic_paths_and_server_switch_clears
     rig.core.set_lists(vec![vec![plugin]]);
     rig.connected().await;
     wait_tabs(&rig, |view| {
-        rig.app.plugins().installed.is_some() && view.items.len() == 1
+        rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     let page_tab = tab(plugin_id, Some(page_id));
@@ -627,5 +796,5 @@ async fn fullscreen_exit_has_manual_and_automatic_paths_and_server_switch_clears
             && view.uninstalled.is_empty()
     })
     .await;
-    assert_eq!(switched.items.len(), 1);
+    assert_eq!(switched.items.len(), 3);
 }

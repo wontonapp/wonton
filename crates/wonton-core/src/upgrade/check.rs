@@ -153,23 +153,11 @@ impl Upgrades {
             return CoreUpgradeCheck::UpToDate;
         }
         self.forget_predownload(running, Some(&reference)).await;
-        let langs = self.owner_languages();
-        // ADR-0085：镜像下载好、版本号读出来之后，在目标镜像的一次性容器里裁决已装插件的
-        // 兼容性。查不成如实给"没查成"，不拦升级。
-        let compat = super::compat::check(
-            self.host.as_ref(),
-            &reference,
-            &digest,
-            &self.layout().data_dir,
-            &langs,
-        )
-        .await;
         CoreUpgradeCheck::Ready {
             offer: CoreUpgradeOffer {
                 digest,
                 version,
                 migrates: migrated_volumes(&info.labels, running.version.as_deref()),
-                compat,
             },
         }
     }
@@ -301,8 +289,8 @@ mod tests {
     #[test]
     fn only_a_tag_follows_a_channel() {
         assert_eq!(
-            channel("ghcr.io/x/core:stable"),
-            Some(("ghcr.io/x/core", "stable"))
+            channel("ghcr.io/x/core:beta"),
+            Some(("ghcr.io/x/core", "beta"))
         );
         assert_eq!(
             channel("localhost:5000/core:stable"),
@@ -315,7 +303,7 @@ mod tests {
     #[test]
     fn a_channel_never_downgrades() {
         assert!(is_older(Some("0.2.0"), Some("0.3.0")));
-        assert!(is_older(Some("v0.3.0"), Some("0.4.0")));
+        assert!(is_older(Some("v0.3.0-beta.1"), Some("0.3.0-beta.2")));
         assert!(!is_older(Some("0.3.0"), Some("0.3.0")));
         assert!(!is_older(Some("0.4.0"), Some("0.3.0")));
         assert!(!is_older(None, Some("0.3.0")));

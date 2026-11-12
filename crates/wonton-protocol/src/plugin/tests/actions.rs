@@ -16,7 +16,6 @@ fn plugin_actions_round_trip_through_json() {
         Action::InstallPlugin {
             preview: preview(),
             secrets: [("token".to_owned(), crate::SecretString::new("s3cret"))].into(),
-            settings: Default::default(),
         },
         Action::UpgradePlugin {
             preview: InstallPreview {
@@ -24,7 +23,6 @@ fn plugin_actions_round_trip_through_json() {
                 ..preview()
             },
             secrets: [("region".to_owned(), crate::SecretString::new("eu-west"))].into(),
-            settings: Default::default(),
         },
         Action::StartTakeover {
             id: "app.memos".into(),

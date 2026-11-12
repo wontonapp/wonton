@@ -332,9 +332,9 @@ pub fn granted_scopes(requested: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// ID 令牌里的用户声明，按授予的 scope 取舍。`groups` 是角色：主人 `["owner"]` 加客户端声明的组
-/// （清单 `oidc.admin_groups`），家人 `["member"]`，好友 `["friend"]`；未知角色不授予任何组。
-/// Hydra 把 `session.id_token` 的声明同时用作 ID 令牌和 userinfo 的内容。
+/// ID 令牌里的用户声明，按授予的 scope 取舍。`groups` 是家庭角色：主人 `["owner"]` 加客户端声明的组
+/// （清单 `oidc.owner_groups`，只发给这个客户端），家人 `["member"]`（ADR-0045）。Hydra 把
+/// `session.id_token` 的声明同时用作 ID 令牌和 userinfo 的内容。
 pub fn id_token_claims(
     owner: &Owner,
     role: Role,
@@ -352,12 +352,10 @@ pub fn id_token_claims(
             claims.insert("locale".into(), json!(locale));
         }
     }
-    if has("email") {
-        // 一律是固定用户名派生的内部地址，只认人不收信（ADR-0056）；真实邮箱只留在资料里。
-        claims.insert(
-            "email".into(),
-            json!(crate::owner::internal_email(&owner.username)),
-        );
+    if has("email")
+        && let Some(email) = &owner.email
+    {
+        claims.insert("email".into(), json!(email));
         claims.insert("email_verified".into(), json!(true));
     }
     if has("groups") {
@@ -367,9 +365,7 @@ pub fn id_token_claims(
                 groups.extend(extra_groups.iter().cloned());
                 groups
             }
-            Role::Member => vec!["member".to_owned()],
-            Role::Friend => vec!["friend".to_owned()],
-            Role::Other => Vec::new(),
+            _ => vec!["member".to_owned()],
         };
         claims.insert("groups".into(), json!(groups));
     }
@@ -393,25 +389,15 @@ mod tests {
         let granted = granted_scopes(&requested);
         assert_eq!(granted, ["openid", "profile", "email", "groups"]);
         let claims = id_token_claims(&owner, Role::Owner, &granted, &[], None);
-        assert_eq!(claims["email"], "owner@wonton.internal");
-        assert_eq!(claims["email_verified"], true);
+        assert_eq!(claims["email"], "owner@wonton.localhost");
         assert_eq!(claims["groups"], serde_json::json!(["owner"]));
         assert_eq!(claims["name"], "云吞");
-        let changed = Owner {
-            email: Some("changed@example.com".into()),
-            ..owner.clone()
-        };
-        assert_eq!(
-            id_token_claims(&changed, Role::Owner, &granted, &[], None),
-            claims
-        );
         let no_email = Owner {
             email: None,
             ..owner
         };
         let claims = id_token_claims(&no_email, Role::Owner, &granted, &[], None);
-        assert_eq!(claims["email"], "owner@wonton.internal");
-        assert_eq!(claims["email_verified"], true);
+        assert!(claims.get("email").is_none() && claims.get("email_verified").is_none());
         let member = Owner {
             username: "alice".into(),
             display_name: "爱丽丝".into(),
@@ -420,15 +406,6 @@ mod tests {
         let claims = id_token_claims(&member, Role::Member, &granted, &[], None);
         assert_eq!(claims["groups"], serde_json::json!(["member"]));
         assert_eq!(claims["preferred_username"], "alice");
-        assert_eq!(claims["email"], "alice@wonton.internal");
-        assert_eq!(claims["email_verified"], true);
-        let profile: Vec<String> = ["openid", "profile"].map(String::from).into();
-        let claims = id_token_claims(&member, Role::Member, &profile, &[], None);
-        assert!(claims.get("email").is_none() && claims.get("email_verified").is_none());
-        let email: Vec<String> = ["openid", "email"].map(String::from).into();
-        let claims = id_token_claims(&member, Role::Member, &email, &[], None);
-        assert_eq!(claims["email"], "alice@wonton.internal");
-        assert!(claims.get("name").is_none() && claims.get("preferred_username").is_none());
     }
 
     #[test]
@@ -448,34 +425,6 @@ mod tests {
         // 这个人还没有记录时也不发，不猜。
         let claims = id_token_claims(&alice, Role::Member, &profile, &[], None);
         assert!(claims.get("locale").is_none());
-    }
-
-    #[test]
-    fn a_friend_gets_the_internal_mailbox_derived_from_the_fixed_name() {
-        let friend = Owner {
-            username: "friend-0011".into(),
-            display_name: "Bob".into(),
-            email: None,
-        };
-        let granted: Vec<String> = ["openid", "profile", "email", "groups"]
-            .map(String::from)
-            .into();
-        let claims = id_token_claims(&friend, Role::Friend, &granted, &[], None);
-        assert_eq!(claims["email"], "friend-0011@wonton.internal");
-        assert_eq!(claims["email_verified"], true);
-        assert_eq!(claims["groups"], serde_json::json!(["friend"]));
-        // 没授予 email scope 就不发，主人自己的邮箱也不套到好友身上。
-        let granted: Vec<String> = ["openid"].map(String::from).into();
-        let claims = id_token_claims(&friend, Role::Friend, &granted, &[], None);
-        assert!(claims.get("email").is_none());
-        let owner = Owner {
-            email: Some("owner@wonton.internal".into()),
-            ..friend
-        };
-        let granted: Vec<String> = ["openid", "email"].map(String::from).into();
-        // 主人也一样：发的是派生内部地址，资料里的真实邮箱不发给插件。
-        let claims = id_token_claims(&owner, Role::Owner, &granted, &[], None);
-        assert_eq!(claims["email"], "friend-0011@wonton.internal");
     }
 
     #[test]
@@ -502,35 +451,6 @@ mod tests {
         let granted: Vec<String> = vec!["groups".to_owned()];
         let claims = id_token_claims(&owner, Role::Member, &granted, &["admin".into()], None);
         assert_eq!(claims["groups"], json!(["member"]));
-        let claims = id_token_claims(&owner, Role::Friend, &granted, &["admin".into()], None);
-        assert_eq!(claims["groups"], json!(["friend"]));
-        let claims = id_token_claims(&owner, Role::Other, &granted, &["admin".into()], None);
-        assert_eq!(claims["groups"], json!([]));
-    }
-
-    #[test]
-    fn friends_get_their_own_identity_without_admin_groups() {
-        let granted = ["openid", "profile", "groups"].map(String::from);
-        for (username, name) in [("friend_bob", "Bob"), ("friend_eve", "Eve")] {
-            let identity = Owner {
-                username: username.into(),
-                display_name: name.into(),
-                email: None,
-            };
-            let claims = id_token_claims(
-                &identity,
-                Role::Friend,
-                &granted,
-                &["owner".into(), "admin".into()],
-                None,
-            );
-            assert_eq!(claims["preferred_username"], username);
-            assert_eq!(claims["name"], name);
-            assert_eq!(claims["groups"], json!(["friend"]));
-            let claims = id_token_claims(&identity, Role::Friend, &[], &["admin".into()], None);
-            assert!(claims.get("groups").is_none());
-            assert!(claims.get("preferred_username").is_none());
-        }
     }
 
     /// Hydra v26.2.0 实测的混合文档：授权和登出端点用 public，其余后台端点用 issuer，两边各错一半。

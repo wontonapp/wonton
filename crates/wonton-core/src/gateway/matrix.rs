@@ -4,7 +4,6 @@
 //! | --- | --- | --- |
 //! | POST | `<base>/_wonton/matrix/login-token` | 签一个 Tuwunel 登录用的一次性 JWT，连同 homeserver 地址 |
 //! | 任意 | `matrix.<base>/_matrix/client/…`、`/_matrix/media/…` | Matrix 客户端接口，转发给 Tuwunel |
-//! | 任意 | `matrix.<base>/_wonton/matrix-rtc/…` | MatrixRTC 授权服务，转给 `matrix_rtc` 的提供方（[`super::matrix_rtc`]） |
 //!
 //! 登录令牌能换出主人的 Matrix 账号，所以接口只认隧道身份（局域网浏览器的核心会话不行），用 `POST` 让核心
 //! 域名上的跨站修改拦截对它生效，也不发 CORS 头，插件网页读不到响应。核心没有接 Tuwunel 时两个入口都如实报
@@ -21,7 +20,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::api::error_response;
-use super::send_limits::hop_card;
 use super::{Gateway, TunnelPeer, client_addr, pages, proxy, pushers};
 use super::{room_rules, send_limits};
 use crate::matrix::{JWT_LOGIN_TYPE, LOGIN_TOKEN_TTL_SECS};
@@ -92,9 +90,6 @@ pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
             "Matrix 只对经隧道接入的已配对设备开放",
         );
     }
-    if super::matrix_rtc::is_prefixed(req.uri().path()) {
-        return super::matrix_rtc::request(gateway, req).await;
-    }
     let req = match room_rules::check(req).await {
         Ok(req) => req,
         Err(refused) => return *refused,
@@ -102,14 +97,6 @@ pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
     // 人在这个房间说了话：跳数清零（ADR-0045）。
     if let Some(room) = send_limits::counted_room(req.method(), req.uri().path()) {
         gateway.send_limits.device_sent(&room);
-    }
-    // 每人每分钟的发邀请、发消息上限（ADR-0051）：按设备认人，超了 SDK 按 retry_after_ms 自己等。
-    if let Some(person) = gateway.device_user(req.extensions().get().copied()) {
-        let req = match gateway.people_limits.check(req, &person).await {
-            Ok(req) => req,
-            Err(refused) => return *refused,
-        };
-        return forward_client_api(gateway, req).await;
     }
     forward_client_api(gateway, req).await
 }
@@ -197,12 +184,7 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
         .await
     {
         Ok(req) => req,
-        Err(refused) => {
-            if let Some(stopped) = refused.stopped {
-                hop_card::ask_to_continue(gateway, stopped);
-            }
-            return refused.response;
-        }
+        Err(refused) => return *refused,
     };
     forward_client_api(gateway, req).await
 }
@@ -287,7 +269,7 @@ fn is_client_api(path: &str) -> bool {
 /// 合法请求：编码过的 `/`、`\`（`%2F`、`%5C`）放行。ruma 把路径参数里的 `/`、`\` 编成它们，而 Megolm 会话 ID
 /// 是标准 base64，大约一半带 `/`，按会话取密钥备份（`GET /_matrix/client/v3/room_keys/keys/{房间}/{会话}`）
 /// 要用到。
-pub(super) fn is_ambiguous(path: &str) -> bool {
+fn is_ambiguous(path: &str) -> bool {
     path.contains('\\')
         || path
             .split('/')
@@ -314,7 +296,7 @@ pub(super) fn percent_decode(segment: &str) -> Vec<u8> {
     out
 }
 
-pub(crate) fn matrix_error(
+pub(super) fn matrix_error(
     status: StatusCode,
     errcode: &str,
     kind: &'static str,

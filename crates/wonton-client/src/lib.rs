@@ -26,29 +26,22 @@ uniffi::setup_scaffolding!();
 #[cfg(target_os = "android")]
 mod android;
 mod appearance;
-mod bot_contacts;
-mod browser;
 mod chat;
 mod client;
-mod composer;
 mod files;
-mod friends;
 mod home;
 mod l10n;
 mod link;
 mod logging;
-mod matrix_login;
 mod onboarding;
 mod peers;
 mod plugins;
-mod port_map;
 mod push;
 mod push_method;
 mod scope;
 mod servers;
 mod session_store;
 mod settings;
-mod sharing;
 mod subscription;
 mod tabs;
 #[cfg(feature = "test-hooks")]
@@ -62,72 +55,63 @@ pub use files::{FileOpenError, FileOpener};
 pub use home::Network;
 pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
-pub use sharing::discover_share_source;
 pub use subscription::{
-    AppearanceSubscription, BotContactsSubscription, ChatSubscription, ComposerSubscription,
-    FriendsSubscription, HomeSubscription, OnboardingSubscription, PeersSubscription,
-    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
-    TabsSubscription, TransfersSubscription,
+    AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
+    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
+    SettingsSubscription, TabsSubscription, TransfersSubscription,
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
 };
 pub use tabs::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
-pub use tabs::media_permission::TabMediaPermission;
 pub use wonton_protocol::LanClient;
 pub use wonton_protocol::StoreUnreadable;
 pub use wonton_protocol::{
     AccessSource, AvatarImage, AvatarKind, AvatarMedia, AvatarMediaProblem, AvatarUpload,
     BotActivity, BotActivityFacts, BotActivityReport, BotNameProblem, BotPluginAccess,
-    BotPluginAccessUpdate, BotProfileFailure, BotProfileProblem, BotRef, BotView, BotWebFailure,
-    BotWebPage, BotWebView, StateAvatar, bot_plugin_access_path, plugin_scope_path,
+    BotPluginAccessUpdate, BotProfileFailure, BotProfileProblem, BotRef, BotView, StateAvatar,
+    bot_plugin_access_path, plugin_scope_path,
 };
 pub use wonton_protocol::{
     Action, AddedSource, AddedTools, AgentLogin, Answer, AppLink, AppearanceProblem,
     AppearanceViewModel, BackPagination, BackupReminder, BotSwitch, CandidatePlugin, CardChoice,
     CardLine, ChatAccount, ChatFailure, ChatProblem, ChatSync, ChatViewModel, ConfirmationCard,
-    ConfirmationState, ConfirmationView, ConnectionNotice, ConnectionQuality, CoreError,
-    CoreUpgradeBreakingPlugin, CoreUpgradeBreakingReason, CoreUpgradeCheck, CoreUpgradeCompat,
-    CoreUpgradeCompatCategory, CoreUpgradeCompatDetail, CoreUpgradeFailure, CoreUpgradeOffer,
-    CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeProgress, CoreUpgradeRun, CoreUpgradeRunState,
-    CoreUpgradeStage, CoreUpgradeStatus, CoreUpgradeTarget, CoreUpgradeViewModel, CoreVersion,
-    DeviceInvite, DeviceNetwork, DeviceVerification, EgressConfirmation, EgressCurrent,
-    EgressFailure, EgressPathState, EgressProbe, EgressProblem, EgressProxyProvider,
-    EgressProxySettings, EgressProxySource, EgressProxyUpdate, EgressRestart, EgressViewModel,
-    EncryptionStatus, FileCard, FileCardAction, FileCardActions, FileFailure, FileId, FileInfo,
-    FileOperation, FileProblem, FileSource, FontStyle, HomeFailure, HomePath, HomeStatus,
-    HomeViewModel, ImageContent, ImageThumbnail, ImageUpload, InstallPreview, InstalledPlugin,
-    InstalledPlugins, KeyHandoff, KeyNotice, LanAddress, LanChoice, LanFailure, LanInterface,
-    LanInterfaceKind, LanPlugin, LanPort, LanProblem, LanProtocol, LanSettings, LanWebuiOffer,
-    LanWebuiUpdate, LinkPreviewCard, LinkPreviewCardImage, LinkPreviewFailure, LinkPreviewReason,
-    LinkPreviewState, Me, MediaHandle, MessageContent, MessageSummary, ModelProvider,
-    ModelProviderFailure, ModelProviderInput, ModelProviderProblem, ModelProviders,
+    ConfirmationState, ConfirmationView, ConnectionNotice, CoreError, CoreUpgradeCheck,
+    CoreUpgradeFailure, CoreUpgradeOffer, CoreUpgradePhase, CoreUpgradeProblem,
+    CoreUpgradeProgress, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage, CoreUpgradeStatus,
+    CoreUpgradeTarget, CoreUpgradeViewModel, CoreVersion, DeviceInvite, DeviceNetwork,
+    DeviceVerification, EgressConfirmation, EgressCurrent, EgressFailure, EgressPathState,
+    EgressProbe, EgressProblem, EgressProxyProvider, EgressProxySettings, EgressProxySource,
+    EgressProxyUpdate, EgressRestart, EgressViewModel, EncryptionStatus, FileCard, FileCardAction,
+    FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, FileSource,
+    FontStyle, HomeFailure, HomePath, HomeStatus, HomeViewModel, ImageContent, ImageThumbnail,
+    ImageUpload, InstallPreview, InstalledPlugin, InstalledPlugins, LanAddress, LanChoice,
+    LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort, LanProblem, LanProtocol,
+    LanSettings, LanWebuiOffer, LanWebuiUpdate, Me, MediaHandle, MessageContent, MessageSummary,
+    ModelProvider, ModelProviderFailure, ModelProviderInput, ModelProviderProblem, ModelProviders,
     NotificationCategory, OnboardingAgentRow, OnboardingCommit, OnboardingItemProblem,
     OnboardingItemState, OnboardingModelChoice, OnboardingModelStep, OnboardingNeedRow,
     OnboardingProfileStep, OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem,
     OnboardingReviewKind, OnboardingStep, OnboardingTip, OnboardingTips, OnboardingViewModel,
-    OpenWindow, OwnerProfileUpdate, PairingFailure, PairingStage, PairingStatus, PeerCode,
-    PeerError, PeerRequestRow, PeerRow, PeerStatus, PeersState, PeersViewModel,
-    PendingConfirmation, PermissionLine, PermissionRisk, PlacedTab, PluginAuthor, PluginDetail,
-    PluginDetailOutcome, PluginDetailRoute, PluginDevice, PluginFailure, PluginHealth, PluginIcon,
-    PluginImage, PluginKind, PluginMediaGrant, PluginOperation, PluginProblem, PluginRuntime,
-    PluginScope, PluginState, PluginTab, PluginTakeover, PluginTask, PluginTaskNextStep,
+    OpenWindow, OwnerProfileUpdate, PairingFailure, PairingStatus, PeerCode, PeerError,
+    PeerRequestRow, PeerRow, PeerStatus, PeersState, PeersViewModel, PendingConfirmation,
+    PermissionLine, PermissionRisk, PluginAuthor, PluginDetail, PluginDevice, PluginFailure,
+    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginOperation, PluginProblem,
+    PluginRuntime, PluginScope, PluginState, PluginTab, PluginTakeover, PluginTask,
     PluginTaskState, PluginTrust, PluginsViewModel, ProxySettings, PushConfirmation, PushContent,
-    PushEndpoint, PushMethod, PushNotification, PushStatus, RecoveryNextStep, RecoveryStatus,
-    RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest,
-    RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe,
-    RegistryProblem, RejectedPeerRow, ReplacedAgent, RequirementLine, RequirementStatus, Rgb,
-    RoomMembership, RoomPreview, RoomRow, RoomTransfers, SecretString, SendState, ServerName,
-    ServerRow, ServersViewModel, SessionListViewModel, SessionRow, SettingsEntry, SettingsSection,
-    SettingsViewModel, SidebarApp, SidebarOpen, SidebarViewModel, SourceKind, StepNav,
-    StoreConfirmation, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
+    PushEndpoint, PushMethod, PushNotification, PushStatus, RecoveryStatus, RegistryFailure,
+    RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest, RegistryMirrorTests,
+    RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe, RegistryProblem, RejectedPeerRow,
+    ReplacedAgent, RequirementLine, RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow,
+    RoomTransfers, SecretString, SendState, ServerName, ServerRow, ServersViewModel,
+    SessionListViewModel, SessionRow, SettingsEntry, SettingsSection, SettingsViewModel,
+    SourceKind, StepNav, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
     TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure,
-    TabMediaPrompt, TabPage, TabRef, TabState, TabsProblem, TabsViewModel, TakeoverState, TextSize,
-    ThemeColors, ThemeMode, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
-    TimelineScroll, TimelineUpdate, TimelineViewport, ToolAccess, ToolPolicyEntry, ToolPolicyView,
-    Transfer, TransferAction, TransferDirection, TransferElsewhere, TransferState,
-    TransfersViewModel, UpdatablePlugin, UpgradeOffer, UploadSource, VerificationCancel,
-    VerificationEmoji, VerificationFlow, VerificationStage, WindowView,
+    TabPage, TabRef, TabState, TabsProblem, TabsViewModel, TakeoverState, TextSize, ThemeColors,
+    ThemeMode, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate,
+    ToolAccess, ToolPolicyEntry, ToolPolicyView, Transfer, TransferAction, TransferDirection,
+    TransferElsewhere, TransferState, TransfersViewModel, UpgradeOffer, UploadSource,
+    VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage, WindowView,
 };
 pub use wonton_protocol::{
     AppsAction, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendGroup,
@@ -138,13 +122,5 @@ pub use wonton_protocol::{
     SharedAppRow, SharedAppsSource, SharedAppsState, SharedAppsViewModel, SharedPlugin,
 };
 pub use wonton_protocol::{
-    BotChatSettings, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings, ChatLayoutTarget,
-    ChatTextScale, CodeOverflow, PluginChat,
-};
-pub use wonton_protocol::{
-    BotContact, BotContactFailure, BotContactsState, BotContactsViewModel, ContactError,
-    ContactKind, ContactRequestPush, ContactState, PendingContactRequest, RemoteContact,
-};
-pub use wonton_protocol::{
-    MappedPort, PluginPortMapping, PortMappingState, PortMappingWarning, PortProtocol, UdpFlowStats,
+    MappedPort, PluginPortMapping, PortMappingState, PortProtocol, UdpFlowStats,
 };

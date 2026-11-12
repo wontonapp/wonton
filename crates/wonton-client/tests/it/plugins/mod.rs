@@ -5,13 +5,10 @@ mod bots;
 mod chat_rows;
 mod connection;
 mod core_upgrade;
-mod detail;
 mod egress;
-mod now;
 mod onboarding;
 mod registry_mirror;
 pub mod rig;
-mod share_recipients;
 mod takeover;
 mod tool_policy;
 
@@ -144,7 +141,6 @@ async fn installing_grants_what_the_preview_listed_and_reports_the_result() {
         .dispatch(Action::InstallPlugin {
             preview: shown.clone(),
             secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     let view = rig.app.plugins();
@@ -210,7 +206,6 @@ async fn a_chosen_file_goes_up_as_is_and_installs_by_the_source_in_its_preview()
         .dispatch(Action::InstallPlugin {
             preview: shown,
             secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     rig.task("app.photos", |state| *state != PluginTaskState::Running)
@@ -292,8 +287,7 @@ async fn a_preview_that_says_no_is_not_sent() {
     assert!(matches!(
         rig.app.dispatch(Action::InstallPlugin {
             preview: blocked,
-            secrets: Default::default(),
-            settings: Default::default(),
+            secrets: Default::default()
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -315,7 +309,6 @@ async fn a_preview_that_needs_the_profile_is_not_sent() {
         rig.app.dispatch(Action::InstallPlugin {
             preview: needs_email,
             secrets: Default::default(),
-            settings: Default::default(),
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -400,7 +393,7 @@ async fn failures_keep_their_reason() {
         ),
         (
             core_error(502, "image_pull_failed", "拉不下镜像"),
-            PluginFailure::SourceUnavailable,
+            PluginFailure::Upstream,
         ),
         (
             core_error(403, "permission_denied", "权限对不上"),
@@ -417,7 +410,6 @@ async fn failures_keep_their_reason() {
             .dispatch(Action::InstallPlugin {
                 preview: preview("app.photos"),
                 secrets: Default::default(),
-                settings: Default::default(),
             })
             .unwrap();
         let state = rig
@@ -432,9 +424,7 @@ async fn failures_keep_their_reason() {
         );
     }
 
-    // 401 在这段一直站着：装失败后的静默刷新可能晚于下面的 RefreshStore 落地，它也会再取一次商店，
-    // 一次性的 401 挡不住它，它拿到默认回答反而把刚记下的问题清掉。
-    rig.core.answer_always(
+    rig.core.answer(
         Method::GET,
         "/_wonton/api/store",
         core_error(401, "unauthenticated", "不认这台设备"),
@@ -444,7 +434,6 @@ async fn failures_keep_their_reason() {
         .unwrap();
     let view = rig.wait_for(|view| view.problem.is_some()).await;
     assert_eq!(view.problem.unwrap().reason, PluginFailure::Unauthorized);
-    rig.core.stop_answering(Method::GET, "/_wonton/api/store");
 
     rig.core.answer(
         Method::GET,
@@ -476,7 +465,6 @@ async fn a_dropped_connection_waits_for_the_result_on_the_server() {
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     let state = rig
@@ -496,7 +484,6 @@ async fn a_dropped_connection_waits_for_the_result_on_the_server() {
         .dispatch(Action::InstallPlugin {
             preview: preview("app.other"),
             secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     let state = rig
@@ -528,7 +515,6 @@ async fn a_stalled_list_read_does_not_fail_the_install() {
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
 
@@ -642,7 +628,6 @@ async fn an_upgrade_says_which_tools_the_new_version_added() {
         .dispatch(Action::UpgradePlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     let view = rig
@@ -673,7 +658,6 @@ async fn an_upgrade_whose_answer_cannot_be_read_still_succeeded() {
         .dispatch(Action::UpgradePlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     let view = rig
@@ -703,7 +687,6 @@ async fn the_secret_values_the_owner_filled_are_posted_and_updated() {
         .dispatch(Action::InstallPlugin {
             preview: shown,
             secrets: [("token".to_owned(), SecretString::new("s3cret"))].into(),
-            settings: Default::default(),
         })
         .unwrap();
     rig.task("app.photos", |state| *state != PluginTaskState::Running)
