@@ -1,6 +1,6 @@
 # ADR-0007 Agent 与 Bot：Agent 即插件
 
-- 状态：已接受（2026-10-28）。Agent 的总体边界和 Bot 关系见本文；ACP 桥的实现形态见 [ADR-0035](0035-acp-bridge.md)。经桥登录的条款限制见 [ADR-0034](0034-onboarding-and-help.md)；家人的 Bot、Bot 听谁的和 Bot 之间的规则由 [ADR-0045](0045-family-members.md) 细化
+- 状态：已接受（2026-10-28）。Agent 的总体边界和 Bot 关系见本文；ACP 桥的实现形态见 [ADR-0035](0035-acp-bridge.md)。经桥登录的条款限制见 [ADR-0034](0034-onboarding-and-help.md)；家人的 Bot、Bot 听谁的和 Bot 之间的规则由 [ADR-0045](0045-family-members.md) 细化；家人账号的角色分级和按角色给 AI 设的上限见 [ADR-0087](0087-family-accounts.md)，不等 M2
 
 ## 背景
 
@@ -22,7 +22,7 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
     [ADR-0035](0035-acp-bridge.md)。
 - **默认 Agent**：Hermes，走 Bot Mode，一个 profile 对应一个 Bot；只收发消息，不做执行轨迹和工具
   过程展示。
-- **家人**：每个家人有自己的私人 Bot（独立记忆，互不可见）；主人可以建共享 Bot，拉进家庭群（M2）。
+- **家人**：每个家人有自己的私人 Bot（独立记忆，互不可见）；主人可以建共享 Bot，拉进家庭群（[ADR-0087](0087-family-accounts.md)，不等 M2）。
 - **Bot 之间通信**：同机走 Matrix 私聊或群聊；跨机做成独立插件（Matrix 联邦走 iroh，或 A2A 协议）。
 - **权限**：
   - 私人 Bot 只接受主人的指令。
@@ -37,7 +37,7 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
 
 ## 范围
 
-默认 Agent 是 Hermes。ACP 桥和 M1 同时开工，M1 验收不等它（ADR-0034）；家人 Bot、Bot 互发消息在 M2，接口预留；跨机通信在 M3。
+默认 Agent 是 Hermes。ACP 桥和 M1 同时开工，M1 验收不等它（ADR-0034）；家人账号和家人 Bot 见 ADR-0087，不等 M2；Bot 互发消息在 M2，接口预留；跨机通信在 M3。
 
 ## 代价与风险
 
