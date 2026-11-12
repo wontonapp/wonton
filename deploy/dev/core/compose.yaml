@@ -183,6 +183,9 @@ services:
       MP_DISABLE_VERSION_CHECK: "true"
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
       MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+      # 核心生成的自签证书，配了才宣告 STARTTLS（不强制，明文照收）。
+      MP_SMTP_TLS_CERT: /wonton-config/smtp-tls.crt
+      MP_SMTP_TLS_KEY: /wonton-config/smtp-tls.key
     volumes:
       - ${WONTON_DEV_DATA}/core/mailpit/data:/data
       - ${WONTON_DEV_DATA}/core/mailpit/config:/wonton-config:ro

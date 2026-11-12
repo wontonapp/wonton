@@ -176,9 +176,12 @@ services:
       MP_MAX_MESSAGES: "0"
       MP_MAX_AGE: 7d
       MP_DISABLE_VERSION_CHECK: "true"
-      # 宣告 AUTH 并接受任何凭据，给服务器不宣告 AUTH 就发不出信的应用；不配证书，认证照走明文。认插件只按来源网段。
+      # 宣告 AUTH 并接受任何凭据，给服务器不宣告 AUTH 就发不出信的应用；认插件只按来源网段。
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
       MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+      # 核心生成的自签证书，配了才宣告 STARTTLS（不强制，明文照收）。
+      MP_SMTP_TLS_CERT: /wonton-config/smtp-tls.crt
+      MP_SMTP_TLS_KEY: /wonton-config/smtp-tls.key
     volumes:
       - ${WONTON_DATA_DIR}/core/mailpit/data:/data
       - ${WONTON_DATA_DIR}/core/mailpit/config:/wonton-config:ro
