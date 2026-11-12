@@ -54,7 +54,8 @@ Bot 能在已授权的文件夹里查找文件，并通过 MCP 在 Immich 里按
 2. **卡片。** 核心把卡片记在确认表里，不发进任何 Matrix 房间。卡片的内容（类型见 `wonton-protocol` 的 `confirmation`、
    `confirmation_origin` 模块）：ID、状态、标题、说明行（高权限、删除数据这类醒目显示）、按钮、到期时间，以及谁发起的（`requester`）
    和显示在哪个会话（`origin`）。文字由核心写好，App 原样渲染。App 经隧道从 `GET /_wonton/api/confirmations` 取列表：带
-   `after=<revision>` 时长轮询，任何一张卡片变了（新卡片、确认、拒绝、过期、执行完）就返回；单张用
+   `after=<revision>` 时长轮询，任何一张卡片变了（新卡片、确认、拒绝、过期、执行完），或者列表里的联系人请求变了
+   （[ADR-0050](0050-cross-server-chat.md)），就返回；单张用
    `GET /_wonton/api/confirmations/{id}`。结束的卡片留 24 小时，列表里照样有。期限过了核心还没改状态（核心重启后等着的确认就没了），
    App 自己把它显示成过期。
    - **显示在哪。** App 把卡片画在 `origin` 的会话里（输入栏上方一行，点开是完整卡片，能直接回答），也列在“等你确认”列表里。
