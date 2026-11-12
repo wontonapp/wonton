@@ -269,20 +269,27 @@ struct ChatRoomView: View {
         sendTimeline(.setTimelineScroll(target: mainTimeline, scroll: pinned ? .bottom : .away))
         if pinned { sendTimeline(.markRead(target: mainTimeline)) }
     }
+}
 
-    private var isDirect: Bool {
+@MainActor
+private extension ChatRoomView {
+    var mainTimeline: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: nil) }
+
+    func sendTimeline(_ action: TimelineAction) { model.send(.timeline(action: action)) }
+
+    var isDirect: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isDirect ?? false
     }
 
     /// 私聊对方是已装应用的 Bot 时非空。
-    private var bot: BotView? {
+    var bot: BotView? {
         guard let directId = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId else {
             return nil
         }
         return model.viewModel.bots.first { $0.userId == directId }
     }
 
-    private var barAvatar: AnyView? {
+    var barAvatar: AnyView? {
         guard let bot else { return nil }
         let plugin = plugins.viewModel.installed?.plugins.first { $0.botUserId == bot.userId }
         return AnyView(BotAvatarView(
@@ -291,20 +298,13 @@ struct ChatRoomView: View {
     }
 
     /// 可以转发到的房间：已加入、能写。
-    private var forwardRooms: [RoomRow] {
+    var forwardRooms: [RoomRow] {
         model.viewModel.rooms.filter { $0.membership == .joined && !$0.isReadOnly }
     }
 
-    private var isReadOnly: Bool {
+    var isReadOnly: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
     }
-}
-
-@MainActor
-private extension ChatRoomView {
-    var mainTimeline: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: nil) }
-
-    func sendTimeline(_ action: TimelineAction) { model.send(.timeline(action: action)) }
 }
 
 private extension TimelineItem {
