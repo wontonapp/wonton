@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use wonton_matrix::{MatrixSession, Verification};
 use wonton_protocol::{
-    CoreError, EncryptionStatus, KeyHandoff, VerificationCancel, VerificationFlow,
+    CoreError, DeviceInvite, EncryptionStatus, KeyHandoff, VerificationCancel, VerificationFlow,
     VerificationStage,
 };
 
@@ -65,8 +65,20 @@ impl ChatLink {
     /// “添加设备”页打开（`Action::InviteDevice`）：接下来来的第一个确认请求自动接受。
     pub(crate) fn open_device_invite(&self) {
         self.handoff_armed.store(true, Ordering::SeqCst);
-        self.view
-            .send_if_modified(|view| clear_giving(&mut view.encryption));
+        self.view.send_if_modified(|view| {
+            let cleared = clear_giving(&mut view.encryption);
+            // 上一轮的结果只属于上一轮：页重新打开时从头开始，结束了的旧快照不留在顶部。
+            let ended = view
+                .encryption
+                .verification_flow
+                .as_ref()
+                .is_some_and(|flow| !verification::active(&flow.stage));
+            if ended {
+                view.encryption.verification_flow = None;
+                recovery::refresh(&mut view.encryption);
+            }
+            cleared || ended
+        });
     }
 
     /// “添加设备”页关掉（`Action::CloseDeviceInvite`）：之后来的请求照 ADR-0046 由主人手动接受。进行中的确认不受影响，
@@ -124,6 +136,31 @@ pub(super) fn forget(link: &ChatLink) {
         view.encryption.verification_flow = None;
         recovery::refresh(&mut view.encryption);
     });
+}
+
+/// 确认结束（完成以外）而“添加设备”页还开着：不再替人交密钥，换一个新码，主人可以马上换一台设备再试。
+/// 码是一次性的，刚失败这一次已经把它用掉了。
+pub(super) fn verification_ended(link: &ChatLink) {
+    let was_giving = link
+        .view
+        .send_if_modified(|view| clear_giving(&mut view.encryption));
+    tracing::info!(was_giving, invite = ?link.home.view().invite, "device verification ended");
+    if !was_giving {
+        return;
+    }
+    let reissue = link
+        .home
+        .view()
+        .invite
+        .as_ref()
+        .is_some_and(|invite| !matches!(invite, DeviceInvite::Requesting));
+    if reissue {
+        // 页还开着：下一台设备扫到新码时，照旧自动接上。
+        link.handoff_armed.store(true, Ordering::SeqCst);
+        if let Err(error) = link.home.invite() {
+            tracing::info!(%error, "could not get a new pairing code after the verification ended");
+        }
+    }
 }
 
 /// 本机密钥到齐、备份可用（`VerificationStage::Done` 的同一条件）时交接结束，交接页关掉。

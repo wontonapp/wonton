@@ -192,8 +192,10 @@ struct Core {
     sync_recording_released: watch::Sender<bool>,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
-    /// “添加设备”发的配对码（`POST /_wonton/api/pairing-codes`），隧道起来后填上。
+    /// “添加设备”发的配对码（`POST /_wonton/api/pairing-codes`），隧道起来后填上；每次要码换一个新 secret。
     issued_pairing_code: Mutex<Option<String>>,
+    /// 发过多少个配对码，用它在每次回应里换一个新 secret。
+    pairing_codes_issued: AtomicUsize,
     /// 已装插件的应答：没有就是没有这个接口（404）。
     installed: Mutex<Option<Value>>,
     /// 取已装列表的请求次数。
@@ -281,6 +283,7 @@ impl Home {
             sync_recording_released: watch::Sender::new(false),
             onboarding: Mutex::default(),
             issued_pairing_code: Mutex::default(),
+            pairing_codes_issued: AtomicUsize::new(0),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
             confirmations: Mutex::default(),
