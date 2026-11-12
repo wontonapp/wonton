@@ -170,10 +170,11 @@ impl ChatLink {
         }
         let allowed = match operation {
             Operation::Accept => flow.stage == VerificationStage::Incoming,
+            // 两台设备几乎同时点“相同/不一样”时，后到的一次落在已经结束的流程上：不算错误，快照里已经是对方的结论。
             Operation::Confirm | Operation::Mismatch => {
-                matches!(flow.stage, VerificationStage::Compare { .. })
+                matches!(flow.stage, VerificationStage::Compare { .. }) || !active(&flow.stage)
             }
-            Operation::Cancel => active(&flow.stage),
+            Operation::Cancel => true,
         };
         if !allowed || control.starting || control.operating {
             return Err(unavailable());
@@ -459,12 +460,22 @@ fn update(link: &ChatLink, flow: &mut Option<Flow>, snapshot: VerificationFlow) 
         }
     }
     let terminal = !active(stage);
+    let finished = flow.as_ref().is_some_and(|f| f.finished);
+    // 第一次走到终态（完成以外）：旧设备那一页不能一直停在“交出密钥”，要重新出码。
+    let ended = terminal && *stage != VerificationStage::Done && !finished;
+    // 页重新打开时清掉了旧结果：后到的同一条终态快照不再把它放回去。
+    if terminal && finished && link.view.borrow().encryption.verification_flow.is_none() {
+        return;
+    }
     set_snapshot(link, snapshot);
     if terminal && let Some(flow) = flow.as_mut() {
         flow.finished = true;
         flow.keys_deadline = None;
         flow.late = false;
         flow.next_ask = None;
+    }
+    if ended {
+        handoff::verification_ended(link);
     }
 }
 
@@ -505,6 +516,9 @@ fn finish_keys(link: &ChatLink, session: &MatrixSession, flow: &mut Option<Flow>
         flow.keys_deadline = None;
         flow.late = !complete;
         flow.next_ask = (!complete).then(|| Instant::now() + LATE_ASK);
+    }
+    if !complete {
+        handoff::verification_ended(link);
     }
 }
 
@@ -597,6 +611,7 @@ fn fail(link: &ChatLink, flow: &mut Option<Flow>, error: &Error) {
         flow.late = false;
         flow.next_ask = None;
     }
+    handoff::verification_ended(link);
     report(link, error);
 }
 
@@ -668,7 +683,7 @@ fn current_session(link: &ChatLink, session: &Arc<MatrixSession>) -> bool {
         .is_some_and(|current| Arc::ptr_eq(current, session))
 }
 
-fn active(stage: &VerificationStage) -> bool {
+pub(super) fn active(stage: &VerificationStage) -> bool {
     !matches!(
         stage,
         VerificationStage::Done | VerificationStage::Cancelled { .. }
