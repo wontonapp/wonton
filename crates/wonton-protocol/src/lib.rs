@@ -64,6 +64,7 @@ mod tabs;
 mod timeline;
 mod timeline_action;
 mod verification;
+mod widget;
 
 pub use action::Action;
 pub use agent_chain::{
@@ -325,4 +326,8 @@ pub use timeline::{
 pub use timeline_action::{TimelineAction, TimelineTarget};
 pub use verification::{
     KeyHandoff, VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
+};
+pub use widget::{
+    WIDGET_MAX_ROOMS, WIDGET_SNAPSHOT_PATH, WIDGET_SNAPSHOT_VERSION, WidgetAccount, WidgetAgent,
+    WidgetContact, WidgetPlugin, WidgetRoom, WidgetSnapshot, WidgetSnapshotRead,
 };

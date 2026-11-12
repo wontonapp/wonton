@@ -12,6 +12,8 @@ struct BotContactsView: View {
     @FocusState private var addFocused: Bool
     /// 删除已生效联系人的确认框挂在整页上：挂在行上，滑动删除后行没了，弹窗跟着消失。
     @State private var removing: BotContact?
+    /// 同意别的服务器的请求的确认框，同样挂整页。
+    @State private var approvingRemote: BotContact?
 
     init(core: ClientCore, bot: BotRef) {
         _model = State(initialValue: BotContactsModel(core: core, bot: bot))
@@ -28,6 +30,7 @@ struct BotContactsView: View {
                 addPanel(close)
             }
             .contactsRemoveDialog($removing, model: model)
+            .contactsApproveRemoteDialog($approvingRemote, model: model)
             .wontonDialog(problem: model.rejection, isPresented: Binding(
                 get: { model.rejection != nil }, set: { if !$0 { model.rejection = nil } }
             ))
@@ -75,7 +78,14 @@ struct BotContactsView: View {
             section(.Contacts0.contactsSectionRequests, model.contacts.filter { $0.state == .incoming }) { contact in
                 IncomingContactRowView(
                     contact: contact,
-                    approve: { model.send(.approveBotContact(bot: model.bot, userId: contact.userId)) },
+                    approve: {
+                        // 别的服务器的请求先弹确认：同意后这个 Bot 只聊天（ADR-0050）。
+                        if contact.remote == nil {
+                            model.send(.approveBotContact(bot: model.bot, userId: contact.userId))
+                        } else {
+                            approvingRemote = contact
+                        }
+                    },
                     reject: { model.send(.rejectBotContact(bot: model.bot, userId: contact.userId)) }
                 )
             }
@@ -263,6 +273,25 @@ extension View {
                 WontonDialogAction(title: String(localized: .Common.commonRemove), kind: .danger) {
                     if let contact { model.send(.removeBotContact(bot: model.bot, userId: contact.userId)) }
                     removing.wrappedValue = nil
+                }
+            ]
+        )
+    }
+
+    /// 同意别的服务器的请求的确认框：同意后这个 Bot 对谁都只聊天（归属人也一样），不再用其他工具（ADR-0050）。
+    func contactsApproveRemoteDialog(_ approving: Binding<BotContact?>, model: BotContactsModel) -> some View {
+        let contact = approving.wrappedValue
+        return wontonDialog(
+            String(localized: .Contacts1.contactsApproveRemoteTitle(contact.map(contactName) ?? "")),
+            message: String(localized: .Contacts1.contactsApproveRemoteMessage),
+            isPresented: Binding(
+                get: { approving.wrappedValue != nil }, set: { if !$0 { approving.wrappedValue = nil } }
+            ),
+            actions: [
+                WontonDialogAction(title: String(localized: .Common.commonCancel)) { approving.wrappedValue = nil },
+                WontonDialogAction(title: String(localized: .Contacts1.contactsApprove), kind: .primary) {
+                    if let contact { model.send(.approveBotContact(bot: model.bot, userId: contact.userId)) }
+                    approving.wrappedValue = nil
                 }
             ]
         )

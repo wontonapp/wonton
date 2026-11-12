@@ -1,6 +1,7 @@
-//! 在子进程里处理不可信的图片（[`super::images`]）：`wonton-core image <icon.png|icon.svg|screenshot|thumbnail|preview>` 从标准输入读
-//! 原文件，把结果写到标准输出。图片是不可信的输入，预检挡不住所有费时费内存的写法（比如很细的虚线），所以解码和渲染放进单独的
-//! 进程：它先给自己设内存和 CPU 时间的上限，到时没做完由核心杀掉。超时、内存不够、崩溃都算这张图处理不了。
+//! 在子进程里处理不可信的图片和 PDF（[`super::images`]、[`super::pdf`]）：`wonton-core image
+//! <icon.png|icon.svg|screenshot|thumbnail|preview|pdf>` 从标准输入读原文件，把结果写到标准输出。文件是不可信的输入，
+//! 预检挡不住所有费时费内存的写法（比如很细的虚线），所以解码和渲染放进单独的进程：它先给自己设内存和 CPU 时间的上限，
+//! 到时没做完由核心杀掉。超时、内存不够、崩溃都算这个文件处理不了。
 //!
 //! 这些子进程不直接从核心起，而是从一个常驻的助手进程（`wonton-core image-host`）起，见 [`host`]：核心
 //! 起子进程时，fork 到 exec 之间子进程手里有隧道 UDP 套接字的副本，正好撞上 iroh 在原端口重绑就
@@ -49,14 +50,19 @@ const MAX_STDERR: usize = 4 << 10;
 const REFUSED: u8 = 1;
 /// 子进程的退出码：用法不对、设不了资源上限、读写不了标准输入输出，和图片无关。
 const BROKEN: u8 = 2;
+/// 助手回答里的结果码：到时限没做完（子进程没有这个退出码）。
+const TIMED_OUT: u8 = 3;
 
-/// 图片处理不了的原因。
+/// 文件处理不了的原因。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ImageError {
-    /// 图片本身的问题：不合规格，或者处理时超时、内存不够、崩溃。同一张图再处理一遍还是这样。
+    /// 文件本身的问题：不合规格，或者处理时内存不够、崩溃。同一份文件再处理一遍还是这样。
     #[error("{0}")]
     Refused(String),
-    /// 核心这边起不了或用不了处理图片的进程，和图片无关。
+    /// 到时限还没处理完：机器忙，同一份文件过一会儿可能就好了。
+    #[error("{0}")]
+    TimedOut(String),
+    /// 核心这边起不了或用不了处理文件的进程，和文件本身无关。
     #[error("{0}")]
     Unavailable(String),
 }
@@ -69,6 +75,7 @@ enum Job {
     Screenshot,
     Thumbnail,
     Preview,
+    Pdf,
 }
 
 impl Job {
@@ -81,13 +88,14 @@ impl Job {
             Self::Screenshot => "screenshot",
             Self::Thumbnail => "thumbnail",
             Self::Preview => "preview",
+            Self::Pdf => "pdf",
         }
     }
 
     /// 最多从标准输入读这么多。多读一个字节：超了由各自的大小检查报出来。
     fn input_limit(self) -> u64 {
         let limit = match self {
-            Self::Thumbnail | Self::Preview => images::MAX_THUMBNAIL_INPUT,
+            Self::Thumbnail | Self::Preview | Self::Pdf => images::MAX_THUMBNAIL_INPUT,
             Self::Icon(_) | Self::TabIcon(_) | Self::Screenshot => images::MAX_FILE_BYTES,
         };
         limit as u64 + 1
@@ -102,6 +110,7 @@ impl Job {
             Self::Screenshot,
             Self::Thumbnail,
             Self::Preview,
+            Self::Pdf,
         ]
         .into_iter()
         .find(|job| job.arg() == arg)
@@ -120,6 +129,13 @@ impl Job {
             }
             Self::Thumbnail => put(&mut out, &images::thumbnail(input, langs)?),
             Self::Preview => put(&mut out, &images::preview(input, langs)?),
+            Self::Pdf => {
+                let extracted = super::pdf::extract(input, langs)?;
+                put(&mut out, extracted.text.as_bytes());
+                put(&mut out, &extracted.pages_read.to_le_bytes());
+                put(&mut out, &extracted.pages_total.to_le_bytes());
+                put(&mut out, &[u8::from(extracted.truncated)]);
+            }
         }
         Ok(out)
     }
@@ -254,12 +270,19 @@ fn outcome(
 ) -> Result<Vec<u8>, ImageError> {
     let stderr = stderr.trim();
     if let Some(signal) = status.signal() {
-        return Err(ImageError::Refused(killed_by(signal, stderr, langs)));
+        let message = killed_by(signal, stderr, langs);
+        // CPU 时间用完就是超时；别的信号和崩溃一样是这份文件处理不了。
+        return Err(if signal == Signal::XCPU.as_raw() {
+            ImageError::TimedOut(message)
+        } else {
+            ImageError::Refused(message)
+        });
     }
     match status.code() {
         Some(0) => Ok(output),
         Some(code) if code == i32::from(REFUSED) => Err(ImageError::Refused(stderr.to_owned())),
         Some(code) if code == i32::from(BROKEN) => Err(ImageError::Unavailable(stderr.to_owned())),
+        Some(code) if code == i32::from(TIMED_OUT) => Err(ImageError::TimedOut(stderr.to_owned())),
         // panic 的退出码是 101。
         code => Err(ImageError::Refused(crate::l10n::text(
             langs,

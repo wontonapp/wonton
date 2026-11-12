@@ -53,6 +53,9 @@ image-webp = "0.2.4"
 # MIT OR Apache-2.0 OR Zlib。image 的 JPEG 包装会复制全部输入且关闭严格校验，头像直接借用其底层解析器。
 zune-core = "0.5.3"
 zune-jpeg = "0.5.15"
+# MIT。`view_file` 抽 PDF 的文字层（ADR-0104）：纯 Rust，传递依赖 lopdf 等也都是 MIT 或 Apache-2.0。以会 panic 出名，
+# 只在图片助手的子进程里调用。
+pdf-extract = "0.12.1"
 # MPL-2.0。Mozilla 的 MP4 轨道解析器支持 avc1 和 avc3。
 mp4parse = "0.17.0"
 # 算插件网络里留给核心的地址和出口容器的名单。
@@ -63,7 +66,7 @@ jsonwebtoken = { workspace = true }
 # Apache-2.0 OR MIT。核心给 App 的文字（ADR-0043）：Fluent 目录和语言协商。
 wonton-l10n = { path = "../wonton-l10n" }
 # MIT OR Apache-2.0。解码共享文件夹引用的路径，编码下载的文件名。
-percent-encoding = "2.3.2"
+percent-encoding = { workspace = true }
 # MIT OR Apache-2.0。从 SSL_CERT_FILE 读自签/测试 CA 给 iroh 中继校验用。
 rustls-pki-types = "1"
 # MIT OR Apache-2.0。推送代理按 Web Push 发推送：推送地址来自设备，可能是 https（rustls，根证书用系统的）。

@@ -127,6 +127,40 @@
         <service
             android:name=".browser.BrowserKeepAliveService"
             android:exported="true" />
+        <!-- 桌面小组件（ADR-0100）。只收系统的 APPWIDGET_UPDATE，不导出给别的 App。 -->
+        <receiver
+            android:name="app.wonton.ui.widget.RecentChatsWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_recent_chats_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_recent_chats" />
+        </receiver>
+        <receiver
+            android:name="app.wonton.ui.widget.AgentStatusWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_agent_status_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_agent_status" />
+        </receiver>
+        <receiver
+            android:name="app.wonton.ui.widget.AskAgentWidgetReceiver"
+            android:exported="false"
+            android:label="@string/shortcut_agent_chat">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_ask_agent" />
+        </receiver>
     </application>
 
 </manifest>

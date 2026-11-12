@@ -53,6 +53,7 @@ mod test_support;
 mod tool_policy;
 #[cfg(feature = "ui-fake")]
 mod ui_fake;
+mod widget;
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
 ///
@@ -84,6 +85,8 @@ pub struct ClientCore {
     matrix_login: Arc<crate::matrix_login::MatrixLogins>,
     /// 系统分享进来、还没发出去的东西（ADR-0097）：不跟服务器走，换服务器、没配对时都在。
     share_in: Arc<crate::share_in::ShareInLink>,
+    /// 系统入口的快照文件（ADR-0100），换服务器不换。
+    widget: crate::widget::WidgetFile,
     /// 测试用的假数据入口（`new_ui_fake`）开着：操作不落到作用域，ViewModel 保持塞进去的假数据。
     #[cfg(feature = "ui-fake")]
     ui_fake: AtomicBool,
@@ -639,6 +642,7 @@ impl ClientCore {
         let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             appearance: AppearanceLink::new(&root),
+            widget: crate::widget::WidgetFile::new(&root),
             #[cfg(feature = "ui-fake")]
             views: RwLock::new(Views::of(&scope)),
             #[cfg(not(feature = "ui-fake"))]

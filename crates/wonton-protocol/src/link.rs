@@ -2,11 +2,33 @@
 //! 编解码，不自己拼。
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 
 use crate::TabRef;
 
 const SCHEME: &str = "wonton://";
+
+/// 房间 ID 里不用转义的字符：RFC 3986 路径段里本来就能出现的（`pchar`）。常见的 `!opaque:server.name` 原样可读，
+/// 别的（包括 `/`、`?`、`#`、`%`）按百分号编码。
+const ROOM_ID: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~')
+    .remove(b'!')
+    .remove(b'$')
+    .remove(b'&')
+    .remove(b'\'')
+    .remove(b'(')
+    .remove(b')')
+    .remove(b'*')
+    .remove(b'+')
+    .remove(b',')
+    .remove(b';')
+    .remove(b'=')
+    .remove(b':')
+    .remove(b'@');
 
 /// App 里能直接打开的地方。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,6 +46,8 @@ pub enum AppLink {
     /// 认领系统分享进来的一次分享（ADR-0097）：iOS 的分享扩展写好收件目录后用它打开 App，壳把令牌交给
     /// `ClientCore::claim_share`。
     Share { token: String },
+    /// 打开一个会话（ADR-0100：桌面小组件和系统搜索点进来）。还没加入的房间，壳等它出现再打开。
+    Room { room_id: String },
 }
 
 impl AppLink {
@@ -80,6 +104,7 @@ impl AppLink {
             Self::AgentChat => "agent-chat".to_owned(),
             Self::Peers => "settings/peers".to_owned(),
             Self::Share { token } => format!("share/{token}"),
+            Self::Room { room_id } => format!("room/{}", utf8_percent_encode(room_id, ROOM_ID)),
         };
         format!("{SCHEME}{path}")
     }
@@ -169,6 +194,12 @@ impl AppLink {
             ["share", token] if crate::is_share_token(token) => Some(Self::Share {
                 token: (*token).to_owned(),
             }),
+            ["room", encoded] => {
+                let room_id = percent_decode_str(encoded).decode_utf8().ok()?;
+                is_room_id(&room_id).then(|| Self::Room {
+                    room_id: room_id.into_owned(),
+                })
+            }
             _ => None,
         }
     }
@@ -181,6 +212,13 @@ fn is_id(text: &str) -> bool {
         && text
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+/// Matrix 房间 ID 以 `!` 开头（房间版本 12 起没有 `:server` 部分），没有空白和控制字符。
+fn is_room_id(text: &str) -> bool {
+    text.len() > 1
+        && text.starts_with('!')
+        && !text.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
 #[cfg(test)]
@@ -246,6 +284,15 @@ mod tests {
             AppLink::Share {
                 token: "6F9619FF-8B86-D011-B42D-00C04FC964FF".into(),
             },
+            AppLink::Room {
+                room_id: "!family:home.example".into(),
+            },
+            AppLink::Room {
+                room_id: "!31hneApxJ_1o-63DmFrpeqnkFfWppnzWso1JvH3ogLM".into(),
+            },
+            AppLink::Room {
+                room_id: "!odd/id?x=1#y%z:[2001:db8::1]:8448".into(),
+            },
         ];
         for link in links {
             assert_eq!(AppLink::parse(&link.to_url()), Some(link));
@@ -264,8 +311,28 @@ mod tests {
             "wonton://ask",
             "wonton://share/../../servers",
             "wonton://share/",
+            "wonton://room/",
+            "wonton://room/!",
+            "wonton://room/family:home.example",
+            "wonton://room/!a%20b:home.example",
+            "wonton://room/!a%0A:home.example",
+            "wonton://room/!a:home.example/extra",
+            "wonton://room/!%FF:home.example",
         ] {
             assert_eq!(AppLink::parse(url), None, "{url}");
         }
+    }
+
+    /// 常见的房间 ID 写进链接后还认得出来，小组件和系统搜索里存的就是这个。
+    #[test]
+    fn a_room_link_keeps_the_usual_room_id_readable() {
+        let link = AppLink::Room {
+            room_id: "!family:home.example".into(),
+        };
+        assert_eq!(link.to_url(), "wonton://room/!family:home.example");
+        let odd = AppLink::Room {
+            room_id: "!a/b?c:home.example".into(),
+        };
+        assert_eq!(odd.to_url(), "wonton://room/!a%2Fb%3Fc:home.example");
     }
 }

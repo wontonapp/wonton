@@ -144,9 +144,14 @@ Android 按 WebView 能力检测配置默认 Profile 的精确来源允许列表
 没配对也出。
 
 `shared/.../ui/AppShortcuts.kt` 用 AndroidX Core（Apache-2.0）发布“新会话”“问 Bot”和固定的插件页；固定入口图标
-复用设计系统，插件图标经核心下载后转 `IconCompat`。总数不超过系统上限：两个固定入口优先，插件按底栏顺序显示。
+复用设计系统，插件图标经核心下载后转 `IconCompat`。总数不超过系统上限：两个固定入口优先，插件按底栏顺序显示，
+剩下的名额放核心系统入口快照里最近的会话（ADR-0100），没登录时由进程里的协程马上撤掉。
 图标获取和系统更新失败会提示原因。卸载后同时停用动态项和已固定到桌面的项，显示“这个应用已卸载”；只移出底栏不禁用
 桌面项，重装后重新启用。实际菜单容量由桌面决定，`adb shell dumpsys shortcut` 可查看动态、固定和停用状态。
+
+桌面小组件在 `shared/.../ui/widget/`（Glance，Apache-2.0）：每次画都从数据目录读核心写的 `widget/snapshot.json`，不调核心；
+`WontonApplication` 在核心起来时订阅“写下了一份”并 `updateAll`。界面接 `WidgetState`（快照、颜色、此刻、点了去哪），
+截图测试用写死的假快照（`androidHostTest/.../widget/WidgetSnapshotsTest.kt`）。
 
 ## 聊天（开发）
 

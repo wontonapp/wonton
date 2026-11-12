@@ -60,7 +60,8 @@ Agent 正在跑一轮时再发的消息，能插话的 Agent 直接插进这一�
 `WONTON_ACP_UNDECRYPTABLE_SECONDS`（默认 60）是解不开的加密消息等密钥晚到多久，超过桥就在房间里说
 一次“读不了”，并给容器健康检查写上这个原因（插件在核心和 App 里显示为异常）；`WONTON_ACP_UNDECRYPTABLE_EVERY_SECONDS`
 （默认 600）是说过之后隔多久才允许再提醒。桥的容器有健康检查：`wonton-acp-bridge health` 看主进程
-心跳和这个标记，别删容器里的 `/tmp/wonton-acp-bridge.*`。
+心跳和这个标记，别删容器里的 `/tmp/wonton-acp-bridge.*`；两个文件在 `WONTON_ACP_BRIDGE_HEALTH_DIR`
+（默认 `/tmp`）下。
 
 主人可以在主对话里另开话题（Matrix thread）：消息按所属话题进各自的 Agent 会话，两边并行干活。每轮开头把别的会话的动态带给 Agent；话题做完一轮在主对话里留一行不推送的提示。同一个文件被两个会话改时，权限卡片给出“等它做完再改（默认）/ 现在就改 / 不改”，等对方这一轮结束后自动批准。同时活跃的话题最多 3 个，第 4 个排队；空闲 30 分钟自动结束。
 
