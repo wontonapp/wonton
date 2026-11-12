@@ -4,6 +4,7 @@
 //! 每个测试用 Docker 起一台一次性的 Tuwunel，所以标了 `#[ignore]`：
 //! `cargo test -p wonton-client --test it chat:: -- --include-ignored`（`scripts/check.sh` 有 Docker 时自动运行）。
 
+mod agent_run;
 mod ask_agent;
 mod bot_profile;
 pub mod bot_profile_support;

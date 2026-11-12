@@ -454,6 +454,7 @@ pub fn owner_message_at(
         body: MessageBody::Text(text.into()),
         custom: Default::default(),
         mentions: Vec::new(),
+        agent_run: None,
         thread_root: thread_root.map(|root| root.parse().unwrap()),
         edited: false,
         read_by: Vec::new(),
