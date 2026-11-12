@@ -1,0 +1,51 @@
+name: queue-sweep
+
+# 合并队列重排时（前面的组失败、有 PR 出队），后面的组换一个 gh-readonly-queue/main/pr-N-<基准> 分支重建，
+# 旧分支被删，可旧分支上的运行不会自己停：实测最多 10 个作废的构建同时占着 runner。
+# 这里在每次 merge_group 时取消分支已经不在的队列运行。分支被删的组不会再合进 main，取消它不影响要合的那组；
+# 不按 PR 号判断，因为表达式取不出 pr-N，按“分支还在不在”判断也不用猜队列的重建规则。
+# 不是必需检查：清理失败只多占几台 runner，不该挡队列。
+on:
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    name: 取消作废的队列构建
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # 取消别的工作流的运行。
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      OWN_REF: ${{ github.event.merge_group.head_ref }}
+    steps:
+      - name: 取消分支已删的 merge_group 运行
+        run: |
+          # 先列运行、再列分支：列出来的运行，分支一定在列分支之前就建好了，此时不在就是被删了。
+          runs=$(for status in queued in_progress pending; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs?event=merge_group&status=$status&per_page=100" \
+              --jq '.workflow_runs[] | "\(.id) \(.head_branch)"'
+          done)
+          branches=$(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/heads/gh-readonly-queue/" \
+            --jq '.[].ref | sub("^refs/heads/"; "")')
+          # 自己的分支一定在；不在说明分支列表不可信，什么都不取消。
+          if ! grep -qxF "${OWN_REF#refs/heads/}" <<<"$branches"; then
+            echo "::error::分支列表里没有本次的 ${OWN_REF}，不取消任何运行"
+            exit 1
+          fi
+          while read -r id branch; do
+            [[ -n $id ]] || continue
+            grep -qxF "$branch" <<<"$branches" && continue
+            echo "取消 $id（$branch 已删）"
+            # 列完到取消之间运行可能已经结束，接口回 409，不算失败。
+            if ! out=$(gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/cancel" 2>&1); then
+              grep -q "HTTP 409" <<<"$out" || { echo "$out"; exit 1; }
+            fi
+          done <<<"$runs"

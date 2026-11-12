@@ -34,6 +34,10 @@
 - 草稿 PR 上 `rust`、`rust-docker`、`ios`、`android` 一个作业都不起（`changes` 也算在内），只有各自的汇总
   起来报通过；lint 只跑冲突标记和密钥扫描（同一个作业的相邻两步）。转 ready（`ready_for_review`）按改动范围运行。
 - 所有 PR 运行都 `cancel-in-progress`：反正要重跑，旧的别继续占名额；定时运行跑完。
+- 合并队列重排时（前面的组失败、有 PR 出队），后面的组换一个 `gh-readonly-queue/main/pr-N-<基准>` 分支重建，
+  旧分支被删，但旧分支上的运行不会自己停。`queue-sweep.yml` 在每次 `merge_group` 时取消分支已经不在的队列运行：
+  分支被删的组不会再合进 main，取消它不影响要合的那一组。它不是必需检查，失败不挡队列。
+- `cache.yml` 不取消进行中的运行，否则 main 忙时缓存几乎写不回去；并发组按作业分，同一作业只跑一个、只留最新一个等着。
 - 合并进 main 不重跑全套（PR 已在最新 main 上跑过）；只有 main-image 继续构建核心镜像，`cache.yml` 用
   和 PR 作业一样的 key 把编译缓存编一遍存下来（只编不跑）。每天定时（`schedule`，02:00 起错开）把
   Rust、Docker、Android、iOS 全量跑一遍兜底。
@@ -46,9 +50,10 @@
   所以：Docker 集成测试作业设 `WONTON_TEST_IMAGES`，测试代码经 wonton-test-images crate 把镜像引用指到
   副本，本地不设、按上游引用拉；main-image 和 release 给 Dockerfile 的 `*_IMAGE` build-arg 传副本引用。
   仓库公开当天先手动跑一次 test-images.yml，再让 main-image 跑（副本空着时镜像构建会拉取失败）。
-  Docker 集成测试作业开跑前先跑 `cargo test -p wonton-core --lib test_docker_check`：Docker 测试文件里出现的
+  wonton-core 的 `test_docker_check` 是普通单测，在 rust 工作流的测试分片里跑：Docker 测试文件里出现的
   镜像引用不在镜像清单里（典型是绕开 `wonton_test_images::image` 把引用直接传给 `ensure_image`），就当场失败
-  并指出文件和镜像名，那是写法错误，不进重试。然后一次拉齐镜像：单个镜像最多重试 3 次
+  并指出文件和镜像名，那是写法错误，不进重试。官方索引检查（`plugin check-index`）也用不到 Docker，在 rust
+  的第一个测试分片里跑。Docker 集成测试作业开跑前一次拉齐镜像：单个镜像最多重试 3 次
   （5 s、15 s 退避），这是基础设施重试，测试本身不重试；预拉用带摘要的引用、测试建容器也用它，
   本机有就不再联网。还拉不到时整个作业失败，日志里是
   `::error::基础设施失败：拉不到镜像 <镜像>（重试 3 次）`，和断言失败分开。

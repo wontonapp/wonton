@@ -1,7 +1,8 @@
 name: rust-docker
 
-# 依赖 Docker 的集成测试（标了 #[ignore] 的都在 wonton-core、wonton-client、wonton-matrix、wonton-acp-bridge 里）
-# 和官方索引检查。草稿 PR 上一个作业都不起（含改动范围），汇总作业起来报一个通过；转 ready 或每天的定时全量才跑。
+# 依赖 Docker 的集成测试（标了 #[ignore] 的都在 wonton-core、wonton-client、wonton-matrix、wonton-acp-bridge 里）。
+# 镜像清单检查和官方索引检查用不到 Docker，在 rust.yml 的测试里跑，不占这个作业的时间。
+# 草稿 PR 上一个作业都不起（含改动范围），汇总作业起来报一个通过；转 ready 或每天的定时全量才跑。
 # 测试镜像拉的是 ghcr.io/<owner>/test-images
 # 的副本（test-images.yml 每周和每次 main 合并时同步），托管 runner 的出口 IP 拉不动 Docker Hub 和 ECR Public。
 # 路径不写在触发器上：合并队列的必需检查每次入队都要有结果，工作流没触发的话检查一直“等待中”，队列合不了。
@@ -132,10 +133,6 @@ jobs:
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
           df -h /
-      - name: 检查 Docker 测试用到的镜像都在镜像清单里
-        # 引用绕开 wonton_test_images::image 写死时预拉会跳过它，测试跑到一半才 `No such image`。
-        # 这是写法错误，不进重试：命中就整步失败，带上文件和镜像名。
-        run: cargo test -p wonton-core --lib test_docker_check -- --nocapture
       - name: 一次拉齐测试镜像
         # 测试里 ensure_image 见本机已有就不再联网，跑起来后不依赖 ghcr 的临时令牌还能用多久
         # （实测跑了几分钟后换令牌开始 401）。预拉和测试建容器用同一个引用（mirror 脚本带摘要），
@@ -186,13 +183,6 @@ jobs:
       - name: Docker 集成测试（标了 #[ignore] 的都是）
         shell: bash
         run: cargo nextest run --workspace --locked --profile docker --run-ignored only 2>&1 | tee "$RUNNER_TEMP/test-logs/test-output.log"
-      - name: 官方索引里的清单这份核心都读得懂、渲染得出来
-        run: |
-          # 每个插件都按安装前的渲染走一遍（索引里只有文件的 sha256，被引用的文件用占位内容），
-          # 核心不再注入的变量、改名的变量当场失败，免得合进来以后那些插件装不上。
-          curl -fsSL --retry 5 -o "$RUNNER_TEMP/index.json" \
-            https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
-          cargo run -q -p wonton-core --locked -- plugin check-index "$RUNNER_TEMP/index.json"
       - name: 失败时留下测试输出
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
