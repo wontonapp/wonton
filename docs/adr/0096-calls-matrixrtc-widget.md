@@ -26,7 +26,7 @@ MSC4157 delayed events、MSC4515 RTC transports）替它收发事件。Element X
   `[global.well_known] livekit_url` 同时出现在 `.well-known/matrix/client` 的 `org.matrix.msc4143.rtc_foci` 和
   `GET /_matrix/client/unstable/org.matrix.msc4143/rtc/transports` 里（v2.0.0 源码 `src/api/client/rtc.rs`、
   `src/core/config/well_known.rs`）；`GET /_matrix/federation/v1/openid/userinfo` 在 `allow_federation = false` 时照样注册
-  （`src/api/federation/routes.rs` 的 `register_server_misc_routes`）。以上只读过源码，没跑，见“待验证”。
+  （`src/api/federation/routes.rs` 的 `register_server_misc_routes`）。实测见“验证结果”。
 
 缺的是两头：一个带 LiveKit 的插件，和让插件页能当 Matrix widget 跑的宿主能力。
 
@@ -58,7 +58,8 @@ MSC4157 delayed events、MSC4515 RTC transports）替它收发事件。Element X
   `wonton-plugin-call`，使用方是任何 MatrixRTC 客户端）。没装提供方或它没在跑时回 503 和明确的错误类别，App 的入口也不显示
   （第 3 节），不装作能打。
 - 这个前缀不要 Matrix 访问令牌（授权靠请求体里的 OpenID 令牌），网关不按 Matrix 客户端接口认它。
-- Tuwunel 这一侧的配置（`livekit_url`、delayed events）由聊天线随 Tuwunel 2.0 上线一起配，这篇不安排升级。
+- 核心部署给 Tuwunel 配 `livekit_url`（`TUWUNEL_WELL_KNOWN__LIVEKIT_URL`，开发栈的 `tuwunel.toml` 同值）；Tuwunel 升到 2.0
+  由聊天线做，这篇不安排升级。
 
 **授权服务怎么验 OpenID：** lk-jwt-service 按标准的服务器发现找主人的服务器：取 `https://<服务器名>/.well-known/matrix/server`，
 再请求 `https://<委托地址>/_matrix/federation/v1/openid/userinfo`，只走 HTTPS（v0.9.0 `src/helper.rs` 的
@@ -66,8 +67,9 @@ MSC4157 delayed events、MSC4515 RTC transports）替它收发事件。Element X
 
 - 核心给 `matrix_rtc` 的提供方注入 `WONTON_MATRIX_SERVER_NAME`（插件拿它填 `LIVEKIT_FULL_ACCESS_HOMESERVERS`），并在它的网络里
   把服务器名解析到核心（同 ADR-0063 的核心别名）。核心在这个别名上只答两个路径：`/.well-known/matrix/server`（指回自己）和
-  `/_matrix/federation/v1/openid/userinfo`（转给 Tuwunel），别的一律 404。
-- 证书怎么让 lk-jwt-service 认，实施前先验，见“待验证”。
+  `/_matrix/federation/v1/openid/userinfo`（转给 Tuwunel），别的一律 404；也只答 `matrix_rtc` 提供方网络里来的请求。
+- 别名是核心的一个 TLS 监听（容器里 443，`WONTON_MATRIX_RTC_LISTEN`），证书是核心启动时给服务器名现签的自签证书。
+  `.well-known/matrix/server` 指回 `<服务器名>:443`，免得授权服务退到 8448。lk-jwt-service 怎么认这张证书见“验证结果”。
 
 ### 2. 核心：插件页可以作为 Matrix widget 跑
 
@@ -188,15 +190,31 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 ## 待验证
 
 - **iOS WKWebView：** `127.0.0.1` 的 ICE 候选、`requestMediaCapturePermissionFor`、信令 WebSocket 经本地代理。不通按第 5 节的退路。
-- **lk-jwt-service 换 OpenID 的 TLS：** 有名字、有公共证书的服务器（ADR-0089），别名用入口的证书答。开发栈和不要名字的服务器
-  在两条里选一条：把核心的 CA 放进 lk-jwt-service 的信任库（v0.9.0 用 reqwest 的 rustls，要验它读不读系统证书目录），或者
-  设它的 `LIVEKIT_INSECURE_SKIP_VERIFY_TLS`（别名只在这个插件的网络里，由核心控制）。实测后定，写进这一节。
-- **Tuwunel v2.0.0 运行时：** `/rtc/transports` 的回答、`allow_federation = false` 时 `openid/userinfo` 能否访问、delayed
-  events 的上限和 Element Call 的用法对不对得上。上面都只读过源码。
-- **网页请求 Matrix 对外地址：** 插件页（另一个 origin）请求 `/_wonton/matrix-rtc` 能否过网关的设备门；`baseUrl` 取头像能否显示。
+- **delayed events 的上限**和 Element Call 的用法对不对得上。
+- **授权服务代管 delayed leave：** lk-jwt-service 代管时还要访问 `.well-known/matrix/client` 和 MSC4140 的
+  `/delayed_events/{id}/{action}`（客户端接口），别名不答，代管用不了。两条路待定：别名加开这几个路径，或者插件不用代管、
+  靠客户端自己续期。
+- **网页请求 Matrix 对外地址（真机）：** 见“验证结果”的设备门一条；`baseUrl` 取头像能否显示。
 - **Element Call 在顶层 WebView 里的 widget 模式：** 注入脚本拦下它发给自己的消息后，它的收发是否完整；`parentUrl` 设成
   页面自己的 origin 是否够。
 - **加密房间：** 每人的媒体密钥经加密 to-device 交换，两台 Wonton 设备和一台 Element X 三方互通。
+
+## 验证结果
+
+Tuwunel v2.0.0、lk-jwt-service 0.9.0、livekit-server v1.13.11，Linux + Docker：
+
+- `allow_federation = false` 时 `GET /_matrix/federation/v1/openid/userinfo` 回 200；`/rtc/transports` 回配置的
+  `livekit_url`；没配 client 的 `.well-known/matrix/client` 回 404。回归测试钉住第一条。
+- lk-jwt-service 用 reqwest + rustls-platform-verifier。别名用自签证书、授权服务什么都不配时校验失败（UnknownIssuer），
+  退到 8448 也失败，`/sfu/get` 回 401。它的错误日志里带着 OpenID 访问令牌。
+- `SSL_CERT_FILE`（或 `SSL_CERT_DIR`）指向核心的 CA 时回 200；但这会替换系统根证书，同一个授权服务就验不了别的公网服务器的用户。
+- `LIVEKIT_INSECURE_SKIP_VERIFY_TLS=YES_I_KNOW_WHAT_I_AM_DOING` 时回 200。核心的自签证书按这条实现：插件设它即可，不用
+  核心交出 CA。代价是授权服务验别的服务器（非 full access 的用户）时也不校验证书。两条里定哪条待定。
+- full access 的服务器名换到令牌后，授权服务建 LiveKit 房间成功。
+- 网关测试：真实 Tuwunel 发的 OpenID 令牌经 `/_wonton/matrix-rtc/sfu/get` 换回 LiveKit 令牌，假令牌 401，没装提供方 503
+  （`gateway/matrix_rtc_docker_tests.rs`）。
+- 设备门：App 的本地代理按主机放行家里服务器的域名，插件页请求 `matrix.<base>/_wonton/matrix-rtc` 带着隧道身份到网关，
+  过得了设备门；预检和 CORS 由授权服务自己答。这条只从代码和网关测试得出，没在真机上跑。
 
 ## 和其他 ADR 的关系
 

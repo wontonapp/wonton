@@ -30,7 +30,7 @@ use wonton_protocol::BotKeeper;
 use super::super::render::{Deployment, InstallContext, dry_run, render};
 use super::super::secrets::{self, Secrets};
 use super::super::store::{EnabledPermission, InstalledRecord};
-use super::super::upstreams::{core_aliases, uses_sso};
+use super::super::upstreams::uses_sso;
 use super::{installed_package, newer};
 use crate::l10n;
 use crate::secret::random_token;
@@ -619,8 +619,7 @@ impl PluginManager {
         let Some(core) = &self.cfg.core_container else {
             return Ok(());
         };
-        let public = &self.cfg.public;
-        if core_aliases(public, from) != core_aliases(public, to) {
+        if self.core_aliases_of(from) != self.core_aliases_of(to) {
             self.engine.disconnect_network(network, core).await?;
         }
         self.attach_core(network, core, to).await

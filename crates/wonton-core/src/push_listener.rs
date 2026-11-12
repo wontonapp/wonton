@@ -6,6 +6,7 @@ use anyhow::Context;
 use axum::Router;
 use axum::serve::ListenerExt;
 use tokio::net::TcpListener;
+use wonton_core::gateway::matrix_rtc_alias::{self, AliasPeer, TlsListener};
 
 pub(crate) async fn bind(configured: Option<&str>) -> anyhow::Result<Option<TcpListener>> {
     let Some(listen) = configured else {
@@ -37,6 +38,7 @@ pub(crate) async fn serve(
     app: Router,
     push: Option<(TcpListener, Router)>,
     entry: Option<(TcpListener, Router)>,
+    matrix_rtc: Option<(TlsListener, Router)>,
 ) -> anyhow::Result<()> {
     let gateway = async move {
         axum::serve(
@@ -71,7 +73,42 @@ pub(crate) async fn serve(
         .await
         .context("联邦入口监听异常退出")
     };
+    let matrix_rtc = async move {
+        let Some((listener, app)) = matrix_rtc else {
+            return Ok(());
+        };
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<AliasPeer>(),
+        )
+        .with_graceful_shutdown(super::shutdown())
+        .await
+        .context("matrix_rtc 别名监听异常退出")
+    };
     // 任一监听失败都让核心退出，不留健康的状态页掩盖入口丢失。
-    tokio::try_join!(gateway, push, entry)?;
+    tokio::try_join!(gateway, push, entry, matrix_rtc)?;
     Ok(())
+}
+
+/// `matrix_rtc` 提供方网络里服务器名别名的 TLS 监听（ADR-0096）。没接 Matrix 时不开：没有服务器名可答。
+pub(crate) async fn bind_matrix_rtc(
+    configured: Option<&str>,
+    server_name: Option<&str>,
+) -> anyhow::Result<Option<TlsListener>> {
+    let Some(listen) = configured else {
+        tracing::info!("没有设置 WONTON_MATRIX_RTC_LISTEN，通话插件验不了 OpenID 令牌");
+        return Ok(None);
+    };
+    let Some(server_name) = server_name else {
+        tracing::info!("核心没接 Matrix，不开 matrix_rtc 别名监听");
+        return Ok(None);
+    };
+    let tcp = TcpListener::bind(listen)
+        .await
+        .with_context(|| format!("监听 WONTON_MATRIX_RTC_LISTEN 的 {listen}"))?;
+    tracing::info!(listen = %tcp.local_addr()?, "matrix_rtc 别名监听已启动");
+    Ok(Some(TlsListener {
+        tcp,
+        acceptor: matrix_rtc_alias::acceptor(server_name)?,
+    }))
 }

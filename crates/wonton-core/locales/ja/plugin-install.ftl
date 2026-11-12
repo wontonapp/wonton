@@ -507,7 +507,7 @@ plugin-install-preinstall-failed = プリインストールに失敗しました
 
 plugin-capability-unknown = このコアは能力 { $capability } を認識しません。コアを更新してからインストールしてください
 plugin-capability-third-party-format = 能力 { $capability } が不正です。サードパーティー能力は x-<作者>.<名前> の形で、作者と名前は小文字・数字・ハイフンで書きます
-plugin-capability-egress-no-consumer = egress_proxy には利用者宣言がなく、requires や wants には書けません
+plugin-capability-no-consumer = { $capability } には利用者宣言がなく、requires や wants には書けません
 plugin-capability-duplicate = { $field } の能力 { $capability } が重複しています
 plugin-capability-in-both-lists = 能力 { $capability } を requires と wants の両方に入れられません
 plugin-capability-provider-requires = 能力を提供するプラグインは他の能力を requires できません
@@ -520,3 +520,5 @@ plugin-capability-service-not-forwardable = { $field } は network_mode: none �
 plugin-install-capability-deps-unsupported = このコアはプラグイン間の依存関係にまだ対応していません。コアを更新してからインストールしてください
 plugin-install-runtime-services = runtime が { $runtime } の場合、services は宣言できません
 plugin-install-runtime-unsupported = このコアは runtime が { $runtime } のプラグインのインストールや更新に対応していません。先にコアを更新してください
+plugin-install-matrix-rtc-needs-matrix = コアが Matrix サーバーに接続していないため、matrix_rtc（通話の認可）を提供するアプリはインストールできません
+plugin-install-matrix-rtc-conflict = matrix_rtc（通話の認可）を提供するアプリ { $id } が既にインストールされています。同時に1つだけです

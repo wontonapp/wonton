@@ -52,7 +52,7 @@ struct Provider {
 }
 
 pub(crate) fn generic(name: &str) -> bool {
-    name != capabilities::MODELS.name && name != capabilities::EGRESS_PROXY.name
+    name != capabilities::MODELS.name && !capabilities::has_no_consumer(name)
 }
 
 pub(crate) fn declarations(manifest: &Manifest) -> impl Iterator<Item = &String> {

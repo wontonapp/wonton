@@ -30,7 +30,7 @@ use super::render::{Deployment, InstallContext, render};
 use super::secrets::{self, Secrets};
 use super::store::{EnabledPermission, InstalledRecord};
 use super::upstreams::Endpoint;
-use super::upstreams::{McpTarget, core_aliases, uses_sso};
+use super::upstreams::{McpTarget, uses_sso};
 use super::vars::{OidcVars, OwnerVars};
 use crate::config::PublicUrls;
 use crate::l10n;
@@ -454,7 +454,11 @@ impl PluginManager {
             matrix: None,
             bots: Default::default(),
             models: None,
-            capabilities: self.dependency_vars(manifest)?,
+            capabilities: {
+                let mut vars = self.dependency_vars(manifest)?;
+                vars.extend(self.matrix_rtc_vars(manifest));
+                vars
+            },
             mcp_url: manifest.permissions.contains(&Permission::Tools).then(|| {
                 let port = self.cfg.gateway_port;
                 format!("http://{}:{port}/mcp", crate::config::PLUGIN_MCP_HOST)
@@ -497,14 +501,14 @@ impl PluginManager {
         }
     }
 
-    /// 核心直接跑在宿主上时，插件经自己网络的网关（宿主上网桥的地址）访问核心的别名（[`core_aliases`]）：
+    /// 核心直接跑在宿主上时，插件经自己网络的网关（宿主上网桥的地址）访问核心的别名（[`PluginManager::core_aliases_of`]）：
     /// 内部网络没有默认路由，`host-gateway`（另一个网桥的地址）走不通。返回要写进 `/etc/hosts` 的条目。
     pub(super) async fn hosts_via_gateway(
         &self,
         manifest: &Manifest,
         network: &str,
     ) -> Result<Vec<String>, InstallError> {
-        let aliases = core_aliases(&self.cfg.public, manifest);
+        let aliases = self.core_aliases_of(manifest);
         if self.cfg.core_container.is_some() || aliases.is_empty() {
             return Ok(Vec::new());
         }

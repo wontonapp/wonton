@@ -66,6 +66,11 @@ pub(super) async fn run_gateway(
     (manager, upgrades_after_serve): (Arc<PluginManager>, Arc<Upgrades>),
 ) -> anyhow::Result<()> {
     let push_listener = push_listener::bind(cfg.push_listen.as_deref()).await?;
+    let matrix_rtc = push_listener::bind_matrix_rtc(
+        cfg.matrix_rtc_listen.as_deref(),
+        gateway.matrix.as_ref().map(|matrix| matrix.server_name()),
+    )
+    .await?;
     let app = gateway::router(gateway.clone());
     let public_entry = wonton_core::entry_runtime::bind().await?;
     let share_protocol = sharing_start::protocol(gateway.clone())?;
@@ -86,7 +91,13 @@ pub(super) async fn run_gateway(
         listener,
         app,
         push_listener.map(|listener| (listener, gateway::push_router(gateway.clone()))),
-        public_entry.map(|listener| (listener, wonton_core::entry_runtime::router(gateway))),
+        public_entry.map(|listener| {
+            (
+                listener,
+                wonton_core::entry_runtime::router(gateway.clone()),
+            )
+        }),
+        matrix_rtc.map(|listener| (listener, gateway::matrix_rtc_alias::router(gateway))),
     ));
     // 网关开始接了才核对插件：核对时渲染变了会重建容器，里面的一次性服务要经核心的地址访问核心。
     start_restored_plugins(cfg, &manager, upgrades_after_serve).await?;

@@ -508,7 +508,7 @@ plugin-install-preinstall-failed = Preinstall failed
 
 plugin-capability-unknown = This core does not know capability { $capability }; upgrade the core before installing
 plugin-capability-third-party-format = Capability { $capability } is invalid: third-party capabilities look like x-<vendor>.<name> with lowercase letters, digits, and hyphens
-plugin-capability-egress-no-consumer = egress_proxy has no consumer declaration and cannot appear in requires or wants
+plugin-capability-no-consumer = { $capability } has no consumer declaration and cannot appear in requires or wants
 plugin-capability-duplicate = capability { $capability } is listed twice in { $field }
 plugin-capability-in-both-lists = capability { $capability } cannot be in both requires and wants
 plugin-capability-provider-requires = a plugin that provides capabilities cannot require other capabilities
@@ -521,3 +521,5 @@ plugin-capability-service-not-forwardable = { $field } must not point at a netwo
 plugin-install-capability-deps-unsupported = this core does not support dependencies between plugins yet; upgrade the core before installing
 plugin-install-runtime-services = runtime { $runtime } must not declare services
 plugin-install-runtime-unsupported = this core cannot install or upgrade runtime { $runtime }; upgrade the core first
+plugin-install-matrix-rtc-needs-matrix = The home server isn't connected to a Matrix server, so an app that provides matrix_rtc (call authorization) can't be installed
+plugin-install-matrix-rtc-conflict = App { $id } already provides matrix_rtc (call authorization): there can only be one at a time

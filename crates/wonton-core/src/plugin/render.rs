@@ -330,6 +330,12 @@ fn dry_run_lan(manifest: &Manifest, slug: &str) -> Option<LanGrant> {
 }
 
 fn dry_run_capabilities(manifest: &Manifest) -> BTreeMap<String, String> {
+    let provider = super::matrix_rtc::provides_matrix_rtc(manifest).then(|| {
+        (
+            super::capabilities::MATRIX_SERVER_NAME_VAR.to_owned(),
+            "wonton.invalid".to_owned(),
+        )
+    });
     super::dependencies::declarations(manifest)
         .flat_map(|capability| {
             [
@@ -343,6 +349,7 @@ fn dry_run_capabilities(manifest: &Manifest) -> BTreeMap<String, String> {
                 ),
             ]
         })
+        .chain(provider)
         .collect()
 }
 

@@ -61,6 +61,7 @@ mod manifest_mcp;
 mod manifest_oidc;
 mod manifest_static;
 mod manifest_tabs;
+pub mod matrix_rtc;
 mod mcp_server;
 pub(crate) mod model_health;
 pub(crate) mod model_providers;

@@ -117,6 +117,27 @@ pub const WEB_STORAGE: Capability = Capability {
     }),
 };
 
+/// MatrixRTC 的 LiveKit 授权服务（ADR-0096）：使用方是任何 MatrixRTC 客户端，经网关 Matrix 对外地址下的
+/// [`MATRIX_RTC_PREFIX`] 到达提供方，所以和出网代理一样不能写在 requires/wants 里，同一时间只有一个提供方。
+pub const MATRIX_RTC: Capability = Capability {
+    name: "matrix_rtc",
+    interface: "MSC4195 的 LiveKit 授权服务（/sfu/get、/get_token），用 Matrix OpenID 令牌换 LiveKit 令牌",
+    credentials: Credentials::None,
+    high_privilege: false,
+    hosted: None,
+};
+
+/// Tuwunel 公布的 `livekit_url` 在 Matrix 对外地址下的路径，网关去掉它转给 [`MATRIX_RTC`] 的提供方。
+pub const MATRIX_RTC_PREFIX: &str = "/_wonton/matrix-rtc";
+
+/// 注入给 [`MATRIX_RTC`] 提供方的 Matrix 服务器名（填 lk-jwt-service 的 `LIVEKIT_FULL_ACCESS_HOMESERVERS`）。
+pub const MATRIX_SERVER_NAME_VAR: &str = "WONTON_MATRIX_SERVER_NAME";
+
+/// 没有使用方声明的能力：核心或网关自己用，不能写在 requires/wants 里。
+pub fn has_no_consumer(name: &str) -> bool {
+    name == EGRESS_PROXY.name || name == MATRIX_RTC.name
+}
+
 /// 全部核心定义的能力。加一项要改核心、发版：第三方插件作者不能自己发明不带 `x-` 的能力。
 pub const ALL: &[Capability] = &[
     MODELS,
@@ -125,6 +146,7 @@ pub const ALL: &[Capability] = &[
     JELLYFIN,
     STATIC_WEB,
     WEB_STORAGE,
+    MATRIX_RTC,
 ];
 
 pub fn lookup(name: &str) -> Option<&'static Capability> {
@@ -214,11 +236,11 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
     for (field, names) in [("requires", &manifest.requires), ("wants", &manifest.wants)] {
         for name in names {
             check_name(name, langs)?;
-            if name == EGRESS_PROXY.name {
+            if has_no_consumer(name) {
                 return Err(ManifestError::Invalid(text(
                     langs,
-                    "plugin-capability-egress-no-consumer",
-                    &[],
+                    "plugin-capability-no-consumer",
+                    &[("capability", name.as_str().into())],
                 )));
             }
         }
@@ -379,8 +401,8 @@ mod tests {
     fn aliases_route_through_the_same_gateway_path() {
         assert_eq!(alias(MODELS.name), crate::config::PLUGIN_MODELS_HOST);
         for capability in ALL {
-            if capability.name == EGRESS_PROXY.name {
-                continue; // egress_proxy 没有使用方声明，出网插件拿的是 WONTON_PROXY_URL。
+            if has_no_consumer(capability.name) {
+                continue; // 没有使用方声明：出网插件拿的是 WONTON_PROXY_URL，matrix_rtc 经 Matrix 对外地址。
             }
             assert!(
                 alias(capability.name).ends_with(".wonton.internal"),
@@ -474,20 +496,15 @@ mod tests {
         drop(e);
     }
 
+    /// 出网代理和 matrix_rtc 的使用方不是插件，写进 requires/wants 当场报错。
     #[test]
-    fn egress_proxy_has_no_consumer_declaration() {
-        let e = validate(
-            &manifest(&["egress_proxy"], &[], false),
-            &Languages::default(),
-        )
-        .unwrap_err();
-        assert!(e.to_string().contains("egress_proxy"));
-        let e = validate(
-            &manifest(&[], &["egress_proxy"], false),
-            &Languages::default(),
-        )
-        .unwrap_err();
-        assert!(e.to_string().contains("egress_proxy"));
+    fn capabilities_without_consumers_cannot_be_declared() {
+        for name in ["egress_proxy", "matrix_rtc"] {
+            let e = validate(&manifest(&[name], &[], false), &Languages::default()).unwrap_err();
+            assert!(e.to_string().contains(name));
+            let e = validate(&manifest(&[], &[name], false), &Languages::default()).unwrap_err();
+            assert!(e.to_string().contains(name));
+        }
     }
 
     #[test]

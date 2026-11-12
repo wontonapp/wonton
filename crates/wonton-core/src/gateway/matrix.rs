@@ -4,6 +4,7 @@
 //! | --- | --- | --- |
 //! | POST | `<base>/_wonton/matrix/login-token` | 签一个 Tuwunel 登录用的一次性 JWT，连同 homeserver 地址 |
 //! | 任意 | `matrix.<base>/_matrix/client/…`、`/_matrix/media/…` | Matrix 客户端接口，转发给 Tuwunel |
+//! | 任意 | `matrix.<base>/_wonton/matrix-rtc/…` | MatrixRTC 授权服务，转给 `matrix_rtc` 的提供方（[`super::matrix_rtc`]） |
 //!
 //! 登录令牌能换出主人的 Matrix 账号，所以接口只认隧道身份（局域网浏览器的核心会话不行），用 `POST` 让核心
 //! 域名上的跨站修改拦截对它生效，也不发 CORS 头，插件网页读不到响应。核心没有接 Tuwunel 时两个入口都如实报
@@ -90,6 +91,9 @@ pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
             "unauthenticated",
             "Matrix 只对经隧道接入的已配对设备开放",
         );
+    }
+    if super::matrix_rtc::is_prefixed(req.uri().path()) {
+        return super::matrix_rtc::request(gateway, req).await;
     }
     let req = match room_rules::check(req).await {
         Ok(req) => req,
@@ -283,7 +287,7 @@ fn is_client_api(path: &str) -> bool {
 /// 合法请求：编码过的 `/`、`\`（`%2F`、`%5C`）放行。ruma 把路径参数里的 `/`、`\` 编成它们，而 Megolm 会话 ID
 /// 是标准 base64，大约一半带 `/`，按会话取密钥备份（`GET /_matrix/client/v3/room_keys/keys/{房间}/{会话}`）
 /// 要用到。
-fn is_ambiguous(path: &str) -> bool {
+pub(super) fn is_ambiguous(path: &str) -> bool {
     path.contains('\\')
         || path
             .split('/')
