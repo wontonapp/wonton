@@ -88,7 +88,9 @@ extensions.configure<ApplicationAndroidComponentsExtension> {
         val buildType = variant.buildType
         val wontonVersionProperty = providers.gradleProperty("wontonVersion").orNull
         val appVersion = providers.exec {
-            commandLine("bash", versionScript.absolutePath, buildType)
+            // 2>&1 合进 stdout：providers.exec 不回显 stderr，脚本失败时 Gradle 只报 exit code，
+            // “发版要传 WONTON_VERSION…”的人话就看不见了；合流后解析失败会把原话带进异常。
+            commandLine("bash", "-c", "\"\$1\" \"\$2\" 2>&1", "app-version", versionScript.absolutePath, buildType)
             if (wontonVersionProperty != null) {
                 environment("WONTON_VERSION", wontonVersionProperty)
             }
