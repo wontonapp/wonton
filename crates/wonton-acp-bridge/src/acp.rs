@@ -10,7 +10,7 @@ use std::{
 
 use serde_json::{Value, json};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncWriteExt, BufReader},
     net::{UnixStream, unix::OwnedReadHalf},
     sync::{Mutex, broadcast, mpsc, oneshot, watch},
 };
@@ -26,6 +26,7 @@ use crate::{
 };
 
 pub mod auth;
+mod frame;
 mod mode;
 mod permissions;
 use permissions::PermissionWaiter;
@@ -594,16 +595,16 @@ impl AcpClient {
 }
 
 async fn read_loop(inner: Arc<Inner>, reader: OwnedReadHalf) {
-    let mut lines = BufReader::new(reader).lines();
+    let mut reader = BufReader::new(reader);
+    let mut frame = Vec::new();
     loop {
-        let line = match lines.next_line().await {
-            Ok(Some(line)) => line,
-            Ok(None) | Err(_) => break,
-        };
-        if line.len() > MAX_FRAME_BYTES {
-            break;
+        match frame::read_frame(&mut reader, &mut frame).await {
+            frame::FrameRead::Frame => {}
+            frame::FrameRead::Oversize | frame::FrameRead::Eof | frame::FrameRead::Transport => {
+                break;
+            }
         }
-        let Ok(message) = serde_json::from_str::<Value>(&line) else {
+        let Ok(message) = serde_json::from_slice::<Value>(&frame) else {
             break;
         };
         if message.get("method").is_some() {
