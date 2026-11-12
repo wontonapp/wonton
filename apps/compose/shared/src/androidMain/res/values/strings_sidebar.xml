@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the app on the sidebar. -->
+    <string name="sidebar_title">Wonton</string>
+    <!-- Toolbar button that opens the sidebar on a root page. -->
+    <string name="sidebar_open">Sidebar</string>
+    <!-- Tap target covering the pushed main screen while the sidebar is open; tapping collapses the sidebar. -->
+    <string name="sidebar_collapse">Collapse sidebar</string>
+    <!-- Sidebar row under the title: the home server is connected. -->
+    <string name="sidebar_status_connected">Home server · Connected</string>
+    <!-- Sidebar row under the title: connecting to the home server. -->
+    <string name="sidebar_status_connecting">Home server · Connecting</string>
+    <!-- Sidebar row under the title: can\'t reach the home server. -->
+    <string name="sidebar_status_disconnected">Home server · Can\'t connect</string>
+    <!-- Sidebar row under the title: no home server paired yet. -->
+    <string name="sidebar_status_not_configured">No home server paired yet</string>
+    <!-- Sidebar row that shows the chat list. -->
+    <string name="sidebar_chats">Chats</string>
+    <!-- Sidebar row that opens the app store. -->
+    <string name="sidebar_store">Store</string>
+    <!-- Sidebar section title above the installed apps that can be opened. -->
+    <string name="sidebar_my_apps">My apps</string>
+    <!-- Sidebar link at the right of My apps that opens the app grid. -->
+    <string name="sidebar_all">All</string>
+    <!-- Sidebar row shown when more than eight apps are installed; opens the app grid. -->
+    <string name="sidebar_all_apps">All apps</string>
+    <!-- Round button at the bottom of the sidebar that opens Settings. -->
+    <string name="sidebar_settings">Settings</string>
+    <!-- Accent capsule at the bottom of the sidebar that starts a new chat. -->
+    <string name="sidebar_new_chat">New chat</string>
+    <!-- Content description of the red count badge on the Store row: how many apps have updates. -->
+    <string name="sidebar_updates_badge">%1$d updates available</string>
+    <!-- Content description of the red dot on an app row: the app has an update. -->
+    <string name="sidebar_updatable">Update available</string>
+    <!-- Content description of the small pin on an app row: the app\'s page is pinned to the navigation bar. -->
+    <string name="sidebar_pinned">Pinned to the navigation bar</string>
+    <!-- Row note for an app whose update needs confirmation before it can start. -->
+    <!-- Content description of the red dot on the settings button in the sidebar. -->
+    <string name="sidebar_needs_attention">Needs your attention</string>
+</resources>

@@ -58,6 +58,7 @@ install-images-from = Images come from { $images }
 install-images-unpinned = Images aren't pinned by digest: { $images }
 install-webui-sso = Opening its web page in Wonton signs you in automatically.
 install-host-network-egress = Services in the host network reach the internet through the host's own routing, not Wonton's Internet proxy.
+install-host-network-proxied = Services in the host network go through your Internet proxy too.
 install-system-preinstalled = System apps can only come preinstalled with your home server.
 install-already-installed = { $id } is already installed (version { $version })
 install-unreviewed-provider = Wonton hasn't reviewed this app; the code and images are provided by { $provider }.

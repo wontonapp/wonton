@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_profile">個人資料</string>
+    <string name="settings_appearance">外觀</string>
+    <string name="settings_nav_bar">底部導覽列</string>
+    <string name="settings_default_agent">預設 Agent</string>
+    <string name="settings_about">關於</string>
+    <string name="settings_version">版本</string>
+    <string name="settings_toolbar">設定</string>
+    <string name="settings_toolbar_update">設定，有新版本</string>
+    <string name="settings_show_setup_again">重看初始設定</string>
+    <string name="settings_language">語言</string>
+    <string name="settings_language_system">跟隨系統</string>
+    <string name="shortcut_icon_missing">取不到「%1$s」的圖示，請檢查連線後重新開啟雲吞。</string>
+    <string name="shortcut_icon_convert_failed">「%1$s」的圖示無法轉換，請重新開啟雲吞。</string>
+    <string name="shortcut_new_chat">新增聊天</string>
+    <string name="shortcut_agent_chat">詢問 Bot</string>
+    <!-- 通知設定頁的開關：開 = 前台服務讓和家用伺服器的隧道在後台不斷，新訊息由 App 彈本機通知；關 = 走 UnifiedPush 推送（ADR-0003）。 -->
+    <string name="notification_title">通知</string>
+    <string name="notification_system">系統通知</string>
+    <string name="notification_push">推送</string>
+    <string name="notification_channel_message">聊天訊息</string>
+    <string name="notification_channel_confirmation">等你確認</string>
+    <string name="notification_value_system_blocked">系統裡沒允許</string>
+    <string name="notification_channel_plugin">應用程式通知</string>
+    <string name="notification_value_on">已開啟</string>
+    <string name="notification_value_off">已關閉</string>
+    <string name="notification_value_registering">註冊中</string>
+    <string name="notification_value_not_set">未開啟</string>
+    <string name="notification_value_unavailable">收不到</string>
+    <string name="notification_channel_created">已建立</string>
+    <string name="notification_channel_not_created">未建立</string>
+    <string name="push_status_no_endpoint">未註冊</string>
+    <string name="push_status_registering">正在註冊</string>
+    <string name="push_status_registered">已註冊</string>
+    <string name="push_status_unavailable">收不到推送，請檢查系統通知和分發器</string>
+    <string name="push_status_failed_transport">註冊失敗，連上家用伺服器後重試</string>
+    <string name="push_status_failed_unauthorized">註冊失敗，請重新配對</string>
+    <!-- Push status line when registering failed because the home server refused it although this device is signed in. -->
+    <string name="push_status_failed_forbidden">註冊失敗，家用伺服器拒絕了</string>
+    <string name="push_status_failed_upstream">註冊失敗，家用伺服器出錯了</string>
+    <string name="push_status_failed_not_ready">註冊失敗，請等聊天連線就緒</string>
+    <string name="push_status_failed_invalid_input">註冊失敗，推送位址無效</string>
+</resources>

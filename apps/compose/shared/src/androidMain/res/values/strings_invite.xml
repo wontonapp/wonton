@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Notice title when the pairing code ran out of time. -->
+    <string name="invite_expired">This code has expired.</string>
+    <!-- Under the QR code: how long the code is still valid. Argument: the remaining time as m:ss. -->
+    <string name="invite_expires_in">Expires in %1$s</string>
+    <!-- Notice title when the pairing code couldn't be fetched; the core's reason is shown below. -->
+    <string name="invite_failed_title">Couldn\'t get a pairing code</string>
+    <!-- Explanation under the QR code: what the new device's owner should do. The code works only once. -->
+    <string name="invite_instructions">Open Wonton on the new device and scan this code to add it. The code works only once.</string>
+    <!-- Label above the pairing code as text, for when the QR code can't be scanned. -->
+    <string name="invite_paste_fallback">If you can\'t scan, paste this text</string>
+    <!-- Accessibility label of the QR code image with the pairing code. -->
+    <string name="invite_qr_label">Pairing QR code</string>
+    <!-- Button under the expired notice: get a new code. -->
+    <string name="invite_renew">Get a new code</string>
+    <!-- Shown next to a spinner while the pairing code is being requested. -->
+    <string name="invite_requesting">Asking your home server for a pairing code…</string>
+    <!-- Button under the failed notice: request a pairing code again. -->
+    <string name="invite_try_again">Try again</string>
+    <string name="invite_device_added">Device added</string>
+    <string name="invite_cannot_give">This device doesn\'t have all the chat keys either, so the new device can\'t read earlier messages.</string>
+</resources>

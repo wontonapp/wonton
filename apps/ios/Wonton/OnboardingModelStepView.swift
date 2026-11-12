@@ -16,7 +16,7 @@ struct OnboardingModelStepView: View {
                 ProblemNotice(problem: problem.onboardingProblem)
                     .id("onboarding-model-problem")
                 if problem.reason != .keyRejected {
-                    Button(String(localized: .commonRetry)) { send(.refreshOnboarding) }
+                    Button(String(localized: .Common.commonRetry)) { send(.refreshOnboarding) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             }
@@ -26,7 +26,7 @@ struct OnboardingModelStepView: View {
                 LoadingView().frame(maxWidth: .infinity)
             }
             ForEach(step.logins, id: \.id) { login in
-                StepOptionRow(title: String(localized: .onboardingModelUseLogin(login.title)),
+                StepOptionRow(title: String(localized: .Onboarding5.onboardingModelUseLogin(login.title)),
                               isSelected: isLoginSelected(login.id)) {
                     form.expand(nil)
                     send(.chooseModelLogin(id: login.id))
@@ -47,7 +47,7 @@ struct OnboardingModelStepView: View {
 
     @ViewBuilder private func providerList(_ list: ModelProviders) -> some View {
         if !list.configured.isEmpty {
-            StepOptionRow(title: String(localized: .onboardingModelUseCurrent),
+            StepOptionRow(title: String(localized: .Onboarding4.onboardingModelUseCurrent),
                           isSelected: step.choice == .current) {
                 form.expand(nil)
                 send(.useCurrentModel)
@@ -68,15 +68,15 @@ struct OnboardingModelStepView: View {
                     }
                 } label: {
                     HStack {
-                        Text(.onboardingModelMore)
+                        Text(.Onboarding5.onboardingModelMore)
                         WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
                             .rotationEffect(showsMoreProviders ? .degrees(90) : .zero)
                     }
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
                 .accessibilityValue(showsMoreProviders
-                    ? String(localized: .onboardingModelExpanded)
-                    : String(localized: .onboardingModelCollapsed))
+                    ? String(localized: .Onboarding1.onboardingModelExpanded)
+                    : String(localized: .Onboarding2.onboardingModelCollapsed))
                 .disabled(step.testing)
                 if showsMoreProviders {
                     ForEach(providers.filter { !$0.recommended }, id: \.id) { providerRow($0) }
@@ -84,7 +84,7 @@ struct OnboardingModelStepView: View {
             }
             if list.custom { customRow }
         } else if let url = list.webUrl.flatMap(URL.init(string:)) {
-            Button(String(localized: .onboardingModelOpenSettings)) { openGateway(url) }
+            Button(String(localized: .Onboarding5.onboardingModelOpenSettings)) { openGateway(url) }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
         }
     }
@@ -106,7 +106,8 @@ struct OnboardingModelStepView: View {
     }
 
     @ViewBuilder private var customRow: some View {
-        StepOptionRow(title: String(localized: .onboardingModelCustom), isSelected: isCustomSelected, select: {
+        StepOptionRow(title: String(localized: .Onboarding5.onboardingModelCustom), isSelected: isCustomSelected,
+            select: {
             form.expand(.custom)
         }, trailing: { disclosure(isExpanded: form.expanded == .custom) })
         .disabled(step.testing)
@@ -119,7 +120,7 @@ struct OnboardingModelStepView: View {
     }
 
     private var unreachable: some View {
-        Text(String(localized: .onboardingModelUnreachable))
+        Text(String(localized: .Onboarding4.onboardingModelUnreachable))
             .wontonText(WontonTheme.typography.supporting)
             .foregroundStyle(Color(colors.warning))
     }

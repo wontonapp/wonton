@@ -75,6 +75,7 @@ async fn home_with(
         data_dir: dir.path().to_owned(),
         apps_dir: dir.path().join("apps"),
         shares_dir: dir.path().join("shares"),
+        relay_dir: dir.path().join("relay"),
         core_container: None,
         tz: "UTC".into(),
         puid: 1000,

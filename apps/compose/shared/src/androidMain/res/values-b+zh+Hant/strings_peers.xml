@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown while waiting for the camera permission. -->
+    <string name="camera_waiting">等待相機權限…</string>
+    <!-- Notice when the camera permission was declined but can be asked again. -->
+    <string name="camera_denied">雲吞沒有相機權限，無法掃碼。</string>
+    <!-- Button to ask for the camera permission again. -->
+    <string name="camera_allow">允許使用相機</string>
+    <!-- Notice when the camera permission was declined permanently. -->
+    <string name="camera_blocked">雲吞沒有相機權限，可以在系統設定裡開啟。</string>
+    <!-- Button that opens the app's page in system settings. -->
+    <string name="camera_settings">開啟系統設定</string>
+    <!-- Notice when the device has no camera at all. -->
+    <string name="camera_missing">這台裝置沒有相機。</string>
+    <!-- Reason shown when system policy disabled the camera. -->
+    <string name="qr_scanner_camera_disabled">相機被系統政策停用了</string>
+    <!-- Reason shown for other CameraX errors. Argument: the numeric CameraX error code. -->
+    <string name="qr_scanner_camera_error_code">相機出錯了（CameraX 錯誤碼 %1$d）</string>
+    <!-- Reason shown when the camera can't open at all; the pairing code can be pasted instead. -->
+    <string name="qr_scanner_camera_failed">相機打不開，請貼上配對碼</string>
+    <!-- Reason shown when the camera is used by another app. -->
+    <string name="qr_scanner_camera_in_use">相機正被別的應用程式佔用</string>
+    <!-- Reason shown when Do Not Disturb mode blocks the camera. -->
+    <string name="qr_scanner_do_not_disturb">零打擾模式下開不了相機</string>
+    <!-- Reason shown when the device has no rear camera to scan with. -->
+    <string name="qr_scanner_no_back_camera">這台裝置沒有後置相機</string>
+    <string name="keepalive_toggle">保持連線</string>
+    <!-- 系統裡關了通知時，開關下面的一行說明：服務照常執行，但新訊息彈不出通知。 -->
+    <string name="keepalive_without_permission">沒有通知權限：新訊息彈不出通知，連線照常保持。</string>
+</resources>

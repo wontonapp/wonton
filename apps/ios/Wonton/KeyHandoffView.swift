@@ -37,7 +37,7 @@ struct KeyHandoffView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-                Text(.handoffTitle)
+                Text(.Handoff.handoffTitle)
                     .wontonText(WontonTheme.typography.screenTitle)
                     .foregroundStyle(Color(colors.textPrimary))
                 progress
@@ -45,7 +45,7 @@ struct KeyHandoffView: View {
                     model.send(.skipKeyHandoff)
                     openBackup()
                 } label: {
-                    Text(.handoffNoOtherDevice)
+                    Text(.Handoff.handoffNoOtherDevice)
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.textSecondary))
                         .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target)
@@ -64,16 +64,16 @@ struct KeyHandoffView: View {
         if case .receiving(unanswered: true) = model.viewModel.encryption.keyHandoff {
             WontonNotice(
                 icon: .warning,
-                title: String(localized: .handoffUnansweredTitle),
-                lines: [String(localized: .handoffUnansweredMessage)]
+                title: String(localized: .Handoff.handoffUnansweredTitle),
+                lines: [String(localized: .Handoff.handoffUnansweredMessage)]
             ) {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     Button { model.send(.startDeviceVerification) } label: {
-                        Text(.handoffTryAgain).frame(maxWidth: .infinity)
+                        Text(.Handoff.handoffTryAgain).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle(kind: .primary))
                     Button { model.keyHandoffDeferred = true } label: {
-                        Text(.handoffLater).frame(maxWidth: .infinity)
+                        Text(.Handoff.handoffLater).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
@@ -84,7 +84,7 @@ struct KeyHandoffView: View {
         } else {
             HStack(spacing: WontonTheme.spacing.s12) {
                 ProgressView()
-                Text(.handoffWaiting)
+                Text(.Handoff.handoffWaiting)
                     .wontonText(WontonTheme.typography.body)
                     .foregroundStyle(Color(colors.textPrimary))
             }

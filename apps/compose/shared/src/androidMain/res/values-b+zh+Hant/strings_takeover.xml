@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 全屏頁面膠囊上退出全屏的按鈕。 -->
+    <string name="takeover_hand_back">交還</string>
+    <string name="takeover_start">我來操作</string>
+    <string name="takeover_got_it">知道了</string>
+    <string name="takeover_not_started">沒有開始操作：%1$s</string>
+    <string name="takeover_lost">已交還，連線斷了</string>
+    <string name="takeover_lost_reason">已交還：%1$s</string>
+</resources>

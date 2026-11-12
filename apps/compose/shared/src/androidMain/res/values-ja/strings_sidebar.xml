@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- サイドバーに表示するアプリの名前。 -->
+    <string name="sidebar_title">Wonton</string>
+    <!-- ルートページの左上にあるサイドバーを開くボタン。 -->
+    <string name="sidebar_open">サイドバー</string>
+    <!-- サイドバーが開いているときにメイン画面を覆う層。タップするとサイドバーを閉じる。 -->
+    <string name="sidebar_collapse">サイドバーを閉じる</string>
+    <!-- サイドバーのタイトル下の状態：自宅サーバーに接続済み。 -->
+    <string name="sidebar_status_connected">自宅サーバー · 接続済み</string>
+    <!-- サイドバーのタイトル下の状態：自宅サーバーに接続中。 -->
+    <string name="sidebar_status_connecting">自宅サーバー · 接続中</string>
+    <!-- サイドバーのタイトル下の状態：自宅サーバーに接続できない。 -->
+    <string name="sidebar_status_disconnected">自宅サーバー · 接続できない</string>
+    <!-- サイドバーのタイトル下の状態：まだ自宅サーバーとペアリングしていない。 -->
+    <string name="sidebar_status_not_configured">まだ自宅サーバーに接続していません</string>
+    <!-- サイドバーでチャット一覧に戻る行。 -->
+    <string name="sidebar_chats">チャット</string>
+    <!-- サイドバーでストアを開く行。 -->
+    <string name="sidebar_store">ストア</string>
+    <!-- サイドバーで開けるアプリの上にある小見出し。 -->
+    <string name="sidebar_my_apps">マイアプリ</string>
+    <!-- マイアプリの右側でアプリ一覧を開くリンク。 -->
+    <string name="sidebar_all">すべて</string>
+    <!-- アプリが8個を超えるときのサイドバーの最後の行。アプリ一覧を開く。 -->
+    <string name="sidebar_all_apps">すべてのアプリ</string>
+    <!-- サイドバー下部で設定を開く丸いボタン。 -->
+    <string name="sidebar_settings">設定</string>
+    <!-- サイドバー下部で新しいチャットを始めるアクセント色のカプセル。 -->
+    <string name="sidebar_new_chat">新しいチャット</string>
+    <!-- ストアの行にある赤い数字バッジの読み上げ：アップデートのあるアプリの数。 -->
+    <string name="sidebar_updates_badge">%1$d件のアップデートあり</string>
+    <!-- アプリの行にある赤い点の読み上げ：このアプリにアップデートがある。 -->
+    <string name="sidebar_updatable">アップデートあり</string>
+    <!-- アプリの行にある小さなピンの読み上げ：このアプリのページがナビゲーションバーに固定されている。 -->
+    <string name="sidebar_pinned">ナビゲーションバーに固定済み</string>
+    <!-- 一行の注意：このアプリのアップデートは確認してから始まる。 -->
+    <string name="sidebar_needs_attention">対応が必要です</string>
+</resources>

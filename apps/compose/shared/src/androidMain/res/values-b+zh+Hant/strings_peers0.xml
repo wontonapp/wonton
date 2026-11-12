@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Empty page: the one sentence above the two add actions. -->
+    <string name="peers_empty">還沒有連線其他伺服器</string>
+    <!-- Row subtitle when the other server can't be reached. -->
+    <string name="peers_status_offline">對方伺服器連不上</string>
+    <!-- Under the offline subtitle. Argument: relative time like "3 hours ago". -->
+    <string name="peers_last_connected">上次連線：%1$s</string>
+    <!-- Approve button on a request row. -->
+    <string name="peers_request_approve">同意</string>
+    <!-- Confirmation dialog title for removing a paired server. Argument: the other owner's display name. -->
+    <string name="peers_remove_title">移除「%1$s」？</string>
+    <!-- Failure title when the other server can't be reached. -->
+    <string name="peers_error_peer_unreachable">連不上對方的伺服器</string>
+    <!-- Failure title when the two servers are already paired. -->
+    <string name="peers_error_already_paired">已經和這台伺服器連線過了</string>
+    <!-- Failure title when the other server can't take more requests right now. -->
+    <string name="peers_error_too_many_requests">對方暫時收不了請求，稍後再試</string>
+    <!-- Notice when the request just handled was already processed elsewhere; the list refreshes itself. -->
+    <string name="peers_error_request_not_found">這條請求已經處理過了</string>
+</resources>

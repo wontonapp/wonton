@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="handoff_title">もう一方のデバイスで続けてください</string>
+    <string name="handoff_waiting">もう一方のデバイスで「デバイスを追加」を開いたままにしてください。</string>
+    <string name="handoff_unanswered_title">もう一方のデバイスから応答がありません</string>
+    <string name="handoff_unanswered_message">もう一方のデバイスでWontonを開き、「デバイスを追加」に戻ってください。</string>
+    <string name="handoff_try_again">もう一度試す</string>
+    <string name="handoff_later">後で</string>
+    <string name="handoff_no_other_device">他のデバイスが手元にない</string>
+</resources>

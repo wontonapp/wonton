@@ -38,13 +38,15 @@ struct InstallConfirmView: View {
             }
         }
         .wontonModalScreen(confirmation.actionTitle, showsStatus: true)
+        // 这一屏有密钥输入，切后台的快照里整页盖住。
+        .secretSnapshotMask()
         .wontonDialog(problem: rejection, isPresented: isShowingRejection)
         .wontonDialog(
-            String(localized: .pluginPermissionUnderstandTitle),
-            message: String(localized: .pluginPermissionHostRoot),
+            String(localized: .Plugin3.pluginPermissionUnderstandTitle),
+            message: String(localized: .Plugin0.pluginPermissionHostRoot),
             isPresented: $hostAcknowledgement,
             actions: [
-                WontonDialogAction(title: String(localized: .commonCancel)),
+                WontonDialogAction(title: String(localized: .Common.commonCancel)),
                 WontonDialogAction(title: confirmation.actionTitle, kind: .danger) {
                     if let preview { confirm(preview) }
                 }
@@ -182,13 +184,13 @@ private struct PreviewContent: View {
                 }
                 if let missing = preview.missingProfile {
                     WontonNotice(icon: .info, title: missing, isError: false) {
-                        Button(String(localized: .installFillProfile), action: fillProfile)
+                        Button(String(localized: .Install.installFillProfile), action: fillProfile)
                             .buttonStyle(WontonButtonStyle())
                     }
                 }
                 if !preview.notices.isEmpty { NoticeLines(lines: preview.notices) }
                 if !preview.permissions.isEmpty {
-                    DetailSection(title: String(localized: .installPermissions)) {
+                    DetailSection(title: String(localized: .Install.installPermissions)) {
                         ForEach(preview.permissions, id: \.permission) { line in
                             if line.optional {
                                 PermissionRow(line: line, selection: Binding(
@@ -208,7 +210,7 @@ private struct PreviewContent: View {
                     }
                 }
                 if !preview.secretInputs.isEmpty {
-                    DetailSection(title: String(localized: .secretSectionTitle)) {
+                    DetailSection(title: String(localized: .Plugins.secretSectionTitle)) {
                         SecretInputsSection(inputs: preview.secretInputs, values: secrets) { name, value in
                             secrets[name] = value
                         }
@@ -219,7 +221,7 @@ private struct PreviewContent: View {
                     LanWebuiToggle(offer: offer, isOn: $lanWebui)
                 }
                 if let notes = preview.releaseNotes {
-                    DetailSection(title: String(localized: .installReleaseNotes)) {
+                    DetailSection(title: String(localized: .Install.installReleaseNotes)) {
                         Text(notes)
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
@@ -276,8 +278,8 @@ private struct AlwaysAllowedSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
             BotSwitches(
-                title: String(localized: .toolPolicyAlwaysTitle),
-                risk: String(localized: .installAlwaysAllowedRisk),
+                title: String(localized: .ToolPolicy.toolPolicyAlwaysTitle),
+                risk: String(localized: .Install.installAlwaysAllowedRisk),
                 bots: bots,
                 enabled: true,
                 change: change

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Label of the back button in pushed pages' top bars. -->
+    <string name="design_back">返回</string>
+    <!-- Accessibility label of the small spinner shown while a step's action runs. Android only. -->
+    <string name="design_busy">正在處理</string>
+    <!-- Label of the button that empties the search field. -->
+    <string name="design_clear">清除</string>
+    <!-- Label of the close button in modal pages' top bars. -->
+    <string name="design_close">關閉</string>
+    <!-- Default single button of the app's dialog, which just closes it. -->
+    <string name="design_ok">好</string>
+    <!-- Button on setup steps: skip this step. -->
+    <string name="design_skip">跳過</string>
+    <!-- Button on setup steps: go back to the previous step. -->
+    <string name="design_step_back">上一步</string>
+    <!-- Accessibility label of the step counter on setup steps, shown as 2/4. Arguments: the current step and the total. -->
+    <string name="design_step_progress">第 %1$d 步，共 %2$d 步</string>
+    <!-- Name of the custom accessibility action that opens a tab's menu. Android only. -->
+    <string name="design_tab_menu">標籤選單</string>
+    <!-- Accessibility state of a list row with the update badge dot. -->
+    <string name="design_update_badge">有新版本</string>
+    <!-- Accessibility state of a list row with a counted badge. Argument: the count. -->
+    <string name="design_badge_count">%1$d 則待處理</string>
+</resources>

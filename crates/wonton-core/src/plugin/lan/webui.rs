@@ -79,7 +79,7 @@ pub fn impersonable(package: &PluginPackage) -> bool {
     }
     let env = package.raw_environment(&webui.service);
     let wide = env.contains("0.0.0.0/0") || env.contains("::/0");
-    wide || !env.contains(core_address::VAR)
+    wide || !(env.contains(core_address::VAR) || env.contains(core_address::CIDR_VAR))
 }
 
 /// 这个插件包要开关的端口；没有时为空。

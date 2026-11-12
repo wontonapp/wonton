@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Explicit acknowledgement of the warning about sharing an app without declared friend support. No arguments. -->
+    <string name="share_acknowledge">このリスクを理解し、同意します</string>
+    <!-- Button that creates an app share for a friend or group. No arguments. -->
+    <string name="share_add">共有を追加</string>
+    <!-- Expiration choice that opens a date and time picker. No arguments. -->
+    <string name="share_custom">日時を選択</string>
+    <!-- Label of the share expiration picker. No arguments. -->
+    <string name="share_expires">有効期限</string>
+    <!-- Identity verification detail when secure discovery of the identity server failed. No arguments. -->
+    <string name="share_identity_discovery">認証サーバーを安全に検出できませんでした。</string>
+    <!-- Identity verification detail for an invalid OpenID identity token. No arguments. -->
+    <string name="share_identity_invalid">認証トークンが無効です。</string>
+    <!-- Identity verification detail for an unrecognized failure category. No arguments. -->
+    <string name="share_identity_other">本人確認に失敗しました。</string>
+    <!-- Expiration choice that keeps access until the owner revokes it. No arguments. -->
+    <string name="share_indefinite">取り消すまで</string>
+    <!-- Apps page section title for apps shared by other people. No arguments. -->
+    <string name="share_received">自分と共有されたアプリ</string>
+    <!-- Button or accessibility label that refreshes apps shared by friends. No arguments. -->
+    <string name="share_refresh">共有を更新</string>
+    <!-- Button that saves a new or edited app share. No arguments. -->
+    <string name="share_save">共有を保存</string>
+    <!-- Recipient label when the saved friend or group is no longer available. No arguments. -->
+    <string name="share_unknown">不明な共有相手</string>
+</resources>

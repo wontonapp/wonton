@@ -1,7 +1,8 @@
 //! 宿主网络的网页、MCP 和通用能力服务经 unix 套接字接进核心（ADR-0036）。
 //!
-//! 宿主开着防火墙时，桥接网络里的核心连不上宿主网络里的服务。中继容器和服务一样在宿主网络里，监听插件数据目录里的
-//! unix 套接字，转发到 `127.0.0.1:<端口>`；unix 套接字不走防火墙，核心直接连文件。
+//! 宿主开着防火墙时，桥接网络里的核心连不上宿主网络里的服务。中继容器和服务一样在宿主网络里，监听中继目录
+//! （[`crate::config::DEFAULT_RELAY_DIR`]）里按哈希命名的 unix 套接字，转发到 `127.0.0.1:<端口>`；unix 套接字不走
+//! 防火墙，核心直接连文件。套接字不放在插件数据目录里，路径就不随安装目录的长度变（`sun_path` 只有 108 字节）。
 
 use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -10,6 +11,7 @@ use std::time::Duration;
 
 use bollard::models::{ContainerCreateBody, HostConfig, RestartPolicy, RestartPolicyNameEnum};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use super::compose::{NetworkMode, PullPolicy, Service};
 use super::docker::Engine;
@@ -90,22 +92,35 @@ impl HostRelay {
     }
 }
 
-/// 容器在插件数据目录里的 `relay` 子目录。
-pub fn dir(app_data: &Path) -> PathBuf {
-    app_data.join("relay")
-}
+/// 中继套接字文件名里的哈希长度（十六进制字符）。加上目录和 `.sock` 也远在 107 字节以内，
+/// 插件 ID 和服务名再长都不影响。
+const HASH_CHARS: usize = 16;
 
-/// 套接字的绝对路径。
-pub fn socket_path(app_data: &Path, relay: &HostRelay) -> PathBuf {
-    dir(app_data).join(relay.socket())
+/// 套接字放在中继目录里，按实例、插件、中继内容取短哈希当文件名：`app_data` 可以从任意长的路径来，
+/// 套接字却只有 107 字节可用。哈希里带实例名，几套核心共用一台机器也不会撞。
+pub fn socket_path(dir: &Path, instance: &Instance, slug: &str, relay: &HostRelay) -> PathBuf {
+    let mut hasher = Sha256::new();
+    for part in [instance.name().unwrap_or_default(), slug, &relay.socket()] {
+        hasher.update(part.as_bytes());
+        hasher.update([0]);
+    }
+    let mut hex = format!("{:x}", hasher.finalize());
+    hex.truncate(HASH_CHARS);
+    dir.join(format!("{hex}.sock"))
 }
 
 /// 核心一侧第一个放不下的套接字：超长时给人看的说明（路径、字节数、上限），
 /// 用来在装之前报明白；都放得下时为空。
-pub fn path_too_long(app_data: &Path, relays: &[HostRelay], langs: &Languages) -> Option<String> {
+pub fn path_too_long(
+    dir: &Path,
+    instance: &Instance,
+    slug: &str,
+    relays: &[HostRelay],
+    langs: &Languages,
+) -> Option<String> {
     relays
         .iter()
-        .map(|relay| socket_path(app_data, relay))
+        .map(|relay| socket_path(dir, instance, slug, relay))
         .find(|path| path.as_os_str().len() > MAX_SOCKET_PATH)
         .map(|path| {
             l10n::text(
@@ -186,15 +201,16 @@ pub fn container(instance: &Instance, slug: &str, relay: &HostRelay) -> String {
 pub fn plan(
     instance: &Instance,
     manifest: &Manifest,
-    app_data: &Path,
+    relay_dir: &Path,
     owner: Owner,
     relay: &HostRelay,
 ) -> ContainerPlan {
     let service = relay.service_name();
-    let name = container(instance, &manifest.id.slug(), relay);
+    let slug = manifest.id.slug();
+    let name = container(instance, &slug, relay);
     let mut labels = instance.labels(&manifest.id);
     labels.insert(LABEL_SERVICE.to_owned(), service.clone());
-    let inside = format!("/s/{}", relay.socket());
+    let inside = socket_path(relay_dir, instance, &slug, relay);
     ContainerPlan {
         bot: None,
         service: service.clone(),
@@ -205,14 +221,21 @@ pub fn plan(
         body: ContainerCreateBody {
             image: Some(image()),
             cmd: Some(vec![
-                format!("UNIX-LISTEN:{inside},fork,mode=0660,unlink-early"),
+                format!(
+                    "UNIX-LISTEN:{},fork,mode=0660,unlink-early",
+                    inside.display()
+                ),
                 format!("TCP:127.0.0.1:{}", relay.port),
             ]),
             user: Some(format!("{}:{}", owner.uid, owner.gid)),
             labels: Some(labels),
             host_config: Some(HostConfig {
                 network_mode: Some("host".to_owned()),
-                binds: Some(vec![format!("{}:/s", dir(app_data).display())]),
+                binds: Some(vec![format!(
+                    "{}:{}",
+                    relay_dir.display(),
+                    relay_dir.display()
+                )]),
                 restart_policy: Some(RestartPolicy {
                     name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
                     ..Default::default()
@@ -308,8 +331,7 @@ impl super::manager::PluginManager {
             .ensure_image(IMAGE, super::compose::PullPolicy::Missing, &accelerated)
             .await?;
         let owner = self.owner();
-        let app_data = self.cfg.apps_dir.join(manifest.id.slug());
-        super::hostdir::ensure_owned_dir(&dir(&app_data), owner).map_err(|e| {
+        super::hostdir::ensure_owned_dir(&self.cfg.relay_dir, owner).map_err(|e| {
             let langs = self.owner_languages();
             InstallError::Storage(l10n::text(
                 &langs,
@@ -330,7 +352,13 @@ impl super::manager::PluginManager {
                 continue;
             }
             self.engine.remove_container(&name).await?;
-            let mut plan = plan(&self.cfg.instance, manifest, &app_data, owner, relay);
+            let mut plan = plan(
+                &self.cfg.instance,
+                manifest,
+                &self.cfg.relay_dir,
+                owner,
+                relay,
+            );
             // 摘要按渲染时的镜像算，所以要在换成拉取后的写法之前打。
             super::render_drift::stamp(&mut plan);
             plan.body.image = Some(image.clone());

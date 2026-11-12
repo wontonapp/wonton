@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connection_updating">アップデートしています…</string>
+    <string name="connection_pair_again">ペアリングし直す</string>
+    <string name="connection_view">接続を表示</string>
+    <string name="connection_lan">ローカルネットワーク</string>
+    <string name="connection_relay">リレー</string>
+    <string name="connection_direct">直接接続</string>
+    <string name="connection_add_device">デバイスを追加</string>
+    <string name="connection_ok">正常</string>
+    <string name="connection_failing">接続不可</string>
+    <string name="connection_value_none">—</string>
+    <string name="connection_last_handshake">最後のハンドシェイク</string>
+    <string name="connection_last_failure">最後の失敗</string>
+</resources>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Accessibility state of the More row while the extra colors are shown. -->
+    <string name="appearance_expanded">已展开</string>
+    <!-- Section title for the font. -->
+    <string name="appearance_font">字体</string>
+    <!-- Choice row: the system default font. -->
+    <string name="appearance_font_default">默认</string>
+    <!-- Choice row: the monospaced system font design. -->
+    <string name="appearance_font_monospaced">等宽</string>
+    <!-- Choice row: the rounded system font design. -->
+    <string name="appearance_font_rounded">圆体</string>
+    <!-- Row that expands the extra color swatches and the color input field. -->
+    <string name="appearance_more">更多</string>
+    <!-- Sample chat bubble on the appearance page, hidden from accessibility; it shows how the theme looks. -->
+    <string name="appearance_preview_message">今晚吃什么？</string>
+    <!-- Choice row: large text size. -->
+    <string name="appearance_size_large">大</string>
+    <!-- Choice row: standard text size. -->
+    <string name="appearance_size_standard">标准</string>
+    <!-- Section title on the appearance page for light and dark mode. -->
+    <string name="appearance_theme">明暗</string>
+</resources>

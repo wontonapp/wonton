@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Connection notice: the home server is updating itself. -->
+    <string name="connection_updating">Updating…</string>
+    <!-- Button that opens pairing again. No arguments; short label. -->
+    <string name="connection_pair_again">Pair again</string>
+    <!-- Button that opens the connection page. No arguments; short label. -->
+    <string name="connection_view">View connection</string>
+    <!-- Row label of the link kind: the phone and the home server are on the same local network. -->
+    <string name="connection_lan">Local network</string>
+    <!-- Row label and value of the link kind: the connection goes through another host. -->
+    <string name="connection_relay">Relayed</string>
+    <!-- Value of the link kind: the phone and the home server are connected directly. -->
+    <string name="connection_direct">Direct</string>
+    <!-- Row title that opens the page for adding another device. No arguments; short label. -->
+    <string name="connection_add_device">Add device</string>
+    <!-- Value of the phone's mobile network check: it works. No arguments. -->
+    <string name="connection_ok">OK</string>
+    <!-- Value of the phone's mobile network check: it doesn't work. No arguments. -->
+    <string name="connection_failing">Unreachable</string>
+    <!-- Value of a number the core couldn\'t measure: a dash, never 0. -->
+    <string name="connection_value_none">—</string>
+    <!-- Label of the last handshake time in the connection details. -->
+    <string name="connection_last_handshake">Last handshake</string>
+    <!-- Label of the last failure in the connection details; the core's text follows. -->
+    <string name="connection_last_failure">Last failure</string>
+</resources>
