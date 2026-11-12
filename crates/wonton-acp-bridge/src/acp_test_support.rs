@@ -21,6 +21,8 @@ use super::*;
 
 #[path = "acp_test_support/driver.rs"]
 mod driver;
+#[path = "acp_test_login.rs"]
+mod login;
 
 #[derive(Clone)]
 pub(crate) enum Scenario {
@@ -87,6 +89,7 @@ impl FakeAgent {
         let link = Arc::new(Link {
             requests: Arc::new(Mutex::new(Vec::new())),
             responses: Arc::new(Mutex::new(Vec::new())),
+            incoming: Arc::new(Mutex::new(Vec::new())),
             pending: Arc::new(Mutex::new(Vec::new())),
             writer: Mutex::new(None),
             steer_outcomes: Mutex::new(std::collections::VecDeque::new()),
@@ -114,7 +117,7 @@ impl FakeAgent {
                 let Ok((stream, _)) = listener.accept().await else {
                     return;
                 };
-                serve_terminal_login(stream, login_logged_in).await;
+                login::serve_terminal_login(stream, login_logged_in).await;
             });
         }
         Self {
@@ -134,6 +137,11 @@ impl FakeAgent {
 
     pub(crate) async fn responses(&self) -> Vec<Value> {
         self.link.responses.lock().await.clone()
+    }
+
+    /// 桥发来的每条消息，按到达顺序。
+    pub(crate) async fn incoming(&self) -> Vec<Value> {
+        self.link.incoming.lock().await.clone()
     }
 
     /// 让每条连接的 Agent 发一次 `available_commands_update`。
@@ -402,6 +410,8 @@ fn initialize_result(scenario: &Scenario) -> Value {
 pub(crate) struct Link {
     requests: Arc<Mutex<Vec<Value>>>,
     responses: Arc<Mutex<Vec<Value>>>,
+    /// 桥发来的每条消息，按到达顺序；跨请求/应答断言先后关系用。
+    incoming: Arc<Mutex<Vec<Value>>>,
     pending: Arc<Mutex<Vec<PendingPrompt>>>,
     writer: Mutex<Option<Arc<Mutex<OwnedWriteHalf>>>>,
     /// 接下来几次 `_session/steering` 的应答；排空了回 `injected`。
@@ -457,6 +467,7 @@ async fn serve_connection(
                 continue;
             }
         };
+        connection.link.incoming.lock().await.push(message.clone());
         connection.link.requests.lock().await.push(message.clone());
         let method = message["method"].as_str().unwrap_or_default().to_owned();
         if method.is_empty() {
@@ -507,7 +518,7 @@ impl Connection {
                 new_session(writer, &message["id"], &id, &self.scenario, &self.logged_in).await;
             }
             "authenticate" => {
-                handle_authenticate(
+                login::handle_authenticate(
                     writer,
                     &message["id"],
                     lines,
@@ -565,9 +576,7 @@ impl Connection {
             "session/close" => {
                 reply(writer, &message["id"], json!({})).await;
             }
-            "session/cancel" => {
-                let _ = self.cancelled.send(());
-            }
+            "session/cancel" => cancel_pending_prompts(&self.link, &self.cancelled, message).await,
             _ => {}
         }
         true
@@ -623,87 +632,6 @@ async fn new_session(
     }
 }
 
-async fn handle_authenticate(
-    writer: &Arc<Mutex<OwnedWriteHalf>>,
-    id: &Value,
-    lines: &mut tokio::io::Lines<BufReader<tokio::net::unix::OwnedReadHalf>>,
-    scenario: &Scenario,
-    logged_in: &Arc<AtomicBool>,
-) {
-    if !matches!(scenario, Scenario::LoginUrl) {
-        rpc_error(writer, id, -32601, "Method not found").await;
-        return;
-    }
-    let request_id = json!(9_000);
-    request(
-        writer,
-        &request_id,
-        "elicitation/create",
-        json!({
-            "mode": "url",
-            "elicitationId": "login-1",
-            "url": "https://auth.example/login?code=abc",
-            "message": "请打开链接完成登录"
-        }),
-    )
-    .await;
-    let action = loop {
-        let Ok(Some(line)) = bounded(lines.next_line(), "等待 elicitation 应答")
-            .await
-            .map_err(|_| ())
-        else {
-            return;
-        };
-        let Ok(message) = serde_json::from_str::<Value>(&line) else {
-            return;
-        };
-        if message["id"] == request_id {
-            break message["result"]["action"]
-                .as_str()
-                .unwrap_or("cancel")
-                .to_owned();
-        }
-    };
-    if action == "accept" {
-        logged_in.store(true, Ordering::Relaxed);
-        reply(writer, id, json!({})).await;
-    } else {
-        rpc_error(writer, id, -32000, "登录被拒绝").await;
-    }
-}
-
-async fn serve_terminal_login(stream: UnixStream, logged_in: Arc<AtomicBool>) {
-    let (reader, mut writer) = stream.into_split();
-    let mut lines = BufReader::new(reader).lines();
-    let Some(request) = lines.next_line().await.unwrap() else {
-        return;
-    };
-    let request: Value = serde_json::from_str(&request).unwrap();
-    assert_eq!(request["methodId"], "term");
-    assert_eq!(request["args"][0], "--login");
-    // 链接打在 stderr，验证桥也把它送进聊天。
-    send_frame(&mut writer, json!({"err": "https://auth.example/device"})).await;
-    send_frame(&mut writer, json!({"out": "输入授权码："})).await;
-    for line in [] as [&str; 0] {
-        send_frame(&mut writer, json!({"out": line})).await;
-    }
-    let Some(code) = lines.next_line().await.unwrap() else {
-        return;
-    };
-    assert_eq!(code, "code-42");
-    logged_in.store(true, Ordering::Relaxed);
-    send_frame(&mut writer, json!({"exit": 0})).await;
-}
-
-async fn send_frame(writer: &mut tokio::net::unix::OwnedWriteHalf, frame: Value) {
-    writer
-        .write_all(frame.to_string().as_bytes())
-        .await
-        .unwrap();
-    writer.write_all(b"\n").await.unwrap();
-    writer.flush().await.unwrap();
-}
-
 async fn request(writer: &Arc<Mutex<OwnedWriteHalf>>, id: &Value, method: &str, params: Value) {
     send(
         writer,
@@ -718,6 +646,31 @@ async fn rpc_error(writer: &Arc<Mutex<OwnedWriteHalf>>, id: &Value, code: i64, m
         json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}),
     )
     .await;
+}
+
+/// 真 Agent 收到 `session/cancel`：记下取消，这个会话挂起的 prompt 回 `cancelled`。
+async fn cancel_pending_prompts(
+    link: &Arc<Link>,
+    cancelled: &broadcast::Sender<()>,
+    message: &Value,
+) {
+    let _ = cancelled.send(());
+    let session = message["params"]["sessionId"].as_str().unwrap_or_default();
+    let (hit, rest) = link
+        .pending
+        .lock()
+        .await
+        .drain(..)
+        .partition(|prompt| prompt.session == session);
+    *link.pending.lock().await = rest;
+    for prompt in hit {
+        reply(
+            &prompt.writer,
+            &prompt.id,
+            json!({"stopReason": "cancelled"}),
+        )
+        .await;
+    }
 }
 
 async fn handle_prompt(
