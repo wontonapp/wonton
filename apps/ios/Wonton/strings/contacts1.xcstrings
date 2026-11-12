@@ -159,25 +159,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "After approving, this bot can only chat with them. It won't use your other tools."
+            "value": "After you approve, this bot can only chat. It won't use any other tools, not even with you."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "同意后，这个 Bot 只和对方聊天，不再使用家里的其他工具。"
+            "value": "同意后，这个 Bot 只能聊天，不再使用其他工具，对你也一样。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "同意後，這個 Bot 只和對方聊天，不再使用家裡的其他工具。"
+            "value": "同意後，這個 Bot 只能聊天，不再使用其他工具，對你也一樣。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "承認すると、このボットは相手とのチャットだけを行い、ほかのツールは使わなくなります。"
+            "value": "承認すると、このボットはチャットだけができ、ほかのツールは使えなくなります。あなたとのチャットでも同じです。"
           }
         }
       }

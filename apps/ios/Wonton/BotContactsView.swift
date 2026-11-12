@@ -278,7 +278,7 @@ extension View {
         )
     }
 
-    /// 同意别的服务器的请求的确认框：同意后这个 Bot 对那边只聊天，不再用家里的其他工具（ADR-0050）。
+    /// 同意别的服务器的请求的确认框：同意后这个 Bot 对谁都只聊天（归属人也一样），不再用其他工具（ADR-0050）。
     func contactsApproveRemoteDialog(_ approving: Binding<BotContact?>, model: BotContactsModel) -> some View {
         let contact = approving.wrappedValue
         return wontonDialog(

@@ -27,7 +27,7 @@
     <!-- On a contact from another server: which server they\'re on. Argument: the server name. -->
     <string name="contacts_remote_from">From %1$s</string>
     <!-- Confirmation body: what approving a remote request means (ADR-0050). -->
-    <string name="contacts_approve_remote_message">After approving, this bot can only chat with them. It won\'t use your other tools.</string>
+    <string name="contacts_approve_remote_message">After you approve, this bot can only chat. It won\'t use any other tools, not even with you.</string>
     <!-- Empty contacts page: the one sentence above the add button. -->
     <string name="contacts_empty">No contacts yet</string>
     <!-- Failure title: not a full Matrix ID, or the bot itself. -->
