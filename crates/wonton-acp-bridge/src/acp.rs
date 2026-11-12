@@ -52,6 +52,9 @@ pub struct Capabilities {
     pub close: bool,
     pub steering: bool,
     pub mcp_http: bool,
+    /// Agent 在 `promptCapabilities` 里声明能收 `image` 内容块（ACP：text 和
+    /// resource_link 所有 Agent 都必须支持，image 要声明）。
+    pub prompt_image: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -186,6 +189,7 @@ impl AcpClient {
                 close: false,
                 steering: false,
                 mcp_http: false,
+                prompt_image: false,
             },
             auth_methods: Vec::new(),
         };
@@ -414,10 +418,12 @@ impl AcpClient {
         Ok(result["outcome"].as_str().unwrap_or("failed").to_owned())
     }
 
+    /// 发一轮提示词。`prompt` 是 ACP 内容块（text、image、resource_link，见
+    /// `bridge/attachments.rs`），一轮可以多个块。
     pub async fn prompt(
         &self,
         session_id: &str,
-        text: &str,
+        prompt: Vec<Value>,
         max_output: usize,
         timeout: Duration,
         lang: Lang,
@@ -450,10 +456,10 @@ impl AcpClient {
             .get(session_id)
             .cloned()
             .unwrap_or_default();
-        tracing::debug!(session_id, bytes = text.len(), "发送 ACP prompt");
+        tracing::debug!(session_id, blocks = prompt.len(), "发送 ACP prompt");
         let response = self.request(
             "session/prompt",
-            json!({"sessionId": session_id, "prompt": [{"type": "text", "text": text}]}),
+            json!({"sessionId": session_id, "prompt": prompt}),
         );
         tokio::pin!(response);
         let timer = tokio::time::sleep(timeout);
@@ -797,5 +803,8 @@ fn parse_capabilities(result: &Value) -> Capabilities {
             .unwrap_or(false),
         mcp_http: agent["mcpCapabilities"]["http"].is_object()
             || agent["mcpCapabilities"]["http"].as_bool().unwrap_or(false),
+        prompt_image: agent["promptCapabilities"]["image"]
+            .as_bool()
+            .unwrap_or(false),
     }
 }

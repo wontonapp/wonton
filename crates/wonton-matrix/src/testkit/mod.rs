@@ -409,3 +409,49 @@ pub async fn eventually<T: Debug, R>(
         Err(_) => panic!("{what}：{WAIT:?} 内没有等到，最后一项：{last:#?}"),
     }
 }
+
+/// 造一条测试用的图片消息内容（未加密来源）。上游测试（如桥的行为测试）要往消息流里
+/// 放图片时用它；生产代码走不了这条路（`source` 字段不公开）。
+impl crate::ImageContent {
+    pub fn for_test(
+        filename: &str,
+        mime_type: Option<&str>,
+        size: Option<u64>,
+        caption: Option<&str>,
+        mxc: &str,
+    ) -> Self {
+        Self {
+            filename: filename.to_owned(),
+            mime_type: mime_type.map(str::to_owned),
+            size,
+            width: None,
+            height: None,
+            caption: caption.map(str::to_owned),
+            source: plain_source(mxc),
+            thumbnail: None,
+        }
+    }
+}
+
+/// 造一条测试用的文件消息内容（未加密来源）；用途同 [`crate::ImageContent::for_test`]。
+impl crate::FileContent {
+    pub fn for_test(
+        filename: &str,
+        mime_type: Option<&str>,
+        size: Option<u64>,
+        caption: Option<&str>,
+        mxc: &str,
+    ) -> Self {
+        Self {
+            filename: filename.to_owned(),
+            mime_type: mime_type.map(str::to_owned),
+            size,
+            caption: caption.map(str::to_owned),
+            source: plain_source(mxc),
+        }
+    }
+}
+
+fn plain_source(mxc: &str) -> matrix_sdk::ruma::events::room::MediaSource {
+    matrix_sdk::ruma::events::room::MediaSource::Plain(mxc.to_owned().into())
+}

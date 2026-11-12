@@ -2,7 +2,6 @@
 
 name-main = 主对话
 
-topic-input-unsupported = 输入不支持：ACP 桥 C2 只接受普通文字。
 topic-interrupt-pending = 忙：已有一个打断请求在等待处理。
 topic-no-active-session = 没有活动 ACP session
 topic-steer-rejected = Agent 没有接受插话请求。

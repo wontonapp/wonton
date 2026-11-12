@@ -5,15 +5,15 @@ use std::time::Instant;
 use wonton_l10n::Arg;
 
 use super::{
-    Job, JobKind, PromptFinished, Room, RoomState, TurnContext, format_error, now, permissions,
-    routing, sessions,
+    Job, JobKind, PromptFinished, Room, RoomState, TurnContext, attachments, format_error, now,
+    permissions, routing, sessions,
 };
 use crate::acp::PromptResult;
 use crate::commands;
 use crate::config::Limits;
 use crate::error::{Detail, Error, Result};
 use crate::l10n::text;
-use crate::matrix::IncomingText;
+use crate::matrix::{Incoming, IncomingContent};
 use crate::topics::{SessionKey, Topics, TurnStart};
 
 /// 发到这条消息所在的地方：主对话，或它所属的话题。
@@ -33,20 +33,46 @@ pub(super) async fn receive_job<R: Room>(
     context: &TurnContext<R>,
     state: &mut RoomState,
     topics: &mut Topics,
-    incoming: IncomingText,
+    incoming: Incoming,
 ) -> Result<()> {
     let key = routing::session_key(incoming.thread_root.as_deref());
-    if incoming.text.is_empty() {
-        return send_to(context, &key, &text(context.lang, "input-unsupported", &[])).await;
+    if let IncomingContent::Unsupported { kind } = &incoming.content {
+        return send_to(
+            context,
+            &key,
+            &text(
+                context.lang,
+                "input-unsupported",
+                &[("kind", Arg::from(kind.clone()))],
+            ),
+        )
+        .await;
     }
-    if commands::is_help_request(&incoming.text) {
+    let user_text = match &incoming.content {
+        IncomingContent::Media(media) => media.caption.clone().unwrap_or_default(),
+        IncomingContent::Text(text) => text.clone(),
+        IncomingContent::Unsupported { .. } => String::new(),
+    };
+    if matches!(&incoming.content, IncomingContent::Text(text) if text.is_empty()) {
+        return send_to(
+            context,
+            &key,
+            &text(
+                context.lang,
+                "input-unsupported",
+                &[("kind", Arg::from("other"))],
+            ),
+        )
+        .await;
+    }
+    if matches!(&incoming.content, IncomingContent::Text(text) if commands::is_help_request(text)) {
         return send_to(context, &key, &commands::help(context.lang)).await;
     }
     if state.sessions.existing(&key).is_none()
         && let Some(root) = &incoming.thread_root
     {
         let (root_text, preceding) =
-            routing::opening_context(state, root, &incoming.event_id, &incoming.text);
+            routing::opening_context(state, root, &incoming.event_id, &user_text);
         let session = state.sessions.state(&key);
         session.root_text = root_text;
         session.preceding = preceding;
@@ -55,25 +81,31 @@ pub(super) async fn receive_job<R: Room>(
         .sessions
         .existing(&key)
         .is_some_and(|state| state.active);
-    if context
-        .login
-        .receive(
-            &context.room,
-            context.group,
-            incoming.thread_root.as_deref(),
-            &incoming,
-            busy,
-            context.lang,
-        )
-        .await?
+    // 登录流程只认文字：发码、回授权码都是打字，不收附件。
+    if matches!(incoming.content, IncomingContent::Text(_))
+        && context
+            .login
+            .receive(
+                &context.room,
+                context.group,
+                incoming.thread_root.as_deref(),
+                &user_text,
+                &incoming.event_id,
+                busy,
+                context.lang,
+            )
+            .await?
     {
         return Ok(());
     }
-    let job = match parse_job(
-        &incoming.event_id,
-        &incoming.text,
-        &context.bridge.config.limits,
-    ) {
+    let job = match incoming.content {
+        IncomingContent::Text(text) => {
+            parse_job(&incoming.event_id, &text, &context.bridge.config.limits)
+        }
+        IncomingContent::Media(media) => media_job(context, media, &incoming.event_id).await,
+        IncomingContent::Unsupported { .. } => return Ok(()),
+    };
+    let job = match job {
         Ok(job) => job,
         Err(error) => return send_to(context, &key, &format_error(&error, context.lang)).await,
     };
@@ -88,6 +120,70 @@ pub(super) async fn receive_job<R: Room>(
         _ if busy => queue(context, state, &key, job).await,
         _ => start_or_report(context, state, topics, key, job).await,
     }
+}
+
+/// 媒体消息的任务：现在就下载落工作区，失败按类别报错；之后排队（含话题准入）只带
+/// 已落盘的路径，不会在中途丢。说明文字也是用户输入，受同一个输入上限。
+async fn media_job<R: Room>(
+    context: &TurnContext<R>,
+    media: crate::matrix::MediaAttachment,
+    event_id: &str,
+) -> Result<Job> {
+    if media
+        .caption
+        .as_ref()
+        .is_some_and(|caption| caption.len() > context.bridge.config.limits.max_input_bytes)
+    {
+        return Err(too_long(&context.bridge.config.limits));
+    }
+    let prepared = attachments::prepare(
+        &*context.room,
+        &media,
+        event_id,
+        &context.bridge.config.workspace,
+    )
+    .await?;
+    Ok(Job {
+        kind: JobKind::Normal,
+        text: media.caption.unwrap_or_default(),
+        event_id: event_id.to_owned(),
+        media: Some(prepared),
+    })
+}
+
+fn too_long(limits: &Limits) -> Error {
+    Error::InvalidInput(Detail::msg_with(
+        "input-too-long",
+        [("max", limits.max_input_bytes.to_string())],
+    ))
+}
+
+/// 一轮的内容块：说明（含开局说明/动态）在前，附件在后；没有文字就只有附件块。
+async fn prompt_blocks<R: Room>(
+    context: &TurnContext<R>,
+    prefix: Option<String>,
+    job: &Job,
+) -> Result<Vec<serde_json::Value>> {
+    let text = match prefix {
+        Some(prefix) => format!("{prefix}\n\n{}", job.text),
+        None => job.text.clone(),
+    };
+    let text = text.trim_end().to_owned();
+    let mut blocks = Vec::new();
+    if !text.is_empty() {
+        blocks.push(attachments::text_block(&text));
+    }
+    if let Some(media) = &job.media {
+        blocks.extend(
+            attachments::blocks(
+                media,
+                context.bridge.acp.capabilities().prompt_image,
+                &context.bridge.config.workspace,
+            )
+            .await?,
+        );
+    }
+    Ok(blocks)
 }
 
 /// `/wonton interrupt`：取消当前一轮，等它的应答回来再发新的。
@@ -196,6 +292,7 @@ fn parse_job(event_id: &str, input: &str, limits: &Limits) -> Result<Job> {
             kind: JobKind::End,
             text: String::new(),
             event_id: event_id.to_owned(),
+            media: None,
         });
     }
     let (kind, body) = if let Some(body) = trimmed.strip_prefix("/wonton interrupt ") {
@@ -214,6 +311,7 @@ fn parse_job(event_id: &str, input: &str, limits: &Limits) -> Result<Job> {
         kind,
         text: body.trim().to_owned(),
         event_id: event_id.to_owned(),
+        media: None,
     })
 }
 
@@ -242,7 +340,7 @@ async fn start_job<R: Room>(
     let first = session.first_turn;
     if first && key.is_topic() && session.root_text.is_none() {
         // 话题根不在历史里（桥重启过、或者根本就是这条消息自己开的头）：拿这句话当起点。
-        session.root_text = Some(job.text.clone());
+        session.root_text = Some(job.display().to_owned());
     }
     // 只有话题第一轮带开局说明；之后每轮只带别人的动态。任务话题不注入别人的动态
     // （编排器自己分工），第一轮的开局说明照带。
@@ -255,7 +353,14 @@ async fn start_job<R: Room>(
         topics.digest_for(&key, context.lang)
     };
     if topics
-        .turn_started(&key, &job.text, &job.event_id, now(), context.lang)
+        .turn_started(
+            &key,
+            job.display(),
+            &job.event_id,
+            job.media.as_ref(),
+            now(),
+            context.lang,
+        )
         .await?
         == TurnStart::Queued
     {
@@ -286,10 +391,8 @@ async fn start_job<R: Room>(
     if first && created == Some(false) {
         send_to(context, &key, &text(context.lang, "topic-no-ask-mode", &[])).await?;
     }
-    let prompt = match prefix {
-        Some(prefix) => format!("{prefix}\n\n{}", job.text),
-        None => job.text,
-    };
+    // 一轮的内容块：说明（含开局说明/动态）在前，附件在后；没有文字就只有附件块。
+    let blocks = prompt_blocks(context, prefix, &job).await?;
     state.sessions.state(&key).active = true;
     state.last_activity = Instant::now();
     // 一轮一条的状态消息（ADR-0082）：发出提示词时先挂上“在想”，之后随 ACP 事件编辑。
@@ -308,7 +411,7 @@ async fn start_job<R: Room>(
         let result = acp
             .prompt(
                 &session_id,
-                &prompt,
+                blocks,
                 limits.max_output_bytes,
                 limits.turn_timeout,
                 lang,
@@ -437,6 +540,10 @@ pub(super) async fn idle<R: Room>(
     state: &mut RoomState,
     topics: &mut Topics,
 ) -> Result<()> {
+    if state.last_sweep.elapsed() >= attachments::SWEEP_INTERVAL {
+        state.last_sweep = Instant::now();
+        attachments::sweep(&context.bridge.config.workspace).await;
+    }
     let main = SessionKey::Main;
     let idle_timeout = context.bridge.config.limits.idle_timeout;
     let close_main = state.last_activity.elapsed() >= idle_timeout
@@ -514,7 +621,7 @@ pub(super) async fn promote<R: Room>(
     state: &mut RoomState,
     topics: &mut Topics,
 ) -> Result<()> {
-    while let Some((key, prompt, event_id)) = topics.poll_admission(now()).await? {
+    while let Some((key, prompt, event_id, media)) = topics.poll_admission(now()).await? {
         start_or_report(
             context,
             state,
@@ -524,6 +631,7 @@ pub(super) async fn promote<R: Room>(
                 kind: JobKind::Normal,
                 text: prompt,
                 event_id,
+                media,
             },
         )
         .await?;

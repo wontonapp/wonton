@@ -7,6 +7,7 @@
 //! 停机期间（容器重建、升级）发来的消息在重启后的首屏快照里：按已读位置（`LastSeen`）
 //! 认出来，补处理最近几条，超出的在房间里如实列出（`routing::route_backlog`）。
 
+pub(crate) mod attachments;
 mod permissions;
 mod routing;
 mod run_status;
@@ -44,7 +45,6 @@ use crate::{
     l10n::text,
     locale::{Locales, Origin},
     login::{LoginChat, LoginEvent, LoginFlow, LoginSink},
-    matrix::IncomingText,
     room::Room,
     room_owner::room_owner,
     state::{LastSeen, SessionStore},
@@ -81,10 +81,23 @@ enum JobKind {
 
 #[derive(Clone, Debug)]
 struct Job {
+    /// 文字部分：文字消息是正文，媒体消息是说明（caption），都没有时为空。
     text: String,
     kind: JobKind,
     /// 这条请求的消息事件 ID，状态消息的 `run`（ADR-0082）。
     event_id: String,
+    /// 已落工作区的附件；纯文字为 None。
+    media: Option<attachments::PreparedAttachment>,
+}
+
+impl Job {
+    /// 给工作板和话题开局看的用户输入摘要：附件没有说明时用文件名。
+    fn display(&self) -> &str {
+        match (self.text.trim(), &self.media) {
+            ("", Some(media)) => &media.name,
+            _ => &self.text,
+        }
+    }
 }
 
 struct PromptFinished {
@@ -166,7 +179,8 @@ impl<R: Room> LoginService<R> {
         room: &Arc<R>,
         group: bool,
         thread: Option<&str>,
-        incoming: &IncomingText,
+        text: &str,
+        event_id: &str,
         busy: bool,
         lang: Lang,
     ) -> BridgeResult<bool> {
@@ -181,8 +195,8 @@ impl<R: Room> LoginService<R> {
             .lock()
             .await
             .receive_from(
-                &incoming.text,
-                &incoming.event_id,
+                text,
+                event_id,
                 &LoginChat {
                     current: &current,
                     direct: direct.as_ref(),
@@ -223,6 +237,8 @@ struct RoomState {
     /// 主对话最近的文字消息（事件 ID 和原文），拼话题开局时取话题起点和前文。
     history: VecDeque<(String, String)>,
     last_activity: Instant,
+    /// 上次清理工作区附件的时间。
+    last_sweep: Instant,
 }
 
 /// 主对话里存多少条最近消息；开局最多带 6 条前文，留够余量。
@@ -302,6 +318,8 @@ pub async fn run() -> Result<()> {
     tokio::fs::create_dir_all(&config.bridge_data)
         .await
         .context("创建桥数据目录")?;
+    // 工作区里上次的附件按保留期和总量清一轮；失败只记日志。
+    attachments::sweep(&config.workspace).await;
     let matrix = MatrixSession::login_with_access_token(
         &SessionConfig {
             homeserver_url: config.homeserver.clone(),
@@ -501,6 +519,7 @@ async fn run_room<R: Room>(
         waiters: Vec::new(),
         history: VecDeque::new(),
         last_activity: Instant::now(),
+        last_sweep: Instant::now(),
     };
     // 进循环前先分发首屏快照：补上停机期间发来的，超出上限的如实列出。
     routing::route_backlog(

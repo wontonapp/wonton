@@ -35,6 +35,8 @@ pub trait Room: Send + Sync + 'static {
     fn replace_run_status(&self, content: Value) -> impl Future<Output = Result<()>> + Send;
     fn typing(&self, typing: bool) -> impl Future<Output = Result<()>> + Send;
     fn redact(&self, event_id: &str, reason: &str) -> impl Future<Output = Result<()>> + Send;
+    /// 凭媒体句柄下载附件（加密房间在本机解密）。句柄里的密钥不进日志。
+    fn download_media(&self, token: &str) -> impl Future<Output = Result<Vec<u8>>> + Send;
     fn set_state(
         &self,
         event_type: &str,
@@ -97,6 +99,10 @@ impl<R: Room> Room for std::sync::Arc<R> {
 
     async fn redact(&self, event_id: &str, reason: &str) -> Result<()> {
         (**self).redact(event_id, reason).await
+    }
+
+    async fn download_media(&self, token: &str) -> Result<Vec<u8>> {
+        (**self).download_media(token).await
     }
 
     async fn set_state(&self, event_type: &str, state_key: &str, content: Value) -> Result<()> {
@@ -172,6 +178,10 @@ impl Room for ChatRoom {
 
     async fn redact(&self, event_id: &str, reason: &str) -> Result<()> {
         Ok(ChatRoom::redact(self, event_id, reason).await?)
+    }
+
+    async fn download_media(&self, token: &str) -> Result<Vec<u8>> {
+        Ok(ChatRoom::download_media(self, token).await?)
     }
 
     async fn set_state(&self, event_type: &str, state_key: &str, content: Value) -> Result<()> {

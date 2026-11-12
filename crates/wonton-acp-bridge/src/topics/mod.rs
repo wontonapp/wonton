@@ -102,6 +102,7 @@ impl Topics {
         key: &SessionKey,
         prompt: &str,
         run: &str,
+        media: Option<&crate::bridge::attachments::PreparedAttachment>,
         now: SystemTime,
         lang: Lang,
     ) -> Result<TurnStart> {
@@ -126,6 +127,7 @@ impl Topics {
             };
             row.pending_prompt = (!started).then(|| prompt.to_owned());
             row.pending_run = (!started).then(|| run.to_owned());
+            row.pending_media = (!started).then(|| media.cloned()).flatten();
             row.last_seen_seq = base;
             started
         } else {
@@ -150,6 +152,7 @@ impl Topics {
                 last_activity: now,
                 pending_prompt: (!admit).then(|| prompt.to_owned()),
                 pending_run: (!admit).then(|| run.to_owned()),
+                pending_media: (!admit).then(|| media.cloned()).flatten(),
                 is_task: false,
             });
             admit
@@ -349,6 +352,7 @@ impl Topics {
                 last_activity: stamp(now),
                 pending_prompt: None,
                 pending_run: None,
+                pending_media: None,
                 is_task: true,
             });
         }
@@ -450,7 +454,14 @@ impl Topics {
     pub async fn poll_admission(
         &mut self,
         now: SystemTime,
-    ) -> Result<Option<(SessionKey, String, String)>> {
+    ) -> Result<
+        Option<(
+            SessionKey,
+            String,
+            String,
+            Option<crate::bridge::attachments::PreparedAttachment>,
+        )>,
+    > {
         let promoted = limits::poll_admission(&mut self.board, stamp(now));
         if promoted.is_some() {
             self.board.persist().await?;

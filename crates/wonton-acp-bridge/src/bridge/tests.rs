@@ -1,6 +1,7 @@
 //! 桥接层的行为测试：给定 Matrix 消息和 ACP 消息序列，断言 Matrix 侧副作用和发给 Agent
 //! 的请求。房间是内存替身，ACP 是 Manual 场景的假 Agent，确认接口是假卡片。
 
+mod attachments;
 mod cards;
 mod downtime;
 mod downtime_real;

@@ -117,6 +117,10 @@ pub(crate) fn summary(body: MessageBody, is_own: bool, links: &LinkTargets) -> M
             }
         }
         MessageBody::Image(_) => MessageSummary::Image,
+        // App 不渲染文件消息；按不认识的消息类型一样显示，交给 Agent 是桥的事。
+        MessageBody::File(_) => MessageSummary::Other {
+            kind: "m.file".to_owned(),
+        },
         MessageBody::Undecryptable => MessageSummary::Undecryptable,
         MessageBody::Redacted => MessageSummary::Redacted,
         MessageBody::Other { kind } => MessageSummary::Other { kind },
@@ -252,6 +256,9 @@ pub(super) fn message_content(
         },
         MessageBody::Undecryptable => MessageContent::Undecryptable,
         MessageBody::Redacted => MessageContent::Redacted,
+        MessageBody::File(_) => MessageContent::Unsupported {
+            kind: "m.file".to_owned(),
+        },
         MessageBody::Other { kind } => MessageContent::Unsupported { kind },
     }
 }

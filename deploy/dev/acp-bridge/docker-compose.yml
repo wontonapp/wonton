@@ -50,6 +50,8 @@ services:
       WONTON_ACP_TOPIC_IDLE_SECONDS: ${WONTON_ACP_TOPIC_IDLE_SECONDS:-1800}
     volumes:
       - ${WONTON_BOT_DATA:?需要 Bot 数据目录}/bridge:/data/bridge
+      # 附件目录：桥把收到的图片和文件落进 Agent 工作区，再以 resource_link 交给它。
+      - ${WONTON_BOT_DATA}/workspace:/workspace
       - acp-socket:/run/wonton
 
 volumes:

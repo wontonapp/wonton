@@ -16,6 +16,8 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# 图片内容块的 base64（ACP image 块）。
+base64 = { workspace = true }
 sha2 = { workspace = true }
 futures-util = "0.3.34"
 reqwest = { workspace = true, features = ["json"] }

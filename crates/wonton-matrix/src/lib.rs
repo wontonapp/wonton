@@ -55,7 +55,7 @@ pub use matrix_sdk::ruma::{
 };
 pub use matrix_sdk_ui::eyeball_im::{Vector, VectorDiff};
 pub use media::media_token;
-pub use message::{ImageContent, Message, MessageBody, SendStatus, UploadProgress};
+pub use message::{FileContent, ImageContent, Message, MessageBody, SendStatus, UploadProgress};
 pub use panels::{LAYOUT_EVENT, LayoutContent, ROOM_PANEL_EVENT, RoomPanelContent};
 pub use profile::UserProfile;
 pub use push::{BackgroundNotification, Notification, PusherConfig};

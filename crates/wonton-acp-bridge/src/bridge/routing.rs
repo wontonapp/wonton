@@ -13,7 +13,7 @@ use wonton_matrix::Message;
 
 use super::{HISTORY_MAX, Room, RoomState, TurnContext, text, turns};
 use crate::error::Result;
-use crate::matrix::{IncomingText, new_allowed_messages};
+use crate::matrix::{Incoming, IncomingContent, new_allowed_messages};
 use crate::state::LastSeenMarker;
 use crate::topics::{SessionKey, Topics};
 
@@ -106,7 +106,7 @@ pub(super) async fn route_backlog<R: Room>(
         .last_seen
         .get(context.room.room_id().as_str())
         .await;
-    let missed: Vec<IncomingText> = match &boundary {
+    let missed: Vec<Incoming> = match &boundary {
         Some(marker) => incoming
             .iter()
             .filter(|message| !covered_by(marker, message))
@@ -127,7 +127,7 @@ pub(super) async fn route_backlog<R: Room>(
         route_incoming(context, state, topics, message.clone()).await?;
     }
     if keep_from > 0 {
-        let dropped: Vec<&IncomingText> = missed[..keep_from].iter().collect();
+        let dropped: Vec<&Incoming> = missed[..keep_from].iter().collect();
         send_dropped_notice(context, &dropped).await?;
     }
     Ok(())
@@ -136,13 +136,13 @@ pub(super) async fn route_backlog<R: Room>(
 /// 把“没处理”的积压在主对话里如实列出来：一条一行，只显示开头一段。
 async fn send_dropped_notice<R: Room>(
     context: &TurnContext<R>,
-    dropped: &[&IncomingText],
+    dropped: &[&Incoming],
 ) -> Result<()> {
     use wonton_l10n::Arg;
     let lines: Vec<String> = dropped
         .iter()
         .take(LIST_MAX)
-        .map(|message| format!("· {}", preview(&message.text)))
+        .map(|message| format!("· {}", preview(message)))
         .collect();
     let rest = dropped.len().saturating_sub(LIST_MAX);
     let (id, args): (&str, Vec<(&str, Arg)>) = if rest > 0 {
@@ -170,7 +170,7 @@ async fn send_dropped_notice<R: Room>(
 }
 
 /// 一批里最后见过的那条：已读位置记时间戳也要记事件 ID（见 [`LastSeenMarker`]）。
-fn newest_of(incoming: &[IncomingText]) -> Option<LastSeenMarker> {
+fn newest_of(incoming: &[Incoming]) -> Option<LastSeenMarker> {
     let timestamp_ms = incoming.iter().map(|message| message.timestamp_ms).max()?;
     // 编辑会让旧时间戳的消息重新出现在批次中间：事件 ID 要取最大时间戳上的最后一条，不是批末。
     let event_id = incoming
@@ -186,14 +186,18 @@ fn newest_of(incoming: &[IncomingText]) -> Option<LastSeenMarker> {
 }
 
 /// 这条消息是不是已经落在已读位置之前（不该再交给 Agent）：更旧，或同一毫秒上同一条。
-fn covered_by(marker: &LastSeenMarker, message: &IncomingText) -> bool {
+fn covered_by(marker: &LastSeenMarker, message: &Incoming) -> bool {
     message.timestamp_ms < marker.timestamp_ms
         || (message.timestamp_ms == marker.timestamp_ms && message.event_id == marker.event_id)
 }
 
-/// 一条积压消息的预览：只取第一行，最多 [`PREVIEW_MAX`] 字。
-fn preview(text: &str) -> String {
-    let first = text.lines().next().unwrap_or("");
+/// 一条积压消息的预览：文字取第一行，附件用文件名，最多 [`PREVIEW_MAX`] 字。
+fn preview(message: &Incoming) -> String {
+    let first = match &message.content {
+        IncomingContent::Text(text) => text.lines().next().unwrap_or(""),
+        IncomingContent::Media(media) => &media.filename,
+        IncomingContent::Unsupported { .. } => "",
+    };
     let mut preview: String = first.chars().take(PREVIEW_MAX).collect();
     if first.chars().count() > PREVIEW_MAX {
         preview.push('…');
@@ -239,12 +243,14 @@ async fn route_incoming<R: Room>(
     context: &TurnContext<R>,
     state: &mut RoomState,
     topics: &mut Topics,
-    incoming: IncomingText,
+    incoming: Incoming,
 ) -> Result<()> {
-    if incoming.thread_root.is_none() && !incoming.text.trim().is_empty() {
+    if let (IncomingContent::Text(text), None) = (&incoming.content, &incoming.thread_root)
+        && !text.trim().is_empty()
+    {
         state
             .history
-            .push_back((incoming.event_id.clone(), incoming.text.clone()));
+            .push_back((incoming.event_id.clone(), text.clone()));
         while state.history.len() > HISTORY_MAX {
             state.history.pop_front();
         }

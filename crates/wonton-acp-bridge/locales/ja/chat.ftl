@@ -2,9 +2,17 @@
 ## データは引数として埋め込みます（翻訳しない）。です・ます体。
 
 login-reconnect = ログインしました。再接続します。
-input-unsupported = 対応していない入力です：プレーンテキストのみ受け付けます。
+input-unsupported =
+    対応していない入力です：{ $kind ->
+        [audio] 音声メッセージ
+        [video] 動画メッセージ
+        *[other] この種類のコンテンツ
+    }はまだ対応していません。テキスト・画像・ファイルのみ送れます。
 input-too-long = 入力が正しくありません：入力が { $max } バイトの上限を超えています
 input-empty = 入力が正しくありません：入力は空にできません
+attachment-too-large = 添付ファイルが { $max } の上限を超えています
+workspace-missing = ワークスペースのディレクトリがありません。プラグインがマウントしていない可能性があります
+workspace-not-absolute = ワークスペースのパスが絶対パスではありません：{ $path }
 control-without-text = 入力が正しくありません：制御コマンドにテキストがありません
 interrupt-pending = 取り込み中：すでに割り込み要求が待機しています。
 queue-full = 取り込み中：ACP のキューが満杯です。しばらくしてからお試しください。

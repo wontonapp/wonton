@@ -28,7 +28,13 @@ async fn fake_agent_round_trip_sets_http_mcp_and_mode() {
     .unwrap();
     assert_eq!(session.session_id, "session-1");
     let result = bounded(
-        client.prompt("session-1", "hi", 1024, Duration::from_secs(2), zh()),
+        client.prompt(
+            "session-1",
+            vec![json!({"type": "text", "text": "hi"})],
+            1024,
+            Duration::from_secs(2),
+            zh(),
+        ),
         "prompt",
     )
     .await
@@ -92,13 +98,25 @@ async fn timeout_cancels_and_next_prompt_discards_late_update() {
         .await
         .unwrap();
     let first = bounded(
-        client.prompt("session-1", "long", 1024, Duration::from_millis(50), zh()),
+        client.prompt(
+            "session-1",
+            vec![json!({"type": "text", "text": "long"})],
+            1024,
+            Duration::from_millis(50),
+            zh(),
+        ),
         "cancelled prompt",
     )
     .await;
     assert!(matches!(first, Err(Error::TransportUnavailable(_))));
     let result = bounded(
-        client.prompt("session-1", "new", 1024, Duration::from_secs(2), zh()),
+        client.prompt(
+            "session-1",
+            vec![json!({"type": "text", "text": "new"})],
+            1024,
+            Duration::from_secs(2),
+            zh(),
+        ),
         "next prompt",
     )
     .await
@@ -140,7 +158,13 @@ async fn restored_replay_updates_do_not_leak_into_the_next_prompt() {
     .await
     .unwrap();
     let result = bounded(
-        client.prompt("session-1", "next", 1024, Duration::from_secs(2), zh()),
+        client.prompt(
+            "session-1",
+            vec![json!({"type": "text", "text": "next"})],
+            1024,
+            Duration::from_secs(2),
+            zh(),
+        ),
         "prompt",
     )
     .await
@@ -186,7 +210,13 @@ async fn prompt_errors_keep_their_categories() {
             .await
             .unwrap();
         let error = bounded(
-            client.prompt("session-1", "hi", 1024, Duration::from_secs(2), zh()),
+            client.prompt(
+                "session-1",
+                vec![json!({"type": "text", "text": "hi"})],
+                1024,
+                Duration::from_secs(2),
+                zh(),
+            ),
             "prompt",
         )
         .await
@@ -212,7 +242,13 @@ async fn prompt_errors_show_the_reason_from_data() {
         .unwrap();
     let prompt_error = || {
         bounded(
-            client.prompt("session-1", "hi", 1024, Duration::from_secs(2), zh()),
+            client.prompt(
+                "session-1",
+                vec![json!({"type": "text", "text": "hi"})],
+                1024,
+                Duration::from_secs(2),
+                zh(),
+            ),
             "prompt",
         )
     };
@@ -351,7 +387,13 @@ async fn oversized_agent_line_disconnects_and_fails_the_pending_prompt() {
         let client = client.clone();
         async move {
             bounded(
-                client.prompt("session-1", "hi", 1024, Duration::from_secs(2), zh()),
+                client.prompt(
+                    "session-1",
+                    vec![json!({"type": "text", "text": "hi"})],
+                    1024,
+                    Duration::from_secs(2),
+                    zh(),
+                ),
                 "prompt",
             )
             .await
@@ -459,7 +501,7 @@ async fn frame_limit_takes_three_mib_lines_and_rejects_over() {
     );
     assert_eq!(frame, payload);
 
-    // 超过上限（4 MiB）：报超长。
+    // 超过上限（32 MiB）：报超长。
     let mut data = vec![b'x'; MAX_FRAME_BYTES + 1];
     data.push(b'\n');
     let mut reader = BufReader::new(ChunkedReader::new(data));
@@ -472,7 +514,7 @@ async fn frame_limit_takes_three_mib_lines_and_rejects_over() {
 
 #[tokio::test]
 async fn oversized_line_stops_at_the_limit_without_reading_the_next_frame() {
-    // 超过上限（4 MiB）不带换行，之后才是换行和一条正常帧：读到上限就得停，后面的字节不进内存。
+    // 超过上限（32 MiB）不带换行，之后才是换行和一条正常帧：读到上限就得停，后面的字节不进内存。
     let mut data = vec![b'x'; MAX_FRAME_BYTES + 1];
     data.extend_from_slice(b"\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n");
     let mut reader = BufReader::new(ChunkedReader::new(data));

@@ -14,7 +14,7 @@ Wonton 要把 Codex、Claude Code、omp、Qwen Code、Kimi Code 等 Agent 作为
 
 ACP 桥是每个 ACP Agent 插件的一部分，不进核心，也不在核心里写 Agent 特例。插件提供两个服务：`bridge` 和 `agent`，一个 Bot 一对；`bridge` 使用 `wonton-matrix`，`agent` 只运行该 Agent 的 ACP 程序。ACP stdio↔socket 转发器写在 Agent 镜像入口脚本里，由插件清单声明命令和 socket；socket 经专用共享卷只挂给两个服务、权限 0600，bridge 只连接它，不跨容器启动 Agent 进程。两服务的其余通信经插件私网，不把 ACP HTTP 当成已存在的标准。
 
-两服务首先为了数据隔离，而不是只为故障隔离：`bridge` 只挂 `${WONTON_BOT_DATA}/bridge`，`agent` 只挂 `${WONTON_BOT_DATA}/agent`，两个目录不互相可见。bridge 目录存 Matrix crypto store、Bot 登录态、恢复密钥和房间→session 映射；agent 目录存 Agent 的 HOME、workspace 和官方登录态。Matrix access token 只在 bridge 服务的 environment 中引用，agent 不拿到 Matrix token、crypto store 或恢复密钥；Agent 自带 shell 因此不能读取这些密钥。
+两服务首先为了数据隔离，而不是只为故障隔离：`bridge` 只挂 `${WONTON_BOT_DATA}/bridge`，`agent` 只挂 `${WONTON_BOT_DATA}/agent`，两个目录不互相可见；工作区 `${WONTON_BOT_DATA}/workspace` 例外，bridge 和 agent 都挂它（bridge 要把附件写进去，见下文 Matrix 到 ACP 一节）。bridge 目录存 Matrix crypto store、Bot 登录态、恢复密钥和房间→session 映射；agent 目录存 Agent 的 HOME、workspace 和官方登录态。Matrix access token 只在 bridge 服务的 environment 中引用，agent 不拿到 Matrix token、crypto store 或恢复密钥；Agent 自带 shell 因此不能读取这些密钥。
 
 桥服务是公共的、版本固定的 Wonton ACP bridge 镜像层；Agent 服务是每个插件自己的层。桥层包含 Rust bridge 和 `wonton-matrix`，不包含任何厂商 Agent；桥不实现 MCP 服务端，`rmcp` 只作客户端问核心总线上的用户语言（`wonton__user_locale`）。Agent 层只放上游程序或其适配器、配置和许可证；Claude Code 第一次启动时在自己的容器内下载未修改的官方程序，不把它打进公共镜像。适配器、Agent、桥都按上游版本和 digest 固定。
 
@@ -24,7 +24,9 @@ ACP 桥是每个 ACP Agent 插件的一部分，不进核心，也不在核心�
 
 桥以一个普通 Matrix 设备运行，核心把 Matrix access token 只注入 bridge 服务。核心创建主人与 Bot 的加密私聊并把房间 ID 交给桥；桥只接受主人的消息，群聊和其他发送者按 Bot 权限拒绝。桥复用 `wonton-matrix` 的 Sliding Sync、设备密钥、交叉签名和恢复密钥，不自己实现 Olm/Megolm。bridge 的 crypto store、Bot 登录状态、恢复密钥和房间→session 映射在 `${WONTON_BOT_DATA}/bridge`，目录权限 0700；agent 的 HOME、workspace 和官方登录态在 `${WONTON_BOT_DATA}/agent`，Agent 看不到 bridge 目录。恢复密钥只在核心收集/保管的文件中出现，不进日志、环境变量或 Matrix 消息。加密初始化失败就让插件不健康，绝不退回明文。
 
-收到普通文本后，桥按房间查 session；没有就调用 `session/new`，随后切到插件配置的模式（见下文）。文本成为一个 `session/prompt`，ACP 的 `agent_message_chunk` 只在该轮结束后拼成一条 Matrix `m.text`；中间不展示 thought、tool call、usage、plan 或执行轨迹，只发送 typing 状态和每轮一条状态消息（[ADR-0082](0082-agent-run-status.md)）。图片和文件 C1 不转，收到时返回明确的输入不支持错误。桥限制输入、输出、队列长度和单轮时间，超限报错误，不截断成成功。
+收到普通文本后，桥按房间查 session；没有就调用 `session/new`，随后切到插件配置的模式（见下文）。文本成为一个 `session/prompt`，ACP 的 `agent_message_chunk` 只在该轮结束后拼成一条 Matrix `m.text`；中间不展示 thought、tool call、usage、plan 或执行轨迹，只发送 typing 状态和每轮一条状态消息（[ADR-0082](0082-agent-run-status.md)）。桥限制输入、输出、队列长度和单轮时间，超限报错误，不截断成成功。
+
+图片和文件也收：收到 `m.image`/`m.file` 时一条事件一轮，桥用 matrix-sdk 下载并解密媒体（加密房间同样适用），落到 Agent 工作区的 `wonton-attachments/{房间}/{事件}/` 下（目录名和文件名都做清洗，工作区目录必须已存在）。发提示词时按 Agent 在 initialize 里声明的 `promptCapabilities` 组块：声明了 image 的给 `image` 块（base64 + mimeType），其余给 `resource_link`（`file://` 工作区路径）——text 和 resource_link 是所有 Agent 必须支持的两类，不给外部 HTTP 地址（ACP 安全指引）。附件自带的说明文字作为 `text` 块放进同一轮；下载失败、超过大小上限（20 MiB，见 `bridge/attachments.rs` 的说明）、不支持的类型（语音、视频等）都按类别回主人，不发残缺的一轮。`prompt` 从此接收内容块数组，多块一轮的口子已留好；多条消息分组成一轮等 ADR-0094 定了标记字段再做。附件文件按时间和总量清理：桥每小时和启动时各清一次，删超过 7 天的，总量超 1 GiB 时从最旧的删起。工作区由 bridge 和 agent 两个服务共享挂载（这是两服务唯一的共享目录）；`wonton://file` 链接不解析，当文字转给 Agent。
 
 同一 session 同时只有一个 `session/prompt`。默认排队，队列满返回 busy。主人发送“打断重来”操作时，桥先 `session/cancel`，等原 prompt 的响应（包括 `cancelled`）后再用新文本调用 `session/prompt`；取消后的迟到 chunk 在该 prompt 的边界外丢弃。桥在 ACP `initialize` 的顶层 `_meta.steering.supported` 为真时支持现成的 `_session/steering`：进行中直接发送，返回 `injected`；空闲返回 `promptRequired`，再走普通 prompt。没有该能力就排队，不调用 Qwen 私有方法。Matrix 控制消息只由桥识别，不发给 ACP：`/wonton interrupt <文字>` 是打断重来，`/wonton queue <文字>` 是显式排队；普通聊天文本默认排队。
 
