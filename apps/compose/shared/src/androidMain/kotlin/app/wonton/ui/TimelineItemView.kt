@@ -157,13 +157,13 @@ private fun agentRunRow(run: TimelineContent.AgentRun): AgentRunRowModel = Agent
     progress = run.progress,
     result = run.result,
     end = when (run.end) {
-        AgentRunEnd.Cancelled -> SerAgentRunEnd.Cancelled
-        AgentRunEnd.Uncertain -> SerAgentRunEnd.Uncertain
+        SerAgentRunEnd.Cancelled -> AgentRunEnd.Cancelled
+        SerAgentRunEnd.Uncertain -> AgentRunEnd.Uncertain
         null -> null
     },
     body = run.body,
     cardId = run.cardId,
-    choices = run.choices.map { AgentRunRowChoice(it.key, it.label) },
+    choices = run.choices.map { AgentRunChoice(it.key, it.label) },
     senderName = run.senderName,
 )
 
