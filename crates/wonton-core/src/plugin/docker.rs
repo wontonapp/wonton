@@ -13,8 +13,8 @@ use bollard::models::{
 use bollard::query_parameters::{
     CreateContainerOptionsBuilder, DownloadFromContainerOptionsBuilder,
     KillContainerOptionsBuilder, ListContainersOptionsBuilder, ListNetworksOptionsBuilder,
-    ListVolumesOptionsBuilder, LogsOptionsBuilder, RemoveContainerOptionsBuilder,
-    RemoveVolumeOptionsBuilder, StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
+    ListVolumesOptionsBuilder, RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder,
+    StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
 };
 use futures_util::StreamExt;
 use wonton_l10n::Arg;
@@ -520,7 +520,6 @@ impl Engine {
             .await
             .map_err(|e| self.fail_name("plugin-install-docker-context-start-container", name, e))
     }
-
     /// 给容器发信号（如 `SIGUSR1`）；返回错误时信号可能已经发出，调用方不要盲目重试。
     pub async fn kill_container(&self, name: &str, signal: &str) -> Result<()> {
         let options = KillContainerOptionsBuilder::default()
@@ -589,21 +588,6 @@ impl Engine {
                     self.fail_name("plugin-install-docker-context-remove-container", name, e)
                 }),
         )
-    }
-
-    /// 容器最后若干行日志，用于在安装失败时给出原因。
-    pub async fn logs_tail(&self, name: &str, lines: usize) -> String {
-        let options = LogsOptionsBuilder::default()
-            .stdout(true)
-            .stderr(true)
-            .tail(&lines.to_string())
-            .build();
-        let mut stream = self.docker.logs(name, Some(options));
-        let mut out = String::new();
-        while let Some(Ok(chunk)) = stream.next().await {
-            out.push_str(&chunk.to_string());
-        }
-        out
     }
 
     /// 列出带 `key=value` 标签、其余标签又让 `keep` 认可的容器、网络和卷（容器包括已停止的）。Docker 的标签过滤

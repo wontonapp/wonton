@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use serde::{Deserialize, Serialize};
 
 use super::docker::{ContainerFile, Engine, EngineError};
@@ -80,13 +80,15 @@ impl SecretStore {
     }
 }
 
-/// 按声明生成一个值，格式和 `openssl rand -hex <bytes>`、`openssl rand -base64 <bytes>` 相同（base64 不换行）。
+/// 按声明生成一个值：`hex` 和 `openssl rand -hex <bytes>` 相同，`base64` 和 `openssl rand -base64 <bytes>`
+/// 相同（不换行），`base64url` 是无填充的 base64url。
 pub fn generate(spec: &GenerateSecret) -> String {
     let mut bytes = vec![0u8; spec.bytes];
     getrandom::fill(&mut bytes).expect("操作系统随机数源不可用");
     match spec.encoding {
         SecretEncoding::Hex => bytes.iter().map(|b| format!("{b:02x}")).collect(),
         SecretEncoding::Base64 => STANDARD.encode(&bytes),
+        SecretEncoding::Base64Url => URL_SAFE_NO_PAD.encode(&bytes),
     }
 }
 
@@ -308,6 +310,14 @@ mod tests {
             44,
             "和 openssl rand -base64 32 一样带填充、不换行"
         );
+        // base64url 无填充：44 减掉 1 个填充符，字符里没有 `+`、`/`。
+        let url = generate(&spec(32, SecretEncoding::Base64Url));
+        assert_eq!(url.len(), 43);
+        assert!(
+            url.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        );
+        assert_eq!(URL_SAFE_NO_PAD.decode(&url).unwrap().len(), 32);
         assert_eq!(secret_var("web_key"), "WONTON_SECRET_WEB_KEY");
     }
 

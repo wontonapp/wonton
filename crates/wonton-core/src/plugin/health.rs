@@ -15,7 +15,9 @@ use crate::l10n;
 const POLL: Duration = Duration::from_millis(500);
 /// 没有健康检查的容器至少要稳定运行这么久才算就绪，避免把“启动即崩溃”当成成功。
 const STABLE_FOR: Duration = Duration::from_secs(3);
-const LOG_LINES: usize = 40;
+/// 失败时带上容器最后这么多行日志：只留几十行时，慢启动的应用真正的原因（第一行 FATAL）已经被截掉了。
+/// 字节上限在 [`Engine::logs_tail`]。
+const LOG_LINES: usize = 200;
 /// 失败时带上最近几次探针的结果：Docker 至多存 5 条，3 次足够看出趋势。
 const PROBES_KEPT: usize = 3;
 /// 每条探针输出截到 1 KiB，防止刷屏。
@@ -99,7 +101,7 @@ pub(super) async fn wait_for(
             Err(failure) => return Err(failure_error(engine, container, failure, langs).await),
         };
         if Instant::now() >= deadline {
-            let logs = engine.logs_tail(container, LOG_LINES).await;
+            let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
             return Err(HealthError::Timeout(with_log_tail(
                 crate::l10n::text(
                     langs,
@@ -166,7 +168,7 @@ pub(super) async fn wait_for_all(
         }
         if Instant::now() >= deadline {
             let dep = pending.swap_remove(0);
-            let logs = engine.logs_tail(dep.name, LOG_LINES).await;
+            let logs = traced(dep.name, engine.logs_tail(dep.name, LOG_LINES).await);
             return Err(HealthError::Timeout(with_log_tail(
                 crate::l10n::text(
                     langs,
@@ -203,7 +205,7 @@ async fn failure_error(
 ) -> HealthError {
     match failure {
         Failure::Unhealthy(probes) => {
-            let logs = engine.logs_tail(container, LOG_LINES).await;
+            let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
             HealthError::Unhealthy(with_log_tail(
                 crate::l10n::text(
                     langs,
@@ -216,7 +218,7 @@ async fn failure_error(
             ))
         }
         Failure::Exited(code) => {
-            let logs = engine.logs_tail(container, LOG_LINES).await;
+            let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
             HealthError::Exited(with_log_tail(
                 crate::l10n::text(
                     langs,
@@ -230,6 +232,14 @@ async fn failure_error(
         }
         Failure::Other(e) => e,
     }
+}
+
+/// 日志同时进核心日志：安装失败后容器会被回滚删掉，只看得到错误的人不至于连日志都没了。
+fn traced(container: &str, logs: String) -> String {
+    if !logs.is_empty() {
+        tracing::warn!(%container, logs = %logs, "容器失败时的日志");
+    }
+    logs
 }
 
 /// 错误正文加上日志尾巴一段：没有探针就不留空行，和以前的排版一致。

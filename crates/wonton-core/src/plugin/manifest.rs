@@ -577,6 +577,10 @@ pub struct Manifest {
     pub settings: Option<String>,
     #[serde(default)]
     pub requirements: Option<Requirements>,
+    /// 安装最多等多久（秒）：安装时要下载大文件（模型等）的插件写长一点，核心按它放宽安装期限。不写用核心的
+    /// 安装期限（默认 300 秒），最多 `install_notes::MAX_INSTALL_TIMEOUT_SECS` 秒。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_timeout_secs: Option<u64>,
 }
 
 /// `optional_permissions` 里的一项。
@@ -633,6 +637,7 @@ impl Manifest {
         super::privileges::validate_optional(self, langs)?;
         super::gpu::validate(self, langs)?;
         super::requirements::validate(self, langs)?;
+        super::install_notes::validate_install_timeout(self)?;
         super::lan::validate(self, langs)?;
         validate_tunnel(self)?;
         super::provides::validate(self, langs)?;

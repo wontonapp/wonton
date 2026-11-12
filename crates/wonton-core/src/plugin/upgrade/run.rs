@@ -384,18 +384,17 @@ impl PluginManager {
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline =
-            super::super::health_gate::deadline(&plan, self.cfg.install_timeout, Instant::now());
+            super::super::health_gate::deadline(&plan, ctx.install_limit, Instant::now());
         self.stage(&manifest.id, InstallStage::Starting);
-        let health = self
-            .start_containers(
-                Some(manifest),
-                &plan,
-                Some(&manifest.id),
-                &mut progress.undo,
-                deadline,
-                &langs,
-            )
-            .await?;
+        let health = Box::pin(self.start_containers(
+            Some(manifest),
+            &plan,
+            Some(&manifest.id),
+            &mut progress.undo,
+            deadline,
+            &langs,
+        ))
+        .await?;
         let (upstream, models, mcp) = self
             .deploy_upstreams(manifest, &network, &mut secrets, deadline, &langs)
             .await?;

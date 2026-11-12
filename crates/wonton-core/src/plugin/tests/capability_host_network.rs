@@ -1,6 +1,7 @@
 //! 通用能力的宿主网络中继：真实 unix HTTP 请求，以及丢失容器后的核对和重启恢复。
 
 use std::path::Path;
+use std::sync::Arc;
 
 use tokio::net::UnixListener;
 
@@ -199,4 +200,29 @@ async fn a_bridge_capability_keeps_its_ordinary_service_address() {
             .relays
             .is_empty()
     );
+}
+
+/// 宿主网络的服务默认没有 `NET_RAW`：起不来时错误里点名缺的能力和补法，作者不用猜。
+#[tokio::test]
+async fn a_host_network_failure_names_the_dropped_capability() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = Arc::new(manager_with(engine, &dir));
+    let compose = package(
+        "  proxy:\n    image: nginx\n    network_mode: host\n    \
+         command: ['sh', '-c', 'ping -c1 8.8.8.8']",
+        "  permissions: [network.host]",
+    );
+    docker.set_state(
+        &super::super::names::container_name("app-test", "proxy"),
+        serde_json::json!({"Status": "exited", "ExitCode": 1}),
+    );
+    let error = m
+        .install(&compose, &[Permission::NetworkHost], langs())
+        .await
+        .unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("NET_RAW"), "{message}");
+    assert!(message.contains("cap_add: [NET_RAW]"), "{message}");
+    assert!(message.contains("cap.NET_RAW"), "{message}");
 }

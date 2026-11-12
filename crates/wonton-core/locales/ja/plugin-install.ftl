@@ -204,6 +204,7 @@ plugin-install-cfg-target-absolute = configsのターゲット`{ $raw }`は絶�
 plugin-install-cfg-target-root = configsのターゲットに/は使えません
 plugin-install-cfg-id-invalid = configsの{ $field }`{ $value }`は0以上の整数である必要があります
 plugin-install-cfg-mode-invalid = configsのmode`{ $value }`が不正です。0から0777の8進数の権限で指定してください
+plugin-install-cfg-parent-is-file = configsのtargetの親`{ $parent }`がコンテナ{ $service }の中でファイルです。そこには書き込めません
 
 # ── マウント（mounts.rs）───────────────────────────────────────────────────
 
@@ -524,6 +525,7 @@ plugin-install-runtime-unsupported = このコアは runtime が { $runtime } �
 plugin-install-matrix-rtc-needs-matrix = コアが Matrix サーバーに接続していないため、matrix_rtc（通話の認可）を提供するアプリはインストールできません
 plugin-install-matrix-rtc-conflict = matrix_rtc（通話の認可）を提供するアプリ { $id } が既にインストールされています。同時に1つだけです
 plugin-install-matrix-rtc-ca-failed = 通話の認可アプリが信頼する証明書バンドルを書き込めませんでした：{ $error }
+plugin-install-capability-dropped = ホストネットワークのサービスでは、ホームサーバーがデフォルトで{ $capability }を外します。イメージがICMP pingなどで必要とするなら、{ $permission }権限を宣言し、サービス{ $service }に{ $field }を書いてください。
 
 # 静态网页和托管形态（ADR-0080）
 plugin-install-static-dir = `{ $root }` の静的ファイル：{ $problem }

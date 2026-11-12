@@ -30,12 +30,12 @@ fn a_readable_package_is_ok() {
 
 #[test]
 fn a_newer_spec_is_reported_before_any_field() {
-    let source = compose("  not_a_field: 1\n", "").replacen("spec: '0.13'", "spec: '0.14'", 1);
+    let source = compose("  not_a_field: 1\n", "").replacen("spec: '0.13'", "spec: '0.15'", 1);
     let verdict = judged(&source);
     assert_eq!(verdict.verdict, Verdict::Breaking);
     assert_eq!(
         verdict.reasons,
-        vec![Reason::new(SPEC_UNSUPPORTED, "0.14")],
+        vec![Reason::new(SPEC_UNSUPPORTED, "0.15")],
         "{:?}",
         verdict.reasons
     );

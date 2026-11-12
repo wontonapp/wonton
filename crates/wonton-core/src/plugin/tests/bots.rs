@@ -217,6 +217,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
         tz: "UTC".into(),
         puid: 1000,
         pgid: 1000,
+        install_limit: crate::config::DEFAULT_INSTALL_TIMEOUT,
         extra_hosts: Vec::new(),
         gpu: None,
         lan: None,

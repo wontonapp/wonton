@@ -303,3 +303,34 @@ fn dedicated_provider_fields_keep_their_original_spec_floors() {
         assert!(problems(&document("0.7", manifest, plain())).is_empty());
     }
 }
+
+#[test]
+fn base64url_secret_encoding_needs_spec_0_14() {
+    let manifest =
+        json!({"secrets": {"key": {"generate": {"bytes": 32, "encoding": "base64url"}}}});
+    let found = problems(&document("0.13", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].contains("x-wonton.secrets.key.generate.encoding: base64url"),
+        "{found:?}"
+    );
+    assert!(problems(&document("0.14", manifest, plain())).is_empty());
+}
+
+#[test]
+fn the_install_deadline_needs_spec_0_14() {
+    let manifest = json!({"install_timeout_secs": 900});
+    let found = problems(&document("0.13", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].contains("x-wonton.install_timeout_secs"),
+        "{found:?}"
+    );
+    assert!(problems(&document("0.14", manifest, plain())).is_empty());
+}
+
+#[test]
+fn other_secret_encodings_stay_at_the_old_spec() {
+    let manifest = json!({"secrets": {"key": {"generate": {"encoding": "base64"}}}});
+    assert!(problems(&document("0.13", manifest, plain())).is_empty());
+}

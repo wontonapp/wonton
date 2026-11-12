@@ -19,6 +19,9 @@ enum Added {
     Field(&'static [&'static str]),
     /// `x-wonton` 下一个字符串字段的新取值，如 `runtime: static_web`。
     Value(&'static str, &'static str),
+    /// 一条路径（写法同 [`Added::Field`]）最后落到的字符串等于某个新取值，如 `secrets.<名字>.encoding:
+    /// base64url`。
+    ValueAt(&'static [&'static str], &'static str),
     /// `provides` 中除保留的专用字段外，每个按能力名声明的提供方。
     GenericProvides,
     /// `x-wonton.permissions` 里的一项。
@@ -42,6 +45,7 @@ const V0_10: SpecVersion = SpecVersion::new(0, 10);
 const V0_11: SpecVersion = SpecVersion::new(0, 11);
 const V0_12: SpecVersion = SpecVersion::new(0, 12);
 const V0_13: SpecVersion = SpecVersion::new(0, 13);
+const V0_14: SpecVersion = SpecVersion::new(0, 14);
 
 /// 0.6 以后才有的写法。新加清单字段时在这里加一行，规范的“各版本新增的字段”同步加。
 const TABLE: &[(SpecVersion, Added)] = &[
@@ -86,6 +90,11 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_13, Added::Field(&["webui", "oidc", "admin_groups"])),
     (V0_13, Added::Field(&["webui", "oidc", "role_claim"])),
     (V0_13, Added::Field(&["webui", "health"])),
+    (V0_14, Added::Field(&["install_timeout_secs"])),
+    (
+        V0_14,
+        Added::ValueAt(&["secrets", "*", "generate", "encoding"], "base64url"),
+    ),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。
@@ -159,6 +168,21 @@ fn places(
             .then(|| format!("x-wonton.{field}: {value}"))
             .into_iter()
             .collect(),
+        Added::ValueAt(path, value) => {
+            let mut found = Vec::new();
+            walk_value(
+                manifest,
+                path,
+                &mut String::from("x-wonton"),
+                value,
+                &mut found,
+            );
+            // 和 `Value` 一样把取值写进报错位置。
+            found
+                .into_iter()
+                .map(|place| format!("{place}: {value}"))
+                .collect()
+        }
         Added::GenericProvides => manifest["provides"]
             .as_object()
             .into_iter()
@@ -201,8 +225,33 @@ fn places(
 
 /// 走完一条字段路径，用到的写进 `found`：`place` 是走到这里的报错位置，`"*"` 展开成所在表里的每个键。
 fn walk(value: &Value, path: &[&str], place: &mut String, found: &mut Vec<String>) {
+    walk_at(value, path, place, None, found);
+}
+
+/// 同 [`walk`]；`wanted` 有值时只算最后落到的字符串等于它的那些地方。
+fn walk_value(
+    value: &Value,
+    path: &[&str],
+    place: &mut String,
+    wanted: &str,
+    found: &mut Vec<String>,
+) {
+    walk_at(value, path, place, Some(wanted), found);
+}
+
+fn walk_at(
+    value: &Value,
+    path: &[&str],
+    place: &mut String,
+    wanted: Option<&str>,
+    found: &mut Vec<String>,
+) {
     let Some((key, rest)) = path.split_first() else {
-        if !value.is_null() {
+        let matched = match wanted {
+            Some(wanted) => value.as_str() == Some(wanted),
+            None => !value.is_null(),
+        };
+        if matched {
             found.push(place.clone());
         }
         return;
@@ -211,7 +260,7 @@ fn walk(value: &Value, path: &[&str], place: &mut String, found: &mut Vec<String
         let length = place.len();
         place.push('.');
         place.push_str(key);
-        walk(next, rest, place, found);
+        walk_at(next, rest, place, wanted, found);
         place.truncate(length);
     };
     if *key == "*" {

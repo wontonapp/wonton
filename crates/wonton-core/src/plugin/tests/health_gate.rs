@@ -151,3 +151,32 @@ async fn a_long_start_period_also_guards_restarts() {
     let view = start.await.unwrap().unwrap();
     assert_eq!(view.status, PluginStatus::Running);
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_declared_install_deadline_extends_the_wait_without_a_start_period() {
+    let (docker, engine) = FakeDocker::start().await;
+    // 暂停的时钟里推进几分钟时，假 Docker 的请求不许被自己的时限取消。
+    let engine = engine.with_request_limit_for_test(Duration::from_secs(2 * 60 * 60));
+    let dir = tempfile::tempdir().unwrap();
+    let app = container_name("app-test", "app");
+    docker.set_state(&app, starting());
+    let mut m = manager_with(engine, &dir);
+    m.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
+    let m = Arc::new(m);
+    let compose = compose_with("{test: ['CMD', 'true']}")
+        .replace("spec: '0.5'", "spec: '0.14'")
+        .replace("x-wonton:\n", "x-wonton:\n  install_timeout_secs: 900\n");
+    let install = {
+        let m = m.clone();
+        tokio::spawn(async move { m.install(&compose, &[], super::langs()).await })
+    };
+    // 下载要十分钟的插件：默认的 300 秒不再判失败，到声明的 900 秒才超时。
+    for _ in 0..14 {
+        tokio::time::advance(Duration::from_secs(60)).await;
+        assert!(!install.is_finished(), "清单声明的安装期限要比 300 秒长");
+    }
+    tokio::time::advance(Duration::from_secs(60)).await;
+    let error: InstallError = install.await.unwrap().unwrap_err();
+    assert_eq!(error.kind(), "unhealthy", "{error}");
+    assert!(error.to_string().contains("app-test--app"), "{error}");
+}

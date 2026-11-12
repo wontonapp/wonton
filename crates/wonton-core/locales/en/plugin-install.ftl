@@ -205,6 +205,7 @@ plugin-install-cfg-target-absolute = The configs target `{ $raw }` must be an ab
 plugin-install-cfg-target-root = The configs target can't be /
 plugin-install-cfg-id-invalid = The configs { $field } `{ $value }` must be a non-negative integer
 plugin-install-cfg-mode-invalid = The configs mode `{ $value }` isn't valid: it must be an octal permission from 0 to 0777
+plugin-install-cfg-parent-is-file = The configs target's parent `{ $parent }` is a file in container { $service }: the file can't be written there
 
 # ── Mounts (mounts.rs) ───────────────────────────────────────────────────────
 
@@ -525,6 +526,7 @@ plugin-install-runtime-unsupported = this core cannot install or upgrade runtime
 plugin-install-matrix-rtc-needs-matrix = The home server isn't connected to a Matrix server, so an app that provides matrix_rtc (call authorization) can't be installed
 plugin-install-matrix-rtc-conflict = App { $id } already provides matrix_rtc (call authorization): there can only be one at a time
 plugin-install-matrix-rtc-ca-failed = Couldn't write the certificate bundle the call authorization app trusts: { $error }
+plugin-install-capability-dropped = The home server drops { $capability } by default for host-network services. If the image needs it (ICMP pings and the like), declare the { $permission } permission and write { $field } for service { $service }.
 
 # 静态网页和托管形态（ADR-0080）
 plugin-install-static-dir = Static files in `{ $root }`: { $problem }

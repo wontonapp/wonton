@@ -23,14 +23,15 @@ impl PluginManager {
                 continue;
             }
             if self.is_installed(&manifest.id) {
+                // 每个包的工作都搬上堆：预装、升级的 await 链贴着测试线程的栈上限。
                 if self.record_unreadable(&manifest.id) {
-                    self.reinstall_bundled(package, backoff).await;
+                    Box::pin(self.reinstall_bundled(package, backoff)).await;
                 } else {
-                    self.upgrade_bundled(package).await;
+                    Box::pin(self.upgrade_bundled(package)).await;
                 }
                 continue;
             }
-            self.preinstall(package, backoff).await;
+            Box::pin(self.preinstall(package, backoff)).await;
         }
         Ok(())
     }

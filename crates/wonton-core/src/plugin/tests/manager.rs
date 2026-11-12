@@ -244,15 +244,19 @@ async fn configs_are_written_after_create_and_before_start() {
             < position(format!("POST /containers/{web}/start")),
         "配置要在启动前写进容器：{writes:?}"
     );
+    // 目标上级目录在容器里不存在时先建出来（root、0755），文件照声明写。
     assert_eq!(
         archived(&docker.archive(&web).unwrap()),
-        [(
-            "etc/app.yaml".to_owned(),
-            101,
-            102,
-            0o444,
-            b"level: info\n".to_vec()
-        )]
+        [
+            ("etc".to_owned(), 0, 0, 0o755, Vec::new()),
+            (
+                "etc/app.yaml".to_owned(),
+                101,
+                102,
+                0o644,
+                b"level: info\n".to_vec()
+            ),
+        ]
     );
 
     // 插件包的文件随记录保存，核心重启后用它们恢复。

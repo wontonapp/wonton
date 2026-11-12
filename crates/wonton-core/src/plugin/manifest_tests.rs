@@ -1,4 +1,7 @@
+use serde_json::Value;
+
 use super::*;
+use crate::plugin::install_notes::MAX_INSTALL_TIMEOUT_SECS;
 
 #[test]
 fn plugin_ids_cannot_occupy_bot_web_host_labels() {
@@ -261,5 +264,39 @@ fn semver_is_checked() {
     }
     for bad in ["1.2", "v1.2.3", "01.2.3", "1.2.x", "1.2.3-é"] {
         assert!(!is_semver(bad), "{bad}");
+    }
+}
+
+#[test]
+fn the_install_deadline_is_optional_and_bounded() {
+    let manifest = |seconds: Value| -> Manifest {
+        let mut value = serde_json::json!({
+            "spec": "0.14",
+            "id": "com.example.slow",
+            "version": "1.0.0",
+            "kind": "app",
+            "title": {"en": "Example"},
+            "description": {"en": "Example"},
+            "permissions": []
+        });
+        if !seconds.is_null() {
+            value["install_timeout_secs"] = seconds;
+        }
+        serde_json::from_value(value).unwrap()
+    };
+    assert_eq!(manifest(Value::Null).install_timeout_secs, None);
+    for good in [60, 900, MAX_INSTALL_TIMEOUT_SECS] {
+        manifest(serde_json::json!(good))
+            .validate(&Languages::default())
+            .unwrap();
+    }
+    for bad in [59, MAX_INSTALL_TIMEOUT_SECS + 1] {
+        let error = manifest(serde_json::json!(bad))
+            .validate(&Languages::default())
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("install_timeout_secs"),
+            "{error}"
+        );
     }
 }
