@@ -65,9 +65,9 @@ pub use logging::init_logging;
 pub use sharing::discover_share_source;
 pub use subscription::{
     AppearanceSubscription, BotContactsSubscription, ChatSubscription, ComposerSubscription,
-    FriendsSubscription, HomeSubscription, OnboardingSubscription, PeersSubscription,
-    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
-    TabsSubscription, TransfersSubscription,
+    ConfirmationsSubscription, FriendsSubscription, HomeSubscription, OnboardingSubscription,
+    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
+    SettingsSubscription, TabsSubscription, TransfersSubscription,
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,

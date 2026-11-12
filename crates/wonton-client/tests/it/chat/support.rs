@@ -30,6 +30,7 @@ use wonton_tunnel::pair::{
 };
 use wonton_tunnel::{Allowlist, TunnelServer};
 
+mod confirmations;
 mod diagnostics;
 mod endpoint;
 mod fake_core;
@@ -118,6 +119,14 @@ impl PairHandler for Pairing {
 }
 
 /// 模拟的核心记下的东西。
+/// 假核心记着的确认卡片。测试直接塞核心的卡片 JSON，字段同 `ConfirmationCard`。
+#[derive(Default, Clone)]
+pub(super) struct FakeConfirmations {
+    pub(super) pending: Vec<Value>,
+    pub(super) finished: Vec<Value>,
+    pub(super) revision: u64,
+}
+
 struct Core {
     tuwunel: String,
     issuer: Issuer,
@@ -188,6 +197,20 @@ struct Core {
     installed: Mutex<Option<Value>>,
     /// 取已装列表的请求次数。
     installed_requests: AtomicUsize,
+    /// “等你确认”列表的假数据（ADR-0016）：卡片和 revision 由测试改，改了挂着的取列表请求就回来。
+    confirmations: Mutex<FakeConfirmations>,
+    /// [`Self::confirmations`] 的 revision，等的一方靠它的事件变化再查。
+    confirmations_revision: watch::Sender<u64>,
+    /// 接下来这么多次取列表的请求回 502，像隧道那一次没连上。
+    failing_confirmations: AtomicUsize,
+    /// 取列表的请求次数。
+    confirmations_requests: AtomicUsize,
+    /// 为真时单张卡片接口回 404，像卡片已经结束太久或核心重启过。
+    single_confirmation_missing: AtomicBool,
+    /// 接下来这么多次单张卡片接口回 503，像核心忙不过来。
+    failing_single_confirmation: AtomicUsize,
+    /// 单张卡片接口的请求次数。
+    single_confirmation_requests: AtomicUsize,
     bot_api: Arc<super::bot_profile_support::BotApi>,
     /// 好友接口的假名单（ADR-0051）。
     friends: Mutex<friends::FakeFriends>,
@@ -259,6 +282,13 @@ impl Home {
             issued_pairing_code: Mutex::default(),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
+            confirmations: Mutex::default(),
+            confirmations_revision: watch::Sender::new(0),
+            failing_confirmations: AtomicUsize::new(0),
+            confirmations_requests: AtomicUsize::new(0),
+            single_confirmation_missing: AtomicBool::new(false),
+            failing_single_confirmation: AtomicUsize::new(0),
+            single_confirmation_requests: AtomicUsize::new(0),
             bot_api: Arc::default(),
             friends: Mutex::default(),
             files: Mutex::default(),
