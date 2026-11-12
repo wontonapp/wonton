@@ -1,6 +1,6 @@
 name: cache
 
-# 在 main 上存编译缓存，PR、合并队列和定时运行只读。缓存只在 main 上写（仓库公开，外部 PR 写的条目会把
+# 在 main 上存编译缓存，PR 和定时运行只读。缓存只在 main 上写（仓库公开，外部 PR 写的条目会把
 # main 的挤掉）；PR 作业的 save-if 都要求 ref 是 refs/heads/main，main 上又不跑测试（见各工作流开头），
 # 所以缓存一直存不下来，每个作业都在冷编。这个工作流补上这一步：用和 PR 作业完全相同的 rust-cache 前缀、
 # 缓存目录和编译目标，只编不跑。
@@ -11,11 +11,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# 又推了一个提交就取消上一次，别让两次编译抢同一个 key。
-concurrency:
-  group: cache-${{ github.ref }}
-  cancel-in-progress: true
-
+# 不设 cancel-in-progress：main 忙时几分钟就合一次，取消上一次的话缓存几乎写不回去（11-11 03:30Z 起
+# 取消 26 次、成功 23 次，桥镜像的依赖层常常是旧的，Docker 作业每次多编 6–8 分钟）。并发组在各作业上：
+# 同一作业同一 ref 只跑一个，跑着的编完写回，等着的只留最新一个（GitHub 会把更早的等待者取消），
+# 不会两次编译抢同一个 key，也不会排成长队；各作业互不等待，桥镜像编得慢不拖住别的缓存。
 # 和 rust.yml、rust-docker.yml、ios.yml、android.yml 里的值一致：rust-cache 的 key 里带这些环境变量的
 # 哈希（CARGO_ 前缀都算），这边少写一个、写别的值，PR 作业就换一个 key、恢复不到这里存的条目。
 env:
@@ -117,6 +116,9 @@ jobs:
     name: 测试二进制（只编不跑）
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.rust == 'true') }}
+    concurrency:
+      group: cache-rust-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -145,6 +147,9 @@ jobs:
     name: Clippy 产物（只编不跑）
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.rust == 'true') }}
+    concurrency:
+      group: cache-clippy-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -165,6 +170,9 @@ jobs:
     name: iOS 模拟器核心（只编不跑）
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.ios == 'true') }}
+    concurrency:
+      group: cache-ios-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: xcode-27
     timeout-minutes: 45
     env:
@@ -191,6 +199,9 @@ jobs:
     name: Android 核心（只编不跑）
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.android == 'true') }}
+    concurrency:
+      group: cache-android-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -227,6 +238,9 @@ jobs:
     name: 桥镜像（层缓存写回镜像仓库）
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.bridge == 'true') }}
+    concurrency:
+      group: cache-bridge-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     # 整编（cargo-chef 依赖层）在 4 核托管机上 18 分钟左右，留余量。
     timeout-minutes: 75

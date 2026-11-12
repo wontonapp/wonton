@@ -125,6 +125,9 @@
     <string name="chat_backup_save_key_title">Save your recovery key</string>
     <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
     <string name="chat_backup_saved">Saved</string>
+    <!-- Confirmation dialog for the "Saved" button: closing the page discards the key on this device. -->
+    <string name="chat_backup_saved_confirm_title">Saved it somewhere safe?</string>
+    <string name="chat_backup_saved_confirm_message">After this, this device no longer shows the key. Make sure you have a copy before you continue.</string>
     <!-- Page heading when chat backup hasn't been set up. -->
     <string name="chat_backup_status_disabled">Chat backup isn\'t set up yet</string>
     <!-- Page heading when chat backup is on and verified. -->
@@ -385,6 +388,10 @@
     <string name="core_upgrade_check_up_to_date">Up to date</string>
     <!-- Button on the update page while the channel check is running. -->
     <string name="core_upgrade_checking">Checking…</string>
+    <!-- Heading of the compatibility warning on the update offer: these installed apps won\'t work after the update. -->
+    <string name="core_upgrade_compat_breaking_title">These apps won\'t work after the update</string>
+    <!-- Light notice on the update offer: it couldn\'t check which installed apps would be affected. Tapping checks again. -->
+    <string name="core_upgrade_compat_not_checked">Couldn\'t check which apps would be affected</string>
     <!-- Stage line after the update finished. Argument: the version now running. -->
     <string name="core_upgrade_completed_to">Updated to %1$s</string>
     <!-- Primary button in the confirm step: start the update. -->
@@ -737,6 +744,12 @@
     <string name="friends_add_placeholder">@bob:example.org</string>
     <!-- Submit button under the Matrix ID field. -->
     <string name="friends_add_submit">Send request</string>
+    <!-- Row in the add-friend sheet that opens the scan page. -->
+    <string name="friends_scan_code">Scan their code</string>
+    <!-- Placeholder of the field for pasting the code when scanning is not possible. -->
+    <string name="friends_paste_placeholder">Paste their code</string>
+    <!-- Row in the add-friend sheet and the dialog that shows my own matrix.to QR code. -->
+    <string name="friends_my_code">My QR code</string>
     <!-- Section heading above the pending requests, received and sent. -->
     <string name="friends_requests_title">Requests</string>
     <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
@@ -1095,6 +1108,15 @@
     <string name="plugin_save_folders">Folders it can save to</string>
     <!-- Button that revokes one save permission. No arguments; short label. -->
     <string name="plugin_save_revoke">Revoke</string>
+    <!-- Section title and row for opening an app\'s settings page. No arguments. -->
+    <string name="plugin_settings_section">Settings</string>
+    <string name="plugin_settings_open">Open settings</string>
+    <!-- Note under a setting the app can\'t render because the home server is newer. No arguments. -->
+    <string name="plugin_settings_update_app">Update the app to change this</string>
+    <!-- Note under a required setting that has no value and no default. No arguments. -->
+    <string name="plugin_settings_required">Required</string>
+    <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
+    <string name="plugin_settings_restart_hint">The app will restart to apply this</string>
     <!-- Section title for the app's updates. No arguments. -->
     <string name="plugin_updates_section">Updates</string>
     <!-- Switch label: ask before every update of an agent-written app. No arguments. -->
@@ -1167,6 +1189,12 @@
     <string name="plugin_task_review">Review again</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">The result is uncertain: %1$s</string>
+    <!-- Status of a running task while the connection to the home server is down. -->
+    <string name="plugin_task_waiting_for_connection">Waiting for connection</string>
+    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
+    <string name="plugin_task_check_installed_next_step">Check the installed list to see whether it installed.</string>
+    <!-- Button on an uncertain task that opens the installed list. -->
+    <string name="plugin_task_check_installed">Check installed</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">Uninstalled</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->
@@ -1190,7 +1218,7 @@
     <!-- Destructive button that uninstalls and deletes the app's data. -->
     <string name="plugin_uninstall_delete_data">Uninstall and delete data</string>
     <!-- Message of the uninstall confirmation. -->
-    <string name="plugin_uninstall_delete_data_warning">Deleting data also removes its keys and bot accounts. This can\'t be undone.</string>
+    <string name="plugin_uninstall_delete_data_warning">Deleting data also removes its keys and bot accounts, and old encrypted messages with its bots become unreadable. This can\'t be undone.</string>
     <!-- Button that uninstalls but keeps the app's data. -->
     <string name="plugin_uninstall_keep_data">Uninstall and keep data</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
@@ -1219,6 +1247,7 @@
     <string name="port_mapping_reason_other">Port mapping ran into a problem.</string>
     <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
     <string name="port_mapping_no_notification_permission">Without the notification permission, you won\'t see the mapping notification. Mapping still works.</string>
+    <string name="port_mapping_warning_public_relay_bandwidth">Connected only through the public relay — not enough bandwidth for streaming.</string>
     <!-- Problem title when the appearance settings couldn't be saved on the home server. -->
     <string name="problem_appearance_title">Appearance settings weren\'t saved</string>
     <!-- Problem reason when a link to an app page opens before the installed app list loaded. -->
@@ -1567,20 +1596,18 @@
     <string name="tab_uninstalling">Uninstalling…</string>
     <!-- Line while the app updates. No arguments. -->
     <string name="tab_upgrading">Updating…</string>
-    <!-- Button that opens a page the cross-origin isolation would block. No arguments. -->
-    <string name="tab_open_anyway">Open anyway</string>
+    <!-- Line on an app page that opens in the system browser instead of the app. Argument: the app name. -->
+    <string name="tab_opens_in_browser">%1$s opens in your browser</string>
+    <!-- Button that opens the app page in the system browser. No arguments; short label. -->
+    <string name="tab_open_in_browser">Open</string>
+    <!-- Next step when no browser can open the app page. No arguments. -->
+    <string name="tab_no_browser_next_step">Install or turn on a browser such as Chrome, then try again.</string>
     <!-- Button that removes the page from the navigation bar. No arguments. -->
     <string name="tab_unpin_from_bar">Remove from navigation bar</string>
     <!-- Button that starts a stopped app. No arguments; short label. -->
     <string name="tab_start">Start</string>
     <!-- Button that opens the app's details page. No arguments; short label. -->
     <string name="tab_view_details">View details</string>
-    <!-- Problem title when cross-origin isolation blocks the page. No arguments. -->
-    <string name="tab_cross_origin_title">This app can\'t open in Wonton on Android yet</string>
-    <!-- Problem detail with the installed WebView version. Argument: the version, or the unknown-version text. -->
-    <string name="tab_cross_origin_detail">Current Android System WebView: %1$s; needs 156 or newer.</string>
-    <!-- Stand-in for the WebView version when it can't be read. No arguments. -->
-    <string name="tab_webview_version_unknown">version unavailable</string>
     <!-- Problem title when the app isn't ready to show its page. No arguments. -->
     <string name="tab_load_not_ready">The app isn\'t ready</string>
     <!-- Problem title when the app's page itself fails to load. No arguments. -->
@@ -1715,6 +1742,8 @@
     <!-- Notification channel name for approval requests waiting for the owner. Shown in the system notification settings. -->
     <string name="notification_channel_confirmation">Waiting for you</string>
     <!-- Notification channel name for notices from apps. Shown in the system notification settings. -->
+    <!-- Notification state value: notifications are not allowed for this app in the system settings. -->
+    <string name="notification_value_system_blocked">Not allowed in system settings</string>
     <string name="notification_channel_plugin">App notifications</string>
     <!-- Notification state value: notifications are allowed. -->
     <string name="notification_value_on">On</string>
@@ -1891,7 +1920,7 @@
     <string name="secret_edit">Change</string>
     <string name="secret_clear">Clear</string>
     <string name="secret_filled">Filled</string>
-    <string name="secret_unfilled">Not filled</string>
+    <string name="secret_unfilled">Not ready: paste a token first</string>
     <string name="pin_to_bar">Pin to navigation bar</string>
     <!-- Menu item that removes an app\'s page from the navigation bar (long press in the sidebar). -->
     <string name="unpin_from_bar">Remove from navigation bar</string>
@@ -1958,4 +1987,85 @@
     <string name="panel_public_unsupported">This device\'s WebView cannot keep public web pages apart from plugin pages, so they cannot be opened here</string>
     <string name="panel_remove">Remove</string>
     <string name="panel_url">Enter a URL</string>
+    <!-- Title of a bot's contacts page and the entry row on the bot's detail page. -->
+    <string name="contacts_title">Contacts</string>
+    <!-- Toolbar button and sheet title for adding a contact to this bot. -->
+    <string name="contacts_add">Add contact</string>
+    <!-- Choice in the add-contact sheet: the other side is a bot. -->
+    <string name="contacts_add_kind_bot">A bot</string>
+    <!-- Choice in the add-contact sheet: the other side is a person. -->
+    <string name="contacts_add_kind_person">A person</string>
+    <!-- Placeholder of the Matrix ID field in the add-contact sheet. -->
+    <string name="contacts_add_placeholder">@someone:example.org</string>
+    <!-- Button that sends the contact request. -->
+    <string name="contacts_add_submit">Send request</string>
+    <!-- Section heading for contact requests waiting for me. -->
+    <string name="contacts_requests_title">Requests</string>
+    <!-- Section heading for contacts both sides approved. -->
+    <string name="contacts_active_title">Added</string>
+    <!-- Section heading for requests I sent that aren't in effect. -->
+    <string name="contacts_sent_title">Sent</string>
+    <!-- Shown on an incoming contact request: what approving means. -->
+    <string name="contacts_incoming_warning">Its messages will be handled like messages to your bot, and sensitive tools will ask you every time.</string>
+    <!-- Approve button on an incoming contact request. -->
+    <string name="contacts_approve">Approve</string>
+    <!-- Reject button on an incoming contact request. -->
+    <string name="contacts_reject">Reject</string>
+    <!-- Button that withdraws a request I sent and they haven't answered. -->
+    <string name="contacts_withdraw">Withdraw</string>
+    <!-- Button that clears a declined or failed request row. -->
+    <string name="contacts_clear">Remove</string>
+    <!-- Content description of the button that removes an added contact. -->
+    <string name="contacts_remove">Remove contact</string>
+    <!-- Confirmation title for removing a contact. Argument: the contact's name. -->
+    <string name="contacts_remove_title">Remove “%1$s”?</string>
+    <!-- Confirmation body: what removing a contact does. -->
+    <string name="contacts_remove_message">Your bot stops handling their messages. Existing chats stay.</string>
+    <!-- Row status: waiting for the other bot's keeper to approve. -->
+    <string name="contacts_status_waiting_bot">Waiting for them to approve</string>
+    <!-- Row status: waiting for the person to accept the chat invite. -->
+    <string name="contacts_status_waiting_person">Waiting for them to accept</string>
+    <!-- Row status: they declined. -->
+    <string name="contacts_status_declined">They declined</string>
+    <!-- Row status: no such user on that server. -->
+    <string name="contacts_status_not_found">No such user</string>
+    <!-- Row status this version doesn't know. -->
+    <string name="contacts_status_unknown">Status unknown</string>
+    <!-- Under a bot contact's name: whose bot it is. Argument: the keeper's name. -->
+    <string name="contacts_keeper">%1$s\'s bot</string>
+    <!-- On a contact from another server whose pairing was removed. -->
+    <string name="contacts_remote_unpaired">That server isn\'t connected anymore, so messages won\'t get through</string>
+    <!-- Empty contacts page: the one sentence above the add button. -->
+    <string name="contacts_empty">No contacts yet</string>
+    <!-- Failure title: not a full Matrix ID, or the bot itself. -->
+    <string name="contacts_error_invalid_user_id">Not a valid Matrix ID</string>
+    <!-- Failure title: their server isn't paired with mine. -->
+    <string name="contacts_error_not_paired">Their server isn\'t connected to yours</string>
+    <!-- Next step under that failure. -->
+    <string name="contacts_error_not_paired_next">Connect it in Other servers first.</string>
+    <!-- Failure title: already a contact or already requested. -->
+    <string name="contacts_error_already_contact">Already a contact, or the request was already sent</string>
+    <!-- Failure title: the bot was uninstalled. -->
+    <string name="contacts_error_bot_not_found">This bot is no longer installed</string>
+    <!-- Failure title: that row was already handled elsewhere. -->
+    <string name="contacts_error_contact_not_found">That was already handled</string>
+    <!-- Failure title: only the bot's keeper can manage contacts. -->
+    <string name="contacts_error_not_keeper">Only this bot\'s keeper can manage its contacts</string>
+    <!-- Failure title: their server can't be reached; nothing was sent. -->
+    <string name="contacts_error_peer_unreachable">Can\'t reach their server. Nothing was sent.</string>
+    <!-- Failure title: this device isn't a paired device. -->
+    <string name="contacts_error_unauthenticated">This device isn\'t allowed to do this</string>
+    <!-- Failure title: the home server failed to save it. -->
+    <string name="contacts_error_upstream">Your home server couldn\'t save this</string>
+    <!-- Label on an incoming chat invite from a bot that asks you to be its contact. -->
+    <string name="friends_request_bot_contact">Bot contact request</string>
+    <string name="handoff_title">Continue on your other device</string>
+    <string name="handoff_waiting">Keep “Add device” open on your other device.</string>
+    <string name="handoff_unanswered_title">Your other device hasn\'t answered</string>
+    <string name="handoff_unanswered_message">Open Wonton on your other device and go back to “Add device”.</string>
+    <string name="handoff_try_again">Try again</string>
+    <string name="handoff_later">Later</string>
+    <string name="handoff_no_other_device">I don\'t have my other device</string>
+    <string name="invite_device_added">Device added</string>
+    <string name="invite_cannot_give">This device doesn\'t have all the chat keys either, so the new device can\'t read earlier messages.</string>
 </resources>

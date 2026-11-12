@@ -1,0 +1,26 @@
+{
+  "msgtype": "m.notice",
+  "body": "完成，用了 2 步",
+  "org.fluxchat.agent": {
+    "v": 1,
+    "run": "$req1",
+    "state": "done",
+    "steps": 2,
+    "result": "完成，用了 2 步"
+  },
+  "m.new_content": {
+    "msgtype": "m.notice",
+    "body": "完成，用了 2 步",
+    "org.fluxchat.agent": {
+      "v": 1,
+      "run": "$req1",
+      "state": "done",
+      "steps": 2,
+      "result": "完成，用了 2 步"
+    }
+  },
+  "m.relates_to": {
+    "rel_type": "m.replace",
+    "event_id": "$status1"
+  }
+}

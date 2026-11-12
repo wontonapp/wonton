@@ -224,6 +224,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
         host_name: "server-01".into(),
         limits: Default::default(),
         cgroup_parent: None,
+        settings: Default::default(),
         granted: Vec::new(),
     };
     let printed = format!("{ctx:?}");

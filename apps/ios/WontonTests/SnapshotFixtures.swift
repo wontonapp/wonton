@@ -71,6 +71,15 @@ enum SnapshotFixtures {
         .environment(OnboardingModel(core: core))
     }
 
+    /// 插件问题视图（#230）：「安装记录不可用」类别，标题和下一步按类别写在壳里，核心的原始说明收进“详情”。
+    static func pluginProblem() -> some View {
+        ProblemNotice(
+            problem: PluginFailure.recordUnusable.problem(
+                detail: "install record for app.example.photos is not readable: unknown schema"
+            )
+        )
+    }
+
     private static func row(_ item: TimelineItem, core: ClientCore, showsSender: Bool) -> some View {
         TimelineRow(
             item: item, core: core, showsSender: showsSender,
@@ -95,7 +104,7 @@ enum SnapshotFixtures {
                     RichSpan(text: text, bold: false, italic: false, code: false, strike: false, link: nil)
                 ])
             ], files: []),
-            edited: false, readBy: readBy, reply: nil, actions: [.copy(text: text)]
+            edited: false, readBy: readBy, reply: nil, sideChat: nil, actions: [.copy(text: text)]
         )))
     }
 
@@ -111,7 +120,7 @@ enum SnapshotFixtures {
                     quality: .unknown, lossPerMille: nil, rttMs: nil, lastFailure: nil,
                     addressesStale: false, udpFlows: [], udpBufferEvictedDatagrams: nil
                 ),
-                proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false
+                proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false, justRecovered: false
             ),
             servers: ServersViewModel(servers: [], adding: false, matrixLogin: nil)
         )
@@ -137,7 +146,7 @@ enum SnapshotFixtures {
                         senderName: "Ada", isOwn: false,
                         body: .text(text: "See you at the lab tomorrow."), timestampMs: timestampMs
                     ),
-                    unreadCount: 2, layout: layout
+                    sideChats: false, unreadCount: 2, layout: layout
                 ),
                 RoomRow(
                     roomId: "!team:home.example", name: "Analytical Engine", isDirect: false,
@@ -145,12 +154,12 @@ enum SnapshotFixtures {
                     preview: RoomPreview(
                         senderName: "Owner", isOwn: true, body: .files, timestampMs: timestampMs
                     ),
-                    unreadCount: 0, layout: layout
+                    sideChats: false, unreadCount: 0, layout: layout
                 ),
                 RoomRow(
                     roomId: "!invite:home.example", name: "Charles Babbage", isDirect: true,
                     directUserId: "@charles:home.example", isEncrypted: true, isReadOnly: false,
-                    membership: .invited, preview: nil, unreadCount: 0, layout: layout
+                    membership: .invited, preview: nil, sideChats: false, unreadCount: 0, layout: layout
                 )
             ],
             problem: nil, push: .registered, pendingConfirmations: [], settledConfirmations: [],

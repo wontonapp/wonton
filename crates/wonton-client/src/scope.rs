@@ -9,11 +9,12 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    ChatViewModel, CoreError, FriendsViewModel, HomeViewModel, OnboardingViewModel, PeersViewModel,
-    PluginsViewModel, RoomPanel, ServersViewModel, SettingsViewModel, TabsViewModel,
-    TransfersViewModel,
+    BotContactsViewModel, ChatViewModel, CoreError, FriendsViewModel, HomeViewModel,
+    OnboardingViewModel, PeersViewModel, PluginsViewModel, RoomPanel, ServersViewModel,
+    SettingsViewModel, TabsViewModel, TransfersViewModel,
 };
 
+use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
 use crate::files::FilesLink;
 use crate::friends::FriendsLink;
@@ -41,8 +42,11 @@ pub(crate) struct Scope {
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) peers: Arc<PeersLink>,
     pub(crate) friends: Arc<FriendsLink>,
+    pub(crate) bot_contacts: Arc<BotContactsLink>,
     pub(crate) settings: SettingsLink,
     pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
+    /// 要跨源隔离的插件网页交给系统浏览器时用的回环入口（ADR-0033）。
+    pub(crate) browser: Arc<crate::browser::BrowserLink>,
     /// 卡片成功的测试钩子，只给集成测试用（feature `test-hooks`，生产构建没有）。挂在作用域上：
     /// 换服务器换作用域，测试不换服务器就一直是同一个。
     #[cfg(feature = "test-hooks")]
@@ -62,6 +66,7 @@ pub(crate) struct Views {
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
     pub(crate) peers: watch::Sender<PeersViewModel>,
     pub(crate) friends: watch::Sender<FriendsViewModel>,
+    pub(crate) bot_contacts: watch::Sender<BotContactsViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
 
@@ -76,6 +81,7 @@ impl Views {
             onboarding: scope.onboarding.sender(),
             peers: scope.peers.sender(),
             friends: scope.friends.sender(),
+            bot_contacts: scope.bot_contacts.sender(),
             settings: scope.settings.sender(),
         }
     }
@@ -94,6 +100,7 @@ pub(crate) fn reuse<T>(sender: Option<watch::Sender<T>>, initial: T) -> watch::S
 
 /// 建各个联系模块时共用的东西（作用域自己的句柄、已有链接和目录）。
 struct Shared<'a> {
+    slot: &'a str,
     handle: &'a tokio::runtime::Handle,
     home: &'a Arc<HomeLink>,
     plugins: &'a Arc<PluginsLink>,
@@ -121,6 +128,7 @@ fn chat_links(
     external: bool,
 ) -> Result<ChatLinks, CoreError> {
     let Shared {
+        slot,
         handle,
         home,
         plugins,
@@ -131,6 +139,7 @@ fn chat_links(
     let chat = ChatLink::new(
         handle.clone(),
         home.clone(),
+        slot,
         dir,
         card_success,
         plugins.clone(),
@@ -183,6 +192,7 @@ fn people_links(
     chat: &Arc<ChatLink>,
 ) -> Result<(Arc<PeersLink>, Arc<FriendsLink>, SettingsLink), CoreError> {
     let Shared {
+        slot: _,
         handle,
         home,
         plugins,
@@ -234,6 +244,7 @@ impl Scope {
             row.id == slot && matches!(row.kind, wonton_protocol::ServerKind::Matrix { .. })
         });
         let storage = Storage::open(root, dir)?;
+        let device_key = storage.device_key()?.to_bytes();
         // 方式是整机设置（设置页一个开关管所有服务器），放在设备级的 root，不放每台服务器一个的槽位目录。
         let push_method = PushMethodLink::new(root);
         let home = HomeLink::new(
@@ -266,8 +277,10 @@ impl Scope {
             method: push_method.subscribe(),
             session_out: session_out.0.clone(),
             room_panel_out: room_panel.0.clone(),
+            external,
         };
         let shared = Shared {
+            slot,
             handle: &handle,
             home: &home,
             plugins: &plugins,
@@ -287,6 +300,17 @@ impl Scope {
         let people = people_links(&shared, servers, &links.chat)?;
         let shared_apps =
             crate::sharing::SharedAppsLink::new(handle.clone(), &links.chat, &plugins, hub);
+        let browser = crate::browser::BrowserLink::new(
+            handle.clone(),
+            device_key,
+            home.subscribe(),
+            plugins.subscribe(),
+        );
+        let bot_contacts = BotContactsLink::new(
+            handle.clone(),
+            home.clone(),
+            views.map(|v| v.bot_contacts.clone()),
+        );
         Ok(Arc::new(Self {
             slot: slot.to_owned(),
             home,
@@ -299,8 +323,10 @@ impl Scope {
             onboarding: links.onboarding,
             peers: people.0,
             friends: people.1,
+            bot_contacts,
             settings: people.2,
             shared_apps,
+            browser,
             #[cfg(feature = "test-hooks")]
             card_success_hook,
             runtime,
@@ -321,6 +347,7 @@ impl Scope {
         self.plugins.set_languages(languages.to_vec());
         self.onboarding.set_languages(languages.to_vec());
         self.peers.set_languages(languages.to_vec());
+        self.bot_contacts.set_languages(languages.to_vec());
     }
 
     pub(crate) fn backgrounded(&self) {

@@ -97,6 +97,7 @@ ADR-0012 定了“核心拉起一次性的升级器容器，失败回滚”，�
 升级器是旧版本，它要操作的是新版本，所以这几样是跨版本的接口：
 
 - `wonton-core init <安装目录> <基础域名>` 的参数，`wonton-core compose-images` 的输出。新版本要多的配置放进 `init` 自己能读到的地方。
+- 目标镜像的 `wonton-core plugin compat` 子命令（ADR-0085）：升级前裁决已装插件包在这个版本下是否兼容，JSON 写标准输出；目标太老没有它时按 ADR-0085 如实显示查不了。
 - compose 项目名 `wonton`、服务名 `core`、卷名；上面两个组件标签和 `wonton.core.migrations` 的名字和含义。
 - 长期服务都设重启策略，一次性服务不设。
 - `.env` 新增的变量在 compose 文件里要有默认值：一键升级不写 `.env` 里别的行。需要新必填项的版本只能走 `install.sh`。

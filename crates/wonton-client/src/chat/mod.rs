@@ -4,8 +4,12 @@
 //! 跟着家里的连接走：本地代理就绪（或者换了）就登录。上次登录的是同一台服务器就用存下来的登录状态恢复，不经服务器；
 //! 否则经隧道向核心要一次性的登录令牌，用它登录 `matrix.<基础域名>`。所有 Matrix 请求都走本地代理，Tuwunel 只被当成
 //! 标准的 Matrix 服务器（ADR-0015）。
+//!
+//! 外部 Matrix 账号的槽位（ADR-0051）不跟着家里的连接走：直连那个账号的 homeserver，用登录时
+//! （`matrix_login`）存进槽位的登录状态和存储恢复；登录状态没了只能重新登录那个账号。
 
 mod accessors;
+mod agent_run;
 mod ask;
 mod avatar_files;
 mod background;
@@ -21,6 +25,7 @@ mod display_name;
 mod draft;
 mod follow_home;
 mod forward;
+mod handoff;
 mod installs;
 mod layout;
 mod links;
@@ -58,12 +63,12 @@ use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, Ro
 use wonton_protocol::{
     Action, ChatAccount, ChatFailure, ChatSync, ChatViewModel, CoreError, DeviceVerification,
     EncryptionStatus, MediaHandle, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus,
-    RoomPanel, TimelineScroll,
+    RoomPanel, TimelineAction, TimelineScroll, TimelineTarget,
 };
 
 pub use bots::bot_current_avatar;
 pub(crate) use confirmation::{PushedCard, core_account, pushed_card};
-pub(crate) use links::LinkTargets;
+pub(crate) use links::{LinkTargets, matrix_target};
 pub(crate) use login::proxy_url;
 pub use timeline::TimelineSubscription;
 pub(crate) use view::{failure, summary};
@@ -74,7 +79,7 @@ use crate::scope::reuse;
 use confirmation::{Answers, Cards};
 use draft::DraftWrite;
 use layout::Layouts;
-use storage::ChatStorage;
+pub(crate) use storage::{ChatStorage, StoredSession};
 use view::core_error;
 
 /// 向前翻页一次最多加载的事件数。
@@ -87,6 +92,9 @@ const SEND_TIMEOUT: Duration = Duration::from_secs(60);
 pub(crate) struct ChatLink {
     runtime: Handle,
     home: Arc<HomeLink>,
+    /// 本作用域的槽位号（`ServerRow::id`）：后台通知的 `server_id` 填它，壳点开通知按它切服务器；
+    /// 不是 home 里的 endpoint ID，那是配对键，槽位列表里没有。
+    slot: String,
     storage: ChatStorage,
     view: watch::Sender<ChatViewModel>,
     active: tokio::sync::Mutex<Option<Active>>,
@@ -127,7 +135,10 @@ pub(crate) struct ChatLink {
     /// App 在后台：保持连接下同步到的该通知的消息收集进 `background_notifications`。
     background: AtomicBool,
     verification: Mutex<Option<verification::Control>>,
+    /// “添加设备”页开着、还能自动接受一个新设备的确认请求（ADR-0087）。
+    handoff_armed: AtomicBool,
     relogin: connect::Relogin,
+    external: bool,
 }
 
 /// 卡片变成成功时就地调用（插件 ID），在卡片的情况发出去之前：ViewModel 里卡片“已经不用回答”时，补不补取已经定了。
@@ -177,12 +188,15 @@ pub(crate) struct ChatChannels {
     pub(crate) session_out: watch::Sender<Option<Arc<MatrixSession>>>,
     /// 打开的房间的面板（房间账号数据）。
     pub(crate) room_panel_out: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
+    /// 外部 Matrix 账号的槽位（ADR-0051）：不跟着家里的连接走，直连 homeserver，用登录时存下的状态恢复。
+    pub(crate) external: bool,
 }
 
 impl ChatLink {
     pub(crate) fn new(
         runtime: Handle,
         home: Arc<HomeLink>,
+        slot: &str,
         data_dir: &Path,
         card_success: CardSuccess,
         plugins: Arc<crate::plugins::PluginsLink>,
@@ -193,6 +207,7 @@ impl ChatLink {
             method,
             session_out,
             room_panel_out,
+            external,
         } = channels;
         let storage = ChatStorage::open(data_dir)?;
         let mut encryption = EncryptionStatus {
@@ -204,6 +219,7 @@ impl ChatLink {
             can_reset: false,
             recovery_next_step: RecoveryNextStep::None,
             verification_flow: None,
+            key_handoff: None,
         };
         recovery::refresh(&mut encryption);
         let view = reuse(
@@ -236,6 +252,7 @@ impl ChatLink {
         let chat = Arc::new(Self {
             runtime: runtime.clone(),
             home: home.clone(),
+            slot: slot.to_owned(),
             storage,
             view,
             active: tokio::sync::Mutex::new(None),
@@ -261,10 +278,16 @@ impl ChatLink {
             draft_writes,
             background: AtomicBool::new(false),
             verification: Mutex::new(None),
+            handoff_armed: AtomicBool::new(false),
             relogin: connect::Relogin::default(),
+            external,
         });
         runtime.spawn(draft::write_drafts(Arc::downgrade(&chat), draft_receiver));
-        runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
+        if external {
+            runtime.spawn(chat.clone().connect(connect::Target::External));
+        } else {
+            runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
+        }
         Ok(chat)
     }
 
@@ -283,8 +306,13 @@ impl ChatLink {
             | ChatAccount::SigningIn => {}
             // 正在等着重连的不再等，马上登录。
             ChatAccount::Reconnecting { .. } | ChatAccount::Failed { .. } => {
-                if let Some(proxy) = self.home.view().proxy {
-                    self.runtime.spawn(self.clone().connect(proxy));
+                let target = match self.home.view().proxy {
+                    _ if self.external => Some(connect::Target::External),
+                    Some(proxy) => Some(connect::Target::Home(proxy)),
+                    None => None,
+                };
+                if let Some(target) = target {
+                    self.runtime.spawn(self.clone().connect(target));
                 }
             }
             ChatAccount::SignedIn { .. } => {
@@ -317,62 +345,12 @@ impl ChatLink {
                 Ok(())
             }
             Action::StartDirectChat { user_id } => self.start_direct_chat(&user_id),
-            Action::SendText {
-                room_id,
-                body,
-                reply_to,
-            } => self.send_text(&room_id, &body, reply_to.as_deref()),
-            Action::SendImage {
-                room_id,
-                image,
-                reply_to,
-            } => self.send_image(&room_id, image, reply_to.as_deref()),
-            Action::ForwardMessage {
+            Action::Timeline { action } => self.timeline_action(action),
+            Action::AnswerAgentChoice {
                 room_id,
                 item_id,
-                to_room_id,
-            } => self.forward_message(&room_id, &item_id, &to_room_id),
-            Action::RedactMessage { room_id, item_id } => self.redact_message(&room_id, &item_id),
-            Action::RetrySend { room_id, item_id } => {
-                let room = self.opened(&room_id)?;
-                let sent = self.sent.clone();
-                self.spawn_op_with_success(
-                    "chat-op-resend-failed",
-                    async move { room.retry_send(&item_id).await },
-                    move || onboarding::record_sent(&sent, room_id),
-                );
-                Ok(())
-            }
-            Action::CancelSend { room_id, item_id } => {
-                let room = self.opened(&room_id)?;
-                self.spawn_op("chat-op-cancel-send-failed", async move {
-                    room.cancel_send(&item_id).await
-                });
-                Ok(())
-            }
-            Action::PaginateBackwards { room_id } => {
-                let room = self.opened(&room_id)?;
-                self.spawn_op("chat-op-paginate-failed", async move {
-                    room.paginate_backwards(PAGE).await.map(drop)
-                });
-                Ok(())
-            }
-            Action::SetTimelineScroll { room_id, scroll } => {
-                self.set_timeline_scroll(&room_id, scroll)
-            }
-            Action::MarkRoomRead { room_id } => {
-                let chat = self.clone();
-                let (_, room_id) = self.target(&room_id)?;
-                self.spawn_op("chat-op-mark-read-failed", async move {
-                    chat.room(&room_id).await?.mark_as_read().await.map(drop)
-                });
-                Ok(())
-            }
-            Action::SetDraft {
-                room_id,
-                body,
-                reply_to,
-            } => self.set_draft(&room_id, &body, reply_to.as_deref()),
+                key,
+            } => self.answer_agent_choice(&room_id, &item_id, &key),
             Action::ResetRecovery => self.reset_recovery(),
             Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
@@ -391,6 +369,105 @@ impl ChatLink {
             Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
             Action::SetChatLayout { target, choice } => self.set_chat_layout(target, choice),
             _ => Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action"))),
+        }
+    }
+
+    /// 旁聊时间线（`TimelineTarget::thread_root` 不为空）还没实现（接口先合并，ADR-0093 §5）：
+    /// 调用方拿到明确的“还不能用”，不是空的成功。
+    fn side_chat_not_ready() -> CoreError {
+        CoreError::NotReady {
+            reason: l10n!(CATALOG, language(), "side-chat-not-ready"),
+        }
+    }
+
+    /// 拆 [`TimelineTarget`]：主时间线回房间 ID；带话题根的报还不能用。
+    fn timeline_target(&self, target: &TimelineTarget) -> Result<String, CoreError> {
+        if target.thread_root.is_some() {
+            return Err(Self::side_chat_not_ready());
+        }
+        Ok(target.room_id.clone())
+    }
+
+    /// 按时间线（主时间线或旁聊，ADR-0093 §5）分发的操作。实现和主时间线共用；旁聊路径在
+    /// [`Self::timeline_target`] 处统一挡下。
+    fn timeline_action(self: &Arc<Self>, action: TimelineAction) -> Result<(), CoreError> {
+        match action {
+            TimelineAction::SendText {
+                target,
+                body,
+                reply_to,
+            } => {
+                let room_id = self.timeline_target(&target)?;
+                self.send_text(&room_id, &body, reply_to.as_deref())
+            }
+            TimelineAction::SendImage {
+                target,
+                image,
+                reply_to,
+            } => {
+                let room_id = self.timeline_target(&target)?;
+                self.send_image(&room_id, image, reply_to.as_deref())
+            }
+            TimelineAction::ForwardMessage {
+                target,
+                item_id,
+                to_room_id,
+            } => {
+                let room_id = self.timeline_target(&target)?;
+                self.forward_message(&room_id, &item_id, &to_room_id)
+            }
+            TimelineAction::RedactMessage { target, item_id } => {
+                let room_id = self.timeline_target(&target)?;
+                self.redact_message(&room_id, &item_id)
+            }
+            TimelineAction::RetrySend { target, item_id } => {
+                let room_id = self.timeline_target(&target)?;
+                let room = self.opened(&room_id)?;
+                let sent = self.sent.clone();
+                self.spawn_op_with_success(
+                    "chat-op-resend-failed",
+                    async move { room.retry_send(&item_id).await },
+                    move || onboarding::record_sent(&sent, room_id),
+                );
+                Ok(())
+            }
+            TimelineAction::CancelSend { target, item_id } => {
+                let room_id = self.timeline_target(&target)?;
+                let room = self.opened(&room_id)?;
+                self.spawn_op("chat-op-cancel-send-failed", async move {
+                    room.cancel_send(&item_id).await
+                });
+                Ok(())
+            }
+            TimelineAction::PaginateBackwards { target } => {
+                let room_id = self.timeline_target(&target)?;
+                let room = self.opened(&room_id)?;
+                self.spawn_op("chat-op-paginate-failed", async move {
+                    room.paginate_backwards(PAGE).await.map(drop)
+                });
+                Ok(())
+            }
+            TimelineAction::SetTimelineScroll { target, scroll } => {
+                let room_id = self.timeline_target(&target)?;
+                self.set_timeline_scroll(&room_id, scroll)
+            }
+            TimelineAction::MarkRead { target } => {
+                let room_id = self.timeline_target(&target)?;
+                let chat = self.clone();
+                let (_, room_id) = self.target(&room_id)?;
+                self.spawn_op("chat-op-mark-read-failed", async move {
+                    chat.room(&room_id).await?.mark_as_read().await.map(drop)
+                });
+                Ok(())
+            }
+            TimelineAction::SetDraft {
+                target,
+                body,
+                reply_to,
+            } => {
+                let room_id = self.timeline_target(&target)?;
+                self.set_draft(&room_id, &body, reply_to.as_deref())
+            }
         }
     }
 

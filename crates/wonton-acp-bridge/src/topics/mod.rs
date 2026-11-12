@@ -26,6 +26,7 @@ use crate::error::Result;
 use crate::l10n::text;
 use board::{Board, NAME_MAX_CHARS, Row, SUMMARY_LINES, Status, TEXT_MAX_CHARS};
 use wonton_l10n::Lang;
+use wonton_protocol::ConfirmationOrigin;
 
 /// 会话键：主对话是 [`SessionKey::Main`]，话题用它的根消息事件 ID。
 ///
@@ -40,6 +41,17 @@ pub enum SessionKey {
 impl SessionKey {
     pub(crate) fn is_topic(&self) -> bool {
         matches!(self, SessionKey::Topic(_))
+    }
+
+    /// 这个会话报给核心的来源会话（ADR-0016）：主对话只带房间，话题带话题根。
+    pub(crate) fn origin(&self, room_id: &str) -> ConfirmationOrigin {
+        ConfirmationOrigin {
+            room_id: room_id.to_owned(),
+            thread_id: match self {
+                SessionKey::Main => None,
+                SessionKey::Topic(root) => Some(root.clone()),
+            },
+        }
     }
 
     /// 会话的持久化键：主对话是 `main`，话题是根消息事件 ID。
@@ -89,6 +101,8 @@ impl Topics {
         &mut self,
         key: &SessionKey,
         prompt: &str,
+        run: &str,
+        media: Option<&crate::bridge::attachments::PreparedAttachment>,
         now: SystemTime,
         lang: Lang,
     ) -> Result<TurnStart> {
@@ -112,6 +126,8 @@ impl Topics {
                 Status::Queued
             };
             row.pending_prompt = (!started).then(|| prompt.to_owned());
+            row.pending_run = (!started).then(|| run.to_owned());
+            row.pending_media = (!started).then(|| media.cloned()).flatten();
             row.last_seen_seq = base;
             started
         } else {
@@ -135,6 +151,8 @@ impl Topics {
                 last_seen_seq: base,
                 last_activity: now,
                 pending_prompt: (!admit).then(|| prompt.to_owned()),
+                pending_run: (!admit).then(|| run.to_owned()),
+                pending_media: (!admit).then(|| media.cloned()).flatten(),
                 is_task: false,
             });
             admit
@@ -333,6 +351,8 @@ impl Topics {
                 last_seen_seq: self.board.seq(),
                 last_activity: stamp(now),
                 pending_prompt: None,
+                pending_run: None,
+                pending_media: None,
                 is_task: true,
             });
         }
@@ -429,12 +449,19 @@ impl Topics {
     }
 
     /// 有话题结束之后调（[`Topics::end`] 返回 true、[`Topics::sweep`] 非空）：名额有
-    /// 空就放最老的排队话题进来，返回它的会话键和首条消息；第 2 步拼上开局说明和
-    /// 动态再发提示词。没有返回值就继续等。
+    /// 空就放最老的排队话题进来，返回它的会话键、首条消息和那条消息的事件 ID（状态
+    /// 消息的 `run`）；第 2 步拼上开局说明和动态再发提示词。没有返回值就继续等。
     pub async fn poll_admission(
         &mut self,
         now: SystemTime,
-    ) -> Result<Option<(SessionKey, String)>> {
+    ) -> Result<
+        Option<(
+            SessionKey,
+            String,
+            String,
+            Option<crate::bridge::attachments::PreparedAttachment>,
+        )>,
+    > {
         let promoted = limits::poll_admission(&mut self.board, stamp(now));
         if promoted.is_some() {
             self.board.persist().await?;

@@ -10,6 +10,7 @@ mod me;
 mod now;
 mod polling;
 mod registry_mirror;
+mod settings;
 mod sharing;
 mod start;
 mod support;
@@ -29,9 +30,8 @@ use tokio::sync::{Notify, watch};
 use wonton_protocol::{
     AddSourceRequest, AddedSource, AskEveryUpdate, CoreError, CoreUpgradeViewModel,
     EgressViewModel, HomeStatus, InstallPreview, InstallSource, InstalledPlugins, LanWebuiUpdate,
-    PermissionUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginTaskState,
-    PluginsViewModel, ProxySettings, StorageUsage, StoreConfirmation, StoreItem, StoreListing,
-    TabRef,
+    PermissionUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginsViewModel,
+    ProxySettings, StorageUsage, StoreConfirmation, StoreItem, StoreListing, TabRef,
 };
 
 use crate::home::HomeLink;
@@ -383,10 +383,10 @@ impl PluginsLink {
             view.core_upgrade = CoreUpgradeViewModel::default();
             view.storage = None;
             view.storage_problem = None;
-            view.tasks
-                .retain(|task| task.state == PluginTaskState::Running);
+            view.tasks.retain(|task| task.state.in_progress());
             for task in &mut view.tasks {
                 task.state = tasks::server_changed();
+                task.waiting_for_connection = false;
             }
         });
         self.forget_core_upgrade();

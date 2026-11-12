@@ -4,7 +4,7 @@
 //! 自己持有的列表上。第一批总是 [`TimelineDiff::Reset`]，给出当前的全部条目。条目和 matrix-rust-sdk 的时间线
 //! 一一对应（含日期分隔线、已读标记等），下标就是 SDK 的下标；哪些事件进时间线由 `wonton-matrix` 的事件过滤决定。
 //!
-//! 列表该停在哪也由核心说：壳用 [`Action::SetTimelineScroll`](crate::Action::SetTimelineScroll) 报告是不是离开了底部，
+//! 列表该停在哪也由核心说：壳用 [`TimelineAction::SetTimelineScroll`](crate::TimelineAction::SetTimelineScroll) 报告是不是离开了底部，
 //! 核心在每一批里给出重新算过的位置和新消息数（[`TimelineUpdate::viewport`]），并在第一批给出该停在哪一条
 //! （[`TimelineUpdate::anchor`]）。壳只按这两个值画和滚，不自己数。
 //!
@@ -13,7 +13,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ConfirmationView, FileId, QuotedMessage, ReplyQuote};
+use crate::{
+    AgentRunChoice, AgentRunEnd, AgentRunState, ConfirmationView, FileId, QuotedMessage, ReplyQuote,
+};
 
 /// 一批时间线变化，以及向前翻页的状态和列表该停在哪。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -57,6 +59,9 @@ pub struct TimelineUpdate {
     /// 每一批都给当前的列表。壳画在输入栏上方，点开是完整的卡片，能直接回答。话题里发起的也在这里。
     #[serde(default)]
     pub confirmations: Vec<ConfirmationView>,
+    /// 旁聊订阅的头部（ADR-0093）：这条时间线是旁聊时给标题和状态，主时间线为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side_chat: Option<crate::SideChatCard>,
 }
 
 /// 解不开的消息旁边的入口，壳按它写按钮。
@@ -73,7 +78,7 @@ pub enum KeyNotice {
     Other,
 }
 
-/// 列表该停在哪，方向是核心到壳。核心按已读位置、壳报告的滚动（[`Action::SetTimelineScroll`](crate::Action::SetTimelineScroll)）
+/// 列表该停在哪，方向是核心到壳。核心按已读位置、壳报告的滚动（[`TimelineAction::SetTimelineScroll`](crate::TimelineAction::SetTimelineScroll)）
 /// 和条目算出。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -161,6 +166,33 @@ pub enum TimelineContent {
     Message {
         message: TimelineMessage,
     },
+    /// Agent 一轮任务的进度（MSC4564，ADR-0082）：Bot 发的一条状态消息，核心按最新编辑解读。
+    /// 只有核心认得的 Bot 账号发的才是 AgentRun，别人发的同样内容是 [`TimelineContent::Message`]。
+    /// 字段是发送者的自述，客户端从不自动作答；聊天列表预览跳过这种条目。
+    AgentRun {
+        /// 这一轮针对的请求消息的事件 ID（`run`）。
+        run: Option<String>,
+        state: AgentRunState,
+        /// 当前步骤的一句话（`step`），Bot 给的原话，原样显示。
+        step: Option<String>,
+        /// 到现在完成的步数（`steps`）。
+        steps: Option<u32>,
+        /// 进度，`0.0..=1.0`（`progress`）。
+        progress: Option<f32>,
+        /// 结束时的一句话总结（`result`），Bot 给的原话，原样显示。
+        result: Option<String>,
+        /// 怎么结束的（`app.wonton.end`），只有状态是 [`AgentRunState::Failed`] 时有。
+        end: Option<AgentRunEnd>,
+        /// 状态消息的 `body`：写给不认识这个格式的客户端的纯文字，状态是
+        /// [`AgentRunState::Other`] 时壳原样显示它。
+        body: String,
+        /// 状态是 [`AgentRunState::Waiting`] 且这个 Bot 在这个房间有等回答的核心卡片（ADR-0016）时，
+        /// 是那张卡片：点条目打开它。
+        card_id: Option<String>,
+        /// Bot 自己发的待回答选项（`choices`），只在等待回答时有；点了一个经
+        /// [`Action::AnswerAgentChoice`](crate::Action::AnswerAgentChoice) 以主人的身份发反应。
+        choices: Vec<AgentRunChoice>,
+    },
     /// 一行说明，比如成员加入、离开，房间改名。文字由核心给出。
     Notice {
         text: String,
@@ -182,6 +214,16 @@ pub enum TimelineContent {
     ReadMarker,
     /// 已经翻到房间的开头。
     TimelineStart,
+    /// 旁聊根（ADR-0093）：带 `app.wonton.side_chat` 的 `m.notice`，只显示成卡片，不进输入框回复。
+    SideChat {
+        card: crate::SideChatCard,
+    },
+    /// 旁聊结果行（ADR-0093）：主时间线里单独的一种条目；同一个旁聊只留最新一条，更早的不显示。
+    SideChatResult {
+        root_event_id: String,
+        title: String,
+        state: crate::SideChatState,
+    },
 }
 
 /// 一条消息。
@@ -206,8 +248,16 @@ pub struct TimelineMessage {
     pub read_by: Vec<String>,
     /// 这条回复的是哪条消息，壳画在正文上方；不是回复时为空。
     pub reply: Option<ReplyQuote>,
+    /// 这条消息挂着一个旁聊卡片（ADR-0093）：普通消息是有回复时的卡片，带 `app.wonton.side_chat`
+    /// 的根只显示成卡片。不是卡片时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side_chat: Option<crate::SideChatCard>,
     /// 长按这条消息能做的事，按菜单顺序排好。空的就没有菜单。
     pub actions: Vec<MessageAction>,
+    /// 一次发送里的几条之一（ADR-0094）：壳把同一发送者、同一 `id`、挨着的几条画在一起。不是一组时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub group: Option<crate::MessageGroup>,
 }
 
 /// 长按消息的菜单里的一项。
@@ -218,11 +268,11 @@ pub enum MessageAction {
     /// 把 `text` 放进剪贴板。
     Copy { text: String },
     /// 回复这条：壳把 `message` 画在输入框上方，发送时把它的事件 ID 作为 `reply_to` 交回，并用
-    /// [`Action::SetDraft`](crate::Action::SetDraft) 记进草稿。有这一项时壳也允许右滑这条消息来回复。
+    /// [`TimelineAction::SetDraft`](crate::TimelineAction::SetDraft) 记进草稿。有这一项时壳也允许右滑这条消息来回复。
     Reply { message: QuotedMessage },
-    /// 转发到另一个房间（[`Action::ForwardMessage`](crate::Action::ForwardMessage)），壳先让主人选房间。
+    /// 转发到另一个房间（[`TimelineAction::ForwardMessage`](crate::TimelineAction::ForwardMessage)），壳先让主人选房间。
     Forward,
-    /// 撤回（[`Action::RedactMessage`](crate::Action::RedactMessage)）：所有人那里都会变成“已撤回”，壳先请主人确认。
+    /// 撤回（[`TimelineAction::RedactMessage`](crate::TimelineAction::RedactMessage)）：所有人那里都会变成“已撤回”，壳先请主人确认。
     Redact,
 }
 
@@ -239,10 +289,10 @@ pub enum SendState {
         progress: Option<f32>,
     },
     Sent,
-    /// 发送失败，`message` 是原因。没发出去的都可以取消（[`Action::CancelSend`](crate::Action::CancelSend)）。
+    /// 发送失败，`message` 是原因。没发出去的都可以取消（[`TimelineAction::CancelSend`](crate::TimelineAction::CancelSend)）。
     ///
     /// - `recoverable` 为真：连接出了问题（连不上、超时、服务器暂时出错）。核心隔一段时间自动重发，连续失败时间隔
-    ///   逐渐拉长，直到发出去；也可以马上重发（[`Action::RetrySend`](crate::Action::RetrySend)）。
+    ///   逐渐拉长，直到发出去；也可以马上重发（[`TimelineAction::RetrySend`](crate::TimelineAction::RetrySend)）。
     /// - 为假：服务器拒收（比如太大、没有权限）。核心不自动重发，同一房间之后发的消息都排在它后面，直到主人重发或者
     ///   取消这一条。
     Failed {
@@ -387,6 +437,20 @@ pub struct ImageContent {
     /// 像素宽度，壳据此预留版面。
     pub width: Option<u64>,
     pub height: Option<u64>,
+    /// 说明文字（Matrix v1.10 的媒体说明：`filename` 和 `body` 不同时 `body` 是说明），壳画在图片下面。没有时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub caption: Option<ImageCaption>,
+}
+
+/// 图片的说明文字。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ImageCaption {
+    /// 原文，复制时用。
+    pub body: String,
+    /// 排好版的样子，壳画这个，同 [`MessageContent::Text`] 的 `blocks`。
+    pub blocks: Vec<RichBlock>,
 }
 
 /// 取媒体用的句柄。对壳是不透明的，原样交回核心即可；里面可能有加密附件的密钥，不要写进日志。
@@ -448,6 +512,10 @@ mod tests {
                             size: Some(4096),
                             width: Some(640),
                             height: Some(480),
+                            caption: Some(ImageCaption {
+                                body: "哪张好看".into(),
+                                blocks: Vec::new(),
+                            }),
                         },
                     },
                     SendState::Sending {
@@ -478,6 +546,24 @@ mod tests {
                     ),
                     SendState::Sent,
                 ),
+            ),
+            item(
+                "4c",
+                TimelineContent::AgentRun {
+                    run: Some("$request".into()),
+                    state: AgentRunState::Waiting,
+                    step: Some("执行命令".into()),
+                    steps: Some(3),
+                    progress: Some(0.5),
+                    result: None,
+                    end: None,
+                    body: "等你确认".into(),
+                    card_id: Some("card-1".into()),
+                    choices: vec![AgentRunChoice {
+                        key: "allow".into(),
+                        label: "继续".into(),
+                    }],
+                },
             ),
             item("5", TimelineContent::ReadMarker),
             item(
@@ -529,6 +615,7 @@ mod tests {
             entry_blocked: true,
             key_notice: Some(KeyNotice::EnterRecoveryKey),
             confirmations: Vec::new(),
+            side_chat: None,
         };
         assert_eq!(round_trip(&update), update);
         assert!(
@@ -579,6 +666,7 @@ mod tests {
             entry_blocked: false,
             key_notice: Some(KeyNotice::VerifyWithOtherDevice),
             confirmations: Vec::new(),
+            side_chat: None,
         };
         let mut value = serde_json::to_value(empty()).unwrap();
         value.as_object_mut().unwrap().remove("key_notice");
@@ -617,6 +705,8 @@ mod tests {
                     settings: None,
                     requester: None,
                     origin: None,
+                    audience: crate::CardAudience::Keeper,
+                    answered_by: None,
                     id: "abc".into(),
                     state: ConfirmationState::Pending,
                     title: "Hermes 想安装 Grafana".into(),
@@ -716,9 +806,15 @@ mod tests {
                 edited: true,
                 read_by: vec!["主人".into()],
                 reply: None,
+                side_chat: None,
                 actions: vec![MessageAction::Copy {
                     text: "好的".into(),
                 }],
+                group: Some(crate::MessageGroup {
+                    id: "3f0c9a1e5b7d42c6a8e1f0b2c4d6e8a0".into(),
+                    index: 0,
+                    count: 2,
+                }),
             },
         }
     }
