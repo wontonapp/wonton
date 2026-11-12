@@ -3,8 +3,7 @@
 # 核心的 JWT 公钥不写在这里，经环境变量 TUWUNEL_JWT__KEY 注入（PEM）。
 # 选项说明见 Tuwunel 仓库的 tuwunel-example.toml。
 #
-# 测试还跑在 1.9.4 上，所以这里用两版都认的扁平写法：2.0 的 `[global.http]`、`[global.registration]`、
-# `[global.federation]`、`[global.network.http]` 这些表 1.9.4 会整个忽略；扁平名在 2.x 里一直有效。
+# 用扁平键名：2.x 一直兼容（2.0 起也能写成 `[global.http]` 这类分组表）。
 
 [global]
 server_name = "wonton.localhost"
