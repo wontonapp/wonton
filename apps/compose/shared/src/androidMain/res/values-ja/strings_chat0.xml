@@ -46,4 +46,6 @@
     <string name="chat_backup_value_unknown">不明</string>
     <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
     <string name="chat_status_reconnecting">再接続しています…</string>
+    <!-- システム認証ダイアログの説明：認証してから復旧キーを表示する（ADR-0102、ブラインドテスト 11-12）。 -->
+    <string name="chat_backup_verify_reason">復旧キーを表示するには認証してください</string>
 </resources>

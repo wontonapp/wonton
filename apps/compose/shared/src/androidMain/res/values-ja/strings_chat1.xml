@@ -38,4 +38,6 @@
     <string name="chat_backup_value_enabled">オン</string>
     <!-- Value on the Settings row: backup or recovery is running. -->
     <string name="chat_backup_value_in_progress">処理中</string>
+    <!-- ボタン：復旧キーを表示する前にシステム認証を求める（ADR-0102、ブラインドテスト 11-12）。 -->
+    <string name="chat_backup_reveal_key">復旧キーを表示</string>
 </resources>

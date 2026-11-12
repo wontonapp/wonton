@@ -451,6 +451,66 @@
           }
         }
       }
+    },
+    "chatBackup.revealKey": {
+      "comment": "Button that asks the system to verify the owner before showing the recovery key.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View recovery key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看恢复密钥"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看復原金鑰"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復旧キーを表示"
+          }
+        }
+      }
+    },
+    "chatBackup.verifyReason": {
+      "comment": "Explains the system verification prompt shown before the recovery key.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verify your identity to view the recovery key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证身份后查看恢复密钥"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "驗證身分後查看復原金鑰"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復旧キーを表示するには認証してください"
+          }
+        }
+      }
     }
   }
 }
