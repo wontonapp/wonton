@@ -29,6 +29,7 @@ mod link_preview;
 mod matrix_login;
 mod onboarding;
 mod owner;
+mod panel;
 mod peers;
 mod plugin;
 mod plugin_mail;
@@ -147,6 +148,10 @@ pub use onboarding::{
 pub use owner::{
     MAX_DISPLAY_NAME_CHARS, OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name,
     check_email, check_email_change, normalized_email,
+};
+pub use panel::{
+    LAYOUT_EVENT, LayoutSettings, MAX_PANEL_PAGES, PanelEntry, PanelItem, PanelScope, PanelSource,
+    PinTarget, PlacedTab, ROOM_PANEL_EVENT, RoomPanel, TabDisplaySetting,
 };
 pub use peers::{
     PEER_ERROR_HEADER, PEERS_PATH, PeerCode, PeerError, PeerErrorBody, PeerProblem, PeerRequestRow,

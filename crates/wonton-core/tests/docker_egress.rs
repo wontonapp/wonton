@@ -325,7 +325,7 @@ async fn the_relay_goes_through_the_owners_proxy_and_follows_its_lists() {
     engine.check_server().await.unwrap();
     for image in [gost::image(), busybox()] {
         engine
-            .ensure_image(&image, PullPolicy::Missing, None)
+            .ensure_image(&image, PullPolicy::Missing, &[])
             .await
             .unwrap();
     }

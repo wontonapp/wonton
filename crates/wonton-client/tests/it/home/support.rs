@@ -18,6 +18,9 @@ use wonton_tunnel::{Allowlist, TunnelServer};
 
 // 只用作等状态的上限，等到就往下走。要盖住定时检查发现死连接的最长用时（间隔 5 秒加时限 8 秒）和之后的重连。
 const WAIT: Duration = Duration::from_secs(30);
+/// 同一端口重建时等端口空出来的总预算。iroh 关掉 endpoint 以后套接字还要过一阵才真的释放，并行的测试
+/// 的 `bind(0)` 也可能临时拿走这个端口；这笔账比 [`WAIT`] 长，但只管重建这一处。
+const RESTART: Duration = Duration::from_secs(60);
 pub(super) const WEB_URL: &str = "http://app-grafana.wonton.localhost:18480/";
 
 /// 测试里的手机：一个客户端核心，连同它的数据目录。
@@ -130,8 +133,12 @@ impl Home {
     }
 
     pub(super) fn ticket(&self) -> String {
+        self.ticket_at(self.server().endpoint().bound_sockets()[0])
+    }
+
+    /// 连接信息里的直连地址换成 `addr`（拦在中间的回环代理）。
+    pub(super) fn ticket_at(&self, addr: SocketAddr) -> String {
         let id = self.server().endpoint().id();
-        let addr = self.server().endpoint().bound_sockets()[0];
         format!(
             r#"{{"server": {{"endpoint_id": "{id}", "direct_addrs": ["{addr}"]}},
                 "base_domain": "wonton.localhost", "web_url": "{WEB_URL}"}}"#
@@ -171,7 +178,6 @@ impl Home {
     }
 
     pub(super) async fn start_again(&mut self, port: u16) {
-        wait_until_port_is_free(port).await;
         let endpoint = loopback_endpoint(self.key.clone(), port).await;
         self.server = Some(TunnelServer::spawn(
             endpoint,
@@ -181,29 +187,59 @@ impl Home {
     }
 }
 
-/// 等旧服务端的 UDP 端口空出来。iroh 的 `Endpoint::close` 返回后，后台任务还要再过一小会儿才释放
-/// 套接字（Linux 单核上实测约 1 ms）。真实的重启是新进程，旧进程退出后端口一定已经空了；进程内模拟
-/// 重启时要等到这一点，否则会偶发 `Address already in use`。
-pub(crate) async fn wait_until_port_is_free(port: u16) {
-    let deadline = tokio::time::Instant::now() + WAIT;
-    while std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).is_err() {
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "旧服务端的 UDP 端口 {port} 一直没有释放"
-        );
-        tokio::time::sleep(Duration::from_millis(1)).await;
+/// 等旧服务端的 UDP 端口空出来并按住它：拿到的套接字放着不放，就代表这个端口确实能用了。iroh 的
+/// `Endpoint::close` 返回后，后台任务还要再过一小会儿才释放套接字。真实的重启是新进程，旧进程退出后端口
+/// 一定已经空了；进程内模拟重启时要等到这一点，否则会偶发 `Address already in use`。
+pub(crate) async fn bind_udp_until_free(port: u16) -> std::net::UdpSocket {
+    let deadline = tokio::time::Instant::now() + RESTART;
+    loop {
+        match std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port)) {
+            Ok(socket) => return socket,
+            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "旧服务端的 UDP 端口 {port} 一直没有释放"
+                );
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            Err(error) => panic!("回环端口 {port} 绑不上：{error}"),
+        }
     }
 }
 
+/// 端口还被别的套接字占着；别的错（配置、加密后端）再怎么等也不会好。
+pub(crate) fn port_in_use(error: &iroh::endpoint::BindError) -> bool {
+    matches!(
+        error,
+        iroh::endpoint::BindError::Sockets { source, .. }
+            if source.kind() == std::io::ErrorKind::AddrInUse
+    )
+}
+
+/// 起回环地址上的 endpoint。端口为 0 时由系统分配；重建要用的固定端口则反复 bind 到绑上为止：
+/// 探一次空再绑的两步之间，并行的测试的 `bind(0)` 会把刚空出来的端口拿走。
 async fn loopback_endpoint(key: SecretKey, port: u16) -> Endpoint {
-    Endpoint::builder(presets::Minimal)
-        .secret_key(key)
-        .clear_ip_transports()
-        .bind_addr((Ipv4Addr::LOCALHOST, port))
-        .unwrap()
-        .bind()
-        .await
-        .unwrap()
+    let deadline = tokio::time::Instant::now() + RESTART;
+    loop {
+        let bound = Endpoint::builder(presets::Minimal)
+            .secret_key(key.clone())
+            .clear_ip_transports()
+            .bind_addr((Ipv4Addr::LOCALHOST, port))
+            .unwrap()
+            .bind()
+            .await;
+        match bound {
+            Ok(endpoint) => return endpoint,
+            Err(error) if port_in_use(&error) => {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "旧服务端的 UDP 端口 {port} 一直没有释放"
+                );
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+            Err(error) => panic!("回环地址的端点起不来：{error}"),
+        }
+    }
 }
 
 pub(super) async fn wait_until_ticket_has(dir: &std::path::Path, addr: SocketAddr) {

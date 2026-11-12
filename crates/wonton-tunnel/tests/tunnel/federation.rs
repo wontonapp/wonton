@@ -210,7 +210,6 @@ impl TestPeer {
     /// 用同样的身份、端口、名单和查找函数重启。停掉之前要先 [`stop`](Self::stop)。
     async fn restart(&mut self) {
         assert!(self.server.is_none(), "服务端还在运行");
-        wait_until_port_is_free(self.endpoint_port).await;
         let endpoint =
             loopback_endpoint(self.key.clone(), self.endpoint_port, Timeouts::Short).await;
         assert_eq!(endpoint.addr().id, self.id, "重启后 endpoint ID 变了");
@@ -270,18 +269,6 @@ impl TestPeer {
         .await
         .expect("等待状态变化超时")
         .unwrap();
-    }
-}
-
-/// 等旧 endpoint 的 UDP 端口空出来（同 support 里的做法）。
-async fn wait_until_port_is_free(port: u16) {
-    let deadline = tokio::time::Instant::now() + WAIT;
-    while std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).is_err() {
-        assert!(
-            tokio::time::Instant::now() < deadline,
-            "旧 endpoint 的 UDP 端口 {port} 一直没有释放"
-        );
-        tokio::time::sleep(Duration::from_millis(1)).await;
     }
 }
 

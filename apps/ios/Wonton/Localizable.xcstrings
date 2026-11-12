@@ -6992,6 +6992,66 @@
         }
       }
     },
+    "message.codeCopied": {
+      "comment": "Accessibility label of that copy button right after the code was copied.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copied"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已复制"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已複製"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コピーしました"
+          }
+        }
+      }
+    },
+    "message.codeCopy": {
+      "comment": "Accessibility label of the copy button on a code block in a message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制代码"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "複製程式碼"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードをコピー"
+          }
+        }
+      }
+    },
     "message.copy": {
       "comment": "Item in the message menu: copy the message text. Android only.",
       "extractionState": "manual",
@@ -7018,6 +7078,96 @@
           "stringUnit": {
             "state": "translated",
             "value": "コピー"
+          }
+        }
+      }
+    },
+    "message.forward": {
+      "comment": "Item in the message menu: send a copy to another room.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转发"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轉發"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送"
+          }
+        }
+      }
+    },
+    "message.forwardEmpty": {
+      "comment": "Shown in the room picker when there is no room to forward to.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No rooms yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有可以转发的房间"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還沒有可以轉發的房間"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送できるルームがまだありません"
+          }
+        }
+      }
+    },
+    "message.forwardTitle": {
+      "comment": "Title of the room picker shown when forwarding a message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward to"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "转发到"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轉發到"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送先"
           }
         }
       }
@@ -7078,6 +7228,306 @@
           "stringUnit": {
             "state": "translated",
             "value": "画像を読み込めません"
+          }
+        }
+      }
+    },
+    "message.originalUnavailable": {
+      "comment": "Title of the failure notice in the original-image preview.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't load the original"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取不到原图"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法取得原圖"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元の画像を読み込めません"
+          }
+        }
+      }
+    },
+    "message.quoteOther": {
+      "comment": "The quoted message is a card or a type the app can't preview.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一条消息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一則訊息"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージ"
+          }
+        }
+      }
+    },
+    "message.quoteRedacted": {
+      "comment": "The quoted original message was deleted.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message deleted"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已撤回的消息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已收回的訊息"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除されたメッセージ"
+          }
+        }
+      }
+    },
+    "message.quoteUnavailable": {
+      "comment": "The quoted original message can't be shown.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original message unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原消息不可用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原訊息無法顯示"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元のメッセージを表示できません"
+          }
+        }
+      }
+    },
+    "message.quoteUndecryptable": {
+      "comment": "The quoted original message can't be decrypted on this device.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't decrypt"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法解密"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法解密"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復号できません"
+          }
+        }
+      }
+    },
+    "message.redact": {
+      "comment": "Item in the message menu: delete this message for everyone.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete for Everyone"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤回"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收回"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全員に送信取消"
+          }
+        }
+      }
+    },
+    "message.redactMessage": {
+      "comment": "Explanation under the redaction confirmation: it happens on every device.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "It turns into a deleted message on everyone's devices."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有人那里都会变成已撤回的消息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有人那裡都會變成已收回的訊息。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全員の端末で削除されたメッセージに変わります。"
+          }
+        }
+      }
+    },
+    "message.redactTitle": {
+      "comment": "Title of the confirmation before redacting a message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete for everyone?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤回这条消息？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收回這則訊息？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全員のメッセージを送信取消にしますか？"
+          }
+        }
+      }
+    },
+    "message.reply": {
+      "comment": "Item in the message menu: reply to this message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reply"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回复"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回覆"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信"
+          }
+        }
+      }
+    },
+    "message.replyCancel": {
+      "comment": "Remove the reply quote above the composer.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Reply"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消回复"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消回覆"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信をやめる"
           }
         }
       }
@@ -13615,10 +14065,16 @@
               "formatSpecifier": "lld",
               "variations": {
                 "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "1個のアプリ"
+                    }
+                  },
                   "other": {
                     "stringUnit": {
                       "state": "translated",
-                      "value": "%#@count@個のアプリ"
+                      "value": "%lld個のアプリ"
                     }
                   }
                 }

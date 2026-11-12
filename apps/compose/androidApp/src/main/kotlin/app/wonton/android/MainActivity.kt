@@ -12,6 +12,8 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import app.wonton.android.keepalive.KeepaliveService
+import app.wonton.android.portmapping.PortMappingService
+import app.wonton.android.portmapping.enabledPluginTitles
 import app.wonton.android.push.PushNotifications
 import app.wonton.android.push.PushRegistration
 import app.wonton.client.ClientCore
@@ -24,6 +26,7 @@ import app.wonton.ui.RoomRequest
 import app.wonton.ui.WontonApp
 import app.wonton.ui.defaultDeviceName
 import app.wonton.ui.homeUpdates
+import app.wonton.ui.pluginsUpdates
 import app.wonton.ui.send
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.launch
@@ -61,6 +64,7 @@ class MainActivity : AppCompatActivity() {
         val devWebUrl = if (debuggable) intent.getStringExtra("wonton_open_web") else null
         PushRegistration(this, core).start()
         keepConnectionService(core)
+        portMappingService(core)
         requestRoom(intent)
         requestLink(intent)
         setContent {
@@ -108,6 +112,29 @@ class MainActivity : AppCompatActivity() {
                         )
                     } else {
                         stopService(Intent(this@MainActivity, KeepaliveService::class.java))
+                    }
+                }
+        }
+    }
+
+    /** 端口映射的前台服务只看 `port_mappings` 有没有开着映射的插件（ADR-0072）：有就带着插件名启动，
+     *  全关了就停。两个前台服务互不启停，见 PortMappingService 的注释。 */
+    private fun portMappingService(core: ClientCore) {
+        lifecycleScope.launch {
+            core.pluginsUpdates()
+                .distinctUntilChangedBy { plugins -> plugins.portMappings.any { it.enabled } }
+                .collect { plugins ->
+                    if (plugins.portMappings.any { it.enabled }) {
+                        ContextCompat.startForegroundService(
+                            this@MainActivity,
+                            Intent(this@MainActivity, PortMappingService::class.java)
+                                .putStringArrayListExtra(
+                                    PortMappingService.EXTRA_TITLES,
+                                    ArrayList(enabledPluginTitles(plugins)),
+                                ),
+                        )
+                    } else {
+                        stopService(Intent(this@MainActivity, PortMappingService::class.java))
                     }
                 }
         }

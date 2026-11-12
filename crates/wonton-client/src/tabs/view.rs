@@ -33,6 +33,9 @@ pub(super) fn make_view(state: &TabsState, plugins: &PluginsViewModel) -> TabsVi
         problem: state.problem.clone(),
         labels: state.config.labels,
         candidates: candidates(state, plugins),
+        panel: Vec::new(),
+        panel_candidates: Vec::new(),
+        panel_selected: None,
     }
 }
 
@@ -87,7 +90,9 @@ fn build_item(
     fixed: bool,
 ) -> TabItem {
     let page = match &stored.tab {
+        // 接口先行（#652）：插件里的某一页和公网网页在实现 PR 里接上显示数据。
         TabRef::Chat | TabRef::Apps | TabRef::Settings | TabRef::SharedApp { .. } => None,
+        TabRef::PluginPath { .. } | TabRef::Url { .. } => None,
         TabRef::Plugin { plugin_id, page } => {
             let plugin = plugins
                 .installed
@@ -260,11 +265,9 @@ pub(super) fn stored_item_for_tab(
             language(),
             "tabs-view-always-pinned"
         ))),
-        TabRef::SharedApp { .. } => Err(invalid(&l10n!(
-            CATALOG,
-            language(),
-            "tabs-view-unknown-plugin"
-        ))),
+        TabRef::SharedApp { .. } | TabRef::PluginPath { .. } | TabRef::Url { .. } => Err(invalid(
+            &l10n!(CATALOG, language(), "tabs-view-unknown-plugin"),
+        )),
         TabRef::Plugin { plugin_id, page } => {
             let Some(installed) = plugins.installed.as_ref() else {
                 return Err(CoreError::NotReady {

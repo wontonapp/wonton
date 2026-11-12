@@ -167,7 +167,7 @@ async fn egress_plugin_relay_uses_provider_dns_and_fails_closed() {
     engine.check_server().await.unwrap();
     for image in [gost::image(), busybox()] {
         engine
-            .ensure_image(&image, PullPolicy::Missing, None)
+            .ensure_image(&image, PullPolicy::Missing, &[])
             .await
             .unwrap();
     }

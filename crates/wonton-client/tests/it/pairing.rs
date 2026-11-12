@@ -93,15 +93,31 @@ impl Home {
         Self::start_at((Ipv4Addr::LOCALHOST, 0).into()).await
     }
 
+    /// 起在给定地址上。同一端口重建时端口可能还被旧 endpoint 占着、或者刚空出来就被别的测试拿走，
+    /// 所以反复 bind 到绑上为止，不先探再绑。
     async fn start_at(address: SocketAddr) -> Self {
-        let endpoint = Endpoint::builder(presets::Minimal)
-            .secret_key(SecretKey::generate())
-            .clear_ip_transports()
-            .bind_addr(address)
-            .unwrap()
-            .bind()
-            .await
-            .unwrap();
+        let key = SecretKey::generate();
+        let deadline = tokio::time::Instant::now() + WAIT;
+        let endpoint = loop {
+            match Endpoint::builder(presets::Minimal)
+                .secret_key(key.clone())
+                .clear_ip_transports()
+                .bind_addr(address)
+                .unwrap()
+                .bind()
+                .await
+            {
+                Ok(endpoint) => break endpoint,
+                Err(error) if crate::home::support::port_in_use(&error) => {
+                    assert!(
+                        tokio::time::Instant::now() < deadline,
+                        "{address} 一直没有释放：{error}"
+                    );
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+                Err(error) => panic!("{address} 起不来：{error}"),
+            }
+        };
         let allowlist = Allowlist::default();
         let codes = Arc::new(Codes {
             allowlist: allowlist.clone(),

@@ -215,7 +215,7 @@ private fun NativeTab(
             peersOpenRequests = nav.peersOpenRequests,
             onPeersOpenRequestsHandled = { nav.peersOpenRequests = false },
         ) { nav.settingsPage = it }
-        is TabRef.Plugin, is TabRef.SharedApp -> Unit
+        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Url, is TabRef.SharedApp -> Unit
     }
 }
 

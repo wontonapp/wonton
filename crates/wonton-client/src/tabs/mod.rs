@@ -10,13 +10,15 @@ use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    Action, CoreError, HomeStatus, HomeViewModel, PluginState, PluginsViewModel, TabDisplayChoice,
-    TabLoadFailure, TabRef, TabsProblem, TabsViewModel,
+    Action, CoreError, HomeStatus, HomeViewModel, PlacedTab, PluginState, PluginsViewModel,
+    TabDisplayChoice, TabLoadFailure, TabRef, TabsProblem, TabsViewModel,
 };
 
 use crate::home::HomeLink;
+use crate::l10n::{CATALOG, language};
 use crate::plugins::PluginsLink;
 use crate::scope::reuse;
+use wonton_l10n::l10n;
 
 pub(crate) mod bridge;
 pub(crate) mod media;
@@ -145,9 +147,9 @@ impl TabsLink {
             Action::SetTabDisplay { tab, display } => self.set_display(tab, display),
             Action::EnterFullscreen { tab } => self.enter_fullscreen(tab),
             Action::ExitFullscreen { tab } => self.exit_fullscreen(tab),
-            Action::ReloadTab { tab } => self.reload(tab),
-            Action::TabLoadFailed { tab, status } => self.load_failed(tab, status),
-            Action::TabLoadSucceeded { tab } => self.load_succeeded(tab),
+            Action::ReloadTab { page } => self.reload(page),
+            Action::TabLoadFailed { page, status } => self.load_failed(page, status),
+            Action::TabLoadSucceeded { page } => self.load_succeeded(page),
             Action::DismissUninstalledTabs => self.dismiss_uninstalled(),
             _ => Err(CoreError::InvalidInput {
                 reason: "不是底栏操作".to_owned(),
@@ -176,6 +178,13 @@ impl TabsLink {
                 state.selected = tab;
                 state.overlay = None;
                 set_automatic_fullscreen(state, &item, previous, plugins);
+                return Ok(());
+            }
+            // "应用"网格页只从侧边栏进，不在栏上也能选中：选它等于把网格页推到前面，栏照旧隐藏。
+            if tab == TabRef::Apps {
+                state.selected = tab;
+                state.overlay = None;
+                state.fullscreen = None;
                 return Ok(());
             }
             if !matches!(tab, TabRef::Plugin { .. }) {
@@ -376,7 +385,18 @@ impl TabsLink {
         })
     }
 
-    pub(crate) fn reload(&self, tab: TabRef) -> Result<(), CoreError> {
+    /// 页面实例属于底栏时给出它的页面；面板的那一份在实现 PR（#652 的实现部分）里接上。
+    fn bar_tab(page: &PlacedTab) -> Option<&TabRef> {
+        match page {
+            PlacedTab::Bar { tab } => Some(tab),
+            PlacedTab::Panel { .. } => None,
+        }
+    }
+
+    pub(crate) fn reload(&self, page: PlacedTab) -> Result<(), CoreError> {
+        let tab = Self::bar_tab(&page)
+            .cloned()
+            .ok_or_else(|| invalid(&l10n!(CATALOG, language(), "tabs-page-not-placed")))?;
         self.runtime_change(|state, _| {
             if !is_plugin(&tab) || !state_has_page(state, &tab) {
                 return Err(invalid("这个页面不能重新加载"));
@@ -387,7 +407,14 @@ impl TabsLink {
         })
     }
 
-    pub(crate) fn load_failed(&self, tab: TabRef, status: Option<u16>) -> Result<(), CoreError> {
+    pub(crate) fn load_failed(
+        &self,
+        page: PlacedTab,
+        status: Option<u16>,
+    ) -> Result<(), CoreError> {
+        let tab = Self::bar_tab(&page)
+            .cloned()
+            .ok_or_else(|| invalid(&l10n!(CATALOG, language(), "tabs-page-not-placed")))?;
         self.runtime_change(|state, plugins| {
             if !is_plugin(&tab) || !state_has_page(state, &tab) {
                 return Err(invalid("这个页面不在底栏或页面覆盖层"));
@@ -404,7 +431,12 @@ impl TabsLink {
         })
     }
 
-    pub(crate) fn load_succeeded(&self, tab: TabRef) -> Result<(), CoreError> {
+    pub(crate) fn load_succeeded(&self, page: PlacedTab) -> Result<(), CoreError> {
+        let tab = match Self::bar_tab(&page) {
+            Some(tab) => tab.clone(),
+            // 面板里的实例没有失败记录可清；不发布，免得白白唤醒壳。
+            None => return Ok(()),
+        };
         // 没有失败记录时什么都不发布：runtime_change 无条件发新状态，会白白唤醒壳。
         if !lock(&self.state).failures.contains_key(&tab) {
             return Ok(());
@@ -533,6 +565,9 @@ fn empty_view() -> TabsViewModel {
         problem: None,
         labels: true,
         candidates: Vec::new(),
+        panel: Vec::new(),
+        panel_candidates: Vec::new(),
+        panel_selected: None,
     }
 }
 
@@ -543,13 +578,15 @@ fn refresh_state(state: &mut TabsState, plugins: &PluginsViewModel, home: &HomeV
         if state.config.server_id.is_some() && state.config.server_id != home.server_id {
             clear_plugin_config(state);
         }
-        // 第一次配上服务器：入口都在侧边栏里，底栏重置为只有“聊天”。
+        // 第一次配上服务器：入口都在侧边栏里，底栏重置为只有“聊天”，选中也回聊天。
         if state.config.server_id.is_none() {
             state.config.items = vec![StoredItem {
                 tab: TabRef::Chat,
                 page: None,
             }];
             state.config.displays.clear();
+            state.selected = TabRef::Chat;
+            (state.overlay, state.fullscreen) = (None, None);
         }
         state.config.items.retain(|item| item.tab != TabRef::Apps);
         state.config.server_id = home.server_id.clone();
@@ -651,7 +688,7 @@ fn remove_uninstalled(
             _ => false,
         };
         if missing {
-            state.selected = TabRef::Apps;
+            state.selected = TabRef::Chat;
             state.fullscreen = None;
         } else {
             state.overlay = Some(overlay);
@@ -667,7 +704,7 @@ fn remove_uninstalled(
             state.uninstalled.push(title);
         }
         if state.selected == tab {
-            state.selected = TabRef::Apps;
+            state.selected = TabRef::Chat;
             state.fullscreen = None;
         }
         if state
@@ -707,18 +744,10 @@ fn update_metadata(state: &mut TabsState, installed: &wonton_protocol::Installed
 }
 
 fn ensure_selection(state: &mut TabsState, plugins: &PluginsViewModel) {
-    if !state
-        .config
-        .items
-        .iter()
-        .any(|item| item.tab == state.selected)
-    {
-        // 没配对时回到“应用”（配对页）；配上了就回“聊天”。
-        state.selected = if state.config.server_id.is_some() {
-            TabRef::Chat
-        } else {
-            TabRef::Apps
-        };
+    // “应用”（配对页、网格页和商店都推在它上面）不在栏上也能一直选中，不跟着刷新被弹回去。
+    let on_bar = state.config.items.iter().any(|i| i.tab == state.selected);
+    if !on_bar && state.selected != TabRef::Apps {
+        state.selected = TabRef::Chat;
         state.overlay = None;
         state.fullscreen = None;
     }

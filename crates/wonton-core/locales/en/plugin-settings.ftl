@@ -146,7 +146,8 @@ plugin-settings-egress-token-not-used = No service in the old version used the t
 
 plugin-settings-mirror-address-invalid = Download mirror address { $address } isn't valid: use only a host name and an optional port, without a scheme, path, or credentials
 plugin-settings-mirror-policy-never = Image { $image } has pull_policy: never and isn't present locally
-plugin-settings-mirror-pull-failed = Mirror { $mirror }: { $error }. Test the mirrors in settings and pick another one
+plugin-settings-mirror-all-failed = Couldn't pull image { $image } from any mirror. { $tries }. Test the mirrors in settings and pick another one
+plugin-settings-mirror-try-failed = { $mirror }: { $error }
 plugin-settings-mirror-digest-mismatch = The local image's RepoDigests don't include the required digest { $digest }; refusing to use it
 plugin-settings-mirror-probe-timeout = The whole test timed out ({ $ms } ms): { $error }
 plugin-settings-mirror-no-challenge = No valid Bearer WWW-Authenticate challenge

@@ -673,6 +673,10 @@
     <string name="message_clip_label">メッセージ</string>
     <!-- Item in the message menu: copy the message text. Android only. -->
     <string name="message_copy">コピー</string>
+    <!-- Accessibility label of the copy button on a code block in a message. -->
+    <string name="message_code_copy">コードをコピー</string>
+    <!-- Accessibility label of that copy button right after the code was copied. -->
+    <string name="message_code_copied">コピーしました</string>
     <!-- Item in the message menu: remove the message for everyone in the chat. Android only. -->
     <string name="message_delete_everyone">全員のメッセージを削除</string>
     <!-- Confirm button in the dialog that removes a message for everyone. Android only. -->
@@ -982,6 +986,28 @@
     <string name="plugin_uninstall_keep_data">アンインストール（データを残す）</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
     <string name="plugin_uninstall_title">「%1$s」をアンインストールしますか？</string>
+    <!-- Switch on an app's page: map the ports the app declares onto this device's loopback interface, so other apps on the phone can reach them (ADR-0072). -->
+    <string name="port_mapping_toggle">この端末にマッピング</string>
+    <!-- One declared port under the switch: the loopback address with the port number, then the protocol. -->
+    <string name="port_mapping_port_line">127.0.0.1:%1$d · %2$s</string>
+    <!-- Protocol label of a declared port whose protocol Wonton doesn't recognize. -->
+    <string name="port_mapping_protocol_other">その他</string>
+    <!-- Reason shown while the mapping is on but another app on this phone has taken the port. -->
+    <string name="port_mapping_reason_port_in_use">このポートは端末上の別のアプリが使用中です。</string>
+    <!-- Reason shown while the mapping is on but the home server is too old to map ports. -->
+    <string name="port_mapping_reason_server_too_old">自宅サーバーのバージョンが古いため、先にアップデートが必要です。</string>
+    <!-- Reason shown while the mapping is on but the tunnel isn't connected. -->
+    <string name="port_mapping_reason_tunnel_disconnected">自宅サーバーへのトンネルに接続していません。</string>
+    <!-- Reason shown while the mapping is on but the app isn't installed on the home server. -->
+    <string name="port_mapping_reason_plugin_not_installed">このアプリは自宅サーバーにインストールされていません。</string>
+    <!-- Reason shown while the mapping is on but the app doesn't declare that port. -->
+    <string name="port_mapping_reason_port_not_declared">このアプリはそのポートを宣言していません。</string>
+    <!-- Reason shown while the mapping is on but the app isn't running. -->
+    <string name="port_mapping_reason_plugin_not_running">このアプリが動いていません。</string>
+    <!-- Reason shown while the mapping is on but the home server can't reach the app. -->
+    <string name="port_mapping_reason_plugin_unreachable">自宅サーバーからこのアプリに接続できません。</string>
+    <!-- Reason shown while the mapping is on and failed for a reason Wonton doesn't recognize. -->
+    <string name="port_mapping_reason_other">マッピングで問題が発生しました。</string>
     <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
     <string name="problem_appearance_title">外観設定を保存できませんでした</string>
     <string name="problem_apps_not_ready">アプリのリストの準備ができていません。しばらくしてからもう一度お試しください。</string>

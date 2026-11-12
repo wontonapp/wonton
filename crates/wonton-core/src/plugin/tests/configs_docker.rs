@@ -44,7 +44,7 @@ async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
     engine
-        .ensure_image(&image(), PullPolicy::Missing, None)
+        .ensure_image(&image(), PullPolicy::Missing, &[])
         .await
         .unwrap();
     let names = Names::new();

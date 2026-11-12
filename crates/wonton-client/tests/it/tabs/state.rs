@@ -219,7 +219,9 @@ async fn content_change_reload_clears_a_previous_load_failure() {
         connected_page_rig("app.upgrade-reload", "home").await;
     rig.app
         .dispatch(Action::TabLoadFailed {
-            tab: page_tab.clone(),
+            page: PlacedTab::Bar {
+                tab: page_tab.clone(),
+            },
             status: Some(502),
         })
         .unwrap();
@@ -275,7 +277,9 @@ async fn reconnect_reload_clears_a_previous_load_failure() {
         .unwrap();
     rig.app
         .dispatch(Action::TabLoadFailed {
-            tab: page_tab.clone(),
+            page: PlacedTab::Bar {
+                tab: page_tab.clone(),
+            },
             status: Some(502),
         })
         .unwrap();

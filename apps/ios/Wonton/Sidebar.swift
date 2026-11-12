@@ -115,7 +115,7 @@ struct SidebarPanel: View {
                     } action: { navigate(.chat) }
                     SidebarRow(
                         title: String(localized: .storeTitle),
-                        badge: sidebar.updates,
+                        badge: Int(sidebar.updates),
                         selected: false
                     ) {
                         WontonIcon.store.view()

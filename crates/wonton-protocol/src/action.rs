@@ -526,6 +526,51 @@ pub enum Action {
     UnpinTab {
         tab: TabRef,
     },
+    /// 把页面放进面板的最后（ADR-0052）。`tab` 必须是插件页、插件里的某一页或 `https://` 公网网页，
+    /// 聊天、应用、设置和分享页不行；已经在面板里、面板已满
+    /// （[`MAX_PANEL_PAGES`](crate::MAX_PANEL_PAGES)）或页面现在放不了时返回 `InvalidInput`。
+    /// 写进账号数据才算成功；连不上服务器时改动不生效，错误按类别返回。
+    AddPanelPage {
+        scope: crate::PanelScope,
+        tab: TabRef,
+    },
+    /// 从面板拿掉。不在面板里时返回 `InvalidInput`。
+    RemovePanelPage {
+        scope: crate::PanelScope,
+        tab: TabRef,
+    },
+    /// 把面板里的一项移到 `index`（移动后的下标，从 0 开始）。不在面板里或下标越界时返回 `InvalidInput`。
+    MovePanelPage {
+        scope: crate::PanelScope,
+        tab: TabRef,
+        index: u32,
+    },
+    /// 壳报告正在看面板的哪一页：核心记住它（本机，下次拉开还是它），并清掉这一页的红点。
+    /// 拉开面板和翻页时都发。
+    SelectPanelPage {
+        scope: crate::PanelScope,
+        tab: TabRef,
+    },
+    /// 把正在看的页面钉到面板或底栏（胶囊“···”菜单里的“钉到面板”“钉到底栏”）。
+    ///
+    /// `url` 是页面此刻的网址，核心按它算出要钉的是哪一种页面：装着的插件的网页入口下的路径，
+    /// 钉成插件里的某一页（路径和清单里的页面对上时是那个页面本身）；不是插件的网站就只收
+    /// `https://`，钉成公网网页。`title` 是页面自己的标题，没有时核心按插件或域名补。
+    /// 目标是底栏且栏满了时，`replacing` 同 [`Action::PinTab`]。
+    PinCurrentPage {
+        url: String,
+        title: Option<String>,
+        to: crate::PinTarget,
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        replacing: Option<TabRef>,
+    },
+    /// 壳报告房间里盖着消息列表的东西开没开：长按菜单、多选模式、转发或删除确认、交给 Bot 的选择、
+    /// 斜杠命令列表。核心把它和核心自己知道的状态合成 [`TimelineUpdate::entry_blocked`]，
+    /// 壳只读那一个字段决定上推拉面板的入口响不响应。换房间后按没盖算，壳不用补发。
+    SetRoomEntryBlocked {
+        room_id: String,
+        blocked: bool,
+    },
     /// 把一项移到 `index`（移动后的下标，从 0 开始）。
     MoveTab {
         tab: TabRef,
@@ -548,18 +593,20 @@ pub enum Action {
     ExitFullscreen {
         tab: TabRef,
     },
-    /// 重新加载插件页（重试、“···”里的重新加载）。
+    /// 重新加载插件页（重试、“···”里的重新加载）。`page` 指是哪一份：底栏的和面板里的同一页面
+    /// 各自加载，互不影响（ADR-0052）。
     ReloadTab {
-        tab: TabRef,
+        page: crate::PlacedTab,
     },
     /// 壳报告网页加载失败。`status` 是 HTTP 状态码，没拿到响应时为空；原因由核心判断。
+    /// `page` 指是哪一份实例。
     TabLoadFailed {
-        tab: TabRef,
+        page: crate::PlacedTab,
         status: Option<u16>,
     },
     /// 壳报告网页加载成功（如按返回回到成功的历史页），核心清掉这个页面的加载失败显示。
     TabLoadSucceeded {
-        tab: TabRef,
+        page: crate::PlacedTab,
     },
     /// 主人看过了“已卸载，已从底栏移除”的提示。
     DismissUninstalledTabs,

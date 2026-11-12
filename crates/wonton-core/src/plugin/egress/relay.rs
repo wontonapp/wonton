@@ -36,7 +36,10 @@ impl PluginManager {
     /// 设置读不出来时不用代理：设置页和探测都会报这个错。
     pub(in crate::plugin) fn follow_core_proxy(&self) {
         match self.egress_config() {
-            Ok(config) => self.core_proxy.set(config.url.as_ref()),
+            Ok(config) => {
+                self.core_proxy.set(config.url.as_ref());
+                self.core_proxy.set_doh(config.doh_url);
+            }
             Err(e) => {
                 tracing::warn!(error = %e, "读不出代理的设置");
                 self.core_proxy.set(None);
@@ -153,18 +156,16 @@ impl PluginManager {
         let state = found.as_ref().and_then(|c| c.state.as_ref());
         let running = state.and_then(|s| s.running) == Some(true);
         // 镜像拉不到时什么都不动，正在跑的出口容器继续跑。
-        let mirror = self.registry_mirror_address(&self.owner_languages())?;
+        let owner_langs = self.owner_languages();
+        let mirrors = self.registry_mirrors(&owner_langs).await?;
+        let accelerated =
+            crate::plugin::registry_mirror::accelerated(&super::gost::image(), &mirrors);
         let image = self
             .engine
-            .ensure_image(
-                &super::gost::image(),
-                PullPolicy::Missing,
-                mirror.as_deref(),
-            )
+            .ensure_image(&super::gost::image(), PullPolicy::Missing, &accelerated)
             .await
             .map_err(|error| {
-                let langs = self.owner_languages();
-                self.registry_pull_error(error, mirror.as_deref(), &langs)
+                self.registry_pull_error(error, mirrors.docker_hub.is_empty(), &owner_langs)
             })?;
         let files = self.relay_files();
         let langs = self.owner_languages();

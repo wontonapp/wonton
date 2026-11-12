@@ -17,7 +17,7 @@ Agent 镜像里放的是 omp 18.16.0 的官方 Linux 二进制（`omp-linux-x64`
 
 ## ACP 桥镜像
 
-`ghcr.io/wontonapp/wonton-acp-bridge` 由 Wonton 主仓库构建，许可证随主仓库。桥只用标准 ACP 和 Matrix 客户端接口，
+`ghcr.io/geraldpeng6/wonton-acp-bridge` 由 Wonton 主仓库构建，许可证随主仓库。桥只用标准 ACP 和 Matrix 客户端接口，
 不含任何厂商 Agent。
 
 ## 许可证

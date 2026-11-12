@@ -9,6 +9,7 @@ mod bind;
 mod connection;
 mod invite;
 mod pairing;
+mod quality;
 mod refresh;
 mod storage;
 mod ticket;
@@ -25,8 +26,8 @@ use tokio::task::JoinHandle;
 use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, CoreError,
-    DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, ProxySettings, PushMethod,
+    ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure,
+    HomePath, HomeStatus, HomeViewModel, ProxySettings, PushMethod,
 };
 use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, spawn_tier_fallback};
 use wonton_tunnel::{
@@ -37,6 +38,7 @@ use wonton_tunnel::{
 use crate::l10n::{CATALOG, language};
 use crate::scope::reuse;
 use connection::Tracker;
+use quality::Quality;
 pub(crate) use storage::{Storage, write_private};
 use ticket::Ticket;
 
@@ -89,6 +91,8 @@ pub(crate) struct HomeLink {
     /// 同步生命周期动作不能等异步的 link 锁；保护挂起检测布防用的当前客户端，换 Link 时整个替换。
     lifecycle_client: std::sync::Mutex<Option<TunnelClient>>,
     tracker: std::sync::Mutex<Tracker>,
+    /// 连接质量的判定；连接断开或换路径时从头来。
+    quality: std::sync::Mutex<Quality>,
     /// 提示要重新算了。
     recount: watch::Sender<()>,
     /// 上次把每包变化的计数写进主 ViewModel 的时间。
@@ -167,6 +171,7 @@ impl HomeLink {
             link: Mutex::new(None),
             lifecycle_client: std::sync::Mutex::new(None),
             tracker: std::sync::Mutex::default(),
+            quality: std::sync::Mutex::default(),
             recount: watch::Sender::new(()),
             stats_at: std::sync::Mutex::new(None),
             background: watch::Sender::new(false),
@@ -343,6 +348,12 @@ impl HomeLink {
 
     fn lock_tracker(&self) -> std::sync::MutexGuard<'_, Tracker> {
         self.tracker
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn lock_quality(&self) -> std::sync::MutexGuard<'_, Quality> {
+        self.quality
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -530,7 +541,16 @@ impl HomeLink {
     ) -> Published {
         let now = Instant::now();
         let status = status_view(tunnel);
-        let path = client.path().map(path_view);
+        let connected = status == HomeStatus::Connected;
+        let path = client.path();
+        let quality = {
+            let mut quality = self.lock_quality();
+            match path.as_ref() {
+                Some(path) if connected => quality.observe(now, path),
+                _ => quality.reset(),
+            }
+        };
+        let path = path.map(path_view);
         let relay = relay_check(endpoint);
         let stats = client.stats();
         let mut tracker = self.lock_tracker();
@@ -551,17 +571,16 @@ impl HomeLink {
             failed_dials: stats.failed_dials,
             sent_packets: stats.sent_packets,
             lost_packets: stats.lost_packets,
-            quality: ConnectionQuality::Unknown,
-            loss_per_mille: None,
-            rtt_ms: None,
+            quality: quality.quality,
+            loss_per_mille: quality.loss_per_mille,
+            rtt_ms: quality.rtt_ms,
             last_failure: stats.last_failure.as_ref().map(ToString::to_string),
             addresses_stale: self.addresses_stale.load(Ordering::Relaxed),
             udp_flows: client.udp_flows(),
             udp_buffer_evicted_datagrams: client.udp_buffer_evicted(),
         };
-        let tick = tracker.next_tick();
+        let tick = tracker.next_tick(connected);
         drop(tracker);
-        let connected = status == HomeStatus::Connected;
         let stats_due = connected && self.stats_due(now);
         let mut withheld = false;
         // 视图里的本地代理不是这条连接的，说明连接信息已被换过（换了服务器或重连），视图归新的
@@ -582,12 +601,16 @@ impl HomeLink {
                     || details.last_connected_at_ms != view.details.last_connected_at_ms
                     || details.udp_flows != view.details.udp_flows
                     || details.udp_buffer_evicted_datagrams
-                        != view.details.udp_buffer_evicted_datagrams;
+                        != view.details.udp_buffer_evicted_datagrams
+                    || details.loss_per_mille != view.details.loss_per_mille
+                    || details.rtt_ms != view.details.rtt_ms;
                 details.sent_packets = view.details.sent_packets;
                 details.lost_packets = view.details.lost_packets;
                 details.last_connected_at_ms = view.details.last_connected_at_ms;
                 details.udp_flows = view.details.udp_flows.clone();
                 details.udp_buffer_evicted_datagrams = view.details.udp_buffer_evicted_datagrams;
+                details.loss_per_mille = view.details.loss_per_mille;
+                details.rtt_ms = view.details.rtt_ms;
                 if let (Some(new), Some(old)) = (&mut path, &view.path) {
                     withheld |= new.rtt_ms != old.rtt_ms;
                     new.rtt_ms = old.rtt_ms;

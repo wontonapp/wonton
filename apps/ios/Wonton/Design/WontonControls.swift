@@ -35,13 +35,15 @@ struct WontonButtonStyle: ButtonStyle {
 struct WontonIconButton: View {
     let icon: WontonIcon
     let label: String
+    /// 不给时用 `textPrimary`；放在带色的底（如自己的气泡）上时由调用方给。
+    var tint: Color?
     let action: () -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
         Button(action: action) {
             icon.view()
-                .foregroundStyle(Color(colors.textPrimary))
+                .foregroundStyle(tint ?? Color(colors.textPrimary))
                 .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
                 .contentShape(Rectangle())
         }
