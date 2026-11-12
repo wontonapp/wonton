@@ -20,7 +20,7 @@ mod endpoint;
 mod install;
 mod plan;
 mod preflight;
-mod preview;
+pub(crate) mod preview;
 pub(crate) use install::DependencyInstall;
 mod lifecycle;
 mod rollback;

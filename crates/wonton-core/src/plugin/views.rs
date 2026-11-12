@@ -168,6 +168,7 @@ impl PluginManager {
                     .map_or(&[][..], |record| &record.enabled_permissions),
                 langs,
             ),
+            widget_capabilities: super::manifest_widget::capabilities(m),
             requirements: Vec::new(),
             secret_inputs: self.installed_input_states(id, m, langs),
             has_web: m.webui.is_some(),
@@ -186,6 +187,7 @@ impl PluginManager {
                         }),
                 )
                 .chain(cross_origin_isolation_notice(m, langs))
+                .chain(super::manifest_widget::manifest_notices(m, langs))
                 .chain(
                     super::egress::provider::provides_proxy(m)
                         .then(|| line(l10n::text(langs, "plugin-egress-proxy-select", &[]))),
@@ -298,6 +300,7 @@ impl PluginManager {
         notices.splice(0..0, opening_notices(m, langs));
         notices.extend(requirement_notices(m, &self.host_facts(langs).await, langs));
         notices.extend(self.host_egress_notice(m, langs));
+        notices.extend(super::manifest_widget::manifest_notices(m, langs));
         notices.extend(gpu.notice);
         notices.extend(lan.notices);
         // 不挡安装的问题：探测只试了一个网站。
@@ -329,6 +332,7 @@ impl PluginManager {
             trust: trust(package.origin.as_ref()),
             author: author(m),
             permissions: super::views_permissions::permission_lines(m, enabled, langs),
+            widget_capabilities: super::manifest_widget::capabilities(m),
             secret_inputs: super::secret_input::lines(m, &|_| false, false, langs),
             settings,
             notices,
@@ -748,6 +752,7 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         stars: None,
         release_notes: None,
         permissions: Vec::new(),
+        widget_capabilities: Vec::new(),
         requirements: Vec::new(),
         secret_inputs: Vec::new(),
         has_web: false,

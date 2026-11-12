@@ -211,6 +211,7 @@ impl PluginManager {
                 .iter()
                 .map(|p| permission_line(p, langs))
                 .collect(),
+            widget_capabilities: crate::plugin::manifest_widget::capabilities(m),
             requirements: requirement_checks(m, &facts, langs),
             secret_inputs: Vec::new(),
             has_web: m.webui.is_some(),
@@ -222,6 +223,7 @@ impl PluginManager {
             }),
             notices: cross_origin_isolation_notice(m, langs)
                 .into_iter()
+                .chain(crate::plugin::manifest_widget::manifest_notices(m, langs))
                 .chain(
                     dependencies
                         .as_ref()

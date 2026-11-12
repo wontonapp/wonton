@@ -261,7 +261,7 @@ pub use plugin::{
     SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, SourceKind,
     StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
     ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
-    UpgradeRequest, UpgradeResult, plugin_scope_path, plugin_settings_path,
+    UpgradeRequest, UpgradeResult, WidgetCapability, WidgetCapabilityLevel, plugin_scope_path, plugin_settings_path,
     plugin_settings_preview_path, secret_input_path,
 };
 pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};

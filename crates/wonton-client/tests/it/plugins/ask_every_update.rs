@@ -23,6 +23,7 @@ fn detail(ask: bool) -> Canned {
         security_tier: None,
         link_url: None,
         scope: None,
+        widget_capabilities: Vec::new(),
         version: "1.0.0".to_owned(),
         trust: PluginTrust::Official,
         provider: None,
