@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use wonton_protocol::{InstallPreview, InstallRequest, PluginTrust, SourceKind, UpgradeRequest};
+use wonton_protocol::{
+    InstallPreview, InstallRequest, PluginState, PluginTrust, SourceKind, UpgradeRequest,
+};
 
 use super::super::fake_docker::FakeDocker;
 use super::super::github::GitHub;
@@ -515,21 +517,30 @@ async fn preview_of(
 }
 
 #[tokio::test]
-async fn installing_without_a_required_input_names_it() {
-    let (_github, _docker, m, _dir) = manager().await;
+async fn installing_without_a_required_input_waits_until_it_is_filled() {
+    let (_github, docker, m, _dir) = manager().await;
     let (preview, _stage) = preview_of(&m, &hello_with_input("1.0.0", true)).await;
     assert_eq!(preview.secret_inputs.len(), 1);
     assert!(preview.secret_inputs[0].required);
-    let err = m
-        .install_source(&install_request(&preview))
+    m.install_source(&install_request(&preview)).await.unwrap();
+    let installed = m.installed_plugin(&id(), &zh()).unwrap();
+    assert_eq!(installed.status, PluginState::NeedsConfiguration);
+    let detail = m.judged_detail(&id(), &zh()).await.unwrap();
+    let input = detail
+        .secret_inputs
+        .iter()
+        .find(|input| input.name == "token")
+        .unwrap();
+    assert!(input.required);
+    assert!(!input.filled);
+
+    m.set_secret_input(&id(), "token", Some("s3cret"), &zh())
         .await
-        .unwrap_err();
-    assert_eq!(err.kind(), "invalid_input", "{err}");
-    assert!(err.to_string().contains("token"), "{err}");
-    assert!(
-        m.installed_plugin(&id(), &zh()).is_none(),
-        "缺必填项时没装上"
-    );
+        .unwrap();
+    let installed = m.installed_plugin(&id(), &zh()).unwrap();
+    assert!(matches!(installed.status, PluginState::Running { .. }));
+    let web = super::super::names::container_name("app-hello", "web");
+    assert!(docker.env(&web).iter().any(|value| value == "TOKEN=s3cret"));
 }
 
 #[tokio::test]
