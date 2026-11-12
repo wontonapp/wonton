@@ -36,10 +36,11 @@ for notice in json.load(sys.stdin)["notices"]:
 }
 
 # 密钥放头里，查询串会进日志：把 Wonton-Plugin-Secrets 追加进 $1 命名的头数组，值为空时不加。
+# 引用名不能和调用方的数组同名（headers=headers 是自引用，bash 报 circular）。
 secret_header() {
-  local -n headers=$1
+  local -n hdrs=$1
   [[ -n "${2:-}" ]] || return 0
-  headers+=(-H "Wonton-Plugin-Secrets: $(python3 -c 'import base64,json,sys;print(base64.urlsafe_b64encode(json.dumps(json.loads(sys.argv[1])).encode()).decode().rstrip("="))' "$2")")
+  hdrs+=(-H "Wonton-Plugin-Secrets: $(python3 -c 'import base64,json,sys;print(base64.urlsafe_b64encode(json.dumps(json.loads(sys.argv[1])).encode()).decode().rstrip("="))' "$2")")
 }
 
 install() {
