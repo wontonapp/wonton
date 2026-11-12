@@ -5,9 +5,12 @@
 //! 拒绝时把理由随应答的 `_meta.reason` 递给 Agent。没有冲突就照常只转 Agent 自己的选项。
 
 use std::collections::HashMap;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
 
 use tokio::sync::oneshot;
-
 use wonton_l10n::{Arg, Lang};
 
 use super::{Room, RoomState, TurnContext, turns};
@@ -22,6 +25,59 @@ use wonton_protocol::{AgentPermissionKind, AgentPermissionOption};
 const WAIT: &str = "__wait";
 /// 拒绝时 Agent 没给拒绝选项的标记。
 const REJECT: &str = "__reject";
+
+/// 桥挂在核心确认接口上的权限长轮询（ADR-0061 第 10 节）：发 `session/cancel` 一方
+/// 要把未决的权限请求都回 `cancelled`，所以会话被取消（停链的 `CancelTurn`）时把
+/// 它们一并断掉，长轮询随之断开，核心撤回对应的卡片。
+/// 会话 → 挂着的取消通道（编号去重，任务结束时摘掉自己）。
+type AskCancels = HashMap<u64, oneshot::Sender<()>>;
+
+#[derive(Clone, Default)]
+pub(crate) struct PendingAsks {
+    asks: Arc<Mutex<HashMap<String, AskCancels>>>,
+    next_id: Arc<AtomicU64>,
+}
+
+impl PendingAsks {
+    /// 登记一个刚挂出去的长轮询，返回它的编号和取消通道；任务结束时凭编号摘掉自己，
+    /// 会话被取消时走通道把它断掉。
+    fn register(&self, session: &str) -> (u64, oneshot::Receiver<()>) {
+        let (cancel, cancelled) = oneshot::channel();
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        self.asks
+            .lock()
+            .expect("权限长轮询表锁中毒")
+            .entry(session.to_owned())
+            .or_default()
+            .insert(id, cancel);
+        (id, cancelled)
+    }
+
+    fn unregister(&self, session: &str, id: u64) {
+        if let Some(asks) = self
+            .asks
+            .lock()
+            .expect("权限长轮询表锁中毒")
+            .get_mut(session)
+        {
+            asks.remove(&id);
+        }
+    }
+
+    /// 会话被取消：断掉它挂着的全部长轮询（已结束的通道发不进去，是空操作）。
+    pub(crate) fn cancel_session(&self, session: &str) {
+        let asks = self
+            .asks
+            .lock()
+            .expect("权限长轮询表锁中毒")
+            .remove(session);
+        if let Some(asks) = asks {
+            for (_, cancel) in asks {
+                let _ = cancel.send(());
+            }
+        }
+    }
+}
 
 /// 等对方做完的那张卡有了答案，回到循环里处理。
 pub(super) struct CardDone {
@@ -120,8 +176,15 @@ pub(super) async fn handle<R: Room>(
 /// 会话不在本房间的表里时直接问卡片，结果照样送回 ACP。
 fn spawn_direct<R: Room>(context: &TurnContext<R>, ask: PermissionAsk) {
     let broker = context.bridge.acp.broker();
+    let asks = context.bridge.pending_asks.clone();
+    let session = ask.session_id.clone();
+    let (id, cancel_rx) = asks.register(&session);
     tokio::spawn(async move {
-        let result = broker.ask(ask.pending).await;
+        let result = tokio::select! {
+            result = broker.ask(ask.pending) => result,
+            _ = cancel_rx => Ok(PermissionResult::Cancelled),
+        };
+        asks.unregister(&session, id);
         let _ = ask.reply.send(result);
     });
 }
@@ -137,17 +200,31 @@ fn spawn_ask<R: Room>(
 ) {
     let broker = context.bridge.acp.broker();
     let cards_tx = context.cards_tx.clone();
+    let asks = context.bridge.pending_asks.clone();
+    // 请求里带着的会话 ID（acp 层的 handle_request 填）就是这座桥登记取消用的键；
+    // 它是本 crate 内部的不变量，缺了是 bug，宁可这一轮挂掉也不静默漏登记。
+    let session = pending
+        .request
+        .session
+        .clone()
+        .expect("权限请求都带会话 ID");
+    let (id, cancel_rx) = asks.register(&session);
     tokio::spawn(async move {
-        let result = broker.ask(pending).await;
-        let done = CardDone {
-            key,
-            conflict,
-            allow,
-            reject,
-            result,
-            reply,
+        let result = tokio::select! {
+            result = broker.ask(pending) => result,
+            _ = cancel_rx => Ok(PermissionResult::Cancelled),
         };
-        let _ = cards_tx.send(done).await;
+        asks.unregister(&session, id);
+        let _ = cards_tx
+            .send(CardDone {
+                key,
+                conflict,
+                allow,
+                reject,
+                result,
+                reply,
+            })
+            .await;
     });
 }
 

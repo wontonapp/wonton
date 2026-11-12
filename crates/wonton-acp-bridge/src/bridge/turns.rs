@@ -5,8 +5,8 @@ use std::time::Instant;
 use wonton_l10n::Arg;
 
 use super::{
-    Job, JobKind, PromptFinished, Room, RoomState, TurnContext, attachments, busy, format_error,
-    now, permissions, routing, sessions,
+    Job, JobKind, PromptFinished, Room, RoomState, TurnContext, attachments, busy, chain,
+    format_error, now, permissions, routing, sessions,
 };
 use crate::acp::PromptResult;
 use crate::commands;
@@ -99,10 +99,15 @@ pub(super) async fn receive_job<R: Room>(
         return Ok(());
     }
     let job = match incoming.content {
-        IncomingContent::Text(text) => {
-            parse_job(&incoming.event_id, &text, &context.bridge.config.limits)
+        IncomingContent::Text(text) => parse_job(
+            &incoming.event_id,
+            &incoming.sender,
+            &text,
+            &context.bridge.config.limits,
+        ),
+        IncomingContent::Media(media) => {
+            media_job(context, media, &incoming.event_id, &incoming.sender).await
         }
-        IncomingContent::Media(media) => media_job(context, media, &incoming.event_id).await,
         IncomingContent::Unsupported { .. } => return Ok(()),
     };
     let job = match job {
@@ -125,6 +130,7 @@ async fn media_job<R: Room>(
     context: &TurnContext<R>,
     media: crate::matrix::MediaAttachment,
     event_id: &str,
+    sender: &str,
 ) -> Result<Job> {
     if media
         .caption
@@ -144,6 +150,7 @@ async fn media_job<R: Room>(
         kind: JobKind::Normal,
         text: media.caption.unwrap_or_default(),
         event_id: event_id.to_owned(),
+        sender: sender.to_owned(),
         media: Some(prepared),
     })
 }
@@ -187,7 +194,7 @@ pub(super) async fn prompt_blocks<R: Room>(
     Ok(blocks)
 }
 
-fn parse_job(event_id: &str, input: &str, limits: &Limits) -> Result<Job> {
+fn parse_job(event_id: &str, sender: &str, input: &str, limits: &Limits) -> Result<Job> {
     if input.len() > limits.max_input_bytes {
         return Err(Error::InvalidInput(Detail::msg_with(
             "input-too-long",
@@ -203,6 +210,7 @@ fn parse_job(event_id: &str, input: &str, limits: &Limits) -> Result<Job> {
             kind: JobKind::End,
             text: String::new(),
             event_id: event_id.to_owned(),
+            sender: sender.to_owned(),
             media: None,
         });
     }
@@ -219,6 +227,7 @@ fn parse_job(event_id: &str, input: &str, limits: &Limits) -> Result<Job> {
         kind,
         text: body.trim().to_owned(),
         event_id: event_id.to_owned(),
+        sender: sender.to_owned(),
         media: None,
     })
 }
@@ -276,6 +285,7 @@ async fn start_job<R: Room>(
             &key,
             &display,
             &last.event_id,
+            &last.sender,
             last.media.as_ref(),
             now(),
             context.lang,
@@ -311,21 +321,53 @@ async fn start_job<R: Room>(
         send_to(context, &key, &text(context.lang, "topic-no-ask-mode", &[])).await?;
     }
     // 一轮的内容块：说明（含开局说明/动态）在前，附件在后；没有文字就只有附件块。
+    // 块在领链前拼好：附件转换出错时这轮还没领链，不用报 End。
     let blocks = prompt_blocks(context, prefix, &batch).await?;
-    state.sessions.state(&key).active = true;
+    // 领链（ADR-0061 第 10 节）：拿到链才发给 Agent；被拒或核心不可用就在房间里
+    // 按类别说明，不开轮，也不发已读回执。
+    if !chain::begin(
+        &context.bridge.chains,
+        context.room.as_ref(),
+        context.lang,
+        &key,
+        last,
+        &session_id,
+    )
+    .await
+    {
+        let _ = topics.turn_finished(&key, "", now(), context.lang).await;
+        return Ok(());
+    }
+    launch_prompt(context, state, &key, &session_id, blocks, last).await;
+    Ok(())
+}
+
+/// 领链通过后把这一轮发给 Agent：标记在跑、挂状态消息（ADR-0082）、发已读回执，
+/// 提示词在后台任务里发，结束后报 End。
+async fn launch_prompt<R: Room>(
+    context: &TurnContext<R>,
+    state: &mut RoomState,
+    key: &SessionKey,
+    session_id: &str,
+    blocks: Vec<serde_json::Value>,
+    trigger: &Job,
+) {
+    state.sessions.state(key).active = true;
     state.last_activity = Instant::now();
     // 一轮一条的状态消息（ADR-0082）：发出提示词时先挂上“在想”，之后随 ACP 事件编辑。
     state
         .run_status
-        .start(context.room.as_ref(), &key, &last.event_id, context.lang)
+        .start(context.room.as_ref(), key, &trigger.event_id, context.lang)
         .await;
     // 这一轮就要发给 Agent：这批消息算收到了。回执只往前走，发给最后一条就覆盖了前面几条。
-    busy::receipt(context, &last.event_id).await;
+    busy::receipt(context, &trigger.event_id).await;
     let acp = context.bridge.acp.clone();
+    let chains = context.bridge.chains.clone();
     let room = context.room.clone();
     let limits = context.bridge.config.limits.clone();
     let finished_tx = context.finished_tx.clone();
     let thread = key.clone();
+    let session_id = session_id.to_owned();
     let lang = context.lang;
     tokio::spawn(async move {
         let _ = room.typing(true).await;
@@ -345,8 +387,10 @@ async fn start_job<R: Room>(
                 result,
             })
             .await;
+        // 一轮结束（成功、取消、出错）都报 End（ADR-0061 第 10 节）；放回执后面，
+        // 房间里的收尾不等核心。
+        chains.end(&session_id).await;
     });
-    Ok(())
 }
 
 /// 活跃话题已满时在话题里写明在排，同一话题只提醒一次。
@@ -537,7 +581,7 @@ pub(super) async fn promote<R: Room>(
     state: &mut RoomState,
     topics: &mut Topics,
 ) -> Result<()> {
-    while let Some((key, prompt, event_id, media)) = topics.poll_admission(now()).await? {
+    while let Some((key, prompt, event_id, sender, media)) = topics.poll_admission(now()).await? {
         start_or_report(
             context,
             state,
@@ -547,6 +591,7 @@ pub(super) async fn promote<R: Room>(
                 kind: JobKind::Normal,
                 text: prompt,
                 event_id,
+                sender,
                 media,
             }],
         )

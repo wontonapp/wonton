@@ -106,7 +106,7 @@ async fn a_permission_request_edits_to_waiting_and_back_to_working() {
     let harness = Harness::start().await;
     let session = start_turn(&harness, "$req1").await;
     harness.agent.ask_permission(&session, "src/a.rs").await;
-    wait_until(|| harness.cards.pending() == 1).await;
+    wait_until(|| harness.core.pending() == 1).await;
     wait_until(|| {
         harness
             .room
@@ -123,7 +123,7 @@ async fn a_permission_request_edits_to_waiting_and_back_to_working() {
         .unwrap();
     assert_eq!(waiting["body"], json!("等你确认"));
 
-    harness.cards.answer("allow_once");
+    harness.core.answer("allow_once");
     wait_until(|| {
         harness
             .room
@@ -419,7 +419,7 @@ async fn a_plan_update_sets_progress() {
         .await;
     // 进度随下一次状态值编辑一起出去（等回答的 waiting 编辑不受 3 秒合并限制）。
     let _id = harness.agent.ask_permission(&session, "src/a.rs").await;
-    wait_until(|| harness.cards.pending() == 1).await;
+    wait_until(|| harness.core.pending() == 1).await;
     wait_until(|| {
         harness
             .room
@@ -454,8 +454,8 @@ async fn the_wire_format_matches_the_shared_fixtures() {
         .raw_update(&session, tool_call("call-2", "read"))
         .await;
     let _id = harness.agent.ask_permission(&session, "src/a.rs").await;
-    wait_until(|| harness.cards.pending() == 1).await;
-    harness.cards.answer("allow_once");
+    wait_until(|| harness.core.pending() == 1).await;
+    harness.core.answer("allow_once");
     wait_until(|| {
         harness
             .room
