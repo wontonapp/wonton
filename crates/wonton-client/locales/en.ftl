@@ -233,6 +233,7 @@ chat-op-mark-read-failed = Can't mark the room as read: { $error }
 chat-op-direct-chat-failed = Can't start the direct chat: { $error }
 chat-op-send-text-failed = Can't send the message: { $error }
 chat-op-send-image-failed = Can't send the image: { $error }
+chat-op-send-preview-failed = Couldn't attach the link preview: { $error }
 chat-op-forward-failed = Can't forward the message: { $error }
 chat-op-redact-failed = Can't remove the message: { $error }
 ## File transfers and playback. Details show on transfer list entries, file cards and playback failure messages.
