@@ -110,6 +110,9 @@ impl PluginPackage {
             ));
         }
         self.check_capability_services(langs)?;
+        if let Some(gpu) = &self.manifest.gpu {
+            super::gpu_images::check(&gpu.images, &self.services, langs)?;
+        }
         Ok(())
     }
 }
