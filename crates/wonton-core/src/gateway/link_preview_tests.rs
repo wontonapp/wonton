@@ -96,6 +96,7 @@ fn invite(h: &Harness, username: &str) {
             display_name: username.to_owned(),
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
+            role_id: "friend".to_owned(),
             can_install_plugins: false,
             wants_private_bot: false,
             private_bot: None,

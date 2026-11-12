@@ -20,6 +20,11 @@ use wonton_tunnel::pair::{PairingSecret, SECRET_LEN};
 
 use crate::owner;
 
+/// 记录里没有角色时算“朋友”：权限最少，不冒充家人或管理员。
+fn default_role_id() -> String {
+    crate::roles::DEFAULT_INVITE_ROLE.to_owned()
+}
+
 fn invalid(problem: ProfileProblem) -> MembersError {
     MembersError::Invalid(problem.to_string())
 }
@@ -78,7 +83,10 @@ pub struct MemberRecord {
     #[serde(default)]
     pub email: Option<String>,
     pub status: MemberStatus,
-    /// 主人授权了“能装插件”。
+    /// 他的角色（`roles.json` 的 ID）。记录里没有这一项时按权限最少的默认角色算。
+    #[serde(default = "default_role_id")]
+    pub role_id: String,
+    /// 旧的“能装插件”开关：角色接上以后不再读（`install_apps` 说了算），留着等接口跟着删。
     #[serde(default)]
     pub can_install_plugins: bool,
     /// 邀请时主人选了建私人 Bot；建 Bot 是后续任务，先记下来。
@@ -200,6 +208,18 @@ impl Members {
         };
         self.save(&mut members, record.clone())?;
         Ok(record)
+    }
+
+    /// 主人给别人换角色（`roles.json` 的 ID）。角色在不在由调用方先查。
+    pub fn set_role(&self, username: &str, role_id: &str) -> Result<MemberRecord, MembersError> {
+        let role_id = role_id.to_owned();
+        self.update(username, |record| {
+            if record.status == MemberStatus::Removed {
+                return Err(MembersError::Removed(record.username.clone()));
+            }
+            record.role_id = role_id;
+            Ok(())
+        })
     }
 
     /// 主人改一个家人的设置。
@@ -497,6 +517,7 @@ mod tests {
             display_name: username.to_owned(),
             email: None,
             status: MemberStatus::Invited,
+            role_id: default_role_id(),
             can_install_plugins: false,
             wants_private_bot: true,
             private_bot: None,
