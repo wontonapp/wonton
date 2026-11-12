@@ -13,7 +13,7 @@ use wonton_protocol::{ComposerDraft, CoreError, ReplyQuote};
 
 use super::ChatLink;
 use super::confirmation::core_account;
-use super::links::LinkTargets;
+use super::links::{LinkTargets, first_external_link};
 use super::reply::quoted_message;
 use super::send::reply_target;
 use crate::l10n::{CATALOG, language};
@@ -114,6 +114,10 @@ impl ChatLink {
     ) -> Result<(), CoreError> {
         let reply_to = reply_target(reply_to)?;
         let (_, room_id) = self.target(room_id)?;
+        // 第一个链接换了或没有了，点掉的预览记录跟着作废（ADR-0065）。
+        let links = LinkTargets::of(&self.plugins.view());
+        let first = first_external_link(body, &links).map(|found| found.url);
+        self.previews.retain_dismissal(&room_id, first.as_deref());
         let draft = Draft {
             body: body.to_owned(),
             reply_to,
@@ -139,6 +143,16 @@ impl ChatLink {
         let Some(stored) = stored else {
             return Ok(None);
         };
+        let links = LinkTargets::of(&self.plugins.view());
+        // 草稿里第一个外部链接的预览：被点掉的不出，还没取到的等这次读回（ADR-0065）。
+        let preview = match first_external_link(&stored.body, &links) {
+            Some(found) if self.previews.dismissed(&room_id, &found.url) => None,
+            Some(found) => Some(self.draft_preview(found.url).await),
+            None => {
+                self.previews.forget(&room_id);
+                None
+            }
+        };
         let reply = match stored.reply_to {
             Some(event_id) => Some(match session.quoted_event(&room_id, &event_id).await {
                 Ok(message) => ReplyQuote::Ready {
@@ -161,6 +175,7 @@ impl ChatLink {
         Ok(Some(ComposerDraft {
             body: stored.body,
             reply,
+            preview,
         }))
     }
 }

@@ -6,10 +6,12 @@
 use std::net::IpAddr;
 use std::ops::Range;
 
-use linkify::LinkKind;
+use linkify::{LinkFinder, LinkKind};
 use percent_encoding::percent_decode_str;
 use url::Url;
 use wonton_protocol::{MatrixTarget, PluginsViewModel, RichLink, RichLinkKind};
+
+use super::rich::CJK_PUNCTUATION;
 
 /// 认链接要用到的这台服务器的事实：只有已装插件的网页地址。别的都从地址本身看。
 #[derive(Default)]
@@ -226,6 +228,64 @@ pub(crate) fn phones(text: &str) -> Vec<Range<usize>> {
     phones.sort_by_key(|phone| phone.start);
     phones.dedup_by(|later, earlier| later.start < earlier.end);
     phones
+}
+
+/// 文字里第一个外部 http(s) 链接，链接预览用它（ADR-0065）：`raw` 是原文里找到的那段（发事件时写进
+/// `matched_url`），`url` 是补全协议后的地址（取预览用它）。插件页和 matrix.to 不是外部链接。
+pub(crate) struct ExternalLink {
+    pub(crate) raw: String,
+    pub(crate) url: String,
+}
+
+/// 扫描顺序和 `rich` 排版一样：号码先切出来，`linkify` 认网址和邮箱，中文标点隔开的段各自判断。
+pub(crate) fn first_external_link(text: &str, links: &LinkTargets) -> Option<ExternalLink> {
+    let mut at = 0;
+    for phone in phones(text) {
+        if let Some(link) = external_in(&text[at..phone.start], links) {
+            return Some(link);
+        }
+        at = phone.end;
+    }
+    external_in(&text[at..], links)
+}
+
+fn external_in(text: &str, links: &LinkTargets) -> Option<ExternalLink> {
+    let mut finder = LinkFinder::new();
+    finder.kinds(&[LinkKind::Url, LinkKind::Email]);
+    finder.url_must_have_scheme(false);
+    for part in finder.spans(text) {
+        if part.kind().is_none() {
+            continue;
+        }
+        let mut rest = part.as_str();
+        while !rest.is_empty() {
+            let cut = rest.find(CJK_PUNCTUATION).unwrap_or(rest.len());
+            let (piece, tail) = rest.split_at(cut);
+            if let Some(link) = piece_link(piece, links) {
+                return Some(link);
+            }
+            let punctuation = tail.chars().take(1).count();
+            rest = &tail[punctuation..];
+        }
+    }
+    None
+}
+
+/// 一段切开的文字：是外部链接就返回。
+fn piece_link(piece: &str, links: &LinkTargets) -> Option<ExternalLink> {
+    if piece.is_empty() {
+        return None;
+    }
+    let kind = if piece.contains('@') && !piece.contains("://") {
+        LinkKind::Email
+    } else {
+        LinkKind::Url
+    };
+    let link = links.link(piece, &kind)?;
+    (link.kind == RichLinkKind::External).then(|| ExternalLink {
+        raw: piece.to_owned(),
+        url: link.url,
+    })
 }
 
 const TEL: &str = "tel:";

@@ -262,6 +262,24 @@ impl ChatRoom {
         Ok(())
     }
 
+    /// 发送文字，事件内容里带上额外字段（链接预览的 `com.beeper.linkpreviews`，ADR-0065）。其余同
+    /// [`Self::send_text`]。
+    pub async fn send_text_with_extra(
+        &self,
+        body: &str,
+        extra: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<()> {
+        ensure_recipient_devices(&self.room).await?;
+        self.timeline()
+            .await
+            .send_with_extra_content(
+                RoomMessageEventContent::text_plain(body).into(),
+                Some(extra),
+            )
+            .await?;
+        Ok(())
+    }
+
     /// 发一个房间状态事件；`state_key` 为空串时是房间级状态。内容原样发，不需要 ruma 认识事件类型。
     pub async fn invite(&self, user: &UserId) -> Result<()> {
         self.room.invite_user_by_id(user).await?;

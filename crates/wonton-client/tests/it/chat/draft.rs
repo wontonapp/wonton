@@ -47,6 +47,7 @@ async fn until_draft(phone: &Phone, room_id: &str, want: Option<&str>) {
     let want = want.map(|body| ComposerDraft {
         body: body.to_owned(),
         reply: None,
+        preview: None,
     });
     until_composer(phone, room_id, want.as_ref()).await;
 }
@@ -199,6 +200,7 @@ async fn a_reply_stays_in_the_draft_until_it_is_sent() {
         reply: Some(ReplyQuote::Ready {
             message: quote.clone(),
         }),
+        preview: None,
     };
 
     phone

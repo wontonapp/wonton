@@ -137,6 +137,9 @@ async fn answer_core_route(core: &Arc<Core>, text: &str, raw: &str, tcp: &mut Tc
     if super::files::serve(core, text, raw, tcp).await {
         return;
     }
+    if super::link_preview::serve(core, text, tcp).await {
+        return;
+    }
     let Some(body) = read_body(tcp, text).await else {
         return;
     };

@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::MediaHandle;
+
 /// `GET`，查询参数 `url` 是要预览的 http(s) 网址。成功返回 [`LinkPreview`]；失败时错误体的 `kind` 是
 /// [`LinkPreviewFailure`] 的取值。
 pub const LINK_PREVIEW_PATH: &str = "/_wonton/api/link-preview";
@@ -62,6 +64,53 @@ pub enum LinkPreviewFailure {
     /// 比这个 App 新的核心给的原因。
     #[serde(other)]
     Other,
+}
+
+/// 链接预览卡片，壳直接画（ADR-0065）。`url` 是跳转之后的最终网址，卡片上显示它的域名。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct LinkPreviewCard {
+    pub url: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub site_name: Option<String>,
+    pub image: Option<LinkPreviewCardImage>,
+}
+
+/// 卡片图片的来源：发送框和向核心取的在自家核心的缓存里，事件里带的在 homeserver 的媒体库。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LinkPreviewCardImage {
+    /// 凭 [`LinkPreviewImage::id`] 经 `ClientCore::load_link_preview_image` 取字节。
+    Core { image: LinkPreviewImage },
+    /// 凭句柄经 `ClientCore::load_media` 取字节；加密房间是加密文件，核心负责解密。发送方没写 MIME 类型时
+    /// 是 `None`，壳按字节自己认。
+    Matrix {
+        media: MediaHandle,
+        mime_type: Option<String>,
+        width: Option<u32>,
+        height: Option<u32>,
+    },
+}
+
+/// 一条消息或发送框草稿的链接预览：有卡片，或按类别取不到；不出空卡片和假卡片（ADR-0065）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LinkPreviewState {
+    Ready { card: LinkPreviewCard },
+    Failed { reason: LinkPreviewReason },
+}
+
+/// 取不到预览的类别：核心回的 [`LinkPreviewFailure`] 原样透传；家里的核心够不着（隧道断了、没连上）时是
+/// `Transport`。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LinkPreviewReason {
+    Upstream { reason: LinkPreviewFailure },
+    Transport,
 }
 
 #[cfg(test)]

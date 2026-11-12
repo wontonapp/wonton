@@ -218,6 +218,7 @@ chat-op-mark-read-failed = 标为已读失败：{ $error }
 chat-op-direct-chat-failed = 发起私聊失败：{ $error }
 chat-op-send-text-failed = 发送消息失败：{ $error }
 chat-op-send-image-failed = 发送图片失败：{ $error }
+chat-op-send-preview-failed = 链接预览没带上：{ $error }
 chat-op-forward-failed = 转发消息失败：{ $error }
 chat-op-redact-failed = 撤回消息失败：{ $error }
 ## 文件传输和播放的详情。显示在传输列表条目、文件卡片和播放失败说明上。

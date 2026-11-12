@@ -109,7 +109,7 @@ fn is_punctuation(c: char) -> bool {
 }
 
 /// linkify 只认 ASCII 标点是网址的结尾，中文句子里紧跟网址的标点会被算进地址。
-const CJK_PUNCTUATION: [char; 15] = [
+pub(super) const CJK_PUNCTUATION: [char; 15] = [
     '。', '，', '、', '；', '：', '！', '？', '）', '】', '》', '」', '』', '”', '’', '…',
 ];
 

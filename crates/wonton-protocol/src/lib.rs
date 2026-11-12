@@ -175,7 +175,8 @@ pub use lan::{
 };
 pub use link::AppLink;
 pub use link_preview::{
-    LINK_PREVIEW_PATH, LinkPreview, LinkPreviewFailure, LinkPreviewImage, link_preview_image_path,
+    LINK_PREVIEW_PATH, LinkPreview, LinkPreviewCard, LinkPreviewCardImage, LinkPreviewFailure,
+    LinkPreviewImage, LinkPreviewReason, LinkPreviewState, link_preview_image_path,
 };
 pub use matrix_login::{
     MatrixAccount, MatrixLoginFailure, MatrixLoginMethod, MatrixLoginState, MatrixLoginViewModel,
