@@ -354,7 +354,7 @@ impl OnboardingLink {
             state.testing = false;
             state.step = view::first_visible(&state.unavailable).or(Some(OnboardingStep::Profile));
         }
-        self.refresh();
+        self.refresh_after_local_reset();
         Ok(())
     }
 }

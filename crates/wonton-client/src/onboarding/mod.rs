@@ -204,6 +204,17 @@ impl OnboardingLink {
 
     /// 重新取家里服务器上的状态。记下的选择和正在显示的一步不变：从网关网页回来、出错后重试都走这里。
     fn refresh(self: &Arc<Self>) {
+        self.refresh_impl(false);
+    }
+
+    /// 本地重置（重看引导）后的那一趟。重置不写服务器，它是之后唯一取资料和服务商的请求；插件变化触发的
+    /// 静默刷新（只取 onboarding）可能后发先至，把这趟按 revision 判旧——onboarding 照旧让给更新的那份，
+    /// 资料、服务商和错误却没有更新的可让，必须落地，否则重看的每一步都没有现值可显示。
+    pub(super) fn refresh_after_local_reset(self: &Arc<Self>) {
+        self.refresh_impl(true);
+    }
+
+    fn refresh_impl(self: &Arc<Self>, after_reset: bool) {
         let (generation, operation, revision) = {
             let mut state = lock(&self.state);
             state.loading = true;
@@ -228,7 +239,15 @@ impl OnboardingLink {
             }
             let (api, onboarding) = match result {
                 Ok(fetched) => fetched,
-                Err(problem) => return link.finish_error(generation, operation, revision, problem),
+                Err(problem) => {
+                    return link.finish_error(
+                        generation,
+                        operation,
+                        revision,
+                        after_reset,
+                        problem,
+                    );
+                }
             };
             let in_flow = {
                 let state = lock(&link.state);
@@ -244,7 +263,7 @@ impl OnboardingLink {
             if !link.operation_is_current(generation, operation) {
                 return;
             }
-            link.received(onboarding, details, revision);
+            link.received(onboarding, details, revision, after_reset);
         });
     }
 
@@ -256,12 +275,14 @@ impl OnboardingLink {
             Result<ModelProviders, ModelProviderProblem>,
         )>,
         revision: u64,
+        after_reset: bool,
     ) {
         {
             let mut state = lock(&self.state);
             // 服务端的 Onboarding 不带版本号，按请求发出时的 revision 判新旧：这趟请求发出后已有
             // 更新的响应落过地（静默刷新、点完成的保存），这份旧的丢弃，视图保持已落地的状态。
-            if state.revision == revision {
+            let current = state.revision == revision;
+            if current {
                 if state.step.is_none() {
                     // 中间的步骤不存在家里服务器上：没走完的从第一个能显示的步开始，每一步显示现在的设置。
                     state.step = Some(match onboarding.step {
@@ -273,22 +294,24 @@ impl OnboardingLink {
                 }
                 state.onboarding = Some(onboarding);
                 state.revision += 1;
-                if let Some((owner, providers)) = details {
-                    match owner {
-                        Ok(owner) => state.owner = Some(owner),
-                        Err(problem) => {
-                            if problem.reason == PluginFailure::ServerTooOld {
-                                state.unavailable.insert(OnboardingStep::Profile);
-                                state.step = view::first_visible(&state.unavailable);
-                            } else {
-                                state.problem = Some(problem);
-                            }
+            }
+            if (current || after_reset)
+                && let Some((owner, providers)) = details
+            {
+                match owner {
+                    Ok(owner) => state.owner = Some(owner),
+                    Err(problem) => {
+                        if problem.reason == PluginFailure::ServerTooOld {
+                            state.unavailable.insert(OnboardingStep::Profile);
+                            state.step = view::first_visible(&state.unavailable);
+                        } else {
+                            state.problem = Some(problem);
                         }
                     }
-                    match providers {
-                        Ok(providers) => state.providers = Some(providers),
-                        Err(problem) => state.model_problem = Some(problem),
-                    }
+                }
+                match providers {
+                    Ok(providers) => state.providers = Some(providers),
+                    Err(problem) => state.model_problem = Some(problem),
                 }
             }
             state.loading = false;
@@ -296,14 +319,22 @@ impl OnboardingLink {
         self.publish();
     }
 
-    fn finish_error(&self, generation: u64, operation: u64, revision: u64, problem: PluginProblem) {
+    fn finish_error(
+        &self,
+        generation: u64,
+        operation: u64,
+        revision: u64,
+        after_reset: bool,
+        problem: PluginProblem,
+    ) {
         if !self.operation_is_current(generation, operation) {
             return;
         }
         let mut state = lock(&self.state);
         state.loading = false;
         // 请求发出后已有更新的响应落过地：这份旧错误丢弃，视图保持已落地的状态。
-        if state.revision == revision {
+        // 重置后的那趟除外：它的失败没有别的请求会报（见 refresh_after_local_reset）。
+        if after_reset || state.revision == revision {
             if problem.reason == PluginFailure::ServerTooOld {
                 state.too_old = Some(too_old(&problem));
                 state.problem = None;

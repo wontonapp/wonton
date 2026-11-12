@@ -7,7 +7,8 @@ use wonton_client::{
 
 use super::super::rig::{Canned, Rig, core_error, item, preview, running};
 use super::{
-    KEY_TEST, ONBOARDING, act, at, edit, flow_rig, onboarding, providers, test_key, wait_requests,
+    KEY_TEST, ONBOARDING, PROVIDERS, act, at, edit, flow_rig, onboarding, providers, test_key,
+    wait_requests,
 };
 
 const PLUGINS: &str = "/_wonton/api/plugins";
@@ -271,4 +272,36 @@ async fn a_late_refresh_response_cannot_rewind_the_finished_onboarding() {
     let settled = rig.wait_onboarding(|view| !view.loading).await;
     assert_eq!(settled.primary_bot_user_id.as_deref(), Some("@agent:home"));
     assert_stays(&rig, &settled).await;
+}
+
+/// 重看重置后的那趟取状态还在等服务商时，插件变化触发的静默刷新后发先至：重看那趟照样落地，
+/// 每一步有现值可显示。不扣住服务商时两趟谁先落地看调度，这条竞态在
+/// `reopening_shows_the_current_settings_on_every_step` 里只会偶发。
+#[tokio::test]
+async fn a_silent_refresh_landing_first_does_not_drop_the_revisit_fetch() {
+    let rig = install_rig("finished").await;
+    rig.core.set_owner(Some("云吞"), None);
+    rig.core.set_providers(providers(true));
+
+    rig.core.hold(Method::GET, PROVIDERS);
+    let fetches = rig.core.seen(&Method::GET, PROVIDERS).len();
+    act(&rig, Action::RestartOnboarding);
+    wait_requests(&rig, Method::GET, PROVIDERS, fetches + 1).await;
+
+    rig.core.set_onboarding(install_state("finished", true));
+    change_installed(&rig, "app.photos");
+    rig.wait_onboarding(|view| view.primary_bot_user_id.as_deref() == Some("@installed:home"))
+        .await;
+
+    rig.core.release(Method::GET, PROVIDERS);
+    let view = rig
+        .wait_onboarding(|view| !view.loading && view.model.providers.is_some())
+        .await;
+    assert_eq!(view.step, Some(OnboardingStep::Profile));
+    assert_eq!(view.profile.display_name, "云吞");
+    assert_eq!(
+        view.primary_bot_user_id.as_deref(),
+        Some("@installed:home"),
+        "重看那趟的 onboarding 比静默刷新的旧，不许盖掉它"
+    );
 }
