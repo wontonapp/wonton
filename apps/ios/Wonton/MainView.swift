@@ -254,22 +254,6 @@ struct MainView: View {
         onboardingGateway = nil
     }
 
-    @ViewBuilder private var notices: some View {
-        if let problem = pages.viewModel.problem {
-            ProblemRow(problem: Problem(title: TabText.configurationFailed, detail: problem.message))
-                .padding(.horizontal, WontonTheme.spacing.pageInset)
-        }
-        if !pages.viewModel.uninstalled.isEmpty {
-            HStack {
-                Text(pages.viewModel.uninstalled.map(TabText.uninstalled).joined(separator: "\n"))
-                    .wontonText(WontonTheme.typography.supporting)
-                Spacer(minLength: 0)
-                WontonIconButton(icon: .close, label: TabText.close) { pages.send(.dismissUninstalledTabs) }
-            }
-            .padding(.horizontal, WontonTheme.spacing.pageInset)
-        }
-    }
-
     private var pendingElsewhere: [PendingConfirmation] {
         let shown: String? = if pages.showsPluginPage { nil } else { chat.shownRoom(in: .chat) }
         return chat.viewModel.pendingConfirmations.filter { shown != $0.roomId }
@@ -290,6 +274,22 @@ struct MainView: View {
 }
 
 extension MainView {
+    @ViewBuilder fileprivate var notices: some View {
+        if let problem = pages.viewModel.problem {
+            ProblemRow(problem: Problem(title: TabText.configurationFailed, detail: problem.message))
+                .padding(.horizontal, WontonTheme.spacing.pageInset)
+        }
+        if !pages.viewModel.uninstalled.isEmpty {
+            HStack {
+                Text(pages.viewModel.uninstalled.map(TabText.uninstalled).joined(separator: "\n"))
+                    .wontonText(WontonTheme.typography.supporting)
+                Spacer(minLength: 0)
+                WontonIconButton(icon: .close, label: TabText.close) { pages.send(.dismissUninstalledTabs) }
+            }
+            .padding(.horizontal, WontonTheme.spacing.pageInset)
+        }
+    }
+
     /// 连接状态条：拆出计算属性，整条 body 的类型检查超时（Swift 编译器限制）。
     fileprivate var barStatus: WontonBarStatus {
         WontonBarStatus(home: home.viewModel, recovered: home.viewModel.justRecovered) {
