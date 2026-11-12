@@ -111,8 +111,10 @@ struct ChatListView: View {
                             }
                             .buttonStyle(.plain)
                         } else {
-                            NavigationLink(value: ChatRoute.chatBackup) { WontonRow(title: reminder, showsForward: true) }
-                                .buttonStyle(.plain)
+                            NavigationLink(value: ChatRoute.chatBackup) {
+                                WontonRow(title: reminder, showsForward: true)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
