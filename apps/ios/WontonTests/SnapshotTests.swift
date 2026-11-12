@@ -44,6 +44,7 @@ final class SnapshotTests: XCTestCase {
 
     func testPluginProblem() throws {
         assert(SnapshotFixtures.pluginProblem(), testName: "testPluginProblem", line: #line)
+    }
 
     func testConfirmationsList() throws {
         let core = try makeCore()

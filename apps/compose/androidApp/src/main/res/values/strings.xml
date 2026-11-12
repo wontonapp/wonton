@@ -17,6 +17,8 @@
     <string name="push_unknown_sender">Someone</string>
     <!-- Notification text when someone invites you to a room. -->
     <string name="push_invite">Invited you to join</string>
+    <!-- Notification text for an approval card: the title already says what it is. -->
+    <string name="push_confirmation_body">Waiting for you</string>
     <!-- Notification text when the message arrived but this device can't load or decrypt it yet. -->
     <string name="push_unavailable">New message (can\'t load it right now)</string>
     <!-- Lock screen version of a notification when sensitive content is hidden: no sender, no text. -->

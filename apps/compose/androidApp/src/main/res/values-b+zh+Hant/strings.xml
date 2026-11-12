@@ -14,6 +14,7 @@
     <string name="push_in_room">%1$s：%2$s</string>
     <string name="push_unknown_sender">有人</string>
     <string name="push_invite">邀請你加入</string>
+    <string name="push_confirmation_body">等你確認</string>
     <string name="push_unavailable">新訊息（暫時無法載入內容）</string>
     <string name="push_hidden">新訊息</string>
     <string name="startup_core_failed">雲吞啟動失敗：%1$s</string>

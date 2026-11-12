@@ -108,6 +108,10 @@ object PushNotifications {
     /** 消息和邀请：标题是房间名（私聊是发送者），正文是消息摘要。 */
     private fun messageTexts(context: Context, notification: PushNotification): Pair<String, String> {
         val sender = notification.sender ?: context.getString(R.string.push_unknown_sender)
+        // 确认卡片不是房间消息：标题就是卡片标题（核心放在 sender 里），正文不再重复，给一句类别文案。
+        if (notification.category == NotificationCategory.CONFIRMATION) {
+            return sender to context.getString(R.string.push_confirmation_body)
+        }
         val text = when (val content = notification.content) {
             is PushContent.Message -> inRoom(context, notification, content.summary.line(context.resources))
             is PushContent.Invite -> inRoom(context, notification, context.getString(R.string.push_invite))

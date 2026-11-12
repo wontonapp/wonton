@@ -14,6 +14,7 @@
     <string name="push_in_room">%1$s：%2$s</string>
     <string name="push_unknown_sender">だれか</string>
     <string name="push_invite">あなたを招待しました</string>
+    <string name="push_confirmation_body">確認待ち</string>
     <string name="push_unavailable">新着メッセージ（今は内容を読み込めません）</string>
     <string name="push_hidden">新着メッセージ</string>
     <string name="startup_core_failed">Wontonを起動できませんでした：%1$s</string>
