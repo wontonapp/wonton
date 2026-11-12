@@ -1,0 +1,82 @@
+# C2 开发样例：一个 bridge/agent 对。bridge 和 agent 只共享 ACP socket，各自的数据目录互不可见。
+name: ${WONTON_ACP_PROJECT:-wonton-dev-acp}
+
+services:
+  agent:
+    image: wonton-acp-agent:dev
+    pull_policy: never
+    user: "0:0"
+    restart: unless-stopped
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      OPENAI_BASE_URL: ${WONTON_MODEL_BASE_URL:?需要模型网关地址}
+      OPENAI_API_KEY: ${WONTON_MODEL_API_KEY:?需要模型网关凭据}
+      OPENAI_MODEL: ${WONTON_MODEL_DEFAULT:?需要默认模型}
+      WONTON_ACP_SOCKET: /run/wonton/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+    volumes:
+      - ${WONTON_BOT_DATA:?需要 Bot 数据目录}/agent:/data/agent
+      - ${WONTON_BOT_DATA}/workspace:/workspace
+      - acp-socket:/run/wonton
+
+  bridge:
+    image: wonton-acp-bridge:dev
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      agent:
+        condition: service_started
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      WONTON_BOT_DATA: /data
+      WONTON_BRIDGE_DATA: /data/bridge
+      WONTON_ACP_SOCKET: /run/wonton/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+      WONTON_MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER:?需要 Matrix 地址}
+      WONTON_MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN:?需要 Bot Matrix 访问令牌}
+      WONTON_MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:?需要主人 Matrix 用户 ID}
+      WONTON_MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM:?需要主人与 Bot 的房间 ID}
+      WONTON_MCP_URL: ${WONTON_MCP_URL:-http://mcp.wonton.internal/mcp}
+      WONTON_ACP_MODE: ${WONTON_ACP_MODE:-plan}
+      WONTON_ACP_TOPIC_MODE: ${WONTON_ACP_TOPIC_MODE:-}
+      WONTON_ACP_TURN_SECONDS: ${WONTON_ACP_TURN_SECONDS:-600}
+      WONTON_ACP_IDLE_SECONDS: ${WONTON_ACP_IDLE_SECONDS:-600}
+      WONTON_ACP_TOPIC_IDLE_SECONDS: ${WONTON_ACP_TOPIC_IDLE_SECONDS:-1800}
+    volumes:
+      - ${WONTON_BOT_DATA:?需要 Bot 数据目录}/bridge:/data/bridge
+      # 附件目录：桥把收到的图片和文件落进 Agent 工作区，再以 resource_link 交给它。
+      - ${WONTON_BOT_DATA}/workspace:/workspace
+      - acp-socket:/run/wonton
+
+volumes:
+  acp-socket:
+
+x-wonton:
+  spec: "0.4"
+  id: dev.wonton.acp-bridge
+  version: 0.1.0
+  kind: agent
+  title: { zh: ACP bridge 样例, en: ACP bridge sample }
+  description:
+    zh: 用 omp 通过 ACP 接入的 Bot 样例
+    en: Sample bot backed by omp over ACP
+  notices: [LICENSE.omp]
+  tags: { zh: [AI], en: [AI] }
+  agent:
+    protocol: acp
+  bot:
+    display_name: { zh: ACP 样例, en: ACP sample }
+  bots:
+    services: [agent, bridge]
+  permissions:
+    - matrix.bot
+    - tools
+    - models
+  requirements:
+    arch: [amd64, arm64]

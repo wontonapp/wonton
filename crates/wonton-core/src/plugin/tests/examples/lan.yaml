@@ -1,0 +1,27 @@
+name: samba
+services:
+  samba:
+    image: ghcr.io/example/samba:4
+    volumes:
+      - ${WONTON_SHARE_DOCUMENTS}:/shares/documents
+  web:
+    image: ghcr.io/example/samba-web:1
+    environment:
+      LAN_ADDRESSES: ${WONTON_LAN_ADDRESSES}
+
+x-wonton:
+  spec: '0.4'
+  id: org.example.samba
+  version: 1.0.0
+  kind: app
+  title: { zh: 文件共享, en: File sharing }
+  description: { zh: 用 SMB 在局域网里共享文件夹, en: Share folders over SMB on the LAN }
+  webui:
+    service: web
+    port: 8080
+  lan:
+    ports:
+      - { service: samba, port: 445 }
+  permissions:
+    - network.lan
+    - storage.share.documents:write

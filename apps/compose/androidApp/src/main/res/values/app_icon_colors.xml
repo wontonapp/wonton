@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 由 scripts/generate-app-icon.py 从 design/app-icon/ 生成，不要手改。 -->
+<resources>
+    <color name="app_icon_background">#F3EDE2</color>
+    <color name="app_icon_ink">#1E1B18</color>
+    <color name="launch_background">#F3EDE2</color>
+    <color name="launch_glyph">#1E1B18</color>
+</resources>

@@ -1,0 +1,125 @@
+# Codex Agent：bridge 说 ACP，agent 跑固定版本的 codex-acp 和 Codex CLI。两个服务只共享 ACP socket 所在的
+# run/ 子目录；bridge 的 crypto store 和 Matrix 令牌不给 agent，agent 的 HOME 和工作区不给 bridge。
+services:
+  agent:
+    image: ghcr.io/geraldpeng6/wonton-plugin-codex:0.1.4@sha256:2b1bed701fadeee0f970cfc8ee8194524a37f00f508b53673c087bc7d74d0d7e
+    # 镜像里固定用 65532，入口脚本不再降权；bridge 挂同一个 run/ 目录，两个服务的属主必须相同，否则核心拒绝安装。
+    user: "65532:65532"
+    restart: unless-stopped
+    environment:
+      HOME: /data/agent/home
+      # 入口脚本每次启动按有没有值选路：有网关就写进 Codex 的 config.toml（model_providers +
+      # model_catalog_json），为空（网关没装或没就绪）就不写，Codex 用自己的登录态；密钥只引用变量名。
+      OPENAI_BASE_URL: ${WONTON_MODEL_BASE_URL}
+      OPENAI_API_KEY: ${WONTON_MODEL_API_KEY}
+      OPENAI_MODEL: ${WONTON_MODEL_DEFAULT}
+      WONTON_MCP_URL: ${WONTON_MCP_URL:?需要 MCP 总线地址}
+      WONTON_ACP_SOCKET: /data/run/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+      # 无浏览器的容器：官方登录走设备码（codex login --device-auth），不用开网页。
+      NO_BROWSER: "1"
+      # 会话和 MCP 连接的日志进容器日志，出问题时能对着它排查。
+      RUST_LOG: info
+      # 出网代理由核心注入（ADR-0023）：登录和登录后的官方模型请求经它出去，内部地址核心已写进
+      # NO_PROXY，不会绕道。这里不写代理变量，写了空值就会把核心的注入顶掉。
+    volumes:
+      - ${WONTON_BOT_DATA:?需要 Bot 数据目录}/agent:/data/agent
+      - ${WONTON_BOT_DATA}/run:/data/run
+      - ${WONTON_BOT_DATA}/workspace:/workspace
+    healthcheck:
+      # socket 是入口脚本建好 ACP 转发后才有的，有这个文件就说明 Agent 侧能接连接。
+      test: ["CMD", "test", "-S", "/data/run/acp.sock"]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      start_interval: 2s
+
+  bridge:
+    image: ghcr.io/geraldpeng6/wonton-acp-bridge:main-83d4297@sha256:6b0645e4cd8a5b80b6c25e4c17334c8d4621b9959756902785bae58b558b2326
+    user: "65532:65532"
+    restart: unless-stopped
+    depends_on:
+      agent:
+        condition: service_started
+    environment:
+      HOME: /data/bridge
+      WONTON_BOT_DATA: /data
+      WONTON_BRIDGE_DATA: /data/bridge
+      WONTON_ACP_SOCKET: /data/run/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+      WONTON_MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER:?需要 Matrix 地址}
+      WONTON_MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN:?需要 Bot 的 Matrix 访问令牌}
+      WONTON_MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:?需要主人的 Matrix 用户 ID}
+      WONTON_MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM:?需要主人与 Bot 的主房间}
+      WONTON_MCP_URL: ${WONTON_MCP_URL:?需要 MCP 总线地址}
+      # Codex 最严格可用的模式（ADR-0035 实测 read-only）：只读工作区，改文件和出网都先经确认卡片问主人。
+      # 它自带的沙箱在普通 Docker 容器里建不了命名空间，更宽的模式不可用。
+      WONTON_ACP_MODE: read-only
+      # codex-acp 唯一的“改前先问”模式就是 read-only：话题里也逐次确认，同改一个文件时出排队卡片。
+      # 不设时桥仍用上面的模式，但会在每个话题里误报没有这种模式。
+      WONTON_ACP_TOPIC_MODE: read-only
+    volumes:
+      - ${WONTON_BOT_DATA}/bridge:/data/bridge
+      - ${WONTON_BOT_DATA}/run:/data/run
+    healthcheck:
+      test: ["CMD", "test", "-S", "/data/run/acp.sock"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
+
+x-wonton:
+  spec: "0.9"
+  id: ai.codex
+  version: 0.1.4
+  kind: agent
+  title: { zh: Codex, en: Codex }
+  description:
+    zh: OpenAI 的 Codex 编程 Agent，在聊天里按你的确认动手
+    en: OpenAI's Codex coding agent that acts in chat, asking before it acts
+  icon: icon.svg
+  screenshots: [screenshots/home.png]
+  notices: [NOTICE, images/wonton-plugin-codex/LICENSE.codex-acp, images/wonton-plugin-codex/LICENSE.codex]
+  author: { name: Wonton plugin authors }
+  homepage: https://github.com/openai/codex
+  # Codex 上游的许可证；插件包自己的许可证在 LICENSE。
+  license: Apache-2.0
+  tags: { zh: [AI, 开发], en: [AI, Development] }
+  about:
+    zh: |
+      OpenAI Codex 以 Bot 的身份住进聊天：模型网关接好时默认走网关，不用账号，也不用填任何 key。
+      它住在自己的容器里，用只读沙箱工作，改文件、跑会出沙箱的命令之前经确认卡片问你；
+      Wonton 插件的工具也从聊天里调。没接网关时，在聊天里发 /wonton login：用设备码登录
+      ChatGPT 订阅，或贴一个自己的 OpenAI API key。
+    en: |
+      OpenAI Codex lives in the chat as a bot: when the model gateway is connected it goes through
+      the gateway by default, with no account and no key to fill in. It works in its own container
+      under a read-only sandbox and asks through confirmation cards before editing files or running
+      commands outside it; Wonton plugin tools are called from the chat too. Without the gateway,
+      send /wonton login in the chat: sign in to a ChatGPT subscription with a device code, or paste
+      your own OpenAI API key.
+  release_notes:
+    zh: "改用新的名单变量，Bot 只听名单里的人（核心 0.9 起，不再兼容旧变量）。需要插件规范 0.9。"
+    en: "Switches to the new allow-list variable so a bot follows the people on the list (core 0.9 and later; the old variable is gone). Requires spec 0.9."
+  agent:
+    protocol: acp
+    # 官方账号登录（ADR-0035）：登录在 Codex 自己的程序里完成，链接和设备码发进聊天；
+    # 没接模型网关时也可以贴自己的 OpenAI API key，同样经终端登录收进 stdin。
+    login:
+      - id: chatgpt
+        title: { zh: ChatGPT 账号, en: ChatGPT account }
+      - id: api-key
+        title: { zh: OpenAI API key, en: OpenAI API key }
+  bot:
+    display_name: { zh: Codex, en: Codex }
+  bots:
+    services: [agent, bridge]
+  permissions:
+    - matrix.bot
+    - tools
+    - models
+    # 设备码登录和登录后的官方模型请求都要出网。
+    - network.egress
+  requirements:
+    arch: [amd64, arm64]
+    memory: 1G

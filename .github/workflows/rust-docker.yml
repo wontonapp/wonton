@@ -1,0 +1,214 @@
+name: rust-docker
+
+# 依赖 Docker 的集成测试（标了 #[ignore] 的都在 wonton-core、wonton-client、wonton-matrix、wonton-acp-bridge 里）。
+# 镜像清单检查和官方索引检查用不到 Docker，在 rust.yml 的测试里跑，不占这个作业的时间。
+# 草稿 PR 上一个作业都不起（含改动范围），汇总作业起来报一个通过；转 ready 或每天的定时全量才跑。
+# 测试镜像拉的是 ghcr.io/<owner>/test-images
+# 的副本（test-images.yml 每周和每次 main 合并时同步），托管 runner 的出口 IP 拉不动 Docker Hub 和 ECR Public。
+# 路径不写在触发器上：合并队列的必需检查每次入队都要有结果，工作流没触发的话检查一直“等待中”，队列合不了。
+# 改成由 changes 作业判断改动范围，没改到时自己报 skipped（跳过的检查算通过）。
+# 必需检查只有末尾的汇总作业，其余作业在作业级直接跳过，不用为了报检查先起 runner。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # 每天全量兜底（PR 已在最新 main 上跑过，main 上不重跑）。
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+  # 合并队列：末尾的汇总作业是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
+  # 队列用 base_sha..head_sha 判断范围，包含排在前面的 PR，沿用 PR 的路径规则。
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
+
+# 队列里的 ref 一律是 gh-merge-queue/main，按它分组会把几次入队挤进同一组，改用这次入队的合并提交。
+concurrency:
+  group: rust-docker-${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # 集成测试的镜像引用指到镜像仓库副本（wonton-test-images 改写），本地不设、按上游引用拉。
+  # 副本前缀按仓库主人来，仓库换组织也跟着走。
+  WONTON_TEST_IMAGES: ghcr.io/${{ github.repository_owner }}/test-images
+
+permissions:
+  contents: read
+  # 镜像副本在仓库还是私有的时候是私有包，拉取要 GITHUB_TOKEN；main 上的运行还把桥镜像的层缓存写回
+  # wonton-ci-cache（PR、队列只读）。
+  packages: write
+
+jobs:
+  changes:
+    name: 改动范围（rust-docker）
+    # PR 用 REST 列改动文件，队列比较整个合并组；定时和手动运行全量，草稿 PR 跳过。
+    if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # 按 REST 接口列 PR 改动的文件，不用检出代码。
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        if: github.event_name == 'merge_group'
+        with:
+          ref: ${{ github.event.merge_group.head_sha }}
+          persist-credentials: false
+      # MIT
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          base: ${{ github.event.merge_group.base_sha }}
+          ref: ${{ github.event.merge_group.head_sha }}
+          # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
+          predicate-quantifier: some-with-excludes
+          filters: |
+            changed:
+              - "crates/wonton-acp-bridge/**"
+              - "crates/wonton-client/**"
+              - "crates/wonton-core/**"
+              - "crates/wonton-matrix/**"
+              # 测试和预热读的部署文件（include_str! 和 Dockerfile）；deploy/dev 其余的只给本机开发栈，改了不用跑。
+              # 新的 include_str! 指向 deploy/ 时要补在这里。
+              - "deploy/install/**"
+              - "deploy/dev/acp-bridge/**"
+              - "deploy/dev/core/compose.yaml"
+              - "deploy/dev/core/Dockerfile"
+              - "deploy/dev/matrix/**"
+              # 预拉测试镜像的清单。
+              - "scripts/mirror-test-images.sh"
+              - "plugins/**"
+              - "Cargo.toml"
+              - "vendor/**"
+              - "Cargo.lock"
+              - "clippy.toml"
+              - ".config/nextest.toml"
+              - "rust-toolchain.toml"
+              - ".github/workflows/rust-docker.yml"
+              - "!**/*.md"
+
+  docker:
+    name: Rust Docker 测试
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || (github.event_name != 'pull_request' && github.event_name != 'merge_group')) }}
+    runs-on: ubuntu-24.04
+    # 桥镜像要整编一遍（预构建 + 测试缓存），45 分钟紧，留出余量。
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 安装 rust-toolchain.toml 指定的工具链
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-nextest@0.9.151
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # 和“测试”分片同一份缓存：编出来的测试二进制一样，恢复完就能直接跑。
+          shared-key: rust-test
+          save-if: false
+      # 层缓存只能从 docker-container 之类的构建器导出（经典镜像存储的 docker 驱动不支持 cache export，实测报
+      # `Cache export is not supported for the docker driver`）。它会成为当前构建器，后面的 `docker build`
+      # 也走它，所以测试里的构建要带 `--load` 把镜像装回 docker。
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: 确认 Docker 可用
+        # 顺带把核数记进日志：nextest 的并发按核数算，改并发后要能从日志核对落到了几条。
+        run: |
+          docker version
+          nproc
+          cat /sys/fs/cgroup/cpu.max 2>/dev/null || true
+      - name: 腾出预装 SDK 占的盘
+        # 托管 runner 根盘只有约 70 GB，预装的 Android、.NET 等 SDK 占掉二十几 GB；测试要拉十来 GB 镜像，
+        # 而核心按磁盘 5% 留空（files/uploads.rs），挤到线以下连 0 字节的上传也会被报 storage_full。
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
+          df -h /
+      - name: 一次拉齐测试镜像
+        # 测试里 ensure_image 见本机已有就不再联网，跑起来后不依赖 ghcr 的临时令牌还能用多久
+        # （实测跑了几分钟后换令牌开始 401）。预拉和测试建容器用同一个引用（mirror 脚本带摘要），
+        # 测试按自己的引用 inspect 得到，不会再按名字拉一次。
+        # 每个镜像最多拉 3 次（5 s、15 s 退避）：GHCR 偶尔对某个 tag 回 `manifest unknown` 或 5xx，
+        # 这是基础设施抖动，只重试拉取本身，不给测试加重试。
+        # 还拉不到就整步失败：交给测试自己拉的话，会停在一个看不出是基础设施的测试里；
+        # 镜像名写进 `::error::`，一眼分得清是拉不到还是断言失败。
+        run: |
+          failed=()
+          while IFS= read -r image; do
+            for attempt in 1 2 3; do
+              docker pull "$image" && continue 2
+              if ((attempt < 3)); then
+                sleep $((attempt == 1 ? 5 : 15))
+              fi
+            done
+            failed+=("$image")
+          done < <(scripts/mirror-test-images.sh --list)
+          if ((${#failed[@]})); then
+            for image in "${failed[@]}"; do
+              printf '::error::基础设施失败：拉不到镜像 %s（重试 3 次）\n' "$image"
+            done
+            exit 1
+          fi
+      - name: 预构建桥镜像
+        # 测试只验启动行为，构建本身先在这里做掉、给 docker 构建缓存预热，测试里的同名 build 就只走缓存。
+        # 层缓存放在镜像仓库里（ghcr.io 的 wonton-ci-cache），不占 10 GB 的 actions 缓存：缓存从 main 上的
+        # 构建恢复，只在 main 上写回（定时、手动），PR 和队列只读。构建必须走 buildx —— `docker build`
+        # 读不了 registry 缓存；镜像用 --load 装回 docker，测试里的 `docker build` 才拿得到这份本机缓存。
+        shell: bash
+        run: |
+          ref="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:acp-bridge"
+          extra=()
+          if [[ $GITHUB_REF == refs/heads/main || $GITHUB_EVENT_NAME == workflow_dispatch ]]; then
+            extra+=(--cache-to "type=registry,ref=$ref,mode=max")
+          fi
+          docker buildx build "${extra[@]}" \
+            --cache-from "type=registry,ref=$ref" \
+            -f deploy/dev/acp-bridge/Dockerfile \
+            --build-arg "RUST_IMAGE=$WONTON_TEST_IMAGES/rust:1.99.1-slim-trixie" \
+            --build-arg "DEBIAN_IMAGE=$WONTON_TEST_IMAGES/debian:trixie-slim" \
+            -t wonton-acp-bridge-docker-test:prebuilt \
+            --load .
+      - name: 准备日志目录
+        # 步骤里用 tee 往 $RUNNER_TEMP/test-logs 写输出，目录得先有：shell 带 pipefail，tee 打不开文件就让整步非零。
+        run: mkdir -p "$RUNNER_TEMP/test-logs"
+      - name: Docker 集成测试（标了 #[ignore] 的都是）
+        shell: bash
+        run: cargo nextest run --workspace --locked --profile docker --run-ignored only 2>&1 | tee "$RUNNER_TEMP/test-logs/test-output.log"
+      - name: 失败时留下测试输出
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rust-docker-test-logs-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/test-logs
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
+  # 草稿 PR 上其余作业全被跳过时它也照样起来并报通过，不用为此先起别的 runner。
+  summary:
+    name: rust-docker 汇总
+    needs: [changes, docker]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      RESULTS: ${{ join(needs.*.result, ' ') }}
+    steps:
+      - name: 各作业的结果
+        run: |
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) exit 1 ;;
+            esac
+          done

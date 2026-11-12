@@ -1,0 +1,8 @@
+# UniFFI 生成绑定时的命名。两个 crate 的 Swift 代码编进同一个 Swift 模块 `WontonClient`，
+# 共用一个 C 模块 `WontonClientFFI`，头文件按 crate 分开。
+[bindings.swift]
+ffi_module_name = "WontonClientFFI"
+ffi_module_filename = "wonton_protocolFFI"
+
+[bindings.kotlin]
+package_name = "app.wonton.protocol"

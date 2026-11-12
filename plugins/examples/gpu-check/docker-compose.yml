@@ -1,0 +1,30 @@
+# 显卡检查：确认核心把宿主的显卡交给了容器，而且容器里的 ROCm（或 NVIDIA 工具）认得它。以非 root 用户运行，
+# 所以设备所属的组也得由核心加上。镜像在本地构建，见同目录的 README。
+name: gpu-check
+services:
+  check:
+    image: wonton-gpu-check:dev
+    pull_policy: never
+    user: "${PUID}:${PGID}"
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/gpu-check.ok"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      start_interval: 1s
+
+x-wonton:
+  spec: '0.4'
+  id: app.wonton.gpu-check
+  version: 0.1.0
+  kind: app
+  title: { zh: 显卡检查, en: GPU check }
+  description:
+    zh: 在容器里确认核心交给它的显卡能用（rocminfo、nvidia-smi）
+    en: Confirms inside a container that the GPU handed over by the core works (rocminfo, nvidia-smi)
+  icon: icon.svg
+  gpu:
+    services: [check]
+  permissions: [devices.gpu]
+  requirements:
+    gpu: {need: required}

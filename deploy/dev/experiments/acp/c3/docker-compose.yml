@@ -1,0 +1,79 @@
+# C3 登录验收插件包：bridge 用本分支构建的镜像，agent 是无账号测试 Agent。
+# 只在开发栈安装验收用；不进官方索引。
+name: wonton-acp-c3
+
+services:
+  agent:
+    image: wonton-acp-c3-agent:dev
+    pull_policy: never
+    user: "0:0"
+    restart: unless-stopped
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      WONTON_ACP_SOCKET: /run/wonton/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+    volumes:
+      - ${WONTON_BOT_DATA:?需要 Bot 数据目录}/agent:/data/agent
+      - ${WONTON_BOT_DATA}/workspace:/workspace
+      - acp-socket:/run/wonton
+
+  bridge:
+    image: wonton-acp-c3-bridge:dev
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      agent:
+        condition: service_started
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      WONTON_BOT_DATA: /data
+      WONTON_BRIDGE_DATA: /data/bridge
+      WONTON_ACP_SOCKET: /run/wonton/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+      WONTON_MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER:?需要 Matrix 地址}
+      WONTON_MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN:?需要 Bot Matrix 访问令牌}
+      WONTON_MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:?需要主人 Matrix 用户 ID}
+      WONTON_MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM:?需要主人与 Bot 的房间 ID}
+      WONTON_MCP_URL: ${WONTON_MCP_URL:-http://mcp.wonton.internal/mcp}
+      WONTON_ACP_MODE: ${WONTON_ACP_MODE:-plan}
+      RUST_LOG: ${RUST_LOG:-info,wonton_acp_bridge=debug}
+    volumes:
+      - ${WONTON_BOT_DATA}/bridge:/data/bridge
+      - acp-socket:/run/wonton
+
+volumes:
+  acp-socket:
+
+x-wonton:
+  spec: "0.4"
+  id: dev.wonton.acp-c3
+  version: 0.1.0
+  kind: agent
+  title: { zh: ACP 登录验收, en: ACP login acceptance }
+  description:
+    zh: C3 登录链路验收用的测试 Bot，无外部账号
+    en: Test bot for C3 login acceptance, no external account
+  tags: { zh: [AI], en: [AI] }
+  agent:
+    protocol: acp
+    login:
+      - id: test-url
+        title: { zh: 测试 URL 登录, en: Test URL login }
+      - id: test-terminal
+        title: { zh: 测试终端登录, en: Test terminal login }
+  bot:
+    display_name: { zh: ACP 登录验收, en: ACP login acceptance }
+  bots:
+    services: [agent, bridge]
+  permissions:
+    - matrix.bot
+    - tools
+    - network.egress
+  requirements:
+    arch: [amd64]

@@ -1,0 +1,532 @@
+//! 连不上、换服务器时的行为：连不上由 `HomeViewModel` 说，不进插件页；不把上一台的结果算到这一台头上。
+
+use std::net::{Ipv4Addr, UdpSocket};
+use std::time::{Duration, Instant};
+
+use axum::http::Method;
+use iroh::SecretKey;
+use wonton_client::{
+    Action, ConnectionNotice, CoreError, HomeFailure, HomeStatus, PluginFailure, PluginState,
+    PluginTaskNextStep, PluginTaskState,
+};
+
+use super::rig::{
+    CONNECT_BACKSTOP, Canned, FakeHome, Rig, WAIT, core_error, installed, preview, running, ticket,
+};
+
+/// 建连尝试可能要等到握手超时。
+const DIAL: Duration = Duration::from_secs(90);
+
+/// 等第一次建连失败，返回隧道报的原因。
+async fn first_failure(rig: &Rig) -> HomeFailure {
+    let deadline = Instant::now() + DIAL;
+    loop {
+        if let HomeStatus::Disconnected { reason, .. } = rig.app.home().status {
+            return reason;
+        }
+        assert!(Instant::now() < deadline, "{:?}", rig.app.home());
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// 服务器拒绝了这台设备，重连也没用，状态不该再回到“连接中”。
+async fn stays_rejected(rig: &Rig) {
+    assert_eq!(first_failure(rig).await, HomeFailure::Unauthorized);
+    assert_eq!(
+        rig.app.home().notice,
+        Some(ConnectionNotice::DeviceRejected)
+    );
+    let quiet = Instant::now() + Duration::from_secs(8);
+    while Instant::now() < quiet {
+        let status = rig.app.home().status;
+        assert!(
+            matches!(status, HomeStatus::Disconnected { .. }),
+            "被拒绝以后又去重连了：{status:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// 连不上可能只是网络断了，要自己再试；插件页上不放隧道的错误。
+#[tokio::test]
+async fn an_unreachable_server_is_tried_again_and_stays_out_of_the_plugin_page() {
+    let rig = Rig::new().await;
+    // 地址上有人占着，但从不应答。
+    let silent = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    rig.connect_to(ticket(
+        SecretKey::generate().public(),
+        silent.local_addr().unwrap(),
+    ));
+    assert_eq!(first_failure(&rig).await, HomeFailure::TransportUnavailable);
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let reconnecting = loop {
+        let home = rig.app.home();
+        if home.status == HomeStatus::Connecting {
+            break home;
+        }
+        assert!(Instant::now() < deadline, "没有再试：{home:?}");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    };
+    assert_eq!(reconnecting.notice, Some(ConnectionNotice::Connecting));
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    assert_eq!(rig.app.plugins().problem, None);
+}
+
+/// 冷启动没网也能显示主屏：一打开就有上次取到的列表，不等隧道。
+#[tokio::test]
+async fn the_installed_list_is_there_as_soon_as_the_app_opens() {
+    let mut rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![running("app.notes")]]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+    // 列表是取到之后才放进 ViewModel 的，这时已经存下了。
+
+    rig.reopen();
+
+    let installed = rig.app.plugins().installed.expect("没有上次的列表");
+    assert_eq!(installed.plugins[0].id, "app.notes");
+}
+
+#[tokio::test]
+async fn a_server_that_rejects_this_device_is_reported_without_redialing() {
+    let rig = Rig::new().await;
+    let home = FakeHome::start(Vec::new()).await;
+    rig.connect_to(home.ticket());
+    stays_rejected(&rig).await;
+}
+
+/// 被拒绝时不自动重连，所以主人的重试要能接回来；连上之后两个列表都要取到。
+#[tokio::test]
+async fn retrying_reconnects_and_fetches_the_lists_again() {
+    let rig = Rig::new().await;
+    let home = FakeHome::start(Vec::new()).await;
+    home.core.set_lists(vec![vec![running("app.notes")]]);
+    rig.app
+        .dispatch(Action::RefreshStore { force: false })
+        .unwrap();
+    rig.connect_to(home.ticket());
+    stays_rejected(&rig).await;
+
+    home.allowed.allow(rig.device());
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    let view = rig
+        .wait_for(|view| view.problem.is_none() && view.installed.is_some() && view.store.is_some())
+        .await;
+    assert_eq!(view.installed.unwrap().plugins[0].id, "app.notes");
+    assert_eq!(rig.app.home().status, HomeStatus::Connected);
+}
+
+#[tokio::test]
+async fn without_a_server_a_task_fails_at_once() {
+    let rig = Rig::new().await;
+    rig.app
+        .dispatch(Action::UninstallPlugin {
+            id: "app.photos".to_owned(),
+            delete_data: false,
+        })
+        .unwrap();
+    let state = rig
+        .task("app.photos", |state| *state != PluginTaskState::Running)
+        .await;
+    assert!(
+        matches!(
+            state,
+            PluginTaskState::Failed {
+                reason: PluginFailure::TransportUnavailable,
+                ..
+            }
+        ),
+        "{state:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_list_only_clears_its_own_problem() {
+    let rig = Rig::new().await;
+    rig.core
+        .set_lists(vec![vec![installed("app.photos", PluginState::Installing)]]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+
+    // 每 3 秒取一次已安装列表，商店取不到的原因不能因此消失。
+    rig.core.answer(
+        Method::GET,
+        "/_wonton/api/store",
+        core_error(503, "source_unavailable", "连不上 GitHub"),
+    );
+    rig.app
+        .dispatch(Action::RefreshStore { force: false })
+        .unwrap();
+    rig.wait_for(|view| view.problem.is_some()).await;
+    let polled = rig.core.seen(&Method::GET, "/_wonton/api/plugins").len();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while rig.core.seen(&Method::GET, "/_wonton/api/plugins").len() == polled {
+        assert!(Instant::now() < deadline, "没有在轮询");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(
+        rig.app.plugins().problem.map(|problem| problem.reason),
+        Some(PluginFailure::SourceUnavailable)
+    );
+
+    // 主屏上的重试连商店一起取，问题才清得掉。
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    let view = rig
+        .wait_for(|view| view.problem.is_none() && view.store.is_some())
+        .await;
+    assert!(view.installed.is_some());
+
+    // 轮询失败也要说。
+    rig.core.answer(
+        Method::GET,
+        "/_wonton/api/plugins",
+        core_error(401, "unauthenticated", "不认这台设备"),
+    );
+    let view = rig.wait_for(|view| view.problem.is_some()).await;
+    assert_eq!(view.problem.unwrap().reason, PluginFailure::Unauthorized);
+}
+
+#[tokio::test]
+async fn an_owner_only_refusal_is_permission_not_transport() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+
+    // 家人的设备调只给主人的接口：这是权限不够，不是连不上。
+    rig.core.answer(
+        Method::GET,
+        "/_wonton/api/plugins",
+        core_error(403, "owner_only", "Only the owner"),
+    );
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    let view = rig.wait_for(|view| view.problem.is_some()).await;
+    assert_eq!(view.problem.unwrap().reason, PluginFailure::Unauthorized);
+}
+
+#[tokio::test]
+async fn a_state_from_a_newer_core_is_not_taken_for_success() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+
+    rig.core
+        .set_lists(vec![vec![installed("app.photos", PluginState::Unknown)]]);
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins",
+        Canned(502, String::new()),
+    );
+    rig.app
+        .dispatch(Action::InstallPlugin {
+            preview: preview("app.photos"),
+            secrets: Default::default(),
+            settings: Default::default(),
+        })
+        .unwrap();
+    let state = rig
+        .task("app.photos", |state| *state != PluginTaskState::Running)
+        .await;
+    assert!(
+        matches!(state, PluginTaskState::Uncertain { .. }),
+        "{state:?}"
+    );
+}
+
+/// 请求发出后连接断了：任务要说在等连接，不能一直像在做；连回来就接着报结果。
+#[tokio::test]
+async fn a_dropped_install_waits_for_a_connection_and_then_reports_the_result() {
+    let rig = Rig::new().await;
+    rig.core
+        .set_lists(vec![vec![installed("app.photos", PluginState::Installing)]]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins",
+        Canned(502, String::new()),
+    );
+    rig.app
+        .dispatch(Action::InstallPlugin {
+            preview: preview("app.photos"),
+            secrets: Default::default(),
+            settings: Default::default(),
+        })
+        .unwrap();
+    let view = rig
+        .wait_for(|view| {
+            view.tasks
+                .iter()
+                .any(|task| task.id == "app.photos" && task.waiting_for_connection)
+        })
+        .await;
+    assert_eq!(view.tasks[0].state, PluginTaskState::Running);
+    // 等连接时既不能清掉任务，也不能对同一个插件再发一次。
+    assert!(matches!(
+        rig.app.dispatch(Action::DismissPluginTask {
+            id: "app.photos".to_owned()
+        }),
+        Err(CoreError::NotReady { .. })
+    ));
+    assert!(matches!(
+        rig.app.dispatch(Action::InstallPlugin {
+            preview: preview("app.photos"),
+            secrets: Default::default(),
+            settings: Default::default(),
+        }),
+        Err(CoreError::NotReady { .. })
+    ));
+
+    // 列表又问得到了：回到“在做”。
+    let view = rig
+        .wait_for(|view| {
+            view.tasks
+                .iter()
+                .any(|task| task.id == "app.photos" && !task.waiting_for_connection)
+        })
+        .await;
+    assert_eq!(view.tasks[0].state, PluginTaskState::Running);
+
+    // 再断一次，重新说在等连接。
+    rig.core.answer_always(
+        Method::GET,
+        "/_wonton/api/plugins",
+        Canned(502, String::new()),
+    );
+    rig.wait_for(|view| view.tasks.iter().any(|task| task.waiting_for_connection))
+        .await;
+
+    // 连回来时它已经跑起来了：成功。
+    rig.core.stop_answering(Method::GET, "/_wonton/api/plugins");
+    rig.core.set_lists(vec![vec![running("app.photos")]]);
+    let state = rig.task("app.photos", |state| !state.in_progress()).await;
+    assert_eq!(state, PluginTaskState::Succeeded);
+    assert!(!rig.app.plugins().tasks[0].waiting_for_connection);
+}
+
+/// 请求还吊着时断网：不等请求报错就先说在等连接，连回来再回到在做。
+#[tokio::test]
+async fn losing_the_network_while_the_request_is_out_waits_at_once() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    rig.core.hold(Method::POST, "/_wonton/api/plugins");
+    rig.app
+        .dispatch(Action::InstallPlugin {
+            preview: preview("app.photos"),
+            secrets: Default::default(),
+            settings: Default::default(),
+        })
+        .unwrap();
+
+    // 请求还挂着，连接断了：不等请求报错就说在等连接。
+    rig.drop_home().await;
+    let view = rig
+        .wait_for(|view| {
+            view.tasks
+                .iter()
+                .any(|task| task.id == "app.photos" && task.waiting_for_connection)
+        })
+        .await;
+    assert_eq!(view.tasks[0].state, PluginTaskState::Running);
+    assert!(matches!(
+        rig.app.dispatch(Action::DismissPluginTask {
+            id: "app.photos".to_owned()
+        }),
+        Err(CoreError::NotReady { .. })
+    ));
+
+    // 连接回来：回到在做。断开期间隧道自己会按自己的节奏重新发布状态，多设几次直到被接住。
+    let deadline = Instant::now() + WAIT;
+    while rig
+        .app
+        .plugins()
+        .tasks
+        .iter()
+        .any(|task| task.waiting_for_connection)
+    {
+        assert!(Instant::now() < deadline, "一直停在等连接");
+        rig.app.set_home_status_for_test(HomeStatus::Connected);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// 请求可能根本没到：连回来以后列表里也一直没有它，结果不确定，下一步是去已安装列表看。
+#[tokio::test]
+async fn an_install_that_never_shows_up_is_uncertain_and_points_at_the_installed_list() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![Vec::new()]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins",
+        Canned(502, String::new()),
+    );
+    rig.app
+        .dispatch(Action::InstallPlugin {
+            preview: preview("app.photos"),
+            secrets: Default::default(),
+            settings: Default::default(),
+        })
+        .unwrap();
+    rig.wait_for(|view| view.tasks.iter().any(|task| task.waiting_for_connection))
+        .await;
+
+    let state = rig.task("app.photos", |state| !state.in_progress()).await;
+    let PluginTaskState::Uncertain { next_step, .. } = state else {
+        panic!("结果不是不确定：{state:?}");
+    };
+    assert_eq!(next_step, PluginTaskNextStep::CheckInstalled);
+    assert!(!rig.app.plugins().tasks[0].waiting_for_connection);
+}
+
+/// 它本来就是坏的：请求还没到时列表里也是这样，不能算卸载失败。
+#[tokio::test]
+async fn uninstalling_a_broken_plugin_over_a_dropped_connection_is_uncertain() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![installed(
+        "app.photos",
+        PluginState::Degraded {
+            reason: "容器起不来".to_owned(),
+        },
+    )]]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+    rig.core.answer(
+        Method::DELETE,
+        "/_wonton/api/plugins/app.photos",
+        Canned(502, String::new()),
+    );
+    rig.app
+        .dispatch(Action::UninstallPlugin {
+            id: "app.photos".to_owned(),
+            delete_data: false,
+        })
+        .unwrap();
+    let state = rig
+        .task("app.photos", |state| *state != PluginTaskState::Running)
+        .await;
+    assert!(
+        matches!(state, PluginTaskState::Uncertain { .. }),
+        "{state:?}"
+    );
+}
+
+/// 启动失败按核心的类别说下一步，不笼统按“服务器出错”：拉不到镜像是来源的事（#126），
+/// 记录读不懂要重新安装。
+#[tokio::test]
+async fn a_failed_start_keeps_the_core_error_category() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![installed(
+        "app.photos",
+        PluginState::Degraded {
+            reason: "容器不存在".to_owned(),
+        },
+    )]]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+
+    for (kind, expected) in [
+        ("image_pull_failed", PluginFailure::SourceUnavailable),
+        ("record_unusable", PluginFailure::RecordUnusable),
+    ] {
+        rig.core.answer(
+            Method::POST,
+            "/_wonton/api/plugins/app.photos/start",
+            core_error(502, kind, "镜像拉不到"),
+        );
+        rig.app
+            .dispatch(Action::StartPlugin {
+                plugin_id: "app.photos".to_owned(),
+            })
+            .unwrap();
+        // 派发时上一次启动的问题先被同一个来源清掉，看到的是这一轮的原因。
+        let view = rig.wait_for(|view| view.problem.is_some()).await;
+        assert_eq!(view.problem.unwrap().reason, expected, "{kind}");
+    }
+}
+
+/// 上一台上的卸载没有结果：新服务器的列表里没有那个插件，不能算卸载成功。
+#[tokio::test]
+async fn pairing_with_another_server_forgets_the_previous_one() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![installed(
+        "app.photos",
+        PluginState::Uninstalling,
+    )]]);
+    rig.connected().await;
+    rig.app
+        .dispatch(Action::RefreshStore { force: false })
+        .unwrap();
+    rig.wait_for(|view| view.installed.is_some() && view.store.is_some())
+        .await;
+    rig.core.answer(
+        Method::DELETE,
+        "/_wonton/api/plugins/app.photos",
+        Canned(502, String::new()),
+    );
+    rig.app
+        .dispatch(Action::UninstallPlugin {
+            id: "app.photos".to_owned(),
+            delete_data: false,
+        })
+        .unwrap();
+    rig.wait_for(|view| !view.tasks.is_empty()).await;
+
+    let next = FakeHome::start(vec![rig.device()]).await;
+    next.core.set_lists(vec![vec![running("app.notes")]]);
+    rig.connect_to(next.ticket());
+
+    let state = rig.task("app.photos", |state| !state.in_progress()).await;
+    assert!(
+        matches!(state, PluginTaskState::Uncertain { .. }),
+        "{state:?}"
+    );
+    assert!(!rig.app.plugins().tasks[0].waiting_for_connection);
+    let view = rig
+        .wait_for(|view| {
+            view.installed
+                .as_ref()
+                .is_some_and(|installed| !installed.plugins.is_empty())
+        })
+        .await;
+    assert_eq!(view.installed.unwrap().plugins[0].id, "app.notes");
+    assert_eq!(view.tasks.len(), 1);
+    // 商店页可能正开着，接着取新服务器的。
+    rig.wait_for(|view| view.store.is_some()).await;
+    assert_eq!(next.core.seen(&Method::GET, "/_wonton/api/store").len(), 1);
+}
+
+/// 换服务器时，旧连接的收尾事件不能把视图盖回“已连接”：新连接的本地代理还没进视图（`proxy`
+/// 是 `None`）时，视图必须停在“连接中”。盖回去的话，这个窗口里发出的请求全部按“连不上”失败，
+/// 插件页还会把假问题记下来，连上后连带多取一轮（#826 的两条偶发）。
+#[tokio::test]
+async fn switching_servers_does_not_report_connected_before_the_new_proxy() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let next = FakeHome::start(vec![rig.device()]).await;
+    let home = rig.app.subscribe_home();
+    home.next().await.unwrap();
+    rig.connect_to(next.ticket());
+    // `RetryConnection` 触发的重算会唤醒还没被收尾的旧连接 watcher：没有守卫时，它按旧客户端
+    // 仍是“已连接”的状态重算视图，把刚写下的“连接中”盖回“已连接”。
+    rig.app.dispatch(Action::RetryConnection).unwrap();
+    let deadline = Instant::now() + CONNECT_BACKSTOP;
+    loop {
+        // 等待本身限时：连接挂着不动时视图不来，deadline 要能兜底。
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let view = tokio::time::timeout(remaining, home.next())
+            .await
+            .unwrap_or_else(|_| panic!("新服务器没连上：{:?}", rig.app.home()))
+            .expect("连接订阅提前结束");
+        if view.status == HomeStatus::Connected {
+            assert!(view.proxy.is_some(), "新连接还没就位就报了已连接：{view:?}");
+        }
+        if view.status == HomeStatus::Connected && view.proxy.is_some() {
+            return;
+        }
+    }
+}

@@ -1,0 +1,16 @@
+# 在 detekt 默认规则上的调整。函数长度与仓库门禁一致：超过 100 行即失败。
+# detekt 没有“文件行数”规则，文件行数由 scripts/check-file-size.sh 检查（不算空行和注释，超过 800 警告、超过 2000 失败），
+# 这里让类的上限与失败线对齐。
+complexity:
+  LongMethod:
+    allowedLines: 100
+  LargeClass:
+    allowedLines: 2000
+  CyclomaticComplexMethod:
+    # 每个枚举值一个分支的平铺 when（分类名、失败后的下一步）拆开反而难读，简单的分支不计入圈复杂度。
+    ignoreSimpleWhenEntries: true
+
+naming:
+  FunctionNaming:
+    # Compose 的可组合函数按惯例用大写开头。
+    ignoreAnnotated: ['Composable']

@@ -1,0 +1,122 @@
+# omp Agent：bridge 说 ACP，agent 跑固定版本的 omp。两个服务只共享 ACP socket 所在的 run/ 子目录；bridge 的
+# crypto store 和 Matrix 令牌不给 agent，agent 的 HOME 和工作区不给 bridge。
+services:
+  agent:
+    image: ghcr.io/geraldpeng6/wonton-plugin-omp:0.1.3@sha256:c9bc4ab4473bcd808e2ff69892835b4368f71cd25a31ae4f0edc33268bebbf11
+    # 镜像里固定用 65532，入口脚本不再降权；bridge 挂同一个 run/ 目录，两个服务的属主必须相同，否则核心拒绝安装。
+    user: "65532:65532"
+    restart: unless-stopped
+    environment:
+      HOME: /data/agent/home
+      # omp 不读 OPENAI_BASE_URL/OPENAI_MODEL，入口脚本把它们转成 models.yml 和 config.yml；密钥只引用变量名。
+      # 模型网关是可选的：核心没接上网关时这三个变量是空字符串，入口脚本按有没有值选路。
+      OPENAI_BASE_URL: ${WONTON_MODEL_BASE_URL}
+      OPENAI_API_KEY: ${WONTON_MODEL_API_KEY}
+      OPENAI_MODEL: ${WONTON_MODEL_DEFAULT}
+      WONTON_ACP_SOCKET: /data/run/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+      # 插件网络是内部网络，到模型网关和 Matrix 都直连；Docker 注入的代理变量会让内部请求走代理，这里清掉。
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+    volumes:
+      - ${WONTON_BOT_DATA:?需要 Bot 数据目录}/agent:/data/agent
+      - ${WONTON_BOT_DATA}/run:/data/run
+      - ${WONTON_BOT_DATA}/workspace:/workspace
+    healthcheck:
+      # socket 是入口脚本建好 ACP 转发后才有的，有这个文件就说明 Agent 侧能接连接。
+      test: ["CMD", "test", "-S", "/data/run/acp.sock"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      start_interval: 2s
+
+  bridge:
+    image: ghcr.io/geraldpeng6/wonton-acp-bridge:main-83d4297@sha256:6b0645e4cd8a5b80b6c25e4c17334c8d4621b9959756902785bae58b558b2326
+    user: "65532:65532"
+    restart: unless-stopped
+    depends_on:
+      agent:
+        condition: service_started
+    environment:
+      HOME: /data/bridge
+      WONTON_BOT_DATA: /data
+      WONTON_BRIDGE_DATA: /data/bridge
+      WONTON_ACP_SOCKET: /data/run/acp.sock
+      WONTON_AGENT_WORKSPACE: /workspace
+      WONTON_MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER:?需要 Matrix 地址}
+      WONTON_MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN:?需要 Bot 的 Matrix 访问令牌}
+      WONTON_MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS:?需要主人的 Matrix 用户 ID}
+      WONTON_MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM:?需要主人与 Bot 的主房间}
+      WONTON_MCP_URL: ${WONTON_MCP_URL:?需要 MCP 总线地址}
+      # omp 在 ACP 里的可用模式只有 default 和 plan，plan 是其中更严的一个：exec 一律问主人。
+      WONTON_ACP_MODE: plan
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+    volumes:
+      - ${WONTON_BOT_DATA}/bridge:/data/bridge
+      - ${WONTON_BOT_DATA}/run:/data/run
+    healthcheck:
+      test: ["CMD", "test", "-S", "/data/run/acp.sock"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
+
+x-wonton:
+  spec: "0.9"
+  id: ai.omp.agent
+  version: 0.1.3
+  kind: agent
+  title: { zh: omp, en: omp }
+  description:
+    zh: 会用工具写代码、跑命令的 Agent，在聊天里按你的确认动手
+    en: A tool-using coding agent that acts in chat, asking before it runs commands
+  icon: icon.svg
+  screenshots: [screenshots/home.png]
+  notices: [NOTICE, images/wonton-plugin-omp/LICENSE.omp]
+  author: { name: Wonton plugin authors }
+  homepage: https://omp.sh
+  # omp 的许可证；插件包自己的许可证在 LICENSE。
+  license: MIT
+  tags: { zh: [AI, 开发], en: [AI, Development] }
+  about:
+    zh: |
+      有模型网关时，模型的调用默认走网关，不用账号，也不用填任何 key。没接网关时 Agent 照样能起来：在聊天里发
+      /wonton login，用它自己的官方登录——模型账号（链接发进聊天，浏览器里授权后把跳转地址或授权码发回来）或
+      直接填模型的 key。它住在自己的容器里，用工作区里的 shell 和文件工具，跑命令前经确认卡片问你；Wonton 插件
+      的工具从聊天里调。
+
+      和它的对话是核心建的加密私聊，重启后接着聊。
+    en: |
+      With the model gateway connected, models are called through it, with no account and no key to fill in. Without a
+      gateway the agent still starts: send /wonton login in the chat to use its own official sign-in — a model account
+      (the link is posted to the chat; after authorizing in the browser, send the redirect URL or code back) or a model
+      key. It lives in its own container, uses the shell and file tools in its workspace, and asks through confirmation
+      cards before running commands; plugin tools from Wonton are called from the chat.
+
+      The chat is an encrypted direct message the core creates, and it carries on after a restart.
+  release_notes:
+    zh: "改用新的名单变量，Bot 只听名单里的人（核心 0.9 起，不再兼容旧变量）。需要插件规范 0.9。"
+    en: "Switches to the new allow-list variable so a bot follows the people on the list (core 0.9 and later; the old variable is gone). Requires spec 0.9."
+  agent:
+    protocol: acp
+    login:
+      - id: terminal
+        title: { zh: 模型账号登录, en: Model account sign-in }
+  bot:
+    display_name: { zh: omp, en: omp }
+  bots:
+    services: [agent, bridge]
+  permissions:
+    - matrix.bot
+    - tools
+    - models
+    # 账号登录（agent.login）后模型请求直接发给官方，不经网关，要出网。
+    - network.egress
+  requirements:
+    arch: [amd64, arm64]
+    memory: 1G

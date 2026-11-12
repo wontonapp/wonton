@@ -1,0 +1,148 @@
+name: android
+
+# PR 和合并队列只在改到 App 或 Rust 绑定时才跑；草稿 PR 上一个作业都不起（含改动范围），汇总作业起来报一个通过，
+# 转 ready 或每天的定时全量才跑。
+# 路径不写在触发器上：合并队列的必需检查每次入队都要有结果，工作流没触发的话检查一直“等待中”，队列合不了。
+# 改成由 changes 作业判断改动范围，没改到时自己报 skipped（跳过的检查算通过）。
+# 必需检查只有末尾的汇总作业，其余作业在作业级直接跳过，不用为了报检查先起 runner。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    # 每天全量兜底（PR 已在最新 main 上跑过，main 上不重跑）。
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+  # 合并队列：末尾的汇总作业是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
+  # 队列用 base_sha..head_sha 判断范围，包含排在前面的 PR，沿用 PR 的路径规则。
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
+
+# 队列里的 ref 一律是 gh-merge-queue/main，按它分组会把几次入队挤进同一组，改用这次入队的合并提交。
+concurrency:
+  group: android-${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: 改动范围（android）
+    # PR 用 REST 列改动文件，队列比较整个合并组；定时和手动运行全量，草稿 PR 跳过。
+    if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # 按 REST 接口列 PR 改动的文件，不用检出代码。
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        if: github.event_name == 'merge_group'
+        with:
+          ref: ${{ github.event.merge_group.head_sha }}
+          persist-credentials: false
+      # MIT
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          base: ${{ github.event.merge_group.base_sha }}
+          ref: ${{ github.event.merge_group.head_sha }}
+          # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
+          predicate-quantifier: some-with-excludes
+          filters: |
+            changed:
+              - "apps/compose/**"
+              - "apps/ios/Wonton/Assets.xcassets/**"
+              - "apps/ios/Wonton/Design/Generated/**"
+              - "design/**"
+              - "scripts/generate-design.py"
+              - "crates/wonton-client/**"
+              - "crates/wonton-matrix/**"
+              - "crates/wonton-protocol/**"
+              - "crates/wonton-tunnel/**"
+              - "Cargo.toml"
+              - "vendor/**"
+              - "Cargo.lock"
+              - "rust-toolchain.toml"
+              - ".github/workflows/android.yml"
+              - "!**/*.md"
+
+  build:
+    name: detekt、单元测试与 Debug 构建
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || (github.event_name != 'pull_request' && github.event_name != 'merge_group')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: 安装 rust-toolchain.toml 指定的工具链和 Android target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-linux-android
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-ndk@4.1.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # 只在 main 上存（cache.yml 用同一个 key 编一遍），PR 只恢复。
+          shared-key: rust-android
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+      - name: 设计生成结果和 design/ 一致
+        run: python3 scripts/generate-design.py --check
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: detekt（函数 ≤ 100 行）、单元测试与 Debug APK
+        working-directory: apps/compose
+        run: ./gradlew detekt :androidApp:testDebugUnitTest :androidApp:assembleDebug
+      # 界面参考图：预览用固定假数据，在 JVM 上渲染，不加载 .so。重录在 snapshots-record.yml，这里只比对。
+      - name: 比对界面参考图
+        working-directory: apps/compose
+        run: ./gradlew :shared:verifyPaparazziAndroidMain
+      - name: 差异图和报告
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: paparazzi-${{ github.run_attempt }}
+          path: |
+            apps/compose/shared/build/paparazzi
+            apps/compose/shared/build/reports/paparazzi
+          retention-days: 7
+          if-no-files-found: ignore
+      # 只编不跑：设备上的测试要在设备上加载原生核心、还要模拟器，日常 PR 上太重；编译能挡住 API 和清单错误。
+      - name: 编译设备测试（androidTest）
+        working-directory: apps/compose
+        run: ./gradlew :androidApp:assembleDebugAndroidTest
+
+  # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
+  # 草稿 PR 上其余作业全被跳过时它也照样起来并报通过，不用为此先起别的 runner。
+  summary:
+    name: android 汇总
+    needs: [changes, build]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      RESULTS: ${{ join(needs.*.result, ' ') }}
+    steps:
+      - name: 各作业的结果
+        run: |
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) exit 1 ;;
+            esac
+          done

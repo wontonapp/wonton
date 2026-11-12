@@ -1,0 +1,3 @@
+# dev.sh 生成的 Hydra 系统密钥和本地数据目录
+.secrets/
+.data/
