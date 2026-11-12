@@ -9,6 +9,18 @@ use matrix_sdk::{
 
 use crate::{ChatRoom, Error, FileContent, ImageContent, MatrixSession, Result};
 
+/// 链接预览的图片上传到媒体库后的来源（ADR-0065）：加密房间是加密文件，未加密只有 mxc 地址。
+/// `Encrypted` 里的 JSON 原样进事件（`beeper:image:encryption`，MSC4095 的裸 EncryptedFile 形态）；
+/// 壳侧要当媒体句柄用时外面还要包一层 `"file"`（ruma 的 `MediaSource` 反序列化认外层键），见
+/// `wonton-client` 的 `previews::bundled_image`。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PreviewImageSource {
+    /// 未加密：事件里写 `og:image`，值是 mxc 地址。
+    Plain { mxc: String },
+    /// 加密：事件里写 `beeper:image:encryption`，值是 EncryptedFile 的 JSON。
+    Encrypted { file: serde_json::Value },
+}
+
 /// 把未加密的 Matrix 媒体地址编成可交给 [`MatrixSession::download_media`] 的句柄。
 pub fn media_token(url: &str) -> Result<String> {
     let uri: OwnedMxcUri = url.into();
@@ -16,6 +28,15 @@ pub fn media_token(url: &str) -> Result<String> {
         .map_err(|error| Error::InvalidInput(format!("Matrix 媒体地址无效：{error}")))?;
     serde_json::to_string(&MediaSource::Plain(uri))
         .map_err(|error| Error::InvalidInput(format!("媒体句柄编码失败：{error}")))
+}
+
+/// 把事件里裸的 EncryptedFile JSON（MSC4095 的 `beeper:image:encryption`）编成可交给
+/// [`MatrixSession::download_media`] 的句柄。`MediaSource::Encrypted` 反序列化认的是外面一层
+/// `"file"`：不包一层，这个对象会被当成未加密的 mxc，取回来就是没解密的密文。
+pub fn encrypted_media_token(file: &serde_json::Value) -> Result<String> {
+    let source: MediaSource = serde_json::from_value(serde_json::json!({ "file": file }))
+        .map_err(|error| Error::InvalidInput(format!("加密文件信息无效：{error}")))?;
+    Ok(serde_json::to_string(&source).expect("媒体来源总能编成 JSON"))
 }
 
 impl ImageContent {

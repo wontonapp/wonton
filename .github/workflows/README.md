@@ -2,7 +2,7 @@
 
 作业全部跑在 GitHub 托管 runner 上（仓库公开后 Linux 和 macOS 分钟都免费，公开仓库不按 10 倍计 macOS）：
 
-- `ubuntu-24.04`：lint（冲突标记、密钥扫描、结构门禁）、各工作流的汇总作业、Rust 的格式/Clippy/测试、Android（SDK 和 NDK 27 镜像自带）、
+- `ubuntu-24.04`：lint（冲突标记、密钥扫描、结构门禁）、gate 的改动范围和汇总作业、Rust 的格式/Clippy/测试、Android（SDK 和 NDK 27 镜像自带）、
   “Rust Docker 测试”（Docker 28 镜像自带）、核心镜像和发版镜像的 amd64 构建。
 - `ubuntu-24.04-arm`：发版镜像的 arm64 构建，和 amd64 各自构建后由 merge 作业合成多架构 manifest。
 - `macos-26`：SwiftLint。
@@ -12,7 +12,7 @@
 ## 合并门槛和合后测试
 
 PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门禁、编译、不依赖 Docker 的单元测试和截图比对
-（`lint`、`rust`、`ios`、`android` 四个工作流），目标是十分钟内出结果。慢的挪到合进 `main` 之后跑，不挡合并：
+（`gate.yml` 调用的 `lint`、`rust`、`ios`、`android`），目标是十分钟内出结果。慢的挪到合进 `main` 之后跑，不挡合并：
 
 - `rust-docker.yml`：依赖 Docker 的集成测试。`push` 到 `main` 时按路径触发，每次合并单独跑一遍、不互相取消，
   红了能按那次提交标题里的 `(#N)` 找到弄红的 PR；合并前想先跑，在 Actions 页对分支手动触发。
@@ -25,34 +25,39 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 合后的测试红了，谁合的谁 30 分钟内修，修不好 revert（见 AGENTS.md“Git 与协作”）。快慢的分界按“能不能十分钟内
 出结果”定：新加的测试要起容器、走界面流程（UI 测试）或要构建镜像的，放进合后的工作流，不放进必需检查。
 
-## 必需检查与汇总作业
+## 必需检查：gate 汇总
 
-- 规则集只配每个工作流末尾的汇总作业（`rust 汇总`、`ios 汇总`、`android 汇总`、`lint 汇总`）：`needs` 本工作流的
-  全部作业、`if: always()`，任一依赖 failure 或 cancelled 就红，success 和 skipped 算过。汇总只干这一件事（一小段 shell，不引第三方 action），草稿 PR 上也起来报一个
-  通过；这样才能把其余作业直接在作业级跳过，不用为了报检查先起 runner。
-- Rust 测试分片被作业级 `if` 跳过时 matrix 不展开，检查名会留成带 `${{ matrix.shard }}` 的字面量；
-  规则集只看汇总，不受影响。所以分片的草稿和路径判断也在作业上。
+- 规则集只配一个检查：`gate.yml` 末尾的 `gate 汇总`。`gate` 里一个 `changes` 作业按改动范围给出 `rust`、`ios`、
+  `android` 三个开关，再用 `workflow_call` 调用 `lint.yml` 和改到的那几个重工作流；汇总 `needs` 全部、`if: always()`，
+  任一依赖 failure 或 cancelled 就红，success 和 skipped 算过。汇总只干这一件事（一小段 shell，不引第三方 action），
+  草稿 PR 上也起来报一个通过。
+- 一次推送只起 `changes`、`lint`、汇总三个轻作业，加改到的重作业。之前四个工作流各有自己的改动范围和汇总，一次推送
+  八个轻作业，各占一台 runner。
+- 被调用的作业检查名是“调用方 / 作业名”（如 `rust / 格式`）。Rust 测试分片被跳过时 matrix 不展开，检查名会留成带
+  `${{ matrix.shard }}` 的字面量；规则集只看汇总，不受影响。
+- 新的快检查放进 `gate` 调用的工作流（作业或步骤都行），规则集不用动；改动范围改 `gate.yml` 的 `changes`。
 
 ## 什么时候跑
 
-- 必需检查所在的工作流不在触发器上按路径过滤：必需检查每个 PR 都要有结果，工作流不触发的话检查一直“等待中”，
-  PR 合不了。改动范围改由各工作流开头的 `changes` 作业判断（`dorny/paths-filter`，在非草稿 PR 上通过 REST
-  列文件，不检出代码），
-  没改到的重作业挂在它上面、自己报 skipped，范围还是写在各个工作流开头；汇总作业把成功和跳过都算通过。
-  lint 例外：冲突标记和密钥可能写在任何文件里，不按路径过滤；它里面的结构门禁只查源码文件，
+- `gate` 不在触发器上按路径过滤：必需检查每个 PR 都要有结果，工作流不触发的话检查一直“等待中”，
+  PR 合不了。改动范围由 `gate.yml` 的 `changes` 作业判断（`dorny/paths-filter`，在非草稿 PR 上通过 REST
+  列文件，不检出代码），没改到的重作业自己报 skipped；汇总作业把成功和跳过都算通过。
+  lint 不看开关：冲突标记和密钥可能写在任何文件里，不按路径过滤；它里面的结构门禁只查源码文件，
   只改文档的提交和草稿 PR 上跳过。
 - 过滤范围按“这个工作流真会读什么”列：Rust 只列测试和预热读的部署文件（`deploy/install/`、
   `deploy/dev/{acp-bridge,matrix}/`、`deploy/dev/core/compose.yaml`、`deploy/dev/core/Dockerfile`），
   `deploy/dev` 其余的只给本机开发栈（开发索引 `core/store/`、`experiments/`、smoke 脚本），改了不跑重作业；
   新的 `include_str!` 指向 `deploy/` 时要补进列表。只改 `.md` 的 PR 每个工作流都跳过（`apps/compose/` 下的也算）。
   新增依赖或测试输入时必须同步维护；定时和手动运行不按路径过滤。`rust-docker` 不是必需检查，路径直接写在
-  `push` 触发器上，和 `rust` 的 `changes` 列表要一起维护。
-- 草稿 PR 上 `rust`、`ios`、`android` 一个作业都不起（`changes` 也算在内），只有各自的汇总
-  起来报通过；lint 只跑冲突标记和密钥扫描（同一个作业的相邻两步）。转 ready（`ready_for_review`）按改动范围运行。
-- 所有 PR 运行都 `cancel-in-progress`：反正要重跑，旧的别继续占名额；定时运行跑完。
+  `push` 触发器上，和 `gate.yml` 里 `rust` 的列表要一起维护。
+- 草稿 PR 上 `changes` 和 `rust`、`ios`、`android` 都不起，只有 lint 和汇总；lint 只跑冲突标记和密钥扫描（同一个作业的
+  相邻两步）。转 ready（`ready_for_review`）按改动范围运行。
+- 所有 PR 运行都 `cancel-in-progress`：反正要重跑，旧的别继续占名额；定时运行跑完。`gate` 整轮取消时调用的重作业跟着取消；
+  被调用的工作流自己的并发组名带前缀（`rust-`、`ios-`、`android-`），和 `gate-` 不重名，否则 GitHub 判成调用方和
+  被调用方互相等待。
 - `cache.yml` 不取消进行中的运行，否则 main 忙时缓存几乎写不回去；并发组按作业分，同一作业只跑一个、只留最新一个等着。
 - 合并进 main 不重跑快检查（规则集不要求 PR 先追上 `main`，两个各自绿的 PR 合在一起才出的错靠下面的定时兜底）；
-  `push` 到 main 跑 lint、`rust-docker`（改到它的路径时）、main-image，`cache.yml` 用和 PR 作业一样的 key
+  `push` 到 main 跑 `gate`（只有 lint）、`rust-docker` 和 `ios`（改到各自的路径时）、main-image，`cache.yml` 用和 PR 作业一样的 key
   把编译缓存编一遍存下来（只编不跑）。每天定时（`schedule`，02:00 起错开）把 Rust、Docker、Android、iOS
   全量跑一遍兜底。
 - 打标签（`labeled`）不进 `ios.yml`、`android.yml`：那会用一次标签事件重跑整轮日常作业，而且跳过的那轮会把之前
@@ -93,8 +98,8 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 
 ## 汇总作业的条件
 
-`schedule` 和 `workflow_dispatch` 跳过 `changes`，重作业全量运行。重作业的 `if` 以 `!cancelled()` 开头，
-防止 `changes` 跳过时下游被连坐跳过；汇总用 `always()`，判断成功、跳过或失败都照常报告。范围判断失败会让汇总
+`rust.yml`、`ios.yml`、`android.yml` 的定时和手动运行不经过 `gate`，没有改动范围，全量运行。`gate` 里重作业的 `if`
+以 `!cancelled()` 开头、再看开关；汇总用 `always()`，判断成功、跳过或失败都照常报告。范围判断失败会让汇总
 变红，不会伪装成没改动。
 
 ## iOS 单测和截图测试
@@ -115,8 +120,8 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
   照跑）。作业用 `WontonSnapshots` scheme 把参考图全部重画，提交回分支并摘掉标签。录制那一轮本身是红的
   （每录一张报一条“Automatically recorded snapshot”），以提交回去的图为准；它不算必需检查。
 - 重录推回之后：`GITHUB_TOKEN` 推的提交照常触发 `pull_request`，但仓库要求外部贡献者的运行先批准
-  （`all_external_contributors`），github-actions[bot] 也算外部，四个日常工作流停在 `action_required`、
-  分支头上没有必需检查。`snapshots-record.yml` 末尾的 `checks` 作业用同一个令牌批准这几次运行；分支头已经
+  （`all_external_contributors`），github-actions[bot] 也算外部，`gate` 停在 `action_required`、
+  分支头上没有必需检查。`snapshots-record.yml` 末尾的 `checks` 作业用同一个令牌批准这次运行；分支头已经
   不是重录推的提交（有人在那之后推过）时不处理。`workflow_dispatch` 重新触发不行：实测手动运行的检查不进
   PR 的检查汇总，规则集不认。外部 fork 的 PR 令牌推不回对方的分支：图存成 `ios-snapshots` 产物，作者自己取。
 - 新增截图用 `WontonTests/SnapshotFixtures`（Debug 专用）搭界面，只放有代表性的界面，不逐页全录。
@@ -124,7 +129,7 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 ## 缓存
 
 - 缓存只在 main 上写，PR 和定时运行只读：仓库公开，外部 PR 写的条目会把 main 的挤掉。
-  main 上不跑快检查（`rust`、`ios`、`android` 只挂 PR 和定时），所以另开 `cache.yml`：push 到 main 或手动触发时，用和 PR 作业**完全相同**
+  main 上不跑快检查（`rust`、`android` 只由 PR 上的 `gate` 和定时运行，`ios` 在 main 上只跑部分路径），所以另开 `cache.yml`：push 到 main 或手动触发时，用和 PR 作业**完全相同**
   的 rust-cache key 前缀、缓存目录和编译目标只编不跑（测试二进制、Clippy、iOS 模拟器核心、Android 核心、
   桥镜像）。改这几个工作流的 rust-cache 参数（`shared-key`、`workspaces`、环境变量）时要和 `cache.yml`
   一起改，少一处 PR 就恢复不到。手动触发也写缓存：换分支验证能不能恢复时用它。
@@ -180,3 +185,4 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 - 密钥扫描用 gitleaks 官方二进制（版本和 sha256 固定在工作流里），只扫 PR 带进来的提交（`HEAD^1..HEAD`）
   或 push 到 main 的这一个提交，不扫全部历史；误报白名单在 `.gitleaks.toml`，每条写明理由，真密钥不能
   进白名单。
+- 规则集只有 `gate 汇总` 一个必需检查：被调用的作业改名、加作业都不动规则集；改动范围只看 `gate.yml` 的 `changes`。

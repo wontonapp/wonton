@@ -8,7 +8,7 @@ use matrix_sdk_ui::timeline::{AttachmentConfig, AttachmentSource};
 use mime::Mime;
 
 use super::{ChatRoom, ImageThumbnail, ImageUpload, UPLOAD_LIMIT_WAIT, ensure_recipient_devices};
-use crate::{Error, Result};
+use crate::{Error, PreviewImageSource, Result};
 
 impl ChatRoom {
     /// 发送图片：和文字一样经发送队列，原图和缩略图先存进本机的媒体缓存，马上以本地回显出现在时间线里（取图的句柄
@@ -94,6 +94,42 @@ pub(crate) async fn check_upload_size(client: &matrix_sdk::Client, size: u64) ->
 /// 1 MB 按 1024 × 1024 字节算，保留一位小数。
 fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+}
+
+impl ChatRoom {
+    /// 链接预览的图片上传到媒体库（ADR-0065）：加密房间先在本机加密（和附件同一套写法），未加密直接传。
+    /// 返回事件里要写的来源和给壳的句柄要用的信息。
+    pub async fn upload_preview_image(
+        &self,
+        mime_type: &str,
+        data: Vec<u8>,
+    ) -> Result<PreviewImageSource> {
+        let content_type: Mime = mime_type
+            .parse()
+            .map_err(|_| Error::InvalidInput(format!("无法识别的 MIME 类型：{mime_type}")))?;
+        if content_type.type_() != mime::IMAGE {
+            return Err(Error::InvalidInput(format!("不是图片类型：{content_type}")));
+        }
+        let client = self.room.client();
+        if self.room.latest_encryption_state().await?.is_encrypted() {
+            let mut cursor = std::io::Cursor::new(data);
+            let file = client
+                .upload_encrypted_file(&mut cursor)
+                .await
+                .map_err(|error| Error::Upstream(format!("上传预览图片失败：{error}")))?;
+            let file = serde_json::to_value(&file)
+                .map_err(|error| Error::Upstream(format!("加密文件信息编不出来：{error}")))?;
+            return Ok(PreviewImageSource::Encrypted { file });
+        }
+        let mxc = client
+            .media()
+            .upload(&content_type, data, None)
+            .await?
+            .content_uri;
+        Ok(PreviewImageSource::Plain {
+            mxc: mxc.to_string(),
+        })
+    }
 }
 
 fn thumbnail(thumbnail: ImageThumbnail) -> Result<Thumbnail> {
