@@ -1,0 +1,30 @@
+[
+  {
+    "code": "desec",
+    "name": "deSEC",
+    "credential_vars": ["DESEC_TOKEN"],
+    "signup_url": "https://desec.io/",
+    "recommended": true
+  },
+  {
+    "code": "cloudflare",
+    "name": "Cloudflare",
+    "credential_vars": ["CLOUDFLARE_DNS_API_TOKEN"],
+    "signup_url": "https://dash.cloudflare.com/sign-up",
+    "recommended": false
+  },
+  {
+    "code": "alidns",
+    "name": "阿里云",
+    "credential_vars": ["ALICLOUD_ACCESS_KEY", "ALICLOUD_SECRET_KEY"],
+    "signup_url": "https://ram.console.aliyun.com/manage/ak",
+    "recommended": false
+  },
+  {
+    "code": "tencentcloud",
+    "name": "腾讯云",
+    "credential_vars": ["TENCENTCLOUD_SECRET_ID", "TENCENTCLOUD_SECRET_KEY"],
+    "signup_url": "https://console.cloud.tencent.com/cam/capi",
+    "recommended": false
+  }
+]

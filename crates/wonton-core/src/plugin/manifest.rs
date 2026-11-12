@@ -231,6 +231,10 @@ pub struct WebUi {
     /// 页面要跨源隔离（如要 `SharedArrayBuffer`）。Android WebView 默认不给，声明了才放宽，见 ADR-0033“跨源隔离”。
     #[serde(default)]
     pub cross_origin_isolated: bool,
+    /// 核心代探测的健康路径（`scratch`、`distroless` 镜像里没有 shell，写不出 compose healthcheck）。
+    /// 装了它的服务不用写 healthcheck，核心周期 GET 这个路径，2xx/3xx 算健康。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health: Option<String>,
 }
 
 /// 清单 `webui.accounts` 的取值。
@@ -728,6 +732,11 @@ fn validate_bots(manifest: &Manifest) -> Result<(), ManifestError> {
 
 fn validate_webui(webui: &WebUi) -> Result<(), ManifestError> {
     if let Some(problem) = manifest_tabs::validate_path("webui.path", &webui.path) {
+        return Err(ManifestError::Invalid(problem));
+    }
+    if let Some(health) = &webui.health
+        && let Some(problem) = manifest_tabs::validate_path("webui.health", health)
+    {
         return Err(ManifestError::Invalid(problem));
     }
     if webui.port == 0 {
