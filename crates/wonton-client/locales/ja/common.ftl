@@ -1,3 +1,15 @@
+## 折りたたまれた技術的な詳細です。原因、エラーコード、上流の原文は変更しません。
+## 長さの制限はありません。引数は診断データで、翻訳キーではありません。
+
+# CoreErrorの説明です。$reason は元のエラーの詳細です。
+core-error-storage = ローカルストレージを読み書きできません：{ $reason }
+core-error-not-ready = まだ準備ができていません：{ $reason }
+core-error-transport = 自宅サーバーに接続できません：{ $reason }
+core-error-unauthorized = 自宅サーバーがリクエストを拒否しました：{ $reason }
+core-error-forbidden = 自宅サーバーがこの操作を許可しませんでした：{ $reason }
+core-error-upstream = 自宅サーバーでエラーが発生しました：{ $reason }
+core-error-server-too-old = 自宅サーバーが古いため、この操作はまだできません。サーバーを更新してからもう一度お試しください。
+
 # シェルからコアの知らないチャット操作が渡されたときに表示します。
 side-chat-not-ready = このバージョンのクライアントコアはサイドチャットにまだ対応していません。
 

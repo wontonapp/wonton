@@ -327,6 +327,8 @@ fn core_problem(error: &CoreError) -> PluginProblem {
         CoreError::InvalidInput { .. } => PluginFailure::Invalid,
         CoreError::TransportUnavailable { .. } => PluginFailure::TransportUnavailable,
         CoreError::Unauthorized { .. } => PluginFailure::Unauthorized,
+        // 插件接口不报这一类（它的 403 归 Unauthorized）；真到了按服务器那边的问题说，不让人去重新配对。
+        CoreError::Forbidden { .. } => PluginFailure::Upstream,
         CoreError::Storage { .. } | CoreError::NotReady { .. } | CoreError::Upstream { .. } => {
             PluginFailure::Upstream
         }
