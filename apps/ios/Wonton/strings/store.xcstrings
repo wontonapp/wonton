@@ -369,7 +369,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%#@count@ apps?"
+            "value": "%#@count@?"
           },
           "substitutions": {
             "count": {
@@ -397,7 +397,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%#@count@個のアプリをアップデートしますか？"
+            "value": "%#@count@をアップデートしますか？"
           },
           "substitutions": {
             "count": {
