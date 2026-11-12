@@ -1070,6 +1070,7 @@
     <string name="plugin_task_review">重新查看</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">結果不確定：%1$s</string>
+    <string name="plugin_task_look">去看看</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">已解除安裝</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->

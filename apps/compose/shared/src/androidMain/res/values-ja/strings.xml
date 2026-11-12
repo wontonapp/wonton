@@ -1070,6 +1070,7 @@
     <string name="plugin_task_review">再確認</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">結果が不確定です：%1$s</string>
+    <string name="plugin_task_look">見てみる</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">アンインストールしました</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->

@@ -1167,6 +1167,8 @@
     <string name="plugin_task_review">Review again</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">The result is uncertain: %1$s</string>
+    <!-- Button on an uncertain task: check the result in My Apps. -->
+    <string name="plugin_task_look">Take a look</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">Uninstalled</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->

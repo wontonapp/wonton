@@ -126,7 +126,11 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
                     ) {
                         items(viewModel.tasks, key = { "task:${it.id}" }) { task ->
                             Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {
-                                TaskRow(task, plugins) { navigation.confirmation = reconfirmation(task, plugins) }
+                                TaskRow(
+                                    task, plugins,
+                                    onReview = { navigation.confirmation = reconfirmation(task, plugins) },
+                                    onOpenApps = onBack,
+                                )
                             }
                         }
                         viewModel.problem?.let { problem ->

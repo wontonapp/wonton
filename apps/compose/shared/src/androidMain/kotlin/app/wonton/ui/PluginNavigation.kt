@@ -107,9 +107,9 @@ internal fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onD
     )
 }
 
-/** 安装、升级、卸载的一项进展。插件包在确认之后变了的，[onReview] 重新打开确认页。 */
+/** 安装、升级、卸载的一项进展。插件包在确认之后变了的，[onReview] 重新打开确认页；[onOpenApps] 去“我的应用”看装上没有。 */
 @Composable
-fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit) {
+fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit, onOpenApps: () -> Unit) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
@@ -118,7 +118,7 @@ fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit) {
         PluginIconImage(task.icon, WontonTheme.size.taskIcon, plugins)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             Text(task.title, style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
-            TaskState(task.operation, task.state, onReview)
+            TaskState(task.operation, task.state, onReview, onOpenApps)
             if (task.state is PluginTaskState.Succeeded) task.addedTools?.let { AddedToolsLine(it) }
         }
         if (task.state is PluginTaskState.Running) {
@@ -134,7 +134,12 @@ fun TaskRow(task: PluginTask, plugins: PluginsState, onReview: () -> Unit) {
 }
 
 @Composable
-private fun TaskState(operation: PluginOperation, state: PluginTaskState, onReview: () -> Unit) {
+private fun TaskState(
+    operation: PluginOperation,
+    state: PluginTaskState,
+    onReview: () -> Unit,
+    onOpenApps: () -> Unit,
+) {
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.supporting
     when (state) {
@@ -160,8 +165,11 @@ private fun TaskState(operation: PluginOperation, state: PluginTaskState, onRevi
                 WontonSmallButton(stringResource(R.string.plugin_task_review), onReview)
             }
         }
-        is PluginTaskState.Uncertain ->
+        is PluginTaskState.Uncertain -> {
             StateLine(WontonIcon.Help, stringResource(R.string.plugin_task_uncertain, state.message), colors.warning)
+            // 结果不确定（比如断网时装）：去“我的应用”看装上没有，如实不猜。
+            WontonSmallButton(stringResource(R.string.plugin_task_look), onOpenApps)
+        }
     }
 }
 

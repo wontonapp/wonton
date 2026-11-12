@@ -134,7 +134,11 @@ private fun DetailContent(
         }
         DetailHeader(detail, plugins, detailAction(detail, working, navigation, LocalContext.current))
         task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {
-            TaskRow(it, plugins) { navigation.confirmation = reconfirmation(it, plugins) }
+            TaskRow(
+                it, plugins,
+                onReview = { navigation.confirmation = reconfirmation(it, plugins) },
+                onOpenApps = { navigation.detail = null },
+            )
         }
         detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
         detail.installed?.let { PluginTabPinControls(it) }
