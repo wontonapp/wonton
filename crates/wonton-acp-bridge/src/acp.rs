@@ -87,6 +87,7 @@ pub struct PromptResult {
 pub struct NewSession {
     pub session_id: String,
     pub ask_before_edit: bool,
+    pub mode: String,
 }
 
 /// 桥接层接管一次权限请求的机会：Agent 发来 `session/request_permission`，ACP 把它连同
@@ -300,6 +301,7 @@ impl AcpClient {
         Ok(NewSession {
             session_id,
             ask_before_edit,
+            mode: mode.to_owned(),
         })
     }
 
@@ -309,6 +311,7 @@ impl AcpClient {
         cwd: &str,
         mcp_url: &str,
         origin: &ConfirmationOrigin,
+        mode: &str,
     ) -> Result<()> {
         let params = json!({
             "sessionId": session_id,
@@ -324,6 +327,7 @@ impl AcpClient {
                 "acp-restore-unsupported",
             )));
         }
+        mode::set_after_restore(self, session_id, mode).await?;
         self.inner
             .origins
             .lock()

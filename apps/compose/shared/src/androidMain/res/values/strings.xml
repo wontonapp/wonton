@@ -737,6 +737,12 @@
     <string name="friends_add_placeholder">@bob:example.org</string>
     <!-- Submit button under the Matrix ID field. -->
     <string name="friends_add_submit">Send request</string>
+    <!-- Row in the add-friend sheet that opens the scan page. -->
+    <string name="friends_scan_code">Scan their code</string>
+    <!-- Placeholder of the field for pasting the code when scanning is not possible. -->
+    <string name="friends_paste_placeholder">Paste their code</string>
+    <!-- Row in the add-friend sheet and the dialog that shows my own matrix.to QR code. -->
+    <string name="friends_my_code">My QR code</string>
     <!-- Section heading above the pending requests, received and sent. -->
     <string name="friends_requests_title">Requests</string>
     <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
@@ -1174,6 +1180,12 @@
     <string name="plugin_task_review">Review again</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">The result is uncertain: %1$s</string>
+    <!-- Status of a running task while the connection to the home server is down. -->
+    <string name="plugin_task_waiting_for_connection">Waiting for connection</string>
+    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
+    <string name="plugin_task_check_installed_next_step">Check the installed list to see whether it installed.</string>
+    <!-- Button on an uncertain task that opens the installed list. -->
+    <string name="plugin_task_check_installed">Check installed</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">Uninstalled</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->
