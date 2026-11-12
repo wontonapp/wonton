@@ -2,29 +2,46 @@ name: rust-docker
 
 # 依赖 Docker 的集成测试（标了 #[ignore] 的都在 wonton-core、wonton-client、wonton-matrix、wonton-acp-bridge 里）。
 # 镜像清单检查和官方索引检查用不到 Docker，在 rust.yml 的测试里跑，不占这个作业的时间。
-# 草稿 PR 上一个作业都不起（含改动范围），汇总作业起来报一个通过；转 ready 或每天的定时全量才跑。
 # 测试镜像拉的是 ghcr.io/<owner>/test-images
 # 的副本（test-images.yml 每周和每次 main 合并时同步），托管 runner 的出口 IP 拉不动 Docker Hub 和 ECR Public。
-# 路径不写在触发器上：合并队列的必需检查每次入队都要有结果，工作流没触发的话检查一直“等待中”，队列合不了。
-# 改成由 changes 作业判断改动范围，没改到时自己报 skipped（跳过的检查算通过）。
-# 必需检查只有末尾的汇总作业，其余作业在作业级直接跳过，不用为了报检查先起 runner。
+#
+# 合进 main 之后才跑，不挂 PR、不是必需检查：PR 只等十分钟内出结果的快检查，
+# 这个作业慢得多（2026-11-12 实测 PR 上中位 24 分钟）。
+# 每次合并单独跑一遍、不互相取消：红了按这次提交标题里的 (#N) 找到弄红的 PR，
+# 中间那几次被取消的话，红的那次可能带着好几个 PR，点不准名。
+# 合并前想先跑一遍：在 Actions 页对 PR 的分支手动触发（workflow_dispatch），结果不进 PR 的检查。
+# 路径写在触发器上：不是必需检查，没触发就是没改到。
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+    paths:
+      - "crates/wonton-acp-bridge/**"
+      - "crates/wonton-client/**"
+      - "crates/wonton-core/**"
+      - "crates/wonton-matrix/**"
+      # 测试和预热读的部署文件（include_str! 和 Dockerfile）；deploy/dev 其余的只给本机开发栈，改了不用跑。
+      # 新的 include_str! 指向 deploy/ 时要补在这里。
+      - "deploy/install/**"
+      - "deploy/dev/acp-bridge/**"
+      - "deploy/dev/core/compose.yaml"
+      - "deploy/dev/core/Dockerfile"
+      - "deploy/dev/matrix/**"
+      # 预拉测试镜像的清单。
+      - "scripts/mirror-test-images.sh"
+      - "plugins/**"
+      - "Cargo.toml"
+      - "vendor/**"
+      - "Cargo.lock"
+      - "clippy.toml"
+      - ".config/nextest.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/rust-docker.yml"
+      # 排除项要放在最后：GitHub 按顺序判断，后面的规则覆盖前面的。
+      - "!**/*.md"
   schedule:
-    # 每天全量兜底（PR 已在最新 main 上跑过，main 上不重跑）。
+    # 每天全量兜底：上游测试镜像、索引这类不随提交变的输入变了也能发现。
     - cron: "30 3 * * *"
   workflow_dispatch:
-  # 合并队列：末尾的汇总作业是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
-  # 队列用 base_sha..head_sha 判断范围，包含排在前面的 PR，沿用 PR 的路径规则。
-  merge_group:
-    types: [checks_requested]
-    branches: [main]
-
-# 队列里的 ref 一律是 gh-merge-queue/main，按它分组会把几次入队挤进同一组，改用这次入队的合并提交。
-concurrency:
-  group: rust-docker-${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_INCREMENTAL: "0"
@@ -35,66 +52,13 @@ env:
 
 permissions:
   contents: read
-  # 镜像副本在仓库还是私有的时候是私有包，拉取要 GITHUB_TOKEN；main 上的运行还把桥镜像的层缓存写回
-  # wonton-ci-cache（PR、队列只读）。
+  # 镜像副本在仓库还是私有的时候是私有包，拉取要 GITHUB_TOKEN；main 上的运行和手动触发还把桥镜像的层缓存
+  # 写回 wonton-ci-cache。
   packages: write
 
 jobs:
-  changes:
-    name: 改动范围（rust-docker）
-    # PR 用 REST 列改动文件，队列比较整个合并组；定时和手动运行全量，草稿 PR 跳过。
-    if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      # 按 REST 接口列 PR 改动的文件，不用检出代码。
-      pull-requests: read
-    outputs:
-      changed: ${{ steps.filter.outputs.changed }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        if: github.event_name == 'merge_group'
-        with:
-          ref: ${{ github.event.merge_group.head_sha }}
-          persist-credentials: false
-      # MIT
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        id: filter
-        with:
-          base: ${{ github.event.merge_group.base_sha }}
-          ref: ${{ github.event.merge_group.head_sha }}
-          # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
-          predicate-quantifier: some-with-excludes
-          filters: |
-            changed:
-              - "crates/wonton-acp-bridge/**"
-              - "crates/wonton-client/**"
-              - "crates/wonton-core/**"
-              - "crates/wonton-matrix/**"
-              # 测试和预热读的部署文件（include_str! 和 Dockerfile）；deploy/dev 其余的只给本机开发栈，改了不用跑。
-              # 新的 include_str! 指向 deploy/ 时要补在这里。
-              - "deploy/install/**"
-              - "deploy/dev/acp-bridge/**"
-              - "deploy/dev/core/compose.yaml"
-              - "deploy/dev/core/Dockerfile"
-              - "deploy/dev/matrix/**"
-              # 预拉测试镜像的清单。
-              - "scripts/mirror-test-images.sh"
-              - "plugins/**"
-              - "Cargo.toml"
-              - "vendor/**"
-              - "Cargo.lock"
-              - "clippy.toml"
-              - ".config/nextest.toml"
-              - "rust-toolchain.toml"
-              - ".github/workflows/rust-docker.yml"
-              - "!**/*.md"
-
   docker:
     name: Rust Docker 测试
-    needs: changes
-    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || (github.event_name != 'pull_request' && github.event_name != 'merge_group')) }}
     runs-on: ubuntu-24.04
     # 桥镜像要整编一遍（预构建 + 测试缓存），45 分钟紧，留出余量。
     timeout-minutes: 75
@@ -161,7 +125,7 @@ jobs:
       - name: 预构建桥镜像
         # 测试只验启动行为，构建本身先在这里做掉、给 docker 构建缓存预热，测试里的同名 build 就只走缓存。
         # 层缓存放在镜像仓库里（ghcr.io 的 wonton-ci-cache），不占 10 GB 的 actions 缓存：缓存从 main 上的
-        # 构建恢复，只在 main 上写回（定时、手动），PR 和队列只读。构建必须走 buildx —— `docker build`
+        # 构建恢复，main 上的运行和手动触发写回。构建必须走 buildx —— `docker build`
         # 读不了 registry 缓存；镜像用 --load 装回 docker，测试里的 `docker build` 才拿得到这份本机缓存。
         shell: bash
         run: |
@@ -191,24 +155,3 @@ jobs:
           path: ${{ runner.temp }}/test-logs
           retention-days: 7
           if-no-files-found: ignore
-
-  # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
-  # 草稿 PR 上其余作业全被跳过时它也照样起来并报通过，不用为此先起别的 runner。
-  summary:
-    name: rust-docker 汇总
-    needs: [changes, docker]
-    if: always()
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    env:
-      RESULTS: ${{ join(needs.*.result, ' ') }}
-    steps:
-      - name: 各作业的结果
-        run: |
-          echo "$RESULTS"
-          for result in $RESULTS; do
-            case "$result" in
-              success|skipped) ;;
-              *) exit 1 ;;
-            esac
-          done
