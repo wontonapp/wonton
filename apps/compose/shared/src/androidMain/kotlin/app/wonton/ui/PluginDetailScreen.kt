@@ -131,10 +131,16 @@ private fun DetailContent(
         val working = task?.state is PluginTaskState.Running
         if (bot != null) {
             BotProfileSection(bot, plugins)
+            BotContactsEntry { navigation.contacts = bot.bot }
         }
         DetailHeader(detail, plugins, detailAction(detail, working, navigation, LocalContext.current))
         task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {
-            TaskRow(it, plugins) { navigation.confirmation = reconfirmation(it, plugins) }
+            TaskRow(
+                it,
+                plugins,
+                { navigation.confirmation = reconfirmation(it, plugins) },
+                navigation.checkInstalled,
+            )
         }
         detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
         detail.installed?.let { PluginTabPinControls(it) }
@@ -144,7 +150,7 @@ private fun DetailContent(
             }
         }
         detail.about?.let { Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor()) }
-        detail.installed?.let { InstalledDetailSections(detail, plugins, onToggled) }
+        detail.installed?.let { InstalledDetailSections(detail, plugins, navigation, onToggled) }
         detail.shares?.let { PluginSharesSection(detail.id, it, plugins, onToggled) }
         DetailSections(detail, plugins, onToggled)
         detail.installed?.takeIf { it.removable && !working }?.let { installed ->
@@ -211,9 +217,13 @@ private fun SaveGrants(plugins: PluginsState, id: String, folders: List<String>,
 private fun InstalledDetailSections(
     detail: PluginDetail,
     plugins: PluginsState,
+    navigation: PluginNavigation,
     onToggled: (PluginDetail) -> Unit,
 ) {
     val installed = detail.installed ?: return
+    if (detail.hasSettings) {
+        SettingsEntry(detail, navigation)
+    }
     SecretSection(detail, plugins, onToggled)
     detail.lanWebui?.let { InstalledLanWebui(plugins, detail.id, it, onToggled) }
     if (installed.tunnelPorts.isNotEmpty()) PortMappingSection(plugins, installed)
@@ -221,6 +231,20 @@ private fun InstalledDetailSections(
     ToolPolicySection(plugins, detail.id, detail.version)
     if (installed.writtenBy != null) {
         AskEveryUpdateSection(plugins, detail.id, detail.askEveryUpdate ?: false, onToggled)
+    }
+}
+
+/** 插件设置（ADR-0077）的入口行，点开整页的原生设置表单。 */
+@Composable
+private fun SettingsEntry(detail: PluginDetail, navigation: PluginNavigation) {
+    DetailSection(stringResource(R.string.plugin_settings_section)) {
+        WontonGroup {
+            WontonRow(
+                stringResource(R.string.plugin_settings_open),
+                showsForward = true,
+                onClick = { navigation.settings = PluginSettingsTarget(detail.id, detail.title) },
+            )
+        }
     }
 }
 

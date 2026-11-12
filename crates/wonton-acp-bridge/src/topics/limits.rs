@@ -18,18 +18,28 @@ pub(crate) fn can_admit(board: &Board) -> bool {
     board.active_topics() < MAX_ACTIVE_TOPICS && board.queued_keys().is_empty()
 }
 
-/// 名额有空就放最老的一个排队话题进来，返回它的会话键和它的首条消息；
-/// 名额不够（或没有排队的）返回 `None`。
-pub(crate) fn poll_admission(board: &mut Board, now: u64) -> Option<(SessionKey, String)> {
+/// 名额有空就放最老的一个排队话题进来，返回它的会话键、它的首条消息、那条消息的
+/// 事件 ID 和附件（如有）；名额不够（或没有排队的）返回 `None`。
+pub(crate) fn poll_admission(
+    board: &mut Board,
+    now: u64,
+) -> Option<(
+    SessionKey,
+    String,
+    String,
+    Option<crate::bridge::attachments::PreparedAttachment>,
+)> {
     let key = board.queued_keys().into_iter().next()?;
     if board.active_topics() >= MAX_ACTIVE_TOPICS {
         return None;
     }
     let row = board.row_mut(&key)?;
     let prompt = row.pending_prompt.take()?;
+    let run = row.pending_run.take().unwrap_or_default();
+    let media = row.pending_media.take();
     row.status = Status::Working;
     row.last_activity = now;
-    Some((key, prompt))
+    Some((key, prompt, run, media))
 }
 
 /// 把空闲超过 30 分钟的话题判为结束，返回被结束的会话键（调用方去关 Agent 会话并

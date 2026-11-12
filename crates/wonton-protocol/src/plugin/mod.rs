@@ -49,7 +49,7 @@ pub use settings::{
     plugin_settings_preview_path,
 };
 pub use takeover::{PluginTakeover, TakeoverState};
-pub use task::{PluginOperation, PluginTask, PluginTaskState, UpgradeResult};
+pub use task::{PluginOperation, PluginTask, PluginTaskNextStep, PluginTaskState, UpgradeResult};
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
 };
@@ -149,7 +149,7 @@ pub struct InstalledPlugin {
     /// 清单 `webui` 的打开方式，没声明 `tabs` 的插件固定后用它。
     #[serde(default)]
     pub web_display: TabDisplay,
-    /// 清单 `webui` 声明了页面要跨源隔离：Android 壳只对这些插件的网页放宽 WebView 的隔离限制。
+    /// 清单 `webui` 声明了页面要跨源隔离。WebView 给不了时，客户端核心让页面在系统浏览器里打开（`TabPage.opens_in_browser`）。
     #[serde(default)]
     pub cross_origin_isolated: bool,
     /// 清单声明了 `mcp`：Bot 能调它的工具，网页标题栏上才有“我来操作”。
@@ -394,6 +394,10 @@ pub struct StoreItem {
     pub security_tier: Option<SecurityTier>,
     /// 装不了的原因（宿主架构不符、需要核心不支持的权限、规范版本比核心新）；能装时为空。
     pub blocked: Option<String>,
+    /// 安全档位到了要醒目提示的程度（ADR-0080 的 High 及以上，比这个 App 新的档位也算）：商店里
+    /// 标红。档位比较只在核心这一处，壳不重复。旧核心不给时按没有算。
+    #[serde(default)]
+    pub high_permissions: bool,
 }
 
 /// 主人给插件定的资源上限，对它的每个服务生效（ADR-0037）。也是 `PUT /_wonton/api/plugins/{id}/limits` 的请求体。

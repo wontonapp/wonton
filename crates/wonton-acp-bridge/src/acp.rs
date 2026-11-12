@@ -10,7 +10,7 @@ use std::{
 
 use serde_json::{Value, json};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncWriteExt, BufReader},
     net::{UnixStream, unix::OwnedReadHalf},
     sync::{Mutex, broadcast, mpsc, oneshot, watch},
 };
@@ -26,6 +26,7 @@ use crate::{
 };
 
 pub mod auth;
+mod frame;
 mod mode;
 mod permissions;
 use permissions::PermissionWaiter;
@@ -51,6 +52,34 @@ pub struct Capabilities {
     pub close: bool,
     pub steering: bool,
     pub mcp_http: bool,
+    /// Agent 在 `promptCapabilities` 里声明能收 `image` 内容块（ACP：text 和
+    /// resource_link 所有 Agent 都必须支持，image 要声明）。
+    pub prompt_image: bool,
+}
+
+/// `_session/steering` 的结果。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SteerOutcome {
+    /// 进了正在跑的一轮。
+    Injected,
+    /// 没有在跑的一轮，Agent 自己另起了一轮（不认 `idleBehavior` 的旧适配器）；那一轮没有 `session/prompt`
+    /// 跟着，回复桥收不到。
+    StartedNewTurn,
+    /// 没有在跑的一轮，内容没被收下，要走普通 `session/prompt`。
+    PromptRequired,
+    /// 没插进去（codex-acp、omp 会回），以及不认识的结果：都按没收下算。
+    Failed,
+}
+
+impl SteerOutcome {
+    fn parse(outcome: &Value) -> Self {
+        match outcome.as_str() {
+            Some("injected") => Self::Injected,
+            Some("startedNewTurn") => Self::StartedNewTurn,
+            Some("promptRequired") => Self::PromptRequired,
+            _ => Self::Failed,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -86,6 +115,7 @@ pub struct PromptResult {
 pub struct NewSession {
     pub session_id: String,
     pub ask_before_edit: bool,
+    pub mode: String,
 }
 
 /// 桥接层接管一次权限请求的机会：Agent 发来 `session/request_permission`，ACP 把它连同
@@ -184,6 +214,7 @@ impl AcpClient {
                 close: false,
                 steering: false,
                 mcp_http: false,
+                prompt_image: false,
             },
             auth_methods: Vec::new(),
         };
@@ -299,6 +330,7 @@ impl AcpClient {
         Ok(NewSession {
             session_id,
             ask_before_edit,
+            mode: mode.to_owned(),
         })
     }
 
@@ -308,6 +340,7 @@ impl AcpClient {
         cwd: &str,
         mcp_url: &str,
         origin: &ConfirmationOrigin,
+        mode: &str,
     ) -> Result<()> {
         let params = json!({
             "sessionId": session_id,
@@ -323,6 +356,7 @@ impl AcpClient {
                 "acp-restore-unsupported",
             )));
         }
+        mode::set_after_restore(self, session_id, mode).await?;
         self.inner
             .origins
             .lock()
@@ -391,7 +425,10 @@ impl AcpClient {
             .await
     }
 
-    pub async fn steer(&self, session_id: &str, text: &str) -> Result<String> {
+    /// 把内容块插进正在跑的一轮（`_session/steering`，claude-agent-acp、codex-acp、omp、OpenCode 共用的
+    /// 预标准扩展）。总带 `idleBehavior: promptRequired`：一轮已经结束时 Agent 不自己另起一轮，内容留给桥
+    /// 走普通 `session/prompt`。投递的时机由 Agent 定，协议里没有让客户端选的字段。
+    pub async fn steer(&self, session_id: &str, prompt: Vec<Value>) -> Result<SteerOutcome> {
         if !self.capabilities.steering {
             return Err(Error::Upstream(Detail::msg("acp-no-steering")));
         }
@@ -400,19 +437,21 @@ impl AcpClient {
                 "_session/steering",
                 json!({
                     "sessionId": session_id,
-                    "prompt": [{"type": "text", "text": text}],
-                    "_meta": {"steering": {"queue": "steering", "idleBehavior": "promptRequired"}}
+                    "prompt": prompt,
+                    "_meta": {"steering": {"idleBehavior": "promptRequired"}}
                 }),
             )
             .await
             .map_err(|error| Error::Upstream(rpc_detail(&error)))?;
-        Ok(result["outcome"].as_str().unwrap_or("failed").to_owned())
+        Ok(SteerOutcome::parse(&result["outcome"]))
     }
 
+    /// 发一轮提示词。`prompt` 是 ACP 内容块（text、image、resource_link，见
+    /// `bridge/attachments.rs`），一轮可以多个块。
     pub async fn prompt(
         &self,
         session_id: &str,
-        text: &str,
+        prompt: Vec<Value>,
         max_output: usize,
         timeout: Duration,
         lang: Lang,
@@ -445,10 +484,10 @@ impl AcpClient {
             .get(session_id)
             .cloned()
             .unwrap_or_default();
-        tracing::debug!(session_id, bytes = text.len(), "发送 ACP prompt");
+        tracing::debug!(session_id, blocks = prompt.len(), "发送 ACP prompt");
         let response = self.request(
             "session/prompt",
-            json!({"sessionId": session_id, "prompt": [{"type": "text", "text": text}]}),
+            json!({"sessionId": session_id, "prompt": prompt}),
         );
         tokio::pin!(response);
         let timer = tokio::time::sleep(timeout);
@@ -594,16 +633,16 @@ impl AcpClient {
 }
 
 async fn read_loop(inner: Arc<Inner>, reader: OwnedReadHalf) {
-    let mut lines = BufReader::new(reader).lines();
+    let mut reader = BufReader::new(reader);
+    let mut frame = Vec::new();
     loop {
-        let line = match lines.next_line().await {
-            Ok(Some(line)) => line,
-            Ok(None) | Err(_) => break,
-        };
-        if line.len() > MAX_FRAME_BYTES {
-            break;
+        match frame::read_frame(&mut reader, &mut frame).await {
+            frame::FrameRead::Frame => {}
+            frame::FrameRead::Oversize | frame::FrameRead::Eof | frame::FrameRead::Transport => {
+                break;
+            }
         }
-        let Ok(message) = serde_json::from_str::<Value>(&line) else {
+        let Ok(message) = serde_json::from_slice::<Value>(&frame) else {
             break;
         };
         if message.get("method").is_some() {
@@ -792,5 +831,8 @@ fn parse_capabilities(result: &Value) -> Capabilities {
             .unwrap_or(false),
         mcp_http: agent["mcpCapabilities"]["http"].is_object()
             || agent["mcpCapabilities"]["http"].as_bool().unwrap_or(false),
+        prompt_image: agent["promptCapabilities"]["image"]
+            .as_bool()
+            .unwrap_or(false),
     }
 }

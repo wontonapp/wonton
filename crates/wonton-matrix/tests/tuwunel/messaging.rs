@@ -6,6 +6,7 @@ use wonton_matrix::{
     ChatRoom, Error, ImageContent, ImageUpload, MISSED_GRACE, MatrixSession, Membership, Message,
     MessageBody, SendStatus, UserId,
 };
+use wonton_protocol::AgentRunState;
 
 use crate::support::{TempStore, TestServer, eventually, random_bytes, unique};
 
@@ -125,6 +126,107 @@ async fn wait_for_text(room: &ChatRoom, what: &str, sender: &UserId, text: &str)
             .cloned()
     })
     .await
+}
+
+/// 等到 `sender` 发的 Agent 状态消息出现、已送达且解析出的状态是 `state`，返回带解析结果的消息。
+async fn wait_for_agent_run(
+    room: &ChatRoom,
+    what: &str,
+    sender: &UserId,
+    state: &AgentRunState,
+) -> Message {
+    eventually(what, room.message_updates().await, |messages| {
+        messages
+            .iter()
+            .find(|message| {
+                message.sender == sender
+                    && message.status == SendStatus::Sent
+                    && message.event_id.is_some()
+                    && message
+                        .agent_run
+                        .as_ref()
+                        .is_some_and(|run| &run.state == state)
+            })
+            .cloned()
+    })
+    .await
+}
+
+/// Bot 发一条带状态对象的消息再用 `m.replace` 编辑（ADR-0082）：读出来的还是一条消息，解析结果跟着最新编辑走。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn an_agent_status_message_and_its_edit_read_as_one() {
+    use serde_json::json;
+
+    let server = TestServer::start().await;
+    let bot = server.login(&unique("bot"), "Bot").await;
+    let owner = server.login(&unique("owner"), "主人").await;
+    bot.start_sync().await.expect("Bot 开始同步");
+    owner.start_sync().await.expect("Owner 开始同步");
+
+    let room_id = bot
+        .create_direct_chat(owner.user_id(), false)
+        .await
+        .expect("Bot 建私聊");
+    eventually("Owner 收到邀请", owner.rooms().await.unwrap(), |rooms| {
+        rooms
+            .iter()
+            .find(|room| room.room_id == room_id && room.membership == Membership::Invited)
+            .map(|_| ())
+    })
+    .await;
+    owner.join_room(&room_id).await.expect("Owner 加入私聊");
+    let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
+    let owner_room = owner.open_room(&room_id).await.expect("Owner 打开私聊");
+
+    let sent = bot_room
+        .send_raw_message(json!({
+            "msgtype": "m.notice",
+            "body": "正在执行命令（第 1 步）",
+            "org.fluxchat.agent": {"v": 1, "run": "$request", "state": "working", "steps": 1},
+        }))
+        .await
+        .expect("Bot 发状态");
+    let first = wait_for_agent_run(
+        &owner_room,
+        "Owner 看到状态",
+        bot.user_id(),
+        &AgentRunState::Working,
+    )
+    .await;
+    let run = first.agent_run.expect("解析出状态对象");
+    assert_eq!(run.state, AgentRunState::Working);
+    assert_eq!(run.steps, Some(1));
+    assert_eq!(run.run.as_deref(), Some("$request"));
+
+    bot_room
+        .send_raw_message(json!({
+            "msgtype": "m.notice",
+            "body": "完成，用了 2 步",
+            "m.new_content": {
+                "msgtype": "m.notice",
+                "body": "完成，用了 2 步",
+                "org.fluxchat.agent": {
+                    "v": 1, "run": "$request", "state": "done", "steps": 2, "result": "查到了",
+                },
+            },
+            "m.relates_to": {"rel_type": "m.replace", "event_id": sent},
+        }))
+        .await
+        .expect("Bot 编辑状态");
+    let edited = wait_for_agent_run(
+        &owner_room,
+        "编辑推进到完成",
+        bot.user_id(),
+        &AgentRunState::Done,
+    )
+    .await;
+    assert_eq!(edited.event_id, first.event_id, "编辑还是同一条消息");
+    let run = edited.agent_run.expect("编辑后还是状态消息");
+    assert_eq!(run.state, AgentRunState::Done);
+    assert_eq!(run.steps, Some(2));
+    assert_eq!(run.result.as_deref(), Some("查到了"));
+    assert!(matches!(&edited.body, MessageBody::Notice(text) if text == "完成，用了 2 步"));
 }
 
 /// 发出的消息被撤回后，双方看到的都是"已撤回"，理由随撤回事件广播。

@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures_util::{Stream, stream};
 use matrix_sdk::{
-    Client, ClientBuildError, SessionChange, SessionMeta, SessionTokens,
+    Client, ClientBuildError, ClientBuilder, SessionChange, SessionMeta, SessionTokens,
     authentication::matrix::MatrixSession as SdkSession,
     cross_process_lock::CrossProcessLockConfig,
     encryption::{BackupDownloadStrategy, EncryptionSettings},
@@ -17,13 +17,13 @@ use matrix_sdk::{
     store::RoomLoadSettings,
 };
 use matrix_sdk_ui::sync_service::SyncService;
-use serde::{Deserialize, Serialize};
 use tokio::{
     sync::{Notify, broadcast::error::RecvError},
     task::JoinHandle,
 };
 
 use crate::rooms::RoomSubscriptions;
+pub use crate::saved::SavedSession;
 use crate::{Error, Result, send_queue};
 
 /// Tuwunel 的 JWT 登录类型。
@@ -121,25 +121,6 @@ pub enum SessionEvent {
     },
 }
 
-/// 存下来的登录状态：用户、设备和令牌。重启后交给 [`MatrixSession::restore`]，不用重新登录。
-///
-/// 令牌等同于登录凭据，要和设备密钥一样保管；`Debug` 不输出令牌。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct SavedSession(SdkSession);
-
-impl SavedSession {
-    /// 这份登录状态属于的用户。
-    pub fn user_id(&self) -> &UserId {
-        &self.0.meta.user_id
-    }
-
-    /// 这份登录状态属于的设备。
-    pub fn device_id(&self) -> &DeviceId {
-        &self.0.meta.device_id
-    }
-}
-
 /// 一个已登录设备的 Matrix 会话。
 pub struct MatrixSession {
     pub(crate) client: Client,
@@ -228,9 +209,9 @@ impl MatrixSession {
     pub async fn restore(config: &SessionConfig, saved: SavedSession) -> Result<Self> {
         // 不查服务器版本：冷启动没网也要能打开本地的房间和消息。登录时已经查过这台服务器。
         let client = build_client(config, VersionBuilder::Native).await?;
-        let user_id = saved.0.meta.user_id.clone();
-        let device_id = saved.0.meta.device_id.clone();
-        client.restore_session(saved.0).await?;
+        let user_id = saved.user_id().to_owned();
+        let device_id = saved.device_id().to_owned();
+        saved.restore_into(&client).await?;
         Self::with_client(client, user_id, device_id, config).await
     }
 
@@ -286,7 +267,7 @@ impl MatrixSession {
 
     /// 当前的登录状态，用来存到本机。访问令牌刷新后（[`SessionEvent::TokensRefreshed`]）要重新取一次存下。
     pub fn saved(&self) -> Option<SavedSession> {
-        self.client.matrix_auth().session().map(SavedSession)
+        SavedSession::of(&self.client)
     }
 
     /// 本设备登录的用户。
@@ -436,35 +417,47 @@ async fn reconcile_store(config: &SessionConfig, device_id: &DeviceId) -> Result
 }
 
 async fn build_client(config: &SessionConfig, versions: VersionBuilder) -> Result<Client> {
-    let mut builder = Client::builder()
+    client_builder(&config.store, config.proxy.as_deref(), true)
         .homeserver_url(&config.homeserver_url)
         .sliding_sync_version_builder(versions)
+        .build()
+        .await
+        .map_err(client_build_error)
+}
+
+/// 除了服务器地址以外的客户端设置，登录（[`crate::login`]）和会话共用。`cross_signing` 为假时登录后不自动建交叉签名：
+/// 用现成账号登录时由之后恢复的会话来建，登录用的客户端用完就停，不在半路上传一半。
+pub(crate) fn client_builder(
+    store: &StoreConfig,
+    proxy: Option<&str>,
+    cross_signing: bool,
+) -> ClientBuilder {
+    let mut builder = Client::builder()
         .handle_refresh_tokens()
         .with_encryption_settings(EncryptionSettings {
             // 登录后自动建交叉签名身份（账号还没有时）；服务器要支持 MSC3967，首次上传不要求再次认证。
-            auto_enable_cross_signing: true,
+            auto_enable_cross_signing: cross_signing,
             // 解密失败时再去密钥备份里找密钥，和 Element X 一样。
             backup_download_strategy: BackupDownloadStrategy::AfterDecryptionFailure,
             // 密钥备份随恢复一起建（[`MatrixSession::enable_recovery`]），不在登录时自动建。
             auto_enable_backups: false,
         });
-    if let Some(proxy) = &config.proxy {
+    if let Some(proxy) = proxy {
         builder = builder.proxy(proxy);
     }
-    let store = match &config.store {
+    let path = match store {
         StoreConfig::InMemory => None,
         StoreConfig::Sqlite { path, .. } => Some(path.as_path()),
     };
     builder = builder.cross_process_store_config(CrossProcessLockConfig::multi_process(
-        crate::store_holder::holder_for(store),
+        crate::store_holder::holder_for(path),
     ));
-    let builder = match &config.store {
+    match store {
         StoreConfig::InMemory => builder,
         StoreConfig::Sqlite { path, passphrase } => {
             builder.sqlite_store(path, passphrase.as_deref())
         }
-    };
-    builder.build().await.map_err(client_build_error)
+    }
 }
 
 fn client_build_error(error: ClientBuildError) -> Error {

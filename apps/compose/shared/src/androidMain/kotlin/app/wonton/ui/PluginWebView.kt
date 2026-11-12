@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.content.res.Configuration
@@ -10,6 +11,7 @@ import android.view.View
 import android.view.MotionEvent
 import android.view.ViewGroup
 import android.view.ContextThemeWrapper
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.HttpAuthHandler
 import android.webkit.WebResourceError
@@ -18,6 +20,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -71,6 +74,8 @@ private val pinchZoomScript = """
 class PluginWebViewController {
     internal var view: WebView? = null
     internal var touchObserver: ((MotionEvent) -> Unit)? = null
+    internal var fileChooserLauncher: ActivityResultLauncher<Intent>? = null
+    internal var pendingFileChooser: ValueCallback<Array<Uri>>? = null
     var canGoBack by mutableStateOf(false)
         private set
     var customView: View? by mutableStateOf(null)
@@ -103,6 +108,9 @@ class PluginWebViewController {
         view = null
         canGoBack = false
         closeCustomView()
+        pendingFileChooser?.onReceiveValue(null)
+        pendingFileChooser = null
+        fileChooserLauncher = null
     }
 
     fun goBack(): Boolean {
@@ -206,6 +214,7 @@ fun PluginWebView(
     val openLink by rememberUpdatedState(onOpenLink)
     val gone by rememberUpdatedState(onRendererGone)
     val loadStarted by rememberUpdatedState(onLoadStarted)
+    rememberFileChooserLauncher(controller)
     val canvas = WontonTheme.colors.canvas.toColor().toArgb()
     var generation by remember { mutableIntStateOf(0) }
     val snapshot = remember(controller) { WebViewSnapshot() }

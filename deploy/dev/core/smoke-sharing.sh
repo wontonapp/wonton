@@ -13,7 +13,10 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel 2>/dev/null)" || root="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$root"
 
-name=share-smoke
+# 联系人冒烟（smoke-contacts.sh）借这套夹具：换名字、驱动，最后一步改由它分步跑。
+name="${SHARE_SMOKE_NAME:-share-smoke}"
+driver="${SHARE_SMOKE_DRIVER:-fr_share_smoke}"
+export SHARE_SMOKE_DRIVER="$driver"
 project="wonton-$name"
 fixture="deploy/dev/core/share-smoke"
 bin_dir="${WONTON_SHARE_SMOKE_BIN_DIR:-$HOME/wonton-dev/share-smoke-bin}"
@@ -24,13 +27,18 @@ cleanup() {
   local status=$?
   if (( started )) && (( status != 0 )); then
     # 失败时把中继和核心的末尾日志一起打出来，日志只有这一份。
-    docker compose -p "$project" -f "$fixture/compose.yaml" logs --tail 60 relay core-owner core-friend >&2 || true
+    docker compose -p "$project" -f "$fixture/compose.yaml" logs --tail 60 relay core-owner core-friend tuwunel-owner tuwunel-friend >&2 || true
   fi
   if (( started )); then
+    if [[ -z "${SHARE_SMOKE_KEEP:-}" ]]; then
+      remove_plugins
+    fi
     if [[ -n "${SHARE_SMOKE_KEEP:-}" ]]; then
       echo "保留栈：docker compose -p $project -f $fixture/compose.yaml down -v --remove-orphans" >&2
     else
       docker compose -p "$project" -f "$fixture/compose.yaml" down -v --remove-orphans >/dev/null 2>&1 || true
+      # 核心的容器也连在插件网络上，down 之前删不掉网络，down 之后再删一次。
+      remove_plugins
       "$HOME/wonton-dev/stack-slot.sh" release "$name" >/dev/null 2>&1 || true
     fi
   fi
@@ -40,7 +48,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for binary in fr_share_smoke share-smoke-relay; do
+# 两个核心装的插件不归 compose 管：按本次的实例标签删容器、网络和卷。
+remove_plugins() {
+  local instance ids
+  [[ -n "${SHARE_SMOKE_INSTANCE:-}" ]] || return 0
+  for instance in "${SHARE_SMOKE_INSTANCE}o" "${SHARE_SMOKE_INSTANCE}f"; do
+    ids="$(docker ps -aq --filter "label=wonton.instance=$instance")"
+    [[ -z "$ids" ]] || docker rm -f $ids >/dev/null 2>&1 || true
+    ids="$(docker network ls -q --filter "label=wonton.instance=$instance")"
+    [[ -z "$ids" ]] || docker network rm $ids >/dev/null 2>&1 || true
+    ids="$(docker volume ls -q --filter "label=wonton.instance=$instance")"
+    [[ -z "$ids" ]] || docker volume rm $ids >/dev/null 2>&1 || true
+  done
+}
+
+for binary in fr_share_smoke "$driver" share-smoke-relay; do
   [[ -x "$bin_dir/$binary" ]] || { echo "缺少 $bin_dir/$binary，先按文件头的命令编译" >&2; exit 2; }
 done
 
@@ -57,7 +79,8 @@ export SHARE_SMOKE_BIN_DIR="$bin_dir"
 export SHARE_SMOKE_INSTANCE="ss$RANDOM"
 slot="${prefix##*.}"
 export SHARE_SMOKE_IDENTITY_PREFIX="11.213.$slot"
-export SHARE_SMOKE_PLUGIN_POOL="10.213.$slot.0/24"
+# 别的栈的插件网络可能已经占了按名额算的这一段（它们不按名额分），撞了就用 WONTON_SHARE_SMOKE_PLUGIN_POOL 换一段。
+export SHARE_SMOKE_PLUGIN_POOL="${WONTON_SHARE_SMOKE_PLUGIN_POOL:-10.213.$slot.0/24}"
 # 必须是含分享实现的镜像（dev.sh share-smoke 会编好它）。
 export SHARE_SMOKE_CORE_IMAGE="${WONTON_SHARE_SMOKE_CORE_IMAGE:-wonton-core:share-smoke}"
 export SHARE_SMOKE_TUWUNEL_IMAGE="ghcr.io/matrix-construct/tuwunel:v1.9.4@sha256:0e86c6164d6c9f5b60291938eb61ad8395021c37fe58d47a963ea7edddbedaec"
@@ -79,7 +102,7 @@ JSON
 # 插件清单引用本地标签：隔离网段没有 registry，带摘要的 Hub 名字仍会去拉。
 docker tag "$SHARE_SMOKE_PYTHON_IMAGE" wonton-share-multiplayer:smoke
 
-compose=(docker compose -p "$project" -f "$fixture/compose.yaml")
+compose=(docker compose -p "$project" -f "$fixture/compose.yaml" ${SHARE_SMOKE_COMPOSE_EXTRA:+-f "$SHARE_SMOKE_COMPOSE_EXTRA"})
 
 # 证书签发前只启动 DNS 和 ACME；TLS 前门需要签发后的证书。
 "${compose[@]}" up -d dns pebble
@@ -114,4 +137,9 @@ if ! "${compose[@]}" up -d --remove-orphans --wait --wait-timeout 300; then
   exit 1
 fi
 
-"${compose[@]}" --profile driver run --rm -T driver
+if [[ -n "${SHARE_SMOKE_SCENARIO:-}" ]]; then
+  # shellcheck source=/dev/null
+  source "$SHARE_SMOKE_SCENARIO"
+else
+  "${compose[@]}" --profile driver run --rm -T driver
+fi

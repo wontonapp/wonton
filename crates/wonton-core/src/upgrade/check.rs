@@ -153,11 +153,23 @@ impl Upgrades {
             return CoreUpgradeCheck::UpToDate;
         }
         self.forget_predownload(running, Some(&reference)).await;
+        let langs = self.owner_languages();
+        // ADR-0085：镜像下载好、版本号读出来之后，在目标镜像的一次性容器里裁决已装插件的
+        // 兼容性。查不成如实给"没查成"，不拦升级。
+        let compat = super::compat::check(
+            self.host.as_ref(),
+            &reference,
+            &digest,
+            &self.layout().data_dir,
+            &langs,
+        )
+        .await;
         CoreUpgradeCheck::Ready {
             offer: CoreUpgradeOffer {
                 digest,
                 version,
                 migrates: migrated_volumes(&info.labels, running.version.as_deref()),
+                compat,
             },
         }
     }

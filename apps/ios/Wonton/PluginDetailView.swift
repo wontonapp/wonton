@@ -12,8 +12,11 @@ struct PluginDetailView: View {
     @State private var uninstalling: UninstallTarget?
     @State private var pluginId: String?
     @State private var changingVersionOf: String?
+    @State private var showsSettings = false
+    @State private var showsContacts = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.wontonColors) private var colors
+    @Environment(\.goToInstalledApps) private var goToInstalledApps
 
     var body: some View {
         content
@@ -59,16 +62,42 @@ struct PluginDetailView: View {
                     if detail.installed != nil {
                         BotProfileSection(chat: chat, plugins: model, pluginId: detail.id)
                     }
+                    if detail.installed != nil, bot(of: detail.id) != nil {
+                        WontonGroup {
+                            Button {
+                                showsContacts = true
+                            } label: {
+                                WontonRow(title: String(localized: .contactsTitle), showsForward: true)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("botContactsEntry")
+                        }
+                    }
                     DetailHeader(model: model, detail: detail, action: action(for: detail))
                     if let task, task.state != .succeeded || task.hasAddedToolsNews {
-                        TaskRow(model: model, task: task) {
-                            confirmation = model.reconfirmation(for: task)
-                        }
+                        TaskRow(
+                            model: model,
+                            task: task,
+                            review: {
+                                confirmation = model.reconfirmation(for: task)
+                            },
+                            checkInstalled: goToInstalledApps,
+                        )
                     }
                     if let installed = detail.installed, !installed.notices.isEmpty {
                         NoticeLines(lines: installed.notices)
                     }
                     if let installed = detail.installed { PluginTabPins(plugin: installed) }
+                    if detail.installed != nil, detail.hasSettings {
+                        WontonGroup {
+                            Button {
+                                showsSettings = true
+                            } label: {
+                                WontonRow(title: String(localized: .pluginSettingsTitle), showsForward: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                     if !detail.screenshots.isEmpty {
                         Screenshots(model: model, images: detail.screenshots)
                     }
@@ -77,8 +106,14 @@ struct PluginDetailView: View {
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                     }
+                    if detail.installed != nil {
+                        SecretSection(detail: detail, model: model) { loaded = .success($0) }
+                    }
                     if let installed = detail.installed, let offer = detail.lanWebui {
                         InstalledLanWebui(model: model, id: installed.id, offer: offer) { loaded = .success($0) }
+                    }
+                    if let installed = detail.installed, !installed.tunnelPorts.isEmpty {
+                        PortMappingSection(installed: installed)
                     }
                     if let installed = detail.installed, !detail.saveGrants.isEmpty {
                         SaveGrants(model: model, id: installed.id, folders: detail.saveGrants) { loaded = .success($0) }
@@ -113,7 +148,18 @@ struct PluginDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(WontonTheme.spacing.pageInset)
             }
+            .navigationDestination(isPresented: $showsSettings) {
+                PluginSettingsScreen(model: model, pluginId: pluginId ?? "")
+            }
+            .navigationDestination(isPresented: $showsContacts) {
+                if let bot = bot(of: detail.id) { BotContactsView(core: model.core, bot: bot) }
+            }
         }
+    }
+
+    /// 有 Bot 的应用的那个 Bot（和资料一节同一个）：它的联系人页从这里进（ADR-0045）。
+    private func bot(of pluginId: String) -> BotRef? {
+        chat.viewModel.bots.first { $0.bot.pluginId == pluginId && $0.bot.bot == "default" }?.bot
     }
 
     private func load() async {
