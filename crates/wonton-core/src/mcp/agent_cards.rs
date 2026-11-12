@@ -19,22 +19,7 @@ pub(super) fn card_settings(
     given: &wonton_protocol::SettingValues,
     langs: &Languages,
 ) -> Result<crate::plugin::settings::Values, crate::plugin::InstallError> {
-    match crate::plugin::settings::load(package, langs)? {
-        Some(schema) => crate::plugin::settings::value::initial(&schema, given, langs)
-            .map_err(|fields| crate::plugin::settings::value_error(fields, langs)),
-        None if given.is_empty() => Ok(Default::default()),
-        None => Err(crate::plugin::settings::value_error(
-            given
-                .keys()
-                .map(|name| wonton_protocol::SettingsFieldError {
-                    name: name.clone(),
-                    kind: wonton_protocol::SettingsFieldProblemKind::UnknownField,
-                    message: l10n::text(langs, "plugin-settings-value-unknown-field", &[]),
-                })
-                .collect(),
-            langs,
-        )),
-    }
+    crate::plugin::settings::install_values(package, given, langs)
 }
 
 /// 更新执行完的结果：卡片上的话按主人的语言写，给 Agent 的还是结构化的 JSON。

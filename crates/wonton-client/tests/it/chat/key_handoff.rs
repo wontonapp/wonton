@@ -8,6 +8,7 @@ use wonton_client::{
     MessageContent, RecoveryNextStep, RecoveryStatus, SecretString, TimelineContent,
     VerificationCancel, VerificationFlow, VerificationStage,
 };
+use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::accept_the_bots_invite;
 use super::support::{Home, Phone, Timeline, WAIT};
@@ -161,6 +162,19 @@ fn assert_without_keys(phone: &Phone) {
     );
 }
 
+fn paginate_backwards(phone: &Phone, room_id: &str) {
+    phone
+        .dispatch(Action::Timeline {
+            action: TimelineAction::PaginateBackwards {
+                target: TimelineTarget {
+                    room_id: room_id.to_owned(),
+                    thread_root: None,
+                },
+            },
+        })
+        .unwrap();
+}
+
 fn message_text(content: &TimelineContent) -> Option<&str> {
     match content {
         TimelineContent::Message { message } => match &message.body {
@@ -209,10 +223,7 @@ async fn a_paired_phone_gets_the_keys_from_the_add_device_page_without_the_recov
     })
     .await;
     let mut timeline = Timeline::open(&new, room_id.as_str()).await;
-    new.dispatch(Action::PaginateBackwards {
-        room_id: room_id.to_string(),
-    })
-    .unwrap();
+    paginate_backwards(&new, room_id.as_str());
     timeline
         .until("新手机的历史还解不开", |item| {
             match &item.content {

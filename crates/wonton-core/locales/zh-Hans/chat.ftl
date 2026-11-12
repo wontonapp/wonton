@@ -159,3 +159,10 @@ panel-pin-matrix = 连不上 Matrix：{ $error }
 panel-pin-not-there = 这个页面没有钉在面板上
 
 # MCP Apps 界面里的调用在卡片上把调用方写成主人。
+
+# 跳数到顶（ADR-0045）：几个 Bot 在一个房间里来回说得太多，网关停下了。
+chat-card-hop-limit-title = { $bots } 来回说了 { $hops } 次，已停下
+chat-choice-hop-limit-continue = 继续
+chat-choice-hop-limit-stay = 先停着
+chat-hop-limit-resumed = 已继续
+chat-hop-limit-kept-by-other = 另一方选了先停着，房间还停着

@@ -158,6 +158,7 @@ chat-contacts-invalid-user-id = ユーザーIDが無効です：{ $reason }
 
 # Siri、ショートカット、チャット画面でメッセージを送るとき、本文が空の場合に表示します。
 chat-empty-message = メッセージを入力してください。
+composer-not-ready = このバージョンのクライアントコアは添付トレイにまだ対応していません。
 # Siriやショートカットから渡されたボットのIDを解析できない場合に表示します。
 chat-ask-invalid-bot-id = デフォルトのエージェントのIDの形式が正しくありません。
 # 既存のダイレクトチャットのルームIDを解析できない場合に表示します。
@@ -169,6 +170,7 @@ chat-layout-change-failed = チャットの表示方法を変更できません�
 chat-session-device-revoked = このデバイスはMatrixで取り消されました。もう一度自宅サーバーとペアリングしてください。
 
 # シェルからコアの知らないチャット操作が渡されたときに表示します。
+side-chat-not-ready = このバージョンのクライアントコアはサイドチャットにまだ対応していません。
 chat-invalid-action = チャット操作ではありません
 # ダイレクトチャットの開始時に、@名前:サーバーの形でないIDが渡されたときに表示します。
 chat-invalid-user-id = ユーザーIDの形式が正しくありません。@名前:サーバーのように入力してください
@@ -512,6 +514,8 @@ plugins-start-busy = { $id }はすでに起動、インストール、更新、�
 tabs-bridge-page-not-open = このアプリのページは開かれていないか、固定されていません
 tabs-bridge-invalid-environment = ページのインセットとセーフエリアは有限の非負の数である必要があります
 tabs-bridge-public-page = 公開ウェブページには Wonton のブリッジがありません。
+plugin-media-not-asked = このアプリのページにはカメラとマイクの判断が保存されていません
+plugin-media-save-failed = カメラとマイクの判断ファイル { $path } に書き込めません：{ $reason }
 
 # チャットの接続問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailableの理由と失敗した操作のメッセージ。
 chat-not-connected = 自宅サーバーに接続してから、もう一度試してください

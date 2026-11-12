@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use wonton_client::{Action, RoomMembership, TimelineContent, TimelineScroll, TimelineViewport};
 use wonton_matrix::{ChatRoom, MatrixSession, OwnedRoomId};
+use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::accept_the_bots_invite;
 use super::support::{Home, Phone, Timeline, WAIT};
@@ -73,8 +74,13 @@ impl Chat {
     async fn read(&self) {
         self.wait_unread(1).await;
         self.phone
-            .dispatch(Action::MarkRoomRead {
-                room_id: self.room_id.to_string(),
+            .dispatch(Action::Timeline {
+                action: TimelineAction::MarkRead {
+                    target: TimelineTarget {
+                        room_id: self.room_id.to_string(),
+                        thread_root: None,
+                    },
+                },
             })
             .unwrap();
         self.phone

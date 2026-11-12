@@ -128,6 +128,14 @@ xcodebuild test -project apps/ios/Wonton.xcodeproj -scheme Wonton \
   -only-testing:WontonUITests/PairingLinkUITests CODE_SIGNING_ALLOWED=NO
 ```
 
+要后端的界面用例（好友、粘贴、安装行、图片查看、Bot 资料）用 `apps/ios/scripts/ui-test.sh` 跑：配对码只经环境变量
+`PAIRING_CODE` 传进去，没给就 XCTSkip，给了但不像配对码就直接失败。
+
+```bash
+PAIRING_CODE="$(deploy/dev/core/dev.sh pair <地址> | tail -n 1)" apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
+  -only-testing:WontonUITests/BotProfileUITests
+```
+
 界面截图回归在 `WontonTests/SnapshotTests`：真实界面配固定假数据（同目录的 `SnapshotFixtures`，Debug 专用），逐像素比较
 `WontonTests/__Snapshots__/` 下的参考图。参考图绑定模拟器型号和系统版本，语言、地区和时区由 scheme 钉住；怎么重录、
 失败产物在哪见 [`.github/workflows/README.md`](../../.github/workflows/README.md)。新增截图先挑有代表性的界面，不逐页全录。

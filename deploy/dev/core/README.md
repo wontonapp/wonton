@@ -63,6 +63,8 @@ Cookie 罐路径，curl 加 `-b` 复用。
   核心经 Engine API 安装的插件不继承它。核心自己的 Compose 用 `x-no-proxy` 清空代理；插件的出网代理规则见
   [ADR-0023](../../../docs/adr/0023-egress-proxy.md#给插件什么)。`dev.sh`、`smoke.sh`、`smoke-onboarding.sh` 的 CLI curl
   探针用 `--noproxy '*'` 直连内部地址；隧道探针用 `--noproxy ''`，确保经过显式指定的本地代理，不必替换 `DOCKER_CONFIG`。
+- 这些 CLI curl 探针都带超时（接口 600 秒、网页 120 秒、连接 10 秒），网页或接口不回时不至于把开发栈和它占的验证栈名额一直占着；
+  `SMOKE_API_MAX_TIME`、`SMOKE_WEB_MAX_TIME`、`SMOKE_CONNECT_TIMEOUT` 可以覆盖，脚本里更慢的调用在自己的参数里给更长的 `--max-time`。
 - 所有 worktree 共用一份 cargo 编译缓存，而 cargo 按修改时间判断要不要重编：源码比别的 worktree 上次编译时
   还旧，就会直接用别人的产物。所以 Dockerfile 每次编译前把工作区的源码 touch 一遍，依赖仍命中缓存，只重编
   工作区的 crate；源码没变时整层命中 Docker 的构建缓存，不重编。
@@ -169,9 +171,10 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 三种错误的原因各不相同。GitHub 连不上时 export `https_proxy`；「错的 key」和「断网」两个用例要经出口容器到真实
 上游，设 `WONTON_SMOKE_EGRESS_PROXY=http://host.docker.internal:<宿主代理端口>`，不设时这两个用例跳过。
 
-两台云吞之间的有两条，共用一套隔离夹具（`share-smoke/`：两台核心经 iroh 配对、各自的 Tuwunel、自己的 DNS 和 Pebble）：
+两台云吞之间的有两条冒烟和一个开发命令，共用一套隔离夹具（`share-smoke/`：两台核心经 iroh 配对、各自的 Tuwunel、自己的 DNS 和 Pebble）：
 分享插件（ADR-0051）是 `dev.sh share-smoke`；跨机 Bot 联系人（ADR-0050）是 `deploy/dev/core/smoke-contacts.sh`，
-依赖和步骤写在脚本开头。
+依赖和步骤写在脚本开头。插件作者看好友打开自己的插件时插件拿到什么身份，用
+`dev.sh friend <插件包目录或 compose 文件>`（做法和限制见 `friend-probe.sh` 开头）。
 
 内部邮箱有单独的一条（ADR-0056），**在目标主机的本机 Docker 上运行**，由调用方申请并释放栈名额：
 
@@ -230,7 +233,7 @@ DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 Debian 基础镜像从 ECR Public 拉（见 Dockerfile），不用传：
 
 ```bash
-for image in oryd/hydra:v26.2.0 ghcr.io/matrix-construct/tuwunel:v1.9.4 tusproject/tusd:v2.10.1 \
+for image in oryd/hydra:v26.2.0 ghcr.io/matrix-construct/tuwunel:v2.0.0 tusproject/tusd:v2.10.1 \
   grafana/grafana:12.2.1 traefik/whoami:v1.11 curlimages/curl:8.23.0 alpine/socat:1.8.0.3; do
   docker pull --platform linux/amd64 "$image"
   docker save --platform linux/amd64 "$image" | ssh "$DEV_HOST" docker load
