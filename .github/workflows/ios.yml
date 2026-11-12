@@ -139,9 +139,11 @@ jobs:
           rustup target add aarch64-apple-ios-sim
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          # macOS 的产物和 Linux 作业不通用，单独一个 key。main 上的条目由 cache.yml 用同一个 key 编。
+          # macOS 的产物和 Linux 作业不通用，单独一个 key。
+          # 只读：同一份 key 由 cache.yml 的 iOS 作业在 push 时编好写回。这里也写的话，
+          # 一次 main 合并会编两遍、两条运行抢着写同一个 key。
           shared-key: rust-ios
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+          save-if: false
       - name: 安装 XcodeGen（版本和 sha256 固定）
         run: |
           curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
