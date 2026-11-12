@@ -138,6 +138,16 @@ fn wildcards_other_rooms_and_unknown_entries_are_refused() {
 }
 
 #[test]
+fn event_types_take_the_whole_matrix_character_set() {
+    parse(&widget(&[
+        "org.matrix.msc2762.receive.event:com.example.foo-bar",
+        "org.matrix.msc2762.receive.event:com.example.a~b_C.2",
+        "org.matrix.msc2762.send.event:org.matrix.MixedCase",
+    ]))
+    .unwrap();
+}
+
+#[test]
 fn the_same_capability_twice_is_refused() {
     let capability = "org.matrix.msc4515.rtc_transports";
     let error = error(&widget(&[capability, capability]));

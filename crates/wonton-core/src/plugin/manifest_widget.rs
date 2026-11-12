@@ -128,12 +128,13 @@ fn capability_problem(capability: &str) -> Option<String> {
         Some((event_type, state_key)) => (event_type, Some(state_key)),
         None => (rest, None),
     };
+    // 事件类型的字符集照 Matrix 规范：字母、数字和 `.`、`_`、`-`、`~`，至少两段。
     let event_type_ok = event_type.contains('.')
         && event_type.split('.').all(|part| {
             !part.is_empty()
                 && part
                     .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'~'))
         });
     if !event_type_ok {
         return Some(format!(
