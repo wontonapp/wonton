@@ -1,6 +1,6 @@
 //! 插件表里的一项：插件现在是什么状态，网关要转发到哪里。
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -90,6 +90,8 @@ pub(super) struct Entry {
     pub(super) mcp: Option<McpTarget>,
     /// 这个异常是容器决定的，容器好了就恢复（见 [`super::watch`]）。
     pub(super) follows_containers: bool,
+    /// 提供托管能力时，网关转发托管插件请求的地址（见 [`Deployed::hosted`]）。
+    pub(super) hosted: BTreeMap<String, Endpoint>,
 }
 
 /// 部署或核对完成的插件：核心访问它网页的地址（是模型网关时还有网关接口的地址），和检查时的健康状况。
@@ -105,6 +107,8 @@ pub(super) struct Deployed {
     pub mcp: Option<McpTarget>,
     /// 直连宿主网络网页连不上。
     pub firewalled: bool,
+    /// 提供托管能力时，网关转发托管插件请求的地址：能力名 → 地址（ADR-0080）。
+    pub hosted: BTreeMap<String, Endpoint>,
 }
 
 impl Entry {
@@ -138,6 +142,7 @@ impl Entry {
             mcp: None,
             listed: Some(listed),
             follows_containers: false,
+            hosted: BTreeMap::new(),
         }
     }
 
@@ -156,6 +161,7 @@ impl Entry {
             models: deployed.models,
             proxy: deployed.proxy,
             mcp: deployed.mcp,
+            hosted: deployed.hosted,
             ..Self::new(listed, PluginStatus::Running, deployed.upstream)
         }
     }
@@ -197,6 +203,7 @@ impl Entry {
             mcp: None,
             listed: None,
             follows_containers: false,
+            hosted: BTreeMap::new(),
         }
     }
 

@@ -75,7 +75,7 @@ impl IndexEntry {
             version: package.manifest.version.clone(),
             commit: commit.to_owned(),
             files: Self::blobs(package)
-                .map(|(path, data)| (path.to_owned(), sha256_hex(data)))
+                .map(|(path, data)| (path, sha256_hex(data)))
                 .collect(),
             compose: package.source.clone(),
         };
@@ -84,10 +84,15 @@ impl IndexEntry {
     }
 
     /// 插件包的全部文件，含 compose：本地的索引目录按 sha256 把它们放在 `blobs/` 下。
-    pub fn blobs(package: &PluginPackage) -> impl Iterator<Item = (&str, &[u8])> {
+    pub fn blobs(package: &PluginPackage) -> impl Iterator<Item = (String, &[u8])> {
         let compose = (COMPOSE_FILE, package.source.as_bytes());
-        let files = package.files().iter();
-        std::iter::once(compose).chain(files.map(|(path, data)| (path.as_str(), data.as_slice())))
+        let files = package
+            .files()
+            .iter()
+            .map(|(path, data)| (path.clone(), data.as_slice()));
+        std::iter::once((COMPOSE_FILE.to_owned(), compose.1))
+            .chain(files)
+            .chain(package.static_blobs())
     }
 
     /// 把这一项写进本地的索引目录：文件放进 `blobs/`，`index.json` 里同一个来源的旧项换成这一项，别的项原样留着。
@@ -397,19 +402,35 @@ impl Files {
         sha256: &str,
         langs: &Languages,
     ) -> Result<Vec<u8>, InstallError> {
+        self.verified_with(repo, subdir, commit, path, sha256, MAX_FILE_BYTES, langs)
+            .await
+    }
+
+    /// 同 [`Self::verified`]，单个文件的上限由调用方给（静态网页的文件比引用文件大，ADR-0080）。
+    #[allow(clippy::too_many_arguments)]
+    pub async fn verified_with(
+        &self,
+        repo: &Repo,
+        subdir: Option<&str>,
+        commit: &str,
+        path: &str,
+        sha256: &str,
+        max: u64,
+        langs: &Languages,
+    ) -> Result<Vec<u8>, InstallError> {
         let full = subdir.map_or_else(|| path.to_owned(), |subdir| format!("{subdir}/{path}"));
         let data = match self {
             Self::Dir(dir) => read_blob(dir, sha256, langs)?,
             Self::GitHub(github) => github
-                .file(repo, commit, &full, MAX_FILE_BYTES, langs)
+                .file(repo, commit, &full, max, langs)
                 .await
                 .map_err(github_error)?,
             Self::Third { location, github } => {
                 let blob = format!("blobs/{sha256}");
-                match location.read(github, &blob, MAX_FILE_BYTES, langs).await {
+                match location.read(github, &blob, max, langs).await {
                     Ok(data) => data,
                     Err(_) => github
-                        .file(repo, commit, &full, MAX_FILE_BYTES, langs)
+                        .file(repo, commit, &full, max, langs)
                         .await
                         .map_err(github_error)?,
                 }
@@ -442,6 +463,28 @@ impl Files {
             files.insert(path, data);
         }
         let mut package = PluginPackage::with_files(compose, files, langs)?;
+        if let Some(root) = package.static_root() {
+            let prefix = format!("{root}/");
+            let mut found = super::super::package::static_files::StaticFiles::new();
+            for (path, sha256) in &listed.entry.files {
+                let Some(rel) = path.strip_prefix(&prefix) else {
+                    continue;
+                };
+                let data = self
+                    .verified_with(
+                        &listed.repo,
+                        listed.subdir.as_deref(),
+                        &listed.entry.commit,
+                        path,
+                        sha256,
+                        super::super::package::static_files::MAX_FILE_BYTES,
+                        langs,
+                    )
+                    .await?;
+                found.insert(rel.to_owned(), data);
+            }
+            package = package.with_static(found, langs)?;
+        }
         package.origin = Some(listed.origin());
         Ok(package)
     }

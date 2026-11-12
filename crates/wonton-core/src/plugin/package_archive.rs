@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 
 use super::languages::Languages;
-use super::package_files::{COMPOSE_FILE, FileError, MAX_FILE_BYTES, PackageFiles, normalize};
+use super::package_files::{COMPOSE_FILE, MAX_FILE_BYTES, PackageFiles, normalize};
 use crate::l10n::text;
 
 /// 压缩包最多这么大（网关的请求体上限）。
@@ -184,10 +184,49 @@ impl Archive {
         wanted: &[String],
         langs: &Languages,
     ) -> Result<PackageFiles, String> {
-        let wanted: BTreeMap<String, &str> = wanted
+        let wanted: BTreeMap<String, String> = wanted
             .iter()
-            .map(|path| (format!("{root}{path}"), path.as_str()))
+            .map(|path| (format!("{root}{path}"), path.clone()))
             .collect();
+        self.read_wanted(&wanted, MAX_FILE_BYTES, langs)
+    }
+
+    /// `prefix`（带结尾的 `/`）下的全部文件，路径相对 `prefix`：静态网页的目录（ADR-0080）。目录项不算文件；
+    /// 软链接这类不是普通文件的项报错。
+    pub fn read_tree(
+        &self,
+        prefix: &str,
+        max: u64,
+        langs: &Languages,
+    ) -> Result<PackageFiles, String> {
+        let mut wanted = BTreeMap::new();
+        for (path, kind) in self.entries(langs)? {
+            let Some(rel) = path.strip_prefix(prefix) else {
+                continue;
+            };
+            match kind {
+                Kind::File => {
+                    wanted.insert(path.clone(), rel.to_owned());
+                }
+                Kind::Other(what) => {
+                    return Err(text(
+                        langs,
+                        "plugin-install-arch-not-regular",
+                        &[("rel", rel.into()), ("what", what.into())],
+                    ));
+                }
+                Kind::Dir => {}
+            }
+        }
+        self.read_wanted(&wanted, max, langs)
+    }
+
+    fn read_wanted(
+        &self,
+        wanted: &BTreeMap<String, String>,
+        max: u64,
+        langs: &Languages,
+    ) -> Result<PackageFiles, String> {
         let mut seen = BTreeSet::new();
         for (path, kind) in self.entries(langs)? {
             let Some(rel) = wanted.get(&path) else {
@@ -197,7 +236,7 @@ impl Archive {
                 return Err(text(
                     langs,
                     "plugin-install-arch-not-regular",
-                    &[("rel", (*rel).into()), ("what", what.into())],
+                    &[("rel", rel.as_str().into()), ("what", what.into())],
                 ));
             }
             // 同名的两项，不同的工具可能解出不同的那个：拒绝，主人核对摘要才有意义。
@@ -205,22 +244,22 @@ impl Archive {
                 return Err(text(
                     langs,
                     "plugin-install-arch-duplicate-file",
-                    &[("rel", (*rel).into())],
+                    &[("rel", rel.as_str().into())],
                 ));
             }
         }
         let mut files = PackageFiles::new();
         let mut keep = |path: &str, data: Vec<u8>| -> Result<(), String> {
             let rel = wanted.get(path).expect("only wanted files are read");
-            if data.len() as u64 > MAX_FILE_BYTES {
-                return Err(format!("`{rel}` {}", FileError::TooBig));
+            if data.len() as u64 > max {
+                return Err(format!("`{rel}` is over {} KiB", max >> 10));
             }
-            files.insert((*rel).to_owned(), data);
+            files.insert(rel.clone(), data);
             Ok(())
         };
         match &self.format {
-            Format::Tar(tar) => read_tar(tar, &wanted, &mut keep, langs)?,
-            Format::Zip(zip) => read_zip(zip, &wanted, &mut keep, langs)?,
+            Format::Tar(tar) => read_tar(tar, wanted, max, &mut keep, langs)?,
+            Format::Zip(zip) => read_zip(zip, wanted, max, &mut keep, langs)?,
         }
         Ok(files)
     }
@@ -230,7 +269,8 @@ type Keep<'a> = &'a mut dyn FnMut(&str, Vec<u8>) -> Result<(), String>;
 
 fn read_tar(
     tar: &[u8],
-    wanted: &BTreeMap<String, &str>,
+    wanted: &BTreeMap<String, String>,
+    max: u64,
     keep: Keep<'_>,
     langs: &Languages,
 ) -> Result<(), String> {
@@ -263,7 +303,7 @@ fn read_tar(
             .into_owned();
         let Ok(path) = normalize(&raw) else { continue };
         if wanted.contains_key(&path) && tar_kind(entry.header().entry_type()) == Kind::File {
-            let data = read_limited(entry, &path, langs)?;
+            let data = read_limited(entry, &path, max, langs)?;
             keep(&path, data)?;
         }
     }
@@ -272,7 +312,8 @@ fn read_tar(
 
 fn read_zip(
     zip: &[u8],
-    wanted: &BTreeMap<String, &str>,
+    wanted: &BTreeMap<String, String>,
+    max: u64,
     keep: Keep<'_>,
     langs: &Languages,
 ) -> Result<(), String> {
@@ -311,7 +352,7 @@ fn read_zip(
             )
         })?;
         if entry.is_file() {
-            let data = read_limited(entry, &path, langs)?;
+            let data = read_limited(entry, &path, max, langs)?;
             keep(&path, data)?;
         }
     }
@@ -339,18 +380,20 @@ fn tar_kind(kind: tar::EntryType) -> Kind {
     }
 }
 
-fn read_limited(entry: impl Read, path: &str, langs: &Languages) -> Result<Vec<u8>, String> {
+fn read_limited(
+    entry: impl Read,
+    path: &str,
+    max: u64,
+    langs: &Languages,
+) -> Result<Vec<u8>, String> {
     let mut data = Vec::new();
-    entry
-        .take(MAX_FILE_BYTES + 1)
-        .read_to_end(&mut data)
-        .map_err(|e| {
-            text(
-                langs,
-                "plugin-install-arch-read-entry-failed",
-                &[("path", path.into()), ("error", e.to_string().into())],
-            )
-        })?;
+    entry.take(max + 1).read_to_end(&mut data).map_err(|e| {
+        text(
+            langs,
+            "plugin-install-arch-read-entry-failed",
+            &[("path", path.into()), ("error", e.to_string().into())],
+        )
+    })?;
     Ok(data)
 }
 

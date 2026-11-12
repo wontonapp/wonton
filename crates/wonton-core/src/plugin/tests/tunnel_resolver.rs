@@ -128,6 +128,8 @@ impl Fixture {
                 family: false,
                 settings: Default::default(),
                 settings_changed_ms: None,
+                static_files: Default::default(),
+                hosted: Vec::new(),
             })
             .unwrap();
         self.manager

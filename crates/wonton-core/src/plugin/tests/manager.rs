@@ -368,6 +368,8 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             family: false,
             settings: Default::default(),
             settings_changed_ms: None,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         })
         .unwrap();
     docker.add_container(&container_name("app-good", "web"), "app.good");
@@ -759,6 +761,8 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
             family: false,
             settings: Default::default(),
             settings_changed_ms: None,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         })
         .unwrap();
     docker.add_container(&container_name("app-test", "web"), "app.test");

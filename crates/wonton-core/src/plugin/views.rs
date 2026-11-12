@@ -41,7 +41,7 @@ impl PluginManager {
                 let installed_at = entry.listed.as_ref().map_or(0, |l| l.installed_at);
                 (
                     (!entry.system, installed_at),
-                    self.listing(id, entry, langs),
+                    self.listing(&plugins, id, entry, langs),
                 )
             })
             .collect();
@@ -59,7 +59,7 @@ impl PluginManager {
     /// 一个已安装的插件；没装时为空。
     pub fn installed_plugin(&self, id: &PluginId, langs: &Languages) -> Option<InstalledPlugin> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
-        let plugin = self.listing(id, plugins.get(id)?, langs);
+        let plugin = self.listing(&plugins, id, plugins.get(id)?, langs);
         drop(plugins);
         Some(self.with_dependency_status(self.with_bot(plugin), langs))
     }
@@ -156,6 +156,7 @@ impl PluginManager {
                 .models_hint(id, m)
                 .into_iter()
                 .chain(self.dependency_hints(m, langs))
+                .chain(self.hosted_hint(m))
                 .collect(),
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),
@@ -459,7 +460,13 @@ impl PluginManager {
     }
 
     /// 列表里的一项，还没填 Bot。
-    fn listing(&self, id: &PluginId, entry: &Entry, langs: &Languages) -> InstalledPlugin {
+    fn listing(
+        &self,
+        plugins: &std::collections::BTreeMap<PluginId, Entry>,
+        id: &PluginId,
+        entry: &Entry,
+        langs: &Languages,
+    ) -> InstalledPlugin {
         let manifest = entry.listed.as_ref().map(|l| &l.manifest);
         let origin = entry.listed.as_ref().and_then(|l| l.origin.as_ref());
         let (upgrade, mut notices) =
@@ -520,7 +527,10 @@ impl PluginManager {
             provider: origin.map(Origin::provider),
             via_index: origin.and_then(Origin::via_index),
             written_by: None,
-            status: state(&entry.status, entry.health),
+            status: state(
+                &super::install_hosted::effective_status(plugins, entry, langs),
+                entry.health,
+            ),
             web_url: self.open_url(id, entry),
             web_display: manifest
                 .and_then(|m| m.webui.as_ref())

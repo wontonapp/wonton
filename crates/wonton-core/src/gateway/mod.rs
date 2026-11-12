@@ -40,6 +40,7 @@ mod files;
 mod friends;
 mod friends_wiring;
 mod health;
+mod hosted;
 mod isolation;
 mod lan;
 mod link_preview;
@@ -650,6 +651,9 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         Ok(upstream) => upstream,
         Err(response) => return *response,
     };
+    if let Some(hosted) = &route.hosted {
+        return hosted::forward(gateway, &route, &upstream, hosted, req, &langs, format).await;
+    }
     if let Some(person) = &person
         && let Err(response) = proxy_sso::attach_credentials(
             gateway,

@@ -98,6 +98,8 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
             family: false,
             settings: Default::default(),
             settings_changed_ms: None,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         })
         .unwrap();
     docker.add_container(&container_name("app-test", "web"), "app.test");

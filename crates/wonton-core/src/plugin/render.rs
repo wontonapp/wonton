@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use bollard::models::ContainerCreateBody;
+use bollard::models::{ContainerCreateBody, Mount, MountType};
 
 use super::bot_services::{BotVars, ServiceVars};
 use super::compose::{DependCondition, NetworkMode, PullPolicy, Service, StringOrList};
@@ -92,6 +92,8 @@ pub struct InstallContext {
     pub instance: Instance,
     /// 插件私有数据目录（宿主路径）。
     pub app_data: PathBuf,
+    /// 托管形态的总目录（宿主路径，ADR-0080）：提供方挂 `<它>/<能力名>`。
+    pub hosted_root: PathBuf,
     /// 核心管理的配置文件目录（宿主路径），`read_only` 服务的 `configs` 从这里挂进容器。
     pub config_store: PathBuf,
     /// 已授权的共享文件夹：名称 → 宿主路径。
@@ -234,6 +236,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         .collect();
     InstallContext {
         app_data: root.join("apps").join(&slug),
+        hosted_root: root.join("hosted"),
         config_store: root.join("core").join("configs"),
         shares,
         app_url: webui.map(|_| url.clone()),
@@ -463,6 +466,7 @@ fn render_service_containers(
             langs,
         }
         .build(&service.volumes, binds)?;
+        mounts.extend(hosted_mounts(manifest, ctx, name));
         let (files, store_dir) = configs::resolve_service(
             package,
             service,
@@ -651,6 +655,30 @@ fn add_relays(
             relay,
         ));
     }
+}
+
+/// 托管能力的提供方（ADR-0080）：核心把这项能力的总目录挂到它在 `provides.<能力>.mount` 声明的位置，
+/// 只读还是读写按能力表。以后装、卸托管插件只改目录里的内容，不重建这个容器。
+fn hosted_mounts(manifest: &Manifest, ctx: &InstallContext, service: &str) -> Vec<Mount> {
+    let Some(provides) = &manifest.provides else {
+        return Vec::new();
+    };
+    provides
+        .capabilities
+        .iter()
+        .filter(|(_, spec)| spec.service == service)
+        .filter_map(|(name, spec)| {
+            let hosted = super::capabilities::lookup(name)?.hosted?;
+            let read_only = hosted.mount? == super::capabilities::HostedMount::ReadOnly;
+            Some(Mount {
+                target: Some(spec.mount.clone()?),
+                source: Some(ctx.hosted_root.join(name).display().to_string()),
+                typ: Some(MountType::BIND),
+                read_only: Some(read_only),
+                ..Default::default()
+            })
+        })
+        .collect()
 }
 
 /// `network_mode: none` 的服务没有网络，网页入口和 MCP 入口不能指向它。

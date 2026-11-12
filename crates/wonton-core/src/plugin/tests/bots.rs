@@ -180,6 +180,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
     let ctx = InstallContext {
         slug: "app-test".into(),
         instance: Default::default(),
+        hosted_root: std::path::PathBuf::from("/hosted"),
         app_data: "/apps/app-test".into(),
         config_store: "/data/core/configs".into(),
         shares: Default::default(),

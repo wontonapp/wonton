@@ -188,6 +188,7 @@ impl PluginManager {
             mcp: self.mcp_upstream(manifest, &network, &secrets).await?,
             proxy: proxy.map(Arc::new),
             firewalled: record.firewalled,
+            hosted: self.hosted_upstreams(manifest, &network).await?,
         }))
     }
 

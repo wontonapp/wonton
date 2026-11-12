@@ -455,6 +455,8 @@ async fn a_bot_plugin_can_change_its_limits() {
             family: false,
             settings: Default::default(),
             settings_changed_ms: None,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         })
         .unwrap();
     let web = container_name("app-test", "web");

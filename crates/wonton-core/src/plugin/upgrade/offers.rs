@@ -72,7 +72,7 @@ pub struct Upgrades {
 }
 
 impl Upgrades {
-    pub(super) fn forget(&self, id: &PluginId) {
+    pub(in crate::plugin) fn forget(&self, id: &PluginId) {
         self.checked.write().expect("升级检查锁中毒").remove(id);
         let mut failed = self.bundled_failed.write().expect("升级检查锁中毒");
         failed.remove(id);

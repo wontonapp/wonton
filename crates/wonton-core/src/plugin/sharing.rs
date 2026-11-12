@@ -127,8 +127,10 @@ impl PluginManager {
     ) -> T {
         let plugins = self.plugins.read().expect("plugin registry lock poisoned");
         let entry = plugins.get(id);
+        // 静态网页第一步不开放给好友（ADR-0080 第 3 节）：好友能不能写它的数据存储还没定。
         let webui = entry
             .and_then(|entry| entry.listed.as_ref())
+            .filter(|listed| super::install_hosted::hosted_capability(&listed.manifest).is_none())
             .and_then(|listed| listed.manifest.webui.as_ref());
         commit(PluginOffer {
             plugin_id: id.to_string(),
