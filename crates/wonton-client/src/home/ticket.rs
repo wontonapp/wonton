@@ -59,6 +59,11 @@ struct Server {
 }
 
 impl Ticket {
+    /// 连接信息里有没有中继表：endpoint 重建的证据只在有中继时凑得齐（ADR-0032 §4）。
+    pub(crate) fn has_relays(&self) -> bool {
+        !self.server.relays.is_empty()
+    }
+
     /// 解析连接信息。至少要有一个中继地址或直连地址：只给 endpoint ID 时要靠地址发现，国内靠不住。
     pub(crate) fn parse(text: &str) -> Result<Self, String> {
         let mut ticket: Self = serde_json::from_str(text).map_err(|e| {
