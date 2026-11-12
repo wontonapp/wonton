@@ -6,6 +6,7 @@ use wonton_core::matrix::FederationBlocks;
 use wonton_core::plugin::docker::Engine;
 /// 安装顺序：注册并记下名字、签证书、写配置，最后才由安装脚本启动 Tuwunel。
 pub(super) async fn init(args: &[String]) -> anyhow::Result<()> {
+    // 第二个参数是基础域名：旧版本的升级器照这个格式调新镜像的 `init`，所以留着，`init` 不再用它。
     let [dir, _base_domain] = args else {
         bail!("用法：wonton-core init <安装目录> <基础域名>");
     };
