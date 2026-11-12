@@ -53,6 +53,9 @@ fn core_error_response(status: u16) -> Response {
 /// 按住不回应的路径：测试要卡住一次请求时（如保存 key 途中再存一次），放行后才回。
 type Holds = Mutex<HashMap<(Method, String), Arc<watch::Sender<bool>>>>;
 
+/// 排队给一个方法+路径的带延迟预设回应。
+type DelayedCanned = VecDeque<(Canned, Duration)>;
+
 #[derive(Default)]
 pub struct CoreState {
     /// 依次给出的已安装列表，最后一份一直用下去。
@@ -71,6 +74,8 @@ pub struct CoreState {
     standing_headered: Mutex<HashMap<(Method, String), Headered>>,
     /// 按住不回应的路径：测试要卡住一次请求时（如保存 key 途中再存一次），放行后才回。
     holds: Holds,
+    /// 带延迟的预设回应：发出早的请求把它取走，睡完才回，制造“发得早、回得晚”。
+    canned_delayed: Mutex<HashMap<(Method, String), DelayedCanned>>,
     seen: Mutex<Vec<Seen>>,
 }
 
@@ -135,6 +140,16 @@ impl CoreState {
         }
     }
 
+    /// 发得早的请求取走这份回应、睡完 `delay` 才回：制造“发得早、回得晚”的旧响应。
+    pub fn answer_delayed(&self, method: Method, path: &str, canned: Canned, delay: Duration) {
+        self.canned_delayed
+            .lock()
+            .unwrap()
+            .entry((method, path.to_owned()))
+            .or_default()
+            .push_back((canned, delay));
+    }
+
     pub fn set_lists(&self, lists: Vec<Vec<InstalledPlugin>>) {
         *self.lists.lock().unwrap() = lists.into();
     }
@@ -197,6 +212,47 @@ fn empty_pins() -> Response {
         .into_response()
 }
 
+/// 带延迟的预设回应：弹出就睡，保证这份旧回应一定是发得早的那个请求取走、晚于新回应到达。
+async fn delayed_canned_response(
+    core: &CoreState,
+    method: &Method,
+    path: &str,
+) -> Option<Response> {
+    let delayed = core
+        .canned_delayed
+        .lock()
+        .unwrap()
+        .get_mut(&(method.clone(), path.to_owned()))
+        .and_then(|queue| queue.pop_front());
+    let (Canned(status, body), delay) = delayed?;
+    tokio::time::sleep(delay).await;
+    Some(
+        Response::builder()
+            .status(StatusCode::from_u16(status).unwrap())
+            .body(Body::from(body))
+            .unwrap(),
+    )
+}
+
+/// GET /_wonton/api/plugins：依次给出预设的列表，最后一份一直用下去。
+fn installed_response(core: &CoreState) -> Response {
+    let mut lists = core.lists.lock().unwrap();
+    let plugins = if lists.len() > 1 {
+        lists.pop_front().unwrap()
+    } else {
+        lists.front().cloned().unwrap_or_default()
+    };
+    (
+        StatusCode::OK,
+        serde_json::to_string(&InstalledPlugins {
+            plugins,
+            upgrade_check: None,
+        })
+        .unwrap(),
+    )
+        .into_response()
+}
+
 pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
     let path = parts
@@ -231,6 +287,9 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
     if let Some(response) = headered_response(&core, &parts.method, parts.uri.path()) {
         return response;
     }
+    if let Some(response) = delayed_canned_response(&core, &parts.method, parts.uri.path()).await {
+        return response;
+    }
     let canned = core
         .canned
         .lock()
@@ -255,21 +314,7 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
     }
     let json = |value: String| (StatusCode::OK, value).into_response();
     match (&parts.method, parts.uri.path()) {
-        (&Method::GET, "/_wonton/api/plugins") => {
-            let mut lists = core.lists.lock().unwrap();
-            let plugins = if lists.len() > 1 {
-                lists.pop_front().unwrap()
-            } else {
-                lists.front().cloned().unwrap_or_default()
-            };
-            json(
-                serde_json::to_string(&InstalledPlugins {
-                    plugins,
-                    upgrade_check: None,
-                })
-                .unwrap(),
-            )
-        }
+        (&Method::GET, "/_wonton/api/plugins") => installed_response(&core),
         (&Method::GET, "/_wonton/api/store") => json(serde_json::to_string(&listing()).unwrap()),
         (&Method::GET, "/_wonton/api/panel/pins") => empty_pins(),
         (&Method::POST, "/_wonton/api/plugins/preview") => {
