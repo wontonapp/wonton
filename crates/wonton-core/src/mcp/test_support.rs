@@ -20,7 +20,8 @@ use wonton_protocol::{ConfirmationCard, ConfirmationState};
 
 use super::Notifier;
 
-/// 假插件：`search`、`find` 标了只读，`delete`、`archive` 没标（会改数据）。`deleted` 记下删过的笔记。
+/// 假插件：`search`、`find` 标了只读，`delete`、`archive` 没标（会改数据），`purge` 标了会删东西
+/// （`destructiveHint`）。`deleted` 记下删过的笔记。
 #[derive(Clone)]
 pub struct Notes {
     pub deleted: Arc<Mutex<Vec<String>>>,
@@ -85,8 +86,10 @@ impl ServerHandler for Notes {
         let archive = Tool::new("archive", "归档文件", schema());
         let boom = Tool::new("boom", "总是报错", schema())
             .with_annotations(ToolAnnotations::new().read_only(true));
+        let purge = Tool::new("purge", "彻底删掉笔记", schema())
+            .with_annotations(ToolAnnotations::new().read_only(false).destructive(true));
         Ok(ListToolsResult::with_all_items(vec![
-            search, delete, find, archive, boom,
+            search, delete, find, archive, boom, purge,
         ]))
     }
 
@@ -117,7 +120,7 @@ impl ServerHandler for Notes {
             "boom" => return Err(ErrorData::internal_error("炸了", None)),
             "find" | "archive" => return Ok(self.found.lock().unwrap().clone().into()),
             "search" => format!("找到 {name}.txt"),
-            "delete" => {
+            "delete" | "purge" => {
                 self.deleted.lock().unwrap().push(name.clone());
                 format!("删掉了 {name}.txt")
             }

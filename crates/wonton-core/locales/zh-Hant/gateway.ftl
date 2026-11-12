@@ -107,6 +107,7 @@ gateway-body-invalid = 請求內容不合法：{ $error }
 gateway-bot-not-found = 沒有這個 Bot：{ $caller }
 gateway-bot-not-in-plugin = 應用程式 { $id } 沒有這個 Bot：{ $caller }
 gateway-tool-not-found = 應用程式 { $id } 沒有工具 { $tool }
+gateway-tool-deletes = 工具 { $tool } 會刪除或覆寫資料，每次都要確認，不能標成唯讀
 gateway-plugin-not-running = 這個應用程式沒有在執行，或者沒有宣告工具
 
 # App 回答確認請求。

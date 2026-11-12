@@ -107,6 +107,7 @@ gateway-body-invalid = 请求体不合法：{ $error }
 gateway-bot-not-found = 没有这个 Bot：{ $caller }
 gateway-bot-not-in-plugin = 应用 { $id } 没有这个 Bot：{ $caller }
 gateway-tool-not-found = 应用 { $id } 没有工具 { $tool }
+gateway-tool-deletes = 工具 { $tool } 会删除或覆盖数据，每次都要确认，不能标成只读
 gateway-plugin-not-running = 这个应用没有在运行，或者没有声明工具
 
 # App 回答确认卡片。

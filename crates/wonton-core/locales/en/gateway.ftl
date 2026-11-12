@@ -107,6 +107,7 @@ gateway-body-invalid = The request body isn't valid: { $error }
 gateway-bot-not-found = No such bot: { $caller }
 gateway-bot-not-in-plugin = The app { $id } has no such bot: { $caller }
 gateway-tool-not-found = The app { $id } has no tool { $tool }
+gateway-tool-deletes = The tool { $tool } deletes or overwrites data, so it asks every time and can't be marked read-only
 gateway-plugin-not-running = This app isn't running, or it doesn't declare any tools
 
 # Confirmation answers from the App.
