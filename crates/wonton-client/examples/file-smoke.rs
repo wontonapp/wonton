@@ -15,6 +15,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use wonton_client::{
     Action, ChatAccount, ClientCore, FileCard, FileId, FileInfo, FileSource, HomeStatus,
@@ -257,7 +258,13 @@ impl<'a> Chat<'a> {
     async fn open(core: &'a Arc<ClientCore>, room: &str, bot: &str) -> Outcome<Self> {
         let deadline = Instant::now() + SETUP;
         let timeline = loop {
-            match core.subscribe_timeline(room.to_owned()).await {
+            match core
+                .subscribe_timeline(TimelineTarget {
+                    room_id: room.to_owned(),
+                    thread_root: None,
+                })
+                .await
+            {
                 Ok(timeline) => break timeline,
                 Err(error) if Instant::now() > deadline => {
                     return Err(format!("打不开时间线：{error}"));
@@ -289,10 +296,15 @@ impl<'a> Chat<'a> {
     fn send(&self, text: &str) -> Outcome<()> {
         println!("  → {text}");
         self.core
-            .dispatch(Action::SendText {
-                room_id: self.room.clone(),
-                body: text.to_owned(),
-                reply_to: None,
+            .dispatch(Action::Timeline {
+                action: TimelineAction::SendText {
+                    target: TimelineTarget {
+                        room_id: self.room.clone(),
+                        thread_root: None,
+                    },
+                    body: text.to_owned(),
+                    reply_to: None,
+                },
             })
             .map_err(|e| format!("发不出去：{e}"))
     }

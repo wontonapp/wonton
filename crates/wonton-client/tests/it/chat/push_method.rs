@@ -8,6 +8,7 @@ use wonton_client::{
 };
 use wonton_matrix::ChatRoom;
 use wonton_protocol::SettingsEntry;
+use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::accept_the_bots_invite;
 use super::push::endpoint;
@@ -16,10 +17,15 @@ use super::support::{Home, Phone, ToDeviceHold, WAIT};
 /// 自己带出去的那条会同步回来，但不该进后台通知；同一条别的照常收集。
 async fn own_message_is_not_notified(phone: &Phone, bot_room: &ChatRoom, room_id: &str) {
     phone
-        .dispatch(Action::SendText {
-            room_id: room_id.to_owned(),
-            body: "这是我自己说的".to_owned(),
-            reply_to: None,
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: TimelineTarget {
+                    room_id: room_id.to_owned(),
+                    thread_root: None,
+                },
+                body: "这是我自己说的".to_owned(),
+                reply_to: None,
+            },
         })
         .unwrap();
     bot_room.send_text("收到").await.expect("Bot 再发一条");

@@ -76,6 +76,10 @@ pub struct PushNotification {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub contact_request: Option<crate::ContactRequestPush>,
+    /// 消息发在旁聊里时是旁聊根的事件 ID（ADR-0093 §4）：点通知进那个旁聊，不是主对话。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub thread_root: Option<String>,
 }
 
 /// 通知的类别。Android 每个类别一个通知渠道，主人在系统设置里分别开关；iOS 当作通知的分类。
@@ -194,6 +198,7 @@ mod tests {
                 }),
             }),
             contact_request: None,
+            thread_root: None,
         };
         assert_eq!(round_trip(&notification), notification);
     }

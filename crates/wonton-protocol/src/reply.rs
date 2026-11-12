@@ -10,7 +10,7 @@ use crate::MediaHandle;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct QuotedMessage {
-    /// 原消息的事件 ID，回复时原样交回核心（[`Action::SendText`](crate::Action::SendText) 的 `reply_to`）。
+    /// 原消息的事件 ID，回复时原样交回核心（[`TimelineAction::SendText`](crate::TimelineAction::SendText) 的 `reply_to`）。
     pub event_id: String,
     pub sender_id: String,
     /// 发送者的显示名，没有设置时是用户 ID。
@@ -56,7 +56,7 @@ pub enum ReplyQuote {
     },
 }
 
-/// 一个房间输入框的草稿，`ClientCore::draft` 返回它；用 [`Action::SetDraft`](crate::Action::SetDraft) 记下。
+/// 一个房间输入框的草稿，`ClientCore::draft` 返回它；用 [`TimelineAction::SetDraft`](crate::TimelineAction::SetDraft) 记下。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ComposerDraft {

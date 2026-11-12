@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use wonton_client::{
     Action, BackPagination, ClientCore, KeyNotice, TimelineDiff, TimelineItem, TimelineScroll,
@@ -42,7 +43,10 @@ const PAGE_EVERY: Duration = Duration::from_millis(250);
 impl Timeline {
     pub async fn open(phone: &Phone, room_id: &str) -> Self {
         let subscription = phone
-            .subscribe_timeline(room_id.to_owned())
+            .subscribe_timeline(TimelineTarget {
+                room_id: room_id.to_owned(),
+                thread_root: None,
+            })
             .await
             .expect("订阅时间线");
         Self {
@@ -117,9 +121,14 @@ impl Timeline {
     pub async fn report_scroll(&mut self, scroll: TimelineScroll) {
         self.scroll = scroll;
         self.core
-            .dispatch(Action::SetTimelineScroll {
-                room_id: self.room_id.clone(),
-                scroll,
+            .dispatch(Action::Timeline {
+                action: TimelineAction::SetTimelineScroll {
+                    target: TimelineTarget {
+                        room_id: self.room_id.clone(),
+                        thread_root: None,
+                    },
+                    scroll,
+                },
             })
             .expect("报告滚动位置");
         let waiting = async {
@@ -178,8 +187,13 @@ impl Timeline {
             self.last_page = Instant::now();
             self.dispatched += 1;
             self.core
-                .dispatch(Action::PaginateBackwards {
-                    room_id: self.room_id.clone(),
+                .dispatch(Action::Timeline {
+                    action: TimelineAction::PaginateBackwards {
+                        target: TimelineTarget {
+                            room_id: self.room_id.clone(),
+                            thread_root: None,
+                        },
+                    },
                 })
                 .expect("往回翻");
         }

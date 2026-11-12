@@ -52,9 +52,11 @@ mod session;
 mod settings;
 mod share_transport;
 mod sharing;
+mod side_chat;
 mod sidebar;
 mod tabs;
 mod timeline;
+mod timeline_action;
 mod verification;
 
 pub use action::Action;
@@ -255,6 +257,9 @@ pub use sharing::{
     ShareProblem, ShareRecipient, SharedAppRow, SharedAppsSource, SharedAppsState,
     SharedAppsViewModel, SharedPlugin,
 };
+pub use side_chat::{
+    SideChatCard, SideChatResult, SideChatResultState, SideChatRoot, SideChatState, SideChatSupport,
+};
 pub use sidebar::{SidebarApp, SidebarOpen, SidebarViewModel};
 pub use tabs::{
     CandidatePlugin, PluginTab, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem,
@@ -266,6 +271,7 @@ pub use timeline::{
     SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll,
     TimelineUpdate, TimelineViewport,
 };
+pub use timeline_action::{TimelineAction, TimelineTarget};
 pub use verification::{
     KeyHandoff, VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
 };

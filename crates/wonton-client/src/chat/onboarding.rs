@@ -74,6 +74,7 @@ mod tests {
             is_read_only: false,
             membership: RoomMembership::Joined,
             preview: None,
+            side_chats: false,
             unread_count: 0,
         }
     }

@@ -109,6 +109,10 @@ pub struct PendingConfirmation {
 pub struct ChatContact {
     pub user_id: String,
     pub name: String,
+    /// 选这个人开新旁聊时在哪个房间开（ADR-0093 §4）：和这个人已有的、有支持声明的私聊。
+    /// 为空时壳走 `StartDirectChat` 先建私聊。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side_chat_room_id: Option<String>,
 }
 
 /// 本设备的 Matrix 账号。
@@ -307,6 +311,9 @@ pub struct RoomRow {
     pub membership: RoomMembership,
     /// 最新一条消息的预览；还没有消息或还没同步到时为空。
     pub preview: Option<RoomPreview>,
+    /// 房间里有旁聊支持声明（ADR-0093 §1）：可以开新旁聊，旁聊有结果行。声明还没同步到时是 false。
+    #[serde(default)]
+    pub side_chats: bool,
     /// 未读消息数。
     pub unread_count: u64,
     /// 打开这个房间时怎么显示（ADR-0060）。
@@ -354,6 +361,11 @@ pub enum MessageSummary {
     /// 本机还没有房间密钥，解不开。
     Undecryptable,
     Redacted,
+    /// 旁聊（ADR-0093）：根消息和结果行在聊天列表里的预览。
+    SideChat {
+        title: String,
+        state: crate::SideChatState,
+    },
     /// 其他类型的事件，`kind` 是事件类型原文，如 `m.sticker`。
     Other {
         kind: String,
@@ -478,6 +490,7 @@ mod tests {
                     body: MessageSummary::Image,
                     timestamp_ms: 1_793_000_000_000,
                 }),
+                side_chats: false,
                 unread_count: 2,
             }],
             problem: Some(ChatProblem {
@@ -507,6 +520,7 @@ mod tests {
                 category: NotificationCategory::Message,
                 confirmation: None,
                 contact_request: None,
+                thread_root: None,
             }],
             bots: Vec::new(),
         }
@@ -538,10 +552,15 @@ mod tests {
             Action::StartDirectChat {
                 user_id: "@hermes:home.example".into(),
             },
-            Action::SendImage {
-                room_id: "!a:home.example".into(),
-                image: image.clone(),
-                reply_to: None,
+            Action::Timeline {
+                action: crate::TimelineAction::SendImage {
+                    target: crate::TimelineTarget {
+                        room_id: "!a:home.example".into(),
+                        thread_root: None,
+                    },
+                    image: image.clone(),
+                    reply_to: None,
+                },
             },
             Action::RecoverEncryption {
                 recovery_key: SecretString::new(KEY),

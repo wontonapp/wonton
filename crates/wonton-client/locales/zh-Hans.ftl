@@ -170,6 +170,7 @@ chat-layout-change-failed = 改显示方式没成功：{ $reason }
 chat-session-device-revoked = 这台设备在 Matrix 上已被吊销，需要主人重新配对。
 
 # 壳把不认识的操作分给聊天时显示。
+side-chat-not-ready = 这个版本的客户端核心还不支持旁聊。
 chat-invalid-action = 不是聊天操作
 # 发起私聊时给的 ID 不像 @名字:服务器 时显示。
 chat-invalid-user-id = ID 的格式不对，应该像 @名字:服务器

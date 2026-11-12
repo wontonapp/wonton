@@ -8,6 +8,7 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.FriendsViewModel
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PeersViewModel
+import app.wonton.protocol.TimelineTarget
 import app.wonton.protocol.PluginsViewModel
 import app.wonton.protocol.SettingsViewModel
 import app.wonton.protocol.ServersViewModel
@@ -36,7 +37,7 @@ fun ClientCore.chatUpdates(): Flow<ChatViewModel> = flow {
  * 批次的语义见核心的 `TimelineSubscription`。打不开时流以 [CoreException] 结束；取消和释放同 [chatUpdates]。
  */
 fun ClientCore.timelineUpdates(roomId: String): Flow<TimelineUpdate> = flow {
-    subscribeTimeline(roomId).use { subscription ->
+    subscribeTimeline(TimelineTarget(roomId, null)).use { subscription ->
         while (true) {
             emit(subscription.next() ?: break)
         }

@@ -284,6 +284,7 @@ private fun previewInviteRow() = RoomRow(
     isReadOnly = false,
     membership = RoomMembership.INVITED,
     preview = null,
+    sideChats = false,
     unreadCount = 0u,
     layout = ChatLayout(form = ChatForm.BUBBLES, textScale = ChatTextScale.STANDARD, code = CodeOverflow.WRAP),
 )

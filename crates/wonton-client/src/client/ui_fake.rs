@@ -126,6 +126,7 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
             timestamp_ms: 1_792_000_000_000,
         }),
         unread_count: 1,
+        side_chats: false,
         layout: ChatLayout::default(),
     }];
     chat.problem = None;

@@ -2,6 +2,7 @@
 
 use serde_json::json;
 use wonton_client::{Action, Answer, PendingConfirmation};
+use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::confirmation::{
     card, content, core_error, core_room, edit, in_ten_minutes, joined_direct_chat, now_ms, send,
@@ -194,10 +195,15 @@ async fn the_notice_room_is_read_only_and_other_chats_are_not() {
     );
 
     let send = |room_id: &str| {
-        phone.dispatch(Action::SendText {
-            room_id: room_id.to_owned(),
-            body: "你好".to_owned(),
-            reply_to: None,
+        phone.dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: TimelineTarget {
+                    room_id: room_id.to_owned(),
+                    thread_root: None,
+                },
+                body: "你好".to_owned(),
+                reply_to: None,
+            },
         })
     };
     assert!(send(notices.as_str()).is_err());

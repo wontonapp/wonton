@@ -76,7 +76,7 @@ impl TimelineSubscription {
         }
     }
 
-    /// 壳报告列表停在哪（[`Action::SetTimelineScroll`](wonton_protocol::Action::SetTimelineScroll)）。
+    /// 壳报告列表停在哪（[`TimelineAction::SetTimelineScroll`](wonton_protocol::TimelineAction::SetTimelineScroll)）。
     /// 跨过底部时发一次，下一批更新里带重新算过的位置和新消息数。
     pub fn set_scroll(&self, scroll: TimelineScroll) {
         self.scroll.send_replace(scroll);

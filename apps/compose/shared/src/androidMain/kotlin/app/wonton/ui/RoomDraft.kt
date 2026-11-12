@@ -15,6 +15,8 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.QuotedMessage
 import app.wonton.protocol.ReplyQuote
+import app.wonton.protocol.TimelineAction
+import app.wonton.protocol.TimelineTarget
 
 /**
  * 输入框里的草稿和正在回复的消息。草稿在核心里按房间存，这里只是它的一份本地副本：退出房间、重启 App 再回来还在。
@@ -77,7 +79,11 @@ class RoomDraft(
         save()
     }
 
-    private fun save() = onAction(Action.SetDraft(roomId, body.value, quoted.value?.eventId))
+    private fun save() = onAction(
+        Action.Timeline(
+            TimelineAction.SetDraft(TimelineTarget(roomId, null), body.value, quoted.value?.eventId),
+        ),
+    )
 }
 
 /**
@@ -92,7 +98,7 @@ fun rememberRoomDraft(core: ClientCore, roomId: String, onAction: (Action) -> Un
     val focus = remember(roomId) { mutableIntStateOf(0) }
     val touched = remember(roomId) { mutableStateOf(false) }
     LaunchedEffect(core, roomId) {
-        runCatching { core.draft(roomId) }.onSuccess { stored ->
+        runCatching { core.draft(TimelineTarget(roomId, null)) }.onSuccess { stored ->
             // 读回排队时排在它前面的写入都已落盘，但它排不进主人之后的新写入：动过草稿就以本机为准。
             if (!touched.value) {
                 if (body.value.isEmpty()) body.value = stored?.body.orEmpty()

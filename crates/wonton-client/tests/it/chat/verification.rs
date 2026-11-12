@@ -7,6 +7,7 @@ use wonton_client::{
 
 use super::accept_the_bots_invite;
 use super::support::{Home, Phone, Timeline, WAIT};
+use wonton_protocol::{TimelineAction, TimelineTarget};
 
 const HISTORY: [&str; 3] = [
     "before pairing one",
@@ -769,8 +770,13 @@ async fn open_history(phone: &Phone, room_id: &str) -> Timeline {
         .await;
     let timeline = Timeline::open(phone, room_id).await;
     phone
-        .dispatch(Action::PaginateBackwards {
-            room_id: room_id.to_owned(),
+        .dispatch(Action::Timeline {
+            action: TimelineAction::PaginateBackwards {
+                target: TimelineTarget {
+                    room_id: room_id.to_owned(),
+                    thread_root: None,
+                },
+            },
         })
         .unwrap();
     timeline

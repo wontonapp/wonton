@@ -72,6 +72,7 @@ impl Payload {
             category: NotificationCategory::Confirmation,
             confirmation: None,
             contact_request: Some(request),
+            thread_root: None,
         })
     }
 
@@ -91,6 +92,7 @@ impl Payload {
             category: NotificationCategory::Message,
             confirmation: None,
             contact_request: None,
+            thread_root: None,
         }
     }
 }
@@ -259,6 +261,7 @@ pub(crate) fn push_notification(
         },
         confirmation,
         contact_request: None,
+        thread_root: None,
     })
 }
 
