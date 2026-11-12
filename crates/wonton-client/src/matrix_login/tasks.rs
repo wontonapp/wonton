@@ -17,6 +17,15 @@ use crate::servers::ServerList;
 pub(super) const CLIENT_URI: &str = "https://wontonapp.github.io";
 const CLIENT_NAME: &str = "Wonton";
 
+fn is_loopback(input: &str) -> bool {
+    Url::parse(input.trim()).is_ok_and(|url| match url.host() {
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        Some(url::Host::Domain(name)) => name == "localhost",
+        None => false,
+    })
+}
+
 /// 登录用的存储：占的槽位里聊天以后要用的那个目录，登录得到的设备密钥直接落在那里。
 pub(super) fn store(servers: &ServerList, slot: &str) -> Result<StoreConfig, CoreError> {
     let storage = ChatStorage::open(&servers.slot_dir(slot))?;
@@ -32,8 +41,10 @@ pub(super) async fn discover(
     input: String,
     store: StoreConfig,
 ) {
-    // 测试里的 homeserver 只有 HTTP；产品构建只认 HTTPS。
-    let allow_http = cfg!(feature = "test-hooks");
+    // 产品构建只认 HTTPS。集成测试的 homeserver 只有 HTTP；Debug 构建（`ui-fake`，发布包不带）也放开本机回环上的
+    // HTTP，给界面测试的本地桩用。
+    let allow_http =
+        cfg!(feature = "test-hooks") || (cfg!(feature = "ui-fake") && is_loopback(&input));
     match PendingLogin::discover(&input, &store, allow_http).await {
         Ok(pending) => {
             let methods = pending.methods().to_vec();
