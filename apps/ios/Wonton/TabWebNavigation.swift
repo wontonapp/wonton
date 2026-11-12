@@ -59,7 +59,8 @@ extension TabWebSession: WKNavigationDelegate {
         // tunnel-unavailable 是没拿到响应，upstream-unavailable 拿到了响应（服务器在，上游没就绪），
         // 照实交状态码给核心判断。
         let category = http.value(forHTTPHeaderField: "x-wonton-error").map { $0.lowercased() }
-        let proxyCategory = category.map { ["tunnel-unavailable", "upstream-unavailable", "unauthorized", "protocol"].contains($0) } == true
+        let proxyCategories: Set = ["tunnel-unavailable", "upstream-unavailable", "unauthorized", "protocol"]
+        let proxyCategory = category.map { proxyCategories.contains($0) } == true
         let tunnelFailed = proxyCategory
             || http.value(forHTTPHeaderField: "x-wonton-tunnel-error") != nil
         let sharedRefusal: Bool
