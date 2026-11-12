@@ -3,9 +3,10 @@
 //! （`crate::matrix::fake`）。
 
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use wonton_protocol::{
-    BotRef, ContactError, ContactKind, ContactOutcome, ContactRequest, ContactState,
+    BotRef, ContactError, ContactEvent, ContactKind, ContactOutcome, ContactRequest, ContactState,
 };
 
 use super::{
@@ -51,6 +52,14 @@ async fn reopen_fixture(config: &MatrixConfig, dir_path: &std::path::Path) -> Fi
 }
 
 async fn open_fixture(config: &MatrixConfig, dir_path: &std::path::Path) -> Fixture {
+    let f = open_contacts(config, dir_path).await;
+    // 生产里 main 起的房间补建监视器：配对变化后由字节序较小的一方建核心联系人房间。
+    exchange::spawn(&f.contacts);
+    f
+}
+
+/// 只建 Contacts，不起收件循环：直接驱动 `process_response` 的测试用它，循环会抢着写同步令牌。
+async fn open_contacts(config: &MatrixConfig, dir_path: &std::path::Path) -> Fixture {
     // 行为测试的世界：本机是 test（假 Tuwunel 的 SERVER），远端是 zz.example。
     let peers = Arc::new(FakePeers::default());
     let bots = Arc::new(FakeBots::default());
@@ -71,8 +80,6 @@ async fn open_fixture(config: &MatrixConfig, dir_path: &std::path::Path) -> Fixt
     ))
     .with_bots(bots.clone())
     .with_push(push.clone());
-    // 生产里 main 起的房间补建监视器：配对变化后由字节序较小的一方建核心联系人房间。
-    exchange::spawn(&contacts);
     Fixture {
         contacts,
         bots,
@@ -431,9 +438,23 @@ async fn failed_room_establishment_shows_in_the_row() {
     let view = f.contacts.view(&a_bot());
     let remote = view.contacts[0].remote.as_ref().unwrap();
     assert_eq!(remote.room_error, Some(ContactError::PeerUnreachable));
-    // 修好后再发一轮：房间建成，失败清掉（等退避窗口过去）。
+    // 修好后再发一轮（等退避窗口过去）：房间建成、邀请已发，但对方核心还没进房——“还没通”如实留着。
     fake.state().refuse_rooms = false;
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    super::exchange::drain(&f.contacts, "zz.example").await;
+    let view = f.contacts.view(&a_bot());
+    assert_eq!(
+        view.contacts[0].remote.as_ref().unwrap().room_error,
+        Some(ContactError::PeerUnreachable)
+    );
+    // 对方核心进了房：状态清掉，事件送出去。
+    let room = f.contacts.peer_room("zz.example").unwrap();
+    fake.state()
+        .rooms
+        .get_mut(&room)
+        .unwrap()
+        .members
+        .insert("@wonton-core:zz.example".to_owned());
     super::exchange::drain(&f.contacts, "zz.example").await;
     let view = f.contacts.view(&a_bot());
     assert_eq!(view.contacts[0].remote.as_ref().unwrap().room_error, None);
@@ -508,4 +529,237 @@ async fn remote_remove_only_touches_the_addressed_bot() {
             .stored_row(&b_bot(), "@helper:zz.example")
             .is_some()
     );
+}
+
+/// 第二轮验收：并发 commit 一条不丢（审查 #1）。
+#[tokio::test]
+async fn concurrent_commits_do_not_lose_updates() {
+    let f = fixture().await;
+    let mut handles = Vec::new();
+    for i in 0..32 {
+        let contacts = f.contacts.clone();
+        handles.push(tokio::spawn(async move {
+            contacts
+                .commit(|stored| {
+                    stored.enqueue(
+                        "zz.example",
+                        ContactEvent::Remove {
+                            from: format!("@helper-{i}:zz.example"),
+                            to: "@a:test".to_owned(),
+                        },
+                        format!("txn-{i}"),
+                        i as u64,
+                    );
+                })
+                .unwrap();
+        }));
+    }
+    for handle in handles {
+        handle.await.unwrap();
+    }
+    assert_eq!(f.contacts.stored_outbox().len(), 32, "入队一条都不能丢");
+}
+
+/// 第二轮验收：并发同意两个请求，两行都落成 Active（审查 #1）。
+#[tokio::test]
+async fn concurrent_approves_all_land() {
+    let f = fixture().await;
+    f.contacts
+        .on_remote_request(
+            &a_bot(),
+            "@u1:zz.example",
+            "zz.example",
+            "req-1",
+            None,
+            None,
+        )
+        .unwrap();
+    f.contacts
+        .on_remote_request(
+            &a_bot(),
+            "@u2:zz.example",
+            "zz.example",
+            "req-2",
+            None,
+            None,
+        )
+        .unwrap();
+    let (c1, c2) = (f.contacts.clone(), f.contacts.clone());
+    let bot = a_bot();
+    let u1 = "@u1:zz.example";
+    let u2 = "@u2:zz.example";
+    let (r1, r2) = tokio::join!(c1.approve(&bot, u1), c2.approve(&bot, u2),);
+    r1.unwrap();
+    r2.unwrap();
+    assert_eq!(
+        a_row(&f, "@u1:zz.example").unwrap().state,
+        ContactState::Active
+    );
+    assert_eq!(
+        a_row(&f, "@u2:zz.example").unwrap().state,
+        ContactState::Active
+    );
+}
+
+/// 第二轮验收：互发直接成立时，Active 行和给对方的同意回复在同一个事务里（审查 #3）。
+#[tokio::test]
+async fn mutual_establishment_persists_active_and_reply_together() {
+    let f = fixture().await;
+    f.peers.pair("zz.example");
+    request_a(&f, "@helper:zz.example", ContactKind::Bot).await;
+    let reply = f
+        .contacts
+        .on_remote_request(
+            &a_bot(),
+            "@helper:zz.example",
+            "zz.example",
+            "theirs-1",
+            None,
+            None,
+        )
+        .unwrap();
+    assert!(reply.is_some(), "互发直接成立要回一条同意");
+    assert_eq!(
+        a_row(&f, "@helper:zz.example").unwrap().state,
+        ContactState::Active
+    );
+    // 回复已经在 outbox 里（和 Active 同一个事务落盘），中间崩了也不会只有一半。
+    let outbox = f.contacts.stored_outbox();
+    assert!(outbox.iter().any(
+        |entry| matches!(&entry.event, ContactEvent::Result { id, outcome: ContactOutcome::Approved, .. } if id == "theirs-1")
+    ));
+}
+
+/// 第二轮验收：取消配对清掉那台服务器的 outbox（审查 #5）。
+#[tokio::test]
+async fn unpairing_drops_the_servers_outbox() {
+    let f = fixture().await;
+    f.peers.pair("zz.example");
+    request_a(&f, "@helper:zz.example", ContactKind::Bot).await;
+    assert!(
+        !f.contacts.stored_outbox().is_empty(),
+        "请求没送到（对方核心没进房），事件应该在 outbox 里"
+    );
+    f.peers.unpair("zz.example");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !f.contacts.stored_outbox().is_empty() {
+        assert!(Instant::now() < deadline, "取消配对后 outbox 没被清掉");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// 一份带 peer 邀请的 /sync 响应（invite_state 的 stripped 形状）。
+fn invite_sync_response(room: &str, inviter: &str, next_batch: &str) -> serde_json::Value {
+    serde_json::json!({
+        "next_batch": next_batch,
+        "rooms": {"invite": {room: {"invite_state": {"events": [
+            {"type": "m.room.create", "sender": inviter,
+             "content": {"type": wonton_protocol::CONTACT_ROOM_TYPE}},
+            {"type": "m.room.member", "sender": inviter,
+             "content": {"membership": "invite"}},
+        ]}}}}
+    })
+}
+
+async fn poll_matrix(config: &MatrixConfig, dir_path: &std::path::Path) -> Arc<Matrix> {
+    Arc::new(
+        Matrix::connect(config, dir_path, crate::http::HttpClient::new())
+            .await
+            .unwrap(),
+    )
+}
+
+/// 第二轮验收：邀请 join 失败时这批不推进令牌——增量 /sync 不会再给这条邀请，
+/// 只有从旧令牌重来才看得见；重投后加入成功（审查 #2）。
+#[tokio::test]
+async fn a_failed_invite_join_defers_the_token() {
+    let (fake, config) = crate::matrix::fake::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let f = open_contacts(&config, dir.path()).await;
+    f.peers.pair("zz.example");
+    // 假 Tuwunel 里造出这条邀请对应的房间：类型对、我们的核心在邀请名单里。
+    {
+        use std::collections::BTreeMap;
+        use std::collections::BTreeSet;
+        let mut state = fake.state();
+        state.rooms.insert(
+            "!room:zz.example".to_owned(),
+            crate::matrix::fake::Room {
+                members: BTreeSet::from(["@wonton-core:zz.example".to_owned()]),
+                invited: BTreeSet::from(["@wonton-core:test".to_owned()]),
+                left: BTreeSet::new(),
+                encrypted: false,
+                room_type: Some(wonton_protocol::CONTACT_ROOM_TYPE.to_owned()),
+                creator: Some("@wonton-core:zz.example".to_owned()),
+                invited_by: BTreeMap::from([(
+                    "@wonton-core:test".to_owned(),
+                    "@wonton-core:zz.example".to_owned(),
+                )]),
+            },
+        );
+    }
+    let matrix = poll_matrix(&config, dir.path()).await;
+    let response = invite_sync_response("!room:zz.example", "@wonton-core:zz.example", "s1");
+    // join 被拒：整批作废，令牌不落盘。
+    fake.state().refuse_join = true;
+    let result = super::exchange::process_response(&f.contacts, &matrix, response.clone()).await;
+    assert!(result.is_err(), "join 失败要作废整批");
+    assert!(
+        !dir.path().join("contacts-sync-token").exists(),
+        "令牌不推进"
+    );
+    // 重投：join 成功，房间记下、令牌落盘。
+    fake.state().refuse_join = false;
+    let next = super::exchange::process_response(&f.contacts, &matrix, response)
+        .await
+        .unwrap();
+    assert_eq!(next.as_deref(), Some("s1"));
+    assert_eq!(
+        f.contacts.peer_room("zz.example").as_deref(),
+        Some("!room:zz.example")
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("contacts-sync-token")).unwrap(),
+        "s1"
+    );
+}
+
+/// 第二轮验收：同步令牌写盘失败时整批作废、令牌不推进（审查 #3）。
+#[tokio::test]
+async fn a_failed_token_write_defers_the_token() {
+    let (_fake, config) = crate::matrix::fake::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let f = open_contacts(&config, dir.path()).await;
+    f.peers.pair("zz.example");
+    let matrix = poll_matrix(&config, dir.path()).await;
+    let token = dir.path().join("contacts-sync-token");
+    // 第一批成功：令牌 s1 落盘。
+    let next = super::exchange::process_response(
+        &f.contacts,
+        &matrix,
+        serde_json::json!({"next_batch": "s1"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(next.as_deref(), Some("s1"));
+    // 令牌文件变成目录：写盘失败，整批作废。
+    std::fs::remove_file(&token).unwrap();
+    std::fs::create_dir(&token).unwrap();
+    let result = super::exchange::process_response(
+        &f.contacts,
+        &matrix,
+        serde_json::json!({"next_batch": "s2"}),
+    )
+    .await;
+    assert!(result.is_err(), "令牌写不进去要作废整批");
+    // 修好：重投同一批，推进。
+    std::fs::remove_dir(&token).unwrap();
+    let next = super::exchange::process_response(
+        &f.contacts,
+        &matrix,
+        serde_json::json!({"next_batch": "s2"}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(next.as_deref(), Some("s2"));
 }

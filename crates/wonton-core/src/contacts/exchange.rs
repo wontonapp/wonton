@@ -46,7 +46,7 @@ fn read_token(contacts: &Contacts) -> Option<String> {
 
 /// 收件循环的失败类型：Matrix 传输和联系人落盘分开，处理一样（记日志、稍后重试，令牌不推进）。
 #[derive(Debug)]
-enum PollError {
+pub(super) enum PollError {
     Matrix(MatrixError),
     Contact(ContactError),
 }
@@ -61,7 +61,7 @@ impl std::fmt::Display for PollError {
 }
 
 /// 起 `/sync` 收件循环：邀请 → 加入已配对服务器的联系人房间；时间线 → `app.wonton.contact` 事件。
-/// 每轮顺带把 outbox 里的事件按退避重发、补建自己该建的房间。没有 Matrix（有些开发模式不装 Tuwunel）时不起。
+/// 每拍把 outbox 里的事件按退避重发、补建自己该建的房间。没有 Matrix（有些开发模式不装 Tuwunel）时不起。
 pub fn spawn(contacts: &Arc<Contacts>) {
     let Some(matrix) = contacts.matrix().cloned() else {
         return;
@@ -69,8 +69,7 @@ pub fn spawn(contacts: &Arc<Contacts>) {
     let contacts = contacts.clone();
     tokio::spawn(async move {
         let mut names = contacts.peers().paired_names();
-        // 起来先对一遍名单：重启后补上漏掉的房间、把没发出去的事件发完。
-        let paired = names.borrow_and_update().clone();
+        let mut paired = names.borrow_and_update().clone();
         maintain(&contacts, &paired).await;
         // outbox 的重发和房间补建不等 25s 的长轮询：2s 一拍。没活干时一拍只是一次锁内检查。
         tokio::spawn({
@@ -87,50 +86,110 @@ pub fn spawn(contacts: &Arc<Contacts>) {
             }
         });
         let mut since = read_token(&contacts);
+        // 第一轮收件在进循环前就起:下面的 select 只等"名单变化"或"在跑的收件落完",
+        // 没有这行,收件永远不会开始(名单不变时 select 不醒)。
+        let mut inflight = Some(tokio::spawn(poll_task(
+            contacts.clone(),
+            matrix.clone(),
+            since.clone(),
+        )));
         loop {
             tokio::select! {
-                _ = names.changed() => {}
-                polled = tokio::spawn(poll_task(contacts.clone(), matrix.clone(), since.clone())) => {
-                    match polled {
-                        Ok(Ok(next)) => since = next,
-                        Ok(Err(error)) => {
-                            tracing::warn!(error = %error, "联系人收件同步出错，稍后重试");
-                            tokio::time::sleep(RETRY).await;
-                        }
-                        Err(join_error) => {
-                            tracing::warn!(error = %join_error, "联系人收件任务没跑完，稍后重试");
-                            tokio::time::sleep(RETRY).await;
+                changed = names.changed() => {
+                    if changed.is_err() {
+                        // 配对信息的发送端没了（核心在收尾）：循环没有存在意义，退出。
+                        return;
+                    }
+                    let fresh = names.borrow().clone();
+                    // 名单里消失的服务器：outbox 里的残留清掉，不然永远躺在 contacts.json 里。
+                    for gone in paired.difference(&fresh) {
+                        contacts.note_room_ok(gone);
+                        if let Err(error) = contacts.commit(|stored| stored.drop_outbox(gone)) {
+                            tracing::warn!(server = %gone, error = error.as_str(), "取消配对后清 outbox 失败");
                         }
                     }
+                    paired = fresh;
+                    // 在跑的收件任务落完再维护，不并发。
+                    if let Some(handle) = inflight.take() {
+                        settle(handle.await, &mut since).await;
+                    }
+                }
+                polled = async {
+                    match inflight.as_mut() {
+                        Some(handle) => handle.await,
+                        None => std::future::pending().await,
+                    }
+                }, if inflight.is_some() => {
+                    // 结果在分支的未来里已经拿到,不能再碰同一个 JoinHandle(二次 poll 已完成的会 panic)。
+                    settle(polled, &mut since).await;
+                    inflight.take();
                 }
             }
-            let paired = names.borrow().clone();
+            if inflight.is_none() {
+                inflight = Some(tokio::spawn(poll_task(
+                    contacts.clone(),
+                    matrix.clone(),
+                    since.clone(),
+                )));
+            }
             maintain(&contacts, &paired).await;
         }
     });
 }
 
-/// 单独一轮收件：`/sync` 一次、处理邀请和时间线、推进令牌。放在独立的任务里跑：配对名单变化打断
-/// `select!` 时任务照常跑完（邀请、令牌都落了盘），不会停在“加了房没记下”的半截（取消安全）。
+/// 一轮收件的结果：成了推进令牌，败了记日志稍等（令牌不动，事件会重投）。
+async fn settle(
+    polled: Result<Result<Option<String>, PollError>, tokio::task::JoinError>,
+    since: &mut Option<String>,
+) {
+    match polled {
+        Ok(Ok(Some(next))) => *since = Some(next),
+        Ok(Ok(None)) => {}
+        Ok(Err(error)) => {
+            tracing::warn!(error = %error, "联系人收件同步出错，稍后重试");
+            tokio::time::sleep(RETRY).await;
+        }
+        Err(join_error) => {
+            tracing::warn!(error = %join_error, "联系人收件任务没跑完，稍后重试");
+            tokio::time::sleep(RETRY).await;
+        }
+    }
+}
+
+/// 单独一轮收件：`/sync` 一次、处理邀请和时间线、推进令牌。放在独立的任务里跑：主循环等它落完
+/// （令牌、房间都在它手里）才起下一轮，同一批事件不会被并发处理两遍。
 async fn poll_task(
     contacts: Arc<Contacts>,
     matrix: Arc<crate::matrix::Matrix>,
     since: Option<String>,
 ) -> Result<Option<String>, PollError> {
-    let core = matrix.core_session();
-    let response = core
+    let response = matrix
+        .core_session()
         .sync(since.as_deref(), SYNC_TIMEOUT, Some(SYNC_FILTER))
         .await
         .map_err(PollError::Matrix)?;
+    process_response(&contacts, &matrix, response).await
+}
+
+/// 处理一份 `/sync` 响应：邀请、时间线、令牌落盘。任何一步失败都整批作废——令牌不推进，
+/// 下次从旧令牌重投，处理是幂等的。
+pub(super) async fn process_response(
+    contacts: &Arc<Contacts>,
+    matrix: &Arc<crate::matrix::Matrix>,
+    response: Value,
+) -> Result<Option<String>, PollError> {
+    let core = matrix.core_session();
     let next = response["next_batch"].as_str().map(str::to_owned);
-    // 邀请：只接受已配对服务器核心账号发来的联系人房间，别的退掉。单个加入失败不挡整批，
-    // 下次同步还会看到这条邀请。
+    // 邀请：只接受已配对服务器核心账号发来的联系人房间，别的退掉。有一个加入失败，这批就不算成功
+    // （令牌不推进）：增量 /sync 不会再给这条邀请，只有从旧令牌重来才看得见它。
+    let mut join_failed = false;
     if let Some(invites) = response["rooms"]["invite"].as_object() {
         for (room, state) in invites {
             match invite_of_peer(&|server| contacts.peers().paired(server), state) {
                 Some(server) => {
                     if let Err(error) = core.join(room).await {
-                        tracing::warn!(peer = %server, room = %room, error = %error, "联系人房间加入失败，下次同步再试");
+                        tracing::warn!(peer = %server, room = %room, error = %error, "联系人房间加入失败，下次同步重来");
+                        join_failed = true;
                         continue;
                     }
                     // 记房间是落盘操作：失败时整个同步作废（令牌不推进），下次重投，处理幂等。
@@ -161,14 +220,17 @@ async fn poll_task(
                 else {
                     continue;
                 };
-                apply(&contacts, sender, parsed)
+                apply(contacts, sender, parsed)
                     .await
                     .map_err(PollError::Contact)?;
             }
         }
     }
+    if join_failed {
+        return Err(PollError::Contact(ContactError::Upstream));
+    }
     // 令牌在整批处理完才推进；写盘失败同样作废，下次从旧令牌重投。
-    if let (Some(path), Some(token)) = (token_path(&contacts), next.clone()) {
+    if let (Some(path), Some(token)) = (token_path(contacts), next.clone()) {
         std::fs::write(path, token).map_err(|_| PollError::Contact(ContactError::Upstream))?;
     }
     Ok(next)
@@ -190,9 +252,6 @@ async fn maintain(contacts: &Arc<Contacts>, paired: &BTreeSet<String>) {
 pub(crate) async fn drain(contacts: &Arc<Contacts>, server: &str) {
     // 同一台服务器的发送全程串行：两个并发 drain 不会把同一事务发两遍。
     let _guard = contacts.exchange_lock().lock().await;
-    if !contacts.room_ready(server) {
-        return;
-    }
     let room = match ensure_room(contacts, server).await {
         Ok(Some(room)) => room,
         // 我们是字节序较大的一方：等对方的建房邀请，不算失败。
@@ -202,25 +261,37 @@ pub(crate) async fn drain(contacts: &Arc<Contacts>, server: &str) {
             return;
         }
     };
-    let joined = match ensure_joined(contacts, server, &room).await {
-        // 对方在房里（能发事件了），或邀请已在路上（等对方接受）：这一轮没有失败。
-        Ok(joined) => {
-            contacts.note_room_ok(server);
-            joined
+    let Some(matrix) = contacts.matrix() else {
+        return;
+    };
+    let core = matrix.core_session();
+    let peer_core = core_user_of(server);
+    // 成员检查不等退避：一次查询而已，而且是唯一能把“还没通”清掉的东西。
+    match room_contains(contacts, &room, &peer_core).await {
+        Ok(true) => contacts.note_room_ok(server),
+        Ok(false) => {
+            // 还没通：如实显示在联系人行里。邀请按它自己的轻退避重发（M_FORBIDDEN 的
+            // “已在邀请里”也是“没通”，不清掉）。事件留在 outbox，等对方进房。
+            contacts.note_room_pending(server);
+            if contacts.invite_ready(server) {
+                contacts.note_invite_attempted(server);
+                match core.invite(&room, &peer_core).await {
+                    Ok(()) => {
+                        tracing::info!(peer = %server, room = %room, "邀请已发出，等对方核心进房");
+                    }
+                    Err(error) => {
+                        tracing::debug!(peer = %server, room = %room, error = %error, "邀请没发出去");
+                        contacts.note_room_failure(server, ContactError::PeerUnreachable);
+                    }
+                }
+            }
+            return;
         }
         Err(error) => {
             contacts.note_room_failure(server, error);
             return;
         }
-    };
-    if !joined {
-        // 对方还没进房：发了也看不见，事件留在 outbox 等下一轮。
-        return;
     }
-    let Some(matrix) = contacts.matrix() else {
-        return;
-    };
-    let core = matrix.core_session();
     // 守卫不跨 await：先取快照再逐条发。
     let entries = contacts.lock().outbox_for(server);
     for entry in entries {
@@ -250,21 +321,18 @@ pub(crate) async fn drain(contacts: &Arc<Contacts>, server: &str) {
     }
 }
 
-/// 把事件排进 outbox 并立刻试着发一轮；发不出去留在队列里，收件循环重试。
+/// 把事件排进 outbox 并立刻试着发一轮。排不进（落盘失败）原样上抛：调用方（收件循环）作废这批，
+/// 令牌不推进，事件重投；发不出去留在队列里，由维护拍重试。
 pub(crate) async fn queue_and_drain(
     contacts: &Arc<Contacts>,
     server: &str,
     event: ContactEvent,
     txn: String,
-) {
+) -> Result<(), ContactError> {
     let at = crate::peers::now_ms();
-    if contacts
-        .commit(|stored| stored.enqueue(server, event, txn, at))
-        .is_err()
-    {
-        return;
-    }
+    contacts.commit(|stored| stored.enqueue(server, event, txn, at))?;
     drain(contacts, server).await;
+    Ok(())
 }
 
 /// 和一台配对服务器的核心联系人房间没建起来时，按字节序较小的一方补建。建房不带邀请：纯本机操作，
@@ -276,6 +344,10 @@ async fn ensure_room(
 ) -> Result<Option<String>, ContactError> {
     if let Some(room) = contacts.peer_room(server) {
         return Ok(Some(room));
+    }
+    // 房间还没建时成员检查也免了（没有房间可查），建房等它自己的退避。
+    if !contacts.room_ready(server) {
+        return Err(ContactError::PeerUnreachable);
     }
     let Some(matrix) = contacts.matrix() else {
         return Err(ContactError::Upstream);
@@ -298,37 +370,6 @@ async fn ensure_room(
     contacts.set_peer_room(server, &room)?;
     tracing::info!(peer = %server, room = %room, "联系人房间已建立");
     Ok(Some(room))
-}
-
-/// 确认对方的核心账号进了联系人房间：不在就补一次邀请（createRoom 里那次邀请会撞上联邦没就绪）。
-/// 返回要不要现在就发事件（对方在房里才算）。重试由调用方按退避管。
-async fn ensure_joined(
-    contacts: &Arc<Contacts>,
-    server: &str,
-    room: &str,
-) -> Result<bool, ContactError> {
-    let matrix = contacts.matrix().ok_or(ContactError::Upstream)?;
-    let core = matrix.core_session();
-    let peer_core = core_user_of(server);
-    if room_contains(contacts, room, &peer_core).await? {
-        return Ok(true);
-    }
-    // 已在邀请里、对方还没接受时 Tuwunel 会拒绝重发（M_FORBIDDEN）：邀请已经在路上，等对方接受，
-    // 不算这轮失败。别的错误（传输、账号问题）如实上报。
-    match core.invite(room, &peer_core).await {
-        Ok(()) => {
-            tracing::info!(peer = %server, room = %room, "邀请已发出，等对方核心进房");
-            Ok(false)
-        }
-        Err(error) if error.errcode() == "M_FORBIDDEN" => {
-            tracing::debug!(peer = %server, room = %room, "邀请已在路上，等对方核心进房");
-            Ok(false)
-        }
-        Err(error) => {
-            tracing::debug!(peer = %server, room = %room, error = %error, "邀请没发出去");
-            Err(ContactError::PeerUnreachable)
-        }
-    }
 }
 
 /// 邀请的对方服务器名：房间类型对上、邀请人是 `@wonton-core:<已配对的服务器>` 时返回那台的名字。
@@ -400,9 +441,10 @@ async fn apply(
                     },
                     crate::secret::random_token(),
                 )
-                .await;
+                .await?;
                 return Ok(false);
             };
+            // 回复（互发直接成立的同意）已在 on_remote_request 的事务里入队；这里只要送一轮。
             let reply = contacts.on_remote_request(
                 &bot,
                 &from,
@@ -411,8 +453,8 @@ async fn apply(
                 from_display_name,
                 keeper_display_name,
             )?;
-            if let Some(reply) = reply {
-                queue_and_drain(contacts, &from_server, reply, id).await;
+            if reply.is_some() {
+                drain(contacts, &from_server).await;
             }
             Ok(true)
         }

@@ -29,8 +29,9 @@ const UNINSTALL: &str = "uninstall_plugin";
 const SET_PERMISSION: &str = "set_plugin_permission";
 const HELP: &str = "help";
 
-/// 有 Active 远端联系人的 Bot 还能用的核心工具：只读、无副作用，也不把家里的数据带出去
-/// （ADR-0050“远端联系人默认不能用插件”）。安装/卸载/权限、读写文件、分享、改资料这类一概不给。
+/// 有 Active 远端联系人的 Bot 还能用的核心工具：只读、无副作用，也绝不把家里的数据带出去
+/// （ADR-0050“远端联系人默认不能用插件”）。安装/卸载/权限、读写文件、分享、存文件、改资料、
+/// 列分享、读资料这类一概不给——分享清单和归属人资料是家人的隐私，默认不给远端联系人。
 pub(super) const REMOTE_CONTACT_READONLY: &[&str] = &[
     LIST,
     SEARCH,
@@ -38,8 +39,6 @@ pub(super) const REMOTE_CONTACT_READONLY: &[&str] = &[
     authoring_tools::GUIDE,
     authoring_tools::CHECK,
     authoring_tools::STATUS,
-    save_tools::LIST,
-    profile_tools::GET,
     people_tools::USER_LOCALE,
     panel_tools::LIST,
 ];

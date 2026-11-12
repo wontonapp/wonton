@@ -10,7 +10,6 @@
 //! 核对规则（ADR-0050）：收到的请求/结果先核对发送者是已配对服务器的核心账号、两个用户 ID 的服务器名
 //! 对得上，对不上整条忽略；结果按我方请求 ID 对上，对不上的忽略。
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
@@ -26,6 +25,7 @@ use crate::peers::{self, Peers};
 
 pub mod exchange;
 mod lifecycle;
+pub(crate) mod room_state;
 pub(crate) mod store;
 
 /// 联系人系统需要的配对信息。实现在 [`crate::peers::Peers`]，测试给假的，不拖起整条隧道。
@@ -89,52 +89,7 @@ pub struct Contacts {
     /// 房间和同步循环的互斥：建房、发事件、处理收到的邀请都串行在这把锁上，避免两边同时给一对服务器建房。
     exchange: AsyncMutex<()>,
     /// 联系人房间的建立进度：每台服务器的退避和最后一次失败，进联系人行的视图（不落盘，重启后重算）。
-    room_state: Mutex<RoomBackoff>,
-}
-
-/// 建房/邀请失败后的按服务器指数退避。退避期内不碰 Tuwunel，调用方立刻失败、事件留在 outbox 里等下一轮。
-struct RoomBackoff {
-    attempts: BTreeMap<String, u32>,
-    next_at: BTreeMap<String, tokio::time::Instant>,
-    last_error: BTreeMap<String, ContactError>,
-    first: Duration,
-    max: Duration,
-}
-
-impl RoomBackoff {
-    fn new(first: Duration, max: Duration) -> Self {
-        Self {
-            attempts: BTreeMap::new(),
-            next_at: BTreeMap::new(),
-            last_error: BTreeMap::new(),
-            first,
-            max,
-        }
-    }
-
-    /// 现在能试吗。被动等待（字节序较大的一方等邀请）不算失败，不进退避。
-    fn ready(&self, server: &str) -> bool {
-        self.next_at
-            .get(server)
-            .is_none_or(|at| *at <= tokio::time::Instant::now())
-    }
-
-    fn note_failure(&mut self, server: &str, error: ContactError) {
-        let attempts = self.attempts.entry(server.to_owned()).or_default();
-        let delay = self.first * (1u32 << (*attempts).min(16));
-        *attempts += 1;
-        self.next_at.insert(
-            server.to_owned(),
-            tokio::time::Instant::now() + delay.min(self.max),
-        );
-        self.last_error.insert(server.to_owned(), error);
-    }
-
-    fn note_success(&mut self, server: &str) {
-        self.attempts.remove(server);
-        self.next_at.remove(server);
-        self.last_error.remove(server);
-    }
+    room_state: Mutex<room_state::RoomBackoff>,
 }
 
 impl Contacts {
@@ -162,7 +117,7 @@ impl Contacts {
             bots: OnceLock::new(),
             push: OnceLock::new(),
             exchange: AsyncMutex::new(()),
-            room_state: Mutex::new(RoomBackoff::new(first, max)),
+            room_state: Mutex::new(room_state::RoomBackoff::new(first, max)),
         }))
     }
 
@@ -181,6 +136,30 @@ impl Contacts {
             .note_failure(server, error);
     }
 
+    /// 邀请已发出、对方还没进房：如实记“没通”，不动退避。
+    pub(crate) fn note_room_pending(&self, server: &str) {
+        self.room_state
+            .lock()
+            .expect("房间退避锁中毒")
+            .note_pending(server);
+    }
+
+    /// 现在能再发一次邀请吗（邀请有自己的轻退避）。
+    pub(crate) fn invite_ready(&self, server: &str) -> bool {
+        self.room_state
+            .lock()
+            .expect("房间退避锁中毒")
+            .invite_ready(server)
+    }
+
+    /// 邀请刚尝试过：记下轻退避。
+    pub(crate) fn note_invite_attempted(&self, server: &str) {
+        self.room_state
+            .lock()
+            .expect("房间退避锁中毒")
+            .note_invite(server);
+    }
+
     pub(crate) fn note_room_ok(&self, server: &str) {
         self.room_state
             .lock()
@@ -193,21 +172,21 @@ impl Contacts {
         self.room_state
             .lock()
             .expect("房间退避锁中毒")
-            .last_error
-            .get(server)
-            .cloned()
+            .last_error(server)
     }
 
-    /// 事务式改动：在副本上改、落盘、成了才提交进内存。落盘失败时内存和磁盘都不变，
+    /// 事务式改动：全程持锁（复制、修改、落盘、写回，中间没有 await），并发提交在这里串行，
+    /// 谁也不会覆盖谁的改动，`json.tmp` 也不会被两个任务同时写。落盘失败时内存和磁盘都不变，
     /// 调用方拿到 Err——绝不出现“接口说失败、内存已经改了”的状态（ADR-0050 的失败即停）。
     pub(crate) fn commit<T>(
         &self,
         edit: impl FnOnce(&mut store::Stored) -> T,
     ) -> Result<T, ContactError> {
-        let mut stored = self.lock().clone();
+        let mut guard = self.lock();
+        let mut stored = guard.clone();
         let result = edit(&mut stored);
         self.save(&stored)?;
-        *self.lock() = stored;
+        *guard = stored;
         Ok(result)
     }
 
@@ -563,20 +542,19 @@ impl Contacts {
         };
         for (user_id, room) in pending {
             let joined = exchange::room_contains(self, &room, &user_id).await?;
-            if joined {
-                let mut stored = self.lock();
-                if stored.person_joined(bot, &user_id, peers::now_ms()).is_ok() {
-                    self.save(&stored)?;
-                    drop(stored);
-                    self.rebuild(bot);
-                }
+            if joined
+                && self
+                    .commit(|stored| stored.person_joined(bot, &user_id, peers::now_ms()).is_ok())?
+            {
+                self.rebuild(bot);
             }
         }
         Ok(())
     }
 
     /// 远端经房间发来的事件已经核对过发送者和服务器名（`exchange.rs`），这里落到状态机。
-    /// 本机 Bot 由事件的 `to` 认定（调用方解析好了）。返回要不要往回送结果（两边互相发了请求时送同意）。
+    /// 本机 Bot 由事件的 `to` 认定（调用方解析好了）。互发直接成立时，Active 行和给对方的同意回复
+    /// 放在同一个事务里落盘——中间崩了不会只有一半（行 Active 了、回复没入队，对方永远等不到）。
     /// 落盘失败返回 Err：收件循环不推进同步令牌，事件会重投，处理是幂等的。
     pub(crate) fn on_remote_request(
         self: &Arc<Self>,
@@ -588,8 +566,13 @@ impl Contacts {
         keeper_display_name: Option<String>,
     ) -> Result<Option<ContactEvent>, ContactError> {
         let at = peers::now_ms();
-        let taken = self.commit(|stored| {
-            stored.on_remote_request(
+        let bots = self.bots.get().ok_or(ContactError::Upstream)?;
+        let bot_user = bots.user_of_bot(bot).ok_or(ContactError::BotNotFound)?;
+        let keeper_display = bots.keeper_display_name(bot);
+        let mut taken = store::Take::Ignore;
+        let mut reply = None;
+        self.commit(|stored| {
+            taken = stored.on_remote_request(
                 &store::RemoteRequest {
                     bot,
                     from_user,
@@ -599,7 +582,18 @@ impl Contacts {
                     keeper_display_name: keeper_display_name.clone(),
                 },
                 at,
-            )
+            );
+            if taken == store::Take::Established {
+                let event = ContactEvent::Result {
+                    id: id.to_owned(),
+                    from: bot_user.clone(),
+                    to: from_user.to_owned(),
+                    outcome: ContactOutcome::Approved,
+                    keeper_display_name: keeper_display.clone(),
+                };
+                stored.enqueue(from_server, event.clone(), id.to_owned(), at);
+                reply = Some(event);
+            }
         })?;
         match taken {
             store::Take::Recorded => {
@@ -608,15 +602,7 @@ impl Contacts {
             }
             store::Take::Established => {
                 self.rebuild(bot);
-                let bots = self.bots.get().ok_or(ContactError::Upstream)?;
-                let bot_user = bots.user_of_bot(bot).ok_or(ContactError::BotNotFound)?;
-                Ok(Some(ContactEvent::Result {
-                    id: id.to_owned(),
-                    from: bot_user,
-                    to: from_user.to_owned(),
-                    outcome: ContactOutcome::Approved,
-                    keeper_display_name: bots.keeper_display_name(bot),
-                }))
+                Ok(reply)
             }
             store::Take::Ignore => Ok(None),
         }

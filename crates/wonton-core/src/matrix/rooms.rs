@@ -84,6 +84,8 @@ async fn membership(
     let response = {
         let mut state = fake.state();
         reply(auth(&state, &headers).and_then(|(user, _)| {
+            // join 的开关要在拿房间可变借用之前读（同一把锁）。
+            let refuse_join = state.refuse_join;
             let room_state = state
                 .rooms
                 .get_mut(&room)
@@ -92,7 +94,9 @@ async fn membership(
             let target = target.unwrap_or_default();
             match action.as_str() {
                 "join"
-                    if room_state.invited.remove(&user) || room_state.members.contains(&user) =>
+                    if !refuse_join
+                        && (room_state.invited.remove(&user)
+                            || room_state.members.contains(&user)) =>
                 {
                     room_state.left.remove(&user);
                     room_state.invited_by.remove(&user);

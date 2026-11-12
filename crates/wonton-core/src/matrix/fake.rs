@@ -68,6 +68,8 @@ pub struct Tuwunel {
     pub registrations: usize,
     /// 为真时建房失败，测试中途失败的处理。
     pub refuse_rooms: bool,
+    /// 为真时加入房间失败（`M_FORBIDDEN`）：核对收件循环对 join 失败的处理。
+    pub refuse_join: bool,
     /// 发出的消息：（房间，内容）。
     pub sent: Vec<(String, Value)>,
     /// 为真时拒绝下一条消息（`M_FORBIDDEN`）：核对之后才被踢出去。

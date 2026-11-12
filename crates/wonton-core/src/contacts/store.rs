@@ -283,6 +283,11 @@ impl Stored {
     pub fn dequeue(&mut self, txn: &str) {
         self.outbox.retain(|entry| entry.txn != txn);
     }
+
+    /// 一台服务器的待发事件全部清掉（取消配对时：维护只走已配对名单，残留会永远躺在文件里）。
+    pub fn drop_outbox(&mut self, server: &str) {
+        self.outbox.retain(|entry| entry.server != server);
+    }
 }
 
 #[cfg(test)]

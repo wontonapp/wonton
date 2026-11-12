@@ -30,6 +30,13 @@ impl FakePeers {
             names.insert(server.to_owned());
         });
     }
+
+    /// 取消配对：抬 watch（生产行为一致，收件循环靠它清 outbox）。
+    pub fn unpair(&self, server: &str) {
+        self.names.send_modify(|names| {
+            names.remove(server);
+        });
+    }
 }
 
 impl PeerDirectory for FakePeers {
