@@ -19,7 +19,7 @@ final class FriendCodeUITests: XCTestCase {
 
     func testMyCodeShowsQR() throws {
         openAddFriend()
-        tapButton("My QR Code", timeout: 90)
+        tapButton("My QR Code", timeout: 40)
         XCTAssertTrue(app.images["My QR Code"].waitForExistence(timeout: 10), "没有二维码")
         let link = app.staticTexts["friends-my-link"]
         XCTAssertTrue(link.waitForExistence(timeout: 10), "没有链接")
@@ -43,7 +43,7 @@ final class FriendCodeUITests: XCTestCase {
         tapButton("Send Request", timeout: 10)
 
         XCTAssertTrue(
-            app.staticTexts["Waiting for them to accept"].waitForExistence(timeout: 90),
+            app.staticTexts["Waiting for them to accept"].waitForExistence(timeout: 40),
             "请求没发出去\n\(app.debugDescription)"
         )
         shot("request-sent")
@@ -52,22 +52,37 @@ final class FriendCodeUITests: XCTestCase {
     // MARK: - 走到加好友面板
 
     private func openAddFriend() {
-        XCTAssertNotNil(waitButton(["Chats", "Apps", "Skip"], timeout: 90), "App 没起来")
         passOnboarding()
-        guard let settings = tabButton(["Settings"]) else { return XCTFail("没进主界面") }
+        guard let settings = tabButton(["Settings"]) else {
+            shot("no-tab-bar")
+            return XCTFail("没进主界面\n\(app.debugDescription)")
+        }
         settings.tap()
-        guard let friends = waitButton(["Friends"], timeout: 90) else { return XCTFail("设置里没有好友入口") }
+        // 设置行的读屏标签带着好友数（“Friends, 0”），按开头认；行可能在首屏下面。
+        let friends = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Friends")).firstMatch
+        let deadline = Date().addingTimeInterval(30)
+        while !(friends.exists && friends.isHittable), Date() < deadline {
+            if friends.exists { app.swipeUp() } else { _ = friends.waitForExistence(timeout: 2) }
+        }
+        guard friends.isHittable else { return XCTFail("设置里没有好友入口\n\(app.debugDescription)") }
         friends.tap()
         guard let add = waitButton(["Add Friend", "Add"], timeout: 10) else { return XCTFail("好友页没打开") }
         add.tap()
     }
 
+    /// 配对后走完引导：能跳过的跳过。整段最多 60 秒（含配对和首次同步）。
     private func passOnboarding() {
-        for _ in 0..<60 {
+        let deadline = Date().addingTimeInterval(60)
+        while Date() < deadline {
             if tabButton(["Chats", "Apps"]) != nil { return }
-            if let skip = waitButton(["Skip"], timeout: 2), skip.isEnabled { skip.tap(); continue }
-            if let done = waitButton(["Done"], timeout: 2), done.isEnabled { done.tap(); continue }
-            if let next = waitButton(["Next"], timeout: 2), next.isEnabled { next.tap(); continue }
+            for label in ["Skip", "Done", "Next"] {
+                let button = app.buttons[label].firstMatch
+                if button.exists && button.isHittable && button.isEnabled {
+                    button.tap()
+                    break
+                }
+            }
+            _ = app.wait(for: .runningForeground, timeout: 1)
         }
     }
 
