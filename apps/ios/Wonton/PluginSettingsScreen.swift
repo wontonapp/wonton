@@ -20,7 +20,7 @@ struct PluginSettingsScreen: View {
     @State private var previewed: PluginSettingsView?
     @State private var previewTask: Task<Void, Never>?
     /// 预检或保存被拒时核心按字段给的明细：键是属性名，盖过视图里带着的问题。
-    @State private var fieldProblems: [String: SettingsFieldError] = [:]
+    @State private var fieldProblems: [String: SettingsFieldProblem] = [:]
     /// 保存成功后这次改动会不会重启应用：改动的项里有服务用到。
     @State private var restartHint = false
     @Environment(\.wontonColors) private var colors
@@ -141,8 +141,8 @@ struct PluginSettingsScreen: View {
                 fieldProblems = [:]
             } catch let failure as CoreError {
                 // 候选值没过校验：明细逐字段标红。
-                if case let .settingsInvalid(_, fields) = failure {
-                    fieldProblems = Dictionary(uniqueKeysWithValues: fields.map { ($0.name, $0) })
+                if case let .SettingsInvalid(_, fields) = failure {
+                    fieldProblems = Dictionary(uniqueKeysWithValues: fields.map { ($0.name, SettingsFieldProblem(kind: $0.kind, message: $0.message)) })
                 }
             } catch {
                 // 别的失败维持现状。
@@ -195,9 +195,9 @@ struct PluginSettingsScreen: View {
             resetDrafts(updated)
         } catch let failure as CoreError {
             problem = failure.problem
-            if case let .settingsInvalid(_, fields) = failure {
+            if case let .SettingsInvalid(_, fields) = failure {
                 // 校验没过：明细逐字段标到控件旁，不用再问核心。
-                fieldProblems = Dictionary(uniqueKeysWithValues: fields.map { ($0.name, $0) })
+                fieldProblems = Dictionary(uniqueKeysWithValues: fields.map { ($0.name, SettingsFieldProblem(kind: $0.kind, message: $0.message)) })
             } else {
                 // 别的失败（如设置文件换过了）：重读整页拿最新状态；主人填的不动。
                 if let refreshed = try? await model.core.pluginSettings(id: pluginId) {

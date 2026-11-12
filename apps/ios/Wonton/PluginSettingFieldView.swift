@@ -85,7 +85,7 @@ func missing(_ field: PluginSettingField, drafts: [String: Draft], localErrors: 
 /// 预检或保存被拒时核心按字段给的明细从 `overlay` 进来，盖过视图里带着的问题。
 struct PluginSettingFieldView: View {
     let field: PluginSettingField
-    var overlay: SettingsFieldError?
+    var overlay: SettingsFieldProblem?
     @Binding var drafts: [String: Draft]
     @Binding var touched: Set<String>
     @Binding var localErrors: [String: String]
