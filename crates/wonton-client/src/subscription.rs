@@ -1,8 +1,9 @@
 use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
-    AppearanceViewModel, BotContactsViewModel, ChatViewModel, ComposerViewModel, FriendsViewModel,
-    HomeViewModel, OnboardingViewModel, PeersViewModel, PluginsViewModel, ServersViewModel,
-    SessionListViewModel, SettingsViewModel, TabsViewModel, TransfersViewModel,
+    AppearanceViewModel, BotContactsViewModel, ChatViewModel, ComposerViewModel,
+    ConfirmationsViewModel, FriendsViewModel, HomeViewModel, OnboardingViewModel, PeersViewModel,
+    PluginsViewModel, ServersViewModel, SessionListViewModel, SettingsViewModel, TabsViewModel,
+    TransfersViewModel,
 };
 
 use crate::session_store::SessionStore;
@@ -120,6 +121,33 @@ impl ChatSubscription {
     /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
     pub async fn next(&self) -> Option<ChatViewModel> {
         self.updates.next(ChatViewModel::clone).await
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
+/// “等你确认”列表的订阅（ADR-0016），用法同 [`SessionListSubscription`]。
+#[derive(uniffi::Object)]
+pub struct ConfirmationsSubscription {
+    updates: Updates<ConfirmationsViewModel>,
+}
+
+impl ConfirmationsSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<ConfirmationsViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl ConfirmationsSubscription {
+    /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
+    pub async fn next(&self) -> Option<ConfirmationsViewModel> {
+        self.updates.next(ConfirmationsViewModel::clone).await
     }
 
     /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。

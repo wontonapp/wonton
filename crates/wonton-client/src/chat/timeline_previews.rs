@@ -4,7 +4,6 @@ use wonton_matrix::{EntryKind, TimelineEntry, Vector};
 use wonton_protocol::TimelineDiff;
 
 use super::agent_run::BotsView;
-use super::confirmation::CardsView;
 use super::links::LinkTargets;
 use super::previews::{Previews, message_target};
 use super::read_mark::ReadMark;
@@ -35,7 +34,6 @@ pub(super) fn ensure_previews(
 /// 预览落定了的条目重发一遍：这些条目的预览从没有变成有（或失败类别）。
 pub(super) fn preview_diffs(
     entries: &Vector<TimelineEntry>,
-    shown: &CardsView,
     read: &ReadMark,
     links: &LinkTargets,
     bots: &BotsView,
@@ -53,7 +51,7 @@ pub(super) fn preview_diffs(
         })
         .map(|(index, entry)| TimelineDiff::Set {
             index: u32::try_from(index).unwrap_or(u32::MAX),
-            item: timeline_item(entry.clone(), shown, read, links, bots, previews),
+            item: timeline_item(entry.clone(), read, links, bots, previews),
         })
         .collect()
 }

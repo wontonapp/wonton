@@ -12,7 +12,6 @@ use wonton_matrix::{Draft, Error, MatrixSession, OwnedEventId, OwnedRoomId};
 use wonton_protocol::{ComposerDraft, CoreError, ReplyQuote};
 
 use super::ChatLink;
-use super::confirmation::core_account;
 use super::links::{LinkTargets, first_external_link};
 use super::reply::quoted_message;
 use super::send::reply_target;
@@ -159,7 +158,6 @@ impl ChatLink {
                     message: quoted_message(
                         event_id.to_string(),
                         message,
-                        &core_account(session.user_id()),
                         &LinkTargets::of(&self.plugins.view()),
                     ),
                 },

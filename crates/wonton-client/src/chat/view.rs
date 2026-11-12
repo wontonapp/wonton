@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 
 use super::agent_run::BotsView;
-use super::confirmation::CardsView;
 use super::links::LinkTargets;
 use super::menu::message_actions;
 use super::read_mark::ReadMark;
@@ -132,7 +131,6 @@ pub(crate) fn summary(body: MessageBody, is_own: bool, links: &LinkTargets) -> M
 
 pub(crate) fn timeline_item(
     entry: TimelineEntry,
-    cards: &CardsView,
     read: &ReadMark,
     links: &LinkTargets,
     bots: &BotsView,
@@ -150,7 +148,7 @@ pub(crate) fn timeline_item(
                 bots.content(status, &body, message.sender.as_str())
             }
             _ => TimelineContent::Message {
-                message: timeline_message(*message, cards, read_by, links, previews),
+                message: timeline_message(*message, read_by, links, previews),
             },
         },
         EntryKind::Notice(text) => TimelineContent::Notice { text },
@@ -177,24 +175,14 @@ pub(crate) fn timeline_item(
 
 fn timeline_message(
     message: Message,
-    cards: &CardsView,
     read_by: Vec<String>,
     links: &LinkTargets,
     previews: &super::previews::Previews,
 ) -> TimelineMessage {
-    let card = cards.view_of(&message);
-    // 卡片靠编辑更新状态，对主人来说不是“编辑过”。
-    let edited = message.edited && card.is_none();
+    // 卡片不再是时间线里的消息（ADR-0016）：旧的核心发的卡片和别的消息一样按正文显示，这里没有特殊处理。
     // 预览只给文字消息：事件里带的直接用，没有的用核心取回的缓存（还在取的下一批带上）。
-    let preview = if card.is_none() {
-        super::previews::message_preview(&message, links, previews)
-    } else {
-        None
-    };
-    let body = match (card, message.body) {
-        (Some(view), _) => MessageContent::Confirmation { view },
-        (None, body) => message_content(body, message.is_own, links),
-    };
+    let preview = super::previews::message_preview(&message, links, previews);
+    let body = message_content(message.body, message.is_own, links);
     let event_id = message.event_id.map(|id| id.to_string());
     let sender_id = message.sender.to_string();
     let actions = message_actions(&body, event_id.as_deref(), message.can_redact, |event_id| {
@@ -223,10 +211,8 @@ fn timeline_message(
                 recoverable,
             },
         },
-        edited,
-        reply: message
-            .reply
-            .map(|reply| reply_quote(reply, cards.core_account(), links)),
+        edited: message.edited,
+        reply: message.reply.map(|reply| reply_quote(reply, links)),
         // 旁聊卡片按 SDK 的话题汇总合成（ADR-0093 §4），还没实现：先都不带。
         side_chat: None,
         preview,
@@ -293,13 +279,12 @@ fn index(index: usize) -> u32 {
 
 pub(crate) fn timeline_diff(
     diff: VectorDiff<TimelineEntry>,
-    cards: &CardsView,
     read: &ReadMark,
     links: &LinkTargets,
     bots: &BotsView,
     previews: &super::previews::Previews,
 ) -> TimelineDiff {
-    let item = |entry| timeline_item(entry, cards, read, links, bots, previews);
+    let item = |entry| timeline_item(entry, read, links, bots, previews);
     match diff {
         VectorDiff::Append { values } => TimelineDiff::Append {
             items: values.into_iter().map(item).collect(),
@@ -436,9 +421,6 @@ mod tests {
 
     #[test]
     fn timeline_exposes_upload_fractions_without_hiding_regressions() {
-        let owner: wonton_matrix::OwnedUserId = "@owner:wonton.localhost".parse().unwrap();
-        let (_, answers) = tokio::sync::watch::channel(Default::default());
-        let cards = crate::chat::confirmation::Cards::new(&owner, answers).view();
         for (counters, expected) in [
             (None, None),
             (Some((0, 0)), None),
@@ -455,7 +437,6 @@ mod tests {
                 entry(SendStatus::Sending {
                     progress: counters.map(|(current, total)| UploadProgress { current, total }),
                 }),
-                &cards,
                 &ReadMark::default(),
                 &LinkTargets::default(),
                 &BotsView::default(),

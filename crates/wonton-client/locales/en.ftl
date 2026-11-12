@@ -163,6 +163,8 @@ chat-confirmation-stop-lost = No response from your home server. You can try aga
 chat-confirmation-response-unreadable = The response from your home server couldn't be read ({ $error })
 # $status is the unchanged HTTP status code.
 chat-confirmation-core-status = Your home server returned HTTP { $status }
+chat-confirmations-list-failed = Couldn't load the list of confirmations: { $message }
+chat-confirmation-fetch-failed = Couldn't load the confirmation: { $message }
 ## Error details shown in the chat screen's problem banner and in a message's Details section.
 
 # Shown when starting a direct chat with an empty username.

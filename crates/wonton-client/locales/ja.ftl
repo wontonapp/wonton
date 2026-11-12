@@ -151,6 +151,8 @@ chat-confirmation-stop-lost = 自宅サーバーからの応答がありませ�
 chat-confirmation-response-unreadable = 自宅サーバーの応答を読み取れません（{ $error }）
 # $status は元のHTTPステータスコードです。
 chat-confirmation-core-status = 自宅サーバーがHTTP { $status }を返しました
+chat-confirmations-list-failed = 確認リストを読み込めませんでした：{ $message }
+chat-confirmation-fetch-failed = 確認カードを読み込めませんでした：{ $message }
 # 個人チャットを始めるとき、ユーザー名が空の場合に表示します。
 chat-contacts-empty-username = ユーザー名を入力してください。
 # $reason はMatrix IDパーサーの元のエラーです。
