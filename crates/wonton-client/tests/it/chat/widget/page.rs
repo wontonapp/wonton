@@ -33,6 +33,10 @@ impl WidgetPage {
         capabilities: &[&str],
     ) -> (Self, Value) {
         let page = PlacedTab::Bar { tab };
+        // 起容器之前拿：拿不到就失败，不留下没人收的容器。
+        let script = core
+            .tab_document_script(page.clone(), environment())
+            .unwrap();
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/it/tabs_bridge/fixtures");
         let container = format!("wonton-widget-sdk-{}", std::process::id());
         let mut child = Command::new("docker")
@@ -81,9 +85,6 @@ impl WidgetPage {
             }
             let _ = from_page.send(json!({"exited": true}));
         });
-        let script = core
-            .tab_document_script(page.clone(), environment())
-            .unwrap();
         input
             .send(json!({"script": script, "url": url, "capabilities": capabilities}).to_string())
             .unwrap();
