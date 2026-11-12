@@ -19,6 +19,8 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 - `ios.yml` 的模拟器构建（WontonTests）在只改了 wonton-client 依赖的其余 crate、依赖版本或工具链时：这些不改导出给
   Swift 的接口，很少弄坏 iOS。改到 Swift 这边或接口（`apps/ios`、设计生成、`wonton-protocol`、`wonton-client`）的
   PR 上照常跑、算必需检查：iOS 在 PR 上红的多半是这几处，挪到合后会让 main 一天红好几次。范围和理由写在 `ios.yml` 开头。
+  合进 main 的连续运行只留最新那次（`cancel-in-progress`）：结果只对旧提交有意义，iOS 的作业一次要编十几分钟，
+  留着旧的在争名额；被取消的旧提交按提交标题里的 `(#N)` 归到它的 PR。
 - `main-image.yml`：核心镜像构建。
 - `nightly-ui.yml`：两端的界面测试（XCUITest、设备上的 androidTest），只定时和手动。
 
@@ -52,7 +54,7 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
   `push` 触发器上，和 `gate.yml` 里 `rust` 的列表要一起维护。
 - 草稿 PR 上 `changes` 和 `rust`、`ios`、`android` 都不起，只有 lint 和汇总；lint 只跑冲突标记和密钥扫描（同一个作业的
   相邻两步）。转 ready（`ready_for_review`）按改动范围运行。
-- 所有 PR 运行都 `cancel-in-progress`：反正要重跑，旧的别继续占名额；定时运行跑完。`gate` 整轮取消时调用的重作业跟着取消；
+- PR 运行和 `main` 上的 `push` 运行都 `cancel-in-progress`：反正要重跑，旧的别继续占名额；定时运行跑完（组名单列）。`gate` 整轮取消时调用的重作业跟着取消；
   被调用的工作流自己的并发组名带前缀（`rust-`、`ios-`、`android-`），和 `gate-` 不重名，否则 GitHub 判成调用方和
   被调用方互相等待。
 - `cache.yml` 不取消进行中的运行，否则 main 忙时缓存几乎写不回去；并发组按作业分，同一作业只跑一个、只留最新一个等着。
