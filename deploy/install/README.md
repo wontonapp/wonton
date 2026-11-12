@@ -90,9 +90,12 @@ ACME 为服务器名本身、`*.<服务器名>` 和 `*.lan.<服务器名>` 签�
 主人负责在到期前更新此文件，保持入口容器可读的所有者和权限，并执行
 `docker kill -s SIGUSR2 wonton-entry` 热加载。
 
-入口容器（`wonton-entry`）和连接器（`wonton-connector`）不在 Compose 里：核心按 `entry/settings.json` 在启动时和设置变化时
-经 Docker API 建、删它们，跟着开关和地址走。升级到带这个行为的核心后第一次启动会自动按已有设置建出来，不用手动做什么；
-回退到旧核心时升级器会按标签删掉它们。
+入口容器（`wonton-entry`）和连接器（`wonton-connector`）不在 Compose 里：核心按 `entry/settings.json` 启动时和此后每隔一阵
+经 Docker API 对账建、删它们，改了 `.env` 里的发布地址或端口会重建。升级到带这个行为的核心后第一次启动会自动按已有设置
+建出来，上一版由 Compose 建的同名容器会被认领、删掉重建，不用手动做什么；回退到旧核心时升级器会按标签删掉它们。
+
+它们挂着 `clients`、`edge`、`relay`，`docker compose down` 删不掉还连着网络的容器：拆栈或卸载前先
+`docker rm -f wonton-entry wonton-connector`（有实例名时是 `wonton-<实例名>--entry`、`--connector`），再 `down`。
 
 ## 装在哪
 

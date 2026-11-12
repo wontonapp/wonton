@@ -135,6 +135,10 @@ async fn federation_settings_create_entry_and_connector() {
     assert!(rig.docker.endpoint(&clients, "wonton-connector").is_none());
     assert!(rig.docker.endpoint(&relay, "wonton-connector").is_some());
     assert_eq!(rig.docker.gateway_priority(&edge), Some(-1));
+    // 端点写在创建请求里，不走 `network_mode: none` 再 connect（Docker 拒绝那种接法）。
+    assert_ne!(entry["HostConfig"]["NetworkMode"], json!("none"));
+    assert!(entry["NetworkingConfig"]["EndpointsConfig"][&clients].is_object());
+    assert!(entry["NetworkingConfig"]["EndpointsConfig"][&edge].is_object());
 }
 
 /// 安全选项逐项断言：非 root、只读根、能力全去、不升权、清代理变量、没有 Docker socket 挂载。
@@ -196,11 +200,9 @@ async fn reconcile_is_idempotent() {
     rig.reconcile(Some(&settings())).await.unwrap();
     assert_eq!(rig.docker.creations("wonton-entry"), 1);
     assert_eq!(rig.docker.creations("wonton-connector"), 1);
-    let edge = format!("{PROJECT}_edge");
-    let connects = rig
-        .writes_for(&format!("POST /networks/{edge}/connect"))
-        .len();
-    assert_eq!(connects, 2, "只该各接一次：{connects}");
+    // 端点都在创建请求里，第二次对账既不重建也不补接网络。
+    let connects = rig.writes_for("/connect").len();
+    assert_eq!(connects, 0, "{connects}");
 }
 
 /// 设置撤了：两个容器都删掉。
@@ -294,6 +296,71 @@ async fn a_stranger_with_the_name_is_reported() {
     assert_eq!(error.category(), "conflict");
     assert!(error.to_string().contains("wonton-entry"), "{error}");
     assert_eq!(rig.created("wonton-entry")["Image"], json!("other:1"));
+}
+
+/// 上一版由 compose 建的同名容器只带 compose 标签：认领、删掉、按现在的样子重建。
+#[tokio::test]
+async fn previous_compose_containers_are_adopted() {
+    let rig = Rig::new().await;
+    rig.docker.add_stranger_container(
+        "wonton-entry",
+        json!({"Image": HAPROXY_IMAGE, "Labels": {
+            "com.docker.compose.project": PROJECT,
+            "com.docker.compose.service": "entry",
+        }}),
+    );
+    rig.reconcile(Some(&settings())).await.unwrap();
+    let created = rig.created("wonton-entry");
+    assert_eq!(created["Labels"]["wonton.core.component"], "entry");
+    assert_eq!(rig.docker.creations("wonton-entry"), 1);
+}
+
+/// 换发布端口要重建：只管“镜像没变就什么都不做”会让改了端口一直是旧的。
+#[tokio::test]
+async fn a_changed_publish_port_recreates_the_connector() {
+    let rig = Rig::new().await;
+    let containers = rig.containers.with_binding("127.0.0.1", "18443");
+    containers.reconcile(Some(&settings())).await.unwrap();
+    let containers = containers.with_binding("127.0.0.1", "18444");
+    containers.reconcile(Some(&settings())).await.unwrap();
+    assert_eq!(rig.docker.creations("wonton-connector"), 2);
+    assert_eq!(
+        rig.docker.created("wonton-connector").unwrap_or_default()["HostConfig"]["PortBindings"]["8443/tcp"],
+        json!([{"HostIp": "127.0.0.1", "HostPort": "18444"}])
+    );
+}
+
+/// 类别不能都报成 docker_unavailable。
+#[test]
+fn categories_follow_the_cause() {
+    use crate::plugin::docker::EngineError;
+    let category = |error: EntryError| error.category();
+    assert_eq!(
+        category(EntryError::Docker(EngineError::PortTaken("x".into()))),
+        "conflict"
+    );
+    assert_eq!(
+        category(EntryError::Docker(EngineError::Rejected {
+            context: "x".into(),
+            message: "y".into()
+        })),
+        "invalid_input"
+    );
+    assert_eq!(
+        category(EntryError::Docker(EngineError::NotFound("x".into()))),
+        "not_found"
+    );
+    assert_eq!(
+        category(EntryError::Docker(EngineError::Pull {
+            image: "i".into(),
+            message: "m".into()
+        })),
+        "source_unavailable"
+    );
+    assert_eq!(
+        category(EntryError::Docker(EngineError::Unavailable("x".into()))),
+        "docker_unavailable"
+    );
 }
 
 fn federation_registration() -> crate::home_service::Registration {

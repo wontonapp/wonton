@@ -365,6 +365,9 @@ async fn serve() -> anyhow::Result<()> {
     let files = serve::open_files(&cfg, host, http.clone(), audit.clone(), images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
+    // 入口容器先对账：联邦转发要解析 `entry.wonton.internal`，那个别名只有入口容器带着。失败按类别记日志、照常启动
+    // （`upstream` 解析不到时会退回 Tuwunel 的 8448），带退避的重试在入口的每小时循环里。
+    let entry = start_entry_runtime(&cfg, &engine).await;
     // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
     let (peers, federation, _forwarder) =
         open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
@@ -373,7 +376,9 @@ async fn serve() -> anyhow::Result<()> {
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
     let clients = open_clients(&cfg, &engine, &notices)?;
-    spawn_entry_runtime(&cfg, &engine, &clients, &notices);
+    if let (Some(containers), Some(clients)) = (entry, &clients) {
+        wonton_core::entry_runtime::spawn(containers, clients.clone(), notices.clone());
+    }
     let contacts = serve::open_contacts(
         &cfg,
         (&manager, &members, &owner),
@@ -766,15 +771,12 @@ fn open_clients(
 }
 
 /// 用安装脚本装的核心（有安装目录）才管入口；核心不在容器里时由入口自己报 `core_not_in_container`。
-fn spawn_entry_runtime(
+/// 对账现在做一次：后面要解析入口地址的启动步骤等在这里。
+async fn start_entry_runtime(
     cfg: &Config,
     engine: &Engine,
-    clients: &Option<Arc<wonton_core::clients::domain::Domain>>,
-    notices: &Option<Arc<NoticeRoom>>,
-) {
-    let (Some(dir), Some(clients)) = (&cfg.install_dir, clients) else {
-        return;
-    };
+) -> Option<wonton_core::entry_containers::EntryContainers> {
+    let dir = cfg.install_dir.as_ref()?;
     let containers = wonton_core::entry_containers::EntryContainers::new(
         engine.clone(),
         dir.clone(),
@@ -782,7 +784,18 @@ fn spawn_entry_runtime(
         cfg.instance.clone(),
         cfg.core_container.clone(),
     );
-    wonton_core::entry_runtime::spawn(containers, clients.clone(), notices.clone());
+    let settings = match wonton_core::entry_settings::EntrySettings::load(dir) {
+        Ok(settings) => settings,
+        Err(error) => {
+            tracing::warn!(%error, "入口设置读不了，先不建入口");
+            None
+        }
+    };
+    if let Err(error) = containers.reconcile(settings.as_ref()).await {
+        // 入口的循环会带退避重试，这里不挡住核心启动。
+        tracing::warn!(category = error.category(), %error, "入口容器没对上");
+    }
+    Some(containers)
 }
 
 fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::Result<Push> {

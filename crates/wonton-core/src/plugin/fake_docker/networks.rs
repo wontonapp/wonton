@@ -54,6 +54,20 @@ fn reject_overlap(docker: &mut Resources, body: &Value) -> Option<Response> {
 }
 
 /// `/networks...` 的端点。
+/// Docker 29 的行为：`network_mode: none` 的容器接不上任何网络（真实 Docker 的原话）。
+fn reject_none_mode(docker: &Resources, container: &str) -> Option<Response> {
+    let none_mode = docker
+        .created
+        .get(container)
+        .is_some_and(|created| created["HostConfig"]["NetworkMode"] == "none");
+    none_mode.then(|| {
+        json_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({"message": "container cannot be connected to multiple networks with one of the networks in private (none) mode"}),
+        )
+    })
+}
+
 pub(super) fn networks(
     docker: &mut Resources,
     method: &Method,
@@ -86,6 +100,12 @@ pub(super) fn networks(
         (&Method::POST, [name, action @ ("connect" | "disconnect")]) => {
             let found = docker.networks.contains_key(*name);
             let container = body["Container"].as_str().unwrap_or_default().to_owned();
+            if found
+                && *action == "connect"
+                && let Some(reply) = reject_none_mode(docker, &container)
+            {
+                return Some(reply);
+            }
             let endpoints = docker.endpoints.entry((*name).to_owned()).or_default();
             if found && *action == "connect" {
                 endpoints.insert(container, body["EndpointConfig"].clone());

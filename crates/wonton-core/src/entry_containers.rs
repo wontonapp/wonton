@@ -13,8 +13,8 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use bollard::models::{
-    ContainerCreateBody, HostConfig, HostConfigLogConfig, PortBinding, RestartPolicy,
-    RestartPolicyNameEnum,
+    ContainerCreateBody, EndpointIpamConfig, EndpointSettings, HostConfig, HostConfigLogConfig,
+    NetworkingConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum,
 };
 
 use crate::entry_haproxy::{CONNECTOR_ADDRESS, ENTRY_EDGE_ADDRESS};
@@ -23,6 +23,7 @@ use crate::plugin::compose::PullPolicy;
 use crate::plugin::core_address::Endpoint;
 use crate::plugin::docker::{Engine, EngineError};
 use crate::plugin::names::{Instance, LABEL_COMPONENT, LABEL_MANAGED_BY};
+use bollard::models::ContainerInspectResponse;
 
 /// 组件的标签值，也是镜像 `wonton.core.components` 里声明的名字。
 pub const ENTRY_COMPONENT: &str = "entry";
@@ -52,10 +53,16 @@ impl EntryError {
     /// ADR-0017 的错误类别（C2 定了 `core_not_in_container` 等几条）。
     pub fn category(&self) -> &'static str {
         match self {
-            Self::CoreNotInContainer => "core_not_in_container",
+            Self::CoreNotInContainer | Self::NetworkMissing(_) => "core_not_in_container",
             Self::NameTaken(_) | Self::NotOneEntry(_) => "conflict",
-            Self::NetworkMissing(_) => "core_not_in_container",
-            Self::Docker(_) => "docker_unavailable",
+            Self::Docker(EngineError::PortTaken(_)) => "conflict",
+            Self::Docker(EngineError::Rejected { .. }) => "invalid_input",
+            Self::Docker(EngineError::NotFound(_)) => "not_found",
+            Self::Docker(EngineError::Pull { .. }) => "source_unavailable",
+            Self::Docker(EngineError::Unavailable(_) | EngineError::TimedOut(_)) => {
+                "docker_unavailable"
+            }
+            Self::Docker(EngineError::Unsupported(_)) => "invalid_input",
         }
     }
 }
@@ -109,6 +116,8 @@ pub struct EntryContainers {
     data_dir: PathBuf,
     instance: Instance,
     core_container: Option<String>,
+    /// 连接器发布的地址和端口；空时看 `WONTON_ENTRY_BIND`/`WONTON_ENTRY_PORT`。
+    binding: Option<(String, String)>,
 }
 
 impl EntryContainers {
@@ -125,7 +134,14 @@ impl EntryContainers {
             data_dir,
             instance,
             core_container,
+            binding: None,
         }
+    }
+
+    /// 测试用：固定发布地址和端口，不读进程环境。
+    pub fn with_binding(mut self, bind: &str, port: &str) -> Self {
+        self.binding = Some((bind.to_owned(), port.to_owned()));
+        self
     }
 
     pub fn engine(&self) -> Engine {
@@ -140,8 +156,11 @@ impl EntryContainers {
         &self.data_dir
     }
 
-    /// 有联邦或者任何一个打开的入口就要入口容器；有连接器设置就要连接器（C5 里是家名服务和路由器转发的默认端口）。
-    /// 没有设置就两个都不要，连网络也不用查。
+    /// 有联邦或者任何一个打开的入口就要入口容器；有连接器设置就要连接器。
+    ///
+    /// `settings` 只在有名字时装机写下，那时 `is_private` 一定是假，所以这里目前恒开；入口的开关（ADR-0021）要等设置里
+    /// 有开关以后才可能关掉它。连接器同样：家名服务（frpc）和路由器转发（发布端口的 HAProxy）现在都随设置存在，
+    /// ADR-0090 的总开关接上后再由设置决定。
     fn wanted(settings: &EntrySettings) -> (bool, bool) {
         let federation = !crate::matrix::federation_config::is_private(&settings.domain);
         (federation, true)
@@ -162,7 +181,7 @@ impl EntryContainers {
                 Ok(())
             };
         };
-        let mut networks = None;
+        let mut resolved = None;
         let sides: [(bool, &'static str); 2] =
             [(entry, ENTRY_COMPONENT), (connector, CONNECTOR_COMPONENT)];
         for (wanted, component) in sides {
@@ -171,12 +190,29 @@ impl EntryContainers {
                 self.engine.remove_container(&name).await?;
                 continue;
             }
-            if networks.is_none() {
-                networks = Some(self.networks(core).await?);
+            if resolved.is_none() {
+                resolved = Some(self.networks(core).await?);
             }
-            let networks = networks.as_ref().expect("网络刚取过");
+            let (project, networks) = resolved.as_ref().expect("网络刚取过");
             let side = self.side(component, networks, settings.expect("要有设置才可能有容器"))?;
-            self.ensure(&side).await?;
+            self.ensure(&side, project).await?;
+        }
+        Ok(())
+    }
+
+    /// 拆栈和卸载时按组件标签删掉两个容器：它们挂着网络，compose `down` 删不掉。
+    pub async fn remove_all(&self) -> Result<(), EntryError> {
+        for component in [ENTRY_COMPONENT, CONNECTOR_COMPONENT] {
+            let found = self
+                .engine
+                .labeled(LABEL_MANAGED_BY, "core", |labels| {
+                    self.instance.owns(labels)
+                        && labels.get(LABEL_COMPONENT).map(String::as_str) == Some(component)
+                })
+                .await?;
+            for name in found.containers {
+                self.engine.remove_container(&name).await?;
+            }
         }
         Ok(())
     }
@@ -207,8 +243,9 @@ impl EntryContainers {
         }
     }
 
-    /// compose 给主项目渲染的网络名：`<项目>_clients`。项目名从核心自己的标签读，开发栈和正式安装不写死。
-    async fn networks(&self, core: &str) -> Result<Networks, EntryError> {
+    /// compose 给主项目渲染的网络名：`<项目>_clients`。项目名从核心自己的标签读，开发栈和正式安装不写死；
+    /// 项目名也用来认上一版 compose 建的同名容器。
+    async fn networks(&self, core: &str) -> Result<(String, Networks), EntryError> {
         let labels = self
             .engine
             .inspect_container(core)
@@ -231,22 +268,25 @@ impl EntryContainers {
                 return Err(EntryError::NetworkMissing(name.clone()));
             }
         }
-        Ok(networks)
+        Ok((project, networks))
     }
 
-    /// 创建一侧的容器：已经在了就只补齐网络；镜像变了重建；名字被别的资源占着就停。
-    async fn ensure(&self, side: &Side) -> Result<(), EntryError> {
+    /// 创建一侧的容器：已经在了就只补齐网络；镜像或运行参数变了、或者是上一版 compose 留下的同名容器，删了重建；
+    /// 名字被别的资源占着就停。
+    async fn ensure(&self, side: &Side, project: &str) -> Result<(), EntryError> {
         let name = self.name(side.component);
         let found = self.engine.inspect_container(&name).await?;
+        let mut previous_version = false;
         if let Some(info) = &found {
             let labels = info
                 .config
                 .as_ref()
                 .and_then(|config| config.labels.clone())
                 .unwrap_or_default();
-            if !self.owns(&labels, side.component) {
+            if !self.owns(&labels, side.component, project) {
                 return Err(EntryError::NameTaken(name));
             }
+            previous_version = is_previous_version(&labels, side.component, project);
         }
         // 拉不到镜像时不动正在跑的容器。
         let image = self
@@ -268,10 +308,12 @@ impl EntryContainers {
             == Some(true);
         let mut body = side.body.clone();
         body.image = Some(image);
-        if found.is_some() && (!current || !running) {
+        let same_options = found.as_ref().is_some_and(|info| same_options(info, &body));
+        let recreate = !current || !running || !same_options || previous_version;
+        if found.is_some() && recreate {
             self.engine.remove_container(&name).await?;
         }
-        if !current || !running {
+        if recreate {
             self.engine.create_container(&name, body).await?;
         }
         for (network, endpoint) in &side.endpoints {
@@ -281,16 +323,17 @@ impl EntryContainers {
                     .await?;
             }
         }
-        if !current || !running {
+        if recreate {
             self.engine.start_container(&name).await?;
         }
         Ok(())
     }
 
-    fn owns(&self, labels: &HashMap<String, String>, component: &str) -> bool {
+    fn owns(&self, labels: &HashMap<String, String>, component: &str, project: &str) -> bool {
         self.instance.owns(labels)
-            && labels.get(LABEL_MANAGED_BY).map(String::as_str) == Some("core")
-            && labels.get(LABEL_COMPONENT).map(String::as_str) == Some(component)
+            && (is_previous_version(labels, component, project)
+                || labels.get(LABEL_MANAGED_BY).map(String::as_str) == Some("core")
+                    && labels.get(LABEL_COMPONENT).map(String::as_str) == Some(component))
     }
 
     fn labels(&self, component: &str) -> HashMap<String, String> {
@@ -322,6 +365,27 @@ impl EntryContainers {
                 )
             })
             .collect();
+        let endpoints = endpoints(component, networks);
+        // `network_mode: none` 的容器接不上别的网络（Docker 29 实测）：创建时就把端点写进 networking_config，
+        // 主网络写 NetworkMode，其余端点一起带上。
+        let primary = endpoints.first().expect("每个组件都有网络").0.clone();
+        let endpoints_config: HashMap<String, EndpointSettings> = endpoints
+            .iter()
+            .map(|(network, endpoint)| {
+                (
+                    network.clone(),
+                    EndpointSettings {
+                        aliases: Some(endpoint.aliases.clone()),
+                        gw_priority: endpoint.gw_priority,
+                        ipam_config: endpoint.address.clone().map(|address| EndpointIpamConfig {
+                            ipv4_address: Some(address),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
         Ok(Side {
             component,
             image,
@@ -337,9 +401,12 @@ impl EntryContainers {
                 labels: Some(self.labels(component)),
                 exposed_ports: (!ports.is_empty())
                     .then(|| ports.iter().map(|(key, _)| key.clone()).collect()),
+                networking_config: Some(NetworkingConfig {
+                    endpoints_config: Some(endpoints_config),
+                }),
                 host_config: Some(HostConfig {
                     binds: Some(binds),
-                    network_mode: Some("none".to_owned()),
+                    network_mode: Some(primary),
                     restart_policy: Some(RestartPolicy {
                         name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
                         ..Default::default()
@@ -359,7 +426,7 @@ impl EntryContainers {
                 }),
                 ..Default::default()
             },
-            endpoints: endpoints(component, networks),
+            endpoints,
         })
     }
 
@@ -398,7 +465,7 @@ impl EntryContainers {
                     haproxy_command("/config/connector.cfg"),
                     mounts(&entry, &[("connector.cfg", "/config/connector.cfg")]),
                     // 路由器把公网端口转到宿主，连接器在宿主上收。
-                    vec![(format!("{CONNECTOR_PORT}/tcp"), host_binding())],
+                    vec![(format!("{CONNECTOR_PORT}/tcp"), self.host_binding())],
                 ),
             }
         } else {
@@ -424,6 +491,24 @@ impl EntryContainers {
             )))
         })?;
         Ok(format!("{}:{}", cert.uid(), cert.gid()))
+    }
+
+    /// 连接器发布在宿主哪里：`WONTON_ENTRY_BIND`、`WONTON_ENTRY_PORT` 可改，默认只有回环。
+    fn host_binding(&self) -> String {
+        let (bind, port) = self.binding.clone().unwrap_or_else(|| {
+            let bind = std::env::var("WONTON_ENTRY_BIND")
+                .ok()
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "127.0.0.1".to_owned());
+            let port = std::env::var("WONTON_ENTRY_PORT")
+                .ok()
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| CONNECTOR_PORT.to_string());
+            (bind, port)
+        });
+        // IPv6 的写法是 `[::1]:8443`，地址里的冒号不能当作分隔符。
+        let bind = bind.trim_start_matches('[').trim_end_matches(']');
+        format!("{bind}:{port}")
     }
 }
 
@@ -462,6 +547,42 @@ fn endpoints(component: &str, networks: &Networks) -> Vec<(String, Endpoint)> {
     ]
 }
 
+/// 上一版 compose 建的同名容器：只带 compose 的标签、没有我们的组件标签。升级到这条线以后第一次启动时
+/// 它们还占着名字，升级器要等 `up` 末尾的 `--remove-orphans` 才删，这里直接认领、删了重建。
+fn is_previous_version(labels: &HashMap<String, String>, component: &str, project: &str) -> bool {
+    labels.get("com.docker.compose.project").map(String::as_str) == Some(project)
+        && labels.get("com.docker.compose.service").map(String::as_str) == Some(component)
+        && labels.get(LABEL_MANAGED_BY).is_none()
+}
+
+/// 运行参数和期望的一样：用户、只读挂载、发布端口、代理变量。不一样就重建（改了端口要生效）。
+fn same_options(info: &ContainerInspectResponse, body: &ContainerCreateBody) -> bool {
+    let config = info.config.as_ref();
+    let host = info.host_config.as_ref();
+    let (Some(config), Some(host)) = (config, host) else {
+        return false;
+    };
+    if config.user != body.user {
+        return false;
+    }
+    let wanted_host = body.host_config.as_ref();
+    let binds = |list: Option<&Vec<String>>| list.cloned().unwrap_or_default();
+    if binds(host.binds.as_ref()) != binds(wanted_host.and_then(|h| h.binds.as_ref())) {
+        return false;
+    }
+    let ports =
+        |map: Option<&HashMap<String, Option<Vec<PortBinding>>>>| map.cloned().unwrap_or_default();
+    if ports(host.port_bindings.as_ref())
+        != ports(wanted_host.and_then(|h| h.port_bindings.as_ref()))
+    {
+        return false;
+    }
+    let env = |list: Option<&Vec<String>>| -> std::collections::BTreeSet<String> {
+        list.cloned().unwrap_or_default().into_iter().collect()
+    };
+    env(config.env.as_ref()) == env(body.env.as_ref())
+}
+
 /// 容器里只读挂的配置文件。
 fn mounts(entry: &Path, names: &[(&str, &str)]) -> Vec<String> {
     names
@@ -483,24 +604,6 @@ struct Networks {
     clients: String,
     edge: String,
     relay: String,
-}
-
-/// 连接器发布在宿主哪里：`WONTON_ENTRY_BIND`、`WONTON_ENTRY_PORT` 可改，默认只有回环。
-fn host_binding() -> String {
-    let bind = std::env::var("WONTON_ENTRY_BIND")
-        .ok()
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "127.0.0.1".to_owned());
-    // IPv6 的写法是 `[::1]:8443`，地址里的冒号不能当作分隔符。
-    let bind = bind
-        .trim_start_matches('[')
-        .trim_end_matches(']')
-        .to_owned();
-    let port = std::env::var("WONTON_ENTRY_PORT")
-        .ok()
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| CONNECTOR_PORT.to_string());
-    format!("{bind}:{port}")
 }
 
 #[cfg(test)]

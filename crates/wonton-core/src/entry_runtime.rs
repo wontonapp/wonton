@@ -107,36 +107,64 @@ async fn trusted_entry(State(authority): State<String>, req: Request, next: Next
     next.run(req).await
 }
 
-/// 初始对账一次；之后每小时查家里状态、每 24 小时让 [`crate::clients::domain::Domain`] 续期
-/// （续期只发布证书，入口容器在不在由对账判断）。
+/// 对账按退避间隔跑，家名和证书按小时跑；续期由 [`crate::clients::domain::Domain`] 发布证书，
+/// 入口容器在不在由对账判断（读不到设置按"不确定"，不删在跑的容器）。
 pub fn spawn(
     containers: EntryContainers,
     domain: Arc<crate::clients::domain::Domain>,
     notices: Option<Arc<NoticeRoom>>,
 ) {
-    // 读不了设置是"不确定"：不按"无设置"删掉在跑的入口容器，先按没有设置对账，交给运行循环重读。
-    let settings = EntrySettings::load(containers.install_dir()).ok().flatten();
     tokio::spawn(async move {
-        match containers.reconcile(settings.as_ref()).await {
-            Ok(()) => {}
-            // 宿主上跑的核心没有入口网络：开发时正常，如实记下类别。
-            Err(error) => tracing::warn!(category = error.category(), %error, "入口容器没对上"),
-        }
-        let mut hourly = tokio::time::interval(Duration::from_secs(3600));
         let mut previous = None;
         let mut hours = 0;
+        let mut retry = Duration::from_secs(RETRY_MIN);
+        let mut hourly = tokio::time::interval(Duration::from_secs(3600));
         loop {
-            hourly.tick().await;
-            if let Some(settings) = &settings {
-                check_home(settings, containers.data_dir(), &notices, &mut previous).await;
+            // 对账按退避间隔跑，家名和证书按小时跑；第一次对账等一会儿，起来先服务再对账。
+            tokio::select! {
+                _ = tokio::time::sleep(retry) => {
+                    retry = reconcile_entry(&containers)
+                        .await
+                        .unwrap_or(retry * 2)
+                        .min(Duration::from_secs(RETRY_MAX));
+                }
+                _ = hourly.tick() => {
+                    let Ok(Some(settings)) = EntrySettings::load(containers.install_dir()) else {
+                        continue;
+                    };
+                    check_home(&settings, containers.data_dir(), &notices, &mut previous).await;
+                    if hours % 24 == 0 {
+                        domain.renew_if_configured();
+                    }
+                    hours += 1;
+                }
             }
-            if hours % 24 == 0 {
-                domain.renew_if_configured();
-            }
-            hours += 1;
         }
     });
 }
+
+/// 对一次账，返回下一次的退避间隔：成功时回到最短，失败时翻倍（调用方封顶到 [`RETRY_MAX`]）。
+async fn reconcile_entry(containers: &EntryContainers) -> Option<Duration> {
+    let settings = match EntrySettings::load(containers.install_dir()) {
+        Ok(settings) => settings,
+        Err(error) => {
+            tracing::warn!(%error, "入口设置读不了");
+            return None;
+        }
+    };
+    match containers.reconcile(settings.as_ref()).await {
+        Ok(()) => Some(Duration::from_secs(RETRY_MIN)),
+        Err(error) => {
+            // 核心照常服务；入口的状态在下一次对账成功时恢复。
+            tracing::warn!(category = error.category(), %error, "入口容器没对上，稍后重试");
+            None
+        }
+    }
+}
+
+/// 对账失败后的第一次重试间隔和上限；调用方把翻倍的结果封到这里。
+const RETRY_MIN: u64 = 30;
+const RETRY_MAX: u64 = 600;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum NameState {

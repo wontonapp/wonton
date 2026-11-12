@@ -201,14 +201,16 @@ class Home:
     def attach_connector(self):
         """连接器由核心建、只接 edge 和 relay：云栈的测试网络和解析器在 compose 里没有机会注入。
 
-        先接网络、再写解析器，最后重启：frpc 设了 `loginFailExit`，起不来时已经退出，不重启不会重试。
+        顺序：接网络 → 重启（frpc 设了 `loginFailExit`，起不来时已经退出，不重启不会重试）→ 再写解析器。
+        解析器放最后：`restart` 会按 Daemon 的配置把 `/etc/resolv.conf` 重写掉，先写会被抹掉；写它是 root 的文件
+        （容器里跑的是证书属主，非 root），所以要 `-u 0`。
         """
         connector = wait_for("connector container",
                              lambda: self.component_container("connector"), seconds=120)
         run("docker", "network", "connect", self.cloud["network"], connector)
-        run("docker", "exec", connector, "sh", "-c",
-            f"printf 'nameserver {self.cloud['resolver']}\n' >> /etc/resolv.conf")
         run("docker", "restart", connector)
+        run("docker", "exec", "-u", "0", connector, "sh", "-c",
+            f"printf 'nameserver {self.cloud['resolver']}\n' >> /etc/resolv.conf")
 
     def api(self, path, body=None):
         headers = {"Authorization": "Bearer " + self.token, "Host": f"wonton.localhost:{self.port}"}
