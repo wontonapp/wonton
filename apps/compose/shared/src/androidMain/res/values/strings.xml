@@ -872,6 +872,60 @@
     </plurals>
     <!-- Action-sheet item that updates the app. Argument: the new version. -->
     <string name="launcher_upgrade_to">Update to %1$s</string>
+    <!-- Row in the server list that opens signing in with an existing Matrix account. No arguments; short label. -->
+    <string name="matrix_login_entry">Sign in with a Matrix account</string>
+    <!-- Navigation title of the Matrix sign-in page. No arguments; fits a phone navigation bar. -->
+    <string name="matrix_login_title">Sign in with Matrix</string>
+    <!-- Field label for the Matrix server to sign in to, a server name like matrix.org or an https URL. No arguments; short label. -->
+    <string name="matrix_login_server">Server</string>
+    <!-- Button that asks the core to check the server and list the ways to sign in. No arguments; short button label. -->
+    <string name="matrix_login_continue">Continue</string>
+    <!-- Progress line while the core contacts the server to discover the sign-in methods. Argument: the server name or URL the user chose. -->
+    <string name="matrix_login_contacting">Contacting %1$s</string>
+    <!-- Button for the password method in the list of ways the server supports. No arguments; short button label. -->
+    <string name="matrix_login_method_password">Sign in with password</string>
+    <!-- Button for the server's own OIDC sign-in, which opens in the system browser. No arguments; short button label. -->
+    <string name="matrix_login_method_oidc">Continue in browser</string>
+    <!-- Field label for the full Matrix user ID, like @user:example.org. No arguments; short label. -->
+    <string name="matrix_login_user_id">Matrix user ID</string>
+    <!-- Field label for the account password. No arguments; short label. -->
+    <string name="matrix_login_password">Password</string>
+    <!-- Button that submits the user ID and password to the server. No arguments; short button label. -->
+    <string name="matrix_login_sign_in">Sign in</string>
+    <!-- Progress line while the core signs in with the password. No arguments. -->
+    <string name="matrix_login_signing_in">Signing in</string>
+    <!-- Progress line while the core stores the signed-in session on this phone. No arguments. -->
+    <string name="matrix_login_saving">Saving the session</string>
+    <!-- Progress line while the user finishes the sign-in in the system browser. No arguments. -->
+    <string name="matrix_login_finish_in_browser">Finish signing in in the browser</string>
+    <!-- Button that opens the browser again for the pending OIDC sign-in. No arguments; short button label. -->
+    <string name="matrix_login_open_browser">Open browser</string>
+    <!-- Notice when the phone has no app that can open the browser link. No arguments. -->
+    <string name="matrix_login_no_browser">No browser app to open the sign-in page</string>
+    <!-- Failure title: the server name or URL doesn't point to a Matrix homeserver. No arguments. -->
+    <string name="matrix_login_failed_invalid_homeserver">Can’t find a Matrix server at this address</string>
+    <!-- Failure title: the server couldn't be reached to discover the sign-in methods. No arguments. -->
+    <string name="matrix_login_failed_discovery">Couldn’t reach the server</string>
+    <!-- Failure title: the server offers none of the sign-in methods this app supports. No arguments. -->
+    <string name="matrix_login_failed_unsupported_method">This server has no supported way to sign in</string>
+    <!-- Failure title: the network is unavailable. No arguments. -->
+    <string name="matrix_login_failed_transport">The network is unavailable</string>
+    <!-- Failure title: the server rejected the user ID or password. No arguments. -->
+    <string name="matrix_login_failed_invalid_credentials">The user ID or password is wrong</string>
+    <!-- Failure title: the server rejected the browser sign-in. No arguments. -->
+    <string name="matrix_login_failed_oidc_rejected">The server rejected the browser sign-in</string>
+    <!-- Failure title: the browser came back without a complete sign-in result. No arguments. -->
+    <string name="matrix_login_failed_invalid_callback">The sign-in result from the browser is incomplete</string>
+    <!-- Failure title: the sign-in took too long or expired on the server. No arguments. -->
+    <string name="matrix_login_failed_expired">The sign-in expired, start over</string>
+    <!-- Failure title: signing in worked but saving the session on this phone failed. No arguments. -->
+    <string name="matrix_login_failed_storage">Signed in, but saving it on this phone failed</string>
+    <!-- Failure title: the homeserver or its sign-in service returned an error (5xx, rate limiting, an unexpected reply), not a problem with the credentials or input. No arguments. -->
+    <string name="matrix_login_failed_upstream">The server or its sign-in service had a problem</string>
+    <!-- Failure title for every category the app doesn't know. No arguments. -->
+    <string name="matrix_login_failed_other">Signing in failed</string>
+    <!-- Notice when the core reports a state the app doesn't know. No arguments. -->
+    <string name="matrix_login_unknown_state">Signing in can’t continue right now</string>
     <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
     <string name="message_clip_label">Message</string>
     <!-- Item in the message menu: copy the message text. Android only. -->

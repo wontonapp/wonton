@@ -792,6 +792,60 @@
     </plurals>
     <!-- Action-sheet item that updates the app. Argument: the new version. -->
     <string name="launcher_upgrade_to">升級到 %1$s</string>
+    <!-- Row in the server list that opens signing in with an existing Matrix account. No arguments; short label. -->
+    <string name="matrix_login_entry">用 Matrix 帳號登入</string>
+    <!-- Navigation title of the Matrix sign-in page. No arguments; fits a phone navigation bar. -->
+    <string name="matrix_login_title">登入 Matrix 帳號</string>
+    <!-- Field label for the Matrix server to sign in to, a server name like matrix.org or an https URL. No arguments; short label. -->
+    <string name="matrix_login_server">伺服器</string>
+    <!-- Button that asks the core to check the server and list the ways to sign in. No arguments; short button label. -->
+    <string name="matrix_login_continue">繼續</string>
+    <!-- Progress line while the core contacts the server to discover the sign-in methods. Argument: the server name or URL the user chose. -->
+    <string name="matrix_login_contacting">正在連上 %1$s</string>
+    <!-- Button for the password method in the list of ways the server supports. No arguments; short button label. -->
+    <string name="matrix_login_method_password">使用密碼登入</string>
+    <!-- Button for the server's own OIDC sign-in, which opens in the system browser. No arguments; short button label. -->
+    <string name="matrix_login_method_oidc">在瀏覽器裡繼續</string>
+    <!-- Field label for the full Matrix user ID, like @user:example.org. No arguments; short label. -->
+    <string name="matrix_login_user_id">Matrix 使用者 ID</string>
+    <!-- Field label for the account password. No arguments; short label. -->
+    <string name="matrix_login_password">密碼</string>
+    <!-- Button that submits the user ID and password to the server. No arguments; short button label. -->
+    <string name="matrix_login_sign_in">登入</string>
+    <!-- Progress line while the core signs in with the password. No arguments. -->
+    <string name="matrix_login_signing_in">正在登入</string>
+    <!-- Progress line while the core stores the signed-in session on this phone. No arguments. -->
+    <string name="matrix_login_saving">正在儲存工作階段</string>
+    <!-- Progress line while the user finishes the sign-in in the system browser. No arguments. -->
+    <string name="matrix_login_finish_in_browser">在瀏覽器裡完成登入</string>
+    <!-- Button that opens the browser again for the pending OIDC sign-in. No arguments; short button label. -->
+    <string name="matrix_login_open_browser">開啟瀏覽器</string>
+    <!-- Notice when the phone has no app that can open the browser link. No arguments. -->
+    <string name="matrix_login_no_browser">沒有可以開啟登入頁面的瀏覽器應用程式</string>
+    <!-- Failure title: the server name or URL doesn't point to a Matrix homeserver. No arguments. -->
+    <string name="matrix_login_failed_invalid_homeserver">這個位址上找不到 Matrix 伺服器</string>
+    <!-- Failure title: the server couldn't be reached to discover the sign-in methods. No arguments. -->
+    <string name="matrix_login_failed_discovery">連不上伺服器</string>
+    <!-- Failure title: the server offers none of the sign-in methods this app supports. No arguments. -->
+    <string name="matrix_login_failed_unsupported_method">這台伺服器沒有可用的登入方式</string>
+    <!-- Failure title: the network is unavailable. No arguments. -->
+    <string name="matrix_login_failed_transport">網路無法使用</string>
+    <!-- Failure title: the server rejected the user ID or password. No arguments. -->
+    <string name="matrix_login_failed_invalid_credentials">使用者 ID 或密碼不正確</string>
+    <!-- Failure title: the server rejected the browser sign-in. No arguments. -->
+    <string name="matrix_login_failed_oidc_rejected">伺服器拒絕了瀏覽器登入</string>
+    <!-- Failure title: the browser came back without a complete sign-in result. No arguments. -->
+    <string name="matrix_login_failed_invalid_callback">瀏覽器回傳的登入結果不完整</string>
+    <!-- Failure title: the sign-in took too long or expired on the server. No arguments. -->
+    <string name="matrix_login_failed_expired">登入已過期，請重新開始</string>
+    <!-- Failure title: signing in worked but saving the session on this phone failed. No arguments. -->
+    <string name="matrix_login_failed_storage">登入成功，但儲存到這台裝置時發生錯誤</string>
+    <!-- Failure title: the homeserver or its sign-in service returned an error (5xx, rate limiting, an unexpected reply), not a problem with the credentials or input. No arguments. -->
+    <string name="matrix_login_failed_upstream">伺服器或它的登入服務發生問題</string>
+    <!-- Failure title for every category the app doesn't know. No arguments. -->
+    <string name="matrix_login_failed_other">登入失敗</string>
+    <!-- Notice when the core reports a state the app doesn't know. No arguments. -->
+    <string name="matrix_login_unknown_state">登入暫時無法繼續</string>
     <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
     <string name="message_clip_label">訊息</string>
     <!-- Item in the message menu: copy the message text. Android only. -->

@@ -13,6 +13,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -192,13 +198,41 @@ fun ConnectionPage(
 ) {
     val details = viewModel.details
     val back = { onNavigate(SettingsSubpage.MAIN) }
+    // “用 Matrix 账号登录”：入口在下面的服务器列表里，打开后整屏接管，进展来自核心的服务器列表订阅。
+    var matrixLoginOpen by rememberSaveable { mutableStateOf(false) }
+    var matrixServer by rememberSaveable { mutableStateOf(DEFAULT_MATRIX_SERVER) }
+    var dismissedLoginId by remember { mutableStateOf<String?>(null) }
+    val login = LocalServers.current.matrixLogin
+    // 登录结束（成功、取消或核心清掉）后收起整屏；关掉时记下流程 ID，核心还没处理完取消的那一小段不再弹回来。
+    var previousLogin by remember { mutableStateOf(login) }
+    LaunchedEffect(login) {
+        if (previousLogin != null && (login == null || login.state.isTerminal)) {
+            matrixLoginOpen = false
+            dismissedLoginId = null
+        }
+        previousLogin = login
+    }
+    val flowActive = login != null && !login.state.isTerminal && login.loginId != dismissedLoginId
+    if (matrixLoginOpen || flowActive) {
+        MatrixLoginScreen(
+            login,
+            plugins.core,
+            matrixServer,
+            onServerChange = { matrixServer = it },
+            onDismiss = {
+                matrixLoginOpen = false
+                dismissedLoginId = login?.loginId
+            },
+        )
+        return
+    }
     WontonScreen(bar = { WontonPushedBar(stringResource(R.string.egress_path_home_server), back) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
-            ServersGroup(plugins)
+            ServersGroup(plugins) { matrixLoginOpen = true }
             WontonGroup {
                 WontonRow(stringResource(R.string.connection_mobile_network), details.network.check.text)
                 WontonSeparator()
