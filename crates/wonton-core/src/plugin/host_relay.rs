@@ -1,4 +1,4 @@
-//! 宿主网络的网页和 MCP 服务经 unix 套接字接进核心（ADR-0036）。
+//! 宿主网络的网页、MCP 和通用能力服务经 unix 套接字接进核心（ADR-0036）。
 //!
 //! 宿主开着防火墙时，桥接网络里的核心连不上宿主网络里的服务。中继容器和服务一样在宿主网络里，监听插件数据目录里的
 //! unix 套接字，转发到 `127.0.0.1:<端口>`；unix 套接字不走防火墙，核心直接连文件。
@@ -37,12 +37,13 @@ pub fn image() -> String {
 /// AF_UNIX 套接字路径的上限：Linux 的 `sun_path` 有 108 字节，含结尾 NUL，路径本身最多 107 字节。
 pub const MAX_SOCKET_PATH: usize = 107;
 
-/// 套接字接的是网页还是 MCP。
+/// 套接字接的是网页、MCP 还是通用能力端点。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Purpose {
     Webui,
     Mcp,
+    Capability,
 }
 
 impl Purpose {
@@ -50,6 +51,7 @@ impl Purpose {
         match self {
             Self::Webui => "webui",
             Self::Mcp => "mcp",
+            Self::Capability => "capability",
         }
     }
 }
@@ -63,14 +65,28 @@ pub struct HostRelay {
 }
 
 impl HostRelay {
-    /// 套接字文件名：清单里 `webui`、`mcp` 各只有一个。
+    /// 网页和 MCP 保持原文件名；通用能力按服务和端口共享中继。
     fn socket(&self) -> String {
-        format!("{}.sock", self.purpose.as_str())
+        match self.purpose {
+            Purpose::Capability => format!("capability-{}-{}.sock", self.service, self.port),
+            purpose => format!("{}.sock", purpose.as_str()),
+        }
     }
 
     /// 中继容器和 `wonton.service` 标签用的服务名。
     pub fn service_name(&self) -> String {
-        format!("relay-{}", self.purpose.as_str())
+        match self.purpose {
+            Purpose::Capability => format!("relay-capability-{}-{}", self.service, self.port),
+            purpose => format!("relay-{}", purpose.as_str()),
+        }
+    }
+
+    pub fn capability(service: &str, port: u16) -> Self {
+        Self {
+            purpose: Purpose::Capability,
+            service: service.to_owned(),
+            port,
+        }
     }
 }
 
@@ -104,7 +120,7 @@ pub fn path_too_long(app_data: &Path, relays: &[HostRelay], langs: &Languages) -
         })
 }
 
-/// 宿主网络的 `webui`、`mcp` 服务各要一个中继。
+/// 宿主网络的网页、MCP 和通用能力端点需要中继；同服务同端口的能力共享一个。
 pub fn needed(manifest: &Manifest, services: &BTreeMap<String, Service>) -> Vec<HostRelay> {
     let declared = [
         (
@@ -116,7 +132,7 @@ pub fn needed(manifest: &Manifest, services: &BTreeMap<String, Service>) -> Vec<
             manifest.mcp.as_ref().map(|m| (&m.service, m.port)),
         ),
     ];
-    declared
+    let mut relays: Vec<_> = declared
         .into_iter()
         .filter_map(|(purpose, spec)| {
             let (service, port) = spec?;
@@ -129,7 +145,36 @@ pub fn needed(manifest: &Manifest, services: &BTreeMap<String, Service>) -> Vec<
                 port,
             })
         })
-        .collect()
+        .collect();
+    for spec in manifest
+        .provides
+        .iter()
+        .flat_map(|provides| &provides.capabilities)
+        .filter(|(name, _)| super::dependencies::generic(name))
+        .map(|(_, spec)| spec)
+    {
+        if services
+            .get(&spec.service)
+            .is_some_and(|service| service.network_mode == Some(NetworkMode::Host))
+        {
+            let relay = HostRelay::capability(&spec.service, spec.port);
+            if !relays.contains(&relay) {
+                relays.push(relay);
+            }
+        }
+    }
+    relays
+}
+
+/// 只保留实际声明的能力端点会生成的服务名，不占用整个中继前缀。
+pub(super) fn reserved_service_name(manifest: &Manifest, name: &str) -> bool {
+    matches!(name, "relay-webui" | "relay-mcp")
+        || manifest.provides.iter().any(|provides| {
+            provides.capabilities.iter().any(|(capability, spec)| {
+                super::dependencies::generic(capability)
+                    && HostRelay::capability(&spec.service, spec.port).service_name() == name
+            })
+        })
 }
 
 /// 中继容器名。

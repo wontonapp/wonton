@@ -30,6 +30,7 @@ mod bot_contacts;
 mod browser;
 mod chat;
 mod client;
+mod composer;
 mod files;
 mod friends;
 mod home;
@@ -98,7 +99,8 @@ pub use wonton_protocol::{
     HomeViewModel, ImageContent, ImageThumbnail, ImageUpload, InstallPreview, InstalledPlugin,
     InstalledPlugins, KeyHandoff, KeyNotice, LanAddress, LanChoice, LanFailure, LanInterface,
     LanInterfaceKind, LanPlugin, LanPort, LanProblem, LanProtocol, LanSettings, LanWebuiOffer,
-    LanWebuiUpdate, Me, MediaHandle, MessageContent, MessageSummary, ModelProvider,
+    LanWebuiUpdate, LinkPreviewCard, LinkPreviewCardImage, LinkPreviewFailure, LinkPreviewReason,
+    LinkPreviewState, Me, MediaHandle, MessageContent, MessageSummary, ModelProvider,
     ModelProviderFailure, ModelProviderInput, ModelProviderProblem, ModelProviders,
     NotificationCategory, OnboardingAgentRow, OnboardingCommit, OnboardingItemProblem,
     OnboardingItemState, OnboardingModelChoice, OnboardingModelStep, OnboardingNeedRow,

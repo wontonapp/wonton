@@ -34,6 +34,8 @@ pub trait Room: Send + Sync + 'static {
     /// 用 `m.replace` 编辑一条已发出的状态消息（内容里已带 `m.relates_to`）。
     fn replace_run_status(&self, content: Value) -> impl Future<Output = Result<()>> + Send;
     fn typing(&self, typing: bool) -> impl Future<Output = Result<()>> + Send;
+    /// 重发被服务器拒收、卡在队首的消息，返回几条。
+    fn resend_refused(&self) -> impl Future<Output = Result<usize>> + Send;
     /// 对这条消息发已读回执：Agent 真的收到它了（ADR-0035）。
     fn read_receipt(&self, event_id: &str) -> impl Future<Output = Result<()>> + Send;
     fn redact(&self, event_id: &str, reason: &str) -> impl Future<Output = Result<()>> + Send;
@@ -97,6 +99,10 @@ impl<R: Room> Room for std::sync::Arc<R> {
 
     async fn typing(&self, typing: bool) -> Result<()> {
         (**self).typing(typing).await
+    }
+
+    async fn resend_refused(&self) -> Result<usize> {
+        (**self).resend_refused().await
     }
 
     async fn read_receipt(&self, event_id: &str) -> Result<()> {
@@ -180,6 +186,10 @@ impl Room for ChatRoom {
 
     async fn typing(&self, typing: bool) -> Result<()> {
         Ok(ChatRoom::typing_notice(self, typing).await?)
+    }
+
+    async fn resend_refused(&self) -> Result<usize> {
+        Ok(ChatRoom::resend_refused(self).await?)
     }
 
     async fn read_receipt(&self, event_id: &str) -> Result<()> {

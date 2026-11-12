@@ -29,6 +29,7 @@ fn confirmation_routes() -> Router<Arc<Gateway>> {
             delete(confirmations::stop_window),
         )
         .route("/_wonton/api/confirmations", get(confirmations::pending))
+        .route("/_wonton/api/confirmations/{id}", get(confirmations::card))
         .route(
             "/_wonton/api/plugins/{id}/tool-policy",
             get(tool_policy::view),
@@ -80,6 +81,22 @@ fn model_provider_routes() -> Router<Arc<Gateway>> {
 /// 插件管理这一组路由：装、看、升级、开关，都挂在 `/_wonton/api/plugins` 下。
 fn plugin_routes() -> Router<Arc<Gateway>> {
     Router::new()
+        .route(
+            "/_wonton/api/capabilities",
+            get(super::capability_settings::list),
+        )
+        .route(
+            "/_wonton/api/capabilities/{capability}",
+            put(super::capability_settings::set_default),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/capabilities",
+            put(super::capability_settings::set_consumer),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/uninstall/preview",
+            get(super::capability_settings::uninstall_preview),
+        )
         .route(
             "/_wonton/api/plugins",
             get(api::list)

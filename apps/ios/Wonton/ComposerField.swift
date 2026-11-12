@@ -10,6 +10,7 @@ struct ComposerField: View {
     @FocusState.Binding var focused: Bool
     var onPasteImage: ([NSItemProvider]) -> Void
     var onPasteFiles: ([URL]) -> Void
+    var onSend: () -> Void
 
     @Environment(\.wontonColors) private var colors
     @ScaledMetric(relativeTo: .body) private var fontSize: CGFloat = WontonTheme.typography.body.size
@@ -21,12 +22,14 @@ struct ComposerField: View {
             focused: $focused,
             onPasteImage: onPasteImage,
             onPasteFiles: onPasteFiles,
+            onSend: onSend,
             fontSize: fontSize,
             line: line,
             colors: colors,
             placeholder: String(localized: .composerMessage)
         )
-        .padding(.horizontal, WontonTheme.spacing.s16)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(minHeight: WontonTheme.size.composerField)
         .background(RoundedRectangle(cornerRadius: WontonTheme.radii.composerField).fill(Color(colors.surfaceSubtle)))
     }
 }
@@ -36,6 +39,7 @@ private struct ComposerTextField: UIViewRepresentable {
     @FocusState.Binding var focused: Bool
     var onPasteImage: ([NSItemProvider]) -> Void
     var onPasteFiles: ([URL]) -> Void
+    var onSend: () -> Void
     var fontSize: CGFloat
     var line: CGFloat
     var colors: ThemeColors
@@ -46,6 +50,8 @@ private struct ComposerTextField: UIViewRepresentable {
         view.delegate = context.coordinator
         view.onPasteImage = onPasteImage
         view.onPasteFiles = onPasteFiles
+        view.onSend = onSend
+        view.placeholderLabel.text = placeholder
         view.accessibilityLabel = placeholder
         // 系统的粘贴建议（键盘上方那一枚）要声明接受什么才出现。
         view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: [
@@ -58,11 +64,19 @@ private struct ComposerTextField: UIViewRepresentable {
         context.coordinator.parent = self
         view.onPasteImage = onPasteImage
         view.onPasteFiles = onPasteFiles
+        view.onSend = onSend
         view.refreshStyle(fontSize: fontSize, line: line, colors: colors)
         // 输入法组词（marked text）期间 text 和绑定对不上，别动它，等上屏。
         if view.markedTextRange == nil, view.text != text { view.setText(text) }
         // 点了回复要把光标放进来；取消回复再回到普通状态。
         if focused, !view.isFirstResponder { view.becomeFirstResponder() }
+    }
+
+    /// 只靠 `intrinsicContentSize` 时 SwiftUI 不一定重新量：打到多行后文字画出输入框，盖住上面的消息（iOS 26.5 模拟器实测）。
+    /// 按给的宽度直接答高度，输入框占多高，上面的列表就让出多高。
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width > 0 else { return nil }
+        return CGSize(width: width, height: uiView.boxHeight(width: width))
     }
 
     func makeCoordinator() -> Coordinator {
@@ -86,15 +100,53 @@ private struct ComposerTextField: UIViewRepresentable {
         func textViewDidBeginEditing(_ view: UITextView) {
             parent.focused = true
         }
+
+        func textViewDidEndEditing(_ view: UITextView) {
+            parent.focused = false
+        }
     }
 }
 
 /// 接住系统“粘贴”的文本视图。一到六行，到顶再打字就滚动，和原 `TextField(axis: .vertical)` 一样。
 final class ComposerTextView: UITextView {
     static let maxLines = 6
+    static let maxScreenShare: CGFloat = 0.25
 
     var onPasteImage: (([NSItemProvider]) -> Void)?
     var onPasteFiles: (([URL]) -> Void)?
+    var onSend: (() -> Void)?
+    private var sendingReturnKeys: Set<UIKeyboardHIDUsage> = []
+
+    // UIPress.key exists only for physical keys; software Return still goes through UITextInput unchanged.
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        var remaining = presses
+        for press in presses {
+            guard let key = press.key,
+                  key.keyCode == .keyboardReturnOrEnter || key.keyCode == .keypadEnter,
+                  key.modifierFlags.isDisjoint(with: [.shift, .control, .alternate, .command]),
+                  markedTextRange == nil else { continue }
+            remaining.remove(press)
+            if sendingReturnKeys.insert(key.keyCode).inserted { onSend?() }
+        }
+        if !remaining.isEmpty { super.pressesBegan(remaining, with: event) }
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let remaining = removeSendingReturns(from: presses)
+        if !remaining.isEmpty { super.pressesEnded(remaining, with: event) }
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let remaining = removeSendingReturns(from: presses)
+        if !remaining.isEmpty { super.pressesCancelled(remaining, with: event) }
+    }
+
+    private func removeSendingReturns(from presses: Set<UIPress>) -> Set<UIPress> {
+        Set(presses.filter { press in
+            guard let key = press.key else { return true }
+            return sendingReturnKeys.remove(key.keyCode) == nil
+        })
+    }
 
     let placeholderLabel = UILabel()
     private var placeholderTop: NSLayoutConstraint!
@@ -170,12 +222,8 @@ final class ComposerTextView: UITextView {
 
     /// 按内容定高：一行时居中垫空（最小高度 `size.composerField`），到 `maxLines` 行封顶改滚动。
     func fitHeight() {
-        textContainerInset = .zero
-        let content = sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude)).height
-        let box = min(
-            max(WontonTheme.size.composerField, content + WontonTheme.spacing.s8 * 2),
-            contentLine * CGFloat(Self.maxLines) + WontonTheme.spacing.s8 * 2
-        )
+        let content = contentHeight(width: bounds.width)
+        let box = boxHeight(content: content)
         let pad = max(WontonTheme.spacing.s8, (box - content) / 2)
         textContainerInset = UIEdgeInsets(top: pad, left: 0, bottom: pad, right: 0)
         placeholderTop.constant = pad
@@ -184,6 +232,26 @@ final class ComposerTextView: UITextView {
             fittedHeight = box
             invalidateIntrinsicContentSize()
         }
+    }
+
+    func boxHeight(width: CGFloat) -> CGFloat {
+        boxHeight(content: contentHeight(width: width))
+    }
+
+    /// 一到 `maxLines` 行；辅助大字号下六行能占半屏，键盘一弹列表只剩一条缝，所以再封顶在屏高的 `maxScreenShare`。
+    private func boxHeight(content: CGFloat) -> CGFloat {
+        let lines = contentLine * CGFloat(Self.maxLines) + WontonTheme.spacing.s8 * 2
+        let screen = (window?.windowScene?.screen.bounds.height).map { $0 * Self.maxScreenShare } ?? lines
+        return max(
+            WontonTheme.size.composerField,
+            min(content + WontonTheme.spacing.s8 * 2, lines, screen)
+        )
+    }
+
+    /// 文字本身多高。`sizeThatFits` 把当前的上下内边距也算了进去，减掉。
+    private func contentHeight(width: CGFloat) -> CGFloat {
+        let fitted = sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+        return fitted - textContainerInset.top - textContainerInset.bottom
     }
 
     // MARK: 粘贴
@@ -221,7 +289,6 @@ final class ComposerTextView: UITextView {
         if !fileProviders.isEmpty {
             Task {
                 let urls = await ComposerPaste.fileURLs(from: fileProviders)
-                guard !urls.isEmpty else { return }
                 onPasteFiles?(urls)
             }
             return
@@ -248,14 +315,14 @@ enum ComposerPaste {
         return (data, UTType(identifier))
     }
 
-    /// 文件 App“拷贝”出来的 file URL，可能多个。一个都取不出来时返回空数组。
+    /// 文件 App“拷贝”出来的 file URL，可能多个。任一文件读不出时整批交给上层报错。
     /// 停在主线程:调用方在主线程拿到 NSItemProvider,Swift 6 不让非 Sendable 的它跨 isolation 传递。
     @MainActor
     static func fileURLs(from providers: [NSItemProvider]) async -> [URL] {
         var urls: [URL] = []
         for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
             guard let data = await data(provider, UTType.fileURL.identifier),
-                  let url = URL(dataRepresentation: data, relativeTo: nil) else { continue }
+                  let url = URL(dataRepresentation: data, relativeTo: nil), url.isFileURL else { return [] }
             urls.append(url)
         }
         return urls

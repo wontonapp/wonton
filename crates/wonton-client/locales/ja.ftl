@@ -158,7 +158,14 @@ chat-contacts-invalid-user-id = ユーザーIDが無効です：{ $reason }
 
 # Siri、ショートカット、チャット画面でメッセージを送るとき、本文が空の場合に表示します。
 chat-empty-message = メッセージを入力してください。
-composer-not-ready = このバージョンのクライアントコアは添付トレイにまだ対応していません。
+composer-tray-full = 添付トレイに入れられるのは { $max } 個までです。
+composer-has-failed = アップロードできなかった添付があります。再試行するか削除してください。
+composer-attachment-not-found = この添付が見つかりません。削除済みか、すでに送信された可能性があります。
+composer-outgoing-not-found = この送信待ちメッセージが見つかりません。すでに送信キューに渡された可能性があります。
+composer-store-failed = 添付トレイを端末に保存できません（{ $path }）：{ $reason }
+composer-attachment-failed = 添付「{ $name }」をアップロードできませんでした。
+composer-transfer-gone = このファイルのアップロード記録が見つかりません。再試行してください。
+composer-upload-record-unreadable = 写真のアップロード記録を読み取れません：{ $reason }
 # Siriやショートカットから渡されたボットのIDを解析できない場合に表示します。
 chat-ask-invalid-bot-id = デフォルトのエージェントのIDの形式が正しくありません。
 # 既存のダイレクトチャットのルームIDを解析できない場合に表示します。
@@ -185,6 +192,7 @@ chat-not-signed-in = Matrixにまだログインしていません
 chat-send-no-response = Matrixサーバーが応答しなくなりました
 # $error はルームID解析の元のエラーです。
 chat-invalid-room-id = ルームIDが正しくありません：{ $error }
+chat-link-room-not-joined = このルームにはまだ参加していません。先にチャットで招待を承認してください。
 # 通知専用のルームに送ろうとしたときに表示します。
 chat-read-only-room = このルームは通知専用のため、メッセージを送信できません
 # $room は元のルームIDです。
@@ -210,6 +218,7 @@ chat-op-mark-read-failed = ルームを既読にできませんでした：{ $er
 chat-op-direct-chat-failed = ダイレクトチャットを開始できませんでした：{ $error }
 chat-op-send-text-failed = メッセージを送信できませんでした：{ $error }
 chat-op-send-image-failed = 画像を送信できませんでした：{ $error }
+chat-op-send-preview-failed = リンクのプレビューを付けられませんでした：{ $error }
 chat-op-forward-failed = メッセージを転送できませんでした：{ $error }
 chat-op-redact-failed = メッセージを取り消せませんでした：{ $error }
 ## ファイル転送と再生の詳細情報。転送リストの項目、ファイルカード、再生失敗の説明に表示されます。

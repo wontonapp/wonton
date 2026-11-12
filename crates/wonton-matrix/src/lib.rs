@@ -19,6 +19,7 @@ mod chat_room;
 mod encryption;
 mod error;
 mod friends;
+mod group;
 mod layout;
 mod login;
 mod media;
@@ -47,6 +48,7 @@ pub use chat_room::{
 pub use encryption::{EncryptionState, Recovery, Verification};
 pub use error::{Error, Result};
 pub use friends::{Blocked, FRIEND_CREATE_KEY, FriendChat, FriendInvite};
+pub use group::{GroupPart, UploadedImage};
 pub use layout::{CHAT_LAYOUT_EVENT, ChatLayoutContent};
 pub use login::{LoginError, OidcClient, OidcStart, PendingLogin};
 pub use matrix_sdk::ruma::{
@@ -54,7 +56,7 @@ pub use matrix_sdk::ruma::{
     RoomId, ServerName, UserId, events::relation::RelationType,
 };
 pub use matrix_sdk_ui::eyeball_im::{Vector, VectorDiff};
-pub use media::media_token;
+pub use media::{PreviewImageSource, encrypted_media_token, media_token};
 pub use message::{FileContent, ImageContent, Message, MessageBody, SendStatus, UploadProgress};
 pub use panels::{LAYOUT_EVENT, LayoutContent, ROOM_PANEL_EVENT, RoomPanelContent};
 pub use profile::UserProfile;

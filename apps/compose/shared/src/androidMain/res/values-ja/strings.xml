@@ -477,6 +477,8 @@
     <string name="file_download_and_open">ダウンロードしてほかのアプリで開く</string>
     <!-- Title of the problem shown when no installed app can open a downloaded file. Android only. -->
     <string name="file_no_app_opens_it">このファイルを開けるアプリがありません</string>
+    <!-- Title of the problem shown when the file can't be handed to the system (outside configured FileProvider roots). Android only. -->
+    <string name="file_handoff_failed">このファイルをシステムに渡せませんでした</string>
     <!-- Link under a file card: open the downloaded file with another app. -->
     <string name="file_open_elsewhere">ほかのアプリで開く</string>
     <!-- Line under a file card while its download is paused. Argument: the home server's reason, shown as is. -->
@@ -746,6 +748,10 @@
     <string name="friends_error_unauthorized">ログインが切れています</string>
     <!-- Next step under the unauthorized failure. -->
     <string name="friends_error_unauthorized_next">もう一度ログインしてから友だちを開いてください。</string>
+    <!-- Failure title when the server refused a friend action although the sign-in is valid. -->
+    <string name="friends_error_forbidden">リクエストが拒否されました</string>
+    <!-- Next step under the refused failure. -->
+    <string name="friends_error_forbidden_next">相手にブロックされているか、相手のサーバーがまだ自宅のサーバーとつながっていない可能性があります。</string>
     <!-- Failure title when the typed ID isn't a full Matrix ID. -->
     <string name="friends_error_invalid_user_id">Matrix ID ではありません</string>
     <!-- Next step under the invalid-ID failure. -->
@@ -862,6 +868,10 @@
     <string name="message_delete_everyone_message">このルームの全員の画面から消えます。</string>
     <!-- Title of the dialog that removes a message for everyone. Android only. -->
     <string name="message_delete_everyone_title">全員のメッセージを削除しますか？</string>
+    <!-- Item in the message menu on someone else's message: remove it for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others">%1$s のメッセージを削除</string>
+    <!-- Title of the dialog that removes someone else's message for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others_title">%1$s のメッセージを全員から削除しますか？</string>
     <!-- Item in the message menu: send the message to another room. Android only. -->
     <string name="message_forward">転送</string>
     <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->
@@ -1813,6 +1823,12 @@
     <string name="panel_public_unsupported">この端末の WebView は公開ウェブページとプラグインのページの保存領域を分けられないため、ここでは開けません</string>
     <string name="panel_remove">削除</string>
     <string name="panel_url">URL を入力</string>
+    <string name="message_image_permission_denied">Android がアクセスを拒否しました。設定でこのアプリの権限を確認して、もう一度お試しください。</string>
+    <string name="composer_file_unreadable">このファイルを読み込めませんでした。もう一度コピーするか、別のファイルを選んでください。</string>
+    <string name="message_link_browser">ブラウザで開く</string>
+    <string name="message_link_open_failed">このリンクを開けませんでした</string>
+    <string name="message_link_share_failed">このリンクを共有できませんでした</string>
+    <string name="message_link_no_handler">この種類のリンクを開けるアプリをインストールして、もう一度お試しください。</string>
     <string name="contacts_title">連絡先</string>
     <string name="contacts_add">連絡先を追加</string>
     <string name="contacts_add_kind_bot">ボット</string>
@@ -1858,4 +1874,17 @@
     <string name="handoff_no_other_device">他のデバイスが手元にない</string>
     <string name="invite_device_added">追加しました</string>
     <string name="invite_cannot_give">このデバイスにもすべての鍵がないため、新しいデバイスでは以前のメッセージを読めません。</string>
+    <string name="composer_tray_full">一度に送れる添付は %1$d 個までです。</string>
+    <string name="composer_attachment_remove">%1$s を外す</string>
+    <string name="composer_attachment_paused">自宅のサーバーへの接続を待っています</string>
+    <string name="composer_attachment_failed">アップロードできませんでした</string>
+    <string name="composer_attachment_retry">もう一度アップロード</string>
+    <string name="composer_attachment_too_large">写真が自宅のサーバーのサイズ上限を超えています。ファイルとして送ってください。</string>
+    <string name="composer_attachment_source_unavailable">元のファイルを読み込めなくなりました。もう一度選んでください。</string>
+    <string name="composer_attachment_storage_full">自宅のサーバーの容量がいっぱいです。</string>
+    <string name="composer_attachment_rejected">自宅のサーバーがこのアップロードを拒否しました。</string>
+    <string name="composer_attachment_upstream">自宅のサーバーでエラーが起きました。</string>
+    <string name="composer_attachment_local_storage">このスマートフォンの空き容量が足りません。</string>
+    <string name="timeline_sending_progress">送信中 %1$s</string>
+    <string name="timeline_cancel_send">送信を取り消す</string>
 </resources>

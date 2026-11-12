@@ -404,6 +404,14 @@ pub struct ComposerSubscription {
     updates: Updates<ComposerViewModel>,
 }
 
+impl ComposerSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<ComposerViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
 #[uniffi::export]
 impl ComposerSubscription {
     /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。

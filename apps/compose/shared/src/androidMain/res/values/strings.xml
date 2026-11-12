@@ -546,6 +546,8 @@
     <string name="file_download_and_open">Download and open in another app</string>
     <!-- Title of the problem shown when no installed app can open a downloaded file. Android only. -->
     <string name="file_no_app_opens_it">No app on this phone can open this file</string>
+    <!-- Title of the problem shown when the file can't be handed to the system (outside configured FileProvider roots). Android only. -->
+    <string name="file_handoff_failed">Couldn\'t hand this file to the system</string>
     <!-- Link under a file card: open the downloaded file with another app. -->
     <string name="file_open_elsewhere">Open in another app</string>
     <!-- Line under a file card while its download is paused. Argument: the home server's reason, shown as is. -->
@@ -824,6 +826,10 @@
     <string name="friends_error_unauthorized">Your session expired</string>
     <!-- Next step under the unauthorized failure. -->
     <string name="friends_error_unauthorized_next">Sign in again, then open Friends.</string>
+    <!-- Failure title when the server refused a friend action although the sign-in is valid. -->
+    <string name="friends_error_forbidden">The request was refused</string>
+    <!-- Next step under the refused failure. -->
+    <string name="friends_error_forbidden_next">They may have blocked you, or their server can\'t reach your home server yet.</string>
     <!-- Failure title when the typed ID isn't a full Matrix ID. -->
     <string name="friends_error_invalid_user_id">Not a Matrix ID</string>
     <!-- Next step under the invalid-ID failure. -->
@@ -942,6 +948,10 @@
     <string name="message_delete_everyone_message">It disappears from the chat for everyone in this room.</string>
     <!-- Title of the dialog that removes a message for everyone. Android only. -->
     <string name="message_delete_everyone_title">Delete this message for everyone?</string>
+    <!-- Item in the message menu on someone else's message: remove it for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others">Delete %1$s\'s message</string>
+    <!-- Title of the dialog that removes someone else's message for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others_title">Delete %1$s\'s message for everyone?</string>
     <!-- Item in the message menu: send the message to another room. Android only. -->
     <string name="message_forward">Forward</string>
     <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->
@@ -2052,6 +2062,12 @@
     <string name="panel_public_unsupported">This device\'s WebView cannot keep public web pages apart from plugin pages, so they cannot be opened here</string>
     <string name="panel_remove">Remove</string>
     <string name="panel_url">Enter a URL</string>
+    <string name="message_image_permission_denied">Android denied access. Check this app\'s permissions in Settings and try again.</string>
+    <string name="composer_file_unreadable">Couldn\'t read this file. Copy it again or choose another file.</string>
+    <string name="message_link_browser">Open in browser</string>
+    <string name="message_link_open_failed">Couldn\'t open this link</string>
+    <string name="message_link_share_failed">Couldn\'t share this link</string>
+    <string name="message_link_no_handler">Install an app that can open this type of link, then try again.</string>
     <!-- Title of a bot's contacts page and the entry row on the bot's detail page. -->
     <string name="contacts_title">Contacts</string>
     <!-- Toolbar button and sheet title for adding a contact to this bot. -->
@@ -2133,4 +2149,30 @@
     <string name="handoff_no_other_device">I don\'t have my other device</string>
     <string name="invite_device_added">Device added</string>
     <string name="invite_cannot_give">This device doesn\'t have all the chat keys either, so the new device can\'t read earlier messages.</string>
+    <!-- Shown when the attachment tray is full. Argument: the most attachments one message can carry. -->
+    <string name="composer_tray_full">You can send up to %1$d attachments at a time.</string>
+    <!-- Accessibility label of the button that takes an attachment out of the tray. Argument: file name. -->
+    <string name="composer_attachment_remove">Remove %1$s</string>
+    <!-- Accessibility label of an attachment whose upload waits for the connection to the home server. -->
+    <string name="composer_attachment_paused">Waiting to reach your home server</string>
+    <!-- An attachment could not be uploaded; also the fallback when the core gives an unknown reason. -->
+    <string name="composer_attachment_failed">Couldn\'t upload</string>
+    <!-- Button: upload a failed attachment again. -->
+    <string name="composer_attachment_retry">Upload Again</string>
+    <!-- Upload failure: the photo is over the home server's limit. -->
+    <string name="composer_attachment_too_large">This photo is over your home server\'s size limit. Send it as a file instead.</string>
+    <!-- Upload failure: the original file on the phone can no longer be read. -->
+    <string name="composer_attachment_source_unavailable">The original file can\'t be read anymore. Choose it again.</string>
+    <!-- Upload failure: the home server's disk is full. -->
+    <string name="composer_attachment_storage_full">Your home server is out of space.</string>
+    <!-- Upload failure: the home server refused the upload. -->
+    <string name="composer_attachment_rejected">Your home server refused this upload.</string>
+    <!-- Upload failure: the home server ran into an error. -->
+    <string name="composer_attachment_upstream">Your home server ran into a problem.</string>
+    <!-- Upload failure: the phone has no room to keep the attachment. -->
+    <string name="composer_attachment_local_storage">There isn\'t enough space on this phone.</string>
+    <!-- Footer of a message still uploading its attachments. Argument: percent done, already formatted. -->
+    <string name="timeline_sending_progress">Sending %1$s</string>
+    <!-- Menu item on a message that is still uploading: drop it and stop the upload. -->
+    <string name="timeline_cancel_send">Cancel Sending</string>
 </resources>

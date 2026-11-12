@@ -26,6 +26,9 @@ pub struct TimelineUpdate {
     pub back_pagination: BackPagination,
     /// 列表该停在哪。壳按它画“回到底部”和按钮上的数字；新消息不把列表拽走。
     pub viewport: TimelineViewport,
+    /// 自己发出的新消息到了：壳应用这一批后回到底部，即使主人翻走了。
+    /// 别人的消息和编辑只在原本贴底时跟随（[`TimelineViewport::Bottom`]），不能打断阅读。
+    pub scroll_to_bottom: bool,
     /// 只有带 `Reset` 的那一批有（订阅的第一批，时间线重建后的第一批），其余为 `None`：壳先把这一条
     /// （`Reset` 里的 `TimelineItem::id`）摆到视野顶部，摆好之前不报 [`TimelineScroll::Bottom`]
     /// （报早了核心以为主人已经看到最新一条，会清掉落点）。
@@ -252,6 +255,9 @@ pub struct TimelineMessage {
     /// 的根只显示成卡片。不是卡片时为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side_chat: Option<crate::SideChatCard>,
+    /// 第一个链接的预览卡片（ADR-0065）：事件里带的直接用，没有的向家里的核心取；没有链接、还没取到或取不到时
+    /// 按 [`crate::LinkPreviewState`] 给。
+    pub preview: Option<crate::LinkPreviewState>,
     /// 长按这条消息能做的事，按菜单顺序排好。空的就没有菜单。
     pub actions: Vec<MessageAction>,
     /// 一次发送里的几条之一（ADR-0094）：壳把同一发送者、同一 `id`、挨着的几条画在一起。不是一组时为空。
@@ -609,6 +615,7 @@ mod tests {
             ],
             back_pagination: BackPagination::ReachedStart,
             viewport: TimelineViewport::Away { new_messages: 3 },
+            scroll_to_bottom: false,
             anchor: Some("5".into()),
             panel: Vec::new(),
             panel_selected: None,
@@ -660,6 +667,7 @@ mod tests {
             diffs: Vec::new(),
             back_pagination: BackPagination::Idle,
             viewport: TimelineViewport::Bottom,
+            scroll_to_bottom: true,
             anchor: None,
             panel: Vec::new(),
             panel_selected: None,
@@ -707,6 +715,7 @@ mod tests {
                     origin: None,
                     audience: crate::CardAudience::Keeper,
                     answered_by: None,
+                    category: None,
                     id: "abc".into(),
                     state: ConfirmationState::Pending,
                     title: "Hermes 想安装 Grafana".into(),
@@ -807,6 +816,7 @@ mod tests {
                 read_by: vec!["主人".into()],
                 reply: None,
                 side_chat: None,
+                preview: None,
                 actions: vec![MessageAction::Copy {
                     text: "好的".into(),
                 }],

@@ -8,10 +8,13 @@ mod downtime;
 mod downtime_real;
 mod limits;
 mod mode;
+mod refused;
 mod restore;
 mod run_status;
 mod tasks;
 mod topics;
+mod undecryptable;
+mod undecryptable_matrix;
 
 use std::sync::Arc;
 
@@ -91,6 +94,8 @@ impl Harness {
                 idle_timeout: std::time::Duration::from_secs(3600),
                 idle_tick: std::time::Duration::from_millis(20),
                 topic_idle: std::time::Duration::from_secs(1800),
+                undecryptable_after: std::time::Duration::from_secs(60),
+                undecryptable_every: std::time::Duration::from_secs(600),
             },
         };
         tune(&mut config);

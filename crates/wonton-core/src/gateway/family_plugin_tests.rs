@@ -391,9 +391,9 @@ async fn a_family_member_with_install_grant_reads_the_store() {
     );
 }
 
-/// 卡片都发给主人：家人列出来是空的，回答别人的卡片回 403 `not_yours`。
+/// 放行时段只在主人的卡片上：家人停时段回 403 `not_yours`。家人列卡片、回答卡片见 `hop_limit_tests`。
 #[tokio::test]
-async fn confirmations_still_belong_to_the_owner() {
+async fn members_cannot_stop_an_allow_window() {
     let h = Harness::start(None).await;
     let hers = SecretKey::generate().public();
     invite_record(&h, false).await;
@@ -402,27 +402,7 @@ async fn confirmations_still_belong_to_the_owner() {
         .add_if(hers, None, Some("mia".to_owned()), |_| true)
         .unwrap();
 
-    let reply = send_as(
-        &h.app,
-        Some(hers),
-        Method::GET,
-        CORE,
-        "/_wonton/api/confirmations",
-        &[],
-        "",
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
-    assert_eq!(reply.json()["confirmations"].as_array().unwrap().len(), 0);
-
-    for (method, path, body) in [
-        (
-            Method::POST,
-            "/_wonton/confirmations/some-id",
-            "{\"answer\": \"approve\"}",
-        ),
-        (Method::DELETE, "/_wonton/confirmations/some-id/window", ""),
-    ] {
+    for (method, path, body) in [(Method::DELETE, "/_wonton/confirmations/some-id/window", "")] {
         let reply = send_as(
             &h.app,
             Some(hers),

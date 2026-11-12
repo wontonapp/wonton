@@ -16,8 +16,10 @@ use super::agent_run::BotsView;
 use super::confirmation::{Cards, CardsView};
 use super::links::LinkTargets;
 use super::menu::{Menus, Outbox};
+use super::previews::Previews;
 use super::read_mark::ReadMark;
 use super::reply::QuoteFetches;
+use super::timeline_previews::{ensure_previews, preview_diffs};
 use super::view::{timeline_diff, timeline_item};
 
 /// 一个房间的时间线订阅。壳循环调用 [`next`](Self::next)，把每一批增量按顺序应用到自己的列表上；不再需要时
@@ -34,22 +36,25 @@ impl TimelineSubscription {
     ///
     /// `room_view` 是 tabs 合成的房间面板视图（ADR-0052）：每一批都带上当前值，变了也发一批空的。`chat` 读加密状态，
     /// 决定解不开的消息旁给什么入口。
+    #[allow(clippy::too_many_arguments)] // 和 [`forward`] 一样，参数就是转发要用的那几个。
     pub(crate) fn start(
         runtime: &Handle,
         room: Arc<ChatRoom>,
         cards: Cards,
         plugins: Arc<crate::plugins::PluginsLink>,
+        previews: super::previews::Previews,
         menus: Arc<std::sync::Mutex<Menus>>,
         room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
         chat: watch::Receiver<wonton_protocol::ChatViewModel>,
     ) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
-        let (scroll, mut scrolled) = watch::channel(TimelineScroll::Bottom);
+        // 落点摆好并由壳确认之前，不能把首屏量出来的默认位置当成已经读到底。
+        let (scroll, mut scrolled) = watch::channel(TimelineScroll::Away);
         runtime.spawn(async move {
             let outbox = Outbox::new(sender, menus, room_view.clone(), chat.clone());
             tokio::select! {
-                () = forward(&room, cards, &plugins, &outbox, &mut scrolled, room_view, chat) => {}
+                () = forward(&room, cards, &plugins, previews, &outbox, &mut scrolled, room_view, chat) => {}
                 () = outbox.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}
             }
@@ -59,6 +64,10 @@ impl TimelineSubscription {
             cancelled,
             scroll,
         })
+    }
+
+    pub(super) fn is_at_bottom(&self) -> bool {
+        *self.scroll.borrow() == TimelineScroll::Bottom && !*self.cancelled.borrow()
     }
 }
 
@@ -124,7 +133,7 @@ enum Batch {
 
 /// 卡片显示变了就重发受影响的条目，没变就等下一轮。用在 [`forward`] 的选择分支里，展开成 `continue` 或一批。
 macro_rules! refreshed {
-    ($entries:ident, $shown:ident, $cards:ident, $read:ident, $plugins:ident, $sender:ident, $view:expr, $bots:expr) => {
+    ($entries:ident, $shown:ident, $cards:ident, $read:ident, $plugins:ident, $previews:ident, $sender:ident, $view:expr, $bots:expr) => {
         match refreshed_batch(
             &$entries,
             &mut $shown,
@@ -134,6 +143,7 @@ macro_rules! refreshed {
             $sender,
             $view,
             &mut $bots,
+            &$previews,
         ) {
             Some(batch) => batch,
             None => continue,
@@ -141,11 +151,12 @@ macro_rules! refreshed {
     };
 }
 
-#[allow(clippy::too_many_lines)] // 一个循环里就是这些分支，拆出去只是把 select 用到的状态搬来搬去。
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)] // 一个循环里就是这些分支，拆出去只是把 select 用到的状态搬来搬去。
 async fn forward(
     room: &Arc<ChatRoom>,
     mut cards: Cards,
     plugins: &crate::plugins::PluginsLink,
+    previews: super::previews::Previews,
     sender: &Outbox,
     scrolled: &mut watch::Receiver<TimelineScroll>,
     mut room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
@@ -167,12 +178,17 @@ async fn forward(
         let links = LinkTargets::of(&plugins.view());
         // Bot 列表、活动和等回答的卡片变了，AgentRun 条目的显示跟着变：每批都带上现在的情况，变了就重算。
         let mut bots = BotsView::of(&chat.borrow_and_update(), &entries, &shown);
-        let Some(mut view) =
-            start_batch(room, &entries, &shown, &read, &links, sender, status, &bots).await
+        let Some(mut view) = start_batch(
+            room, &entries, &shown, &read, &links, sender, status, &bots, &previews,
+        )
+        .await
         else {
             return;
         };
         fetches.request(room, &entries);
+        ensure_previews(&previews, &entries, plugins);
+        // 预览落定了就醒一次：把落定网址所在的条目重发。
+        let mut preview_versions = previews.subscribe();
         let mut diffs = std::pin::pin!(diffs);
         // 插件装、卸以后，同一段文字里的插件网址类别会变，要重算。
         let mut plugin_changes = plugins.subscribe();
@@ -187,7 +203,7 @@ async fn forward(
             let sent = tokio::select! {
                 batch = diffs.next() => {
                     let Some(batch) = batch else { return };
-                    apply(room, &mut entries, &mut shown, &cards, &mut read, plugins, sender, &mut view, &mut bots, batch)
+                    apply(room, &mut entries, &mut shown, &cards, &mut read, plugins, sender, &mut view, &mut bots, &previews, batch)
                 }
                 update = room_info.recv() => {
                     match update {
@@ -222,7 +238,7 @@ async fn forward(
                     if changed.is_err() {
                         return;
                     }
-                    let Some(batch) = relinked_batch(&entries, &cards, &read, plugins, sender, &mut view, &bots) else {
+                    let Some(batch) = relinked_batch(&entries, &cards, &read, plugins, sender, &mut view, &bots, &previews) else {
                         continue;
                     };
                     batch
@@ -261,6 +277,7 @@ async fn forward(
                         &links_of(plugins),
                         &bots,
                         &new_bots,
+                        &previews,
                     );
                     if diffs.is_empty() && sender.key_notice(&entries) == view.notice {
                         continue;
@@ -272,16 +289,32 @@ async fn forward(
                     if changed.is_err() {
                         return;
                     }
-                    refreshed!(entries, shown, cards, read, plugins, sender, &mut view, bots)
+                    refreshed!(entries, shown, cards, read, plugins, previews, sender, &mut view, bots)
+                }
+                changed = preview_versions.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    // 预览取回来了：落定网址所在的条目重发一遍，别的条目不动。
+                    let settled = previews.take_settled();
+                    let links = links_of(plugins);
+                    let diffs = preview_diffs(&entries, &shown, &read, &links, &bots, &previews, &settled);
+                    if diffs.is_empty() {
+                        continue;
+                    }
+                    Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
                 }
                 () = tokio::time::sleep(next_expiry.unwrap_or_default()), if next_expiry.is_some() => {
-                    refreshed!(entries, shown, cards, read, plugins, sender, &mut view, bots)
+                    refreshed!(entries, shown, cards, read, plugins, previews, sender, &mut view, bots)
                 }
             };
             match settle(sent, room, &entries, sender, &mut view).await {
                 Next::End => return,
                 Next::Rebuild => continue 'outer,
-                Next::Continue => fetches.request(room, &entries),
+                Next::Continue => {
+                    fetches.request(room, &entries);
+                    ensure_previews(&previews, &entries, plugins);
+                }
             }
         }
     }
@@ -299,6 +332,7 @@ async fn start_batch(
     sender: &Outbox,
     status: BackPagination,
     bots: &BotsView,
+    previews: &Previews,
 ) -> Option<View> {
     let mut view = View {
         status,
@@ -316,7 +350,7 @@ async fn start_batch(
     let reset = TimelineDiff::Reset {
         items: entries
             .iter()
-            .map(|entry| timeline_item(entry.clone(), shown, read, links, bots))
+            .map(|entry| timeline_item(entry.clone(), shown, read, links, bots, previews))
             .collect(),
     };
     send(sender, entries, vec![reset], &mut view, anchor).ok()?;
@@ -324,6 +358,7 @@ async fn start_batch(
 }
 
 /// 插件表变了：整条时间线按现在的插件表重画一遍；没有条目时返回 `None`。
+#[allow(clippy::too_many_arguments)] // 和 [`apply`] 一样，参数就是批处理要用的那几个。
 fn relinked_batch(
     entries: &Vector<TimelineEntry>,
     cards: &Cards,
@@ -332,10 +367,11 @@ fn relinked_batch(
     sender: &Outbox,
     view: &mut View,
     bots: &BotsView,
+    previews: &Previews,
 ) -> Option<Batch> {
     let links = LinkTargets::of(&plugins.view());
     let shown = cards.view();
-    let diffs = relinked(entries, &shown, read, &links, bots);
+    let diffs = relinked(entries, &shown, read, &links, bots, previews);
     if diffs.is_empty() {
         return None;
     }
@@ -349,13 +385,14 @@ fn relinked(
     read: &ReadMark,
     links: &LinkTargets,
     bots: &BotsView,
+    previews: &Previews,
 ) -> Vec<TimelineDiff> {
     entries
         .iter()
         .enumerate()
         .map(|(index, entry)| TimelineDiff::Set {
             index: u32::try_from(index).unwrap_or(u32::MAX),
-            item: timeline_item(entry.clone(), shown, read, links, bots),
+            item: timeline_item(entry.clone(), shown, read, links, bots, previews),
         })
         .collect()
 }
@@ -372,6 +409,7 @@ fn apply(
     sender: &Outbox,
     view: &mut View,
     bots: &mut BotsView,
+    previews: &Previews,
     batch: Vec<VectorDiff<TimelineEntry>>,
 ) -> Batch {
     if batch.iter().any(|diff| matches!(diff, VectorDiff::Clear)) {
@@ -385,21 +423,29 @@ fn apply(
             sender,
             view,
             bots,
+            previews,
         );
     }
     let links = LinkTargets::of(&plugins.view());
-    let mut out = refresh(entries, shown, cards, read, &links, bots);
+    let mut out = refresh(entries, shown, cards, read, &links, bots, previews);
     for diff in batch {
-        out.push(timeline_diff(diff.clone(), shown, read, &links, bots));
+        out.push(timeline_diff(
+            diff.clone(),
+            shown,
+            read,
+            &links,
+            bots,
+            previews,
+        ));
         diff.apply(entries);
     }
     // 这一批带来了新的卡片或回答：房间里的等回答卡片变了，AgentRun 条目跟着重算。
     let new_bots = bots.with_waiting_cards(entries, shown);
     out.extend(refreshed_agent_runs(
-        entries, shown, read, &links, bots, &new_bots,
+        entries, shown, read, &links, bots, &new_bots, previews,
     ));
     *bots = new_bots;
-    out.extend(move_read_mark(entries, shown, read, &links, bots));
+    out.extend(move_read_mark(entries, shown, read, &links, bots, previews));
     // 对账不放在每批之后：它会读一遍整个缓存，批多一点就把时间线的更新通道挤到跟不上（15 秒一次都嫌多）。
     Batch::Sent(send(sender, entries, out, view, None), false)
 }
@@ -448,8 +494,9 @@ fn clear_batch(
     sender: &Outbox,
     view: &mut View,
     bots: &mut BotsView,
+    previews: &Previews,
 ) -> Batch {
-    let replaced = reset_diffs(entries, &batch, shown, read, links, bots);
+    let replaced = reset_diffs(entries, &batch, shown, read, links, bots, previews);
     tracing::info!(room_id = %room.room_id(), reason = "sdk-clear", silent = replaced.is_some(), "timeline got a Clear");
     let Some(mut out) = replaced else {
         return Batch::Sent(
@@ -457,10 +504,10 @@ fn clear_batch(
             true,
         );
     };
-    out.extend(move_read_mark(entries, shown, read, links, bots));
+    out.extend(move_read_mark(entries, shown, read, links, bots, previews));
     let new_bots = bots.with_waiting_cards(entries, shown);
     out.extend(refreshed_agent_runs(
-        entries, shown, read, links, bots, &new_bots,
+        entries, shown, read, links, bots, &new_bots, previews,
     ));
     *bots = new_bots;
     Batch::Sent(send(sender, entries, out, view, None), false)
@@ -476,6 +523,7 @@ fn reset_diffs(
     read: &ReadMark,
     links: &LinkTargets,
     bots: &BotsView,
+    previews: &Previews,
 ) -> Option<Vec<TimelineDiff>> {
     let mut replacement = entries.clone();
     for diff in batch {
@@ -484,7 +532,7 @@ fn reset_diffs(
     let render = |items: &Vector<TimelineEntry>| {
         items
             .iter()
-            .map(|entry| timeline_item(entry.clone(), shown, read, links, bots))
+            .map(|entry| timeline_item(entry.clone(), shown, read, links, bots, previews))
             .collect::<Vec<_>>()
     };
     let (old, new) = (render(entries), render(&replacement));
@@ -529,12 +577,13 @@ fn refreshed_batch(
     sender: &Outbox,
     view: &mut View,
     bots: &mut BotsView,
+    previews: &Previews,
 ) -> Option<Batch> {
-    let mut diffs = refresh(entries, shown, cards, read, links, bots);
+    let mut diffs = refresh(entries, shown, cards, read, links, bots, previews);
     // 回答有了进展（卡片结束）：房间里的等回答卡片变了，AgentRun 条目跟着重算。
     let new_bots = bots.with_waiting_cards(entries, shown);
     diffs.extend(refreshed_agent_runs(
-        entries, shown, read, links, bots, &new_bots,
+        entries, shown, read, links, bots, &new_bots, previews,
     ));
     *bots = new_bots;
     if diffs.is_empty() {
@@ -565,6 +614,7 @@ fn refresh(
     read: &ReadMark,
     links: &LinkTargets,
     bots: &BotsView,
+    previews: &Previews,
 ) -> Vec<TimelineDiff> {
     let now = cards.view();
     let mut diffs = Vec::new();
@@ -572,8 +622,8 @@ fn refresh(
         if !now.is_card(entry) {
             continue;
         }
-        let before = timeline_item(entry.clone(), shown, read, links, bots);
-        let after = timeline_item(entry.clone(), &now, read, links, bots);
+        let before = timeline_item(entry.clone(), shown, read, links, bots, previews);
+        let after = timeline_item(entry.clone(), &now, read, links, bots, previews);
         if before != after {
             diffs.push(TimelineDiff::Set {
                 index: u32::try_from(index).unwrap_or(u32::MAX),
@@ -592,6 +642,7 @@ fn move_read_mark(
     read: &mut ReadMark,
     links: &LinkTargets,
     bots: &BotsView,
+    previews: &Previews,
 ) -> Vec<TimelineDiff> {
     let now = ReadMark::of(entries);
     if now == *read {
@@ -603,7 +654,7 @@ fn move_read_mark(
         .filter(|(_, entry)| read.marks(&entry.id) || now.marks(&entry.id))
         .map(|(index, entry)| TimelineDiff::Set {
             index: u32::try_from(index).unwrap_or(u32::MAX),
-            item: timeline_item(entry.clone(), cards, &now, links, bots),
+            item: timeline_item(entry.clone(), cards, &now, links, bots, previews),
         })
         .collect();
     *read = now;
@@ -618,6 +669,7 @@ fn refreshed_agent_runs(
     links: &LinkTargets,
     before: &BotsView,
     after: &BotsView,
+    previews: &Previews,
 ) -> Vec<TimelineDiff> {
     if before == after {
         return Vec::new();
@@ -629,8 +681,8 @@ fn refreshed_agent_runs(
             matches!(&entry.kind, EntryKind::Message(message) if message.agent_run.is_some())
         })
         .filter_map(|(index, entry)| {
-            let item = timeline_item(entry.clone(), shown, read, links, after);
-            (timeline_item(entry.clone(), shown, read, links, before) != item)
+            let item = timeline_item(entry.clone(), shown, read, links, after, previews);
+            (timeline_item(entry.clone(), shown, read, links, before, previews) != item)
                 .then_some(TimelineDiff::Set {
                     index: u32::try_from(index).unwrap_or(u32::MAX),
                     item,
@@ -723,6 +775,7 @@ mod tests {
                 edited: false,
                 read_by: Vec::new(),
                 reply: None,
+                group: None,
                 can_redact: false,
             })),
         }
@@ -765,6 +818,7 @@ mod tests {
             &read,
             &LinkTargets::default(),
             &BotsView::default(),
+            &Previews::new(),
         );
         assert_eq!(kind(&before[0]), RichLinkKind::External);
 
@@ -772,7 +826,14 @@ mod tests {
             "app.grafana",
             "http://app-grafana.home.example:18480/",
         )]);
-        let after = relinked(&entries, &cards, &read, &links, &BotsView::default());
+        let after = relinked(
+            &entries,
+            &cards,
+            &read,
+            &links,
+            &BotsView::default(),
+            &Previews::new(),
+        );
         assert_eq!(
             kind(&after[0]),
             RichLinkKind::Plugin {

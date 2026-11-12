@@ -9,6 +9,9 @@
 uniffi::setup_scaffolding!();
 
 mod action;
+mod agent_chain;
+mod agent_handoff;
+mod agent_outbox;
 mod agent_permission;
 mod agent_run;
 mod appearance;
@@ -60,6 +63,19 @@ mod timeline_action;
 mod verification;
 
 pub use action::Action;
+pub use agent_chain::{
+    AGENT_CHAINS_PATH, AGENT_OUTBOX_PATH, AgentChainAction, AgentChainBot, AgentChainRow,
+    AgentChainStatus, AgentChainsViewModel, AgentSettingsViewModel, ChainError, ChainLimitKind,
+    ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
+    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_CHAIN_HEADER,
+    WONTON_MAX_DEPTH_HEADER, WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER,
+    WONTON_ON_BEHALF_OF_HEADER, WONTON_PLUGIN_HEADER, WONTON_USER_HEADER,
+};
+pub use agent_handoff::{
+    HAND_OFF_STATUS_TOOL, HAND_OFF_TOOL, HandOffRequest, HandOffResult, HandOffSession,
+    HandOffState, HandOffStatusRequest, SEND_MESSAGE_TOOL, SendMessageRequest,
+};
+pub use agent_outbox::{OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult};
 pub use agent_permission::{
     AGENT_PERMISSION_PATH, AGENT_PERMISSION_TTL_SECS, AgentPermissionKind, AgentPermissionOption,
     AgentPermissionOutcome, AgentPermissionRequest,
@@ -107,8 +123,8 @@ pub use composer::{
 };
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,
-    ConfirmationCard, ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView,
-    ConfirmationWindow, WindowEnd, WindowView, answer_path, window_path,
+    ConfirmationCard, ConfirmationCategory, ConfirmationList, ConfirmationReply, ConfirmationState,
+    ConfirmationView, ConfirmationWindow, WindowEnd, WindowView, answer_path, window_path,
 };
 pub use confirmation_origin::{
     CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ConfirmationOrigin, ConfirmationRequester,
@@ -131,10 +147,10 @@ pub use egress::{
 pub use error::{CoreError, set_core_error_formatter};
 pub use family::{
     BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
-    ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, Me, Member, MemberInvite, MemberList,
-    MemberPairingCode, MemberRemoval, MemberSettings, MemberStatus, NewSharedBot, Role,
-    SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path, member_path,
-    member_removal_path, plugin_family_path,
+    HOP_LIMIT_ERRCODE, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, Me, Member,
+    MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberSettings, MemberStatus,
+    NewSharedBot, Role, SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path,
+    member_path, member_removal_path, plugin_family_path,
 };
 pub use file::{
     FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileCardAction, FileCardActions, FileError,
@@ -159,7 +175,8 @@ pub use lan::{
 };
 pub use link::AppLink;
 pub use link_preview::{
-    LINK_PREVIEW_PATH, LinkPreview, LinkPreviewFailure, LinkPreviewImage, link_preview_image_path,
+    LINK_PREVIEW_PATH, LinkPreview, LinkPreviewCard, LinkPreviewCardImage, LinkPreviewFailure,
+    LinkPreviewImage, LinkPreviewReason, LinkPreviewState, link_preview_image_path,
 };
 pub use matrix_login::{
     MatrixAccount, MatrixLoginFailure, MatrixLoginMethod, MatrixLoginState, MatrixLoginViewModel,

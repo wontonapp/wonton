@@ -16,6 +16,7 @@ mod file_link;
 mod key_handoff;
 mod key_upload_order;
 mod layout;
+mod link_preview;
 mod message_actions;
 mod onboarding;
 mod pending;
@@ -452,14 +453,22 @@ async fn bot_receives<R>(
 
 /// 标为已读后未读清零；等待自动开启恢复并得到恢复密钥。
 async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> SecretString {
+    let target = TimelineTarget {
+        room_id: room_id.to_string(),
+        thread_root: None,
+    };
+    let timeline = phone.subscribe_timeline(target.clone()).await.unwrap();
     phone
         .dispatch(Action::Timeline {
-            action: TimelineAction::MarkRead {
-                target: TimelineTarget {
-                    room_id: room_id.to_string(),
-                    thread_root: None,
-                },
+            action: TimelineAction::SetTimelineScroll {
+                target: target.clone(),
+                scroll: wonton_client::TimelineScroll::Bottom,
             },
+        })
+        .unwrap();
+    phone
+        .dispatch(Action::Timeline {
+            action: TimelineAction::MarkRead { target },
         })
         .unwrap();
     phone
@@ -470,6 +479,7 @@ async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> Sec
                 .then_some(())
         })
         .await;
+    drop(timeline);
     phone
         .wait_chat("恢复自动开启", |view| {
             (view.encryption.recovery == RecoveryStatus::Enabled)

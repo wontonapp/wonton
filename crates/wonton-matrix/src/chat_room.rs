@@ -262,6 +262,24 @@ impl ChatRoom {
         Ok(())
     }
 
+    /// 发送文字，事件内容里带上额外字段（链接预览的 `com.beeper.linkpreviews`，ADR-0065）。其余同
+    /// [`Self::send_text`]。
+    pub async fn send_text_with_extra(
+        &self,
+        body: &str,
+        extra: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<()> {
+        ensure_recipient_devices(&self.room).await?;
+        self.timeline()
+            .await
+            .send_with_extra_content(
+                RoomMessageEventContent::text_plain(body).into(),
+                Some(extra),
+            )
+            .await?;
+        Ok(())
+    }
+
     /// 发一个房间状态事件；`state_key` 为空串时是房间级状态。内容原样发，不需要 ruma 认识事件类型。
     pub async fn invite(&self, user: &UserId) -> Result<()> {
         self.room.invite_user_by_id(user).await?;
@@ -627,7 +645,7 @@ fn renamed_entries(
 /// `get_missing_sessions`），没回来就带着不完整的设备表往下走，可以把密钥分享给 0 个设备：事件照样发出去，
 /// 收端永远解不开，也没有重试。这里对有成员没有设备的房间先查一次，回到本地已经有设备为止（每个房间只查缺的人，
 /// 拿到以后再发不再查）。
-async fn ensure_recipient_devices(room: &Room) -> Result<()> {
+pub(crate) async fn ensure_recipient_devices(room: &Room) -> Result<()> {
     if !room.latest_encryption_state().await?.is_encrypted() {
         return Ok(());
     }
@@ -723,6 +741,7 @@ mod actions;
 #[cfg(test)]
 mod bootstrap_tests;
 mod image;
+pub(crate) use image::check_upload_size;
 mod pagination_status;
 mod raw;
 mod send;

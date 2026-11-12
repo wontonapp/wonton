@@ -22,7 +22,7 @@ ACP 桥是每个 ACP Agent 插件的一部分，不进核心，也不在核心�
 
 ### Matrix 到 ACP
 
-桥以一个普通 Matrix 设备运行，核心把 Matrix access token 只注入 bridge 服务。核心创建主人与 Bot 的加密私聊并把房间 ID 交给桥；桥只接受主人的消息，群聊和其他发送者按 Bot 权限拒绝。桥复用 `wonton-matrix` 的 Sliding Sync、设备密钥、交叉签名和恢复密钥，不自己实现 Olm/Megolm。bridge 的 crypto store、Bot 登录状态、恢复密钥和房间→session 映射在 `${WONTON_BOT_DATA}/bridge`，目录权限 0700；agent 的 HOME、workspace 和官方登录态在 `${WONTON_BOT_DATA}/agent`，Agent 看不到 bridge 目录。恢复密钥只在核心收集/保管的文件中出现，不进日志、环境变量或 Matrix 消息。加密初始化失败就让插件不健康，绝不退回明文。
+桥以一个普通 Matrix 设备运行，核心把 Matrix access token 只注入 bridge 服务。核心创建主人与 Bot 的加密私聊并把房间 ID 交给桥；桥只接受主人的消息，群聊和其他发送者按 Bot 权限拒绝（群里听谁的、什么时候回由 [ADR-0083](0083-bot-contacts-and-group-chat.md) 修订）。桥复用 `wonton-matrix` 的 Sliding Sync、设备密钥、交叉签名和恢复密钥，不自己实现 Olm/Megolm。bridge 的 crypto store、Bot 登录状态、恢复密钥和房间→session 映射在 `${WONTON_BOT_DATA}/bridge`，目录权限 0700；agent 的 HOME、workspace 和官方登录态在 `${WONTON_BOT_DATA}/agent`，Agent 看不到 bridge 目录。恢复密钥只在核心收集/保管的文件中出现，不进日志、环境变量或 Matrix 消息。加密初始化失败就让插件不健康，绝不退回明文。
 
 收到普通文本后，桥按房间查 session；没有就调用 `session/new`，随后切到插件配置的模式（见下文）。文本成为一个 `session/prompt`，ACP 的 `agent_message_chunk` 只在该轮结束后拼成一条 Matrix `m.text`；中间不展示 thought、tool call、usage、plan 或执行轨迹，只发送 typing 状态和每轮一条状态消息（[ADR-0082](0082-agent-run-status.md)）。桥限制输入、输出、队列长度和单轮时间，超限报错误，不截断成成功。
 
@@ -44,7 +44,7 @@ Matrix 控制消息只由桥识别，不发给 ACP，帮助和命令菜单里只
 
 Agent 的 `session/request_permission` 不是 Matrix 消息里的普通按钮，而是核心确认系统的一个请求。桥把 ACP 的 `toolCallId`、标题、说明、已收到的 `tool_call`/`tool_call_update` 参数和选项原样整理成核心可渲染的结构化卡片；同一 `toolCallId` 的增量合并，秘密字段和 token 永不进卡片、日志或审计。请求带上这个 ACP 会话所在的房间和话题（`origin`，核心按 ADR-0016 核对），卡片显示在那个会话里，包含 ACP 提供的选项名称，不让模型文字决定按钮。
 
-核心复用现有确认卡片的通用 `approve`/`reject` 方向，不新增 `allow_always`、`reject_always` 或 `allow_window` 的 Answer 枚举。为让一张卡片保留多个 ACP 选项，卡片的按钮和主人的回答扩展一个 opaque `choice_id`，由桥为这次请求生成，核心只原样放到卡片上再原样带回，不认识 ACP `optionId`；回答对不上卡片上的按钮时返回 400 `invalid_input`。`allow_once`/`allow_always` 都显示为 Agent 给的同意选项，`reject_once`/`reject_always` 都显示为拒绝选项，桥再按自己的映射回原始 ACP `optionId`。`allow_always` 是 Agent 自己的作用域，不转成 `ApproveWider`，不写 Wonton `tool-policy`；Wonton MCP 工具的持续放行仍只按 ADR-0024，两个策略不互相扩大。若 ACP 没有拒绝选项，核心另加一个不带 `choice_id` 的拒绝按钮“取消”，桥回 ACP `cancelled`。核心审计决定，不让桥或 Agent 自己批准。
+核心复用现有确认卡片的通用 `approve`/`reject` 方向，不新增 `allow_always`、`reject_always` 或 `allow_window` 的 Answer 枚举。为让一张卡片保留多个 ACP 选项，卡片的按钮和主人的回答扩展一个 opaque `choice_id`，由桥为这次请求生成，核心只原样放到卡片上再原样带回，不认识 ACP `optionId`；回答对不上卡片上的按钮时返回 400 `invalid_input`。`allow_once`/`allow_always` 都显示为 Agent 给的同意选项，`reject_once`/`reject_always` 都显示为拒绝选项，桥再按自己的映射回原始 ACP `optionId`。`allow_always` 是 Agent 自己的作用域，不转成 `ApproveWider`，不写 Wonton `tool-policy`；Wonton MCP 工具的持续放行仍只按 ADR-0024，两个策略不互相扩大。若 ACP 没有拒绝选项，核心另加一个不带 `choice_id` 的拒绝按钮“取消”，桥回 ACP `cancelled`。核心审计决定，不让桥或 Agent 自己批准。核心可以按主人定的策略代答：危险模式（[ADR-0091](0091-danger-mode.md)）下来自主人私聊的请求，核心不发卡片，直接回 `allow_once` 那项的 `choice_id`，永不选 `allow_always`；桥收到的和主人点了一样，不感知危险模式，职责不变。
 
 入口不写 ACP 或桥的特例，插件网络里的任何 Agent 适配层都能用：`POST /agent/permissions`，和 MCP 总线同一个地址（`WONTON_MCP_URL` 换掉路径）、同一道门（按来源地址认出调用方，要有 `tools` 权限），但不是 MCP，因为桥不说 MCP。它是长请求，用 HTTP 而不是回调，桥不用再开监听。请求带 `tool_call_id`、标题、说明、参数和选项（`choice_id`、`kind`、显示名），响应是三种结果之一：`selected`（带 `choice_id`，包括主人选了拒绝类的选项）、`cancelled`（主人点了核心加的“取消”）、`expired`。选项不认识、没有选项或 `choice_id` 重复时返回 400 `invalid_input`；已经有太多请求在等主人时返回 429 `too_many_pending`，和 MCP 的卡片共用同一个上限（ADR-0016）；卡片发不出去时返回 503 `confirmation_unavailable`。桥断开长请求就是撤回，卡片随之作废，主人的回答不再算数。选了同意类的选项后，卡片写明选了哪一项，不显示“正在执行”，因为执行归 Agent，核心看不到结果。类型在 `wonton-protocol` 的 `agent_permission` 模块。
 
@@ -81,6 +81,15 @@ Wonton MCP 入口按插件网络来源授权，C1–C3 不引入 bearer token；
 桥代码放主仓库私有的 `crates/wonton-acp-bridge`，因为它复用私有 workspace 的 `wonton-matrix`；插件仓库是公开的，不能复制或依赖主仓库源代码。主仓库 CI 构建多架构 `ghcr.io/wontonapp/wonton-acp-bridge:<version>`，发布后按 digest 固定；公开插件仓库只放 Compose、Agent 层、配置和 notices，并引用这个 digest；ACP Agent 插件合在一个仓库、每家一个子目录，见 [ADR-0079](0079-agent-plugins-monorepo.md)。推荐这个边界；把桥源代码另开公开仓库需要先抽出 Matrix 边界和单独处理许可证，不属于 C1。
 
 桥用 Rust，原因是仓库已有 Matrix 的 Rust 边界、厚核心的错误分类和低常驻开销；桥是独立插件进程，不能调用核心内部 API。桥及其复用的 `wonton-matrix` 随私有主仓库的 `LicenseRef-Proprietary` 发布；公共插件仓库只引用已构建的镜像，不暴露桥源代码。桥只在客户端说 MCP（查用户语言），`rmcp`（Apache-2.0）由 `wonton-core` 和桥共用；桥及其依赖不引入 GPL/AGPL。Agent 的专有许可证、适配器许可证和上游 notices 随 Agent 插件清单分发；不能满足某个 Agent 的许可证时不上架。
+
+### 报文类型：网关换官方库之前桥用自己的类型
+
+[ADR-0061 第 11 节](0061-agent-runtime-and-frontends.md)定了方向：网关用官方的 `agent-client-protocol`，桥的 ACP 层跟网关一起换，不单独重写桥。换之前桥保留手写类型；官方 crate（Apache-2.0）在测试里当报文契约的对照物（`acp_contract_tests.rs`，双向断言字段映射不漂移），换库时照着它核对。
+
+换的时候要处理的（2026-11 实测，5.2.0）：
+
+- 官方 schema 给 serde_json 硬编码 `preserve_order`，特性统一进整个 workspace 的测试图后 `serde_json::Value` 撑大，`cargo clippy --workspace --all-targets -- -D warnings` 会让 `wonton-core` 两处（`mcp/takeover.rs:232`、`mcp/mod.rs:381` 的 `CallToolResult`）触发 `clippy::result_large_err`（`-p wonton-core` 单独跑不触发，差异只在桥 dev-dependency 带来的统一特性）。换库前先把这两处装箱或缩小，契约测试的对照物才能跟着钉到网关同款版本（现在钉 0.13.1，见 `crates/wonton-acp-bridge/Cargo.toml`）。
+- 桥的私有扩展和容错官方 schema 不覆盖：`_session/steering`（Claude/Codex 私有）、`_wonton/task`（ADR-0059）、`-32099` 自有错误码、`mcpCapabilities.http` 对象/布尔两种写法、错误 `data` 的多形状——换的时候按 ADR-0061 第 11 节走无类型处理。
 
 每个活跃 ACP session 的内存预算按实测值留余量：Claude 约 200 MiB/会话增量，Qwen 有 2.7–2.9 GiB 的瞬时多会话峰值；插件清单声明限制，Qwen 默认单 session 并设容器内存上限，超限显示插件被杀/未就绪，不静默重试。空闲 10 分钟后 `session/close`，不删除持久状态。
 

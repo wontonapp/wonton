@@ -4,8 +4,8 @@
 use std::time::Instant;
 
 use wonton_client::{
-    Action, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendsState, FriendsViewModel,
-    RoomMembership,
+    Action, CoreError, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendsState,
+    FriendsViewModel, RoomMembership,
 };
 use wonton_matrix::testkit::unique;
 
@@ -304,6 +304,51 @@ async fn a_bad_user_id_fails_with_its_own_class() {
     .await;
 }
 
+/// 服务器不让发的邀请（对方屏蔽了自己，或对方的服务器不在联邦名单里）Tuwunel 回 403：
+/// 这台设备的登录好好的，不能报成登录失效。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_refused_invite_is_not_reported_as_an_expired_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let (home, phone) = signed_in_phone(dir.path()).await;
+    let bob = home.matrix.login(&unique("bob"), "Bob 的手机").await;
+    let mut blocked = wonton_matrix::Blocked::default();
+    blocked
+        .users
+        .insert(wonton_matrix::OwnedUserId::try_from(OWNER).unwrap());
+    bob.set_blocked_list(&blocked).await.expect("Bob 屏蔽主人");
+
+    // 只取一次列表、等它回来再加好友：还在路上的刷新会把失败顶回 Ready。
+    let updates = phone.subscribe_friends();
+    let next_state = || async {
+        tokio::time::timeout(WAIT, updates.next())
+            .await
+            .expect("等好友页更新超时")
+            .expect("订阅还在")
+            .state
+    };
+    refresh(&phone);
+    while next_state().await != FriendsState::Ready {}
+    phone
+        .dispatch(Action::AddFriend {
+            user_id: bob.user_id().to_string(),
+        })
+        .unwrap();
+    let problem = loop {
+        match next_state().await {
+            FriendsState::Failed { problem } => break problem,
+            FriendsState::Loading => {}
+            other => panic!("邀请应被拒，实际：{other:?}"),
+        }
+    };
+    assert_eq!(problem.reason, FriendFailure::Forbidden, "{problem:?}");
+    assert_eq!(problem.http_status, Some(403));
+    // MSC4155 的拒绝码；对方服务器不在联邦名单里时是 `M_FORBIDDEN`，见 wonton-matrix 的测试。
+    assert_eq!(problem.matrix_errcode.as_deref(), Some("M_INVITE_BLOCKED"));
+    // 聊天的登录不受影响。
+    phone.signed_in().await;
+}
+
 // 不用连上 Matrix：输入在发邀请之前就按类别挡下，不连家也该如实报。
 #[tokio::test]
 async fn scanning_something_that_is_not_a_user_link_fails_as_invalid_input() {
@@ -354,6 +399,56 @@ async fn a_matrix_to_user_link_sends_the_request() {
     let my_link = format!("https://matrix.to/#/{OWNER}");
     until(&phone, "给出自己的用户链接", |view| {
         (view.my_link.as_deref() == Some(my_link.as_str())).then_some(())
+    })
+    .await;
+}
+
+/// 隧道断开时好友页和“你的资料”立刻失败成“连不上家里的服务器”，不等各自接口的 30 秒超时；
+/// 恢复后好友名单照常取到。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn friends_and_profile_fail_right_away_while_the_tunnel_is_down() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut home, phone) = signed_in_phone(dir.path()).await;
+
+    home.stop_tunnel().await;
+    // 服务端关闭连接，状态很快如实变断开；等它变完，闸门才有依据。
+    let deadline = Instant::now() + WAIT;
+    while matches!(phone.home().status, wonton_protocol::HomeStatus::Connected) {
+        assert!(Instant::now() < deadline, "服务端停了，状态还没如实变断开");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    let started = Instant::now();
+    refresh(&phone);
+    until(&phone, "断开时立刻失败", |view| match &view.state {
+        FriendsState::Failed { problem }
+            if problem.reason == FriendFailure::TransportUnavailable =>
+        {
+            Some(())
+        }
+        _ => None,
+    })
+    .await;
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "断开时好友请求要立刻失败，实际等了 {:?}",
+        started.elapsed()
+    );
+    let started = Instant::now();
+    let error = phone.me().await.expect_err("断开时取资料要失败");
+    assert!(
+        matches!(error, CoreError::TransportUnavailable { .. }),
+        "{error:?}"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "断开时取资料要立刻失败，实际等了 {:?}",
+        started.elapsed()
+    );
+
+    home.start_tunnel().await;
+    until(&phone, "恢复后取到名单", |view| {
+        matches!(view.state, FriendsState::Ready).then_some(())
     })
     .await;
 }

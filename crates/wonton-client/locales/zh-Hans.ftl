@@ -158,7 +158,14 @@ chat-contacts-invalid-user-id = 用户 ID 不合法：{ $reason }
 
 # 通过 Siri、快捷指令或聊天页发消息、内容为空时显示。
 chat-empty-message = 消息不能为空。
-composer-not-ready = 这个版本的客户端核心还不支持附件区。
+composer-tray-full = 附件区最多放 { $max } 个附件。
+composer-has-failed = 附件区里有没传上去的附件，先重试或删掉它。
+composer-attachment-not-found = 找不到这个附件，可能已经删掉或发出去了。
+composer-outgoing-not-found = 找不到这条待发消息，可能已经交出去了。
+composer-store-failed = 附件区存不到手机上（{ $path }）：{ $reason }
+composer-attachment-failed = 附件“{ $name }”没传上去。
+composer-transfer-gone = 这个文件的上传记录不见了，请重试。
+composer-upload-record-unreadable = 照片的上传记录读不懂：{ $reason }
 # Siri 或快捷指令传进来的 Bot ID 解析不了时显示。
 chat-ask-invalid-bot-id = 默认 Agent 的 ID 格式不对。
 # 已有私聊的房间 ID 解析不了时显示。
@@ -185,6 +192,7 @@ chat-not-signed-in = 还没有登录 Matrix
 chat-send-no-response = Matrix 服务器没有回应
 # $error 是房间 ID 解析器的原始错误。
 chat-invalid-room-id = 房间 ID 不合法：{ $error }
+chat-link-room-not-joined = 还没加入这个房间，请先在聊天列表里接受邀请。
 # 往只放通知的房间里发东西时显示。
 chat-read-only-room = 这个房间只放通知，不能发消息
 # $room 是原始的房间 ID。
@@ -210,6 +218,7 @@ chat-op-mark-read-failed = 标为已读失败：{ $error }
 chat-op-direct-chat-failed = 发起私聊失败：{ $error }
 chat-op-send-text-failed = 发送消息失败：{ $error }
 chat-op-send-image-failed = 发送图片失败：{ $error }
+chat-op-send-preview-failed = 链接预览没带上：{ $error }
 chat-op-forward-failed = 转发消息失败：{ $error }
 chat-op-redact-failed = 撤回消息失败：{ $error }
 ## 文件传输和播放的详情。显示在传输列表条目、文件卡片和播放失败说明上。

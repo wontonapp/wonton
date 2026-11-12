@@ -11,11 +11,11 @@ use serde_json::json;
 use tokio::sync::broadcast;
 use tokio_websockets::{Message, ServerBuilder};
 
-use super::test_support::StateData;
+use super::test_support::{Signal, StateData};
 
 pub(super) async fn subscribe(
     state: Arc<Mutex<StateData>>,
-    events: broadcast::Sender<Option<String>>,
+    events: broadcast::Sender<Signal>,
     mut request: Request<Body>,
 ) -> Response<Body> {
     let key = request.headers().get(header::SEC_WEBSOCKET_KEY).unwrap();
@@ -30,18 +30,20 @@ pub(super) async fn subscribe(
         state.lock().unwrap().connections += 1;
         while let Ok(signal) = receiver.recv().await {
             match signal {
-                Some(id) => {
+                Signal::New(id) => {
                     let message = json!({"Type":"new","Data":{"ID":id}}).to_string();
                     if stream.send(Message::text(message)).await.is_err() {
                         return;
                     }
                 }
-                None => {
+                Signal::Close => {
                     let _ = stream.send(Message::close(None, "")).await;
                     state.lock().unwrap().closed += 1;
                     let _ = stream.next().await;
                     return;
                 }
+                // 直接把流连同 TCP 一起丢掉，对端只会看到连接结束而没有 close frame。
+                Signal::Drop => return,
             }
         }
     });

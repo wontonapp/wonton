@@ -477,6 +477,8 @@
     <string name="file_download_and_open">下載後用其他 App 開啟</string>
     <!-- Title of the problem shown when no installed app can open a downloaded file. Android only. -->
     <string name="file_no_app_opens_it">這支手機上沒有應用程式可以開啟這個檔案</string>
+    <!-- Title of the problem shown when the file can't be handed to the system (outside configured FileProvider roots). Android only. -->
+    <string name="file_handoff_failed">無法把這個檔案交給系統</string>
     <!-- Link under a file card: open the downloaded file with another app. -->
     <string name="file_open_elsewhere">用其他 App 開啟</string>
     <!-- Line under a file card while its download is paused. Argument: the home server's reason, shown as is. -->
@@ -746,6 +748,10 @@
     <string name="friends_error_unauthorized">登入已失效</string>
     <!-- Next step under the unauthorized failure. -->
     <string name="friends_error_unauthorized_next">重新登入後再開啟好友。</string>
+    <!-- Failure title when the server refused a friend action although the sign-in is valid. -->
+    <string name="friends_error_forbidden">請求被拒絕了</string>
+    <!-- Next step under the refused failure. -->
+    <string name="friends_error_forbidden_next">對方可能封鎖了你，或者對方的伺服器還不能和家裡的伺服器互通。</string>
     <!-- Failure title when the typed ID isn't a full Matrix ID. -->
     <string name="friends_error_invalid_user_id">不是 Matrix ID</string>
     <!-- Next step under the invalid-ID failure. -->
@@ -862,6 +868,10 @@
     <string name="message_delete_everyone_message">這個房間裡所有成員都會看到它被收回。</string>
     <!-- Title of the dialog that removes a message for everyone. Android only. -->
     <string name="message_delete_everyone_title">對所有人生效，收回這則訊息？</string>
+    <!-- Item in the message menu on someone else's message: remove it for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others">刪除 %1$s 的訊息</string>
+    <!-- Title of the dialog that removes someone else's message for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others_title">刪除 %1$s 的這則訊息？</string>
     <!-- Item in the message menu: send the message to another room. Android only. -->
     <string name="message_forward">轉發</string>
     <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->
@@ -1813,6 +1823,12 @@
     <string name="panel_public_unsupported">這台裝置的 WebView 分不開公開網頁和插件頁面的儲存，開不了公開網頁</string>
     <string name="panel_remove">移除</string>
     <string name="panel_url">填寫網址</string>
+    <string name="message_image_permission_denied">Android 拒絕存取。請在設定中檢查此應用程式的權限，再試一次。</string>
+    <string name="composer_file_unreadable">無法讀取這個檔案。請重新複製，或選擇其他檔案。</string>
+    <string name="message_link_browser">在瀏覽器中開啟</string>
+    <string name="message_link_open_failed">無法開啟這個連結</string>
+    <string name="message_link_share_failed">無法分享這個連結</string>
+    <string name="message_link_no_handler">請安裝能開啟此類連結的應用程式，再試一次。</string>
     <string name="contacts_title">聯絡人</string>
     <string name="contacts_add">加聯絡人</string>
     <string name="contacts_add_kind_bot">Bot</string>
@@ -1858,4 +1874,17 @@
     <string name="handoff_no_other_device">手邊沒有別的裝置</string>
     <string name="invite_device_added">已加好</string>
     <string name="invite_cannot_give">這部裝置也沒有完整的金鑰，新裝置看不到以前的訊息。</string>
+    <string name="composer_tray_full">一次最多傳送 %1$d 個附件。</string>
+    <string name="composer_attachment_remove">移除 %1$s</string>
+    <string name="composer_attachment_paused">等連上家裡的伺服器</string>
+    <string name="composer_attachment_failed">傳不上去</string>
+    <string name="composer_attachment_retry">重新上傳</string>
+    <string name="composer_attachment_too_large">照片超過了家裡伺服器的大小上限，可以改用檔案傳送。</string>
+    <string name="composer_attachment_source_unavailable">原檔案讀不了了，請重新選一次。</string>
+    <string name="composer_attachment_storage_full">家裡伺服器的磁碟滿了。</string>
+    <string name="composer_attachment_rejected">家裡的伺服器拒收了這個附件。</string>
+    <string name="composer_attachment_upstream">家裡的伺服器出錯了。</string>
+    <string name="composer_attachment_local_storage">手機上存不下了。</string>
+    <string name="timeline_sending_progress">傳送中 %1$s</string>
+    <string name="timeline_cancel_send">取消傳送</string>
 </resources>

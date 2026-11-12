@@ -508,7 +508,7 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
         display_name: "主人".into(),
         email: Some("owner@wonton.localhost".into()),
     };
-    let auth = m.route("app-test").unwrap().proxy.unwrap();
+    let auth = m.route("app-test", "/").unwrap().proxy.unwrap();
     let header = auth.headers(&owner, wonton_protocol::Role::Owner).unwrap();
     assert_eq!(
         (header[0].0.as_str(), header[0].1.as_str()),
@@ -521,7 +521,7 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
     // 核心重启后从密钥库读回同一个值。
     let restarted = manager_with(engine, &dir);
     restarted.restore().await.unwrap();
-    let auth = restarted.route("app-test").unwrap().proxy.unwrap();
+    let auth = restarted.route("app-test", "/").unwrap().proxy.unwrap();
     assert_eq!(
         auth.cookies(&owner, wonton_protocol::Role::Owner).unwrap()[0].1,
         key
@@ -640,7 +640,10 @@ async fn an_uninstall_finishes_after_its_request_goes_away() {
     ));
     let request = tokio::spawn({
         let (m, id) = (m.clone(), id.clone());
-        async move { m.uninstall_detached(id, true, super::langs()).await }
+        async move {
+            m.uninstall_detached(id, true, Vec::new(), true, super::langs())
+                .await
+        }
     });
     hold.reached().await;
     // 请求断开时 hyper 丢弃处理它的 future。
@@ -649,7 +652,7 @@ async fn an_uninstall_finishes_after_its_request_goes_away() {
 
     // 卸载还在进行：再来一次如实回答，不另起一次。
     let err = m
-        .uninstall_detached(id.clone(), true, super::langs())
+        .uninstall_detached(id.clone(), true, Vec::new(), true, super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "conflict");
@@ -773,7 +776,7 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
     let m = manager_in_container(engine, &dir);
     m.restore().await.unwrap();
     assert_eq!(
-        m.route("app-test").unwrap().upstream,
+        m.route("app-test", "/").unwrap().upstream,
         Some(Endpoint::Tcp(
             "web.app-test.wonton.internal:8123".to_owned()
         ))

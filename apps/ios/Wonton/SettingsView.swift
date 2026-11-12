@@ -37,6 +37,10 @@ struct SettingsTab: View {
     @ViewBuilder private func destination(_ route: SettingsRoute) -> some View {
         switch route {
         case .server: ConnectionView(model: home, plugins: plugins)
+        case .matrixLogin:
+            MatrixLoginView(model: home) {
+                if model.path.last == .matrixLogin { model.path.removeLast() }
+            }
         case .connectionDetails: ConnectionDetailsView(model: home)
         case .invite: InviteView(model: home, chat: chat)
         case .pairing:

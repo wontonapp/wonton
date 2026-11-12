@@ -16,9 +16,9 @@ use wonton_matrix::{
 };
 use wonton_protocol::{
     ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus, FileLinks,
-    ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary, QuotedMessage,
-    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SendState, TimelineContent, TimelineDiff,
-    TimelineItem, TimelineMessage, extract_file_links,
+    ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary,
+    QuotedMessage, RecoveryStatus, RichBlock, RoomMembership, RoomPreview, RoomRow, SendState,
+    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
 };
 
 use crate::l10n::{CATALOG, language};
@@ -136,6 +136,7 @@ pub(crate) fn timeline_item(
     read: &ReadMark,
     links: &LinkTargets,
     bots: &BotsView,
+    previews: &super::previews::Previews,
 ) -> TimelineItem {
     let read_by = read.readers_of(&entry.id);
     let content = match entry.kind {
@@ -149,7 +150,7 @@ pub(crate) fn timeline_item(
                 bots.content(status, &body, message.sender.as_str())
             }
             _ => TimelineContent::Message {
-                message: timeline_message(*message, cards, read_by, links),
+                message: timeline_message(*message, cards, read_by, links, previews),
             },
         },
         EntryKind::Notice(text) => TimelineContent::Notice { text },
@@ -179,10 +180,17 @@ fn timeline_message(
     cards: &CardsView,
     read_by: Vec<String>,
     links: &LinkTargets,
+    previews: &super::previews::Previews,
 ) -> TimelineMessage {
     let card = cards.view_of(&message);
     // 卡片靠编辑更新状态，对主人来说不是“编辑过”。
     let edited = message.edited && card.is_none();
+    // 预览只给文字消息：事件里带的直接用，没有的用核心取回的缓存（还在取的下一批带上）。
+    let preview = if card.is_none() {
+        super::previews::message_preview(&message, links, previews)
+    } else {
+        None
+    };
     let body = match (card, message.body) {
         (Some(view), _) => MessageContent::Confirmation { view },
         (None, body) => message_content(body, message.is_own, links),
@@ -221,10 +229,11 @@ fn timeline_message(
             .map(|reply| reply_quote(reply, cards.core_account(), links)),
         // 旁聊卡片按 SDK 的话题汇总合成（ADR-0093 §4），还没实现：先都不带。
         side_chat: None,
+        preview,
         actions,
         body,
         read_by,
-        group: None,
+        group: message.group,
     }
 }
 
@@ -236,11 +245,7 @@ pub(super) fn message_content(
     match body {
         MessageBody::Text(text) | MessageBody::Notice(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
-            let blocks = if is_own {
-                rich::plain(&body, links)
-            } else {
-                rich::markdown(&body, links)
-            };
+            let blocks = blocks_of(&body, is_own, links);
             MessageContent::Text {
                 body,
                 blocks,
@@ -258,7 +263,10 @@ pub(super) fn message_content(
                 size: image.size,
                 width: image.width,
                 height: image.height,
-                caption: None,
+                caption: image.caption.map(|body| ImageCaption {
+                    blocks: blocks_of(&body, is_own, links),
+                    body,
+                }),
             },
         },
         MessageBody::Undecryptable => MessageContent::Undecryptable,
@@ -267,6 +275,14 @@ pub(super) fn message_content(
             kind: "m.file".to_owned(),
         },
         MessageBody::Other { kind } => MessageContent::Unsupported { kind },
+    }
+}
+
+fn blocks_of(body: &str, is_own: bool, links: &LinkTargets) -> Vec<RichBlock> {
+    if is_own {
+        rich::plain(body, links)
+    } else {
+        rich::markdown(body, links)
     }
 }
 
@@ -281,8 +297,9 @@ pub(crate) fn timeline_diff(
     read: &ReadMark,
     links: &LinkTargets,
     bots: &BotsView,
+    previews: &super::previews::Previews,
 ) -> TimelineDiff {
-    let item = |entry| timeline_item(entry, cards, read, links, bots);
+    let item = |entry| timeline_item(entry, cards, read, links, bots, previews);
     match diff {
         VectorDiff::Append { values } => TimelineDiff::Append {
             items: values.into_iter().map(item).collect(),
@@ -336,7 +353,8 @@ pub(crate) fn not_connected() -> String {
 pub(crate) fn failure(error: &Error) -> ChatFailure {
     match error {
         Error::Transport(_) => ChatFailure::TransportUnavailable,
-        Error::Unauthorized { .. } => ChatFailure::Unauthorized,
+        // ChatFailure 的 Unauthorized 包括“无权操作”。
+        Error::Unauthorized { .. } | Error::Forbidden { .. } => ChatFailure::Unauthorized,
         Error::NotReady(_) => ChatFailure::NotReady,
         Error::Upstream(_) => ChatFailure::Upstream,
         Error::InvalidInput(_) => ChatFailure::InvalidInput,
@@ -441,6 +459,7 @@ mod tests {
                 &ReadMark::default(),
                 &LinkTargets::default(),
                 &BotsView::default(),
+                &super::super::previews::Previews::new(),
             );
             let TimelineContent::Message { message } = item.content else {
                 panic!("the message must stay in the timeline");
@@ -477,6 +496,7 @@ mod tests {
                 edited: false,
                 read_by: Vec::new(),
                 reply: None,
+                group: None,
                 can_redact: true,
             })),
         }

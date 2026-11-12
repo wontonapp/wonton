@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use wonton_protocol::{Answer, BotKeeper, CARD_FIELD, PanelScope, TOOL_CALL_USER_META};
+use wonton_protocol::{Answer, BotKeeper, PanelScope, TOOL_CALL_USER_META};
 
 use super::test_setup::setup_with_upstreams;
 use super::upstream::Upstreams;
@@ -99,15 +99,15 @@ fn pin_args(plugin: &str, path: &str, target: &str) -> Value {
     json!({"plugin": plugin, "path": path, "target": target})
 }
 
-async fn wait_card(fake: &crate::matrix::fake::Fake) -> String {
+fn posted(s: &super::test_setup::Setup) -> usize {
+    s.cards.posted.lock().unwrap().len()
+}
+
+async fn wait_card(s: &super::test_setup::Setup) -> String {
     for _ in 0..500 {
-        if let Some((_, content)) = fake
-            .state()
-            .sent
-            .iter()
-            .find(|(_, content)| content.get(CARD_FIELD).is_some())
-        {
-            return content[CARD_FIELD]["id"].as_str().unwrap().to_owned();
+        let (pending, _, _) = s.bus.confirmations().list(None);
+        if let Some(card) = pending.first() {
+            return card.id.clone();
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
@@ -115,20 +115,16 @@ async fn wait_card(fake: &crate::matrix::fake::Fake) -> String {
 }
 
 async fn wait_for_card(
-    fake: &crate::matrix::fake::Fake,
+    s: &super::test_setup::Setup,
     call: &mut tokio::task::JoinHandle<rmcp::model::CallToolResult>,
 ) -> String {
     for _ in 0..500 {
         if call.is_finished() {
             panic!("调用先结束了：{:?}", call.await);
         }
-        if let Some((_, content)) = fake
-            .state()
-            .sent
-            .iter()
-            .find(|(_, content)| content.get(CARD_FIELD).is_some())
-        {
-            return content[CARD_FIELD]["id"].as_str().unwrap().to_owned();
+        let (pending, _, _) = s.bus.confirmations().list(None);
+        if let Some(card) = pending.first() {
+            return card.id.clone();
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
@@ -155,7 +151,7 @@ async fn a_bot_pins_into_its_own_room_without_asking() {
                     room_id: b.room.clone()
                 })
     );
-    // 自己的房间不问，通知房间和 Bot 房间都没有卡片。
+    // 自己的房间不问，没有卡片。
     assert!(s.cards.posted.lock().unwrap().is_empty());
 }
 
@@ -193,13 +189,13 @@ async fn re_pinning_updates_title_and_attention() {
 
 #[tokio::test]
 async fn the_first_main_pin_asks_once() {
-    let (s, b, fake) = bot("com.example.agent").await;
+    let (s, b, _fake) = bot("com.example.agent").await;
     let mut call = s.spawn_as(
         &b.caller,
         "wonton__pin_page",
         pin_args("app.example.notes", "/one", "main"),
     );
-    let card = wait_for_card(&fake, &mut call).await;
+    let card = wait_for_card(&s, &mut call).await;
     s.bus
         .confirmations()
         .answer(&card, Answer::Approve, None)
@@ -218,26 +214,18 @@ async fn the_first_main_pin_asks_once() {
         )
         .await;
     assert!(!again.is_error.unwrap_or(false));
-    let cards = fake
-        .state()
-        .sent
-        .iter()
-        .filter(|(_, content)| {
-            content.get(CARD_FIELD).is_some() && content.get("m.relates_to").is_none()
-        })
-        .count();
-    assert_eq!(cards, 1, "第二次不再问");
+    assert_eq!(posted(&s), 1, "第二次不再问");
 }
 
 #[tokio::test]
 async fn a_refused_main_pin_is_not_stored() {
-    let (s, b, fake) = bot("com.example.agent").await;
+    let (s, b, _fake) = bot("com.example.agent").await;
     let mut call = s.spawn_as(
         &b.caller,
         "wonton__pin_page",
         pin_args("app.example.notes", "/one", "main"),
     );
-    let card = wait_for_card(&fake, &mut call).await;
+    let card = wait_for_card(&s, &mut call).await;
     s.bus
         .confirmations()
         .answer(&card, Answer::Reject, None)
@@ -366,13 +354,13 @@ async fn only_bots_can_pin_and_urls_must_be_https() {
 
 #[tokio::test]
 async fn cancelling_the_pin_call_still_asks_and_pins() {
-    let (s, b, fake) = bot("com.example.agent").await;
+    let (s, b, _fake) = bot("com.example.agent").await;
     let handle = s.spawn_as(
         &b.caller,
         "wonton__pin_page",
         pin_args("app.example.notes", "/one", "main"),
     );
-    let card = wait_card(&fake).await;
+    let card = wait_card(&s).await;
     handle.abort();
     s.bus
         .confirmations()

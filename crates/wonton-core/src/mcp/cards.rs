@@ -1,16 +1,14 @@
-//! 确认卡片的内容（ADR-0016）：标题、说明行、按钮，以及给其他 Matrix 客户端看的纯文本。文字都由核心写好，
-//! App 原样渲染。
+//! 确认卡片的内容（ADR-0016）：标题、说明行、按钮。文字都由核心写好，App 原样渲染。
 
 mod permission;
 
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 use wonton_l10n::Arg;
 use wonton_protocol::{
-    AgentPermissionRequest, Answer, CARD_FIELD, CardChoice, CardLine, ConfirmationCard,
-    ConfirmationState, ConfirmationWindow, PermissionRisk, SecretInput, WindowEnd,
+    AgentPermissionRequest, Answer, CardChoice, CardLine, PermissionRisk, SecretInput,
 };
 
 pub(crate) use permission::set_permission;
@@ -663,139 +661,5 @@ pub fn save_file(
         plugin_id: None,
         secret_inputs: Vec::new(),
         settings: None,
-    }
-}
-
-/// 给其他 Matrix 客户端看的纯文本。
-pub fn body(card: &ConfirmationCard, langs: &Languages) -> String {
-    let mut out = card.title.clone();
-    for line in &card.lines {
-        out.push('\n');
-        out.push_str(&line.text);
-    }
-    out.push('\n');
-    let message = |id: &str| l10n::text(langs, id, &[]);
-    out.push_str(&match &card.state {
-        ConfirmationState::Pending => message("chat-card-state-pending"),
-        ConfirmationState::Running => message("chat-card-state-running"),
-        ConfirmationState::Succeeded { message } => l10n::text(
-            langs,
-            "chat-card-state-succeeded",
-            &[("message", message.as_str().into())],
-        ),
-        ConfirmationState::Failed { message } => l10n::text(
-            langs,
-            "chat-card-state-failed",
-            &[("message", message.as_str().into())],
-        ),
-        ConfirmationState::Uncertain { message } => l10n::text(
-            langs,
-            "chat-card-state-uncertain",
-            &[("message", message.as_str().into())],
-        ),
-        ConfirmationState::Rejected => message("chat-card-state-rejected"),
-        ConfirmationState::Expired => message("chat-card-state-expired"),
-    });
-    if let Some(window) = &card.window {
-        out.push('\n');
-        out.push_str(&window_text(window, langs));
-    }
-    out
-}
-
-fn window_text(window: &ConfirmationWindow, langs: &Languages) -> String {
-    if let Some(reason) = window.ended {
-        let count = window.allowed.unwrap_or(0);
-        let reason = match reason {
-            WindowEnd::Expired => "expired",
-            WindowEnd::Stopped => "stopped",
-            WindowEnd::CoreRestarted => "restarted",
-            WindowEnd::Unknown => "unknown",
-        };
-        return l10n::text(
-            langs,
-            "chat-window-ended",
-            &[("reason", reason.into()), ("count", Arg::from(count))],
-        );
-    }
-    l10n::text(langs, "chat-window-active", &[])
-}
-
-/// 卡片的 Matrix 消息内容。用 `m.text` 的原因见 ADR-0016。
-pub fn content(card: &ConfirmationCard, langs: &Languages) -> Value {
-    json!({
-        "msgtype": "m.text",
-        "body": body(card, langs),
-        CARD_FIELD: card,
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use wonton_protocol::ConfirmationState;
-
-    use super::*;
-    use crate::l10n::CATALOG;
-    /// 两张卡片共用的底版：没密钥、没设置、待确认、过期为 1。
-    fn sample_card() -> ConfirmationCard {
-        ConfirmationCard {
-            secret_inputs: Vec::new(),
-            settings: None,
-            requester: None,
-            origin: None,
-            audience: wonton_protocol::CardAudience::Keeper,
-            answered_by: None,
-            id: "abc".into(),
-            state: ConfirmationState::Pending,
-            title: "Hermes 想安装 Grafana".into(),
-            lines: Vec::new(),
-            choices: Vec::new(),
-            expires_at_ms: 1,
-            plugin_id: None,
-            window: Some(ConfirmationWindow {
-                expires_at_ms: 1,
-                allowed: Some(2),
-                ended: Some(WindowEnd::Expired),
-            }),
-        }
-    }
-
-    /// 契约：`wonton-client` 的 `a_waiting_card_wakes_a_killed_app_and_its_edits_stay_quiet` 证明推得到手机。
-    #[test]
-    fn a_card_is_a_message_the_default_push_rules_notify() {
-        let langs = Languages::default();
-        let mut card = sample_card();
-        card.choices = choices(
-            &l10n::text(&langs, "chat-choice-install", &[]),
-            &l10n::text(&langs, "chat-choice-deny-install", &[]),
-        );
-        assert_eq!(content(&card, &langs)["msgtype"], "m.text");
-    }
-
-    /// 卡片正文按语言协商：ja 请求给日文，fr-FR 回退英文，两种真的不同。期望值由目录格式化。
-    #[test]
-    fn the_card_body_follows_the_requested_language() {
-        let mut card = sample_card();
-        card.lines = vec![line("一条说明")];
-        for (header, tag) in [("ja", "ja"), ("fr-FR", "en"), ("zh-TW", "zh-Hant")] {
-            let langs = Languages::from_header(Some(header));
-            let expected = CATALOG.negotiate(&[tag]);
-            let body = body(&card, &langs);
-            assert!(
-                body.contains(&CATALOG.format(expected, "chat-card-state-pending", &[])),
-                "{header}: {body}"
-            );
-            assert!(
-                body.contains(&CATALOG.format(
-                    expected,
-                    "chat-window-ended",
-                    &[("reason", "expired".into()), ("count", Arg::from(2u64))]
-                )),
-                "{header}: {body}"
-            );
-        }
-        let ja = body(&card, &Languages::from_header(Some("ja")));
-        let en = body(&card, &Languages::from_header(Some("fr-FR")));
-        assert_ne!(ja, en);
     }
 }

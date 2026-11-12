@@ -34,16 +34,19 @@ mod menu;
 mod onboarding;
 mod ops;
 mod pending;
+mod previews;
 mod read_mark;
 pub(crate) mod recovery;
 mod reply;
 mod rich;
+mod room_link;
 mod room_rows;
 mod send;
 mod session;
 mod sign_in;
 mod storage;
 mod timeline;
+mod timeline_previews;
 mod verification;
 mod view;
 
@@ -132,6 +135,8 @@ pub(crate) struct ChatLink {
     method: watch::Receiver<PushMethod>,
     /// 排队的草稿写入，见 [`draft::write_drafts`]。
     draft_writes: mpsc::UnboundedSender<DraftWrite>,
+    /// 链接预览的按网址缓存和点掉的记录（ADR-0065），发送框和时间线共用。
+    previews: previews::Previews,
     /// App 在后台：保持连接下同步到的该通知的消息收集进 `background_notifications`。
     background: AtomicBool,
     verification: Mutex<Option<verification::Control>>,
@@ -276,6 +281,7 @@ impl ChatLink {
             avatar_files: avatar_files::AvatarFiles::new(data_dir),
             method,
             draft_writes,
+            previews: previews::Previews::new(),
             background: AtomicBool::new(false),
             verification: Mutex::new(None),
             handoff_armed: AtomicBool::new(false),
@@ -453,12 +459,7 @@ impl ChatLink {
             }
             TimelineAction::MarkRead { target } => {
                 let room_id = self.timeline_target(&target)?;
-                let chat = self.clone();
-                let (_, room_id) = self.target(&room_id)?;
-                self.spawn_op("chat-op-mark-read-failed", async move {
-                    chat.room(&room_id).await?.mark_as_read().await.map(drop)
-                });
-                Ok(())
+                self.mark_room_read(&room_id)
             }
             TimelineAction::SetDraft {
                 target,
@@ -467,6 +468,19 @@ impl ChatLink {
             } => {
                 let room_id = self.timeline_target(&target)?;
                 self.set_draft(&room_id, &body, reply_to.as_deref())
+            }
+            TimelineAction::DismissLinkPreview { target } => {
+                let room_id = self.timeline_target(&target)?;
+                self.dismiss_preview(&room_id);
+                Ok(())
+            }
+            // 附件区的操作由 `ClientCore::dispatch` 交给附件区（ADR-0094），不会到这里。
+            TimelineAction::SendComposer { .. }
+            | TimelineAction::RemoveAttachment { .. }
+            | TimelineAction::RetryAttachment { .. }
+            | TimelineAction::RetryOutgoing { .. }
+            | TimelineAction::CancelOutgoing { .. } => {
+                Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
             }
         }
     }
@@ -514,6 +528,7 @@ impl ChatLink {
             room,
             cards,
             self.plugins.clone(),
+            self.previews.clone(),
             menus,
             room_view,
             self.view.subscribe(),

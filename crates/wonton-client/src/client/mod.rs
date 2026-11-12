@@ -196,6 +196,16 @@ impl ClientCore {
         self.scope().chat.resolve_user_id(&input)
     }
 
+    /// 把 Matrix 房间 ID 或别名解成已加入的房间 ID；不自动加入房间。
+    /// 取不到、未加入和输入非法分别返回对应的错误，壳不按别名等待一个永远不会出现的 ID。
+    pub async fn resolve_chat_room(&self, input: String) -> Result<String, CoreError> {
+        let scope = self.scope();
+        let chat = scope.chat.clone();
+        scope
+            .run(async move { chat.resolve_chat_room(&input).await })
+            .await
+    }
+
     /// 订阅一条时间线（主时间线或旁聊，ADR-0093 §5）：第一批是全部条目，之后是按顺序应用的增量。
     /// 同一时间只打开一个房间，打开另一个房间后前一个的订阅不再更新。还没登录、房间还没同步到本机时
     /// 返回 `NotReady`；旁聊时间线还没实现，`thread_root` 不为空时返回 `NotReady`。
@@ -253,6 +263,15 @@ impl ClientCore {
         let scope = self.scope();
         let chat = scope.chat.clone();
         scope.run(async move { chat.load_media(media).await }).await
+    }
+
+    /// 链接预览卡片的图片原文件（凭卡片图片里的 id）。核心负责从家里取回来。
+    pub async fn load_link_preview_image(&self, id: String) -> Result<Vec<u8>, CoreError> {
+        let scope = self.scope();
+        let chat = scope.chat.clone();
+        scope
+            .run(async move { chat.preview_image(&id).await })
+            .await
     }
 
     /// 视频头像的本机缓存文件；相同媒体的并发请求共用一次下载。
@@ -489,12 +508,14 @@ impl ClientCore {
     }
 
     /// 这个房间的传输条列什么。不走网络，传输列表一变就可以重新取。
+    /// 附件区自己的上传不在里面，它们画在附件区里。
     pub fn room_transfers(&self, room_id: String) -> RoomTransfers {
         let scope = self.scope();
-        scope
+        let listed = scope
             .files
             .view()
-            .for_room(&room_id, &scope.chat.view().rooms)
+            .for_room(&room_id, &scope.chat.view().rooms);
+        scope.composer.hide_own_uploads(listed)
     }
 
     /// 订阅传输列表，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
