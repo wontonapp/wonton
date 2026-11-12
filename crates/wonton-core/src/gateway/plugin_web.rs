@@ -198,6 +198,9 @@ async fn plugin_request_path(
         Ok(upstream) => upstream,
         Err(response) => return *response,
     };
+    if let Some(hosted) = &route.hosted {
+        return hosted::forward(gateway, &route, &upstream, hosted, req, langs, format).await;
+    }
     if let Some(person) = &person
         && let Err(response) =
             proxy_sso::attach_credentials(gateway, &route, person, req.headers_mut(), langs, format)
