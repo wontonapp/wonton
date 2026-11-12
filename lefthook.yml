@@ -66,6 +66,11 @@ pre-push:
         echo "==> cargo clippy ${targets% } --all-targets --locked -- -D warnings"
         # targets 是按空格分开的参数，不能加引号。
         cargo clippy ${targets% } --all-targets --locked -- -D warnings
+    merged-main:
+      # 合上最新 main 后的树能不能编过：PR 的 CI 只编 PR 自己的提交，main 上新加的字段这里先拦下。
+      # 只跳这一项：LEFTHOOK_EXCLUDE=merged-main git push。说明见脚本开头。
+      glob: "{crates/**,Cargo.toml,Cargo.lock,clippy.toml,rust-toolchain.toml}"
+      run: bash scripts/check-merged-main.sh
     swiftlint:
       glob: "apps/ios/**"
       run: |
