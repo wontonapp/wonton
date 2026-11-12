@@ -42,11 +42,12 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
         checkInstalled = { checkInstalled() },
     )
 
-    fun openRoom(roomId: String) {
+    /** 点通知进房间；通知来自旁聊时 [sideChatRoot] 是它的根，进那个旁聊（ADR-0093 §4）。 */
+    fun openRoom(roomId: String, sideChatRoot: String? = null) {
         settingsOverlay = false
         closeApps()
         pages.send(Action.OpenPage(TabRef.Chat))
-        chat.openWhenJoined(pages.core, roomId)
+        chat.openWhenJoined(pages.core, roomId, sideChatRoot)
     }
 
     /** 联系人请求的通知点进来：这个 Bot 的详情页上打开联系人页。 */
