@@ -127,7 +127,7 @@ pub(super) async fn request(gateway: &Gateway, label: &str, mut req: Request) ->
         };
         return bot_request(gateway, &bot, &host, req).await;
     }
-    let Some(route) = gateway.plugins.route(label) else {
+    let Some(route) = gateway.plugins.route(label, req.uri().path()) else {
         return pages::error(
             StatusCode::NOT_FOUND,
             "not_installed",

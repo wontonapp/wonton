@@ -54,7 +54,7 @@ impl PluginManager {
         }
         let web = package.manifest.webui.as_ref().expect("Bot web checked");
         let mut route = self
-            .route(&id.slug())
+            .route(&id.slug(), "/")
             .ok_or(unavailable(BotWebFailure::NotReady))?;
         if !matches!(
             route.status,
