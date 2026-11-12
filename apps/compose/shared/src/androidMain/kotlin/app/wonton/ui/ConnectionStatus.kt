@@ -13,11 +13,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -42,9 +37,6 @@ import app.wonton.ui.design.toColor
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.delay
-
-private const val RECOVERY_FEEDBACK_MS = 4_000L
 
 internal val HomeStatus.connectionText: String
     @Composable get() = when (this) {
@@ -116,31 +108,13 @@ fun connectionBarStatus(
     onOpen: (SettingsSubpage) -> Unit,
 ): WontonBarStatus {
     val notice = home.notice
-    var interrupted by remember(home.serverId) { mutableStateOf(false) }
-    var recovered by remember(home.serverId) { mutableStateOf(false) }
-    LaunchedEffect(home.serverId, home.status, notice != null) {
-        if (home.status is HomeStatus.Connected) {
-            if (interrupted) {
-                recovered = true
-                interrupted = false
-            }
-        } else {
-            recovered = false
-            if (notice != null) interrupted = true
-        }
-    }
-    LaunchedEffect(recovered) {
-        if (recovered) {
-            delay(RECOVERY_FEEDBACK_MS)
-            recovered = false
-        }
-    }
     val poor = poorNoticeText(
         home.status is HomeStatus.Connected, notice, home.details.quality, home.path?.relay == true,
     )?.let { stringResource(it) }
     return when {
         poor != null -> WontonBarStatus(title = poor, subtitle = poor)
-        recovered && notice == null -> {
+        // “刚恢复”由核心给：只在连接正常、没有别的提示时为真，到点由核心收掉，壳不计时。
+        home.justRecovered -> {
             val connected = stringResource(R.string.connection_connected)
             WontonBarStatus(title = connected, subtitle = connected)
         }

@@ -497,6 +497,7 @@ pub fn item(id: &str, title: &str, tags: &[&str]) -> StoreItem {
         stars: None,
         installed_version: None,
         security_tier: None,
+        high_permissions: false,
         blocked: None,
     }
 }
