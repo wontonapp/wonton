@@ -438,6 +438,7 @@ async fn send_text(server: &ClusterServer, account: &Account, room: &str, body: 
                 server.address
             ),
             Some(&account.token),
+            &[],
             RequestBody::Json(&serde_json::json!({"msgtype": "m.text", "body": body})),
             WAIT,
         )
@@ -458,6 +459,7 @@ async fn received(
             Method::GET,
             &format!("{}/_matrix/client/v3/sync", server.address),
             Some(&account.token),
+            &[],
             RequestBody::Empty,
             WAIT,
         )

@@ -462,6 +462,7 @@ pub(super) async fn create_room(server: &ClusterServer, account: &Account) -> St
             Method::POST,
             &format!("{}/_matrix/client/v3/createRoom", server.address),
             Some(&account.token),
+            &[],
             RequestBody::Json(&serde_json::json!({"preset": "private_chat"})),
             WAIT,
         )
@@ -483,6 +484,7 @@ pub(super) async fn invite(
             Method::POST,
             &format!("{}/_matrix/client/v3/rooms/{room}/invite", server.address),
             Some(&account.token),
+            &[],
             RequestBody::Json(&serde_json::json!({"user_id": user_id})),
             WAIT,
         )
@@ -506,6 +508,7 @@ pub(super) async fn join(server: &ClusterServer, token: &str, room: &str) -> Res
             Method::GET,
             &format!("{}/_matrix/client/v3/sync", server.address),
             Some(token),
+            &[],
             RequestBody::Empty,
             WAIT,
         )
@@ -523,6 +526,7 @@ pub(super) async fn join(server: &ClusterServer, token: &str, room: &str) -> Res
             Method::POST,
             &format!("{}/_matrix/client/v3/rooms/{room}/join", server.address),
             Some(token),
+            &[],
             RequestBody::Json(&serde_json::json!({})),
             WAIT,
         )
