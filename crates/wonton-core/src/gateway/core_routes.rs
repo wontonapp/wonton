@@ -29,6 +29,7 @@ fn confirmation_routes() -> Router<Arc<Gateway>> {
             delete(confirmations::stop_window),
         )
         .route("/_wonton/api/confirmations", get(confirmations::pending))
+        .route("/_wonton/api/confirmations/{id}", get(confirmations::card))
         .route(
             "/_wonton/api/plugins/{id}/tool-policy",
             get(tool_policy::view),
