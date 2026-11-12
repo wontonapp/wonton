@@ -11,11 +11,8 @@ options:
   # 优先级反转，在被卡住的主线程上逐帧符号化、打印整个调用栈；CI 上一帧约一秒，一次能拖过单测的 60 秒时限，用例被判超时。
   # XcodeGen 只给运行动作生成这个开关；test plan 里的同名选项在 Xcode 27.1 实测不生效，用了 test plan 以后 scheme 上的
   # 开关也不认，所以生成完往 scheme 的测试动作上补。
-  # 生成工程后把版本号写进不提交的 Version.xcconfig（下面的 configFiles 引用它）：scripts/app-version.sh
-  # 算版本（WONTON_VERSION → 最近的 vX.Y.Z tag，规则和 Android 同一处），发版时生成工程传
-  # WONTON_VERSION=X.Y.Z，或给 xcodebuild 显式传 MARKETING_VERSION / CURRENT_PROJECT_VERSION 覆盖。
-  postGenCommand: ../scripts/app-version.sh debug | sed -e 's/^VERSION=/MARKETING_VERSION = /' -e 's/^BUILD=/CURRENT_PROJECT_VERSION = /' > Version.xcconfig && sed -i '' 's/<TestAction/<TestAction disablePerformanceAntipatternChecker = "YES"/' Wonton.xcodeproj/xcshareddata/xcschemes/*.xcscheme
-# 两个配置共用 postGenCommand 写出的版本号；文件不进 git。
+  postGenCommand: sed -i '' 's/<TestAction/<TestAction disablePerformanceAntipatternChecker = "YES"/' Wonton.xcodeproj/xcshareddata/xcschemes/*.xcscheme
+# 两个配置共用 build-core.sh 写出的版本号（见其脚本内注释）；文件不进 git。
 configFiles:
   Debug: Version.xcconfig
   Release: Version.xcconfig

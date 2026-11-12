@@ -65,14 +65,15 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 apps/ios/scripts/build-core.sh
 ```
 
+版本号在跑 `build-core.sh` 时由仓库根的 `scripts/app-version.sh` 写进不提交的 `Version.xcconfig`（XcodeGen
+生成工程时校验这个文件存在，所以要先生成；规则和 Android 共用，见 `apps/compose/README.md` 的「构建」）：
+**发版跑 `build-core.sh` 时显式传 `WONTON_VERSION=0.2.4`**（与 Android 同一要求，不传时取检出里最近的
+`vX.Y.Z` tag）；构建时给 `xcodebuild` 显式传 `MARKETING_VERSION=0.2.4 CURRENT_PROJECT_VERSION=2004` 也能
+覆盖。
+
 ```bash
 xcodegen generate --spec apps/ios/project.yml
 ```
-
-版本号在生成工程时由仓库根的 `scripts/app-version.sh` 写进不提交的 `Version.xcconfig`（规则和 Android
-共用，见 `apps/compose/README.md` 的「构建」）：**发版生成工程时显式传 `WONTON_VERSION=0.2.4`**（与
-Android 同一要求，不传时取检出里最近的 `vX.Y.Z` tag）；构建时给 `xcodebuild` 显式传
-`MARKETING_VERSION=0.2.4 CURRENT_PROJECT_VERSION=2004` 也能覆盖。
 
 然后用 Xcode 打开 `apps/ios/Wonton.xcodeproj` 运行。改了 Rust 代码后重新运行 `build-core.sh`；
 增删 Swift 文件后重新运行 `xcodegen`。模拟器只支持 Apple 芯片的 Mac。
