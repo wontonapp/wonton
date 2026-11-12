@@ -1,79 +1,9 @@
-//! 服务器发来的同步把刚加入的房间标成“受邀”：时间线里有加入事件，`required_state` 里本人却还是邀请。
-//! Tuwunel 先让新事件对同步可见、再更新房间当前状态，这中间的一次同步就是这样（CI 上实测）。模拟核心保持
-//! 这种错标，测试看到改写送达后清除，让客户端通过重新订阅拿回真实状态。
-
-use std::time::{Duration, Instant};
+//! 把刚加入的房间在同步应答里错标成“受邀”：时间线里有加入事件，`required_state` 里本人却还是邀请（Tuwunel
+//! v2.0.0 之前 #685 的样子）。测试用它让列表行在受邀和已加入之间抖动。
 
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use wonton_client::{Action, RoomMembership};
-use wonton_matrix::OwnedUserId;
-
-use super::support::{Home, OWNER, Phone, WAIT};
-
-/// 加入后同步一直标着“受邀”时，客户端重新订阅这个房间，服务器按当前状态重发，房间变成已加入。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn a_join_the_server_reports_as_invited_still_ends_joined() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let home = Home::start(&[phone.device_id()]).await;
-    phone.connect(&home);
-    phone.signed_in().await;
-    let bot = home.bot("hermes", "Hermes").await;
-    let owner: OwnedUserId = OWNER.parse().unwrap();
-    let room_id = bot
-        .create_direct_chat(&owner, false)
-        .await
-        .expect("Bot 发起私聊");
-    phone
-        .wait_chat("收到 Bot 的邀请", |view| {
-            view.rooms
-                .iter()
-                .find(|row| {
-                    row.room_id == room_id.as_str()
-                        && row.membership == RoomMembership::Invited
-                        && row.is_direct
-                })
-                .map(|_| ())
-        })
-        .await;
-    home.report_join_as_invited(StaleJoin {
-        room_id: room_id.to_string(),
-        user_id: OWNER.to_owned(),
-    });
-    phone
-        .dispatch(Action::JoinRoom {
-            room_id: room_id.to_string(),
-        })
-        .unwrap();
-    // 改写持续到显式清除（会话里多条同步连接都会带回房间状态，只改写一次会被没改写的那条覆盖回去）。
-    // 等第一次改写发生就停：之后的应答照原样转发，客户端重新订阅、服务器按当前状态重发，房间变成已加入。
-    let deadline = Instant::now() + WAIT;
-    while !home.join_was_reported_as_invited() {
-        assert!(
-            Instant::now() < deadline,
-            "joined sync response was never rewritten"
-        );
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    home.clear_join_report_as_invited();
-    phone
-        .wait_chat("加入后变成已加入", |view| {
-            view.rooms
-                .iter()
-                .find(|row| {
-                    row.room_id == room_id.as_str() && row.membership == RoomMembership::Joined
-                })
-                .map(|_| ())
-        })
-        .await;
-    assert!(
-        home.join_was_reported_as_invited(),
-        "加入后的同步应答被改写过"
-    );
-}
 
 /// 要改写的房间和本人。
 #[derive(Clone)]

@@ -10,7 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tracing::debug;
 
-use super::super::stale_join::forward_one;
+use super::stale_join::forward_one;
 use super::{Core, read_body};
 
 pub(super) async fn serve_matrix(

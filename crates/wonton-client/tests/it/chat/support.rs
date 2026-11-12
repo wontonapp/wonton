@@ -9,7 +9,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use super::stale_join::StaleJoin;
 use iroh::{EndpointId, SecretKey};
 use serde_json::Value;
 use tokio::sync::watch;
@@ -38,11 +37,13 @@ mod friends;
 mod io;
 mod link_preview;
 mod matrix;
+mod stale_join;
 
 pub use diagnostics::{is_room_list, pending_requests, request_arrived, request_done};
 use endpoint::loopback_endpoint;
 use fake_core::fake_core;
 pub(super) use io::{read_body, relay};
+pub use stale_join::StaleJoin;
 
 pub const WAIT: Duration = Duration::from_secs(60);
 pub(super) const BASE_DOMAIN: &str = "wonton.localhost";

@@ -29,7 +29,6 @@ mod replies;
 mod resume;
 mod send;
 mod server_switch;
-mod stale_join;
 mod subscriptions;
 pub(crate) mod support;
 mod sync_order;

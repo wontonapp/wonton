@@ -7,7 +7,7 @@ use wonton_client::{Action, RoomMembership};
 use wonton_matrix::ChatRoom;
 
 use super::confirmation::joined_direct_chat;
-use super::stale_join::StaleJoin;
+use super::support::StaleJoin;
 use super::support::{Home, OWNER, Phone, Timeline, WAIT, is_room_list};
 use super::text;
 
@@ -52,7 +52,7 @@ async fn wait_for_sync<R>(what: &str, home: &Home, mut check: impl FnMut() -> Op
 }
 
 /// 让列表行错标成受邀再恢复：同步重启后的第一个应答带着加入事件，被改写成“受邀”（Tuwunel 补状态
-/// 前的样子，见 [`super::stale_join`]），再重启一次用没改写的应答把状态补回来。两次重启都靠
+/// 前的样子，见 [`super::support::StaleJoin`]），再重启一次用没改写的应答把状态补回来。两次重启都靠
 /// `M_UNKNOWN_POS`；在飞的长轮询用另一个房间的一条消息结束，不动这个房间的时间线。
 async fn flicker(phone: &Phone, home: &Home, poke_room: &ChatRoom, room_id: &str, label: &str) {
     home.report_join_as_invited(StaleJoin {
