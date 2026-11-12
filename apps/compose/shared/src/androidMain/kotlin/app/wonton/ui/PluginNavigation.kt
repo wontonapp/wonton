@@ -25,6 +25,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.AddedTools
+import app.wonton.protocol.BotRef
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTask
@@ -59,6 +60,9 @@ class PluginNavigation(val open: (PluginEntry) -> Unit) {
 
     /** 详情页上打开的设置页（ADR-0077）。 */
     var settings by mutableStateOf<PluginSettingsTarget?>(null)
+
+    /** 详情页上打开的 Bot 联系人页（ADR-0045、ADR-0050）。 */
+    var contacts by mutableStateOf<BotRef?>(null)
 }
 
 /** [list] 上叠着打开的详情页和确认页，返回键逐层关掉。 */
@@ -78,7 +82,12 @@ fun PluginPages(plugins: PluginsState, navigation: PluginNavigation, list: @Comp
     }
     val changingVersion = navigation.changingVersion
     val settings = navigation.settings
+    val contacts = navigation.contacts
     when {
+        contacts != null -> {
+            BackHandler { navigation.contacts = null }
+            BotContactsPage(plugins.core, contacts, onBack = { navigation.contacts = null })
+        }
         settings != null -> {
             BackHandler { navigation.settings = null }
             PluginSettingsScreen(plugins, settings, onClose = { navigation.settings = null })

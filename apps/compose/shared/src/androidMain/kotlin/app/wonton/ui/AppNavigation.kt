@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppLink
+import app.wonton.protocol.BotRef
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.OnboardingStep
@@ -38,6 +39,13 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
         chat.openWhenJoined(tabs.core, roomId)
     }
 
+    /** 联系人请求的通知点进来：这个 Bot 的详情页上打开联系人页。 */
+    fun openContacts(bot: BotRef) {
+        resetNavigation()
+        detail(bot.pluginId)
+        plugins.contacts = bot
+    }
+
     fun finishOnboarding(peer: String?) {
         settingsOverlay = false
         chat.reset()
@@ -58,6 +66,7 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
         plugins.uninstalling = null
         plugins.addingSource = false
         plugins.changingVersion = null
+        plugins.contacts = null
     }
 
     fun openLink(link: AppLink, onboarding: OnboardingViewModel) {
