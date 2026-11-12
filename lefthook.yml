@@ -26,7 +26,7 @@ pre-commit:
     file-size:
       glob: "*.{rs,swift,kt,kts,ts,tsx,js,mjs,py,go,sh}"
       run: "bash scripts/check-file-size.sh {staged_files}"
-      fail_text: "源码文件不能超过 800 行：拆开模块，或用 .size-allowlist 写明例外（格式见 scripts/check-file-size.sh 开头）"
+      fail_text: "源码文件不能超过 2000 行代码（不算空行和注释）：按职责拆开模块，或用 .size-allowlist 写明例外（格式见 scripts/check-file-size.sh 开头）"
     ui-text:
       # 要读整个仓库的字符串目录，传文件只为了让无关的提交跳过。
       glob:
