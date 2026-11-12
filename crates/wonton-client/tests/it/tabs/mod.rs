@@ -3,6 +3,7 @@
 mod bar_settings;
 mod default_bar;
 mod load;
+mod media_permission;
 mod polling;
 mod revision;
 mod state;
