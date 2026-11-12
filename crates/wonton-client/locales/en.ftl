@@ -562,6 +562,8 @@ plugins-start-busy = { $id } is already starting, installing, updating, or unins
 tabs-bridge-page-not-open = This app page isn't open or pinned.
 tabs-bridge-invalid-environment = The page insets and safe area must be finite, non-negative numbers.
 tabs-bridge-public-page = Public web pages get no Wonton bridge.
+plugin-media-not-asked = This app page has no saved camera or microphone decision.
+plugin-media-save-failed = Can't write the camera and microphone decisions file { $path }: { $reason }
 
 # Chat transport problems (crates/wonton-client/src/chat/view.rs): the reason
 # of a CoreError::TransportUnavailable and the message of a failed chat action.

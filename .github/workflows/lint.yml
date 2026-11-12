@@ -42,6 +42,21 @@ jobs:
         run: ./gitleaks git --log-opts="HEAD^1..HEAD" --config .gitleaks.toml --redact --no-banner
       - name: 行为测试：扫得出也挡得住
         run: PATH="$PWD:$PATH" bash scripts/test-gitleaks.sh
+      # 改了协议的 PR，main 在分支切出之后又改过协议就挡下：两边各自按旧协议写，合起来才坏，各自的 CI 看不出来。
+      # 只在这个 PR 的 CI 跑时判断一次，之后 main 再改协议不会回头把它变红（规则集不要求 PR 先追上 main）。
+      # 没改协议的 PR 先按合并提交的差异跳过，不去补历史；放在这个作业里而不是另起作业，检查名就是 lint 汇总，
+      # 不会出现路径过滤导致必需检查等不来。
+      - name: 改了协议的 PR 基于最新 main
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- crates/wonton-protocol; then
+            echo "没改 crates/wonton-protocol，不用查。"
+            exit 0
+          fi
+          bash scripts/check-protocol-base.sh "$BASE_REF" "$HEAD_SHA"
       - name: 结构门禁跑不跑：只改了文档、或草稿 PR 上就跳过
         id: changes
         run: |
@@ -94,6 +109,18 @@ jobs:
       - name: 生成绑定的 crate 的文档注释能进 Swift 和 Kotlin 的块注释
         if: steps.changes.outputs.source == 'true'
         run: bash scripts/check-uniffi-comments.sh
+      - name: 两个壳的对齐检查自己的用例
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s scripts/shell_parity -t scripts
+      # 只有一个壳用到的 ViewModel 项报警告注解，不挡合并（主人 2026-11-12 定）。脚本只在读不懂 Rust 源码时
+      # 退出非零，那也只标黄，不让这个作业失败。
+      - name: 两个壳的对齐（只报警告）
+        if: steps.changes.outputs.source == 'true'
+        continue-on-error: true
+        run: python3 scripts/check-shell-parity.py
+      - name: 协议基线检查自己的用例
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s scripts/protocol_base -t scripts
       - name: 安装脚本的行为测试（假 docker，不用真的 Docker）
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -q -s scripts/install -t scripts

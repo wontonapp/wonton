@@ -515,6 +515,8 @@ plugins-start-busy = { $id }はすでに起動、インストール、更新、�
 tabs-bridge-page-not-open = このアプリのページは開かれていないか、固定されていません
 tabs-bridge-invalid-environment = ページのインセットとセーフエリアは有限の非負の数である必要があります
 tabs-bridge-public-page = 公開ウェブページには Wonton のブリッジがありません。
+plugin-media-not-asked = このアプリのページにはカメラとマイクの判断が保存されていません
+plugin-media-save-failed = カメラとマイクの判断ファイル { $path } に書き込めません：{ $reason }
 
 # チャットの接続問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailableの理由と失敗した操作のメッセージ。
 chat-not-connected = 自宅サーバーに接続してから、もう一度試してください
