@@ -1,19 +1,23 @@
-//! 有远端联系人的 Bot 只聊天（ADR-0050）：联系人走真实的状态机（外部接口是 `contacts` 测试里的替身），
-//! 断言总线列给这个 Bot 的工具和调用的结果。
+//! 远端联系人按轮次挡（ADR-0050）：联系人走真实的状态机（外部接口是 `contacts` 测试里的替身），
+//! 轮次直接造进调用链账本，断言总线列给这个 Bot 的工具和调用的结果。
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use rmcp::model::CallToolResult;
 use serde_json::json;
-use wonton_protocol::{BotKeeper, BotRef};
+use wonton_protocol::{BotKeeper, BotRef, ChainLimits, ChainTurnReport};
 
 use super::Caller;
 use super::test_setup::{Setup, setup};
 use super::tests::{failed, text};
 use super::tool_failure_tests::failure_kind;
+use crate::agent_chain::Chains;
+use crate::agent_chain::settings::AgentSettings;
 use crate::contacts::InviteeState;
 use crate::contacts::tests::{Net, Server, ask, bot_request, person_request};
+use crate::gateway::agent_chains::AgentChains;
+use crate::gateway::agent_outbox::Outbox;
 use crate::plugin::PluginId;
 use crate::plugin::docker::Engine;
 
@@ -51,6 +55,74 @@ fn has_plugin_tools(names: &[String]) -> bool {
 
 fn refused(result: &CallToolResult) -> bool {
     failed(result) && failure_kind(result) == Some("remote_contact")
+}
+
+/// 只聊天时留下的 4 个核心工具。
+const ONLY_CHAT: [&str; 4] = [
+    "wonton__get_profile",
+    "wonton__help",
+    "wonton__plugin_guide",
+    "wonton__search_catalog",
+];
+
+/// 总线和一本空账本接上：轮次直接造，不经网关。返回账本。
+fn attach_ledger(s: &Setup) -> Arc<Chains> {
+    let ledger = Arc::new(
+        Chains::open(
+            s.dir.path().join("agent-chains.json"),
+            ChainLimits::default(),
+        )
+        .unwrap(),
+    );
+    s.bus.attach_agent_chains(Arc::new(AgentChains::new(
+        ledger.clone(),
+        Arc::new(Outbox::default()),
+        Arc::new(AgentSettings::open(s.dir.path().join("agent-settings.json")).unwrap()),
+    )));
+    ledger
+}
+
+/// 桥报这个 Bot 的一轮开始，说话的是 `sender`；`session` 用来结束这一轮。
+fn start_turn(ledger: &Chains, bot: &BotRef, sender: &str, session: &str) {
+    let report = ChainTurnReport::Start {
+        session: session.to_owned(),
+        room: format!("!dm-{}:a.test", bot.bot),
+        thread: None,
+        sender: sender.to_owned(),
+        event_id: format!("$ev-{session}:a.test"),
+    };
+    ledger.start_bridge_turn(bot.clone(), report).unwrap();
+}
+
+/// b.test 上的 bob 成为 alice 这个 Bot 的已成立远端联系人。
+async fn remote_contact(net: &Arc<Net>, a: &Server, alice: &BotRef, b: &Server, bob: &BotRef) {
+    ask(a, alice, bot_request(BOB)).await.unwrap();
+    net.deliver_all().await;
+    b.contacts
+        .approve(bob, "bob", "@hermes-alice:a.test")
+        .await
+        .unwrap();
+    net.deliver_all().await;
+}
+
+/// 这个调用方此刻只看到 4 个核心工具，插件的工具调不动。
+async fn assert_only_chats(s: &Setup, me: &Caller) {
+    let mut listed = names(s, me).await;
+    listed.sort();
+    assert_eq!(listed, ONLY_CHAT);
+    let result = s
+        .call_as(me, "app-example-notes__search", json!({"name": "a"}))
+        .await;
+    assert!(refused(&result), "{result:?}");
+}
+
+/// 这个调用方拿到全部工具，插件的工具调得通。
+async fn assert_full(s: &Setup, me: &Caller) {
+    assert!(has_plugin_tools(&names(s, me).await));
+    let result = s
+        .call_as(me, "app-example-notes__search", json!({"name": "a"}))
+        .await;
+    assert_eq!(text(&result), "找到 a.txt");
 }
 
 #[tokio::test]
@@ -175,4 +247,97 @@ async fn same_server_contacts_and_other_bots_keep_their_tools() {
             .await;
         assert_eq!(text(&result), "找到 a.txt", "{bot:?}");
     }
+}
+
+/// 远端的人说话的这一轮只聊天。
+#[tokio::test]
+async fn a_remote_turn_only_chats() {
+    let net = Arc::new(Net::default());
+    let (s, a) = home(&net).await;
+    let b = Server::start(&net, "b.test");
+    let alice = a.bot("alice", "alice");
+    let bob = b.bot("bob", "bob");
+    let me = caller(&alice);
+    remote_contact(&net, &a, &alice, &b, &bob).await;
+    let ledger = attach_ledger(&s);
+
+    start_turn(&ledger, &alice, BOB, "s-remote");
+    assert_only_chats(&s, &me).await;
+
+    // 结束之后没有进行中的轮次，回落到联系人名单：联系人还在，照样挡。
+    ledger.end_session("s-remote");
+    assert_only_chats(&s, &me).await;
+}
+
+/// 归属人自己这一轮全量：联系人还在、没有远端轮时插件照常调得通。
+#[tokio::test]
+async fn the_owners_turn_keeps_every_tool() {
+    let net = Arc::new(Net::default());
+    let (s, a) = home(&net).await;
+    let b = Server::start(&net, "b.test");
+    let alice = a.bot("alice", "alice");
+    let bob = b.bot("bob", "bob");
+    let me = caller(&alice);
+    remote_contact(&net, &a, &alice, &b, &bob).await;
+    let ledger = attach_ledger(&s);
+
+    start_turn(&ledger, &alice, "@alice:a.test", "s-owner");
+    assert_full(&s, &me).await;
+}
+
+/// 并行时取最低档：远端轮一进来，同一个 Bot 归属人那一轮也挡；远端轮一结束就恢复。
+#[tokio::test]
+async fn a_live_remote_turn_lowers_the_parallel_owner_turn() {
+    let net = Arc::new(Net::default());
+    let (s, a) = home(&net).await;
+    let b = Server::start(&net, "b.test");
+    let alice = a.bot("alice", "alice");
+    let bob = b.bot("bob", "bob");
+    let me = caller(&alice);
+    remote_contact(&net, &a, &alice, &b, &bob).await;
+    let ledger = attach_ledger(&s);
+
+    start_turn(&ledger, &alice, "@alice:a.test", "s-owner");
+    assert_full(&s, &me).await;
+    start_turn(&ledger, &alice, BOB, "s-remote");
+    assert_only_chats(&s, &me).await;
+    ledger.end_session("s-remote");
+    assert_full(&s, &me).await;
+    // 归属人这一轮恢复了。
+}
+
+/// 没有进行中的轮次时回落到联系人名单（#365 的行为）：远端联系人删掉就不挡了。
+#[tokio::test]
+async fn without_live_turns_the_contact_list_decides() {
+    let net = Arc::new(Net::default());
+    let (s, a) = home(&net).await;
+    let b = Server::start(&net, "b.test");
+    let alice = a.bot("alice", "alice");
+    let bob = b.bot("bob", "bob");
+    let me = caller(&alice);
+    remote_contact(&net, &a, &alice, &b, &bob).await;
+    let _ledger = attach_ledger(&s);
+
+    assert_only_chats(&s, &me).await;
+    a.contacts.remove(&alice, "alice", BOB).await.unwrap();
+    assert_full(&s, &me).await;
+}
+
+/// 远端轮结束后的下一轮全量（回落只在没有进行中的轮次时生效，这一轮是归属人说的）。
+#[tokio::test]
+async fn the_turn_after_a_remote_end_gets_everything() {
+    let net = Arc::new(Net::default());
+    let (s, a) = home(&net).await;
+    let b = Server::start(&net, "b.test");
+    let alice = a.bot("alice", "alice");
+    let bob = b.bot("bob", "bob");
+    let me = caller(&alice);
+    remote_contact(&net, &a, &alice, &b, &bob).await;
+    let ledger = attach_ledger(&s);
+
+    start_turn(&ledger, &alice, BOB, "s-remote");
+    assert_only_chats(&s, &me).await;
+    ledger.end_session("s-remote");
+    start_turn(&ledger, &alice, "@alice:a.test", "s-next");
+    assert_full(&s, &me).await;
 }
