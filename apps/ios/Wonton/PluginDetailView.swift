@@ -77,8 +77,14 @@ struct PluginDetailView: View {
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                     }
+                    if detail.installed != nil {
+                        SecretSection(detail: detail, model: model) { loaded = .success($0) }
+                    }
                     if let installed = detail.installed, let offer = detail.lanWebui {
                         InstalledLanWebui(model: model, id: installed.id, offer: offer) { loaded = .success($0) }
+                    }
+                    if let installed = detail.installed, !installed.tunnelPorts.isEmpty {
+                        PortMappingSection(installed: installed)
                     }
                     if let installed = detail.installed, !detail.saveGrants.isEmpty {
                         SaveGrants(model: model, id: installed.id, folders: detail.saveGrants) { loaded = .success($0) }

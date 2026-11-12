@@ -7,9 +7,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import app.wonton.android.keepalive.KeepaliveService
@@ -19,14 +16,11 @@ import app.wonton.android.push.PushNotifications
 import app.wonton.android.push.PushRegistration
 import app.wonton.client.ClientCore
 import app.wonton.client.initLogging
-import app.wonton.client.parseAppLink
 import app.wonton.protocol.Action
 import app.wonton.protocol.PluginsViewModel
-import app.wonton.ui.AppLinkRequest
 import app.wonton.ui.LocalNotificationPermission
 import app.wonton.ui.NotificationPermission
 import app.wonton.ui.StartupFailure
-import app.wonton.ui.RoomRequest
 import app.wonton.ui.WontonApp
 import app.wonton.ui.defaultDeviceName
 import app.wonton.ui.homeUpdates
@@ -38,9 +32,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
-    /** 点通知要打开的房间。 */
-    private var requestedRoom by mutableStateOf<RoomRequest?>(null)
-    private var requestedLink by mutableStateOf<AppLinkRequest?>(null)
+    private val requests = IncomingRequests()
     private var networkWatcher: NetworkWatcher? = null
     private lateinit var notificationPermission: NotificationPermission
 
@@ -73,16 +65,16 @@ class MainActivity : AppCompatActivity() {
         keepConnectionService(core)
         portMappingService(core)
         refreshMappingNotificationOnGrant(core)
-        requestRoom(intent)
-        requestLink(intent)
+        requests.take(intent)
         setContent {
             CompositionLocalProvider(LocalNotificationPermission provides notificationPermission) {
                 WontonApp(
                     core,
                     devWebUrl = devWebUrl,
-                    requestedRoom = requestedRoom,
-                    onRoomRequestHandled = { requestedRoom = null },
-                    requestedLink = requestedLink,
+                    requestedRoom = requests.room,
+                    onRoomRequestHandled = requests::roomHandled,
+                    requestedLink = requests.link,
+                    requestedAgentText = requests.agentText,
                     onCardsSettled = { server, cards -> PushNotifications.cancelCards(this, server, cards) },
                 )
             }
@@ -92,20 +84,7 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        requestRoom(intent)
-        requestLink(intent)
-    }
-
-    /** 取走就删：屏幕旋转重建 Activity 时拿到的还是这个 Intent，不能再跳一次。 */
-    private fun requestRoom(intent: Intent) {
-        val room = intent.getStringExtra(EXTRA_ROOM)
-        val server = intent.getStringExtra(EXTRA_SERVER)
-        if (room != null && server != null) {
-            requestedLink = null
-            requestedRoom = RoomRequest(server, room)
-        }
-        intent.removeExtra(EXTRA_ROOM)
-        intent.removeExtra(EXTRA_SERVER)
+        requests.take(intent)
     }
 
     /** “保持连接”的前台服务只看 `keep_connection`（ADR-0003 的“设计：保持连接”）：已配对、方式是保持连接时开，
@@ -168,15 +147,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestLink(intent: Intent) {
-        if (intent.action != Intent.ACTION_VIEW) return
-        val url = intent.dataString ?: return
-        requestedLink = parseAppLink(url)?.let { link ->
-            AppLinkRequest(link) { intent.data = null }
-        }
-        if (requestedLink == null) intent.data = null
-    }
-
     override fun onResume() {
         super.onResume()
         // 回到前台：网络可能变了，让核心检查隧道并重连；通知权限也可能在系统设置里改过。
@@ -195,10 +165,5 @@ class MainActivity : AppCompatActivity() {
         networkWatcher?.stop()
         networkWatcher = null
         (application as WontonApplication).core.getOrNull()?.send(Action.AppBackgrounded)
-    }
-
-    companion object {
-        const val EXTRA_ROOM = "wonton_open_room"
-        const val EXTRA_SERVER = "wonton_open_server"
     }
 }

@@ -12,8 +12,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,6 +63,16 @@ class PluginNavigation(val open: (PluginEntry) -> Unit) {
 fun PluginPages(plugins: PluginsState, navigation: PluginNavigation, list: @Composable () -> Unit) {
     val confirmation = navigation.confirmation
     val detail = navigation.detail
+    // 商店的一键操作确认页关掉时没装也没升，要告诉核心放下一条排队的（iOS 的 StoreView 同）：
+    // 主人自己关（返回、关闭、跳转重置）和核心撤走（装完了、队列空了）都收拢到这一处。
+    var presented by remember { mutableStateOf<PluginConfirmation?>(null) }
+    LaunchedEffect(confirmation) {
+        val previous = presented
+        presented = confirmation
+        if (previous is PluginConfirmation.Store && confirmation == null) {
+            plugins.send(Action.DismissStoreConfirmation)
+        }
+    }
     val changingVersion = navigation.changingVersion
     when {
         confirmation != null -> {
