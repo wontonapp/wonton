@@ -113,7 +113,7 @@ jobs:
         run: cargo clippy -p wonton-client --all-targets --locked --features ui-fake -- -D warnings
 
   test:
-    name: 测试（不含依赖 Docker 的集成测试）${{ matrix.shard }}/3
+    name: 测试（不含依赖 Docker 的集成测试）${{ matrix.shard }}/4
     needs: changes
     # !cancelled() 让 changes 在定时、手动运行里跳过时，下游仍能全量运行；取消后不再起重作业。
     # 草稿和路径的判断在作业上：被跳过时 matrix 不展开、检查名留成字面量，规则集只看汇总就不受影响。
@@ -123,7 +123,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        # 编译是每片都要做一遍的固定成本（缓存里的依赖之外那 12 个工作区 crate，4 核上约 250 秒），
+        # 分片只缩短跑测试的那一段（三片时 62/80/114 秒）。多一片把最慢那片的跑测试减掉约四分之一。
+        shard: [1, 2, 3, 4]
     env:
       # 故意让 Docker 不可用，保证默认的测试不依赖它：依赖 Docker 的测试标了 #[ignore]，由“Rust Docker 测试”运行。
       DOCKER_HOST: unix:///nonexistent/docker.sock
@@ -140,10 +142,10 @@ jobs:
         with:
           shared-key: rust-test
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
-      - name: 测试（按名字的哈希分三片并行）
+      - name: 测试（按名字的哈希分四片并行）
         shell: bash
         # 完整输出另存一份：失败时作为 artifact 上传，重跑覆盖不了失败那次的日志。
-        run: cargo nextest run --workspace --locked --partition hash:${{ matrix.shard }}/3 2>&1 | tee "$RUNNER_TEMP/test-output.log"
+        run: cargo nextest run --workspace --locked --partition hash:${{ matrix.shard }}/4 2>&1 | tee "$RUNNER_TEMP/test-output.log"
       - name: 文档测试（nextest 不跑 doctest，分不了片，只在第一片跑）
         if: matrix.shard == 1
         shell: bash
