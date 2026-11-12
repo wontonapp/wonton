@@ -1,6 +1,6 @@
 # ADR-0011 安全模型
 
-- 状态：已接受（2026-10-28）。“插件权限”和“网络暴露”已被 [ADR-0036](0036-plugin-privileges.md) 取代；“已定”里“永远不给 Bot 宿主的 shell”已被 [ADR-0091](0091-danger-mode.md) 取代（主人 2026-11-12）
+- 状态：已接受（2026-10-28）。“插件权限”和“网络暴露”已被 [ADR-0036](0036-plugin-privileges.md) 取代；“已定”里“永远不给 Bot 宿主的 shell”已被 [ADR-0091](0091-danger-mode.md) 取代（主人 2026-11-12）；OIDC 回调的 query-only 约束已被 [ADR-0078](0078-oidc-form-post-callback.md) 取代
 
 ## 背景
 
@@ -62,7 +62,7 @@ sudo 组且审批关闭，一次提示注入就能控制整台机器；本地 AP
   - 插件子域名上，Cookie 会话、隧道身份和 `sso: proxy` 代加的凭据只给这些请求：`Sec-Fetch-Site`
     为 `same-origin` 或 `none`；导航（`Sec-Fetch-Mode: navigate`，方法为 `GET` 或 `HEAD`，`<object>`、
     `<embed>` 的加载不算）；没有 `Sec-Fetch-Site` 时，没有 `Origin` 或者 `Origin` 就是插件地址。其余请求按
-    未登录处理，到不了插件，也不跳去核心换会话。
+    未登录处理，到不了插件，也不跳去核心换会话；仅 OIDC 表单回调有下述窄例外。
   - 核心域名上改状态的请求（`POST`、`DELETE` 等）只接受同源：`Sec-Fetch-Site` 为 `same-origin` 或 `none`；
     没有它时，`Origin` 要么没有、要么是核心地址；否则回 403 `cross_site`。插件页面因此不能替主人退出登录。
     管理 API 另外要 `Authorization: Bearer`，浏览器不会自动带上它；插件管理接口还接受已配对设备，但不接受网页发起的
@@ -80,8 +80,8 @@ sudo 组且审批关闭，一次提示注入就能控制整台机器；本地 AP
     插件，所以插件的 `GET` 不能改状态。隧道内不另加 HTTPS（ADR-0009），这条边界一直存在。
   - iframe 也是导航：别的插件能把这个插件嵌进 iframe，读不到内容，但可能诱导主人点击。防点击劫持靠插件
     自己的 `X-Frame-Options` 或 CSP `frame-ancestors`。
-  - 应用的 OIDC 回调要用默认的 `query` 响应模式：`form_post` 是从 `auth.<base>` 发来的跨站 POST，会被当成
-    未登录。
+  - OIDC 的 `form_post` 回调可按 [ADR-0078](0078-oidc-form-post-callback.md) 的路径、方法、媒体类型和来源限制，
+    不带网关登录状态到达应用；这不授予网关身份，应用仍须自行校验登录关联和 OIDC 凭据。`query`/GET 导航规则不变。
 
 ## 已定
 

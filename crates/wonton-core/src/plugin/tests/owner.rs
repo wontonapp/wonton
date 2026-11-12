@@ -256,7 +256,7 @@ async fn without_a_real_email_a_proxy_template_installs_with_the_internal_addres
         .unwrap();
     assert_eq!(preview.missing_profile, None);
     m.install(&compose, &[], super::langs()).await.unwrap();
-    let auth = m.route("app-test").unwrap().proxy.unwrap();
+    let auth = m.route("app-test", "/").unwrap().proxy.unwrap();
     assert_eq!(
         auth.headers(&m.cfg.profile.owner(), Role::Owner).unwrap()[0].1,
         "owner@wonton.internal"
@@ -277,7 +277,7 @@ async fn proxy_and_lan_templates_share_stable_person_specific_internal_addresses
         ),
     );
     m.install(&compose, &[], super::langs()).await.unwrap();
-    let auth = m.route("app-test").unwrap().proxy.unwrap();
+    let auth = m.route("app-test", "/").unwrap().proxy.unwrap();
     let mut owner = Owner {
         username: "owner".into(),
         display_name: "云吞".into(),

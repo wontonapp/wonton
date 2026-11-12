@@ -161,7 +161,7 @@ impl PluginManager {
             PluginState::Uninstalling => return None,
             PluginState::Degraded { reason } => {
                 if self
-                    .route(&id.slug())
+                    .route(&id.slug(), "/")
                     .is_some_and(|route| route.web_serving)
                 {
                     TabState::Ready

@@ -74,7 +74,7 @@ fn compose(port: u16) -> String {
 }
 
 async fn page(manager: &PluginManager) -> String {
-    let route = manager.route("app-test").unwrap();
+    let route = manager.route("app-test", "/").unwrap();
     reqwest::Client::builder()
         .no_proxy()
         .build()
