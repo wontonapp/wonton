@@ -213,6 +213,9 @@ impl EntryContainers {
             for name in found.containers {
                 self.engine.remove_container(&name).await?;
             }
+            for network in found.networks {
+                self.engine.remove_network(&network).await?;
+            }
         }
         Ok(())
     }
@@ -263,12 +266,64 @@ impl EntryContainers {
             edge: network("edge"),
             relay: network("relay"),
         };
-        for name in [&networks.clients, &networks.edge, &networks.relay] {
-            if self.engine.inspect_network(name).await?.is_none() {
-                return Err(EntryError::NetworkMissing(name.clone()));
-            }
+        // `clients` 核心自己在用，compose 会建；`edge`、`relay` 没有任何 compose 服务引用，compose 跳过它们
+        // （实测：全新安装时这两张网络不存在），所以由核心按原来的参数建。
+        if self
+            .engine
+            .inspect_network(&networks.clients)
+            .await?
+            .is_none()
+        {
+            return Err(EntryError::NetworkMissing(networks.clients.clone()));
         }
+        self.ensure_network(
+            &networks.edge,
+            Some(crate::entry_haproxy::EDGE_SUBNET),
+            true,
+        )
+        .await?;
+        self.ensure_network(&networks.relay, None, false).await?;
         Ok((project, networks))
+    }
+
+    /// 建一张由核心管的网络（不存在才建）。`subnet` 给了就固定网段；`isolated` 的网络两侧网关都关掉，
+    /// 容器连不到宿主（ADR-0021“网络规则”）。
+    async fn ensure_network(
+        &self,
+        name: &str,
+        subnet: Option<&str>,
+        isolated: bool,
+    ) -> Result<(), EntryError> {
+        if self.engine.inspect_network(name).await?.is_some() {
+            return Ok(());
+        }
+        let mut labels = self.instance.core_labels();
+        labels.insert(LABEL_MANAGED_BY.to_owned(), "core".to_owned());
+        labels.insert(LABEL_COMPONENT.to_owned(), ENTRY_COMPONENT.to_owned());
+        let request = bollard::models::NetworkCreateRequest {
+            name: name.to_owned(),
+            driver: Some("bridge".to_owned()),
+            labels: Some(labels),
+            internal: Some(isolated),
+            options: isolated.then(|| {
+                [
+                    ("com.docker.network.bridge.gateway_mode_ipv4", "isolated"),
+                    ("com.docker.network.bridge.gateway_mode_ipv6", "isolated"),
+                ]
+                .map(|(key, value)| (key.to_owned(), value.to_owned()))
+                .into()
+            }),
+            ipam: subnet.map(|subnet| bollard::models::Ipam {
+                config: Some(vec![bollard::models::IpamConfig {
+                    subnet: Some(subnet.to_owned()),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        self.engine.create_network_from(request).await?;
+        Ok(())
     }
 
     /// 创建一侧的容器：已经在了就只补齐网络；镜像或运行参数变了、或者是上一版 compose 留下的同名容器，删了重建；

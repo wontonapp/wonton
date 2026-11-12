@@ -40,14 +40,18 @@ struct Rig {
 }
 
 impl Rig {
-    /// 核心在自己的 compose 项目里，三张网络都在；证书文件有着落的属主（测试进程）。
+    /// 核心在自己的 compose 项目里；`wanted` 里的网络先建好（全新安装时 edge、relay 还不存在）。
     async fn new() -> Self {
+        Self::with_networks(&["clients", "edge", "relay"]).await
+    }
+
+    async fn with_networks(networks: &[&str]) -> Self {
         let (docker, engine) = FakeDocker::start().await;
         docker.add_stranger_container(
             CORE,
             json!({"Labels": {"com.docker.compose.project": PROJECT}}),
         );
-        for network in ["clients", "edge", "relay"] {
+        for network in networks {
             docker.add_unlabeled_network(&format!("{PROJECT}_{network}"));
         }
         let dir = tempfile::tempdir().unwrap();

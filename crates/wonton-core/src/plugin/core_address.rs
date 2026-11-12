@@ -192,6 +192,15 @@ impl Engine {
             .await
     }
 
+    /// 按给定参数建一张网络，IPAM、内部与否、网关模式全由调用方写（入口的 `edge`、`relay` 是 compose
+    /// 不管的死网络：没有服务引用它们，`compose up` 不会建）。
+    pub async fn create_network_from(
+        &self,
+        request: NetworkCreateRequest,
+    ) -> Result<(), EngineError> {
+        self.create_raw(request).await
+    }
+
     /// 同 [`Self::create_network`]，但在迁移预留的网段上建。
     pub(super) async fn create_network_at(
         &self,

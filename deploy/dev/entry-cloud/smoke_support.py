@@ -170,7 +170,7 @@ class Home:
         core["group_add"] = [str(os.stat("/var/run/docker.sock").st_gid)]
         core["environment"].update({"WONTON_TUNNEL_BIND": address,
                                     "WONTON_ANNOUNCE_ADDRESSES": address,
-                                    "WONTON_SYSTEM_PLUGINS": "", "WONTON_DEFAULT_PLUGINS": "", "RUST_LOG": "wonton_core::peers=debug,wonton_tunnel=debug,iroh=debug"})
+                                    "WONTON_SYSTEM_PLUGINS": "", "WONTON_DEFAULT_PLUGINS": "", "RUST_LOG": "wonton_core=debug,wonton_tunnel=debug,iroh=debug"})
         core["volumes"].append(f"{self.binary}:/usr/local/bin/wonton-core:ro")
         core["ports"] = [f"127.0.0.1:{self.port}:{self.port}", f"127.0.0.1:{self.udp}:{self.udp}/udp"]
         private(self.install / "compose.yaml", json.dumps(compose))
