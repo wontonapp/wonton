@@ -69,6 +69,8 @@ fn identity_headers_switch_the_whole_service_unless_it_trusts_only_the_core() {
     assert_eq!(ports_of(&unset), [80], "没写信任的代理地址也算");
     let only_core = parsed(&app(80, IDENTITY, "TRUST: '${WONTON_CORE_ADDRESS}/32'", ""));
     assert_eq!(ports_of(&only_core), [0u16; 0]);
+    let cidr = parsed(&app(80, IDENTITY, "TRUST: '${WONTON_GATEWAY_CIDR}'", ""));
+    assert_eq!(ports_of(&cidr), [0u16; 0]);
     let widened = parsed(&app(
         80,
         IDENTITY,
