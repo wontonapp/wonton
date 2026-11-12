@@ -110,7 +110,7 @@ pub(super) async fn self_request(
     response
 }
 
-pub(super) async fn request(gateway: &Gateway, label: &str, mut req: Request) -> Response {
+pub(super) async fn request(gateway: &Gateway, label: &str, req: Request) -> Response {
     let host = gateway.public.plugin_host(label);
     let langs = api::languages(req.headers());
     let format = pages::Format::of(req.headers());
@@ -127,16 +127,24 @@ pub(super) async fn request(gateway: &Gateway, label: &str, mut req: Request) ->
         };
         return bot_request(gateway, &bot, &host, req).await;
     }
+    plugin_request_path(gateway, label, &host, &langs, format, req).await
+}
+
+/// 插件网页（不是 Bot 网页）的转发：会话、家人开关、代登录和目标服务都在这里判。
+async fn plugin_request_path(
+    gateway: &Gateway,
+    label: &str,
+    host: &str,
+    langs: &Languages,
+    format: pages::Format,
+    mut req: Request,
+) -> Response {
     let Some(route) = gateway.plugins.route(label, req.uri().path()) else {
         return pages::error(
             StatusCode::NOT_FOUND,
             "not_installed",
-            &crate::l10n::text(
-                &langs,
-                "gateway-no-app-for-host",
-                &[("host", host.as_str().into())],
-            ),
-            &langs,
+            &crate::l10n::text(langs, "gateway-no-app-for-host", &[("host", host.into())]),
+            langs,
             format,
         );
     };
@@ -149,20 +157,20 @@ pub(super) async fn request(gateway: &Gateway, label: &str, mut req: Request) ->
         return self_request(gateway, &route, req).await;
     }
     if req.uri().path() == "/_wonton/session" {
-        return sso::redeem(gateway, &host, &req);
+        return sso::redeem(gateway, host, &req);
     }
-    let origin = gateway.public.origin(&host);
+    let origin = gateway.public.origin(host);
     let credentials = isolation::credentials_allowed(req.method(), req.headers(), &origin);
     // 登记 OIDC 回调表单（精确路径、urlencoded、来源限签发方/本插件/缺失）无会话可达，身份由应用校验（ADR-0078）。
     let callback = oidc_callback_post(&route, &req, &gateway.public, &origin);
-    let person = gateway.plugin_person(&host, &req);
+    let person = gateway.plugin_person(host, &req);
     if !credentials && !callback {
-        return request_guards::unauthenticated(gateway, &host, &req, false);
+        return request_guards::unauthenticated(gateway, host, &req, false);
     }
     let person = match person {
         Some(person) => Some(person),
         None if callback => None,
-        None => return request_guards::unauthenticated(gateway, &host, &req, true),
+        None => return request_guards::unauthenticated(gateway, host, &req, true),
     };
     // 插件对家人只看“家人能用”开关：主人开放了才放行（ADR-0045）。核心不查 setup_done（ADR-0021），
     // 家人这一侧没有别的门槛。
@@ -172,11 +180,11 @@ pub(super) async fn request(gateway: &Gateway, label: &str, mut req: Request) ->
             StatusCode::FORBIDDEN,
             "not_shared",
             &l10n::text(
-                &langs,
+                langs,
                 "gateway-plugin-not-shared",
                 &[("id", route.id.as_str().into())],
             ),
-            &langs,
+            langs,
             format,
         );
     }
@@ -184,21 +192,15 @@ pub(super) async fn request(gateway: &Gateway, label: &str, mut req: Request) ->
     if let Some(hosted) = &route.hosted
         && web_storage::is_data_path(req.uri().path())
     {
-        return web_storage::forward(gateway, &route, hosted, req, &origin, &langs, format).await;
+        return web_storage::forward(gateway, &route, hosted, req, &origin, langs, format).await;
     }
-    let upstream = match upstream(&route, &langs, format) {
+    let upstream = match upstream(&route, langs, format) {
         Ok(upstream) => upstream,
         Err(response) => return *response,
     };
     if let Some(person) = &person
-        && let Err(response) = proxy_sso::attach_credentials(
-            gateway,
-            &route,
-            person,
-            req.headers_mut(),
-            &langs,
-            format,
-        )
+        && let Err(response) =
+            proxy_sso::attach_credentials(gateway, &route, person, req.headers_mut(), langs, format)
     {
         return *response;
     }
@@ -211,9 +213,9 @@ pub(super) async fn request(gateway: &Gateway, label: &str, mut req: Request) ->
         name: route.id.as_str(),
     };
     let mut response =
-        match proxy::forward_or(&gateway.upstream_http, target, req, fwd, &langs).await {
+        match proxy::forward_or(&gateway.upstream_http, target, req, fwd, langs).await {
             Ok(response) => response,
-            Err(error) => return error.response(route.id.as_str(), &langs, format),
+            Err(error) => return error.response(route.id.as_str(), langs, format),
         };
     isolation::sanitize_set_cookies(response.headers_mut());
     if let Some(auth) = &route.proxy {
