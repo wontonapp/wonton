@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 /// 用 `-only-testing` 分开跑：
 ///
 /// - `testPasteImageSends`（发送方）：把一张 PNG 放进剪贴板（测试进程和 App 同在模拟器上，写的就是设备剪贴板），
-///   长按输入框 → 粘贴 → 预览确认 → 发送，断言时间线里出现图片消息、“发送中”标记消失。
+///   长按输入框 → 粘贴进附件区 → 点发送，断言时间线里出现图片消息、“发送中”标记消失。
 /// - `testPeerShowsImage`（对方，同一账号的另一台设备）：打开聊天，等图片消息出现在时间线里并截图。
 final class PasteUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -38,11 +38,12 @@ final class PasteUITests: XCTestCase {
         XCTAssertNotNil(paste, "长按后没有粘贴菜单（菜单项 \(app.menuItems.count) 个）")
         paste?.tap()
 
-        // 预览面板：发出去之前看得到，也能取消。
+        // 粘贴只放进附件区（ADR-0094），发送按钮才发。
+        XCTAssertTrue(app.otherElements["composerTray"].waitForExistence(timeout: 10)
+            || app.scrollViews["composerTray"].waitForExistence(timeout: 1), "粘贴后附件区里没有这张图")
         let send = waitAnyButton(["Send", "发送"], timeout: 10)
-        XCTAssertNotNil(send, "粘贴后没有出预览面板")
-        XCTAssertNotNil(waitAnyButton(["Cancel", "取消"], timeout: 3), "预览面板没有取消")
-        shot("10-preview")
+        XCTAssertNotNil(send, "找不到发送按钮")
+        shot("10-tray")
 
         // 本地回显在时间线末尾，App 发送后自动滚到最新消息。图片气泡的读屏类型不确定，
         // 用复合证据：大图元素，或自己这条消息的「已读」回执。

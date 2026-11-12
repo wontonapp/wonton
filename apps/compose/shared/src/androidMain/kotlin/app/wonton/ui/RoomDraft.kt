@@ -64,16 +64,9 @@ class RoomDraft(
         save()
     }
 
-    /** 文字发出去了：草稿整个清掉，别让回复对象留下来。 */
+    /** 字和附件发出去了：草稿整个清掉，别让回复对象留下来。 */
     fun sent() {
         body.value = ""
-        quoted.value = null
-        touched = true
-        save()
-    }
-
-    /** 用图片回复过：正文还留着，只把回复对象去掉（核心那边也这么处理存着的草稿）。 */
-    fun replySent() {
         quoted.value = null
         touched = true
         save()

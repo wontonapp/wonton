@@ -1870,4 +1870,17 @@
     <string name="handoff_no_other_device">手邊沒有別的裝置</string>
     <string name="invite_device_added">已加好</string>
     <string name="invite_cannot_give">這部裝置也沒有完整的金鑰，新裝置看不到以前的訊息。</string>
+    <string name="composer_tray_full">一次最多傳送 %1$d 個附件。</string>
+    <string name="composer_attachment_remove">移除 %1$s</string>
+    <string name="composer_attachment_paused">等連上家裡的伺服器</string>
+    <string name="composer_attachment_failed">傳不上去</string>
+    <string name="composer_attachment_retry">重新上傳</string>
+    <string name="composer_attachment_too_large">照片超過了家裡伺服器的大小上限，可以改用檔案傳送。</string>
+    <string name="composer_attachment_source_unavailable">原檔案讀不了了，請重新選一次。</string>
+    <string name="composer_attachment_storage_full">家裡伺服器的磁碟滿了。</string>
+    <string name="composer_attachment_rejected">家裡的伺服器拒收了這個附件。</string>
+    <string name="composer_attachment_upstream">家裡的伺服器出錯了。</string>
+    <string name="composer_attachment_local_storage">手機上存不下了。</string>
+    <string name="timeline_sending_progress">傳送中 %1$s</string>
+    <string name="timeline_cancel_send">取消傳送</string>
 </resources>
