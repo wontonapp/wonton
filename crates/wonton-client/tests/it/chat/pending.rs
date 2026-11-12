@@ -619,3 +619,42 @@ async fn the_notice_room_is_read_only_and_other_chats_are_not() {
     assert!(send(notices.as_str()).is_err());
     assert!(send(chat.as_str()).is_ok());
 }
+
+fn contact_request(id: &str) -> Value {
+    json!({
+        "bot": {"plugin_id": "ai.nous.hermes", "bot": "bob"},
+        "contact": {
+            "user_id": format!("@hermes-{id}:wonton.localhost"),
+            "display_name": id,
+            "kind": "bot",
+            "state": "incoming",
+        },
+        "received_at_ms": 1,
+    })
+}
+
+/// 联系人请求跟着同一份列表走：来了进 ViewModel，处理过就从列表消失，壳靠它架通知、也靠它撤通知。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_contact_request_lands_in_the_list_and_leaves_when_handled() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    // 只要确认列表：挡掉登录，省掉 Matrix 同步空转。
+    home.fail_login_tokens(usize::MAX);
+    phone.connect(&home);
+
+    home.set_contact_requests(vec![contact_request("alice")]);
+    let request = wait_confirmations(&phone, "请求进了列表", |view| {
+        view.contact_requests.first().cloned()
+    })
+    .await;
+    assert_eq!(request.contact.user_id, "@hermes-alice:wonton.localhost");
+    assert_eq!(request.bot.bot, "bob");
+
+    home.set_contact_requests(vec![]);
+    wait_confirmations(&phone, "处理过的请求从列表消失", |view| {
+        view.contact_requests.is_empty().then_some(())
+    })
+    .await;
+}

@@ -130,7 +130,6 @@ gateway-owner-secrets-store-failed = Couldn't read the app secret: { $error }
 gateway-owner-secrets-not-text = The secret { $name } isn't stored as text
 gateway-owner-secrets-audit-unavailable = The audit log isn't wired on this server, so secret values can't be shown
 gateway-plugin-scope-unsupported = This core does not support changing which bots can use a plugin. Upgrade the core first.
-gateway-bot-plugin-access-unsupported = This core does not support switching plugin access for a bot. Upgrade the core first.
 
 # MCP Apps 宿主页（#35）。
 mcp-app-loading = Loading…
@@ -144,3 +143,7 @@ gateway-share-required = The owner hasn't shared this app with you
 gateway-share-revoked = The owner stopped sharing this app
 gateway-share-expired = This share has expired
 gateway-confirmation-gone = There is no such confirmation, or it ended more than a day ago
+# 静态网页的数据存储（ADR-0080 第 6 节）
+gateway-web-storage-undeclared = This app doesn't store data
+gateway-web-storage-cross-site = Only this app's own pages can change its data
+gateway-web-storage-not-ready = The app that keeps this app's data isn't running; try again later

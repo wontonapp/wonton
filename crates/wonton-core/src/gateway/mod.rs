@@ -26,6 +26,7 @@ mod api_switch;
 mod auth;
 mod bot_activity;
 mod bot_contacts;
+mod bot_plugin_access;
 mod bot_profile;
 mod bots;
 mod capabilities;
@@ -73,6 +74,7 @@ mod request_guards;
 mod room_rules;
 pub(crate) mod send_limits;
 pub mod sharing;
+mod web_storage;
 
 pub use entry::router as entry_router;
 pub use push::router as push_router;
@@ -646,6 +648,12 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
             &langs,
             format,
         );
+    }
+    // 数据存储不经网页的提供方，不看它的状态（ADR-0080 第 6 节）。
+    if let Some(hosted) = &route.hosted
+        && web_storage::is_data_path(req.uri().path())
+    {
+        return web_storage::forward(gateway, &route, hosted, req, &origin, &langs, format).await;
     }
     let upstream = match plugin_web::upstream(&route, &langs, format) {
         Ok(upstream) => upstream,
