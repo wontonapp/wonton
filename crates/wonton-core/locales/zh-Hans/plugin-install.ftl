@@ -507,7 +507,7 @@ plugin-install-preinstall-failed = 预装失败
 
 plugin-capability-unknown = 这份核心不认识能力 { $capability }，升级核心后再装
 plugin-capability-third-party-format = 能力 { $capability } 不合法：第三方能力要写成 x-<作者>.<名字>，作者和名字用小写字母、数字、连字符
-plugin-capability-egress-no-consumer = egress_proxy 没有使用方声明，不能写在 requires 或 wants 里
+plugin-capability-no-consumer = { $capability } 没有使用方声明，不能写在 requires 或 wants 里
 plugin-capability-duplicate = { $field } 里的能力 { $capability } 写了两次
 plugin-capability-in-both-lists = 能力 { $capability } 不能同时在 requires 和 wants 里
 plugin-capability-provider-requires = 提供能力的插件不能 requires 别的能力
@@ -520,3 +520,5 @@ plugin-capability-service-not-forwardable = { $field } 不能指向 network_mode
 plugin-install-capability-deps-unsupported = 这个核心还不支持插件之间的依赖，升级核心后再装
 plugin-install-runtime-services = runtime 为 { $runtime } 时不能声明 services
 plugin-install-runtime-unsupported = 这个核心不支持安装或升级 runtime 为 { $runtime } 的插件，请先升级核心
+plugin-install-matrix-rtc-needs-matrix = 核心没有接入 Matrix 服务器，装不了提供 matrix_rtc（通话授权）的插件
+plugin-install-matrix-rtc-conflict = 已经装了提供 matrix_rtc（通话授权）的插件 { $id }：同一时间只能有一个
