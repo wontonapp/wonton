@@ -14,6 +14,7 @@ use super::languages::Languages;
 pub use super::manifest_agent::{AgentLogin, AgentProtocol, AgentSpec};
 use super::manifest_clients::ClientsSpec;
 pub use super::manifest_gpu_images::GpuImages;
+pub use super::manifest_remote::RemoteMcpSpec;
 pub use super::manifest_static::{LinkSpec, StaticWebSpec};
 use super::manifest_tabs;
 pub use super::manifest_tabs::ManifestTab;
@@ -356,6 +357,9 @@ pub struct Manifest {
     /// `runtime: link` 的地址（ADR-0080）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<LinkSpec>,
+    /// `runtime: remote_mcp` 的远端服务器和鉴权方式（ADR-0066）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_mcp: Option<RemoteMcpSpec>,
     #[serde(default)]
     pub mcp: Option<McpEndpoint>,
     #[serde(default)]
@@ -469,6 +473,7 @@ impl Manifest {
         super::capabilities::validate(self, langs)?;
         super::manifest_static::validate(self)?;
         super::manifest_widget::validate(self)?;
+        super::manifest_remote::validate(self, langs)?;
         super::proxy_auth::validate(self, langs)?;
         super::proxy_auth::validate_mcp_headers(self, langs)?;
         if let Some(webui) = &self.webui {

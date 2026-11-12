@@ -267,15 +267,17 @@ pub use plugin::{
     PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginSettingField,
     PluginSettingKind, PluginSettingOption, PluginSettingsUpdate, PluginSettingsView, PluginState,
     PluginTakeover, PluginTask, PluginTaskNextStep, PluginTaskState, PluginTrust, PluginWidget,
-    PluginWriter, PluginsViewModel, RequirementLine, RequirementStatus, RoomWidget, SecretInput,
-    SecretInputState, SecretUpdate, SecretValues, SecurityTier, SettingValue, SettingValues,
-    SettingsFieldError, SettingsFieldProblem, SettingsFieldProblemKind, SettingsForm,
-    SettingsInvalidError, SettingsProblem, SettingsSchemaError, SettingsSchemaProblem,
+    PluginWriter, PluginsViewModel, RemoteAuth, RemoteAuthorization, RemoteMcpDetail,
+    RemoteMcpPreview, RemoteOauthGrant, RemoteOauthStart, RequirementLine, RequirementStatus,
+    RoomWidget, SecretInput, SecretInputState, SecretUpdate, SecretValues, SecurityTier,
+    SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem, SettingsFieldProblemKind,
+    SettingsForm, SettingsInvalidError, SettingsProblem, SettingsSchemaError, SettingsSchemaProblem,
     SettingsSchemaProblemKind, SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing,
     StoreProblem, StoreSection, TakeoverState, ToolAccess, ToolPolicyEntry, ToolPolicyView,
     UninstallPreview, UninstallRequest, UpgradeOffer, UpgradeRequest, UpgradeResult,
-    WidgetCapability, WidgetCapabilityLevel, WidgetEntry, plugin_scope_path, plugin_settings_path,
-    plugin_settings_preview_path, secret_input_path,
+    WidgetCapability, WidgetCapabilityLevel, WidgetEntry, plugin_remote_oauth_finish_path,
+    plugin_remote_oauth_start_path, plugin_scope_path, plugin_settings_path,
+    plugin_settings_preview_path, remote_oauth_start_path, secret_input_path,
 };
 pub use plugin::{PluginDesiredState, PluginLifecycle, PluginRecovery, PluginRecoveryStage};
 pub use plugin::{PluginStart, PluginStartState, RoomPlugin};

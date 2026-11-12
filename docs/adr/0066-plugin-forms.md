@@ -307,6 +307,29 @@
 5. 商店的“工具”“技能”两区，以及 MCP Registry、Docker Catalog 的转换。
 6. 第三方目录插件（`catalog` 能力）。
 
+## 补充：远端 MCP 的清单、白名单和接口（2026-11-13）
+
+第 1、3、3a 节的细则。第 2 节的包格式第一版不用，第 4 节照旧。
+
+- **清单写在 `x-wonton.remote_mcp`，不用 Agent Plugins 1.0 的 `mcp.json` 加 `extensions`。** 核心要先单独解析、校验这一形态，
+  而容器插件本来就用 compose 里的 `x-wonton`，一条解析路径就够。Agent Plugins 1.0 的包留给第三方包和转换脚本，
+  换过去时清单字段不变，只换外壳。
+- **配置随每个请求带给提供方，提供方不读清单。** 核心发往提供方的每个请求带 `X-Wonton-Plugin`（插件 ID）、
+  `X-Wonton-Remote-Url`（服务器的地址）、`X-Wonton-Remote-Auth`（`none`、`header`、`oauth`）、
+  `X-Wonton-Remote-Forward`（清单 `headers` 填好密钥后的头，JSON 对象做 base64）；`X-Wonton-*` 由核心删掉重写。
+  提供方不缓存清单，装、改、卸都不需要重启它。托管形态因此不必有包内目录，`HostedForm.mount` 可空，
+  提供 `remote_mcp` 的插件不写 `provides.remote_mcp.mount`。
+- **回调页用 wonton-docs 的 Pages 地址（第 3a 节）。** wonton-docs 先转到 wontonapp 组织再用，回调页和 CIMD 文档一起合。
+- **两种新的失败类别：** `remote_unavailable`（连不上：DNS、TLS、超时、拒连）和 `remote_error`（远端回 5xx 或协议错误）。
+  不复用 `TransportUnavailable`、`Upstream`，那两个说的是家里的服务器。
+- **经出网代理时接受 DNS 重绑定的残留风险：** 连接器在每次连接前解析并检查地址，代理侧的解析结果和它可能不同；
+  第一版按此接受，写在连接器的 PR 里。
+- **填了密钥仍被远端拒绝就拒装**，错误写“服务器不接受填的密钥”，不装一个连不上的插件。
+- **第一版不支持局域网远端 MCP：** `https` 地址且解析后是公网地址；要连内网就等 ADR-0019 的 `lan` 接进来。
+- **两个接口 PR 和连接器、静态托管插件分别建公开仓库（`wontonapp/wonton-plugin-mcp-connector`、
+  `wontonapp/wonton-plugin-static-host`）。** 连接器是系统插件，可替换。
+- **两个接口 PR（清单和托管、连接器）之间不发版，共用当前未发版的规范版本 0.14。**
+
 ## 关联
 
 - ADR-0006 和 ADR-0016（MCP 总线、按 Bot 白名单）

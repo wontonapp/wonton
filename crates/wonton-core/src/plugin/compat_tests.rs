@@ -1,17 +1,22 @@
 use super::*;
 use crate::plugin::package_files::PackageFiles;
 
-const FIELDS: &str = "  spec: '0.15'\n  id: app.example.photos\n  version: 1.0.0\n  kind: app\n  \
-                      title: {en: Example}\n  description: {en: Example}\n  permissions: []\n";
+/// 一份合法清单，`spec` 跟着这份核心支持的最新版本走。
+fn fields() -> String {
+    format!(
+        "  spec: '{SPEC_VERSION}'\n  id: app.example.photos\n  version: 1.0.0\n  kind: app\n  \
+         title: {{en: Example}}\n  description: {{en: Example}}\n  permissions: []\n"
+    )
+}
 
 /// `extra` 直接放在 `x-wonton:` 下（两格缩进起），`service` 放在服务 `web` 下（四格缩进起）。
-/// `fields` 覆盖清单字段（含 permissions），默认 FIELDS。
+/// `fields` 覆盖清单字段（含 permissions），默认 [`fields`]。
 fn compose_with(fields: &str, extra: &str, service: &str) -> String {
     format!("services:\n  web:\n    image: nginx\n{service}x-wonton:\n{fields}{extra}")
 }
 
 fn compose(extra: &str, service: &str) -> String {
-    compose_with(FIELDS, extra, service)
+    compose_with(&fields(), extra, service)
 }
 
 fn judged(source: &str) -> PackageVerdict {
@@ -28,14 +33,23 @@ fn a_readable_package_is_ok() {
     assert!(verdict.reasons.is_empty(), "{:?}", verdict.reasons);
 }
 
+/// 比当前支持的新一版（`0.14` → `0.15`），升版时不用改这个测试。
+fn newer_spec() -> String {
+    let current = SPEC_VERSION.to_string();
+    let (major, minor) = current.split_once('.').expect("版本号是 主.次");
+    format!("{major}.{}", minor.parse::<u32>().expect("次版本号是数字") + 1)
+}
+
 #[test]
 fn a_newer_spec_is_reported_before_any_field() {
-    let source = compose("  not_a_field: 1\n", "").replacen("spec: '0.15'", "spec: '0.16'", 1);
+    let newer = newer_spec();
+    let source = compose("  not_a_field: 1\n", "")
+        .replacen(&format!("spec: '{SPEC_VERSION}'"), &format!("spec: '{newer}'"), 1);
     let verdict = judged(&source);
     assert_eq!(verdict.verdict, Verdict::Breaking);
     assert_eq!(
         verdict.reasons,
-        vec![Reason::new(SPEC_UNSUPPORTED, "0.16")],
+        vec![Reason::new(SPEC_UNSUPPORTED, &newer)],
         "{:?}",
         verdict.reasons
     );
@@ -55,7 +69,7 @@ fn an_unknown_field_is_reported_with_its_path() {
 
 #[test]
 fn an_unknown_permission_is_reported_by_name() {
-    let fields = FIELDS.replace(
+    let fields = fields().replace(
         "  permissions: []\n",
         "  permissions: [files.home, models]\n",
     );
@@ -84,7 +98,7 @@ fn a_missing_capability_is_reported_by_name() {
 /// 安装路径只报第一个不认识的名字；compat 把权限和能力一次报全。
 #[test]
 fn all_unknown_names_are_reported_at_once() {
-    let fields = FIELDS.replace(
+    let fields = fields().replace(
         "  permissions: []\n",
         "  permissions: [files.home]\n  requires: [wonton_cloud]\n",
     );
@@ -132,7 +146,7 @@ fn an_unreadable_package_breaks_without_blocking_others() {
 
 #[test]
 fn a_manifest_without_spec_is_other() {
-    let source = compose("", "").replacen("  spec: '0.15'\n", "", 1);
+    let source = compose("", "").replacen(&format!("  spec: '{SPEC_VERSION}'\n"), "", 1);
     let verdict = judged(&source);
     assert_eq!(verdict.verdict, Verdict::Breaking);
     assert_eq!(

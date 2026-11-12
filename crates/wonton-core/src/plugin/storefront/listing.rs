@@ -195,6 +195,18 @@ impl PluginManager {
             runtime: m.runtime.into(),
             security_tier: Some(crate::plugin::security_tier::security_tier(m)),
             link_url: m.link.as_ref().map(|link| link.url.clone()),
+            remote: m.remote_mcp.as_ref().map(|remote| {
+                wonton_protocol::RemoteMcpDetail {
+                    host: remote.host().to_owned(),
+                    auth: remote.protocol_auth(),
+                    authorization: match remote.auth {
+                        crate::plugin::manifest_remote::RemoteAuth::Oauth => {
+                            wonton_protocol::RemoteAuthorization::NeedsAuthorization
+                        }
+                        _ => wonton_protocol::RemoteAuthorization::NotNeeded,
+                    },
+                }
+            }),
             scope: installed
                 .as_ref()
                 .map(|_| wonton_protocol::PluginScope::All),

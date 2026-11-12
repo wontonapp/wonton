@@ -78,6 +78,7 @@ mod manifest_gpu_images;
 mod manifest_mcp;
 mod manifest_oidc;
 mod manifest_permission;
+mod manifest_remote;
 mod manifest_static;
 mod manifest_tabs;
 pub(crate) mod manifest_widget;

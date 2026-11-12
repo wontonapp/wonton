@@ -22,6 +22,7 @@ fn detail(ask: bool) -> Canned {
         runtime: Default::default(),
         security_tier: None,
         link_url: None,
+        remote: None,
         scope: None,
         widget_capabilities: Vec::new(),
         version: "1.0.0".to_owned(),

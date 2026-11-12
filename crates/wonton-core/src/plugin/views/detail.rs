@@ -1,6 +1,9 @@
 //! 已安装插件的详情页视图。
 
-use wonton_protocol::{CardLine, InstalledPlugin, PluginDetail, PluginState, RequirementLine};
+use wonton_protocol::{
+    CardLine, InstalledPlugin, PluginDetail, PluginState, RemoteAuthorization, RemoteMcpDetail,
+    RequirementLine,
+};
 
 use super::super::github_source::Origin;
 use super::super::host_check;
@@ -10,6 +13,20 @@ use super::super::manager::PluginManager;
 use super::super::manifest::{Manifest, PluginId};
 use super::text::{author, cross_origin_isolation_notice, line, setup_notice};
 use crate::l10n;
+
+/// 远端 MCP 插件的详情：授权状态由连接器记，核心还没有问它的路径时，要授权的先如实写“要授权”。
+fn remote_detail(m: &Manifest) -> Option<RemoteMcpDetail> {
+    m.remote_mcp.as_ref().map(|remote| RemoteMcpDetail {
+        host: remote.host().to_owned(),
+        auth: remote.protocol_auth(),
+        authorization: match remote.auth {
+            super::super::manifest_remote::RemoteAuth::Oauth => {
+                RemoteAuthorization::NeedsAuthorization
+            }
+            _ => RemoteAuthorization::NotNeeded,
+        },
+    })
+}
 
 impl PluginManager {
     /// 给主人的详情，返回详情的接口都走这里：要求逐条判断过（要问 Docker），开关开着时带上第三方客户端的连接信息。
@@ -56,6 +73,7 @@ impl PluginManager {
             runtime: m.runtime.into(),
             security_tier: Some(super::super::security_tier::security_tier(m)),
             link_url: m.link.as_ref().map(|link| link.url.clone()),
+            remote: remote_detail(m),
             scope: Some(wonton_protocol::PluginScope::All),
             audience: Some(super::super::audience::view(m)),
             installable: true,
@@ -202,6 +220,7 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         runtime: installed.runtime,
         security_tier: None,
         link_url: None,
+        remote: None,
         scope: None,
         audience: None,
         installable: false,

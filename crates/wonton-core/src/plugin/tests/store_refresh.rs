@@ -81,6 +81,7 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     };
     m.install_source(&request).await.unwrap();
 }

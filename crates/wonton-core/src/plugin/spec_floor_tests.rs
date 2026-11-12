@@ -430,3 +430,13 @@ fn devices_and_the_disk_permission_require_0_14() {
         assert!(problems(&document("0.14", manifest, plain())).is_empty());
     }
 }
+
+#[test]
+fn remote_mcp_needs_0_15() {
+    let manifest = json!({"remote_mcp": {"url": "https://mcp.example.com/mcp"}});
+    let found = problems(&document("0.14", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("x-wonton.remote_mcp"), "{found:?}");
+    assert!(found[0].contains("0.15"), "{found:?}");
+    assert!(problems(&document("0.15", manifest, plain())).is_empty());
+}

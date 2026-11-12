@@ -86,6 +86,7 @@ fn request(preview: &InstallPreview, langs: &Languages) -> Result<InstallRequest
         devices: Vec::new(),
         lan_webui: false,
         install_together: Vec::new(),
+        remote_oauth: None,
         connect_plugins: Vec::new(),
     })
 }
