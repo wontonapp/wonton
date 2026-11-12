@@ -664,6 +664,9 @@
     <string name="friends_add_placeholder">@bob:example.org</string>
     <!-- Submit button under the Matrix ID field. -->
     <string name="friends_add_submit">傳送邀請</string>
+    <string name="friends_scan_code">掃描對方的碼</string>
+    <string name="friends_paste_placeholder">貼上對方的碼</string>
+    <string name="friends_my_code">我的QR碼</string>
     <!-- Section heading above the pending requests, received and sent. -->
     <string name="friends_requests_title">邀請</string>
     <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
