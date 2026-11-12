@@ -119,7 +119,9 @@ impl From<MatrixError> for Error {
         match error {
             MatrixError::Transport(message) => Self::TransportUnavailable(Detail::data(message)),
             MatrixError::InvalidInput(message) => Self::InvalidInput(Detail::data(message)),
-            MatrixError::Unauthorized { message, .. } => Self::Matrix(Detail::data(message)),
+            MatrixError::Unauthorized { message, .. } | MatrixError::Forbidden { message, .. } => {
+                Self::Matrix(Detail::data(message))
+            }
             MatrixError::NotReady(message) | MatrixError::Upstream(message) => {
                 Self::Matrix(Detail::data(message))
             }

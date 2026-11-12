@@ -144,7 +144,10 @@ pub struct FriendProblem {
 #[serde(rename_all = "snake_case")]
 pub enum FriendFailure {
     TransportUnavailable,
+    /// 登录失效：设备被吊销、令牌过期。要重新登录或配对。
     Unauthorized,
+    /// 登录有效，但这件事不让做：对方屏蔽了自己、对方的服务器不和这台互通、只有主人能改。
+    Forbidden,
     InvalidUserId,
     RequestNotFound,
     RateLimited,

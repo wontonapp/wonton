@@ -62,11 +62,13 @@ impl Failure {
         use wonton_matrix::Error;
         let (reason, status, errcode) = match &error {
             Error::Transport(_) => (FriendFailure::TransportUnavailable, None, None),
-            Error::Unauthorized { errcode, .. } => (
-                FriendFailure::Unauthorized,
-                Some(401),
-                Some(errcode.clone()),
-            ),
+            // 身份被拒可能是 401 也可能是 403，原始状态码没留下，不编一个。
+            Error::Unauthorized { errcode, .. } => {
+                (FriendFailure::Unauthorized, None, Some(errcode.clone()))
+            }
+            Error::Forbidden { errcode, .. } => {
+                (FriendFailure::Forbidden, Some(403), Some(errcode.clone()))
+            }
             Error::NotReady(_) => (FriendFailure::RequestNotFound, None, None),
             Error::InvalidInput(_) => (FriendFailure::InvalidUserId, None, None),
             Error::Upstream(_) => (FriendFailure::Upstream, None, None),
@@ -297,8 +299,10 @@ fn problem(bytes: &[u8], status: u16, kind: Option<String>) -> Failure {
         Some("request_not_found") => FriendFailure::RequestNotFound,
         Some("rate_limited") => FriendFailure::RateLimited,
         Some("unauthenticated") => FriendFailure::Unauthorized,
+        Some("owner_only" | "cross_site") => FriendFailure::Forbidden,
         _ if status == 429 => FriendFailure::RateLimited,
         _ if status == 401 => FriendFailure::Unauthorized,
+        _ if status == 403 => FriendFailure::Forbidden,
         _ if status == 404 => FriendFailure::RequestNotFound,
         _ => FriendFailure::Upstream,
     };

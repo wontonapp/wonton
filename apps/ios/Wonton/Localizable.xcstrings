@@ -17218,6 +17218,66 @@
         }
       }
     },
+    "friends.error.forbidden": {
+      "comment": "Title when the server refused a friend action although the sign-in is valid.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The request was refused"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求被拒绝了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請求被拒絕了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リクエストが拒否されました"
+          }
+        }
+      }
+    },
+    "friends.error.forbidden.nextStep": {
+      "comment": "Explains why a friend action was refused.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "They may have blocked you, or their server can't reach your home server yet."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方可能屏蔽了你，或者对方的服务器还不能和家里的服务器互通。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "對方可能封鎖了你，或者對方的伺服器還不能和家裡的伺服器互通。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手にブロックされているか、相手のサーバーがまだ自宅のサーバーとつながっていない可能性があります。"
+          }
+        }
+      }
+    },
     "friends.error.invalidUserId": {
       "comment": "Title when the typed Matrix ID is not valid.",
       "extractionState": "manual",

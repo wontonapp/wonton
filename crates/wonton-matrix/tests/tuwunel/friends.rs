@@ -326,7 +326,7 @@ async fn a_blocked_user_invite_is_rejected_without_leaving_a_room() {
         .invite_friend(bob.user_id())
         .await
         .expect_err("屏蔽后邀请应失败");
-    assert!(matches!(error, Error::Unauthorized { .. }), "{error}");
+    assert!(matches!(error, Error::Forbidden { .. }), "{error}");
     assert!(
         bob.blocked_list()
             .await
@@ -346,4 +346,32 @@ async fn an_unknown_user_is_invalid_input() {
         alice.invite_friend(&stranger).await,
         Err(Error::InvalidInput(_))
     ));
+}
+
+/// 正式安装里联邦只对配对过的服务器开（ADR-0050）：邀请名单外服务器上的人，Tuwunel 回 403 `M_FORBIDDEN`。
+/// 这是“不让做”，登录照样有效，不能和身份失效混在一起。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn inviting_someone_on_an_unpaired_server_is_forbidden_not_signed_out() {
+    let server = TestServer::container(&[
+        ("TUWUNEL_ALLOW_FEDERATION", "true"),
+        (
+            "TUWUNEL_ALLOWED_REMOTE_SERVER_NAMES_EXPERIMENTAL",
+            r#"["^paired\\.invalid$"]"#,
+        ),
+    ])
+    .await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    alice.start_sync().await.expect("Alice 开始同步");
+    let lily: wonton_matrix::OwnedUserId = "@lily:example.org".parse().unwrap();
+
+    let error = alice
+        .invite_friend(&lily)
+        .await
+        .expect_err("名单外的服务器应被拒");
+    assert!(
+        matches!(&error, Error::Forbidden { errcode, .. } if errcode == "M_FORBIDDEN"),
+        "{error:?}"
+    );
+    alice.blocked_list().await.expect("登录还有效");
 }

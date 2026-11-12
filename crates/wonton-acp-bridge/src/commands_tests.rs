@@ -209,7 +209,7 @@ async fn disconnect_writes_back_the_table_with_only_the_own_command() {
 async fn a_missing_permission_is_reported_once_per_room() {
     let (agent, client, mut notices) = connected().await;
     let mut commands = Commands::new();
-    let sink = MemorySink::failing(MatrixError::Unauthorized {
+    let sink = MemorySink::failing(MatrixError::Forbidden {
         errcode: "M_FORBIDDEN".into(),
         message: "没有权限".into(),
     });

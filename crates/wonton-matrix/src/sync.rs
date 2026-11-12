@@ -166,7 +166,8 @@ impl MatrixSession {
             let SyncStatus::Failed(error) = status else {
                 continue;
             };
-            if matches!(error, Error::Unauthorized { .. }) {
+            // 同步被 403 拒绝也一样：每次重启都会被拒。
+            if matches!(error, Error::Unauthorized { .. } | Error::Forbidden { .. }) {
                 return;
             }
             // 上次重启以后跑了一阵才出错，算恢复过，间隔从头算。重启本身成功不算数：服务器不通时它也可能先成功。
