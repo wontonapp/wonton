@@ -16,7 +16,7 @@ use super::*;
 use crate::acp::AcpClient;
 use crate::acp::test_support::{FakeAgent, Scenario, bounded};
 use crate::bridge::LoginService;
-use crate::bridge::test_support::FakeCards;
+use crate::bridge::test_support::FakeCore;
 use crate::config::Config;
 use crate::locale::{Locales, Origin};
 use crate::login::LoginFlow;
@@ -134,7 +134,7 @@ async fn restarted_bridge(setup: &Setup) -> (MatrixSession, tempfile::TempDir) {
     );
 
     let agent = FakeAgent::start(Scenario::Manual).await;
-    let cards = FakeCards::start().await;
+    let cards = FakeCore::start().await;
     let dir = tempfile::tempdir().unwrap();
     let owner = setup.owner.user_id().to_owned();
     let config = Config {
@@ -190,6 +190,8 @@ async fn restarted_bridge(setup: &Setup) -> (MatrixSession, tempfile::TempDir) {
         ),
         bot: setup.bot_user.clone(),
         locales: Arc::new(Locales::new(Origin::Fixed, setup.bot_user.clone())),
+        chains: crate::bridge::chain::Client::new(&config.mcp_url, &config.access_token).unwrap(),
+        pending_asks: permissions::PendingAsks::default(),
     };
     let login = Arc::new(LoginService {
         flow: tokio::sync::Mutex::new(LoginFlow::new().0),
