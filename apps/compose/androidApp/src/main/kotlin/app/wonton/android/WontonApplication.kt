@@ -11,9 +11,13 @@ class WontonApplication : Application(), PageMediaCoreOwner {
     override fun onCreate() {
         super.onCreate()
         installSystemDns()
+        installCertificateVerifier()
     }
 
     private external fun installSystemDns()
+
+    /** 核心按系统证书库校验 HTTPS 证书前要拿到 Application；失败时核心把 HTTPS 请求报成传输不可用。 */
+    private external fun installCertificateVerifier()
 
     override val core: Result<ClientCore> by lazy {
         try {

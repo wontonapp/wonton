@@ -25,6 +25,7 @@ mod login;
 mod media;
 mod message;
 mod panels;
+pub mod platform_tls;
 mod profile;
 mod push;
 mod read_position;

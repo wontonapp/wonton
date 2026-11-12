@@ -74,6 +74,7 @@ impl PendingLogin {
         allow_http: bool,
     ) -> Result<Self, LoginError> {
         let target = target(input, allow_http)?;
+        crate::platform_tls::check_url(&target).map_err(|reason| transport(&reason))?;
         let client = client_builder(store, None, false)
             .server_name_or_homeserver_url(&target)
             .sliding_sync_version_builder(VersionBuilder::DiscoverNative)

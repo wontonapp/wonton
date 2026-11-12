@@ -27,6 +27,8 @@ android-minSdk = "29"
 android-targetSdk = "36"
 
 [libraries]
+# MIT OR Apache-2.0。Rust 核心校验 HTTPS 证书时经 JNI 调的 Android 组件。不写版本：androidApp 从 Cargo.lock 读。
+rustls-platform-verifier = { module = "org.rustls:rustls-platform-verifier" }
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
 compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }
 compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "compose-material3" }
