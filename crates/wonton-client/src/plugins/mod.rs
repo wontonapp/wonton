@@ -76,6 +76,10 @@ pub(crate) struct PluginsLink {
     problem_of: Mutex<Option<Listing>>,
     /// 已安装列表存在本机的位置。
     installed_cache: PathBuf,
+    /// 每次发起取已安装列表加一；只应用比已应用的更大的序号。卸载请求还没返回时轮询也在取列表，
+    /// 旧响应晚到会把卸载掉的插件写回首页（盲测 #12），按发起顺序丢弃。
+    fetch_seq: AtomicU64,
+    applied_seq: AtomicU64,
     /// 每换一台服务器加一：之前发出的请求和任务，结果不再算数。
     generation: AtomicU64,
     /// 每次取或改出网代理的设置加一：只有最后发起的那次能写 `view.egress`。
@@ -145,6 +149,8 @@ impl PluginsLink {
             poll_changed: Notify::new(),
             problem_of: Mutex::new(None),
             installed_cache,
+            fetch_seq: AtomicU64::new(0),
+            applied_seq: AtomicU64::new(0),
             generation: AtomicU64::new(0),
             egress_epoch: AtomicU64::new(0),
             upgrade: Mutex::new(core_upgrade::UpgradeLocal::default()),
@@ -448,12 +454,18 @@ impl PluginsLink {
         generation: u64,
         server: &Option<String>,
     ) -> Result<(), PluginProblem> {
+        // 序号从 1 开始：0 会和 applied_seq 的初值撞车，第一个响应会被当成旧的丢掉。
+        let seq = self.fetch_seq.fetch_add(1, Ordering::SeqCst) + 1;
         let result: Result<InstalledPlugins, PluginProblem> =
             api.get(&["plugins"], &[], READ_TIMEOUT).await;
         if !self.is_current_home(generation, server) {
             return Ok(());
         }
         let installed = result?;
+        // 晚到的旧响应直接丢掉：内容是发起时家里服务器的状态，不能盖住已应用的新状态。
+        if seq <= self.applied_seq.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         if self.view.borrow().installed.as_ref() != Some(&installed)
             && let Some(server) = server
         {
@@ -462,6 +474,7 @@ impl PluginsLink {
         if !self.is_current_home(generation, server) {
             return Ok(());
         }
+        self.applied_seq.store(seq, Ordering::SeqCst);
         self.view
             .send_modify(|view| view.installed = Some(installed));
         self.refresh_derived();
