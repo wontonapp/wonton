@@ -29,6 +29,12 @@ if [[ ${WONTON_SKIP_MERGED_CHECK:-} == 1 ]]; then
   echo "跳过：WONTON_SKIP_MERGED_CHECK=1"
   exit 0
 fi
+# Mac 上不编 Rust：wonton-core 那里编不过，还会在工作区留下几个 G 的 target。有 WONTON_CARGO 说明编译另有去处
+# （远端包装），照走；没有就把这一步交给 CI，别让每次推送都卡在编不过上。
+if [[ $(uname) == Darwin && -z ${WONTON_CARGO:-} ]]; then
+  echo "Mac 上不在本机编；要在这里也查，设 WONTON_CARGO 指到远端编译的包装脚本。这次跳过，由 CI 兜底"
+  exit 0
+fi
 
 cd "$top"
 
