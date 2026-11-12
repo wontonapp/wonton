@@ -105,4 +105,8 @@
     <string name="confirmation_card_window_until">Approved until %1$s</string>
     <!-- Content description of a state picture in the bot profile. Argument: the state name. -->
     <string name="bot_avatar_pick_state">Change the %1$s picture</string>
+    <!-- Footer of a message still uploading its attachments. Argument: percent done, already formatted. -->
+    <string name="timeline_sending_progress">Sending %1$s</string>
+    <!-- Menu item on a message that is still uploading: drop it and stop the upload. -->
+    <string name="timeline_cancel_send">Cancel Sending</string>
 </resources>

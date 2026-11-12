@@ -246,7 +246,13 @@ private struct MessageBubble: View {
         case let .text(_, blocks, files):
             TextMessageBody(blocks: blocks, ink: textColor, files: files, trailingReserve: reserve)
         case let .image(image):
-            MediaImage(image: image, core: core, sendState: message.sendState)
+            // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                MediaImage(image: image, core: core, sendState: message.sendState)
+                if let caption = image.caption {
+                    TextMessageBody(blocks: caption.blocks, ink: textColor, files: [])
+                }
+            }
         case let .confirmation(view):
             ConfirmationCardView(
                 view: view,

@@ -124,7 +124,7 @@ PARTS: Dict[str, int] = {
     "share": 3,
     "contacts": 2,
     "handoff": 1,
-    "matrixlogin": 1,
+    "matrixlogin": 2,
 }
 
 GROUP_OF: Dict[str, str] = {

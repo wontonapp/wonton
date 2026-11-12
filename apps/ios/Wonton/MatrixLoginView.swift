@@ -28,7 +28,7 @@ struct MatrixLoginView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .scrollDismissesKeyboard(.interactively)
-        .wontonPushedScreen(String(localized: .Matrixlogin.matrixLoginTitle))
+        .wontonPushedScreen(String(localized: .Matrixlogin1.matrixLoginTitle))
         .onChange(of: login?.state, initial: true) { old, state in follow(state, changed: old != state) }
         .onDisappear(perform: leave)
     }
@@ -41,27 +41,27 @@ struct MatrixLoginView: View {
             ProblemNotice(problem: reason.problem(homeserver: login.homeserver), icon: .error)
             MatrixLoginStart(server: $server, isRetry: true, start: start)
         case .discovering:
-            MatrixLoginProgress(text: String(localized: .Matrixlogin.matrixLoginContacting(login.homeserver)))
+            MatrixLoginProgress(text: String(localized: .Matrixlogin1.matrixLoginContacting(login.homeserver)))
         case .ready:
             MatrixLoginMethods(login: login, send: send)
         case .authenticating:
-            MatrixLoginProgress(text: String(localized: .Matrixlogin.matrixLoginSigningIn))
+            MatrixLoginProgress(text: String(localized: .Matrixlogin1.matrixLoginSigningIn))
         case let .awaitingOidc(authorizationUrl):
-            MatrixLoginProgress(text: String(localized: .Matrixlogin.matrixLoginFinishInBrowser))
+            MatrixLoginProgress(text: String(localized: .Matrixlogin0.matrixLoginFinishInBrowser))
             if browser.failedToOpen {
-                WontonNotice(icon: .warning, title: String(localized: .Matrixlogin.matrixLoginBrowserFailed))
+                WontonNotice(icon: .warning, title: String(localized: .Matrixlogin0.matrixLoginBrowserFailed))
             }
             Button {
                 openBrowser(login, url: authorizationUrl)
             } label: {
-                Text(.Matrixlogin.matrixLoginOpenBrowser).frame(maxWidth: .infinity)
+                Text(.Matrixlogin0.matrixLoginOpenBrowser).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle(kind: .secondary))
         case .saving:
-            MatrixLoginProgress(text: String(localized: .Matrixlogin.matrixLoginSaving))
+            MatrixLoginProgress(text: String(localized: .Matrixlogin0.matrixLoginSaving))
         case .other:
             // 比这个壳新的状态：如实说走不下去，不装成进行中。
-            WontonNotice(icon: .warning, title: String(localized: .Matrixlogin.matrixLoginUnknownState))
+            WontonNotice(icon: .warning, title: String(localized: .Matrixlogin0.matrixLoginUnknownState))
             MatrixLoginStart(server: $server, isRetry: true, start: start)
         }
     }
@@ -107,7 +107,7 @@ struct MatrixLoginEntryLabel: View {
     var body: some View {
         HStack(spacing: WontonTheme.spacing.s12) {
             WontonIcon.globe.view(size: WontonTheme.size.iconSmall)
-            Text(.Matrixlogin.matrixLoginEntry).wontonText(WontonTheme.typography.body)
+            Text(.Matrixlogin0.matrixLoginEntry).wontonText(WontonTheme.typography.body)
             Spacer(minLength: 0)
         }
         .foregroundStyle(Color(colors.textPrimary))
@@ -127,11 +127,11 @@ private struct MatrixLoginStart: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            Text(.Matrixlogin.matrixLoginServer)
+            Text(.Matrixlogin0.matrixLoginServer)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
                 .accessibilityHidden(true)
-            TextField(String(localized: .Matrixlogin.matrixLoginServer), text: $server)
+            TextField(String(localized: .Matrixlogin0.matrixLoginServer), text: $server)
                 .accessibilityIdentifier("matrix-login-server")
                 .textFieldStyle(.plain)
                 .keyboardType(.URL)
@@ -143,7 +143,7 @@ private struct MatrixLoginStart: View {
                 .wontonField()
         }
         Button(action: start) {
-            Text(isRetry ? .Common.commonRetry : .Matrixlogin.matrixLoginContinue).frame(maxWidth: .infinity)
+            Text(isRetry ? .Common.commonRetry : .Matrixlogin0.matrixLoginContinue).frame(maxWidth: .infinity)
         }
         .buttonStyle(WontonButtonStyle())
         .accessibilityIdentifier("matrix-login-start")
@@ -167,7 +167,7 @@ private struct MatrixLoginMethods: View {
             .wontonText(WontonTheme.typography.supporting)
             .foregroundStyle(Color(colors.textSecondary))
         if !offersOidc && !offersPassword {
-            WontonNotice(icon: .warning, title: String(localized: .Matrixlogin.matrixLoginFailedUnsupportedMethod))
+            WontonNotice(icon: .warning, title: String(localized: .Matrixlogin0.matrixLoginFailedUnsupportedMethod))
         }
         if offersOidc {
             Button {
@@ -175,7 +175,7 @@ private struct MatrixLoginMethods: View {
                     loginId: login.loginId, redirectUri: login.oidcRedirectUri, deviceName: UIDevice.current.name
                 )))
             } label: {
-                Text(.Matrixlogin.matrixLoginMethodOidc).frame(maxWidth: .infinity)
+                Text(.Matrixlogin0.matrixLoginMethodOidc).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle())
             .accessibilityIdentifier("matrix-login-oidc")
@@ -185,7 +185,7 @@ private struct MatrixLoginMethods: View {
                 passwordForm
             } else {
                 Button { showsPassword = true } label: {
-                    Text(.Matrixlogin.matrixLoginMethodPassword).frame(maxWidth: .infinity)
+                    Text(.Matrixlogin1.matrixLoginMethodPassword).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
@@ -194,21 +194,21 @@ private struct MatrixLoginMethods: View {
 
     private var passwordForm: some View {
         VStack(spacing: WontonTheme.spacing.s12) {
-            TextField(String(localized: .Matrixlogin.matrixLoginUserId), text: $userId)
+            TextField(String(localized: .Matrixlogin0.matrixLoginUserId), text: $userId)
                 .textFieldStyle(.plain)
                 .keyboardType(.emailAddress)
                 .textContentType(.username)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .wontonField()
-            SecureField(String(localized: .Matrixlogin.matrixLoginPassword), text: $password)
+            SecureField(String(localized: .Matrixlogin0.matrixLoginPassword), text: $password)
                 .textFieldStyle(.plain)
                 .textContentType(.password)
                 .submitLabel(.go)
                 .onSubmit(submit)
                 .wontonField()
             Button(action: submit) {
-                Text(.Matrixlogin.matrixLoginSignIn).frame(maxWidth: .infinity)
+                Text(.Matrixlogin1.matrixLoginSignIn).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle())
             .disabled(userId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || password.isEmpty)
@@ -258,17 +258,17 @@ extension MatrixLoginFailure {
 
     private var title: String {
         switch self {
-        case .invalidHomeserver: String(localized: .Matrixlogin.matrixLoginFailedInvalidHomeserver)
-        case .discovery: String(localized: .Matrixlogin.matrixLoginFailedDiscovery)
-        case .unsupportedMethod: String(localized: .Matrixlogin.matrixLoginFailedUnsupportedMethod)
-        case .transport: String(localized: .Matrixlogin.matrixLoginFailedTransport)
-        case .invalidCredentials: String(localized: .Matrixlogin.matrixLoginFailedInvalidCredentials)
-        case .oidcRejected: String(localized: .Matrixlogin.matrixLoginFailedOidcRejected)
-        case .invalidCallback: String(localized: .Matrixlogin.matrixLoginFailedInvalidCallback)
-        case .expired: String(localized: .Matrixlogin.matrixLoginFailedExpired)
-        case .storage: String(localized: .Matrixlogin.matrixLoginFailedStorage)
-        case .upstream: String(localized: .Matrixlogin.matrixLoginFailedUpstream)
-        case .other: String(localized: .Matrixlogin.matrixLoginFailedOther)
+        case .invalidHomeserver: String(localized: .Matrixlogin0.matrixLoginFailedInvalidHomeserver)
+        case .discovery: String(localized: .Matrixlogin1.matrixLoginFailedDiscovery)
+        case .unsupportedMethod: String(localized: .Matrixlogin0.matrixLoginFailedUnsupportedMethod)
+        case .transport: String(localized: .Matrixlogin0.matrixLoginFailedTransport)
+        case .invalidCredentials: String(localized: .Matrixlogin0.matrixLoginFailedInvalidCredentials)
+        case .oidcRejected: String(localized: .Matrixlogin1.matrixLoginFailedOidcRejected)
+        case .invalidCallback: String(localized: .Matrixlogin0.matrixLoginFailedInvalidCallback)
+        case .expired: String(localized: .Matrixlogin0.matrixLoginFailedExpired)
+        case .storage: String(localized: .Matrixlogin1.matrixLoginFailedStorage)
+        case .upstream: String(localized: .Matrixlogin1.matrixLoginFailedUpstream)
+        case .other: String(localized: .Matrixlogin1.matrixLoginFailedOther)
         }
     }
 }

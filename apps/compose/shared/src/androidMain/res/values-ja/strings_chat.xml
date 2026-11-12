@@ -91,4 +91,6 @@
     <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
     <string name="confirmation_card_window_until">%1$sまで許可</string>
     <string name="bot_avatar_pick_state">%1$sの画像を変更</string>
+    <string name="timeline_sending_progress">送信中 %1$s</string>
+    <string name="timeline_cancel_send">送信を取り消す</string>
 </resources>

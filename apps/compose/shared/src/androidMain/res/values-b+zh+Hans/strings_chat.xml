@@ -91,4 +91,6 @@
     <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
     <string name="confirmation_card_window_until">放行到 %1$s</string>
     <string name="bot_avatar_pick_state">更换%1$s头像</string>
+    <string name="timeline_sending_progress">发送中 %1$s</string>
+    <string name="timeline_cancel_send">取消发送</string>
 </resources>

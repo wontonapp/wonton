@@ -13,4 +13,15 @@
     <!-- Screen-reader label of the round send button at the right of the chat composer. -->
     <string name="composer_send">傳送</string>
     <string name="composer_file_unreadable">無法讀取這個檔案。請重新複製，或選擇其他檔案。</string>
+    <string name="composer_tray_full">一次最多傳送 %1$d 個附件。</string>
+    <string name="composer_attachment_remove">移除 %1$s</string>
+    <string name="composer_attachment_paused">等連上家裡的伺服器</string>
+    <string name="composer_attachment_failed">傳不上去</string>
+    <string name="composer_attachment_retry">重新上傳</string>
+    <string name="composer_attachment_too_large">照片超過了家裡伺服器的大小上限，可以改用檔案傳送。</string>
+    <string name="composer_attachment_source_unavailable">原檔案讀不了了，請重新選一次。</string>
+    <string name="composer_attachment_storage_full">家裡伺服器的磁碟滿了。</string>
+    <string name="composer_attachment_rejected">家裡的伺服器拒收了這個附件。</string>
+    <string name="composer_attachment_upstream">家裡的伺服器出錯了。</string>
+    <string name="composer_attachment_local_storage">手機上存不下了。</string>
 </resources>
