@@ -2,7 +2,7 @@ name: rust
 
 # 格式、Clippy、不依赖 Docker 的测试。PR 上由 gate.yml 按改动范围调用（合并门槛，范围写在那边的 changes 里），
 # 不自己挂 pull_request；每天定时、手动触发时自己跑全量。
-# 测试分片被调用方跳过时检查名会留成带 ${{ matrix.shard }} 的字面量，规则集只看 gate 汇总，不受影响。
+# 测试分片被跳过时检查名会留成带 ${{ matrix.shard }} 的字面量，规则集只看 gate 汇总，不受影响。
 on:
   workflow_call:
   schedule:
@@ -64,15 +64,8 @@ jobs:
         run: cargo clippy -p wonton-client --all-targets --locked --features ui-fake -- -D warnings
 
   test:
-<<<<<<< HEAD
     name: 测试（不含依赖 Docker 的集成测试）${{ matrix.shard }}/4
-    needs: changes
-    # !cancelled() 让 changes 在定时、手动运行里跳过时，下游仍能全量运行；取消后不再起重作业。
-    # 草稿和路径的判断在作业上：被跳过时 matrix 不展开、检查名留成字面量，规则集只看汇总就不受影响。
-    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || github.event_name != 'pull_request') }}
-=======
-    name: 测试（不含依赖 Docker 的集成测试）${{ matrix.shard }}/3
->>>>>>> c486f81 (ci(gate): PR 的检查并成一个 gate 工作流，规则集只要求 gate 汇总)
+    # 整轮跑不跑由 gate 的开关决定（被调用时没有 changes 作业）；跳过时 matrix 不展开、检查名留成字面量，规则集只看 gate 汇总。
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -117,14 +110,11 @@ jobs:
           path: ${{ runner.temp }}/test-output.log
           retention-days: 7
           if-no-files-found: ignore
-<<<<<<< HEAD
 
   extras:
     name: 假数据入口的测试、官方索引检查
     # 两件都不分片、都要另编一遍工作区的 crate，单独一个作业和分片并行：放进哪一片都成最慢的那片
     # （11-12 实测：假数据入口 4 核上 185～209 s，索引检查 73～90 s，分片本身 6～7 分钟）。
-    needs: changes
-    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || github.event_name != 'pull_request') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -157,26 +147,3 @@ jobs:
       - name: 测试假数据入口（feature ui-fake）
         # 假数据入口的模块和测试都在 cargo feature 后面，默认的 workspace 测试跑不到。
         run: cargo nextest run -p wonton-client --lib --locked --features ui-fake ui_fake
-
-  # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
-  # 草稿 PR 上其余作业全被跳过时它也照样起来并报通过，不用为此先起别的 runner。
-  summary:
-    name: rust 汇总
-    needs: [changes, format, clippy, test, extras]
-    if: always()
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    env:
-      RESULTS: ${{ join(needs.*.result, ' ') }}
-    steps:
-      - name: 各作业的结果
-        run: |
-          echo "$RESULTS"
-          for result in $RESULTS; do
-            case "$result" in
-              success|skipped) ;;
-              *) exit 1 ;;
-            esac
-          done
-=======
->>>>>>> c486f81 (ci(gate): PR 的检查并成一个 gate 工作流，规则集只要求 gate 汇总)
