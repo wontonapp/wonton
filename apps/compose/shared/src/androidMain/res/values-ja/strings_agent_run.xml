@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_run_waiting">確認待ち</string>
+    <string name="agent_run_done">完了</string>
+    <string name="agent_run_cancelled">中断しました</string>
+    <string name="agent_run_uncertain">結果は不明です</string>
+    <string name="agent_run_asking">%1$s が質問しています</string>
+    <plurals name="agent_run_done_steps">
+        <item quantity="other">完了 · %1$d ステップ</item>
+    </plurals>
+</resources>

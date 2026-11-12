@@ -18,6 +18,10 @@ struct TimelineRow: View {
     let reply: (QuotedMessage) -> Void
     let forward: () -> Void
     let redact: () -> Void
+    /// Agent 在等回答的卡片就在这个房间：滚到那张卡片（ADR-0082）。
+    var openCard: (String) -> Void = { _ in }
+    /// 回答 Agent 自己的提问（`choices` 的 key），以主人的身份发反应。
+    var answerChoice: (String) -> Void = { _ in }
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -30,10 +34,23 @@ struct TimelineRow: View {
             )
         case let .notice(text):
             note(Text(text))
-        case let .agentRun(_, _, _, _, _, _, _, body, _, _):
-            // 一轮 Agent 任务的进度行（ADR-0082）：完整的样子在 App 壳那个 PR 里做，先按普通的
-            // Bot 提示消息显示 `body`——和其他不认识这个格式的客户端一样。
-            note(Text(body))
+        case let .agentRun(run, state, step, steps, progress, result, end, body, cardId, choices, senderName):
+            AgentRunRow(
+                run: AgentRunRowModel(
+                    state: Self.agentRunState(state),
+                    step: step,
+                    steps: steps.map { Int($0) },
+                    progress: progress.map { Double($0) },
+                    result: result,
+                    end: Self.agentRunEnd(end),
+                    body: body,
+                    cardId: cardId,
+                    choices: choices.map { AgentRunRowChoice(key: $0.key, label: $0.label) },
+                    senderName: senderName
+                ),
+                openCard: openCard,
+                answerChoice: answerChoice
+            )
         case let .profileChange(_, name, previousName, _):
             if let previousName {
                 note(Text(.Chat.timelineRenamed(previousName, name)))
@@ -59,6 +76,25 @@ struct TimelineRow: View {
             note(Text(title))
         case .timelineStart:
             note(Text(.Chat.timelineStart))
+        }
+    }
+
+    private static func agentRunState(_ state: AgentRunState) -> AgentRunRowState {
+        switch state {
+        case .working: .working
+        case .waiting: .waiting
+        case .done: .done
+        case .failed: .failed
+        case .uncertain: .uncertain
+        case .other: .other
+        }
+    }
+
+    private static func agentRunEnd(_ end: AgentRunEnd?) -> AgentRunRowEnd? {
+        switch end {
+        case .cancelled: .cancelled
+        case .uncertain: .uncertain
+        case nil: nil
         }
     }
 

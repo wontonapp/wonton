@@ -18,6 +18,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import app.wonton.protocol.ThemeColors
 import app.wonton.ui.design.WontonTheme
@@ -170,22 +172,22 @@ private fun Mark(run: AgentRunRowModel, colors: ThemeColors) {
 }
 
 /** 状态行的文字。打断了、结果不确定用壳自己的文字，其余显示 Bot 的自述。 */
+@Composable
 private fun statusText(run: AgentRunRowModel): String = when (run.state) {
     AgentRunRowState.Working -> run.step ?: ""
-    // 接线时换成拆分后表里的资源（键名见 fe-agent-run-strings.md）；现在显示键本身。
-    AgentRunRowState.Waiting -> "agentRun.waiting"
+    AgentRunRowState.Waiting -> stringResource(R.string.agent_run_waiting)
     AgentRunRowState.Done ->
         if (run.steps != null) {
-            "agentRun.doneSteps"
+            pluralStringResource(R.plurals.agent_run_done_steps, run.steps, run.steps)
         } else {
-            "agentRun.done"
+            stringResource(R.string.agent_run_done)
         }
     AgentRunRowState.Failed -> when (run.end) {
-        AgentRunEnd.Cancelled -> "agentRun.cancelled"
-        AgentRunEnd.Uncertain -> "agentRun.uncertain"
+        AgentRunEnd.Cancelled -> stringResource(R.string.agent_run_cancelled)
+        AgentRunEnd.Uncertain -> stringResource(R.string.agent_run_uncertain)
         null -> run.result ?: ""
     }
-    AgentRunRowState.Uncertain -> "agentRun.uncertain"
+    AgentRunRowState.Uncertain -> stringResource(R.string.agent_run_uncertain)
     AgentRunRowState.Other -> run.body ?: ""
 }
 
@@ -213,8 +215,7 @@ private fun Asking(run: AgentRunRowModel, onAnswerChoice: (String) -> Unit) {
         ) {
             Icon(WontonIcon.Agent, null, Modifier.size(WontonTheme.size.iconSmall), tint = ink)
             Text(
-                // 接线时换成 agent_run_asking（fe-agent-run-strings.md）；现在显示键本身。
-                "agentRun.asking",
+                stringResource(R.string.agent_run_asking, run.senderName),
                 style = WontonTheme.typography.supporting,
                 color = ink,
             )

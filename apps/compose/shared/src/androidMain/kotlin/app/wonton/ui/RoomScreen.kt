@@ -30,6 +30,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -50,6 +51,7 @@ import app.wonton.protocol.BotView
 import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.KeyNotice
+import app.wonton.protocol.MessageContent
 import app.wonton.protocol.OutgoingMessage
 import app.wonton.protocol.PanelItem
 import app.wonton.protocol.RoomMembership
@@ -78,6 +80,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.launch
 
 private const val TAG = "RoomScreen"
 
@@ -457,6 +460,13 @@ private fun Messages(
     }
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
+    val scope = rememberCoroutineScope()
+    // Agent 在等回答的卡片就在这个房间：滚到那张卡片所在的消息，不另开界面（ADR-0082）。
+    val openCard: (String) -> Unit = { cardId ->
+        val index = newestFirst.indexOfFirst { it.cardId == cardId }
+        // 列表最前面是还没交出去的发送中消息，时间线的下标要接在它们后面。
+        if (index >= 0) scope.launch { listState.animateScrollToItem(index + outgoing.size) }
+    }
     // 滚到最上面（最早的一条露出来）时加载更早的消息；加载完条目变多，还在顶上就再加载一页。
     LaunchedEffect(listState, roomId) {
         snapshotFlow { listState.reachedTop(timeline) }
@@ -506,7 +516,11 @@ private fun Messages(
                         },
                         onCardAction = onAction,
                         onOpenMenu = onOpenMenu,
-                    onReply = onReply,
+                        onReply = onReply,
+                        onOpenAgentCard = openCard,
+                        onAnswerAgentChoice = { key ->
+                            onAction(Action.AnswerAgentChoice(roomId, item.id, key))
+                        },
                     )
                 }
             }
@@ -539,6 +553,10 @@ private fun TimelineItem.joins(other: TimelineItem?): Boolean {
 
 private val TimelineItem.senderId
     get() = (content as? TimelineContent.Message)?.message?.senderId
+
+/// 这条消息带着的确认卡片 ID：Agent 的等待行靠它滚到卡片。
+private val TimelineItem.cardId
+    get() = ((content as? TimelineContent.Message)?.message?.body as? MessageContent.Confirmation)?.view?.card?.id
 
 internal val TimelineItem.isOwn
     get() = (content as? TimelineContent.Message)?.message?.isOwn == true

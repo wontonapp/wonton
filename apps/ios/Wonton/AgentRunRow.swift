@@ -170,23 +170,23 @@ struct AgentRunRow: View {
         case .working:
             return run.step ?? ""
         case .waiting:
-            return String(localized: "agentRun.waiting")
+            return String(localized: .AgentRun.agentRunWaiting)
         case .done:
             if let steps = run.steps {
-                return String(format: String(localized: "agentRun.doneSteps"), steps)
+                return String(localized: .AgentRun.agentRunDoneSteps(steps))
             }
-            return String(localized: "agentRun.done")
+            return String(localized: .AgentRun.agentRunDone)
         case .failed:
             switch run.end {
             case .cancelled:
-                return String(localized: "agentRun.cancelled")
+                return String(localized: .AgentRun.agentRunCancelled)
             case .uncertain:
-                return String(localized: "agentRun.uncertain")
+                return String(localized: .AgentRun.agentRunUncertain)
             case nil:
                 return run.result ?? ""
             }
         case .uncertain:
-            return String(localized: "agentRun.uncertain")
+            return String(localized: .AgentRun.agentRunUncertain)
         case .other:
             return run.body ?? ""
         }
@@ -216,7 +216,7 @@ struct AgentRunRow: View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
             HStack(spacing: WontonTheme.spacing.s8) {
                 WontonIcon.agent.view(size: WontonTheme.size.iconSmall)
-                Text(String(format: String(localized: "agentRun.asking"), run.senderName))
+                Text(String(localized: .AgentRun.agentRunAsking(run.senderName)))
                     .wontonText(WontonTheme.typography.supporting)
             }
             .foregroundStyle(Color(colors.accentInk))

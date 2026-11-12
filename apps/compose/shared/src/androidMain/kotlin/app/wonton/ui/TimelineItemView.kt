@@ -45,6 +45,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.AgentRunEnd as SerAgentRunEnd
+import app.wonton.protocol.AgentRunState
 import app.wonton.protocol.MessageAction
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.RichBlockKind
@@ -69,6 +71,7 @@ import java.util.Date
 /**
  * `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。`joinsPrevious`、`joinsNext`：和上一条、下一条是
  * 不是同一个人连着发的。`onRetry`、`onCancel` 处理发送失败的这一条，`onCardAction` 是确认卡片上的操作。
+ * `onOpenAgentCard` 打开这张等回答的卡片，`onAnswerAgentChoice` 回答 Bot 自己的提问（ADR-0082）。
  */
 @Composable
 fun TimelineItemView(
@@ -82,6 +85,8 @@ fun TimelineItemView(
     onCardAction: (Action) -> Unit,
     onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
     onReply: (TimelineMessage) -> Unit,
+    onOpenAgentCard: (String) -> Unit,
+    onAnswerAgentChoice: (String) -> Unit,
 ) {
     when (val content = item.content) {
         is TimelineContent.Message -> MessageBubble(
@@ -97,10 +102,11 @@ fun TimelineItemView(
             onReply,
         )
         is TimelineContent.Notice -> CenteredNote(content.text)
-        is TimelineContent.AgentRun ->
-            // 一轮 Agent 任务的进度行（ADR-0082）：完整的样子在 App 壳那个 PR 里做，先按普通的
-            // Bot 提示消息显示 `body`——和其他不认识这个格式的客户端一样。
-            CenteredNote(content.body)
+        is TimelineContent.AgentRun -> AgentRunRowView(
+            agentRunRow(content),
+            onOpenCard = onOpenAgentCard,
+            onAnswerChoice = onAnswerAgentChoice,
+        )
         is TimelineContent.ProfileChange -> CenteredNote(
             content.previousName
                 ?.let { stringResource(R.string.timeline_profile_rename, it, content.name) }
@@ -135,6 +141,31 @@ fun TimelineItemView(
 private fun RowScope.NoteEdge() {
     Box(Modifier.weight(1f).height(WontonTheme.size.hairline).background(WontonTheme.colors.separator.toColor()))
 }
+
+/// 核心的条目映射成状态行的数据（ADR-0082）：状态值不认识时落到 `Other`，`body` 原样显示。
+private fun agentRunRow(run: TimelineContent.AgentRun): AgentRunRowModel = AgentRunRowModel(
+    state = when (run.state) {
+        AgentRunState.Working -> AgentRunRowState.Working
+        AgentRunState.Waiting -> AgentRunRowState.Waiting
+        AgentRunState.Done -> AgentRunRowState.Done
+        AgentRunState.Failed -> AgentRunRowState.Failed
+        AgentRunState.Uncertain -> AgentRunRowState.Uncertain
+        is AgentRunState.Other -> AgentRunRowState.Other
+    },
+    step = run.step,
+    steps = run.steps?.toInt(),
+    progress = run.progress,
+    result = run.result,
+    end = when (run.end) {
+        AgentRunEnd.Cancelled -> SerAgentRunEnd.Cancelled
+        AgentRunEnd.Uncertain -> SerAgentRunEnd.Uncertain
+        null -> null
+    },
+    body = run.body,
+    cardId = run.cardId,
+    choices = run.choices.map { AgentRunRowChoice(it.key, it.label) },
+    senderName = run.senderName,
+)
 
 @Composable
 private fun CenteredNote(text: String) {
