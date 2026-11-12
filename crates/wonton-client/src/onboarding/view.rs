@@ -290,6 +290,7 @@ mod tests {
                 can_reset: false,
                 recovery_next_step: RecoveryNextStep::None,
                 verification_flow: None,
+                key_handoff: None,
             },
             installing_bots: Vec::new(),
             rooms: vec![RoomRow {

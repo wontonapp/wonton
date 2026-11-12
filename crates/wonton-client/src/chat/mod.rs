@@ -25,6 +25,7 @@ mod display_name;
 mod draft;
 mod follow_home;
 mod forward;
+mod handoff;
 mod installs;
 mod layout;
 mod links;
@@ -91,6 +92,9 @@ const SEND_TIMEOUT: Duration = Duration::from_secs(60);
 pub(crate) struct ChatLink {
     runtime: Handle,
     home: Arc<HomeLink>,
+    /// 本作用域的槽位号（`ServerRow::id`）：后台通知的 `server_id` 填它，壳点开通知按它切服务器；
+    /// 不是 home 里的 endpoint ID，那是配对键，槽位列表里没有。
+    slot: String,
     storage: ChatStorage,
     view: watch::Sender<ChatViewModel>,
     active: tokio::sync::Mutex<Option<Active>>,
@@ -131,6 +135,8 @@ pub(crate) struct ChatLink {
     /// App 在后台：保持连接下同步到的该通知的消息收集进 `background_notifications`。
     background: AtomicBool,
     verification: Mutex<Option<verification::Control>>,
+    /// “添加设备”页开着、还能自动接受一个新设备的确认请求（ADR-0087）。
+    handoff_armed: AtomicBool,
     relogin: connect::Relogin,
     external: bool,
 }
@@ -190,6 +196,7 @@ impl ChatLink {
     pub(crate) fn new(
         runtime: Handle,
         home: Arc<HomeLink>,
+        slot: &str,
         data_dir: &Path,
         card_success: CardSuccess,
         plugins: Arc<crate::plugins::PluginsLink>,
@@ -212,6 +219,7 @@ impl ChatLink {
             can_reset: false,
             recovery_next_step: RecoveryNextStep::None,
             verification_flow: None,
+            key_handoff: None,
         };
         recovery::refresh(&mut encryption);
         let view = reuse(
@@ -244,6 +252,7 @@ impl ChatLink {
         let chat = Arc::new(Self {
             runtime: runtime.clone(),
             home: home.clone(),
+            slot: slot.to_owned(),
             storage,
             view,
             active: tokio::sync::Mutex::new(None),
@@ -269,6 +278,7 @@ impl ChatLink {
             draft_writes,
             background: AtomicBool::new(false),
             verification: Mutex::new(None),
+            handoff_armed: AtomicBool::new(false),
             relogin: connect::Relogin::default(),
             external,
         });

@@ -57,11 +57,22 @@ async fn backlog_beyond_the_cap_is_listed_not_processed() {
         ));
     }
     harness.restart_with(backlog).await;
-    for index in 2..8 {
-        let prompts = harness.wait_prompts(1).await;
-        assert_eq!(prompts[0].1, format!("停机第{index}句"), "补处理顺序错");
-        harness.respond(&prompts[0].0, "好").await;
-    }
+    // 补处理的头一条开一轮，后面几条按顺序插进这一轮。
+    let prompts = harness.wait_prompts(1).await;
+    assert_eq!(prompts[0].1, "停机第2句");
+    let agent = &harness.agent;
+    crate::bridge::test_support::wait_for(|| async { agent.steers().await.len() >= 5 }).await;
+    let steered = agent
+        .steers()
+        .await
+        .iter()
+        .map(|blocks| blocks[0]["text"].as_str().unwrap_or_default().to_owned())
+        .collect::<Vec<_>>();
+    let expected = (3..8)
+        .map(|index| format!("停机第{index}句"))
+        .collect::<Vec<_>>();
+    assert_eq!(steered, expected, "补处理顺序错");
+    harness.respond(&prompts[0].0, "好").await;
     let notices_before = notices(&harness);
     assert_eq!(notices_before.len(), 1, "notices={notices_before:?}");
     assert!(
@@ -112,10 +123,10 @@ async fn late_decryption_is_still_delivered_after_the_boundary_moved() {
     let prompts = harness.wait_prompts(1).await;
     assert_eq!(prompts[0].1, "后来的话");
     harness.send_at("$m1", 100, "迟解密的话");
-    // 上一轮还在跑：重投的这句按平时一样排队，等这轮结束才到 Agent。
-    harness.respond(&prompts[0].0, "好").await;
-    let prompts = harness.wait_prompts(1).await;
-    assert_eq!(prompts[0].1, "迟解密的话");
+    // 上一轮还在跑：重投的这句和平时一样插进这一轮。
+    let agent = &harness.agent;
+    crate::bridge::test_support::wait_for(|| async { !agent.steers().await.is_empty() }).await;
+    assert_eq!(agent.steers().await[0][0]["text"], "迟解密的话");
     harness.finish().await;
 }
 

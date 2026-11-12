@@ -8,6 +8,7 @@
 //! 认出来，补处理最近几条，超出的在房间里如实列出（`routing::route_backlog`）。
 
 pub(crate) mod attachments;
+mod busy;
 mod permissions;
 mod routing;
 mod run_status;
@@ -73,9 +74,8 @@ impl Bridge {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum JobKind {
     Normal,
-    Queue,
+    /// `/wonton interrupt <文字>`：调试用，不进帮助和菜单。
     Interrupt,
-    Steer,
     End,
 }
 

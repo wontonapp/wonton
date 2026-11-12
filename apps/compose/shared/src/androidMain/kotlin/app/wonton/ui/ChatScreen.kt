@@ -46,6 +46,7 @@ import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.BotView
+import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
@@ -55,6 +56,7 @@ import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.LocalWontonBottomInset
+import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.wontonContentPaddingValues
@@ -67,6 +69,7 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.accentFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Add
+import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.LockFill
 import app.wonton.ui.icons.WontonIcon
@@ -98,7 +101,12 @@ fun ChatRoute(
     when {
         navigation.showingBackup -> {
             BackHandler { navigation.showingBackup = false }
-            ChatBackupScreen(viewModel.encryption, onAction, onClose = { navigation.showingBackup = false })
+            ChatBackupScreen(
+                viewModel.encryption,
+                onAction,
+                onContinueHandoff = { navigation.keyHandoffDeferred = false },
+                onClose = { navigation.showingBackup = false },
+            )
         }
         navigation.startingChat -> {
             BackHandler { navigation.startingChat = false }
@@ -147,7 +155,12 @@ fun ChatRoute(
                 pluginNavigation = pluginNavigation,
                 onAction = onAction,
                 onOpenRoom = { navigation.openRoom = it },
-                onOpenBackup = { navigation.showingBackup = true },
+                onOpenBackup = {
+                    // 收起了的交接页从提醒再打开，不进备份页（ADR-0087）。
+                    if (viewModel.encryption.backupReminder == BackupReminder.CONTINUE_ON_OTHER_DEVICE) {
+                        navigation.keyHandoffDeferred = false
+                    } else navigation.showingBackup = true
+                },
                 onStartChat = { navigation.startingChat = true },
             )
         }
@@ -249,7 +262,8 @@ private fun ChatListScreen(
 internal fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
     val account = viewModel.account
     val sync = viewModel.sync
-    val reminder = viewModel.encryption.backupReminder?.text
+    val backupReminder = viewModel.encryption.backupReminder
+    val reminder = backupReminder?.text
     // 连不上由标题栏说，连上后自动重来。
     val failure = (account as? ChatAccount.Failed)?.takeIf { it.reason != ChatFailure.TRANSPORT_UNAVAILABLE }
         ?.let { it.reason.problem(it.message) }
@@ -260,6 +274,11 @@ internal fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
         ChatAccount.SigningIn -> stringResource(R.string.chat_signing_in)
         is ChatAccount.Reconnecting -> stringResource(R.string.chat_status_reconnecting)
         else -> null
+    }
+    val context = LocalContext.current
+    val reminderPrefs = remember { BackupReminderPrefs(context) }
+    var reminderDismissed by remember(backupReminder) {
+        mutableStateOf(backupReminder != null && reminderPrefs.dismissed(backupReminder))
     }
     if (account != ChatAccount.SignedOut && listOfNotNull(failure, progress, reminder).isEmpty()) return
     Column(
@@ -273,7 +292,32 @@ internal fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
         progress?.let {
             Text(it, style = WontonTheme.typography.supporting, color = WontonTheme.colors.textSecondary.toColor())
         }
-        reminder?.let { WontonGroup { WontonRow(it, showsForward = true, onClick = onOpenBackup) } }
+        if (reminder != null && !reminderDismissed && backupReminder != null) {
+            WontonGroup {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable(onClick = onOpenBackup)
+                        .heightIn(min = WontonTheme.size.target)
+                        .padding(start = WontonTheme.spacing.s16),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        reminder,
+                        Modifier.weight(1f).padding(vertical = WontonTheme.spacing.s12),
+                        style = WontonTheme.typography.body,
+                        color = WontonTheme.colors.textPrimary.toColor(),
+                    )
+                    WontonIconButton(
+                        WontonIcon.Close,
+                        stringResource(R.string.common_close),
+                        {
+                            reminderPrefs.dismiss(backupReminder)
+                            reminderDismissed = true
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 
