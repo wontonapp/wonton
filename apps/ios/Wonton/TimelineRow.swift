@@ -94,6 +94,8 @@ struct TimelineRow: View {
         switch end {
         case .cancelled: .cancelled
         case .uncertain: .uncertain
+        // 以后新加的结束原因不单独画，显示 result 和失败的红色。
+        case .other: nil
         case nil: nil
         }
     }

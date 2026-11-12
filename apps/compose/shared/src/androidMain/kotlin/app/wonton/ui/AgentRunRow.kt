@@ -89,7 +89,7 @@ fun AgentRunRowView(
         StatusLine(run, onOpenCard)
         if (run.state == AgentRunRowState.Working && run.progress != null) {
             LinearProgressIndicator(
-                progress = { run.progress ?: 0f },
+                progress = { run.progress },
                 Modifier.fillMaxWidth(),
                 color = WontonTheme.colors.accentInk.toColor(),
             )

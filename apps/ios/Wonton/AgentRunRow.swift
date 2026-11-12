@@ -173,7 +173,7 @@ struct AgentRunRow: View {
             return String(localized: .AgentRun.agentRunWaiting)
         case .done:
             if let steps = run.steps {
-                return String(localized: .AgentRun.agentRunDoneSteps(steps))
+                return String(localized: .AgentRun.agentRunDoneSteps(count: steps))
             }
             return String(localized: .AgentRun.agentRunDone)
         case .failed:
