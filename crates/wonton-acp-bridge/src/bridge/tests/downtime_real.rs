@@ -51,6 +51,8 @@ async fn a_message_sent_while_down_is_processed_after_a_real_restart() {
             idle_timeout: Duration::from_secs(600),
             idle_tick: Duration::from_millis(100),
             topic_idle: Duration::from_secs(1800),
+            undecryptable_after: Duration::from_secs(60),
+            undecryptable_every: Duration::from_secs(600),
         },
     };
 

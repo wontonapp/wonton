@@ -218,6 +218,7 @@ chat-op-mark-read-failed = ルームを既読にできませんでした：{ $er
 chat-op-direct-chat-failed = ダイレクトチャットを開始できませんでした：{ $error }
 chat-op-send-text-failed = メッセージを送信できませんでした：{ $error }
 chat-op-send-image-failed = 画像を送信できませんでした：{ $error }
+chat-op-send-preview-failed = リンクのプレビューを付けられませんでした：{ $error }
 chat-op-forward-failed = メッセージを転送できませんでした：{ $error }
 chat-op-redact-failed = メッセージを取り消せませんでした：{ $error }
 ## ファイル転送と再生の詳細情報。転送リストの項目、ファイルカード、再生失敗の説明に表示されます。
