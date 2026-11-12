@@ -76,12 +76,6 @@ impl Instance {
         format!("{}--{service}", self.network(slug))
     }
 
-    /// Bot 服务的容器名 `<插件网络>--<服务名>--<Bot 名>`。服务名不能含 `--`，Bot 名也不能（一个插件多个
-    /// Bot 的名字规则），所以同样不会重名；单 `-` 的写法会和服务名混在一起。
-    pub fn bot_container(&self, slug: &str, service: &str, bot: &str) -> String {
-        format!("{}--{service}--{bot}", self.network(slug))
-    }
-
     /// 命名卷 `<插件网络>--<卷名>`，理由同容器名。
     pub fn volume(&self, slug: &str, volume: &str) -> String {
         format!("{}--{volume}", self.network(slug))

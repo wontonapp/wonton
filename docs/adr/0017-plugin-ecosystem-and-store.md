@@ -1,6 +1,6 @@
 # ADR-0017 插件生态：独立仓库、商店和来源
 
-- 状态：已接受（2026-10-30）。“App 只按来源安装”“没有降级”和 `Local` 的标签已被 [ADR-0031](0031-plugin-sources.md) 取代；“谁能装”里 Bot 的部分和小程序 JS SDK 已被 [ADR-0033](0033-plugin-tabs.md) 取代；导入 CasaOS 已撤销（主人 2026-11-04 定）；挑语言的规则已被 [ADR-0043](0043-app-languages.md) 取代；“一个插件一个 Git 仓库”已被 [ADR-0079](0079-agent-plugins-monorepo.md) 修改：插件包也可以是仓库里的一个子目录
+- 状态：已接受（2026-10-30）。“App 只按来源安装”“没有降级”和 `Local` 的标签已被 [ADR-0031](0031-plugin-sources.md) 取代；“谁能装”里 Bot 的部分和小程序 JS SDK 已被 [ADR-0033](0033-plugin-tabs.md) 取代；导入 CasaOS 已撤销（主人 2026-11-04 定）；挑语言的规则已被 [ADR-0043](0043-app-languages.md) 取代
 
 ## 背景
 
@@ -24,7 +24,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 
 ### 插件仓库和版本
 
-- 一个插件一个 Git 仓库，仓库根目录就是插件包（已被 ADR-0079 修改：也可以是仓库里的一个子目录，来源带子目录，tag 为 `<子目录>/v<版本>`）：`docker-compose.yml` 加它引用的文件（插件规范的“插件包”）。仓库里的其他
+- 一个插件一个 Git 仓库，仓库根目录就是插件包：`docker-compose.yml` 加它引用的文件（插件规范的“插件包”）。仓库里的其他
   文件（README、没有被 `notices` 引用的 LICENSE、Dockerfile、源码、测试脚本）核心不取。
 - 发布就是打 tag `v<版本>`，`<版本>` 是这个提交里清单的 `version`（语义化版本）。核心取包时核对两者一致，不一致拒绝。带
   预发布后缀的版本（`v1.2.0-beta.1`）可以按 tag 明确安装，不进商店，也不作为升级提示。
@@ -110,14 +110,8 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
   装着的就是审核过的那份。提交对不上的保持社区，主人升级到官方索引里的版本才换过来。
 - 提示：已安装列表里给出能升级到的版本、更新说明（清单的 `release_notes`），以及权限有没有变。App 显示角标。M1 不另发消息，
   以后在“Wonton”私聊里发（ADR-0016）。
-- 一键更新（2026-11-09 定）：商店列表和详情页的“获取”“更新”点了就开始，不跳页；只有要主人拿主意的才弹出确认页。核心取
-  预览、判断要不要请主人拿主意，规则在核心写成测试：装不了、缺资料、要用设备、有核心不支持的权限；安装时有带风险等级的
-  权限或标了重点的提醒（内存、架构、自动登录这类说明不拦）；更新时新增了权限，或者这个插件有 Bot 开了“始终允许”
-  （ADR-0024 规定这种不能静默升级）。核心判完把要确认的放进 `PluginsViewModel.confirmation`，壳照着打开确认页。
-- 商店页右上角的更新图标带着可更新数，点了弹一次确认（列出这些应用），然后逐个升级：不用拿主意的直接开始，要拿主意的排进
-  确认页，一次一条。侧边栏“应用商店”的角标是同一个数。
-- 升级要主人拿主意时，和安装用同一个确认页：列出新版本的全部权限，新增的标出来，高权限照样醒目；新版本多申请了权限，就要
-  重新确认全部权限。
+- 升级要主人确认，和安装用同一个确认页：列出新版本的全部权限，新增的标出来，高权限照样醒目；新版本多申请了权限，就要重新
+  确认全部权限。
 - 执行：保留数据、密钥、Bot 账号和设备（不换加密身份）、模型凭据和 OIDC 客户端，只换容器。新版本健康检查不过就回滚，按旧
   记录和旧容器当时的镜像重建旧版本的容器。没有降级，回滚只发生在这次升级失败时。（“没有降级”已被 ADR-0031 取代。）
 - 数据迁移由应用自己负责。迁移做到一半才失败时，旧版本可能读不了新数据；插件作者要在更新说明里写明这类风险。升级前备份的
@@ -183,7 +177,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 | 商店信息、图标、截图 | 做 | 见上 |
 | 主屏入口 | 做 | 底栏的“应用”页按图标和名字列出已安装的插件，最后一格进应用商店，商店不单占一个标签。界面上对普通用户把插件叫“应用”，插件作者看的校验信息和规范仍叫插件：有网页的点开就是小程序（“模型设置”就在这里）；Agent 插件点开是和它的 Bot 的私聊。图标下面列连接、等确认的卡片和存储，拿不到的显示不确定 |
 | 深链 | 先定格式 | `wonton://plugin/<id>`，可选 `?path=/…`，打开插件网页的某一页。格式定下后 Bot 就可以在消息里这样写；App 让消息和通知里的这种链接能点，M2 做 |
-| 设置表单原生渲染（`settings`） | 合同见 ADR-0077 | JSON Schema 定义非秘密设置；核心校验、保存和按渲染漂移重建，原生控件由归一化表单驱动 |
+| 设置表单原生渲染（`settings`） | 预留 | JSON Schema 的子集、设置的值怎样交给插件（注入变量、重建容器）待定（插件规范的待定问题）；M1 的插件用自己的网页做设置 |
 | 多个入口和快捷方式 | 预留 | 清单字段 `shortcuts`（名字、路径、图标），M2 定 |
 | 插件通知（`notify`） | 做 | 插件经核心给主人发通知，进“Wonton”私聊，按级别推送，见 ADR-0047 |
 | 小程序 JS SDK | 不做 | 已被 ADR-0033 取代：用 MCP Apps 的方法名，原生能力按那里的表扩展 |
@@ -206,9 +200,6 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 | POST | `plugins` | `InstallRequest`（JSON），或者插件包加 `?grant=` | 201 `InstalledPlugin` |
 | POST | `plugins/{id}/upgrade/preview` | 空（升到提示的版本），或者插件包 | `InstallPreview` |
 | POST | `plugins/{id}/upgrade` | `UpgradeRequest`（JSON），或者插件包加 `?grant=` | `InstalledPlugin` |
-| GET | `plugins/{id}/settings` | — | `PluginSettingsView`（ADR-0077） |
-| POST | `plugins/{id}/settings/preview` | `PluginSettingsUpdate` | `PluginSettingsView`（只校验） |
-| PUT | `plugins/{id}/settings` | `PluginSettingsUpdate` | `PluginSettingsView`（保存并重建） |
 | DELETE | `plugins/{id}?purge=true` | — | 卸载报告 |
 | GET | `PluginImage.path` 给出的地址 | — | `image/png` 或 `image/jpeg`，可以一直缓存 |
 | GET | `storage` | — | `StorageUsage`（存数据的那块盘） |
@@ -219,24 +210,19 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 - 新的错误类别：`source_unavailable`（503，家里的服务器连不上插件的来源，如 GitHub）、`not_found`（404，来源里没有这个
   仓库或版本）、`changed`（409，插件包在预览之后变了，摘要对不上，要重新预览）、`images_unavailable`（503，核心起不了
   处理图片的进程；图片本身处理不了是 `invalid_input`）。原有的类别照旧（`invalid_input`、`permission_denied`、
-  `unsupported`、`conflict`、`not_installed` 等）。设置另有 `settings_schema_invalid`（包的 Schema 不合格）和
-  `settings_invalid`（值过不了 Schema），见 [ADR-0077](0077-plugin-settings.md)。
+  `unsupported`、`conflict`、`not_installed` 等）。
 - 安装、升级和卸载在核心里单独执行：请求断开了也照样做完，结果体现在已安装列表里。
 
 **客户端核心**（`ClientCore`）：
 
 - 状态：`subscribe_plugins()` 推 `PluginsViewModel`：已安装的插件、商店、最近一次取列表的问题，以及安装、升级、卸载的
-  进展（`tasks`）、可更新的应用（`updatable`）、侧边栏的内容（`sidebar`），以及一键装、一键升的进展
-  （`pending`）和要主人拿主意的确认（`confirmation`）。
+  进展（`tasks`）。
 - 操作：`SetLanguages`（壳把系统的语言偏好告诉核心，核心据此带 `Accept-Language`）、`RefreshPlugins`、
-  `RefreshStore { force }`、`InstallPlugin { preview, secrets, settings }`、`UpgradePlugin { preview, secrets, settings }`、`UninstallPlugin`、
-  `DismissPluginTask`，以及一键装、一键升：`InstallNow { source }`、`UpgradeNow { plugin_id }`、`UpgradeAll`、
-  `DismissStoreConfirmation`。安装和升级把确认页渲染的那份预览原样交回，核心按它授予列出的全部权限：确认页上看到的
-  就是授予的，壳不用自己拼权限列表。
-- 直接返回结果的调用：`store_plugin(source)`、`installed_plugin(id)`（详情页）、`plugin_detail(route)`（详情页：
-  插件还在时给 `PluginDetail`，已经卸掉时给 `Close` 让壳关掉这一页）、`plugin_detail_after_task(route)`（详情页上的
-  任务做完后重取；卸载确定做成了直接给 `Close`，失败或等不到结果时由重取认出“没装”再关）、`preview_install(source)`、
-  `preview_upgrade(id)`（确认页）、`plugin_settings(id)`、`preview_plugin_settings(id, update)`、`set_plugin_settings(id, update)`（ADR-0077）、`load_plugin_image(image)`（经隧道取图片并缓存，返回 PNG 或 JPEG 的字节，同
+  `RefreshStore { force }`、`InstallPlugin { preview }`、`UpgradePlugin { preview }`、`UninstallPlugin`、
+  `DismissPluginTask`。安装和升级把确认页渲染的那份预览原样交回，核心按它授予列出的全部权限：确认页上看到的就是授予的，
+  壳不用自己拼权限列表。
+- 直接返回结果的调用：`store_plugin(source)`、`installed_plugin(id)`（详情页）、`preview_install(source)`、
+  `preview_upgrade(id)`（确认页）、`load_plugin_image(image)`（经隧道取图片并缓存，返回 PNG 或 JPEG 的字节，同
   `load_media`）、`search_store(query)`（在取到的商店列表里按名字、说明、标签和 ID 找）。
 - 失败的原因（`PluginFailure`）按核心的错误类别区分，壳据此提示下一步：连不上家里的服务器、本设备不被认、家里的服务器
   连不上来源、来源里没有、插件包变了、核心不支持（权限、架构、规范版本）、冲突（已经装了或正在装）、插件包不合法、
@@ -255,7 +241,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 
 - 官方索引不签名：GitHub 账号被盗或 TLS 被劫持时，索引可能被换掉；靠插件包摘要和主人的权限确认兜底，签名以后补上。
 - 依赖 GitHub：社区插件的发现和安装都离不开它；连不上 GitHub 的国内主机上，只有已装的插件和预装插件稳定可用；官方列表只能显示磁盘上次取到的。
-- 核心多了 SVG 渲染和图片解码，处理的是不可信输入：靠大小和像素上限，再放进限了内存和时间的子进程里（子进程由一个常驻助手起，见 [ADR-0075](0075-image-helper-process.md)）；resvg 不执行
+- 核心多了 SVG 渲染和图片解码，处理的是不可信输入：靠大小和像素上限，再放进限了内存和时间的子进程里；resvg 不执行
   脚本、不取外部资源。子进程只限资源，不是沙箱：它和核心是同一个用户，解码器的内存安全漏洞仍会波及核心的数据。
 - 上游的 tag 可以改写，仓库可以删除：已安装的插件按提交记录，镜像在本地，不受影响；但仓库删掉以后就重装不了。
 

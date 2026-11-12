@@ -8,7 +8,7 @@ use super::storage::StoredSession;
 use super::{ChatLink, failure, login};
 use crate::l10n::{CATALOG, language};
 
-/// 连接信息里没有设备名时的显示名（`ConnectHome` 给的连接信息没有）。
+/// 本设备在 Matrix 服务器上的显示名。
 const DEVICE_NAME: &str = "Wonton App";
 
 impl ChatLink {
@@ -18,14 +18,9 @@ impl ChatLink {
         server_id: String,
     ) -> Result<MatrixSession, (ChatFailure, String)> {
         let lang = language();
-        // Matrix 设备名用配对时填的名字，主人才能在设备列表里认出是哪台。
-        let device_name = self
-            .home
-            .device_name()
-            .unwrap_or_else(|| DEVICE_NAME.to_owned());
         let config = |homeserver_url: String| SessionConfig {
             homeserver_url,
-            device_name: device_name.clone(),
+            device_name: DEVICE_NAME.to_owned(),
             store: StoreConfig::Sqlite {
                 path: self.storage.store_dir(),
                 passphrase: None,
@@ -81,50 +76,7 @@ impl ChatLink {
         }
         self.save(&session, token.homeserver_url, server_id)
             .map_err(storage_failure)?;
-        // 扫码配对来的新设备接着等另一台设备交出密钥（ADR-0087）；之后恢复会话时靠这个标记接着交接。
-        if self.home.paired_with_code() {
-            self.storage.begin_key_handoff().map_err(storage_failure)?;
-        }
         Ok(session)
-    }
-
-    /// 外部 Matrix 账号的槽位（ADR-0051）：只用登录时存下的状态和存储恢复，直连 homeserver，不经家里的代理。
-    /// 没有登录状态（或存储丢了）就只能重新登录这个账号，按被拒处理，不自己去登录。
-    pub(super) async fn sign_in_external(&self) -> Result<MatrixSession, (ChatFailure, String)> {
-        let lang = language();
-        let stored = self
-            .storage
-            .session()
-            .map_err(|e| (ChatFailure::Upstream, e.to_string()))?
-            .filter(|_| self.storage.has_store())
-            .ok_or_else(|| {
-                (
-                    ChatFailure::Unauthorized,
-                    l10n!(CATALOG, lang, "chat-sign-in-external-missing"),
-                )
-            })?;
-        let config = SessionConfig {
-            homeserver_url: stored.homeserver_url,
-            device_name: DEVICE_NAME.to_owned(),
-            store: StoreConfig::Sqlite {
-                path: self.storage.store_dir(),
-                passphrase: None,
-            },
-            proxy: None,
-        };
-        MatrixSession::restore(&config, stored.session)
-            .await
-            .map_err(|e| {
-                (
-                    failure(&e),
-                    l10n!(
-                        CATALOG,
-                        lang,
-                        "chat-sign-in-restore-failed",
-                        reason = e.to_string()
-                    ),
-                )
-            })
     }
 
     /// 存下的登录状态，只要 `server_id` 这台服务器的。别的服务器的令牌拿到这里只会被拒，看着像这台设备被吊销了，那边的
@@ -146,7 +98,7 @@ impl ChatLink {
             view.problem = None;
             view.encryption.verification = DeviceVerification::Unknown;
             view.encryption.recovery = RecoveryStatus::Unknown;
-            super::recovery::refresh(&mut view.encryption);
+            super::recovery::update_reminder(&mut view.encryption);
         });
         Ok(None)
     }

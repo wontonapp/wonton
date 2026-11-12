@@ -81,7 +81,7 @@ impl Rig {
             "format": 1,
             "plugins": [],
             "docs": {
-                "source": "github:wontonapp/wonton-docs",
+                "source": "github:geraldpeng6/wonton-docs",
                 "commit": commit,
                 "min_core": min_core,
                 "files": files,
@@ -128,11 +128,10 @@ async fn an_unknown_topic_lists_what_can_be_asked() {
         .answer(Some("add device"), None)
         .await
         .unwrap_err();
-    assert_eq!(error.kind(), "invalid_input");
-    let message = error.to_string();
+    assert!(error.starts_with("invalid_input"), "{error}");
     assert!(
-        message.contains("devices") && message.contains("models"),
-        "{message}"
+        error.contains("devices") && error.contains("models"),
+        "{error}"
     );
 }
 
@@ -141,7 +140,7 @@ async fn no_docs_at_all_is_reported() {
     let rig = Rig::new();
     fs::remove_dir_all(rig.dir.path().join("image")).unwrap();
     let error = rig.help(None).answer(None, None).await.unwrap_err();
-    assert_eq!(error.kind(), "docs_unavailable");
+    assert!(error.starts_with("docs_unavailable"), "{error}");
 }
 
 #[tokio::test]
@@ -285,7 +284,7 @@ async fn the_default_language_is_the_one_the_app_asked_for() {
     let before = help.answer(Some("devices"), None).await.unwrap();
     assert_eq!(before["lang"], "en");
     rig.manager
-        .note_person_languages("owner", Some("zh-Hans-CN, en;q=0.8"));
+        .note_owner_languages(Some("zh-Hans-CN, en;q=0.8"));
     let after = help.answer(Some("devices"), None).await.unwrap();
     assert_eq!(after["lang"], "zh");
 }
@@ -319,8 +318,7 @@ async fn agents_reach_the_docs_through_the_bus() {
     let s = setup(Engine::unreachable_for_test(), Duration::from_secs(60)).await;
     let missing = s.call("wonton__help", json!({})).await;
     assert!(failed(&missing));
-    let meta = missing.meta.as_ref().unwrap();
-    assert_eq!(meta.0["app.wonton/failure"], "service_unavailable");
+    assert!(text(&missing).starts_with("service_unavailable"));
 
     let rig = Rig::new();
     s.bus.attach_help(rig.help(None));

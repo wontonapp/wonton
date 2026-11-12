@@ -14,7 +14,8 @@ use bollard::query_parameters::{
     CreateContainerOptionsBuilder, DownloadFromContainerOptionsBuilder,
     KillContainerOptionsBuilder, ListContainersOptionsBuilder, ListNetworksOptionsBuilder,
     ListVolumesOptionsBuilder, LogsOptionsBuilder, RemoveContainerOptionsBuilder,
-    RemoveVolumeOptionsBuilder, StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
+    RemoveVolumeOptionsBuilder, RestartContainerOptionsBuilder, StopContainerOptionsBuilder,
+    UploadToContainerOptionsBuilder,
 };
 use futures_util::StreamExt;
 use wonton_l10n::Arg;
@@ -192,8 +193,8 @@ pub struct Engine {
     pub(super) held_subnets: Arc<std::sync::Mutex<Vec<Ipv4Net>>>,
     pub(super) network_pool: NetworkPool,
     pub(super) network_detector: Detector,
-    /// 语言文件和主人的用户名，按它找主人的语言（[`Self::set_languages`]）；没接上时按默认语言写。
-    languages: Option<(std::path::PathBuf, String)>,
+    /// 主人的语言存放在哪（[`Self::set_owner_languages_path`]）；没接上时按默认语言写。
+    owner_languages_path: Option<std::path::PathBuf>,
 }
 
 type Result<T> = std::result::Result<T, EngineError>;
@@ -213,22 +214,6 @@ impl Engine {
         Ok(Self::new(docker))
     }
 
-    /// 不连守护进程的客户端，给从来不碰 Docker 的测试用：bollard 只检查路径存在，
-    /// 建一个空的 socket 文件就够，没有 Docker 的机器上也建得出来。
-    #[cfg(test)]
-    pub(crate) fn for_test() -> Self {
-        let path = std::env::temp_dir().join(format!("wonton-test-{}.sock", std::process::id()));
-        std::fs::write(&path, b"").expect("写测试 socket 占位文件");
-        Self::new(
-            Docker::connect_with_unix(
-                &format!("unix://{}", path.display()),
-                120,
-                bollard::API_DEFAULT_VERSION,
-            )
-            .expect("构造 Docker 客户端"),
-        )
-    }
-
     fn new(docker: Docker) -> Self {
         Self {
             docker,
@@ -237,25 +222,21 @@ impl Engine {
             held_subnets: Arc::default(),
             network_pool: NetworkPool::default(),
             network_detector: Detector::Here,
-            languages: None,
+            owner_languages_path: None,
         }
     }
 
-    /// 语言文件（[`super::store::Store::people_languages`]）和主人的用户名；读不到时按默认语言写
-    /// （接线由核心启动时做）。
-    pub fn set_languages(&mut self, file: std::path::PathBuf, owner: String) {
-        self.languages = Some((file, owner));
+    /// 主人语言文件的路径：读不到时按默认语言写（接线由核心启动时做）。
+    pub fn set_owner_languages_path(&mut self, path: std::path::PathBuf) {
+        self.owner_languages_path = Some(path);
     }
 
     pub(super) fn owner_languages(&self) -> Languages {
-        match &self.languages {
-            Some((file, owner)) => Languages::from_header(
-                super::store::read_people_languages(file)
-                    .get(owner)
-                    .map(String::as_str),
-            ),
-            None => Languages::default(),
-        }
+        let header = self
+            .owner_languages_path
+            .as_deref()
+            .and_then(|path| super::store::read_json::<String>(path).ok().flatten());
+        Languages::from_header(header.as_deref())
     }
 
     fn fail(&self, id: &str, args: &[(&str, Arg<'_>)], error: BollardError) -> EngineError {
@@ -538,6 +519,17 @@ impl Engine {
             })
     }
 
+    /// 重启容器：先按 `timeout` 秒优雅停止（超时强杀），再启动。
+    pub async fn restart_container(&self, name: &str, timeout: u32) -> Result<()> {
+        let options = RestartContainerOptionsBuilder::default()
+            .t(timeout as i32)
+            .build();
+        self.patient()
+            .restart_container(name, Some(options))
+            .await
+            .map_err(|e| self.fail_name("plugin-install-docker-context-restart-container", name, e))
+    }
+
     /// 查询容器；不存在时返回 `None`。
     pub async fn inspect_container(&self, name: &str) -> Result<Option<ContainerInspectResponse>> {
         match self.docker.inspect_container(name, None).await {
@@ -547,20 +539,6 @@ impl Engine {
                     EngineError::NotFound(_) => Ok(None),
                     other => Err(other),
                 }
-            }
-        }
-    }
-
-    /// 停止但保留容器及卷；已停止视为成功。
-    pub async fn stop_container(&self, name: &str) -> Result<()> {
-        let stop = StopContainerOptionsBuilder::default().t(10).build();
-        match self.patient().stop_container(name, Some(stop)).await {
-            Ok(()) => Ok(()),
-            Err(bollard::errors::Error::DockerResponseServerError {
-                status_code: 304, ..
-            }) => Ok(()),
-            Err(error) => {
-                Err(self.fail_name("plugin-install-docker-context-stop-container", name, error))
             }
         }
     }

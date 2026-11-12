@@ -182,27 +182,6 @@ async fn egress_plugin_singleton_reserves_even_during_concurrent_installs() {
     assert_eq!(m.list().len(), 1);
 }
 
-/// 代理连不上时：消费者的预览被拦，安装报 `egress_proxy_unavailable`。
-async fn assert_consumer_blocked(m: &PluginManager, langs: &Languages) {
-    let app = consumer("app.out");
-    let preview = m
-        .preview_install(&PluginPackage::parse(&app, &super::langs()).unwrap(), langs)
-        .await
-        .unwrap();
-    assert!(preview.blocked.is_some());
-    let grants = PluginPackage::parse(&app, &super::langs())
-        .unwrap()
-        .manifest
-        .permissions;
-    assert_eq!(
-        m.install(&app, &grants, super::langs())
-            .await
-            .unwrap_err()
-            .kind(),
-        "egress_proxy_unavailable"
-    );
-}
-
 #[tokio::test]
 async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgrade_and_reinstall() {
     let (docker, engine) = FakeDocker::start().await;
@@ -231,7 +210,26 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
             m.egress_problem().unwrap().reason,
             EgressFailure::ProxyUnreachable
         );
-        assert_consumer_blocked(&m, &langs).await;
+        let app = consumer("app.out");
+        let preview = m
+            .preview_install(
+                &PluginPackage::parse(&app, &super::langs()).unwrap(),
+                &langs,
+            )
+            .await
+            .unwrap();
+        assert!(preview.blocked.is_some());
+        let grants = PluginPackage::parse(&app, &super::langs())
+            .unwrap()
+            .manifest
+            .permissions;
+        assert_eq!(
+            m.install(&app, &grants, super::langs())
+                .await
+                .unwrap_err()
+                .kind(),
+            "egress_proxy_unavailable"
+        );
     }
     m.engine.remove_container(name).await.unwrap();
     m.probe_egress(&Languages::default()).await.unwrap();
@@ -253,9 +251,7 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
         &PluginId::parse("app.proxy").unwrap(),
         upgraded,
         grants,
-        Vec::new(),
         false,
-        &Default::default(),
         &super::langs(),
     )
     .await
@@ -326,9 +322,7 @@ async fn egress_plugin_upgrade_retargets_relay_without_restarting_consumers() {
         &PluginId::parse("app.proxy").unwrap(),
         upgraded,
         grants,
-        Vec::new(),
         false,
-        &Default::default(),
         &super::langs(),
     )
     .await
@@ -362,12 +356,12 @@ async fn plugin_written_no_proxy_is_merged_and_networked_services_all_get_one() 
     assert_eq!(web["HTTP_PROXY"], super::super::egress::PROXY_URL);
     assert_eq!(
         web["NO_PROXY"],
-        format!("localhost,web,.localhost,127.0.0.1,::1,.wonton.internal,hub,{private}")
+        format!("localhost,web,127.0.0.1,::1,.wonton.internal,auth.wonton.localhost,hub,{private}")
     );
     let hub = env_of_container(&docker, "wonton-app-out--hub");
     assert_eq!(
         hub["NO_PROXY"],
-        format!("localhost,.localhost,127.0.0.1,::1,.wonton.internal,hub,web,{private}")
+        format!("localhost,127.0.0.1,::1,.wonton.internal,auth.wonton.localhost,hub,web,{private}")
     );
 }
 

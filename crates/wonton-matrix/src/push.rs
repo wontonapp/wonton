@@ -2,9 +2,6 @@
 //! 在本机解密。推送本身只带房间和事件 ID，正文只在这里解密。
 
 use std::sync::Arc;
-use std::time::Duration;
-
-use futures_util::{StreamExt, pin_mut};
 
 use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedTimelineEvent;
 use matrix_sdk::ruma::{
@@ -18,26 +15,13 @@ use matrix_sdk::ruma::{
 };
 use matrix_sdk::{Client, sync::Notification as SdkNotification};
 use matrix_sdk_ui::notification_client::{
-    NotificationClient, NotificationClientTimeouts, NotificationEvent, NotificationItem,
-    NotificationProcessSetup, NotificationStatus, RawNotificationEvent,
+    NotificationClient, NotificationEvent, NotificationItem, NotificationProcessSetup,
+    NotificationStatus, RawNotificationEvent,
 };
 use matrix_sdk_ui::sync_service::SyncService;
 use serde_json::{Map, Value};
 
 use crate::{Error, MatrixSession, MessageBody, Result};
-
-/// 保持连接的后台通知等房间密钥的上限。App 在后台没人等这几秒，密钥在同步被压住时常迟到十几秒；
-/// SDK 默认 6 秒到点就交回解不开的消息，通知里只剩一句正文缺失。推送路径不放宽：那边有系统的后台时限。
-/// 比 [`BACKGROUND_FETCH_WAIT`] 短，让 SDK 自己先交出 UTD，按正常通知发出去，不落在外层超时上。
-const BACKGROUND_KEY_WAIT: Duration = Duration::from_secs(12);
-
-/// 后台通知取回消息的总时限。SDK 的通知客户端在隧道被压住时可能几次尝试都拿不到事件（内部还有 `/context`
-/// 兜底），60 秒一声不吭对后台通知太长；到点按取不到正文发出去，和推送路径的兜底同一个意思。
-const BACKGROUND_FETCH_WAIT: Duration = Duration::from_secs(20);
-
-/// 占位发出后继续等房间密钥的时限。密钥在同步被压住时可能晚到十几秒，[`BACKGROUND_KEY_WAIT`] 只兜住大多数；
-/// 这里接住更晚到的。60 秒够同步慢慢追上，密钥永远不来（比如退过房间）也不把任务一直挂着。
-const BACKGROUND_BACKFILL_WAIT: Duration = Duration::from_secs(60);
 
 /// 本设备的 HTTP pusher。`Debug` 不输出 pushkey：它兼作家里推送代理的凭据。
 #[derive(Clone)]
@@ -128,7 +112,7 @@ impl MatrixSession {
         room_id: &RoomId,
         event_id: &EventId,
     ) -> Result<Option<Notification>> {
-        self.fetcher().notification(room_id, event_id, None).await
+        self.fetcher().notification(room_id, event_id).await
     }
 
     /// 能取回并解密通知的那部分会话状态（client 和同步服务），Clone，matrix-sdk 的通知回调里要用。
@@ -141,8 +125,8 @@ impl MatrixSession {
 
     /// 注册一个后台通知的回调（ADR-0003 的“设计：保持连接”）：同步循环里出现该通知的事件（sliding sync 的
     /// 通知在本机按账号的推送规则评估，和服务器给 pusher 的判断一致），取回那条消息、按推送同样的方式映射，
-    /// 交给 `on_notification`。按推送规则不用通知、已撤回的事件不会到这里；取回失败写日志，不回调。缺房间
-    /// 密钥时先交占位，密钥晚到会再交一次同一个事件的通知，占位要换成正文。会话释放后不再触发。
+    /// 交给 `on_notification`。按推送规则不用通知、已撤回的事件不会到这里；取回失败写日志，不回调。会话释放后
+    /// 不再触发。
     pub async fn register_background_notifications(
         &self,
         on_notification: impl Fn(BackgroundNotification) + Send + Sync + Clone + 'static,
@@ -174,28 +158,17 @@ pub(crate) struct NotificationFetcher {
 }
 
 impl NotificationFetcher {
-    /// 同 [`MatrixSession::notification`]：取回那条消息并在本机解密。`key_wait` 有值时覆盖 SDK 缺密钥时的
-    /// 等待上限（默认 6 秒），见 [`BACKGROUND_KEY_WAIT`]。
+    /// 同 [`MatrixSession::notification`]：取回那条消息并在本机解密。
     async fn notification(
         &self,
         room_id: &RoomId,
         event_id: &EventId,
-        key_wait: Option<Duration>,
     ) -> Result<Option<Notification>> {
         // 和 App 同一个进程（Android 上推送唤醒的就是 App 的进程）：和正在跑的同步共用加密同步，不另起一个。
         let setup = NotificationProcessSetup::SingleProcess {
             sync_service: self.sync.clone(),
         };
         let client = NotificationClient::new(self.client.clone(), setup).await?;
-        let client = match key_wait {
-            Some(wait) => client.with_timeouts(NotificationClientTimeouts {
-                decryption_deadline: wait,
-                // 单进程里加密同步由主同步跑，这个值实际用不上；按默认的比例跟着放大。
-                encryption_sync_poll_timeout: wait / 2,
-                ..Default::default()
-            }),
-            None => client,
-        };
         match client.get_notification(room_id, event_id).await? {
             NotificationStatus::Event(item) => {
                 // 两个人的房间按一对一显示，同推送规则（`room_member_count == 2`）：刚加入的私聊，`m.direct` 可能
@@ -218,7 +191,7 @@ impl NotificationFetcher {
         self,
         notification: SdkNotification,
         room_id: OwnedRoomId,
-        on_notification: impl Fn(BackgroundNotification) + Send + Clone + 'static,
+        on_notification: impl FnOnce(BackgroundNotification),
     ) {
         let event = match notification.event {
             RawAnySyncOrStrippedTimelineEvent::Sync(event) => event,
@@ -228,136 +201,17 @@ impl NotificationFetcher {
         let Ok(event) = event.deserialize() else {
             return;
         };
-        let sender = event.sender().to_owned();
         let event_id = event.event_id().to_owned();
-        // 密钥到没到，取回才见分晓；订阅要赶在取回之前，这中间到达的密钥也不漏（SDK 的 wait_for_room_key
-        // 同款做法）。
-        let room_keys = self.client.encryption().room_keys_received_stream().await;
-        let fetched = tokio::time::timeout(
-            BACKGROUND_FETCH_WAIT,
-            self.notification(&room_id, &event_id, Some(BACKGROUND_KEY_WAIT)),
-        )
-        .await;
-        let (message, missing_key) = match fetched {
-            Ok(Ok(Some(message))) => {
-                let missing_key = matches!(message.body, MessageBody::Undecryptable);
-                (message, missing_key)
+        match self.notification(&room_id, &event_id).await {
+            Ok(Some(message)) => on_notification(BackgroundNotification {
+                room_id,
+                event_id,
+                message,
+            }),
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(%error, "background notification: failed to fetch the event")
             }
-            // 按推送规则不该响、已撤回：不通知。
-            Ok(Ok(None)) => return,
-            Ok(Err(error)) => {
-                tracing::warn!(%error, "background notification: failed to fetch the event");
-                (self.unavailable(&room_id, sender).await, false)
-            }
-            Err(_) => {
-                tracing::warn!("background notification: replying without the message content");
-                (self.unavailable(&room_id, sender).await, false)
-            }
-        };
-        on_notification(BackgroundNotification {
-            room_id: room_id.clone(),
-            event_id: event_id.clone(),
-            message,
-        });
-        // 占位只差密钥：密钥晚于等待上限才到就回填——重取正文、再交一次同一个事件的通知，客户端把占位换成
-        // 正文，壳用同一个通知标识替换。取回失败和取不到正文的占位不回填：原因不是缺密钥。
-        if missing_key && let Some(room_keys) = room_keys {
-            tokio::spawn(async move {
-                pin_mut!(room_keys);
-                let deadline = tokio::time::Instant::now() + BACKGROUND_BACKFILL_WAIT;
-                loop {
-                    // 等到这个房间的密钥才出去重取；流滞后说明可能错过了，也去试一次。到点或流断就停，
-                    // 占位照旧。
-                    loop {
-                        let remaining =
-                            deadline.saturating_duration_since(tokio::time::Instant::now());
-                        if remaining.is_zero() {
-                            tracing::info!(
-                                %event_id,
-                                "background notification: no room key before the backfill deadline"
-                            );
-                            return;
-                        }
-                        match tokio::time::timeout(remaining, room_keys.next()).await {
-                            Ok(Some(Ok(keys))) if keys.iter().any(|key| key.room_id == room_id) => {
-                                break;
-                            }
-                            Ok(Some(Err(_))) => break,
-                            Ok(Some(Ok(_))) => {}
-                            Ok(None) | Err(_) => return,
-                        }
-                    }
-                    tracing::info!(
-                        %event_id,
-                        "background notification: room key arrived, refetching the message"
-                    );
-                    if self
-                        .refetch_and_notify(&room_id, &event_id, on_notification.clone())
-                        .await
-                    {
-                        return;
-                    }
-                }
-            });
-        }
-    }
-
-    /// 回填的重取：解出来了再交一次同一个事件的通知，返回要不要停。还是解不开说明来的是别的会话的钥匙，
-    /// 回去接着等；取回失败写日志就停，不重试。
-    async fn refetch_and_notify(
-        &self,
-        room_id: &RoomId,
-        event_id: &EventId,
-        on_notification: impl Fn(BackgroundNotification),
-    ) -> bool {
-        let fetched = tokio::time::timeout(
-            BACKGROUND_FETCH_WAIT,
-            self.notification(room_id, event_id, Some(BACKGROUND_KEY_WAIT)),
-        )
-        .await;
-        match fetched {
-            Ok(Ok(Some(message))) if !matches!(message.body, MessageBody::Undecryptable) => {
-                on_notification(BackgroundNotification {
-                    room_id: room_id.to_owned(),
-                    event_id: event_id.to_owned(),
-                    message,
-                });
-                true
-            }
-            Ok(Ok(Some(_))) => false,
-            // 按推送规则不该响、已撤回：占位换不了也撤不下，停就是了。
-            Ok(Ok(None)) => true,
-            Ok(Err(error)) => {
-                tracing::warn!(%error, "background notification: backfill refetch failed");
-                true
-            }
-            Err(_) => {
-                tracing::warn!("background notification: backfill refetch timed out");
-                true
-            }
-        }
-    }
-
-    /// 取不回正文时的占位：照实说解不开（超时和缺密钥对用户是同一句），点开还能看到时间线里的那条。
-    /// 发送者名取本机已知的成员显示名，取不到用用户 ID；`_no_sync` 是关键——这时外层时限往往已经到了、
-    /// 隧道正被压着，`get_member` 的 lazy-loading 还会发 `/members`（默认 30 秒超时），能再把占位拖慢半分钟。
-    async fn unavailable(&self, room_id: &RoomId, sender: OwnedUserId) -> Notification {
-        let sender_name = match self.client.get_room(room_id) {
-            Some(room) => room
-                .get_member_no_sync(&sender)
-                .await
-                .ok()
-                .flatten()
-                .and_then(|member| member.display_name().map(str::to_owned)),
-            None => None,
-        }
-        .unwrap_or_else(|| sender.to_string());
-        Notification {
-            sender_name,
-            sender,
-            room_name: None,
-            body: MessageBody::Undecryptable,
-            custom: Map::new(),
         }
     }
 
@@ -410,7 +264,8 @@ fn body(event: &AnySyncTimelineEvent) -> MessageBody {
         AnySyncMessageLikeEvent::RoomMessage(SyncRoomMessageEvent::Original(original)) => {
             match &original.content.msgtype {
                 MessageType::Text(text) => MessageBody::Text(text.body.clone()),
-                MessageType::Notice(notice) => MessageBody::Notice(notice.body.clone()),
+                // Bot 常用 m.notice 回复，内容同样是文字。
+                MessageType::Notice(notice) => MessageBody::Text(notice.body.clone()),
                 MessageType::Image(image) => MessageBody::Image(image.into()),
                 other => MessageBody::Other {
                     kind: other.msgtype().to_owned(),

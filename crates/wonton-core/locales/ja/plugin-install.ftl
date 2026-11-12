@@ -68,7 +68,6 @@ plugin-install-containers-unhealthy = 一部のコンテナが不健康です：
 plugin-install-container-unhealthy = コンテナ{ $container }のヘルスチェックが失敗しました（最後のプローブ、終了コード { $code }）：{ $output }
 plugin-install-container-unhealthy-nocode = コンテナ{ $container }のヘルスチェックが失敗しました（最後のプローブ、終了コード不明）：{ $output }
 plugin-install-container-unhealthy-noprobe = コンテナ{ $container }のヘルスチェックが失敗しました（Docker にプローブの結果が残っていません）
-plugin-install-container-health-probe-failed = コンテナ { $container } のヘルスプローブに失敗しました（GET { $path }）：{ $reason }
 plugin-install-container-not-running = コンテナ{ $container }が動いていません（{ $status }）
 plugin-install-one-shot-failed = 一度きりのサービスのコンテナ{ $container }が 0 で終了しませんでした（{ $status }、終了コード { $code }）
 plugin-install-reach-none = 存在しない
@@ -228,7 +227,6 @@ plugin-install-priv-fixed-device = 固定デバイスの権限で指定できる
 plugin-install-priv-host-network-ports = ホストネットワークのサービスはlan.portsも宣言できません。ポートはアプリが直接ホストネットワークで待ち受けます
 plugin-install-priv-host-network-sso = ホストネットワークのwebuiではsso: proxyを使えません。oidcかnoneを使ってください
 plugin-install-priv-host-network-healthcheck = ホストネットワークのwebuiサービスには、有効なhealthcheckの記載が必要です
-plugin-install-priv-host-network-mail = ホストネットワークを使うアプリはメールを送れません。送信元はネットワークセグメントで識別され、ホストネットワークからのメールは特定できません。アプリケーションネットワークを使うか、メール送信を外してください
 plugin-install-priv-cap-invalid = cap_addのケーパビリティ`{ $cap }`が不正です
 plugin-install-priv-cap-drop-invalid = cap_dropのケーパビリティ`{ $cap }`が不正です
 plugin-install-priv-security-opt-invalid = security_optの`{ $opt }`が不正です（no-new-privilegesの値はtrueまたはfalseのみ）
@@ -242,14 +240,6 @@ plugin-install-priv-missing-cap-add = 権限{ $permission }に対応するcap_ad
 plugin-install-priv-missing-devices = 権限{ $permission }に対応するdevicesフィールドがありません
 plugin-install-priv-field-requires = { $field }にはマニフェスト権限{ $permission }が必要です
 plugin-install-priv-missing-field = マニフェスト権限{ $permission }に対応する{ $field }フィールドがありません
-plugin-install-optional-not-allowed = 権限{ $permission }は任意にできません
-plugin-install-optional-declared-twice = 権限{ $permission }が permissions と optional_permissions の両方にあります
-plugin-install-optional-off-loss = 任意の権限{ $permission }には off_loss（切ったとき失うもの）を中国語と英語の両方で書きます
-plugin-install-optional-gpu-required = 任意の権限{ $permission }は切るとGPUを渡さないので、requirements.gpu.need は required にできません
-plugin-install-optional-not-enabled = 任意権限{ $permission }は任意として宣言されていません
-plugin-install-optional-duplicate = 任意権限{ $permission }が二度あります
-upgrade-optional-became-required = このバージョンは{ $permission }を必須にします。確認すると付与されます
-upgrade-optional-removed = このバージョンは任意権限{ $permission }を削除します
 
 # ── provides（provides.rs）─────────────────────────────────────────────────
 
@@ -418,6 +408,7 @@ plugin-install-docker-archive-unparseable = アーカイブを解析できませ
 plugin-install-docker-context-start-container = コンテナ{ $name }の起動
 plugin-install-docker-context-inspect-container = コンテナ{ $name }の照会
 plugin-install-docker-context-kill-container = コンテナ{ $name }に{ $signal }を送信
+plugin-install-docker-context-restart-container = コンテナ{ $name }の再起動
 plugin-install-docker-context-stop-container = コンテナ{ $name }の停止
 plugin-install-docker-context-remove-container = コンテナ{ $name }の削除
 plugin-install-docker-context-list-containers = コンテナの一覧
@@ -496,51 +487,7 @@ plugin-install-img-worker-memory-limit = 処理に必要なメモリが{ $mib } 
 plugin-install-img-worker-killed = 画像処理のプロセスが強制終了されました（SIGKILL）。メモリ不足の可能性が高いです
 plugin-install-img-worker-signal = 画像処理のプロセスがシグナル{ $signal }で終了しました
 plugin-install-img-worker-malformed = 画像処理のプロセスの出力形式が不正です
-plugin-install-img-worker-host-exited = 画像処理のヘルパーが終了しました：{ $error }
-plugin-install-img-worker-host-not-ready = 画像処理のヘルパーが準備できませんでした：{ $error }
-plugin-install-img-worker-host-protocol = 画像処理のヘルパーのプロトコルバージョンは { $got } ですが、コアは { $want } です
 
 ## 预装（启动时随服务器带的包）失败的原因。
 plugin-install-preinstall-retrying = プリインストールに失敗しました（{ $attempts } 回試行、自動で再試行します）
 plugin-install-preinstall-failed = プリインストールに失敗しました
-
-# ── 能力依存（capabilities.rs、ADR-0053）──────────────────────────────────
-
-plugin-capability-unknown = このコアは能力 { $capability } を認識しません。コアを更新してからインストールしてください
-plugin-capability-third-party-format = 能力 { $capability } が不正です。サードパーティー能力は x-<作者>.<名前> の形で、作者と名前は小文字・数字・ハイフンで書きます
-plugin-capability-no-consumer = { $capability } には利用者宣言がなく、requires や wants には書けません
-plugin-capability-duplicate = { $field } の能力 { $capability } が重複しています
-plugin-capability-in-both-lists = 能力 { $capability } を requires と wants の両方に入れられません
-plugin-capability-provider-requires = 能力を提供するプラグインは他の能力を requires できません
-plugin-capability-port-zero = provides.{ $capability }.port は 0 にできません
-plugin-capability-credentials-required = provides.{ $capability } には credentials の宣言が必要です。利用者ごとに専用の資格情報を発行するためです
-plugin-capability-credentials-forbidden = provides.{ $capability } には credentials を宣言できません。この能力の提供元はコアが転送した要求だけを受け付けます
-plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $field } は空でない argv で、{ $placeholder } で資格情報名を指し示す必要があります
-plugin-capability-service-unknown = { $field } が参照するサービス `{ $service }` が compose ファイルにありません
-plugin-capability-service-not-forwardable = { $field } は network_mode: none のサービスを指せません。コアが転送し、そこで資格情報を発行するためです
-plugin-install-capability-deps-unsupported = このコアはプラグイン間の依存関係にまだ対応していません。コアを更新してからインストールしてください
-plugin-install-runtime-services = runtime が { $runtime } の場合、services は宣言できません
-plugin-install-runtime-unsupported = このコアは runtime が { $runtime } のプラグインのインストールや更新に対応していません。先にコアを更新してください
-plugin-install-matrix-rtc-needs-matrix = コアが Matrix サーバーに接続していないため、matrix_rtc（通話の認可）を提供するアプリはインストールできません
-plugin-install-matrix-rtc-conflict = matrix_rtc（通話の認可）を提供するアプリ { $id } が既にインストールされています。同時に1つだけです
-plugin-install-matrix-rtc-ca-failed = 通話の認可アプリが信頼する証明書バンドルを書き込めませんでした：{ $error }
-
-# 静态网页和托管形态（ADR-0080）
-plugin-install-static-dir = `{ $root }` の静的ファイル：{ $problem }
-plugin-install-static-too-many = ファイルとフォルダーが { $max } 個を超えています
-plugin-install-static-too-big = 合計 { $mib } MiB で、上限の { $max } MiB を超えています
-plugin-install-static-file-too-big = `{ $path }` が1ファイルの上限 { $max } MiB を超えています
-plugin-install-static-hidden = `{ $path }`：. で始まる名前は使えません
-plugin-install-static-reserved = _wonton/ フォルダーはアプリのデータ用に予約されています
-plugin-install-static-no-index = index.html がありません
-plugin-install-static-no-fallback = fallback に指定された `{ $path }` がフォルダーにありません
-plugin-install-static-symlink = `{ $path }` はシンボリックリンクです。静的ファイルにシンボリックリンクは使えません
-plugin-install-static-not-file = `{ $path }` は通常のファイルではありません
-plugin-install-static-missing = フォルダーがありません
-plugin-install-static-read-failed = `{ $path }` を読み込めません：{ $error }
-plugin-hosted-provider-not-running = このアプリをホストしている { $provider } が実行されていません
-plugin-hosted-provider-missing = このアプリに必要な { $capability } を提供するアプリがインストールされていません
-plugin-hosted-provider-taken = { $other } がすでに { $capability } を提供しています。提供できるアプリは1つだけです
-plugin-hosted-provider-in-use = 次のアプリはこのアプリがホストしており、アンインストールすると開けなくなります：{ $plugins }。先にそれらをアンインストールしてください
-plugin-hosted-dir-missing = このアプリの { $capability } のファイルが見つかりません。再インストールしてください
-plugin-hosted-storage-failed = ホストするファイルを書き込めません：{ $error }

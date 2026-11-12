@@ -4,24 +4,9 @@ use std::sync::Arc;
 
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginView, detached};
-use super::manifest::{Manifest, Permission, PluginKind, Runtime};
+use super::manifest::{Permission, PluginKind};
 use super::package::PluginPackage;
-use super::store::EnabledPermission;
 use crate::l10n;
-
-pub(super) fn check_runtime(manifest: &Manifest, langs: &Languages) -> Result<(), InstallError> {
-    if !matches!(
-        manifest.runtime,
-        Runtime::Compose | Runtime::StaticWeb | Runtime::Link
-    ) {
-        return Err(InstallError::UnsupportedRuntime(l10n::text(
-            langs,
-            "plugin-install-runtime-unsupported",
-            &[("runtime", manifest.runtime.as_str().into())],
-        )));
-    }
-    Ok(())
-}
 
 impl PluginManager {
     /// 安装只有 compose 文本的插件包，见 [`Self::install_package`]。
@@ -53,21 +38,6 @@ impl PluginManager {
         lan_webui: bool,
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
-        self.install_user_enabled(package, granted, &[], lan_webui, Default::default(), langs)
-            .await
-    }
-
-    /// 同 [`Self::install_user`]，另外带上主人打开了的可选权限（ADR-0057）。
-    pub async fn install_user_enabled(
-        &self,
-        package: PluginPackage,
-        granted: &[Permission],
-        enabled: &[EnabledPermission],
-        lan_webui: bool,
-        settings: std::collections::BTreeMap<String, serde_json::Value>,
-        langs: Languages,
-    ) -> Result<PluginView, InstallError> {
-        check_runtime(&package.manifest, &langs)?;
         if package.manifest.kind == PluginKind::System {
             return Err(InstallError::Unsupported(l10n::text(
                 &langs,
@@ -75,7 +45,7 @@ impl PluginManager {
                 &[],
             )));
         }
-        self.install_checked(package, granted, enabled, lan_webui, settings, &langs)
+        self.install_checked(package, granted, lan_webui, &langs)
             .await
     }
 
@@ -85,32 +55,9 @@ impl PluginManager {
         package: PluginPackage,
         granted: Vec<Permission>,
         lan_webui: bool,
-        settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
         let this = Arc::clone(self);
-        detached(async move {
-            this.install_user_enabled(package, &granted, &[], lan_webui, settings, langs)
-                .await
-        })
-        .await
-    }
-
-    /// 同 [`Self::install_detached`]，另外带上主人打开了的可选权限（ADR-0057）。
-    pub async fn install_detached_enabled(
-        self: &Arc<Self>,
-        package: PluginPackage,
-        granted: Vec<Permission>,
-        enabled: Vec<EnabledPermission>,
-        lan_webui: bool,
-        settings: std::collections::BTreeMap<String, serde_json::Value>,
-        langs: Languages,
-    ) -> Result<PluginView, InstallError> {
-        let this = Arc::clone(self);
-        detached(async move {
-            this.install_user_enabled(package, &granted, &enabled, lan_webui, settings, langs)
-                .await
-        })
-        .await
+        detached(async move { this.install_user(package, &granted, lan_webui, langs).await }).await
     }
 }

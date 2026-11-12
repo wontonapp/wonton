@@ -7,6 +7,11 @@
 ## with_note 把原消息和补充说明拼成一句。en 用半角括号加空格。
 plugin-settings-note-appended = { $message }（{ $note }）
 
+# ── 还没填邮箱（owner.rs，安装和网页端口用）──────────────────────────────────
+
+plugin-settings-email-missing = 你还没填邮箱：在 App 的设置里填好再试
+plugin-settings-email-needed = 这个应用要用你的邮箱，填好才能装
+
 # ── 网页的局域网端口的风险说明（lan/webui.rs，App 详情页显示）────────────────
 
 plugin-settings-lan-webui-risk-impersonate = 局域网里的设备和这台主机上能出网的应用，不用密码就能以你的身份打开它
@@ -36,9 +41,6 @@ plugin-settings-lan-client-not-published = 端口没有开在任何局域网地�
 # ── 局域网检测和选择（lan/detect.rs、lan/select.rs、lan/monitor.rs）──────────
 
 plugin-settings-lan-fixed-by-env = 局域网地址由服务器的 WONTON_LAN_ADDRESSES 指定，不能在设置里改
-plugin-settings-lan-announce-by-env = 手机连的地址由服务器的 WONTON_ANNOUNCE_ADDRESSES 指定，不能在设置里改
-plugin-settings-lan-desktop-vm = 服务器跑在电脑上的虚拟机里，手机连不到虚拟机的地址。启动器要把 WONTON_ANNOUNCE_ADDRESSES 设为电脑的局域网地址。内核：{ $evidence }
-plugin-settings-lan-announced = 宣告
 plugin-settings-lan-fixed-missing = WONTON_LAN_ADDRESSES 里的 { $ip } 不在主机上
 plugin-settings-lan-detect-failed = 检测主机的网卡失败：{ $failure }
 plugin-settings-lan-detect-error = 检测主机的网卡时出错：{ $error }
@@ -141,8 +143,7 @@ plugin-settings-egress-token-not-used = 旧版本没有服务用到令牌
 
 plugin-settings-mirror-address-invalid = 镜像加速地址 { $address } 不合法：只填主机名和可选端口，不带协议、路径或用户名密码
 plugin-settings-mirror-policy-never = 镜像 { $image } 标了 pull_policy: never，本地又没有
-plugin-settings-mirror-all-failed = 镜像 { $image } 从哪个加速地址都拉不下来；{ $tries }。请去设置里测速、换一个加速地址
-plugin-settings-mirror-try-failed = { $mirror }：{ $error }
+plugin-settings-mirror-pull-failed = 加速地址 { $mirror }：{ $error }；请去设置里测速、换一个加速地址
 plugin-settings-mirror-digest-mismatch = 本地镜像的 RepoDigests 没有要求的摘要 { $digest }，拒绝使用
 plugin-settings-mirror-probe-timeout = 测速总超时（{ $ms } 毫秒）：{ $error }
 plugin-settings-mirror-no-challenge = 缺少有效的 Bearer WWW-Authenticate
@@ -234,7 +235,6 @@ plugin-settings-github-file-what = 取 { $repo } 在提交 { $commit } 里的 { 
 plugin-settings-github-missing = 没有 { $what }
 plugin-settings-github-url-what = 取 { $url }
 plugin-settings-github-api-what = 经 API 取 { $repo } 在 { $reference } 里的 { $path }
-plugin-settings-github-tree-what = 读取 { $repo } 在 { $commit } 里 { $dir } 的文件列表
 plugin-settings-github-rate-limited = { $what }：GitHub 限速了，几分钟后再试
 plugin-settings-github-rate-limited-plain = GitHub 限速了，几分钟后再试
 plugin-settings-github-api-status = { $what }：GitHub 回了 { $status }
@@ -252,14 +252,10 @@ plugin-settings-github-no-release = { $repo } 没有正式版本：要有 v<语�
 plugin-settings-github-no-release-tag = 没有 v<语义化版本> 的正式版本 tag
 plugin-settings-github-tag-version-mismatch = tag { $tag } 和清单的版本 { $version } 不一致：发布时 tag 要是 v<清单的版本>
 plugin-settings-github-tag-version-short = tag { $tag } 和清单的版本 { $version } 不一致
-plugin-settings-github-source-invalid = 来源 `{ $text }` 不对：{ $why }；写成 github:<owner>/<repo>[/<子目录>]，可以带 @<tag> 或 @<40 位提交号>
+plugin-settings-github-source-invalid = 来源 `{ $text }` 不对：{ $why }；写成 github:<owner>/<repo>，可以带 @<tag> 或 @<40 位提交号>
 plugin-settings-github-source-scheme = 只支持 github: 开头的来源
 plugin-settings-github-source-no-name = 缺少仓库名
 plugin-settings-github-source-name-chars = owner 和仓库名只能有字母、数字、`-`、`_`、`.`
-plugin-settings-github-source-subdir-empty = 子目录里有空的段；开头或结尾的 `/` 也算空段
-plugin-settings-github-source-subdir-long = 子目录超过 200 个字符
-plugin-settings-github-source-subdir-dot = 子目录里有 `.` 或 `..` 段
-plugin-settings-github-source-subdir-chars = 子目录只能有字母、数字、`-`、`_`、`.`、`/`
 plugin-settings-github-source-bad-tag = @ 后面的 tag 不合法
 plugin-settings-github-sibling-url = { $url } 旁边的 { $path } 不是合法地址：{ $error }
 
@@ -270,7 +266,7 @@ plugin-settings-source-address-tls = 只支持 https：未审核的来源要靠 
 plugin-settings-source-address-https-only = 只支持 https 地址和 GitHub 仓库
 plugin-settings-source-address-formats = 写成仓库地址、owner/repo，或者索引的 https 地址
 plugin-settings-source-not-a-repo = `{ $text }` 不是应用仓库。索引要在商店里添加，再从那里装
-plugin-settings-source-page-invalid = GitHub 地址 `{ $path }` 不对：写成 https://github.com/<owner>/<repo>，可以带 /tree/<tag>[/<子目录>] 或 /commit/<提交>
+plugin-settings-source-page-invalid = GitHub 地址 `{ $path }` 不对：写成 https://github.com/<owner>/<repo>，可以带 /tree/<tag> 或 /commit/<提交>
 plugin-settings-index-address-invalid = 索引地址 `{ $text }` 不对：{ $why }
 plugin-settings-index-address-https = 只支持 https
 plugin-settings-item-source-invalid = 来源 `{ $source }` 不对
@@ -285,10 +281,6 @@ plugin-settings-models-reconcile-failed = 模型网关凭据对账失败：{ $er
 plugin-settings-models-credential-rejected = 模型网关 { $provider } 不认服务器签发的凭据 { $name }：签发后请求模型列表仍然 401
 plugin-settings-models-unreachable = 模型网关 { $provider } 不可达：{ $error }
 plugin-settings-models-list-error = 模型网关 { $provider } 回答模型列表时出错：HTTP { $status }
-plugin-settings-models-provider-error = 默认模型的服务商出错：{ $error }
-plugin-settings-models-provider-invalid-reply = 服务商没有返回合法的对话结果
-plugin-settings-models-list-malformed = 模型网关 { $provider } 的模型列表格式不合法
-plugin-settings-models-connect-first = 先在“模型设置”接入模型，Bot 才能回话。
 plugin-settings-models-not-ready = 模型网关 { $provider } 未就绪：{ $error }
 plugin-settings-models-command-rejected = 模型网关 { $provider } 拒绝了凭据命令（{ $command }，退出码 { $code }）：{ $stderr }
 plugin-settings-model-action-save = 保存
@@ -342,9 +334,9 @@ plugin-settings-secret-too-big = 超过 64 KiB
 
 plugin-settings-bot-avatar-missing = bot.avatar 指向的 { $path } 不在插件包里
 plugin-settings-bot-avatar-type = bot.avatar 只支持 png、jpg、gif、webp：{ $path }
-plugin-settings-bot-device-name = Wonton 应用 { $id }（{ $bot }）
+plugin-settings-bot-device-name = Wonton 应用 { $id }
 plugin-settings-bot-account-deactivated = Bot 账号 { $user } 已停用：选择删除数据卸载这个应用后重装，会分配新账号
-plugin-settings-bot-device-record-missing = 没有 Bot { $bot } 的设备记录：重装应用（可以不删数据）
+plugin-settings-bot-device-record-missing = 没有这个应用的 Bot 设备记录：重装应用（可以不删数据）
 plugin-settings-bot-device-revoked = Bot { $user } 的设备已被吊销，应用拿着的 Matrix 令牌失效了：重装应用（可以不删数据）重新签发
 
 # ── 局域网检测、出网容器和商店索引的补充（lan/detect.rs、docker_limits.rs、egress、storefront）──
@@ -367,54 +359,3 @@ plugin-settings-store-index-docs-problem = 官方索引的 docs 读不懂：{ $e
 plugin-settings-store-index-onboarding-problem = 官方索引的 onboarding 读不懂：{ $error }
 plugin-settings-store-index-mirrors-problem = 官方索引的 registry_mirrors 读不懂：{ $error }
 plugin-settings-store-index-read-failed = 读不了官方索引 { $path }：{ $error }
-
-plugin-secret-unknown = 请求里有不认识的密钥：{ $names }
-plugin-secret-required-missing = 必填的密钥还没填：{ $names }
-plugin-secret-required-clear = 必填的密钥 { $name } 不能清空
-plugin-secret-not-input = { $name } 不是主人填写的密钥
-chat-card-secrets-not-used = 这张确认不收密钥
-
-# ── 插件设置的值和 Schema（ADR-0077）────────────────────────────────────────
-
-plugin-settings-schema-invalid-json = 设置文件不是合法 JSON
-plugin-settings-schema-object = 设置 Schema 必须是对象 Schema
-plugin-settings-schema-properties = 设置 Schema 缺少 properties 对象
-plugin-settings-schema-too-many = 设置 Schema 的项超过 64 个
-plugin-settings-schema-draft = $schema 必须是 https://json-schema.org/draft/2020-12/schema
-plugin-settings-schema-additional = additionalProperties 必须是 false
-plugin-settings-schema-unsupported = 原生控件不支持 { $key }
-plugin-settings-schema-required-duplicate = required 里的 { $key } 重复了
-plugin-settings-schema-required-unknown = required 里的 { $key } 不是属性
-plugin-settings-schema-required = required 必须是属性名列表
-plugin-settings-schema-order = x-wonton-order 里每个属性最多出现一次
-plugin-settings-schema-field = 每个属性必须是 Schema 对象
-plugin-settings-schema-name = 属性名以小写字母开头，只用小写字母、数字和 _，最长 64 个字符
-plugin-settings-schema-secret-name = 这个名字也是密钥名，改掉其中一个
-plugin-settings-schema-sensitive = 敏感项，挪到输入密钥
-plugin-settings-schema-title = 缺少 x-wonton-title
-plugin-settings-schema-description = x-wonton-description 必须按语言键写
-plugin-settings-schema-type = type 必须是单个受支持的类型
-plugin-settings-schema-enum = enum 至少要有一个不重复的字符串
-plugin-settings-schema-pattern = pattern 不是合法正则
-plugin-settings-schema-bound = minimum 和 maximum 必须是数字
-plugin-settings-schema-length = minLength 和 maxLength 必须是非负整数
-plugin-settings-schema-items = 数组的 items 必须是字符串 enum
-plugin-settings-schema-unique = 数组项必须写 uniqueItems: true
-plugin-settings-schema-enum-duplicate = enum 里有重复的值
-plugin-settings-schema-enum-titles = x-wonton-enum-titles 必须给每个枚举值一个标题，不多不少
-plugin-settings-schema-problems = 设置 Schema 有 { $count } 处不合格
-plugin-settings-value-unknown-field = 这个应用没有这一项
-plugin-settings-value-missing = 必填，填一下
-plugin-settings-value-wrong-type = 必须是 { $type }
-plugin-settings-value-below-minimum = 不能小于 { $min }
-plugin-settings-value-above-maximum = 不能大于 { $max }
-plugin-settings-value-too-short = 至少 { $min } 个字符
-plugin-settings-value-too-long = 最多 { $max } 个字符
-plugin-settings-value-pattern = 不符合要求的格式
-plugin-settings-value-duplicate = 有重复的值
-plugin-settings-value-not-in-options = 从选项里挑一个
-plugin-settings-value-string-too-big = 超过 { $max } 字节
-plugin-settings-value-array-too-big = 超过 { $max } 项
-plugin-settings-value-too-big = 设置合计超过 { $max } 字节
-plugin-settings-value-unknown-type = 这个 App 版本发不了这种值，更新 App
-plugin-settings-value-problems = { $count } 项设置不合格

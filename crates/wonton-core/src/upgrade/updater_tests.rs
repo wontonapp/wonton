@@ -35,23 +35,11 @@ fn langs() -> Languages {
     Languages::from_header(None)
 }
 
-const ENV: &str = "WONTON_CORE_SOURCE=reg/core:stable\nWONTON_CORE_IMAGE=reg/core@sha256:old\n\
+const ENV: &str = "WONTON_CORE_SOURCE=reg/core:beta\nWONTON_CORE_IMAGE=reg/core@sha256:old\n\
                    WONTON_INSTALL_DIR=/opt/wonton\nWONTON_DATA_DIR=/var/lib/wonton\nWONTON_PORT=8480\n\
                    WONTON_TUNNEL_PORT=8482\nWONTON_BASE_DOMAIN=wonton.localhost\n";
 
-/// 旧安装脚本写的 compose 引用：渠道标签，会跟着渠道移走。
-const TAG: &str = "reg/core:stable";
-
 fn scene() -> Scene {
-    scene_with(ENV, OLD)
-}
-
-/// 装在渠道标签上的机器。
-fn tagged_scene() -> Scene {
-    scene_with(&ENV.replace(OLD, TAG), TAG)
-}
-
-fn scene_with(env: &str, running: &str) -> Scene {
     let root =
         std::env::temp_dir().join(format!("wonton-updater-{}", crate::secret::random_token()));
     let layout = Layout {
@@ -60,46 +48,30 @@ fn scene_with(env: &str, running: &str) -> Scene {
     };
     fs::create_dir_all(&layout.install_dir).unwrap();
     fs::create_dir_all(layout.core_dir()).unwrap();
-    fs::write(layout.env_path(), env).unwrap();
+    fs::write(layout.env_path(), ENV).unwrap();
     fs::write(layout.install_dir.join("compose.yaml"), "compose of old").unwrap();
     fs::write(layout.core_dir().join("devices.json"), "paired before").unwrap();
     let host = FakeHost::installed(&layout);
-    if running != OLD {
-        let mut world = host.world();
-        let old = world.images.get(OLD).cloned().unwrap();
-        world.images.insert(running.to_owned(), old);
-        let core = world
-            .containers
-            .iter_mut()
-            .find(|c| c.service == super::CORE_SERVICE)
-            .unwrap();
-        core.image = running.to_owned();
-    }
     let scene = Scene {
         _temp: Temp(root),
         layout,
         host,
     };
-    scene.begin_from(running, "sha256:old", "0.1.0", Vec::new());
+    scene.begin(Vec::new());
     scene
 }
 
 impl Scene {
     fn begin(&self, migrates: Vec<String>) {
-        self.begin_from(OLD, "sha256:old", "0.1.0", migrates);
-    }
-
-    fn begin_from(&self, from: &str, digest: &str, version: &str, migrates: Vec<String>) {
-        let image = |image: &str, digest: &str, version: &str, image_id: Option<&str>| ImageRef {
+        let image = |image: &str, digest: &str, version: &str| ImageRef {
             image: image.to_owned(),
             digest: Some(digest.to_owned()),
             version: Some(version.to_owned()),
-            image_id: image_id.map(str::to_owned),
         };
         let fresh = UpgradeState::new(
             "u1".to_owned(),
-            image(from, digest, version, Some("id-0.1.0")),
-            image(NEW, "sha256:new", "0.2.0", None),
+            image(OLD, "sha256:old", "0.1.0"),
+            image(NEW, "sha256:new", "0.2.0"),
             migrates,
             self.host.now.load(std::sync::atomic::Ordering::SeqCst),
         );
@@ -217,25 +189,6 @@ async fn a_new_version_that_fails_its_health_check_is_rolled_back() {
     // 回滚写回的是备份里的 compose 文件和配置，不是只改 .env。
     assert_eq!(s.compose(), "compose of old");
     assert_eq!(devices(&s), "paired before");
-}
-
-/// 回滚目标是个渠道标签、标签又已经被别处拉到别的镜像时：容器跑的不是原来那一版，不能报回滚成功（#669）。
-#[tokio::test]
-async fn a_rollback_to_a_tag_that_moved_reports_the_wrong_image() {
-    let s = tagged_scene();
-    {
-        let mut world = s.host.world();
-        world.unhealthy.insert(NEW.to_owned());
-        let moved = world.images.get(NEW).cloned().unwrap();
-        world.images.insert(TAG.to_owned(), moved);
-    }
-    s.run().await;
-
-    let end = s.state();
-    assert_eq!(end.result, Some(Outcome::RollbackFailed));
-    let message = end.problem.unwrap().message;
-    assert!(message.contains("id-0.1.0"), "要写明期望的镜像：{message}");
-    assert!(message.contains("id-0.2.0"), "要写明实际的镜像：{message}");
 }
 
 #[tokio::test]

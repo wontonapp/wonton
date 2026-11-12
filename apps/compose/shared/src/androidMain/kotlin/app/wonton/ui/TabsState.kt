@@ -13,10 +13,6 @@ class TabsState(val plugins: PluginsState) {
     var viewModel by mutableStateOf(core.tabs())
         private set
     var pinRequest by mutableStateOf<PinRequest?>(null)
-    /** 核心出了询问、还没答的那次网页请求；弹窗交回回答时用它放行或拒绝。 */
-    var mediaWebRequest by mutableStateOf<android.webkit.PermissionRequest?>(null)
-    /** 核心已放行、等系统运行时权限的那次网页请求。 */
-    var mediaSystemRequest by mutableStateOf<android.webkit.PermissionRequest?>(null)
 
     suspend fun observe() {
         core.subscribeTabs().use { subscription ->

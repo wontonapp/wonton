@@ -57,7 +57,7 @@ mod tests {
             let wait = wait_after(failures);
             assert!(
                 wait >= seconds(nominal * 0.8) && wait <= seconds(nominal * 1.2),
-                "after {failures} failures, waited {wait:?}"
+                "第 {failures} 次失败后等了 {wait:?}"
             );
         }
     }

@@ -55,20 +55,18 @@ pub(super) fn validate(
     let mut problems = Vec::new();
     if let Some(tabs) = tabs {
         if webui.is_none() {
-            problems.push("tabs is declared but webui is not".to_owned());
+            problems.push("tabs 声明了但没有声明 webui".to_owned());
         }
         if tabs.len() > 4 {
-            problems.push("tabs allows at most 4 entries".to_owned());
+            problems.push("tabs 最多 4 项".to_owned());
         }
         let mut ids = BTreeSet::new();
         for (index, tab) in tabs.iter().enumerate() {
             let field = format!("tabs[{index}]");
             if !is_tab_id(&tab.id) {
-                problems.push(format!(
-                    "{field}.id allows only lowercase letters, digits, and hyphens"
-                ));
+                problems.push(format!("{field}.id 只能包含小写字母、数字和连字符"));
             } else if !ids.insert(&tab.id) {
-                problems.push(format!("{field}.id `{}` is duplicated", tab.id));
+                problems.push(format!("{field}.id `{}` 重复", tab.id));
             }
             for locale in ["zh", "en"] {
                 if tab
@@ -76,41 +74,32 @@ pub(super) fn validate(
                     .get(locale)
                     .is_none_or(|value| value.trim().is_empty())
                 {
-                    problems.push(format!("{field}.title needs a non-empty {locale} entry"));
+                    problems.push(format!("{field}.title 至少要有非空的 {locale}"));
                 }
             }
             if tab.icon.as_deref().is_none_or(str::is_empty) {
-                problems.push(format!("{field}.icon is required"));
+                problems.push(format!("{field}.icon 必填"));
             }
             if let Some(problem) = validate_path(&format!("{field}.path"), &tab.path) {
                 problems.push(problem);
             }
             if !matches!(tab.layout.as_str(), "inset" | "edge-to-edge") {
-                problems.push(format!(
-                    "{field}.layout `{}` is not recognized; use inset or edge-to-edge",
-                    tab.layout
-                ));
+                problems.push(format!("{field}.layout 不认识 `{}`", tab.layout));
             }
             if !matches!(tab.display.as_str(), "standard" | "fullscreen") {
-                problems.push(format!(
-                    "{field}.display `{}` is not recognized; use standard or fullscreen",
-                    tab.display
-                ));
+                problems.push(format!("{field}.display 不认识 `{}`", tab.display));
             }
         }
     }
     if let Some(webui) = webui
         && !matches!(webui.display.as_str(), "standard" | "fullscreen")
     {
-        problems.push(format!(
-            "webui.display `{}` is not recognized; use standard or fullscreen",
-            webui.display
-        ));
+        problems.push(format!("webui.display 不认识 `{}`", webui.display));
     }
     if problems.is_empty() {
         Ok(())
     } else {
-        Err(ManifestError::Invalid(problems.join("; ")))
+        Err(ManifestError::Invalid(problems.join("；")))
     }
 }
 
@@ -119,13 +108,13 @@ pub(super) fn validate(
 /// 核心原样拼接、不再编码。规则写在规范（wonton-docs）里，两边保持一致。
 pub(crate) fn validate_path(field: &str, path: &str) -> Option<String> {
     if !path.starts_with('/') {
-        return Some(format!("{field} must start with /"));
+        return Some(format!("{field} 必须以 / 开头"));
     }
     if path.starts_with("//") {
-        return Some(format!("{field} must not start with //"));
+        return Some(format!("{field} 不能以 // 开头"));
     }
     if path.contains('\\') {
-        return Some(format!("{field} must not contain a backslash"));
+        return Some(format!("{field} 不能包含反斜杠"));
     }
     let chars: Vec<char> = path.chars().collect();
     let mut i = 0;
@@ -136,29 +125,24 @@ pub(crate) fn validate_path(field: &str, path: &str) -> Option<String> {
                 && chars.get(i + 2).is_some_and(char::is_ascii_hexdigit);
             if !encoded {
                 return Some(format!(
-                    "{field} has a bare %; write it as full percent-encoding (% followed by two hex digits)"
+                    "{field} 的 % 要写成完整的百分号编码（% 后跟两位十六进制）"
                 ));
             }
             i += 3;
             continue;
         }
         if ch.is_control() {
-            return Some(format!(
-                "{field} must not contain control characters (U+{:04X})",
-                ch as u32
-            ));
+            return Some(format!("{field} 不能包含控制字符（U+{:04X}）", ch as u32));
         }
         if ch.is_whitespace() {
-            return Some(format!(
-                "{field} must not contain whitespace; write spaces as %20"
-            ));
+            return Some(format!("{field} 不能包含空白字符，空格要写成 %20"));
         }
         if ch == '#' {
-            return Some(format!("{field} must not contain #; write it as %23"));
+            return Some(format!("{field} 不能包含 #，要写成 %23"));
         }
         if !ch.is_ascii() || !raw_allowed(ch) {
             return Some(format!(
-                "{field} character `{ch}` must be percent-encoded ({}); the home server concatenates paths as-is and does not encode them",
+                "{field} 的字符「{ch}」要先写成百分号编码（{}），核心原样拼接、不再编码",
                 encoded(ch)
             ));
         }

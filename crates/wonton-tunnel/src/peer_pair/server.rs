@@ -1,7 +1,5 @@
 //! 服务器配对的服务端：在 [`PEER_PAIR_ALPN`](super::PEER_PAIR_ALPN) 上接受对方开的一条双向流，读一条
 //! [`PeerMessage`](super::PeerMessage)、交给 [`PeerPairHandler`]、回一条 [`PeerReply`](super::PeerReply)。
-//!
-//! 决定和问结果都只认 QUIC 握手认证的对方 endpoint ID：冒充者拿不到别人扫过的结果。
 
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -22,19 +20,16 @@ const LINGER: Duration = Duration::from_secs(5);
 
 const CLOSE_DONE: VarInt = VarInt::from_u32(0);
 
-/// 决定一次服务器配对交互怎么做：出码方按 [`PeerPairHandler::scanned`] 验令牌，扫码方只认自己扫过的
-/// endpoint ID 发来的配对结果，删除通知原样转交，问结果按自己的请求表答。
+/// 决定一次服务器配对交互怎么做：出码方按 [`PeerPairHandler::scanned`] 验码，扫码方只认自己扫过的
+/// endpoint ID 发来的配对结果，删除通知原样转交。
 pub trait PeerPairHandler: Send + Sync + Debug + 'static {
     /// 有人扫了我们的码。`scanner` 是 QUIC 握手认证过的对方 endpoint ID，不可伪造。
     fn scanned(
         &self,
         scanner: EndpointId,
         request: &super::PeerIdentity,
-        token: &super::PeerPairToken,
+        secret: &super::PeerPairSecret,
     ) -> PeerReply;
-
-    /// 扫码方来问自己那条请求的结果。`scanner` 是 QUIC 握手认证过的对方 endpoint ID。
-    fn outcome(&self, scanner: EndpointId) -> PeerReply;
 
     /// 我们在等这个 endpoint ID 的配对结果吗。结果只认我们自己扫过的那个对方（ADR-0050），别的来源一律不理。
     fn expecting_decision(&self, from: &EndpointId) -> bool;
@@ -90,15 +85,14 @@ impl<H: PeerPairHandler> PeerPairProtocol<H> {
 
     fn dispatch(&self, remote: EndpointId, message: PeerMessage) -> PeerReply {
         match message {
-            PeerMessage::Scan { token, identity } => {
-                self.handler.scanned(remote, &identity, &token)
+            PeerMessage::Scan { secret, identity } => {
+                self.handler.scanned(remote, &identity, &secret)
             }
-            PeerMessage::Outcome => self.handler.outcome(remote),
             PeerMessage::Decision { approved, identity } => {
                 if !self.handler.expecting_decision(&remote) {
                     debug!(from = %remote.fmt_short(), "不理不是自己扫过的服务器的配对结果");
                     return PeerReply::Error {
-                        reason: super::PeerRejectReason::CodeRevoked,
+                        reason: super::PeerRejectReason::UnknownCode,
                         message: "扫码方不在等这个来源的配对结果".to_owned(),
                     };
                 }

@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 
 use super::languages::Languages;
-use super::package_files::{COMPOSE_FILE, MAX_FILE_BYTES, PackageFiles, normalize};
+use super::package_files::{COMPOSE_FILE, FileError, MAX_FILE_BYTES, PackageFiles, normalize};
 use crate::l10n::text;
 
 /// 压缩包最多这么大（网关的请求体上限）。
@@ -59,12 +59,9 @@ impl Archive {
             flate2::read::GzDecoder::new(body)
                 .take(MAX_UNPACKED_BYTES + 1)
                 .read_to_end(&mut tar)
-                .map_err(|e| format!("can't decompress gzip: {e}"))?;
+                .map_err(|e| format!("解不开 gzip：{e}"))?;
             if tar.len() as u64 > MAX_UNPACKED_BYTES {
-                return Err(format!(
-                    "unpacks to more than {} MiB",
-                    MAX_UNPACKED_BYTES >> 20
-                ));
+                return Err(format!("解开后超过 {} MiB", MAX_UNPACKED_BYTES >> 20));
             }
             Format::Tar(tar)
         } else if body.starts_with(ZIP_MAGIC) || body.starts_with(ZIP_EMPTY_MAGIC) {
@@ -80,8 +77,8 @@ impl Archive {
         let mut entries = Vec::new();
         let mut add = |raw: String, kind: Kind| {
             if entries.len() >= MAX_ENTRIES {
-                // 这条没有对应的消息 ID，不按语言写。
-                return Err(format!("the archive holds more than {MAX_ENTRIES} entries"));
+                // 目录的原文里没有对应的消息 ID，保留中文原样。
+                return Err(format!("压缩包里超过 {MAX_ENTRIES} 项"));
             }
             if let Ok(path) = normalize(&raw) {
                 entries.push((path, kind));
@@ -184,49 +181,10 @@ impl Archive {
         wanted: &[String],
         langs: &Languages,
     ) -> Result<PackageFiles, String> {
-        let wanted: BTreeMap<String, String> = wanted
+        let wanted: BTreeMap<String, &str> = wanted
             .iter()
-            .map(|path| (format!("{root}{path}"), path.clone()))
+            .map(|path| (format!("{root}{path}"), path.as_str()))
             .collect();
-        self.read_wanted(&wanted, MAX_FILE_BYTES, langs)
-    }
-
-    /// `prefix`（带结尾的 `/`）下的全部文件，路径相对 `prefix`：静态网页的目录（ADR-0080）。目录项不算文件；
-    /// 软链接这类不是普通文件的项报错。
-    pub fn read_tree(
-        &self,
-        prefix: &str,
-        max: u64,
-        langs: &Languages,
-    ) -> Result<PackageFiles, String> {
-        let mut wanted = BTreeMap::new();
-        for (path, kind) in self.entries(langs)? {
-            let Some(rel) = path.strip_prefix(prefix) else {
-                continue;
-            };
-            match kind {
-                Kind::File => {
-                    wanted.insert(path.clone(), rel.to_owned());
-                }
-                Kind::Other(what) => {
-                    return Err(text(
-                        langs,
-                        "plugin-install-arch-not-regular",
-                        &[("rel", rel.into()), ("what", what.into())],
-                    ));
-                }
-                Kind::Dir => {}
-            }
-        }
-        self.read_wanted(&wanted, max, langs)
-    }
-
-    fn read_wanted(
-        &self,
-        wanted: &BTreeMap<String, String>,
-        max: u64,
-        langs: &Languages,
-    ) -> Result<PackageFiles, String> {
         let mut seen = BTreeSet::new();
         for (path, kind) in self.entries(langs)? {
             let Some(rel) = wanted.get(&path) else {
@@ -236,7 +194,7 @@ impl Archive {
                 return Err(text(
                     langs,
                     "plugin-install-arch-not-regular",
-                    &[("rel", rel.as_str().into()), ("what", what.into())],
+                    &[("rel", (*rel).into()), ("what", what.into())],
                 ));
             }
             // 同名的两项，不同的工具可能解出不同的那个：拒绝，主人核对摘要才有意义。
@@ -244,22 +202,22 @@ impl Archive {
                 return Err(text(
                     langs,
                     "plugin-install-arch-duplicate-file",
-                    &[("rel", rel.as_str().into())],
+                    &[("rel", (*rel).into())],
                 ));
             }
         }
         let mut files = PackageFiles::new();
         let mut keep = |path: &str, data: Vec<u8>| -> Result<(), String> {
-            let rel = wanted.get(path).expect("only wanted files are read");
-            if data.len() as u64 > max {
-                return Err(format!("`{rel}` is over {} KiB", max >> 10));
+            let rel = wanted.get(path).expect("只读要的文件");
+            if data.len() as u64 > MAX_FILE_BYTES {
+                return Err(format!("`{rel}` {}", FileError::TooBig));
             }
-            files.insert(rel.clone(), data);
+            files.insert((*rel).to_owned(), data);
             Ok(())
         };
         match &self.format {
-            Format::Tar(tar) => read_tar(tar, wanted, max, &mut keep, langs)?,
-            Format::Zip(zip) => read_zip(zip, wanted, max, &mut keep, langs)?,
+            Format::Tar(tar) => read_tar(tar, &wanted, &mut keep, langs)?,
+            Format::Zip(zip) => read_zip(zip, &wanted, &mut keep, langs)?,
         }
         Ok(files)
     }
@@ -269,8 +227,7 @@ type Keep<'a> = &'a mut dyn FnMut(&str, Vec<u8>) -> Result<(), String>;
 
 fn read_tar(
     tar: &[u8],
-    wanted: &BTreeMap<String, String>,
-    max: u64,
+    wanted: &BTreeMap<String, &str>,
     keep: Keep<'_>,
     langs: &Languages,
 ) -> Result<(), String> {
@@ -303,7 +260,7 @@ fn read_tar(
             .into_owned();
         let Ok(path) = normalize(&raw) else { continue };
         if wanted.contains_key(&path) && tar_kind(entry.header().entry_type()) == Kind::File {
-            let data = read_limited(entry, &path, max, langs)?;
+            let data = read_limited(entry, &path, langs)?;
             keep(&path, data)?;
         }
     }
@@ -312,8 +269,7 @@ fn read_tar(
 
 fn read_zip(
     zip: &[u8],
-    wanted: &BTreeMap<String, String>,
-    max: u64,
+    wanted: &BTreeMap<String, &str>,
     keep: Keep<'_>,
     langs: &Languages,
 ) -> Result<(), String> {
@@ -352,7 +308,7 @@ fn read_zip(
             )
         })?;
         if entry.is_file() {
-            let data = read_limited(entry, &path, max, langs)?;
+            let data = read_limited(entry, &path, langs)?;
             keep(&path, data)?;
         }
     }
@@ -380,20 +336,18 @@ fn tar_kind(kind: tar::EntryType) -> Kind {
     }
 }
 
-fn read_limited(
-    entry: impl Read,
-    path: &str,
-    max: u64,
-    langs: &Languages,
-) -> Result<Vec<u8>, String> {
+fn read_limited(entry: impl Read, path: &str, langs: &Languages) -> Result<Vec<u8>, String> {
     let mut data = Vec::new();
-    entry.take(max + 1).read_to_end(&mut data).map_err(|e| {
-        text(
-            langs,
-            "plugin-install-arch-read-entry-failed",
-            &[("path", path.into()), ("error", e.to_string().into())],
-        )
-    })?;
+    entry
+        .take(MAX_FILE_BYTES + 1)
+        .read_to_end(&mut data)
+        .map_err(|e| {
+            text(
+                langs,
+                "plugin-install-arch-read-entry-failed",
+                &[("path", path.into()), ("error", e.to_string().into())],
+            )
+        })?;
     Ok(data)
 }
 
@@ -547,18 +501,13 @@ mod tests {
     fn archives_that_unpack_too_big_or_hold_too_many_entries_are_refused() {
         let bomb = gz(&vec![0; MAX_UNPACKED_BYTES as usize + 1]);
         assert!(bomb.len() < MAX_ARCHIVE_BYTES);
-        assert!(
-            Archive::open(&bomb)
-                .err()
-                .unwrap()
-                .contains("unpacks to more than")
-        );
+        assert!(Archive::open(&bomb).err().unwrap().contains("解开后超过"));
 
         let entries: Vec<(String, &[u8])> = (0..=MAX_ENTRIES)
             .map(|i| (format!("f{i}"), b"".as_slice()))
             .collect();
         let entries: Vec<(&str, &[u8])> = entries.iter().map(|(p, d)| (p.as_str(), *d)).collect();
         let many = zip_of(&entries);
-        assert!(read_all(&many, &[]).unwrap_err().contains("more than"));
+        assert!(read_all(&many, &[]).unwrap_err().contains("超过"));
     }
 }

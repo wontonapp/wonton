@@ -296,7 +296,6 @@ async fn direct_invites_accepted_back_to_back_both_stay_direct() {
 }
 
 /// `alice` 建私聊邀请 `bob`，`bob` 看到邀请后加入。
-/// 加密时等收信设备的密钥上服务器；否则发送方首次查询会漏掉设备，首条消息的房间密钥不会共享给它。
 pub async fn direct_chat(
     alice: &MatrixSession,
     bob: &MatrixSession,
@@ -322,11 +321,6 @@ pub async fn direct_chat(
         row.membership == Membership::Joined
     })
     .await;
-    if encrypted {
-        alice
-            .wait_for_server_device(bob.user_id(), bob.device_id())
-            .await;
-    }
     room_id
 }
 

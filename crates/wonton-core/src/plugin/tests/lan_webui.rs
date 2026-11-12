@@ -13,7 +13,6 @@ use super::super::names::container_name;
 use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::egress::serve;
 use super::lan::{binding, created, granted, office, on};
-use super::lan_announce::on_announced;
 use super::{env_of_container, package};
 
 const IDENTITY: &str = "sso: proxy, proxy: {headers: {Remote-User: '{user}'}}";
@@ -140,7 +139,7 @@ async fn a_client_port_stays_closed_until_the_switch_then_shows_the_account() {
     let offer = opened.lan_webui.unwrap();
     assert_eq!(offer.client_problem, None);
     let client = offer.client.expect("开着就有账号");
-    assert_eq!(client.addresses, ["http://192.168.0.10:4533"]);
+    assert_eq!(client.addresses, ["http://192.168.0.193:4533"]);
     assert_eq!(client.username, m.cfg.owner);
     let installed = m.installed_detail(&id(), &langs).unwrap();
     assert_eq!(
@@ -158,51 +157,6 @@ async fn a_client_port_stays_closed_until_the_switch_then_shows_the_account() {
 
     let closed = m.set_lan_webui(id(), false, langs).await.unwrap();
     assert_eq!(closed.lan_webui.unwrap().client, None);
-}
-
-#[tokio::test]
-async fn a_lan_client_uses_the_internal_email_before_and_after_profile_updates() {
-    let (_docker, m, _detected, _dir) = on(office()).await;
-    let compose = with_client(web_port().await, &CLIENT.replace("{user}", "{email}"));
-    m.install(&compose, &granted(&compose), super::langs())
-        .await
-        .unwrap();
-    let opened = m
-        .set_lan_webui(id(), true, Languages::default())
-        .await
-        .unwrap();
-    assert_eq!(
-        opened.lan_webui.unwrap().client.unwrap().username,
-        "owner@wonton.internal"
-    );
-    m.cfg
-        .profile
-        .update(&wonton_protocol::OwnerProfileUpdate {
-            display_name: "主人".into(),
-            email: Some("changed@example.com".into()),
-        })
-        .unwrap();
-    let detail = m.judged_detail(&id(), &Languages::default()).await.unwrap();
-    assert_eq!(
-        detail.lan_webui.unwrap().client.unwrap().username,
-        "owner@wonton.internal"
-    );
-}
-
-/// 启动器声明了宣告地址时，客户端的连接地址用宣告地址，不用容器记录里的通配地址。
-#[tokio::test]
-async fn the_client_address_uses_the_announced_address() {
-    let (_docker, m, _detected, _dir) = on_announced(office(), "192.168.0.5").await;
-    let compose = with_client(web_port().await, CLIENT);
-    m.install(&compose, &granted(&compose), super::langs())
-        .await
-        .unwrap();
-    let opened = m
-        .set_lan_webui(id(), true, Languages::default())
-        .await
-        .unwrap();
-    let client = opened.lan_webui.unwrap().client.expect("开着就有地址");
-    assert_eq!(client.addresses, ["http://192.168.0.5:4533"]);
 }
 
 #[tokio::test]
@@ -271,10 +225,10 @@ async fn opening_at_install_publishes_the_port_and_survives_restart() {
     let key = format!("{port}/tcp");
     assert_eq!(
         published(&docker, "web")[&key],
-        binding("192.168.0.10", &port.to_string())
+        binding("192.168.0.193", &port.to_string())
     );
     let env = env_of_container(&docker, "wonton-app-test--web");
-    assert_eq!(env["ADDRESSES"], "192.168.0.10");
+    assert_eq!(env["ADDRESSES"], "192.168.0.193");
     assert_eq!(m.lan_plugins().len(), 1);
 
     let record = super::super::store::Store::open(dir.path().join("plugins"))
@@ -301,7 +255,7 @@ async fn switching_rebuilds_the_opening_containers_only() {
         .await
         .unwrap();
     assert!(detail.lan_webui.unwrap().enabled);
-    let binding_on = binding("192.168.0.10", &port.to_string());
+    let binding_on = binding("192.168.0.193", &port.to_string());
     assert_eq!(published(&docker, "web")[&key], binding_on);
     assert_eq!(m.lan_plugins()[0].1.ports.len(), 2);
     assert_eq!(status(&m), PluginStatus::Running);
@@ -321,7 +275,7 @@ async fn switching_rebuilds_the_opening_containers_only() {
     assert_eq!(published(&docker, "web"), Value::Null);
     assert_eq!(
         published(&docker, "smb")["445/tcp"],
-        binding("192.168.0.10", "445"),
+        binding("192.168.0.193", "445"),
         "不用开关的端口一直开着"
     );
     assert_eq!(m.lan_plugins()[0].1.ports.len(), 1);
@@ -342,7 +296,7 @@ async fn switching_updates_address_consumers_without_lan_ports() {
         env_of_container(&docker, "wonton-app-test--smb")["ADDRESSES"],
         ""
     );
-    for (enabled, addresses) in [(true, "192.168.0.10"), (false, "")] {
+    for (enabled, addresses) in [(true, "192.168.0.193"), (false, "")] {
         let before = docker.writes().len();
         m.set_lan_webui(id(), enabled, Languages::default())
             .await
@@ -471,14 +425,13 @@ async fn closing_never_reopens_the_port_when_it_fails() {
         detail.lan_webui.unwrap().enabled
     };
 
-    // 别的服务不健康：端口照样关得掉（按服务算，关的是网页的端口），插件是异常；定期检测不开回去，
-    // 那个服务好了就恢复，网页不再重建。
+    // 别的服务不健康：端口关了，报错，定期检测也不开回去；那个服务好了就恢复，网页不再重建。
     let smb = container_name("app-test", "smb");
     let health = |status| serde_json::json!({"Status": "running", "Running": true, "Health": {"Status": status}});
     docker.set_state(&smb, health("unhealthy"));
     m.set_lan_webui(id(), false, Languages::default())
         .await
-        .unwrap();
+        .unwrap_err();
     assert!(!enabled(&m));
     assert!(matches!(status(&m), PluginStatus::Degraded { .. }));
     let closed = docker.writes().len();
@@ -487,9 +440,7 @@ async fn closing_never_reopens_the_port_when_it_fails() {
     assert!(!enabled(&m));
     assert!(matches!(status(&m), PluginStatus::Degraded { .. }));
     docker.set_state(&smb, health("healthy"));
-    // 端口已经关了，局域网检测没事可做：由巡检发现容器好了。
     m.lan_pass(&Languages::default()).await.unwrap();
-    m.watch_containers().await;
     assert_eq!(status(&m), PluginStatus::Running);
     assert_eq!(published(&docker, "web"), Value::Null);
     assert!(

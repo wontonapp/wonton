@@ -13,7 +13,7 @@ use std::{
 };
 
 use axum::body::Body;
-use futures_util::future::BoxFuture;
+use futures_util::{TryFutureExt, future::MapOk};
 use hyper::rt::{Read, ReadBufCursor, Write};
 use hyper::{
     Request, Uri,
@@ -26,7 +26,7 @@ use hyper_util::{
 use tokio::{net::TcpStream, sync::watch, time::Instant};
 use tower::Service;
 
-use super::{ConnTag, Connections};
+use super::HttpError;
 
 #[derive(Clone, Default)]
 pub(crate) struct Flushed(Arc<Mutex<Option<watch::Sender<Option<Instant>>>>>);
@@ -46,35 +46,20 @@ impl Flushed {
 pub(crate) struct FlushIo<T> {
     inner: T,
     pub(crate) flushed: Flushed,
-    tag: Option<ConnTag>,
 }
 
 impl<T> FlushIo<T> {
-    /// 池外的单条连接（unix 套接字）没有连接编号。
     pub(crate) fn new(inner: T) -> Self {
         Self {
             inner,
             flushed: Flushed::default(),
-            tag: None,
-        }
-    }
-
-    fn tagged(inner: T, tag: ConnTag) -> Self {
-        Self {
-            inner,
-            flushed: Flushed::default(),
-            tag: Some(tag),
         }
     }
 }
 
 impl<T: Connection> Connection for FlushIo<T> {
     fn connected(&self) -> Connected {
-        let connected = self.inner.connected().extra(self.flushed.clone());
-        match self.tag {
-            Some(tag) => connected.extra(tag),
-            None => connected,
-        }
+        self.inner.connected().extra(self.flushed.clone())
     }
 }
 
@@ -122,36 +107,23 @@ impl<T: Write + Unpin> Write for FlushIo<T> {
     }
 }
 
-/// 给每条新建连接编号，上层靠它分辨失败是不是出在从池里复用的连接上。
 #[derive(Clone)]
-pub(super) struct FlushConnector<C> {
-    inner: C,
-    connections: Connections,
-}
-
-impl<C> FlushConnector<C> {
-    pub(super) fn new(inner: C, connections: Connections) -> Self {
-        Self { inner, connections }
-    }
-}
+pub(super) struct FlushConnector<C>(pub(super) C);
 
 impl<C> Service<Uri> for FlushConnector<C>
 where
-    C: Service<Uri, Response = TokioIo<TcpStream>> + 'static,
-    C::Future: Send + 'static,
+    C: Service<Uri, Response = TokioIo<TcpStream>>,
 {
     type Response = FlushIo<TokioIo<TcpStream>>;
     type Error = C::Error;
-    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+    type Future = MapOk<C::Future, fn(TokioIo<TcpStream>) -> Self::Response>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
+        self.0.poll_ready(cx)
     }
 
     fn call(&mut self, uri: Uri) -> Self::Future {
-        let tag = self.connections.next();
-        let connecting = self.inner.call(uri);
-        Box::pin(async move { connecting.await.map(|io| FlushIo::tagged(io, tag)) })
+        self.0.call(uri).map_ok(FlushIo::new)
     }
 }
 
@@ -271,11 +243,10 @@ impl ResponseDeadline {
         (request, Self { started, limit })
     }
 
-    pub(crate) async fn wait<T, E>(
+    pub(crate) async fn wait<T>(
         mut self,
-        sending: impl Future<Output = Result<T, E>>,
-        timeout: E,
-    ) -> Result<T, E> {
+        sending: impl Future<Output = Result<T, HttpError>>,
+    ) -> Result<T, HttpError> {
         let deadline = async {
             let started = self
                 .started
@@ -291,7 +262,7 @@ impl ResponseDeadline {
         tokio::select! {
             biased;
             response = sending => response,
-            () = deadline => Err(timeout),
+            () = deadline => Err(HttpError::ResponseHeadersTimeout(self.limit)),
         }
     }
 }

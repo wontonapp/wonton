@@ -79,10 +79,7 @@ fn tab_validation_reports_each_field_rule() {
         assert!(err.contains(field), "{field}: {err}");
     }
 
-    for (path, expected) in [
-        ("//evil.example/x", "//"),
-        ("/\\evil.example/x", "backslash"),
-    ] {
+    for (path, expected) in [("//evil.example/x", "//"), ("/\\evil.example/x", "反斜杠")] {
         let source = tab("").replace("      path: /feed", &format!("      path: '{path}'"));
         let err = PluginPackage::parse(&package(SERVICES, &source), &super::langs())
             .unwrap_err()
@@ -98,7 +95,7 @@ fn tab_validation_reports_each_field_rule() {
         .unwrap_err()
         .to_string();
     assert!(
-        err.contains("tabs[0].path") && err.contains("control characters"),
+        err.contains("tabs[0].path") && err.contains("控制字符"),
         "{err}"
     );
 
@@ -112,7 +109,7 @@ fn tab_validation_reports_each_field_rule() {
             )
         })
         .collect::<String>();
-    assert!(error(&too_many).contains("tabs allows at most 4 entries"));
+    assert!(error(&too_many).contains("tabs 最多 4 项"));
 
     let no_webui = package(
         SERVICES,
@@ -122,7 +119,7 @@ fn tab_validation_reports_each_field_rule() {
         PluginPackage::parse(&no_webui, &super::langs())
             .unwrap_err()
             .to_string()
-            .contains("tabs is declared but webui is not")
+            .contains("tabs 声明了但没有声明 webui")
     );
 
     let bad_display = package(
@@ -218,7 +215,7 @@ fn tab_icon_files_are_required_when_declared() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("tabs[0].icon_selected"), "{err}");
-    assert!(err.contains("does not exist"), "{err}");
+    assert!(err.contains("不存在"), "{err}");
 }
 
 #[test]

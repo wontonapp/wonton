@@ -1,6 +1,8 @@
 //! 一次性服务和健康状态：安装和核心重启后核对时，一次性服务“已退出、退出码 0”是正常状态；没有健康检查的
 //! 服务只能说在运行，不能说健康。
 
+use std::fs;
+use std::path::Path;
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -226,10 +228,8 @@ async fn timeout_also_names_the_failing_probes() {
     let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
     let error = wait_for(
         &engine,
-        &crate::http::HttpClient::new(),
         &app,
         Target::Ready,
-        None,
         deadline,
         &Languages::default(),
     )
@@ -413,4 +413,31 @@ async fn a_one_shot_service_starts_only_after_the_long_running_service_is_health
         !started_too_early.await.unwrap(),
         "init 在应用健康之前就被启动了"
     );
+}
+
+/// 规范：长期运行的服务都要有健康检查，官方目录的插件缺了不收录。`plugins/examples/` 不进官方目录，
+/// 其中 whoami 的镜像里没有任何可以用来检查的命令。插件草稿用到核心还没实现的字段，这里直接读 YAML。
+#[test]
+fn official_plugins_check_the_health_of_every_long_running_service() {
+    let plugins = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+    let mut checked = Vec::new();
+    for entry in fs::read_dir(&plugins).unwrap() {
+        let dir = entry.unwrap().path();
+        let compose = dir.join("docker-compose.yml");
+        if dir.ends_with("examples") || !compose.is_file() {
+            continue;
+        }
+        let doc: Value = serde_saphyr::from_str(&fs::read_to_string(&compose).unwrap()).unwrap();
+        let services = doc["services"].as_object().expect("compose 里有服务");
+        for (name, service) in services.iter().filter(|(_, s)| s["restart"] != "no") {
+            let check = &service["healthcheck"];
+            assert!(
+                !check["test"].is_null() && check["disable"] != true,
+                "{}：长期运行的服务 {name} 没有健康检查",
+                compose.display()
+            );
+            checked.push(name.clone());
+        }
+    }
+    assert!(!checked.is_empty(), "{} 下没有找到插件", plugins.display());
 }

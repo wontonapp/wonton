@@ -16,7 +16,7 @@ upgrade-launch-updater-failed = 啟動更新器失敗：{ $error }
 
 # 介面自己查不到要答的東西。
 upgrade-container-missing = 找不到家用伺服器的容器 { $name }
-upgrade-image-missing = 找不到正在使用的映像檔 { $image }；重新啟動家用伺服器後恢復
+upgrade-image-missing = 找不到正在使用的映像檔 { $image }
 
 # 背景檢查（每 6 小時一次，打開更新頁也會查）。
 upgrade-check-core-failed = 查家用伺服器的容器失敗：{ $error }
@@ -29,13 +29,6 @@ upgrade-auto-download-skipped = 磁碟剩不到 5 GB，沒有自動下載
 upgrade-download-no-space = 磁碟不夠：下載大約要 { $needed } 位元組，只有 { $free } 位元組可用
 upgrade-download-failed = 下載失敗：{ $error }
 upgrade-image-missing-after-pull = 下載完了，本機還是沒有 { $reference }
-
-# 相容性檢查（ADR-0085）查不成不攔升級：詳情如實說沒查成，升級照常可以發起。
-upgrade-compat-records-unreadable = 讀不了已安裝應用程式的紀錄：{ $error }
-upgrade-compat-materialize-failed = 無法為相容性檢查寫出已安裝應用程式的套件：{ $error }
-upgrade-compat-run-failed = 在新映像檔 { $image } 裡跑不了相容性檢查：{ $error }
-upgrade-compat-command-failed = 新映像檔 { $image } 裡的相容性檢查以結束代碼 { $code } 結束：{ $error }
-upgrade-compat-output-unreadable = 讀不懂相容性檢查的輸出：{ $error }
 
 # 更新器容器把自己做的事寫進狀態檔，用主人的語言。
 upgrade-updater-crashed = 更新器反覆崩潰
@@ -63,7 +56,7 @@ upgrade-components-failed =
        *[old] 處理舊版本不支援的元件失敗：{ $error }
     }
 upgrade-up-failed = 服務沒有啟動：{ $error }
-upgrade-core-image-wrong = 家用伺服器的容器跑的是 { $actual }（映像檔 { $actual_id }），不是 { $image }（映像檔 { $image_id }）
+upgrade-core-image-wrong = 家用伺服器的容器用的是 { $actual }，不是 { $image }
 upgrade-core-container-missing = 沒有家用伺服器的容器
 upgrade-containers-failed = 查系統服務的容器失敗：{ $error }
 upgrade-observe-timed-out = 觀察階段超過了時限

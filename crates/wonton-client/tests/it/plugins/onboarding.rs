@@ -1,22 +1,19 @@
 use std::fs;
-use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use wonton_client::{
     Action, CoreError, ModelProviderFailure, ModelProviderInput, OnboardingModelChoice,
-    OnboardingReviewDetail, OnboardingReviewKind, OnboardingStep, OnboardingViewModel,
-    SecretString, StepNav,
+    OnboardingReviewKind, OnboardingStep, OnboardingViewModel, SecretString, StepNav,
 };
 
-use super::rig::{FakeHome, Rig, WAIT, core_error, item};
+use super::rig::{FakeHome, Rig, core_error, item};
 
 mod commit;
 mod loading;
-mod old_server;
 mod refresh;
 
 const ONBOARDING: &str = "/_wonton/api/onboarding";
-const PROFILE: &str = wonton_protocol::ME_PATH;
+const PROFILE: &str = "/_wonton/api/owner-profile";
 const PROVIDERS: &str = "/_wonton/api/models/providers";
 const KEY: &str = "/_wonton/api/models/providers/openai";
 const KEY_TEST: &str = "/_wonton/api/models/providers/openai/test";
@@ -164,19 +161,6 @@ async fn walk_to_review(rig: &Rig) -> OnboardingViewModel {
     .await
 }
 
-/// 轮询等请求到达假核心，20ms 一拍。不能用 yield_now 忙等：忙等的测试任务和假核心、
-/// 隧道服务端共用测试线程，高负载下会把请求链饿死（#836）。
-async fn wait_requests(rig: &Rig, method: Method, path: &str, count: usize) {
-    let deadline = Instant::now() + WAIT;
-    while rig.core.seen(&method, path).len() < count {
-        assert!(
-            Instant::now() < deadline,
-            "missing {method} {path} #{count}"
-        );
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-}
-
 #[tokio::test]
 async fn every_step_only_records_its_choice_until_finish() {
     let rig = flow_rig(with_photos(onboarding("profile"))).await;
@@ -202,7 +186,6 @@ async fn every_step_only_records_its_choice_until_finish() {
             can_back: true,
             can_skip: false,
             can_next: true,
-            can_close: false,
         })
     );
     let tested = rig.core.seen(&Method::POST, KEY_TEST);
@@ -277,7 +260,6 @@ async fn reopening_shows_the_current_settings_on_every_step() {
         })
         .await;
     assert_eq!(view.profile.display_name, "云吞");
-    assert!(view.nav.unwrap().can_close, "重看引导每一步都能关");
     act(&rig, Action::ContinueOnboarding);
     assert!(at(&rig, OnboardingStep::Agent).await.agents[0].selected);
     act(&rig, Action::ContinueOnboarding);
@@ -294,71 +276,11 @@ async fn reopening_shows_the_current_settings_on_every_step() {
         [
             OnboardingReviewKind::Profile,
             OnboardingReviewKind::Agent,
-            OnboardingReviewKind::Model,
-            OnboardingReviewKind::App
+            OnboardingReviewKind::Model
         ],
-        "四类各一行，装着的应用也在"
+        "装着的应用不再列出"
     );
-    let details: Vec<_> = review
-        .review
-        .items
-        .iter()
-        .map(|item| item.detail.clone())
-        .collect();
-    assert_eq!(
-        details,
-        [
-            Some(OnboardingReviewDetail::Unchanged),
-            Some(OnboardingReviewDetail::Unchanged),
-            Some(OnboardingReviewDetail::KeepCurrent),
-            Some(OnboardingReviewDetail::Unchanged),
-        ],
-        "没动的标不变，模型是“用现在的”"
-    );
-    assert_eq!(review.review.items[0].titles, ["云吞"]);
-    assert_eq!(review.review.items[1].titles, ["Agent One"]);
     assert_nothing_saved(&rig);
-}
-
-#[tokio::test]
-async fn closing_a_revisit_discards_every_choice_and_saves_nothing() {
-    let rig = Rig::new().await;
-    let mut state = onboarding("finished");
-    state["primary_agent"] = serde_json::json!("agent.one");
-    state["agents"][0]["status"] = serde_json::json!({"state": "running", "health": "healthy"});
-    state["agents"][0]["source"] = serde_json::Value::Null;
-    rig.core.set_onboarding(state);
-    rig.core.set_owner(Some("云吞"), None);
-    rig.core.set_providers(providers(true));
-    rig.connected().await;
-    at(&rig, OnboardingStep::Finished).await;
-
-    act(&rig, Action::RestartOnboarding);
-    at(&rig, OnboardingStep::Profile).await;
-    edit(&rig, "改过的名字", "new@example.com");
-    act(&rig, Action::ContinueOnboarding);
-    act(
-        &rig,
-        Action::ChooseOnboardingAgent {
-            id: "agent.one".to_owned(),
-        },
-    );
-    act(&rig, Action::ContinueOnboarding);
-    act(&rig, Action::UseCurrentModel);
-    act(&rig, Action::ContinueOnboarding);
-    // 中途关掉：什么都没保存，回到设置。
-    rig.app.close_onboarding();
-    let view = rig
-        .wait_onboarding(|view| view.step.is_none() && !view.loading)
-        .await;
-    assert_eq!(view.profile.display_name, "云吞", "显示的还是现值");
-    assert!(view.agents[0].selected, "默认 Agent 还是现值");
-    assert_nothing_saved(&rig);
-
-    // 再看重看：从第一步开始，草稿已经丢掉。
-    act(&rig, Action::RestartOnboarding);
-    let view = at(&rig, OnboardingStep::Profile).await;
-    assert_eq!(view.profile.display_name, "云吞");
 }
 
 #[tokio::test]

@@ -108,17 +108,12 @@ async fn a_stuck_local_read_keeps_its_slot_until_it_really_ends() {
     );
 
     drop(holding);
-    // 期限回到生产里的长度：最后这次读验的是“名额回来以后能照常读”，和那 50 毫秒无关。
-    with_timeout(&mut f, super::THUMBNAIL_READ_TIMEOUT);
-    with_slot_wait(&mut f, super::slots::SLOT_WAIT);
-    // 读真的结束才还名额：等名额全回来为止。30 秒只是防挂死的保险（真有 bug 时别让 CI 等整作业超时），平时到不了点。
-    tokio::time::timeout(Duration::from_secs(30), async {
-        while f.files.local_thumbnail_reads.available_permits() < super::MAX_THUMBNAIL_READS {
-            tokio::task::yield_now().await;
+    for _ in 0..500 {
+        if f.files.local_thumbnail_reads.available_permits() == super::MAX_THUMBNAIL_READS {
+            break;
         }
-    })
-    .await
-    .expect("名额要在读真正结束后全还回来");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     assert_eq!(
         f.files.local_thumbnail_reads.available_permits(),
         super::MAX_THUMBNAIL_READS
@@ -260,8 +255,7 @@ async fn a_plugin_that_is_only_busy_is_not_called_unavailable() {
 fn stuck_decoder(f: &mut Fixture, dir: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;
     let script = dir.join("decode.sh");
-    // 假的助手：报个协议版本就再也不回答，任务一直挂着。
-    std::fs::write(&script, "#!/bin/sh\nprintf '0 1\\n'\nexec sleep 60\n").unwrap();
+    std::fs::write(&script, "#!/bin/sh\nexec sleep 60\n").unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     Arc::get_mut(&mut f.files).unwrap().images = Arc::new(super::ImageWorker::new(script));
 }

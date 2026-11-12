@@ -7,7 +7,6 @@ core-error-not-ready = まだ準備ができていません：{ $reason }
 core-error-transport = 自宅サーバーに接続できません：{ $reason }
 core-error-unauthorized = 自宅サーバーがリクエストを拒否しました：{ $reason }
 core-error-upstream = 自宅サーバーでエラーが発生しました：{ $reason }
-core-error-server-too-old = 自宅サーバーが古いため、この操作はまだできません。サーバーを更新してからもう一度お試しください。
 
 # デバイスの追加時に、ペアリングコードをまだ取得できない理由です。
 invite-not-paired = 自宅サーバーとまだペアリングしていません。
@@ -45,20 +44,6 @@ peers-invalid-proxy = ローカルプロキシを利用できません：{ $reas
 peers-server-status = 自宅サーバーが HTTP { $status } を返しました
 # $reason は JSON パーサーの元のエラーです。
 peers-invalid-response = 自宅サーバーの応答を読み取れません：{ $reason }
-friends-transport = 自宅サーバーに接続できません：{ $reason }
-friends-server-status = 自宅サーバーが HTTP { $status } を返しました
-friends-invalid-response = 自宅サーバーの応答を読み取れません：{ $reason }
-friends-not-signed-in = まだこのアカウントにサインインしていません。
-friends-not-connected = まだ自宅サーバーに接続していません。
-friends-invalid-action = 友だちの操作ではありません。
-friends-local-open = 端末内の友だちリストを開けません：{ $reason }
-friends-invalid-proxy = ローカルプロキシを利用できません：{ $reason }
-friends-http-client = ローカル HTTP クライアントを作成できません：{ $reason }
-friends-invalid-url = 友だちサービスのアドレスが無効です：{ $reason }
-friends-request-body = 友だちリクエストをエンコードできません：{ $reason }
-friends-timeout = 友だちサービスから時間内に応答がありませんでした。
-friends-group-name-required = グループ名を入力してください。
-friends-group-not-found = グループ { $id } が見つかりません。
 # $reason はトンネルに拒否されたときの元の文章です。
 peers-rejected = 自宅サーバーがこのデバイスを拒否しました：{ $reason }
 
@@ -78,8 +63,6 @@ onboarding-steps-testing = テストが実行中です
 onboarding-steps-model-not-chosen = モデルがまだ選ばれていません
 onboarding-steps-cannot-skip = このステップはスキップできません
 onboarding-steps-cannot-go-back = このステップからは戻れません
-# シェルからコアの知らないセットアップ操作が渡されたときに表示します。
-onboarding-invalid-action = セットアップ操作ではありません
 
 # モデルプロバイダーの接続です。
 onboarding-model-key-required = APIキーが空です
@@ -108,7 +91,6 @@ onboarding-review-no-failure = その項目は失敗していません
 
 # サインイン関連。$reason は Matrix SDK の元のエラーの詳細です。
 chat-sign-in-restore-failed = Matrixセッションを復元できません：{ $reason }
-chat-sign-in-external-missing = このスマートフォンにはこの Matrix アカウントのログイン状態がありません。もう一度ログインしてください。
 chat-sign-in-no-connection-info = 自宅サーバーの接続情報がまだありません
 chat-sign-in-login-failed = Matrixにログインできません：{ $reason }
 chat-sign-in-no-saved-session = ログイン後にログイン状態を取得できません
@@ -156,71 +138,15 @@ chat-contacts-empty-username = ユーザー名を入力してください。
 # $reason はMatrix IDパーサーの元のエラーです。
 chat-contacts-invalid-user-id = ユーザーIDが無効です：{ $reason }
 
-# Siri、ショートカット、チャット画面でメッセージを送るとき、本文が空の場合に表示します。
-chat-empty-message = メッセージを入力してください。
-composer-tray-full = 添付トレイに入れられるのは { $max } 個までです。
-composer-has-failed = アップロードできなかった添付があります。再試行するか削除してください。
-composer-attachment-not-found = この添付が見つかりません。削除済みか、すでに送信された可能性があります。
-composer-outgoing-not-found = この送信待ちメッセージが見つかりません。すでに送信キューに渡された可能性があります。
-composer-store-failed = 添付トレイを端末に保存できません（{ $path }）：{ $reason }
-composer-attachment-failed = 添付「{ $name }」をアップロードできませんでした。
-composer-transfer-gone = このファイルのアップロード記録が見つかりません。再試行してください。
-composer-upload-record-unreadable = 写真のアップロード記録を読み取れません：{ $reason }
+# Siriやショートカットでメッセージを送るとき、本文が空の場合に表示します。
+chat-ask-empty-message = メッセージを入力してください。
 # Siriやショートカットから渡されたボットのIDを解析できない場合に表示します。
 chat-ask-invalid-bot-id = デフォルトのエージェントのIDの形式が正しくありません。
 # 既存のダイレクトチャットのルームIDを解析できない場合に表示します。
 chat-ask-invalid-room-id = ダイレクトチャットのルームIDが無効です。
-chat-layout-invalid-bot-id = Matrix IDの形式が正しくありません（@name:server の形式）。
-chat-layout-change-failed = チャットの表示方法を変更できませんでした：{ $reason }
 
 # Matrixがこのデバイスを取り消し、アカウントが失敗扱いになったときに表示します。
 chat-session-device-revoked = このデバイスはMatrixで取り消されました。もう一度自宅サーバーとペアリングしてください。
-
-# シェルからコアの知らないチャット操作が渡されたときに表示します。
-side-chat-not-ready = このバージョンのクライアントコアはサイドチャットにまだ対応していません。
-chat-invalid-action = チャット操作ではありません
-# ダイレクトチャットの開始時に、@名前:サーバーの形でないIDが渡されたときに表示します。
-chat-invalid-user-id = ユーザーIDの形式が正しくありません。@名前:サーバーのように入力してください
-# $file_type は選択したファイルの元のMIMEタイプです。
-chat-not-image-type = 画像ファイルではありません：{ $file_type }
-# シェルからコアの知らない回答が渡されたときに表示します。
-chat-unknown-answer = このバージョンのWontonでは、この回答を認識できません
-# 自宅サーバーに接続する前に確認へ回答したり停止したりしたときに表示します。
-chat-action-not-connected = 自宅サーバーにまだ接続していません
-# Matrixにサインインする前にチャット操作が届いたときに表示します。
-chat-not-signed-in = Matrixにまだログインしていません
-chat-send-no-response = Matrixサーバーが応答しなくなりました
-# $error はルームID解析の元のエラーです。
-chat-invalid-room-id = ルームIDが正しくありません：{ $error }
-chat-link-room-not-joined = このルームにはまだ参加していません。先にチャットで招待を承認してください。
-# 通知専用のルームに送ろうとしたときに表示します。
-chat-read-only-room = このルームは通知専用のため、メッセージを送信できません
-# $room は元のルームIDです。
-chat-room-not-subscribed = 先にルーム{ $room }のタイムラインを購読してください
-# $error はイベント ID パーサーの元のエラー。
-chat-invalid-event-id = メッセージのイベントIDが正しくありません：{ $error }
-# 転送・取り消しするメッセージのメニューにその項目がない（取り消し済み、未送信、権限がないなど）ときに表示。
-chat-message-action-unavailable = このメッセージにはその操作ができません
-# 転送先のルームが存在しないか、まだ参加していないときに表示。
-chat-forward-target-not-joined = 転送先のルームにまだ参加していません
-# デフォルトのエージェントを選ぶ前に問い合わせたときに表示します。
-chat-no-default-agent = デフォルトのエージェントがまだありません。設定で選んでください
-
-# バックグラウンドのチャット操作が失敗したときの問題表示です。$error はMatrix SDKまたは自宅サーバーの元のエラーです。
-chat-op-ask-agent-failed = デフォルトのエージェントに質問できませんでした：{ $error }
-chat-op-display-name-failed = 表示名を同期できませんでした：{ $error }
-chat-op-join-failed = ルームに参加できませんでした：{ $error }
-chat-op-leave-failed = ルームから退出できませんでした：{ $error }
-chat-op-resend-failed = メッセージを再送できませんでした：{ $error }
-chat-op-cancel-send-failed = 送信をキャンセルできませんでした：{ $error }
-chat-op-paginate-failed = 過去のメッセージを読み込めませんでした：{ $error }
-chat-op-mark-read-failed = ルームを既読にできませんでした：{ $error }
-chat-op-direct-chat-failed = ダイレクトチャットを開始できませんでした：{ $error }
-chat-op-send-text-failed = メッセージを送信できませんでした：{ $error }
-chat-op-send-image-failed = 画像を送信できませんでした：{ $error }
-chat-op-send-preview-failed = リンクのプレビューを付けられませんでした：{ $error }
-chat-op-forward-failed = メッセージを転送できませんでした：{ $error }
-chat-op-redact-failed = メッセージを取り消せませんでした：{ $error }
 ## ファイル転送と再生の詳細情報。転送リストの項目、ファイルカード、再生失敗の説明に表示されます。
 
 # 転送や再生を始める前に接続がないとわかったときに表示されます。
@@ -279,13 +205,13 @@ files-download-incomplete = 接続が切断され、最後まで受信できま�
 files-download-stalled = データを受信できず、トンネルが停止している可能性があります
 
 # 接続の切断によって再生が失敗したときに表示されます。
-files-playback-transport = 自宅サーバーに接続できません。
+files-playback-transport = 自宅サーバーに接続できません。ダウンロードしてから他のアプリで開けます。
 # この端末でこの形式を再生できないときに表示されます。
 files-playback-unsupported = この端末ではこの形式を再生できません。ダウンロードしてから他のアプリで開けます。
 # $detail は自宅サーバーまたは接続の元の理由です。
 files-playback-unavailable = 自宅サーバーがこのファイルを提供できません：{ $detail }
 # $detail は自宅サーバーまたは接続の元の理由です。
-files-playback-error = 自宅サーバーでエラーが発生しました：{ $detail }。
+files-playback-error = 自宅サーバーでエラーが発生しました：{ $detail }。ダウンロードしてから他のアプリで開けます。
 # 再生の確認がタイムアウトしたときに表示されます。
 files-playback-no-response = 自宅サーバーから応答がありません
 
@@ -311,17 +237,7 @@ home-ticket-invalid-core-url = 自宅サーバーのアドレスが無効です�
 # $domain は接続情報のベースドメイン、$url は接続情報に書かれた元のアドレスです。
 home-ticket-core-url-under-domain = 自宅サーバーのアドレスは{ $domain }のhttp(s)アドレスである必要があります：{ $url }
 # $error はネットワーク設定の元のエラーです。
-# 引数なし。ペアリング画面のデバイス名欄が空です。
-home-pairing-name-empty = デバイス名が空です
 home-pairing-bind-failed = ネットワーク接続を確立できません：{ $error }
-# $reason は接続情報の解析の元のエラーです。
-home-ticket-corrupt = 保存された接続情報が壊れています：{ $reason }
-home-no-connection-info = 自宅サーバーの接続情報がまだありません
-# $error はローカルプロキシの元のバインドエラーです。
-home-proxy-start-failed = ローカルプロキシを開始できませんでした：{ $error }
-home-tunnel-closed = トンネルクライアントが閉じられました
-home-lan-unsupported = このバージョンのクライアントコアはローカルネットワーク設定に対応していません
-home-port-mapping-save-failed = ポートマッピングの設定を保存できませんでした：{ $error }
 # タブバー（tabs/view.rs、tabs/config.rs）と外観（appearance/mod.rs）の画面の「詳細」。
 # コアの文字は両シェルで共通のため Android の書き方に合わせ、ナビゲーションバーと書きます。プラグインはユーザーには「アプリ」です。
 
@@ -330,10 +246,7 @@ home-port-mapping-save-failed = ポートマッピングの設定を保存でき
 tabs-view-always-pinned = チャットとアプリはすでにナビゲーションバーに固定されています。
 tabs-view-plugin-list-not-ready = アプリの一覧をまだ読み込んでいないため、今はアプリのページを操作できません。
 tabs-view-unknown-plugin = このアプリが見つかりません。
-# $error はローカル保存の元のエラー。
-tabs-storage-problem = タブバーの設定を保存できません。次回の起動では古い状態に戻ることがあります: { $error }
 tabs-view-plugin-no-page = このアプリには開けるウェブページがありません。
-tabs-page-not-placed = このページはパネルにありません。
 
 # ナビゲーションバーの設定ファイル（tabs.json）のエラー。CoreError の理由として出ます。
 # $path は設定ファイルのパス、$reason は元のパースまたは入出力エラーです。
@@ -343,7 +256,7 @@ tabs-config-corrupt = ナビゲーションバーの設定ファイル { $path }
 tabs-config-too-many-items = ナビゲーションバーには最大 { $count } 個までしか項目を追加できません。
 tabs-config-duplicate-page = ナビゲーションバーに重複したページがあります。
 tabs-config-plugin-page-incomplete = アプリのページにタイトルとアイコンがありません。
-tabs-config-missing-fixed = ナビゲーションバーにチャットがありません。
+tabs-config-missing-fixed = ナビゲーションバーにチャットかアプリがありません。
 # $path は設定ファイルのパス、$reason は元の書き込みエラーです。
 tabs-config-write-failed = ナビゲーションバーの設定ファイル { $path } に書き込めません：{ $reason }
 
@@ -373,7 +286,6 @@ plugins-api-not-image-url = アプリ画像のアドレスではありません�
 # $status は元のHTTPステータスコードです。
 plugins-api-server-status = 自宅サーバーからHTTP { $status }が返されました
 plugins-api-not-connected = 自宅サーバーに接続してからもう一度お試しください。
-plugins-api-server-too-old = 自宅サーバー { $version } は古すぎます。この機能には { $minimum } 以降が必要です。
 
 # インストール・アップデート・アンインストールのタスク（crates/wonton-client/src/plugins/tasks.rs）。
 plugins-tasks-uncertain = 接続が切断されたため、自宅サーバーでの結果は不明です。インストール済みリストを確認してください。
@@ -414,232 +326,3 @@ chat-avatar-cache-missing-mxc = アバターのキャッシュにMXCアドレス
 chat-avatar-cache-path-not-utf8 = アバターのキャッシュのパスが有効なUTF-8ではありません
 scope-task-crashed = バックグラウンドのタスクが異常終了しました：{ $error }
 scope-switched-server = 別のサーバーに切り替えました
-
-## クライアントコアの残りの部分（ADR-0043）：C1とC2が対象外だったモジュールの「詳細」で、既定では折りたたまれます。同じファイルのログは英語で書かれ、ここには含まれません。
-## プッシュ通知の本文とプレースホルダー（不明な送信者、招待、[ファイル]など）はまだ未定のため、今回の範囲外です。
-
-# ファイル転送（crates/wonton-client/src/files/mod.rs）：拒否された操作、失敗した操作、ローカルファイルの削除の詳細情報。
-files-invalid-action = ファイルの操作ではありません
-files-name-required = ファイル名を入力してください
-files-download-already-running = このファイルはすでにダウンロード中です
-files-transfer-not-found = この転送が見つかりません
-# リンク再送の待機状態にない転送に対してリンクの再送を要求した場合に表示します。
-files-transfer-server-changed = 自宅サーバーが変わったため、この転送は前のサーバーのものです
-files-dismiss-transfer-running = この転送は実行中です。先にキャンセルしてください
-# アップロードを削除してローカルファイルも削除しようとした場合に表示します。元のファイルはシステムから提供されたもので、Wontonでは削除できません。
-files-dismiss-upload-source-protected = アップロードの元ファイルはWontonでは管理していません
-# $reason は元のioエラーです。
-files-delete-local-failed = スマートフォン上のファイルを削除できません：{ $reason }
-# バックグラウンドのファイル操作の失敗結果。$id はそのままのファイルID、$message は元の失敗の詳細です。
-files-delete-failed = ファイル{ $id }を削除できません：{ $message }
-files-send-failed = ファイル{ $id }をデバイスに送れません：{ $message }
-files-grant-failed = ファイル{ $id }をチャットに許可できません：{ $message }
-files-play-failed = ファイル{ $id }を再生できません：{ $message }
-# $path は転送リストのパス、$reason は元の入出力エラーです。
-files-store-write-failed = 転送リスト{ $path }に書き込めません：{ $reason }
-
-# 接続のローカルストレージ（crates/wonton-client/src/home/storage.rs）。
-# $path はファイルのパス、$reason は元のパースまたは入出力エラーです。
-home-storage-device-key-corrupt = デバイスキーのファイル{ $path }が破損しています：{ $reason }
-home-storage-io-failed = { $path }を読み書きできません：{ $reason }
-
-# チャットのローカルストレージ（crates/wonton-client/src/chat/storage.rs）。
-# $path はファイルのパス、$reason は元のパースまたは入出力エラーです。
-chat-storage-session-corrupt = チャットのログイン状態のファイル{ $path }が破損しています：{ $reason }
-chat-storage-io-failed = { $path }を読み書きできません：{ $reason }
-
-# 登録済みサーバーのリスト（crates/wonton-client/src/servers.rs）。
-# $path はサーバーリストファイルのパス、$reason は元のパースまたは入出力エラーです。
-servers-list-corrupt = サーバーリストのファイル{ $path }が破損しています：{ $reason }
-servers-add-current-unpaired = このサーバーを設定してから、別のサーバーを追加してください
-servers-name-required = 名前を入力してください
-# $path は読み書きまたは削除の対象のパス、$reason は元の入出力エラーです。
-servers-storage-failed = { $path }を読み書きできません：{ $reason }
-# シェルからコアの知らないサーバー一覧の操作が渡されたときに表示します。
-servers-invalid-action = サーバー一覧の操作ではありません
-matrix-login-not-current = このログインは終了したか、新しいログインに置き換えられました。
-matrix-login-wrong-step = このログインはその段階にありません。
-matrix-login-method-not-offered = このサーバーはそのログイン方法に対応していません。
-matrix-login-device-name-required = このデバイスの名前を入力してください。
-matrix-login-invalid-user-id = @name:matrix.org のような完全な Matrix ID を入力してください。
-matrix-login-password-required = パスワードを入力してください。
-matrix-login-redirect-not-allowed = アプリはそのアドレスへのログインコールバックを受け取れません。
-
-# セッションリスト（crates/wonton-client/src/session_store.rs）。
-sessions-title-required = セッションのタイトルを入力してください
-# $id はそのままのセッションIDです。
-sessions-not-found = そのセッションはありません：{ $id }
-# シェルからコアの知らないセッション操作が渡されたときに表示します。
-sessions-invalid-action = セッション操作ではありません
-
-# 通知方式の設定（crates/wonton-client/src/push_method.rs）。
-# $path は設定ファイルのパス、$reason は元の入出力エラーです。
-push-method-write-failed = 通知方式の設定ファイル{ $path }に書き込めません：{ $reason }
-
-# プッシュ通知（crates/wonton-client/src/push/{mod,registration,notification}.rs）：拒否されたエンドポイント、失敗した登録、メッセージを取得できなかった場合の詳細情報。
-# 通知の本文とプレースホルダー（不明な送信者、招待、[ファイル]など）はまだここにはありません。
-# $reason は元のエラーの詳細です。
-push-matrix-pusher-failed = Matrixにpusherを登録できません：{ $reason }
-# $reason はURLパーサーの元のエラーです。
-push-endpoint-invalid-url = プッシュ通知のエンドポイントが有効なURLではありません：{ $reason }
-push-endpoint-scheme = プッシュ通知のエンドポイントはhttpまたはhttpsのアドレスである必要があります
-push-endpoint-p256dh = p256dhは65バイトの非圧縮P-256公開鍵（base64url）である必要があります
-push-endpoint-auth = authは16バイト（base64url）である必要があります
-# $reason は上流の原文、または翻訳されたタイムアウトの詳細です。
-push-register-failed = 自宅サーバーにプッシュ通知を登録できません：{ $reason }
-push-unregister-failed = 自宅サーバーのプッシュ通知の登録を解除できません：{ $reason }
-# $reason はJSONパーサーの元のエラーです。
-push-register-invalid-response = 自宅サーバーが返した登録結果の形式が正しくありません：{ $reason }
-# $reason はローカルプロキシまたはHTTPクライアントの元のエラーです。
-push-invalid-proxy = ローカルプロキシのアドレスが無効です：{ $reason }
-push-http-client = HTTPクライアントを作成できません：{ $reason }
-# $seconds はリクエストのタイムアウト秒数です。
-push-timeout = { $seconds }秒以内に応答がありません
-# $status はそのままのHTTPステータスコードです。
-push-server-status = 自宅サーバーからHTTP { $status }が返されました
-# $message と $kind はサーバーの元のエラーテキストとエラーコードです。
-push-server-error = { $message }（{ $kind }）
-# $reason はJSONパーサーの元のエラーです。
-push-payload-invalid = プッシュ通知の内容の形式が正しくありません：{ $reason }
-# $reason はIDパーサーの元のエラーです。
-push-invalid-room-id = プッシュ通知内のルームIDが無効です：{ $reason }
-push-invalid-event-id = プッシュ通知内のイベントIDが無効です：{ $reason }
-# $seconds はメッセージの取得で待った秒数です。
-push-fetch-timeout = { $seconds }秒以内にこのメッセージを取得できませんでした
-# $reason はMatrix SDKの元のエラーです。
-push-fetch-failed = このメッセージを取得できません：{ $reason }
-push-core-closed = クライアントコアが終了しました
-push-not-paired = まだ自宅サーバーに接続したことがありません
-push-home-unreachable = 自宅サーバーに接続できません：{ $reason }
-# $seconds はログインで待った秒数です。
-push-session-timeout = { $seconds }秒以内にMatrixにログインできませんでした
-push-room-key-missing = このメッセージのルームキーがまだ届いていません
-
-# 自宅サーバー上のアプリの起動（crates/wonton-client/src/plugins/start.rs）。
-# $id はそのままのアプリIDです。
-plugins-start-busy = { $id }はすでに起動、インストール、更新、またはアンインストールの実行中です
-
-# アプリページのブリッジ（crates/wonton-client/src/tabs/bridge/）。
-tabs-bridge-page-not-open = このアプリのページは開かれていないか、固定されていません
-tabs-bridge-invalid-environment = ページのインセットとセーフエリアは有限の非負の数である必要があります
-tabs-bridge-public-page = 公開ウェブページには Wonton のブリッジがありません。
-plugin-media-not-asked = このアプリのページにはカメラとマイクの判断が保存されていません
-plugin-media-save-failed = カメラとマイクの判断ファイル { $path } に書き込めません：{ $reason }
-
-# チャットの接続問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailableの理由と失敗した操作のメッセージ。
-chat-not-connected = 自宅サーバーに接続してから、もう一度試してください
-chat-draft-save-failed = 下書きの保存に失敗しました：{ $error }
-chat-draft-clear-failed = 送信済みの下書きを消すのに失敗しました：{ $error }
-chat-draft-not-signed-in = まだ Matrix にログインしていません
-chat-draft-read-interrupted = 下書きの読み込みが中断されました
-
-# セットアップのローカル記録（crates/wonton-client/src/onboarding/storage.rs）。
-# $path はファイルのパス、$reason は元の入出力エラーです。
-onboarding-storage-io-failed = { $path }を読み書きできません：{ $reason }
-
-# 自宅サーバーのワンクリックアップデート（crates/wonton-client/src/plugins/core_upgrade.rs）：不確定な段階の説明と拒否された操作で、アップデートページやエラーの「詳細」に表示されます。
-# 引数なし。自宅サーバーがこのアプリでは理解できない結果を返しました。
-plugins-core-upgrade-unrecognized = 自宅サーバーが、このバージョンのWontonでは理解できない結果を返しました。Wontonを更新してからもう一度確認してください
-# 実行中のダイジェストが欠けている場合の代わりの語。文ではありません。
-plugins-core-upgrade-unknown-digest = 不明
-# 自宅サーバーはアップデート完了を報告していますが、実行中のバージョンが目標と一致しません。$running は実行中のダイジェストか「不明」、$target はそのままの目標ダイジェストです。
-plugins-core-upgrade-completed-mismatch = 自宅サーバーはアップデートが完了したと報告していますが、実行中のバージョンが目標と異なります：実行中 { $running }、目標 { $target }
-# 制限時間内に接続できず、結果は不明です。$digest は旧バージョンに戻すときに固定するそのままのダイジェストです。
-plugins-core-upgrade-timed-out = 制限時間を過ぎても自宅サーバーに接続できず、アップデートの結果は不明です。接続するとここが更新されます
-plugins-core-upgrade-timed-out-rollback = 制限時間を過ぎても自宅サーバーに接続できず、アップデートの結果は不明です。接続するとここが更新されます。旧バージョンに戻すには、ホストでインストールコマンドをもう一度実行し、WONTON_CORE_PIN={ $digest } を付けてください
-plugins-core-upgrade-invalid-action = 自宅サーバーのアップデートの操作ではありません
-plugins-core-upgrade-already-running = すでにアップデートを実行中です
-plugins-core-upgrade-not-cancellable = 今はキャンセルできません
-# $reason は接続問題の元の詳細です。
-plugins-core-upgrade-start-uncertain = アップデートを開始できたかはっきりしません。接続後にもう一度確認してください：{ $reason }
-
-# アップデート前の互換性チェック（ADR-0085）の詳細：理由ごとに 1 行、{ $raw } はマニフェ
-# ストの原文の値。クライアントコアがアプリの言語で書き、アップデートページでは新しいバー
-# ジョンが読めないアプリの下に並べます。
-plugins-core-upgrade-compat-spec = このアプリは仕様{ $raw }で書かれており、新しいバージョンは対応していません。アップデート後は異常として表示されます。
-plugins-core-upgrade-compat-feature = このアプリのマニフェストには、新しいバージョンが認識しない{ $raw }があります。アップデート後は異常として表示されます。
-plugins-core-upgrade-compat-capability = このアプリは能力{ $raw }に依存していますが、新しいバージョンでは提供されません。アップデート後は異常として表示されます。
-plugins-core-upgrade-compat-other = 新しいバージョンはこのアプリを読めません。アップデート後は異常として表示されます。
-plugins-core-upgrade-compat-other-raw = 新しいバージョンはこのアプリの{ $raw }を読めません。アップデート後は異常として表示されます。
-
-# プロフィールのステップ：名前やメールアドレスを保存できない理由です。$max は名前の最大文字数です。
-onboarding-profile-name-empty = 名前を入力してください
-onboarding-profile-name-too-long = 名前は{ $max }文字以内にしてください
-onboarding-profile-name-control = 名前に改行や制御文字は使えません
-onboarding-profile-email-invalid = メールアドレスの形式ではありません。me@example.comのように、空白や制御文字を含めずに入力してください
-onboarding-profile-email-cleared = 一度設定したメールアドレスは変更できますが、削除はできません。メールアドレスが必要なアプリの再構築に使われます
-
-# 確認カードの下の、許可期間が終わったあとの行です。$count は期間を開いた1回を除いて許可した回数で、0 は不明またはなしです。
-chat-window-ended =
-    { $reason ->
-        [expired]
-            { $count ->
-                [0] 許可期間が終了しました。
-               *[other] 許可期間が終了しました（{ $count }回許可）。
-            }
-        [stopped]
-            { $count ->
-                [0] 許可期間を停止しました。
-               *[other] 許可期間を停止しました（{ $count }回許可）。
-            }
-        [restarted] サーバーが再起動したため、許可期間は終了しました。
-       *[other]
-            { $count ->
-                [0] 許可期間が終了しました。
-               *[other] 許可期間が終了しました（{ $count }回許可）。
-            }
-    }
-
-# ペアリングの詳細。アドレスとリレー URL にペアリングキーは含まれません。error は上流の原文です。
-home-pairing-timeout = { $seconds } 秒以内にペアリングを完了できませんでした。
-home-pairing-aborted = ペアリングが完了する前に中断しました。もう一度お試しください。
-home-pairing-not-pairing = 進行中のペアリングはありません。
-home-pairing-failed-detail = 直接接続先：{ $addresses }。リレー：[{ $relays }]。経過時間：{ $milliseconds } ミリ秒、制限時間：{ $seconds } 秒。原因：{ $error }
-plugin-now-start-failed = ワンタップ操作を開始できません：{ $error }
-
-# パネル（ADR-0052）のエラー。CoreError の理由、または TabsProblem の説明として表示する。
-panel-full = パネルがいっぱいです。先にページを外してください。
-panel-pins-not-connected = まだ自宅サーバーに接続していません。
-panel-pins-api-failed = { $status }：{ $body }
-
-panel-page-already-there = このページはすでにパネルにあります。
-panel-page-not-there = このページはパネルにありません。
-panel-page-unsupported = パネルに入れられるのはアプリのページ、アプリ内のページ、https:// のウェブページだけです。
-panel-index-out-of-range = その位置はパネルの外です。
-panel-not-signed-in = まだログインしていないため、パネルの変更をアカウントに保存できませんでした。端末には記録してあります。
-panel-room-not-open = このチャットのパネルを変えるには、先に開いてください。
-panel-room-unknown = このチャットが見つかりません。
-panel-pin-invalid-url = そのアドレスは読み取れません。
-panel-pin-not-https = ピンできるのは https:// のウェブページだけです。
-panel-pin-path-outside = そのページはアプリ自身のサイトの外です。
-panel-attention-panel-only = パネル内のページだけに注意の印を付けられます。
-panel-config-too-many = パネルには最大 { $count } ページまで入ります。
-panel-config-duplicate = 同じページがパネルに二つあります。
-panel-sync-failed-read = サーバーからパネルの設定を読み取れませんでした。
-panel-sync-unreadable = サーバーのパネル設定をこの端末では読めないため、端末のものを使います。
-tabs-page-cannot-reload = このページは再読み込みできません。
-
-tabs-bar-not-pinned = このページはナビゲーションバーに固定されていません。
-tabs-bar-already-pinned = このページはすでにナビゲーションバーに固定されています。
-tabs-bar-replace-required = ナビゲーションバーがいっぱいです。置き換えるページを指定してください。
-tabs-bar-replacing-missing = 置き換えるページがナビゲーションバーにありません。
-tabs-bar-fixed = チャットとアプリは置き換えられません。
-tabs-bar-not-full = ナビゲーションバーがいっぱいではないので、置き換えるページは指定できません。
-tabs-bar-remove-fixed = チャットとアプリは外せません。
-tabs-bar-page-missing = このページはナビゲーションバーにありません。
-tabs-bar-index-out-of-range = その位置はナビゲーションバーの範囲外です。
-tabs-open-only-plugins = 開き方を設定できるのはアプリのページだけです。
-tabs-fullscreen-only-plugins = 全画面にできるのはアプリのページだけです。
-tabs-fullscreen-none = 全画面のページはありません。
-tabs-fullscreen-not-current = そのページは全画面のページではありません。
-panel-pins-refresh-failed = Bot がピン留めしたページを読み込めません:{ $error }
-
-## クロスオリジン分離が必要なプラグインのページはシステムのブラウザで開きます（ADR-0033）。後の3つはブラウザに表示されます。
-browser-front-failed = ブラウザ用のローカルアドレスを開けませんでした：{ $error }
-browser-page-not-isolated = このページはブラウザでは開きません。
-browser-not-paired = Wontonはまだ自宅のサーバーとペアリングされていません。
-browser-unknown-address = このアドレスは期限切れです。Wontonに戻って、アプリをもう一度開いてください。
-browser-not-connected = Wontonは今、自宅のサーバーにつながっていません。Wontonに戻り、つながってからこのページを再読み込みしてください。
-browser-bad-request = このページはWontonから開いてください。
-
-contacts-invalid-action = Bot の連絡先の操作ではありません。

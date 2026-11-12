@@ -3,8 +3,7 @@
 //! 插件子域名彼此同站，也和核心同站，`SameSite=Lax` 拦不住一个插件的页面让浏览器带着 Cookie 向另一个
 //! 插件或核心发请求；隧道身份同样随请求自动带上。这里集中四条规则：
 //!
-//! - 插件子域名上，登录状态只给本插件页面发起的请求和导航：[`credentials_allowed`]；
-//!   登记过的 OIDC 回调表单另走受限例外，由应用校验登录请求关联（ADR-0078）。
+//! - 插件子域名上，登录状态只给本插件页面发起的请求和导航：[`credentials_allowed`]。
 //! - 核心域名上改状态的请求只接受同源：[`write_allowed`]。
 //! - 经隧道调插件管理接口的请求不能是别的网页发起的，读也一样：[`not_from_another_page`]。
 //! - 插件响应里的 `Set-Cookie` 不能用网关保留的名字，也不能指定 `Domain`：[`sanitize_set_cookies`]。
@@ -15,7 +14,6 @@ use hyper::Method;
 use hyper::header::{HeaderMap, HeaderValue, ORIGIN, SET_COOKIE};
 
 use super::session::is_reserved_cookie;
-use crate::config::PublicUrls;
 
 const SEC_FETCH_SITE: &str = "sec-fetch-site";
 const SEC_FETCH_MODE: &str = "sec-fetch-mode";
@@ -28,7 +26,7 @@ const SEC_FETCH_DEST: &str = "sec-fetch-dest";
 /// - 导航：`Sec-Fetch-Mode: navigate`，方法为 `GET` 或 `HEAD`；
 /// - 没有 `Sec-Fetch-Site` 时，没有 `Origin`，或者 `Origin` 就是 `origin`（本插件的地址）。
 ///
-/// 其余请求按没有登录状态处理；登记的 OIDC 回调 POST 由 `plugin_web::oidc_callback_post` 单独判断。
+/// 其余请求（其他插件或核心页面里的表单 POST、`fetch`、`<img>`、WebSocket 等）按没有登录状态处理。
 pub fn credentials_allowed(method: &Method, headers: &HeaderMap, origin: &str) -> bool {
     let site = headers.get(SEC_FETCH_SITE).map(HeaderValue::as_bytes);
     matches!(site, Some(b"same-origin" | b"none"))
@@ -72,16 +70,6 @@ fn origin_absent_or(headers: &HeaderMap, origin: &str) -> bool {
     headers
         .get(ORIGIN)
         .is_none_or(|value| value.as_bytes().eq_ignore_ascii_case(origin.as_bytes()))
-}
-
-/// 签发方表单与本插件自己的提交；缺 Origin 的命令行也可达，身份不能靠这个头证明。
-pub(super) fn oidc_callback_origin_allowed(
-    headers: &HeaderMap,
-    public: &PublicUrls,
-    origin: &str,
-) -> bool {
-    origin_absent_or(headers, origin)
-        || origin_absent_or(headers, &public.origin(&public.auth_host()))
 }
 
 /// 过滤插件响应里的 `Set-Cookie`：整条丢弃名字为网关保留（`wonton_*`）的 Cookie，其余的去掉 `Domain`

@@ -137,7 +137,7 @@ async fn declared_headers_go_on_every_request() {
     assert!(listed.is_ok(), "{listed:?}");
     let call = tokio::time::timeout(
         Duration::from_secs(20),
-        upstreams.call(&server, "a", None, None, std::future::pending()),
+        upstreams.call(&server, "a", None, std::future::pending()),
     )
     .await
     .expect("到期了还没有结果");
@@ -184,5 +184,5 @@ async fn a_401_from_the_upstream_says_the_plugin_rejected_the_credentials() {
     let plugin = auth_plugin().await;
     plugin.require("s3cret");
     let error = upstreams.tools(&plugin.server).await.unwrap_err();
-    assert!(error.contains("rejected the credentials"), "{error}");
+    assert!(error.contains("凭据"), "{error}");
 }

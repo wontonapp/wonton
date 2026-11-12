@@ -21,4 +21,3 @@ peers-error-not-paired-remove = This server is not paired
 peers-error-code-revoked = This pairing code is no longer valid; ask for a new one
 peers-error-too-many-requests = The other server cannot take pairing requests right now; try again later
 peers-error-request-not-found = This request is no longer there
-peers-new-request = { $owner }'s server ({ $server }) wants to connect to your server

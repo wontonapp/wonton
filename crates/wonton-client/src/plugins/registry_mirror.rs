@@ -29,19 +29,6 @@ struct Request {
     api: Result<CoreApi, PluginProblem>,
 }
 
-/// 索引的地址列表读不懂时，设置照常显示，问题挂在 `load_problem` 上让人看见（表单里带重试）。
-fn choices_problem(settings: &RegistryMirrorSettings) -> Option<PluginProblem> {
-    settings
-        .choices_problem
-        .as_ref()
-        .map(|message| PluginProblem {
-            reason: PluginFailure::Upstream,
-            message: message.clone(),
-            min_version: None,
-            settings: None,
-        })
-}
-
 impl PluginsLink {
     fn registry_request(&self, epoch: u64) -> Request {
         Request {
@@ -83,8 +70,8 @@ impl PluginsLink {
                 vm.loading = false;
                 match result {
                     Ok(settings) => {
-                        vm.load_problem = choices_problem(&settings);
                         vm.settings = Some(settings);
+                        vm.load_problem = None;
                     }
                     Err(problem) => vm.load_problem = Some(problem),
                 }
@@ -130,8 +117,8 @@ impl PluginsLink {
                 vm.saving = false;
                 match result {
                     Ok(settings) => {
-                        vm.load_problem = choices_problem(&settings);
                         vm.settings = Some(settings);
+                        vm.load_problem = None;
                     }
                     Err(mut problem) => {
                         if problem.reason == PluginFailure::TransportUnavailable {

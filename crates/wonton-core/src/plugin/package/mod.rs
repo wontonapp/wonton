@@ -23,26 +23,20 @@ use super::github_source::Origin;
 use super::images::IconFormat;
 use super::interpolate::{UsedVars, Vars, interpolate, interpolate_value};
 use super::languages::Languages;
-use super::manifest::{Manifest, ManifestError};
+use super::manifest::{Manifest, ManifestError, SecretSpec};
 use super::package_archive;
 use super::package_files::{
     self, COMPOSE_FILE, FileError, MAX_FILE_BYTES, MAX_PACKAGE_BYTES, PackageFiles,
 };
 use crate::l10n::text;
 
-#[path = "package_capability_services.rs"]
-mod capability_services;
-mod references;
-mod runtime;
-pub mod static_files;
-
 pub(super) mod errors;
 
 pub use errors::PackageError;
 use errors::{
     archive_error, compose_file_error, config_error, config_interpolate_error, file_error,
-    interpolate_error, reference_error, service_error, static_error, too_big_error,
-    top_level_error, yaml_error,
+    interpolate_error, reference_error, service_error, too_big_error, top_level_error,
+    unknown_service_error, yaml_error,
 };
 
 /// 顶层 `configs` 的一项。
@@ -64,10 +58,6 @@ pub struct PluginPackage {
     volumes: BTreeSet<String>,
     configs: BTreeMap<String, ConfigSource>,
     files: PackageFiles,
-    /// `runtime: static_web` 的静态文件（相对 `static_web.root`），只在装、升级时带着；从安装记录恢复的为空。
-    static_files: Option<static_files::StaticFiles>,
-    /// 静态文件的 sha256，算插件包摘要用；从安装记录恢复时只有它。
-    static_hashes: static_files::StaticHashes,
     /// 从哪里取来的；上传的和预装的插件包为空。
     pub origin: Option<Origin>,
 }
@@ -109,15 +99,7 @@ impl PluginPackage {
         let files = archive
             .read(&root, &Self::referenced_files(&source, langs)?, langs)
             .map_err(|e| archive_error(langs, e))?;
-        let package = Self::with_files(&source, files, langs)?;
-        let Some(static_root) = package.static_root() else {
-            return Ok(package);
-        };
-        let prefix = format!("{root}{static_root}/");
-        let files = archive
-            .read_tree(&prefix, static_files::MAX_FILE_BYTES, langs)
-            .map_err(|e| archive_error(langs, e))?;
-        package.with_static(files, langs)
+        Self::with_files(&source, files, langs)
     }
 
     /// 读插件包目录：`docker-compose.yml` 和它引用的文件，路径和软链接的规则见 [`super::package_files`]。
@@ -148,59 +130,7 @@ impl PluginPackage {
             };
             files.insert(path.clone(), data);
         }
-        let package = package.attach(files, langs)?;
-        match package.static_root() {
-            Some(root) => {
-                let files = static_files::read_dir(dir, &root)
-                    .map_err(|problem| static_error(langs, &root, &problem))?;
-                package.with_static(files, langs)
-            }
-            None => Ok(package),
-        }
-    }
-
-    /// `runtime: static_web` 时包里静态文件的目录（`static_web.root`），其他形态为空。
-    pub fn static_root(&self) -> Option<String> {
-        (self.manifest.runtime == super::manifest::Runtime::StaticWeb)
-            .then(|| self.manifest.static_web.clone().unwrap_or_default().root)
-    }
-
-    /// 配上静态文件（相对 `static_web.root`），按目录规则核对（ADR-0080 第 3 节）。
-    pub fn with_static(
-        mut self,
-        files: static_files::StaticFiles,
-        langs: &Languages,
-    ) -> Result<Self, PackageError> {
-        let root = self.static_root().unwrap_or_default();
-        let spec = self.manifest.static_web.clone().unwrap_or_default();
-        static_files::check(&files, &spec).map_err(|p| static_error(langs, &root, &p))?;
-        self.static_hashes = static_files::hashes(&files);
-        self.static_files = Some(files);
-        Ok(self)
-    }
-
-    /// 从安装记录恢复的静态网页：只有每个文件的 sha256，文件在托管目录里。
-    pub fn with_static_hashes(mut self, hashes: static_files::StaticHashes) -> Self {
-        self.static_hashes = hashes;
-        self
-    }
-
-    /// 带着的静态文件；从安装记录恢复的、不是静态网页的为空。
-    pub fn static_files(&self) -> Option<&static_files::StaticFiles> {
-        self.static_files.as_ref()
-    }
-
-    pub fn static_hashes(&self) -> &static_files::StaticHashes {
-        &self.static_hashes
-    }
-
-    /// 静态文件按包里的路径（`<static_web.root>/<相对路径>`）列出内容。
-    pub fn static_blobs(&self) -> impl Iterator<Item = (String, &[u8])> {
-        let root = self.static_root().unwrap_or_default();
-        self.static_files
-            .iter()
-            .flatten()
-            .map(move |(path, data)| (format!("{root}/{path}"), data.as_slice()))
+        package.attach(files, langs)
     }
 
     /// compose 文本里的清单，不管它引用的文件：商店列表只要清单。
@@ -242,7 +172,7 @@ impl PluginPackage {
             PackageError::MissingManifest(text(langs, "plugin-install-pkg-missing-manifest", &[]))
         })?;
         super::store_info::check_spec(&manifest_value, langs)?;
-        let mut manifest: Manifest = match serde_json::from_value(manifest_value) {
+        let manifest: Manifest = match serde_json::from_value(manifest_value) {
             Ok(manifest) => manifest,
             Err(e) => {
                 // 两种解析对个别标量的松紧不同（`version: 1.0` 直接反序列化能当成字符串），成功与否仍以
@@ -257,12 +187,20 @@ impl PluginPackage {
                 ))));
             }
         };
-        manifest.imply_static_webui();
         manifest.validate(langs)?;
 
-        let services = runtime::services(top.remove("services"), manifest.runtime, langs)?;
+        let services = match top.remove("services") {
+            Some(Value::Object(services)) if !services.is_empty() => services,
+            _ => {
+                return Err(service_error(
+                    langs,
+                    "*",
+                    text(langs, "plugin-install-pkg-needs-service", &[]),
+                ));
+            }
+        };
         for (name, service) in &services {
-            check_service_name(name, &manifest, langs)?;
+            check_service_name(name, langs)?;
             check_service_keys(name, service, langs)?;
         }
         let volumes = parse_named_volumes(top.remove("volumes"), langs)?;
@@ -274,8 +212,6 @@ impl PluginPackage {
             volumes,
             configs,
             files: PackageFiles::new(),
-            static_files: None,
-            static_hashes: static_files::StaticHashes::new(),
             origin: None,
         };
         package.check_manifest_references(langs)?;
@@ -405,22 +341,12 @@ impl PluginPackage {
 
     /// 插件包打成的 tar 归档，[`Self::from_archive`] 读得回来。
     pub fn archive(&self) -> Vec<u8> {
-        let mut files = self.files.clone();
-        files.extend(
-            self.static_blobs()
-                .map(|(path, data)| (path, data.to_vec())),
-        );
-        package_files::write_archive(self.source.as_bytes(), &files)
+        package_files::write_archive(self.source.as_bytes(), &self.files)
     }
 
-    /// 插件包摘要，见 [`package_files::digest`]：静态网页的文件也算在内，按包里的路径。
+    /// 插件包摘要，见 [`package_files::digest`]。
     pub fn digest(&self) -> String {
-        let root = self.static_root().unwrap_or_default();
-        let hashes = self
-            .static_hashes
-            .iter()
-            .map(|(path, hash)| (format!("{root}/{path}"), hash.clone()));
-        package_files::digest_with(self.source.as_bytes(), &self.files, hashes)
+        package_files::digest(self.source.as_bytes(), &self.files)
     }
 
     /// 服务的 `environment` 的原文（没插值）：引用了哪些变量、写了什么字面值。
@@ -487,23 +413,9 @@ impl PluginPackage {
             .collect()
     }
 
-    /// 长期运行的服务，也就是部署完成时全部能用的那些（[`Self::one_shot_services`] 之外）。
-    pub fn resident_services(&self) -> BTreeSet<&str> {
-        let one_shot = self.one_shot_services();
-        self.service_names()
-            .filter(|service| !one_shot.contains(service))
-            .collect()
-    }
-
     /// 被引用的文件，安装时随记录保存。
     pub fn files(&self) -> &PackageFiles {
         &self.files
-    }
-
-    /// 清单 `x-wonton.settings` 指向的设置 Schema 原文；没声明时为空（引用在解析包时已核对存在并是 UTF-8）。
-    pub fn settings(&self) -> Option<&[u8]> {
-        let path = self.manifest.settings.as_deref()?;
-        self.files.get(path).map(Vec::as_slice)
     }
 
     pub fn has_config(&self, name: &str) -> bool {
@@ -569,6 +481,99 @@ impl PluginPackage {
         super::network_mode::validate(&self.manifest, &services)?;
         Ok(services)
     }
+
+    fn check_manifest_references(&self, langs: &Languages) -> Result<(), PackageError> {
+        let models = self
+            .manifest
+            .provides
+            .as_ref()
+            .and_then(|p| p.models.as_ref());
+        let credentials = models.and_then(|m| m.credentials.service.as_ref());
+        let egress = self
+            .manifest
+            .provides
+            .as_ref()
+            .and_then(|p| p.egress_proxy.as_ref());
+        let refs = [
+            (
+                "webui.service",
+                self.manifest.webui.as_ref().map(|w| &w.service),
+            ),
+            (
+                "mcp.service",
+                self.manifest.mcp.as_ref().map(|m| &m.service),
+            ),
+            ("provides.models.service", models.map(|m| &m.service)),
+            ("provides.models.credentials.service", credentials),
+            ("provides.egress_proxy.service", egress.map(|p| &p.service)),
+        ];
+        let collects = self
+            .manifest
+            .secrets
+            .values()
+            .filter_map(|spec| match spec {
+                SecretSpec::Collect(collect) => {
+                    Some(("secrets 的 collect.service", Some(&collect.service)))
+                }
+                SecretSpec::Generate(_) => None,
+            });
+        let bot_services = self.manifest.bots.iter().flat_map(|b| &b.services);
+        let bots = bot_services
+            .clone()
+            .map(|service| ("bots.services", Some(service)));
+        let gpu = self
+            .manifest
+            .gpu
+            .iter()
+            .flat_map(|g| &g.services)
+            .map(|service| ("gpu.services", Some(service)));
+        let lan = self
+            .manifest
+            .lan
+            .iter()
+            .flat_map(|l| &l.ports)
+            .map(|port| ("lan.ports", Some(&port.service)));
+        let all = refs.iter().cloned().chain(collects).chain(bots).chain(gpu);
+        for (field, service) in all.chain(lan) {
+            if let Some(service) = service
+                && !self.services.contains_key(service)
+            {
+                return Err(unknown_service_error(langs, field, service.clone()));
+            }
+        }
+        // 网页入口连默认 Bot；MCP 和 provides 仍是全插件一份的入口。
+        let bot_entry = refs
+            .iter()
+            .filter(|(field, _)| *field != "webui.service")
+            .find_map(|(field, service)| {
+                service
+                    .filter(|s| bot_services.clone().any(|b| b == *s))
+                    .map(|s| (*field, s))
+            });
+        if let Some((field, service)) = bot_entry {
+            return Err(service_error(
+                langs,
+                service,
+                text(
+                    langs,
+                    "plugin-install-pkg-ref-bot-service",
+                    &[("field", (*field).into())],
+                ),
+            ));
+        }
+        if let Some(provider) = egress
+            && self.services[&provider.service]
+                .as_object()
+                .is_some_and(|service| service.contains_key("network_mode"))
+        {
+            return Err(service_error(
+                langs,
+                &provider.service,
+                text(langs, "plugin-install-pkg-egress-network-mode", &[]),
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// serde 报错带字段路径（如 `webui.port`）：路径在根上时没有可写的段，原样返回信息。
@@ -577,13 +582,13 @@ fn pathed<E: fmt::Display>(error: &serde_path_to_error::Error<E>) -> String {
     if path.is_empty() {
         error.inner().to_string()
     } else {
-        format!("`{path}`: {}", error.inner())
+        format!("`{path}`：{}", error.inner())
     }
 }
 
 /// 从 YAML 文本直接反序列化清单：`serde_json::from_value` 丢掉了位置，失败时用它把报错写到
 /// 字段和行号（如 `x-wonton.description.Y`，加 serde-saphyr 给的 at line N, column M）。
-pub(crate) fn manifest_from_yaml(source: &str) -> Result<Manifest, ManifestError> {
+fn manifest_from_yaml(source: &str) -> Result<Manifest, ManifestError> {
     #[derive(Deserialize)]
     struct ManifestDocument {
         #[serde(rename = "x-wonton")]
@@ -619,12 +624,8 @@ fn check_top_level_keys(top: &Map<String, Value>, langs: &Languages) -> Result<(
 }
 
 /// 服务名同时用作网络别名和容器名的一部分，限制为小写 DNS 安全字符。
-fn check_service_name(
-    name: &str,
-    manifest: &Manifest,
-    langs: &Languages,
-) -> Result<(), PackageError> {
-    if super::host_relay::reserved_service_name(manifest, name) {
+fn check_service_name(name: &str, langs: &Languages) -> Result<(), PackageError> {
+    if matches!(name, "relay-webui" | "relay-mcp") {
         return Err(service_error(
             langs,
             name,
@@ -660,14 +661,12 @@ fn check_service_name(
 fn check_service_keys(name: &str, service: &Value, langs: &Languages) -> Result<(), PackageError> {
     let service_err = |message: String| service_error(langs, name, message);
     let Value::Object(map) = service else {
-        return Err(service_err(
-            "the service definition must be a mapping".to_owned(),
-        ));
+        return Err(service_err("服务定义必须是映射".to_owned()));
     };
     super::network_mode::validate_fields(name, map)?;
     for key in map.keys() {
         if let Some(reason) = forbidden_service_key_reason(key, langs) {
-            return Err(service_err(format!("unsupported key `{key}`: {reason}")));
+            return Err(service_err(format!("不支持 `{key}`：{reason}")));
         }
     }
     match map.get("network_mode") {
@@ -675,12 +674,12 @@ fn check_service_keys(name: &str, service: &Value, langs: &Languages) -> Result<
         Some(Value::String(mode)) => match NetworkMode::try_from(mode.clone()) {
             Ok(_) => Ok(()),
             Err(_) => Err(service_err(format!(
-                "unsupported network_mode `{mode}`: {}",
+                "不支持 network_mode `{mode}`：{}",
                 network_mode_refusal(mode, langs)
             ))),
         },
         Some(other) => Err(service_err(format!(
-            "network_mode must be a string, not `{other}`"
+            "network_mode 必须是字符串，不能写 `{other}`"
         ))),
     }
 }
@@ -733,11 +732,7 @@ fn parse_configs(
         return Ok(BTreeMap::new());
     };
     let Value::Object(map) = value else {
-        return Err(top_level_error(
-            langs,
-            "configs",
-            "must be a mapping".to_owned(),
-        ));
+        return Err(top_level_error(langs, "configs", "必须是映射".to_owned()));
     };
     map.into_iter()
         .map(|(name, mut definition)| {
@@ -747,22 +742,18 @@ fn parse_configs(
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'));
             if !name_ok {
-                return Err(config_err(
-                    "config names allow only letters, digits, -, _, and .".to_owned(),
-                ));
+                return Err(config_err("配置名只能包含字母、数字、-、_ 和 .".to_owned()));
             }
             strip_extensions(&mut definition);
             let Value::Object(fields) = definition else {
-                return Err(config_err(
-                    "must be a mapping with either file or content".to_owned(),
-                ));
+                return Err(config_err("必须是映射，写明 file 或 content".to_owned()));
             };
             for key in fields.keys() {
                 if let Some(reason) = forbidden_config_key_reason(key, langs) {
-                    return Err(config_err(format!("unsupported key `{key}`: {reason}")));
+                    return Err(config_err(format!("不支持 `{key}`：{reason}")));
                 }
                 if !matches!(key.as_str(), "file" | "content") {
-                    return Err(config_err(format!("unsupported key `{key}`")));
+                    return Err(config_err(format!("不支持 `{key}`")));
                 }
             }
             let source = match (fields.get("file"), fields.get("content")) {
@@ -770,11 +761,9 @@ fn parse_configs(
                     ConfigSource::File(package_files::normalize(path).map_err(config_err)?)
                 }
                 (None, Some(Value::String(text))) => ConfigSource::Content(text.clone()),
-                (Some(_), Some(_)) => {
-                    return Err(config_err("write either file or content, not both".into()));
-                }
-                (None, None) => return Err(config_err("write either file or content".to_owned())),
-                _ => return Err(config_err("file and content must be strings".to_owned())),
+                (Some(_), Some(_)) => return Err(config_err("file 和 content 只能写一个".into())),
+                (None, None) => return Err(config_err("必须写 file 或 content".to_owned())),
+                _ => return Err(config_err("file 和 content 必须是字符串".to_owned())),
             };
             Ok((name, source))
         })

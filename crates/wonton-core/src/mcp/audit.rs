@@ -216,12 +216,12 @@ impl Audit {
         {
             line.extend(fields);
         }
-        let mut file = self.file.lock().expect("audit log lock poisoned");
+        let mut file = self.file.lock().expect("审计日志锁中毒");
         let written = self
             .open(&mut file)
             .and_then(|f| f.write_all(format!("{line}\n").as_bytes()));
         if let Err(e) = written {
-            tracing::error!(path = %self.path.display(), error = %e, "failed to write the audit log");
+            tracing::error!(path = %self.path.display(), error = %e, "写审计日志失败");
             *file = None;
         }
     }
@@ -236,6 +236,6 @@ impl Audit {
                     .open(&self.path)?,
             );
         }
-        Ok(file.as_mut().expect("just opened"))
+        Ok(file.as_mut().expect("刚打开"))
     }
 }

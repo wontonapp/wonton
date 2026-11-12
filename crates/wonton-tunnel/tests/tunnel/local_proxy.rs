@@ -6,8 +6,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use iroh::SecretKey;
 use tokio::{io::AsyncWriteExt, net::TcpListener, task::JoinHandle};
 use wonton_tunnel::{
-    Allowlist, CATEGORY_HEADER, ERROR_HEADER, ProxyAccess, ProxyCredential, TunnelServer,
-    TunnelStatus,
+    Allowlist, ERROR_HEADER, ProxyAccess, ProxyCredential, TunnelServer, TunnelStatus,
 };
 
 use crate::support::{Phone, Timeouts, exchange, loopback_endpoint, parse_response, read_head};
@@ -128,7 +127,6 @@ async fn tunnel_errors_are_still_explained_through_the_forward_proxy() {
     let response = parse_response(&exchange(phone.proxy.local_addr(), &request).await);
     assert_eq!(response.status, 403);
     assert_eq!(response.header(ERROR_HEADER), Some("unauthorized"));
-    assert_eq!(response.header(CATEGORY_HEADER), Some("unauthorized"));
 
     // CONNECT 已经回了 200，隧道错误作为里面第一个请求的响应回给客户端，WebView 能显示原因。
     let inner = format!("GET / HTTP/1.1\r\nHost: {SITE}\r\n\r\n");
@@ -139,24 +137,6 @@ async fn tunnel_errors_are_still_explained_through_the_forward_proxy() {
     let response = parse_response(rest);
     assert_eq!(response.status, 403);
     assert_eq!(response.header(ERROR_HEADER), Some("unauthorized"));
-    assert_eq!(response.header(CATEGORY_HEADER), Some("unauthorized"));
-}
-
-/// 隧道不通时立刻回带类别的响应：状态码照旧，类别头给壳，正文只有类别、不写英文原文
-/// 客户端已关时新请求当场失败，不用等建连。
-#[tokio::test]
-async fn a_dead_tunnel_is_reported_by_category_not_by_english_text() {
-    let (home, upstream) = home_with_head_echo(true).await;
-    let credential = ProxyCredential::generate();
-    let phone = phone(&home, credential.clone(), &upstream.device).await;
-
-    phone.client.close();
-    let request = get_absolute("/", Some(&basic(&credential)));
-    let response = parse_response(&exchange(phone.proxy.local_addr(), &request).await);
-    assert_eq!(response.status, 502);
-    assert_eq!(response.header(ERROR_HEADER), Some("closed"));
-    assert_eq!(response.header(CATEGORY_HEADER), Some("tunnel-unavailable"));
-    assert_eq!(response.body, "tunnel-unavailable\n");
 }
 
 /// 服务端加一个回显请求头的上游。`paired` 为假时手机的设备不在白名单里。

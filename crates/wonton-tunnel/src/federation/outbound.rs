@@ -1,11 +1,9 @@
-//! 联邦出站：在核心的内部网络上开一个 HTTP CONNECT 代理，本机 Tuwunel 的联邦出站都经它走（Tuwunel 的
-//! `proxy` 配置），按 CONNECT 里的服务器名转给配对过的对方服务器。
+//! 联邦出站：在 Tuwunel 的网络上监听，按 TLS ClientHello 的 SNI 把连接转给配对过的对方服务器。
 //!
-//! 每条 TCP 连接先读 CONNECT 请求头，目标的主机名就是对方的 Matrix 服务器名；按嵌入方给的查找函数换成
-//! 配对时记下的 endpoint ID，经共享的 iroh 连接转发。对方确认接上它那台 Tuwunel 之后才回 200，之后的
-//! 字节（两台 Tuwunel 之间的 TLS）双向原样转发，转发器不终结 TLS，断开也不当协议错误。
-//!
-//! 有名字的配对服务器也通过此代理取 443 上的发现文件；私用名保留 8448。其余端口拒绝。
+//! 每条 TCP 连接先读到 ClientHello 为止（rustls 的 [`Acceptor`]，只解析、不回握手、不终结 TLS），SNI
+//! 就是对方的 Matrix 服务器名；按嵌入方给的查找函数换成配对时记下的 endpoint ID，经共享的 iroh 连接
+//! 转发。转发器不看 ClientHello 之后的内容，断开也不当协议错误。
+
 use std::{
     collections::BTreeSet,
     io,
@@ -18,21 +16,22 @@ use std::{
 };
 
 use iroh::{Endpoint, EndpointAddr, EndpointId};
+use rustls::server::Acceptor;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncReadExt,
     net::{TcpListener, TcpStream},
     sync::watch,
     task::AbortHandle,
 };
 use tracing::{debug, info, warn};
 
-use crate::{client::TunnelStream, error::TunnelError, forward};
+use crate::{forward, wire::Status};
 
-use super::peer::{PeerStates, PeerTable};
+use super::peer::{ForwardStream, PeerStates, PeerTable};
 
 /// 嵌入方提供的查找函数：Matrix 服务器名 → 配对时记下的对方 endpoint ID 和地址。
 ///
-/// 返回 `None` 表示这个名字不在配对名单里（还没配对，或者对方已被删除），连接回 403 后关闭，并记一次
+/// 返回 `None` 表示这个名字不在配对名单里（还没配对，或者对方已被删除），连接会被关闭并记一次
 /// [`OutboundErrors::unknown_server`]。绑定只在配对时定下、以后不变（ADR-0050），嵌入方按
 /// `core/peers.json` 实现，不做别的解析（不查 DNS）。
 pub type ServerLookup = Arc<dyn Fn(&str) -> Option<(EndpointId, EndpointAddr)> + Send + Sync>;
@@ -40,20 +39,20 @@ pub type ServerLookup = Arc<dyn Fn(&str) -> Option<(EndpointId, EndpointAddr)> +
 /// 出站一侧记下来的错误次数。这些错误没有对应的对方服务器，进不了每台服务器的状态，只能计数。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OutboundErrors {
-    /// CONNECT 到联邦端口的服务器名不在配对名单里，回 403 后关闭。
+    /// SNI 指向的服务器名不在配对名单里，连接已关闭。
     pub unknown_server: u64,
-    /// 连接开头不是能读懂的 CONNECT 请求（格式不对、不是 CONNECT、目标不是 `主机:端口`、太大或超时），
-    /// 回 400 后关闭。
-    pub invalid_request: u64,
+    /// 连接开头不是能读出 SNI 的 TLS ClientHello（不是 TLS、格式不对、没有 SNI、太大或超时），
+    /// 连接已关闭。
+    pub invalid_client_hello: u64,
 }
 
 #[derive(Debug, Default)]
 struct Counters {
     unknown_server: AtomicU64,
-    invalid_request: AtomicU64,
+    invalid_client_hello: AtomicU64,
 }
 
-/// 联邦出站转发器：在 `listen` 上接受本机 Tuwunel 发往对方服务器的 CONNECT，经 iroh 转出去；
+/// 联邦出站转发器：在 `listen` 上接受本机 Tuwunel 发往对方服务器的连接，按 SNI 经 iroh 转出去；
 /// 配对名单里每出现一台服务器就建它的客户端并开始探活，不等出站流量。
 #[derive(Debug)]
 pub struct FederationForwarder {
@@ -70,6 +69,7 @@ pub(super) struct ForwarderCtx {
     pub(super) endpoint: Endpoint,
     pub(super) lookup: ServerLookup,
     pub(super) peers: Arc<PeerTable>,
+    pub(super) status: watch::Sender<PeerStates>,
     pub(super) ping_interval: Duration,
     pub(super) ping_timeout: Duration,
 }
@@ -93,7 +93,8 @@ impl FederationForwarder {
         let ctx = Arc::new(ForwarderCtx {
             endpoint,
             lookup,
-            peers: Arc::new(PeerTable::new(status.clone())),
+            peers: Arc::new(PeerTable::default()),
+            status: status.clone(),
             ping_interval,
             ping_timeout,
         });
@@ -123,7 +124,7 @@ impl FederationForwarder {
     pub fn outbound_errors(&self) -> OutboundErrors {
         OutboundErrors {
             unknown_server: self.counters.unknown_server.load(Ordering::Relaxed),
-            invalid_request: self.counters.invalid_request.load(Ordering::Relaxed),
+            invalid_client_hello: self.counters.invalid_client_hello.load(Ordering::Relaxed),
         }
     }
 }
@@ -147,7 +148,7 @@ async fn sync_loop(mut paired: watch::Receiver<BTreeSet<String>>, ctx: Arc<Forwa
                 continue;
             };
             let peer = ctx.peers.get_or_create(name, id, addr.clone(), &ctx);
-            peer.set_target(addr);
+            peer.set_target(id, addr);
         }
         if paired.changed().await.is_err() {
             return;
@@ -163,7 +164,7 @@ async fn accept_loop(listener: TcpListener, ctx: Arc<ForwarderCtx>, counters: Ar
                 tokio::spawn(serve_conn(tcp, ctx, counters));
             }
             Err(err) => {
-                warn!("federation outbound listener failed: {err}");
+                warn!("联邦出站监听出错：{err}");
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
         }
@@ -172,173 +173,143 @@ async fn accept_loop(listener: TcpListener, ctx: Arc<ForwarderCtx>, counters: Ar
 
 async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Counters>) {
     let _ = tcp.set_nodelay(true);
-    let request = match read_connect(&mut tcp).await {
-        Ok(request) => request,
+    let (hello, name) = match read_client_hello(&mut tcp).await {
+        Ok(result) => result,
         Err(reason) => {
-            counters.invalid_request.fetch_add(1, Ordering::Relaxed);
-            warn!(%reason, "federation outbound: the connection does not start with a usable CONNECT request");
-            respond(&mut tcp, BAD_REQUEST).await;
+            counters
+                .invalid_client_hello
+                .fetch_add(1, Ordering::Relaxed);
+            warn!(%reason, "联邦出站：连接开头不是能用的 TLS ClientHello");
             return;
         }
     };
-    let name = request.host;
-    if (request.port != FEDERATION_PORT && request.port != 443)
-        || (request.port == 443 && name.ends_with(".wonton.internal"))
-    {
-        debug!(server = %name, port = request.port, "federation outbound: unsupported port");
-        respond(&mut tcp, BAD_GATEWAY).await;
-        return;
-    }
     let Some((id, addr)) = (ctx.lookup)(&name) else {
         counters.unknown_server.fetch_add(1, Ordering::Relaxed);
-        warn!(%name, "federation outbound: the server is not in the paired server list");
-        respond(&mut tcp, FORBIDDEN).await;
+        warn!(%name, "联邦出站：SNI 不在配对名单里，关闭连接");
         return;
     };
     let peer = ctx.peers.get_or_create(&name, id, addr.clone(), &ctx);
-    peer.set_target(addr);
+    peer.set_target(id, addr);
     let mut stream = match peer.open_forward().await {
         Ok(stream) => stream,
         Err(err) => {
-            debug!(server = %name, "federation outbound: cannot reach the peer: {err}");
-            respond(&mut tcp, BAD_GATEWAY).await;
+            debug!(server = %name, "联邦出站：连不上对方：{err}");
             return;
         }
     };
+    // ClientHello 之前的字节原样转过去（同一段 TCP 里 ClientHello 之后紧跟的字节也在里面）。
+    if let Err(err) = stream.send.write_all(&hello).await {
+        debug!(server = %name, "联邦出站：发送 ClientHello 失败：{err}");
+        stream.abort();
+        return;
+    }
     // 对方先回 1 字节状态，然后是它那台 Tuwunel 的原样字节（TLS 在两台 Tuwunel 之间）。
-    match peer.read_status(&mut stream).await {
-        Ok(()) => established(stream, tcp, request.rest, &name).await,
-        Err(TunnelError::UpstreamUnavailable) => {
-            info!(server = %name, "federation outbound: the peer cannot reach its Tuwunel");
-            stream.abort();
-            respond(&mut tcp, BAD_GATEWAY).await;
-        }
+    let mut status = [0u8; 1];
+    match stream.recv.read_exact(&mut status).await {
         Err(err) => {
-            debug!(server = %name, %err, "federation outbound: the stream did not carry the request");
+            debug!(server = %name, "联邦出站：读状态失败：{err}");
             stream.abort();
-            respond(&mut tcp, BAD_GATEWAY).await;
         }
+        Ok(_) => match Status::from_byte(status[0]) {
+            Some(Status::Ok) => {
+                peer.note_confirmed(stream.conn_id);
+                relay(stream, tcp).await;
+            }
+            Some(Status::UpstreamUnavailable) => {
+                info!(server = %name, "联邦出站：对方连不上它的 Tuwunel");
+                stream.abort();
+            }
+            _ => {
+                warn!(server = %name, kind = status[0], "联邦出站：对方不支持这个请求");
+                stream.abort();
+            }
+        },
     }
 }
 
-/// 对方已接上它的 Tuwunel：回 200，把请求头之后已经读到的字节先转过去，之后双向原样转发。
-async fn established(mut stream: TunnelStream, mut tcp: TcpStream, rest: Vec<u8>, name: &str) {
-    if let Err(err) = tcp.write_all(ESTABLISHED).await {
-        debug!(server = %name, "federation outbound: failed to answer the CONNECT: {err}");
-        stream.abort();
-        return;
-    }
-    if !rest.is_empty()
-        && let Err(err) = stream.send.write_all(&rest).await
-    {
-        debug!(server = %name, "federation outbound: failed to send the early bytes: {err}");
-        stream.abort();
-        return;
-    }
-    relay(stream, tcp).await;
-}
-
-/// CONNECT 已确认：之后的字节双向原样转发。
-async fn relay(mut stream: TunnelStream, tcp: TcpStream) {
+/// ClientHello 已发完：之后的字节双向原样转发。
+async fn relay(mut stream: ForwardStream, tcp: TcpStream) {
     let (mut tcp_read, mut tcp_write) = tcp.into_split();
     if let Err(err) = tokio::try_join!(
         forward::tcp_to_tunnel(&mut tcp_read, &mut stream.send),
-        forward::tunnel_to_tcp(&mut stream.recv, &mut tcp_write, None),
+        forward::tunnel_to_tcp(&mut stream.recv, &mut tcp_write),
     ) {
-        debug!("federation forwarding interrupted: {err}");
+        debug!("联邦转发中断：{err}");
         stream.abort();
     }
 }
 
-/// 回一个不带正文的错误状态，然后关闭（客户端可能已经走了，写失败不用管）。
-async fn respond(tcp: &mut TcpStream, status: &str) {
-    let reply = format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
-    let _ = tcp.write_all(reply.as_bytes()).await;
-    let _ = tcp.shutdown().await;
-}
+/// 读 ClientHello 的最长时间。连接来自本机 Tuwunel，正常毫秒级就到。
+const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 
-const ESTABLISHED: &[u8] = b"HTTP/1.1 200 Connection established\r\n\r\n";
-const BAD_REQUEST: &str = "400 Bad Request";
-const FORBIDDEN: &str = "403 Forbidden";
-const BAD_GATEWAY: &str = "502 Bad Gateway";
+/// 缓冲的 TLS 字节上限。rustls 自己也把握手消息限制在 64 KiB。
+const MAX_HELLO: usize = 64 * 1024 + 5;
 
-/// Matrix 的默认联邦端口：服务器名不带端口、没有 well-known 和 SRV 时，对方就在 `<名字>:8448`。
-const FEDERATION_PORT: u16 = 8448;
+/// 每次从连接里读多少字节。
+const READ_CHUNK: usize = 4096;
 
-/// 读请求头的最长时间。连接来自本机 Tuwunel，正常毫秒级就到。
-const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// 请求头的长度上限。CONNECT 只有一行请求行和几个头。
-const MAX_HEAD: usize = 8 * 1024;
-
-const MAX_HEADERS: usize = 32;
-
-/// 读到的 CONNECT：目标和请求头之后已经读到的字节。
-struct Connect {
-    host: String,
-    port: u16,
-    rest: Vec<u8>,
-}
-
-/// 连接开头读不出 CONNECT 的原因。
+/// 连接开头读不出 SNI 的原因。
 #[derive(Debug, thiserror::Error)]
-enum RequestError {
-    #[error("the connection closed before the request head: {0}")]
+enum HelloError {
+    #[error("连接在 ClientHello 之前就关了：{0}")]
     Closed(io::Error),
-    #[error("not an HTTP request")]
-    Malformed,
-    #[error("the method is {0}, not CONNECT")]
-    NotConnect(String),
-    #[error("the CONNECT target is not host:port: {0}")]
-    BadTarget(String),
-    #[error("the request head exceeds the size limit")]
+    #[error("不是 TLS 或 ClientHello 不合法：{0}")]
+    NotTls(io::Error),
+    #[error("ClientHello 里没有 SNI")]
+    NoSni,
+    #[error("ClientHello 超过字节上限")]
     TooLarge,
-    #[error("the request head did not complete within the time limit")]
+    #[error("ClientHello 限时内没有读完整")]
     Timeout,
 }
 
-/// 读到 CONNECT 请求头结束为止。
-async fn read_connect(tcp: &mut TcpStream) -> Result<Connect, RequestError> {
-    let deadline = tokio::time::Instant::now() + HEAD_TIMEOUT;
-    let mut buf = Vec::with_capacity(1024);
-    let mut chunk = [0u8; 1024];
+/// 读到 TLS ClientHello 为止，返回（已读的全部字节，SNI）。已读的字节要原样转给对方，之后的字节由
+/// 调用方从连接里继续读。不回握手：拿到 SNI 就由调用方决定转给谁，TLS 由两台 Tuwunel 端到端完成。
+async fn read_client_hello(tcp: &mut TcpStream) -> Result<(Vec<u8>, String), HelloError> {
+    let mut acceptor = Acceptor::default();
+    let mut buf = Vec::new();
+    let mut consumed = 0;
+    let deadline = tokio::time::Instant::now() + HELLO_TIMEOUT;
     loop {
+        // 先喂已经读到的字节：连接开头可能一次带来不止一条 TLS 记录。
+        while consumed < buf.len() {
+            let mut view: &[u8] = &buf[consumed..];
+            // read_tls 每次最多吃进一条记录，返回吃掉的字节数；剩下的留在 view 里下轮再喂。
+            let used = acceptor.read_tls(&mut view).map_err(HelloError::NotTls)?;
+            if used == 0 {
+                return Err(HelloError::NotTls(io::Error::other("读不出完整的记录")));
+            }
+            consumed += used;
+            match acceptor.accept() {
+                Ok(Some(accepted)) => {
+                    let hello = accepted.client_hello();
+                    let Some(name) = hello.server_name() else {
+                        return Err(HelloError::NoSni);
+                    };
+                    return Ok((buf, name.to_owned()));
+                }
+                Ok(None) => {}
+                Err((err, _alert)) => {
+                    // 对方不是 TLS 客户端或握手不合法。告警由调用方记，不回 TLS 告警。
+                    return Err(HelloError::NotTls(io::Error::other(err)));
+                }
+            }
+        }
+        // 已缓冲的字节喂完了：从连接里再读一段。
+        let mut chunk = [0u8; READ_CHUNK];
         let n = tokio::time::timeout_at(deadline, tcp.read(&mut chunk))
             .await
-            .map_err(|_| RequestError::Timeout)?
-            .map_err(RequestError::Closed)?;
+            .map_err(|_| HelloError::Timeout)?
+            .map_err(HelloError::Closed)?;
         if n == 0 {
-            return Err(RequestError::Closed(io::Error::new(
+            return Err(HelloError::Closed(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                "the connection closed before the request head",
+                "ClientHello 之前连接就关了",
             )));
         }
         buf.extend_from_slice(&chunk[..n]);
-        let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
-        let mut request = httparse::Request::new(&mut headers);
-        match request.parse(&buf) {
-            Ok(httparse::Status::Complete(len)) => {
-                let method = request.method.unwrap_or_default();
-                if !method.eq_ignore_ascii_case("CONNECT") {
-                    return Err(RequestError::NotConnect(method.to_owned()));
-                }
-                let target = request.path.unwrap_or_default();
-                let (host, port) = target
-                    .rsplit_once(':')
-                    .and_then(|(host, port)| Some((host, port.parse::<u16>().ok()?)))
-                    .filter(|(host, _)| !host.is_empty())
-                    .ok_or_else(|| RequestError::BadTarget(target.to_owned()))?;
-                return Ok(Connect {
-                    host: host.to_ascii_lowercase(),
-                    port,
-                    rest: buf[len..].to_vec(),
-                });
-            }
-            Ok(httparse::Status::Partial) if buf.len() < MAX_HEAD => {}
-            Ok(httparse::Status::Partial) | Err(httparse::Error::TooManyHeaders) => {
-                return Err(RequestError::TooLarge);
-            }
-            Err(_) => return Err(RequestError::Malformed),
+        if buf.len() > MAX_HELLO {
+            return Err(HelloError::TooLarge);
         }
     }
 }

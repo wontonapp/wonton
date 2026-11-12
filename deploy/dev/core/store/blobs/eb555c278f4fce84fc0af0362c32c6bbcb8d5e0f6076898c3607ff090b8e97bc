@@ -1,0 +1,229 @@
+# OpenClaw：自带 Matrix 客户端、模型网关适配和 MCP 客户端的 Agent。只有 gateway 常驻；init
+# 在首次启动时安装固定版本的官方 Matrix 插件并写入配置，安装状态和加密设备都留在 Bot 数据目录。
+services:
+  init:
+    image: ghcr.io/openclaw/openclaw:2026.10.10@sha256:1e5ee6c7d02d5b5f64f9cf26a30c7ef7d4ec292f0d25fa590f4b7e103e8bf799
+    # npm 插件安装会对受管文件执行 fchmod；init 只在容器内以 root 完成安装和权限交接，gateway 仍以主人 uid 运行。
+    user: "0:0"
+    entrypoint: ["/bin/sh", "/seed/init.sh"]
+    environment:
+      HOME: /home/node
+      OPENCLAW_HOME: /home/node
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+      OPENCLAW_CONFIG_DIR: /home/node/.openclaw
+      PUID: ${PUID}
+      PGID: ${PGID}
+      OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
+      WONTON_MODEL_BASE_URL: ${WONTON_MODEL_BASE_URL}
+      WONTON_MODEL_API_KEY: ${WONTON_MODEL_API_KEY}
+      WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT}
+      WONTON_MCP_URL: ${WONTON_MCP_URL}
+      MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER}
+      MATRIX_USER_ID: ${WONTON_MATRIX_USER_ID}
+      MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN}
+      MATRIX_OWNER: ${WONTON_MATRIX_OWNER}
+      MATRIX_DEVICE_NAME: Wonton OpenClaw
+    volumes:
+      - ${WONTON_BOT_DATA}:/home/node/.openclaw
+      # 帮助 skill（ADR-0034）要落进 App 数据的 skills 目录；gateway 对它是只读挂载，由 init 以 root 写入。
+      - ${WONTON_APP_DATA}/skills:/wonton-skills
+    configs:
+      - source: init
+        target: /seed/init.sh
+      - source: help-skill
+        target: /seed/wonton-help/SKILL.md
+    restart: "no"
+
+  gateway:
+    image: ghcr.io/openclaw/openclaw:2026.10.10@sha256:1e5ee6c7d02d5b5f64f9cf26a30c7ef7d4ec292f0d25fa590f4b7e103e8bf799
+    user: "${PUID}:${PGID}"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    command: ["node", "/app/dist/index.js", "gateway", "--bind", "loopback", "--port", "18789"]
+    environment:
+      HOME: /home/node
+      OPENCLAW_HOME: /home/node
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+      OPENCLAW_CONFIG_DIR: /home/node/.openclaw
+      OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
+      WONTON_MODEL_BASE_URL: ${WONTON_MODEL_BASE_URL}
+      WONTON_MODEL_API_KEY: ${WONTON_MODEL_API_KEY}
+      WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT}
+      WONTON_MCP_URL: ${WONTON_MCP_URL}
+      MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER}
+      MATRIX_USER_ID: ${WONTON_MATRIX_USER_ID}
+      MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN}
+      MATRIX_OWNER: ${WONTON_MATRIX_OWNER}
+      MATRIX_DEVICE_NAME: Wonton OpenClaw
+    volumes:
+      - ${WONTON_BOT_DATA}:/home/node/.openclaw
+      - ${WONTON_APP_DATA}/skills:/home/node/.agents/skills:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18789/readyz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 3m
+      start_interval: 2s
+
+configs:
+  init:
+    content: |
+      # The install is kept in the Bot data directory so the native Matrix crypto
+      # binding and plugin state survive gateway restarts and container rebuilds.
+      set -eu
+      umask 077
+      export MATRIX_DEVICE_ID="$$(node --input-type=module -e 'const r=await fetch(process.env.MATRIX_HOMESERVER + "/_matrix/client/v3/account/whoami", {headers: {Authorization: "Bearer " + process.env.MATRIX_ACCESS_TOKEN}}); if (!r.ok) throw new Error("whoami HTTP " + r.status); const j=await r.json(); if (!j.device_id) throw new Error("whoami response missing device_id"); process.stdout.write(j.device_id);')"
+      test -n "$$MATRIX_DEVICE_ID"
+      config=/home/node/.openclaw/openclaw.json
+      mkdir -p /home/node/.openclaw /home/node/.openclaw/workspace
+      if [ ! -s /home/node/.openclaw/.matrix-plugin-installed ]; then
+        install_config=/tmp/openclaw-install.json
+        printf '%s\n' '{"gateway":{"mode":"local","bind":"loopback","port":18789},"plugins":{"enabled":true}}' >"$$install_config"
+        # OpenClaw deliberately installs npm dependencies with --ignore-scripts; run the
+        # Matrix SDK downloader explicitly so E2EE has a platform-native .node binding.
+        OPENCLAW_CONFIG_PATH="$$install_config" openclaw plugins install npm:@openclaw/matrix@2026.10.10 --pin --force --accept-capabilities
+        crypto_script="$$(find /home/node/.openclaw/npm/projects -type f -path '*/@matrix-org/matrix-sdk-crypto-nodejs/download-lib.js' -print -quit)"
+        test -n "$$crypto_script"
+        node "$$crypto_script"
+        crypto_dir="$$(dirname "$$crypto_script")"
+        test -n "$$(find "$$crypto_dir" -maxdepth 1 -name '*.node' -print -quit)"
+        touch /home/node/.openclaw/.matrix-plugin-installed
+      fi
+      if [ ! -s "$$config" ]; then
+        cat >"$$config" <<JSON
+      {
+        "gateway": {
+          "mode": "local",
+          "bind": "loopback",
+          "port": 18789,
+          "controlUi": { "enabled": false },
+          "cliAgents": { "enabled": false },
+          "terminal": { "enabled": false }
+        },
+        "plugins": {
+          "enabled": true,
+          "allow": ["matrix"]
+        },
+        "models": {
+          "mode": "merge",
+          "providers": {
+            "wonton": {
+              "baseUrl": "$${WONTON_MODEL_BASE_URL}",
+              "apiKey": "$${WONTON_MODEL_API_KEY}",
+              "api": "openai-completions",
+              "models": [
+                {
+                  "id": "$${WONTON_MODEL_DEFAULT}",
+                  "name": "Wonton default",
+                  "input": ["text"],
+                  "contextWindow": 128000,
+                  "maxTokens": 8192,
+                  "compat": { "supportsTools": true }
+                }
+              ]
+            }
+          }
+        },
+        "agents": {
+          "defaults": {
+            "workspace": "/home/node/.openclaw/workspace",
+            "model": { "primary": "wonton/$${WONTON_MODEL_DEFAULT}" },
+            "sandbox": { "mode": "off" }
+          }
+        },
+        "tools": {
+          "profile": "full",
+          "deny": ["gateway", "browser", "canvas", "nodes", "cron", "automations", "sessions_spawn", "subagents"]
+        },
+        "channels": {
+          "matrix": {
+            "enabled": true,
+            "homeserver": "$${MATRIX_HOMESERVER}",
+            "userId": "$${MATRIX_USER_ID}",
+            "accessToken": "$${MATRIX_ACCESS_TOKEN}",
+            "deviceId": "$${MATRIX_DEVICE_ID}",
+            "deviceName": "$${MATRIX_DEVICE_NAME}",
+            "encryption": true,
+            "startupVerification": "off",
+            "network": { "dangerouslyAllowPrivateNetwork": true },
+            "dm": {
+              "policy": "allowlist",
+              "allowFrom": ["$${MATRIX_OWNER}"],
+              "sessionScope": "per-room",
+              "threadReplies": "off"
+            },
+            "groupPolicy": "disabled",
+            "autoJoin": "off"
+          }
+        },
+        "mcp": {
+          "servers": {
+            "wonton": {
+              "url": "$${WONTON_MCP_URL}",
+              "transport": "streamable-http",
+              "enabled": true,
+              "connectionTimeoutMs": 10000,
+              "requestTimeoutMs": 660000,
+              "toolFilter": { "include": ["wonton__list_plugins", "wonton__list_shares", "wonton__view_file"] }
+            }
+          }
+        },
+        "skills": {
+          "load": { "extraDirs": ["/home/node/.agents/skills"] },
+          "install": { "allowUploadedArchives": false }
+        }
+      }
+      JSON
+      fi
+      node --input-type=module -e 'import fs from "node:fs"; const p="/home/node/.openclaw/openclaw.json"; const c=JSON.parse(fs.readFileSync(p, "utf8")); c.channels ??= {}; c.channels.matrix ??= {}; Object.assign(c.channels.matrix, {homeserver: process.env.MATRIX_HOMESERVER, userId: process.env.MATRIX_USER_ID, accessToken: process.env.MATRIX_ACCESS_TOKEN, deviceId: process.env.MATRIX_DEVICE_ID, deviceName: process.env.MATRIX_DEVICE_NAME}); fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");'
+      openclaw config validate
+      # 帮助 skill 是 wonton-docs 的指路条（ADR-0034），放进 App 数据的 skills 目录，gateway 经只读挂载读它。
+      install -D -m 0644 /seed/wonton-help/SKILL.md /wonton-skills/wonton-help/SKILL.md
+      chown -R "$$PUID:$$PGID" /wonton-skills
+      chown -R "$$PUID:$$PGID" /home/node/.openclaw
+  help-skill:
+    file: wonton-help/SKILL.md
+
+x-wonton:
+  spec: "0.4"
+  id: ai.openclaw.agent
+  version: 0.1.0
+  kind: agent
+  title: { zh: OpenClaw, en: OpenClaw }
+  description:
+    zh: 通过加密 Matrix 私聊对话、调用模型并使用云吞工具的 Agent
+    en: Agent that chats over encrypted Matrix DMs, reaches models, and uses Wonton tools
+  icon: icon.svg
+  notices: [NOTICE]
+  author: { name: Wonton plugin authors }
+  homepage: https://openclaw.ai
+  license: MIT
+  tags: { zh: [AI], en: [AI] }
+  about:
+    zh: |
+      OpenClaw 是一个住在云吞里的 Agent。它只接核心分配的 Matrix 身份，只加入主人创建的加密私聊；模型经核心的模型网关访问，云吞工具经 MCP 总线访问。
+
+      容器里的工作区和 OpenClaw 状态都在这个 Bot 的数据目录中。Agent 自带的 shell、文件和其他工具直接在容器内执行，不经过云吞确认卡片；它们能读写 Bot 数据目录，并在 network.egress 允许的范围内访问外网或运行容器内安装程序。云吞 MCP 工具仍按核心的权限和确认规则执行。容器没有 Docker socket、宿主 shell、网页入口、对外端口或 OpenClaw 插件市场入口。
+    en: |
+      OpenClaw is an Agent living in Wonton. It uses only the Matrix identity assigned by the core and joins the encrypted DM created for the owner; models go through the core model gateway and Wonton tools go through the MCP bus.
+
+      The workspace and OpenClaw state stay in this Bot's data directory. Its built-in shell, filesystem, and other tools execute inside the container without Wonton confirmation cards; they can read and write that Bot data and, when network.egress is granted, reach the Internet or run container-local installers. Wonton MCP tools remain subject to the core's permissions and confirmation rules. The container has no Docker socket, host shell, web entry, public port, or OpenClaw plugin marketplace.
+  release_notes:
+    zh: "首版：Matrix 加密 Bot、模型网关和 Wonton MCP 总线。"
+    en: "First release: encrypted Matrix Bot, model gateway, and Wonton MCP bus."
+  agent:
+    protocol: matrix
+  bot:
+    display_name: { zh: OpenClaw, en: OpenClaw }
+  bots:
+    services: [init, gateway]
+  permissions:
+    - models
+    - matrix.bot
+    - tools
+    - network.egress
+  requirements:
+    arch: [amd64, arm64]
+    memory: 1G

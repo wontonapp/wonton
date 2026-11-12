@@ -146,23 +146,17 @@ impl PluginManager {
         if !has_bot {
             return Err(ProfileError::NotFound);
         }
-        let bots = self
+        let record = self
             .store
             .bots()
             .load(id)
-            .map_err(|e| ProfileError::Storage(e.to_string()))?;
-        // 资料按 Bot 的接口在别的任务里；现在默认 Bot 没有（或插件没记录）就报没找到。
-        let record = bots
-            .bots
-            .get(super::bot_services::DEFAULT_BOT)
-            .or_else(|| bots.bots.values().next())
+            .map_err(|e| ProfileError::Storage(e.to_string()))?
             .ok_or(ProfileError::NotFound)?;
-        let user = record.account.user_id.clone();
         let matrix = self
             .matrix
             .as_deref()
             .ok_or_else(|| ProfileError::MatrixUnavailable("核心没有接入 Matrix".to_owned()))?;
-        Ok((matrix, user))
+        Ok((matrix, record.account.user_id))
     }
 
     fn profile_name(&self, name: Option<String>) -> Result<Option<String>, ProfileError> {
@@ -216,9 +210,7 @@ impl PluginManager {
             })
             .await;
         let profile_rev = if written {
-            let profile_rev = self.profiles.revisions.bump(id.as_str());
-            self.activity.changed();
-            profile_rev
+            self.profiles.revisions.bump(id.as_str())
         } else {
             self.profiles.revisions.get(id.as_str())
         };
@@ -259,7 +251,6 @@ impl PluginManager {
         if written {
             editing.succeeded();
             self.profiles.revisions.bump(id.as_str());
-            self.activity.changed();
         }
         Ok(result?)
     }

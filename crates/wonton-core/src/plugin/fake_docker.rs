@@ -10,7 +10,6 @@ use axum::extract::{Request, State};
 use axum::http::{Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
-use futures_util::StreamExt;
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
@@ -101,7 +100,7 @@ struct Resources {
     containers: BTreeMap<String, Labels>,
     /// 容器名 → 创建它的请求。
     created: BTreeMap<String, Value>,
-    /// 容器名 → 被创建过的次数：重建会计数，断言“容器（别的 Bot 的）没被动过”用。
+    /// 容器名 → 被创建过的次数：重建会计数，断言“容器没被动过”用。
     creation_count: BTreeMap<String, u32>,
     /// 网络名 → 标签。
     networks: BTreeMap<String, Labels>,
@@ -122,7 +121,6 @@ struct Resources {
     states: BTreeMap<String, Value>,
     start_states: BTreeMap<String, Value>,
     start_error: Option<String>,
-    create_error: Option<(String, String)>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
     /// 网络名 → 容器名 → 它在网络里的端点（Docker 的 `EndpointSettings` 写法）。
@@ -333,28 +331,12 @@ impl FakeDocker {
         self.lock().states.insert(container.to_owned(), state);
     }
 
-    /// 容器从 Docker 里不见了（被外部删掉）。
-    pub fn remove(&self, container: &str) {
-        let mut docker = self.lock();
-        docker.containers.remove(container);
-        docker.states.remove(container);
-        docker.created.remove(container);
-        for endpoints in docker.endpoints.values_mut() {
-            endpoints.remove(container);
-        }
-    }
-
     pub fn set_start_state(&self, container: &str, state: Value) {
         self.lock().start_states.insert(container.to_owned(), state);
     }
 
     pub fn fail_starts(&self, message: Option<&str>) {
         self.lock().start_error = message.map(str::to_owned);
-    }
-
-    /// 下一次创建指定容器时返回错误；消费后自动恢复正常。
-    pub fn fail_next_create(&self, container: &str, message: &str) {
-        self.lock().create_error = Some((container.to_owned(), message.to_owned()));
     }
 
     /// 容器里执行的命令由 `handler` 回应。
@@ -533,7 +515,7 @@ fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Respons
         ["containers", rest @ ..] => containers(&mut docker, method, rest, query, body),
         ["networks", rest @ ..] => networks(&mut docker, method, rest, query, body),
         ["volumes", rest @ ..] => volumes(&mut docker, method, rest, query, body),
-        _ => others(&mut docker, method, &parts, query),
+        _ => others(&mut docker, method, &parts),
     };
     reply.unwrap_or_else(|| {
         json_reply(
@@ -544,12 +526,7 @@ fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Respons
 }
 
 /// 版本、镜像、exec 查询。
-fn others(
-    docker: &mut Resources,
-    method: &Method,
-    parts: &[&str],
-    query: &str,
-) -> Option<Response> {
+fn others(docker: &mut Resources, method: &Method, parts: &[&str]) -> Option<Response> {
     let reply = match (method, parts) {
         (&Method::GET, ["version"]) => json_reply(
             StatusCode::OK,
@@ -582,11 +559,6 @@ fn others(
                 json!({"Name": docker.name, "Runtimes": map, "Architecture": "x86_64", "OSType": "linux", "NCPU": 32, "HttpsProxy": docker.https_proxy}),
             )
         }
-        (&Method::GET, ["images", image @ .., "json"])
-            if docker.missing_images.contains(&image.join("/")) =>
-        {
-            json_reply(StatusCode::NOT_FOUND, json!({"message": "No such image"}))
-        }
         (&Method::GET, ["images", image @ .., "json"]) => {
             let check = docker.image_healthchecks.get(&image.join("/"));
             json_reply(StatusCode::OK, json!({"Config": {"Healthcheck": check}}))
@@ -595,33 +567,6 @@ fn others(
             StatusCode::INTERNAL_SERVER_ERROR,
             json!({"message": docker.pull_error}),
         ),
-        // 拉成功：像 Docker 一样一行一个 JSON，带进度，最后一条表示下完。每行隔一会儿，测试才看得到中间状态。
-        (&Method::POST, ["images", "create"]) => {
-            // 拉完的这个镜像就在本地了：之后查它、用它建容器都正常；没拉的还在不在看它原来在不在。
-            // 核心拉的引用补了 `:latest`，`forget_image` 记的可能是不带标签的名字。
-            if let Some(image) = query_param(query, "fromImage") {
-                docker
-                    .missing_images
-                    .retain(|missing| *missing != image && format!("{missing}:latest") != image);
-            }
-            let lines = futures_util::stream::iter([
-                "{\"status\":\"Downloading\",\"progressDetail\":{\"current\":40,\"total\":100},\"id\":\"a\"}",
-                "{\"status\":\"Downloading\",\"progressDetail\":{\"current\":40,\"total\":100},\"id\":\"b\"}",
-                "{\"status\":\"Pull complete\",\"id\":\"a\"}",
-                "{\"status\":\"Downloading\",\"progressDetail\":{\"current\":100,\"total\":100},\"id\":\"b\"}",
-                "{\"status\":\"Already exists\",\"id\":\"c\"}",
-                "{\"status\":\"Pull complete\",\"id\":\"b\"}",
-            ])
-            .then(|line| async move {
-                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-                Ok::<_, std::io::Error>(Bytes::from(format!("{line}\n")))
-            });
-            axum::response::Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", "application/json")
-                .body(axum::body::Body::from_stream(lines))
-                .unwrap()
-        }
         (&Method::GET, ["exec", id, "json"]) if docker.execs.contains_key(*id) => {
             let code = docker.execs[*id].exit_code;
             json_reply(

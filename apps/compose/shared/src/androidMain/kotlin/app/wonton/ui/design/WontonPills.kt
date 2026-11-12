@@ -60,7 +60,6 @@ fun WontonSearchField(value: String, onValueChange: (String) -> Unit, prompt: St
             ) {
                 Icon(
                     WontonIcon.Search,
-                    // 装饰：输入框自己有提示文字。
                     contentDescription = null,
                     modifier = Modifier.size(WontonTheme.size.iconSmall),
                     tint = colors.textSecondary.toColor(),
@@ -115,7 +114,7 @@ fun WontonChip(title: String, isSelected: Boolean, onClick: () -> Unit) {
 
 /** 列表行尾的小按钮。图形比按钮矮，命中区还是 48。 */
 @Composable
-fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true, danger: Boolean = false) {
+fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
     val colors = WontonTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -131,11 +130,7 @@ fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true
                 .padding(horizontal = WontonTheme.spacing.s12),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text,
-                style = WontonTheme.typography.supporting,
-                color = (if (danger) colors.danger else colors.textPrimary).toColor(),
-            )
+            Text(text, style = WontonTheme.typography.supporting, color = colors.textPrimary.toColor())
         }
     }
 }

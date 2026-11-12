@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonTheme
@@ -21,9 +20,7 @@ import app.wonton.ui.icons.WontonIcon
 internal fun SettingsToolbarButton(upgrade: Boolean, onClick: () -> Unit) {
     val colors = WontonTheme.colors
     Box {
-        val label = stringResource(
-            if (upgrade) R.string.settings_toolbar_update else R.string.settings_toolbar,
-        )
+        val label = if (upgrade) tabText("设置，有新版本", "Settings, update available") else tabText("设置", "Settings")
         WontonIconButton(WontonIcon.Settings, label, onClick)
         if (upgrade) {
             Box(

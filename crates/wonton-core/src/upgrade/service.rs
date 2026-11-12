@@ -318,13 +318,11 @@ impl Upgrades {
                 image: running.config_image.clone(),
                 digest: running.digest.clone(),
                 version: running.version.clone(),
-                image_id: Some(running.image_id.clone()),
             },
             ImageRef {
                 image: format!("{repository}@{}", offer.digest),
                 digest: Some(offer.digest.clone()),
                 version: offer.version.clone(),
-                image_id: None,
             },
             offer.migrates.clone(),
             self.host.now(),

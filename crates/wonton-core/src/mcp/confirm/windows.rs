@@ -8,11 +8,9 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
-use wonton_protocol::{
-    Answer, ConfirmationCard, ConfirmationState, ConfirmationWindow, SecretValues, WindowEnd,
-};
+use wonton_protocol::{Answer, ConfirmationCard, ConfirmationState, ConfirmationWindow, WindowEnd};
 
-use super::{Chosen, Confirmations, Slot, Table, now_ms};
+use super::{Chosen, Confirmations, Table, now_ms};
 use crate::l10n;
 use crate::plugin::PluginId;
 use crate::plugin::languages::Languages;
@@ -21,6 +19,7 @@ use crate::plugin::store::write_json;
 /// 还显示着时段的一张卡片。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct Persisted {
+    handle: String,
     caller: String,
     plugin: String,
     card: ConfirmationCard,
@@ -57,12 +56,12 @@ fn load(path: &PathBuf) -> HashMap<String, Persisted> {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == ErrorKind::NotFound => return HashMap::new(),
         Err(e) => {
-            tracing::error!(path = %path.display(), error = %e, "can't read the saved confirmation windows");
+            tracing::error!(path = %path.display(), error = %e, "读不出放行时段的记录");
             return HashMap::new();
         }
     };
     serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-        tracing::error!(path = %path.display(), error = %e, "saved confirmation windows are corrupt");
+        tracing::error!(path = %path.display(), error = %e, "放行时段的记录坏了");
         HashMap::new()
     })
 }
@@ -147,12 +146,9 @@ impl Confirmations {
             let chosen = Chosen {
                 answer: Answer::Approve,
                 choice_id: None,
-                secrets: SecretValues::new(),
-                settings: Default::default(),
             };
             if waiter.send(chosen).is_ok() {
                 slot.card.state = ConfirmationState::Running;
-                slot.ended = Some(now);
                 slot.released_by = Some(id.to_owned());
                 released += 1;
             }
@@ -199,7 +195,7 @@ impl Confirmations {
             table.windows.retain(|_, card| card != id);
             ended
         };
-        self.bump();
+        self.publish(id).await;
         self.save_windows();
         Some(ended)
     }
@@ -213,8 +209,9 @@ impl Confirmations {
         let mut saved = table.leftovers.clone();
         for (id, slot) in &table.slots {
             let open = slot.card.window.as_ref().is_some_and(|w| w.ended.is_none());
-            if let (true, Some(plugin)) = (open, &slot.scope) {
+            if let (true, Some(handle), Some(plugin)) = (open, &slot.handle, &slot.scope) {
                 let entry = Persisted {
+                    handle: handle.clone(),
                     caller: slot.caller.to_string(),
                     plugin: plugin.clone(),
                     card: slot.card.clone(),
@@ -223,7 +220,7 @@ impl Confirmations {
             }
         }
         if let Err(e) = write_json(file, &saved) {
-            tracing::error!(path = %file.display(), error = %e, "can't save the confirmation windows");
+            tracing::error!(path = %file.display(), error = %e, "记不下放行时段");
         }
     }
 
@@ -231,11 +228,9 @@ impl Confirmations {
         !self.lock().leftovers.is_empty()
     }
 
-    /// 把上次运行留下的卡片改成“核心重启，已结束”，写回确认表：结束的卡片只在确认表里，App 从列表看到
-    /// “结果不确定”。改成功的才从文件里删，没成功的下次再试。
+    /// 把上次运行留下的卡片改成“核心重启，已结束”。改成功的才从文件里删，没成功的下次再试。
     pub async fn recover_windows(&self, langs: &Languages) -> Vec<EndedWindow> {
         let uncertain = l10n::text(langs, "chat-uncertain-restart", &[]);
-        let now = now_ms(SystemTime::now());
         let leftovers: Vec<_> = self
             .lock()
             .leftovers
@@ -255,34 +250,21 @@ impl Confirmations {
                     message: uncertain.clone(),
                 };
             }
-            let Ok(caller) = PluginId::parse(&entry.caller) else {
-                tracing::error!(confirmation = %id, caller = %entry.caller, "留着的放行时段记着不认识的插件，丢下它");
-                self.lock().leftovers.remove(&id);
-                continue;
-            };
-            // 放行时段只有主人的卡片有（家人的卡片不给这个选项），收件人是主人。
-            let slot = Slot {
-                caller,
-                recipient: None,
-                scope: Some(entry.plugin.clone()),
-                released_by: None,
-                card: card.clone(),
-                waiter: None,
-                secret_inputs: Vec::new(),
-                ended: Some(now),
-            };
-            self.lock().slots.insert(id.clone(), slot);
-            self.lock().leftovers.remove(&id);
-            ended.push(EndedWindow {
-                card: id,
-                caller: entry.caller,
-                plugin: entry.plugin,
-                allowed: None,
-                reason: WindowEnd::CoreRestarted,
-            });
+            match self.notifier.update(&entry.handle, &card).await {
+                Ok(_) => {
+                    self.lock().leftovers.remove(&id);
+                    ended.push(EndedWindow {
+                        card: id,
+                        caller: entry.caller,
+                        plugin: entry.plugin,
+                        allowed: None,
+                        reason: WindowEnd::CoreRestarted,
+                    });
+                }
+                Err(e) => tracing::warn!(confirmation = %id, error = %e, "还改不了上次的放行卡片"),
+            }
         }
         if !ended.is_empty() {
-            self.bump();
             self.save_windows();
         }
         ended

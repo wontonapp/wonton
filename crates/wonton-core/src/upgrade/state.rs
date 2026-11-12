@@ -75,9 +75,6 @@ pub struct ImageRef {
     pub image: String,
     pub digest: Option<String>,
     pub version: Option<String>,
-    /// 回滚目标实际是哪个镜像：`from` 是标签时，标签可能已经被移走。旧版本写的状态文件没有这一项。
-    #[serde(default)]
-    pub image_id: Option<String>,
 }
 
 /// 升级的结果。
@@ -360,7 +357,6 @@ mod tests {
             image: format!("r@{name}"),
             digest: Some(name.into()),
             version: None,
-            image_id: None,
         }
     }
 

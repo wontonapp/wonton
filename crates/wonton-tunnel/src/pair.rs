@@ -16,7 +16,7 @@ use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-pub use client::{PAIR_TIMEOUT, pair, pair_with_timeout};
+pub use client::pair;
 pub use server::{PairHandler, PairProtocol};
 
 use crate::relays::Relay;
@@ -96,12 +96,12 @@ impl fmt::Debug for PairingCode {
 /// 扫到的不是能用的配对码。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum InvalidCode {
-    #[error("not a Wonton pairing code")]
+    #[error("不是云吞的配对码")]
     NotPairingCode,
     /// 配对码比这个 App 新：要更新 App，换一个码没有用。
-    #[error("pairing code format version {0} is not recognized by this app; update the app")]
+    #[error("配对码的格式版本是 {0}，这个 App 认不出，请更新 App")]
     UnsupportedVersion(String),
-    #[error("invalid {field} in the pairing code: {reason}")]
+    #[error("配对码里的{field}不对：{reason}")]
     Malformed { field: &'static str, reason: String },
 }
 
@@ -119,21 +119,20 @@ impl PairingCode {
         match fields.version.as_deref() {
             Some(CODE_VERSION) => {}
             Some(other) => return Err(InvalidCode::UnsupportedVersion(other.to_owned())),
-            None => return Err(malformed("version", "missing v")),
+            None => return Err(malformed("版本", "缺少 v")),
         }
         fields.build()
     }
 
     /// 写成二维码里的文字。
     pub fn to_uri(&self) -> String {
-        let mut url = Url::parse("wonton://pair").expect("the fixed URL always parses");
+        let mut url = Url::parse("wonton://pair").expect("固定的地址总能解析");
         {
             let mut query = url.query_pairs_mut();
             query.append_pair("v", CODE_VERSION);
             query.append_pair("id", &self.server_id.to_string());
             // 整张中继表（连令牌和档位）放在一个参数里，和 `/_wonton/api/tunnel` 的 `relays` 同一个写法。
-            let relays = serde_json::to_string(&self.relays)
-                .expect("the relay table always serializes to JSON");
+            let relays = serde_json::to_string(&self.relays).expect("中继表总能写成 JSON");
             query.append_pair("relays", &relays);
             for addr in &self.direct_addrs {
                 query.append_pair("addr", &addr.to_string());
@@ -188,35 +187,29 @@ impl Fields {
         let server_id = self
             .id
             .as_deref()
-            .ok_or_else(|| malformed("server ID", "missing id"))
+            .ok_or_else(|| malformed("服务端 ID", "缺少 id"))
             .and_then(|id| {
-                EndpointId::from_str(id).map_err(|e| malformed("server ID", &e.to_string()))
+                EndpointId::from_str(id).map_err(|e| malformed("服务端 ID", &e.to_string()))
             })?;
         let relays = match self.relays.as_deref() {
             Some(text) => serde_json::from_str::<Vec<Relay>>(text)
-                .map_err(|e| malformed("relay table", &e.to_string()))?,
+                .map_err(|e| malformed("中继表", &e.to_string()))?,
             None => Vec::new(),
-        }
-        .into_iter()
-        .map(crate::relays::canonical_relay)
-        .collect::<Vec<_>>();
+        };
         for relay in &relays {
             relay
                 .validate()
-                .map_err(|reason| malformed("relay table", &reason))?;
+                .map_err(|reason| malformed("中继表", &reason))?;
         }
         let direct_addrs = self
             .addrs
             .iter()
             .map(|addr| {
-                SocketAddr::from_str(addr).map_err(|e| malformed("direct address", &e.to_string()))
+                SocketAddr::from_str(addr).map_err(|e| malformed("直连地址", &e.to_string()))
             })
             .collect::<Result<Vec<_>, _>>()?;
         if relays.is_empty() && direct_addrs.is_empty() {
-            return Err(malformed(
-                "server address",
-                "no relay URL or direct address",
-            ));
+            return Err(malformed("服务端地址", "没有中继地址或直连地址"));
         }
         let base_domain = base_domain(self.domain.as_deref())?;
         let core_url = core_url(self.core.as_deref(), &base_domain)?;
@@ -224,7 +217,7 @@ impl Fields {
             .secret
             .as_deref()
             .and_then(PairingSecret::from_hex)
-            .ok_or_else(|| malformed("pairing secret", "expected 32 lowercase hex digits"))?;
+            .ok_or_else(|| malformed("配对密钥", "应为 32 位十六进制小写"))?;
         Ok(PairingCode {
             server_id,
             relays,
@@ -237,7 +230,7 @@ impl Fields {
 }
 
 fn base_domain(text: Option<&str>) -> Result<String, InvalidCode> {
-    let text = text.ok_or_else(|| malformed("base domain", "missing domain"))?;
+    let text = text.ok_or_else(|| malformed("基础域名", "缺少 domain"))?;
     let domain = text.trim_end_matches('.').to_ascii_lowercase();
     let valid_label = |label: &str| {
         !label.is_empty()
@@ -248,20 +241,20 @@ fn base_domain(text: Option<&str>) -> Result<String, InvalidCode> {
     if domain.split('.').all(valid_label) {
         Ok(domain)
     } else {
-        Err(malformed("base domain", text))
+        Err(malformed("基础域名", text))
     }
 }
 
 fn core_url(text: Option<&str>, domain: &str) -> Result<Url, InvalidCode> {
-    let text = text.ok_or_else(|| malformed("core URL", "missing core"))?;
-    let url = Url::parse(text).map_err(|e| malformed("core URL", &e.to_string()))?;
+    let text = text.ok_or_else(|| malformed("核心地址", "缺少 core"))?;
+    let url = Url::parse(text).map_err(|e| malformed("核心地址", &e.to_string()))?;
     let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
     if matches!(url.scheme(), "http" | "https") && host == domain {
         Ok(url)
     } else {
         Err(malformed(
-            "core URL",
-            &format!("must be an http(s) URL under {domain}"),
+            "核心地址",
+            &format!("要是 {domain} 的 http(s) 地址"),
         ))
     }
 }
@@ -280,7 +273,7 @@ pub enum PairRequest {
     /// 出示配对密钥，请服务端把本设备登记成主人的设备。
     Pair {
         secret: PairingSecret,
-        /// 主人在设备列表里认它用，如“Alice 的 iPhone”。
+        /// 主人在设备列表里认它用，如“Jiale 的 iPhone”。
         device_name: String,
     },
 }
@@ -306,7 +299,7 @@ pub enum RejectReason {
     UnknownCode,
     /// 码过期了，要换一个新码。
     Expired,
-    /// 码已经被别的设备用过；用它的那台设备重发是幂等的 `Paired`。
+    /// 码已经用过。
     Used,
     /// 这种码已经不能再用来配对，例如服务器上已经有配对的设备，首次配对码随之作废。
     Closed,
@@ -329,7 +322,7 @@ mod tests {
         PairingCode {
             server_id: SecretKey::generate().public(),
             relays: vec![crate::relays::Relay {
-                url: "https://relay.example.com/".parse().unwrap(),
+                url: "https://relay.example.com./".parse().unwrap(),
                 token: Some(crate::relays::RelayToken::new("tok")),
                 tier: 0,
             }],
@@ -351,19 +344,6 @@ mod tests {
         assert_eq!(PairingCode::parse(&uri).unwrap(), code);
         // 二维码扫出来的文字常带首尾空白。
         assert_eq!(PairingCode::parse(&format!(" {uri}\n")).unwrap(), code);
-    }
-
-    /// 带尾点的中继地址解析成不带的：同一个中继在码里、表里、状态里只有一个写法（#200）。
-    #[test]
-    fn a_dotted_relay_url_parses_to_the_canonical_spelling() {
-        let mut dotted = code();
-        dotted.relays[0].url = "https://relay.example.com./".parse().unwrap();
-        let parsed = PairingCode::parse(&dotted.to_uri()).unwrap();
-        assert_eq!(parsed.relays[0].url.as_str(), "https://relay.example.com/");
-        assert!(parsed.relays[0].validate().is_ok());
-        // 直连地址和其余字段不跟规范。
-        assert_eq!(parsed.direct_addrs, dotted.direct_addrs);
-        assert_eq!(parsed.secret, dotted.secret);
     }
 
     #[test]
@@ -429,14 +409,14 @@ mod tests {
     fn messages_have_the_documented_json_shape() {
         let request = PairRequest::Pair {
             secret: PairingSecret::from_bytes([1; SECRET_LEN]),
-            device_name: "Alice 的 iPhone".to_owned(),
+            device_name: "Jiale 的 iPhone".to_owned(),
         };
         assert_eq!(
             serde_json::to_value(&request).unwrap(),
             serde_json::json!({
                 "type": "pair",
                 "secret": "01010101010101010101010101010101",
-                "device_name": "Alice 的 iPhone",
+                "device_name": "Jiale 的 iPhone",
             })
         );
         assert_eq!(

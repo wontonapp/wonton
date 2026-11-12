@@ -40,30 +40,7 @@ impl PluginManager {
     /// 接上 Matrix 服务器：声明了 `matrix.bot` 的插件这才装得上。
     #[must_use]
     pub fn with_matrix(mut self, matrix: Option<Arc<Matrix>>) -> Self {
-        self.matrix_server_name = matrix.as_ref().map(|m| m.server_name().to_owned());
         self.matrix = matrix;
-        self
-    }
-
-    /// `matrix_rtc` 别名的 CA（ADR-0096），接了 Matrix 时由核心启动时给出。
-    #[must_use]
-    pub fn with_matrix_rtc_ca(mut self, ca: Option<Arc<super::matrix_rtc_ca::CoreCa>>) -> Self {
-        self.matrix_rtc_ca = ca;
-        self
-    }
-
-    /// 测试用：只给出 Matrix 服务器名和一个不落盘的 CA，不连真的 Tuwunel。
-    #[cfg(test)]
-    #[must_use]
-    pub fn with_matrix_server_name(mut self, server_name: &str) -> Self {
-        self.matrix_server_name = Some(server_name.to_owned());
-        self.matrix_rtc_ca = Some(super::matrix_rtc_ca::CoreCa::ephemeral());
-        self
-    }
-
-    #[must_use]
-    pub fn with_mailpit(mut self, mailpit: Option<Arc<crate::mailbox::Component>>) -> Self {
-        self.mailpit = mailpit;
         self
     }
 

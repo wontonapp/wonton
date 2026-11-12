@@ -2,16 +2,12 @@
 
 mod ask_every_update;
 mod bots;
-mod chat_rows;
 mod connection;
 mod core_upgrade;
-mod detail;
 mod egress;
-mod now;
 mod onboarding;
 mod registry_mirror;
 pub mod rig;
-mod share_recipients;
 mod takeover;
 mod tool_policy;
 
@@ -27,7 +23,6 @@ use rig::{
     CONNECT_BACKSTOP, Canned, IMAGE, Rig, WAIT, core_error, installed, item, listing, preview,
     running,
 };
-use wonton_protocol::{SecretInput, SecretString};
 
 /// 兜底预算，不是节奏：按生产常数推导——三次成功读取最坏 3 × (3s 间隔 + 30s 读取限时) = 99s，
 /// 之后 settle 自己在最后一次成功读取 120s 后转不确定（UNREACHABLE_LIMIT），合计 219s；取 240s。
@@ -143,8 +138,6 @@ async fn installing_grants_what_the_preview_listed_and_reports_the_result() {
     rig.app
         .dispatch(Action::InstallPlugin {
             preview: shown.clone(),
-            secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     let view = rig.app.plugins();
@@ -207,11 +200,7 @@ async fn a_chosen_file_goes_up_as_is_and_installs_by_the_source_in_its_preview()
     assert!(asked.body.ends_with("gz"), "{asked:?}");
 
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: shown,
-            secrets: Default::default(),
-            settings: Default::default(),
-        })
+        .dispatch(Action::InstallPlugin { preview: shown })
         .unwrap();
     rig.task("app.photos", |state| *state != PluginTaskState::Running)
         .await;
@@ -290,11 +279,7 @@ async fn a_preview_that_says_no_is_not_sent() {
     let mut blocked = preview("app.photos");
     blocked.blocked = Some("宿主架构不符".to_owned());
     assert!(matches!(
-        rig.app.dispatch(Action::InstallPlugin {
-            preview: blocked,
-            secrets: Default::default(),
-            settings: Default::default(),
-        }),
+        rig.app.dispatch(Action::InstallPlugin { preview: blocked }),
         Err(CoreError::NotReady { .. })
     ));
     assert!(rig.app.plugins().tasks.is_empty());
@@ -313,9 +298,7 @@ async fn a_preview_that_needs_the_profile_is_not_sent() {
     needs_email.missing_profile = Some("这个应用要用你的邮箱，填好才能装".to_owned());
     assert!(matches!(
         rig.app.dispatch(Action::InstallPlugin {
-            preview: needs_email,
-            secrets: Default::default(),
-            settings: Default::default(),
+            preview: needs_email
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -326,17 +309,10 @@ async fn a_preview_that_needs_the_profile_is_not_sent() {
     );
 }
 
-const PROFILE: &str = wonton_protocol::ME_PATH;
+const PROFILE: &str = "/_wonton/api/owner-profile";
 
 fn profile(name: Option<&str>, email: Option<&str>) -> Canned {
-    let body = serde_json::json!({
-        "user_id": "@owner:wonton.localhost",
-        "username": "owner",
-        "role": "owner",
-        "display_name": name,
-        "email": email,
-        "can_install_plugins": true,
-    });
+    let body = serde_json::json!({"username": "owner", "display_name": name, "email": email});
     Canned(200, body.to_string())
 }
 
@@ -351,7 +327,11 @@ async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
     };
     let refused = core_error(400, "invalid_input", "不像邮箱");
     rig.core.answer(Method::PUT, PROFILE, refused);
-    let error = rig.app.save_me(update.clone()).await.unwrap_err();
+    let error = rig
+        .app
+        .save_owner_profile(update.clone())
+        .await
+        .unwrap_err();
     assert_eq!(
         error,
         CoreError::InvalidInput {
@@ -365,7 +345,7 @@ async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
         email: Some("me@example.com".to_owned()),
         ..update
     };
-    let profile = rig.app.save_me(good).await.unwrap();
+    let profile = rig.app.save_owner_profile(good).await.unwrap();
     assert_eq!(profile.email.as_deref(), Some("me@example.com"));
     let sent = rig.core.seen(&Method::PUT, PROFILE);
     assert!(sent[1].body.contains("me@example.com"), "{}", sent[1].body);
@@ -400,7 +380,7 @@ async fn failures_keep_their_reason() {
         ),
         (
             core_error(502, "image_pull_failed", "拉不下镜像"),
-            PluginFailure::SourceUnavailable,
+            PluginFailure::Upstream,
         ),
         (
             core_error(403, "permission_denied", "权限对不上"),
@@ -416,8 +396,6 @@ async fn failures_keep_their_reason() {
         rig.app
             .dispatch(Action::InstallPlugin {
                 preview: preview("app.photos"),
-                secrets: Default::default(),
-                settings: Default::default(),
             })
             .unwrap();
         let state = rig
@@ -432,9 +410,7 @@ async fn failures_keep_their_reason() {
         );
     }
 
-    // 401 在这段一直站着：装失败后的静默刷新可能晚于下面的 RefreshStore 落地，它也会再取一次商店，
-    // 一次性的 401 挡不住它，它拿到默认回答反而把刚记下的问题清掉。
-    rig.core.answer_always(
+    rig.core.answer(
         Method::GET,
         "/_wonton/api/store",
         core_error(401, "unauthenticated", "不认这台设备"),
@@ -444,7 +420,6 @@ async fn failures_keep_their_reason() {
         .unwrap();
     let view = rig.wait_for(|view| view.problem.is_some()).await;
     assert_eq!(view.problem.unwrap().reason, PluginFailure::Unauthorized);
-    rig.core.stop_answering(Method::GET, "/_wonton/api/store");
 
     rig.core.answer(
         Method::GET,
@@ -475,8 +450,6 @@ async fn a_dropped_connection_waits_for_the_result_on_the_server() {
     rig.app
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     let state = rig
@@ -495,8 +468,6 @@ async fn a_dropped_connection_waits_for_the_result_on_the_server() {
     rig.app
         .dispatch(Action::InstallPlugin {
             preview: preview("app.other"),
-            secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     let state = rig
@@ -527,8 +498,6 @@ async fn a_stalled_list_read_does_not_fail_the_install() {
     rig.app
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
 
@@ -641,8 +610,6 @@ async fn an_upgrade_says_which_tools_the_new_version_added() {
     rig.app
         .dispatch(Action::UpgradePlugin {
             preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     let view = rig
@@ -672,8 +639,6 @@ async fn an_upgrade_whose_answer_cannot_be_read_still_succeeded() {
     rig.app
         .dispatch(Action::UpgradePlugin {
             preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     let view = rig
@@ -684,66 +649,4 @@ async fn an_upgrade_whose_answer_cannot_be_read_still_succeeded() {
         })
         .await;
     assert_eq!(view.tasks[0].added_tools, None);
-}
-
-/// 确认页上填的密钥随安装请求发出；改一项时走 PUT，值只上行。
-#[tokio::test]
-async fn the_secret_values_the_owner_filled_are_posted_and_updated() {
-    let rig = Rig::new().await;
-    rig.connected().await;
-    let mut shown = preview("app.photos");
-    shown.secret_inputs = vec![SecretInput {
-        name: "token".to_owned(),
-        title: "Token".to_owned(),
-        description: None,
-        url: None,
-        required: true,
-    }];
-    rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: shown,
-            secrets: [("token".to_owned(), SecretString::new("s3cret"))].into(),
-            settings: Default::default(),
-        })
-        .unwrap();
-    rig.task("app.photos", |state| *state != PluginTaskState::Running)
-        .await;
-    let sent: serde_json::Value = serde_json::from_str(
-        rig.core.seen(&Method::POST, "/_wonton/api/plugins")[0]
-            .body
-            .as_str(),
-    )
-    .unwrap();
-    assert_eq!(sent["secrets"]["token"], "s3cret");
-
-    let path = "/_wonton/api/plugins/app.photos/secrets/token";
-    rig.core.answer(
-        Method::PUT,
-        path,
-        Canned(
-            200,
-            serde_json::json!({
-                "source": null, "id": "app.photos", "title": "x", "summary": "",
-                "about": null, "icon": null, "screenshots": [], "tags": [],
-                "kind": "app", "version": "1.0.0", "trust": "official",
-                "provider": null, "via_index": null, "author": null,
-                "homepage": null, "repository": null, "license": null, "stars": null,
-                "release_notes": null, "permissions": [], "requirements": [],
-                "has_web": false, "installed": null, "blocked": null,
-                "lan_webui": null, "secret_inputs": [],
-            })
-            .to_string(),
-        ),
-    );
-    rig.app
-        .set_plugin_secret(
-            "app.photos".to_owned(),
-            "token".to_owned(),
-            Some(SecretString::new("next")),
-        )
-        .await
-        .unwrap();
-    let put: serde_json::Value =
-        serde_json::from_str(&rig.core.seen(&Method::PUT, path)[0].body).unwrap();
-    assert_eq!(put["value"], "next");
 }

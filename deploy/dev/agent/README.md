@@ -6,7 +6,7 @@
 
 Tuwunel（不联邦）+ magpie 模型网关 + Hermes（以 Matrix bot 身份接入）。`dev.sh` 扮演核心：
 生成密钥、注册主人和 Bot 的账号、建好主人和 Bot 的加密私聊、给 Hermes 签发 Matrix 令牌和
-magpie 网关凭据。Hermes 的配置和 Wonton 插件来自 [`plugins/system.lock`](../../../plugins/system.lock) 锁定的插件包。
+magpie 网关凭据。Hermes 的配置和插件草稿共用 [`plugins/hermes/config.yaml`](../../../plugins/hermes/config.yaml)。
 验证结论见 [ADR-0008](../../../docs/adr/0008-model-gateway-magpie.md) 的“验证结果”。
 
 ```text
@@ -16,14 +16,9 @@ magpie 网关凭据。Hermes 的配置和 Wonton 插件来自 [`plugins/system.l
 
 ## 用法
 
-先按 [`deploy/dev/core`](../core/README.md) 的方式构建核心镜像（`wonton-core:dev`）。`up` 通过该镜像运行
-`plugin fetch-locked /system.lock /output/packages`，挂载仓库锁文件和临时输出目录，核对提交与包摘要后把结果放进
-`.secrets/packages/`；compose 只读挂载其中 `default-plugins/hermes/` 的配置和 `wonton/` 文件。
-取包失败即停止，不替换已缓存的包。可在 `.env` 里用 `WONTON_AGENT_CORE_IMAGE` 指定包含该命令的其他核心镜像。
-
 ```bash
 cp .env.example .env   # 按需改模型上游：UPSTREAM_URL、UPSTREAM_KEY、UPSTREAM_MODELS（见下）
-./dev.sh up            # 按锁文件取包，生成密钥和账号，配置 magpie，启动并等到全部健康
+./dev.sh up            # 生成密钥和账号，配置 magpie，启动并等到全部健康
 ./dev.sh smoke         # magpie 鉴权检查 + 和 Bot 的两轮对话，全部通过才返回 0
 ./dev.sh web           # 打印 magpie 网页（模型设置）的登录链接，可在里面直接加 provider
 ./dev.sh down          # 停止，保留数据；./dev.sh reset 连数据和 .secrets/ 一起删
@@ -36,7 +31,7 @@ cp .env.example .env   # 按需改模型上游：UPSTREAM_URL、UPSTREAM_KEY、U
 - 没有模型上游时，在 `.env` 里设 `WONTON_AGENT_LOCAL_MODEL=1`，用 CPU 上的 Qwen2.5 1.5B 跑通链路
   （首次下载约 1 GB，每轮首条回复要一两分钟）。
 - 改了 `.env` 里的上游或模型后运行 `./dev.sh providers`。
-- 锁定包的 `config.yaml` 只在数据卷里没有该文件时写入；改锁文件后运行 `./dev.sh up` 重新取包，已有配置要 `./dev.sh reset` 才重置。
+- `plugins/hermes/config.yaml` 只在数据卷里没有 `config.yaml` 时写入；改了它要 `./dev.sh reset`。
 - `smoke` 会临时签发一个名为 `smoke-temp` 的网关凭据，验证“签发立即可用、吊销立即失效”。magpie 允许重名凭据，
   所以按签发时新增的 id 吊销，脚本中断或失败退出时也会吊销。早先中断的冒烟可能留下同名凭据：在 magpie
   容器里用 `magpie gateway-key list` 找到，再 `magpie gateway-key remove <id>` 清掉。

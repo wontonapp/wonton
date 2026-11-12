@@ -29,27 +29,7 @@ pub(crate) async fn accept(
     tcp_write: &mut OwnedWriteHalf,
     credential: &ProxyCredential,
     domain: &str,
-    #[cfg(feature = "test-hooks")] sequence: u64,
 ) -> Option<Vec<u8>> {
-    accept_selected(
-        tcp_read,
-        tcp_write,
-        |header| credential.matches(header).then_some(((), domain)),
-        #[cfg(feature = "test-hooks")]
-        sequence,
-    )
-    .await
-    .map(|(_, prefix)| prefix)
-}
-
-/// Select an immutable route by credentials before checking its domain. Used by
-/// the Android proxy hub, which has one listener but no global current source.
-pub(crate) async fn accept_selected<T, D: AsRef<str>>(
-    tcp_read: &mut OwnedReadHalf,
-    tcp_write: &mut OwnedWriteHalf,
-    select: impl FnOnce(Option<&[u8]>) -> Option<(T, D)>,
-    #[cfg(feature = "test-hooks")] sequence: u64,
-) -> Option<(T, Vec<u8>)> {
     let head = match read_head(tcp_read).await {
         Ok(head) => head?,
         Err(rejection) => {
@@ -57,42 +37,31 @@ pub(crate) async fn accept_selected<T, D: AsRef<str>>(
             return None;
         }
     };
-    let Some((route, domain)) = select(head.header("proxy-authorization")) else {
-        debug!("local proxy rejected a connection without session credentials");
+    if !credential.matches(head.header("proxy-authorization")) {
+        debug!("本地代理拒绝了没有会话凭据的连接");
         reject(tcp_write, tcp_read, Rejection::Unauthorized).await;
         return None;
-    };
+    }
     let host = head.target_host();
-    if !host
-        .as_deref()
-        .is_some_and(|host| in_domain(host, domain.as_ref()))
-    {
+    if !host.as_deref().is_some_and(|host| in_domain(host, domain)) {
         debug!(
             host = host.as_deref().unwrap_or("-"),
-            "local proxy rejected an address outside the home server"
+            "本地代理拒绝了家里服务器以外的地址"
         );
         reject(tcp_write, tcp_read, Rejection::ForeignHost).await;
         return None;
     }
     if head.method.eq_ignore_ascii_case("CONNECT") {
-        debug!(target = %head.target, "local proxy received CONNECT");
+        debug!(target = %head.target, "本地代理收到 CONNECT");
         tcp_write
             .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             .await
             .ok()?;
-        return Some((route, head.rest));
+        return Some(head.rest);
     }
     // 只记主机：路径和查询里可能有 OAuth 授权码等秘密。
-    debug!(method = %head.method, host = host.as_deref().unwrap_or("-"), "local proxy received a request");
-    #[cfg(feature = "test-hooks")]
-    let mut head = head;
-    // 独立隧道流和服务端任务可能乱序；序号只供测试还原客户端取消旧请求之前的顺序。
-    #[cfg(feature = "test-hooks")]
-    head.headers.push((
-        "x-wonton-test-sequence".to_owned(),
-        sequence.to_string().into_bytes(),
-    ));
-    Some((route, head.rewrite()))
+    debug!(method = %head.method, host = host.as_deref().unwrap_or("-"), "本地代理收到请求");
+    Some(head.rewrite())
 }
 
 /// `host` 是 `domain` 本身或它的子域名（不区分大小写，忽略末尾的点）。
@@ -104,35 +73,23 @@ fn in_domain(host: &str, domain: &str) -> bool {
 
 /// 不交给隧道、由代理自己回绝的原因。
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Rejection {
+enum Rejection {
     Unauthorized,
     ForeignHost,
     TooLarge,
     Malformed,
 }
 
-pub(crate) async fn reject(
-    tcp_write: &mut OwnedWriteHalf,
-    tcp_read: &mut OwnedReadHalf,
-    why: Rejection,
-) {
+async fn reject(tcp_write: &mut OwnedWriteHalf, tcp_read: &mut OwnedReadHalf, why: Rejection) {
     let (status, extra, body) = match why {
         Rejection::Unauthorized => (
             "407 Proxy Authentication Required",
             "proxy-authenticate: Basic realm=\"wonton\"\r\n",
-            "the local proxy only accepts requests carrying this app's session credentials\n",
+            "本地代理只接受带本 App 会话凭据的请求\n",
         ),
-        Rejection::ForeignHost => (
-            "403 Forbidden",
-            "",
-            "the local proxy only forwards addresses of the home server\n",
-        ),
-        Rejection::TooLarge => (
-            "431 Request Header Fields Too Large",
-            "",
-            "request headers too large\n",
-        ),
-        Rejection::Malformed => ("400 Bad Request", "", "malformed request headers\n"),
+        Rejection::ForeignHost => ("403 Forbidden", "", "本地代理只转发家里服务器的地址\n"),
+        Rejection::TooLarge => ("431 Request Header Fields Too Large", "", "请求头太大\n"),
+        Rejection::Malformed => ("400 Bad Request", "", "请求头不合法\n"),
     };
     let code = match why {
         Rejection::Unauthorized => "proxy-unauthorized",
@@ -155,16 +112,16 @@ pub(crate) async fn reject(
 
 /// 收到的第一个请求头，以及紧跟在它后面、已经读到的字节。
 #[derive(Debug)]
-pub(crate) struct Head {
-    pub(crate) method: String,
-    pub(crate) target: String,
-    pub(crate) minor_version: u8,
-    pub(crate) headers: Vec<(String, Vec<u8>)>,
-    pub(crate) rest: Vec<u8>,
+struct Head {
+    method: String,
+    target: String,
+    minor_version: u8,
+    headers: Vec<(String, Vec<u8>)>,
+    rest: Vec<u8>,
 }
 
 /// 读到第一个请求头结束为止。连接在此之前关闭或出错时返回 `Ok(None)`。
-pub(crate) async fn read_head(tcp: &mut OwnedReadHalf) -> Result<Option<Head>, Rejection> {
+async fn read_head(tcp: &mut OwnedReadHalf) -> Result<Option<Head>, Rejection> {
     let mut buf = Vec::with_capacity(4096);
     let mut chunk = [0u8; 4096];
     loop {
@@ -211,7 +168,7 @@ impl Head {
         Some(strip_port(authority.trim()).to_owned())
     }
 
-    pub(crate) fn header(&self, name: &str) -> Option<&[u8]> {
+    fn header(&self, name: &str) -> Option<&[u8]> {
         self.headers
             .iter()
             .find(|(key, _)| key.eq_ignore_ascii_case(name))
@@ -307,10 +264,7 @@ mod tests {
         ] {
             assert!(!in_domain(host, "wonton.localhost"), "{host}");
         }
-        assert!(
-            !in_domain("anything", ""),
-            "an empty base domain admits no host"
-        );
+        assert!(!in_domain("anything", ""), "空的基础域名不放行任何地址");
         assert_eq!(
             strip_port("app.wonton.localhost:18480"),
             "app.wonton.localhost"
@@ -345,7 +299,7 @@ mod tests {
         let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
         let mut request = httparse::Request::new(&mut headers);
         let httparse::Status::Complete(len) = request.parse(bytes).unwrap() else {
-            panic!("rewritten request head is incomplete");
+            panic!("改写后的请求头不完整");
         };
         let line = format!("{} {}", request.method.unwrap(), request.path.unwrap());
         let headers = request

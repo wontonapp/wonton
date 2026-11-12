@@ -29,20 +29,17 @@ use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use wonton_l10n::l10n;
-use wonton_tunnel::relays::{Relay, canonical_relay};
+use wonton_tunnel::relays::Relay;
 
 use crate::l10n::{CATALOG, language};
 
-/// 连接信息里最多存这么多直连地址，包含本次连接验证过的路径。
+/// 连接信息里最多存这么多直连地址。服务端报的都换成新的，多了只是握手的初始包多发几份。
 const MAX_DIRECT_ADDRS: usize = 8;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct Ticket {
     server: Server,
     base_domain: String,
-    /// 配对时填的设备名，Matrix 设备显示名和 pusher 的设备名都用它。`ConnectHome` 给的连接信息里没有。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    device_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     core_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -59,14 +56,9 @@ struct Server {
 }
 
 impl Ticket {
-    /// 连接信息里有没有中继表：endpoint 重建的证据只在有中继时凑得齐（ADR-0032 §4）。
-    pub(crate) fn has_relays(&self) -> bool {
-        !self.server.relays.is_empty()
-    }
-
     /// 解析连接信息。至少要有一个中继地址或直连地址：只给 endpoint ID 时要靠地址发现，国内靠不住。
     pub(crate) fn parse(text: &str) -> Result<Self, String> {
-        let mut ticket: Self = serde_json::from_str(text).map_err(|e| {
+        let ticket: Self = serde_json::from_str(text).map_err(|e| {
             l10n!(
                 CATALOG,
                 language(),
@@ -87,12 +79,6 @@ impl Ticket {
                 )
             })?;
         }
-        ticket.server.relays = ticket
-            .server
-            .relays
-            .into_iter()
-            .map(canonical_relay)
-            .collect();
         let domain = ticket
             .base_domain
             .trim_end_matches('.')
@@ -154,10 +140,6 @@ impl Ticket {
         }
         Ok(Self {
             base_domain: domain,
-            device_name: ticket
-                .device_name
-                .map(|name| name.trim().to_owned())
-                .filter(|name| !name.is_empty()),
             ..ticket
         })
     }
@@ -204,38 +186,27 @@ impl Ticket {
         &self.server.relays
     }
 
-    /// 记上核心报告的地址；和已有的一样时返回 `None`。中继表或直连地址报告为空时留着旧候选，仍把
-    /// 本次实证直连路径排第一：中继可能只是暂时没连上，地址也可能只是这一次没测出来。令牌变了以后，
-    /// 跑着的 endpoint 不会跟着换（iroh#4642），要等下一次重建 endpoint。
+    /// 记上核心报告的地址；和已有的一样时返回 `None`。中继表或直连地址报告为空时留着旧的：中继可能
+    /// 只是暂时没连上，地址也可能只是这一次没测出来。令牌变了以后，跑着的 endpoint 不会跟着换
+    /// （iroh#4642），要等下一次重建 endpoint。
     ///
-    /// 本次真实连通的直连路径优先于核心的候选；核心不知道手机侧的地址转换。报告非空时其它旧地址不合并，
-    /// 避免失效地址积累并挤掉新候选（ADR-0032）。
+    /// 直连地址是替换，不和旧的合并：核心报的就是手机到得了的地址（ADR-0032），旧地址只会越积越多，
+    /// 容器网卡地址永远清不掉。
     pub(crate) fn with_reported(
         &self,
         relays: Vec<Relay>,
         direct_addrs: &[SocketAddr],
-        connected: Option<SocketAddr>,
     ) -> Option<Self> {
         let mut updated = self.clone();
         if !relays.is_empty() {
-            updated.server.relays = relays.into_iter().map(canonical_relay).collect();
+            updated.server.relays = relays;
         }
-        if connected.is_some() || !direct_addrs.is_empty() {
-            let candidates = if direct_addrs.is_empty() {
-                self.direct_addrs()
-            } else {
-                direct_addrs
-            };
-            let mut addresses = Vec::with_capacity(MAX_DIRECT_ADDRS);
-            for addr in connected.into_iter().chain(candidates.iter().copied()) {
-                if !addresses.contains(&addr) {
-                    addresses.push(addr);
-                }
-                if addresses.len() == MAX_DIRECT_ADDRS {
-                    break;
-                }
-            }
-            updated.server.direct_addrs = addresses;
+        if !direct_addrs.is_empty() {
+            updated.server.direct_addrs = direct_addrs
+                .iter()
+                .copied()
+                .take(MAX_DIRECT_ADDRS)
+                .collect();
         }
         let changed = updated.server.relays != self.server.relays
             || updated.server.direct_addrs != self.server.direct_addrs;
@@ -255,11 +226,6 @@ impl Ticket {
     pub(crate) fn base_domain(&self) -> &str {
         &self.base_domain
     }
-
-    /// 配对时填的设备名；去掉首尾空白后为空也算没有。
-    pub(crate) fn device_name(&self) -> Option<&str> {
-        self.device_name.as_deref()
-    }
 }
 
 #[cfg(test)]
@@ -270,10 +236,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn reported_addresses_replace_the_old_ones() {
+        let id = SecretKey::generate().public();
+        let text = format!(
+            r#"{{"server": {{"endpoint_id": "{id}", "direct_addrs": ["192.168.1.2:18482"]}},
+                "base_domain": "wonton.localhost", "web_url": "http://wonton.localhost:1/"}}"#
+        );
+        let ticket = Ticket::parse(&text).unwrap();
+        let addr = |n: u8| SocketAddr::from(([10, 0, 0, n], 18482));
+
+        assert!(
+            ticket
+                .with_reported(Vec::new(), &ticket.server.direct_addrs)
+                .is_none()
+        );
+        // 报来的为空：留着旧的。
+        assert!(ticket.with_reported(Vec::new(), &[]).is_none());
+
+        let moved = ticket.with_reported(Vec::new(), &[addr(1)]).unwrap();
+        assert_eq!(moved.direct_addrs(), [addr(1)]);
+        let saved = serde_json::to_string(&moved).unwrap();
+        let again = Ticket::parse(&saved).unwrap();
+        assert_eq!(again.direct_addrs(), moved.direct_addrs());
+        assert_eq!(again.web_url(), moved.web_url());
+
+        let many: Vec<SocketAddr> = (1..=9).map(addr).collect();
+        let full = moved.with_reported(Vec::new(), &many).unwrap();
+        assert_eq!(full.direct_addrs(), &many[..8]);
+    }
+
+    #[test]
     fn reported_relays_replace_the_saved_table_and_an_empty_report_keeps_the_old_one() {
         let id = SecretKey::generate().public();
         let text = format!(
-            r#"{{"server": {{"endpoint_id": "{id}", "relays": [{{"url": "https://a.example./", "tier": 0}}], "direct_addrs": ["192.0.2.2:18482"]}},
+            r#"{{"server": {{"endpoint_id": "{id}", "relays": [{{"url": "https://a.example/", "tier": 0}}], "direct_addrs": ["192.168.1.2:18482"]}},
                 "base_domain": "wonton.localhost"}}"#
         );
         let ticket = Ticket::parse(&text).unwrap();
@@ -286,16 +282,15 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["https://a.example/".parse().unwrap()]
         );
-        assert!(ticket.with_reported(Vec::new(), &[], None).is_none());
+        assert!(ticket.with_reported(Vec::new(), &[]).is_none());
         let updated = ticket
             .with_reported(
                 vec![Relay {
-                    url: "https://b.example./".parse().unwrap(),
+                    url: "https://b.example/".parse().unwrap(),
                     token: Some(RelayToken::new("tok")),
                     tier: 0,
                 }],
                 &[],
-                None,
             )
             .unwrap();
         assert_eq!(updated.relays()[0].url.as_str(), "https://b.example/");

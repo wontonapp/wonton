@@ -8,18 +8,13 @@ use bollard::query_parameters::{
 use futures_util::StreamExt;
 
 use crate::plugin::PluginManager;
+use crate::plugin::compose::PullPolicy;
 use crate::plugin::docker::Engine;
 use crate::plugin::manifest::PluginId;
 use crate::test_docker::Names;
 
-/// busybox 和 registry：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-fn base() -> String {
-    wonton_test_images::image("public.ecr.aws/docker/library/busybox:1.37")
-}
-
-fn registry() -> String {
-    wonton_test_images::image("public.ecr.aws/docker/library/registry:2")
-}
+const BASE: &str = "public.ecr.aws/docker/library/busybox:1.37";
+const REGISTRY: &str = "public.ecr.aws/docker/library/registry:2";
 const REGISTRY_PORT: &str = "5000/tcp";
 
 pub(super) struct Fixture {
@@ -60,8 +55,11 @@ impl Fixture {
     /// 端口由 Docker 发布时分配，不先在测试里绑一个再放掉：放掉到仓库绑上之间，并行的测试或别的进程可能拿走同一个
     /// 端口，仓库起不来，就绪检查却被占着端口的那个应答（CI 上实测过：另一个测试的仓库应答，它一拆，推镜像就被拒）。
     pub async fn start(&mut self) {
-        for image in [&registry(), &base()] {
-            crate::test_docker::ensure_image(&self.engine, image).await;
+        for image in [REGISTRY, BASE] {
+            self.engine
+                .ensure_image(image, PullPolicy::Missing, None)
+                .await
+                .unwrap();
         }
         let storage = self.dir.path().join("registry");
         std::fs::create_dir(&storage).unwrap();
@@ -74,7 +72,7 @@ impl Fixture {
             .create_container(
                 &self.registry,
                 ContainerCreateBody {
-                    image: Some(registry()),
+                    image: Some(REGISTRY.to_owned()),
                     user: Some(format!("{}:{}", owner.uid(), owner.gid())),
                     env: Some(vec!["REGISTRY_STORAGE_DELETE_ENABLED=true".into()]),
                     exposed_ports: Some(vec![REGISTRY_PORT.into()]),
@@ -127,7 +125,7 @@ impl Fixture {
             .create_container(
                 &self.seed,
                 ContainerCreateBody {
-                    image: Some(base()),
+                    image: Some(BASE.to_owned()),
                     ..Default::default()
                 },
             )

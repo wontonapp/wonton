@@ -3,14 +3,10 @@
 //!
 //! | 方法 | 路径 | 说明 |
 //! | --- | --- | --- |
-//! | GET | `/_wonton/api/peers` | 已配对的服务器、发来的请求和拒绝过的那几条（`PeersView`） |
-//! | GET | `/_wonton/api/peers/code` | 本机的码，一直有效到重置（`PeerCode`） |
-//! | POST | `/_wonton/api/peers/code/reset` | 换一个新令牌，旧码作废，旧码的待处理请求清掉（`PeerCode`） |
-//! | POST | `/_wonton/api/peers` | 请求体是扫来的码（`PeerScan`）；连上出码方并发一条请求 |
-//! | POST | `/_wonton/api/peers/requests/{id}/approve` | 同意一条请求 |
-//! | POST | `/_wonton/api/peers/requests/{id}/reject` | 拒绝一条请求 |
-//! | DELETE | `/_wonton/api/peers/rejected/{id}` | 撤销一次拒绝 |
-//! | DELETE | `/_wonton/api/peers/{server_name}` | 删一台服务器的配对，或者取消自己发出的请求 |
+//! | GET | `/_wonton/api/peers` | 已配对和等对方同意的服务器，加还没过期的出码（`PeersView`） |
+//! | POST | `/_wonton/api/peers/code` | 出一张新码，上一张作废（`PeerCode`） |
+//! | POST | `/_wonton/api/peers` | 请求体是扫来的码（`PeerScan`）；连上出码方并记成“等对方同意” |
+//! | DELETE | `/_wonton/api/peers/{server_name}` | 删一台服务器的配对，通知对方（尽力而为） |
 
 use std::sync::Arc;
 
@@ -34,23 +30,18 @@ fn languages(headers: &HeaderMap) -> Languages {
     Languages::from_header(accept)
 }
 
-/// 配对接口的鉴权：只认经隧道的主人设备。设备身份随隧道上的每个请求自动带上，插件网页发的请求
-/// 不算（ADR-0017）：插件网页探测不到主人的服务器名单。和哪台服务器配对是主人的事（ADR-0045
-/// “谁能做什么”），家人的设备回 403 `permission_required`。
+/// 配对接口的鉴权：只认经隧道的已配对设备。设备身份随隧道上的每个请求自动带上，插件网页发的请求
+/// 不算（ADR-0017）：插件网页探测不到主人的服务器名单。
 fn denied(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
 ) -> Option<Response> {
-    let Some(person) = gateway.device_person(peer.map(|Extension(peer)| peer)) else {
+    let Some(Extension(TunnelPeer(id))) = peer else {
         return Some(error(&languages(headers), PeerError::Unauthenticated));
     };
-    if !person.is_owner() {
-        return Some(api::error_response(
-            StatusCode::FORBIDDEN,
-            "permission_required",
-            "服务器配对只有主人能管",
-        ));
+    if !gateway.tunnel.devices.contains(&id) {
+        return Some(error(&languages(headers), PeerError::Unauthenticated));
     }
     if isolation::not_from_another_page(headers, &gateway.core_origin()) {
         None
@@ -90,6 +81,7 @@ fn error(langs: &Languages, kind: PeerError) -> Response {
 /// 类别的主人说得清的说明（ADR-0043）。
 fn message(kind: PeerError, langs: &Languages) -> String {
     let id = match kind {
+        PeerError::CodeExpired => "peers-error-code-expired",
         PeerError::CodeInvalid => "peers-error-code-invalid",
         PeerError::PeerUnreachable => "peers-error-peer-unreachable",
         PeerError::PeerRejected => "peers-error-peer-rejected",
@@ -137,8 +129,12 @@ pub async fn list(
     if let Some(denied) = denied(&gateway, peer, &headers) {
         return denied;
     }
-    // 记下请求的人的语言：配对提醒的文字从它来（照插件管理接口的做法）。
-    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
+    // 记下主人的语言：配对请求卡片的文字从它来（照插件管理接口的做法）。
+    gateway.plugins.note_owner_languages(
+        headers
+            .get(hyper::header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok()),
+    );
     let langs = languages(&headers);
     let Some(peers) = peers(&gateway) else {
         return unavailable(&langs);
@@ -146,7 +142,7 @@ pub async fn list(
     Json(peers.view(&langs)).into_response()
 }
 
-/// `GET /_wonton/api/peers/code`
+/// `POST /_wonton/api/peers/code`
 pub async fn code(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -160,22 +156,6 @@ pub async fn code(
         return unavailable(&langs);
     };
     Json(peers.issue_code()).into_response()
-}
-
-/// `POST /_wonton/api/peers/code/reset`
-pub async fn reset_code(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: HeaderMap,
-) -> Response {
-    if let Some(denied) = denied(&gateway, peer, &headers) {
-        return denied;
-    }
-    let langs = languages(&headers);
-    let Some(peers) = peers(&gateway) else {
-        return unavailable(&langs);
-    };
-    Json(peers.reset_code()).into_response()
 }
 
 /// `POST /_wonton/api/peers`
@@ -194,73 +174,10 @@ pub async fn scan(
     };
     let request: PeerScan = match serde_json::from_slice(&body) {
         Ok(request) => request,
-        Err(e) => {
-            tracing::info!(error = %e, "扫码的请求体读不懂");
-            return error(&langs, PeerError::CodeInvalid);
-        }
+        Err(_) => return error(&langs, PeerError::CodeInvalid),
     };
     match peers.scan(request.code.expose()).await {
         Ok(()) => Json(serde_json::json!({"status": "awaiting_approval"})).into_response(),
-        Err(kind) => error(&langs, kind),
-    }
-}
-
-/// `POST /_wonton/api/peers/requests/{id}/approve`
-pub async fn approve(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Response {
-    if let Some(denied) = denied(&gateway, peer, &headers) {
-        return denied;
-    }
-    let langs = languages(&headers);
-    let Some(peers) = peers(&gateway) else {
-        return unavailable(&langs);
-    };
-    match peers.approve(&id).await {
-        Ok(()) => Json(serde_json::json!({"approved": true})).into_response(),
-        Err(kind) => error(&langs, kind),
-    }
-}
-
-/// `POST /_wonton/api/peers/requests/{id}/reject`
-pub async fn reject(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Response {
-    if let Some(denied) = denied(&gateway, peer, &headers) {
-        return denied;
-    }
-    let langs = languages(&headers);
-    let Some(peers) = peers(&gateway) else {
-        return unavailable(&langs);
-    };
-    match peers.reject(&id).await {
-        Ok(()) => Json(serde_json::json!({"rejected": true})).into_response(),
-        Err(kind) => error(&langs, kind),
-    }
-}
-
-/// `DELETE /_wonton/api/peers/rejected/{id}`
-pub async fn unreject(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Response {
-    if let Some(denied) = denied(&gateway, peer, &headers) {
-        return denied;
-    }
-    let langs = languages(&headers);
-    let Some(peers) = peers(&gateway) else {
-        return unavailable(&langs);
-    };
-    match peers.unreject(&id).await {
-        Ok(()) => Json(serde_json::json!({"unrejected": true})).into_response(),
         Err(kind) => error(&langs, kind),
     }
 }

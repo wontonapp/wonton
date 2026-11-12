@@ -5,12 +5,14 @@ use super::*;
 /// 刚配好、探活还没有结果：状态是“正在确认”（`Checking`），不报离线；探活一出结果就换成真状态。
 #[tokio::test]
 async fn a_paired_server_is_checking_until_the_first_probe_result() {
-    let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
+    let b = TestCore::start("Jiale", "b.example.internal", Duration::from_secs(60)).await;
     let code = a.peers.issue_code();
-    b.scan_code(&code, &a).await.unwrap();
-    a.request_now("b.example.internal");
-    a.approve("b.example.internal").await.unwrap();
+    b.peers.scan(code.code.expose()).await.unwrap();
+    let card = a.cards.wait_for(1).await;
+    a.confirmations
+        .answer(&card.id, Answer::Approve, None)
+        .unwrap();
     b.wait_paired("a.example.internal").await;
 
     let (states, rx) = watch::channel(wonton_tunnel::federation::PeerStates::new());
@@ -33,8 +35,8 @@ async fn a_paired_server_is_checking_until_the_first_probe_result() {
 /// 最近连上的时刻跟着状态变化写进记录：对方停掉以后还是那个时刻，重启后还在。
 #[tokio::test]
 async fn the_last_connected_time_is_kept_after_the_peer_stops() {
-    let mut a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
+    let b = TestCore::start("Jiale", "b.example.internal", Duration::from_secs(60)).await;
     pair(&a, &b).await;
 
     let (states, rx) = watch::channel(PeerStates::new());
@@ -76,16 +78,18 @@ async fn the_last_connected_time_is_kept_after_the_peer_stops() {
 /// 同意之后的第一次探活就能连上：中间不出“对方服务器拒绝了本机”，扫码方回送的结果也有人收。
 #[tokio::test]
 async fn the_first_probe_after_approval_connects() {
-    let mut a = TestCore::start("Alex", "a.example.internal").await;
-    let mut b = TestCore::start("Alice", "b.example.internal").await;
+    let mut a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
+    let mut b = TestCore::start("Jiale", "b.example.internal", Duration::from_secs(60)).await;
     a.enable_federation().await;
     b.enable_federation().await;
     let history = a.record_states();
 
     let code = a.peers.issue_code();
-    b.scan_code(&code, &a).await.unwrap();
-    a.request_now("b.example.internal");
-    a.approve("b.example.internal").await.unwrap();
+    b.peers.scan(code.code.expose()).await.unwrap();
+    let card = a.cards.wait_for(1).await;
+    a.confirmations
+        .answer(&card.id, Answer::Approve, None)
+        .unwrap();
 
     a.wait_row_status("b.example.internal", PeerStatus::Connected)
         .await;

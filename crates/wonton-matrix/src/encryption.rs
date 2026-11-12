@@ -9,8 +9,6 @@ use matrix_sdk::encryption::{
     recovery::{RecoveryError, RecoveryState},
     secret_storage::SecretStorageError,
 };
-#[cfg(feature = "testkit")]
-use matrix_sdk::ruma::DeviceId;
 use matrix_sdk::ruma::api::client::uiaa::AuthData;
 
 use crate::{Error, MatrixSession, Result};
@@ -75,19 +73,6 @@ impl MatrixSession {
         }
     }
 
-    /// 再向自己的其他设备要一次本机还缺的秘密（交叉签名私钥、备份密钥），马上发出；返回这次有没有发新请求。
-    ///
-    /// 自我验证完成时 SDK 已经要过一次，但请求比对方把本机记成“已验证”早到时，对方直接丢掉、不补发
-    /// （matrix-sdk 0.19.1），只能再要。只排队不发的话要等下一次同步，可能是 30 秒的长轮询，所以补丁方法当场发出。
-    /// 同一个秘密还有没发出的请求时不重复要。用的是 `vendor/matrix-sdk` 的补丁方法。
-    pub async fn request_missing_secrets(&self) -> Result<bool> {
-        self.client
-            .encryption()
-            .query_missing_secrets_from_other_sessions()
-            .await
-            .map_err(Error::from)
-    }
-
     /// 加密状态流：第一项是当前状态，之后验证状态或恢复状态变化时给出新状态。
     pub fn encryption_states(&self) -> impl Stream<Item = EncryptionState> + use<> {
         let encryption = self.client.encryption();
@@ -117,21 +102,12 @@ impl MatrixSession {
     /// 恢复密钥只在这里给出一次，调用方要存好，主人在别的设备上恢复时要用。账号已经设置过恢复时返回
     /// [`Error::NotReady`]：再设置一次会换掉秘密存储的密钥，主人手里的旧恢复密钥就作废了。本设备未验证时也一样：
     /// 它没有交叉签名的私钥，存不进秘密存储，之后别的设备输对恢复密钥也一直不完整（matrix-sdk 0.19 实测）。
-    /// “已验证”但手里没有交叉签名私钥的设备（SAS 确认过但对方给不出秘密）同样拒绝：SDK 的验证状态只看签名链，
-    /// 不代表持有私钥（matrix-sdk 0.19.1 的 `VerificationState::Verified` 语义）。
     pub async fn enable_recovery(&self) -> Result<String> {
         let encryption = self.client.encryption();
-        let verified = !matches!(
+        if matches!(
             encryption.verification_state().get(),
             VerificationState::Unverified
-        );
-        let has_keys = encryption
-            .cross_signing_status()
-            .await
-            .is_some_and(|status| {
-                status.has_master && status.has_self_signing && status.has_user_signing
-            });
-        if !verified || !has_keys {
+        ) {
             return Err(Error::NotReady(
                 "这台设备没有账号的身份密钥，要到最早配对的那台设备上开启".to_owned(),
             ));
@@ -155,18 +131,10 @@ impl MatrixSession {
     /// 用恢复密钥恢复：取回交叉签名的秘密和密钥备份，本设备随之被验证。
     pub async fn recover(&self, recovery_key: &str) -> Result<()> {
         let recovery = self.client.encryption().recovery();
-        if let Err(error) = recovery.recover(recovery_key.trim()).await {
-            // SDK 导入完秘密还要再读一次账号数据算恢复状态，这一步的网络错误是顶层的 `Sdk`（开秘密存储、导入秘密的错误
-            // 包在 `SecretStorage` 里）。导入秘密触发的 keys/query 往往已先把状态算成 Enabled，这时秘密已经齐了，
-            // 只是刷新那一下断在半路（matrix-sdk 0.19.1，隧道正好断开时实测）。报失败的话界面把状态退回恢复前，
-            // 还留着一条“连不上”的错误。
-            let only_refresh_failed = matches!(error, RecoveryError::Sdk(_))
-                && matches!(recovery.state(), RecoveryState::Enabled);
-            if !only_refresh_failed {
-                return Err(recovery_error(&error));
-            }
-            tracing::info!("恢复已完成，之后刷新恢复状态失败：{error}");
-        }
+        recovery
+            .recover(recovery_key.trim())
+            .await
+            .map_err(|error| recovery_error(&error))?;
         // 密钥对、秘密存储却缺东西时 SDK 也算成功，这台设备其实什么也没取回。
         if matches!(recovery.state(), RecoveryState::Incomplete) {
             return Err(Error::NotReady(
@@ -213,36 +181,6 @@ impl MatrixSession {
             .wait_for_backups_to_upload()
             .await
             .map_err(|error| recovery_error(&error))
-    }
-
-    /// 给同账号的另一台设备做本地手工签名：用本机的 self-signing 私钥签那台设备并上传签名，不通知对端、
-    /// 不转秘密。对端拿到签名链就算“已验证”，手里照样没有交叉签名私钥（[`Self::enable_recovery`]
-    /// 的第二道检查挡的正是这种设备）。规范里没有这种方法（ADR-0076 调研的“直接批准”），只有测试用它制造。
-    #[cfg(feature = "testkit")]
-    pub async fn sign_device(&self, device_id: &DeviceId) -> Result<()> {
-        let device = self
-            .client
-            .encryption()
-            .get_device(self.user_id(), device_id)
-            .await
-            .map_err(|error| Error::Upstream(error.to_string()))?
-            .ok_or_else(|| Error::NotReady(format!("本机看不到设备 {device_id}")))?;
-        device
-            .verify()
-            .await
-            .map_err(|error| Error::Upstream(error.to_string()))
-    }
-
-    /// 本机是否已经看到同账号的另一台设备：设备密钥要经对方的 keys/query 慢一拍才到，签名前先等它。
-    #[cfg(feature = "testkit")]
-    pub async fn sees_device(&self, device_id: &DeviceId) -> bool {
-        self.client
-            .encryption()
-            .get_device(self.user_id(), device_id)
-            .await
-            .ok()
-            .flatten()
-            .is_some()
     }
 }
 

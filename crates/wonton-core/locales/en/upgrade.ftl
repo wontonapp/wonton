@@ -17,7 +17,7 @@ upgrade-launch-updater-failed = Can't start the updater: { $error }
 
 # The API couldn't answer for its own sake.
 upgrade-container-missing = Can't find the home server's container { $name }
-upgrade-image-missing = Can't find the running image { $image }; restarting the home server fixes this
+upgrade-image-missing = Can't find the running image { $image }
 
 # Background check (every 6 hours, or when the update page opens).
 upgrade-check-core-failed = Can't check the home server's container: { $error }
@@ -30,14 +30,6 @@ upgrade-auto-download-skipped = Less than 5 GB of disk is free, so it wasn't dow
 upgrade-download-no-space = Not enough disk space: the download needs about { $needed } bytes, but only { $free } bytes are available
 upgrade-download-failed = Can't download it: { $error }
 upgrade-image-missing-after-pull = It was downloaded, but { $reference } still isn't on this machine
-
-# The compatibility check before the update (ADR-0085). It never blocks the update:
-# when it can't run, the details say so and the update goes ahead all the same.
-upgrade-compat-records-unreadable = Can't read the installed apps' records: { $error }
-upgrade-compat-materialize-failed = Can't stage the installed apps' packages for the compatibility check: { $error }
-upgrade-compat-run-failed = Can't run the compatibility check in the new image { $image }: { $error }
-upgrade-compat-command-failed = The compatibility check in the new image { $image } exited with code { $code }: { $error }
-upgrade-compat-output-unreadable = Can't read the compatibility check's output: { $error }
 
 # The updater container reports what it did into the state file, in the owner's language.
 upgrade-updater-crashed = The updater keeps crashing
@@ -65,7 +57,7 @@ upgrade-components-failed =
        *[old] Can't remove the components the old version doesn't support: { $error }
     }
 upgrade-up-failed = The services didn't come up: { $error }
-upgrade-core-image-wrong = The home server's container is running { $actual } (image { $actual_id }), not { $image } (image { $image_id })
+upgrade-core-image-wrong = The home server's container is running { $actual }, not { $image }
 upgrade-core-container-missing = The home server's container is missing
 upgrade-containers-failed = Can't check the system services' containers: { $error }
 upgrade-observe-timed-out = Watching the new version took too long

@@ -128,8 +128,7 @@ fn respond(result: Result<Response, Failure>) -> Response {
     result.unwrap_or_else(|e| failure(&e))
 }
 
-/// 经隧道的已配对设备才能过，每个请求都查设备登记表，吊销立即生效。文件的访问范围还是只有主人
-/// （ADR-0045 的按人范围是后续任务）：家人的设备如实报 `not_shared`。
+/// 经隧道的已配对设备才能过，每个请求都查设备登记表，吊销立即生效。
 async fn require_device(
     State(gateway): State<Arc<Gateway>>,
     mut req: Request,
@@ -154,13 +153,6 @@ async fn require_device(
             ),
         ));
     };
-    let person = gateway.device_person(peer);
-    if person.is_none_or(|person| !person.is_owner()) {
-        return failure(&Failure::new(
-            FileFailure::NotShared,
-            "文件接口还没有开放给家人（访问范围按人是后续任务）",
-        ));
-    }
     let Some(files) = gateway.files.clone() else {
         let langs = languages(req.headers());
         return failure(&Failure::new(

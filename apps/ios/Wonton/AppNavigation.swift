@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import UIKit
 import WontonClient
 
 /// App 和系统 Intent 共用同一套模型；冷启动时也不依赖 MainView 已经出现。
@@ -16,10 +15,6 @@ final class AppNavigation {
     let onboarding: OnboardingModel
     private(set) var presentationRevision = 0
     private(set) var opensSettings = false
-    /// 链接要求直接打开“其他服务器”页并滚到“请求”；由 MainView 取走。
-    private var opensPeers = false
-    /// 正在用 SFSafariViewController 打开的外部网页。
-    var safari: SafariTarget?
     private var pending: Task<Void, Never>?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel) {
@@ -32,7 +27,7 @@ final class AppNavigation {
     }
 
     static func requireShared() throws -> AppNavigation {
-        guard let shared else { throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadyLaunchFailed)) }
+        guard let shared else { throw CoreError.NotReady(reason: "云吞没有启动成功，请打开 App 查看。") }
         return shared
     }
 
@@ -44,38 +39,6 @@ final class AppNavigation {
     func receive(_ url: URL) {
         guard let link = parseAppLink(url: url.absoluteString) else { return }
         request { try await $0.open(link) }
-    }
-
-    /// 聊天里的一条链接：类别由核心判断，壳只按类别开（ADR-0065）。外部和认不出的地址用 Safari 在 App 内打开，
-    /// 插件进插件页，matrix.to 在 App 里跳用户或房间，邮件和电话交给系统。
-    func openLink(_ link: RichLink) {
-        switch link.kind {
-        case .external, .other:
-            guard let url = URL(string: link.url) else { return }
-            safari = SafariTarget(url: url)
-        case let .plugin(pluginId):
-            request { try await $0.open(.tab(tab: .plugin(pluginId: pluginId, page: nil))) }
-        case let .matrix(target):
-            switch target {
-            case let .user(userId):
-                request { navigation in
-                    guard try await navigation.navigationReady() else { return }
-                    try navigation.select(.chat)
-                    navigation.chat.resetNavigation()
-                    navigation.chat.openDirectChat(with: userId)
-                }
-            case let .room(roomId, _):
-                request { navigation in
-                    guard try await navigation.navigationReady() else { return }
-                    try navigation.select(.chat)
-                    let roomId = try await navigation.chat.core.resolveChatRoom(input: roomId)
-                    navigation.chat.openRoom(id: roomId)
-                }
-            }
-        case .email, .phone:
-            guard let url = URL(string: link.url) else { return }
-            UIApplication.shared.open(url)
-        }
     }
 
     /// 链接和 Intent 都会把 App 打开，所以交给 App 执行、出错用 App 的对话框说。冷启动时连上家里的服务器可能要十几秒以上，
@@ -112,21 +75,15 @@ final class AppNavigation {
             try select(.chat)
             chat.openDirectChat(with: bot, acceptingInvitation: true)
         case .peers:
-            opensPeers = true
+            // 设置里的“其他服务器”页随 ADR-0050 的界面一起接上，在那之前先到设置。
             try select(.settings)
             chat.resetNavigation()
         }
     }
 
-    /// 链接要求进“其他服务器”。取走标记，调用方去改导航路径。
-    func takeOpensPeers() -> Bool {
-        defer { opensPeers = false }
-        return opensPeers
-    }
-
     func askAgent(_ text: String) async throws {
         guard try await navigationReady() else {
-            throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadyAskAgent))
+            throw CoreError.NotReady(reason: "请先完成配对和引导，再问 Bot。")
         }
         let bot = try primaryBot()
         // 新操作不能被上一次后台失败留下的 problem 提前判成失败。
@@ -148,7 +105,7 @@ final class AppNavigation {
             if let step = view.step { return step == .finished }
             if let problem = view.problem { throw IntentProblem(problem: problem.problem) }
             if let end, clock.now >= end {
-                throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadySlowServer))
+                throw CoreError.NotReady(reason: "还没连上家里的服务器，请打开云吞，连上后再试。")
             }
             try await Task.sleep(for: .milliseconds(100))
         }
@@ -164,7 +121,7 @@ final class AppNavigation {
             guard allowsNavigation else { return }
             if let problem = chat.core.plugins().problem { throw IntentProblem(problem: problem.problem) }
             if let end, clock.now >= end {
-                throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadyPluginsNotLoaded))
+                throw CoreError.NotReady(reason: "应用列表还没有加载好，请连上家里的服务器后再试。")
             }
             try await Task.sleep(for: .milliseconds(100))
         }
@@ -172,7 +129,7 @@ final class AppNavigation {
 
     private func primaryBot() throws -> String {
         guard let bot = chat.core.onboarding().primaryBotUserId else {
-            throw CoreError.NotReady(reason: String(localized: .shortcutsNotReadyNoDefaultAgent))
+            throw CoreError.NotReady(reason: "还没有默认 Agent：先在设置里选一个")
         }
         return bot
     }

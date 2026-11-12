@@ -12,8 +12,7 @@ use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
     PEER_ERROR_HEADER, PEERS_PATH, PeerCode, PeerError, PeerErrorBody, PeerScan, PeersView,
-    ProxySettings, SecretString, peer_code_path, peer_code_reset_path, peer_path,
-    peer_rejected_path, peer_request_approve_path, peer_request_reject_path,
+    ProxySettings, SecretString, peer_code_path, peer_path,
 };
 
 use crate::chat::proxy_url;
@@ -36,7 +35,7 @@ impl Failure {
         Self { error, message }
     }
 
-    pub(super) fn transport(reason: String) -> Self {
+    fn transport(reason: String) -> Self {
         Self::new(
             PeerError::TransportUnavailable,
             l10n!(CATALOG, language(), "peers-transport", reason = reason),
@@ -76,7 +75,7 @@ impl Api {
         }
     }
 
-    /// `GET /_wonton/api/peers`：配对过的服务器、发来的请求和拒绝过的那几条。
+    /// `GET /_wonton/api/peers`：配对过的服务器和还有效的出码。
     pub(super) async fn list(&self) -> Result<PeersView, Failure> {
         let bytes = self
             .call(Method::GET, PEERS_PATH, None, CALL_TIMEOUT)
@@ -84,54 +83,15 @@ impl Api {
         parse(&bytes)
     }
 
-    /// `GET /_wonton/api/peers/code`：取本机的码。
+    /// `POST /_wonton/api/peers/code`：出一张配对码。
     pub(super) async fn show_code(&self) -> Result<PeerCode, Failure> {
         let bytes = self
-            .call(Method::GET, &peer_code_path(), None, CALL_TIMEOUT)
+            .call(Method::POST, &peer_code_path(), None, CALL_TIMEOUT)
             .await?;
         parse(&bytes)
     }
 
-    /// `POST /_wonton/api/peers/code/reset`：换一个新令牌，旧码作废。
-    pub(super) async fn reset_code(&self) -> Result<PeerCode, Failure> {
-        let bytes = self
-            .call(Method::POST, &peer_code_reset_path(), None, CALL_TIMEOUT)
-            .await?;
-        parse(&bytes)
-    }
-
-    /// `POST /_wonton/api/peers/requests/{id}/approve`：同意一条请求。
-    pub(super) async fn approve(&self, id: &str) -> Result<(), Failure> {
-        self.call(
-            Method::POST,
-            &peer_request_approve_path(id),
-            None,
-            CALL_TIMEOUT,
-        )
-        .await?;
-        Ok(())
-    }
-
-    /// `POST /_wonton/api/peers/requests/{id}/reject`：拒绝一条请求。
-    pub(super) async fn reject(&self, id: &str) -> Result<(), Failure> {
-        self.call(
-            Method::POST,
-            &peer_request_reject_path(id),
-            None,
-            CALL_TIMEOUT,
-        )
-        .await?;
-        Ok(())
-    }
-
-    /// `DELETE /_wonton/api/peers/rejected/{id}`：撤销一次拒绝。
-    pub(super) async fn unreject(&self, id: &str) -> Result<(), Failure> {
-        self.call(Method::DELETE, &peer_rejected_path(id), None, CALL_TIMEOUT)
-            .await?;
-        Ok(())
-    }
-
-    /// `POST /_wonton/api/peers`：把扫来的码交给自己的核心。这次只发一条请求，对方同意之后配对才成立。
+    /// `POST /_wonton/api/peers`：把扫来的码交给自己的核心。对方同意之后配对才成立。
     pub(super) async fn scan(&self, code: &SecretString) -> Result<(), Failure> {
         let body = serde_json::to_vec(&PeerScan { code: code.clone() })
             .map_err(|e| unreadable_response(e.to_string()))?;
@@ -140,7 +100,7 @@ impl Api {
         Ok(())
     }
 
-    /// `DELETE /_wonton/api/peers/{server_name}`：删掉和一台服务器的配对，或者取消自己发出的请求。
+    /// `DELETE /_wonton/api/peers/{server_name}`：删掉和一台服务器的配对。
     pub(super) async fn remove(&self, server_name: &str) -> Result<(), Failure> {
         self.call(Method::DELETE, &peer_path(server_name), None, CALL_TIMEOUT)
             .await?;
@@ -247,18 +207,8 @@ fn error_response(status: u16, headers: &reqwest::header::HeaderMap, body: &[u8]
     let kind = headers
         .get(PEER_ERROR_HEADER)
         .and_then(|value| value.to_str().ok())
-        .map(|value| {
-            // 只给主人、或者要“能装插件”的接口，家人设备上就是权限不够（ADR-0045）。
-            if matches!(
-                value,
-                "permission_required" | "install_not_allowed" | "not_yours"
-            ) {
-                return PeerError::Unauthenticated;
-            }
-            serde_json::from_value::<PeerError>(serde_json::Value::String(value.into()))
-                .unwrap_or(PeerError::Protocol)
-        });
-    if let Some(kind) = kind {
+        .map(|value| serde_json::from_value::<PeerError>(serde_json::Value::String(value.into())));
+    if let Some(Ok(kind)) = kind {
         return Failure::new(kind, message);
     }
     match status {

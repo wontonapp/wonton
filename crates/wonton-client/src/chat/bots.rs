@@ -7,13 +7,11 @@ use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 use wonton_matrix::{MatrixSession, UserProfile};
 use wonton_protocol::{
-    AVATARS_FIELD, AvatarImage, AvatarKind, AvatarMedia, BotActivity, BotActivityFacts, BotRef,
-    BotView, ChatForm, ChatViewModel, HomeStatus, InstalledPlugins, MediaHandle, StateAvatar,
-    StateAvatars,
+    AVATARS_FIELD, AvatarImage, AvatarKind, AvatarMedia, BotActivity, BotActivityFacts, BotView,
+    ChatViewModel, HomeStatus, InstalledPlugins, MediaHandle, StateAvatar, StateAvatars,
 };
 
 use super::bot_activity::{Activity, synthesize};
-use super::layout::{self, Layouts};
 use super::lock;
 use crate::home::HomeLink;
 use crate::plugins::PluginsLink;
@@ -24,7 +22,6 @@ pub(super) struct Bots {
     pub plugins: Arc<PluginsLink>,
     pub view: watch::Sender<ChatViewModel>,
     pub session: watch::Sender<Option<Arc<MatrixSession>>>,
-    layouts: Arc<Layouts>,
     pub foreground: watch::Sender<bool>,
     pub changed: Notify,
     pub epoch: AtomicU64,
@@ -56,14 +53,12 @@ impl Bots {
         home: Arc<HomeLink>,
         plugins: Arc<PluginsLink>,
         view: watch::Sender<ChatViewModel>,
-        layouts: Arc<Layouts>,
     ) -> Arc<Self> {
         let bots = Arc::new(Self {
             runtime: runtime.clone(),
             home,
             plugins,
             view,
-            layouts,
             session: watch::Sender::new(None),
             foreground: watch::Sender::new(true),
             changed: Notify::new(),
@@ -171,7 +166,7 @@ impl Bots {
                 }
             };
             bots.view.send_modify(|view| {
-                if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
+                if let Some(bot) = view.bots.iter_mut().find(|bot| bot.plugin_id == id) {
                     bot.name = name;
                     bot.avatar = avatar;
                     bot.state_avatars = state_avatars;
@@ -196,18 +191,13 @@ impl Bots {
                 let previous = records
                     .remove(&plugin.id)
                     .filter(|record| record.user_id == *user);
-                let mut bot = previous
+                let bot = previous
                     .as_ref()
-                    .and_then(|_| old.iter().find(|bot| bot.bot.plugin_id == plugin.id))
+                    .and_then(|_| old.iter().find(|bot| bot.plugin_id == plugin.id))
                     .cloned()
                     .unwrap_or_else(|| BotView {
-                        chat: Default::default(),
                         user_id: user.clone(),
-                        bot: BotRef {
-                            plugin_id: plugin.id.clone(),
-                            bot: "default".into(),
-                        },
-                        web: None,
+                        plugin_id: plugin.id.clone(),
                         name: plugin.title.clone(),
                         avatar: None,
                         state_avatars: Vec::new(),
@@ -215,11 +205,6 @@ impl Bots {
                         saving: false,
                         problem: None,
                     });
-                bot.chat = layout::bot_settings(
-                    &self.layouts.current(),
-                    plugin.chat.as_ref(),
-                    bot.user_id.as_str(),
-                );
                 let mut record = previous.unwrap_or_else(|| Record {
                     user_id: user.clone(),
                     title: plugin.title.clone(),
@@ -251,42 +236,6 @@ impl Bots {
         self.update_activity();
         self.refresh_all();
         self.changed.notify_one();
-        self.layouts.touch();
-    }
-
-    /// 这个 Bot 所属插件声明的显示形态；不是插件 Bot 时 `None`。
-    pub fn chat_form(&self, user: &str) -> Option<ChatForm> {
-        let local = lock(&self.local);
-        local
-            .installed
-            .as_ref()?
-            .plugins
-            .iter()
-            .find(|plugin| plugin.bot_user_id.as_deref() == Some(user))
-            .and_then(|plugin| plugin.chat.as_ref())
-            .map(|chat| chat.form)
-    }
-
-    /// 账号数据里的选择变了：重算每个 Bot 资料页的“显示”。
-    pub fn refresh_chat(&self) {
-        let settings = self.layouts.current();
-        let local = lock(&self.local);
-        let Some(installed) = &local.installed else {
-            return;
-        };
-        self.view.send_modify(|view| {
-            for bot in &mut view.bots {
-                let plugin = installed
-                    .plugins
-                    .iter()
-                    .find(|plugin| plugin.id == bot.bot.plugin_id);
-                bot.chat = layout::bot_settings(
-                    &settings,
-                    plugin.and_then(|plugin| plugin.chat.as_ref()),
-                    bot.user_id.as_str(),
-                );
-            }
-        });
     }
 
     pub fn clear_activity(&self) {
@@ -325,7 +274,7 @@ impl Bots {
             for bot in &mut view.bots {
                 let activity = local
                     .records
-                    .get(&bot.bot.plugin_id)
+                    .get(&bot.plugin_id)
                     .and_then(|record| record.activity.state);
                 changed |= bot.activity != activity;
                 bot.activity = activity;
@@ -435,13 +384,8 @@ mod tests {
 
     fn view(activity: Option<BotActivity>, states: &[(&str, BotActivity)]) -> BotView {
         BotView {
-            chat: Default::default(),
             user_id: "@bot:home".into(),
-            bot: BotRef {
-                plugin_id: "app.bot".into(),
-                bot: "default".into(),
-            },
-            web: None,
+            plugin_id: "app.bot".into(),
             name: "Bot".into(),
             avatar: None,
             state_avatars: states

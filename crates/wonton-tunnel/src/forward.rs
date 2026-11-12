@@ -9,7 +9,6 @@ use iroh::endpoint::{RecvStream, SendStream};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::{
-    client::streams::StreamCounters,
     error::{TunnelError, from_read_error, from_write_error},
     wire::STREAM_ABORTED,
 };
@@ -29,7 +28,7 @@ pub(crate) enum PumpError {
 impl fmt::Display for PumpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Tcp(err) => write!(f, "local TCP connection failed: {err}"),
+            Self::Tcp(err) => write!(f, "本地 TCP 连接出错：{err}"),
             Self::Tunnel(err) => err.fmt(f),
         }
     }
@@ -54,20 +53,14 @@ pub(crate) async fn tcp_to_tunnel(
     }
 }
 
-/// 隧道 → TCP，直到隧道流结束，然后关闭 TCP 写端。`delivered` 有值时把交给调用方的新数据记上去。
+/// 隧道 → TCP，直到隧道流结束，然后关闭 TCP 写端。
 pub(crate) async fn tunnel_to_tcp(
     recv: &mut RecvStream,
     tcp: &mut (impl AsyncWrite + Unpin),
-    delivered: Option<&StreamCounters>,
 ) -> Result<(), PumpError> {
     loop {
         match recv.read_chunk(CHUNK).await {
-            Ok(Some(chunk)) => {
-                tcp.write_all(&chunk).await.map_err(PumpError::Tcp)?;
-                if let Some(delivered) = delivered {
-                    delivered.note_received(chunk.len());
-                }
-            }
+            Ok(Some(chunk)) => tcp.write_all(&chunk).await.map_err(PumpError::Tcp)?,
             Ok(None) => return tcp.shutdown().await.map_err(PumpError::Tcp),
             Err(err) => return Err(PumpError::Tunnel(from_read_error(&err))),
         }

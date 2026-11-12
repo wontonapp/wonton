@@ -8,15 +8,12 @@ use super::{allowlist_toml, files::regex_escape};
 use crate::http::{HttpClient, RequestBody};
 use crate::plugin::docker::Engine;
 
-/// Tuwunel：本地按标签拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-pub(super) fn image() -> String {
-    wonton_test_images::image("ghcr.io/matrix-construct/tuwunel:v2.0.0")
-}
+const IMAGE: &str = "ghcr.io/matrix-construct/tuwunel:v1.9.4";
 const WAIT: Duration = Duration::from_secs(15);
 
 /// 真实 Tuwunel（v1.9.4）：两份配置里的名单生效，原地重写第二份后发 SIGUSR1，
-/// 名单外的邀请被拒、名单内的放行（ADR-0050）。这里的服务器经 Docker 网络别名互相直连，
-/// 经核心转发组件的出站在 `proxy_tests.rs`。
+/// 名单外的邀请被拒、名单内的放行（ADR-0050）。hosts 的热加载不在这里测：它只在
+/// Tuwunel 启动时被读，核心对它的唯一手段是重启（实测见 ADR-0050 的“验证”）。
 #[test]
 #[ignore = "需要 Docker，跑一遍约一分钟"]
 fn the_real_server_hot_reloads_the_allowlist_from_the_second_file() {
@@ -32,7 +29,7 @@ fn the_real_server_hot_reloads_the_allowlist_from_the_second_file() {
         let registration_secret = crate::secret::random_token();
 
         let dir = tempfile::tempdir().unwrap();
-        // 本机名单来自第二份配置文件（secrets/tuwunel/wonton-fed.toml 的角色），另两台把本机放进各自名单。
+        // 本机名单来自第二份配置文件（fed/config.toml 的角色），另两台把本机放进各自名单。
         std::fs::write(
             dir.path().join("self.toml"),
             cluster_config(&self_name, &[], &registration_secret),
@@ -245,10 +242,10 @@ async fn expect_invite_accepted(cluster: &Cluster, inviter: &Account, room: &str
 }
 
 /// 一台测试用的 Tuwunel：容器名、映射出来的地址、挂进去的名单文件。
-pub(super) struct ClusterServer {
-    pub(super) name: String,
-    pub(super) address: String,
-    pub(super) fed_path: Option<std::path::PathBuf>,
+struct ClusterServer {
+    name: String,
+    address: String,
+    fed_path: Option<std::path::PathBuf>,
 }
 
 /// 一组测试容器和它们的专用网络，Drop 时全部删掉。
@@ -307,16 +304,16 @@ impl Cluster {
         let fed_path = match fed {
             Some(fed) => {
                 let path = dir.path().join(fed);
-                let mount = format!("{}:/etc/tuwunel/wonton-fed.toml:ro", path.display());
+                let mount = format!("{}:/etc/tuwunel/fed.toml:ro", path.display());
                 docker_args.push("--volume".to_owned());
                 docker_args.push(mount);
                 command_args.push("-c".to_owned());
-                command_args.push("/etc/tuwunel/wonton-fed.toml".to_owned());
+                command_args.push("/etc/tuwunel/fed.toml".to_owned());
                 Some(path)
             }
             None => None,
         };
-        docker_args.push(image());
+        docker_args.push(IMAGE.to_owned());
         docker_args.extend(command_args);
         let output = Command::new("docker")
             .args(&docker_args)
@@ -378,7 +375,7 @@ impl Drop for Cluster {
     }
 }
 
-pub(super) async fn wait_ready(base: &str) {
+async fn wait_ready(base: &str) {
     let http = HttpClient::new();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     while std::time::Instant::now() < deadline {
@@ -399,12 +396,7 @@ pub(super) async fn wait_ready(base: &str) {
 }
 
 /// 共享密钥注册一个普通用户，返回访问令牌和用户 ID（Synapse 兼容的管理接口，ADR-0009）。
-pub(super) async fn register_user(
-    http: &HttpClient,
-    base: &str,
-    shared_secret: &str,
-    user: &str,
-) -> Account {
+async fn register_user(http: &HttpClient, base: &str, shared_secret: &str, user: &str) -> Account {
     use aws_lc_rs::hmac;
     let (status, value) = http
         .json(
@@ -450,19 +442,18 @@ pub(super) async fn register_user(
     }
 }
 
-pub(super) struct Account {
-    pub(super) token: String,
-    pub(super) user_id: String,
+struct Account {
+    token: String,
+    user_id: String,
 }
 
-pub(super) async fn create_room(server: &ClusterServer, account: &Account) -> String {
+async fn create_room(server: &ClusterServer, account: &Account) -> String {
     let http = HttpClient::new();
     let (_, value) = http
         .request_json(
             Method::POST,
             &format!("{}/_matrix/client/v3/createRoom", server.address),
             Some(&account.token),
-            &[],
             RequestBody::Json(&serde_json::json!({"preset": "private_chat"})),
             WAIT,
         )
@@ -472,7 +463,7 @@ pub(super) async fn create_room(server: &ClusterServer, account: &Account) -> St
 }
 
 /// 邀请；被本机名单拒绝时返回带原因的错误（同步 403）。
-pub(super) async fn invite(
+async fn invite(
     server: &ClusterServer,
     account: &Account,
     room: &str,
@@ -484,7 +475,6 @@ pub(super) async fn invite(
             Method::POST,
             &format!("{}/_matrix/client/v3/rooms/{room}/invite", server.address),
             Some(&account.token),
-            &[],
             RequestBody::Json(&serde_json::json!({"user_id": user_id})),
             WAIT,
         )
@@ -500,7 +490,7 @@ pub(super) async fn invite(
 }
 
 /// 对端用户接受邀请并加入：跨机握手走通的唯一客户端可见证据。
-pub(super) async fn join(server: &ClusterServer, token: &str, room: &str) -> Result<(), String> {
+async fn join(server: &ClusterServer, token: &str, room: &str) -> Result<(), String> {
     let http = HttpClient::new();
     // 同步拿到邀请，再加入。
     let (_, value) = http
@@ -508,7 +498,6 @@ pub(super) async fn join(server: &ClusterServer, token: &str, room: &str) -> Res
             Method::GET,
             &format!("{}/_matrix/client/v3/sync", server.address),
             Some(token),
-            &[],
             RequestBody::Empty,
             WAIT,
         )
@@ -526,7 +515,6 @@ pub(super) async fn join(server: &ClusterServer, token: &str, room: &str) -> Res
             Method::POST,
             &format!("{}/_matrix/client/v3/rooms/{room}/join", server.address),
             Some(token),
-            &[],
             RequestBody::Json(&serde_json::json!({})),
             WAIT,
         )

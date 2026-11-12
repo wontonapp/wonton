@@ -1,20 +1,18 @@
 //! “其他服务器”页面（ADR-0050）：配对过的服务器列表和主人的出码，经隧道取自家核心的管理接口。
 //! 每台服务器一个作用域（ADR-0042），作用域里的这份状态就属于这一台。
 //!
-//! 状态 [`PeersState`]：取列表时 `Loading`，最近一次取到了 `Ready`，最近一次操作（取列表、取码、重置码、
-//! 扫码、同意拒绝、撤销、删除）失败 `Failed`。连上家里的服务器时取一次列表——设置首页的“其他服务器”一项
-//! 要显示已配对的台数，条目只在取到过列表时给（核心只让主人设备读这个接口，非主人的设备取不到，
-//! 也就看不到这一项）。
-//!
-//! 出码页由壳开关：[`Action::ShowPeerCode`] 取码放进 [`PeersViewModel::code`]，[`Action::HidePeerCode`] 清掉。
-//! 出码页开着（码还在）、有一行在等对方同意或刚配对还没探活出结果时，每几秒取一次列表，跟上对方的扫码和
-//! 同意，不用退出页面再进；都没有了就停。列表取到过（包括空的）以后按核心的探活周期取，已配对服务器的
+//! 状态 [`PeersState`]：取列表时 `Loading`，最近一次取到了 `Ready`，最近一次操作（取列表、出码、扫码、
+//! 删除）失败 `Failed`。连上家里的服务器时取一次列表——设置首页的“其他服务器”一项要显示已配对的台数，
+//! 条目只在取到过列表时给（核心只让主人设备读这个接口，非主人的设备取不到，也就看不到这一项）。
+//! 扫码、删除成功后再取一次；出的码显示到过期，过期后清掉。有东西在等对方的时候——出的码还没作废，
+//! 列表里有还没批的请求，或有一行刚配对还没探活出结果——再隔几秒取一次，跟上对方的扫码和同意，
+//! 不用退出页面再进；都没有了就停。列表取到过（包括空的）以后按核心的探活周期取，已配对服务器的
 //! 连上、掉线、对方删了配对在半分钟内显示出来，设置首页的台数也跟着变。
 
 mod api;
 
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -52,6 +50,8 @@ pub(crate) struct PeersLink {
     list_queue: tokio::sync::Mutex<()>,
     /// 取到过列表：只有在这之后状态才算“列表是最新的”，设置首页才给那一项。
     listed: AtomicBool,
+    /// 出过的第几张码。过期的定时器醒来时码已经换了（新出一张、刷新）就不要清。
+    code_epoch: AtomicU64,
 }
 
 impl PeersLink {
@@ -75,6 +75,7 @@ impl PeersLink {
             client: std::sync::Mutex::new(None),
             list_queue: tokio::sync::Mutex::new(()),
             listed: AtomicBool::new(false),
+            code_epoch: AtomicU64::new(0),
         });
         link.spawn(follow_home(Arc::downgrade(&link)));
         link.spawn(follow_waiting(Arc::downgrade(&link)));
@@ -99,26 +100,6 @@ impl PeersLink {
             }
             Action::ShowPeerCode => {
                 self.show_code();
-                Ok(())
-            }
-            Action::HidePeerCode => {
-                self.hide_code();
-                Ok(())
-            }
-            Action::ResetPeerCode => {
-                self.reset_code();
-                Ok(())
-            }
-            Action::ApprovePeerRequest { id } => {
-                self.act(Action::ApprovePeerRequest { id });
-                Ok(())
-            }
-            Action::RejectPeerRequest { id } => {
-                self.act(Action::RejectPeerRequest { id });
-                Ok(())
-            }
-            Action::UnrejectPeerRequest { id } => {
-                self.act(Action::UnrejectPeerRequest { id });
                 Ok(())
             }
             Action::ScanPeerCode { code } => {
@@ -149,13 +130,13 @@ impl PeersLink {
         }
     }
 
-    /// 取列表。失败不影响已显示的列表，下次成功时一起换掉。
+    /// 取列表和出码状态。失败不影响已显示的列表，下次成功时一起换掉。
     fn refresh(self: &Arc<Self>) {
         let link = self.clone();
         self.spawn(async move { link.fetch(true).await });
     }
 
-    /// 取列表。失败不影响已显示的列表，下次成功时一起换掉。
+    /// 取列表和出码状态。失败不影响已显示的列表，下次成功时一起换掉。
     /// `mark_loading`：取之前先把状态拨成 `Loading`，主人的操作要马上有反馈；后台轮询不拨——页面上
     /// 那份列表还在显示，几秒一次的拨动没有信息，设置首页的台数只在 `Ready` 时给，会跟着一闪一闪。
     async fn fetch(self: Arc<Self>, mark_loading: bool) {
@@ -172,6 +153,7 @@ impl PeersLink {
         match outcome {
             Ok(list) => {
                 self.listed.store(true, Ordering::SeqCst);
+                self.set_code(list.code);
                 self.view.send_modify(|view| {
                     view.peers = list.peers;
                     view.requests = list.requests;
@@ -183,7 +165,8 @@ impl PeersLink {
         }
     }
 
-    /// 打开出码页：取本机的码。列表还没取到过时状态不动，等列表请求落地再变成“列表是最新的”。
+    /// 出一张码。码显示到过期（`set_code` 里的定时器负责清）；列表还没取到过时状态不动，
+    /// 等列表请求落地再变成“列表是最新的”。
     fn show_code(self: &Arc<Self>) {
         let link = self.clone();
         self.spawn(async move {
@@ -198,47 +181,6 @@ impl PeersLink {
                     }
                     link.set_code(Some(code));
                 }
-                Err(failure) => link.fail(failure),
-            }
-        });
-    }
-
-    /// 关掉出码页：本机记的码清掉，不再快速取列表。
-    fn hide_code(&self) {
-        self.set_code(None);
-    }
-
-    /// 重置码：换一张，旧码作废。
-    fn reset_code(self: &Arc<Self>) {
-        let link = self.clone();
-        self.spawn(async move {
-            let outcome = match link.api() {
-                Ok(api) => api.reset_code().await,
-                Err(failure) => Err(failure),
-            };
-            match outcome {
-                Ok(code) => {
-                    link.set_code(Some(code));
-                    link.refresh();
-                }
-                Err(failure) => link.fail(failure),
-            }
-        });
-    }
-
-    /// 处理一条请求（同意、拒绝、撤销）：成功后重新取列表，失败按类别进状态。
-    fn act(self: &Arc<Self>, action: Action) {
-        let link = self.clone();
-        self.spawn(async move {
-            let outcome = match (link.api(), action) {
-                (Ok(api), Action::ApprovePeerRequest { id }) => api.approve(&id).await,
-                (Ok(api), Action::RejectPeerRequest { id }) => api.reject(&id).await,
-                (Ok(api), Action::UnrejectPeerRequest { id }) => api.unreject(&id).await,
-                (Err(failure), _) => Err(failure),
-                (Ok(_), _) => Ok(()),
-            };
-            match outcome {
-                Ok(()) => link.refresh(),
                 Err(failure) => link.fail(failure),
             }
         });
@@ -282,10 +224,6 @@ impl PeersLink {
     }
 
     fn api(&self) -> Result<api::Api, api::Failure> {
-        // 已知隧道不通就立刻失败，不等超时。
-        if let Some(reason) = self.home.tunnel_outage() {
-            return Err(api::Failure::transport(reason));
-        }
         let proxy = self.home.view().proxy.ok_or_else(not_connected)?;
         let base = self.home.core_url().ok_or_else(not_connected)?;
         let client = {
@@ -313,12 +251,27 @@ impl PeersLink {
         });
     }
 
-    /// 记下新的码（或清掉）。和正显示的同一张码就不动，不白往壳重推一遍。
-    fn set_code(&self, code: Option<PeerCode>) {
-        if self.view.borrow().code.as_ref() == code.as_ref() {
+    /// 记下新的出码（或清掉），并安排到点清掉。和正显示的同一张码就不动：等待时的轮询每隔几秒取到它
+    /// 一次，别每次都重摆过期定时器、往壳重推一遍。
+    fn set_code(self: &Arc<Self>, code: Option<PeerCode>) {
+        let unchanged = self.view.borrow().code.as_ref() == code.as_ref();
+        if unchanged {
             return;
         }
+        let epoch = self.code_epoch.fetch_add(1, Ordering::SeqCst) + 1;
         self.view.send_modify(|view| view.code = code.clone());
+        let Some(code) = code else { return };
+        let link = self.clone();
+        self.spawn(async move {
+            let now = unix_ms();
+            if code.expires_at_ms > now {
+                tokio::time::sleep(Duration::from_millis(code.expires_at_ms - now)).await;
+            }
+            // 码在这期间被换掉了（新出一张、刷新拿到别的）就什么都不做。
+            if link.code_epoch.load(Ordering::SeqCst) == epoch {
+                link.view.send_modify(|view| view.code = None);
+            }
+        });
     }
 
     /// 在作用域的运行时里跑：作用域关闭（换服务器、核心释放）时任务跟着停。
@@ -340,8 +293,8 @@ fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// 有东西在等对方时自己取列表：出码页开着（对方随时可能扫掉），有一行在等对方同意（对方随时可能
-/// 同意或拒绝），或有一行刚配对、第一次探活还没出结果（几十秒内见分晓）。都没有了就睡到状态再变，
+/// 有东西在等对方时自己取列表：出的码还没作废（对方随时可能扫掉），列表里有还没批的请求（对方随时
+/// 可能点同意），或有一行刚配对、第一次探活还没出结果（几十秒内见分晓）。都没有了就睡到状态再变，
 /// 这期间一个请求都不发；取列表失败不停轮询，状态照现有规则进 `Failed`，下一次照样取。作用域
 /// 关掉时这个任务跟着停。
 async fn follow_waiting(link: Weak<PeersLink>) {
@@ -365,7 +318,7 @@ async fn follow_waiting(link: Weak<PeersLink>) {
     }
 }
 
-/// 现在有没有东西在等对方：出码页开着，有一行在等对方同意，或有一行刚配对、第一次探活还没出结果。
+/// 现在有没有东西在等对方：出的码还没作废，列表里有还没批的请求，或有一行刚配对、第一次探活还没出结果。
 fn waiting(view: &PeersViewModel) -> bool {
     view.code.is_some()
         || view.peers.iter().any(|row| {
@@ -399,7 +352,7 @@ async fn follow_status(link: Weak<PeersLink>) {
         }
         tokio::time::sleep(STATUS_INTERVAL).await;
         let Some(link) = link.upgrade() else { return };
-        // 这期间连不上或有人在等更急的东西（出码页、等对方同意）：`follow_home` 和 `follow_waiting`
+        // 这期间连不上或有人在等更急的东西（码、等对方同意）：`follow_home` 和 `follow_waiting`
         // 管着，不重复取。
         if link.home.view().status != HomeStatus::Connected || waiting(&link.view.borrow()) {
             continue;
@@ -426,4 +379,12 @@ async fn follow_home(link: Weak<PeersLink>) {
             return;
         }
     }
+}
+
+fn unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+        })
 }

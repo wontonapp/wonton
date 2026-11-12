@@ -29,8 +29,6 @@ impl HomeLink {
     pub(crate) fn backgrounded(&self) {
         self.app_backgrounded.store(true, Ordering::SeqCst);
         self.sync_background();
-        // 挂起检测照可见性布防，保持连接也在内：前台服务减少冻结但不豁免，见 [`HomeLink::arm_suspend_gate`]。
-        self.arm_suspend_gate();
     }
 
     /// 网页媒体开始或停止播放：播放期间 App 退到后台也照常探测、自动重连，隧道不会空闲断开。

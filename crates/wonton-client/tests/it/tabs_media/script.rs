@@ -4,12 +4,8 @@ use std::process::{Command, Stdio};
 use serde_json::json;
 use wonton_client::PageMediaAction;
 
-/// node：本地从 Docker Hub 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-fn node_image() -> String {
-    wonton_test_images::image(
-        "node:22@sha256:18a6d90fd60542269850c80ca03b29b1d9b14d6b221ac7ee8e35b0d33ef904bd",
-    )
-}
+const NODE_IMAGE: &str =
+    "node:22@sha256:18a6d90fd60542269850c80ca03b29b1d9b14d6b221ac7ee8e35b0d33ef904bd";
 
 #[test]
 #[ignore = "需要 Docker，固定摘要的官方 Node 22 验证网页媒体状态和系统命令往返"]
@@ -30,7 +26,7 @@ fn media_script_roundtrip() {
                 "type=bind,source={},target=/fixture.mjs,readonly",
                 fixture.display()
             ),
-            node_image().as_str(),
+            NODE_IMAGE,
             "node",
             "/fixture.mjs",
         ])

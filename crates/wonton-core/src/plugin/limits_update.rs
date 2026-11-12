@@ -116,16 +116,13 @@ impl PluginManager {
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
         // 只要资源字段，用和安装前检查一样的占位环境：Bot 的令牌之类核心不存，真的环境凑不齐。
-        let mut ctx = dry_run_context(&package);
+        let mut ctx = dry_run_context(&package, Some("owner@wonton.invalid"));
         ctx.memory_total = self.memory_total().await;
         ctx.limits = limits;
         let slug = package.manifest.id.slug();
         let mut updates = Vec::new();
         for plan in render(&package, &ctx, langs)?.containers {
-            let container = match &plan.bot {
-                Some(bot) => self.cfg.instance.bot_container(&slug, &plan.service, bot),
-                None => self.cfg.instance.container(&slug, &plan.service),
-            };
+            let container = self.cfg.instance.container(&slug, &plan.service);
             // 容器不在的服务下次重建时按记录来。
             let Some(current) = self.engine.inspect_container(&container).await? else {
                 continue;

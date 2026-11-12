@@ -7,8 +7,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 
-use super::PROJECT;
-use super::host::Mount;
 use super::state::Layout;
 use crate::l10n;
 use crate::plugin::languages::Languages;
@@ -23,14 +21,10 @@ pub const INSTALL: &str = "install";
 pub const CORE: &str = "core";
 pub const VOLUMES: &str = "volumes";
 
-/// 核心数据里不备份、恢复时也不碰的目录：升级自己的状态、没传完的上传和链接预览的缓存。
+/// 核心数据里不备份、恢复时也不碰的目录：升级自己的状态，和没传完的上传。
 fn core_skips(layout: &Layout) -> Vec<PathBuf> {
     let core = layout.core_dir();
-    vec![
-        core.join("upgrade"),
-        core.join("files").join("uploads"),
-        core.join("link-previews"),
-    ]
+    vec![core.join("upgrade"), core.join("files").join("uploads")]
 }
 
 /// `expired` 返回真时停下，返回错误。
@@ -228,20 +222,6 @@ pub fn remove_others(layout: &Layout, keep: Option<&Path>) -> anyhow::Result<()>
         .filter(|dir| Some(dir.as_path()) != keep)
         .collect();
     remove_all(&others)
-}
-
-/// compose 项目里卷 `name` 在 Docker 里的名字。
-pub fn compose_volume(name: &str) -> String {
-    format!("{PROJECT}_{name}")
-}
-
-/// 把卷挂在 `/volume` 上的一次性容器用。
-pub fn volume_mount(name: &str, read_only: bool) -> Mount {
-    Mount::Volume {
-        name: compose_volume(name),
-        target: PathBuf::from("/volume"),
-        read_only,
-    }
 }
 
 #[cfg(test)]

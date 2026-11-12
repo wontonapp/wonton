@@ -25,25 +25,17 @@ pub enum InstallError {
     PermissionNotGranted(String),
     #[error("{0}")]
     Unsupported(String),
+    /// 插件要用的资料（如邮箱）还没填（ADR-0030）。
     #[error("{0}")]
-    UnsupportedRuntime(String),
+    OwnerProfileIncomplete(String),
     #[error("{0}")]
     Conflict(String),
-    #[error("{message}")]
-    InUse {
-        message: String,
-        plugins: Vec<wonton_protocol::CapabilityProviderRef>,
-    },
     /// 插件要用的网络或卷的名字被别的插件或主人占了（见 [`super::leftovers`]）。对外也是 `conflict`；预装时和
     /// [`Self::Conflict`] 不同，不是“别人已经在装它”，要标成异常让主人看到。
     #[error("{0}")]
     NameTaken(String),
     #[error("{0}")]
     NotInstalled(String),
-    /// 插件的安装记录读不出来或不可用（核心升级后不认的字段、文件损坏、磁盘出错）：启动、恢复都做不了，
-    /// 要卸载（可以保留数据）后重新安装。
-    #[error("{0}")]
-    RecordUnusable(String),
     #[error("{0}")]
     DockerUnavailable(String),
     #[error("{0}")]
@@ -94,12 +86,6 @@ pub enum InstallError {
     /// 核心正在升级：回滚只退备份里的东西，这时动插件，回滚后记录和容器就对不上了（ADR-0025）。
     #[error("{0}")]
     CoreUpgrading(String),
-    /// 设置值过不了 Schema（ADR-0077）；原值不动、不重建。
-    #[error("{0}")]
-    SettingsInvalid(String, Vec<wonton_protocol::SettingsFieldError>),
-    /// 插件包的设置 Schema 自己不合格（ADR-0077）。
-    #[error("{0}")]
-    SettingsSchemaInvalid(String, Vec<wonton_protocol::SettingsSchemaProblem>),
 }
 
 impl InstallError {
@@ -108,11 +94,10 @@ impl InstallError {
         match self {
             Self::Invalid(_) => "invalid_input",
             Self::PermissionNotGranted(_) => "permission_denied",
-            Self::Unsupported(_) | Self::UnsupportedRuntime(_) => "unsupported",
+            Self::Unsupported(_) => "unsupported",
+            Self::OwnerProfileIncomplete(_) => "owner_profile_incomplete",
             Self::Conflict(_) | Self::NameTaken(_) => "conflict",
-            Self::InUse { .. } => "in_use",
             Self::NotInstalled(_) => "not_installed",
-            Self::RecordUnusable(_) => "record_unusable",
             Self::DockerUnavailable(_) => "docker_unavailable",
             Self::Docker(_) => "docker_rejected",
             Self::PortTaken(_) => "port_taken",
@@ -131,8 +116,6 @@ impl InstallError {
             Self::NotFound(_) => "not_found",
             Self::Changed(_) => "changed",
             Self::CoreUpgrading(_) => "core_upgrading",
-            Self::SettingsInvalid(..) => "settings_invalid",
-            Self::SettingsSchemaInvalid(..) => "settings_schema_invalid",
         }
     }
 }
@@ -160,24 +143,15 @@ impl InstallError {
             Self::Invalid(m) => Self::Invalid(add(m)),
             Self::PermissionNotGranted(list) => Self::PermissionNotGranted(list),
             Self::Unsupported(m) => Self::Unsupported(add(m)),
-            Self::UnsupportedRuntime(m) => Self::UnsupportedRuntime(add(m)),
+            Self::OwnerProfileIncomplete(m) => Self::OwnerProfileIncomplete(m),
             Self::Conflict(m) => Self::Conflict(add(m)),
-            Self::InUse { message, plugins } => Self::InUse {
-                message: add(message),
-                plugins,
-            },
             Self::NameTaken(m) => Self::NameTaken(add(m)),
             Self::NotInstalled(m) => Self::NotInstalled(m),
-            Self::RecordUnusable(m) => Self::RecordUnusable(m),
             Self::DockerUnavailable(m) => Self::DockerUnavailable(add(m)),
             Self::Docker(m) => Self::Docker(add(m)),
             Self::PortTaken(m) => Self::PortTaken(add(m)),
             Self::ImagePull(m) => Self::ImagePull(add(m)),
             Self::OidcUnavailable(m) => Self::OidcUnavailable(add(m)),
-            Self::SettingsInvalid(m, fields) => Self::SettingsInvalid(add(m), fields),
-            Self::SettingsSchemaInvalid(m, problems) => {
-                Self::SettingsSchemaInvalid(add(m), problems)
-            }
             Self::MatrixUnavailable(m) => Self::MatrixUnavailable(add(m)),
             Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
             Self::UpstreamUnavailable(m) => Self::UpstreamUnavailable(add(m)),
@@ -213,6 +187,8 @@ impl From<PackageError> for InstallError {
 impl From<RenderError> for InstallError {
     fn from(e: RenderError) -> Self {
         match e {
+            // 插件没写错，是还没填邮箱。
+            RenderError::NoOwnerEmail(message) => Self::OwnerProfileIncomplete(message),
             // 插件没写错，是这台主机放不下。
             RenderError::HostPath(message) => Self::Unsupported(message),
             e => Self::Invalid(e.to_string()),

@@ -92,16 +92,16 @@ async fn oversized_binary_blocks_become_an_explanation_and_other_blocks_survive(
     let explanations: Vec<&str> = texts
         .iter()
         .copied()
-        .filter(|t| t.contains("over the single-block limit"))
+        .filter(|t| t.contains("超过单块上限"))
         .collect();
     assert_eq!(explanations.len(), 3, "{texts:?}");
     let all = explanations.join("\n");
     for wanted in [
-        "image block",
-        "audio block",
-        "blob in a resource block",
-        "decodes to 2.0 MiB",
-        "limit of 1.0 MiB",
+        "image 块",
+        "audio 块",
+        "resource 块里的 blob",
+        "解码后有 2.0 MiB",
+        "单块上限 1.0 MiB",
         "resource_link",
     ] {
         assert!(all.contains(wanted), "{wanted}：{all}");
@@ -129,7 +129,7 @@ async fn blocks_that_are_not_valid_base64_become_an_explanation() {
     let texts = texts(&result);
     assert_eq!(texts.len(), 2, "{texts:?}");
     for explanation in &texts {
-        assert!(explanation.contains("not valid base64"), "{explanation}");
+        assert!(explanation.contains("不是合法的 base64"), "{explanation}");
     }
     let wire = serde_json::to_string(&result).unwrap();
     assert!(!wire.contains("\"data\""), "没有 base64 数据：{wire}");

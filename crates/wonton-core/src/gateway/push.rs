@@ -16,7 +16,7 @@ use std::sync::Arc;
 use axum::body::Bytes;
 use axum::extract::{Request, State};
 use axum::response::{IntoResponse, Response};
-use axum::{Extension, Json, Router};
+use axum::{Extension, Json};
 use hyper::{Method, StatusCode};
 use iroh::EndpointId;
 use serde::Deserialize;
@@ -24,8 +24,8 @@ use serde_json::json;
 
 use super::api::error_response;
 use super::matrix::matrix_error;
-use super::{Gateway, TunnelPeer, client_addr, from_service, request_host};
-use crate::config::{HostKind, PUSH_GATEWAY_HOST};
+use super::{Gateway, TunnelPeer, client_addr, from_service};
+use crate::config::PUSH_GATEWAY_HOST;
 use crate::push::{NotifyRequest, NotifyResponse, PushError, Subscription};
 
 /// Matrix Push Gateway API 的通知接口。
@@ -150,19 +150,6 @@ pub(super) fn forget_device(gateway: &Gateway, device: &EndpointId) {
 async fn from_matrix_server(gateway: &Gateway, peer: Option<SocketAddr>) -> bool {
     let authority = gateway.matrix.as_ref().map(|matrix| matrix.authority());
     from_service(authority, peer, "Matrix 服务器").await
-}
-
-/// 专用监听只服务推送 Host，不暴露主网关的管理接口和反向代理。
-pub fn router(gateway: Arc<Gateway>) -> Router {
-    Router::new().fallback(move |req: Request| {
-        let gateway = gateway.clone();
-        async move {
-            if gateway.public.classify(&request_host(&req)) != HostKind::Push {
-                return StatusCode::NOT_FOUND.into_response();
-            }
-            gateway_request(&gateway, req).await
-        }
-    })
 }
 
 /// `push.wonton.internal`：推送代理。错误按 Matrix 的格式给出。

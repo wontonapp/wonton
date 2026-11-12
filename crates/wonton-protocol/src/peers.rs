@@ -19,6 +19,8 @@ pub struct PeersView {
     pub requests: Vec<PeerRequestRow>,
     /// 主人拒绝过的请求，按拒绝的时间排，能撤销。
     pub rejected: Vec<RejectedPeerRow>,
+    /// 主人出了码、还没过期时是这张码。
+    pub code: Option<PeerCode>,
 }
 
 /// 配对过的一台服务器。
@@ -60,12 +62,14 @@ pub enum PeerStatus {
     Other,
 }
 
-/// 主人本机的配对码（ADR-0050），`GET /_wonton/api/peers/code` 的响应。一直有效到重置。
+/// 一张配对二维码（ADR-0050），`POST /_wonton/api/peers/code` 的响应。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PeerCode {
     /// 二维码和“分享”的内容（`wonton://peer?…`），日志里照样打码；格式由核心定，壳只显示和分享。
     pub code: SecretString,
+    /// 过期时间，Unix 毫秒。
+    pub expires_at_ms: u64,
 }
 
 /// 别的服务器发来的一条配对请求（ADR-0050）。除了 `id`，都是对方自报的，界面上不写成核实过的身份。
@@ -152,6 +156,8 @@ pub fn peer_path(server_name: &str) -> String {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum PeerError {
+    /// 码过期了，要重新出码。
+    CodeExpired,
     /// 码读不懂：不是配对码，或者被改过。
     CodeInvalid,
     /// 码已作废：对方重置过码，这是重置前的那张，要一张新的。
@@ -185,6 +191,7 @@ impl PeerError {
     /// 类别的写法。
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::CodeExpired => "code_expired",
             Self::CodeInvalid => "code_invalid",
             Self::CodeRevoked => "code_revoked",
             Self::TooManyRequests => "too_many_requests",
@@ -204,7 +211,7 @@ impl PeerError {
     /// 配对接口用哪个 HTTP 状态码返回这个类别；只有客户端核心才有的类别为空。
     pub fn http_status(self) -> Option<u16> {
         match self {
-            Self::CodeRevoked => Some(410),
+            Self::CodeExpired | Self::CodeRevoked => Some(410),
             Self::CodeInvalid | Self::SelfPairing => Some(400),
             Self::TooManyRequests => Some(429),
             Self::RequestNotFound => Some(404),
@@ -307,12 +314,14 @@ mod tests {
             peers: vec![row()],
             requests: vec![request()],
             rejected: vec![rejected()],
+            code: None,
         };
         let json = serde_json::to_string(&view).unwrap();
         assert_eq!(serde_json::from_str::<PeersView>(&json).unwrap(), view);
 
         let code = PeerCode {
             code: SecretString::new("wonton://peer?t=request-token"),
+            expires_at_ms: 1_799_000_600_000,
         };
         let json = serde_json::to_string(&code).unwrap();
         assert_eq!(serde_json::from_str::<PeerCode>(&json).unwrap(), code);
@@ -408,6 +417,7 @@ mod tests {
         assert_eq!(error, PeerError::Other);
 
         for (kind, expected) in [
+            ("code_expired", PeerError::CodeExpired),
             ("code_invalid", PeerError::CodeInvalid),
             ("code_revoked", PeerError::CodeRevoked),
             ("too_many_requests", PeerError::TooManyRequests),

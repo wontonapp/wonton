@@ -6,7 +6,6 @@ struct TabSettingsView: View {
     @Environment(TabsModel.self) private var tabs
     @Environment(\.wontonColors) private var colors
     @State private var showsCandidates = false
-    @State private var editingPanel = false
 
     var body: some View {
         List {
@@ -34,13 +33,6 @@ struct TabSettingsView: View {
                 .onMove(perform: move)
                 .onDelete(perform: remove)
             }
-            Section {
-                Button { editingPanel = true } label: {
-                    WontonRow(title: TabText.editPanel, showsForward: true)
-                }
-                .buttonStyle(.plain)
-                .listRowBackground(Color(colors.canvas))
-            }
             if !tabs.viewModel.candidates.isEmpty {
                 Section {
                     Button { showsCandidates = true } label: {
@@ -54,17 +46,6 @@ struct TabSettingsView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .environment(\.editMode, .constant(.active))
-        .sheet(isPresented: $editingPanel) {
-            PanelEditor(
-                items: tabs.viewModel.panel,
-                candidates: tabs.viewModel.panelCandidates.compactMap(\.panelCandidate),
-                plugins: plugins,
-                add: { tabs.send(.addPanelPage(scope: .main, tab: $0)) },
-                remove: { tabs.send(.removePanelPage(scope: .main, tab: $0)) },
-                move: { tab, index in tabs.send(.movePanelPage(scope: .main, tab: tab, index: UInt32(index))) },
-                addURL: { tabs.send(.addPanelPage(scope: .main, tab: .url(url: $0))) }
-            )
-        }
         .navigationDestination(isPresented: $showsCandidates) {
             AddTabView(plugins: plugins).wontonPushedScreen(TabText.addToBar)
         }

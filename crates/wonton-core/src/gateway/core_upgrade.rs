@@ -10,7 +10,7 @@ use hyper::{HeaderMap, StatusCode};
 use serde::de::DeserializeOwned;
 use wonton_protocol::{CoreUpgradeCheckRequest, CoreUpgradeRequest};
 
-use super::api::{error_response, languages, owner_denied};
+use super::api::{error_response, languages, plugin_denied};
 use super::{Gateway, TunnelPeer};
 use crate::l10n;
 use crate::plugin::languages::Languages;
@@ -34,7 +34,7 @@ fn upgrades(
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
 ) -> Result<Arc<Upgrades>, Box<Response>> {
-    if let Some(denied) = owner_denied(gateway, peer, headers) {
+    if let Some(denied) = plugin_denied(gateway, peer, headers) {
         return Err(Box::new(denied));
     }
     gateway.upgrades.clone().ok_or_else(|| {

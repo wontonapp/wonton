@@ -25,52 +25,27 @@ pub(super) async fn follow_cards(
     answers: watch::Sender<Answers>,
     succeeded: CardSuccess,
 ) {
-    let core = core_account(session.user_id());
+    let core = core_account(session.user_id()).to_string();
     let mut rooms = view.subscribe();
     let (sender, mut updates) = mpsc::unbounded_channel();
     let mut followed: HashMap<String, Active> = HashMap::new();
     let mut standing: BTreeMap<String, RoomCards> = BTreeMap::new();
     loop {
-        let rows = rooms.borrow_and_update().rooms.clone();
-        // 是不是核心的私聊以会话里的 `m.direct` 为准，不以行上的私聊字段认：行跟着每次列表重算重取，
-        // `m.direct` 还没同步到、或 Tuwunel 补状态的间隙里，同一房间在相邻两次重算里一会儿算一会儿不算，
-        // 拿它当集合的依据，订阅就跟着行抖动进出（`MatrixSession::direct_chat_rooms_with`）。
-        // 读不到就不动集合：不知道私聊名单时，进和出都没有依据，等下一轮重算再试。
-        let dm_rooms: Option<BTreeSet<String>> = match session.direct_chat_rooms_with(&core).await {
-            Ok(rooms) => Some(rooms.into_iter().map(|room| room.to_string()).collect()),
-            Err(error) => {
-                tracing::warn!("cannot read m.direct; keeping watched rooms unchanged: {error}");
-                None
-            }
-        };
-        // 进集合：行已是已加入，且 `m.direct` 把房间标给核心账号。
-        let wanted: BTreeSet<String> = dm_rooms
-            .as_ref()
-            .map(|dm_rooms| {
-                rows.iter()
-                    .filter(|row| {
-                        row.membership == RoomMembership::Joined && dm_rooms.contains(&row.room_id)
-                    })
-                    .map(|row| row.room_id.clone())
-                    .collect()
+        let wanted: BTreeSet<String> = rooms
+            .borrow_and_update()
+            .rooms
+            .iter()
+            .filter(|row| {
+                row.membership == RoomMembership::Joined
+                    && row.direct_user_id.as_deref() == Some(core.as_str())
             })
-            .unwrap_or_default();
-        // 出集合只认稳定的证据，行上的其他变化不动已跟着的房间：
-        // - `m.direct` 不再把房间标给核心：私聊真的换走了，这是收到事件才有的变化；
-        // - 行从列表里消失：列表只显示没离开的房间，消失就是离开了。
-        // 行上的成员状态不看出：Tuwunel 在加入后的第一次同步里先让事件可见、再补房间的当前状态，这中间
-        // 的行把已加入的房间错标成受邀（见 `MatrixSession::until_joined`），等下一次重算就回正。按它退订，
-        // 订阅跟着行翻转，每次都取消在飞的同步请求，进而把整个同步顶重启（#370）。
-        let gone: Vec<String> = match &dm_rooms {
-            Some(dm_rooms) => followed
-                .keys()
-                .filter(|room| {
-                    !dm_rooms.contains(*room) || !rows.iter().any(|row| &row.room_id == *room)
-                })
-                .cloned()
-                .collect(),
-            None => Vec::new(),
-        };
+            .map(|row| row.room_id.clone())
+            .collect();
+        let gone: Vec<String> = followed
+            .keys()
+            .filter(|room| !wanted.contains(*room))
+            .cloned()
+            .collect();
         for room in gone {
             followed.remove(&room);
             standing.remove(&room);
@@ -117,14 +92,14 @@ async fn follow_room(
     let room = match room_id.parse::<OwnedRoomId>() {
         Ok(room) => session.watch_room(&room).await,
         Err(error) => {
-            tracing::warn!(room = %room_id, "notification room ID isn't valid: {error}");
+            tracing::warn!(room = %room_id, "通知房间的 ID 不合法：{error}");
             return;
         }
     };
     let room = match room {
         Ok(room) => room,
         Err(error) => {
-            tracing::warn!(room = %room_id, "can't follow the notification room, so cards won't be announced: {error}");
+            tracing::warn!(room = %room_id, "跟不了通知房间，有卡片也提示不了：{error}");
             return;
         }
     };
@@ -142,7 +117,7 @@ async fn follow_room(
         if latest != newest {
             newest = latest;
             if let Err(error) = room.paginate_backwards(CARD_LOOKBACK).await {
-                tracing::warn!(room = %room_id, "can't page back through the notification room, so older cards won't be announced: {error}");
+                tracing::warn!(room = %room_id, "往回翻通知房间失败，更早的卡片提示不了：{error}");
             }
         }
         let shown = cards.view();

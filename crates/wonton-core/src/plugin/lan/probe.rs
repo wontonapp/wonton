@@ -38,12 +38,6 @@ pub struct HostNetwork {
     pub interfaces: Vec<HostInterface>,
     /// main 表里已启用的 IPv4 路由网段，不含默认路由。
     pub subnets: Vec<Ipv4Net>,
-    /// `/proc/version`：认出桌面虚拟机用。读不到为空。
-    #[serde(default)]
-    pub kernel: Option<String>,
-    /// DMI 的 `product_name` 和 `sys_vendor`：同一个用途，内核串没命中时补充。读不到为空。
-    #[serde(default)]
-    pub dmi: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,28 +155,7 @@ pub fn probe(root: &Path) -> Result<HostNetwork, String> {
     let route = root.join("proc/net/route");
     let text =
         fs::read_to_string(&route).map_err(|e| format!("cannot read {}: {e}", route.display()))?;
-    let mut network = assemble(&text, &root.join("sys/class/net"), addresses()?)?;
-    // 桌面虚拟机认不认得出只看这两个，读不到不挡检测。
-    network.kernel = read_line(&root.join("proc/version"));
-    network.dmi = dmi(root);
-    Ok(network)
-}
-
-/// 一行文本，读不到或者空的是 `None`。
-fn read_line(path: &Path) -> Option<String> {
-    let text = fs::read_to_string(path).ok()?;
-    let text = text.trim();
-    (!text.is_empty()).then(|| text.to_owned())
-}
-
-/// DMI 的型号和厂商，如 `Virtual Machine / Microsoft Corporation`。
-fn dmi(root: &Path) -> Option<String> {
-    let field = |name: &str| read_line(&root.join("sys/class/dmi/id").join(name));
-    let parts: Vec<String> = ["product_name", "sys_vendor"]
-        .into_iter()
-        .filter_map(field)
-        .collect();
-    (!parts.is_empty()).then(|| parts.join(" / "))
+    assemble(&text, &root.join("sys/class/net"), addresses()?)
 }
 
 /// 把三处读到的拼起来：地址按网卡序号归到网卡上。
@@ -201,8 +174,6 @@ pub fn assemble(
         routes: default_routes(route),
         interfaces: interfaces.into_iter().map(|(_, i)| i).collect(),
         subnets: super::route_subnets::parse(route)?,
-        kernel: None,
-        dmi: None,
     })
 }
 
@@ -376,7 +347,7 @@ mod tests {
         assert!(parse_targets("192.168.0.10:http").is_err());
     }
 
-    /// 一台 Linux 宿主（2026-11-02）的 `/proc/net/route`：有线和 Wi-Fi 各一条默认路由，另有 Docker 网桥和 Tailscale 的网段。
+    /// npchy（2026-11-02）的 `/proc/net/route`：有线和 Wi-Fi 各一条默认路由，另有 Docker 网桥和 Tailscale 的网段。
     const ROUTE: &str = "\
 Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT
 eno1\t00000000\t0100A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0
@@ -434,7 +405,7 @@ eno1\t0000A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0
             (
                 2,
                 HostAddress {
-                    ip: "192.168.0.10".parse().unwrap(),
+                    ip: "192.168.0.193".parse().unwrap(),
                     secondary: false,
                     prefix: 24,
                 },
@@ -462,34 +433,5 @@ eno1\t0000A8C0\t00000000\t0001\t0\t0\t100\t00FFFFFF\t0\t0\t0
         assert!(by_name("tailscale0").tun);
         assert!(by_name("veth1a2b").linked);
         assert!(by_name("lo").loopback);
-    }
-
-    #[test]
-    fn kernel_and_dmi_are_read_when_present() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        write(&root.join("proc/net/route"), ROUTE);
-        fs::create_dir_all(root.join("sys/class/net")).unwrap();
-        write(
-            &root.join("proc/version"),
-            "Linux version 6.10.14-linuxkit\n",
-        );
-        write(
-            &root.join("sys/class/dmi/id/product_name"),
-            "Docker Desktop\n",
-        );
-        write(&root.join("sys/class/dmi/id/sys_vendor"), "Docker Inc.\n");
-        let network = probe(root).unwrap();
-        assert_eq!(
-            network.kernel.as_deref(),
-            Some("Linux version 6.10.14-linuxkit")
-        );
-        assert_eq!(network.dmi.as_deref(), Some("Docker Desktop / Docker Inc."));
-        // 读不到时是空的，不挡检测。
-        fs::remove_file(root.join("proc/version")).unwrap();
-        fs::remove_file(root.join("sys/class/dmi/id/product_name")).unwrap();
-        let network = probe(root).unwrap();
-        assert_eq!(network.kernel, None);
-        assert_eq!(network.dmi.as_deref(), Some("Docker Inc."));
     }
 }

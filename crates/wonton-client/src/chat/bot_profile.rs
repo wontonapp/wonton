@@ -99,7 +99,7 @@ impl Bots {
 
     pub fn dismiss_problem(&self, id: &str) {
         self.view.send_modify(|view| {
-            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
+            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.plugin_id == id) {
                 bot.problem = None;
             }
         });
@@ -107,7 +107,7 @@ impl Bots {
 
     fn problem(&self, id: &str, reason: BotProfileFailure, detail: String) {
         self.view.send_modify(|view| {
-            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
+            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.plugin_id == id) {
                 bot.problem = Some(BotProfileProblem { reason, detail });
             }
         });
@@ -134,7 +134,7 @@ impl Bots {
         let api = self.plugins.api();
         let mut busy = false;
         self.view.send_modify(|view| {
-            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
+            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.plugin_id == id) {
                 busy = bot.saving;
                 if !busy {
                     bot.saving = true;
@@ -170,7 +170,7 @@ impl Bots {
             }
             let success = result.is_ok();
             bots.view.send_modify(|view| {
-                if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
+                if let Some(bot) = view.bots.iter_mut().find(|bot| bot.plugin_id == id) {
                     bot.saving = false;
                     bot.problem = result.err();
                 }
@@ -245,7 +245,7 @@ fn matrix_problem(error: Error) -> BotProfileProblem {
     let (reason, detail) = match error {
         Error::Transport(detail) => (BotProfileFailure::TransportUnavailable, detail),
         Error::NotReady(detail) => (BotProfileFailure::NotReady, detail),
-        Error::Unauthorized { errcode, message } | Error::Forbidden { errcode, message } => {
+        Error::Unauthorized { errcode, message } => {
             (BotProfileFailure::Upstream, format!("{errcode}: {message}"))
         }
         Error::Upstream(detail) | Error::InvalidInput(detail) => {
@@ -276,8 +276,6 @@ fn profile_problem(error: CoreApiError) -> BotProfileProblem {
         } => {
             let reason = match (status, kind.as_deref()) {
                 (404, _) => BotProfileFailure::NotReady,
-                // 只有主人的接口对家人的设备回 403 `permission_required`（ADR-0045）：不是网络问题，按权限缺失如实显示。
-                (403, Some("permission_required")) => BotProfileFailure::PermissionRequired,
                 (403 | 502, None) => BotProfileFailure::TransportUnavailable,
                 (400, Some("invalid_input")) => BotProfileFailure::InvalidName {
                     problem: problem

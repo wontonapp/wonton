@@ -20,21 +20,10 @@ struct WontonApp: App {
             switch launch {
             case let .ready(chat, home, plugins, appearance, navigation):
                 WontonThemeRoot(appearance: appearance.viewModel) {
-                    #if DEBUG
-                    if QualityPreviews.active {
-                        QualityPreviews.root
-                    } else {
-                        MainView(
-                            chat: chat, home: home, plugins: plugins, appearance: appearance,
-                            navigation: navigation, devWebURL: Launch.devWebURL
-                        )
-                    }
-                    #else
                     MainView(
                         chat: chat, home: home, plugins: plugins, appearance: appearance,
                         navigation: navigation, devWebURL: Launch.devWebURL
                     )
-                    #endif
                 }
                 .environmentObject(orientation)
                 .task { await appearance.observe() }
@@ -46,10 +35,8 @@ struct WontonApp: App {
                 }
             case let .failed(reason):
                 WontonThemeRoot(appearance: defaultAppearance()) {
-                    ContentUnavailableView(
-                        String(localized: .appLaunchFailed), systemImage: "exclamationmark.triangle",
-                        description: Text(reason)
-                    )
+                    ContentUnavailableView("启动失败", systemImage: "exclamationmark.triangle",
+                                           description: Text(reason))
                 }
             }
         }
@@ -78,18 +65,9 @@ private enum Launch {
         #endif
         let core: ClientCore
         do {
-            #if DEBUG
-            // UI 测试的假数据入口（见 crates/wonton-client/src/client/ui_fake.rs）：不进主界面以外的路径。
-            if ProcessInfo.processInfo.environment["WONTON_UI_FAKE"] != nil {
-                core = try ClientCore.newUiFake(dataDir: dataDirectory().path(percentEncoded: false))
-            } else {
-                core = try ClientCore(dataDir: dataDirectory().path(percentEncoded: false))
-            }
-            #else
             core = try ClientCore(dataDir: dataDirectory().path(percentEncoded: false))
-            #endif
         } catch {
-            return .failed(String(localized: .appCoreLaunchFailed(String(describing: error))))
+            return .failed("核心启动失败：\(error)")
         }
         // 赶在核心接着传上次没传完的文件之前。
         core.setFileOpener(opener: BookmarkFileOpener())
@@ -99,7 +77,7 @@ private enum Launch {
             do {
                 try core.dispatch(action: .pairHome(code: code, deviceName: UIDevice.current.name))
             } catch {
-                return .failed(String(localized: .appDevCodeRejected(String(describing: error))))
+                return .failed("开发时传入的配对码被拒绝：\(error)")
             }
         }
         #endif
@@ -115,11 +93,6 @@ private enum Launch {
         let base = try FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
         )
-        #if DEBUG
-        if let suffix = ProcessInfo.processInfo.environment["WONTON_DEV_DATA_SUFFIX"] {
-            return base.appending(path: "wonton-\(suffix)", directoryHint: .isDirectory)
-        }
-        #endif
         return base.appending(path: "wonton", directoryHint: .isDirectory)
     }
 }

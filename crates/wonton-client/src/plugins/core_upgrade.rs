@@ -3,22 +3,18 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
-use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, CoreError, CoreUpgradeCheck, CoreUpgradeCheckRequest, CoreUpgradeCompat,
-    CoreUpgradeCompatCategory, CoreUpgradeCompatDetail, CoreUpgradeFailure, CoreUpgradeOffer,
+    Action, CoreError, CoreUpgradeCheck, CoreUpgradeCheckRequest, CoreUpgradeFailure,
     CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeRequest, CoreUpgradeRun, CoreUpgradeRunState,
     CoreUpgradeStage, CoreUpgradeStatus, CoreUpgradeViewModel,
 };
 
 use super::api::{READ_TIMEOUT, SOURCE_TIMEOUT};
 use super::{POLL_INTERVAL, PluginsLink, lock};
-use crate::l10n::{CATALOG, language};
 
 const PATH: [&str; 2] = ["core", "upgrade"];
 const CHECK_PATH: [&str; 3] = ["core", "upgrade", "check"];
@@ -64,13 +60,6 @@ pub(super) struct UpgradeLocal {
 }
 
 impl UpgradeLocal {
-    /// 服务器最近报的运行版本；没取到过时为空。
-    pub(super) fn running_version(&self) -> Option<String> {
-        self.status
-            .as_ref()
-            .and_then(|status| status.current.version.clone())
-    }
-
     fn running_run(&self) -> Option<&CoreUpgradeRun> {
         self.status
             .as_ref()
@@ -106,7 +95,6 @@ impl UpgradeLocal {
             }
             _ => None,
         };
-        let compat_details = offer.as_ref().map(compat_details).unwrap_or_default();
         CoreUpgradeViewModel {
             status: self.status.clone(),
             stage: self.stage(now_ms),
@@ -114,7 +102,6 @@ impl UpgradeLocal {
                 .as_ref()
                 .is_some_and(|offer| self.skipped.as_ref() == Some(&offer.digest)),
             offer,
-            compat_details,
             refreshing: self.manual && self.follow_ups > 0,
             problem: self.problem.clone(),
         }
@@ -161,7 +148,7 @@ impl UpgradeLocal {
             CoreUpgradeRunState::Other => CoreUpgradeStage::Uncertain {
                 problem: CoreUpgradeProblem {
                     reason: CoreUpgradeFailure::Protocol,
-                    message: l10n!(CATALOG, language(), "plugins-core-upgrade-unrecognized"),
+                    message: "家里的服务器给了这个 App 不认识的结果，更新 App 后再看".to_owned(),
                 },
             },
         }
@@ -216,35 +203,25 @@ fn completed(status: &CoreUpgradeStatus, run: &CoreUpgradeRun) -> CoreUpgradeSta
     if status.current.digest.as_deref() == Some(run.to.digest.as_str()) {
         return CoreUpgradeStage::Completed { to: run.to.clone() };
     }
-    let running = status.current.digest.as_deref().map_or_else(
-        || l10n!(CATALOG, language(), "plugins-core-upgrade-unknown-digest"),
-        |digest| digest.to_owned(),
-    );
+    let running = status.current.digest.as_deref().unwrap_or("未知");
     CoreUpgradeStage::Uncertain {
         problem: CoreUpgradeProblem {
             reason: CoreUpgradeFailure::Protocol,
-            message: l10n!(
-                CATALOG,
-                language(),
-                "plugins-core-upgrade-completed-mismatch",
-                running = running,
-                target = run.to.digest.as_str()
+            message: format!(
+                "家里的服务器说升级完成了，但正在运行的不是目标版本：在运行 {running}，目标 {}",
+                run.to.digest
             ),
         },
     }
 }
 
 fn timed_out(run: &CoreUpgradeRun) -> CoreUpgradeProblem {
-    // 一条完整的话一条消息：有没有退回的线索是两句话，不拼半句。
-    let message = match &run.from.digest {
-        Some(digest) => l10n!(
-            CATALOG,
-            language(),
-            "plugins-core-upgrade-timed-out-rollback",
-            digest = digest
-        ),
-        None => l10n!(CATALOG, language(), "plugins-core-upgrade-timed-out"),
-    };
+    let mut message = "过了时限还连不上家里的服务器，不知道升级的结果。连上后这里会更新".to_owned();
+    if let Some(digest) = &run.from.digest {
+        message.push_str(&format!(
+            "。要退回旧版本，在主机上再执行一次安装命令，加上 WONTON_CORE_PIN={digest}"
+        ));
+    }
     CoreUpgradeProblem {
         reason: CoreUpgradeFailure::TimedOut,
         message,
@@ -301,7 +278,7 @@ impl PluginsLink {
         if let Err(error) = std::fs::remove_file(self.upgrade_file())
             && error.kind() != std::io::ErrorKind::NotFound
         {
-            tracing::warn!("could not remove the previous server's update record: {error}");
+            tracing::warn!("删不掉上一台服务器的升级记录：{error}");
         }
     }
 
@@ -312,7 +289,6 @@ impl PluginsLink {
             plugins.core_upgrade = view;
             changed
         });
-        self.refresh_derived();
     }
 
     /// 写不进去只影响 App 被杀后接不接得上，这次的显示不受影响。
@@ -331,7 +307,7 @@ impl PluginsLink {
                 std::fs::rename(&partial, &path)
             });
         if let Err(error) = written {
-            tracing::warn!("could not write the update record: {error}");
+            tracing::warn!("升级记录写不进去：{error}");
         }
     }
 
@@ -365,13 +341,7 @@ impl PluginsLink {
                 return;
             }
             match result {
-                Ok(status) => {
-                    let version = status.current.version.clone();
-                    let changed = local.accept(status, now_ms());
-                    drop(local);
-                    self.server_version.seed(version);
-                    changed
-                }
+                Ok(status) => local.accept(status, now_ms()),
                 Err(problem) => {
                     local.reject(problem);
                     false
@@ -387,9 +357,6 @@ impl PluginsLink {
 
     /// 只有一个在跑。退出时再发布一次：刚过时限时，要从“暂时连不上”变成“不确定”。
     fn follow_core_upgrade(self: &Arc<Self>) {
-        if self.upgrade_polling_paused.load(Ordering::SeqCst) {
-            return;
-        }
         {
             let mut local = lock(&self.upgrade);
             if local.polling || !local.live(now_ms()) {
@@ -403,7 +370,7 @@ impl PluginsLink {
                 tokio::time::sleep(POLL_INTERVAL).await;
                 let epoch = {
                     let mut local = lock(&link.upgrade);
-                    if link.upgrade_polling_paused.load(Ordering::SeqCst) || !local.live(now_ms()) {
+                    if !local.live(now_ms()) {
                         local.polling = false;
                         break;
                     }
@@ -446,7 +413,7 @@ impl PluginsLink {
                 Ok(())
             }
             _ => Err(CoreError::InvalidInput {
-                reason: l10n!(CATALOG, language(), "plugins-core-upgrade-invalid-action"),
+                reason: "不是升级服务器的操作".to_owned(),
             }),
         }
     }
@@ -477,7 +444,7 @@ impl PluginsLink {
             let mut local = lock(&self.upgrade);
             if local.requesting || local.running_run().is_some() {
                 return Err(CoreError::NotReady {
-                    reason: l10n!(CATALOG, language(), "plugins-core-upgrade-already-running"),
+                    reason: "已经在升级了".to_owned(),
                 });
             }
             local.requesting = true;
@@ -542,7 +509,7 @@ impl PluginsLink {
             let run = local.running_run().map(|run| run.id.clone());
             let (true, Some(run)) = (cancellable, run) else {
                 return Err(CoreError::NotReady {
-                    reason: l10n!(CATALOG, language(), "plugins-core-upgrade-not-cancellable"),
+                    reason: "现在不能取消".to_owned(),
                 });
             };
             local.cancel_sent = Some(run.clone());
@@ -585,62 +552,6 @@ fn start_problem(problem: CoreUpgradeProblem) -> CoreUpgradeProblem {
     }
     CoreUpgradeProblem {
         reason: problem.reason,
-        message: l10n!(
-            CATALOG,
-            language(),
-            "plugins-core-upgrade-start-uncertain",
-            reason = problem.message
-        ),
+        message: format!("不确定发起了没有，连上后再看一下：{}", problem.message),
     }
-}
-
-/// 会新失效的插件各原因一行：客户端核心按 App 的语言写（ADR-0085），壳只渲染。
-/// 没查、查了没有、查不成时不产生行。
-fn compat_details(offer: &CoreUpgradeOffer) -> Vec<CoreUpgradeCompatDetail> {
-    let CoreUpgradeOffer {
-        compat: CoreUpgradeCompat::Breaking { plugins },
-        ..
-    } = offer
-    else {
-        return Vec::new();
-    };
-    plugins
-        .iter()
-        .map(|plugin| CoreUpgradeCompatDetail {
-            id: plugin.id.clone(),
-            lines: plugin
-                .reasons
-                .iter()
-                .map(|reason| match reason.category {
-                    CoreUpgradeCompatCategory::SpecUnsupported => l10n!(
-                        CATALOG,
-                        language(),
-                        "plugins-core-upgrade-compat-spec",
-                        raw = reason.raw.as_str()
-                    ),
-                    CoreUpgradeCompatCategory::UnknownFeature => l10n!(
-                        CATALOG,
-                        language(),
-                        "plugins-core-upgrade-compat-feature",
-                        raw = reason.raw.as_str()
-                    ),
-                    CoreUpgradeCompatCategory::CapabilityMissing => l10n!(
-                        CATALOG,
-                        language(),
-                        "plugins-core-upgrade-compat-capability",
-                        raw = reason.raw.as_str()
-                    ),
-                    CoreUpgradeCompatCategory::Other if reason.raw.is_empty() => {
-                        l10n!(CATALOG, language(), "plugins-core-upgrade-compat-other")
-                    }
-                    CoreUpgradeCompatCategory::Other => l10n!(
-                        CATALOG,
-                        language(),
-                        "plugins-core-upgrade-compat-other-raw",
-                        raw = reason.raw.as_str()
-                    ),
-                })
-                .collect(),
-        })
-        .collect()
 }

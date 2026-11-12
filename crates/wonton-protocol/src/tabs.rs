@@ -74,49 +74,14 @@ pub enum TabRef {
         /// 清单 `tabs` 里的 `id`；空的是没声明 `tabs` 的插件的网页入口（`webui`）。
         page: Option<String>,
     },
-    /// 插件网站里的某一页：网页入口下的路径（含查询和 `#` 后面的部分），只认同一个插件网站。
-    /// 从正在看的页面钉上来的（[`Action::PinCurrentPage`](crate::Action::PinCurrentPage)），
-    /// 或者编辑面板里给插件填的路径。
-    PluginPath {
-        plugin_id: String,
-        path: String,
-    },
-    /// 独立 Bot 网页。选择、固定、面板、桥及媒体操作都保留这个身份，不借用插件默认页。
-    /// URL 来自同一 BotRef 的 BotView.web；没有已核实的 Ready 时不能用插件 web_url 代替。
-    Bot {
-        bot: crate::BotRef,
-        /// 空值打开清单入口；非空为同一 Bot origin 内的路径，固定当前页时使用，不存完整 URL。
-        #[serde(default)]
-        path: Option<String>,
-    },
-    /// 公网网页，只收 `https://`。手机直接访问，不经隧道：没有登录身份、桥和 `--wonton-*` 变量，
-    /// 存储和插件页面分开。
-    Url {
-        url: String,
-    },
-    /// 插件的 MCP Apps 界面（`ui://` 资源），Bot 钉上来的（ADR-0052）。核心另给宿主页，
-    /// 界面在隔离的 iframe 里，只经 MCP Apps 的 postMessage 说话。
-    UiResource {
-        plugin_id: String,
-        resource_uri: String,
-    },
-    /// 分享页与本机插件页、其他来源的同名插件分别持有网页状态；不授予主人管理操作。
-    SharedApp {
-        owner_user_id: String,
-        plugin_id: String,
-    },
 }
 
 /// 整个底栏，以及盖在主界面上的插件页。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TabsViewModel {
-    /// 主界面可呈现的页面，包含未固定的应用页；底栏仍只渲染 `items`。
-    pub pages: Vec<TabRef>,
     /// 底栏上的项，按显示顺序。
     pub items: Vec<TabItem>,
-    /// 要不要显示整条底栏：栏上除了"聊天"还有别的项才显示，只有"聊天"时聊天页铺到底。核心算，壳不自己数。
-    pub show_bar: bool,
     pub selected: TabRef,
     /// 没固定的插件页打开时盖在主界面上：有顶栏，没有底栏。
     pub overlay: Option<TabItem>,
@@ -131,24 +96,6 @@ pub struct TabsViewModel {
     pub labels: bool,
     /// 还没放到底栏上、可以加上去的页面：设置在前，然后按已装插件的顺序。
     pub candidates: Vec<TabCandidate>,
-    /// 主聊天页下拉面板里的页面，按显示顺序（ADR-0052）。空的时候壳画大加号。
-    #[serde(default)]
-    pub panel: Vec<crate::PanelItem>,
-    /// 还没放进主面板、可以放进去的页面：已装插件的页面，去掉已经在面板里的。
-    /// 插件里的某一页和公网网页不走这里：钉当前页（[`Action::PinCurrentPage`](crate::Action::PinCurrentPage)）
-    /// 或在编辑面板里填。
-    #[serde(default)]
-    pub panel_candidates: Vec<TabCandidate>,
-    /// 主面板上次看的那一页（本机记住，不同步），下次拉开还是它。没记住时为 `None`，壳从第一页开。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub panel_selected: Option<TabRef>,
-    /// 每个 Bot 往主面板钉页的同意（服务器上的）；设置里按它显示和收回。
-    #[serde(default)]
-    pub bot_pin_consents: Vec<crate::BotPinOwner>,
-    /// 插件页在问摄像头和麦克风：壳画成平台风格的弹窗（允许 / 不允许）。一次只有一张，
-    /// 页面关掉或答完就清；决定按插件记在本机（[`Action::SetPluginMediaPermission`](crate::Action::SetPluginMediaPermission)）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub media_prompt: Option<TabMediaPrompt>,
 }
 
 /// 底栏上的一项。
@@ -156,7 +103,7 @@ pub struct TabsViewModel {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TabItem {
     pub tab: TabRef,
-    /// 能从栏上拿掉；聊天不能。
+    /// 能从栏上拿掉；聊天和应用不能。
     pub removable: bool,
     /// 图标上要不要画角标：插件页出了问题，或者设置里有要处理的事（核心有新版本）。
     pub badge: bool,
@@ -204,11 +151,6 @@ pub struct TabPage {
     pub fullscreen: bool,
     /// 页面要重新加载的计数：变了壳就重新加载（重试、升级完、连上后）。
     pub reload: u64,
-    /// 这个页面不在 App 里加载，交给系统浏览器：它要跨源隔离，这个平台的 WebView 给不了（ADR-0033）。
-    /// 壳用 `ClientCore::plugin_browser_url` 换浏览器打开的地址。
-    #[serde(default)]
-    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
-    pub opens_in_browser: bool,
 }
 
 /// 底栏图标的两种画法。
@@ -253,7 +195,6 @@ pub enum TabState {
         status: Option<u16>,
     },
     /// 核心给的插件状态这个 App 不认识，不知道页面能不能用。
-    #[serde(other)]
     Unknown,
 }
 
@@ -278,18 +219,6 @@ pub struct TabsProblem {
     pub message: String,
 }
 
-/// 插件页在问摄像头和麦克风。发请求的必须是这个页面自己的源，页面里嵌的其他源（如第三方 iframe）直接拒，
-/// 不出这张询问。要不要摄像头、要不要麦克风分开给，壳按它写询问的文字。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct TabMediaPrompt {
-    pub plugin_id: String,
-    /// 插件的显示名；装着列表里没有时是插件 ID。
-    pub plugin_title: String,
-    pub camera: bool,
-    pub microphone: bool,
-}
-
 #[cfg(test)]
 mod tests {
     use serde::Serialize;
@@ -310,8 +239,10 @@ mod tests {
         assert_eq!(serde_json::from_value::<T>(json).unwrap(), value);
     }
 
-    fn sample_page(state: TabState, icon: TabIcon) -> TabPage {
-        TabPage {
+    #[test]
+    fn the_view_model_round_trips_through_json() {
+        let image = |path: &str| PluginImage { path: path.into() };
+        let plugin_page = |state, icon| TabPage {
             title: "动态".into(),
             icon,
             url: Some("http://app-example-feed.wonton.localhost:8480/feed".into()),
@@ -322,28 +253,13 @@ mod tests {
             opens_fullscreen: true,
             fullscreen: true,
             reload: 2,
-            opens_in_browser: true,
-        }
-    }
-
-    fn sample_item(state: TabState, icon: TabIcon) -> TabItem {
-        TabItem {
-            tab: page(),
-            removable: true,
-            badge: true,
-            page: Some(sample_page(state, icon)),
-        }
-    }
-
-    #[test]
-    fn the_view_model_round_trips_through_json() {
-        let image = |path: &str| PluginImage { path: path.into() };
+        };
         let monochrome = TabIcon::Monochrome {
             icon: image("/_wonton/api/images/a.png"),
             selected: Some(image("/_wonton/api/images/b.png")),
         };
         let mut without_dimmed =
-            serde_json::to_value(sample_page(TabState::Ready, monochrome.clone())).unwrap();
+            serde_json::to_value(plugin_page(TabState::Ready, monochrome.clone())).unwrap();
         without_dimmed.as_object_mut().unwrap().remove("dimmed");
         assert!(
             !serde_json::from_value::<TabPage>(without_dimmed)
@@ -379,22 +295,16 @@ mod tests {
             },
             TabState::Unknown,
         ] {
-            items.push(sample_item(state, monochrome.clone()));
+            items.push(TabItem {
+                tab: page(),
+                removable: true,
+                badge: true,
+                page: Some(plugin_page(state, monochrome.clone())),
+            });
         }
-        let overlay = sample_item(TabState::Ready, colored.clone());
-        let panel = vec![crate::PanelItem {
-            tab: page(),
-            page: sample_page(TabState::Ready, colored),
-            attention: true,
-            source: crate::PanelSource::User,
-            movable: true,
-        }];
         round_trip(TabsViewModel {
-            pages: items.iter().map(|item| item.tab.clone()).collect(),
             items,
-            show_bar: true,
             selected: page(),
-            bot_pin_consents: Vec::new(),
             overlay: Some(TabItem {
                 tab: TabRef::Plugin {
                     plugin_id: "app.example.other".into(),
@@ -402,18 +312,12 @@ mod tests {
                 },
                 removable: true,
                 badge: false,
-                page: Some(overlay.page.expect("overlay page")),
+                page: Some(plugin_page(TabState::Ready, colored)),
             }),
             full: true,
             uninstalled: vec!["相册".into()],
             problem: Some(TabsProblem {
                 message: "读不了 tabs.json".into(),
-            }),
-            media_prompt: Some(TabMediaPrompt {
-                plugin_id: "app.example.feed".into(),
-                plugin_title: "动态".into(),
-                camera: true,
-                microphone: true,
             }),
             labels: false,
             candidates: vec![
@@ -430,9 +334,6 @@ mod tests {
                     }),
                 },
             ],
-            panel,
-            panel_candidates: vec![],
-            panel_selected: Some(page()),
         });
     }
 
@@ -459,53 +360,13 @@ mod tests {
             },
             Action::EnterFullscreen { tab: page() },
             Action::ExitFullscreen { tab: page() },
-            Action::ReloadTab {
-                page: crate::PlacedTab::Bar { tab: page() },
-            },
+            Action::ReloadTab { tab: page() },
             Action::TabLoadFailed {
-                page: crate::PlacedTab::Panel {
-                    scope: crate::PanelScope::Main,
-                    tab: page(),
-                },
-                status: Some(503),
+                tab: page(),
+                status: None,
             },
-            Action::TabLoadSucceeded {
-                page: crate::PlacedTab::Bar { tab: page() },
-            },
+            Action::TabLoadSucceeded { tab: page() },
             Action::DismissUninstalledTabs,
-            Action::AddPanelPage {
-                scope: crate::PanelScope::Main,
-                tab: crate::TabRef::Url {
-                    url: "https://example.com/weather".into(),
-                },
-            },
-            Action::RemovePanelPage {
-                scope: crate::PanelScope::Room {
-                    room_id: "!room:home.example".into(),
-                },
-                tab: page(),
-            },
-            Action::MovePanelPage {
-                scope: crate::PanelScope::Main,
-                tab: page(),
-                index: 1,
-            },
-            Action::SelectPanelPage {
-                scope: crate::PanelScope::Main,
-                tab: page(),
-            },
-            Action::PinCurrentPage {
-                url: "https://app.example.wonton.localhost/stats".into(),
-                title: Some("本月统计".into()),
-                to: crate::PinTarget::Panel {
-                    scope: crate::PanelScope::Main,
-                },
-                replacing: None,
-            },
-            Action::SetRoomEntryBlocked {
-                room_id: "!room:home.example".into(),
-                blocked: true,
-            },
         ] {
             round_trip(action);
         }

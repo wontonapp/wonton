@@ -19,7 +19,7 @@ pub struct FileId(String);
 
 /// 不是合法的文件编号。
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("not a valid file id")]
+#[error("不是合法的文件编号")]
 pub struct InvalidFileId;
 
 impl FileId {
@@ -87,22 +87,6 @@ impl From<FileId> for String {
 // 壳交回来的编号也要校验：它会拼进 `/_wonton/files/{id}` 这样的路径。
 #[cfg(feature = "uniffi")]
 uniffi::custom_type!(FileId, String);
-
-/// 一次发送里的文件发成的那条消息的正文（ADR-0094 第 2 节）：主人的字，空一行，每个文件一行链接，按附件区的顺序。没有字时只有链接。
-/// 收到的一方用 [`extract_file_links`] 拆回文字和文件。
-pub fn files_message_body(text: &str, files: &[FileId]) -> String {
-    let links = files
-        .iter()
-        .map(FileId::link)
-        .collect::<Vec<_>>()
-        .join("\n");
-    let text = text.trim();
-    match (text.is_empty(), links.is_empty()) {
-        (true, _) => links,
-        (false, true) => text.to_owned(),
-        (false, false) => format!("{text}\n\n{links}"),
-    }
-}
 
 /// [`extract_file_links`] 的结果。
 #[derive(Clone, Debug, PartialEq, Eq)]

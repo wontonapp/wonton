@@ -9,7 +9,7 @@ mod notification;
 pub(crate) mod record;
 mod registration;
 
-pub(crate) use notification::{DirectConfirmation, Payload, push_notification};
+pub(crate) use notification::{Payload, push_notification};
 
 use std::path::{Path, PathBuf};
 
@@ -19,7 +19,6 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
-use wonton_l10n::l10n;
 use wonton_matrix::PusherConfig;
 use wonton_protocol::{
     ChatAccount, ChatFailure, ChatViewModel, CoreError, PushEndpoint, PushMethod, PushStatus,
@@ -27,12 +26,11 @@ use wonton_protocol::{
 
 use crate::chat::{ChatLink, failure};
 use crate::home::HomeLink;
-use crate::l10n::{CATALOG, language};
 
 /// Matrix pusher 的 `app_id`。推送代理按登记找设备，不靠它区分平台，所以各端共用一个。
 const APP_ID: &str = "app.wonton";
 const APP_NAME: &str = "Wonton";
-/// 连接信息里没有设备名时 pusher 列表里的名字，和 Matrix 设备名一致（`ConnectHome` 给的连接信息没有）。
+/// 本设备在 pusher 列表里的名字，和 Matrix 设备名一致。
 const DEVICE_NAME: &str = "Wonton App";
 const LANG: &str = "zh-CN";
 
@@ -152,23 +150,13 @@ impl PushLink {
                     pushkey: registration.pushkey.clone(),
                     gateway_url: registration.gateway_url,
                     app_display_name: APP_NAME.to_owned(),
-                    device_display_name: self
-                        .home
-                        .device_name()
-                        .unwrap_or_else(|| DEVICE_NAME.to_owned()),
+                    device_display_name: DEVICE_NAME.to_owned(),
                     lang: LANG.to_owned(),
                 };
-                session.set_pusher(&pusher).await.map_err(|e| {
-                    (
-                        failure(&e),
-                        l10n!(
-                            CATALOG,
-                            language(),
-                            "push-matrix-pusher-failed",
-                            reason = e.to_string()
-                        ),
-                    )
-                })?;
+                session
+                    .set_pusher(&pusher)
+                    .await
+                    .map_err(|e| (failure(&e), format!("在 Matrix 上注册 pusher 失败：{e}")))?;
                 Ok::<_, (ChatFailure, String)>(registration.pushkey)
             }
             .await;
@@ -181,12 +169,12 @@ impl PushLink {
                     state.pushkey = Some(pushkey);
                     drop(state);
                     record::save(&self.dir, &endpoint);
-                    tracing::info!("push registered");
+                    tracing::info!("推送已登记");
                     self.chat.set_push(PushStatus::Registered);
                 }
                 Err((reason, message)) => {
                     drop(state);
-                    tracing::info!(%message, "push registration failed");
+                    tracing::info!("推送登记失败：{message}");
                     self.chat.set_push(PushStatus::Failed { reason, message });
                 }
             }
@@ -202,7 +190,7 @@ impl PushLink {
         let session = match self.wait_session().await {
             Ok(session) => session,
             Err((_, message)) => {
-                tracing::info!(%message, "could not unregister push");
+                tracing::info!("没能取消推送登记：{message}");
                 return;
             }
         };
@@ -218,7 +206,7 @@ impl PushLink {
         if let Some(pushkey) = pushkey
             && let Err(error) = session.delete_pusher(APP_ID, &pushkey).await
         {
-            tracing::info!(%error, "could not delete the pusher");
+            tracing::info!("删除 pusher 失败：{error}");
         }
     }
 }
@@ -260,25 +248,25 @@ async fn follow_method(push: Weak<PushLink>, mut method: watch::Receiver<PushMet
 /// 推送地址是 http 或 https；`p256dh` 是 65 字节的未压缩 P-256 点，`auth` 是 16 字节，都是 base64url。曲线上的点
 /// 由家里的核心再校验一次。
 fn validate(endpoint: &PushEndpoint) -> Result<(), CoreError> {
-    let invalid = |reason: String| CoreError::InvalidInput { reason };
-    let url = url::Url::parse(&endpoint.url).map_err(|e| {
-        invalid(l10n!(
-            CATALOG,
-            language(),
-            "push-endpoint-invalid-url",
-            reason = e.to_string()
-        ))
-    })?;
+    let invalid = |reason: &str| CoreError::InvalidInput {
+        reason: reason.to_owned(),
+    };
+    let url = url::Url::parse(&endpoint.url)
+        .map_err(|e| invalid(&format!("推送地址不是合法的 URL：{e}")))?;
     if !matches!(url.scheme(), "http" | "https") {
-        return Err(invalid(l10n!(CATALOG, language(), "push-endpoint-scheme")));
+        return Err(invalid("推送地址必须是 http 或 https 地址"));
     }
     let decode = |value: &str| URL_SAFE_NO_PAD.decode(value.trim_end_matches('='));
     match decode(&endpoint.p256dh) {
         Ok(key) if key.len() == 65 && key[0] == 0x04 => {}
-        _ => return Err(invalid(l10n!(CATALOG, language(), "push-endpoint-p256dh"))),
+        _ => {
+            return Err(invalid(
+                "p256dh 应为 65 字节的未压缩 P-256 公钥（base64url）",
+            ));
+        }
     }
     match decode(endpoint.auth.expose()) {
         Ok(auth) if auth.len() == 16 => Ok(()),
-        _ => Err(invalid(l10n!(CATALOG, language(), "push-endpoint-auth"))),
+        _ => Err(invalid("auth 应为 16 字节（base64url）")),
     }
 }

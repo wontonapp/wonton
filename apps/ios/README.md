@@ -6,26 +6,18 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
 ## 结构
 
 - `Wonton/`：App 源码。`ChatModel`、`HomeModel`、`PluginsModel` 持有核心推来的 ViewModel 并转发操作，`TimelineModel` 按顺序
-  应用时间线的增量，视图只渲染。`PhotoUpload` 把相册里选的照片转成要发的图片（规则见 ADR-0005），消息图片的全屏查看在
-  `ImageViewer`：缩放、下滑关闭、存相册和分享都调系统能力。`FilesModel`、`FileCardView`、`TransfersStrip` 和 `BookmarkFileOpener` 是文件的选择、卡片、进度和打开（ADR-0020）。`TabsModel` 持有核心底栏状态；`TabPageView` 和 `TabWebSession`
-  共用固定页、覆盖页的 WKWebView 容器，HTTP CONNECT 代理带会话凭据，插件网页经隧道打开。`ChatPanelHost` 是聊天页和房间的下拉面板（ADR-0052）：两级、
-  跟手、翻页的小圆点，页面按全页大小放着不缩放，面板里的 WKWebView 和底栏的各一份；`PanelEditor` 增删面板里的页面。`PairingView` 是扫码配对页，
+  应用时间线的增量，视图只渲染。`PhotoUpload` 把相册里选的照片转成要发的图片（规则见 ADR-0005）。`FilesModel`、`FileCardView`、`TransfersStrip` 和 `BookmarkFileOpener` 是文件的选择、卡片、进度和打开（ADR-0020）。`TabsModel` 持有核心底栏状态；`TabPageView` 和 `TabWebSession`
+  共用固定页、覆盖页的 WKWebView 容器，HTTP CONNECT 代理带会话凭据，插件网页经隧道打开。`PairingView` 是扫码配对页，
   `QRScannerView` 用 VisionKit 的 `DataScannerViewController` 识别二维码；`InviteView` 是“添加设备”，用 Core Image
-  把核心要来的配对码画成二维码。`HomeView` 是侧边栏进入的“应用”页，商店入口独立放在已装插件网格上方，有更新时显示数量；连接和“添加设备”在设置的“家里的服务器”里。`StoreView`、
+  把核心要来的配对码画成二维码。`HomeView` 是底栏的“应用”页，商店入口独立放在已装插件网格上方，有更新时显示数量；连接和“添加设备”在设置的“家里的服务器”里。`StoreView`、
   `PluginDetailView`、`InstallConfirmView` 是商店、详情和安装确认页（ADR-0017）。`SettingsModel` 订阅核心的设置首页，`SettingsView` 按核心的分组渲染，外观、通知和关于在二级页（ADR-0028）；`NotificationSettingsView` 只提供系统通知设置入口并说明这个版本收不到推送，不放无效的类别开关。`EgressSettingsView` 是“家里的服务器”里的出网代理设置，也放着插件网页局域网端口的开关（ADR-0023）。`CoreUpgradeView` 是“家里的服务器”里的升级服务器（ADR-0025）。
   “家里的服务器”顶部始终显示服务器列表和“添加服务器”，当前这台带勾，点另一台切换。长按可改名或移除；移除前确认只删手机上的聊天记录和文件，不影响服务器。添加时配对页左上角可取消，首次配对不显示取消（ADR-0042）。
   默认名由壳按核心给的固定编号和 App 语言显示，自定义名字原样显示；改名预填显示名，只在主人保存时写回（ADR-0043）。
-  配对页和服务器列表的“添加服务器”下面是“用 Matrix 账号登录”（`MatrixLoginView`，ADR-0051），没有服务器的人从配对页进：按核心发现的方式给浏览器登录或密码表单，浏览器登录用
-  `ASWebAuthenticationSession`，回调地址取核心的 `oidcRedirectUri`。`project.yml` 也注册了它的 scheme，回调从面板以外的路径回来时同样交给核心核对。
 - `WontonClient/`：Rust 核心的 Swift 包。`build/WontonClientFFI.xcframework` 和
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
-  等几行胶水代码。Rust 静态库依赖的系统框架由包声明，App 和测试目标不各自补链接选项。
+  等几行胶水代码。
 - `project.yml`：XcodeGen 工程描述。`Wonton.xcodeproj` 和 `Wonton/Info.plist` 由它生成，不提交。
 - `scripts/build-core.sh`：编译 Rust 核心、生成 XCFramework 和 Swift 绑定。
-
-插件的可选权限在安装预览中本地选择，升级沿用核心预览的开关；提交包含最高风险或未知风险权限时另行确认主机控制权。
-详情开关只显示服务器返回的状态，打开最高风险或未知风险需两步确认，关闭需一次确认；失败可重试原目标。
-应用图标上的主机权限锁标记独立于更新、故障标记，点锁打开详情（ADR-0057）。
 
 固定入口在插件详情、应用长按菜单、安装完成页和设置的“底栏”页。底栏设置只列当前项，可拖动排序、移除，“添加更多”进入使用插件自身图标的候选页；“显示文字”开关可让底栏只显示图标。底栏顺序、上限和页面状态只由核心决定（ADR-0033）；
 壳在首次选中后保留 WKWebView，取消固定或关闭未固定页面时释放。桥的 `ui/message` 只把文字追加到用户选的聊天草稿，
@@ -48,8 +40,7 @@ WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期�
 
 快捷指令、Siri 和 Spotlight 的入口在 `Wonton/Intents/`，共用 App 启动时创建的核心和导航模型。
 `AppNavigation` 与 `MainView+Navigation` 接收系统链接；链接编解码遵循 [ADR-0041](../../docs/adr/0041-app-links-and-shortcuts.md)。
-未配对或引导未完成时忽略导航链接，带文字的“问 Bot”明确向 Siri 报错，不发送消息；配对链接的确认边界见
-[ADR-0009](../../docs/adr/0009-identity-pairing-sso.md#接口扫码配对m1)。扫码和粘贴仍走 `PairingView`。
+未配对或引导未完成时忽略导航链接，带文字的“问 Bot”明确向 Siri 报错，不发送消息；扫码和粘贴配对码仍走 `PairingView`。
 已配对设备冷启动时先等核心恢复引导状态，再判断是否导航；“问 Bot”在核心接受操作后打开私聊，
 建房、接受邀请和发送在核心后台执行，后续失败由聊天页按原有错误类别显示。
 
@@ -66,12 +57,6 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 ```bash
 apps/ios/scripts/build-core.sh
 ```
-
-版本号在跑 `build-core.sh` 时由仓库根的 `scripts/app-version.sh` 写进不提交的 `Version.xcconfig`（XcodeGen
-生成工程时校验这个文件存在，所以要先生成；规则和 Android 共用，见 `apps/compose/README.md` 的「构建」）：
-**发版跑 `build-core.sh` 时显式传 `WONTON_VERSION=0.2.4`**（与 Android 同一要求，不传时取检出里最近的
-`vX.Y.Z` tag）；构建时给 `xcodebuild` 显式传 `MARKETING_VERSION=0.2.4 CURRENT_PROJECT_VERSION=2004` 也能
-覆盖。
 
 ```bash
 xcodegen generate --spec apps/ios/project.yml
@@ -123,27 +108,5 @@ swiftlint lint --strict --config apps/ios/.swiftlint.yml apps/ios
 ```
 
 函数体超过 100 行即报错。CI 见 `.github/workflows/ios.yml`。
-
-配对链接回归在 `WontonTests/PairingLinkTests`（真实核心，临时数据目录）和 `WontonUITests/PairingLinkUITests`。
-界面用例通过 Debug 环境变量 `WONTON_DEV_DATA_SUFFIX` 使用独立的 App 数据目录，不读取或改动其他用例的配对信息。
-
-```bash
-xcodebuild test -project apps/ios/Wonton.xcodeproj -scheme Wonton \
-  -destination 'platform=iOS Simulator,name=<模拟器名称>' \
-  -only-testing:WontonTests/PairingLinkTests \
-  -only-testing:WontonUITests/PairingLinkUITests CODE_SIGNING_ALLOWED=NO
-```
-
-要后端的界面用例（好友、粘贴、安装行、图片查看、Bot 资料）用 `apps/ios/scripts/ui-test.sh` 跑：配对码只经环境变量
-`PAIRING_CODE` 传进去，没给就 XCTSkip，给了但不像配对码就直接失败。
-
-```bash
-PAIRING_CODE="$(deploy/dev/core/dev.sh pair <地址> | tail -n 1)" apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
-  -only-testing:WontonUITests/BotProfileUITests
-```
-
-界面截图回归在 `WontonTests/SnapshotTests`：真实界面配固定假数据（同目录的 `SnapshotFixtures`，Debug 专用），逐像素比较
-`WontonTests/__Snapshots__/` 下的参考图。参考图绑定模拟器型号和系统版本，语言、地区和时区由 scheme 钉住；怎么重录、
-失败产物在哪见 [`.github/workflows/README.md`](../../.github/workflows/README.md)。新增截图先挑有代表性的界面，不逐页全录。
 
 Bundle ID `app.wonton.ios` 是临时的，上架前确定正式的。

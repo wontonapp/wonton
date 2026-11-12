@@ -1,12 +1,10 @@
 use serde_json::{Map, Value, json};
-use wonton_l10n::l10n;
 use wonton_protocol::{
     AppearanceViewModel, CoreError, FontStyle, TabDisplayChoice, TabLayout, TabPage,
 };
 
 use super::tokens::{COLOR_VARIABLES, FONT_VARIABLE, RADIUS_VARIABLES};
 use super::{TabEnvironment, TabPlatform};
-use crate::l10n::{CATALOG, language};
 
 pub(super) fn payload(
     appearance: &AppearanceViewModel,
@@ -106,7 +104,7 @@ fn validate_environment(environment: &TabEnvironment) -> Result<(), CoreError> {
     .any(|value| !value.is_finite() || *value < 0.0)
     {
         return Err(CoreError::InvalidInput {
-            reason: l10n!(CATALOG, language(), "tabs-bridge-invalid-environment"),
+            reason: "页面栏高和安全区必须是有限的非负数".to_owned(),
         });
     }
     Ok(())

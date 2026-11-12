@@ -3,7 +3,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
@@ -19,11 +19,6 @@ use tokio::{
 
 use super::*;
 
-#[path = "acp_test_support/driver.rs"]
-mod driver;
-#[path = "acp_test_login.rs"]
-mod login;
-
 #[derive(Clone)]
 pub(crate) enum Scenario {
     Normal,
@@ -38,35 +33,15 @@ pub(crate) enum Scenario {
     PromptTransportError,
     PromptUpstreamError,
     PromptErrorData,
-    /// `session/new` 应答不带 `modes` 和 `configOptions`，也不认 `session/set_mode`（dsh 0.2.2 的实测行为）。
-    NoModes,
-    /// `session/prompt` 不自动应答，测试用 [`FakeAgent::respond_prompt`] 控制什么时候、回什么。
-    Manual,
-    /// Manual 的变体：`availableModes` 里多一个 `bypassPermissions`，测桥不跟 Agent 报出的危险档位。
-    DangerousModes,
-    /// 同 [`Scenario::Manual`]，另在 `promptCapabilities` 里声明能收 `image` 块。
-    ManualImages,
-    /// 同 [`Scenario::Manual`]，但不声明 `_meta.steering`（Kimi、Qwen 这类不能插话的 Agent）。
-    ManualNoSteer,
-}
-
-/// Manual 场景里挂起的一轮：应答的 id、会话、完整内容块，和写回用的连接。
-pub(crate) struct PendingPrompt {
-    id: Value,
-    session: String,
-    text: String,
-    blocks: Value,
-    writer: Arc<Mutex<OwnedWriteHalf>>,
 }
 
 pub(crate) struct FakeAgent {
     _dir: TempDir,
     pub(crate) socket: PathBuf,
-    commands: broadcast::Sender<Value>,
+    requests: Arc<Mutex<Vec<Value>>>,
+    responses: Arc<Mutex<Vec<Value>>>,
     task: JoinHandle<()>,
     handlers: Arc<Mutex<Vec<JoinHandle<()>>>>,
-    link: Arc<Link>,
-    next_request: Arc<AtomicU64>,
 }
 
 impl FakeAgent {
@@ -74,9 +49,10 @@ impl FakeAgent {
         let dir = tempfile::tempdir().unwrap();
         let socket = dir.path().join("acp.sock");
         let listener = UnixListener::bind(&socket).unwrap();
-
-        let (commands, _) = broadcast::channel(8);
-        let connection_commands = commands.clone();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = requests.clone();
+        let responses = Arc::new(Mutex::new(Vec::new()));
+        let recorded_responses = responses.clone();
         let logged_in = Arc::new(AtomicBool::new(false));
         let login_logged_in = logged_in.clone();
         let mut login_listener = None;
@@ -86,28 +62,20 @@ impl FakeAgent {
         let task_logged_in = logged_in.clone();
         let handlers: Arc<Mutex<Vec<JoinHandle<()>>>> = Arc::new(Mutex::new(Vec::new()));
         let recorded_handlers = handlers.clone();
-        let link = Arc::new(Link {
-            requests: Arc::new(Mutex::new(Vec::new())),
-            responses: Arc::new(Mutex::new(Vec::new())),
-            incoming: Arc::new(Mutex::new(Vec::new())),
-            pending: Arc::new(Mutex::new(Vec::new())),
-            writer: Mutex::new(None),
-            steer_outcomes: Mutex::new(std::collections::VecDeque::new()),
-        });
-        let task_link = link.clone();
         let task = tokio::spawn(async move {
             loop {
                 let Ok((stream, _)) = listener.accept().await else {
                     return;
                 };
+                let recorded = recorded.clone();
                 let scenario = scenario.clone();
                 let logged_in = task_logged_in.clone();
                 let handle = tokio::spawn(serve_connection(
                     stream,
-                    connection_commands.clone(),
+                    recorded,
+                    recorded_responses.clone(),
                     scenario,
                     logged_in,
-                    task_link.clone(),
                 ));
                 recorded_handlers.lock().await.push(handle);
             }
@@ -117,235 +85,25 @@ impl FakeAgent {
                 let Ok((stream, _)) = listener.accept().await else {
                     return;
                 };
-                login::serve_terminal_login(stream, login_logged_in).await;
+                serve_terminal_login(stream, login_logged_in).await;
             });
         }
         Self {
             _dir: dir,
             socket,
-            commands,
+            requests,
+            responses,
             task,
             handlers,
-            link,
-            next_request: Arc::new(AtomicU64::new(100_000)),
         }
     }
 
     pub(crate) async fn requests(&self) -> Vec<Value> {
-        self.link.requests.lock().await.clone()
+        self.requests.lock().await.clone()
     }
 
     pub(crate) async fn responses(&self) -> Vec<Value> {
-        self.link.responses.lock().await.clone()
-    }
-
-    /// 桥发来的每条消息，按到达顺序。
-    pub(crate) async fn incoming(&self) -> Vec<Value> {
-        self.link.incoming.lock().await.clone()
-    }
-
-    /// 让每条连接的 Agent 发一次 `available_commands_update`。
-    pub(crate) fn send_commands(&self, commands: Value) {
-        let _ = self.commands.send(commands);
-    }
-
-    /// 让 Agent 向桥发任意一帧：契约测试用官方类型序列化出的报文从这条路进真实 `read_loop`。
-    pub(crate) async fn send_agent_frame(&self, frame: Value) {
-        let writer = self
-            .link
-            .writer
-            .lock()
-            .await
-            .clone()
-            .expect("还没有 ACP 连接");
-        send(&writer, frame).await;
-    }
-
-    /// 还有几个挂起没答的轮次。
-    pub(crate) fn pending_count(&self) -> usize {
-        self.link
-            .pending
-            .try_lock()
-            .map(|pending| pending.len())
-            .unwrap_or(0)
-    }
-
-    /// 这个权限请求 id 收到的应答。
-    pub(crate) async fn responses_for(&self, id: &Value) -> Vec<Value> {
-        self.link
-            .responses
-            .lock()
-            .await
-            .iter()
-            .filter(|response| &response["id"] == id)
-            .cloned()
-            .collect()
-    }
-
-    /// Manual 场景挂起的各轮：会话 ID 和发给 Agent 的原文（第一个文字块）。
-    pub(crate) async fn prompts(&self) -> Vec<(String, String)> {
-        self.link
-            .pending
-            .lock()
-            .await
-            .iter()
-            .map(|pending| (pending.session.clone(), pending.text.clone()))
-            .collect()
-    }
-
-    /// Manual 场景挂起的各轮：会话 ID 和完整内容块数组（附件轮有多个块）。
-    pub(crate) async fn prompt_blocks(&self) -> Vec<(String, Value)> {
-        self.link
-            .pending
-            .lock()
-            .await
-            .iter()
-            .map(|pending| (pending.session.clone(), pending.blocks.clone()))
-            .collect()
-    }
-
-    /// 让第 `index` 个挂起的一轮回复 `text` 并结束。
-    pub(crate) async fn respond_prompt(&self, index: usize, text: &str) -> String {
-        let pending = {
-            let mut pending = self.link.pending.lock().await;
-            pending.remove(index)
-        };
-        notify(
-            &pending.writer,
-            &pending.session,
-            &format!("m-{index}"),
-            text,
-        )
-        .await;
-        reply(
-            &pending.writer,
-            &pending.id,
-            json!({"stopReason": "end_turn"}),
-        )
-        .await;
-        pending.session
-    }
-
-    /// 发一条工具调用通知。
-    pub(crate) async fn tool_call(&self, session: &str, tool_call_id: &str, path: &str) {
-        self.tool_update(session, "tool_call", tool_call_id, "edit", path)
-            .await;
-    }
-
-    pub(crate) async fn tool_update(
-        &self,
-        session: &str,
-        update: &str,
-        tool_call_id: &str,
-        kind: &str,
-        path: &str,
-    ) {
-        let writer = self
-            .link
-            .writer
-            .lock()
-            .await
-            .clone()
-            .expect("还没有 ACP 连接");
-        send(
-            &writer,
-            json!({
-                "jsonrpc": "2.0",
-                "method": "session/update",
-                "params": {
-                    "sessionId": session,
-                    "update": {
-                        "sessionUpdate": update,
-                        "toolCallId": tool_call_id,
-                        "title": "改文件",
-                        "kind": kind,
-                        "locations": [{"path": path}]
-                    }
-                }
-            }),
-        )
-        .await;
-    }
-
-    /// 发一条 `_wonton/task` 任务事件（编排器扩展，ADR-0059）。
-    pub(crate) async fn task(
-        &self,
-        session: &str,
-        task_id: &str,
-        title: &str,
-        state: &str,
-        task_session: &str,
-    ) {
-        let writer = self
-            .link
-            .writer
-            .lock()
-            .await
-            .clone()
-            .expect("还没有 ACP 连接");
-        send(
-            &writer,
-            json!({
-                "jsonrpc": "2.0",
-                "method": "_wonton/task",
-                "params": {
-                    "sessionId": session,
-                    "task": {
-                        "id": task_id,
-                        "title": title,
-                        "state": state,
-                        "taskSessionId": task_session
-                    }
-                }
-            }),
-        )
-        .await;
-    }
-
-    /// 发一段原始字节，不补换行（超长帧测试用：超长行后面再跟正常帧）。
-    pub(crate) async fn send_raw(&self, bytes: &[u8]) {
-        let writer = self
-            .link
-            .writer
-            .lock()
-            .await
-            .clone()
-            .expect("还没有 ACP 连接");
-        let mut writer = writer.lock().await;
-        writer.write_all(bytes).await.unwrap();
-        writer.flush().await.unwrap();
-    }
-
-    /// Agent 发一次改文件的权限请求，返回请求 id。
-    pub(crate) async fn ask_permission(&self, session: &str, path: &str) -> Value {
-        let id = json!(self.next_request.fetch_add(1, Ordering::Relaxed));
-        let writer = self
-            .link
-            .writer
-            .lock()
-            .await
-            .clone()
-            .expect("还没有 ACP 连接");
-        request(
-            &writer,
-            &id,
-            "session/request_permission",
-            json!({
-                "sessionId": session,
-                "toolCall": {
-                    "toolCallId": "call-perm",
-                    "title": format!("改 {path}"),
-                    "kind": "edit",
-                    "locations": [{"path": path}]
-                },
-                "options": [
-                    {"optionId": "allow_once", "kind": "allow_once", "name": "允许"},
-                    {"optionId": "reject_once", "kind": "reject_once", "name": "拒绝"}
-                ]
-            }),
-        )
-        .await;
-        id
+        self.responses.lock().await.clone()
     }
 
     pub(crate) async fn finish(self) {
@@ -368,17 +126,11 @@ fn initialize_result(scenario: &Scenario) -> Value {
             } else {
                 json!({"close": {}})
             },
-            "mcpCapabilities": {"http": {}},
-            "promptCapabilities": if matches!(scenario, Scenario::ManualImages) {
-                json!({"image": true})
-            } else {
-                json!({})
-            }
+            "mcpCapabilities": {"http": {}}
         },
         "_meta": {"steering": {"supported": true}}
     });
     match scenario {
-        Scenario::ManualNoSteer => result["_meta"] = json!({}),
         Scenario::LoginUrl => {
             result["authMethods"] = json!([
                 {"id": "url-method", "name": "URL 登录"}
@@ -406,93 +158,32 @@ fn initialize_result(scenario: &Scenario) -> Value {
     result
 }
 
-/// 一条连接上测试共用的东西：记录、挂起的轮次和给 Agent 写回用的连接。
-pub(crate) struct Link {
-    requests: Arc<Mutex<Vec<Value>>>,
-    responses: Arc<Mutex<Vec<Value>>>,
-    /// 桥发来的每条消息，按到达顺序；跨请求/应答断言先后关系用。
-    incoming: Arc<Mutex<Vec<Value>>>,
-    pending: Arc<Mutex<Vec<PendingPrompt>>>,
-    writer: Mutex<Option<Arc<Mutex<OwnedWriteHalf>>>>,
-    /// 接下来几次 `_session/steering` 的应答；排空了回 `injected`。
-    steer_outcomes: Mutex<std::collections::VecDeque<Value>>,
-}
-
-/// 一条连接的运行状态。
-struct Connection {
-    link: Arc<Link>,
-    writer: Arc<Mutex<OwnedWriteHalf>>,
-    scenario: Scenario,
-    logged_in: Arc<AtomicBool>,
-    cancelled: broadcast::Sender<()>,
-    sessions: AtomicU32,
-    prompts: usize,
-}
-
 async fn serve_connection(
     stream: UnixStream,
-    commands: broadcast::Sender<Value>,
+    recorded: Arc<Mutex<Vec<Value>>>,
+    responses: Arc<Mutex<Vec<Value>>>,
     scenario: Scenario,
     logged_in: Arc<AtomicBool>,
-    link: Arc<Link>,
 ) {
     let (reader, writer) = stream.into_split();
     let writer = Arc::new(Mutex::new(writer));
-    *link.writer.lock().await = Some(writer.clone());
     let mut lines = BufReader::new(reader).lines();
-    let mut command_updates = commands.subscribe();
     let (cancelled, _) = broadcast::channel(4);
-    let mut connection = Connection {
-        link,
-        writer,
-        scenario,
-        logged_in,
-        cancelled,
-        sessions: AtomicU32::new(0),
-        prompts: 0,
-    };
-    loop {
-        let message = tokio::select! {
-            line = lines.next_line() => {
-                let Ok(Some(line)) = line else {
-                    return;
-                };
-                let Ok(message) = serde_json::from_str::<Value>(&line) else {
-                    return;
-                };
-                message
-            }
-            Ok(commands) = command_updates.recv() => {
-                notify_commands(&connection.writer, commands).await;
-                continue;
-            }
+    let mut prompts = 0;
+    while let Ok(Some(line)) = lines.next_line().await {
+        let Ok(message) = serde_json::from_str::<Value>(&line) else {
+            return;
         };
-        connection.link.incoming.lock().await.push(message.clone());
-        connection.link.requests.lock().await.push(message.clone());
-        let method = message["method"].as_str().unwrap_or_default().to_owned();
+        recorded.lock().await.push(message.clone());
+        let method = message["method"].as_str().unwrap_or_default();
         if method.is_empty() {
-            connection.link.responses.lock().await.push(message.clone());
+            responses.lock().await.push(message.clone());
             continue;
         }
-        if !connection.handle(&method, &message, &mut lines).await {
-            return;
-        }
-    }
-}
-
-impl Connection {
-    /// 处理一条请求；返回 false 表示连接该结束了。
-    async fn handle(
-        &mut self,
-        method: &str,
-        message: &Value,
-        lines: &mut tokio::io::Lines<BufReader<tokio::net::unix::OwnedReadHalf>>,
-    ) -> bool {
-        let writer = &self.writer;
         match method {
             "initialize" => {
-                reply(writer, &message["id"], initialize_result(&self.scenario)).await;
-                if matches!(self.scenario, Scenario::IdleElicit) {
+                reply(&writer, &message["id"], initialize_result(&scenario)).await;
+                if matches!(scenario, Scenario::IdleElicit) {
                     let writer = writer.clone();
                     tokio::spawn(async move {
                         request(
@@ -510,126 +201,132 @@ impl Connection {
                 }
             }
             "session/new" => {
-                // 每条连接（一次桥进程）自己编号，和真实 Agent 一样重连后从 1 再来。
-                let id = json!(format!(
-                    "session-{}",
-                    self.sessions.fetch_add(1, Ordering::Relaxed) + 1
-                ));
-                new_session(writer, &message["id"], &id, &self.scenario, &self.logged_in).await;
+                if matches!(scenario, Scenario::LoginUrl | Scenario::LoginTerminal)
+                    && !logged_in.load(Ordering::Relaxed)
+                {
+                    rpc_error(&writer, &message["id"], -32000, "Authentication required").await;
+                } else {
+                    reply(&writer, &message["id"], json!({"sessionId": "session-1"})).await;
+                }
             }
             "authenticate" => {
-                login::handle_authenticate(
-                    writer,
-                    &message["id"],
-                    lines,
-                    &self.scenario,
-                    &self.logged_in,
-                )
-                .await;
+                handle_authenticate(&writer, &message["id"], &mut lines, &scenario, &logged_in)
+                    .await;
             }
             "session/load" => {
-                if matches!(self.scenario, Scenario::RestoreMethodMissing) {
-                    fail(writer, &message["id"], "Method not found").await;
+                if matches!(scenario, Scenario::RestoreMethodMissing) {
+                    fail(&writer, &message["id"], "Method not found").await;
                 } else {
-                    reply(writer, &message["id"], json!({})).await;
-                    if matches!(self.scenario, Scenario::RestoreReplay) {
+                    reply(&writer, &message["id"], json!({})).await;
+                    if matches!(scenario, Scenario::RestoreReplay) {
                         let writer = writer.clone();
                         tokio::spawn(async move {
                             tokio::time::sleep(Duration::from_millis(50)).await;
-                            notify(&writer, "session-1", "replay", "回放").await;
+                            notify(&writer, "replay", "回放").await;
                         });
                     }
                 }
             }
-            "session/set_mode" if matches!(self.scenario, Scenario::NoModes) => {
-                fail(writer, &message["id"], "Method not found").await;
-            }
             "session/set_mode" => {
-                reply(writer, &message["id"], json!({})).await;
+                reply(&writer, &message["id"], json!({})).await;
             }
             "session/prompt" => {
-                self.prompts += 1;
-                if matches!(
-                    self.scenario,
-                    Scenario::Manual
-                        | Scenario::DangerousModes
-                        | Scenario::ManualImages
-                        | Scenario::ManualNoSteer
-                ) {
-                    self.hold_prompt(message, writer).await;
-                } else {
-                    handle_prompt(
-                        writer,
-                        &self.cancelled,
-                        message,
-                        self.prompts,
-                        &self.scenario,
-                    )
-                    .await;
-                }
+                prompts += 1;
+                handle_prompt(&writer, &cancelled, &message, prompts, &scenario).await;
             }
             "_session/steering" => {
-                let outcome = self.link.steer_outcomes.lock().await.pop_front();
-                let outcome = outcome.unwrap_or_else(|| json!({"outcome": "injected"}));
-                reply(writer, &message["id"], outcome).await;
+                reply(&writer, &message["id"], json!({"outcome": "injected"})).await;
             }
             "session/close" => {
-                reply(writer, &message["id"], json!({})).await;
+                reply(&writer, &message["id"], json!({})).await;
             }
-            "session/cancel" => cancel_pending_prompts(&self.link, &self.cancelled, message).await,
+            "session/cancel" => {
+                let _ = cancelled.send(());
+            }
             _ => {}
         }
-        true
-    }
-
-    /// Manual 系场景：把一轮挂在链路上，等测试用 [`FakeAgent::respond_prompt`] 回。
-    async fn hold_prompt(&self, message: &Value, writer: &Arc<Mutex<OwnedWriteHalf>>) {
-        self.link.pending.lock().await.push(PendingPrompt {
-            id: message["id"].clone(),
-            session: message["params"]["sessionId"]
-                .as_str()
-                .unwrap_or_default()
-                .to_owned(),
-            text: message["params"]["prompt"][0]["text"]
-                .as_str()
-                .unwrap_or_default()
-                .to_owned(),
-            blocks: message["params"]["prompt"].clone(),
-            writer: writer.clone(),
-        });
     }
 }
 
-async fn new_session(
+async fn handle_authenticate(
     writer: &Arc<Mutex<OwnedWriteHalf>>,
     id: &Value,
-    session: &Value,
+    lines: &mut tokio::io::Lines<BufReader<tokio::net::unix::OwnedReadHalf>>,
     scenario: &Scenario,
-    logged_in: &AtomicBool,
+    logged_in: &Arc<AtomicBool>,
 ) {
-    if matches!(scenario, Scenario::LoginUrl | Scenario::LoginTerminal)
-        && !logged_in.load(Ordering::Relaxed)
-    {
-        rpc_error(writer, id, -32000, "Authentication required").await;
-    } else if matches!(scenario, Scenario::NoModes) {
-        reply(writer, id, json!({"sessionId": session})).await;
-    } else {
-        let mut modes = json!({
-            "currentModeId": "plan",
-            "availableModes": [
-                {"id": "plan", "name": "Plan"},
-                {"id": "workspace-write", "name": "Workspace write"},
-                {"id": "agent", "name": "Agent"}
-            ]
-        });
-        if matches!(scenario, Scenario::DangerousModes) {
-            modes["availableModes"]
-                .as_array_mut()
-                .unwrap()
-                .push(json!({"id": "bypassPermissions", "name": "Bypass"}));
-        }
-        reply(writer, id, json!({"sessionId": session, "modes": modes})).await;
+    if !matches!(scenario, Scenario::LoginUrl) {
+        rpc_error(writer, id, -32601, "Method not found").await;
+        return;
     }
+    let request_id = json!(9_000);
+    request(
+        writer,
+        &request_id,
+        "elicitation/create",
+        json!({
+            "mode": "url",
+            "elicitationId": "login-1",
+            "url": "https://auth.example/login?code=abc",
+            "message": "请打开链接完成登录"
+        }),
+    )
+    .await;
+    let action = loop {
+        let Ok(Some(line)) = bounded(lines.next_line(), "等待 elicitation 应答")
+            .await
+            .map_err(|_| ())
+        else {
+            return;
+        };
+        let Ok(message) = serde_json::from_str::<Value>(&line) else {
+            return;
+        };
+        if message["id"] == request_id {
+            break message["result"]["action"]
+                .as_str()
+                .unwrap_or("cancel")
+                .to_owned();
+        }
+    };
+    if action == "accept" {
+        logged_in.store(true, Ordering::Relaxed);
+        reply(writer, id, json!({})).await;
+    } else {
+        rpc_error(writer, id, -32000, "登录被拒绝").await;
+    }
+}
+
+async fn serve_terminal_login(stream: UnixStream, logged_in: Arc<AtomicBool>) {
+    let (reader, mut writer) = stream.into_split();
+    let mut lines = BufReader::new(reader).lines();
+    let Some(request) = lines.next_line().await.unwrap() else {
+        return;
+    };
+    let request: Value = serde_json::from_str(&request).unwrap();
+    assert_eq!(request["methodId"], "term");
+    assert_eq!(request["args"][0], "--login");
+    // 链接打在 stderr，验证桥也把它送进聊天。
+    send_frame(&mut writer, json!({"err": "https://auth.example/device"})).await;
+    send_frame(&mut writer, json!({"out": "输入授权码："})).await;
+    for line in [] as [&str; 0] {
+        send_frame(&mut writer, json!({"out": line})).await;
+    }
+    let Some(code) = lines.next_line().await.unwrap() else {
+        return;
+    };
+    assert_eq!(code, "code-42");
+    logged_in.store(true, Ordering::Relaxed);
+    send_frame(&mut writer, json!({"exit": 0})).await;
+}
+
+async fn send_frame(writer: &mut tokio::net::unix::OwnedWriteHalf, frame: Value) {
+    writer
+        .write_all(frame.to_string().as_bytes())
+        .await
+        .unwrap();
+    writer.write_all(b"\n").await.unwrap();
+    writer.flush().await.unwrap();
 }
 
 async fn request(writer: &Arc<Mutex<OwnedWriteHalf>>, id: &Value, method: &str, params: Value) {
@@ -648,31 +345,6 @@ async fn rpc_error(writer: &Arc<Mutex<OwnedWriteHalf>>, id: &Value, code: i64, m
     .await;
 }
 
-/// 真 Agent 收到 `session/cancel`：记下取消，这个会话挂起的 prompt 回 `cancelled`。
-async fn cancel_pending_prompts(
-    link: &Arc<Link>,
-    cancelled: &broadcast::Sender<()>,
-    message: &Value,
-) {
-    let _ = cancelled.send(());
-    let session = message["params"]["sessionId"].as_str().unwrap_or_default();
-    let (hit, rest) = link
-        .pending
-        .lock()
-        .await
-        .drain(..)
-        .partition(|prompt| prompt.session == session);
-    *link.pending.lock().await = rest;
-    for prompt in hit {
-        reply(
-            &prompt.writer,
-            &prompt.id,
-            json!({"stopReason": "cancelled"}),
-        )
-        .await;
-    }
-}
-
 async fn handle_prompt(
     writer: &Arc<Mutex<OwnedWriteHalf>>,
     cancelled: &broadcast::Sender<()>,
@@ -680,10 +352,6 @@ async fn handle_prompt(
     count: usize,
     scenario: &Scenario,
 ) {
-    let session = message["params"]["sessionId"]
-        .as_str()
-        .unwrap_or_default()
-        .to_owned();
     if matches!(scenario, Scenario::PromptTransportError) {
         rpc_error(writer, &message["id"], -32098, "ACP 连接已关闭").await;
         return;
@@ -724,16 +392,16 @@ async fn handle_prompt(
             let _ = cancellation.recv().await;
             reply(&writer, &request_id, json!({"stopReason": "cancelled"})).await;
             tokio::time::sleep(Duration::from_millis(150)).await;
-            notify(&writer, "session-1", "late", "迟到的旧回复").await;
+            notify(&writer, "late", "迟到的旧回复").await;
         });
         return;
     }
     let text = if count == 1 { "hello" } else { "new" };
-    notify(writer, &session, "message-1", text).await;
+    notify(writer, "message-1", text).await;
     reply(writer, &message["id"], json!({"stopReason": "end_turn"})).await;
 }
 
-async fn notify_commands(writer: &Arc<Mutex<OwnedWriteHalf>>, commands: Value) {
+async fn notify(writer: &Arc<Mutex<OwnedWriteHalf>>, message_id: &str, text: &str) {
     send(
         writer,
         json!({
@@ -741,24 +409,6 @@ async fn notify_commands(writer: &Arc<Mutex<OwnedWriteHalf>>, commands: Value) {
             "method": "session/update",
             "params": {
                 "sessionId": "session-1",
-                "update": {
-                    "sessionUpdate": "available_commands_update",
-                    "availableCommands": commands
-                }
-            }
-        }),
-    )
-    .await;
-}
-
-async fn notify(writer: &Arc<Mutex<OwnedWriteHalf>>, session: &str, message_id: &str, text: &str) {
-    send(
-        writer,
-        json!({
-            "jsonrpc": "2.0",
-            "method": "session/update",
-            "params": {
-                "sessionId": session,
                 "update": {
                     "sessionUpdate": "agent_message_chunk",
                     "messageId": message_id,
@@ -802,12 +452,4 @@ pub(crate) async fn bounded<T>(operation: impl Future<Output = T>, name: &str) -
 
 pub(crate) fn broker() -> PermissionBroker {
     PermissionBroker::new("http://127.0.0.1:1/mcp").unwrap()
-}
-
-/// 测试用的来源会话：固定房间，`thread` 是话题根事件 ID。
-pub(crate) fn origin(thread: Option<&str>) -> ConfirmationOrigin {
-    ConfirmationOrigin {
-        room_id: "!room:wonton.internal".into(),
-        thread_id: thread.map(str::to_owned),
-    }
 }

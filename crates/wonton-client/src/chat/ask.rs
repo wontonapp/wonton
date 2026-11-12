@@ -14,7 +14,11 @@ impl ChatLink {
     pub(crate) fn ask(self: &Arc<Self>, bot: &str, text: &str) -> Result<(), CoreError> {
         let body = text.trim().to_owned();
         if body.is_empty() {
-            return Err(invalid(&l10n!(CATALOG, language(), "chat-empty-message")));
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "chat-ask-empty-message"
+            )));
         }
         let bot: OwnedUserId = bot
             .parse()
@@ -43,7 +47,7 @@ impl ChatLink {
             )),
             None => None,
         };
-        self.spawn_op("chat-op-ask-agent-failed", async move {
+        self.spawn_op("问默认 Agent", async move {
             let room_id = match existing {
                 Some((room_id, RoomMembership::Invited)) => {
                     session.join_room(&room_id).await?;

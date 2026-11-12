@@ -1,6 +1,5 @@
 //! 设备一侧：用配对码连上服务端，出示密钥，取回服务端的回应。
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use iroh::Endpoint;
@@ -9,8 +8,8 @@ use iroh::endpoint::{ConnectError, ConnectingError, ConnectionError, RecvStream,
 use super::{MAX_MESSAGE_LEN, PAIR_ALPN, PairRequest, PairResponse, PairingCode};
 use crate::error::{TunnelError, from_connect_error, from_read_error, from_write_error};
 
-/// 一段交换的时限：建连（包括打洞或经中继）到读完回应。和隧道的请求一样，超时按传输不可用处理。
-pub const PAIR_TIMEOUT: Duration = Duration::from_secs(30);
+/// 建连（包括打洞或经中继）到读完回应的总时间。和隧道的请求一样，超时按传输不可用处理。
+const PAIR_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// TLS 的 `no_application_protocol` 告警：服务端不接受 [`PAIR_ALPN`]，两端版本不配。
 const NO_APPLICATION_PROTOCOL: u64 = 0x100 + 120;
@@ -21,59 +20,15 @@ pub async fn pair(
     code: &PairingCode,
     device_name: &str,
 ) -> Result<PairResponse, TunnelError> {
-    pair_with_timeout(endpoint, code, device_name, PAIR_TIMEOUT, || {}).await
-}
-
-/// 同 [`pair`]，`timeout` 是每一段交换的时限。
-///
-/// `on_request_sent` 在配对请求整段交出（服务端可能已经开始按它登记）后调用一次，两段交换合计只调一次。
-///
-/// 请求整个写完还是没等到回应时（服务端可能已经登记了这台设备，只是回应在慢中继上没赶上），用同样长的
-/// 另一段再确认一次：服务端对还在登记表里的同一台设备、同一个码重发时幂等地回 `Paired`。设备已被吊销、
-/// 或者码本来就被别的设备用掉，确认拿到的是 `used`，照样按拒绝报。连建连都没走完的超时不确认：
-/// 连不上的服务端再问一次也一样。
-pub async fn pair_with_timeout(
-    endpoint: &Endpoint,
-    code: &PairingCode,
-    device_name: &str,
-    timeout: Duration,
-    on_request_sent: impl Fn() + Send + Sync,
-) -> Result<PairResponse, TunnelError> {
-    let written = AtomicBool::new(false);
-    let first = tokio::time::timeout(
-        timeout,
-        exchange(endpoint, code, device_name, &written, &on_request_sent),
-    )
-    .await;
-    match first {
-        Ok(result) => return result,
-        Err(_) if !written.load(Ordering::Relaxed) => return Err(did_not_finish(timeout)),
-        Err(_) => {}
-    }
-    match tokio::time::timeout(
-        timeout,
-        exchange(endpoint, code, device_name, &written, &on_request_sent),
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(_) => Err(did_not_finish(timeout)),
-    }
-}
-
-fn did_not_finish(timeout: Duration) -> TunnelError {
-    TunnelError::transport(format!(
-        "pairing did not finish within {}s",
-        timeout.as_secs()
-    ))
+    tokio::time::timeout(PAIR_TIMEOUT, exchange(endpoint, code, device_name))
+        .await
+        .map_err(|_| TunnelError::transport(format!("{} 秒内没有配对完", PAIR_TIMEOUT.as_secs())))?
 }
 
 async fn exchange(
     endpoint: &Endpoint,
     code: &PairingCode,
     device_name: &str,
-    written: &AtomicBool,
-    on_request_sent: &(impl Fn() + Sync),
 ) -> Result<PairResponse, TunnelError> {
     let conn = endpoint
         .connect(code.server_addr(), PAIR_ALPN)
@@ -84,20 +39,15 @@ async fn exchange(
         secret: code.secret.clone(),
         device_name: device_name.to_owned(),
     };
-    let body = serde_json::to_vec(&request).expect("the request always serializes to JSON");
+    let body = serde_json::to_vec(&request).expect("请求总能编成 JSON");
     send.write_all(&body)
         .await
         .map_err(|e| from_write_error(&e))?;
     send.finish().map_err(TunnelError::transport)?;
-    // 请求已经全部交出：之后超时，服务端可能已经按它登记了设备。
-    if !written.swap(true, Ordering::Relaxed) {
-        on_request_sent();
-    }
     let reply = read_reply(&mut recv).await?;
     conn.close(VarInt::from_u32(0), b"done");
-    serde_json::from_slice(&reply).map_err(|e| {
-        TunnelError::protocol(format!("malformed pairing response from the server: {e}"))
-    })
+    serde_json::from_slice(&reply)
+        .map_err(|e| TunnelError::protocol(format!("服务端的配对回应不合规：{e}")))
 }
 
 /// 读服务端的回应，直到回应结束（FIN）。
@@ -111,9 +61,7 @@ async fn read_reply(recv: &mut RecvStream) -> Result<Vec<u8>, TunnelError> {
     loop {
         // 协议里回应不会接近这个长度；到上限还没读到结束就不再收，与回应长度上限一致。
         if reply.len() >= MAX_MESSAGE_LEN {
-            return Err(TunnelError::transport(
-                "the pairing response from the server exceeds the length limit",
-            ));
+            return Err(TunnelError::transport("服务端的配对回应超过长度上限"));
         }
         match recv.read_chunk(MAX_MESSAGE_LEN - reply.len()).await {
             Ok(Some(bytes)) => reply.extend_from_slice(&bytes),
@@ -140,9 +88,7 @@ fn connect_error(err: &ConnectError) -> TunnelError {
     if let Some(ConnectionError::ConnectionClosed(close)) = closed
         && u64::from(close.error_code) == NO_APPLICATION_PROTOCOL
     {
-        return TunnelError::protocol(
-            "the server does not accept this version of the pairing protocol",
-        );
+        return TunnelError::protocol("服务端不接受这个版本的配对协议");
     }
     from_connect_error(err)
 }

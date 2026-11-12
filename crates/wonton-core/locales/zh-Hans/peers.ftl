@@ -21,4 +21,3 @@ peers-error-not-paired-remove = 没有配对过这台服务器
 peers-error-code-revoked = 这张配对码已经作废，请对方重新发一张
 peers-error-too-many-requests = 对方暂时收不了配对请求，稍后再试
 peers-error-request-not-found = 这条请求已经不在了
-peers-new-request = { $owner } 的服务器（{ $server }）想和你的服务器连接

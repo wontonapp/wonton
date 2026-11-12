@@ -88,7 +88,7 @@ async fn resident_states_drive_stopped_and_degraded_without_counting_completed_i
 }
 
 #[tokio::test]
-async fn dead_unhealthy_and_oom_containers_are_not_stopped() {
+async fn dead_missing_unhealthy_and_oom_containers_are_not_stopped() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let manager = manager_with(engine.clone(), &dir);
@@ -116,10 +116,9 @@ async fn dead_unhealthy_and_oom_containers_are_not_stopped() {
     );
     manager.watch_containers().await;
     assert_eq!(seen(&manager), (PluginStatus::Stopped, None));
-    // 容器不在（被删了）也算停着：启动按已安装记录照安装的路径重建（issue #126）。
     engine.remove_container(&app).await.unwrap();
     manager.watch_containers().await;
-    assert_eq!(seen(&manager), (PluginStatus::Stopped, None));
+    assert!(matches!(seen(&manager).0, PluginStatus::Degraded { .. }));
 }
 
 #[tokio::test]

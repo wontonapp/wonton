@@ -21,4 +21,3 @@ peers-error-not-paired-remove = このサーバーとはペアリングしてい
 peers-error-code-revoked = このペアリングコードは無効化されています。相手に新しいコードを発行してもらってください
 peers-error-too-many-requests = 相手のサーバーが現在ペアリング要求を受け付けられません。しばらくしてからもう一度お試しください
 peers-error-request-not-found = このリクエストはすでにありません
-peers-new-request = { $owner }のサーバー（{ $server }）があなたのサーバーへの接続を求めています

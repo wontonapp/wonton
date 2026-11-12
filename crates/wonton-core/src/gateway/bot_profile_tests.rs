@@ -9,9 +9,8 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 use wonton_protocol::{StateAvatars, bot_profile_path};
 
-use super::fakes::loopback_tunnel;
 use super::tests::{CORE, TOKEN};
-use super::tunnel_tests::Phone;
+use super::tunnel_tests::{Phone, loopback_tunnel};
 use super::{Gateway, TunnelPeer, router};
 use crate::http::HttpClient;
 use crate::plugin::PluginId;
@@ -29,7 +28,7 @@ struct Home {
 impl Home {
     async fn start() -> Self {
         let bed = Bed::start().await;
-        let (tunnel, members) = loopback_tunnel(bed.dir.path()).await;
+        let tunnel = loopback_tunnel(bed.dir.path()).await;
         let peer = TunnelPeer(SecretKey::generate().public());
         tunnel.devices.add(peer.0, Some("Phone".into())).unwrap();
         let profile = bed.owner.clone();
@@ -42,7 +41,6 @@ impl Home {
                 },
                 profile,
                 TOKEN.into(),
-                members,
                 bed.manager.clone(),
                 None,
                 HttpClient::new(),

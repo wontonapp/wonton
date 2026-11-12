@@ -1,46 +1,28 @@
-//! 发起方：连上对方，交换一条消息和回应。扫码、问结果、送配对结果和删配对通知共用一套收发。
+//! 发起方：连上对方，交换一条消息和回应。扫码、送配对结果和删配对通知共用一套收发。
 
 use std::time::Duration;
 
 use iroh::Endpoint;
 use iroh::endpoint::{ConnectError, ConnectingError, ConnectionError, RecvStream, VarInt};
 
-use super::{MAX_MESSAGE_LEN, PEER_PAIR_ALPN, PeerIdentity, PeerMessage, PeerPairToken, PeerReply};
+use super::{MAX_MESSAGE_LEN, PEER_PAIR_ALPN, PeerIdentity, PeerMessage, PeerReply};
 use crate::error::{TunnelError, from_connect_error, from_read_error, from_write_error};
 
 /// 建连（包括打洞或经中继）到读完回应的总时间。和设备配对一样，超时按传输不可用处理。
-const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(90);
+const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// TLS 的 `no_application_protocol` 告警：服务端不接受 [`PEER_PAIR_ALPN`]，两端版本不配。
 const NO_APPLICATION_PROTOCOL: u64 = 0x100 + 120;
 
-/// 扫对方的码：出示令牌和自己的身份，取回出码方的回应（等主人同意、直接同意，或拒绝的原因）。
+/// 扫对方的码：出示密钥和自己的身份，取回出码方的回应（等主人同意，或拒绝的原因）。
 pub async fn scan(
     endpoint: &Endpoint,
-    code: super::PeerPairingCode,
+    addr: super::PeerPairingCode,
     identity: PeerIdentity,
 ) -> Result<PeerReply, TunnelError> {
-    let token = code.token.clone();
-    let addr = code.server_addr();
-    scan_to(endpoint, addr, token, identity).await
-}
-
-/// 和 [`scan`] 一样，但直接连已知地址：码里只有中继，同机直连或拿到过对方地址时用它。
-pub async fn scan_to(
-    endpoint: &Endpoint,
-    addr: iroh::EndpointAddr,
-    token: PeerPairToken,
-    identity: PeerIdentity,
-) -> Result<PeerReply, TunnelError> {
-    exchange(endpoint, addr, PeerMessage::Scan { token, identity }).await
-}
-
-/// 问出码方自己那条请求的结果：等待中、已同意（附出码方的身份）、已拒绝，或者不认识这条请求。
-pub async fn ask_outcome(
-    endpoint: &Endpoint,
-    to: iroh::EndpointAddr,
-) -> Result<PeerReply, TunnelError> {
-    exchange(endpoint, to, PeerMessage::Outcome).await
+    let secret = addr.secret.clone();
+    let addr = addr.server_addr();
+    exchange(endpoint, addr, PeerMessage::Scan { secret, identity }).await
 }
 
 /// 把主人对一次扫码的决定送给扫码方。回应不是 `Ok`（对方不在等这个结果）时按传输失败处理：
@@ -58,9 +40,9 @@ pub async fn deliver_decision(
             PeerReply::Error { message, .. } => Err(TunnelError::transport(format!(
                 "对方没有收下配对结果：{message}"
             ))),
-            other => Err(TunnelError::protocol(format!(
-                "配对结果的回应不对：对方回的是 {other:?}"
-            ))),
+            PeerReply::AwaitingApproval { .. } => Err(TunnelError::protocol(
+                "配对结果的回应不对：对方把它当成了扫码",
+            )),
         })
 }
 

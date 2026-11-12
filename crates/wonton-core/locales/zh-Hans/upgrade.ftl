@@ -15,7 +15,7 @@ upgrade-launch-updater-failed = 启动更新器失败：{ $error }
 
 # 接口自己查不到要答的东西。
 upgrade-container-missing = 查不到家里的服务器的容器 { $name }
-upgrade-image-missing = 查不到正在运行的镜像 { $image }；重启家里的服务器后恢复
+upgrade-image-missing = 查不到正在运行的镜像 { $image }
 
 # 后台检查（每 6 小时一次，打开更新页也会查）。
 upgrade-check-core-failed = 查家里的服务器的容器失败：{ $error }
@@ -28,13 +28,6 @@ upgrade-auto-download-skipped = 磁盘剩不到 5 GB，没有自动下载
 upgrade-download-no-space = 磁盘不够：下载大约要 { $needed } 字节，只有 { $free } 字节可用
 upgrade-download-failed = 下载不了：{ $error }
 upgrade-image-missing-after-pull = 下载完了，本机还是没有 { $reference }
-
-# 兼容检查（ADR-0085）查不成不拦升级：详情如实说没查成，升级照常可以发起。
-upgrade-compat-records-unreadable = 读不了已装应用的记录：{ $error }
-upgrade-compat-materialize-failed = 无法为兼容检查写出已装应用的包：{ $error }
-upgrade-compat-run-failed = 在新镜像 { $image } 里跑不了兼容检查：{ $error }
-upgrade-compat-command-failed = 新镜像 { $image } 里的兼容检查以退出码 { $code } 结束：{ $error }
-upgrade-compat-output-unreadable = 读不懂兼容检查的输出：{ $error }
 
 # 更新器容器把自己做的事写进状态文件，用主人的语言。
 upgrade-updater-crashed = 更新器反复崩溃
@@ -62,7 +55,7 @@ upgrade-components-failed =
        *[old] 处理旧版本不支持的组件失败：{ $error }
     }
 upgrade-up-failed = 服务没有起来：{ $error }
-upgrade-core-image-wrong = 家里的服务器的容器跑的是 { $actual }（镜像 { $actual_id }），不是 { $image }（镜像 { $image_id }）
+upgrade-core-image-wrong = 家里的服务器的容器用的是 { $actual }，不是 { $image }
 upgrade-core-container-missing = 没有家里的服务器的容器
 upgrade-containers-failed = 查系统服务的容器失败：{ $error }
 upgrade-observe-timed-out = 观察阶段超过了时限

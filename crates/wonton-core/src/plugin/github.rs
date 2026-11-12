@@ -17,9 +17,6 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// `ls-refs` 的响应最多这么大：一个 tag 一行，几万个 tag 也用不到。
 const MAX_REFS_BYTES: u64 = 4 << 20;
 
-#[path = "github_tree.rs"]
-mod tree;
-
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GitHubError {
     /// 连不上 GitHub，或者 GitHub 出错了。

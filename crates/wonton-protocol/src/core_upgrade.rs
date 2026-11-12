@@ -90,75 +90,6 @@ pub struct CoreUpgradeOffer {
     pub version: Option<String>,
     /// 这次升级会迁移、之后退不回去的卷，如 `tuwunel`（ADR-0025 的“不可逆的版本”）。不为空时确认页要醒目提示。
     pub migrates: Vec<String>,
-    /// 目标版本下已装插件的兼容性（ADR-0085）。旧核心没有这个字段＝没查过，按 [`CoreUpgradeCompat::Unavailable`] 处理，
-    /// 不等于“没有会坏的”。
-    #[serde(default)]
-    pub compat: CoreUpgradeCompat,
-}
-
-/// 目标版本下已装插件的兼容性（ADR-0085）。
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum CoreUpgradeCompat {
-    /// 没查：核心没实现这个检查，或目标镜像太老、没有 compat 子命令。
-    #[default]
-    Unavailable,
-    /// 查了，没有会新失效的已装插件。
-    Ok,
-    /// 查了，这些已装插件在目标版本下会被标异常。
-    Breaking {
-        /// 现在装着、读得懂，目标版本读不懂的插件。
-        plugins: Vec<CoreUpgradeBreakingPlugin>,
-    },
-    /// 查了但没查成：容器没起来、命令超时、输出读不懂。附原因。
-    Failed { problem: CoreUpgradeProblem },
-    /// 比这个 App 新的核心给的状态。
-    #[serde(other)]
-    Other,
-}
-
-/// 目标版本读不懂的一份已装插件。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct CoreUpgradeBreakingPlugin {
-    pub id: String,
-    pub reasons: Vec<CoreUpgradeBreakingReason>,
-}
-
-/// 目标版本读不懂的一项：壳按 `category` 挑文字，`raw` 原样进详情（ADR-0043）。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct CoreUpgradeBreakingReason {
-    pub category: CoreUpgradeCompatCategory,
-    /// 清单里的原值：`spec` 的值、字段路径（如 `x-wonton.tabs`）、权限名、能力名、变量名。
-    pub raw: String,
-}
-
-/// 一份会失效的插件的详情：客户端核心按 App 的语言把每个原因写成一行（ADR-0085 的
-/// "详情由客户端核心按 App 的语言写"），壳只渲染。
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct CoreUpgradeCompatDetail {
-    pub id: String,
-    pub lines: Vec<String>,
-}
-
-/// 会失效的原因类别，共四个（ADR-0085）。未来核心加了类别时落到 [`CoreUpgradeCompatCategory::Other`]，
-/// 按“查不了”显示，不伪装成没有问题。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum CoreUpgradeCompatCategory {
-    /// 清单的 `spec` 超过目标核心支持的上限。
-    SpecUnsupported,
-    /// 字段或权限不认识。
-    UnknownFeature,
-    /// 能力名不在目标核心的能力表里，也不是合法的 `x-` 第三方名字。
-    CapabilityMissing,
-    /// 渲染不过（引用了不再注入的变量、运行时不支持等），或这个 App 不认识的类别（含未来核心加的）。
-    #[serde(other)]
-    Other,
 }
 
 /// 一次升级。
@@ -298,10 +229,6 @@ pub struct CoreUpgradeViewModel {
     pub stage: CoreUpgradeStage,
     /// 现在能升级到的版本。在升级时为空，这时 `status.check` 还是发起前的结果。
     pub offer: Option<CoreUpgradeOffer>,
-    /// 会新失效的插件各原因一行（客户端核心按 App 的语言写好，壳只渲染）。
-    /// 没查、查了没有、查不成时为空。
-    #[serde(default)]
-    pub compat_details: Vec<CoreUpgradeCompatDetail>,
     /// 主人在这台设备上跳过了 `offer` 这个版本：不再提示，想升还能升。渠道上出了别的版本时重新提示。
     pub offer_skipped: bool,
     /// 主人点了“检查”，结果还没出来。
@@ -382,7 +309,6 @@ mod tests {
                     digest: "sha256:new".into(),
                     version: Some("0.4.0".into()),
                     migrates: vec!["tuwunel".into()],
-                    compat: CoreUpgradeCompat::Unavailable,
                 },
             },
             run: Some(CoreUpgradeRun {
@@ -403,8 +329,7 @@ mod tests {
             "channel": "stable",
             "check": {
                 "state": "ready",
-                "offer": {"digest": "sha256:new", "version": "0.4.0", "migrates": ["tuwunel"],
-                          "compat": {"state": "unavailable"}},
+                "offer": {"digest": "sha256:new", "version": "0.4.0", "migrates": ["tuwunel"]},
             },
             "run": {
                 "id": "u1",
@@ -612,127 +537,6 @@ mod tests {
         assert_eq!(
             serde_json::to_value(CoreUpgradeCheckRequest { manual: true }).unwrap(),
             json!({"manual": true})
-        );
-    }
-
-    fn breaking() -> CoreUpgradeCompat {
-        CoreUpgradeCompat::Breaking {
-            plugins: vec![CoreUpgradeBreakingPlugin {
-                id: "app.immich.photos".into(),
-                reasons: vec![CoreUpgradeBreakingReason {
-                    category: CoreUpgradeCompatCategory::SpecUnsupported,
-                    raw: "0.13".into(),
-                }],
-            }],
-        }
-    }
-
-    /// ADR-0085 缝二：compat 各状态的线上格式，逐个固定写法。
-    #[test]
-    fn every_compat_state_keeps_its_wire_format() {
-        let failed = json!({"reason": "upstream", "message": "说明"});
-        let cases = [
-            (
-                CoreUpgradeCompat::Unavailable,
-                json!({"state": "unavailable"}),
-            ),
-            (CoreUpgradeCompat::Ok, json!({"state": "ok"})),
-            (
-                CoreUpgradeCompat::Breaking {
-                    plugins: Vec::new(),
-                },
-                json!({"state": "breaking", "plugins": []}),
-            ),
-            (
-                breaking(),
-                json!({
-                    "state": "breaking",
-                    "plugins": [{
-                        "id": "app.immich.photos",
-                        "reasons": [{"category": "spec_unsupported", "raw": "0.13"}],
-                    }],
-                }),
-            ),
-            (
-                CoreUpgradeCompat::Failed {
-                    problem: problem(CoreUpgradeFailure::Upstream),
-                },
-                json!({"state": "failed", "problem": failed}),
-            ),
-        ];
-        for (compat, wire) in cases {
-            assert_eq!(serde_json::to_value(&compat).unwrap(), wire);
-            assert_eq!(
-                serde_json::from_value::<CoreUpgradeCompat>(wire).unwrap(),
-                compat
-            );
-        }
-    }
-
-    /// 旧核心没有 compat 字段＝没查过，不等于“没有会坏的”：缺字段按 Unavailable，和 Ok 是两个值。
-    #[test]
-    fn a_missing_compat_field_is_unavailable() {
-        let offer: CoreUpgradeOffer = serde_json::from_value(json!({
-            "digest": "sha256:new",
-            "version": "0.4.0",
-            "migrates": [],
-        }))
-        .unwrap();
-        assert_eq!(offer.compat, CoreUpgradeCompat::Unavailable);
-        assert_ne!(offer.compat, CoreUpgradeCompat::Ok);
-    }
-
-    /// ViewModel 带上客户端核心写好的详情行：线上多字段可忽略，旧数据缺字段按空。
-    #[test]
-    fn the_view_model_carries_the_written_details() {
-        let view = CoreUpgradeViewModel {
-            compat_details: vec![CoreUpgradeCompatDetail {
-                id: "app.immich.photos".into(),
-                lines: vec!["它按规范 0.13 写成，新版本不支持：升级后会被标为异常。".into()],
-            }],
-            ..CoreUpgradeViewModel::default()
-        };
-        let wire = serde_json::to_value(&view).unwrap();
-        assert_eq!(
-            wire["compat_details"][0]["lines"][0],
-            json!("它按规范 0.13 写成，新版本不支持：升级后会被标为异常。")
-        );
-        let parsed: CoreUpgradeViewModel = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(parsed, view);
-
-        // 比这个 App 旧的核心（或它自己的旧版本）没有这个字段：按空。
-        let mut older = wire;
-        older.as_object_mut().unwrap().remove("compat_details");
-        let parsed: CoreUpgradeViewModel = serde_json::from_value(older).unwrap();
-        assert!(parsed.compat_details.is_empty());
-    }
-
-    /// 未来核心加的类别落到 Other，不伪装成认识的原因。
-    #[test]
-    fn an_unknown_category_falls_to_other() {
-        let compat: CoreUpgradeCompat = serde_json::from_value(json!({
-            "state": "breaking",
-            "plugins": [{
-                "id": "app.immich.photos",
-                "reasons": [
-                    {"category": "revoked_publisher", "raw": "app.immich.photos"},
-                    {"category": "other", "raw": "WONTON_RETIRED_VAR"},
-                ],
-            }],
-        }))
-        .unwrap();
-        let CoreUpgradeCompat::Breaking { plugins } = compat else {
-            panic!("{compat:?}");
-        };
-        let categories: Vec<_> = plugins[0]
-            .reasons
-            .iter()
-            .map(|reason| reason.category)
-            .collect();
-        assert_eq!(
-            categories,
-            [CoreUpgradeCompatCategory::Other; 2],
-            "{categories:?}"
         );
     }
 }

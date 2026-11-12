@@ -216,14 +216,12 @@ fn save_problem(problem: PluginProblem) -> PluginProblem {
     }
     PluginProblem {
         reason: problem.reason,
-        min_version: None,
         message: l10n!(
             CATALOG,
             language(),
             "plugins-egress-save-uncertain",
             reason = problem.message
         ),
-        settings: None,
     }
 }
 

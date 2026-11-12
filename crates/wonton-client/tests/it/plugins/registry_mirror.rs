@@ -21,7 +21,6 @@ fn settings(mirror: Option<&str>) -> RegistryMirrorSettings {
             "second.example".into(),
             "first.example".into(),
         ],
-        choices_problem: None,
         docker_hub: None,
         recommended: false,
     }
@@ -309,22 +308,4 @@ async fn registry_test_refreshes_recommendation_without_replacing_the_selected_m
     let current = view.registry_mirror.settings.unwrap();
     assert!(!current.recommended);
     assert_eq!(current.mirror.as_deref(), Some("custom.example"));
-}
-
-/// 索引的地址列表读不懂：设置照常显示，问题作为加载问题露出来，重试能再拉一次。
-#[tokio::test]
-async fn unreadable_index_choices_show_a_problem_and_keep_the_settings() {
-    let rig = Rig::new().await;
-    let mut unreadable = settings(Some("custom.example"));
-    unreadable.choices.clear();
-    unreadable.choices_problem = Some("索引的 registry_mirrors 读不懂：invalid type".into());
-    opened(&rig, &unreadable).await;
-    let vm = rig
-        .wait_for(|view| view.registry_mirror.load_problem.is_some())
-        .await
-        .registry_mirror;
-    let problem = vm.load_problem.unwrap();
-    assert_eq!(problem.reason, PluginFailure::Upstream);
-    assert!(problem.message.contains("registry_mirrors"), "{problem:?}");
-    assert_eq!(vm.settings, Some(unreadable));
 }

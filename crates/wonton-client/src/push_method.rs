@@ -8,11 +8,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use tokio::sync::watch;
-use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, PushMethod};
 
 use crate::home::write_private;
-use crate::l10n::{CATALOG, language};
 
 const METHOD_FILE: &str = "push-method.json";
 
@@ -46,37 +44,26 @@ impl PushMethodLink {
 
     /// 写不了时返回 `Storage`，方式不变。
     pub(crate) fn set(&self, method: PushMethod) -> Result<(), CoreError> {
-        let _writing = self
-            .writing
-            .lock()
-            .expect("the settings lock is never poisoned");
-        let text = serde_json::to_vec(&method)
-            .expect("the push method is a plain enum and always serializes");
+        let _writing = self.writing.lock().expect("写设置时不会 panic");
+        let text = serde_json::to_vec(&method).expect("推送方式只有枚举值，能序列化");
         write_private(&self.path, &text).map_err(|error| CoreError::Storage {
-            reason: l10n!(
-                CATALOG,
-                language(),
-                "push-method-write-failed",
-                path = self.path.display().to_string(),
-                reason = error.to_string()
-            ),
+            reason: format!("{}：{error}", self.path.display()),
         })?;
         self.view.send_replace(method);
         Ok(())
     }
 }
 
-/// 没选过时是默认值。返回的字符串只进日志（`new` 里记英文警告）。
+/// 没选过时是默认值。
 fn read_method(path: &Path) -> Result<PushMethod, String> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Ok(PushMethod::default());
         }
-        Err(error) => return Err(format!("{}: {error}", path.display())),
+        Err(error) => return Err(format!("{}：{error}", path.display())),
     };
-    serde_json::from_slice(&bytes)
-        .map_err(|error| format!("{} is damaged: {error}", path.display()))
+    serde_json::from_slice(&bytes).map_err(|error| format!("{} 已损坏：{error}", path.display()))
 }
 
 #[cfg(test)]

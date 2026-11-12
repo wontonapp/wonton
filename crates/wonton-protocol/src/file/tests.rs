@@ -114,22 +114,6 @@ fn several_links_keep_their_order_without_duplicates() {
     assert_eq!(found.files, vec![id(), other_id()]);
 }
 
-/// 契约：一次发送里的文件合成一条消息（ADR-0094 第 2 节），收到的一方拆回原来的字和文件。
-#[test]
-fn a_files_message_carries_the_text_then_one_link_per_line() {
-    let body = files_message_body("  这是上个月的账单\n", &[id(), other_id()]);
-    assert_eq!(
-        body,
-        format!("这是上个月的账单\n\n{}\n{}", id().link(), other_id().link())
-    );
-    let found = extract_file_links(&body);
-    assert_eq!(found.body.trim_end(), "这是上个月的账单");
-    assert_eq!(found.files, vec![id(), other_id()]);
-
-    assert_eq!(files_message_body(" ", &[id()]), id().link());
-    assert_eq!(files_message_body("只有字", &[]), "只有字");
-}
-
 /// 不够严格时，别的 URL 或者模型改过的链接会被当成文件，从正文里吞掉。
 #[test]
 fn text_that_is_not_exactly_a_link_is_left_alone() {
@@ -485,7 +469,6 @@ fn upload_to(room: Option<&str>, state: TransferState) -> Transfer {
 
 fn room_row(room_id: &str, name: &str) -> RoomRow {
     RoomRow {
-        layout: Default::default(),
         room_id: room_id.into(),
         name: name.into(),
         is_direct: true,
@@ -494,7 +477,6 @@ fn room_row(room_id: &str, name: &str) -> RoomRow {
         is_read_only: false,
         membership: crate::RoomMembership::Joined,
         preview: None,
-        side_chats: false,
         unread_count: 0,
     }
 }

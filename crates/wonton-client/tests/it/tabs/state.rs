@@ -20,7 +20,7 @@ async fn a_tabs_storage_error_leaves_the_bar_unchanged_and_recovers() {
     rig.app
         .dispatch(Action::MoveTab {
             tab: TabRef::Chat,
-            index: 0,
+            index: 1,
         })
         .unwrap();
     assert!(rig.app.tabs().problem.is_none());
@@ -38,7 +38,7 @@ async fn uninstall_persist_error_is_visible_and_recovers() {
     )]]);
     rig.connected().await;
     wait_tabs(&rig, |view| {
-        rig.app.plugins().installed.is_some() && view.items.len() == 1
+        rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     let page_tab = tab(plugin_id, Some("home"));
@@ -64,7 +64,7 @@ async fn uninstall_persist_error_is_visible_and_recovers() {
     rig.app
         .dispatch(Action::MoveTab {
             tab: TabRef::Chat,
-            index: 0,
+            index: 1,
         })
         .unwrap();
     assert!(rig.app.tabs().problem.is_none());
@@ -110,7 +110,7 @@ async fn uninstall_notice_uses_plugin_title_once_and_ignores_overlay_pages() {
     rig.core.set_lists(vec![vec![plugin]]);
     rig.connected().await;
     wait_tabs(&rig, |view| {
-        rig.app.plugins().installed.is_some() && view.items.len() == 1
+        rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     let one = tab(plugin_id, Some("one"));
@@ -145,7 +145,7 @@ async fn uninstall_notice_uses_plugin_title_once_and_ignores_overlay_pages() {
     )]]);
     overlay_rig.connected().await;
     wait_tabs(&overlay_rig, |view| {
-        overlay_rig.app.plugins().installed.is_some() && view.items.len() == 1
+        overlay_rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     overlay_rig
@@ -155,7 +155,7 @@ async fn uninstall_notice_uses_plugin_title_once_and_ignores_overlay_pages() {
     overlay_rig.core.set_lists(vec![Vec::new()]);
     overlay_rig.app.dispatch(Action::RefreshPlugins).unwrap();
     let overlay_removed = wait_tabs(&overlay_rig, |view| {
-        view.overlay.is_none() && view.selected == TabRef::Chat && view.uninstalled.is_empty()
+        view.overlay.is_none() && view.selected == TabRef::Apps && view.uninstalled.is_empty()
     })
     .await;
     assert!(overlay_removed.uninstalled.is_empty());
@@ -175,7 +175,7 @@ async fn reentering_automatic_fullscreen_keeps_its_previous_tab() {
     )]]);
     rig.connected().await;
     wait_tabs(&rig, |view| {
-        rig.app.plugins().installed.is_some() && view.items.len() == 1
+        rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     let page_tab = tab(plugin_id, Some(page_id));
@@ -219,9 +219,7 @@ async fn content_change_reload_clears_a_previous_load_failure() {
         connected_page_rig("app.upgrade-reload", "home").await;
     rig.app
         .dispatch(Action::TabLoadFailed {
-            page: PlacedTab::Bar {
-                tab: page_tab.clone(),
-            },
+            tab: page_tab.clone(),
             status: Some(502),
         })
         .unwrap();
@@ -265,7 +263,7 @@ async fn reconnect_reload_clears_a_previous_load_failure() {
     rig.core.set_lists(vec![vec![plugin]]);
     rig.connected().await;
     wait_tabs(&rig, |view| {
-        rig.app.plugins().installed.is_some() && view.items.len() == 1
+        rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     let page_tab = tab(plugin_id, Some(page_id));
@@ -277,9 +275,7 @@ async fn reconnect_reload_clears_a_previous_load_failure() {
         .unwrap();
     rig.app
         .dispatch(Action::TabLoadFailed {
-            page: PlacedTab::Bar {
-                tab: page_tab.clone(),
-            },
+            tab: page_tab.clone(),
             status: Some(502),
         })
         .unwrap();
@@ -325,7 +321,7 @@ async fn fixed_page_selection_works_while_loading_or_removed() {
     rig.core.set_lists(vec![vec![plugin.clone()]]);
     rig.connected().await;
     wait_tabs(&rig, |view| {
-        rig.app.plugins().installed.is_some() && view.items.len() == 1
+        rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     let page_tab = tab(plugin_id, Some(page_id));
@@ -400,7 +396,7 @@ async fn removed_pages_never_open_fullscreen() {
     rig.core.set_lists(vec![vec![plugin]]);
     rig.connected().await;
     wait_tabs(&rig, |view| {
-        rig.app.plugins().installed.is_some() && view.items.len() == 1
+        rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     let web_tab = tab(plugin_id, None);
@@ -467,7 +463,7 @@ async fn page_urls_keep_web_entry_and_resolve_declared_paths_from_origin() {
     rig.core.set_lists(vec![vec![plugin]]);
     rig.connected().await;
     wait_tabs(&rig, |view| {
-        rig.app.plugins().installed.is_some() && view.items.len() == 1
+        rig.app.plugins().installed.is_some() && view.items.len() == 3
     })
     .await;
     let web_tab = tab(plugin_id, None);

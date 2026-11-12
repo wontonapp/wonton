@@ -30,10 +30,10 @@ async fn scene() -> Scene {
     let host = Arc::new(FakeHost::installed(&layout));
     host.world()
         .registry
-        .insert("reg/core:stable".to_owned(), "sha256:new".to_owned());
+        .insert("reg/core:beta".to_owned(), "sha256:new".to_owned());
     let upgrades = Arc::new(Upgrades::new(
         UpgradeConfig {
-            source: Some("reg/core:stable".to_owned()),
+            source: Some("reg/core:beta".to_owned()),
             install_dir: Some(layout.install_dir.clone()),
             data_dir: layout.data_dir.clone(),
             core_container: Some("wonton-core".to_owned()),
@@ -79,7 +79,7 @@ async fn upgrading_through_the_interface() {
     let status = s.send(Method::GET, CORE_UPGRADE_PATH, "").await;
     assert_eq!(status.status, StatusCode::OK, "{}", status.text());
     assert_eq!(status.json()["check"], json!({"state": "not_checked"}));
-    assert_eq!(status.json()["channel"], "stable");
+    assert_eq!(status.json()["channel"], "beta");
     assert_eq!(status.json()["run"], json!(null));
 
     let checked = s

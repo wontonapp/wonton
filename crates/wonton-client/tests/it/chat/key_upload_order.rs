@@ -12,12 +12,8 @@
 //! 最新一条消息是 Undecryptable。用 (b) 而不是"Bot 发送返回"是因为 `send_text` 返回只代表进了发送
 //! 队列，真正的加密发送在后台任务里；preview 变成 Undecryptable 严格晚于"消息已发出且到了手机"，
 //! 此时密钥的共享与否已成定局——修复缺失时每次都是 Undecryptable，放开也救不回来，必挂。
-//!
-//! 放行到实际转发再延迟 4 秒，覆盖“允许转发”早于“密钥已入库”的时序；成功响应才是完成事件，
-//! 不能用固定短轮询窗口推断入库，也不能假设设备密钥上传后还会有下一次 keys/upload。
 
 use std::sync::atomic::Ordering;
-use std::time::Duration;
 
 use wonton_client::MessageSummary;
 
@@ -31,7 +27,6 @@ async fn the_bot_waits_for_the_owners_device_keys_before_its_first_message() {
     let phone = Phone::open(dir.path());
     let home = Home::start(&[phone.device_id()]).await;
     home.hold_key_uploads();
-    home.delay_key_uploads(Duration::from_secs(4));
 
     phone.connect(&home);
     let (_, _device) = phone.signed_in().await;

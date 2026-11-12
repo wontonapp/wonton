@@ -2,14 +2,11 @@
 //! 阶段等待使用快照订阅；watch 会合并中间值，限时阶段的等待者要先于触发它的请求挂起，并一直 poll 到交出阶段：
 //! 快照里有值不代表等待者下一次 poll 就绪。
 
-use std::sync::Arc;
-
 use axum::http::Method;
 use wonton_client::{
-    Action, ClientCore, CoreUpgradeBreakingPlugin, CoreUpgradeBreakingReason, CoreUpgradeCheck,
-    CoreUpgradeCompat, CoreUpgradeCompatCategory, CoreUpgradeFailure, CoreUpgradeOffer,
-    CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage,
-    CoreUpgradeStatus, CoreUpgradeTarget, CoreVersion, HomeStatus, PluginsViewModel, SettingsEntry,
+    Action, CoreUpgradeCheck, CoreUpgradeFailure, CoreUpgradeOffer, CoreUpgradePhase,
+    CoreUpgradeProblem, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage, CoreUpgradeStatus,
+    CoreUpgradeTarget, CoreVersion, HomeStatus, PluginsViewModel, SettingsEntry, TabRef,
 };
 
 use super::rig::{Canned, Rig, WAIT, core_error};
@@ -41,7 +38,6 @@ fn offer(digest: &str) -> CoreUpgradeCheck {
             digest: digest.to_owned(),
             version: Some("0.4.0".to_owned()),
             migrates: Vec::new(),
-            compat: CoreUpgradeCompat::Unavailable,
         },
     }
 }
@@ -96,8 +92,8 @@ fn unreachable(rig: &Rig) {
         .answer_always(Method::POST, CHECK_PATH, Canned(502, String::new()));
 }
 
-async fn stage(app: &Arc<ClientCore>, wanted: Wanted) -> PluginsViewModel {
-    let updates = app.subscribe_plugins();
+async fn stage(rig: &Rig, wanted: Wanted) -> PluginsViewModel {
+    let updates = rig.app.subscribe_plugins();
     tokio::time::timeout(WAIT, async {
         loop {
             let view = updates.next().await.expect("插件订阅提前结束");
@@ -107,7 +103,7 @@ async fn stage(app: &Arc<ClientCore>, wanted: Wanted) -> PluginsViewModel {
         }
     })
     .await
-    .unwrap_or_else(|_| panic!("等待升级阶段超时：{:?}", app.plugins().core_upgrade))
+    .unwrap_or_else(|_| panic!("等待升级阶段超时：{:?}", rig.app.plugins().core_upgrade))
 }
 
 #[tokio::test]
@@ -115,13 +111,13 @@ async fn a_lost_connection_is_reconnecting_until_the_limit_then_uncertain_until_
     let rig = Rig::new().await;
     reports(&rig, &in_progress(CoreUpgradePhase::Switching, 4));
     rig.connected().await;
-    stage(&rig.app, |stage| {
+    stage(&rig, |stage| {
         matches!(stage, CoreUpgradeStage::InProgress { .. })
     })
     .await;
 
     // watch 只保存最新快照；先挂起等待者，再触发请求，不靠三秒轮询撞上四秒时限。
-    let reconnecting = stage(&rig.app, |stage| *stage == CoreUpgradeStage::Reconnecting);
+    let reconnecting = stage(&rig, |stage| *stage == CoreUpgradeStage::Reconnecting);
     tokio::pin!(reconnecting);
     assert!(futures_util::poll!(&mut reconnecting).is_pending());
     unreachable(&rig);
@@ -129,7 +125,7 @@ async fn a_lost_connection_is_reconnecting_until_the_limit_then_uncertain_until_
         .dispatch(Action::RefreshCoreUpgrade { manual: false })
         .unwrap();
     reconnecting.await;
-    let view = stage(&rig.app, |stage| {
+    let view = stage(&rig, |stage| {
         matches!(stage, CoreUpgradeStage::Uncertain { .. })
     })
     .await;
@@ -147,7 +143,7 @@ async fn a_lost_connection_is_reconnecting_until_the_limit_then_uncertain_until_
     rig.app
         .dispatch(Action::RefreshCoreUpgrade { manual: false })
         .unwrap();
-    let view = stage(&rig.app, |stage| {
+    let view = stage(&rig, |stage| {
         matches!(stage, CoreUpgradeStage::RolledBack { .. })
     })
     .await;
@@ -163,41 +159,57 @@ async fn a_lost_connection_is_reconnecting_until_the_limit_then_uncertain_until_
 #[tokio::test]
 async fn a_waiting_observer_sees_reconnecting_before_a_later_report_replaces_it() {
     let rig = Rig::new().await;
-    // 关掉升级状态的定时轮询：轮询的 GET 什么时候 settle 不由测试控制，负载下会在
-    // 重连发布之后才带回 200（accept 把断连清掉、发布“升级中”），恰好盖住等待者要读的值。
-    // 场景里每次状态变化都由测试自己发起。
-    rig.app.stop_periodic_checks();
-    // 剩余时限 600 秒：时限必须长过整个测试。机器负载下测试的临界段可能超过 4 秒，
-    // 真实时限一过，产品就按 ADR-0025 从“升级中”直接给出“不确定”，重连中不会再出现，
-    // 场景的前提（断连发生在时限内）不成立。时限穿越本身由
-    // a_lost_connection_is_reconnecting… 覆盖。
-    reports(&rig, &in_progress(CoreUpgradePhase::Switching, 600));
+    reports(&rig, &in_progress(CoreUpgradePhase::Switching, 4));
     rig.connected().await;
-    stage(&rig.app, |stage| {
+    stage(&rig, |stage| {
         matches!(stage, CoreUpgradeStage::InProgress { .. })
     })
     .await;
 
-    // 按住升级状态的 GET：这段里除测试自己发起的两个 check 请求外，不许任何请求 settle，
-    // 否则它带回的报告会盖掉重连阶段（如断连后补取的 GET 带 200 回来，accept 把断连清掉、发布“升级中”）。
-    rig.core.hold(Method::GET, PATH);
-
     let published = rig.app.subscribe_plugins();
     published.next().await.unwrap();
-    // 观察者按壳的方式等待：真实任务、真实 waker，发布即唤醒并取值。
-    let app = Arc::clone(&rig.app);
-    let waiting =
-        tokio::spawn(
-            async move { stage(&app, |stage| *stage == CoreUpgradeStage::Reconnecting).await },
-        );
-    tokio::task::yield_now().await;
+    // 网络在核心自己的运行时里跑；只冻结测试时钟，明确禁止等待者靠轮询定时器醒来。
+    tokio::time::pause();
+    let waiting = stage(&rig, |stage| *stage == CoreUpgradeStage::Reconnecting);
+    tokio::pin!(waiting);
+    assert!(futures_util::poll!(&mut waiting).is_pending());
 
     unreachable(&rig);
     rig.app
         .dispatch(Action::RefreshCoreUpgrade { manual: false })
         .unwrap();
-    // 等待者取到重连阶段才算数；后续报告只能在这之后取代快照。
-    let seen = waiting.await.expect("观察者任务没有结束").core_upgrade;
+    // 发布由独立订阅确认：它先看到重连，才轮到检查等待者。
+    let delivered = async {
+        loop {
+            let view = published.next().await.expect("插件订阅提前结束");
+            if view.core_upgrade.stage == CoreUpgradeStage::Reconnecting {
+                return;
+            }
+        }
+    };
+    tokio::pin!(delivered);
+    let deadline = std::time::Instant::now() + WAIT;
+    while futures_util::poll!(&mut delivered).is_pending() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{:?}",
+            rig.app.plugins()
+        );
+        // 保持测试运行时可运行，Tokio 不会在等网络响应期间自动推进暂停的时钟。
+        tokio::task::yield_now().await;
+    }
+    // 等待者像壳一样被持续驱动：快照里有值不等于它下一次 poll 就绪，单次 poll 可能仍是 Pending。
+    let observed = loop {
+        if let std::task::Poll::Ready(view) = futures_util::poll!(&mut waiting) {
+            break view.core_upgrade.stage;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{:?}",
+            rig.app.plugins()
+        );
+        tokio::task::yield_now().await;
+    };
 
     reports(
         &rig,
@@ -217,7 +229,6 @@ async fn a_waiting_observer_sees_reconnecting_before_a_later_report_replaces_it(
         }
     };
     tokio::pin!(later);
-    let deadline = std::time::Instant::now() + WAIT;
     let view = loop {
         if let std::task::Poll::Ready(view) = futures_util::poll!(&mut later) {
             break view;
@@ -225,12 +236,12 @@ async fn a_waiting_observer_sees_reconnecting_before_a_later_report_replaces_it(
         assert!(std::time::Instant::now() < deadline);
         tokio::task::yield_now().await;
     };
-    // 快照已经被后续报告取代，等待者拿到的仍是重连中。
     assert_eq!(
-        seen.stage,
+        observed,
         CoreUpgradeStage::Reconnecting,
         "后续报告取代当前值前，等待者必须先收到重连阶段"
     );
+    tokio::time::resume();
     assert_eq!(
         view.core_upgrade.stage,
         CoreUpgradeStage::Uncertain {
@@ -244,7 +255,7 @@ async fn an_app_killed_during_an_upgrade_picks_it_up_again() {
     let mut rig = Rig::new().await;
     reports(&rig, &in_progress(CoreUpgradePhase::Starting, 600));
     rig.connected().await;
-    stage(&rig.app, |stage| {
+    stage(&rig, |stage| {
         matches!(stage, CoreUpgradeStage::InProgress { .. })
     })
     .await;
@@ -258,7 +269,7 @@ async fn an_app_killed_during_an_upgrade_picks_it_up_again() {
     let mut done = run(CoreUpgradeRunState::Completed);
     done.current = version(NEW);
     reports(&rig, &done);
-    stage(&rig.app, |stage| {
+    stage(&rig, |stage| {
         matches!(stage, CoreUpgradeStage::Completed { .. })
     })
     .await;
@@ -346,7 +357,7 @@ async fn the_new_core_first_check_shows_up_without_touching_the_page() {
     done.check = CoreUpgradeCheck::NotChecked;
     reports(&rig, &done);
     rig.connected().await;
-    stage(&rig.app, |stage| {
+    stage(&rig, |stage| {
         matches!(stage, CoreUpgradeStage::Completed { .. })
     })
     .await;
@@ -360,45 +371,6 @@ async fn the_new_core_first_check_shows_up_without_touching_the_page() {
             .is_some_and(|status| status.check == CoreUpgradeCheck::UpToDate)
     })
     .await;
-}
-
-/// 服务端报了会新失效的插件：客户端核心按 App 的语言把每个原因写一行，壳只渲染。
-#[tokio::test]
-async fn the_breaking_plugins_details_are_written_in_the_apps_language() {
-    let rig = Rig::new().await;
-    let mut check = idle(offer(NEW));
-    let CoreUpgradeCheck::Ready { offer } = &mut check.check else {
-        panic!("{check:?}");
-    };
-    offer.compat = CoreUpgradeCompat::Breaking {
-        plugins: vec![CoreUpgradeBreakingPlugin {
-            id: "app.immich.photos".into(),
-            reasons: vec![
-                CoreUpgradeBreakingReason {
-                    category: CoreUpgradeCompatCategory::SpecUnsupported,
-                    raw: "0.13".into(),
-                },
-                CoreUpgradeBreakingReason {
-                    category: CoreUpgradeCompatCategory::Other,
-                    raw: String::new(),
-                },
-            ],
-        }],
-    };
-    reports(&rig, &check);
-    rig.connected().await;
-    let view = rig
-        .wait_for(|view| !view.core_upgrade.compat_details.is_empty())
-        .await;
-    let details = &view.core_upgrade.compat_details;
-    assert_eq!(details.len(), 1, "{details:?}");
-    assert_eq!(details[0].id, "app.immich.photos");
-    assert_eq!(details[0].lines.len(), 2, "{details:?}");
-    assert!(
-        details[0].lines[0].contains("0.13"),
-        "{:?}",
-        details[0].lines
-    );
 }
 
 #[tokio::test]
@@ -416,7 +388,7 @@ async fn upgrading_sends_the_confirmed_digest_and_can_be_cancelled_only_while_pu
             digest: NEW.to_owned(),
         })
         .unwrap();
-    let view = stage(&rig.app, |stage| {
+    let view = stage(&rig, |stage| {
         matches!(
             stage,
             CoreUpgradeStage::InProgress {
@@ -445,7 +417,7 @@ async fn upgrading_sends_the_confirmed_digest_and_can_be_cancelled_only_while_pu
     );
 
     reports(&rig, &in_progress(CoreUpgradePhase::Other, 600));
-    stage(&rig.app, |stage| {
+    stage(&rig, |stage| {
         matches!(
             stage,
             CoreUpgradeStage::InProgress {
@@ -539,9 +511,13 @@ async fn a_new_version_marks_the_server_setting_and_the_settings_tab_until_skipp
                 } => Some((status, upgrade)),
                 _ => None,
             });
-        // 设置的红点现在在侧边栏上（栏上默认没有设置这一项）。
-        let badge = rig.app.plugins().sidebar.settings_badge;
-        (server, Some(badge))
+        let tab = rig
+            .app
+            .tabs()
+            .items
+            .into_iter()
+            .find(|item| item.tab == TabRef::Settings);
+        (server, tab.map(|item| item.badge))
     };
     let deadline = tokio::time::Instant::now() + WAIT;
     while marked(&rig) != (Some((HomeStatus::Connected, true)), Some(true)) {

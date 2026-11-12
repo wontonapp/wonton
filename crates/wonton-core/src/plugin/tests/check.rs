@@ -83,11 +83,8 @@ async fn lists_the_package_and_warns_about_what_the_store_would_flag() {
     let [unpinned, unhealthy] = &report.warnings[..] else {
         panic!("{report:?}")
     };
-    assert!(
-        unpinned.contains("nginx:1.27 isn't pinned by digest"),
-        "{unpinned}"
-    );
-    assert!(unhealthy.contains("has no healthcheck"), "{unhealthy}");
+    assert!(unpinned.contains("nginx:1.27 没有按摘要固定"), "{unpinned}");
+    assert!(unhealthy.contains("没有健康检查"), "{unhealthy}");
 }
 
 #[tokio::test]
@@ -96,12 +93,12 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
         .await
         .unwrap();
     for expected in [
-        "isn't pinned by digest",
-        "has no healthcheck",
-        "the official index requires tags",
-        "the official index requires license",
-        "the official index requires author",
-        "the official index requires notices",
+        "没有按摘要固定",
+        "没有健康检查",
+        "官方索引要求写 tags",
+        "官方索引要求写 license",
+        "官方索引要求写 author",
+        "官方索引要求写 notices",
     ] {
         assert!(
             report.problems.iter().any(|p| p.contains(expected)),
@@ -118,43 +115,6 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
         .unwrap();
     assert!(
         report.problems.is_empty() && report.warnings.is_empty(),
-        "{report:?}"
-    );
-}
-
-// `webui.health` 是核心代探测：网页服务可以不写 healthcheck，别的服务仍然要写。
-#[tokio::test]
-async fn webui_health_stands_in_for_the_healthcheck_of_the_web_service_only() {
-    let pinned = format!("  web:\n    image: nginx:1.27@sha256:{}", "a".repeat(64));
-    let complete = "  tags: {zh: [工具], en: [Tools]}\n  license: MIT\n  author: {name: Example}\n  notices: [NOTICE]";
-    let webui = "  webui: {service: web, port: 8080, health: /health}";
-    let report = run(
-        repo(&compose(&pinned, &format!("{webui}\n{complete}"))).path(),
-        true,
-    )
-    .await
-    .unwrap();
-    assert!(
-        !report.problems.iter().any(|p| p.contains("healthcheck")),
-        "{report:?}"
-    );
-
-    let sidecar = format!(
-        "{pinned}\n  sidecar:\n    image: nginx:1.27@sha256:{}",
-        "b".repeat(64)
-    );
-    let report = run(
-        repo(&compose(&sidecar, &format!("{webui}\n{complete}"))).path(),
-        true,
-    )
-    .await
-    .unwrap();
-    // 另外还有一条 `webui.health` 要 spec 0.13 的问题（这个包里写的是 0.5）。
-    assert!(
-        report
-            .problems
-            .iter()
-            .any(|p| p.contains("service sidecar has no healthcheck")),
         "{report:?}"
     );
 }
@@ -208,7 +168,7 @@ async fn icons_and_screenshots_are_processed_like_the_store_does() {
         &[("width", "48".into()), ("height", "24".into())],
     );
     assert!(
-        icon.starts_with("icon icon.svg: ") && icon.contains(&viewbox),
+        icon.starts_with("图标 icon.svg：") && icon.contains(&viewbox),
         "{icon}"
     );
     let gif_format = crate::l10n::text(
@@ -217,10 +177,10 @@ async fn icons_and_screenshots_are_processed_like_the_store_does() {
         &[("format", "Gif".into())],
     );
     assert!(
-        gif.starts_with("screenshot shots/gif.png: ") && gif.contains(&gif_format),
+        gif.starts_with("截图 shots/gif.png：") && gif.contains(&gif_format),
         "{gif}"
     );
-    for expected in ["shots/tall.png is 600×900", "landscape and portrait"] {
+    for expected in ["shots/tall.png 是 600×900", "横屏和竖屏"] {
         assert!(
             report.warnings.iter().any(|w| w.contains(expected)),
             "{expected}：{report:?}"
@@ -231,10 +191,7 @@ async fn icons_and_screenshots_are_processed_like_the_store_does() {
     write(dir.path(), "icon.svg", round.as_bytes());
     let report = run(dir.path(), false).await.unwrap();
     assert!(
-        report
-            .warnings
-            .iter()
-            .any(|w| w.contains("transparent corners")),
+        report.warnings.iter().any(|w| w.contains("角是透明的")),
         "{report:?}"
     );
 }
@@ -375,14 +332,4 @@ async fn interpolation_errors_name_the_field() {
         report.problems.iter().any(|p| p.contains("entrypoint[2]")),
         "{report:?}"
     );
-}
-
-/// 显示方式的取值写错时和安装时报同一条错误。
-#[tokio::test]
-async fn an_unknown_chat_layout_is_reported() {
-    let compose = compose("  bot:\n    image: echo", "  bot: {chat_layout: hologram}")
-        .replace("permissions: []", "permissions: [matrix.bot]");
-    let dir = repo(&compose);
-    let err = run(dir.path(), false).await.unwrap_err();
-    assert!(err.contains("bot.chat_layout"), "{err}");
 }

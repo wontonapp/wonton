@@ -20,18 +20,12 @@ struct TabPageTitleBar: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                VStack(spacing: WontonTheme.spacing.s4) {
-                    Text(page.title)
-                        .wontonText(WontonTheme.typography.itemTitle)
-                        .foregroundStyle(Color(colors.textPrimary))
-                        .lineLimit(1)
-                        .padding(.horizontal, max(leadingWidth, trailingWidth) + WontonTheme.spacing.s8)
-                        .accessibilityAddTraits(.isHeader)
-                    if case .sharedApp = session.tab, let owner = status.subtitle {
-                        Text(owner).wontonText(WontonTheme.typography.caption)
-                            .foregroundStyle(Color(colors.textSecondary))
-                    }
-                }
+                Text(status.title ?? page.title)
+                    .wontonText(WontonTheme.typography.itemTitle)
+                    .foregroundStyle(Color(colors.textPrimary))
+                    .lineLimit(1)
+                    .padding(.horizontal, max(leadingWidth, trailingWidth) + WontonTheme.spacing.s8)
+                    .accessibilityAddTraits(.isHeader)
                 HStack(spacing: 0) {
                     HStack(spacing: 0) {
                         if session.canGoBack {
@@ -41,32 +35,19 @@ struct TabPageTitleBar: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { leadingWidth = $0 }
                     Spacer(minLength: 0)
                     HStack(spacing: 0) {
-                        if let takeover {
-                            TakeoverButton(takeover: takeover).lineLimit(1).minimumScaleFactor(0.5)
-                        }
+                        if let takeover { TakeoverButton(takeover: takeover) }
                         WontonIconButton(icon: .expand, label: TabText.fullscreen, action: enterFullscreen)
                         if isOverlay {
                             WontonIconButton(icon: .close, label: TabText.close, action: close)
                         }
                     }
-                    // 最大的辅助字号下“我来操作”会把退出挤出屏幕，盖层就没有出口了：这一组的字号封顶。
-                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { trailingWidth = $0 }
                 }
                 .padding(.horizontal, WontonTheme.spacing.s4)
             }
             .frame(minHeight: WontonTheme.size.topBar)
-            // 工具按钮占着右边，标题只剩一点：连接原因单独一行，短句也不许挤成省略号（#149）。
             if let line = status.line {
                 line.padding(.horizontal, WontonTheme.spacing.pageInset)
-                    .padding(.bottom, WontonTheme.spacing.s8)
-            } else if let sentence = status.subtitle {
-                Text(sentence)
-                    .wontonText(WontonTheme.typography.body)
-                    .foregroundStyle(Color(colors.textPrimary))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, WontonTheme.spacing.pageInset)
                     .padding(.bottom, WontonTheme.spacing.s8)
             }
         }

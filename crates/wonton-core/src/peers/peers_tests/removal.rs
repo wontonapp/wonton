@@ -6,8 +6,8 @@ use super::*;
 /// 状态写进存储。
 #[tokio::test]
 async fn a_peer_removal_keeps_the_record_as_removed() {
-    let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
+    let b = TestCore::start("Jiale", "b.example.internal", Duration::from_secs(60)).await;
     pair(&a, &b).await;
 
     // 转发组件报过“已连上”：最近连上的时刻记在这一行上。
@@ -39,8 +39,8 @@ async fn a_peer_removal_keeps_the_record_as_removed() {
 /// 本机离线时对方删了、上线后握手被对方拒绝：和收到通知是同一个结果，不需要通知送到。
 #[tokio::test]
 async fn a_handshake_rejection_marks_the_record_like_a_notification() {
-    let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
+    let b = TestCore::start("Jiale", "b.example.internal", Duration::from_secs(60)).await;
     pair(&a, &b).await;
 
     // b 删了，通知没送到 a：只有 a 的转发组件探活时被 b 的服务器名单拒绝。
@@ -65,8 +65,8 @@ async fn a_handshake_rejection_marks_the_record_like_a_notification() {
 /// 主人对“对方已断开连接”的一行点移除才真删记录；对方已经没有记录了，通知不会报错。
 #[tokio::test]
 async fn the_owner_removes_a_removed_peer_for_good() {
-    let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
+    let b = TestCore::start("Jiale", "b.example.internal", Duration::from_secs(60)).await;
     pair(&a, &b).await;
 
     a.peers.remove("b.example.internal").await.unwrap();
@@ -82,8 +82,8 @@ async fn the_owner_removes_a_removed_peer_for_good() {
 /// 重启：标记过的记录原样读回，状态仍是“对方已断开连接”，名单和查找里没有它。
 #[tokio::test]
 async fn a_removed_peer_stays_removed_after_a_restart() {
-    let mut a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
+    let b = TestCore::start("Jiale", "b.example.internal", Duration::from_secs(60)).await;
     pair(&a, &b).await;
     b.peers.remove("a.example.internal").await.unwrap();
     a.wait_removed("b.example.internal").await;
@@ -103,17 +103,19 @@ async fn a_removed_peer_stays_removed_after_a_restart() {
 /// 对方删了以后重新配：对方扫本机的新码，原来的记录被新配对替换，不挡配对。
 #[tokio::test]
 async fn a_removed_peer_can_pair_again_by_scanning_our_code() {
-    let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
+    let b = TestCore::start("Jiale", "b.example.internal", Duration::from_secs(60)).await;
     pair(&a, &b).await;
     a.peers.remove("b.example.internal").await.unwrap();
     b.wait_removed("a.example.internal").await;
     b.peers.remove("a.example.internal").await.unwrap();
 
     let code = a.peers.issue_code();
-    b.scan_code(&code, &a).await.unwrap();
-    a.request_now("b.example.internal");
-    a.approve("b.example.internal").await.unwrap();
+    b.peers.scan(code.code.expose()).await.unwrap();
+    let card = a.cards.wait_for(2).await;
+    a.confirmations
+        .answer(&card.id, Answer::Approve, None)
+        .unwrap();
 
     a.wait_paired("b.example.internal").await;
     assert_eq!(
@@ -128,19 +130,21 @@ async fn a_removed_peer_can_pair_again_by_scanning_our_code() {
 /// 对方删了以后重新配：本机扫对方的新码，原来的记录被新配对替换，不报“已经配对过”。
 #[tokio::test]
 async fn a_removed_peer_can_pair_again_by_scanning_it() {
-    let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let a = TestCore::start("Alex", "a.example.internal", Duration::from_secs(60)).await;
+    let b = TestCore::start("Jiale", "b.example.internal", Duration::from_secs(60)).await;
     pair(&a, &b).await;
     b.peers.remove("a.example.internal").await.unwrap();
     a.wait_removed("b.example.internal").await;
 
     let code = b.peers.issue_code();
-    a.scan_code(&code, &b).await.unwrap();
+    a.peers.scan(code.code.expose()).await.unwrap();
     let row = a.row("b.example.internal").unwrap();
     assert_eq!(row.status, PeerStatus::AwaitingApproval);
 
-    b.request_now("a.example.internal");
-    b.approve("a.example.internal").await.unwrap();
+    let card = b.cards.wait_for(1).await;
+    b.confirmations
+        .answer(&card.id, Answer::Approve, None)
+        .unwrap();
     a.wait_paired("b.example.internal").await;
     assert_eq!(
         a.row("b.example.internal").unwrap().status,

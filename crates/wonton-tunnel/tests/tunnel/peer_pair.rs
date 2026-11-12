@@ -1,11 +1,10 @@
 //! 服务器配对的行为测试：两台“服务器”都在本机进程内，各自一个 endpoint 和服务器配对协议；
-//! 配对业务（令牌、请求表、回答）用测试里的替身处理方模拟。不依赖外网和 Docker。
-//!
-//! 码里只有中继，测试的 endpoint 不开中继，所以都用 `scan_to` 直接连对方的套接字；码本身的形状单独测。
+//! 配对业务（码表、记录）用测试里的替身处理方模拟。不依赖外网和 Docker。
 
 use std::{
     net::SocketAddr,
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 use iroh::protocol::DynProtocolHandler;
@@ -13,49 +12,24 @@ use iroh::{EndpointId, SecretKey};
 use wonton_tunnel::TunnelServer;
 use wonton_tunnel::pair::{PairHandler, PairProtocol, PairResponse, RejectReason};
 use wonton_tunnel::peer_pair::{
-    PEER_PAIR_ALPN, PeerIdentity, PeerPairHandler, PeerPairProtocol, PeerPairToken,
-    PeerPairingCode, PeerRejectReason, PeerReply, ask_outcome, deliver_decision, notify_removed,
-    scan_to,
+    PEER_PAIR_ALPN, PeerIdentity, PeerPairHandler, PeerPairProtocol, PeerPairSecret,
+    PeerPairingCode, PeerRejectReason, PeerReply, deliver_decision, notify_removed, scan,
 };
 
 use crate::support::{Timeouts, loopback_endpoint};
 
-/// 出码方的令牌和请求表。码长期有效，同一台服务器同时只有一条请求。
+/// 出码方的一次性码：有效期内能用一次。
 #[derive(Debug)]
 struct Issuer {
     server_name: String,
-    token: PeerPairToken,
+    secret: PeerPairSecret,
+    expires_at: Mutex<Instant>,
+    used: Mutex<bool>,
     /// 已配对的（endpoint ID，服务器名）。
     paired: Mutex<Vec<(EndpointId, String)>>,
     /// 扫进来的请求：扫码方的 endpoint ID、身份和能被回连的地址。
     scanned: Mutex<Vec<(EndpointId, PeerIdentity)>>,
-    /// 主人拒绝过的 endpoint ID。
-    rejected: Mutex<Vec<EndpointId>>,
-    /// 主人的回答：还没回答时为空。
-    answer: Mutex<Option<bool>>,
-}
-
-impl Issuer {
-    fn new() -> Self {
-        Self {
-            server_name: "issuer.example".to_owned(),
-            token: PeerPairToken::from_bytes([7; 16]),
-            paired: Mutex::new(Vec::new()),
-            scanned: Mutex::new(Vec::new()),
-            rejected: Mutex::new(Vec::new()),
-            answer: Mutex::new(None),
-        }
-    }
-
-    fn own_identity(&self) -> PeerIdentity {
-        PeerIdentity {
-            server_name: self.server_name.clone(),
-            owner_user_id: "@alex:issuer.example".to_owned(),
-            owner_display_name: "Alex".to_owned(),
-            relays: Vec::new(),
-            addrs: Vec::new(),
-        }
-    }
+    reject_self_name: bool,
 }
 
 impl PeerPairHandler for Issuer {
@@ -63,24 +37,30 @@ impl PeerPairHandler for Issuer {
         &self,
         scanner: EndpointId,
         identity: &PeerIdentity,
-        token: &PeerPairToken,
+        secret: &PeerPairSecret,
     ) -> PeerReply {
-        if identity.server_name == self.server_name {
+        if self.reject_self_name && identity.server_name == self.server_name {
             return PeerReply::Error {
                 reason: PeerRejectReason::SelfPairing,
                 message: "扫了自己的服务器".to_owned(),
             };
         }
-        if *token != self.token {
+        if *self.used.lock().unwrap() {
             return PeerReply::Error {
-                reason: PeerRejectReason::CodeRevoked,
-                message: "这张码已经作废".to_owned(),
+                reason: PeerRejectReason::Used,
+                message: "这个码已经用过".to_owned(),
             };
         }
-        if self.rejected.lock().unwrap().contains(&scanner) {
+        if *secret != self.secret {
             return PeerReply::Error {
-                reason: PeerRejectReason::Rejected,
-                message: "主人拒绝过这台服务器".to_owned(),
+                reason: PeerRejectReason::UnknownCode,
+                message: "没发过这个码".to_owned(),
+            };
+        }
+        if Instant::now() >= *self.expires_at.lock().unwrap() {
+            return PeerReply::Error {
+                reason: PeerRejectReason::Expired,
+                message: "码过期了".to_owned(),
             };
         }
         if self
@@ -95,33 +75,19 @@ impl PeerPairHandler for Issuer {
                 message: "已经配对过".to_owned(),
             };
         }
-        // 同一台服务器再发只更新那一条。
-        let mut scanned = self.scanned.lock().unwrap();
-        match scanned.iter_mut().find(|(id, _)| *id == scanner) {
-            Some(entry) => entry.1 = identity.clone(),
-            None => scanned.push((scanner, identity.clone())),
-        }
+        *self.used.lock().unwrap() = true;
+        self.scanned
+            .lock()
+            .unwrap()
+            .push((scanner, identity.clone()));
         PeerReply::AwaitingApproval {
-            identity: self.own_identity(),
-        }
-    }
-
-    fn outcome(&self, scanner: EndpointId) -> PeerReply {
-        match *self.answer.lock().unwrap() {
-            Some(true) => PeerReply::Approved {
-                identity: self.own_identity(),
+            identity: PeerIdentity {
+                server_name: self.server_name.clone(),
+                owner_user_id: "@alex:issuer.example".to_owned(),
+                owner_display_name: "Alex".to_owned(),
+                relays: Vec::new(),
+                addrs: Vec::new(),
             },
-            Some(false) => PeerReply::Declined,
-            None if self
-                .scanned
-                .lock()
-                .unwrap()
-                .iter()
-                .any(|(id, _)| *id == scanner) =>
-            {
-                PeerReply::Pending
-            }
-            None => PeerReply::UnknownRequest,
         }
     }
 
@@ -153,15 +119,11 @@ struct Scanner {
 }
 
 impl PeerPairHandler for Scanner {
-    fn scanned(&self, _: EndpointId, _: &PeerIdentity, _: &PeerPairToken) -> PeerReply {
+    fn scanned(&self, _: EndpointId, _: &PeerIdentity, _: &PeerPairSecret) -> PeerReply {
         PeerReply::Error {
             reason: PeerRejectReason::BadRequest,
             message: "扫码方不该收到扫码".to_owned(),
         }
-    }
-
-    fn outcome(&self, _: EndpointId) -> PeerReply {
-        PeerReply::UnknownRequest
     }
 
     fn expecting_decision(&self, from: &EndpointId) -> bool {
@@ -224,20 +186,21 @@ async fn start<H: PeerPairHandler + wonton_tunnel::pair::PairHandler>(handler: A
     }
 }
 
-fn code_for(issuer: &Server, token: PeerPairToken) -> PeerPairingCode {
+fn code_for(issuer: &Server, secret: PeerPairSecret) -> PeerPairingCode {
     PeerPairingCode {
         server_id: issuer.id,
-        relay_urls: vec!["https://relay.example.com/".parse().unwrap()],
+        relay_urls: Vec::new(),
+        direct_addrs: issuer.addrs.clone(),
         server_name: "issuer.example".to_owned(),
-        token,
+        secret,
     }
 }
 
 fn scanner_identity() -> PeerIdentity {
     PeerIdentity {
         server_name: "scanner.example".to_owned(),
-        owner_user_id: "@alice:scanner.example".to_owned(),
-        owner_display_name: "Alice".to_owned(),
+        owner_user_id: "@jiale:scanner.example".to_owned(),
+        owner_display_name: "Jiale".to_owned(),
         relays: Vec::new(),
         addrs: Vec::new(),
     }
@@ -252,39 +215,31 @@ fn addr_for(id: EndpointId, addrs: &[SocketAddr]) -> iroh::EndpointAddr {
     addr
 }
 
-/// 扫对方的码：连对方的套接字，出示令牌和自己的身份。码里没有直连地址时用它。
-async fn scan_server(
-    scanner: &Server,
-    issuer: &Server,
-    token: PeerPairToken,
-    identity: PeerIdentity,
-) -> Result<PeerReply, wonton_tunnel::TunnelError> {
-    scan_to(
-        scanner.endpoint(),
-        addr_for(issuer.id, &issuer.addrs),
-        token,
-        identity,
-    )
-    .await
-}
-
 #[tokio::test]
 async fn a_scan_gets_awaiting_approval_and_the_decision_reaches_only_the_scanned_endpoint() {
-    let issuer_state = Arc::new(Issuer::new());
+    let issuer_state = Arc::new(Issuer {
+        server_name: "issuer.example".to_owned(),
+        secret: PeerPairSecret::from_bytes([7; 16]),
+        expires_at: Mutex::new(Instant::now() + Duration::from_secs(60)),
+        used: Mutex::new(false),
+        paired: Mutex::new(Vec::new()),
+        scanned: Mutex::new(Vec::new()),
+        reject_self_name: false,
+    });
     let issuer = start(issuer_state.clone()).await;
     let scanner_state = Arc::new(Scanner::default());
     let scanner = start(scanner_state.clone()).await;
 
     // 扫码：出码方回了“等主人同意”，附自己的身份。
+    let code = code_for(&issuer, PeerPairSecret::from_bytes([7; 16]));
     scanner_state.expecting.lock().unwrap().push(issuer.id);
-    let reply = scan_server(
-        &scanner,
-        &issuer,
-        issuer_state.token.clone(),
+    let reply = scan(
+        scanner.endpoint(),
+        code,
         PeerIdentity {
             server_name: "scanner.example".to_owned(),
-            owner_user_id: "@alice:scanner.example".to_owned(),
-            owner_display_name: "Alice".to_owned(),
+            owner_user_id: "@jiale:scanner.example".to_owned(),
+            owner_display_name: "Jiale".to_owned(),
             relays: Vec::new(),
             addrs: scanner.addrs.clone(),
         },
@@ -310,7 +265,13 @@ async fn a_scan_gets_awaiting_approval_and_the_decision_reaches_only_the_scanned
         issuer.endpoint(),
         scanner_addr.clone(),
         true,
-        issuer_state.own_identity(),
+        PeerIdentity {
+            server_name: "issuer.example".to_owned(),
+            owner_user_id: "@alex:issuer.example".to_owned(),
+            owner_display_name: "Alex".to_owned(),
+            relays: Vec::new(),
+            addrs: Vec::new(),
+        },
     )
     .await
     .unwrap();
@@ -349,114 +310,80 @@ async fn a_scan_gets_awaiting_approval_and_the_decision_reaches_only_the_scanned
     scanner.server.shutdown().await;
 }
 
-/// 码的契约：版本升到 1，只有 endpoint ID、中继、服务器名和令牌，没有直连地址。
 #[tokio::test]
-async fn the_code_speaks_version_one_and_carries_no_direct_address() {
-    let issuer_state = Arc::new(Issuer::new());
+async fn expired_used_tampered_and_self_codes_are_rejected_with_distinct_reasons() {
+    let issuer_state = Arc::new(Issuer {
+        server_name: "issuer.example".to_owned(),
+        secret: PeerPairSecret::from_bytes([7; 16]),
+        expires_at: Mutex::new(Instant::now() + Duration::from_secs(60)),
+        used: Mutex::new(false),
+        paired: Mutex::new(Vec::new()),
+        scanned: Mutex::new(Vec::new()),
+        reject_self_name: true,
+    });
     let issuer = start(issuer_state.clone()).await;
-    let code = code_for(&issuer, issuer_state.token.clone());
-    let uri = code.to_uri();
-    assert!(uri.starts_with("wonton://peer?v=1&"), "{uri}");
-    assert!(uri.contains("token="), "{uri}");
-    assert!(!uri.contains("addr="), "{uri}");
-    assert_eq!(PeerPairingCode::parse(&uri).unwrap(), code);
+    let dialer = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
+
+    // 码被改：密钥对不上。
+    let tampered = code_for(&issuer, PeerPairSecret::from_bytes([8; 16]));
+    let reply = scan(&dialer, tampered, scanner_identity()).await.unwrap();
     assert_eq!(
-        PeerPairingCode::parse(&uri.replace("v=1", "v=0")),
-        Err(wonton_tunnel::peer_pair::InvalidPeerCode::UnsupportedVersion("0".to_owned()))
+        reply,
+        PeerReply::Error {
+            reason: PeerRejectReason::UnknownCode,
+            message: "没发过这个码".to_owned(),
+        }
     );
-    issuer.server.shutdown().await;
-}
 
-/// 同一张码扫两次都收下，第二次只更新那一条请求，不新开一条。
-#[tokio::test]
-async fn the_same_code_scans_twice_and_updates_one_request() {
-    let issuer_state = Arc::new(Issuer::new());
-    let issuer = start(issuer_state.clone()).await;
-    let scanner = start(Arc::new(Scanner::default())).await;
+    // 扫自己：扫码方报的服务器名和出码方一样。
+    let good = code_for(&issuer, PeerPairSecret::from_bytes([7; 16]));
+    let mut self_scanner = scanner_identity();
+    self_scanner.server_name = "issuer.example".to_owned();
+    let reply = scan(&dialer, good.clone(), self_scanner).await.unwrap();
+    assert!(matches!(
+        reply,
+        PeerReply::Error {
+            reason: PeerRejectReason::SelfPairing,
+            ..
+        }
+    ));
 
-    for name in ["Alice", "改名了"] {
-        let reply = scan_server(
-            &scanner,
-            &issuer,
-            issuer_state.token.clone(),
-            PeerIdentity {
-                owner_display_name: name.to_owned(),
-                addrs: scanner.addrs.clone(),
-                ..scanner_identity()
-            },
-        )
+    // 码过期。
+    *issuer_state.expires_at.lock().unwrap() = Instant::now() - Duration::from_secs(1);
+    let reply = scan(&dialer, good, scanner_identity()).await.unwrap();
+    assert!(matches!(
+        reply,
+        PeerReply::Error {
+            reason: PeerRejectReason::Expired,
+            ..
+        }
+    ));
+
+    // 码已用过：同一张码第二次扫（替身只认自己的密钥，“新码”也是它）。
+    *issuer_state.expires_at.lock().unwrap() = Instant::now() + Duration::from_secs(60);
+    let fresh = code_for(&issuer, PeerPairSecret::from_bytes([7; 16]));
+    let reply = scan(&dialer, fresh.clone(), scanner_identity())
         .await
         .unwrap();
-        assert!(
-            matches!(reply, PeerReply::AwaitingApproval { .. }),
-            "{reply:?}"
-        );
-    }
-    {
-        let scanned = issuer_state.scanned.lock().unwrap();
-        assert_eq!(scanned.len(), 1, "同一台服务器只有一条请求");
-        assert_eq!(scanned[0].1.owner_display_name, "改名了");
-    }
-    issuer.server.shutdown().await;
-    scanner.server.shutdown().await;
-}
-
-/// 令牌不对（对方拿的是重置前的码）：按 `code_revoked` 拒绝；拒绝过的服务器再扫直接说清。
-#[tokio::test]
-async fn a_wrong_token_and_a_rejected_scanner_are_told_apart() {
-    let issuer_state = Arc::new(Issuer::new());
-    let issuer = start(issuer_state.clone()).await;
-    let scanner = start(Arc::new(Scanner::default())).await;
-
-    let reply = scan_server(
-        &scanner,
-        &issuer,
-        PeerPairToken::from_bytes([9; 16]),
-        scanner_identity(),
-    )
-    .await
-    .unwrap();
+    assert!(matches!(reply, PeerReply::AwaitingApproval { .. }));
+    let reply = scan(&dialer, fresh, scanner_identity()).await.unwrap();
     assert!(matches!(
         reply,
         PeerReply::Error {
-            reason: PeerRejectReason::CodeRevoked,
+            reason: PeerRejectReason::Used,
             ..
         }
     ));
 
-    issuer_state.rejected.lock().unwrap().push(scanner.id);
-    let reply = scan_server(
-        &scanner,
-        &issuer,
-        issuer_state.token.clone(),
-        scanner_identity(),
-    )
-    .await
-    .unwrap();
-    assert!(matches!(
-        reply,
-        PeerReply::Error {
-            reason: PeerRejectReason::Rejected,
-            ..
-        }
-    ));
-    assert!(issuer_state.scanned.lock().unwrap().is_empty());
-
-    // 已经配对过。
-    issuer_state.rejected.lock().unwrap().clear();
+    // 已经配对过：码没用过的前提下，对方已在配对名单里。
+    *issuer_state.used.lock().unwrap() = false;
     issuer_state
         .paired
         .lock()
         .unwrap()
         .push((SecretKey::generate().public(), "scanner.example".to_owned()));
-    let reply = scan_server(
-        &scanner,
-        &issuer,
-        issuer_state.token.clone(),
-        scanner_identity(),
-    )
-    .await
-    .unwrap();
+    let fresh = code_for(&issuer, PeerPairSecret::from_bytes([7; 16]));
+    let reply = scan(&dialer, fresh, scanner_identity()).await.unwrap();
     assert!(matches!(
         reply,
         PeerReply::Error {
@@ -465,79 +392,34 @@ async fn a_wrong_token_and_a_rejected_scanner_are_told_apart() {
         }
     ));
     issuer.server.shutdown().await;
-    scanner.server.shutdown().await;
-}
-
-/// 扫码方来问结果：等待中、已同意（附出码方的身份）、已拒绝、不认识这条请求。
-#[tokio::test]
-async fn asking_for_the_outcome_reports_pending_approved_declined_and_unknown() {
-    let issuer_state = Arc::new(Issuer::new());
-    let issuer = start(issuer_state.clone()).await;
-    let scanner = start(Arc::new(Scanner::default())).await;
-    let stranger = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
-
-    // 还没扫过：不认识。
-    let reply = ask_outcome(scanner.endpoint(), addr_for(issuer.id, &issuer.addrs))
-        .await
-        .unwrap();
-    assert_eq!(reply, PeerReply::UnknownRequest);
-
-    scan_server(
-        &scanner,
-        &issuer,
-        issuer_state.token.clone(),
-        PeerIdentity {
-            addrs: scanner.addrs.clone(),
-            ..scanner_identity()
-        },
-    )
-    .await
-    .unwrap();
-    let reply = ask_outcome(scanner.endpoint(), addr_for(issuer.id, &issuer.addrs))
-        .await
-        .unwrap();
-    assert_eq!(reply, PeerReply::Pending);
-
-    *issuer_state.answer.lock().unwrap() = Some(true);
-    let reply = ask_outcome(scanner.endpoint(), addr_for(issuer.id, &issuer.addrs))
-        .await
-        .unwrap();
-    let PeerReply::Approved { identity } = reply else {
-        panic!("应是已同意，实际 {reply:?}");
-    };
-    assert_eq!(identity.server_name, "issuer.example");
-
-    *issuer_state.answer.lock().unwrap() = Some(false);
-    let reply = ask_outcome(&stranger, addr_for(issuer.id, &issuer.addrs))
-        .await
-        .unwrap();
-    assert_eq!(reply, PeerReply::Declined);
-
-    // 别的 endpoint 来问、主人又还没回答：它没发过请求。
-    *issuer_state.answer.lock().unwrap() = None;
-    let reply = ask_outcome(&stranger, addr_for(issuer.id, &issuer.addrs))
-        .await
-        .unwrap();
-    assert_eq!(reply, PeerReply::UnknownRequest);
-    issuer.server.shutdown().await;
-    scanner.server.shutdown().await;
 }
 
 #[tokio::test]
 async fn a_rejected_decision_and_a_removal_notice_reach_the_scanner() {
-    let issuer_state = Arc::new(Issuer::new());
+    let issuer_state = Arc::new(Issuer {
+        server_name: "issuer.example".to_owned(),
+        secret: PeerPairSecret::from_bytes([7; 16]),
+        expires_at: Mutex::new(Instant::now() + Duration::from_secs(60)),
+        used: Mutex::new(false),
+        paired: Mutex::new(Vec::new()),
+        scanned: Mutex::new(Vec::new()),
+        reject_self_name: false,
+    });
     let issuer = start(issuer_state.clone()).await;
     let scanner_state = Arc::new(Scanner::default());
     let scanner = start(scanner_state.clone()).await;
 
+    let code = code_for(&issuer, PeerPairSecret::from_bytes([7; 16]));
     scanner_state.expecting.lock().unwrap().push(issuer.id);
-    scan_server(
-        &scanner,
-        &issuer,
-        issuer_state.token.clone(),
+    scan(
+        scanner.endpoint(),
+        code,
         PeerIdentity {
+            server_name: "scanner.example".to_owned(),
+            owner_user_id: "@jiale:scanner.example".to_owned(),
+            owner_display_name: "Jiale".to_owned(),
+            relays: Vec::new(),
             addrs: scanner.addrs.clone(),
-            ..scanner_identity()
         },
     )
     .await
@@ -552,7 +434,13 @@ async fn a_rejected_decision_and_a_removal_notice_reach_the_scanner() {
         issuer.endpoint(),
         scanner_addr.clone(),
         false,
-        issuer_state.own_identity(),
+        PeerIdentity {
+            server_name: "issuer.example".to_owned(),
+            owner_user_id: "@alex:issuer.example".to_owned(),
+            owner_display_name: "Alex".to_owned(),
+            relays: Vec::new(),
+            addrs: Vec::new(),
+        },
     )
     .await
     .unwrap();
@@ -594,25 +482,37 @@ async fn a_removal_notice_to_a_server_without_any_record_still_succeeds() {
     scanner.server.shutdown().await;
 }
 
-/// 出码方靠扫码请求里的地址回连。
+/// 码的地址拼法和回连地址一致：出码方靠扫码请求里的地址回连。
 #[tokio::test]
 async fn the_issuer_dials_back_through_the_addresses_from_the_scan() {
-    let issuer_state = Arc::new(Issuer::new());
+    let issuer_state = Arc::new(Issuer {
+        server_name: "issuer.example".to_owned(),
+        secret: PeerPairSecret::from_bytes([7; 16]),
+        expires_at: Mutex::new(Instant::now() + Duration::from_secs(60)),
+        used: Mutex::new(false),
+        paired: Mutex::new(Vec::new()),
+        scanned: Mutex::new(Vec::new()),
+        reject_self_name: false,
+    });
     let issuer = start(issuer_state.clone()).await;
-    let scanner = start(Arc::new(Scanner::default())).await;
+    let scanner_state = Arc::new(Scanner::default());
+    let scanner = start(scanner_state.clone()).await;
 
-    let code = code_for(&issuer, issuer_state.token.clone());
+    let code = code_for(&issuer, PeerPairSecret::from_bytes([7; 16]));
     let parsed = PeerPairingCode::parse(&code.to_uri()).unwrap();
     assert_eq!(parsed, code);
     assert_eq!(parsed.server_addr().id, issuer.id);
 
-    let reply = scan_server(
-        &scanner,
-        &issuer,
-        issuer_state.token.clone(),
+    scanner_state.expecting.lock().unwrap().push(issuer.id);
+    let reply = scan(
+        scanner.endpoint(),
+        code,
         PeerIdentity {
+            server_name: "scanner.example".to_owned(),
+            owner_user_id: "@jiale:scanner.example".to_owned(),
+            owner_display_name: "Jiale".to_owned(),
+            relays: Vec::new(),
             addrs: scanner.addrs.clone(),
-            ..scanner_identity()
         },
     )
     .await
@@ -625,19 +525,4 @@ async fn the_issuer_dials_back_through_the_addresses_from_the_scan() {
     }
     issuer.server.shutdown().await;
     scanner.server.shutdown().await;
-}
-
-/// 码里的中继地址拼进连出码方的地址；没有直连地址。
-#[tokio::test]
-async fn the_code_address_holds_the_relay_only() {
-    let issuer = start(Arc::new(Issuer::new())).await;
-    let code = code_for(&issuer, PeerPairToken::from_bytes([7; 16]));
-    let addr = code.server_addr();
-    assert_eq!(addr.id, issuer.id);
-    assert_eq!(
-        addr.relay_urls().collect::<Vec<_>>(),
-        vec![&"https://relay.example.com/".parse().unwrap()]
-    );
-    assert_eq!(addr.ip_addrs().count(), 0);
-    issuer.server.shutdown().await;
 }

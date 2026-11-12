@@ -13,15 +13,10 @@ use serde::{Deserialize, Serialize};
 pub struct LanSettings {
     /// 主人在设置里的选择；没选过时是 [`LanChoice::Auto`]。
     pub choice: LanChoice,
-    /// 绑定地址由核心容器的 `WONTON_LAN_ADDRESSES` 或 `WONTON_ANNOUNCE_ADDRESSES` 定死：`choice` 不起作用，设置里不能改。
+    /// 地址由核心容器的 `WONTON_LAN_ADDRESSES` 指定：`choice` 不起作用，设置里不能改。
     pub fixed_by_environment: bool,
-    /// 上面的环境变量里是 `WONTON_ANNOUNCE_ADDRESSES`：端口在虚拟机里全接口绑定，手机连的是宣告地址。
-    pub announce_by_environment: bool,
-    /// 端口开在这些地址上；选不出地址时为空，原因见 `problem`。由启动器声明宣告地址时是通配地址 `0.0.0.0`（有 IPv6 时还有 `::`），
-    /// 手机连的是 `announce_addresses`。
+    /// 端口开在这些地址上；选不出地址时为空，原因见 `problem`。
     pub addresses: Vec<LanAddress>,
-    /// 告诉手机去连的地址。没设 `WONTON_ANNOUNCE_ADDRESSES` 时和 `addresses` 相同；设了时是它。
-    pub announce_addresses: Vec<LanAddress>,
     /// 选不出地址，或者选的网卡、地址不在宿主上了；没有问题时为空。
     pub problem: Option<LanProblem>,
     /// 可以选的网卡：宿主上有私有地址的网卡，不列 Docker 的网桥和 veth。默认路由所在的网卡在前。
@@ -42,7 +37,7 @@ pub enum LanChoice {
     Manual {
         /// 网卡名，如 `eno1`、`tailscale0`。
         interfaces: Vec<String>,
-        /// 私有地址，如 `192.168.0.10`、`fd00::10`。
+        /// 私有地址，如 `192.168.0.193`、`fd00::10`。
         addresses: Vec<String>,
     },
     /// 比这个 App 新的核心给的选法，不能用来改设置。
@@ -54,7 +49,7 @@ pub enum LanChoice {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct LanAddress {
-    /// 如 `192.168.0.10`。
+    /// 如 `192.168.0.193`。
     pub address: String,
     /// 地址所在的网卡；`WONTON_LAN_ADDRESSES` 指定的地址在宿主上找不到时为空。
     pub interface: Option<String>,
@@ -112,8 +107,6 @@ pub enum LanFailure {
     NoDefaultRoute,
     /// 默认路由走的是虚拟网卡（如 Tailscale 的出口节点、WireGuard），不自动选。
     VirtualInterface,
-    /// 服务器跑在电脑上的虚拟机里（Docker Desktop、OrbStack、WSL2 这类），虚拟机自己的地址手机连不到，也没有声明宣告地址。
-    DesktopVm,
     /// 网卡上没有私有 IPv4 地址：自动选的那块，或者主人选的网卡。
     NoPrivateAddress,
     /// 主人选的网卡或地址，或者 `WONTON_LAN_ADDRESSES` 里的地址，不在宿主上了。
@@ -177,13 +170,8 @@ mod tests {
                 addresses: vec!["fd00::10".into()],
             },
             fixed_by_environment: false,
-            announce_by_environment: false,
             addresses: vec![
-                address("192.168.0.10", "eno1", false),
-                address("fd00::10", "eno1", true),
-            ],
-            announce_addresses: vec![
-                address("192.168.0.10", "eno1", false),
+                address("192.168.0.193", "eno1", false),
                 address("fd00::10", "eno1", true),
             ],
             problem: None,
@@ -192,7 +180,7 @@ mod tests {
                     name: "eno1".into(),
                     kind: LanInterfaceKind::Ethernet,
                     addresses: vec![
-                        address("192.168.0.10", "eno1", false),
+                        address("192.168.0.193", "eno1", false),
                         address("fd00::10", "eno1", true),
                     ],
                     default_route: true,
@@ -223,9 +211,7 @@ mod tests {
         let failed = LanSettings {
             choice: LanChoice::Auto,
             fixed_by_environment: true,
-            announce_by_environment: false,
             addresses: vec![],
-            announce_addresses: vec![],
             problem: Some(LanProblem {
                 reason: LanFailure::VirtualInterface,
                 message: "默认路由走的是 tailscale0（虚拟网卡）".into(),
@@ -234,18 +220,6 @@ mod tests {
             plugins: vec![],
         };
         assert_eq!(round_trip(&failed), failed);
-        // 启动器声明了宣告地址：绑定是通配地址，手机连的是宣告地址。
-        let announced = LanSettings {
-            choice: LanChoice::Auto,
-            fixed_by_environment: true,
-            announce_by_environment: true,
-            addresses: vec![address("0.0.0.0", "", false)],
-            announce_addresses: vec![address("192.168.0.5", "", true)],
-            problem: None,
-            interfaces: vec![],
-            plugins: vec![],
-        };
-        assert_eq!(round_trip(&announced), announced);
     }
 
     /// 契约：核心和客户端核心之间的 JSON 写法。改了就要两边一起改，旧的 App 也会读不懂。
@@ -277,10 +251,6 @@ mod tests {
             json!("no_private_address")
         );
         assert_eq!(
-            serde_json::to_value(LanFailure::DesktopVm).unwrap(),
-            json!("desktop_vm")
-        );
-        assert_eq!(
             serde_json::to_value(LanPort {
                 port: 22000,
                 protocol: LanProtocol::Udp,
@@ -304,10 +274,6 @@ mod tests {
         assert_eq!(parsed.interfaces[0].kind, LanInterfaceKind::Other);
         assert_eq!(parsed.plugins[0].ports[0].protocol, LanProtocol::Other);
         assert_eq!(parsed.problem.unwrap().reason, LanFailure::Other);
-        assert!(!parsed.announce_by_environment);
-        assert_eq!(parsed.announce_addresses.len(), 2);
-        let desktop: LanFailure = serde_json::from_value(json!("desktop_vm")).unwrap();
-        assert_eq!(desktop, LanFailure::DesktopVm);
     }
 
     fn round_trip<T>(value: &T) -> T

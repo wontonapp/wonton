@@ -6,11 +6,9 @@
 
 ## 产品边界
 
-- Wonton 是独立产品，不引入其他产品的代码、账号体系或服务。别的仓库只作参考：不整段复制代码，
-  也不导入其 git 历史。
-- 服务端是“任意 Linux + Docker”。Mac、Windows 上由云吞自带一台隐藏的 Linux 虚拟机来跑，核心和插件照样在 Linux + Docker 里，
-  不做原生的 macOS 或 Windows 服务端（[ADR-0062](docs/adr/0062-desktop-vm-host.md)）。
-- 不做自有 OS 镜像，只在 Mac、Windows 上带一台不可变的 Linux 虚拟机，系统盘整盘替换。
+- Wonton 是独立产品，不引入端脑云（Cephalon）的任何代码、账号体系或服务。旧 Lucy 仓库只作参考，
+  不整段复制代码，也不导入其 git 历史。
+- 服务端只支持“任意 Linux + Docker”，不做自有 OS 镜像、macOS 或 Windows 宿主。
 - 核心保持薄：插件管理、网关与配对、推送代理、MCP 总线、密钥与存储授权。其余能力（包括 Agent、
   模型网关、相册）都是插件。
 - 架构遵循 ADR-0015：一个组件只做一件事，组件之间只经标准接口连接（Matrix、MCP、ACP、OIDC、Compose），
@@ -32,25 +30,18 @@
 - 优先使用成熟的开源组件和开放标准（Matrix、iroh、MCP、ACP、OIDC、Subsonic、Compose）。
   要自研时，先在 PR 或 ADR 里写明现成方案为什么不行。
 - 新增依赖要写明许可证。链接进我们二进制的代码禁止 AGPL/GPL；作为独立容器运行的插件
-  （如 Immich、Navidrome）不受此限。
-- 插件优先拉上游官方镜像；上游没有镜像时，可以装上游的发布物（npm、deb 等），或从上游固定的版本或提交原样构建镜像。
-  都不改上游源码、固定版本，不分发修改版。AGPL 的插件在插件页写明源码地址。
+  （如 Immich、Navidrome）不受此限，只拉取上游官方镜像，不分发修改版。
 
 ## 代码结构
 
-- 源码文件按代码行数，不算空行和只有注释的行：超过 800 行警告，超过 2000 行 CI 失败，由
-  `scripts/check-file-size.sh` 检查。函数 ≤ 100 行，超过即失败，由各语言 linter 检查：Rust 用 clippy
+- CI 硬门禁：源码文件 ≤ 800 行，函数 ≤ 100 行，超过即失败。文件行数由
+  `scripts/check-file-size.sh` 检查；函数长度由各语言 linter 检查：Rust 用 clippy
   `too_many_lines`，Kotlin 用 detekt `LongMethod`，Swift 用 SwiftLint `function_body_length`。
-- 不许为了缩短行数写难懂的代码：删注释、把多行挤成一行、把穷举的 match/when 改成 `_`、缩短有意义的名字都不行。
-  超过 800 行的警告是“该按职责拆”的信号，拆要按职责，不是挪几行凑数。
-- 确需超过 2000 行时写进 `.size-allowlist`，格式 `路径 | 原因 | 到期日 YYYY-MM-DD`；到期后 CI 重新失败。
+- 确需例外时写进 `.size-allowlist`，格式 `路径 | 原因 | 到期日 YYYY-MM-DD`；到期后 CI 重新失败。
 - 按职责拆模块。新功能放进职责清晰的小模块，不往已经很大的文件末尾追加。
 - 客户端遵循“厚 Rust 核心 + 薄原生壳”：状态、业务逻辑、网络、存储、ViewModel 都在 Rust；
   Swift/Kotlin 只渲染 ViewModel、把用户操作发回核心，以及调用平台能力（推送、相册、文件选择、
-  后台音频等）。核心导出的 ViewModel 项只有一个壳用到时，CI 的 `scripts/check-shell-parity.py` 报警告、不挡合并；
-  有意只在一边的写进 `.shell-parity-allowlist` 并写明原因。
-- 改用户可见功能，尽量在同一个 PR 里把两个壳（`apps/ios`、`apps/compose`）一起改；做不到就在 PR 描述里写明
-  “只改了 iOS：<原因>”或“只改了 Android：<原因>”（看板据此给前端线建待补卡）。平台能力（推送、相册等）各端单独排期，不受此限。
+  后台音频等）。
 
 ## 界面设计
 
@@ -67,19 +58,12 @@
 ## 开发环境与检查
 
 - Rust 工具链版本由 `rust-toolchain.toml` 固定，所有 crate 在 `crates/` 下，同属一个 workspace。
-- git hook 用 lefthook（MIT，单个可执行文件，只是开发工具；`brew install lefthook`）。`bash scripts/check.sh` 开头会装上（幂等），
-  只想装 hook 用 `bash scripts/install-hooks.sh`。提交前自动 rustfmt、SwiftLint 修正并 stage，行数门禁和界面文字检查不过就拦下；
-  推送前对改到的 crate 跑 Clippy，改到 `apps/ios/`、`apps/compose/` 才跑 SwiftLint、detekt，本机没装的工具打印“跳过”，由 CI 兜底。
-  改到 Rust 的推送还会拉最新的 main，在合并后的树上跑 `cargo check --workspace --tests`（`scripts/check-merged-main.sh`，
-  `check.sh` 也跑），拦住“main 加了字段、分支没跟上”这类各自都绿、合起来才坏的冲突；确需跳过时用 `LEFTHOOK_EXCLUDE=merged-main`。
-  规则只在 `lefthook.yml` 一处，CI 用同一份配置查全部文件。不要用 `--no-verify` 绕过。
 - 提交前运行 `bash scripts/check.sh`（行数门禁、冲突标记检查、格式、Clippy、测试），和 CI 的 Rust 部分一致；Swift、Kotlin 的检查在各自的工作流里。
 - 依赖 Docker 的测试标 `#[ignore = "需要 Docker，…"]`。`check.sh` 连得上 Docker 就一起运行，连不上就跳过并打印手动运行的
-  命令。跳过不等于通过：PR 说明里写明没跑。CI 分两处跑：PR 上的“Rust”跑默认的测试，故意让 Docker 不可用，保证它们
-  不依赖 Docker，是合并门槛；“Rust Docker 测试”运行这些标了 `#[ignore]` 的，合进 `main` 之后才跑，不挡合并，
-  Docker 不可用即失败。合并前想先跑，在 Actions 页对自己的分支手动触发 `rust-docker`。
-- CI 用 `plugin check-index` 检查官方索引（wonton-store）里的每个清单这份核心都读得懂、都渲染得出来（不再注入的变量当场失败）。
-  改清单写法或注入变量的 PR 要先让索引换成新核心读得懂的写法，否则 CI 失败。
+  命令。跳过不等于通过：PR 说明里写明没跑。CI 分两个作业：“Rust”跑默认的测试，故意让 Docker 不可用，保证它们不依赖
+  Docker；“Rust Docker 测试”运行这些标了 `#[ignore]` 的，Docker 不可用即失败。
+- CI 用 `plugin check-index` 检查官方索引（wonton-store）里的每个清单这份核心都读得懂。改清单写法的 PR 要先让索引
+  换成新核心读得懂的写法，否则 CI 失败。
 - 没有 `/var/run/docker.sock`（OrbStack、Colima 等）时，`check.sh` 从当前 Docker context 取 `DOCKER_HOST`；
   直接运行 `cargo test` 要自己设置，testcontainers 不读 context。
 - 依赖：只有一个 crate 用到的依赖写在该 crate 的 `Cargo.toml`；多个 crate 共用的依赖在根
@@ -92,12 +76,7 @@
 - 业务逻辑在 Rust 核心里，用行为测试覆盖：给定操作序列，断言 ViewModel 或对外副作用，不测实现细节。
 - 核心 API 和插件清单用契约测试。
 - 每个里程碑维护一条可在真实主机上复跑的端到端冒烟脚本。
-- 不写文案断言和只为凑覆盖率的测试；不设覆盖率门槛。
-- Rust 侧不写快照测试。原生壳（Swift、Kotlin）允许截图测试：截图只从 SwiftUI 预览、Compose `@Preview`
-  出，用固定的假 ViewModel 数据（测试替身只在测试代码里，见“失败即停”），参考图直接进 git，
-  不用 LFS（公开仓库的 LFS 流量超了要收费）。截图测试只比像素，不必给每个预览都录。
-- 界面改了不手改参考图：给 PR 打标签，由 CI 重录并提交，见 [.github/workflows/README.md](.github/workflows/README.md)。
-- 能不能走通交给 CI（单测、截图测试、夜跑的界面测试），人工走查只留给视觉和手感上的改动。
+- 不写快照测试、文案断言和只为凑覆盖率的测试；不设覆盖率门槛。
 - 改了行为就改测试；删功能时连同测试一起删。
 
 ## 文档与注释
@@ -107,7 +86,7 @@
 - 只维护：README、本文件、`docs/GOAL.md`、`docs/ARCHITECTURE.md`、`docs/glossary.md`（术语表）、公开仓库里的插件规范、
   `docs/adr/`，以及各模块目录下简短的 README。
 - 改变架构、协议或用户可见行为的 PR，必须在同一个 PR 里更新对应文档。
-- 插件规范在公开仓库 [wonton-docs](https://github.com/wontonapp/wonton-docs)，插件作者要看，主仓库是私有的。改规范的核心 PR
+- 插件规范在公开仓库 [wonton-docs](https://github.com/geraldpeng6/wonton-docs)，插件作者要看，主仓库是私有的。改规范的核心 PR
   同时在那边提 PR，核心合并后再合。那边是公开文档，不引用 ADR 和里程碑。
 - 重大决策写 ADR，写法见 [docs/adr/README.md](docs/adr/README.md)。
 - 不写进度报告、按日期的笔记和已完成的实施计划。进度看 GitHub issue 和里程碑。
@@ -124,24 +103,19 @@
 - 一个分支一个 PR；squash 合并后自动删除分支。
 - 一个 issue 可以分几个 PR：最后一个写 `Closes #N`，合并时 GitHub 自动关掉 issue；之前的写 `Refs #N`，并在
   issue 里留言说明还剩什么。不写的话 issue 不会自己关，做完的和没做的混在一起。
-- PR 合并前只等快检查：格式、lint（Clippy、detekt、SwiftLint）、行数门禁、编译、不依赖 Docker 的单元测试，目标十分钟内
-  出结果。必需检查绿了就 `gh pr merge --auto --squash` 直接合，不要求 PR 先追上 `main`。
-- 改了 `crates/wonton-protocol` 的 PR，`main` 在分支切出之后又改过协议时，lint 的“改了协议的 PR 基于最新 main”一步失败：
-  先 `git rebase origin/main`、解完冲突再推。只在 PR 的 CI 跑时判断一次；没改协议的 PR 不受影响。
-- 慢的合进 `main` 之后跑，不挡合并：Docker 集成测试、界面测试、镜像构建。新加的测试按这个分界放，哪个工作流在哪一边见
-  [.github/workflows/README.md](.github/workflows/README.md)。
-- 必需检查只有 `gate` 工作流末尾的“gate 汇总”一个：PR 要等的检查都由 `gate.yml` 调用，它的 `changes` 作业判断改动范围，
-  没改到的重作业报 skipped。新的快检查加进 `gate` 调用的工作流，规则集不用动。
-- `main` 每次合并后都跑合后的测试。红了，谁合的谁马上看：是 PR 引起的，30 分钟内修不好就 revert 那次合并让 `main` 回绿，
-  再在新 PR 里修；是环境问题，修环境后重跑。`main` 红着、原因没查清时不合别的 PR。
+- PR 自己的 CI 绿、和 `main` 没有冲突就合，不要求先在最新的 `main` 上重跑。两个各自绿的 PR 合在一起才出错的情况很少，
+  `main` 合并后的 CI 会发现；为它让每个 PR 在别人合并后都重跑一遍，排队的代价大得多。分支落后 `main` 超过一天的，先更新再合。
+- 改到 `wonton-protocol`、构建脚本或 CI 配置的 PR 影响所有模块，要在含最新提交的 `main` 上跑绿再合。GitHub 上没有强制，
+  靠合并的人看 CI。
+- `main` 每次合并后都跑 CI。红了，谁合的谁马上看：是 PR 引起的，先 revert 那次合并让 `main` 回绿，再在新 PR 里修；
+  是环境问题，修环境后重跑。`main` 红着、原因没查清时不合别的 PR。
 - 时好时坏的测试修测试本身或它依赖的环境，不加自动重试：重试会把真问题一起盖住。
 - 分支名用 `<type>/<简述>`，如 `feat/tunnel-http-proxy`。
 - 提交信息用 Conventional Commits：`type(scope): 中文摘要`。`type` 取 `feat`、`fix`、`docs`、
   `test`、`refactor`、`chore`、`build`、`ci`；摘要说清行为变化，不写 `Update files` 这类空话。
-- 发布打 tag（`vX.Y.Z`，1.0 之前是 `v0.x.0`，不带预发布后缀）；`stable` 是镜像渠道，不是分支。每次合进 main 还会推核心镜像 `:main` 和
-  `:sha-<提交号>`（`.github/workflows/main-image.yml`），给插件仓库的 CI 跑端到端冒烟，不是发版。
+- 发布打 tag（`vX.Y.Z`）；stable/beta 是镜像渠道，不是分支。
 - 提交前运行 `git status --short` 和 `git diff --cached --stat`，确认只包含本次任务的改动。
-  截图、录屏、`.xcresult` 等调试产物放在仓库外（截图测试的参考图除外）。
+  截图、录屏、`.xcresult` 等调试产物放在仓库外。
 - 不提交密钥。测试用的示例配置放 `.env.example`。
 - 公开仓库（wonton-docs、各插件仓库、wonton-store）的提交、PR 和截图里，不带真实地址、主机名和内部渠道名。
   示例地址用 `192.0.2.10`。
@@ -149,6 +123,6 @@
 ## 多 Agent 并行开发
 
 - 每个任务在独立的 git worktree 里做，分支从最新的 `main` 切出。
-- 只并行彼此解耦的模块。改跨模块接口（`crates/wonton-protocol`、插件规范）里的破坏性改动（改名、删字段或取值、改含义）时，
-  先单独提一个只改接口的 PR 合并，各任务再基于它开发。只加不改的（新取值、新可选字段、新接口）随功能 PR 一起提，谁先合谁定，其他线 rebase 上去。
+- 只并行彼此解耦的模块。要改跨模块接口（`crates/wonton-protocol`、插件规范）时，
+  先单独提一个只改接口的 PR 合并，各任务再基于它开发。
 - PR 描述写清改了什么、为什么、怎么验证（命令和结果）。

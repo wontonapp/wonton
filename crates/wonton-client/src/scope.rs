@@ -9,16 +9,12 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    BotContactsViewModel, ChatViewModel, CoreError, FriendsViewModel, HomeViewModel,
-    OnboardingViewModel, PeersViewModel, PluginsViewModel, RoomPanel, ServersViewModel,
-    SettingsViewModel, TabsViewModel, TransfersViewModel,
+    ChatViewModel, CoreError, HomeViewModel, OnboardingViewModel, PeersViewModel, PluginsViewModel,
+    ServersViewModel, SettingsViewModel, TabsViewModel, TransfersViewModel,
 };
 
-use crate::bot_contacts::BotContactsLink;
-use crate::chat::{CardSuccess, ChatLink};
-use crate::composer::{ComposerLink, uplink::LiveUplink};
+use crate::chat::ChatLink;
 use crate::files::FilesLink;
-use crate::friends::FriendsLink;
 use crate::home::{HomeLink, Network, Storage};
 use crate::onboarding::OnboardingLink;
 use crate::peers::PeersLink;
@@ -29,7 +25,6 @@ use crate::settings::SettingsLink;
 use crate::tabs::TabsLink;
 pub(crate) use runtime::ScopeRuntime;
 pub(crate) use visit::{Entered, Visits};
-use wonton_matrix::{MatrixSession, OwnedRoomId};
 
 pub(crate) struct Scope {
     pub(crate) slot: String,
@@ -40,15 +35,9 @@ pub(crate) struct Scope {
     pub(crate) plugins: Arc<PluginsLink>,
     pub(crate) tabs: Arc<TabsLink>,
     pub(crate) files: Arc<FilesLink>,
-    pub(crate) composer: Arc<ComposerLink>,
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) peers: Arc<PeersLink>,
-    pub(crate) friends: Arc<FriendsLink>,
-    pub(crate) bot_contacts: Arc<BotContactsLink>,
     pub(crate) settings: SettingsLink,
-    pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
-    /// 要跨源隔离的插件网页交给系统浏览器时用的回环入口（ADR-0033）。
-    pub(crate) browser: Arc<crate::browser::BrowserLink>,
     /// 卡片成功的测试钩子，只给集成测试用（feature `test-hooks`，生产构建没有）。挂在作用域上：
     /// 换服务器换作用域，测试不换服务器就一直是同一个。
     #[cfg(feature = "test-hooks")]
@@ -67,8 +56,6 @@ pub(crate) struct Views {
     pub(crate) transfers: watch::Sender<TransfersViewModel>,
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
     pub(crate) peers: watch::Sender<PeersViewModel>,
-    pub(crate) friends: watch::Sender<FriendsViewModel>,
-    pub(crate) bot_contacts: watch::Sender<BotContactsViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
 
@@ -82,8 +69,6 @@ impl Views {
             transfers: scope.files.sender(),
             onboarding: scope.onboarding.sender(),
             peers: scope.peers.sender(),
-            friends: scope.friends.sender(),
-            bot_contacts: scope.bot_contacts.sender(),
             settings: scope.settings.sender(),
         }
     }
@@ -100,134 +85,9 @@ pub(crate) fn reuse<T>(sender: Option<watch::Sender<T>>, initial: T) -> watch::S
     }
 }
 
-/// 建各个联系模块时共用的东西（作用域自己的句柄、已有链接和目录）。
-struct Shared<'a> {
-    slot: &'a str,
-    handle: &'a tokio::runtime::Handle,
-    home: &'a Arc<HomeLink>,
-    plugins: &'a Arc<PluginsLink>,
-    push_method: &'a PushMethodLink,
-    dir: &'a Path,
-    views: Option<&'a Views>,
-}
-
-/// 聊天这一支建出来的链接：聊天、推送、底栏、文件和引导。
-struct ChatLinks {
-    chat: Arc<ChatLink>,
-    push: Arc<PushLink>,
-    tabs: Arc<TabsLink>,
-    files: Arc<FilesLink>,
-    onboarding: Arc<OnboardingLink>,
-}
-
-fn chat_links(
-    shared: &Shared<'_>,
-    card_success: CardSuccess,
-    channels: crate::chat::ChatChannels,
-    session_in: watch::Receiver<Option<Arc<MatrixSession>>>,
-    room_sender: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
-    room_receiver: watch::Receiver<Option<(OwnedRoomId, RoomPanel)>>,
-    external: bool,
-) -> Result<ChatLinks, CoreError> {
-    let Shared {
-        slot,
-        handle,
-        home,
-        plugins,
-        push_method,
-        dir,
-        views,
-    } = *shared;
-    let chat = ChatLink::new(
-        handle.clone(),
-        home.clone(),
-        slot,
-        dir,
-        card_success,
-        plugins.clone(),
-        channels,
-    )?;
-    let push = PushLink::new(
-        handle.clone(),
-        home.clone(),
-        chat.clone(),
-        dir,
-        push_method.subscribe(),
-    );
-    let tabs = TabsLink::new(
-        handle.clone(),
-        home.clone(),
-        plugins.clone(),
-        dir,
-        views.map(|v| v.tabs.clone()),
-        session_in,
-        (room_sender, room_receiver),
-        external,
-    );
-    let files = FilesLink::new(
-        handle.clone(),
-        home.clone(),
-        chat.clone(),
-        dir,
-        views.map(|v| v.transfers.clone()),
-    );
-    let onboarding = OnboardingLink::new(
-        handle.clone(),
-        home.clone(),
-        chat.clone(),
-        plugins.clone(),
-        dir,
-        views.map(|v| v.onboarding.clone()),
-    );
-    Ok(ChatLinks {
-        chat,
-        push,
-        tabs,
-        files,
-        onboarding,
-    })
-}
-
-fn people_links(
-    shared: &Shared<'_>,
-    servers: watch::Receiver<ServersViewModel>,
-    chat: &Arc<ChatLink>,
-) -> Result<(Arc<PeersLink>, Arc<FriendsLink>, SettingsLink), CoreError> {
-    let Shared {
-        slot: _,
-        handle,
-        home,
-        plugins,
-        push_method,
-        dir,
-        views,
-    } = *shared;
-    let peers = PeersLink::new(handle.clone(), home.clone(), views.map(|v| v.peers.clone()));
-    let friends = FriendsLink::new(
-        handle.clone(),
-        home.clone(),
-        chat.clone(),
-        dir,
-        views.map(|v| v.friends.clone()),
-    )?;
-    let settings = SettingsLink::new(
-        handle,
-        home.subscribe(),
-        chat.subscribe(),
-        plugins.subscribe(),
-        peers.subscribe(),
-        friends.subscribe(),
-        servers,
-        push_method.subscribe(),
-        views.map(|v| v.settings.clone()),
-    );
-    Ok((peers, friends, settings))
-}
-
 impl Scope {
     /// `root` 是壳给的数据目录（放设备密钥），`dir` 是这个槽位的目录。`views` 是上一个作用域留下的发送端，
     /// 上一个作用域要先关掉：不然它停下前的最后几次发送会盖掉新作用域的状态。
-    #[allow(clippy::too_many_lines)] // 一个作用域的接线按顺序列在这里，拆开只会把顺序关系藏进多个函数。
     pub(crate) fn open(
         slot: &str,
         root: &Path,
@@ -238,20 +98,11 @@ impl Scope {
     ) -> Result<Arc<Self>, CoreError> {
         let runtime = ScopeRuntime::new();
         let handle = runtime.handle().expect("the runtime was just built");
-        // 会话和打开着的房间的面板（ADR-0052）：chat 往里喂，tabs 用来同步账号数据、合成房间面板的视图。
-        let session_out = watch::channel(None);
-        let room_panel = watch::channel(None);
-        let hub = crate::sharing::hub::bind(handle.clone())?;
-        let external = servers.borrow().servers.iter().any(|row| {
-            row.id == slot && matches!(row.kind, wonton_protocol::ServerKind::Matrix { .. })
-        });
         let storage = Storage::open(root, dir)?;
-        let device_key = storage.device_key()?.to_bytes();
         // 方式是整机设置（设置页一个开关管所有服务器），放在设备级的 root，不放每台服务器一个的槽位目录。
         let push_method = PushMethodLink::new(root);
         let home = HomeLink::new(
             handle.clone(),
-            hub.clone(),
             storage,
             network,
             views.map(|v| v.home.clone()),
@@ -262,7 +113,6 @@ impl Scope {
             home.clone(),
             dir,
             views.map(|v| v.plugins.clone()),
-            external,
         );
         #[cfg(feature = "test-hooks")]
         let card_success_hook = Arc::new(crate::test_hooks::CardSuccessHook::new());
@@ -274,71 +124,67 @@ impl Scope {
             let plugins = plugins.clone();
             Arc::new(move |plugin_id: &str| plugins.card_succeeded(plugin_id))
         };
-        let channels = crate::chat::ChatChannels {
-            view: views.map(|v| v.chat.clone()),
-            method: push_method.subscribe(),
-            session_out: session_out.0.clone(),
-            room_panel_out: room_panel.0.clone(),
-            external,
-        };
-        let shared = Shared {
-            slot,
-            handle: &handle,
-            home: &home,
-            plugins: &plugins,
-            push_method: &push_method,
-            dir,
-            views,
-        };
-        let links = chat_links(
-            &shared,
-            card_success,
-            channels,
-            session_out.1,
-            room_panel.0,
-            room_panel.1,
-            external,
-        )?;
-        let composer = ComposerLink::new(
-            handle.clone(),
-            Arc::new(LiveUplink {
-                chat: links.chat.clone(),
-                files: links.files.clone(),
-                home: home.clone(),
-            }),
-            dir,
-        );
-        let people = people_links(&shared, servers, &links.chat)?;
-        let shared_apps =
-            crate::sharing::SharedAppsLink::new(handle.clone(), &links.chat, &plugins, hub);
-        let browser = crate::browser::BrowserLink::new(
-            handle.clone(),
-            device_key,
-            home.subscribe(),
-            plugins.subscribe(),
-        );
-        let bot_contacts = BotContactsLink::new(
+        let chat = ChatLink::new(
             handle.clone(),
             home.clone(),
-            views.map(|v| v.bot_contacts.clone()),
+            dir,
+            card_success,
+            plugins.clone(),
+            views.map(|v| v.chat.clone()),
+            push_method.subscribe(),
+        )?;
+        let push = PushLink::new(
+            handle.clone(),
+            home.clone(),
+            chat.clone(),
+            dir,
+            push_method.subscribe(),
+        );
+        let tabs = TabsLink::new(
+            handle.clone(),
+            home.clone(),
+            plugins.clone(),
+            dir,
+            views.map(|v| v.tabs.clone()),
+        );
+        let files = FilesLink::new(
+            handle.clone(),
+            home.clone(),
+            chat.clone(),
+            dir,
+            views.map(|v| v.transfers.clone()),
+        );
+        let onboarding = OnboardingLink::new(
+            handle.clone(),
+            home.clone(),
+            chat.clone(),
+            plugins.clone(),
+            dir,
+            views.map(|v| v.onboarding.clone()),
+        );
+        let peers = PeersLink::new(handle.clone(), home.clone(), views.map(|v| v.peers.clone()));
+        let settings = SettingsLink::new(
+            &handle,
+            home.subscribe(),
+            chat.subscribe(),
+            plugins.subscribe(),
+            peers.subscribe(),
+            servers,
+            push_method.subscribe(),
+            views.map(|v| v.settings.clone()),
         );
         Ok(Arc::new(Self {
             slot: slot.to_owned(),
             home,
-            chat: links.chat,
-            push: links.push,
+            chat,
+            push,
             push_method,
             plugins,
-            tabs: links.tabs,
-            files: links.files,
-            composer,
-            onboarding: links.onboarding,
-            peers: people.0,
-            friends: people.1,
-            bot_contacts,
-            settings: people.2,
-            shared_apps,
-            browser,
+            tabs,
+            files,
+            onboarding,
+            peers,
+            settings,
             #[cfg(feature = "test-hooks")]
             card_success_hook,
             runtime,
@@ -351,15 +197,6 @@ impl Scope {
         self.push.foregrounded();
         self.plugins.foregrounded();
         self.files.foregrounded();
-    }
-
-    /// 壳给的语言交给作用域里每个按 App 语言写字或把语言带给家里服务器（Accept-Language）的模块。
-    /// 壳发 `SetLanguages` 和换作用域时重放都走这里，两处不各列一份，漏不掉哪个模块。
-    pub(crate) fn set_languages(&self, languages: &[String]) {
-        self.plugins.set_languages(languages.to_vec());
-        self.onboarding.set_languages(languages.to_vec());
-        self.peers.set_languages(languages.to_vec());
-        self.bot_contacts.set_languages(languages.to_vec());
     }
 
     pub(crate) fn backgrounded(&self) {

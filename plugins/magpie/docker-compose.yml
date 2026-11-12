@@ -1,0 +1,125 @@
+# magpie 模型网关：系统插件（按 docs/plugin-spec.md 草案 v0.1），由安装器预装（WONTON_SYSTEM_PLUGINS）。
+#
+# 本插件提供 models：声明了 models 权限的插件经核心转发访问它，各自拿到一个只属于自己的网关凭据
+# （magpie 的 gateway key，可单独限模型、限额度、吊销，用量按凭据名归属），由 credentials.sh 签发。
+# 在 deploy/dev/agent 里验证过同样的运行配置；鉴权细节见 ADR-0008 的“验证结果”。
+#
+# 用户在“模型设置”小程序（magpie 自带网页，3430 端口）里配置 provider 和 key，key 只存在本插件的数据目录。
+# 网页由网关代登录（sso: proxy）：网关认出主人后代为带上网页密钥的 Cookie，主人不用输密码，浏览器也拿不到密钥。
+name: magpie
+
+# 锁定 stable 渠道的版本（每周一更新）；升级前回归。
+x-image: &image ghcr.io/yetone/magpie:0.1.1327@sha256:85e5b25a9b72ffc4de4bccb94743f4afb17a86a74d90b6260c03f29268d2f45e
+
+services:
+  magpie:
+    image: *image
+    restart: unless-stopped
+    # 镜像固定以 uid 65532 运行，不认 PUID/PGID；写明 user，核心据此把数据目录交给它。
+    user: "65532:65532"
+    # 同一个进程同时提供网关（3425）和网页（3430）。
+    command: ["web", "--addr", "0.0.0.0:3430", "--no-open"]
+    environment:
+      TZ: ${TZ}
+      # 网关监听在容器网卡上：来自其他容器的请求必须带启用中的网关凭据，否则 401。
+      # 容器内回环不需要凭据：核心只经容器网卡转发，也不让别的容器共用本容器的网络命名空间。
+      MAGPIE_ADDR: 0.0.0.0:3425
+      # 网页的登录密钥，由核心生成（x-wonton.secrets.web_key）。
+      MAGPIE_WEB_KEY: ${WONTON_SECRET_WEB_KEY}
+    volumes:
+      - ${WONTON_APP_DATA}/config:/config
+    configs:
+      # 核心签发、吊销网关凭据时在本容器里执行（x-wonton.provides.models.credentials）。
+      - source: credentials
+        target: /wonton/credentials.sh
+      - source: providers
+        target: /wonton/providers.sh
+    healthcheck:
+      test: ["CMD", "/magpie", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 1m
+      start_interval: 1s
+
+  # 维护默认路由组 wonton-default（注入给各插件的默认模型）：provider 变了就按 ADR-0008 的规则重新挑模型，主人改过
+  # 就不再动它，见 default-model.sh。只读写 magpie 的配置目录，用缓存的模型目录，不联网。
+  default-model:
+    image: *image
+    user: "65532:65532"
+    entrypoint: [sh, /wonton/default-model.sh]
+    volumes:
+      - ${WONTON_APP_DATA}/config:/config
+    configs:
+      - source: default_model
+        target: /wonton/default-model.sh
+    network_mode: none
+    restart: unless-stopped
+    # 镜像自带的健康检查查网关端口，这个容器不跑网关；改成看上一次维护成没成功。
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/default-model.ok"]
+      interval: 30s
+      timeout: 5s
+      start_period: 1m
+      start_interval: 1s
+    depends_on:
+      magpie:
+        condition: service_healthy
+
+configs:
+  credentials:
+    file: ./credentials.sh
+  providers:
+    file: ./providers.sh
+  default_model:
+    file: ./default-model.sh
+
+x-wonton:
+  spec: "0.6"
+  id: ai.usemagpie.magpie
+  version: 0.6.1
+  kind: system
+  title: { zh: 模型设置, en: Models }
+  description:
+    zh: magpie 模型网关：provider 和 key 只配一次，所有 Bot 和插件共用
+    en: "magpie model gateway: set up providers and keys once, shared by every bot and plugin"
+  icon: icon.png
+  notices: [LICENSE.icon]
+  tags: { zh: [系统, AI], en: [System, AI] }
+  webui:
+    service: magpie
+    port: 3430
+    # magpie 的网页认名为 magpie_web_<端口> 的 Cookie，值就是网页密钥（MAGPIE_WEB_KEY）。
+    sso: proxy
+    proxy:
+      cookies:
+        magpie_web_3430: "{secret:web_key}"
+  provides:
+    models:
+      service: magpie
+      port: 3425
+      # magpie 在根路径上同时提供 Anthropic Messages（/v1/messages）和 Gemini（/v1beta/…）。
+      apis:
+        openai: /v1
+        anthropic: /
+        gemini: /
+      # 注入给各插件的 WONTON_MODEL_DEFAULT：default-model 维护的路由组，主人可以在网页里改。
+      default_model: group/wonton-default
+      credentials:
+        issue: [sh, /wonton/credentials.sh, issue, "{name}"]
+        revoke: [sh, /wonton/credentials.sh, revoke, "{name}"]
+      providers:
+        list: [sh, /wonton/providers.sh, list]
+        save: [sh, /wonton/providers.sh, save, "{id}"]
+        test: [sh, /wonton/providers.sh, test, "{id}"]
+        custom:
+          save: [sh, /wonton/providers.sh, custom-save]
+          test: [sh, /wonton/providers.sh, custom-test]
+  secrets:
+    web_key:
+      generate: { bytes: 32 }
+  permissions:
+    # 访问上游 provider。
+    - network.egress
+  requirements:
+    arch: [amd64, arm64]
+    memory: 256M

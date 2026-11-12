@@ -19,7 +19,7 @@ struct HomeView: View {
     @Environment(TabsModel.self) private var tabs
     @State private var pin: TabRef?
     @State private var openedDevPage = false
-    @Binding var path: NavigationPath
+    @State private var path = NavigationPath()
     @State private var confirmation: PluginConfirmation?
     @State private var uninstalling: UninstallTarget?
     @State private var menuPlugin: InstalledPlugin?
@@ -27,32 +27,29 @@ struct HomeView: View {
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                if case .notConfigured = model.viewModel.status,
-                   model.servers.adding || !model.servers.servers.contains(where: { $0.current }) {
+                if case .notConfigured = model.viewModel.status {
                     PairingView(model: model)
-                        .wontonRootScreen(String(localized: .pairingTitle), hasActions: !tabs.isPinned(.settings)) {
+                        .wontonRootScreen("配对", hasActions: !tabs.isPinned(.settings)) {
                             if !tabs.isPinned(.settings) {
                                 settingsLink
                             }
                         }
                 } else {
                     launcher
-                        .wontonRootScreen(String(localized: .launcherTitle), hasActions: !tabs.isPinned(.settings)) {
+                        .wontonRootScreen("应用", hasActions: !tabs.isPinned(.settings)) {
                             if !tabs.isPinned(.settings) {
                                 settingsLink
                             }
                         }
                 }
             }
-            .modifier(VisitingRoomModifier(model: chat, plugins: plugins, tab: .apps, path: $path))
+            .modifier(VisitingRoomModifier(model: chat, tab: .apps, path: $path))
             .navigationDestination(for: AppsRoute.self) { route in
                 switch route {
                 case .store: StoreView(model: plugins, open: open)
                 }
             }
-            .navigationDestination(for: PluginRoute.self) { route in
-                PluginDetailView(model: plugins, chat: chat, route: route, open: open)
-            }
+            .navigationDestination(for: PluginRoute.self) { PluginDetailView(model: plugins, route: $0, open: open) }
             .onChange(of: plugins.viewModel.installed, initial: true) { _, installed in
                 guard !openedDevPage, let devWebURL,
                       let plugin = installed?.plugins.first(where: { $0.webUrl == devWebURL.absoluteString }),
@@ -64,37 +61,26 @@ struct HomeView: View {
         }
         .wontonDialog(problem: plugins.rejection, isPresented: isShowingPluginRejection)
         .tabPinRequests($pin)
-        .environment(\.goToInstalledApps, {
-            path = NavigationPath()
-            tabs.select(.apps)
-        })
     }
 
     private var launcher: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s24) {
-                if plugins.viewModel.actions.contains(.store) { storeEntry }
+                storeEntry
                 if let installed = plugins.viewModel.installed {
                     installedPlugins(installed)
                     HomeStatusPanel(
                         home: model.viewModel, plugins: plugins.viewModel, cards: pendingCards,
                         showConnection: showServer, openCardRoom: openCardRoom
                     )
-                } else if plugins.viewModel.actions.contains(.store) {
+                } else {
                     placeholder.frame(maxWidth: .infinity)
                 }
-                SharedAppsSection(model: plugins)
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .refreshable {
-            if plugins.viewModel.actions.contains(.store) { plugins.send(.refreshPlugins) }
-            plugins.send(.refreshSharedApps(ownerUserId: nil))
-        }
-        .task {
-            if plugins.viewModel.actions.contains(.store) { plugins.refresh(.refreshPlugins) }
-            plugins.send(.refreshSharedApps(ownerUserId: nil))
-        }
+        .refreshable { plugins.send(.refreshPlugins) }
+        .task { plugins.refresh(.refreshPlugins) }
         .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
         .uninstallDialog($uninstalling, model: plugins)
         .wontonActionSheet(
@@ -118,16 +104,14 @@ struct HomeView: View {
             let cell = GridItem(.adaptive(minimum: WontonTheme.size.launcherCell), spacing: WontonTheme.spacing.s12)
             LazyVGrid(columns: [cell], spacing: WontonTheme.spacing.s24) {
                 ForEach(installed.plugins, id: \.id) { plugin in
-                    LauncherIcon(model: plugins, plugin: plugin) {
-                        path.append(PluginRoute.installed(id: plugin.id))
-                    }
+                    LauncherIcon(model: plugins, plugin: plugin)
                         .contentShape(Rectangle())
                         .onTapGesture { tap(plugin) }
                         .onLongPressGesture { menuPlugin = plugin }
-                        .accessibilityElement(children: .contain)
+                        .accessibilityElement(children: .combine)
                         .accessibilityAddTraits(.isButton)
                         .accessibilityAction { tap(plugin) }
-                        .accessibilityAction(named: Text(.launcherMenu)) { menuPlugin = plugin }
+                        .accessibilityAction(named: "菜单") { menuPlugin = plugin }
                 }
             }
         }
@@ -138,14 +122,16 @@ struct HomeView: View {
             HStack(spacing: WontonTheme.spacing.s12) {
                 WontonIcon.store.view()
                     .foregroundStyle(Color(colors.accentInkOnFill))
-                Text(.storeTitle)
+                Text("应用商店")
                     .wontonText(WontonTheme.typography.body)
                 Spacer(minLength: 0)
-                let updates = plugins.viewModel.updatable.count
-                if updates > 0 {
-                    Text(.launcherUpdatesAvailable(count: updates))
-                        .wontonText(WontonTheme.typography.supporting)
-                        .multilineTextAlignment(.trailing)
+                if let installed = plugins.viewModel.installed {
+                    let updates = installed.plugins.reduce(0) { $0 + ($1.upgrade != nil ? 1 : 0) }
+                    if updates > 0 {
+                        Text("\(updates) 个可更新")
+                            .wontonText(WontonTheme.typography.supporting)
+                            .multilineTextAlignment(.trailing)
+                    }
                 }
             }
             .foregroundStyle(Color(colors.textOnAccentFill))
@@ -180,13 +166,11 @@ struct HomeView: View {
 
     private func menu(for plugin: InstalledPlugin) -> [WontonSheetAction] {
         var actions = [
-            WontonSheetAction(title: String(localized: .commonDetails), icon: .info) {
-                path.append(PluginRoute.installed(id: plugin.id))
-            }
+            WontonSheetAction(title: "详情", icon: .info) { path.append(PluginRoute.installed(id: plugin.id)) }
         ]
         // 有 Bot 又有网页的 Agent 插件，点图标进私聊，网页从这里打开。
         if plugin.entries.count > 1, let web = plugin.entries.last {
-            actions.append(WontonSheetAction(title: String(localized: .launcherOpenWeb), icon: .web) { open(web) })
+            actions.append(WontonSheetAction(title: "打开网页", icon: .web) { open(web) })
         }
         for choice in plugin.tabChoices {
             let pinned = tabs.isPinned(choice.tab)
@@ -197,14 +181,12 @@ struct HomeView: View {
             })
         }
         if let upgrade = plugin.upgrade {
-            let title = String(localized: .launcherUpgradeTo(upgrade.version))
-            actions.append(WontonSheetAction(title: title, icon: .download) {
-                plugins.send(.upgradeNow(pluginId: plugin.id))
+            actions.append(WontonSheetAction(title: "升级到 \(upgrade.version)", icon: .download) {
+                confirmation = .upgrade(id: plugin.id)
             })
         }
         if plugin.removable {
-            let title = String(localized: .pluginUninstallAction)
-            actions.append(WontonSheetAction(title: title, icon: .trash, isDanger: true) {
+            actions.append(WontonSheetAction(title: "卸载", icon: .trash, isDanger: true) {
                 uninstalling = UninstallTarget(id: plugin.id, title: plugin.title)
             })
         }
@@ -251,7 +233,7 @@ struct HomeView: View {
     }
 }
 
-enum AppsRoute: Hashable {
+private enum AppsRoute: Hashable {
     case store
 }
 
@@ -261,10 +243,10 @@ private struct NoPlugins: View {
 
     var body: some View {
         VStack(spacing: WontonTheme.spacing.s12) {
-            Text(.launcherEmpty)
+            Text("还没有装应用")
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
-            Button(.launcherGoToStore, action: showStore)
+            Button("去应用商店", action: showStore)
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
         }
         .frame(maxWidth: .infinity)
@@ -276,7 +258,6 @@ private struct NoPlugins: View {
 private struct LauncherIcon: View {
     let model: PluginsModel
     let plugin: InstalledPlugin
-    let showDetails: () -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -291,22 +272,6 @@ private struct LauncherIcon: View {
                     }
                 }
                 .overlay(alignment: .topTrailing) { badge.offset(x: 6, y: -6) }
-                .overlay(alignment: .bottomTrailing) {
-                    if !plugin.enabledRootPermissions.isEmpty {
-                        // 点按区域 48pt，看得见的圆只有 28pt；整体往右下挪，圆心落在图标角上，不盖住图标本身。
-                        Button(action: showDetails) {
-                            WontonIcon.lock.view(size: WontonTheme.size.iconSmall)
-                                .foregroundStyle(Color(colors.warning))
-                                .padding(WontonTheme.spacing.s4)
-                                .background(Circle().fill(Color(colors.canvas)))
-                                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(String(localized: .pluginRootPermissionBadge))
-                        .offset(x: 16, y: 16)
-                    }
-                }
             Text(plugin.title)
                 .wontonText(WontonTheme.typography.caption)
                 .foregroundStyle(Color(colors.textPrimary))
@@ -321,11 +286,9 @@ private struct LauncherIcon: View {
             WontonIcon.warningCircleFill.view(size: WontonTheme.size.iconSmall)
                 .foregroundStyle(Color(colors.danger))
                 .background(Circle().fill(Color(colors.canvas)))
-                .accessibilityLabel(String(localized: .launcherBadgeDegraded))
         } else if plugin.upgrade != nil {
             Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
                 .overlay(Circle().strokeBorder(Color(colors.canvas), lineWidth: 2))
-                .accessibilityLabel(String(localized: .sidebarUpdatable))
         }
     }
 }

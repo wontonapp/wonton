@@ -8,13 +8,12 @@ use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use wonton_protocol::{
-    BotActivity, FileFailure, MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE,
-    MAX_BOT_NAME_CHARS,
+    BotActivity, MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE, MAX_BOT_NAME_CHARS,
 };
 
 use super::audit::{Decision, Record};
 use super::core_tools::tool;
-use super::{Bus, Caller, ToolFailure, naming};
+use super::{Bus, Caller, naming};
 use crate::files::share_fs::saving::Outgoing;
 use crate::plugin::bot_profile::{LocalUpdate, MediaChange, Profile, ProfileError, UploadedAvatar};
 
@@ -29,23 +28,20 @@ pub(super) fn definitions() -> Vec<Tool> {
     vec![
         tool(
             GET,
-            "Read your own bot profile: actual name, whether a static avatar is set, which states have avatars and \
-             when each state applies, plus the name and media limits. Can't read other bots.",
+            "读取你自己的 Bot 资料：实际名字、有没有静态头像、哪些状态设置了头像、四种状态何时显示，以及名字和媒体限制。不能读取其他 Bot。",
             json!({"type": "object", "properties": {}, "additionalProperties": false}),
             true,
         ),
         tool(
             SET,
-            "Change your own bot's name or avatar; no owner confirmation needed. Change at least one thing. Put files \
-             in your own outbox first and pass relative paths; mxc URIs are not accepted. \
-             Static avatars accept PNG, JPEG, and static WebP; state avatars also accept GIF, animated WebP, and \
-             H.264 MP4. On success, used outbox files that are not rewritten again are deleted; on failure they are \
-             kept. At most 10 successful changes per hour; over the limit the error returns how many seconds to wait.",
+            "修改你自己的 Bot 名字或头像，不需要主人确认。至少改一项。文件先放进你自己的 outbox，传相对路径，不接受 mxc 地址。\
+             静态头像只接受 PNG、JPEG、静态 WebP；状态头像还支持 GIF、动图 WebP 和 H.264 MP4。\
+             成功后删除用过且没有再被改写的 outbox 文件，失败时保留。每小时最多成功修改 10 次，超限返回还要等的秒数。",
             json!({"type": "object", "properties": {
-                "name": {"type": "string", "description": "new name, 1 to 32 characters after trimming, no control characters, and it must not impersonate the owner or the home server"},
-                "avatar": {"type": "string", "description": "relative path in your outbox of the static avatar, e.g. avatar.png"},
+                "name": {"type": "string", "description": "新名字，去掉首尾空白后 1 到 32 个字符，不能含控制字符，也不能冒充主人或核心"},
+                "avatar": {"type": "string", "description": "静态头像在 outbox 里的相对路径，如 avatar.png"},
                 "avatars": {"type": "object", "properties": states, "additionalProperties": false,
-                    "description": "only the states being changed: a relative path sets the avatar, null clears it; states not mentioned stay unchanged"},
+                    "description": "只改写到的状态：相对路径设置头像，null 清掉；没写的状态保持不变"},
             }, "additionalProperties": false, "anyOf": [
                 {"required": ["name"]}, {"required": ["avatar"]},
                 {"required": ["avatars"], "properties": {"avatars": {"minProperties": 1}}},
@@ -64,23 +60,17 @@ struct Arguments {
     avatars: BTreeMap<BotActivity, Option<String>>,
 }
 
-fn parse(args: &JsonObject) -> Result<Arguments, ToolFailure> {
+fn parse(args: &JsonObject) -> Result<Arguments, String> {
     // serde 的 Option 会接受 null；只有 avatars 里的 null 才表示清掉。
     for key in ["name", "avatar"] {
         if args.get(key).is_some_and(|value| !value.is_string()) {
-            return Err(ToolFailure::new(
-                "invalid_input",
-                format!("invalid_input: {key} must be a string"),
-            ));
+            return Err(format!("invalid_input: {key} 必须是字符串"));
         }
     }
     let args: Arguments = serde_json::from_value(Value::Object(args.clone()))
-        .map_err(|e| ToolFailure::new("invalid_input", format!("invalid_input: {e}")))?;
+        .map_err(|e| format!("invalid_input: {e}"))?;
     if args.name.is_none() && args.avatar.is_none() && args.avatars.is_empty() {
-        return Err(ToolFailure::new(
-            "invalid_input",
-            "invalid_input: change at least name, avatar, or one state avatar",
-        ));
+        return Err("invalid_input: 至少修改 name、avatar 或一个状态头像".to_owned());
     }
     Ok(args)
 }
@@ -102,10 +92,7 @@ pub(super) async fn call(
             caller,
             &naming::join(naming::CORE, which),
             &Value::Object(args),
-            &ToolFailure::new(
-                "internal_error",
-                format!("internal: profile operation aborted unexpectedly: {e}"),
-            ),
+            &format!("internal: 资料操作意外中止：{e}"),
         ),
     }
 }
@@ -117,10 +104,7 @@ async fn run(bus: &Bus, caller: &Caller, which: &str, args: JsonObject) -> CallT
         if args.is_empty() {
             bus.plugins.bot_profile(&caller.id).await.map_err(problem)
         } else {
-            Err(ToolFailure::new(
-                "invalid_input",
-                "invalid_input: get_profile takes no arguments; it only reads your own bot",
-            ))
+            Err("invalid_input: get_profile 不接受参数，只读取你自己的 Bot".to_owned())
         }
     } else {
         set(bus, caller, &args).await
@@ -138,27 +122,23 @@ async fn run(bus: &Bus, caller: &Caller, which: &str, args: JsonObject) -> CallT
             });
             CallToolResult::success(vec![ContentBlock::text(view(&profile).to_string())])
         }
-        Err(failure) => bus.deny(caller, &name, &value, &failure),
+        Err(message) => bus.deny(caller, &name, &value, &message),
     }
 }
 
-fn problem(error: ProfileError) -> ToolFailure {
-    // 这两个的文字按 Bot 面向的英文写，限流的还带机器可读的秒数；别的用错误自己的文字（开头就是类别）。
-    let message = match &error {
-        ProfileError::NotFound => {
-            "not_found: the app is not installed or has no bot of its own".to_owned()
-        }
+fn problem(error: ProfileError) -> String {
+    match error {
+        ProfileError::NotFound => "invalid_input: 插件没有安装或没有自己的 Bot".to_owned(),
         ProfileError::RateLimited { retry_after_secs } => {
             format!(
-                "rate_limited: retry_after_secs={retry_after_secs}; wait {retry_after_secs} seconds and try again"
+                "rate_limited: retry_after_secs={retry_after_secs}，请再等 {retry_after_secs} 秒"
             )
         }
         error => error.to_string(),
-    };
-    ToolFailure::new(error.kind(), message)
+    }
 }
 
-async fn set(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Profile, ToolFailure> {
+async fn set(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Profile, String> {
     let args = parse(args)?;
     let mut paths = BTreeMap::new();
     for path in args
@@ -168,14 +148,12 @@ async fn set(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Profile, T
     {
         *paths.entry(path.clone()).or_insert(0) += 1;
     }
-    let (outgoing, mut files) = read(bus.plugins.app_data_dir(&caller.id), paths)
-        .await
-        .map_err(|e| ToolFailure::new(e.kind.as_str(), e.to_string()))?;
-    let mut take = |path: String| -> Result<MediaChange, ToolFailure> {
+    let (outgoing, mut files) = read(bus.plugins.app_data_dir(&caller.id), paths).await?;
+    let mut take = |path: String| -> Result<MediaChange, String> {
         // 重复路径只读一次；上传接口拥有字节，所以最后一次使用才移动，其余使用复制。
-        let (filename, data, uses) = files.get_mut(&path).ok_or_else(|| {
-            ToolFailure::new("internal_error", "internal: avatar file was not read")
-        })?;
+        let (filename, data, uses) = files
+            .get_mut(&path)
+            .ok_or_else(|| "internal: 没有读到头像文件".to_owned())?;
         *uses -= 1;
         let data = if *uses == 0 {
             std::mem::take(data)
@@ -200,7 +178,7 @@ async fn set(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Profile, T
                     .unwrap_or(MediaChange::Clear),
             ))
         })
-        .collect::<Result<_, ToolFailure>>()?;
+        .collect::<Result<_, String>>()?;
     let profile = bus
         .plugins
         .set_bot_profile(
@@ -216,7 +194,7 @@ async fn set(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Profile, T
     if let Some(outgoing) = outgoing
         && let Err(error) = tokio::task::spawn_blocking(move || outgoing.remove_originals()).await
     {
-        tracing::warn!(%error, "profile updated; cleaning up the outbox aborted unexpectedly");
+        tracing::warn!(%error, "资料已更新，清理 outbox 意外中止");
     }
     Ok(profile)
 }
@@ -226,14 +204,16 @@ type Files = BTreeMap<String, (String, Vec<u8>, usize)>;
 async fn read(
     app_data: PathBuf,
     paths: BTreeMap<String, usize>,
-) -> Result<(Option<Outgoing>, Files), crate::files::Failure> {
+) -> Result<(Option<Outgoing>, Files), String> {
     if paths.is_empty() {
         return Ok((None, BTreeMap::new()));
     }
     tokio::task::spawn_blocking(move || {
         let unique: Vec<_> = paths.keys().cloned().collect();
-        let outgoing = Outgoing::open(&app_data, &unique)?;
-        let bytes = outgoing.read_bounded(MAX_AVATAR_BYTES + 1)?;
+        let outgoing = Outgoing::open(&app_data, &unique).map_err(|e| e.to_string())?;
+        let bytes = outgoing
+            .read_bounded(MAX_AVATAR_BYTES + 1)
+            .map_err(|e| e.to_string())?;
         let files = paths
             .into_iter()
             .zip(bytes)
@@ -242,12 +222,7 @@ async fn read(
         Ok((Some(outgoing), files))
     })
     .await
-    .map_err(|e| {
-        crate::files::Failure::new(
-            FileFailure::Internal,
-            format!("internal: reading the outbox aborted unexpectedly: {e}"),
-        )
-    })?
+    .map_err(|e| format!("internal: 读取 outbox 意外中止：{e}"))?
 }
 
 fn view(profile: &Profile) -> Value {
@@ -261,10 +236,10 @@ fn view(profile: &Profile) -> Value {
         "avatar": profile.avatar.is_some(),
         "avatars": avatars,
         "when": {
-            "offline": "the app is not running: installing, upgrading, starting, stopped, or in error (highest priority)",
-            "waiting": "the app is running and a confirmation card from this bot is waiting for the owner",
-            "working": "the app is running with no pending confirmation card; a model request or tool call is in progress, or the bot is typing",
-            "idle": "none of the above",
+            "offline": "插件没在运行：在安装、升级、启动，停了或者出错（最高优先级）",
+            "waiting": "插件在运行，有这个 Bot 发起的确认卡片在等主人",
+            "working": "插件在运行、没有待确认卡片，有模型请求或工具调用在进行，或 Bot 正在输入",
+            "idle": "以上条件都不成立",
         },
         "limits": {
             "max_name_chars": MAX_BOT_NAME_CHARS,

@@ -413,7 +413,6 @@ fn docker_mount(mount: &Mount) -> DockerMount {
 }
 
 fn service_container(id: String, info: ContainerInspectResponse) -> ServiceContainer {
-    let image_id = info.image.unwrap_or_default();
     let config = info.config.unwrap_or_default();
     let labels = config.labels.unwrap_or_default();
     let state = info.state.unwrap_or_default();
@@ -437,7 +436,6 @@ fn service_container(id: String, info: ContainerInspectResponse) -> ServiceConta
             .cloned()
             .unwrap_or_default(),
         image: config.image.unwrap_or_default(),
-        image_id,
         status: state.status.map(|s| s.to_string()).unwrap_or_default(),
         health: state.health.and_then(|h| h.status).map(|s| s.to_string()),
         exit_code: state.exit_code.unwrap_or(0),

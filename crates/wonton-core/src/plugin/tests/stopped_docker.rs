@@ -17,16 +17,10 @@ use crate::config::DEFAULT_INSTALL_TIMEOUT;
 use crate::device::Devices;
 use crate::gateway::{Gateway, router};
 use crate::http::HttpClient;
-use crate::members::Members;
 use crate::test_docker::Names;
 use crate::tunnel::Tunnel;
 
-/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-fn image() -> String {
-    wonton_test_images::image(
-        "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
-    )
-}
+const IMAGE: &str = "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec";
 const TOKEN: &str = "stopped-integration-owner-token";
 
 async fn gateway(
@@ -41,10 +35,8 @@ async fn gateway(
         .bind()
         .await
         .unwrap();
-    let members = Arc::new(Members::open(dir.join("members.json")).unwrap());
     let tunnel = Tunnel::new(
         Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
-        members.clone(),
         Arc::new(|| crate::plugin::languages::Languages::from_header(None)),
         endpoint,
         0,
@@ -55,7 +47,6 @@ async fn gateway(
         manager.cfg.public.clone(),
         manager.cfg.profile.clone(),
         TOKEN.to_owned(),
-        members,
         manager,
         None,
         HttpClient::new(),
@@ -72,9 +63,7 @@ async fn gateway(
 fn compose() -> String {
     package(
         &format!(
-            "  init:\n    image: {}\n    restart: 'no'\n    volumes: ['${{WONTON_APP_DATA}}:/data']\n    command: ['sh', '-c', 'echo initialized >> /data/init-runs; echo persistent > /data/index.html']\n  app:\n    image: {}\n    init: true\n    volumes: ['${{WONTON_APP_DATA}}:/data']\n    command: ['httpd', '-f', '-p', '8000', '-h', '/data']\n    depends_on:\n      init: {{condition: service_completed_successfully}}\n    healthcheck:\n      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8000/']\n      interval: 1s\n      timeout: 1s\n      retries: 3\n",
-            image(),
-            image()
+            "  init:\n    image: {IMAGE}\n    restart: 'no'\n    volumes: ['${{WONTON_APP_DATA}}:/data']\n    command: ['sh', '-c', 'echo initialized >> /data/init-runs; echo persistent > /data/index.html']\n  app:\n    image: {IMAGE}\n    init: true\n    volumes: ['${{WONTON_APP_DATA}}:/data']\n    command: ['httpd', '-f', '-p', '8000', '-h', '/data']\n    depends_on:\n      init: {{condition: service_completed_successfully}}\n    healthcheck:\n      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8000/']\n      interval: 1s\n      timeout: 1s\n      retries: 3\n"
         ),
         "  permissions: []\n  webui: {service: app, port: 8000, sso: none}",
     )
@@ -142,7 +131,7 @@ async fn exercise(
         assert_eq!(status.as_u16(), 200, "{body}");
         assert_eq!(body["status"]["state"], "running");
     }
-    let route = restarted.route("app-test", "/").unwrap();
+    let route = restarted.route("app-test").unwrap();
     let upstream = route.upstream.unwrap();
     let page = http
         .get(upstream.url("/"))

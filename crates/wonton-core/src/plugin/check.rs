@@ -79,21 +79,17 @@ pub async fn check_package(
     if m.kind == PluginKind::System {
         report
             .warnings
-            .push("kind: system plugins can only be preinstalled with the home server; users can't install them"
-                .to_owned());
+            .push("kind: system 的插件只能随核心预装，用户装不了".to_owned());
     }
     for permission in m.permissions.iter().filter(|p| !supported(p)) {
         report
             .problems
-            .push(format!(
-                "permission {permission} isn't supported by this home server yet; update the home server or drop the permission"
-            ));
+            .push(format!("核心还不支持权限 {permission}，装不上"));
     }
     match dry_run(package, &Languages::default()) {
-        Ok(plan) => check_services(&plan, m, official, &mut report),
+        Ok(plan) => check_services(&plan, official, &mut report),
         Err(e) => report.problems.push(e.to_string()),
     }
-    check_spec_floor(package, &mut report);
     check_trusts_core(package, official, &mut report);
     check_icon(package, official, images, &mut report).await;
     check_tab_icons(package, images, &mut report).await;
@@ -107,9 +103,7 @@ pub async fn check_package(
             ("notices", !m.notices.is_empty()),
         ];
         for (field, _) in required.iter().filter(|(_, present)| !present) {
-            report
-                .problems
-                .push(format!("the official index requires {field}"));
+            report.problems.push(format!("官方索引要求写 {field}"));
         }
         let keys = |keys: Vec<&String>| ["zh", "en"].iter().all(|l| keys.iter().any(|k| k == l));
         let translated = [
@@ -125,24 +119,19 @@ pub async fn check_package(
                     .as_ref()
                     .is_none_or(|t| keys(t.keys().collect())),
             ),
-            (
-                "setup",
-                m.setup.as_ref().is_none_or(|t| keys(t.keys().collect())),
-            ),
         ];
         for (field, _) in translated.iter().filter(|(_, both)| !both) {
-            report.problems.push(format!(
-                "the official index requires {field} in both zh and en"
-            ));
+            report
+                .problems
+                .push(format!("官方索引要求 {field} 写 zh 和 en"));
         }
     }
     Ok(report)
 }
 
-/// 镜像要按摘要固定，长期运行的服务要有健康检查：官方索引要求，其他插件只提醒。只看 compose 里写的健康检查
-/// 和清单的 `webui.health`，镜像自带的看不到（检查不连 Docker）。
-fn check_services(plan: &Deployment, manifest: &Manifest, official: bool, report: &mut Report) {
-    let webui = manifest.webui.as_ref();
+/// 镜像要按摘要固定，长期运行的服务要有健康检查：官方索引要求，其他插件只提醒。只看 compose 里写的健康检查，
+/// 镜像自带的看不到（检查不连 Docker）。
+fn check_services(plan: &Deployment, official: bool, report: &mut Report) {
     let list = if official {
         &mut report.problems
     } else {
@@ -159,15 +148,13 @@ fn check_services(plan: &Deployment, manifest: &Manifest, official: bool, report
         }
         if !container.image.contains("@sha256:") {
             list.push(format!(
-                "service {} image {} isn't pinned by digest (write name:tag@sha256:…)",
+                "服务 {} 的镜像 {} 没有按摘要固定（写成 名字:标签@sha256:…）",
                 container.service, container.image
             ));
         }
-        // `webui.health` 是核心代探测的替代：只有网页服务能这么写，别的服务仍要自带的健康检查。
-        let probed = webui.is_some_and(|w| w.health.is_some() && w.service == container.service);
-        if !container.one_shot && !probed && !has_healthcheck(&container.body) {
+        if !container.one_shot && !has_healthcheck(&container.body) {
             list.push(format!(
-                "service {} has no healthcheck; add one, or use webui.health for the web service (its status will show as unknown after install)",
+                "服务 {} 没有健康检查，装上后状态显示“健康未知”",
                 container.service
             ));
         }
@@ -176,7 +163,7 @@ fn check_services(plan: &Deployment, manifest: &Manifest, official: bool, report
             for line in env.filter(|line| hardcoded_proxy(line)) {
                 let name = line.split('=').next().unwrap_or_default();
                 list.push(format!(
-                    "service {} env {name} hardcodes a proxy address: the home server injects proxy variables for egress plugins, and the address won't work on another host (ADR-0023)",
+                    "服务 {} 的 {name} 写了具体的代理地址：核心会给出网插件注入代理变量，换一台主机这个地址也用不了（ADR-0023）",
                     container.service
                 ));
             }
@@ -186,35 +173,25 @@ fn check_services(plan: &Deployment, manifest: &Manifest, official: bool, report
 
 /// 用请求头认用户的应用，信任的代理地址只写核心的地址（ADR-0023 的“只信任核心的地址”）。出网插件能从宿主连到它，所以官方
 /// 索引不收；不出网的只有开了局域网端口才有人连得到，那些端口有开关。
-/// 用了新版本的字段，`spec` 要跟着写到那一版（[`super::spec_floor`]）。
-fn check_spec_floor(package: &PluginPackage, report: &mut Report) {
-    match serde_saphyr::from_str::<serde_json::Value>(&package.source) {
-        Ok(document) => report
-            .problems
-            .extend(super::spec_floor::problems(&document)),
-        Err(e) => report.problems.push(format!("docker-compose.yml: {e}")),
-    }
-}
-
 fn check_trusts_core(package: &PluginPackage, official: bool, report: &mut Report) {
     if !impersonable(package) {
         return;
     }
     let m = &package.manifest;
     let advice = format!(
-        "the web app authenticates users from request headers but doesn't trust only the home server: set the trusted proxy address to ${{{VAR}}}, not 0.0.0.0/0 or ::/0"
+        "网页用请求头认用户，但不是只信任核心：把信任的代理地址写成 ${{{VAR}}}，不写 0.0.0.0/0 和 ::/0"
     );
     if official && m.permissions.contains(&Permission::NetworkEgress) {
         report.problems.push(format!(
-            "{advice}. If an egress plugin can't do that, use OIDC or {{secret:…}} instead (ADR-0023)"
+            "{advice}。出网插件做不到时改用 OIDC 或 {{secret:…}}（ADR-0023）"
         ));
     } else if m.lan.is_some() {
         report.warnings.push(format!(
-            "{advice}. Otherwise the LAN port of the web service stays closed by default; users have to turn on the lan_webui switch"
+            "{advice}。否则网页所在服务的局域网端口默认不开，要用户打开开关 lan_webui"
         ));
     } else {
         report.warnings.push(format!(
-            "{advice}. If that's impossible, note it for the index review (ADR-0023)"
+            "{advice}。做不到时要在索引的审核里登记（ADR-0023）"
         ));
     }
 }
@@ -235,11 +212,11 @@ async fn check_icon(
         if official {
             report
                 .problems
-                .push("the official index requires an icon".to_owned());
+                .push("官方索引要求有图标（icon）".to_owned());
         } else {
             report
                 .warnings
-                .push("no icon: the store and the home screen show a placeholder".to_owned());
+                .push("没有图标：商店和主屏上显示占位图标".to_owned());
         }
         return;
     };
@@ -247,15 +224,15 @@ async fn check_icon(
     let path = package_files::normalize(raw).unwrap_or_else(|_| raw.clone());
     let (Some(format), Some(data)) = (IconFormat::from_path(&path), package.files().get(&path))
     else {
-        report.problems.push(format!("icon {path} can't be read"));
+        report.problems.push(format!("图标 {path} 读不到"));
         return;
     };
     match images.icon(format, data).await {
         Ok(icon) if icon.transparent_corner => report.warnings.push(format!(
-            "icon {path} has transparent corners: icons must be full-bleed; the app rounds the corners"
+            "图标 {path} 的角是透明的：图标要满幅，圆角由 App 裁"
         )),
         Ok(_) => {}
-        Err(e) => report.problems.push(format!("icon {path}: {e}")),
+        Err(e) => report.problems.push(format!("图标 {path}：{e}")),
     }
 }
 
@@ -273,13 +250,11 @@ async fn check_tab_icons(package: &PluginPackage, images: &ImageWorker, report: 
             let (Some(format), Some(data)) =
                 (IconFormat::from_path(&path), package.files().get(&path))
             else {
-                report
-                    .problems
-                    .push(format!("{field} {path} can't be read"));
+                report.problems.push(format!("{field} {path} 读不到"));
                 continue;
             };
             if let Err(e) = images.tab_icon(format, data).await {
-                report.problems.push(format!("{field} {path}: {e}"));
+                report.problems.push(format!("{field} {path}：{e}"));
             }
         }
     }
@@ -300,9 +275,9 @@ fn check_tab_title_lengths(package: &PluginPackage, report: &mut Report) {
                 .get(locale)
                 .is_some_and(|title| title.chars().count() > max)
             {
-                report.warnings.push(format!(
-                    "tabs[{index}].title.{locale} exceeds the suggested length"
-                ));
+                report
+                    .warnings
+                    .push(format!("tabs[{index}].title.{locale} 超过建议长度"));
             }
         }
     }
@@ -327,17 +302,17 @@ async fn check_screenshots(
                 landscape.insert(shot.width >= shot.height);
                 if shot.width.max(shot.height) < SCREENSHOT_EDGE {
                     report.warnings.push(format!(
-                        "screenshot {path} is {}×{}; the long edge should be at least {SCREENSHOT_EDGE}",
+                        "截图 {path} 是 {}×{}，建议长边至少 {SCREENSHOT_EDGE}",
                         shot.width, shot.height
                     ));
                 }
             }
-            Err(e) => report.problems.push(format!("screenshot {path}: {e}")),
+            Err(e) => report.problems.push(format!("截图 {path}：{e}")),
         }
     }
     if landscape.len() > 1 {
         report
             .warnings
-            .push("landscape and portrait screenshots are mixed".to_owned());
+            .push("横屏和竖屏的截图混在了一起".to_owned());
     }
 }

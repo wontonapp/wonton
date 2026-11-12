@@ -13,7 +13,6 @@ use wonton_protocol::{
     CoreUpgradeFailure as Failure, CoreUpgradePhase as Phase, CoreUpgradeProblem,
 };
 
-use super::backup::{compose_volume, volume_mount};
 use super::envfile::EnvFile;
 use super::host::{Host, Mount, OneShot, ServiceContainer};
 use super::observe::Baseline;
@@ -604,7 +603,7 @@ impl Updater<'_> {
                 )
             })?;
         self.up(left).await?;
-        self.verify_core_image(&target, None).await?;
+        self.verify_core_image(&target).await?;
         self.enter(Phase::Observing)?;
         Ok(())
     }
@@ -622,25 +621,18 @@ impl Updater<'_> {
             })
     }
 
-    /// 容器必须真的跑在 `image` 上：引用会被移走，比的是移不走的镜像 ID。`expected_id` 是升级开始时记下的实际镜像；
-    /// 没有（旧版本写的状态文件）时按引用查本机镜像。
-    async fn verify_core_image(&self, image: &str, expected_id: Option<&str>) -> Result<(), Halt> {
-        let expected = match expected_id {
-            Some(id) => id.to_owned(),
-            None => self.local_image_id(image).await?,
-        };
+    async fn verify_core_image(&self, image: &str) -> Result<(), Halt> {
         let containers = self.containers().await?;
-        match containers.iter().find(|c| c.service == CORE_SERVICE) {
-            Some(core) if core.image_id == expected => Ok(()),
+        let core = containers.iter().find(|c| c.service == CORE_SERVICE);
+        match core {
+            Some(core) if core.image == image => Ok(()),
             Some(core) => Err(halt(
                 Failure::Unhealthy,
                 self.msg(
                     "upgrade-core-image-wrong",
                     &[
                         ("actual", core.image.as_str().into()),
-                        ("actual_id", core.image_id.as_str().into()),
                         ("image", image.into()),
-                        ("image_id", expected.as_str().into()),
                     ],
                 ),
             )),
@@ -649,24 +641,6 @@ impl Updater<'_> {
                 self.msg("upgrade-core-container-missing", &[]),
             )),
         }
-    }
-
-    async fn local_image_id(&self, image: &str) -> Result<String, Halt> {
-        let info = self.host.image(image).await.map_err(|e| {
-            halt(
-                Failure::Upstream,
-                self.msg(
-                    "upgrade-inspect-image-failed",
-                    &[("image", image.into()), ("error", e.to_string().into())],
-                ),
-            )
-        })?;
-        info.map(|info| info.id).ok_or_else(|| {
-            halt(
-                Failure::Unhealthy,
-                self.msg("upgrade-no-image", &[("image", image.into())]),
-            )
-        })
     }
 
     async fn containers(&self) -> Result<Vec<ServiceContainer>, Halt> {
@@ -762,8 +736,7 @@ impl Updater<'_> {
                 )
             })?;
         self.up(left).await?;
-        let recorded = self.state.from.image_id.as_deref();
-        self.verify_core_image(&from, recorded).await?;
+        self.verify_core_image(&from).await?;
         self.finish(Outcome::RolledBack, None)?;
         Ok(())
     }
@@ -793,5 +766,18 @@ impl Updater<'_> {
                 Vec::new()
             }
         }
+    }
+}
+
+/// compose 项目里卷 `name` 在 Docker 里的名字。
+fn compose_volume(name: &str) -> String {
+    format!("{PROJECT}_{name}")
+}
+
+fn volume_mount(name: &str, read_only: bool) -> Mount {
+    Mount::Volume {
+        name: compose_volume(name),
+        target: PathBuf::from("/volume"),
+        read_only,
     }
 }

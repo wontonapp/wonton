@@ -34,9 +34,9 @@ trap cleanup EXIT
 # 取一个插件会话：登录核心，走一遍会话交接，从 Cookie 罐里拿 wonton_app。
 docker run -d --name wonton-bench-browser --network "container:$core" --entrypoint sleep \
   curlimages/curl:8.23.0 600 >/dev/null
-docker exec wonton-bench-browser curl -sS --max-time 120 -c /tmp/jar -b /tmp/jar -o /dev/null \
+docker exec wonton-bench-browser curl -sS -c /tmp/jar -b /tmp/jar -o /dev/null \
   -X POST --data-urlencode "token=$("$dev" token)" "http://$domain:$port/_wonton/login"
-docker exec wonton-bench-browser curl -sS --max-time 120 -L -c /tmp/jar -b /tmp/jar -o /dev/null \
+docker exec wonton-bench-browser curl -sS -L -c /tmp/jar -b /tmp/jar -o /dev/null \
   -H 'Accept: text/html' "http://$plugin_host/"
 session="$(docker exec wonton-bench-browser awk '$6 == "wonton_app" {print $7}' /tmp/jar)"
 [[ -n "$session" ]] || { echo "没有拿到插件会话" >&2; exit 1; }
