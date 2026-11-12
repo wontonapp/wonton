@@ -78,7 +78,11 @@ internal fun ServerApp(
     LaunchedEffect(requestedRoom) {
         requestedRoom?.let { request ->
             val contacts = request.contacts
-            if (contacts != null) navigation.openContacts(contacts) else navigation.openRoom(request.roomId)
+            if (contacts != null) {
+                navigation.openContacts(contacts)
+            } else {
+                navigation.openRoom(request.roomId, request.sideChatRoot)
+            }
             onRoomRequestHandled()
         }
     }

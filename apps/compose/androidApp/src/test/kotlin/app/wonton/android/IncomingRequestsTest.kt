@@ -42,4 +42,20 @@ class IncomingRequestsTest {
 
         assertEquals(RoomRequest("server-1", "!r:h"), requests.room)
     }
+
+    @Test
+    fun aSideChatNotificationOpensThatSideChat() {
+        val requests = IncomingRequests()
+        val intent = Intent()
+            .putExtra(IncomingRequests.EXTRA_SERVER, "server-1")
+            .putExtra(IncomingRequests.EXTRA_ROOM, "!r:h")
+            .putExtra(IncomingRequests.EXTRA_SIDE_CHAT, "\$root")
+
+        requests.take(intent)
+
+        assertEquals(RoomRequest("server-1", "!r:h", sideChatRoot = "\$root"), requests.room)
+        requests.roomHandled()
+        requests.take(intent)
+        assertNull(requests.room)
+    }
 }

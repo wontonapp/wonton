@@ -70,6 +70,7 @@ import java.util.Date
  * `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。`joinsPrevious`、`joinsNext`：和上一条、下一条是
  * 不是同一个人连着发的。`onRetry`、`onCancel` 处理发送失败的这一条，`onCardAction` 是确认卡片上的操作。
  * `onOpenAgentCard` 打开这张等回答的卡片，`onAnswerAgentChoice` 回答 Bot 自己的提问（ADR-0082）。
+ * `onOpenSideChat` 进旁聊（参数是根的事件 ID），旁聊卡片和结果行都用它（ADR-0093）。
  */
 @Composable
 fun TimelineItemView(
@@ -85,6 +86,7 @@ fun TimelineItemView(
     onReply: (TimelineMessage) -> Unit,
     onOpenAgentCard: (String) -> Unit,
     onAnswerAgentChoice: (String) -> Unit,
+    onOpenSideChat: (String) -> Unit,
 ) {
     when (val content = item.content) {
         is TimelineContent.Message -> MessageBubble(
@@ -98,6 +100,7 @@ fun TimelineItemView(
             onCardAction,
             { message, bounds -> onOpenMenu(item, message, bounds) },
             onReply,
+            onOpenSideChat,
         )
         is TimelineContent.Notice -> CenteredNote(content.text)
         is TimelineContent.AgentRun -> AgentRunRowView(content, onOpenAgentCard, onAnswerAgentChoice)
@@ -121,13 +124,12 @@ fun TimelineItemView(
             NoteEdge()
         }
         TimelineContent.TimelineStart -> CenteredNote(stringResource(R.string.timeline_start))
-        is TimelineContent.SideChat ->
-            // 旁聊根消息（ADR-0093）：完整的样子在实现 PR 里做，先按普通提示显示标题。
-            // 核心还没产生这种条目；标题是事件里的数据，不是界面文案。
-            CenteredNote(content.card.title)
-        is TimelineContent.SideChatResult ->
-            // 旁聊结果行（ADR-0093）：同上，先按普通提示显示标题。
-            CenteredNote(content.title)
+        is TimelineContent.SideChat -> SideChatCardRow(content.card, Modifier.fillMaxWidth()) {
+            onOpenSideChat(content.card.rootEventId)
+        }
+        is TimelineContent.SideChatResult -> SideChatResultRow(content.title, content.state) {
+            onOpenSideChat(content.rootEventId)
+        }
     }
 }
 
@@ -172,6 +174,7 @@ private fun MessageBubble(
     onCardAction: (Action) -> Unit,
     onOpenMenu: (TimelineMessage, Rect) -> Unit,
     onReply: (TimelineMessage) -> Unit,
+    onOpenSideChat: (String) -> Unit,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
@@ -221,6 +224,8 @@ private fun MessageBubble(
                 onLongPress = openMenu.takeIf { showsMenu },
             )
         }
+        // 有回复的消息下面挂一张旁聊卡片（ADR-0093），点了进那个旁聊。
+        message.sideChat?.let { card -> SideChatCardRow(card) { onOpenSideChat(card.rootEventId) } }
     }
 }
 

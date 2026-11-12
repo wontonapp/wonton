@@ -42,25 +42,27 @@ import app.wonton.ui.design.toColor
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
-/// 进房间的落点、新消息的跟随、滚动方向的报告、只在底部标已读（ADR-0071、#159）。
+/// 进房间的落点、新消息的跟随、滚动方向的报告、只在底部标已读（ADR-0071、#159）。`covered`：旁聊页盖在这条主对话
+/// 上面，主对话看不见，不标已读（ADR-0093）。
 @Composable
 internal fun ScrollEffects(
     listState: LazyListState,
     timeline: TimelineState,
-    roomId: String,
+    target: TimelineTarget,
+    covered: Boolean,
     onAction: (Action) -> Unit,
 ) {
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
     val newest = timeline.items.lastOrNull()?.id
-    var following by remember(roomId) { mutableStateOf(true) }
+    var following by remember(target) { mutableStateOf(true) }
     // 进房间的落点摆好之前：不跟随、不报方向、不标已读（ADR-0071）。时间线清空重建后闸门重开，按新落点重摆。
     var placed by remember(timeline.clears) { mutableStateOf(false) }
     LaunchedEffect(timeline.revision, timeline.clears) {
         if (newest == null) return@LaunchedEffect
         withFrameNanos { }
         if (!placed) {
-            following = placeAnchor(listState, newestFirst, timeline, roomId, newest, onAction)
+            following = placeAnchor(listState, newestFirst, timeline, target, newest, onAction)
         } else if (timeline.bottomRequest != 0 && timeline.bottomRequest != timeline.handledBottomRequest) {
             listState.scrollToItem(0)
         } else if (following && !listState.isScrollInProgress) {
@@ -70,7 +72,7 @@ internal fun ScrollEffects(
         placed = true
     }
     // 滚动跨过底部时报告方向（ADR-0071），核心按它算位置和新消息数；摆落点前不报。
-    LaunchedEffect(roomId) {
+    LaunchedEffect(target, covered) {
         snapshotFlow {
             Triple(placed, listState.isAtBottom(), timeline.items.lastOrNull()?.id)
         }.distinctUntilChanged().collect { (ready, atBottom, latest) ->
@@ -78,18 +80,18 @@ internal fun ScrollEffects(
                 // 非手势的插入和行变高不能被当成主人翻走；真正的滚动在交互观察里报告。
                 if (atBottom) {
                     following = true
-                    onAction(scrollAction(roomId, TimelineScroll.BOTTOM))
-                    if (latest != null) onAction(markReadAction(roomId))
+                    onAction(scrollAction(target, TimelineScroll.BOTTOM))
+                    if (latest != null && !covered) onAction(markReadAction(target))
                 }
             }
         }
     }
-    LaunchedEffect(roomId) {
+    LaunchedEffect(target) {
         snapshotFlow { listState.isScrollInProgress to listState.isAtBottom() }
             .distinctUntilChanged().collect { (scrolling, atBottom) ->
                 if (placed && scrolling && !atBottom) {
                     following = false
-                    onAction(scrollAction(roomId, TimelineScroll.AWAY))
+                    onAction(scrollAction(target, TimelineScroll.AWAY))
                 }
             }
     }
@@ -102,7 +104,7 @@ private suspend fun placeAnchor(
     listState: LazyListState,
     newestFirst: List<TimelineItem>,
     timeline: TimelineState,
-    roomId: String,
+    target: TimelineTarget,
     newest: String,
     onAction: (Action) -> Unit,
 ): Boolean {
@@ -122,7 +124,7 @@ private suspend fun placeAnchor(
             listState.scrollToItem(index, listState.layoutInfo.viewportSize.height - height)
         }
         if (anchor != newest) {
-            onAction(scrollAction(roomId, TimelineScroll.AWAY))
+            onAction(scrollAction(target, TimelineScroll.AWAY))
         }
     }
     return atLatest || anchor == newest
@@ -132,7 +134,7 @@ private suspend fun placeAnchor(
 @Composable
 internal fun ScrollToBottomButton(
     timeline: TimelineState,
-    roomId: String,
+    target: TimelineTarget,
     listState: LazyListState,
     onAction: (Action) -> Unit,
     modifier: Modifier,
@@ -155,8 +157,8 @@ internal fun ScrollToBottomButton(
             onClick = {
                 scope.launch {
                     listState.animateScrollToItem(0)
-                    onAction(scrollAction(roomId, TimelineScroll.BOTTOM))
-                    onAction(markReadAction(roomId))
+                    onAction(scrollAction(target, TimelineScroll.BOTTOM))
+                    onAction(markReadAction(target))
                 }
             },
             modifier = Modifier
@@ -200,7 +202,7 @@ internal fun LazyListState.reachedTop(timeline: TimelineState): Boolean {
         timeline.backPagination == BackPagination.IDLE
 }
 
-private fun scrollAction(roomId: String, scroll: TimelineScroll) =
-    Action.Timeline(TimelineAction.SetTimelineScroll(TimelineTarget(roomId, null), scroll))
+private fun scrollAction(target: TimelineTarget, scroll: TimelineScroll) =
+    Action.Timeline(TimelineAction.SetTimelineScroll(target, scroll))
 
-private fun markReadAction(roomId: String) = Action.Timeline(TimelineAction.MarkRead(TimelineTarget(roomId, null)))
+private fun markReadAction(target: TimelineTarget) = Action.Timeline(TimelineAction.MarkRead(target))

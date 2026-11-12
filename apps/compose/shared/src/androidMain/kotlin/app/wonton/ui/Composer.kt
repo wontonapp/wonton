@@ -79,11 +79,14 @@ private const val MAX_LINES = 6
  * 聊天页底部的输入栏。`reply` 是正在回复的消息，画在输入框上方；`focusToken` 变一次就把光标放回输入框（开始回复时）。
  * 相册、文件和粘贴进来的东西都先进附件区（ADR-0094，`composer` 是核心给的附件区和待发消息），只有发送按钮把字和附件
  * 一起发出去，回复对象的事件 ID 一起交给核心。
+ *
+ * 附件区只有主对话有（ADR-0093、ADR-0094）：[target] 是旁聊时字和照片直接发进那个旁聊，`composer` 是 `null`；
+ * 文件上传只认房间，旁聊里不给选文件。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun Composer(
-    roomId: String,
+    target: TimelineTarget,
     draft: String,
     reply: ReplyQuote?,
     focusToken: Int,
@@ -104,17 +107,28 @@ fun Composer(
     }
     val attachments = composer?.attachments.orEmpty()
     val viaTray = attachments.isNotEmpty() || composer?.outgoing.orEmpty().isNotEmpty()
-    val attach = rememberAttachments(roomId, composer, core, onReject)
+    val roomId = target.roomId
+    val inSideChat = target.threadRoot != null
+    // 旁聊里照片不进附件区，选好就发；回复跟着这张照片发出去。
+    val sendImage = if (inSideChat) {
+        { upload: ImageUpload ->
+            onAction(Action.Timeline(TimelineAction.SendImage(target, upload, reply?.eventId)))
+            if (reply != null) onReplyCancel()
+        }
+    } else {
+        null
+    }
+    val attach = rememberAttachments(roomId, composer, core, onReject, sendImage)
     val spacing = WontonTheme.spacing
     val size = WontonTheme.size
     val isEmpty = draft.isBlank() && attachments.isEmpty()
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(focusToken) { if (focusToken > 0) focusRequester.requestFocus() }
     val send = { text: String ->
-        onAction(sendAction(roomId, text, reply, viaTray))
+        onAction(sendAction(target, text, reply, viaTray))
         onSent()
     }
-    OnboardingChatPrompts(roomId)
+    if (!inSideChat) OnboardingChatPrompts(roomId)
     if (reply != null) ComposerReply(reply, core, onReplyCancel)
     ComposerTray(attachments, roomId, core, onAction)
     Row(Modifier.fillMaxWidth().padding(spacing.s4), verticalAlignment = Alignment.Bottom) {
@@ -141,7 +155,7 @@ fun Composer(
     attach.chooser()
 }
 
-/** 附件区的入口：选照片、选文件和粘贴，都只放进附件区，不发。 */
+/** 附件区的入口：选照片、选文件和粘贴，都只放进附件区，不发（旁聊里照片直接发，见 [Composer]）。 */
 @OptIn(ExperimentalFoundationApi::class)
 private class Attachments(
     val choose: () -> Unit,
@@ -156,6 +170,7 @@ private fun rememberAttachments(
     composer: ComposerViewModel?,
     core: ClientCore,
     onReject: (Problem) -> Unit,
+    sendImage: ((ImageUpload) -> Unit)?,
 ): Attachments {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -166,21 +181,31 @@ private fun rememberAttachments(
     val trayFull = stringResource(R.string.composer_tray_full, max)
     val remaining = (max - composer?.attachments.orEmpty().size).coerceAtLeast(0)
     var choosing by rememberSaveable { mutableStateOf(false) }
+    // 粘贴的回调只登记一次：回复对象换了也要发给现在的那条。
+    val currentSendImage by rememberUpdatedState(sendImage)
     val addPhotos = { uris: List<Uri> ->
         scope.launch {
             // 按选的顺序放：发出去也是这个顺序。
             uris.forEach { uri ->
                 PhotoUpload.make(context, uri).fold(
-                    onSuccess = { upload -> addImage(core, roomId, upload)?.let(onReject) },
+                    onSuccess = { upload ->
+                        val send = currentSendImage
+                        if (send != null) send(upload) else addImage(core, roomId, upload)?.let(onReject)
+                    },
                     onFailure = { failure -> onReject(Problem(photoUnreadable, photoTryAnother, failure.message)) },
                 )
             }
         }
         Unit
     }
+    val noFiles = Problem(titleRes = R.string.side_chat_no_files)
     val addFiles = { uris: List<Uri> ->
-        // 文件选择器不能限制选几个：超出的由核心拒收，说一声附件区满了。
-        uris.forEach { uri -> core.attachFile(context, uri, roomId)?.let(onReject) }
+        if (currentSendImage != null) {
+            onReject(noFiles)
+        } else {
+            // 文件选择器不能限制选几个：超出的由核心拒收，说一声附件区满了。
+            uris.forEach { uri -> core.attachFile(context, uri, roomId)?.let(onReject) }
+        }
     }
     val pickPhoto = rememberLauncherForActivityResult(PickVisualMedia()) { uri -> uri?.let { addPhotos(listOf(it)) } }
     // 系统多选的上限要大于 1，契约换了上限才重新登记。
@@ -204,7 +229,7 @@ private fun rememberAttachments(
         chooser = {
             if (choosing) {
                 WontonActionSheet(
-                    actions = listOf(
+                    actions = listOfNotNull(
                         WontonSheetAction(stringResource(R.string.composer_photo), WontonIcon.Image) {
                             whenRoom {
                                 val request = PickVisualMediaRequest(PickVisualMedia.ImageOnly)
@@ -213,7 +238,7 @@ private fun rememberAttachments(
                         },
                         WontonSheetAction(stringResource(R.string.composer_file), WontonIcon.Attach) {
                             whenRoom { pickFiles.launch(arrayOf("*/*")) }
-                        },
+                        }.takeIf { sendImage == null },
                     ),
                     onDismiss = { choosing = false },
                 )
@@ -319,13 +344,11 @@ private fun SendButton(onClick: () -> Unit) {
  * 发送按钮。附件区空着、前面也没有待发消息时照旧直接发字：不进待发消息，不闪一下；否则作为一次发送交给附件区，
  * 字也排在前面的待发消息后面，不抢到前面去。
  */
-private fun sendAction(roomId: String, text: String, reply: ReplyQuote?, viaTray: Boolean): Action {
-    val target = TimelineTarget(roomId, null)
-    return Action.Timeline(
+private fun sendAction(target: TimelineTarget, text: String, reply: ReplyQuote?, viaTray: Boolean): Action =
+    Action.Timeline(
         if (viaTray) {
             TimelineAction.SendComposer(target, text, reply?.eventId)
         } else {
             TimelineAction.SendText(target, text, reply?.eventId)
         },
     )
-}

@@ -131,7 +131,7 @@ object PushNotifications {
         return title to text
     }
 
-    /** 点开去哪：联系人请求去被请求的 Bot 的联系人页，其余去房间。 */
+    /** 点开去哪：联系人请求去被请求的 Bot 的联系人页，其余去房间；发在旁聊里的进那个旁聊。 */
     private fun openIntent(context: Context, notification: PushNotification): Intent {
         val intent = Intent(context, MainActivity::class.java)
             .putExtra(IncomingRequests.EXTRA_SERVER, notification.serverId)
@@ -144,6 +144,7 @@ object PushNotifications {
                 .putExtra(IncomingRequests.EXTRA_CONTACTS_BOT, contact.bot.bot)
         } else {
             intent.putExtra(IncomingRequests.EXTRA_ROOM, notification.roomId)
+                .putExtra(IncomingRequests.EXTRA_SIDE_CHAT, notification.threadRoot)
         }
     }
 
