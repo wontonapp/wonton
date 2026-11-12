@@ -229,6 +229,7 @@ impl PluginManager {
         self.save_installed(package, granted, enabled, &ctx, &plan, secret, firewalled)
             .await?;
         undo.record = Some(manifest.id.clone());
+        self.refresh_bot_web_routes(&package.manifest).await?;
         Ok(Deployed {
             upstream,
             serving: package
