@@ -141,27 +141,29 @@ private struct MessageBubble: View {
             Button {
                 UIPasteboard.general.string = text
             } label: {
-                Label { Text(.Message2.messageCopy) } icon: { WontonIcon.copy.image }
+                Label { Text(.Message2.messageCopy) } icon: { WontonIcon.copy.view(size: WontonTheme.size.iconSmall) }
             }
         case let .reply(quoted):
             Button {
                 reply(quoted)
             } label: {
-                Label { Text(.Message0.messageReply) } icon: { WontonIcon.reply.image }
+                Label { Text(.Message0.messageReply) } icon: { WontonIcon.reply.view(size: WontonTheme.size.iconSmall) }
             }
             .accessibilityIdentifier("messageReply")
         case .forward:
             Button {
                 forward()
             } label: {
-                Label { Text(.Message1.messageForward) } icon: { WontonIcon.forward.image }
+                Label { Text(.Message1.messageForward) }
+                    icon: { WontonIcon.forward.view(size: WontonTheme.size.iconSmall) }
             }
             .accessibilityIdentifier("messageForward")
         case .redact:
             Button(role: .destructive) {
                 redact()
             } label: {
-                Label { Text(.Message1.messageRedact) } icon: { WontonIcon.trash.image }
+                Label { Text(.Message1.messageRedact) }
+                    icon: { WontonIcon.trash.view(size: WontonTheme.size.iconSmall) }
             }
             .accessibilityIdentifier("messageRedact")
         // 核心和 App 分开升级时，不认识的菜单项不显示。
@@ -300,8 +302,9 @@ private struct MessageBubble: View {
                 }
                 .buttonStyle(.plain)
                 .wontonActionSheet(isPresented: $isChoosingFailed, actions: [
-                    WontonSheetAction(title: String(localized: .Message1.messageResend), icon: .refresh,
-                        perform: retry),
+                    WontonSheetAction(
+                        title: String(localized: .Message1.messageResend), icon: .refresh, perform: retry
+                    ),
                     WontonSheetAction(
                         title: String(localized: .Common.commonDelete), icon: .trash, isDanger: true, perform: cancel
                     )

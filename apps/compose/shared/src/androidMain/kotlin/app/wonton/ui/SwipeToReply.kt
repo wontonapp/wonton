@@ -1,13 +1,14 @@
 package app.wonton.ui
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -25,6 +26,7 @@ import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Reply
 import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 
 /** 右滑多远算回复：过了这里松手就进回复状态，也在这里给一次触感。 */
 private val THRESHOLD = 40.dp
@@ -44,8 +46,10 @@ class SwipeToReplyState(
     private val threshold: Float,
     private val max: Float,
 ) {
-    val offset = Animatable(0f)
+    val offset = mutableFloatStateOf(0f)
     private var armed = false
+    private var crossedThreshold = false
+    private var settleJob: Job? = null
 
     val modifier: Modifier = if (!enabled) {
         Modifier
@@ -54,14 +58,19 @@ class SwipeToReplyState(
             .graphicsLayer { translationX = offset.value }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
-                    onDragStart = { armed = false },
-                    onDragEnd = { scope.launch { settle(offset.value) } },
-                    onDragCancel = { scope.launch { settle(0f) } },
+                    onDragStart = {
+                        settleJob?.cancel()
+                        armed = false
+                        crossedThreshold = false
+                    },
+                    onDragEnd = { finish(armed) },
+                    onDragCancel = { finish(false) },
                     onHorizontalDrag = { change, drag ->
-                        change.consume()
-                        scope.launch { offset.snapTo((offset.value + drag).coerceIn(0f, max)) }
-                        if (!armed && offset.value >= threshold) {
-                            armed = true
+                        if (offset.floatValue > 0f || drag > 0f) change.consume()
+                        offset.floatValue = (offset.floatValue + drag).coerceIn(0f, max)
+                        armed = offset.floatValue >= threshold
+                        if (armed && !crossedThreshold) {
+                            crossedThreshold = true
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         }
                     },
@@ -69,14 +78,13 @@ class SwipeToReplyState(
             }
     }
 
-    /** 过了阈值就进回复状态，然后弹回原位。 */
-    private suspend fun settle(at: Float) {
-        val triggered = armed && at >= threshold
-        if (triggered) {
-            offset.animateTo(max, tween(WontonTheme.motion.feedback))
-            onReply()
+    /** A reply never leaves the row open, including a canceled or below-threshold drag. */
+    private fun finish(reply: Boolean) {
+        settleJob?.cancel()
+        if (reply) onReply()
+        settleJob = scope.launch {
+            Animatable(offset.floatValue).animateTo(0f, spring()) { offset.floatValue = value }
         }
-        offset.animateTo(0f, tween(WontonTheme.motion.state))
     }
 }
 

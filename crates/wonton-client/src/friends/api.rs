@@ -62,7 +62,7 @@ impl Failure {
         }
     }
 
-    fn transport(reason: String) -> Self {
+    pub(super) fn transport(reason: String) -> Self {
         Self {
             problem: FriendProblem {
                 reason: FriendFailure::TransportUnavailable,

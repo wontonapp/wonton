@@ -70,6 +70,7 @@ final class AppNavigation {
                 request { navigation in
                     guard try await navigation.navigationReady() else { return }
                     try navigation.select(.chat)
+                    let roomId = try await navigation.chat.core.resolveChatRoom(input: roomId)
                     navigation.chat.openRoom(id: roomId)
                 }
             }

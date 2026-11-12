@@ -3,6 +3,7 @@ import WontonClient
 
 extension MainView {
     func receiveAppURL(_ url: URL) {
+        if home.completeMatrixLogin(from: url) { return }
         if home.prefillPairing(from: url) {
             showsSettings = false
             showsTabSettings = false

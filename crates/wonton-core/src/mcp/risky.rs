@@ -5,6 +5,7 @@
 use rmcp::model::Tool;
 use serde_json::Value;
 
+use super::audience::Subject;
 use super::cards::{self, Draft};
 use super::{Bus, Caller};
 use crate::l10n;
@@ -30,7 +31,7 @@ impl Bus {
         highest: bool,
     ) -> Draft {
         let plugin = cards::text(&server.title);
-        let langs = self.plugins.owner_languages();
+        let langs = self.card_languages(caller, Subject::Tool);
         let mut draft = cards::tool_call(
             &caller.name,
             &plugin,
@@ -43,7 +44,8 @@ impl Bus {
         if deletes && let Some(first) = draft.lines.first_mut() {
             *first = cards::emphasized(l10n::text(&langs, "chat-card-tool-deletes", &[]));
         }
-        if highest || deletes {
+        // 放行时段按插件记，不分 Bot：家人打开的时段会连主人的 Bot 一起放行，所以发给家人的卡片不给这个选项。
+        if highest || deletes || self.recipient(caller, Subject::Tool).is_some() {
             return draft;
         }
         draft.with_window(

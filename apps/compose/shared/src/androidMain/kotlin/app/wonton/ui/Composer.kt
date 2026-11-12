@@ -103,13 +103,12 @@ fun Composer(
     val photoUnreadable = stringResource(R.string.photo_unreadable)
     val photoTryAnother = stringResource(R.string.photo_try_another)
     var pendingPaste by rememberSaveable(roomId) { mutableStateOf<Uri?>(null) }
-    // 监听器只建一次；发送文件要带的房间以最新一次组成为准（预览面板是模态的，开着时换不了房间）。
-    val sendPastedFile by rememberUpdatedState { uri: Uri -> onAction(uploadAction(context, uri, roomId)) }
-    val pasteListener = remember {
+    var pastedImage by rememberSaveable(roomId) { mutableStateOf(false) }
+    val pasteListener = remember(roomId) {
         pasteContentListener(
             context.applicationContext.contentResolver,
-            onImage = { pendingPaste = it },
-            onFile = { sendPastedFile(it) },
+            onImage = { pastedImage = true; pendingPaste = it },
+            onFile = { pastedImage = false; pendingPaste = it },
         )
     }
     val pickPhoto = rememberLauncherForActivityResult(PickVisualMedia()) { uri ->
@@ -141,6 +140,10 @@ fun Composer(
             draft,
             onDraftChange,
             pasteListener,
+            onHardwareSend = { text ->
+                onAction(sendTextAction(roomId, text, reply))
+                onSent()
+            },
             modifier = Modifier.weight(1f)
                 .focusRequester(focusRequester)
                 .padding(vertical = (size.target - size.composerField) / 2)
@@ -153,34 +156,76 @@ fun Composer(
             exit = scaleOut(motion) + fadeOut(motion),
         ) {
             SendButton {
-                onAction(Action.Timeline(TimelineAction.SendText(TimelineTarget(roomId, null), draft, reply?.eventId)))
+                onAction(sendTextAction(roomId, draft, reply))
                 onSent()
             }
         }
     }
-    if (isChoosingAttachment) {
+    ComposerAttachmentContent(
+        choosing = isChoosingAttachment,
+        onDismissChooser = { isChoosingAttachment = false },
+        onPickPhoto = { pickPhoto.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly)) },
+        onPickFiles = { pickFiles.launch(arrayOf("*/*")) },
+        pendingPaste = pendingPaste,
+        pastedImage = pastedImage,
+        roomId = roomId,
+        reply = reply,
+        onAction = onAction,
+        onReplySent = onReplySent,
+        onDismissPaste = { pendingPaste = null },
+        onReject = onReject,
+    )
+
+}
+
+@Composable
+private fun ComposerAttachmentContent(
+    choosing: Boolean,
+    onDismissChooser: () -> Unit,
+    onPickPhoto: () -> Unit,
+    onPickFiles: () -> Unit,
+    pendingPaste: Uri?,
+    pastedImage: Boolean,
+    roomId: String,
+    reply: ReplyQuote?,
+    onAction: (Action) -> Unit,
+    onReplySent: () -> Unit,
+    onDismissPaste: () -> Unit,
+    onReject: (Problem) -> Unit,
+) {
+    if (choosing) {
         WontonActionSheet(
             actions = listOf(
-                WontonSheetAction(stringResource(R.string.composer_photo), WontonIcon.Image) {
-                    pickPhoto.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly))
-                },
-                WontonSheetAction(stringResource(R.string.composer_file), WontonIcon.Attach) {
-                    pickFiles.launch(arrayOf("*/*"))
-                },
+                WontonSheetAction(
+                    stringResource(R.string.composer_photo), WontonIcon.Image, onClick = onPickPhoto,
+                ),
+                WontonSheetAction(
+                    stringResource(R.string.composer_file), WontonIcon.Attach, onClick = onPickFiles,
+                ),
             ),
-            onDismiss = { isChoosingAttachment = false },
+            onDismiss = onDismissChooser,
         )
     }
     pendingPaste?.let { uri ->
-        PastePreviewSheet(
-            uri,
-            onSend = { upload ->
-                onAction(sendImageAction(roomId, upload, reply))
-                if (reply != null) onReplySent()
-            },
-            onDismiss = { pendingPaste = null },
-            onReject = onReject,
-        )
+        if (pastedImage) {
+            PastePreviewSheet(
+                uri,
+                onSend = { upload ->
+                    onAction(sendImageAction(roomId, upload, reply))
+                    if (reply != null) onReplySent()
+                },
+                onDismiss = onDismissPaste,
+                onReject = onReject,
+            )
+        } else {
+            FilePastePreviewSheet(
+                uri,
+                onSend = { action -> onAction(action) },
+                roomId = roomId,
+                onDismiss = onDismissPaste,
+                onReject = onReject,
+            )
+        }
     }
 }
 
@@ -190,6 +235,7 @@ private fun ComposerField(
     draft: String,
     onDraftChange: (String) -> Unit,
     pasteListener: ReceiveContentListener,
+    onHardwareSend: (String) -> Unit,
     modifier: Modifier,
 ) {
     val colors = WontonTheme.colors
@@ -215,7 +261,7 @@ private fun ComposerField(
     }
     BasicTextField(
         state = fieldState,
-        modifier = modifier.contentReceiver(pasteListener),
+        modifier = modifier.contentReceiver(pasteListener).hardwareMessageKeys(fieldState, onHardwareSend),
         lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = MAX_LINES),
         textStyle = typography.body.copy(color = colors.textPrimary.toColor()),
         cursorBrush = SolidColor(colors.textPrimary.toColor()),
@@ -266,5 +312,8 @@ private fun SendButton(onClick: () -> Unit) {
 }
 
 /** 发图片的一条时间线操作；两个调用点（选图、粘贴）共用，也把行收短。 */
+private fun sendTextAction(roomId: String, text: String, reply: ReplyQuote?): Action =
+    Action.Timeline(TimelineAction.SendText(TimelineTarget(roomId, null), text, reply?.eventId))
+
 private fun sendImageAction(roomId: String, upload: ImageUpload, reply: ReplyQuote?): Action =
     Action.Timeline(TimelineAction.SendImage(TimelineTarget(roomId, null), upload, reply?.eventId))

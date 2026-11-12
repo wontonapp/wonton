@@ -28,4 +28,5 @@
     <string name="message_quote_other">Message</string>
     <!-- Placeholder for a message the sender deleted. -->
     <string name="message_summary_redacted">[Message deleted]</string>
+    <string name="message_link_open_failed">Couldn\'t open this link</string>
 </resources>

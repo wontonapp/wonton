@@ -53,6 +53,8 @@ chat-not-signed-in = 還沒登入 Matrix
 
 chat-send-no-response = Matrix 伺服器沒有回應
 
+chat-link-room-not-joined = 還沒加入這個聊天室，請先在聊天列表接受邀請。
+
 # 在只放通知的房間裡送東西時顯示。
 chat-read-only-room = 這個聊天室只放通知，不能傳送訊息
 

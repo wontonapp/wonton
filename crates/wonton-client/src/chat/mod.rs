@@ -38,6 +38,7 @@ mod read_mark;
 pub(crate) mod recovery;
 mod reply;
 mod rich;
+mod room_link;
 mod room_rows;
 mod send;
 mod session;
@@ -453,12 +454,7 @@ impl ChatLink {
             }
             TimelineAction::MarkRead { target } => {
                 let room_id = self.timeline_target(&target)?;
-                let chat = self.clone();
-                let (_, room_id) = self.target(&room_id)?;
-                self.spawn_op("chat-op-mark-read-failed", async move {
-                    chat.room(&room_id).await?.mark_as_read().await.map(drop)
-                });
-                Ok(())
+                self.mark_room_read(&room_id)
             }
             TimelineAction::SetDraft {
                 target,
@@ -467,6 +463,14 @@ impl ChatLink {
             } => {
                 let room_id = self.timeline_target(&target)?;
                 self.set_draft(&room_id, &body, reply_to.as_deref())
+            }
+            // 附件区的操作由 `ClientCore::dispatch` 交给附件区（ADR-0094），不会到这里。
+            TimelineAction::SendComposer { .. }
+            | TimelineAction::RemoveAttachment { .. }
+            | TimelineAction::RetryAttachment { .. }
+            | TimelineAction::RetryOutgoing { .. }
+            | TimelineAction::CancelOutgoing { .. } => {
+                Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
             }
         }
     }

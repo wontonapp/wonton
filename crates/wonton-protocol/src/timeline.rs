@@ -26,6 +26,9 @@ pub struct TimelineUpdate {
     pub back_pagination: BackPagination,
     /// 列表该停在哪。壳按它画“回到底部”和按钮上的数字；新消息不把列表拽走。
     pub viewport: TimelineViewport,
+    /// 自己发出的新消息到了：壳应用这一批后回到底部，即使主人翻走了。
+    /// 别人的消息和编辑只在原本贴底时跟随（[`TimelineViewport::Bottom`]），不能打断阅读。
+    pub scroll_to_bottom: bool,
     /// 只有带 `Reset` 的那一批有（订阅的第一批，时间线重建后的第一批），其余为 `None`：壳先把这一条
     /// （`Reset` 里的 `TimelineItem::id`）摆到视野顶部，摆好之前不报 [`TimelineScroll::Bottom`]
     /// （报早了核心以为主人已经看到最新一条，会清掉落点）。
@@ -609,6 +612,7 @@ mod tests {
             ],
             back_pagination: BackPagination::ReachedStart,
             viewport: TimelineViewport::Away { new_messages: 3 },
+            scroll_to_bottom: false,
             anchor: Some("5".into()),
             panel: Vec::new(),
             panel_selected: None,
@@ -660,6 +664,7 @@ mod tests {
             diffs: Vec::new(),
             back_pagination: BackPagination::Idle,
             viewport: TimelineViewport::Bottom,
+            scroll_to_bottom: true,
             anchor: None,
             panel: Vec::new(),
             panel_selected: None,
@@ -707,6 +712,7 @@ mod tests {
                     origin: None,
                     audience: crate::CardAudience::Keeper,
                     answered_by: None,
+                    category: None,
                     id: "abc".into(),
                     state: ConfirmationState::Pending,
                     title: "Hermes 想安装 Grafana".into(),

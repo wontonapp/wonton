@@ -5,4 +5,5 @@
     <!-- Stand-in in a quote for a message this device can't decrypt. Android only. -->
     <string name="message_quote_undecryptable">加密訊息</string>
     <string name="message_summary_undecryptable">[加密訊息]</string>
+    <string name="message_link_browser">在瀏覽器中開啟</string>
 </resources>

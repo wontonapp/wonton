@@ -25,4 +25,5 @@
     <string name="message_image_save_failed">アルバムに保存できませんでした</string>
     <string name="message_image_share_failed">画像を共有できませんでした</string>
     <string name="message_summary_redacted">[削除されたメッセージ]</string>
+    <string name="message_link_open_failed">このリンクを開けませんでした</string>
 </resources>

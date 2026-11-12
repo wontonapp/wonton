@@ -79,6 +79,7 @@ PREFIXES: Dict[str, str] = {
     "share": "share",
     "contacts": "contacts",
     "handoff": "handoff",
+    "matrixlogin": "matrixlogin",
     # settings
     "settings": "settings",
     "appearance": "appearance",
@@ -123,6 +124,7 @@ PARTS: Dict[str, int] = {
     "share": 3,
     "contacts": 2,
     "handoff": 1,
+    "matrixlogin": 1,
 }
 
 GROUP_OF: Dict[str, str] = {
@@ -131,7 +133,7 @@ GROUP_OF: Dict[str, str] = {
         "chat": "chat chatbackup chatstatus timeline message room bot botprofile transfer composer panel confirmation confirmationcard",
         "onboarding": "onboarding pairing install home homestatus launcher",
         "plugins": "plugin pluginsources store registry registrymirror tool toolpolicy tab tabs files file viewer photo preview secret sidebar sessions scope takeover port mapping portmapping",
-        "peers": "peers friends invite servers connection verification lanclient lanwebui qr qrscanner camera ownerprofile keepalive share contacts handoff",
+        "peers": "peers friends invite servers connection verification lanclient lanwebui qr qrscanner camera ownerprofile keepalive share contacts handoff matrixlogin",
         "settings": "settings appearance egress notification push shortcuts shortcut",
         "common": "common problem core coreupgrade design app language startup page pin unpin",
     }.items()
@@ -141,6 +143,7 @@ GROUP_OF["verification.emoji"] = "peers"
 GROUP_OF["share"] = "peers"
 GROUP_OF["contacts"] = "peers"
 GROUP_OF["handoff"] = "peers"
+GROUP_OF["matrixlogin"] = "peers"
 
 # 各平台的默认文件（common 的基准文件）。
 BASE_FILE = {"ios": "Localizable.xcstrings", "android": "strings.xml", "fluent": "common.ftl"}

@@ -17,4 +17,7 @@
     <string name="message_image_share">共有</string>
     <string name="message_summary_files">[ファイル]</string>
     <string name="message_summary_image">[画像]</string>
+    <string name="message_image_permission_denied">Android がアクセスを拒否しました。設定でこのアプリの権限を確認して、もう一度お試しください。</string>
+    <string name="message_link_share_failed">このリンクを共有できませんでした</string>
+    <string name="message_link_no_handler">この種類のリンクを開けるアプリをインストールして、もう一度お試しください。</string>
 </resources>

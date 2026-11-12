@@ -6,4 +6,5 @@
     <string name="message_quote_undecryptable">Encrypted message</string>
     <!-- Placeholder for a message this device can't decrypt yet. -->
     <string name="message_summary_undecryptable">[Encrypted message]</string>
+    <string name="message_link_browser">Open in browser</string>
 </resources>

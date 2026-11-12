@@ -17,4 +17,7 @@
     <string name="message_image_share">分享</string>
     <string name="message_summary_files">[文件]</string>
     <string name="message_summary_image">[图片]</string>
+    <string name="message_image_permission_denied">Android 拒绝了访问。请在设置中检查此 App 的权限，再试一次。</string>
+    <string name="message_link_share_failed">无法分享这个链接</string>
+    <string name="message_link_no_handler">请安装能打开此类链接的 App，再试一次。</string>
 </resources>
