@@ -195,13 +195,13 @@ final class ChatPanelUITests: XCTestCase {
 
     /// 进 Bot 的房间，返回输入框。新配对的设备走完引导直接落在主 Bot 的房间里，这时不用再从列表点进去。
     private func enterBotRoom() -> XCUIElement? {
-        if let field = composer(timeout: 3) { return field }
         skipKeyHandoff()
+        if let field = composer(timeout: 3) { return field }
         botRoom(timeout: 30)?.tap()
         return composer(timeout: 10)
     }
 
-    /// 开发栈的账号上已经有别的设备（前几次走查配上的）时，新配上的这台先整屏盖着“在另一台设备上继续”。
+    /// 新配上的设备先整屏盖着加设备的密钥交接页“在另一台设备上继续”，落进房间后才出来也有。
     /// 这里不测交接：选“手边没有别的设备”，再从它打开的聊天备份页退回列表。
     private func skipKeyHandoff() {
         let labels = ["I don't have my other device", "手边没有别的设备"]
