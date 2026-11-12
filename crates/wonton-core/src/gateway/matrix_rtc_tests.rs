@@ -16,7 +16,7 @@ use tower::ServiceExt;
 
 use super::fakes::{bind, serve};
 use super::matrix_rtc::KIND_UNAVAILABLE;
-use super::matrix_rtc_alias::{USERINFO_PATH, WELL_KNOWN_SERVER_PATH};
+use super::matrix_rtc_alias::{DELAYED_EVENTS_PREFIX, USERINFO_PATH, WELL_KNOWN_SERVER_PATH};
 use super::tests::{Harness, Reply, TOKEN, owner};
 use super::{Gateway, TunnelPeer, matrix_rtc_alias};
 use crate::http::HttpClient;
@@ -142,6 +142,13 @@ impl Alias {
                     recorded.lock().unwrap().push(req.uri().to_string());
                     return axum::Json(json!({"sub": "@owner:test"})).into_response();
                 }
+                if req.uri().path().starts_with(DELAYED_EVENTS_PREFIX) {
+                    recorded
+                        .lock()
+                        .unwrap()
+                        .push(format!("{} {}", req.method(), req.uri()));
+                    return axum::Json(json!({})).into_response();
+                }
                 let (mut parts, body) = req.into_parts();
                 parts.uri = format!("http://{authority}{}", parts.uri).parse().unwrap();
                 let response = http.send(Request::from_parts(parts, body)).await.unwrap();
@@ -184,7 +191,12 @@ impl Alias {
     }
 
     async fn get(&self, from: &str, host: &str, path: &str) -> Reply {
+        self.send(Method::GET, from, host, path).await
+    }
+
+    async fn send(&self, method: Method, from: &str, host: &str, path: &str) -> Reply {
         let mut req = Request::builder()
+            .method(method)
             .uri(path)
             .header(header::HOST, host)
             .body(Body::empty())
@@ -222,11 +234,22 @@ async fn the_alias_answers_discovery_and_userinfo_for_the_provider_only() {
         "/_matrix/federation/v1/version",
         "/_matrix/key/v2/server",
         "/_matrix/client/versions",
-        "/.well-known/matrix/client",
+        "/_matrix/client/v1/delayed_events/abc/restart",
     ] {
         let reply = alias.get("10.77.0.5", &host, path).await;
         assert_eq!(reply.status, StatusCode::NOT_FOUND, "{path}");
     }
+    // 授权服务代管 delayed leave：不稳定路径上的操作原样转给 Tuwunel，GET 不转。
+    let action = format!("{DELAYED_EVENTS_PREFIX}abc/restart");
+    let reply = alias.send(Method::POST, "10.77.0.5", &host, &action).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    let reply = alias.get("10.77.0.5", &host, &action).await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        alias.seen.lock().unwrap().last().unwrap(),
+        &format!("POST {action}")
+    );
+
     // 别的插件网络、别的主机名都不答。
     let reply = alias.get("10.78.0.5", &host, WELL_KNOWN_SERVER_PATH).await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN);
@@ -238,6 +261,6 @@ async fn the_alias_answers_discovery_and_userinfo_for_the_provider_only() {
         )
         .await;
     assert_eq!(reply.status, StatusCode::MISDIRECTED_REQUEST);
-    assert_eq!(alias.seen.lock().unwrap().len(), 1);
+    assert_eq!(alias.seen.lock().unwrap().len(), 2);
     drop(alias.h);
 }

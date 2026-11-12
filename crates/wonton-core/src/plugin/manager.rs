@@ -44,7 +44,7 @@ use crate::matrix::Matrix;
 pub(super) mod busy;
 mod views;
 
-pub use views::{PluginView, Route};
+pub use views::{HostedRoute, PluginView, Route};
 
 pub(super) use busy::{busy, detached};
 
@@ -83,6 +83,8 @@ pub struct PluginManager {
     pub(super) matrix: Option<Arc<Matrix>>,
     /// Tuwunel 的服务器名，接上 Matrix 时一起定下；`matrix_rtc` 提供方要它（见 [`super::matrix_rtc`]）。
     pub(super) matrix_server_name: Option<String>,
+    /// 给 `matrix_rtc` 别名签证书、给提供方写证书包的 CA；接了 Matrix 才有。
+    pub(super) matrix_rtc_ca: Option<std::sync::Arc<super::matrix_rtc_ca::CoreCa>>,
     pub(super) mailpit: Option<Arc<crate::mailbox::Component>>,
     pub(super) profiles: super::bot_profile::ProfileState,
     pub(super) cfg: LifecycleConfig,
@@ -176,6 +178,7 @@ impl PluginManager {
             oidc,
             matrix: None,
             matrix_server_name: None,
+            matrix_rtc_ca: None,
             mailpit: None,
             profiles: Default::default(),
             host: HostPaths::new(host_dev),
@@ -566,9 +569,11 @@ impl PluginManager {
     }
 
     async fn restore_one(&self, record: &InstalledRecord, langs: &Languages) -> Entry {
-        match PluginPackage::with_files(&record.source, record.files.clone(), langs) {
-            Ok(mut package) => {
-                package.origin = record.origin.clone();
+        match record.package(langs) {
+            Ok(package) if super::install_hosted::is_containerless(&package.manifest) => {
+                self.restore_containerless(&package, record, langs)
+            }
+            Ok(package) => {
                 // 不管核对结果如何都先登记来源：插件暂时不健康，也要能经核心重新连上 Matrix 恢复过来。
                 let manifest = &package.manifest;
                 let network = self.cfg.instance.network(&manifest.id.slug());

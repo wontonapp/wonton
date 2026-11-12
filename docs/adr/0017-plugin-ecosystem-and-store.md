@@ -233,7 +233,9 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
   `DismissPluginTask`，以及一键装、一键升：`InstallNow { source }`、`UpgradeNow { plugin_id }`、`UpgradeAll`、
   `DismissStoreConfirmation`。安装和升级把确认页渲染的那份预览原样交回，核心按它授予列出的全部权限：确认页上看到的
   就是授予的，壳不用自己拼权限列表。
-- 直接返回结果的调用：`store_plugin(source)`、`installed_plugin(id)`（详情页）、`preview_install(source)`、
+- 直接返回结果的调用：`store_plugin(source)`、`installed_plugin(id)`（详情页）、`plugin_detail(route)`（详情页：
+  插件还在时给 `PluginDetail`，已经卸掉时给 `Close` 让壳关掉这一页）、`plugin_detail_after_task(route)`（详情页上的
+  任务做完后重取；卸载确定做成了直接给 `Close`，失败或等不到结果时由重取认出“没装”再关）、`preview_install(source)`、
   `preview_upgrade(id)`（确认页）、`plugin_settings(id)`、`preview_plugin_settings(id, update)`、`set_plugin_settings(id, update)`（ADR-0077）、`load_plugin_image(image)`（经隧道取图片并缓存，返回 PNG 或 JPEG 的字节，同
   `load_media`）、`search_store(query)`（在取到的商店列表里按名字、说明、标签和 ID 找）。
 - 失败的原因（`PluginFailure`）按核心的错误类别区分，壳据此提示下一步：连不上家里的服务器、本设备不被认、家里的服务器

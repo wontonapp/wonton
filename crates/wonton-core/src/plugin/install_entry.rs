@@ -10,7 +10,10 @@ use super::store::EnabledPermission;
 use crate::l10n;
 
 pub(super) fn check_runtime(manifest: &Manifest, langs: &Languages) -> Result<(), InstallError> {
-    if manifest.runtime != Runtime::Compose {
+    if !matches!(
+        manifest.runtime,
+        Runtime::Compose | Runtime::StaticWeb | Runtime::Link
+    ) {
         return Err(InstallError::UnsupportedRuntime(l10n::text(
             langs,
             "plugin-install-runtime-unsupported",

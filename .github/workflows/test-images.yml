@@ -29,7 +29,8 @@ on:
 
 # PR 上又推了一个提交就取消上一次；定时、main 上的复制和手动触发都跑完（main-image 等 main 上这一次的结果）。
 concurrency:
-  group: test-images-${{ github.ref }}
+  # 按提交分组：main 上合并很密，挂在 ref 上的排队会被下一次合并顶掉（实测连取消两个 push 运行）。
+  group: test-images-${{ github.head_ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -66,7 +67,7 @@ jobs:
     concurrency:
       group: test-images-tools-${{ matrix.target }}
       cancel-in-progress: false
-    if: github.event_name != 'pull_request' || inputs.tag != ''
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -93,6 +94,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           platforms: linux/amd64
           file: deploy/dev/core/Dockerfile
+          target: ${{ matrix.target }}
           version: ${{ inputs.tag || 'main' }}
           extra-build-args: |-
             WONTON_BUILD_COMMIT=${{ github.sha }}

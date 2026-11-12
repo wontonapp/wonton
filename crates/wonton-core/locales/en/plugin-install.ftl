@@ -524,3 +524,24 @@ plugin-install-runtime-services = runtime { $runtime } must not declare services
 plugin-install-runtime-unsupported = this core cannot install or upgrade runtime { $runtime }; upgrade the core first
 plugin-install-matrix-rtc-needs-matrix = The home server isn't connected to a Matrix server, so an app that provides matrix_rtc (call authorization) can't be installed
 plugin-install-matrix-rtc-conflict = App { $id } already provides matrix_rtc (call authorization): there can only be one at a time
+plugin-install-matrix-rtc-ca-failed = Couldn't write the certificate bundle the call authorization app trusts: { $error }
+
+# 静态网页和托管形态（ADR-0080）
+plugin-install-static-dir = Static files in `{ $root }`: { $problem }
+plugin-install-static-too-many = more than { $max } files and folders
+plugin-install-static-too-big = { $mib } MiB in total, over the { $max } MiB limit
+plugin-install-static-file-too-big = `{ $path }` is over the { $max } MiB limit for one file
+plugin-install-static-hidden = `{ $path }`: names starting with . are not allowed
+plugin-install-static-reserved = the folder _wonton/ is reserved for app data
+plugin-install-static-no-index = there is no index.html
+plugin-install-static-no-fallback = the fallback file `{ $path }` is not in the folder
+plugin-install-static-symlink = `{ $path }` is a symlink; static files must not be symlinks
+plugin-install-static-not-file = `{ $path }` is not a regular file
+plugin-install-static-missing = the folder is missing
+plugin-install-static-read-failed = cannot read `{ $path }`: { $error }
+plugin-hosted-provider-not-running = { $provider }, which serves this app, is not running
+plugin-hosted-provider-missing = No installed app provides { $capability }, which this app needs
+plugin-hosted-provider-taken = { $other } already provides { $capability }; only one app can provide it
+plugin-hosted-provider-in-use = These apps are served by it and would stop working: { $plugins }. Uninstall them first
+plugin-hosted-dir-missing = The files of this app for { $capability } are missing; reinstall it
+plugin-hosted-storage-failed = Could not write the hosted files: { $error }

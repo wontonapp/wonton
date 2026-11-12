@@ -55,8 +55,15 @@ pub fn render(
         json!("entry-gateway.wonton.internal:8484");
     compose["services"]["core"]["environment"]["WONTON_MATRIX_FEDERATION_ADDR"] =
         json!("entry.wonton.internal:8449");
-    // 发布的 UDP 端口由 Docker 按容器端点做 DNAT，命中的接口不确定；隧道绑所有地址，哪个端点都收得到。
-    compose["services"]["core"]["environment"]["WONTON_TUNNEL_BIND"] = json!("0.0.0.0");
+    // 隧道只绑核心在 core 网络上的地址（ADR-0021）：被攻破的入口容器在 clients 网络上发到隧道端口的包
+    // 落不到套接字。绑的是别名，由 Docker 的内嵌 DNS 在启动时解析；发布的 UDP 端口经 Docker DNAT 落在
+    // core 网络的端点上（tests/docker_tunnel_bind.rs 断言），局域网和公网来的包照样到得了。
+    compose["services"]["core"]["networks"]["core"]["aliases"]
+        .as_array_mut()
+        .context("core 网络的 aliases 不是列表")?
+        .push(json!("tunnel.wonton.internal"));
+    compose["services"]["core"]["environment"]["WONTON_TUNNEL_BIND"] =
+        json!("tunnel.wonton.internal");
     // 客户端网关不能在入口接口上接受连接，防止已攻破入口读取首次配对码。
     compose["services"]["core"]["environment"]["WONTON_EXCLUDE_LISTEN"] =
         json!("entry-gateway.wonton.internal");
@@ -281,6 +288,37 @@ mod tests {
                 "2001:db8::53",
                 "2001:db8::54"
             ])
+        );
+    }
+
+    /// 隧道只绑核心在 core 网络上的地址（ADR-0021）：绑的别名只挂在那张网络上，被攻破的入口容器
+    /// 在 clients 网络上发到隧道端口的包落不到套接字；core 网络上的别名能被 Docker 的内嵌 DNS
+    /// 解析到核心在那里的地址。
+    #[test]
+    fn the_tunnel_binds_an_alias_that_only_exists_on_the_core_network() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
+        std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
+        let compose: Value = serde_json::from_str(
+            &render(crate::install::COMPOSE, Some(&settings()), dir.path()).unwrap(),
+        )
+        .unwrap();
+        let core = &compose["services"]["core"];
+        assert_eq!(
+            core["environment"]["WONTON_TUNNEL_BIND"],
+            json!("tunnel.wonton.internal")
+        );
+        let aliases = core["networks"]["core"]["aliases"]
+            .as_array()
+            .expect("core 网络的 aliases");
+        assert!(
+            aliases.contains(&json!("tunnel.wonton.internal")),
+            "core 网络上没有隧道别名：{aliases:?}"
+        );
+        assert_eq!(
+            core["networks"]["clients"],
+            json!({"aliases": ["entry-gateway.wonton.internal"]}),
+            "入口别名要在 clients 网络上，不能和隧道别名同网络"
         );
     }
 }

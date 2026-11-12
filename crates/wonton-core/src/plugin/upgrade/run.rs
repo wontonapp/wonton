@@ -110,7 +110,9 @@ impl PluginManager {
         let langs = self.owner_languages();
         super::super::install_entry::check_runtime(&package.manifest, &langs)?;
         self.check_not_upgrading(&langs)?;
-        dry_run(&package, &langs)?;
+        if !super::super::install_hosted::is_containerless(&package.manifest) {
+            dry_run(&package, &langs)?;
+        }
         self.check_icon(&package, &langs).await?;
         let manifest = &package.manifest;
         let id = &manifest.id;
@@ -132,6 +134,11 @@ impl PluginManager {
             })
             .collect();
         check_permissions(manifest, granted, &enabled, &langs)?;
+        super::super::capabilities::unsupported_model_dependency(manifest, &langs)?;
+        if super::super::install_hosted::is_containerless(manifest) {
+            return self.upgrade_containerless(package, granted, &langs).await;
+        }
+        self.check_hosted_provider(manifest, &langs)?;
         self.check_requirements(manifest, &langs).await?;
         self.check_egress(manifest, &langs).await?;
         let gpu = self
@@ -145,16 +152,16 @@ impl PluginManager {
         let lan = self.lan_grant(&package, lan_webui, &langs).await?;
         let before = self.begin_upgrade(id)?;
         tracing::info!(plugin = %id, version = %manifest.version, "开始升级插件");
-        let outcome = self
-            .upgrade_begun(
-                &package,
-                granted,
-                &enabled,
-                (gpu, lan),
-                settings.clone(),
-                &langs,
-            )
-            .await;
+        // 放堆上跑：从建容器到对账的一整串都在这条链里，调试构建的帧很大，嵌套两层就够顶满测试线程的 2 MiB 栈。
+        let outcome = Box::pin(self.upgrade_begun(
+            &package,
+            granted,
+            &enabled,
+            (gpu, lan),
+            settings.clone(),
+            &langs,
+        ))
+        .await;
         self.lan.end(id);
         let result = self.finish_upgrade(&package, lan_webui, before, outcome);
         if result.is_ok()
@@ -419,6 +426,8 @@ impl PluginManager {
             family: old.record.family,
             settings: ctx.settings.clone().into_iter().collect(),
             settings_changed_ms: old.record.settings_changed_ms,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         })?;
         Ok(Deployed {
             upstream,
@@ -433,6 +442,7 @@ impl PluginManager {
             proxy: proxy.map(Arc::new),
             mcp,
             firewalled,
+            hosted: self.hosted_upstreams(manifest, &network).await?,
         })
     }
 
@@ -702,7 +712,8 @@ impl PluginManager {
         pin_images(&mut plan, &old.images);
         self.replace_containers(&ctx, plan, Gate::StartPeriod)
             .await?;
-        self.reconcile_running(&old.package, &old.record).await
+        // 对账要取宿主信息、起检查容器，链很深：同样放堆上。
+        Box::pin(self.reconcile_running(&old.package, &old.record)).await
     }
 
     /// 新版本不要了的：记录已经写好，失败只记日志，主人卸载时一并清掉。

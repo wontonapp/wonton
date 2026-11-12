@@ -523,3 +523,24 @@ plugin-install-runtime-services = runtime が { $runtime } の場合、services 
 plugin-install-runtime-unsupported = このコアは runtime が { $runtime } のプラグインのインストールや更新に対応していません。先にコアを更新してください
 plugin-install-matrix-rtc-needs-matrix = コアが Matrix サーバーに接続していないため、matrix_rtc（通話の認可）を提供するアプリはインストールできません
 plugin-install-matrix-rtc-conflict = matrix_rtc（通話の認可）を提供するアプリ { $id } が既にインストールされています。同時に1つだけです
+plugin-install-matrix-rtc-ca-failed = 通話の認可アプリが信頼する証明書バンドルを書き込めませんでした：{ $error }
+
+# 静态网页和托管形态（ADR-0080）
+plugin-install-static-dir = `{ $root }` の静的ファイル：{ $problem }
+plugin-install-static-too-many = ファイルとフォルダーが { $max } 個を超えています
+plugin-install-static-too-big = 合計 { $mib } MiB で、上限の { $max } MiB を超えています
+plugin-install-static-file-too-big = `{ $path }` が1ファイルの上限 { $max } MiB を超えています
+plugin-install-static-hidden = `{ $path }`：. で始まる名前は使えません
+plugin-install-static-reserved = _wonton/ フォルダーはアプリのデータ用に予約されています
+plugin-install-static-no-index = index.html がありません
+plugin-install-static-no-fallback = fallback に指定された `{ $path }` がフォルダーにありません
+plugin-install-static-symlink = `{ $path }` はシンボリックリンクです。静的ファイルにシンボリックリンクは使えません
+plugin-install-static-not-file = `{ $path }` は通常のファイルではありません
+plugin-install-static-missing = フォルダーがありません
+plugin-install-static-read-failed = `{ $path }` を読み込めません：{ $error }
+plugin-hosted-provider-not-running = このアプリをホストしている { $provider } が実行されていません
+plugin-hosted-provider-missing = このアプリに必要な { $capability } を提供するアプリがインストールされていません
+plugin-hosted-provider-taken = { $other } がすでに { $capability } を提供しています。提供できるアプリは1つだけです
+plugin-hosted-provider-in-use = 次のアプリはこのアプリがホストしており、アンインストールすると開けなくなります：{ $plugins }。先にそれらをアンインストールしてください
+plugin-hosted-dir-missing = このアプリの { $capability } のファイルが見つかりません。再インストールしてください
+plugin-hosted-storage-failed = ホストするファイルを書き込めません：{ $error }

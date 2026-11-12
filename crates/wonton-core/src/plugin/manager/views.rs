@@ -7,7 +7,9 @@ use serde::Serialize;
 use super::super::entry::Entry;
 use super::super::entry::Health;
 use super::super::entry::PluginStatus;
+use super::super::install_hosted::{effective_status, hosted_capability, provider_in};
 use super::super::manifest::{LocalizedText, PluginId, Sso};
+use super::super::manifest_static::content_security_policy;
 use super::super::proxy_auth::ProxyAuth;
 use super::super::upstreams::Endpoint;
 use super::PluginManager;
@@ -39,37 +41,74 @@ pub struct Route {
     pub proxy: Option<Arc<ProxyAuth>>,
     /// 请求路径是否精确匹配本次路由清单登记的 OIDC 登录回调。
     pub oidc_callback: bool,
+    /// 托管插件（ADR-0080）：`upstream` 是提供方，网关还要带上插件 ID、加按清单算的响应头。
+    pub hosted: Option<HostedRoute>,
+}
+
+/// 网关转发托管插件的请求要的东西。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostedRoute {
+    /// 网关下发的 `Content-Security-Policy`（ADR-0080 第 4 节），盖掉提供方给的。
+    pub csp: String,
+    /// 提供方回 404 时改取的文件（相对站点根，不带开头的 `/`）。
+    pub fallback: Option<String>,
+}
+
+/// 请求路径是否精确匹配本次路由清单登记的 OIDC 登录回调。
+fn oidc_callback(entry: &Entry, path: &str) -> bool {
+    entry
+        .listed
+        .as_ref()
+        .and_then(|listed| listed.manifest.webui.as_ref())
+        .filter(|webui| webui.sso == Sso::Oidc)
+        .and_then(|webui| webui.oidc.as_ref())
+        .is_some_and(|client| client.redirect_paths.iter().any(|p| p == path))
 }
 
 impl PluginManager {
     pub fn route(&self, slug: &str, path: &str) -> Option<Route> {
+        let langs = self.owner_languages();
         let plugins = self.plugins.read().expect("插件表锁中毒");
-        plugins
-            .iter()
-            .find(|(id, _)| id.slug() == slug)
-            .map(|(id, entry)| Route {
+        let (id, entry) = plugins.iter().find(|(id, _)| id.slug() == slug)?;
+        let manifest = entry.listed.as_ref().map(|listed| &listed.manifest);
+        if let Some(capability) = manifest.and_then(hosted_capability) {
+            let spec = manifest
+                .and_then(|m| m.static_web.clone())
+                .unwrap_or_default();
+            return Some(Route {
                 id: id.clone(),
-                status: entry.status.clone(),
-                upstream: entry.upstream.clone(),
-                web_serving: entry
-                    .listed
-                    .as_ref()
-                    .and_then(|listed| listed.manifest.webui.as_ref())
-                    .is_some_and(|webui| entry.serving.contains(&webui.service)),
-                cross_origin_isolated: entry
-                    .listed
-                    .as_ref()
-                    .and_then(|listed| listed.manifest.webui.as_ref())
+                status: effective_status(&plugins, entry, &langs),
+                upstream: provider_in(&plugins, capability, &langs).and_then(|p| p.endpoint),
+                web_serving: false,
+                cross_origin_isolated: manifest
+                    .and_then(|m| m.webui.as_ref())
                     .is_some_and(|webui| webui.cross_origin_isolated),
                 proxy: entry.proxy.clone(),
-                oidc_callback: entry
-                    .listed
-                    .as_ref()
-                    .and_then(|listed| listed.manifest.webui.as_ref())
-                    .filter(|webui| webui.sso == Sso::Oidc)
-                    .and_then(|webui| webui.oidc.as_ref())
-                    .is_some_and(|client| client.redirect_paths.iter().any(|p| p == path)),
-            })
+                oidc_callback: oidc_callback(entry, path),
+                hosted: Some(HostedRoute {
+                    csp: content_security_policy(&spec),
+                    fallback: spec.fallback,
+                }),
+            });
+        }
+        Some(Route {
+            id: id.clone(),
+            status: entry.status.clone(),
+            upstream: entry.upstream.clone(),
+            web_serving: entry
+                .listed
+                .as_ref()
+                .and_then(|listed| listed.manifest.webui.as_ref())
+                .is_some_and(|webui| entry.serving.contains(&webui.service)),
+            cross_origin_isolated: entry
+                .listed
+                .as_ref()
+                .and_then(|listed| listed.manifest.webui.as_ref())
+                .is_some_and(|webui| webui.cross_origin_isolated),
+            proxy: entry.proxy.clone(),
+            oidc_callback: oidc_callback(entry, path),
+            hosted: None,
+        })
     }
 
     pub(in crate::plugin) fn view(&self, id: &PluginId, entry: &Entry) -> PluginView {
@@ -77,6 +116,7 @@ impl PluginManager {
             id: id.clone(),
             version: entry.version.clone(),
             title: entry.title.clone(),
+            // 托管插件刚装上时提供方的状态在插件表里，调用方可能正拿着写锁：这里给记录里的状态，列表和网关现看。
             status: entry.status.clone(),
             health: entry.health,
             url: self.open_url(id, entry),

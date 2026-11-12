@@ -28,7 +28,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -42,8 +41,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalUriHandler
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.PluginDetail
+import app.wonton.protocol.PluginDetailOutcome
 import app.wonton.protocol.PluginImage
-import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginState
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskState
@@ -73,18 +72,24 @@ private const val SCREENSHOT_RATIO = 9f / 19.5f
 @Composable
 fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, route: PluginRoute) {
     var attempt by remember { mutableIntStateOf(0) }
-    var pluginId by remember(route) { mutableStateOf<String?>(null) }
+    var loaded by remember(route) { mutableStateOf<Result<PluginDetail>?>(null) }
     var toggled by remember(route) { mutableStateOf<PluginDetail?>(null) }
-    val loaded by produceState<Result<PluginDetail>?>(null, route, attempt) {
-        value = null
+    // 主屏打开的插件先知道 ID：取详情的请求还没回来、任务就做完时，也要看得到“进行中 → 结束”这一步。
+    var pluginId by remember(route) { mutableStateOf((route as? PluginRoute.Installed)?.id) }
+    LaunchedEffect(route, attempt) {
+        loaded = null
         toggled = null
-        value = try {
-            Result.success(
-                when (route) {
-                    is PluginRoute.Store -> plugins.core.storePlugin(route.source)
-                    is PluginRoute.Installed -> plugins.core.installedPlugin(route.id)
-                }.also { pluginId = it.id },
-            )
+        loaded = try {
+            when (val outcome = plugins.core.pluginDetail(route.coreRoute)) {
+                is PluginDetailOutcome.Close -> {
+                    navigation.detail = null
+                    null
+                }
+                is PluginDetailOutcome.Detail -> {
+                    pluginId = outcome.detail.id
+                    Result.success(outcome.detail)
+                }
+            }
         } catch (failure: CoreException) {
             Result.failure(failure)
         }
@@ -92,11 +97,20 @@ fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, rout
     val task = plugins.viewModel.tasks.firstOrNull { it.id == pluginId }
     val working = task?.state is PluginTaskState.Running
     var wasWorking by remember { mutableStateOf(false) }
-    // 详情只在打开时取一次，任务做完要重取，按钮才对。主屏上打开的插件卸载以后，这一页没有东西可看了。
+    // 详情只在打开时取一次，任务做完要重取，按钮才对。要不要关这一页由核心判断：插件已经卸掉了，核心让关。
     LaunchedEffect(working) {
         if (wasWorking && !working) {
-            val removed = task?.operation == PluginOperation.UNINSTALL && task.state is PluginTaskState.Succeeded
-            if (route is PluginRoute.Installed && removed) navigation.detail = null else attempt++
+            try {
+                when (val outcome = plugins.core.pluginDetailAfterTask(route.coreRoute)) {
+                    is PluginDetailOutcome.Close -> navigation.detail = null
+                    is PluginDetailOutcome.Detail -> {
+                        toggled = null
+                        loaded = Result.success(outcome.detail)
+                    }
+                }
+            } catch (failure: CoreException) {
+                loaded = Result.failure(failure)
+            }
         }
         wasWorking = working
     }

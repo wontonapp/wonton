@@ -234,6 +234,7 @@ plugin-settings-github-file-what = fetching { $path } of { $repo } at commit { $
 plugin-settings-github-missing = { $what }: not found
 plugin-settings-github-url-what = fetching { $url }
 plugin-settings-github-api-what = fetching { $path } of { $repo } at { $reference } through the API
+plugin-settings-github-tree-what = fetching the file list of { $dir } in { $repo } at { $commit }
 plugin-settings-github-rate-limited = { $what }: GitHub rate-limited the request; try again in a few minutes
 plugin-settings-github-rate-limited-plain = GitHub rate-limited the request; try again in a few minutes
 plugin-settings-github-api-status = { $what }: GitHub replied { $status }

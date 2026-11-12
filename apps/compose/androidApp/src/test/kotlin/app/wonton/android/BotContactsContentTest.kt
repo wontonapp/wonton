@@ -1,6 +1,7 @@
 package app.wonton.android
 
 import android.app.Application
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -9,6 +10,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.wonton.protocol.Action
 import app.wonton.protocol.BotContact
+import app.wonton.protocol.BotContactFailure
 import app.wonton.protocol.BotContactsState
 import app.wonton.protocol.BotContactsViewModel
 import app.wonton.protocol.BotRef
@@ -42,9 +44,15 @@ class BotContactsContentTest {
     private val sent = mutableListOf<Action>()
     private val removed = mutableListOf<BotContact>()
 
-    private fun contact(userId: String, state: ContactState, kind: ContactKind = ContactKind.BOT) = BotContact(
+    // 显示名不给时行的名字回退成用户 ID，同一行出现两个相同文本，按文本找节点会数到 2 个。
+    private fun contact(
+        userId: String,
+        state: ContactState,
+        kind: ContactKind = ContactKind.BOT,
+        displayName: String? = null,
+    ) = BotContact(
         userId = userId,
-        displayName = null,
+        displayName = displayName,
         keeperDisplayName = null,
         kind = kind,
         state = state,
@@ -59,8 +67,12 @@ class BotContactsContentTest {
         }
     }
 
-    private fun ready(vararg contacts: BotContact) =
-        BotContactsViewModel(bot = bot, state = BotContactsState.Ready, contacts = contacts.toList())
+    private fun ready(vararg contacts: BotContact) = BotContactsViewModel(
+        bot = bot,
+        state = BotContactsState.Ready,
+        contacts = contacts.toList(),
+        actionFailure = null,
+    )
 
     @Test
     fun approvingAndRejectingAnIncomingRequestSendTheMatchingActions() {
@@ -101,11 +113,33 @@ class BotContactsContentTest {
     @Test
     fun aFailureWithoutRowsOffersARetryThatRefetches() {
         val failed = BotContactsState.Failed(ContactError.TRANSPORT_UNAVAILABLE, "detail")
-        show(BotContactsViewModel(bot, failed, emptyList()))
+        show(BotContactsViewModel(bot, failed, emptyList(), null))
 
         compose.onNodeWithText(context.getString(R.string.common_retry)).performClick()
 
         assertEquals(listOf<Action>(Action.RefreshBotContacts(bot)), sent)
+    }
+
+    @Test
+    fun aFailedActionKeepsTheListAndShowsWhyAboveIt() {
+        val failure = BotContactFailure(ContactError.CONTACT_NOT_FOUND, "detail")
+        show(
+            ready(contact("@c:b.example", ContactState.ACTIVE, displayName = "家庭助手"))
+                .copy(actionFailure = failure),
+        )
+
+        compose.onNodeWithText("@c:b.example").assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.contacts_error_contact_not_found)).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.common_retry)).assertDoesNotExist()
+    }
+
+    @Test
+    fun aFailedFirstRequestKeepsTheEmptyPageWithItsAddButton() {
+        val failure = BotContactFailure(ContactError.INVALID_USER_ID, "detail")
+        show(ready().copy(actionFailure = failure))
+
+        compose.onNodeWithText(context.getString(R.string.contacts_error_invalid_user_id)).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.contacts_add)).assertIsDisplayed()
     }
 
     @Test
@@ -122,7 +156,7 @@ class BotContactsContentTest {
     fun aListForAnotherBotIsNotShownAsThisBots() {
         val other = BotRef(pluginId = "openclaw", bot = "default")
         val incoming = contact("@x:b.example", ContactState.INCOMING)
-        show(BotContactsViewModel(other, BotContactsState.Ready, listOf(incoming)))
+        show(BotContactsViewModel(other, BotContactsState.Ready, listOf(incoming), null))
 
         compose.onNodeWithText("@x:b.example").assertDoesNotExist()
     }

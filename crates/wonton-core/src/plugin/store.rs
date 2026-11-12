@@ -97,9 +97,27 @@ pub struct InstalledRecord {
     /// 设置最后保存的时间，Unix 毫秒；没改过时为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_changed_ms: Option<u64>,
+    /// 静态网页的文件摘要（相对 `static_web.root` 的路径 → sha256），算插件包摘要用；文件本身只在托管目录里（ADR-0080）。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub static_files: super::package::static_files::StaticHashes,
+    /// 副作用账本里的托管目录：这个插件在哪些托管能力下有自己的子目录（ADR-0080 第 2 节）。卸载照它撤。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hosted: Vec<String>,
 }
 
 impl InstalledRecord {
+    /// 记录里的插件包：引用的文件之外，静态网页只有文件摘要（文件在托管目录里）。
+    pub fn package(
+        &self,
+        langs: &super::languages::Languages,
+    ) -> Result<super::package::PluginPackage, super::package::PackageError> {
+        let mut package =
+            super::package::PluginPackage::with_files(&self.source, self.files.clone(), langs)?
+                .with_static_hashes(self.static_files.clone());
+        package.origin = self.origin.clone();
+        Ok(package)
+    }
+
     /// 记录里开着的可选权限。
     pub fn enabled(&self) -> Vec<Permission> {
         self.enabled_permissions
@@ -593,6 +611,8 @@ mod tests {
             family: false,
             settings: Default::default(),
             settings_changed_ms: None,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         }
     }
 

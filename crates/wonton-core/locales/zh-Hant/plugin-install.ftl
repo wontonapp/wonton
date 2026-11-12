@@ -523,3 +523,24 @@ plugin-install-runtime-services = runtime 為 { $runtime } 時不能宣告 servi
 plugin-install-runtime-unsupported = 這個核心不支援安裝或升級 runtime 為 { $runtime } 的外掛，請先升級核心
 plugin-install-matrix-rtc-needs-matrix = 核心沒有接入 Matrix 伺服器，裝不了提供 matrix_rtc（通話授權）的應用程式
 plugin-install-matrix-rtc-conflict = 已經安裝了提供 matrix_rtc（通話授權）的應用程式 { $id }：同一時間只能有一個
+plugin-install-matrix-rtc-ca-failed = 寫不了通話授權應用程式要信任的憑證包：{ $error }
+
+# 静态网页和托管形态（ADR-0080）
+plugin-install-static-dir = `{ $root }` 裡的靜態檔案：{ $problem }
+plugin-install-static-too-many = 檔案和資料夾超過 { $max } 個
+plugin-install-static-too-big = 一共 { $mib } MiB，超過 { $max } MiB
+plugin-install-static-file-too-big = `{ $path }` 超過單一檔案 { $max } MiB 的上限
+plugin-install-static-hidden = `{ $path }`：不能有以 . 開頭的名稱
+plugin-install-static-reserved = _wonton/ 目錄保留給應用程式資料，不能使用
+plugin-install-static-no-index = 沒有 index.html
+plugin-install-static-no-fallback = fallback 指定的 `{ $path }` 不在目錄裡
+plugin-install-static-symlink = `{ $path }` 是符號連結，靜態檔案不能是符號連結
+plugin-install-static-not-file = `{ $path }` 不是一般檔案
+plugin-install-static-missing = 目錄不存在
+plugin-install-static-read-failed = 無法讀取 `{ $path }`：{ $error }
+plugin-hosted-provider-not-running = 託管這個應用程式的 { $provider } 沒有在執行
+plugin-hosted-provider-missing = 沒有安裝提供 { $capability } 的應用程式，這個應用程式無法使用
+plugin-hosted-provider-taken = { $other } 已經提供 { $capability }，只能有一個應用程式提供它
+plugin-hosted-provider-in-use = 這些應用程式由它託管，解除安裝後會打不開：{ $plugins }。請先解除安裝它們
+plugin-hosted-dir-missing = 這個應用程式在 { $capability } 下的檔案不見了，請重新安裝
+plugin-hosted-storage-failed = 託管檔案無法寫入：{ $error }
