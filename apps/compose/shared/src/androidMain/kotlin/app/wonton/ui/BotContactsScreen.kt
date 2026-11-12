@@ -68,6 +68,7 @@ internal fun BotContactsPage(core: ClientCore, bot: BotRef, onBack: () -> Unit) 
     val view by remember(core) { core.botContactsUpdates() }.collectAsState(remember(core) { core.botContacts() })
     var adding by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<BotContact?>(null) }
+    var approvingRemote by remember { mutableStateOf<BotContact?>(null) }
     var rejection by remember { mutableStateOf<Problem?>(null) }
     val send = { action: Action -> rejection = core.send(action) }
     LaunchedEffect(core, bot) { send(Action.RefreshBotContacts(bot)) }
@@ -76,7 +77,8 @@ internal fun BotContactsPage(core: ClientCore, bot: BotRef, onBack: () -> Unit) 
             WontonIconButton(WontonIcon.Add, stringResource(R.string.contacts_add), { adding = true })
         })
     }) {
-        BotContactsContent(view, bot, send, onAdd = { adding = true }, onRemove = { removing = it })
+        BotContactsContent(view, bot, send, onAdd = { adding = true }, onRemove = { removing = it },
+            onApproveRemote = { approvingRemote = it })
     }
     if (adding) {
         AddContactSheet(onDismiss = { adding = false }) { userId, person ->
@@ -91,13 +93,20 @@ internal fun BotContactsPage(core: ClientCore, bot: BotRef, onBack: () -> Unit) 
             send(Action.RemoveBotContact(bot, contact.userId))
         }
     }
+    approvingRemote?.let { contact ->
+        ApproveRemoteContactDialog(contact, onDismiss = { approvingRemote = null }) {
+            approvingRemote = null
+            send(Action.ApproveBotContact(bot, contact.userId))
+        }
+    }
     rejection?.let { ProblemDialog(it) { rejection = null } }
 }
 
 /**
  * 联系人页的内容：列表、整页的失败、转圈或空页。ViewModel 还看着别的 Bot 时（刚切过来）当成正在取。
  * 只有取列表失败才占整页；动作失败是列表上方的一条提示，下一个动作时核心清掉。
- * 删掉已生效的联系人要确认，经 [onRemove] 交给页面弹框；其余操作直接发给核心。
+ * 删掉已生效的联系人要确认，经 [onRemove] 交给页面弹框；本服务器的请求点同意直接发给核心，
+ * 别的服务器的先经 [onApproveRemote] 弹确认（ADR-0050）；其余操作直接发给核心。
  */
 @Composable
 fun BotContactsContent(
@@ -106,6 +115,7 @@ fun BotContactsContent(
     onAction: (Action) -> Unit,
     onAdd: () -> Unit,
     onRemove: (BotContact) -> Unit,
+    onApproveRemote: (BotContact) -> Unit,
 ) {
     val current = view.bot == bot
     val contacts = if (current) view.contacts else emptyList()
@@ -114,7 +124,7 @@ fun BotContactsContent(
         onAction(Action.RefreshBotContacts(bot))
     }
     when {
-        contacts.isNotEmpty() -> BotContactList(contacts, notices, onAction, bot, onRemove)
+        contacts.isNotEmpty() -> BotContactList(contacts, notices, onAction, bot, onRemove, onApproveRemote)
         failed != null -> ProblemView(failed.problem(), notices.onRetry)
         !current || view.state == BotContactsState.Loading -> LoadingView()
         else -> BotContactsEmpty(notices.actionFailure, onAdd)
@@ -135,6 +145,7 @@ private fun BotContactList(
     onAction: (Action) -> Unit,
     bot: BotRef,
     onRemove: (BotContact) -> Unit,
+    onApproveRemote: (BotContact) -> Unit,
 ) {
     val incoming = contacts.filter { it.state == ContactState.INCOMING }
     val active = contacts.filter { it.state == ContactState.ACTIVE }
@@ -149,7 +160,13 @@ private fun BotContactList(
         ContactSection(R.string.contacts_requests_title, incoming) { contact ->
             IncomingContactRow(
                 contact,
-                onApprove = { onAction(Action.ApproveBotContact(bot, contact.userId)) },
+                onApprove = {
+                    if (contact.remote == null) {
+                        onAction(Action.ApproveBotContact(bot, contact.userId))
+                    } else {
+                        onApproveRemote(contact)
+                    }
+                },
                 onReject = { onAction(Action.RejectBotContact(bot, contact.userId)) },
             )
         }

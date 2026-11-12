@@ -24,6 +24,8 @@
     <string name="contacts_status_unknown">Status unknown</string>
     <!-- On a contact from another server whose pairing was removed. -->
     <string name="contacts_remote_unpaired">That server isn\'t connected anymore, so messages won\'t get through</string>
+    <!-- Confirmation title for approving a request from another server. Argument: the requester\'s name. -->
+    <string name="contacts_approve_remote_title">Approve “%1$s” from another server?</string>
     <!-- Failure title: their server isn't paired with mine. -->
     <string name="contacts_error_not_paired">Their server isn\'t connected to yours</string>
     <!-- Failure title: already a contact or already requested. -->

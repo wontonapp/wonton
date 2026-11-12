@@ -86,7 +86,7 @@ internal fun SentContactRow(contact: BotContact, onRemove: () -> Unit) {
     }
 }
 
-/** 一行的骨架：名字、谁的 Bot、用户 ID、跨机时的连接情况，下面是各状态自己的内容。 */
+/** 一行的骨架：名字、谁的 Bot、用户 ID、跨机时来自哪台服务器和连接情况，下面是各状态自己的内容。 */
 @Composable
 private fun ContactRowFrame(
     contact: BotContact,
@@ -114,6 +114,13 @@ private fun ContactRowFrame(
                 style = WontonTheme.typography.caption.copy(fontFamily = FontFamily.Monospace),
                 color = secondary,
             )
+            contact.remote?.let {
+                Text(
+                    stringResource(R.string.contacts_remote_from, it.serverName),
+                    style = WontonTheme.typography.supporting,
+                    color = secondary,
+                )
+            }
             contact.remoteProblem()?.let {
                 Text(stringResource(it), style = WontonTheme.typography.supporting, color = colors.warning.toColor())
             }
