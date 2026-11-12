@@ -9,20 +9,35 @@
 - `xcode-27`：iOS 模拟器构建。选这个镜像是为对上开发机（mini）的 Xcode 27.1；作业里显式
   `xcode-select /Applications/Xcode_27.1.app`，镜像以后把默认版本升上去也不受影响。
 
+## 合并门槛和合后测试
+
+PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门禁、编译、不依赖 Docker 的单元测试和截图比对
+（`lint`、`rust`、`ios`、`android` 四个工作流），目标是十分钟内出结果。慢的挪到合进 `main` 之后跑，不挡合并：
+
+- `rust-docker.yml`：依赖 Docker 的集成测试。`push` 到 `main` 时按路径触发，每次合并单独跑一遍、不互相取消，
+  红了能按那次提交标题里的 `(#N)` 找到弄红的 PR；合并前想先跑，在 Actions 页对分支手动触发。
+- `ios.yml` 的模拟器构建（WontonTests）在只改了 wonton-client 依赖的其余 crate、依赖版本或工具链时：这些不改导出给
+  Swift 的接口，很少弄坏 iOS。改到 Swift 这边或接口（`apps/ios`、设计生成、`wonton-protocol`、`wonton-client`）的
+  PR 上照常跑、算必需检查：iOS 在 PR 上红的多半是这几处，挪到合后会让 main 一天红好几次。范围和理由写在 `ios.yml` 开头。
+- `main-image.yml`：核心镜像构建。
+- `nightly-ui.yml`：两端的界面测试（XCUITest、设备上的 androidTest），只定时和手动。
+
+合后的测试红了，谁合的谁 30 分钟内修，修不好 revert（见 AGENTS.md“Git 与协作”）。快慢的分界按“能不能十分钟内
+出结果”定：新加的测试要起容器、走界面流程（UI 测试）或要构建镜像的，放进合后的工作流，不放进必需检查。
+
 ## 必需检查与汇总作业
 
-- 规则集只配每个工作流末尾的汇总作业（`rust 汇总`、`rust-docker 汇总`、`ios 汇总`、`android 汇总`、
-  `lint 汇总`）：`needs` 本工作流的全部作业、`if: always()`，任一依赖 failure 或 cancelled 就红，
-  success 和 skipped 算过。汇总只干这一件事（一小段 shell，不引第三方 action），草稿 PR 上也起来报一个
+- 规则集只配每个工作流末尾的汇总作业（`rust 汇总`、`ios 汇总`、`android 汇总`、`lint 汇总`）：`needs` 本工作流的
+  全部作业、`if: always()`，任一依赖 failure 或 cancelled 就红，success 和 skipped 算过。汇总只干这一件事（一小段 shell，不引第三方 action），草稿 PR 上也起来报一个
   通过；这样才能把其余作业直接在作业级跳过，不用为了报检查先起 runner。
-- 汇总的名字在 `pull_request` 和 `merge_group` 下是同一个，规则集两种事件共用一份。
 - Rust 测试分片被作业级 `if` 跳过时 matrix 不展开，检查名会留成带 `${{ matrix.shard }}` 的字面量；
   规则集只看汇总，不受影响。所以分片的草稿和路径判断也在作业上。
 
 ## 什么时候跑
 
-- 路径不在触发器上过滤：合并队列的必需检查每次入队都要有结果，工作流不触发的话检查一直“等待中”，队列
-  直接判失败。改动范围改由各工作流开头的 `changes` 作业判断（`dorny/paths-filter`，在非草稿 PR 和合并队列上跑），
+- 必需检查所在的工作流不在触发器上按路径过滤：必需检查每个 PR 都要有结果，工作流不触发的话检查一直“等待中”，
+  PR 合不了。改动范围改由各工作流开头的 `changes` 作业判断（`dorny/paths-filter`，在非草稿 PR 上通过 REST
+  列文件，不检出代码），
   没改到的重作业挂在它上面、自己报 skipped，范围还是写在各个工作流开头；汇总作业把成功和跳过都算通过。
   lint 例外：冲突标记和密钥可能写在任何文件里，不按路径过滤；它里面的结构门禁只查源码文件，
   只改文档的提交和草稿 PR 上跳过。
@@ -30,17 +45,16 @@
   `deploy/dev/{acp-bridge,matrix}/`、`deploy/dev/core/compose.yaml`、`deploy/dev/core/Dockerfile`），
   `deploy/dev` 其余的只给本机开发栈（开发索引 `core/store/`、`experiments/`、smoke 脚本），改了不跑重作业；
   新的 `include_str!` 指向 `deploy/` 时要补进列表。只改 `.md` 的 PR 每个工作流都跳过（`apps/compose/` 下的也算）。
-  PR 和队列共用同一份路径规则，新增依赖或测试输入时必须同步维护；定时和手动运行不按路径过滤。
-- 草稿 PR 上 `rust`、`rust-docker`、`ios`、`android` 一个作业都不起（`changes` 也算在内），只有各自的汇总
+  新增依赖或测试输入时必须同步维护；定时和手动运行不按路径过滤。`rust-docker` 不是必需检查，路径直接写在
+  `push` 触发器上，和 `rust` 的 `changes` 列表要一起维护。
+- 草稿 PR 上 `rust`、`ios`、`android` 一个作业都不起（`changes` 也算在内），只有各自的汇总
   起来报通过；lint 只跑冲突标记和密钥扫描（同一个作业的相邻两步）。转 ready（`ready_for_review`）按改动范围运行。
 - 所有 PR 运行都 `cancel-in-progress`：反正要重跑，旧的别继续占名额；定时运行跑完。
-- 合并队列重排时（前面的组失败、有 PR 出队），后面的组换一个 `gh-readonly-queue/main/pr-N-<基准>` 分支重建，
-  旧分支被删，但旧分支上的运行不会自己停。`queue-sweep.yml` 在每次 `merge_group` 时取消分支已经不在的队列运行：
-  分支被删的组不会再合进 main，取消它不影响要合的那一组。它不是必需检查，失败不挡队列。
 - `cache.yml` 不取消进行中的运行，否则 main 忙时缓存几乎写不回去；并发组按作业分，同一作业只跑一个、只留最新一个等着。
-- 合并进 main 不重跑全套（PR 已在最新 main 上跑过）；只有 main-image 继续构建核心镜像，`cache.yml` 用
-  和 PR 作业一样的 key 把编译缓存编一遍存下来（只编不跑）。每天定时（`schedule`，02:00 起错开）把
-  Rust、Docker、Android、iOS 全量跑一遍兜底。
+- 合并进 main 不重跑快检查（规则集不要求 PR 先追上 `main`，两个各自绿的 PR 合在一起才出的错靠下面的定时兜底）；
+  `push` 到 main 跑 lint、`rust-docker`（改到它的路径时）、main-image，`cache.yml` 用和 PR 作业一样的 key
+  把编译缓存编一遍存下来（只编不跑）。每天定时（`schedule`，02:00 起错开）把 Rust、Docker、Android、iOS
+  全量跑一遍兜底。
 - 打标签（`labeled`）不进 `ios.yml`、`android.yml`：那会用一次标签事件重跑整轮日常作业，而且跳过的那轮会把之前
   失败的必需检查盖成“通过”。重录统一走 `snapshots-record.yml`，只在标签是 `record-snapshots` 时跑一个作业，
   不算必需检查。
@@ -64,7 +78,7 @@
   `gradle/libs.versions.toml`）。它按布局在 JVM 上把 `@Preview` 渲染成 PNG，不加载 Rust 的 .so；预览自己带
   固定假数据。参考图在 `apps/compose/shared/src/androidHostTest/snapshots/`，直接进 git，不用 LFS。
 - 比对跑在 android 工作流的构建作业里（`verifyPaparazziAndroidMain`），不新开作业：同一个 PR 上的新检查放进
-  已有作业，合并队列的必需检查列表不用动。设备固定成 PIXEL_5、语言 en、浅色，另有深色的一份；参考图在 Linux
+  已有作业，规则集的必需检查列表不用动。设备固定成 PIXEL_5、语言 en、浅色，另有深色的一份；参考图在 Linux
   runner 上生成，本机字体不同也可能有差异，以 CI 的为准。
 - 比对失败时差异图和报告作为 `paparazzi-<运行次数>` 产物留 7 天，下载下来看差在哪。
 - 重录：本地 `cd apps/compose && ./gradlew :shared:recordPaparazziAndroidMain` 后提交 `snapshots/` 下的
@@ -77,23 +91,11 @@
 - 标签用完就摘：GitHub 不会给已经贴着的标签再发一次 `labeled`，留着就发不出下一轮重录。摘标签是单独一步、
   只看标签（外部 PR 也摘），不跟着提交步骤的成败走。
 
-## 合并队列
-
-仓库开着合并队列时，入队的 PR 会在队列里的合并提交上重跑一遍必需检查；`merge_group` 事件没报告，入队就
-直接判失败。所以凡是必需检查所在的五个工作流（`lint`、`rust`、`rust-docker`、`android`、`ios`）都带
-`merge_group` 触发（`types: [checks_requested]`，只对 `main`）：各工作流的汇总作业要在队列里报告，
-它们 `needs` 了本工作流的全部作业，没改到的模块重作业跳过，汇总照常报成功。`main-image` 和 `test-images`
-不用带，队列合进 main 时该跑的照常由 `push` 触发。
-
-`changes` 在非草稿 `pull_request` 和 `merge_group` 上运行：PR 通过 REST 列文件，不检出代码；队列检出
-`github.event.merge_group.head_sha`，用 `dorny/paths-filter` 比较 `base_sha..head_sha`，缺的提交由 action
-浅拉取。这段差异包含排在前面的 PR，不能只比较本 PR，也不能只看合并提交的第一个父提交。两种事件沿用各工作流
-同一份 `filters`，只有 `changed == 'true'` 才跑对应重作业；范围判断失败会让汇总变红，不会伪装成没改动。
+## 汇总作业的条件
 
 `schedule` 和 `workflow_dispatch` 跳过 `changes`，重作业全量运行。重作业的 `if` 以 `!cancelled()` 开头，
-防止 `changes` 跳过时下游被连坐跳过；汇总用 `always()`，判断成功、跳过或失败都照常报告。
-草稿 PR 不运行 `changes` 和重作业。并发组在 `merge_group` 上取 `github.event.merge_group.head_sha`，
-不让几次入队挤进同一组互相取消。缓存仍只在 main 上写，队列运行和 PR 一样只读。
+防止 `changes` 跳过时下游被连坐跳过；汇总用 `always()`，判断成功、跳过或失败都照常报告。范围判断失败会让汇总
+变红，不会伪装成没改动。
 
 ## iOS 单测和截图测试
 
@@ -113,7 +115,7 @@
   照跑）。作业用 `WontonSnapshots` scheme 把参考图全部重画，提交回分支并摘掉标签。录制那一轮本身是红的
   （每录一张报一条“Automatically recorded snapshot”），以提交回去的图为准；它不算必需检查。
 - 重录推回之后：`GITHUB_TOKEN` 推的提交照常触发 `pull_request`，但仓库要求外部贡献者的运行先批准
-  （`all_external_contributors`），github-actions[bot] 也算外部，五个日常工作流停在 `action_required`、
+  （`all_external_contributors`），github-actions[bot] 也算外部，四个日常工作流停在 `action_required`、
   分支头上没有必需检查。`snapshots-record.yml` 末尾的 `checks` 作业用同一个令牌批准这几次运行；分支头已经
   不是重录推的提交（有人在那之后推过）时不处理。`workflow_dispatch` 重新触发不行：实测手动运行的检查不进
   PR 的检查汇总，规则集不认。外部 fork 的 PR 令牌推不回对方的分支：图存成 `ios-snapshots` 产物，作者自己取。
@@ -121,8 +123,8 @@
 
 ## 缓存
 
-- 缓存只在 main 上写，PR、合并队列和定时运行只读：仓库公开，外部 PR 写的条目会把 main 的挤掉。
-  main 上不跑测试（只有 push），所以另开 `cache.yml`：push 到 main 或手动触发时，用和 PR 作业**完全相同**
+- 缓存只在 main 上写，PR 和定时运行只读：仓库公开，外部 PR 写的条目会把 main 的挤掉。
+  main 上不跑快检查（`rust`、`ios`、`android` 只挂 PR 和定时），所以另开 `cache.yml`：push 到 main 或手动触发时，用和 PR 作业**完全相同**
   的 rust-cache key 前缀、缓存目录和编译目标只编不跑（测试二进制、Clippy、iOS 模拟器核心、Android 核心、
   桥镜像）。改这几个工作流的 rust-cache 参数（`shared-key`、`workspaces`、环境变量）时要和 `cache.yml`
   一起改，少一处 PR 就恢复不到。手动触发也写缓存：换分支验证能不能恢复时用它。
@@ -151,7 +153,7 @@
 
 ## 界面测试夜跑（`nightly-ui.yml`）
 
-两端的界面测试每晚在模拟器上各跑一遍，只定时和手动触发，不挂 PR、不进合并队列、不设必需检查。时间沿用
+两端的界面测试每晚在模拟器上各跑一遍，只定时和手动触发，不挂 PR、不设必需检查。时间沿用
 `ios.yml` 和 `android.yml` 的定时（一个工作流两条 cron，作业按 `github.event.schedule` 分开），不另占窗口。
 
 - iOS 只开一台模拟器跑全部 `WontonUITests`；要两台的用例（粘贴的对方视角、好友两端）在工作流里排除或

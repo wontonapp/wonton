@@ -25,6 +25,7 @@ mod display_name;
 mod draft;
 mod follow_home;
 mod forward;
+mod handoff;
 mod installs;
 mod layout;
 mod links;
@@ -62,7 +63,7 @@ use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, Ro
 use wonton_protocol::{
     Action, ChatAccount, ChatFailure, ChatSync, ChatViewModel, CoreError, DeviceVerification,
     EncryptionStatus, MediaHandle, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus,
-    RoomPanel, TimelineScroll,
+    RoomPanel, TimelineAction, TimelineScroll, TimelineTarget,
 };
 
 pub use bots::bot_current_avatar;
@@ -91,6 +92,9 @@ const SEND_TIMEOUT: Duration = Duration::from_secs(60);
 pub(crate) struct ChatLink {
     runtime: Handle,
     home: Arc<HomeLink>,
+    /// 本作用域的槽位号（`ServerRow::id`）：后台通知的 `server_id` 填它，壳点开通知按它切服务器；
+    /// 不是 home 里的 endpoint ID，那是配对键，槽位列表里没有。
+    slot: String,
     storage: ChatStorage,
     view: watch::Sender<ChatViewModel>,
     active: tokio::sync::Mutex<Option<Active>>,
@@ -131,6 +135,8 @@ pub(crate) struct ChatLink {
     /// App 在后台：保持连接下同步到的该通知的消息收集进 `background_notifications`。
     background: AtomicBool,
     verification: Mutex<Option<verification::Control>>,
+    /// “添加设备”页开着、还能自动接受一个新设备的确认请求（ADR-0087）。
+    handoff_armed: AtomicBool,
     relogin: connect::Relogin,
     external: bool,
 }
@@ -190,6 +196,7 @@ impl ChatLink {
     pub(crate) fn new(
         runtime: Handle,
         home: Arc<HomeLink>,
+        slot: &str,
         data_dir: &Path,
         card_success: CardSuccess,
         plugins: Arc<crate::plugins::PluginsLink>,
@@ -212,6 +219,7 @@ impl ChatLink {
             can_reset: false,
             recovery_next_step: RecoveryNextStep::None,
             verification_flow: None,
+            key_handoff: None,
         };
         recovery::refresh(&mut encryption);
         let view = reuse(
@@ -244,6 +252,7 @@ impl ChatLink {
         let chat = Arc::new(Self {
             runtime: runtime.clone(),
             home: home.clone(),
+            slot: slot.to_owned(),
             storage,
             view,
             active: tokio::sync::Mutex::new(None),
@@ -269,6 +278,7 @@ impl ChatLink {
             draft_writes,
             background: AtomicBool::new(false),
             verification: Mutex::new(None),
+            handoff_armed: AtomicBool::new(false),
             relogin: connect::Relogin::default(),
             external,
         });
@@ -335,67 +345,12 @@ impl ChatLink {
                 Ok(())
             }
             Action::StartDirectChat { user_id } => self.start_direct_chat(&user_id),
-            Action::SendText {
-                room_id,
-                body,
-                reply_to,
-            } => self.send_text(&room_id, &body, reply_to.as_deref()),
-            Action::SendImage {
-                room_id,
-                image,
-                reply_to,
-            } => self.send_image(&room_id, image, reply_to.as_deref()),
-            Action::ForwardMessage {
-                room_id,
-                item_id,
-                to_room_id,
-            } => self.forward_message(&room_id, &item_id, &to_room_id),
-            Action::RedactMessage { room_id, item_id } => self.redact_message(&room_id, &item_id),
+            Action::Timeline { action } => self.timeline_action(action),
             Action::AnswerAgentChoice {
                 room_id,
                 item_id,
                 key,
             } => self.answer_agent_choice(&room_id, &item_id, &key),
-            Action::RetrySend { room_id, item_id } => {
-                let room = self.opened(&room_id)?;
-                let sent = self.sent.clone();
-                self.spawn_op_with_success(
-                    "chat-op-resend-failed",
-                    async move { room.retry_send(&item_id).await },
-                    move || onboarding::record_sent(&sent, room_id),
-                );
-                Ok(())
-            }
-            Action::CancelSend { room_id, item_id } => {
-                let room = self.opened(&room_id)?;
-                self.spawn_op("chat-op-cancel-send-failed", async move {
-                    room.cancel_send(&item_id).await
-                });
-                Ok(())
-            }
-            Action::PaginateBackwards { room_id } => {
-                let room = self.opened(&room_id)?;
-                self.spawn_op("chat-op-paginate-failed", async move {
-                    room.paginate_backwards(PAGE).await.map(drop)
-                });
-                Ok(())
-            }
-            Action::SetTimelineScroll { room_id, scroll } => {
-                self.set_timeline_scroll(&room_id, scroll)
-            }
-            Action::MarkRoomRead { room_id } => {
-                let chat = self.clone();
-                let (_, room_id) = self.target(&room_id)?;
-                self.spawn_op("chat-op-mark-read-failed", async move {
-                    chat.room(&room_id).await?.mark_as_read().await.map(drop)
-                });
-                Ok(())
-            }
-            Action::SetDraft {
-                room_id,
-                body,
-                reply_to,
-            } => self.set_draft(&room_id, &body, reply_to.as_deref()),
             Action::ResetRecovery => self.reset_recovery(),
             Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
             Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
@@ -414,6 +369,105 @@ impl ChatLink {
             Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
             Action::SetChatLayout { target, choice } => self.set_chat_layout(target, choice),
             _ => Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action"))),
+        }
+    }
+
+    /// 旁聊时间线（`TimelineTarget::thread_root` 不为空）还没实现（接口先合并，ADR-0093 §5）：
+    /// 调用方拿到明确的“还不能用”，不是空的成功。
+    fn side_chat_not_ready() -> CoreError {
+        CoreError::NotReady {
+            reason: l10n!(CATALOG, language(), "side-chat-not-ready"),
+        }
+    }
+
+    /// 拆 [`TimelineTarget`]：主时间线回房间 ID；带话题根的报还不能用。
+    fn timeline_target(&self, target: &TimelineTarget) -> Result<String, CoreError> {
+        if target.thread_root.is_some() {
+            return Err(Self::side_chat_not_ready());
+        }
+        Ok(target.room_id.clone())
+    }
+
+    /// 按时间线（主时间线或旁聊，ADR-0093 §5）分发的操作。实现和主时间线共用；旁聊路径在
+    /// [`Self::timeline_target`] 处统一挡下。
+    fn timeline_action(self: &Arc<Self>, action: TimelineAction) -> Result<(), CoreError> {
+        match action {
+            TimelineAction::SendText {
+                target,
+                body,
+                reply_to,
+            } => {
+                let room_id = self.timeline_target(&target)?;
+                self.send_text(&room_id, &body, reply_to.as_deref())
+            }
+            TimelineAction::SendImage {
+                target,
+                image,
+                reply_to,
+            } => {
+                let room_id = self.timeline_target(&target)?;
+                self.send_image(&room_id, image, reply_to.as_deref())
+            }
+            TimelineAction::ForwardMessage {
+                target,
+                item_id,
+                to_room_id,
+            } => {
+                let room_id = self.timeline_target(&target)?;
+                self.forward_message(&room_id, &item_id, &to_room_id)
+            }
+            TimelineAction::RedactMessage { target, item_id } => {
+                let room_id = self.timeline_target(&target)?;
+                self.redact_message(&room_id, &item_id)
+            }
+            TimelineAction::RetrySend { target, item_id } => {
+                let room_id = self.timeline_target(&target)?;
+                let room = self.opened(&room_id)?;
+                let sent = self.sent.clone();
+                self.spawn_op_with_success(
+                    "chat-op-resend-failed",
+                    async move { room.retry_send(&item_id).await },
+                    move || onboarding::record_sent(&sent, room_id),
+                );
+                Ok(())
+            }
+            TimelineAction::CancelSend { target, item_id } => {
+                let room_id = self.timeline_target(&target)?;
+                let room = self.opened(&room_id)?;
+                self.spawn_op("chat-op-cancel-send-failed", async move {
+                    room.cancel_send(&item_id).await
+                });
+                Ok(())
+            }
+            TimelineAction::PaginateBackwards { target } => {
+                let room_id = self.timeline_target(&target)?;
+                let room = self.opened(&room_id)?;
+                self.spawn_op("chat-op-paginate-failed", async move {
+                    room.paginate_backwards(PAGE).await.map(drop)
+                });
+                Ok(())
+            }
+            TimelineAction::SetTimelineScroll { target, scroll } => {
+                let room_id = self.timeline_target(&target)?;
+                self.set_timeline_scroll(&room_id, scroll)
+            }
+            TimelineAction::MarkRead { target } => {
+                let room_id = self.timeline_target(&target)?;
+                let chat = self.clone();
+                let (_, room_id) = self.target(&room_id)?;
+                self.spawn_op("chat-op-mark-read-failed", async move {
+                    chat.room(&room_id).await?.mark_as_read().await.map(drop)
+                });
+                Ok(())
+            }
+            TimelineAction::SetDraft {
+                target,
+                body,
+                reply_to,
+            } => {
+                let room_id = self.timeline_target(&target)?;
+                self.set_draft(&room_id, &body, reply_to.as_deref())
+            }
         }
     }
 

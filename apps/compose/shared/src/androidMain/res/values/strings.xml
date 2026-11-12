@@ -125,6 +125,9 @@
     <string name="chat_backup_save_key_title">Save your recovery key</string>
     <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
     <string name="chat_backup_saved">Saved</string>
+    <!-- Confirmation dialog for the "Saved" button: closing the page discards the key on this device. -->
+    <string name="chat_backup_saved_confirm_title">Saved it somewhere safe?</string>
+    <string name="chat_backup_saved_confirm_message">After this, this device no longer shows the key. Make sure you have a copy before you continue.</string>
     <!-- Page heading when chat backup hasn't been set up. -->
     <string name="chat_backup_status_disabled">Chat backup isn\'t set up yet</string>
     <!-- Page heading when chat backup is on and verified. -->
@@ -1112,6 +1115,8 @@
     <string name="plugin_settings_update_app">Update the app to change this</string>
     <!-- Note under a required setting that has no value and no default. No arguments. -->
     <string name="plugin_settings_required">Required</string>
+    <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
+    <string name="plugin_settings_restart_hint">The app will restart to apply this</string>
     <!-- Section title for the app's updates. No arguments. -->
     <string name="plugin_updates_section">Updates</string>
     <!-- Switch label: ask before every update of an agent-written app. No arguments. -->
@@ -1242,6 +1247,7 @@
     <string name="port_mapping_reason_other">Port mapping ran into a problem.</string>
     <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
     <string name="port_mapping_no_notification_permission">Without the notification permission, you won\'t see the mapping notification. Mapping still works.</string>
+    <string name="port_mapping_warning_public_relay_bandwidth">Connected only through the public relay — not enough bandwidth for streaming.</string>
     <!-- Problem title when the appearance settings couldn't be saved on the home server. -->
     <string name="problem_appearance_title">Appearance settings weren\'t saved</string>
     <!-- Problem reason when a link to an app page opens before the installed app list loaded. -->
@@ -1736,6 +1742,8 @@
     <!-- Notification channel name for approval requests waiting for the owner. Shown in the system notification settings. -->
     <string name="notification_channel_confirmation">Waiting for you</string>
     <!-- Notification channel name for notices from apps. Shown in the system notification settings. -->
+    <!-- Notification state value: notifications are not allowed for this app in the system settings. -->
+    <string name="notification_value_system_blocked">Not allowed in system settings</string>
     <string name="notification_channel_plugin">App notifications</string>
     <!-- Notification state value: notifications are allowed. -->
     <string name="notification_value_on">On</string>
@@ -1912,7 +1920,7 @@
     <string name="secret_edit">Change</string>
     <string name="secret_clear">Clear</string>
     <string name="secret_filled">Filled</string>
-    <string name="secret_unfilled">Not filled</string>
+    <string name="secret_unfilled">Not ready: paste a token first</string>
     <string name="pin_to_bar">Pin to navigation bar</string>
     <!-- Menu item that removes an app\'s page from the navigation bar (long press in the sidebar). -->
     <string name="unpin_from_bar">Remove from navigation bar</string>
@@ -2051,4 +2059,13 @@
     <string name="contacts_error_upstream">Your home server couldn\'t save this</string>
     <!-- Label on an incoming chat invite from a bot that asks you to be its contact. -->
     <string name="friends_request_bot_contact">Bot contact request</string>
+    <string name="handoff_title">Continue on your other device</string>
+    <string name="handoff_waiting">Keep “Add device” open on your other device.</string>
+    <string name="handoff_unanswered_title">Your other device hasn\'t answered</string>
+    <string name="handoff_unanswered_message">Open Wonton on your other device and go back to “Add device”.</string>
+    <string name="handoff_try_again">Try again</string>
+    <string name="handoff_later">Later</string>
+    <string name="handoff_no_other_device">I don\'t have my other device</string>
+    <string name="invite_device_added">Device added</string>
+    <string name="invite_cannot_give">This device doesn\'t have all the chat keys either, so the new device can\'t read earlier messages.</string>
 </resources>

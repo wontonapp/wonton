@@ -102,6 +102,7 @@ pub(crate) fn reuse<T>(sender: Option<watch::Sender<T>>, initial: T) -> watch::S
 
 /// 建各个联系模块时共用的东西（作用域自己的句柄、已有链接和目录）。
 struct Shared<'a> {
+    slot: &'a str,
     handle: &'a tokio::runtime::Handle,
     home: &'a Arc<HomeLink>,
     plugins: &'a Arc<PluginsLink>,
@@ -129,6 +130,7 @@ fn chat_links(
     external: bool,
 ) -> Result<ChatLinks, CoreError> {
     let Shared {
+        slot,
         handle,
         home,
         plugins,
@@ -139,6 +141,7 @@ fn chat_links(
     let chat = ChatLink::new(
         handle.clone(),
         home.clone(),
+        slot,
         dir,
         card_success,
         plugins.clone(),
@@ -191,6 +194,7 @@ fn people_links(
     chat: &Arc<ChatLink>,
 ) -> Result<(Arc<PeersLink>, Arc<FriendsLink>, SettingsLink), CoreError> {
     let Shared {
+        slot: _,
         handle,
         home,
         plugins,
@@ -278,6 +282,7 @@ impl Scope {
             external,
         };
         let shared = Shared {
+            slot,
             handle: &handle,
             home: &home,
             plugins: &plugins,

@@ -45,7 +45,8 @@ pub(crate) fn key_notice(
     encryption: &EncryptionStatus,
     has_undecryptable: bool,
 ) -> Option<KeyNotice> {
-    if !has_undecryptable {
+    // 交接期间新设备在等另一台设备交出密钥，不提恢复密钥（ADR-0087）。
+    if !has_undecryptable || super::handoff::receiving(encryption).is_some() {
         return None;
     }
     match encryption.recovery {
@@ -78,6 +79,8 @@ pub(crate) fn room_row(
             Membership::Left | Membership::Knocked | Membership::Banned => RoomMembership::Left,
         },
         preview: room.latest.and_then(|latest| preview(latest, bots)),
+        // 旁聊支持声明还没实现（ADR-0093 §4），先都按没有算；实现 PR 从声明状态事件来。
+        side_chats: false,
         unread_count: room.unread_count,
     }
 }
@@ -216,6 +219,8 @@ fn timeline_message(
         reply: message
             .reply
             .map(|reply| reply_quote(reply, cards.core_account(), links)),
+        // 旁聊卡片按 SDK 的话题汇总合成（ADR-0093 §4），还没实现：先都不带。
+        side_chat: None,
         actions,
         body,
         read_by,
@@ -378,6 +383,7 @@ mod tests {
             can_reset: false,
             recovery_next_step: wonton_protocol::RecoveryNextStep::None,
             verification_flow: None,
+            key_handoff: None,
         }
     }
 
