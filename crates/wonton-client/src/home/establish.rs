@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use wonton_l10n::l10n;
 use wonton_protocol::{ConnectionCheck, HomeFailure, HomeStatus, ProxySettings};
+use wonton_tunnel::TunnelStatus;
 use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, spawn_tier_fallback};
 use wonton_tunnel::{LocalProxy, ProxyAccess, ProxyCredential, TunnelClient};
 
@@ -27,13 +28,19 @@ const RETRY_MAX: Duration = Duration::from_secs(30);
 /// 冷启动的头 [`COLD_DIALS`] 次拨号用这个时限。设备刚重装、进程刚起来时，翻译层和冷缓存让一次握手要
 /// 十几二十秒，12 秒的差额每次都把它掐在快成功的时候，客户端一轮一轮重来。名额用完、或者这一轮已经连上过
 /// 一次，就回到 [`wonton_tunnel::DIAL_DEADLINE`]：断线重拨的握手已经是热的，服务器真没了也不多等。
+/// 测试构建里默认不生效（见 [`HomeLink::cold_allowance`]），只在造慢的用例里显式设。
+#[cfg_attr(feature = "test-hooks", allow(dead_code))]
 const COLD_DIAL_DEADLINE: Duration = Duration::from_secs(30);
 /// 冷启动的头几次拨号可以用 [`COLD_DIAL_DEADLINE`]。两次：第一轮被什么拖慢了都还够一次重拨；
-/// 用完之后、或者第一次连上之后，回到 [`wonton_tunnel::DIAL_DEADLINE`]。
+/// 用完之后、或者第一次连上之后，回到 [`wonton_tunnel::DIAL_DEADLINE`]。名额只在进程还没连上过时发
+/// （启动时读回连接信息、配对的第一次建连）：连上过以后换服务器、重建都是热路径，主人要尽快看到“连不上”。
 const COLD_DIALS: u32 = 2;
 
 impl HomeLink {
+    /// 换上这台服务器并开始建连。这台进程还没连上过时算冷启动（启动时读回连接信息、配对的第一次建连）：
+    /// 只有这种时候才发冷启动的握手名额；连上过以后换服务器、或者重建，按正常时限，主人要尽快看到“连不上”。
     pub(super) fn start(self: &Arc<Self>, text: String, ticket: Ticket) {
+        let cold = !self.ever_connected.load(Ordering::SeqCst);
         *self.lock_ticket() = Some(text);
         *self
             .core_url
@@ -41,7 +48,8 @@ impl HomeLink {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(ticket.core_url());
         self.lock_tracker().new_server();
         self.carried_disconnects.store(0, Ordering::SeqCst);
-        self.cold_dials.store(COLD_DIALS, Ordering::SeqCst);
+        self.cold_dials
+            .store(if cold { COLD_DIALS } else { 0 }, Ordering::SeqCst);
         *self.lock_unlinked() = None;
         self.view.send_modify(|view| {
             view.server_id = Some(ticket.server_id().to_string());
@@ -85,6 +93,9 @@ impl HomeLink {
                         drop(current);
                         // 主动建连：壳打开网页之前，状态就已经是准的。
                         self.check(&client).await;
+                        if client.status() == TunnelStatus::Connected {
+                            self.ever_connected.store(true, Ordering::SeqCst);
+                        }
                         return;
                     }
                     Err(message) => message,
@@ -134,14 +145,19 @@ impl HomeLink {
     /// 冷启动的建连时限和之后的建连时限。
     pub(crate) fn cold_allowance(&self) -> (Duration, Duration) {
         #[cfg(feature = "test-hooks")]
-        if let Some(allowance) = *self
-            .test_hooks
-            .cold_allowance
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
         {
-            return allowance;
+            if let Some(allowance) = *self
+                .test_hooks
+                .cold_allowance
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+            {
+                return allowance;
+            }
+            // 测试里没有慢设备：默认不给额外的耐心，只有造慢的用例自己设。
+            (wonton_tunnel::DIAL_DEADLINE, wonton_tunnel::DIAL_DEADLINE)
         }
+        #[cfg(not(feature = "test-hooks"))]
         (COLD_DIAL_DEADLINE, wonton_tunnel::DIAL_DEADLINE)
     }
 
