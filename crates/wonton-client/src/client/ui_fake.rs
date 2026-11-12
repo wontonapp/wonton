@@ -65,6 +65,7 @@ fn fake_home(mut home: HomeViewModel) -> HomeViewModel {
     home.status = HomeStatus::Connected;
     home.path = Some(HomePath {
         relay: false,
+        public_relay: false,
         lan: true,
         rtt_ms: 12,
     });

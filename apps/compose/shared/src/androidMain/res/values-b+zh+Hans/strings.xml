@@ -1143,6 +1143,7 @@
     <string name="port_mapping_reason_other">映射出错了。</string>
     <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
     <string name="port_mapping_no_notification_permission">没有通知权限，映射开着时通知栏看不到；映射照常可用。</string>
+    <string name="port_mapping_warning_public_relay_bandwidth">只连上了公共中继，带宽不够传画面。</string>
     <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
     <string name="problem_appearance_title">外观设置没有存上</string>
     <string name="problem_apps_not_ready">应用列表还没有准备好，请稍后重试。</string>
