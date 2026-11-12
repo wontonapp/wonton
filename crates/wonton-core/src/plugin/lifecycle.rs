@@ -235,7 +235,9 @@ impl PluginManager {
             .await?;
         self.stage(&manifest.id, InstallStage::Preparing);
         self.prepare_dirs(&ctx, &plan.dirs, undo, langs)?;
-        self.create_networks(manifest, &plan, &ctx, undo).await?;
+        // create_networks 里经 attach_relay→sync_relay 到 bollard 的 inspect 反序列化是整条
+        // install 链的栈顶；box 上堆后默认 2 MiB 测试线程栈才装得下（egress_plugin_docker 的栈溢出）。
+        Box::pin(self.create_networks(manifest, &plan, &ctx, undo)).await?;
         // 容器启动前登记：安装过程中 Bot 就要经核心连 Matrix，健康检查才过得了。
         self.register_source(manifest, &plan.network).await?;
         undo.source = Some(manifest.id.clone());
