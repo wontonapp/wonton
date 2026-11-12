@@ -85,6 +85,7 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_13, Added::Field(&["webui", "accounts"])),
     (V0_13, Added::Field(&["webui", "oidc", "admin_groups"])),
     (V0_13, Added::Field(&["webui", "oidc", "role_claim"])),
+    (V0_13, Added::Field(&["webui", "health"])),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。
