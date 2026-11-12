@@ -1,4 +1,4 @@
-# ADR-0101 `wonton__view_file` 能读 PDF 文本，视频给元数据
+# ADR-0104 `wonton__view_file` 能读 PDF 文本，视频给元数据
 
 - 状态：已接受（2026-11-13）
 - 修订 [ADR-0020](0020-file-service.md)：`wonton__view_file` 不再对 PDF 一律回 `not_viewable`；工具说明里把 `share_file` 当读法的句子删掉。“Bot 读 PDF 等二进制文件的字节”原本在 [ADR-0020](0020-file-service.md) 里列在“放到后面做”
