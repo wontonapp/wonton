@@ -213,7 +213,7 @@ pub struct ConfirmationList {
     /// 结束不到 24 小时的，最近结束的在前。
     #[serde(default)]
     pub finished: Vec<ConfirmationCard>,
-    /// 列表的版本，任何一张卡片变了就变大；下次带 `after=<revision>` 长轮询。核心重启后从头数：`after` 比当前的大时
+    /// 列表的版本，任何一张卡片或联系人请求变了就变大；下次带 `after=<revision>` 长轮询。核心重启后从头数：`after` 比当前的大时
     /// 核心立即返回，客户端见到变小就当成新的列表。
     #[serde(default)]
     pub revision: u64,

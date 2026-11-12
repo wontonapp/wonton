@@ -249,6 +249,7 @@ async fn confirmations(core: &Core, head: &str) -> Option<(u16, String)> {
         json!({
             "confirmations": list.pending,
             "finished": list.finished,
+            "contact_requests": list.contact_requests,
             "revision": list.revision,
         })
         .to_string(),

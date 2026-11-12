@@ -124,6 +124,7 @@ impl PairHandler for Pairing {
 pub(super) struct FakeConfirmations {
     pub(super) pending: Vec<Value>,
     pub(super) finished: Vec<Value>,
+    pub(super) contact_requests: Vec<Value>,
     pub(super) revision: u64,
 }
 

@@ -92,6 +92,11 @@ impl Contacts {
         self.changes.subscribe()
     }
 
+    /// 记录变过多少次：“等你确认”列表把它算进版本，联系人请求有变化就唤醒挂着的长轮询。
+    pub fn changes_count(&self) -> u64 {
+        *self.changes.borrow()
+    }
+
     fn lock(&self) -> MutexGuard<'_, Stored> {
         self.stored.lock().expect("联系人表锁中毒")
     }
