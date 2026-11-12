@@ -13,6 +13,7 @@ struct PluginDetailView: View {
     @State private var pluginId: String?
     @State private var changingVersionOf: String?
     @State private var showsSettings = false
+    @State private var showsContacts = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.wontonColors) private var colors
     @Environment(\.goToInstalledApps) private var goToInstalledApps
@@ -60,6 +61,17 @@ struct PluginDetailView: View {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                     if detail.installed != nil {
                         BotProfileSection(chat: chat, plugins: model, pluginId: detail.id)
+                    }
+                    if detail.installed != nil, bot(of: detail.id) != nil {
+                        WontonGroup {
+                            Button {
+                                showsContacts = true
+                            } label: {
+                                WontonRow(title: String(localized: .contactsTitle), showsForward: true)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("botContactsEntry")
+                        }
                     }
                     DetailHeader(model: model, detail: detail, action: action(for: detail))
                     if let task, task.state != .succeeded || task.hasAddedToolsNews {
@@ -139,7 +151,15 @@ struct PluginDetailView: View {
             .navigationDestination(isPresented: $showsSettings) {
                 PluginSettingsScreen(model: model, pluginId: pluginId ?? "")
             }
+            .navigationDestination(isPresented: $showsContacts) {
+                if let bot = bot(of: detail.id) { BotContactsView(core: model.core, bot: bot) }
+            }
         }
+    }
+
+    /// 有 Bot 的应用的那个 Bot（和资料一节同一个）：它的联系人页从这里进（ADR-0045）。
+    private func bot(of pluginId: String) -> BotRef? {
+        chat.viewModel.bots.first { $0.bot.pluginId == pluginId && $0.bot.bot == "default" }?.bot
     }
 
     private func load() async {
