@@ -10,6 +10,7 @@ mod me;
 mod now;
 mod polling;
 mod registry_mirror;
+mod settings;
 mod sharing;
 mod start;
 mod support;

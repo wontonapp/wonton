@@ -12,10 +12,11 @@ use matrix_sdk::ruma::{
 use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, MsgLikeKind, TimelineDetails};
 use serde_json::{Map, Value};
 
+use crate::agent_run::{self, AgentRunStatus};
 use crate::reply::{ReplyTo, reply_to};
 
 /// 时间线里的一条消息。
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Message {
     /// 服务器分配的事件 ID；本地回显还没发出去时为 `None`。
     pub event_id: Option<OwnedEventId>,
@@ -45,6 +46,9 @@ pub struct Message {
     pub read_by: Vec<String>,
     /// 这条回复的是哪条消息（`m.in_reply_to`）；不是回复时为 `None`。
     pub reply: Option<ReplyTo>,
+    /// MSC4564 的 Agent 进度状态对象（ADR-0082），被编辑过时是最新编辑里的；不是状态消息时为 `None`。
+    /// 发送者是不是 Bot 由客户端核心判断。
+    pub agent_run: Option<AgentRunStatus>,
     /// 本账号在这个房间的权限（power level）能不能撤回这条：自己的看“撤回自己的”，别人的看“撤回别人的”。
     /// 只看权限，发没发出去、是不是已撤回由调用方判断。
     pub can_redact: bool,
@@ -218,6 +222,7 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
         .filter(|reader| *reader != event.sender())
         .map(|reader| names.name(reader))
         .collect();
+    let raw = content(event, kind);
     Some(Message {
         event_id: event.event_id().map(ToOwned::to_owned),
         sender: event.sender().to_owned(),
@@ -226,8 +231,9 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
         timestamp_ms: event.timestamp().get().into(),
         status: status(event.send_state()),
         body: body(kind),
-        custom: custom(event, kind),
-        mentions: mentions(event, kind),
+        custom: raw.as_ref().map(custom_fields).unwrap_or_default(),
+        mentions: raw.as_ref().map(mentions_of).unwrap_or_default(),
+        agent_run: raw.as_ref().and_then(agent_run::parse),
         thread_root: msglike.thread_root.clone(),
         edited,
         read_by,
@@ -269,18 +275,13 @@ fn status(state: Option<&EventSendState>) -> SendStatus {
     }
 }
 
-fn custom(event: &EventTimelineItem, kind: &MsgLikeKind) -> Map<String, Value> {
-    content(event, kind)
-        .unwrap_or_default()
-        .into_iter()
+/// 原始事件（被编辑过时为编辑后的新内容）里带命名空间的自定义字段；不是文字或提示消息时没有。
+fn custom_fields(content: &Map<String, Value>) -> Map<String, Value> {
+    content
+        .iter()
         .filter(|(key, _)| key.contains('.') && !key.starts_with("m."))
+        .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
-}
-
-fn mentions(event: &EventTimelineItem, kind: &MsgLikeKind) -> Vec<OwnedUserId> {
-    content(event, kind)
-        .map(|content| mentions_of(&content))
-        .unwrap_or_default()
 }
 
 /// `m.mentions.user_ids`；不认识的名字跳过。
@@ -295,10 +296,10 @@ pub(crate) fn mentions_of(content: &Map<String, Value>) -> Vec<OwnedUserId> {
         .collect()
 }
 
-/// 原始事件（被编辑过时为编辑后的新内容）里的内容对象；不是文字消息时没有。
+/// 原始事件（被编辑过时为编辑后的新内容）里的内容对象；文字和 `m.notice` 都有（Bot 的状态消息是 notice）。
 fn content(event: &EventTimelineItem, kind: &MsgLikeKind) -> Option<Map<String, Value>> {
     let is_text = matches!(kind, MsgLikeKind::Message(message)
-        if matches!(message.msgtype(), MessageType::Text(_)));
+        if matches!(message.msgtype(), MessageType::Text(_) | MessageType::Notice(_)));
     if !is_text {
         return None;
     }

@@ -30,6 +30,10 @@ struct TimelineRow: View {
             )
         case let .notice(text):
             note(Text(text))
+        case let .agentRun(_, _, _, _, _, _, _, body, _, _):
+            // 一轮 Agent 任务的进度行（ADR-0082）：完整的样子在 App 壳那个 PR 里做，先按普通的
+            // Bot 提示消息显示 `body`——和其他不认识这个格式的客户端一样。
+            note(Text(body))
         case let .profileChange(_, name, previousName, _):
             if let previousName {
                 note(Text(.timelineRenamed(previousName, name)))
@@ -243,7 +247,7 @@ private struct MessageBubble: View {
                             id: view.card.id,
                             answer: $0.answer,
                             choiceId: $0.choiceId,
-                            secrets: [:],
+                            secrets: $1,
                             settings: [:]
                         )
                     )
