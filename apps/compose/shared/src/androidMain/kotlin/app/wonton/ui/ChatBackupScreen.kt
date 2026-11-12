@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.fragment.app.FragmentActivity
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.DeviceVerification
@@ -273,6 +275,11 @@ val BackupReminder.text: String?
 private fun RecoveryKey(key: String, onConfirm: () -> Unit) {
     val context = LocalContext.current
     val colors = WontonTheme.colors
+    // 只在 FragmentActivity（MainActivity 是 AppCompatActivity）里渲染；预览数据不带密钥，截图测试走不到这里。
+    val activity = LocalActivity.current as FragmentActivity
+    val auth = remember(activity) { RecoveryKeyAuth(activity) }
+    // 验证只对这一次显示有效：离开页面（组合销毁）再进要重新验证，不能进 rememberSaveable。
+    var revealed by remember { mutableStateOf(!auth.needsAuth()) }
     // 点“已保存”先确认一次：关掉后本机不再显示这把密钥，误点等于永久丢失（盲测 11-12）。
     var confirming by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
@@ -281,6 +288,16 @@ private fun RecoveryKey(key: String, onConfirm: () -> Unit) {
             style = WontonTheme.typography.itemTitle,
             color = colors.textPrimary.toColor(),
         )
+        if (!revealed) {
+            val promptTitle = stringResource(R.string.chat_backup_recovery_key)
+            val promptReason = stringResource(R.string.chat_backup_verify_reason)
+            WontonButton(
+                stringResource(R.string.chat_backup_reveal_key),
+                { auth.prompt(promptTitle, promptReason) { shown -> if (shown) revealed = true } },
+                Modifier.fillMaxWidth(),
+            )
+            return
+        }
         // 不能长按选中：系统的拷贝不会标为敏感内容，复制只走“复制”按钮。
         Text(
             key,
