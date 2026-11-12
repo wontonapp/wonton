@@ -125,6 +125,9 @@
     <string name="chat_backup_save_key_title">Save your recovery key</string>
     <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
     <string name="chat_backup_saved">Saved</string>
+    <!-- Confirmation dialog for the "Saved" button: closing the page discards the key on this device. -->
+    <string name="chat_backup_saved_confirm_title">Saved it somewhere safe?</string>
+    <string name="chat_backup_saved_confirm_message">After this, this device no longer shows the key. Make sure you have a copy before you continue.</string>
     <!-- Page heading when chat backup hasn't been set up. -->
     <string name="chat_backup_status_disabled">Chat backup isn\'t set up yet</string>
     <!-- Page heading when chat backup is on and verified. -->

@@ -258,6 +258,8 @@ val BackupReminder.text: String?
 private fun RecoveryKey(key: String, onConfirm: () -> Unit) {
     val context = LocalContext.current
     val colors = WontonTheme.colors
+    // 点“已保存”先确认一次：关掉后本机不再显示这把密钥，误点等于永久丢失（盲测 11-12）。
+    var confirming by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Text(
             stringResource(R.string.chat_backup_save_key_title),
@@ -283,8 +285,23 @@ private fun RecoveryKey(key: String, onConfirm: () -> Unit) {
                 stringResource(R.string.chat_backup_copy), { copySensitive(context, key) },
                 Modifier.weight(1f), WontonButtonKind.SECONDARY,
             )
-            WontonButton(stringResource(R.string.chat_backup_saved), onConfirm, Modifier.weight(1f))
+            WontonButton(stringResource(R.string.chat_backup_saved), { confirming = true }, Modifier.weight(1f))
         }
+    }
+    if (confirming) {
+        val dismiss = { confirming = false }
+        WontonDialog(
+            stringResource(R.string.chat_backup_saved_confirm_title),
+            stringResource(R.string.chat_backup_saved_confirm_message),
+            dismiss,
+            listOf(
+                WontonDialogAction(stringResource(R.string.common_cancel), onClick = dismiss),
+                WontonDialogAction(stringResource(R.string.chat_backup_saved)) {
+                    dismiss()
+                    onConfirm()
+                },
+            ),
+        )
     }
 }
 
