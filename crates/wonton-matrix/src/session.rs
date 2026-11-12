@@ -328,6 +328,7 @@ async fn access_token_identity(
     config: &SessionConfig,
     token: &str,
 ) -> Result<(OwnedUserId, OwnedDeviceId)> {
+    crate::platform_tls::check_url(&config.homeserver_url).map_err(Error::Transport)?;
     let mut http = reqwest::Client::builder();
     if let Some(proxy) = &config.proxy {
         http = http.proxy(
@@ -417,6 +418,7 @@ async fn reconcile_store(config: &SessionConfig, device_id: &DeviceId) -> Result
 }
 
 async fn build_client(config: &SessionConfig, versions: VersionBuilder) -> Result<Client> {
+    crate::platform_tls::check_url(&config.homeserver_url).map_err(Error::Transport)?;
     client_builder(&config.store, config.proxy.as_deref(), true)
         .homeserver_url(&config.homeserver_url)
         .sliding_sync_version_builder(versions)

@@ -73,6 +73,45 @@ extensions.configure<ApplicationAndroidComponentsExtension> {
     }
 }
 
+/**
+ * rustls-platform-verifier 的 Kotlin 组件版本必须等于 Cargo.lock 里 rustls-platform-verifier-android 的版本，
+ * 不一致时 Rust 那边找不到要调的类或方法。做法照它 README 的 Android 一节。
+ */
+abstract class RustlsPlatformVerifierVersion : ValueSource<String, RustlsPlatformVerifierVersion.Params> {
+    interface Params : ValueSourceParameters {
+        val lockFile: RegularFileProperty
+    }
+
+    override fun obtain(): String {
+        val lines = parameters.lockFile.get().asFile.readLines()
+        val nameIdx = lines.indexOfFirst { it.trim() == "name = \"$CRATE\"" }
+        return lines.drop(nameIdx + 1)
+            .takeIf { nameIdx >= 0 }
+            ?.firstOrNull { it.trimStart().startsWith("version = ") }
+            ?.substringAfter('"')
+            ?.substringBefore('"')
+            ?.takeIf { it.isNotEmpty() }
+            ?: throw GradleException("$CRATE not found in ${parameters.lockFile.get().asFile}")
+    }
+
+    private companion object {
+        const val CRATE = "rustls-platform-verifier-android"
+    }
+}
+
+val rustlsPlatformVerifierVersion = providers.of(RustlsPlatformVerifierVersion::class.java) {
+    parameters.lockFile.set(rootProject.layout.projectDirectory.file("../../Cargo.lock"))
+}
+
+configurations.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.rustls" && requested.name == "rustls-platform-verifier") {
+            useVersion(rustlsPlatformVerifierVersion.get())
+            because("must match rustls-platform-verifier-android in Cargo.lock")
+        }
+    }
+}
+
 android {
     namespace = "app.wonton.android"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -104,6 +143,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     // Apache-2.0（连带的 Tink 也是）。接 UnifiedPush 分发器：在本机生成 Web Push 密钥对，按 RFC 8291 解开推送。
     implementation(libs.unifiedpush.connector)
+    implementation(libs.rustls.platform.verifier)
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
