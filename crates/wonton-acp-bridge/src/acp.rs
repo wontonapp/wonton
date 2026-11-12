@@ -36,6 +36,9 @@ use auth::{AuthMethod, AuthRequests, parse_auth_methods};
 use rpc_error::RpcError;
 use updates::PromptUpdates;
 #[cfg(test)]
+#[path = "acp_contract_tests.rs"]
+mod contract_tests;
+#[cfg(test)]
 #[path = "acp_test_support.rs"]
 pub(crate) mod test_support;
 #[cfg(test)]
