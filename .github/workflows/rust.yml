@@ -113,7 +113,7 @@ jobs:
         run: cargo clippy -p wonton-client --all-targets --locked --features ui-fake -- -D warnings
 
   test:
-    name: 测试（不含依赖 Docker 的集成测试）${{ matrix.shard }}/3
+    name: 测试（不含依赖 Docker 的集成测试）${{ matrix.shard }}/4
     needs: changes
     # !cancelled() 让 changes 在定时、手动运行里跳过时，下游仍能全量运行；取消后不再起重作业。
     # 草稿和路径的判断在作业上：被跳过时 matrix 不展开、检查名留成字面量，规则集只看汇总就不受影响。
@@ -123,7 +123,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        # 编译是每片都要做一遍的固定成本（缓存里的依赖之外那 12 个工作区 crate，4 核上约 250 秒），
+        # 分片只缩短跑测试的那一段（三片时 62/80/114 秒）。多一片把最慢那片的跑测试减掉约四分之一。
+        shard: [1, 2, 3, 4]
     env:
       # 故意让 Docker 不可用，保证默认的测试不依赖它：依赖 Docker 的测试标了 #[ignore]，由“Rust Docker 测试”运行。
       DOCKER_HOST: unix:///nonexistent/docker.sock
@@ -140,10 +142,10 @@ jobs:
         with:
           shared-key: rust-test
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
-      - name: 测试（按名字的哈希分三片并行）
+      - name: 测试（按名字的哈希分四片并行）
         shell: bash
         # 完整输出另存一份：失败时作为 artifact 上传，重跑覆盖不了失败那次的日志。
-        run: cargo nextest run --workspace --locked --partition hash:${{ matrix.shard }}/3 2>&1 | tee "$RUNNER_TEMP/test-output.log"
+        run: cargo nextest run --workspace --locked --partition hash:${{ matrix.shard }}/4 2>&1 | tee "$RUNNER_TEMP/test-output.log"
       - name: 文档测试（nextest 不跑 doctest，分不了片，只在第一片跑）
         if: matrix.shard == 1
         shell: bash
@@ -151,23 +153,6 @@ jobs:
         run: cargo test --doc --workspace --locked 2>&1 | tee -a "$RUNNER_TEMP/test-output.log"
         env:
           DOCKER_HOST: unix:///nonexistent/docker.sock
-      - name: 官方索引里的清单这份核心都读得懂、渲染得出来
-        if: matrix.shard == 1
-        # 每个插件都按安装前的渲染走一遍（索引里只有文件的 sha256，被引用的文件用占位内容），
-        # 核心不再注入的变量、改名的变量当场失败，免得合进来以后那些插件装不上。用不到 Docker。
-        # 放在文档测试后面、带 --workspace：库已经按整个 workspace 的特性编好，只差链接核心的二进制；
-        # 写成 -p wonton-core 会按单个包重新合特性，依赖又编一遍。
-        shell: bash
-        run: |
-          curl -fsSL --retry 5 -o "$RUNNER_TEMP/index.json" \
-            https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
-          cargo build --workspace --locked --bin wonton-core 2>&1 | tee -a "$RUNNER_TEMP/test-output.log"
-          target/debug/wonton-core plugin check-index "$RUNNER_TEMP/index.json" 2>&1 | tee -a "$RUNNER_TEMP/test-output.log"
-      # 假数据入口的模块和测试都在 cargo feature 后面，默认的 workspace 测试跑不到；只在第一片跑一遍。
-      - name: 测试假数据入口（feature ui-fake）
-        if: env.RUN == 'true' && matrix.shard == 1
-        shell: bash
-        run: cargo nextest run -p wonton-client --lib --locked --features ui-fake ui_fake 2>&1 | tee -a "$RUNNER_TEMP/test-output.log"
       - name: 失败时留下测试输出
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -178,11 +163,50 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  extras:
+    name: 假数据入口的测试、官方索引检查
+    # 两件都不分片、都要另编一遍工作区的 crate，单独一个作业和分片并行：放进哪一片都成最慢的那片
+    # （11-12 实测：假数据入口 4 核上 185～209 s，索引检查 73～90 s，分片本身 6～7 分钟）。
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || github.event_name != 'pull_request') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      DOCKER_HOST: unix:///nonexistent/docker.sock
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 安装 rust-toolchain.toml 指定的工具链
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-nextest@0.9.151
+      # 和测试分片同一份依赖缓存（只读）：依赖的 feature 不变，只有工作区的 crate 要编。
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: rust-test
+          save-if: false
+      # 先编不带 feature 的：和缓存里的依赖同一套特性，只编工作区的 crate；带 ui-fake 的放后面，只多编 wonton-client。
+      - name: 官方索引里的清单这份核心都读得懂、渲染得出来
+        # 每个插件都按安装前的渲染走一遍（索引里只有文件的 sha256，被引用的文件用占位内容），
+        # 核心不再注入的变量、改名的变量当场失败，免得合进来以后那些插件装不上。用不到 Docker。
+        # 带 --workspace：按整个 workspace 合特性，和测试缓存里的依赖一致；写成 -p wonton-core 会按单个包重新合特性，依赖又编一遍。
+        shell: bash
+        run: |
+          curl -fsSL --retry 5 -o "$RUNNER_TEMP/index.json" \
+            https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
+          cargo build --workspace --locked --bin wonton-core
+          target/debug/wonton-core plugin check-index "$RUNNER_TEMP/index.json"
+      - name: 测试假数据入口（feature ui-fake）
+        # 假数据入口的模块和测试都在 cargo feature 后面，默认的 workspace 测试跑不到。
+        run: cargo nextest run -p wonton-client --lib --locked --features ui-fake ui_fake
+
   # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
   # 草稿 PR 上其余作业全被跳过时它也照样起来并报通过，不用为此先起别的 runner。
   summary:
     name: rust 汇总
-    needs: [changes, format, clippy, test]
+    needs: [changes, format, clippy, test, extras]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
