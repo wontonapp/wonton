@@ -114,11 +114,11 @@ private fun RichBlockView(block: RichBlock, reserve: String?) {
             LocalLinkOpener.current,
         )
         when (val kind = block.kind) {
-            RichBlockKind.Paragraph -> Text(inline)
-            RichBlockKind.Heading -> Text(inline, style = WontonTheme.typography.itemTitle)
+            RichBlockKind.Paragraph -> RichLinkText(inline, block.spans)
+            RichBlockKind.Heading -> RichLinkText(inline, block.spans, style = WontonTheme.typography.itemTitle)
             is RichBlockKind.ListItem -> Row(horizontalArrangement = Arrangement.spacedBy(spacing.s8)) {
                 Text(kind.marker, Modifier.alignByBaseline())
-                Text(inline, Modifier.alignByBaseline())
+                RichLinkText(inline, block.spans, Modifier.alignByBaseline())
             }
             RichBlockKind.Code -> CodeBlock(block.spans.firstOrNull()?.text.orEmpty(), ink)
             is RichBlockKind.Table -> RichTable(kind.rows)

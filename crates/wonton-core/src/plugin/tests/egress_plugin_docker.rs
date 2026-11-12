@@ -34,7 +34,11 @@ async fn install(m: &PluginManager, source: &str) {
         .unwrap()
         .manifest
         .permissions;
-    m.install(source, &granted, super::langs()).await.unwrap();
+    // install 链的状态机整体上堆：中继测试的默认 2 MiB 测试线程栈装不下
+    // （egress_plugin_relay_uses_provider_dns_and_fails_closed 的栈溢出）。
+    Box::pin(m.install(source, &granted, super::langs()))
+        .await
+        .unwrap();
 }
 
 async fn fetch(engine: &Engine, client: &str) -> Result<String, String> {

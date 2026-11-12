@@ -280,6 +280,11 @@ val CoreException.problem: Problem
                 detail = detail,
             )
             is CoreException.InvalidInput -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = reason)
+            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
+            is CoreException.SettingsInvalid -> Problem(
+                titleRes = R.string.problem_invalid_input_title,
+                nextStep = reason,
+            )
             is CoreException.ServerTooOld -> Problem(
                 titleRes = R.string.problem_plugin_server_too_old_title,
                 nextStepRes = R.string.problem_upgrade_server_next_step,

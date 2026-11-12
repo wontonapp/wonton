@@ -195,7 +195,7 @@ impl PluginPackage {
 
         let services = runtime::services(top.remove("services"), manifest.runtime, langs)?;
         for (name, service) in &services {
-            check_service_name(name, langs)?;
+            check_service_name(name, &manifest, langs)?;
             check_service_keys(name, service, langs)?;
         }
         let volumes = parse_named_volumes(top.remove("volumes"), langs)?;
@@ -640,8 +640,12 @@ fn check_top_level_keys(top: &Map<String, Value>, langs: &Languages) -> Result<(
 }
 
 /// 服务名同时用作网络别名和容器名的一部分，限制为小写 DNS 安全字符。
-fn check_service_name(name: &str, langs: &Languages) -> Result<(), PackageError> {
-    if matches!(name, "relay-webui" | "relay-mcp") {
+fn check_service_name(
+    name: &str,
+    manifest: &Manifest,
+    langs: &Languages,
+) -> Result<(), PackageError> {
+    if super::host_relay::reserved_service_name(manifest, name) {
         return Err(service_error(
             langs,
             name,

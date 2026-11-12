@@ -56,7 +56,12 @@ fun uploadAction(context: Context, uri: Uri, roomId: String): Action {
  * 没有 App 能打开时返回原因，供界面提示；成功时返回 null。
  */
 fun openWithSystem(context: Context, path: String, mimeType: String?): Problem? {
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", File(path))
+    val uri = try {
+        FileProvider.getUriForFile(context, "${context.packageName}.files", File(path))
+    } catch (_: IllegalArgumentException) {
+        // 文件不在配好的根里（file_paths.xml 没盖住）。失败即停：如实提示，不崩、不装成功。
+        return Problem(context.getString(R.string.file_handoff_failed))
+    }
     // `Intent` 按字面匹配类型：带参数的匹配不上，`application/octet-stream` 没有 App 认，都退回按扩展名。
     val type = mimeType?.let(Intent::normalizeMimeType)?.takeUnless { it == "application/octet-stream" }
     val intent = Intent(Intent.ACTION_VIEW)
@@ -70,12 +75,17 @@ fun openWithSystem(context: Context, path: String, mimeType: String?): Problem? 
     }
 }
 
-/** 下载好的文件交给系统的分享：存到别处、发给别的 App。 */
-fun shareWithSystem(context: Context, path: String, mimeType: String? = null) {
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", File(path))
+/** 下载好的文件交给系统的分享：存到别处、发给别的 App。失败时返回提示，成功返回 null。 */
+fun shareWithSystem(context: Context, path: String, mimeType: String? = null): Problem? {
+    val uri = try {
+        FileProvider.getUriForFile(context, "${context.packageName}.files", File(path))
+    } catch (_: IllegalArgumentException) {
+        return Problem(context.getString(R.string.file_handoff_failed))
+    }
     val send = Intent(Intent.ACTION_SEND)
         .setType(mimeType ?: context.contentResolver.getType(uri) ?: "*/*")
         .putExtra(Intent.EXTRA_STREAM, uri)
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     context.startActivity(Intent.createChooser(send, null))
+    return null
 }

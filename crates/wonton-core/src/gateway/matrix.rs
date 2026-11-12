@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::api::error_response;
+use super::send_limits::hop_card;
 use super::{Gateway, TunnelPeer, client_addr, pages, proxy, pushers};
 use super::{room_rules, send_limits};
 use crate::matrix::{JWT_LOGIN_TYPE, LOGIN_TOKEN_TTL_SECS};
@@ -192,7 +193,12 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
         .await
     {
         Ok(req) => req,
-        Err(refused) => return *refused,
+        Err(refused) => {
+            if let Some(stopped) = refused.stopped {
+                hop_card::ask_to_continue(gateway, stopped);
+            }
+            return refused.response;
+        }
     };
     forward_client_api(gateway, req).await
 }

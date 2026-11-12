@@ -90,7 +90,7 @@ pub(crate) fn line(text: impl Into<String>) -> CardLine {
     }
 }
 
-fn emphasized(text: impl Into<String>) -> CardLine {
+pub(crate) fn emphasized(text: impl Into<String>) -> CardLine {
     CardLine {
         text: text.into(),
         emphasis: true,
@@ -732,8 +732,6 @@ pub fn content(card: &ConfirmationCard, langs: &Languages) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use wonton_protocol::ConfirmationState;
-
     use super::*;
     use crate::l10n::CATALOG;
     /// 两张卡片共用的底版：没密钥、没设置、待确认、过期为 1。
@@ -742,7 +740,10 @@ mod tests {
             secret_inputs: Vec::new(),
             settings: None,
             requester: None,
+            category: None,
             origin: None,
+            audience: wonton_protocol::CardAudience::Keeper,
+            answered_by: None,
             id: "abc".into(),
             state: ConfirmationState::Pending,
             title: "Hermes 想安装 Grafana".into(),
@@ -776,9 +777,8 @@ mod tests {
         let mut card = sample_card();
         card.lines = vec![line("一条说明")];
         for (header, tag) in [("ja", "ja"), ("fr-FR", "en"), ("zh-TW", "zh-Hant")] {
-            let langs = Languages::from_header(Some(header));
             let expected = CATALOG.negotiate(&[tag]);
-            let body = body(&card, &langs);
+            let body = body(&card, &Languages::from_header(Some(header)));
             assert!(
                 body.contains(&CATALOG.format(expected, "chat-card-state-pending", &[])),
                 "{header}: {body}"

@@ -8,7 +8,9 @@
 //! 认出来，补处理最近几条，超出的在房间里如实列出（`routing::route_backlog`）。
 
 pub(crate) mod attachments;
+mod busy;
 mod permissions;
+mod refused;
 mod routing;
 mod run_status;
 mod sessions;
@@ -73,9 +75,8 @@ impl Bridge {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum JobKind {
     Normal,
-    Queue,
+    /// `/wonton interrupt <文字>`：调试用，不进帮助和菜单。
     Interrupt,
-    Steer,
     End,
 }
 
@@ -237,6 +238,8 @@ struct RoomState {
     /// 主对话最近的文字消息（事件 ID 和原文），拼话题开局时取话题起点和前文。
     history: VecDeque<(String, String)>,
     last_activity: Instant,
+    /// 被网关拒收的自己的消息。
+    refused: refused::Refused,
     /// 上次清理工作区附件的时间。
     last_sweep: Instant,
 }
@@ -519,6 +522,7 @@ async fn run_room<R: Room>(
         waiters: Vec::new(),
         history: VecDeque::new(),
         last_activity: Instant::now(),
+        refused: refused::Refused::default(),
         last_sweep: Instant::now(),
     };
     // 进循环前先分发首屏快照：补上停机期间发来的，超出上限的如实列出。
@@ -537,7 +541,7 @@ async fn run_room<R: Room>(
     loop {
         tokio::select! {
             Some(messages) = updates.next() => {
-                routing::route_owner_messages(
+                on_messages(
                     &context,
                     &mut state,
                     &mut topics,
@@ -590,6 +594,19 @@ async fn run_room<R: Room>(
             }
         }
     }
+}
+
+/// 房间时间线变了：先看自己被拒收的消息，再把人的新消息交给会话。
+async fn on_messages<R: Room>(
+    context: &TurnContext<R>,
+    state: &mut RoomState,
+    topics: &mut Topics,
+    messages: &[Message],
+    seen: &mut HashSet<String>,
+    arrived: &mut HashSet<String>,
+) -> BridgeResult<()> {
+    refused::handle(context, &mut state.refused, messages, seen, &state.owner).await?;
+    routing::route_owner_messages(context, state, topics, messages, seen, arrived).await
 }
 
 /// 一条 ACP 通知：任务事件开话题，其余交给命令菜单和改文件表。

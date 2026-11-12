@@ -27,6 +27,9 @@ use wonton_l10n::l10n;
 
 pub(crate) mod bridge;
 pub(crate) mod media;
+pub(crate) mod media_permission;
+
+use media_permission::{PendingMediaPrompt, clear_gone_prompt};
 
 mod config;
 mod helpers;
@@ -96,6 +99,8 @@ pub(crate) struct TabsState {
     pins_problem: Option<String>,
     previous_sources: HashMap<String, wonton_protocol::ProxySettings>,
     external: bool,
+    /// 还没答的摄像头/麦克风询问（一次只有一张，页面关掉就清）。
+    media_prompt: Option<PendingMediaPrompt>,
 }
 
 pub(crate) struct TabsLink {
@@ -201,6 +206,7 @@ impl TabsLink {
             pins_problem: None,
             previous_sources: HashMap::new(),
             external,
+            media_prompt: None,
         };
         let room_view = watch::Sender::new(None);
         let sync_problem = watch::Sender::new(None);
@@ -389,6 +395,7 @@ impl TabsLink {
                     .await;
             });
         }
+        clear_gone_prompt(&mut state);
         let view = make_view(&state, &plugins);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
@@ -416,6 +423,7 @@ impl TabsLink {
             return Err(error);
         }
         state.problem = None;
+        clear_gone_prompt(&mut state);
         let view = make_view(&state, &plugins);
         let settings = state.config.panel_layout();
         *lock(&self.state) = state;
@@ -452,6 +460,7 @@ impl TabsLink {
                 Err(error) => state.problem = Some(storage_problem(&error)),
             }
         }
+        clear_gone_prompt(&mut state);
         let view = make_view(&state, &plugins);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
@@ -507,6 +516,7 @@ fn empty_view() -> TabsViewModel {
         panel_candidates: Vec::new(),
         panel_selected: None,
         bot_pin_consents: Vec::new(),
+        media_prompt: None,
     }
 }
 

@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use iroh::TransportAddr;
 use iroh::{Endpoint, SecretKey, Watcher};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, watch};
@@ -32,7 +33,7 @@ use wonton_protocol::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure,
     HomePath, HomeStatus, HomeViewModel, ProxySettings, PushMethod,
 };
-use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, spawn_tier_fallback};
+use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, is_public_relay, spawn_tier_fallback};
 use wonton_tunnel::{
     LocalProxy, PathInfo, PathKind, ProxyAccess, ProxyCredential, TunnelClient, TunnelError,
     TunnelStatus,
@@ -376,6 +377,30 @@ impl HomeLink {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
+    }
+
+    /// 已知连不上家里的服务器时给出原文（进“详情”），否则为空。核心自己经隧道的请求（好友、资料、成员这些）
+    /// 在发出前先过这道闸：已知不通就立刻失败成“连不上家里的服务器”，不等各自的 30 秒超时。
+    ///
+    /// 只拦传输不通：断开着，或传输断开后自动重试回到的“连接中”（状态在两者之间来回跳，只看“断开”会时拦时不拦）。
+    /// 被拒绝、上游没就绪这些不拦：服务器连得上，请求本身就是恢复的路（主人放行设备后，下一次请求经代理重新建连）。
+    /// 第一次建连、回前台和网络恢复后的新一轮建连也不拦。WebView 的流量不经这道闸（ADR-0032）。
+    pub(crate) fn tunnel_outage(&self) -> Option<String> {
+        let view = self.view();
+        let unreachable = match &view.status {
+            HomeStatus::Disconnected { reason, .. } => *reason == HomeFailure::TransportUnavailable,
+            HomeStatus::Connecting => {
+                self.lock_tracker().known_failure() == Some(HomeFailure::TransportUnavailable)
+            }
+            HomeStatus::Connected | HomeStatus::NotConfigured => false,
+        };
+        unreachable.then(|| view.details.last_failure.unwrap_or_default())
+    }
+
+    /// 测试里直接给出连接状态，不必真的建连。
+    #[cfg(test)]
+    pub(crate) fn set_status_for_test(&self, status: HomeStatus) {
+        self.view.send_modify(|view| view.status = status);
     }
 
     /// 配对时填的设备名；`ConnectHome` 给的连接信息里没有，存储坏了也为空。
@@ -728,8 +753,13 @@ fn failure(err: &TunnelError) -> HomeFailure {
 }
 
 fn path_view(path: PathInfo) -> HomePath {
+    let public_relay = match &path.remote {
+        TransportAddr::Relay(url) => is_public_relay(url),
+        _ => false,
+    };
     HomePath {
         relay: path.kind == PathKind::Relay,
+        public_relay,
         lan: path.is_lan(),
         rtt_ms: u32::try_from(path.rtt.as_millis()).unwrap_or(u32::MAX),
     }

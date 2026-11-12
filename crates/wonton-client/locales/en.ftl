@@ -172,6 +172,14 @@ chat-contacts-invalid-user-id = That user ID isn't valid: { $reason }
 
 # Shown when sending a message through Siri, Shortcuts or the chat screen with empty text.
 chat-empty-message = Type a message first.
+composer-tray-full = The attachment tray holds at most { $max } attachments.
+composer-has-failed = An attachment didn't upload. Retry or remove it first.
+composer-attachment-not-found = This attachment wasn't found. It may have been removed or already sent.
+composer-outgoing-not-found = This pending message wasn't found. It may have already been handed over for sending.
+composer-store-failed = Couldn't save the attachment tray on this device ({ $path }): { $reason }
+composer-attachment-failed = The attachment "{ $name }" didn't upload.
+composer-transfer-gone = The upload record for this file is missing. Please retry.
+composer-upload-record-unreadable = Couldn't read the photo's upload record: { $reason }
 # Shown when the bot ID handed in from Siri or Shortcuts doesn't parse.
 chat-ask-invalid-bot-id = The default agent's ID isn't formatted correctly.
 # Shown when a saved direct chat's room ID doesn't parse.
@@ -183,6 +191,7 @@ chat-layout-change-failed = Couldn't change the chat layout: { $reason }
 chat-session-device-revoked = This device was revoked on Matrix. Pair it with your home server again.
 
 # Shown when the shell routes a chat action this core doesn't know.
+side-chat-not-ready = This version of the client core doesn't support side chats yet.
 chat-invalid-action = Not a chat action.
 # Shown when starting a direct chat with a user ID that isn't @name:server.
 chat-invalid-user-id = That user ID isn't valid. It should look like @name:server.
@@ -197,6 +206,7 @@ chat-not-signed-in = You're not signed in to Matrix yet.
 chat-send-no-response = The Matrix server stopped responding
 # $error is the room ID parser's original error.
 chat-invalid-room-id = The room ID isn't valid: { $error }
+chat-link-room-not-joined = You haven't joined this room. Accept its invitation in Chats first.
 # Shown when sending into a room that only carries notifications.
 chat-read-only-room = This room only carries notifications, so you can't send messages here.
 # $room is the unchanged room ID.
@@ -559,6 +569,8 @@ plugins-start-busy = { $id } is already starting, installing, updating, or unins
 tabs-bridge-page-not-open = This app page isn't open or pinned.
 tabs-bridge-invalid-environment = The page insets and safe area must be finite, non-negative numbers.
 tabs-bridge-public-page = Public web pages get no Wonton bridge.
+plugin-media-not-asked = This app page has no saved camera or microphone decision.
+plugin-media-save-failed = Can't write the camera and microphone decisions file { $path }: { $reason }
 
 # Chat transport problems (crates/wonton-client/src/chat/view.rs): the reason
 # of a CoreError::TransportUnavailable and the message of a failed chat action.

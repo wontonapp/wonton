@@ -139,3 +139,28 @@ pub(super) async fn signed_in_within(
         }
     }
 }
+
+/// 附件区（ADR-0094）用到的聊天这一侧。
+impl ChatLink {
+    /// 点发送时的检查，和发文字一样：房间能发、回复对象的格式对。
+    pub(crate) fn check_send(
+        &self,
+        room_id: &str,
+        reply_to: Option<&str>,
+    ) -> Result<(), CoreError> {
+        reply_target(reply_to)?;
+        self.send_target(room_id).map(drop)
+    }
+
+    /// 点了发送：字已经交给附件区，草稿（连同回复对象）留着没用了；发送途中又打的字不算。
+    pub(crate) fn forget_sent_draft(&self, room_id: &str, body: &str) {
+        if let Ok((_, room_id)) = self.target(room_id) {
+            self.enqueue_draft(DraftWrite::Forget(room_id, body.trim().to_owned()));
+        }
+    }
+
+    /// 这一组交给了发送队列：引导提示记下这个房间发过消息。
+    pub(crate) fn record_sent_room(&self, room_id: &str) {
+        onboarding::record_sent(&self.sent, room_id.to_owned());
+    }
+}

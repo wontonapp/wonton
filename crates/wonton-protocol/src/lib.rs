@@ -9,6 +9,9 @@
 uniffi::setup_scaffolding!();
 
 mod action;
+mod agent_chain;
+mod agent_handoff;
+mod agent_outbox;
 mod agent_permission;
 mod agent_run;
 mod appearance;
@@ -19,6 +22,7 @@ mod bot_web;
 mod bot_web_registration;
 mod chat;
 mod chat_layout;
+mod composer;
 mod confirmation;
 mod confirmation_origin;
 mod core_upgrade;
@@ -43,6 +47,7 @@ mod port_mapping;
 mod push;
 mod registry_mirror;
 mod reply;
+mod roles;
 mod secret;
 mod server_version;
 mod servers;
@@ -50,12 +55,27 @@ mod session;
 mod settings;
 mod share_transport;
 mod sharing;
+mod side_chat;
 mod sidebar;
 mod tabs;
 mod timeline;
+mod timeline_action;
 mod verification;
 
 pub use action::Action;
+pub use agent_chain::{
+    AGENT_CHAINS_PATH, AGENT_OUTBOX_PATH, AgentChainAction, AgentChainBot, AgentChainRow,
+    AgentChainStatus, AgentChainsViewModel, AgentSettingsViewModel, ChainError, ChainLimitKind,
+    ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
+    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_CHAIN_HEADER,
+    WONTON_MAX_DEPTH_HEADER, WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER,
+    WONTON_ON_BEHALF_OF_HEADER, WONTON_PLUGIN_HEADER, WONTON_USER_HEADER,
+};
+pub use agent_handoff::{
+    HAND_OFF_STATUS_TOOL, HAND_OFF_TOOL, HandOffRequest, HandOffResult, HandOffSession,
+    HandOffState, HandOffStatusRequest, SEND_MESSAGE_TOOL, SendMessageRequest,
+};
+pub use agent_outbox::{OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult};
 pub use agent_permission::{
     AGENT_PERMISSION_PATH, AGENT_PERMISSION_TTL_SECS, AgentPermissionKind, AgentPermissionOption,
     AgentPermissionOutcome, AgentPermissionRequest,
@@ -97,10 +117,14 @@ pub use chat_layout::{
     BotChatSettings, CHAT_LAYOUT_EVENT, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings,
     ChatLayoutTarget, ChatTextScale, CodeOverflow, PluginChat,
 };
+pub use composer::{
+    AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerViewModel,
+    MessageGroup, OutgoingMessage,
+};
 pub use confirmation::{
-    Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
-    ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView, ConfirmationWindow,
-    WindowEnd, WindowView, answer_path, window_path,
+    Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,
+    ConfirmationCard, ConfirmationCategory, ConfirmationList, ConfirmationReply, ConfirmationState,
+    ConfirmationView, ConfirmationWindow, WindowEnd, WindowView, answer_path, window_path,
 };
 pub use confirmation_origin::{
     CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ConfirmationOrigin, ConfirmationRequester,
@@ -123,22 +147,22 @@ pub use egress::{
 pub use error::{CoreError, set_core_error_formatter};
 pub use family::{
     BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
-    ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, Me, Member, MemberInvite, MemberList,
-    MemberPairingCode, MemberRemoval, MemberSettings, MemberStatus, NewSharedBot, Role,
-    SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path, member_path,
-    member_removal_path, plugin_family_path,
+    HOP_LIMIT_ERRCODE, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, Me, Member,
+    MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberSettings, MemberStatus,
+    NewSharedBot, Role, SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path,
+    member_path, member_removal_path, plugin_family_path,
 };
 pub use file::{
     FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileCardAction, FileCardActions, FileError,
     FileErrorBody, FileFailure, FileGrantRequest, FileId, FileInfo, FileLinks, FileOperation,
     FileProblem, FileSource, InvalidFileId, RoomTransfers, Transfer, TransferAction,
     TransferDirection, TransferElsewhere, TransferState, TransfersViewModel, UploadSource,
-    extract_file_links,
+    extract_file_links, files_message_body,
 };
 pub use friends::{
     FRIEND_EVENT, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendEvent, FriendFailure,
-    FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsState,
-    FriendsViewModel,
+    FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList,
+    FriendsState, FriendsViewModel, RemovedFriend,
 };
 pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
@@ -199,22 +223,24 @@ pub use plugin::{
     OpenWindow, OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets, OwnerSecretFailure,
     OwnerSecretProblem, OwnerSecretView, OwnerSecretsView, PermissionLine, PermissionOpened,
     PermissionRisk, PermissionUpdate, PluginAuthor, PluginDetail, PluginDevice, PluginFailure,
-    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginOperation,
-    PluginProblem, PluginRuntime, PluginScope, PluginSettingField, PluginSettingKind,
-    PluginSettingOption, PluginSettingsUpdate, PluginSettingsView, PluginState, PluginTakeover,
-    PluginTask, PluginTaskNextStep, PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel,
-    RequirementLine, RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues,
-    SecurityTier, SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
-    SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsProblem,
-    SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, SourceKind,
-    StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
-    ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
-    UpgradeRequest, UpgradeResult, plugin_scope_path, plugin_settings_path,
+    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginMediaGrant,
+    PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginSettingField,
+    PluginSettingKind, PluginSettingOption, PluginSettingsUpdate, PluginSettingsView, PluginState,
+    PluginTakeover, PluginTask, PluginTaskNextStep, PluginTaskState, PluginTrust, PluginWriter,
+    PluginsViewModel, RequirementLine, RequirementStatus, SecretInput, SecretInputState,
+    SecretUpdate, SecretValues, SecurityTier, SettingValue, SettingValues, SettingsFieldError,
+    SettingsFieldProblem, SettingsFieldProblemKind, SettingsForm, SettingsInvalidError,
+    SettingsProblem, SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind,
+    SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
+    TakeoverState, ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest,
+    UpgradeOffer, UpgradeRequest, UpgradeResult, plugin_scope_path, plugin_settings_path,
     plugin_settings_preview_path, secret_input_path,
 };
 pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
-pub use port_mapping::{MappedPort, PluginPortMapping, PortMappingState, UdpFlowStats};
+pub use port_mapping::{
+    MappedPort, PluginPortMapping, PortMappingState, PortMappingWarning, UdpFlowStats,
+};
 pub use push::{
     NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushMethod,
     PushNotification, PushStatus,
@@ -225,6 +251,14 @@ pub use registry_mirror::{
     RegistryProblem,
 };
 pub use reply::{ComposerDraft, QuotedContent, QuotedMessage, ReplyQuote};
+pub use roles::{
+    AdminScope, AiLevel, AppScope, BOT_AI_LEVEL_ENV, CAPABILITIES_HEADER, Capability,
+    DEFAULT_INVITE_ROLE_PATH, Gate, JOIN_REQUESTS_PATH, JoinOutcome, JoinRequest, JoinRequestList,
+    OIDC_USER_GROUP, PERMISSION_REQUIRED, PermissionItem, PermissionRequired, Permissions,
+    PluginAudience, ROLES_PATH, RoleAssignment, RoleDef, RoleDraft, RoleList, RoleTemplate,
+    TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
+    join_request_reject_path, member_role_path, plugin_audience_path, role_path,
+};
 pub use secret::SecretString;
 pub use server_version::{is_older, minimum_server_version};
 pub use servers::{ServerKind, ServerName, ServerRow, ServersViewModel};
@@ -239,17 +273,22 @@ pub use sharing::{
     ShareProblem, ShareRecipient, SharedAppRow, SharedAppsSource, SharedAppsState,
     SharedAppsViewModel, SharedPlugin,
 };
+pub use side_chat::{
+    SideChatCard, SideChatResult, SideChatResultState, SideChatRoot, SideChatState, SideChatSupport,
+};
 pub use sidebar::{SidebarApp, SidebarOpen, SidebarViewModel};
 pub use tabs::{
     CandidatePlugin, PluginTab, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem,
-    TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,
+    TabLayout, TabLoadFailure, TabMediaPrompt, TabPage, TabRef, TabState, TabsProblem,
+    TabsViewModel,
 };
 pub use timeline::{
-    BackPagination, ImageContent, KeyNotice, MatrixTarget, MediaHandle, MessageAction,
-    MessageContent, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan, SendState,
-    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll, TimelineUpdate,
-    TimelineViewport,
+    BackPagination, ImageCaption, ImageContent, KeyNotice, MatrixTarget, MediaHandle,
+    MessageAction, MessageContent, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan,
+    SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll,
+    TimelineUpdate, TimelineViewport,
 };
+pub use timeline_action::{TimelineAction, TimelineTarget};
 pub use verification::{
     KeyHandoff, VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
 };

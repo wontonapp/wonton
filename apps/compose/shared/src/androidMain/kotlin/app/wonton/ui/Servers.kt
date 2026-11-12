@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -49,6 +50,8 @@ import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Globe
+import app.wonton.ui.icons.WontonIcon
 
 internal val LocalServers = compositionLocalOf<ServersViewModel> { error("Servers are not provided") }
 
@@ -63,7 +66,7 @@ internal fun ServerName.displayName(): String = when (this) {
 }
 
 @Composable
-internal fun ServersGroup(plugins: PluginsState) {
+internal fun ServersGroup(plugins: PluginsState, onMatrixLogin: () -> Unit) {
     val view = LocalServers.current
     var rename by remember { mutableStateOf<ServerRow?>(null) }
     var remove by remember { mutableStateOf<ServerRow?>(null) }
@@ -73,6 +76,8 @@ internal fun ServersGroup(plugins: PluginsState) {
             WontonSeparator()
         }
         AddServerRow { plugins.send(Action.AddServer) }
+        WontonSeparator()
+        MatrixLoginRow(onMatrixLogin)
     }
     rename?.let { server -> RenameServerDialog(server, plugins::send) { rename = null } }
     remove?.let { server ->
@@ -189,6 +194,28 @@ private fun AddServerRow(add: () -> Unit) {
         )
         Text(
             stringResource(R.string.servers_add), Modifier.padding(start = WontonTheme.spacing.s12),
+            style = WontonTheme.typography.body, color = WontonTheme.colors.primary.toColor(),
+        )
+    }
+}
+
+@Composable
+private fun MatrixLoginRow(open: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
+            .clickable(role = Role.Button, onClick = open)
+            .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            WontonIcon.Globe,
+            // 装饰：右边的文字就是“用 Matrix 账号登录”。
+            contentDescription = null,
+            modifier = Modifier.size(WontonTheme.size.icon),
+            tint = WontonTheme.colors.primary.toColor(),
+        )
+        Text(
+            stringResource(R.string.matrix_login_entry), Modifier.padding(start = WontonTheme.spacing.s12),
             style = WontonTheme.typography.body, color = WontonTheme.colors.primary.toColor(),
         )
     }

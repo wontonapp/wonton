@@ -9,6 +9,7 @@ use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotation
 use serde_json::{Value, json};
 use wonton_protocol::SecretValues;
 
+use super::audience::Subject;
 use super::audit::{Decision, Record};
 use super::{
     Bus, Caller, Outcome, ToolFailure, agent_install, authoring_tools, cards, file_tools, naming,
@@ -384,7 +385,7 @@ async fn set_permission(
         Ok(found) => found,
         Err(failure) => return bus.deny(caller, name, &value, &failure),
     };
-    let langs = bus.plugins.owner_languages();
+    let langs = bus.card_languages(caller, Subject::PluginAdmin);
     let highest = line.risk == Some(wonton_protocol::PermissionRisk::Highest);
     let bot = crate::plugin::store::OpenedBy::Bot {
         plugin_id: caller.id.to_string(),
@@ -487,14 +488,20 @@ async fn uninstall(
         .get("delete_data")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let langs = bus.plugins.owner_languages();
+    let langs = bus.card_languages(caller, Subject::PluginAdmin);
     let draft = cards::uninstall(&caller.name, &title, purge, &langs);
     let run = move |bus: Arc<Bus>,
                     _secrets: SecretValues,
                     _settings: wonton_protocol::SettingValues| async move {
         match bus
             .plugins
-            .uninstall_detached(id.clone(), purge, bus.plugins.owner_languages())
+            .uninstall_detached(
+                id.clone(),
+                purge,
+                Vec::new(),
+                true,
+                bus.plugins.owner_languages(),
+            )
             .await
         {
             Ok(report) => {

@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, DeviceNetwork,
-    FileId, FontStyle, FriendBlockScope, FriendBlockTarget, ImageUpload, InstallPreview,
-    MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, ModelProviderInput, OnboardingTip,
-    PushEndpoint, PushMethod, Rgb, SecretString, ShareGrantUpdate, TabDisplayChoice, TabRef,
-    TextSize, ThemeMode, UploadSource,
+    FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview, MatrixOidcCallback,
+    MatrixOidcLogin, MatrixPasswordLogin, ModelProviderInput, OnboardingTip, PushEndpoint,
+    PushMethod, Rgb, SecretString, ShareGrantUpdate, TabDisplayChoice, TabRef, TextSize, ThemeMode,
+    UploadSource,
 };
 
 /// 原生壳发给客户端核心的用户操作。
@@ -15,6 +15,9 @@ use crate::{
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
+    Timeline {
+        action: crate::TimelineAction,
+    },
     /// 新建一个会话并选中它。标题去掉首尾空白后不能为空。
     CreateSession {
         title: String,
@@ -120,79 +123,11 @@ pub enum Action {
     AskAgent {
         text: String,
     },
-    /// 发送文字。正文去掉首尾空白后不能为空。消息先以本地回显出现在时间线里。
-    ///
-    /// `reply_to` 是被回复消息的事件 ID（[`MessageAction::Reply`](crate::MessageAction::Reply) 里的），发出的是对它的
-    /// 回复；那条消息不在这个房间里时返回 `InvalidInput`。
-    SendText {
-        room_id: String,
-        body: String,
-        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-        reply_to: Option<String>,
-    },
-    /// 发送图片。上传和发送的进展、`reply_to` 同 [`Action::SendText`]。
-    SendImage {
-        room_id: String,
-        image: ImageUpload,
-        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-        reply_to: Option<String>,
-    },
-    /// 把一条消息转发到另一个房间（ADR-0073）：照原样再发一条，不带“转发自”，加密附件不重新上传。`item_id` 同
-    /// [`Action::RetrySend`]，只能转发菜单里有 [`MessageAction::Forward`](crate::MessageAction::Forward) 的消息。
-    /// 进展在目标房间的时间线里（本地回显、发送状态），壳随后打开目标房间。
-    ForwardMessage {
-        room_id: String,
-        item_id: String,
-        to_room_id: String,
-    },
-    /// 撤回一条已经发出去的消息（Matrix 的 redaction），所有人那里都变成 [`MessageContent::Redacted`](crate::MessageContent::Redacted)。
-    /// 只能撤回菜单里有 [`MessageAction::Redact`](crate::MessageAction::Redact) 的消息；还没发出去的用
-    /// [`Action::CancelSend`]。失败进 `ChatViewModel::problem`。
-    RedactMessage {
-        room_id: String,
-        item_id: String,
-    },
     /// 以反应回答 Bot 的提问。
     AnswerAgentChoice {
         room_id: String,
         item_id: String,
         key: String,
-    },
-    /// 马上重发一条发送失败的消息（[`SendState::Failed`](crate::SendState::Failed)），不等核心自动重发。`item_id` 是
-    /// 它的 [`TimelineItem::id`](crate::TimelineItem::id)，要先订阅这个房间的时间线。
-    RetrySend {
-        room_id: String,
-        item_id: String,
-    },
-    /// 取消发送：删掉一条还没发出去的消息（排队中或发送失败的），同一房间排在它后面的接着发。`item_id` 同
-    /// [`Action::RetrySend`]。已经发出去的取消不了。
-    CancelSend {
-        room_id: String,
-        item_id: String,
-    },
-    /// 加载更早的消息。要先订阅这个房间的时间线，结果体现在时间线的增量和翻页状态里。
-    PaginateBackwards {
-        room_id: String,
-    },
-    /// 壳报告列表停在哪儿：滚动停下、进出底部时发，不用每一帧发。要先订阅这个房间的时间线。核心据此重算
-    /// [`TimelineUpdate::viewport`](crate::TimelineUpdate::viewport)，下面的新消息数随之变。
-    SetTimelineScroll {
-        room_id: String,
-        scroll: crate::TimelineScroll,
-    },
-    /// 把房间标为读到最新一条，发出已读回执，房间的未读数随之清零。只在列表真的贴着最新一条时发（新消息到了、
-    /// 滚回底部），翻在别处时不发。
-    MarkRoomRead {
-        room_id: String,
-    },
-    /// 记下这个房间输入框里的草稿，主人换个房间、关掉 App 再回来还在；正文为空、也没在回复时表示清掉。只存本机，
-    /// 不上服务器。发送成功后核心自己清掉。`reply_to` 是正在回复的消息的事件 ID，读回时在
-    /// [`ComposerDraft::reply`](crate::ComposerDraft::reply)。
-    SetDraft {
-        room_id: String,
-        body: String,
-        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-        reply_to: Option<String>,
     },
     /// 重置恢复：删掉账号的密钥备份和秘密存储，换新的交叉签名身份，本设备成为新身份下已验证的设备，再开启备份，
     /// 新的恢复密钥放进 `EncryptionStatus::recovery_key`。旧的恢复密钥作废，备份里的旧消息取不回了，其他设备要

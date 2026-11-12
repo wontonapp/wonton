@@ -44,6 +44,8 @@ pub(crate) enum Scenario {
     DangerousModes,
     /// 同 [`Scenario::Manual`]，另在 `promptCapabilities` 里声明能收 `image` 块。
     ManualImages,
+    /// 同 [`Scenario::Manual`]，但不声明 `_meta.steering`（Kimi、Qwen 这类不能插话的 Agent）。
+    ManualNoSteer,
 }
 
 /// Manual 场景里挂起的一轮：应答的 id、会话、完整内容块，和写回用的连接。
@@ -87,6 +89,7 @@ impl FakeAgent {
             responses: Arc::new(Mutex::new(Vec::new())),
             pending: Arc::new(Mutex::new(Vec::new())),
             writer: Mutex::new(None),
+            steer_outcomes: Mutex::new(std::collections::VecDeque::new()),
         });
         let task_link = link.clone();
         let task = tokio::spawn(async move {
@@ -136,6 +139,18 @@ impl FakeAgent {
     /// 让每条连接的 Agent 发一次 `available_commands_update`。
     pub(crate) fn send_commands(&self, commands: Value) {
         let _ = self.commands.send(commands);
+    }
+
+    /// 让 Agent 向桥发任意一帧：契约测试用官方类型序列化出的报文从这条路进真实 `read_loop`。
+    pub(crate) async fn send_agent_frame(&self, frame: Value) {
+        let writer = self
+            .link
+            .writer
+            .lock()
+            .await
+            .clone()
+            .expect("还没有 ACP 连接");
+        send(&writer, frame).await;
     }
 
     /// 还有几个挂起没答的轮次。
@@ -355,6 +370,7 @@ fn initialize_result(scenario: &Scenario) -> Value {
         "_meta": {"steering": {"supported": true}}
     });
     match scenario {
+        Scenario::ManualNoSteer => result["_meta"] = json!({}),
         Scenario::LoginUrl => {
             result["authMethods"] = json!([
                 {"id": "url-method", "name": "URL 登录"}
@@ -388,6 +404,8 @@ pub(crate) struct Link {
     responses: Arc<Mutex<Vec<Value>>>,
     pending: Arc<Mutex<Vec<PendingPrompt>>>,
     writer: Mutex<Option<Arc<Mutex<OwnedWriteHalf>>>>,
+    /// 接下来几次 `_session/steering` 的应答；排空了回 `injected`。
+    steer_outcomes: Mutex<std::collections::VecDeque<Value>>,
 }
 
 /// 一条连接的运行状态。
@@ -522,7 +540,10 @@ impl Connection {
                 self.prompts += 1;
                 if matches!(
                     self.scenario,
-                    Scenario::Manual | Scenario::DangerousModes | Scenario::ManualImages
+                    Scenario::Manual
+                        | Scenario::DangerousModes
+                        | Scenario::ManualImages
+                        | Scenario::ManualNoSteer
                 ) {
                     self.hold_prompt(message, writer).await;
                 } else {
@@ -537,7 +558,9 @@ impl Connection {
                 }
             }
             "_session/steering" => {
-                reply(writer, &message["id"], json!({"outcome": "injected"})).await;
+                let outcome = self.link.steer_outcomes.lock().await.pop_front();
+                let outcome = outcome.unwrap_or_else(|| json!({"outcome": "injected"}));
+                reply(writer, &message["id"], outcome).await;
             }
             "session/close" => {
                 reply(writer, &message["id"], json!({})).await;

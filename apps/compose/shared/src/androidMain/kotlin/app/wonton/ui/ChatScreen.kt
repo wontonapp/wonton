@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,7 @@ import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.LocalWontonBottomInset
+import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.wontonContentPaddingValues
@@ -68,6 +70,7 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.accentFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Add
+import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.LockFill
 import app.wonton.ui.icons.WontonIcon
@@ -90,6 +93,7 @@ fun ChatRoute(
     val initial = remember(core) { core.chat() }
     val viewModel by updates.collectAsState(initial = initial)
     var rejection by remember { mutableStateOf<Problem?>(null) }
+    val scope = rememberCoroutineScope()
     // 只在被拒绝时更新提示：成功的操作（比如自动发出的已读回执）不清掉还没看的拒绝原因。
     val onAction: (Action) -> Unit = { action -> core.send(action)?.let { rejection = it } }
 
@@ -125,8 +129,8 @@ fun ChatRoute(
             }
             val row = viewModel.rooms.firstOrNull { it.roomId == room }
             val context = LocalContext.current
-            val opener = remember(core, navigation, context) {
-                AndroidLinkOpener(context, core, navigation) { rejection = it }
+            val opener = remember(core, navigation, context, scope) {
+                AndroidLinkOpener(context, core, navigation, scope) { rejection = it }
             }
             CompositionLocalProvider(LocalLinkOpener provides opener) {
                 RoomRoute(
@@ -260,7 +264,8 @@ private fun ChatListScreen(
 internal fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
     val account = viewModel.account
     val sync = viewModel.sync
-    val reminder = viewModel.encryption.backupReminder?.text
+    val backupReminder = viewModel.encryption.backupReminder
+    val reminder = backupReminder?.text
     // 连不上由标题栏说，连上后自动重来。
     val failure = (account as? ChatAccount.Failed)?.takeIf { it.reason != ChatFailure.TRANSPORT_UNAVAILABLE }
         ?.let { it.reason.problem(it.message) }
@@ -271,6 +276,11 @@ internal fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
         ChatAccount.SigningIn -> stringResource(R.string.chat_signing_in)
         is ChatAccount.Reconnecting -> stringResource(R.string.chat_status_reconnecting)
         else -> null
+    }
+    val context = LocalContext.current
+    val reminderPrefs = remember { BackupReminderPrefs(context) }
+    var reminderDismissed by remember(backupReminder) {
+        mutableStateOf(backupReminder != null && reminderPrefs.dismissed(backupReminder))
     }
     if (account != ChatAccount.SignedOut && listOfNotNull(failure, progress, reminder).isEmpty()) return
     Column(
@@ -284,7 +294,32 @@ internal fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
         progress?.let {
             Text(it, style = WontonTheme.typography.supporting, color = WontonTheme.colors.textSecondary.toColor())
         }
-        reminder?.let { WontonGroup { WontonRow(it, showsForward = true, onClick = onOpenBackup) } }
+        if (reminder != null && !reminderDismissed && backupReminder != null) {
+            WontonGroup {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable(onClick = onOpenBackup)
+                        .heightIn(min = WontonTheme.size.target)
+                        .padding(start = WontonTheme.spacing.s16),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        reminder,
+                        Modifier.weight(1f).padding(vertical = WontonTheme.spacing.s12),
+                        style = WontonTheme.typography.body,
+                        color = WontonTheme.colors.textPrimary.toColor(),
+                    )
+                    WontonIconButton(
+                        WontonIcon.Close,
+                        stringResource(R.string.common_close),
+                        {
+                            reminderPrefs.dismiss(backupReminder)
+                            reminderDismissed = true
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -328,7 +328,7 @@ async fn serve() -> anyhow::Result<()> {
     gateway::family::spawn_member_event_logger(members.clone());
     let notices = notice_room(&cfg, matrix.as_ref(), owner_languages(&manager));
     // Bot 调用的确认卡片（ADR-0016）。
-    let (bus, _confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
+    let (bus, confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
     let server_name = cfg
         .matrix
         .as_ref()
@@ -352,7 +352,7 @@ async fn serve() -> anyhow::Result<()> {
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
     spawn_entry_runtime(&cfg, &engine, &notices)?;
-    let push = Arc::new(open_push(&cfg, &tunnel, &manager)?);
+    let push = open_push_for_confirmations(&cfg, &tunnel, &manager, &confirmations)?;
     let contacts = serve::open_contacts(
         &cfg,
         (&manager, &members, &owner),
@@ -632,6 +632,19 @@ fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::
     Push::open(&path, tunnel.devices.clone(), tunnel.endpoint.id())
         .and_then(|push| push.with_proxy(manager.core_proxy()))
         .with_context(|| format!("打开推送登记表 {}", path.display()))
+}
+
+/// 打开推送代理并接到确认流程上：发给家人的卡片直接推到他的设备（ADR-0016）；主人的卡片走通知房间的
+/// 消息推送，不走这里。Gateway 和确认流程用同一个 `Arc<Push>`。
+fn open_push_for_confirmations(
+    cfg: &Config,
+    tunnel: &Tunnel,
+    manager: &PluginManager,
+    confirmations: &Arc<mcp::Confirmations>,
+) -> anyhow::Result<Arc<Push>> {
+    let push = Arc::new(open_push(cfg, tunnel, manager)?);
+    confirmations.attach_push(Some(push.clone() as Arc<dyn mcp::RecipientPush>));
+    Ok(push)
 }
 
 /// 帮助文档（ADR-0034）。版本号和升级接口报的是同一个。
