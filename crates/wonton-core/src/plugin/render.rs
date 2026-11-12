@@ -280,7 +280,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
                     .unwrap_or_default(),
                 default_model: "dry-run".into(),
             }),
-        capabilities: dry_run_capabilities(manifest),
+        capabilities: dry_run_capabilities(manifest, &root.join("apps").join(&slug)),
         mcp_url: manifest
             .permissions
             .contains(&Permission::Tools)
@@ -329,13 +329,25 @@ fn dry_run_lan(manifest: &Manifest, slug: &str) -> Option<LanGrant> {
     })
 }
 
-fn dry_run_capabilities(manifest: &Manifest) -> BTreeMap<String, String> {
-    let provider = super::matrix_rtc::provides_matrix_rtc(manifest).then(|| {
-        (
-            super::capabilities::MATRIX_SERVER_NAME_VAR.to_owned(),
-            "wonton.invalid".to_owned(),
-        )
-    });
+fn dry_run_capabilities(manifest: &Manifest, app_data: &Path) -> BTreeMap<String, String> {
+    let provider = super::matrix_rtc::provides_matrix_rtc(manifest)
+        .then(|| {
+            [
+                (
+                    super::capabilities::MATRIX_SERVER_NAME_VAR.to_owned(),
+                    "wonton.invalid".to_owned(),
+                ),
+                (
+                    super::matrix_rtc_ca::CA_DIR_VAR.to_owned(),
+                    app_data
+                        .join(super::matrix_rtc_ca::CA_DIR)
+                        .display()
+                        .to_string(),
+                ),
+            ]
+        })
+        .into_iter()
+        .flatten();
     super::dependencies::declarations(manifest)
         .flat_map(|capability| {
             [

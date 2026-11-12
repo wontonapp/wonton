@@ -41,6 +41,8 @@ encoding_rs = "0.8.42"
 rustls = { workspace = true }
 tokio-rustls = { version = "0.26.6", default-features = false }
 rustls-platform-verifier = "0.7.1"
+# Apache-2.0 OR ISC OR MIT。matrix_rtc 提供方的证书包要带上系统根证书（ADR-0096）；已在依赖树里（rustls-platform-verifier 用它）。
+rustls-native-certs = "0.8.5"
 # MIT OR Apache-2.0。插件的图标和截图（ADR-0017，只收 PNG 和 JPEG）、文件的缩略图（ADR-0020，另收 GIF 和 WebP）解码、
 # 缩放后重新编码。
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }

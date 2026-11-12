@@ -6,12 +6,14 @@
 
 use std::collections::BTreeMap;
 use std::net::IpAddr;
+use std::path::Path;
 
 use super::capabilities::{MATRIX_RTC, MATRIX_SERVER_NAME_VAR};
 use super::entry::{Entry, PluginStatus};
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
 use super::manifest::{Manifest, PluginId};
+use super::matrix_rtc_ca::CA_DIR_VAR;
 use super::provides::ProviderService;
 use super::upstreams::{Endpoint, core_aliases};
 use crate::l10n;
@@ -65,17 +67,40 @@ impl PluginManager {
         aliases
     }
 
-    /// 注入给提供方的变量：Matrix 服务器名。
+    /// 给 `matrix_rtc` 别名签证书的 CA：接了 Matrix 才有。
+    pub fn matrix_rtc_ca(&self) -> Option<std::sync::Arc<super::matrix_rtc_ca::CoreCa>> {
+        self.matrix_rtc_ca.clone()
+    }
+
+    /// 注入给提供方的变量：Matrix 服务器名，和放证书包的目录（先把证书包写进提供方的数据目录）。
     pub(in crate::plugin) fn matrix_rtc_vars(
         &self,
         manifest: &Manifest,
-    ) -> BTreeMap<String, String> {
-        match (&self.matrix_server_name, provides_matrix_rtc(manifest)) {
-            (Some(server_name), true) => {
-                BTreeMap::from([(MATRIX_SERVER_NAME_VAR.to_owned(), server_name.clone())])
-            }
-            _ => BTreeMap::new(),
-        }
+        app_data: &Path,
+        langs: &Languages,
+    ) -> Result<BTreeMap<String, String>, InstallError> {
+        let (Some(server_name), true) = (&self.matrix_server_name, provides_matrix_rtc(manifest))
+        else {
+            return Ok(BTreeMap::new());
+        };
+        let failed = |error: String| {
+            InstallError::Storage(l10n::text(
+                langs,
+                "plugin-install-matrix-rtc-ca-failed",
+                &[("error", error.into())],
+            ))
+        };
+        let ca = self
+            .matrix_rtc_ca
+            .as_ref()
+            .ok_or_else(|| failed("核心没有 matrix_rtc 的 CA".to_owned()))?;
+        let dir = ca
+            .write_bundle(app_data)
+            .map_err(|e| failed(format!("{e:#}")))?;
+        Ok(BTreeMap::from([
+            (MATRIX_SERVER_NAME_VAR.to_owned(), server_name.clone()),
+            (CA_DIR_VAR.to_owned(), dir.display().to_string()),
+        ]))
     }
 
     /// 装或升级成 `matrix_rtc` 的提供方之前：核心要接着 Matrix（不然给不出服务器名），且别的插件没在提供它。

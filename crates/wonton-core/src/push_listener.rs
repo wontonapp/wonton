@@ -6,7 +6,8 @@ use anyhow::Context;
 use axum::Router;
 use axum::serve::ListenerExt;
 use tokio::net::TcpListener;
-use wonton_core::gateway::matrix_rtc_alias::{self, AliasPeer, TlsListener};
+use wonton_core::gateway::matrix_rtc_alias::{AliasPeer, TlsListener};
+use wonton_core::plugin::matrix_rtc_ca::CoreCa;
 
 pub(crate) async fn bind(configured: Option<&str>) -> anyhow::Result<Option<TcpListener>> {
     let Some(listen) = configured else {
@@ -94,12 +95,13 @@ pub(crate) async fn serve(
 pub(crate) async fn bind_matrix_rtc(
     configured: Option<&str>,
     server_name: Option<&str>,
+    ca: Option<&CoreCa>,
 ) -> anyhow::Result<Option<TlsListener>> {
     let Some(listen) = configured else {
         tracing::info!("没有设置 WONTON_MATRIX_RTC_LISTEN，通话插件验不了 OpenID 令牌");
         return Ok(None);
     };
-    let Some(server_name) = server_name else {
+    let (Some(server_name), Some(ca)) = (server_name, ca) else {
         tracing::info!("核心没接 Matrix，不开 matrix_rtc 别名监听");
         return Ok(None);
     };
@@ -109,6 +111,6 @@ pub(crate) async fn bind_matrix_rtc(
     tracing::info!(listen = %tcp.local_addr()?, "matrix_rtc 别名监听已启动");
     Ok(Some(TlsListener {
         tcp,
-        acceptor: matrix_rtc_alias::acceptor(server_name)?,
+        acceptor: ca.acceptor(server_name)?,
     }))
 }
