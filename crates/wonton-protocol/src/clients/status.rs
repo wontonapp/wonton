@@ -19,7 +19,9 @@ pub struct ClientsStatus {
     pub gates: PublicSwitchState,
     /// 最近一次自检：从家里按公网地址绕出去再连回自己；只说明这条路通，不代表外面所有网络都通。
     pub self_probe: ProbeResult,
-    /// 别的服务器上的好友现在能不能从公网联系到这台主机；好友页和跨服务器联系人按它显示。
+    /// 别的服务器上的好友现在能不能从公网联系到这台主机；设置页按它显示。好友页和跨服务器联系人不用这一条，
+    /// 它们读 [`PeerStatus::PublicAccessOff`](crate::PeerStatus) 和
+    /// [`FriendsViewModel::public_access_off`](crate::FriendsViewModel)。
     pub public_reach: PublicReach,
     /// 现在公开的东西：开着公网入口的应用、它的路径规则和还有效的访客链接。
     pub public_now: Vec<PublicItem>,
