@@ -12,6 +12,7 @@ pub mod check;
 pub mod compose;
 pub mod configs;
 pub(super) mod configs_store;
+pub mod contacts;
 pub mod core_address;
 #[cfg(test)]
 mod core_address_tests;

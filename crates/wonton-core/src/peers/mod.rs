@@ -402,6 +402,16 @@ impl Peers {
         self.own.to_wire(&self.tunnel, (self.owner_display_name)())
     }
 
+    /// 一台服务器在联系人看来的样子（ADR-0050）：已配对时是转发组件给的状态，没配对或配对已经移除时为空。
+    pub fn contact_reach(&self, server_name: &str) -> Option<PeerStatus> {
+        let paired = self
+            .lock()
+            .peers
+            .get(server_name)
+            .is_some_and(|record| record.phase == Phase::Paired);
+        paired.then(|| self.forwarded_status(server_name))
+    }
+
     /// 本机的码：令牌一直是这一张，中继地址按当时的取。
     pub fn issue_code(&self) -> PeerCode {
         let inner = self.lock();

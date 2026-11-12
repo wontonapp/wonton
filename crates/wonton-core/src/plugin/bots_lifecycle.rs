@@ -243,9 +243,7 @@ impl PluginManager {
         })
     }
 
-    /// 名单变了（家人加入、联系人批了）：重建这个 Bot 的服务，沿用设备和令牌。家人记录和联系人
-    /// 在别的任务里做，它们合进来就会调用这个入口。
-    #[allow(dead_code)]
+    /// 名单变了（家人加入、联系人批了）：重建这个 Bot 的服务，沿用设备和令牌。
     pub(in crate::plugin) async fn rebuild_bot(
         &self,
         plugin: &PluginId,

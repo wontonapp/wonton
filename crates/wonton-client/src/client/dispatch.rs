@@ -77,6 +77,12 @@ impl ClientCore {
             | Action::RejectPeerRequest { .. }
             | Action::UnrejectPeerRequest { .. }
             | Action::RemovePeer { .. }) => scope.peers.dispatch(peers),
+            contacts @ (Action::RefreshBotContacts { .. }
+            | Action::RequestBotContact { .. }
+            | Action::RequestPersonContact { .. }
+            | Action::ApproveBotContact { .. }
+            | Action::RejectBotContact { .. }
+            | Action::RemoveBotContact { .. }) => scope.bot_contacts.dispatch(contacts),
             friends @ (Action::RefreshFriends
             | Action::AddFriend { .. }
             | Action::ApproveFriendRequest { .. }

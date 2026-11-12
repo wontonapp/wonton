@@ -1,0 +1,9 @@
+contacts-error-invalid-user-id = 请填完整的 Matrix ID（如 @名字:服务器），不能是这个 Bot 自己
+contacts-error-not-paired = 那台服务器没有和你的配对，先配对两台服务器
+contacts-error-already-contact = 已经是联系人，或者请求已经发出
+contacts-error-bot-not-found = 这个 Bot 已经不在了
+contacts-error-contact-not-found = 这条请求或联系人已经不在了，可能在别处处理过
+contacts-error-not-keeper = 只有管这个 Bot 的人能管它的联系人
+contacts-error-peer-unreachable = 现在连不上对方的服务器，什么都没发出，稍后再试
+contacts-error-unauthenticated = 先把这台设备和你的服务器配对，再从 App 里打开
+contacts-error-upstream = 服务器没能保存或发出，稍后再试

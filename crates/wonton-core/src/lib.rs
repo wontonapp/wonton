@@ -16,6 +16,7 @@ mod bot_activity;
 pub mod bot_media;
 
 pub mod config;
+pub mod contacts;
 pub mod device;
 pub mod entry_certificate;
 pub mod entry_compose;

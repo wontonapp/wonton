@@ -32,6 +32,7 @@ use crate::subscription::{
 use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 use switch::Replay;
 
+mod bot_contacts;
 mod dispatch;
 mod limits;
 mod media;

@@ -32,6 +32,31 @@ pub(super) fn open_friends(
     Ok((friends, blocks))
 }
 
+/// Bot 的联系人（ADR-0045、ADR-0050）：要 Matrix 和服务器配对，没接 Matrix 的核心没有。
+pub(super) fn open_contacts(
+    cfg: &Config,
+    (manager, members, owner): (&Arc<PluginManager>, &Arc<Members>, &Arc<OwnerStore>),
+    push: Option<Arc<Push>>,
+    matrix: Option<&Arc<Matrix>>,
+    peers: Option<&Arc<peers::Peers>>,
+) -> anyhow::Result<Option<Arc<wonton_core::contacts::Contacts>>> {
+    let (Some(matrix), Some(peers)) = (matrix, peers) else {
+        return Ok(None);
+    };
+    let wiring = wonton_core::contacts::wiring::Wiring {
+        plugins: manager.clone(),
+        members: members.clone(),
+        owner: owner.clone(),
+        push,
+        matrix: matrix.clone(),
+        peers: peers.clone(),
+    };
+    Ok(Some(wonton_core::contacts::wiring::start(
+        &cfg.core_state_dir(),
+        wiring,
+    )?))
+}
+
 pub(super) async fn run_gateway(
     cfg: &Config,
     listener: wonton_core::entry_runtime::MainListener,

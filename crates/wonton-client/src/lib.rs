@@ -26,6 +26,7 @@ uniffi::setup_scaffolding!();
 #[cfg(target_os = "android")]
 mod android;
 mod appearance;
+mod bot_contacts;
 mod chat;
 mod client;
 mod files;
@@ -60,9 +61,10 @@ pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
 pub use sharing::discover_share_source;
 pub use subscription::{
-    AppearanceSubscription, ChatSubscription, FriendsSubscription, HomeSubscription,
-    OnboardingSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
-    SessionListSubscription, SettingsSubscription, TabsSubscription, TransfersSubscription,
+    AppearanceSubscription, BotContactsSubscription, ChatSubscription, FriendsSubscription,
+    HomeSubscription, OnboardingSubscription, PeersSubscription, PluginsSubscription,
+    ServersSubscription, SessionListSubscription, SettingsSubscription, TabsSubscription,
+    TransfersSubscription,
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
@@ -130,6 +132,10 @@ pub use wonton_protocol::{
 pub use wonton_protocol::{
     BotChatSettings, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings, ChatLayoutTarget,
     ChatTextScale, CodeOverflow, PluginChat,
+};
+pub use wonton_protocol::{
+    BotContact, BotContactsState, BotContactsViewModel, ContactError, ContactKind,
+    ContactRequestPush, ContactState, PendingContactRequest, RemoteContact,
 };
 pub use wonton_protocol::{
     MappedPort, PluginPortMapping, PortMappingState, PortProtocol, UdpFlowStats,

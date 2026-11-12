@@ -7,6 +7,7 @@ mod admin;
 mod api;
 mod bot;
 mod bot_profile;
+mod contact_api;
 pub mod federation_config;
 pub mod issuer;
 mod notices;

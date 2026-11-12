@@ -98,6 +98,48 @@ async fn a_plain_direct_invite_is_not_a_friend_request() {
 
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_bots_contact_invite_is_recognized_and_is_not_a_friend_request() {
+    // 和核心替 Bot 发的邀请同样的建法：create 内容带联系人标记，私聊、加密。
+    let server = TestServer::start().await;
+    let bot = server.login(&unique("hermes"), "Wonton contacts").await;
+    let bob = server.login(&unique("bob"), "Bob 的手机").await;
+    bot.start_sync().await.expect("Bot 开始同步");
+    bob.start_sync().await.expect("Bob 开始同步");
+    let mut request = matrix_sdk::ruma::api::client::room::create_room::v3::Request::new();
+    request.creation_content = Some(
+        serde_json::from_value(
+            serde_json::json!({ wonton_protocol::BOT_CONTACT_CREATE_KEY: true }),
+        )
+        .expect("固定的 JSON 一定能读出 Raw"),
+    );
+    request.invite = vec![bob.user_id().to_owned()];
+    request.is_direct = true;
+    request.preset =
+        Some(matrix_sdk::ruma::api::client::room::create_room::v3::RoomPreset::TrustedPrivateChat);
+    let room_id = bot
+        .client()
+        .create_room(request)
+        .await
+        .expect("建带联系人标记的私聊")
+        .room_id()
+        .to_owned();
+
+    let row = wait_for_room(&bob, "Bob 收到邀请", &room_id, |row| {
+        row.membership == Membership::Invited
+    })
+    .await;
+    assert!(row.is_direct && !row.is_friend);
+    let invite = bob
+        .friend_invite(&room_id)
+        .await
+        .unwrap()
+        .expect("认得出邀请");
+    assert!(invite.bot_contact, "认得出是 Bot 的联系人邀请");
+    assert!(!invite.friend);
+}
+
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_dm_marked_only_by_the_state_event_is_not_a_friend() {
     // create 内容建完不能改；只补一个同名状态事件的普通私聊不算好友请求，接受它也不会把人变成好友。
     let server = TestServer::start().await;

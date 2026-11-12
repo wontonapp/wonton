@@ -198,7 +198,8 @@ services:
     image: ${SHARE_SMOKE_CORE_IMAGE:?}
     profiles: [driver]
     entrypoint: [/bin/sh, -ec]
-    command: ['cat "$${SHARE_SMOKE_STATE}/ca.pem" >> /etc/ssl/certs/ca-certificates.crt; exec /smoke/fr_share_smoke run']
+    # 联系人冒烟（smoke-contacts.sh）换驱动、分步跑：SHARE_SMOKE_DRIVER、SHARE_SMOKE_STEP。
+    command: ['cat "$${SHARE_SMOKE_STATE}/ca.pem" >> /etc/ssl/certs/ca-certificates.crt; exec /smoke/${SHARE_SMOKE_DRIVER:-fr_share_smoke} ${SHARE_SMOKE_STEP:-run}']
     environment:
       <<: *env
       WONTON_SHARE_CA_FILE: ${SHARE_SMOKE_STATE}/ca.pem
@@ -206,6 +207,7 @@ services:
       - ${SHARE_SMOKE_STATE}:${SHARE_SMOKE_STATE}
       - ./:/fixture:ro
       - ${SHARE_SMOKE_BIN_DIR}:/smoke:ro
+      - ../../../../plugins/examples/echo-bot:/plugins/echo-bot:ro
     networks: [core, identities]
 
 networks:
