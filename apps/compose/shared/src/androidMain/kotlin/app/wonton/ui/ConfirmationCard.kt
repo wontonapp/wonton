@@ -121,6 +121,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                                 choice.choiceId,
                                 secretValues(card.secretInputs, secrets),
                                 cardSettingsValues(settings),
+                                card.devices.filter { it.chosen }.map { it.id },
                             ),
                         )
                     }

@@ -96,10 +96,11 @@ fn only_the_four_permissions_may_be_optional() {
         "devices.serial",
         "devices.usb",
     ] {
-        let extra = if good == "devices.gpu" {
-            "\n  gpu: {services: [db]}"
-        } else {
-            ""
+        let extra = match good {
+            "devices.gpu" => "\n  gpu: {services: [db]}",
+            "devices.serial" => "\n  devices:\n    serial:\n      - {service: db, target: /dev/x}",
+            "devices.usb" => "\n  devices:\n    usb:\n      - {service: db}",
+            _ => "",
         };
         let compose = app(
             "",

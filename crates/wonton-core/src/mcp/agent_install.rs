@@ -139,9 +139,12 @@ async fn official(
     let id_for_run = package.manifest.id.clone();
     let run = move |bus: Arc<Bus>,
                     secrets: SecretValues,
-                    settings: wonton_protocol::SettingValues| async move {
+                    settings: wonton_protocol::SettingValues,
+                    devices: Vec<String>| async move {
+        proposed.with_devices(devices);
         let mut request = proposed.with_secrets(secrets);
         request.settings = settings;
+
         let installed = bus
             .plugins
             .install_with_dependencies(
@@ -408,9 +411,12 @@ async fn first_install(
     let langs = langs.clone();
     let run = move |bus: Arc<Bus>,
                     secrets: SecretValues,
-                    settings: wonton_protocol::SettingValues| async move {
+                    settings: wonton_protocol::SettingValues,
+                    devices: Vec<String>| async move {
+        proposed.with_devices(devices);
         let mut request = proposed.with_secrets(secrets);
         request.settings = settings;
+
         let installed = bus
             .plugins
             .install_with_dependencies(
@@ -665,8 +671,16 @@ async fn card_update(
         inputs,
         langs,
     );
-    draft.settings = match bus.plugins.card_settings(&package, Some(&record), langs) {
-        Ok(settings) => settings,
+    let preview = match bus
+        .plugins
+        .preview_upgrade(
+            &id,
+            crate::plugin::UpgradeTo::Upload(Box::new(package.clone())),
+            langs,
+        )
+        .await
+    {
+        Ok(preview) => preview,
         Err(e) => {
             return bus.deny(
                 caller,
@@ -676,19 +690,24 @@ async fn card_update(
             );
         }
     };
+    draft.settings = preview.settings;
+    draft.permissions = preview.permissions;
+    draft.devices = preview.devices.unwrap_or_default();
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, langs));
     let id_for_run = id;
     let writer = adopt.then(|| PluginWriter {
         plugin_id: caller.id.to_string(),
         title: caller.name.clone(),
     });
-    let run =
-        move |bus: Arc<Bus>, secrets: SecretValues, settings: wonton_protocol::SettingValues| {
-            upgrade_ran(
-                bus, id_for_run, version, package, granted, enabled, lan_webui, secrets, settings,
-                writer,
-            )
-        };
+    let run = move |bus: Arc<Bus>,
+                    secrets: SecretValues,
+                    settings: wonton_protocol::SettingValues,
+                    devices: Vec<String>| {
+        upgrade_ran(
+            bus, id_for_run, version, package, granted, enabled, lan_webui, secrets, settings,
+            devices, writer,
+        )
+    };
     bus.confirmed_twice(
         caller,
         name,

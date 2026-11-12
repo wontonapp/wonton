@@ -134,20 +134,27 @@ impl FakeHost {
         .unwrap();
     }
 
-    /// 盘上有一个分区（`/dev/disk/by-id/<name>-part1` 和 sysfs 的 `dev`）。
+    /// 盘上有一个分区：by-id、`partition` 标记和 sysfs 的设备号。
     pub fn partition(&self, node: &str, by_id: &str, number: u32, dev: &str) {
-        let dir = self
-            .sys()
-            .join("block")
-            .join(node)
-            .join(format!("{node}{number}"));
+        let separator = if node.ends_with(|c: char| c.is_ascii_digit()) {
+            "p"
+        } else {
+            ""
+        };
+        let partition = format!("{node}{separator}{number}");
+        let dir = self.sys().join("block").join(node).join(&partition);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("dev"), format!("{dev}\n")).unwrap();
+        fs::write(dir.join("partition"), format!("{number}\n")).unwrap();
+        self.dev_node(&partition);
+        let class = self.sys().join("class/block");
+        fs::create_dir_all(&class).unwrap();
+        std::os::unix::fs::symlink(&dir, class.join(&partition)).unwrap();
         let link = self
             .dev()
             .join("disk/by-id")
             .join(format!("{by_id}-part{number}"));
-        std::os::unix::fs::symlink(format!("../../{node}{number}"), link).unwrap();
+        std::os::unix::fs::symlink(format!("../../{partition}"), link).unwrap();
     }
 
     /// 宿主的 `/run/udev` 存在。
@@ -161,8 +168,13 @@ impl FakeHost {
         fs::create_dir_all(&proc).unwrap();
         let mut table = String::new();
         for (index, (point, device)) in entries.iter().enumerate() {
+            let point = point
+                .replace('\\', "\\134")
+                .replace(' ', "\\040")
+                .replace('\t', "\\011")
+                .replace('\n', "\\012");
             table.push_str(&format!(
-                "{} 0 {device} 0 / {point} rw - ext4 /dev/x rw\n",
+                "{} 0 {device} / {point} rw - ext4 /dev/x rw\n",
                 index + 1
             ));
         }

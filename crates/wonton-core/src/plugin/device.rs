@@ -57,8 +57,10 @@ pub struct Listing {
 /// 选择不合格的原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectionProblem {
-    /// 认不出的 ID（设备刚被拔掉、App 拿的是旧预览）。
+    /// 请求的格式或位置不在清单里。
     Unknown(String),
+    /// 清单里的位置指向了不在的设备。
+    Unavailable(String),
     /// 同一个位置选了两个，或者同一块盘勾了两次。
     Twice(String),
     /// 必需的位置没选。
@@ -71,6 +73,11 @@ impl SelectionProblem {
     pub fn message(&self, langs: &Languages) -> String {
         match self {
             Self::Unknown(id) => text(langs, "plugin-install-device-unknown", &[("id", id.into())]),
+            Self::Unavailable(id) => text(
+                langs,
+                "plugin-install-device-gone",
+                &[("devices", id.into())],
+            ),
             Self::Twice(id) => text(langs, "plugin-install-device-twice", &[("id", id.into())]),
             Self::Missing(service) => text(
                 langs,
@@ -170,6 +177,17 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
             if devices.is_empty() {
                 return Err(invalid(text(langs, "plugin-install-device-empty", &[])));
             }
+            if !devices.disk.is_empty()
+                && manifest
+                    .optional_permissions
+                    .contains_key(&Permission::DevicesDisk)
+            {
+                return Err(invalid(text(
+                    langs,
+                    "plugin-install-device-disk-not-optional",
+                    &[],
+                )));
+            }
             for class in DeviceClass::ALL {
                 let slots = devices.slots(class);
                 if slots.is_empty() {
@@ -189,18 +207,6 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
                         &[("class", class.as_str().into())],
                     )));
                 }
-                // 只有串口能标成可选（ADR-0057 的允许名单）。
-                if manifest
-                    .optional_permissions
-                    .contains_key(&class.permission())
-                    && class == DeviceClass::Disk
-                {
-                    return Err(invalid(text(
-                        langs,
-                        "plugin-install-device-disk-not-optional",
-                        &[],
-                    )));
-                }
                 validate_slots(class, slots, langs)?;
             }
             Ok(())
@@ -210,6 +216,10 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
 
 fn has_permission(manifest: &Manifest, class: DeviceClass) -> bool {
     manifest.permissions.contains(&class.permission())
+        || (class != DeviceClass::Disk
+            && manifest
+                .optional_permissions
+                .contains_key(&class.permission()))
 }
 
 fn validate_slots(
@@ -264,6 +274,7 @@ fn validate_slots(
                         "plugin-install-device-target-unused",
                         &[
                             ("class", class.as_str().into()),
+                            ("service", slot.service.as_str().into()),
                             ("target", target.as_str().into()),
                         ],
                     )));
@@ -299,7 +310,7 @@ pub fn resolve(
                 .serial
                 .iter()
                 .find(|candidate| candidate.host_path == path)
-                .ok_or_else(|| SelectionProblem::Unknown(id.clone()))?;
+                .ok_or_else(|| SelectionProblem::Unavailable(id.clone()))?;
             if selection
                 .serial
                 .insert(slot.service.clone(), candidate.clone())
@@ -315,7 +326,7 @@ pub fn resolve(
                 .disks
                 .iter()
                 .find(|candidate| candidate.host_path == path)
-                .ok_or_else(|| SelectionProblem::Unknown(id.clone()))?;
+                .ok_or_else(|| SelectionProblem::Unavailable(id.clone()))?;
             if !disk_seen.insert(path) {
                 return Err(SelectionProblem::Twice(id.clone()));
             }
@@ -399,10 +410,17 @@ pub(super) fn disk_target(index: usize, nvme: bool) -> String {
     if nvme {
         format!("/dev/nvme{index}n1")
     } else {
-        format!(
-            "/dev/sd{}",
-            char::from(b'a' + u8::try_from(index % 26).unwrap_or(0))
-        )
+        let mut path = String::with_capacity(7 + std::mem::size_of::<usize>() * 2);
+        path.push_str("/dev/sd");
+        let mut number = index;
+        loop {
+            path.insert(7, char::from(b'a' + (number % 26) as u8));
+            if number < 26 {
+                break;
+            }
+            number = number / 26 - 1;
+        }
+        path
     }
 }
 
@@ -467,13 +485,13 @@ pub fn selection_from_record(
                 .insert(slot.service.clone(), candidate_from_record(device));
         }
     }
-    for device in record.iter().filter(|d| d.class == DeviceClass::Disk) {
-        // 控制器和它的盘是两条记录，选盘只算盘。
-        let nvme = device.source.rsplit('/').next().is_some_and(|n| {
-            n.strip_prefix("nvme")
-                .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
-        });
-        if !nvme {
+    let mut seen = BTreeSet::new();
+    for device in record.iter().filter(|device| {
+        !devices.disk.is_empty()
+            && device.class == DeviceClass::Disk
+            && device.source.starts_with("/dev/disk/by-id/")
+    }) {
+        if seen.insert(device.source.as_str()) {
             selection.disks.push(candidate_from_record(device));
         }
     }
@@ -536,41 +554,12 @@ pub fn present(dev: Option<&Path>, source: &str) -> bool {
     path.exists()
 }
 
-/// 按安装记录重建渲染用的设备（重建容器时用）：组按节点现在的算，节点没了就沿用记下的。
-pub fn replay(
-    record: &[super::store::InstalledDevice],
-    granted: &[Permission],
-    udev: bool,
-) -> DeviceGrant {
-    let mut grant = DeviceGrant {
-        udev,
-        ..Default::default()
-    };
-    for device in record
-        .iter()
-        .filter(|device| granted.contains(&device.class.permission()))
-    {
-        grant
-            .services
-            .entry(device.service.clone())
-            .or_default()
-            .push(GrantedDevice {
-                class: device.class,
-                source: device.source.clone(),
-                target: device.target.clone(),
-                gid: host::gid(Path::new(&device.source)).unwrap_or(device.gid),
-                system: device.system,
-            });
-    }
-    grant
-}
-
 fn candidate_from_record(device: &super::store::InstalledDevice) -> Candidate {
     Candidate {
         class: device.class,
         host_path: device.source.clone(),
         node: device
-            .source
+            .target
             .rsplit('/')
             .next()
             .unwrap_or_default()
@@ -601,9 +590,17 @@ impl super::manager::PluginManager {
             }
             return Ok((DeviceGrant::default(), Vec::new()));
         };
+        if !DeviceClass::ALL
+            .iter()
+            .any(|class| granted.contains(&class.permission()))
+            && chosen.is_empty()
+        {
+            return Ok((DeviceGrant::default(), Vec::new()));
+        }
         let listing = self
             .device_listing()
-            .map_err(|reason| super::manager::InstallError::DeviceUnavailable(reason))?;
+            .map_err(super::manager::InstallError::DeviceUnavailable)?;
+        check_usb(devices, granted, &listing, langs)?;
         let selection = resolve(devices, chosen, &listing, granted)
             .map_err(|problem| selection_error(problem, langs))?;
         let grant = grant(devices, &selection, granted, listing.udev);
@@ -611,7 +608,7 @@ impl super::manager::PluginManager {
         Ok((grant, record))
     }
 
-    /// 升级时的设备：请求里带了按新的选，没带沿用记录。设备不在了的话，可选的位置跳过、必需的报错。
+    /// 请求没带新选择时沿用记录，并用本次探测的节点和 GID 刷新；选过的设备缺失不能静默丢掉。
     pub(in crate::plugin) fn upgrade_devices(
         &self,
         manifest: &Manifest,
@@ -627,60 +624,80 @@ impl super::manager::PluginManager {
             }
             return Ok((DeviceGrant::default(), Vec::new()));
         };
+        if !DeviceClass::ALL
+            .iter()
+            .any(|class| granted.contains(&class.permission()))
+            && chosen.is_empty()
+        {
+            return Ok((DeviceGrant::default(), Vec::new()));
+        }
         let listing = self
             .device_listing()
             .map_err(super::manager::InstallError::DeviceUnavailable)?;
+        check_usb(devices, granted, &listing, langs)?;
         let mut selection = if chosen.is_empty() {
             selection_from_record(devices, installed)
         } else {
             resolve(devices, chosen, &listing, granted)
                 .map_err(|problem| selection_error(problem, langs))?
         };
-        let mut gone = Vec::new();
-        selection.serial.retain(|service, candidate| {
-            let present = listing
+        if !granted.contains(&Permission::DevicesSerial) {
+            selection.serial.clear();
+        }
+        if !granted.contains(&Permission::DevicesDisk) {
+            selection.disks.clear();
+        }
+        for candidate in selection
+            .serial
+            .values_mut()
+            .chain(selection.disks.iter_mut())
+        {
+            let current = listing
                 .serial
                 .iter()
-                .any(|c| c.host_path == candidate.host_path);
-            if !present {
-                gone.push(candidate.name.clone());
-            }
-            let required = devices
+                .chain(&listing.disks)
+                .find(|current| {
+                    current.class == candidate.class && current.host_path == candidate.host_path
+                })
+                .ok_or_else(|| {
+                    super::manager::InstallError::DeviceUnavailable(text(
+                        langs,
+                        "plugin-install-device-gone",
+                        &[("devices", candidate.name.as_str().into())],
+                    ))
+                })?;
+            *candidate = current.clone();
+        }
+        if granted.contains(&Permission::DevicesSerial)
+            && let Some(slot) = devices
                 .serial
                 .iter()
-                .any(|slot| slot.service == *service && !slot.optional);
-            present || !required
-        });
-        selection.disks.retain(|disk| {
-            let present = listing.disks.iter().any(|c| c.host_path == disk.host_path);
-            if !present {
-                gone.push(disk.name.clone());
-            }
-            present
-        });
-        if !gone.is_empty() {
-            // 必需的位置缺了才装不了；选了的可选设备不在时照装，只是这个服务拿不到设备。
-            let serial_gone = granted.contains(&Permission::DevicesSerial)
-                && devices
-                    .serial
-                    .iter()
-                    .any(|slot| !slot.optional && !selection.serial.contains_key(&slot.service));
-            let disks_gone = granted.contains(&Permission::DevicesDisk)
-                && !devices.disk.is_empty()
-                && selection.disks.is_empty();
-            let required_gone = serial_gone || disks_gone;
-            if required_gone {
-                return Err(super::manager::InstallError::DeviceUnavailable(text(
-                    langs,
-                    "plugin-install-device-gone",
-                    &[("devices", list(langs, &gone).into())],
-                )));
-            }
+                .find(|slot| !slot.optional && !selection.serial.contains_key(&slot.service))
+        {
+            return Err(selection_error(
+                SelectionProblem::Missing(slot.service.clone()),
+                langs,
+            ));
         }
         let grant = grant(devices, &selection, granted, listing.udev);
         let record = record(&grant, &selection);
         Ok((grant, record))
     }
+}
+
+fn check_usb(
+    devices: &ManifestDevices,
+    granted: &[Permission],
+    listing: &Listing,
+    langs: &Languages,
+) -> Result<(), super::manager::InstallError> {
+    if !devices.usb.is_empty() && granted.contains(&Permission::DevicesUsb) && !listing.usb {
+        return Err(selection_error(
+            SelectionProblem::Unavailable("/dev/bus/usb".to_owned()),
+            langs,
+        ));
+    }
+    Ok(())
 }
 
 fn invalid_selection(message: String) -> super::manager::InstallError {
@@ -692,7 +709,7 @@ fn selection_error(problem: SelectionProblem, langs: &Languages) -> super::manag
         SelectionProblem::Unknown(_) | SelectionProblem::Twice(_) | SelectionProblem::NotADisk => {
             super::manager::InstallError::Invalid(problem.message(langs))
         }
-        SelectionProblem::Missing(_) => {
+        SelectionProblem::Missing(_) | SelectionProblem::Unavailable(_) => {
             super::manager::InstallError::DeviceUnavailable(problem.message(langs))
         }
     }

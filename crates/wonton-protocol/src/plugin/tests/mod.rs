@@ -248,7 +248,7 @@ fn preview() -> InstallPreview {
             target: "/dev/zigbee".into(),
             service: "homeassistant".into(),
             optional: true,
-            kind: wonton_protocol::PluginDeviceKind::Serial,
+            kind: PluginDeviceKind::Serial,
             system: false,
             chosen: false,
         }]),

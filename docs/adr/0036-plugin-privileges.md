@@ -155,6 +155,12 @@ smartctl 认盘都读 udev 数据库，没有它上游的自动发现用不了�
 by-id 改指向另一个节点（模拟拔插后编号变化）时，使用方的 compose 和渲染结果不变，核心给的 `PathOnHost`、`GroupAdd`、
 cgroup 规则和 `/run/udev` 挂载符合上表；by-id 消失和重现时按“拔插后自动恢复”的结论动了且只动了拿到这个设备的服务。
 
+安装预览和确认卡片都返回结构化权限项 `PermissionLine`（`permission`、`risk`）及设备项 `PluginDevice`（`kind`、`service`、`target`、`system`、`chosen`）。USB 是整类授权，由权限名 `devices.usb` 表示，不列单个设备。确认回答的 `devices` 是主人勾选的 ID；二次最高风险确认沿用第一次的选择，执行前重新检查宿主设备。
+
+升级不提交新 ID 时沿用记录；空列表也表示沿用，不能借它清空所有设备。选过的设备缺失时升级、重新启动返回 `device_unavailable`，不因安装时的 `optional` 静默取消。新装可以不选任何硬盘，此时不挂硬盘、不附带 `SYS_RAWIO`。系统盘识别仅标出能从挂载设备号证实的盘；无法映射的挂载（如叠加层或逻辑设备）不冒充已识别。
+
+整盘候选须有 sysfs 的物理 `device` 或 NVMe 命名空间 `nsid`，避免把 device-mapper、循环文件等虚拟块设备交给 SMART 应用。逻辑卷上的挂载无法据此反推出物理系统盘时保持未知。
+
 ### 三级提示
 
 每个权限都有一个级别。预览接口把级别和这段话一起返回，App 只负责按级别画；不认识的级别按最高画。

@@ -826,16 +826,16 @@ impl PluginManager {
             return;
         }
         let granted = manifest.permissions.clone();
-        if let Err(e) = self
-            .upgrade_checked(
-                package,
-                &granted,
-                &installed.enabled_permissions,
-                installed.lan_webui,
-                &[],
-                installed.settings.clone(),
-            )
-            .await
+        // 和 install_checked 一样：upgrade 子树的状态机搬上堆，默认 2 MiB 测试线程栈装不下整条 await 链。
+        if let Err(e) = Box::pin(self.upgrade_checked(
+            package,
+            &granted,
+            &installed.enabled_permissions,
+            installed.lan_webui,
+            &[],
+            installed.settings.clone(),
+        ))
+        .await
         {
             let from = installed.version;
             tracing::error!(plugin = %id, error = %e, "系统插件升级失败");

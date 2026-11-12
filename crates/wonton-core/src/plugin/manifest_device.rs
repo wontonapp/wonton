@@ -67,6 +67,14 @@ pub enum DeviceClass {
 }
 
 impl DeviceClass {
+    /// 引用检查里用的字段名。
+    pub fn field(self) -> &'static str {
+        match self {
+            Self::Serial => "devices.serial.service",
+            Self::Usb => "devices.usb.service",
+            Self::Disk => "devices.disk.service",
+        }
+    }
     pub const ALL: [Self; 3] = [Self::Serial, Self::Usb, Self::Disk];
 
     pub fn permission(self) -> Permission {

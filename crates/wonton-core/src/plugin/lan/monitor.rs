@@ -424,14 +424,16 @@ impl PluginManager {
             .await?;
         ctx.limits = record.limits;
         ctx.settings = record.settings.clone();
-        ctx.devices = Some(super::super::device::replay(
-            &record.devices,
-            &record.effective_permissions(manifest),
-            self.host
-                .udev
-                .as_deref()
-                .is_some_and(std::path::Path::is_dir),
-        ));
+        ctx.devices = Some(
+            self.upgrade_devices(
+                manifest,
+                &record.effective_permissions(manifest),
+                &record.devices,
+                &[],
+                &langs,
+            )?
+            .0,
+        );
         ctx.gpu = self
             .gpu_grant_recorded(
                 manifest,

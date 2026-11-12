@@ -403,7 +403,10 @@ async fn set_permission(
     };
     let run = {
         let (id, title, langs) = (id.clone(), title.clone(), langs.clone());
-        move |bus: Arc<Bus>, _secrets: SecretValues, _settings: wonton_protocol::SettingValues| async move {
+        move |bus: Arc<Bus>,
+              _secrets: SecretValues,
+              _settings: wonton_protocol::SettingValues,
+              _devices: Vec<String>| async move {
             match bus
                 .plugins
                 .set_plugin_permission(
@@ -431,6 +434,38 @@ async fn set_permission(
             }
         }
     };
+    // 关掉是收权限：已放宽的调用不再发卡。
+    if enabled {
+        let draft = cards::set_permission(&caller.name, &title, &line, enabled, highest, &langs);
+        return bus
+            .confirmed(caller, name, value, (draft, activity), run)
+            .await;
+    }
+    let cleared = bus
+        .plugins
+        .tool_policy()
+        .clearance(caller.id.as_str(), naming::CORE, SET_PERMISSION)
+        .is_some();
+    if cleared {
+        let outcome = run(
+            Arc::clone(bus),
+            SecretValues::new(),
+            Default::default(),
+            Vec::new(),
+        )
+        .await;
+        let failed = matches!(outcome.state, ConfirmationState::Failed { .. });
+        bus.audit.record(&Record {
+            caller: caller.id.as_str(),
+            tool: name,
+            arguments: &value,
+            decision: Decision::Allowed,
+            basis: None,
+            outcome: Some(if failed { "failed" } else { "ok" }),
+            files: &[],
+        });
+        return outcome.result;
+    }
     let draft = cards::set_permission(&caller.name, &title, &line, enabled, highest, &langs);
     bus.confirmed(caller, name, value, (draft, activity), run)
         .await
@@ -479,7 +514,8 @@ async fn uninstall(
     let draft = cards::uninstall(&caller.name, &title, purge, &value, &langs);
     let run = move |bus: Arc<Bus>,
                     _secrets: SecretValues,
-                    _settings: wonton_protocol::SettingValues| async move {
+                    _settings: wonton_protocol::SettingValues,
+                    _devices: Vec<String>| async move {
         match bus
             .plugins
             .uninstall_detached(

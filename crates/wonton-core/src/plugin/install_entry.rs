@@ -89,6 +89,8 @@ impl PluginManager {
     }
 
     /// 同 [`Self::install_user`]，另外带上主人打开了的可选权限（ADR-0057）。
+    // 装插件要的几样各管各的来源，打包反而看不清哪来的（同 deploy_retained）。
+    #[allow(clippy::too_many_arguments)]
     pub async fn install_user_enabled(
         &self,
         package: PluginPackage,
@@ -128,6 +130,8 @@ impl PluginManager {
     }
 
     /// 同 [`Self::install_detached`]，另外带上主人打开了的可选权限（ADR-0057）。
+    // 装插件要的几样各管各的来源，打包反而看不清哪来的（同 deploy_retained）。
+    #[allow(clippy::too_many_arguments)]
     pub async fn install_detached_enabled(
         self: &Arc<Self>,
         package: PluginPackage,

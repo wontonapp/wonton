@@ -28,7 +28,7 @@ use super::package::PluginPackage;
 use super::proxy_auth::ProxyAuth;
 use super::render::{Deployment, InstallContext, render};
 use super::secrets::{self, Secrets};
-use super::store::{EnabledPermission, InstalledRecord};
+use super::store::EnabledPermission;
 use super::upstreams::Endpoint;
 use super::upstreams::{McpTarget, uses_sso};
 use super::vars::{OidcVars, OwnerVars};
@@ -186,6 +186,7 @@ impl PluginManager {
             .prepare_install(package, enabled, (grants.gpu, grants.lan), settings, undo, langs)
             .await?;
         ctx.devices = Some(grants.devices);
+        let device_record = grants.device_record;
         let mut plan = render(package, &ctx, langs)?;
         self.prepare_images(&mut plan, Some(&manifest.id), langs)
             .await?;

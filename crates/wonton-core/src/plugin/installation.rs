@@ -31,6 +31,8 @@ pub(in crate::plugin) struct InstallDecision {
 
 impl PluginManager {
     /// 检查并部署，API 安装和预装（见 [`super::preinstall`]）共用。
+    // 装插件要的几样各管各的来源，打包反而看不清哪来的（同 deploy_retained）。
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn install_checked(
         &self,
         package: PluginPackage,

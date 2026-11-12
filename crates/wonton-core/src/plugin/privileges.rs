@@ -104,6 +104,8 @@ pub fn may_be_optional(permission: &Permission) -> bool {
             | Permission::DevicesGpu
             | Permission::DevicesSerial
             | Permission::DevicesUsb
+            // 由 [`super::device::validate`] 拦下，说清为什么不能可选。
+            | Permission::DevicesDisk
     )
 }
 
@@ -334,10 +336,10 @@ fn validate_capabilities(
         })?;
         // 读 SMART 的 SYS_RAWIO 随 `devices.disk` 由核心给，插件不用也不能为此另写 `cap.SYS_RAWIO`（ADR-0036）。
         let from_disk = capability == "SYS_RAWIO"
-            && (manifest.permissions.contains(&Permission::DevicesDisk)
-                || manifest
-                    .optional_permissions
-                    .contains_key(&Permission::DevicesDisk));
+            && manifest
+                .devices
+                .as_ref()
+                .is_some_and(|devices| devices.disk.iter().any(|slot| slot.service == name));
         if from_disk {
             used.caps.insert(capability);
             continue;

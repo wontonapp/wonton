@@ -147,6 +147,7 @@ fn approve(phone: &Phone, id: &str) {
             choice_id: None,
             secrets: Default::default(),
             settings: Default::default(),
+            devices: Vec::new(),
         })
         .unwrap();
 }

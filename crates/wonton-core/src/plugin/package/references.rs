@@ -5,9 +5,24 @@ use super::errors::{service_error, unknown_service_error};
 use super::{PackageError, PluginPackage};
 use crate::l10n::text;
 use crate::plugin::languages::Languages;
-use crate::plugin::manifest::{DeviceClass, SecretSpec};
+use crate::plugin::manifest::{Manifest, SecretSpec};
 
 impl PluginPackage {
+    /// `devices` 里的服务引用，按类给字段名。
+    fn device_service_refs(
+        manifest: &Manifest,
+    ) -> impl Iterator<Item = (&'static str, Option<&String>)> {
+        manifest
+            .devices
+            .iter()
+            .flat_map(|devices| devices.classes())
+            .flat_map(move |(class, slots)| {
+                slots
+                    .iter()
+                    .map(move |slot| (class.field(), Some(&slot.service)))
+            })
+    }
+
     pub(super) fn check_manifest_references(&self, langs: &Languages) -> Result<(), PackageError> {
         let models = self
             .manifest
@@ -70,25 +85,16 @@ impl PluginPackage {
             .iter()
             .flat_map(|t| &t.ports)
             .map(|port| ("tunnel.ports", Some(&port.service)));
-        let devices = self
-            .manifest
-            .devices
+        for (field, service) in refs
             .iter()
-            .flat_map(|devices| devices.classes())
-            .flat_map(|(class, slots)| {
-                slots.iter().map(move |slot| {
-                    (
-                        match class {
-                            DeviceClass::Serial => "devices.serial.service",
-                            DeviceClass::Usb => "devices.usb.service",
-                            DeviceClass::Disk => "devices.disk.service",
-                        },
-                        Some(&slot.service),
-                    )
-                })
-            });
-        let all = refs.iter().cloned().chain(collects).chain(bots).chain(gpu).chain(devices);
-        for (field, service) in all.chain(lan).chain(tunnel) {
+            .cloned()
+            .chain(collects)
+            .chain(bots)
+            .chain(gpu)
+            .chain(Self::device_service_refs(&self.manifest))
+            .chain(lan)
+            .chain(tunnel)
+        {
             if let Some(service) = service
                 && !self.services.contains_key(service)
             {

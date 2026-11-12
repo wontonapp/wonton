@@ -256,11 +256,11 @@ fn blocked_categories_fall_back_to_other() {
 /// 旧核心给的设备项没有类别、系统盘标记和选中状态：按不认识的类、没标、没选读。
 #[test]
 fn devices_from_older_cores_default_the_new_fields() {
-    let device: wonton_protocol::PluginDevice = serde_json::from_value(json!({
+    let device: PluginDevice = serde_json::from_value(json!({
         "id": "usb-1", "name": "Zigbee 棒", "target": "/dev/zigbee",
         "service": "zigbee2mqtt", "optional": false
     }))
     .unwrap();
-    assert_eq!(device.kind, wonton_protocol::PluginDeviceKind::Other);
+    assert_eq!(device.kind, PluginDeviceKind::Other);
     assert!(!device.system && !device.chosen);
 }

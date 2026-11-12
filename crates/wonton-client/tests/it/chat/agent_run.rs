@@ -404,6 +404,7 @@ async fn waiting_carries_the_pending_card_until_it_is_answered() {
             choice_id: None,
             secrets: Default::default(),
             settings: Default::default(),
+            devices: Vec::new(),
         })
         .unwrap();
     timeline

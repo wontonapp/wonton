@@ -205,6 +205,8 @@ fn host_config(
         langs,
     )
     .map_err(|message| service_err(langs, name, message))?;
+    super::super::privileges::apply(service, &mut host, langs)
+        .map_err(|message| service_err(langs, name, message))?;
     if let Some(grant) = options.gpu {
         grant.apply(&mut host);
     }

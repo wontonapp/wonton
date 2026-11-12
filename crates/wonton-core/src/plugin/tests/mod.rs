@@ -25,6 +25,7 @@ mod check;
 mod clients_manifest_package;
 mod configs;
 mod configs_docker;
+mod device_host;
 mod devices;
 mod docker_timeouts;
 mod egress;

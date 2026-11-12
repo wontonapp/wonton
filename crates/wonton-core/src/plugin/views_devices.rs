@@ -57,10 +57,12 @@ impl PluginManager {
         for item in &mut preview.items {
             item.chosen = (item.kind == wonton_protocol::PluginDeviceKind::Serial
                 && classes.contains(&DeviceClass::Serial)
-                && kept
-                    .serial
-                    .values()
-                    .any(|candidate| item.id.ends_with(&candidate.host_path)))
+                && kept.serial.get(&item.service).is_some_and(|candidate| {
+                    item.id
+                        .split_once(':')
+                        .and_then(|(_, rest)| rest.split_once(':'))
+                        .is_some_and(|(_, path)| path == candidate.host_path)
+                }))
                 || (item.kind == wonton_protocol::PluginDeviceKind::Disk
                     && classes.contains(&DeviceClass::Disk)
                     && kept
@@ -91,6 +93,16 @@ impl PluginManager {
                 BlockedCategory::DeviceUnavailable,
             ));
         }
+        if preview.blocked.is_none() && classes.contains(&DeviceClass::Usb) && !listing.usb {
+            preview.blocked = Some((
+                l10n::text(
+                    langs,
+                    "plugin-install-device-gone",
+                    &[("devices", "/dev/bus/usb".into())],
+                ),
+                BlockedCategory::DeviceUnavailable,
+            ));
+        }
         if preview.blocked.is_none()
             && classes.contains(&DeviceClass::Serial)
             && let Some(blocked) = device::blocked(devices, &listing, langs)
@@ -100,7 +112,7 @@ impl PluginManager {
         Ok(preview)
     }
 
-    /// 上次选了、现在不在的串口列进预览并返回名字；必需的位置缺了时调用方据此挡下安装。
+    /// 选过但缺失的设备保留在预览里，设备所属类仍启用时阻止升级。
     fn gone_devices(
         &self,
         devices: &super::manifest::ManifestDevices,
@@ -123,7 +135,7 @@ impl PluginManager {
                 continue;
             }
             gone.push(candidate.name.clone());
-            required |= !slot.optional && classes.contains(&DeviceClass::Serial);
+            required |= classes.contains(&DeviceClass::Serial);
             items.push(PluginDevice {
                 id: format!("serial:{index}:{}", candidate.host_path),
                 name: candidate.name.clone(),
@@ -132,6 +144,31 @@ impl PluginManager {
                 optional: slot.optional,
                 kind: wonton_protocol::PluginDeviceKind::Serial,
                 system: false,
+                chosen: true,
+            });
+        }
+        for disk in &kept.disks {
+            if listing
+                .disks
+                .iter()
+                .any(|candidate| candidate.host_path == disk.host_path)
+            {
+                continue;
+            }
+            gone.push(disk.name.clone());
+            required |= classes.contains(&DeviceClass::Disk);
+            items.push(PluginDevice {
+                id: format!("disk:{}", disk.host_path),
+                name: disk.name.clone(),
+                target: String::new(),
+                service: devices
+                    .disk
+                    .first()
+                    .map(|slot| slot.service.clone())
+                    .unwrap_or_default(),
+                optional: false,
+                kind: wonton_protocol::PluginDeviceKind::Disk,
+                system: disk.system,
                 chosen: true,
             });
         }
@@ -162,7 +199,10 @@ impl PluginManager {
             )));
         }
         if classes.contains(&DeviceClass::Usb) {
-            notices.push(line(l10n::text(langs, "plugin-install-device-usb", &[])));
+            notices.push(CardLine {
+                text: l10n::text(langs, "plugin-install-device-usb", &[]),
+                emphasis: true,
+            });
         }
         if classes.contains(&DeviceClass::Disk) {
             let services: Vec<&str> = devices

@@ -80,11 +80,24 @@ pub fn apply(
 ) {
     grant.apply(service, host);
     let mut touches = !grant.of(service).is_empty();
-    if grant
+    let selected_disks = grant
         .of(service)
         .iter()
-        .any(|device| device.class == DeviceClass::Disk)
+        .any(|device| device.class == DeviceClass::Disk);
+    if !selected_disks
+        && devices.disk.iter().any(|slot| slot.service == service)
+        && !granted.iter().any(|permission| matches!(permission, Permission::Capability { name } if name == "SYS_RAWIO"))
     {
+        host.cap_add = host
+            .cap_add
+            .take()
+            .map(|mut caps| {
+                caps.retain(|cap| cap != "SYS_RAWIO");
+                caps
+            })
+            .filter(|caps| !caps.is_empty());
+    }
+    if selected_disks {
         // 读 SMART 要 SYS_RAWIO，随 `devices.disk` 由核心给（ADR-0036）。
         let caps = host.cap_add.get_or_insert_with(Vec::new);
         if !caps.iter().any(|cap| cap == "SYS_RAWIO" || cap == "ALL") {
@@ -115,6 +128,10 @@ fn bind(source: &str, target: &str) -> bollard::models::Mount {
         source: Some(source.to_owned()),
         target: Some(target.to_owned()),
         read_only: Some(true),
+        bind_options: Some(bollard::models::MountBindOptions {
+            non_recursive: Some(true),
+            ..Default::default()
+        }),
         ..Default::default()
     }
 }

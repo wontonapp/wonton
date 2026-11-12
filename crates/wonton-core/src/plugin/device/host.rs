@@ -3,7 +3,9 @@
 //! 核心看到的是只读挂载进来的宿主 `/dev`（[`HostDevices::dev`]），系统盘按宿主根目录或 Wonton 数据目录所在的盘认。
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::fs;
+use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
@@ -44,8 +46,13 @@ impl HostDevices {
         Ok(Listing {
             serial: self.serial(dev, langs)?,
             disks: self.disks(dev, langs)?,
-            usb: dev.join("bus/usb").is_dir(),
-            udev: self.udev.as_deref().is_some_and(Path::is_dir),
+            usb: directory(&dev.join("bus/usb"))?,
+            udev: self
+                .udev
+                .as_deref()
+                .map(directory)
+                .transpose()?
+                .unwrap_or(false),
         })
     }
 
@@ -53,9 +60,7 @@ impl HostDevices {
     fn serial(&self, dev: &Path, langs: &Languages) -> Result<Vec<Candidate>, String> {
         let mut items = Vec::new();
         for (name, path) in entries(&dev.join("serial/by-id"))? {
-            let Some(node) = link_name(&path) else {
-                continue;
-            };
+            let node = link_name(&path)?;
             let gid = gid(&path).map_err(|e| unreadable(&path, &e, langs))?;
             items.push(Candidate {
                 class: super::DeviceClass::Serial,
@@ -69,22 +74,25 @@ impl HostDevices {
         Ok(items)
     }
 
-    /// `/dev/disk/by-id` 里的整盘：同一块盘的 `wwn-*` 和型号名合成一项，只留 sysfs 里认得的块设备。
+    /// 同一块盘的多个 by-id 合成一项，优先保留型号名而非 `wwn-*`。
     fn disks(&self, dev: &Path, langs: &Languages) -> Result<Vec<Candidate>, String> {
-        let mounted = self.mounted_devices();
+        let mounted = self.mounted_devices()?;
         let mut by_node: BTreeMap<String, (String, PathBuf)> = BTreeMap::new();
         for (name, path) in entries(&dev.join("disk/by-id"))? {
             if is_partition(&name) {
                 continue;
             }
-            let Some(node) = link_name(&path) else {
-                continue;
-            };
-            if !self.sys.join("block").join(&node).join("device").is_dir() {
+            let node = link_name(&path)?;
+            let block = self.sys.join("block").join(&node);
+            if optional_text(&self.sys.join("class/block").join(&node).join("partition"))?.is_some()
+                || !directory(&block)?
+                || optional_text(&block.join("partition"))?.is_some()
+                || (!directory(&block.join("device"))?
+                    && optional_text(&block.join("nsid"))?.is_none())
+            {
                 continue;
             }
             match by_node.get(&node) {
-                // `wwn-*` 和型号名是同一块盘，显示用型号名那一项。
                 Some((kept, _)) if !kept.starts_with("wwn-") || name.starts_with("wwn-") => {}
                 _ => {
                     by_node.insert(node, (name, path));
@@ -94,13 +102,12 @@ impl HostDevices {
         let mut items = Vec::new();
         for (node, (_, path)) in by_node {
             let gid = gid(&path).map_err(|e| unreadable(&path, &e, langs))?;
-            let system = self.is_system_disk(&node, &mounted);
             items.push(Candidate {
                 class: super::DeviceClass::Disk,
                 host_path: host_path(dev, &path),
-                name: self.disk_label(&node),
+                name: self.disk_label(&node)?,
+                system: self.is_system_disk(&node, &mounted)?,
                 node,
-                system,
                 gid,
             });
         }
@@ -108,90 +115,120 @@ impl HostDevices {
     }
 
     /// 型号和序列号；sysfs 没有时退回盘名。
-    fn disk_label(&self, node: &str) -> String {
-        let device = self.sys.join("block").join(node);
-        let read = |name: &str| {
-            fs::read_to_string(device.join("device").join(name))
-                .or_else(|_| fs::read_to_string(device.join(name)))
-                .ok()
+    fn disk_label(&self, node: &str) -> Result<String, String> {
+        let block = self.sys.join("block").join(node);
+        let read = |name: &str| -> Result<Option<String>, String> {
+            let value = match optional_text(&block.join("device").join(name))? {
+                Some(value) => Some(value),
+                None => optional_text(&block.join(name))?,
+            };
+            Ok(value
                 .map(|value| value.trim().to_owned())
-                .filter(|value| !value.is_empty())
+                .filter(|value| !value.is_empty()))
         };
-        match (read("model"), read("serial")) {
+        Ok(match (read("model")?, read("serial")?) {
             (Some(model), Some(serial)) => format!("{model}（{serial}）"),
             (Some(model), None) => model,
-            _ => node.to_owned(),
-        }
+            (None, Some(serial)) => format!("{node}（{serial}）"),
+            (None, None) => node.to_owned(),
+        })
     }
 
-    /// 这块盘的分区（或盘本身）是不是宿主根目录或 Wonton 数据目录所在的盘。
-    fn is_system_disk(&self, node: &str, mounted: &BTreeSet<String>) -> bool {
+    /// 保留已经证实的系统盘标记，即使另一个挂载点无法映射到物理盘。
+    fn is_system_disk(&self, node: &str, mounted: &BTreeSet<String>) -> Result<bool, String> {
         if mounted.is_empty() {
-            return false;
+            return Ok(false);
         }
         let dir = self.sys.join("block").join(node);
-        let mut numbers = Vec::new();
-        if let Ok(dev) = fs::read_to_string(dir.join("dev")) {
-            numbers.push(dev.trim().to_owned());
+        if optional_text(&dir.join("dev"))?.is_some_and(|dev| mounted.contains(dev.trim())) {
+            return Ok(true);
         }
-        for (name, _) in entries(&dir).unwrap_or_default() {
-            if let Ok(dev) = fs::read_to_string(dir.join(&name).join("dev")) {
-                numbers.push(dev.trim().to_owned());
+        for (_, child) in entries(&dir)? {
+            if directory(&child)?
+                && optional_text(&child.join("dev"))?
+                    .is_some_and(|dev| mounted.contains(dev.trim()))
+            {
+                return Ok(true);
             }
         }
-        numbers.iter().any(|number| mounted.contains(number))
+        Ok(false)
     }
 
-    /// `/proc/self/mountinfo` 里宿主根目录和 Wonton 数据目录所用的设备号（`主:次`）。数据目录不是单独的挂载时
-    /// 认不出，返回空、一块盘都不标。
-    fn mounted_devices(&self) -> BTreeSet<String> {
-        let Ok(table) = fs::read_to_string(self.proc.join("self/mountinfo")) else {
-            return BTreeSet::new();
+    /// 根挂载和包含数据目录的最长挂载点；不存在或无法映射的设备号不冒充已识别的盘。
+    fn mounted_devices(&self) -> Result<BTreeSet<String>, String> {
+        let path = self.proc.join("self/mountinfo");
+        let table = match fs::read(&path) {
+            Ok(table) => table,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
+            Err(e) => return Err(format!("{}：{e}", path.display())),
         };
         let mut numbers = BTreeSet::new();
         let mut best = (0usize, None::<String>);
-        for line in table.lines() {
-            let fields: Vec<&str> = line.split(' ').collect();
-            let (Some(number), Some(point)) = (fields.get(2), fields.get(4)) else {
+        for line in table.split(|byte| *byte == b'\n') {
+            let mut fields = line.split(|byte| byte.is_ascii_whitespace());
+            let (Some(number), Some(point)) = (fields.nth(2), fields.nth(1)) else {
+                continue;
+            };
+            let Ok(number) = std::str::from_utf8(number) else {
                 continue;
             };
             let point = unescape(point);
-            if point == "/" {
-                numbers.insert((*number).to_owned());
+            if point == Path::new("/") {
+                numbers.insert(number.to_owned());
             }
-            let length = point.trim_end_matches('/').len();
+            let length = point.as_os_str().len();
             if self.data_dir.starts_with(&point) && length >= best.0 {
-                best = (length, Some((*number).to_owned()));
+                best = (length, Some(number.to_owned()));
             }
         }
         numbers.extend(best.1);
-        numbers
+        Ok(numbers)
     }
 }
 
-/// `mountinfo` 里空格等字符写成 `\040` 这样的八进制。
-fn unescape(field: &str) -> String {
-    let bytes = field.as_bytes();
-    let mut out = String::with_capacity(field.len());
+/// mountinfo 转义的是路径字节，而非 Unicode 字符。
+fn unescape(field: &[u8]) -> PathBuf {
+    let mut out = Vec::with_capacity(field.len());
     let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'\\'
-            && index + 3 < bytes.len()
-            && let Ok(code) = u8::from_str_radix(&field[index + 1..index + 4], 8)
+    while index < field.len() {
+        if field[index] == b'\\'
+            && let Some(digits) = field.get(index + 1..index + 4)
+            && digits.iter().all(|digit| (b'0'..=b'7').contains(digit))
         {
-            out.push(char::from(code));
-            index += 4;
-            continue;
+            let code = u16::from(digits[0] - b'0') * 64
+                + u16::from(digits[1] - b'0') * 8
+                + u16::from(digits[2] - b'0');
+            if let Ok(code) = u8::try_from(code) {
+                out.push(code);
+                index += 4;
+                continue;
+            }
         }
-        out.push(char::from(bytes[index]));
+        out.push(field[index]);
         index += 1;
     }
-    out.trim_end_matches('/').to_owned()
+    PathBuf::from(OsString::from_vec(out))
 }
 
 fn is_partition(name: &str) -> bool {
     name.rsplit_once("-part")
         .is_some_and(|(_, tail)| !tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()))
+}
+
+fn optional_text(path: &Path) -> Result<Option<String>, String> {
+    match fs::read_to_string(path) {
+        Ok(value) => Ok(Some(value)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}：{e}", path.display())),
+    }
+}
+
+fn directory(path: &Path) -> Result<bool, String> {
+    match fs::metadata(path) {
+        Ok(metadata) => Ok(metadata.is_dir()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(format!("{}：{e}", path.display())),
+    }
 }
 
 fn entries(dir: &Path) -> Result<Vec<(String, PathBuf)>, String> {
@@ -200,26 +237,27 @@ fn entries(dir: &Path) -> Result<Vec<(String, PathBuf)>, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(format!("{}：{e}", dir.display())),
     };
-    let mut items: Vec<(String, PathBuf)> = read
-        .filter_map(Result::ok)
-        .map(|entry| {
-            (
-                entry.file_name().to_string_lossy().into_owned(),
-                entry.path(),
-            )
-        })
-        .collect();
+    let mut items = Vec::new();
+    for entry in read {
+        let entry = entry.map_err(|e| format!("{}：{e}", dir.display()))?;
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|name| format!("{}：invalid device identifier {name:?}", dir.display()))?;
+        items.push((name, entry.path()));
+    }
     items.sort();
     Ok(items)
 }
 
 /// 软链接指向的节点名（`ttyUSB0`、`sda`）。
-fn link_name(path: &Path) -> Option<String> {
-    fs::read_link(path).ok().and_then(|target| {
-        target
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-    })
+fn link_name(path: &Path) -> Result<String, String> {
+    let target = fs::read_link(path).map_err(|e| format!("{}：{e}", path.display()))?;
+    target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_owned)
+        .ok_or_else(|| format!("{}：invalid device node", path.display()))
 }
 
 pub(super) fn gid(path: &Path) -> std::io::Result<u32> {

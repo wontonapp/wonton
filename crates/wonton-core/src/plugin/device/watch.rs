@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tokio::time::Instant as TokioInstant;
 
@@ -22,13 +22,13 @@ pub const STABLE: Duration = Duration::from_secs(2);
 
 #[derive(Default)]
 pub struct DeviceWatch {
-    gone: tokio::sync::Mutex<BTreeMap<PluginId, Gone>>,
+    gone: tokio::sync::Mutex<BTreeMap<(PluginId, String), Gone>>,
 }
 
 struct Gone {
-    services: Vec<String>,
     /// 设备全部回来的时刻；没全回来时为空。
     back: Option<TokioInstant>,
+    reason: String,
 }
 
 impl PluginManager {
@@ -62,27 +62,34 @@ impl PluginManager {
                 .iter()
                 .filter(|device| device.class == DeviceClass::Serial)
                 .collect();
-            if serial.is_empty() || !self.device_idle(&record.id) {
+            if serial.is_empty() {
                 continue;
             }
             seen.insert(record.id.clone());
-            let dev = self.host.dev.as_deref();
-            let missing: Vec<&str> = serial
-                .iter()
-                .filter(|device| !super::present(dev, &device.source))
-                .map(|device| device.source.as_str())
-                .collect();
-            if missing.is_empty() {
-                self.restore_devices(&record.id, &serial, &langs).await;
-            } else {
-                self.mark_devices_gone(&record.id, &serial, &langs).await;
+            if !self.device_idle(&record.id) {
+                continue;
             }
+            let mut by_service = BTreeMap::<&str, Vec<&InstalledDevice>>::new();
+            for device in serial {
+                by_service.entry(&device.service).or_default().push(device);
+            }
+            for devices in by_service.values() {
+                if devices
+                    .iter()
+                    .all(|device| super::present(self.host.dev.as_deref(), &device.source))
+                {
+                    self.restore_devices(&record.id, devices, &langs).await;
+                } else {
+                    self.mark_devices_gone(&record.id, devices, &langs).await;
+                }
+            }
+            self.lan.end(&record.id);
         }
         self.devices
             .gone
             .lock()
             .await
-            .retain(|id, _| seen.contains(id));
+            .retain(|(id, _), _| seen.contains(id));
         Ok(())
     }
 
@@ -95,10 +102,6 @@ impl PluginManager {
                 PluginStatus::Running | PluginStatus::Degraded { .. }
             )
         }) && self.lan.begin(id)
-            && {
-                self.lan.end(id);
-                true
-            }
     }
 
     async fn mark_devices_gone(
@@ -107,15 +110,6 @@ impl PluginManager {
         serial: &[&InstalledDevice],
         langs: &Languages,
     ) {
-        let mut gone = self.devices.gone.lock().await;
-        let state = gone.entry(id.clone()).or_insert_with(|| Gone {
-            services: serial.iter().map(|d| d.service.clone()).collect(),
-            back: None,
-        });
-        state.back = None;
-        if serial.is_empty() {
-            return;
-        }
         let names: Vec<&str> = serial
             .iter()
             .filter(|device| !super::present(self.host.dev.as_deref(), &device.source))
@@ -133,7 +127,13 @@ impl PluginManager {
             ),
             text(langs, "plugin-install-device-gone-replug", &[]),
         );
-        drop(gone);
+        self.devices.gone.lock().await.insert(
+            (id.clone(), serial[0].service.clone()),
+            Gone {
+                back: None,
+                reason: reason.clone(),
+            },
+        );
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let Some(entry) = plugins.get_mut(id) else {
             return;
@@ -149,9 +149,10 @@ impl PluginManager {
     }
 
     async fn restore_devices(&self, id: &PluginId, serial: &[&InstalledDevice], langs: &Languages) {
+        let key = (id.clone(), serial[0].service.clone());
         let stable = {
             let mut gone = self.devices.gone.lock().await;
-            let Some(state) = gone.get_mut(id) else {
+            let Some(state) = gone.get_mut(&key) else {
                 return;
             };
             if state.back.is_none() {
@@ -163,15 +164,23 @@ impl PluginManager {
         if !stable {
             return;
         }
-        let services: Vec<String> = serial.iter().map(|d| d.service.clone()).collect();
+        let services = [serial[0].service.clone()];
         match self.restart_services(id, &services, langs).await {
             Ok(()) => {
-                self.devices.gone.lock().await.remove(id);
+                let mut gone = self.devices.gone.lock().await;
+                let removed = gone.remove(&key);
+                let pending = gone
+                    .iter()
+                    .find(|((plugin, _), _)| plugin == id)
+                    .map(|(_, state)| state.reason.clone());
+                drop(gone);
                 let mut plugins = self.plugins.write().expect("插件表锁中毒");
                 if let Some(entry) = plugins.get_mut(id)
-                    && matches!(entry.status, PluginStatus::Degraded { .. })
+                    && matches!(&entry.status, PluginStatus::Degraded { reason } if removed.as_ref().is_some_and(|state| state.reason == *reason))
                 {
-                    entry.status = PluginStatus::Running;
+                    entry.status = pending.map_or(PluginStatus::Running, |reason| {
+                        PluginStatus::Degraded { reason }
+                    });
                     entry.health = Some(Health::Unknown);
                     self.changed();
                 }
@@ -180,7 +189,7 @@ impl PluginManager {
             Err(error) => {
                 tracing::warn!(plugin = %id, %error, "设备回来了，重启服务失败，下次再试");
                 // 下次从重现那一刻重新计时，别每 2 秒撞一次失败的 Docker。
-                if let Some(state) = self.devices.gone.lock().await.get_mut(id) {
+                if let Some(state) = self.devices.gone.lock().await.get_mut(&key) {
                     state.back = None;
                 }
             }
@@ -225,10 +234,4 @@ impl PluginManager {
         }
         Ok(())
     }
-}
-
-/// 等到 `stable` 这么久以后再做 `action`（测试里把 [`STABLE`] 缩短用）。
-pub async fn settle(stable: Duration) {
-    tokio::time::sleep(stable).await;
-    let _: Instant = Instant::now();
 }
