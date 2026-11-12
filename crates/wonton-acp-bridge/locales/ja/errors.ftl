@@ -39,3 +39,16 @@ perm-invalid-kind = ACP 権限オプションの kind が無効です：{ $error
 perm-empty-options = ACP 権限リクエストに options が1つもありません
 perm-missing-field = ACP 権限リクエストに { $field } がありません
 perm-redacted = [非表示]
+
+# 呼び出しチェーン（ADR-0061 第 10 節）：コアがチェーンを返さないとき、このターンは Agent に送らず、部屋で理由を伝える。
+chain-limit-depth = この会話チェーンは Agent の層数が上限に達したため、このターンは開始できません。続けるには Wonton でこのチェーンに「追加を許可」してください。
+chain-limit-rounds = この会話チェーンはターン数を使い切ったため、このターンは開始できません。続けるには Wonton でこのチェーンに「追加を許可」してください。
+chain-limit-cost = この会話チェーンは費用が上限に達したため、このターンは開始できません。続けるには Wonton でこのチェーンに「追加を許可」してください。
+chain-limit-other = この会話チェーンは上限に達したため、このターンは開始できません。続けるには Wonton でこのチェーンに「追加を許可」してください。
+chain-stopped = この会話チェーンは停止済みのため、このターンは開始できません。続けるには新しいメッセージとしてもう一度送ってください。
+err-chain-refused = 呼び出しチェーンがこのターンを拒否しました：{ $message }
+chain-unreachable = 呼び出しチェーンの接続に失敗しました：{ $error }
+chain-invalid = 呼び出しチェーンの応答が無効です（HTTP { $status }）：{ $error }
+chain-client = 呼び出しチェーンの HTTP クライアントの作成に失敗しました：{ $error }
+chain-url = WONTON_MCP_URL が無効です：{ $error }
+outbox-client = 送信箱の HTTP クライアントの作成に失敗しました：{ $error }

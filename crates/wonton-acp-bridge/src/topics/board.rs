@@ -72,6 +72,9 @@ pub(crate) struct Row {
     /// 排队中那条消息的事件 ID（状态消息的 `run`，ADR-0082），跟 `pending_prompt` 一起交回。
     #[serde(default)]
     pub(crate) pending_run: Option<String>,
+    /// 排队中那条消息的说话人（轮次登记报给核心，ADR-0061 第 10 节），跟 `pending_prompt` 一起交回。
+    #[serde(default)]
+    pub(crate) pending_sender: Option<String>,
     /// 排队中那条消息带的附件（已落工作区，只有路径等非敏感字段），跟 `pending_prompt` 一起交回。
     #[serde(default)]
     pub(crate) pending_media: Option<crate::bridge::attachments::PreparedAttachment>,

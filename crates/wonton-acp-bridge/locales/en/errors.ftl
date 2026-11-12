@@ -39,3 +39,16 @@ perm-invalid-kind = the ACP permission option kind isn't valid: { $error }
 perm-empty-options = the ACP permission request lists no options
 perm-missing-field = the ACP permission request is missing { $field }
 perm-redacted = [hidden]
+
+# 调用链（ADR-0061 第 10 节）：核心不给链时这一轮不发给 Agent，房间里如实说明。
+chain-limit-depth = This conversation chain has reached the Agent depth limit, so this turn didn't start. To continue, tap "grant more" for the chain in Wonton.
+chain-limit-rounds = This conversation chain has run out of turns, so this turn didn't start. To continue, tap "grant more" for the chain in Wonton.
+chain-limit-cost = This conversation chain has reached its spending limit, so this turn didn't start. To continue, tap "grant more" for the chain in Wonton.
+chain-limit-other = This conversation chain has reached a limit, so this turn didn't start. To continue, tap "grant more" for the chain in Wonton.
+chain-stopped = This conversation chain was stopped, so this turn didn't start. To continue, just say it again as a new message.
+err-chain-refused = the chain service declined this turn: { $message }
+chain-unreachable = talking to the chain service failed: { $error }
+chain-invalid = the chain service response isn't valid (HTTP { $status }): { $error }
+chain-client = building the chain HTTP client failed: { $error }
+chain-url = WONTON_MCP_URL isn't valid: { $error }
+outbox-client = building the outbox HTTP client failed: { $error }
