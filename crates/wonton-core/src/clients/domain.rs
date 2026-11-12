@@ -58,6 +58,7 @@ pub enum DomainError {
 pub struct Saved {
     pub previous_suffix: Option<String>,
     pub suffix_changed: bool,
+    pub provider_changed: bool,
 }
 
 /// 域名设置和签发。API 和续期循环共用一份。
@@ -73,6 +74,8 @@ pub struct Domain {
     pending: AtomicUsize,
     /// 设置文件的读写锁，签发不占着它。
     writes: Mutex<()>,
+    /// CAA 结果的短缓存（后缀加账号为键，60 秒）：设置页刷新别每次都等 DNS。
+    caa_cache: Mutex<Option<(std::time::Instant, String, CaaState)>>,
 }
 
 struct Acme {
@@ -101,6 +104,7 @@ impl Domain {
             issuance: Mutex::new(()),
             pending: AtomicUsize::new(0),
             writes: Mutex::new(()),
+            caa_cache: Mutex::new(None),
         })
     }
 
@@ -188,17 +192,36 @@ impl Domain {
         )
     }
 
-    /// 写设置：先写临时文件再改名，和别的密钥文件一样 0600。
-    async fn update(&self, change: impl FnOnce(&mut Store)) -> Result<()> {
+    /// 在设置文件的锁里读-改-写：并发请求看到的是同一个当前值。
+    async fn apply<T>(
+        &self,
+        change: impl FnOnce(&mut Store) -> Result<T, DomainError>,
+    ) -> Result<T, DomainError> {
         let _writing = self.writes.lock().await;
-        let mut store = self.effective()?;
-        change(&mut store);
+        let mut store = self.effective().map_err(invalid)?;
+        let out = change(&mut store)?;
         let directory = self.install_dir.join("entry/secrets");
-        std::fs::create_dir_all(&directory)?;
+        std::fs::create_dir_all(&directory).map_err(|error| invalid(error.into()))?;
+        std::fs::set_permissions(
+            &directory,
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .map_err(|error| invalid(error.into()))?;
         crate::install::write_private(
             &self.install_dir.join(DOMAIN_FILE),
-            &serde_json::to_string_pretty(&store)?,
+            &serde_json::to_string_pretty(&store).map_err(|error| invalid(error.into()))?,
         )
+        .map_err(invalid)?;
+        Ok(out)
+    }
+
+    async fn update(&self, change: impl FnOnce(&mut Store)) -> Result<()> {
+        self.apply(|store| {
+            change(store);
+            Ok(())
+        })
+        .await
+        .map_err(|error| anyhow::anyhow!("{error}"))
     }
 
     /// 设置页看到的整份状态。
@@ -218,77 +241,97 @@ impl Domain {
     }
 
     /// 保存设置并排一次签发。`suffix` 在服务器名定死时只能是同一个值，改不了。
+    /// 凭据为空时沿用已存的；家名服务的安装本来就不用服务商和凭据，两者也都可空。
     pub async fn save(self: &Arc<Self>, request: PutDomainRequest) -> Result<Saved, DomainError> {
         if !request.accept_terms {
             return Err(DomainError::Invalid(
                 "先勾选 Let's Encrypt 的订户协议".into(),
             ));
         }
-        validate_provider(&request.provider).map_err(invalid)?;
-        validate_credentials(&request.credentials).map_err(invalid)?;
+        let settings = EntrySettings::load(&self.install_dir).map_err(invalid)?;
         // 主人自己放了 site.pem 的安装不跑 ACME：收下设置也没人签，直接说清楚。
-        if EntrySettings::load(&self.install_dir)
-            .map_err(invalid)?
+        if settings
+            .as_ref()
             .is_some_and(|settings| settings.external_certificate)
         {
             return Err(DomainError::Conflict(
                 "装的是自己的证书（WONTON_ENTRY_CERTIFICATE=external），核心不签发".into(),
             ));
         }
+        let registered = settings
+            .as_ref()
+            .is_some_and(|settings| settings.registration.is_some());
+        if !(registered && request.provider.is_empty()) {
+            validate_provider(&request.provider).map_err(invalid)?;
+        }
+        validate_credentials(&request.credentials).map_err(invalid)?;
         let fixed = self.fixed_suffix().map_err(invalid)?;
-        let current = self.effective().map_err(invalid)?;
-        let suffix = match fixed {
-            Some(fixed) => {
-                if request
-                    .suffix
-                    .as_deref()
-                    .is_some_and(|value| value != fixed)
-                {
-                    return Err(DomainError::Conflict(
-                        "服务器名已经定了，后缀只能换服务商和凭据".into(),
-                    ));
+        let provider = request.provider;
+        let credentials: std::collections::BTreeMap<String, String> = request
+            .credentials
+            .into_iter()
+            .map(|entry| (entry.name, entry.value.expose().to_owned()))
+            .collect();
+        let saved = self
+            .apply(|store| {
+                let previous = store.suffix.clone();
+                let suffix = match &fixed {
+                    Some(fixed) => {
+                        if request
+                            .suffix
+                            .as_deref()
+                            .is_some_and(|value| value != fixed)
+                        {
+                            return Err(DomainError::Conflict(
+                                "服务器名已经定了，后缀只能换服务商和凭据".into(),
+                            ));
+                        }
+                        fixed.clone()
+                    }
+                    None => {
+                        let suffix = request
+                            .suffix
+                            .clone()
+                            .or_else(|| previous.clone())
+                            .ok_or_else(|| DomainError::Invalid("先填一个后缀".into()))?;
+                        validate_domain(&suffix).map_err(invalid)?;
+                        suffix
+                    }
+                };
+                let changed = previous.as_deref().is_some_and(|old| old != suffix);
+                let provider_changed = store.provider.as_deref() != Some(provider.as_str());
+                store.suffix = Some(suffix);
+                if !provider.is_empty() {
+                    store.provider = Some(provider.clone());
                 }
-                fixed
-            }
-            None => {
-                let suffix = request
-                    .suffix
-                    .or_else(|| current.suffix.clone())
-                    .ok_or_else(|| DomainError::Invalid("先填一个后缀".into()))?;
-                validate_domain(&suffix).map_err(invalid)?;
-                suffix
-            }
-        };
-        let previous = current.suffix.clone();
-        let changed = previous.as_deref().is_some_and(|old| old != suffix);
-        let provider_changed = current.provider.as_deref() != Some(request.provider.as_str());
-        self.update(|store| {
-            store.suffix = Some(suffix);
-            store.provider = Some(request.provider);
-            store.credentials = request
-                .credentials
-                .into_iter()
-                .map(|entry| (entry.name, entry.value.expose().to_owned()))
-                .collect();
-            store.terms_accepted = true;
-        })
-        .await
-        .map_err(invalid)?;
-        if changed || provider_changed {
+                if !credentials.is_empty() {
+                    store.credentials = credentials.clone();
+                }
+                store.terms_accepted = true;
+                Ok(Saved {
+                    previous_suffix: changed.then_some(previous).flatten(),
+                    suffix_changed: changed,
+                    provider_changed,
+                })
+            })
+            .await?;
+        if saved.suffix_changed || saved.provider_changed {
             self.reset_prepared();
         }
         self.spawn_issue();
-        Ok(Saved {
-            previous_suffix: changed.then_some(previous).flatten(),
-            suffix_changed: changed,
-        })
+        Ok(saved)
     }
 
     /// 后缀或服务商换了：账号还是那个，但持久化的身份、CSR 和准备状态属于旧名字，删掉重建。
     /// 旧的 `site.pem` 留着，新证书发布前入口照常用它。
     fn reset_prepared(&self) {
         for name in ["prepared.json", "identity.json", "requests/site.csr"] {
-            let _ = std::fs::remove_file(self.install_dir.join("entry").join(name));
+            let path = self.install_dir.join("entry").join(name);
+            if let Err(error) = std::fs::remove_file(&path)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::error!(path = %path.display(), %error, "清掉旧的证书准备状态失败");
+            }
         }
     }
 
@@ -356,6 +399,7 @@ impl Domain {
 
     /// 装机路径：同步签发一次，失败让安装停下。主人自己放 `site.pem` 的装机只核对文件在不在。
     pub async fn issue_now(self: &Arc<Self>) -> Result<()> {
+        let _serial = self.issuance.lock().await;
         if EntrySettings::load(&self.install_dir)
             .map_err(invalid)?
             .is_some_and(|settings| settings.external_certificate)
@@ -491,17 +535,32 @@ impl Domain {
         }
     }
 
-    /// 已发布证书的到期时间（Unix 毫秒）。
+    /// 已发布证书的到期时间（Unix 毫秒）。取第一张不是 CA 的叶证书：自己拼的链条可能把 CA 放前面。
     fn not_after_ms(&self) -> Option<u64> {
         let pem = std::fs::read(self.install_dir.join("entry/certs/site.pem")).ok()?;
-        let der = rustls_pemfile::certs(&mut Cursor::new(pem)).next()?.ok()?;
-        let (_, certificate) = x509_parser::parse_x509_certificate(&der).ok()?;
-        let seconds = u64::try_from(certificate.validity().not_after.timestamp()).ok()?;
-        seconds.checked_mul(1000)
+        let mut fallback = None;
+        for der in rustls_pemfile::certs(&mut Cursor::new(pem)).flatten() {
+            let Ok((_, certificate)) = x509_parser::parse_x509_certificate(&der) else {
+                continue;
+            };
+            let seconds = u64::try_from(certificate.validity().not_after.timestamp()).ok()?;
+            let millis = seconds.checked_mul(1000);
+            let ca = certificate
+                .basic_constraints()
+                .ok()
+                .flatten()
+                .is_some_and(|constraints| constraints.value.ca);
+            if ca {
+                fallback.get_or_insert(millis);
+            } else {
+                return millis;
+            }
+        }
+        fallback.flatten()
     }
 
     async fn caa_state(&self, store: &Store) -> CaaState {
-        let (Some(suffix), Some(_)) = (store.suffix.as_deref(), store.provider.as_deref()) else {
+        let Some(suffix) = store.suffix.as_deref() else {
             return CaaState::Unknown;
         };
         let Ok(acme) = self.acme() else {
@@ -510,13 +569,22 @@ impl Domain {
         let Ok(manager) = self.manager(store) else {
             return CaaState::Unknown;
         };
-        let Ok(records) = crate::entry_dns::caa_issues(suffix, &acme.resolvers).await else {
-            return CaaState::Unknown;
-        };
         let Ok(account) = manager.account_uri() else {
             return CaaState::Unknown;
         };
-        crate::entry_dns::caa_state(&records, &account)
+        let key = format!("{suffix}|{account}");
+        if let Some((at, cached_key, state)) = &*self.caa_cache.lock().await
+            && cached_key == &key
+            && at.elapsed() < std::time::Duration::from_secs(60)
+        {
+            return *state;
+        }
+        let Ok(records) = crate::entry_dns::caa_issues(suffix, &acme.resolvers).await else {
+            return CaaState::Unknown;
+        };
+        let state = crate::entry_dns::caa_state(&records, &account);
+        *self.caa_cache.lock().await = Some((std::time::Instant::now(), key, state));
+        state
     }
 
     async fn notify(&self, id: &str, error: &str) {
@@ -558,7 +626,9 @@ fn validate_provider(provider: &str) -> Result<()> {
 
 /// 凭据变量名按环境变量，值不能带换行（否则一个值能伪造出第二行）。
 fn validate_credentials(credentials: &[CredentialEntry]) -> Result<()> {
-    ensure!(!credentials.is_empty(), "至少要填一项凭据");
+    if credentials.is_empty() {
+        return Ok(());
+    }
     let mut seen = std::collections::BTreeSet::new();
     for entry in credentials {
         ensure!(
@@ -576,20 +646,27 @@ fn validate_credentials(credentials: &[CredentialEntry]) -> Result<()> {
             "凭据 {} 的值不能有换行",
             entry.name
         );
+        // lego 用 godotenv 读 env 文件，单引号里是字面量：值里带单引号表示不了，直接拒绝。
+        ensure!(
+            !entry.value.expose().contains('\''),
+            "凭据 {} 的值不能有单引号",
+            entry.name
+        );
     }
     Ok(())
 }
 
-/// 值里有 dotenv 有意义的字符时用单引号包起来。
+/// 值里有 dotenv 有意义的字符时用单引号包起来。godotenv 的单引号是字面量（不解 `\`、不展开 `$`），
+/// 值里只要没有单引号（校验时已拒绝）就原样写。
 pub(super) fn dotenv_value(value: &str) -> String {
     let plain = !value.is_empty()
         && value
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"-_./:+".contains(&byte));
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-_./:+$\\".contains(&byte));
     if plain {
         return value.to_owned();
     }
-    format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'"))
+    format!("'{value}'")
 }
 
 pub(super) fn read_dotenv(path: &Path) -> Result<BTreeMap<String, String>> {
@@ -605,7 +682,7 @@ pub(super) fn read_dotenv(path: &Path) -> Result<BTreeMap<String, String>> {
         };
         let value = value.trim();
         let value = match value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')) {
-            Some(quoted) => quoted.replace("\\'", "'").replace("\\\\", "\\"),
+            Some(quoted) => quoted.to_owned(),
             None => value.to_owned(),
         };
         values.insert(name.trim().to_owned(), value);

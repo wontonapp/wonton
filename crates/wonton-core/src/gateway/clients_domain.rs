@@ -28,7 +28,7 @@ pub async fn domain(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> 
     match clients.view().await {
         Ok(view) => no_store(Json(view).into_response()),
         Err(error) => failure(
-            ClientsFailure::InvalidInput,
+            ClientsFailure::Other,
             &l10n::text(
                 &langs,
                 "clients-domain-read-failed",
@@ -59,7 +59,7 @@ pub async fn save_domain(
     };
     let Ok(view) = clients.view().await else {
         return failure(
-            ClientsFailure::InvalidInput,
+            ClientsFailure::Other,
             &l10n::text(&langs, "clients-domain-read-failed", &[]),
         );
     };

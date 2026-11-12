@@ -16,6 +16,8 @@ use wonton_protocol::CaaState;
 /// 一条 CAA 的 `issue` 记录：签发的 CA 和它的参数（`accounturi`、`validationmethods` 等）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CaaIssue {
+    /// `issue` 或 `issuewild`。
+    pub tag: String,
     pub issuer: Option<String>,
     pub parameters: Vec<(String, String)>,
 }
@@ -37,6 +39,7 @@ pub async fn caa_issues(domain: &str, servers: &[String]) -> anyhow::Result<Vec<
             };
             let (issuer, parameters) = caa.value_as_issue().ok()?;
             Some(CaaIssue {
+                tag: caa.tag.clone(),
                 issuer: issuer.map(|name| name.to_string().trim_end_matches('.').to_owned()),
                 parameters: parameters
                     .iter()
@@ -54,12 +57,18 @@ pub fn caa_state(records: &[CaaIssue], account_uri: &str) -> CaaState {
         return CaaState::Missing;
     }
     let bound = records.iter().any(|record| {
-        record
-            .parameters
-            .iter()
-            .any(|(key, value)| key.eq_ignore_ascii_case("accounturi") && value == account_uri)
+        // 状态页问的是后缀（apex），只有 `issue` 管它；`issuewild` 只管通配符。
+        record.tag.eq_ignore_ascii_case("issue")
+            && record
+                .parameters
+                .iter()
+                .any(|(key, value)| key.eq_ignore_ascii_case("accounturi") && value == account_uri)
             && record.parameters.iter().any(|(key, value)| {
-                key.eq_ignore_ascii_case("validationmethods") && value == "dns-01"
+                // RFC 8657 的列表是逗号分隔，大小写不敏感。
+                key.eq_ignore_ascii_case("validationmethods")
+                    && value
+                        .split(',')
+                        .any(|method| method.trim().eq_ignore_ascii_case("dns-01"))
             })
     });
     if bound {
@@ -111,6 +120,7 @@ mod tests {
 
     fn issue(pairs: &[(&str, &str)]) -> CaaIssue {
         CaaIssue {
+            tag: "issue".into(),
             issuer: Some("letsencrypt.org".into()),
             parameters: pairs
                 .iter()
@@ -138,6 +148,28 @@ mod tests {
         );
     }
 
+    /// 多方法列表和额外空白不影响；只有 `issuewild` 的不算绑定 apex。
+    #[test]
+    fn method_lists_and_issuewild() {
+        let record = issue(&[
+            ("accounturi", "https://pebble.test/my-account/1"),
+            ("validationmethods", "http-01, DNS-01"),
+        ]);
+        assert_eq!(
+            caa_state(&[record], "https://pebble.test/my-account/1"),
+            CaaState::Bound
+        );
+        let mut wild = issue(&[
+            ("accounturi", "https://pebble.test/my-account/1"),
+            ("validationmethods", "dns-01"),
+        ]);
+        wild.tag = "issuewild".into();
+        assert_eq!(
+            caa_state(&[wild], "https://pebble.test/my-account/1"),
+            CaaState::Mismatch
+        );
+    }
+
     #[test]
     fn none_is_missing_and_other_policies_are_mismatch() {
         assert_eq!(
@@ -150,6 +182,7 @@ mod tests {
             CaaState::Mismatch
         );
         let other_ca = CaaIssue {
+            tag: "issue".into(),
             issuer: Some("other-ca.example".into()),
             parameters: Vec::new(),
         };

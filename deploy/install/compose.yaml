@@ -58,6 +58,13 @@ services:
       WONTON_PLUGIN_SLICE: ${WONTON_PLUGIN_SLICE:-}
       # 装插件时等容器就绪的下限秒数：空值时用核心自己的默认值，不在这里写。
       WONTON_INSTALL_TIMEOUT_SECS: ${WONTON_INSTALL_TIMEOUT_SECS:-}
+      # ACME 坐标（ADR-0089）：安装时给了就沿用到运行时，“不要名字”的安装没有 settings.json 时靠它签发。
+      WONTON_ACME_DIRECTORY: ${WONTON_ACME_DIRECTORY:-}
+      WONTON_ACME_RESOLVERS: ${WONTON_ACME_RESOLVERS:-}
+      WONTON_ACME_EMAIL: ${WONTON_ACME_EMAIL:-}
+      WONTON_ACME_ACCEPT_TERMS: ${WONTON_ACME_ACCEPT_TERMS:-}
+      WONTON_ACME_NETWORK: ${WONTON_ACME_NETWORK:-}
+      WONTON_ACME_CA_FILE: ${WONTON_ACME_CA_FILE:-}
       WONTON_PLUGIN_NETWORK_POOL: ${WONTON_PLUGIN_NETWORK_POOL:-10.213.0.0/16}
       # 给 Tuwunel 的联邦出站代理（ADR-0050）：用下面 core 网络上的别名，核心只绑在这个网络的地址上，插件网络里
       # 连不到。和 tuwunel.toml 里的代理地址（wonton-core init 写的）是同一个值。

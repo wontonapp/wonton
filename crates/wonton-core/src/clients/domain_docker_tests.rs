@@ -10,7 +10,6 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
-use super::domain::Domain;
 use crate::entry_certificate::{CertificateConfig, CertificateManager, LEGO_IMAGE};
 use crate::entry_compose::HAPROXY_IMAGE;
 use crate::entry_haproxy::{Model, render};
@@ -166,113 +165,55 @@ lock = threading.Lock()
 def name_bytes(name):
     return b"".join(bytes([len(p)]) + p.encode() for p in name.rstrip(".").split(".")) + b"\x00"
 
-def txt_values(host):
-    labels = host.rstrip(".").split(".")
-    question = b"".join(bytes([len(p)]) + p.encode() for p in labels) + b"\x00\x00\x10\x00\x01"
-    packet = b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00" + question
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(3)
-    try:
-        sock.sendto(packet, (chall_host_of(acme), 53))
-        data = sock.recvfrom(4096)[0]
-    except OSError:
-        return []
-    position = 12
-    while data[position]:
-        position += 1 + data[position]
-    position += 5
-    total = struct.unpack("!H", data[6:8])[0]
-    values = []
-    for _ in range(total):
-        while True:
-            length = data[position]
-            if length & 0xC0 == 0xC0:
-                position += 2
-                break
-            if length == 0:
-                position += 1
-                break
-            position += 1 + length
-        rtype, length = struct.unpack("!H", data[position:position + 2])[0], struct.unpack("!H", data[position + 8:position + 10])[0]
-        rdata = data[position + 10:position + 10 + length]
-        position += 10 + length
-        if rtype == 16:
-            values.append(rdata[1:].decode())
-    return values
-
-def chall_host_of(address):
-    return address.rsplit(":", 1)[0]
-
-def cname_answer(data, end, target):
-    question = data[12:end + 5]
-    rdata = name_bytes(target)
-    header = data[:2] + b"\x81\x80" + data[4:6] + struct.pack("!H", 1) + b"\x00\x00\x00\x00"
-    answer = b"\xc0\x0c" + struct.pack("!HHIH", 5, 1, 1, len(rdata)) + rdata
-    return header + question + answer
-
-def txt_values(host):
-    labels = host.rstrip(".").split(".")
-    question = b"".join(bytes([len(p)]) + p.encode() for p in labels) + b"\x00\x00\x10\x00\x01"
-    packet = b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00" + question
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(3)
-    try:
-        sock.sendto(packet, (chall_host_of(acme), 53))
-        data = sock.recvfrom(4096)[0]
-    except OSError:
-        return []
-    position = 12
-    while data[position]:
-        position += 1 + data[position]
-    position += 5
-    total = struct.unpack("!H", data[6:8])[0]
-    values = []
-    for _ in range(total):
-        while True:
-            length = data[position]
-            if length & 0xC0 == 0xC0:
-                position += 2
-                break
-            if length == 0:
-                position += 1
-                break
-            position += 1 + length
-        rtype, length = struct.unpack("!H", data[position:position + 2])[0], struct.unpack("!H", data[position + 8:position + 10])[0]
-        rdata = data[position + 10:position + 10 + length]
-        position += 10 + length
-        if rtype == 16:
-            values.append(rdata[1:].decode())
-    return values
-
-def chall_host_of(address):
-    return address.rsplit(":", 1)[0]
-
-def cname_answer(data, end, target):
-    question = data[12:end + 5]
-    rdata = name_bytes(target)
-    header = data[:2] + b"\x81\x80" + data[4:6] + struct.pack("!H", 1) + b"\x00\x00\x00\x00"
-    answer = b"\xc0\x0c" + struct.pack("!HHIH", 5, 1, 1, len(rdata)) + rdata
-    return header + question + answer
-
-def txt(host):
-    labels = host.rstrip(".").split(".")
-    question = b"".join(bytes([len(p)]) + p.encode() for p in labels) + b"\x00\x00\x10\x00\x01"
-    packet = b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00" + question
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(3)
-    try:
-        sock.sendto(packet, (chall_host, 53))
-        data = sock.recvfrom(2048)[0]
-        return data[41:].decode(errors="ignore")
-    except OSError as error:
-        return str(error)
-
 def post(path, body):
     connection = http.client.HTTPConnection(chall_host, int(chall_port), timeout=5)
     connection.request("POST", path, body=json.dumps(body), headers={"content-type": "application/json"})
-    response = connection.getresponse()
-    response.read()
+    connection.getresponse().read()
     connection.close()
+
+def txt_values(host):
+    labels = host.rstrip(".").split(".")
+    question = b"".join(bytes([len(p)]) + p.encode() for p in labels) + b"\x00\x00\x10\x00\x01"
+    packet = b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00" + question
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(3)
+    try:
+        sock.sendto(packet, (chall_host_of(acme), 53))
+        data = sock.recvfrom(4096)[0]
+    except OSError:
+        return []
+    position = 12
+    while data[position]:
+        position += 1 + data[position]
+    position += 5
+    total = struct.unpack("!H", data[6:8])[0]
+    values = []
+    for _ in range(total):
+        while True:
+            length = data[position]
+            if length & 0xC0 == 0xC0:
+                position += 2
+                break
+            if length == 0:
+                position += 1
+                break
+            position += 1 + length
+        rtype, length = struct.unpack("!H", data[position:position + 2])[0], struct.unpack("!H", data[position + 8:position + 10])[0]
+        rdata = data[position + 10:position + 10 + length]
+        position += 10 + length
+        if rtype == 16:
+            values.append(rdata[1:].decode())
+    return values
+
+def chall_host_of(address):
+    return address.rsplit(":", 1)[0]
+
+def cname_answer(data, end, target):
+    question = data[12:end + 5]
+    rdata = name_bytes(target)
+    header = data[:2] + b"\x81\x80" + data[4:6] + struct.pack("!H", 1) + b"\x00\x00\x00\x00"
+    answer = b"\xc0\x0c" + struct.pack("!HHIH", 5, 1, 1, len(rdata)) + rdata
+    return header + question + answer
 
 class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -375,12 +316,12 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
     let mut names = Names::new();
     let dir = tempfile::tempdir().unwrap();
     let engine = Engine::connect().expect("基础设施失败：连不上 Docker");
-    let haproxy = ensure_image(&engine, HAPROXY_IMAGE).await;
-    let pebble = ensure_image(&engine, PEBBLE).await;
-    let challtestsrv = ensure_image(&engine, CHALLTESTSRV).await;
-    let _lego = ensure_image(&engine, LEGO_IMAGE).await;
-    let acme_dns_image = ensure_image(&engine, ACME_DNS).await;
-    let python = ensure_image(&engine, PYTHON).await;
+    let haproxy = ensure_image(&engine, &wonton_test_images::image(HAPROXY_IMAGE)).await;
+    let pebble = ensure_image(&engine, &wonton_test_images::image(PEBBLE)).await;
+    let challtestsrv = ensure_image(&engine, &wonton_test_images::image(CHALLTESTSRV)).await;
+    let _lego = ensure_image(&engine, &wonton_test_images::image(LEGO_IMAGE)).await;
+    let acme_dns_image = ensure_image(&engine, &wonton_test_images::image(ACME_DNS)).await;
+    let python = ensure_image(&engine, &wonton_test_images::image(PYTHON)).await;
 
     let (base, cidr) = subnet();
     let network = names.oneshot_network("cert");
@@ -804,13 +745,6 @@ async fn entry_certificate_contract() {
     let acme_dns = case(Provider::AcmeDns).await;
     assert_eq!(httpreq.0, acme_dns.0, "两个服务商渲染出的入口配置不同");
     assert_eq!(httpreq.1, acme_dns.1, "两个服务商渲染出的 compose 不同");
-}
-
-/// 让 Domain 也能在 Docker 测试里被引用（装机路径用的就是它）。
-#[test]
-fn domain_type_is_the_one_used_by_install() {
-    fn assert_same(_: &Domain) {}
-    let _ = assert_same;
 }
 
 use std::os::unix::fs::{MetadataExt, PermissionsExt};

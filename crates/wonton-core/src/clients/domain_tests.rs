@@ -68,6 +68,7 @@ fn certificate(dir: &Path) {
     fs::create_dir_all(&directory).unwrap();
     let tls = rcgen::generate_simple_self_signed(vec!["example.test".to_owned()]).unwrap();
     fs::write(directory.join("site.pem"), tls.cert.pem()).unwrap();
+    fs::write(directory.join("site.key"), tls.signing_key.serialize_pem()).unwrap();
 }
 
 #[tokio::test]
@@ -178,8 +179,13 @@ async fn issue_failure_keeps_previous_certificate_and_reports_error() {
     certificate(dir.path());
     let before = fs::read(dir.path().join("entry/certs/site.pem")).unwrap();
     let clients = domain(dir.path());
-    // 假 Engine 起不了 lego：签发必定失败。
-    assert!(clients.issue_now().await.is_err());
+    // 假 Engine 连不上 Docker：签发死在起 lego 之前，错误要来自这一步。
+    let error = clients.issue_now().await.unwrap_err();
+    let text = format!("{error:#}").to_lowercase();
+    assert!(
+        text.contains("docker") || text.contains("lego") || text.contains("socket"),
+        "{text}"
+    );
     assert_eq!(
         fs::read(dir.path().join("entry/certs/site.pem")).unwrap(),
         before
@@ -198,6 +204,7 @@ fn caa_states() {
     use crate::entry_dns::{CaaIssue, caa_state};
     let account = "https://pebble.test/my-account/1";
     let bound = CaaIssue {
+        tag: "issue".into(),
         issuer: Some("letsencrypt.org".into()),
         parameters: vec![
             ("accounturi".into(), account.into()),
@@ -207,6 +214,7 @@ fn caa_states() {
     assert_eq!(caa_state(&[bound], account), CaaState::Bound);
     assert_eq!(caa_state(&[], account), CaaState::Missing);
     let mismatch = CaaIssue {
+        tag: "issue".into(),
         issuer: Some("letsencrypt.org".into()),
         parameters: vec![("accounturi".into(), "https://other.test/1".into())],
     };
@@ -246,14 +254,30 @@ async fn env_install_seeds_settings() {
 }
 
 #[test]
-fn dotenv_values_round_trip_quotes() {
+fn dotenv_values_keep_backslashes_and_dollars() {
+    // godotenv 的单引号是字面量：反斜杠和 `$` 原样写、原样读。
     assert_eq!(dotenv_value("plain-token_1"), "plain-token_1");
+    assert_eq!(dotenv_value("a\\b$c"), "a\\b$c");
     assert_eq!(dotenv_value("with space"), "'with space'");
-    assert_eq!(dotenv_value("it's"), "'it\\'s'");
+    assert_eq!(dotenv_value("a\\b c$d"), "'a\\b c$d'");
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("dns.env");
-    fs::write(&path, "A='it\\'s'\nB=plain\n# comment\n").unwrap();
+    fs::write(&path, "A='a\\b c$d'\nB=a\\b$c\n# comment\n").unwrap();
     let values = read_dotenv(&path).unwrap();
-    assert_eq!(values["A"], "it's");
-    assert_eq!(values["B"], "plain");
+    assert_eq!(values["A"], "a\\b c$d");
+    assert_eq!(values["B"], "a\\b$c");
+}
+
+#[tokio::test]
+async fn credentials_accept_backslash_and_dollar_but_not_single_quote() {
+    let dir = tempfile::tempdir().unwrap();
+    settings(dir.path(), Some("abcdefgh.example.test"));
+    let mut put = request(None);
+    put.credentials[0].value = SecretString::new("a\\b$c d");
+    assert!(domain(dir.path()).save(put.clone()).await.is_ok());
+    put.credentials[0].value = SecretString::new("it's");
+    assert!(matches!(
+        domain(dir.path()).save(put).await,
+        Err(DomainError::Invalid(_))
+    ));
 }
