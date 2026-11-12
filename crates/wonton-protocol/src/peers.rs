@@ -55,6 +55,8 @@ pub enum PeerStatus {
     AwaitingApproval,
     /// 对方拒绝了我的配对请求。
     Declined,
+    /// 自己的公网访问总开关关着，暂时联系不到对方（ADR-0090 第 2 节）；重新打开后对方重试才到。
+    PublicAccessOff,
     /// 比这个 App 新的核心给的状态。
     #[serde(other)]
     Other,
@@ -398,6 +400,15 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(view.peers[0].status, PeerStatus::Other);
+    }
+
+    /// 契约：自己的公网访问总开关关着时，服务器那一行落到这个名字，不落到 `Other`。
+    #[test]
+    fn the_public_access_switch_has_its_own_row_status() {
+        assert_eq!(
+            serde_json::to_value(PeerStatus::PublicAccessOff).unwrap(),
+            json!("public_access_off")
+        );
     }
 
     /// 契约：核心比 App 新时，不认识的错误落到 `Other`；类别的写法就是 [`PEER_ERROR_HEADER`]

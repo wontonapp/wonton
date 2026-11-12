@@ -4,6 +4,8 @@
     <string name="peers_status_declined">相手に拒否されました</string>
     <!-- Row subtitle for a status this version doesn't know. -->
     <string name="peers_status_unknown">状態不明</string>
+    <!-- Row subtitle while our own public access switch is off. -->
+    <string name="peers_status_public_access_off">外部からのアクセスはオフです</string>
     <!-- Reject button on a request row. -->
     <string name="peers_request_reject">拒否</string>
     <!-- Collapsed section heading at the bottom for requests I declined. -->

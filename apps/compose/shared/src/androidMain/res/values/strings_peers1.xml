@@ -4,6 +4,8 @@
     <string name="peers_status_declined">They declined your request</string>
     <!-- Row subtitle for a status this version doesn't know. -->
     <string name="peers_status_unknown">Status unknown</string>
+    <!-- Row subtitle while our own public access switch is off. -->
+    <string name="peers_status_public_access_off">Public access is off</string>
     <!-- Reject button on a request row. -->
     <string name="peers_request_reject">Reject</string>
     <!-- Collapsed section heading at the bottom for requests I declined. -->

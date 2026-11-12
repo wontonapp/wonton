@@ -4,6 +4,8 @@
     <string name="peers_status_declined">对方拒绝了</string>
     <!-- Row subtitle for a status this version doesn't know. -->
     <string name="peers_status_unknown">状态未知</string>
+    <!-- Row subtitle while our own public access switch is off. -->
+    <string name="peers_status_public_access_off">公网访问已关</string>
     <!-- Reject button on a request row. -->
     <string name="peers_request_reject">拒绝</string>
     <!-- Collapsed section heading at the bottom for requests I declined. -->

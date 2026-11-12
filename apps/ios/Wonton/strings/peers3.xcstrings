@@ -271,6 +271,36 @@
           }
         }
       }
+    },
+    "peers.status.publicAccessOff": {
+      "comment": "Status line of a paired server row: our own public access switch is off, so other servers can't reach us until it is back on.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Public access is off"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公网访问已关"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公網訪問已關"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外部からのアクセスはオフです"
+          }
+        }
+      }
     }
   }
 }

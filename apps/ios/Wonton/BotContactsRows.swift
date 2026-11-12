@@ -142,6 +142,7 @@ func contactRemoteProblem(_ contact: BotContact) -> LocalizedStringResource? {
     case nil: return .Contacts0.contactsRemoteUnpaired
     case .offline: return .Peers2.peersStatusOffline
     case .removedByPeer: return .Peers1.peersStatusRemoved
+    case .publicAccessOff: return .Peers3.peersStatusPublicAccessOff
     case .connected, .checking, .awaitingApproval, .declined, .other: return nil
     }
 }

@@ -142,6 +142,7 @@ internal fun BotContact.remoteProblem(): Int? {
         null -> R.string.contacts_remote_unpaired
         PeerStatus.OFFLINE -> R.string.peers_status_offline
         PeerStatus.REMOVED_BY_PEER -> R.string.peers_status_removed
+        PeerStatus.PUBLIC_ACCESS_OFF -> R.string.peers_status_public_access_off
         PeerStatus.CONNECTED, PeerStatus.CHECKING, PeerStatus.AWAITING_APPROVAL, PeerStatus.DECLINED,
         PeerStatus.OTHER -> null
     }

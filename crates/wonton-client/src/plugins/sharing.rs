@@ -97,6 +97,7 @@ pub(crate) fn recipients(list: FriendsList) -> FriendsViewModel {
         outgoing: Vec::new(),
         blocked: Vec::new(),
         can_block_federation: list.can_block_federation,
+        public_access_off: false,
         my_link: None,
     }
 }

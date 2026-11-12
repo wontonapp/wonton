@@ -395,6 +395,9 @@ private fun PeerSubtitle(row: PeerRow) {
         PeerStatus.REMOVED_BY_PEER -> Text(
             stringResource(R.string.peers_status_removed), style = style, color = color,
         )
+        PeerStatus.PUBLIC_ACCESS_OFF -> Text(
+            stringResource(R.string.peers_status_public_access_off), style = style, color = color,
+        )
         PeerStatus.CHECKING -> Text(
             stringResource(R.string.peers_status_checking), style = style, color = color,
         )

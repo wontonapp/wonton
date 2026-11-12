@@ -26,6 +26,10 @@ pub struct FriendsViewModel {
     pub blocked: Vec<FriendBlock>,
     /// 当前账号能否管理整台 Wonton 的联邦黑名单；不等于个人的邀请屏蔽。
     pub can_block_federation: bool,
+    /// 公网访问总开关关着：别的服务器上的好友暂时联系不到这台，重新打开后对方重试才到（ADR-0090 第 2 节）。
+    /// 关着时页面顶部挂一条；各服务器那一行的状态见 [`PeerStatus::PublicAccessOff`](crate::PeerStatus)。
+    #[serde(default)]
+    pub public_access_off: bool,
     /// 自己的 matrix.to 用户链接，给壳画“我的二维码”；没登录到 Matrix 时没有。
     pub my_link: Option<String>,
 }
