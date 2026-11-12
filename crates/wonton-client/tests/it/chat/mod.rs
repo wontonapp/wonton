@@ -452,21 +452,22 @@ async fn bot_receives<R>(
 
 /// 标为已读后未读清零；等待自动开启恢复并得到恢复密钥。
 async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> SecretString {
-    let timeline = phone.subscribe_timeline(room_id.to_string()).await.unwrap();
+    let target = TimelineTarget {
+        room_id: room_id.to_string(),
+        thread_root: None,
+    };
+    let timeline = phone.subscribe_timeline(target.clone()).await.unwrap();
     phone
-        .dispatch(Action::SetTimelineScroll {
-            room_id: room_id.to_string(),
-            scroll: wonton_client::TimelineScroll::Bottom,
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SetTimelineScroll {
+                target: target.clone(),
+                scroll: wonton_client::TimelineScroll::Bottom,
+            },
         })
         .unwrap();
     phone
         .dispatch(Action::Timeline {
-            action: TimelineAction::MarkRead {
-                target: TimelineTarget {
-                    room_id: room_id.to_string(),
-                    thread_root: None,
-                },
-            },
+            action: TimelineAction::MarkRead { target },
         })
         .unwrap();
     phone
