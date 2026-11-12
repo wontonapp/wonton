@@ -240,7 +240,13 @@ impl OnboardingLink {
             let (api, onboarding) = match result {
                 Ok(fetched) => fetched,
                 Err(problem) => {
-                    return link.finish_error(generation, operation, revision, after_reset, problem);
+                    return link.finish_error(
+                        generation,
+                        operation,
+                        revision,
+                        after_reset,
+                        problem,
+                    );
                 }
             };
             let in_flow = {
@@ -289,23 +295,23 @@ impl OnboardingLink {
                 state.onboarding = Some(onboarding);
                 state.revision += 1;
             }
-            if current || after_reset {
-                if let Some((owner, providers)) = details {
-                    match owner {
-                        Ok(owner) => state.owner = Some(owner),
-                        Err(problem) => {
-                            if problem.reason == PluginFailure::ServerTooOld {
-                                state.unavailable.insert(OnboardingStep::Profile);
-                                state.step = view::first_visible(&state.unavailable);
-                            } else {
-                                state.problem = Some(problem);
-                            }
+            if (current || after_reset)
+                && let Some((owner, providers)) = details
+            {
+                match owner {
+                    Ok(owner) => state.owner = Some(owner),
+                    Err(problem) => {
+                        if problem.reason == PluginFailure::ServerTooOld {
+                            state.unavailable.insert(OnboardingStep::Profile);
+                            state.step = view::first_visible(&state.unavailable);
+                        } else {
+                            state.problem = Some(problem);
                         }
                     }
-                    match providers {
-                        Ok(providers) => state.providers = Some(providers),
-                        Err(problem) => state.model_problem = Some(problem),
-                    }
+                }
+                match providers {
+                    Ok(providers) => state.providers = Some(providers),
+                    Err(problem) => state.model_problem = Some(problem),
                 }
             }
             state.loading = false;
