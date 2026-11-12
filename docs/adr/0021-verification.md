@@ -92,6 +92,24 @@ Pebble 不是 Let's Encrypt，CAA 没有测。
 | App 填局域网地址，用详情页给的邮箱和密码登录 | 登录成功，进入时间线 |
 | 往相册推一张照片，在 App 里开备份 | 数秒内传完，待备份归 0；服务端时间线收到，共享文件夹里的原件和测试图 sha256 一致 |
 | App 切到后台（HOME），再推一张 | 不回到前台，媒体扫描后约 30 秒（27–32 秒）服务端自己收到 |
+## 隧道只绑 core 网络的地址（2026-11-12）
+
+在一台 Linux 开发机（x86_64，Docker 29.7.2，userland-proxy 默认开）的开发栈上实测：核心创建时同时接 `core` 网络和 `clients`（internal，宿主一侧没有地址），一个入口容器在 `clients` 上，发布的 UDP 端口听宿主所有地址（正式安装的形态）。手机侧是 `wonton-tunnel` 的 tunnel-client 容器，在另一条普通桥接网络上，隔一层 Docker 网桥；配对和探测走真实 iroh。`crates/wonton-core/tests/docker_tunnel_bind.rs` 把同样的拓扑写成 Docker 测试。
+
+Docker 的行为（实测）：
+
+- compose 渲染的多网络容器，服务 `networks` 映射里排在前面的网络成为主端点（`HostConfig.NetworkMode`）；渲染按字母序，`clients` 排在 `core` 前面。出站的默认路由仍走 `core` 网络的网关。
+- 发布的 UDP 端口（`docker-proxy -proto udp -host-ip 0.0.0.0`）落在 `core` 网络的端点上，不是主端点：`clients` 是 internal，宿主一侧没有地址可落。容器网络里的另一台机器发到宿主发布端口的包，到得了绑在 `core` 网络地址上的套接字。
+- 套接字绑 `0.0.0.0` 时，任何本地地址发到隧道端口的包都落进同一个套接字，入口容器因此在 `clients` 网络上够得着 iroh 端口。
+
+绑定后（`WONTON_TUNNEL_BIND` 是核心在 `core` 网络上的别名，启动时经 Docker 内嵌 DNS 解析，DHCP 换地址后跟着新地址）：
+
+| 测试 | 结果 |
+| --- | --- |
+| 配对（新设备经发布端口） | paired |
+| 直连（手机经发布端口，两轮） | 初始路径直连，握手 11–12 ms，ping RTT 中位 1.0 ms，2/2 轮 |
+| 经中继（`--relay-only`，客户端没有 IP 传输） | 建连成功，ping RTT 中位约 570 ms（经 n0 公共中继）；出站的 STUN/QAD 探测正常 |
+| 入口侧（`clients` 网络发到隧道端口） | 内核回 ICMP port unreachable，包落不到套接字；iroh 传输经中继可达，但隧道协议拒绝未配对的设备 |
 
 ## 待验证
 
@@ -109,8 +127,6 @@ Pebble 不是 Let's Encrypt，CAA 没有测。
 - 家名服务经 API 建 zone 和记录后立即生效（`pdnsutil` 建的 zone 在 PowerDNS 重启前回 REFUSED，2026-11-03 实测）。
 - lego 的 `acme-dns` provider 用带路径前缀的 API 地址（经家名服务转发 `/update`）。
 - frpc 校验 frps 证书（`trustedCaFile`）在官方镜像里怎么配。
-
-- 隧道的 IPv4 UDP 套接字绑核心在 `core` 网络上的地址以后，发布的端口和打洞都正常（`tunnel.rs` 绑的是 `0.0.0.0`）。核心接入插件网络以后默认路由可能不走 `core` 网络，要看出去的 UDP 能不能回来。
 
 **局域网地址**
 
