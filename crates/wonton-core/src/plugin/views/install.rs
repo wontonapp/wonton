@@ -1,8 +1,7 @@
 //! 安装和升级前给主人确认的预览：显示的内容和这台主机装不装得下的检查。
 
 use wonton_protocol::{
-    CardLine, EgressProblem, InstallPreview, PluginTrust, PluginWriter, RemoteMcpPreview,
-    RequirementStatus,
+    CardLine, EgressProblem, InstallPreview, PluginTrust, PluginWriter, RequirementStatus,
 };
 
 use super::super::egress::probe::blocks;
@@ -21,14 +20,6 @@ use super::super::store::{EnabledPermission, InstalledRecord};
 use super::super::views_source::source_notices;
 use super::text::{author, kind, line, opening_notices, trust};
 use crate::l10n;
-
-/// 远端 MCP 插件的确认信息（ADR-0066）：主机名和鉴权方式。别的形态为空。
-fn remote_preview(m: &Manifest) -> Option<RemoteMcpPreview> {
-    m.remote_mcp.as_ref().map(|remote| RemoteMcpPreview {
-        host: remote.host().to_owned(),
-        auth: remote.protocol_auth(),
-    })
-}
 
 impl PluginManager {
     /// 挡安装的最后两条：代理不通，或者套接字路径放不下（数据目录、中继目录被指到了很长的路径）。
@@ -178,7 +169,7 @@ impl PluginManager {
             has_bot: super::super::bots::is_bot(m),
             runtime: m.runtime.into(),
             security_tier: Some(super::super::security_tier::security_tier(m)),
-            remote: remote_preview(m),
+            remote: super::super::manifest_remote::preview(m),
             scope_choices: self.scope_choices()?,
             icon: icon.map(|i| i.paths()),
             trust: trust(package.origin.as_ref()),

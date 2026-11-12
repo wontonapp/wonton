@@ -63,6 +63,26 @@ impl RemoteMcpSpec {
     }
 }
 
+/// 确认页要写的远端服务器（主机名和鉴权方式）；不是远端形态时为空。
+pub(crate) fn preview(m: &Manifest) -> Option<wonton_protocol::RemoteMcpPreview> {
+    m.remote_mcp.as_ref().map(|remote| wonton_protocol::RemoteMcpPreview {
+        host: remote.host().to_owned(),
+        auth: remote.protocol_auth(),
+    })
+}
+
+/// 详情里的远端服务器和授权状态。状态由连接器记，核心还没有问它的路径，要授权的先如实写“要授权”。
+pub(crate) fn detail(m: &Manifest) -> Option<wonton_protocol::RemoteMcpDetail> {
+    m.remote_mcp.as_ref().map(|remote| wonton_protocol::RemoteMcpDetail {
+        host: remote.host().to_owned(),
+        auth: remote.protocol_auth(),
+        authorization: match remote.auth {
+            RemoteAuth::Oauth => wonton_protocol::RemoteAuthorization::NeedsAuthorization,
+            _ => wonton_protocol::RemoteAuthorization::NotNeeded,
+        },
+    })
+}
+
 fn invalid(message: String) -> ManifestError {
     ManifestError::Invalid(message)
 }

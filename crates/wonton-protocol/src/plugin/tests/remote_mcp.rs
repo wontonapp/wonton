@@ -31,9 +31,9 @@ fn remote_preview_round_trips() {
     assert_eq!(decoded.remote, None);
 }
 
-/// 契约：详情里的远端信息和授权状态原样往返，未知取值落到 `Other`。
+/// 契约：详情里的远端信息和授权状态原样往返。
 #[test]
-fn remote_detail_round_trips_and_unknown_states_are_other() {
+fn remote_detail_round_trips() {
     let mut shown = detail();
     shown.remote = Some(RemoteMcpDetail {
         host: "mcp.example.com".into(),
@@ -42,12 +42,20 @@ fn remote_detail_round_trips_and_unknown_states_are_other() {
     });
     assert_eq!(round_trip(&shown), shown);
     assert_eq!(
-        serde_json::to_value(&shown).unwrap()["remote"]["authorization"],
-        json!("authorized")
+        serde_json::to_value(&shown).unwrap()["remote"],
+        json!({
+            "host": "mcp.example.com", "auth": "header", "authorization": "authorized",
+        })
     );
+}
 
-    let mut wire = serde_json::to_value(&shown).unwrap();
-    wire["remote"]["authorization"] = json!("future_state");
+/// 契约：不认识的授权状态落到 `Other`，不挡整份详情。
+#[test]
+fn unknown_remote_authorization_is_other() {
+    let mut wire = serde_json::to_value(detail()).unwrap();
+    wire["remote"] = json!({
+        "host": "mcp.example.com", "auth": "oauth", "authorization": "future_state",
+    });
     let decoded: PluginDetail = serde_json::from_value(wire).unwrap();
     assert_eq!(
         decoded.remote.unwrap().authorization,
