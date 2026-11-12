@@ -221,7 +221,12 @@ async fn capability_installation_waits_for_an_omitted_provider_secret_and_recove
             .any(|input| input.name == "token" && input.required && !input.filled)
     );
     let provider_web = container_name(&id.slug(), "web");
-    assert!(docker.env(&provider_web).iter().any(|value| value == "TOKEN="));
+    assert!(
+        docker
+            .env(&provider_web)
+            .iter()
+            .any(|value| value == "TOKEN=")
+    );
 
     b.s.manager
         .set_secret_input(&id, "token", Some("provider-private-value"), &langs)
