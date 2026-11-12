@@ -737,6 +737,12 @@
     <string name="friends_add_placeholder">@bob:example.org</string>
     <!-- Submit button under the Matrix ID field. -->
     <string name="friends_add_submit">Send request</string>
+    <!-- Row in the add-friend sheet that opens the scan page. -->
+    <string name="friends_scan_code">Scan their code</string>
+    <!-- Placeholder of the field for pasting the code when scanning is not possible. -->
+    <string name="friends_paste_placeholder">Paste their code</string>
+    <!-- Row in the add-friend sheet and the dialog that shows my own matrix.to QR code. -->
+    <string name="friends_my_code">My QR code</string>
     <!-- Section heading above the pending requests, received and sent. -->
     <string name="friends_requests_title">Requests</string>
     <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->

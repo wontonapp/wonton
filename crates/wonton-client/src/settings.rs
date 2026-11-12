@@ -471,6 +471,7 @@ mod tests {
             outgoing: Vec::new(),
             blocked: Vec::new(),
             can_block_federation: false,
+            my_link: None,
         }
     }
 
