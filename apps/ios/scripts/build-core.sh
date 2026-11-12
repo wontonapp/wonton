@@ -31,6 +31,14 @@ if (( ${#targets[@]} == 0 )); then
 fi
 
 repo_root="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
+
+# project.yml 的 configFiles 引用版本号 xcconfig，XcodeGen 在生成时校验它存在，而 postGenCommand 在生成
+# 之后才跑、兜不住首次生成，所以在这里（xcodegen 之前）写好。规则和 Android 共 scripts/app-version.sh
+# 一处，发版显式传 WONTON_VERSION=X.Y.Z；Debug 必有输出（无 tag 落 0.0.0/0）。
+bash "$repo_root/scripts/app-version.sh" debug |
+  sed -e 's/^VERSION=/MARKETING_VERSION = /' -e 's/^BUILD=/CURRENT_PROJECT_VERSION = /' \
+    > "$repo_root/apps/ios/Version.xcconfig"
+
 package_dir="$repo_root/apps/ios/WontonClient"
 generated_dir="$package_dir/Sources/WontonClient/Generated"
 xcframework="$package_dir/build/WontonClientFFI.xcframework"

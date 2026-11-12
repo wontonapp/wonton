@@ -10,7 +10,7 @@ name: ios
 #   iOS 在 PR 上红的几乎都落在这几处（Swift 这边改了，或接口改了 Swift 没跟上；2026-11-12 前一天约十次），
 #   挪到合后会让 main 一天红好几次。
 # - 合进 main 之后：wonton-client 依赖的其余 crate、依赖版本、工具链（不改导出接口，很少弄坏 Swift）按 push 的路径触发，
-#   不挡合并；每次合并单独跑、不互相取消，红了按那次提交标题里的 (#N) 找到弄红的 PR。
+#   不挡合并；连续合并时只跑最新那次（新的取消旧的，结果只对旧提交有意义），红了按那次提交标题里的 (#N) 找到弄红的 PR。
 # 两半合起来是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
 # 加了依赖要同步改。只改测试的（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉。
 on:
@@ -36,11 +36,11 @@ on:
     - cron: "30 4 * * *"
   workflow_dispatch:
 
-# 被 gate 调用时组名按调用方的 ref 算：同一个 PR 又推了新提交，旧的整个取消。
-# main 上每次合并单独一组、不互相取消（见开头）。
+# 同一分支又推了新提交，旧的整个取消：新提交的结果出来前旧的那次已经没用，别占名额。定时全量跑完为止，
+# 手动触发跟着分支走。被 gate 调用时组名按调用方的 ref 算；组名带 ios- 前缀，免得和 gate- 判成互相等待。
 concurrency:
-  group: ios-${{ github.event_name == 'push' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: "${{ github.event_name == 'schedule' && 'ios-nightly' || format('ios-{0}', github.ref) }}"
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 env:
   # 同 rust.yml：不留增量编译的缓存，调试信息只留行号。
