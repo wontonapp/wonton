@@ -87,6 +87,9 @@ const SEND_TIMEOUT: Duration = Duration::from_secs(60);
 pub(crate) struct ChatLink {
     runtime: Handle,
     home: Arc<HomeLink>,
+    /// 本作用域的槽位号（`ServerRow::id`）：后台通知的 `server_id` 填它，壳点开通知按它切服务器；
+    /// 不是 home 里的 endpoint ID，那是配对键，槽位列表里没有。
+    slot: String,
     storage: ChatStorage,
     view: watch::Sender<ChatViewModel>,
     active: tokio::sync::Mutex<Option<Active>>,
@@ -183,6 +186,7 @@ impl ChatLink {
     pub(crate) fn new(
         runtime: Handle,
         home: Arc<HomeLink>,
+        slot: &str,
         data_dir: &Path,
         card_success: CardSuccess,
         plugins: Arc<crate::plugins::PluginsLink>,
@@ -236,6 +240,7 @@ impl ChatLink {
         let chat = Arc::new(Self {
             runtime: runtime.clone(),
             home: home.clone(),
+            slot: slot.to_owned(),
             storage,
             view,
             active: tokio::sync::Mutex::new(None),
