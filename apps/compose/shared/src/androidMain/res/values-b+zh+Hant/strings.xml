@@ -1223,6 +1223,10 @@
     <string name="problem_appearance_title">無法儲存外觀設定</string>
     <string name="problem_apps_not_ready">應用程式清單還沒準備好，請稍後重試。</string>
     <string name="problem_no_default_agent">還沒有預設 Agent，請先在初始設定中選擇並安裝。</string>
+    <!-- Problem title: the server refused an action although this device is still signed in. -->
+    <string name="problem_forbidden_title">請求被拒絕了</string>
+    <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
+    <string name="problem_forbidden_next_step">登入沒有問題。可能是沒有權限、對方封鎖了你，或者對方的伺服器還不能和家用伺服器互通。</string>
     <string name="problem_invalid_input_title">無法執行這個操作</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->
     <string name="problem_loading">正在載入</string>
@@ -1658,6 +1662,8 @@
     <string name="push_status_unavailable">收不到推送，請檢查系統通知和分發器</string>
     <string name="push_status_failed_transport">註冊失敗，連上家用伺服器後重試</string>
     <string name="push_status_failed_unauthorized">註冊失敗，請重新配對</string>
+    <!-- Push status line when registering failed because the home server refused it although this device is signed in. -->
+    <string name="push_status_failed_forbidden">註冊失敗，家用伺服器拒絕了</string>
     <string name="push_status_failed_upstream">註冊失敗，家用伺服器出錯了</string>
     <string name="push_status_failed_not_ready">註冊失敗，請等聊天連線就緒</string>
     <string name="push_status_failed_invalid_input">註冊失敗，推送位址無效</string>

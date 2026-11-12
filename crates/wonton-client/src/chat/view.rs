@@ -353,8 +353,9 @@ pub(crate) fn not_connected() -> String {
 pub(crate) fn failure(error: &Error) -> ChatFailure {
     match error {
         Error::Transport(_) => ChatFailure::TransportUnavailable,
-        // ChatFailure 的 Unauthorized 包括“无权操作”。
-        Error::Unauthorized { .. } | Error::Forbidden { .. } => ChatFailure::Unauthorized,
+        Error::Unauthorized { .. } => ChatFailure::Unauthorized,
+        // 不让做这件事（没有权限、对方屏蔽、联邦不通），登录还有效，不能说成登录失效。
+        Error::Forbidden { .. } => ChatFailure::Forbidden,
         Error::NotReady(_) => ChatFailure::NotReady,
         Error::Upstream(_) => ChatFailure::Upstream,
         Error::InvalidInput(_) => ChatFailure::InvalidInput,
@@ -368,9 +369,10 @@ pub(crate) fn core_error(error: &Error) -> CoreError {
         ChatFailure::TransportUnavailable => CoreError::TransportUnavailable {
             reason: not_connected(),
         },
-        ChatFailure::Unauthorized => CoreError::Unauthorized { reason },
+        // CoreError 没有单独的“被拒绝”类别，它的 Unauthorized 包括无权操作。
+        ChatFailure::Unauthorized | ChatFailure::Forbidden => CoreError::Unauthorized { reason },
         ChatFailure::NotReady => CoreError::NotReady { reason },
-        ChatFailure::Upstream => CoreError::Upstream { reason },
+        ChatFailure::Upstream | ChatFailure::Other => CoreError::Upstream { reason },
         ChatFailure::InvalidInput => CoreError::InvalidInput { reason },
     }
 }

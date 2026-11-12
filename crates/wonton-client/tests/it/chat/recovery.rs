@@ -282,7 +282,8 @@ async fn failed_automatic_backup_stays_disabled_until_a_new_session() {
     let problem = phone
         .wait_chat("自动开启失败", |view| view.problem.clone())
         .await;
-    assert_eq!(problem.reason, wonton_client::ChatFailure::Unauthorized);
+    // 服务器回 403 M_FORBIDDEN：不让开备份，登录还有效。
+    assert_eq!(problem.reason, wonton_client::ChatFailure::Forbidden);
     assert_recovery(
         &phone.chat().encryption,
         RecoveryStatus::Disabled,
