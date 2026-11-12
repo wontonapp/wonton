@@ -40,6 +40,8 @@ pub(crate) enum Scenario {
     NoModes,
     /// `session/prompt` 不自动应答，测试用 [`FakeAgent::respond_prompt`] 控制什么时候、回什么。
     Manual,
+    /// Manual 的变体：`availableModes` 里多一个 `bypassPermissions`，测桥不跟 Agent 报出的危险档位。
+    DangerousModes,
 }
 
 /// Manual 场景里挂起的一轮：应答的 id、会话，和写回用的连接。
@@ -499,7 +501,7 @@ impl Connection {
             }
             "session/prompt" => {
                 self.prompts += 1;
-                if matches!(self.scenario, Scenario::Manual) {
+                if matches!(self.scenario, Scenario::Manual | Scenario::DangerousModes) {
                     self.link.pending.lock().await.push(PendingPrompt {
                         id: message["id"].clone(),
                         session: message["params"]["sessionId"]
@@ -552,7 +554,7 @@ async fn new_session(
     } else if matches!(scenario, Scenario::NoModes) {
         reply(writer, id, json!({"sessionId": session})).await;
     } else {
-        let modes = json!({
+        let mut modes = json!({
             "currentModeId": "plan",
             "availableModes": [
                 {"id": "plan", "name": "Plan"},
@@ -560,6 +562,12 @@ async fn new_session(
                 {"id": "agent", "name": "Agent"}
             ]
         });
+        if matches!(scenario, Scenario::DangerousModes) {
+            modes["availableModes"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"id": "bypassPermissions", "name": "Bypass"}));
+        }
         reply(writer, id, json!({"sessionId": session, "modes": modes})).await;
     }
 }

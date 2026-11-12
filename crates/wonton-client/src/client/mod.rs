@@ -43,6 +43,7 @@ mod sharing;
 mod switch;
 #[cfg(feature = "test-hooks")]
 mod test_hooks;
+mod test_support;
 mod tool_policy;
 #[cfg(feature = "ui-fake")]
 mod ui_fake;

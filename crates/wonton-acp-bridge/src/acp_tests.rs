@@ -133,6 +133,7 @@ async fn restored_replay_updates_do_not_leak_into_the_next_prompt() {
             "/workspace",
             "http://mcp.wonton.internal/mcp",
             &origin(None),
+            "plan",
         ),
         "session/load",
     )
@@ -163,6 +164,7 @@ async fn missing_restore_support_is_treated_as_a_lost_session() {
                 "/workspace",
                 "http://mcp.wonton.internal/mcp",
                 &origin(None),
+                "plan",
             ),
             "session/load",
         )
@@ -289,6 +291,7 @@ async fn session_setup_reports_the_origin_session_in_mcp_headers() {
             "/workspace",
             "http://mcp.wonton.internal/mcp",
             &origin(Some("$thread-2")),
+            "plan",
         ),
         "session/load",
     )
@@ -363,9 +366,9 @@ async fn oversized_agent_line_disconnects_and_fails_the_pending_prompt() {
         "等挂起的轮次",
     )
     .await;
-    // 600 KiB 不带换行的一行，后面跟换行和一条正常帧：桥读到上限就断开，
+    // 超过上限（4 MiB）不带换行的一行，后面跟换行和一条正常帧：桥读到上限就断开，
     // 后面的帧不再读。断开后写端只多占内核缓冲，写得进去。
-    agent.send_raw(&vec![b'x'; 600 * 1024]).await;
+    agent.send_raw(&vec![b'x'; MAX_FRAME_BYTES + 1]).await;
     agent.send_raw(b"\n").await;
     agent
         .tool_update(
@@ -433,9 +436,44 @@ impl AsyncRead for ChunkedReader {
 }
 
 #[tokio::test]
+async fn frame_limit_takes_three_mib_lines_and_rejects_over() {
+    // 3 MiB 的合法 JSON 行照常读成一帧：qwen 的技能清单（约 650 KiB）留了余量。
+    let payload = {
+        let mut body = vec![b'a'; 3 * 1024 * 1024];
+        body[0] = b'"';
+        let mut line = Vec::with_capacity(body.len() + 16);
+        line.extend_from_slice(
+            b"{\"jsonrpc\":\"2.0\",\"method\":\"qwen/notify\",\"params\":{\"text\":",
+        );
+        line.extend_from_slice(&body);
+        line.extend_from_slice(b"\"}");
+        line
+    };
+    let mut data = payload.clone();
+    data.push(b'\n');
+    let mut reader = BufReader::new(ChunkedReader::new(data));
+    let mut frame = Vec::new();
+    assert_eq!(
+        frame::read_frame(&mut reader, &mut frame).await,
+        frame::FrameRead::Frame
+    );
+    assert_eq!(frame, payload);
+
+    // 超过上限（4 MiB）：报超长。
+    let mut data = vec![b'x'; MAX_FRAME_BYTES + 1];
+    data.push(b'\n');
+    let mut reader = BufReader::new(ChunkedReader::new(data));
+    let mut frame = Vec::new();
+    assert_eq!(
+        frame::read_frame(&mut reader, &mut frame).await,
+        frame::FrameRead::Oversize
+    );
+}
+
+#[tokio::test]
 async fn oversized_line_stops_at_the_limit_without_reading_the_next_frame() {
-    // 600 KiB 不带换行，之后才是换行和一条正常帧：读到上限就得停，后面的字节不进内存。
-    let mut data = vec![b'x'; 600 * 1024];
+    // 超过上限（4 MiB）不带换行，之后才是换行和一条正常帧：读到上限就得停，后面的字节不进内存。
+    let mut data = vec![b'x'; MAX_FRAME_BYTES + 1];
     data.extend_from_slice(b"\n{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}\n");
     let mut reader = BufReader::new(ChunkedReader::new(data));
     let mut frame = Vec::new();
@@ -484,4 +522,64 @@ async fn frame_limit_takes_lines_up_to_the_limit_and_rejects_over_by_one() {
         frame::FrameRead::Frame
     );
     assert_eq!(frame.len(), MAX_FRAME_BYTES);
+}
+
+#[tokio::test]
+async fn restored_sessions_get_the_mode_new_set_again() {
+    let agent = FakeAgent::start(Scenario::Normal).await;
+    let client = bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+        .await
+        .unwrap();
+    bounded(
+        client.load_or_resume(
+            "session-1",
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            &origin(None),
+            "acceptEdits",
+        ),
+        "session/load",
+    )
+    .await
+    .unwrap();
+    let requests = agent.requests().await;
+    let set_modes: Vec<_> = requests
+        .iter()
+        .filter(|request| request["method"] == "session/set_mode")
+        .collect();
+    assert_eq!(set_modes.len(), 1, "{requests:?}");
+    assert_eq!(set_modes[0]["params"]["sessionId"], "session-1");
+    assert_eq!(set_modes[0]["params"]["modeId"], "acceptEdits");
+    drop(client);
+    agent.finish().await;
+}
+
+#[tokio::test]
+async fn agents_without_modes_tolerate_the_restore_set_mode() {
+    let agent = FakeAgent::start(Scenario::NoModes).await;
+    let client = bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+        .await
+        .unwrap();
+    bounded(
+        client.load_or_resume(
+            "session-1",
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            &origin(None),
+            "plan",
+        ),
+        "session/load",
+    )
+    .await
+    .unwrap();
+    // set_mode 发了但 Agent 回 Method not found：照 new 的路子跳过，恢复照常成功。
+    let requests = agent.requests().await;
+    assert!(
+        requests
+            .iter()
+            .any(|request| request["method"] == "session/set_mode"),
+        "{requests:?}"
+    );
+    drop(client);
+    agent.finish().await;
 }

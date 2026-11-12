@@ -664,6 +664,9 @@
     <string name="friends_add_placeholder">@bob:example.org</string>
     <!-- Submit button under the Matrix ID field. -->
     <string name="friends_add_submit">招待を送る</string>
+    <string name="friends_scan_code">相手のコードをスキャン</string>
+    <string name="friends_paste_placeholder">相手のコードをペースト</string>
+    <string name="friends_my_code">自分のQRコード</string>
     <!-- Section heading above the pending requests, received and sent. -->
     <string name="friends_requests_title">リクエスト</string>
     <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
@@ -1074,6 +1077,12 @@
     <string name="plugin_task_review">再確認</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">結果が不確定です：%1$s</string>
+    <!-- Status of a running task while the connection to the home server is down. -->
+    <string name="plugin_task_waiting_for_connection">接続を待っています</string>
+    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
+    <string name="plugin_task_check_installed_next_step">インストールされたかアプリ一覧で確認してください。</string>
+    <!-- Button on an uncertain task that opens the installed list. -->
+    <string name="plugin_task_check_installed">インストール済みを確認</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">アンインストールしました</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->
