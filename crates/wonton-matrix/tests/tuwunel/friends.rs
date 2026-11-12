@@ -3,8 +3,7 @@
 use futures_util::{Stream, StreamExt};
 use wonton_matrix::{Blocked, Error, MatrixSession, Membership, OwnedRoomId, OwnedServerName};
 
-use crate::chat::wait_for_room;
-use crate::support::{TestServer, eventually, unique};
+use crate::support::{TestServer, eventually, unique, wait_for_room};
 
 fn server_name(name: &str) -> OwnedServerName {
     name.parse().unwrap()

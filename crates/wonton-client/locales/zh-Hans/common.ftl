@@ -1,3 +1,15 @@
+## 默认收起的技术详情。原因、错误码和上游原文保持不变。
+## 不限长度。参数是诊断数据，不是翻译键。
+
+# CoreError 前缀。$reason 是原始错误详情。
+core-error-storage = 本机存储读写失败：{ $reason }
+core-error-not-ready = 尚未就绪：{ $reason }
+core-error-transport = 连不上家里的服务器：{ $reason }
+core-error-unauthorized = 家里的服务器拒绝了请求：{ $reason }
+core-error-forbidden = 家里的服务器不让做这件事：{ $reason }
+core-error-upstream = 家里的服务器出错：{ $reason }
+core-error-server-too-old = 家里的服务器太旧，还做不了这件事。升级服务器后再试。
+
 # 壳把不认识的操作分给聊天时显示。
 side-chat-not-ready = 这个版本的客户端核心还不支持旁聊。
 

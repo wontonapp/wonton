@@ -176,7 +176,6 @@ pub(super) struct Outbox {
     chat: watch::Receiver<ChatViewModel>,
     room_id: OwnedRoomId,
     confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
-    confirmation_updates: tokio::sync::Mutex<watch::Receiver<Arc<Vec<ConfirmationView>>>>,
 }
 
 impl Outbox {
@@ -194,7 +193,6 @@ impl Outbox {
             room_view,
             chat,
             room_id,
-            confirmation_updates: tokio::sync::Mutex::new(confirmations.clone()),
             confirmations,
         }
     }
@@ -222,11 +220,6 @@ impl Outbox {
             })
             .cloned()
             .collect()
-    }
-
-    /// 消费同一个接收端的版本；每次等待都克隆会把同一份卡片无限重发。
-    pub(super) async fn confirmations_changed(&self) -> Result<(), watch::error::RecvError> {
-        self.confirmation_updates.lock().await.changed().await
     }
 
     pub(super) fn send(
@@ -496,30 +489,5 @@ mod tests {
             item: item("older", true),
         });
         assert!(!rx.try_recv().unwrap().scroll_to_bottom);
-    }
-
-    #[tokio::test]
-    async fn each_card_publication_wakes_the_timeline_only_once() {
-        let dir = tempfile::tempdir().unwrap();
-        let core = crate::ClientCore::new(dir.path().to_string_lossy().into_owned()).unwrap();
-        let (sender, _) = mpsc::unbounded_channel();
-        let (_, room_view) = watch::channel(None);
-        let (_, chat) = watch::channel(core.chat());
-        let (cards, receiver) = watch::channel(Arc::new(Vec::new()));
-        let outbox = Outbox::new(
-            sender,
-            Arc::default(),
-            room_view,
-            chat,
-            OwnedRoomId::try_from("!room:example.com").unwrap(),
-            receiver,
-        );
-        cards.send_replace(Arc::new(Vec::new()));
-        outbox.confirmations_changed().await.unwrap();
-        // An unchanged card must leave the next UI batch pending; the broken receiver immediately repeats it.
-        assert!(futures_util::poll!(std::pin::pin!(outbox.confirmations_changed())).is_pending());
-        cards.send_replace(Arc::new(Vec::new()));
-        outbox.confirmations_changed().await.unwrap();
-        assert!(futures_util::poll!(std::pin::pin!(outbox.confirmations_changed())).is_pending());
     }
 }

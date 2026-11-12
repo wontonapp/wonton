@@ -178,6 +178,9 @@ def resolve(key: str, platform: str) -> Tuple[str, str]:
     """键该去的（组，文件主干）。不认识的前缀进 common 的基准文件。"""
     prefix = prefix_of(key, platform)
     stem = PREFIXES.get(prefix, "")
+    # Fluent 的基准文件就叫 common.ftl：common 组的主干和基准是同一个文件，不然 core-error-* 放哪都报错。
+    if platform == "fluent" and stem == BASE_FILE["fluent"][: -len(".ftl")]:
+        stem = ""
     count = PARTS.get(prefix, 1)
     if count == 1:
         return GROUP_OF.get(prefix, "common"), stem

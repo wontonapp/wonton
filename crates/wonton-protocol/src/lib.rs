@@ -22,6 +22,7 @@ mod bot_web;
 mod bot_web_registration;
 mod chat;
 mod chat_layout;
+mod clients;
 mod composer;
 mod confirmation;
 mod confirmation_origin;
@@ -117,6 +118,19 @@ pub use chat::{
 pub use chat_layout::{
     BotChatSettings, CHAT_LAYOUT_EVENT, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings,
     ChatLayoutTarget, ChatTextScale, CodeOverflow, PluginChat,
+};
+pub use clients::{
+    Ban, CLIENTS_ERROR_HEADER, CLIENTS_HEADER, CaaState, CertificateState, ClientAuthKind,
+    ClientsErrorBody, ClientsFailure, ClientsPlugin, ClientsProblem, ClientsStatus,
+    CredentialEntry, DnsProviderPreset, DomainSettings, EntryBlock, EntryKind, EntrySwitch,
+    GUEST_LINKS_MAX, GUEST_TTL_DEFAULT, GUEST_TTL_MAX, GateState, GuestLink, IngressKind,
+    IngressSettings, LanRecordState, NewGuestLinkRequest, NewPasswordRequest, PasswordSummary,
+    PasswordValue, PendingChange, PendingChangeKind, PendingOp, ProbeResult, PublicAccess,
+    PublicItem, PublicReach, PublicRuleMode, PublicRules, PublicSwitchState, PutDomainRequest,
+    PutIngressRequest, RevokeDeviceRequest, SetEntryRequest, clients_ban_path, clients_domain_path,
+    clients_entry_path, clients_guest_path, clients_guests_path, clients_ingress_path,
+    clients_password_path, clients_passwords_path, clients_path, clients_public_access_path,
+    clients_status_path, dns_providers_path,
 };
 pub use composer::{
     AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerViewModel,

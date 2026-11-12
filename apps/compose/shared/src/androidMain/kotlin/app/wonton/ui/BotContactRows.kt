@@ -86,7 +86,7 @@ internal fun SentContactRow(contact: BotContact, onRemove: () -> Unit) {
     }
 }
 
-/** 一行的骨架：名字、谁的 Bot、用户 ID、跨机时的连接情况，下面是各状态自己的内容。 */
+/** 一行的骨架：名字、谁的 Bot、用户 ID、跨机时来自哪台服务器和连接情况，下面是各状态自己的内容。 */
 @Composable
 private fun ContactRowFrame(
     contact: BotContact,
@@ -114,6 +114,13 @@ private fun ContactRowFrame(
                 style = WontonTheme.typography.caption.copy(fontFamily = FontFamily.Monospace),
                 color = secondary,
             )
+            contact.remote?.let {
+                Text(
+                    stringResource(R.string.contacts_remote_from, it.serverName),
+                    style = WontonTheme.typography.supporting,
+                    color = secondary,
+                )
+            }
             contact.remoteProblem()?.let {
                 Text(stringResource(it), style = WontonTheme.typography.supporting, color = colors.warning.toColor())
             }
@@ -142,6 +149,7 @@ internal fun BotContact.remoteProblem(): Int? {
         null -> R.string.contacts_remote_unpaired
         PeerStatus.OFFLINE -> R.string.peers_status_offline
         PeerStatus.REMOVED_BY_PEER -> R.string.peers_status_removed
+        PeerStatus.PUBLIC_ACCESS_OFF -> R.string.peers_status_public_access_off
         PeerStatus.CONNECTED, PeerStatus.CHECKING, PeerStatus.AWAITING_APPROVAL, PeerStatus.DECLINED,
         PeerStatus.OTHER -> null
     }

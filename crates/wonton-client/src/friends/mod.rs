@@ -74,6 +74,7 @@ impl FriendsLink {
             outgoing: Vec::new(),
             blocked: Vec::new(),
             can_block_federation: false,
+            public_access_off: false,
             my_link: None,
         };
         Ok(Arc::new(Self {
@@ -225,6 +226,7 @@ impl FriendsLink {
             outgoing: sync.outgoing,
             blocked,
             can_block_federation,
+            public_access_off: false,
             my_link: Some(format!("https://matrix.to/#/{}", session.user_id())),
         })
     }
