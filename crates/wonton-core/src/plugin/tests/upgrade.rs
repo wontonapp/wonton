@@ -523,60 +523,62 @@ async fn a_bundled_default_plugin_is_offered_from_the_official_index() {
     assert_eq!(plugin.source.as_deref(), Some("github:acme/hello@v1.1.0"));
 }
 
-#[tokio::test]
-async fn system_plugins_upgrade_from_the_image_and_say_so_when_they_cannot() {
-    let (docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let m = Arc::new(manager_with(engine, &dir));
-    let system = dir.path().join("system");
-    fs::create_dir_all(system.join("hello")).unwrap();
-    let write = |version: &str, services: &str| {
-        let compose =
-            hello(version, services, "  permissions: []\n").replace("kind: app", "kind: system");
-        fs::write(system.join("hello/docker-compose.yml"), compose).unwrap();
-    };
-    write("1.0.0", "");
-    m.ensure_system(&system, Backoff::default()).await.unwrap();
-    assert_eq!(version(&m), "1.0.0");
-    let err = m
-        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
-        .await
-        .unwrap_err();
-    assert_eq!(err.kind(), "unsupported", "接口升不了系统插件：{err}");
+#[test]
+fn system_plugins_upgrade_from_the_image_and_say_so_when_they_cannot() {
+    super::on_big_stack(async {
+        let (docker, engine) = FakeDocker::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let m = Arc::new(manager_with(engine, &dir));
+        let system = dir.path().join("system");
+        fs::create_dir_all(system.join("hello")).unwrap();
+        let write = |version: &str, services: &str| {
+            let compose = hello(version, services, "  permissions: []\n")
+                .replace("kind: app", "kind: system");
+            fs::write(system.join("hello/docker-compose.yml"), compose).unwrap();
+        };
+        write("1.0.0", "");
+        m.ensure_system(&system, Backoff::default()).await.unwrap();
+        assert_eq!(version(&m), "1.0.0");
+        let err = m
+            .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind(), "unsupported", "接口升不了系统插件：{err}");
 
-    let worker = container_name("app-hello", "worker");
-    docker.set_state(
-        &worker,
-        json!({"Status": "exited", "Running": false, "ExitCode": 1}),
-    );
-    write("1.1.0", "  worker:\n    image: worker:1\n");
-    m.ensure_system(&system, Backoff::default()).await.unwrap();
-    let plugin = m.installed_plugin(&id(), &zh()).unwrap();
-    assert_eq!(plugin.version, "1.0.0");
-    assert!(matches!(plugin.status, PluginState::Running { .. }));
-    assert!(
-        {
-            // 原因里有动态的出错详情，钉住前缀就够：版本、还在跑的版本和“下次启动再试”。
-            let prefix = super::message(
-                "plugin-settings-upgrade-bundled-failed",
-                &[("version", "1.1.0"), ("from", "1.0.0"), ("error", "")],
-            );
-            let prefix = prefix
-                .strip_suffix(": ")
-                .or_else(|| prefix.strip_suffix("："))
-                .unwrap_or(&prefix);
-            plugin.notices[0].text.contains(prefix)
-        },
-        "{:?}",
-        plugin.notices
-    );
+        let worker = container_name("app-hello", "worker");
+        docker.set_state(
+            &worker,
+            json!({"Status": "exited", "Running": false, "ExitCode": 1}),
+        );
+        write("1.1.0", "  worker:\n    image: worker:1\n");
+        m.ensure_system(&system, Backoff::default()).await.unwrap();
+        let plugin = m.installed_plugin(&id(), &zh()).unwrap();
+        assert_eq!(plugin.version, "1.0.0");
+        assert!(matches!(plugin.status, PluginState::Running { .. }));
+        assert!(
+            {
+                // 原因里有动态的出错详情，钉住前缀就够：版本、还在跑的版本和“下次启动再试”。
+                let prefix = super::message(
+                    "plugin-settings-upgrade-bundled-failed",
+                    &[("version", "1.1.0"), ("from", "1.0.0"), ("error", "")],
+                );
+                let prefix = prefix
+                    .strip_suffix(": ")
+                    .or_else(|| prefix.strip_suffix("："))
+                    .unwrap_or(&prefix);
+                plugin.notices[0].text.contains(prefix)
+            },
+            "{:?}",
+            plugin.notices
+        );
 
-    write("1.2.0", "");
-    m.ensure_system(&system, Backoff::default()).await.unwrap();
-    let plugin = m.installed_plugin(&id(), &zh()).unwrap();
-    assert_eq!(plugin.version, "1.2.0");
-    assert!(plugin.notices.is_empty(), "{:?}", plugin.notices);
-    assert_eq!(image(&docker, &web()), "web:1.2.0");
+        write("1.2.0", "");
+        m.ensure_system(&system, Backoff::default()).await.unwrap();
+        let plugin = m.installed_plugin(&id(), &zh()).unwrap();
+        assert_eq!(plugin.version, "1.2.0");
+        assert!(plugin.notices.is_empty(), "{:?}", plugin.notices);
+        assert_eq!(image(&docker, &web()), "web:1.2.0");
+    });
 }
 
 /// 核心升级后读不懂旧记录（清单新增了必填字段，插件版本号却没变）：接口重装不了系统插件，升级要先读旧包也走不通。

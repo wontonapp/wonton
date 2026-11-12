@@ -170,6 +170,27 @@ fn env_of_container(
         .collect()
 }
 
+/// 在 16 MiB 栈的线程上跑一个测试体：装、升级插件这条链（`render` 的同步调用树加各处 await）在默认 2 MiB 的
+/// 测试线程栈上很吃紧，多一层就溢出的测试用它。
+pub(super) fn on_big_stack<F>(future: F) -> F::Output
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send,
+{
+    std::thread::Builder::new()
+        .stack_size(16 << 20)
+        .spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("测试用的运行时建不起来")
+                .block_on(future)
+        })
+        .expect("测试线程起不来")
+        .join()
+        .expect("测试线程崩了")
+}
+
 fn render_err(yaml: &str) -> String {
     let pkg = PluginPackage::parse(yaml, &langs()).expect("包结构合法");
     match dry_run(&pkg, &langs()) {
