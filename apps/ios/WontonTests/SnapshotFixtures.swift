@@ -231,6 +231,7 @@ enum SnapshotFixtures {
                             answeredBy: "@mom:home.example", answeredByDevice: "Mom's phone"
                         ),
                     ],
+                    contactRequests: [],
                     loading: false, problem: nil
                 ),
                 bots: [hermesBot], plugins: plugins,
@@ -249,6 +250,7 @@ enum SnapshotFixtures {
                 view: ConfirmationsViewModel(
                     pending: [confirmation(id: "c1", title: "Hermes wants to install File Search", state: .pending, requester: .bot(bot: BotRef(pluginId: "app.hermes", bot: "owner"), userId: "@hermes:home.example"))],
                     finished: [],
+                    contactRequests: [],
                     loading: false,
                     problem: ChatProblem(reason: .transportUnavailable, message: "GET /_wonton/api/confirmations: connection refused")
                 ),
