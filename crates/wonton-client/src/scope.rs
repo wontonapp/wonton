@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    BotContactsViewModel, ChatViewModel, CoreError, FriendsViewModel, HomeViewModel,
-    OnboardingViewModel, PeersViewModel, PluginsViewModel, RoomPanel, ServersViewModel,
-    SettingsViewModel, TabsViewModel, TransfersViewModel,
+    BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError, FriendsViewModel,
+    HomeViewModel, OnboardingViewModel, PeersViewModel, PluginsViewModel, RoomPanel,
+    ServersViewModel, SettingsViewModel, TabsViewModel, TransfersViewModel,
 };
 
 use crate::bot_contacts::BotContactsLink;
@@ -62,6 +62,7 @@ pub(crate) struct Scope {
 pub(crate) struct Views {
     pub(crate) home: watch::Sender<HomeViewModel>,
     pub(crate) chat: watch::Sender<ChatViewModel>,
+    pub(crate) confirmations: watch::Sender<ConfirmationsViewModel>,
     pub(crate) plugins: watch::Sender<PluginsViewModel>,
     pub(crate) tabs: watch::Sender<TabsViewModel>,
     pub(crate) transfers: watch::Sender<TransfersViewModel>,
@@ -77,6 +78,7 @@ impl Views {
         Self {
             home: scope.home.sender(),
             chat: scope.chat.sender(),
+            confirmations: scope.chat.confirmations_sender(),
             plugins: scope.plugins.sender(),
             tabs: scope.tabs.sender(),
             transfers: scope.files.sender(),
@@ -276,6 +278,7 @@ impl Scope {
         };
         let channels = crate::chat::ChatChannels {
             view: views.map(|v| v.chat.clone()),
+            confirmations: views.map(|v| v.confirmations.clone()),
             method: push_method.subscribe(),
             session_out: session_out.0.clone(),
             room_panel_out: room_panel.0.clone(),

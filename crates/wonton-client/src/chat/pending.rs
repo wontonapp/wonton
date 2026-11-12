@@ -1,210 +1,383 @@
-//! 一直跟着和核心账号的私聊，把等回答的卡片放进 ViewModel（ADR-0016）：主人在别的房间、别的页面时，壳靠它提示有卡片要回答。
+//! “等你确认”列表（ADR-0016）：长轮询核心的确认接口，把等回答的、结束的卡片交给壳。主人在别的房间、别的页面
+//! 时，壳靠 `ChatViewModel::pending_confirmations` 提示有卡片要回答。
 //!
-//! 打开的房间才有完整的时间线，所以这个私聊单独订阅（`MatrixSession::watch_room`），和主人打开着哪个房间无关。
+//! 跟着家里的连接走，不和 Matrix 会话绑定：卡片不是 Matrix 消息，换登录、重连都不动这份状态；连不上核心时如实
+//! 报问题、留上次的列表，退避重试，`Action::RetryConfirmations` 立即重试。
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
 
-use futures_util::StreamExt;
-use tokio::sync::{mpsc, watch};
-use wonton_matrix::{MatrixSession, OwnedRoomId, TimelineEntry, Vector};
-use wonton_protocol::{ChatViewModel, RoomMembership};
+use tokio::sync::watch;
+use url::Url;
+use wonton_l10n::l10n;
+use wonton_protocol::{
+    ChatProblem, ChatViewModel, ConfirmationList, ConfirmationState, ConfirmationView,
+    ConfirmationsViewModel, HomeViewModel, PendingConfirmation, ProxySettings,
+};
 
-use super::confirmation::{Answers, Cards, RoomCards, core_account};
-use super::{Active, CardSuccess};
+use super::confirmation::{Answers, card_view, fetch_list, next_wakeup_of_card, now_ms};
+use super::{CardSuccess, ChatLink};
+use crate::home::HomeLink;
+use crate::l10n::{CATALOG, language};
 
-/// 开始跟一个房间时往回看多少条事件。卡片 10 分钟就过期，同一个插件同时等确认的又有上限，这些够了。
-const CARD_LOOKBACK: u16 = 50;
+/// 长轮询失败后的退避：连不上一两次多半是抖动，翻倍着退，到上限为止。
+const BACKOFF_START: Duration = Duration::from_secs(2);
+const BACKOFF_MAX: Duration = Duration::from_secs(30);
 
-/// 跟着房间列表找出和核心账号的私聊，逐个跟着，把结果汇总进 ViewModel。主人退出过私聊时核心会换一个新的，旧的会从 `m.direct`
-/// 去掉，所以列表里通常只有一个。卡片在本会话里见过（亲眼见过它没结束，或这台设备回答过它）变成成功时往
-/// 调一次 `succeeded`：装好插件的卡片出现时，已装列表多半还是旧的。
-pub(super) async fn follow_cards(
-    view: watch::Sender<ChatViewModel>,
-    session: Arc<MatrixSession>,
-    answers: watch::Sender<Answers>,
+/// 长轮询“等你确认”列表。三份产出都从核心的同一份列表加这台设备的回答进展算出来：
+/// - 壳订阅的 [`ConfirmationsViewModel`]：等回答的、结束的、取没取到过、最近一次的问题；
+/// - [`ChatViewModel::pending_confirmations`] 和 `settled_confirmations`：提示条和撤通知的依据；
+/// - 打开的房间要显示的卡片：时间线的出口按 `origin.room_id` 过滤后放进 `TimelineUpdate::confirmations`。
+pub(super) async fn follow_cards(chat: Weak<ChatLink>, home: watch::Receiver<HomeViewModel>) {
+    let Some(link) = chat.upgrade() else { return };
+    let mut follower = Follower {
+        answers: link.answers.subscribe(),
+        retry: link.retry_confirmations.clone(),
+        chat_view: link.view.clone(),
+        vm_out: link.confirmations.clone(),
+        rooms_out: link.room_cards.clone(),
+        succeeded: link.card_success.clone(),
+        home_link: link.home.clone(),
+        home,
+        latest: None,
+        after: None,
+        problem: None,
+        backoff: Duration::ZERO,
+        transitions: Witnessed::default(),
+    };
+    drop(link);
+    follower.publish().await;
+    follower.run().await;
+}
+
+/// 跟随者的状态。列表是核心给的；其余是这台设备自己知道的补充。
+struct Follower {
+    answers: watch::Receiver<Answers>,
+    retry: Arc<tokio::sync::Notify>,
+    chat_view: watch::Sender<ChatViewModel>,
+    vm_out: watch::Sender<ConfirmationsViewModel>,
+    rooms_out: watch::Sender<Arc<Vec<ConfirmationView>>>,
     succeeded: CardSuccess,
-) {
-    let core = core_account(session.user_id());
-    let mut rooms = view.subscribe();
-    let (sender, mut updates) = mpsc::unbounded_channel();
-    let mut followed: HashMap<String, Active> = HashMap::new();
-    let mut standing: BTreeMap<String, RoomCards> = BTreeMap::new();
-    loop {
-        let rows = rooms.borrow_and_update().rooms.clone();
-        // 是不是核心的私聊以会话里的 `m.direct` 为准，不以行上的私聊字段认：行跟着每次列表重算重取，
-        // `m.direct` 还没同步到、或 Tuwunel 补状态的间隙里，同一房间在相邻两次重算里一会儿算一会儿不算，
-        // 拿它当集合的依据，订阅就跟着行抖动进出（`MatrixSession::direct_chat_rooms_with`）。
-        // 读不到就不动集合：不知道私聊名单时，进和出都没有依据，等下一轮重算再试。
-        let dm_rooms: Option<BTreeSet<String>> = match session.direct_chat_rooms_with(&core).await {
-            Ok(rooms) => Some(rooms.into_iter().map(|room| room.to_string()).collect()),
-            Err(error) => {
-                tracing::warn!("cannot read m.direct; keeping watched rooms unchanged: {error}");
-                None
+    home_link: Arc<HomeLink>,
+    home: watch::Receiver<HomeViewModel>,
+    /// 核心的最近一份列表（取到过的）。
+    latest: Option<ConfirmationList>,
+    /// 下次长轮询带的 `after`。
+    after: Option<u64>,
+    problem: Option<ChatProblem>,
+    /// 下一次取列表前要等多久（失败后翻倍）。
+    backoff: Duration,
+    transitions: Witnessed,
+}
+
+/// 这个进程里“看着结束”的过渡：亲眼见过在等的、确认过结束的、报过成功结果的。
+#[derive(Default)]
+struct Witnessed {
+    /// 见过还在等回答的卡片：它结束时就算“看着结束的”，会话里还显示一会儿结果。
+    seen_pending: HashSet<String>,
+    /// 看着结束的（亲眼见过在等，或这台设备回答过）：会话里显示结果，成功的补取一次已装列表。
+    finished: HashSet<String>,
+    /// 报过成功结果的卡片：重复见到的同一张不再报。
+    reported: HashSet<String>,
+}
+
+impl Follower {
+    async fn run(mut self) {
+        // 挂着的取列表请求单独跑：它一挂就是 `CONFIRMATIONS_WAIT_SECS`，回答的进展和卡片到期不能跟着等。
+        let mut in_flight: Option<tokio::task::JoinHandle<Result<ConfirmationList, ChatProblem>>> =
+            None;
+        loop {
+            if in_flight.is_none() {
+                let Some((core_url, proxy)) = self.wait_ready().await else {
+                    return;
+                };
+                in_flight = Some(tokio::spawn(fetch_list(core_url, proxy, self.after)));
             }
-        };
-        // 进集合：行已是已加入，且 `m.direct` 把房间标给核心账号。
-        let wanted: BTreeSet<String> = dm_rooms
-            .as_ref()
-            .map(|dm_rooms| {
-                rows.iter()
-                    .filter(|row| {
-                        row.membership == RoomMembership::Joined && dm_rooms.contains(&row.room_id)
-                    })
-                    .map(|row| row.room_id.clone())
-                    .collect()
-            })
-            .unwrap_or_default();
-        // 出集合只认稳定的证据，行上的其他变化不动已跟着的房间：
-        // - `m.direct` 不再把房间标给核心：私聊真的换走了，这是收到事件才有的变化；
-        // - 行从列表里消失：列表只显示没离开的房间，消失就是离开了。
-        // 行上的成员状态不看出：Tuwunel 在加入后的第一次同步里先让事件可见、再补房间的当前状态，这中间
-        // 的行把已加入的房间错标成受邀（见 `MatrixSession::until_joined`），等下一次重算就回正。按它退订，
-        // 订阅跟着行翻转，每次都取消在飞的同步请求，进而把整个同步顶重启（#370）。
-        let gone: Vec<String> = match &dm_rooms {
-            Some(dm_rooms) => followed
-                .keys()
-                .filter(|room| {
-                    !dm_rooms.contains(*room) || !rows.iter().any(|row| &row.room_id == *room)
-                })
-                .cloned()
-                .collect(),
-            None => Vec::new(),
-        };
-        for room in gone {
-            followed.remove(&room);
-            standing.remove(&room);
-            if let Ok(room) = room.parse::<OwnedRoomId>() {
-                session.unwatch_room(&room).await;
+            let Some(mut task) = in_flight.take() else {
+                unreachable!()
+            };
+            match self.wait_for_event(&mut task).await {
+                Some(Ok(list)) => {
+                    self.after = Some(list.revision);
+                    self.latest = Some(list);
+                    self.problem = None;
+                    self.backoff = Duration::ZERO;
+                }
+                Some(Err(next)) => {
+                    self.problem = Some(next);
+                    self.backoff = if self.backoff.is_zero() {
+                        BACKOFF_START
+                    } else {
+                        (self.backoff * 2).min(BACKOFF_MAX)
+                    };
+                }
+                // 家里的连接或回答的通道没了：作用域在收尾，任务跟着停。
+                None => return,
+            }
+            self.publish().await;
+        }
+    }
+
+    /// 等在飞的取列表请求回来。等的过程中回答的进展、卡片到期、重试和连接变化都会就地重算显示；
+    /// 家里的连接或回答的通道没了返回 `None`（作用域在收尾）。
+    async fn wait_for_event(
+        &mut self,
+        task: &mut tokio::task::JoinHandle<Result<ConfirmationList, ChatProblem>>,
+    ) -> Option<Result<ConfirmationList, ChatProblem>> {
+        let mut wakeup = next_wakeup(&self.latest);
+        loop {
+            tokio::select! {
+                fetched = &mut *task => {
+                    return Some(fetched.unwrap_or_else(|error| {
+                        Err(transport(format!("the list request failed: {error}")))
+                    }));
+                }
+                changed = self.answers.changed() => {
+                    changed.ok()?;
+                    self.publish().await;
+                    wakeup = next_wakeup(&self.latest);
+                }
+                _ = async {
+                    match wakeup {
+                        Some(delay) => tokio::time::sleep(delay).await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    // 期限到了：重新算显示，卡片在列表里换成“已过期”；剩下的到期接着等。
+                    self.publish().await;
+                    wakeup = next_wakeup(&self.latest);
+                }
+                _ = self.retry.notified() => {
+                    // 正在挂着的请求等它自己回来；退避清零，下一次取列表立即发。
+                    self.backoff = Duration::ZERO;
+                }
+                changed = self.home.changed() => {
+                    changed.ok()?;
+                    // 连接变了：挂着的请求多半要失败，走正常的失败路径。
+                }
             }
         }
-        for room in wanted {
-            if followed.contains_key(&room) {
+    }
+
+    /// 连接没就绪就不打核心：留上次的列表，一次都没取到过就还显示加载中。失败过的先等退避；
+    /// `Action::RetryConfirmations` 立即放行。连接没了（作用域释放）返回 `None`。
+    async fn wait_ready(&mut self) -> Option<(Url, ProxySettings)> {
+        if !self.backoff.is_zero() {
+            tokio::select! {
+                _ = tokio::time::sleep(self.backoff) => {}
+                _ = self.retry.notified() => {}
+                changed = self.home.changed() => {
+                    changed.ok()?;
+                }
+            }
+        }
+        loop {
+            let proxy = self.home.borrow_and_update().proxy.clone();
+            if let (Some(proxy), Some(core_url)) = (proxy, self.home_link.core_url()) {
+                return Some((core_url, proxy));
+            }
+            tokio::select! {
+                changed = self.home.changed() => {
+                    changed.ok()?;
+                }
+                _ = self.retry.notified() => {}
+            }
+        }
+    }
+
+    /// 把算好的显示发出去。卡片在这台设备上看着变成成功时，先就地补取已装列表（等测试钩子放行），再发列表：
+    /// 壳看到卡片结束时，补不补取已经定了。
+    async fn publish(&mut self) {
+        let answers = self.answers.borrow().clone();
+        let derived = derive(
+            self.latest.as_ref(),
+            &answers,
+            now_ms(),
+            &mut self.transitions,
+        );
+        let mut successes = Vec::new();
+        for view in &derived.finished {
+            if !matches!(view.card.state, ConfirmationState::Succeeded { .. }) {
                 continue;
             }
-            let task = tokio::spawn(follow_room(
-                session.clone(),
-                room.clone(),
-                Cards::new(session.user_id(), answers.subscribe()),
-                sender.clone(),
-                succeeded.clone(),
-            ));
-            followed.insert(room, Active { tasks: vec![task] });
-        }
-        publish(&view, &standing);
-        tokio::select! {
-            changed = rooms.changed() => {
-                if changed.is_err() {
-                    return;
-                }
+            let Some(plugin_id) = &view.card.plugin_id else {
+                continue;
+            };
+            if !self.transitions.finished.contains(&view.card.id) {
+                continue;
             }
-            Some((room, cards)) = updates.recv() => {
-                standing.insert(room, cards);
+            if self.transitions.reported.insert(view.card.id.clone()) {
+                successes.push(plugin_id.clone());
             }
         }
+        for plugin_id in successes {
+            #[cfg(not(feature = "test-hooks"))]
+            (self.succeeded)(&plugin_id);
+            #[cfg(feature = "test-hooks")]
+            (self.succeeded)(&plugin_id).await;
+        }
+        self.vm_out.send_replace(ConfirmationsViewModel {
+            pending: derived.pending.clone(),
+            finished: derived.finished.clone(),
+            // 联系人请求跟卡片坐同一班列表（ADR-0051 的接法在联系人那头），这里照核心给的顺序原样带过去。
+            contact_requests: self
+                .latest
+                .as_ref()
+                .map(|list| list.contact_requests.clone())
+                .unwrap_or_default(),
+            loading: self.latest.is_none(),
+            problem: self.problem.clone(),
+        });
+        self.rooms_out.send_replace(Arc::new(derived.rooms.clone()));
+        let chat_pending = derived.chat_pending.clone();
+        let chat_settled = derived.chat_settled.clone();
+        self.chat_view.send_if_modified(|view| {
+            if view.pending_confirmations == chat_pending
+                && view.settled_confirmations == chat_settled
+            {
+                return false;
+            }
+            view.pending_confirmations.clone_from(&chat_pending);
+            view.settled_confirmations.clone_from(&chat_settled);
+            true
+        });
     }
 }
 
-/// 跟着一个房间，卡片的情况每次可能变化时报一次：来了新事件、这台设备的回答有了进展、有卡片到期。
-/// 卡片在本会话里见过（亲眼见过它没结束，或这台设备回答过它）变成成功时调一次 `succeeded`。
-async fn follow_room(
-    session: Arc<MatrixSession>,
-    room_id: String,
-    mut cards: Cards,
-    out: mpsc::UnboundedSender<(String, RoomCards)>,
-    succeeded: CardSuccess,
+/// 等回答的卡片和生效中的时段里，最近的到期还差多久；已经到期的显示刚发布时就算过了，不用再等。
+fn next_wakeup(list: &Option<ConfirmationList>) -> Option<Duration> {
+    let now = now_ms();
+    list.as_ref()?
+        .confirmations
+        .iter()
+        .filter_map(|card| next_wakeup_of_card(card, now))
+        .filter(|delay| !delay.is_zero())
+        .min()
+}
+
+fn transport(message: String) -> ChatProblem {
+    ChatProblem {
+        reason: wonton_protocol::ChatFailure::TransportUnavailable,
+        message: l10n!(
+            CATALOG,
+            language(),
+            "chat-confirmations-list-failed",
+            message = message
+        ),
+    }
+}
+
+/// 一份核心列表加这台设备的回答进展，算出各处要显示的东西。
+struct Derived {
+    /// 等回答的，最早到期的在前。正在发给核心的也在里面（`sending` 标着）。
+    pending: Vec<ConfirmationView>,
+    /// 结束的：显示成过期的（核心还没标，按到期晚的在前）在前，核心给的（保序）在后。
+    finished: Vec<ConfirmationView>,
+    /// [`ChatViewModel::pending_confirmations`]。
+    chat_pending: Vec<PendingConfirmation>,
+    /// [`ChatViewModel::settled_confirmations`]。
+    chat_settled: Vec<String>,
+    /// 打开的房间能显示的：等回答的，加上看着结束的。
+    rooms: Vec<ConfirmationView>,
+}
+
+fn derive(
+    list: Option<&ConfirmationList>,
+    answers: &Answers,
+    now: u64,
+    transitions: &mut Witnessed,
+) -> Derived {
+    let Some(list) = list else {
+        return Derived {
+            pending: Vec::new(),
+            finished: Vec::new(),
+            chat_pending: Vec::new(),
+            chat_settled: Vec::new(),
+            rooms: Vec::new(),
+        };
+    };
+    let mut pending = Vec::new();
+    // 核心还挂在等回答的列表里、这台设备知道已经结束了的（到期了，自己答过了，或核心不收回答了）。
+    let mut ended_early = Vec::new();
+    for card in &list.confirmations {
+        let view = card_view(card.clone(), answers, now);
+        if view.sending.is_some() {
+            // 正在发给核心：列表和会话里都显示发送中，等结果；提示条不再催（这台设备已经在答了）。
+            transitions.seen_pending.insert(card.id.clone());
+            pending.push(view);
+        } else if view.card.state != ConfirmationState::Pending {
+            ended_early.push(view);
+        } else if view.card.choices.is_empty() && view.problem.is_some() {
+            // 核心不收回答了（主人的另一台设备答过、没有这个确认）：对这台设备来说已经结束，如实带着原因。
+            ended_early.push(view);
+        } else {
+            transitions.seen_pending.insert(card.id.clone());
+            pending.push(view);
+        }
+    }
+    ended_early.sort_by_key(|view| std::cmp::Reverse(view.card.expires_at_ms));
+    let mut finished = Vec::new();
+    let mut chat_settled = Vec::new();
+    for view in ended_early {
+        note_ended(view, answers, transitions, &mut chat_settled, &mut finished);
+    }
+    for card in &list.finished {
+        note_ended(
+            card_view(card.clone(), answers, now),
+            answers,
+            transitions,
+            &mut chat_settled,
+            &mut finished,
+        );
+    }
+    pending.sort_by_key(|view| view.card.expires_at_ms);
+    // 会话横幅只催能在这里回答、还没在答的：正在发的和认不得它的回答的卡片（比这个 App 新的核心写的）不催主人。
+    let chat_pending = pending
+        .iter()
+        .filter(|view| view.sending.is_none() && !view.card.choices.is_empty())
+        .map(|view| PendingConfirmation {
+            id: view.card.id.clone(),
+            room_id: view
+                .card
+                .origin
+                .as_ref()
+                .map(|origin| origin.room_id.clone()),
+            title: view.card.title.clone(),
+            requester: view.card.requester.clone(),
+            expires_at_ms: view.card.expires_at_ms,
+        })
+        .collect();
+    let rooms = pending
+        .iter()
+        .chain(
+            finished
+                .iter()
+                .filter(|view| transitions.finished.contains(&view.card.id)),
+        )
+        .cloned()
+        .collect();
+    Derived {
+        pending,
+        finished,
+        chat_pending,
+        chat_settled,
+        rooms,
+    }
+}
+
+/// 一张结束的卡片：记下“看着结束”的过渡（见过它在等，或这台设备回答过它），列进不用回答的。
+fn note_ended(
+    view: ConfirmationView,
+    answers: &Answers,
+    transitions: &mut Witnessed,
+    chat_settled: &mut Vec<String>,
+    finished: &mut Vec<ConfirmationView>,
 ) {
-    let room = match room_id.parse::<OwnedRoomId>() {
-        Ok(room) => session.watch_room(&room).await,
-        Err(error) => {
-            tracing::warn!(room = %room_id, "notification room ID isn't valid: {error}");
-            return;
-        }
-    };
-    let room = match room {
-        Ok(room) => room,
-        Err(error) => {
-            tracing::warn!(room = %room_id, "can't follow the notification room, so cards won't be announced: {error}");
-            return;
-        }
-    };
-    let (entries, diffs) = room.entries().await;
-    let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
-    let mut diffs = std::pin::pin!(diffs);
-    let mut newest = None;
-    // 本会话里见过、还没结束的卡片：它变成成功时报一次插件 ID。
-    let mut watched = HashSet::new();
-    // 报过成功结果的卡片：重放和重复编辑不再报。
-    let mut reported = HashSet::new();
-    loop {
-        // 同步只给最新的事件，更早的卡片要往回翻才看得到。缺口是同步带来的，所以最底下来了新事件就翻一次；翻回来的在上面，不会再触发。
-        let latest = entries.back().map(|entry| entry.id.clone());
-        if latest != newest {
-            newest = latest;
-            if let Err(error) = room.paginate_backwards(CARD_LOOKBACK).await {
-                tracing::warn!(room = %room_id, "can't page back through the notification room, so older cards won't be announced: {error}");
-            }
-        }
-        let shown = cards.view();
-        for (card_id, done, plugin_id) in shown.plugin_cards(&entries) {
-            if done {
-                // 本会话里见过的卡片变成成功才报：亲眼见过它没结束，或这台设备回答过它。
-                // 同一批同步里卡片和结果一起到时，亲眼这条路赶不上，回答过的照报。
-                // 启动时翻回来的历史结果（两条都不占）不报——那时连上后的取列表本来就会跑。
-                // 报过一次就不再报，重放和重复编辑不再触发。
-                let witnessed = watched.remove(&card_id) || shown.answered_here(&card_id);
-                if witnessed && reported.insert(card_id.clone()) {
-                    // 测试钩子开着时决定等放行（见 test_hooks）：settled 在这一步之后才发出去。
-                    #[cfg(not(feature = "test-hooks"))]
-                    succeeded(&plugin_id);
-                    #[cfg(feature = "test-hooks")]
-                    succeeded(&plugin_id).await;
-                }
-            } else {
-                watched.insert(card_id);
-            }
-        }
-        if out
-            .send((room_id.clone(), shown.standing(&room_id, &entries)))
-            .is_err()
-        {
-            return;
-        }
-        let next_expiry = shown.next_expiry(&entries);
-        tokio::select! {
-            batch = diffs.next() => {
-                let Some(batch) = batch else { return };
-                for diff in batch {
-                    diff.apply(&mut entries);
-                }
-            }
-            changed = cards.changed() => {
-                if changed.is_err() {
-                    return;
-                }
-            }
-            () = tokio::time::sleep(next_expiry.unwrap_or_default()), if next_expiry.is_some() => {}
-        }
+    let was_pending = transitions.seen_pending.remove(&view.card.id);
+    if was_pending || answers.answered_here(&view.card.id) {
+        transitions.finished.insert(view.card.id.clone());
     }
-}
-
-fn publish(view: &watch::Sender<ChatViewModel>, standing: &BTreeMap<String, RoomCards>) {
-    let mut pending: Vec<_> = standing
-        .values()
-        .flat_map(|cards| cards.pending.iter().cloned())
-        .collect();
-    pending.sort_by_key(|(expires_at_ms, _)| *expires_at_ms);
-    let pending: Vec<_> = pending.into_iter().map(|(_, card)| card).collect();
-    let settled: Vec<_> = standing
-        .values()
-        .flat_map(|cards| cards.settled.iter().cloned())
-        .collect();
-    view.send_if_modified(|view| {
-        if view.pending_confirmations == pending && view.settled_confirmations == settled {
-            return false;
-        }
-        view.pending_confirmations.clone_from(&pending);
-        view.settled_confirmations.clone_from(&settled);
-        true
-    });
+    chat_settled.push(view.card.id.clone());
+    finished.push(view);
 }

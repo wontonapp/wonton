@@ -9,7 +9,7 @@ mod notification;
 pub(crate) mod record;
 mod registration;
 
-pub(crate) use notification::{DirectConfirmation, Payload, push_notification};
+pub(crate) use notification::{Payload, push_notification};
 
 use std::path::{Path, PathBuf};
 

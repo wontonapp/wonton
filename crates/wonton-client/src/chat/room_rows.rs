@@ -8,7 +8,7 @@ use tokio::task::JoinHandle;
 use wonton_matrix::MatrixSession;
 
 use super::ChatLink;
-use super::confirmation::core_account;
+use super::core_account;
 use super::layout::compose;
 use super::lock;
 use super::view::{room_row, sort_rooms};

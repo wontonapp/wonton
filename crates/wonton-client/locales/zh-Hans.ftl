@@ -151,6 +151,8 @@ chat-confirmation-stop-lost = 没等到家里服务器的回应，可以再点�
 chat-confirmation-response-unreadable = 核心的回应读不懂（{ $error }）
 # $status 是原始 HTTP 状态码。
 chat-confirmation-core-status = 核心回了 { $status }
+chat-confirmations-list-failed = 取不到确认列表：{ $message }
+chat-confirmation-fetch-failed = 取不到确认卡片：{ $message }
 # 开始私聊时用户名为空时显示。
 chat-contacts-empty-username = 用户名不能为空。
 # $reason 是 Matrix ID 解析器的原始错误。

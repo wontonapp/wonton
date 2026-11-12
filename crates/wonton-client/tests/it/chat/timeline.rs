@@ -25,6 +25,8 @@ pub struct Timeline {
     scroll: TimelineScroll,
     /// 核心给的加密入口，和壳一样逐批换。
     pub notice: Option<KeyNotice>,
+    /// 最近一批里这个房间的确认卡片（ADR-0016），和壳一样逐批换。
+    pub confirmations: Vec<wonton_client::ConfirmationView>,
     dispatched: usize,
     started: bool,
     cleared: bool,
@@ -58,6 +60,7 @@ impl Timeline {
             viewport: TimelineViewport::Bottom,
             scroll: TimelineScroll::Bottom,
             notice: None,
+            confirmations: Vec::new(),
             dispatched: 0,
             started: false,
             cleared: false,
@@ -72,6 +75,7 @@ impl Timeline {
     fn apply_update(&mut self, update: wonton_client::TimelineUpdate) {
         self.viewport = update.viewport;
         self.notice = update.key_notice;
+        self.confirmations = update.confirmations;
         let diffs = update.diffs;
         let back_pagination = update.back_pagination;
         // 翻页开始了，或者翻回来的条目到了：这一页算翻过，下回还在顶上就再翻。
@@ -228,6 +232,31 @@ impl Timeline {
                     self.notice
                 )
             });
+    }
+
+    /// 应用增量，直到这个房间的确认卡片（ADR-0016）满足条件。空批也带着当前的列表，变化就会醒。
+    pub async fn until_confirmations<R>(
+        &mut self,
+        what: &str,
+        mut check: impl FnMut(&[wonton_client::ConfirmationView]) -> Option<R>,
+    ) -> R {
+        let waiting = async {
+            loop {
+                if let Some(found) = check(&self.confirmations) {
+                    return found;
+                }
+                let update = self.subscription.next().await.expect("时间线订阅提前结束");
+                self.apply_update(update);
+            }
+        };
+        tokio::time::timeout(WAIT, waiting)
+            .await
+            .unwrap_or_else(|_| {
+                panic!(
+                    "{what}：{WAIT:?} 内确认卡片没有等到，现在是 {:#?}",
+                    self.confirmations
+                )
+            })
     }
 
     /// 应用增量，直到整个列表满足条件。

@@ -1,100 +1,20 @@
 //! 模拟的核心服务端：`POST /_wonton/matrix/login-token` 签发主人的登录令牌，`POST /_wonton/api/pairing-codes`
 //! 发“添加设备”的码，`PUT`、`DELETE` `/_wonton/push/registration` 记下推送登记（响应同核心的推送登记接口），
-//! `matrix.<基础域名>` 上的请求原样转给 Tuwunel。本地代理每个请求一条连接，读完请求头就能分流。
+//! `GET /_wonton/api/confirmations` 给“等你确认”列表和单张卡片（ADR-0016），`matrix.<基础域名>` 上的请求原样转给
+//! Tuwunel。本地代理每个请求一条连接，读完请求头就能分流。
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 
+use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
-
-use serde_json::{Value, json};
-use std::sync::atomic::Ordering;
 use wonton_matrix::testkit::PushGateway;
 
-use super::{BASE_DOMAIN, Core, OWNER, friends, matrix, read_body};
-
-/// 核心自己的接口；不认识的请求回 `None`（404）。
-fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
-    let push = |method: &str, body: Value| {
-        core.push_requests
-            .lock()
-            .unwrap()
-            .push((method.to_owned(), body));
-        core.push_registrations_seen
-            .send_modify(|count| *count += 1);
-    };
-    if let Some(rest) = head.strip_prefix("post /_wonton/confirmations/") {
-        let id = rest
-            .split_whitespace()
-            .next()
-            .unwrap_or_default()
-            .to_owned();
-        let answer: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
-        let state = match answer["answer"].as_str() {
-            Some("approve") => "running",
-            _ => "rejected",
-        };
-        core.answers.lock().unwrap().push((id, answer));
-        let (status, reply) = core
-            .answer_replies
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or_else(|| (200, json!({"state": {"type": state}})));
-        return Some((status, reply.to_string()));
-    }
-    if let Some(rest) = head.strip_prefix("delete /_wonton/confirmations/") {
-        let id = rest.split('/').next().unwrap_or_default().to_owned();
-        core.window_stops.lock().unwrap().push(id);
-        let reply = core.answer_replies.lock().unwrap().pop_front();
-        return Some(reply.map_or((204, String::new()), |(status, reply)| {
-            (status, reply.to_string())
-        }));
-    }
-    if let Some(reply) = friends::respond(core, head, body) {
-        return Some(reply);
-    }
-    if head.starts_with("get /_wonton/api/plugins ") {
-        core.installed_requests.fetch_add(1, Ordering::SeqCst);
-        let installed = core.installed.lock().unwrap().clone()?;
-        return Some((200, installed.to_string()));
-    }
-    let response = if head.starts_with("post /_wonton/matrix/login-token ") {
-        if core
-            .failing_login_tokens
-            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-            .is_ok()
-        {
-            return Some((502, String::new()));
-        }
-        core.login_tokens.fetch_add(1, Ordering::SeqCst);
-        json!({
-            "homeserver_url": format!("http://matrix.{BASE_DOMAIN}"),
-            "server_name": BASE_DOMAIN,
-            "user_id": OWNER,
-            "login_type": "org.matrix.login.jwt",
-            "token": core.issuer.login_token("owner"),
-            "expires_in": 120,
-        })
-    } else if head.starts_with("put /_wonton/push/registration ") {
-        push("PUT", serde_json::from_slice(body).unwrap_or(Value::Null));
-        json!({"pushkey": core.pushkey, "gateway_url": PushGateway::URL})
-    } else if head.starts_with("post /_wonton/api/pairing-codes ") {
-        let code = core.issued_pairing_code.lock().unwrap().clone()?;
-        json!({"code": code, "expires_in": 600})
-    } else if head.starts_with("get /_wonton/api/onboarding ") {
-        let value = core.onboarding.lock().unwrap().clone()?;
-        return Some((200, value.to_string()));
-    } else if head.starts_with("delete /_wonton/push/registration ") {
-        push("DELETE", Value::Null);
-        json!({"removed": true})
-    } else {
-        return None;
-    };
-    Some((200, response.to_string()))
-}
+use super::{BASE_DOMAIN, Core, OWNER, matrix, read_body};
 
 pub(super) async fn fake_core(core: Arc<Core>) -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
@@ -151,7 +71,7 @@ async fn answer_core_route(core: &Arc<Core>, text: &str, raw: &str, tcp: &mut Tc
     }
     let reply = match core.bot_api.respond(text, &body).await {
         Some(reply) => Some(reply),
-        None => respond(core, text, &body),
+        None => respond(core, text, &body).await,
     };
     hold_push_registration_response(core, text).await;
     let response = match reply {
@@ -177,4 +97,160 @@ async fn hold_push_registration_response(core: &Core, text: &str) {
         let mut released = core.hold_push_registrations.subscribe();
         released.wait_for(|hold| !hold).await.ok();
     }
+}
+
+/// 核心自己的接口；不认识的请求回 `None`（404）。
+async fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
+    let push = |method: &str, body: Value| {
+        core.push_requests
+            .lock()
+            .unwrap()
+            .push((method.to_owned(), body));
+        core.push_registrations_seen
+            .send_modify(|count| *count += 1);
+    };
+    if let Some(rest) = head.strip_prefix("post /_wonton/confirmations/") {
+        let id = rest
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        let answer: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+        let state = match answer["answer"].as_str() {
+            Some("approve") => "running",
+            _ => "rejected",
+        };
+        core.answers.lock().unwrap().push((id, answer));
+        let (status, reply) = core
+            .answer_replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| (200, json!({"state": {"type": state}})));
+        return Some((status, reply.to_string()));
+    }
+    if let Some(rest) = head.strip_prefix("delete /_wonton/confirmations/") {
+        let id = rest.split('/').next().unwrap_or_default().to_owned();
+        core.window_stops.lock().unwrap().push(id);
+        let reply = core.answer_replies.lock().unwrap().pop_front();
+        return Some(reply.map_or((204, String::new()), |(status, reply)| {
+            (status, reply.to_string())
+        }));
+    }
+    if let Some(reply) = super::friends::respond(core, head, body) {
+        return Some(reply);
+    }
+    if head.starts_with("get /_wonton/api/confirmations") {
+        return confirmations(core, head).await;
+    }
+    if head.starts_with("get /_wonton/api/plugins ") {
+        core.installed_requests.fetch_add(1, Ordering::SeqCst);
+        let installed = core.installed.lock().unwrap().clone()?;
+        return Some((200, installed.to_string()));
+    }
+    let response = if head.starts_with("post /_wonton/matrix/login-token ") {
+        if core
+            .failing_login_tokens
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .is_ok()
+        {
+            return Some((502, String::new()));
+        }
+        core.login_tokens.fetch_add(1, Ordering::SeqCst);
+        json!({
+            "homeserver_url": format!("http://matrix.{BASE_DOMAIN}"),
+            "server_name": BASE_DOMAIN,
+            "user_id": OWNER,
+            "login_type": "org.matrix.login.jwt",
+            "token": core.issuer.login_token("owner"),
+            "expires_in": 120,
+        })
+    } else if head.starts_with("put /_wonton/push/registration ") {
+        push("PUT", serde_json::from_slice(body).unwrap_or(Value::Null));
+        json!({"pushkey": core.pushkey, "gateway_url": PushGateway::URL})
+    } else if head.starts_with("post /_wonton/api/pairing-codes ") {
+        let code = core.issued_pairing_code.lock().unwrap().clone()?;
+        json!({"code": code, "expires_in": 600})
+    } else if head.starts_with("get /_wonton/api/onboarding ") {
+        let value = core.onboarding.lock().unwrap().clone()?;
+        return Some((200, value.to_string()));
+    } else if head.starts_with("delete /_wonton/push/registration ") {
+        push("DELETE", Value::Null);
+        json!({"removed": true})
+    } else {
+        return None;
+    };
+    Some((200, response.to_string()))
+}
+
+/// 假核心的确认接口（ADR-0016）：单张 `GET /_wonton/api/confirmations/{id}` 和列表
+/// `GET /_wonton/api/confirmations?after=<revision>`。带 `after` 且没有更新时挂住等 revision 变化，
+/// 和真核心一样，客户端的长轮询才不会空转。
+async fn confirmations(core: &Core, head: &str) -> Option<(u16, String)> {
+    let rest = head.strip_prefix("get /_wonton/api/confirmations")?;
+    if let Some(rest) = rest.strip_prefix('/') {
+        let id = rest.split_whitespace().next().unwrap_or_default();
+        core.single_confirmation_requests
+            .fetch_add(1, Ordering::SeqCst);
+        if core.single_confirmation_missing.load(Ordering::SeqCst) {
+            return Some((404, String::new()));
+        }
+        if core
+            .failing_single_confirmation
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .is_ok()
+        {
+            return Some((503, String::new()));
+        }
+        let list = core.confirmations.lock().unwrap().clone();
+        let wanted = serde_json::json!(id);
+        return Some(
+            match list
+                .pending
+                .iter()
+                .chain(&list.finished)
+                .find(|card| card["id"] == wanted)
+            {
+                Some(card) => (200, card.to_string()),
+                None => (404, String::new()),
+            },
+        );
+    }
+    core.confirmations_requests.fetch_add(1, Ordering::SeqCst);
+    if core
+        .failing_confirmations
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+        .is_ok()
+    {
+        return Some((502, String::new()));
+    }
+    let list = core.confirmations.lock().unwrap().clone();
+    let after = head
+        .split("?after=")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|after| after.parse::<u64>().ok());
+    if let Some(after) = after
+        && after >= list.revision
+    {
+        let mut revision = core.confirmations_revision.subscribe();
+        drop(list);
+        // 和真核心一样挂到有更新为止，测试里限两秒：没有更新就回当前列表，客户端再去取，
+        // 不让测试等满整个客户端超时。
+        let _ = tokio::time::timeout(
+            Duration::from_secs(2),
+            revision.wait_for(|revision| *revision > after),
+        )
+        .await;
+    }
+    let list = core.confirmations.lock().unwrap().clone();
+    Some((
+        200,
+        json!({
+            "confirmations": list.pending,
+            "finished": list.finished,
+            "revision": list.revision,
+        })
+        .to_string(),
+    ))
 }
