@@ -36,9 +36,12 @@ pub enum CoreError {
     /// 连不上家里的服务器或它上面的服务：隧道没连上、网络断开或请求超时。
     #[error("{}", detail("core-error-transport", .reason))]
     TransportUnavailable { reason: String },
-    /// 服务器拒绝了身份或权限：设备已被吊销、无权访问。
+    /// 服务器不认这个身份：设备已被吊销、令牌失效。要重新配对或登录。
     #[error("{}", detail("core-error-unauthorized", .reason))]
     Unauthorized { reason: String },
+    /// 身份有效，但服务器不让做这件事：没有权限、不在房间里、对方屏蔽了自己、对方的服务器不和这台互通。不是要重新登录。
+    #[error("{}", detail("core-error-forbidden", .reason))]
+    Forbidden { reason: String },
     /// 服务器上的服务出错。
     #[error("{}", detail("core-error-upstream", .reason))]
     Upstream { reason: String },

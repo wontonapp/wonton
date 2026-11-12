@@ -34,7 +34,7 @@ class ResolveTest(unittest.TestCase):
         self.assertEqual(groups.resolve("chat.empty", "ios"), ("chat", "chat1"))
         self.assertEqual(groups.resolve("chat_empty", "android"), ("chat", "chat1"))
         self.assertEqual(groups.resolve("chat-empty", "fluent"), ("chat", "chat1"))
-        self.assertEqual(groups.resolve("core-error-storage", "fluent"), ("common", "common"))
+        self.assertEqual(groups.resolve("core-error-storage", "fluent"), ("common", ""))
         self.assertEqual(groups.resolve("Ask a bot: %@", "ios"), ("common", ""))
 
     def test_emoji_keys_land_by_number(self):
@@ -57,6 +57,10 @@ class LayoutTest(unittest.TestCase):
         problems = catalogs.layout_problems([("apps/ios/Wonton/strings/chat0.xcstrings", [("store.title", 4)])], "ios")
         self.assertIn("store.xcstrings", problems["apps/ios/Wonton/strings/chat0.xcstrings"][0][1])
         self.assertIn("plugins", problems["apps/ios/Wonton/strings/chat0.xcstrings"][0][1])
+
+    def test_core_keys_belong_in_the_fluent_base_file(self):
+        found = [("crates/wonton-client/locales/en/common.ftl", [("core-error-storage", 5)])]
+        self.assertEqual(catalogs.layout_problems(found, "fluent"), {})
 
     def test_duplicate_key_is_reported(self):
         found = [
