@@ -201,20 +201,28 @@ class Home:
     def attach_connector(self):
         """连接器由核心建、只接 edge 和 relay：云栈的测试网络和解析器在 compose 里没有机会注入。
 
-        顺序：接网络 → 重启（frpc 设了 `loginFailExit`，起不来时已经退出，不重启不会重试）→ 再写解析器。
-        解析器放最后：`restart` 会按 Daemon 的配置把 `/etc/resolv.conf` 重写掉，先写会被抹掉；写它是 root 的文件
-        （容器里跑的是证书属主，非 root），所以要 `-u 0`。
+        核心每隔一阵会对账，容器停着会被当成需要重建、换成新 id，所以每一步之后都重新取一次、以 inspect
+        的网络为准；连不上中继时 frpc 会退出重起，restart 中的容器没有网络沙箱（connect 报 "network sandbox
+        ... not found"），先停再连才稳。解析器核心已写进创建请求，这里的 append 只是兜底。
         """
-        connector = wait_for("connector container",
-                             lambda: self.component_container("connector"), seconds=120)
-        # 连不上中继时 frpc 会退出并被重启策略拉起来，restart 中的容器没有网络沙箱（connect 报 "network sandbox
-        # ... not found"）：先停下、接网络、再启动，最后补解析器（启动会按 Daemon 的配置重写 resolv.conf）。
-        run("docker", "stop", connector)
-        wait_for("connector attached", lambda: run(
-            "docker", "network", "connect", self.cloud["network"], connector, check=False
-        ).returncode == 0, seconds=60)
-        run("docker", "start", connector)
-        # 核心已经把 settings 里的解析器写进创建请求；只读根文件系统上 resolv.conf 是只读的，这步在旧核心上才需要。
+        network = self.cloud["network"]
+
+        def attached():
+            connector = self.component_container("connector")
+            if connector is None:
+                return False
+            networks = run("docker", "inspect", "-f",
+                           "{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}",
+                           connector, check=False).stdout.split()
+            if network in networks:
+                return True
+            run("docker", "stop", connector, check=False)
+            run("docker", "network", "connect", network, connector, check=False)
+            run("docker", "start", connector, check=False)
+            return False
+
+        wait_for("connector attached", attached, seconds=180)
+        connector = self.component_container("connector")
         run("docker", "exec", "-u", "0", connector, "sh", "-c",
             f"printf 'nameserver {self.cloud['resolver']}\n' >> /etc/resolv.conf", check=False)
 
