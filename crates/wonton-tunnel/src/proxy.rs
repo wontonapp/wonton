@@ -38,6 +38,10 @@ use crate::{
 /// 和 `bad-request`（请求头不合法或太大）。
 pub const ERROR_HEADER: &str = "x-wonton-tunnel-error";
 
+/// 代理回错误响应时给壳的用户可读类别头，取值见 [`TunnelError::category`]。壳按它显示人话；
+/// [`ERROR_HEADER`] 和正文只给机器和调试。
+pub const CATEGORY_HEADER: &str = "x-wonton-error";
+
 /// 响应结束后，最多再花这么久收尾客户端没发完的请求，避免空闲写端长期占住流。
 const LINGER: Duration = Duration::from_secs(2);
 
@@ -256,6 +260,8 @@ async fn relay(
 }
 
 /// 等隧道流上回的状态字节。服务端迟迟不回，就在这里等着，所以等久了报一下：卡在这里是服务端没接请求，不是转发慢。
+/// 等过 [`SLOW_STAGE`] 还没回时催一次定时检查（tunnel-502）：连接可能已经死了，立即确认一次，
+/// 不让这条请求干等下一个检查周期。
 async fn download(
     client: &TunnelClient,
     recv: &mut RecvStream,
@@ -264,10 +270,21 @@ async fn download(
     accepted: Instant,
     delivered: &StreamCounters,
 ) -> Result<(), RelayError> {
-    client
-        .read_status(recv, conn_id)
-        .await
-        .map_err(RelayError::BeforeResponse)?;
+    match tokio::time::timeout(SLOW_STAGE, client.read_status(recv, conn_id)).await {
+        Ok(result) => result.map_err(RelayError::BeforeResponse)?,
+        Err(_) => {
+            debug!(
+                conn_id,
+                ?SLOW_STAGE,
+                "the server has not accepted the request yet"
+            );
+            client.nudge_check();
+            client
+                .read_status(recv, conn_id)
+                .await
+                .map_err(RelayError::BeforeResponse)?;
+        }
+    }
     let waiting = accepted.elapsed();
     if waiting > SLOW_STAGE {
         warn!(
@@ -329,16 +346,19 @@ fn error_response(err: &TunnelError) -> String {
         TunnelError::UpstreamUnavailable => (503, "Service Unavailable"),
         _ => (502, "Bad Gateway"),
     };
-    let body = format!("{err}\n");
+    // 正文会被网页原样显示，只放类别；人话由壳按类别写（tunnel-502）。
+    let body = format!("{}\n", err.category());
     format!(
         "HTTP/1.1 {status} {reason}\r\n\
          {ERROR_HEADER}: {code}\r\n\
+         {CATEGORY_HEADER}: {category}\r\n\
          content-type: text/plain; charset=utf-8\r\n\
          content-length: {len}\r\n\
          connection: close\r\n\
          \r\n\
          {body}",
         code = err.code(),
+        category = err.category(),
         len = body.len(),
     )
 }
