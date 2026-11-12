@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use super::WidgetCapability;
 use super::{
     ConsumerCapabilitySetting, InstalledPlugin, LanWebuiOffer, MissingCapability, PermissionLine,
-    PluginAuthor, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginRuntime, PluginScope,
-    PluginProblem, PluginTrust, RequirementLine, SecretInputState, SecurityTier, hint,
+    PluginAuthor, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginProblem, PluginRuntime,
+    PluginScope, PluginTrust, RequirementLine, SecretInputState, SecurityTier, hint,
 };
 use crate::{CardLine, PluginShares};
 
