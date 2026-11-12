@@ -11,6 +11,7 @@ struct ConfirmationCardView: View {
     @State private var showsPages = false
     @State private var pinRequest: TabRef?
     @State private var secrets: [String: String] = [:]
+    @State private var shownSecrets = false
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -25,10 +26,10 @@ struct ConfirmationCardView: View {
             if !view.card.secretInputs.isEmpty {
                 SecretInputsSection(
                     inputs: view.card.secretInputs, values: secrets,
-                    enabled: view.card.state == .pending
-                ) { name, value in
-                    secrets[name] = value
-                }
+                    enabled: view.card.state == .pending,
+                    onShownChange: { shownSecrets = $0 },
+                    onChange: { name, value in secrets[name] = value }
+                )
             }
             state
             if let window = view.window {
@@ -66,6 +67,14 @@ struct ConfirmationCardView: View {
         }
         // 时间线第一次量这一行时给的高度可能不够，主人没读完不该按确认。
         .fixedSize(horizontal: false, vertical: true)
+        // 有密钥、点过“显示”或框里有值、卡片还没答完时，这一块在快照里要盖住。
+        .secretSnapshotMask(view.card.state == .pending && hidesValues)
+    }
+
+    /// 有密钥、点过“显示”或框里有值、卡片还没答完。
+    private var hidesValues: Bool {
+        !view.card.secretInputs.isEmpty
+            && (shownSecrets || view.card.secretInputs.contains { !(secrets[$0.name] ?? "").isEmpty })
     }
 
     @ViewBuilder private var state: some View {
