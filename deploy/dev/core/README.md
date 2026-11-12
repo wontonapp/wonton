@@ -145,6 +145,10 @@ docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=
 确认：核心在和主人的“Wonton”私聊里发确认卡片，已配对设备经隧道回答（`POST /_wonton/confirmations/{id}`，请求体
 `{"answer": "approve"}`），10 分钟没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`）。每次调用记一行审计，在数据目录的 `core/audit.jsonl`。
 没有 App 的主机上用真实的客户端核心回答：`cargo run -p wonton-client --example confirm-card -- <数据目录> <配对码> approve`。
+开发栈还没有配对设备时，用主人令牌经网关批，别干等（插件套件的 `scripts/dev.sh approve` 就是这么做的）：
+`dev.sh api GET /_wonton/api/confirmations` 列出等回答的卡片（`id`、`title`），
+`dev.sh api POST /_wonton/confirmations/<id> -d '{"answer":"approve"}'` 批准。`answer` 取 `approve`、`approve_wider`、
+`allow_window`、`reject`，必须和卡片上的按钮一致；按钮带 `choice_id` 的要原样带上，密钥类卡片随回答带 `secrets`。
 
 ## 推送
 
