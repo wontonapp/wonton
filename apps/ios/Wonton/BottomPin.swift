@@ -17,6 +17,7 @@ final class BottomPin {
     private var observations: [NSKeyValueObservation] = []
     private var heldOffset: CGFloat?
     private var updateGeneration = 0
+    private var settling = false
 
     /// List 会为末尾追加和变高的行调整 contentOffset；翻走时保留更新前的位置，不借内容高度反推主人的手势。
     func prepareForUpdate() {
@@ -81,8 +82,26 @@ final class BottomPin {
         guard let scrollView, !scrollView.isDragging, !scrollView.isDecelerating else { return }
         if isPinned {
             scrollView.contentOffset.y = scrollView.bottomOffset
+            settleAtBottom()
         } else {
             restoreOffset()
+        }
+    }
+
+    /// List 排完新行会自己再挪一次 contentOffset，保住原先看到的那一行；键盘弹着、行比可见区高时新消息就停在可见区下面，
+    /// 内容高度也不再变，等不到下一次 stick（iOS 26.5 模拟器实测）。贴底时在后面两轮里再拉回底部，同 `prepareForUpdate`。
+    private func settleAtBottom() {
+        guard !settling else { return }
+        settling = true
+        DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.settling = false
+                guard self.isPinned, let scrollView = self.scrollView,
+                      !scrollView.isDragging, !scrollView.isDecelerating else { return }
+                scrollView.layoutIfNeeded()
+                scrollView.contentOffset.y = scrollView.bottomOffset
+            }
         }
     }
 }

@@ -101,29 +101,26 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
     }
 
-    /// 长消息的最后一段不被输入框盖住：大字号下输入框长到多行、键盘弹着，滚到底仍看得全最后一条。
+    /// 长消息的最后一段不被输入框盖住：大字号下发一条长消息，再把输入框打到多行、键盘弹着，列表仍贴底，
+    /// 内容的底边在列表里、列表的底边在输入框上面。不按正文找那一行：开发栈里本机常解不开自己刚发的消息。
     func testLastMessageClearsComposer() throws {
         try launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
         guard let field = enterBotRoom() else {
             return XCTFail("没进 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
         }
-        let mark = "END\(Int.random(in: 1000...9999))"
         field.tap()
-        field.typeText(String(repeating: "long reply text ", count: 30) + mark)
+        field.typeText(String(repeating: "long reply text ", count: 30))
         tapAnyButton(["Send", "发送"], timeout: 5, required: true)
-        _ = app.wait(for: .runningForeground, timeout: 1)
-        shot("30-sent")
-        // 消息正文是 UITextView（LinkedMessageText），文字在 value 里。
-        let last = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", mark, mark)
-        ).firstMatch
-        XCTAssertTrue(last.waitForExistence(timeout: 10), "发出的消息没出现在时间线里")
-
         field.typeText(String(repeating: "draft ", count: 40))
-        _ = app.wait(for: .runningForeground, timeout: 1)
-        shot("31-composer-grown")
-        XCTAssertGreaterThan(last.frame.height, 0, "最后一条没在屏幕上")
-        XCTAssertLessThanOrEqual(last.frame.maxY, field.frame.minY, "最后一条的末尾被输入框盖住")
+        _ = app.wait(for: .runningForeground, timeout: 3)
+        shot("30-composer-grown")
+
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.exists, "房间里没有消息列表")
+        // 列表的第一个子元素是整片内容（含屏幕外的部分）。
+        let content = list.children(matching: .other).firstMatch.frame
+        XCTAssertLessThanOrEqual(content.maxY, list.frame.maxY + 2, "发完以后列表没贴底，最后一条在可见区下面")
+        XCTAssertLessThanOrEqual(list.frame.maxY, field.frame.minY + 1, "列表的底边被输入框盖住")
     }
 
     // MARK: - 摆台
