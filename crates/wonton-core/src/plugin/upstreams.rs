@@ -177,7 +177,7 @@ pub(super) fn core_aliases(public: &PublicUrls, manifest: &Manifest) -> Vec<Stri
     }
     for capability in manifest.requires.iter().chain(&manifest.wants) {
         if capability == super::capabilities::MODELS.name
-            || capability == super::capabilities::EGRESS_PROXY.name
+            || super::capabilities::has_no_consumer(capability)
             || (super::capabilities::lookup(capability).is_none()
                 && !super::capabilities::is_third_party(capability))
         {
