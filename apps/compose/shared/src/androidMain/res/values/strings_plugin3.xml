@@ -2,6 +2,8 @@
 <resources>
     <!-- Note under a setting the app can\'t render because the home server is newer. No arguments. -->
     <string name="plugin_settings_update_app">Update the app to change this</string>
+    <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
+    <string name="plugin_settings_restart_hint">The app will restart to apply this</string>
     <!-- Meta row: where the app came from. -->
     <string name="plugin_source">Source</string>
     <string name="plugin_permission_added">New</string>

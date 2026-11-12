@@ -2,6 +2,66 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "invite.cannotGive": {
+      "comment": "This device can't hand over keys because it doesn't have them all itself.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device doesn't have all the chat keys either, so the new device can't read earlier messages."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备也没有完整的密钥，新设备看不到以前的消息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這部裝置也沒有完整的金鑰，新裝置看不到以前的訊息。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスにもすべての鍵がないため、新しいデバイスでは以前のメッセージを読めません。"
+          }
+        }
+      }
+    },
+    "invite.deviceAdded": {
+      "comment": "Shown on Add device once the new device has the keys.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device added"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已加好"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已加好"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加しました"
+          }
+        }
+      }
+    },
     "invite.expired": {
       "comment": "Notice title when the pairing code ran out of time.",
       "extractionState": "manual",

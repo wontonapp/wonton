@@ -339,25 +339,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Not filled"
+            "value": "Not ready: paste a token first"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "未填写"
+            "value": "未就绪：要先填令牌"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "未填寫"
+            "value": "未就緒：要先填令牌"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "未入力"
+            "value": "未準備：トークンを先に入力してください"
           }
         }
       }

@@ -27,6 +27,7 @@
     <string name="chat_backup_reset_title">チャットのバックアップをリセットしますか？</string>
     <!-- Note under the freshly issued recovery key: it is only shown once. -->
     <string name="chat_backup_save_key_note">機種変更時に必要です。表示されるのは一度だけです。「保存しました」をタップすると、このデバイスには残りません。</string>
+    <string name="chat_backup_saved_confirm_message">確認すると、このデバイスにはもう表示されません。先にコピーかメモをしてください。</string>
     <!-- Page heading when chat backup hasn't been set up. -->
     <string name="chat_backup_status_disabled">チャットはまだバックアップされていません</string>
     <!-- Page heading when the backup status isn't known (offline). -->

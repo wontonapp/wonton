@@ -21,6 +21,7 @@
     <string name="notification_push">推送</string>
     <string name="notification_channel_message">聊天消息</string>
     <string name="notification_channel_confirmation">等你确认</string>
+    <string name="notification_value_system_blocked">系统里没允许</string>
     <string name="notification_channel_plugin">应用通知</string>
     <string name="notification_value_on">已开启</string>
     <string name="notification_value_off">已关闭</string>

@@ -47,7 +47,7 @@ struct PluginShareEditor: View {
                         DatePicker(String(localized: .Share0.shareCustom), selection: $date)
                     }
                 }
-                if !shares.friendsSupported {
+                if !shares.perUserAccounts {
                     Section {
                         WontonNotice(icon: .warning, title: String(localized: .Share2.shareRisk))
                         Toggle(String(localized: .Share1.shareAcknowledge), isOn: $acknowledged)
@@ -98,7 +98,7 @@ struct PluginShareEditor: View {
     }
 
     private var canSave: Bool {
-        !busy && !loading && recipientAvailable && (shares.friendsSupported || acknowledged)
+        !busy && !loading && recipientAvailable && (shares.perUserAccounts || acknowledged)
             && (expiry != .custom || date > .now)
     }
 
@@ -166,7 +166,7 @@ struct PluginShareEditor: View {
     }
 
     private var canSubmit: Bool {
-        !loading && recipientAvailable && (shares.friendsSupported || acknowledged)
+        !loading && recipientAvailable && (shares.perUserAccounts || acknowledged)
             && (expiry != .custom || date > .now)
     }
 }

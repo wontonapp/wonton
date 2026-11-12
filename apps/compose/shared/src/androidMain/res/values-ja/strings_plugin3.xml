@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="plugin_settings_update_app">変更するには App のアップデートが必要です</string>
+    <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
+    <string name="plugin_settings_restart_hint">アプリを一度再起動します</string>
     <string name="plugin_source">提供元</string>
     <string name="plugin_permission_added">追加</string>
     <!-- Small tag next to a permission the core doesn't support. -->

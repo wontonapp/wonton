@@ -84,5 +84,5 @@
     <string name="secret_edit">Change</string>
     <string name="secret_clear">Clear</string>
     <string name="secret_filled">Filled</string>
-    <string name="secret_unfilled">Not filled</string>
+    <string name="secret_unfilled">Not ready: paste a token first</string>
 </resources>

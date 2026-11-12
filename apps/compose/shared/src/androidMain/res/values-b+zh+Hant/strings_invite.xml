@@ -18,4 +18,6 @@
     <string name="invite_requesting">正在向家用伺服器取得配對碼…</string>
     <!-- Button under the failed notice: request a pairing code again. -->
     <string name="invite_try_again">重試</string>
+    <string name="invite_device_added">已加好</string>
+    <string name="invite_cannot_give">這部裝置也沒有完整的金鑰，新裝置看不到以前的訊息。</string>
 </resources>

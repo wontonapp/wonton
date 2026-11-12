@@ -18,4 +18,6 @@
     <string name="invite_requesting">正在向家里的服务器要配对码…</string>
     <!-- Button under the failed notice: request a pairing code again. -->
     <string name="invite_try_again">再试一次</string>
+    <string name="invite_device_added">已加好</string>
+    <string name="invite_cannot_give">这台设备也没有完整的密钥，新设备看不到以前的消息。</string>
 </resources>

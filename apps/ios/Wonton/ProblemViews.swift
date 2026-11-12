@@ -42,8 +42,8 @@ extension PluginFailure {
         case .unauthorized:
             categorizedProblem(
                 .Problem3.problemUnauthorizedTitle,
-                .Problem2.problemUnauthorizedNextStep,
-                detail)
+                 .Problem2.problemUnauthorizedNextStep,
+                 detail)
         case .upstream: categorizedProblem(.Problem2.problemUpstreamTitle, .Problem2.problemUpstreamNextStep, detail)
         case .sourceUnavailable:
             categorizedProblem(
@@ -53,28 +53,28 @@ extension PluginFailure {
         case .notFound:
             categorizedProblem(
                 .Problem2.problemPluginNotFoundTitle,
-                .Problem0.problemPluginNotFoundNextStep,
-                detail)
+                 .Problem0.problemPluginNotFoundNextStep,
+                 detail)
         case .changed:
             categorizedProblem(
                 .Problem3.problemPluginChangedTitle,
-                .Problem1.problemPluginChangedNextStep,
-                detail)
+                 .Problem1.problemPluginChangedNextStep,
+                 detail)
         case .unsupported:
             categorizedProblem(
                 .Problem2.problemPluginUnsupportedTitle,
-                .Problem0.problemUpgradeServerNextStep,
-                detail)
+                 .Problem0.problemUpgradeServerNextStep,
+                 detail)
         case .conflict:
             categorizedProblem(
                 .Problem1.problemPluginConflictTitle,
-                .Problem3.problemPluginConflictNextStep,
-                detail)
+                 .Problem3.problemPluginConflictNextStep,
+                 detail)
         case .invalid:
             categorizedProblem(
                 .Problem2.problemPluginInvalidTitle,
-                .Problem3.problemPluginInvalidNextStep,
-                detail)
+                 .Problem3.problemPluginInvalidNextStep,
+                 detail)
         case .deviceUnavailable:
             categorizedProblem(
                 .Problem1.problemPluginDeviceUnavailableTitle,
@@ -198,7 +198,7 @@ extension BotProfileFailure {
                 detail: detail
             )
         // 家人设备调只有主人的接口（ADR-0045）：不是出错，也不是还没准备好。
-        case .ownerOnly:
+        case .permissionRequired:
             return Problem(
                 title: String(localized: .BotProfile0.botProfileProblemOwnerOnlyTitle),
                 nextStep: String(localized: .BotProfile0.botProfileProblemOwnerOnlyNext),
@@ -322,6 +322,9 @@ extension Error {
                 detail: detail
             )
         case let .InvalidInput(reason):
+            return Problem(title: String(localized: .Problem2.problemInvalidInputTitle), nextStep: reason)
+        case let .SettingsInvalid(reason, _):
+            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
             return Problem(title: String(localized: .Problem2.problemInvalidInputTitle), nextStep: reason)
         case .ServerTooOld:
             return Problem(

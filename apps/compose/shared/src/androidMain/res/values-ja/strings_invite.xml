@@ -18,4 +18,6 @@
     <string name="invite_requesting">自宅サーバーにペアリングコードを要求しています…</string>
     <!-- Button under the failed notice: request a pairing code again. -->
     <string name="invite_try_again">再試行</string>
+    <string name="invite_device_added">追加しました</string>
+    <string name="invite_cannot_give">このデバイスにもすべての鍵がないため、新しいデバイスでは以前のメッセージを読めません。</string>
 </resources>

@@ -41,6 +41,8 @@
     <!-- Notification channel name for approval requests waiting for the owner. Shown in the system notification settings. -->
     <string name="notification_channel_confirmation">Waiting for you</string>
     <!-- Notification channel name for notices from apps. Shown in the system notification settings. -->
+    <!-- Notification state value: notifications are not allowed for this app in the system settings. -->
+    <string name="notification_value_system_blocked">Not allowed in system settings</string>
     <string name="notification_channel_plugin">App notifications</string>
     <!-- Notification state value: notifications are allowed. -->
     <string name="notification_value_on">On</string>

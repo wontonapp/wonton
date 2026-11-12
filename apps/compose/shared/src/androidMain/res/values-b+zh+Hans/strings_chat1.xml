@@ -27,6 +27,7 @@
     <string name="chat_backup_reset_title">重置聊天记录备份？</string>
     <!-- Note under the freshly issued recovery key: it is only shown once. -->
     <string name="chat_backup_save_key_note">换手机时要用它。只显示这一次，点“已保存”后本机不再留着它。</string>
+    <string name="chat_backup_saved_confirm_message">确认后这台设备不再显示这把密钥。先复制或抄下来，再点确认。</string>
     <!-- Page heading when chat backup hasn't been set up. -->
     <string name="chat_backup_status_disabled">还没有备份聊天记录</string>
     <!-- Page heading when the backup status isn't known (offline). -->

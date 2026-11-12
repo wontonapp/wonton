@@ -84,5 +84,5 @@
     <string name="secret_edit">修改</string>
     <string name="secret_clear">清空</string>
     <string name="secret_filled">已填寫</string>
-    <string name="secret_unfilled">未填寫</string>
+    <string name="secret_unfilled">未就緒：要先填令牌</string>
 </resources>

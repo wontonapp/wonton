@@ -21,6 +21,7 @@
     <string name="notification_push">プッシュ通知</string>
     <string name="notification_channel_message">チャットメッセージ</string>
     <string name="notification_channel_confirmation">確認待ち</string>
+    <string name="notification_value_system_blocked">システム設定で許可されていません</string>
     <string name="notification_channel_plugin">アプリからの通知</string>
     <string name="notification_value_on">オン</string>
     <string name="notification_value_off">オフ</string>

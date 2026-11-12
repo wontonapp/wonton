@@ -384,6 +384,11 @@ impl HomeLink {
         ticket.device_name().map(str::to_owned)
     }
 
+    /// 连接信息是不是扫码配对来的：只有配对生成的连接信息里有设备名，测试用的 `ConnectHome` 没有。
+    pub(crate) fn paired_with_code(&self) -> bool {
+        self.device_name().is_some()
+    }
+
     fn start(self: &Arc<Self>, text: String, ticket: Ticket) {
         *self.lock_ticket() = Some(text);
         *self

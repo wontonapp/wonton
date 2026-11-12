@@ -13,32 +13,50 @@ struct InviteView: View {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 // 配对码正出示给新设备时，新设备发来的确认请求就在这一屏接着显示，不另弹（ADR-0046）。
                 if let flow = chat.viewModel.encryption.verificationFlow, !flow.startedHere {
-                    DeviceVerificationFlowView(flow: flow, model: chat)
-                }
-                switch model.viewModel.invite {
-                case nil, .requesting:
-                    HStack(spacing: WontonTheme.spacing.s12) {
-                        ProgressView()
-                        Text(.Invite.inviteRequesting)
-                            .wontonText(WontonTheme.typography.body)
+                    if giving, case .done = flow.stage {
+                        Text(.Invite.inviteDeviceAdded)
+                            .wontonText(WontonTheme.typography.itemTitle)
                             .foregroundStyle(Color(colors.textPrimary))
+                    } else {
+                        DeviceVerificationFlowView(flow: flow, model: chat)
                     }
-                case let .ready(code, expiresAtMs):
-                    InviteCode(code: code, expiresAt: Date(timeIntervalSince1970: Double(expiresAtMs) / 1000)) {
-                        model.send(.inviteDevice)
-                    }
-                case let .failed(_, message):
-                    WontonNotice(icon: .warning, title: String(localized: .Invite.inviteFailedTitle),
-                        lines: [message]) {
-                        Button(String(localized: .Invite.inviteTryAgain)) { model.send(.inviteDevice) }
-                            .buttonStyle(WontonButtonStyle(kind: .secondary))
-                    }
+                }
+                if chat.viewModel.encryption.keyHandoff == .cannotGive {
+                    WontonNotice(icon: .warning, title: String(localized: .Invite.inviteCannotGive))
+                }
+                // 码已经被新设备用掉、这一页在替它交出密钥（ADR-0087）：不再摆码。
+                if !giving {
+                    code
                 }
             }
             .padding(WontonTheme.spacing.pageInset)
         }
         .wontonPushedScreen(String(localized: .Invite.inviteTitle))
         .task { model.send(.inviteDevice) }
+        .onDisappear { model.send(.closeDeviceInvite) }
+    }
+
+    private var giving: Bool { chat.viewModel.encryption.keyHandoff == .giving }
+
+    @ViewBuilder private var code: some View {
+        switch model.viewModel.invite {
+        case nil, .requesting:
+            HStack(spacing: WontonTheme.spacing.s12) {
+                ProgressView()
+                Text(.Invite.inviteRequesting)
+                    .wontonText(WontonTheme.typography.body)
+                    .foregroundStyle(Color(colors.textPrimary))
+            }
+        case let .ready(code, expiresAtMs):
+            InviteCode(code: code, expiresAt: Date(timeIntervalSince1970: Double(expiresAtMs) / 1000)) {
+                model.send(.inviteDevice)
+            }
+        case let .failed(_, message):
+            WontonNotice(icon: .warning, title: String(localized: .Invite.inviteFailedTitle), lines: [message]) {
+                Button(String(localized: .Invite.inviteTryAgain)) { model.send(.inviteDevice) }
+                    .buttonStyle(WontonButtonStyle(kind: .secondary))
+            }
+        }
     }
 }
 

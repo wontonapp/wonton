@@ -18,4 +18,6 @@
     <string name="invite_requesting">Asking your home server for a pairing code…</string>
     <!-- Button under the failed notice: request a pairing code again. -->
     <string name="invite_try_again">Try again</string>
+    <string name="invite_device_added">Device added</string>
+    <string name="invite_cannot_give">This device doesn\'t have all the chat keys either, so the new device can\'t read earlier messages.</string>
 </resources>

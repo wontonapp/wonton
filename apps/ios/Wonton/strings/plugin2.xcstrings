@@ -122,6 +122,36 @@
         }
       }
     },
+    "plugin.settings.restartHint": {
+      "comment": "Shown after saving when the app will restart to apply the new values. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app will restart to apply this"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用会重新启动一下"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "應用會重新啟動一下"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリを一度再起動します"
+          }
+        }
+      }
+    },
     "plugin.task.addedToolsUnknown": {
       "comment": "Succeeded task line when the core couldn't compare the app's tools.",
       "extractionState": "manual",

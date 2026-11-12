@@ -31,6 +31,7 @@
     <string name="chat_backup_save_key_title">保存恢复密钥</string>
     <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
     <string name="chat_backup_saved">已保存</string>
+    <string name="chat_backup_saved_confirm_title">已经存好了吗？</string>
     <!-- Page heading when chat backup is on and verified. -->
     <string name="chat_backup_status_enabled">聊天记录已备份</string>
     <!-- Page heading while backup or recovery runs. -->

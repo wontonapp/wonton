@@ -35,6 +35,7 @@
     <string name="chat_backup_reset_title">Reset chat backup?</string>
     <!-- Note under the freshly issued recovery key: it is only shown once. -->
     <string name="chat_backup_save_key_note">You\'ll need it when you switch phones. It\'s only shown once; after \"Saved\" this device keeps no copy.</string>
+    <string name="chat_backup_saved_confirm_message">After this, this device no longer shows the key. Make sure you have a copy before you continue.</string>
     <!-- Page heading when chat backup hasn't been set up. -->
     <string name="chat_backup_status_disabled">Chat backup isn\'t set up yet</string>
     <!-- Page heading when the backup status isn't known (offline). -->
