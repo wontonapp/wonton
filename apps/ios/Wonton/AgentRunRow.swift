@@ -195,7 +195,9 @@ struct AgentRunRow: View {
                             .foregroundStyle(Color(colors.accentInk))
                             .padding(.horizontal, WontonTheme.spacing.s12)
                             .frame(minHeight: WontonTheme.size.chip)
-                            .overlay(Capsule().strokeBorder(Color(colors.accentInk), lineWidth: WontonTheme.size.hairline))
+                            .overlay(
+                                Capsule().strokeBorder(Color(colors.accentInk), lineWidth: WontonTheme.size.hairline)
+                            )
                             .frame(minHeight: WontonTheme.size.target)
                             .contentShape(Rectangle())
                     }
