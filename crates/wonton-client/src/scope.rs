@@ -9,11 +9,12 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    ChatViewModel, CoreError, FriendsViewModel, HomeViewModel, OnboardingViewModel, PeersViewModel,
-    PluginsViewModel, RoomPanel, ServersViewModel, SettingsViewModel, TabsViewModel,
-    TransfersViewModel,
+    BotContactsViewModel, ChatViewModel, CoreError, FriendsViewModel, HomeViewModel,
+    OnboardingViewModel, PeersViewModel, PluginsViewModel, RoomPanel, ServersViewModel,
+    SettingsViewModel, TabsViewModel, TransfersViewModel,
 };
 
+use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
 use crate::files::FilesLink;
 use crate::friends::FriendsLink;
@@ -41,6 +42,7 @@ pub(crate) struct Scope {
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) peers: Arc<PeersLink>,
     pub(crate) friends: Arc<FriendsLink>,
+    pub(crate) bot_contacts: Arc<BotContactsLink>,
     pub(crate) settings: SettingsLink,
     pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
     /// 卡片成功的测试钩子，只给集成测试用（feature `test-hooks`，生产构建没有）。挂在作用域上：
@@ -62,6 +64,7 @@ pub(crate) struct Views {
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
     pub(crate) peers: watch::Sender<PeersViewModel>,
     pub(crate) friends: watch::Sender<FriendsViewModel>,
+    pub(crate) bot_contacts: watch::Sender<BotContactsViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
 
@@ -76,6 +79,7 @@ impl Views {
             onboarding: scope.onboarding.sender(),
             peers: scope.peers.sender(),
             friends: scope.friends.sender(),
+            bot_contacts: scope.bot_contacts.sender(),
             settings: scope.settings.sender(),
         }
     }
@@ -287,6 +291,11 @@ impl Scope {
         let people = people_links(&shared, servers, &links.chat)?;
         let shared_apps =
             crate::sharing::SharedAppsLink::new(handle.clone(), &links.chat, &plugins, hub);
+        let bot_contacts = BotContactsLink::new(
+            handle.clone(),
+            home.clone(),
+            views.map(|v| v.bot_contacts.clone()),
+        );
         Ok(Arc::new(Self {
             slot: slot.to_owned(),
             home,
@@ -299,6 +308,7 @@ impl Scope {
             onboarding: links.onboarding,
             peers: people.0,
             friends: people.1,
+            bot_contacts,
             settings: people.2,
             shared_apps,
             #[cfg(feature = "test-hooks")]
@@ -321,6 +331,7 @@ impl Scope {
         self.plugins.set_languages(languages.to_vec());
         self.onboarding.set_languages(languages.to_vec());
         self.peers.set_languages(languages.to_vec());
+        self.bot_contacts.set_languages(languages.to_vec());
     }
 
     pub(crate) fn backgrounded(&self) {
