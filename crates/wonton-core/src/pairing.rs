@@ -403,6 +403,21 @@ mod tests {
         assert_eq!(pairing.devices().list().len(), 2);
     }
 
+    /// 主人发的码只用一次：换一台设备拿同一个码来是 `used`，同一台设备重发（回应丢了）仍幂等地回 `paired`。
+    #[test]
+    fn an_invite_code_pairs_one_device_and_stays_valid_only_for_its_retries() {
+        let (_dir, pairing, _) = pairing(CODE_TTL);
+        let invite = pairing.issue(CodeKind::Invite, None);
+        let phone = device();
+        assert_eq!(reason(&pairing.pair(phone, &invite.secret, "手机")), None);
+        assert_eq!(reason(&pairing.pair(phone, &invite.secret, "重发")), None);
+        assert_eq!(
+            reason(&pairing.pair(device(), &invite.secret, "平板")),
+            Some(RejectReason::Used)
+        );
+        assert_eq!(pairing.devices().list().len(), 1);
+    }
+
     #[test]
     fn expired_unknown_and_reused_codes_say_why() {
         let (_dir, pairing, _) = pairing(Duration::from_millis(50));

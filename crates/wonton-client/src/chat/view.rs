@@ -156,7 +156,7 @@ pub(crate) fn timeline_item(
                     MessageBody::Text(text) | MessageBody::Notice(text) => text.clone(),
                     _ => String::new(),
                 };
-                bots.content(status, &body, message.sender.as_str())
+                bots.content(status, &body, message.sender.as_str(), &message.sender_name)
             }
             _ => TimelineContent::Message {
                 message: timeline_message(*message, read_by, links, previews),

@@ -195,6 +195,8 @@ pub enum TimelineContent {
         /// Bot 自己发的待回答选项（`choices`），只在等待回答时有；点了一个经
         /// [`Action::AnswerAgentChoice`](crate::Action::AnswerAgentChoice) 以主人的身份发反应。
         choices: Vec<AgentRunChoice>,
+        /// 发这条状态的 Bot 的显示名，没有设置时是用户 ID。壳在 `choices` 区标明是谁在问。
+        sender_name: String,
     },
     /// 一行说明，比如成员加入、离开，房间改名。文字由核心给出。
     Notice {
@@ -569,6 +571,7 @@ mod tests {
                         key: "allow".into(),
                         label: "继续".into(),
                     }],
+                    sender_name: "Hermes".into(),
                 },
             ),
             item("5", TimelineContent::ReadMarker),
