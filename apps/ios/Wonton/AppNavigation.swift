@@ -113,6 +113,9 @@ final class AppNavigation {
             let bot = try primaryBot()
             try select(.chat)
             chat.openDirectChat(with: bot, acceptingInvitation: true)
+        case let .room(roomId):
+            try select(.chat)
+            chat.openRoom(id: roomId)
         case .peers:
             opensPeers = true
             try select(.settings)

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 最近会话（ADR-0100）：默认 4×2。minWidth/minHeight 按 70n−30 dp 给 Android 11 及以下，12 起看 targetCell。
+     不定时刷新（updatePeriodMillis=0）：快照落盘时 App 进程自己让它重画，进程不在就停在旧数据、写明更新时间。 -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/glance_default_loading_layout" />

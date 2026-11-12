@@ -66,7 +66,7 @@ jsonwebtoken = { workspace = true }
 # Apache-2.0 OR MIT。核心给 App 的文字（ADR-0043）：Fluent 目录和语言协商。
 wonton-l10n = { path = "../wonton-l10n" }
 # MIT OR Apache-2.0。解码共享文件夹引用的路径，编码下载的文件名。
-percent-encoding = "2.3.2"
+percent-encoding = { workspace = true }
 # MIT OR Apache-2.0。从 SSL_CERT_FILE 读自签/测试 CA 给 iroh 中继校验用。
 rustls-pki-types = "1"
 # MIT OR Apache-2.0。推送代理按 Web Push 发推送：推送地址来自设备，可能是 https（rustls，根证书用系统的）。

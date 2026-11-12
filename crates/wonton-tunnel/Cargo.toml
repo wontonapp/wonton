@@ -20,7 +20,7 @@ getrandom = { workspace = true }
 httparse = "1.10.1"
 iroh = { workspace = true }
 # MIT OR Apache-2.0。中继令牌写在地址的 userinfo 里，按百分号编码解码。
-percent-encoding = "2.3.2"
+percent-encoding = { workspace = true }
 # MIT OR Apache-2.0。配对请求和回应的 JSON。
 serde = { workspace = true }
 serde_json = { workspace = true }

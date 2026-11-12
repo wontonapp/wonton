@@ -100,6 +100,7 @@ impl ClientCore {
             .scope
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = scope.clone();
+        self.clear_widget_for_switch();
         self.attach(&scope);
     }
 
@@ -123,6 +124,7 @@ impl ClientCore {
     pub(super) fn attach(&self, scope: &Scope) {
         self.replay_into(scope);
         self.follow_pairing(scope);
+        self.follow_widget(scope);
     }
 
     fn replay_into(&self, scope: &Scope) {
