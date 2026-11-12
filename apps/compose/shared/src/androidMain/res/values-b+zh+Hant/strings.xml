@@ -477,6 +477,8 @@
     <string name="file_download_and_open">下載後用其他 App 開啟</string>
     <!-- Title of the problem shown when no installed app can open a downloaded file. Android only. -->
     <string name="file_no_app_opens_it">這支手機上沒有應用程式可以開啟這個檔案</string>
+    <!-- Title of the problem shown when the file can't be handed to the system (outside configured FileProvider roots). Android only. -->
+    <string name="file_handoff_failed">無法把這個檔案交給系統</string>
     <!-- Link under a file card: open the downloaded file with another app. -->
     <string name="file_open_elsewhere">用其他 App 開啟</string>
     <!-- Line under a file card while its download is paused. Argument: the home server's reason, shown as is. -->

@@ -165,7 +165,6 @@ private suspend fun shareWithOthers(context: Context, core: ClientCore, image: I
         shareImageFile(context, bytes, image.filename, image.mimeType)
     }
     shareWithSystem(context, path, mime)
-    null
 } catch (failure: CancellationException) {
     throw failure
 } catch (failure: Exception) {

@@ -2,6 +2,9 @@
 <paths>
     <!-- 核心放下载文件的目录（ADR-0020），只把它交给系统打开。 -->
     <files-path name="downloads" path="downloads/" />
+    <!-- 下载目录按服务器分层在 files/servers/<n>/downloads/。FileProvider 的 path 不支持通配，
+         放开不到 downloads 那层，只能整层放开 servers/；交给系统的具体文件仍由代码决定，只传下载的。 -->
+    <files-path name="server-downloads" path="servers/" />
     <!-- 图片分享：落进私有缓存，经 FileProvider 交给分享面板，用完由系统清。 -->
     <cache-path name="share" path="share/" />
 </paths>

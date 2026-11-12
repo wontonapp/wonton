@@ -192,7 +192,7 @@ private fun TransferButton(transfer: Transfer, action: TransferAction) {
         TransferAction.SHARE -> WontonIconButton(
             WontonIcon.Share,
             stringResource(R.string.transfer_share),
-            { path?.let { shareWithSystem(context, it) } },
+            { path?.let { shareWithSystem(context, it)?.let(files.onReject) } },
         )
     }
     if (confirming) DismissDownloadedDialog(transfer, onClose = { confirming = false })
