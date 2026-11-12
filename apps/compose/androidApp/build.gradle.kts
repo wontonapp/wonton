@@ -88,8 +88,10 @@ extensions.configure<ApplicationAndroidComponentsExtension> {
         val buildType = variant.buildType
         val wontonVersionProperty = providers.gradleProperty("wontonVersion").orNull
         val appVersion = providers.exec {
-            // 2>&1 合进 stdout：providers.exec 不回显 stderr，脚本失败时 Gradle 只报 exit code，
-            // “发版要传 WONTON_VERSION…”的人话就看不见了；合流后解析失败会把原话带进异常。
+            // 失败不抛：providers.exec 在非零退出时既不回显 stderr、也不交出已捕获的 stdout，Gradle 只报
+            // exit code，“发版要传 WONTON_VERSION…”的人话就看不见了。stderr 合进 stdout、忽略退出码，
+            // 让下面的解析在拿不到 VERSION/BUILD 两行时把脚本原话带进异常。
+            isIgnoreExitValue = true
             commandLine("bash", "-c", "\"\$1\" \"\$2\" 2>&1", "app-version", versionScript.absolutePath, buildType)
             if (wontonVersionProperty != null) {
                 environment("WONTON_VERSION", wontonVersionProperty)
