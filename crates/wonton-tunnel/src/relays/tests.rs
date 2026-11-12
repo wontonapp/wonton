@@ -23,6 +23,22 @@ fn the_default_table_is_the_n0_group() {
 }
 
 #[test]
+fn n0_public_relays_are_recognized_by_any_spelling() {
+    let n0 = RelayTable::builtin_n0()
+        .tier(0)
+        .first()
+        .unwrap()
+        .url
+        .clone();
+    assert!(is_public_relay(&n0));
+    // iroh 内置主机名带 FQDN 尾点，路径地址用同一种写法也要认得。
+    let dotted = format!("{n0}.").parse::<RelayUrl>().unwrap();
+    assert!(is_public_relay(&dotted));
+    assert!(!is_public_relay(&url("https://relay.example.org")));
+    assert!(!is_public_relay(&url("https://192.0.2.10/")));
+}
+
+#[test]
 fn a_token_in_the_userinfo_is_taken_out_of_the_url() {
     let table = RelayTable::parse("https://tok@a.example").unwrap();
     assert_eq!(table.tier(0).len(), 1);

@@ -383,8 +383,13 @@ async fn failures(phone: &Phone, home: &Home) {
                 problem: AvatarMediaProblem::Other,
             },
         ),
-        // 只有主人的接口对家人的设备回 403 owner_only（ADR-0045）：不是网络问题。
-        (403, "owner_only", "", BotProfileFailure::OwnerOnly),
+        // 只有主人的接口对家人的设备回 403 permission_required（ADR-0045）：不是网络问题。
+        (
+            403,
+            "permission_required",
+            "",
+            BotProfileFailure::PermissionRequired,
+        ),
         (500, "upstream", "", BotProfileFailure::Upstream),
     ] {
         *home.bot_api.next_reply.lock().unwrap() = Some((

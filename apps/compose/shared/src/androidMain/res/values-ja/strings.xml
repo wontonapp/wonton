@@ -796,6 +796,60 @@
     </plurals>
     <!-- Action-sheet item that updates the app. Argument: the new version. -->
     <string name="launcher_upgrade_to">%1$sにアップデート</string>
+    <!-- Row in the server list that opens signing in with an existing Matrix account. No arguments; short label. -->
+    <string name="matrix_login_entry">Matrix アカウントでログイン</string>
+    <!-- Navigation title of the Matrix sign-in page. No arguments; fits a phone navigation bar. -->
+    <string name="matrix_login_title">Matrix にログイン</string>
+    <!-- Field label for the Matrix server to sign in to, a server name like matrix.org or an https URL. No arguments; short label. -->
+    <string name="matrix_login_server">サーバー</string>
+    <!-- Button that asks the core to check the server and list the ways to sign in. No arguments; short button label. -->
+    <string name="matrix_login_continue">次へ</string>
+    <!-- Progress line while the core contacts the server to discover the sign-in methods. Argument: the server name or URL the user chose. -->
+    <string name="matrix_login_contacting">%1$s に接続中</string>
+    <!-- Button for the password method in the list of ways the server supports. No arguments; short button label. -->
+    <string name="matrix_login_method_password">パスワードでログイン</string>
+    <!-- Button for the server's own OIDC sign-in, which opens in the system browser. No arguments; short button label. -->
+    <string name="matrix_login_method_oidc">ブラウザで続行</string>
+    <!-- Field label for the full Matrix user ID, like @user:example.org. No arguments; short label. -->
+    <string name="matrix_login_user_id">Matrix ユーザー ID</string>
+    <!-- Field label for the account password. No arguments; short label. -->
+    <string name="matrix_login_password">パスワード</string>
+    <!-- Button that submits the user ID and password to the server. No arguments; short button label. -->
+    <string name="matrix_login_sign_in">ログイン</string>
+    <!-- Progress line while the core signs in with the password. No arguments. -->
+    <string name="matrix_login_signing_in">ログイン中</string>
+    <!-- Progress line while the core stores the signed-in session on this phone. No arguments. -->
+    <string name="matrix_login_saving">セッションを保存中</string>
+    <!-- Progress line while the user finishes the sign-in in the system browser. No arguments. -->
+    <string name="matrix_login_finish_in_browser">ブラウザでログインを完了してください</string>
+    <!-- Button that opens the browser again for the pending OIDC sign-in. No arguments; short button label. -->
+    <string name="matrix_login_open_browser">ブラウザを開く</string>
+    <!-- Notice when the phone has no app that can open the browser link. No arguments. -->
+    <string name="matrix_login_no_browser">ログインページを開けるブラウザアプリがありません</string>
+    <!-- Failure title: the server name or URL doesn't point to a Matrix homeserver. No arguments. -->
+    <string name="matrix_login_failed_invalid_homeserver">このアドレスに Matrix サーバーが見つかりません</string>
+    <!-- Failure title: the server couldn't be reached to discover the sign-in methods. No arguments. -->
+    <string name="matrix_login_failed_discovery">サーバーに接続できません</string>
+    <!-- Failure title: the server offers none of the sign-in methods this app supports. No arguments. -->
+    <string name="matrix_login_failed_unsupported_method">このサーバーには利用可能なログイン方法がありません</string>
+    <!-- Failure title: the network is unavailable. No arguments. -->
+    <string name="matrix_login_failed_transport">ネットワークに接続できません</string>
+    <!-- Failure title: the server rejected the user ID or password. No arguments. -->
+    <string name="matrix_login_failed_invalid_credentials">ユーザー ID またはパスワードが違います</string>
+    <!-- Failure title: the server rejected the browser sign-in. No arguments. -->
+    <string name="matrix_login_failed_oidc_rejected">サーバーがブラウザでのログインを拒否しました</string>
+    <!-- Failure title: the browser came back without a complete sign-in result. No arguments. -->
+    <string name="matrix_login_failed_invalid_callback">ブラウザから返されたログイン結果が不完全です</string>
+    <!-- Failure title: the sign-in took too long or expired on the server. No arguments. -->
+    <string name="matrix_login_failed_expired">ログインの有効期限が切れました。最初からやり直してください</string>
+    <!-- Failure title: signing in worked but saving the session on this phone failed. No arguments. -->
+    <string name="matrix_login_failed_storage">ログインできましたが、この端末への保存に失敗しました</string>
+    <!-- Failure title: the homeserver or its sign-in service returned an error (5xx, rate limiting, an unexpected reply), not a problem with the credentials or input. No arguments. -->
+    <string name="matrix_login_failed_upstream">サーバーかそのログインサービスで問題が発生しました</string>
+    <!-- Failure title for every category the app doesn't know. No arguments. -->
+    <string name="matrix_login_failed_other">ログインに失敗しました</string>
+    <!-- Notice when the core reports a state the app doesn't know. No arguments. -->
+    <string name="matrix_login_unknown_state">現在ログインを続けられません</string>
     <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
     <string name="message_clip_label">メッセージ</string>
     <!-- Item in the message menu: copy the message text. Android only. -->
@@ -1023,6 +1077,7 @@
     <string name="photo_unreadable">この写真を読み込めません</string>
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <string name="plugin_save_folders">保存できるフォルダ</string>
+    <string name="plugin_media_title">ウェブページのカメラとマイク</string>
     <string name="plugin_save_revoke">取り消す</string>
     <string name="plugin_settings_section">設定</string>
     <string name="plugin_settings_open">設定を開く</string>
@@ -1147,6 +1202,7 @@
     <string name="port_mapping_reason_other">マッピングで問題が発生しました。</string>
     <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
     <string name="port_mapping_no_notification_permission">通知権限がないため、マッピング中でも通知バーに表示されません。マッピングはそのまま使えます。</string>
+    <string name="port_mapping_warning_public_relay_bandwidth">公共リレー経由でしか接続できておらず、映像を送る帯域が足りません。</string>
     <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
     <string name="problem_appearance_title">外観設定を保存できませんでした</string>
     <string name="problem_apps_not_ready">アプリのリストの準備ができていません。しばらくしてからもう一度お試しください。</string>
@@ -1460,6 +1516,14 @@
     <string name="tab_load_not_ready">アプリの準備ができていません</string>
     <string name="tab_load_upstream">アプリのページを開けません</string>
     <string name="tab_uninstalled_notice">%1$sはアンインストールされ、ナビゲーションバーから外されました</string>
+    <string name="tab_media_prompt_camera">%1$sにカメラの使用を許可しますか？</string>
+    <string name="tab_media_prompt_microphone">%1$sにマイクの使用を許可しますか？</string>
+    <string name="tab_media_prompt_both">%1$sにカメラとマイクの使用を許可しますか？</string>
+    <string name="tab_media_allow">許可</string>
+    <string name="tab_media_deny">許可しない</string>
+    <string name="tab_media_system_denied_title">カメラまたはマイクが使えません</string>
+    <string name="tab_media_system_denied">システム設定で Wonton にカメラまたはマイクの権限がありません。このページは拒否されました。システム設定で許可できます。</string>
+    <string name="tab_media_system_settings">設定を開く</string>
     <string name="tab_settings_unreadable">ナビゲーションバーの設定を読み込めません</string>
     <string name="tab_open_settings">ナビゲーションバーの設定</string>
     <string name="tab_menu_open_fullscreen">全画面で開く</string>

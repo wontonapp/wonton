@@ -67,7 +67,8 @@ Bot 归配对它的人，是他的私人 Bot，只认这一个人：联系人也
 - **一条关不掉的底线**：网关对执行类工具的参数查一份内置名单（递归删除家目录或根目录、读写 `~/.ssh` 和钥匙串、改 shell 启动文件），
   命中直接拒绝，放行过的类别也越不过 [Z2][CC1]。这是尽力而为的匹配，不是沙箱。
 - **有沙箱就用**：名单给每家写上它最严的参数，比如 Codex 的 `read-only` 或 `workspace-write`（默认断网）[CX1]、Claude Code 的手动确认加沙箱 [CC2]。
-  **没沙箱的 Agent 也支持**（如 dsh）：在电脑上选它时醒目提示“它能改你电脑上的任何文件”，兜底靠每步确认、底线拒绝和工作文件夹。
+  **沙箱不全的 Agent 也支持**，选它时醒目提示它能做什么，兜底靠每步确认、底线拒绝和工作文件夹：没沙箱的提示“它能改你电脑上的任何文件”；
+  dsh 有沙箱（macOS 上是 Seatbelt，Windows 上是受限令牌），但只管文件、不管网络 [DSH1]，提示“它能把读得到的东西发到网上”。
   工作文件夹只是起点，不是围栏，提示里照实写。
 - **电脑上也能点确认，不专门防“Agent 替你点同意”。** 电脑上的 Agent 能读这个用户的文件、能操作屏幕，
   **理论上能在同一台电脑上替你点同意**，或借桌面端的设备身份答卡。靠得住的防法只有“确认放在另一台设备”或“物理动作加服务器验签”，
@@ -100,7 +101,7 @@ Agent 由单独签名的连接程序拉起，不经被控端：macOS 按“负�
 | Agent 读走 Bot 的 Matrix 令牌 | 令牌只在服务器 | 无 |
 | 服务器指定在电脑上跑什么 | 命令、参数、文件夹由电脑本地定；`mcpServers` 清空 | 服务器被攻破时能发消息、答卡片，让 Agent 在已有权限内干活 |
 | 家人、联系人、群里的人指挥它 | 只认一个人，不进群 | 无 |
-| 没沙箱的 Agent | 醒目提示、每步确认、底线 | 同意过的命令能碰全盘 |
+| 没沙箱或沙箱不管网络的 Agent（如 dsh） | 醒目提示、每步确认、底线 | 同意过的命令能碰全盘、能出网 |
 | 电脑上用户自己配的 MCP、技能 | 不归我们管，提示写明 | Agent 照用 |
 
 ## 考虑过的做法
@@ -110,7 +111,7 @@ Agent 由单独签名的连接程序拉起，不经被控端：macOS 按“负�
 - **网关放在连接程序里**：网关守的规矩落在 Agent 能改的机器上。
 - **确认只能在另一台设备上点**：防得住同机自批，但手机不在手边时 Bot 只能等。
 - **每次确认刷脸或按指纹、服务器验签**：模拟键鼠过不了，但每步都要物理动作，平台实现多。
-- **只支持带沙箱的 Agent**：更稳，但 dsh 这类用不了。
+- **只支持沙箱同时管文件和网络的 Agent**：更稳，但 dsh 这类（沙箱不管网络）用不了。
 - **不逐步确认，靠沙箱**（Raft、Cursor 后台 Agent）；**往终端发按键**（Alma，拿不到结构化的权限请求）。
 - **不做，在容器里再登录一次**：仍是开关关着时的路径。
 
@@ -133,4 +134,5 @@ Agent 由单独签名的连接程序拉起，不经被控端：macOS 按“负�
 [CX1] https://learn.chatgpt.com/docs/agent-approvals-security ；[CX3] https://learn.chatgpt.com/docs/agent-configuration/rules ；
 [H6] https://github.com/slopus/happy/blob/main/docs/permission-resolution.md ；[R1] https://github.com/botiverse/raft-source/tree/main/packages/daemon/src/drivers ；
 [CU1] https://cursor.com/docs/cloud-agent/security-network ；[Z2] https://zed.dev/docs/ai/tool-permissions ；
-[T1] https://tailscale.com/kb/1193/tailscale-ssh ；[RD2] https://github.com/rustdesk/rustdesk/blob/master/src/ui/cm.tis
+[T1] https://tailscale.com/kb/1193/tailscale-ssh ；[RD2] https://github.com/rustdesk/rustdesk/blob/master/src/ui/cm.tis ；
+[DSH1] https://github.com/deepseek-ai/deepseek-harness/blob/e8f7b93/docs/subsystems/sandbox.zh.md#L5-L11 （2026-11-12 读取）

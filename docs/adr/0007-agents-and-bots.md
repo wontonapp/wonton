@@ -1,6 +1,6 @@
 # ADR-0007 Agent 与 Bot：Agent 即插件
 
-- 状态：已接受（2026-10-28）。Agent 的总体边界和 Bot 关系见本文；ACP 桥的实现形态见 [ADR-0035](0035-acp-bridge.md)。经桥登录的条款限制见 [ADR-0034](0034-onboarding-and-help.md)；家人的 Bot、Bot 听谁的和 Bot 之间的规则由 [ADR-0045](0045-family-members.md) 细化；家人账号的角色和按角色给 AI 设的上限见 [ADR-0088](0088-family-accounts.md)，不等 M2
+- 状态：已接受（2026-10-28）。Agent 的总体边界和 Bot 关系见本文；ACP 桥的实现形态见 [ADR-0035](0035-acp-bridge.md)。经桥登录的条款限制见 [ADR-0034](0034-onboarding-and-help.md)；家人的 Bot、Bot 听谁的和 Bot 之间的规则由 [ADR-0045](0045-family-members.md) 细化；家人账号的角色和按角色给 AI 设的上限见 [ADR-0088](0088-family-accounts.md)，不等 M2。Agent 自带的网页做插件网页见 [ADR-0084](0084-agent-own-web.md)
 
 ## 背景
 
@@ -227,9 +227,8 @@ claude-agent-acp 和 codex-acp 实现了同一个约定（两家都写在各自�
 - 结果：`injected` 表示并入进行中的这一轮，原来那个 `session/prompt` 照常以这一轮的结束返回；`promptRequired`
   表示 agent 空闲，由桥用 `session/prompt` 发。
 - 桥只在自己有一轮进行中时发。codex-acp 2.3.0 不认 `idleBehavior`（codex-acp#440），空闲时会返回 `startedNewTurn`、
-  自己开一轮，而这一轮没有对应的 `session/prompt` 响应。桥要处理这个竞态：把后续输出当作新一轮。M2 实现时
-  写测试覆盖。
-- 不支持的运行时（Kimi、Qwen、Qoder）退回排队，聊天里另给“打断重来”。Qwen 有私有的插话方法
+  自己开一轮，而这一轮没有对应的 `session/prompt` 响应。桥怎么处理见 ADR-0035。
+- 不支持的运行时（Kimi、Qwen、Qoder）由桥攒着，这一轮结束后合成一轮发（ADR-0035）。Qwen 有私有的插话方法
   （`craft/drainMidTurnQueue`、`craft/midTurnSendNow`，不带 `_` 前缀，不符合 ACP 的扩展约定），不接。
 - ACP v2 草案把 `session/prompt` 改成“插入即返回”，但仍没规定排队和插话；claude-agent-acp 的插话只在 v1 上。
   v2 定稿后再看是否迁移。

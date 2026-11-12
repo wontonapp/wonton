@@ -121,6 +121,13 @@ fun TimelineItemView(
             NoteEdge()
         }
         TimelineContent.TimelineStart -> CenteredNote(stringResource(R.string.timeline_start))
+        is TimelineContent.SideChat ->
+            // 旁聊根消息（ADR-0093）：完整的样子在实现 PR 里做，先按普通提示显示标题。
+            // 核心还没产生这种条目；标题是事件里的数据，不是界面文案。
+            CenteredNote(content.card.title)
+        is TimelineContent.SideChatResult ->
+            // 旁聊结果行（ADR-0093）：同上，先按普通提示显示标题。
+            CenteredNote(content.title)
     }
 }
 

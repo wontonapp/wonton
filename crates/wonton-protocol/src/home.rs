@@ -251,6 +251,8 @@ pub struct ConnectionDetails {
 pub struct HomePath {
     /// 经中继转发；否则是局域网或打洞成功的直连。
     pub relay: bool,
+    /// 中继是 n0 公共中继（带宽不够传画面）；直连或自建中继为假。
+    pub public_relay: bool,
     /// 直连的对端是局域网地址。
     pub lan: bool,
     /// 往返时间估计，毫秒。
