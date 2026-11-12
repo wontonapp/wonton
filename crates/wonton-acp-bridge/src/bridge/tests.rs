@@ -86,6 +86,7 @@ impl Harness {
             mcp_url: cards.url(),
             mode: "plan".into(),
             topic_mode: Some("workspace-write".into()),
+            health: crate::health::Files::in_dir(dir.path()),
             limits: Limits {
                 max_input_bytes: 4096,
                 max_output_bytes: 4096,

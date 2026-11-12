@@ -195,8 +195,8 @@ impl MatrixSession {
         }
     }
 
-    /// 加入房间，用于接受邀请。私聊邀请加入后记进 `m.direct`，之后列表里仍标为私聊。等同步把房间标成已加入才返回，
-    /// 调用方接着就能往里发消息。
+    /// 加入房间，用于接受邀请。私聊邀请加入后记进 `m.direct`，之后列表里仍标为私聊。等同步把房间标成
+    /// 已加入才返回，调用方接着就能往里发消息；邀请还没同步到本地就调用也一样等（房间可能还没进本地库）。
     pub async fn join_room(&self, room_id: &RoomId) -> Result<()> {
         // 私聊标记和邀请人要在加入前从邀请里读。不用 SDK 的 `join_room_by_id`：它加入后用 `set_is_direct`
         // 记私聊，拿本机存的 `m.direct` 改完整份写回，而本机这份要等写入同步回来才更新。一次同步之内先后接受
@@ -227,7 +227,11 @@ impl MatrixSession {
         }
         match invited {
             Some(room) => self.until_joined(&room).await,
-            None => Ok(()),
+            // 邀请还没同步到本地：房间可能还没进本地库，按 [`Self::joined_within`] 等它同步到并成为已加入。
+            None => self
+                .joined_within(room_id, ROOM_SYNC_WAIT)
+                .await
+                .map(|_| ()),
         }
     }
 

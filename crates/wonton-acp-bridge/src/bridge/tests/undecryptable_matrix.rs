@@ -6,9 +6,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use wonton_matrix::testkit::{TempStore, TestServer, unique};
+use wonton_matrix::testkit::{TempStore, TestServer, unique, wait_for_room};
 use wonton_matrix::{
-    MatrixSession, MessageBody, OwnedRoomId, OwnedUserId, SavedSession, SessionConfig, UserId,
+    MatrixSession, Membership, MessageBody, OwnedRoomId, OwnedUserId, SavedSession, SessionConfig,
+    UserId,
 };
 
 use super::*;
@@ -81,18 +82,23 @@ async fn setup() -> Setup {
     }
 }
 
-/// `alice` 建加密私聊邀请 `bob`，`bob` 看到邀请后加入（同 wonton-matrix 的 store_loss 测试）。
+/// `alice` 建加密私聊邀请 `bob`，等邀请和私聊标记同步到 `bob`，`bob` 加入，等加入同步回来
+/// （同 wonton-matrix 的 store_loss 测试用的 chat::direct_chat）。
 async fn direct_chat(owner: &MatrixSession, bot: &MatrixSession) -> OwnedRoomId {
     let room_id = owner
         .create_direct_chat(bot.user_id(), true)
         .await
         .expect("建私聊");
-    for _ in 0..50 {
-        if bot.join_room(&room_id).await.is_ok() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    // 私聊标记和邀请事件分开到：加入时按这个标记把房间记进 `m.direct`，等标记到了再加入。
+    wait_for_room(bot, "Bot 收到私聊邀请", &room_id, |row| {
+        row.membership == Membership::Invited && row.is_direct
+    })
+    .await;
+    bot.join_room(&room_id).await.expect("Bot 加入私聊");
+    wait_for_room(bot, "Bot 加入后同步标成已加入", &room_id, |row| {
+        row.membership == Membership::Joined
+    })
+    .await;
     owner
         .wait_for_server_device(bot.user_id(), bot.device_id())
         .await;
@@ -107,8 +113,8 @@ fn is_notice(message: &wonton_matrix::Message, bot_user: &UserId) -> bool {
 /// 同一台设备带着空 store 重启（桥 `login_with_access_token` 的路径：whoami 同设备、
 /// `reconcile_store` 不动空目录、`restore_session` 建出全新 Olm 账号），把桥的房间循环跑起来，
 /// 返回要一直活到测试结束的 Bot 会话：房间流跟它共享同步，停了桥就什么都收不到。断言走
-/// `Setup::owner_room`（主人的时间线）。
-async fn restarted_bridge(setup: &Setup) -> MatrixSession {
+/// `Setup::owner_room`（主人的时间线）。返回的临时目录要让测试一直拿着：桥的心跳一直往里写。
+async fn restarted_bridge(setup: &Setup) -> (MatrixSession, tempfile::TempDir) {
     setup.store.wipe();
     let session_config = SessionConfig {
         homeserver_url: setup.server.url.clone(),
@@ -144,6 +150,7 @@ async fn restarted_bridge(setup: &Setup) -> MatrixSession {
         mcp_url: cards.url(),
         mode: "plan".into(),
         topic_mode: None,
+        health: crate::health::Files::in_dir(dir.path()),
         limits: crate::config::Limits {
             max_input_bytes: 4096,
             max_output_bytes: 4096,
@@ -192,14 +199,14 @@ async fn restarted_bridge(setup: &Setup) -> MatrixSession {
         socket: config.socket.clone(),
     });
     tokio::spawn(run_room(bridge, room, false, None, login));
-    bot
+    (bot, dir)
 }
 
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_bot_that_lost_its_store_says_so_once() {
     let setup = setup().await;
-    let _bot = restarted_bridge(&setup).await;
+    let (_bot, _dir) = restarted_bridge(&setup).await;
     let mut updates = setup.owner_room.message_updates().await;
 
     // 启动时的历史（第一条）解不开不算“收到解不开的消息”：这段时间桥不该说话。
@@ -246,6 +253,4 @@ async fn a_bot_that_lost_its_store_says_so_once() {
     })
     .await;
     assert!(second.is_err(), "10 分钟内只说一次");
-    // 行为测试真写了宿主的 /tmp 标记，跑完清掉。
-    crate::health::clear_state_for_test();
 }

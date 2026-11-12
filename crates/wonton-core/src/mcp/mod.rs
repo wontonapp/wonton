@@ -9,6 +9,7 @@ mod apps;
 mod audience;
 pub mod audit;
 mod authoring_tools;
+mod bot_access;
 mod bounded_http;
 mod cards;
 pub(crate) mod chain_card;
@@ -354,13 +355,14 @@ impl Bus {
         self.peers.lock().expect("会话表锁中毒").push(peer);
     }
 
-    /// 调用方能看到的工具：核心自己的，加上所有在运行的插件的。并发地问，一个插件卡住挡不住别的（每个插件有期限，见
-    /// [`Upstreams::tools`]）。列不出工具的插件记一条警告后跳过，它的工具这时本来也调不通。
+    /// 调用方能看到的工具：核心自己的，加上所有在运行、对它放行（[`Bus::bot_access`]）的插件的。并发地问，一个插件卡住
+    /// 挡不住别的（每个插件有期限，见 [`Upstreams::tools`]）。列不出工具的插件记一条警告后跳过，它的工具这时本来也调不通。
     async fn tools(&self, caller: &Caller) -> Vec<Tool> {
         if self.remote_contact_blocked(caller) {
             return contacts_gate::tools();
         }
-        let servers = self.plugins.mcp_servers();
+        let mut servers = self.plugins.mcp_servers();
+        servers.retain(|server| self.bot_access(caller, &server.id).is_ok());
         let listed = servers.iter().map(|server| self.upstreams.tools(server));
         let listed = futures_util::future::join_all(listed).await;
         let mut tools = core_tools::definitions();
@@ -414,6 +416,9 @@ impl Bus {
                 &ToolFailure::new("not_found", format!("没有在运行的插件提供 {name}")),
             );
         };
+        if let Err(failure) = self.bot_access(caller, &server.id) {
+            return self.deny(caller, &name, &args, &failure);
+        }
         self.call_plugin(
             caller,
             &server,
@@ -650,6 +655,8 @@ mod agent_install_tests;
 mod agent_permission_tests;
 #[cfg(test)]
 mod authoring_tests;
+#[cfg(test)]
+mod bot_access_tests;
 #[cfg(test)]
 mod capability_install_tests;
 #[cfg(test)]

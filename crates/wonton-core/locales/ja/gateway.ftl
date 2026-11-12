@@ -130,7 +130,6 @@ gateway-owner-secrets-store-failed = アプリのキーを読み取れません�
 gateway-owner-secrets-not-text = キー{ $name }に保存されている値はテキストではありません
 gateway-owner-secrets-audit-unavailable = 自宅サーバーに監査ログが接続されていないため、キーの値を表示できません
 gateway-plugin-scope-unsupported = このコアではプラグインを使える Bot を変更できません。先にコアを更新してください。
-gateway-bot-plugin-access-unsupported = このコアでは Bot ごとにプラグインの利用を切り替えられません。先にコアを更新してください。
 
 # MCP Apps 宿主页（#35）。
 mcp-app-loading = 読み込み中…

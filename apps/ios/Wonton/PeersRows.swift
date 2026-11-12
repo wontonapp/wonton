@@ -57,7 +57,7 @@ struct PeerRowView: View {
     private var showsRemove: Bool {
         switch row.status {
         case .removedByPeer, .awaitingApproval, .declined: true
-        case .checking, .connected, .offline, .other: false
+        case .checking, .connected, .offline, .publicAccessOff, .other: false
         }
     }
 
@@ -71,6 +71,7 @@ struct PeerRowView: View {
         case .connected: nil
         case .offline: .Peers2.peersStatusOffline
         case .removedByPeer: .Peers1.peersStatusRemoved
+        case .publicAccessOff: .Peers3.peersStatusPublicAccessOff
         case .awaitingApproval: .Peers1.peersStatusAwaiting
         case .declined: .Peers3.peersStatusDeclined
         case .other: .Peers3.peersStatusUnknown

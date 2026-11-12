@@ -5,11 +5,14 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.CoreException
 import app.wonton.media.PageMediaCoreOwner
 import app.wonton.ui.ContentFileOpener
+import app.wonton.ui.syncAppLocalesFromSystem
 
 /** 进程内唯一的核心实例：状态都在核心里，Activity 重建时不丢。核心起不来时如实给出原因。 */
 class WontonApplication : Application(), PageMediaCoreOwner {
     override fun onCreate() {
         super.onCreate()
+        // 赶在第一个 Activity 的 AppCompat 同步之前，系统设置里的“应用语言”才不会被清掉（AppLanguage.kt）。
+        syncAppLocalesFromSystem(this)
         installSystemDns()
         installCertificateVerifier()
     }

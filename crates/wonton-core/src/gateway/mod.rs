@@ -29,6 +29,7 @@ mod api_switch;
 mod auth;
 mod bot_activity;
 mod bot_contacts;
+mod bot_plugin_access;
 mod bot_profile;
 mod bots;
 mod capabilities;

@@ -275,6 +275,11 @@ val CoreException.problem: Problem
                 R.string.problem_unauthorized_next_step,
                 detail,
             )
+            is CoreException.Forbidden -> problem(
+                R.string.problem_forbidden_title,
+                R.string.problem_forbidden_next_step,
+                detail,
+            )
             is CoreException.Upstream -> problem(
                 R.string.problem_upstream_title,
                 R.string.problem_upstream_next_step,
