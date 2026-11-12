@@ -3602,6 +3602,66 @@
         }
       }
     },
+    "coreUpgrade.compat.breakingTitle": {
+      "comment": "Heading of the compatibility warning on the update offer: these installed apps won't work after the update.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These apps won't work after the update"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升级后这些应用会用不了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新後這些應用會用不了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデート後、これらのアプリは使えなくなります"
+          }
+        }
+      }
+    },
+    "coreUpgrade.compat.notChecked": {
+      "comment": "Light notice on the update offer: it couldn't check which installed apps would be affected. Tapping checks again.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't check which apps would be affected"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没查到哪些应用会受影响"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒查到哪些應用會受影響"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どのアプリが影響を受けるか確認できませんでした"
+          }
+        }
+      }
+    },
     "coreUpgrade.completedTo": {
       "comment": "Stage line after the update finished. Argument: the version now running.",
       "extractionState": "manual",
@@ -11388,6 +11448,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "ここに追加したアプリとファイルは審査されていません。信頼できるものだけをインストールしてください。"
+          }
+        }
+      }
+    },
+    "preview.appName1": {
+      "comment": "Fake app name for previews only.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photos (Immich)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片库（Immich）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片庫（Immich）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真（Immich）"
+          }
+        }
+      }
+    },
+    "preview.appName2": {
+      "comment": "Fake app name for previews only.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files (Copyparty)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家庭网盘（Copyparty）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家庭網碟（Copyparty）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイル（Copyparty）"
           }
         }
       }
