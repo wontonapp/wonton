@@ -761,3 +761,5 @@ mod tunnel_bot_tests;
 mod tunnel_tests;
 #[cfg(test)]
 mod tusd_tests;
+#[cfg(test)]
+mod upload_settings_tests;

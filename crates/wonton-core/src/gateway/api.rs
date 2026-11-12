@@ -36,7 +36,7 @@ use serde_json::json;
 use wonton_protocol::{AddedTools, InstallRequest, InstallSource, UpgradeRequest, UpgradeResult};
 
 pub(super) use super::api_body::{MAX_UPLOAD_BYTES, invalid_body, json_body, package};
-use super::api_switch::{enabled, granted, secrets, upload_parts};
+use super::api_switch::{enabled, granted, secrets, settings, upload_parts};
 use super::{Gateway, Person, TunnelPeer, isolation, pages};
 
 pub use super::api_switch::set_plugin_permission;
@@ -446,17 +446,12 @@ async fn install_upload(
     let granted = granted(query)?;
     let enabled = enabled(query)?;
     let secrets = secrets(headers)?;
+    let given = settings(headers)?;
     let package = package(langs, headers, body)?;
     gateway
         .plugins
         .store_input_values(&package.manifest, &secrets, None, langs)?;
-    let settings = match crate::plugin::settings::load(&package, langs)? {
-        Some(schema) => {
-            crate::plugin::settings::value::initial(&schema, &Default::default(), langs)
-                .map_err(|fields| crate::plugin::settings::value_error(fields, langs))?
-        }
-        None => Default::default(),
-    };
+    let settings = crate::plugin::settings::install_values(&package, &given, langs)?;
     gateway
         .plugins
         .install_detached_enabled(
@@ -533,8 +528,10 @@ pub async fn upgrade(
     let upgraded = match json_body::<UpgradeRequest>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
         Some(Ok(request)) => gateway.plugins.upgrade_source(&id, &request, &langs).await,
-        None => match upload_parts(&languages(&headers), &headers, &body, &query) {
-            Ok((grant, enabled, secrets, package)) => {
+        None => match upload_parts(&languages(&headers), &headers, &body, &query)
+            .and_then(|parts| Ok((parts, settings(&headers)?)))
+        {
+            Ok(((grant, enabled, secrets, package), given)) => {
                 let plugins = &gateway.plugins;
                 let filled = plugins.store().secrets().load(&id).ok().flatten();
                 if let Err(e) =
@@ -549,7 +546,7 @@ pub async fn upgrade(
                         grant,
                         enabled,
                         query.lan_webui,
-                        &Default::default(),
+                        &given,
                         &langs,
                     )
                     .await

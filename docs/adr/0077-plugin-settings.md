@@ -150,7 +150,9 @@ Schema 自己在校验值之前先校验一遍：能解析、`$schema` 是 2020-
 - 视图和写请求都带 `schema_digest`（设置文件的 sha256）。插件在中间升级换了文件时对不上，返回 409 `changed`，App
   重新读。
 - 安装预览的 `settings` 带表单和默认值；安装、升级请求和确认卡片的回答用 `settings` 带值。Bot 经 MCP 装插件时，
-  主人在确认卡片里用同一套原生表单填，值不进 Matrix。
+  主人在确认卡片里用同一套原生表单填，值不进 Matrix。上传插件包（请求体是包本身）安装、升级时，值放在
+  `Wonton-Plugin-Settings` 请求头，编码同输入密钥的头（base64url 无填充的 JSON，ADR-0064），写法同 `settings`；
+  插件开发套件的 `--setting` 走这条路。
 - 核心只给已支持设置接口的版本置 `PluginDetail.has_settings`；接口阶段不凭 Schema 文件存在就开启入口。
 - 只有主人能读写，路由按 `owner_only`（同 ADR-0045）。
 
