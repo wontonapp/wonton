@@ -11,6 +11,7 @@ mod authoring_tools;
 mod bounded_http;
 mod cards;
 mod confirm;
+mod contacts_gate;
 mod core_tools;
 mod file_results;
 mod file_tools;
@@ -104,6 +105,8 @@ pub struct Bus {
     people: OnceLock<People>,
     /// Matrix 和主人：Bot 钉进主面板的同意卡片要发进 Bot 的房间里（[`Bus::attach_matrix`]）。
     matrix: OnceLock<Cards>,
+    /// Bot 的联系人：有远端联系人的 Bot 只聊天（[`Bus::attach_contacts`]，ADR-0050）。
+    contacts: OnceLock<Arc<crate::contacts::Contacts>>,
     /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
     pin_cards: Mutex<HashSet<PluginId>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
@@ -138,6 +141,7 @@ impl Bus {
             help: OnceLock::new(),
             people: OnceLock::new(),
             matrix: OnceLock::new(),
+            contacts: OnceLock::new(),
             pin_cards: Mutex::new(HashSet::new()),
             peers: Mutex::new(Vec::new()),
         });
@@ -310,6 +314,9 @@ impl Bus {
     /// 调用方能看到的工具：核心自己的，加上所有在运行的插件的。并发地问，一个插件卡住挡不住别的（每个插件有期限，见
     /// [`Upstreams::tools`]）。列不出工具的插件记一条警告后跳过，它的工具这时本来也调不通。
     async fn tools(&self, caller: &Caller) -> Vec<Tool> {
+        if self.remote_contact_blocked(caller) {
+            return contacts_gate::tools();
+        }
         let servers = self.plugins.mcp_servers();
         let listed = servers.iter().map(|server| self.upstreams.tools(server));
         let listed = futures_util::future::join_all(listed).await;
@@ -345,6 +352,9 @@ impl Bus {
                 &ToolFailure::new("invalid_input", format!("没有工具 {name}")),
             );
         };
+        if let Some(failure) = self.remote_contact_gate(caller, owner, tool) {
+            return self.deny(caller, &name, &args, &failure);
+        }
         if owner == naming::CORE {
             return core_tools::call(self, caller, tool, arguments, activity).await;
         }
@@ -742,6 +752,8 @@ mod agent_install_tests;
 mod agent_permission_tests;
 #[cfg(test)]
 mod authoring_tests;
+#[cfg(test)]
+mod contacts_gate_tests;
 #[cfg(test)]
 mod file_block_tests;
 #[cfg(test)]
