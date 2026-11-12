@@ -1,32 +1,25 @@
 name: ios
 
 # 托管 macOS（仓库公开后 macOS 分钟免费）：SwiftLint，和一次模拟器构建：在固定型号和系统版本的模拟器上
-# 跑 WontonTests（单测和截图测试，不跑 UI 测试，不签名）。PR 和合并队列只在改到 iOS 相关文件时跑；草稿 PR 上
-# 一个作业都不起（含改动范围），汇总作业起来报一个通过；转 ready 或每天的定时全量才跑。main 上不重跑
-# （PR 已在最新 main 上跑过），定时兜底。
+# 跑 WontonTests（单测和截图测试，不跑 UI 测试，不签名）。PR 只在改到 iOS 相关文件时跑；草稿 PR 上
+# 一个作业都不起（含改动范围），汇总作业起来报一个通过；转 ready 或每天的定时全量才跑。
 # 重录参考图不在这个工作流里：另开 snapshots-record.yml，只在打 record-snapshots 标签时跑，见 workflows/README.md。
 # 触发的 crate 是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
 # 加了依赖要同步改这份列表。只改测试的 PR（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉。
-# 路径不写在触发器上：合并队列的必需检查每次入队都要有结果，工作流没触发的话检查一直“等待中”，队列合不了。
+# 路径不写在触发器上：必需检查在每个 PR 上都要有结果，工作流没触发的话检查一直“等待中”，PR 合不了。
 # 改成由 changes 作业判断改动范围，没改到时自己报 skipped（跳过的检查算通过）。
 # 必需检查只有末尾的汇总作业，其余作业在作业级直接跳过，不用为了报检查先起 runner。
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   schedule:
-    # 每天全量兜底（PR 已在最新 main 上跑过，main 上不重跑）。
+    # 每天全量兜底：main 上不重跑，两个各自绿的 PR 合在一起才出的错由这次发现。
     - cron: "30 4 * * *"
   workflow_dispatch:
-  # 合并队列：末尾的汇总作业是必需检查，入队后的合并提交上也要报告，否则队列直接判失败。
-  # 队列用 base_sha..head_sha 判断范围，包含排在前面的 PR，沿用 PR 的路径规则。
-  merge_group:
-    types: [checks_requested]
-    branches: [main]
 
 # 同一个 PR 又推了新提交，旧的整个取消，排上的模拟器构建也不许再起（build 的条件用 !cancelled()）。
-# 队列里的 ref 一律是 gh-merge-queue/main，按它分组会把几次入队挤进同一组，改用这次入队的合并提交。
 concurrency:
-  group: ios-${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.ref }}
+  group: ios-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -40,8 +33,8 @@ permissions:
 jobs:
   changes:
     name: 改动范围（ios）
-    # PR 用 REST 列改动文件，队列比较整个合并组；定时和手动运行全量，草稿 PR 跳过。
-    if: github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+    # PR 用 REST 列改动文件，不用检出代码；定时和手动运行全量，草稿 PR 跳过。
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -51,17 +44,10 @@ jobs:
     outputs:
       changed: ${{ steps.filter.outputs.changed }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        if: github.event_name == 'merge_group'
-        with:
-          ref: ${{ github.event.merge_group.head_sha }}
-          persist-credentials: false
       # MIT
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
-          base: ${{ github.event.merge_group.base_sha }}
-          ref: ${{ github.event.merge_group.head_sha }}
           # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
           predicate-quantifier: some-with-excludes
           filters: |
@@ -88,7 +74,7 @@ jobs:
   swiftlint:
     name: SwiftLint（函数体 ≤ 100 行）
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || (github.event_name != 'pull_request' && github.event_name != 'merge_group')) }}
+    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || github.event_name != 'pull_request') }}
     runs-on: macos-26
     timeout-minutes: 10
     env:
@@ -114,7 +100,7 @@ jobs:
   build:
     name: 模拟器构建
     needs: changes
-    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || (github.event_name != 'pull_request' && github.event_name != 'merge_group')) }}
+    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || github.event_name != 'pull_request') }}
     runs-on: xcode-27
     timeout-minutes: 45
     env:
