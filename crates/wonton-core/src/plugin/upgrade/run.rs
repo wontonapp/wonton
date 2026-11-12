@@ -1,7 +1,6 @@
 //! 执行升级：保留数据、插件密钥、Bot 账号和设备、模型凭据、OIDC 客户端，只换容器。
 //!
-//! 先把能失败的都做在旧容器还在跑的时候（渲染、拉镜像、建目录和卷），这些失败了旧版本不受影响。换容器之后失败就退回：用
-//! 旧记录和旧容器当时的镜像重建旧版本。Bot 的令牌从旧容器读回（见 [`crate::plugin::egress`]），只留在内存里和容器的环境
+//! 先把能失败的都做在旧容器还在跑的时候（渲染、拉镜像、建目录和卷），这些失败了旧版本不受影响。换容器之后失败就退回：用旧记录和旧容器当时的镜像重建旧版本。Bot 的令牌从旧容器读回（见 [`crate::plugin::egress`]），只留在内存里和容器的环境
 //! 变量里，这里绝不签新设备：换设备要重新建加密身份。安装记录最后才写，核心中途退出时记录还是旧版本的。
 
 use std::collections::HashMap;
@@ -106,6 +105,7 @@ impl PluginManager {
         granted: &[Permission],
         requested: &[EnabledPermission],
         lan_webui: bool,
+        settings: super::super::settings::Values,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
         super::super::install_entry::check_runtime(&package.manifest, &langs)?;
@@ -147,7 +147,14 @@ impl PluginManager {
         let before = self.begin_upgrade(id)?;
         tracing::info!(plugin = %id, version = %manifest.version, "开始升级插件");
         let outcome = self
-            .upgrade_begun(&package, granted, &enabled, (gpu, lan), &langs)
+            .upgrade_begun(
+                &package,
+                granted,
+                &enabled,
+                (gpu, lan),
+                settings.clone(),
+                &langs,
+            )
             .await;
         self.lan.end(id);
         let result = self.finish_upgrade(&package, lan_webui, before, outcome);
@@ -249,6 +256,7 @@ impl PluginManager {
         granted: &[Permission],
         enabled: &[EnabledPermission],
         grants: (Option<GpuGrant>, Option<LanGrant>),
+        settings: super::super::settings::Values,
         langs: &Languages,
     ) -> Outcome {
         let old = match self.read_old(&package.manifest.id).await {
@@ -257,7 +265,15 @@ impl PluginManager {
         };
         let mut progress = Progress::default();
         let error = match self
-            .replace_version(&old, package, granted, enabled, grants, &mut progress)
+            .replace_version(
+                &old,
+                package,
+                granted,
+                enabled,
+                grants,
+                settings,
+                &mut progress,
+            )
             .await
         {
             Ok(deployed) => {
@@ -327,6 +343,7 @@ impl PluginManager {
         })
     }
 
+    #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
     async fn replace_version(
         &self,
         old: &Old,
@@ -334,11 +351,12 @@ impl PluginManager {
         granted: &[Permission],
         enabled: &[EnabledPermission],
         grants: (Option<GpuGrant>, Option<LanGrant>),
+        settings: super::super::settings::Values,
         progress: &mut Progress,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
         let prepared = self
-            .prepare_new(old, package, enabled, grants, progress)
+            .prepare_new(old, package, enabled, grants, settings, progress)
             .await?;
         let langs = self.owner_languages();
         let Prepared {
@@ -399,6 +417,8 @@ impl PluginManager {
             written_by: old.record.written_by.clone(),
             ask_every_update: old.record.ask_every_update,
             family: old.record.family,
+            settings: ctx.settings.clone().into_iter().collect(),
+            settings_changed_ms: old.record.settings_changed_ms,
         })?;
         Ok(Deployed {
             upstream,
@@ -423,6 +443,7 @@ impl PluginManager {
         package: &PluginPackage,
         enabled: &[EnabledPermission],
         (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
+        settings: super::super::settings::Values,
         progress: &mut Progress,
     ) -> Result<Prepared, InstallError> {
         let manifest = &package.manifest;
@@ -448,6 +469,7 @@ impl PluginManager {
         ctx.limits = old.record.limits;
         ctx.gpu = gpu;
         ctx.lan = lan;
+        ctx.settings = settings;
         // 新版本才接入 Matrix 的插件：先代 Bot 登录新设备，模型凭据签发后再把变量填进上下文。
         let mut new_bot = None;
         if is_bot(manifest) && !is_bot(&old.package.manifest) {
@@ -756,6 +778,7 @@ impl PluginManager {
                 &granted,
                 &installed.enabled_permissions,
                 installed.lan_webui,
+                installed.settings.clone(),
             )
             .await
         {
