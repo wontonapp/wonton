@@ -16,7 +16,7 @@ on:
 
 # 同一个 PR 又推了新提交，旧的运行就取消，别占着 runner；定时运行都跑完。
 concurrency:
-  group: rust-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # CI 不需要增量编译的缓存，调试信息只留行号：构建缓存小一半以上。

@@ -42,7 +42,7 @@ on:
 # 同一个 PR 又推了新提交，旧的整个取消，排上的模拟器构建也不许再起（build 的条件用 !cancelled()）。
 # main 上每次合并单独一组、不互相取消（见开头）。
 concurrency:
-  group: ios-${{ github.event_name == 'push' && github.sha || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
