@@ -1541,10 +1541,8 @@
     <string name="notification_channel_confirmation">確認待ち</string>
     <string name="notification_channel_plugin">アプリからの通知</string>
     <string name="notification_value_on">オン</string>
+    <string name="notification_value_system_blocked">システム設定で許可されていません</string>
     <string name="notification_value_off">オフ</string>
-    <string name="notification_value_registering">登録中</string>
-    <string name="notification_value_not_set">未設定</string>
-    <string name="notification_value_unavailable">受信できません</string>
     <string name="notification_channel_created">作成済み</string>
     <string name="notification_channel_not_created">未作成</string>
     <string name="push_status_no_endpoint">未登録</string>

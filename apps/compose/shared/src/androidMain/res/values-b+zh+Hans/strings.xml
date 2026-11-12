@@ -1541,10 +1541,8 @@
     <string name="notification_channel_confirmation">等你确认</string>
     <string name="notification_channel_plugin">应用通知</string>
     <string name="notification_value_on">已开启</string>
+    <string name="notification_value_system_blocked">系统里没允许</string>
     <string name="notification_value_off">已关闭</string>
-    <string name="notification_value_registering">注册中</string>
-    <string name="notification_value_not_set">未开启</string>
-    <string name="notification_value_unavailable">收不到</string>
     <string name="notification_channel_created">已创建</string>
     <string name="notification_channel_not_created">未创建</string>
     <string name="push_status_no_endpoint">未注册</string>

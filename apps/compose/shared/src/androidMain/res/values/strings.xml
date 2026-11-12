@@ -1718,15 +1718,11 @@
     <string name="notification_channel_plugin">App notifications</string>
     <!-- Notification state value: notifications are allowed. -->
     <string name="notification_value_on">On</string>
+    <!-- Notification state value: notifications are not allowed for this app in the system settings. -->
+    <string name="notification_value_system_blocked">Not allowed in system settings</string>
     <!-- Notification state value: notifications are turned off. -->
     <string name="notification_value_off">Off</string>
-    <!-- Notification state value: push registration is in progress. -->
-    <string name="notification_value_registering">Registering</string>
-    <!-- Notification state value: the user never turned on push. -->
-    <string name="notification_value_not_set">Not on</string>
-    <!-- Notification state value: no push can arrive. -->
-    <string name="notification_value_unavailable">Not receiving</string>
-    <!-- Channel state value: the system has a channel for this category. -->
+                <!-- Channel state value: the system has a channel for this category. -->
     <string name="notification_channel_created">Created</string>
     <!-- Channel state value: the system has no channel for this category yet. -->
     <string name="notification_channel_not_created">Not created</string>
