@@ -30,6 +30,32 @@ impl PluginManager {
             .insert(id, entry);
     }
 
+    /// 测试用：登记一个托管能力的提供方（ADR-0080），网关把托管插件的请求转到 `upstream`；为空时是没在运行。
+    #[cfg(test)]
+    pub(crate) fn register_hosted_provider_for_test(
+        &self,
+        manifest: Manifest,
+        capability: &str,
+        upstream: Option<String>,
+    ) {
+        let id = manifest.id.clone();
+        let status = if upstream.is_some() {
+            PluginStatus::Running
+        } else {
+            PluginStatus::Stopped
+        };
+        let mut entry = Entry::new(Listed::of_manifest(manifest), status, None);
+        if let Some(upstream) = upstream {
+            entry
+                .hosted
+                .insert(capability.to_owned(), Endpoint::Tcp(upstream));
+        }
+        self.plugins
+            .write()
+            .expect("插件表锁中毒")
+            .insert(id, entry);
+    }
+
     /// 测试用：读插件的安装记录。
     #[cfg(test)]
     pub(crate) fn record_for_test(&self, id: &PluginId) -> Option<InstalledRecord> {
