@@ -4,10 +4,12 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
+use super::super::capabilities::WEB_STORAGE;
 use super::super::entry::Entry;
 use super::super::entry::Health;
 use super::super::entry::PluginStatus;
 use super::super::install_hosted::{effective_status, hosted_capability, provider_in};
+use super::super::install_storage::storage_need;
 use super::super::manifest::{LocalizedText, PluginId, Sso};
 use super::super::manifest_static::content_security_policy;
 use super::super::proxy_auth::ProxyAuth;
@@ -52,6 +54,15 @@ pub struct HostedRoute {
     pub csp: String,
     /// 提供方回 404 时改取的文件（相对站点根，不带开头的 `/`）。
     pub fallback: Option<String>,
+    /// 清单写了 `web_storage`（ADR-0080 第 6 节）时 `/_wonton/data/` 转去哪；没写时为空，网关回 404。
+    pub storage: Option<StorageRoute>,
+}
+
+/// 数据存储的转发目标。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageRoute {
+    /// 提供方运行中时的地址；没装或没在运行时为空，网关回“没有就绪”。
+    pub upstream: Option<Endpoint>,
 }
 
 /// 请求路径是否精确匹配本次路由清单登记的 OIDC 登录回调。
@@ -88,6 +99,10 @@ impl PluginManager {
                 hosted: Some(HostedRoute {
                     csp: content_security_policy(&spec),
                     fallback: spec.fallback,
+                    storage: manifest.and_then(storage_need).map(|_| StorageRoute {
+                        upstream: provider_in(&plugins, WEB_STORAGE.name, &langs)
+                            .and_then(|p| p.endpoint),
+                    }),
                 }),
             });
         }

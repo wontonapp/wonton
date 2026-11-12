@@ -855,7 +855,7 @@ impl PluginManager {
             self.store.secrets().remove(id)?;
             report.data_removed = true;
         }
-        self.remove_hosted(id, langs)?;
+        self.remove_hosted(id, purge, langs)?;
         self.store.save_grants().clear(id)?;
         self.store.remove(id)?;
         let left = self.own_resources(id).await?;

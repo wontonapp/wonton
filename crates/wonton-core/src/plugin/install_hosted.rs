@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 
 use wonton_protocol::{CapabilityProviderRef, PluginHint, PluginHintCategory};
 
-use super::capabilities::{self, STATIC_WEB};
+use super::capabilities::{self, STATIC_WEB, WEB_STORAGE};
 use super::hosted::HostedDirs;
+use super::install_storage::{StorageNeed, required_hosted, storage_error, storage_need};
 use super::languages::Languages;
 use super::listed::Listed;
 use super::manager::{
@@ -71,20 +72,28 @@ pub(super) fn effective_status(
     entry: &Entry,
     langs: &Languages,
 ) -> PluginStatus {
-    let Some(capability) = entry
-        .listed
-        .as_ref()
-        .and_then(|listed| hosted_capability(&listed.manifest))
-    else {
+    let Some(listed) = entry.listed.as_ref() else {
         return entry.status.clone();
     };
     if entry.status != PluginStatus::Running {
         return entry.status.clone();
     }
-    match provider_in(plugins, capability, langs) {
+    required_hosted(&listed.manifest)
+        .into_iter()
+        .find_map(|capability| not_serving(plugins, capability, langs))
+        .unwrap_or(PluginStatus::Running)
+}
+
+/// 这项能力的提供方没在提供时的状态；在提供时为空。
+fn not_serving(
+    plugins: &BTreeMap<PluginId, Entry>,
+    capability: &str,
+    langs: &Languages,
+) -> Option<PluginStatus> {
+    Some(match provider_in(plugins, capability, langs) {
         Some(Provider {
             endpoint: Some(_), ..
-        }) => PluginStatus::Running,
+        }) => return None,
         Some(provider) => PluginStatus::Degraded {
             reason: l10n::text(
                 langs,
@@ -99,7 +108,7 @@ pub(super) fn effective_status(
                 &[("capability", capability.into())],
             ),
         },
-    }
+    })
 }
 
 impl PluginManager {
@@ -135,9 +144,11 @@ impl PluginManager {
 
     /// 详情页的轻提示：托管插件的提供方没在运行（ADR-0053 的 `dependency_stopped`）。
     pub(super) fn hosted_hint(&self, manifest: &Manifest) -> Option<PluginHint> {
-        let capability = hosted_capability(manifest)?;
-        let provider = self.hosted_provider(capability)?;
-        provider.endpoint.is_none().then(|| PluginHint {
+        let provider = required_hosted(manifest)
+            .into_iter()
+            .filter_map(|capability| self.hosted_provider(capability))
+            .find(|provider| provider.endpoint.is_none())?;
+        Some(PluginHint {
             category: PluginHintCategory::DependencyStopped,
             detail: None,
             provider: Some(CapabilityProviderRef {
@@ -192,10 +203,9 @@ impl PluginManager {
             .filter(|(other, _)| *other != id)
             .filter_map(|(_, entry)| {
                 let listed = entry.listed.as_ref()?;
-                let capability = hosted_capability(&listed.manifest)?;
-                provides
-                    .capabilities
-                    .contains_key(capability)
+                required_hosted(&listed.manifest)
+                    .into_iter()
+                    .any(|capability| provides.capabilities.contains_key(capability))
                     .then(|| langs.pick_owned(&entry.title))
             })
             .collect()
@@ -209,8 +219,9 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<PluginView, InstallError> {
         let manifest = package.manifest.clone();
-        if let Some(capability) = hosted_capability(&manifest)
-            && self.hosted_provider(capability).is_none()
+        if let Some(capability) = required_hosted(&manifest)
+            .into_iter()
+            .find(|capability| self.hosted_provider(capability).is_none())
         {
             return Err(missing_provider(capability, langs));
         }
@@ -314,6 +325,17 @@ impl PluginManager {
             }
             None => None,
         };
+        let created = match storage_need(manifest) {
+            Some(StorageNeed::Required | StorageNeed::Wanted) => {
+                self.prepare_storage(&manifest.id, langs)?
+            }
+            None => false,
+        };
+        // 数据跟着账本走：新版本不再要数据存储时，留着的数据照样记着，卸载时才知道要不要删。
+        let had_storage = old.is_some_and(|old| old.hosted.iter().any(|c| c == WEB_STORAGE.name));
+        if storage_need(manifest).is_some() || had_storage {
+            hosted.push(WEB_STORAGE.name.to_owned());
+        }
         let record = InstalledRecord {
             settings: Default::default(),
             settings_changed_ms: None,
@@ -341,7 +363,14 @@ impl PluginManager {
             static_files: package.static_hashes().clone(),
             hosted,
         };
-        match (self.store.save(&record), swapped) {
+        let saved = self.store.save(&record);
+        if saved.is_err()
+            && created
+            && let Err(e) = self.hosted_dirs().remove(WEB_STORAGE.name, &manifest.id)
+        {
+            tracing::warn!(plugin = %manifest.id, error = %e, "记录没存上，删不掉刚建的数据目录");
+        }
+        match (saved, swapped) {
             (Ok(()), swapped) => {
                 if let Some(swapped) = swapped {
                     swapped.finish();
@@ -372,29 +401,28 @@ impl PluginManager {
             .iter()
             .find(|capability| !self.hosted_dirs().exists(capability, &record.id));
         match missing {
-            Some(capability) => Entry::new(
-                listed,
-                PluginStatus::Degraded {
-                    reason: l10n::text(
-                        langs,
-                        "plugin-hosted-dir-missing",
-                        &[("capability", capability.as_str().into())],
-                    ),
-                },
-                None,
-            ),
+            Some(capability) => {
+                let key = if capability == WEB_STORAGE.name {
+                    "plugin-hosted-data-missing"
+                } else {
+                    "plugin-hosted-dir-missing"
+                };
+                let reason = l10n::text(langs, key, &[("capability", capability.as_str().into())]);
+                Entry::new(listed, PluginStatus::Degraded { reason }, None)
+            }
             None => running(listed),
         }
     }
 
-    /// 卸载时照记录（副作用账本）撤掉托管目录。
+    /// 卸载时照记录（副作用账本）撤掉托管目录。数据存储的目录和容器插件的应用数据一样，`purge` 时才删。
     pub(super) fn remove_hosted(
         &self,
         id: &PluginId,
+        purge: bool,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         // 记录读不出来（损坏的记录也要卸得掉）时没有账本可看：子目录按插件 ID 命名、只属于它，托管形态的
-        // 都删；数据存储不在这里猜，留给主人。
+        // 都删，数据存储照 `purge`。
         let hosted = match self.store.load(id) {
             Ok(Some(record)) => record.hosted,
             Ok(None) => return Ok(()),
@@ -402,13 +430,16 @@ impl PluginManager {
                 tracing::warn!(plugin = %id, error = %e, "读不出安装记录，按托管形态清理");
                 capabilities::ALL
                     .iter()
-                    .filter(|c| c.hosted.is_some_and(|h| h.runtime.is_some()))
+                    .filter(|c| c.hosted.is_some_and(|h| purge || h.runtime.is_some()))
                     .map(|c| c.name.to_owned())
                     .collect()
             }
         };
         let dirs = self.hosted_dirs();
-        for capability in &hosted {
+        for capability in hosted
+            .iter()
+            .filter(|capability| purge || *capability != WEB_STORAGE.name)
+        {
             dirs.remove(capability, id)
                 .map_err(|e| storage(langs, &e))?;
         }
@@ -423,11 +454,7 @@ fn running(listed: std::sync::Arc<Listed>) -> Entry {
 }
 
 fn storage(langs: &Languages, error: &dyn std::fmt::Display) -> InstallError {
-    InstallError::Storage(l10n::text(
-        langs,
-        "plugin-hosted-storage-failed",
-        &[("error", error.to_string().into())],
-    ))
+    storage_error(langs, error)
 }
 
 fn missing_provider(capability: &str, langs: &Languages) -> InstallError {

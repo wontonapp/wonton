@@ -548,3 +548,4 @@ plugin-hosted-provider-taken = { $other } already provides { $capability }; only
 plugin-hosted-provider-in-use = These apps are served by it and would stop working: { $plugins }. Uninstall them first
 plugin-hosted-dir-missing = The files of this app for { $capability } are missing; reinstall it
 plugin-hosted-storage-failed = Could not write the hosted files: { $error }
+plugin-hosted-data-missing = This app's saved data for { $capability } is missing; reinstalling starts it empty

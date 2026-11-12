@@ -144,3 +144,7 @@ gateway-share-required = 所有者はこのアプリをあなたに共有して�
 gateway-share-revoked = 所有者がこのアプリの共有を止めました
 gateway-share-expired = 共有の期限が切れました
 gateway-confirmation-gone = その確認はありません。終了して1日以上経過しています
+# 静态网页的数据存储（ADR-0080 第 6 节）
+gateway-web-storage-undeclared = このアプリはデータを保存しません
+gateway-web-storage-cross-site = このアプリのデータを変更できるのは、このアプリ自身のページだけです
+gateway-web-storage-not-ready = このアプリのデータを保存しているアプリが実行されていません。しばらくしてからもう一度お試しください

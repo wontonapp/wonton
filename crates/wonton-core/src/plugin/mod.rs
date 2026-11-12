@@ -46,6 +46,7 @@ mod install_entry;
 mod install_error;
 pub(crate) mod install_hosted;
 mod install_notes;
+pub(crate) mod install_storage;
 mod installation;
 pub mod interpolate;
 pub mod lan;
