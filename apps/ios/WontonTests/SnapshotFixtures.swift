@@ -69,6 +69,8 @@ enum SnapshotFixtures {
             plugins: PluginsModel(core: core)
         )
         .environment(OnboardingModel(core: core))
+        // 版本号钉死：设置页直接读 Bundle 版本，不钉的话参考图随无 tag 的 Debug 构建漂（构建号 1→0）。
+        .environment(\.appVersionOverride, "0.0.0 (0)")
     }
 
     /// 插件问题视图（#230）：「安装记录不可用」类别，标题和下一步按类别写在壳里，核心的原始说明收进“详情”。

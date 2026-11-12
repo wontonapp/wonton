@@ -10,6 +10,7 @@ struct SettingsTab: View {
     var isModal = false
     var isActive = true
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.appVersionOverride) private var appVersionOverride
     @State private var isEditingProfile = false
     @State private var isChoosingAgent = false
     @Environment(OnboardingModel.self) private var onboarding
@@ -141,7 +142,7 @@ struct SettingsView: View {
             }
         case .about:
             NavigationLink(value: SettingsRoute.about) {
-                WontonRow(title: String(localized: .settingsAbout), value: AppVersion.full, showsForward: true)
+                WontonRow(title: String(localized: .settingsAbout), value: appVersionOverride ?? AppVersion.full, showsForward: true)
             }
         case .matrixAccount, .matrixDevices, .addWontonServer, .other:
             EmptyView()
@@ -161,10 +162,24 @@ private enum AppVersion {
     }
 }
 
+/// 截图测试钉版本号用：设置页直接读 Bundle 的版本，CI 的 Debug 构建没有 tag 时会变，参考图跟着漂。
+/// 测试夹具设一个固定值；生产不设，照常读真实版本。
+private struct AppVersionOverrideKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    var appVersionOverride: String? {
+        get { self[AppVersionOverrideKey.self] }
+        set { self[AppVersionOverrideKey.self] = newValue }
+    }
+}
+
 private struct AboutView: View {
+    @Environment(\.appVersionOverride) private var appVersionOverride
     var body: some View {
         ScrollView {
-            WontonGroup { WontonRow(title: String(localized: .pluginInfoVersion), value: AppVersion.full) }
+            WontonGroup { WontonRow(title: String(localized: .pluginInfoVersion), value: appVersionOverride ?? AppVersion.full) }
                 .padding(WontonTheme.spacing.pageInset)
         }
         .wontonPushedScreen(String(localized: .settingsAbout))
