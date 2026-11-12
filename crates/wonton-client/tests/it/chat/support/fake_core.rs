@@ -13,6 +13,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
 use wonton_matrix::testkit::PushGateway;
+use wonton_tunnel::pair::{PairingSecret, SECRET_LEN};
 
 use super::{BASE_DOMAIN, Core, OWNER, matrix, read_body};
 
@@ -169,7 +170,16 @@ async fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> 
         push("PUT", serde_json::from_slice(body).unwrap_or(Value::Null));
         json!({"pushkey": core.pushkey, "gateway_url": PushGateway::URL})
     } else if head.starts_with("post /_wonton/api/pairing-codes ") {
+        // 每要一次换一个 secret，同核心：码是一次性的，重开页拿到的是新码。
         let code = core.issued_pairing_code.lock().unwrap().clone()?;
+        let (before, rest) = code
+            .split_once("secret=")
+            .expect("fake pairing code has a secret");
+        let mut bytes = [0u8; SECRET_LEN];
+        let serial = core.pairing_codes_issued.fetch_add(1, Ordering::SeqCst) as u64;
+        bytes[..8].copy_from_slice(&serial.to_be_bytes());
+        let secret = PairingSecret::from_bytes(bytes).expose().to_owned();
+        let code = format!("{before}secret={secret}{}", &rest[SECRET_LEN * 2..]);
         json!({"code": code, "expires_in": 600})
     } else if head.starts_with("get /_wonton/api/onboarding ") {
         let value = core.onboarding.lock().unwrap().clone()?;
