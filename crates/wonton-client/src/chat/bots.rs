@@ -316,6 +316,13 @@ impl Bots {
     pub fn clear_activity(&self) {
         let mut local = lock(&self.local);
         local.report = None;
+        // 后台或换会话时网页状态作废：换一代，把已发的网页地址撤下来。
+        local.web_generation = local.web_generation.wrapping_add(1);
+        self.view.send_modify(|view| {
+            for bot in &mut view.bots {
+                bot.web = None;
+            }
+        });
         for record in local.records.values_mut() {
             record.facts = None;
             record.typing.clear();
