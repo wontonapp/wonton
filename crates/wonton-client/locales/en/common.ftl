@@ -1,3 +1,15 @@
+## Collapsed technical details. Raw reasons, codes and upstream text stay unchanged.
+## No length limit. Each parameter is diagnostic data, not a translation key.
+
+# CoreError prefixes. $reason is the original error detail.
+core-error-storage = Can't read or write local storage: { $reason }
+core-error-not-ready = Not ready: { $reason }
+core-error-transport = Can't reach your home server: { $reason }
+core-error-unauthorized = Your home server rejected the request: { $reason }
+core-error-forbidden = Your home server refused this: { $reason }
+core-error-upstream = Something went wrong on your home server: { $reason }
+core-error-server-too-old = Your home server is too old for this. Update the server, then try again.
+
 ## Plugin module: technical details, collapsed by default in the Details of
 ## errors, app task rows, and the Internet proxy / Download Mirror settings pages.
 ## No length limit. Each parameter is diagnostic data, not a translation key.

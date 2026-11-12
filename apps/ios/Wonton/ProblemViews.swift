@@ -319,6 +319,12 @@ extension Error {
                 nextStep: String(localized: .Problem2.problemUnauthorizedNextStep),
                 detail: detail
             )
+        case .Forbidden:
+            return Problem(
+                title: String(localized: .Problem3.problemForbiddenTitle),
+                nextStep: String(localized: .Problem3.problemForbiddenNextStep),
+                detail: detail
+            )
         case .Upstream:
             return Problem(
                 title: String(localized: .Problem2.problemUpstreamTitle),

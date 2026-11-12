@@ -1,3 +1,15 @@
+## 預設收合的技術詳細資訊。原因、錯誤碼和上游原文保持不變。
+## 不限長度。參數是診斷資料，不是翻譯鍵。
+
+# CoreError 前綴。$reason 是原始錯誤詳細資訊。
+core-error-storage = 無法讀寫本機儲存空間：{ $reason }
+core-error-not-ready = 尚未就緒：{ $reason }
+core-error-transport = 無法連上家用伺服器：{ $reason }
+core-error-unauthorized = 家用伺服器拒絕了請求：{ $reason }
+core-error-forbidden = 家用伺服器不允許這個操作：{ $reason }
+core-error-upstream = 家用伺服器發生錯誤：{ $reason }
+core-error-server-too-old = 家裡的伺服器太舊，還做不了這件事。升級伺服器後再試。
+
 ## 外掛程式模組的技術詳細資訊，預設收合在錯誤、應用程式任務和代理伺服器、下載鏡像站設定頁的「詳細資訊」裡。
 ## 不限長度。參數是診斷資料，不是翻譯鍵。
 # 外掛程式管理介面（crates/wonton-client/src/plugins/api.rs）。

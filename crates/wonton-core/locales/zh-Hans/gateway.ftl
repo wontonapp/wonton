@@ -130,7 +130,6 @@ gateway-owner-secrets-store-failed = 读应用密钥失败：{ $error }
 gateway-owner-secrets-not-text = 密钥 { $name } 存的值不是文本
 gateway-owner-secrets-audit-unavailable = 家里的服务器没有接审计日志，不能查看密钥的值
 gateway-plugin-scope-unsupported = 这个核心不支持修改插件给哪些 Bot 用，请先升级核心。
-gateway-bot-plugin-access-unsupported = 这个核心不支持为单个 Bot 开关插件，请先升级核心。
 
 # MCP Apps 宿主页（#35）。
 mcp-app-loading = 正在载入…
@@ -144,3 +143,7 @@ gateway-share-required = 主人没有把这个应用分享给你
 gateway-share-revoked = 主人停止分享这个应用了
 gateway-share-expired = 分享已到期
 gateway-confirmation-gone = 没有这张确认，或它已结束超过一天
+# 静态网页的数据存储（ADR-0080 第 6 节）
+gateway-web-storage-undeclared = 这个应用不存数据
+gateway-web-storage-cross-site = 只有这个应用自己的页面能改它的数据
+gateway-web-storage-not-ready = 替这个应用存数据的应用没有在运行，请稍后再试

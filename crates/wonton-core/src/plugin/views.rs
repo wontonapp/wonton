@@ -238,7 +238,7 @@ impl PluginManager {
     ) -> Result<Option<CardLine>, InstallError> {
         let volumes = !self.own_resources(id).await?.volumes.is_empty();
         let secrets = self.store.secrets().load(id)?.is_some();
-        let dir = self.cfg.apps_dir.join(id.slug()).exists();
+        let dir = self.cfg.apps_dir.join(id.slug()).exists() || self.storage_retained(id);
         Ok((volumes || secrets || dir).then(|| CardLine {
             text: l10n::text(
                 langs,
