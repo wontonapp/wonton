@@ -76,9 +76,12 @@ extensions.configure<ApplicationAndroidComponentsExtension> {
 // versionName/versionCode 由仓库根的 scripts/app-version.sh 一处计算（iOS 共用同一规则）：
 // 环境变量 WONTON_VERSION（发版脚本显式传，-PwontonVersion 透传给它）→ 最近的 vX.Y.Z tag；
 // 都拿不到时 Debug 用 0.0.0/0（CI 浅克隆没有 tag），Release 直接失败，不悄悄落到 0.0.0。
-// providers.exec 惰性求值，值留到该变体真正合并 manifest 时才取：编 Debug 不会因为 Release
+// providers.exec 惰性求值，值留到该变体真正合并 manifest 的任务里才取：编 Debug 不会因为 Release
 // 变体拿不到版本号而在配置期失败；spec 里只捕获可序列化的值，配置缓存才存得下。
-val versionScript = rootDir.parentFile.resolve("scripts/app-version.sh")
+// 构建可能搬到没有本仓库目录结构的机器上跑（android-remote 的远程副本），路径必须按本次构建的
+// rootDir 现场解析，不能写死任何机器路径。
+val versionScript = rootDir.parentFile.parentFile.resolve("scripts/app-version.sh")
+require(versionScript.isFile) { "找不到版本号脚本 ${versionScript.path}（rootDir=${rootDir.path}）" }
 
 extensions.configure<ApplicationAndroidComponentsExtension> {
     onVariants { variant ->
