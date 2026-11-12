@@ -379,15 +379,22 @@ impl HomeLink {
             .clone()
     }
 
-    /// 已知隧道不通时的原因；连接没断、正在建连或还没配过对时不拦。核心自己经隧道的请求
-    /// （好友、成员这些）在发出前先过这道闸：已知不通就立刻失败成“连不上家里的服务器”，
-    /// 不等各自的 30 秒超时（tunnel-502）。WebView 的流量照旧等下一次建连结果（ADR-0032）。
-    /// 读主 ViewModel：它由连接状态推出来，也是壳看到的同一份状态。
+    /// 已知隧道不通时的原因：断开着，或断开后自动重试正在建连。已连上、还没配过对、第一次建连
+    /// 或回前台后的新一轮建连时不拦。核心自己经隧道的请求（好友、资料、成员这些）在发出前先过这道闸：
+    /// 已知不通就立刻失败成“连不上家里的服务器”，不等各自的 30 秒超时。WebView 的流量照旧等下一次
+    /// 建连结果（ADR-0032）。状态读主 ViewModel：它由连接状态推出来，也是壳看到的同一份状态。
     pub(crate) fn tunnel_outage(&self) -> Option<HomeFailure> {
         match self.view().status {
             HomeStatus::Disconnected { reason, .. } => Some(reason),
-            _ => None,
+            HomeStatus::Connecting => self.lock_tracker().known_failure(),
+            HomeStatus::Connected | HomeStatus::NotConfigured => None,
         }
+    }
+
+    /// 测试里直接给出连接状态，不必真的建连。
+    #[cfg(test)]
+    pub(crate) fn set_status_for_test(&self, status: HomeStatus) {
+        self.view.send_modify(|view| view.status = status);
     }
 
     /// 配对时填的设备名；`ConnectHome` 给的连接信息里没有，存储坏了也为空。
