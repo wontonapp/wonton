@@ -74,3 +74,25 @@ async fn bot_pinned_pages_come_after_user_pages_and_count_toward_the_limit() {
         .unwrap();
     assert!(!rig.tabs.view().panel[1].attention);
 }
+
+/// 已知连不上家里的服务器时，拉钉页失败不弹“读不了导航栏设置”：连接提示已经说了，列表留着上次的。
+#[tokio::test]
+async fn a_known_outage_keeps_the_pins_without_a_settings_problem() {
+    let rig = Rig::new();
+    lock(&rig.tabs.state).bot_pins = vec![bot_pin("a", page_tab(), false)];
+    rig.tabs
+        .home_link
+        .set_status_for_test(HomeStatus::Disconnected {
+            reason: wonton_protocol::HomeFailure::TransportUnavailable,
+            message: "测试".into(),
+        });
+    let tabs = Arc::new(rig.tabs);
+    tabs.refresh_bot_pins().await;
+    assert_eq!(tabs.view().problem, None);
+    assert_eq!(lock(&tabs.state).bot_pins.len(), 1, "列表要留着上次的");
+
+    // 连接不是已知断开时，拉不到照旧如实记下。
+    tabs.home_link.set_status_for_test(HomeStatus::Connected);
+    tabs.refresh_bot_pins().await;
+    assert!(tabs.view().problem.is_some());
+}

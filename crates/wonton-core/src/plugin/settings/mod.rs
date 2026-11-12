@@ -73,6 +73,31 @@ pub(crate) fn value_error(
     )
 }
 
+/// 新装时要存的设置值：显式给的值叠上 Schema 默认值再校验。插件没有设置、却给了值时，每项都报不认识。
+pub(crate) fn install_values(
+    package: &PluginPackage,
+    given: &wonton_protocol::SettingValues,
+    langs: &Languages,
+) -> Result<Values, InstallError> {
+    match load(package, langs)? {
+        Some(schema) => {
+            value::initial(&schema, given, langs).map_err(|fields| value_error(fields, langs))
+        }
+        None if given.is_empty() => Ok(Values::new()),
+        None => Err(value_error(
+            given
+                .keys()
+                .map(|name| wonton_protocol::SettingsFieldError {
+                    name: name.clone(),
+                    kind: wonton_protocol::SettingsFieldProblemKind::UnknownField,
+                    message: l10n::text(langs, "plugin-settings-value-unknown-field", &[]),
+                })
+                .collect(),
+            langs,
+        )),
+    }
+}
+
 /// 读设置页的视图；`services` 是每个设置被哪些服务引用。
 pub(crate) fn view(
     schema: &Schema,

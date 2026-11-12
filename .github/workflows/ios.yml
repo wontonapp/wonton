@@ -133,15 +133,32 @@ jobs:
           persist-credentials: false
       - name: 用 Xcode 27.1（和开发机 mini 上的一致）
         run: sudo xcode-select -s /Applications/Xcode_27.1.app
+      # 模拟器冷启动要三分多钟（11-12 实测：test-without-building 开始后 3 分 25 秒才认到模拟器，测试本身 2 秒），
+      # 放在后台先启动，和下面编 Rust 核心、构建测试重叠；跑测试前再等它启动完。
+      - name: 后台启动模拟器
+        run: |
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, os, sys
+          runtime = "com.apple.CoreSimulator.SimRuntime.iOS-" + os.environ["SIMULATOR_OS"].replace(".", "-")
+          names = [d["udid"] for d in json.load(sys.stdin)["devices"].get(runtime, []) if d["name"] == os.environ["SIMULATOR_NAME"]]
+          print(names[0] if names else "")')
+          if [ -z "$udid" ]; then
+            echo "::error::找不到模拟器 $SIMULATOR_NAME（iOS $SIMULATOR_OS），runner 镜像变了要改 SIMULATOR_NAME/SIMULATOR_OS 并重录参考图"
+            exit 1
+          fi
+          echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+          nohup xcrun simctl bootstatus "$udid" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
       - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
         run: |
           rustup toolchain install
           rustup target add aarch64-apple-ios-sim
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
-          # macOS 的产物和 Linux 作业不通用，单独一个 key。main 上的条目由 cache.yml 用同一个 key 编。
+          # macOS 的产物和 Linux 作业不通用，单独一个 key。
+          # 只读：同一份 key 由 cache.yml 的 iOS 作业在 push 时编好写回。这里也写的话，
+          # 一次 main 合并会编两遍、两条运行抢着写同一个 key。
           shared-key: rust-ios
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+          save-if: false
       - name: 安装 XcodeGen（版本和 sha256 固定）
         run: |
           curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
@@ -169,6 +186,10 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
+      - name: 等模拟器启动完
+        run: |
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+          cat "$RUNNER_TEMP/simulator-boot.log"
       # 录制模式由 scheme 的环境变量切（`Wonton` 是 never）：只比较、缺图也报错，不在 CI 里悄悄补图；
       # 重录在 snapshots-record.yml。每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。
       - name: 单元测试和截图测试

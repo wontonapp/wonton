@@ -1,6 +1,6 @@
-//! 主人回答确认卡片（ADR-0016、ADR-0024）。和管理接口同一道门：主人令牌，或者经隧道的已配对设备，设备的请求还要不是
-//! 别的网页发起的。插件网络里来的请求两样都没有，Agent 拿到 ID 也答不了。卡片现在都发给主人（ADR-0045）：家人
-//! 列出来是空的，回答别人的卡片回 403 `not_yours`；发到归属人是后续任务。
+//! 回答确认卡片（ADR-0016、ADR-0024）。和管理接口同一道门：主人令牌，或者经隧道的已配对设备，设备的请求还要不是
+//! 别的网页发起的。插件网络里来的请求两样都没有，Agent 拿到 ID 也答不了。卡片按收件人分（ADR-0045）：默认发给主人，
+//! 发给家人的（如跳数到顶的卡片发给 Bot 的归属人）只有他列得到、答得了，回答别人的卡片回 403 `not_yours`。
 
 use std::sync::Arc;
 
@@ -43,8 +43,11 @@ pub async fn pending(
         .contacts()
         .map(|contacts| contacts.pending_for(&person.username))
         .unwrap_or_default();
-    if !person.is_owner() {
-        // 卡片都发给主人：家人这里没有自己的卡片。
+    let Some(mcp) = &gateway.mcp else {
+        // 没开 MCP 总线就没有卡片；家人照样拿得到自己的联系人请求。
+        if person.is_owner() {
+            return mcp_unavailable(&languages(&headers));
+        }
         return Json(ConfirmationList {
             confirmations: Vec::new(),
             finished: Vec::new(),
@@ -52,11 +55,10 @@ pub async fn pending(
             contact_requests,
         })
         .into_response();
-    }
-    let Some(mcp) = &gateway.mcp else {
-        return mcp_unavailable(&languages(&headers));
     };
-    let confirmations = mcp.bus.confirmations().pending();
+    // 只列发给这个人的卡片：主人的是没写收件人的，家人的是写了他用户名的。
+    let recipient = (!person.is_owner()).then_some(person.username.as_str());
+    let confirmations = mcp.bus.confirmations().pending_for(recipient);
     Json(ConfirmationList {
         confirmations,
         finished: Vec::new(),
@@ -79,12 +81,12 @@ pub async fn answer(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
-    if let Some(not_yours) = not_the_owners_card(&gateway, peer, &headers) {
-        return not_yours;
-    }
     let Some(mcp) = &gateway.mcp else {
         return mcp_unavailable(&languages(&headers));
     };
+    if let Some(not_yours) = not_their_card(&gateway, mcp, peer, &headers, &id) {
+        return not_yours;
+    }
     let answer: ConfirmationAnswer = match serde_json::from_slice(&body) {
         Ok(answer) => answer,
         Err(e) => {
@@ -141,7 +143,28 @@ pub async fn stop_window(
     }
 }
 
-/// 卡片都发给主人（ADR-0045）：主人的令牌和设备能答，家人的设备回答回 403 `not_yours`。
+/// 卡片发给谁谁回答（ADR-0045）：主人答没写收件人的，家人答写了他用户名的，别人回 403 `not_yours`。没有这张卡片时
+/// 交给回答本身报 404。
+fn not_their_card(
+    gateway: &Gateway,
+    mcp: &crate::mcp::Endpoint,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+    id: &str,
+) -> Option<Response> {
+    let person = match requester(gateway, peer, headers) {
+        Ok(person) => person,
+        Err(response) => return Some(*response),
+    };
+    let recipient = mcp.bus.confirmations().recipient(id)?;
+    let theirs = match recipient {
+        None => person.is_owner(),
+        Some(username) => !person.is_owner() && person.username == username,
+    };
+    (!theirs).then(|| error_response(StatusCode::FORBIDDEN, "not_yours", "这张卡片不是发给你的"))
+}
+
+/// 放行时段只在主人的卡片上（ADR-0024）：主人的令牌和设备能答，家人的设备回答回 403 `not_yours`。
 fn not_the_owners_card(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,

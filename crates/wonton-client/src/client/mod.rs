@@ -11,7 +11,7 @@ use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, ComposerDraft, CoreError,
     FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
-    OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail, PluginImage,
+    OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PluginDetail, PluginImage,
     PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
     SettingsViewModel, StoreItem, TabRef, TabsViewModel, TimelineTarget, TransfersViewModel,
 };
@@ -29,7 +29,6 @@ use crate::subscription::{
     OnboardingSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
     SessionListSubscription, SettingsSubscription, TabsSubscription, TransfersSubscription,
 };
-use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 use switch::Replay;
 
 mod bot_contacts;
@@ -42,6 +41,7 @@ mod push_route;
 mod settings;
 mod sharing;
 mod switch;
+mod tabs;
 #[cfg(feature = "test-hooks")]
 mod test_hooks;
 mod test_support;
@@ -99,70 +99,6 @@ impl ClientCore {
     /// 订阅底栏，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_tabs(&self) -> Arc<TabsSubscription> {
         Arc::new(TabsSubscription::new(self.views().tabs.subscribe()))
-    }
-
-    /// 文档开始前、只在插件自己的主框架注入；原生通道名为 `wontonBridge`。
-    pub fn tab_document_script(
-        &self,
-        page: PlacedTab,
-        environment: TabEnvironment,
-    ) -> Result<String, CoreError> {
-        bridge::document_script(
-            &self.scope().tabs,
-            &self.appearance.view(),
-            &page,
-            &environment,
-        )
-    }
-
-    /// 壳原样交入消息及原生回调的主框架标志、来源；核心校验来源，草稿不发送。
-    pub fn tab_handle_message(
-        &self,
-        page: PlacedTab,
-        is_main_frame: bool,
-        origin: String,
-        message: String,
-        environment: TabEnvironment,
-    ) -> TabBridgeResult {
-        bridge::handle_message(
-            &self.scope().tabs,
-            &self.appearance,
-            &page,
-            is_main_frame,
-            &origin,
-            &message,
-            &environment,
-        )
-    }
-
-    /// 外观、字号、布局或全屏状态变化后注入，不重新加载页面。
-    pub fn tab_context_script(
-        &self,
-        page: PlacedTab,
-        environment: TabEnvironment,
-    ) -> Result<String, CoreError> {
-        bridge::context_script(
-            &self.scope().tabs,
-            &self.appearance.view(),
-            &page,
-            &environment,
-        )
-    }
-
-    pub fn tab_reselected_script(&self) -> String {
-        bridge::reselected_script()
-    }
-
-    /// 连接变化时派发真实的核心状态；不把不确定状态当成已连接。
-    pub fn tab_connection_script(&self, tab: TabRef) -> String {
-        let scope = self.scope();
-        let home = scope.home.sender();
-        let plugins = scope.plugins.sender();
-        bridge::connection_script(sharing::tab_connected(
-            &tab,
-            &home.borrow().status,
-            &plugins.borrow(),
-        ))
     }
 
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
@@ -258,6 +194,16 @@ impl ClientCore {
     /// `InvalidInput`，还没登录时返回 `NotReady`。
     pub fn resolve_user_id(&self, input: String) -> Result<String, CoreError> {
         self.scope().chat.resolve_user_id(&input)
+    }
+
+    /// 把 Matrix 房间 ID 或别名解成已加入的房间 ID；不自动加入房间。
+    /// 取不到、未加入和输入非法分别返回对应的错误，壳不按别名等待一个永远不会出现的 ID。
+    pub async fn resolve_chat_room(&self, input: String) -> Result<String, CoreError> {
+        let scope = self.scope();
+        let chat = scope.chat.clone();
+        scope
+            .run(async move { chat.resolve_chat_room(&input).await })
+            .await
     }
 
     /// 订阅一条时间线（主时间线或旁聊，ADR-0093 §5）：第一批是全部条目，之后是按顺序应用的增量。

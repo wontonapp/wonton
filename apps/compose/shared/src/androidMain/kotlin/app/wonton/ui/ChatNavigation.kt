@@ -66,6 +66,7 @@ class ChatNavigation(
         returnTab = null
         awaitedRoom = roomId
         onUpdate(core.chat())
+        selectTab(TabRef.Chat)
     }
 
     /**

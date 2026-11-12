@@ -181,53 +181,23 @@ impl PluginManager {
         self: &Arc<Self>,
         request: &InstallRequest,
     ) -> Result<PluginView, InstallError> {
-        let granted = super::store::parse_permissions(&request.grant)
-            .map_err(|e| InstallError::Invalid(e.to_string()))?;
-        let enabled = super::store::parse_enabled(
-            &request.enabled_permissions,
-            super::store::OpenedBy::Owner,
-            super::manager::now_secs(),
-        )
-        .map_err(|e| InstallError::Invalid(e.to_string()))?;
+        let langs = self.owner_languages();
         let package = self.fetch_source(&request.source).await?;
         let digest = package.digest();
         if digest != request.digest {
-            return Err(InstallError::Changed(format!(
-                "{} 在预览之后变了（插件包摘要现在是 {digest}），要重新预览、重新确认",
-                request.source
+            return Err(InstallError::Changed(crate::l10n::text(
+                &langs,
+                "plugin-capability-plan-changed",
+                &[],
             )));
         }
-        let langs = self.owner_languages();
-        self.store_input_values(&package.manifest, &request.secrets, None, &langs)?;
-        let settings = match super::settings::load(&package, &langs)? {
-            Some(schema) => super::settings::value::initial(&schema, &request.settings, &langs)
-                .map_err(|fields| super::settings::value_error(fields, &langs))?,
-            None if request.settings.is_empty() => Default::default(),
-            None => {
-                let fields = request
-                    .settings
-                    .keys()
-                    .map(|name| wonton_protocol::SettingsFieldError {
-                        name: name.clone(),
-                        kind: wonton_protocol::SettingsFieldProblemKind::UnknownField,
-                        message: crate::l10n::text(
-                            &langs,
-                            "plugin-settings-value-unknown-field",
-                            &[],
-                        ),
-                    })
-                    .collect();
-                return Err(super::settings::value_error(fields, &langs));
-            }
-        };
         let installed = self
-            .install_detached_enabled(
+            .install_with_dependencies(
                 package,
-                granted,
-                enabled,
-                request.lan_webui,
-                settings,
-                langs,
+                super::dependencies::DependencyInstall {
+                    request: request.clone(),
+                    langs,
+                },
             )
             .await?;
         self.staged.remove(&digest);

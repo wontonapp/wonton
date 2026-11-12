@@ -33,6 +33,9 @@ impl PluginManager {
     }
 
     pub(crate) async fn watch_containers(&self) {
+        let Ok(_changing) = self.dependencies.changing.try_lock() else {
+            return;
+        };
         let watched: Vec<PluginId> = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins
@@ -82,6 +85,17 @@ impl PluginManager {
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), &langs)?;
         package.origin = record.origin.clone();
         let checked = self.check_containers(&package, &langs).await?;
+        let capability_recovered = {
+            let plugins = self.plugins.read().expect("插件表锁中毒");
+            plugins.get(id).is_some_and(|entry| {
+                package.manifest.provides.as_ref().is_some_and(|provides| {
+                    provides.capabilities.values().any(|provider| {
+                        !entry.serving.contains(&provider.service)
+                            && checked.serving().contains(&provider.service)
+                    })
+                })
+            })
+        };
         self.saw_serving(id, checked.serving().clone());
         match checked.ready(&langs) {
             Ok(ContainersState::Running(health))
@@ -91,15 +105,22 @@ impl PluginManager {
                     self.ensure_relays(&package.manifest, &record).await?;
                 }
                 self.saw_running(id, health);
+                self.capabilities_installed(&package.manifest, &[], capability_recovered)
+                    .await?;
             }
             Ok(ContainersState::Running(_)) => {
-                self.recover(id, &package, &record).await;
+                self.recover(id, &package, &record, capability_recovered)
+                    .await?;
                 // 容器刚恢复，和刚启动一样补一轮一次性探测（见 model_health 的计费节奏）。
                 self.check_models_once(vec![id.clone()]).await;
             }
             Ok(ContainersState::Stopped) => self.saw_unavailable(id, PluginStatus::Stopped),
             Err(InstallError::Unhealthy(reason)) => {
-                self.saw_unavailable(id, PluginStatus::Degraded { reason })
+                self.saw_unavailable(id, PluginStatus::Degraded { reason });
+                if capability_recovered {
+                    self.capabilities_installed(&package.manifest, &[], true)
+                        .await?;
+                }
             }
             Err(e) => return Err(e),
         }
@@ -162,22 +183,32 @@ impl PluginManager {
 
     /// 容器好了不等于插件好了：和核心启动时一样核对一遍，路由才回来。
     /// 监视是一个插件接一个插件串行的，漂移重建只等 `install_timeout`（见 [`Gate`]）。
-    async fn recover(&self, id: &PluginId, package: &PluginPackage, record: &InstalledRecord) {
+    async fn recover(
+        &self,
+        id: &PluginId,
+        package: &PluginPackage,
+        record: &InstalledRecord,
+        capability_recovered: bool,
+    ) -> Result<(), InstallError> {
         if !self.begin_rebuild(id) {
-            return;
+            return Ok(());
         }
         let result = self.reconcile(package, record, Gate::InstallTimeout).await;
         self.lan.end(id);
         let deployed = match result {
             Ok(Some(deployed)) => deployed,
-            Ok(None) => return self.saw_unavailable(id, PluginStatus::Stopped),
+            Ok(None) => {
+                self.saw_unavailable(id, PluginStatus::Stopped);
+                return Ok(());
+            }
             Err(e) => {
-                return self.saw_unavailable(
+                self.saw_unavailable(
                     id,
                     PluginStatus::Degraded {
                         reason: e.to_string(),
                     },
                 );
+                return Err(e);
             }
         };
         // 核心启动时模型网关不在，使用方的凭据没对上账。
@@ -186,6 +217,8 @@ impl PluginManager {
                 tracing::error!(%plugin, %error, "模型网关凭据对账失败");
             }
         }
+        self.capabilities_installed(&package.manifest, &[], capability_recovered)
+            .await
     }
 
     /// 返回恢复的是不是模型网关。

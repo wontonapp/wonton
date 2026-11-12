@@ -158,7 +158,14 @@ chat-contacts-invalid-user-id = ユーザーIDが無効です：{ $reason }
 
 # Siri、ショートカット、チャット画面でメッセージを送るとき、本文が空の場合に表示します。
 chat-empty-message = メッセージを入力してください。
-composer-not-ready = このバージョンのクライアントコアは添付トレイにまだ対応していません。
+composer-tray-full = 添付トレイに入れられるのは { $max } 個までです。
+composer-has-failed = アップロードできなかった添付があります。再試行するか削除してください。
+composer-attachment-not-found = この添付が見つかりません。削除済みか、すでに送信された可能性があります。
+composer-outgoing-not-found = この送信待ちメッセージが見つかりません。すでに送信キューに渡された可能性があります。
+composer-store-failed = 添付トレイを端末に保存できません（{ $path }）：{ $reason }
+composer-attachment-failed = 添付「{ $name }」をアップロードできませんでした。
+composer-transfer-gone = このファイルのアップロード記録が見つかりません。再試行してください。
+composer-upload-record-unreadable = 写真のアップロード記録を読み取れません：{ $reason }
 # Siriやショートカットから渡されたボットのIDを解析できない場合に表示します。
 chat-ask-invalid-bot-id = デフォルトのエージェントのIDの形式が正しくありません。
 # 既存のダイレクトチャットのルームIDを解析できない場合に表示します。
@@ -185,6 +192,7 @@ chat-not-signed-in = Matrixにまだログインしていません
 chat-send-no-response = Matrixサーバーが応答しなくなりました
 # $error はルームID解析の元のエラーです。
 chat-invalid-room-id = ルームIDが正しくありません：{ $error }
+chat-link-room-not-joined = このルームにはまだ参加していません。先にチャットで招待を承認してください。
 # 通知専用のルームに送ろうとしたときに表示します。
 chat-read-only-room = このルームは通知専用のため、メッセージを送信できません
 # $room は元のルームIDです。
@@ -514,6 +522,8 @@ plugins-start-busy = { $id }はすでに起動、インストール、更新、�
 tabs-bridge-page-not-open = このアプリのページは開かれていないか、固定されていません
 tabs-bridge-invalid-environment = ページのインセットとセーフエリアは有限の非負の数である必要があります
 tabs-bridge-public-page = 公開ウェブページには Wonton のブリッジがありません。
+plugin-media-not-asked = このアプリのページにはカメラとマイクの判断が保存されていません
+plugin-media-save-failed = カメラとマイクの判断ファイル { $path } に書き込めません：{ $reason }
 
 # チャットの接続問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailableの理由と失敗した操作のメッセージ。
 chat-not-connected = 自宅サーバーに接続してから、もう一度試してください

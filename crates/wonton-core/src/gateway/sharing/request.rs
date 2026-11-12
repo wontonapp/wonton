@@ -45,7 +45,7 @@ async fn plugin(gateway: &Gateway, slug: &str, mut req: Request) -> Response {
     let langs = api::languages(req.headers());
     let format = super::super::pages::Format::of(req.headers());
     let host = gateway.public.plugin_host(slug);
-    let Some(route) = gateway.plugins.route(slug) else {
+    let Some(route) = gateway.plugins.route(slug, "/") else {
         return refused(GatewayRefusal::ShareRequired, &langs, format);
     };
     // No handoff codes or owner cookies are recognized on the share transport.

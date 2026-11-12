@@ -139,6 +139,9 @@ impl ClientCore {
             Action::SetThemeMode { mode } => self.appearance.set_theme_mode(mode),
             Action::SetTextSize { size } => self.appearance.set_text_size(size),
             Action::SetFont { font } => self.appearance.set_font(font),
+            Action::Timeline { action } if super::composer::is_composer_action(&action) => {
+                self.composer_action(&scope, action)
+            }
             action if is_tab_action(&action) => scope.tabs.dispatch(action),
             other => self.dispatch_plugins_or_chat(&scope, other),
         }

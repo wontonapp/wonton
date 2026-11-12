@@ -158,7 +158,14 @@ chat-contacts-invalid-user-id = 使用者 ID 無效：{ $reason }
 
 # 透過 Siri、捷徑或聊天頁傳送訊息、內容為空時顯示。
 chat-empty-message = 訊息不能為空。
-composer-not-ready = 這個版本的用戶端核心還不支援附件區。
+composer-tray-full = 附件區最多放 { $max } 個附件。
+composer-has-failed = 附件區裡有沒傳上去的附件，先重試或刪掉它。
+composer-attachment-not-found = 找不到這個附件，可能已經刪掉或發出去了。
+composer-outgoing-not-found = 找不到這則待發訊息，可能已經交出去了。
+composer-store-failed = 附件區存不到手機上（{ $path }）：{ $reason }
+composer-attachment-failed = 附件「{ $name }」沒傳上去。
+composer-transfer-gone = 這個檔案的上傳紀錄不見了，請重試。
+composer-upload-record-unreadable = 照片的上傳紀錄讀不懂：{ $reason }
 # Siri 或捷徑傳入的 Bot ID 剖析失敗時顯示。
 chat-ask-invalid-bot-id = 預設 Agent 的 ID 格式不對。
 # 已有私訊的聊天室 ID 剖析失敗時顯示。
@@ -185,6 +192,7 @@ chat-not-signed-in = 還沒登入 Matrix
 chat-send-no-response = Matrix 伺服器沒有回應
 # $error 是房間 ID 剖析器的原始錯誤。
 chat-invalid-room-id = 聊天室 ID 無效：{ $error }
+chat-link-room-not-joined = 還沒加入這個聊天室，請先在聊天列表接受邀請。
 # 在只放通知的房間裡送東西時顯示。
 chat-read-only-room = 這個聊天室只放通知，不能傳送訊息
 # $room 是原始的房間 ID。
@@ -514,6 +522,8 @@ plugins-start-busy = { $id } 正在啟動、安裝、更新或解除安裝
 tabs-bridge-page-not-open = 這個 App 的頁面沒有開啟或固定
 tabs-bridge-invalid-environment = 頁面欄高與安全區必須是有限的非負數
 tabs-bridge-public-page = 公網網頁沒有 Wonton 的橋。
+plugin-media-not-asked = 這個 App 的頁面沒有保存攝影機和麥克風的判斷
+plugin-media-save-failed = 無法寫入攝影機和麥克風的判斷檔 { $path }：{ $reason }
 
 # 聊天的連線問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailable 的原因和失敗操作的訊息。
 chat-not-connected = 連上家用伺服器後再試

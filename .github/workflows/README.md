@@ -130,9 +130,9 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
   一起改，少一处 PR 就恢复不到。手动触发也写缓存：换分支验证能不能恢复时用它。
 - `save-if` 要写成 `${{ … }}`：不包的时候 runner 把表达式原样当字符串交给动作，动作只认字面量 `true`，
   结果一次也存不下来（之前就是没包，调度器日志里能看到传给动作的是 `github.ref == 'refs/heads/main'` 本身）。
-- Rust 作业用 Swatinem/rust-cache，三个测试分片共用 `rust-test` 一个 key（编的是同一套测试二进制），
+- Rust 作业用 Swatinem/rust-cache，四个测试分片共用 `rust-test` 一个 key（编的是同一套测试二进制），
   “Rust Docker 测试”也恢复它；Clippy、iOS、Android 各有各的 key（iOS 是 macOS 产物，不能和 Linux 混）。
-  测试用 cargo-nextest 按测试名哈希分三片并行；并发上限、卡死时限和 Docker 重活的分组在
+  测试用 cargo-nextest 按测试名哈希分四片并行；并发上限、卡死时限和 Docker 重活的分组在
   `.config/nextest.toml`。nextest 不跑 doctest，第一片里单列一步 `cargo test --doc`，`cache.yml` 也先把
   doctest 编好。
 - 镜像构建的层缓存走 registry（`type=registry`，包是 `ghcr.io/<owner>/wonton-ci-cache`），不占 10 GB 的
@@ -158,7 +158,7 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 
 - iOS 只开一台模拟器跑全部 `WontonUITests`；要两台的用例（粘贴的对方视角、好友两端）在工作流里排除或
   `XCTSkip`。要后端的用例没有配对码时 `XCTSkip`，不静默通过。手动触发可以填 `pairing_code`，把开发栈的
-  配对码带进来；`PAIR_CODES` 也一并给。
+  配对码带进来（经 `TEST_RUNNER_PAIRING_CODE`，见 `apps/ios/scripts/ui-test.sh`）。
 - 不需要后端的两个用例是冷启动：全新安装落在配对页，和 `WONTON_UI_FAKE` 的假数据首屏。假数据入口整个
   在 cargo feature `ui-fake` 后面（`crates/wonton-client`）：Debug 构建默认带上，Release 不带；夜跑在
   构建时显式传开关（iOS 的 `WONTON_UI_FAKE=1`、Android 的 `-Pwonton.uiFake=1`），壳的调用在 `#if DEBUG`

@@ -2,17 +2,26 @@ package app.wonton.ui
 
 import android.content.res.Resources
 import android.view.MotionEvent
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.systemGestureExclusion
+import androidx.compose.runtime.Composable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.systemGestureExclusion
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -20,6 +29,8 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 
@@ -31,14 +42,15 @@ private const val EDGE_SWIPE_GAIN = 10f
 /** 边缘热区占屏高的比例：系统返回手势的排除区最多认 200dp，2400px 屏上 0.22 ≈ 528px（≈220dp，压到上限内）。 */
 private const val EDGE_ZONE_RATIO = 0.22f
 private const val SLOP_DP = 8f
-
-/** 第 1、2 级时盖在聊天页上的那一条：点收回去，往打开的方向推换级。 */
 @Composable
-internal fun ChatPanelStrip(state: ChatPanelState) {
+internal fun BoxScope.ChatPanelStrip(state: ChatPanelState) {
     val interaction = remember { MutableInteractionSource() }
     val label = stringResource(R.string.panel_close)
+    val strip = with(LocalDensity.current) { state.strip.toDp() }
     Box(
-        Modifier.fillMaxSize()
+        Modifier.fillMaxWidth()
+            .height(strip)
+            .align(if (state.edge == PanelEdge.TOP) Alignment.TopCenter else Alignment.BottomCenter)
             .clickable(interaction, indication = null) { state.move(PanelLevel.CLOSED) }
             .semantics { contentDescription = label }
             .pointerInput(state) {
@@ -54,7 +66,48 @@ internal fun ChatPanelStrip(state: ChatPanelState) {
                     onDragCancel = { state.settle(state.level, 0f) },
                 )
             },
-    )
+    ) {
+        if (state.level == PanelLevel.PEEK) {
+            Box(
+                Modifier.align(if (state.edge == PanelEdge.TOP) Alignment.TopCenter else Alignment.BottomCenter)
+                    .padding(vertical = WontonTheme.spacing.s8)
+                    .size(WontonTheme.size.grabberWidth, WontonTheme.size.grabberHeight)
+                    .background(WontonTheme.colors.separator.toColor(), CircleShape),
+            )
+        }
+    }
+}
+
+/** 整页面板从顶部下拉回第 1 级；只占顶部一小段，不抢网页正文的手势。 */
+@Composable
+internal fun ChatPanelTopPull(state: ChatPanelState) {
+    if (state.edge != PanelEdge.BOTTOM || state.level == PanelLevel.CLOSED) return
+    val top = with(LocalDensity.current) { (state.height - state.shiftPx).toDp() }
+    Box(
+        Modifier.fillMaxWidth()
+            .offset(y = top)
+            .height(48.dp)
+            .pointerInput(state) {
+                val tracker = VelocityTracker()
+                detectDragGestures(
+                    onDragStart = { tracker.resetTracking() },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        tracker.addPosition(change.uptimeMillis, change.position)
+                        state.pull(-amount.y)
+                    },
+                    onDragEnd = { state.settle(state.level, -tracker.calculateVelocity().y) },
+                    onDragCancel = { state.settle(state.level, 0f) },
+                )
+            },
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Box(
+            Modifier.padding(vertical = WontonTheme.spacing.s8)
+                .size(WontonTheme.size.grabberWidth, WontonTheme.size.grabberHeight)
+                .background(WontonTheme.colors.separator.toColor(), CircleShape),
+        )
+    }
 }
 
 /** 左边缘往右滑关掉面板：面板开着时左边缘归面板（A 块），系统返回手势排除这一段。 */

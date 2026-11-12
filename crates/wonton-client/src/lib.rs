@@ -30,6 +30,7 @@ mod bot_contacts;
 mod browser;
 mod chat;
 mod client;
+mod composer;
 mod files;
 mod friends;
 mod home;
@@ -72,5 +73,6 @@ pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
 };
 pub use tabs::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
+pub use tabs::media_permission::TabMediaPermission;
 // 协议类型整体转出：并行 PR 各自加名字不再挤在同一段列表里。
 pub use wonton_protocol::*;
