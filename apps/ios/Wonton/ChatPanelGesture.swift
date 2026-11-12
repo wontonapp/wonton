@@ -57,7 +57,7 @@ final class PullAnchor: UIView {
     var changed: ((CGFloat) -> Void)?
     var ended: ((CGFloat, CGFloat) -> Void)?
     private let attachesToAncestor: Bool
-    private let edge: PanelEdge
+    var edge: PanelEdge
     private weak var scrollView: UIScrollView?
     private var pullStart: CGFloat?
 
@@ -135,12 +135,16 @@ private extension UIScrollView {
 struct PanelPagePull: UIViewRepresentable {
     let enabled: Bool
     let webView: WKWebView?
+    let edge: PanelEdge
     let changed: (CGFloat) -> Void
     let ended: (CGFloat, CGFloat) -> Void
 
-    func makeUIView(context: Context) -> PullAnchor { PullAnchor(attachesToAncestor: false) }
+    func makeUIView(context: Context) -> PullAnchor {
+        PullAnchor(attachesToAncestor: false, edge: edge)
+    }
 
     func updateUIView(_ anchor: PullAnchor, context: Context) {
+        anchor.edge = edge
         anchor.enabled = enabled
         anchor.changed = changed
         anchor.ended = ended

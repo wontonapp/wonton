@@ -199,6 +199,7 @@ chat-not-signed-in = You're not signed in to Matrix yet.
 chat-send-no-response = The Matrix server stopped responding
 # $error is the room ID parser's original error.
 chat-invalid-room-id = The room ID isn't valid: { $error }
+chat-link-room-not-joined = You haven't joined this room. Accept its invitation in Chats first.
 # Shown when sending into a room that only carries notifications.
 chat-read-only-room = This room only carries notifications, so you can't send messages here.
 # $room is the unchanged room ID.
