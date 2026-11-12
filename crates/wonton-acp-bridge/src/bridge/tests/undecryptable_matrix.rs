@@ -6,9 +6,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use wonton_matrix::testkit::{TempStore, TestServer, unique};
+use wonton_matrix::testkit::{TempStore, TestServer, eventually, unique};
 use wonton_matrix::{
-    MatrixSession, MessageBody, OwnedRoomId, OwnedUserId, SavedSession, SessionConfig, UserId,
+    MatrixSession, Membership, MessageBody, OwnedRoomId, OwnedUserId, RoomInfo, SavedSession,
+    SessionConfig, UserId,
 };
 
 use super::*;
@@ -81,22 +82,48 @@ async fn setup() -> Setup {
     }
 }
 
-/// `alice` 建加密私聊邀请 `bob`，`bob` 看到邀请后加入（同 wonton-matrix 的 store_loss 测试）。
+/// `alice` 建加密私聊邀请 `bob`，等邀请和私聊标记同步到 `bob`，`bob` 加入，等加入同步回来
+/// （同 wonton-matrix 的 store_loss 测试用的 chat::direct_chat）。
+///
+/// 加入请求成功不等于本地状态已更新：服务器先接受加入，同步后才把房间标成已加入，这之前
+/// `open_room` 报 NotReady。`join_room` 只在本地还标着受邀时才等（`rooms::join_room`），邀请还没
+/// 同步到的窗口里它加入后直接返回，所以这里按房间列表等成员状态，而不是重试加入。
 async fn direct_chat(owner: &MatrixSession, bot: &MatrixSession) -> OwnedRoomId {
     let room_id = owner
         .create_direct_chat(bot.user_id(), true)
         .await
         .expect("建私聊");
-    for _ in 0..50 {
-        if bot.join_room(&room_id).await.is_ok() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
+    // 私聊标记和邀请事件分开到：加入时按这个标记把房间记进 `m.direct`，等标记到了再加入。
+    wait_for_room(bot, &room_id, "Bot 收到私聊邀请", |row| {
+        row.membership == Membership::Invited && row.is_direct
+    })
+    .await;
+    bot.join_room(&room_id).await.expect("Bot 加入私聊");
+    wait_for_room(bot, &room_id, "Bot 加入后同步标成已加入", |row| {
+        row.membership == Membership::Joined
+    })
+    .await;
     owner
         .wait_for_server_device(bot.user_id(), bot.device_id())
         .await;
     room_id
+}
+
+/// 等房间列表里 `room_id` 这一行满足条件。列表只跟着同步到的事件变，不是定时重试。
+async fn wait_for_room(
+    session: &MatrixSession,
+    room_id: &OwnedRoomId,
+    what: &str,
+    check: impl FnMut(&RoomInfo) -> bool,
+) {
+    let mut check = check;
+    eventually(what, session.rooms().await.expect("房间列表"), |rooms| {
+        rooms
+            .iter()
+            .find(|row| &row.room_id == room_id && check(row))
+            .map(|_| ())
+    })
+    .await;
 }
 
 fn is_notice(message: &wonton_matrix::Message, bot_user: &UserId) -> bool {
