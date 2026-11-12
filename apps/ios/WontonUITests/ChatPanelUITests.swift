@@ -109,7 +109,7 @@ final class ChatPanelUITests: XCTestCase {
     private func launch(arguments: [String] = []) throws {
         app = XCUIApplication()
         app.launchArguments += arguments
-        if let code = ProcessInfo.processInfo.environment["PAIRING_CODE"], !code.isEmpty {
+        if let code = try UITestBackend.codes().first {
             app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = code
         }
         app.launch()

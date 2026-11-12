@@ -73,6 +73,7 @@ pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
 };
 pub use tabs::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
+pub use tabs::media_permission::TabMediaPermission;
 pub use wonton_protocol::LanClient;
 pub use wonton_protocol::StoreUnreadable;
 pub use wonton_protocol::{
@@ -108,23 +109,24 @@ pub use wonton_protocol::{
     PeerError, PeerRequestRow, PeerRow, PeerStatus, PeersState, PeersViewModel,
     PendingConfirmation, PermissionLine, PermissionRisk, PlacedTab, PluginAuthor, PluginDetail,
     PluginDevice, PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind,
-    PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginState, PluginTab,
-    PluginTakeover, PluginTask, PluginTaskNextStep, PluginTaskState, PluginTrust, PluginsViewModel,
-    ProxySettings, PushConfirmation, PushContent, PushEndpoint, PushMethod, PushNotification,
-    PushStatus, RecoveryNextStep, RecoveryStatus, RegistryFailure, RegistryMirrorSettings,
-    RegistryMirrorTest, RegistryMirrorTestRequest, RegistryMirrorTests, RegistryMirrorUpdate,
-    RegistryMirrorViewModel, RegistryProbe, RegistryProblem, RejectedPeerRow, ReplacedAgent,
-    RequirementLine, RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow, RoomTransfers,
-    SecretString, SendState, ServerName, ServerRow, ServersViewModel, SessionListViewModel,
-    SessionRow, SettingsEntry, SettingsSection, SettingsViewModel, SidebarApp, SidebarOpen,
-    SidebarViewModel, SourceKind, StepNav, StoreConfirmation, StoreFailure, StoreItem,
-    StoreListing, StoreProblem, StoreSection, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon,
-    TabItem, TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,
-    TakeoverState, TextSize, ThemeColors, ThemeMode, TimelineContent, TimelineDiff, TimelineItem,
-    TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport, ToolAccess, ToolPolicyEntry,
-    ToolPolicyView, Transfer, TransferAction, TransferDirection, TransferElsewhere, TransferState,
-    TransfersViewModel, UpdatablePlugin, UpgradeOffer, UploadSource, VerificationCancel,
-    VerificationEmoji, VerificationFlow, VerificationStage, WindowView,
+    PluginMediaGrant, PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginState,
+    PluginTab, PluginTakeover, PluginTask, PluginTaskNextStep, PluginTaskState, PluginTrust,
+    PluginsViewModel, ProxySettings, PushConfirmation, PushContent, PushEndpoint, PushMethod,
+    PushNotification, PushStatus, RecoveryNextStep, RecoveryStatus, RegistryFailure,
+    RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest, RegistryMirrorTests,
+    RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe, RegistryProblem, RejectedPeerRow,
+    ReplacedAgent, RequirementLine, RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow,
+    RoomTransfers, SecretString, SendState, ServerName, ServerRow, ServersViewModel,
+    SessionListViewModel, SessionRow, SettingsEntry, SettingsSection, SettingsViewModel,
+    SidebarApp, SidebarOpen, SidebarViewModel, SourceKind, StepNav, StoreConfirmation,
+    StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TabCandidate, TabDisplay,
+    TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure, TabMediaPrompt, TabPage, TabRef,
+    TabState, TabsProblem, TabsViewModel, TakeoverState, TextSize, ThemeColors, ThemeMode,
+    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll, TimelineUpdate,
+    TimelineViewport, ToolAccess, ToolPolicyEntry, ToolPolicyView, Transfer, TransferAction,
+    TransferDirection, TransferElsewhere, TransferState, TransfersViewModel, UpdatablePlugin,
+    UpgradeOffer, UploadSource, VerificationCancel, VerificationEmoji, VerificationFlow,
+    VerificationStage, WindowView,
 };
 pub use wonton_protocol::{
     AppsAction, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendGroup,

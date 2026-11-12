@@ -521,6 +521,8 @@ plugins-start-busy = { $id } 正在啟動、安裝、更新或解除安裝
 tabs-bridge-page-not-open = 這個 App 的頁面沒有開啟或固定
 tabs-bridge-invalid-environment = 頁面欄高與安全區必須是有限的非負數
 tabs-bridge-public-page = 公網網頁沒有 Wonton 的橋。
+plugin-media-not-asked = 這個 App 的頁面沒有保存攝影機和麥克風的判斷
+plugin-media-save-failed = 無法寫入攝影機和麥克風的判斷檔 { $path }：{ $reason }
 
 # 聊天的連線問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailable 的原因和失敗操作的訊息。
 chat-not-connected = 連上家用伺服器後再試
