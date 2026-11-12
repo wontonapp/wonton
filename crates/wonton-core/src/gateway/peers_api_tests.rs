@@ -41,7 +41,7 @@ async fn home_with(
             endpoint_id: SecretKey::generate().public(),
             server_name: (*server_name).to_owned(),
             owner_user_id: format!("@owner:{server_name}"),
-            owner_display_name: "Alice".to_owned(),
+            owner_display_name: "Jiale".to_owned(),
             relays: Vec::new(),
             addrs: Vec::new(),
             received_at_ms: 1_799_000_000_000,

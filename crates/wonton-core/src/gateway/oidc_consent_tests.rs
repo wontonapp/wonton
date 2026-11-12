@@ -56,16 +56,15 @@ async fn oidc_login_and_consent_use_the_core_session() {
         json!(["openid", "profile", "email", "groups"])
     );
     let claims = &accepted[1]["session"]["id_token"];
-    assert_eq!(claims["email"], "owner@wonton.internal");
-    assert_eq!(claims["email_verified"], true);
+    assert_eq!(claims["email"], "owner@wonton.localhost");
     assert_eq!(claims["preferred_username"], "owner");
     assert_eq!(claims["groups"], json!(["owner"]));
 }
 
-/// 声明了 `oidc.admin_groups` 的客户端拿到 `["owner", …]`，没声明的客户端只有 `["owner"]`。
+/// 声明了 `oidc.owner_groups` 的客户端拿到 `["owner", …]`，没声明的客户端只有 `["owner"]`。
 /// Hydra 把 `session.id_token` 的声明同时用作 ID 令牌和 userinfo 的内容。
 #[tokio::test]
-async fn consent_gives_admin_groups_to_the_declaring_client_only() {
+async fn consent_gives_owner_groups_to_the_declaring_client_only() {
     let accepted = Arc::new(Mutex::new(Vec::new()));
     let hydra = fake_hydra(accepted.clone()).await;
     let h = Harness::start(Some(hydra)).await;
@@ -74,7 +73,7 @@ async fn consent_gives_admin_groups_to_the_declaring_client_only() {
         &WHOAMI.replace("app.whoami", "app.books").replace(
             "  webui:\n    service: web\n    port: 8000",
             "  webui:\n    service: web\n    port: 8000\n    sso: oidc\n    oidc:\n      \
-                 redirect_paths: [/cb]\n      admin_groups: [admin, app.admin]",
+                 redirect_paths: [/cb]\n      owner_groups: [admin, app.admin]",
         ),
         &Languages::from_header(Some("zh-Hans")),
     )

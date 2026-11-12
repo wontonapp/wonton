@@ -1,6 +1,5 @@
 //! 改插件的一项填写密钥（ADR-0064）：改完只重建渲染结果里用到这个变量的服务，值不返回。
 
-use super::health_gate::Gate;
 use super::install_error::InstallError;
 use super::languages::Languages;
 use super::listed::Listed;
@@ -124,8 +123,7 @@ impl PluginManager {
             return Ok(());
         }
         rendered.retain_services(&users);
-        self.replace_containers(&ctx, rendered, Gate::StartPeriod)
-            .await
+        self.replace_containers(&ctx, rendered).await
     }
 }
 

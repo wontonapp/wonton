@@ -1,15 +1,10 @@
 use std::time::{Duration, Instant};
 
 use axum::http::Method;
-use wonton_client::{
-    Action, OnboardingCommit, OnboardingStep, OnboardingViewModel, PluginTaskState,
-};
+use wonton_client::{Action, OnboardingStep, OnboardingViewModel, PluginTaskState};
 
-use super::super::rig::{Canned, Rig, core_error, item, preview, running};
-use super::{
-    KEY_TEST, ONBOARDING, PROVIDERS, act, at, edit, flow_rig, onboarding, providers, test_key,
-    wait_requests,
-};
+use super::super::rig::{Canned, Rig, WAIT, core_error, item, preview, running};
+use super::{KEY_TEST, ONBOARDING, act, at, edit, onboarding, providers, test_key};
 
 const PLUGINS: &str = "/_wonton/api/plugins";
 
@@ -39,6 +34,17 @@ async fn install_rig(step: &str) -> Rig {
     rig.wait_onboarding(|view| view.step.is_some() && !view.loading)
         .await;
     rig
+}
+
+async fn wait_requests(rig: &Rig, method: Method, path: &str, count: usize) {
+    let deadline = Instant::now() + WAIT;
+    while rig.core.seen(&method, path).len() < count {
+        assert!(
+            Instant::now() < deadline,
+            "missing {method} {path} #{count}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 }
 
 async fn assert_stays(rig: &Rig, expected: &OnboardingViewModel) {
@@ -76,7 +82,6 @@ async fn a_finished_task_refreshes_rows_even_when_installed_list_is_unchanged() 
         .dispatch(Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     wait_requests(&rig, Method::POST, PLUGINS, 1).await;
@@ -227,81 +232,9 @@ async fn a_failed_first_get_is_fetched_again_once_plugins_change() {
         Action::InstallPlugin {
             preview: preview("app.photos"),
             secrets: Default::default(),
-            settings: Default::default(),
         },
     );
     rig.core.release(Method::POST, PLUGINS);
     rig.task("app.photos", |state| *state == PluginTaskState::Succeeded)
         .await;
-}
-
-#[tokio::test]
-async fn a_late_refresh_response_cannot_rewind_the_finished_onboarding() {
-    // Agent 已经装着：点完成不装任何插件，扣住的 GET 不会卡住插件那头的刷新。
-    let mut state = onboarding("profile");
-    state["agents"][0]["status"] = serde_json::json!({ "state": "running", "health": "healthy" });
-    let rig = flow_rig(state.clone()).await;
-    edit(&rig, "云吞", "");
-    act(&rig, Action::ContinueOnboarding);
-    at(&rig, OnboardingStep::Agent).await;
-    act(&rig, Action::ContinueOnboarding);
-    at(&rig, OnboardingStep::Model).await;
-    act(&rig, Action::SkipOnboardingStep);
-    at(&rig, OnboardingStep::Apps).await;
-    act(&rig, Action::ContinueOnboarding);
-    at(&rig, OnboardingStep::Review).await;
-
-    // 旧请求扣在假核心上，回应是点完成之前的状态（primary_agent 还是空）。
-    rig.core
-        .answer(Method::GET, ONBOARDING, Canned(200, state.to_string()));
-    rig.core.hold(Method::GET, ONBOARDING);
-    let gets = rig.core.seen(&Method::GET, ONBOARDING).len();
-    act(&rig, Action::RefreshOnboarding);
-    wait_requests(&rig, Method::GET, ONBOARDING, gets + 1).await;
-
-    // 点完成：finish 的回应先落地，走完了和默认 Agent 都比旧请求的新。
-    act(&rig, Action::ContinueOnboarding);
-    rig.wait_onboarding(|view| {
-        view.review.commit == OnboardingCommit::Done
-            && view.primary_bot_user_id.as_deref() == Some("@agent:home")
-    })
-    .await;
-
-    // 旧回应放行：不许盖掉刚保存的状态。
-    rig.core.release(Method::GET, ONBOARDING);
-    let settled = rig.wait_onboarding(|view| !view.loading).await;
-    assert_eq!(settled.primary_bot_user_id.as_deref(), Some("@agent:home"));
-    assert_stays(&rig, &settled).await;
-}
-
-/// 重看重置后的那趟取状态还在等服务商时，插件变化触发的静默刷新后发先至：重看那趟照样落地，
-/// 每一步有现值可显示。不扣住服务商时两趟谁先落地看调度，这条竞态在
-/// `reopening_shows_the_current_settings_on_every_step` 里只会偶发。
-#[tokio::test]
-async fn a_silent_refresh_landing_first_does_not_drop_the_revisit_fetch() {
-    let rig = install_rig("finished").await;
-    rig.core.set_owner(Some("云吞"), None);
-    rig.core.set_providers(providers(true));
-
-    rig.core.hold(Method::GET, PROVIDERS);
-    let fetches = rig.core.seen(&Method::GET, PROVIDERS).len();
-    act(&rig, Action::RestartOnboarding);
-    wait_requests(&rig, Method::GET, PROVIDERS, fetches + 1).await;
-
-    rig.core.set_onboarding(install_state("finished", true));
-    change_installed(&rig, "app.photos");
-    rig.wait_onboarding(|view| view.primary_bot_user_id.as_deref() == Some("@installed:home"))
-        .await;
-
-    rig.core.release(Method::GET, PROVIDERS);
-    let view = rig
-        .wait_onboarding(|view| !view.loading && view.model.providers.is_some())
-        .await;
-    assert_eq!(view.step, Some(OnboardingStep::Profile));
-    assert_eq!(view.profile.display_name, "云吞");
-    assert_eq!(
-        view.primary_bot_user_id.as_deref(),
-        Some("@installed:home"),
-        "重看那趟的 onboarding 比静默刷新的旧，不许盖掉它"
-    );
 }

@@ -35,12 +35,12 @@ fn langs() -> Languages {
     Languages::from_header(None)
 }
 
-const ENV: &str = "WONTON_CORE_SOURCE=reg/core:stable\nWONTON_CORE_IMAGE=reg/core@sha256:old\n\
+const ENV: &str = "WONTON_CORE_SOURCE=reg/core:beta\nWONTON_CORE_IMAGE=reg/core@sha256:old\n\
                    WONTON_INSTALL_DIR=/opt/wonton\nWONTON_DATA_DIR=/var/lib/wonton\nWONTON_PORT=8480\n\
                    WONTON_TUNNEL_PORT=8482\nWONTON_BASE_DOMAIN=wonton.localhost\n";
 
 /// 旧安装脚本写的 compose 引用：渠道标签，会跟着渠道移走。
-const TAG: &str = "reg/core:stable";
+const TAG: &str = "reg/core:beta";
 
 fn scene() -> Scene {
     scene_with(ENV, OLD)

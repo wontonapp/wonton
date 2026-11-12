@@ -76,10 +76,8 @@ async fn with_github(
 async fn install(m: &Arc<PluginManager>, source: &str) {
     let preview = m.preview_source(source, &zh()).await.unwrap();
     let request = InstallRequest {
-        scope: None,
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
-        plan: preview.plan.clone(),
         grant: preview
             .permissions
             .iter()
@@ -88,7 +86,6 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
             .collect(),
         enabled_permissions: Vec::new(),
         secrets: Default::default(),
-        settings: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
         install_together: Vec::new(),
@@ -112,7 +109,6 @@ async fn upgrade(m: &Arc<PluginManager>) -> Result<(), InstallError> {
             .collect(),
         enabled_permissions: Vec::new(),
         secrets: Default::default(),
-        settings: Default::default(),
         lan_webui: false,
     };
     m.upgrade_source(&id(), &request, &super::langs()).await
@@ -332,7 +328,6 @@ async fn more_permissions_need_a_new_confirmation_and_a_moved_tag_a_new_preview(
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
         secrets: Default::default(),
-        settings: Default::default(),
         lan_webui: false,
     };
     let err = m
@@ -410,7 +405,6 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
         Vec::new(),
         Vec::new(),
         false,
-        &Default::default(),
         &super::langs(),
     )
     .await
@@ -430,7 +424,6 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
             Vec::new(),
             Vec::new(),
             false,
-            &Default::default(),
             &super::langs(),
         )
         .await
@@ -470,7 +463,6 @@ pub(super) async fn upgrade_expect_rollback(
             permissions(&broken),
             Vec::new(),
             false,
-            &Default::default(),
             &super::langs(),
         )
         .await
@@ -630,15 +622,7 @@ async fn nothing_is_upgraded_while_the_core_itself_is_upgrading() {
     let v2 =
         PluginPackage::parse(&hello("1.1.0", "", "  permissions: []\n"), &super::langs()).unwrap();
     let err = m
-        .upgrade_upload(
-            &id(),
-            v2,
-            Vec::new(),
-            Vec::new(),
-            false,
-            &Default::default(),
-            &super::langs(),
-        )
+        .upgrade_upload(&id(), v2, Vec::new(), Vec::new(), false, &super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "core_upgrading", "{err}");

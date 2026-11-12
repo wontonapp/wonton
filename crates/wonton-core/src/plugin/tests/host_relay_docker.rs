@@ -8,18 +8,22 @@ use crate::test_docker::Names;
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_real_loopback_listener_is_recognized_in_the_proc_table() {
+    use crate::plugin::compose::PullPolicy;
+
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
-    // 本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-    let image = wonton_test_images::image("public.ecr.aws/docker/library/busybox:1.37");
-    crate::test_docker::ensure_image(&engine, &image).await;
+    const IMAGE: &str = "public.ecr.aws/docker/library/busybox:1.37";
+    engine
+        .ensure_image(IMAGE, PullPolicy::Missing, None)
+        .await
+        .unwrap();
     let mut names = Names::new();
     let name = names.oneshot_container("relay-probe");
     engine
         .create_container(
             &name,
             ContainerCreateBody {
-                image: Some(image.clone()),
+                image: Some(IMAGE.to_owned()),
                 // 端口交给 nc 自己挑：测试先找空闲端口再交给它，中间隔着一次 `docker run`，宿主上别的进程能抢走。
                 cmd: Some(vec![
                     "sh".to_owned(),

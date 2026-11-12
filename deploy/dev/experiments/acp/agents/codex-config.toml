@@ -1,5 +1,5 @@
 # codex 经开发机的 magpie 网关调用模型（Responses 接口）；任意 key 都行，只经网关调用。
-# model 行由 setup.sh 按 CODEX_MODEL 写入；这里不写死模型名。
+model = "auto/glm-5.3-flash"
 model_provider = "magpie"
 
 [model_providers.magpie]

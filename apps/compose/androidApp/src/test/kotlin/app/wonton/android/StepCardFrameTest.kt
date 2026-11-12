@@ -38,10 +38,7 @@ class StepCardFrameTest {
         compose.setContent {
             WontonTheme(testAppearance()) {
                 StepCardFrame(
-                    nav = StepNav(
-                        position = 2u, total = 3u,
-                        canBack = true, canSkip = false, canNext = true, canClose = false,
-                    ),
+                    nav = StepNav(position = 2u, total = 3u, canBack = true, canSkip = false, canNext = true),
                     title = "标题",
                     primaryText = "继续",
                     primaryBusy = false,
@@ -58,13 +55,13 @@ class StepCardFrameTest {
     }
 }
 
-internal fun rgb(hex: Int) = Rgb(
+private fun rgb(hex: Int) = Rgb(
     (hex shr 16 and 0xFF).toUByte(),
     (hex shr 8 and 0xFF).toUByte(),
     (hex and 0xFF).toUByte(),
 )
 
-internal fun palette() = ThemeColors(
+private fun palette() = ThemeColors(
     canvas = rgb(0xFFFFFF),
     surface = rgb(0xFFFFFF),
     surfaceSubtle = rgb(0xF2F2F2),
@@ -83,7 +80,7 @@ internal fun palette() = ThemeColors(
     accentFillBorder = rgb(0xBBDEFB),
 )
 
-internal fun testAppearance() = AppearanceViewModel(
+private fun testAppearance() = AppearanceViewModel(
     accent = rgb(0x3366FF),
     presets = listOf(rgb(0x3366FF)),
     moreColors = emptyList(),

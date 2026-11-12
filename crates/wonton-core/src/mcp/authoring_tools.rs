@@ -9,7 +9,6 @@ use std::os::fd::AsFd;
 
 use super::Bus;
 use super::Caller;
-use super::ToolFailure;
 use super::core_tools::tool;
 use crate::files::share_fs::saving;
 use crate::plugin::PluginId;
@@ -20,8 +19,8 @@ pub(super) const GUIDE: &str = "plugin_guide";
 pub(super) const CHECK: &str = "check_plugin";
 pub(super) const STATUS: &str = "plugin_status";
 
-/// 说明和例子随核心走：这台核心支持的规范版本对应这一份，机器没外网也能用。这份是源，
-/// wonton-docs 的 `skills/wonton-plugin/` 与它保持一致，只保留指向那边文档的链接差异。
+/// 说明和例子随核心走：这台核心支持的规范版本对应这一份，机器没外网也能用（wonton-docs 的
+/// `skills/wonton-plugin/`，随规范一起改）。
 const GUIDE_TEXT: &str = include_str!("../../plugin-guide/SKILL.md");
 const EXAMPLES: &[(&str, &[(&str, &str)])] = &[
     (
@@ -113,20 +112,15 @@ pub(super) fn guide() -> Value {
     })
 }
 
-pub(super) async fn check(
-    bus: &Bus,
-    caller: &Caller,
-    args: &JsonObject,
-) -> Result<Value, ToolFailure> {
+pub(super) async fn check(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Value, String> {
     let dir = args
         .get("dir")
         .and_then(Value::as_str)
         .filter(|dir| !dir.is_empty())
-        .ok_or_else(|| ToolFailure::new("invalid_input", "invalid_input: missing argument dir"))?;
+        .ok_or("invalid_input: missing argument dir")?;
     let app_data = bus.plugins.app_data_dir(&caller.id);
     // 目录 fd 一路钉住，包里的文件都从它读，中途换成软链接也出不去。
-    let (opened, _) = saving::outbox_dir(&app_data, dir)
-        .map_err(|e| ToolFailure::new(e.kind.as_str(), e.to_string()))?;
+    let (opened, _) = saving::outbox_dir(&app_data, dir).map_err(|e| e.to_string())?;
     let report = match check::check_at(opened.as_fd(), false, bus.plugins.images()).await {
         Ok(report) => report_value(&report),
         // 清单解析不了也是校验结果，不是工具错误。
@@ -151,29 +145,19 @@ fn report_value(report: &Report) -> Value {
     })
 }
 
-pub(super) async fn status(
-    bus: &Bus,
-    caller: &Caller,
-    args: &JsonObject,
-) -> Result<Value, ToolFailure> {
+pub(super) async fn status(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Value, String> {
     let id = args
         .get("id")
         .and_then(Value::as_str)
         .filter(|id| !id.is_empty())
-        .ok_or_else(|| ToolFailure::new("invalid_input", "invalid_input: missing argument id"))?;
-    let id = PluginId::parse(id)
-        .map_err(|e| ToolFailure::new("invalid_input", format!("invalid_input: {e}")))?;
+        .ok_or("invalid_input: missing argument id")?;
+    let id = PluginId::parse(id).map_err(|e| format!("invalid_input: {e}"))?;
     let view = bus
         .plugins
         .list()
         .into_iter()
         .find(|p| p.id == id)
-        .ok_or_else(|| {
-            ToolFailure::new(
-                "not_installed",
-                format!("invalid_input: {id} is not installed"),
-            )
-        })?;
+        .ok_or_else(|| format!("invalid_input: {id} is not installed"))?;
     let mut result = json!({
         "id": id.to_string(),
         "status": view.status,

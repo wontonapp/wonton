@@ -17,25 +17,36 @@ struct OnboardingAppsStep: View {
                 StepOptionRow(title: need.title, isSelected: need.selected) {
                     send(.toggleOnboardingNeed(id: need.id))
                 }
-                // 子项跟着分组一起勾：勾的粒度是需求，子项列出它装哪些应用，点子项同切换。
-                ForEach(need.plugins, id: \.id) { item in
-                    StepOptionRow(
-                        title: item.title, isSelected: need.selected, blocked: item.blocked,
-                        select: { send(.toggleOnboardingNeed(id: need.id)) },
-                        leading: {
-                            PluginIconView(icon: item.icon, size: WontonTheme.size.taskIcon, model: plugins)
-                        },
-                        trailing: {
-                            if item.installedVersion != nil {
-                                Text(.onboardingAppInstalled)
-                                    .wontonText(WontonTheme.typography.supporting)
-                                    .foregroundStyle(Color(colors.success))
-                            }
-                        }
-                    )
-                    .padding(.leading, WontonTheme.spacing.s16)
+                if need.selected {
+                    ForEach(need.plugins, id: \.id) { item in
+                        plugin(item)
+                    }
                 }
             }
         }
+    }
+
+    private func plugin(_ item: StoreItem) -> some View {
+        HStack(spacing: WontonTheme.spacing.s12) {
+            PluginIconView(icon: item.icon, size: WontonTheme.size.taskIcon, model: plugins)
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                Text(verbatim: item.title)
+                    .wontonText(WontonTheme.typography.itemTitle)
+                    .foregroundStyle(Color(colors.textPrimary))
+                if let blocked = item.blocked {
+                    Text(verbatim: blocked)
+                        .wontonText(WontonTheme.typography.supporting)
+                        .foregroundStyle(Color(colors.danger))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if item.installedVersion != nil {
+                Text(.onboardingAppInstalled)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.success))
+            }
+        }
+        .padding(.leading, WontonTheme.spacing.s16)
+        .padding(.vertical, WontonTheme.spacing.s8)
     }
 }

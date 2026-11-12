@@ -9,11 +9,11 @@
 
 - open-webui 调模型时，magpie 连不上上游，开发时只好手工重建容器补上 `HTTP_PROXY`。
 - paperless-ngx 下载语言包时卡住。
-- vane 在入口脚本里写死了开发机的代理地址 `172.17.0.1:7899`。
+- vane 在入口脚本里写死了开发机 npchy 的代理地址 `172.17.0.1:7899`。
 
 反过来，`docker compose` 建的系统容器会继承客户端代理，Hydra 的健康检查因此也走了代理，11 个插件的开发都撞上了，这是 #121。
 
-下面的取舍以开发机上的实测为准（见“验证结果”）。最影响设计的是三点：
+下面的取舍以 npchy 上的实测为准（见“验证结果”）。最影响设计的是三点：
 
 - **Hermes 不能随便重建。** 它同时声明 `matrix.bot` 和 `network.egress`，核心不保存 Bot 的访问令牌（ADR-0019）。
 - **很多程序不认代理变量。** Node 默认不读，Java 不读，aiohttp 默认不读，apt、wget 和 curl 的明文 HTTP 只读小写。
@@ -160,7 +160,7 @@ gost -C /etc/gost/gost.yaml
 3. Docker 守护进程的配置（`docker info` 的 `HTTPProxy`、`HTTPSProxy`）。
 
 - 这些地址都用核心镜像的 `egress-proxy-check` 子命令测。安装脚本先建好 `wonton-egress` 网络（打上标签，核心沿用），测试容器接在它上面，和以后的 gost 同一个网桥。
-- 地址是 `127.0.0.1` 或 `localhost` 时（守护进程的配置常常这样，开发机就是），换成 `host.docker.internal`（`host-gateway`）再测。
+- 地址是 `127.0.0.1` 或 `localhost` 时（守护进程的配置常常这样，npchy 就是），换成 `host.docker.internal`（`host-gateway`）再测。
 - 测通了就用，并打印地址和取消的办法。检测到的都测不通时不写，打印原因，安装继续：可能这台主机本来就不需要代理。
 - 主人明确给的 `WONTON_EGRESS_PROXY` 测不通时，安装失败。
 
@@ -234,7 +234,7 @@ gost -C /etc/gost/gost.yaml
 | 核心的插件入口（`matrix.`、`models.`、`mcp.` 这些别名），想以 B 的身份用 | 认不出身份：来源是网桥的网关地址，`Sources` 排除了它，不算任何插件（读代码，没有端到端实测） | 已有的来源判断 |
 
 - **这条路不全是这篇引入的。** 桥接网络本来就连得上宿主的代理，A 不经 gost 也能走（实测）。这篇把“代理要连得上桥接网络”定成了前提，所以写在这里。
-- **没有这条规则的代理不受影响。** 开发机自己的 mihomo 对回环回 502，别的插件地址超时。
+- **没有这条规则的代理不受影响。** npchy 自己的 mihomo 对回环回 502，别的插件地址超时。
 - **挡不住 A 直接连代理。** 要挡就得改宿主防火墙（ADR-0019 不改），或者把插件网络变成内部网络（不认代理的程序全部断网，见“没选的做法”）。
 - **主人不想接受时：** 在代理规则里拒绝回环和私有地址。这份代理还给别的程序用时，给 Wonton 单开一个端口和规则（mihomo 的 `listeners`）。插件连局域网不受影响：宿主所在网段由 gost 直连，不经主人的代理。
 
@@ -261,7 +261,7 @@ gost -C /etc/gost/gost.yaml
      安装器的代理预检调用核心的 `prepare-egress-network`，也不直接让 Docker 自动选网段。
   3. 核心接入时用 `IPAddress` 指定最后一个可用地址；已经接着但地址不对时断开重接。
 
-  Docker 默认地址池大约建 30 个网络就用完（[#120](https://github.com/wontonapp/wonton/issues/120)），所以由核心分配小网段，
+  Docker 默认地址池大约建 30 个网络就用完（[#120](https://github.com/geraldpeng6/wonton/issues/120)），所以由核心分配小网段，
   不改 `daemon.json`。地址段没有空闲 `/26` 时复用地址池用完的拒绝路径：提示主人卸载不用的插件，或者扩大
   `WONTON_PLUGIN_NETWORK_POOL`；详情带上地址段和已用数量。Engine 28 不许在自动分配的网段上指定地址（实测报
   `user specified IP address is supported only when connecting to networks with user configured subnets`，Engine 29.7.2 可以），
@@ -383,7 +383,7 @@ gost -C /etc/gost/gost.yaml
 
 **环境**
 
-- 开发机：Linux，Docker Engine 29.7.2，防火墙同 ADR-0019。守护进程代理 `http://127.0.0.1:7899`，客户端代理 `http://172.17.0.1:7899`，代理是 mihomo，监听所有地址。
+- npchy：Linux，Docker Engine 29.7.2，防火墙同 ADR-0019。守护进程代理 `http://127.0.0.1:7899`，客户端代理 `http://172.17.0.1:7899`，代理是 mihomo，监听所有地址。
 - 容器都用空的 `DOCKER_CONFIG` 起，和核心经 API 建的一样没有客户端代理变量；否则“直连”其实走了代理（第一轮踩到）。
 - gost 3.3.3（`gogost/gost:3`，`sha256:f266f957c6e4f8d433ed23202a5745fa4969d08f3f0ef034fb9357345e16ad67`）。
 
@@ -503,7 +503,7 @@ busybox 和 GNU wget 带 `-Y off` 时都不走代理（环境变量里有代理�
 | 经 gost 到 `<B 的地址>.nip.io`、`.sslip.io` | `src=<网桥网关> remote-user=owner` |
 | 经 gost 到 B 的十进制写法，`127.1`、`2130706433` | CONNECT 回 200，没有连上 |
 | 经 gost 到 `127.0.0.1.nip.io`、`localhost.` 上的 Ollama | 到了，Ollama 回 403。`localhost.` 进拒绝名单后 gost 回 403 |
-| 开发机自己的 mihomo，到 B 的地址和 `.nip.io`、回环 | CONNECT 回 200，没有连上 |
+| npchy 自己的 mihomo，到 B 的地址和 `.nip.io`、回环 | CONNECT 回 200，没有连上 |
 
 **探测代理放不放行（没选）**
 
@@ -512,7 +512,7 @@ busybox 和 GNU wget 带 `-Y off` 时都不走代理（环境变量里有代理�
 | 代理 | 内网 | 回环 |
 | --- | --- | --- |
 | 放行私有地址的 mihomo | 收到随机串 | 收到随机串 |
-| 开发机自己的 mihomo | 6 秒超时 | 空回复 |
+| npchy 自己的 mihomo | 6 秒超时 | 空回复 |
 
 **判断容器（没选，gost 的 bypass plugin）**
 
@@ -531,7 +531,7 @@ gost 的配置：`services[].bypass` 指向 `bypasses[].plugin: {type: http, add
 | `<B 的地址>.nip.io` | 200，到了 B，`src=<网桥网关>` |
 | `127.0.0.1.nip.io` | CONNECT 200，mihomo 连上后 Ollama 回 403 |
 | `192.168.0.1`（放行的网段，gost 的 `nodes[].bypass` 直连） | 200 |
-| 公网，上级是开发机自己的 mihomo：gstatic（https、明文）、GitHub、OpenAI | 204、204、200、401 |
+| 公网，上级是 npchy 自己的 mihomo：gstatic（https、明文）、GitHub、OpenAI | 204、204、200、401 |
 | 同一条连接上，先明文请求 `<B 的地址>.nip.io`，再请求 B 的标准写法 | 第一个到了 B，第二个 403：每个请求都重新判断 |
 | 判断服务停了（解析失败、连接被拒） | 全部 403，gost 记一条错误日志 |
 | 判断服务重启后 | 恢复，不用动 gost |
@@ -587,7 +587,7 @@ gost 的配置：`services[].bypass` 指向 `bypasses[].plugin: {type: http, add
 - 用真实插件走完整条链路（核心注入、健康检查改写、Hermes 重建），实现 PR 里跑。
 - mihomo 以外的上级代理：回环地址和 `CONNECT` 的行为都可能不同。
 - 没给 Docker 网段放行的 ufw 主机上，探测报出来的原因对不对。
-- 宿主防火墙只放行部分 Docker 网段时，经 gost 走网关地址连宿主的结果：实测用的是开发机放行的端口。
+- 宿主防火墙只放行部分 Docker 网段时，经 gost 走网关地址连宿主的结果：实测用的是 npchy 放行的端口。
 - mihomo 以外的上级代理对数字写法的 IP 怎么处理。
 - Chromium（`wonton-plugin-browser`）读不读这些变量。
 - arm64，Engine 28。

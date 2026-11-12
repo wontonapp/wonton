@@ -11,12 +11,11 @@ use super::super::package_files::PackageFiles;
 use super::super::storefront::index::IndexEntry;
 use super::super::{PluginId, PluginManager, PluginPackage, UpgradeTo};
 use super::github::{FakeGitHub, zh};
-
 use super::manager::manager_with;
 
-pub(super) const REPO: &str = "acme/hello";
+const REPO: &str = "acme/hello";
 
-pub(super) fn hello(version: &str, manifest: &str) -> String {
+fn hello(version: &str, manifest: &str) -> String {
     format!(
         "services:\n  web:\n    image: ghcr.io/acme/web:{version}\n    volumes: ['data:/data']\nvolumes:\n  data: {{}}\n\
          x-wonton:\n  spec: \"0.2\"\n  id: app.hello\n  version: {version}\n  kind: app\n  title: {{zh: 你好, en: Hello}}\n  \
@@ -24,7 +23,7 @@ pub(super) fn hello(version: &str, manifest: &str) -> String {
     )
 }
 
-pub(super) fn package(compose: &str) -> PluginPackage {
+fn package(compose: &str) -> PluginPackage {
     PluginPackage::parse(compose, &super::langs()).unwrap()
 }
 
@@ -32,11 +31,11 @@ fn secret(value: &str) -> wonton_protocol::SecretString {
     wonton_protocol::SecretString::new(value)
 }
 
-pub(super) fn id() -> PluginId {
+fn id() -> PluginId {
     PluginId::parse("app.hello").unwrap()
 }
 
-pub(super) async fn manager() -> (
+async fn manager() -> (
     FakeGitHub,
     FakeDocker,
     Arc<PluginManager>,
@@ -53,13 +52,11 @@ fn texts(preview: &InstallPreview) -> Vec<&str> {
     preview.notices.iter().map(|n| n.text.as_str()).collect()
 }
 
-pub(super) fn install_request(preview: &InstallPreview) -> InstallRequest {
+fn install_request(preview: &InstallPreview) -> InstallRequest {
     InstallRequest {
-        scope: None,
         devices: Vec::new(),
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
-        plan: preview.plan.clone(),
         grant: preview
             .permissions
             .iter()
@@ -68,7 +65,6 @@ pub(super) fn install_request(preview: &InstallPreview) -> InstallRequest {
             .collect(),
         enabled_permissions: Vec::new(),
         secrets: Default::default(),
-        settings: Default::default(),
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
@@ -88,7 +84,6 @@ fn upgrade_request(preview: &InstallPreview) -> UpgradeRequest {
             .collect(),
         enabled_permissions: Vec::new(),
         secrets: Default::default(),
-        settings: Default::default(),
         lan_webui: false,
     }
 }
@@ -158,7 +153,7 @@ async fn leftover_data_under_the_same_id_is_called_out_before_installing() {
         .unwrap();
     assert!(!texts(&first).iter().any(|t| t.contains("留着")));
     m.install_source(&install_request(&first)).await.unwrap();
-    m.uninstall_detached(id(), false, Vec::new(), true, super::langs())
+    m.uninstall_detached(id(), false, super::langs())
         .await
         .unwrap();
 

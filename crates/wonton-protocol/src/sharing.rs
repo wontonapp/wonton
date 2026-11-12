@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ProxySettings, TabDisplay, TabState};
+use crate::{TabDisplay, TabState};
 
 /// 应用页可显示的入口；未列出的入口不显示，外部 Matrix 槽位不列 Store 或 AddSource。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -19,8 +19,8 @@ pub enum AppsAction {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PluginShares {
-    /// 清单声明了 `webui.accounts: per_user`（应用按登录的人分开数据）；false 不禁止分享，但授权确认必须提示账号和数据风险。
-    pub per_user_accounts: bool,
+    /// 清单 `webui.friends` 的原值；false 不禁止分享，但授权确认必须提示账号和数据风险。
+    pub friends_supported: bool,
     /// 当前有效授权涉及的不同好友数；组与直接授权重叠只算一次，已到期不算。
     pub friend_count: u32,
     pub grants: Vec<ShareGrant>,
@@ -56,7 +56,7 @@ pub struct ShareGrantUpdate {
     pub plugin_id: String,
     pub recipient: ShareRecipient,
     pub expires_at_ms: Option<u64>,
-    /// 清单未声明 `webui.accounts: per_user` 时，主人看过风险提示后才能设为 true。
+    /// 清单未声明 `webui.friends` 时，主人看过风险提示后才能设为 true。
     pub acknowledge_risk: bool,
 }
 
@@ -76,7 +76,6 @@ pub struct SharedAppsSource {
     pub owner_display_name: Option<String>,
     /// 分享人的 Matrix 服务器名，不是 endpoint ID 或自家槽位的 ID。
     pub server_name: String,
-    /// 该来源的分享连接状态；网页只用这里 Ready 携带的代理，不借自家 HomeViewModel。
     pub state: SharedAppsState,
     /// 最近一次成功返回的列表；失败时可以保留，但不能当作授权仍有效的依据。
     pub apps: Vec<SharedAppRow>,
@@ -87,11 +86,7 @@ pub struct SharedAppsSource {
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum SharedAppsState {
     Loading,
-    /// 已完成可信发现、OpenID 认证并取得列表；代理只路由到该来源的分享连接。
-    /// 连接结束就离开 Ready，旧列表可以保留，旧代理不可继续用于加载网页。
-    Ready {
-        proxy: ProxySettings,
-    },
+    Ready,
     Failed {
         problem: ShareProblem,
     },

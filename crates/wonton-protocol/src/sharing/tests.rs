@@ -50,7 +50,7 @@ fn grants_preserve_person_group_and_optional_expiry() {
                 expires_at_ms,
             };
             let shares = PluginShares {
-                per_user_accounts: false,
+                friends_supported: false,
                 friend_count: 2,
                 grants: vec![grant],
             };
@@ -84,15 +84,7 @@ fn sources_and_app_failures_remain_distinct() {
                 owner_user_id: "@alice:example.org".into(),
                 owner_display_name: Some("Alice".into()),
                 server_name: "example.org".into(),
-                state: SharedAppsState::Ready {
-                    proxy: crate::ProxySettings {
-                        host: "127.0.0.1".into(),
-                        port: 19001,
-                        username: "share".into(),
-                        password: "connection-secret".into(),
-                        domain: "home.example.org".into(),
-                    },
-                },
+                state: SharedAppsState::Ready,
                 apps: vec![SharedAppRow {
                     plugin: plugin(),
                     problem: Some(problem(ShareFailure::Revoked)),
@@ -143,40 +135,6 @@ fn sources_and_app_failures_remain_distinct() {
         owner_user_id: "@alice:example.org".into(),
         plugin_id: "app.snake".into(),
     });
-}
-
-#[test]
-fn a_shared_page_requires_its_source_and_a_ready_source_requires_its_proxy() {
-    let page: crate::TabRef = serde_json::from_value(json!({
-        "type": "shared_app",
-        "owner_user_id": "@alice:example.org",
-        "plugin_id": "app.snake"
-    }))
-    .unwrap();
-    assert_eq!(
-        page,
-        crate::TabRef::SharedApp {
-            owner_user_id: "@alice:example.org".into(),
-            plugin_id: "app.snake".into(),
-        }
-    );
-    assert!(
-        serde_json::from_value::<crate::TabRef>(json!({
-            "type": "shared_app", "plugin_id": "app.snake"
-        }))
-        .is_err()
-    );
-    assert!(serde_json::from_value::<SharedAppsState>(json!({"state": "ready"})).is_err());
-    let source: SharedAppsState = serde_json::from_value(json!({
-        "state": "ready",
-        "proxy": {
-            "host": "127.0.0.1", "port": 19001,
-            "username": "share", "password": "connection-secret",
-            "domain": "home.example.org"
-        }
-    }))
-    .unwrap();
-    assert!(!format!("{source:?}").contains("connection-secret"));
 }
 
 #[test]

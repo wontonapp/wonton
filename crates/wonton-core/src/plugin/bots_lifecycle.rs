@@ -9,7 +9,6 @@ use wonton_protocol::{BotKeeper, BotRef, NewSharedBot};
 
 use super::bot_services::BotVars;
 use super::bots::{BotEntry, check_bot_name, is_bot};
-use super::health_gate;
 use super::lifecycle::Undo;
 use super::manager::{BotReport, InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, SecretSpec};
@@ -243,7 +242,9 @@ impl PluginManager {
         })
     }
 
-    /// 名单变了（家人加入、联系人批了）：重建这个 Bot 的服务，沿用设备和令牌。
+    /// 名单变了（家人加入、联系人批了）：重建这个 Bot 的服务，沿用设备和令牌。家人记录和联系人
+    /// 在别的任务里做，它们合进来就会调用这个入口。
+    #[allow(dead_code)]
     pub(in crate::plugin) async fn rebuild_bot(
         &self,
         plugin: &PluginId,
@@ -461,13 +462,9 @@ impl PluginManager {
                 .await?;
             self.stage(&package.manifest.id, InstallStage::Preparing);
             self.prepare_dirs(&ctx, &plan.dirs, &mut undo, &langs)?;
-            // 镜像自带的 healthcheck 也算进时限：和 replace_bot_containers 一样先并入计划。
-            self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-            let deadline =
-                health_gate::deadline(&plan, self.cfg.install_timeout, tokio::time::Instant::now());
+            let deadline = tokio::time::Instant::now() + self.cfg.install_timeout;
             self.stage(&package.manifest.id, InstallStage::Starting);
             self.start_containers(
-                Some(&package.manifest),
                 &plan,
                 Some(&package.manifest.id),
                 &mut undo,
@@ -516,18 +513,10 @@ impl PluginManager {
             self.engine.remove_container(name).await?;
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-        let deadline =
-            health_gate::deadline(&plan, self.cfg.install_timeout, tokio::time::Instant::now());
+        let deadline = tokio::time::Instant::now() + self.cfg.install_timeout;
         self.stage(id, InstallStage::Starting);
-        self.start_containers(
-            Some(&package.manifest),
-            &plan,
-            Some(id),
-            &mut Undo::default(),
-            deadline,
-            &langs,
-        )
-        .await?;
+        self.start_containers(&plan, Some(id), &mut Undo::default(), deadline, &langs)
+            .await?;
         Ok(())
     }
 

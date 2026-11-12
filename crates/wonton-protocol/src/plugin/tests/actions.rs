@@ -16,15 +16,13 @@ fn plugin_actions_round_trip_through_json() {
         Action::InstallPlugin {
             preview: preview(),
             secrets: [("token".to_owned(), crate::SecretString::new("s3cret"))].into(),
-            settings: Default::default(),
         },
         Action::UpgradePlugin {
             preview: InstallPreview {
                 upgrade_from: Some("0.9.0".into()),
                 ..preview()
             },
-            secrets: [("region".to_owned(), crate::SecretString::new("eu-west"))].into(),
-            settings: Default::default(),
+            secrets: Default::default(),
         },
         Action::StartTakeover {
             id: "app.memos".into(),

@@ -3,7 +3,7 @@
 //! 会话键和 ACP 会话 ID 都存在 `sessions.json`：重启后按会话键 `session/load`，Agent 说
 //! 会话没了才新建并如实说明上下文已丢（ADR-0035）。
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 use tokio::sync::mpsc;
 
@@ -18,10 +18,8 @@ pub(super) struct SessionState {
     pub(super) session_id: Option<String>,
     pub(super) loaded: bool,
     pub(super) active: bool,
-    /// 这一轮在跑时 Agent 没收下的消息，按到达顺序；这一轮结束后合成一轮发（`busy.rs`）。
-    pub(super) buffer: Vec<Job>,
-    /// 已经发了 `session/cancel`、在等这一轮收尾：这时进来的消息不再插进将要结束的一轮。
-    pub(super) cancelling: bool,
+    pub(super) queue: VecDeque<Job>,
+    pub(super) pending_interrupt: Option<Job>,
     /// 还没跑过一轮；话题的第一轮要带开局说明。
     pub(super) first_turn: bool,
     /// 话题起点那条消息的原文和它前面的主对话片段，开局用。
@@ -65,14 +63,6 @@ impl Sessions {
     pub(super) fn key_of(&self, session_id: &str) -> Option<SessionKey> {
         self.acp.get(session_id).cloned()
     }
-
-    /// 丢掉所有会话攒着的消息：连接断开时不再开新一轮，收尾只管在跑的。
-    pub(super) fn drop_pending(&mut self) {
-        for state in self.states.values_mut() {
-            state.buffer.clear();
-            state.cancelling = false;
-        }
-    }
 }
 
 /// 保证这个会话有一个可用的 ACP 会话，返回（会话 ID、是否丢了旧上下文、是否切到了
@@ -84,7 +74,6 @@ pub(super) async fn ensure_session(
     key: &SessionKey,
     state: &mut SessionState,
 ) -> Result<(String, bool, Option<bool>)> {
-    let origin = key.origin(room_id);
     if state.session_id.is_none()
         && let Some(record) = bridge.sessions.get(room_id, key).await
     {
@@ -93,20 +82,13 @@ pub(super) async fn ensure_session(
     let mut lost = false;
     if let Some(session_id) = state.session_id.clone() {
         if !state.loaded {
-            // 恢复后按建会话时的模式补切一次；旧记录里没记就退回配置的默认。
-            let mode = match bridge.sessions.get(room_id, key).await {
-                Some(record) if !record.mode.is_empty() => record.mode,
-                _ => bridge.config.mode.clone(),
+            let record = SessionRecord {
+                session_id: session_id.clone(),
+                cwd: bridge.config.workspace.clone(),
             };
             match bridge
                 .acp
-                .load_or_resume(
-                    &session_id,
-                    &bridge.config.workspace,
-                    &bridge.config.mcp_url,
-                    &origin,
-                    &mode,
-                )
+                .load_or_resume(&record.session_id, &record.cwd, &bridge.config.mcp_url)
                 .await
             {
                 Ok(()) => state.loaded = true,
@@ -134,7 +116,6 @@ pub(super) async fn ensure_session(
             &bridge.config.mcp_url,
             &bridge.config.mode,
             ask_mode,
-            &origin,
         )
         .await?;
     let session_id = created.session_id;
@@ -146,7 +127,6 @@ pub(super) async fn ensure_session(
             SessionRecord {
                 session_id: session_id.clone(),
                 cwd: bridge.config.workspace.clone(),
-                mode: created.mode.clone(),
             },
         )
         .await?;

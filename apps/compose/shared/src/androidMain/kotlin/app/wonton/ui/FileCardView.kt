@@ -83,7 +83,6 @@ private fun FileCardView(id: FileId, core: ClientCore) {
             val danger = WontonTheme.colors.danger.toColor()
             Icon(
                 WontonIcon.Warning,
-                // 装饰：失败原因写在右边的文字里。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconSmall),
                 tint = danger,
@@ -172,13 +171,11 @@ private fun FileIcon(info: FileInfo, playable: Boolean, core: ClientCore) {
     val shape = Modifier.size(WontonTheme.size.fileThumbnail).clip(RoundedCornerShape(WontonTheme.radii.control))
     val loaded = thumbnail
     if (loaded != null) {
-        // 装饰：缩略图旁边就是文件名。
         Image(loaded, contentDescription = null, shape, contentScale = ContentScale.Crop)
     } else {
         Box(shape, contentAlignment = Alignment.Center) {
             Icon(
                 if (playable) WontonIcon.Play else WontonIcon.File,
-                // 装饰：缩略图旁边就是文件名，播放还是文件由点下去的结果说。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.icon),
             )

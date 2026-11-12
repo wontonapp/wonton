@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use tokio::{io::AsyncWriteExt, sync::oneshot};
+use tokio::sync::oneshot;
 
 use super::{
     AgentNotice, Inner, PermissionAsk, id_key, lang_for, merge_json, parse_pending,
@@ -29,8 +29,7 @@ pub(super) async fn handle_request(inner: Arc<Inner>, id: Value, message: Value)
     let mut params = message["params"].clone();
     merge_tool_call(&inner, &session_id, &mut params).await;
     let lang = lang_for(&inner, &session_id).await;
-    let origin = inner.origins.lock().await.get(&session_id).cloned();
-    let pending = match parse_pending(&params, lang, origin) {
+    let pending = match parse_pending(&params, lang) {
         Ok(pending) => pending,
         Err(error) => {
             send_result(&inner, &id, json!({"outcome": {"outcome": "cancelled"}})).await;
@@ -63,16 +62,7 @@ pub(super) async fn handle_request(inner: Arc<Inner>, id: Value, message: Value)
             }
             send_result(&inner, &id, result).await;
         }
-        Ok(PermissionResult::Expired) => {
-            // 过期的卡片等不到答案了（ADR-0061）：先取消会话再回 cancelled，Agent 收到
-            // `session/cancel` 会撤掉这一轮。
-            cancel_upstream_session(&inner, &session_id).await;
-            send_result(&inner, &id, json!({"outcome": {"outcome": "cancelled"}})).await;
-            let _ = inner
-                .notices
-                .send(AgentNotice::PermissionCancelled { session_id });
-        }
-        Ok(PermissionResult::Cancelled) => {
+        Ok(PermissionResult::Cancelled) | Ok(PermissionResult::Expired) => {
             send_result(&inner, &id, json!({"outcome": {"outcome": "cancelled"}})).await;
             let _ = inner
                 .notices
@@ -149,26 +139,5 @@ pub(super) async fn cancel_session(inner: &Arc<Inner>, session_id: &str) {
         if let Some(waiter) = waiters.remove(&key) {
             let _ = waiter.cancel.send(());
         }
-    }
-}
-
-/// 照 `Acp::cancel` 的同一条路取消会话：撤掉同会话待答的权限请求、记下取消标记、给
-/// Agent 发 `session/cancel`。卡片过期等不到答案时先走这里再回 `cancelled`（ADR-0061）。
-async fn cancel_upstream_session(inner: &Arc<Inner>, session_id: &str) {
-    cancel_session(inner, session_id).await;
-    inner
-        .cancelled_sessions
-        .lock()
-        .await
-        .insert(session_id.to_owned());
-    let bytes = serde_json::to_vec(&json!({
-        "jsonrpc": "2.0",
-        "method": "session/cancel",
-        "params": {"sessionId": session_id}
-    }));
-    if let Ok(bytes) = bytes {
-        let mut writer = inner.writer.lock().await;
-        let _ = writer.write_all(&bytes).await;
-        let _ = writer.write_all(b"\n").await;
     }
 }

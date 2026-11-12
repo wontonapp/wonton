@@ -181,30 +181,3 @@ async fn no_conflict_keeps_the_agent_options() {
     assert_eq!(options[0]["choice_id"], "acp-0");
     harness.finish().await;
 }
-
-#[tokio::test]
-async fn permission_cards_carry_the_origin_session() {
-    let harness = Harness::start().await;
-    harness.send("$root", "改登录");
-    let prompts = harness.wait_prompts(1).await;
-    let main = prompts[0].0.clone();
-    harness.agent.ask_permission(&main, "src/a.rs").await;
-    wait_until(|| harness.cards.pending() == 1).await;
-    let request = harness.cards.requests()[0].clone();
-    // 主对话的卡片只报房间。
-    assert_eq!(request["origin"]["room_id"], "!room:example.org");
-    assert!(request["origin"].get("thread_id").is_none());
-    harness.cards.answer("acp-0");
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    harness.send_in_thread("$t1", "$root", "也改登录");
-    let prompts = harness.wait_prompts(2).await;
-    let topic = prompts[1].0.clone();
-    harness.agent.ask_permission(&topic, "src/b.rs").await;
-    wait_until(|| harness.cards.pending() == 1).await;
-    let request = harness.cards.requests().last().cloned().unwrap();
-    // 话题里的卡片带话题根（ADR-0016）。
-    assert_eq!(request["origin"]["room_id"], "!room:example.org");
-    assert_eq!(request["origin"]["thread_id"], "$root");
-    harness.finish().await;
-}

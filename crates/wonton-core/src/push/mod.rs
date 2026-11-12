@@ -12,13 +12,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use iroh::EndpointId;
-use serde_json::json;
-use wonton_protocol::DeviceConfirmationPush;
 
 pub use notification::{DevicePayload, Notification, NotifyRequest, NotifyResponse};
 pub use store::{Registration, Subscription};
 
-use crate::device::{Device, Devices};
+use crate::device::Devices;
 use crate::plugin::egress::core_proxy::CoreProxy;
 use store::Registrations;
 use webpush::{Delivery, WebPush};
@@ -114,14 +112,8 @@ impl Push {
             }
             // 只有计数的通知不转发：App 不靠它更新什么，转发只会白白唤醒手机。
             let Some(payload) = &payload else { continue };
-            let plaintext = serde_json::to_vec(payload).expect("推送内容总能序列化");
             match self
-                .deliver(
-                    &registration,
-                    plaintext,
-                    notification.urgency(),
-                    &payload.event_id,
-                )
+                .deliver(&registration, payload, notification.urgency())
                 .await
             {
                 Ok(true) => {}
@@ -135,53 +127,22 @@ impl Push {
         }
     }
 
-    /// 把一条新的联系人请求推给一个人的所有设备（`user` 为空是主人，ADR-0045）。核心自己发起，没有 Tuwunel 等着
-    /// 重试：推送服务暂时不可用时记日志，请求本身在“等你确认”列表里还在。
-    pub async fn notify_contact_request(
-        &self,
-        user: Option<&str>,
-        request: wonton_protocol::ContactRequestPush,
-    ) {
-        let payload = DevicePayload {
-            server: self.server.clone(),
-            room_id: String::new(),
-            event_id: String::new(),
-            sender: Some(request.user_id.clone()),
-            sender_display_name: request.display_name.clone(),
-            room_name: None,
-            prio: None,
-            contact_request: Some(request),
-        };
-        let plaintext = serde_json::to_vec(&payload).expect("推送内容总能序列化");
-        for device in self.devices_of(user) {
-            let Some(registration) = self.registrations.get(&device.id) else {
-                continue;
-            };
-            if let Err(e) = self
-                .deliver(&registration, plaintext.clone(), "high", "contact_request")
-                .await
-            {
-                tracing::warn!(device = %device.id.fmt_short(), error = %e, "联系人请求的推送没发出去");
-            }
-        }
-    }
-
     /// 发给一台设备。返回订阅是否还有效。
     async fn deliver(
         &self,
         registration: &Registration,
-        plaintext: Vec<u8>,
+        payload: &DevicePayload,
         urgency: &'static str,
-        event: &str,
     ) -> Result<bool, PushError> {
         let device = registration.device.fmt_short();
+        let plaintext = serde_json::to_vec(payload).expect("推送内容总能序列化");
         let delivery = self
             .sender
             .send(&registration.subscription, plaintext, urgency)
             .await;
         match delivery {
             Ok(Delivery::Accepted) => {
-                tracing::info!(%device, %event, urgency, "推送已交给推送服务");
+                tracing::info!(%device, event = %payload.event_id, urgency, "推送已交给推送服务");
                 Ok(true)
             }
             Ok(Delivery::Gone) => {
@@ -204,76 +165,6 @@ impl Push {
                 self.forget(registration);
                 Ok(false)
             }
-        }
-    }
-
-    /// 一个人名下的已配对设备（`person` 为空是主人，ADR-0045）。
-    fn devices_of(&self, person: Option<&str>) -> Vec<Device> {
-        match person {
-            Some(person) => self.devices.of_user(person),
-            None => self
-                .devices
-                .list()
-                .into_iter()
-                .filter(|device| device.user.is_none())
-                .collect(),
-        }
-    }
-
-    /// 这个人（`None` 是主人）名下有没有已配对的设备：没有就没人能回答发给他的确认卡片。
-    pub fn has_devices(&self, person: Option<&str>) -> bool {
-        !self.devices_of(person).is_empty()
-    }
-
-    /// 发给一个人（`None` 是主人）名下的已配对设备：确认卡片直推（ADR-0016）。卡片不在任何 Matrix
-    /// 房间里，直推是它到设备的唯一通道；明文里是 `confirmation` 段，加密同消息推送。返回发到的设备数；
-    /// 一台都没发成时给原因（设备没配对、没登记推送或推送服务不可用），个别设备失败只记日志。
-    pub async fn send_confirmation(
-        &self,
-        person: Option<&str>,
-        card: &DeviceConfirmationPush,
-    ) -> Result<usize, PushError> {
-        let who = person.unwrap_or("owner");
-        // 字段名是和 App 之间的契约（wonton-protocol 的 `DeviceConfirmationPush`），App 靠 `confirmation`
-        // 认出这不是房间里的消息。
-        let plaintext = serde_json::to_vec(&json!({
-            "server": self.server,
-            "confirmation": card,
-        }))
-        .expect("确认推送总能序列化");
-        let devices = self.devices_of(person);
-        if devices.is_empty() {
-            return Err(PushError::Invalid(format!(
-                "{who} 名下没有已配对的设备，确认卡片推不出去"
-            )));
-        }
-        let mut sent = 0usize;
-        let mut unavailable = None;
-        for device in &devices {
-            let Some(registration) = self.registrations.get(&device.id) else {
-                tracing::warn!(person = who, device = %device.id.fmt_short(), "设备没登记推送，确认卡片推不到它");
-                continue;
-            };
-            if !self.devices.contains(&registration.device) {
-                tracing::warn!(device = %registration.device.fmt_short(), "设备已吊销，不再推送");
-                self.forget(&registration);
-                continue;
-            }
-            match self
-                .deliver(&registration, plaintext.clone(), "high", &card.id)
-                .await
-            {
-                Ok(true) => sent += 1,
-                Ok(false) => {}
-                Err(e) => unavailable = Some(e),
-            }
-        }
-        match (sent, unavailable) {
-            (0, Some(e)) => Err(e),
-            (0, None) => Err(PushError::Invalid(format!(
-                "{who} 的设备都没登记推送，确认卡片推不出去"
-            ))),
-            _ => Ok(sent),
         }
     }
 

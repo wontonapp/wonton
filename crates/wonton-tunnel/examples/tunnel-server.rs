@@ -29,10 +29,9 @@ struct Args {
     /// 已配对设备的 endpoint ID，可以重复。
     #[arg(long = "allow")]
     allow: Vec<EndpointId>,
-    /// 服务端私钥文件，不存在时自动生成；私钥决定 endpoint ID。默认 `$XDG_STATE_HOME/wonton/tunnel-server.key`
-    /// （没设时 `~/.local/state/wonton/tunnel-server.key`），不放当前目录。
-    #[arg(long)]
-    key: Option<PathBuf>,
+    /// 服务端私钥文件，不存在时自动生成；私钥决定 endpoint ID。
+    #[arg(long, default_value = "tunnel-server.key")]
+    key: PathBuf,
     /// 固定 UDP 端口（IPv4 和 IPv6 同端口），便于防火墙放行。默认随机。
     #[arg(long, default_value_t = 0)]
     port: u16,
@@ -42,8 +41,7 @@ struct Args {
 async fn main() -> Result<()> {
     common::init_tracing();
     let args = Args::parse();
-    let key =
-        common::load_or_create_key(&common::key_path(args.key.clone(), "tunnel-server.key")?)?;
+    let key = common::load_or_create_key(&args.key)?;
     let mut builder = Endpoint::builder(presets::N0).secret_key(key);
     if args.port != 0 {
         builder = builder

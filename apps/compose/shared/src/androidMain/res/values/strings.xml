@@ -82,16 +82,6 @@
     <string name="chat_peer_placeholder">Username or Matrix ID</string>
     <!-- Button that starts the chat with the entered person. No arguments; short label. -->
     <string name="chat_start">Start</string>
-    <!-- Install row subtitle while images are downloaded. No arguments. -->
-    <string name="chat_install_stage_pulling_images">Pulling images</string>
-    <!-- Install row subtitle while networks, volumes and data folders are set up. No arguments. -->
-    <string name="chat_install_stage_preparing">Preparing</string>
-    <!-- Install row subtitle while containers start. No arguments. -->
-    <string name="chat_install_stage_starting">Starting</string>
-    <!-- Install row subtitle while health checks pass and the bot comes online. No arguments. -->
-    <string name="chat_install_stage_waiting_for_bot">Waiting for the bot</string>
-    <!-- Button on an install row when the source is unknown or the result is uncertain; opens the app's page. No arguments; short label. -->
-    <string name="chat_install_open_page">Open app page</string>
     <string name="chat_backup_copy">Copy</string>
     <!-- Explanation under the heading when backup is on. -->
     <string name="chat_backup_detail_enabled">When you switch to a new phone, enter your recovery key to see your past messages.</string>
@@ -125,9 +115,6 @@
     <string name="chat_backup_save_key_title">Save your recovery key</string>
     <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
     <string name="chat_backup_saved">Saved</string>
-    <!-- Confirmation dialog for the "Saved" button: closing the page discards the key on this device. -->
-    <string name="chat_backup_saved_confirm_title">Saved it somewhere safe?</string>
-    <string name="chat_backup_saved_confirm_message">After this, this device no longer shows the key. Make sure you have a copy before you continue.</string>
     <!-- Page heading when chat backup hasn't been set up. -->
     <string name="chat_backup_status_disabled">Chat backup isn\'t set up yet</string>
     <!-- Page heading when chat backup is on and verified. -->
@@ -214,10 +201,6 @@
     <string name="bot_state_offline">Offline</string>
     <!-- Marker between read and new messages in the timeline. No arguments. -->
     <string name="timeline_new_messages_below">New messages below</string>
-    <!-- Accessibility label of the scroll-to-bottom button. -->
-    <string name="room_scroll_to_bottom">Back to bottom</string>
-    <!-- Accessibility label of the scroll-to-bottom button with new messages. Argument: the new message count. -->
-    <string name="room_scroll_to_bottom_count">Back to bottom, %1$d new messages</string>
     <!-- Marker at the start of the timeline. No arguments. -->
     <string name="timeline_start">Start of the chat</string>
     <!-- Footer label of an edited message. No arguments. -->
@@ -234,7 +217,6 @@
     <string name="timeline_resend">Send again</string>
     <!-- Body placeholder of a message this device can't decrypt. No arguments. -->
     <string name="timeline_undecryptable">Can\'t decrypt: this device doesn\'t have the key for this message</string>
-    <string name="timeline_undecryptable_notice">Earlier encrypted messages can\'t be read on this device.</string>
     <!-- Body placeholder of a redacted message. No arguments. -->
     <string name="timeline_redacted">Message deleted</string>
     <!-- Body placeholder of a message type that can't be shown. Argument: the event type, like m.sticker. -->
@@ -290,8 +272,6 @@
     <string name="connection_waiting_network">Waiting for the network…</string>
     <!-- Connection notice: the tunnel is being established. -->
     <string name="connection_connecting">Connecting…</string>
-    <!-- Connection progress while a real connection attempt or manual retry is running. -->
-    <string name="connection_retrying">Trying to reach your home server…</string>
     <!-- Connection notice: the home server is updating itself. -->
     <string name="connection_updating">Updating…</string>
     <!-- Connection notice: the tunnel dropped and the home server doesn't answer. -->
@@ -328,20 +308,8 @@
     <string name="connection_path">Path</string>
     <!-- Label of the round-trip time in the connection details. -->
     <string name="connection_latency">Latency</string>
-    <!-- Label of the connection quality in the connection details. -->
-    <string name="connection_quality">Connection quality</string>
-    <!-- Value of the connection quality: the connection is fine. -->
-    <string name="connection_quality_good">Good</string>
-    <!-- Value of the connection quality: connected, but lossy or slow. -->
-    <string name="connection_quality_poor">Poor</string>
-    <!-- Label of the recent loss rate in the connection details; a percentage with one decimal. -->
-    <string name="connection_loss_rate">Packet loss</string>
-    <!-- Value of a number the core couldn\'t measure: a dash, never 0. -->
-    <string name="connection_value_none">—</string>
-    <!-- Short status shown while connected and the connection quality is poor. -->
-    <string name="connection_poor">Poor connection, things may lag</string>
-    <!-- Short status shown while connected, the quality is poor, and the traffic goes through a relay. -->
-    <string name="connection_poor_relay">Poor connection, going through a relay</string>
+    <!-- Label of the lost and sent packet counts in the connection details. -->
+    <string name="connection_lost_packets">Packet loss</string>
     <!-- Label of the last handshake time in the connection details. -->
     <string name="connection_last_handshake">Last handshake</string>
     <!-- Label of the disconnect count in the connection details. -->
@@ -388,10 +356,6 @@
     <string name="core_upgrade_check_up_to_date">Up to date</string>
     <!-- Button on the update page while the channel check is running. -->
     <string name="core_upgrade_checking">Checking…</string>
-    <!-- Heading of the compatibility warning on the update offer: these installed apps won\'t work after the update. -->
-    <string name="core_upgrade_compat_breaking_title">These apps won\'t work after the update</string>
-    <!-- Light notice on the update offer: it couldn\'t check which installed apps would be affected. Tapping checks again. -->
-    <string name="core_upgrade_compat_not_checked">Couldn\'t check which apps would be affected</string>
     <!-- Stage line after the update finished. Argument: the version now running. -->
     <string name="core_upgrade_completed_to">Updated to %1$s</string>
     <!-- Primary button in the confirm step: start the update. -->
@@ -498,8 +462,6 @@
     <string name="design_tab_menu">Tab menu</string>
     <!-- Accessibility state of a list row with the update badge dot. -->
     <string name="design_update_badge">Update available</string>
-    <!-- Accessibility state of a list row with a counted badge. Argument: the count. -->
-    <string name="design_badge_count">%1$d pending</string>
     <!-- Section title and text field label for the proxy address (like http://192.0.2.10:7890). -->
     <string name="egress_address">Proxy address</string>
     <!-- Radio option: type a proxy address by hand instead of using an app's proxy. -->
@@ -546,8 +508,6 @@
     <string name="file_download_and_open">Download and open in another app</string>
     <!-- Title of the problem shown when no installed app can open a downloaded file. Android only. -->
     <string name="file_no_app_opens_it">No app on this phone can open this file</string>
-    <!-- Title of the problem shown when the file can't be handed to the system (outside configured FileProvider roots). Android only. -->
-    <string name="file_handoff_failed">Couldn\'t hand this file to the system</string>
     <!-- Link under a file card: open the downloaded file with another app. -->
     <string name="file_open_elsewhere">Open in another app</string>
     <!-- Line under a file card while its download is paused. Argument: the home server's reason, shown as is. -->
@@ -572,6 +532,8 @@
     <string name="install_change_version">Change version</string>
     <!-- Status when the install succeeded. -->
     <string name="install_completion_done">Installed</string>
+    <!-- Problem title when the install failed; the core's reason is in the collapsed details. -->
+    <string name="install_completion_failed">Installation failed</string>
     <!-- Status while the app installs. -->
     <string name="install_completion_installing">Installing…</string>
     <!-- Title of the page that stays open while the app installs. -->
@@ -612,16 +574,10 @@
     <string name="pairing_instructions">On your home network, open the server\'s IP address in a browser (the installer prints it), then scan the pairing QR code on that page.</string>
     <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
     <string name="pairing_paste_placeholder">Paste the pairing code</string>
-    <!-- Persistent label above the paste field; also the field's accessibility label. -->
-    <string name="pairing_paste_label">Pairing code</string>
     <!-- Button under the paste field: pair with the code. -->
     <string name="pairing_submit">Pair</string>
     <!-- Shown next to a spinner while pairing is in progress. -->
     <string name="pairing_in_progress">Pairing…</string>
-    <!-- Shown after a while under the spinner while the pairing request has not reached the server yet. -->
-    <string name="pairing_still_connecting">Still connecting…</string>
-    <!-- Shown after a while under the spinner once the pairing request has reached the server and it hasn't answered. -->
-    <string name="pairing_still_confirming">Still waiting for the server…</string>
     <!-- Label of the field for this device's name. -->
     <string name="pairing_device_name">This device\'s name</string>
     <!-- Failure title when the server rejected the pairing code. -->
@@ -630,8 +586,6 @@
     <string name="pairing_failure_expired">The pairing code has expired</string>
     <!-- Failure title when the pairing code was deactivated. -->
     <string name="pairing_failure_closed">This pairing code has been deactivated</string>
-    <!-- Failure title when none of the pairing code's server addresses can be reached. No arguments. -->
-    <string name="pairing_failure_transport">Can\'t reach the server in this pairing code</string>
     <!-- Button under the failed notice: retry pairing with the same code. -->
     <!-- Next step under a rejected or expired pairing code: where a new code comes from. No arguments. -->
     <string name="pairing_next_new_code">Get a new code: on a paired device, pick Add Device; or run sudo wonton pair on the computer.</string>
@@ -641,7 +595,7 @@
     <!-- Failure title when the app and the server speak different versions. -->
     <string name="pairing_failure_protocol">The app and the server versions don\'t match</string>
     <!-- Next step under the transport failure. May wrap. -->
-    <string name="pairing_hint_transport">Check that your home server is on and connected to the network, then try again.</string>
+    <string name="pairing_hint_transport">Make sure the phone and the server are on the same local network, or that the server can reach the internet, then try again.</string>
     <!-- Next step under the protocol failure. May wrap. -->
     <string name="pairing_hint_protocol">Update the app and the server to the latest versions.</string>
     <!-- Title of the "Other servers" page and the settings row that opens it. -->
@@ -736,116 +690,6 @@
     <string name="peers_paste_placeholder">Paste their code</string>
     <!-- Button under the paste field: submit the pasted code. -->
     <string name="peers_paste_submit">Pair</string>
-    <!-- Title of the friends page and the settings row that opens it. -->
-    <string name="friends_title">Friends</string>
-    <!-- Top-right button on the friends page that opens the add-friend sheet. -->
-    <string name="friends_add">Add</string>
-    <!-- Title of the add-friend sheet. -->
-    <string name="friends_add_title">Add friend</string>
-    <!-- Placeholder of the Matrix ID field; the example is a full Matrix ID. -->
-    <string name="friends_add_placeholder">@bob:example.org</string>
-    <!-- Submit button under the Matrix ID field. -->
-    <string name="friends_add_submit">Send request</string>
-    <!-- Row in the add-friend sheet that opens the scan page. -->
-    <string name="friends_scan_code">Scan their code</string>
-    <!-- Placeholder of the field for pasting the code when scanning is not possible. -->
-    <string name="friends_paste_placeholder">Paste their code</string>
-    <!-- Row in the add-friend sheet and the dialog that shows my own matrix.to QR code. -->
-    <string name="friends_my_code">My QR code</string>
-    <!-- Section heading above the pending requests, received and sent. -->
-    <string name="friends_requests_title">Requests</string>
-    <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
-    <string name="friends_request_label">Friend request</string>
-    <!-- Subtitle on a request I sent: it stays until they answer. -->
-    <string name="friends_request_waiting">Waiting for them to accept</string>
-    <!-- Approve button on a received request. -->
-    <string name="friends_request_approve">Approve</string>
-    <!-- Reject button on a received request. -->
-    <string name="friends_request_reject">Reject</string>
-    <!-- Cancel button on a request I sent. -->
-    <string name="friends_request_cancel">Cancel</string>
-    <!-- Section heading above the friend list. -->
-    <string name="friends_list_title">Friends</string>
-    <!-- Empty page: the one sentence above the add button. -->
-    <string name="friends_empty">No friends yet</string>
-    <!-- Row subtitle when a friend is in no group. -->
-    <string name="friends_no_group">No group</string>
-    <!-- Separator between group names on a friend row. -->
-    <string name="friends_group_separator">", "</string>
-    <!-- Row subtitle: how many plugins this friend can open. -->
-    <plurals name="friends_shared_plugins">
-        <item quantity="one">%1$d plugin shared</item>
-        <item quantity="other">%1$d plugins shared</item>
-    </plurals>
-    <!-- Section heading above the groups and their actions. -->
-    <string name="friends_groups_title">Groups</string>
-    <!-- Row that opens the new-group dialog. -->
-    <string name="friends_group_new">New group</string>
-    <!-- Title of the new-group dialog. -->
-    <string name="friends_group_create_title">New group</string>
-    <!-- Title of the rename-group dialog. Argument: the current name. -->
-    <string name="friends_group_rename_title">Rename “%1$s”</string>
-    <!-- Placeholder of the group name field. -->
-    <string name="friends_group_name_placeholder">Group name</string>
-    <!-- Confirmation dialog title for deleting a group. Argument: the group name. -->
-    <string name="friends_group_delete_title">Delete “%1$s”?</string>
-    <!-- Confirmation dialog body: what deleting a group does. -->
-    <string name="friends_group_delete_message">Friends in it stay friends. Plugin access given to this group is withdrawn.</string>
-    <!-- Sheet title for choosing a friend's groups. Argument: the friend. -->
-    <string name="friends_choose_groups_title">Groups for %1$s</string>
-    <!-- Sheet action on a friend row that opens the group chooser. -->
-    <string name="friends_groups">Groups</string>
-    <!-- Sheet action on a friend row: remove the friend. -->
-    <string name="friends_remove_friend">Remove friend</string>
-    <string name="friends_block_user">Block invitations</string>
-    <!-- Confirmation dialog title for removing a friend. Argument: the friend. -->
-    <string name="friends_remove_title">Remove “%1$s”?</string>
-    <!-- Confirmation dialog body: what removing a friend does. -->
-    <string name="friends_remove_message">They stop getting the plugins you share. The chat stays.</string>
-    <!-- Section heading above blocked people and servers. -->
-    <string name="friends_blocked_title">Blocked</string>
-    <!-- Row that opens the block-a-server dialog; only shown to the server's owner. -->
-    <string name="friends_block_server">Block a server</string>
-    <!-- Title of the block-a-server dialog. -->
-    <string name="friends_block_server_title">Block a server</string>
-    <!-- Placeholder of the server name field; no scheme, no wildcards. -->
-    <string name="friends_block_server_placeholder">example.org</string>
-    <!-- Submit button under the server name field. -->
-    <string name="friends_block_submit">Block</string>
-    <!-- Row subtitle for a blocked person. -->
-    <string name="friends_block_invitations">Invitations blocked</string>
-    <!-- Row subtitle for a server blocked for the whole server. -->
-    <string name="friends_block_federation">Server blocked</string>
-    <!-- Row subtitle for a blocked target this version doesn't know. -->
-    <string name="friends_block_unknown">Blocked</string>
-    <!-- Undo button on a blocked row. -->
-    <string name="friends_unblock">Undo</string>
-    <!-- Failure title when the Matrix server can't be reached. -->
-    <string name="friends_error_transport">Can\'t reach the Matrix server</string>
-    <!-- Failure title when the session is no longer signed in. -->
-    <string name="friends_error_unauthorized">Your session expired</string>
-    <!-- Next step under the unauthorized failure. -->
-    <string name="friends_error_unauthorized_next">Sign in again, then open Friends.</string>
-    <!-- Failure title when the server refused a friend action although the sign-in is valid. -->
-    <string name="friends_error_forbidden">The request was refused</string>
-    <!-- Next step under the refused failure. -->
-    <string name="friends_error_forbidden_next">They may have blocked you, or their server can\'t reach your home server yet.</string>
-    <!-- Failure title when the typed ID isn't a full Matrix ID. -->
-    <string name="friends_error_invalid_user_id">Not a Matrix ID</string>
-    <!-- Next step under the invalid-ID failure. -->
-    <string name="friends_error_invalid_user_id_next">Use the whole ID, like @bob:example.org.</string>
-    <!-- Failure title when the request was already accepted or rejected elsewhere. -->
-    <string name="friends_error_request_not_found">That request was already handled</string>
-    <!-- Failure title when the server asks to wait before trying again. Argument: seconds to wait. -->
-    <string name="friends_error_rate_limited">Too many requests. Wait %1$d seconds.</string>
-    <!-- Failure title when the server asks to wait but didn't say how long. -->
-    <string name="friends_error_rate_limited_later">Too many requests. Try again later.</string>
-    <!-- Failure title when the server refused the change. -->
-    <string name="friends_error_upstream">The server refused it</string>
-    <!-- Failure title for the remaining categories. -->
-    <string name="friends_error_other">Something went wrong. Try again later.</string>
-    <!-- Section heading on the peers page above the friend requests. -->
-    <string name="friends_peers_title">Friend requests</string>
     <!-- Label before an address that a third-party client uses to connect to the app. -->
     <string name="lan_client_address">Address</string>
     <!-- Label before the password a third-party client uses to sign in to the app. -->
@@ -878,114 +722,16 @@
     </plurals>
     <!-- Action-sheet item that updates the app. Argument: the new version. -->
     <string name="launcher_upgrade_to">Update to %1$s</string>
-    <!-- Row in the server list that opens signing in with an existing Matrix account. No arguments; short label. -->
-    <string name="matrix_login_entry">Sign in with a Matrix account</string>
-    <!-- Navigation title of the Matrix sign-in page. No arguments; fits a phone navigation bar. -->
-    <string name="matrix_login_title">Sign in with Matrix</string>
-    <!-- Field label for the Matrix server to sign in to, a server name like matrix.org or an https URL. No arguments; short label. -->
-    <string name="matrix_login_server">Server</string>
-    <!-- Button that asks the core to check the server and list the ways to sign in. No arguments; short button label. -->
-    <string name="matrix_login_continue">Continue</string>
-    <!-- Progress line while the core contacts the server to discover the sign-in methods. Argument: the server name or URL the user chose. -->
-    <string name="matrix_login_contacting">Contacting %1$s</string>
-    <!-- Button for the password method in the list of ways the server supports. No arguments; short button label. -->
-    <string name="matrix_login_method_password">Sign in with password</string>
-    <!-- Button for the server's own OIDC sign-in, which opens in the system browser. No arguments; short button label. -->
-    <string name="matrix_login_method_oidc">Continue in browser</string>
-    <!-- Field label for the full Matrix user ID, like @user:example.org. No arguments; short label. -->
-    <string name="matrix_login_user_id">Matrix user ID</string>
-    <!-- Field label for the account password. No arguments; short label. -->
-    <string name="matrix_login_password">Password</string>
-    <!-- Button that submits the user ID and password to the server. No arguments; short button label. -->
-    <string name="matrix_login_sign_in">Sign in</string>
-    <!-- Progress line while the core signs in with the password. No arguments. -->
-    <string name="matrix_login_signing_in">Signing in</string>
-    <!-- Progress line while the core stores the signed-in session on this phone. No arguments. -->
-    <string name="matrix_login_saving">Saving the session</string>
-    <!-- Progress line while the user finishes the sign-in in the system browser. No arguments. -->
-    <string name="matrix_login_finish_in_browser">Finish signing in in the browser</string>
-    <!-- Button that opens the browser again for the pending OIDC sign-in. No arguments; short button label. -->
-    <string name="matrix_login_open_browser">Open browser</string>
-    <!-- Notice when the phone has no app that can open the browser link. No arguments. -->
-    <string name="matrix_login_no_browser">No browser app to open the sign-in page</string>
-    <!-- Failure title: the server name or URL doesn't point to a Matrix homeserver. No arguments. -->
-    <string name="matrix_login_failed_invalid_homeserver">Can’t find a Matrix server at this address</string>
-    <!-- Failure title: the server couldn't be reached to discover the sign-in methods. No arguments. -->
-    <string name="matrix_login_failed_discovery">Couldn’t reach the server</string>
-    <!-- Failure title: the server offers none of the sign-in methods this app supports. No arguments. -->
-    <string name="matrix_login_failed_unsupported_method">This server has no supported way to sign in</string>
-    <!-- Failure title: the network is unavailable. No arguments. -->
-    <string name="matrix_login_failed_transport">The network is unavailable</string>
-    <!-- Failure title: the server rejected the user ID or password. No arguments. -->
-    <string name="matrix_login_failed_invalid_credentials">The user ID or password is wrong</string>
-    <!-- Failure title: the server rejected the browser sign-in. No arguments. -->
-    <string name="matrix_login_failed_oidc_rejected">The server rejected the browser sign-in</string>
-    <!-- Failure title: the browser came back without a complete sign-in result. No arguments. -->
-    <string name="matrix_login_failed_invalid_callback">The sign-in result from the browser is incomplete</string>
-    <!-- Failure title: the sign-in took too long or expired on the server. No arguments. -->
-    <string name="matrix_login_failed_expired">The sign-in expired, start over</string>
-    <!-- Failure title: signing in worked but saving the session on this phone failed. No arguments. -->
-    <string name="matrix_login_failed_storage">Signed in, but saving it on this phone failed</string>
-    <!-- Failure title: the homeserver or its sign-in service returned an error (5xx, rate limiting, an unexpected reply), not a problem with the credentials or input. No arguments. -->
-    <string name="matrix_login_failed_upstream">The server or its sign-in service had a problem</string>
-    <!-- Failure title for every category the app doesn't know. No arguments. -->
-    <string name="matrix_login_failed_other">Signing in failed</string>
-    <!-- Notice when the core reports a state the app doesn't know. No arguments. -->
-    <string name="matrix_login_unknown_state">Signing in can’t continue right now</string>
     <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
     <string name="message_clip_label">Message</string>
     <!-- Item in the message menu: copy the message text. Android only. -->
     <string name="message_copy">Copy</string>
-    <!-- Accessibility label of the copy button on a code block in a message. -->
-    <string name="message_code_copy">Copy code</string>
-    <!-- Accessibility label of that copy button right after the code was copied. -->
-    <string name="message_code_copied">Copied</string>
-    <!-- Item in the message menu: remove the message for everyone in the chat. Android only. -->
-    <string name="message_delete_everyone">Delete for everyone</string>
-    <!-- Confirm button in the dialog that removes a message for everyone. Android only. -->
-    <string name="message_delete_everyone_confirm">Delete</string>
-    <!-- Body of the dialog that removes a message for everyone, saying the scope of it. Android only. -->
-    <string name="message_delete_everyone_message">It disappears from the chat for everyone in this room.</string>
-    <!-- Title of the dialog that removes a message for everyone. Android only. -->
-    <string name="message_delete_everyone_title">Delete this message for everyone?</string>
-    <!-- Item in the message menu on someone else's message: remove it for everyone. Argument: the sender's name. Android only. -->
-    <string name="message_delete_others">Delete %1$s\'s message</string>
-    <!-- Title of the dialog that removes someone else's message for everyone. Argument: the sender's name. Android only. -->
-    <string name="message_delete_others_title">Delete %1$s\'s message for everyone?</string>
-    <!-- Item in the message menu: send the message to another room. Android only. -->
-    <string name="message_forward">Forward</string>
-    <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->
-    <string name="message_forward_empty">No other chats</string>
-    <!-- Title of the room list that picks where a message is forwarded to. Android only. -->
-    <string name="message_forward_title">Forward to</string>
     <!-- Fallback under an image message when it can't be decoded: the format isn't supported. Android only. -->
     <string name="message_image_format_unsupported">This image format isn\'t supported</string>
     <!-- Fallback under an image message when it can't be loaded and the error carries no reason. Android only. -->
     <string name="message_image_unavailable">Can\'t load this image</string>
-    <!-- Item in the message menu: reply to the message. Android only. -->
-    <string name="message_reply">Reply</string>
-    <!-- Label of the fullscreen viewer action that hands the picture to the system share sheet. Android only. -->
-    <string name="message_image_share">Share</string>
-    <!-- Label of the fullscreen viewer action that saves the picture into the system gallery. Android only. -->
-    <string name="message_image_save">Save to gallery</string>
-    <!-- Notice after the picture was saved into the gallery. Android only. -->
-    <string name="message_image_saved">Saved to the gallery</string>
-    <!-- Notice when handing the picture to the share sheet failed. Android only. -->
-    <string name="message_image_share_failed">Couldn\'t share this picture</string>
-    <!-- Notice when saving the picture into the gallery failed. Android only. -->
-    <string name="message_image_save_failed">Couldn\'t save to the gallery</string>
-    <!-- Screen-reader label of the cross that stops replying above the composer. Android only. -->
-    <string name="message_reply_cancel">Stop replying</string>
-    <!-- Short stand-in for a quoted message type that can be shown but has nothing to summarize. Android only. -->
-    <string name="message_quote_image">Photo</string>
-    <!-- Short stand-in in a quote for a message type with no text, like an approval card. Android only. -->
-    <string name="message_quote_other">Message</string>
-    <!-- Stand-in in a quote for a message the core couldn't load from the server. Android only. -->
-    <string name="message_quote_unavailable">Original message unavailable</string>
-    <!-- Stand-in in a quote for a message this device can't decrypt. Android only. -->
-    <string name="message_quote_undecryptable">Encrypted message</string>
-    <!-- Description of an agent row in setup when it has no account login: it needs a model provider key in the next step. -->
-    <string name="onboarding_agent_connection_key">Set up a model provider key in the next step</string>
+    <!-- Description of an agent row in setup when it has no account login. -->
+    <string name="onboarding_agent_connection_key">API key</string>
     <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
     <string name="onboarding_agent_connection_logins">%1$s or an API key</string>
     <!-- Problem title in setup when no agent can be chosen. -->
@@ -1027,7 +773,7 @@
     <!-- Warning under a model provider row: testing couldn't reach the provider, but it's saved anyway when setup finishes. -->
     <string name="onboarding_model_unreachable">Can\'t reach the provider. It will still be saved when you finish.</string>
     <!-- Row title: keep the models already configured in the model gateway. -->
-    <string name="onboarding_model_use_current">Use your current model</string>
+    <string name="onboarding_model_use_current">Use current</string>
     <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
     <string name="onboarding_model_use_login">Use %1$s</string>
     <!-- Primary button that advances to the next setup step. -->
@@ -1071,6 +817,8 @@
     <string name="onboarding_problem_plugin_lan_unavailable">No local network address is available. Check the server\'s network settings.</string>
     <!-- Problem title while installing: the app wasn't found. -->
     <string name="onboarding_problem_plugin_not_found">This app wasn\'t found. Refresh the list and try again.</string>
+    <!-- Problem title while installing: the owner profile isn't complete. -->
+    <string name="onboarding_problem_plugin_owner_profile_incomplete">Your profile isn\'t complete. Fill it in and try again.</string>
     <!-- Problem title while installing: the app and the home server versions don't work together. -->
     <string name="onboarding_problem_plugin_protocol">Wonton and your home server versions don\'t match. Update Wonton or the server.</string>
     <!-- Problem title while installing: the home server is older than the app needs. -->
@@ -1113,20 +861,10 @@
     <string name="onboarding_review_keep_current">Keep current</string>
     <!-- Label next to a spinner while an install task is being prepared. -->
     <string name="onboarding_review_preparing">Preparing</string>
-    <!-- Kind label above a review row: the profile that will be saved. -->
-    <string name="onboarding_review_section_profile">Profile</string>
-    <!-- Kind label above a review row: the default agent. -->
-    <string name="onboarding_review_section_agent">Agent</string>
-    <!-- Kind label above a review row: the model. -->
-    <string name="onboarding_review_section_model">Model</string>
-    <!-- Kind label above a review row: the apps that will be installed. -->
-    <string name="onboarding_review_section_apps">Apps</string>
     <!-- Row description in the review step: the item is set as the default agent. -->
     <string name="onboarding_review_set_default">Set as default</string>
     <!-- Row description in the review step: the agent signs in from chat after setup. -->
     <string name="onboarding_review_sign_in_after_setup">Sign in from chat after setup</string>
-    <!-- Row description in the review step: finishing will not touch this. -->
-    <string name="onboarding_review_unchanged">Unchanged</string>
     <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
     <string name="onboarding_review_uncertain">Install result unknown. Check the app\'s page.</string>
     <!-- Row description in the review step: the model couldn't be reached during the test. -->
@@ -1165,6 +903,8 @@
     <string name="owner_profile_email_optional">Optional</string>
     <!-- Section title, field label and accessibility label for the owner's display name. -->
     <string name="owner_profile_name">Name</string>
+    <!-- Placeholder in the empty name field. -->
+    <string name="owner_profile_name_required">Required</string>
     <!-- Title of the owner profile page (name and email) and its entry point in Settings. -->
     <string name="owner_profile_title">Your profile</string>
     <!-- Row label for the account name the home server assigned; shown under the form. -->
@@ -1180,19 +920,8 @@
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <!-- Section title for the folders the app may save files into. No arguments. -->
     <string name="plugin_save_folders">Folders it can save to</string>
-    <!-- Detail-page switch for the remembered camera/microphone decision of its web page. -->
-    <string name="plugin_media_title">Camera and microphone for its web page</string>
     <!-- Button that revokes one save permission. No arguments; short label. -->
     <string name="plugin_save_revoke">Revoke</string>
-    <!-- Section title and row for opening an app\'s settings page. No arguments. -->
-    <string name="plugin_settings_section">Settings</string>
-    <string name="plugin_settings_open">Open settings</string>
-    <!-- Note under a setting the app can\'t render because the home server is newer. No arguments. -->
-    <string name="plugin_settings_update_app">Update the app to change this</string>
-    <!-- Note under a required setting that has no value and no default. No arguments. -->
-    <string name="plugin_settings_required">Required</string>
-    <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
-    <string name="plugin_settings_restart_hint">The app will restart to apply this</string>
     <!-- Section title for the app's updates. No arguments. -->
     <string name="plugin_updates_section">Updates</string>
     <!-- Switch label: ask before every update of an agent-written app. No arguments. -->
@@ -1265,12 +994,6 @@
     <string name="plugin_task_review">Review again</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">The result is uncertain: %1$s</string>
-    <!-- Status of a running task while the connection to the home server is down. -->
-    <string name="plugin_task_waiting_for_connection">Waiting for connection</string>
-    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
-    <string name="plugin_task_check_installed_next_step">Check the installed list to see whether it installed.</string>
-    <!-- Button on an uncertain task that opens the installed list. -->
-    <string name="plugin_task_check_installed">Check installed</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">Uninstalled</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->
@@ -1294,46 +1017,17 @@
     <!-- Destructive button that uninstalls and deletes the app's data. -->
     <string name="plugin_uninstall_delete_data">Uninstall and delete data</string>
     <!-- Message of the uninstall confirmation. -->
-    <string name="plugin_uninstall_delete_data_warning">Deleting data also removes its keys and bot accounts, and old encrypted messages with its bots become unreadable. This can\'t be undone.</string>
+    <string name="plugin_uninstall_delete_data_warning">Deleting data also removes its keys and bot accounts. This can\'t be undone.</string>
     <!-- Button that uninstalls but keeps the app's data. -->
     <string name="plugin_uninstall_keep_data">Uninstall and keep data</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
     <string name="plugin_uninstall_title">Uninstall %1$s?</string>
-    <!-- Switch on an app's page: map the ports the app declares onto this device's loopback interface, so other apps on the phone can reach them (ADR-0072). -->
-    <string name="port_mapping_toggle">Map to this device</string>
-    <!-- One declared port under the switch: the loopback address with the port number, then the protocol. -->
-    <string name="port_mapping_port_line">127.0.0.1:%1$d · %2$s</string>
-    <!-- Protocol label of a declared port whose protocol Wonton doesn't recognize. -->
-    <string name="port_mapping_protocol_other">Other</string>
-    <!-- Reason shown while the mapping is on but another app on this phone has taken the port. -->
-    <string name="port_mapping_reason_port_in_use">The port is already in use by another app on this phone.</string>
-    <!-- Reason shown while the mapping is on but the home server is too old to map ports. -->
-    <string name="port_mapping_reason_server_too_old">Your home server is too old and needs an update.</string>
-    <!-- Reason shown while the mapping is on but the tunnel isn't connected. -->
-    <string name="port_mapping_reason_tunnel_disconnected">The tunnel to your home server isn\'t connected.</string>
-    <!-- Reason shown while the mapping is on but the app isn't installed on the home server. -->
-    <string name="port_mapping_reason_plugin_not_installed">This app isn\'t installed on your home server.</string>
-    <!-- Reason shown while the mapping is on but the app doesn't declare that port. -->
-    <string name="port_mapping_reason_port_not_declared">This app doesn\'t declare that port.</string>
-    <!-- Reason shown while the mapping is on but the app isn't running. -->
-    <string name="port_mapping_reason_plugin_not_running">This app isn\'t running on your home server.</string>
-    <!-- Reason shown while the mapping is on but the home server can't reach the app. -->
-    <string name="port_mapping_reason_plugin_unreachable">Your home server can\'t reach this app.</string>
-    <!-- Reason shown while the mapping is on and failed for a reason Wonton doesn't recognize. -->
-    <string name="port_mapping_reason_other">Port mapping ran into a problem.</string>
-    <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
-    <string name="port_mapping_no_notification_permission">Without the notification permission, you won\'t see the mapping notification. Mapping still works.</string>
-    <string name="port_mapping_warning_public_relay_bandwidth">Connected only through the public relay — not enough bandwidth for streaming.</string>
     <!-- Problem title when the appearance settings couldn't be saved on the home server. -->
     <string name="problem_appearance_title">Appearance settings weren\'t saved</string>
     <!-- Problem reason when a link to an app page opens before the installed app list loaded. -->
     <string name="problem_apps_not_ready">The app list isn\'t ready yet. Try again shortly.</string>
     <!-- Problem reason when an agent chat link opens but no default agent is set. -->
     <string name="problem_no_default_agent">There\'s no default agent yet. Pick and install one in setup.</string>
-    <!-- Problem title: the server refused an action although this device is still signed in. -->
-    <string name="problem_forbidden_title">The request was refused</string>
-    <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
-    <string name="problem_forbidden_next_step">You\'re still signed in. You may not have permission for this, they may have blocked you, or their server can\'t reach yours yet.</string>
     <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
     <string name="problem_invalid_input_title">This can\'t be done</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->
@@ -1376,14 +1070,14 @@
     <string name="problem_plugin_not_found_next_step">Refresh the store and try again.</string>
     <!-- Problem title: the app is gone from its source. -->
     <string name="problem_plugin_not_found_title">This app wasn\'t found</string>
+    <!-- Next step: fill it in in Settings, then try again. -->
+    <string name="problem_plugin_owner_profile_incomplete_next_step">Fill it in in Settings, then try again.</string>
+    <!-- Problem title: the owner's profile (name and email) isn't filled in yet, and the app needs it. -->
+    <string name="problem_plugin_owner_profile_incomplete_title">Your profile isn\'t filled in yet</string>
     <!-- Next step: update the app or the home server. -->
     <string name="problem_plugin_protocol_next_step">Update Wonton or your home server.</string>
     <!-- Problem title: the app and the home server versions don't match. -->
     <string name="problem_plugin_protocol_title">Wonton and your home server aren\'t compatible</string>
-    <!-- Problem title: the home server can't read this app's install record. -->
-    <string name="problem_plugin_record_unusable_title">This app\'s install record is unusable</string>
-    <!-- Next step: uninstall the app (its data can be kept) and install it again. -->
-    <string name="problem_plugin_record_unusable_next_step">Uninstall this app and install it again.</string>
     <!-- Problem title when the proxy settings were rejected as invalid; the core's own reason is shown as the next step. -->
     <string name="problem_plugin_save_invalid_title">This doesn\'t look right</string>
     <!-- Next step: look at the proxy settings again once the server is reachable. -->
@@ -1547,75 +1241,6 @@
     <string name="shortcuts_too_few">The system allows only %1$d shortcuts, so “New chat” and “Ask a Bot” can\'t both show.</string>
     <!-- Shortcut problem detail when more app pages exist than the launcher allows. Argument: the maximum count. -->
     <string name="shortcuts_too_many">The system allows at most %1$d shortcuts. “New chat” and “Ask a Bot” come first, then app pages in navigation bar order.</string>
-    <!-- Explicit acknowledgement of the warning about sharing an app without declared friend support. No arguments. -->
-    <string name="share_acknowledge">I understand and accept this risk</string>
-    <!-- Button that creates an app share for a friend or group. No arguments. -->
-    <string name="share_add">Add share</string>
-    <!-- Button that dismisses the share editor without saving changes. No arguments. -->
-    <string name="share_cancel">Cancel</string>
-    <!-- Plugin detail badge showing how many friends can access this app. Argument: count, an integer; use native plural rules. -->
-    <plurals name="share_count">
-        <item quantity="one">Shared with %1$d friend</item>
-        <item quantity="other">Shared with %1$d friends</item>
-    </plurals>
-    <!-- Expiration choice that opens a date and time picker. No arguments. -->
-    <string name="share_custom">Choose date and time</string>
-    <!-- Title of the editor for an existing app share. No arguments. -->
-    <string name="share_edit">Edit share</string>
-    <!-- Empty state when no friends or groups can be selected for sharing. No arguments. -->
-    <string name="share_empty">No friends or groups available</string>
-    <!-- Label of the share expiration picker. No arguments. -->
-    <string name="share_expires">Expires</string>
-    <!-- Section title for individual friends in the share recipient picker. No arguments. -->
-    <string name="share_friends">Friends</string>
-    <!-- Section title for friend groups in the share recipient picker. No arguments. -->
-    <string name="share_groups">Groups</string>
-    <!-- Expiration choice that grants access for one hour from now. No arguments. -->
-    <string name="share_hour">1 hour</string>
-    <!-- Identity verification detail when secure discovery of the identity server failed. No arguments. -->
-    <string name="share_identity_discovery">The identity server could not be discovered securely.</string>
-    <!-- Identity verification detail for an invalid OpenID identity token. No arguments. -->
-    <string name="share_identity_invalid">The identity token is invalid.</string>
-    <!-- Identity verification detail when the verified user ID belongs to a different server. No arguments. -->
-    <string name="share_identity_mismatch">The verified user ID does not match the identity server.</string>
-    <!-- Identity verification detail for an unrecognized failure category. No arguments. -->
-    <string name="share_identity_other">Identity verification failed.</string>
-    <!-- Identity verification detail when the identity server could not confirm the user. No arguments. -->
-    <string name="share_identity_userinfo">The identity server could not confirm your identity.</string>
-    <!-- Expiration choice that keeps access until the owner revokes it. No arguments. -->
-    <string name="share_indefinite">Until revoked</string>
-    <!-- Shared app problem when the access grant has expired. No arguments. -->
-    <string name="share_problem_expired">This share has expired</string>
-    <!-- Shared app problem when the sharing friend's server cannot verify the current user. No arguments. -->
-    <string name="share_problem_identity">This friend’s server cannot recognize you</string>
-    <!-- Shared app problem for an unavailable source not covered by a more specific category. No arguments. -->
-    <string name="share_problem_other">Shared apps are unavailable</string>
-    <!-- Shared app problem when the app is not running; recipients cannot start it. No arguments. -->
-    <string name="share_problem_plugin">This app is not running</string>
-    <!-- Shared app problem when the current user has no grant for the app. No arguments. -->
-    <string name="share_problem_required">This friend has not shared this app with you</string>
-    <!-- Shared app problem when the owner has revoked access. No arguments. -->
-    <string name="share_problem_revoked">This friend stopped sharing this app</string>
-    <!-- Shared app problem when the sharing friend's server cannot be reached. No arguments. -->
-    <string name="share_problem_unreachable">Cannot connect to this friend’s server</string>
-    <!-- Apps page section title for apps shared by other people. No arguments. -->
-    <string name="share_received">Shared with me</string>
-    <!-- Label of the friend or group picker for an app share. No arguments. -->
-    <string name="share_recipient">Friend or group</string>
-    <!-- Button or accessibility label that refreshes apps shared by friends. No arguments. -->
-    <string name="share_refresh">Refresh shares</string>
-    <!-- Destructive action that immediately removes access granted by an app share. No arguments. -->
-    <string name="share_revoke">Revoke share</string>
-    <!-- Prominent warning before sharing an app without declared friend support. Explain account creation and possible access to the owner's data. No arguments. -->
-    <string name="share_risk">Your friend will sign in to this app with their own username. The app may create an account for them and let them see your data.</string>
-    <!-- Button that saves a new or edited app share. No arguments. -->
-    <string name="share_save">Save share</string>
-    <!-- Plugin detail section and share management page title. No arguments. -->
-    <string name="share_title">Share with friends</string>
-    <!-- Expiration choice that grants access until the end of today. No arguments. -->
-    <string name="share_today">Today</string>
-    <!-- Recipient label when the saved friend or group is no longer available. No arguments. -->
-    <string name="share_unknown">Unknown recipient</string>
     <!-- Toolbar button that opens the Add Source page. -->
     <string name="store_add_source">Add source</string>
     <!-- Button on a store row to install an app you don't have. -->
@@ -1676,33 +1301,26 @@
     <string name="tab_uninstalling">Uninstalling…</string>
     <!-- Line while the app updates. No arguments. -->
     <string name="tab_upgrading">Updating…</string>
-    <!-- Line on an app page that opens in the system browser instead of the app. Argument: the app name. -->
-    <string name="tab_opens_in_browser">%1$s opens in your browser</string>
-    <!-- Button that opens the app page in the system browser. No arguments; short label. -->
-    <string name="tab_open_in_browser">Open</string>
-    <!-- Next step when no browser can open the app page. No arguments. -->
-    <string name="tab_no_browser_next_step">Install or turn on a browser such as Chrome, then try again.</string>
+    <!-- Button that opens a page the cross-origin isolation would block. No arguments. -->
+    <string name="tab_open_anyway">Open anyway</string>
     <!-- Button that removes the page from the navigation bar. No arguments. -->
     <string name="tab_unpin_from_bar">Remove from navigation bar</string>
     <!-- Button that starts a stopped app. No arguments; short label. -->
     <string name="tab_start">Start</string>
     <!-- Button that opens the app's details page. No arguments; short label. -->
     <string name="tab_view_details">View details</string>
+    <!-- Problem title when cross-origin isolation blocks the page. No arguments. -->
+    <string name="tab_cross_origin_title">This app can\'t open in Wonton on Android yet</string>
+    <!-- Problem detail with the installed WebView version. Argument: the version, or the unknown-version text. -->
+    <string name="tab_cross_origin_detail">Current Android System WebView: %1$s; needs 156 or newer.</string>
+    <!-- Stand-in for the WebView version when it can't be read. No arguments. -->
+    <string name="tab_webview_version_unknown">version unavailable</string>
     <!-- Problem title when the app isn't ready to show its page. No arguments. -->
     <string name="tab_load_not_ready">The app isn\'t ready</string>
     <!-- Problem title when the app's page itself fails to load. No arguments. -->
     <string name="tab_load_upstream">Can\'t open the app\'s page</string>
     <!-- Dialog text when apps were uninstalled and their tabs removed. Argument: list of app names. -->
     <string name="tab_uninstalled_notice">%1$s was uninstalled and removed from the navigation bar</string>
-    <!-- Camera and microphone permission for plugin web pages. Arguments: app title. -->
-    <string name="tab_media_prompt_camera">Allow %1$s to use your camera?</string>
-    <string name="tab_media_prompt_microphone">Allow %1$s to use your microphone?</string>
-    <string name="tab_media_prompt_both">Allow %1$s to use your camera and microphone?</string>
-    <string name="tab_media_allow">Allow</string>
-    <string name="tab_media_deny">Don\'t allow</string>
-    <string name="tab_media_system_denied_title">Camera or microphone unavailable</string>
-    <string name="tab_media_system_denied">Wonton doesn\'t have camera or microphone permission in system settings. The page was denied.</string>
-    <string name="tab_media_system_settings">Open settings</string>
     <!-- Problem title when the tab bar settings can't be read. No arguments. -->
     <string name="tab_settings_unreadable">Can\'t read the navigation bar settings</string>
     <!-- Button that opens the navigation bar settings from that problem. No arguments. -->
@@ -1831,8 +1449,6 @@
     <!-- Notification channel name for approval requests waiting for the owner. Shown in the system notification settings. -->
     <string name="notification_channel_confirmation">Waiting for you</string>
     <!-- Notification channel name for notices from apps. Shown in the system notification settings. -->
-    <!-- Notification state value: notifications are not allowed for this app in the system settings. -->
-    <string name="notification_value_system_blocked">Not allowed in system settings</string>
     <string name="notification_channel_plugin">App notifications</string>
     <!-- Notification state value: notifications are allowed. -->
     <string name="notification_value_on">On</string>
@@ -1860,8 +1476,6 @@
     <string name="push_status_failed_transport">Registration failed. Try again once the home server is reachable</string>
     <!-- Push status line when registering failed because this device isn't recognized. -->
     <string name="push_status_failed_unauthorized">Registration failed. Pair again</string>
-    <!-- Push status line when registering failed because the home server refused it although this device is signed in. -->
-    <string name="push_status_failed_forbidden">Registration failed. Your home server refused it</string>
     <!-- Push status line when registering failed because the home server hit an error. -->
     <string name="push_status_failed_upstream">Registration failed. Your home server hit an error</string>
     <!-- Push status line when registering failed because the chat connection isn't ready. -->
@@ -2003,192 +1617,4 @@
         <item>Folder</item>
         <item>Pin</item>
     </string-array>
-    <string name="secret_section_title">Keys this app needs</string>
-    <string name="secret_optional">Optional</string>
-    <string name="secret_get_one">Where to get one</string>
-    <string name="secret_show">Show value</string>
-    <string name="secret_hide">Hide value</string>
-    <string name="secret_edit">Change</string>
-    <string name="secret_clear">Clear</string>
-    <string name="secret_filled">Filled</string>
-    <string name="secret_unfilled">Not ready: paste a token first</string>
-    <string name="pin_to_bar">Pin to navigation bar</string>
-    <!-- Menu item that removes an app\'s page from the navigation bar (long press in the sidebar). -->
-    <string name="unpin_from_bar">Remove from navigation bar</string>
-    <!-- Title of the app on the sidebar. -->
-    <string name="sidebar_title">Wonton</string>
-    <!-- Toolbar button that opens the sidebar on a root page. -->
-    <string name="sidebar_open">Sidebar</string>
-    <!-- Tap target covering the pushed main screen while the sidebar is open; tapping collapses the sidebar. -->
-    <string name="sidebar_collapse">Collapse sidebar</string>
-    <!-- Sidebar row under the title: the home server is connected. -->
-    <string name="sidebar_status_connected">Home server · Connected</string>
-    <!-- Sidebar row under the title: connecting to the home server. -->
-    <string name="sidebar_status_connecting">Home server · Connecting</string>
-    <!-- Sidebar row under the title: can\'t reach the home server. -->
-    <string name="sidebar_status_disconnected">Home server · Can\'t connect</string>
-    <!-- Sidebar row under the title: no home server paired yet. -->
-    <string name="sidebar_status_not_configured">No home server paired yet</string>
-    <!-- Sidebar row that shows the chat list. -->
-    <string name="sidebar_chats">Chats</string>
-    <!-- Sidebar row that opens the app store. -->
-    <string name="sidebar_store">Store</string>
-    <!-- Sidebar section title above the installed apps that can be opened. -->
-    <string name="sidebar_my_apps">My apps</string>
-    <!-- Sidebar link at the right of My apps that opens the app grid. -->
-    <string name="sidebar_all">All</string>
-    <!-- Sidebar row shown when more than eight apps are installed; opens the app grid. -->
-    <string name="sidebar_all_apps">All apps</string>
-    <!-- Round button at the bottom of the sidebar that opens Settings. -->
-    <string name="sidebar_settings">Settings</string>
-    <!-- Accent capsule at the bottom of the sidebar that starts a new chat. -->
-    <string name="sidebar_new_chat">New chat</string>
-    <!-- Content description of the red count badge on the Store row: how many apps have updates. -->
-    <string name="sidebar_updates_badge">%1$d updates available</string>
-    <!-- Content description of the red dot on an app row: the app has an update. -->
-    <string name="sidebar_updatable">Update available</string>
-    <!-- Content description of the small pin on an app row: the app\'s page is pinned to the navigation bar. -->
-    <string name="sidebar_pinned">Pinned to the navigation bar</string>
-    <!-- Sheet title before updating every app that has an update at once. -->
-    <string name="store_update_all_title">Update %1$d apps</string>
-    <!-- Button in that sheet that starts all the updates. -->
-    <string name="store_update_all">Update all</string>
-    <!-- Content description of the toolbar download icon that opens that sheet. -->
-    <string name="store_update_all_a11y">Update all, %1$d apps</string>
-    <!-- Row note for an app whose update needs confirmation before it can start. -->
-    <!-- Content description of the red dot on the settings button in the sidebar. -->
-    <string name="sidebar_needs_attention">Needs your attention</string>
-    <!-- Content description of the warning badge on a launcher tile: the app has a problem. -->
-    <string name="launcher_badge_degraded">Has a problem</string>
-    <!-- Content description of a screenshot on the app detail page. -->
-    <string name="plugin_screenshot">Screenshot</string>
-    <!-- Content description of the direction icon on an upload. -->
-    <string name="transfer_upload">Upload</string>
-    <!-- Content description of the direction icon on a download. -->
-    <string name="transfer_download">Download</string>
-    <!-- Content description of a state picture in the bot profile. Argument: the state name. -->
-    <string name="bot_avatar_pick_state">Change the %1$s picture</string>
-    <string name="panel_add">Add</string>
-    <string name="panel_add_pages">Add pages</string>
-    <string name="panel_can_add">Can be added to the panel</string>
-    <string name="panel_close">Close panel</string>
-    <string name="panel_edit">Edit panel</string>
-    <string name="panel_in_panel">In the panel</string>
-    <string name="panel_open">Open panel</string>
-    <string name="panel_public_unsupported">This device\'s WebView cannot keep public web pages apart from plugin pages, so they cannot be opened here</string>
-    <string name="panel_remove">Remove</string>
-    <string name="panel_url">Enter a URL</string>
-    <string name="message_image_permission_denied">Android denied access. Check this app\'s permissions in Settings and try again.</string>
-    <string name="composer_file_unreadable">Couldn\'t read this file. Copy it again or choose another file.</string>
-    <string name="message_link_browser">Open in browser</string>
-    <string name="message_link_open_failed">Couldn\'t open this link</string>
-    <string name="message_link_share_failed">Couldn\'t share this link</string>
-    <string name="message_link_no_handler">Install an app that can open this type of link, then try again.</string>
-    <!-- Title of a bot's contacts page and the entry row on the bot's detail page. -->
-    <string name="contacts_title">Contacts</string>
-    <!-- Toolbar button and sheet title for adding a contact to this bot. -->
-    <string name="contacts_add">Add contact</string>
-    <!-- Choice in the add-contact sheet: the other side is a bot. -->
-    <string name="contacts_add_kind_bot">A bot</string>
-    <!-- Choice in the add-contact sheet: the other side is a person. -->
-    <string name="contacts_add_kind_person">A person</string>
-    <!-- Placeholder of the Matrix ID field in the add-contact sheet. -->
-    <string name="contacts_add_placeholder">@someone:example.org</string>
-    <!-- Button that sends the contact request. -->
-    <string name="contacts_add_submit">Send request</string>
-    <!-- Section heading for contact requests waiting for me. -->
-    <string name="contacts_requests_title">Requests</string>
-    <!-- Section heading for contacts both sides approved. -->
-    <string name="contacts_active_title">Added</string>
-    <!-- Section heading for requests I sent that aren't in effect. -->
-    <string name="contacts_sent_title">Sent</string>
-    <!-- Shown on an incoming contact request: what approving means. -->
-    <string name="contacts_incoming_warning">Its messages will be handled like messages to your bot, and sensitive tools will ask you every time.</string>
-    <!-- Approve button on an incoming contact request. -->
-    <string name="contacts_approve">Approve</string>
-    <!-- Reject button on an incoming contact request. -->
-    <string name="contacts_reject">Reject</string>
-    <!-- Button that withdraws a request I sent and they haven't answered. -->
-    <string name="contacts_withdraw">Withdraw</string>
-    <!-- Button that clears a declined or failed request row. -->
-    <string name="contacts_clear">Remove</string>
-    <!-- Content description of the button that removes an added contact. -->
-    <string name="contacts_remove">Remove contact</string>
-    <!-- Confirmation title for removing a contact. Argument: the contact's name. -->
-    <string name="contacts_remove_title">Remove “%1$s”?</string>
-    <!-- Confirmation body: what removing a contact does. -->
-    <string name="contacts_remove_message">Your bot stops handling their messages. Existing chats stay.</string>
-    <!-- Row status: waiting for the other bot's keeper to approve. -->
-    <string name="contacts_status_waiting_bot">Waiting for them to approve</string>
-    <!-- Row status: waiting for the person to accept the chat invite. -->
-    <string name="contacts_status_waiting_person">Waiting for them to accept</string>
-    <!-- Row status: they declined. -->
-    <string name="contacts_status_declined">They declined</string>
-    <!-- Row status: no such user on that server. -->
-    <string name="contacts_status_not_found">No such user</string>
-    <!-- Row status this version doesn't know. -->
-    <string name="contacts_status_unknown">Status unknown</string>
-    <!-- Under a bot contact's name: whose bot it is. Argument: the keeper's name. -->
-    <string name="contacts_keeper">%1$s\'s bot</string>
-    <!-- On a contact from another server whose pairing was removed. -->
-    <string name="contacts_remote_unpaired">That server isn\'t connected anymore, so messages won\'t get through</string>
-    <!-- Empty contacts page: the one sentence above the add button. -->
-    <string name="contacts_empty">No contacts yet</string>
-    <!-- Failure title: not a full Matrix ID, or the bot itself. -->
-    <string name="contacts_error_invalid_user_id">Not a valid Matrix ID</string>
-    <!-- Failure title: their server isn't paired with mine. -->
-    <string name="contacts_error_not_paired">Their server isn\'t connected to yours</string>
-    <!-- Next step under that failure. -->
-    <string name="contacts_error_not_paired_next">Connect it in Other servers first.</string>
-    <!-- Failure title: already a contact or already requested. -->
-    <string name="contacts_error_already_contact">Already a contact, or the request was already sent</string>
-    <!-- Failure title: the bot was uninstalled. -->
-    <string name="contacts_error_bot_not_found">This bot is no longer installed</string>
-    <!-- Failure title: that row was already handled elsewhere. -->
-    <string name="contacts_error_contact_not_found">That was already handled</string>
-    <!-- Failure title: only the bot's keeper can manage contacts. -->
-    <string name="contacts_error_not_keeper">Only this bot\'s keeper can manage its contacts</string>
-    <!-- Failure title: their server can't be reached; nothing was sent. -->
-    <string name="contacts_error_peer_unreachable">Can\'t reach their server. Nothing was sent.</string>
-    <!-- Failure title: this device isn't a paired device. -->
-    <string name="contacts_error_unauthenticated">This device isn\'t allowed to do this</string>
-    <!-- Failure title: the home server failed to save it. -->
-    <string name="contacts_error_upstream">Your home server couldn\'t save this</string>
-    <!-- Label on an incoming chat invite from a bot that asks you to be its contact. -->
-    <string name="friends_request_bot_contact">Bot contact request</string>
-    <string name="handoff_title">Continue on your other device</string>
-    <string name="handoff_waiting">Keep “Add device” open on your other device.</string>
-    <string name="handoff_unanswered_title">Your other device hasn\'t answered</string>
-    <string name="handoff_unanswered_message">Open Wonton on your other device and go back to “Add device”.</string>
-    <string name="handoff_try_again">Try again</string>
-    <string name="handoff_later">Later</string>
-    <string name="handoff_no_other_device">I don\'t have my other device</string>
-    <string name="invite_device_added">Device added</string>
-    <string name="invite_cannot_give">This device doesn\'t have all the chat keys either, so the new device can\'t read earlier messages.</string>
-    <!-- Shown when the attachment tray is full. Argument: the most attachments one message can carry. -->
-    <string name="composer_tray_full">You can send up to %1$d attachments at a time.</string>
-    <!-- Accessibility label of the button that takes an attachment out of the tray. Argument: file name. -->
-    <string name="composer_attachment_remove">Remove %1$s</string>
-    <!-- Accessibility label of an attachment whose upload waits for the connection to the home server. -->
-    <string name="composer_attachment_paused">Waiting to reach your home server</string>
-    <!-- An attachment could not be uploaded; also the fallback when the core gives an unknown reason. -->
-    <string name="composer_attachment_failed">Couldn\'t upload</string>
-    <!-- Button: upload a failed attachment again. -->
-    <string name="composer_attachment_retry">Upload Again</string>
-    <!-- Upload failure: the photo is over the home server's limit. -->
-    <string name="composer_attachment_too_large">This photo is over your home server\'s size limit. Send it as a file instead.</string>
-    <!-- Upload failure: the original file on the phone can no longer be read. -->
-    <string name="composer_attachment_source_unavailable">The original file can\'t be read anymore. Choose it again.</string>
-    <!-- Upload failure: the home server's disk is full. -->
-    <string name="composer_attachment_storage_full">Your home server is out of space.</string>
-    <!-- Upload failure: the home server refused the upload. -->
-    <string name="composer_attachment_rejected">Your home server refused this upload.</string>
-    <!-- Upload failure: the home server ran into an error. -->
-    <string name="composer_attachment_upstream">Your home server ran into a problem.</string>
-    <!-- Upload failure: the phone has no room to keep the attachment. -->
-    <string name="composer_attachment_local_storage">There isn\'t enough space on this phone.</string>
-    <!-- Footer of a message still uploading its attachments. Argument: percent done, already formatted. -->
-    <string name="timeline_sending_progress">Sending %1$s</string>
-    <!-- Menu item on a message that is still uploading: drop it and stop the upload. -->
-    <string name="timeline_cancel_send">Cancel Sending</string>
 </resources>

@@ -19,7 +19,10 @@ pub(super) async fn serve_matrix(
     mut head: Vec<u8>,
     text: &str,
 ) {
-    if answer_instead_of_tuwunel(&mut tcp, &core, text).await {
+    if intercept_verification(&mut tcp, &core, text).await {
+        return;
+    }
+    if intercept_backup_creation(&mut tcp, &core, text).await {
         return;
     }
     if text.starts_with("post /_matrix/media/")
@@ -81,14 +84,6 @@ pub(super) async fn serve_matrix(
         core.members_requests_dropped.fetch_add(1, Ordering::SeqCst);
         return;
     }
-    if fail_send(&core, text, &mut tcp).await {
-        return;
-    }
-    if text.contains("/account_data/app.wonton.chat_layout")
-        && core.layout_down.load(Ordering::SeqCst)
-    {
-        return;
-    }
     if expire_room_list(&mut tcp, &core, request.as_ref()).await {
         return;
     }
@@ -114,13 +109,6 @@ pub(super) async fn serve_matrix(
         _ = down.wait_for(|down| *down) => {}
         _ = stale.wait_for(Option::is_some), if is_sync => {}
     }
-}
-
-/// 测试让假核心替 Tuwunel 回答的请求：设备确认失败、拒绝建备份、按 [`Refusal`] 拒绝。认下请求返回真。
-async fn answer_instead_of_tuwunel(tcp: &mut TcpStream, core: &Core, text: &str) -> bool {
-    intercept_verification(tcp, core, text).await
-        || intercept_backup_creation(tcp, core, text).await
-        || refuse(tcp, core, text).await
 }
 
 const KEY_REQUEST: &str = "put /_matrix/client/v3/sendtodevice/m.secret.request/";
@@ -205,16 +193,7 @@ async fn hold_key_request(
     text: &str,
     head: &mut Vec<u8>,
 ) -> Option<()> {
-    if !text.starts_with(KEY_REQUEST) {
-        return Some(());
-    }
-    // 丢了：读完请求体照常回 200（客户端以为送到了），只是不转发。
-    if core.drop_key_requests.load(Ordering::SeqCst) {
-        read_body(tcp, text).await?;
-        reply_ok(tcp).await;
-        return None;
-    }
-    if !*core.hold_key_requests.borrow() {
+    if !text.starts_with(KEY_REQUEST) || !*core.hold_key_requests.borrow() {
         return Some(());
     }
     let body = read_body(tcp, text).await?;
@@ -241,13 +220,9 @@ async fn forward_held(core: &Core, request: &[u8]) {
         return;
     };
     let mut response = [0u8; 1024];
-    match tokio::time::timeout(Duration::from_secs(10), upstream.read(&mut response)).await {
-        Ok(Ok(read)) => debug!(
-            reply = %String::from_utf8_lossy(&response[..read]).lines().next().unwrap_or(""),
-            "forwarded a held request"
-        ),
-        other => debug!(?other, "forwarding a held request failed"),
-    }
+    tokio::time::timeout(Duration::from_secs(10), upstream.read(&mut response))
+        .await
+        .ok();
 }
 
 async fn intercept_verification(tcp: &mut TcpStream, core: &Core, text: &str) -> bool {
@@ -319,54 +294,6 @@ async fn forward_to(core: &Core, head: &[u8]) -> Option<TcpStream> {
             None
         }
     }
-}
-
-/// 测试要假核心替 Tuwunel 拒绝的一类请求，见 `Home::refuse_matrix`。
-pub(crate) struct Refusal {
-    pub request: String,
-    pub status: u16,
-    pub errcode: String,
-}
-
-/// 请求行命中某条 [`Refusal`] 时回它的状态码和 Matrix 错误码。认下请求（要自己写应答）返回真。
-async fn refuse(tcp: &mut TcpStream, core: &Core, text: &str) -> bool {
-    let line = text.lines().next().unwrap_or_default();
-    let Some((status, errcode)) = core
-        .refusals
-        .lock()
-        .unwrap()
-        .iter()
-        .find(|refusal| line.contains(&refusal.request))
-        .map(|refusal| (refusal.status, refusal.errcode.clone()))
-    else {
-        return false;
-    };
-    let body = format!(r#"{{"errcode":"{errcode}","error":"refused by the test"}}"#);
-    let response = format!(
-        "HTTP/1.1 {status} Refused\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\
-         connection: close\r\n\r\n{body}",
-        body.len()
-    );
-    tcp.write_all(response.as_bytes()).await.ok();
-    tcp.shutdown().await.ok();
-    true
-}
-
-/// 发消息的请求回 502：像网关连不上 Tuwunel。matrix-sdk 收到 5xx 会自己重试很久，客户端这边不设期限就一直挂着。
-/// 认下请求（要自己写应答）返回真。
-async fn fail_send(core: &Core, text: &str, tcp: &mut TcpStream) -> bool {
-    if !text
-        .lines()
-        .next()
-        .is_some_and(|line| line.contains("/send/"))
-        || !*core.fail_sends.borrow()
-    {
-        return false;
-    }
-    tcp.write_all(b"HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
-        .await
-        .ok();
-    true
 }
 
 /// 下一条房间列表请求回 M_UNKNOWN_POS，过期注入先于房间状态改写。

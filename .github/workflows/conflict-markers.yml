@@ -1,0 +1,21 @@
+name: conflict-markers
+
+# 冲突标记进哪个文件都不行，不按路径过滤：只改文档的 PR 也要跑。不能并进 ci.yml，它有 paths-ignore 会跳过。
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# 同一个 PR 又推了新提交，旧的运行就取消，别占着 runner；main 上的每次合并都跑完。
+concurrency:
+  group: conflict-markers-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  conflict-markers:
+    name: 冲突标记检查
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: actions/checkout@v5
+      - name: 残留的合并冲突标记
+        run: bash scripts/check-conflict-markers.sh

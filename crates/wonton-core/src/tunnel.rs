@@ -18,9 +18,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use iroh::endpoint::presets;
-use iroh::tls::CaTlsConfig;
 use iroh::{Endpoint, RelayMode, RelayUrl, SecretKey, Watcher};
-use rustls_pki_types::{CertificateDer, pem::PemObject};
 use tokio::sync::watch;
 use tokio::task::{JoinHandle, JoinSet};
 use tower::ServiceExt;
@@ -148,26 +146,6 @@ pub fn load_or_create_key(path: &Path) -> anyhow::Result<SecretKey> {
 /// 绑定隧道 endpoint。中继表从配置来（ADR-0048），一开始只放最优先的一档，掉档的回退交给
 /// [`wonton_tunnel::relays::spawn_tier_fallback`]；`port` 为 0 时由系统分配，固定端口便于防火墙放行
 /// 和容器发布端口。
-/// 中继用测试 CA 签证书时（开发栈），把 `SSL_CERT_FILE` 里的根也交给 iroh 校验；默认仍用内置 Mozilla 根。
-fn relay_roots() -> Option<Vec<CertificateDer<'static>>> {
-    let path = std::env::var("SSL_CERT_FILE").ok()?;
-    let data = std::fs::read(path).ok()?;
-    let roots: Vec<_> = CertificateDer::pem_slice_iter(&data)
-        .filter_map(Result::ok)
-        .collect();
-    (!roots.is_empty()).then_some(roots)
-}
-
-fn rustls_pemfile_roots(
-    pem: &[u8],
-) -> anyhow::Result<Vec<rustls_pki_types::CertificateDer<'static>>> {
-    let mut roots = Vec::new();
-    for item in rustls_pemfile::certs(&mut std::io::Cursor::new(pem)) {
-        roots.push(item.context("读取 PEM 证书")?);
-    }
-    Ok(roots)
-}
-
 pub async fn bind(key: SecretKey, port: u16, table: &RelayTable) -> anyhow::Result<Endpoint> {
     let mut builder = Endpoint::builder(presets::N0)
         .secret_key(key)
@@ -175,25 +153,10 @@ pub async fn bind(key: SecretKey, port: u16, table: &RelayTable) -> anyhow::Resu
             table.relays(),
             1,
         )));
-    if let Some(roots) = relay_roots() {
-        builder = builder.ca_tls_config(iroh::tls::CaTlsConfig::default().with_extra_roots(roots));
-    }
-    if let Some(host) = std::env::var("WONTON_TUNNEL_BIND")
-        .ok()
-        .filter(|s| !s.is_empty())
-    {
-        let address = wonton_tunnel::bind_address::resolve_bind_v4(&host, port).await?;
-        builder = builder.clear_ip_transports().bind_addr(address)?;
-    } else if port != 0 {
+    if port != 0 {
         builder = builder
             .bind_addr((Ipv4Addr::UNSPECIFIED, port))?
             .bind_addr((Ipv6Addr::UNSPECIFIED, port))?;
-    }
-    // iroh 默认只信编译进去的根；冒烟和私有部署用 WONTON_SHARE_CA_FILE 显式加一份。
-    if let Some(path) = std::env::var_os("WONTON_SHARE_CA_FILE") {
-        let pem = std::fs::read(path).context("读取隧道额外的根证书")?;
-        let roots = rustls_pemfile_roots(&pem).context("解析隧道额外的根证书")?;
-        builder = builder.ca_tls_config(CaTlsConfig::custom_roots(roots));
     }
     let endpoint = builder.bind().await.context("绑定隧道 endpoint")?;
     let _fallback = wonton_tunnel::relays::spawn_tier_fallback(
@@ -234,34 +197,6 @@ pub fn spawn_announcing(
     })
 }
 
-/// 按插件安装记录、清单的 `tunnel.ports` 和运行状态解析端口。
-pub struct PluginPortResolver {
-    plugins: Arc<crate::plugin::PluginManager>,
-}
-
-impl std::fmt::Debug for PluginPortResolver {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("PluginPortResolver")
-    }
-}
-
-impl PluginPortResolver {
-    pub fn new(plugins: Arc<crate::plugin::PluginManager>) -> Self {
-        Self { plugins }
-    }
-}
-
-impl wonton_tunnel::PortResolver for PluginPortResolver {
-    async fn resolve(
-        &self,
-        plugin: &str,
-        port: u16,
-        protocol: wonton_protocol::PortProtocol,
-    ) -> Result<SocketAddr, wonton_tunnel::PortResolveError> {
-        self.plugins.tunnel_port(plugin, port, protocol).await
-    }
-}
-
 /// 运行中的隧道入口。
 pub struct TunnelEntry {
     server: TunnelServer,
@@ -272,28 +207,21 @@ impl TunnelEntry {
     /// 在隧道的 endpoint 上接受已配对设备的隧道连接，用 `app`（网关的完整路由）服务每条流；还没登记的设备
     /// 可以来配对。
     pub fn spawn(tunnel: &Tunnel, app: Router) -> Self {
-        Self::spawn_with_protocols(
-            tunnel,
-            app,
-            [],
-            Arc::new(wonton_tunnel::UnsupportedPortResolver),
-        )
+        Self::spawn_with_protocols(tunnel, app, [])
     }
 
     /// 同 [`Self::spawn`]，同一个 endpoint 上再多挂几个协议的处理器（联邦转发和服务器配对，ADR-0050），
     /// 每项是它的 ALPN 加处理器。
-    pub fn spawn_with_protocols<R: wonton_tunnel::PortResolver>(
+    pub fn spawn_with_protocols(
         tunnel: &Tunnel,
         app: Router,
         extra: impl IntoIterator<Item = (&'static [u8], Box<dyn iroh::protocol::DynProtocolHandler>)>,
-        ports: Arc<R>,
     ) -> Self {
-        let (server, listener) = TunnelServer::spawn_embedded_with_pairing_and_resolver(
+        let (server, listener) = TunnelServer::spawn_embedded_with_pairing_and(
             tunnel.endpoint.clone(),
             tunnel.devices.allowlist().clone(),
             PairProtocol::new(tunnel.pairing.clone()),
             extra,
-            ports,
         );
         let task = tokio::spawn(serve(listener, app));
         Self { server, task }
@@ -483,30 +411,6 @@ mod tests {
         assert!(!endpoint.addr().ip_addrs().any(|addr| *addr == old));
 
         task.abort();
-        endpoint.close().await;
-    }
-
-    /// 设了 `WONTON_TUNNEL_BIND` 时套接字只绑解析出的那个地址：没有通配地址，也没有别的传输
-    /// （ADR-0021：入口拓扑下只绑 core 网络上的地址，别的网络发到隧道端口的包落不到套接字）。
-    #[tokio::test]
-    async fn the_tunnel_binds_only_the_address_wonton_tunnel_bind_resolves_to() {
-        // 进程环境是所有测试共享的；全仓库只有这个测试动 WONTON_TUNNEL_BIND，先存后还。
-        let saved = std::env::var("WONTON_TUNNEL_BIND").ok();
-        unsafe { std::env::set_var("WONTON_TUNNEL_BIND", "127.0.0.1") };
-        let bound = bind(
-            SecretKey::generate(),
-            0,
-            &RelayTable::from_relays(Vec::new()),
-        )
-        .await;
-        match &saved {
-            Some(value) => unsafe { std::env::set_var("WONTON_TUNNEL_BIND", value) },
-            None => unsafe { std::env::remove_var("WONTON_TUNNEL_BIND") },
-        }
-        let endpoint = bound.unwrap();
-        let bound = endpoint.bound_sockets();
-        assert_eq!(bound.len(), 1, "只绑一个地址：{bound:?}");
-        assert_eq!(bound[0].ip(), Ipv4Addr::LOCALHOST);
         endpoint.close().await;
     }
 }

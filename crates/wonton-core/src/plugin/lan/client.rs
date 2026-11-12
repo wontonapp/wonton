@@ -20,7 +20,7 @@ const HOST: &str = "{host}";
 pub struct LanClientSpec {
     /// 连接地址，`{host}` 换成端口开着的局域网地址，如 `http://{host}:4533`。
     pub address: String,
-    /// 主人的账号模板；不能用显示名 `{name}` 或网页请求者的 `{role}`。
+    /// 值模板，同 `webui.proxy`，但不能用 `{name}`。
     pub username: String,
     pub password: String,
 }

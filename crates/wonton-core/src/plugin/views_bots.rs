@@ -9,28 +9,6 @@ use super::manifest::PluginId;
 use super::store::StoreError;
 
 impl PluginManager {
-    pub(super) fn scope_choices(&self) -> Result<Vec<wonton_protocol::BotRef>, StoreError> {
-        let mut bots: Vec<_> = self
-            .store
-            .bots()
-            .all()?
-            .into_iter()
-            .flat_map(|(id, record)| {
-                record
-                    .bots
-                    .into_keys()
-                    .map(move |bot| wonton_protocol::BotRef {
-                        plugin_id: id.to_string(),
-                        bot,
-                    })
-            })
-            .collect();
-        if bots.len() == 1 {
-            bots.clear();
-        }
-        Ok(bots)
-    }
-
     /// 全部 Bot 用掉的 Matrix 用户名（localpart），给家人用户名的查重用（ADR-0045）。
     pub fn bot_localparts(&self) -> Result<BTreeSet<String>, StoreError> {
         self.store.bots().localparts()

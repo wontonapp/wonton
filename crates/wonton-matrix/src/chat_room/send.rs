@@ -10,10 +10,10 @@ use matrix_sdk::ruma::{
     },
 };
 
-use matrix_sdk_ui::timeline::{EventSendState, MsgLikeKind};
+use matrix_sdk_ui::timeline::MsgLikeKind;
 
 use super::ChatRoom;
-use crate::{Error, Result};
+use crate::Result;
 
 impl ChatRoom {
     /// 发一条文字进指定话题，`root` 是话题根消息的事件 ID。
@@ -125,39 +125,5 @@ impl ChatRoom {
         );
         self.timeline().await.send(content.into()).await?;
         Ok(())
-    }
-}
-
-impl ChatRoom {
-    /// 重发所有被服务器拒收、卡在队首的消息（不可恢复的发送失败），按原来的顺序，再打开发送队列。返回重发了几条。
-    ///
-    /// 只给拒收原因已经消失的调用方用（比如网关的跳数被人说话清零了）：原因还在时会再被拒收一次，照样卡住。
-    pub async fn resend_refused(&self) -> Result<usize> {
-        let mut resent = 0;
-        for item in self.timeline().await.items().await.iter() {
-            let Some(event) = item.as_event() else {
-                continue;
-            };
-            let refused = matches!(
-                event.send_state(),
-                Some(EventSendState::SendingFailed {
-                    is_recoverable: false,
-                    ..
-                })
-            );
-            let Some(handle) = event.local_echo_send_handle().filter(|_| refused) else {
-                continue;
-            };
-            handle
-                .unwedge()
-                .await
-                .map_err(|error| Error::Upstream(format!("重发失败：{error}")))?;
-            resent += 1;
-        }
-        // `unwedge` 只唤醒队列，出错后停下的队列要重新打开（见 `send_queue`）。
-        if resent > 0 {
-            self.room.send_queue().set_enabled(true);
-        }
-        Ok(resent)
     }
 }

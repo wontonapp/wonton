@@ -2,12 +2,11 @@ import PhotosUI
 import SwiftUI
 import WontonClient
 
-/// 聊天页底部的输入栏。相册、文件和粘贴进来的东西都先进附件区（ADR-0094），只有发送按钮把字和附件一起发出去。
+/// 聊天页底部的输入栏。
 struct ComposerView: View {
     let model: ChatModel
-    let composer: ComposerModel
+    let roomId: String
     let pin: BottomPin
-    private var roomId: String { composer.roomId }
     private var draft: Binding<String> {
         Binding(
             get: { model.drafts[roomId, default: ""] },
@@ -17,72 +16,46 @@ struct ComposerView: View {
             }
         )
     }
-    @State private var photos: [PhotosPickerItem] = []
+    @State private var photo: PhotosPickerItem?
     @State private var isChoosingAttachment = false
     @State private var isPickingPhoto = false
     @State private var isPickingFiles = false
-    @FocusState private var isFocused: Bool
-    @Environment(\.wontonColors) private var colors
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let isEmpty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && composer.attachments.isEmpty
-        VStack(spacing: 0) {
-            if let reply = model.replies[roomId] {
-                ReplyQuoteView(
-                    quote: reply, core: model.core, ink: Color(colors.textSecondary),
-                    cancel: { model.cancelReply(in: roomId) }
-                )
-                .padding(.horizontal, WontonTheme.spacing.s16)
-                .padding(.top, WontonTheme.spacing.s8)
-            }
-            ComposerTray(composer: composer)
-            HStack(alignment: .bottom, spacing: 0) {
-                WontonIconButton(icon: .attach, label: String(localized: .composerAttach)) {
-                    isChoosingAttachment = true
+        HStack(alignment: .bottom, spacing: 0) {
+            WontonIconButton(icon: .attach, label: String(localized: .composerAttach)) { isChoosingAttachment = true }
+            ComposerField(text: draft)
+                .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.composerField) / 2)
+                .padding(.trailing, isEmpty ? WontonTheme.spacing.s12 : 0)
+            if !isEmpty {
+                SendButton {
+                    pin.pin()
+                    model.send(.sendText(roomId: roomId, body: draft.wrappedValue))
+                    draft.wrappedValue = ""
                 }
-                ComposerField(
-                    text: draft,
-                    focused: $isFocused,
-                    onPasteImage: { providers in Task { await pasteImage(from: providers) } },
-                    onPasteFiles: { pasteFiles($0) },
-                    onSend: send
-                )
-                    .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.composerField) / 2)
-                SendButton(action: send)
-                    .disabled(isEmpty)
-                    .opacity(isEmpty ? WontonTheme.ratio.secondaryContent : 1)
+                .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             }
-            .padding(WontonTheme.spacing.s4)
         }
-        // 点了回复就把光标放进输入框。
-        .onChange(of: model.replyFocusRevision) {
-            if model.replies[roomId] != nil { isFocused = true }
-        }
+        .padding(WontonTheme.spacing.s4)
+        .animation(.easeOut(duration: WontonTheme.motion.feedback), value: isEmpty)
         .onAppear { model.acceptPendingDraft(in: roomId) }
         .wontonActionSheet(isPresented: $isChoosingAttachment, actions: [
-            WontonSheetAction(title: String(localized: .composerPhoto), icon: .image) {
-                if hasRoom() { isPickingPhoto = true }
-            },
-            WontonSheetAction(title: String(localized: .composerFile), icon: .attach) {
-                if hasRoom() { isPickingFiles = true }
-            }
+            WontonSheetAction(title: String(localized: .composerPhoto), icon: .image) { isPickingPhoto = true },
+            WontonSheetAction(title: String(localized: .composerFile), icon: .attach) { isPickingFiles = true }
         ])
-        // 选几张都只进附件区，不发；最多选到附件区放满。0 在系统选择器里是不限，所以至少给 1，满了根本不打开。
-        .photosPicker(
-            isPresented: $isPickingPhoto, selection: $photos,
-            maxSelectionCount: max(composer.remaining, 1), selectionBehavior: .ordered, matching: .images
-        )
-        .onChange(of: photos) { _, items in
-            guard !items.isEmpty else { return }
-            photos = []
-            Task { await composer.addPhotos(items) }
+        .photosPicker(isPresented: $isPickingPhoto, selection: $photo, matching: .images)
+        .onChange(of: photo) { _, item in
+            guard let item else { return }
+            photo = nil
+            Task { await send(item) }
         }
         .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) {
             switch $0 {
             case let .success(urls):
-                // 文件选择器不能限制选几个：超出的不放，附件区满了的提示由核心给。
-                composer.addFiles(urls)
+                pin.pin()
+                for url in urls { model.files.upload(url, room: roomId) }
             case let .failure(error):
                 model.rejection = Problem(
                     title: String(localized: .composerChooseFailed), detail: error.localizedDescription
@@ -91,39 +64,55 @@ struct ComposerView: View {
         }
     }
 
-    /// 附件区满了就不开选择器，说一声最多几个。
-    private func hasRoom() -> Bool {
-        guard composer.remaining == 0 else { return true }
-        model.rejection = Problem(title: String(localized: .composerTrayFull(Int(composer.maxAttachments))))
-        return false
-    }
-
-    /// 粘贴的图转码后进附件区。
-    private func pasteImage(from providers: [NSItemProvider]) async {
-        guard let (data, type) = await ComposerPaste.image(from: providers) else {
+    /// 解码和转码放到后台：大照片在主线程上转码会卡住界面。
+    private func send(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self) else {
             model.rejection = Problem(
                 title: String(localized: .photoUnreadable), nextStep: String(localized: .photoTryAnother)
             )
             return
         }
-        await composer.addImage(data, type)
-    }
-
-    private func pasteFiles(_ urls: [URL]) {
-        guard !urls.isEmpty, urls.allSatisfy(\.isFileURL) else {
-            model.rejection = Problem(title: String(localized: .composerChooseFailed))
-            return
+        let type = item.supportedContentTypes.first
+        do {
+            let upload = try await Task.detached(priority: .userInitiated) {
+                try PhotoUpload.make(data: data, type: type)
+            }.value
+            pin.pin()
+            model.send(.sendImage(roomId: roomId, image: upload))
+        } catch let failure as PhotoUpload.Failure {
+            model.rejection = Problem(
+                title: String(localized: failure.text), nextStep: String(localized: .photoTryAnother)
+            )
+        } catch {
+            model.rejection = Problem(title: String(describing: error), nextStep: String(localized: .photoTryAnother))
         }
-        composer.addFiles(urls)
     }
+}
 
-    private func send() {
-        guard !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !composer.attachments.isEmpty else { return }
-        pin.pin()
-        composer.send(draft.wrappedValue, replyTo: model.replies[roomId]?.eventId)
-        draft.wrappedValue = ""
-        model.cancelReply(in: roomId)
+private struct ComposerField: View {
+    @Binding var text: String
+    @Environment(\.wontonColors) private var colors
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        TextField(
+            "", text: $text,
+            prompt: Text(.composerMessage).foregroundStyle(Color(colors.textSecondary)), axis: .vertical
+        )
+            .lineLimit(1...6)
+            .textFieldStyle(.plain)
+            .focused($isFocused)
+            .wontonText(WontonTheme.typography.body)
+            .foregroundStyle(Color(colors.textPrimary))
+            .padding(.horizontal, WontonTheme.spacing.s16)
+            .padding(.vertical, WontonTheme.spacing.s8)
+            .frame(minHeight: WontonTheme.size.composerField)
+            .background(
+                RoundedRectangle(cornerRadius: WontonTheme.radii.composerField).fill(Color(colors.surfaceSubtle))
+            )
+            // 系统的输入框只有文字那一行接得住点按，整个底都要能点。
+            .contentShape(Rectangle())
+            .onTapGesture { isFocused = true }
     }
 }
 

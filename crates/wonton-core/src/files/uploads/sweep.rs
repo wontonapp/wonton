@@ -11,7 +11,7 @@ use wonton_protocol::FileId;
 
 use super::{Pending, STALE_SECS, Uploads};
 use crate::files::record::Lookup;
-use crate::files::{Failure, FileEvent, Files};
+use crate::files::{Failure, Files};
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
 use crate::plugin::store::{StoreError, read_json};
@@ -203,8 +203,6 @@ impl Files {
         let scanned = self
             .blocking(move |files| {
                 let scan = files.uploads.scan(now);
-                // 先查到期：这一趟里作废旧上传时补的记录（主人改过的文件）要等下个钟头，不在同一次清理里马上到期。
-                let expired = files.registry.expired_uploads(now);
                 let mut retry = scan.complete;
                 // 记录写好了，清理没做完：也走一遍，那边会接着清。
                 retry.extend(
@@ -212,10 +210,10 @@ impl Files {
                         .into_iter()
                         .filter(|id| matches!(files.registry.get(id, now), Lookup::Found(_))),
                 );
-                Ok((retry, scan.stale, scan.abandoned, expired))
+                Ok((retry, scan.stale, scan.abandoned))
             })
             .await;
-        let (retry, stale, abandoned, expired) = scanned.unwrap_or_else(|e| {
+        let (retry, stale, abandoned) = scanned.unwrap_or_else(|e| {
             tracing::error!(error = %e, "清理上传目录的任务中止");
             Default::default()
         });
@@ -238,25 +236,6 @@ impl Files {
             let langs = Languages::from_header(None);
             if let Err(e) = self.finish_upload(&id, &langs).await {
                 tracing::error!(file = %id, error = %e, "放传完的文件失败，下次清理时再试");
-            }
-        }
-        for id in expired {
-            let _turn = self.uploads.turn(&id).await;
-            let task = id.clone();
-            let deleted = self
-                .blocking(move |files| files.delete_expired_now(&task, now))
-                .await;
-            match deleted {
-                Ok(outcome) if outcome != "kept" => self.audit(&FileEvent {
-                    event: "file_delete",
-                    device: "expiry".to_owned(),
-                    file: id.as_str(),
-                    range: None,
-                    bots: None,
-                    outcome,
-                }),
-                Ok(_) => {}
-                Err(e) => tracing::warn!(file = %id, error = %e, "删过期的上传失败，下次再试"),
             }
         }
         self.remove_orphan_temps().await;

@@ -2,18 +2,12 @@
 //! （网页、模型网关、MCP 服务）。普通网络里连 [`names::service_host`] 的稳定域名（上游看到的 Host 就是它），
 //! 宿主网络里的服务经 [`super::host_relay`] 的 unix 套接字访问。
 
-use std::collections::BTreeMap;
-use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
 use std::time::Duration;
 
-use tokio::time::Instant;
-
 use super::PluginId;
-use super::health;
 use super::host_relay::{HostRelay, Purpose};
-use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, Permission, Sso};
 use super::models::ModelsRoute;
@@ -28,8 +22,6 @@ use crate::config::{
 };
 use crate::http::HttpError;
 use crate::l10n;
-use wonton_protocol::PortProtocol;
-use wonton_tunnel::PortResolveError;
 
 /// MCP 服务没写 `path` 时的路径。
 const DEFAULT_MCP_PATH: &str = "/mcp";
@@ -176,19 +168,6 @@ pub(super) fn core_aliases(public: &PublicUrls, manifest: &Manifest) -> Vec<Stri
     if granted(Permission::Notify) {
         aliases.push(PLUGIN_NOTIFY_HOST.to_owned());
     }
-    for capability in manifest.requires.iter().chain(&manifest.wants) {
-        if capability == super::capabilities::MODELS.name
-            || super::capabilities::has_no_consumer(capability)
-            || (super::capabilities::lookup(capability).is_none()
-                && !super::capabilities::is_third_party(capability))
-        {
-            continue;
-        }
-        let alias = super::capabilities::alias(capability);
-        if !aliases.contains(&alias) {
-            aliases.push(alias);
-        }
-    }
     aliases
 }
 
@@ -217,60 +196,32 @@ impl PluginManager {
         let slug = manifest.id.slug();
         let name = self.cfg.instance.container(&slug, &webui.service);
         if let Some(endpoint) = self
-            .host_relay_endpoint(manifest, Purpose::Webui, &webui.service, webui.port)
+            .host_relay_endpoint(manifest, Purpose::Webui, &webui.service)
             .await?
         {
             return Ok(Some(endpoint));
         }
-        self.service_address(
+        self.service_upstream(
             &name,
             &names::service_host(&slug, &webui.service),
             webui.port,
             network,
         )
         .await
-        .map(|address| address.map(Endpoint::Tcp))
-    }
-
-    /// 托管能力的提供方（ADR-0080）：网关把托管插件的请求转到这些地址。容器不在时少了那一项，
-    /// 网关如实回“提供方没有在运行”。
-    pub(super) async fn hosted_upstreams(
-        &self,
-        manifest: &Manifest,
-        network: &str,
-    ) -> Result<BTreeMap<String, Endpoint>, InstallError> {
-        let mut found = BTreeMap::new();
-        let Some(provides) = &manifest.provides else {
-            return Ok(found);
-        };
-        let slug = manifest.id.slug();
-        for (capability, spec) in &provides.capabilities {
-            if super::capabilities::lookup(capability).is_none_or(|c| c.hosted.is_none()) {
-                continue;
-            }
-            let name = self.cfg.instance.container(&slug, &spec.service);
-            let host = names::service_host(&slug, &spec.service);
-            if let Some(address) = self
-                .service_address(&name, &host, spec.port, network)
-                .await?
-            {
-                found.insert(capability.clone(), Endpoint::Tcp(address));
-            }
-        }
-        Ok(found)
+        .map(Endpoint::Tcp)
+        .map(Some)
     }
 
     /// 网页探测的状态码（ADR-0033 的 `wonton__plugin_status`）：请求一次网页入口，和装完时的探测
     /// （[`super::health::wait_webui`]）用同一个地址（核心在插件网络里看到的 `主机:端口` 加网页路径）
-    /// 和每请求 5 秒的时限；声明了 `webui.health` 时探健康路径。没有网页、还没部署到那一步的为空。
+    /// 和每请求 5 秒的时限。没有网页、还没部署到那一步的为空。
     pub async fn webui_status(&self, id: &PluginId) -> Option<Result<u16, HttpError>> {
         let (endpoint, path) = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             let entry = plugins.get(id)?;
-            let webui = entry.listed.as_ref()?.manifest.webui.as_ref()?;
             (
                 entry.upstream.clone()?,
-                webui.health.clone().unwrap_or_else(|| webui.path.clone()),
+                entry.listed.as_ref()?.manifest.webui.as_ref()?.path.clone(),
             )
         };
         Some(status(&self.http, &endpoint, &path, PROBE_TIMEOUT).await)
@@ -287,17 +238,14 @@ impl PluginManager {
         };
         let slug = manifest.id.slug();
         let name = self.cfg.instance.container(&slug, &spec.service);
-        let Some(upstream) = self
-            .service_address(
+        let upstream = self
+            .service_upstream(
                 &name,
                 &names::service_host(&slug, &spec.service),
                 spec.port,
                 network,
             )
-            .await?
-        else {
-            return Ok(None);
-        };
+            .await?;
         Ok(Some(ModelsRoute {
             id: manifest.id.clone(),
             spec: spec.clone(),
@@ -335,7 +283,7 @@ impl PluginManager {
             })?;
         let path = mcp.path.as_deref().unwrap_or(DEFAULT_MCP_PATH);
         if let Some(endpoint) = self
-            .host_relay_endpoint(manifest, Purpose::Mcp, &mcp.service, mcp.port)
+            .host_relay_endpoint(manifest, Purpose::Mcp, &mcp.service)
             .await?
         {
             return Ok(Some(McpTarget {
@@ -346,17 +294,14 @@ impl PluginManager {
         }
         let slug = manifest.id.slug();
         let name = self.cfg.instance.container(&slug, &mcp.service);
-        let Some(upstream) = self
-            .service_address(
+        let upstream = self
+            .service_upstream(
                 &name,
                 &names::service_host(&slug, &mcp.service),
                 mcp.port,
                 network,
             )
-            .await?
-        else {
-            return Ok(None);
-        };
+            .await?;
         Ok(Some(McpTarget {
             url: format!("http://{upstream}{path}"),
             socket: None,
@@ -365,12 +310,11 @@ impl PluginManager {
     }
 
     /// 服务是宿主网络、又该有中继时套接字地址；普通网络为空。
-    pub(in crate::plugin) async fn host_relay_endpoint(
+    async fn host_relay_endpoint(
         &self,
         manifest: &Manifest,
         purpose: Purpose,
         service: &str,
-        port: u16,
     ) -> Result<Option<Endpoint>, InstallError> {
         let name = self.cfg.instance.container(&manifest.id.slug(), service);
         let host = self
@@ -386,7 +330,7 @@ impl PluginManager {
         let relay = HostRelay {
             purpose,
             service: service.to_owned(),
-            port,
+            port: 0,
         };
         let app_data = self.cfg.apps_dir.join(manifest.id.slug());
         Ok(Some(Endpoint::unix(super::host_relay::socket_path(
@@ -441,48 +385,29 @@ impl PluginManager {
             .ok_or(ResourceUpstreamError::Unavailable)
     }
 
-    /// 安装、升级的容器起来之后：收存密钥，取网页、MCP 和模型网关的入口，声明了的入口取不到就是部署坏了，
-    /// 最后等网页入口应一声。核对时容器本来就可能不在，所以入口函数给的是 `None`，这两条路要当错误。
-    pub(super) async fn deploy_upstreams(
+    /// 核心访问容器里一个端口的地址：核心在容器里时用服务的稳定域名（`服务名.<slug>.wonton.internal`，对上游
+    /// 可见的 Host），否则用容器 IP。
+    pub(super) async fn service_upstream(
         &self,
-        manifest: &Manifest,
+        container: &str,
+        host: &str,
+        port: u16,
         network: &str,
-        secrets: &mut Secrets,
-        deadline: Instant,
-        langs: &Languages,
-    ) -> Result<(Option<Endpoint>, Option<ModelsRoute>, Option<McpTarget>), InstallError> {
-        if super::secrets::collect(
-            &self.engine,
-            &self.cfg.instance,
-            manifest,
-            &self.bot_names(&manifest.id),
-            secrets,
-            langs,
-        )
-        .await?
-        {
-            self.store.secrets().save(&manifest.id, secrets)?;
-        }
-        let upstream = self.webui_upstream(manifest, network).await?;
-        let models = self.models_upstream(manifest, network).await?;
-        let mcp = self.mcp_upstream(manifest, network, secrets).await?;
-        check_present(
-            upstream.as_ref(),
-            models.as_ref(),
-            mcp.as_ref(),
-            manifest,
-            &self.cfg.instance,
-            network,
-            langs,
-        )?;
-        if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
-            health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
-        }
-        Ok((upstream, models, mcp))
+    ) -> Result<String, InstallError> {
+        let langs = self.owner_languages();
+        self.service_address(container, host, port, network)
+            .await?
+            .ok_or_else(|| {
+                InstallError::Docker(l10n::text(
+                    &langs,
+                    "plugin-install-upstream-container-missing",
+                    &[("container", container.into()), ("network", network.into())],
+                ))
+            })
     }
 
     /// 容器不在或者在这个网络里没有地址时为空。
-    pub(in crate::plugin) async fn service_address(
+    async fn service_address(
         &self,
         container: &str,
         host: &str,
@@ -501,123 +426,6 @@ impl PluginManager {
             .filter(|ip| !ip.is_empty());
         Ok(ip.map(|ip| format!("{ip}:{port}")))
     }
-
-    /// 隧道把已授权设备的 `Port`/`Udp` 请求解析到插件网络里的地址（ADR-0072）：只在清单声明过
-    /// `(service, port, protocol)` 时放行，拒绝类别和“连不上”分开。
-    pub(crate) async fn tunnel_port(
-        &self,
-        plugin: &str,
-        port: u16,
-        protocol: PortProtocol,
-    ) -> Result<SocketAddr, PortResolveError> {
-        use PortResolveError as Refused;
-
-        if protocol == PortProtocol::Other {
-            return Err(Refused::PortNotDeclared);
-        }
-        let id = PluginId::parse(plugin).map_err(|_| Refused::PluginNotInstalled)?;
-        let internal = |why: String| {
-            tracing::warn!(plugin, port, %why, "解析插件隧道端口失败");
-            Refused::UpstreamUnavailable
-        };
-        let record = self
-            .store
-            .load(&id)
-            .map_err(|e| internal(e.to_string()))?
-            .ok_or(Refused::PluginNotInstalled)?;
-        let package =
-            PluginPackage::with_files(&record.source, record.files, &self.owner_languages())
-                .map_err(|e| internal(e.to_string()))?;
-        if package.manifest.id != id {
-            return Err(internal("插件清单和安装记录的 ID 不符".to_owned()));
-        }
-        let service = package
-            .manifest
-            .tunnel
-            .as_ref()
-            .and_then(|tunnel| {
-                tunnel
-                    .ports
-                    .iter()
-                    .find(|spec| spec.port == port && spec.protocol == protocol)
-            })
-            .map(|spec| spec.service.as_str())
-            .ok_or(Refused::PortNotDeclared)?;
-        if !self.is_running(&id) {
-            return Err(Refused::PluginNotRunning);
-        }
-        let slug = id.slug();
-        let name = self.cfg.instance.container(&slug, service);
-        let network = self.cfg.instance.network(&slug);
-        // 即使核心在容器里也查这个插件网络的地址，不经 DNS 解析请求里的插件名。
-        let endpoint = self
-            .engine
-            .inspect_container(&name)
-            .await
-            .map_err(|e| internal(e.to_string()))?
-            .and_then(|info| info.network_settings)
-            .and_then(|settings| settings.networks)
-            .and_then(|mut networks| networks.remove(&network))
-            .ok_or(Refused::UpstreamUnavailable)?;
-        let address = endpoint
-            .ip_address
-            .as_deref()
-            .filter(|ip| !ip.is_empty())
-            .or_else(|| {
-                endpoint
-                    .global_ipv6_address
-                    .as_deref()
-                    .filter(|ip| !ip.is_empty())
-            })
-            .ok_or(Refused::UpstreamUnavailable)?;
-        let ip = address
-            .parse::<IpAddr>()
-            .map_err(|e| internal(e.to_string()))?;
-        Ok(SocketAddr::new(ip, port))
-    }
-}
-
-/// 安装、升级刚确认过每个容器就绪，声明了的入口却取不到就是这次部署坏了。核对时容器本来就可能不在，
-/// [`PluginManager::webui_upstream`] 这些给的是 `None`（原因在核对的 `problem` 里），这两条路要当错误。
-pub(super) fn check_present(
-    upstream: Option<&Endpoint>,
-    models_route: Option<&ModelsRoute>,
-    mcp_target: Option<&McpTarget>,
-    manifest: &Manifest,
-    instance: &names::Instance,
-    network: &str,
-    langs: &Languages,
-) -> Result<(), InstallError> {
-    let slug = manifest.id.slug();
-    let missing = |service: &str| {
-        InstallError::Docker(l10n::text(
-            langs,
-            "plugin-install-upstream-container-missing",
-            &[
-                ("container", instance.container(&slug, service).into()),
-                ("network", network.into()),
-            ],
-        ))
-    };
-    if let Some(webui) = &manifest.webui
-        && upstream.is_none()
-    {
-        return Err(missing(&webui.service));
-    }
-    if let Some(models) = manifest
-        .provides
-        .as_ref()
-        .and_then(|provides| provides.models.as_ref())
-        && models_route.is_none()
-    {
-        return Err(missing(&models.service));
-    }
-    if let Some(mcp) = &manifest.mcp
-        && mcp_target.is_none()
-    {
-        return Err(missing(&mcp.service));
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -704,31 +512,6 @@ x-wonton:
         assert!(
             !core_aliases(&public(), &manifest)
                 .contains(&"app-example-t.wonton.example".to_owned())
-        );
-    }
-
-    #[test]
-    fn dependency_aliases_only_include_known_or_valid_third_party_capabilities() {
-        let mut manifest = PluginPackage::parse(MANIFEST, &Languages::from_header(None))
-            .unwrap()
-            .manifest;
-        manifest.permissions.clear();
-        manifest.requires = vec!["torrent_client".into(), "x-acme.ledger".into()];
-        manifest.wants = vec![
-            "jellyfin".into(),
-            "torrent_client".into(),
-            "models".into(),
-            "egress_proxy".into(),
-            "unknown".into(),
-            "x-acme.invalid_name".into(),
-        ];
-        assert_eq!(
-            core_aliases(&public(), &manifest),
-            vec![
-                "torrent_client.wonton.internal",
-                "x-acme.ledger.wonton.internal",
-                "jellyfin.wonton.internal",
-            ],
         );
     }
 }

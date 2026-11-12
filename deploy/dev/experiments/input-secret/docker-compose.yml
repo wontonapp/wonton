@@ -5,7 +5,6 @@ services:
     command: ["sleep 3600"]
     environment:
       TOKEN: ${WONTON_SECRET_TOKEN}
-      REGION: ${WONTON_SECRET_REGION}
     healthcheck:
       test: ["CMD", "sh", "-c", "test -n \"$$TOKEN\""]
   side:
@@ -15,7 +14,7 @@ services:
 x-wonton:
   spec: "0.8"
   id: app.plat732.input
-  version: 1.2.0
+  version: 1.0.0
   kind: app
   title: { zh: 输入密钥测试, en: Input secret test }
   description: { zh: 测 plat-732, en: plat-732 smoke }
@@ -25,9 +24,3 @@ x-wonton:
       input:
         title: { zh: 令牌, en: Token }
         required: true
-    region:
-      input:
-        title: { zh: 区域（可选）, en: Region (optional) }
-        description: { zh: 填了就近连接, en: Set a region to connect nearby }
-        url: https://example.com/regions
-        required: false

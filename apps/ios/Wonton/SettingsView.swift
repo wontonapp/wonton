@@ -25,7 +25,6 @@ struct SettingsTab: View {
         }
         .fullScreenCover(isPresented: $isEditingProfile) { OwnerProfileView(model: plugins) }
         .fullScreenCover(isPresented: $isChoosingAgent) { PrimaryAgentPicker(model: onboarding) }
-        .task { try? chat.core.dispatch(action: .refreshFriends) }
         .wontonDialog(problem: home.rejection, isPresented: Binding(
             get: { isActive && home.rejection != nil }, set: { if !$0 && isActive { home.rejection = nil } }
         ))
@@ -37,22 +36,13 @@ struct SettingsTab: View {
     @ViewBuilder private func destination(_ route: SettingsRoute) -> some View {
         switch route {
         case .server: ConnectionView(model: home, plugins: plugins)
-        case .matrixLogin:
-            MatrixLoginView(model: home) {
-                if model.path.last == .matrixLogin { model.path.removeLast() }
-            }
         case .connectionDetails: ConnectionDetailsView(model: home)
         case .invite: InviteView(model: home, chat: chat)
         case .pairing:
-            PairingView(
-                model: home,
-                onBack: { if !model.path.isEmpty { model.path.removeLast() } },
-                onPaired: { if !model.path.isEmpty { model.path.removeLast() } }
-            )
+            PairingView(model: home) { if !model.path.isEmpty { model.path.removeLast() } }
                 .wontonPushedScreen(String(localized: .pairingTitleAgain))
         case .peers:
             PeersView(core: chat.core, focusRequests: model.peersFocusRequests)
-        case .friends: FriendsView(core: chat.core)
         case .egress: EgressSettingsView(model: plugins)
         case .registryMirror: RegistryMirrorSettingsView(model: plugins)
         case .coreUpgrade: CoreUpgradeView(model: plugins)
@@ -70,7 +60,6 @@ struct SettingsView: View {
     let editProfile: () -> Void
     let chooseAgent: () -> Void
     @Environment(OnboardingModel.self) private var onboarding
-    @Environment(\.appVersionOverride) private var appVersionOverride
 
     var body: some View {
         ScrollView {
@@ -115,15 +104,6 @@ struct SettingsView: View {
             NavigationLink(value: SettingsRoute.peers) {
                 WontonRow(title: String(localized: .peersTitle), value: String(count), showsForward: true)
             }
-        case let .friends(count, requests):
-            NavigationLink(value: SettingsRoute.friends) {
-                WontonRow(
-                    title: String(localized: .friendsTitle),
-                    value: String(count),
-                    badgeText: requests > 0 ? String(requests) : nil,
-                    showsForward: true
-                )
-            }
         case .bottomBar:
             NavigationLink(value: SettingsRoute.bottomBar) { WontonRow(title: TabText.bottomBar, showsForward: true) }
         case .notifications:
@@ -146,13 +126,9 @@ struct SettingsView: View {
             }
         case .about:
             NavigationLink(value: SettingsRoute.about) {
-                WontonRow(
-                    title: String(localized: .settingsAbout),
-                    value: appVersionOverride ?? AppVersion.full,
-                    showsForward: true
-                )
+                WontonRow(title: String(localized: .settingsAbout), value: AppVersion.full, showsForward: true)
             }
-        case .matrixAccount, .matrixDevices, .addWontonServer, .other:
+        case .matrixAccount, .matrixDevices, .addWontonServer, .friends, .other:
             EmptyView()
         }
     }
@@ -170,27 +146,11 @@ private enum AppVersion {
     }
 }
 
-/// 截图测试钉版本号用：设置页直接读 Bundle 的版本，CI 的 Debug 构建没有 tag 时会变，参考图跟着漂。
-/// 测试夹具设一个固定值；生产不设，照常读真实版本。
-private struct AppVersionOverrideKey: EnvironmentKey {
-    static let defaultValue: String? = nil
-}
-
-extension EnvironmentValues {
-    var appVersionOverride: String? {
-        get { self[AppVersionOverrideKey.self] }
-        set { self[AppVersionOverrideKey.self] = newValue }
-    }
-}
-
 private struct AboutView: View {
-    @Environment(\.appVersionOverride) private var appVersionOverride
     var body: some View {
         ScrollView {
-            WontonGroup {
-                WontonRow(title: String(localized: .pluginInfoVersion), value: appVersionOverride ?? AppVersion.full)
-            }
-            .padding(WontonTheme.spacing.pageInset)
+            WontonGroup { WontonRow(title: String(localized: .pluginInfoVersion), value: AppVersion.full) }
+                .padding(WontonTheme.spacing.pageInset)
         }
         .wontonPushedScreen(String(localized: .settingsAbout))
     }

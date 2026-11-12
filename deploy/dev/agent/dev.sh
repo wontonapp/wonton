@@ -120,7 +120,7 @@ magpie_with_secret() {
 matrix() {
   local method="$1" path="$2"
   shift 2
-  curl -sS --max-time 60 -X "$method" "$base_url/_matrix/client/v3$path" -H 'content-type: application/json' "$@"
+  curl -sS -X "$method" "$base_url/_matrix/client/v3$path" -H 'content-type: application/json' "$@"
 }
 
 # 服务器里是否已经有这个用户名。

@@ -35,7 +35,7 @@ impl std::fmt::Debug for OidcVars {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnerVars {
     pub name: String,
-    pub email: String,
+    pub email: Option<String>,
 }
 
 /// 注入给 Bot 的 Matrix 身份（`matrix.bot`）。`Debug` 不打印访问令牌。
@@ -70,8 +70,6 @@ pub struct ModelVars {
     /// 插件级的凭据（凭据名是插件 `id`），全插件一份的服务用。
     pub plugin_key: Option<String>,
     /// 每个 Bot 的凭据（凭据名 `<id>/<Bot 名>`，键是 Bot 名），声明了 `bots` 时 Bot 服务用。
-    /// 较早的核心没记这一项：缺省按空表读，整份记录还能读出来。
-    #[serde(default)]
     pub bot_keys: BTreeMap<String, String>,
     pub default_model: String,
 }
@@ -117,9 +115,6 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     for (name, value) in &ctx.secrets {
         set(&secret_var(name), value.clone());
     }
-    for (name, value) in super::settings::value::vars(&ctx.settings) {
-        set(&name, value);
-    }
     if let Some(oidc) = &ctx.oidc {
         set("WONTON_OIDC_ISSUER", oidc.issuer.clone());
         set("WONTON_OIDC_CLIENT_ID", oidc.client_id.clone());
@@ -130,7 +125,9 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     }
     if let Some(owner) = &ctx.owner {
         set("WONTON_OWNER_NAME", owner.name.clone());
-        set("WONTON_OWNER_EMAIL", owner.email.clone());
+        if let Some(email) = &owner.email {
+            set("WONTON_OWNER_EMAIL", email.clone());
+        }
     }
     if let Some(models) = &ctx.models {
         set("WONTON_MODEL_BASE_URL", models.base_url.clone());
@@ -145,25 +142,11 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
         }
         set("WONTON_MODEL_DEFAULT", models.default_model.clone());
     }
-    for (name, value) in &ctx.capabilities {
-        set(name, value.clone());
-    }
     if let Some(url) = &ctx.mcp_url {
         set("WONTON_MCP_URL", url.clone());
     }
     if let Some(url) = &ctx.notify_url {
         set("WONTON_NOTIFY_URL", url.clone());
-    }
-    if manifest.permissions.contains(&Permission::Notify) {
-        set(
-            "WONTON_SMTP_HOST",
-            crate::config::PLUGIN_SMTP_HOST.to_owned(),
-        );
-        set("WONTON_SMTP_PORT", "25".to_owned());
-        set(
-            "WONTON_MAIL_FROM",
-            format!("{}@plugins.wonton.internal", manifest.id),
-        );
     }
     if let Some(grant) = &ctx.lan {
         set(lan::ADDRESSES_VAR, grant.var());

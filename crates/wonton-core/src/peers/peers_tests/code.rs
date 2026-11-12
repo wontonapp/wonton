@@ -6,7 +6,7 @@ use super::*;
 #[tokio::test]
 async fn resetting_the_code_revokes_the_old_one_and_clears_requests() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     let old = a.peers.issue_code();
     b.scan_code(&old, &a).await.unwrap();

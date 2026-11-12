@@ -42,7 +42,7 @@ pub enum LanChoice {
     Manual {
         /// 网卡名，如 `eno1`、`tailscale0`。
         interfaces: Vec<String>,
-        /// 私有地址，如 `192.168.0.10`、`fd00::10`。
+        /// 私有地址，如 `192.168.0.193`、`fd00::10`。
         addresses: Vec<String>,
     },
     /// 比这个 App 新的核心给的选法，不能用来改设置。
@@ -54,7 +54,7 @@ pub enum LanChoice {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct LanAddress {
-    /// 如 `192.168.0.10`。
+    /// 如 `192.168.0.193`。
     pub address: String,
     /// 地址所在的网卡；`WONTON_LAN_ADDRESSES` 指定的地址在宿主上找不到时为空。
     pub interface: Option<String>,
@@ -179,11 +179,11 @@ mod tests {
             fixed_by_environment: false,
             announce_by_environment: false,
             addresses: vec![
-                address("192.168.0.10", "eno1", false),
+                address("192.168.0.193", "eno1", false),
                 address("fd00::10", "eno1", true),
             ],
             announce_addresses: vec![
-                address("192.168.0.10", "eno1", false),
+                address("192.168.0.193", "eno1", false),
                 address("fd00::10", "eno1", true),
             ],
             problem: None,
@@ -192,7 +192,7 @@ mod tests {
                     name: "eno1".into(),
                     kind: LanInterfaceKind::Ethernet,
                     addresses: vec![
-                        address("192.168.0.10", "eno1", false),
+                        address("192.168.0.193", "eno1", false),
                         address("fd00::10", "eno1", true),
                     ],
                     default_route: true,

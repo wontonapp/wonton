@@ -5,41 +5,21 @@ use axum::extract::Request;
 use axum::response::{IntoResponse, Response};
 use hyper::StatusCode;
 
-use super::sharing::{self, SharePeer, oidc};
 use super::{Gateway, api, client_addr, pages, proxy};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 
-pub(super) async fn request(gateway: &Gateway, mut req: Request) -> Response {
-    let langs = api::languages(req.headers());
-    let format = pages::Format::of(req.headers());
-    if let Some(peer) = req.extensions().get::<SharePeer>().cloned() {
-        let plugin = match oidc::authorize_auth(gateway, &peer, req.method(), req.uri()) {
-            Ok(plugin) => plugin,
-            Err(error) => return sharing::refused(error, &langs, format),
-        };
-        if let Some(plugin) = plugin
-            && let Err(error) = sharing::guard_request(gateway, &mut req, &plugin)
-        {
-            return sharing::refused(error, &langs, format);
-        }
-        if let Err(error) = oidc::consume_auth(gateway, &peer, req.method(), req.uri()) {
-            return sharing::refused(error, &langs, format);
-        }
-        // Preserve Hydra's code-flow CSRF cookies; challenge handlers bind their subject
-        // to SharePeer and never authenticate an owner cookie or bearer token.
-        req.headers_mut().remove(hyper::header::AUTHORIZATION);
-    }
+pub(super) async fn request(gateway: &Gateway, req: Request) -> Response {
     if req.uri().path() == crate::oidc::DISCOVERY_PATH {
         return discovery(gateway, req).await;
     }
+    let langs = api::languages(req.headers());
     let Some(authority) = &gateway.hydra_public else {
         return pages::error(
             StatusCode::SERVICE_UNAVAILABLE,
             "oidc_unavailable",
             &l10n::text(&langs, "gateway-oidc-unconfigured", &[]),
             &langs,
-            format,
         );
     };
     let fwd = proxy::Forwarded {
@@ -52,47 +32,34 @@ pub(super) async fn request(gateway: &Gateway, mut req: Request) -> Response {
         endpoint: &endpoint,
         name: &name,
     };
-    // Keep a guard clone outside the consumed request so revocation also interrupts forwarding.
-    let guard = req.extensions().get::<sharing::AccessGuard>().cloned();
-    let forward = proxy::forward(&gateway.system_http, target, req, fwd, &langs);
-    if let Some(guard) = guard {
-        tokio::select! {
-            biased;
-            _ = guard.cancelled() => sharing::refused(wonton_protocol::GatewayRefusal::ShareRevoked, &langs, format),
-            response = forward => response,
-        }
-    } else {
-        forward.await
-    }
+    proxy::forward(&gateway.system_http, target, req, fwd, &langs).await
 }
 
 /// 发现文档不原样转发：Hydra 给浏览器和插件后端的端点各错一半，由核心按谁来访问改写
 /// （[`crate::oidc::rewrite_discovery`]）。两个主机名拿到同一份改写结果。
 async fn discovery(gateway: &Gateway, req: Request) -> Response {
     let langs = api::languages(req.headers());
-    let format = pages::Format::of(req.headers());
     let Some(hydra) = &gateway.hydra else {
         return pages::error(
             StatusCode::SERVICE_UNAVAILABLE,
             "oidc_unavailable",
             &l10n::text(&langs, "gateway-oidc-unconfigured", &[]),
             &langs,
-            format,
         );
     };
     let browser = gateway.public.origin(&gateway.public.auth_host());
     let backend = gateway.public.auth_internal_origin();
     let mut document = match hydra.discovery().await {
         Ok(document) => document,
-        Err(error) => return failure(&error, &langs, format),
+        Err(error) => return failure(&error, &langs),
     };
     if let Err(error) = crate::oidc::rewrite_discovery(&mut document, &browser, &backend) {
-        return failure(&error, &langs, format);
+        return failure(&error, &langs);
     }
     axum::Json(document).into_response()
 }
 
-fn failure(error: &crate::oidc::OidcError, langs: &Languages, format: pages::Format) -> Response {
+fn failure(error: &crate::oidc::OidcError, langs: &Languages) -> Response {
     let name = l10n::text(langs, "gateway-name-oidc", &[]);
     pages::error(
         StatusCode::BAD_GATEWAY,
@@ -103,6 +70,5 @@ fn failure(error: &crate::oidc::OidcError, langs: &Languages, format: pages::For
             &[("name", name.into()), ("error", error.to_string().into())],
         ),
         langs,
-        format,
     )
 }

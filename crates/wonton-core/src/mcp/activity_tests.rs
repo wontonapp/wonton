@@ -245,7 +245,7 @@ async fn confirmation_wait_is_idle_and_detached_execution_stays_counted() {
     wait_calls(&s, 0).await;
     tokio::time::timeout(Duration::from_secs(5), async {
         while !matches!(
-            s.bus.confirmations().card(&card.id).map(|card| card.state),
+            s.cards.states(&card.id).last(),
             Some(ConfirmationState::Succeeded { .. })
         ) {
             tokio::task::yield_now().await;

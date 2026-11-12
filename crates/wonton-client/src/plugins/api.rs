@@ -1,10 +1,6 @@
 //! 核心的插件管理接口（ADR-0017 的“管理接口”）：请求走本地代理，核心凭隧道身份认出这台已配对设备。请求不带
 //! `Origin` 和 `Sec-Fetch-Site`，核心据此知道它不是网页发起的。
 
-#[path = "api_error.rs"]
-mod error;
-use error::core_error;
-
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -17,8 +13,7 @@ use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, CoreUpgradeFailure, CoreUpgradeProblem, CoreUpgradeStatus, PluginFailure,
-    PluginImage, PluginProblem, SettingsFieldError, SettingsSchemaProblem, minimum_server_version,
-    window_path,
+    PluginImage, PluginProblem, is_older, minimum_server_version, window_path,
 };
 
 use crate::chat::proxy_url;
@@ -32,8 +27,8 @@ const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 /// 家里的服务器要去来源（GitHub）取东西：商店、商店里的详情、预览，以及引导要取的官方索引和图标。
 pub(crate) const SOURCE_TIMEOUT: Duration = Duration::from_secs(120);
 /// 安装和升级：响应要等拉完镜像、通过健康检查。Hermes 的镜像约 1 GB，慢的网络要很久；超时后核心照样做完，
-/// 结果从已安装列表里看。核心等健康至多 60 分钟（按插件的 healthcheck.start_period 放宽），再留出拉镜像的时间。
-pub(super) const INSTALL_TIMEOUT: Duration = Duration::from_secs(90 * 60);
+/// 结果从已安装列表里看。
+pub(super) const INSTALL_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 const IMAGE_PREFIX: &str = "/_wonton/api/images/";
 
@@ -49,10 +44,6 @@ struct ErrorDetail {
     message: String,
     #[serde(default)]
     problem: Option<String>,
-    #[serde(default)]
-    fields: Vec<SettingsFieldError>,
-    #[serde(default)]
-    problems: Vec<SettingsSchemaProblem>,
 }
 pub(crate) enum CoreApiError {
     Transport(PluginProblem),
@@ -153,7 +144,6 @@ pub(super) fn proxied_client(
                     "plugins-api-invalid-proxy",
                     reason = e.to_string()
                 ),
-                settings: None,
             })?,
         )
         .build()
@@ -166,7 +156,6 @@ pub(super) fn proxied_client(
                 "plugins-api-http-client",
                 reason = e.to_string()
             ),
-            settings: None,
         })
 }
 
@@ -310,7 +299,6 @@ impl CoreApi {
                 "plugins-api-invalid-request",
                 reason = e.to_string()
             ),
-            settings: None,
         })?;
         let bytes = self
             .send(Method::POST, self.url(segments, &[]), Some(body), timeout)
@@ -353,7 +341,6 @@ impl CoreApi {
                 "plugins-api-invalid-request",
                 reason = e.to_string()
             ),
-            settings: None,
         })?;
         let bytes = self
             .send(Method::PUT, self.url(segments, &[]), Some(body), timeout)
@@ -435,28 +422,6 @@ impl CoreApi {
         }
         serde_json::from_slice(&bytes)
             .map_err(|error| CoreApiError::Protocol(format!("Invalid core response: {error}")))
-    }
-
-    /// `GET`，响应是原始字节；错误带类别和消息。链接预览的图片用（ADR-0065）。
-    pub(crate) async fn get_bytes_detailed(
-        &self,
-        segments: &[&str],
-        timeout: Duration,
-    ) -> Result<Vec<u8>, CoreApiError> {
-        let (status, bytes) = self
-            .exchange(
-                Method::GET,
-                self.url(segments, &[]),
-                None,
-                "application/json",
-                timeout,
-            )
-            .await
-            .map_err(CoreApiError::Transport)?;
-        if status < 400 {
-            return Ok(bytes);
-        }
-        Err(http_error(status, &bytes))
     }
 
     /// `GET` 但错误带类别和消息：取模型服务商列表要分得清网关没就绪和别的失败，响应本身还是 JSON。
@@ -544,7 +509,6 @@ impl CoreApi {
                 "plugins-api-invalid-request",
                 reason = e.to_string()
             ),
-            settings: None,
         })?;
         self.send(Method::POST, self.url(segments, &[]), Some(body), timeout)
             .await
@@ -584,7 +548,6 @@ impl CoreApi {
                     "plugins-api-not-image-url",
                     reason = image.path.as_str()
                 ),
-                settings: None,
             });
         }
         let url = self.base.join(&image.path).map_err(|e| PluginProblem {
@@ -596,7 +559,6 @@ impl CoreApi {
                 "plugins-api-not-image-url",
                 reason = e.to_string()
             ),
-            settings: None,
         })?;
         // 上面看的是规范化之前的写法，`images/../devices` 也能通过。
         if !url.path().starts_with(IMAGE_PREFIX) {
@@ -609,7 +571,6 @@ impl CoreApi {
                     "plugins-api-not-image-url",
                     reason = image.path.as_str()
                 ),
-                settings: None,
             });
         }
         self.send(Method::GET, url, None, READ_TIMEOUT).await
@@ -626,7 +587,6 @@ fn http_error(status: u16, bytes: &[u8]) -> CoreApiError {
             kind,
             message,
             problem,
-            ..
         }) => (Some(kind), message, problem),
         None => (
             None,
@@ -657,7 +617,6 @@ fn parse<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, PluginProblem> {
             "plugins-api-invalid-response",
             reason = e.to_string()
         ),
-        settings: None,
     })
 }
 
@@ -676,7 +635,79 @@ pub(super) fn not_connected() -> PluginProblem {
         reason: PluginFailure::TransportUnavailable,
         min_version: None,
         message: l10n!(CATALOG, language(), "plugins-api-not-connected"),
-        settings: None,
+    }
+}
+
+/// 按核心的错误类别区分原因（ADR-0017）；没有错误体的响应来自核心之外：本地代理连不上隧道时回 502，隧道拒绝这台设备时
+/// 回 403。这两种都是连接的事，由 `HomeViewModel` 说。
+fn core_error(
+    status: u16,
+    body: &[u8],
+    minimum: Option<&str>,
+    version: Option<&str>,
+) -> PluginProblem {
+    // 服务器比这个接口要的版本旧：不是对象不存在，升级服务器后可用。
+    if let (Some(minimum), Some(version)) = (minimum, version)
+        && is_older(version, minimum)
+    {
+        return PluginProblem {
+            reason: PluginFailure::ServerTooOld,
+            message: l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-server-too-old",
+                version = version,
+                minimum = minimum
+            ),
+            min_version: Some(minimum.to_owned()),
+        };
+    }
+    let detail = serde_json::from_slice::<ErrorBody>(body)
+        .ok()
+        .map(|body| body.error);
+    let reason = match detail.as_ref().map(|detail| detail.kind.as_str()) {
+        Some("unauthenticated" | "cross_site") => PluginFailure::Unauthorized,
+        // 授权列表和插件清单对不上，和设备身份无关：重新看预览、确认，重新配对解决不了。
+        Some("changed" | "permission_denied") => PluginFailure::Changed,
+        Some("source_unavailable") => PluginFailure::SourceUnavailable,
+        Some("not_found" | "not_installed") => PluginFailure::NotFound,
+        Some("unsupported" | "gpu_unavailable") => PluginFailure::Unsupported,
+        Some("device_unavailable") => PluginFailure::DeviceUnavailable,
+        Some("conflict") => PluginFailure::Conflict,
+        Some("not_ready") => PluginFailure::Upstream,
+        Some("invalid_input") => PluginFailure::Invalid,
+        Some("lan_unavailable") => PluginFailure::LanUnavailable,
+        Some("port_taken") => PluginFailure::LanPortTaken,
+        Some("egress_proxy_unavailable") => PluginFailure::EgressProxyUnavailable,
+        Some("core_upgrading") => PluginFailure::CoreUpgrading,
+        Some("owner_profile_incomplete") => PluginFailure::OwnerProfileIncomplete,
+        Some(_) if status >= 500 => PluginFailure::Upstream,
+        Some(_) => PluginFailure::Protocol,
+        None => match status {
+            403 | 502 => PluginFailure::TransportUnavailable,
+            401 => PluginFailure::Unauthorized,
+            500..=599 => PluginFailure::Upstream,
+            _ => PluginFailure::Protocol,
+        },
+    };
+    if reason == PluginFailure::TransportUnavailable {
+        return not_connected();
+    }
+    let message = detail.map_or_else(
+        || {
+            l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-server-status",
+                status = status
+            )
+        },
+        |detail| detail.message,
+    );
+    PluginProblem {
+        reason,
+        message,
+        min_version: None,
     }
 }
 
@@ -714,28 +745,22 @@ fn upgrade_error(status: u16, body: &[u8]) -> CoreUpgradeProblem {
 }
 
 /// 直接返回结果的调用（详情、预览、图片）按 [`CoreError`] 的分类失败，核心写的说明原样带上。
-pub(crate) fn to_core_error(problem: PluginProblem) -> CoreError {
+pub(super) fn to_core_error(problem: PluginProblem) -> CoreError {
     let reason = problem.message;
     match problem.reason {
         PluginFailure::TransportUnavailable => CoreError::TransportUnavailable { reason },
         PluginFailure::Unauthorized => CoreError::Unauthorized { reason },
-        PluginFailure::SettingsInvalid => CoreError::SettingsInvalid {
-            reason,
-            fields: problem.settings.map(|settings| settings.fields).unwrap_or_default(),
-        },
-        PluginFailure::NotFound
-        | PluginFailure::Invalid
-        | PluginFailure::Changed
-        | PluginFailure::SettingsSchemaInvalid => CoreError::InvalidInput { reason },
+        PluginFailure::NotFound | PluginFailure::Invalid | PluginFailure::Changed => {
+            CoreError::InvalidInput { reason }
+        }
         PluginFailure::Unsupported
         | PluginFailure::Conflict
         | PluginFailure::DeviceUnavailable
         | PluginFailure::LanUnavailable
         | PluginFailure::LanPortTaken
         | PluginFailure::EgressProxyUnavailable
-        | PluginFailure::CoreUpgrading
-        // 记录不可用：现在做不了。壳按类别出「重新安装」的下一步（#198 的核心行为、#230 的 iOS 壳）。
-        | PluginFailure::RecordUnusable => CoreError::NotReady { reason },
+        | PluginFailure::OwnerProfileIncomplete
+        | PluginFailure::CoreUpgrading => CoreError::NotReady { reason },
         PluginFailure::SourceUnavailable | PluginFailure::Upstream | PluginFailure::Protocol => {
             CoreError::Upstream { reason }
         }

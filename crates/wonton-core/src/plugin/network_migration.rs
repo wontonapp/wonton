@@ -9,6 +9,7 @@ use super::core_address::{Reservation, last_usable};
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
 use super::manifest::Manifest;
+use super::upstreams::core_aliases;
 use crate::l10n;
 
 /// 渲染前准备好的迁移。各网络的新网段已经预留（同进程其他建网络跳过），按新主网络算出的
@@ -65,7 +66,7 @@ impl PluginManager {
                         .to_string(),
                     None => Ipv4Addr::from(subnet.network().to_bits() + 1).to_string(),
                 };
-                let aliases = self.core_aliases_of(manifest);
+                let aliases = core_aliases(&self.cfg.public, manifest);
                 let extra_hosts = if self.cfg.core_container.is_none() && !aliases.is_empty() {
                     aliases
                         .into_iter()
@@ -146,7 +147,6 @@ impl PluginManager {
                 self.engine.disconnect_network(&network, core).await?;
             }
             self.detach_relay(&network).await?;
-            self.detach_mailpit(&network).await?;
             self.engine.remove_network(&network).await?;
             self.engine
                 .create_network_at(

@@ -36,7 +36,7 @@ impl Failure {
         Self { error, message }
     }
 
-    pub(super) fn transport(reason: String) -> Self {
+    fn transport(reason: String) -> Self {
         Self::new(
             PeerError::TransportUnavailable,
             l10n!(CATALOG, language(), "peers-transport", reason = reason),
@@ -247,18 +247,8 @@ fn error_response(status: u16, headers: &reqwest::header::HeaderMap, body: &[u8]
     let kind = headers
         .get(PEER_ERROR_HEADER)
         .and_then(|value| value.to_str().ok())
-        .map(|value| {
-            // 只给主人、或者要“能装插件”的接口，家人设备上就是权限不够（ADR-0045）。
-            if matches!(
-                value,
-                "permission_required" | "install_not_allowed" | "not_yours"
-            ) {
-                return PeerError::Unauthenticated;
-            }
-            serde_json::from_value::<PeerError>(serde_json::Value::String(value.into()))
-                .unwrap_or(PeerError::Protocol)
-        });
-    if let Some(kind) = kind {
+        .map(|value| serde_json::from_value::<PeerError>(serde_json::Value::String(value.into())));
+    if let Some(Ok(kind)) = kind {
         return Failure::new(kind, message);
     }
     match status {

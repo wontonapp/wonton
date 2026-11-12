@@ -152,9 +152,7 @@ impl Fields {
             .relays
             .iter()
             .map(|relay| {
-                RelayUrl::from_str(relay)
-                    .map(crate::relays::canonical_url)
-                    .map_err(|e| malformed("中继地址", &e.to_string()))
+                RelayUrl::from_str(relay).map_err(|e| malformed("中继地址", &e.to_string()))
             })
             .collect::<Result<Vec<_>, _>>()?;
         if relay_urls.is_empty() {
@@ -224,7 +222,7 @@ impl fmt::Debug for PeerPairToken {
 pub struct PeerIdentity {
     /// 自己的 Matrix 服务器名。
     pub server_name: String,
-    /// 自己主人的 Matrix 用户 ID，如 `@alice:home.example`。
+    /// 自己主人的 Matrix 用户 ID，如 `@jiale:home.example`。
     pub owner_user_id: String,
     /// 自己主人的显示名。
     pub owner_display_name: String,
@@ -241,7 +239,7 @@ impl PeerIdentity {
         let mut addr = EndpointAddr::new(id);
         for relay in &self.relays {
             if let Ok(relay) = RelayUrl::from_str(relay) {
-                addr = addr.with_relay_url(crate::relays::canonical_url(relay));
+                addr = addr.with_relay_url(relay);
             }
         }
         for ip in &self.addrs {
@@ -338,8 +336,8 @@ mod tests {
     fn identity() -> PeerIdentity {
         PeerIdentity {
             server_name: "abc.wonton.internal".to_owned(),
-            owner_user_id: "@alice:abc.wonton.internal".to_owned(),
-            owner_display_name: "Alice".to_owned(),
+            owner_user_id: "@jiale:abc.wonton.internal".to_owned(),
+            owner_display_name: "Jiale".to_owned(),
             relays: vec!["https://relay.example.com./".to_owned()],
             addrs: vec!["192.168.1.20:18482".parse().unwrap()],
         }
@@ -348,7 +346,7 @@ mod tests {
     fn code() -> PeerPairingCode {
         PeerPairingCode {
             server_id: SecretKey::generate().public(),
-            relay_urls: vec![RelayUrl::from_str("https://relay.example.com/").unwrap()],
+            relay_urls: vec![RelayUrl::from_str("https://relay.example.com./").unwrap()],
             server_name: "abc.wonton.internal".to_owned(),
             token: PeerPairToken::from_bytes([0xab; TOKEN_LEN]),
         }
@@ -363,20 +361,6 @@ mod tests {
         assert!(!uri.contains("addr="), "{uri}");
         assert_eq!(PeerPairingCode::parse(&uri).unwrap(), code);
         assert_eq!(PeerPairingCode::parse(&format!(" {uri}\n")).unwrap(), code);
-    }
-
-    /// 带尾点的中继地址解析成不带的：同一个中继在码里、表里、状态里只有一个写法（#200）。
-    #[test]
-    fn a_dotted_relay_url_parses_to_the_canonical_spelling() {
-        let mut dotted = code();
-        dotted.relay_urls[0] = RelayUrl::from_str("https://relay.example.com./").unwrap();
-        let parsed = PeerPairingCode::parse(&dotted.to_uri()).unwrap();
-        assert_eq!(
-            parsed.relay_urls,
-            vec![RelayUrl::from_str("https://relay.example.com/").unwrap()]
-        );
-        assert_eq!(parsed.server_name, dotted.server_name);
-        assert_eq!(parsed.token, dotted.token);
     }
 
     /// 契约：别的二维码、旧版本和缺字段的码分得清。
@@ -434,8 +418,8 @@ mod tests {
                 "type": "scan",
                 "token": "01010101010101010101010101010101",
                 "server_name": "abc.wonton.internal",
-                "owner_user_id": "@alice:abc.wonton.internal",
-                "owner_display_name": "Alice",
+                "owner_user_id": "@jiale:abc.wonton.internal",
+                "owner_display_name": "Jiale",
                 "relays": ["https://relay.example.com./"],
                 "addrs": ["192.168.1.20:18482"],
             })
@@ -544,10 +528,6 @@ mod tests {
         let id = SecretKey::generate().public();
         let addr = identity().endpoint_addr(id);
         assert_eq!(addr.id, id);
-        assert_eq!(
-            addr.relay_urls().cloned().collect::<Vec<_>>(),
-            ["https://relay.example.com/".parse().unwrap()]
-        );
         assert!(
             addr.ip_addrs()
                 .any(|a| a == &"192.168.1.20:18482".parse().unwrap())

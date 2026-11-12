@@ -68,16 +68,6 @@
     <string name="chat_start_direct">发起私聊</string>
     <string name="chat_peer_placeholder">用户名或 Matrix ID</string>
     <string name="chat_start">发起</string>
-    <!-- Install row subtitle while images are downloaded. No arguments. -->
-    <string name="chat_install_stage_pulling_images">正在拉取镜像</string>
-    <!-- Install row subtitle while networks, volumes and data folders are set up. No arguments. -->
-    <string name="chat_install_stage_preparing">正在准备</string>
-    <!-- Install row subtitle while containers start. No arguments. -->
-    <string name="chat_install_stage_starting">正在启动</string>
-    <!-- Install row subtitle while health checks pass and the bot comes online. No arguments. -->
-    <string name="chat_install_stage_waiting_for_bot">等待 Bot 就绪</string>
-    <!-- Button on an install row when the source is unknown or the result is uncertain; opens the app's page. No arguments; short label. -->
-    <string name="chat_install_open_page">去应用页</string>
     <string name="chat_backup_copy">复制</string>
     <!-- Explanation under the heading when backup is on. -->
     <string name="chat_backup_detail_enabled">换手机或新设备时，输入恢复密钥就能看到以前的消息。</string>
@@ -111,8 +101,6 @@
     <string name="chat_backup_save_key_title">保存恢复密钥</string>
     <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
     <string name="chat_backup_saved">已保存</string>
-    <string name="chat_backup_saved_confirm_title">已经存好了吗？</string>
-    <string name="chat_backup_saved_confirm_message">确认后这台设备不再显示这把密钥。先复制或抄下来，再点确认。</string>
     <!-- Page heading when chat backup hasn't been set up. -->
     <string name="chat_backup_status_disabled">还没有备份聊天记录</string>
     <!-- Page heading when chat backup is on and verified. -->
@@ -198,8 +186,6 @@
     <!-- Status: the app isn\'t running, or is installing, updating or starting. -->
     <string name="bot_state_offline">离线</string>
     <string name="timeline_new_messages_below">以下是新消息</string>
-    <string name="room_scroll_to_bottom">回到底部</string>
-    <string name="room_scroll_to_bottom_count">回到底部，还有 %1$d 条新消息</string>
     <string name="timeline_start">以上是聊天的开头</string>
     <string name="timeline_edited">已编辑</string>
     <string name="timeline_sending">发送中</string>
@@ -208,7 +194,6 @@
     <string name="timeline_send_failed">发送失败：%1$s</string>
     <string name="timeline_resend">重发</string>
     <string name="timeline_undecryptable">无法解密：本设备还没有这条消息的密钥</string>
-    <string name="timeline_undecryptable_notice">这台设备读不了之前的加密消息。</string>
     <string name="timeline_redacted">消息已撤回</string>
     <string name="timeline_unsupported">暂不支持显示的消息（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
@@ -258,7 +243,6 @@
     <string name="connection_connected">已连接</string>
     <string name="connection_waiting_network">等待网络…</string>
     <string name="connection_connecting">连接中…</string>
-    <string name="connection_retrying">正在连接家里的服务器…</string>
     <string name="connection_updating">正在更新…</string>
     <string name="connection_server_offline">家里的服务器好像离线了</string>
     <string name="connection_device_rejected">家里的服务器已不认这台手机</string>
@@ -277,13 +261,7 @@
     <string name="connection_unknown">不确定</string>
     <string name="connection_path">路径</string>
     <string name="connection_latency">延迟</string>
-    <string name="connection_loss_rate">丢包率</string>
-    <string name="connection_value_none">—</string>
-    <string name="connection_poor">网络较差，可能会卡</string>
-    <string name="connection_poor_relay">网络较差，正在经中转连接</string>
-    <string name="connection_quality">连接质量</string>
-    <string name="connection_quality_good">好</string>
-    <string name="connection_quality_poor">较差</string>
+    <string name="connection_lost_packets">丢包</string>
     <string name="connection_last_handshake">上次握手</string>
     <string name="connection_disconnects">断开次数</string>
     <string name="connection_last_connected">最后连上</string>
@@ -319,10 +297,6 @@
     <string name="core_upgrade_check_up_to_date">已经是最新版</string>
     <!-- Button on the update page while the channel check is running. -->
     <string name="core_upgrade_checking">正在检查</string>
-    <!-- Heading of the compatibility warning on the update offer: these installed apps won\'t work after the update. -->
-    <string name="core_upgrade_compat_breaking_title">升级后这些应用会用不了</string>
-    <!-- Light notice on the update offer: it couldn\'t check which installed apps would be affected. Tapping checks again. -->
-    <string name="core_upgrade_compat_not_checked">没查到哪些应用会受影响</string>
     <!-- Stage line after the update finished. Argument: the version now running. -->
     <string name="core_upgrade_completed_to">已升级到 %1$s</string>
     <!-- Primary button in the confirm step: start the update. -->
@@ -429,8 +403,6 @@
     <string name="design_tab_menu">标签菜单</string>
     <!-- Accessibility state of a list row with the update badge dot. -->
     <string name="design_update_badge">有新版本</string>
-    <!-- Accessibility state of a list row with a counted badge. Argument: the count. -->
-    <string name="design_badge_count">%1$d 条待处理</string>
     <!-- Section title and text field label for the proxy address (like http://192.0.2.10:7890). -->
     <string name="egress_address">代理地址</string>
     <!-- Radio option: type a proxy address by hand instead of using an app's proxy. -->
@@ -477,8 +449,6 @@
     <string name="file_download_and_open">下载后用其他 App 打开</string>
     <!-- Title of the problem shown when no installed app can open a downloaded file. Android only. -->
     <string name="file_no_app_opens_it">这台手机上没有能打开这个文件的 App</string>
-    <!-- Title of the problem shown when the file can't be handed to the system (outside configured FileProvider roots). Android only. -->
-    <string name="file_handoff_failed">无法把这个文件交给系统</string>
     <!-- Link under a file card: open the downloaded file with another app. -->
     <string name="file_open_elsewhere">用其他 App 打开</string>
     <!-- Line under a file card while its download is paused. Argument: the home server's reason, shown as is. -->
@@ -503,6 +473,8 @@
     <string name="install_change_version">换版本</string>
     <!-- Status when the install succeeded. -->
     <string name="install_completion_done">安装完成</string>
+    <!-- Problem title when the install failed; the core's reason is in the collapsed details. -->
+    <string name="install_completion_failed">安装失败</string>
     <!-- Status while the app installs. -->
     <string name="install_completion_installing">正在安装…</string>
     <!-- Title of the page that stays open while the app installs. -->
@@ -543,13 +515,10 @@
     <string name="pairing_instructions">在家里的局域网里，用浏览器打开服务器的 IP 地址（装好时终端里给出），页面上有配对二维码。</string>
     <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
     <string name="pairing_paste_placeholder">粘贴配对码</string>
-    <string name="pairing_paste_label">配对码</string>
     <!-- Button under the paste field: pair with the code. -->
     <string name="pairing_submit">配对</string>
     <!-- Shown next to a spinner while pairing is in progress. -->
     <string name="pairing_in_progress">正在配对…</string>
-    <string name="pairing_still_connecting">还在连接…</string>
-    <string name="pairing_still_confirming">还在等服务器确认…</string>
     <!-- Label of the field for this device's name. -->
     <string name="pairing_device_name">这台设备的名字</string>
     <!-- Failure title when the server rejected the pairing code. -->
@@ -558,8 +527,6 @@
     <string name="pairing_failure_expired">配对码过期了</string>
     <!-- Failure title when the pairing code was deactivated. -->
     <string name="pairing_failure_closed">这个配对码已经停用</string>
-    <!-- Failure title when none of the pairing code's server addresses can be reached. No arguments. -->
-    <string name="pairing_failure_transport">连不上配对码里的服务器</string>
     <!-- Button under the failed notice: retry pairing with the same code. -->
     <string name="pairing_next_new_code">换一个新码：在已配对的设备上“添加设备”出码，或在主机上执行 sudo wonton pair。</string>
     <string name="pairing_next_closed">这台服务器已经有配对的设备，首次配对码不能再用；请在已配对的设备上添加，或在主机上执行 sudo wonton pair 另发一个码。</string>
@@ -567,7 +534,7 @@
     <!-- Failure title when the app and the server speak different versions. -->
     <string name="pairing_failure_protocol">App 和服务器的版本对不上</string>
     <!-- Next step under the transport failure. May wrap. -->
-    <string name="pairing_hint_transport">确认家里的服务器已开机并联网，再试一次。</string>
+    <string name="pairing_hint_transport">请确认手机和服务器在同一个局域网里，或者服务器连得上互联网，然后再试一次。</string>
     <!-- Next step under the protocol failure. May wrap. -->
     <string name="pairing_hint_protocol">请把 App 和服务器都更新到最新版本。</string>
     <!-- Title of the "Other servers" page and the settings row that opens it. -->
@@ -662,112 +629,6 @@
     <string name="peers_paste_placeholder">粘贴配对码</string>
     <!-- Button under the paste field: submit the pasted code. -->
     <string name="peers_paste_submit">配对</string>
-    <!-- Title of the friends page and the settings row that opens it. -->
-    <string name="friends_title">好友</string>
-    <!-- Top-right button on the friends page that opens the add-friend sheet. -->
-    <string name="friends_add">添加</string>
-    <!-- Title of the add-friend sheet. -->
-    <string name="friends_add_title">加好友</string>
-    <!-- Placeholder of the Matrix ID field; the example is a full Matrix ID. -->
-    <string name="friends_add_placeholder">@bob:example.org</string>
-    <!-- Submit button under the Matrix ID field. -->
-    <string name="friends_add_submit">发送请求</string>
-    <string name="friends_scan_code">扫对方的码</string>
-    <string name="friends_paste_placeholder">粘贴对方的码</string>
-    <string name="friends_my_code">我的二维码</string>
-    <!-- Section heading above the pending requests, received and sent. -->
-    <string name="friends_requests_title">请求</string>
-    <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
-    <string name="friends_request_label">好友请求</string>
-    <!-- Subtitle on a request I sent: it stays until they answer. -->
-    <string name="friends_request_waiting">等对方同意</string>
-    <!-- Approve button on a received request. -->
-    <string name="friends_request_approve">同意</string>
-    <!-- Reject button on a received request. -->
-    <string name="friends_request_reject">拒绝</string>
-    <!-- Cancel button on a request I sent. -->
-    <string name="friends_request_cancel">取消</string>
-    <!-- Section heading above the friend list. -->
-    <string name="friends_list_title">好友</string>
-    <!-- Empty page: the one sentence above the add button. -->
-    <string name="friends_empty">还没有好友</string>
-    <!-- Row subtitle when a friend is in no group. -->
-    <string name="friends_no_group">没有分组</string>
-    <!-- Separator between group names on a friend row. -->
-    <string name="friends_group_separator">、</string>
-    <!-- Row subtitle: how many plugins this friend can open. -->
-    <plurals name="friends_shared_plugins">
-        <item quantity="other">已分享 %1$d 个插件</item>
-    </plurals>
-    <!-- Section heading above the groups and their actions. -->
-    <string name="friends_groups_title">分组</string>
-    <!-- Row that opens the new-group dialog. -->
-    <string name="friends_group_new">新建分组</string>
-    <!-- Title of the new-group dialog. -->
-    <string name="friends_group_create_title">新建分组</string>
-    <!-- Title of the rename-group dialog. Argument: the current name. -->
-    <string name="friends_group_rename_title">给“%1$s”改名</string>
-    <!-- Placeholder of the group name field. -->
-    <string name="friends_group_name_placeholder">分组名称</string>
-    <!-- Confirmation dialog title for deleting a group. Argument: the group name. -->
-    <string name="friends_group_delete_title">删除“%1$s”？</string>
-    <!-- Confirmation dialog body: what deleting a group does. -->
-    <string name="friends_group_delete_message">组里的人还是好友，发给这个组的插件权限会收回。</string>
-    <!-- Sheet title for choosing a friend's groups. Argument: the friend. -->
-    <string name="friends_choose_groups_title">%1$s 的分组</string>
-    <!-- Sheet action on a friend row that opens the group chooser. -->
-    <string name="friends_groups">分组</string>
-    <!-- Sheet action on a friend row: remove the friend. -->
-    <string name="friends_remove_friend">删除好友</string>
-    <string name="friends_block_user">屏蔽邀请</string>
-    <!-- Confirmation dialog title for removing a friend. Argument: the friend. -->
-    <string name="friends_remove_title">删除“%1$s”？</string>
-    <!-- Confirmation dialog body: what removing a friend does. -->
-    <string name="friends_remove_message">你分享给他的插件会收回，私聊留着。</string>
-    <!-- Section heading above blocked people and servers. -->
-    <string name="friends_blocked_title">已屏蔽</string>
-    <!-- Row that opens the block-a-server dialog; only shown to the server's owner. -->
-    <string name="friends_block_server">拉黑整台服务器</string>
-    <!-- Title of the block-a-server dialog. -->
-    <string name="friends_block_server_title">拉黑整台服务器</string>
-    <!-- Placeholder of the server name field; no scheme, no wildcards. -->
-    <string name="friends_block_server_placeholder">example.org</string>
-    <!-- Submit button under the server name field. -->
-    <string name="friends_block_submit">拉黑</string>
-    <!-- Row subtitle for a blocked person. -->
-    <string name="friends_block_invitations">已屏蔽邀请</string>
-    <!-- Row subtitle for a server blocked for the whole server. -->
-    <string name="friends_block_federation">已拉黑服务器</string>
-    <!-- Row subtitle for a blocked target this version doesn't know. -->
-    <string name="friends_block_unknown">已屏蔽</string>
-    <!-- Undo button on a blocked row. -->
-    <string name="friends_unblock">撤销</string>
-    <!-- Failure title when the Matrix server can't be reached. -->
-    <string name="friends_error_transport">连不上 Matrix 服务器</string>
-    <!-- Failure title when the session is no longer signed in. -->
-    <string name="friends_error_unauthorized">登录已失效</string>
-    <!-- Next step under the unauthorized failure. -->
-    <string name="friends_error_unauthorized_next">重新登录后再打开好友。</string>
-    <!-- Failure title when the server refused a friend action although the sign-in is valid. -->
-    <string name="friends_error_forbidden">请求被拒绝了</string>
-    <!-- Next step under the refused failure. -->
-    <string name="friends_error_forbidden_next">对方可能屏蔽了你，或者对方的服务器还不能和家里的服务器互通。</string>
-    <!-- Failure title when the typed ID isn't a full Matrix ID. -->
-    <string name="friends_error_invalid_user_id">不是 Matrix ID</string>
-    <!-- Next step under the invalid-ID failure. -->
-    <string name="friends_error_invalid_user_id_next">写完整的 ID，比如 @bob:example.org。</string>
-    <!-- Failure title when the request was already accepted or rejected elsewhere. -->
-    <string name="friends_error_request_not_found">这条请求已经处理过了</string>
-    <!-- Failure title when the server asks to wait before trying again. Argument: seconds to wait. -->
-    <string name="friends_error_rate_limited">请求太多，等 %1$d 秒</string>
-    <!-- Failure title when the server asks to wait but didn't say how long. -->
-    <string name="friends_error_rate_limited_later">请求太多，稍后再试</string>
-    <!-- Failure title when the server refused the change. -->
-    <string name="friends_error_upstream">服务器没有接受</string>
-    <!-- Failure title for the remaining categories. -->
-    <string name="friends_error_other">出了点问题，稍后再试。</string>
-    <!-- Section heading on the peers page above the friend requests. -->
-    <string name="friends_peers_title">好友请求</string>
     <!-- Label before an address that a third-party client uses to connect to the app. -->
     <string name="lan_client_address">地址</string>
     <!-- Label before the password a third-party client uses to sign in to the app. -->
@@ -798,109 +659,16 @@
     </plurals>
     <!-- Action-sheet item that updates the app. Argument: the new version. -->
     <string name="launcher_upgrade_to">升级到 %1$s</string>
-    <!-- Row in the server list that opens signing in with an existing Matrix account. No arguments; short label. -->
-    <string name="matrix_login_entry">用 Matrix 账号登录</string>
-    <!-- Navigation title of the Matrix sign-in page. No arguments; fits a phone navigation bar. -->
-    <string name="matrix_login_title">登录 Matrix 账号</string>
-    <!-- Field label for the Matrix server to sign in to, a server name like matrix.org or an https URL. No arguments; short label. -->
-    <string name="matrix_login_server">服务器</string>
-    <!-- Button that asks the core to check the server and list the ways to sign in. No arguments; short button label. -->
-    <string name="matrix_login_continue">继续</string>
-    <!-- Progress line while the core contacts the server to discover the sign-in methods. Argument: the server name or URL the user chose. -->
-    <string name="matrix_login_contacting">正在联系 %1$s</string>
-    <!-- Button for the password method in the list of ways the server supports. No arguments; short button label. -->
-    <string name="matrix_login_method_password">用密码登录</string>
-    <!-- Button for the server's own OIDC sign-in, which opens in the system browser. No arguments; short button label. -->
-    <string name="matrix_login_method_oidc">在浏览器里继续</string>
-    <!-- Field label for the full Matrix user ID, like @user:example.org. No arguments; short label. -->
-    <string name="matrix_login_user_id">Matrix 用户 ID</string>
-    <!-- Field label for the account password. No arguments; short label. -->
-    <string name="matrix_login_password">密码</string>
-    <!-- Button that submits the user ID and password to the server. No arguments; short button label. -->
-    <string name="matrix_login_sign_in">登录</string>
-    <!-- Progress line while the core signs in with the password. No arguments. -->
-    <string name="matrix_login_signing_in">正在登录</string>
-    <!-- Progress line while the core stores the signed-in session on this phone. No arguments. -->
-    <string name="matrix_login_saving">正在保存会话</string>
-    <!-- Progress line while the user finishes the sign-in in the system browser. No arguments. -->
-    <string name="matrix_login_finish_in_browser">在浏览器里完成登录</string>
-    <!-- Button that opens the browser again for the pending OIDC sign-in. No arguments; short button label. -->
-    <string name="matrix_login_open_browser">打开浏览器</string>
-    <!-- Notice when the phone has no app that can open the browser link. No arguments. -->
-    <string name="matrix_login_no_browser">没有能打开登录页面的浏览器应用</string>
-    <!-- Failure title: the server name or URL doesn't point to a Matrix homeserver. No arguments. -->
-    <string name="matrix_login_failed_invalid_homeserver">这个地址上找不到 Matrix 服务器</string>
-    <!-- Failure title: the server couldn't be reached to discover the sign-in methods. No arguments. -->
-    <string name="matrix_login_failed_discovery">连不上服务器</string>
-    <!-- Failure title: the server offers none of the sign-in methods this app supports. No arguments. -->
-    <string name="matrix_login_failed_unsupported_method">这台服务器没有可用的登录方式</string>
-    <!-- Failure title: the network is unavailable. No arguments. -->
-    <string name="matrix_login_failed_transport">网络不可用</string>
-    <!-- Failure title: the server rejected the user ID or password. No arguments. -->
-    <string name="matrix_login_failed_invalid_credentials">用户 ID 或密码不对</string>
-    <!-- Failure title: the server rejected the browser sign-in. No arguments. -->
-    <string name="matrix_login_failed_oidc_rejected">服务器拒绝了浏览器登录</string>
-    <!-- Failure title: the browser came back without a complete sign-in result. No arguments. -->
-    <string name="matrix_login_failed_invalid_callback">浏览器回来的登录结果不完整</string>
-    <!-- Failure title: the sign-in took too long or expired on the server. No arguments. -->
-    <string name="matrix_login_failed_expired">登录已过期，请重新开始</string>
-    <!-- Failure title: signing in worked but saving the session on this phone failed. No arguments. -->
-    <string name="matrix_login_failed_storage">登录成功，但保存在这台设备上时出错</string>
-    <!-- Failure title: the homeserver or its sign-in service returned an error (5xx, rate limiting, an unexpected reply), not a problem with the credentials or input. No arguments. -->
-    <string name="matrix_login_failed_upstream">服务器或它的登录服务出了问题</string>
-    <!-- Failure title for every category the app doesn't know. No arguments. -->
-    <string name="matrix_login_failed_other">登录失败</string>
-    <!-- Notice when the core reports a state the app doesn't know. No arguments. -->
-    <string name="matrix_login_unknown_state">登录暂时无法继续</string>
     <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
     <string name="message_clip_label">消息</string>
     <!-- Item in the message menu: copy the message text. Android only. -->
     <string name="message_copy">复制</string>
-    <!-- Accessibility label of the copy button on a code block in a message. -->
-    <string name="message_code_copy">复制代码</string>
-    <!-- Accessibility label of that copy button right after the code was copied. -->
-    <string name="message_code_copied">已复制</string>
-    <!-- Item in the message menu: remove the message for everyone in the chat. Android only. -->
-    <string name="message_delete_everyone">撤回</string>
-    <!-- Confirm button in the dialog that removes a message for everyone. Android only. -->
-    <string name="message_delete_everyone_confirm">撤回</string>
-    <!-- Body of the dialog that removes a message for everyone, saying the scope of it. Android only. -->
-    <string name="message_delete_everyone_message">这个房间里所有人都会看到它被撤回。</string>
-    <!-- Title of the dialog that removes a message for everyone. Android only. -->
-    <string name="message_delete_everyone_title">对所有人生效，撤回这条消息？</string>
-    <!-- Item in the message menu on someone else's message: remove it for everyone. Argument: the sender's name. Android only. -->
-    <string name="message_delete_others">删除 %1$s 的消息</string>
-    <!-- Title of the dialog that removes someone else's message for everyone. Argument: the sender's name. Android only. -->
-    <string name="message_delete_others_title">删除 %1$s 的这条消息？</string>
-    <!-- Item in the message menu: send the message to another room. Android only. -->
-    <string name="message_forward">转发</string>
-    <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->
-    <string name="message_forward_empty">没有别的聊天</string>
-    <!-- Title of the room list that picks where a message is forwarded to. Android only. -->
-    <string name="message_forward_title">转发到</string>
     <!-- Fallback under an image message when it can't be decoded: the format isn't supported. Android only. -->
     <string name="message_image_format_unsupported">图片格式不支持</string>
     <!-- Fallback under an image message when it can't be loaded and the error carries no reason. Android only. -->
     <string name="message_image_unavailable">取不到图片</string>
-    <!-- Item in the message menu: reply to the message. Android only. -->
-    <string name="message_reply">回复</string>
-    <!-- Screen-reader label of the cross that stops replying above the composer. Android only. -->
-    <string name="message_reply_cancel">取消回复</string>
-    <!-- Short stand-in for a quoted message type that can be shown but has nothing to summarize. Android only. -->
-    <string name="message_quote_image">图片</string>
-    <!-- Short stand-in in a quote for a message type with no text, like an approval card. Android only. -->
-    <string name="message_quote_other">一条消息</string>
-    <!-- Stand-in in a quote for a message the core couldn't load from the server. Android only. -->
-    <string name="message_quote_unavailable">原消息不可用</string>
-    <!-- Stand-in in a quote for a message this device can't decrypt. Android only. -->
-    <string name="message_quote_undecryptable">加密消息</string>
-    <string name="message_image_save">保存到相册</string>
-    <string name="message_image_save_failed">没能保存到相册</string>
-    <string name="message_image_saved">已保存到相册</string>
-    <string name="message_image_share">分享</string>
-    <string name="message_image_share_failed">没能分享这张图片</string>
-    <!-- Description of an agent row in setup when it has no account login: it needs a model provider key in the next step. -->
-    <string name="onboarding_agent_connection_key">在下一步填模型服务商的 key</string>
+    <!-- Description of an agent row in setup when it has no account login. -->
+    <string name="onboarding_agent_connection_key">key</string>
     <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
     <string name="onboarding_agent_connection_logins">%1$s或 key</string>
     <!-- Problem title in setup when no agent can be chosen. -->
@@ -942,7 +710,7 @@
     <!-- Warning under a model provider row: testing couldn't reach the provider, but it's saved anyway when setup finishes. -->
     <string name="onboarding_model_unreachable">连不上服务商，完成时照样保存。</string>
     <!-- Row title: keep the models already configured in the model gateway. -->
-    <string name="onboarding_model_use_current">用现在的模型</string>
+    <string name="onboarding_model_use_current">用现在的</string>
     <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
     <string name="onboarding_model_use_login">用%1$s</string>
     <!-- Primary button that advances to the next setup step. -->
@@ -985,6 +753,8 @@
     <string name="onboarding_problem_plugin_lan_unavailable">没有可用的局域网地址，请检查服务器的网络设置。</string>
     <!-- Problem title while installing: the app wasn't found. -->
     <string name="onboarding_problem_plugin_not_found">没有找到这个应用，刷新列表后再试。</string>
+    <!-- Problem title while installing: the owner profile isn't complete. -->
+    <string name="onboarding_problem_plugin_owner_profile_incomplete">你的资料还没填好，填好后再试。</string>
     <!-- Problem title while installing: the app and the home server versions don't work together. -->
     <string name="onboarding_problem_plugin_protocol">App 和家里的服务器版本对不上，请更新 App 或服务器。</string>
     <!-- Problem title while installing: the home server is older than the app needs. -->
@@ -1027,20 +797,10 @@
     <string name="onboarding_review_keep_current">用现在的</string>
     <!-- Label next to a spinner while an install task is being prepared. -->
     <string name="onboarding_review_preparing">正在准备</string>
-    <!-- Kind label above a review row: the profile that will be saved. -->
-    <string name="onboarding_review_section_profile">资料</string>
-    <!-- Kind label above a review row: the default agent. -->
-    <string name="onboarding_review_section_agent">Agent</string>
-    <!-- Kind label above a review row: the model. -->
-    <string name="onboarding_review_section_model">模型</string>
-    <!-- Kind label above a review row: the apps that will be installed. -->
-    <string name="onboarding_review_section_apps">应用</string>
     <!-- Row description in the review step: the item is set as the default agent. -->
     <string name="onboarding_review_set_default">设为默认</string>
     <!-- Row description in the review step: the agent signs in from chat after setup. -->
     <string name="onboarding_review_sign_in_after_setup">装好后在聊天里登录</string>
-    <!-- Row description in the review step: finishing will not touch this. -->
-    <string name="onboarding_review_unchanged">不变</string>
     <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
     <string name="onboarding_review_uncertain">不确定装好没有，请到应用页查看。</string>
     <!-- Row description in the review step: the model couldn't be reached during the test. -->
@@ -1079,6 +839,8 @@
     <string name="owner_profile_email_optional">选填</string>
     <!-- Section title, field label and accessibility label for the owner's display name. -->
     <string name="owner_profile_name">名字</string>
+    <!-- Placeholder in the empty name field. -->
+    <string name="owner_profile_name_required">必填</string>
     <!-- Title of the owner profile page (name and email) and its entry point in Settings. -->
     <string name="owner_profile_title">你的资料</string>
     <!-- Row label for the account name the home server assigned; shown under the form. -->
@@ -1093,14 +855,7 @@
     <string name="photo_unreadable">读不出这张照片</string>
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <string name="plugin_save_folders">能存文件的文件夹</string>
-    <string name="plugin_media_title">网页的摄像头和麦克风</string>
     <string name="plugin_save_revoke">撤销</string>
-    <string name="plugin_settings_section">设置</string>
-    <string name="plugin_settings_open">打开设置</string>
-    <string name="plugin_settings_update_app">要更新 App 才能改</string>
-    <string name="plugin_settings_required">必填</string>
-    <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
-    <string name="plugin_settings_restart_hint">应用会重新启动一下</string>
     <string name="plugin_updates_section">更新</string>
     <string name="plugin_ask_every_update">每次都问</string>
     <string name="plugin_written_by_agent">你的 Agent · %1$s</string>
@@ -1160,12 +915,6 @@
     <string name="plugin_task_review">重新查看</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">结果不确定：%1$s</string>
-    <!-- Status of a running task while the connection to the home server is down. -->
-    <string name="plugin_task_waiting_for_connection">正在等待连接</string>
-    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
-    <string name="plugin_task_check_installed_next_step">到已安装列表看看装上没有。</string>
-    <!-- Button on an uncertain task that opens the installed list. -->
-    <string name="plugin_task_check_installed">检查已安装</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">已卸载</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->
@@ -1189,44 +938,15 @@
     <!-- Destructive button that uninstalls and deletes the app's data. -->
     <string name="plugin_uninstall_delete_data">卸载并删除数据</string>
     <!-- Message of the uninstall confirmation. -->
-    <string name="plugin_uninstall_delete_data_warning">删除数据会一并删掉它的密钥和 Bot 账号，和 Bot 的旧加密消息将无法再查看，不能恢复。</string>
+    <string name="plugin_uninstall_delete_data_warning">删除数据会一并删掉它的密钥和 Bot 账号，不能恢复。</string>
     <!-- Button that uninstalls but keeps the app's data. -->
     <string name="plugin_uninstall_keep_data">卸载，保留数据</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
     <string name="plugin_uninstall_title">卸载“%1$s”？</string>
-    <!-- Switch on an app's page: map the ports the app declares onto this device's loopback interface, so other apps on the phone can reach them (ADR-0072). -->
-    <string name="port_mapping_toggle">映射到本机</string>
-    <!-- One declared port under the switch: the loopback address with the port number, then the protocol. -->
-    <string name="port_mapping_port_line">127.0.0.1:%1$d · %2$s</string>
-    <!-- Protocol label of a declared port whose protocol Wonton doesn't recognize. -->
-    <string name="port_mapping_protocol_other">其他</string>
-    <!-- Reason shown while the mapping is on but another app on this phone has taken the port. -->
-    <string name="port_mapping_reason_port_in_use">端口被手机上的其他应用占用了。</string>
-    <!-- Reason shown while the mapping is on but the home server is too old to map ports. -->
-    <string name="port_mapping_reason_server_too_old">家里的服务器版本太旧，需要先升级。</string>
-    <!-- Reason shown while the mapping is on but the tunnel isn't connected. -->
-    <string name="port_mapping_reason_tunnel_disconnected">到家里服务器的隧道没连上。</string>
-    <!-- Reason shown while the mapping is on but the app isn't installed on the home server. -->
-    <string name="port_mapping_reason_plugin_not_installed">服务器上没有安装这个应用。</string>
-    <!-- Reason shown while the mapping is on but the app doesn't declare that port. -->
-    <string name="port_mapping_reason_port_not_declared">这个应用没有声明这个端口。</string>
-    <!-- Reason shown while the mapping is on but the app isn't running. -->
-    <string name="port_mapping_reason_plugin_not_running">这个应用没有在运行。</string>
-    <!-- Reason shown while the mapping is on but the home server can't reach the app. -->
-    <string name="port_mapping_reason_plugin_unreachable">服务器连不上这个应用。</string>
-    <!-- Reason shown while the mapping is on and failed for a reason Wonton doesn't recognize. -->
-    <string name="port_mapping_reason_other">映射出错了。</string>
-    <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
-    <string name="port_mapping_no_notification_permission">没有通知权限，映射开着时通知栏看不到；映射照常可用。</string>
-    <string name="port_mapping_warning_public_relay_bandwidth">只连上了公共中继，带宽不够传画面。</string>
     <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
     <string name="problem_appearance_title">外观设置没有存上</string>
     <string name="problem_apps_not_ready">应用列表还没有准备好，请稍后重试。</string>
     <string name="problem_no_default_agent">还没有默认 Agent，请先在引导中选择并安装。</string>
-    <!-- Problem title: the server refused an action although this device is still signed in. -->
-    <string name="problem_forbidden_title">请求被拒绝了</string>
-    <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
-    <string name="problem_forbidden_next_step">登录没有问题。可能是没有权限、对方屏蔽了你，或者对方的服务器还不能和家里的服务器互通。</string>
     <string name="problem_invalid_input_title">这个操作做不了</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->
     <string name="problem_loading">正在加载</string>
@@ -1268,14 +988,14 @@
     <string name="problem_plugin_not_found_next_step">刷新应用商店后再试。</string>
     <!-- Problem title: the app is gone from its source. -->
     <string name="problem_plugin_not_found_title">没有找到这个应用</string>
+    <!-- Next step: fill it in in Settings, then try again. -->
+    <string name="problem_plugin_owner_profile_incomplete_next_step">在设置里填好后再试。</string>
+    <!-- Problem title: the owner's profile (name and email) isn't filled in yet, and the app needs it. -->
+    <string name="problem_plugin_owner_profile_incomplete_title">你的资料还没填好</string>
     <!-- Next step: update the app or the home server. -->
     <string name="problem_plugin_protocol_next_step">请更新 App 或家里的服务器。</string>
     <!-- Problem title: the app and the home server versions don't match. -->
     <string name="problem_plugin_protocol_title">App 和家里的服务器版本对不上</string>
-    <!-- Problem title: the home server can't read this app's install record. -->
-    <string name="problem_plugin_record_unusable_title">应用的安装记录不可用</string>
-    <!-- Next step: uninstall the app (its data can be kept) and install it again. -->
-    <string name="problem_plugin_record_unusable_next_step">卸载这个应用（数据可以保留）后重新安装。</string>
     <!-- Problem title when the proxy settings were rejected as invalid; the core's own reason is shown as the next step. -->
     <string name="problem_plugin_save_invalid_title">这样填不对</string>
     <!-- Next step: look at the proxy settings again once the server is reachable. -->
@@ -1414,74 +1134,6 @@
     <string name="shortcut_agent_chat">问 Bot</string>
     <string name="shortcuts_too_few">系统只允许 %1$d 个快捷方式，不能同时显示“新建聊天”和“问 Bot”。</string>
     <string name="shortcuts_too_many">系统最多允许 %1$d 个快捷方式，已优先保留“新建聊天”“问 Bot”，应用页面按底栏顺序显示。</string>
-    <!-- Explicit acknowledgement of the warning about sharing an app without declared friend support. No arguments. -->
-    <string name="share_acknowledge">我了解并接受此风险</string>
-    <!-- Button that creates an app share for a friend or group. No arguments. -->
-    <string name="share_add">添加分享</string>
-    <!-- Button that dismisses the share editor without saving changes. No arguments. -->
-    <string name="share_cancel">取消</string>
-    <!-- Plugin detail badge showing how many friends can access this app. Argument: count, an integer; use native plural rules. -->
-    <plurals name="share_count">
-        <item quantity="other">已分享给 %1$d 个好友</item>
-    </plurals>
-    <!-- Expiration choice that opens a date and time picker. No arguments. -->
-    <string name="share_custom">选择日期和时间</string>
-    <!-- Title of the editor for an existing app share. No arguments. -->
-    <string name="share_edit">编辑分享</string>
-    <!-- Empty state when no friends or groups can be selected for sharing. No arguments. -->
-    <string name="share_empty">没有可选的好友或分组</string>
-    <!-- Label of the share expiration picker. No arguments. -->
-    <string name="share_expires">到期时间</string>
-    <!-- Section title for individual friends in the share recipient picker. No arguments. -->
-    <string name="share_friends">好友</string>
-    <!-- Section title for friend groups in the share recipient picker. No arguments. -->
-    <string name="share_groups">分组</string>
-    <!-- Expiration choice that grants access for one hour from now. No arguments. -->
-    <string name="share_hour">1 小时</string>
-    <!-- Identity verification detail when secure discovery of the identity server failed. No arguments. -->
-    <string name="share_identity_discovery">无法安全发现身份服务器。</string>
-    <!-- Identity verification detail for an invalid OpenID identity token. No arguments. -->
-    <string name="share_identity_invalid">身份令牌无效。</string>
-    <!-- Identity verification detail when the verified user ID belongs to a different server. No arguments. -->
-    <string name="share_identity_mismatch">验证的用户 ID 与身份服务器不匹配。</string>
-    <!-- Identity verification detail for an unrecognized failure category. No arguments. -->
-    <string name="share_identity_other">身份验证失败。</string>
-    <!-- Identity verification detail when the identity server could not confirm the user. No arguments. -->
-    <string name="share_identity_userinfo">身份服务器无法确认你的身份。</string>
-    <!-- Expiration choice that keeps access until the owner revokes it. No arguments. -->
-    <string name="share_indefinite">一直有效</string>
-    <!-- Shared app problem when the access grant has expired. No arguments. -->
-    <string name="share_problem_expired">分享已到期</string>
-    <!-- Shared app problem when the sharing friend's server cannot verify the current user. No arguments. -->
-    <string name="share_problem_identity">这位好友的服务器认不出你</string>
-    <!-- Shared app problem for an unavailable source not covered by a more specific category. No arguments. -->
-    <string name="share_problem_other">无法获取分享的应用</string>
-    <!-- Shared app problem when the app is not running; recipients cannot start it. No arguments. -->
-    <string name="share_problem_plugin">这个应用未在运行</string>
-    <!-- Shared app problem when the current user has no grant for the app. No arguments. -->
-    <string name="share_problem_required">这位好友没有把这个应用分享给你</string>
-    <!-- Shared app problem when the owner has revoked access. No arguments. -->
-    <string name="share_problem_revoked">这位好友已停止分享这个应用</string>
-    <!-- Shared app problem when the sharing friend's server cannot be reached. No arguments. -->
-    <string name="share_problem_unreachable">连不上这位好友的服务器</string>
-    <!-- Apps page section title for apps shared by other people. No arguments. -->
-    <string name="share_received">别人分享给我的</string>
-    <!-- Label of the friend or group picker for an app share. No arguments. -->
-    <string name="share_recipient">好友或分组</string>
-    <!-- Button or accessibility label that refreshes apps shared by friends. No arguments. -->
-    <string name="share_refresh">刷新分享</string>
-    <!-- Destructive action that immediately removes access granted by an app share. No arguments. -->
-    <string name="share_revoke">收回分享</string>
-    <!-- Prominent warning before sharing an app without declared friend support. Explain account creation and possible access to the owner's data. No arguments. -->
-    <string name="share_risk">好友会以自己的用户名登录这个应用，应用可能给他建账号、让他看到你的数据。</string>
-    <!-- Button that saves a new or edited app share. No arguments. -->
-    <string name="share_save">保存分享</string>
-    <!-- Plugin detail section and share management page title. No arguments. -->
-    <string name="share_title">分享给好友</string>
-    <!-- Expiration choice that grants access until the end of today. No arguments. -->
-    <string name="share_today">今天</string>
-    <!-- Recipient label when the saved friend or group is no longer available. No arguments. -->
-    <string name="share_unknown">未知接收方</string>
     <!-- Toolbar button that opens the Add Source page. -->
     <string name="store_add_source">添加来源</string>
     <!-- Button on a store row to install an app you don't have. -->
@@ -1527,23 +1179,16 @@
     <string name="tab_starting">正在启动…</string>
     <string name="tab_uninstalling">正在卸载…</string>
     <string name="tab_upgrading">正在更新…</string>
-    <string name="tab_opens_in_browser">%1$s 在浏览器里打开</string>
-    <string name="tab_open_in_browser">打开</string>
-    <string name="tab_no_browser_next_step">装上或启用一个浏览器（如 Chrome）后再试。</string>
+    <string name="tab_open_anyway">仍然打开</string>
     <string name="tab_unpin_from_bar">从底栏移除</string>
     <string name="tab_start">启动</string>
     <string name="tab_view_details">查看详情</string>
+    <string name="tab_cross_origin_title">这个应用在 Android 版云吞里暂时打不开</string>
+    <string name="tab_cross_origin_detail">当前 Android System WebView：%1$s；需要 156 或更新。</string>
+    <string name="tab_webview_version_unknown">拿不到版本号</string>
     <string name="tab_load_not_ready">应用还没有准备好</string>
     <string name="tab_load_upstream">应用的网页打不开</string>
     <string name="tab_uninstalled_notice">%1$s 已卸载，已从底栏移除</string>
-    <string name="tab_media_prompt_camera">允许 %1$s 使用摄像头吗？</string>
-    <string name="tab_media_prompt_microphone">允许 %1$s 使用麦克风吗？</string>
-    <string name="tab_media_prompt_both">允许 %1$s 使用摄像头和麦克风吗？</string>
-    <string name="tab_media_allow">允许</string>
-    <string name="tab_media_deny">不允许</string>
-    <string name="tab_media_system_denied_title">摄像头或麦克风用不了</string>
-    <string name="tab_media_system_denied">系统设置里没有允许 Wonton 使用摄像头或麦克风，这次不给网页。可以到系统设置里打开。</string>
-    <string name="tab_media_system_settings">去设置</string>
     <string name="tab_settings_unreadable">底栏设置读不了</string>
     <string name="tab_open_settings">查看底栏设置</string>
     <string name="tab_menu_open_fullscreen">全屏打开</string>
@@ -1647,7 +1292,6 @@
     <string name="notification_push">推送</string>
     <string name="notification_channel_message">聊天消息</string>
     <string name="notification_channel_confirmation">等你确认</string>
-    <string name="notification_value_system_blocked">系统里没允许</string>
     <string name="notification_channel_plugin">应用通知</string>
     <string name="notification_value_on">已开启</string>
     <string name="notification_value_off">已关闭</string>
@@ -1662,8 +1306,6 @@
     <string name="push_status_unavailable">收不到推送，请检查系统通知和分发器</string>
     <string name="push_status_failed_transport">注册失败，连上家里的服务器后重试</string>
     <string name="push_status_failed_unauthorized">注册失败，请重新配对</string>
-    <!-- Push status line when registering failed because the home server refused it although this device is signed in. -->
-    <string name="push_status_failed_forbidden">注册失败，家里的服务器拒绝了</string>
     <string name="push_status_failed_upstream">注册失败，家里的服务器出错了</string>
     <string name="push_status_failed_not_ready">注册失败，请等聊天连接就绪</string>
     <string name="push_status_failed_invalid_input">注册失败，推送地址无效</string>
@@ -1770,137 +1412,4 @@
         <item>文件夹</item>
         <item>图钉</item>
     </string-array>
-    <string name="secret_section_title">要填的密钥</string>
-    <string name="secret_optional">可选</string>
-    <string name="secret_get_one">去哪里拿</string>
-    <string name="secret_show">显示</string>
-    <string name="secret_hide">隐藏</string>
-    <string name="secret_edit">修改</string>
-    <string name="secret_clear">清空</string>
-    <string name="secret_filled">已填写</string>
-    <string name="secret_unfilled">未就绪：要先填令牌</string>
-    <string name="pin_to_bar">固定到底栏</string>
-    <!-- 长按侧边栏里的一行，把应用的页面从底栏拿掉。 -->
-    <string name="unpin_from_bar">从底栏拿掉</string>
-    <!-- 侧边栏上的应用名。 -->
-    <string name="sidebar_title">云吞</string>
-    <!-- 根页面左上角打开侧边栏的按钮。 -->
-    <string name="sidebar_open">侧边栏</string>
-    <!-- 侧边栏开着时盖在主界面上的那层，点一下收起侧边栏。 -->
-    <string name="sidebar_collapse">收起侧边栏</string>
-    <!-- 侧边栏标题下的状态：家里的服务器已连接。 -->
-    <string name="sidebar_status_connected">家里的服务器 · 已连接</string>
-    <!-- 侧边栏标题下的状态：正在连接家里的服务器。 -->
-    <string name="sidebar_status_connecting">家里的服务器 · 正在连接</string>
-    <!-- 侧边栏标题下的状态：连不上家里的服务器。 -->
-    <string name="sidebar_status_disconnected">家里的服务器 · 连不上</string>
-    <!-- 侧边栏标题下的状态：还没配对家里的服务器。 -->
-    <string name="sidebar_status_not_configured">还没连上家里的服务器</string>
-    <!-- 侧边栏里回到聊天列表的一行。 -->
-    <string name="sidebar_chats">聊天</string>
-    <!-- 侧边栏里进应用商店的一行。 -->
-    <string name="sidebar_store">应用商店</string>
-    <!-- 侧边栏里能打开的应用上面的小标题。 -->
-    <string name="sidebar_my_apps">我的应用</string>
-    <!-- 我的应用右边进应用网格的链接。 -->
-    <string name="sidebar_all">全部</string>
-    <!-- 装的应用超过八个时侧边栏的最后一行，进应用网格。 -->
-    <string name="sidebar_all_apps">全部应用</string>
-    <!-- 侧边栏底部打开设置的圆按钮。 -->
-    <string name="sidebar_settings">设置</string>
-    <!-- 侧边栏底部发起新聊天的主色胶囊。 -->
-    <string name="sidebar_new_chat">新聊天</string>
-    <!-- 商店一行上红色数字角标的读屏描述：有几个应用可更新。 -->
-    <string name="sidebar_updates_badge">%1$d 个可更新</string>
-    <!-- 应用行上红点的读屏描述：这个应用有更新。 -->
-    <string name="sidebar_updatable">可更新</string>
-    <!-- 应用行上小图钉的读屏描述：这个应用的页面固定在底栏上。 -->
-    <string name="sidebar_pinned">已固定到底栏</string>
-    <!-- 一次更新所有有更新的应用之前，底部面板的标题。 -->
-    <string name="store_update_all_title">更新 %1$d 个应用</string>
-    <!-- 那个面板里开始全部更新的按钮。 -->
-    <string name="store_update_all">全部更新</string>
-    <!-- 打开那个面板的工具栏下载图标的读屏描述。 -->
-    <string name="store_update_all_a11y">全部更新，%1$d 个</string>
-    <!-- 一行提示：这个应用的更新要先确认才能开始。 -->
-    <string name="sidebar_needs_attention">需要你处理</string>
-    <string name="launcher_badge_degraded">有问题</string>
-    <string name="plugin_screenshot">截图</string>
-    <string name="transfer_upload">上传</string>
-    <string name="transfer_download">下载</string>
-    <string name="bot_avatar_pick_state">更换%1$s头像</string>
-    <string name="panel_add">添加</string>
-    <string name="panel_add_pages">添加页面</string>
-    <string name="panel_can_add">可以放进面板的页面</string>
-    <string name="panel_close">关掉面板</string>
-    <string name="panel_edit">编辑面板</string>
-    <string name="panel_in_panel">面板里的页面</string>
-    <string name="panel_open">打开面板</string>
-    <string name="panel_public_unsupported">这台设备的 WebView 分不开公网网页和插件页面的存储，打不开公网网页</string>
-    <string name="panel_remove">移除</string>
-    <string name="panel_url">填写网址</string>
-    <string name="message_image_permission_denied">Android 拒绝了访问。请在设置中检查此 App 的权限，再试一次。</string>
-    <string name="composer_file_unreadable">无法读取这个文件。请重新复制，或选择其他文件。</string>
-    <string name="message_link_browser">在浏览器中打开</string>
-    <string name="message_link_open_failed">无法打开这个链接</string>
-    <string name="message_link_share_failed">无法分享这个链接</string>
-    <string name="message_link_no_handler">请安装能打开此类链接的 App，再试一次。</string>
-    <string name="contacts_title">联系人</string>
-    <string name="contacts_add">加联系人</string>
-    <string name="contacts_add_kind_bot">Bot</string>
-    <string name="contacts_add_kind_person">一个人</string>
-    <string name="contacts_add_placeholder">@someone:example.org</string>
-    <string name="contacts_add_submit">发送请求</string>
-    <string name="contacts_requests_title">请求</string>
-    <string name="contacts_active_title">已添加</string>
-    <string name="contacts_sent_title">已发出</string>
-    <string name="contacts_incoming_warning">对方 Bot 的话，你的 Bot 会当作给它的话处理；敏感工具每次都要你确认。</string>
-    <string name="contacts_approve">同意</string>
-    <string name="contacts_reject">拒绝</string>
-    <string name="contacts_withdraw">撤销</string>
-    <string name="contacts_clear">删除</string>
-    <string name="contacts_remove">删除联系人</string>
-    <string name="contacts_remove_title">删除“%1$s”？</string>
-    <string name="contacts_remove_message">你的 Bot 不再处理对方的话，已有的聊天留着。</string>
-    <string name="contacts_status_waiting_bot">等对方同意</string>
-    <string name="contacts_status_waiting_person">等对方接受</string>
-    <string name="contacts_status_declined">对方拒绝了</string>
-    <string name="contacts_status_not_found">没有这个人</string>
-    <string name="contacts_status_unknown">状态未知</string>
-    <string name="contacts_keeper">%1$s 的 Bot</string>
-    <string name="contacts_remote_unpaired">和那台服务器的配对已移除，消息过不去</string>
-    <string name="contacts_empty">还没有联系人</string>
-    <string name="contacts_error_invalid_user_id">不是有效的 Matrix ID</string>
-    <string name="contacts_error_not_paired">对方的服务器没和你的配对</string>
-    <string name="contacts_error_not_paired_next">先在“其他服务器”里配对。</string>
-    <string name="contacts_error_already_contact">已经是联系人，或者请求已经发出</string>
-    <string name="contacts_error_bot_not_found">这个 Bot 已经不在了</string>
-    <string name="contacts_error_contact_not_found">这一条已经处理过了</string>
-    <string name="contacts_error_not_keeper">只有这个 Bot 的归属人能管它的联系人</string>
-    <string name="contacts_error_peer_unreachable">连不上对方的服务器，这次没发出去</string>
-    <string name="contacts_error_unauthenticated">这台设备不能做这件事</string>
-    <string name="contacts_error_upstream">家里的服务器没能记下这件事</string>
-    <string name="friends_request_bot_contact">Bot 联系人请求</string>
-    <string name="handoff_title">在另一台设备上继续</string>
-    <string name="handoff_waiting">保持另一台设备上的“添加设备”页开着。</string>
-    <string name="handoff_unanswered_title">另一台设备没有回应</string>
-    <string name="handoff_unanswered_message">在另一台设备上打开云吞，回到“添加设备”。</string>
-    <string name="handoff_try_again">再试一次</string>
-    <string name="handoff_later">稍后</string>
-    <string name="handoff_no_other_device">手边没有别的设备</string>
-    <string name="invite_device_added">已加好</string>
-    <string name="invite_cannot_give">这台设备也没有完整的密钥，新设备看不到以前的消息。</string>
-    <string name="composer_tray_full">一次最多发 %1$d 个附件。</string>
-    <string name="composer_attachment_remove">移除 %1$s</string>
-    <string name="composer_attachment_paused">等连上家里的服务器</string>
-    <string name="composer_attachment_failed">传不上去</string>
-    <string name="composer_attachment_retry">重新上传</string>
-    <string name="composer_attachment_too_large">照片超过了家里服务器的大小上限，可以改用文件发。</string>
-    <string name="composer_attachment_source_unavailable">原文件读不了了，请重新选一次。</string>
-    <string name="composer_attachment_storage_full">家里服务器的磁盘满了。</string>
-    <string name="composer_attachment_rejected">家里的服务器拒收了这个附件。</string>
-    <string name="composer_attachment_upstream">家里的服务器出错了。</string>
-    <string name="composer_attachment_local_storage">手机上存不下了。</string>
-    <string name="timeline_sending_progress">发送中 %1$s</string>
-    <string name="timeline_cancel_send">取消发送</string>
 </resources>

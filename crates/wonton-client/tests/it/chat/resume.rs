@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 use futures_util::StreamExt;
 use wonton_client::{Action, ChatSync, HomeStatus, TimelineContent};
 use wonton_matrix::{ChatRoom, MatrixSession, MessageBody, OwnedRoomId};
-use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::support::{Home, Phone, Timeline, WAIT, is_room_list};
 use super::{accept_the_bots_invite, text};
@@ -52,34 +51,26 @@ impl Chat {
             .await
             .expect("Bot 发消息");
         self.phone
-            .dispatch(Action::Timeline {
-                action: TimelineAction::SendText {
-                    target: TimelineTarget {
-                        room_id: self.room_id.to_string(),
-                        thread_root: None,
-                    },
-                    body: "断开时主人发的".to_owned(),
-                    reply_to: None,
-                },
+            .dispatch(Action::SendText {
+                room_id: self.room_id.to_string(),
+                body: "断开时主人发的".to_owned(),
             })
             .unwrap();
     }
 
     /// 恢复以后两条都到了对面，同步在跑，用的还是原来的会话。
     async fn caught_up(&mut self) {
-        // 先等同步真的跑起来（恢复的后置条件），再等断开期间的消息：同步没跑起来时，等消息只会白等满一个
-        // 时限，也分不清是同步没恢复还是消息没到。
-        self.phone
-            .wait_chat("同步恢复", |view| {
-                (view.sync == ChatSync::Running).then_some(())
-            })
-            .await;
         self.timeline
             .until("打开着的房间收到断开时 Bot 发的", |item| {
                 text(item, "断开时 Bot 发的")
             })
             .await;
         self.bot_received("断开时主人发的").await;
+        self.phone
+            .wait_chat("同步恢复", |view| {
+                (view.sync == ChatSync::Running).then_some(())
+            })
+            .await;
         assert_eq!(
             self.home.login_tokens(),
             self.login_tokens,

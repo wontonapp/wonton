@@ -1,16 +1,15 @@
 name: release
 
-# 推 vX.Y.Z 的 tag 时构建核心镜像（amd64、arm64），推到 GHCR，同时更新 stable 渠道（ADR-0070）。安装脚本和 App 里的升级
-# 都按 digest 记版本，渠道只是找新版本的入口。只认不带后缀的版本号 tag（v0.2.0），误推的 vfoo、v0.2.0-rc.1 不会发布。
+# 推 vX.Y.Z 的 tag 时构建核心镜像（amd64、arm64），推到 GHCR（ADR-0012）。带连字符的预发布版本（v0.2.0-beta.1）只更新
+# beta 渠道，正式版本同时更新 stable 和 beta。安装脚本和 App 里的升级都按 digest 记版本，渠道只是找新版本的入口。
+# 只认版本号的 tag（v1.2.3、v1.2.3-beta.1），误推的 vfoo 不会发布。
 # 手动触发（只认 main）只发桥镜像，标签 main-<短提交号>，不碰任何渠道：桥和插件一起改名时，插件要先钉上新桥，
 # 不必为此发一版核心。
-#
-# 双架构用 amd64 和 arm64 两种原生 runner 构建（托管 runner 便宜又快，不在 QEMU 里交叉编译），各自按 digest 推，
-# digest 作为 artifact 传给 merge 作业，最后合成多架构 manifest 打上版本和渠道标签。
 on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
   workflow_dispatch:
 
 permissions:
@@ -19,163 +18,103 @@ permissions:
 
 jobs:
   core-image:
-    name: 核心镜像 ${{ matrix.platform }}
+    name: 核心镜像
     if: github.event_name == 'push'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux/amd64
-            runs-on: ubuntu-24.04
-          - platform: linux/arm64
-            runs-on: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runs-on }}
+    runs-on: [self-hosted, Linux, X64, docker]
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: 镜像仓库与基础镜像
-        id: meta
-        run: |
-          mirror="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/test-images"
-          {
-            echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-core"
-            echo "rust=$mirror/rust:1.99.1-slim-trixie"
-            echo "debian=$mirror/debian:trixie-slim"
-            echo "compose=$mirror/docker:29.9.2-cli"
-            # 层缓存读 main-image 写的那份；发版不写，免得把发版的层塞进 main 的缓存。
-            echo "cache=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:core-image"
-          } >> "$GITHUB_OUTPUT"
-      - id: push
-        uses: ./.github/actions/push-image
-        with:
-          platforms: ${{ matrix.platform }}
-          file: deploy/dev/core/Dockerfile
-          version: ${{ github.ref_name }}
-          extra-build-args: |-
-            WONTON_BUILD_COMMIT=${{ github.sha }}
-            RUST_IMAGE=${{ steps.meta.outputs.rust }}
-            DEBIAN_IMAGE=${{ steps.meta.outputs.debian }}
-            COMPOSE_IMAGE=${{ steps.meta.outputs.compose }}
-          image: ${{ steps.meta.outputs.image }}
-          cache-ref: ${{ steps.meta.outputs.cache }}
-          push-by-digest: "true"
-      - name: 记下本架构的 digest
-        env:
-          DIGEST: ${{ steps.push.outputs.digest }}
-          PLATFORM: ${{ matrix.platform }}
-        run: |
-          mkdir -p digests
-          echo "$DIGEST" > "digests/${PLATFORM##*/}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          # 每个架构一个 artifact：同名的话 v4 只留下一份，合出来的 manifest 少一个架构（v0.2.0 就这样只有单架构）。
-          name: digests-core-${{ strategy.job-index }}
-          path: digests/*
-          retention-days: 1
-
-  core-merge:
-    name: 核心镜像合 manifest
-    if: github.event_name == 'push'
-    needs: core-image
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: 版本、渠道
+      - uses: actions/checkout@v5
+      # runner 环境里的代理监听在主机的回环地址上，构建步骤（cargo 下载依赖）用 host 网络才连得上。
+      - name: 版本、渠道和代理
         id: meta
         run: |
           version="${GITHUB_REF_NAME#v}"
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-core"
-          echo "tags=$image:$version,$image:stable" >> "$GITHUB_OUTPUT"
-      - uses: ./.github/actions/merge-image-manifest
+          tags="$image:$version,$image:beta"
+          case "$version" in *-*) ;; *) tags="$tags,$image:stable" ;; esac
+          {
+            echo "version=$version"
+            echo "tags=$tags"
+            echo "http_proxy=${http_proxy:-}"
+            echo "https_proxy=${https_proxy:-}"
+          } >> "$GITHUB_OUTPUT"
+      # 容器里的构建器：Docker 自带的构建器用的是 Docker 的镜像存储，本机已有 amd64 的 debian:trixie-slim 时，构建 arm64
+      # 也拿它当基础镜像（Docker 29.7.2、overlayfs 存储驱动上实测，镜像里的 arm64 程序找不到动态链接器）。每次都是新的
+      # 构建器，Rust 从头编译。构建器自己的镜像 moby/buildkit 要预先放在 runner 主机上：国内的主机连不上 Docker Hub
+      # （所以基础镜像也改从 ECR Public 拉，见 Dockerfile）。
+      - uses: docker/setup-buildx-action@v3
         with:
+          driver-opts: network=host
+          buildkitd-flags: --allow-insecure-entitlement network.host
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/dev/core/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          network: host
+          allow: network.host
+          build-args: |
+            http_proxy=${{ steps.meta.outputs.http_proxy }}
+            https_proxy=${{ steps.meta.outputs.https_proxy }}
+            WONTON_BUILD_COMMIT=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
-          artifact: digests-core
+          push: true
 
   acp-bridge-image:
-    name: ACP bridge 镜像 ${{ matrix.platform }}
+    name: ACP bridge 镜像
     if: github.event_name == 'push' || github.ref == 'refs/heads/main'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux/amd64
-            runs-on: ubuntu-24.04
-          - platform: linux/arm64
-            runs-on: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runs-on }}
-    timeout-minutes: 90
+    runs-on: [self-hosted, Linux, X64, docker]
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: 版本、镜像仓库与基础镜像
-        id: meta
-        run: |
-          mirror="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/test-images"
-          {
-            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-              echo "version=main-${GITHUB_SHA::7}"
-            else
-              echo "version=${GITHUB_REF_NAME#v}"
-            fi
-            echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-acp-bridge"
-            echo "rust=$mirror/rust:1.99.1-slim-trixie"
-            echo "debian=$mirror/debian:trixie-slim"
-            # 层缓存读 main 上存的那份（cache.yml 的桥镜像作业），发版不写。
-            echo "cache=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:acp-bridge"
-          } >> "$GITHUB_OUTPUT"
-      - id: push
-        uses: ./.github/actions/push-image
-        with:
-          platforms: ${{ matrix.platform }}
-          file: deploy/dev/acp-bridge/Dockerfile
-          version: ${{ steps.meta.outputs.version }}
-          extra-build-args: |-
-            RUST_IMAGE=${{ steps.meta.outputs.rust }}
-            DEBIAN_IMAGE=${{ steps.meta.outputs.debian }}
-          image: ${{ steps.meta.outputs.image }}
-          cache-ref: ${{ steps.meta.outputs.cache }}
-          push-by-digest: "true"
-      - name: 记下本架构的 digest
-        env:
-          DIGEST: ${{ steps.push.outputs.digest }}
-          PLATFORM: ${{ matrix.platform }}
-        run: |
-          mkdir -p digests
-          echo "$DIGEST" > "digests/${PLATFORM##*/}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          # 每个架构一个 artifact：同名的话 v4 只留下一份，合出来的 manifest 少一个架构（v0.2.0 就这样只有单架构）。
-          name: digests-acp-bridge-${{ strategy.job-index }}
-          path: digests/*
-          retention-days: 1
-
-  acp-bridge-merge:
-    name: ACP bridge 镜像合 manifest
-    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
-    needs: acp-bridge-image
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: 版本、渠道
+      - uses: actions/checkout@v5
+      - name: 版本和代理
         id: meta
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-acp-bridge"
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-            echo "tags=$image:main-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            version="main-${GITHUB_SHA::7}"
+            tags="$image:$version"
           else
             version="${GITHUB_REF_NAME#v}"
-            echo "tags=$image:$version,$image:stable" >> "$GITHUB_OUTPUT"
+            tags="$image:$version,$image:beta"
+            case "$version" in *-*) ;; *) tags="$tags,$image:stable" ;; esac
           fi
-      - uses: ./.github/actions/merge-image-manifest
+          {
+            echo "version=$version"
+            echo "tags=$tags"
+            echo "http_proxy=${http_proxy:-}"
+            echo "https_proxy=${https_proxy:-}"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
         with:
+          driver-opts: network=host
+          buildkitd-flags: --allow-insecure-entitlement network.host
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/dev/acp-bridge/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          network: host
+          allow: network.host
+          build-args: |
+            http_proxy=${{ steps.meta.outputs.http_proxy }}
+            https_proxy=${{ steps.meta.outputs.https_proxy }}
+            CARGO_BUILD_JOBS=8
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
-          artifact: digests-acp-bridge
+          push: true

@@ -10,8 +10,7 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, CoreError, CoreUpgradeCheck, CoreUpgradeCheckRequest, CoreUpgradeCompat,
-    CoreUpgradeCompatCategory, CoreUpgradeCompatDetail, CoreUpgradeFailure, CoreUpgradeOffer,
+    Action, CoreError, CoreUpgradeCheck, CoreUpgradeCheckRequest, CoreUpgradeFailure,
     CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeRequest, CoreUpgradeRun, CoreUpgradeRunState,
     CoreUpgradeStage, CoreUpgradeStatus, CoreUpgradeViewModel,
 };
@@ -106,7 +105,6 @@ impl UpgradeLocal {
             }
             _ => None,
         };
-        let compat_details = offer.as_ref().map(compat_details).unwrap_or_default();
         CoreUpgradeViewModel {
             status: self.status.clone(),
             stage: self.stage(now_ms),
@@ -114,7 +112,6 @@ impl UpgradeLocal {
                 .as_ref()
                 .is_some_and(|offer| self.skipped.as_ref() == Some(&offer.digest)),
             offer,
-            compat_details,
             refreshing: self.manual && self.follow_ups > 0,
             problem: self.problem.clone(),
         }
@@ -312,7 +309,6 @@ impl PluginsLink {
             plugins.core_upgrade = view;
             changed
         });
-        self.refresh_derived();
     }
 
     /// 写不进去只影响 App 被杀后接不接得上，这次的显示不受影响。
@@ -592,55 +588,4 @@ fn start_problem(problem: CoreUpgradeProblem) -> CoreUpgradeProblem {
             reason = problem.message
         ),
     }
-}
-
-/// 会新失效的插件各原因一行：客户端核心按 App 的语言写（ADR-0085），壳只渲染。
-/// 没查、查了没有、查不成时不产生行。
-fn compat_details(offer: &CoreUpgradeOffer) -> Vec<CoreUpgradeCompatDetail> {
-    let CoreUpgradeOffer {
-        compat: CoreUpgradeCompat::Breaking { plugins },
-        ..
-    } = offer
-    else {
-        return Vec::new();
-    };
-    plugins
-        .iter()
-        .map(|plugin| CoreUpgradeCompatDetail {
-            id: plugin.id.clone(),
-            lines: plugin
-                .reasons
-                .iter()
-                .map(|reason| match reason.category {
-                    CoreUpgradeCompatCategory::SpecUnsupported => l10n!(
-                        CATALOG,
-                        language(),
-                        "plugins-core-upgrade-compat-spec",
-                        raw = reason.raw.as_str()
-                    ),
-                    CoreUpgradeCompatCategory::UnknownFeature => l10n!(
-                        CATALOG,
-                        language(),
-                        "plugins-core-upgrade-compat-feature",
-                        raw = reason.raw.as_str()
-                    ),
-                    CoreUpgradeCompatCategory::CapabilityMissing => l10n!(
-                        CATALOG,
-                        language(),
-                        "plugins-core-upgrade-compat-capability",
-                        raw = reason.raw.as_str()
-                    ),
-                    CoreUpgradeCompatCategory::Other if reason.raw.is_empty() => {
-                        l10n!(CATALOG, language(), "plugins-core-upgrade-compat-other")
-                    }
-                    CoreUpgradeCompatCategory::Other => l10n!(
-                        CATALOG,
-                        language(),
-                        "plugins-core-upgrade-compat-other-raw",
-                        raw = reason.raw.as_str()
-                    ),
-                })
-                .collect(),
-        })
-        .collect()
 }

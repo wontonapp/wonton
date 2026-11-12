@@ -6,7 +6,6 @@ mod bridge;
 mod commands;
 mod config;
 mod error;
-mod health;
 mod l10n;
 mod locale;
 mod login;
@@ -16,7 +15,6 @@ mod room;
 mod room_owner;
 mod state;
 mod topics;
-mod undecryptable;
 
 use std::process::ExitCode;
 
@@ -30,21 +28,6 @@ async fn main() -> ExitCode {
                 .unwrap_or_else(|_| EnvFilter::new("info,wonton_matrix=warn,matrix_sdk=warn")),
         )
         .init();
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if args.first().map(String::as_str) == Some("health") {
-        // 健康检查的原因要进探针的 stdout：Docker 收探针输出，核心把它原样放进插件的原因里。
-        return match health::run() {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                println!("{error:#}");
-                ExitCode::FAILURE
-            }
-        };
-    }
-    if let Some(other) = args.first() {
-        eprintln!("未知命令 {other}；用法：wonton-acp-bridge [run|health]");
-        return ExitCode::FAILURE;
-    }
     match bridge::run().await {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

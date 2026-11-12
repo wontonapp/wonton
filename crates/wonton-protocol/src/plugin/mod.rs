@@ -6,55 +6,38 @@
 //! 核心可能比 App 新：核心多给的字段被忽略；枚举遇到不认识的取值时落到 `Other` 或 `Unknown`，不让整份列表解析失败。
 
 mod capability_deps;
-mod detail;
-mod forms;
 pub mod hint;
-mod install;
 mod owner_secrets;
-pub mod store;
-mod view_model;
-pub use install::{InstallPreview, InstallRequest, UpgradeRequest};
-pub use view_model::PluginsViewModel;
 mod permission;
-pub(super) mod ports;
 mod secret_input;
-mod settings;
-mod takeover;
 #[path = "task.rs"]
 mod task;
 mod tool_policy;
-use crate::{CardLine, LanPort, PluginChat, PluginTab, TabDisplay};
 pub use capability_deps::{
     BlockedCategory, CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef,
     CapabilityProviderSettings, CapabilitySetting, ConsumerCapabilityChoice,
     ConsumerCapabilitySetting, InUseError, InstallTogether, MissingCapability, UninstallPreview,
     UninstallRequest,
 };
-pub use detail::{PluginDetail, PluginDetailOutcome, PluginDetailRoute};
-pub use forms::{PluginKind, PluginRuntime, PluginScope, SecurityTier, plugin_scope_path};
+use serde::{Deserialize, Serialize};
+
 pub use owner_secrets::{OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets};
-pub use owner_secrets::{
-    OwnerSecretFailure, OwnerSecretProblem, OwnerSecretView, OwnerSecretsView,
-};
 pub use permission::{
     PermissionLine, PermissionOpened, PermissionRisk, PermissionUpdate, PluginDevice,
 };
 pub use secret_input::{
     SecretInput, SecretInputState, SecretUpdate, SecretValues, secret_input_path,
 };
-use serde::{Deserialize, Serialize};
-pub use settings::{
-    PluginSettingField, PluginSettingKind, PluginSettingOption, PluginSettingsUpdate,
-    PluginSettingsView, SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
-    SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsProblem,
-    SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, plugin_settings_path,
-    plugin_settings_preview_path,
-};
-pub use takeover::{PluginTakeover, TakeoverState};
-pub use task::{PluginOperation, PluginTask, PluginTaskNextStep, PluginTaskState, UpgradeResult};
+pub use task::{PluginOperation, PluginTask, PluginTaskState, UpgradeResult};
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
 };
+
+use crate::{
+    CardLine, CoreUpgradeViewModel, EgressViewModel, LanPort, PluginChat, PluginTab,
+    RegistryMirrorViewModel, TabDisplay,
+};
+
 /// 插件从哪里来，决定商店、确认页和已安装列表上的标签。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -71,6 +54,20 @@ pub enum PluginTrust {
     /// 比这个 App 新的核心给的来源，当作未审核显示。
     #[serde(other)]
     Unknown,
+}
+
+/// 插件的种类（清单的 `kind`）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PluginKind {
+    App,
+    Agent,
+    Channel,
+    Model,
+    System,
+    #[serde(other)]
+    Other,
 }
 
 /// 核心处理过的一张图片：图标是 PNG，截图是 JPEG。用 `ClientCore::load_plugin_image` 取。
@@ -131,8 +128,6 @@ pub struct InstalledPlugin {
     /// 插件内容变化时随之变化，仅用于比较相等。
     pub revision: String,
     pub kind: PluginKind,
-    #[serde(default)]
-    pub runtime: PluginRuntime,
     /// 没有图标时为空，壳画占位图标。
     pub icon: Option<PluginIcon>,
     pub trust: PluginTrust,
@@ -151,7 +146,7 @@ pub struct InstalledPlugin {
     /// 清单 `webui` 的打开方式，没声明 `tabs` 的插件固定后用它。
     #[serde(default)]
     pub web_display: TabDisplay,
-    /// 清单 `webui` 声明了页面要跨源隔离。WebView 给不了时，客户端核心让页面在系统浏览器里打开（`TabPage.opens_in_browser`）。
+    /// 清单 `webui` 声明了页面要跨源隔离：Android 壳只对这些插件的网页放宽 WebView 的隔离限制。
     #[serde(default)]
     pub cross_origin_isolated: bool,
     /// 清单声明了 `mcp`：Bot 能调它的工具，网页标题栏上才有“我来操作”。
@@ -180,10 +175,6 @@ pub struct InstalledPlugin {
     /// 正在安装或升级时做到了哪一步；其余状态和还没开始部署时为空。
     #[serde(default)]
     pub install_progress: Option<InstallProgress>,
-    /// 清单 `tunnel.ports` 的端口和协议：App 在 `127.0.0.1` 上同号映射这些端口。只给 App 要的两项，不带清单校验用的
-    /// `deny_unknown_fields`：新核心给端口项加字段时旧 App 照样读得懂列表。
-    #[serde(default)]
-    pub tunnel_ports: Vec<crate::MappedPort>,
 }
 
 /// 插件的状态。
@@ -391,15 +382,10 @@ pub struct StoreItem {
     pub stars: Option<u32>,
     /// 装着的版本；没装时为空。
     pub installed_version: Option<String>,
-    /// 核心按清单算出的安全档位（ADR-0080）；旧核心不给时为空。
-    #[serde(default)]
-    pub security_tier: Option<SecurityTier>,
+    /// 申请了高权限，商店里标出来。
+    pub high_permissions: bool,
     /// 装不了的原因（宿主架构不符、需要核心不支持的权限、规范版本比核心新）；能装时为空。
     pub blocked: Option<String>,
-    /// 安全档位到了要醒目提示的程度（ADR-0080 的 High 及以上，比这个 App 新的档位也算）：商店里
-    /// 标红。档位比较只在核心这一处，壳不重复。旧核心不给时按没有算。
-    #[serde(default)]
-    pub high_permissions: bool,
 }
 
 /// 主人给插件定的资源上限，对它的每个服务生效（ADR-0037）。也是 `PUT /_wonton/api/plugins/{id}/limits` 的请求体。
@@ -441,21 +427,92 @@ pub struct RequirementLine {
     pub problem: Option<String>,
 }
 
+/// 插件的详情页：`GET /_wonton/api/store/plugin?source=…`（来源最新的版本）或
+/// `GET /_wonton/api/plugins/{id}`（装着的版本）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginDetail {
+    /// 安装来源（不带版本）；上传的和预装的插件为空。
+    pub source: Option<String>,
+    pub id: String,
+    pub title: String,
+    pub summary: String,
+    /// 详细介绍：纯文本，空行分段；作者没写时为空。
+    pub about: Option<String>,
+    pub icon: Option<PluginIcon>,
+    /// 截图，按作者给的顺序；取不到的图片显示占位。
+    pub screenshots: Vec<PluginImage>,
+    pub tags: Vec<String>,
+    pub kind: PluginKind,
+    /// 详情说的版本。
+    pub version: String,
+    pub trust: PluginTrust,
+    /// 核心能核实的提供方，如 `github.com/owner/repo`；上传的和预装的插件为空。清单里的 `author` 是作者自己写的，要分开显示。
+    pub provider: Option<String>,
+    /// 经第三方索引装的插件是索引的主机，如 `example.com`：装哪个提交由它决定。
+    pub via_index: Option<String>,
+    pub author: Option<PluginAuthor>,
+    /// 应用的主页。
+    pub homepage: Option<String>,
+    /// 插件仓库的网页，如 `https://github.com/owner/repo`。
+    pub repository: Option<String>,
+    /// 插件里那个应用的许可证（SPDX 表达式）。
+    pub license: Option<String>,
+    /// GitHub 星数；不是来自 GitHub 的插件为空。
+    pub stars: Option<u32>,
+    /// 这个版本的更新说明。
+    pub release_notes: Option<String>,
+    /// 安装时要授予的权限。
+    pub permissions: Vec<PermissionLine>,
+    /// 对宿主的要求和这台主机满不满足。
+    pub requirements: Vec<RequirementLine>,
+    /// 主人要填的密钥和填没填（ADR-0064），按清单里的顺序；装着的版本才列，`input` 项才在里面。没有值。
+    #[serde(default)]
+    pub secret_inputs: Vec<SecretInputState>,
+    /// 装好后有网页（小程序）。
+    pub has_web: bool,
+    /// 装着时是它的状态；没装时为空。
+    pub installed: Option<InstalledPlugin>,
+    /// 装不了的原因；能装时为空。
+    pub blocked: Option<String>,
+    /// 要主人知道的情况，如本机防火墙可能挡住了局域网设备；按顺序显示，`emphasis` 的醒目显示。
+    #[serde(default)]
+    pub notices: Vec<CardLine>,
+    /// 装着的插件缺了某个平台能力、在用它自己的设置时的轻提示（如没接模型网关），类别见
+    /// [`hint::PluginHintCategory`]；不是错误，状态照常，一页可以有多条。没有可提示的情况（没装、
+    /// 能力都接上了）时是空列表。
+    #[serde(default)]
+    pub hints: Vec<hint::PluginHint>,
+    /// 缺的 `requires` 能力（ADR-0053）：`providers` 列索引里能提供它的插件；没有的装不上。
+    #[serde(default)]
+    pub missing_requires: Vec<MissingCapability>,
+    /// 缺的 `wants` 能力（ADR-0053）：照装，少点能力。
+    #[serde(default)]
+    pub missing_wants: Vec<MissingCapability>,
+    /// 使用方给每种能力单独指定的提供方（ADR-0053）；`selected` 为空表示跟全局默认走。
+    #[serde(default)]
+    pub capability_providers: Vec<ConsumerCapabilitySetting>,
+    /// 这个版本有要主人打开开关才开的局域网端口时是开关的情况；`enabled` 是当前值，没装时是 `false`。
+    pub lan_webui: Option<LanWebuiOffer>,
+    /// 这个插件的 Bot 已获授权存文件的路径，如 `music/周杰伦`（ADR-0027）。
+    #[serde(default)]
+    pub save_grants: Vec<String>,
+    /// 主人给它定的资源上限；没装时为空。
+    #[serde(default)]
+    pub limits: Option<PluginLimits>,
+    /// 开关“每次都问”：Agent 写的插件是当前值，打开后这个 Agent 每次更新都发卡片；别的插件为空。
+    #[serde(default)]
+    pub ask_every_update: Option<bool>,
+    /// 主人可管理的分享；没权限、没装或不支持分享接口时为空，不伪装成零人。
+    #[serde(default)]
+    pub shares: Option<crate::PluginShares>,
+}
+
 /// `PUT /_wonton/api/plugins/{id}/ask-every-update` 的请求体，响应是更新后的 [`PluginDetail`]。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AskEveryUpdate {
     pub enabled: bool,
-}
-
-/// 插件网页用摄像头和麦克风的记下的决定，按插件 ID 存在设备本机：
-/// 插件详情页一行开关，没问过（没有记录）不显示。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct PluginMediaGrant {
-    pub plugin_id: String,
-    /// `true` 是允许过；`false` 是拒绝过（只在询问弹窗里产生）。
-    pub allowed: bool,
 }
 
 /// 开关 `lan_webui`：网页的局域网端口默认不开，主人看过风险后可以打开（ADR-0023 的“网页的局域网端口”）。
@@ -494,6 +551,185 @@ pub struct InstallSource {
     pub source: String,
 }
 
+/// 安装或升级前给主人确认的内容：预览接口的响应。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct InstallPreview {
+    /// 解析后的来源，带着 tag 或提交，如 `github:owner/repo@v1.2.0`；上传的插件包是 `upload:sha256:…`，核心暂存 1 小时。
+    /// 安装和升级请求原样带回。
+    pub source: Option<String>,
+    /// 来源解析到的提交（40 位十六进制）；上传的插件包为空。
+    pub commit: Option<String>,
+    /// 插件包摘要（`sha256:…`）：安装请求原样带回，插件包在预览后变了就装不上。
+    pub digest: String,
+    pub id: String,
+    pub title: String,
+    pub summary: String,
+    pub version: String,
+    pub kind: PluginKind,
+    /// 清单声明了 Bot：装的时候聊天列表要给它占一行，装好后是和它的私聊。
+    #[serde(default)]
+    pub has_bot: bool,
+    pub icon: Option<PluginIcon>,
+    pub trust: PluginTrust,
+    /// 核心能核实的提供方，如 `github.com/owner/repo`；上传的和预装的插件为空。清单里的 `author` 是作者自己写的，要分开显示。
+    pub provider: Option<String>,
+    /// 经第三方索引装的插件是索引的主机，如 `example.com`：装哪个提交由它决定。
+    pub via_index: Option<String>,
+    /// Agent 写的插件是写它的 Agent。
+    #[serde(default)]
+    pub written_by: Option<PluginWriter>,
+    pub author: Option<PluginAuthor>,
+    /// 要授予的全部权限；主人确认的就是这些。
+    pub permissions: Vec<PermissionLine>,
+    /// 要主人填的密钥（ADR-0064）；值不在预览里，跟着安装、升级请求上行。升级预览只列新增的和还没填的。
+    #[serde(default)]
+    pub secret_inputs: Vec<SecretInput>,
+    /// 确认前要看到的其他说明：未审核、镜像来自哪里、留着旧数据、降级、换来源、对宿主的要求等，按顺序显示，`emphasis` 的醒目显示。
+    pub notices: Vec<CardLine>,
+    /// 缺的 `requires` 能力（ADR-0053）：索引里有提供方的列出插件，主人确认一起装；没有的装不上。
+    #[serde(default)]
+    pub missing_requires: Vec<MissingCapability>,
+    /// 缺的 `wants` 能力（ADR-0053）：照装，少点能力。
+    #[serde(default)]
+    pub missing_wants: Vec<MissingCapability>,
+    /// 装的是提供方、而已装的插件正 `wants` 这个能力时（ADR-0053 的“高权限能力”），列出它们：不自动
+    /// 接上，主人在安装请求里勾选的才接上；没勾的以后在它们的详情页里接。
+    #[serde(default)]
+    pub wanting_plugins: Vec<CapabilityProviderRef>,
+    /// 升级或换版本时是装着的版本；新装时为空。
+    pub upgrade_from: Option<String>,
+    /// 这个版本的更新说明。
+    pub release_notes: Option<String>,
+    /// 装不了的原因；能装时为空，确认按钮这时不可点。
+    pub blocked: Option<String>,
+    /// 装不了的类别（ADR-0053）：App 按类别写文字，`blocked` 是细节。其他原因核心只写 `blocked`。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub blocked_category: Option<BlockedCategory>,
+    /// 要先填资料才能装时的说明，确认按钮这时不可点。壳显示这句话和去填资料的按钮，填完重新预览。
+    pub missing_profile: Option<String>,
+    /// 可供主人选择、交给插件服务的宿主设备；不需要选择时为空。
+    #[serde(default)]
+    pub devices: Option<Vec<PluginDevice>>,
+    /// 有要主人打开开关才开的局域网端口时是开关的情况；主人的选择放在请求的 `lan_webui` 字段带回。
+    pub lan_webui: Option<LanWebuiOffer>,
+    /// 升级时已经对这个插件始终允许的 Bot（ADR-0024）：新版本多出来的工具也算在内，主人在确认页可以关。新装时为空。
+    pub always_allowed: Vec<BotSwitch>,
+}
+
+/// `POST /_wonton/api/plugins` 的请求体（JSON）：按来源安装。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct InstallRequest {
+    /// 预览给的 `source`。
+    pub source: String,
+    /// 预览给的 `digest`；对不上时得到 409 `changed`。
+    pub digest: String,
+    /// 主人确认的权限：每项必需权限都要在，少一项装不上；可以带上可选项（老客户端会这么做），但它们不算打开；
+    /// 多出预览里没有的项装不上。
+    pub grant: Vec<String>,
+    /// 主人在预览里打开的可选项（[`PermissionLine::optional`] 的 `permission`），没带就是全关。
+    #[serde(default)]
+    pub enabled_permissions: Vec<String>,
+    /// 主人填的密钥值（[`SecretValues`]），键是预览里 [`SecretInput::name`]。
+    #[serde(default)]
+    pub secrets: SecretValues,
+    /// 主人选择的设备 ID；没有设备选择时为空。
+    #[serde(default)]
+    pub devices: Vec<String>,
+    /// 打开开关 `lan_webui`。预览没有 [`LanWebuiOffer`] 时不起作用。
+    #[serde(default)]
+    pub lan_webui: bool,
+    /// 要一起装的提供方（ADR-0053），带安装来源（和预览的 `providers[].source` 一致）。
+    #[serde(default)]
+    pub install_together: Vec<InstallTogether>,
+    /// 要接上的已装使用方插件 ID（ADR-0053 的“高权限能力”）：装的是提供方、预览里列了
+    /// `wanting_plugins`，主人勾选的才接上。
+    #[serde(default)]
+    pub connect_plugins: Vec<String>,
+}
+
+/// `POST /_wonton/api/plugins/{id}/upgrade` 的请求体（JSON）：换到升级预览给的版本。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct UpgradeRequest {
+    /// 主人选择的设备 ID；没有设备选择时为空。
+    #[serde(default)]
+    pub devices: Vec<String>,
+    /// 预览给的 `source`。主人没有主动选来源、只是升到提示的版本时为空。
+    #[serde(default)]
+    pub source: Option<String>,
+    pub digest: String,
+    /// 同 [`InstallRequest::grant`]。
+    pub grant: Vec<String>,
+    /// 同 [`InstallRequest::enabled_permissions`]。
+    #[serde(default)]
+    pub enabled_permissions: Vec<String>,
+    /// 同 [`InstallRequest::secrets`]：升级只要新增的、还没填的项。
+    #[serde(default)]
+    pub secrets: SecretValues,
+    /// 同 [`InstallRequest::lan_webui`]。
+    #[serde(default)]
+    pub lan_webui: bool,
+}
+
+/// 插件页面的 ViewModel：已安装的插件、商店，以及安装、升级、卸载的进展。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginsViewModel {
+    /// 已安装的插件；还没取到过时为空，不代表没装插件。
+    pub installed: Option<InstalledPlugins>,
+    /// 商店；还没取过时为空。
+    pub store: Option<StoreListing>,
+    /// 正在从家里的服务器取已安装列表或商店。
+    pub refreshing: bool,
+    /// 最近一次取列表失败的原因，这时显示的是上次取到的列表；再取成功后清空。
+    pub problem: Option<PluginProblem>,
+    /// 安装、升级、卸载的进展，按发起的先后。同一个插件同时只有一个。
+    pub tasks: Vec<PluginTask>,
+    /// 出网代理的设置页。
+    pub egress: EgressViewModel,
+    /// Docker Hub 镜像加速的设置页。
+    pub registry_mirror: RegistryMirrorViewModel,
+    /// 核心的升级页。
+    pub core_upgrade: CoreUpgradeViewModel,
+    /// 家里服务器存数据的那块盘；还没取到、或者连不上时为空，这时不知道还剩多少。
+    pub storage: Option<StorageUsage>,
+    /// 连着家里的服务器却查不到磁盘空间的原因。
+    pub storage_problem: Option<PluginProblem>,
+    /// “我来操作”；没在操作时为空。结束了但不是主人交还的，留着告诉主人，等 `EndTakeover` 或者下一次 `StartTakeover`。
+    pub takeover: Option<PluginTakeover>,
+    /// 由核心给出的应用页入口；壳不按槽位种类自行判断，未知操作不显示。
+    #[serde(default)]
+    pub actions: Vec<crate::AppsAction>,
+    /// 朋友分享的应用，来源独立于自家已装插件；未取到时为空。
+    pub shared_apps: Option<crate::SharedAppsViewModel>,
+}
+
+/// 这台设备上的“我来操作”，同时只操作一个插件。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginTakeover {
+    pub id: String,
+    pub state: TakeoverState,
+}
+
+/// “我来操作”走到哪一步了。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum TakeoverState {
+    /// 请求发出去了，家里的服务器还没回：Bot 的调用还没有停住。
+    Starting,
+    /// 家里的服务器确认了：Bot 的敏感调用都先停住。
+    Operating,
+    /// 没开始成，Bot 的调用照常判定。
+    NotStarted { problem: PluginProblem },
+    /// 操作到一半断了：续不上约，或者插件停了、设备被吊销。Bot 的调用不再停住。
+    Lost { problem: PluginProblem },
+}
+
 /// 家里服务器存数据的那块盘。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -512,9 +748,6 @@ pub struct PluginProblem {
     /// “服务器太旧”时要的最低服务器版本；别的类别和不知道时为空。
     #[serde(default)]
     pub min_version: Option<String>,
-    /// 设置校验失败的明细（ADR-0077）：壳按字段标红、按类别写文字。别的类别和没有明细时为空。
-    #[serde(default)]
-    pub settings: Option<SettingsProblem>,
 }
 
 /// 失败的原因，壳据此提示主人下一步。
@@ -548,14 +781,10 @@ pub enum PluginFailure {
     CoreUpgrading,
     /// 主人配的代理连不上或者拒绝了，出网插件装不上：要主人在代理设置里改地址，或者修好代理（ADR-0023）。
     EgressProxyUnavailable,
+    /// 插件要用的资料（如邮箱）还没填：要主人在设置里填好再试（ADR-0030）。
+    OwnerProfileIncomplete,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
-    /// 设置值没通过 Schema（ADR-0077），明细在 [`PluginProblem::settings`]。
-    SettingsInvalid,
-    /// 插件包的设置 Schema 自己不合格（ADR-0077），明细在 [`PluginProblem::settings`]。
-    SettingsSchemaInvalid,
-    /// 这台服务器读不出这个应用的安装记录：卸载（可以保留数据）后重新安装。
-    RecordUnusable,
     /// App 和家里服务器的版本对不上，有一边要更新。
     Protocol,
     /// 服务器比 App 旧，还没有这个接口（[`crate::minimum_server_version`]）：升级服务器后可用。

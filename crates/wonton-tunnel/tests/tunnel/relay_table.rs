@@ -7,7 +7,6 @@
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use iroh::endpoint::{QuicTransportConfig, presets};
@@ -24,7 +23,7 @@ use tokio::net::{TcpListener, TcpStream};
 use wonton_tunnel::relays::{RelayTable, relay_map, spawn_tier_fallback};
 use wonton_tunnel::{Allowlist, PathKind, ProxyAccess, TunnelServer, TunnelStatus};
 
-use crate::support::{Phone, Upstream, WAIT, init_tracing};
+use crate::support::{Phone, Upstream, WAIT};
 
 /// 测试里的回退阈值。iroh 第一次连上家中继多半在几百毫秒内，2 秒的阈值足够它先连上第一档。
 const FALLBACK_AFTER: Duration = Duration::from_secs(2);
@@ -32,10 +31,6 @@ const FALLBACK_AFTER: Duration = Duration::from_secs(2);
 /// 断言“不撤回”要等的窗口。修前的 TCP 探测在拒绝中继出现后 1-3 秒内就会错判恢复并撤档
 /// （1 秒轮询 + 2 秒探测限时），8 秒的窗口足够把误判等出来；修对以后这个窗口白等 8 秒。
 const FLAP_WINDOW: Duration = Duration::from_secs(8);
-
-/// 等中继重连的窗口。iroh 重连有退避，托管 CI 只有 2–4 核、测试把线程占满时偶尔超过
-/// [`WAIT`] 的 15 秒（实测），这一处放得宽一些。
-const RECONNECT_WAIT: Duration = Duration::from_secs(60);
 
 /// 只认 `token` 的准入：和 iroh-relay 二进制的 `shared_token` 一个做法。
 #[derive(Debug)]
@@ -87,7 +82,6 @@ struct Forwarder {
     /// 前门地址：放进中继表的就是它。
     front: SocketAddr,
     backend: tokio::sync::watch::Sender<Option<SocketAddr>>,
-    accepted: Arc<AtomicUsize>,
 }
 
 impl Forwarder {
@@ -95,8 +89,6 @@ impl Forwarder {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
         let front = listener.local_addr()?;
         let (backend, mut backend_rx) = tokio::sync::watch::channel(None);
-        let accepted = Arc::new(AtomicUsize::new(0));
-        let counter = accepted.clone();
         tokio::spawn(async move {
             loop {
                 let accepted = tokio::select! {
@@ -113,7 +105,6 @@ impl Forwarder {
                         continue;
                     }
                 };
-                counter.fetch_add(1, Ordering::Relaxed);
                 let Some(backend) = *backend_rx.borrow() else {
                     continue; // 无后端：刚接受的连接随变量一起关掉
                 };
@@ -124,19 +115,11 @@ impl Forwarder {
                 }
             }
         });
-        Ok(Self {
-            front,
-            backend,
-            accepted,
-        })
+        Ok(Self { front, backend })
     }
 
     fn set_backend(&self, backend: Option<SocketAddr>) {
         self.backend.send_replace(backend);
-    }
-
-    fn connections(&self) -> usize {
-        self.accepted.load(Ordering::Relaxed)
     }
 
     /// 前门的中继地址（表里用的形式）。
@@ -147,7 +130,6 @@ impl Forwarder {
 
 /// 只走本地测试中继的 endpoint：不做地址发现，不走 UDP 直连，中继表由表项给。
 async fn relay_endpoint(key: SecretKey, relays: RelayMap) -> Endpoint {
-    init_tracing();
     // 短空闲超时：第一档死掉后，旧连接的唯一路径跟着断，连接要在几秒内自己断开（事件），
     // 不能等 iroh 默认的 30 秒。
     let transport = QuicTransportConfig::builder()
@@ -163,130 +145,6 @@ async fn relay_endpoint(key: SecretKey, relays: RelayMap) -> Endpoint {
         .bind()
         .await
         .unwrap()
-}
-
-/// 中继拒绝测试的 TCP 足迹：把内核的 TIME_WAIT 和 conntrack 用量打到 stderr。CI 机上没有 shell，
-/// 前后对比只能在测试进程里读 `/proc`（`--nocapture` 才看得到，通过时被测试框架收着）。
-fn print_net_metrics(label: &str) {
-    let time_wait = std::fs::read_to_string("/proc/net/sockstat")
-        .ok()
-        .and_then(|text| {
-            text.lines()
-                .find(|line| line.starts_with("TCP:"))
-                .and_then(|line| {
-                    line.split_whitespace()
-                        .skip_while(|word| *word != "tw")
-                        .nth(1)
-                        .map(str::to_owned)
-                })
-        })
-        .unwrap_or_else(|| "?".to_owned());
-    let conntrack = std::fs::read_to_string("/proc/sys/net/netfilter/nf_conntrack_count")
-        .map(|text| text.trim().to_owned())
-        .unwrap_or_else(|_| "?".to_owned());
-    eprintln!("net metrics {label}: time_wait={time_wait} conntrack={conntrack}");
-}
-
-#[tokio::test]
-async fn a_refusing_relay_bounds_main_and_probe_reconnects() -> anyhow::Result<()> {
-    let (_url, refusing) = spawn_relay(Arc::new(SharedToken::new("other"))).await?;
-    let backend = refusing.https_addr().expect("配置了 TLS 地址");
-    let main_front = Forwarder::spawn().await?;
-    main_front.set_backend(Some(backend));
-    // 探针要覆盖两档被撤的中继：一个都不连上时 `home_relay_status` 是空的，修前的实现会把
-    // 它们当成“没插过”每拍重插。
-    let probe_front = Forwarder::spawn().await?;
-    probe_front.set_backend(Some(backend));
-    let second_front = Forwarder::spawn().await?;
-    second_front.set_backend(Some(backend));
-    // 对照：同样连这台被拒中继、但没有任何回退机制的 endpoint。它的连接全是 iroh 自己的退避和
-    // 本机的网络变化报告，用来把“机器当时的噪声”从探针的连接数里除掉。
-    let control_front = Forwarder::spawn().await?;
-    control_front.set_backend(Some(backend));
-    let (_map, healthy_url, healthy) = run_relay_server().await?;
-    let single = RelayTable::parse(&format!("https://tok@{}", main_front.front)).unwrap();
-    let tiered = RelayTable::parse(&format!(
-        "https://tok@{};https://tok@{};{healthy_url}",
-        probe_front.front, second_front.front
-    ))
-    .unwrap();
-    assert_eq!(tiered.tier_count(), 3);
-    let control_table = RelayTable::parse(&format!("https://tok@{}", control_front.front)).unwrap();
-    let main = relay_endpoint(SecretKey::generate(), relay_map(single.relays(), 1)).await;
-    let _main_fallback = spawn_tier_fallback(
-        main.clone(),
-        single,
-        FALLBACK_AFTER,
-        Some(CaTlsConfig::insecure_skip_verify()),
-    );
-    let tiered_endpoint =
-        relay_endpoint(SecretKey::generate(), relay_map(tiered.relays(), 1)).await;
-    let control = relay_endpoint(SecretKey::generate(), relay_map(control_table.relays(), 1)).await;
-    let mut fallback = spawn_tier_fallback(
-        tiered_endpoint.clone(),
-        tiered,
-        FALLBACK_AFTER,
-        Some(CaTlsConfig::insecure_skip_verify()),
-    );
-    // 探针只在回退激活后存在；落到第三档、它开始覆盖两档以后才数。
-    tokio::time::timeout(WAIT, fallback.wait_enabled_tiers(3))
-        .await
-        .expect("拒绝令牌应回退到可用的第三档");
-    let probes = || probe_front.connections() + second_front.connections();
-    print_net_metrics("start");
-    // 前 5 秒有建连的突发，噪声大；断言只数第 5–15 秒的稳态。
-    let mut main_baseline = 0;
-    let mut probe_baseline = 0;
-    let mut control_baseline = 0;
-    for second in 1..=15 {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        if second == 5 {
-            main_baseline = main_front.connections();
-            probe_baseline = probes();
-            control_baseline = control_front.connections();
-        }
-        eprintln!(
-            "relay attempts second={second} main={} probes={} control={} main_status={:?}",
-            main_front.connections(),
-            probes(),
-            control_front.connections(),
-            main.home_relay_status().get()
-        );
-    }
-    print_net_metrics("end");
-    let main_connections = main_front.connections() - main_baseline;
-    let probe_connections = probes() - probe_baseline;
-    let control_connections = control_front.connections() - control_baseline;
-    let main_total = main_front.connections();
-    let probe_total = probes();
-    main.close().await;
-    control.close().await;
-    tiered_endpoint.close().await;
-    refusing.shutdown().await?;
-    healthy.shutdown().await?;
-    // 稳态窗口只断言上限：16 秒封顶的退避可能让这十秒里没有新拨号。全程计数另断言至少一次，
-    // 确认转发器确实观察到了主 endpoint 和探针侧的连接。
-    // 稳态窗口理论上最多几次：iroh 的退避从 10 ms 起、每次翻倍、封顶 16 s；封顶后每次间隔在 8–16 秒抖动，
-    // 十秒窗口最多两次计划内重拨。61 上 netmon 的 LinkChangeMajor 会重置退避并立即重拨，这部分
-    // 次数由环境决定，无法从参数推出。对照 endpoint 跑同一个 iroh actor、共享同一批网络事件，
-    // 所以它这十秒的计数就是本轮噪声基线；主 endpoint 和它同样是单档单中继，只多给两秒采样
-    // 对齐的余量。20 是安静机器上的绝对下限，基线更大时按 control + 2 放宽。
-    let main_limit = (control_connections + 2).max(20);
-    assert!(
-        main_connections <= main_limit,
-        "单档主 endpoint 稳态十秒连接数 {main_connections} 超过 {main_limit}（对照 {control_connections} + 2，下限 20）"
-    );
-    assert!(
-        probe_connections <= 60,
-        "恢复探针稳态十秒连接数 {probe_connections} 超过 60"
-    );
-    assert!(
-        probe_connections <= 4 * control_connections.max(3),
-        "恢复探针连接数 {probe_connections} 超过对照 endpoint（{control_connections}）的四倍"
-    );
-    assert!(main_total >= 1, "观察窗口内主 endpoint 没有连接");
-    assert!(probe_total >= 1, "观察窗口内探针侧没有连接");
-    Ok(())
 }
 
 #[tokio::test]
@@ -536,18 +394,11 @@ async fn a_refusing_top_tier_does_not_flap() -> anyhow::Result<()> {
     // 不许判成“恢复”。
     let (_refusing_url, refusing_relay) = spawn_relay(Arc::new(SharedToken::new("other"))).await?;
     first.set_backend(Some(refusing_relay.https_addr().expect("配置了 TLS 地址")));
-    let started = first.connections();
-    eprintln!("refusing transition initial connections={started}");
-    print_net_metrics("refusing-start");
 
     // 撤回判定在几秒内就该发生一次（修前的 TCP 探测就是这样错判的），等一个比它宽的窗口：
     // 窗口内两侧都不许把启用档数降回 1。预期超时，真的撤回了就是来回切。
     let no_flap = tokio::time::timeout(FLAP_WINDOW, phone_fallback.wait_enabled_tiers(1)).await;
     assert!(no_flap.is_err(), "手机侧不应撤回第二档：第一档只是端口活着");
-    eprintln!(
-        "refusing transition after eight seconds connections={}",
-        first.connections()
-    );
     let no_flap = tokio::time::timeout(FLAP_WINDOW, server_fallback.wait_enabled_tiers(1)).await;
     assert!(
         no_flap.is_err(),
@@ -560,12 +411,6 @@ async fn a_refusing_top_tier_does_not_flap() -> anyhow::Result<()> {
     assert_eq!(response.status, 200);
     let path = phone.client.path().expect("请求应有选中路径");
     assert_eq!(path.remote, TransportAddr::Relay(second_url.clone()));
-    eprintln!(
-        "refusing transition final connections={} delta={}",
-        first.connections(),
-        first.connections() - started
-    );
-    print_net_metrics("refusing-end");
 
     phone.client.close();
     phone_endpoint.close().await;
@@ -636,7 +481,6 @@ async fn a_recovered_middle_tier_pulls_back_one_level() -> anyhow::Result<()> {
     r1.shutdown().await.ok();
     tier0.set_backend(None);
     tier1.set_backend(None);
-    print_net_metrics("fallback-start");
     tokio::time::timeout(WAIT, phone_fallback.wait_enabled_tiers(3))
         .await
         .expect("手机侧应落到第三档");
@@ -665,7 +509,6 @@ async fn a_recovered_middle_tier_pulls_back_one_level() -> anyhow::Result<()> {
     third_relay.shutdown().await.ok();
     wait_disconnected(&phone).await;
     wait_reestablished(&phone).await;
-    print_net_metrics("fallback-end");
     let response = timeout_get(&phone, "/via-recovered-tier1").await;
     assert_eq!(response.status, 200);
     let path = phone.client.path().expect("请求应有选中路径");
@@ -687,9 +530,8 @@ async fn timeout_get(phone: &Phone, path: &str) -> crate::support::Response {
 }
 
 /// 等一个中继连上：iroh 重连有退避，端口恢复可达和家里继真正连上是两件事。
-/// 用比 [`WAIT`] 更宽的窗口：托管 CI 只有 2–4 核、测试并发占满时，重连偶尔超过 15 秒（实测）。
 async fn wait_relay_connected(endpoint: &Endpoint, url: &RelayUrl) {
-    tokio::time::timeout(RECONNECT_WAIT, async {
+    tokio::time::timeout(WAIT, async {
         loop {
             let statuses = endpoint.home_relay_status().get();
             if statuses

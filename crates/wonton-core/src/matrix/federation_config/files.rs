@@ -1,4 +1,4 @@
-//! 联邦名单文件 `secrets/tuwunel/wonton-fed.toml` 的生成（ADR-0050）。纯函数，运行时在 [super]。
+//! 联邦名单文件 `fed/config.toml` 的生成（ADR-0050）。纯函数，运行时在 [super]。
 
 use std::collections::BTreeSet;
 
@@ -25,16 +25,6 @@ pub(crate) fn allowlist_toml(names: &BTreeSet<String>) -> String {
          # 这份文件只写联邦名单，别的选项在 tuwunel.toml。\n\
          allowed_remote_server_names_experimental = [{list}]\n"
     )
-}
-
-/// 整台服务器黑名单的行：和 allowlist 一样锚定、转义。
-pub(crate) fn blocks_toml(names: &BTreeSet<String>) -> String {
-    let list = names
-        .iter()
-        .map(|name| format!("'^{}$'", regex_escape(name)))
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("forbidden_remote_server_names = [{list}]\n")
 }
 
 /// 服务器名进正则：名字经过校验只有 `[a-z0-9.-]`，点要转义；其他符号也一并转义，转义字母和数字

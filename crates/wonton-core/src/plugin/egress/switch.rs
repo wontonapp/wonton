@@ -5,7 +5,6 @@
 //! 先读后删，读不到就不动容器、标为异常，不悄悄签新设备：换设备要重新建加密身份。
 
 use super::provider::provides_proxy;
-use crate::plugin::health_gate::Gate;
 use wonton_protocol::EgressRestart;
 
 use crate::l10n;
@@ -203,8 +202,7 @@ impl PluginManager {
             )
             .await?;
         }
-        self.replace_containers(&ctx, plan, Gate::StartPeriod)
-            .await?;
+        self.replace_containers(&ctx, plan).await?;
         record.proxied = ctx.egress.is_some();
         self.store.save(&record)?;
         self.reconcile_running(&package, &record).await

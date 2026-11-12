@@ -77,19 +77,7 @@ impl HomeLink {
                 DeviceInvite::Failed { reason, message }
             }
         };
-        // 主人等码时离开了“添加设备”页（`CloseDeviceInvite`）：码不再放回去。
-        self.view.send_if_modified(|view| {
-            let waiting = matches!(view.invite, Some(DeviceInvite::Requesting));
-            if waiting {
-                view.invite = Some(invite);
-            }
-            waiting
-        });
-    }
-
-    /// `CloseDeviceInvite`：主人离开“添加设备”页。码在服务器上到期前仍然能用，只是不再显示。
-    pub(crate) fn close_invite(&self) {
-        self.set_invite(None);
+        self.set_invite(Some(invite));
     }
 
     fn set_invite(&self, invite: Option<DeviceInvite>) {

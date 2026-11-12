@@ -161,7 +161,6 @@ impl PluginManager {
         filled: Option<&Secrets>,
         langs: &Languages,
     ) -> Result<Vec<String>, InstallError> {
-        super::install_entry::check_runtime(manifest, langs)?;
         let store = self.store.secrets();
         let mut secrets = match filled {
             Some(secrets) => secrets.clone(),

@@ -21,10 +21,10 @@ use wonton_tunnel::federation::{
     FEDERATION_ALPN, FederationForwarder, FederationProtocol, OutboundErrors, PeerStatus,
 };
 
-use super::PROXY_ADDR;
 use super::tests::{
-    Account, ClusterServer, create_room, image, invite, join, register_user, wait_ready,
+    Account, ClusterServer, IMAGE, create_room, invite, join, register_user, wait_ready,
 };
+use super::{PROXY_ADDR, allowlist_toml};
 use crate::http::{HttpClient, RequestBody};
 
 const WAIT: Duration = Duration::from_secs(15);
@@ -195,7 +195,6 @@ struct Stack {
     server_name: String,
     registration_secret: String,
     federation_port: u16,
-    proxy: String,
 }
 
 impl Stack {
@@ -204,14 +203,15 @@ impl Stack {
         crate::install::init(dir, None).unwrap();
         let secrets = dir.join("secrets");
         let read = |name: &str| std::fs::read_to_string(secrets.join(name)).unwrap();
-        let config = std::fs::read_to_string(dir.join("secrets/tuwunel/wonton-fed.toml")).unwrap();
+        let config = read("tuwunel.toml");
+        assert!(config.contains(PROXY_ADDR), "{config}");
         let proxy_host = if HOST_NETWORK {
             "127.0.0.1"
         } else {
             "host.docker.internal"
         };
         let config = config.replace(PROXY_ADDR, &format!("{proxy_host}:{proxy_port}"));
-        std::fs::write(dir.join("secrets/tuwunel/wonton-fed.toml"), config).unwrap();
+        std::fs::write(secrets.join("tuwunel.toml"), config).unwrap();
         let token = crate::secret::random_token();
         let mut stack = Self {
             dir: dir.to_owned(),
@@ -219,7 +219,6 @@ impl Stack {
             container: format!("fedproxy-test-{token}"),
             server_name: read("matrix-server-name").trim().to_owned(),
             registration_secret: read("matrix-registration-secret").trim().to_owned(),
-            proxy: format!("{proxy_host}:{proxy_port}"),
             federation_port: 0,
         };
         if let Some(network) = &stack.network {
@@ -311,7 +310,7 @@ impl Stack {
                 args.extend(["--volume".to_owned(), mount]);
             }
         }
-        args.push(image());
+        args.push(IMAGE.to_owned());
         args.extend(strings(&tuwunel["command"]));
         args
     }
@@ -319,13 +318,8 @@ impl Stack {
     /// 把对方放进名单并热加载（核心配对成立时做的事）。
     fn allow(&self, peer: &str) {
         std::fs::write(
-            self.dir.join("secrets/tuwunel/wonton-fed.toml"),
-            super::config_toml(
-                &self.server_name,
-                &BTreeSet::from([peer.to_owned()]),
-                &BTreeSet::new(),
-            )
-            .replace(PROXY_ADDR, &self.proxy),
+            self.dir.join("fed/config.toml"),
+            allowlist_toml(&BTreeSet::from([peer.to_owned()])),
         )
         .unwrap();
         docker(&["kill", "--signal", "SIGUSR1", &self.container]);
@@ -438,7 +432,6 @@ async fn send_text(server: &ClusterServer, account: &Account, room: &str, body: 
                 server.address
             ),
             Some(&account.token),
-            &[],
             RequestBody::Json(&serde_json::json!({"msgtype": "m.text", "body": body})),
             WAIT,
         )
@@ -459,7 +452,6 @@ async fn received(
             Method::GET,
             &format!("{}/_matrix/client/v3/sync", server.address),
             Some(&account.token),
-            &[],
             RequestBody::Empty,
             WAIT,
         )

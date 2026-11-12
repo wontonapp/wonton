@@ -19,7 +19,7 @@ impl FakeHost {
         Self { dir }
     }
 
-    /// 带 AMD 集成显卡的主机：amdgpu 驱动、KFD、一个渲染节点和一个显示节点。
+    /// npchy 那样的 AMD 主机：amdgpu 驱动、KFD、一个渲染节点和一个显示节点。
     pub fn amd() -> Self {
         let host = Self::empty();
         host.pci("0000:05:00.0", "0x1002", "0x038000", Some("amdgpu"));

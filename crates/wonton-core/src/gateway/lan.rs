@@ -27,13 +27,7 @@ pub fn request(gateway: &Gateway, host_ip: IpAddr, req: &Request) -> Response {
     // 局域网页不在多语言范围（ADR-0043），保持现状：文字固定简体，插件标题按同一套回退挑中文。
     let langs = Languages::from_header(Some("zh"));
     if req.method() != Method::GET || req.uri().path() != "/" {
-        return pages::error(
-            StatusCode::NOT_FOUND,
-            "not_found",
-            "没有这个页面",
-            &langs,
-            pages::Format::of(req.headers()),
-        );
+        return pages::error(StatusCode::NOT_FOUND, "not_found", "没有这个页面", &langs);
     }
     let code = gateway
         .tunnel
