@@ -6,6 +6,7 @@ mod downtime;
 mod downtime_real;
 mod limits;
 mod restore;
+mod run_status;
 mod tasks;
 mod topics;
 

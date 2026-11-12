@@ -63,6 +63,14 @@ impl Sessions {
     pub(super) fn key_of(&self, session_id: &str) -> Option<SessionKey> {
         self.acp.get(session_id).cloned()
     }
+
+    /// 丢掉所有会话排队的后续任务：连接断开时不再开新一轮，收尾只管在跑的。
+    pub(super) fn drop_pending(&mut self) {
+        for state in self.states.values_mut() {
+            state.queue.clear();
+            state.pending_interrupt = None;
+        }
+    }
 }
 
 /// 保证这个会话有一个可用的 ACP 会话，返回（会话 ID、是否丢了旧上下文、是否切到了

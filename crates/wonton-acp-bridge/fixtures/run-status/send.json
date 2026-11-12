@@ -1,0 +1,19 @@
+{
+  "msgtype": "m.notice",
+  "body": "在想",
+  "org.fluxchat.agent": {
+    "v": 1,
+    "run": "$req1",
+    "state": "working",
+    "step": "在想",
+    "steps": 0
+  },
+  "m.relates_to": {
+    "rel_type": "m.thread",
+    "event_id": "$troot",
+    "is_falling_back": true,
+    "m.in_reply_to": {
+      "event_id": "$troot"
+    }
+  }
+}

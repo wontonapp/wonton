@@ -683,6 +683,7 @@ mod actions;
 mod bootstrap_tests;
 mod image;
 mod pagination_status;
+mod raw;
 mod send;
 #[cfg(test)]
 mod tests;

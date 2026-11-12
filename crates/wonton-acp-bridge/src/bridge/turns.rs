@@ -69,7 +69,11 @@ pub(super) async fn receive_job<R: Room>(
     {
         return Ok(());
     }
-    let job = match parse_job(&incoming.text, &context.bridge.config.limits) {
+    let job = match parse_job(
+        &incoming.event_id,
+        &incoming.text,
+        &context.bridge.config.limits,
+    ) {
         Ok(job) => job,
         Err(error) => return send_to(context, &key, &format_error(&error, context.lang)).await,
     };
@@ -176,7 +180,7 @@ async fn queue<R: Room>(
     Ok(())
 }
 
-fn parse_job(input: &str, limits: &Limits) -> Result<Job> {
+fn parse_job(event_id: &str, input: &str, limits: &Limits) -> Result<Job> {
     if input.len() > limits.max_input_bytes {
         return Err(Error::InvalidInput(Detail::msg_with(
             "input-too-long",
@@ -191,6 +195,7 @@ fn parse_job(input: &str, limits: &Limits) -> Result<Job> {
         return Ok(Job {
             kind: JobKind::End,
             text: String::new(),
+            event_id: event_id.to_owned(),
         });
     }
     let (kind, body) = if let Some(body) = trimmed.strip_prefix("/wonton interrupt ") {
@@ -208,6 +213,7 @@ fn parse_job(input: &str, limits: &Limits) -> Result<Job> {
     Ok(Job {
         kind,
         text: body.trim().to_owned(),
+        event_id: event_id.to_owned(),
     })
 }
 
@@ -249,7 +255,7 @@ async fn start_job<R: Room>(
         topics.digest_for(&key, context.lang)
     };
     if topics
-        .turn_started(&key, &job.text, now(), context.lang)
+        .turn_started(&key, &job.text, &job.event_id, now(), context.lang)
         .await?
         == TurnStart::Queued
     {
@@ -286,6 +292,11 @@ async fn start_job<R: Room>(
     };
     state.sessions.state(&key).active = true;
     state.last_activity = Instant::now();
+    // 一轮一条的状态消息（ADR-0082）：发出提示词时先挂上“在想”，之后随 ACP 事件编辑。
+    state
+        .run_status
+        .start(context.room.as_ref(), &key, &job.event_id, context.lang)
+        .await;
     let acp = context.bridge.acp.clone();
     let room = context.room.clone();
     let limits = context.bridge.config.limits.clone();
@@ -362,7 +373,13 @@ pub(super) async fn finished<R: Room>(
     }
     permissions::release(context, state, topics, &key).await?;
     permissions::drop_waiting(state, &key);
-    report_prompt(context, &key, finished.result).await;
+    // ADR-0082：先把答案发出去，再把状态消息编辑成 done/failed，时间线上状态在上、
+    // 答案在下。
+    report_prompt(context, &key, &finished.result).await;
+    state
+        .run_status
+        .finish(context.room.as_ref(), &key, &finished.result)
+        .await;
     if topics.is_finished(&key) {
         let _ = sessions::close_session(&context.bridge, state, &key).await;
         return promote(context, state, topics).await;
@@ -382,12 +399,12 @@ pub(super) async fn finished<R: Room>(
 async fn report_prompt<R: Room>(
     context: &TurnContext<R>,
     key: &SessionKey,
-    result: Result<PromptResult>,
+    result: &Result<PromptResult>,
 ) {
     let lang = context.lang;
     let line = match result {
         Ok(result) => {
-            if let Some(message) = result.permission_error {
+            if let Some(message) = result.permission_error.as_ref() {
                 text(
                     lang,
                     "permission-failed",
@@ -404,12 +421,12 @@ async fn report_prompt<R: Room>(
                     &[("stop_reason", Arg::from(result.stop_reason.as_str()))],
                 )
             } else if result.stop_reason != "cancelled" {
-                result.text
+                result.text.clone()
             } else {
                 return;
             }
         }
-        Err(error) => format_error(&error, lang),
+        Err(error) => format_error(error, lang),
     };
     let _ = send_to(context, key, &line).await;
 }
@@ -497,7 +514,7 @@ pub(super) async fn promote<R: Room>(
     state: &mut RoomState,
     topics: &mut Topics,
 ) -> Result<()> {
-    while let Some((key, prompt)) = topics.poll_admission(now()).await? {
+    while let Some((key, prompt, event_id)) = topics.poll_admission(now()).await? {
         start_or_report(
             context,
             state,
@@ -506,6 +523,7 @@ pub(super) async fn promote<R: Room>(
             Job {
                 kind: JobKind::Normal,
                 text: prompt,
+                event_id,
             },
         )
         .await?;

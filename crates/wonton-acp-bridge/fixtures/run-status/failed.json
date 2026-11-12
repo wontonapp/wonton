@@ -1,0 +1,28 @@
+{
+  "msgtype": "m.notice",
+  "body": "打断了",
+  "app.wonton.end": "cancelled",
+  "org.fluxchat.agent": {
+    "v": 1,
+    "run": "$req2",
+    "state": "failed",
+    "steps": 1,
+    "result": "打断了"
+  },
+  "m.new_content": {
+    "msgtype": "m.notice",
+    "body": "打断了",
+    "app.wonton.end": "cancelled",
+    "org.fluxchat.agent": {
+      "v": 1,
+      "run": "$req2",
+      "state": "failed",
+      "steps": 1,
+      "result": "打断了"
+    }
+  },
+  "m.relates_to": {
+    "rel_type": "m.replace",
+    "event_id": "$status2"
+  }
+}
