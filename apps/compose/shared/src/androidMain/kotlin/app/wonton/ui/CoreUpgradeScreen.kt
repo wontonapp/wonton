@@ -39,6 +39,8 @@ import app.wonton.protocol.CoreUpgradeProgress
 import app.wonton.protocol.CoreUpgradeStage
 import app.wonton.protocol.CoreUpgradeStatus
 import app.wonton.protocol.CoreUpgradeTarget
+import app.wonton.protocol.CoreUpgradeViewModel
+import app.wonton.protocol.InstalledPlugins
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -96,7 +98,7 @@ private fun CoreUpgradeContent(plugins: PluginsState, status: CoreUpgradeStatus)
         }
         StageCard(plugins, upgrade.stage, status.run?.to)
         if (upgrade.stage.isSettled()) CheckSection(plugins, status.check)
-        Details(status, upgrade.offer, upgrade.stage)
+        Details(upgrade, plugins.viewModel.installed, status)
     }
 }
 
@@ -144,6 +146,13 @@ private fun OfferCard(plugins: PluginsState, offer: CoreUpgradeOffer, skipped: B
                 color = colors.textSecondary.toColor(),
             )
         }
+        CompatSection(
+            compat = offer.compat,
+            apps = offer.compat.breakingApps(plugins.viewModel.installed),
+            refreshing = plugins.viewModel.coreUpgrade.refreshing,
+            onRetry = { plugins.send(Action.RefreshCoreUpgrade(true)) },
+            icon = { PluginIconImage(it, WontonTheme.size.taskIcon, plugins) },
+        )
         if (confirming) {
             FullWidthButton(stringResource(R.string.core_upgrade_confirm_upgrade)) {
                 plugins.send(Action.StartCoreUpgrade(offer.digest))
@@ -269,7 +278,7 @@ private fun DownloadProgress(progress: CoreUpgradeProgress) {
 }
 
 @Composable
-private fun Details(status: CoreUpgradeStatus, offer: CoreUpgradeOffer?, stage: CoreUpgradeStage) {
+private fun Details(upgrade: CoreUpgradeViewModel, installed: InstalledPlugins?, status: CoreUpgradeStatus) {
     val colors = WontonTheme.colors
     var open by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
@@ -294,7 +303,8 @@ private fun Details(status: CoreUpgradeStatus, offer: CoreUpgradeOffer?, stage: 
             )
         }
         if (open) {
-            status.detailRows(offer, stage).forEach { (title, value) ->
+            val rows = status.detailRows(upgrade.offer, upgrade.stage, upgrade.compatDetails, installed)
+            rows.forEach { (title, value) ->
                 Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
                     Text(title, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
                     SelectionContainer {
