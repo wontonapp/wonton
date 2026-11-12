@@ -547,3 +547,4 @@ plugin-hosted-provider-taken = { $other } 已經提供 { $capability }，只能�
 plugin-hosted-provider-in-use = 這些應用程式由它託管，解除安裝後會打不開：{ $plugins }。請先解除安裝它們
 plugin-hosted-dir-missing = 這個應用程式在 { $capability } 下的檔案不見了，請重新安裝
 plugin-hosted-storage-failed = 託管檔案無法寫入：{ $error }
+plugin-hosted-data-missing = 這個應用程式在 { $capability } 下儲存的資料不見了，重新安裝會從空的開始

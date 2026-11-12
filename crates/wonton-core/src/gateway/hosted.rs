@@ -78,7 +78,7 @@ pub(super) async fn forward(
     response
 }
 
-async fn send(
+pub(super) async fn send(
     gateway: &Gateway,
     route: &Route,
     upstream: &Endpoint,

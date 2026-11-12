@@ -547,3 +547,4 @@ plugin-hosted-provider-taken = { $other } がすでに { $capability } を提供
 plugin-hosted-provider-in-use = 次のアプリはこのアプリがホストしており、アンインストールすると開けなくなります：{ $plugins }。先にそれらをアンインストールしてください
 plugin-hosted-dir-missing = このアプリの { $capability } のファイルが見つかりません。再インストールしてください
 plugin-hosted-storage-failed = ホストするファイルを書き込めません：{ $error }
+plugin-hosted-data-missing = このアプリの { $capability } に保存したデータが見つかりません。再インストールすると空の状態から始まります
