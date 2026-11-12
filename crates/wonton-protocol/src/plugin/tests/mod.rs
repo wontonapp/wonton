@@ -384,9 +384,10 @@ fn an_uncertain_task_keeps_its_wire_format() {
     assert_eq!(
         serde_json::to_value(PluginTaskState::Uncertain {
             message: "x".to_owned(),
+            next_step: PluginTaskNextStep::CheckInstalled,
         })
         .unwrap(),
-        json!({"type": "uncertain", "message": "x"})
+        json!({"type": "uncertain", "message": "x", "next_step": "check_installed"})
     );
 }
 

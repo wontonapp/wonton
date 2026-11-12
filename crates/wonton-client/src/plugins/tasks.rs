@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, InstallPreview, InstallRequest, PluginDetail, PluginFailure, PluginIcon,
-    PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskState, SecretString,
-    SecretUpdate, SecretValues, SettingValues, UpgradeRequest, UpgradeResult,
+    PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskNextStep, PluginTaskState,
+    SecretString, SecretUpdate, SecretValues, SettingValues, UpgradeRequest, UpgradeResult,
 };
 
 use super::api::{CoreApi, INSTALL_TIMEOUT, to_core_error};
@@ -259,6 +259,7 @@ impl PluginsLink {
                 icon,
                 operation,
                 state: PluginTaskState::Running,
+                waiting_for_connection: false,
                 added_tools: None,
             });
             true
@@ -368,6 +369,7 @@ impl PluginsLink {
                 Err(problem) => {
                     return PluginTaskState::Uncertain {
                         message: problem.message,
+                        next_step: PluginTaskNextStep::CheckInstalled,
                     };
                 }
             };
@@ -422,12 +424,14 @@ impl PluginsLink {
 fn uncertain() -> PluginTaskState {
     PluginTaskState::Uncertain {
         message: l10n!(CATALOG, language(), "plugins-tasks-uncertain"),
+        next_step: PluginTaskNextStep::CheckInstalled,
     }
 }
 
 pub(super) fn server_changed() -> PluginTaskState {
     PluginTaskState::Uncertain {
         message: l10n!(CATALOG, language(), "plugins-tasks-server-changed"),
+        next_step: PluginTaskNextStep::CheckInstalled,
     }
 }
 
