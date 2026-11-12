@@ -41,6 +41,11 @@ targets:
           - CFBundleURLName: app.wonton.navigation
             CFBundleURLSchemes:
               - wonton
+          # Matrix 登录的回调（核心的 `oidcRedirectUri`）。网页登录面板自己截住回调，用不到它；注册了，回调从面板以外的路径
+          # （Safari、`simctl openurl`）回来时也能交给核心核对，而不是被系统说“打不开”。
+          - CFBundleURLName: app.wonton.matrix-login
+            CFBundleURLSchemes:
+              - io.github.wontonapp
         # M0 的网关和插件网页只有 http（HTTPS 方案在 M1 定），只对 WebView 里的内容放开。
         NSAppTransportSecurity:
           NSAllowsArbitraryLoadsInWebContent: true

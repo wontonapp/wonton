@@ -27,8 +27,11 @@ use crate::servers::ServerList;
 /// 不填服务器时用的。
 const DEFAULT_HOMESERVER: &str = "matrix.org";
 
-/// 平台注册、核心接受的 OIDC 回调地址；壳交来的不在这里就拒绝。
-const REDIRECT_URIS: &[&str] = &["wonton://matrix-login"];
+/// 核心接受的 OIDC 回调地址，经 `MatrixLoginViewModel.oidc_redirect_uri` 给壳；壳交来的不是它就拒绝。
+///
+/// matrix.org 的授权服务器（MAS）动态注册时要求原生 App 的回调 scheme 是 `client_uri` 域名倒过来写
+/// （[`tasks::CLIENT_URI`]），`wonton://` 会被拒成 `invalid_redirect_uri`。只有一个斜杠是 RFC 8252 7.1 的私有 scheme 写法。
+const OIDC_REDIRECT_URI: &str = "io.github.wontonapp:/matrix-login";
 
 /// 授权地址发出去以后，回调最晚多久内回来。授权服务器的授权码一般只活几分钟，这里给够在浏览器里登录的时间。
 const OIDC_DEADLINE: Duration = Duration::from_secs(15 * 60);
@@ -58,6 +61,20 @@ struct FlowState {
     /// 发现完成后才有；流程结束时丢掉，登录用的客户端跟着释放。
     pending: Option<Arc<PendingLogin>>,
     oidc: Option<Oidc>,
+}
+
+impl Flow {
+    /// 丢掉登录用的客户端和 OIDC 的秘密。matrix-sdk 的 SQLite 存储析构时要往 tokio 运行时里交任务，壳的主线程上
+    /// 没有运行时，在那里丢会 panic，析构里的 panic 让整个 App 退出；所以进这个流程的运行时里丢。
+    fn discard(&self, state: &mut FlowState) {
+        state.oidc = None;
+        let Some(pending) = state.pending.take() else {
+            return;
+        };
+        let handle = self.runtime.handle();
+        let _context = handle.as_ref().map(|handle| handle.enter());
+        drop(pending);
+    }
 }
 
 /// 等着浏览器回调的 OIDC 授权。`state` 和授权地址一样是秘密，不进日志。
@@ -117,6 +134,7 @@ impl MatrixLogins {
             login_id: id.clone(),
             homeserver: input.clone(),
             methods: Vec::new(),
+            oidc_redirect_uri: OIDC_REDIRECT_URI.to_owned(),
             state: MatrixLoginState::Discovering,
         };
         let flow = Arc::new(Flow {
@@ -160,11 +178,10 @@ impl MatrixLogins {
 
     fn start_oidc(self: &Arc<Self>, login: MatrixOidcLogin) -> Result<(), CoreError> {
         let device_name = device_name(&login.device_name)?;
-        let redirect = REDIRECT_URIS
-            .iter()
-            .find(|allowed| **allowed == login.redirect_uri.trim())
-            .and_then(|allowed| Url::parse(allowed).ok())
-            .ok_or_else(|| invalid("matrix-login-redirect-not-allowed"))?;
+        if login.redirect_uri.trim() != OIDC_REDIRECT_URI {
+            return Err(invalid("matrix-login-redirect-not-allowed"));
+        }
+        let redirect = Url::parse(OIDC_REDIRECT_URI).expect("the redirect URI is valid");
         // 浏览器里放弃了的话可以再开一次授权，换新的 state。
         let (flow, pending) = self.ready(&login.login_id, MatrixLoginMethod::Oidc, true)?;
         let logins = self.clone();
@@ -184,13 +201,14 @@ impl MatrixLogins {
         let flow = current_flow(&current, &callback.login_id)?.clone();
         let mut state = lock(&flow.state);
         let awaiting = matches!(state.view.state, MatrixLoginState::AwaitingOidc { .. });
-        let (Some(oidc), Some(pending), true) = (&state.oidc, state.pending.clone(), awaiting)
-        else {
+        // 登录用的客户端到核对通过才取：核对失败时它要在流程的运行时里丢掉（见 `Flow::discard`），不能留一份在这里。
+        let (Some(oidc), true, true) = (&state.oidc, state.pending.is_some(), awaiting) else {
             return Err(invalid("matrix-login-wrong-step"));
         };
         let device_name = oidc.device_name.clone();
         match check_callback(oidc, callback.callback_url.expose()) {
             Ok(url) => {
+                let pending = state.pending.clone().expect("checked above");
                 state.oidc = None;
                 state.view.state = MatrixLoginState::Authenticating;
                 self.servers.set_login(Some(state.view.clone()));
@@ -221,8 +239,7 @@ impl MatrixLogins {
             return Ok(());
         }
         state.view.state = MatrixLoginState::Cancelled;
-        state.pending = None;
-        state.oidc = None;
+        flow.discard(&mut state);
         self.servers.set_login(Some(state.view.clone()));
         drop(state);
         self.end(flow);
@@ -292,8 +309,7 @@ impl MatrixLogins {
             return;
         }
         state.view.state = MatrixLoginState::Failed { reason };
-        state.pending = None;
-        state.oidc = None;
+        flow.discard(&mut state);
         self.servers.set_login(Some(state.view.clone()));
         drop(state);
         self.end(flow);
@@ -304,8 +320,7 @@ impl MatrixLogins {
     fn end(&self, flow: &Arc<Flow>) {
         let release = {
             let mut state = lock(&flow.state);
-            state.pending = None;
-            state.oidc = None;
+            flow.discard(&mut state);
             if !is_finished(&state.view.state) {
                 state.view.state = MatrixLoginState::Cancelled;
             }
@@ -343,7 +358,7 @@ fn current_flow<'a>(
 fn check_callback(oidc: &Oidc, callback: &str) -> Result<Url, MatrixLoginFailure> {
     let url = Url::parse(callback.trim()).map_err(|_| MatrixLoginFailure::InvalidCallback)?;
     let same_target = url.scheme() == oidc.redirect.scheme()
-        && url.host_str() == oidc.redirect.host_str()
+        && host(&url) == host(&oidc.redirect)
         && url.port() == oidc.redirect.port()
         && url.path() == oidc.redirect.path();
     if !same_target {
@@ -360,6 +375,11 @@ fn check_callback(oidc: &Oidc, callback: &str) -> Result<Url, MatrixLoginFailure
         return Err(MatrixLoginFailure::InvalidCallback);
     }
     Ok(url)
+}
+
+/// iOS 把从 App 外面打开的 `scheme:/path` 交成 `scheme:///path`（空主机），两种写法是同一个地址。
+fn host(url: &Url) -> Option<&str> {
+    url.host_str().filter(|host| !host.is_empty())
 }
 
 fn is_finished(state: &MatrixLoginState) -> bool {
