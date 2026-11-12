@@ -72,7 +72,7 @@ final class PasteUITests: XCTestCase {
     /// 码 10 分钟过期，而 mini 重活锁的排队时长不可预期，重跑走已配对会话才不跟 TTL 赛跑。
     private func launch() throws {
         app = XCUIApplication()
-        UITestBackend.passPairingCode(to: app)
+        try UITestBackend.passPairingCode(to: app)
         app.launch()
         let start = waitAnyButton(["Apps", "应用"], timeout: 25)
             ?? waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 60)
