@@ -126,6 +126,8 @@
   issue 里留言说明还剩什么。不写的话 issue 不会自己关，做完的和没做的混在一起。
 - PR 合并前只等快检查：格式、lint（Clippy、detekt、SwiftLint）、行数门禁、编译、不依赖 Docker 的单元测试，目标十分钟内
   出结果。必需检查绿了就 `gh pr merge --auto --squash` 直接合，不要求 PR 先追上 `main`。
+- 改了 `crates/wonton-protocol` 的 PR，`main` 在分支切出之后又改过协议时，lint 的“改了协议的 PR 基于最新 main”一步失败：
+  先 `git rebase origin/main`、解完冲突再推。只在 PR 的 CI 跑时判断一次；没改协议的 PR 不受影响。
 - 慢的合进 `main` 之后跑，不挡合并：Docker 集成测试、界面测试、镜像构建。新加的测试按这个分界放，哪个工作流在哪一边见
   [.github/workflows/README.md](.github/workflows/README.md)。
 - 必需检查在每个 PR 上都要有结果：必需检查所在的工作流不在触发器上按路径过滤，由 `changes` 作业判断改动范围，没改到的
