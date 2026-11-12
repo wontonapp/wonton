@@ -194,13 +194,14 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 - **离开页面就挂断**，体验不如 Element X；后台通话和响铃一起补。
 - **通话插件会带“高”级提示**（要撤回自己的回应），主人可能被吓到；提示文字要写清只在打开它的房间里。
 - **头像可能不显示：** Element Call 用 `baseUrl` 直接取服务器上的媒体，WebView 经网关取 Matrix 媒体要访问令牌。不影响通话。
+- **lk-jwt-service 连不上别名时，error 级日志里带 OpenID 令牌**（见“验证结果”）。只在核心没在跑、地址不通时出现；
+  这个令牌只用来证明身份，约一小时过期；上游没有开关能关掉。接受，不为它关掉授权服务的日志，也不给上游镜像套滤日志的包装。
 - 映射开着时手机上别的 App 也连得上 LiveKit 的媒体端口（ADR-0072 的风险）；LiveKit 只认带令牌的参会者。
 
 ## 待验证
 
 - **iOS WKWebView：** `127.0.0.1` 的 ICE 候选、`requestMediaCapturePermissionFor`、信令 WebSocket 经本地代理。不通按第 5 节的退路。
 - **delayed events 的上限**和 Element Call 的用法对不对得上。
-- **lk-jwt-service 连不上别名时日志里带 OpenID 令牌：** 见“验证结果”，它没有配置项能关掉这一条。
 - **网页请求 Matrix 对外地址（真机）：** 见“验证结果”的设备门一条；`baseUrl` 取头像能否显示。
 - **Element Call 在顶层 WebView 里的 widget 模式：** 注入脚本拦下它发给自己的消息后，它的收发是否完整；`parentUrl` 设成
   页面自己的 origin 是否够。
