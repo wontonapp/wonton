@@ -490,19 +490,22 @@ impl PluginsLink {
                         }
                         // 容器停止不能证明操作已完成；未知状态也不能算成功。
                         PluginState::Stopped | PluginState::Unknown => return uncertain(),
-                        PluginState::Running { .. } => match outcome {
-                            Outcome::Running { version } => {
-                                let done = version
-                                    .as_ref()
-                                    .is_none_or(|version| *version == plugin.version);
-                                return if done {
-                                    PluginTaskState::Succeeded
-                                } else {
-                                    uncertain()
-                                };
+                        // 待配置的插件装上了：任务本身完成了，缺密钥是详情页上的事。
+                        PluginState::Running { .. } | PluginState::NeedsConfiguration => {
+                            match outcome {
+                                Outcome::Running { version } => {
+                                    let done = version
+                                        .as_ref()
+                                        .is_none_or(|version| *version == plugin.version);
+                                    return if done {
+                                        PluginTaskState::Succeeded
+                                    } else {
+                                        uncertain()
+                                    };
+                                }
+                                Outcome::Removed => return uncertain(),
                             }
-                            Outcome::Removed => return uncertain(),
-                        },
+                        }
                     }
                 }
             }

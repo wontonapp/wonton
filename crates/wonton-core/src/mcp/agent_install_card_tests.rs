@@ -223,11 +223,12 @@ async fn a_shrinking_update_grants_only_the_new_manifest() {
     );
 }
 
-/// Agent 写的插件带一项主人填写的密钥：卡片列出它，Bot 传的任何 `secrets` 参数都不算值，
-/// 主人回答时缺必填项卡片不结束。
+/// Agent 写的插件带一项主人填写的密钥：卡片列出它，Bot 传的任何 `secrets` 参数都不算值；
+/// 主人不填也能回答，装上了是待配置。
 #[tokio::test]
 async fn the_card_asks_for_input_secrets_and_the_bot_cannot_fill_them() {
     let b = bench().await;
+    let langs = Languages::from_header(Some("zh-Hans"));
     let (services, mut x_wonton) = plain("app.input", "1.0.0", "");
     x_wonton = format!(
         "{x_wonton}  secrets:\n    token:\n      input:\n        title: {{zh: 令牌, en: Token}}\n        required: true\n"
@@ -247,26 +248,29 @@ async fn the_card_asks_for_input_secrets_and_the_bot_cannot_fill_them() {
     assert_eq!(card.secret_inputs[0].name, "token");
     assert!(card.secret_inputs[0].required);
 
-    // 缺必填项：报错，卡片还等着。
-    let err =
-        b.s.answer_with_secrets(&card.id, Answer::Approve, Default::default())
-            .unwrap_err();
-    assert!(err.to_string().contains("token"), "{err}");
-    assert!(!b.installed("app.input"));
-
-    b.s.answer_with_secrets(
-        &card.id,
-        Answer::Approve,
-        [(
-            "token".to_owned(),
-            wonton_protocol::SecretString::new("s3cret"),
-        )]
-        .into(),
-    )
-    .unwrap();
+    // 缺必填项：照常回答，装上后是待配置。
+    b.s.answer_with_secrets(&card.id, Answer::Approve, Default::default())
+        .unwrap();
     let result = call.await.unwrap();
     assert!(!failed(&result), "{result:?}");
-    assert!(b.installed("app.input"));
+    let id = PluginId::parse("app.input").unwrap();
+    let installed = b.s.bus.plugins.installed_plugin(&id, &langs).unwrap();
+    assert_eq!(
+        installed.status,
+        wonton_protocol::PluginState::NeedsConfiguration
+    );
+
+    // 主人之后在详情页填上：状态回到运行中。
+    b.s.bus
+        .plugins
+        .set_secret_input(&id, "token", Some("s3cret"), &langs)
+        .await
+        .unwrap();
+    let installed = b.s.bus.plugins.installed_plugin(&id, &langs).unwrap();
+    assert!(matches!(
+        installed.status,
+        wonton_protocol::PluginState::Running { .. }
+    ));
 }
 
 /// 最高级权限的两张卡：密钥填在第一张上，执行用的是第一张卡的值（第二张卡没有输入）。
