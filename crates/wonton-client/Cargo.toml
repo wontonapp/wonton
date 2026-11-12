@@ -46,7 +46,7 @@ iroh = { workspace = true }
 # MIT OR Apache-2.0。认出消息文字里没有写成 Markdown 链接的网址。
 linkify = "0.11.0"
 # MIT OR Apache-2.0。matrix.to 链接的片段里有百分号转义的房间和用户 ID。
-percent-encoding = "2.3.2"
+percent-encoding = { workspace = true }
 # MIT OR Apache-2.0。重点色推导用的 OKLCH 和 WCAG 对比度（ADR-0026）。
 palette = { version = "0.7.7", default-features = false, features = ["std"] }
 # MIT。把 Bot 发的 Markdown 排成气泡里的块和片段。
@@ -94,7 +94,8 @@ tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring
 # MIT。插件和文件接口的行为测试用它在本机假扮核心（文件还假扮 tusd）。
 axum = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["rt", "time", "net", "io-util"] }
+# 快照写入器的去抖测试要暂停的时钟（test-util）。
+tokio = { workspace = true, features = ["rt", "time", "net", "io-util", "test-util"] }
 # 聊天的集成测试：一次性的 Tuwunel 和模拟核心的 JWT 签发。
 wonton-matrix = { path = "../wonton-matrix", features = ["testkit"] }
 # MIT OR Apache-2.0。tabs 测试的 node 镜像在 CI 指到镜像仓库副本。

@@ -31,7 +31,9 @@
     <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
     <string name="store_via_index">經 %1$s</string>
     <!-- 一次更新所有有更新的應用程式之前，底部面板的標題。 -->
-    <string name="store_update_all_title">更新 %1$d 個應用程式</string>
+    <plurals name="store_update_all_title">
+        <item quantity="other">更新 %1$d 個應用程式</item>
+    </plurals>
     <!-- 那個面板裡開始全部更新的按鈕。 -->
     <string name="store_update_all">全部更新</string>
     <!-- 開啟那個面板的工具列下載圖示的讀屏描述。 -->

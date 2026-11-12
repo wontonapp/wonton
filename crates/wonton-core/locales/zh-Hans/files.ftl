@@ -16,6 +16,12 @@ files-upstream-not-own = { $service } 不是应用 { $plugin } 自己的服务
 
 # 预览和缩略图。
 files-too-big-for-thumbnail = 文件超过 { $limit } MiB，不做缩略图
+files-pdf-unreadable = 这个 PDF 解析不了（可能加密了或结构坏了），读不了内容
+files-pdf-no-text = 这个 PDF 没有文字层（是扫描件或整页图），共 { $pages } 页，看不到图表里的内容
+files-too-big-for-parsing = 文件超过 { $limit } MiB，抽不出内容
+files-video-unsupported = 这个视频的封装读不了（只认 MP4、M4V 和 MOV），只能下载或分享
+files-video-unreadable = 这个视频解析不了（封装或结构不认识），拿不到时长和分辨率
+files-audio-unreadable = 音频读不了内容，只能下载或分享
 files-thumbnail-timeout = 原文件 { $after } 内没有读完
 files-idle-limited = 应用的响应 { $idle } 没有新的字节
 files-declared-size-over-limit = 应用声明的大小超过 resources/read 的上限（{ $limit } MiB）
@@ -24,6 +30,7 @@ files-not-text-utf8 = { $name } 不是文本文件：内容解不成 UTF-8，读
 files-no-preview = 这个类型没有预览或缩略图
 files-preview-failed = 做不了预览或缩略图：{ $why }
 files-decode-busy = 图片解码忙
+files-view-busy = 这个文件正在读，稍后再试
 files-read-busy = 图片读取忙
 
 # 存文件、上传和删除。

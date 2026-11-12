@@ -87,6 +87,26 @@
     <string name="pin_to_bar">Pin to navigation bar</string>
     <!-- Menu item that removes an app\'s page from the navigation bar (long press in the sidebar). -->
     <string name="unpin_from_bar">Remove from navigation bar</string>
+    <!-- Name of the home screen widget listing recent chats, shown in the launcher's widget picker. No arguments. -->
+    <string name="widget_recent_chats_label">Recent chats</string>
+    <!-- Name of the home screen widget showing the default agent's status, shown in the launcher's widget picker. No arguments. -->
+    <string name="widget_agent_status_label">Bot status</string>
+    <!-- Widget text before Wonton has been opened once since install. Tapping opens the app. No arguments. -->
+    <string name="widget_open_to_start">Open Wonton to get started</string>
+    <!-- Widget text when the app isn't paired with a home server. Tapping opens the app. No arguments. -->
+    <string name="widget_open_to_pair">Open Wonton to pair</string>
+    <!-- Widget text when the session was signed out or revoked. Tapping opens the app. No arguments. -->
+    <string name="widget_open_to_sign_in">Signed out. Open Wonton to sign in.</string>
+    <!-- Widget text when the app is switching servers or the widget data can't be read. Tapping opens the app. No arguments. -->
+    <string name="widget_open_to_refresh">Open Wonton to refresh</string>
+    <!-- Agent status widget when no default agent is set. Tapping opens the app. No arguments. -->
+    <string name="widget_choose_agent">Choose a default agent in Wonton</string>
+    <!-- Agent status widget when the agent hasn't reported what it's doing. No arguments. -->
+    <string name="widget_agent_status_unknown">Status unknown</string>
+    <!-- Footer of the recent chats widget: when its data was last written. Argument: a time like 14:05, or a date and time if not today. -->
+    <string name="widget_updated_at">Updated %1$s</string>
+    <!-- Agent status widget's second line. Arguments: the agent's state (e.g. Working), then a time like 14:05 when it was last written. -->
+    <string name="widget_status_at">%1$s · %2$s</string>
     <!-- Notification fallback page for cards without a chat room; no arguments. -->
     <string name="confirmations_title">Waiting for you</string>
     <!-- Empty confirmation list after requests have been answered or expired. -->

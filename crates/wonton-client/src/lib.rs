@@ -54,6 +54,7 @@ mod subscription;
 mod tabs;
 #[cfg(feature = "test-hooks")]
 pub(crate) mod test_hooks;
+mod widget;
 
 pub use appearance::{accent_hex, default_appearance, parse_accent};
 pub use chat::TimelineSubscription;
@@ -69,11 +70,13 @@ pub use subscription::{
     ConfirmationsSubscription, FriendsSubscription, HomeSubscription, OnboardingSubscription,
     PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
     SettingsSubscription, TabsSubscription, TransfersSubscription, UnreadSubscription,
+    WidgetSnapshotSubscription,
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
 };
 pub use tabs::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
 pub use tabs::media_permission::TabMediaPermission;
+pub use widget::read_widget_snapshot;
 // 协议类型整体转出：并行 PR 各自加名字不再挤在同一段列表里。
 pub use wonton_protocol::*;

@@ -91,6 +91,13 @@ private enum Launch {
         } catch {
             return .failed(String(localized: .appCoreLaunchFailed(String(describing: error))))
         }
+        // 核心在收到 `setLanguages` 之前按英文写“详情”。主界面 `.task` 要等第一帧之后才跑，配对页的
+        // 第一帧和 DEBUG 的配对码那条都在它前面，所以在这里发。iOS 改 App 语言会重启 App，启动一次就够。
+        do {
+            try core.dispatch(action: .setLanguages(languages: AppLanguage.preferred))
+        } catch {
+            return .failed(String(localized: .appCoreLaunchFailed(String(describing: error))))
+        }
         // 赶在核心接着传上次没传完的文件之前。
         core.setFileOpener(opener: BookmarkFileOpener())
         #if DEBUG

@@ -86,6 +86,16 @@
     <string name="pin_to_bar">固定到底栏</string>
     <!-- 长按侧边栏里的一行，把应用的页面从底栏拿掉。 -->
     <string name="unpin_from_bar">从底栏拿掉</string>
+    <string name="widget_recent_chats_label">最近聊天</string>
+    <string name="widget_agent_status_label">Bot 状态</string>
+    <string name="widget_open_to_start">打开云吞开始使用</string>
+    <string name="widget_open_to_pair">打开云吞完成配对</string>
+    <string name="widget_open_to_sign_in">已退出登录，打开云吞重新登录</string>
+    <string name="widget_open_to_refresh">打开云吞刷新</string>
+    <string name="widget_choose_agent">在云吞里选一个默认 Agent</string>
+    <string name="widget_agent_status_unknown">状态未知</string>
+    <string name="widget_updated_at">更新于 %1$s</string>
+    <string name="widget_status_at">%1$s · %2$s</string>
     <!-- Notification fallback page for cards without a chat room; no arguments. -->
     <string name="confirmations_title">等你确认</string>
     <!-- Empty confirmation list after requests have been answered or expired. -->

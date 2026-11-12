@@ -10,8 +10,18 @@ mod mp4;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use mp4::VideoInfo;
+
 type Problem = AvatarMediaProblem;
 type Metrics = (u32, u32, Option<u32>);
+
+/// `view_file` 的视频分支（ADR-0104）：只要时长和分辨率，头像的正方、10 分钟时长和只认 H.264 这几条不算数。
+pub(crate) fn probe_video(data: &[u8]) -> Result<VideoInfo, AvatarMediaProblem> {
+    if data.get(4..8) != Some(b"ftyp") {
+        return Err(Problem::Format);
+    }
+    mp4::probe(data)
+}
 
 pub fn inspect(data: &[u8]) -> Result<AvatarMedia, AvatarMediaProblem> {
     if data.len() as u64 > MAX_AVATAR_BYTES {
