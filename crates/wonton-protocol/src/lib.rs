@@ -251,5 +251,5 @@ pub use timeline::{
     TimelineViewport,
 };
 pub use verification::{
-    VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
+    KeyHandoff, VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
 };
