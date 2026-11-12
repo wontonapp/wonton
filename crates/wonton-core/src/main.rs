@@ -736,6 +736,10 @@ async fn start_plugin_manager(
         tracing::warn!("图片助手没起来，图片处理要等它重起：{e}");
     }
     let images = Arc::new(images);
+    let matrix_rtc_ca = matrix
+        .as_ref()
+        .map(|_| wonton_core::plugin::matrix_rtc_ca::CoreCa::load_or_create(&cfg.core_state_dir()))
+        .transpose()?;
     let manager = Arc::new(
         open_plugin_manager(
             cfg,
@@ -748,7 +752,8 @@ async fn start_plugin_manager(
             &upgrades,
             images.clone(),
         )
-        .with_mailpit(mailpit),
+        .with_mailpit(mailpit)
+        .with_matrix_rtc_ca(matrix_rtc_ca),
     );
     manager.attach_sharing(sharing.friends.clone(), sharing.shares.clone());
     manager.spawn_registry_mirror_probe();

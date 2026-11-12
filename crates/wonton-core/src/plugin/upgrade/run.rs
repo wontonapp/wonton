@@ -381,6 +381,7 @@ impl PluginManager {
         self.stage(&manifest.id, InstallStage::Starting);
         let health = self
             .start_containers(
+                Some(manifest),
                 &plan,
                 Some(&manifest.id),
                 &mut progress.undo,

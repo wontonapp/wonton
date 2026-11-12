@@ -9,7 +9,8 @@ const SERVER: &str = "home.test";
 
 fn provider(id: &str) -> String {
     package(
-        "  jwt:\n    image: nginx\n    environment:\n      FULL_ACCESS: ${WONTON_MATRIX_SERVER_NAME}",
+        "  jwt:\n    image: nginx\n    environment:\n      FULL_ACCESS: ${WONTON_MATRIX_SERVER_NAME}\n      \
+         SSL_CERT_FILE: /etc/wonton-ca/ca-bundle.pem\n    volumes:\n      - ${WONTON_MATRIX_CA_DIR}:/etc/wonton-ca:ro",
         "  permissions: []\n  provides:\n    matrix_rtc: {service: jwt, port: 8080}",
     )
     .replace("spec: '0.5'", "spec: '0.11'")
@@ -35,9 +36,18 @@ async fn the_provider_gets_the_server_name_and_resolves_it_to_the_core() {
     install(&m, &provider("app.call")).await.unwrap();
     let env = env_of_container(&docker, "wonton-app-call--jwt");
     assert_eq!(env["FULL_ACCESS"], SERVER);
+    // 证书包写进提供方的数据目录，挂进容器：系统根证书加核心的 CA。
+    let created = docker.created("wonton-app-call--jwt").unwrap();
+    let source = created["HostConfig"]["Mounts"][0]["Source"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let bundle =
+        std::fs::read_to_string(std::path::Path::new(&source).join("ca-bundle.pem")).unwrap();
+    assert!(bundle.ends_with(m.matrix_rtc_ca().unwrap().cert_pem()));
+    assert!(bundle.matches("BEGIN CERTIFICATE").count() > 1);
     // 核心跑在宿主上：服务器名经插件网络的网关到核心。
     let gateway = m.engine.network_gateway("wonton-app-call").await.unwrap();
-    let created = docker.created("wonton-app-call--jwt").unwrap();
     let hosts = created["HostConfig"]["ExtraHosts"].as_array().unwrap();
     assert!(
         hosts.contains(&format!("{SERVER}:{gateway}").into()),
