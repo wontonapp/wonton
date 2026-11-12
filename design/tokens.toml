@@ -1,0 +1,108 @@
+# ADR-0026 的固定令牌。颜色不在这里：颜色由客户端核心推导。
+
+[spacing]
+s4 = 4
+s8 = 8
+s12 = 12
+s16 = 16
+s24 = 24
+s32 = 32
+s48 = 48
+pageInset = 16
+sectionGap = 24
+
+# 圆角可以分平台（ADR-0029）。
+[radii]
+control = { ios = 14, android = 12 }
+card = { ios = 20, android = 16 }
+bubble = { ios = 18, android = 16 }
+bubbleJoined = { ios = 6, android = 4 }
+pill = 999
+bar = { ios = 999, android = 22 }
+barItem = { ios = 999, android = 16 }
+composerField = 20
+
+[size]
+target = 48
+avatar = 48
+topBar = 56
+bottomBar = 64
+icon = 24
+iconSmall = 20
+iconTiny = 14
+sendButton = 36
+composerField = 40
+fileThumbnail = 44
+menuBlur = 12
+menuWidth = 200
+menuElevation = 8
+messageImage = 240
+launcherIcon = 62
+launcherCell = 76
+storeIcon = 56
+taskIcon = 40
+floatingActionButton = 56
+previewIcon = 64
+detailIcon = 112
+screenshot = 380
+chip = 36
+smallButton = 32
+switchWidth = 44
+switchHeight = 26
+switchKnob = 22
+dialogWidth = 320
+grabberWidth = 36
+grabberHeight = 4
+hairline = 1
+quoteBar = 2
+
+[ratio]
+pluginIconRadius = 0.2237
+secondaryContent = 0.7
+scrim = 0.4
+codeFill = 0.1
+
+[typography]
+screenTitle = { size = 28, line = 34, weight = "bold", relativeTo = "title" }
+sectionTitle = { size = 20, line = 26, weight = "semibold", relativeTo = "title3" }
+itemTitle = { size = 17, line = 24, weight = "medium", relativeTo = "headline" }
+body = { size = 16, line = 22, weight = "regular", relativeTo = "body" }
+supporting = { size = 14, line = 20, weight = "regular", relativeTo = "subheadline" }
+caption = { size = 12, line = 16, weight = "regular", relativeTo = "caption" }
+
+# 毫秒。系统“减少动态”打开时一律改用 reduced 的淡入淡出。
+[motion]
+feedback = 120
+state = 180
+panel = 240
+messageInsert = 180
+reduced = 100
+
+# ADR-0033：公开变量只增不改名。颜色引用 ThemeColors，字体引用 AppearanceViewModel。
+# --wonton-* 只注入根元素；--wonton-inset-* 由运行时环境提供。
+[web_variables]
+"--color-background-primary" = { color = "canvas" }
+"--color-background-secondary" = { color = "surface_subtle" }
+"--color-text-primary" = { color = "text_primary" }
+"--color-text-secondary" = { color = "text_secondary" }
+"--color-border-primary" = { color = "separator" }
+"--color-background-danger" = { color = "danger" }
+"--color-text-danger" = { color = "danger" }
+"--color-border-danger" = { color = "danger" }
+"--color-ring-danger" = { color = "danger" }
+"--color-background-success" = { color = "success" }
+"--color-text-success" = { color = "success" }
+"--color-border-success" = { color = "success" }
+"--color-ring-success" = { color = "success" }
+"--color-background-warning" = { color = "warning" }
+"--color-text-warning" = { color = "warning" }
+"--color-border-warning" = { color = "warning" }
+"--color-ring-warning" = { color = "warning" }
+"--wonton-accent-fill" = { color = "accent_fill" }
+"--wonton-accent-ink" = { color = "accent_ink" }
+"--wonton-accent-ink-on-fill" = { color = "accent_ink_on_fill" }
+"--border-radius-xs" = { radius = "bubbleJoined" }
+"--border-radius-md" = { radius = "control" }
+"--border-radius-lg" = { radius = "card" }
+"--border-radius-full" = { radius = "pill" }
+"--font-sans" = { font = "font" }

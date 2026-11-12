@@ -1,0 +1,45 @@
+[package]
+name = "wonton-acp-bridge"
+description = "Matrix 与 ACP Agent 之间的 Wonton 桥"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "wonton-acp-bridge"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# 图片内容块的 base64（ACP image 块）。
+base64 = { workspace = true }
+sha2 = { workspace = true }
+futures-util = "0.3.34"
+reqwest = { workspace = true, features = ["json"] }
+tokio = { workspace = true, features = ["macros", "net", "process", "rt-multi-thread", "signal", "sync", "time", "io-std", "io-util"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
+url = { workspace = true }
+# MCP 总线是 Streamable HTTP，客户端的握手交给官方 SDK。
+rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
+wonton-l10n = { path = "../wonton-l10n" }
+wonton-matrix = { path = "../wonton-matrix" }
+wonton-protocol = { path = "../wonton-protocol" }
+
+[dev-dependencies]
+axum = { workspace = true }
+rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
+tempfile = { workspace = true }
+tracing-core = { workspace = true }
+# 停机重启的集成测试要真 Tuwunel；只进测试构建。
+wonton-matrix = { path = "../wonton-matrix", features = ["testkit"] }
+# MIT OR Apache-2.0。镜像冒烟的基础镜像在 CI 指到镜像仓库副本。
+wonton-test-images = { path = "../wonton-test-images" }
+
+[lints]
+workspace = true

@@ -1,0 +1,26 @@
+# 开发栈的联邦选项（ADR-0050），第二份配置：compose 里 `-c` 给两次，同键覆盖 tuwunel.toml。
+# 只在这里挂载：crates/wonton-matrix 的测试用基础配置起 Tuwunel（127.0.0.1 上联邦开不了）。
+# 选项与正式安装生成的 tuwunel.toml 保持一致，见 crates/wonton-core/src/install.rs。
+# 测试还跑在 1.9.4 上，这里用两版都认的扁平写法（2.0 的 `[global.*]` 分组表 1.9.4 会整个忽略）。
+
+[global]
+# 8008 明文给核心网关（客户端接口），8448 是联邦端口。
+port = [8008, 8448]
+
+# 联邦开着，只对配对过的服务器开：正式安装里名单由核心生成和热加载；开发栈没有名单文件，
+# 等于没有限制。8448 只在本机和内部网络上，出不去。
+allow_federation = true
+trusted_servers = []
+# 默认值含 10/8、127/8，会拦掉到转发组件的出站。
+ip_range_denylist = []
+
+# 联邦对端证书是自签的（服务器名拿不到公共证书），出站不校验；对端认证落在 X-Matrix 签名上。
+# 这个栈等同不受信任名的私用模式（ADR-0051）：正式安装里有名字的服务器用有效证书并关掉这一项，
+# 只有显式不要名字的服务器才保留自签证书和这个例外。
+allow_invalid_tls_certificates = true
+
+[global.tls]
+# dev.sh 生成的自签证书；dual_protocol 让 8008 上的明文客户端接口照旧。
+certs = "/etc/tuwunel/tls/tls.crt"
+key = "/etc/tuwunel/tls/tls.key"
+dual_protocol = true

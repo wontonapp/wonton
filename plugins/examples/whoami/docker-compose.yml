@@ -1,0 +1,22 @@
+# 最小示例插件：traefik/whoami 回显收到的请求，用来检查核心网关的路由与请求头处理。
+# 没有 OIDC，网页只靠网关的会话鉴权。
+name: whoami
+services:
+  web:
+    image: traefik/whoami:v1.11
+    command: --port 8000 --name ${WONTON_APP_ID}
+
+x-wonton:
+  spec: '0.4'
+  id: app.whoami
+  version: 0.1.0
+  kind: app
+  title: { zh: 回显, en: Who am I }
+  description:
+    zh: 回显请求头的最小示例插件
+    en: Minimal example plugin that echoes request headers
+  icon: icon.svg
+  webui:
+    service: web
+    port: 8000
+  permissions: []

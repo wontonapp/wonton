@@ -1,0 +1,220 @@
+name: ios
+
+# 托管 macOS（仓库公开后 macOS 分钟免费）：SwiftLint，和一次模拟器构建：在固定型号和系统版本的模拟器上
+# 跑 WontonTests（单测和截图测试，不跑 UI 测试，不签名）。草稿 PR 上一个作业都不起（含改动范围），汇总作业起来报
+# 一个通过；转 ready 或每天的定时全量才跑。
+# 重录参考图不在这个工作流里：另开 snapshots-record.yml，只在打 record-snapshots 标签时跑，见 workflows/README.md。
+#
+# 改动范围分两半（模拟器构建要十几分钟，2026-11-12 实测 PR 上中位 13 分钟，PR 只等十分钟内出结果的快检查）：
+# - PR 上：改到 Swift 这边或导出给 Swift 的接口（apps/ios、设计生成、wonton-protocol、wonton-client）才跑，汇总是必需检查。
+#   iOS 在 PR 上红的几乎都落在这几处（Swift 这边改了，或接口改了 Swift 没跟上；2026-11-12 前一天约十次），
+#   挪到合后会让 main 一天红好几次。
+# - 合进 main 之后：wonton-client 依赖的其余 crate、依赖版本、工具链（不改导出接口，很少弄坏 Swift）按 push 的路径触发，
+#   不挡合并；每次合并单独跑、不互相取消，红了按那次提交标题里的 (#N) 找到弄红的 PR。
+# 两半合起来是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
+# 加了依赖要同步改。只改测试的（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉。
+# PR 上路径不写在触发器上：必需检查在每个 PR 上都要有结果，工作流没触发的话检查一直“等待中”，PR 合不了；
+# 由 changes 作业判断，没改到时自己报 skipped（跳过的检查算通过）。
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+    # 不是必需检查，路径直接写在触发器上；排除项放最后，GitHub 按顺序判断。
+    paths:
+      - "crates/wonton-l10n/**"
+      - "crates/wonton-matrix/**"
+      - "crates/wonton-tunnel/**"
+      - "Cargo.toml"
+      - "vendor/**"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "!**/*.md"
+      - "!crates/**/tests/**"
+      - "!crates/**/benches/**"
+      - "!crates/**/tests.rs"
+      - "!crates/**/*_tests.rs"
+  schedule:
+    # 每天全量兜底：两个各自绿的 PR 合在一起才出的错由这次发现。
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+# 同一个 PR 又推了新提交，旧的整个取消，排上的模拟器构建也不许再起（build 的条件用 !cancelled()）。
+# main 上每次合并单独一组、不互相取消（见开头）。
+concurrency:
+  group: ios-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # 同 rust.yml：不留增量编译的缓存，调试信息只留行号。
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: 改动范围（ios）
+    # PR 用 REST 列改动文件，不用检出代码；定时和手动运行全量，草稿 PR 跳过。
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # 按 REST 接口列 PR 改动的文件，不用检出代码。
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+    steps:
+      # MIT
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
+          predicate-quantifier: some-with-excludes
+          filters: |
+            changed:
+              - "apps/ios/**"
+              - "design/**"
+              - "scripts/generate-design.py"
+              - "crates/wonton-client/**"
+              - "crates/wonton-protocol/**"
+              - ".github/workflows/ios.yml"
+              - "!**/*.md"
+              - "!crates/**/tests/**"
+              - "!crates/**/benches/**"
+              - "!crates/**/tests.rs"
+              - "!crates/**/*_tests.rs"
+
+  swiftlint:
+    name: SwiftLint（函数体 ≤ 100 行）
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || github.event_name != 'pull_request') }}
+    runs-on: macos-26
+    timeout-minutes: 10
+    env:
+      SWIFTLINT_VERSION: "0.65.1"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 安装 SwiftLint（版本和 sha256 固定）
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/swiftlint.zip" \
+            "https://github.com/realm/SwiftLint/releases/download/$SWIFTLINT_VERSION/portable_swiftlint.zip"
+          echo "c1e429b0599cf1b516f369a2d9ec04eaf0e436f3c12b637df8851fa52ff694d0  $RUNNER_TEMP/swiftlint.zip" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/swiftlint"
+          unzip -q -o "$RUNNER_TEMP/swiftlint.zip" -d "$RUNNER_TEMP/swiftlint"
+          echo "$RUNNER_TEMP/swiftlint" >> "$GITHUB_PATH"
+      - name: SwiftLint
+        working-directory: apps/ios
+        run: |
+          swiftlint version
+          swiftlint lint --strict --no-cache
+
+  build:
+    name: 模拟器构建
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.changed == 'true' || github.event_name != 'pull_request') }}
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      XCODEGEN_VERSION: "2.46.0"
+      # 参考图绑定这台模拟器和这个系统版本：改了就整体重录（打 record-snapshots 标签）。系统版本取 Xcode 27.1 支持的，
+      # 设备取装机列表里的普通 iPhone。模拟器名字带空格，走变量拼进 -destination。
+      SIMULATOR_NAME: iPhone 17
+      SIMULATOR_OS: "27.0"
+      # 截图测试并行会同时开好几个窗口、失败时也不好定位，单台模拟器顺序跑；日期按 UTC、en_US 排版，参考图才可复现。
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 用 Xcode 27.1（和开发机 mini 上的一致）
+        run: sudo xcode-select -s /Applications/Xcode_27.1.app
+      - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # macOS 的产物和 Linux 作业不通用，单独一个 key。main 上的条目由 cache.yml 用同一个 key 编。
+          shared-key: rust-ios
+          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+      - name: 安装 XcodeGen（版本和 sha256 固定）
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/xcodegen"
+          unzip -q -o "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
+          echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: 编译 Rust 核心并生成 Swift 绑定
+        env:
+          WONTON_IOS_TARGETS: aarch64-apple-ios-sim
+        run: apps/ios/scripts/build-core.sh debug
+      - name: 生成 Xcode 工程
+        run: xcodegen generate --spec apps/ios/project.yml
+      # 只编 WontonTests：UI 测试（WontonUITests）在夜跑里跑，这里不编。
+      - name: 构建测试
+        run: |
+          xcodebuild -version
+          xcodebuild build-for-testing \
+            -project apps/ios/Wonton.xcodeproj \
+            -scheme Wonton \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
+            -only-testing:WontonTests \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO
+      # 录制模式由 scheme 的环境变量切（`Wonton` 是 never）：只比较、缺图也报错，不在 CI 里悄悄补图；
+      # 重录在 snapshots-record.yml。每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。
+      - name: 单元测试和截图测试
+        run: |
+          xcodebuild test-without-building \
+            -project apps/ios/Wonton.xcodeproj \
+            -scheme Wonton \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
+            -only-testing:WontonTests \
+            -parallel-testing-enabled NO \
+            -testLanguage en \
+            -testRegion US \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 10 \
+            -maximum-test-execution-time-allowance 60 \
+            -resultBundlePath "$RUNNER_TEMP/Tests.xcresult" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO
+      # 对比失败的新图和差异图作为附注在 .xcresult 里。
+      - name: 失败时存测试结果包
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-test-failure
+          path: ${{ runner.temp }}/Tests.xcresult
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
+  # 草稿 PR 上其余作业全被跳过时它也照样起来并报通过，不用为此先起别的 runner。
+  summary:
+    name: ios 汇总
+    needs: [changes, swiftlint, build]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      RESULTS: ${{ join(needs.*.result, ' ') }}
+    steps:
+      - name: 各作业的结果
+        run: |
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) exit 1 ;;
+            esac
+          done

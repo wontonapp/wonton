@@ -1,0 +1,31 @@
+name: share smoke multiplayer
+services:
+  web:
+    # 脚本预先把冒烟用的 python 镜像打上这个本地标签：隔离网段没有 registry。
+    image: wonton-share-multiplayer:smoke
+    command: ["python3", "/app.py"]
+    configs:
+      - source: app
+        target: /app.py
+configs:
+  app:
+    file: ./app.py
+x-wonton:
+  spec: '0.13'
+  id: app.share-smoke
+  version: 0.1.0
+  kind: app
+  license: MIT
+  title: {zh: 分享冒烟, en: Share smoke}
+  description: {zh: 两个好友同时进入的多人在线房间, en: One shared room two friends join at once}
+  webui:
+    service: web
+    port: 8000
+    accounts: per_user
+    sso: proxy
+    proxy:
+      headers:
+        X-Remote-User: '{user}'
+        X-Remote-Name: '{name}'
+        X-Remote-Role: '{role}'
+  permissions: []

@@ -1,0 +1,19 @@
+[package]
+name = "wonton-l10n"
+description = "客户端与服务器共用的 Fluent 目录、语言协商和一致性校验"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+fluent-bundle = { workspace = true }
+fluent-langneg = { workspace = true }
+# Apache-2.0 OR MIT。遍历 Fluent AST，检查消息和属性中的变量。
+fluent-syntax = "0.12.0"
+# 可能子标签补全（choose_language 里把 zh-TW 补成 zh-Hant-TW）；fluent-langneg 的 cldr 特性也开着它。
+unic-langid = { workspace = true, features = ["likelysubtags"] }
+
+[lints]
+workspace = true
