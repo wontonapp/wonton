@@ -387,11 +387,13 @@ impl PluginManager {
 
     fn image_error(path: &str, error: ImageError, langs: &Languages) -> InstallError {
         match error {
-            ImageError::Refused(reason) => InstallError::Invalid(l10n::text(
-                langs,
-                "plugin-install-install-icon-error",
-                &[("path", path.into()), ("reason", reason.into())],
-            )),
+            ImageError::Refused(reason) | ImageError::TimedOut(reason) => {
+                InstallError::Invalid(l10n::text(
+                    langs,
+                    "plugin-install-install-icon-error",
+                    &[("path", path.into()), ("reason", reason.into())],
+                ))
+            }
             ImageError::Unavailable(reason) => InstallError::ImagesUnavailable(reason),
         }
     }

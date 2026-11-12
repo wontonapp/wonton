@@ -175,7 +175,9 @@ impl Gallery {
             .get_or_try_init(|| async {
                 match self.images.icon(source.format, &source.data).await {
                     Ok(icon) => Ok(Ok(Arc::new(icon))),
-                    Err(ImageError::Refused(reason)) => Ok(Err(reason)),
+                    Err(ImageError::Refused(reason) | ImageError::TimedOut(reason)) => {
+                        Ok(Err(reason))
+                    }
                     Err(e @ ImageError::Unavailable(_)) => Err(e),
                 }
             })
@@ -191,7 +193,9 @@ impl Gallery {
             .get_or_try_init(|| async {
                 match self.images.tab_icon(source.format, &source.data).await {
                     Ok(icon) => Ok(Ok(Arc::new(icon))),
-                    Err(ImageError::Refused(reason)) => Ok(Err(reason)),
+                    Err(ImageError::Refused(reason) | ImageError::TimedOut(reason)) => {
+                        Ok(Err(reason))
+                    }
                     Err(e @ ImageError::Unavailable(_)) => Err(e),
                 }
             })

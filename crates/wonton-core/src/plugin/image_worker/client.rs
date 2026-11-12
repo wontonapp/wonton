@@ -22,6 +22,7 @@ use super::{
     Fields, HELPER_GRACE, HOST_COMMAND, ImageError, Job, Languages, MAX_RUNNING, READY_TIMEOUT,
     TIMEOUT, outcome, owner_language_tag, parse_icon,
 };
+use crate::plugin::pdf::Extracted;
 
 /// 核心这边：把图片任务交给常驻助手，限时，限并发。
 pub struct ImageWorker {
@@ -156,6 +157,19 @@ impl ImageWorker {
         Ok(Fields(&output).bytes(&langs)?.to_vec())
     }
 
+    /// PDF 的文字层：文字、读到的页数、总页数。
+    pub async fn pdf_text(&self, data: &[u8]) -> Result<Extracted, ImageError> {
+        let output = self.run(Job::Pdf, data).await?;
+        let langs = self.owner_languages();
+        let mut fields = Fields(&output);
+        Ok(Extracted {
+            text: String::from_utf8_lossy(fields.bytes(&langs)?).into_owned(),
+            pages_read: fields.number(&langs)?,
+            pages_total: fields.number(&langs)?,
+            truncated: fields.bytes(&langs)? == [1],
+        })
+    }
+
     async fn run(&self, job: Job, input: &[u8]) -> Result<Vec<u8>, ImageError> {
         let _permit = self.running.acquire().await.expect("信号量不会关闭");
         self.execute(job, input).await
@@ -199,7 +213,7 @@ impl ImageWorker {
                 // 助手自己卡住了：杀掉它，子进程跟着退。下一个任务前再起。
                 in_flight.done = true;
                 self.retire(&helper).await;
-                return Err(ImageError::Refused(crate::l10n::text(
+                return Err(ImageError::TimedOut(crate::l10n::text(
                     &langs,
                     "plugin-install-img-worker-timeout",
                     &[("seconds", self.timeout.as_secs_f32().into())],

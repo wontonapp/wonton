@@ -56,6 +56,36 @@ pub fn can_thumbnail(name: &str, declared: Option<&str>) -> bool {
     served_type(name, declared).is_some_and(|mime| THUMBNAIL_TYPES.contains(&mime))
 }
 
+/// `view_file` 碰到的媒体类型（ADR-0104）。PDF 只看声明的类型和扩展名，不看内容嗅探。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaKind {
+    Pdf,
+    /// MP4、M4V、MOV：核心里有解析器。
+    Mp4,
+    /// webm、mkv：另一个容器，核心里没解析器。
+    OtherVideo,
+    Audio,
+}
+
+/// PDF 看声明的类型或扩展名；视频和音频按 [`served_type`] 归一后的类型分。
+pub fn media_kind(name: &str, declared: Option<&str>) -> Option<MediaKind> {
+    let declared = declared
+        .and_then(declared_type)
+        .map(str::to_ascii_lowercase);
+    let extension = name
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase());
+    if declared.as_deref() == Some("application/pdf") || extension.as_deref() == Some("pdf") {
+        return Some(MediaKind::Pdf);
+    }
+    Some(match served_type(name, declared.as_deref())? {
+        "video/mp4" | "video/quicktime" => MediaKind::Mp4,
+        "video/webm" | "video/x-matroska" => MediaKind::OtherVideo,
+        mime if mime.starts_with("audio/") => MediaKind::Audio,
+        _ => return None,
+    })
+}
+
 /// 这次要发文件的哪一段。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Selection {
@@ -224,6 +254,30 @@ mod tests {
         assert!(!can_thumbnail("a.heic", None));
         assert!(!can_thumbnail("a.mp4", None));
         assert!(!can_thumbnail("a.svg", None));
+    }
+
+    #[test]
+    fn view_kinds_go_by_declared_type_or_extension() {
+        assert_eq!(media_kind("a.pdf", None), Some(MediaKind::Pdf));
+        assert_eq!(
+            media_kind("a", Some("application/pdf")),
+            Some(MediaKind::Pdf)
+        );
+        assert_eq!(
+            media_kind("a.PDF", Some("text/plain")),
+            Some(MediaKind::Pdf)
+        );
+        assert_eq!(media_kind("a.mp4", None), Some(MediaKind::Mp4));
+        assert_eq!(
+            media_kind("a", Some("video/quicktime")),
+            Some(MediaKind::Mp4)
+        );
+        assert_eq!(media_kind("a.webm", None), Some(MediaKind::OtherVideo));
+        assert_eq!(media_kind("a.mkv", None), Some(MediaKind::OtherVideo));
+        assert_eq!(media_kind("a.mp3", None), Some(MediaKind::Audio));
+        assert_eq!(media_kind("a", Some("audio/ogg")), Some(MediaKind::Audio));
+        assert_eq!(media_kind("a.svg", None), None);
+        assert_eq!(media_kind("a.jpg", None), None);
     }
 
     #[test]

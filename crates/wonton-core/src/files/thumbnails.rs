@@ -119,7 +119,7 @@ impl Files {
         let reading = self.thumbnail_slot(&record.origin, langs).await?;
         let (data, reading) = tokio::time::timeout(
             self.thumbnail_read_timeout,
-            self.read_for_thumbnail(record, reading, langs),
+            self.read_whole(record, reading, langs, too_big_for_thumbnail),
         )
         .await
         .map_err(|_| {
@@ -147,7 +147,7 @@ impl Files {
             .await
             .map_err(|_| decode_busy())?
             .map_err(|e| match e {
-                ImageError::Refused(why) => not_viewable(l10n::text(
+                ImageError::Refused(why) | ImageError::TimedOut(why) => not_viewable(l10n::text(
                     langs,
                     "files-preview-failed",
                     &[("why", why.into())],
@@ -184,33 +184,34 @@ impl Files {
         }
     }
 
-    /// 原文件的字节和它占着的名额。
-    async fn read_for_thumbnail(
+    /// 原文件的字节和它占着的名额。超过上限按 `too_big` 报（缩略图和抽文本、读视频的类别不一样）。
+    pub(super) async fn read_whole(
         &self,
         record: &FileRecord,
         reading: ThumbnailSlot,
         langs: &Languages,
+        too_big: fn(&Languages) -> Failure,
     ) -> Result<(Vec<u8>, ThumbnailSlot), Failure> {
         if let Origin::Share { reference } | Origin::Upload { reference, .. } = &record.origin {
             return self
-                .read_local_for_thumbnail(reference.clone(), reading, langs)
+                .read_local_whole(reference.clone(), reading, langs, too_big)
                 .await;
         }
         let content = self
             .content(record, RemoteRequest::whole(), langs)
             .await
             .map_err(|e| match e.kind {
-                FileFailure::ResourceTooLarge => too_big_for_thumbnail(langs),
+                FileFailure::ResourceTooLarge => too_big(langs),
                 _ => e,
             })?;
         let bytes = match content {
             Content::Remote(response) => {
                 resource::read_limited(response, MAX_THUMBNAIL_INPUT, langs)
                     .await?
-                    .ok_or_else(|| too_big_for_thumbnail(langs))?
+                    .ok_or_else(|| too_big(langs))?
             }
             Content::Bytes(bytes) if bytes.len() > MAX_THUMBNAIL_INPUT => {
-                return Err(too_big_for_thumbnail(langs));
+                return Err(too_big(langs));
             }
             Content::Bytes(bytes) => bytes,
             Content::File(_) | Content::Unread { .. } => {
@@ -221,11 +222,12 @@ impl Files {
     }
 
     /// 阻塞的读放不下来：调用方超时之后它还在跑（存储卡住时可能一直不回来），所以名额跟着它走，真读完才还。打开也在里面，一样会卡。
-    async fn read_local_for_thumbnail(
+    async fn read_local_whole(
         &self,
         reference: ShareRef,
         reading: ThumbnailSlot,
         langs: &Languages,
+        too_big: fn(&Languages) -> Failure,
     ) -> Result<(Vec<u8>, ThumbnailSlot), Failure> {
         let shares = self.shares.clone();
         let langs = langs.clone();
@@ -238,7 +240,7 @@ impl Files {
                 .open(&reference)
                 .map_err(|e| share_failure(e, &langs))?;
             if opened.snapshot.size > MAX_THUMBNAIL_INPUT as u64 {
-                return Err(too_big_for_thumbnail(&langs));
+                return Err(too_big(&langs));
             }
             // 文件可能在查过大小之后变大。
             let mut file = opened.file.take(MAX_THUMBNAIL_INPUT as u64 + 1);
@@ -246,7 +248,7 @@ impl Files {
             file.read_to_end(&mut bytes)
                 .map_err(|e| Failure::internal(format!("读文件失败：{e}")))?;
             if bytes.len() > MAX_THUMBNAIL_INPUT {
-                return Err(too_big_for_thumbnail(&langs));
+                return Err(too_big(&langs));
             }
             Ok((bytes, reading))
         })
@@ -274,6 +276,21 @@ pub(super) fn too_big_for_thumbnail(langs: &Languages) -> Failure {
         l10n::text(
             langs,
             "files-too-big-for-thumbnail",
+            &[(
+                "limit",
+                wonton_l10n::Arg::from((MAX_THUMBNAIL_INPUT >> 20) as i64),
+            )],
+        ),
+    )
+}
+
+/// `view_file` 抽 PDF 文字、读视频元数据的上限：和缩略图一样 64 MiB，但类别是 `resource_too_large`（ADR-0104）。
+pub(super) fn too_big_for_parsing(langs: &Languages) -> Failure {
+    Failure::new(
+        FileFailure::ResourceTooLarge,
+        l10n::text(
+            langs,
+            "files-too-big-for-parsing",
             &[(
                 "limit",
                 wonton_l10n::Arg::from((MAX_THUMBNAIL_INPUT >> 20) as i64),

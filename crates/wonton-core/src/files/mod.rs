@@ -36,7 +36,7 @@ use crate::l10n;
 use crate::mcp::audit::Audit;
 use crate::plugin::PluginId;
 use crate::plugin::hostdir::{self, DirError, Owner};
-use crate::plugin::image_worker::ImageWorker;
+use crate::plugin::image_worker::{ImageError, ImageWorker};
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
 use crate::plugin::store::StoreError;
@@ -47,7 +47,7 @@ use share_fs::{Deleted, Opened, ShareError, ShareRef, Shares, TRANSFERS};
 use slots::PluginSlots;
 use thumbnails::{
     MAX_THUMBNAIL_DECODES, MAX_THUMBNAIL_READS, Scale, THUMBNAIL_DECODE_TIMEOUT,
-    thumbnail_input_limit, thumbnail_read_timed_out,
+    thumbnail_input_limit, thumbnail_read_timed_out, too_big_for_parsing,
 };
 
 /// `resources/read` 最多读这么多（插件规范）。
@@ -196,6 +196,22 @@ pub struct TextHead {
     /// 实际读到的字节数。
     pub read: usize,
     pub truncated: bool,
+}
+
+/// 从 PDF 抽出来的文字（[`Files::pdf_text`]）。
+pub struct PdfText {
+    pub text: String,
+    /// 文字里读到第几页（空白页也算读过）。
+    pub pages_read: u32,
+    pub pages_total: u32,
+    pub truncated: bool,
+}
+
+/// 视频的时长和分辨率（[`Files::video_info`]）。
+pub struct VideoMeta {
+    pub width: u32,
+    pub height: u32,
+    pub duration_ms: u64,
 }
 
 /// 审计日志的一行（`core/audit.jsonl`）。
@@ -484,6 +500,83 @@ impl Files {
         })
     }
 
+    /// PDF 的文字层（`wonton__view_file` 的 PDF 分支，ADR-0104）：整份读进内存（上限同缩略图），在图片助手里按页抽，
+    /// 解析崩了报 `not_viewable`。名额和期限沿用缩略图那套，忙和超时报 `service_unavailable`。
+    pub async fn pdf_text(
+        &self,
+        record: &FileRecord,
+        langs: &Languages,
+    ) -> Result<PdfText, Failure> {
+        let data = self.view_input(record, langs).await?;
+        let _decoding = self.decode_slot(langs)?;
+        let extracted =
+            tokio::time::timeout(self.thumbnail_decode_timeout, self.images.pdf_text(&data))
+                .await
+                .map_err(|_| view_busy(langs))?
+                .map_err(pdf_failure)?;
+        Ok(PdfText {
+            text: extracted.text,
+            pages_read: extracted.pages_read,
+            pages_total: extracted.pages_total,
+            truncated: extracted.truncated,
+        })
+    }
+
+    /// 视频的时长和分辨率（`wonton__view_file` 的视频分支，ADR-0104）：和头像的检查不同，不要求正方、10 分钟内或 H.264。
+    /// ISO-BMFF 的读取核心里本来就有，只在阻塞线程上跑。
+    pub async fn video_info(
+        &self,
+        record: &FileRecord,
+        langs: &Languages,
+    ) -> Result<VideoMeta, Failure> {
+        let data = self.view_input(record, langs).await?;
+        let _decoding = self.decode_slot(langs)?;
+        let parse = async {
+            let langs = langs.clone();
+            tokio::task::spawn_blocking(move || {
+                crate::bot_media::probe_video(&data).map_err(|_| {
+                    Failure::new(
+                        FileFailure::NotViewable,
+                        l10n::text(&langs, "files-video-unreadable", &[]),
+                    )
+                })
+            })
+            .await
+            .map_err(|e| Failure::internal(format!("解析视频的任务中止：{e}")))?
+        };
+        let info = tokio::time::timeout(self.thumbnail_decode_timeout, parse)
+            .await
+            .map_err(|_| view_busy(langs))??;
+        Ok(VideoMeta {
+            width: info.width,
+            height: info.height,
+            duration_ms: info.duration_ms,
+        })
+    }
+
+    /// 要看内容的整份读取：名额和期限同缩略图，超过上限报 `resource_too_large`。
+    async fn view_input(&self, record: &FileRecord, langs: &Languages) -> Result<Vec<u8>, Failure> {
+        let reading = self.thumbnail_slot(&record.origin, langs).await?;
+        let (bytes, reading) = tokio::time::timeout(
+            self.thumbnail_read_timeout,
+            self.read_whole(record, reading, langs, too_big_for_parsing),
+        )
+        .await
+        .map_err(|_| {
+            thumbnail_read_timed_out(&record.origin, self.thumbnail_read_timeout, langs)
+        })??;
+        drop(reading);
+        Ok(bytes)
+    }
+
+    /// 解析类工作的名额：满了如实报忙，不排着队等。
+    fn decode_slot(&self, langs: &Languages) -> Result<tokio::sync::OwnedSemaphorePermit, Failure> {
+        self.thumbnail_decodes
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| view_busy(langs))
+    }
+
     /// 把这个房间的 Bot 加进访问范围，返回加了哪些。房间里没有 Bot 时也会清掉过期：App 授权之后马上发链接，这时链接就算发出去了。
     /// 和到期清理排同一个队：清理已经取了过期名单也不会在授权之后把文件删掉。
     pub async fn grant_room(
@@ -661,6 +754,23 @@ impl Files {
             }
             Err(e) => Err(share_failure(e, &langs)),
         }
+    }
+}
+
+/// 抽 PDF、读视频的名额满了或者到点了。
+fn view_busy(langs: &Languages) -> Failure {
+    Failure::new(
+        FileFailure::ServiceUnavailable,
+        l10n::text(langs, "files-view-busy", &[]),
+    )
+}
+
+/// 抽 PDF 时图片助手那边的错误：内容的问题重试也一样（`not_viewable`），超时和起不来按 ADR-0104 的类别报。
+fn pdf_failure(error: ImageError) -> Failure {
+    match error {
+        ImageError::Refused(why) => Failure::new(FileFailure::NotViewable, why),
+        ImageError::TimedOut(why) => Failure::new(FileFailure::ServiceUnavailable, why),
+        ImageError::Unavailable(why) => Failure::internal(why),
     }
 }
 

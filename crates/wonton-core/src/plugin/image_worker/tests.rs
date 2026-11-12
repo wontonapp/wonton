@@ -23,6 +23,13 @@ fn refused(status: ExitStatus, stderr: &str) -> String {
     }
 }
 
+fn timed_out(status: ExitStatus, stderr: &str) -> String {
+    match outcome(status, Vec::new(), stderr, &langs()) {
+        Err(ImageError::TimedOut(reason)) => reason,
+        other => panic!("{other:?}"),
+    }
+}
+
 #[test]
 fn exit_statuses_tell_the_image_apart_from_the_worker() {
     assert_eq!(
@@ -67,13 +74,6 @@ fn crashes_and_limits_are_reported_as_unprocessable_with_the_cause() {
             &[("code", 101i32.into())]
         ))
     );
-    assert!(
-        refused(signaled(Signal::XCPU), "").contains(&crate::l10n::text(
-            &langs,
-            "plugin-install-img-worker-cpu-timeout",
-            &[("seconds", CPU_SECONDS.into())],
-        ))
-    );
     let oom = refused(
         signaled(Signal::ABORT),
         "memory allocation of 1073741824 bytes failed",
@@ -100,6 +100,28 @@ fn crashes_and_limits_are_reported_as_unprocessable_with_the_cause() {
             "plugin-install-img-worker-signal",
             &[("signal", term.into())]
         ))
+    );
+}
+
+#[test]
+fn a_cpu_timeout_is_not_the_files_fault() {
+    let langs = langs();
+    assert!(
+        timed_out(signaled(Signal::XCPU), "").contains(&crate::l10n::text(
+            &langs,
+            "plugin-install-img-worker-cpu-timeout",
+            &[("seconds", CPU_SECONDS.into())],
+        ))
+    );
+    // 助手说超时的结果码也一样。
+    assert_eq!(
+        outcome(
+            ExitStatus::from_raw(i32::from(TIMED_OUT) << 8),
+            Vec::new(),
+            "太慢",
+            &langs
+        ),
+        Err(ImageError::TimedOut("太慢".to_owned()))
     );
 }
 

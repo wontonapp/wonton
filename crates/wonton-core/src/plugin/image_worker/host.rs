@@ -110,6 +110,7 @@ async fn handle(program: &Path, request: Incoming) -> Reply {
     match run(program, job, &request).await {
         Ok(output) => Reply::ok(request.id, output),
         Err(ImageError::Refused(reason)) => Reply::refused(request.id, reason),
+        Err(ImageError::TimedOut(reason)) => Reply::timed_out(request.id, reason),
         Err(ImageError::Unavailable(reason)) => Reply::broken(request.id, reason),
     }
 }
@@ -184,7 +185,7 @@ async fn run(program: &Path, job: Job, request: &Incoming) -> Result<Vec<u8>, Im
             if let Err(e) = child.kill().await {
                 tracing::warn!("结束处理图片的子进程失败：{e}");
             }
-            return Err(ImageError::Refused(crate::l10n::text(
+            return Err(ImageError::TimedOut(crate::l10n::text(
                 &langs,
                 "plugin-install-img-worker-timeout",
                 &[("seconds", request.timeout.as_secs_f32().into())],

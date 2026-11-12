@@ -16,6 +16,12 @@ files-upstream-not-own = { $service }はアプリ{ $plugin }自身のサービ�
 
 # プレビューとサムネイル。
 files-too-big-for-thumbnail = ファイルが{ $limit } MiBを超えるため、サムネイルは作成しません
+files-pdf-unreadable = このPDFは解析できません（暗号化されているか、壊れています）。内容は読めません
+files-pdf-no-text = このPDFにはテキスト層がありません（スキャン画像か図版のみです）。全{ $pages }ページで、図表の中身は読めません
+files-too-big-for-parsing = ファイルが{ $limit } MiBを超えるため、内容を抽出できません
+files-video-unsupported = この動画のコンテナは読めません（MP4・M4V・MOVのみ対応）。ダウンロードか共有だけができます
+files-video-unreadable = この動画は解析できません（コンテナか構造が不明です）。長さと解像度を取得できません
+files-audio-unreadable = 音声は内容を読めません。ダウンロードか共有だけができます
 files-thumbnail-timeout = 元のファイルを{ $after }以内に読み終えられませんでした
 files-idle-limited = アプリからのレスポンスは{ $idle }間、新しいバイトがありません
 files-declared-size-over-limit = アプリが宣言したサイズがresources/readの上限（{ $limit } MiB）を超えています
@@ -24,6 +30,7 @@ files-not-text-utf8 = { $name }はテキストファイルではありません�
 files-no-preview = この種類にはプレビューもサムネイルもありません
 files-preview-failed = プレビューもサムネイルも作成できません：{ $why }
 files-decode-busy = 画像のデコードが混み合っています
+files-view-busy = このファイルは読み取り中です。しばらくしてから再試行してください
 files-read-busy = 画像の読み取りが混み合っています
 
 # 保存・アップロード・削除。

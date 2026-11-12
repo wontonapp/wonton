@@ -222,3 +222,30 @@ fn accepts_eof_sized_media_and_fragmented_h264_with_known_movie_duration() {
     broken[trun + 12..trun + 16].copy_from_slice(&u32::MAX.to_be_bytes());
     assert_eq!(inspect(&broken), Err(Problem::Unreadable));
 }
+
+#[test]
+fn view_probe_takes_long_rectangle_videos() {
+    let mut bytes = MP4.to_vec();
+    let mvhd = tag(&bytes, b"mvhd");
+    bytes[mvhd + 16..mvhd + 20].copy_from_slice(&1000u32.to_be_bytes());
+    bytes[mvhd + 20..mvhd + 24].copy_from_slice(&120_000u32.to_be_bytes());
+    let avc = bytes
+        .windows(8)
+        .position(|part| part == b"avc1\0\0\0\0")
+        .unwrap();
+    bytes[avc + 28..avc + 30].copy_from_slice(&32u16.to_be_bytes());
+    bytes[avc + 30..avc + 32].copy_from_slice(&16u16.to_be_bytes());
+    let info = probe_video(&bytes).unwrap();
+    assert_eq!((info.width, info.height), (32, 16));
+    assert_eq!(info.duration_ms, 120_000);
+    // 头像那套照旧：不是正方，也只能是 6 秒以内。
+    assert_eq!(inspect(&bytes), Err(Problem::NotSquare));
+}
+
+#[test]
+fn view_probe_accepts_other_codecs_but_the_avatar_check_keeps_h264() {
+    let mpeg4 = include_bytes!("../../tests/fixtures/avatars/mpeg4.mp4");
+    assert_eq!(probe_video(mpeg4).unwrap().width, 16);
+    assert_eq!(inspect(mpeg4), Err(Problem::Format));
+    assert_eq!(probe_video(PNG), Err(Problem::Format));
+}
