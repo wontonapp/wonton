@@ -372,6 +372,7 @@ impl Bus {
     }
 
     /// 插件工具的声明：清单这会儿取不到、或插件没有这个工具时，给 Agent 的失败。
+    /// 错误装箱：serde_json 开 `preserve_order` 时 `CallToolResult` 撑过 clippy `result_large_err` 的 128 字节阈值。
     async fn definition_of(
         &self,
         caller: &Caller,
@@ -379,26 +380,26 @@ impl Bus {
         args: &Value,
         server: &McpServer,
         tool: &str,
-    ) -> Result<rmcp::model::Tool, CallToolResult> {
+    ) -> Result<rmcp::model::Tool, Box<CallToolResult>> {
         let listed = match self.upstreams.tools(server).await {
             Ok(tools) => tools,
             // 插件的工具清单这会儿取不到：多半是插件没就绪或连接断了，Agent 该晚点再试。
             Err(e) => {
-                return Err(self.deny(
+                return Err(Box::new(self.deny(
                     caller,
                     name,
                     args,
                     &ToolFailure::new("source_unavailable", e),
-                ));
+                )));
             }
         };
         listed.into_iter().find(|t| t.name == tool).ok_or_else(|| {
-            self.deny(
+            Box::new(self.deny(
                 caller,
                 name,
                 args,
                 &ToolFailure::new("not_found", format!("插件 {} 没有工具 {tool}", server.id)),
-            )
+            ))
         })
     }
 
@@ -413,7 +414,7 @@ impl Bus {
         let args = Value::Object(arguments.clone());
         let definition = match self.definition_of(caller, name, &args, server, tool).await {
             Ok(definition) => definition,
-            Err(result) => return result,
+            Err(result) => return *result,
         };
         let read_only = definition
             .annotations
@@ -442,7 +443,7 @@ impl Bus {
                 .await
             {
                 Ok(held_ms) => held_ms,
-                Err(result) => return result,
+                Err(result) => return *result,
             };
             // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。最高级的工具全部不放宽。
             let cleared = if highest {
