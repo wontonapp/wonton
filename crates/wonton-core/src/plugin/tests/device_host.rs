@@ -72,7 +72,14 @@ fn aliases_deduplicate_and_sysfs_rejects_partitions_without_part_suffixes() {
     let host = FakeHost::empty();
     host.disk("sda", "ata-drive", "wwn-drive", "Drive", "S1", "8:0");
     host.partition("sda", "ata-drive", 1, "8:1");
-    host.disk("dm-0", "dm-name-volume", "dm-uuid-volume", "Volume", "V", "253:0");
+    host.disk(
+        "dm-0",
+        "dm-name-volume",
+        "dm-uuid-volume",
+        "Volume",
+        "V",
+        "253:0",
+    );
     fs::remove_dir_all(host.sys().join("block/dm-0/device")).unwrap();
     let aliases = host.dev().join("disk/by-id");
     symlink("../../sda1", aliases.join("custom-partition-name")).unwrap();
