@@ -145,6 +145,9 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
         }
         set("WONTON_MODEL_DEFAULT", models.default_model.clone());
     }
+    for (name, value) in &ctx.capabilities {
+        set(name, value.clone());
+    }
     if let Some(url) = &ctx.mcp_url {
         set("WONTON_MCP_URL", url.clone());
     }

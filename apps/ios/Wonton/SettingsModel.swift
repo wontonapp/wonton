@@ -50,6 +50,7 @@ final class SettingsModel {
 
 enum SettingsRoute: Hashable {
     case server
+    case matrixLogin
     case connectionDetails
     case invite
     case pairing

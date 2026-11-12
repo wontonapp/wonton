@@ -20,6 +20,7 @@ struct PairingView: View {
     /// 最近一次出示的码。扫到同一个码不再自动出示，失败后由“再试一次”重来。
     @State private var lastCode: String?
     @FocusState private var isEditingCode: Bool
+    @State private var showsMatrixLogin = false
     @Environment(\.wontonColors) private var colors
 
     /// 相机状态和设备名都可以传入：截图测试要把它们固定住，模拟器的权限和设备名每次不一样。
@@ -49,6 +50,11 @@ struct PairingView: View {
                     )
                 } else {
                     pairingForm
+                    // 没有自己服务器的人从这里用别家的 Matrix 账号登录（ADR-0051）。
+                    WontonGroup {
+                        Button { showsMatrixLogin = true } label: { MatrixLoginEntryLabel() }
+                            .buttonStyle(.plain)
+                    }
                 }
             }
             .padding(WontonTheme.spacing.pageInset)
@@ -72,6 +78,11 @@ struct PairingView: View {
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
                 .frame(minHeight: WontonTheme.size.topBar)
                 .background(.ultraThinMaterial)
+            }
+        }
+        .fullScreenCover(isPresented: $showsMatrixLogin) {
+            NavigationStack {
+                MatrixLoginView(model: model) { showsMatrixLogin = false }
             }
         }
         .task { await askForCamera() }

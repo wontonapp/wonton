@@ -89,7 +89,8 @@ impl PluginManager {
         };
         self.ensure_host_cidrs().await?;
         let _pass = self.egress.pass.lock().await;
-        self.sync_relay(proxy, &config, Some(network)).await
+        // 同 lifecycle.rs deploy_inner 的减帧：sync_relay 往下到 bollard 的反序列化很深。
+        Box::pin(self.sync_relay(proxy, &config, Some(network))).await
     }
 
     /// 卸载或回滚时，删网络之前断开：Docker 不让删还有端点的网络。
