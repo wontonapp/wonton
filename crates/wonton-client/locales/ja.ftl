@@ -540,6 +540,15 @@ plugins-core-upgrade-not-cancellable = 今はキャンセルできません
 # $reason は接続問題の元の詳細です。
 plugins-core-upgrade-start-uncertain = アップデートを開始できたかはっきりしません。接続後にもう一度確認してください：{ $reason }
 
+# アップデート前の互換性チェック（ADR-0085）の詳細：理由ごとに 1 行、{ $raw } はマニフェ
+# ストの原文の値。クライアントコアがアプリの言語で書き、アップデートページでは新しいバー
+# ジョンが読めないアプリの下に並べます。
+plugins-core-upgrade-compat-spec = このアプリは仕様{ $raw }で書かれており、新しいバージョンは対応していません。アップデート後は異常として表示されます。
+plugins-core-upgrade-compat-feature = このアプリのマニフェストには、新しいバージョンが認識しない{ $raw }があります。アップデート後は異常として表示されます。
+plugins-core-upgrade-compat-capability = このアプリは能力{ $raw }に依存していますが、新しいバージョンでは提供されません。アップデート後は異常として表示されます。
+plugins-core-upgrade-compat-other = 新しいバージョンはこのアプリを読めません。アップデート後は異常として表示されます。
+plugins-core-upgrade-compat-other-raw = 新しいバージョンはこのアプリの{ $raw }を読めません。アップデート後は異常として表示されます。
+
 # プロフィールのステップ：名前やメールアドレスを保存できない理由です。$max は名前の最大文字数です。
 onboarding-profile-name-empty = 名前を入力してください
 onboarding-profile-name-too-long = 名前は{ $max }文字以内にしてください

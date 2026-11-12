@@ -409,6 +409,7 @@ mod tests {
                 digest: "sha256:new".into(),
                 version: Some("0.2.0".into()),
                 migrates: Vec::new(),
+                compat: wonton_protocol::CoreUpgradeCompat::Unavailable,
             });
         });
         updates.changed().await.unwrap();

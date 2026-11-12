@@ -184,6 +184,7 @@ internal fun previewPlugins() = PluginsViewModel(
         status = null,
         stage = CoreUpgradeStage.Idle,
         offer = null,
+        compatDetails = emptyList(),
         offerSkipped = false,
         refreshing = false,
         problem = null,

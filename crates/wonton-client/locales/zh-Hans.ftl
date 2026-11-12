@@ -539,6 +539,14 @@ plugins-core-upgrade-not-cancellable = 现在不能取消
 # $reason 是连接问题的原始详情。
 plugins-core-upgrade-start-uncertain = 不确定发起了没有，连上后再看一下：{ $reason }
 
+# 兼容检查（ADR-0085）的详情：每个原因一行，{ $raw } 是清单里的原值。客户端核心按
+# App 的语言写，升级页列在新版本读不了的应用下面。
+plugins-core-upgrade-compat-spec = 它按规范 { $raw } 写成，新版本不支持：升级后会被标为异常。
+plugins-core-upgrade-compat-feature = 它的清单用了新版本不认识的 { $raw }：升级后会被标为异常。
+plugins-core-upgrade-compat-capability = 它依赖能力 { $raw }，新版本不提供：升级后会被标为异常。
+plugins-core-upgrade-compat-other = 新版本读不了这个应用：升级后会被标为异常。
+plugins-core-upgrade-compat-other-raw = 新版本读不了这个应用的 { $raw }：升级后会被标为异常。
+
 # 资料这一步：名字或邮箱为什么存不了。$max 是名字最多几个字。
 onboarding-profile-name-empty = 名字不能为空
 onboarding-profile-name-too-long = 名字太长：最多 { $max } 个字

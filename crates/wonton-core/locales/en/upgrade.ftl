@@ -31,6 +31,14 @@ upgrade-download-no-space = Not enough disk space: the download needs about { $n
 upgrade-download-failed = Can't download it: { $error }
 upgrade-image-missing-after-pull = It was downloaded, but { $reference } still isn't on this machine
 
+# The compatibility check before the update (ADR-0085). It never blocks the update:
+# when it can't run, the details say so and the update goes ahead all the same.
+upgrade-compat-records-unreadable = Can't read the installed apps' records: { $error }
+upgrade-compat-materialize-failed = Can't stage the installed apps' packages for the compatibility check: { $error }
+upgrade-compat-run-failed = Can't run the compatibility check in the new image { $image }: { $error }
+upgrade-compat-command-failed = The compatibility check in the new image { $image } exited with code { $code }: { $error }
+upgrade-compat-output-unreadable = Can't read the compatibility check's output: { $error }
+
 # The updater container reports what it did into the state file, in the owner's language.
 upgrade-updater-crashed = The updater keeps crashing
 upgrade-phase-unreadable = Can't read the phase in the state file

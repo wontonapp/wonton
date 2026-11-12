@@ -9,6 +9,7 @@ mod bots_lifecycle;
 mod by_source;
 pub mod capabilities;
 pub mod check;
+pub mod compat;
 pub mod compose;
 pub mod configs;
 pub(super) mod configs_store;
