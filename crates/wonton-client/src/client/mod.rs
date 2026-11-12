@@ -33,6 +33,7 @@ use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 use switch::Replay;
 
 mod bot_contacts;
+mod browser;
 mod dispatch;
 mod limits;
 mod media;
@@ -42,6 +43,7 @@ mod sharing;
 mod switch;
 #[cfg(feature = "test-hooks")]
 mod test_hooks;
+mod test_support;
 mod tool_policy;
 #[cfg(feature = "ui-fake")]
 mod ui_fake;

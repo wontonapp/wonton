@@ -37,6 +37,12 @@ class PreviewSnapshotsTest {
     fun problemView() = paparazzi.snapshot { ProblemViewPreview() }
 
     @Test
+    fun coreUpgradeCompatBreaking() = paparazzi.snapshot { CoreUpgradeCompatBreakingPreview() }
+
+    @Test
+    fun coreUpgradeCompatFailed() = paparazzi.snapshot { CoreUpgradeCompatFailedPreview() }
+
+    @Test
     fun pluginSettingsFields() = paparazzi.snapshot { PluginSettingsFieldsPreview() }
 
     @Test

@@ -2,7 +2,7 @@
 //! 等测试回答，ACP 侧用 `acp::test_support::FakeAgent` 的 Manual 场景驱动。
 
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     future::Future,
     sync::{
         Arc, Mutex,
@@ -73,6 +73,8 @@ pub struct FakeRoom {
     snapshot: Vec<Message>,
     recorded: Arc<Mutex<Recorded>>,
     updates: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<Vec<Message>>>>,
+    /// 可下载的媒体：句柄 → 字节。没登记的句柄按下载失败处理。
+    media: Arc<Mutex<HashMap<String, Vec<u8>>>>,
 }
 
 impl FakeRoom {
@@ -91,7 +93,13 @@ impl FakeRoom {
             snapshot,
             recorded,
             updates: Arc::new(tokio::sync::Mutex::new(receiver)),
+            media: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// 登记一个可下载的媒体句柄。
+    pub fn serve_media(&self, token: &str, bytes: Vec<u8>) {
+        self.media.lock().unwrap().insert(token.to_owned(), bytes);
     }
 
     pub fn push(&self, messages: Vec<Message>) {
@@ -292,6 +300,19 @@ impl Room for FakeRoom {
         Ok(())
     }
 
+    async fn download_media(&self, token: &str) -> Result<Vec<u8>> {
+        self.media
+            .lock()
+            .unwrap()
+            .get(token)
+            .cloned()
+            .ok_or_else(|| {
+                crate::error::Error::Matrix(crate::error::Detail::data(format!(
+                    "M_NOT_FOUND: {token}"
+                )))
+            })
+    }
+
     async fn set_state(&self, event_type: &str, _state_key: &str, _content: Value) -> Result<()> {
         self.record(Effect::State(event_type.to_owned()));
         Ok(())
@@ -461,6 +482,13 @@ pub fn owner_message_at(
         reply: None,
         can_redact: false,
     }
+}
+
+/// 主人发的一条带内容的消息（图片、文件等），其余字段同 [`owner_message`]。
+pub fn owner_message_with(event_id: &str, body: MessageBody) -> Message {
+    let mut message = owner_message(event_id, "", None);
+    message.body = body;
+    message
 }
 
 /// 等到异步断言成立，最久 5 秒。
