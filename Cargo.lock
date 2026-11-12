@@ -8933,6 +8933,7 @@ dependencies = [
  "ruma-common",
  "rustix",
  "rustls",
+ "rustls-native-certs",
  "rustls-pemfile",
  "rustls-pki-types",
  "rustls-platform-verifier",

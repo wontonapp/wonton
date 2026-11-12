@@ -69,6 +69,7 @@ pub(super) async fn run_gateway(
     let matrix_rtc = push_listener::bind_matrix_rtc(
         cfg.matrix_rtc_listen.as_deref(),
         gateway.matrix.as_ref().map(|matrix| matrix.server_name()),
+        manager.matrix_rtc_ca().as_deref(),
     )
     .await?;
     let app = gateway::router(gateway.clone());

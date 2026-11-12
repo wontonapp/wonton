@@ -1,10 +1,12 @@
 //! `matrix_rtc` 提供方网络里的服务器名别名（ADR-0096）：lk-jwt-service 这类授权服务按标准的服务器发现，
 //! 用 HTTPS 访问 `<服务器名>` 的 `/.well-known/matrix/server` 和 `/_matrix/federation/v1/openid/userinfo`
-//! 来验 OpenID 令牌。核心在提供方网络里把服务器名解析到自己（[`crate::plugin::PluginManager`] 的核心别名），
-//! 在这个 TLS 监听上只答这两个路径，其余 404，也只答 `matrix_rtc` 提供方网络里来的请求。
+//! 来验 OpenID 令牌；代管断线后的 delayed leave 时，再经客户端接口发 MSC4140 的
+//! `/delayed_events/{delay_id}/{action}`（不带访问令牌，靠 `delay_id` 本身）。核心在提供方网络里把服务器名
+//! 解析到自己（[`crate::plugin::PluginManager`] 的核心别名），在这个 TLS 监听上只答这几个路径，
+//! 发现文件自己答，其余原样转给 Tuwunel，别的路径 404，也只答 `matrix_rtc` 提供方网络里来的请求。
 //!
-//! 证书是核心启动时给服务器名现签的自签证书：别名只存在于提供方自己的网络里，名字由核心解析，提供方要么
-//! 跳过校验，要么不认（实测见 ADR-0096 的“验证结果”）。不复用入口的公共证书：没有名字的服务器没有它。
+//! 证书由核心自己的 CA（[`crate::plugin::matrix_rtc_ca`]）签，提供方信任“系统根证书 + 这个 CA”的证书包。
+//! 不复用入口的公共证书：没有名字的服务器没有它。
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -20,8 +22,6 @@ use hyper::{Method, StatusCode};
 use serde_json::json;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
-use tokio_rustls::rustls::ServerConfig;
-use tokio_rustls::rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use tokio_rustls::server::TlsStream;
 
 use super::matrix::{is_ambiguous, matrix_error};
@@ -32,11 +32,16 @@ use crate::plugin::matrix_rtc::server_host;
 pub const USERINFO_PATH: &str = "/_matrix/federation/v1/openid/userinfo";
 /// 联邦发现文件。
 pub const WELL_KNOWN_SERVER_PATH: &str = "/.well-known/matrix/server";
+/// 客户端发现文件：授权服务找客户端接口时先看它，原样转给 Tuwunel。
+pub const WELL_KNOWN_CLIENT_PATH: &str = "/.well-known/matrix/client";
+/// MSC4140 的不稳定前缀，后面跟 `{delay_id}/{action}`。只放不稳定路径：稳定路径要访问令牌，授权服务没有。
+pub const DELAYED_EVENTS_PREFIX: &str =
+    "/_matrix/client/unstable/org.matrix.msc4140/delayed_events/";
 
 /// TLS 握手的上限：axum 一条一条地 accept，握手卡住会挡住后面的连接。
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// 只答 `matrix_rtc` 提供方网络里来的、发给服务器名的两个路径。
+/// 只答 `matrix_rtc` 提供方网络里来的、发给服务器名的这几个路径。
 pub fn router(gateway: Arc<Gateway>) -> Router {
     Router::new().fallback(move |mut req: Request| {
         let gateway = gateway.clone();
@@ -88,14 +93,26 @@ async fn dispatch(gateway: &Gateway, req: Request) -> Response {
         (&Method::GET | &Method::HEAD, WELL_KNOWN_SERVER_PATH) => {
             axum::Json(json!({"m.server": delegated(server_name)})).into_response()
         }
-        (&Method::GET, USERINFO_PATH) => forward(gateway, matrix.authority(), req).await,
+        (&Method::GET, USERINFO_PATH | WELL_KNOWN_CLIENT_PATH) => {
+            forward(gateway, matrix.authority(), req).await
+        }
+        (&Method::POST, path) if is_delayed_event_action(path) => {
+            forward(gateway, matrix.authority(), req).await
+        }
         _ => matrix_error(
             StatusCode::NOT_FOUND,
             "M_UNRECOGNIZED",
             "not_found",
-            "这里只提供联邦发现文件和 OpenID 用户信息",
+            "这里只提供发现文件、OpenID 用户信息和 delayed event 的操作",
         ),
     }
+}
+
+/// `…/delayed_events/{delay_id}/{action}`：前缀后正好两段、都不空。
+fn is_delayed_event_action(path: &str) -> bool {
+    path.strip_prefix(DELAYED_EVENTS_PREFIX)
+        .and_then(|rest| rest.split_once('/'))
+        .is_some_and(|(id, action)| !id.is_empty() && !action.is_empty() && !action.contains('/'))
 }
 
 /// `m.server` 指回自己：服务器名带端口就原样，不带就是 443（授权服务不带端口时默认去 8448）。
@@ -155,21 +172,6 @@ fn unavailable() -> Response {
     response
 }
 
-/// 给服务器名现签一张自签证书，交给 [`TlsListener`]。
-pub fn acceptor(server_name: &str) -> anyhow::Result<TlsAcceptor> {
-    let host = server_host(server_name).to_owned();
-    let cert = rcgen::generate_simple_self_signed(vec![host])
-        .map_err(|e| anyhow::anyhow!("给 {server_name} 签证书失败：{e}"))?;
-    let chain = vec![CertificateDer::from(cert.cert.der().to_vec())];
-    let key = PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der()).into();
-    let provider = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider();
-    let config = ServerConfig::builder_with_provider(Arc::new(provider))
-        .with_safe_default_protocol_versions()?
-        .with_no_client_auth()
-        .with_single_cert(chain, key)?;
-    Ok(TlsAcceptor::from(Arc::new(config)))
-}
-
 /// TCP 监听加 TLS 握手，给 `axum::serve` 用；握手失败或超时的连接丢掉，接着等下一条。
 pub struct TlsListener {
     pub tcp: TcpListener,
@@ -225,6 +227,18 @@ mod tests {
     fn the_delegation_points_back_at_this_listener() {
         assert_eq!(delegated("wonton.localhost"), "wonton.localhost:443");
         assert_eq!(delegated("rtc.test:18448"), "rtc.test:18448");
+    }
+
+    #[test]
+    fn only_delayed_event_actions_pass() {
+        let path = |rest: &str| format!("{DELAYED_EVENTS_PREFIX}{rest}");
+        assert!(is_delayed_event_action(&path("abc/restart")));
+        for rest in ["abc", "abc/", "/restart", "abc/restart/x", ""] {
+            assert!(!is_delayed_event_action(&path(rest)), "{rest}");
+        }
+        assert!(!is_delayed_event_action(
+            "/_matrix/client/v1/delayed_events/abc/restart"
+        ));
     }
 
     #[test]

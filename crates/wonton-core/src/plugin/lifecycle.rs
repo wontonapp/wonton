@@ -464,6 +464,11 @@ impl PluginManager {
                 ))
             })?;
         }
+        let capabilities = {
+            let mut vars = self.dependency_vars(manifest)?;
+            vars.extend(self.matrix_rtc_vars(manifest, &self.cfg.apps_dir.join(&slug), langs)?);
+            vars
+        };
         Ok(InstallContext {
             app_data: self.cfg.apps_dir.join(&slug),
             config_store: self.cfg.data_dir.join("core").join("configs"),
@@ -479,11 +484,7 @@ impl PluginManager {
             matrix: None,
             bots: Default::default(),
             models: None,
-            capabilities: {
-                let mut vars = self.dependency_vars(manifest)?;
-                vars.extend(self.matrix_rtc_vars(manifest));
-                vars
-            },
+            capabilities,
             mcp_url: manifest.permissions.contains(&Permission::Tools).then(|| {
                 let port = self.cfg.gateway_port;
                 format!("http://{}:{port}/mcp", crate::config::PLUGIN_MCP_HOST)
