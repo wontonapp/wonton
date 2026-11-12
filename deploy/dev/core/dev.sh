@@ -677,8 +677,13 @@ share_smoke_prepare() {
 [[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
 case "${1:-}" in
   up)
-    # 分流机的入口只放行固定的几个子命令；工作区里有标记时把 up 让给分享冒烟。
-    if [[ -f "$repo/.share-smoke" ]]; then exec bash "$0" share-smoke; fi
+    # 分流机的入口只放行固定的几个子命令；`.share-smoke` 里写着要跑的子命令（`share-smoke`、
+    # `friend <插件包>`），有它就借 up 的 rsync 和回传把 up 让出去。
+    if [[ -f "$repo/.share-smoke" ]]; then
+      # 文件末尾没有换行时 read 也返回 1，别让 set -e 把 up 结束掉。
+      read -r -a pending < "$repo/.share-smoke" || true
+      exec bash "$0" "${pending[@]}"
+    fi
     # 端口冲突在构建之前查出来：compose 要到绑定时才报，那时已经构建完了。
     "$here/port-preflight.sh" "$core" "$WONTON_DEV_PORT" "$WONTON_DEV_TUNNEL_PORT" || exit 1
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
