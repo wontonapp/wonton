@@ -108,6 +108,7 @@ onboarding-review-no-failure = その項目は失敗していません
 
 # サインイン関連。$reason は Matrix SDK の元のエラーの詳細です。
 chat-sign-in-restore-failed = Matrixセッションを復元できません：{ $reason }
+chat-sign-in-external-missing = このスマートフォンにはこの Matrix アカウントのログイン状態がありません。もう一度ログインしてください。
 chat-sign-in-no-connection-info = 自宅サーバーの接続情報がまだありません
 chat-sign-in-login-failed = Matrixにログインできません：{ $reason }
 chat-sign-in-no-saved-session = ログイン後にログイン状態を取得できません
@@ -445,6 +446,13 @@ servers-name-required = 名前を入力してください
 servers-storage-failed = { $path }を読み書きできません：{ $reason }
 # シェルからコアの知らないサーバー一覧の操作が渡されたときに表示します。
 servers-invalid-action = サーバー一覧の操作ではありません
+matrix-login-not-current = このログインは終了したか、新しいログインに置き換えられました。
+matrix-login-wrong-step = このログインはその段階にありません。
+matrix-login-method-not-offered = このサーバーはそのログイン方法に対応していません。
+matrix-login-device-name-required = このデバイスの名前を入力してください。
+matrix-login-invalid-user-id = @name:matrix.org のような完全な Matrix ID を入力してください。
+matrix-login-password-required = パスワードを入力してください。
+matrix-login-redirect-not-allowed = アプリはそのアドレスへのログインコールバックを受け取れません。
 
 # セッションリスト（crates/wonton-client/src/session_store.rs）。
 sessions-title-required = セッションのタイトルを入力してください

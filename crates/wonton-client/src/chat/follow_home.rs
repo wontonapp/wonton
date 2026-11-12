@@ -24,7 +24,8 @@ pub(super) async fn run(chat: Weak<ChatLink>, mut home: watch::Receiver<HomeView
             proxy.clone_from(&next_proxy);
             match next_proxy {
                 Some(next) => {
-                    link.runtime.spawn(link.clone().connect(next));
+                    link.runtime
+                        .spawn(link.clone().connect(super::connect::Target::Home(next)));
                 }
                 None => link.disconnect().await,
             }

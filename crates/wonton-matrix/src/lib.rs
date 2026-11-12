@@ -19,6 +19,7 @@ mod encryption;
 mod error;
 mod friends;
 mod layout;
+mod login;
 mod media;
 mod message;
 mod panels;
@@ -27,6 +28,7 @@ mod push;
 mod read_position;
 mod reply;
 mod rooms;
+mod saved;
 mod send_queue;
 mod session;
 mod sharing;
@@ -44,6 +46,7 @@ pub use encryption::{EncryptionState, Recovery, Verification};
 pub use error::{Error, Result};
 pub use friends::{Blocked, FRIEND_CREATE_KEY, FriendChat, FriendInvite};
 pub use layout::{CHAT_LAYOUT_EVENT, ChatLayoutContent};
+pub use login::{LoginError, OidcClient, OidcStart, PendingLogin};
 pub use matrix_sdk::ruma::{
     DeviceId, EventId, OwnedDeviceId, OwnedEventId, OwnedRoomId, OwnedServerName, OwnedUserId,
     RoomId, ServerName, UserId,

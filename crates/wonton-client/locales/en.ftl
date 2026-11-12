@@ -116,6 +116,7 @@ onboarding-review-no-failure = That item hasn't failed.
 
 # Sign-in details. $reason is the Matrix SDK's original error.
 chat-sign-in-restore-failed = Can't restore your Matrix session: { $reason }
+chat-sign-in-external-missing = This Matrix account's sign-in on this phone is gone. Sign in to it again.
 chat-sign-in-no-connection-info = There's no connection information for your home server yet.
 chat-sign-in-login-failed = Can't sign in to Matrix: { $reason }
 chat-sign-in-no-saved-session = No session to save after signing in.
@@ -481,6 +482,13 @@ servers-name-required = The name can't be empty.
 servers-storage-failed = Can't read or write { $path }: { $reason }
 # Shown when the shell routes a server list action this core doesn't know.
 servers-invalid-action = Not a server list action.
+matrix-login-not-current = This sign-in has ended or was replaced by a newer one.
+matrix-login-wrong-step = This sign-in isn't at that step.
+matrix-login-method-not-offered = This server doesn't offer that sign-in method.
+matrix-login-device-name-required = Enter a name for this device.
+matrix-login-invalid-user-id = Enter the full Matrix ID, like @name:matrix.org.
+matrix-login-password-required = Enter the password.
+matrix-login-redirect-not-allowed = This app can't receive sign-in callbacks at that address.
 
 # The session list (crates/wonton-client/src/session_store.rs).
 sessions-title-required = The session title can't be empty.

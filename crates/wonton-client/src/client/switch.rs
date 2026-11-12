@@ -39,6 +39,16 @@ impl ClientCore {
     }
 }
 
+impl crate::matrix_login::SlotSwitch for ClientCore {
+    fn add_matrix_slot(
+        &self,
+        slot: &str,
+        account: wonton_protocol::MatrixAccount,
+    ) -> Result<(), CoreError> {
+        self.change_servers(|servers| servers.add_matrix(slot, account))
+    }
+}
+
 impl ClientCore {
     pub(super) fn scope(&self) -> Arc<Scope> {
         self.scope

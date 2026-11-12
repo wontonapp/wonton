@@ -35,6 +35,7 @@ mod home;
 mod l10n;
 mod link;
 mod logging;
+mod matrix_login;
 mod onboarding;
 mod peers;
 mod plugins;
