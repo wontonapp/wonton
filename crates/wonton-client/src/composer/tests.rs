@@ -370,6 +370,48 @@ async fn files_are_granted_before_the_text_with_their_links_goes_out() {
     assert_eq!(groups[0].reply_to.as_deref(), Some("$event:example.org"));
 }
 
+/// 附件区的文件画在附件区和待发消息里，房间的传输条不再列；别的传输照列。附件区的上传不带房间，不拿掉的话每个房间都会列。
+#[tokio::test(flavor = "multi_thread")]
+async fn the_transfer_strip_leaves_out_the_trays_own_uploads() {
+    let s = setup();
+    s.link
+        .add_file(ROOM, file_source("a.pdf"), "a.pdf".into(), None)
+        .unwrap();
+    s.link
+        .add_file(ROOM, file_source("b.pdf"), "b.pdf".into(), None)
+        .unwrap();
+    until("文件在传", || {
+        s.fake.transfers.borrow().active.len() == 2
+    })
+    .await;
+    settle().await;
+    s.link.send(ROOM, "", None).unwrap();
+    s.link
+        .add_file(ROOM, file_source("c.pdf"), "c.pdf".into(), None)
+        .unwrap();
+    until("第三个在传", || {
+        s.fake.transfers.borrow().active.len() == 3
+    })
+    .await;
+    settle().await;
+    s.fake.transfers.send_modify(|view| {
+        let mut other = view.active[0].clone();
+        other.id = "download".into();
+        other.direction = TransferDirection::Download;
+        view.active.push(other);
+    });
+
+    let listed = s
+        .link
+        .hide_own_uploads(s.fake.transfers.borrow().for_room(ROOM, &[]));
+    let ids: Vec<_> = listed
+        .here
+        .iter()
+        .map(|transfer| transfer.id.as_str())
+        .collect();
+    assert_eq!(ids, ["download"]);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_failed_photo_turns_the_message_red_and_retry_sends_it() {
     let s = setup();

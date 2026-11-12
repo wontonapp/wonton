@@ -748,6 +748,10 @@
     <string name="friends_error_unauthorized">登录已失效</string>
     <!-- Next step under the unauthorized failure. -->
     <string name="friends_error_unauthorized_next">重新登录后再打开好友。</string>
+    <!-- Failure title when the server refused a friend action although the sign-in is valid. -->
+    <string name="friends_error_forbidden">请求被拒绝了</string>
+    <!-- Next step under the refused failure. -->
+    <string name="friends_error_forbidden_next">对方可能屏蔽了你，或者对方的服务器还不能和家里的服务器互通。</string>
     <!-- Failure title when the typed ID isn't a full Matrix ID. -->
     <string name="friends_error_invalid_user_id">不是 Matrix ID</string>
     <!-- Next step under the invalid-ID failure. -->
@@ -1866,4 +1870,17 @@
     <string name="handoff_no_other_device">手边没有别的设备</string>
     <string name="invite_device_added">已加好</string>
     <string name="invite_cannot_give">这台设备也没有完整的密钥，新设备看不到以前的消息。</string>
+    <string name="composer_tray_full">一次最多发 %1$d 个附件。</string>
+    <string name="composer_attachment_remove">移除 %1$s</string>
+    <string name="composer_attachment_paused">等连上家里的服务器</string>
+    <string name="composer_attachment_failed">传不上去</string>
+    <string name="composer_attachment_retry">重新上传</string>
+    <string name="composer_attachment_too_large">照片超过了家里服务器的大小上限，可以改用文件发。</string>
+    <string name="composer_attachment_source_unavailable">原文件读不了了，请重新选一次。</string>
+    <string name="composer_attachment_storage_full">家里服务器的磁盘满了。</string>
+    <string name="composer_attachment_rejected">家里的服务器拒收了这个附件。</string>
+    <string name="composer_attachment_upstream">家里的服务器出错了。</string>
+    <string name="composer_attachment_local_storage">手机上存不下了。</string>
+    <string name="timeline_sending_progress">发送中 %1$s</string>
+    <string name="timeline_cancel_send">取消发送</string>
 </resources>

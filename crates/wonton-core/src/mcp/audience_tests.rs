@@ -103,7 +103,7 @@ async fn matrix(s: &Setup) -> Fake {
 /// 等发给 `recipient`（`None` 是主人）的第一张卡片。
 async fn pending_for(s: &Setup, recipient: Option<&str>) -> ConfirmationCard {
     for _ in 0..500 {
-        if let Some(card) = s.bus.confirmations().pending_for(recipient).pop() {
+        if let Some(card) = s.bus.confirmations().list(recipient).0.pop() {
             return card;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -151,7 +151,7 @@ async fn a_card_shows_the_bot_and_the_conversation_it_was_asked_from() {
     let card = s.cards.wait_for(1).await;
     assert_eq!(card.requester, requester("main"));
     assert_eq!(card.origin, caller.origin);
-    assert_eq!(s.bus.confirmations().pending_for(None)[0].id, card.id);
+    assert_eq!(s.bus.confirmations().list(None).0[0].id, card.id);
     s.answer(&card.id, Answer::Approve).unwrap();
     call.await.unwrap();
     assert!(rejected_origins(&s).is_empty());
@@ -226,10 +226,11 @@ async fn a_family_bots_tool_card_goes_to_its_keeper_only() {
     let card = pending_for(&s, Some("alice")).await;
     assert_eq!(card.requester, requester("alice"));
     assert_eq!(card.origin, caller.origin);
-    assert!(s.bus.confirmations().pending_for(None).is_empty());
-    assert!(
-        s.cards.posted.lock().unwrap().is_empty(),
-        "不进主人的通知房间"
+    assert!(s.bus.confirmations().list(None).0.is_empty());
+    assert_eq!(
+        *s.cards.recipients.lock().unwrap(),
+        [Some("alice".to_owned())],
+        "只推给她，不推给主人"
     );
     // 放行时段按插件记，家人的卡片不给这个选项。
     assert!(card.choices.iter().all(|c| c.answer != Answer::AllowWindow));
@@ -296,7 +297,11 @@ async fn plugin_admin_cards_go_to_a_keeper_only_with_the_install_grant() {
     );
     let card = pending_for(&s, Some("bob")).await;
     assert_eq!(card.origin, Some(origin(&home("bob"))));
-    assert_eq!(s.cards.posted.lock().unwrap().len(), 1);
+    assert_eq!(
+        *s.cards.recipients.lock().unwrap(),
+        [None, Some("bob".to_owned())],
+        "没授权的发给主人，授权了的推给他自己"
+    );
     s.answer(&card.id, Answer::Reject).unwrap();
     call.await.unwrap();
 }
