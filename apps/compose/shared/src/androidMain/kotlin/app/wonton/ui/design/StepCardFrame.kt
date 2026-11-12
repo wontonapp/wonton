@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import app.wonton.protocol.StepNav
 import app.wonton.ui.R
+import app.wonton.ui.icons.WontonIcon
 @Composable
 fun StepCardFrame(
     nav: StepNav,
@@ -28,6 +29,7 @@ fun StepCardFrame(
     onSkip: () -> Unit,
     onPrimary: () -> Unit,
     modifier: Modifier = Modifier,
+    onClose: (() -> Unit)? = null,
     reject: WontonDialogAction? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -35,7 +37,7 @@ fun StepCardFrame(
         modifier.fillMaxWidth().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s16),
     ) {
-        StepCardHeader(nav, onBack, onSkip)
+        StepCardHeader(nav, onClose, onBack, onSkip)
         Text(
             title,
             modifier = Modifier.semantics { heading() },
@@ -47,26 +49,37 @@ fun StepCardFrame(
     }
 }
 @Composable
-private fun StepCardHeader(nav: StepNav, onBack: () -> Unit, onSkip: () -> Unit) {
+private fun StepCardHeader(
+    nav: StepNav,
+    onClose: (() -> Unit)?,
+    onBack: () -> Unit,
+    onSkip: () -> Unit,
+) {
     val stepDescription = stringResource(R.string.design_step_progress, nav.position.toInt(), nav.total.toInt())
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 重看引导：左上关闭；第一步没有可用的返回就不画灰按钮。
+        if (nav.canClose && onClose != null) {
+            WontonIconButton(WontonIcon.Close, stringResource(R.string.common_close), onClose)
+        }
         Text(
             "${nav.position}/${nav.total}",
             modifier = Modifier.weight(1f).clearAndSetSemantics { contentDescription = stepDescription },
             style = WontonTheme.typography.supporting,
             color = WontonTheme.colors.textSecondary.toColor(),
         )
-        WontonButton(
-            stringResource(R.string.design_step_back),
-            onBack,
-            modifier = Modifier.weight(1f),
-            kind = WontonButtonKind.SECONDARY,
-            enabled = nav.canBack,
-        )
+        if (!nav.canClose || nav.canBack) {
+            WontonButton(
+                stringResource(R.string.design_step_back),
+                onBack,
+                modifier = Modifier.weight(1f),
+                kind = WontonButtonKind.SECONDARY,
+                enabled = nav.canBack,
+            )
+        }
         WontonButton(
             stringResource(R.string.design_skip),
             onSkip,

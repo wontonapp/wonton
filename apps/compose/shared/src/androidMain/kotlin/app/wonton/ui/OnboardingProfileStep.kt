@@ -37,6 +37,7 @@ internal fun OnboardingProfileStep(
         onBack = { send(Action.BackOnboardingStep) },
         onSkip = { send(Action.SkipOnboardingStep) },
         onPrimary = { send(Action.ContinueOnboarding) },
+        onClose = { LocalOnboarding.current.close() },
         modifier = modifier,
     ) {
         Box(Modifier.weight(1f).fillMaxWidth()) {

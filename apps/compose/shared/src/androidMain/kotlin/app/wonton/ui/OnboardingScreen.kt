@@ -39,7 +39,13 @@ internal fun OnboardingScreen(
 ) {
     val nav = requireNotNull(view.nav)
     val send = plugins::send
-    BackHandler { if (nav.canBack) send(Action.BackOnboardingStep) }
+    // 系统返回和左边缘右滑同一路：能后退就后退，重看引导的第一步等同关闭。
+    BackHandler {
+        when {
+            nav.canBack -> send(Action.BackOnboardingStep)
+            nav.canClose -> LocalOnboarding.current.close()
+        }
+    }
     val modifier = Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor())
         .statusBarsPadding().navigationBarsPadding().imePadding()
     if (view.step == OnboardingStep.PROFILE) {
@@ -68,6 +74,7 @@ internal fun OnboardingScreen(
                 send(Action.ContinueOnboarding)
             }
         },
+        onClose = { LocalOnboarding.current.close() },
         modifier = modifier,
     ) {
         Box(Modifier.weight(1f).fillMaxWidth()) {

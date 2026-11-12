@@ -305,7 +305,8 @@ extension MainView {
             ))
         } else {
             OnboardingGate(model: onboarding, plugins: plugins, isPaired: isPaired,
-                           finished: finishOnboarding, openGateway: openOnboardingGateway, content: {
+                           finished: finishOnboarding, openGateway: openOnboardingGateway,
+                           close: { showsSettings = true }, content: {
                 VStack(spacing: 0) {
                     if !selectedFullscreen, !pendingElsewhere.isEmpty {
                         PendingCardBanner(cards: pendingElsewhere, open: openCardRoom)
