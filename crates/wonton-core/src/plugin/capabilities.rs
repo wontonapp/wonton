@@ -128,6 +128,17 @@ pub const PERSONAL_DATA: Capability = Capability {
     hosted: None,
 };
 
+/// Agent 运行时（ADR-0061）：前端和编排器经它指挥已装的 Agent，Agent 之间也能互相交接。
+/// 提供方只认核心转发来、带提供方令牌的连接，所以和出网代理一样不声明凭据。
+/// 提供方可以同时 `wants`/`requires` 这个能力（ADR-0061 第 9 节）。
+pub const AGENT_ACP: Capability = Capability {
+    name: "agent_acp",
+    interface: "ACP over WebSocket（/acp），核心注入身份和上限头",
+    credentials: Credentials::None,
+    high_privilege: true,
+    hosted: None,
+};
+
 /// MatrixRTC 的 LiveKit 授权服务（ADR-0096）：使用方是任何 MatrixRTC 客户端，经网关 Matrix 对外地址下的
 /// [`MATRIX_RTC_PREFIX`] 到达提供方，所以和出网代理一样不能写在 requires/wants 里，同一时间只有一个提供方。
 pub const MATRIX_RTC: Capability = Capability {
@@ -159,6 +170,7 @@ pub const ALL: &[Capability] = &[
     WEB_STORAGE,
     MATRIX_RTC,
     PERSONAL_DATA,
+    AGENT_ACP,
 ];
 
 pub fn lookup(name: &str) -> Option<&'static Capability> {
@@ -243,6 +255,17 @@ pub fn is_provided(capability: &Capability, manifest: &Manifest) -> bool {
     }
 }
 
+/// 清单是不是按名字提供了这个能力（含 `models`、`egress_proxy` 的专用字段）。
+/// ADR-0061 第 9 节：提供方可以 `requires`/`wants` 自己也提供的能力。
+pub fn is_self_provided(manifest: &Manifest, name: &str) -> bool {
+    let Some(provides) = &manifest.provides else {
+        return false;
+    };
+    provides.capabilities.contains_key(name)
+        || (name == MODELS.name && provides.models.is_some())
+        || (name == EGRESS_PROXY.name && provides.egress_proxy.is_some())
+}
+
 /// 清单的 `requires`/`wants` 和 `provides` 校验（ADR-0053）。
 pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
     for (field, names) in [("requires", &manifest.requires), ("wants", &manifest.wants)] {
@@ -275,12 +298,15 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
             &[("capability", name.as_str().into())],
         )));
     }
-    if manifest.provides.is_some() && !manifest.requires.is_empty() {
-        return Err(ManifestError::Invalid(text(
-            langs,
-            "plugin-capability-provider-requires",
-            &[],
-        )));
+    // ADR-0061 第 9 节：提供方可以 requires 自己也提供的能力（按名字比，不写死某个能力），别的照旧拒。
+    for name in &manifest.requires {
+        if manifest.provides.is_some() && !is_self_provided(manifest, name) {
+            return Err(ManifestError::Invalid(text(
+                langs,
+                "plugin-capability-provider-requires",
+                &[("capability", name.as_str().into())],
+            )));
+        }
     }
     if let Some(provides) = &manifest.provides {
         validate_provides(provides, langs)?;

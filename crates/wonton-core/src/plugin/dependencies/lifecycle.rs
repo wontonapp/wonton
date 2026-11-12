@@ -18,7 +18,7 @@ impl PluginManager {
             let Some(provider) = chosen(&state, &providers, &manifest.id, capability) else {
                 if required {
                     return Err(InstallError::Conflict(
-                        self.capability_missing(capability, langs),
+                        self.capability_missing_other(manifest, capability, langs),
                     ));
                 }
                 continue;
@@ -29,7 +29,7 @@ impl PluginManager {
             {
                 if required {
                     return Err(InstallError::Conflict(
-                        self.capability_missing(capability, langs),
+                        self.capability_missing_other(manifest, capability, langs),
                     ));
                 }
                 continue;
@@ -51,7 +51,7 @@ impl PluginManager {
             let Some(id) = targets.get(capability) else {
                 if manifest.requires.contains(capability) {
                     return Err(InstallError::Conflict(
-                        self.capability_missing(capability, langs),
+                        self.capability_missing_other(manifest, capability, langs),
                     ));
                 }
                 continue;
@@ -396,7 +396,9 @@ impl PluginManager {
         for capability in manifest.requires.iter().filter(|c| super::generic(c)) {
             let provider =
                 chosen(&state, &providers, &manifest.id, capability).ok_or_else(|| {
-                    InstallError::Conflict(self.capability_missing(capability, langs))
+                    InstallError::Conflict(
+                        self.capability_missing_other(manifest, capability, langs),
+                    )
                 })?;
             if connection(&state, &manifest.id, &provider.id, capability).is_none() {
                 return Err(InstallError::Conflict(

@@ -152,6 +152,8 @@ pub(super) fn remaining_provider<'a>(
         .or_else(|| state.defaults.get(capability).filter(retained));
     providers.iter().find(|provider| {
         !removing.contains(&provider.id)
+            // 自己提供不算替代：requires 要的是别的插件（ADR-0061 第 9 节）。
+            && provider.id != *consumer
             && super::service(&provider.listed.manifest, capability).is_some()
             && selected.is_none_or(|selected| selected == provider.id.as_str())
     })

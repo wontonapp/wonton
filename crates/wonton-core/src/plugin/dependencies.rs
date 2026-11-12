@@ -88,19 +88,24 @@ fn chosen<'a>(
     consumer: &PluginId,
     capability: &str,
 ) -> Option<&'a Provider> {
+    // ADR-0061 第 9 节：提供方可以 requires/wants 自己也提供的能力，选提供方时排除它自己；
+    // 显式选择或全局默认指向自己时，落到别的提供方上。
     if let Some(id) = state
         .selected
         .get(consumer.as_str())
         .and_then(|entries| entries.get(capability))
         .or_else(|| state.defaults.get(capability))
     {
-        return providers
+        let selected = providers
             .iter()
             .find(|p| p.id.as_str() == id && service(&p.listed.manifest, capability).is_some());
+        if let Some(provider) = selected.filter(|p| p.id != *consumer) {
+            return Some(provider);
+        }
     }
     providers
         .iter()
-        .find(|p| service(&p.listed.manifest, capability).is_some())
+        .find(|p| p.id != *consumer && service(&p.listed.manifest, capability).is_some())
 }
 
 fn connection<'a>(
@@ -171,69 +176,59 @@ impl PluginManager {
         capability: &str,
         langs: &Languages,
     ) -> Result<CapabilityRoute, CapabilityAccessError> {
-        let (provider, listed, spec) = {
-            let plugins = self.plugins.read().expect("插件表锁中毒");
-            let declared = plugins
-                .get(consumer)
-                .and_then(|entry| entry.listed.as_ref())
-                .is_some_and(|listed| declarations(&listed.manifest).any(|c| c == capability));
-            if !declared {
-                return Err(CapabilityAccessError::Denied);
-            }
-            let required = plugins
-                .get(consumer)
-                .and_then(|entry| entry.listed.as_ref())
-                .is_some_and(|listed| listed.manifest.requires.iter().any(|c| c == capability));
-            self.dependencies
-                .inspect(|state| {
-                    let id = state
-                        .selected
-                        .get(consumer.as_str())
-                        .and_then(|s| s.get(capability))
-                        .or_else(|| state.defaults.get(capability));
-                    // 必需能力还没获准连接是权限问题（gateway-capability-permission 的文案）；
-                    // 可选能力没有提供方是可用性问题，主人随时可以再装一个。
-                    let Some(id) = id else {
-                        if required {
-                            return Err(CapabilityAccessError::Denied);
+        // 提供方列表在插件表锁外先解析好：chosen 要按完整列表排除使用方自己（ADR-0061 第 9 节）。
+        let providers = self.capability_providers();
+        let (provider, listed, spec) =
+            {
+                let plugins = self.plugins.read().expect("插件表锁中毒");
+                let declared = plugins
+                    .get(consumer)
+                    .and_then(|entry| entry.listed.as_ref())
+                    .is_some_and(|listed| declarations(&listed.manifest).any(|c| c == capability));
+                if !declared {
+                    return Err(CapabilityAccessError::Denied);
+                }
+                let listed = plugins
+                    .get(consumer)
+                    .and_then(|entry| entry.listed.as_ref());
+                let required = listed
+                    .is_some_and(|listed| listed.manifest.requires.iter().any(|c| c == capability));
+                let missing = match listed.map(|listed| &listed.manifest) {
+                    Some(manifest) => self.capability_missing_other(manifest, capability, langs),
+                    None => self.capability_missing(capability, langs),
+                };
+                self.dependencies
+                    .inspect(|state| {
+                        let Some(provider) = chosen(state, &providers, consumer, capability) else {
+                            // 必需能力还没获准连接是权限问题（gateway-capability-permission 的文案）；
+                            // 可选能力没有提供方是可用性问题，主人随时可以再装一个。
+                            if required {
+                                return Err(CapabilityAccessError::Denied);
+                            }
+                            return Err(CapabilityAccessError::Unavailable(missing.clone()));
+                        };
+                        let connected = connection(state, consumer, &provider.id, capability)
+                            .ok_or(CapabilityAccessError::Denied)?;
+                        if let Some(problem) = &connected.problem {
+                            return Err(CapabilityAccessError::Unavailable(problem.clone()));
                         }
-                        return Err(CapabilityAccessError::Unavailable(
-                            self.capability_missing(capability, langs),
-                        ));
-                    };
-                    let (id, entry) = plugins
-                        .iter()
-                        .find(|(key, _)| key.as_str() == id)
-                        .ok_or_else(|| {
-                            CapabilityAccessError::Unavailable(
-                                self.capability_missing(capability, langs),
-                            )
-                        })?;
-                    let connected = connection(state, consumer, id, capability)
-                        .ok_or(CapabilityAccessError::Denied)?;
-                    if let Some(problem) = &connected.problem {
-                        return Err(CapabilityAccessError::Unavailable(problem.clone()));
-                    }
-                    let listed = entry.listed.as_ref().ok_or(CapabilityAccessError::Denied)?;
-                    let spec = service(&listed.manifest, capability)
-                        .ok_or(CapabilityAccessError::Denied)?;
-                    if !matches!(
-                        entry.status,
-                        PluginStatus::Running | PluginStatus::Degraded { .. }
-                    ) || !entry.serving.contains(&spec.service)
-                    {
-                        return Err(CapabilityAccessError::Unavailable(
-                            self.capability_stopped(id, capability, langs),
-                        ));
-                    }
-                    Ok((
-                        id.clone(),
-                        Arc::clone(listed),
-                        (spec.service.clone(), spec.port),
-                    ))
-                })
-                .map_err(|e| CapabilityAccessError::Unavailable(e.to_string()))??
-        };
+                        let listed = Arc::clone(&provider.listed);
+                        let spec = service(&listed.manifest, capability)
+                            .ok_or(CapabilityAccessError::Denied)?;
+                        if !matches!(
+                            provider.status,
+                            PluginStatus::Running | PluginStatus::Degraded { .. }
+                        ) || !provider.serving.contains(&spec.service)
+                        {
+                            return Err(CapabilityAccessError::Unavailable(
+                                self.capability_stopped(&provider.id, capability, langs),
+                            ));
+                        }
+                        let spec = (spec.service.clone(), spec.port);
+                        Ok((provider.id.clone(), listed, spec))
+                    })
+                    .map_err(|e| CapabilityAccessError::Unavailable(e.to_string()))??
+            };
         #[cfg(test)]
         if let Some(endpoint) = self
             .dependencies
@@ -311,9 +306,12 @@ impl PluginManager {
             .map(|capability| ConsumerCapabilitySetting {
                 capability: capability.clone(),
                 third_party: capabilities::is_third_party(capability),
+                // 选提供方时排除自己（ADR-0061 第 9 节）。
                 providers: providers
                     .iter()
-                    .filter(|p| service(&p.listed.manifest, capability).is_some())
+                    .filter(|p| {
+                        p.id != manifest.id && service(&p.listed.manifest, capability).is_some()
+                    })
                     .map(|p| reference(p, capability, langs))
                     .collect(),
                 selected: state
@@ -331,6 +329,24 @@ impl PluginManager {
             "plugin-capability-missing",
             &[("capability", capability.into())],
         )
+    }
+
+    /// 缺提供方的错误；清单自己也提供这个能力时，写明要的是另一个提供方（ADR-0061 第 9 节）。
+    pub(in crate::plugin) fn capability_missing_other(
+        &self,
+        manifest: &Manifest,
+        capability: &str,
+        langs: &Languages,
+    ) -> String {
+        if capabilities::is_self_provided(manifest, capability) {
+            crate::l10n::text(
+                langs,
+                "plugin-capability-self-only",
+                &[("capability", capability.into())],
+            )
+        } else {
+            self.capability_missing(capability, langs)
+        }
     }
 
     fn capability_stopped(
