@@ -158,10 +158,16 @@ private struct MessageBubble: View {
             }
             .accessibilityIdentifier("messageForward")
         case .redact:
+            // 隔开前面的项，别和转发挨着误点。管理员也能撤别人的消息，写明是谁的，免得以为撤的是自己的。
+            Divider()
             Button(role: .destructive) {
                 redact()
             } label: {
-                Label { Text(.messageRedact) } icon: { WontonIcon.trash.view(size: WontonTheme.size.iconSmall) }
+                Label {
+                    message.isOwn ? Text(.messageRedact) : Text(.messageRedactOthers(message.senderName))
+                } icon: {
+                    WontonIcon.trash.view(size: WontonTheme.size.iconSmall)
+                }
             }
             .accessibilityIdentifier("messageRedact")
         // 核心和 App 分开升级时，不认识的菜单项不显示。
@@ -244,7 +250,13 @@ private struct MessageBubble: View {
         case let .text(_, blocks, files):
             TextMessageBody(blocks: blocks, ink: textColor, files: files, trailingReserve: reserve)
         case let .image(image):
-            MediaImage(image: image, core: core, sendState: message.sendState)
+            // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                MediaImage(image: image, core: core, sendState: message.sendState)
+                if let caption = image.caption {
+                    TextMessageBody(blocks: caption.blocks, ink: textColor, files: [])
+                }
+            }
         case let .confirmation(view):
             ConfirmationCardView(
                 view: view,

@@ -88,10 +88,7 @@ final class ChatPanelUITests: XCTestCase {
 
     func testRoomPullFromBottom() throws {
         try launch()
-        let room = botRoom(timeout: 30)
-        XCTAssertNotNil(room, "列表里没有 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
-        room?.tap()
-        XCTAssertTrue(composer(timeout: 10)?.exists == true, "没进房间")
+        XCTAssertNotNil(enterBotRoom(), "没进 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
 
         let panel = app.otherElements["chatPanel"]
         pullUpInRoom()
@@ -102,6 +99,35 @@ final class ChatPanelUITests: XCTestCase {
         shot("12-room-full")
         capsule.tap()
         XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
+    }
+
+    /// 长消息的最后一段不被输入框盖住：大字号下发一条长消息，再把输入框打到多行、键盘弹着，列表仍贴底，
+    /// 内容的底边在列表里、列表的底边在输入框上面。不按正文找那一行：开发栈里本机常解不开自己刚发的消息。
+    func testLastMessageClearsComposer() throws {
+        try launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        guard let field = enterBotRoom() else {
+            return XCTFail("没进 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
+        }
+        field.tap()
+        field.typeText(String(repeating: "long reply text ", count: 30))
+        tapAnyButton(["Send", "发送"], timeout: 5, required: true)
+        Thread.sleep(forTimeInterval: 2)
+        shot("29-after-send")
+        let sent = frames(list: app.collectionViews.firstMatch, field: field)
+        attach("after-send \(sent) \(scrollState())")
+
+        field.typeText(String(repeating: "draft ", count: 40))
+        Thread.sleep(forTimeInterval: 2)
+        shot("30-composer-grown")
+
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.exists, "房间里没有消息列表")
+        let now = frames(list: list, field: field)
+        let state = scrollState()
+        attach("after-draft \(now) \(state)")
+        // 贴底看 App 自己的位置：List 的内容高度比真实内容矮一段，按内容外框比较在长行上必败（见 PR 说明）。
+        XCTAssertTrue(state.contains("pin=true") && isAtBottom(state), "发完以后列表没贴底：\(now) \(state)")
+        XCTAssertLessThanOrEqual(list.frame.maxY, field.frame.minY + 1, "列表的底边被输入框盖住：\(now)")
     }
 
     // MARK: - 摆台
@@ -172,6 +198,95 @@ final class ChatPanelUITests: XCTestCase {
         case .down: low.press(forDuration: 0.05, thenDragTo: high, withVelocity: .slow, thenHoldForDuration: 0)
         case .up: high.press(forDuration: 0.05, thenDragTo: low, withVelocity: .slow, thenHoldForDuration: 0)
         }
+    }
+
+    /// 进 Bot 的房间，返回输入框。新配对的设备走完引导直接落在主 Bot 的房间里，这时不用再从列表点进去。
+    private func enterBotRoom() -> XCUIElement? {
+        skipKeyHandoff()
+        if let field = composer(timeout: 3) {
+            goToBottom()
+            return field
+        }
+        botRoom(timeout: 30)?.tap()
+        guard let field = composer(timeout: 10) else { return nil }
+        goToBottom()
+        return field
+    }
+
+    /// 房间落在已读位置（开发栈账号常攒着未读），不是最新一条。落点是首批时间线到了才摆的，比输入框出现晚，
+    /// 摆的时候还会把列表拉回已读位置，所以要等按钮出现（最多 10 秒），按下去、等它消失，再确认没有回来。
+    private func goToBottom() {
+        var tapped = false
+        for _ in 0..<3 {
+            guard let button = bottomButton(timeout: tapped ? 2 : 10) else { break }
+            tapped = true
+            button.tap()
+            _ = waitGone(button, timeout: 5)
+        }
+    }
+
+    /// 停在别处时才有的“回到底部”，数字悬在图标上方，标签会带新消息条数。
+    private func bottomButton(timeout: TimeInterval) -> XCUIElement? {
+        let labels = ["Back to bottom", "回到底部", "回到底部", "一番下へ戻る"]
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            for label in labels {
+                let button = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+                if button.exists { return button }
+            }
+            if Date() >= deadline { return nil }
+            _ = app.wait(for: .runningForeground, timeout: 0.3)
+        }
+    }
+
+    /// 量一次列表：内容的底边是不是还在列表可见区里。
+    private struct Layout: CustomStringConvertible {
+        let contentBottom: CGFloat
+        let listBottom: CGFloat
+        let fieldTop: CGFloat
+
+        /// 停在别处时才有“回到底部”按钮：它出现说明 App 自己也知道没到底。
+        let back: Bool
+
+        var description: String { "content=\(contentBottom) list=\(listBottom) field=\(fieldTop) back=\(back)" }
+    }
+
+    private func frames(list: XCUIElement, field: XCUIElement) -> Layout {
+        // 列表的第一个子元素是整片内容（含屏幕外的部分）。
+        Layout(contentBottom: list.children(matching: .other).firstMatch.frame.maxY,
+               listBottom: list.frame.maxY, fieldTop: field.frame.minY, back: bottomButton(timeout: 0) != nil)
+    }
+
+    /// App 里 `BottomPin` 的自述：贴底没贴底、真实位置和底部差多少。
+    private func scrollState() -> String {
+        app.staticTexts["roomScroll"].label
+    }
+
+    /// `snapshot` 里的 y 是不是到位（`bottom` 是 App 算出来的底部）。
+    private func isAtBottom(_ state: String) -> Bool {
+        let values = Dictionary(uniqueKeysWithValues: state.split(separator: " ").compactMap { part -> (String, Double)? in
+            let pair = part.split(separator: "=", maxSplits: 1)
+            guard pair.count == 2, let value = Double(pair[1]) else { return nil }
+            return (String(pair[0]), value)
+        })
+        guard let y = values["y"], let bottom = values["bottom"] else { return false }
+        return y >= bottom - 2
+    }
+
+    private func attach(_ text: String) {
+        let attachment = XCTAttachment(string: text)
+        attachment.name = text
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    /// 新配上的设备先整屏盖着加设备的密钥交接页“在另一台设备上继续”，落进房间后才出来也有。
+    /// 这里不测交接：选“手边没有别的设备”，再从它打开的聊天备份页退回列表。
+    private func skipKeyHandoff() {
+        let labels = ["I don't have my other device", "手边没有别的设备"]
+        guard let button = waitAnyButton(labels, timeout: 10) else { return }
+        button.tap()
+        tapAnyButton(["Back", "返回"], timeout: 5)
     }
 
     /// 列表里 Bot 的房间行。按名字找：列表顶上还可能有整行宽的提示（如恢复聊天备份），按位置挑会点错。

@@ -20,7 +20,9 @@ use tokio::runtime::Handle;
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
-use wonton_protocol::{AttachmentState, ComposerViewModel, CoreError, ImageUpload, UploadSource};
+use wonton_protocol::{
+    AttachmentState, ComposerViewModel, CoreError, ImageUpload, RoomTransfers, UploadSource,
+};
 
 use crate::l10n::{CATALOG, language};
 use state::{Body, Item, MAX_ATTACHMENTS, Outgoing, State, Thumbnail};
@@ -127,6 +129,33 @@ impl ComposerLink {
             .entry(room.to_owned())
             .or_insert_with(|| watch::Sender::new(view))
             .subscribe()
+    }
+
+    /// 从房间的传输条里拿掉附件区自己的上传：它们画在附件区和待发消息里，传输条再列一遍就重了；又因为不带房间，
+    /// 不拿掉的话每个房间都会列。
+    pub(crate) fn hide_own_uploads(&self, mut listed: RoomTransfers) -> RoomTransfers {
+        let own: HashSet<String> = {
+            let inner = self.lock();
+            inner
+                .state
+                .rooms
+                .values()
+                .flat_map(|room| {
+                    room.tray
+                        .iter()
+                        .chain(room.outgoing.iter().flat_map(|outgoing| &outgoing.items))
+                })
+                .filter_map(|item| match &item.body {
+                    Body::File {
+                        transfer: Some(transfer),
+                        ..
+                    } => Some(transfer.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        listed.here.retain(|transfer| !own.contains(&transfer.id));
+        listed
     }
 
     fn publish(inner: &Inner, room: &str) {

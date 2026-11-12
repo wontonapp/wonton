@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -45,8 +47,10 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
+import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.KeyNotice
+import app.wonton.protocol.OutgoingMessage
 import app.wonton.protocol.PanelItem
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
@@ -174,6 +178,15 @@ fun RoomRoute(
             timeline.failure = failure.problem
         }
     }
+    // 附件区和点了发送、还没交出去的消息（ADR-0094）：附件区画在输入框上方，待发消息画在最新一条下面。
+    var composer by remember(roomId) { mutableStateOf<ComposerViewModel?>(null) }
+    LaunchedEffect(core, roomId) {
+        try {
+            core.composerUpdates(roomId).collect { composer = it }
+        } catch (failure: CoreException) {
+            onReject(failure.problem)
+        }
+    }
     val first = remember(core) { core.transfers() }
     val transfers by produceState(first, core) { core.transfersUpdates().collect { value = it } }
     CompositionLocalProvider(LocalFiles provides FilesContext(transfers, onAction, onReject)) {
@@ -187,6 +200,7 @@ fun RoomRoute(
             plugins,
             rooms,
             timeline,
+            composer,
             onAction,
             onReject,
             onOpenRoom,
@@ -210,6 +224,7 @@ private fun RoomScreen(
     plugins: PluginsState,
     rooms: List<RoomRow>,
     timeline: TimelineState,
+    composer: ComposerViewModel?,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
     onOpenRoom: (String) -> Unit,
@@ -248,7 +263,7 @@ private fun RoomScreen(
     }
     // 转发、撤回都要时间线条目的 id，菜单开着的那条。
     var forwarding by remember { mutableStateOf<String?>(null) }
-    var redacting by remember { mutableStateOf<String?>(null) }
+    var redacting by remember { mutableStateOf<MessageMenuTarget?>(null) }
     // 和 Bot 的私聊：顶栏显示 Bot 的状态头像和名字（ADR-0044），名字下面不写状态文字。
     val barTitle = if (isDirect) bot?.name ?: title else title
     val barAvatar: (@Composable () -> Unit)? = if (isDirect && bot != null) {
@@ -270,7 +285,7 @@ private fun RoomScreen(
                 },
             ) {
                 Conversation(
-                    core, roomId, isDirect, isReadOnly, timeline, draft, onAction, onReject, openMenu,
+                    core, roomId, isDirect, isReadOnly, timeline, composer, draft, onAction, onReject, openMenu,
                     onOpenBackup,
                 )
             }
@@ -283,7 +298,7 @@ private fun RoomScreen(
                 core = core,
                 onReply = draft::replyTo,
                 onForward = { forwarding = target.itemId },
-                onRedact = { redacting = target.itemId },
+                onRedact = { redacting = target },
                 onDismiss = { menu = null },
             )
         }
@@ -301,10 +316,11 @@ private fun RoomScreen(
                 onDismiss = { forwarding = null },
             )
         }
-        redacting?.let { itemId ->
+        redacting?.let { target ->
             RedactConfirm(
+                target.message,
                 onConfirm = {
-                    onAction(Action.Timeline(TimelineAction.RedactMessage(TimelineTarget(roomId, null), itemId)))
+                    onAction(Action.Timeline(TimelineAction.RedactMessage(TimelineTarget(roomId, null), target.itemId)))
                     redacting = null
                 },
                 onDismiss = { redacting = null },
@@ -321,6 +337,7 @@ private fun Conversation(
     isDirect: Boolean,
     isReadOnly: Boolean,
     timeline: TimelineState,
+    composer: ComposerViewModel?,
     draft: RoomDraft,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
@@ -345,6 +362,7 @@ private fun Conversation(
                 core,
                 roomId,
                 timeline,
+                composer?.outgoing.orEmpty(),
                 showsSender = !isDirect,
                 onAction = onAction,
                 onOpenMenu = onOpenMenu,
@@ -360,10 +378,10 @@ private fun Conversation(
                 draft = draft.text,
                 reply = draft.reply,
                 focusToken = draft.focusToken,
+                composer = composer,
                 core = core,
                 onDraftChange = draft::change,
                 onSent = draft::sent,
-                onReplySent = draft::replySent,
                 onReplyCancel = draft::stopReplying,
                 onAction = onAction,
                 onReject = onReject,
@@ -396,9 +414,13 @@ private fun RoomRow.forwardTarget(roomId: String): Boolean =
 
 /** 撤回对所有人生效，发出去之前先确认。 */
 @Composable
-private fun RedactConfirm(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+private fun RedactConfirm(message: TimelineMessage, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     WontonDialog(
-        title = stringResource(R.string.message_delete_everyone_title),
+        title = if (message.isOwn) {
+            stringResource(R.string.message_delete_everyone_title)
+        } else {
+            stringResource(R.string.message_delete_others_title, message.senderName)
+        },
         message = stringResource(R.string.message_delete_everyone_message),
         onDismiss = onDismiss,
         actions = listOf(
@@ -417,6 +439,7 @@ private fun Messages(
     core: ClientCore,
     roomId: String,
     timeline: TimelineState,
+    outgoing: List<OutgoingMessage>,
     showsSender: Boolean,
     onAction: (Action) -> Unit,
     onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
@@ -426,6 +449,12 @@ private fun Messages(
     val listState = rememberLazyListState()
     val panel = LocalChatPanel.current
     ScrollEffects(listState, timeline, roomId, onAction)
+    // 待发消息出现、交出去换成本地回显时，在底部附近的跟着到底：插在第 0 项前面的行，列表按键记位置不会自己露出来。
+    val outgoingIds = outgoing.map { it.id }
+    LaunchedEffect(outgoingIds) {
+        withFrameNanos { }
+        if (listState.firstVisibleItemIndex <= outgoing.size + 1) listState.scrollToItem(0)
+    }
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
     // 滚到最上面（最早的一条露出来）时加载更早的消息；加载完条目变多，还在顶上就再加载一页。
@@ -452,6 +481,12 @@ private fun Messages(
             ),
             verticalArrangement = Arrangement.spacedBy(JOINED_GAP),
         ) {
+            // 倒着排：最后点发送的那条在最下面。
+            items(outgoing.asReversed(), key = { it.id }) { message ->
+                Box(Modifier.padding(top = WontonTheme.spacing.s8 - JOINED_GAP)) {
+                    OutgoingRow(message, roomId, core, onAction)
+                }
+            }
             itemsIndexed(newestFirst, key = { _, item -> item.id }) { index, item ->
                 // 倒着排：下标大的是更早的一条。
                 val joinsPrevious = item.joins(newestFirst.getOrNull(index + 1))
