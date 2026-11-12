@@ -6,9 +6,6 @@
     <string name="tab_status_unknown">無法確定應用程式狀態</string>
     <string name="tab_start">啟動</string>
     <string name="tab_view_details">查看詳細資訊</string>
-    <string name="tab_cross_origin_title">這個應用程式暫時無法在 Android 版雲吞裡開啟</string>
-    <string name="tab_cross_origin_detail">目前的 Android System WebView：%1$s；需要 156 或更新版本。</string>
-    <string name="tab_webview_version_unknown">取不到版本號</string>
     <string name="tab_load_upstream">應用程式的網頁打不開</string>
     <string name="tab_uninstalled_notice">%1$s 已解除安裝，已從底部導覽列移除</string>
     <string name="tab_menu_open_fullscreen">全螢幕開啟</string>

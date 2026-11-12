@@ -74,7 +74,8 @@ extension WontonBarStatus {
             quality: home.details.quality,
             pathRelay: home.path?.relay
         )
-        let connected = recovered && home.notice == nil ? String(localized: .Connection0.connectionConnected) : nil
+        // “刚恢复”由核心给：只在连接正常、没有别的提示时为真，壳直接把短状态换成“已连接”。
+        let connected = recovered ? String(localized: .Connection0.connectionConnected) : nil
         self.init(
             title: home.notice.flatMap { $0.isShort ? $0.sentence : nil }
                 ?? connected ?? hint?.sentence,
@@ -181,7 +182,8 @@ struct ConnectionView: View {
             VStack(spacing: WontonTheme.spacing.sectionGap) {
                 ServersSection(model: model, removing: $removing)
                 WontonGroup {
-                    WontonRow(title: String(localized: .Connection2.connectionCellular),
+                    WontonRow(
+                        title: String(localized: .Connection2.connectionCellular),
                         value: view.details.network.check.text)
                     WontonSeparator()
                     WontonRow(title: String(localized: .Connection0.connectionRelay), value: view.details.relay.text)
@@ -290,15 +292,18 @@ struct ConnectionDetailsRows: View {
             )
             if let handshake = details.handshakeMs {
                 WontonSeparator()
-                WontonRow(title: String(localized: .Connection1.connectionDetailLastHandshake),
+                WontonRow(
+                    title: String(localized: .Connection1.connectionDetailLastHandshake),
                     value: "\(handshake) ms")
             }
             WontonSeparator()
-            WontonRow(title: String(localized: .Connection1.connectionDetailDisconnects),
+            WontonRow(
+                title: String(localized: .Connection1.connectionDetailDisconnects),
                 value: "\(details.disconnects)")
             if let connected = details.lastConnectedAtMs {
                 WontonSeparator()
-                WontonRow(title: String(localized: .Connection0.connectionDetailLastConnected),
+                WontonRow(
+                    title: String(localized: .Connection0.connectionDetailLastConnected),
                     value: Self.time(connected))
             }
         }

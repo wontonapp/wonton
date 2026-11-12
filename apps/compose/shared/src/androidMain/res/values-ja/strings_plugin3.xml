@@ -18,6 +18,8 @@
     <string name="plugin_task_install_failed">インストールに失敗しました：%1$s</string>
     <!-- Button on a failed task whose app package changed after the confirmation: reopen the confirmation. -->
     <string name="plugin_task_review">再確認</string>
+    <!-- Status of a running task while the connection to the home server is down. -->
+    <string name="plugin_task_waiting_for_connection">接続を待っています</string>
     <!-- Failed update task line. Argument: the reason from the core. -->
     <string name="plugin_task_upgrade_failed">アップデートに失敗しました：%1$s</string>
     <!-- Button that uninstalls but keeps the app's data. -->

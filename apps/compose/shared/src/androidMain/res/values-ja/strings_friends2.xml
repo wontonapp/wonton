@@ -2,6 +2,7 @@
 <resources>
     <!-- Title of the friends page and the settings row that opens it. -->
     <string name="friends_title">友だち</string>
+    <string name="friends_scan_code">相手のコードをスキャン</string>
     <!-- Reject button on a received request. -->
     <string name="friends_request_reject">拒否</string>
     <!-- Row subtitle: how many plugins this friend can open. -->
@@ -13,4 +14,5 @@
     <string name="friends_remove_title">「%1$s」を削除しますか？</string>
     <!-- Failure title when the server asks to wait but didn't say how long. -->
     <string name="friends_error_rate_limited_later">リクエストが多すぎます。後でもう一度お試しください。</string>
+    <string name="friends_request_bot_contact">ボットの連絡先リクエスト</string>
 </resources>

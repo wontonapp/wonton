@@ -2,6 +2,8 @@
 <resources>
     <string name="tab_uninstalling">正在解除安裝…</string>
     <string name="tab_upgrading">正在更新…</string>
+    <string name="tab_opens_in_browser">%1$s 會在瀏覽器裡開啟</string>
+    <string name="tab_open_in_browser">開啟</string>
     <string name="tab_unpin_from_bar">從底部導覽列移除</string>
     <string name="tab_load_not_ready">應用程式還沒準備好</string>
     <string name="tab_fullscreen">全螢幕</string>

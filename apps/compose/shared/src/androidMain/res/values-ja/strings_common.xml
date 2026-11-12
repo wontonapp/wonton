@@ -40,6 +40,10 @@
     <string name="core_upgrade_check_up_to_date">最新です</string>
     <!-- Button on the update page while the channel check is running. -->
     <string name="core_upgrade_checking">確認中</string>
+    <!-- Heading of the compatibility warning on the update offer: these installed apps won\'t work after the update. -->
+    <string name="core_upgrade_compat_breaking_title">アップデート後、これらのアプリは使えなくなります</string>
+    <!-- Light notice on the update offer: it couldn\'t check which installed apps would be affected. Tapping checks again. -->
+    <string name="core_upgrade_compat_not_checked">どのアプリが影響を受けるか確認できませんでした</string>
     <!-- Stage line after the update finished. Argument: the version now running. -->
     <string name="core_upgrade_completed_to">%1$sにアップデートしました</string>
     <!-- Primary button in the confirm step: start the update. -->

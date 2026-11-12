@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Placeholder of the field for pasting the code when scanning is not possible. -->
+    <string name="friends_paste_placeholder">Paste their code</string>
     <!-- Approve button on a received request. -->
     <string name="friends_request_approve">Approve</string>
     <!-- Cancel button on a request I sent. -->

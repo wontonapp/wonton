@@ -32,6 +32,36 @@
         }
       }
     },
+    "coreUpgrade.compat.breakingTitle": {
+      "comment": "Heading of the compatibility warning on the update offer: these installed apps won't work after the update.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These apps won't work after the update"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "升级后这些应用会用不了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新後這些應用會用不了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップデート後、これらのアプリは使えなくなります"
+          }
+        }
+      }
+    },
     "coreUpgrade.detail.migrates": {
       "comment": "Collapsed details row: the data kinds this version migrates, as a localized list.",
       "extractionState": "manual",

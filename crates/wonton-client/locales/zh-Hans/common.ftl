@@ -115,4 +115,15 @@ plugins-core-upgrade-compat-other = 新版本读不了这个应用：升级后�
 
 plugins-core-upgrade-compat-other-raw = 新版本读不了这个应用的 { $raw }：升级后会被标为异常。
 
-contacts-invalid-action = 不是 Bot 联系人操作。
+## 要跨源隔离的插件网页在系统浏览器里打开（ADR-0033）。后三条显示在浏览器里。
+browser-front-failed = 给浏览器用的本机地址开不了：{ $error }
+
+browser-page-not-isolated = 这个页面不在浏览器里打开。
+
+browser-not-paired = 云吞还没和家里的服务器配对。
+
+browser-unknown-address = 这个地址已经失效。回到云吞，重新打开这个应用。
+
+browser-not-connected = 云吞现在没连上家里的服务器。回到云吞，等连上后再刷新这个页面。
+
+browser-bad-request = 请从云吞里打开这个页面。

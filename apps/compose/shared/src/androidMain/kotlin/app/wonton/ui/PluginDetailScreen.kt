@@ -131,10 +131,16 @@ private fun DetailContent(
         val working = task?.state is PluginTaskState.Running
         if (bot != null) {
             BotProfileSection(bot, plugins)
+            BotContactsEntry { navigation.contacts = bot.bot }
         }
         DetailHeader(detail, plugins, detailAction(detail, working, navigation, LocalContext.current))
         task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {
-            TaskRow(it, plugins) { navigation.confirmation = reconfirmation(it, plugins) }
+            TaskRow(
+                it,
+                plugins,
+                { navigation.confirmation = reconfirmation(it, plugins) },
+                navigation.checkInstalled,
+            )
         }
         detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
         detail.installed?.let { PluginTabPinControls(it) }

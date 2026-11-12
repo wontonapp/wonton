@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="friends_paste_placeholder">相手のコードをペースト</string>
     <!-- Approve button on a received request. -->
     <string name="friends_request_approve">承認</string>
     <!-- Cancel button on a request I sent. -->

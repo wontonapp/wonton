@@ -6,9 +6,6 @@
     <string name="tab_status_unknown">アプリの状態を確認できません</string>
     <string name="tab_start">起動</string>
     <string name="tab_view_details">詳細を表示</string>
-    <string name="tab_cross_origin_title">このアプリはWontonのAndroid版ではまだ開けません</string>
-    <string name="tab_cross_origin_detail">現在のAndroid System WebView：%1$s。156以降が必要です。</string>
-    <string name="tab_webview_version_unknown">バージョンを取得できません</string>
     <string name="tab_load_upstream">アプリのページを開けません</string>
     <string name="tab_uninstalled_notice">%1$sはアンインストールされ、ナビゲーションバーから外されました</string>
     <string name="tab_menu_open_fullscreen">全画面で開く</string>

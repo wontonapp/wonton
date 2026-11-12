@@ -2,6 +2,8 @@
 <resources>
     <!-- Top-right button on the friends page that opens the add-friend sheet. -->
     <string name="friends_add">Add</string>
+    <!-- Row in the add-friend sheet and the dialog that shows my own matrix.to QR code. -->
+    <string name="friends_my_code">My QR code</string>
     <!-- Section heading above the pending requests, received and sent. -->
     <string name="friends_requests_title">Requests</string>
     <!-- Section heading above the friend list. -->

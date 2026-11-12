@@ -32,7 +32,7 @@ enum QualityPreviews {
                 quality: .poor, lossPerMille: 73, rttMs: 1_240,
                 lastFailure: nil, addressesStale: false, udpFlows: [], udpBufferEvictedDatagrams: nil
             ),
-            proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false
+            proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false, justRecovered: false
         )
     }
 }

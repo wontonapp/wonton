@@ -36,56 +36,81 @@ extension PluginFailure {
         switch self {
         case .transportUnavailable:
             categorizedProblem(
-                .Problem2.problemTransportUnavailableTitle, .Problem3.problemTransportUnavailableNextStep, detail
-            )
-        case .unauthorized: categorizedProblem(
-                .Problem3.problemUnauthorizedTitle, .Problem2.problemUnauthorizedNextStep, detail
-            )
+                .Problem2.problemTransportUnavailableTitle,
+                .Problem3.problemTransportUnavailableNextStep,
+                detail)
+        case .unauthorized:
+            categorizedProblem(
+                .Problem3.problemUnauthorizedTitle,
+                .Problem2.problemUnauthorizedNextStep,
+                detail)
         case .upstream: categorizedProblem(.Problem2.problemUpstreamTitle, .Problem2.problemUpstreamNextStep, detail)
         case .sourceUnavailable:
             categorizedProblem(
-                .Problem1.problemPluginSourceUnavailableTitle, .Problem0.problemPluginSourceUnavailableNextStep, detail
-            )
-        case .notFound: categorizedProblem(
-                .Problem2.problemPluginNotFoundTitle, .Problem0.problemPluginNotFoundNextStep, detail
-            )
-        case .changed: categorizedProblem(
-                .Problem3.problemPluginChangedTitle, .Problem1.problemPluginChangedNextStep, detail
-            )
-        case .unsupported: categorizedProblem(
-                .Problem2.problemPluginUnsupportedTitle, .Problem0.problemUpgradeServerNextStep, detail
-            )
-        case .conflict: categorizedProblem(
-                .Problem1.problemPluginConflictTitle, .Problem3.problemPluginConflictNextStep, detail
-            )
-        case .invalid: categorizedProblem(
-                .Problem2.problemPluginInvalidTitle, .Problem3.problemPluginInvalidNextStep, detail
-            )
+                .Problem1.problemPluginSourceUnavailableTitle,
+                .Problem0.problemPluginSourceUnavailableNextStep,
+                detail)
+        case .notFound:
+            categorizedProblem(
+                .Problem2.problemPluginNotFoundTitle,
+                .Problem0.problemPluginNotFoundNextStep,
+                detail)
+        case .changed:
+            categorizedProblem(
+                .Problem3.problemPluginChangedTitle,
+                .Problem1.problemPluginChangedNextStep,
+                detail)
+        case .unsupported:
+            categorizedProblem(
+                .Problem2.problemPluginUnsupportedTitle,
+                .Problem0.problemUpgradeServerNextStep,
+                detail)
+        case .conflict:
+            categorizedProblem(
+                .Problem1.problemPluginConflictTitle,
+                .Problem3.problemPluginConflictNextStep,
+                detail)
+        case .invalid:
+            categorizedProblem(
+                .Problem2.problemPluginInvalidTitle,
+                .Problem3.problemPluginInvalidNextStep,
+                detail)
         case .deviceUnavailable:
             categorizedProblem(
-                .Problem1.problemPluginDeviceUnavailableTitle, .Problem3.problemPluginDeviceUnavailableNextStep, detail
-            )
+                .Problem1.problemPluginDeviceUnavailableTitle,
+                .Problem3.problemPluginDeviceUnavailableNextStep,
+                detail)
         case .lanUnavailable:
             categorizedProblem(
-                .Problem0.problemPluginLanUnavailableTitle, .Problem1.problemPluginLanUnavailableNextStep, detail
-            )
+                .Problem0.problemPluginLanUnavailableTitle,
+                .Problem1.problemPluginLanUnavailableNextStep,
+                detail)
         case .lanPortTaken:
             categorizedProblem(
-                .Problem2.problemPluginLanPortTakenTitle, .Problem2.problemPluginLanPortTakenNextStep, detail
-            )
+                .Problem2.problemPluginLanPortTakenTitle,
+                .Problem2.problemPluginLanPortTakenNextStep,
+                detail)
         case .coreUpgrading:
             categorizedProblem(
-                .Problem3.problemPluginCoreUpgradingTitle, .Problem2.problemPluginCoreUpgradingNextStep, detail
-            )
+                .Problem3.problemPluginCoreUpgradingTitle,
+                .Problem2.problemPluginCoreUpgradingNextStep,
+                detail)
         case .egressProxyUnavailable:
             categorizedProblem(
                 .Problem3.problemPluginEgressProxyUnavailableTitle,
                 .Problem1.problemPluginEgressProxyUnavailableNextStep,
                 detail
             )
-        case .protocol: categorizedProblem(
-                .Problem0.problemPluginProtocolTitle, .Problem0.problemPluginProtocolNextStep, detail
-            )
+        case .protocol:
+            categorizedProblem(
+                .Problem0.problemPluginProtocolTitle,
+                .Problem0.problemPluginProtocolNextStep,
+                detail)
+        case .recordUnusable:
+            categorizedProblem(
+                .Problem0.problemPluginRecordUnusableTitle,
+                .Problem0.problemPluginRecordUnusableNextStep,
+                detail)
         case .serverTooOld:
             categorizedProblem(.Problem3.problemPluginServerTooOldTitle, .Problem0.problemUpgradeServerNextStep, detail)
         // 比这个壳新的类别：先按服务器出错说。

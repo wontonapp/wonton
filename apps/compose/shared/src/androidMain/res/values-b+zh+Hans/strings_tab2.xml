@@ -6,9 +6,6 @@
     <string name="tab_status_unknown">无法确定应用状态</string>
     <string name="tab_start">启动</string>
     <string name="tab_view_details">查看详情</string>
-    <string name="tab_cross_origin_title">这个应用在 Android 版云吞里暂时打不开</string>
-    <string name="tab_cross_origin_detail">当前 Android System WebView：%1$s；需要 156 或更新。</string>
-    <string name="tab_webview_version_unknown">拿不到版本号</string>
     <string name="tab_load_upstream">应用的网页打不开</string>
     <string name="tab_uninstalled_notice">%1$s 已卸载，已从底栏移除</string>
     <string name="tab_menu_open_fullscreen">全屏打开</string>

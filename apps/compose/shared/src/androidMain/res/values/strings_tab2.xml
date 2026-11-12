@@ -12,12 +12,6 @@
     <string name="tab_start">Start</string>
     <!-- Button that opens the app's details page. No arguments; short label. -->
     <string name="tab_view_details">View details</string>
-    <!-- Problem title when cross-origin isolation blocks the page. No arguments. -->
-    <string name="tab_cross_origin_title">This app can\'t open in Wonton on Android yet</string>
-    <!-- Problem detail with the installed WebView version. Argument: the version, or the unknown-version text. -->
-    <string name="tab_cross_origin_detail">Current Android System WebView: %1$s; needs 156 or newer.</string>
-    <!-- Stand-in for the WebView version when it can't be read. No arguments. -->
-    <string name="tab_webview_version_unknown">version unavailable</string>
     <!-- Problem title when the app's page itself fails to load. No arguments. -->
     <string name="tab_load_upstream">Can\'t open the app\'s page</string>
     <!-- Dialog text when apps were uninstalled and their tabs removed. Argument: list of app names. -->

@@ -182,6 +182,36 @@
         }
       }
     },
+    "coreUpgrade.compat.notChecked": {
+      "comment": "Light notice on the update offer: it couldn't check which installed apps would be affected. Tapping checks again.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't check which apps would be affected"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没查到哪些应用会受影响"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒查到哪些應用會受影響"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どのアプリが影響を受けるか確認できませんでした"
+          }
+        }
+      }
+    },
     "coreUpgrade.completedTo": {
       "comment": "Stage line after the update finished. Argument: the version now running.",
       "extractionState": "manual",

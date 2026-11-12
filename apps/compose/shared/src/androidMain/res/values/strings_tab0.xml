@@ -4,8 +4,8 @@
     <string name="tab_webview_too_old">Update Android System WebView and try again</string>
     <!-- Line above the skeleton while the app starts. No arguments. -->
     <string name="tab_starting">Starting…</string>
-    <!-- Button that opens a page the cross-origin isolation would block. No arguments. -->
-    <string name="tab_open_anyway">Open anyway</string>
+    <!-- Next step when no browser can open the app page. No arguments. -->
+    <string name="tab_no_browser_next_step">Install or turn on a browser such as Chrome, then try again.</string>
     <!-- Problem title when the tab bar settings can't be read. No arguments. -->
     <string name="tab_settings_unreadable">Can\'t read the navigation bar settings</string>
     <!-- Button that opens the navigation bar settings from that problem. No arguments. -->

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="friends_paste_placeholder">貼上對方的碼</string>
     <!-- Approve button on a received request. -->
     <string name="friends_request_approve">同意</string>
     <!-- Cancel button on a request I sent. -->

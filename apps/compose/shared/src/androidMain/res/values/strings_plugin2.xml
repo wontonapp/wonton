@@ -20,6 +20,8 @@
     <string name="plugin_task_install_done">Installed</string>
     <!-- Status of a running install task. -->
     <string name="plugin_task_install_running">Installing</string>
+    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
+    <string name="plugin_task_check_installed_next_step">Check the installed list to see whether it installed.</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">Uninstalled</string>
     <!-- Status of a running uninstall task. -->

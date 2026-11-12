@@ -4,6 +4,10 @@
     <string name="tab_uninstalling">Uninstalling…</string>
     <!-- Line while the app updates. No arguments. -->
     <string name="tab_upgrading">Updating…</string>
+    <!-- Line on an app page that opens in the system browser instead of the app. Argument: the app name. -->
+    <string name="tab_opens_in_browser">%1$s opens in your browser</string>
+    <!-- Button that opens the app page in the system browser. No arguments; short label. -->
+    <string name="tab_open_in_browser">Open</string>
     <!-- Button that removes the page from the navigation bar. No arguments. -->
     <string name="tab_unpin_from_bar">Remove from navigation bar</string>
     <!-- Problem title when the app isn't ready to show its page. No arguments. -->

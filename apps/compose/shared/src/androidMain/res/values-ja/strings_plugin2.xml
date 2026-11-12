@@ -17,6 +17,8 @@
     <string name="plugin_task_install_done">インストールしました</string>
     <!-- Status of a running install task. -->
     <string name="plugin_task_install_running">インストール中</string>
+    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
+    <string name="plugin_task_check_installed_next_step">インストールされたかアプリ一覧で確認してください。</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">アンインストールしました</string>
     <!-- Status of a running uninstall task. -->

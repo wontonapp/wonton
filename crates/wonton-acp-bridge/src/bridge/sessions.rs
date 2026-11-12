@@ -91,17 +91,19 @@ pub(super) async fn ensure_session(
     let mut lost = false;
     if let Some(session_id) = state.session_id.clone() {
         if !state.loaded {
-            let record = SessionRecord {
-                session_id: session_id.clone(),
-                cwd: bridge.config.workspace.clone(),
+            // 恢复后按建会话时的模式补切一次；旧记录里没记就退回配置的默认。
+            let mode = match bridge.sessions.get(room_id, key).await {
+                Some(record) if !record.mode.is_empty() => record.mode,
+                _ => bridge.config.mode.clone(),
             };
             match bridge
                 .acp
                 .load_or_resume(
-                    &record.session_id,
-                    &record.cwd,
+                    &session_id,
+                    &bridge.config.workspace,
                     &bridge.config.mcp_url,
                     &origin,
+                    &mode,
                 )
                 .await
             {
@@ -142,6 +144,7 @@ pub(super) async fn ensure_session(
             SessionRecord {
                 session_id: session_id.clone(),
                 cwd: bridge.config.workspace.clone(),
+                mode: created.mode.clone(),
             },
         )
         .await?;

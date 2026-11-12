@@ -13,6 +13,7 @@ struct StoreView: View {
     /// “添加来源”那一页选好的文件：那一页关上以后才能再盖确认页。
     @State private var chosen: PluginConfirmation?
     @Environment(\.wontonColors) private var colors
+    @Environment(\.goToInstalledApps) private var goToInstalledApps
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,9 +23,9 @@ struct StoreView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(model.viewModel.tasks, id: \.id) { task in
-                        TaskRow(model: model, task: task) {
+                        TaskRow(model: model, task: task, review: {
                             confirmation = model.reconfirmation(for: task)
-                        }
+                        }, checkInstalled: { goToInstalledApps() })
                         .padding(.horizontal, WontonTheme.spacing.pageInset)
                         .padding(.vertical, WontonTheme.spacing.s8)
                     }
@@ -224,8 +225,7 @@ private extension Problem {
         Problem(
             title: String(localized: .Store.storeProblemFromSource(provider, title)),
             nextStep: nextStep,
-            detail: detail
-        )
+            detail: detail)
     }
 }
 
@@ -333,8 +333,8 @@ private struct StoreItemRow: View {
     /// 已审核的插件在自己的分组里，不再标来源。
     @ViewBuilder private var tags: some View {
         let showsTrust = item.trust != .official
-        let highTier = item.securityTier.map { $0 != .minimal && $0 != .standard } ?? false
-        if showsTrust || item.provider != nil || highTier || item.stars != nil {
+        let highPermissions = item.highPermissions
+        if showsTrust || item.provider != nil || highPermissions || item.stars != nil {
             HStack(spacing: WontonTheme.spacing.s8) {
                 if showsTrust { Tag(text: item.trust.label, tint: item.trust.tint(colors)) }
                 if let provider = item.viaIndex.map({ String(localized: .Store.storeViaIndex($0)) }) ?? item.provider {
@@ -343,7 +343,7 @@ private struct StoreItemRow: View {
                         .foregroundStyle(Color(colors.textSecondary))
                         .lineLimit(1)
                 }
-                if highTier { Tag(text: String(localized: .Store.storeHighPermissions), tint: colors.danger) }
+                if highPermissions { Tag(text: String(localized: .Store.storeHighPermissions), tint: colors.danger) }
                 if let stars = item.stars {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         WontonIcon.starFill.view(size: WontonTheme.size.iconTiny)
@@ -362,6 +362,8 @@ struct TaskRow: View {
     let model: PluginsModel
     let task: PluginTask
     let review: () -> Void
+    /// The result is uncertain: go look in the installed apps instead of installing again.
+    var checkInstalled: () -> Void = {}
     var showsDismiss = true
     @Environment(\.wontonColors) private var colors
 
@@ -388,7 +390,12 @@ struct TaskRow: View {
     @ViewBuilder private var state: some View {
         switch task.state {
         case .running:
-            Text(task.operation.runningText).foregroundStyle(Color(colors.textSecondary))
+            Text(
+                task.waitingForConnection
+                    ? String(localized: .Plugin1.pluginTaskWaitingForConnection)
+                    : task.operation.runningText
+            )
+            .foregroundStyle(Color(colors.textSecondary))
         case .succeeded:
             HStack(spacing: WontonTheme.spacing.s4) {
                 WontonIcon.checkCircleFill.view(size: WontonTheme.size.iconTiny)
@@ -410,16 +417,23 @@ struct TaskRow: View {
                 }
                 ProblemDetail(text: message)
                 if reason == .changed {
-                    Button(String(localized: .Plugin3.pluginTaskReview), action: review)
+                    Button(
+                        String(localized: .Plugin3.pluginTaskReview),
+                        action: review).buttonStyle(WontonSmallButtonStyle())
+                }
+            }
+        case let .uncertain(message, nextStep):
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                HStack(alignment: .top, spacing: WontonTheme.spacing.s4) {
+                    WontonIcon.help.view(size: WontonTheme.size.iconTiny).padding(.top, 3)
+                    Text(.Plugin2.pluginTaskUncertain(message))
+                }
+                .foregroundStyle(Color(colors.warning))
+                if nextStep == .checkInstalled {
+                    Button(String(localized: .Plugin2.pluginTaskCheckInstalled), action: checkInstalled)
                         .buttonStyle(WontonSmallButtonStyle())
                 }
             }
-        case let .uncertain(message, _):
-            HStack(alignment: .top, spacing: WontonTheme.spacing.s4) {
-                WontonIcon.help.view(size: WontonTheme.size.iconTiny).padding(.top, 3)
-                Text(.Plugin2.pluginTaskUncertain(message))
-            }
-            .foregroundStyle(Color(colors.warning))
         }
     }
 
@@ -467,4 +481,9 @@ private struct UpdateAllButton: View {
                     .accessibilityLabel(String(localized: .Launcher.launcherUpdatesAvailable(count: count)))
             }
     }
+}
+
+extension EnvironmentValues {
+    /// 关掉叠着的页面、回到已安装的应用格子（结果不确定时用）。
+    @Entry var goToInstalledApps: () -> Void = {}
 }

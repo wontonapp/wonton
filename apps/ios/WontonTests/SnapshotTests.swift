@@ -42,6 +42,10 @@ final class SnapshotTests: XCTestCase {
         assert(SnapshotFixtures.settings(core: core), testName: "testSettings", line: #line)
     }
 
+    func testPluginProblem() throws {
+        assert(SnapshotFixtures.pluginProblem(), testName: "testPluginProblem", line: #line)
+    }
+
     /// 逐像素比较；系统字体和矢量图标在同一台模拟器上是确定的，放宽精度要写明原因。
     private func assert(_ view: some View, testName: String, line: UInt) {
         assertSnapshot(

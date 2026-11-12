@@ -2,6 +2,7 @@
 <resources>
     <!-- Top-right button on the friends page that opens the add-friend sheet. -->
     <string name="friends_add">添加</string>
+    <string name="friends_my_code">我的二维码</string>
     <!-- Section heading above the pending requests, received and sent. -->
     <string name="friends_requests_title">请求</string>
     <!-- Section heading above the friend list. -->

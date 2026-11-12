@@ -84,8 +84,9 @@ struct PairingView: View {
             if phase == .active { camera = .current }
         }
         .onChange(of: model.viewModel.pairing) { old, new in
-            // 配上才会连上服务器；取消也回到没有配对，但 serverId 还是空，不当作配上了。
-            if !model.servers.adding, inProgress(old), new == nil, model.viewModel.serverId != nil {
+            // 配上了由核心说：进展从“正在配对”翻到 Paired；取消回到没有进展，不算配上。添加服务器
+            // 的流程有自己的收尾，不在这里走。
+            if !model.servers.adding, inProgress(old), new == .paired {
                 onPaired()
             }
         }
@@ -278,6 +279,9 @@ private struct PairingProgress: View {
 
     var body: some View {
         switch status {
+        // 配上了就该离开配对页（onPaired）；这个视图只为失败而挂载，Paired 不画。
+        case .paired:
+            EmptyView()
         case let .inProgress(elapsed, stage):
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 HStack(spacing: WontonTheme.spacing.s12) {

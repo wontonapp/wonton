@@ -27,6 +27,8 @@
     <string name="plugin_task_added_tools_unknown">Can\'t tell which tools were added this time</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">The result is uncertain: %1$s</string>
+    <!-- Button on an uncertain task that opens the installed list. -->
+    <string name="plugin_task_check_installed">Check installed</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->
     <string name="plugin_task_uninstall_failed">Uninstall failed: %1$s</string>
     <!-- Small tag: the app isn't reviewed. -->

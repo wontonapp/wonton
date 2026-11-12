@@ -394,9 +394,10 @@ extension View {
     }
 
     /// 盖在整屏上的页面：标题栏和进入下一层的一样，返回换成关闭。
-    func wontonModalScreen(_ title: String) -> some View {
+    func wontonModalScreen(_ title: String, showsStatus: Bool = false) -> some View {
         let bar = WontonPushedBar(
-            title: title, icon: .close, iconLabel: String(localized: .Design.designClose)
+            title: title, icon: .close, iconLabel: String(localized: .Design.designClose),
+            showsStatus: showsStatus
         ) { EmptyView() }
         return wontonTopBar { bar }
             .modifier(WontonCanvas())

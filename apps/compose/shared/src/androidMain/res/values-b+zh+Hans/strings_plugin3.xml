@@ -18,6 +18,8 @@
     <string name="plugin_task_install_failed">安装失败：%1$s</string>
     <!-- Button on a failed task whose app package changed after the confirmation: reopen the confirmation. -->
     <string name="plugin_task_review">重新查看</string>
+    <!-- Status of a running task while the connection to the home server is down. -->
+    <string name="plugin_task_waiting_for_connection">正在等待连接</string>
     <!-- Failed update task line. Argument: the reason from the core. -->
     <string name="plugin_task_upgrade_failed">升级失败：%1$s</string>
     <!-- Button that uninstalls but keeps the app's data. -->

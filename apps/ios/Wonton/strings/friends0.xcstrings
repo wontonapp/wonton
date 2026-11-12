@@ -451,6 +451,36 @@
           }
         }
       }
+    },
+    "friends.botContact.badge": {
+      "comment": "Label on an incoming chat invite from a bot that asks you to be its contact.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bot contact request"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bot 联系人请求"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bot 聯絡人請求"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボットの連絡先リクエスト"
+          }
+        }
+      }
     }
   }
 }

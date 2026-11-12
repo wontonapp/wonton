@@ -10,4 +10,6 @@
     <string name="push_no_public_key">分发器没有给出 Web Push 公钥，推送内容没法加密</string>
     <string name="push_registration_rejected">分发器拒绝了注册：%1$s</string>
     <string name="push_unregistered">分发器注销了云吞</string>
+    <string name="push_contact_request">想加你的 Bot 为联系人</string>
+    <string name="push_contact_request_keeper">%1$s 的 Bot 想加你的 Bot 为联系人</string>
 </resources>

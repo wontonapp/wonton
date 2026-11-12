@@ -17,6 +17,8 @@
     <string name="plugin_task_install_done">已安装</string>
     <!-- Status of a running install task. -->
     <string name="plugin_task_install_running">正在安装</string>
+    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
+    <string name="plugin_task_check_installed_next_step">到已安装列表看看装上没有。</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">已卸载</string>
     <!-- Status of a running uninstall task. -->

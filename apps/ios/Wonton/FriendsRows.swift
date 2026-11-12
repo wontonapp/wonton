@@ -32,9 +32,9 @@ struct FriendRequestRowView: View {
                 name
                 Spacer(minLength: 0)
             }
-            if request.kind == .friend {
+            if let badge = friendRequestBadge(request.kind) {
                 Label {
-                    Text(.Friends0.friendsFriendBadge)
+                    Text(badge)
                 } icon: {
                     WontonIcon.person.view(size: WontonTheme.size.iconSmall)
                 }
@@ -61,6 +61,15 @@ struct FriendRequestRowView: View {
             .wontonText(WontonTheme.typography.body)
             .foregroundStyle(Color(colors.textPrimary))
             .layoutPriority(1)
+    }
+}
+
+/// 邀请上的标签：好友请求、别人家的 Bot 请你做联系人（ADR-0050，接受就是同意）；普通私聊邀请和不认识的种类不加。
+func friendRequestBadge(_ kind: FriendRequestKind) -> LocalizedStringResource? {
+    switch kind {
+    case .friend: .Friends0.friendsFriendBadge
+    case .botContact: .Friends0.friendsBotContactBadge
+    case .directChat, .other: nil
     }
 }
 
