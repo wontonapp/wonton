@@ -641,6 +641,11 @@ impl Rig {
         )
     }
 
+    /// 关掉服务端，模拟断网：客户端那边会看到连接断开。
+    pub async fn drop_home(&self) {
+        self._home.server.endpoint().close().await;
+    }
+
     pub async fn connected(&self) {
         self.connected_within(WAIT).await;
     }

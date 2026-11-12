@@ -37,7 +37,7 @@ struct InstallConfirmView: View {
                 .padding(WontonTheme.spacing.pageInset)
             }
         }
-        .wontonModalScreen(confirmation.actionTitle)
+        .wontonModalScreen(confirmation.actionTitle, showsStatus: true)
         .wontonDialog(problem: rejection, isPresented: isShowingRejection)
         .wontonDialog(
             String(localized: .pluginPermissionUnderstandTitle),
