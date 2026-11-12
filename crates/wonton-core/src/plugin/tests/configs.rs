@@ -127,7 +127,7 @@ fn configs_become_files_with_owner_and_mode() {
     assert_eq!(
         plan.containers[0].files,
         [
-            // 短语法放到 /<名字>；默认属主是服务的 user，默认所有人可读；content 按注入的变量插值。
+            // 短语法放到 /<名字>；默认属主是服务的 user，默认所有人可读、属主可写；content 按注入的变量插值。
             file("/motd", 1000, 1001, 0o644, b"id=app.test\n"),
             file("/etc/app/app.yaml", 0, 1001, 0o440, b"level: info\n"),
         ]

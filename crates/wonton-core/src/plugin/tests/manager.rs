@@ -253,7 +253,7 @@ async fn configs_are_written_after_create_and_before_start() {
                 "etc/app.yaml".to_owned(),
                 101,
                 102,
-                0o444,
+                0o644,
                 b"level: info\n".to_vec()
             ),
         ]

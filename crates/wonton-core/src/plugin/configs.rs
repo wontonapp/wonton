@@ -29,10 +29,9 @@ const DIR_MODE: u32 = 0o755;
 /// 判断路径是什么时最多读多少归档字节：只要第一项的头部。
 const KIND_PROBE_BYTES: usize = 16 << 10;
 
-/// 默认权限：所有用户可读，和 compose 一致。
-const DEFAULT_MODE: u32 = 0o444;
-/// 写权限位被忽略：写进容器的配置每次重建都会被覆盖，应用要改写的配置由一次性服务复制进数据目录。
-const WRITE_BITS: u32 = 0o222;
+/// 默认权限：所有用户可读，属主可写。属主默认是 root 或服务的数字 `user`；一次性服务把配置复制进数据目录
+/// 后，复制出来的文件带写位才能再改，所以默认不是 `0444`。
+const DEFAULT_MODE: u32 = 0o644;
 
 /// 要写进容器的一个文件。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,7 +212,7 @@ fn id(value: Option<&Scalar>, field: &str, langs: &Languages) -> Result<Option<u
 }
 
 /// `mode` 按八进制理解：字符串按八进制解析；`0o640` 这样的 YAML 八进制数原样使用；`0640` 被 YAML 1.2
-/// 解析成十进制浮点数 640，按它的数字当八进制，和 docker compose 一样得到 0640。写权限位被忽略。
+/// 解析成十进制浮点数 640，按它的数字当八进制，和 docker compose 一样得到 0640。
 fn mode(value: &Scalar, langs: &Languages) -> Result<u32, String> {
     let parsed = match value {
         Scalar::Int(n) => u32::try_from(*n).ok(),
@@ -224,7 +223,7 @@ fn mode(value: &Scalar, langs: &Languages) -> Result<u32, String> {
         Scalar::Float(_) | Scalar::Bool(_) => None,
     };
     match parsed {
-        Some(mode) if mode <= 0o777 => Ok(mode & !WRITE_BITS),
+        Some(mode) if mode <= 0o777 => Ok(mode),
         _ => Err(crate::l10n::text(
             langs,
             "plugin-install-cfg-mode-invalid",

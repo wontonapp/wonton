@@ -43,7 +43,7 @@ description: 写一个 Wonton 插件，装到主人的服务器上，让主人�
 
 ## 容易猜错的
 
-- **`configs` 的属主：** `user` 写 `${PUID}:${PGID}` 时按插值后的数字算，默认模式 `0444`，所有用户都能读。不用另写 `uid`、`gid`。
+- **`configs` 的属主：** `user` 写 `${PUID}:${PGID}` 时按插值后的数字算，默认模式 `0644`，所有用户都能读、属主能写。不用另写 `uid`、`gid`。
 - **环境变量里的 `on`/`off`：** `environment` 里裸写会被 YAML 当成布尔（容器拿到 `true`），要的就是这两个字就加引号。
 - **健康检查和代理：** 只有 `wget` 和 shell 的写法由核心改写成不走代理。`python3 -c` 不改写，用 `urllib.request.build_opener(urllib.request.ProxyHandler({}))` 自己绕开，见 `assets/backend`。
 - **没有登录的页面：** `sso: none` 又不做登录是可以的，所有请求先经网关校验主人的会话，别人打不开。不要自己加默认密码。
