@@ -8,7 +8,6 @@ use wonton_client::{
 use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::confirmation::{core_room, joined_direct_chat};
-};
 
 use super::support::{Home, Phone, WAIT};
 

@@ -1,9 +1,9 @@
 use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
     AppearanceViewModel, BotContactsViewModel, ChatViewModel, ComposerViewModel,
-    ConfirmationsViewModel, FriendsViewModel, HomeViewModel, OnboardingViewModel,
-    PeersViewModel, PluginsViewModel, ServersViewModel, SessionListViewModel, SettingsViewModel,
-    TabsViewModel, TransfersViewModel,
+    ConfirmationsViewModel, FriendsViewModel, HomeViewModel, OnboardingViewModel, PeersViewModel,
+    PluginsViewModel, ServersViewModel, SessionListViewModel, SettingsViewModel, TabsViewModel,
+    TransfersViewModel,
 };
 
 use crate::session_store::SessionStore;

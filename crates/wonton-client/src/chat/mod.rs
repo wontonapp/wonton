@@ -305,17 +305,28 @@ impl ChatLink {
             relogin: connect::Relogin::default(),
             external,
         });
-        runtime.spawn(draft::write_drafts(Arc::downgrade(&chat), draft_receiver));
+        Self::spawn_loops(&runtime, &home, &chat, external, draft_receiver);
+        Ok(chat)
+    }
+
+    /// 启动时要跑的后台循环：草稿落盘、回家连接、确认列表的长轮询。
+    fn spawn_loops(
+        runtime: &Handle,
+        home: &Arc<HomeLink>,
+        chat: &Arc<Self>,
+        external: bool,
+        draft_receiver: mpsc::UnboundedReceiver<draft::DraftWrite>,
+    ) {
+        runtime.spawn(draft::write_drafts(Arc::downgrade(chat), draft_receiver));
         if external {
             runtime.spawn(chat.clone().connect(connect::Target::External));
         } else {
-            runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
+            runtime.spawn(follow_home::run(Arc::downgrade(chat), home.subscribe()));
         }
         runtime.spawn(pending::follow_cards(
-            Arc::downgrade(&chat),
+            Arc::downgrade(chat),
             home.subscribe(),
         ));
-        Ok(chat)
     }
 
     /// App 回到前台或家里的连接恢复：登录失败（不是被吊销）或正在等着重连的话马上重新登录；已经登录的接着用同一个

@@ -322,6 +322,7 @@ impl PushLink {
             category: NotificationCategory::Confirmation,
             confirmation: None,
             contact_request: None,
+            thread_root: None,
         };
         let Some((core_url, proxy)) = self.wait_home().await else {
             tracing::info!("push: the home connection isn't ready for a confirmation");
@@ -347,6 +348,7 @@ impl PushLink {
                             text: card.title.clone(),
                         },
                     },
+                    thread_root: None,
                     category: NotificationCategory::Confirmation,
                     confirmation: Some(PushConfirmation {
                         id: card.id,

@@ -430,7 +430,14 @@ mod tests {
             bots: Vec::new(),
             chat_layout_default: Default::default(),
         });
-        let outbox = Outbox::new(tx, Arc::default(), room_view, chat);
+        let outbox = Outbox::new(
+            tx,
+            Arc::default(),
+            room_view,
+            chat,
+            OwnedRoomId::try_from("!room:example.com").unwrap(),
+            watch::channel(Arc::default()).1,
+        );
         let item = |id: &str, own: bool| TimelineItem {
             id: id.to_owned(),
             content: TimelineContent::Message {
