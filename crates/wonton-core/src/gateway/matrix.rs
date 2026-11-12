@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::api::error_response;
+use super::chain_mentions;
 use super::send_limits::hop_card;
 use super::{Gateway, TunnelPeer, client_addr, pages, proxy, pushers};
 use super::{room_rules, send_limits};
@@ -191,12 +192,12 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
         Ok(req) => req,
         Err(refused) => return *refused,
     };
-    let req = match gateway
+    let (req, sent) = match gateway
         .send_limits
         .check_bot_send(req, gateway.matrix.as_deref())
         .await
     {
-        Ok(req) => req,
+        Ok((req, sent)) => (req, sent),
         Err(refused) => {
             if let Some(stopped) = refused.stopped {
                 hop_card::ask_to_continue(gateway, stopped);
@@ -204,7 +205,15 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
             return refused.response;
         }
     };
-    forward_client_api(gateway, req).await
+    // 数跳数的同一处挂叫回标签（第 8 块）：转发前认链，应答的事件 ID 记到账本。
+    let pending = sent
+        .as_ref()
+        .and_then(|sent| chain_mentions::prepare(gateway, sent));
+    let response = forward_client_api(gateway, req).await;
+    match pending {
+        Some(pending) => chain_mentions::after_send(gateway, pending, response).await,
+        None => response,
+    }
 }
 
 /// 只转发客户端接口，先挡住可能被上游读成别的路径的写法。
