@@ -3,34 +3,27 @@ package app.wonton.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
@@ -38,50 +31,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
-import app.wonton.protocol.BotView
-import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
-import app.wonton.protocol.KeyNotice
-import app.wonton.protocol.OutgoingMessage
-import app.wonton.protocol.PanelItem
-import app.wonton.protocol.RoomMembership
-import app.wonton.protocol.RoomRow
-import app.wonton.protocol.TabRef
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineMessage
-import app.wonton.protocol.TimelineViewport
-import app.wonton.protocol.TimelineAction
-import app.wonton.protocol.TimelineTarget
-import app.wonton.ui.design.LocalWontonBottomInset
-import app.wonton.ui.design.LocalWontonTopInset
-import app.wonton.ui.design.WontonButton
-import app.wonton.ui.design.WontonButtonKind
-import app.wonton.ui.design.WontonDialog
-import app.wonton.ui.design.WontonDialogAction
-import app.wonton.ui.design.WontonNotice
+import app.wonton.ui.design.wontonContentPaddingValues
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.icons.LockKey
-import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.filter
 
-private const val TAG = "RoomScreen"
-
-internal class TimelineState {
+private class TimelineState {
     val items = mutableStateListOf<TimelineItem>()
     var backPagination by mutableStateOf(BackPagination.IDLE)
 
@@ -89,39 +57,13 @@ internal class TimelineState {
     var loaded by mutableStateOf(false)
     var failure by mutableStateOf<Problem?>(null)
 
-    /** 核心算的位置：在不在底部、离开底部时的新消息数（ADR-0071）。 */
-    var viewport by mutableStateOf<TimelineViewport>(TimelineViewport.Bottom)
-
-    /** 第一批的落点：进房间停在这一条上（ADR-0071）。 */
-    var anchor by mutableStateOf<String?>(null)
-
-    /** 有消息解不开时给主人的入口，核心按加密状态给。 */
-    var notice by mutableStateOf<KeyNotice?>(null)
-
-    /** 时间线被清空重建的次数：重建的 Reset 里带新落点，壳要重新摆。 */
-    var clears by mutableIntStateOf(0)
-
-    /** 每一批更新的序号，编辑流和内容增高都要触发布局跟随。 */
-    var revision by mutableIntStateOf(0)
-    /** 核心要求自己发出的消息回到底部的次数。 */
-    var bottomRequest by mutableIntStateOf(0)
-    var handledBottomRequest by mutableIntStateOf(0)
     /** 打不开时点“重试”加一，按它重新订阅。 */
     var attempt by mutableIntStateOf(0)
-
-    /** 这个房间的面板（ADR-0052）：核心每一批带上。 */
-    var panel by mutableStateOf<List<PanelItem>>(emptyList())
-    var panelSelected by mutableStateOf<TabRef?>(null)
-    /** 另有东西盖着消息列表（长按菜单、转发、删除确认），上推拉面板的入口不响应。 */
-    var entryBlocked by mutableStateOf(false)
 
     fun apply(diff: TimelineDiff) {
         when (diff) {
             is TimelineDiff.Append -> items.addAll(diff.items)
-            TimelineDiff.Clear -> {
-                items.clear()
-                clears++
-            }
+            TimelineDiff.Clear -> items.clear()
             is TimelineDiff.PushFront -> items.add(0, diff.item)
             is TimelineDiff.PushBack -> items.add(diff.item)
             TimelineDiff.PopFront -> items.removeAt(0)
@@ -133,7 +75,6 @@ internal class TimelineState {
             is TimelineDiff.Reset -> {
                 items.clear()
                 items.addAll(diff.items)
-                clears++
             }
         }
     }
@@ -146,13 +87,8 @@ fun RoomRoute(
     title: String,
     isDirect: Boolean,
     isReadOnly: Boolean,
-    bot: BotView?,
-    plugins: PluginsState,
-    rooms: List<RoomRow>,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
-    onOpenRoom: (String) -> Unit,
-    onOpenBackup: () -> Unit,
     onClose: () -> Unit,
 ) {
     val timeline = remember(roomId) { TimelineState() }
@@ -162,14 +98,6 @@ fun RoomRoute(
             core.timelineUpdates(roomId).collect { update ->
                 update.diffs.forEach(timeline::apply)
                 timeline.backPagination = update.backPagination
-                timeline.viewport = update.viewport
-                timeline.notice = update.keyNotice
-                update.anchor?.let { timeline.anchor = it }
-                timeline.panel = update.panel
-                timeline.panelSelected = update.panelSelected
-                timeline.entryBlocked = update.entryBlocked
-                if (update.scrollToBottom) timeline.bottomRequest++
-                timeline.revision++
                 timeline.loaded = true
             }
             currentCoroutineContext().ensureActive()
@@ -178,40 +106,19 @@ fun RoomRoute(
             timeline.failure = failure.problem
         }
     }
-    // 附件区和点了发送、还没交出去的消息（ADR-0094）：附件区画在输入框上方，待发消息画在最新一条下面。
-    var composer by remember(roomId) { mutableStateOf<ComposerViewModel?>(null) }
-    LaunchedEffect(core, roomId) {
-        try {
-            core.composerUpdates(roomId).collect { composer = it }
-        } catch (failure: CoreException) {
-            onReject(failure.problem)
-        }
+    val newest = timeline.items.lastOrNull()?.id
+    LaunchedEffect(newest) {
+        if (newest != null) onAction(Action.MarkRoomRead(roomId))
     }
     val first = remember(core) { core.transfers() }
     val transfers by produceState(first, core) { core.transfersUpdates().collect { value = it } }
     CompositionLocalProvider(LocalFiles provides FilesContext(transfers, onAction, onReject)) {
-        RoomScreen(
-            core,
-            roomId,
-            title,
-            isDirect,
-            isReadOnly,
-            bot,
-            plugins,
-            rooms,
-            timeline,
-            composer,
-            onAction,
-            onReject,
-            onOpenRoom,
-            onOpenBackup,
-            onClose,
-        )
+        RoomScreen(core, roomId, title, isDirect, isReadOnly, timeline, onAction, onReject, onClose)
     }
 }
 
 /** 长按的是哪条消息，它的气泡在屏幕上的位置。 */
-private class MessageMenuTarget(val itemId: String, val message: TimelineMessage, val bubble: Rect)
+private class MessageMenuTarget(val message: TimelineMessage, val bubble: Rect)
 
 @Composable
 private fun RoomScreen(
@@ -220,218 +127,37 @@ private fun RoomScreen(
     title: String,
     isDirect: Boolean,
     isReadOnly: Boolean,
-    bot: BotView?,
-    plugins: PluginsState,
-    rooms: List<RoomRow>,
     timeline: TimelineState,
-    composer: ComposerViewModel?,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
-    onOpenRoom: (String) -> Unit,
-    onOpenBackup: () -> Unit,
     onClose: () -> Unit,
 ) {
     var menu by remember { mutableStateOf<MessageMenuTarget?>(null) }
-    val openMenu = { item: TimelineItem, message: TimelineMessage, bounds: Rect ->
-        menu = MessageMenuTarget(item.id, message, bounds)
-    }
-    // 菜单能画在哪儿：窗口减去系统栏和键盘。弹层是另一个窗口，在里面拿不到这些，在这里算好传进去。
-    // 横屏时导航栏或挖孔在侧边，左右也要让。
-    val windowSize = LocalWindowInfo.current.containerSize
-    val density = LocalDensity.current
-    val safe = WindowInsets.safeDrawing
-    val direction = LocalLayoutDirection.current
-    val visible = Rect(
-        safe.getLeft(density, direction).toFloat(),
-        safe.getTop(density).toFloat(),
-        (windowSize.width - safe.getRight(density, direction)).toFloat(),
-        (windowSize.height - safe.getBottom(density)).toFloat(),
-    )
-    val draft = rememberRoomDraft(core, roomId, onAction)
-    val panel = LocalChatPanel.current
-    // 在组合里读一遍，面板数据变了才会重组，下面的 SideEffect 才会跟着跑。
-    val panelPages = timeline.panel
-    val panelSelected = timeline.panelSelected
-    val entryBlocked = timeline.entryBlocked
-    SideEffect {
-        panel?.feed(panelPages, panelSelected)
-        panel?.blocked = entryBlocked
-    }
-    DisposableEffect(panel, draft) {
-        panel?.draftSink = { text -> draft.change(if (draft.text.isBlank()) text else "${draft.text}\n$text") }
-        onDispose { panel?.draftSink = null }
-    }
-    // 转发、撤回都要时间线条目的 id，菜单开着的那条。
-    var forwarding by remember { mutableStateOf<String?>(null) }
-    var redacting by remember { mutableStateOf<MessageMenuTarget?>(null) }
-    // 和 Bot 的私聊：顶栏显示 Bot 的状态头像和名字（ADR-0044），名字下面不写状态文字。
-    val barTitle = if (isDirect) bot?.name ?: title else title
-    val barAvatar: (@Composable () -> Unit)? = if (isDirect && bot != null) {
-        { BotAvatar(bot, plugins, WontonTheme.size.avatar) }
-    } else {
-        null
-    }
-    // 有东西盖着列表时上推的入口不响应，由核心合成（ADR-0052）。
-    val covers = menu != null || forwarding != null || redacting != null
-    LaunchedEffect(covers, roomId) { onAction(Action.SetRoomEntryBlocked(roomId, covers)) }
+    val openMenu = { message: TimelineMessage, bounds: Rect -> menu = MessageMenuTarget(message, bounds) }
     Box(Modifier.fillMaxSize()) {
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
         Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
-            WontonScreen(
-                bar = {
-                    WontonPushedBar(
-                        barTitle, onClose, showsStatus = true, showsStatusLine = true, avatar = barAvatar,
-                    )
-                },
-            ) {
-                Conversation(
-                    core, roomId, isDirect, isReadOnly, timeline, composer, draft, onAction, onReject, openMenu,
-                    onOpenBackup,
-                )
+            WontonScreen(bar = { WontonPushedBar(title, onClose, showsStatus = true) }) {
+                // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
+                Column(
+                    Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)),
+                ) {
+                    val failure = timeline.failure
+                    if (failure != null) {
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            ProblemView(failure) { timeline.attempt++ }
+                        }
+                    } else {
+                        val showsSender = !isDirect
+                        Messages(core, roomId, timeline, showsSender, onAction, openMenu, Modifier.weight(1f))
+                    }
+                    TransfersStrip(roomId, core)
+                    if (!isReadOnly) Composer(roomId, onAction, onReject)
+                }
             }
         }
-        menu?.let { target ->
-            MessageMenu(
-                message = target.message,
-                bubble = target.bubble,
-                visible = visible,
-                core = core,
-                onReply = draft::replyTo,
-                onForward = { forwarding = target.itemId },
-                onRedact = { redacting = target },
-                onDismiss = { menu = null },
-            )
-        }
-        forwarding?.let { itemId ->
-            ForwardSheet(
-                rooms = rooms.filter { it.forwardTarget(roomId) },
-                onPick = { row ->
-                    onAction(
-                        Action.Timeline(
-                            TimelineAction.ForwardMessage(TimelineTarget(roomId, null), itemId, row.roomId),
-                        ),
-                    )
-                    onOpenRoom(row.roomId)
-                },
-                onDismiss = { forwarding = null },
-            )
-        }
-        redacting?.let { target ->
-            RedactConfirm(
-                target.message,
-                onConfirm = {
-                    onAction(Action.Timeline(TimelineAction.RedactMessage(TimelineTarget(roomId, null), target.itemId)))
-                    redacting = null
-                },
-                onDismiss = { redacting = null },
-            )
-        }
+        menu?.let { target -> MessageMenu(target.message, target.bubble, core) { menu = null } }
     }
-}
-
-/** 消息列表、传输条和输入栏。打开失败时列表位置换成原因和重试。 */
-@Composable
-private fun Conversation(
-    core: ClientCore,
-    roomId: String,
-    isDirect: Boolean,
-    isReadOnly: Boolean,
-    timeline: TimelineState,
-    composer: ComposerViewModel?,
-    draft: RoomDraft,
-    onAction: (Action) -> Unit,
-    onReject: (Problem) -> Unit,
-    onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
-    onOpenBackup: () -> Unit,
-) {
-    // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
-    // 房间列表倒着排、贴底，稳态下旧消息正对着顶栏：让位不能像普通滚动页那样走 contentPadding
-    // （随滚动消失，消息仍画到标题和状态栏上），视口本身要从顶栏下面开始。
-    Column(
-        Modifier.fillMaxSize()
-            .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
-            .padding(top = LocalWontonTopInset.current),
-    ) {
-        val failure = timeline.failure
-        if (failure != null) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                ProblemView(failure) { timeline.attempt++ }
-            }
-        } else {
-            Messages(
-                core,
-                roomId,
-                timeline,
-                composer?.outgoing.orEmpty(),
-                showsSender = !isDirect,
-                onAction = onAction,
-                onOpenMenu = onOpenMenu,
-                onReply = { message -> message.replyAction?.let { draft.replyTo(it.message) } },
-                modifier = Modifier.weight(1f),
-            )
-        }
-        timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
-        TransfersStrip(roomId, core)
-        if (!isReadOnly) {
-            Composer(
-                roomId = roomId,
-                draft = draft.text,
-                reply = draft.reply,
-                focusToken = draft.focusToken,
-                composer = composer,
-                core = core,
-                onDraftChange = draft::change,
-                onSent = draft::sent,
-                onReplyCancel = draft::stopReplying,
-                onAction = onAction,
-                onReject = onReject,
-            )
-        }
-    }
-}
-
-/**
- * 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
- * 更新的核心给出的类别没有按钮，说明照常显示。
- */
-@Composable
-private fun KeyNoticeRow(notice: KeyNotice, onOpenBackup: () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth()
-            .padding(horizontal = WontonTheme.spacing.pageInset, vertical = WontonTheme.spacing.s8),
-    ) {
-        WontonNotice(WontonIcon.LockKey, stringResource(R.string.timeline_undecryptable_notice), isError = false) {
-            notice.action?.let { action ->
-                WontonButton(stringResource(action), onOpenBackup, Modifier.fillMaxWidth(), WontonButtonKind.PRIMARY)
-            }
-        }
-    }
-}
-
-/** 转发能去的房间：别的、已经加入、能发的房间。 */
-private fun RoomRow.forwardTarget(roomId: String): Boolean =
-    this.roomId != roomId && membership == RoomMembership.JOINED && !isReadOnly
-
-/** 撤回对所有人生效，发出去之前先确认。 */
-@Composable
-private fun RedactConfirm(message: TimelineMessage, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    WontonDialog(
-        title = if (message.isOwn) {
-            stringResource(R.string.message_delete_everyone_title)
-        } else {
-            stringResource(R.string.message_delete_others_title, message.senderName)
-        },
-        message = stringResource(R.string.message_delete_everyone_message),
-        onDismiss = onDismiss,
-        actions = listOf(
-            WontonDialogAction(stringResource(R.string.common_cancel), onClick = onDismiss),
-            WontonDialogAction(
-                stringResource(R.string.message_delete_everyone_confirm),
-                WontonButtonKind.DANGER,
-                onConfirm,
-            ),
-        ),
-    )
 }
 
 @Composable
@@ -439,93 +165,72 @@ private fun Messages(
     core: ClientCore,
     roomId: String,
     timeline: TimelineState,
-    outgoing: List<OutgoingMessage>,
     showsSender: Boolean,
     onAction: (Action) -> Unit,
-    onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
-    onReply: (TimelineMessage) -> Unit,
+    onOpenMenu: (TimelineMessage, Rect) -> Unit,
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
-    val panel = LocalChatPanel.current
-    ScrollEffects(listState, timeline, roomId, onAction)
-    // 待发消息出现、交出去换成本地回显时，在底部附近的跟着到底：插在第 0 项前面的行，列表按键记位置不会自己露出来。
-    val outgoingIds = outgoing.map { it.id }
-    LaunchedEffect(outgoingIds) {
-        withFrameNanos { }
-        if (listState.firstVisibleItemIndex <= outgoing.size + 1) listState.scrollToItem(0)
-    }
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
+    // 新消息插在第 0 项时，列表保持原来看到的那条不动，新消息落在屏幕下面；原本就在底部时滚过去。
+    val newest = timeline.items.lastOrNull()?.id
+    var followed by remember { mutableStateOf(newest) }
+    LaunchedEffect(newest) {
+        if (newest == null) return@LaunchedEffect
+        // 这里可能先于列表测量新条目运行：那时第 0 项还是旧的那条，滚过去等于没动，新消息留在屏幕下面（实测回复较长时）。
+        withFrameNanos { }
+        // 一批到了几条时，上次滚到的那条不在第 1 项。滚动被下一条打断时不更新，下一条还会跟上。
+        val arrived = newestFirst.indexOfFirst { it.id == followed }.coerceAtLeast(1)
+        if (listState.firstVisibleItemIndex <= arrived) listState.animateScrollToItem(0)
+        followed = newest
+    }
     // 滚到最上面（最早的一条露出来）时加载更早的消息；加载完条目变多，还在顶上就再加载一页。
     LaunchedEffect(listState, roomId) {
-        snapshotFlow { listState.reachedTop(timeline) }
+        snapshotFlow {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+            timeline.loaded && last != null && last >= listState.layoutInfo.totalItemsCount - 1 &&
+                timeline.backPagination == BackPagination.IDLE
+        }
             .distinctUntilChanged()
             .filter { it }
-            .collect { onAction(Action.Timeline(TimelineAction.PaginateBackwards(TimelineTarget(roomId, null)))) }
+            .collect { onAction(Action.PaginateBackwards(roomId)) }
     }
-    Box(modifier) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize()
-                .panelAction(panel)
-                .chatPanelPull(panel, { !listState.canScrollForward }, !timeline.entryBlocked),
-            state = listState,
-            reverseLayout = true,
-            overscrollEffect = null,
-            // 顶栏让位已垫在视口上（上面的 Column），这里不再叠加；底部照旧让开手势条。
-            contentPadding = PaddingValues(
-                start = WontonTheme.spacing.pageInset,
-                end = WontonTheme.spacing.pageInset,
-                top = WontonTheme.spacing.s8,
-                bottom = LocalWontonBottomInset.current + WontonTheme.spacing.s8,
-            ),
-            verticalArrangement = Arrangement.spacedBy(JOINED_GAP),
-        ) {
-            // 倒着排：最后点发送的那条在最下面。
-            items(outgoing.asReversed(), key = { it.id }) { message ->
-                Box(Modifier.padding(top = WontonTheme.spacing.s8 - JOINED_GAP)) {
-                    OutgoingRow(message, roomId, core, onAction)
-                }
-            }
-            itemsIndexed(newestFirst, key = { _, item -> item.id }) { index, item ->
-                // 倒着排：下标大的是更早的一条。
-                val joinsPrevious = item.joins(newestFirst.getOrNull(index + 1))
-                val joinsNext = item.joins(newestFirst.getOrNull(index - 1))
-                Box(Modifier.padding(top = if (joinsPrevious) 0.dp else WontonTheme.spacing.s8 - JOINED_GAP)) {
-                    TimelineItemView(
-                        item,
-                        core,
-                        showsSender,
-                        joinsPrevious,
-                        joinsNext,
-                        onRetry = {
-                            onAction(Action.Timeline(TimelineAction.RetrySend(TimelineTarget(roomId, null), item.id)))
-                        },
-                        onCancel = {
-                            onAction(Action.Timeline(TimelineAction.CancelSend(TimelineTarget(roomId, null), item.id)))
-                        },
-                        onCardAction = onAction,
-                        onOpenMenu = onOpenMenu,
-                    onReply = onReply,
-                    )
-                }
-            }
-            if (timeline.backPagination != BackPagination.REACHED_START) {
-                // 列表还空时转圈是第 0 项。它的键不能和有消息时一样：列表按键记位置，消息进来后会跟着转圈跳到最早的一条。
-                item(key = if (newestFirst.isEmpty()) "loading" else "paginating") {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                }
+    LazyColumn(
+        modifier.fillMaxWidth(),
+        state = listState,
+        reverseLayout = true,
+        contentPadding = wontonContentPaddingValues(
+            horizontal = WontonTheme.spacing.pageInset,
+            top = WontonTheme.spacing.s8,
+            bottom = WontonTheme.spacing.s8,
+        ),
+        verticalArrangement = Arrangement.spacedBy(JOINED_GAP),
+    ) {
+        itemsIndexed(newestFirst, key = { _, item -> item.id }) { index, item ->
+            // 倒着排：下标大的是更早的一条。
+            val joinsPrevious = item.joins(newestFirst.getOrNull(index + 1))
+            val joinsNext = item.joins(newestFirst.getOrNull(index - 1))
+            Box(Modifier.padding(top = if (joinsPrevious) 0.dp else WontonTheme.spacing.s8 - JOINED_GAP)) {
+                TimelineItemView(
+                    item,
+                    core,
+                    showsSender,
+                    joinsPrevious,
+                    joinsNext,
+                    onRetry = { onAction(Action.RetrySend(roomId, item.id)) },
+                    onCancel = { onAction(Action.CancelSend(roomId, item.id)) },
+                    onCardAction = onAction,
+                    onOpenMenu = onOpenMenu,
+                )
             }
         }
-        ScrollToBottomButton(
-            timeline,
-            roomId,
-            listState,
-            onAction,
-            Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = WontonTheme.spacing.pageInset, bottom = WontonTheme.spacing.s8),
-        )
+        if (timeline.backPagination != BackPagination.REACHED_START) {
+            // 列表还空时转圈是第 0 项。它的键不能和有消息时一样：列表按键记位置，消息进来后会跟着转圈跳到最早的一条。
+            item(key = if (newestFirst.isEmpty()) "loading" else "paginating") {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            }
+        }
     }
 }
 
@@ -539,6 +244,3 @@ private fun TimelineItem.joins(other: TimelineItem?): Boolean {
 
 private val TimelineItem.senderId
     get() = (content as? TimelineContent.Message)?.message?.senderId
-
-internal val TimelineItem.isOwn
-    get() = (content as? TimelineContent.Message)?.message?.isOwn == true

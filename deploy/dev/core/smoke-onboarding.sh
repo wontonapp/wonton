@@ -46,10 +46,7 @@ relay="wonton-$WONTON_DEV_INSTANCE--egress"
 core_version=0.1.0
 plugins=(ai.usemagpie.magpie app.onboarding.probe)
 
-step() {
-  step_now="$*"
-  printf '\n== %s\n' "$*"
-}
+step() { printf '\n== %s\n' "$*"; }
 ok() { printf '   ✓ %s\n' "$*"; }
 fail() {
   printf '   ✗ %s\n' "$*" >&2
@@ -61,9 +58,6 @@ expect() {
 expect_contains() {
   if [[ "$2" == *"$3"* ]]; then ok "$1"; else fail "$1：实际里没有「$3」：$2"; fi
 }
-# 探针的 curl 统一走 smoke-curl.sh 里的 curl_in：都带超时，超时报出是哪一步（见该文件）。
-# shellcheck source=deploy/dev/core/smoke-curl.sh
-source "$here/smoke-curl.sh"
 json() {
   python3 -c 'import json,sys
 value = json.load(sys.stdin)
@@ -109,27 +103,23 @@ cleanup() {
 
 # 与核心共享网络的 curl。结果存 REPLY（正文）和 CODE（状态码）：网关错误的用例要读 4xx/5xx 的正文。
 api() {
-  local method="$1" path="$2" body="${3:-}" out rc=0
+  local method="$1" path="$2" body="${3:-}" out
   local args=(-sS -X "$method" -H "Authorization: Bearer $token" -w '\n%{http_code}')
   [[ -n "$body" ]] && args+=(-H 'Content-Type: application/json' -d "$body")
-  out="$(docker run --rm --network "container:$core" "$curl_image" --noproxy '*' \
-    --max-time "$SMOKE_WEB_MAX_TIME" --connect-timeout "$SMOKE_CONNECT_TIMEOUT" \
-    "${args[@]}" "$core_url$path")" || rc=$?
-  timed_out "$rc" "$SMOKE_WEB_MAX_TIME" "$core_url$path"
+  out="$(docker run --rm --network "container:$core" "$curl_image" --noproxy '*' "${args[@]}" "$core_url$path")"
   CODE="${out##*$'\n'}"
   REPLY="${out%$'\n'*}"
-  return "$rc"
 }
 # 探针插件（tools 权限）经真实 MCP 总线调 wonton__help。会话和调用都在探针容器里发。
 mcp_session() {
   docker exec "$probe" sh -c '
-    curl -sS --max-time 120 -D /tmp/session-headers -o /dev/null -X POST "http://mcp.wonton.internal:'"$WONTON_DEV_PORT"'/mcp" \
+    curl -sS -D /tmp/session-headers -o /dev/null -X POST "http://mcp.wonton.internal:'"$WONTON_DEV_PORT"'/mcp" \
       -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
       -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"onboarding-smoke\",\"version\":\"0.1.0\"}}}"
     grep -i "^mcp-session-id:" /tmp/session-headers | tr -d "\r" | cut -d" " -f2'
 }
 mcp_call() {
-  docker exec "$probe" curl -sS --max-time 120 -X POST "http://mcp.wonton.internal:$WONTON_DEV_PORT/mcp" \
+  docker exec "$probe" curl -sS -X POST "http://mcp.wonton.internal:$WONTON_DEV_PORT/mcp" \
     -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
     -H "mcp-session-id: $session" -d "$1"
 }
@@ -239,7 +229,7 @@ step "构建核心镜像（版本号 $core_version，满足索引的 min_core）
   -t "$core_image" -f "$here/Dockerfile" "$repo" >/dev/null
 ok "镜像 $core_image"
 
-step "准备 Hydra 和 Matrix 的密钥（这个脚本自己用检出目录的 .secrets，没有才生成；dev.sh 的密钥在状态目录，互不相干）"
+step "准备 Hydra 和 Matrix 的密钥（和 dev.sh 用同一份，没有才生成）"
 secrets="$here/.secrets"
 mkdir -p "$secrets" && chmod 700 "$secrets"
 if [[ ! -s "$secrets/hydra-system-secret" ]]; then
@@ -277,8 +267,7 @@ cat >"$probe_file" <<'YAML'
 services:
   probe:
     image: curlimages/curl:8.23.0
-    # 容器只是探针的宿主，寿命按整轮冒烟算。
-    entrypoint: ["sh", "-c", "exec sleep 7200"]
+    entrypoint: ["sh", "-c", "exec sleep 1800"]
 x-wonton:
   spec: '0.4'
   id: app.onboarding.probe
@@ -370,7 +359,8 @@ ok "min_core 99.0.0 挡住了版本 $core_version 的核心，文档停在 $upda
 
 step "模型网关：三种错误的原因各不相同（ADR-0034）"
 plugin_state() {
-  "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
+  "$dev" list | python3 -c 'import json, sys
+print(next((p["status"]["state"] for p in json.load(sys.stdin)["plugins"] if p["id"] == sys.argv[1]), "absent"))' "$1"
 }
 for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
 expect "核心在后台预装了模型网关" "$(plugin_state ai.usemagpie.magpie)" running

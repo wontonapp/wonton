@@ -5,31 +5,32 @@
 //! 先读后删，读不到就不动容器、标为异常，不悄悄签新设备：换设备要重新建加密身份。
 
 use super::provider::provides_proxy;
-use crate::plugin::health_gate::Gate;
 use wonton_protocol::EgressRestart;
 
 use crate::l10n;
+use crate::plugin::bots::is_bot;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::{Deployed, Entry, InstallError, PluginManager, PluginStatus};
-use crate::plugin::manifest::{Permission, PluginId};
+use crate::plugin::manifest::{Manifest, Permission, PluginId};
 use crate::plugin::package::PluginPackage;
-use crate::plugin::render::{Deployment, render};
+use crate::plugin::render::{Deployment, InstallContext, render};
+use crate::plugin::vars::MatrixVars;
 
 /// 找哪里引用了令牌时代替它。令牌不会长这样，插件也不会写出这串字。
-pub(in crate::plugin) const PLACEHOLDER: &str = "wonton-matrix-token-to-read-back";
+const PLACEHOLDER: &str = "wonton-matrix-token-to-read-back";
 
 /// 容器的一个环境变量里引用了令牌，令牌前后是这些字。
 #[derive(Debug, PartialEq, Eq)]
-pub(in crate::plugin) struct TokenUse {
-    pub(in crate::plugin) container: String,
-    pub(in crate::plugin) variable: String,
-    pub(in crate::plugin) before: String,
-    pub(in crate::plugin) after: String,
+struct TokenUse {
+    container: String,
+    variable: String,
+    before: String,
+    after: String,
 }
 
 impl TokenUse {
     /// 从旧容器的环境变量里取出令牌。
-    pub(in crate::plugin) fn read(&self, env: &[String]) -> Option<String> {
+    fn read(&self, env: &[String]) -> Option<String> {
         let value = env.iter().find_map(|line| {
             let (name, value) = line.split_once('=')?;
             (name == self.variable).then_some(value)
@@ -42,10 +43,7 @@ impl TokenUse {
 }
 
 /// 用占位值渲染出来的部署计划里，哪些环境变量引用了令牌。写在 `command`、`configs` 这些地方的读不回来。
-pub(in crate::plugin) fn token_uses(
-    plan: &Deployment,
-    langs: &Languages,
-) -> Result<Vec<TokenUse>, String> {
+fn token_uses(plan: &Deployment, langs: &Languages) -> Result<Vec<TokenUse>, String> {
     let mut uses = Vec::new();
     for container in &plan.containers {
         let service = &container.service;
@@ -190,8 +188,7 @@ impl PluginManager {
         let mut ctx = self
             .rebuild_context(&package, &record, lan, pending.as_ref())
             .await?;
-        // Bot 的 Matrix 变量和总线地址也要填：Bot 服务的容器引用了它们，令牌从旧容器读回。
-        self.fill_bot_vars(&package, &mut ctx, langs).await?;
+        ctx.matrix = self.bot_vars_read_back(&package, &ctx, langs).await?;
         let plan = render(&package, &ctx, &self.owner_languages())?;
         if let (Some(pending), Some(reservation)) = (&pending, reservation) {
             self.apply_migration(
@@ -203,11 +200,93 @@ impl PluginManager {
             )
             .await?;
         }
-        self.replace_containers(&ctx, plan, Gate::StartPeriod)
-            .await?;
+        self.replace_containers(&ctx, plan).await?;
         record.proxied = ctx.egress.is_some();
         self.store.save(&record)?;
         self.reconcile_running(&package, &record).await
+    }
+
+    /// Bot 插件的 Matrix 变量，令牌从旧容器读回。读不到时报错，容器还没动。
+    pub(in crate::plugin) async fn bot_vars_read_back(
+        &self,
+        package: &PluginPackage,
+        ctx: &InstallContext,
+        langs: &Languages,
+    ) -> Result<Option<MatrixVars>, InstallError> {
+        let manifest = &package.manifest;
+        if !is_bot(manifest) {
+            return Ok(None);
+        }
+        let mut vars = self.bot_vars(manifest, langs)?;
+        let mut probing = ctx.clone();
+        probing.matrix = Some(vars.clone());
+        let plan = render(package, &probing, langs)?;
+        let uses = token_uses(&plan, langs).map_err(|reason| cannot_read(langs, reason))?;
+        vars.access_token = self.read_token(&uses, langs).await?;
+        Ok(Some(vars))
+    }
+
+    fn bot_vars(&self, manifest: &Manifest, langs: &Languages) -> Result<MatrixVars, InstallError> {
+        let matrix = self.matrix()?;
+        let record = self.store.bots().load(&manifest.id)?;
+        let account = record.map(|record| record.account).ok_or_else(|| {
+            cannot_read(
+                langs,
+                l10n::text(langs, "plugin-settings-egress-bot-record-missing", &[]),
+            )
+        })?;
+        Ok(self.matrix_vars(&crate::matrix::ProvisionedBot {
+            device_id: String::new(),
+            access_token: PLACEHOLDER.to_owned(),
+            owner: matrix.user_id(&self.cfg.owner),
+            account,
+        }))
+    }
+
+    /// 所有引用令牌的变量都读到、而且一样才算数。没有服务引用它时不用读。
+    async fn read_token(
+        &self,
+        uses: &[TokenUse],
+        langs: &Languages,
+    ) -> Result<String, InstallError> {
+        let mut token: Option<String> = None;
+        for found in uses {
+            let info = self.engine.inspect_container(&found.container).await?;
+            let name = &found.container;
+            let info = info.ok_or_else(|| {
+                cannot_read(
+                    langs,
+                    l10n::text(
+                        langs,
+                        "plugin-settings-egress-old-container-gone",
+                        &[("container", name.as_str().into())],
+                    ),
+                )
+            })?;
+            let env = info.config.and_then(|c| c.env).unwrap_or_default();
+            let variable = &found.variable;
+            let value = found.read(&env).ok_or_else(|| {
+                cannot_read(
+                    langs,
+                    l10n::text(
+                        langs,
+                        "plugin-settings-egress-token-not-in-env",
+                        &[
+                            ("container", name.as_str().into()),
+                            ("variable", variable.as_str().into()),
+                        ],
+                    ),
+                )
+            })?;
+            if token.as_ref().is_some_and(|t| *t != value) {
+                return Err(cannot_read(
+                    langs,
+                    l10n::text(langs, "plugin-settings-egress-token-mismatch", &[]),
+                ));
+            }
+            token = Some(value);
+        }
+        Ok(token.unwrap_or_default())
     }
 }
 

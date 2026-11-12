@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures_util::future::BoxFuture;
-use iroh::{EndpointAddr, EndpointId, RelayUrl};
+use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use wonton_protocol::{
@@ -34,7 +34,6 @@ use wonton_protocol::{
 use wonton_tunnel::Allowlist;
 use wonton_tunnel::federation::{PeerStates, PeerStatus as FederationStatus};
 use wonton_tunnel::peer_pair::{PeerIdentity, PeerPairingCode};
-use wonton_tunnel::relays::canonical_url;
 
 use crate::plugin::languages::Languages;
 use crate::tunnel::Tunnel;
@@ -134,8 +133,8 @@ pub struct RejectedRequest {
 fn endpoint_addr(id: EndpointId, relays: &[String], addrs: &[SocketAddr]) -> EndpointAddr {
     let mut addr = EndpointAddr::new(id);
     for relay in relays {
-        if let Ok(relay) = relay.parse::<RelayUrl>() {
-            addr = addr.with_relay_url(canonical_url(relay));
+        if let Ok(relay) = relay.parse() {
+            addr = addr.with_relay_url(relay);
         }
     }
     for ip in addrs {
@@ -402,16 +401,6 @@ impl Peers {
         self.own.to_wire(&self.tunnel, (self.owner_display_name)())
     }
 
-    /// 一台服务器在联系人看来的样子（ADR-0050）：已配对时是转发组件给的状态，没配对或配对已经移除时为空。
-    pub fn contact_reach(&self, server_name: &str) -> Option<PeerStatus> {
-        let paired = self
-            .lock()
-            .peers
-            .get(server_name)
-            .is_some_and(|record| record.phase == Phase::Paired);
-        paired.then(|| self.forwarded_status(server_name))
-    }
-
     /// 本机的码：令牌一直是这一张，中继地址按当时的取。
     pub fn issue_code(&self) -> PeerCode {
         let inner = self.lock();
@@ -543,7 +532,7 @@ impl Peers {
                 owner_display_name: request.owner_display_name.clone(),
                 received_at_ms: request.received_at_ms,
                 conflicts_with: conflict(&inner, request),
-                detail: Some(endpoint_text(request.endpoint_id, langs)),
+                detail: Some(short_endpoint(request.endpoint_id)),
             })
             .collect::<Vec<_>>();
         let rejected = inner
@@ -555,7 +544,7 @@ impl Peers {
                 owner_user_id: rejected.owner_user_id.clone(),
                 owner_display_name: rejected.owner_display_name.clone(),
                 rejected_at_ms: rejected.rejected_at_ms,
-                detail: Some(endpoint_text(rejected.endpoint_id, langs)),
+                detail: Some(short_endpoint(rejected.endpoint_id)),
             })
             .collect::<Vec<_>>();
         PeersView {
@@ -573,7 +562,7 @@ impl Peers {
             Phase::Paired => self.forwarded_status(&record.server_name),
         };
         let text = if record.phase == Phase::AwaitingPeer {
-            endpoint_text(record.endpoint_id, langs)
+            short_endpoint(record.endpoint_id)
         } else {
             self.detail(record, langs)
         };
@@ -612,7 +601,7 @@ impl Peers {
                 "peers-endpoint-detail",
                 &[("id", id.into()), ("error", error.into())],
             ),
-            None => endpoint_text(record.endpoint_id, langs),
+            None => crate::l10n::text(langs, "peers-endpoint", &[("id", id.into())]),
         }
     }
 
@@ -636,18 +625,15 @@ impl Peers {
         } else {
             request.owner_display_name.clone()
         };
-        let text = format!(
-            "{}\n{}",
-            crate::l10n::text(
-                &langs,
-                "peers-new-request",
-                &[
-                    ("owner", who.into()),
-                    ("server", request.server_name.as_str().into()),
-                ],
-            ),
-            wonton_protocol::AppLink::Peers.to_url()
-        );
+        let text = crate::l10n::text(
+            &langs,
+            "peers-new-request",
+            &[
+                ("owner", who.into()),
+                ("server", request.server_name.as_str().into()),
+            ],
+        ) + "\n"
+            + &wonton_protocol::AppLink::Peers.to_url();
         let server_name = request.server_name.clone();
         tokio::spawn(async move {
             let content = serde_json::json!({"msgtype": "m.text", "body": text});
@@ -677,17 +663,8 @@ fn conflict(inner: &Inner, request: &PeerRequest) -> Option<String> {
     })
 }
 
-/// endpoint ID 前 8 位。“endpoint”这个词由文案加（`peers-endpoint`、`peers-endpoint-detail`），这里不带。
 fn short_endpoint(id: EndpointId) -> String {
-    id.to_string()[..8].to_owned()
-}
-
-fn endpoint_text(id: EndpointId, langs: &Languages) -> String {
-    crate::l10n::text(
-        langs,
-        "peers-endpoint",
-        &[("id", short_endpoint(id).into())],
-    )
+    format!("endpoint {}", &id.to_string()[..8])
 }
 
 /// `core/peers.json` 的形状。
@@ -720,5 +697,5 @@ fn read_store(path: &Path) -> Result<Stored, PeerStoreError> {
     }
 }
 
-/// 后台轮询的间隔（ADR-0050：扫码后先问一次，之后每 10 分钟一次；没问到时更快重问，见 `spawn_poll`）。
+/// 后台轮询的间隔（ADR-0050：扫码后先问一次，之后每 10 分钟一次）。
 pub(crate) const OUTCOME_POLL: Duration = Duration::from_secs(600);

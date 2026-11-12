@@ -1,7 +1,5 @@
 package app.wonton.ui
 
-import android.content.Context
-import android.icu.text.ListFormatter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -12,7 +10,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -21,13 +18,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -35,14 +31,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalUriHandler
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.PluginDetail
-import app.wonton.protocol.PluginDetailOutcome
 import app.wonton.protocol.PluginImage
+import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginState
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskState
@@ -72,24 +65,18 @@ private const val SCREENSHOT_RATIO = 9f / 19.5f
 @Composable
 fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, route: PluginRoute) {
     var attempt by remember { mutableIntStateOf(0) }
-    var loaded by remember(route) { mutableStateOf<Result<PluginDetail>?>(null) }
+    var pluginId by remember(route) { mutableStateOf<String?>(null) }
     var toggled by remember(route) { mutableStateOf<PluginDetail?>(null) }
-    // 主屏打开的插件先知道 ID：取详情的请求还没回来、任务就做完时，也要看得到“进行中 → 结束”这一步。
-    var pluginId by remember(route) { mutableStateOf((route as? PluginRoute.Installed)?.id) }
-    LaunchedEffect(route, attempt) {
-        loaded = null
+    val loaded by produceState<Result<PluginDetail>?>(null, route, attempt) {
+        value = null
         toggled = null
-        loaded = try {
-            when (val outcome = plugins.core.pluginDetail(route.coreRoute)) {
-                is PluginDetailOutcome.Close -> {
-                    navigation.detail = null
-                    null
-                }
-                is PluginDetailOutcome.Detail -> {
-                    pluginId = outcome.detail.id
-                    Result.success(outcome.detail)
-                }
-            }
+        value = try {
+            Result.success(
+                when (route) {
+                    is PluginRoute.Store -> plugins.core.storePlugin(route.source)
+                    is PluginRoute.Installed -> plugins.core.installedPlugin(route.id)
+                }.also { pluginId = it.id },
+            )
         } catch (failure: CoreException) {
             Result.failure(failure)
         }
@@ -97,20 +84,11 @@ fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, rout
     val task = plugins.viewModel.tasks.firstOrNull { it.id == pluginId }
     val working = task?.state is PluginTaskState.Running
     var wasWorking by remember { mutableStateOf(false) }
-    // 详情只在打开时取一次，任务做完要重取，按钮才对。要不要关这一页由核心判断：插件已经卸掉了，核心让关。
+    // 详情只在打开时取一次，任务做完要重取，按钮才对。主屏上打开的插件卸载以后，这一页没有东西可看了。
     LaunchedEffect(working) {
         if (wasWorking && !working) {
-            try {
-                when (val outcome = plugins.core.pluginDetailAfterTask(route.coreRoute)) {
-                    is PluginDetailOutcome.Close -> navigation.detail = null
-                    is PluginDetailOutcome.Detail -> {
-                        toggled = null
-                        loaded = Result.success(outcome.detail)
-                    }
-                }
-            } catch (failure: CoreException) {
-                loaded = Result.failure(failure)
-            }
+            val removed = task?.operation == PluginOperation.UNINSTALL && task.state is PluginTaskState.Succeeded
+            if (route is PluginRoute.Installed && removed) navigation.detail = null else attempt++
         }
         wasWorking = working
     }
@@ -135,29 +113,15 @@ private fun DetailContent(
     onToggled: (PluginDetail) -> Unit,
 ) {
     val colors = WontonTheme.colors
-    // 和 Bot 的已装应用在最上面有一节“资料”（ADR-0044）；家人线的“谁能用”以后加在这一节下面。
-    val chat = rememberChat(plugins.core)
-    val bot = detail.installed?.let { installed ->
-        chat.bots.firstOrNull { it.bot.pluginId == installed.id && it.bot.bot == "default" }
-    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         val working = task?.state is PluginTaskState.Running
-        if (bot != null) {
-            BotProfileSection(bot, plugins)
-            BotContactsEntry { navigation.contacts = bot.bot }
-        }
-        DetailHeader(detail, plugins, detailAction(detail, working, navigation, LocalContext.current))
+        DetailHeader(detail, plugins, detailAction(detail, working, navigation))
         task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {
-            TaskRow(
-                it,
-                plugins,
-                { navigation.confirmation = reconfirmation(it, plugins) },
-                navigation.checkInstalled,
-            )
+            TaskRow(it, plugins) { navigation.confirmation = reconfirmation(it, plugins) }
         }
         detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
         detail.installed?.let { PluginTabPinControls(it) }
@@ -167,18 +131,17 @@ private fun DetailContent(
             }
         }
         detail.about?.let { Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor()) }
-        detail.installed?.let { InstalledDetailSections(detail, plugins, navigation, onToggled) }
-        detail.shares?.let { PluginSharesSection(detail.id, it, plugins, onToggled) }
-        DetailSections(detail, plugins, onToggled)
+        detail.installed?.let { InstalledDetailSections(detail, plugins, onToggled) }
+        DetailSections(detail)
         detail.installed?.takeIf { it.removable && !working }?.let { installed ->
             WontonButton(
-                stringResource(R.string.install_change_version),
+                "换版本",
                 { navigation.changingVersion = installed.id },
                 Modifier.fillMaxWidth(),
                 WontonButtonKind.SECONDARY,
             )
             WontonButton(
-                stringResource(R.string.plugin_uninstall_action),
+                "卸载",
                 { navigation.uninstalling = UninstallTarget(installed.id, installed.title) },
                 Modifier.fillMaxWidth(),
                 WontonButtonKind.DANGER,
@@ -194,7 +157,7 @@ private fun SaveGrants(plugins: PluginsState, id: String, folders: List<String>,
     val scope = rememberCoroutineScope()
     var revoking by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
-    DetailSection(stringResource(R.string.plugin_save_folders)) {
+    DetailSection("能存文件的文件夹") {
         folders.forEach { folder ->
             Row(
                 horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
@@ -207,7 +170,7 @@ private fun SaveGrants(plugins: PluginsState, id: String, folders: List<String>,
                     color = colors.textPrimary.toColor(),
                 )
                 WontonButton(
-                    stringResource(R.string.plugin_save_revoke),
+                    "撤销",
                     {
                         revoking = true
                         problem = null
@@ -234,35 +197,14 @@ private fun SaveGrants(plugins: PluginsState, id: String, folders: List<String>,
 private fun InstalledDetailSections(
     detail: PluginDetail,
     plugins: PluginsState,
-    navigation: PluginNavigation,
     onToggled: (PluginDetail) -> Unit,
 ) {
     val installed = detail.installed ?: return
-    if (detail.hasSettings) {
-        SettingsEntry(detail, navigation)
-    }
-    SecretSection(detail, plugins, onToggled)
     detail.lanWebui?.let { InstalledLanWebui(plugins, detail.id, it, onToggled) }
-    if (installed.tunnelPorts.isNotEmpty()) PortMappingSection(plugins, installed)
     if (detail.saveGrants.isNotEmpty()) SaveGrants(plugins, detail.id, detail.saveGrants, onToggled)
     ToolPolicySection(plugins, detail.id, detail.version)
-    MediaPermissionSection(plugins, detail.id)
     if (installed.writtenBy != null) {
         AskEveryUpdateSection(plugins, detail.id, detail.askEveryUpdate ?: false, onToggled)
-    }
-}
-
-/** 插件设置（ADR-0077）的入口行，点开整页的原生设置表单。 */
-@Composable
-private fun SettingsEntry(detail: PluginDetail, navigation: PluginNavigation) {
-    DetailSection(stringResource(R.string.plugin_settings_section)) {
-        WontonGroup {
-            WontonRow(
-                stringResource(R.string.plugin_settings_open),
-                showsForward = true,
-                onClick = { navigation.settings = PluginSettingsTarget(detail.id, detail.title) },
-            )
-        }
     }
 }
 
@@ -280,14 +222,14 @@ private fun AskEveryUpdateSection(
     var isOn by remember(id) { mutableStateOf(enabled) }
     var busy by remember(id) { mutableStateOf(false) }
     var problem by remember(id) { mutableStateOf<Problem?>(null) }
-    DetailSection(stringResource(R.string.plugin_updates_section)) {
+    DetailSection(tabText("更新", "Updates")) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                stringResource(R.string.plugin_ask_every_update),
+                tabText("每次都问", "Ask every update"),
                 Modifier.weight(1f),
                 style = WontonTheme.typography.body,
                 color = WontonTheme.colors.textPrimary.toColor(),
@@ -313,20 +255,16 @@ private fun AskEveryUpdateSection(
 }
 
 /** 标题旁的按钮：没装的“获取”，能升级的“更新”，装着的“打开”。 */
-private fun detailAction(
-    detail: PluginDetail, working: Boolean, navigation: PluginNavigation, context: Context,
-): DetailAction? {
+private fun detailAction(detail: PluginDetail, working: Boolean, navigation: PluginNavigation): DetailAction? {
     val installed = detail.installed
     val source = detail.source
     val entry = installed?.entries?.firstOrNull()
     return when {
-        installed?.upgrade != null -> DetailAction(
-            context.getString(R.string.install_action_upgrade), !installed.isBusy,
-        ) { navigation.confirmation = PluginConfirmation.Upgrade(installed.id) }
-        installed != null -> entry?.let {
-            DetailAction(context.getString(R.string.store_open), !installed.isBusy) { navigation.open(it) }
+        installed?.upgrade != null -> DetailAction("更新", !installed.isBusy) {
+            navigation.confirmation = PluginConfirmation.Upgrade(installed.id)
         }
-        source != null -> DetailAction(context.getString(R.string.store_get), detail.blocked == null && !working) {
+        installed != null -> entry?.let { DetailAction("打开", !installed.isBusy) { navigation.open(it) } }
+        source != null -> DetailAction("获取", detail.blocked == null && !working) {
             navigation.confirmation = PluginConfirmation.Install(source)
         }
         else -> null
@@ -352,7 +290,7 @@ private fun DetailHeader(detail: PluginDetail, plugins: PluginsState, action: De
                     }
                     detail.installed?.writtenBy?.let { writer ->
                         Text(
-                            stringResource(R.string.plugin_written_by_agent, writer.title),
+                            tabText("你的 Agent · ${writer.title}", "Your agent · ${writer.title}"),
                             style = WontonTheme.typography.caption,
                             color = colors.textSecondary.toColor(),
                         )
@@ -374,39 +312,32 @@ private fun Screenshot(source: PluginImage, plugins: PluginsState) {
     val shape = RoundedCornerShape(WontonTheme.radii.card)
     val height = WontonTheme.size.screenshot
     if (image != null) {
-        Image(
-            image,
-            contentDescription = stringResource(R.string.plugin_screenshot),
-            Modifier.height(height).clip(shape),
-            contentScale = ContentScale.Fit,
-        )
+        Image(image, contentDescription = null, Modifier.height(height).clip(shape), contentScale = ContentScale.Fit)
     } else {
         Box(
             Modifier.height(height).aspectRatio(SCREENSHOT_RATIO).background(colors.surfaceSubtle.toColor(), shape),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                WontonIcon.ImageBroken,
-                contentDescription = stringResource(R.string.plugin_screenshot),
-                tint = colors.textSecondary.toColor(),
-            )
+            Icon(WontonIcon.ImageBroken, contentDescription = null, tint = colors.textSecondary.toColor())
         }
     }
 }
 
 /** 更新说明、权限、要求和其他信息。 */
 @Composable
-private fun DetailSections(detail: PluginDetail, plugins: PluginsState, onToggled: (PluginDetail) -> Unit) {
+private fun DetailSections(detail: PluginDetail) {
     val colors = WontonTheme.colors
     detail.releaseNotes?.let { notes ->
-        DetailSection(stringResource(R.string.install_release_notes)) {
+        DetailSection("新内容") {
             Text(detail.version, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
             Text(notes, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
         }
     }
-    PluginPermissionSection(detail, plugins, onToggled)
+    if (detail.permissions.isNotEmpty()) {
+        DetailSection("权限") { detail.permissions.forEach { PermissionRow(it) } }
+    }
     if (detail.requirements.isNotEmpty()) {
-        DetailSection(stringResource(R.string.plugin_requirements)) {
+        DetailSection("要求") {
             detail.requirements.forEach { requirement ->
                 Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                     LineIcon(WontonIcon.Check, colors.textSecondary.toColor())
@@ -415,25 +346,21 @@ private fun DetailSections(detail: PluginDetail, plugins: PluginsState, onToggle
             }
         }
     }
-    DetailSection(stringResource(R.string.plugin_info)) { DetailInfo(detail) }
+    DetailSection("信息") { DetailInfo(detail) }
 }
 
 @Composable
 private fun DetailInfo(detail: PluginDetail) {
     val uris = LocalUriHandler.current
-    val tagList = ListFormatter.getInstance(LocalConfiguration.current.locales[0])
     val info = listOfNotNull(
-        stringResource(R.string.settings_version) to detail.version,
-        detail.tags.takeIf { it.isNotEmpty() }?.let { stringResource(R.string.plugin_tags) to tagList.format(it) },
-        detail.author?.let { stringResource(R.string.plugin_author) to it.name },
-        detail.license?.let { stringResource(R.string.plugin_license) to it },
-        detail.source?.let { stringResource(R.string.plugin_source) to it },
-        detail.stars?.let { stringResource(R.string.plugin_stars) to it.toString() },
+        "版本" to detail.version,
+        detail.tags.takeIf { it.isNotEmpty() }?.let { "标签" to it.joinToString("、") },
+        detail.author?.let { "作者" to it.name },
+        detail.license?.let { "许可证" to it },
+        detail.source?.let { "来源" to it },
+        detail.stars?.let { "星标" to it.toString() },
     )
-    val links = listOfNotNull(
-        detail.homepage?.let { stringResource(R.string.plugin_homepage) to it },
-        detail.repository?.let { stringResource(R.string.plugin_repository) to it },
-    )
+    val links = listOfNotNull(detail.homepage?.let { "主页" to it }, detail.repository?.let { "代码仓库" to it })
     WontonGroup {
         info.forEachIndexed { index, (title, value) ->
             if (index > 0) WontonSeparator()

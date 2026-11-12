@@ -155,7 +155,7 @@ async fn it_ends_only_when_the_last_device_hands_back() {
     s.bus.end_takeover(&notes(), PHONE);
     assert_still_held(&s, &call).await;
 
-    s.bus.end_device_takeovers("tablet");
+    s.bus.end_device_takeovers("device:tablet");
     let card = s.cards.wait_for(1).await;
     s.answer(&card.id, Answer::Reject).unwrap();
     call.await.unwrap();
@@ -187,8 +187,6 @@ async fn a_plugin_that_stops_ends_the_takeover() {
     );
     s.manager
         .mcp_for_test(&notes(), "http://127.0.0.1:9/mcp".to_owned());
-    // MCP 服务自己的容器也停了。
-    s.manager.serving_for_test(&notes(), &[]);
 
     tokio::time::timeout(Duration::from_secs(5), async {
         while takeovers_audit(&s).len() < 2 {

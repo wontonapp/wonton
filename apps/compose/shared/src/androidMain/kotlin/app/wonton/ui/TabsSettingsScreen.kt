@@ -21,7 +21,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -34,7 +33,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -42,7 +40,6 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.zIndex
 import app.wonton.protocol.Action
-import app.wonton.protocol.PanelScope
 import app.wonton.protocol.TabCandidate
 import app.wonton.protocol.TabItem
 import app.wonton.protocol.TabRef
@@ -70,19 +67,13 @@ private const val DRAG_HANDLE_INSET = 1f / 6f
 @Composable
 fun TabsSettingsScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
     var adding by remember { mutableStateOf(false) }
-    var editingPanel by remember { mutableStateOf(false) }
-    val editor = if (editingPanel) rememberChatPanelState(PanelEdge.TOP, PanelScope.Main) else null
-    if (editor != null) {
-        SideEffect { editor.feed(viewModel.panel, viewModel.panelSelected) }
-        ChatPanelEditor(editor, LocalTabs.current) { editingPanel = false }
-    }
     if (adding) {
         TabCandidatesScreen(viewModel) { adding = false }
         return
     }
     BackHandler(onBack = onBack)
     val list = rememberLazyListState()
-    WontonScreen(bar = { TabSettingsBar(stringResource(R.string.settings_nav_bar), onBack) }) {
+    WontonScreen(bar = { TabSettingsBar(tabText("底栏", "Tab bar"), onBack) }) {
         LazyColumn(
             state = list,
             modifier = Modifier.fillMaxSize().padding(horizontal = WontonTheme.spacing.pageInset),
@@ -90,18 +81,11 @@ fun TabsSettingsScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             item(key = "labels") { WontonGroup { TabLabelsRow(viewModel.labels) } }
-            item(key = "panel") {
-                WontonGroup {
-                    WontonRow(stringResource(R.string.panel_edit), showsForward = true) { editingPanel = true }
-                }
-            }
             item(key = "current") { CurrentTabsGroup(viewModel.items, list) }
             if (viewModel.candidates.isNotEmpty()) {
                 item(key = "add") {
                     WontonGroup {
-                        WontonRow(
-                            stringResource(R.string.tab_add_more), showsForward = true, onClick = { adding = true },
-                        )
+                        WontonRow(tabText("添加更多", "Add more"), showsForward = true, onClick = { adding = true })
                     }
                 }
             }
@@ -113,7 +97,7 @@ fun TabsSettingsScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
 @Composable
 private fun TabLabelsRow(visible: Boolean) {
     val tabs = LocalTabs.current
-    val title = stringResource(R.string.tab_show_labels)
+    val title = tabText("显示文字", "Show labels")
     Row(
         Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
@@ -197,8 +181,8 @@ private fun CurrentTabsGroup(items: List<TabItem>, list: LazyListState) {
 @Composable
 private fun TabSettingsRow(item: TabItem, index: Int, count: Int, modifier: Modifier) {
     val tabs = LocalTabs.current
-    val moveUp = stringResource(R.string.tab_move_up)
-    val moveDown = stringResource(R.string.tab_move_down)
+    val moveUp = tabText("上移", "Move up")
+    val moveDown = tabText("下移", "Move down")
     val colors = WontonTheme.colors
     Row(
         modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
@@ -220,7 +204,7 @@ private fun TabSettingsRow(item: TabItem, index: Int, count: Int, modifier: Modi
         Text(item.tabTitle(), Modifier.weight(1f).padding(vertical = WontonTheme.spacing.s12),
             style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
         if (item.removable) {
-            WontonIconButton(WontonIcon.Trash, stringResource(R.string.tab_unpin_from_bar),
+            WontonIconButton(WontonIcon.Trash, tabText("从底栏移除", "Remove from tab bar"),
                 { tabs.send(Action.UnpinTab(item.tab)) }, tint = colors.danger.toColor())
         }
     }
@@ -242,7 +226,7 @@ private fun TabDragHandle() {
 @Composable
 private fun TabCandidatesScreen(viewModel: TabsViewModel, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
-    WontonScreen(bar = { TabSettingsBar(stringResource(R.string.tab_add_to_bar), onBack) }) {
+    WontonScreen(bar = { TabSettingsBar(tabText("添加到底栏", "Add to tab bar"), onBack) }) {
         LazyColumn(
             Modifier.fillMaxSize().padding(horizontal = WontonTheme.spacing.pageInset),
             contentPadding = wontonContentPaddingValues(),
@@ -265,7 +249,7 @@ private fun TabSettingsBar(title: String, onBack: () -> Unit) {
 private fun TabCandidateRow(candidate: TabCandidate) {
     val tabs = LocalTabs.current
     val plugin = candidate.plugin
-    val title = if (plugin == null) stringResource(R.string.tab_settings) else {
+    val title = if (plugin == null) tabText("设置", "Settings") else {
         plugin.pageTitle?.let { "${plugin.title} · $it" } ?: plugin.title
     }
     Row(
@@ -275,13 +259,11 @@ private fun TabCandidateRow(candidate: TabCandidate) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
-        // 装饰：图标旁边就是行标题。
         if (plugin != null) PluginIconImage(plugin.icon, WontonTheme.size.icon, tabs.plugins)
         else Icon(WontonIcon.Settings, null, Modifier.size(WontonTheme.size.icon),
             tint = WontonTheme.colors.textPrimary.toColor())
         Text(title, Modifier.weight(1f), style = WontonTheme.typography.body,
             color = WontonTheme.colors.textPrimary.toColor())
-        // 装饰：整行可点，加号只表示点了会固定。
         Icon(WontonIcon.Add, null, Modifier.size(WontonTheme.size.icon),
             tint = WontonTheme.colors.textPrimary.toColor())
     }
@@ -291,8 +273,8 @@ private fun TabCandidateRow(candidate: TabCandidate) {
 internal fun TabsConfigurationProblem(viewModel: TabsViewModel) {
     viewModel.problem?.let {
         ProblemNotice(Problem(
-            stringResource(R.string.tab_settings_unreadable),
-            stringResource(R.string.tab_defaults_shown),
+            tabText("读不了底栏设置", "Could not read tab settings"),
+            tabText("已显示默认底栏。修改底栏后会重新保存设置。", "Showing default tabs. Changes will save the settings again."),
             it.message,
         ))
     }

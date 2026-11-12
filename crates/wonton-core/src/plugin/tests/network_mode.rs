@@ -390,10 +390,7 @@ async fn network_mode_upgrade_recreates_the_target_and_every_sidecar() {
     )
     .unwrap();
     let before = docker.writes().len();
-    manager
-        .upgrade_checked(next, &[], &[], false, Default::default())
-        .await
-        .unwrap();
+    manager.upgrade_checked(next, &[], false).await.unwrap();
     let writes = docker.writes()[before..].to_vec();
     for service in ["target", "sidecar"] {
         let name = container_name("app-test", service);

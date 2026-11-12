@@ -5,11 +5,12 @@
 //! 不是只信任核心时，这个服务的局域网端口；`sso: none` 把网页的端口列进 `lan.ports` 时，这个端口。其余的局域网端口身份
 //! 由插件自己验证（ADR-0019），装好就开。
 
+use std::net::IpAddr;
 use std::sync::Arc;
 
-use wonton_protocol::{LanPort, LanProtocol, LanWebuiOffer, PluginDetail, PortProtocol, PortSpec};
+use wonton_protocol::{LanPort, LanProtocol, LanWebuiOffer, PluginDetail};
 
-use super::select::Plan;
+use super::{LanPortSpec, Protocol};
 use crate::l10n;
 use crate::plugin::core_address;
 use crate::plugin::languages::Languages;
@@ -41,7 +42,7 @@ impl Risk {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Switched {
-    pub ports: Vec<PortSpec>,
+    pub ports: Vec<LanPortSpec>,
     risk: Risk,
 }
 
@@ -57,13 +58,12 @@ impl Switched {
     }
 }
 
-pub(super) fn lan_port(port: &PortSpec) -> LanPort {
+pub(super) fn lan_port(port: &LanPortSpec) -> LanPort {
     LanPort {
         port: port.port,
         protocol: match port.protocol {
-            PortProtocol::Tcp => LanProtocol::Tcp,
-            PortProtocol::Udp => LanProtocol::Udp,
-            PortProtocol::Other => LanProtocol::Other,
+            Protocol::Tcp => LanProtocol::Tcp,
+            Protocol::Udp => LanProtocol::Udp,
         },
     }
 }
@@ -93,12 +93,12 @@ pub fn switched(package: &PluginPackage) -> Option<Switched> {
     }
     let webui = m.webui.as_ref()?;
     let ports = m.lan.iter().flat_map(|lan| &lan.ports);
-    let (ports, risk): (Vec<PortSpec>, _) = if impersonable(package) {
+    let (ports, risk): (Vec<LanPortSpec>, _) = if impersonable(package) {
         let ports = ports.filter(|p| p.service == webui.service);
         (ports.cloned().collect(), Risk::Impersonate)
     } else if webui.sso == Sso::None {
         let ports = ports.filter(|p| {
-            p.service == webui.service && p.port == webui.port && p.protocol == PortProtocol::Tcp
+            p.service == webui.service && p.port == webui.port && p.protocol == Protocol::Tcp
         });
         (ports.cloned().collect(), Risk::Register)
     } else {
@@ -112,7 +112,7 @@ pub fn open_ports_of(
     manifest: &Manifest,
     switched: Option<&Switched>,
     enabled: bool,
-) -> Vec<PortSpec> {
+) -> Vec<LanPortSpec> {
     let closed = switched.filter(|_| !enabled);
     let ports = manifest.lan.iter().flat_map(|lan| &lan.ports);
     ports
@@ -121,7 +121,7 @@ pub fn open_ports_of(
         .collect()
 }
 
-pub fn open_ports(package: &PluginPackage, enabled: bool) -> Vec<PortSpec> {
+pub fn open_ports(package: &PluginPackage, enabled: bool) -> Vec<LanPortSpec> {
     open_ports_of(&package.manifest, switched(package).as_ref(), enabled)
 }
 
@@ -175,7 +175,7 @@ impl PluginManager {
         if listed.lan_webui == enabled && !self.lan.is_degraded(id) {
             return Ok(());
         }
-        let plan = self.addresses_for(&listed, enabled, langs).await?;
+        let addresses = self.addresses_for(&listed, enabled, langs).await?;
         if !self.begin_rebuild(id) {
             return Err(InstallError::Conflict(l10n::text(
                 langs,
@@ -183,7 +183,7 @@ impl PluginManager {
                 &[("id", id.to_string().into())],
             )));
         }
-        let result = self.apply_lan_webui(id, enabled, &plan, langs).await;
+        let result = self.apply_lan_webui(id, enabled, &addresses, langs).await;
         let outcome = match result {
             Ok(deployed) => {
                 tracing::info!(plugin = %id, enabled, "主人改了网页的局域网端口开关");
@@ -206,7 +206,7 @@ impl PluginManager {
             Err(e) => {
                 // 比如端口被宿主的服务占着：退回原来的样子，开关不算改成。
                 match self
-                    .apply_lan_webui(id, listed.lan_webui, &plan, langs)
+                    .apply_lan_webui(id, listed.lan_webui, &addresses, langs)
                     .await
                 {
                     Ok(deployed) => self.lan_webui_applied(id, listed.lan_webui, deployed),
@@ -226,22 +226,23 @@ impl PluginManager {
         outcome
     }
 
-    /// 开关改成 `enabled` 后端口开在哪、告诉手机哪。有端口要开时，和新装一样核对冲突和地址。
-    pub(in crate::plugin) async fn addresses_for(
+    /// 开关改成 `enabled` 后端口开在哪里。有端口要开时，和新装一样核对冲突和地址。
+    async fn addresses_for(
         &self,
         listed: &Listed,
         enabled: bool,
         langs: &Languages,
-    ) -> Result<Plan, InstallError> {
+    ) -> Result<Vec<IpAddr>, InstallError> {
         let open = listed.open_ports(enabled);
         if open.is_empty() {
-            return Ok(Plan::default());
+            return Ok(Vec::new());
         }
         if let Some(conflict) = self.lan_conflict(&listed.manifest, &open, langs) {
             return Err(InstallError::Conflict(conflict));
         }
         let detected = self.detect_lan(langs).await?;
-        detected.result.map_err(|p| self.unavailable(p, langs))
+        let bound = detected.result.map_err(|p| self.unavailable(p, langs))?;
+        Ok(bound.iter().map(|b| b.ip).collect())
     }
 
     /// 存下开关，重建 `lan.ports` 和插值用到地址的服务：开着的多发布端口，关了的连 `--lan` 网络也不接。
@@ -249,7 +250,7 @@ impl PluginManager {
         &self,
         id: &PluginId,
         enabled: bool,
-        plan: &Plan,
+        addresses: &[IpAddr],
         langs: &Languages,
     ) -> Result<Deployed, InstallError> {
         let mut record = self
@@ -260,7 +261,7 @@ impl PluginManager {
         self.store.save(&record)?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
-        self.rebuild_lan(&package, &record, plan).await?;
+        self.rebuild_lan(&package, &record, addresses).await?;
         self.reconcile_running(&package, &record).await
     }
 

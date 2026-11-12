@@ -3,7 +3,6 @@
 use std::time::Duration;
 
 use wonton_client::{Action, ChatAccount, ChatFailure, ChatSync, MessageSummary};
-use wonton_protocol::TimelineTarget;
 
 use super::support::{Home, Phone};
 use super::{accept_the_bots_invite, chat_with_the_bot};
@@ -119,10 +118,7 @@ async fn switching_back_keeps_the_first_servers_chat() {
     let a_bot = a.bot("hermes", "Hermes").await;
     let a_room = accept_the_bots_invite(&a, &phone, &a_bot).await;
     let timeline = phone
-        .subscribe_timeline(TimelineTarget {
-            room_id: a_room.to_string(),
-            thread_root: None,
-        })
+        .subscribe_timeline(a_room.to_string())
         .await
         .expect("打开 A 的房间");
 

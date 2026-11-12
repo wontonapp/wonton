@@ -35,7 +35,7 @@ pub(super) struct ErrorDetail {
 const JWT_LOGIN: &str = "org.matrix.login.jwt";
 
 /// 要令牌的整个请求（连上、发出、读完回应）最多等这么久，和 matrix-sdk 默认的请求超时一样。隧道或本地代理
-/// 收下请求却一直不回时，登录按“传输不可用”失败、过一会儿再试（见 `connect`），不会一直停在“正在登录”。
+/// 收下请求却一直不回时，登录按“传输不可用”失败，回到前台或隧道重连时再试，不会一直停在“正在登录”。
 pub(crate) const LOGIN_TOKEN_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 本地代理的地址，带上本次启动的会话凭据，给 HTTP 客户端用。

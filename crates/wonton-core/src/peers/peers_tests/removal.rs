@@ -7,7 +7,7 @@ use super::*;
 #[tokio::test]
 async fn a_peer_removal_keeps_the_record_as_removed() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
     pair(&a, &b).await;
 
     // 转发组件报过“已连上”：最近连上的时刻记在这一行上。
@@ -40,7 +40,7 @@ async fn a_peer_removal_keeps_the_record_as_removed() {
 #[tokio::test]
 async fn a_handshake_rejection_marks_the_record_like_a_notification() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
     pair(&a, &b).await;
 
     // b 删了，通知没送到 a：只有 a 的转发组件探活时被 b 的服务器名单拒绝。
@@ -66,7 +66,7 @@ async fn a_handshake_rejection_marks_the_record_like_a_notification() {
 #[tokio::test]
 async fn the_owner_removes_a_removed_peer_for_good() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
     pair(&a, &b).await;
 
     a.peers.remove("b.example.internal").await.unwrap();
@@ -83,7 +83,7 @@ async fn the_owner_removes_a_removed_peer_for_good() {
 #[tokio::test]
 async fn a_removed_peer_stays_removed_after_a_restart() {
     let mut a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
     pair(&a, &b).await;
     b.peers.remove("a.example.internal").await.unwrap();
     a.wait_removed("b.example.internal").await;
@@ -104,7 +104,7 @@ async fn a_removed_peer_stays_removed_after_a_restart() {
 #[tokio::test]
 async fn a_removed_peer_can_pair_again_by_scanning_our_code() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
     pair(&a, &b).await;
     a.peers.remove("b.example.internal").await.unwrap();
     b.wait_removed("a.example.internal").await;
@@ -129,7 +129,7 @@ async fn a_removed_peer_can_pair_again_by_scanning_our_code() {
 #[tokio::test]
 async fn a_removed_peer_can_pair_again_by_scanning_it() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
     pair(&a, &b).await;
     b.peers.remove("a.example.internal").await.unwrap();
     a.wait_removed("b.example.internal").await;

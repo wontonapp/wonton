@@ -32,10 +32,7 @@ pub struct GpuSpec {
 /// 服务名是否存在由 [`super::package`] 对照 compose 检查。
 pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
     let invalid = |message: String| Err(ManifestError::Invalid(message));
-    let optional = manifest
-        .optional_permissions
-        .contains_key(&Permission::DevicesGpu);
-    let permitted = manifest.permissions.contains(&Permission::DevicesGpu) || optional;
+    let permitted = manifest.permissions.contains(&Permission::DevicesGpu);
     let wants = manifest.requirements.as_ref().and_then(|r| r.gpu.as_ref());
     match (&manifest.gpu, permitted) {
         (Some(_), false) => {
@@ -49,13 +46,6 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
         }
         _ => {}
     }
-    if optional && wants.is_some_and(|gpu| gpu.need == GpuNeed::Required) {
-        return invalid(text(
-            langs,
-            "plugin-install-optional-gpu-required",
-            &[("permission", "devices.gpu".into())],
-        ));
-    }
     if let Some(gpu) = &manifest.gpu {
         let mut seen = BTreeSet::new();
         if gpu.services.is_empty() || !gpu.services.iter().all(|s| seen.insert(s)) {
@@ -65,14 +55,8 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
     Ok(())
 }
 
-/// 插件要不要显卡：没申请 `devices.gpu` 的不要；可选的按 `optional`；必需的而没写 `requirements.gpu` 的按 `required`。
+/// 插件要不要显卡：没申请 `devices.gpu` 的不要；申请了而没写 `requirements.gpu` 的按 `required`。
 pub fn requirement(manifest: &Manifest) -> Option<GpuNeed> {
-    if manifest
-        .optional_permissions
-        .contains_key(&Permission::DevicesGpu)
-    {
-        return Some(GpuNeed::Optional);
-    }
     manifest
         .permissions
         .contains(&Permission::DevicesGpu)
@@ -452,15 +436,11 @@ impl PluginManager {
     pub(super) async fn gpu_grant(
         &self,
         manifest: &Manifest,
-        granted: &[Permission],
         langs: &Languages,
     ) -> Result<Option<GpuGrant>, InstallError> {
         let Some(requirement) = requirement(manifest) else {
             return Ok(None);
         };
-        if !granted.contains(&Permission::DevicesGpu) {
-            return Ok(None);
-        }
         match self.gpu_fit(manifest, langs).await? {
             Ok(grant) => Ok(Some(grant)),
             Err(problem) if requirement == GpuNeed::Optional => {
@@ -475,7 +455,6 @@ impl PluginManager {
     pub(super) async fn gpu_preview(
         &self,
         manifest: &Manifest,
-        enabled: bool,
         langs: &Languages,
     ) -> Result<GpuPreview, InstallError> {
         let Some(requirement) = requirement(manifest) else {
@@ -484,12 +463,6 @@ impl PluginManager {
                 blocked: None,
             });
         };
-        if !enabled {
-            return Ok(GpuPreview {
-                notice: None,
-                blocked: None,
-            });
-        }
         let services = manifest
             .gpu
             .as_ref()
@@ -544,4 +517,273 @@ impl PluginManager {
 }
 
 #[cfg(test)]
-pub(crate) use super::gpu_fake_host as fake_host;
+pub(crate) mod fake_host {
+    //! 测试用的假宿主：在临时目录里摆出 sysfs 和 `/dev` 的相关部分。设备节点用普通文件代替（测试进程不能
+    //! mknod），所属的组就是测试进程的组。
+
+    use std::fs;
+    use std::path::Path;
+
+    use super::HostPaths;
+
+    pub struct FakeHost {
+        pub dir: tempfile::TempDir,
+    }
+
+    impl FakeHost {
+        pub fn empty() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            fs::create_dir_all(dir.path().join("sys/class/drm")).unwrap();
+            fs::create_dir_all(dir.path().join("sys/bus/pci/devices")).unwrap();
+            fs::create_dir_all(dir.path().join("dev")).unwrap();
+            Self { dir }
+        }
+
+        /// npchy 那样的 AMD 主机：amdgpu 驱动、KFD、一个渲染节点和一个显示节点。
+        pub fn amd() -> Self {
+            let host = Self::empty();
+            host.pci("0000:05:00.0", "0x1002", "0x038000", Some("amdgpu"));
+            host.render_node("renderD128", "0x1002", "0000:05:00.0");
+            fs::create_dir_all(host.sys().join("class/kfd/kfd")).unwrap();
+            host.dev_node("kfd");
+            host.dev_node("dri/card1");
+            host.dev_node("dri/renderD128");
+            fs::create_dir_all(host.dev().join("dri/by-path")).unwrap();
+            host
+        }
+
+        /// 加载了 NVIDIA 官方驱动的主机：有 `nvidia` 内核模块，渲染节点属于 NVIDIA。
+        pub fn nvidia() -> Self {
+            let host = Self::empty();
+            host.pci("0000:01:00.0", "0x10de", "0x030000", Some("nvidia"));
+            host.render_node("renderD128", "0x10de", "0000:01:00.0");
+            fs::create_dir_all(host.sys().join("module/nvidia")).unwrap();
+            host
+        }
+
+        pub fn sys(&self) -> std::path::PathBuf {
+            self.dir.path().join("sys")
+        }
+
+        pub fn dev(&self) -> std::path::PathBuf {
+            self.dir.path().join("dev")
+        }
+
+        /// 核心直接跑在宿主上：看得到 `/dev`。
+        pub fn paths(&self) -> HostPaths {
+            HostPaths {
+                dev: Some(self.dev()),
+                sys: self.sys(),
+                proc: self.sys().with_file_name("proc"),
+            }
+        }
+
+        /// 核心在容器里，compose 没有挂载宿主的 `/dev`。
+        pub fn paths_without_dev(&self) -> HostPaths {
+            HostPaths {
+                dev: None,
+                sys: self.sys(),
+                proc: self.sys().with_file_name("proc"),
+            }
+        }
+
+        pub fn pci(&self, address: &str, vendor: &str, class: &str, driver: Option<&str>) {
+            let device = self.sys().join("bus/pci/devices").join(address);
+            fs::create_dir_all(&device).unwrap();
+            fs::write(device.join("vendor"), format!("{vendor}\n")).unwrap();
+            fs::write(device.join("class"), format!("{class}\n")).unwrap();
+            if let Some(driver) = driver {
+                let drivers = self.sys().join("bus/pci/drivers").join(driver);
+                fs::create_dir_all(&drivers).unwrap();
+                std::os::unix::fs::symlink(&drivers, device.join("driver")).unwrap();
+            }
+        }
+
+        pub fn render_node(&self, name: &str, vendor: &str, address: &str) {
+            let node = self.sys().join("class/drm").join(name);
+            fs::create_dir_all(&node).unwrap();
+            let device = self.sys().join("bus/pci/devices").join(address);
+            std::os::unix::fs::symlink(&device, node.join("device")).unwrap();
+            fs::create_dir_all(device.join("drm").join(name)).unwrap();
+            fs::write(device.join("vendor"), format!("{vendor}\n")).unwrap();
+        }
+
+        /// `/proc/meminfo`，只有总内存。
+        pub fn memory_total_kib(&self, kib: u64) {
+            let proc = self.sys().with_file_name("proc");
+            fs::create_dir_all(&proc).unwrap();
+            fs::write(proc.join("meminfo"), format!("MemTotal: {kib} kB\n")).unwrap();
+        }
+
+        pub fn dev_node(&self, relative: &str) {
+            let path = self.dev().join(relative);
+            fs::create_dir_all(path.parent().unwrap_or(Path::new("/"))).unwrap();
+            fs::write(path, "").unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::MetadataExt;
+
+    use super::fake_host::FakeHost;
+    use super::*;
+    use wonton_l10n::Arg;
+
+    /// 测试用的语言和期望值都走同一个目录，防止文案漂移。
+    fn zh() -> Languages {
+        Languages::from_header(Some("zh-Hans"))
+    }
+
+    fn say(id: &str, args: &[(&str, Arg<'_>)]) -> String {
+        crate::l10n::text(&zh(), id, args)
+    }
+
+    fn zh_list(items: &[&str]) -> String {
+        crate::l10n::list(&zh(), items)
+    }
+
+    #[test]
+    fn amd_hosts_hand_over_kfd_dri_and_the_owning_groups() {
+        let host = FakeHost::amd();
+        let grant = probe(&host.paths(), &zh()).unwrap();
+        assert_eq!(grant.devices, ["/dev/kfd", "/dev/dri"]);
+        assert!(!grant.nvidia);
+        assert_eq!(grant.vendors, ["AMD"]);
+        // 假设备节点是普通文件，属于测试进程的组；真机上是 video、render 的 GID。
+        let gid = std::fs::metadata(host.dev().join("kfd")).unwrap().gid();
+        let expected: Vec<u32> = if gid == 0 { Vec::new() } else { vec![gid] };
+        assert_eq!(grant.groups, expected);
+        let text = grant.describe(&zh());
+        let groups: Vec<String> = expected.iter().map(ToString::to_string).collect();
+        let group_refs: Vec<&str> = groups.iter().map(String::as_str).collect();
+        assert_eq!(
+            text,
+            say(
+                "plugin-install-gpu-describe-vendors",
+                &[
+                    ("vendors", zh_list(&["AMD"]).into()),
+                    ("devices", zh_list(&["/dev/kfd", "/dev/dri"]).into()),
+                    ("groups", zh_list(&group_refs).into()),
+                ],
+            ),
+        );
+    }
+
+    #[test]
+    fn render_nodes_without_kfd_still_get_dri() {
+        let host = FakeHost::empty();
+        host.pci("0000:00:02.0", "0x8086", "0x030000", Some("i915"));
+        host.render_node("renderD128", "0x8086", "0000:00:02.0");
+        host.dev_node("dri/renderD128");
+        let grant = probe(&host.paths(), &zh()).unwrap();
+        assert_eq!(grant.devices, ["/dev/dri"]);
+        assert_eq!(grant.vendors, ["Intel"]);
+    }
+
+    #[test]
+    fn nvidia_needs_the_kernel_module_not_the_binary() {
+        let host = FakeHost::nvidia();
+        let grant = probe(&host.paths(), &zh()).unwrap();
+        assert!(grant.nvidia);
+        assert!(grant.devices.is_empty(), "NVIDIA 的设备由运行时放进容器");
+        assert_eq!(grant.vendors, ["NVIDIA"]);
+        assert_eq!(
+            grant.describe(&zh()),
+            say("plugin-install-gpu-describe-nvidia", &[])
+        );
+
+        // 同样的显卡，驱动没加载（nvidia-smi 装了也没用）：如实说没有可用的驱动。
+        let host = FakeHost::empty();
+        host.pci("0000:01:00.0", "0x10de", "0x030000", None);
+        let err = probe(&host.paths(), &zh()).unwrap_err();
+        assert!(
+            matches!(&err, GpuProblem::NoDriver(detail) if detail.contains("NVIDIA") && detail.contains(&say("plugin-install-gpu-no-driver-none", &[]))),
+            "{err:?}"
+        );
+        let host = FakeHost::empty();
+        host.pci("0000:01:00.0", "0x10de", "0x030000", Some("nouveau"));
+        host.render_node("renderD128", "0x10de", "0000:01:00.0");
+        let err = probe(&host.paths(), &zh()).unwrap_err();
+        assert!(
+            matches!(&err, GpuProblem::NoDriver(detail) if detail.contains("nouveau")),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn hosts_without_a_gpu_say_so() {
+        let host = FakeHost::empty();
+        host.pci("0000:00:1f.0", "0x8086", "0x060100", Some("lpc_ich"));
+        assert_eq!(
+            probe(&host.paths(), &zh()).unwrap_err(),
+            GpuProblem::NoDevice
+        );
+        // sysfs 里连 drm、pci 目录都没有（比如测试机）也是没有显卡，不是读错。
+        let bare = tempfile::tempdir().unwrap();
+        let paths = HostPaths {
+            dev: Some(bare.path().join("dev")),
+            sys: bare.path().join("sys"),
+            proc: bare.path().join("proc"),
+        };
+        assert_eq!(probe(&paths, &zh()).unwrap_err(), GpuProblem::NoDevice);
+    }
+
+    #[test]
+    fn a_core_in_a_container_without_the_host_dev_mount_does_not_guess() {
+        let host = FakeHost::amd();
+        assert_eq!(
+            probe(&host.paths_without_dev(), &zh()).unwrap_err(),
+            GpuProblem::HostDevUnavailable
+        );
+        // 有渲染节点、/dev/dri 里却没有设备节点：报读不了，不悄悄给一个空目录。
+        let host = FakeHost::empty();
+        host.pci("0000:05:00.0", "0x1002", "0x038000", Some("amdgpu"));
+        host.render_node("renderD128", "0x1002", "0000:05:00.0");
+        std::fs::create_dir_all(host.dev().join("dri")).unwrap();
+        assert!(matches!(
+            probe(&host.paths(), &zh()).unwrap_err(),
+            GpuProblem::Unreadable { .. }
+        ));
+    }
+
+    #[test]
+    fn grants_become_devices_groups_and_device_requests() {
+        let grant = GpuGrant {
+            devices: vec!["/dev/kfd".into(), "/dev/dri".into()],
+            groups: vec![983, 987],
+            nvidia: true,
+            vendors: vec!["AMD".into(), "NVIDIA".into()],
+        };
+        let mut host = HostConfig::default();
+        grant.apply(&mut host);
+        let devices = host.devices.unwrap();
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].path_on_host.as_deref(), Some("/dev/kfd"));
+        assert_eq!(devices[0].path_in_container.as_deref(), Some("/dev/kfd"));
+        assert_eq!(devices[0].cgroup_permissions.as_deref(), Some("rwm"));
+        assert_eq!(host.group_add.unwrap(), ["983", "987"]);
+        let request = &host.device_requests.unwrap()[0];
+        assert_eq!(request.count, Some(-1));
+        assert_eq!(
+            request.capabilities.as_deref(),
+            Some(&[vec!["gpu".to_owned()]][..])
+        );
+        assert_eq!(
+            grant.describe(&zh()),
+            format!(
+                "{}；{}",
+                say(
+                    "plugin-install-gpu-describe-vendors",
+                    &[
+                        ("vendors", zh_list(&["AMD"]).into()),
+                        ("devices", zh_list(&["/dev/kfd", "/dev/dri"]).into()),
+                        ("groups", zh_list(&["983", "987"]).into()),
+                    ],
+                ),
+                say("plugin-install-gpu-describe-nvidia", &[]),
+            ),
+        );
+    }
+}

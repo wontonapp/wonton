@@ -1,0 +1,4 @@
+stall-593 归档说明：三个 104M 的 batch-bin-* 超过 GitHub 单文件限制，没进本分支（工作区原件已随目录删除）。
+104M /home/npchy/wonton-dev/tt/stall-593/batch-bin-405
+104M /home/npchy/wonton-dev/tt/stall-593/batch-bin-after
+104M /home/npchy/wonton-dev/tt/stall-593/batch-bin-before

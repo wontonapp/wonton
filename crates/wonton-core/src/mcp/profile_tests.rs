@@ -45,7 +45,7 @@ impl Bed {
             .ok()
             .unwrap()
             .with_matrix(Some(Arc::new(matrix)));
-        manager.note_person_languages("owner", Some("zh"));
+        manager.note_owner_languages(Some("zh"));
         let manager = Arc::new(manager);
         for (id, user) in [(s.caller.id.clone(), OWN), (other_id(), OTHER)] {
             let source = NOTES

@@ -11,7 +11,7 @@ use wonton_protocol::{FileFailure, FileId};
 
 use super::audit::{AuditedFile, Decision, Record};
 use super::core_tools::tool;
-use super::{Bus, Caller, naming, with_failure};
+use super::{Bus, Caller, error, naming};
 use crate::files::Failure;
 use crate::files::content::can_thumbnail;
 use crate::files::record::FileRecord;
@@ -69,10 +69,7 @@ pub(super) async fn call(
         outcome: Some(outcome),
         files: &files,
     });
-    done.map_or_else(
-        |failure| with_failure(&failure.to_string(), failure.kind.as_str()),
-        |(result, _)| result,
-    )
+    done.map_or_else(|failure| error(&failure.to_string()), |(result, _)| result)
 }
 
 /// 文件不在范围里、没有授权、参数不对才算拒绝。文件没了、解码忙是执行时出的问题，类别写在 `outcome` 里。

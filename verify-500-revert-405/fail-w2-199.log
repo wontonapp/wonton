@@ -1,0 +1,54 @@
+
+running 1 test
+test stall::revalidating_a_proven_slow_path_keeps_the_connection ... FAILED
+
+failures:
+
+---- stall::revalidating_a_proven_slow_path_keeps_the_connection stdout ----
+2026-11-07T15:05:12.421654Z DEBUG endpoint{id=90553bc336}: iroh::socket::transports::ip: binding addr=127.0.0.1:0
+2026-11-07T15:05:12.421839Z DEBUG endpoint{id=90553bc336}: iroh::socket::transports::ip: successfully bound addr=127.0.0.1:0 local_addr=127.0.0.1:53603
+2026-11-07T15:05:12.910786Z DEBUG endpoint{id=90553bc336}: iroh::socket: scheduling periodic_stun to run immediately and in 21s
+2026-11-07T15:05:12.911064Z DEBUG endpoint{id=90553bc336}: iroh::_events::direct_addrs: addrs={DirectAddr { addr: 127.0.0.1:53603, typ: Local }}
+2026-11-07T15:05:12.911242Z DEBUG endpoint{id=90553bc336}: iroh::endpoint: iroh endpoint bound id=90553bc336cb9ac27bfc1782acfe093818ea63b401f297332d46540f0187dd88 iroh_version=1.4.1
+2026-11-07T15:05:12.912509Z DEBUG endpoint{id=90553bc336}:actor: iroh::socket: scheduling periodic_stun to run in 25s
+2026-11-07T15:05:12.926247Z DEBUG endpoint{id=13e7c82600}: iroh::socket::transports::ip: binding addr=[::1]:0
+2026-11-07T15:05:12.926420Z DEBUG endpoint{id=13e7c82600}: iroh::socket::transports::ip: successfully bound addr=[::1]:0 local_addr=[::1]:35847
+2026-11-07T15:05:13.724946Z DEBUG endpoint{id=13e7c82600}: iroh::socket: scheduling periodic_stun to run immediately and in 20s
+2026-11-07T15:05:13.725261Z DEBUG endpoint{id=13e7c82600}: iroh::_events::direct_addrs: addrs={DirectAddr { addr: [::1]:35847, typ: Local }}
+2026-11-07T15:05:13.725458Z DEBUG endpoint{id=13e7c82600}: iroh::endpoint: iroh endpoint bound id=13e7c82600a3976c3eb56bf292704cd46a8800920d74e7a7776868504400d46e iroh_version=1.4.1
+2026-11-07T15:05:13.729951Z DEBUG endpoint{id=13e7c82600}:actor: iroh::socket: scheduling periodic_stun to run in 21s
+2026-11-07T15:05:13.730170Z DEBUG wonton_tunnel::proxy: local proxy accepted a connection peer=127.0.0.1:58818
+2026-11-07T15:05:13.730450Z DEBUG connect{me=13e7c82600 alpn=wonton/tunnel/0 remote=90553bc336}: iroh::_events::conn::connecting: remote_id=90553bc336 alpn=wonton/tunnel/0
+2026-11-07T15:05:13.730475Z DEBUG connect{me=13e7c82600 alpn=wonton/tunnel/0 remote=90553bc336}: iroh::endpoint: connecting relay_url=None ip_addresses=[[::1]:39582]
+2026-11-07T15:05:13.746999Z DEBUG iroh::_events::conn::incoming: remote_addr=Ip(127.0.0.1:35079)
+2026-11-07T15:05:13.829671Z DEBUG iroh::_events::conn::connected: conn_id=138897967412480 side=Client remote_id=90553bc336 alpn=wonton/tunnel/0
+2026-11-07T15:05:13.830664Z DEBUG endpoint{id=13e7c82600}:RemoteStateActor{remote=90553bc336}:handle_message{msg=AddConnection(138897967412480) send_tasks=FuturesUnorderedBounded { len: 0, .. }}: iroh::_events::path::open: remote=90553bc336 conn_id=138897967412480 path_id=0 network_path=Ip(::1->[::1]:39582)
+2026-11-07T15:05:13.830733Z DEBUG endpoint{id=13e7c82600}:RemoteStateActor{remote=90553bc336}:handle_message{msg=AddConnection(138897967412480) send_tasks=FuturesUnorderedBounded { len: 0, .. }}: iroh::_events::path::set_status: remote=90553bc336 conn_id=138897967412480 path_id=0 network_path=Ip(::1->[::1]:39582) status=Backup prev_status=Available
+2026-11-07T15:05:13.830808Z DEBUG endpoint{id=13e7c82600}:RemoteStateActor{remote=90553bc336}:handle_message{msg=AddConnection(138897967412480) send_tasks=FuturesUnorderedBounded { len: 0, .. }}:do_holepunching: iroh::_events::qnt::init: remote=90553bc336 local_candidates={[::1]:35847} remote_candidates={}
+2026-11-07T15:05:13.830862Z DEBUG endpoint{id=13e7c82600}:RemoteStateActor{remote=90553bc336}:handle_message{msg=AddConnection(138897967412480) send_tasks=FuturesUnorderedBounded { len: 0, .. }}:select_path: iroh::_events::path::selected: remote=90553bc336 network_path=Ip(::1->[::1]:39582) prev_network_path=None
+2026-11-07T15:05:13.830881Z DEBUG endpoint{id=13e7c82600}:RemoteStateActor{remote=90553bc336}:handle_message{msg=AddConnection(138897967412480) send_tasks=FuturesUnorderedBounded { len: 0, .. }}:select_path: iroh::_events::path::set_status: remote=90553bc336 conn_id=138897967412480 path_id=0 network_path=Ip(::1->[::1]:39582) status=Available prev_status=Backup
+2026-11-07T15:05:13.830995Z DEBUG iroh::endpoint: Connection established. me=13e7c82600 remote=90553bc336 alpn=wonton/tunnel/0
+2026-11-07T15:05:13.842399Z  INFO wonton_tunnel::client: 隧道连接已建立 server=90553bc336 handshake_ms=111
+2026-11-07T15:05:13.878441Z DEBUG router.accept{me=90553bc336 alpn="wonton/tunnel/0"}: iroh::_events::conn::connected: conn_id=138898034398800 side=Server remote_id=13e7c82600 alpn=wonton/tunnel/0
+2026-11-07T15:05:13.890057Z DEBUG endpoint{id=90553bc336}:RemoteStateActor{remote=13e7c82600}:handle_message{msg=AddConnection(138898034398800) send_tasks=FuturesUnorderedBounded { len: 0, .. }}: iroh::_events::path::open: remote=13e7c82600 conn_id=138898034398800 path_id=0 network_path=Ip(127.0.0.1->127.0.0.1:35079)
+2026-11-07T15:05:13.890206Z DEBUG endpoint{id=90553bc336}:RemoteStateActor{remote=13e7c82600}:handle_message{msg=AddConnection(138898034398800) send_tasks=FuturesUnorderedBounded { len: 0, .. }}: iroh::_events::path::set_status: remote=13e7c82600 conn_id=138898034398800 path_id=0 network_path=Ip(127.0.0.1->127.0.0.1:35079) status=Backup prev_status=Available
+2026-11-07T15:05:13.890314Z DEBUG endpoint{id=90553bc336}:RemoteStateActor{remote=13e7c82600}:handle_message{msg=AddConnection(138898034398800) send_tasks=FuturesUnorderedBounded { len: 0, .. }}:select_path: iroh::_events::path::selected: remote=13e7c82600 network_path=Ip(127.0.0.1->127.0.0.1:35079) prev_network_path=None
+2026-11-07T15:05:13.890334Z DEBUG endpoint{id=90553bc336}:RemoteStateActor{remote=13e7c82600}:handle_message{msg=AddConnection(138898034398800) send_tasks=FuturesUnorderedBounded { len: 0, .. }}:select_path: iroh::_events::path::set_status: remote=13e7c82600 conn_id=138898034398800 path_id=0 network_path=Ip(127.0.0.1->127.0.0.1:35079) status=Available prev_status=Backup
+2026-11-07T15:05:13.890557Z DEBUG endpoint{id=90553bc336}:RemoteStateActor{remote=13e7c82600}: iroh::socket::remote_map::remote_state: connections are not good enough, triggering holepunching
+2026-11-07T15:05:13.890682Z  INFO router.accept{me=90553bc336 alpn="wonton/tunnel/0" remote=13e7c82600}: wonton_tunnel::server: device connected remote=13e7c82600
+2026-11-07T15:05:13.896512Z DEBUG endpoint{id=13e7c82600}:RemoteStateActor{remote=90553bc336}:do_holepunching: iroh::_events::qnt::init: remote=90553bc336 local_candidates={[::1]:35847} remote_candidates={127.0.0.1:53603}
+
+thread 'stall::revalidating_a_proven_slow_path_keeps_the_connection' (3808040) panicked at crates/wonton-tunnel/tests/tunnel/stall.rs:280:5:
+assertion `left == right` failed
+  left: 1.5s
+ right: 8s
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-11-07T15:05:17.608914Z ERROR iroh::socket: Endpoint dropped without calling `Endpoint::close`. Aborting ungracefully.
+2026-11-07T15:05:17.610033Z ERROR iroh::socket: Endpoint dropped without calling `Endpoint::close`. Aborting ungracefully.
+
+
+failures:
+    stall::revalidating_a_proven_slow_path_keeps_the_connection
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 68 filtered out; finished in 5.21s
+

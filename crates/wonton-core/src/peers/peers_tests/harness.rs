@@ -1,7 +1,6 @@
 //! 起测试核心：设备表、隧道 endpoint、配对协议和联邦入站都在这里装配。
 
 use super::*;
-use crate::members::Members;
 
 impl TestCore {
     /// 起一台预置了待处理请求（接收时刻都很旧）和这一小时已收条数的核心。
@@ -39,12 +38,10 @@ impl TestCore {
         )
         .unwrap();
         let devices = Arc::new(Devices::open(dir.path().join("devices.json")).unwrap());
-        let members = Arc::new(Members::open(dir.path().join("members.json")).unwrap());
         let key = SecretKey::generate();
         let endpoint = loopback_endpoint(key.clone()).await;
         let tunnel = Tunnel::new(
             devices,
-            members,
             Arc::new(|| crate::plugin::languages::Languages::from_header(None)),
             endpoint,
             0,

@@ -30,11 +30,9 @@ pub(crate) fn contacts(
 ) -> Vec<ChatContact> {
     let bots = plugins.iter().filter_map(|plugin| {
         let user_id = plugin.bot_user_id.clone()?;
-        // 旁聊房间按支持声明算（ADR-0093 §4），还没实现：先都给空，壳走 StartDirectChat。
         Some(ChatContact {
             user_id,
             name: plugin.title.clone(),
-            side_chat_room_id: None,
         })
     });
     let peers = rooms
@@ -45,7 +43,6 @@ pub(crate) fn contacts(
             Some(ChatContact {
                 user_id,
                 name: room.name.clone(),
-                side_chat_room_id: None,
             })
         });
     let query = query.trim().to_lowercase();
@@ -121,14 +118,12 @@ mod tests {
 
     fn plugin(title: &str, bot: Option<&str>) -> InstalledPlugin {
         InstalledPlugin {
-            chat: Default::default(),
             id: title.to_owned(),
             title: title.to_owned(),
             summary: String::new(),
             version: "1".to_owned(),
             revision: "1".to_owned(),
             kind: PluginKind::Agent,
-            runtime: Default::default(),
             icon: None,
             trust: PluginTrust::Official,
             source: None,
@@ -147,14 +142,11 @@ mod tests {
             removable: true,
             notices: Vec::new(),
             enabled_root_permissions: Vec::new(),
-            install_progress: None,
-            tunnel_ports: Vec::new(),
         }
     }
 
     fn room(name: &str, peer: Option<&str>, read_only: bool) -> RoomRow {
         RoomRow {
-            layout: Default::default(),
             room_id: format!("!{name}:s"),
             name: name.to_owned(),
             is_direct: peer.is_some(),
@@ -163,7 +155,6 @@ mod tests {
             is_read_only: read_only,
             membership: RoomMembership::Joined,
             preview: None,
-            side_chats: false,
             unread_count: 0,
         }
     }

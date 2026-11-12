@@ -1,6 +1,7 @@
 use std::os::unix::fs::MetadataExt;
+use std::time::Duration;
 
-use crate::config::{DEFAULT_INSTALL_TIMEOUT, PublicUrls};
+use crate::config::PublicUrls;
 use crate::http::HttpClient;
 use crate::owner::{Owner, OwnerStore};
 use crate::plugin::PluginManager;
@@ -26,9 +27,7 @@ pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir, instance: &str) -
         tz: "UTC".into(),
         puid: owner.uid(),
         pgid: owner.gid(),
-        // 期限从建容器之前算起（lifecycle 的部署），满载时 Docker 建、启动容器本身就要十几到二十几秒，
-        // 之后还要稳定运行 3 秒才算就绪，30 秒不够用；这两个测试验镜像缓存和摘要，不验安装速度，跟生产默认一致。
-        install_timeout: DEFAULT_INSTALL_TIMEOUT,
+        install_timeout: Duration::from_secs(30),
         owner: "owner".into(),
         profile: OwnerStore::for_test(
             dir.path(),

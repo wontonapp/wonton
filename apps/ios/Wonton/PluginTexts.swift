@@ -69,55 +69,24 @@ struct NoticeLines: View {
     }
 }
 
-/// 权限说明和开关共用同一排版；标签放在独立行，避免大字号时挤压开关。
+/// 要授予的一项权限：有风险级别时醒目，升级时新申请的、核心不支持的标出来。
 struct PermissionRow: View {
     let line: PermissionLine
-    var selection: Binding<Bool>?
-    var busy = false
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            if let selection {
-                Toggle(isOn: selection) { heading }
-                    .toggleStyle(WontonToggleStyle())
-                    .disabled(busy || !line.supported)
-            } else {
-                heading
-            }
-            labels
-            if let notice = line.notice { supporting(notice) }
-            if let offLoss = line.offLoss { supporting(offLoss) }
-            if busy { ProgressView() }
-        }
-    }
-
-    private var heading: some View {
+        let risky = line.risk != nil
         HStack(alignment: .top, spacing: WontonTheme.spacing.s8) {
-            (line.risk != nil ? WontonIcon.warningFill : WontonIcon.shield)
+            (risky ? WontonIcon.warningFill : WontonIcon.shield)
                 .view(size: WontonTheme.size.iconSmall)
-                .accessibilityHidden(true)
+                .foregroundStyle(Color(risky ? colors.warning : colors.textSecondary))
             Text(line.text)
                 .wontonText(WontonTheme.typography.body)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .foregroundStyle(Color(line.risk != nil ? colors.warning : colors.textPrimary))
-    }
-
-    private var labels: some View {
-        VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-            if let risk = line.riskLabel { Tag(text: risk, tint: colors.warning) }
-            if line.optional { Tag(text: String(localized: .pluginPermissionOptional), tint: colors.textSecondary) }
+                .foregroundStyle(Color(risky ? colors.warning : colors.textPrimary))
+            Spacer(minLength: 0)
             if line.added { Tag(text: String(localized: .pluginPermissionAdded), tint: colors.primary) }
             if !line.supported { Tag(text: String(localized: .pluginPermissionUnsupported), tint: colors.danger) }
         }
-    }
-
-    private func supporting(_ text: String) -> some View {
-        Text(text)
-            .wontonText(WontonTheme.typography.supporting)
-            .foregroundStyle(Color(colors.textSecondary))
-            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

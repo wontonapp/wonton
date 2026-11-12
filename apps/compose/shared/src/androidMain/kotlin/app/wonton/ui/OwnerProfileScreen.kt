@@ -22,7 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.CoreException
-import app.wonton.protocol.Me
+import app.wonton.protocol.OwnerProfile
 import app.wonton.protocol.OwnerProfileUpdate
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.LocalWontonBottomInset
@@ -44,10 +44,10 @@ fun OwnerProfilePage(plugins: PluginsState, onClose: () -> Unit) {
     var problem by remember { mutableStateOf<Problem?>(null) }
     var saving by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val loaded by produceState<Result<Me>?>(null, attempt) {
+    val loaded by produceState<Result<OwnerProfile>?>(null, attempt) {
         value = null
         value = try {
-            val profile = plugins.core.me()
+            val profile = plugins.core.ownerProfile()
             name = profile.displayName.orEmpty()
             email = profile.email.orEmpty()
             Result.success(profile)
@@ -86,7 +86,7 @@ fun OwnerProfilePage(plugins: PluginsState, onClose: () -> Unit) {
                         saving = true
                         scope.launch {
                             try {
-                                plugins.core.saveMe(OwnerProfileUpdate(name, email))
+                                plugins.core.saveOwnerProfile(OwnerProfileUpdate(name, email))
                                 onClose()
                             } catch (failure: CoreException) {
                                 problem = failure.problem

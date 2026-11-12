@@ -12,7 +12,7 @@ use wonton_tunnel::{Allowlist, LocalProxy, ProxyAccess, SuspendClock, TunnelClie
 
 use crate::{
     stall::{DROP_ALL, Flaky, PASS},
-    support::{Home, Phone, Timeouts, Upstream, WAIT, endpoint_on, wait_until_quiet},
+    support::{Home, Phone, Timeouts, Upstream, WAIT, endpoint_on},
 };
 
 #[derive(Debug)]
@@ -90,7 +90,6 @@ async fn the_first_proxy_request_after_suspension_does_not_need_a_foreground_eve
         assert_eq!(phone.get("/before").await.status, 200);
         phone.client.set_suspendable(true);
         flaky.drop_above(DROP_ALL);
-        wait_until_quiet(&flaky, &phone).await;
         home.crash();
         home.restart().await;
         clock.advance(monotonic, wall);
@@ -111,7 +110,6 @@ async fn requests_timer_and_foreground_share_one_replacement_and_its_recent_resu
     assert_eq!(phone.get("/before").await.status, 200);
     phone.client.set_suspendable(true);
     flaky.drop_above(DROP_ALL);
-    wait_until_quiet(&flaky, &phone).await;
     clock.advance(Duration::from_secs(10), Duration::from_secs(10));
     let first = phone.get("/first");
     let foreground = async {
@@ -147,7 +145,6 @@ async fn requests_timer_and_foreground_share_one_replacement_and_its_recent_resu
 
     // 完成后的迟到前台事件必须直接用结果。若又检查，全丢包会迫使它第三次建连。
     flaky.drop_above(DROP_ALL);
-    wait_until_quiet(&flaky, &phone).await;
     phone.client.revalidate().await.unwrap();
     assert_eq!(connections(&home), 2);
     flaky.drop_above(PASS);
@@ -155,7 +152,6 @@ async fn requests_timer_and_foreground_share_one_replacement_and_its_recent_resu
     // 一秒之外不能继续沿用旧结论；下一次明确的前台检查要真的检测失效路径。
     clock.advance(Duration::from_secs(2), Duration::from_secs(2));
     flaky.drop_above(DROP_ALL);
-    wait_until_quiet(&flaky, &phone).await;
     let (checked, ()) = tokio::join!(
         phone.client.revalidate(),
         restore_when_redialling(&flaky, &phone.client),
@@ -183,7 +179,6 @@ async fn the_timer_can_revalidate_before_any_request_or_foreground_event() {
     assert_eq!(phone.get("/before").await.status, 200);
     phone.client.set_suspendable(true);
     flaky.drop_above(DROP_ALL);
-    wait_until_quiet(&flaky, &phone).await;
     home.crash();
     home.restart().await;
     clock.advance(Duration::ZERO, Duration::from_secs(10));
@@ -213,7 +208,6 @@ async fn an_executing_background_timer_does_not_probe_or_replace_the_connection(
 
     // 请求在旧路径上等待时不应触发检查重拨；旧路径一恢复，同一请求直接成功。
     flaky.drop_above(DROP_ALL);
-    wait_until_quiet(&flaky, &phone).await;
     let get = phone.get("/background-music");
     let restore = async {
         tick().await;
@@ -234,7 +228,6 @@ async fn disabling_suspend_detection_leaves_new_requests_on_the_live_connection(
     clock.advance(Duration::from_secs(10), Duration::from_secs(10));
     tick().await;
     flaky.drop_above(DROP_ALL);
-    wait_until_quiet(&flaky, &phone).await;
     let get = phone.get("/foreground");
     let restore = async {
         tick().await;
@@ -257,7 +250,6 @@ async fn late_resume_signals_share_a_failed_check_until_the_reuse_window_expires
         .client
         .set_server_addr(EndpointAddr::new(refusing.addr.id).with_ip_addr(refusal_path.addr));
     flaky.drop_above(DROP_ALL);
-    wait_until_quiet(&flaky, &phone).await;
 
     let failure = phone.client.revalidate().await.unwrap_err();
     assert_eq!(refusing.dials(), 1);

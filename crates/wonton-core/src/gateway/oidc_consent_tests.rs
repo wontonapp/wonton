@@ -6,9 +6,7 @@ use hyper::StatusCode;
 use serde_json::json;
 
 use super::CORE_COOKIE;
-use super::fakes::{fake_hydra, fake_hydra_for, fake_hydra_scopes};
-use super::family_tests::send_as;
-use super::tests::{CORE, Harness, Reply, TOKEN, WHOAMI};
+use super::tests::{CORE, Harness, TOKEN, WHOAMI, fake_hydra};
 use crate::plugin::languages::Languages;
 use crate::plugin::{PluginPackage, PluginStatus};
 
@@ -56,16 +54,15 @@ async fn oidc_login_and_consent_use_the_core_session() {
         json!(["openid", "profile", "email", "groups"])
     );
     let claims = &accepted[1]["session"]["id_token"];
-    assert_eq!(claims["email"], "owner@wonton.internal");
-    assert_eq!(claims["email_verified"], true);
+    assert_eq!(claims["email"], "owner@wonton.localhost");
     assert_eq!(claims["preferred_username"], "owner");
     assert_eq!(claims["groups"], json!(["owner"]));
 }
 
-/// 声明了 `oidc.admin_groups` 的客户端拿到 `["owner", …]`，没声明的客户端只有 `["owner"]`。
+/// 声明了 `oidc.owner_groups` 的客户端拿到 `["owner", …]`，没声明的客户端只有 `["owner"]`。
 /// Hydra 把 `session.id_token` 的声明同时用作 ID 令牌和 userinfo 的内容。
 #[tokio::test]
-async fn consent_gives_admin_groups_to_the_declaring_client_only() {
+async fn consent_gives_owner_groups_to_the_declaring_client_only() {
     let accepted = Arc::new(Mutex::new(Vec::new()));
     let hydra = fake_hydra(accepted.clone()).await;
     let h = Harness::start(Some(hydra)).await;
@@ -74,7 +71,7 @@ async fn consent_gives_admin_groups_to_the_declaring_client_only() {
         &WHOAMI.replace("app.whoami", "app.books").replace(
             "  webui:\n    service: web\n    port: 8000",
             "  webui:\n    service: web\n    port: 8000\n    sso: oidc\n    oidc:\n      \
-                 redirect_paths: [/cb]\n      admin_groups: [admin, app.admin]",
+                 redirect_paths: [/cb]\n      owner_groups: [admin, app.admin]",
         ),
         &Languages::from_header(Some("zh-Hans")),
     )
@@ -117,129 +114,4 @@ async fn consent_gives_admin_groups_to_the_declaring_client_only() {
         accepted[1]["session"]["id_token"]["groups"],
         json!(["owner"])
     );
-}
-
-/// 给一个人配一台设备、记下他的语言；设备归属决定 OIDC 认成谁。
-fn person(h: &Harness, username: &str, language: &str) -> iroh::EndpointId {
-    if username != "owner" {
-        h.members
-            .invite(crate::members::MemberRecord {
-                username: username.into(),
-                user_id: format!("@{username}:{}", "test"),
-                display_name: username.into(),
-                email: None,
-                status: wonton_protocol::MemberStatus::Joined,
-                can_install_plugins: false,
-                wants_private_bot: false,
-                private_bot: None,
-                pairing_code_hash: None,
-                pairing_code_expires_at_ms: None,
-            })
-            .unwrap();
-    }
-    let id = iroh::SecretKey::generate().public();
-    h.tunnel
-        .devices
-        .add_if(
-            id,
-            None,
-            (username != "owner").then(|| username.to_owned()),
-            |_| true,
-        )
-        .unwrap();
-    h.manager.note_person_languages(username, Some(language));
-    id
-}
-
-async fn consent_as(
-    h: &Harness,
-    device: Option<iroh::EndpointId>,
-    challenge: &str,
-    cookie: Option<&str>,
-) -> Reply {
-    let path = format!("/_wonton/oidc/consent?consent_challenge={challenge}");
-    match cookie {
-        Some(cookie) => h.get(CORE, &path, &[("cookie", cookie)]).await,
-        None => send_as(&h.app, device, hyper::Method::GET, CORE, &path, &[], "").await,
-    }
-}
-
-/// `locale` 是登录者本人的（主人和家人各拿各的），B 47 原样；换过语言后下一次签发就是新值。
-/// ID 令牌和 userinfo 是同一份 `session.id_token`，值天然一致。
-#[tokio::test]
-async fn each_person_gets_their_own_locale() {
-    let accepted = Arc::new(Mutex::new(Vec::new()));
-    let hydra = fake_hydra_for(accepted.clone(), "alice").await;
-    let h = Harness::start(Some(hydra)).await;
-    person(&h, "owner", "zh-Hant-TW, en;q=0.8");
-    let alice = person(&h, "alice", "ja-JP");
-
-    let core = h.login(TOKEN).await.cookie(CORE_COOKIE);
-    assert_eq!(
-        h.manager.person_locale("owner").as_deref(),
-        Some("zh-Hant-TW"),
-        "先有记录"
-    );
-    assert_eq!(
-        consent_as(&h, None, "abc", Some(&core)).await.status,
-        StatusCode::SEE_OTHER
-    );
-    assert_eq!(
-        consent_as(&h, Some(alice), "def", None).await.status,
-        StatusCode::SEE_OTHER
-    );
-
-    // 主人换了语言：下一次签发是新值。
-    h.manager.note_person_languages("owner", Some("en-GB"));
-    assert_eq!(
-        consent_as(&h, None, "abc", Some(&core)).await.status,
-        StatusCode::SEE_OTHER
-    );
-
-    // 每成功一次授权确认记一条。
-    let accepted = accepted.lock().unwrap();
-    let locale = |i: usize| accepted[i]["session"]["id_token"]["locale"].clone();
-    assert_eq!(
-        accepted[0]["session"]["id_token"]["preferred_username"],
-        "owner"
-    );
-    assert_eq!(locale(0), "zh-Hant-TW");
-    assert_eq!(
-        accepted[1]["session"]["id_token"]["preferred_username"],
-        "alice"
-    );
-    assert_eq!(locale(1), "ja-JP");
-    assert_eq!(locale(2), "en-GB", "换过语言后是新值");
-}
-
-/// 没授予 `profile` 就不发 `locale`；这个人还没有记录时也不发。
-#[tokio::test]
-async fn locale_needs_the_profile_scope_and_a_record() {
-    let accepted = Arc::new(Mutex::new(Vec::new()));
-    let hydra = fake_hydra_scopes(accepted.clone(), "owner", &["openid"]).await;
-    let h = Harness::start(Some(hydra)).await;
-    person(&h, "owner", "ja");
-    let core = h.login(TOKEN).await.cookie(CORE_COOKIE);
-    assert_eq!(
-        consent_as(&h, None, "abc", Some(&core)).await.status,
-        StatusCode::SEE_OTHER
-    );
-    {
-        let accepted = accepted.lock().unwrap();
-        let claims = &accepted[0]["session"]["id_token"];
-        assert!(claims.get("locale").is_none(), "{claims}");
-    }
-
-    // 有 `profile` 但这个人没有记录。
-    let accepted = Arc::new(Mutex::new(Vec::new()));
-    let hydra = super::fakes::fake_hydra(accepted.clone()).await;
-    let h = Harness::start(Some(hydra)).await;
-    let core = h.login(TOKEN).await.cookie(CORE_COOKIE);
-    assert_eq!(
-        consent_as(&h, None, "abc", Some(&core)).await.status,
-        StatusCode::SEE_OTHER
-    );
-    let accepted = accepted.lock().unwrap();
-    let claims = &accepted[0]["session"]["id_token"];
-    assert!(claims.get("locale").is_none(), "{claims}");
 }

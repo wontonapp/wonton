@@ -38,7 +38,7 @@ pub const CUSTOM_MODEL_PROVIDER_TEST_PATH: &str = "/_wonton/api/models/custom-pr
 
 /// 引导的一步。家里的服务器上只记 `Profile`（还没走完）和 `Finished`：每一步只记下选择，到 `Review` 点完成才一起
 /// 生效（ADR-0038），所以中间的步骤只在客户端核心里。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum OnboardingStep {
@@ -198,7 +198,7 @@ pub enum ModelProviderInput {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct OnboardingViewModel {
-    /// 正在显示的一步：还没从家里的服务器取到、或者刚关掉重看的引导时为空。
+    /// 还没从家里的服务器取到时为空，这时不知道引导走完了没有。
     pub step: Option<OnboardingStep>,
     /// 第几步和哪些按钮能点；走完了或者还没取到时为空。
     pub nav: Option<StepNav>,
@@ -221,17 +221,6 @@ pub struct OnboardingViewModel {
     /// [`Action::DismissReplacedAgentOffer`](crate::Action::DismissReplacedAgentOffer)。
     pub replaced_agent: Option<ReplacedAgent>,
     pub tips: OnboardingTips,
-    /// 服务器太旧，引导整段打不开（连引导接口都没有）：[`Self::step`] 为空，壳只在引导该出现的地方留一条
-    /// “升级服务器后可用”和服务器升级入口。
-    pub too_old: Option<OnboardingTooOld>,
-}
-
-/// 服务器太旧，引导整段用不了。各步单独隐藏的情况不在这里，见 [`OnboardingViewModel::step`]。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct OnboardingTooOld {
-    /// 服务器至少要升到的版本；旧服务器不报版本时为空。
-    pub min_version: Option<String>,
 }
 
 /// 一步一张的外框：第几步、共几步，哪些按钮能点。壳的外框只认这个类型。
@@ -244,9 +233,6 @@ pub struct StepNav {
     pub can_back: bool,
     pub can_skip: bool,
     pub can_next: bool,
-    /// 从设置重看引导时每一步都能不提交就离开：壳画关闭（iOS 左上 X、Android 顶栏），
-    /// 第一步的返回手势也当关闭。首次引导为假，照旧走完才算。
-    pub can_close: bool,
 }
 
 /// 你的资料这一步。名字必填，邮箱选填。
@@ -416,8 +402,6 @@ pub enum OnboardingReviewDetail {
     Unreachable { model: Option<String> },
     /// 选了 Agent 的账号登录，装好后在聊天里登录。
     SignInAfterSetup,
-    /// 这一类这次不动：完成时不发请求，服务器上的现值保持原样。
-    Unchanged,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

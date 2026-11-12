@@ -1,7 +1,6 @@
 //! 按来源预览和安装（插件规范的“来源”）。安装时按来源重新取一次插件包，摘要要和预览时的一样：主人确认的就是
 //! 装上的；tag 在这之间被移动了，就得重新预览、重新确认。
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -9,11 +8,12 @@ use wonton_protocol::{AddedSource, InstallPreview, InstallRequest, StoreProblem}
 
 use super::github_source::{self, INDEX_SCHEME, SourceRef};
 use super::index_location::IndexLocation;
-use super::languages::{Languages, accept_language_tags};
+use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginView};
+use super::manifest::Permission;
 use super::package::PluginPackage;
 use super::staged;
-use super::store::{create_private_dir, read_json, read_people_languages, write_json};
+use super::store::{create_private_dir, read_json, write_json};
 use super::storefront::index::{Files, Index, Listed};
 
 impl PluginManager {
@@ -90,61 +90,28 @@ impl PluginManager {
         self.store.docs_cache()
     }
 
-    /// 记下 `username` 最近一次请求的语言（ADR-0043）：语言按人给，主人和家人各记各的。只在变了时写盘，
-    /// 写不了时下次再试。头里没有能用的语言（空、只有 `*`）时不写，免得把好的记录盖掉。
-    pub fn note_person_languages(&self, username: &str, header: Option<&str>) {
+    /// 记下主人的语言：帮助文档的工具经 MCP 调用，请求里没有 `Accept-Language`。只在变了时写盘，写不了时下次再试。
+    pub fn note_owner_languages(&self, header: Option<&str>) {
         let Some(header) = header else { return };
-        if accept_language_tags(header).is_empty() {
+        if self.stored_languages().as_deref() == Some(header) {
             return;
         }
-        let _writing = self.people_writes.lock().expect("语言记录锁中毒");
-        let path = self.store.people_languages();
-        // 只有文件不在算空表；读不了或坏了时整份表会被这条盖掉，所以这次不写，下次再试。
-        let mut people = match read_json::<BTreeMap<String, String>>(&path) {
-            Ok(Some(people)) => people,
-            Ok(None) => BTreeMap::new(),
-            Err(error) => {
-                tracing::warn!(%error, path = %path.display(), person = %username, "每个人的语言读不出来，这次不写");
-                return;
-            }
-        };
-        if people.get(username).map(String::as_str) == Some(header) {
-            return;
-        }
-        people.insert(username.to_owned(), header.to_owned());
+        let path = self.store.owner_languages();
         let written = path
             .parent()
             .map_or(Ok(()), create_private_dir)
-            .and_then(|()| write_json(&path, &people));
+            .and_then(|()| write_json(&path, &header));
         if let Err(error) = written {
-            tracing::warn!(%error, person = %username, "这个人的语言存不下");
+            tracing::warn!(%error, "主人的语言存不下");
         }
     }
 
-    /// 某人最近一次请求的 `Accept-Language` 原文；没有记录时为空。
-    pub fn person_languages(&self, username: &str) -> Option<String> {
-        self.stored_languages().get(username).cloned()
-    }
-
-    /// 某人最近一次请求的第一个语言标签，原样（OIDC 的 `locale`）；没有记录时为空。
-    pub fn person_locale(&self, username: &str) -> Option<String> {
-        let header = self.person_languages(username)?;
-        accept_language_tags(&header).into_iter().next()
-    }
-
-    /// 主人的语言：请求里没有 `Accept-Language` 的路径（Agent 经 MCP 调用）按它写。
     pub fn owner_languages(&self) -> Languages {
-        Languages::from_header(self.person_languages(&self.cfg.owner).as_deref())
+        Languages::from_header(self.stored_languages().as_deref())
     }
 
-    /// 整份表；读不了时按没有记录，但打一条日志，不静默。
-    fn stored_languages(&self) -> BTreeMap<String, String> {
-        read_people_languages(&self.store.people_languages())
-    }
-
-    /// 主人的用户名。
-    pub fn owner_name(&self) -> &str {
-        &self.cfg.owner
+    fn stored_languages(&self) -> Option<String> {
+        read_json(&self.store.owner_languages()).ok().flatten()
     }
 
     /// 官方索引里一项的插件包，文件按索引核对。
@@ -175,30 +142,27 @@ impl PluginManager {
         Ok(preview)
     }
 
-    /// 按预览给的来源和摘要安装，`grant` 是主人确认的权限、`enabled_permissions` 是打开了的可选项。安装本身在独立的
-    /// 任务里执行，见 [`Self::install_detached`]。
+    /// 按预览给的来源和摘要安装，`grant` 是主人确认的权限。安装本身在独立的任务里执行，见 [`Self::install_detached`]。
     pub async fn install_source(
         self: &Arc<Self>,
         request: &InstallRequest,
     ) -> Result<PluginView, InstallError> {
-        let langs = self.owner_languages();
+        let granted = request
+            .grant
+            .iter()
+            .map(|p| p.parse::<Permission>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| InstallError::Invalid(e.to_string()))?;
         let package = self.fetch_source(&request.source).await?;
         let digest = package.digest();
         if digest != request.digest {
-            return Err(InstallError::Changed(crate::l10n::text(
-                &langs,
-                "plugin-capability-plan-changed",
-                &[],
+            return Err(InstallError::Changed(format!(
+                "{} 在预览之后变了（插件包摘要现在是 {digest}），要重新预览、重新确认",
+                request.source
             )));
         }
         let installed = self
-            .install_with_dependencies(
-                package,
-                super::dependencies::DependencyInstall {
-                    request: request.clone(),
-                    langs,
-                },
-            )
+            .install_detached(package, granted, request.lan_webui, self.owner_languages())
             .await?;
         self.staged.remove(&digest);
         Ok(installed)

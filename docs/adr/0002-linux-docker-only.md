@@ -1,6 +1,6 @@
 # ADR-0002 部署形态：任意 Linux + Docker
 
-- 状态：已接受（2026-10-28）；“不支持 macOS 或 Windows 作为宿主”一条被 [ADR-0062](0062-desktop-vm-host.md) 部分取代
+- 状态：已接受（2026-10-28）
 
 ## 背景
 
@@ -35,7 +35,7 @@
 
 `deploy/install/install.sh` 在干净的 Ubuntu 24.04 上装好核心、Hydra、Tuwunel，核心随后装上 magpie，四个容器都健康。
 验证条件（2026-10-29）：OrbStack 虚拟机，arm64 原生、amd64 在 Rosetta 下，Docker Engine 29.9.2、Compose v5.6.1；核心镜像
-用发布的 Dockerfile 在一台 Linux 主机上构建（arm64 交叉编译）后导入虚拟机，Hydra、Tuwunel、magpie 的镜像从各自的仓库拉取；安装
+用发布的 Dockerfile 在 npchy 上构建（arm64 交叉编译）后导入虚拟机，Hydra、Tuwunel、magpie 的镜像从各自的仓库拉取；安装
 脚本由本机的 HTTP 服务提供，按 `curl … | sudo sh` 执行。
 
 - amd64：从执行安装命令到终端出现首次配对码（这时核心、Hydra、Tuwunel 都健康）465 秒，大半是在 Rosetta 下拉 Hydra 和
@@ -53,8 +53,8 @@
 Docker Engine 29.9.2、Compose v5.6.1，所有镜像都从公开的仓库拉取。
 
 - 从执行安装命令到终端出现首次配对码（含拉全部镜像）：arm64 44 秒，amd64 35 秒。
-- `.env` 记下渠道（`WONTON_CORE_SOURCE=ghcr.io/wontonapp/wonton-core:beta`）和按 digest 写下的镜像
-  （`ghcr.io/wontonapp/wonton-core@sha256:93feeb5de86afb2c678cef8e3c630cd4f6c0228d95aa9d046c58120ba6fe8b7f`）；amd64 上
+- `.env` 记下渠道（`WONTON_CORE_SOURCE=ghcr.io/geraldpeng6/wonton-core:beta`）和按 digest 写下的镜像
+  （`ghcr.io/geraldpeng6/wonton-core@sha256:93feeb5de86afb2c678cef8e3c630cd4f6c0228d95aa9d046c58120ba6fe8b7f`）；amd64 上
   拉到的是 amd64 的变体。
 - 核心、Hydra、Tuwunel、magpie 四个容器都健康。
 - 从另一台机器用虚拟机的 IP 打开 8480 端口，看到运行状态和首次配对二维码；`Host` 换成域名得到 404。

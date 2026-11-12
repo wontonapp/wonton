@@ -18,11 +18,8 @@ const OUTCOME_FIRST: Duration = Duration::from_secs(5);
 impl Peers {
     /// 主人的设备扫来一个码：连出码方，记成“等对方同意”，然后自己问结果。
     pub async fn scan(self: &Arc<Self>, code_text: &str) -> Result<(), PeerError> {
-        let code = wonton_tunnel::peer_pair::PeerPairingCode::parse(code_text).map_err(|e| {
-            // 码在发出连接之前就读不懂：不打日志的话，两边的日志里都看不到这次扫码。
-            tracing::info!(error = %e, "扫来的码读不懂");
-            PeerError::CodeInvalid
-        })?;
+        let code = wonton_tunnel::peer_pair::PeerPairingCode::parse(code_text)
+            .map_err(|_| PeerError::CodeInvalid)?;
         let addr = code.server_addr();
         self.scan_to(&code, addr, self.own_identity()).await
     }
@@ -256,27 +253,16 @@ impl Peers {
         let name = server_name.to_owned();
         tokio::spawn(async move {
             tokio::time::sleep(OUTCOME_FIRST).await;
-            // 问到了“还在等”才按 10 分钟一次；没问到（连不上、回应看不懂）从 OUTCOME_FIRST 起翻倍重问，
-            // 封顶 OUTCOME_POLL。只问一次就等 10 分钟的话，刚启动或网络抖一下，“等对方同意”就多挂 10 分钟。
-            let mut retry = OUTCOME_FIRST;
             loop {
                 let Some(link) = peers.upgrade() else {
                     return;
                 };
-                let answered = link.check_outcome(&name).await;
+                link.check_outcome(&name).await;
                 if !link.is_awaiting(&name) {
                     return;
                 }
                 drop(link);
-                let pause = if answered {
-                    retry = OUTCOME_FIRST;
-                    OUTCOME_POLL
-                } else {
-                    let pause = retry;
-                    retry = (retry * 2).min(OUTCOME_POLL);
-                    pause
-                };
-                tokio::time::sleep(pause).await;
+                tokio::time::sleep(OUTCOME_POLL).await;
             }
         });
     }
@@ -288,9 +274,8 @@ impl Peers {
             .is_some_and(|record| record.phase == Phase::AwaitingPeer)
     }
 
-    /// 问一次结果：对方同意就成立，拒绝就标成拒绝，没答上来下个周期再问。对方给了看得懂的回应
-    /// （包括“还在等”）时返回 true；连不上、回应看不懂时返回 false，由调用方很快再问。
-    async fn check_outcome(self: &Arc<Self>, server_name: &str) -> bool {
+    /// 问一次结果：对方同意就成立，拒绝就标成拒绝，没答上来下个周期再问。
+    async fn check_outcome(self: &Arc<Self>, server_name: &str) {
         let target = {
             let inner = self.lock();
             inner
@@ -300,7 +285,7 @@ impl Peers {
                 .map(|record| (record.endpoint_id, record.endpoint_addr()))
         };
         let Some((endpoint, addr)) = target else {
-            return true;
+            return;
         };
         match ask_outcome(&self.tunnel.endpoint, addr).await {
             Ok(PeerReply::Approved { identity }) => {
@@ -309,26 +294,16 @@ impl Peers {
                         server = %server_name,
                         "问结果的回应报的服务器名对不上，不理"
                     );
-                    return true;
+                    return;
                 }
                 // 对方在等本机的探活：先放行再落记录。
                 self.server_allowlist.allow(endpoint);
                 self.pair_local(server_name, endpoint, identity);
-                true
             }
-            Ok(PeerReply::Declined) => {
-                self.mark_declined(server_name, endpoint);
-                true
-            }
-            Ok(PeerReply::Pending | PeerReply::UnknownRequest) => true,
-            Ok(other) => {
-                tracing::debug!(reply = ?other, "问结果的回应看不懂，稍后再问");
-                false
-            }
-            Err(e) => {
-                tracing::debug!(error = %e, "没有问到配对结果，稍后再问");
-                false
-            }
+            Ok(PeerReply::Declined) => self.mark_declined(server_name, endpoint),
+            Ok(PeerReply::Pending | PeerReply::UnknownRequest) => {}
+            Ok(other) => tracing::debug!(reply = ?other, "问结果的回应看不懂，稍后再问"),
+            Err(e) => tracing::debug!(error = %e, "没有问到配对结果，稍后再问"),
         }
     }
 

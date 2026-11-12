@@ -33,14 +33,12 @@ fn succeeded(message: &str) -> Value {
 
 fn plugin() -> InstalledPlugin {
     InstalledPlugin {
-        chat: Default::default(),
         id: PLUGIN.to_owned(),
         title: "看板".to_owned(),
         summary: String::new(),
         version: "1.0.0".to_owned(),
         revision: "1.0.0".to_owned(),
         kind: PluginKind::App,
-        runtime: Default::default(),
         icon: None,
         trust: PluginTrust::Official,
         source: None,
@@ -61,8 +59,6 @@ fn plugin() -> InstalledPlugin {
         removable: true,
         notices: Vec::new(),
         enabled_root_permissions: Vec::new(),
-        install_progress: None,
-        tunnel_ports: Vec::new(),
     }
 }
 

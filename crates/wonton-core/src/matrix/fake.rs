@@ -71,10 +71,6 @@ pub struct Tuwunel {
     pub refuse_logout: bool,
     /// 写过几次显示名。
     pub display_name_writes: usize,
-    /// 全局账号数据：（用户，事件类型）→ 内容。
-    pub account_data: BTreeMap<(String, String), Value>,
-    /// 房间账号数据：（用户，房间，事件类型）→ 内容。
-    pub room_account_data: BTreeMap<(String, String, String), Value>,
     next: usize,
 }
 
@@ -574,82 +570,6 @@ async fn joined_members(
     }))
 }
 
-async fn get_account_data(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, event)): Path<(String, String)>,
-) -> Reply {
-    let state = fake.state();
-    reply(auth(&state, &headers).and_then(|(caller, _)| {
-        if caller != user {
-            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
-        }
-        match state
-            .account_data
-            .get(&(user.clone(), event.clone()))
-            .cloned()
-        {
-            Some(value) => Ok(ok(value)),
-            None => Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND")),
-        }
-    }))
-}
-
-async fn put_account_data(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, event)): Path<(String, String)>,
-    Json(body): Json<Value>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).map(|(caller, _)| {
-        if caller == user {
-            state.account_data.insert((user, event), body);
-            ok(json!({}))
-        } else {
-            error(StatusCode::FORBIDDEN, "M_FORBIDDEN")
-        }
-    }))
-}
-
-async fn get_room_account_data(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, room, event)): Path<(String, String, String)>,
-) -> Reply {
-    let state = fake.state();
-    reply(auth(&state, &headers).and_then(|(caller, _)| {
-        if caller != user {
-            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
-        }
-        match state
-            .room_account_data
-            .get(&(user.clone(), room.clone(), event.clone()))
-            .cloned()
-        {
-            Some(value) => Ok(ok(value)),
-            None => Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND")),
-        }
-    }))
-}
-
-async fn put_room_account_data(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((user, room, event)): Path<(String, String, String)>,
-    Json(body): Json<Value>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).map(|(caller, _)| {
-        if caller == user {
-            state.room_account_data.insert((user, room, event), body);
-            ok(json!({}))
-        } else {
-            error(StatusCode::FORBIDDEN, "M_FORBIDDEN")
-        }
-    }))
-}
-
 async fn get_direct(
     State(fake): State<Fake>,
     headers: HeaderMap,
@@ -744,14 +664,6 @@ pub async fn start() -> (Fake, MatrixConfig) {
         .route(
             &format!("{client}/user/{{user}}/account_data/m.direct"),
             get(get_direct).put(put_direct),
-        )
-        .route(
-            &format!("{client}/user/{{user}}/account_data/{{event}}"),
-            get(get_account_data).put(put_account_data),
-        )
-        .route(
-            &format!("{client}/user/{{user}}/rooms/{{room}}/account_data/{{event}}"),
-            get(get_room_account_data).put(put_room_account_data),
         )
         // 注册 pusher：回显收到的请求体（原文和解析结果），测试据此确认网关转过来的就是它检查过的那一份。
         .route(

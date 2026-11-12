@@ -7,7 +7,6 @@ core-error-not-ready = 尚未就緒：{ $reason }
 core-error-transport = 無法連上家用伺服器：{ $reason }
 core-error-unauthorized = 家用伺服器拒絕了請求：{ $reason }
 core-error-upstream = 家用伺服器發生錯誤：{ $reason }
-core-error-server-too-old = 家裡的伺服器太舊，還做不了這件事。升級伺服器後再試。
 
 # 新增裝置時，還無法取得配對碼的原因。
 invite-not-paired = 你還沒與家用伺服器配對。
@@ -45,20 +44,6 @@ peers-invalid-proxy = 本機代理不可用：{ $reason }
 peers-server-status = 家裡的伺服器回了 HTTP { $status }
 # $reason 是 JSON 解析器的原始錯誤。
 peers-invalid-response = 家裡的伺服器給的回應讀不懂：{ $reason }
-friends-transport = 連不上家裡的伺服器：{ $reason }
-friends-server-status = 家裡的伺服器回了 HTTP { $status }
-friends-invalid-response = 家裡的伺服器給的回應讀不懂：{ $reason }
-friends-not-signed-in = 還沒登入這個帳號。
-friends-not-connected = 還沒連上家用伺服器。
-friends-invalid-action = 不是好友操作。
-friends-local-open = 本機好友清單打不開：{ $reason }
-friends-invalid-proxy = 本機代理位址不可用：{ $reason }
-friends-http-client = 本機 HTTP 用戶端建立失敗：{ $reason }
-friends-invalid-url = 好友服務位址不合法：{ $reason }
-friends-request-body = 好友請求編碼失敗：{ $reason }
-friends-timeout = 好友服務沒有及時回應。
-friends-group-name-required = 請填寫分組名稱。
-friends-group-not-found = 沒有這個分組：{ $id }
 # $reason 是隧道拒絕的原話。
 peers-rejected = 家裡的伺服器拒絕了這台裝置：{ $reason }
 
@@ -78,8 +63,6 @@ onboarding-steps-testing = 正在測試
 onboarding-steps-model-not-chosen = 還沒有選模型
 onboarding-steps-cannot-skip = 這一步不能跳過
 onboarding-steps-cannot-go-back = 這一步不能返回
-# 殼把不認得的操作交給初始設定時顯示。
-onboarding-invalid-action = 不是初始設定操作
 
 # 接模型這一步。
 onboarding-model-key-required = API 金鑰不能為空
@@ -108,7 +91,6 @@ onboarding-review-no-failure = 這一項沒有失敗
 
 # 登入相關。$reason 是 Matrix SDK 的原始錯誤詳細資訊。
 chat-sign-in-restore-failed = 無法恢復 Matrix 工作階段：{ $reason }
-chat-sign-in-external-missing = 這支手機上已經沒有這個 Matrix 帳號的登入狀態，請重新登入。
 chat-sign-in-no-connection-info = 還沒有家用伺服器的連線資訊
 chat-sign-in-login-failed = 無法登入 Matrix：{ $reason }
 chat-sign-in-no-saved-session = 登入後取不到登入狀態
@@ -156,71 +138,15 @@ chat-contacts-empty-username = 使用者名稱不能為空。
 # $reason 是 Matrix ID 剖析器的原始錯誤。
 chat-contacts-invalid-user-id = 使用者 ID 無效：{ $reason }
 
-# 透過 Siri、捷徑或聊天頁傳送訊息、內容為空時顯示。
-chat-empty-message = 訊息不能為空。
-composer-tray-full = 附件區最多放 { $max } 個附件。
-composer-has-failed = 附件區裡有沒傳上去的附件，先重試或刪掉它。
-composer-attachment-not-found = 找不到這個附件，可能已經刪掉或發出去了。
-composer-outgoing-not-found = 找不到這則待發訊息，可能已經交出去了。
-composer-store-failed = 附件區存不到手機上（{ $path }）：{ $reason }
-composer-attachment-failed = 附件「{ $name }」沒傳上去。
-composer-transfer-gone = 這個檔案的上傳紀錄不見了，請重試。
-composer-upload-record-unreadable = 照片的上傳紀錄讀不懂：{ $reason }
+# 透過 Siri 或捷徑傳送訊息、內容為空時顯示。
+chat-ask-empty-message = 訊息不能為空。
 # Siri 或捷徑傳入的 Bot ID 剖析失敗時顯示。
 chat-ask-invalid-bot-id = 預設 Agent 的 ID 格式不對。
 # 已有私訊的聊天室 ID 剖析失敗時顯示。
 chat-ask-invalid-room-id = 私訊的聊天室 ID 無效。
-chat-layout-invalid-bot-id = ID 的格式不對，應該像 @名字:伺服器。
-chat-layout-change-failed = 改顯示方式沒成功：{ $reason }
 
 # Matrix 撤銷本裝置、帳號標記為失敗時顯示。
 chat-session-device-revoked = 這台裝置在 Matrix 上已被撤銷，需要主人重新配對。
-
-# 殼把不認得的操作交給聊天時顯示。
-side-chat-not-ready = 這個版本的用戶端核心還不支援旁聊。
-chat-invalid-action = 不是聊天操作
-# 發起私聊時給的 ID 不像 @名稱:伺服器時顯示。
-chat-invalid-user-id = ID 格式不對，應該像 @名稱:伺服器
-# $file_type 是所選檔案原始的 MIME 類型。
-chat-not-image-type = 這個檔案不是圖片：{ $file_type }
-# 殼送出這個核心不認得的回答時顯示。
-chat-unknown-answer = 這個版本的雲吞不認得這個回答
-# 還沒連上家用伺服器就回答或停止確認時顯示。
-chat-action-not-connected = 還沒連上家用伺服器
-# 還沒登入 Matrix 就有聊天操作時顯示。
-chat-not-signed-in = 還沒登入 Matrix
-chat-send-no-response = Matrix 伺服器沒有回應
-# $error 是房間 ID 剖析器的原始錯誤。
-chat-invalid-room-id = 聊天室 ID 無效：{ $error }
-chat-link-room-not-joined = 還沒加入這個聊天室，請先在聊天列表接受邀請。
-# 在只放通知的房間裡送東西時顯示。
-chat-read-only-room = 這個聊天室只放通知，不能傳送訊息
-# $room 是原始的房間 ID。
-chat-room-not-subscribed = 要先訂閱聊天室 { $room } 的時間軸
-# $error 是事件 ID 解析器的原始錯誤。
-chat-invalid-event-id = 訊息的事件 ID 無效：{ $error }
-# 要轉傳或收回的訊息選單裡沒有這一項（已收回、還沒傳出去、沒有權限等）時顯示。
-chat-message-action-unavailable = 這則訊息不能這樣操作
-# 轉傳的目標聊天室不存在或還沒加入時顯示。
-chat-forward-target-not-joined = 還沒有加入要轉傳到的聊天室
-# 還沒選預設 Agent 就詢問時顯示。
-chat-no-default-agent = 還沒有預設 Agent：先在設定裡選一個
-
-# 背景聊天操作失敗的訊息，放進問題提示；$error 是 Matrix SDK 或家用伺服器的原始錯誤。
-chat-op-ask-agent-failed = 無法詢問預設 Agent：{ $error }
-chat-op-display-name-failed = 無法同步顯示名稱：{ $error }
-chat-op-join-failed = 無法加入聊天室：{ $error }
-chat-op-leave-failed = 無法離開聊天室：{ $error }
-chat-op-resend-failed = 無法重新傳送訊息：{ $error }
-chat-op-cancel-send-failed = 無法取消傳送：{ $error }
-chat-op-paginate-failed = 無法載入更早的訊息：{ $error }
-chat-op-mark-read-failed = 無法標為已讀：{ $error }
-chat-op-direct-chat-failed = 無法發起私訊：{ $error }
-chat-op-send-text-failed = 無法傳送訊息：{ $error }
-chat-op-send-image-failed = 無法傳送圖片：{ $error }
-chat-op-send-preview-failed = 連結預覽沒有附上：{ $error }
-chat-op-forward-failed = 無法轉傳訊息：{ $error }
-chat-op-redact-failed = 無法收回訊息：{ $error }
 ## 檔案傳輸與播放的詳細資訊。顯示在傳輸清單項目、檔案卡片和播放失敗說明上。
 
 # 傳輸或播放還沒開始就發現未連線時顯示。
@@ -279,13 +205,13 @@ files-download-incomplete = 連線中斷，沒有收完
 files-download-stalled = 收不到資料，隧道可能卡住了
 
 # 連線中斷導致播放失敗時顯示。
-files-playback-transport = 連不上家用伺服器。
+files-playback-transport = 連不上家用伺服器。可以下載後用其他 App 開啟。
 # 這部裝置無法播放這個格式時顯示。
 files-playback-unsupported = 這部手機無法播放這個格式。可以下載後用其他 App 開啟。
 # $detail 是家用伺服器或連線的原始原因。
 files-playback-unavailable = 家用伺服器無法提供這個檔案：{ $detail }
 # $detail 是家用伺服器或連線的原始原因。
-files-playback-error = 家用伺服器發生錯誤：{ $detail }。
+files-playback-error = 家用伺服器發生錯誤：{ $detail }。可以下載後用其他 App 開啟。
 # 播放探測逾時時顯示。
 files-playback-no-response = 家用伺服器一直沒有回應
 
@@ -311,17 +237,7 @@ home-ticket-invalid-core-url = 家用伺服器位址無效：{ $error }
 # $domain 是連線資訊的基礎網域，$url 是連線資訊裡的原始位址。
 home-ticket-core-url-under-domain = 家用伺服器位址必須是 { $domain } 的 http(s) 位址：{ $url }
 # $error 是網路初始化的原始錯誤。
-# 沒有參數。配對頁的裝置名欄位被清空了。
-home-pairing-name-empty = 裝置名是空的。
 home-pairing-bind-failed = 無法建立網路連線：{ $error }
-# $reason 是連線資訊剖析器的原始錯誤。
-home-ticket-corrupt = 儲存的連線資訊已損毀：{ $reason }
-home-no-connection-info = 還沒有家用伺服器的連線資訊
-# $error 是本機代理原始的繫結錯誤。
-home-proxy-start-failed = 本機代理啟動失敗：{ $error }
-home-tunnel-closed = 隧道用戶端已關閉
-home-lan-unsupported = 這個版本的用戶端核心不支援區域網路設定
-home-port-mapping-save-failed = 連接埠映射的開關存不下來：{ $error }
 # 底欄（tabs/view.rs、tabs/config.rs）和外觀（appearance/mod.rs）的介面「詳細資訊」。
 # 對使用者，插件一律叫「App」；底欄按 Android 慣例寫「底部導覽列」。
 
@@ -330,10 +246,7 @@ home-port-mapping-save-failed = 連接埠映射的開關存不下來：{ $error 
 tabs-view-always-pinned = 聊天和應用程式已經固定到底部導覽列。
 tabs-view-plugin-list-not-ready = 還沒載入應用程式清單，暫時無法操作應用程式頁面。
 tabs-view-unknown-plugin = 找不到這個應用程式。
-# $error 是本地儲存的原始錯誤。
-tabs-storage-problem = 底欄設定存不下，下次啟動可能恢復舊狀態：{ $error }
 tabs-view-plugin-no-page = 這個應用程式沒有可開啟的網頁。
-tabs-page-not-placed = 這個頁面不在面板裡。
 
 # 底部導覽列設定檔（tabs.json）的錯誤，作為 CoreError 的 reason 顯示。
 # $path 是設定檔的路徑，$reason 是原始的剖析或讀寫錯誤。
@@ -343,7 +256,7 @@ tabs-config-corrupt = 底部導覽列設定檔 { $path } 已損毀：{ $reason }
 tabs-config-too-many-items = 底部導覽列最多只能有 { $count } 個項目。
 tabs-config-duplicate-page = 底部導覽列裡有重複的頁面。
 tabs-config-plugin-page-incomplete = 應用程式頁面缺少標題和圖示。
-tabs-config-missing-fixed = 底部導覽列缺少聊天。
+tabs-config-missing-fixed = 底部導覽列缺少聊天或應用程式。
 # $path 是設定檔的路徑，$reason 是原始的寫入錯誤。
 tabs-config-write-failed = 無法寫入底部導覽列設定檔 { $path }：{ $reason }
 
@@ -373,7 +286,6 @@ plugins-api-not-image-url = 不是應用程式圖片的位址：{ $reason }
 # $status 是原始 HTTP 狀態碼。
 plugins-api-server-status = 家用伺服器傳回 HTTP { $status }
 plugins-api-not-connected = 連上家用伺服器後再試。
-plugins-api-server-too-old = 家裡的伺服器 { $version } 太舊：這個功能要 { $minimum } 起。
 
 # 安裝、更新、解除安裝任務（crates/wonton-client/src/plugins/tasks.rs）。
 plugins-tasks-uncertain = 連線中斷了，等不到家用伺服器的結果，看一下已安裝清單。
@@ -424,6 +336,7 @@ files-name-required = 檔案名稱不能為空
 files-download-already-running = 這個檔案已經在下載了
 files-transfer-not-found = 找不到這筆傳輸
 # 這筆傳輸不在「等著傳送連結」的狀態時要重新傳送連結。
+files-resend-not-waiting = 這筆傳輸沒有等著重新傳送的連結
 files-transfer-server-changed = 換了家用伺服器，這筆傳輸屬於之前那一台
 files-dismiss-transfer-running = 這筆傳輸還在進行，要先取消
 # 移除上傳並要求刪除本機檔案時：原檔案是系統給的，App 刪不了它。
@@ -455,22 +368,11 @@ servers-add-current-unpaired = 先配好這一台，再新增別的伺服器
 servers-name-required = 名稱不能為空
 # $path 是要讀取、寫入或刪除的路徑，$reason 是原始的讀寫錯誤。
 servers-storage-failed = 無法讀寫 { $path }：{ $reason }
-# 殼把不認得的操作交給伺服器清單時顯示。
-servers-invalid-action = 不是伺服器清單操作
-matrix-login-not-current = 這次登入已經結束，或者已經換成了新的一次。
-matrix-login-wrong-step = 這次登入不在這一步。
-matrix-login-method-not-offered = 這台伺服器不提供這種登入方式。
-matrix-login-device-name-required = 請填這台裝置的名稱。
-matrix-login-invalid-user-id = 請填完整的 Matrix ID，例如 @name:matrix.org。
-matrix-login-password-required = 請填密碼。
-matrix-login-redirect-not-allowed = App 收不到發往這個位址的登入回呼。
 
 # 工作階段清單（crates/wonton-client/src/session_store.rs）。
 sessions-title-required = 工作階段標題不能為空
 # $id 是原樣的工作階段編號。
 sessions-not-found = 沒有這個工作階段：{ $id }
-# 殼把不認得的操作交給工作階段時顯示。
-sessions-invalid-action = 不是工作階段操作
 
 # 推播方式設定（crates/wonton-client/src/push_method.rs）。
 # $path 是設定檔的路徑，$reason 是原始的讀寫錯誤。
@@ -522,16 +424,9 @@ plugins-start-busy = { $id } 正在啟動、安裝、更新或解除安裝
 # 應用程式頁面的橋接（crates/wonton-client/src/tabs/bridge/）。
 tabs-bridge-page-not-open = 這個 App 的頁面沒有開啟或固定
 tabs-bridge-invalid-environment = 頁面欄高與安全區必須是有限的非負數
-tabs-bridge-public-page = 公網網頁沒有 Wonton 的橋。
-plugin-media-not-asked = 這個 App 的頁面沒有保存攝影機和麥克風的判斷
-plugin-media-save-failed = 無法寫入攝影機和麥克風的判斷檔 { $path }：{ $reason }
 
 # 聊天的連線問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailable 的原因和失敗操作的訊息。
 chat-not-connected = 連上家用伺服器後再試
-chat-draft-save-failed = 存草稿失敗：{ $error }
-chat-draft-clear-failed = 清掉已發出的草稿失敗：{ $error }
-chat-draft-not-signed-in = 還沒有登入 Matrix
-chat-draft-read-interrupted = 草稿的讀取被打斷了
 
 # 引導的本機記錄（crates/wonton-client/src/onboarding/storage.rs）。
 # $path 是檔案的路徑，$reason 是原始的讀寫錯誤。
@@ -552,93 +447,3 @@ plugins-core-upgrade-already-running = 已經在更新了
 plugins-core-upgrade-not-cancellable = 現在無法取消
 # $reason 是連線問題的原始詳細資訊。
 plugins-core-upgrade-start-uncertain = 不確定發起了沒有，連上後再看一下：{ $reason }
-
-# 相容性檢查（ADR-0085）的詳情：每個原因一行，{ $raw } 是清單裡的原值。用戶端核心按
-# App 的語言寫，升級頁列在新版本讀不了的應用程式下面。
-plugins-core-upgrade-compat-spec = 它按規範 { $raw } 寫成，新版本不支援：升級後會被標為異常。
-plugins-core-upgrade-compat-feature = 它的清單用了新版本不認得的 { $raw }：升級後會被標為異常。
-plugins-core-upgrade-compat-capability = 它依賴能力 { $raw }，新版本不提供：升級後會被標為異常。
-plugins-core-upgrade-compat-other = 新版本讀不了這個應用程式：升級後會被標為異常。
-plugins-core-upgrade-compat-other-raw = 新版本讀不了這個應用程式的 { $raw }：升級後會被標為異常。
-
-# 個人資料這一步：名字或電子郵件為什麼無法儲存。$max 是名字最多幾個字。
-onboarding-profile-name-empty = 名字不能空白
-onboarding-profile-name-too-long = 名字太長：最多 { $max } 個字
-onboarding-profile-name-control = 名字裡不能有換行或控制字元
-onboarding-profile-email-invalid = 這看起來不像電子郵件地址：請寫成 me@example.com 這樣，不含空白和控制字元
-onboarding-profile-email-cleared = 電子郵件填過以後只能修改、不能清除：需要電子郵件的 App 重建時會用到它
-
-# 確認卡片下方放行時段結束後的那一行。$count 是開啟時段那次之外放行了幾次，0 表示不知道或沒有。
-chat-window-ended =
-    { $reason ->
-        [expired]
-            { $count ->
-                [0] 放行時段已到期。
-               *[other] 放行時段已到期，放行了 { $count } 次。
-            }
-        [stopped]
-            { $count ->
-                [0] 放行時段已停止。
-               *[other] 放行時段已停止，放行了 { $count } 次。
-            }
-        [restarted] 伺服器重新啟動過，放行時段已結束。
-       *[other]
-            { $count ->
-                [0] 放行時段已結束。
-               *[other] 放行時段已結束，放行了 { $count } 次。
-            }
-    }
-
-# 配對詳細資訊。位址和中繼 URL 不含配對密鑰；error 保留上游原文。
-home-pairing-timeout = 配對未能在 { $seconds } 秒內完成。
-home-pairing-aborted = 配對沒有完成就中斷了，再試一次。
-home-pairing-not-pairing = 沒有正在進行的配對。
-home-pairing-failed-detail = 直連位址：{ $addresses }。中繼：[{ $relays }]。已用時 { $milliseconds } 毫秒，時限 { $seconds } 秒。原因：{ $error }
-plugin-now-start-failed = 一鍵操作開始不了：{ $error }
-
-# 面板（ADR-0052）的錯誤。作為 CoreError 的原因，或 TabsProblem 的說明顯示。
-panel-full = 面板滿了，先拿掉一頁再放。
-panel-pins-not-connected = 還沒有連上家裡的伺服器。
-panel-pins-api-failed = { $status }：{ $body }
-
-panel-page-already-there = 這個頁面已經在面板裡。
-panel-page-not-there = 這個頁面不在面板裡。
-panel-page-unsupported = 面板裡只能放 App 頁面、App 裡的某一頁和 https:// 的網頁。
-panel-index-out-of-range = 那個位置在面板外面。
-panel-not-signed-in = 還沒登入，面板改動存不進帳號；本機先記著，登入後再同步。
-panel-room-not-open = 先打開這個聊天，才能改它的面板。
-panel-room-unknown = 找不到這個聊天。
-panel-pin-invalid-url = 這個網址讀不出來。
-panel-pin-not-https = 只能釘 https:// 的網頁。
-panel-pin-path-outside = 這一頁不在這個 App 自己的網站裡。
-panel-attention-panel-only = 只有面板裡的頁面能掛紅點。
-panel-config-too-many = 面板最多放 { $count } 頁。
-panel-config-duplicate = 同一個頁面在面板裡出現了兩次。
-panel-sync-failed-read = 從伺服器讀面板設定沒有成功。
-panel-sync-unreadable = 伺服器上的面板設定這台裝置讀不懂，先用本機的。
-tabs-page-cannot-reload = 這個頁面不能重新載入。
-
-tabs-bar-not-pinned = 這個頁面沒有固定到底欄。
-tabs-bar-already-pinned = 這個頁面已經固定到底欄。
-tabs-bar-replace-required = 底欄已滿，必須指定要替換的頁面。
-tabs-bar-replacing-missing = 要替換的頁面不在底欄。
-tabs-bar-fixed = 聊天和應用不能被替換。
-tabs-bar-not-full = 底欄未滿時不能指定替換頁面。
-tabs-bar-remove-fixed = 聊天和應用不能拿掉。
-tabs-bar-page-missing = 這個頁面不在底欄。
-tabs-bar-index-out-of-range = 底欄下標越界。
-tabs-open-only-plugins = 只有外掛頁面可以設定開啟方式。
-tabs-fullscreen-only-plugins = 只有外掛頁面可以全螢幕。
-tabs-fullscreen-none = 目前沒有全螢幕頁面。
-tabs-fullscreen-not-current = 退出的頁面不是目前全螢幕頁面。
-panel-pins-refresh-failed = 面板裡 Bot 釘的頁面取不到:{ $error }
-
-## 要跨來源隔離的插件網頁在系統瀏覽器裡開啟（ADR-0033）。後三條顯示在瀏覽器裡。
-browser-front-failed = 無法開啟給瀏覽器用的本機位址：{ $error }
-browser-page-not-isolated = 這個頁面不在瀏覽器裡開啟。
-browser-not-paired = 雲吞還沒和家裡的伺服器配對。
-browser-unknown-address = 這個位址已經失效。回到雲吞，重新開啟這個應用程式。
-browser-not-connected = 雲吞目前沒有連上家裡的伺服器。回到雲吞，等連上後再重新整理這個頁面。
-browser-bad-request = 請從雲吞裡開啟這個頁面。
-
-contacts-invalid-action = 不是 Bot 聯絡人操作。

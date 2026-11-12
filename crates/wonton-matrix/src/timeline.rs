@@ -18,7 +18,7 @@ use matrix_sdk_ui::timeline::{
 use crate::message::{MemberNames, Message, message, sender_name};
 
 /// 时间线里的一条。
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TimelineEntry {
     /// 在这条时间线里稳定的标识：本地回显发出后、内容被编辑后都不变。
     pub id: String,
@@ -26,7 +26,7 @@ pub struct TimelineEntry {
 }
 
 /// 条目的种类。
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EntryKind {
     /// 消息比其他种类大得多，装箱放着。
     Message(Box<Message>),

@@ -6,55 +6,29 @@ use bollard::errors::Error as BollardError;
 use bollard::query_parameters::CreateImageOptionsBuilder;
 use futures_util::StreamExt;
 
-use super::reference::{digest, pull_reference, station};
+use super::reference::{digest, mirrored, pull_reference};
 use crate::plugin::compose::PullPolicy;
 use crate::plugin::docker::{Engine, EngineError};
 
 type Result<T, E = EngineError> = std::result::Result<T, E>;
-
-/// 拉镜像时一层报到的情况。Docker 的 `progressDetail` 是按层的，百分比要按层的字节数加起来算。
-pub(in crate::plugin) struct LayerProgress<'a> {
-    /// 层的 ID。
-    pub id: &'a str,
-    /// 这一层已经下完，或者本来就在本地（`Already exists`、`Pull complete`）。
-    pub done: bool,
-    /// 这一层下到的字节数。
-    pub current: u64,
-    pub total: u64,
-}
 
 impl Engine {
     pub async fn ensure_image(
         &self,
         image: &str,
         policy: PullPolicy,
-        accelerated: &[String],
+        mirror: Option<&str>,
     ) -> Result<String> {
-        self.ensure_image_with_progress(image, policy, accelerated, &mut |_layer: LayerProgress<
-            '_,
-        >| {})
-            .await
-    }
-
-    /// 同 [`Self::ensure_image`]。拉的时候每层的字节数交给 `progress`；本机已经有了、不拉时不报。
-    /// `accelerated` 是同一个引用按名单顺序改写出的加速引用，一个站失败就换下一个（ADR-0074）。
-    pub(in crate::plugin) async fn ensure_image_with_progress(
-        &self,
-        image: &str,
-        policy: PullPolicy,
-        accelerated: &[String],
-        progress: &mut (dyn FnMut(LayerProgress<'_>) + Send),
-    ) -> Result<String> {
+        let accelerated = mirror.and_then(|mirror| mirrored(image, mirror));
         if policy != PullPolicy::Always {
-            if self.image_present(image).await? && self.digest_matches(image).await? {
+            if self.image_present(image).await? {
                 return Ok(image.to_owned());
             }
-            for reference in accelerated {
-                if self.image_present(reference).await?
-                    && self.check_digest(reference).await.is_ok()
-                {
-                    return Ok(reference.clone());
-                }
+            if let Some(reference) = &accelerated
+                && self.image_present(reference).await?
+            {
+                self.check_digest(reference).await?;
+                return Ok(reference.clone());
             }
             if policy == PullPolicy::Never {
                 let langs = self.owner_languages();
@@ -65,63 +39,37 @@ impl Engine {
                 )));
             }
         }
-        if accelerated.is_empty() {
-            self.pull_and_check(image, progress).await?;
-            return Ok(image.to_owned());
-        }
-        let mut failures = Vec::new();
-        for reference in accelerated {
-            match self.pull_and_check(reference, progress).await {
-                Ok(()) => {
-                    return Ok(if self.image_present(image).await? {
-                        image.to_owned()
-                    } else {
-                        reference.clone()
-                    });
-                }
-                Err(error) => failures.push((station(reference).to_owned(), error.to_string())),
+        let reference = accelerated.as_deref().unwrap_or(image);
+        let pulled = async {
+            self.pull(reference).await?;
+            if digest(reference).is_some() {
+                self.check_digest(reference).await?;
             }
+            Ok::<_, EngineError>(())
         }
-        Err(self.all_stations_failed(image, &failures))
-    }
-
-    async fn pull_and_check(
-        &self,
-        reference: &str,
-        progress: &mut (dyn FnMut(LayerProgress<'_>) + Send),
-    ) -> Result<()> {
-        self.pull(reference, progress).await?;
-        if digest(reference).is_some() {
-            self.check_digest(reference).await?;
+        .await;
+        if let Err(error) = pulled {
+            return Err(if accelerated.is_some() {
+                let langs = self.owner_languages();
+                EngineError::Pull {
+                    image: reference.to_owned(),
+                    message: l10n::text(
+                        &langs,
+                        "plugin-settings-mirror-pull-failed",
+                        &[
+                            ("mirror", mirror.expect("改写引用有加速地址").into()),
+                            ("error", error.to_string().into()),
+                        ],
+                    ),
+                }
+            } else {
+                error
+            });
         }
-        Ok(())
-    }
-
-    fn all_stations_failed(&self, image: &str, failures: &[(String, String)]) -> EngineError {
-        let langs = self.owner_languages();
-        let tries = failures
-            .iter()
-            .map(|(mirror, error)| {
-                l10n::text(
-                    &langs,
-                    "plugin-settings-mirror-try-failed",
-                    &[
-                        ("mirror", mirror.as_str().into()),
-                        ("error", error.as_str().into()),
-                    ],
-                )
-            })
-            .collect::<Vec<_>>();
-        EngineError::Pull {
-            image: image.to_owned(),
-            message: l10n::text(
-                &langs,
-                "plugin-settings-mirror-all-failed",
-                &[
-                    ("image", image.into()),
-                    ("tries", l10n::list(&langs, &tries).into()),
-                ],
-            ),
+        if accelerated.is_some() && self.image_present(image).await? {
+            Ok(image.to_owned())
+        } else {
+            Ok(reference.to_owned())
         }
     }
 
@@ -143,38 +91,6 @@ impl Engine {
                 }
             }
         }
-    }
-
-    /// 引用带摘要时要求本机那份的内容也是这个摘要：只按标签拉到过、标签换了指向的镜像照样算没有。
-    /// 防的是这个；没有 `RepoDigests` 的（本地构建、测试替身）不知道来源，按旧行为当作能用，
-    /// 只有登记过摘要且一条都不匹配才拒。inspect 出错往上报，不当成匹配；查不到镜像和
-    /// `image_present` 一样算没有，交给调用方走拉取。
-    async fn digest_matches(&self, image: &str) -> Result<bool> {
-        let Some(expected) = digest(image) else {
-            return Ok(true);
-        };
-        let inspect = match self.docker.inspect_image(image).await {
-            Ok(inspect) => inspect,
-            Err(BollardError::DockerResponseServerError {
-                status_code: 404, ..
-            }) => return Ok(false),
-            Err(error) => {
-                let langs = self.owner_languages();
-                return Err(crate::plugin::docker::from_bollard(
-                    &langs,
-                    &crate::l10n::text(&langs, "plugin-settings-mirror-inspect", &[]),
-                    error,
-                ));
-            }
-        };
-        let Some(digests) = inspect.repo_digests.filter(|digests| !digests.is_empty()) else {
-            return Ok(true);
-        };
-        Ok(digests.iter().any(|reference| {
-            reference
-                .rsplit_once('@')
-                .is_some_and(|(_, digest)| digest == expected)
-        }))
     }
 
     async fn check_digest(&self, image: &str) -> Result<()> {
@@ -214,18 +130,14 @@ impl Engine {
         Ok(())
     }
 
-    async fn pull(
-        &self,
-        image: &str,
-        progress: &mut (dyn FnMut(LayerProgress<'_>) + Send),
-    ) -> Result<()> {
+    async fn pull(&self, image: &str) -> Result<()> {
         let reference = pull_reference(image);
         let options = CreateImageOptionsBuilder::default()
             .from_image(&reference)
             .build();
         let mut stream = self.docker.create_image(Some(options), None, None);
         while let Some(item) = stream.next().await {
-            let item = item.map_err(|error| match error {
+            item.map_err(|error| match error {
                 BollardError::DockerResponseServerError { message, .. }
                 | BollardError::DockerStreamError { error: message } => EngineError::Pull {
                     image: image.to_owned(),
@@ -248,25 +160,6 @@ impl Engine {
                     )
                 }
             })?;
-            let Some(id) = item.id else { continue };
-            let done = matches!(
-                item.status.as_deref(),
-                Some("Already exists" | "Pull complete" | "Download complete")
-            );
-            let (current, total) = item.progress_detail.map_or((0, 0), |detail| {
-                (
-                    detail.current.unwrap_or_default().max(0) as u64,
-                    detail.total.unwrap_or_default().max(0) as u64,
-                )
-            });
-            if done || total > 0 {
-                progress(LayerProgress {
-                    id: &id,
-                    done,
-                    current,
-                    total,
-                });
-            }
         }
         Ok(())
     }

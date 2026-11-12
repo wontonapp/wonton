@@ -78,10 +78,6 @@ impl HomeLink {
             && !self.keep_connection.load(Ordering::SeqCst);
         if *self.background.borrow() != background {
             self.background.send_replace(background);
-            // 真的进了后台（没在放声音、没开保持连接）才停取地址：保活期间和前台一样。
-            if background {
-                self.stop_address_refresh();
-            }
         }
     }
 }

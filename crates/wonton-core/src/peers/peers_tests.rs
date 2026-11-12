@@ -32,8 +32,6 @@ use wonton_tunnel::relays::RelayTable;
 
 use super::{OwnIdentity, OwnerNotices, PeerRequest, Peers};
 use crate::device::Devices;
-use crate::members::Members;
-
 use crate::plugin::languages::Languages;
 use crate::tunnel::Tunnel;
 
@@ -372,7 +370,6 @@ impl TestCore {
         let endpoint = loopback_endpoint(self.key.clone()).await;
         let tunnel = Tunnel::new(
             devices,
-            Arc::new(Members::open(self.dir.path().join("members.json")).unwrap()),
             Arc::new(|| Languages::from_header(None)),
             endpoint,
             0,
@@ -416,7 +413,7 @@ async fn pair(a: &TestCore, b: &TestCore) {
 #[tokio::test]
 async fn scan_then_approval_pairs_both_sides() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     let code = a.peers.issue_code();
     b.scan_code(&code, &a).await.unwrap();
@@ -429,7 +426,7 @@ async fn scan_then_approval_pairs_both_sides() {
 
     // 出码方的请求里是扫码方自报的内容，私聊里来了一条带链接的提醒。
     let request = a.request_now("b.example.internal");
-    assert_eq!(request.owner_display_name, "Alice");
+    assert_eq!(request.owner_display_name, "Jiale");
     assert_eq!(request.owner_user_id, "@owner:b.example.internal");
     assert!(
         a.peers.lookup("b.example.internal").is_none(),
@@ -438,7 +435,7 @@ async fn scan_then_approval_pairs_both_sides() {
     a.wait_notices(1).await;
     let notice = a.notices().remove(0)["body"].as_str().unwrap().to_owned();
     assert!(notice.contains("wonton://settings/peers"), "{notice}");
-    assert!(notice.contains("Alice"), "{notice}");
+    assert!(notice.contains("Jiale"), "{notice}");
 
     // 主人同意：两边记成已配对。
     a.approve("b.example.internal").await.unwrap();
@@ -454,7 +451,7 @@ async fn scan_then_approval_pairs_both_sides() {
     a.wait_paired_names("b.example.internal").await;
     b.wait_paired_names("a.example.internal").await;
     let row = a.row("b.example.internal").unwrap();
-    assert_eq!(row.owner_display_name, "Alice");
+    assert_eq!(row.owner_display_name, "Jiale");
     assert_eq!(row.owner_user_id, "@owner:b.example.internal");
     assert_eq!(
         row.status,
@@ -475,7 +472,7 @@ async fn scan_then_approval_pairs_both_sides() {
 #[tokio::test]
 async fn an_owner_rename_reaches_the_peer_as_the_current_name() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     a.set_owner_name("改名了");
     let code = a.peers.issue_code();
@@ -484,7 +481,7 @@ async fn an_owner_rename_reaches_the_peer_as_the_current_name() {
     assert_eq!(row.owner_display_name, "改名了");
 
     let request = a.request_now("b.example.internal");
-    assert_eq!(request.owner_display_name, "Alice");
+    assert_eq!(request.owner_display_name, "Jiale");
     a.approve("b.example.internal").await.unwrap();
     b.wait_paired("a.example.internal").await;
     assert_eq!(
@@ -497,7 +494,7 @@ async fn an_owner_rename_reaches_the_peer_as_the_current_name() {
 #[tokio::test]
 async fn a_decision_sent_while_the_scanner_is_offline_is_picked_up_by_the_poll() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     let code = a.peers.issue_code();
     // b 不带回连地址：a 送结果送不到，只能等 b 来问。
@@ -530,7 +527,7 @@ async fn a_decision_sent_while_the_scanner_is_offline_is_picked_up_by_the_poll()
 #[tokio::test]
 async fn a_taken_server_name_is_refused() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
     pair(&a, &b).await;
 
     // 另一个 endpoint 冒充同一个服务器名。
@@ -551,7 +548,7 @@ async fn a_taken_server_name_is_refused() {
 #[tokio::test]
 async fn removing_a_pairing_notifies_the_peer() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
     pair(&a, &b).await;
 
     assert!(a.peers.remove("b.example.internal").await.unwrap());
@@ -569,7 +566,7 @@ async fn removing_a_pairing_notifies_the_peer() {
 #[tokio::test]
 async fn a_server_name_resolves_only_to_its_bound_endpoint() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     assert!(a.peers.lookup("b.example.internal").is_none());
     let code = a.peers.issue_code();
@@ -590,7 +587,7 @@ async fn a_server_name_resolves_only_to_its_bound_endpoint() {
 #[tokio::test]
 async fn a_restart_keeps_pending_requests_and_pairings() {
     let mut a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     let code = a.peers.issue_code();
     b.scan_code(&code, &a).await.unwrap();
@@ -608,7 +605,7 @@ async fn a_restart_keeps_pending_requests_and_pairings() {
 #[tokio::test]
 async fn a_pending_scan_is_polled_again_after_a_restart() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let mut b = TestCore::start("Alice", "b.example.internal").await;
+    let mut b = TestCore::start("Jiale", "b.example.internal").await;
 
     let code = a.peers.issue_code();
     b.scan_code(&code, &a).await.unwrap();
@@ -673,10 +670,8 @@ async fn pending_rows_do_not_expire() {
     .unwrap();
     let devices = Arc::new(Devices::open(dir.path().join("devices.json")).unwrap());
     let endpoint = loopback_endpoint(SecretKey::generate()).await;
-    let members = Arc::new(Members::open(dir.path().join("members.json")).unwrap());
     let tunnel = Tunnel::new(
         devices,
-        members,
         Arc::new(|| Languages::from_header(None)),
         endpoint,
         0,

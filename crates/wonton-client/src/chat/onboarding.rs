@@ -65,7 +65,6 @@ mod tests {
 
     fn row(id: &str, direct_user_id: Option<&str>) -> RoomRow {
         RoomRow {
-            layout: Default::default(),
             room_id: id.to_owned(),
             name: id.to_owned(),
             is_direct: direct_user_id.is_some(),
@@ -74,7 +73,6 @@ mod tests {
             is_read_only: false,
             membership: RoomMembership::Joined,
             preview: None,
-            side_chats: false,
             unread_count: 0,
         }
     }

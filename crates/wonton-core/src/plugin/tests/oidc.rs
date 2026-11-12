@@ -23,17 +23,12 @@ struct Client {
 type Provider = Arc<Mutex<Client>>;
 
 async fn fake_hydra(client: Provider) -> Hydra {
-    // 和 Hydra v26.2.0 实测的一样：授权、登出端点给浏览器地址，签发方和后台端点给内部地址。
-    let public = |path: &str| format!("http://auth.wonton.localhost:8080{path}");
-    let internal = |path: &str| format!("http://auth.wonton.internal:8080{path}");
+    let endpoint = |path: &str| format!("http://auth.wonton.localhost:8080{path}");
     let discovery = json!({
-        "issuer": internal(""),
-        "authorization_endpoint": public("/oauth2/auth"),
-        "token_endpoint": internal("/oauth2/token"),
-        "userinfo_endpoint": internal("/userinfo"),
-        "jwks_uri": internal("/.well-known/jwks.json"),
-        "revocation_endpoint": internal("/oauth2/revoke"),
-        "end_session_endpoint": public("/oauth2/sessions/logout"),
+        "issuer": endpoint(""),
+        "authorization_endpoint": endpoint("/oauth2/auth"),
+        "token_endpoint": endpoint("/oauth2/token"),
+        "userinfo_endpoint": endpoint("/userinfo"),
     });
     let update = client.clone();
     let app = Router::new()
@@ -171,40 +166,4 @@ fn oidc_logout_paths_require_a_leading_slash_like_login_redirects() {
         )
         .unwrap();
     }
-}
-
-#[tokio::test]
-async fn injected_endpoints_follow_who_reaches_them() {
-    let web = serve(Router::new().route("/", get(|| async { "ok" }))).await;
-    let (docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let manager = manager_with_oidc(engine, &dir, fake_hydra(Provider::default()).await);
-    let compose = app(web.port(), "").replace(
-        "    image: nginx",
-        "    image: nginx\n    environment:\n      \
-         WONTON_OIDC_ISSUER: ${WONTON_OIDC_ISSUER}\n      \
-         WONTON_OIDC_AUTH_URL: ${WONTON_OIDC_AUTH_URL}\n      \
-         WONTON_OIDC_TOKEN_URL: ${WONTON_OIDC_TOKEN_URL}\n      \
-         WONTON_OIDC_USERINFO_URL: ${WONTON_OIDC_USERINFO_URL}",
-    );
-    manager
-        .install(&compose, &[], super::langs())
-        .await
-        .unwrap();
-    let env = super::env_of_container(
-        &docker,
-        &super::super::names::container_name("app-test", "web"),
-    );
-    let public = "http://auth.wonton.localhost:8080";
-    let internal = "http://auth.wonton.internal:8080";
-    assert_eq!(env["WONTON_OIDC_ISSUER"], internal);
-    assert_eq!(env["WONTON_OIDC_AUTH_URL"], format!("{public}/oauth2/auth"));
-    assert_eq!(
-        env["WONTON_OIDC_TOKEN_URL"],
-        format!("{internal}/oauth2/token")
-    );
-    assert_eq!(
-        env["WONTON_OIDC_USERINFO_URL"],
-        format!("{internal}/userinfo")
-    );
 }

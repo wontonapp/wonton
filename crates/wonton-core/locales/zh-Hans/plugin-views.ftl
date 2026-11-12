@@ -20,8 +20,8 @@ permission-models = 使用模型网关
 permission-tools = 调用家里的服务器和其他应用的工具
 permission-plugins-health = 读所有应用的健康状态
 permission-matrix-bot = 以 Bot 身份收发消息
-permission-notify = 给家里的人发通知和信
-permission-owner-identity = 知道你的用户名和邮箱，还能查家人用什么语言
+permission-notify = 给你发通知
+permission-owner-identity = 知道你的用户名和邮箱
 permission-network-egress = 访问外网和局域网
 permission-egress-proxy = 提供出网代理（高权限）
 permission-network-lan = 在局域网上开放端口（高权限）
@@ -33,8 +33,6 @@ permission-security-opt = 修改容器安全选项（最高权限）
 permission-privileged = 以特权模式运行（最高权限）
 permission-devices-gpu = 使用 GPU（高权限）
 permission-device = 访问宿主设备 { $path }（高权限）
-permission-devices-serial = 访问宿主串口设备（高权限）
-permission-devices-usb = 访问宿主 USB 设备（高权限）
 permission-docker-socket = 控制 Docker（最高权限）
 
 # 高权限下面带的长说明。
@@ -43,12 +41,11 @@ permission-notice-network-host = 这个应用能直接访问你家里的网络�
 permission-notice-highest-risk = 这个应用能控制整台主机：读写所有文件和其他应用的数据，改动或停掉 Wonton 自己。这等于把主机的 root 交给它。只装你信任的应用。卸载后，它建的容器和改过的东西不会被清理。
 permission-notice-network-lan = 局域网里的设备可以直接连接应用开放的端口，不经 Wonton 登录；身份验证由应用自己负责。
 permission-notice-device = 这个应用可以访问宿主设备 { $path }。
-permission-notice-devices = 这个应用可以访问你交给它的宿主设备。
 
 # 应用详情里的提示。
 plugin-firewall-notice = 本机防火墙可能挡住了外来连接，局域网设备可能连不进来
 plugin-egress-proxy-select = 在出网代理设置里选它
-plugin-cross-origin-isolation = 这个应用要跨源隔离：在 Android 上，它的页面会在浏览器里打开。
+plugin-cross-origin-isolation = 这个应用放宽了跨源隔离：在 Android 上，它的页面可能和别的网页共用进程。
 
 # 安装和更新预览里的提示与装不了的原因。
 install-retained-data = 这台服务器上留着 { $id } 以前的数据和密钥，这个应用装上后能读到它们；不想这样就先彻底删除

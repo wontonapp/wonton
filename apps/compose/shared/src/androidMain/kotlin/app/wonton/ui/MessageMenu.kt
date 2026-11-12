@@ -15,10 +15,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,14 +47,10 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import app.wonton.client.ClientCore
 import app.wonton.protocol.MessageAction
-import app.wonton.protocol.QuotedMessage
 import app.wonton.protocol.TimelineMessage
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Copy
-import app.wonton.ui.icons.Forward
-import app.wonton.ui.icons.Reply
-import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -71,23 +65,11 @@ private object WindowOrigin : PopupPositionProvider {
     ) = IntOffset.Zero
 }
 
-/// 消息预览留在原来的位置，菜单贴着它：下面放得下放下面，放不下翻到上面，两头都夹在可视区里。
-/// `bubble` 是气泡在屏幕上的位置（根坐标），`visible` 是能用的那一片（同样坐标，已经让开系统栏和键盘）。
+/** 消息预览留在原来的位置，菜单贴着它；放不下时整体往上挪。`bubble` 是气泡在屏幕上的位置（根坐标）。 */
 @Composable
-fun MessageMenu(
-    message: TimelineMessage,
-    bubble: Rect,
-    visible: Rect,
-    core: ClientCore,
-    onReply: (QuotedMessage) -> Unit,
-    onForward: () -> Unit,
-    onRedact: () -> Unit,
-    onDismiss: () -> Unit,
-) {
+fun MessageMenu(message: TimelineMessage, bubble: Rect, core: ClientCore, onDismiss: () -> Unit) {
     var origin by remember { mutableStateOf(Offset.Zero) }
     val bounds = bubble.translate(-origin)
-    // 弹层里的坐标从让开边距以后的左上角算起，可视区也要跟着挪。
-    val area = visible.translate(-origin)
     val gap = WontonTheme.spacing.s8
     val scrim = Color.Black.copy(alpha = WontonTheme.ratio.scrim)
     val width = with(LocalDensity.current) { bounds.width.toDp() }
@@ -107,7 +89,7 @@ fun MessageMenu(
                     Box(Modifier.width(width).clearAndSetSemantics {}) {
                         BubbleSurface(message, core, false, false, Modifier, {}, {}, {})
                     }
-                    MenuSurface(message, onReply, onForward, onRedact, onDismiss)
+                    MenuSurface(message.actions, onDismiss)
                 },
                 modifier = Modifier
                     .fillMaxSize()
@@ -118,23 +100,13 @@ fun MessageMenu(
                 val preview = measurables[0].measure(loose)
                 val menu = measurables[1].measure(loose)
                 val spacing = gap.roundToPx()
-                // 弹层的窗口可能比看得见的地方长（键盘、系统栏那么一块照画不误），两样都别越过。
-                val left = area.left.roundToInt().coerceIn(0, constraints.maxWidth)
-                val top = area.top.roundToInt().coerceIn(0, constraints.maxHeight)
-                val right = area.right.roundToInt().coerceIn(left, constraints.maxWidth)
-                val bottom = area.bottom.roundToInt().coerceIn(top, constraints.maxHeight)
-                val previewTop = bounds.top.roundToInt().coerceIn(top, maxOf(top, bottom - preview.height))
-                val below = previewTop + preview.height + spacing
-                val above = previewTop - spacing - menu.height
-                val wanted = if (below + menu.height <= bottom) below else above
-                val menuTop = wanted.coerceIn(top, maxOf(top, bottom - menu.height))
+                val lowest = constraints.maxHeight - menu.height - spacing - preview.height
+                val previewTop = minOf(bounds.top.roundToInt(), lowest).coerceAtLeast(0)
+                val menuTop = minOf(previewTop + preview.height + spacing, constraints.maxHeight - menu.height)
                 val menuX = if (message.isOwn) bounds.right.roundToInt() - menu.width else bounds.left.roundToInt()
                 layout(constraints.maxWidth, constraints.maxHeight) {
-                    preview.place(
-                        bounds.left.roundToInt().coerceIn(left, maxOf(left, right - preview.width)),
-                        previewTop,
-                    )
-                    menu.place(menuX.coerceIn(left, maxOf(left, right - menu.width)), menuTop)
+                    preview.place(bounds.left.roundToInt(), previewTop)
+                    menu.place(menuX.coerceIn(0, constraints.maxWidth - menu.width), menuTop)
                 }
             }
         }
@@ -142,70 +114,33 @@ fun MessageMenu(
 }
 
 @Composable
-private fun MenuSurface(
-    message: TimelineMessage,
-    reply: (QuotedMessage) -> Unit,
-    forward: () -> Unit,
-    redact: () -> Unit,
-    onDismiss: () -> Unit,
-) {
+private fun MenuSurface(actions: List<MessageAction>, onDismiss: () -> Unit) {
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val copyLabel = stringResource(R.string.message_copy)
     // 剪贴板条目的标签：别的 App 粘贴时可能显示。
     val clipLabel = stringResource(R.string.message_clip_label)
-    val replyLabel = stringResource(R.string.message_reply)
-    val forwardLabel = stringResource(R.string.message_forward)
-    // 管理员也能撤别人的消息：写明是谁的，免得以为撤的是自己的。
-    val redactLabel = if (message.isOwn) {
-        stringResource(R.string.message_delete_everyone)
-    } else {
-        stringResource(R.string.message_delete_others, message.senderName)
-    }
-    val danger = WontonTheme.colors.danger.toColor()
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = WontonTheme.colors.surface.toColor(),
         shadowElevation = WontonTheme.size.menuElevation,
     ) {
         Column(Modifier.width(WontonTheme.size.menuWidth)) {
-            // 顺序照核心给的 `actions`，核心和 App 分开升级时不认识的不显示。
-            message.actions.forEach { action ->
-                val run: () -> Unit = when (action) {
-                    is MessageAction.Copy -> {
-                        {
+            actions.forEach { action ->
+                when (action) {
+                    is MessageAction.Copy -> DropdownMenuItem(
+                        text = { Text(copyLabel) },
+                        leadingIcon = {
+                            Icon(WontonIcon.Copy, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall))
+                        },
+                        onClick = {
                             scope.launch {
                                 clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(clipLabel, action.text)))
                             }
-                        }
-                    }
-                    is MessageAction.Reply -> { { reply(action.message) } }
-                    MessageAction.Forward -> forward
-                    MessageAction.Redact -> redact
+                            onDismiss()
+                        },
+                    )
                 }
-                val (label, icon) = when (action) {
-                    is MessageAction.Copy -> copyLabel to WontonIcon.Copy
-                    is MessageAction.Reply -> replyLabel to WontonIcon.Reply
-                    MessageAction.Forward -> forwardLabel to WontonIcon.Forward
-                    MessageAction.Redact -> redactLabel to WontonIcon.Trash
-                }
-                val destructive = action == MessageAction.Redact
-                // 隔开前面的项，别和转发挨着误点。
-                if (destructive) HorizontalDivider()
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    // 装饰：菜单项有文字。
-                    leadingIcon = { Icon(icon, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall)) },
-                    colors = if (destructive) {
-                        MenuDefaults.itemColors(textColor = danger, leadingIconColor = danger)
-                    } else {
-                        MenuDefaults.itemColors()
-                    },
-                    onClick = {
-                        run()
-                        onDismiss()
-                    },
-                )
             }
         }
     }

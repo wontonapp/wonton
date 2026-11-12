@@ -116,7 +116,7 @@ async fn serve_stream(mut send: SendStream, mut recv: RecvStream, upstream: Sock
     match Request::from_byte(kind[0]) {
         Some(Request::Forward) => forward_to_upstream(send, recv, upstream).await,
         Some(Request::Ping) => reply(&mut send, Status::Ok).await,
-        Some(Request::Port | Request::Udp) | None => {
+        None => {
             warn!(kind = kind[0], "unsupported request type");
             reply(&mut send, Status::UnsupportedRequest).await;
         }
@@ -142,7 +142,7 @@ async fn forward_to_upstream(mut send: SendStream, mut recv: RecvStream, upstrea
     }
     let (mut tcp_read, mut tcp_write) = tcp.split();
     let result = tokio::try_join!(
-        forward::tunnel_to_tcp(&mut recv, &mut tcp_write, None),
+        forward::tunnel_to_tcp(&mut recv, &mut tcp_write),
         forward::tcp_to_tunnel(&mut tcp_read, &mut send),
     );
     if let Err(err) = result {

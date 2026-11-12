@@ -123,6 +123,7 @@ fn record(used: &mut UsedVars, name: &str) {
 }
 
 /// 对 JSON 值里的所有字符串做插值（只处理值，不处理键，与 compose 一致）。
+/// 对 JSON 值里的所有字符串做插值（只处理值，不处理键，与 compose 一致）。
 pub fn interpolate_value(
     value: &mut Value,
     vars: &Vars,
@@ -166,69 +167,6 @@ fn walk(
     }
 }
 
-enum Expansion<'a> {
-    Escaped,
-    Plain(&'a str),
-    Braced { name: &'a str, op: &'a str },
-}
-
-/// `at` 指向 `$`；扫描引用和实际求值共用转义、变量名和括号的解析。
-fn expansion(input: &str, at: usize) -> Result<(Expansion<'_>, &str), InterpolateError> {
-    let after = &input[at + 1..];
-    if let Some(tail) = after.strip_prefix('$') {
-        return Ok((Expansion::Escaped, tail));
-    }
-    if let Some(body) = after.strip_prefix('{') {
-        let end = matching_brace(body).ok_or_else(|| syntax_error(input, at, false))?;
-        let inner = &body[..end];
-        let len = name_len(inner);
-        if len == 0 {
-            return Err(syntax_error(input, at, false));
-        }
-        let (name, op) = inner.split_at(len);
-        if !op.is_empty()
-            && ![":-", "-", ":?", "?", ":+", "+"]
-                .iter()
-                .any(|prefix| op.starts_with(prefix))
-        {
-            return Err(syntax_error(input, at, false));
-        }
-        return Ok((Expansion::Braced { name, op }, &body[end + 1..]));
-    }
-    let len = name_len(after);
-    if len == 0 {
-        return Err(syntax_error(input, at, shell_special(after)));
-    }
-    Ok((Expansion::Plain(&after[..len]), &after[len..]))
-}
-
-/// 只收集没有默认值的引用；分支里的必需变量也算，转义和错误消息里的文字不算。
-pub fn references(input: &str, found: &mut impl FnMut(&str)) -> Result<(), InterpolateError> {
-    let mut rest = input;
-    while let Some(pos) = rest.find('$') {
-        let at = input.len() - rest.len() + pos;
-        let (token, tail) = expansion(input, at)?;
-        match token {
-            Expansion::Escaped => {}
-            Expansion::Plain(name) => found(name),
-            Expansion::Braced { name, op } => {
-                if op.is_empty() || op.starts_with(":?") || op.starts_with('?') {
-                    found(name);
-                }
-                // 必填项的错误信息不做插值，与实际求值一致。
-                if let Some(word) = [":-", "-", ":+", "+"]
-                    .iter()
-                    .find_map(|prefix| op.strip_prefix(prefix))
-                {
-                    references(word, found)?;
-                }
-            }
-        }
-        rest = tail;
-    }
-    Ok(())
-}
-
 pub fn interpolate(
     input: &str,
     vars: &Vars,
@@ -237,24 +175,31 @@ pub fn interpolate(
     let mut out = String::with_capacity(input.len());
     let mut rest = input;
     while let Some(pos) = rest.find('$') {
+        // `$` 在整条字符串里的字节偏移，报错时换算成字符数。
         let at = input.len() - rest.len() + pos;
         out.push_str(&rest[..pos]);
-        let (token, tail) = expansion(input, at)?;
-        match token {
-            Expansion::Escaped => out.push('$'),
-            Expansion::Plain(name) => {
-                record(used, name);
-                let value = vars.get(name).ok_or_else(|| InterpolateError::Missing {
-                    name: name.to_owned(),
-                    path: String::new(),
-                })?;
-                out.push_str(value);
+        let after = &rest[pos + 1..];
+        if let Some(tail) = after.strip_prefix('$') {
+            out.push('$');
+            rest = tail;
+        } else if let Some(body) = after.strip_prefix('{') {
+            let end = matching_brace(body).ok_or_else(|| syntax_error(input, at, false))?;
+            out.push_str(&expand_braced(&body[..end], vars, used, input, at)?);
+            rest = &body[end + 1..];
+        } else {
+            let len = name_len(after);
+            if len == 0 {
+                return Err(syntax_error(input, at, shell_special(after)));
             }
-            Expansion::Braced { name, op } => {
-                out.push_str(&expand_braced(name, op, vars, used)?);
-            }
+            let name = &after[..len];
+            record(used, name);
+            let value = vars.get(name).ok_or_else(|| InterpolateError::Missing {
+                name: name.to_owned(),
+                path: String::new(),
+            })?;
+            out.push_str(value);
+            rest = &after[len..];
         }
-        rest = tail;
     }
     out.push_str(rest);
     Ok(out)
@@ -338,11 +283,17 @@ fn snippet(input: &str, at: usize) -> String {
 }
 
 fn expand_braced(
-    name: &str,
-    op: &str,
+    inner: &str,
     vars: &Vars,
     used: &mut UsedVars,
+    input: &str,
+    at: usize,
 ) -> Result<String, InterpolateError> {
+    let len = name_len(inner);
+    if len == 0 {
+        return Err(syntax_error(input, at, false));
+    }
+    let (name, op) = inner.split_at(len);
     record(used, name);
     let value = vars.get(name);
     let set_nonempty = value.is_some_and(|v| !v.is_empty());
@@ -380,7 +331,7 @@ fn expand_braced(
             Ok(String::new())
         }
     } else {
-        unreachable!("expansion validates the operator")
+        Err(syntax_error(input, at, false))
     }
 }
 
@@ -555,26 +506,5 @@ mod tests {
             doc,
             serde_json::json!({"${A}": ["1", {"k": "1"}, 3, true, null]})
         );
-    }
-
-    #[test]
-    fn required_references_include_branches_but_not_optional_names_or_literal_text() {
-        let mut found = UsedVars::new();
-        references(
-            "$A ${B:-${C}} ${D+${E}} $${F} ${G:?${H}} ${I?${J}}",
-            &mut |name| record(&mut found, name),
-        )
-        .unwrap();
-        let expected: UsedVars = ["A", "C", "E", "G", "I"].map(String::from).into();
-        assert_eq!(found, expected);
-    }
-
-    #[test]
-    fn reference_scanning_rejects_the_same_invalid_tokens_as_interpolation() {
-        for input in ["${", "${A", "$-x", "${:-x}", "${A!x}"] {
-            let scan = references(input, &mut |_| {}).unwrap_err();
-            let evaluate = interpolate(input, &vars(), &mut UsedVars::new()).unwrap_err();
-            assert_eq!(scan, evaluate, "{input}");
-        }
     }
 }

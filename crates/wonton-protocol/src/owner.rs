@@ -1,7 +1,9 @@
 //! 你的资料（ADR-0030）：显示名和邮箱在 App 里填，存在家里的服务器上，单点登录和要身份的插件从那里取。
-//! 读写的接口是 [`ME_PATH`](crate::ME_PATH)（ADR-0045 起按人：主人写 [`OwnerProfileUpdate`]，家人改自己的）。
 
 use serde::{Deserialize, Serialize};
+
+/// 读写资料的接口：`GET` 和 `PUT` 都返回 [`OwnerProfile`]，`PUT` 的请求体是 [`OwnerProfileUpdate`]。
+pub const OWNER_PROFILE_PATH: &str = "/_wonton/api/owner-profile";
 
 /// 家里的服务器上的资料。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,59 +26,41 @@ pub struct OwnerProfileUpdate {
     pub email: Option<String>,
 }
 
-pub const MAX_DISPLAY_NAME_CHARS: usize = 64;
-
-/// 资料哪里不合规则。给人看的话由用的一方按自己的语言写（ADR-0043）；`Display` 是英文原文，进日志和“详情”。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum ProfileProblem {
-    #[error("the name is empty")]
-    NameEmpty,
-    #[error("the name is longer than {MAX_DISPLAY_NAME_CHARS} characters")]
-    NameTooLong,
-    #[error("the name contains line breaks or control characters")]
-    NameControlChars,
-    #[error(
-        "not an email address: write it like me@example.com, without spaces or control characters"
-    )]
-    EmailInvalid,
-    #[error("an email address that was set can be changed but not cleared")]
-    EmailCleared,
-}
+const MAX_DISPLAY_NAME_CHARS: usize = 64;
 
 /// 显示名会原样进 OIDC 声明和代登录的请求头，有控制字符时写不进 HTTP。家里的服务器保存时查，引导在点完成之前也用它
 /// 查，规则只写在这里。
-pub fn check_display_name(name: &str) -> Result<(), ProfileProblem> {
+pub fn check_display_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
-        return Err(ProfileProblem::NameEmpty);
+        return Err("名字不能为空".to_owned());
     }
     if name.chars().count() > MAX_DISPLAY_NAME_CHARS {
-        return Err(ProfileProblem::NameTooLong);
+        return Err(format!("名字太长：最多 {MAX_DISPLAY_NAME_CHARS} 个字"));
     }
     if name.chars().any(char::is_control) {
-        return Err(ProfileProblem::NameControlChars);
+        return Err("名字里不能有换行和控制字符".to_owned());
     }
     Ok(())
 }
 
 /// 不验证能不能收信，只挡住明显不是邮箱的值：它会原样进 OIDC 声明和请求头。空的邮箱是“没填”，不经过这里。
-pub fn check_email(email: &str) -> Result<(), ProfileProblem> {
+pub fn check_email(email: &str) -> Result<(), String> {
     let valid = email.split_once('@').is_some_and(|(local, domain)| {
         !local.is_empty() && !domain.is_empty() && !domain.contains('@')
     }) && !email.chars().any(|c| c.is_whitespace() || c.is_control());
     if valid {
         Ok(())
     } else {
-        Err(ProfileProblem::EmailInvalid)
+        Err("不像邮箱：写成 me@example.com 这样，没有空白和控制字符".to_owned())
     }
 }
 
 /// 填过的邮箱只能改，不能清空：邮箱清掉后，要邮箱的插件重建时会失败（ADR-0030）。`next` 已经过 [`normalized_email`]。
-pub fn check_email_change(
-    previous: Option<&str>,
-    next: Option<&str>,
-) -> Result<(), ProfileProblem> {
+pub fn check_email_change(previous: Option<&str>, next: Option<&str>) -> Result<(), String> {
     match (previous, next) {
-        (Some(_), None) => Err(ProfileProblem::EmailCleared),
+        (Some(_), None) => {
+            Err("邮箱填过以后只能改，不能清空：要邮箱的应用重建时会用到它".to_owned())
+        }
         (_, Some(email)) => check_email(email),
         (None, None) => Ok(()),
     }

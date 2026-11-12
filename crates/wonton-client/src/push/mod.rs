@@ -9,7 +9,7 @@ mod notification;
 pub(crate) mod record;
 mod registration;
 
-pub(crate) use notification::{DirectConfirmation, Payload, push_notification};
+pub(crate) use notification::{Payload, push_notification};
 
 use std::path::{Path, PathBuf};
 
@@ -32,7 +32,7 @@ use crate::l10n::{CATALOG, language};
 /// Matrix pusher 的 `app_id`。推送代理按登记找设备，不靠它区分平台，所以各端共用一个。
 const APP_ID: &str = "app.wonton";
 const APP_NAME: &str = "Wonton";
-/// 连接信息里没有设备名时 pusher 列表里的名字，和 Matrix 设备名一致（`ConnectHome` 给的连接信息没有）。
+/// 本设备在 pusher 列表里的名字，和 Matrix 设备名一致。
 const DEVICE_NAME: &str = "Wonton App";
 const LANG: &str = "zh-CN";
 
@@ -152,10 +152,7 @@ impl PushLink {
                     pushkey: registration.pushkey.clone(),
                     gateway_url: registration.gateway_url,
                     app_display_name: APP_NAME.to_owned(),
-                    device_display_name: self
-                        .home
-                        .device_name()
-                        .unwrap_or_else(|| DEVICE_NAME.to_owned()),
+                    device_display_name: DEVICE_NAME.to_owned(),
                     lang: LANG.to_owned(),
                 };
                 session.set_pusher(&pusher).await.map_err(|e| {

@@ -20,7 +20,7 @@ async fn a_port_published_by_a_stranger_container_is_refused_before_anything_sta
     for (port, host_ip, protocol) in [
         ("445", "0.0.0.0", "tcp"),
         ("137", "::", "udp"),
-        ("445", "192.168.0.10", "tcp"),
+        ("445", "192.168.0.193", "tcp"),
     ] {
         let (docker, m, _, _dir) = on(office()).await;
         docker.add_stranger_container("forgejo", stranger_on(port, host_ip, protocol));
@@ -54,7 +54,7 @@ async fn a_port_published_by_a_stranger_container_is_refused_before_anything_sta
 async fn a_port_the_plugin_itself_holds_or_nothing_holds_is_no_conflict() {
     let (docker, m, _, _dir) = on(office()).await;
     // 别的地址上的同一个端口、停着的容器、别的协议：都不算。
-    docker.add_stranger_container("wifi", stranger_on("445", "192.168.0.11", "tcp"));
+    docker.add_stranger_container("wifi", stranger_on("445", "192.168.0.82", "tcp"));
     docker.add_stranger_container("stopped", stranger_on("445", "0.0.0.0", "tcp"));
     docker.set_state("stopped", json!({"Status": "exited", "Running": false}));
     docker.add_stranger_container("dns", stranger_on("137", "0.0.0.0", "tcp"));
@@ -153,7 +153,7 @@ async fn a_taken_port_follows_the_requested_language() {
                 CATALOG.negotiate(&[tag]),
                 "plugin-install-lan-port-taken",
                 &[
-                    ("place", "192.168.0.10:445".into()),
+                    ("place", "192.168.0.193:445".into()),
                     (
                         "who",
                         CATALOG
@@ -180,7 +180,7 @@ async fn a_port_taken_at_start_follows_the_owner_language() {
         "failed to set up container networking: driver failed programming external connectivity on endpoint x (abc):\
          Bind for 0.0.0.0:445 failed: port is already allocated",
     ));
-    m.note_person_languages("owner", Some("ja"));
+    m.note_owner_languages(Some("ja"));
     let compose = samba("");
     let error = m
         .install(

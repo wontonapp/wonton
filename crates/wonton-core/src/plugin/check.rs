@@ -90,10 +90,9 @@ pub async fn check_package(
             ));
     }
     match dry_run(package, &Languages::default()) {
-        Ok(plan) => check_services(&plan, m, official, &mut report),
+        Ok(plan) => check_services(&plan, official, &mut report),
         Err(e) => report.problems.push(e.to_string()),
     }
-    check_spec_floor(package, &mut report);
     check_trusts_core(package, official, &mut report);
     check_icon(package, official, images, &mut report).await;
     check_tab_icons(package, images, &mut report).await;
@@ -125,10 +124,6 @@ pub async fn check_package(
                     .as_ref()
                     .is_none_or(|t| keys(t.keys().collect())),
             ),
-            (
-                "setup",
-                m.setup.as_ref().is_none_or(|t| keys(t.keys().collect())),
-            ),
         ];
         for (field, _) in translated.iter().filter(|(_, both)| !both) {
             report.problems.push(format!(
@@ -139,10 +134,9 @@ pub async fn check_package(
     Ok(report)
 }
 
-/// 镜像要按摘要固定，长期运行的服务要有健康检查：官方索引要求，其他插件只提醒。只看 compose 里写的健康检查
-/// 和清单的 `webui.health`，镜像自带的看不到（检查不连 Docker）。
-fn check_services(plan: &Deployment, manifest: &Manifest, official: bool, report: &mut Report) {
-    let webui = manifest.webui.as_ref();
+/// 镜像要按摘要固定，长期运行的服务要有健康检查：官方索引要求，其他插件只提醒。只看 compose 里写的健康检查，
+/// 镜像自带的看不到（检查不连 Docker）。
+fn check_services(plan: &Deployment, official: bool, report: &mut Report) {
     let list = if official {
         &mut report.problems
     } else {
@@ -163,11 +157,9 @@ fn check_services(plan: &Deployment, manifest: &Manifest, official: bool, report
                 container.service, container.image
             ));
         }
-        // `webui.health` 是核心代探测的替代：只有网页服务能这么写，别的服务仍要自带的健康检查。
-        let probed = webui.is_some_and(|w| w.health.is_some() && w.service == container.service);
-        if !container.one_shot && !probed && !has_healthcheck(&container.body) {
+        if !container.one_shot && !has_healthcheck(&container.body) {
             list.push(format!(
-                "service {} has no healthcheck; add one, or use webui.health for the web service (its status will show as unknown after install)",
+                "service {} has no healthcheck; its status will show as unknown after install",
                 container.service
             ));
         }
@@ -186,16 +178,6 @@ fn check_services(plan: &Deployment, manifest: &Manifest, official: bool, report
 
 /// 用请求头认用户的应用，信任的代理地址只写核心的地址（ADR-0023 的“只信任核心的地址”）。出网插件能从宿主连到它，所以官方
 /// 索引不收；不出网的只有开了局域网端口才有人连得到，那些端口有开关。
-/// 用了新版本的字段，`spec` 要跟着写到那一版（[`super::spec_floor`]）。
-fn check_spec_floor(package: &PluginPackage, report: &mut Report) {
-    match serde_saphyr::from_str::<serde_json::Value>(&package.source) {
-        Ok(document) => report
-            .problems
-            .extend(super::spec_floor::problems(&document)),
-        Err(e) => report.problems.push(format!("docker-compose.yml: {e}")),
-    }
-}
-
 fn check_trusts_core(package: &PluginPackage, official: bool, report: &mut Report) {
     if !impersonable(package) {
         return;

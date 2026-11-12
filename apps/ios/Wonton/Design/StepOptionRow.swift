@@ -1,13 +1,12 @@
 import SwiftUI
 
-struct StepOptionRow<Leading: View, Trailing: View>: View {
+struct StepOptionRow<Trailing: View>: View {
     let title: String
     var description: String?
     let isSelected: Bool
     var blocked: String?
     let select: () -> Void
-    @ViewBuilder var leading: Leading
-    @ViewBuilder var trailing: Trailing
+    @ViewBuilder let trailing: Trailing
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -24,7 +23,6 @@ struct StepOptionRow<Leading: View, Trailing: View>: View {
                         }
                     }
                     .foregroundStyle(Color(isSelected ? colors.accentInkOnFill : colors.textSecondary))
-                    leading
                     VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                         Text(verbatim: title)
                             .wontonText(WontonTheme.typography.itemTitle)
@@ -62,19 +60,10 @@ struct StepOptionRow<Leading: View, Trailing: View>: View {
     }
 }
 
-extension StepOptionRow where Leading == EmptyView, Trailing == EmptyView {
+extension StepOptionRow where Trailing == EmptyView {
     init(title: String, description: String? = nil, isSelected: Bool, blocked: String? = nil,
          select: @escaping () -> Void) {
         self.init(title: title, description: description, isSelected: isSelected, blocked: blocked,
-                  select: select, leading: { EmptyView() }, trailing: { EmptyView() })
-    }
-}
-
-extension StepOptionRow where Leading == EmptyView {
-    init(title: String, description: String? = nil, isSelected: Bool, blocked: String? = nil,
-         select: @escaping () -> Void,
-         @ViewBuilder trailing: @escaping () -> Trailing) {
-        self.init(title: title, description: description, isSelected: isSelected, blocked: blocked,
-                  select: select, leading: { EmptyView() }, trailing: trailing)
+                  select: select) { EmptyView() }
     }
 }

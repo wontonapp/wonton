@@ -1,7 +1,6 @@
 //! 管理接口 `GET`/`PUT /_wonton/api/lan`（ADR-0019 的“接口：App 和核心”）：当场检测，返回端口开在哪里、可以选的
 //! 网卡和开了局域网端口的插件；改选择时核对、存下，按新地址重建，做完再返回。
 
-use std::net::IpAddr;
 use std::sync::Arc;
 
 use wonton_protocol::{
@@ -21,15 +20,6 @@ fn address(bound: &Bound) -> LanAddress {
         interface: bound.interface.clone(),
         // 插件网络只有 IPv4：IPv6 地址上的连接由 docker-proxy 转发，插件看到的客户端是网桥的网关。
         proxied: bound.ip.is_ipv6(),
-    }
-}
-
-/// 宣告地址：不在虚拟机的网卡上，连接经宿主转发，插件看到的客户端地址不准。
-fn announced(ip: &IpAddr) -> LanAddress {
-    LanAddress {
-        address: ip.to_string(),
-        interface: None,
-        proxied: true,
     }
 }
 
@@ -74,13 +64,6 @@ impl PluginManager {
         choice: &LanChoice,
         langs: &Languages,
     ) -> Result<(), InstallError> {
-        if self.lan.announce.is_some() {
-            return Err(InstallError::Conflict(l10n::text(
-                langs,
-                "plugin-settings-lan-announce-by-env",
-                &[],
-            )));
-        }
         if self.lan.fixed.is_some() {
             return Err(InstallError::Conflict(l10n::text(
                 langs,
@@ -108,18 +91,9 @@ impl PluginManager {
         detected: &Detected,
         langs: &Languages,
     ) -> Result<LanSettings, InstallError> {
-        let (addresses, announce_addresses, problem) = match &detected.result {
-            Ok(plan) => (
-                plan.bind.iter().map(address).collect(),
-                if self.lan.announce.is_some() {
-                    plan.announce.iter().map(announced).collect()
-                } else {
-                    plan.bind.iter().map(address).collect()
-                },
-                None,
-            ),
+        let (addresses, problem) = match &detected.result {
+            Ok(bound) => (bound.iter().map(address).collect(), None),
             Err(problem) => (
-                Vec::new(),
                 Vec::new(),
                 Some(LanProblem {
                     reason: problem.reason,
@@ -149,9 +123,7 @@ impl PluginManager {
             .collect();
         Ok(LanSettings {
             choice: self.store.lan_choice()?.unwrap_or(LanChoice::Auto),
-            fixed_by_environment: self.lan.fixed.is_some() || self.lan.announce.is_some(),
-            announce_by_environment: self.lan.announce.is_some(),
-            announce_addresses,
+            fixed_by_environment: self.lan.fixed.is_some(),
             addresses,
             problem,
             interfaces,

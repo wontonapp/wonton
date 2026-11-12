@@ -4,20 +4,14 @@
 /// 私有网络的顶级域名，基础域名不能落在它下面。
 pub const PLUGIN_MATRIX_HOST: &str = "matrix.wonton.internal";
 
-/// 插件经核心在插件网络里的这个别名访问身份提供方（`WONTON_OIDC_ISSUER` 和后台端点，ADR-0063）。有的库把
-/// `*.localhost` 直接当回环，`auth.<base>` 的别名对它们不起作用。
-pub const PLUGIN_AUTH_HOST: &str = "auth.wonton.internal";
-
 /// 插件经核心在插件网络里的这个别名访问模型网关（`WONTON_MODEL_BASE_URL` 等）。
 pub const PLUGIN_MODELS_HOST: &str = "models.wonton.internal";
 
 /// 插件经核心在插件网络里的这个别名发通知（`WONTON_NOTIFY_URL`，ADR-0047）。
 pub const PLUGIN_NOTIFY_HOST: &str = "notify.wonton.internal";
 
-/// 申请了 `notify` 的插件经这个 Mailpit 别名向家里人发信（ADR-0056）。
-pub const PLUGIN_SMTP_HOST: &str = "smtp.wonton.internal";
-
-/// Tuwunel 经核心私有网络上的这个别名直连推送专用监听（ADR-0003 的“接口：推送”）。
+/// Tuwunel 经这个地址调核心的推送代理（ADR-0003 的“接口：推送”）。不用解析它：Tuwunel 经出站代理发请求，代理
+/// 只代理这一个域名，代理地址就是核心网关。
 pub const PUSH_GATEWAY_HOST: &str = "push.wonton.internal";
 
 /// 插件经核心在插件网络里的这个别名访问 MCP 总线（`WONTON_MCP_URL`）。
@@ -34,7 +28,6 @@ pub const FILE_HOOKS_HOST: &str = "files-hooks.wonton.internal";
 pub enum HostKind {
     Core,
 
-    /// 浏览器走 `auth.<base>`、插件走 [`PLUGIN_AUTH_HOST`]：都是身份提供方的公开端点。
     Auth,
 
     Matrix,
@@ -46,9 +39,6 @@ pub enum HostKind {
 
     /// 插件网络里的插件访问模型网关（[`PLUGIN_MODELS_HOST`]）。
     PluginModels,
-
-    /// 插件网络里访问清单声明的通用能力（ADR-0053）。
-    PluginCapability(String),
 
     /// 插件网络里的插件发通知（[`PLUGIN_NOTIFY_HOST`]，ADR-0047）。
     PluginNotify,
@@ -89,11 +79,6 @@ impl PublicUrls {
         format!("auth.{}", self.base_domain)
     }
 
-    /// 插件网络里身份提供方的地址（[`PLUGIN_AUTH_HOST`]），端口同网关。
-    pub fn auth_internal_origin(&self) -> String {
-        self.origin(PLUGIN_AUTH_HOST)
-    }
-
     pub fn matrix_host(&self) -> String {
         format!("matrix.{}", self.base_domain)
     }
@@ -132,10 +117,6 @@ impl PublicUrls {
             return HostKind::Lan(ip);
         }
 
-        if host == PLUGIN_AUTH_HOST {
-            return HostKind::Auth;
-        }
-
         if host == PLUGIN_MATRIX_HOST {
             return HostKind::PluginMatrix;
         }
@@ -164,14 +145,6 @@ impl PublicUrls {
             return HostKind::FileHooks;
         }
 
-        if let Some(capability) = host.strip_suffix(".wonton.internal")
-            && !crate::plugin::capabilities::has_no_consumer(capability)
-            && (crate::plugin::capabilities::lookup(capability).is_some()
-                || crate::plugin::capabilities::is_third_party(capability))
-        {
-            return HostKind::PluginCapability(capability.to_owned());
-        }
-
         match host.strip_suffix(&format!(".{}", self.base_domain)) {
             Some("auth") => HostKind::Auth,
 
@@ -182,46 +155,6 @@ impl PublicUrls {
             }
 
             _ => HostKind::Unknown,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn capability_hosts_follow_the_registry_and_third_party_name_rules() {
-        let public = PublicUrls {
-            scheme: "http".into(),
-            base_domain: "wonton.example".into(),
-            port: 8080,
-        };
-        for capability in crate::plugin::capabilities::ALL {
-            let expected = match capability.name {
-                "models" => HostKind::PluginModels,
-                "egress_proxy" | "matrix_rtc" => HostKind::Unknown,
-                name => HostKind::PluginCapability(name.to_owned()),
-            };
-            assert_eq!(
-                public.classify(&crate::plugin::capabilities::alias(capability.name)),
-                expected,
-            );
-        }
-        assert_eq!(
-            public.classify("X-Acme.Ledger.Wonton.Internal.:8080"),
-            HostKind::PluginCapability("x-acme.ledger".into()),
-        );
-        for host in [
-            "unknown.wonton.internal",
-            "x-acme.wonton.internal",
-            "x-.ledger.wonton.internal",
-            "x-acme..wonton.internal",
-            "x-acme.ledger.extra.wonton.internal",
-            "x-acme.bad_name.wonton.internal",
-            "torrent_client.wonton.internal.attacker.example",
-        ] {
-            assert_eq!(public.classify(host), HostKind::Unknown, "{host}");
         }
     }
 }

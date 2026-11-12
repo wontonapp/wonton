@@ -55,21 +55,12 @@ fn store_info_parses() {
     PluginPackage::parse(&dual, &langs()).unwrap();
 }
 
-/// 比核心新一版的规范号：清单写它时，核心要报“先升级核心”，不能逐项报未知字段。
-fn next_spec() -> String {
-    let super::SpecVersion(major, minor) = super::SPEC_VERSION;
-    super::SpecVersion(major, minor + 1).to_string()
-}
-
 /// 比核心新的清单可能用了核心不认识的字段：先报规范版本，类别是 unsupported（要升级的是核心）。
 #[test]
 fn newer_spec_is_reported_before_unknown_fields() {
-    let newer = next_spec();
-    let yaml = without_spec(&format!(
-        "  spec: \"{newer}\"\n  shortcuts: []\n  webui: {{service: web, port: 80, not_yet: true}}"
-    ));
+    let yaml = without_spec("  spec: \"0.7\"\n  shortcuts: []");
     let err = PluginPackage::parse(&yaml, &langs()).unwrap_err();
-    assert!(err.to_string().contains(&format!("规范 {newer}")), "{err}");
+    assert!(err.to_string().contains("规范 0.7"), "{err}");
     assert!(err.to_string().contains("先升级核心"), "{err}");
     assert_eq!(InstallError::from(err).kind(), "unsupported");
     let reject = |yaml: String| {
@@ -77,25 +68,15 @@ fn newer_spec_is_reported_before_unknown_fields() {
             .unwrap_err()
             .to_string()
     };
-    let version = super::SPEC_VERSION.to_string();
+    let version = "0.6";
     assert!(reject(without_spec("  spec: 0.2")).contains(&message(
         "plugin-settings-store-info-spec-string",
-        &[("version", &version)],
+        &[("version", version)],
     )));
     assert!(reject(without_spec("  spec: \"v2\"")).contains(&message(
         "plugin-settings-store-info-spec-version",
-        &[("text", "v2"), ("version", &version)],
+        &[("text", "v2"), ("version", version)],
     )));
-}
-
-/// 同一份清单写核心支持的版本时，未知字段照常按字段报（类别 invalid_input），不冒充“核心太旧”。
-#[test]
-fn an_unknown_field_under_the_supported_spec_is_invalid() {
-    let current = super::SPEC_VERSION.to_string();
-    let yaml = without_spec(&format!("  spec: \"{current}\"\n  shortcuts: []"));
-    let err = PluginPackage::parse(&yaml, &langs()).unwrap_err();
-    assert!(err.to_string().contains("shortcuts"), "{err}");
-    assert_eq!(InstallError::from(err).kind(), "invalid_input");
 }
 
 #[test]
@@ -104,7 +85,7 @@ fn a_manifest_without_spec_is_rejected() {
     assert!(
         err.to_string().contains(&message(
             "plugin-settings-store-info-spec-missing",
-            &[("version", &super::SPEC_VERSION.to_string())],
+            &[("version", "0.6")],
         )),
         "{err}"
     );
@@ -227,7 +208,7 @@ fn package_size_is_limited() {
     let mut yaml = compose("") + "configs:\n";
     let mut files = PackageFiles::new();
     for i in 0..count {
-        yaml += format!("  c{i}:\n    file: c{i}.bin\n").as_str();
+        yaml += &format!("  c{i}:\n    file: c{i}.bin\n");
         files.insert(format!("c{i}.bin"), vec![b'x'; MAX_FILE_BYTES as usize]);
     }
     let err = PluginPackage::with_files(&yaml, files, &langs()).unwrap_err();

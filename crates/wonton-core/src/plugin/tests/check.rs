@@ -122,43 +122,6 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
     );
 }
 
-// `webui.health` 是核心代探测：网页服务可以不写 healthcheck，别的服务仍然要写。
-#[tokio::test]
-async fn webui_health_stands_in_for_the_healthcheck_of_the_web_service_only() {
-    let pinned = format!("  web:\n    image: nginx:1.27@sha256:{}", "a".repeat(64));
-    let complete = "  tags: {zh: [工具], en: [Tools]}\n  license: MIT\n  author: {name: Example}\n  notices: [NOTICE]";
-    let webui = "  webui: {service: web, port: 8080, health: /health}";
-    let report = run(
-        repo(&compose(&pinned, &format!("{webui}\n{complete}"))).path(),
-        true,
-    )
-    .await
-    .unwrap();
-    assert!(
-        !report.problems.iter().any(|p| p.contains("healthcheck")),
-        "{report:?}"
-    );
-
-    let sidecar = format!(
-        "{pinned}\n  sidecar:\n    image: nginx:1.27@sha256:{}",
-        "b".repeat(64)
-    );
-    let report = run(
-        repo(&compose(&sidecar, &format!("{webui}\n{complete}"))).path(),
-        true,
-    )
-    .await
-    .unwrap();
-    // 另外还有一条 `webui.health` 要 spec 0.13 的问题（这个包里写的是 0.5）。
-    assert!(
-        report
-            .problems
-            .iter()
-            .any(|p| p.contains("service sidecar has no healthcheck")),
-        "{report:?}"
-    );
-}
-
 #[tokio::test]
 async fn the_official_index_refuses_hardcoded_proxy_addresses() {
     let services = |environment: &str| {
@@ -375,14 +338,4 @@ async fn interpolation_errors_name_the_field() {
         report.problems.iter().any(|p| p.contains("entrypoint[2]")),
         "{report:?}"
     );
-}
-
-/// 显示方式的取值写错时和安装时报同一条错误。
-#[tokio::test]
-async fn an_unknown_chat_layout_is_reported() {
-    let compose = compose("  bot:\n    image: echo", "  bot: {chat_layout: hologram}")
-        .replace("permissions: []", "permissions: [matrix.bot]");
-    let dir = repo(&compose);
-    let err = run(dir.path(), false).await.unwrap_err();
-    assert!(err.contains("bot.chat_layout"), "{err}");
 }

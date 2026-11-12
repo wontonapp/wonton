@@ -38,8 +38,6 @@ internal class OnboardingContext(
     val view: OnboardingViewModel,
     val chat: ChatViewModel,
     val send: (Action) -> Unit,
-    /** 关掉重看的引导：不保存任何东西。首次引导不会调用。 */
-    val close: () -> Unit,
 )
 
 internal val LocalOnboarding = compositionLocalOf<OnboardingContext> { error("OnboardingContext is not provided") }
@@ -65,9 +63,7 @@ internal fun OnboardingHost(
     }
     val paired = home.status !is HomeStatus.NotConfigured
     OnboardingFinishedEffect(view, paired && !skipped, onFinished)
-    CompositionLocalProvider(
-        LocalOnboarding provides OnboardingContext(view, chat, send) { core.closeOnboarding() },
-    ) {
+    CompositionLocalProvider(LocalOnboarding provides OnboardingContext(view, chat, send)) {
         when {
             paired && !skipped && view.blocksHome() -> {
                 OnboardingGate(view, plugins, home, send) { skipped = true }

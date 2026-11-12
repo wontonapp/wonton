@@ -6,7 +6,6 @@ import WontonClient
 struct ChatBackupView: View {
     let model: ChatModel
     @State private var key = ""
-    @State private var showKeyEntry = false
     @State private var isConfirmingReset = false
     @Environment(\.wontonColors) private var colors
 
@@ -26,24 +25,14 @@ struct ChatBackupView: View {
                             .foregroundStyle(Color(colors.textSecondary))
                     }
                 }
-                // 确认流程在这一屏显示，不管恢复是什么状态：这一页开着时弹窗压着不弹（DeviceVerificationDialogs），
-                // 页面就是唯一看得到请求的地方。流程结束时留着结果，收起弹窗后还在这里看得到。
-                if let flow = encryption.verificationFlow {
-                    DeviceVerificationFlowView(flow: flow, model: model, useRecoveryKey: { showKeyEntry = true })
-                }
                 nextStep
-                // 新设备进来第一件事是输恢复密钥；重置只是丢了钥匙时的退路，做成不抢眼的文字按钮放在最下面。
                 if encryption.canReset {
                     Button {
                         isConfirmingReset = true
                     } label: {
-                        Text(.chatBackupReset)
-                            .wontonText(WontonTheme.typography.supporting)
-                            .foregroundStyle(Color(colors.textSecondary))
-                            .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target)
-                            .contentShape(Rectangle())
+                        Text(.chatBackupReset).frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -65,64 +54,27 @@ struct ChatBackupView: View {
     }
 
     @ViewBuilder private var nextStep: some View {
-        // 类别由核心按恢复状态算好（ADR-0076），这里只按类别画。
-        switch encryption.recoveryNextStep {
-        case .enterKey:
-            recoveryKeyEntry
-        case .chooseDeviceOrKey:
-            // 账号里有别的已验证设备：确认和恢复密钥两条路并列（ADR-0046）。
-            if showKeyEntry {
-                recoveryKeyEntry
-            } else {
-                HStack(spacing: WontonTheme.spacing.s8) {
-                    Button { model.send(.startDeviceVerification) } label: {
-                        Text(.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(WontonButtonStyle(kind: .primary))
-                    Button { showKeyEntry = true } label: {
-                        Text(.verificationUseRecoveryKey).frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(WontonButtonStyle(kind: .secondary))
-                }
-            }
-        case .showFlow:
-            // 设备确认是这一步：流程在上面那一屏；还没开始时给入口按钮（账号没有备份，输恢复密钥没用）。
-            if encryption.verificationFlow == nil {
-                Button { model.send(.startDeviceVerification) } label: {
-                    Text(.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
+        switch encryption.recovery {
+        case .incomplete:
+            VStack(spacing: WontonTheme.spacing.s12) {
+                SecureField(String(localized: .chatBackupRecoveryKey), text: $key)
+                    .textFieldStyle(.plain)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .wontonField()
+                Button {
+                    model.send(.recoverEncryption(recoveryKey: key))
+                    key = ""
+                } label: {
+                    Text(.chatBackupRecover).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
-            } else if showKeyEntry {
-                recoveryKeyEntry
+                .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-        case .progress:
+        case .inProgress:
             ProgressView().frame(maxWidth: .infinity)
-        case .waitForOtherDevice:
-            // 新设备在等另一台设备交出密钥（ADR-0087）：这里不给恢复密钥，回到交接页。
-            Button { model.keyHandoffDeferred = false } label: {
-                Text(.handoffTitle).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(WontonButtonStyle(kind: .primary))
-        case .none, .other:
+        case .disabled, .enabled, .unknown:
             EmptyView()
-        }
-    }
-
-    private var recoveryKeyEntry: some View {
-        VStack(spacing: WontonTheme.spacing.s12) {
-            SecureField(String(localized: .chatBackupRecoveryKey), text: $key)
-                .textFieldStyle(.plain)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .wontonField()
-            Button {
-                model.send(.recoverEncryption(recoveryKey: key))
-                key = ""
-            } label: {
-                Text(.chatBackupRecover).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(WontonButtonStyle(kind: .primary))
-            .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 
@@ -152,6 +104,16 @@ extension RecoveryStatus {
 }
 
 extension EncryptionStatus {
+    /// 恢复密钥丢了、备份残缺或者开启不了时的出路。正在显示新密钥时不出现，免得主人还没抄下来就把它作废。
+    var canReset: Bool {
+        guard recoveryKey == nil else { return false }
+        switch recovery {
+        case .enabled, .incomplete: return true
+        case .disabled: return verification == .unverified
+        case .inProgress, .unknown: return false
+        }
+    }
+
     var backupDetail: String? {
         switch recovery {
         case .enabled: return String(localized: .chatBackupDetailEnabled)
@@ -167,23 +129,11 @@ extension EncryptionStatus {
     }
 }
 
-extension KeyNotice {
-    /// 按钮上的字；`other` 是更新的核心给的新类别，只显示说明。
-    var action: String? {
-        switch self {
-        case .enterRecoveryKey: return String(localized: .verificationUseRecoveryKey)
-        case .verifyWithOtherDevice: return String(localized: .verificationVerifyWithOtherDevice)
-        case .other: return nil
-        }
-    }
-}
-
 extension BackupReminder {
     var text: String? {
         switch self {
         case .saveRecoveryKey: return String(localized: .chatBackupReminderSaveKey)
         case .enterRecoveryKey: return String(localized: .chatBackupReminderEnterKey)
-        case .continueOnOtherDevice: return String(localized: .handoffTitle)
         case .other: return nil
         }
     }

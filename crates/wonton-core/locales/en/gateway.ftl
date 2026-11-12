@@ -39,7 +39,6 @@ gateway-oidc-unconfigured = The home server has no identity provider configured
 gateway-no-app-for-host = No app is installed for { $host }
 gateway-no-webui = This app has no web page
 gateway-app-not-ready = The app { $id } isn't ready yet
-gateway-plugin-not-shared = { $id } isn't shared with family members
 gateway-proxy-sso-failed = Can't get the sign-in credentials for the app { $id }: { $error }
 gateway-cross-site-login = The gateway doesn't trust sign-in state on requests from another site; use the app's own page
 gateway-login-required = Sign in to Wonton first
@@ -54,7 +53,6 @@ gateway-sso-local-only = Redirects can only go to this server's app addresses
 gateway-sso-missing-code = The handoff code is missing
 gateway-sso-code-invalid = The handoff code is invalid or expired; open the page again
 gateway-sso-user-mismatch = The identity provider remembers a different user
-gateway-proxy-sso-member-missing = Your account is no longer on this home server; ask the owner to invite you again
 gateway-sso-consent-mismatch = The authorization request doesn't match the signed-in user
 
 # Forwarding to upstreams (auth endpoints, model gateway).
@@ -107,7 +105,6 @@ gateway-body-invalid = The request body isn't valid: { $error }
 gateway-bot-not-found = No such bot: { $caller }
 gateway-bot-not-in-plugin = The app { $id } has no such bot: { $caller }
 gateway-tool-not-found = The app { $id } has no tool { $tool }
-gateway-tool-deletes = The tool { $tool } deletes or overwrites data, so it asks every time and can't be marked read-only
 gateway-plugin-not-running = This app isn't running, or it doesn't declare any tools
 
 # Confirmation answers from the App.
@@ -120,27 +117,3 @@ gateway-pair-code-used = This pairing code was already used; get a new one
 gateway-pair-code-expired = The pairing code has expired; get a new one
 gateway-pair-first-used = This server already has paired devices and the first-pairing code can't be reused; run sudo wonton pair on the server to issue a new code
 gateway-pair-register-failed = The server couldn't register the device: { $error }
-
-# Owner viewing plugin secrets in the App.
-gateway-owner-secrets-plugin-not-installed = The app { $id } isn't installed
-gateway-owner-secrets-record-unreadable = The app { $id } record is unreadable, so its secrets can't be listed
-gateway-owner-secrets-not-viewable = The app { $id } doesn't declare a viewable secret { $name }
-gateway-owner-secrets-not-generated = The secret { $name } has no value yet; start the app once (or upgrade) to generate it again
-gateway-owner-secrets-store-failed = Couldn't read the app secret: { $error }
-gateway-owner-secrets-not-text = The secret { $name } isn't stored as text
-gateway-owner-secrets-audit-unavailable = The audit log isn't wired on this server, so secret values can't be shown
-gateway-plugin-scope-unsupported = This core does not support changing which bots can use a plugin. Upgrade the core first.
-gateway-bot-plugin-access-unsupported = This core does not support switching plugin access for a bot. Upgrade the core first.
-
-# MCP Apps 宿主页（#35）。
-mcp-app-loading = Loading…
-mcp-app-failed = Can't load the app: { $error }
-mcp-app-page-failed = The app didn't load.
-mcp-app-retry = Retry
-
-# Friends opening a page over a share connection (ADR-0051).
-gateway-share-identity = This server can't confirm who you are
-gateway-share-required = The owner hasn't shared this app with you
-gateway-share-revoked = The owner stopped sharing this app
-gateway-share-expired = This share has expired
-gateway-confirmation-gone = There is no such confirmation, or it ended more than a day ago

@@ -116,7 +116,7 @@ pub(crate) async fn get(
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) = api::plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let langs = api::languages(&headers);
@@ -138,7 +138,7 @@ pub(crate) async fn put(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) = api::plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let update: OnboardingUpdate = match serde_json::from_slice(&body) {

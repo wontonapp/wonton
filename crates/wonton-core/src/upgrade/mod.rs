@@ -5,7 +5,6 @@
 
 pub mod backup;
 pub mod check;
-pub mod compat;
 pub mod components;
 pub mod compose_images;
 pub mod docker_host;

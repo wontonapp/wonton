@@ -5,33 +5,6 @@
 
 use serde_json::{Value, json};
 
-use super::{AcpClient, rpc_detail};
-use crate::error::{Error, Result};
-
-/// 恢复后按建会话时的模式补切一次：适配器不都记得上次的模式（Codex 恢复后回默认档
-/// 就不问了）。不分模式的 Agent 回 Method not found，照 `new` 的路子跳过；其余错误
-/// 和 `new` 一样往上报。
-pub(super) async fn set_after_restore(
-    client: &AcpClient,
-    session_id: &str,
-    mode: &str,
-) -> Result<()> {
-    if let Err(error) = client
-        .request(
-            "session/set_mode",
-            json!({"sessionId": session_id, "modeId": mode}),
-        )
-        .await
-    {
-        if error.code == -32601 {
-            tracing::debug!(mode, "Agent 不分工作模式，跳过恢复后的切换");
-        } else {
-            return Err(Error::Upstream(rpc_detail(&error)));
-        }
-    }
-    Ok(())
-}
-
 /// 要发给 Agent 的切模式请求；`None` 是 Agent 不分模式。
 pub(super) fn request(
     session: &Value,
@@ -54,44 +27,6 @@ pub(super) fn request(
         "session/set_config_option",
         json!({"sessionId": session_id, "configId": config_id, "value": mode}),
     ))
-}
-
-/// 话题想要“改前先问”的模式请求（ADR-0058）：Agent 自己报的出这个取值才切，否则返回
-/// `None`，由调用方退回配置的默认模式并在话题里如实说明。
-pub(super) fn topic_request(
-    session: &Value,
-    session_id: &str,
-    mode: &str,
-) -> Option<(&'static str, Value)> {
-    if !offers(session, mode) {
-        return None;
-    }
-    request(session, session_id, mode)
-}
-
-/// Agent 报出的模式取值里有没有 `mode`。`modes.availableModes` 和类别为 `mode` 的配置项
-/// 的 `options[].value` 是两种写法；两样都没有可选值表时不认。
-fn offers(session: &Value, mode: &str) -> bool {
-    let listed = session["modes"]["availableModes"]
-        .as_array()
-        .map(|modes| {
-            modes
-                .iter()
-                .any(|available| available["id"].as_str() == Some(mode))
-        })
-        .unwrap_or(false);
-    if listed {
-        return true;
-    }
-    session
-        .get("configOptions")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|option| option["category"] == "mode")
-        .filter_map(|option| option["options"].as_array())
-        .flatten()
-        .any(|value| value["value"].as_str() == Some(mode))
 }
 
 #[cfg(test)]

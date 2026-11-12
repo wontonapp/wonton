@@ -1,80 +1,33 @@
-//! 清单里 `webui.oidc` 的字段规则。
+//! 清单里 `webui.oidc` 的字段规则，和“装这个插件要不要主人的邮箱”的统一判断。
 
 use std::collections::BTreeSet;
 
-use super::manifest::{ManifestError, OidcClient, RoleClaim};
+use super::manifest::{Manifest, ManifestError, OidcClient};
 
-/// `admin_groups` 最多这么多个。
-pub const MAX_ADMIN_GROUPS: usize = 8;
+/// `owner_groups` 最多这么多个。
+pub const MAX_OWNER_GROUPS: usize = 8;
 
 /// 组名的最长字符数。
 const MAX_GROUP_NAME: usize = 64;
 
-/// 应用自己的声明不能占用的名字：核心已经在发的，和 OIDC 规定的。
-const RESERVED_CLAIMS: &[&str] = &[
-    "sub",
-    "iss",
-    "aud",
-    "exp",
-    "iat",
-    "nbf",
-    "jti",
-    "nonce",
-    "auth_time",
-    "acr",
-    "amr",
-    "azp",
-    "at_hash",
-    "c_hash",
-    "sid",
-    "name",
-    "preferred_username",
-    "email",
-    "email_verified",
-    "groups",
-    "locale",
-];
-
-/// 校验 serde 表达不了的规则：组名的字符、长度、去重和个数上限；`role_claim` 的名字和取值。
+/// 校验 serde 表达不了的规则：组名的字符、长度、去重和个数上限。
 pub(super) fn validate(client: &OidcClient) -> Result<(), ManifestError> {
-    if let Some(claim) = &client.role_claim {
-        validate_role_claim(claim)?;
-    }
-    if client.admin_groups.len() > MAX_ADMIN_GROUPS {
+    if client.owner_groups.len() > MAX_OWNER_GROUPS {
         return Err(ManifestError::Invalid(format!(
-            "webui.oidc.admin_groups allows at most {MAX_ADMIN_GROUPS} entries"
+            "webui.oidc.owner_groups allows at most {MAX_OWNER_GROUPS} entries"
         )));
     }
     let mut seen = BTreeSet::new();
-    for name in &client.admin_groups {
+    for name in &client.owner_groups {
         if !is_group_name(name) {
             return Err(ManifestError::Invalid(format!(
-                "webui.oidc.admin_groups entry `{name}` is invalid: 1 to {MAX_GROUP_NAME} characters, \
+                "webui.oidc.owner_groups entry `{name}` is invalid: 1 to {MAX_GROUP_NAME} characters, \
                  only ASCII letters, digits, and _-.:"
             )));
         }
         if !seen.insert(name.as_str()) {
             return Err(ManifestError::Invalid(format!(
-                "webui.oidc.admin_groups entry `{name}` is duplicated"
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn validate_role_claim(claim: &RoleClaim) -> Result<(), ManifestError> {
-    if !is_group_name(&claim.name) || RESERVED_CLAIMS.contains(&claim.name.as_str()) {
-        return Err(ManifestError::Invalid(format!(
-            "webui.oidc.role_claim.name `{}` is invalid: 1 to {MAX_GROUP_NAME} characters, only ASCII \
-             letters, digits, and _-.:, and not a claim the core already sends",
-            claim.name
-        )));
-    }
-    for (field, value) in [("admin", &claim.admin), ("user", &claim.user)] {
-        if !is_group_name(value) {
-            return Err(ManifestError::Invalid(format!(
-                "webui.oidc.role_claim.{field} `{value}` is invalid: 1 to {MAX_GROUP_NAME} characters, \
-                 only ASCII letters, digits, and _-.:"
+                "webui.oidc.owner_groups entry `{name}` is duplicated"
             )));
         }
     }
@@ -89,17 +42,29 @@ fn is_group_name(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b':'))
 }
 
+/// 装这个插件要不要主人的邮箱：代登录模板用了 `{email}`（compose 里引用
+/// `WONTON_OWNER_EMAIL` 的由渲染时的插值检查拦下），或 OIDC 声明了 `requires_email`。
+/// OIDC 用 `email` 声明认人的应用不引用变量，声明 `requires_email` 让预览和安装时就报，不用等登录才失败。
+pub fn needs_owner_email(manifest: &Manifest) -> bool {
+    super::proxy_auth::uses_email(manifest)
+        || manifest
+            .webui
+            .as_ref()
+            .and_then(|webui| webui.oidc.as_ref())
+            .is_some_and(|client| client.requires_email)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn client(admin_groups: &[&str]) -> OidcClient {
+    fn client(owner_groups: &[&str]) -> OidcClient {
         OidcClient {
             redirect_paths: vec!["/cb".into()],
             post_logout_paths: Vec::new(),
             token_endpoint_auth_method: Default::default(),
-            admin_groups: admin_groups.iter().map(|s| s.to_string()).collect(),
-            role_claim: None,
+            owner_groups: owner_groups.iter().map(|s| s.to_string()).collect(),
+            requires_email: false,
         }
     }
 
@@ -124,29 +89,5 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(error.contains("at most 8"), "{error}");
-    }
-
-    #[test]
-    fn a_role_claim_needs_a_free_name_and_plain_values() {
-        let mut immich = client(&[]);
-        immich.role_claim = Some(RoleClaim {
-            name: "immich_role".into(),
-            admin: "admin".into(),
-            user: "user".into(),
-        });
-        validate(&immich).unwrap();
-        for (name, admin) in [
-            ("groups", "admin"),
-            ("sub", "admin"),
-            ("immich_role", "管理员"),
-        ] {
-            immich.role_claim = Some(RoleClaim {
-                name: name.into(),
-                admin: admin.into(),
-                user: "user".into(),
-            });
-            let error = validate(&immich).unwrap_err().to_string();
-            assert!(error.contains("role_claim"), "{error}");
-        }
     }
 }

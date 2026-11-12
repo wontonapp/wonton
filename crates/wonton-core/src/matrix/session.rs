@@ -46,39 +46,6 @@ impl<'a> Session<'a> {
         )
     }
 
-    /// 一个全局账号数据事件的内容；没设过时是 `None`。
-    pub async fn account_data(&self, event: &str) -> Result<Option<Value>, MatrixError> {
-        let path = format!(
-            "/_matrix/client/v3/user/{}/account_data/{}",
-            encode(&self.user_id),
-            encode(event)
-        );
-        match self.json(Method::GET, &path, None, "读账号数据").await {
-            Ok(value) => Ok(Some(value)),
-            Err(e) if e.errcode() == "M_NOT_FOUND" => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
-
-    /// 一个房间账号数据事件的内容；没设过时是 `None`。
-    pub async fn room_account_data(
-        &self,
-        room: &str,
-        event: &str,
-    ) -> Result<Option<Value>, MatrixError> {
-        let path = format!(
-            "/_matrix/client/v3/user/{}/rooms/{}/account_data/{}",
-            encode(&self.user_id),
-            encode(room),
-            encode(event)
-        );
-        match self.json(Method::GET, &path, None, "读房间账号数据").await {
-            Ok(value) => Ok(Some(value)),
-            Err(e) if e.errcode() == "M_NOT_FOUND" => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
-
     /// 账号的显示名。Matrix 规定没设时回 `M_NOT_FOUND`。
     pub async fn display_name(&self) -> Result<Option<String>, MatrixError> {
         let path = self.profile_path("displayname");
@@ -170,21 +137,10 @@ impl<'a> Session<'a> {
 
     /// 发一条消息，返回事件 ID。
     pub async fn send_message(&self, room: &str, content: &Value) -> Result<String, MatrixError> {
-        self.send_message_with_txn(room, content, &crate::secret::random_token())
-            .await
-    }
-
-    /// 同一事务可在断线或重启后重发，Matrix 不会在同一房间里生成重复事件。
-    pub(crate) async fn send_message_with_txn(
-        &self,
-        room: &str,
-        content: &Value,
-        transaction: &str,
-    ) -> Result<String, MatrixError> {
         let path = format!(
             "/_matrix/client/v3/rooms/{}/send/m.room.message/{}",
             encode(room),
-            encode(transaction)
+            crate::secret::random_token()
         );
         let value = self
             .json(Method::PUT, &path, Some(content), "发消息")

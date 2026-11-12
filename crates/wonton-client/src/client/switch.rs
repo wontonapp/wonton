@@ -25,31 +25,6 @@ pub(super) enum PushInput {
 }
 
 impl ClientCore {
-    /// Pairing always starts in an unpaired scope, including direct/debug scans and re-pairing.
-    pub(super) fn pair_home(&self, text: &str, device_name: &str) -> Result<(), CoreError> {
-        let _switching = lock(&self.switching);
-        let Some(code) = self.scope().home.validate_pairing(text, device_name)? else {
-            return Ok(());
-        };
-        if self.scope().home.view().server_id.is_some() {
-            self.change_servers_locked(ServerList::add)?;
-        }
-        self.scope().home.pair(code, device_name);
-        Ok(())
-    }
-}
-
-impl crate::matrix_login::SlotSwitch for ClientCore {
-    fn add_matrix_slot(
-        &self,
-        slot: &str,
-        account: wonton_protocol::MatrixAccount,
-    ) -> Result<(), CoreError> {
-        self.change_servers(|servers| servers.add_matrix(slot, account))
-    }
-}
-
-impl ClientCore {
     pub(super) fn scope(&self) -> Arc<Scope> {
         self.scope
             .read()
@@ -68,13 +43,6 @@ impl ClientCore {
         change: impl FnOnce(&ServerList) -> Result<Change, CoreError>,
     ) -> Result<(), CoreError> {
         let _switching = lock(&self.switching);
-        self.change_servers_locked(change)
-    }
-
-    fn change_servers_locked(
-        &self,
-        change: impl FnOnce(&ServerList) -> Result<Change, CoreError>,
-    ) -> Result<(), CoreError> {
         let change = change(&self.servers)?;
         let previous = self.scope();
         if let Some(slot) = change.switch_to.filter(|slot| *slot != previous.slot) {
@@ -104,18 +72,13 @@ impl ClientCore {
     }
 
     fn open_scope(&self, slot: &str) -> Result<Arc<Scope>, CoreError> {
-        // feature 开时 views() 返回读锁，关时直接返回引用；这里统一拿成 &Views。
-        #[cfg(feature = "ui-fake")]
-        let views = &*self.views();
-        #[cfg(not(feature = "ui-fake"))]
-        let views = self.views();
         Scope::open(
             slot,
             &self.root,
             &self.servers.slot_dir(slot),
             self.network,
             self.servers.subscribe(),
-            Some(views),
+            Some(&self.views),
         )
     }
 
@@ -128,7 +91,8 @@ impl ClientCore {
     fn replay_into(&self, scope: &Scope) {
         let replay = self.replay();
         if let Some(languages) = &replay.languages {
-            scope.set_languages(languages);
+            scope.plugins.set_languages(languages.clone());
+            scope.onboarding.set_languages(languages.clone());
         }
         if let Some(network) = replay.network {
             scope.home.network_changed(network);

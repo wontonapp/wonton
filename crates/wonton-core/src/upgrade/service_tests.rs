@@ -16,7 +16,7 @@ use super::state::{self, ImageRef, Layout, Outcome, UpgradeState, WATCHDOG_MARGI
 use super::{LABEL_MIGRATIONS, LABEL_VERSION, UPDATER_CONTAINER, backup};
 use crate::plugin::languages::Languages;
 
-const SOURCE: &str = "reg/core:stable";
+const SOURCE: &str = "reg/core:beta";
 
 struct Scene {
     root: PathBuf,
@@ -132,7 +132,7 @@ async fn a_new_digest_on_the_channel_is_offered_with_what_the_image_says() {
     s.upgrades.check_now(false).await;
 
     let status = s.upgrades.status(&langs()).await.unwrap();
-    assert_eq!(status.channel.as_deref(), Some("stable"));
+    assert_eq!(status.channel.as_deref(), Some("beta"));
     assert_eq!(status.current.version.as_deref(), Some("0.1.0"));
     assert_eq!(status.current.digest.as_deref(), Some("sha256:old"));
     let CoreUpgradeCheck::Ready { offer } = status.check else {
@@ -188,16 +188,9 @@ async fn background_problems_follow_the_owner_language() {
     let mut messages = Vec::new();
     for (header, tag) in [("ja", "ja"), ("fr-FR", "en")] {
         let s = scene();
-        let core = s.layout.data_dir.join("core");
-        std::fs::create_dir_all(&core).unwrap();
-        std::fs::write(core.join("owner.json"), r#"{"username": "owner"}"#).unwrap();
-        let dir = crate::plugin::store::people_languages_dir(&s.layout.data_dir);
+        let dir = crate::plugin::store::owner_languages_dir(&s.layout.data_dir);
         std::fs::create_dir_all(&dir).unwrap();
-        crate::plugin::store::write_json(
-            &dir.join("people-languages.json"),
-            &std::collections::BTreeMap::from([("owner".to_owned(), header.to_owned())]),
-        )
-        .unwrap();
+        crate::plugin::store::write_json(&dir.join("owner-languages.json"), &header).unwrap();
         s.host.world().registry_error = Some("连不上".to_owned());
         s.upgrades.check_now(false).await;
         let CoreUpgradeCheck::Failed { problem } = s.upgrades.status(&langs()).await.unwrap().check

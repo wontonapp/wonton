@@ -73,48 +73,6 @@ extensions.configure<ApplicationAndroidComponentsExtension> {
     }
 }
 
-// versionName/versionCode 由仓库根的 scripts/app-version.sh 一处计算（iOS 共用同一规则）：
-// 环境变量 WONTON_VERSION（发版脚本显式传，-PwontonVersion 透传给它）→ 最近的 vX.Y.Z tag；
-// 都拿不到时 Debug 用 0.0.0/0（CI 浅克隆没有 tag），Release 直接失败，不悄悄落到 0.0.0。
-// providers.exec 惰性求值，值留到该变体真正合并 manifest 的任务里才取：编 Debug 不会因为 Release
-// 变体拿不到版本号而在配置期失败；spec 里只捕获可序列化的值，配置缓存才存得下。
-// 构建可能搬到没有本仓库目录结构的机器上跑（android-remote 的远程副本），路径必须按本次构建的
-// rootDir 现场解析，不能写死任何机器路径。
-val versionScript = rootDir.parentFile.parentFile.resolve("scripts/app-version.sh")
-require(versionScript.isFile) { "找不到版本号脚本 ${versionScript.path}（rootDir=${rootDir.path}）" }
-
-extensions.configure<ApplicationAndroidComponentsExtension> {
-    onVariants { variant ->
-        val buildType = variant.buildType
-        val wontonVersionProperty = providers.gradleProperty("wontonVersion").orNull
-        val appVersion = providers.exec {
-            // 失败不抛：providers.exec 在非零退出时既不回显 stderr、也不交出已捕获的 stdout，Gradle 只报
-            // exit code，“发版要传 WONTON_VERSION…”的人话就看不见了。stderr 合进 stdout、忽略退出码，
-            // 让下面的解析在拿不到 VERSION/BUILD 两行时把脚本原话带进异常。
-            isIgnoreExitValue = true
-            commandLine("bash", "-c", "\"\$1\" \"\$2\" 2>&1", "app-version", versionScript.absolutePath, buildType)
-            if (wontonVersionProperty != null) {
-                environment("WONTON_VERSION", wontonVersionProperty)
-            }
-        }.standardOutput.asText.map { output ->
-            val values = output.lines().filter { it.contains('=') }.associate {
-                val (key, value) = it.split("=", limit = 2)
-                key.trim() to value.trim()
-            }
-            val version = values["VERSION"]
-            val build = values["BUILD"]?.toIntOrNull()
-            if (version == null || build == null) {
-                throw GradleException("scripts/app-version.sh 没输出 VERSION=X.Y.Z 和 BUILD=<数字> 两行：\n$output")
-            }
-            version to build
-        }
-        variant.outputs.forEach { output ->
-            output.versionName.set(appVersion.map { it.first })
-            output.versionCode.set(appVersion.map { it.second })
-        }
-    }
-}
-
 android {
     namespace = "app.wonton.android"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -123,7 +81,8 @@ android {
         applicationId = "app.wonton.android"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        versionCode = 1
+        versionName = "0.0.0"
 
         // 只打包编译了 Rust 核心的 ABI：其他 ABI 的设备直接装不上，而不是装上后因缺 .so 崩溃。
         ndk {
@@ -148,20 +107,11 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.junit)
-    // 仪器测试（夜跑用）：启动 App 到首屏的骨架和 Compose 语义树断言。
-    androidTestImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.test.junit)
-    androidTestImplementation(libs.androidx.test.rules)
-    androidTestImplementation(libs.compose.ui.test.junit4)
     // shared 用 implementation 引 Compose，测试编译 StepCardFrame 要自己拿到这些类型。
     testImplementation(libs.compose.runtime)
     testImplementation(libs.compose.foundation)
     testImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
-
-    // Apache-2.0。设备上跑 androidTest 的 runner（testInstrumentationRunner 指它）；
-    // AndroidJUnitRunner 在这个包里，ext:junit 不带。
-    androidTestImplementation(libs.androidx.test.runner)
 }
 
 /** Robolectric 要读 strings.xml 和各语言的 values-*，资源得进单元测试。 */

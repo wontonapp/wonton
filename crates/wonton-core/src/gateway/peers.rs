@@ -34,23 +34,18 @@ fn languages(headers: &HeaderMap) -> Languages {
     Languages::from_header(accept)
 }
 
-/// 配对接口的鉴权：只认经隧道的主人设备。设备身份随隧道上的每个请求自动带上，插件网页发的请求
-/// 不算（ADR-0017）：插件网页探测不到主人的服务器名单。和哪台服务器配对是主人的事（ADR-0045
-/// “谁能做什么”），家人的设备回 403 `permission_required`。
+/// 配对接口的鉴权：只认经隧道的已配对设备。设备身份随隧道上的每个请求自动带上，插件网页发的请求
+/// 不算（ADR-0017）：插件网页探测不到主人的服务器名单。
 fn denied(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
 ) -> Option<Response> {
-    let Some(person) = gateway.device_person(peer.map(|Extension(peer)| peer)) else {
+    let Some(Extension(TunnelPeer(id))) = peer else {
         return Some(error(&languages(headers), PeerError::Unauthenticated));
     };
-    if !person.is_owner() {
-        return Some(api::error_response(
-            StatusCode::FORBIDDEN,
-            "permission_required",
-            "服务器配对只有主人能管",
-        ));
+    if !gateway.tunnel.devices.contains(&id) {
+        return Some(error(&languages(headers), PeerError::Unauthenticated));
     }
     if isolation::not_from_another_page(headers, &gateway.core_origin()) {
         None
@@ -137,8 +132,12 @@ pub async fn list(
     if let Some(denied) = denied(&gateway, peer, &headers) {
         return denied;
     }
-    // 记下请求的人的语言：配对提醒的文字从它来（照插件管理接口的做法）。
-    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
+    // 记下主人的语言：配对提醒的文字从它来（照插件管理接口的做法）。
+    gateway.plugins.note_owner_languages(
+        headers
+            .get(hyper::header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok()),
+    );
     let langs = languages(&headers);
     let Some(peers) = peers(&gateway) else {
         return unavailable(&langs);
@@ -194,10 +193,7 @@ pub async fn scan(
     };
     let request: PeerScan = match serde_json::from_slice(&body) {
         Ok(request) => request,
-        Err(e) => {
-            tracing::info!(error = %e, "扫码的请求体读不懂");
-            return error(&langs, PeerError::CodeInvalid);
-        }
+        Err(_) => return error(&langs, PeerError::CodeInvalid),
     };
     match peers.scan(request.code.expose()).await {
         Ok(()) => Json(serde_json::json!({"status": "awaiting_approval"})).into_response(),

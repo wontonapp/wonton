@@ -1,149 +1,130 @@
 name: rust
 
-# 格式、Clippy、不依赖 Docker 的测试。PR 上由 gate.yml 按改动范围调用（合并门槛，范围写在那边的 changes 里），
-# 不自己挂 pull_request；每天定时、手动触发时自己跑全量。
-# 测试分片被跳过时检查名会留成带 ${{ matrix.shard }} 的字面量，规则集只看 gate 汇总，不受影响。
+# 排队最久的是这个工作流，所以 PR 只在改到 Rust 或测试读的文件时才跑：测试会读 deploy/ 和 plugins/ 里的文件。没有分支
+# 保护，跳过的检查不挡合并。main 上每次合并都跑，文档除外。
 on:
-  workflow_call:
-  schedule:
-    # 每天全量兜底：main 上不重跑，两个各自绿的 PR 合在一起才出的错由这次发现。
-    - cron: "0 3 * * *"
-  workflow_dispatch:
+  pull_request:
+    paths:
+      - "crates/**"
+      - "deploy/**"
+      - "plugins/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "clippy.toml"
+      - "rust-toolchain.toml"
+      - ".github/workflows/rust.yml"
+      - "scripts/clean-docker-test-leftovers.sh"
+      - "scripts/ci-capture-container-logs.sh"
+      - "scripts/ci-note-sigterm.sh"
+      - "!**/*.md"
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
 
-# 被 gate 调用时组名按调用方的 ref 算，PR 又推了新提交就取消旧的（gate 自己也会整轮取消）；定时运行都跑完。
+# 同一个 PR 又推了新提交，旧的运行就取消，别占着 runner；main 上的每次合并都跑完。
 concurrency:
   group: rust-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# CI 不需要增量编译的缓存，调试信息只留行号：构建缓存小一半以上。
+# 作业都跑在主人的自托管 runner 上（ADR-0012 的“CI”）。检出会清掉工作区里没被跟踪的文件，Rust 的构建缓存放在
+# runner 主机的共享目录（`WONTON_CI_CACHE`），同一台机器上的几个 runner 共用、跨次沿用。
 env:
+  # CI 不需要增量编译的缓存，调试信息只留行号：构建缓存小一半以上。
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
-permissions:
-  contents: read
-
-# 缓存只在 main 上存，PR 恢复不写：PR 各自的分支都会写满 10 GB 的 actions 缓存。main 上的条目不靠这个
-# 工作流（main 上只有 push，这里不跑），由 cache.yml 在 push 到 main 时用同样的 key 编一遍存下来。
-# 同一族作业用同一个 shared-key：三个测试分片编的是同一套测试二进制，谁先存都一样。
 jobs:
-  format:
-    name: 格式
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+  # 分成两个作业：格式、Clippy 和默认测试不碰 Docker，跑在带 rust 标签的机器上；Docker 集成测试只能在带 docker 标签的
+  # 几台上跑。合在一起时每个 PR 都要排那几台，一排七八个（2026-11-06）。分开后两个作业同时跑，Docker 那个要在另一个
+  # target 目录里再编译、链接一遍测试二进制，但 PR 等的总时间不变长。
+  rust:
+    name: Rust
+    # 不用任意 Linux runner：带 docker 标签的那台主机同时跑 omp 编译和验证栈，常年满载，Rust 作业落上去会慢到超时。
+    # 只写 rust：只给 Rust 作业用的机器注册时去掉了默认标签（--no-default-labels），不会接到 Android 这类要别的环境的作业。
+    runs-on: [rust]
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@v5
+      - name: 构建缓存目录
+        # 按 runner 分开：同一台主机上的几个 runner 共用 WONTON_CI_CACHE，同时跑的作业共用一个 target 目录时，
+        # 实测出现过测试编进了另一个分支的代码（2026-11-03，#139 编出了 file-client 分支的 wonton-protocol）。
+        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/rust" >> "$GITHUB_ENV"
+      - name: 构建缓存超过 30 GB 就清掉
+        # Cargo 不回收旧产物，target 目录会一直长。不用 cargo clean：target 目录是挪到别的盘的符号链接时，它只删链接（实测），
+        # 数据留在原处，下次还编译到链接原来的位置。
+        run: |
+          if [ -d "$CARGO_TARGET_DIR" ] && [ "$(du -sm "$CARGO_TARGET_DIR/" | cut -f1)" -gt 30720 ]; then
+            rm -rf "$CARGO_TARGET_DIR/debug"
+          fi
       - name: 安装 rust-toolchain.toml 指定的工具链
         run: rustup toolchain install
       - name: 格式
         run: cargo fmt --all --check
-
-  clippy:
-    name: Clippy（含函数不超过 100 行）
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: 安装 rust-toolchain.toml 指定的工具链
-        run: rustup toolchain install
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
-        with:
-          tool: cargo-nextest@0.9.151
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          shared-key: rust-clippy
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+      - name: 安装脚本（假 docker，不用真的 Docker）
+        run: python3 -m unittest discover -q -s scripts/install -t scripts
       - name: Clippy（含函数不超过 100 行）
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      # 假数据入口（src/client/ui_fake.rs）在 cargo feature 后面，默认的 workspace 构建编不到它，门禁得单独开一遍。
-      - name: Clippy 假数据入口（feature ui-fake）
-        run: cargo clippy -p wonton-client --all-targets --locked --features ui-fake -- -D warnings
-
-  test:
-    name: 测试（不含依赖 Docker 的集成测试）${{ matrix.shard }}/4
-    # 整轮跑不跑由 gate 的开关决定（被调用时没有 changes 作业）；跳过时 matrix 不展开、检查名留成字面量，规则集只看 gate 汇总。
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        # 编译是每片都要做一遍的固定成本（缓存里的依赖之外那 12 个工作区 crate，4 核上约 250 秒），
-        # 分片只缩短跑测试的那一段（三片时 62/80/114 秒）。多一片把最慢那片的跑测试减掉约四分之一。
-        shard: [1, 2, 3, 4]
-    env:
-      # 故意让 Docker 不可用，保证默认的测试不依赖它：依赖 Docker 的测试标了 #[ignore]，由“Rust Docker 测试”运行。
-      DOCKER_HOST: unix:///nonexistent/docker.sock
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: 安装 rust-toolchain.toml 指定的工具链
-        run: rustup toolchain install
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
-        with:
-          tool: cargo-nextest@0.9.151
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          shared-key: rust-test
-          save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
-      - name: 测试（按名字的哈希分四片并行）
-        shell: bash
+      - name: 测试（不含依赖 Docker 的集成测试）
         # 完整输出另存一份：失败时作为 artifact 上传，重跑覆盖不了失败那次的日志。
-        run: cargo nextest run --workspace --locked --partition hash:${{ matrix.shard }}/4 2>&1 | tee "$RUNNER_TEMP/test-output.log"
-      - name: 文档测试（nextest 不跑 doctest，分不了片，只在第一片跑）
-        if: matrix.shard == 1
+        # shell: bash 带 pipefail：默认的 shell 不带，经过 tee 测试失败也会算成功。
         shell: bash
-        # 接在上一条的日志后面：失败时一起进 artifact。
-        run: cargo test --doc --workspace --locked 2>&1 | tee -a "$RUNNER_TEMP/test-output.log"
+        run: bash scripts/ci-note-sigterm.sh cargo test --workspace --locked 2>&1 | tee "$RUNNER_TEMP/test-output.log"
         env:
+          # 故意让 Docker 不可用，保证默认的测试不依赖它：依赖 Docker 的测试标了 #[ignore]，由“Rust Docker 测试”运行。
           DOCKER_HOST: unix:///nonexistent/docker.sock
       - name: 失败时留下测试输出
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@v4
         with:
           # 名字带上第几次运行：重跑另存一份，不覆盖失败那次。
-          name: rust-test-output-${{ matrix.shard }}-${{ github.run_attempt }}
+          name: rust-test-output-${{ github.run_attempt }}
           path: ${{ runner.temp }}/test-output.log
-          retention-days: 7
+          retention-days: 14
           if-no-files-found: ignore
 
-  extras:
-    name: 假数据入口的测试、官方索引检查
-    # 两件都不分片、都要另编一遍工作区的 crate，单独一个作业和分片并行：放进哪一片都成最慢的那片
-    # （11-12 实测：假数据入口 4 核上 185～209 s，索引检查 73～90 s，分片本身 6～7 分钟）。
-    runs-on: ubuntu-24.04
+  docker:
+    name: Rust Docker 测试
+    # docker-test：能跑这些测试的机器（Docker 可用、deploy/ci/docker-test-images.txt 里的镜像由 npchy 推过去）。和发布用的 docker 标签分开，
+    # 194 这类只跑测试、拉不到 Docker Hub 的机器不会接到发布作业。
+    runs-on: [docker-test]
+    # 起容器、拉镜像最容易卡住，不要占满默认的 6 小时。
     timeout-minutes: 45
-    env:
-      DOCKER_HOST: unix:///nonexistent/docker.sock
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
+      - uses: actions/checkout@v5
+      # 下面三步同“Rust”作业。
+      - name: 构建缓存目录
+        run: echo "CARGO_TARGET_DIR=${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME/rust" >> "$GITHUB_ENV"
+      - name: 构建缓存超过 30 GB 就清掉
+        run: |
+          if [ -d "$CARGO_TARGET_DIR" ] && [ "$(du -sm "$CARGO_TARGET_DIR/" | cut -f1)" -gt 30720 ]; then
+            rm -rf "$CARGO_TARGET_DIR/debug"
+          fi
       - name: 安装 rust-toolchain.toml 指定的工具链
         run: rustup toolchain install
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
-        with:
-          tool: cargo-nextest@0.9.151
-      # 和测试分片同一份依赖缓存（只读）：依赖的 feature 不变，只有工作区的 crate 要编。
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          shared-key: rust-test
-          save-if: false
-      # 先编不带 feature 的：和缓存里的依赖同一套特性，只编工作区的 crate；带 ui-fake 的放后面，只多编 wonton-client。
-      - name: 官方索引里的清单这份核心都读得懂、渲染得出来
-        # 每个插件都按安装前的渲染走一遍（索引里只有文件的 sha256，被引用的文件用占位内容），
-        # 核心不再注入的变量、改名的变量当场失败，免得合进来以后那些插件装不上。用不到 Docker。
-        # 带 --workspace：按整个 workspace 合特性，和测试缓存里的依赖一致；写成 -p wonton-core 会按单个包重新合特性，依赖又编一遍。
-        shell: bash
+      - name: 确认 Docker 可用
+        run: docker version
+      - name: 清理被中断的 Docker 测试遗留
+        run: bash scripts/clean-docker-test-leftovers.sh
+      - name: 记下测试起的容器的日志
+        # 测试结束时容器会被删掉；失败时上传这些日志，才看得到 tuwunel、核心当时说了什么。只记本作业起的（见脚本）。
         run: |
-          curl -fsSL --retry 5 -o "$RUNNER_TEMP/index.json" \
-            https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
-          cargo build --workspace --locked --bin wonton-core
-          target/debug/wonton-core plugin check-index "$RUNNER_TEMP/index.json"
-      - name: 测试假数据入口（feature ui-fake）
-        # 假数据入口的模块和测试都在 cargo feature 后面，默认的 workspace 测试跑不到。
-        run: cargo nextest run -p wonton-client --lib --locked --features ui-fake ui_fake
+          mkdir -p "$RUNNER_TEMP/test-logs/containers"
+          nohup bash scripts/ci-capture-container-logs.sh "$RUNNER_TEMP/test-logs/containers" "$PPID" >/dev/null 2>&1 &
+      - name: Docker 集成测试（标了 #[ignore] 的都是）
+        shell: bash
+        # 这个作业的 runner 都是 containerd 镜像存储：只在那时复现得了 #666 的测试不许静默跳过。
+        run: bash scripts/ci-note-sigterm.sh cargo test --workspace --locked -- --ignored 2>&1 | tee "$RUNNER_TEMP/test-logs/test-output.log"
+        env:
+          WONTON_TEST_REQUIRE_CONTAINERD: "1"
+      - name: 官方索引里的清单这份核心都读得懂
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/index.json" https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
+          cargo run -q -p wonton-core --locked -- plugin check-index "$RUNNER_TEMP/index.json"
+      - name: 失败时留下测试输出和容器日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-docker-test-logs-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/test-logs
+          retention-days: 14
+          if-no-files-found: ignore

@@ -308,16 +308,7 @@ async fn one_result_registers_at_most_a_hundred_files() {
 
 #[tokio::test]
 async fn the_first_four_images_get_previews_no_larger_than_1024() {
-    // 预览期限是给产品用的 10 秒（files/mod.rs 的 PREVIEW_BUDGET）。CI 是 debug 构建，慢机器上一个切片的
-    // 测试挤在一起解码 1600 像素的图偶尔超过它（2 核机器上实测），这条测的是「前四张里能看的都有预览、
-    // 不超过 1024」，跟单张预算的生死赛跑无关，所以先放宽预算，断言就和机器快慢脱钩。
-    let mut f = Fixture::new();
-    std::sync::Arc::get_mut(&mut f.files)
-        .unwrap()
-        .preview_budget = Duration::from_secs(60);
-    let s = setup(Docker::unreachable_for_test(), Duration::from_secs(60)).await;
-    s.bus.attach_files(f.files.clone());
-    let b = Bench { s, f };
+    let b = bench().await;
     let mut links = Vec::new();
     for i in 0..6 {
         let path = format!("photos/{i}.jpg");
@@ -699,14 +690,9 @@ async fn slow_previews_do_not_hold_up_the_result() {
     s.bus.attach_files(f.files.clone());
     let b = Bench { s, f };
     b.plugin_runs();
-    // 假插件的读一直挂着，放行之前一定还在读：结果回不回来不靠机器快慢。
     b.f.host.reads_hang.store(true, Ordering::SeqCst);
-    let mut found = std::pin::pin!(b.find(vec![plugin_resource("notes://a", "a.jpg", None)]));
-    tokio::select! {
-        _ = b.f.host.reads_stuck.notified() => {}
-        result = &mut found => panic!("读还没卡住，结果就回来了：{result:?}"),
-    }
-    let result = tokio::time::timeout(Duration::from_secs(20), &mut found)
+    let found = b.find(vec![plugin_resource("notes://a", "a.jpg", None)]);
+    let result = tokio::time::timeout(Duration::from_secs(20), found)
         .await
         .expect("预览到时不做了，结果照常给");
     assert_eq!(ids(&result).len(), 1);
@@ -716,12 +702,6 @@ async fn slow_previews_do_not_hold_up_the_result() {
         1,
         "插件收不到取消，还在读，这次读取不能提前还名额"
     );
-    // 放行，读真的结束：后台这次读不会一直挂着。
-    b.f.host.reads_release.notify_one();
-    tokio::time::timeout(Duration::from_secs(20), b.f.host.reads_over.notified())
-        .await
-        .expect("放行以后读要结束");
-    assert_eq!(b.f.host.reads_running.load(Ordering::SeqCst), 0);
 }
 
 #[tokio::test]

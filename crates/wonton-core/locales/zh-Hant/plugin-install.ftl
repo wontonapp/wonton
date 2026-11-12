@@ -68,7 +68,6 @@ plugin-install-containers-unhealthy = 部分容器不健康：{ $failures }
 plugin-install-container-unhealthy = 容器 { $container } 健康檢查失敗（最後一次探針，退出碼 { $code }）：{ $output }
 plugin-install-container-unhealthy-nocode = 容器 { $container } 健康檢查失敗（最後一次探針，退出碼未知）：{ $output }
 plugin-install-container-unhealthy-noprobe = 容器 { $container } 健康檢查失敗（Docker 沒有留下探針結果）
-plugin-install-container-health-probe-failed = 容器 { $container } 的健康探測失敗（GET { $path }）：{ $reason }
 plugin-install-container-not-running = 容器 { $container } 沒有在執行（{ $status }）
 plugin-install-one-shot-failed = 一次性服務的容器 { $container } 沒有以 0 結束（{ $status }，退出碼 { $code }）
 plugin-install-reach-none = 不存在
@@ -228,7 +227,6 @@ plugin-install-priv-fixed-device = 固定裝置權限只支援 /dev/net/tun 和 
 plugin-install-priv-host-network-ports = 主機網路服務不能同時宣告 lan.ports；應用程式直接監聽主機網路上的連接埠
 plugin-install-priv-host-network-sso = 主機網路裡的 webui 不能使用 sso: proxy，請改用 oidc 或 none
 plugin-install-priv-host-network-healthcheck = 主機網路裡的 webui 服務必須寫有效的 healthcheck
-plugin-install-priv-host-network-mail = 用主機網路的應用程式不能寄信：寄信按來源網段識別，主機網路寄來的信認不出來源會被丟棄。請改用應用程式網路，或去掉寄信
 plugin-install-priv-cap-invalid = cap_add 裡的能力 `{ $cap }` 不合法
 plugin-install-priv-cap-drop-invalid = cap_drop 裡的能力 `{ $cap }` 不合法
 plugin-install-priv-security-opt-invalid = security_opt 裡的 `{ $opt }` 不合法（no-new-privileges 的值只接受 true 或 false）
@@ -242,14 +240,6 @@ plugin-install-priv-missing-cap-add = 權限 { $permission } 沒有對應的 cap
 plugin-install-priv-missing-devices = 權限 { $permission } 沒有對應的 devices 欄位
 plugin-install-priv-field-requires = { $field } 需要清單權限 { $permission }
 plugin-install-priv-missing-field = 清單權限 { $permission } 沒有對應的 { $field } 欄位
-plugin-install-optional-not-allowed = 權限 { $permission } 不能宣告成可選
-plugin-install-optional-declared-twice = 權限 { $permission } 同時寫在 permissions 和 optional_permissions 裡
-plugin-install-optional-off-loss = 可選權限 { $permission } 要寫 off_loss（關著時少了什麼），中文和英文都要有
-plugin-install-optional-gpu-required = 可選權限 { $permission } 關著時不會給顯示卡，requirements.gpu.need 不能寫 required
-plugin-install-optional-not-enabled = 可選項 { $permission } 沒有宣告成可選
-plugin-install-optional-duplicate = 可選項 { $permission } 寫了兩遍
-upgrade-optional-became-required = 新版本把 { $permission } 改成必要權限，確認後授予
-upgrade-optional-removed = 新版本去掉了可選項 { $permission }
 
 # ── provides（provides.rs）─────────────────────────────────────────────────
 
@@ -418,6 +408,7 @@ plugin-install-docker-archive-unparseable = 封存檔無法解析：{ $error }
 plugin-install-docker-context-start-container = 啟動容器 { $name }
 plugin-install-docker-context-inspect-container = 查詢容器 { $name }
 plugin-install-docker-context-kill-container = 對容器 { $name } 發送 { $signal }
+plugin-install-docker-context-restart-container = 重新啟動容器 { $name }
 plugin-install-docker-context-stop-container = 停止容器 { $name }
 plugin-install-docker-context-remove-container = 刪除容器 { $name }
 plugin-install-docker-context-list-containers = 列出容器
@@ -496,51 +487,7 @@ plugin-install-img-worker-memory-limit = 處理時需要的記憶體超過 { $mi
 plugin-install-img-worker-killed = 處理圖片的行程被強制終止（SIGKILL），多半是記憶體不足
 plugin-install-img-worker-signal = 處理圖片的行程被訊號 { $signal } 結束
 plugin-install-img-worker-malformed = 處理圖片的行程輸出的格式不對
-plugin-install-img-worker-host-exited = 處理圖片的助手退出了：{ $error }
-plugin-install-img-worker-host-not-ready = 處理圖片的助手沒有就緒：{ $error }
-plugin-install-img-worker-host-protocol = 處理圖片的助手用的協定版本是 { $got }，核心是 { $want }
 
 ## 预装（启动时随服务器带的包）失败的原因。
 plugin-install-preinstall-retrying = 預先安裝失敗（已試 { $attempts } 次，稍後自動重試）
 plugin-install-preinstall-failed = 預先安裝失敗
-
-# ── 能力依賴（capabilities.rs，ADR-0053）──────────────────────────────────
-
-plugin-capability-unknown = 這份核心不認識能力 { $capability }，升級核心後再裝
-plugin-capability-third-party-format = 能力 { $capability } 不合法：第三方能力要寫成 x-<作者>.<名字>，作者和名字用小寫字母、數字、連字符號
-plugin-capability-no-consumer = { $capability } 沒有使用方聲明，不能寫在 requires 或 wants 裡
-plugin-capability-duplicate = { $field } 裡的能力 { $capability } 寫了兩次
-plugin-capability-in-both-lists = 能力 { $capability } 不能同時在 requires 和 wants 裡
-plugin-capability-provider-requires = 提供能力的插件不能 requires 別的能力
-plugin-capability-port-zero = provides.{ $capability }.port 不能為 0
-plugin-capability-credentials-required = provides.{ $capability } 要宣告 credentials：給每個使用方簽一個只屬於它的憑據
-plugin-capability-credentials-forbidden = provides.{ $capability } 不能宣告 credentials：這個能力的提供方只認經核心轉發來的請求
-plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $field } 是非空的 argv，並用 { $placeholder } 指明憑據名
-plugin-capability-service-unknown = { $field } 引用的服務 `{ $service }` 在 compose 裡不存在
-plugin-capability-service-not-forwardable = { $field } 不能指向 network_mode: none 的服務：核心要轉發進去、在裡面簽發憑據
-plugin-install-capability-deps-unsupported = 這個核心還不支援外掛之間的依賴，升級核心後再裝
-plugin-install-runtime-services = runtime 為 { $runtime } 時不能宣告 services
-plugin-install-runtime-unsupported = 這個核心不支援安裝或升級 runtime 為 { $runtime } 的外掛，請先升級核心
-plugin-install-matrix-rtc-needs-matrix = 核心沒有接入 Matrix 伺服器，裝不了提供 matrix_rtc（通話授權）的應用程式
-plugin-install-matrix-rtc-conflict = 已經安裝了提供 matrix_rtc（通話授權）的應用程式 { $id }：同一時間只能有一個
-plugin-install-matrix-rtc-ca-failed = 寫不了通話授權應用程式要信任的憑證包：{ $error }
-
-# 静态网页和托管形态（ADR-0080）
-plugin-install-static-dir = `{ $root }` 裡的靜態檔案：{ $problem }
-plugin-install-static-too-many = 檔案和資料夾超過 { $max } 個
-plugin-install-static-too-big = 一共 { $mib } MiB，超過 { $max } MiB
-plugin-install-static-file-too-big = `{ $path }` 超過單一檔案 { $max } MiB 的上限
-plugin-install-static-hidden = `{ $path }`：不能有以 . 開頭的名稱
-plugin-install-static-reserved = _wonton/ 目錄保留給應用程式資料，不能使用
-plugin-install-static-no-index = 沒有 index.html
-plugin-install-static-no-fallback = fallback 指定的 `{ $path }` 不在目錄裡
-plugin-install-static-symlink = `{ $path }` 是符號連結，靜態檔案不能是符號連結
-plugin-install-static-not-file = `{ $path }` 不是一般檔案
-plugin-install-static-missing = 目錄不存在
-plugin-install-static-read-failed = 無法讀取 `{ $path }`：{ $error }
-plugin-hosted-provider-not-running = 託管這個應用程式的 { $provider } 沒有在執行
-plugin-hosted-provider-missing = 沒有安裝提供 { $capability } 的應用程式，這個應用程式無法使用
-plugin-hosted-provider-taken = { $other } 已經提供 { $capability }，只能有一個應用程式提供它
-plugin-hosted-provider-in-use = 這些應用程式由它託管，解除安裝後會打不開：{ $plugins }。請先解除安裝它們
-plugin-hosted-dir-missing = 這個應用程式在 { $capability } 下的檔案不見了，請重新安裝
-plugin-hosted-storage-failed = 託管檔案無法寫入：{ $error }
