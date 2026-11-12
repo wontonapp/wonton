@@ -53,7 +53,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ImageUpload
 import app.wonton.protocol.ReplyQuote
+import app.wonton.protocol.TimelineAction
+import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonSheetAction
@@ -114,7 +117,7 @@ fun Composer(
             scope.launch {
                 PhotoUpload.make(context, uri).fold(
                     onSuccess = { upload ->
-                        onAction(Action.SendImage(roomId, upload, reply?.eventId))
+                        onAction(sendImageAction(roomId, upload, reply))
                         if (reply != null) onReplySent()
                     },
                     onFailure = { failure -> onReject(Problem(photoUnreadable, photoTryAnother, failure.message)) },
@@ -150,7 +153,7 @@ fun Composer(
             exit = scaleOut(motion) + fadeOut(motion),
         ) {
             SendButton {
-                onAction(Action.SendText(roomId, draft, reply?.eventId))
+                onAction(Action.Timeline(TimelineAction.SendText(TimelineTarget(roomId, null), draft, reply?.eventId)))
                 onSent()
             }
         }
@@ -172,7 +175,7 @@ fun Composer(
         PastePreviewSheet(
             uri,
             onSend = { upload ->
-                onAction(Action.SendImage(roomId, upload, reply?.eventId))
+                onAction(sendImageAction(roomId, upload, reply))
                 if (reply != null) onReplySent()
             },
             onDismiss = { pendingPaste = null },
@@ -261,3 +264,7 @@ private fun SendButton(onClick: () -> Unit) {
         }
     }
 }
+
+/** 发图片的一条时间线操作；两个调用点（选图、粘贴）共用，也把行收短。 */
+private fun sendImageAction(roomId: String, upload: ImageUpload, reply: ReplyQuote?): Action =
+    Action.Timeline(TimelineAction.SendImage(TimelineTarget(roomId, null), upload, reply?.eventId))

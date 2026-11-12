@@ -53,6 +53,7 @@ struct ChatListView: View {
             }
             .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
+            .environment(\.goToInstalledApps, { tabs.select(.apps) })
             .navigationDestination(for: ChatRoute.self) { route in
                 switch route {
                 case let .room(roomId):
@@ -103,8 +104,18 @@ struct ChatListView: View {
                 status.map(ChatStatusView.init)
                 if let reminder {
                     WontonGroup {
-                        NavigationLink(value: ChatRoute.chatBackup) { WontonRow(title: reminder, showsForward: true) }
+                        if model.viewModel.encryption.backupReminder == .continueOnOtherDevice {
+                            // 交接还没完成，主人先进了列表：点了回到交接页（ADR-0087）。
+                            Button { model.keyHandoffDeferred = false } label: {
+                                WontonRow(title: reminder, showsForward: true)
+                            }
                             .buttonStyle(.plain)
+                        } else {
+                            NavigationLink(value: ChatRoute.chatBackup) {
+                                WontonRow(title: reminder, showsForward: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
@@ -424,6 +435,7 @@ private extension MessageSummary {
         case .image: String(localized: .messageSummaryImage)
         case .undecryptable: String(localized: .messageSummaryUndecryptable)
         case .redacted: String(localized: .messageSummaryRedacted)
+        case let .sideChat(title, _): title
         case let .other(kind): String(localized: .chatSummaryOther(kind))
         }
     }

@@ -97,7 +97,7 @@ private fun previewHome(relay: Boolean) = HomeViewModel(
     deviceId = "0".repeat(64),
     serverId = null,
     status = HomeStatus.Connected,
-    path = HomePath(relay = relay, lan = false, rttMs = 1240u),
+    path = HomePath(relay = relay, publicRelay = false, lan = false, rttMs = 1240u),
     notice = null,
     details = ConnectionDetails(
         network = DeviceNetwork.WIFI,
@@ -122,6 +122,7 @@ private fun previewHome(relay: Boolean) = HomeViewModel(
     pairing = null,
     invite = null,
     keepConnection = false,
+    justRecovered = false,
 )
 
 // 和 StepCardFrameTest 的假外观同一套颜色。

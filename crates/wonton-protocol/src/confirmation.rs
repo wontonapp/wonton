@@ -63,6 +63,27 @@ pub struct ConfirmationCard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub origin: Option<crate::ConfirmationOrigin>,
+    /// 谁能回答（ADR-0088）。
+    #[serde(default)]
+    pub audience: CardAudience,
+    /// 回答了的人的 Matrix 用户 ID：发给所有管理员的卡片，别的管理员看到“已由某某处理”。还没回答时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub answered_by: Option<String>,
+}
+
+/// 一张卡片发给谁。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum CardAudience {
+    /// 发给 Bot 的归属人（共享 Bot 是主人），ADR-0045。
+    #[default]
+    Keeper,
+    /// 发给所有管理员（主人和有“管理成员”的人），谁先答算谁的（ADR-0088）。
+    Admins,
+    #[serde(other)]
+    Other,
 }
 
 /// 放行时段：这个 Bot 调这个插件，到期前不再发卡片。卡片只在时段开始和结束时更新。

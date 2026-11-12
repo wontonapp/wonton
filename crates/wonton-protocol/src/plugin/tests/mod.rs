@@ -105,6 +105,7 @@ fn store() -> StoreListing {
         }),
         stars: None,
         installed_version: Some("2.0.0".into()),
+        security_tier: Some(SecurityTier::Standard),
         high_permissions: false,
         blocked: None,
     };
@@ -137,6 +138,7 @@ fn store() -> StoreListing {
                 source: "github:someone/wonton-samba".into(),
                 trust: PluginTrust::Community,
                 stars: Some(42),
+                security_tier: Some(SecurityTier::Highest),
                 high_permissions: true,
                 blocked: Some("宿主是 arm64，这个插件只支持 amd64".into()),
                 ..item
@@ -166,6 +168,7 @@ fn preview() -> InstallPreview {
         version: "1.0.0".into(),
         kind: PluginKind::App,
         runtime: PluginRuntime::Compose,
+        security_tier: Some(SecurityTier::High),
         scope_choices: vec![],
         has_bot: false,
         icon: None,
@@ -263,6 +266,8 @@ fn detail() -> PluginDetail {
         tags: vec![],
         kind: PluginKind::App,
         runtime: PluginRuntime::Compose,
+        security_tier: Some(SecurityTier::Standard),
+        link_url: None,
         scope: None,
         version: "2.1.0".into(),
         trust: PluginTrust::Official,
@@ -381,9 +386,10 @@ fn an_uncertain_task_keeps_its_wire_format() {
     assert_eq!(
         serde_json::to_value(PluginTaskState::Uncertain {
             message: "x".to_owned(),
+            next_step: PluginTaskNextStep::CheckInstalled,
         })
         .unwrap(),
-        json!({"type": "uncertain", "message": "x"})
+        json!({"type": "uncertain", "message": "x", "next_step": "check_installed"})
     );
 }
 

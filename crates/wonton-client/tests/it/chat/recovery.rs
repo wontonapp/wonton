@@ -201,6 +201,75 @@ async fn an_unverified_device_does_not_enable_backup_for_an_account_without_reco
     );
 }
 
+/// 已验证但手里没有交叉签名私钥的设备（ADR-0046）：自动开启备份会造出缺私钥的残缺秘密存储，所以
+/// `enable_recovery` 拒绝并如实报错，备份保持没有。这里的“已验证但没私钥”用手工签名制造（ADR-0076 调研的
+/// “直接批准”）：签名链让新设备算成已验证，签名后原设备下线，新设备补要的秘密没人答。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_verified_device_without_private_keys_does_not_enable_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    // 原设备只经 Matrix 登录，建立交叉签名但不经过 ClientCore 的自动开启逻辑。
+    let original = home.matrix.login("owner", "Original device").await;
+    original.start_sync().await.unwrap();
+    eventually(
+        "原设备有交叉签名但没设置恢复",
+        original.encryption_states(),
+        |state| {
+            (state.verification == Verification::Verified && state.recovery == Recovery::Disabled)
+                .then_some(())
+        },
+    )
+    .await;
+
+    phone.connect(&home);
+    let (_, device_id) = phone.signed_in().await;
+    wait_for_recovery(
+        &phone,
+        RecoveryStatus::Disabled,
+        DeviceVerification::Unverified,
+    )
+    .await;
+
+    // 原设备要先看到新设备的设备密钥（keys/query 慢一拍）才签得上；签上后立刻下线，新设备随后才从签名链
+    // 算成已验证，它补要秘密的请求没人答。
+    let deadline = std::time::Instant::now() + WAIT;
+    while !original.sees_device(device_id.as_str().into()).await {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "原设备一直没看到新设备的设备密钥"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    original
+        .sign_device(device_id.as_str().into())
+        .await
+        .expect("原设备手工签名新设备");
+    drop(original);
+
+    // 自动开启被拒：问题如实报（前置不满足），备份保持没有，新密钥不存在。
+    phone
+        .wait_chat("已验证但缺私钥的设备开不了备份", |view| {
+            matches!(&view.problem, Some(problem) if problem.reason == ChatFailure::NotReady)
+                .then_some(())
+        })
+        .await;
+    assert_recovery(
+        &phone.chat().encryption,
+        RecoveryStatus::Disabled,
+        DeviceVerification::Verified,
+        None,
+    );
+    let encryption = &phone.chat().encryption;
+    // 备份页的可见性是主人定死的（ADR-0076）：Disabled 且本设备已验证就不给重置入口，哪怕这台设备缺私钥——
+    // 出路是回最早配对的那台设备，不是在这里换身份。没有要主人做的下一步。
+    assert!(!encryption.can_reset);
+    assert_eq!(encryption.recovery_next_step, RecoveryNextStep::None);
+    // 本设备已验证，请别的设备确认的入口也收起。
+    assert!(!encryption.can_verify_with_other_device);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn failed_automatic_backup_stays_disabled_until_a_new_session() {

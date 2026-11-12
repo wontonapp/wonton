@@ -125,7 +125,12 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
                     ) {
                         items(viewModel.tasks, key = { "task:${it.id}" }) { task ->
                             Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {
-                                TaskRow(task, plugins) { navigation.confirmation = reconfirmation(task, plugins) }
+                                TaskRow(
+                                    task,
+                                    plugins,
+                                    { navigation.confirmation = reconfirmation(task, plugins) },
+                                    navigation.checkInstalled,
+                                )
                             }
                         }
                         viewModel.problem?.let { problem ->
@@ -374,7 +379,9 @@ private fun ItemTags(item: StoreItem) {
     val stars = item.stars
     val provider = item.viaIndex?.let { stringResource(R.string.store_via_index, it) } ?: item.provider
     val hasSource = showsTrust || provider != null
-    if (hasSource || item.highPermissions || stars != null) {
+    // 要不要标红由核心说（highPermissions），壳不比较档位。
+    val highPermissions = item.highPermissions
+    if (hasSource || highPermissions || stars != null) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             verticalAlignment = Alignment.CenterVertically,
@@ -389,7 +396,7 @@ private fun ItemTags(item: StoreItem) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (item.highPermissions) Tag(stringResource(R.string.store_high_permissions), colors.danger)
+            if (highPermissions) Tag(stringResource(R.string.store_high_permissions), colors.danger)
             stars?.let {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),

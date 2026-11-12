@@ -13,6 +13,10 @@ use crate::topics::SessionKey;
 pub struct SessionRecord {
     pub session_id: String,
     pub cwd: String,
+    /// 建会话时切到的模式；恢复后补切一次用（适配器不都记得上次的模式）。
+    /// 旧文件里没有这个字段，空值恢复时退回配置的默认模式。
+    #[serde(default)]
+    pub mode: String,
 }
 
 /// 房间和会话键（主对话 `main`，话题是根消息事件 ID）到 ACP 会话的映射，重启后恢复。
@@ -118,6 +122,76 @@ async fn persist_tasks(path: &Path, tasks: &BTreeMap<String, TaskRecord>) -> Res
     tokio::fs::rename(&temp, path)
         .await
         .map_err(|error| Error::Upstream(Detail::data(format!("替换桥任务映射失败：{error}"))))
+}
+
+/// 房间里最后见过的主人消息：时间戳（Unix 毫秒）加事件 ID。重启后首屏快照里比它新的
+/// 是停机期间发来的，要补处理；首次运行没有记录，快照整批当作启动前的旧消息，只从
+/// 这里往后算。带着事件 ID 是因为两件事可能落在同一毫秒：只比时间会把同毫秒的新消息
+/// 当成旧的丢掉，比到事件才算分得清。
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct LastSeenMarker {
+    pub timestamp_ms: u64,
+    pub event_id: String,
+}
+
+pub struct LastSeen {
+    path: PathBuf,
+    rooms: Mutex<BTreeMap<String, LastSeenMarker>>,
+}
+
+impl LastSeen {
+    pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref().to_owned();
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent).await.map_err(|error| {
+                Error::Upstream(Detail::data(format!("创建桥状态目录失败：{error}")))
+            })?;
+        }
+        let rooms = match tokio::fs::read(&path).await {
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
+                Error::Upstream(Detail::data(format!("桥的已读位置损坏：{error}")))
+            })?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => BTreeMap::new(),
+            Err(error) => {
+                return Err(Error::Upstream(Detail::data(format!(
+                    "读取桥的已读位置失败：{error}"
+                ))));
+            }
+        };
+        Ok(Self {
+            path,
+            rooms: Mutex::new(rooms),
+        })
+    }
+
+    pub async fn get(&self, room_id: &str) -> Option<LastSeenMarker> {
+        self.rooms.lock().await.get(room_id).cloned()
+    }
+
+    /// 记到这条消息：时间戳只前进不后退（编辑、撤回这类旧时间戳的重复投递拉不回去）；
+    /// 同一时间戳上来得更晚的消息，把事件 ID 换成它（它才是这条时间戳上最后见过的）。
+    pub async fn advance(&self, room_id: &str, marker: LastSeenMarker) -> Result<()> {
+        let mut rooms = self.rooms.lock().await;
+        let current = rooms.entry(room_id.to_owned()).or_default();
+        if marker.timestamp_ms < current.timestamp_ms
+            || (marker.timestamp_ms == current.timestamp_ms && marker.event_id == current.event_id)
+        {
+            return Ok(());
+        }
+        *current = marker;
+        let bytes = serde_json::to_vec_pretty(&*rooms).map_err(|error| {
+            Error::Upstream(Detail::data(format!("编码桥的已读位置失败：{error}")))
+        })?;
+        let temp = self.path.with_extension("tmp");
+        tokio::fs::write(&temp, bytes).await.map_err(|error| {
+            Error::Upstream(Detail::data(format!("写桥的已读位置失败：{error}")))
+        })?;
+        tokio::fs::rename(&temp, self.path.as_path())
+            .await
+            .map_err(|error| {
+                Error::Upstream(Detail::data(format!("替换桥的已读位置失败：{error}")))
+            })
+    }
 }
 
 async fn persist(

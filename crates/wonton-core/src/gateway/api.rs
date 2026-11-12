@@ -79,7 +79,10 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
     }
     let status = match error {
         InstallError::EgressProxyUnavailable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
-        InstallError::Invalid(_) | InstallError::UnsupportedRuntime(_) => StatusCode::BAD_REQUEST,
+        InstallError::Invalid(_)
+        | InstallError::UnsupportedRuntime(_)
+        | InstallError::SettingsInvalid(..)
+        | InstallError::SettingsSchemaInvalid(..) => StatusCode::BAD_REQUEST,
         InstallError::PermissionNotGranted(_) => StatusCode::FORBIDDEN,
         InstallError::Unsupported(_)
         | InstallError::GpuUnavailable(_)
@@ -103,7 +106,41 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         }
         InstallError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
-    error_response(status, error.kind(), &error.to_string())
+    match error {
+        InstallError::SettingsInvalid(message, fields) => settings_error(
+            status,
+            "settings_invalid",
+            message,
+            json!({"fields": fields}),
+        ),
+        InstallError::SettingsSchemaInvalid(message, problems) => settings_error(
+            status,
+            "settings_schema_invalid",
+            message,
+            json!({"problems": problems}),
+        ),
+        _ => error_response(status, error.kind(), &error.to_string()),
+    }
+}
+
+/// 设置的两类校验失败：附加字段直接放在 `error` 对象上。
+fn settings_error(
+    status: StatusCode,
+    kind: &'static str,
+    message: &str,
+    extra: serde_json::Value,
+) -> Response {
+    let mut error = json!({"kind": kind, "message": message});
+    if let serde_json::Value::Object(extra) = extra
+        && let serde_json::Value::Object(error) = &mut error
+    {
+        error.extend(extra);
+    }
+    let mut response = (status, Json(json!({"error": error}))).into_response();
+    response
+        .headers_mut()
+        .insert(pages::ERROR_HEADER, HeaderValue::from_static(kind));
+    response
 }
 
 /// 带没带主人令牌。
@@ -133,7 +170,7 @@ pub(crate) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response>
 }
 
 /// 只给主人的接口（ADR-0045“谁能做什么”）：主人令牌，或者主人名下的设备（经隧道，且不是别的网页发起的）。
-/// 家人的设备回 403 `owner_only`。
+/// 家人的设备回 403 `permission_required`。
 pub(crate) fn owner_denied(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
@@ -144,7 +181,7 @@ pub(crate) fn owner_denied(
         Some(person) if person.is_owner() => from_another_page(headers, &gateway.core_origin()),
         Some(_) => Some(error_response(
             StatusCode::FORBIDDEN,
-            "owner_only",
+            "permission_required",
             "这个接口只有主人能用",
         )),
         None => denied(gateway, headers),
@@ -413,9 +450,23 @@ async fn install_upload(
     gateway
         .plugins
         .store_input_values(&package.manifest, &secrets, None, langs)?;
+    let settings = match crate::plugin::settings::load(&package, langs)? {
+        Some(schema) => {
+            crate::plugin::settings::value::initial(&schema, &Default::default(), langs)
+                .map_err(|fields| crate::plugin::settings::value_error(fields, langs))?
+        }
+        None => Default::default(),
+    };
     gateway
         .plugins
-        .install_detached_enabled(package, granted, enabled, query.lan_webui, langs.clone())
+        .install_detached_enabled(
+            package,
+            granted,
+            enabled,
+            query.lan_webui,
+            settings,
+            langs.clone(),
+        )
         .await
 }
 
@@ -492,7 +543,15 @@ pub async fn upgrade(
                     return install_error(&e);
                 }
                 plugins
-                    .upgrade_upload(&id, package, grant, enabled, query.lan_webui, &langs)
+                    .upgrade_upload(
+                        &id,
+                        package,
+                        grant,
+                        enabled,
+                        query.lan_webui,
+                        &Default::default(),
+                        &langs,
+                    )
                     .await
             }
             Err(e) => return install_error(&e),

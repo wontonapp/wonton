@@ -65,9 +65,7 @@ async fn the_watchdog_fails_a_stuck_pairing_and_leaves_a_newer_one_alone() {
 
     // 放行以后旧的几次也做完了交换，它们迟到的结果不算数，新的一次照常配上、连通。
     gate.open();
-    let view = phone
-        .wait_for(|view| view.pairing.is_none() && view.status == HomeStatus::Connected)
-        .await;
+    let view = phone.wait_for(super::paired).await;
     assert_eq!(
         view.server_id,
         Some(home_side.server.endpoint().id().to_string())

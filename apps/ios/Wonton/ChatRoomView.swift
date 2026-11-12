@@ -82,7 +82,7 @@ struct ChatRoomView: View {
             actions: [
                 WontonDialogAction(title: String(localized: .commonCancel)),
                 WontonDialogAction(title: String(localized: .messageRedact), kind: .danger) {
-                    if let item = redactItem { model.send(.redactMessage(roomId: roomId, itemId: item)) }
+                    if let item = redactItem { sendTimeline(.redactMessage(target: mainTimeline, itemId: item)) }
                 }
             ],
             afterDismiss: { redactItem = nil }
@@ -143,7 +143,7 @@ struct ChatRoomView: View {
                                 guard (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
                                 if timeline.isLoaded, timeline.backPagination == .idle {
                                     pageAnchor = oldestEvent
-                                    model.send(.paginateBackwards(roomId: roomId))
+                                    sendTimeline(.paginateBackwards(target: mainTimeline))
                                 }
                             }
                             .onDisappear { pageAnchor = nil }
@@ -163,8 +163,8 @@ struct ChatRoomView: View {
                     TimelineRow(
                         item: item, core: model.core, showsSender: !isDirect,
                         joinsPrevious: joinsPrevious, joinsNext: joinsNext,
-                        retry: { model.send(.retrySend(roomId: roomId, itemId: item.id)) },
-                        cancel: { model.send(.cancelSend(roomId: roomId, itemId: item.id)) },
+                        retry: { sendTimeline(.retrySend(target: mainTimeline, itemId: item.id)) },
+                        cancel: { sendTimeline(.cancelSend(target: mainTimeline, itemId: item.id)) },
                         cardAction: { model.send($0) },
                         reply: { model.startReply(.ready(message: $0), in: roomId) },
                         forward: {
@@ -204,14 +204,14 @@ struct ChatRoomView: View {
                 guard last != nil else { return }
                 // 只有停在底部才标已读；翻上去读历史时不标，回到底部再标（贴底那一下的 onChange 在下面）。
                 // 落点摆好之前不标：标早了已读行跳到最新一条，进房的落点就丢了。
-                if pin.isPinned, placed { model.send(.markRoomRead(roomId: roomId)) }
+                if pin.isPinned, placed { sendTimeline(.markRead(target: mainTimeline)) }
                 // 自己发的消息（包括别的设备发的）到了：不管翻到哪都回到底部看结果。
                 if case let .message(message) = timeline.items.last?.content, message.isOwn { pin.pin() }
             }
             .onChange(of: pin.isPinned) { _, pinned in
                 // 跨过底部报告方向（ADR-0071）：核心按它算“回到底部”按钮和新消息数；贴底时标已读。
-                model.send(.setTimelineScroll(roomId: roomId, scroll: pinned ? .bottom : .away))
-                if pinned { model.send(.markRoomRead(roomId: roomId)) }
+                sendTimeline(.setTimelineScroll(target: mainTimeline, scroll: pinned ? .bottom : .away))
+                if pinned { sendTimeline(.markRead(target: mainTimeline)) }
             }
             // 摆进房间的落点（ADR-0071）：落点不是最新一条就停在它上面（落点行在视野顶部），解开贴底；
             // 没有落点或落点就是最新一条，维持贴底。unpin 触发上面的方向报告，核心的落点由此知道没被当成到底。
@@ -292,6 +292,13 @@ struct ChatRoomView: View {
     private var isReadOnly: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
     }
+}
+
+@MainActor
+private extension ChatRoomView {
+    var mainTimeline: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: nil) }
+
+    func sendTimeline(_ action: TimelineAction) { model.send(.timeline(action: action)) }
 }
 
 /// 有 `Reply` 的消息可以右滑回复（ADR-0073）：滑过阈值系统给一次触感，松手进入回复状态。

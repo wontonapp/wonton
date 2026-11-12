@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
+use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use serde_json::json;
 use wonton_client::{Action, MessageContent, TimelineContent};
@@ -52,10 +53,15 @@ async fn sending_to_the_bot_hides_the_prompts_and_records_the_room() {
     let room = room_id.to_string();
     let mut timeline = Timeline::open(&phone, &room).await;
     phone
-        .dispatch(Action::SendText {
-            room_id: room.clone(),
-            body: "你好".to_owned(),
-            reply_to: None,
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: TimelineTarget {
+                    room_id: room.clone(),
+                    thread_root: None,
+                },
+                body: "你好".to_owned(),
+                reply_to: None,
+            },
         })
         .unwrap();
     timeline
@@ -144,10 +150,15 @@ async fn prompts_used_reaches_the_disk_before_the_room_is_published_as_sent() {
 
     let mut timeline = Timeline::open(&phone, &room).await;
     phone
-        .dispatch(Action::SendText {
-            room_id: room.clone(),
-            body: "你好".to_owned(),
-            reply_to: None,
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: TimelineTarget {
+                    room_id: room.clone(),
+                    thread_root: None,
+                },
+                body: "你好".to_owned(),
+                reply_to: None,
+            },
         })
         .unwrap();
     timeline

@@ -101,3 +101,10 @@
 | [0081](0081-local-agent-host.md) | 用户自己电脑上的 Agent：电脑只当远端 ACP 运行时，桥和令牌留在服务器 |
 | [0082](0082-agent-run-status.md) | Agent 进度用一条状态消息：按 MSC4564，每轮一条，编辑推进到“等你确认”“完成”“失败” |
 | [0084](0084-agent-own-web.md) | Agent 自带网页做插件：网页就是插件的 webui，访问控制用核心现有的那套 |
+| [0085](0085-upgrade-plugin-compat.md) | 核心升级前列出会失效的插件：目标镜像自证的兼容检查 |
+| [0087](0087-pairing-key-handoff.md) | 加设备时自动带上聊天密钥：配对后接着做 Matrix 自我验证，恢复密钥只留给旧设备都不在时 |
+| [0088](0088-family-accounts.md) | 家人账号：独立账号、可配置的角色、私人和共享 Bot |
+| [0089](0089-https-own-domain.md) | HTTPS 先用主人自己的域名：lego DNS-01，设置里预设 deSEC，插件只认一个规范对外地址 |
+| [0090](0090-public-access.md) | 公网访问：自己的域名或 Cloudflare Tunnel 当入口，默认关，一键全关，回调按路径放行，访客链接 |
+| [0093](0093-side-chats.md) | 旁聊：主对话里的 Matrix 话题，收成卡片，结束时主对话里一行结果 |
+| [0094](0094-chat-attachments.md) | 聊天里附件和文字一起发：附件区预上传，全部传完才发第一条，一组事件带同一个分组标记 |

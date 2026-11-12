@@ -25,6 +25,7 @@ mod api_body;
 mod api_switch;
 mod auth;
 mod bot_activity;
+mod bot_contacts;
 mod bot_profile;
 mod bots;
 mod confirmations;
@@ -55,6 +56,7 @@ mod panel_pins;
 mod peers;
 pub mod people_limits;
 mod plugin_scope;
+mod plugin_settings;
 mod plugin_start;
 mod plugin_web;
 mod proxy;
@@ -180,6 +182,8 @@ pub struct Gateway {
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     pub peers: Option<Arc<crate::peers::Peers>>,
     friends: Option<Arc<Friends>>,
+    /// Bot 的联系人（ADR-0045、ADR-0050）；没接 Matrix 的核心没有。
+    contacts: Option<Arc<crate::contacts::Contacts>>,
     pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
     pub sharing: Option<Arc<sharing::Sharing>>,
     pub(crate) onboarding: Arc<onboarding::OnboardingState>,
@@ -245,6 +249,7 @@ impl Gateway {
             upgrades: None,
             peers: None,
             friends: None,
+            contacts: None,
             federation_blocks: None,
             sharing: None,
             onboarding,
@@ -635,7 +640,7 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         Err(response) => return *response,
     };
     if let Err(response) =
-        attach_proxy_credentials(gateway, &route, &person, req.headers_mut(), &langs, format)
+        proxy_sso::attach_credentials(gateway, &route, &person, req.headers_mut(), &langs, format)
     {
         return *response;
     }
@@ -662,53 +667,12 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
     response
 }
 
-/// 代登录（`sso: proxy`）：拿这个人的身份写进请求头。拿不到身份或值写不进去时，回错误（形状按请求协商）。
-fn attach_proxy_credentials(
-    gateway: &Gateway,
-    route: &crate::plugin::manager::Route,
-    person: &Person,
-    headers: &mut hyper::HeaderMap,
-    langs: &crate::plugin::languages::Languages,
-    format: pages::Format,
-) -> Result<(), Box<Response>> {
-    let Some(auth) = &route.proxy else {
-        return Ok(());
-    };
-    let identity = match gateway.identity_of(person) {
-        Ok(identity) => identity,
-        Err(e) => {
-            tracing::warn!(plugin = %route.id, error = %e, "代登录拿不到身份");
-            return Err(Box::new(pages::error(
-                StatusCode::FORBIDDEN,
-                "permission_denied",
-                &l10n::text(langs, "gateway-proxy-sso-member-missing", &[]),
-                langs,
-                format,
-            )));
-        }
-    };
-    proxy_sso::attach(headers, auth, &identity, person.role).map_err(|e| {
-        Box::new(pages::error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "proxy_credentials",
-            &l10n::text(
-                langs,
-                "gateway-proxy-sso-failed",
-                &[
-                    ("id", route.id.as_str().into()),
-                    ("error", e.to_string().into()),
-                ],
-            ),
-            langs,
-            format,
-        ))
-    })
-}
-
 /// 未登录：浏览器的页面导航跳到核心换取插件会话，其余请求（XHR、API）直接 401。`credentials` 为假的
 /// 跨站请求换到会话也不认，同样 401。
 #[cfg(test)]
 mod bot_activity_tests;
+#[cfg(test)]
+mod bot_contacts_tests;
 #[cfg(test)]
 mod bot_profile_tests;
 #[cfg(test)]

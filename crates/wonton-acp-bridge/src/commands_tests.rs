@@ -53,7 +53,13 @@ async fn connected() -> (FakeAgent, AcpClient, broadcast::Receiver<AgentNotice>)
         .await
         .unwrap();
     bounded(
-        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
+        client.new_session(
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            "plan",
+            None,
+            &origin(None),
+        ),
         "session/new",
     )
     .await
@@ -256,12 +262,16 @@ fn help_covers_the_subcommands_other_modules_handle() {
     for subcommand in SUBCOMMANDS {
         assert!(help.contains(&format!("/wonton {subcommand}")));
     }
+    for hidden in ["interrupt", "queue", "steer"] {
+        assert!(!help.contains(hidden), "{hidden} 不进帮助");
+    }
     assert!(is_help_request("/wonton"));
     assert!(is_help_request("  /wonton  "));
     assert!(is_help_request("/wonton nope"));
     assert!(!is_help_request("/wonton login"));
     assert!(!is_help_request("/wonton login cancel"));
     assert!(!is_help_request("/wonton interrupt 继续"));
+    assert!(!is_help_request("/wonton interrupt"));
     assert!(!is_help_request("/wonton end"));
     assert!(!is_help_request("/review"));
     assert!(!is_help_request("/wontonfoo"));
