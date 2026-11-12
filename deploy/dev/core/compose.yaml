@@ -11,8 +11,14 @@ x-no-proxy: &no-proxy
   http_proxy: ""
   https_proxy: ""
 
+# 这套栈归哪个任务、什么时候可以回收：共用的开发机上，回收脚本按这两个标签认主（WONTON_TASK、WONTON_TTL 没设就是空）。
+x-owner-labels: &owner-labels
+  com.wonton.task: ${WONTON_TASK:-}
+  com.wonton.ttl: ${WONTON_TTL:-}
+
 services:
   core:
+    labels: *owner-labels
     build:
       context: ../../..
       dockerfile: deploy/dev/core/Dockerfile
@@ -117,6 +123,7 @@ services:
 
   # 设备上传的字节（ADR-0020）。只在核心的私有网络里，经核心网关鉴权后才到它；没传完的数据放在核心数据目录下。
   tusd:
+    labels: *owner-labels
     image: tusproject/tusd:v2.10.1@sha256:7b1c552a8b42f4b36cb01f2a3bd49f82ab078b2eefd191459e716141dd50376c
     restart: unless-stopped
     user: "${WONTON_DEV_PUID:-1000}:${WONTON_DEV_PGID:-1000}"
@@ -153,6 +160,7 @@ services:
       start_interval: 1s
 
   mailpit:
+    labels: *owner-labels
     image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
     restart: unless-stopped
     user: "${WONTON_DEV_PUID:-1000}:${WONTON_DEV_PGID:-1000}"
@@ -192,6 +200,7 @@ services:
       start_interval: 1s
 
   hydra-migrate:
+    labels: *owner-labels
     image: oryd/hydra:v26.2.0
     command: migrate sql up -e --yes
     environment:
@@ -203,6 +212,7 @@ services:
     networks: [core]
 
   hydra:
+    labels: *owner-labels
     image: oryd/hydra:v26.2.0
     # --dev 允许 http 签发方：M0 的网关还没有 TLS。
     command: serve all --dev
@@ -240,6 +250,7 @@ services:
   # 联邦名单、黑名单和出站代理范围在第二份 TOML，由核心原地重写、SIGUSR1 热加载（ADR-0050、ADR-0051）；
   # 单文件挂载钉住 inode，核心只做原地截断写。
   tuwunel:
+    labels: *owner-labels
     image: ghcr.io/matrix-construct/tuwunel:v1.9.4
     restart: unless-stopped
     stop_grace_period: 5m
