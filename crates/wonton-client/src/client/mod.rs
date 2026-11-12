@@ -33,6 +33,7 @@ use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 use switch::Replay;
 
 mod bot_contacts;
+mod browser;
 mod composer;
 mod dispatch;
 mod limits;
